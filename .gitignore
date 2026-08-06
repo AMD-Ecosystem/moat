@@ -83,3 +83,6 @@ data/blindspot_candidates.json
 # are not yet filed, and publishing an unfiled report puts it where the component
 # owners will not see it. They stay on disk and in the private history.
 findings/
+
+# Claude Code agent worktrees (isolated checkouts; their commits live on their own branches)
+.claude/worktrees/
