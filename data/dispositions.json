@@ -419,6 +419,13 @@
     "note": "vLLM fork; AMD officially supports vLLM, not forks",
     "reason": "ported-elsewhere"
   },
+  "dphnai/sonar": {
+    "decided": "2026-08-06T18:23:29Z",
+    "disposition": "skip",
+    "full_name": "dphnAI/sonar",
+    "note": "Sonar is Aphrodite Engine renamed, itself a vLLM fork, and it ships mature actively-maintained ROCm support: CMakeLists HIP_SUPPORTED_ARCHS covers 17 archs (gfx906/908/90a/942/950/1250 plus gfx1030-1201), aphrodite/platforms/rocm.py (1055 lines), a hand-written csrc/rocm/ HIP kernel tree (attention.cu 3719 lines, RDNA3 WMMA GEMMs), AITER attention/MoE backends, per-model AMD paths including gfx950 Gluon kernels, ~126 tuned MoE/GEMM configs for MI300X/MI325X/MI350/MI355/R9700, ~40 ROCm test files, and CI-built ROCm wheels. Newest ROCm commits 2026-08-03 (Enable gfx1250) and 2026-07-30 (AITER FP8 ViT attention). Nothing to port; AMD leverage on this engine is in vLLM and AITER upstream, which Sonar syncs from. Licence AGPL-3.0 (tier 3) recorded in upstream.json.",
+    "reason": "already-supported"
+  },
   "dr-noob/peakperf": {
     "decided": "2026-06-05T01:23:30Z",
     "disposition": "skip",

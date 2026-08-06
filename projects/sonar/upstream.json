@@ -1,0 +1,11 @@
+{
+  "full_name": "dphnAI/sonar",
+  "upstream_url": "https://github.com/dphnAI/sonar",
+  "default_branch": "main",
+  "fork_url": null,
+  "ext_type": "torch-extension",
+  "base_sha": null,
+  "license_spdx": "AGPL-3.0",
+  "license_source": "GitHub field and LICENSE file agree: verbatim GNU AGPL v3 (662 lines, no addenda)",
+  "license_note": "Tier 3, strong copyleft. No submodules. Nested licences at aphrodite/third_party/flash_linear_attention/LICENSE and csrc/punica/LICENSE are permissive. NVIDIA proprietary licence TEXT appears in aphrodite/multimodal/evs.py and aphrodite/model_executor/models/radio.py under a contradictory SPDX-License-Identifier: Apache-2.0 header inherited from vLLM; both are pure Python with no CUDA. Scope is contributing upstream only, not using or depending on the project."
+}
