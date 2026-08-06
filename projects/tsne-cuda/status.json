@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "name": "tsne-cuda",
+  "upstream_url": "https://github.com/CannyLab/tsne-cuda",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-08-06T18:14:28Z",
+  "updated_at": "2026-08-06T18:21:49Z",
+  "head_sha": null,
+  "depends_on": [
+    "faiss"
+  ],
+  "porting": null,
+  "waivers": {},
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "awaiting-fork",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-06T18:21:49Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  }
+}
