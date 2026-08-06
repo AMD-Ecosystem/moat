@@ -1281,14 +1281,17 @@ def record_tokens(name, tokens, source=None):
 
 
 def commit_project(name, message, extra_paths=()):
-    """Commit a project's control-plane artifacts together: status.json, notes.md,
-    plan.md, and stats.jsonl (whichever exist), plus any extra_paths. Agents call
+    """Commit a project's control-plane artifacts together: status.json,
+    upstream.json, notes.md, plan.md, and stats.jsonl (whichever exist), plus any
+    extra_paths. upstream.json is in the set because intake's mandatory output --
+    license_spdx -- lives there, and a licence fact left untracked blocks the
+    upstream PR exactly as a missing one does. Agents call
     this for every state transition so the per-phase telemetry in stats.jsonl
     (compile/test wall-clock etc., written by timeit.sh -- the README/blog metrics)
     is persisted WITH the transition and never accumulates uncommitted in the
     shared working tree. Prefer this over commit_and_push for project transitions."""
     paths = [f"projects/{name}/{fn}" for fn in
-             ("status.json", "notes.md", "plan.md", "stats.jsonl")
+             ("status.json", "upstream.json", "notes.md", "plan.md", "stats.jsonl")
              if (PROJECTS / name / fn).exists()]
     paths.extend(str(p) for p in extra_paths)
     return commit_and_push(paths, message)
