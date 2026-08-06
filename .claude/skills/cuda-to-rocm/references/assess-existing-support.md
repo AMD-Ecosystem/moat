@@ -1,0 +1,18 @@
+## Before porting: assess existing AMD support
+
+A "port" is not always a fresh CUDA-to-HIP conversion, and an existing AMD effort is often NOT an obvious GitHub fork. Check for existing support in this order, recording the finding + URL in plan.md:
+1. `grep -rniE 'amd|rocm|hip|gfx[0-9]' README* docs/` -- repos often LINK a platform fork in a "notable forks"/"AMD support" section, and that link IS the port (karpathy/llm.c links anthonix/llm.c, a mature gfx90a+gfx1100 fork, on README:206 -- MOAT ran a full wasted pipeline for missing this). A repo that LINKS platform forks rather than merging them does not want an upstream platform PR even for a real delta -- contribute to the linked fork.
+2. `gh pr list --repo <upstream> --state all --search "ROCm OR HIP OR AMD"` across ALL authors, not just our own -- catches open competing PRs (nerfstudio-project/gsplat already had three open AMD-support PRs, one an AMD-team "preferred contribution", when MOAT opened a 4th, #970).
+3. Web search ("<project>" + ROCm / AMD GPU / HIP / MI300 / gfx9) + the ROCm/AMD/GPUOpen GitHub orgs + rocm.docs.amd.com -- the AMD port is frequently a SEPARATELY-NAMED project, not a fork-of, so a GitHub forked-from check misses it (RAPIDS -> "ROCm-DS"; gsplat -> `ROCm/gsplat`, the `amd_gsplat` wheel, MI300X/gfx942).
+
+When a designated AMD effort already exists, contribute your DIFFERENTIATOR to it (for gsplat: the RDNA wave32 + Windows + gfx90a coverage the MI300X-only effort lacks), not a parallel upstream PR.
+
+Then classify what you found:
+- Mature ROCm/HIP support upstream, OR a mature separate AMD project (ROCm-DS-style) -> skip (disposition already-supported). We do not duplicate AMD's own work.
+- AMD supported only via OpenCL, Vulkan, or SYCL with no HIP path -> a ROCm/HIP port of the CUDA code is still valuable.
+- An AUTHORITATIVE but incomplete AMD port -- an AMD-official WIP, a sound upstream rocm/hip branch, an unmerged PR that follows good practice -> the value shifts to VALIDATING AND IMPROVING it: point MOAT at it, confirm on real GPU, contribute fixes; do not re-port from scratch.
+- A NON-authoritative community fork (a one-off personal fork, consumer-GPU-only, unvalidated, hacky) -> do NOT adopt it as a base. Its `.cu` edits are NOT assumed to be SOTA or best-practice, and it may carry the very hazards this guide forbids (wave64 hardcodes, `HSA_OVERRIDE_GFX_VERSION` crutches, missing-return UB, layered-array misuse, ...) that we would then have to find and undo -- worse than starting clean. Port from scratch our way; use the community fork at most as a non-authoritative HINT (e.g. "they hit the same texture limit"), never as code to inherit.
+- A ROCm/HIP port that is otherwise sound but below the best practices here -> improve it (minimal footprint, warp_size abstraction, ...). A hacky community fork does not qualify; prefer a clean from-scratch port.
+Authoritativeness is the deciding axis, not mere existence: AMD-official / well-maintained -> reuse-and-improve or skip; one-off community hack -> from-scratch, reference-only. The planner records the call in plan.md WITH the URL of any existing AMD effort and a one-line authoritative-vs-community judgment. "Already supports AMD via OpenCL/Vulkan" alone does not mean skip.
+
+Performance-critical kernels (attention, GEMM, quantization) are often tuned to NVIDIA-specific features (CUTLASS/CuTe, Hopper sm90 wgmma/MMA, warp specialization). A straight CUDA-to-HIP translation will compile and run but can leave large performance on the table versus an AMD-native implementation (rocWMMA, Composable Kernel, MFMA intrinsics). For these the planner decides between a mechanical port (correctness first) and an AMD-native rewrite of the hot kernels, and says which in plan.md.

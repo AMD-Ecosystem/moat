@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "name": "gpu4pyscf",
+  "upstream_url": "https://github.com/pyscf/gpu4pyscf",
+  "fork_url": "https://github.com/AMD-Ecosystem/gpu4pyscf",
+  "fork_default_branch": "master",
+  "priority": 4.871,
+  "ext_type": "cmake-cupy-plugin",
+  "adopted_at": "2026-05-30T00:46:51Z",
+  "updated_at": "2026-08-05T16:07:17Z",
+  "head_sha": "899ec268910992ae968ef6e8e447483e9fa22244",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "899ec268910992ae968ef6e8e447483e9fa22244",
+      "started_at": "2026-06-02T06:21:22Z",
+      "completed_at": "2026-06-02T08:00:00Z",
+      "updated_at": "2026-06-16T05:32:42Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-02T06:21:22Z",
+        "last_session_at": "2026-06-02T08:00:00Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "8cb88067f72652557788a3dc7be075a38b717c82",
+        "to": "899ec268910992ae968ef6e8e447483e9fa22244",
+        "method": "source-class",
+        "class": "comment-only",
+        "detail": "gpu4pyscf/lib/CMakeLists.txt: comment-only (comments/format only); gpu4pyscf/lib/cuda_to_hip.h: comment-only (comments/format only)",
+        "at": "2026-06-16T05:32:42Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "899ec268910992ae968ef6e8e447483e9fa22244",
+      "started_at": "2026-06-02T07:24:00Z",
+      "completed_at": "2026-06-02T07:55:00Z",
+      "updated_at": "2026-06-16T05:32:42Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 124,
+          "test": 207,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-02T07:24:00Z",
+        "last_session_at": "2026-06-02T07:55:00Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "8cb88067f72652557788a3dc7be075a38b717c82",
+        "to": "899ec268910992ae968ef6e8e447483e9fa22244",
+        "method": "source-class",
+        "class": "comment-only",
+        "detail": "gpu4pyscf/lib/CMakeLists.txt: comment-only (comments/format only); gpu4pyscf/lib/cuda_to_hip.h: comment-only (comments/format only)",
+        "at": "2026-06-16T05:32:42Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "port-ready",
+      "blocked": true,
+      "blocked_reason": "cupy-rocm has no Windows distribution (manylinux2014-only wheels); gpu4pyscf Python layer is entirely CuPy-ROCm-based (cupy.ndarray, cupy_backends.cuda.libs.*); no CuPy-ROCm on Windows means no GPU test path is exercisable on this host",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T21:10:19Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1201": {
+      "state": "port-ready",
+      "blocked": true,
+      "blocked_reason": "cupy-rocm has no Windows distribution (manylinux2014-only wheels); same host as gfx1101, same blocker",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T21:10:34Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": true,
+      "blocked_reason": "windows-gfx1151 host retired (superseded by the gfx1101/gfx1201 machine); validation moved to windows-gfx1101 and windows-gfx1201",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T19:41:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "porting": null,
+  "waivers": {}
+}

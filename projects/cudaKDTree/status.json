@@ -1,0 +1,176 @@
+{
+  "schema_version": 1,
+  "name": "cudaKDTree",
+  "upstream_url": "https://github.com/ingowald/cudaKDTree",
+  "fork_url": "https://github.com/AMD-Ecosystem/cudaKDTree",
+  "fork_default_branch": "master",
+  "priority": 3.907,
+  "ext_type": "unknown",
+  "adopted_at": "2026-05-30T01:04:51Z",
+  "updated_at": "2026-06-18T18:54:00Z",
+  "head_sha": "93a838d776f5ffc1b4069291c7906129689ed1be",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "93a838d776f5ffc1b4069291c7906129689ed1be",
+      "started_at": "2026-05-30T05:52:44Z",
+      "completed_at": "2026-05-30T06:56:59Z",
+      "updated_at": "2026-06-18T18:54:00Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "moat-checkup",
+      "carry_forward": {
+        "from": "d2ca74ba91d0e1d3f9c0aabaa2152492c461750d",
+        "to": "4fd5d89",
+        "method": "source-class",
+        "class": "comment-only",
+        "detail": "cukd/cuda_to_hip.h: comment-only (comments/format only); cukd/spatial-kdtree.h: comment-only (comments/format only)",
+        "at": "2026-06-11T22:18:52Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "93a838d776f5ffc1b4069291c7906129689ed1be",
+      "started_at": null,
+      "completed_at": "2026-05-30T09:31:03Z",
+      "updated_at": "2026-06-11T22:19:49Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "d2ca74ba91d0e1d3f9c0aabaa2152492c461750d",
+        "to": "4fd5d89",
+        "method": "source-class",
+        "class": "comment-only",
+        "detail": "cukd/cuda_to_hip.h: comment-only (comments/format only); cukd/spatial-kdtree.h: comment-only (comments/format only)",
+        "at": "2026-06-11T22:18:52Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "93a838d776f5ffc1b4069291c7906129689ed1be",
+      "started_at": null,
+      "completed_at": "2026-06-04T23:07:57Z",
+      "updated_at": "2026-06-11T22:19:49Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "d2ca74ba91d0e1d3f9c0aabaa2152492c461750d",
+        "to": "4fd5d89",
+        "method": "source-class",
+        "class": "comment-only",
+        "detail": "cukd/cuda_to_hip.h: comment-only (comments/format only); cukd/spatial-kdtree.h: comment-only (comments/format only)",
+        "at": "2026-06-11T22:18:52Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "93a838d776f5ffc1b4069291c7906129689ed1be",
+      "started_at": null,
+      "completed_at": "2026-06-04T23:07:57Z",
+      "updated_at": "2026-06-11T22:19:49Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "d2ca74ba91d0e1d3f9c0aabaa2152492c461750d",
+        "to": "4fd5d89",
+        "method": "source-class",
+        "class": "comment-only",
+        "detail": "cukd/cuda_to_hip.h: comment-only (comments/format only); cukd/spatial-kdtree.h: comment-only (comments/format only)",
+        "at": "2026-06-11T22:18:52Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "93a838d776f5ffc1b4069291c7906129689ed1be",
+      "started_at": null,
+      "completed_at": "2026-05-31T00:00:00Z",
+      "updated_at": "2026-06-11T22:19:49Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "d2ca74ba91d0e1d3f9c0aabaa2152492c461750d",
+        "to": "4fd5d89",
+        "method": "source-class",
+        "class": "comment-only",
+        "detail": "cukd/cuda_to_hip.h: comment-only (comments/format only); cukd/spatial-kdtree.h: comment-only (comments/format only)",
+        "at": "2026-06-11T22:18:52Z"
+      }
+    }
+  },
+  "pr_url": "https://github.com/ingowald/cudaKDTree/pull/40",
+  "pr_number": 40,
+  "pr_opened_at": "2026-06-11T22:35:11Z",
+  "pr_merged_at": "2026-06-18T18:54:00Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged"
+}

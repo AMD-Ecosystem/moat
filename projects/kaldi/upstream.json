@@ -1,0 +1,12 @@
+{
+  "full_name": "kaldi-asr/kaldi",
+  "upstream_url": "https://github.com/kaldi-asr/kaldi",
+  "default_branch": "master",
+  "fork_url": null,
+  "ext_type": "cmake",
+  "base_sha": null,
+  "outcome": "validated",
+  "outcome_note": "kaldi-asr/kaldi already ships a mature upstream ROCm/HIP backend (AMD, 2022-2023). We GPU-validated it on gfx90a (CDNA2 wave64) and gfx1100 (RDNA3 wave32) under ROCm 7.2.1; the only delta is launch-geometry modernization, too small to warrant a separate upstream PR. No PR; delivered as a validation record.",
+  "license_spdx": "Apache-2.0",
+  "license_source": "read from the licence text; GitHub could not parse it"
+}

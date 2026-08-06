@@ -1,0 +1,29 @@
+{"kind": "tokens", "ts": "2026-06-05T06:39:43Z", "tokens": 102117, "source": "planner"}
+{"kind":"phase","ts":"2026-06-05T06:41:54Z","phase":"compile","seconds":0.138,"exit":1,"cmd":"cmake --build . --parallel"}
+{"kind": "tokens", "ts": "2026-06-05T06:57:54Z", "tokens": 189585, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-05T06:59:47Z", "tokens": 80259, "source": "reviewer"}
+{"kind":"phase","ts":"2026-06-05T07:00:50Z","phase":"compile","seconds":11.135,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/CUDA-ScanMatcher-ICP/src/build --parallel"}
+{"kind": "tokens", "ts": "2026-06-05T07:02:12Z", "tokens": 34887, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-05T07:04:21Z", "tokens": 52358, "source": "reviewer"}
+{"kind":"phase","ts":"2026-06-05T07:04:59Z","phase":"compile","seconds":2.977,"exit":0,"cmd":"bash -c cd projects/CUDA-ScanMatcher-ICP/src/build && cmake .. -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=/opt/rocm -DCMAKE_BUILD_TYPE=Release"}
+{"kind":"phase","ts":"2026-06-05T07:05:12Z","phase":"compile","seconds":11.179,"exit":0,"cmd":"bash -c cd projects/CUDA-ScanMatcher-ICP/src/build && cmake --build . --parallel"}
+{"kind":"phase","ts":"2026-06-05T07:05:27Z","phase":"test","seconds":0.240,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/CUDA-ScanMatcher-ICP/src/build && HIP_VISIBLE_DEVICES=2 ./bin/cis565_ScanMatching"}
+{"kind":"phase","ts":"2026-06-05T13:54:33Z","phase":"compile","seconds":2.326,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/CUDA-ScanMatcher-ICP/src && rm -rf build && mkdir build && cd build && cmake .. -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_PREFIX_PATH=/opt/rocm -DCMAKE_BUILD_TYPE=Release && cmake --build . --parallel"}
+{"kind":"phase","ts":"2026-06-05T13:54:44Z","phase":"compile","seconds":2.334,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/CUDA-ScanMatcher-ICP/src && rm -rf build && mkdir build && cd build && cmake .. -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_PREFIX_PATH=/opt/rocm -DCMAKE_BUILD_TYPE=Release -DCMAKE_IGNORE_PATH=/opt/conda && cmake --build . --parallel"}
+{"kind":"phase","ts":"2026-06-05T13:54:59Z","phase":"compile","seconds":10.883,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/CUDA-ScanMatcher-ICP/src && rm -rf build && mkdir build && cd build && unset CMAKE_PREFIX_PATH && cmake .. -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_PREFIX_PATH=/opt/rocm -DCMAKE_BUILD_TYPE=Release -Dglfw3_DIR=/usr/lib/x86_64-linux-gnu/cmake/glfw3 && cmake --build . --parallel"}
+{"kind":"phase","ts":"2026-06-05T13:55:17Z","phase":"test","seconds":0.212,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/CUDA-ScanMatcher-ICP/src/build && HIP_VISIBLE_DEVICES=0 ./bin/cis565_ScanMatching"}
+{"kind": "tokens", "ts": "2026-06-05T13:56:46Z", "tokens": 38611, "source": "validator (gfx1100)"}
+{"kind":"phase","ts":"2026-06-07T22:47:02Z","phase":"compile","seconds":1.735,"exit":1,"cmd":"python3 /b/develop/moat/agent_space/build_scanmatcher_gfx1201.py"}
+{"kind":"phase","ts":"2026-06-07T22:47:24Z","phase":"compile","seconds":10.177,"exit":0,"cmd":"python3 /b/develop/moat/agent_space/build_scanmatcher_gfx1201.py"}
+{"kind":"phase","ts":"2026-06-07T22:48:08Z","phase":"test","seconds":0.340,"exit":0,"cmd":"python3 /b/develop/moat/agent_space/run_scanmatcher_gfx1201.py"}
+{"kind":"phase","ts":"2026-06-11T21:38:04Z","phase":"compile","seconds":0.148,"exit":1,"cmd":"bash -c cmake .. -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=/opt/rocm -DCMAKE_BUILD_TYPE=Release && cmake --build . -j"}
+{"kind":"phase","ts":"2026-06-11T21:38:25Z","phase":"compile","seconds":13.783,"exit":0,"cmd":"bash -c cmake -S /var/lib/jenkins/moat/projects/CUDA-ScanMatcher-ICP/src -B /var/lib/jenkins/moat/projects/CUDA-ScanMatcher-ICP/src/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=/opt/rocm -DCMAKE_BUILD_TYPE=Release && cmake --build /var/lib/jenkins/moat/projects/CUDA-ScanMatcher-ICP/src/build -j"}
+{"kind":"phase","ts":"2026-06-11T21:38:33Z","phase":"test","seconds":0.006,"exit":127,"cmd":"timeout 120 ./bin/cis565_ScanMatching"}
+{"kind":"phase","ts":"2026-06-11T21:38:38Z","phase":"test","seconds":0.239,"exit":0,"cmd":"timeout 120 /var/lib/jenkins/moat/projects/CUDA-ScanMatcher-ICP/src/build/bin/cis565_ScanMatching"}
+{"kind": "tokens", "ts": "2026-06-11T21:42:00Z", "tokens": 52472, "source": "porter PR-prep"}
+{"kind": "tokens", "ts": "2026-06-07T22:49:33Z", "tokens": 57189, "source": "validator"}
+{"kind":"phase","ts":"2026-06-19T21:52:45Z","phase":"compile","seconds":3.603,"exit":0,"cmd":"cmake /b/develop/moat/projects/CUDA-ScanMatcher-ICP/src -G Ninja -DCMAKE_C_COMPILER=/b/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang.exe -DCMAKE_CXX_COMPILER=/b/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++.exe -DCMAKE_HIP_COMPILER=/b/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++.exe -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1101 -DCMAKE_PREFIX_PATH=/b/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_devel -DCMAKE_BUILD_TYPE=Release"}
+{"kind":"phase","ts":"2026-06-19T21:52:55Z","phase":"compile","seconds":5.849,"exit":0,"cmd":"cmake --build . --parallel 64"}
+{"kind":"phase","ts":"2026-06-19T21:54:00Z","phase":"test","seconds":0.253,"exit":0,"cmd":"B:/develop/moat/bin/cis565_ScanMatching.exe"}
+{"kind": "tokens", "ts": "2026-06-19T21:55:36Z", "tokens": 47168, "source": "validator (gfx1101)"}
+{"kind": "tokens", "ts": "2026-06-23T22:21:28Z", "tokens": 15694, "source": "gfx90a dead-code cleanup (batch A subagent, shared)"}

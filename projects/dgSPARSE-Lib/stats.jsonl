@@ -1,0 +1,48 @@
+{"kind": "tokens", "ts": "2026-06-05T08:29:25Z", "tokens": 107649, "source": "planner"}
+{"kind":"phase","ts":"2026-06-05T08:32:35Z","phase":"compile","seconds":0.328,"exit":1,"cmd":"pip install -e ."}
+{"kind":"phase","ts":"2026-06-05T08:32:39Z","phase":"compile","seconds":1.501,"exit":1,"cmd":"pip install -e /var/lib/jenkins/moat/projects/dgSPARSE-Lib/src"}
+{"kind":"phase","ts":"2026-06-05T08:34:22Z","phase":"compile","seconds":98.660,"exit":0,"cmd":"pip install -e /var/lib/jenkins/moat/projects/dgSPARSE-Lib/src --no-build-isolation"}
+{"kind":"phase","ts":"2026-06-05T08:35:13Z","phase":"compile","seconds":22.909,"exit":1,"cmd":"pip install -e /var/lib/jenkins/moat/projects/dgSPARSE-Lib/src --no-build-isolation"}
+{"kind":"phase","ts":"2026-06-05T08:42:26Z","phase":"compile","seconds":0.038,"exit":2,"cmd":"python3 setup.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-06-05T08:42:32Z","phase":"compile","seconds":2.791,"exit":0,"cmd":"python3 /var/lib/jenkins/moat/projects/dgSPARSE-Lib/src/setup.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-06-05T08:49:54Z","phase":"test","seconds":0.414,"exit":4,"cmd":"pytest test/test_spmm.py -v"}
+{"kind":"phase","ts":"2026-06-05T08:50:01Z","phase":"test","seconds":2.946,"exit":2,"cmd":"pytest /var/lib/jenkins/moat/projects/dgSPARSE-Lib/src/test/test_spmm.py -v"}
+{"kind":"phase","ts":"2026-06-05T08:50:15Z","phase":"test","seconds":5.111,"exit":2,"cmd":"pytest /var/lib/jenkins/moat/projects/dgSPARSE-Lib/src/test/test_spmm.py -v"}
+{"kind":"phase","ts":"2026-06-05T08:50:30Z","phase":"test","seconds":6.380,"exit":2,"cmd":"pytest /var/lib/jenkins/moat/projects/dgSPARSE-Lib/src/test/test_spmm.py -v"}
+{"kind": "tokens", "ts": "2026-06-05T08:55:18Z", "tokens": 140613, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-05T08:58:32Z", "tokens": 71880, "source": "reviewer"}
+{"kind": "tokens", "ts": "2026-06-05T08:59:31Z", "tokens": 19148, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-05T09:03:28Z", "tokens": 42155, "source": "reviewer"}
+{"kind":"phase","ts":"2026-06-05T09:07:54Z","phase":"compile","seconds":228.525,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/dgSPARSE-Lib/src && pip install -e . --no-build-isolation 2>&1"}
+{"kind":"phase","ts":"2026-06-05T09:08:57Z","phase":"test","seconds":2.646,"exit":1,"cmd":"python3 /var/lib/jenkins/moat/agent_space/test_dgsparse_basic.py"}
+{"kind":"phase","ts":"2026-06-05T15:02:54Z","phase":"compile","seconds":112.832,"exit":0,"cmd":"bash -c cd projects/dgSPARSE-Lib/src && pip install -e . --no-build-isolation"}
+{"kind":"phase","ts":"2026-06-05T15:03:30Z","phase":"test","seconds":2.720,"exit":1,"cmd":"python3 /var/lib/jenkins/moat/agent_space/test_dgsparse_gfx1100.py"}
+{"kind":"phase","ts":"2026-06-05T15:04:40Z","phase":"test","seconds":2.785,"exit":1,"cmd":"python3 /var/lib/jenkins/moat/agent_space/test_dgsparse_gfx1100.py"}
+{"kind":"phase","ts":"2026-06-05T15:16:14Z","phase":"test","seconds":2.902,"exit":1,"cmd":"python3 /var/lib/jenkins/moat/agent_space/test_dgsparse_gfx1100.py"}
+{"kind":"phase","ts":"2026-06-05T15:16:36Z","phase":"test","seconds":2.918,"exit":0,"cmd":"python3 /var/lib/jenkins/moat/agent_space/test_dgsparse_gfx1100.py"}
+{"kind": "tokens", "ts": "2026-06-05T15:17:49Z", "tokens": 60454, "source": "validator (gfx1100)"}
+{"kind":"phase","ts":"2026-06-08T15:01:14Z","phase":"compile","seconds":5.191,"exit":1,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe /B/develop/moat/agent_space/build_dgsparse_gfx1201.py"}
+{"kind":"phase","ts":"2026-06-08T15:04:24Z","phase":"compile","seconds":5.256,"exit":1,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe /B/develop/moat/agent_space/build_dgsparse_gfx1201.py"}
+{"kind":"phase","ts":"2026-06-08T15:07:46Z","phase":"compile","seconds":5.146,"exit":1,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe /B/develop/moat/agent_space/build_dgsparse_gfx1201.py"}
+{"kind":"phase","ts":"2026-06-08T15:10:59Z","phase":"compile","seconds":18.121,"exit":1,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe /B/develop/moat/agent_space/build_dgsparse_gfx1201.py"}
+{"kind":"phase","ts":"2026-06-08T15:18:31Z","phase":"compile","seconds":35.879,"exit":1,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe /B/develop/moat/agent_space/build_dgsparse_gfx1201.py"}
+{"kind":"phase","ts":"2026-06-08T15:28:19Z","phase":"compile","seconds":0.016,"exit":0,"cmd":"echo build complete (already done)"}
+{"kind":"phase","ts":"2026-06-08T15:28:29Z","phase":"test","seconds":3.129,"exit":0,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe B:/develop/moat/agent_space/test_dgsparse_gfx1201.py"}
+{"kind":"phase","ts":"2026-06-08T17:44:50Z","phase":"compile","seconds":149.371,"exit":0,"cmd":"bash -c cd projects/dgSPARSE-Lib/src && pip install -e . --no-build-isolation 2>&1 | tail -10"}
+{"kind":"phase","ts":"2026-06-08T17:44:57Z","phase":"test","seconds":2.589,"exit":1,"cmd":"python3 /var/lib/jenkins/moat/agent_space/test_dgsparse_gfx90a_revalidate.py"}
+{"kind":"phase","ts":"2026-06-08T17:45:45Z","phase":"test","seconds":2.447,"exit":1,"cmd":"python3 /var/lib/jenkins/moat/agent_space/test_dgsparse_gfx90a_revalidate.py"}
+{"kind":"phase","ts":"2026-06-08T17:46:19Z","phase":"test","seconds":2.711,"exit":1,"cmd":"python3 /var/lib/jenkins/moat/agent_space/test_dgsparse_gfx90a_revalidate.py"}
+{"kind":"phase","ts":"2026-06-08T17:46:41Z","phase":"test","seconds":4.390,"exit":0,"cmd":"python3 /var/lib/jenkins/moat/agent_space/test_dgsparse_gfx90a_revalidate.py"}
+{"kind":"phase","ts":"2026-06-08T18:15:50Z","phase":"compile-old","seconds":0.290,"exit":1,"cmd":"pip install --no-build-isolation --prefix=/var/lib/jenkins/moat/agent_space/dgSPARSE-Lib-gfx1100-gpu0/old-install -e ."}
+{"kind":"phase","ts":"2026-06-08T18:16:01Z","phase":"compile-old","seconds":0.255,"exit":1,"cmd":"pip install --no-build-isolation ."}
+{"kind":"phase","ts":"2026-06-08T18:18:16Z","phase":"compile-old","seconds":124.639,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/dgSPARSE-Lib/src && pip install --no-build-isolation -e ."}
+{"kind":"phase","ts":"2026-06-08T18:18:52Z","phase":"compile-new","seconds":0.281,"exit":1,"cmd":"pip install --no-build-isolation -e ."}
+{"kind":"phase","ts":"2026-06-08T18:20:51Z","phase":"compile-new","seconds":113.059,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/dgSPARSE-Lib/src && rm -f dgsparse/*.so && pip install --no-build-isolation -e ."}
+{"kind":"phase","ts":"2026-06-08T18:21:27Z","phase":"test","seconds":3.279,"exit":0,"cmd":"python3 /var/lib/jenkins/moat/agent_space/test_dgsparse_gfx1100.py"}
+{"kind": "tokens", "ts": "2026-06-08T18:30:29Z", "tokens": 38478, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-08T17:48:17Z", "tokens": 60829, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-08T15:31:41Z", "tokens": 85068, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-15T12:15:42Z", "tokens": 51286, "source": "pr-prep"}
+{"kind":"phase","ts":"2026-06-19T23:16:07Z","phase":"compile","seconds":61.593,"exit":0,"cmd":"B:\\develop\\TheRock\\external-builds\\pytorch\\.venv\\Scripts\\python.exe B;C:\\Program Files\\Git\\develop\\moat\\agent_space\\build_dgsparse_gfx1101.py"}
+{"kind":"phase","ts":"2026-06-19T23:16:34Z","phase":"test","seconds":1.903,"exit":0,"cmd":"B:\\develop\\TheRock\\external-builds\\pytorch\\.venv\\Scripts\\python.exe B;C:\\Program Files\\Git\\develop\\moat\\agent_space\\test_dgsparse_gfx1101.py"}
+{"kind": "tokens", "ts": "2026-06-19T23:18:28Z", "tokens": 48494, "source": "validator (gfx1101)"}

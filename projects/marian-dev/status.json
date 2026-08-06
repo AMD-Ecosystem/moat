@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "name": "marian-dev",
+  "upstream_url": "https://github.com/marian-nmt/marian-dev",
+  "fork_url": "https://github.com/AMD-Ecosystem/marian-dev",
+  "fork_default_branch": "master",
+  "priority": 3.968,
+  "ext_type": "cmake",
+  "adopted_at": "2026-05-30T03:26:35Z",
+  "updated_at": "2026-08-05T16:07:17Z",
+  "head_sha": "ba0ec806b9f949acac6bb2dcc623017b47d71e75",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "ba0ec806b9f949acac6bb2dcc623017b47d71e75",
+      "started_at": "2026-06-02T01:50:34Z",
+      "completed_at": "2026-06-23T22:46:44Z",
+      "updated_at": "2026-06-23T22:46:44Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "ba0ec806b9f949acac6bb2dcc623017b47d71e75",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:46:44Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "ba0ec806b9f949acac6bb2dcc623017b47d71e75",
+      "started_at": "2026-06-02T05:35:00Z",
+      "completed_at": "2026-06-23T22:46:44Z",
+      "updated_at": "2026-06-23T22:46:44Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-02T05:35:00Z",
+        "last_session_at": "2026-06-02T05:42:00Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "ba0ec806b9f949acac6bb2dcc623017b47d71e75",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:46:44Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "validation-failed",
+      "blocked": true,
+      "blocked_reason": "TheRock/rocBLAS library limitation, not a port defect: at decoder-scale sizes rocBLAS selects a generic SPIR-V grouped-batched GEMM kernel (Cijk_..._GB_..._ISA000); gfx1101 Tensile .dat has no GB solution so it falls back to the DLL-embedded SPIR-V, which Windows kpack_load_code_object cannot load (hipErrorInvalidImage). gfx1201 uses an ELF batched path and is unaffected. Unit tests + GPU graph/attention/transformer + training smoke all PASS; only e2e marian-decoder fails. Optional platform; gfx1201 completed so PR is unlocked. Potential fix deferred: _WIN32 && USE_HIP strided-batched-GEMM path in prod.cpp ProdBatchedTyped.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-20T03:07:37Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "ba0ec806b9f949acac6bb2dcc623017b47d71e75",
+      "started_at": "2026-06-08T20:30:21Z",
+      "completed_at": "2026-06-23T22:46:45Z",
+      "updated_at": "2026-06-23T22:46:45Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "ba0ec806b9f949acac6bb2dcc623017b47d71e75",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:46:45Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": true,
+      "blocked_reason": "windows-gfx1151 host retired (superseded by the gfx1101/gfx1201 machine); validation moved to windows-gfx1101 and windows-gfx1201",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T19:41:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "porting": null,
+  "waivers": {}
+}

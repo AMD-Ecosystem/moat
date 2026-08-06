@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "name": "stdgpu",
+  "upstream_url": "https://github.com/stotko/stdgpu",
+  "fork_url": "https://github.com/AMD-Ecosystem/stdgpu",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-06-04T23:23:31Z",
+  "updated_at": "2026-08-06T16:04:18Z",
+  "head_sha": "a0c404b71a19872c4d175f931378b74a682e3f09",
+  "depends_on": [],
+  "platforms": {
+    "windows-gfx1151": {
+      "state": "validation-failed",
+      "blocked": true,
+      "blocked_reason": "gfx1151/RDNA3.5-APU platform faults, not port defects (port correct + validated on gfx90a/gfx1100). 17 concurrent-container tests fail two ways: (A) single-thread insert into a full table hangs at the per-kernel launch path -- entry printf never flushes even with a forced early return; occupancy reads are correct, so not a coherence/spinlock/atomic bug; consistent with known gfx1151 APU runtime gaps; (B) deque same-end concurrent push+pop livelock requiring cross-wavefront forward progress AMD does not guarantee. Coherence/fence/scope/cache-invalidate fixes all disproven. See notes.md 2026-06-07 Correction.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-08T05:59:40Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a0c404b71a19872c4d175f931378b74a682e3f09",
+      "started_at": null,
+      "completed_at": "2026-07-06T03:28:35Z",
+      "updated_at": "2026-07-06T03:28:35Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "a0c404b71a19872c4d175f931378b74a682e3f09",
+        "method": "binary-equiv",
+        "detail": "guard->IS_DEVICE_COMPILED + execution_detail.h->.cuh rename (front-end only): codeobj_diff 9f1c6ef->a0c404b verdict=identical on gfx90a (21 exports)",
+        "at": "2026-07-06T03:28:35Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a0c404b71a19872c4d175f931378b74a682e3f09",
+      "started_at": "2026-06-08T21:05:42Z",
+      "completed_at": "2026-07-06T03:28:35Z",
+      "updated_at": "2026-07-06T03:28:35Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "to": "a0c404b71a19872c4d175f931378b74a682e3f09",
+        "method": "binary-equiv",
+        "detail": "guard->IS_DEVICE_COMPILED + execution_detail.h->.cuh rename (front-end only): codeobj_diff 9f1c6ef->a0c404b verdict=identical on gfx90a (21 exports)",
+        "at": "2026-07-06T03:28:35Z"
+      }
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "c563696e805cdfff1ce92e851061a1eee877e54c",
+      "started_at": "2026-06-04T23:45:57Z",
+      "completed_at": "2026-06-19T23:54:58Z",
+      "updated_at": "2026-06-20T00:07:15Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "dd4312ec378472c0daeccd3d0cb77031eb45ba72",
+        "method": "source-class",
+        "detail": "PR-prep squash to one commit; only delta vs validated 4db4d21 is the wave_lock.h copyright year 2024->2026 (comment); device code identical",
+        "at": "2026-06-19T23:54:58Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a0c404b71a19872c4d175f931378b74a682e3f09",
+      "started_at": null,
+      "completed_at": "2026-07-06T03:28:35Z",
+      "updated_at": "2026-07-06T03:28:35Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "to": "a0c404b71a19872c4d175f931378b74a682e3f09",
+        "method": "binary-equiv",
+        "detail": "guard->IS_DEVICE_COMPILED + execution_detail.h->.cuh rename (front-end only): codeobj_diff 9f1c6ef->a0c404b verdict=identical on gfx90a (21 exports)",
+        "at": "2026-07-06T03:28:35Z"
+      }
+    }
+  },
+  "pr_url": "https://github.com/stotko/stdgpu/pull/484",
+  "pr_number": 484,
+  "pr_opened_at": "2026-06-20T00:07:15Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged",
+  "pr_merged_at": "2026-08-06T16:04:18Z"
+}

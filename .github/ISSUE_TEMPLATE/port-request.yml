@@ -1,0 +1,86 @@
+name: Port request
+description: Suggest a CUDA project to port to ROCm/HIP
+title: "[port] <owner/repo>"
+labels: ["port-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a project! MOAT ports popular CUDA GitHub projects to
+        ROCm/HIP on AMD GPUs. Before filing, please search existing issues and the
+        suggestion list so we don't track a duplicate.
+
+  - type: input
+    id: repo
+    attributes:
+      label: Repository (owner/repo)
+      description: The GitHub path of the CUDA project, e.g. NVlabs/tiny-cuda-nn
+      placeholder: owner/repo
+    validations:
+      required: true
+
+  - type: input
+    id: url
+    attributes:
+      label: Repository URL
+      placeholder: https://github.com/owner/repo
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What does it do, and why port it?
+      description: One or two sentences on the project and who would benefit from AMD support.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: cuda-evidence
+    attributes:
+      label: How does it use CUDA?
+      description: Best guess is fine; we verify during triage.
+      options:
+        - Has .cu/.cuh CUDA kernels in-tree
+        - Calls CUDA libraries (cuBLAS, cuFFT, cuDNN, Thrust, etc.)
+        - Python package with a compiled CUDA extension
+        - Depends on CUDA but I'm not sure how
+    validations:
+      required: true
+
+  - type: input
+    id: rocm-status
+    attributes:
+      label: Existing ROCm/AMD support?
+      description: Link any existing ROCm fork, PR, or issue. Write "none that I know of" if unaware.
+      placeholder: none that I know of
+    validations:
+      required: true
+
+  - type: input
+    id: license
+    attributes:
+      label: What licence is it under?
+      description: >
+        The SPDX identifier if you know it (MIT, Apache-2.0, GPL-3.0-only), or the name of
+        the licence file. This decides whether a fix can be offered upstream at all, so it
+        is worth getting right; "unsure" is a fine answer and better than a guess.
+      placeholder: MIT
+    validations:
+      required: true
+
+  - type: textarea
+    id: deps
+    attributes:
+      label: Build dependencies on other CUDA projects (optional)
+      description: e.g. builds on a base library that would also need porting.
+
+  - type: checkboxes
+    id: confirms
+    attributes:
+      label: Before submitting
+      options:
+        - label: This is a CUDA project (not already ROCm/AMD-native), and not a fork of another repo
+          required: true
+        - label: I searched open issues and didn't find an existing request for this repo
+          required: true

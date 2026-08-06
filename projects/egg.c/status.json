@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "name": "egg.c",
+  "upstream_url": "https://github.com/d0rc/egg.c",
+  "fork_url": "https://github.com/AMD-Ecosystem/egg.c",
+  "fork_default_branch": "master",
+  "priority": 4.12,
+  "ext_type": "make",
+  "adopted_at": "2026-05-30T03:26:35Z",
+  "updated_at": "2026-08-06T02:41:27Z",
+  "head_sha": "f565358f3f87a6db2a311b56ce24ce2db113ca8a",
+  "platforms": {
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "f565358f3f87a6db2a311b56ce24ce2db113ca8a",
+      "started_at": null,
+      "completed_at": "2026-06-18T17:10:54Z",
+      "updated_at": "2026-06-18T17:10:54Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "f565358f3f87a6db2a311b56ce24ce2db113ca8a",
+        "method": "binary-equiv",
+        "detail": "gfx1201 codeobj_diff identical for adam + mgpu (cross-compiled before/after, build-only); device ISA OS-independent",
+        "at": "2026-06-18T17:10:54Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "f565358f3f87a6db2a311b56ce24ce2db113ca8a",
+      "started_at": "2026-06-02T08:05:00Z",
+      "completed_at": "2026-06-18T17:10:54Z",
+      "updated_at": "2026-06-18T17:10:54Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 11,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-02T08:05:00Z",
+        "last_session_at": "2026-06-02T08:30:00Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "f565358f3f87a6db2a311b56ce24ce2db113ca8a",
+        "method": "binary-equiv",
+        "detail": "gfx1100 codeobj_diff identical for adam + mgpu (cross-compiled before/after, build-only)",
+        "at": "2026-06-18T17:10:54Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": true,
+      "blocked_reason": "windows-gfx1151 host retired (superseded by the gfx1101/gfx1201 machine); validation moved to windows-gfx1101 and windows-gfx1201",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T19:41:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "f565358f3f87a6db2a311b56ce24ce2db113ca8a",
+      "started_at": "2026-06-02T06:31:35Z",
+      "completed_at": "2026-06-18T16:10:17Z",
+      "updated_at": "2026-06-18T17:10:54Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "f565358f3f87a6db2a311b56ce24ce2db113ca8a",
+        "method": "binary-equiv",
+        "detail": "gfx90a device code identical before/after collapsing the adaptive_normalize warp-shim guards: adam + mgpu codeobj_diff identical",
+        "at": "2026-06-18T17:10:54Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "port-ready",
+      "blocked": true,
+      "blocked_reason": "gfx1101 TDR-removed mid-kernel: hipInfo returns 0100 immediately, PRO V710 absent from wmic; train_sequence_kernel dispatched (AMD_LOG_LEVEL=3 confirmed) then TDR fired; build succeeded at f565358; cannot reboot (sibling CLIs active)",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-24T17:55:27Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "pr_url": "https://github.com/d0rc/egg.c/pull/8",
+  "pr_number": 8,
+  "pr_opened_at": "2026-06-18T16:11:53Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:41:27Z",
+    "tier": 4,
+    "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
+  }
+}

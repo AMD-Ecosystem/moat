@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "name": "TTT3R",
+  "upstream_url": "https://github.com/Inception3D/TTT3R",
+  "fork_url": "https://github.com/AMD-Ecosystem/TTT3R",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "torch-extension",
+  "adopted_at": "2026-06-04T23:49:50Z",
+  "updated_at": "2026-08-06T02:41:26Z",
+  "head_sha": "d064cc9a55b88763e5a3873dfa4a6b45e2751e00",
+  "depends_on": [],
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d064cc9a",
+      "started_at": "2026-06-04T23:58:35Z",
+      "completed_at": "2026-06-08T04:17:28Z",
+      "updated_at": "2026-06-08T04:17:28Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "d064cc9a",
+        "method": "binary-equiv",
+        "detail": "Windows-only linker workaround (sys.platform==win32 guard), device ISA and exports identical (66 symbols) on gfx90a",
+        "at": "2026-06-08T04:17:28Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d064cc9a55b88763e5a3873dfa4a6b45e2751e00",
+      "started_at": null,
+      "completed_at": "2026-06-08T13:50:18Z",
+      "updated_at": "2026-06-08T13:50:18Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "d064cc9a55b88763e5a3873dfa4a6b45e2751e00",
+        "method": "binary-equiv",
+        "detail": "Windows-only linker workaround (sys.platform==win32 guard), device ISA and exports identical (66 symbols) on gfx1100",
+        "at": "2026-06-08T13:50:18Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d064cc9a55b88763e5a3873dfa4a6b45e2751e00",
+      "started_at": null,
+      "completed_at": "2026-06-20T07:12:22Z",
+      "updated_at": "2026-06-20T07:12:22Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d064cc9a55b88763e5a3873dfa4a6b45e2751e00",
+      "started_at": null,
+      "completed_at": "2026-06-08T02:40:53Z",
+      "updated_at": "2026-06-08T02:40:53Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T00:09:00Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "porting": null,
+  "waivers": {},
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:41:26Z",
+    "tier": 4,
+    "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
+  }
+}

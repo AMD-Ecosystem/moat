@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "name": "mirage",
+  "upstream_url": "https://github.com/mirage-project/mirage",
+  "fork_url": null,
+  "fork_default_branch": "mpk",
+  "priority": 6.018,
+  "ext_type": "cmake-cython",
+  "adopted_at": "2026-05-30T00:04:57Z",
+  "updated_at": "2026-06-16T06:28:31Z",
+  "head_sha": null,
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "unclaimed",
+      "blocked": true,
+      "blocked_reason": "SKIP disposition cant-port (re-confirmed 2026-06-16 at HEAD 2c87a75): CUTLASS/CuTe + PTX mma/wgmma/TMA/cp.async + NVSHMEM + NVRTC/nvcc sm_90a/sm_100a codegen; no tractable mechanical HIP target. AMD support would be a ground-up CK/ck_tile+HIP backend, out of MOAT scope. See projects/mirage/plan.md and data/dispositions.json.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-16T06:28:31Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "linux-gfx1100": {
+      "state": "awaiting-port",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-05-30T00:04:57Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1101": {
+      "state": "awaiting-port",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T19:41:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1201": {
+      "state": "awaiting-port",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T19:41:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1151": {
+      "state": "awaiting-port",
+      "blocked": true,
+      "blocked_reason": "windows-gfx1151 host retired (superseded by the gfx1101/gfx1201 machine); validation moved to windows-gfx1101 and windows-gfx1201",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T19:41:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "porting": null,
+  "waivers": {}
+}

@@ -1,0 +1,10 @@
+{
+  "full_name": "xlite-dev/ffpa-attn",
+  "upstream_url": "https://github.com/xlite-dev/ffpa-attn",
+  "default_branch": "main",
+  "fork_url": "https://github.com/AMD-Ecosystem/ffpa-attn",
+  "ext_type": "torch-extension",
+  "base_sha": "67e3fff78e27a5ae6762aa177318d6f5a263625d",
+  "license_spdx": "Apache-2.0",
+  "license_source": "GitHub and the licence text agree"
+}

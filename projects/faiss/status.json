@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "name": "faiss",
+  "upstream_url": "https://github.com/facebookresearch/faiss",
+  "fork_url": "https://github.com/AMD-Ecosystem/faiss",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-05-31T16:36:35Z",
+  "updated_at": "2026-08-05T16:07:17Z",
+  "head_sha": "ab1dcf71",
+  "depends_on": [],
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "ab1dcf71",
+      "started_at": "2026-05-31T23:40:43Z",
+      "completed_at": "2026-06-08T03:46:47Z",
+      "updated_at": "2026-06-08T03:46:47Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "ab1dcf71",
+        "method": "binary-equiv",
+        "detail": "TestUtils.cpp test-only change (CLOCK_REALTIME->std::chrono); faiss.dll device code objects unchanged (test TU not in faiss_gpu_objs)",
+        "at": "2026-06-08T03:46:47Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "ab1dcf71",
+      "started_at": "2026-06-01T20:49:00Z",
+      "completed_at": "2026-06-08T03:47:04Z",
+      "updated_at": "2026-06-08T03:47:04Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-01T20:49:00Z",
+        "last_session_at": "2026-06-01T21:10:00Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "ab1dcf71",
+        "method": "binary-equiv",
+        "detail": "TestUtils.cpp test-only change (CLOCK_REALTIME->std::chrono); faiss.dll device code objects unchanged (test TU not in faiss_gpu_objs)",
+        "at": "2026-06-08T03:47:04Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "ab1dcf71",
+      "started_at": null,
+      "completed_at": "2026-06-19T23:42:18Z",
+      "updated_at": "2026-06-19T23:42:18Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "ab1dcf71",
+      "started_at": null,
+      "completed_at": "2026-06-08T03:45:26Z",
+      "updated_at": "2026-06-08T03:45:26Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1151": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "ab1dcf71",
+      "started_at": null,
+      "completed_at": "2026-06-08T03:47:04Z",
+      "updated_at": "2026-06-08T03:47:04Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "ab1dcf71",
+        "method": "binary-equiv",
+        "detail": "TestUtils.cpp test-only change (CLOCK_REALTIME->std::chrono); faiss.dll device code objects unchanged (test TU not in faiss_gpu_objs)",
+        "at": "2026-06-08T03:47:04Z"
+      }
+    }
+  },
+  "porting": null,
+  "waivers": {}
+}

@@ -1,0 +1,12 @@
+{
+  "full_name": "LMCache/LMCache",
+  "upstream_url": "https://github.com/LMCache/LMCache",
+  "default_branch": "dev",
+  "fork_url": "https://github.com/AMD-Ecosystem/LMCache",
+  "ext_type": "torch-extension",
+  "base_sha": "7eb57ad",
+  "outcome": "validated",
+  "outcome_note": "Validated upstream HIP path on gfx90a (CDNA2 wave64) + gfx1100 (RDNA3 wave32); upstream targets gfx942/gfx950 only with build-only CI. Carries a contributable build-rot fix (setup.py rocm_extension c++17->c++20: BUILD_WITH_HIP fails on current torch whose <torch/all.h> uses a c++20 requires-clause). gfx1151 blocked by LMCache lacking any Windows host port (POSIX mmap/NUMA/shm), not ROCm. FINAL DECISION 2026-06-16 (jeff): keep as validated, NO upstream PR. The c++20 build-rot fix lives on the fork (the fork @ moat-port, squashed to 8ffe6460, also adds gfx90a to the install-doc arch list) as the delivered validation record; do NOT open a PR or re-surface it as PR-worthy. Supersedes the earlier 'c++20 fix is PR-worthy' note.",
+  "license_spdx": "Apache-2.0",
+  "license_source": "GitHub and the licence text agree"
+}

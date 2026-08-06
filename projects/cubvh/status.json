@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "name": "cubvh",
+  "upstream_url": "https://github.com/ashawkey/cubvh",
+  "fork_url": "https://github.com/AMD-Ecosystem/cubvh",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "torch-extension",
+  "adopted_at": "2026-06-19T04:40:36Z",
+  "updated_at": "2026-06-23T13:54:59Z",
+  "head_sha": "e5a657a",
+  "depends_on": [],
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "e5a657a",
+      "started_at": "2026-06-19T04:56:39Z",
+      "completed_at": "2026-06-19T16:40:24Z",
+      "updated_at": "2026-06-23T13:54:59Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "moat-checkup",
+      "carry_forward": {
+        "from": "9c3b40d",
+        "to": "e5a657a",
+        "method": "source-class",
+        "class": "comment-only",
+        "detail": "setup.py: comment-only (comments/format only)",
+        "at": "2026-06-19T17:51:26Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "e5a657a",
+      "started_at": null,
+      "completed_at": "2026-06-19T17:54:30Z",
+      "updated_at": "2026-06-19T17:54:30Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-19T05:26:03Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "e5a657a",
+      "started_at": null,
+      "completed_at": "2026-06-19T16:43:31Z",
+      "updated_at": "2026-06-19T17:51:26Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "9c3b40d",
+        "to": "e5a657a",
+        "method": "source-class",
+        "class": "comment-only",
+        "detail": "setup.py: comment-only (comments/format only)",
+        "at": "2026-06-19T17:51:26Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "e5a657a",
+      "started_at": null,
+      "completed_at": "2026-06-19T16:45:54Z",
+      "updated_at": "2026-06-19T17:51:26Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "9c3b40d",
+        "to": "e5a657a",
+        "method": "source-class",
+        "class": "comment-only",
+        "detail": "setup.py: comment-only (comments/format only)",
+        "at": "2026-06-19T17:51:26Z"
+      }
+    }
+  },
+  "pr_url": "https://github.com/ashawkey/cubvh/pull/33",
+  "pr_merged_at": "2026-06-23T13:54:59Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged"
+}

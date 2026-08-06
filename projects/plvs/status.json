@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "name": "plvs",
+  "upstream_url": "https://github.com/luigifreda/plvs",
+  "fork_url": "https://github.com/AMD-Ecosystem/plvs",
+  "fork_default_branch": "master",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "adopted_at": "2026-06-04T23:25:55Z",
+  "updated_at": "2026-08-06T02:33:28Z",
+  "head_sha": "be91acd9d8f97d55547e32b817ae181bba33d23f",
+  "depends_on": [
+    "opencv_contrib"
+  ],
+  "platforms": {
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "be91acd9d8f97d55547e32b817ae181bba33d23f",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:48:03Z",
+      "updated_at": "2026-06-23T22:48:03Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "be91acd9d8f97d55547e32b817ae181bba33d23f",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:48:03Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "port-ready",
+      "blocked": true,
+      "blocked_reason": "Same host-wide Windows toolchain blocker as windows-gfx1201 (same physical machine, same TheRock clang-cl): full-SLAM binary crashes at startup in boost.serialization static type-registration (0xC00000FD infinite recursion in oserializer<KeyFrame>::save_object_data) BEFORE any GPU call. Confirmed GPU-independent and host-wide (independent of static/dynamic boost, -O0, and the Pangolin viewer). gfx1101 GPU itself is proven by other passes (e.g. libSGM). Not a port defect; needs a boost-header patch for the clang-MSVC ABI, MSVC cl.exe for the serialization TUs, or a fixed ROCm clang.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-20T04:49:53Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "be91acd9d8f97d55547e32b817ae181bba33d23f",
+      "started_at": "2026-06-05T00:11:54Z",
+      "completed_at": "2026-06-23T22:48:03Z",
+      "updated_at": "2026-06-23T22:48:03Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer",
+      "carry_forward": {
+        "to": "be91acd9d8f97d55547e32b817ae181bba33d23f",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:48:03Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "ported",
+      "blocked": true,
+      "blocked_reason": "Full-SLAM gfx1201 GPU run blocked by a clang-cl + boost.serialization toolchain miscompilation (not a port defect): static type-registration recurses infinitely (0xC00000FD in oserializer<KeyFrame>::save_object_data) at startup before any GPU call. CONFIRMED independent of static-vs-dynamic boost (rebuilt the whole boost+PCL stack as x64-windows-static-md, single static boost.serialization, still crashes), of -O0, and of the Pangolin viewer (headless build crashes identically). Same code is GPU-validated and clean on Linux gfx90a+gfx1100. Full SLAM stack now BUILDS+LINKS cleanly on Windows static-md (commit 57212e2). gfx1201 GPU independently proven by the libsgm-stereo PASS on record. Needs a boost-header patch for the clang-MSVC ABI, MSVC cl.exe for the serialization TUs, or a fixed ROCm clang. See notes.md 2026-06-16.",
+      "validated_sha": null,
+      "started_at": "2026-06-16T04:52:03Z",
+      "completed_at": null,
+      "updated_at": "2026-06-16T07:29:57Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-12T08:45:05Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "porting": null,
+  "waivers": {},
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:33:28Z",
+    "tier": 3,
+    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
+  }
+}

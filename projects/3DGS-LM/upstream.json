@@ -1,0 +1,12 @@
+{
+  "full_name": "lukasHoel/3DGS-LM",
+  "upstream_url": "https://github.com/lukasHoel/3DGS-LM",
+  "default_branch": "main",
+  "fork_url": "https://github.com/AMD-Ecosystem/3DGS-LM",
+  "ext_type": "torch-extension",
+  "base_sha": "d6db64b1844b4303caa2f6e9a0a1ba107b96d6c9",
+  "outcome_note": "Contribution cleared 2026-08-05. Covers CONTRIBUTING a fix upstream only -- not using this project in AMD software, shipping it, or depending on it. A non-commercial licence in particular bars use while leaving contribution unremarkable, so if this ever becomes a dependency rather than a contribution, that is a new question.",
+  "license_spdx": "non-commercial (MIT wrapper)",
+  "approved_at": "2026-08-05T23:10:07Z",
+  "approval_scope": "contribute-only"
+}

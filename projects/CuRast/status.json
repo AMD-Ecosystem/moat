@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "name": "CuRast",
+  "upstream_url": "https://github.com/m-schuetz/CuRast",
+  "fork_url": "https://github.com/AMD-Ecosystem/CuRast",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-06-05T01:23:49Z",
+  "updated_at": "2026-08-06T00:00:00Z",
+  "head_sha": "302cb5fe2791ea138648c93c7258ba666f29257b",
+  "depends_on": [],
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "302cb5fe2791ea138648c93c7258ba666f29257b",
+      "started_at": "2026-06-05T10:02:41Z",
+      "completed_at": "2026-06-11T21:38:21Z",
+      "updated_at": "2026-07-06T02:49:05Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "porter",
+      "carry_forward": {
+        "to": "302cb5fe2791ea138648c93c7258ba666f29257b",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:20:12Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "302cb5fe2791ea138648c93c7258ba666f29257b",
+      "started_at": "2026-06-05T14:00:17Z",
+      "completed_at": "2026-06-23T22:20:12Z",
+      "updated_at": "2026-07-06T02:49:05Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "302cb5fe2791ea138648c93c7258ba666f29257b",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:20:12Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "302cb5fe2791ea138648c93c7258ba666f29257b",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:20:12Z",
+      "updated_at": "2026-07-06T02:49:05Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "302cb5fe2791ea138648c93c7258ba666f29257b",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:20:12Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "302cb5fe2791ea138648c93c7258ba666f29257b",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:20:12Z",
+      "updated_at": "2026-07-06T02:49:05Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "302cb5fe2791ea138648c93c7258ba666f29257b",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:20:12Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-07-06T02:49:05Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "pr_url": "https://github.com/m-schuetz/CuRast/pull/2",
+  "pr_number": 2,
+  "pr_opened_at": "2026-06-11T22:03:10Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:41:26Z",
+    "tier": 3,
+    "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
+  }
+}

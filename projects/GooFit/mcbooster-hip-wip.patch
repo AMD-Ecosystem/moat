@@ -1,0 +1,480 @@
+diff --git a/mcbooster/Config.h b/mcbooster/Config.h
+index 4412eea..c6dc62a 100644
+--- a/mcbooster/Config.h
++++ b/mcbooster/Config.h
+@@ -17,6 +17,7 @@
+ #define OMP 2
+ #define TBB 3
+ #define CPP 4
++#define HIP 5
+ 
+ #if(__cplusplus < 201103L) && !defined(_MSV_VER)
+ #error "This library needs a C++11 compliant compiler"
+@@ -26,9 +27,10 @@
+ #define MCBOOSTER_BACKEND CUDA
+ #endif
+ 
+-#if MCBOOSTER_BACKEND != CUDA && MCBOOSTER_BACKEND != OMP && MCBOOSTER_BACKEND != TBB && MCBOOSTER_BACKEND != CPP
++#if MCBOOSTER_BACKEND != CUDA && MCBOOSTER_BACKEND != OMP && MCBOOSTER_BACKEND != TBB                  \
++    && MCBOOSTER_BACKEND != CPP && MCBOOSTER_BACKEND != HIP
+ 
+-#error "MCBooster: Backend not supported. MCBOOSTER_BACKEND = CUDA, OMP, TBB, or CPP"
++#error "MCBooster: Backend not supported. MCBOOSTER_BACKEND = CUDA, HIP, OMP, TBB, or CPP"
+ 
+ #endif
+ 
+@@ -37,10 +39,28 @@
+ #include <cuda.h>
+ #include <cuda_runtime.h>
+ #include <cuda_runtime_api.h>
++#elif MCBOOSTER_BACKEND == HIP
++// ROCm/HIP backend: GooFit force-includes cuda_to_hip.h, which maps the CUDA
++// runtime spelling used below onto the hipXxx runtime.
++#include <hip/hip_runtime.h>
+ #elif MCBOOSTER_BACKEND != CPP
+ #include <omp.h>
+ #endif
+ 
++#if MCBOOSTER_BACKEND == HIP
++// rocThrust pulls __host__/__device__ from HIP itself; it has no
++// thrust/detail/config/host_device.h header.
++#include <thrust/detail/config.h>
++#else
+ #include <thrust/detail/config/host_device.h>
++#endif
++
++// Stream-aware Thrust execution policy: thrust::cuda::par on CUDA, the
++// rocThrust equivalent thrust::hip::par on HIP.
++#if MCBOOSTER_BACKEND == HIP
++#define MCBOOSTER_THRUST_PAR thrust::hip::par
++#else
++#define MCBOOSTER_THRUST_PAR thrust::cuda::par
++#endif
+ 
+ #endif /* CONFIG_H_ */
+diff --git a/mcbooster/EvaluateArray.h b/mcbooster/EvaluateArray.h
+index 856424e..3f51f2b 100644
+--- a/mcbooster/EvaluateArray.h
++++ b/mcbooster/EvaluateArray.h
+@@ -272,7 +272,7 @@ void EvaluateArray(const CUSTOMFUNC funcObj, ParticlesSet_d &pset, VariableSet_h
+     for(GInt_t d = 0; d < arrayWidth; d++)
+         it[d]    = new strided_range<RealVector_d::iterator>(dev_array.begin() + d, dev_array.end(), arrayWidth);
+     for(GInt_t d = 0; d < arrayWidth; d++) {
+-        thrust::copy(thrust::cuda::par.on(s[d]), it[d]->begin(), it[d]->end(), varset[d]->begin());
++        thrust::copy(MCBOOSTER_THRUST_PAR.on(s[d]), it[d]->begin(), it[d]->end(), varset[d]->begin());
+     }
+     cudaDeviceSynchronize();
+     for(GInt_t d = 0; d < arrayWidth; d++)
+@@ -534,7 +534,7 @@ void EvaluateArray(const CUSTOMFUNC funcObj, ParticlesSet_d &pset, VariableSet_d
+     for(GInt_t d = 0; d < arrayWidth; d++)
+         it[d]    = new strided_range<RealVector_d::iterator>(dev_array.begin() + d, dev_array.end(), arrayWidth);
+     for(GInt_t d = 0; d < arrayWidth; d++) {
+-        thrust::copy(thrust::cuda::par.on(s[d]), it[d]->begin(), it[d]->end(), varset[d]->begin());
++        thrust::copy(MCBOOSTER_THRUST_PAR.on(s[d]), it[d]->begin(), it[d]->end(), varset[d]->begin());
+     }
+     cudaDeviceSynchronize();
+     for(GInt_t d = 0; d < arrayWidth; d++)
+diff --git a/mcbooster/GContainers.h b/mcbooster/GContainers.h
+index d0e7c5f..b8534bd 100644
+--- a/mcbooster/GContainers.h
++++ b/mcbooster/GContainers.h
+@@ -40,7 +40,7 @@ namespace mcbooster {
+ template<typename T>
+ using mc_device_vector = thrust::device_vector<T>;
+ 
+-#elif(MCBOOSTER_BACKEND == CUDA)
++#elif(MCBOOSTER_BACKEND == CUDA || MCBOOSTER_BACKEND == HIP)
+ /*!
+  * Generic template typedef for thrust::host_vector. Use it instead of Thrust implementation
+  * in order to avoid problems to compile OpenMP based applications using gcc and without a cuda runtime installation.
+diff --git a/mcbooster/Generate.h b/mcbooster/Generate.h
+index 0cf9346..d86a515 100644
+--- a/mcbooster/Generate.h
++++ b/mcbooster/Generate.h
+@@ -378,14 +378,14 @@ inline void PhaseSpace::ExportUnweighted(Events *_Events) {
+         CUDA_CHECK_RETURN(cudaStreamCreateWithFlags(&s[d], cudaStreamNonBlocking));
+     }
+ 
+-    thrust::copy_if(thrust::cuda::par.on(s[fNDaughters]),
++    thrust::copy_if(MCBOOSTER_THRUST_PAR.on(s[fNDaughters]),
+                     fWeights.begin(),
+                     fWeights.end(),
+                     fAccRejFlags.begin(),
+                     _Events->fWeights.begin(),
+                     isAccepted());
+ 
+-    thrust::copy_if(thrust::cuda::par.on(s[fNDaughters]),
++    thrust::copy_if(MCBOOSTER_THRUST_PAR.on(s[fNDaughters]),
+                     fAccRejFlags.begin(),
+                     fAccRejFlags.end(),
+                     fAccRejFlags.begin(),
+@@ -393,7 +393,7 @@ inline void PhaseSpace::ExportUnweighted(Events *_Events) {
+                     isAccepted());
+ 
+     for(GInt_t d = 0; d < fNDaughters; d++) {
+-        thrust::copy_if(thrust::cuda::par.on(s[d]),
++        thrust::copy_if(MCBOOSTER_THRUST_PAR.on(s[d]),
+                         fDaughters[d].begin(),
+                         fDaughters[d].end(),
+                         fAccRejFlags.begin(),
+diff --git a/mcbooster/Vector3R.h b/mcbooster/Vector3R.h
+index 654dad1..7a11d7f 100644
+--- a/mcbooster/Vector3R.h
++++ b/mcbooster/Vector3R.h
+@@ -51,79 +51,79 @@ class Vector3R {
+     GReal_t v[3];
+ };
+ 
+-inline Vector3R &Vector3R::operator*=(const GReal_t c) {
++__host__ __device__ inline Vector3R &Vector3R::operator*=(const GReal_t c) {
+     v[0] *= c;
+     v[1] *= c;
+     v[2] *= c;
+     return *this;
+ }
+ 
+-inline Vector3R &Vector3R::operator/=(const GReal_t c) {
++__host__ __device__ inline Vector3R &Vector3R::operator/=(const GReal_t c) {
+     v[0] /= c;
+     v[1] /= c;
+     v[2] /= c;
+     return *this;
+ }
+ 
+-inline Vector3R &Vector3R::operator+=(const Vector3R &v2) {
++__host__ __device__ inline Vector3R &Vector3R::operator+=(const Vector3R &v2) {
+     v[0] += v2.v[0];
+     v[1] += v2.v[1];
+     v[2] += v2.v[2];
+     return *this;
+ }
+ 
+-inline Vector3R &Vector3R::operator-=(const Vector3R &v2) {
++__host__ __device__ inline Vector3R &Vector3R::operator-=(const Vector3R &v2) {
+     v[0] -= v2.v[0];
+     v[1] -= v2.v[1];
+     v[2] -= v2.v[2];
+     return *this;
+ }
+ 
+-inline Vector3R operator*(GReal_t c, const Vector3R &v2) { return Vector3R(v2) *= c; }
++__host__ __device__ inline Vector3R operator*(GReal_t c, const Vector3R &v2) { return Vector3R(v2) *= c; }
+ 
+-inline Vector3R operator*(const Vector3R &v1, GReal_t c) { return Vector3R(v1) *= c; }
++__host__ __device__ inline Vector3R operator*(const Vector3R &v1, GReal_t c) { return Vector3R(v1) *= c; }
+ 
+-inline Vector3R operator/(const Vector3R &v1, GReal_t c) { return Vector3R(v1) /= c; }
++__host__ __device__ inline Vector3R operator/(const Vector3R &v1, GReal_t c) { return Vector3R(v1) /= c; }
+ 
+-inline GReal_t operator*(const Vector3R &v1, const Vector3R &v2) {
++__host__ __device__ inline GReal_t operator*(const Vector3R &v1, const Vector3R &v2) {
+     return v1.v[0] * v2.v[0] + v1.v[1] * v2.v[1] + v1.v[2] * v2.v[2];
+ }
+ 
+-inline Vector3R operator+(const Vector3R &v1, const Vector3R &v2) { return Vector3R(v1) += v2; }
++__host__ __device__ inline Vector3R operator+(const Vector3R &v1, const Vector3R &v2) { return Vector3R(v1) += v2; }
+ 
+-inline Vector3R operator-(const Vector3R &v1, const Vector3R &v2) { return Vector3R(v1) -= v2; }
++__host__ __device__ inline Vector3R operator-(const Vector3R &v1, const Vector3R &v2) { return Vector3R(v1) -= v2; }
+ 
+-inline GReal_t Vector3R::get(GInt_t i) const { return v[i]; }
++__host__ __device__ inline GReal_t Vector3R::get(GInt_t i) const { return v[i]; }
+ 
+-inline void Vector3R::set(GInt_t i, GReal_t d) { v[i] = d; }
++__host__ __device__ inline void Vector3R::set(GInt_t i, GReal_t d) { v[i] = d; }
+ 
+-inline void Vector3R::set(GReal_t x, GReal_t y, GReal_t z) {
++__host__ __device__ inline void Vector3R::set(GReal_t x, GReal_t y, GReal_t z) {
+     v[0] = x;
+     v[1] = y;
+     v[2] = z;
+ }
+ 
+-inline Vector3R::Vector3R() { v[0] = v[1] = v[2] = 0.0; }
++__host__ __device__ inline Vector3R::Vector3R() { v[0] = v[1] = v[2] = 0.0; }
+ 
+-inline Vector3R::Vector3R(GReal_t x, GReal_t y, GReal_t z) {
++__host__ __device__ inline Vector3R::Vector3R(GReal_t x, GReal_t y, GReal_t z) {
+     v[0] = x;
+     v[1] = y;
+     v[2] = z;
+ }
+ 
+-inline Vector3R::Vector3R(const Vector3R &other) {
++__host__ __device__ inline Vector3R::Vector3R(const Vector3R &other) {
+     v[0] = other.get(0);
+     v[1] = other.get(1);
+     v[2] = other.get(2);
+ }
+ 
+-inline Vector3R rotateEuler(const Vector3R &v, GReal_t alpha, GReal_t beta, GReal_t gamma) {
++__host__ __device__ inline Vector3R rotateEuler(const Vector3R &v, GReal_t alpha, GReal_t beta, GReal_t gamma) {
+     Vector3R tmp(v);
+     tmp.applyRotateEuler(alpha, beta, gamma);
+     return tmp;
+ }
+ 
+-inline void Vector3R::applyRotateEuler(GReal_t phi, GReal_t theta, GReal_t ksi) {
++__host__ __device__ inline void Vector3R::applyRotateEuler(GReal_t phi, GReal_t theta, GReal_t ksi) {
+     GReal_t temp[3];
+     GReal_t sp, st, sk, cp, ct, ck;
+ 
+@@ -149,7 +149,7 @@ inline ostream &operator<<(ostream &s, const Vector3R &v) {
+     return s;
+ }
+ 
+-inline Vector3R cross(const Vector3R &p1, const Vector3R &p2) {
++__host__ __device__ inline Vector3R cross(const Vector3R &p1, const Vector3R &p2) {
+     // Calcs the cross product.  Added by djl on July 27, 1995.
+     // Modified for real vectros by ryd Aug 28-96
+ 
+@@ -158,7 +158,7 @@ inline Vector3R cross(const Vector3R &p1, const Vector3R &p2) {
+                     p1.v[0] * p2.v[1] - p1.v[1] * p2.v[0]);
+ }
+ 
+-inline GReal_t Vector3R::d3mag() const
++__host__ __device__ inline GReal_t Vector3R::d3mag() const
+ 
+ // returns the 3 momentum mag.
+ {
+@@ -170,7 +170,7 @@ inline GReal_t Vector3R::d3mag() const
+     return temp;
+ } // r3mag
+ 
+-inline GReal_t Vector3R::dot(const Vector3R &p2) {
++__host__ __device__ inline GReal_t Vector3R::dot(const Vector3R &p2) {
+     GReal_t temp;
+ 
+     temp = v[0] * p2.v[0];
+diff --git a/mcbooster/Vector4R.h b/mcbooster/Vector4R.h
+index 1d16aa7..39ac2c3 100644
+--- a/mcbooster/Vector4R.h
++++ b/mcbooster/Vector4R.h
+@@ -70,11 +70,11 @@ class Vector4R {
+     __host__ __device__ inline GReal_t Square(GReal_t x) const { return x * x; }
+ };
+ 
+-Vector4R rotateEuler(const Vector4R &rs, GReal_t alpha, GReal_t beta, GReal_t gamma);
+-Vector4R boostTo(const Vector4R &rs, const Vector4R &p4, bool inverse = false);
+-Vector4R boostTo(const Vector4R &rs, const Vector3R &boost, bool inverse = false);
++__host__ __device__ Vector4R rotateEuler(const Vector4R &rs, GReal_t alpha, GReal_t beta, GReal_t gamma);
++__host__ __device__ Vector4R boostTo(const Vector4R &rs, const Vector4R &p4, bool inverse = false);
++__host__ __device__ Vector4R boostTo(const Vector4R &rs, const Vector3R &boost, bool inverse = false);
+ 
+-inline Vector4R &Vector4R::operator=(const Vector4R &v2) {
++__host__ __device__ inline Vector4R &Vector4R::operator=(const Vector4R &v2) {
+     v[0] = v2.v[0];
+     v[1] = v2.v[1];
+     v[2] = v2.v[2];
+@@ -83,7 +83,7 @@ inline Vector4R &Vector4R::operator=(const Vector4R &v2) {
+     return *this;
+ }
+ 
+-inline Vector4R &Vector4R::operator+=(const Vector4R &v2) {
++__host__ __device__ inline Vector4R &Vector4R::operator+=(const Vector4R &v2) {
+     v[0] += v2.v[0];
+     v[1] += v2.v[1];
+     v[2] += v2.v[2];
+@@ -92,7 +92,7 @@ inline Vector4R &Vector4R::operator+=(const Vector4R &v2) {
+     return *this;
+ }
+ 
+-inline Vector4R &Vector4R::operator-=(const Vector4R &v2) {
++__host__ __device__ inline Vector4R &Vector4R::operator-=(const Vector4R &v2) {
+     v[0] -= v2.v[0];
+     v[1] -= v2.v[1];
+     v[2] -= v2.v[2];
+@@ -101,15 +101,15 @@ inline Vector4R &Vector4R::operator-=(const Vector4R &v2) {
+     return *this;
+ }
+ 
+-inline GReal_t Vector4R::mass2() const { return v[0] * v[0] - v[1] * v[1] - v[2] * v[2] - v[3] * v[3]; }
++__host__ __device__ inline GReal_t Vector4R::mass2() const { return v[0] * v[0] - v[1] * v[1] - v[2] * v[2] - v[3] * v[3]; }
+ 
+-inline Vector4R operator*(GReal_t c, const Vector4R &v2) { return Vector4R(v2) *= c; }
++__host__ __device__ inline Vector4R operator*(GReal_t c, const Vector4R &v2) { return Vector4R(v2) *= c; }
+ 
+-inline Vector4R operator*(const Vector4R &v2, GReal_t c) { return Vector4R(v2) *= c; }
++__host__ __device__ inline Vector4R operator*(const Vector4R &v2, GReal_t c) { return Vector4R(v2) *= c; }
+ 
+-inline Vector4R operator/(const Vector4R &v2, GReal_t c) { return Vector4R(v2) /= c; }
++__host__ __device__ inline Vector4R operator/(const Vector4R &v2, GReal_t c) { return Vector4R(v2) /= c; }
+ 
+-inline Vector4R &Vector4R::operator*=(GReal_t c) {
++__host__ __device__ inline Vector4R &Vector4R::operator*=(GReal_t c) {
+     v[0] *= c;
+     v[1] *= c;
+     v[2] *= c;
+@@ -118,7 +118,7 @@ inline Vector4R &Vector4R::operator*=(GReal_t c) {
+     return *this;
+ }
+ 
+-inline Vector4R &Vector4R::operator/=(GReal_t c) {
++__host__ __device__ inline Vector4R &Vector4R::operator/=(GReal_t c) {
+     GReal_t cinv = 1.0 / c;
+     v[0] *= cinv;
+     v[1] *= cinv;
+@@ -128,21 +128,21 @@ inline Vector4R &Vector4R::operator/=(GReal_t c) {
+     return *this;
+ }
+ 
+-inline GReal_t operator*(const Vector4R &v1, const Vector4R &v2) {
++__host__ __device__ inline GReal_t operator*(const Vector4R &v1, const Vector4R &v2) {
+     return v1.v[0] * v2.v[0] - v1.v[1] * v2.v[1] - v1.v[2] * v2.v[2] - v1.v[3] * v2.v[3];
+ }
+ 
+-inline GReal_t Vector4R::cont(const Vector4R &v4) const {
++__host__ __device__ inline GReal_t Vector4R::cont(const Vector4R &v4) const {
+     return v[0] * v4.v[0] - v[1] * v4.v[1] - v[2] * v4.v[2] - v[3] * v4.v[3];
+ }
+ 
+-inline Vector4R operator-(const Vector4R &v1, const Vector4R &v2) { return Vector4R(v1) -= v2; }
++__host__ __device__ inline Vector4R operator-(const Vector4R &v1, const Vector4R &v2) { return Vector4R(v1) -= v2; }
+ 
+-inline Vector4R operator+(const Vector4R &v1, const Vector4R &v2) { return Vector4R(v1) += v2; }
++__host__ __device__ inline Vector4R operator+(const Vector4R &v1, const Vector4R &v2) { return Vector4R(v1) += v2; }
+ 
+-inline GReal_t Vector4R::get(GInt_t i) const { return v[i]; }
++__host__ __device__ inline GReal_t Vector4R::get(GInt_t i) const { return v[i]; }
+ 
+-inline void Vector4R::set(GInt_t i, GReal_t d) { v[i] = d; }
++__host__ __device__ inline void Vector4R::set(GInt_t i, GReal_t d) { v[i] = d; }
+ 
+ __host__ __device__ inline void Vector4R::set(GReal_t e, GReal_t p1, GReal_t p2, GReal_t p3) {
+     v[0] = e;
+@@ -153,28 +153,28 @@ __host__ __device__ inline void Vector4R::set(GReal_t e, GReal_t p1, GReal_t p2,
+ 
+ using std::ostream;
+ 
+-inline Vector4R::Vector4R() {
++__host__ __device__ inline Vector4R::Vector4R() {
+     v[0] = 0.0;
+     v[1] = 0.0;
+     v[2] = 0.0;
+     v[3] = 0.0;
+ }
+ 
+-inline Vector4R::Vector4R(GReal_t e, GReal_t p1, GReal_t p2, GReal_t p3) {
++__host__ __device__ inline Vector4R::Vector4R(GReal_t e, GReal_t p1, GReal_t p2, GReal_t p3) {
+     v[0] = e;
+     v[1] = p1;
+     v[2] = p2;
+     v[3] = p3;
+ }
+ 
+-inline Vector4R::Vector4R(const Vector4R &other) {
++__host__ __device__ inline Vector4R::Vector4R(const Vector4R &other) {
+     v[0] = other.get(0);
+     v[1] = other.get(1);
+     v[2] = other.get(2);
+     v[3] = other.get(3);
+ }
+ 
+-inline GReal_t Vector4R::mass() const {
++__host__ __device__ inline GReal_t Vector4R::mass() const {
+     GReal_t m2 = v[0] * v[0] - v[1] * v[1] - v[2] * v[2] - v[3] * v[3];
+ 
+     if(m2 > 0.0) {
+@@ -184,25 +184,25 @@ inline GReal_t Vector4R::mass() const {
+     }
+ }
+ 
+-inline Vector4R rotateEuler(const Vector4R &rs, GReal_t alpha, GReal_t beta, GReal_t gamma) {
++__host__ __device__ inline Vector4R rotateEuler(const Vector4R &rs, GReal_t alpha, GReal_t beta, GReal_t gamma) {
+     Vector4R tmp(rs);
+     tmp.applyRotateEuler(alpha, beta, gamma);
+     return tmp;
+ }
+ 
+-inline Vector4R boostTo(const Vector4R &rs, const Vector4R &p4, bool inverse) {
++__host__ __device__ inline Vector4R boostTo(const Vector4R &rs, const Vector4R &p4, bool inverse) {
+     Vector4R tmp(rs);
+     tmp.applyBoostTo(p4, inverse);
+     return tmp;
+ }
+ 
+-inline Vector4R boostTo(const Vector4R &rs, const Vector3R &boost, bool inverse) {
++__host__ __device__ inline Vector4R boostTo(const Vector4R &rs, const Vector3R &boost, bool inverse) {
+     Vector4R tmp(rs);
+     tmp.applyBoostTo(boost, inverse);
+     return tmp;
+ }
+ 
+-inline void Vector4R::applyRotateEuler(GReal_t phi, GReal_t theta, GReal_t ksi) {
++__host__ __device__ inline void Vector4R::applyRotateEuler(GReal_t phi, GReal_t theta, GReal_t ksi) {
+     GReal_t sp = sin(phi);
+     GReal_t st = sin(theta);
+     GReal_t sk = sin(ksi);
+@@ -225,7 +225,7 @@ inline ostream &operator<<(ostream &s, const Vector4R &v) {
+     return s;
+ }
+ 
+-inline void Vector4R::applyBoostTo(const Vector4R &p4, bool inverse) {
++__host__ __device__ inline void Vector4R::applyBoostTo(const Vector4R &p4, bool inverse) {
+     GReal_t e = p4.get(0);
+ 
+     Vector3R boost(p4.get(1) / e, p4.get(2) / e, p4.get(3) / e);
+@@ -235,7 +235,7 @@ inline void Vector4R::applyBoostTo(const Vector4R &p4, bool inverse) {
+     return;
+ }
+ 
+-inline void Vector4R::applyBoostTo(const Vector3R &boost, bool inverse) {
++__host__ __device__ inline void Vector4R::applyBoostTo(const Vector3R &boost, bool inverse) {
+     GReal_t bx, by, bz, gamma, b2;
+ 
+     bx = boost.get(0);
+@@ -286,7 +286,7 @@ inline void Vector4R::applyBoostTo(const Vector3R &boost, bool inverse) {
+     }
+ }
+ 
+-inline void Vector4R::applyBoostTo(const GReal_t bx, const GReal_t by, const GReal_t bz, bool inverse) {
++__host__ __device__ inline void Vector4R::applyBoostTo(const GReal_t bx, const GReal_t by, const GReal_t bz, bool inverse) {
+     GReal_t gamma, b2;
+ 
+     GReal_t bxx = bx * bx;
+@@ -332,7 +332,7 @@ inline void Vector4R::applyBoostTo(const GReal_t bx, const GReal_t by, const GRe
+         }
+     }
+ }
+-inline Vector4R Vector4R::cross(const Vector4R &p2) {
++__host__ __device__ inline Vector4R Vector4R::cross(const Vector4R &p2) {
+     // Calcs the cross product.  Added by djl on July 27, 1995.
+     // Modified for real vectros by ryd Aug 28-96
+ 
+@@ -346,7 +346,7 @@ inline Vector4R Vector4R::cross(const Vector4R &p2) {
+     return temp;
+ }
+ 
+-inline GReal_t Vector4R::d3mag() const
++__host__ __device__ inline GReal_t Vector4R::d3mag() const
+ 
+ // returns the 3 momentum mag.
+ {
+@@ -359,7 +359,7 @@ inline GReal_t Vector4R::d3mag() const
+     return temp;
+ } // r3mag
+ 
+-inline GReal_t Vector4R::dot(const Vector4R &p2) const {
++__host__ __device__ inline GReal_t Vector4R::dot(const Vector4R &p2) const {
+     // Returns the dot product of the 3 momentum.  Added by
+     // djl on July 27, 1995.  for real!!!
+ 
+@@ -375,15 +375,15 @@ inline GReal_t Vector4R::dot(const Vector4R &p2) const {
+ 
+ // Calculate the 3-d dot product of 4-vectors p1 and p2 in the rest frame of
+ // 4-vector p0
+-inline GReal_t Vector4R::dotr3(const Vector4R &p1, const Vector4R &p2) const {
++__host__ __device__ inline GReal_t Vector4R::dotr3(const Vector4R &p1, const Vector4R &p2) const {
+     return 1 / mass2() * ((*this) * p1) * ((*this) * p2) - p1 * p2;
+ }
+ 
+ // Calculate the 3-d magnitude squared of 4-vector p1 in the rest frame of
+ // 4-vector p0
+-inline GReal_t Vector4R::mag2r3(const Vector4R &p1) const { return Square((*this) * p1) / mass2() - p1.mass2(); }
++__host__ __device__ inline GReal_t Vector4R::mag2r3(const Vector4R &p1) const { return Square((*this) * p1) / mass2() - p1.mass2(); }
+ 
+ // Calculate the 3-d magnitude 4-vector p1 in the rest frame of 4-vector p0.
+-inline GReal_t Vector4R::magr3(const Vector4R &p1) const { return sqrt(mag2r3(p1)); }
++__host__ __device__ inline GReal_t Vector4R::magr3(const Vector4R &p1) const { return sqrt(mag2r3(p1)); }
+ }
+ #endif /* VECTOR4R_H_ */

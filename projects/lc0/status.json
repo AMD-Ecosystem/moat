@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "name": "lc0",
+  "upstream_url": "https://github.com/LeelaChessZero/lc0",
+  "fork_url": "https://github.com/AMD-Ecosystem/lc0",
+  "fork_default_branch": "master",
+  "priority": 6.245,
+  "ext_type": "cmake",
+  "adopted_at": "2026-05-29T23:30:02Z",
+  "updated_at": "2026-08-06T02:33:28Z",
+  "head_sha": "223ee63914f3c7c1da020d63072e133523b2df91",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d83b6d171eda425ef79092849185830ba5f15623",
+      "started_at": "2026-05-31T01:38:05Z",
+      "completed_at": "2026-06-11T07:03:11Z",
+      "updated_at": "2026-06-11T07:21:22Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "d4fdecacbe2760029246c2a28ec1e14c10131ce5",
+        "method": "source-class",
+        "detail": "PR-prep doc/comment/attribution only: README.md and AUTHORS are non-compiled; hip_compat.h delta is the AMD copyright/author comment lines inside the existing header block; meson.build delta is a sing",
+        "at": "2026-06-11T07:03:11Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "revalidate",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a80a7be",
+      "started_at": "2026-05-31T05:46:00Z",
+      "completed_at": "2026-07-02T19:35:45Z",
+      "updated_at": "2026-07-06T03:31:39Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-05-31T05:46:00Z",
+        "last_session_at": "2026-05-31T06:05:00Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "a80a7be",
+        "method": "binary-equiv",
+        "detail": "c++17->c++20 and SKIP_FP16_BITS->HAS_FP16_SUPPORT refactor: device ISA identical (213 exports)",
+        "at": "2026-07-02T19:35:45Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "port-ready",
+      "blocked": true,
+      "blocked_reason": "Value-head numerical defect identical to gfx1151: builds+runs (344 targets, benchmark clean, 8/8 CPU gtest), policy bit-identical (~4.6e-07) but value wrong 4.4e-02 absolute (sign flips) at atol=1e-3 bar. Defect appears identically on gfx1201 under same TheRock ROCm 7.14 Windows SDK. Exhaustive investigation: graph capture off, use_gemm_ex=false, Conv1Layer loop replacement, standalone BLAS tests all PASS -- BLAS is correct for all relevant dimensions. Root cause unresolved; suspected TheRock ROCm 7.14 Windows HIP runtime issue in custom kernel path. Linux gfx90a+gfx1100 pass the same check on ROCm 7.2.1.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T12:02:47Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1201": {
+      "state": "port-ready",
+      "blocked": true,
+      "blocked_reason": "Value-head numerical defect identical to gfx1151 and gfx1101: builds+runs (344 targets, benchmark clean, 8/8 CPU gtest), policy bit-identical (~4.6e-07) but value wrong 4.4e-02 absolute (sign flips) at atol=1e-3 bar. Defect appears identically on gfx1101 under same TheRock ROCm 7.14 Windows SDK. Exhaustive investigation: graph capture off, use_gemm_ex=false, Conv1Layer loop replacement, standalone BLAS tests all PASS -- BLAS is correct for all relevant dimensions. Root cause unresolved; suspected TheRock ROCm 7.14 Windows HIP runtime issue in custom kernel path. Linux gfx90a+gfx1100 pass the same check on ROCm 7.2.1.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T12:02:56Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": true,
+      "blocked_reason": "Value-head numerical defect on gfx1151 only: builds+runs (hip backend benchmark clean), policy head bit-identical to blas (~1e-6) but value head off 4-6e-2 absolute with sign flips (rel up to 2.0) at the atol=1e-3 bar that gfx90a+gfx1100 pass. Localized to the value head (trunk/policy provably correct); leading hypothesis is a gfx1151 rocBLAS/Tensile fallback kernel for the value GEMM shape or the value SE/globalAvgPool reduction. Prior session did not converge. See notes.md windows-gfx1151 section.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T08:02:51Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "pr_url": "https://github.com/LeelaChessZero/lc0/pull/2420",
+  "pr_number": 2420,
+  "pr_opened_at": "2026-06-11T07:21:22Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:33:28Z",
+    "tier": 3,
+    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
+  }
+}

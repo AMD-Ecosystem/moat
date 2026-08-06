@@ -1,0 +1,82 @@
+name: moatbot
+
+# Record-maintenance jobs. Everything here is confined to what a token scoped to
+# THIS repository can do: read public state anywhere, write only here. Neither does any porting: that needs a
+# GPU host and a session. These only keep the record true and tell someone.
+
+# A protected trunk cannot be written directly, so once a project's PR has merged
+# here there is no writable place left to record what its upstream PR does next.
+# This polls the recorded PRs and opens a PR with the corrections, like everything
+# else. Without it the README shows work as open weeks after it landed -- measured
+# 2026-08-05: 6 of 74 records disagreed with GitHub, two of them merges nobody knew about.
+on:
+  schedule:
+    - cron: "0 7 * * 1"          # Mondays, early UTC
+  workflow_dispatch:
+    inputs:
+      report_only:
+        description: "Report drift without touching the branch or PR"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Report drift
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 utils/upstream.py --dry-run | tee "$GITHUB_STEP_SUMMARY"
+
+      - name: Update the moatbot-sync branch and PR
+        # The scheduled run DOES act: the PR it opens is the review gate, so leaving
+        # the work for a human to trigger just recreates the gap this exists to close.
+        # Repeat runs are safe -- one branch, regenerated from the trunk and
+        # force-pushed, so an unmerged PR is updated rather than duplicated.
+        #
+        # Only merges are applied. Closures are reported and never written: withdrawn
+        # on licence grounds, rejected by a maintainer, and superseded are identical
+        # to the API and mean very different things.
+        if: ${{ !inputs.report_only }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name  "moatbot"
+          git config user.email "moatbot@users.noreply.github.com"
+          python3 utils/upstream.py --apply
+
+  approvals:
+    # An approval covers the code, title and body that were on screen when it was
+    # given. GitHub keeps showing "Approved" after a later push or a body edit, so
+    # without this the page says a human signed off on something they never saw.
+    # Nothing can be published while an approval is stale -- the submission gate
+    # refuses -- but a green check nobody has earned is its own problem.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Report overtaken approvals
+        # Reports only. Dismissing a stale approval is a write on the fork, which this
+        # job's token cannot do -- an agent running locally does it, with the same
+        # command and a human's credentials.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 utils/upstream.py --approvals | tee -a "$GITHUB_STEP_SUMMARY"

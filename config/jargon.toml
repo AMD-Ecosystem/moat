@@ -1,0 +1,62 @@
+# In-house vocabulary that must not appear in upstream-visible text.
+#
+# Everything MOAT publishes to an upstream project -- commit messages, PR titles and
+# bodies, code comments, docs -- is read by maintainers with no idea what our internal
+# terms mean. "The lead platform validated at head_sha" is meaningless outside this
+# repo, and it caused repeated review churn before `utils/jargon.py` existed.
+#
+# ADDING A TERM
+#
+# Add one whenever any of these happens:
+#   - a maintainer asks what something means, or misreads it ("what is a follower?")
+#   - a reviewer strikes a phrase from a PR body as internal-sounding
+#   - a new state, role or mechanism is introduced here that would leak outward --
+#     add it in the SAME change that introduces it, not after it escapes
+#
+# Each entry needs a `fix`: what to say instead. Banning a word without offering a
+# replacement just produces circumlocution, and the person editing at 11pm needs the
+# alternative more than the prohibition.
+#
+# Terms are regexes matched case-insensitively against prose. Fenced code blocks and
+# shell-command lines are skipped by the scanner, so documenting a command that
+# contains a term is fine.
+#
+# REMOVING A TERM
+#
+# Remove one when it turns out to read fine to an outsider. `arch-unified` was removed
+# on that basis: it appeared in three open PRs and is close enough to self-explanatory
+# that flagging it was crying wolf. A checker that fires on harmless text trains people
+# to ignore it, which is worse than not having it.
+#
+# Changes arrive as PRs against this file, like config/licenses.toml. There is no
+# generator.
+
+[terms]
+"lead platform"            = "name the GPU, e.g. 'MI210 (gfx90a)'"
+"follower platform"        = "name the GPU"
+'followers?\b(?!\s+of)'    = "name the GPUs"
+"Strategy [AB]"            = "describe the approach, e.g. 'a compatibility header'"
+"colmap model"             = "describe the approach, not the project we named it after"
+"head_sha"                 = "'the branch head', or the sha itself"
+"validated_sha"            = "'the commit that was tested'"
+'revalidat(e|ed|ion)'      = "'re-tested'"
+"curated commit"           = "just describe the commit"
+"moat-port"                = "name the branch plainly, or omit it"
+"MOAT"                     = "omit -- upstream does not know what MOAT is"
+"port-ready"               = "'ready to test'"
+'delta-port(ed|ing)?'      = "'follow-up fix'"
+'awaiting-(port|fork|upstream|lead)' = "describe the actual wait"
+'carry-forward|carried forward'      = "'still valid for'"
+"pr-ready"                 = "'ready to submit'"
+'fault class(es)?'         = "name the actual issue"
+"completeness gate"        = "omit"
+"pending-approval"         = "omit -- describe the actual blocker if it is relevant"
+"osrb"                     = "omit -- internal review process"
+
+# Contexts where a term is legitimate. A URL containing the org or repo name is not
+# jargon, it is an address.
+[allow]
+patterns = [
+  'https?://\S*moat',
+  'github\.com/\S+',
+]

@@ -1,0 +1,5 @@
+{"kind":"phase","ts":"2026-06-01T22:44:35Z","phase":"compile","seconds":0.285,"exit":1,"cmd":"pip install -e . --no-build-isolation -v"}
+{"kind":"phase","ts":"2026-06-01T22:45:13Z","phase":"compile","seconds":20.222,"exit":1,"cmd":"/opt/conda/envs/py_3.12/bin/pip install -e /var/lib/jenkins/moat/projects/pytorch3d/src --no-build-isolation -v"}
+{"kind":"phase","ts":"2026-06-01T22:48:12Z","phase":"compile","seconds":81.026,"exit":0,"cmd":"/opt/conda/envs/py_3.12/bin/pip install -e /var/lib/jenkins/moat/projects/pytorch3d/src --no-build-isolation -v"}
+{"kind":"phase","ts":"2026-06-01T22:56:32Z","phase":"test","seconds":95.600,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/pytorch3d/src/tests && HIP_VISIBLE_DEVICES=0 /opt/conda/envs/py_3.12/bin/python3 -m pytest pulsar/ test_knn.py test_ball_query.py test_point_mesh_distance.py test_rasterize_meshes.py test_sample_farthest_points.py test_chamfer.py -q 2>&1 | tail -5"}
+{"kind": "tokens", "ts": "2026-06-05T00:03:18Z", "tokens": 98659, "source": "validator"}

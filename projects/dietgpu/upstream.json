@@ -1,0 +1,10 @@
+{
+  "full_name": "facebookresearch/dietgpu",
+  "upstream_url": "https://github.com/facebookresearch/dietgpu",
+  "default_branch": "main",
+  "fork_url": "https://github.com/AMD-Ecosystem/dietgpu",
+  "ext_type": "cmake",
+  "base_sha": "a4d70a14066d2c3e5fe1849b3723e4cd423eee7e",
+  "license_spdx": "MIT",
+  "license_source": "GitHub and the licence text agree"
+}

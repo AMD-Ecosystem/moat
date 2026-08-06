@@ -1,0 +1,37 @@
+# Coverage gates, and how a platform's gates are derived from its name.
+#
+# A platform is `<os>-<gfx>` -- one architecture on one operating system. Platforms
+# are NOT enumerated here, deliberately: whatever GPU a host reports is a platform,
+# and the gates it satisfies follow from its name. A machine carrying a GPU nobody
+# has used before works with no change to this file, and no host is more or less
+# eligible than another.
+#
+# A port is PR-ready when every required gate is satisfied, and a gate is satisfied
+# when ANY platform carrying that attribute is `completed` at the current head_sha.
+# Validating a second platform against a gate that is already satisfied is additive
+# evidence: welcome, and never required.
+#
+# Terminology: wave64/wave32 name the hardware wavefront and are correct for a gate.
+# `warpSize` is the HIP/CUDA variable and is the right word when talking about code.
+
+[gates]
+required = ["wave64", "wave32", "windows"]
+
+# Only `windows` may be waived -- for a project whose obstacle is the platform rather
+# than the GPU (deep Linux file-I/O assumptions, say). Every waiver needs MAINTAINER
+# approval recorded in status.json; agents may only suggest one. This is the sole
+# escapable gate, so it must not be self-certifiable.
+waivable = ["windows"]
+
+# Linux is deliberately not a gate. wave64 is only satisfiable on Linux (CDNA is
+# Linux-only), so proving wave64 proves Linux. There is likewise no wave64-Windows
+# platform: the empty quadrant is hardware reality, not an oversight.
+
+# Wavefront width by architecture family, matched on the longest `gfx` prefix. This
+# is the one property that cannot be read off the platform name without knowing the
+# hardware, and getting it wrong mis-sizes shared memory rather than failing loudly,
+# so an unrecognised family is an ERROR and not a guess. Adding a family is one line
+# here and nothing else.
+[wave]
+wave64 = ["gfx8", "gfx9"]                 # GCN, CDNA
+wave32 = ["gfx10", "gfx11", "gfx12"]      # RDNA

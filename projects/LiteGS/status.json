@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "name": "LiteGS",
+  "upstream_url": "https://github.com/MooreThreads/LiteGS",
+  "fork_url": "https://github.com/AMD-Ecosystem/LiteGS",
+  "fork_default_branch": "master",
+  "priority": 4.566,
+  "ext_type": "torch-extension",
+  "adopted_at": "2026-05-30T03:26:35Z",
+  "updated_at": "2026-08-06T02:41:26Z",
+  "head_sha": "d65b6ab9ec19bbff45641c989002c8dc746119bc",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d65b6ab9ec19bbff45641c989002c8dc746119bc",
+      "started_at": "2026-05-31T23:22:01Z",
+      "completed_at": "2026-06-16T09:37:54Z",
+      "updated_at": "2026-06-16T09:37:54Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "d65b6ab9ec19bbff45641c989002c8dc746119bc",
+        "method": "source-class",
+        "detail": "fused_ssim submodule bump: ext.cpp adds || defined(FUSED_SSIM_HIP) which is dead code on Linux (torch uses -DFUSED_SSIM_CUDA); Linux device objects and pybind registrations identical",
+        "at": "2026-06-16T09:37:54Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d65b6ab9ec19bbff45641c989002c8dc746119bc",
+      "started_at": "2026-06-01T10:00:00Z",
+      "completed_at": "2026-06-16T09:38:27Z",
+      "updated_at": "2026-06-16T09:38:27Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-01T10:00:00Z",
+        "last_session_at": "2026-06-01T12:00:00Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "d65b6ab9ec19bbff45641c989002c8dc746119bc",
+        "method": "source-class",
+        "detail": "fused_ssim submodule bump: ext.cpp adds || defined(FUSED_SSIM_HIP) which is dead code on Linux (torch uses -DFUSED_SSIM_CUDA); Linux device objects and pybind registrations identical",
+        "at": "2026-06-16T09:38:27Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d65b6ab9ec19bbff45641c989002c8dc746119bc",
+      "started_at": null,
+      "completed_at": "2026-06-16T09:39:31Z",
+      "updated_at": "2026-06-16T09:39:31Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d65b6ab9ec19bbff45641c989002c8dc746119bc",
+      "started_at": "2026-06-06T02:29:32Z",
+      "completed_at": "2026-06-16T09:38:57Z",
+      "updated_at": "2026-06-16T09:38:57Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "d65b6ab9ec19bbff45641c989002c8dc746119bc",
+        "method": "source-class",
+        "detail": "fused_ssim submodule bump: ext.cpp adds || defined(FUSED_SSIM_HIP) to expose fusedssim3d on Windows ROCm; validation Tier 1/2/3 tests do not use 3D SSIM, behavior-preserving for the validated test sui",
+        "at": "2026-06-16T09:38:57Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": true,
+      "blocked_reason": "windows-gfx1151 host retired (superseded by the gfx1101/gfx1201 machine); validation moved to windows-gfx1101 and windows-gfx1201",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T19:41:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "porting": null,
+  "waivers": {},
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:41:26Z",
+    "tier": 4,
+    "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
+  }
+}

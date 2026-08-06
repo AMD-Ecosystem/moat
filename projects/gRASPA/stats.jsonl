@@ -1,0 +1,46 @@
+{"kind": "tokens", "ts": "2026-06-05T08:58:17Z", "tokens": 106901, "source": "planner"}
+{"kind":"phase","ts":"2026-06-05T09:00:23Z","phase":"compile","seconds":0.140,"exit":1,"cmd":"cmake --build . -j128"}
+{"kind":"phase","ts":"2026-06-05T09:11:21Z","phase":"compile","seconds":0.140,"exit":1,"cmd":"cmake --build . -j128"}
+{"kind": "tokens", "ts": "2026-06-05T09:20:34Z", "tokens": 156600, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-05T09:23:05Z", "tokens": 87393, "source": "reviewer"}
+{"kind":"session","ts":"2026-06-05T09:23:27Z","epoch":1780651407.166588591,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-06-05T09:23:34Z","phase":"linux-gfx90a","seconds":0.003,"exit":127,"cmd":"compile -- bash -c mkdir build && cd build && cmake .. -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a && cmake --build . -j$(nproc)"}
+{"kind":"phase","ts":"2026-06-05T09:23:40Z","phase":"compile","seconds":0.008,"exit":1,"cmd":"bash -c mkdir build && cd build && cmake .. -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a && cmake --build . -j$(nproc)"}
+{"kind":"phase","ts":"2026-06-05T09:23:42Z","phase":"compile","seconds":0.008,"exit":1,"cmd":"bash -c mkdir build && cd build && cmake .. -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a && cmake --build . -j$(nproc)"}
+{"kind":"phase","ts":"2026-06-05T09:23:54Z","phase":"compile","seconds":0.140,"exit":1,"cmd":"cmake --build . -j128"}
+{"kind":"phase","ts":"2026-06-05T09:24:08Z","phase":"compile","seconds":10.977,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/gRASPA/src/build && cmake --build . -j$(nproc)"}
+{"kind":"phase","ts":"2026-06-05T09:24:32Z","phase":"test","seconds":0.278,"exit":0,"cmd":"/var/lib/jenkins/moat/projects/gRASPA/src/build/src_clean/graspa simulation.input"}
+{"kind":"session","ts":"2026-06-05T09:38:40Z","epoch":1780652320.003087968,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-06-05T09:39:46Z", "tokens": 45294, "source": "validator"}
+{"kind":"phase","ts":"2026-06-05T09:41:51Z","phase":"compile","seconds":6.666,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/gRASPA/src/build -j128"}
+{"kind": "tokens", "ts": "2026-06-05T09:55:40Z", "tokens": 56612, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-05T09:58:21Z", "tokens": 67594, "source": "reviewer"}
+{"kind":"phase","ts":"2026-06-05T10:01:17Z","phase":"compile","seconds":0.131,"exit":1,"cmd":"cmake .. -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a"}
+{"kind":"phase","ts":"2026-06-05T10:01:23Z","phase":"compile","seconds":2.963,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/gRASPA/src/build && cmake .. -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a"}
+{"kind":"phase","ts":"2026-06-05T10:01:37Z","phase":"compile","seconds":10.662,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/gRASPA/src/build && cmake --build . -j$(nproc)"}
+{"kind":"phase","ts":"2026-06-05T10:06:29Z","phase":"test","seconds":285.253,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/gRASPA/src/Examples/CO2-MFI && /var/lib/jenkins/moat/projects/gRASPA/src/build/src_clean/graspa"}
+{"kind":"phase","ts":"2026-06-05T10:09:34Z","phase":"test","seconds":166.260,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/gRASPA/src/Examples/Methane-TMMC && /var/lib/jenkins/moat/projects/gRASPA/src/build/src_clean/graspa"}
+{"kind":"phase","ts":"2026-06-05T10:10:34Z","phase":"test","seconds":53.813,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/gRASPA/src/Examples/Tail-Correction && /var/lib/jenkins/moat/projects/gRASPA/src/build/src_clean/graspa"}
+{"kind":"session","ts":"2026-06-05T15:38:06Z","epoch":1780673886.182005670,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-06-08T16:37:03Z","phase":"compile","seconds":6.156,"exit":1,"cmd":"cmake --build /b/develop/moat/projects/gRASPA/src/build-gfx1201 -j24"}
+{"kind":"phase","ts":"2026-06-08T16:43:21Z","phase":"compile","seconds":9.303,"exit":1,"cmd":"cmake --build /b/develop/moat/projects/gRASPA/src/build-gfx1201 -j24"}
+{"kind":"phase","ts":"2026-06-08T17:08:21Z","phase":"compile","seconds":9.352,"exit":1,"cmd":"cmake --build /b/develop/moat/projects/gRASPA/src/build-gfx1201 -j24"}
+{"kind":"phase","ts":"2026-06-08T17:11:20Z","phase":"compile","seconds":10.009,"exit":0,"cmd":"cmake --build /b/develop/moat/projects/gRASPA/src/build-gfx1201 -j24"}
+{"kind":"phase","ts":"2026-06-08T17:11:57Z","phase":"test","seconds":0.248,"exit":0,"cmd":"B:/develop/moat/projects/gRASPA/src/build-gfx1201/src_clean/graspa.exe /b/develop/moat/projects/gRASPA/src/Examples/CO2-MFI/simulation.input"}
+{"kind":"phase","ts":"2026-06-08T17:30:29Z","phase":"test","seconds":45.677,"exit":0,"cmd":"bash /tmp/run_graspa_tests.sh /b/develop/moat/projects/gRASPA/src/build-gfx1201/src_clean/graspa.exe /b/develop/moat/projects/gRASPA/src/Examples"}
+{"kind":"phase","ts":"2026-06-08T19:01:08Z","phase":"compile","seconds":14.840,"exit":0,"cmd":"bash -c \ncd /var/lib/jenkins/moat/projects/gRASPA/src\nrm -rf build_old && mkdir build_old && cd build_old\ncmake .. -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a 2>&1 | tail -5\ncmake --build . -j128 2>&1 | tail -10\necho 'BUILD_OLD EXIT:' $?\n"}
+{"kind":"phase","ts":"2026-06-08T19:01:33Z","phase":"compile","seconds":14.985,"exit":0,"cmd":"bash -c \ncd /var/lib/jenkins/moat/projects/gRASPA/src\nrm -rf build_new && mkdir build_new && cd build_new\ncmake .. -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a 2>&1 | tail -5\ncmake --build . -j128 2>&1 | tail -10\necho 'BUILD_NEW EXIT:' $?\n"}
+{"kind":"phase","ts":"2026-06-08T19:39:45Z","phase":"compile","seconds":0.128,"exit":1,"cmd":"bash -c \n    mkdir -p build_old && cd build_old &&\n    cmake ../build_old_src -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release 2>&1 &&\n    cmake --build . -j64 2>&1\n  "}
+{"kind":"phase","ts":"2026-06-08T19:40:07Z","phase":"compile","seconds":13.496,"exit":0,"cmd":"bash -c \n    mkdir -p /var/lib/jenkins/moat/agent_space/gRASPA-gfx1100-gpu0/build_old && cd /var/lib/jenkins/moat/agent_space/gRASPA-gfx1100-gpu0/build_old &&\n    cmake /var/lib/jenkins/moat/agent_space/gRASPA-gfx1100-gpu0/build_old_src -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release &&\n    cmake --build . -j$(nproc)\n  "}
+{"kind":"phase","ts":"2026-06-08T19:40:26Z","phase":"compile","seconds":12.819,"exit":0,"cmd":"bash -c \n    mkdir -p /var/lib/jenkins/moat/agent_space/gRASPA-gfx1100-gpu0/build_new && cd /var/lib/jenkins/moat/agent_space/gRASPA-gfx1100-gpu0/build_new &&\n    cmake /var/lib/jenkins/moat/agent_space/gRASPA-gfx1100-gpu0/build_new_src -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release &&\n    cmake --build . -j$(nproc)\n  "}
+{"kind": "tokens", "ts": "2026-06-08T19:04:05Z", "tokens": 34751, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-08T19:53:36Z", "tokens": 32225, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-08T17:39:15Z", "tokens": 111598, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-15T12:15:42Z", "tokens": 51286, "source": "pr-prep"}
+{"kind": "tokens", "ts": "2026-06-16T06:35:36Z", "tokens": 17889, "source": "porter"}
+{"kind":"phase","ts":"2026-06-20T02:04:50Z","phase":"compile","seconds":0.044,"exit":1,"cmd":"cmake -B build-gfx1101 -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1101 -DCMAKE_CXX_COMPILER=/b/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++.exe -DCMAKE_HIP_COMPILER=/b/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++.exe -DCMAKE_PREFIX_PATH=/b/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_devel -DCMAKE_CXX_FLAGS=-D_USE_MATH_DEFINES -DCMAKE_HIP_FLAGS=-D_USE_MATH_DEFINES -DOpenMP_CXX_FLAGS=-fopenmp -DOpenMP_CXX_LIB_NAMES=libomp -DOpenMP_libomp_LIBRARY=C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.44.35207/lib/x64/libomp.lib -DOpenMP_CXX_INCLUDE_DIR=C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.44.35207/include"}
+{"kind":"phase","ts":"2026-06-20T02:05:13Z","phase":"compile","seconds":8.428,"exit":0,"cmd":"cmake --build /b/develop/moat/projects/gRASPA/src/build-gfx1101 -j64"}
+{"kind": "tokens", "ts": "2026-06-20T02:17:27Z", "tokens": 64805, "source": "validator (gfx1101)"}
+{"kind": "tokens", "ts": "2026-06-23T22:51:23Z", "tokens": 16420, "source": "gfx90a in-pipeline cleanup (batch 3 subagent, shared)"}
+{"kind":"session","ts":"2026-06-05T15:30:57Z","epoch":1780673457.095550093,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-06-05T15:31:11Z","phase":"compile","seconds":0.110,"exit":1,"cmd":"cmake .. -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100"}

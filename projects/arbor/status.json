@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "name": "arbor",
+  "upstream_url": "https://github.com/arbor-sim/arbor",
+  "fork_url": "https://github.com/AMD-Ecosystem/arbor",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-06-05T00:05:54Z",
+  "updated_at": "2026-07-02T17:17:26Z",
+  "head_sha": "3e750fac",
+  "depends_on": [],
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "c5f27d01d4eeaaa4dcc614388b5b5095c92c9e55",
+      "started_at": "2026-06-05T00:11:13Z",
+      "completed_at": "2026-06-08T19:42:49Z",
+      "updated_at": "2026-07-02T17:17:26Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "moat-checkup",
+      "carry_forward": {
+        "to": "c5f27d01d4eeaaa4dcc614388b5b5095c92c9e55",
+        "method": "binary-equiv",
+        "detail": "Refactor: moved warp-intrinsic #ifdefs into gpu api helpers (count_leading_zeros/find_first_set). codeobj_diff IDENTICAL on gfx90a (unit device ISA + exports unchanged) AND full unit suite 1182/1182 p",
+        "at": "2026-06-09T17:49:51Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "3e750fac",
+      "started_at": "2026-06-05T01:46:00Z",
+      "completed_at": "2026-06-19T21:47:38Z",
+      "updated_at": "2026-06-19T21:47:38Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "3e750fac",
+      "started_at": null,
+      "completed_at": "2026-06-19T20:50:13Z",
+      "updated_at": "2026-06-19T20:50:13Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "3e750fac",
+      "started_at": null,
+      "completed_at": "2026-06-19T20:51:16Z",
+      "updated_at": "2026-06-19T20:51:16Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "porter",
+      "carry_forward": {
+        "to": "3e750fac",
+        "method": "binary-equiv",
+        "detail": "test_intrin.cu: extend gfx110 to relaxed expm1 bound; gfx1201 device ISA unchanged (kernel not modified); 12/12 critical GPU tests verified on gfx1201 at 3e750fac",
+        "at": "2026-06-19T20:51:16Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T01:15:28Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "pr_url": "https://github.com/arbor-sim/arbor/pull/2512",
+  "pr_number": 2512,
+  "pr_opened_at": "2026-06-08T19:44:18Z",
+  "pr_merged_at": "2026-07-02T17:17:26Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged"
+}

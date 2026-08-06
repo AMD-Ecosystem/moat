@@ -1,0 +1,47 @@
+{"kind": "tokens", "ts": "2026-06-05T08:13:48Z", "tokens": 138520, "source": "planner"}
+{"kind": "tokens", "ts": "2026-06-05T08:17:35Z", "tokens": 119316, "source": "planner-dup"}
+{"kind":"phase","ts":"2026-06-05T08:22:29Z","phase":"compile","seconds":4.172,"exit":0,"cmd":"python3 agent_space/test_brian2cuda_hip_compile.py"}
+{"kind":"phase","ts":"2026-06-05T08:29:31Z","phase":"compile","seconds":9.729,"exit":1,"cmd":"python3 agent_space/test_brian2cuda_hip_run.py"}
+{"kind":"phase","ts":"2026-06-05T08:30:06Z","phase":"compile","seconds":9.657,"exit":0,"cmd":"python3 agent_space/test_brian2cuda_hip_run.py"}
+{"kind": "tokens", "ts": "2026-06-05T08:31:35Z", "tokens": 170951, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-05T08:33:45Z", "tokens": 87511, "source": "reviewer"}
+{"kind":"phase","ts":"2026-06-05T08:37:48Z","phase":"compile","seconds":11.521,"exit":0,"cmd":"bash -c \nexport HIP_VISIBLE_DEVICES=1\nexport USE_HIP=1\ncd /var/lib/jenkins/moat/projects/brian2cuda/src\n\n# Run a simple test that generates and compiles HIP code with synapses\npython -c \"\nfrom brian2 import *\nimport brian2cuda\nset_device(\\\"cuda_standalone\\\", build_on_run=False)\n\n# Create a network with synapses to test spike queue code\neqs = \\\"dv/dt = -v/(10*ms) : 1\\\"\nG = NeuronGroup(100, eqs, threshold=\\\"v>0.5\\\", reset=\\\"v=0\\\", method=\\\"linear\\\")\nG.v = \\\"rand()\\\"\nS = Synapses(G, G, on_pre=\\\"v_post += 0.1\\\", delay=1*ms)\nS.connect(p=0.1)\nrun(1*ms)\ndevice.build(directory=\\\"/tmp/brian2cuda_wave64_test\\\", compile=True, run=True, clean=True)\n\"\n"}
+{"kind": "tokens", "ts": "2026-06-05T08:38:55Z", "tokens": 72453, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-05T08:42:43Z", "tokens": 94813, "source": "reviewer"}
+{"kind":"session","ts":"2026-06-05T08:43:14Z","epoch":1780648994.045721792,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-06-05T08:43:26Z","phase":"linux-gfx90a","seconds":0.003,"exit":127,"cmd":"compile -- bash -c cd /var/lib/jenkins/moat/projects/brian2cuda/src && pip install -e .[test] --quiet"}
+{"kind":"phase","ts":"2026-06-05T08:43:42Z","phase":"compile","seconds":4.459,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/brian2cuda/src && pip install -e .[test] --quiet"}
+{"kind":"phase","ts":"2026-06-05T08:43:58Z","phase":"test","seconds":1.850,"exit":3,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/brian2cuda/src && HIP_VISIBLE_DEVICES=1 USE_HIP=1 pytest brian2cuda/tests -v 2>&1"}
+{"kind":"phase","ts":"2026-06-05T08:45:17Z","phase":"test","seconds":30.885,"exit":1,"cmd":"bash -c HIP_VISIBLE_DEVICES=1 USE_HIP=1 python agent_space/brian2cuda_validation.py"}
+{"kind":"phase","ts":"2026-06-05T08:46:26Z","phase":"test","seconds":30.917,"exit":0,"cmd":"bash -c HIP_VISIBLE_DEVICES=1 USE_HIP=1 python agent_space/brian2cuda_validation.py 2>&1 | grep -E '(===|PASS|FAIL|neurons|Synaptic|spikes|ALL TESTS)'"}
+{"kind":"session","ts":"2026-06-05T08:47:22Z","epoch":1780649242.660931722,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-06-05T14:39:59Z","epoch":1780670399.126427688,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-06-05T14:40:20Z","phase":"gfx1100-build","seconds":7.729,"exit":0,"cmd":"bash -c cd projects/brian2cuda/src && pip install -e .[test]"}
+{"kind":"phase","ts":"2026-06-05T14:40:56Z","phase":"gfx1100-test","seconds":7.464,"exit":1,"cmd":"python3 projects/brian2cuda/test_gfx1100_validation.py"}
+{"kind":"phase","ts":"2026-06-05T14:41:28Z","phase":"gfx1100-test","seconds":7.411,"exit":1,"cmd":"python3 projects/brian2cuda/test_gfx1100_validation.py"}
+{"kind":"phase","ts":"2026-06-05T14:41:43Z","phase":"gfx1100-test","seconds":0.865,"exit":1,"cmd":"python3 projects/brian2cuda/test_gfx1100_validation.py"}
+{"kind":"session","ts":"2026-06-05T14:43:56Z","epoch":1780670636.360494010,"event":"end","platform":"linux-gfx1100"}
+{"kind": "tokens", "ts": "2026-06-05T14:44:38Z", "tokens": 55519, "source": "validator (gfx1100)"}
+{"kind":"phase","ts":"2026-06-08T13:18:11Z","phase":"compile","seconds":0.985,"exit":1,"cmd":"B:\\develop\\TheRock\\external-builds\\pytorch\\.venv\\Scripts\\python.exe /b/develop/moat/agent_space/brian2cuda_test/test_basic.py"}
+{"kind":"phase","ts":"2026-06-08T13:41:03Z","phase":"compile","seconds":24.982,"exit":0,"cmd":"B:\\develop\\TheRock\\external-builds\\pytorch\\.venv\\Scripts\\python.exe /b/develop/moat/agent_space/brian2cuda_test/test_basic.py"}
+{"kind":"phase","ts":"2026-06-08T13:51:36Z","phase":"test","seconds":24.930,"exit":0,"cmd":"B:\\develop\\TheRock\\external-builds\\pytorch\\.venv\\Scripts\\python.exe /b/develop/moat/agent_space/brian2cuda_test/test_basic.py"}
+{"kind":"phase","ts":"2026-06-08T15:18:10Z","phase":"test","seconds":37.880,"exit":0,"cmd":"python3 agent_space/brian2cuda_reval_gfx90a.py"}
+{"kind":"phase","ts":"2026-06-08T17:05:29Z","phase":"test","seconds":22.440,"exit":0,"cmd":"python3 agent_space/brian2cuda-gfx1100-gpu0/test_gfx1100.py"}
+{"kind": "tokens", "ts": "2026-06-08T17:07:55Z", "tokens": 53244, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-08T15:20:10Z", "tokens": 52199, "source": "validator"}
+{"kind":"phase","ts":"2026-06-09T15:18:52Z","phase":"test","seconds":31.702,"exit":0,"cmd":"python3 agent_space/brian2cuda_reval_prefs_fix.py"}
+{"kind":"phase","ts":"2026-06-09T15:19:33Z","phase":"test","seconds":31.210,"exit":0,"cmd":"python3 agent_space/brian2cuda_reval_prefs_fix.py"}
+{"kind": "tokens", "ts": "2026-06-09T15:24:09Z", "tokens": 72051, "source": "porter (hip_prefs wiring fix + gfx90a re-validation: 3/3 sims, gpu_arch pref now honored)"}
+{"kind":"phase","ts":"2026-06-09T16:27:04Z","phase":"test","seconds":31.445,"exit":0,"cmd":"python3 agent_space/brian2cuda_cleanup_reval.py"}
+{"kind": "tokens", "ts": "2026-06-09T16:30:52Z", "tokens": 97425, "source": "porter (remove dead hipgputools.py + consolidate is_hip_backend + symmetric prefs wiring; gfx90a 3/3 re-validated, prefs confirmed live)"}
+{"kind": "tokens", "ts": "2026-06-08T13:54:24Z", "tokens": 77131, "source": "validator"}
+{"kind":"phase","ts":"2026-06-19T21:26:18Z","phase":"test","seconds":0.996,"exit":1,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe agent_space/brian2cuda_test/test_gfx1101.py"}
+{"kind":"phase","ts":"2026-06-19T21:26:56Z","phase":"test","seconds":24.975,"exit":0,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe agent_space/brian2cuda_test/test_gfx1101.py"}
+{"kind": "tokens", "ts": "2026-06-19T21:30:26Z", "tokens": 79477, "source": "validator (gfx1101)"}
+{"kind":"phase","ts":"2026-07-02T18:33:20Z","phase":"compile","seconds":8.871,"exit":0,"cmd":"bash -c pip install brian2==2.10.1 2>&1 | tail -3 && pip install -e projects/brian2cuda/src 2>&1 | tail -5"}
+{"kind":"phase","ts":"2026-07-02T18:34:12Z","phase":"test","seconds":20.453,"exit":1,"cmd":"python3 agent_space/brian2cuda_rebase_reval.py"}
+{"kind":"phase","ts":"2026-07-02T18:35:16Z","phase":"test","seconds":34.087,"exit":0,"cmd":"python3 agent_space/brian2cuda_rebase_reval.py"}
+{"kind": "tokens", "ts": "2026-07-02T18:37:46Z", "tokens": 94597, "source": "porter (conflict rebase + gfx90a revalidation)"}
+{"kind":"phase","ts":"2026-07-02T20:01:17Z","phase":"compile","seconds":6.267,"exit":0,"cmd":"pip install -e projects/brian2cuda/src"}
+{"kind":"phase","ts":"2026-07-02T20:02:01Z","phase":"test","seconds":22.462,"exit":0,"cmd":"python3 agent_space/brian2cuda-gfx1100-gpu0/test_gfx1100.py"}
+{"kind": "tokens", "ts": "2026-07-02T20:03:20Z", "tokens": 54597, "source": "validator"}

@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "name": "AutoDock-GPU",
+  "upstream_url": "https://github.com/ccsb-scripps/AutoDock-GPU",
+  "fork_url": "https://github.com/AMD-Ecosystem/AutoDock-GPU",
+  "fork_default_branch": "develop",
+  "priority": 4.951,
+  "ext_type": "unknown",
+  "adopted_at": "2026-05-30T00:46:51Z",
+  "updated_at": "2026-07-02T18:26:40Z",
+  "head_sha": "2966dcd",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "bb2f0624b28563b119ce5424893bc1abb85420f0",
+      "started_at": "2026-05-30T06:52:18Z",
+      "completed_at": "2026-06-10T03:48:57Z",
+      "updated_at": "2026-06-10T04:03:06Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "porter",
+      "carry_forward": {
+        "to": "d1b5e7b5afdbc923030e2ee9185d5f96f6505414",
+        "method": "source-class",
+        "detail": "Squash to one clean commit d1b5e7b5; delta vs the validated c2f2f6f is doc/comment/copyright-only (verified by full diff: Makefile.Hip comment jargon-scrub, README TENSOR=ON doc, AMD copyright lines i",
+        "at": "2026-06-10T03:48:57Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "2966dcd",
+      "started_at": "2026-05-30T07:18:00Z",
+      "completed_at": "2026-06-10T03:48:57Z",
+      "updated_at": "2026-07-02T18:26:40Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-05-30T07:18:00Z",
+        "last_session_at": "2026-05-30T07:35:00Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "bb2f0624b28563b119ce5424893bc1abb85420f0",
+        "to": "2966dcd",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-07-02T18:26:40Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "2966dcd",
+      "started_at": null,
+      "completed_at": "2026-06-11T23:55:00Z",
+      "updated_at": "2026-07-02T18:26:40Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-11T23:30:00Z",
+        "last_session_at": "2026-06-11T23:55:00Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "bb2f0624b28563b119ce5424893bc1abb85420f0",
+        "to": "2966dcd",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-07-02T18:26:40Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "2966dcd",
+      "started_at": null,
+      "completed_at": "2026-06-10T03:48:57Z",
+      "updated_at": "2026-07-02T18:26:40Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "bb2f0624b28563b119ce5424893bc1abb85420f0",
+        "to": "2966dcd",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-07-02T18:26:40Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": true,
+      "blocked_reason": "windows-gfx1151 host retired (superseded by the gfx1101/gfx1201 machine); validation moved to windows-gfx1101 and windows-gfx1201",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T19:41:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "pr_url": "https://github.com/ccsb-scripps/AutoDock-GPU/pull/320",
+  "pr_number": 320,
+  "pr_opened_at": "2026-06-10T04:03:06Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open"
+}

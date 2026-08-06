@@ -1,0 +1,10 @@
+{
+  "full_name": "AndreSlavescu/mHC.cu",
+  "upstream_url": "https://github.com/AndreSlavescu/mHC.cu",
+  "default_branch": "main",
+  "fork_url": "https://github.com/AMD-Ecosystem/mHC.cu",
+  "ext_type": "torch-extension",
+  "base_sha": null,
+  "license_spdx": "MIT",
+  "license_source": "GitHub and the licence text agree"
+}

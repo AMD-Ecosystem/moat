@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "name": "llmq",
+  "upstream_url": "https://github.com/IST-DASLab/llmq",
+  "fork_url": null,
+  "fork_default_branch": "dev",
+  "priority": 4.457,
+  "ext_type": "cmake",
+  "adopted_at": "2026-05-30T01:04:50Z",
+  "updated_at": "2026-06-04T19:41:52Z",
+  "head_sha": null,
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "planned",
+      "blocked": true,
+      "blocked_reason": "Hopper/sm89+ tensor-core PTX (mma.sync.aligned.m16n8k32 e4m3/bf16, ldmatrix, cp.async) in gemm_mma.cu/tensor_core_utils.cuh + thread-block clusters/TMA/DSMEM in fused_classifier_tma.cu + cuDNN-frontend attention + cuBLASLt FP8: AMD-native rewrite (rocWMMA/CK/ck_tile + MFMA), NOT a mechanical CUDA->HIP port. FP8 needs gfx942 MFMA, unsupported on gfx90a/MI250X; recommend retarget lead to gfx942 and fund a CK kernel track. ext_type=cmake.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-02T07:23:00Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "planner"
+    },
+    "linux-gfx1100": {
+      "state": "awaiting-port",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-05-30T01:04:50Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1101": {
+      "state": "awaiting-port",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T19:41:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1201": {
+      "state": "awaiting-port",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T19:41:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1151": {
+      "state": "awaiting-port",
+      "blocked": true,
+      "blocked_reason": "windows-gfx1151 host retired (superseded by the gfx1101/gfx1201 machine); validation moved to windows-gfx1101 and windows-gfx1201",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T19:41:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "porting": null,
+  "waivers": {}
+}

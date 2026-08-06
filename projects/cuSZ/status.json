@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "name": "cuSZ",
+  "upstream_url": "https://github.com/szcompressor/cuSZ",
+  "fork_url": "https://github.com/AMD-Ecosystem/cuSZ",
+  "fork_default_branch": "master",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-06-05T01:19:23Z",
+  "updated_at": "2026-06-25T21:25:23Z",
+  "head_sha": "11140547",
+  "depends_on": [],
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "11140547",
+      "started_at": "2026-06-25T05:46:25.276181Z",
+      "completed_at": "2026-06-25T21:18:12Z",
+      "updated_at": "2026-06-25T21:25:23Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "11140547",
+      "started_at": "2026-06-25T06:44:27Z",
+      "completed_at": "2026-06-25T21:19:33Z",
+      "updated_at": "2026-06-25T21:19:33Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "11140547",
+        "method": "source-class",
+        "detail": "squash 252224e3->11140547 collapses history + clang-format whitespace in 2 host files (verinfo_hip.cu, compare.hh); gfx90a codeobj_diff proved device .text byte-identical in all 5 HIP libs, arch-indep",
+        "at": "2026-06-25T21:19:33Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "unclaimed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-25T05:36:25Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "11140547",
+      "started_at": "2026-06-25T13:56:49Z",
+      "completed_at": "2026-06-25T21:19:33Z",
+      "updated_at": "2026-06-25T21:19:33Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "11140547",
+        "method": "source-class",
+        "detail": "squash 252224e3->11140547 collapses history + clang-format whitespace in 2 host files (verinfo_hip.cu, compare.hh); gfx90a codeobj_diff proved device .text byte-identical in all 5 HIP libs, arch-indep",
+        "at": "2026-06-25T21:19:33Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "unclaimed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-25T05:36:25Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "pr_url": "https://github.com/szcompressor/cuSZ/pull/91",
+  "pr_number": 91,
+  "pr_opened_at": "2026-06-25T21:25:23Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open"
+}

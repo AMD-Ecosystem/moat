@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "name": "CudaSift",
+  "upstream_url": "https://github.com/Celebrandil/CudaSift",
+  "fork_url": "https://github.com/AMD-Ecosystem/CudaSift",
+  "fork_default_branch": "AdaLovelace",
+  "priority": 5.346,
+  "ext_type": "unknown",
+  "adopted_at": "2026-05-29T23:57:04Z",
+  "updated_at": "2026-06-23T22:18:22Z",
+  "head_sha": "fa25871",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "fa25871",
+      "started_at": "2026-05-30T00:15:15Z",
+      "completed_at": "2026-05-30T06:04:28Z",
+      "updated_at": "2026-06-23T22:18:21Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "fa25871",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:18:21Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "fa25871",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:18:21Z",
+      "updated_at": "2026-06-23T22:18:21Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "fa25871",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:18:21Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "fa25871",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:18:22Z",
+      "updated_at": "2026-06-23T22:18:22Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "fa25871",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:18:22Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "fa25871",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:18:22Z",
+      "updated_at": "2026-06-23T22:18:22Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "fa25871",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:18:22Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "fa25871",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:18:22Z",
+      "updated_at": "2026-06-23T22:18:22Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "fa25871",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:18:22Z"
+      }
+    }
+  },
+  "pr_url": "https://github.com/Celebrandil/CudaSift/pull/97",
+  "pr_number": 97,
+  "pr_opened_at": "2026-06-12T01:04:29Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open"
+}

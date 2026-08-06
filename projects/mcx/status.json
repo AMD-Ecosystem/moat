@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "name": "mcx",
+  "upstream_url": "https://github.com/fangq/mcx",
+  "fork_url": "https://github.com/AMD-Ecosystem/mcx",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "adopted_at": "2026-06-04T23:23:31Z",
+  "updated_at": "2026-08-06T02:33:28Z",
+  "head_sha": "d38c7aaa2f8d",
+  "depends_on": [],
+  "platforms": {
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d38c7aaa2f8d",
+      "started_at": null,
+      "completed_at": "2026-06-20T03:19:23Z",
+      "updated_at": "2026-06-20T03:19:23Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d38c7aaa2f8d",
+      "started_at": null,
+      "completed_at": "2026-06-18T19:23:36Z",
+      "updated_at": "2026-06-18T19:23:36Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d38c7aaa2f8d",
+      "started_at": null,
+      "completed_at": "2026-06-17T05:27:28Z",
+      "updated_at": "2026-06-17T05:27:28Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-12T06:58:30Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a7ecad73548d91e935f8d6e1a992664f0b9c1346",
+      "started_at": "2026-06-04T23:45:54Z",
+      "completed_at": "2026-06-12T14:30:16Z",
+      "updated_at": "2026-06-18T18:54:00Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "moat-checkup",
+      "carry_forward": {
+        "from": "cd4b395",
+        "to": "dcbd61d",
+        "method": "source-class",
+        "class": "comment-only",
+        "detail": "src/cuda_to_hip.h: comment-only (comments/format only); src/mcx_vector_types.h: comment-only (comments/format only)",
+        "at": "2026-06-16T16:37:58Z"
+      }
+    }
+  },
+  "pr_url": "https://github.com/fangq/mcx/pull/264",
+  "pr_number": 264,
+  "pr_opened_at": "2026-06-16T17:03:53Z",
+  "pr_merged_at": "2026-06-18T18:54:00Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged",
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:33:28Z",
+    "tier": 3,
+    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
+  }
+}

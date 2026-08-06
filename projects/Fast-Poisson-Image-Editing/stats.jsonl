@@ -1,0 +1,3 @@
+{"kind":"phase","ts":"2026-05-30T07:42:58Z","phase":"compile","seconds":6.889,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/agent_space/fpie_build_gfx1100 --target core_cuda -j64"}
+{"kind":"phase","ts":"2026-05-30T07:44:13Z","phase":"test","seconds":0.533,"exit":1,"cmd":"python3 /var/lib/jenkins/moat/agent_space/validate_fpie_gfx1100.py"}
+{"kind":"phase","ts":"2026-05-30T07:45:33Z","phase":"test","seconds":1.515,"exit":0,"cmd":"python3 /var/lib/jenkins/moat/agent_space/validate_fpie_gfx1100.py"}

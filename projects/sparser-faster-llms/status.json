@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "name": "sparser-faster-llms",
+  "upstream_url": "https://github.com/SakanaAI/sparser-faster-llms",
+  "fork_url": null,
+  "fork_default_branch": "master",
+  "priority": 4.464,
+  "ext_type": "torch-extension",
+  "adopted_at": "2026-05-30T01:04:50Z",
+  "updated_at": "2026-06-04T22:07:37Z",
+  "head_sha": null,
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "unclaimed",
+      "blocked": true,
+      "blocked_reason": "TwELL CUDA kernels use NVIDIA Hopper PTX (WGMMA, TMA, thread clusters) with no AMD equivalent; requires ground-up rewrite, not a port",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T22:07:26Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "linux-gfx1100": {
+      "state": "awaiting-port",
+      "blocked": true,
+      "blocked_reason": "Lead platform (linux-gfx90a) blocked: Hopper-only PTX kernels",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T22:07:36Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1101": {
+      "state": "awaiting-port",
+      "blocked": true,
+      "blocked_reason": "Lead platform (linux-gfx90a) blocked: Hopper-only PTX kernels",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T22:07:36Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1201": {
+      "state": "awaiting-port",
+      "blocked": true,
+      "blocked_reason": "Lead platform (linux-gfx90a) blocked: Hopper-only PTX kernels",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T22:07:37Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1151": {
+      "state": "awaiting-port",
+      "blocked": true,
+      "blocked_reason": "windows-gfx1151 host retired (superseded by the gfx1101/gfx1201 machine); validation moved to windows-gfx1101 and windows-gfx1201",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T19:41:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "porting": null,
+  "waivers": {}
+}

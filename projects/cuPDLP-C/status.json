@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "name": "cuPDLP-C",
+  "upstream_url": "https://github.com/COPT-Public/cuPDLP-C",
+  "fork_url": "https://github.com/AMD-Ecosystem/cuPDLP-C",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-06-05T07:45:23Z",
+  "updated_at": "2026-06-23T22:21:06Z",
+  "head_sha": "d380bcab9f7bf75bbaa7b14366f6c7902c2a8f91",
+  "depends_on": [],
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d380bcab9f7bf75bbaa7b14366f6c7902c2a8f91",
+      "started_at": "2026-06-05T07:50:17Z",
+      "completed_at": "2026-06-08T15:23:53Z",
+      "updated_at": "2026-06-23T22:21:06Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "planner",
+      "carry_forward": {
+        "to": "d380bcab9f7bf75bbaa7b14366f6c7902c2a8f91",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake dead-code/default-path change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:21:06Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d380bcab9f7bf75bbaa7b14366f6c7902c2a8f91",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:21:06Z",
+      "updated_at": "2026-06-23T22:21:06Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "to": "d380bcab9f7bf75bbaa7b14366f6c7902c2a8f91",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake dead-code/default-path change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:21:06Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d380bcab9f7bf75bbaa7b14366f6c7902c2a8f91",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:21:06Z",
+      "updated_at": "2026-06-23T22:21:06Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "d380bcab9f7bf75bbaa7b14366f6c7902c2a8f91",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake dead-code/default-path change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:21:06Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d380bcab9f7bf75bbaa7b14366f6c7902c2a8f91",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:21:06Z",
+      "updated_at": "2026-06-23T22:21:06Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "d380bcab9f7bf75bbaa7b14366f6c7902c2a8f91",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake dead-code/default-path change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:21:06Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T08:06:41Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "pr_url": "https://github.com/COPT-Public/cuPDLP-C/pull/41",
+  "pr_number": 41,
+  "pr_opened_at": "2026-06-12T06:41:52Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open"
+}

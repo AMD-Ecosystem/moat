@@ -1,0 +1,10 @@
+{
+  "full_name": "CEED/libCEED",
+  "upstream_url": "https://github.com/CEED/libCEED",
+  "default_branch": "main",
+  "fork_url": null,
+  "ext_type": "unknown",
+  "base_sha": null,
+  "license_spdx": "BSD-2-Clause",
+  "license_source": "GitHub and the licence text agree"
+}

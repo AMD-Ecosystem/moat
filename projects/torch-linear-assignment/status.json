@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "name": "torch-linear-assignment",
+  "upstream_url": "https://github.com/ivan-chai/torch-linear-assignment",
+  "fork_url": "https://github.com/AMD-Ecosystem/torch-linear-assignment",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "adopted_at": "2026-06-05T01:25:53Z",
+  "updated_at": "2026-06-20T07:03:54Z",
+  "head_sha": "c65c0b823fe81f022e060291a47374ac8483cfc8",
+  "depends_on": [],
+  "platforms": {
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T13:20:31Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "c65c0b823fe81f022e060291a47374ac8483cfc8",
+      "started_at": "2026-06-05T09:50:01Z",
+      "completed_at": "2026-06-08T20:19:12Z",
+      "updated_at": "2026-06-17T01:28:04Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "13c2e6e",
+        "to": "5142d662c9398c6b57bb97ddd45ae94768b6f4db",
+        "method": "source-class",
+        "class": "comment-only",
+        "detail": "setup.py: comment-only (comments/format only)",
+        "at": "2026-06-17T01:20:56Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "c65c0b823fe81f022e060291a47374ac8483cfc8",
+      "started_at": null,
+      "completed_at": "2026-06-08T20:19:22Z",
+      "updated_at": "2026-06-17T01:24:40Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "13c2e6e",
+        "to": "5142d662c9398c6b57bb97ddd45ae94768b6f4db",
+        "method": "source-class",
+        "class": "comment-only",
+        "detail": "setup.py: comment-only (comments/format only)",
+        "at": "2026-06-17T01:20:56Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "c65c0b823fe81f022e060291a47374ac8483cfc8",
+      "started_at": null,
+      "completed_at": "2026-06-08T20:19:17Z",
+      "updated_at": "2026-06-17T01:24:40Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "from": "13c2e6e",
+        "to": "5142d662c9398c6b57bb97ddd45ae94768b6f4db",
+        "method": "source-class",
+        "class": "comment-only",
+        "detail": "setup.py: comment-only (comments/format only)",
+        "at": "2026-06-17T01:20:56Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "c65c0b823fe81f022e060291a47374ac8483cfc8",
+      "started_at": null,
+      "completed_at": "2026-06-20T07:03:54Z",
+      "updated_at": "2026-06-20T07:03:54Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "pr_url": "https://github.com/ivan-chai/torch-linear-assignment/pull/31",
+  "pr_number": 31,
+  "pr_opened_at": "2026-06-17T01:28:04Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open"
+}

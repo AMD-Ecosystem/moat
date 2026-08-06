@@ -1,0 +1,14 @@
+# Orchestration knobs for utils/orient.sh and the agents.
+
+[pipeline]
+max_inflight_build = 1     # heavy build/test stages at once per host (single GPU)
+lookahead_planners = 1     # plan the next project while the current one ports
+
+# Claiming is no longer time-based. A project is claimed by its port/<name> branch
+# existing on the remote, and the fork-write lock is status.json `porting`
+# {arch, since}. Takeover is a human decision -- if the lock is held by another arch,
+# ask the person running the agent rather than expiring it on a timer -- so there is
+# no TTL or heartbeat to configure.
+
+[porter]
+max_attempts = 3           # failed validation cycles before blocking and asking

@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "name": "popsift",
+  "upstream_url": "https://github.com/alicevision/popsift",
+  "fork_url": "https://github.com/AMD-Ecosystem/popsift",
+  "fork_default_branch": "develop",
+  "priority": 5.187,
+  "ext_type": "unknown",
+  "adopted_at": "2026-05-30T00:36:13Z",
+  "updated_at": "2026-06-23T22:30:19Z",
+  "head_sha": "f2712723d90371b706db3a37fb82537af151ab04",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "f2712723d90371b706db3a37fb82537af151ab04",
+      "started_at": "2026-05-30T01:38:56Z",
+      "completed_at": "2026-06-03T23:05:07Z",
+      "updated_at": "2026-06-23T22:30:19Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "f2712723d90371b706db3a37fb82537af151ab04",
+        "method": "source-class",
+        "detail": "gfx90a dead-pin removal; unreachable code, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:30:19Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "f2712723d90371b706db3a37fb82537af151ab04",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:30:19Z",
+      "updated_at": "2026-06-23T22:30:19Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "f2712723d90371b706db3a37fb82537af151ab04",
+        "method": "source-class",
+        "detail": "gfx90a dead-pin removal; unreachable code, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:30:19Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "f2712723d90371b706db3a37fb82537af151ab04",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:30:19Z",
+      "updated_at": "2026-06-23T22:30:19Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "to": "f2712723d90371b706db3a37fb82537af151ab04",
+        "method": "source-class",
+        "detail": "gfx90a dead-pin removal; unreachable code, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:30:19Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "f2712723d90371b706db3a37fb82537af151ab04",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:30:19Z",
+      "updated_at": "2026-06-23T22:30:19Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "f2712723d90371b706db3a37fb82537af151ab04",
+        "method": "source-class",
+        "detail": "gfx90a dead-pin removal; unreachable code, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:30:19Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "f2712723d90371b706db3a37fb82537af151ab04",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:30:19Z",
+      "updated_at": "2026-06-23T22:30:19Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "f2712723d90371b706db3a37fb82537af151ab04",
+        "method": "source-class",
+        "detail": "gfx90a dead-pin removal; unreachable code, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:30:19Z"
+      }
+    }
+  },
+  "pr_url": "https://github.com/alicevision/popsift/pull/186",
+  "pr_number": 186,
+  "pr_opened_at": "2026-06-08T16:22:54Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open"
+}

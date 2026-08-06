@@ -1,0 +1,27 @@
+{"kind":"phase","ts":"2026-05-31T23:31:02Z","phase":"compile","seconds":49.961,"exit":1,"cmd":"bash agent_space/gsplat_build.sh"}
+{"kind":"phase","ts":"2026-05-31T23:32:52Z","phase":"compile","seconds":52.365,"exit":0,"cmd":"bash agent_space/gsplat_build.sh"}
+{"kind":"phase","ts":"2026-05-31T23:33:23Z","phase":"test","seconds":0.060,"exit":1,"cmd":"/opt/conda/envs/py_3.12/bin/python -m unittest test.test_rasterize_autograd -v"}
+{"kind":"phase","ts":"2026-05-31T23:33:40Z","phase":"test","seconds":0.064,"exit":5,"cmd":"/opt/conda/envs/py_3.12/bin/python -m unittest discover test -p test_rasterize_autograd.py -v"}
+{"kind":"phase","ts":"2026-05-31T23:35:27Z","phase":"test","seconds":3.013,"exit":0,"cmd":"/opt/conda/envs/py_3.12/bin/python -m unittest discover test -v"}
+{"kind":"phase","ts":"2026-05-31T23:47:40Z","phase":"test","seconds":77.705,"exit":1,"cmd":"bash /var/lib/jenkins/moat/agent_space/gsplat_test.sh"}
+{"kind":"summary","ts":"2026-05-31T23:55:14Z","agent":"porter","platform":"linux-gfx90a","result":"ported","fork_head":"a4d8b9aa308b23ba46a10d9734817237fd2474fd","fix":"render_backward.cu cg::reduce -> templated warpReduceSum shfl_xor butterfly (USE_ROCM-guarded), guarded out <cooperative_groups/reduce.h>","ffp_contract_pin":false,"gate":"Tier1 16/16 float64 gradchecks PASS x2 deterministic; no-SH forward bitwise to golden; forward bitwise-deterministic","nonregressions":"3 test_rasterize SH goldens + 2 test_projection + 1 test_utils rays + 3 test_dataloader all proven pre-existing upstream (stale/sub-fp32-epsilon goldens, missing hardcoded dataset), reproduce off-GPU"}
+{"kind":"phase","ts":"2026-06-01T00:06:19Z","phase":"compile","seconds":51.939,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/gsplat_build.sh"}
+{"kind":"phase","ts":"2026-06-01T00:07:53Z","phase":"test","seconds":81.087,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/gaussian_splatting/src && export HIP_VISIBLE_DEVICES=3 && /opt/conda/envs/py_3.12/bin/python -m unittest test.test_rasterize_autograd test.test_cuda_autograd_functions -v 2>&1"}
+{"kind":"phase","ts":"2026-06-01T20:24:36Z","phase":"compile","seconds":39.842,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/gauss_splatting_build_gfx1100.sh"}
+{"kind":"phase","ts":"2026-06-01T20:26:29Z","phase":"test","seconds":65.084,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/gauss_splatting_test_gfx1100.sh"}
+{"kind":"phase","ts":"2026-06-01T20:27:44Z","phase":"test","seconds":63.204,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/gauss_splatting_test_gfx1100.sh"}
+{"kind":"phase","ts":"2026-06-01T20:27:48Z","phase":"test","seconds":62.594,"exit":1,"cmd":"bash /var/lib/jenkins/moat/agent_space/gauss_splatting_test_full_gfx1100.sh"}
+{"kind":"phase","ts":"2026-06-01T20:29:57Z","phase":"test","seconds":64.929,"exit":1,"cmd":"bash /var/lib/jenkins/moat/agent_space/gauss_splatting_test_full_gfx1100.sh"}
+{"kind":"phase","ts":"2026-06-07T21:49:09Z","phase":"compile","seconds":32.814,"exit":1,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe B:/develop/moat/agent_space/gauss_build_gfx1201.py"}
+{"kind":"phase","ts":"2026-06-07T21:51:00Z","phase":"compile","seconds":36.047,"exit":0,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe B:/develop/moat/agent_space/gauss_build_gfx1201.py"}
+{"kind":"phase","ts":"2026-06-07T21:53:40Z","phase":"test","seconds":68.916,"exit":0,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe B:/develop/moat/agent_space/gauss_test_gfx1201.py"}
+{"kind":"phase","ts":"2026-06-07T21:54:53Z","phase":"test","seconds":67.566,"exit":1,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe B:/develop/moat/agent_space/gauss_test_gfx1201.py discover test -v"}
+{"kind":"phase","ts":"2026-06-08T00:14:05Z","phase":"compile","seconds":52.775,"exit":0,"cmd":"bash agent_space/gsplat_build.sh"}
+{"kind":"phase","ts":"2026-06-08T00:31:03Z","phase":"compile","seconds":41.331,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/gauss_splatting_build_gfx1100_gpu3.sh"}
+{"kind": "tokens", "ts": "2026-06-08T00:42:26Z", "tokens": 56990, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-07T21:58:21Z", "tokens": 82691, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-15T12:15:42Z", "tokens": 51286, "source": "pr-prep"}
+{"kind":"phase","ts":"2026-06-20T01:41:43Z","phase":"compile","seconds":38.064,"exit":0,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe agent_space/gauss_build_gfx1101.py"}
+{"kind":"phase","ts":"2026-06-20T01:43:06Z","phase":"test","seconds":57.558,"exit":0,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe agent_space/gauss_test_gfx1101.py test.test_rasterize_autograd test.test_cuda_autograd_functions -v"}
+{"kind":"phase","ts":"2026-06-20T01:44:14Z","phase":"test","seconds":56.947,"exit":1,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe agent_space/gauss_test_gfx1101.py discover test -v"}
+{"kind": "tokens", "ts": "2026-06-20T01:46:47Z", "tokens": 59233, "source": "validator (gfx1101)"}

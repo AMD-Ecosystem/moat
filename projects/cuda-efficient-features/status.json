@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "name": "cuda-efficient-features",
+  "upstream_url": "https://github.com/fixstars/cuda-efficient-features",
+  "fork_url": "https://github.com/AMD-Ecosystem/cuda-efficient-features",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-06-05T04:44:13Z",
+  "updated_at": "2026-06-23T22:22:01Z",
+  "head_sha": "aaf32c9f7714c94c8ec90792e0362d294dff48a8",
+  "depends_on": [],
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "aaf32c9f7714c94c8ec90792e0362d294dff48a8",
+      "started_at": "2026-06-05T08:23:04Z",
+      "completed_at": "2026-06-09T23:07:35Z",
+      "updated_at": "2026-06-23T22:22:01Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "aaf32c9f7714c94c8ec90792e0362d294dff48a8",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake dead-code/default-path change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:22:01Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "aaf32c9f7714c94c8ec90792e0362d294dff48a8",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:22:01Z",
+      "updated_at": "2026-06-23T22:22:01Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "aaf32c9f7714c94c8ec90792e0362d294dff48a8",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake dead-code/default-path change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:22:01Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "aaf32c9f7714c94c8ec90792e0362d294dff48a8",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:22:01Z",
+      "updated_at": "2026-06-23T22:22:01Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "to": "aaf32c9f7714c94c8ec90792e0362d294dff48a8",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake dead-code/default-path change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:22:01Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "aaf32c9f7714c94c8ec90792e0362d294dff48a8",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:22:01Z",
+      "updated_at": "2026-06-23T22:22:01Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "to": "aaf32c9f7714c94c8ec90792e0362d294dff48a8",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake dead-code/default-path change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:22:01Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T09:26:10Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "pr_url": "https://github.com/fixstars/cuda-efficient-features/pull/3",
+  "pr_number": 3,
+  "pr_opened_at": "2026-06-10T04:31:59Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open"
+}

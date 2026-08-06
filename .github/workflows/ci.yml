@@ -1,0 +1,64 @@
+name: checks
+
+# Runs on every pull request and on the trunk. NOT on pushes to other branches: the
+# pre-push hook runs the same gates locally, so a branch push would be the third time
+# the same checks ran, and the only thing it adds is mail. The gates themselves live
+# in utils/check.py -- implementing them twice is how CI and the hook end up
+# disagreeing.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A branch pushed repeatedly should not queue a run per push; only the last one is
+# interesting.
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install check dependencies
+        run: pip install --quiet jsonschema
+
+      - name: Title and shape (backstop -- the real check runs before the PR is opened)
+        # Whoever opens a pull request checks the title first, with
+        # `pr_intent.py --check-title`. This is the net under that, and it can only
+        # ever be a net: a pull request from a fork gets a read-only token, so this
+        # cannot comment to explain itself, and reaching for pull_request_target to
+        # get write access is how repositories get compromised by strangers. So it
+        # fails the check with the reason in the log, and the fix is upstream of here.
+        if: ${{ github.event_name == 'pull_request' }}
+        # pipefail, or `tee` reports success and the title check never gates.
+        shell: bash -eo pipefail {0}
+        env:
+          # Through the environment, never interpolated into the shell: a title is
+          # attacker-controlled text and ${{ }} would paste it straight into bash.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: python3 utils/pr_intent.py --base "origin/${{ github.base_ref }}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Run gates
+        # --fast skips the fork-cleanliness gate, which needs the fork clones that
+        # only exist on a porting host. That one is enforced by the pre-push hook
+        # and by pr_ready, where the clones are actually present.
+        run: python3 utils/check.py --fast
+
+# NOTE: there is deliberately no jargon job here. The no-in-house-vocabulary rule
+# applies to text that reaches an UPSTREAM project -- fork commit messages, PR
+# bodies, code comments -- not to this repo, whose own docs necessarily discuss
+# "lead platform", "head_sha" and the rest. Scanning moat's diff would fire on
+# every PR and be ignored within a week, which is worse than no check. It runs
+# where it bites instead: the porter before pushing a fork commit, and the
+# reviewer via the pr-review checklist, both against the fork's history.

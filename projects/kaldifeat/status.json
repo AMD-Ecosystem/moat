@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "name": "kaldifeat",
+  "upstream_url": "https://github.com/csukuangfj/kaldifeat",
+  "fork_url": "https://github.com/AMD-Ecosystem/kaldifeat",
+  "fork_default_branch": "master",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-06-11T15:50:21Z",
+  "updated_at": "2026-08-05T16:07:17Z",
+  "head_sha": "aa90013",
+  "depends_on": [],
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "aa90013",
+      "started_at": "2026-06-11T15:57:28Z",
+      "completed_at": "2026-06-12T13:17:00Z",
+      "updated_at": "2026-06-12T13:17:00Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer",
+      "carry_forward": {
+        "to": "aa90013",
+        "method": "source-class",
+        "detail": "windows-only cmake guards (WIN32 AND NOT MSVC); Linux build unchanged",
+        "at": "2026-06-12T13:17:00Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "aa90013",
+      "started_at": null,
+      "completed_at": "2026-06-12T13:17:00Z",
+      "updated_at": "2026-06-12T13:17:00Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "aa90013",
+        "method": "source-class",
+        "detail": "windows-only cmake guards (WIN32 AND NOT MSVC); Linux build unchanged",
+        "at": "2026-06-12T13:17:00Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "aa90013",
+      "started_at": null,
+      "completed_at": "2026-06-20T02:21:56Z",
+      "updated_at": "2026-06-20T02:21:56Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "aa90013",
+      "started_at": null,
+      "completed_at": "2026-06-12T13:17:07Z",
+      "updated_at": "2026-06-12T13:17:07Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "to": "aa90013",
+        "method": "source-class",
+        "detail": "validated at aa90013 with 14/14 tests pass",
+        "at": "2026-06-12T13:17:07Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-12T06:42:59Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "porting": null,
+  "waivers": {}
+}

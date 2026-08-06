@@ -1,0 +1,35 @@
+{"kind":"phase","ts":"2026-05-31T00:41:27Z","phase":"compile","seconds":0.159,"exit":1,"cmd":"cmake --build build -j16 --target tests"}
+{"kind":"phase","ts":"2026-05-31T00:43:14Z","phase":"compile","seconds":7.698,"exit":2,"cmd":"cmake --build /var/lib/jenkins/moat/projects/Open3D/src/build -j16 --target tests"}
+{"kind":"phase","ts":"2026-05-31T00:48:07Z","phase":"compile","seconds":131.364,"exit":2,"cmd":"cmake --build /var/lib/jenkins/moat/projects/Open3D/src/build -j16 --target tests"}
+{"kind":"phase","ts":"2026-05-31T00:53:25Z","phase":"compile","seconds":107.085,"exit":2,"cmd":"cmake --build /var/lib/jenkins/moat/projects/Open3D/src/build -j16 --target tests"}
+{"kind":"phase","ts":"2026-05-31T00:54:50Z","phase":"compile","seconds":107.249,"exit":2,"cmd":"cmake --build /var/lib/jenkins/moat/projects/Open3D/src/build -j16 --target tests"}
+{"kind":"phase","ts":"2026-05-31T00:56:37Z","phase":"compile","seconds":28.511,"exit":2,"cmd":"cmake --build /var/lib/jenkins/moat/projects/Open3D/src/build -j16 --target tests"}
+{"kind":"phase","ts":"2026-05-31T01:00:57Z","phase":"compile","seconds":120.875,"exit":2,"cmd":"cmake --build /var/lib/jenkins/moat/projects/Open3D/src/build -j16 --target tests"}
+{"kind":"phase","ts":"2026-05-31T01:07:45Z","phase":"compile","seconds":204.575,"exit":2,"cmd":"cmake --build /var/lib/jenkins/moat/projects/Open3D/src/build -j16 --target tests"}
+{"kind":"phase","ts":"2026-05-31T01:15:27Z","phase":"compile","seconds":334.207,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/Open3D/src/build -j16 --target tests"}
+{"kind":"phase","ts":"2026-05-31T01:16:15Z","phase":"test","seconds":0.003,"exit":127,"cmd":"./bin/tests --gtest_filter=*Tensor*"}
+{"kind":"phase","ts":"2026-05-31T01:17:25Z","phase":"test","seconds":64.044,"exit":1,"cmd":"/var/lib/jenkins/moat/projects/Open3D/src/build/bin/tests --gtest_filter=*Tensor*"}
+{"kind":"phase","ts":"2026-05-31T06:48:33Z","phase":"compile","seconds":0.754,"exit":0,"cmd":"cmake --build projects/Open3D/src/build -j16 --target tests"}
+{"kind":"phase","ts":"2026-05-31T06:58:52Z","phase":"test","seconds":6.292,"exit":0,"cmd":"/var/lib/jenkins/moat/projects/Open3D/src/build/bin/tests --gtest_filter=*HashMap*:*VoxelBlockGrid*"}
+{"kind":"phase","ts":"2026-05-31T08:26:12Z","phase":"compile","seconds":11.163,"exit":0,"cmd":"cmake -S projects/Open3D/src -B projects/Open3D/src/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=/opt/rocm -DBUILD_PYTORCH_OPS=OFF -DBUILD_TENSORFLOW_OPS=OFF -DBUILD_GUI=OFF -DBUILD_WEBRTC=OFF -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF -DBUILD_PYTHON_MODULE=OFF -DBUILD_UNIT_TESTS=ON -DBUILD_ISPC_MODULE=OFF -DWITH_IPP=OFF -DCMAKE_BUILD_TYPE=Release -DDEVELOPER_BUILD=ON"}
+{"kind":"phase","ts":"2026-05-31T08:26:29Z","phase":"compile","seconds":7.974,"exit":2,"cmd":"cmake --build projects/Open3D/src/build -j16 --target tests"}
+{"kind":"phase","ts":"2026-05-31T08:28:58Z","phase":"compile","seconds":101.296,"exit":2,"cmd":"cmake --build /var/lib/jenkins/moat/projects/Open3D/src/build -j16 --target tests"}
+{"kind":"phase","ts":"2026-05-31T08:33:19Z","phase":"compile","seconds":226.902,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/Open3D/src/build -j16 --target tests"}
+{"kind":"phase","ts":"2026-05-31T08:33:36Z","phase":"test","seconds":0.004,"exit":127,"cmd":"env HIP_VISIBLE_DEVICES=0 ./bin/tests --gtest_filter=*Tensor*:*Reduction*:*MemoryManager*"}
+{"kind":"phase","ts":"2026-05-31T08:34:24Z","phase":"test","seconds":39.848,"exit":0,"cmd":"env HIP_VISIBLE_DEVICES=0 /var/lib/jenkins/moat/projects/Open3D/src/build/bin/tests --gtest_filter=*Tensor*:*Reduction*:*MemoryManager*"}
+{"kind":"phase","ts":"2026-05-31T08:34:55Z","phase":"test","seconds":24.167,"exit":1,"cmd":"env HIP_VISIBLE_DEVICES=0 /var/lib/jenkins/moat/projects/Open3D/src/build/bin/tests --gtest_filter=*NearestNeighbor*:*KnnIndex*:*FixedRadiusIndex*:*Knn*:*Hybrid*:*Registration*:*Feature*"}
+{"kind":"phase","ts":"2026-05-31T08:35:04Z","phase":"test","seconds":4.308,"exit":0,"cmd":"env HIP_VISIBLE_DEVICES=0 /var/lib/jenkins/moat/projects/Open3D/src/build/bin/tests --gtest_filter=*HashMap*:*VoxelBlockGrid*"}
+{"kind":"phase","ts":"2026-05-31T08:35:13Z","phase":"test","seconds":2.383,"exit":0,"cmd":"env HIP_VISIBLE_DEVICES=0 /var/lib/jenkins/moat/projects/Open3D/src/build/bin/tests --gtest_repeat=10 --gtest_break_on_failure --gtest_filter=*HashMapPermuteDevices.Reserve*:*HashMapPermuteDevices.InsertComplexKeys*:*HashMapPermuteDevices.MultivalueInsertion*:*HashMapPermuteDevices.HashSet*"}
+{"kind":"phase","ts":"2026-05-31T08:35:32Z","phase":"test","seconds":0.334,"exit":0,"cmd":"env HIP_VISIBLE_DEVICES=0 /var/lib/jenkins/moat/projects/Open3D/src/build/bin/tests --gtest_filter=*NearestNeighbor*:*KnnIndex*:*FixedRadiusIndex*"}
+{"kind":"phase","ts":"2026-05-31T07:11:25Z","phase":"compile","seconds":19.471,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/Open3D/src/build -j16 --target tests"}
+{"kind":"phase","ts":"2026-05-31T07:12:36Z","phase":"test","seconds":63.697,"exit":0,"cmd":"env HIP_VISIBLE_DEVICES=3 /var/lib/jenkins/moat/projects/Open3D/src/build/bin/tests --gtest_filter=*Tensor*:*Reduction*:*MemoryManager*"}
+{"kind":"phase","ts":"2026-06-07T19:20:26Z","phase":"compile","seconds":493.016,"exit":0,"cmd":"cmake --build projects/Open3D/src/build -j16 --target tests"}
+{"kind":"phase","ts":"2026-06-07T19:45:44Z","phase":"compile","seconds":332.844,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/Open3D/src/build -j16 --target tests"}
+{"kind": "tokens", "ts": "2026-06-07T19:48:48Z", "tokens": 54523, "source": "validator"}
+{"kind": "tokens", "ts": "2026-07-02T18:38:48Z", "tokens": 85195, "source": "porter (PR fix round: doc scrub, 8 threads)"}
+{"kind": "tokens", "ts": "2026-07-02T19:00:32Z", "tokens": 112919, "source": "porter (conflict rebase onto upstream main)"}
+{"kind":"phase","ts":"2026-07-02T19:18:49Z","phase":"compile","seconds":200.492,"exit":0,"cmd":"cmake --build projects/Open3D/src/build -j16 --target tests"}
+{"kind":"phase","ts":"2026-07-02T19:25:36Z","phase":"compile","seconds":1020.212,"exit":0,"cmd":"cmake --build projects/Open3D/src/build -j16 --target tests"}
+{"kind":"phase","ts":"2026-07-02T19:30:47Z","phase":"compile-old","seconds":220.102,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/Open3D/src/build -j16 --target tests"}
+{"kind": "tokens", "ts": "2026-07-02T19:33:42Z", "tokens": 108170, "source": "validator (gfx90a binary-equiv carry-forward at rebased head)"}
+{"kind": "tokens", "ts": "2026-07-02T19:21:07Z", "tokens": 51567, "source": "validator"}

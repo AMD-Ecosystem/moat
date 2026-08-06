@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "name": "fused-ssim",
+  "upstream_url": "https://github.com/rahul-goel/fused-ssim",
+  "fork_url": "https://github.com/AMD-Ecosystem/fused-ssim",
+  "fork_default_branch": "main",
+  "priority": 4.269,
+  "ext_type": "unknown",
+  "adopted_at": "2026-05-30T01:04:51Z",
+  "updated_at": "2026-08-05T16:07:17Z",
+  "head_sha": "6f9a6201df9cb774d8256cf802832c6cc1f6fb03",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "6f9a6201df9cb774d8256cf802832c6cc1f6fb03",
+      "started_at": "2026-05-30T07:21:34Z",
+      "completed_at": "2026-06-07T19:14:08Z",
+      "updated_at": "2026-06-16T06:32:04Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "cdfe1fa6fced7898a9c8b3ba48e78633646ce28d",
+        "to": "6f9a6201df9cb774d8256cf802832c6cc1f6fb03",
+        "method": "source-class",
+        "class": "comment-only",
+        "detail": "setup.py: comment-only (comments/format only)",
+        "at": "2026-06-16T06:32:04Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "6f9a6201df9cb774d8256cf802832c6cc1f6fb03",
+      "started_at": "2026-05-30T07:55:00Z",
+      "completed_at": "2026-06-07T20:07:47Z",
+      "updated_at": "2026-06-16T06:32:05Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 37,
+          "test": 190,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-05-30T07:55:00Z",
+        "last_session_at": "2026-05-30T08:15:00Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "cdfe1fa6fced7898a9c8b3ba48e78633646ce28d",
+        "to": "6f9a6201df9cb774d8256cf802832c6cc1f6fb03",
+        "method": "source-class",
+        "class": "comment-only",
+        "detail": "setup.py: comment-only (comments/format only)",
+        "at": "2026-06-16T06:32:05Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "6f9a6201df9cb774d8256cf802832c6cc1f6fb03",
+      "started_at": null,
+      "completed_at": "2026-06-16T10:33:50Z",
+      "updated_at": "2026-06-16T10:33:50Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "6f9a6201df9cb774d8256cf802832c6cc1f6fb03",
+      "started_at": "2026-06-07T18:20:23Z",
+      "completed_at": "2026-06-07T18:20:23Z",
+      "updated_at": "2026-06-16T06:32:05Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 60,
+          "test": 180,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "cdfe1fa6fced7898a9c8b3ba48e78633646ce28d",
+        "to": "6f9a6201df9cb774d8256cf802832c6cc1f6fb03",
+        "method": "source-class",
+        "class": "comment-only",
+        "detail": "setup.py: comment-only (comments/format only)",
+        "at": "2026-06-16T06:32:05Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": true,
+      "blocked_reason": "torch-wheel/clang toolchain bug: c10.dll (clang-cl) does not export inherited ctor c10::ValueError(SourceLocation,std::string) -> PYBIND11 ext LNK2001. LLVM#182706 fixes only trivial-param inherited ctors, not callee-cleanup (by-value std::string); pytorch#175340 explicit-ctor workaround still needed. Port itself correct (validates gfx90a+gfx1100).",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-05-31T00:00:00Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "porting": null,
+  "waivers": {}
+}

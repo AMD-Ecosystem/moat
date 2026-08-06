@@ -1,0 +1,10 @@
+{
+  "full_name": "catboost/catboost",
+  "upstream_url": "https://github.com/catboost/catboost",
+  "default_branch": "master",
+  "fork_url": "https://github.com/AMD-Ecosystem/catboost-moat",
+  "ext_type": "cmake",
+  "base_sha": "a691fb75940a77f20e50bd7a3062b36d338e9d61",
+  "license_spdx": "Apache-2.0",
+  "license_source": "GitHub and the licence text agree"
+}

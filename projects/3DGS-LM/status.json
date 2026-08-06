@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "name": "3DGS-LM",
+  "upstream_url": "https://github.com/lukasHoel/3DGS-LM",
+  "fork_url": "https://github.com/AMD-Ecosystem/3DGS-LM",
+  "fork_default_branch": "main",
+  "priority": 3.618,
+  "ext_type": "torch-extension",
+  "adopted_at": "2026-05-30T01:04:50Z",
+  "updated_at": "2026-08-06T00:00:00Z",
+  "head_sha": "6cb3a0bbf83cb6d86eb12056ed1906cc753171d0",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "6cb3a0bbf83cb6d86eb12056ed1906cc753171d0",
+      "started_at": "2026-06-01T00:55:34Z",
+      "completed_at": "2026-06-08T15:06:54Z",
+      "updated_at": "2026-07-06T02:50:06Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "6cb3a0bbf83cb6d86eb12056ed1906cc753171d0",
+        "method": "source-class",
+        "detail": "count-safe index_map 6cb3a0b; USE_ROCM-guarded, CUDA byte-identical; validated gfx942 full-garden + gfx90a real-LM no-fault; inert for prior synthetic runs (reserved slots overwritten absent under-fil",
+        "at": "2026-06-10T20:15:25Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "6cb3a0bbf83cb6d86eb12056ed1906cc753171d0",
+      "started_at": "2026-06-02T01:00:00Z",
+      "completed_at": "2026-06-10T20:15:25Z",
+      "updated_at": "2026-07-06T02:49:05Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 86,
+          "test": 14,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-02T01:00:00Z",
+        "last_session_at": "2026-06-02T01:30:00Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "6cb3a0bbf83cb6d86eb12056ed1906cc753171d0",
+        "method": "source-class",
+        "detail": "count-safe index_map 6cb3a0b; USE_ROCM-guarded, CUDA byte-identical; validated gfx942 full-garden + gfx90a real-LM no-fault; inert for prior synthetic runs (reserved slots overwritten absent under-fil",
+        "at": "2026-06-10T20:15:25Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "6cb3a0bbf83cb6d86eb12056ed1906cc753171d0",
+      "started_at": "2026-06-19T19:48:00Z",
+      "completed_at": "2026-06-19T20:03:52Z",
+      "updated_at": "2026-07-06T02:49:05Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 76,
+          "test": 5,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-19T19:48:00Z",
+        "last_session_at": "2026-06-19T20:03:52Z"
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "6cb3a0bbf83cb6d86eb12056ed1906cc753171d0",
+      "started_at": null,
+      "completed_at": "2026-06-10T20:15:25Z",
+      "updated_at": "2026-07-06T02:49:05Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 310,
+          "test": 90,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "6cb3a0bbf83cb6d86eb12056ed1906cc753171d0",
+        "method": "source-class",
+        "detail": "count-safe index_map 6cb3a0b; USE_ROCM-guarded, CUDA byte-identical; validated gfx942 full-garden + gfx90a real-LM no-fault; inert for prior synthetic runs (reserved slots overwritten absent under-fil",
+        "at": "2026-06-10T20:15:25Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-07-06T02:49:05Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "pr_url": "https://github.com/lukasHoel/3DGS-LM/pull/15",
+  "pr_number": 15,
+  "pr_opened_at": "2026-06-08T15:08:58Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:41:26Z",
+    "tier": 4,
+    "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
+  }
+}

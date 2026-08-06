@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "name": "CUDA-ScanMatcher-ICP",
+  "upstream_url": "https://github.com/botforge/CUDA-ScanMatcher-ICP",
+  "fork_url": "https://github.com/AMD-Ecosystem/CUDA-ScanMatcher-ICP",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "adopted_at": "2026-06-05T01:23:54Z",
+  "updated_at": "2026-06-23T22:18:29Z",
+  "head_sha": "26073aa3ee515b2dfa50db2706c3ce6ae78e4eee",
+  "depends_on": [],
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "26073aa3ee515b2dfa50db2706c3ce6ae78e4eee",
+      "started_at": "2026-06-05T06:39:57Z",
+      "completed_at": "2026-06-05T07:05:51Z",
+      "updated_at": "2026-06-23T22:18:29Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer",
+      "carry_forward": {
+        "to": "26073aa3ee515b2dfa50db2706c3ce6ae78e4eee",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:18:29Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "26073aa3ee515b2dfa50db2706c3ce6ae78e4eee",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:18:29Z",
+      "updated_at": "2026-06-23T22:18:29Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "to": "26073aa3ee515b2dfa50db2706c3ce6ae78e4eee",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:18:29Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "26073aa3ee515b2dfa50db2706c3ce6ae78e4eee",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:18:29Z",
+      "updated_at": "2026-06-23T22:18:29Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "to": "26073aa3ee515b2dfa50db2706c3ce6ae78e4eee",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:18:29Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "26073aa3ee515b2dfa50db2706c3ce6ae78e4eee",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:18:29Z",
+      "updated_at": "2026-06-23T22:18:29Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "to": "26073aa3ee515b2dfa50db2706c3ce6ae78e4eee",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:18:29Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T07:05:51Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "pr_url": "https://github.com/botforge/CUDA-ScanMatcher-ICP/pull/10",
+  "pr_number": 10,
+  "pr_opened_at": "2026-06-11T22:01:14Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open"
+}

@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "name": "FLAMEGPU2",
+  "upstream_url": "https://github.com/FLAMEGPU/FLAMEGPU2",
+  "fork_url": "https://github.com/AMD-Ecosystem/FLAMEGPU2",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "adopted_at": "2026-06-05T01:16:31Z",
+  "updated_at": "2026-08-06T02:33:28Z",
+  "head_sha": "a290861",
+  "depends_on": [],
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a290861",
+      "started_at": "2026-06-05T05:06:43Z",
+      "completed_at": "2026-06-08T00:38:47Z",
+      "updated_at": "2026-06-08T00:38:47Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "a290861",
+        "method": "binary-equiv",
+        "detail": "#include <windows.h> inside #ifdef _MSC_VER; linux clang does not define _MSC_VER, no compiled diff",
+        "at": "2026-06-08T00:38:47Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a290861",
+      "started_at": null,
+      "completed_at": "2026-06-08T00:39:02Z",
+      "updated_at": "2026-06-08T00:39:02Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "a290861",
+        "method": "binary-equiv",
+        "detail": "#include <windows.h> inside #ifdef _MSC_VER; linux clang does not define _MSC_VER, no compiled diff",
+        "at": "2026-06-08T00:39:02Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a290861",
+      "started_at": null,
+      "completed_at": "2026-06-20T00:21:53Z",
+      "updated_at": "2026-06-20T00:21:53Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a290861",
+      "started_at": null,
+      "completed_at": "2026-06-08T00:58:21Z",
+      "updated_at": "2026-06-08T00:58:21Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T05:33:26Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "porting": null,
+  "waivers": {},
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:33:28Z",
+    "tier": 3,
+    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
+  }
+}
