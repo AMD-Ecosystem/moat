@@ -923,6 +923,13 @@
     "note": "Educational PyTorch recreation, not a library to port",
     "reason": "not-a-target"
   },
+  "luce-org/lucebox": {
+    "decided": "2026-08-06T18:25:41Z",
+    "disposition": "skip",
+    "full_name": "Luce-Org/lucebox",
+    "note": "Upstream ships a first-class maintained ROCm/HIP backend: server/CMakeLists.txt DFLASH27B_GPU_BACKEND=hip with DFLASH27B_HIP_ARCHITECTURES, HIP kernel sources (rms_norm_hip.cu, flashprefill_kernels.hip.cu, bsa_launcher_hip.cu) + hip_compat/ shim, rocWMMA fast path (DFLASH27B_HIP_SM80_EQUIV) with its own HIP numerical test, benchmarked gfx1100/gfx1151/gfx1201, published ghcr.io/luce-org/lucebox-hub:rocm image, and an active server/docs/HIP_PERF_PLAN.md optimization program. Also the SAME codebase as Luce-Org/lucebox-hub, skipped already-supported 2026-05-30 (repo renamed; README still clones lucebox-hub). Only CUDA-only piece is optimizations/megakernel (7.7k lines of PTX mma / cooperative-launch NVFP4 kernels for sm_86/sm_121a) -- reimplement-not-port, same class as mirage/SpargeAttn/FlashRT. Licence Apache-2.0 (tier 1), vendored llama.cpp MIT, Block-Sparse-Attention submodule BSD-3-Clause, no NVIDIA proprietary licence text.",
+    "reason": "already-supported"
+  },
   "luce-org/lucebox-hub": {
     "decided": "2026-05-30T00:04:56Z",
     "disposition": "skip",

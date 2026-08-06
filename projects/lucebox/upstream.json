@@ -1,0 +1,11 @@
+{
+  "full_name": "Luce-Org/lucebox",
+  "upstream_url": "https://github.com/Luce-Org/lucebox",
+  "default_branch": "main",
+  "fork_url": null,
+  "ext_type": "cmake",
+  "base_sha": null,
+  "license_spdx": "Apache-2.0",
+  "license_source": "GitHub field, LICENSE file text and repo badge all agree; read in full (201-line unmodified Apache-2.0, \"Copyright 2026 Lucebox\", no added riders)",
+  "license_notes": "Vendored components carry their own permissive licences: server/deps/llama.cpp is MIT (ggml authors), server/deps/llama.cpp/gguf-py MIT, and the one submodule (server/deps/Block-Sparse-Attention -> mit-han-lab/Block-Sparse-Attention) is BSD-3-Clause. All tier 1. No NVIDIA proprietary licence TEXT anywhere in the tree: all four markers in config/licenses.toml tier3.nvidia_proprietary.text_markers scanned over the full checkout, zero hits."
+}

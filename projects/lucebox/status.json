@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "name": "lucebox",
+  "upstream_url": "https://github.com/Luce-Org/lucebox",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-08-06T18:23:03Z",
+  "updated_at": "2026-08-06T18:26:52Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "unclaimed",
+      "blocked": true,
+      "blocked_reason": "already-supported: upstream's own maintained ROCm/HIP backend (DFLASH27B_GPU_BACKEND=hip in server/CMakeLists.txt, rocWMMA flashprefill kernels, benchmarked gfx1100/gfx1151/gfx1201, published ghcr.io/luce-org/lucebox-hub:rocm image). Same codebase as Luce-Org/lucebox-hub, already skipped already-supported 2026-05-30. No port needed; see dispositions.json + notes.md.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-06T18:26:47Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  }
+}
