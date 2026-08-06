@@ -199,6 +199,7 @@ The project name links upstream.
 | [TIGRE](https://github.com/CERN/TIGRE) ([fork](https://github.com/AMD-Ecosystem/TIGRE/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#747](https://github.com/CERN/TIGRE/pull/747) |
 | [tiny-vllm](https://github.com/jmaczan/tiny-vllm) ([fork](https://github.com/AMD-Ecosystem/tiny-vllm/tree/moat-port)) | 🔄 | ✅ | ✅ | 🟣 [#2](https://github.com/jmaczan/tiny-vllm/pull/2) |
 | [torch-linear-assignment](https://github.com/ivan-chai/torch-linear-assignment) ([fork](https://github.com/AMD-Ecosystem/torch-linear-assignment/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#31](https://github.com/ivan-chai/torch-linear-assignment/pull/31) |
+| [tsne-cuda](https://github.com/CannyLab/tsne-cuda) | ⬜ | — | — | — |
 | [TTT3R](https://github.com/Inception3D/TTT3R) ([fork](https://github.com/AMD-Ecosystem/TTT3R/tree/moat-port)) | 🔄 | ✅ | ✅ | — |
 | [TurboFNO](https://github.com/shixun404/TurboFNO) ([fork](https://github.com/AMD-Ecosystem/TurboFNO/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#3](https://github.com/shixun404/TurboFNO/pull/3) |
 | [unified-cache-management](https://github.com/ModelEngine-Group/unified-cache-management) ([fork](https://github.com/AMD-Ecosystem/unified-cache-management/tree/moat-port)) | ✅ | ✅ | 🔄 | 🟢 [#1021](https://github.com/ModelEngine-Group/unified-cache-management/pull/1021) |
