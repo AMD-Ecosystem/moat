@@ -1,0 +1,23 @@
+{"kind":"phase","ts":"2026-06-02T01:09:43Z","phase":"compile","seconds":0.336,"exit":1,"cmd":"pip install -e . --no-build-isolation"}
+{"kind":"phase","ts":"2026-06-02T01:10:15Z","phase":"compile","seconds":23.378,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/evogp/src && pip install -e . --no-build-isolation"}
+{"kind":"phase","ts":"2026-06-02T01:11:57Z","phase":"compile","seconds":53.139,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/evogp/src && pip install -e . --no-build-isolation"}
+{"kind":"phase","ts":"2026-06-02T01:19:49Z","phase":"compile","seconds":52.494,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/evogp/src && pip install -e . --no-build-isolation"}
+{"kind":"phase","ts":"2026-06-02T01:21:36Z","phase":"compile","seconds":52.526,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/evogp/src && pip install -e . --no-build-isolation"}
+{"kind":"phase","ts":"2026-06-02T01:21:45Z","phase":"test","seconds":2.847,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/evogp/src && python test/test_bind_success.py"}
+{"kind":"phase","ts":"2026-06-02T01:22:06Z","phase":"test","seconds":5.277,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/evogp/src && python -m evogp.sr_test"}
+{"kind":"phase","ts":"2026-06-02T01:55:21Z","phase":"test","seconds":5.289,"exit":0,"cmd":"python -m evogp.sr_test"}
+{"kind":"phase","ts":"2026-06-02T02:02:35Z","phase":"compile","seconds":0.259,"exit":1,"cmd":"pip install -e . --no-build-isolation"}
+{"kind":"phase","ts":"2026-06-02T02:03:21Z","phase":"compile","seconds":38.164,"exit":0,"cmd":"pip install -e /var/lib/jenkins/moat/projects/evogp/src --no-build-isolation"}
+{"kind":"phase","ts":"2026-06-02T02:04:22Z","phase":"compile","seconds":38.963,"exit":0,"cmd":"pip install -e /var/lib/jenkins/moat/projects/evogp/src --no-build-isolation"}
+{"kind":"phase","ts":"2026-06-02T02:04:56Z","phase":"test","seconds":3.670,"exit":0,"cmd":"python -m evogp.sr_test"}
+{"kind":"phase","ts":"2026-06-02T02:05:08Z","phase":"test","seconds":3.710,"exit":0,"cmd":"python -m evogp.sr_test"}
+{"kind": "phase", "ts": "2026-06-06T00:06:11Z", "phase": "compile", "seconds": 29.0, "exit": 0, "cmd": "pip install -e . --no-build-isolation (gfx1101)"}
+{"kind": "phase", "ts": "2026-06-06T00:07:07Z", "phase": "test", "seconds": 5.0, "exit": 0, "cmd": "python -m evogp.sr_test (gfx1101, 2 runs)"}
+{"kind": "tokens", "ts": "2026-06-06T00:08:39Z", "tokens": 69234, "source": "validator"}
+{"kind":"phase","ts":"2026-06-07T04:31:21Z","phase":"compile","seconds":0.469,"exit":1,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe -m pip install -e . --no-build-isolation"}
+{"kind":"phase","ts":"2026-06-07T04:31:56Z","phase":"compile","seconds":28.802,"exit":0,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe -m pip install -e B:/develop/moat/projects/evogp/src --no-build-isolation"}
+{"kind":"phase","ts":"2026-06-07T04:32:14Z","phase":"test","seconds":3.479,"exit":0,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe -m evogp.sr_test"}
+{"kind":"phase","ts":"2026-06-07T04:32:25Z","phase":"test","seconds":3.363,"exit":0,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe -m evogp.sr_test"}
+{"kind": "tokens", "ts": "2026-06-07T04:34:36Z", "tokens": 43462, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-15T12:15:42Z", "tokens": 51286, "source": "pr-prep"}
+{"kind": "tokens", "ts": "2026-06-17T13:58:07Z", "tokens": 51286, "source": "pr-prep"}

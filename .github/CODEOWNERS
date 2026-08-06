@@ -1,0 +1,11 @@
+# Every PR needs a maintainer. The gates in utils/check.py are mechanical; the
+# judgement calls -- is this port complete, is this licence acceptable, should this
+# reach an upstream maintainer -- are not.
+*                       @jeffdaily
+
+# Policy. A change here alters what the pipeline will and will not do, so it wants
+# deliberate review rather than a rubber stamp: the licence tiers decide what may be
+# ported at all, and the arch gates decide what counts as validated.
+/config/licenses.toml   @jeffdaily
+/config/arches.toml     @jeffdaily
+/config/jargon.toml     @jeffdaily

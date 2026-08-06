@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "name": "kaldi",
+  "upstream_url": "https://github.com/kaldi-asr/kaldi",
+  "fork_url": "https://github.com/AMD-Ecosystem/kaldi",
+  "fork_default_branch": "master",
+  "priority": 6.626,
+  "ext_type": "cmake",
+  "adopted_at": "2026-05-29T23:30:03Z",
+  "updated_at": "2026-06-12T18:33:50Z",
+  "head_sha": "014a2179c29f2c0437898a8ded09f57501eb9fb7",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "014a2179c29f2c0437898a8ded09f57501eb9fb7",
+      "started_at": "2026-05-31T00:16:51Z",
+      "completed_at": "2026-06-12T14:19:28Z",
+      "updated_at": "2026-06-12T18:33:50Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "366869b8f32955852553f1a0a1142d1b43bfe18c",
+        "method": "source-class",
+        "detail": "doc/comment-only: configure header gains a #-comment --use-rocm worked example; cu-common.h/cu-device.h/cu-kernels.cu gain a copyright comment line. No compiled code changes; device objects identical.",
+        "at": "2026-06-12T14:19:28Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "014a2179c29f2c0437898a8ded09f57501eb9fb7",
+      "started_at": null,
+      "completed_at": "2026-06-12T14:19:28Z",
+      "updated_at": "2026-06-12T14:21:16Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "366869b8f32955852553f1a0a1142d1b43bfe18c",
+        "method": "source-class",
+        "detail": "doc/comment-only: configure header gains a #-comment --use-rocm worked example; cu-common.h/cu-device.h/cu-kernels.cu gain a copyright comment line. No compiled code changes; device objects identical.",
+        "at": "2026-06-12T14:19:28Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "port-ready",
+      "blocked": true,
+      "blocked_reason": "kaldi ROCm build is POSIX-only: src/configure configure_rocm() hard-gates on uname==Linux and exits 1 on Windows/MSYS (arch-independent). Same non-viability as windows-gfx1151; no Windows arch can build. Scope the PR to Linux.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T20:51:24Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1201": {
+      "state": "port-ready",
+      "blocked": true,
+      "blocked_reason": "kaldi ROCm build is POSIX-only: src/configure configure_rocm() hard-gates on uname==Linux and exits 1 on Windows/MSYS (arch-independent). Same non-viability as windows-gfx1151; no Windows arch can build. Scope the PR to Linux.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T20:51:24Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": true,
+      "blocked_reason": "kaldi ROCm build is POSIX-only: configure_rocm() explicitly gates on uname==Linux (src/configure:308-316); exits 1 on Windows/MSYS2 with 'ROCm is only supported with 64-bit Linux builds'. The tools/ chain (OpenFST autoconf/Makefile, sox, OpenBLAS) is equally POSIX-only. The CMake build path (cmake/INSTALL.md) has no ROCm/HIP support at all. The Windows/.sln path (windows/INSTALL.md) explicitly says no CUDA/GPU support. No Windows-native ROCm build path exists; porting the autotools configure+Makefile system to Windows is out of ROCm-port scope.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-03T18:16:13Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "depends_on": [],
+  "pr_url": "https://github.com/kaldi-asr/kaldi/pull/4986",
+  "pr_number": 4986,
+  "pr_opened_at": "2026-06-12T18:33:50Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open"
+}

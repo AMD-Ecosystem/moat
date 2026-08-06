@@ -1,0 +1,10 @@
+{
+  "full_name": "supranational/sppark",
+  "upstream_url": "https://github.com/supranational/sppark",
+  "default_branch": "main",
+  "fork_url": "https://github.com/AMD-Ecosystem/sppark",
+  "ext_type": "rust-cc",
+  "base_sha": null,
+  "license_spdx": "Apache-2.0",
+  "license_source": "GitHub and the licence text agree"
+}

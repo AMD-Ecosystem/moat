@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "name": "opencv_contrib",
+  "upstream_url": "https://github.com/opencv/opencv_contrib",
+  "fork_url": "https://github.com/AMD-Ecosystem/opencv_contrib",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "adopted_at": "2026-06-09T22:04:50Z",
+  "updated_at": "2026-06-20T04:47:32Z",
+  "head_sha": "041d5528286a81465828a668d014035e149f6a97",
+  "depends_on": [],
+  "platforms": {
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "041d5528286a81465828a668d014035e149f6a97",
+      "started_at": null,
+      "completed_at": "2026-06-11T15:15:55Z",
+      "updated_at": "2026-06-19T19:38:23Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "from": "1c3b2fd42859e3acf26600f87c5f1f66237268e0",
+        "to": "041d5528286a81465828a668d014035e149f6a97",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-06-19T19:38:23Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "041d5528286a81465828a668d014035e149f6a97",
+      "started_at": null,
+      "completed_at": "2026-06-11T15:15:55Z",
+      "updated_at": "2026-06-19T19:38:23Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "from": "1c3b2fd42859e3acf26600f87c5f1f66237268e0",
+        "to": "041d5528286a81465828a668d014035e149f6a97",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-06-19T19:38:23Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "041d5528286a81465828a668d014035e149f6a97",
+      "started_at": null,
+      "completed_at": "2026-06-20T04:47:32Z",
+      "updated_at": "2026-06-20T04:47:32Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "ad105bb5914a256335dad33abdd66b360dd91634",
+      "started_at": "2026-06-10T23:48:26Z",
+      "completed_at": "2026-06-11T13:55:03Z",
+      "updated_at": "2026-06-11T14:11:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-11T03:55:45Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "pr_url": "https://github.com/opencv/opencv_contrib/pull/4147",
+  "pr_number": 4147,
+  "pr_opened_at": "2026-06-11T14:11:52Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open"
+}

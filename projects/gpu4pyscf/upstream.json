@@ -1,0 +1,10 @@
+{
+  "full_name": "pyscf/gpu4pyscf",
+  "upstream_url": "https://github.com/pyscf/gpu4pyscf",
+  "default_branch": "master",
+  "fork_url": "https://github.com/AMD-Ecosystem/gpu4pyscf",
+  "ext_type": "cmake-cupy-plugin",
+  "base_sha": "72087c7",
+  "license_spdx": "Apache-2.0",
+  "license_source": "GitHub and the licence text agree"
+}

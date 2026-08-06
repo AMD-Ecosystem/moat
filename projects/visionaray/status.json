@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "name": "visionaray",
+  "upstream_url": "https://github.com/szellmann/visionaray",
+  "fork_url": "https://github.com/AMD-Ecosystem/visionaray",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-06-04T23:23:31Z",
+  "updated_at": "2026-06-24T18:42:45Z",
+  "head_sha": "f4f3b3612d75efdb3264e2c2b731257f97e4b6ef",
+  "depends_on": [],
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "1b0b5813",
+      "started_at": "2026-06-04T23:45:52Z",
+      "completed_at": "2026-06-07T19:46:07Z",
+      "updated_at": "2026-06-23T06:05:14Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "moat-checkup",
+      "carry_forward": {
+        "from": "d904b8b02cb386ac6f97be9774ede7fe8314a3ed",
+        "to": "e7ab8213",
+        "method": "source-class",
+        "class": "comment-only",
+        "detail": "include/visionaray/detail/hip_sched.h: comment-only (comments/format only); include/visionaray/detail/hip_sched.inl: comment-only (comments/format only); include/visionaray/hip/managed_allocator.h: co",
+        "at": "2026-06-19T06:39:24Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "revalidate",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "1b0b5813",
+      "started_at": null,
+      "completed_at": "2026-06-20T07:31:57Z",
+      "updated_at": "2026-06-24T00:59:35Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "f4f3b3612d75efdb3264e2c2b731257f97e4b6ef",
+      "started_at": null,
+      "completed_at": "2026-06-24T18:50:00Z",
+      "updated_at": "2026-06-24T18:50:00Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "def3f13b1a29bdf944023f135eaee157aa2d4b2f",
+        "to": "f4f3b3612d75efdb3264e2c2b731257f97e4b6ef",
+        "method": "binary-equiv",
+        "detail": "def3f13b->f4f3b361 (union type-pun -> __builtin_memcpy in reinterpret_as_int/float): gfx1100 codeobj_diff shows identical device ISA; same source change applies equally to gfx1201 (RDNA4 wave32). Real GPU run at def3f13b passed (hip_test + hip_random_test PASS on AMD Radeon RX 9070 XT).",
+        "at": "2026-06-24T18:50:00Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T00:04:28Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "f4f3b3612d75efdb3264e2c2b731257f97e4b6ef",
+      "started_at": "2026-06-05T02:01:34.983385+00:00",
+      "completed_at": "2026-06-24T18:42:45Z",
+      "updated_at": "2026-06-24T18:42:45Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "f4f3b3612d75efdb3264e2c2b731257f97e4b6ef",
+        "method": "binary-equiv",
+        "detail": "def3f13b->f4f3b361 (union type-pun -> __builtin_memcpy): codeobj_diff verdict=identical for hip_test and hip_random_test on gfx1100 (exported symbols + device ISA identical). Behavior-preserving, no G",
+        "at": "2026-06-24T18:42:45Z"
+      }
+    }
+  },
+  "pr_url": "https://github.com/szellmann/visionaray/pull/51",
+  "pr_number": 51,
+  "pr_opened_at": "2026-06-19T06:51:34Z",
+  "pr_merged_at": "2026-06-23T06:05:14Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged"
+}

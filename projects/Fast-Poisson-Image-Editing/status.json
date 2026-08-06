@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "name": "Fast-Poisson-Image-Editing",
+  "upstream_url": "https://github.com/Trinkle23897/Fast-Poisson-Image-Editing",
+  "fork_url": "https://github.com/AMD-Ecosystem/Fast-Poisson-Image-Editing",
+  "fork_default_branch": "main",
+  "priority": 4.518,
+  "ext_type": "unknown",
+  "adopted_at": "2026-05-30T03:26:35Z",
+  "updated_at": "2026-06-05T19:24:58Z",
+  "head_sha": "4c6411be2d3801babf65fba4b5166a15f5a3d883",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "4c6411be2d3801babf65fba4b5166a15f5a3d883",
+      "started_at": "2026-05-30T07:02:44Z",
+      "completed_at": "2026-06-02T16:14:52Z",
+      "updated_at": "2026-06-05T19:24:58Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "moat-checkup",
+      "carry_forward": {
+        "from": "fd5415cfe4b0ca957923a9c58efa54e0f09a29ed",
+        "to": "4c6411be2d3801babf65fba4b5166a15f5a3d883",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-06-02T16:23:22Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "4c6411be2d3801babf65fba4b5166a15f5a3d883",
+      "started_at": null,
+      "completed_at": "2026-06-02T16:14:52Z",
+      "updated_at": "2026-06-02T16:23:22Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "fd5415cfe4b0ca957923a9c58efa54e0f09a29ed",
+        "to": "4c6411be2d3801babf65fba4b5166a15f5a3d883",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-06-02T16:23:22Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "4c6411be2d3801babf65fba4b5166a15f5a3d883",
+      "started_at": null,
+      "completed_at": "2026-06-04T23:33:12Z",
+      "updated_at": "2026-06-04T23:33:12Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "4c6411be2d3801babf65fba4b5166a15f5a3d883",
+      "started_at": null,
+      "completed_at": "2026-06-04T23:33:12Z",
+      "updated_at": "2026-06-04T23:33:12Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1151": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "4c6411be2d3801babf65fba4b5166a15f5a3d883",
+      "started_at": null,
+      "completed_at": "2026-06-03T14:17:38Z",
+      "updated_at": "2026-06-03T14:17:38Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "4c6411be2d3801babf65fba4b5166a15f5a3d883",
+        "method": "binary-equiv",
+        "detail": "Rebuilt core_cuda at 4c6411b (gfx1151, all-clang); extracted .hip_fat code object: ISA byte-identical (844 instrs) + identical kernel symbols vs the validated 6a41e0b build. Delta 6a41e0b..4c6411b is ",
+        "at": "2026-06-03T14:17:38Z"
+      }
+    }
+  },
+  "pr_url": "https://github.com/Trinkle23897/Fast-Poisson-Image-Editing/pull/25",
+  "pr_number": 25,
+  "pr_opened_at": "2026-06-05T19:24:58Z",
+  "pr_merged_at": "2026-06-05T19:24:58Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged"
+}

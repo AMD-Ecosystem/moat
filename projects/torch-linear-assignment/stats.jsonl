@@ -1,0 +1,26 @@
+{"kind": "tokens", "ts": "2026-06-05T09:49:35Z", "tokens": 66344, "source": "planner"}
+{"kind":"phase","ts":"2026-06-05T09:50:28Z","phase":"compile","seconds":0.350,"exit":1,"cmd":"pip install --no-build-isolation -e ."}
+{"kind":"phase","ts":"2026-06-05T09:52:25Z","phase":"compile","seconds":113.814,"exit":0,"cmd":"pip install --no-build-isolation -e /var/lib/jenkins/moat/projects/torch-linear-assignment/src"}
+{"kind":"phase","ts":"2026-06-05T09:52:39Z","phase":"test","seconds":3.420,"exit":1,"cmd":"pytest /var/lib/jenkins/moat/projects/torch-linear-assignment/src/tests/ -v"}
+{"kind": "tokens", "ts": "2026-06-05T09:54:31Z", "tokens": 44699, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-05T09:57:01Z", "tokens": 54323, "source": "reviewer"}
+{"kind":"session","ts":"2026-06-05T09:57:21Z","epoch":1780653441.343615289,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-06-05T09:57:27Z","phase":"linux-gfx90a","seconds":0.004,"exit":127,"cmd":"build -- pip install --no-build-isolation -e ."}
+{"kind":"phase","ts":"2026-06-05T09:57:32Z","phase":"compile","seconds":0.347,"exit":1,"cmd":"pip install --no-build-isolation -e ."}
+{"kind":"session","ts":"2026-06-05T10:00:19Z","epoch":1780653619.915448622,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-06-05T15:47:09Z","phase":"compile","seconds":85.585,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/torch-linear-assignment/src && HIP_VISIBLE_DEVICES=3 pip install --no-build-isolation -e ."}
+{"kind":"phase","ts":"2026-06-05T15:47:23Z","phase":"test","seconds":2.836,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/torch-linear-assignment/src && HIP_VISIBLE_DEVICES=3 pytest tests/ -v"}
+{"kind":"phase","ts":"2026-06-08T20:13:49Z","phase":"compile","seconds":28.886,"exit":1,"cmd":"bash /tmp/tla_build_official.sh"}
+{"kind":"phase","ts":"2026-06-08T20:15:28Z","phase":"test","seconds":2.194,"exit":0,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe /tmp/tla_test_wrapper.py"}
+{"kind": "tokens", "ts": "2026-06-08T20:21:17Z", "tokens": 90270, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-15T12:15:44Z", "tokens": 45603, "source": "pr-prep"}
+{"kind": "tokens", "ts": "2026-06-17T01:09:24Z", "tokens": 47309, "source": "pr-prep"}
+{"kind":"phase","ts":"2026-06-17T01:13:52Z","phase":"compile","seconds":0.312,"exit":1,"cmd":"python3 -m pip install --no-build-isolation -e ."}
+{"kind":"phase","ts":"2026-06-17T01:14:35Z","phase":"compile","seconds":38.232,"exit":0,"cmd":"python3 -m pip install --no-build-isolation -e /var/lib/jenkins/moat/projects/torch-linear-assignment/src"}
+{"kind":"phase","ts":"2026-06-17T01:14:49Z","phase":"test","seconds":2.852,"exit":0,"cmd":"python3 -m pytest /var/lib/jenkins/moat/projects/torch-linear-assignment/src/tests/ -v --tb=short"}
+{"kind": "tokens", "ts": "2026-06-17T01:15:25Z", "tokens": 27212, "source": "validator"}
+{"kind":"phase","ts":"2026-06-20T07:01:31Z","phase":"compile","seconds":0.535,"exit":1,"cmd":"env DISTUTILS_USE_SDK=1 HIP_VISIBLE_DEVICES=1 PYTORCH_ROCM_ARCH=gfx1101 ROCM_HOME=B:/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_devel HIP_DEVICE_LIB_PATH=B:/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/amdgcn/bitcode B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe -m pip install --no-build-isolation -e . --no-deps"}
+{"kind":"phase","ts":"2026-06-20T07:01:37Z","phase":"compile","seconds":0.496,"exit":1,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe -m pip install --no-build-isolation -e . --no-deps"}
+{"kind":"phase","ts":"2026-06-20T07:02:19Z","phase":"compile","seconds":30.372,"exit":0,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe -m pip install --no-build-isolation -e B:/develop/moat/projects/torch-linear-assignment/src --no-deps"}
+{"kind":"phase","ts":"2026-06-20T07:02:59Z","phase":"test","seconds":2.209,"exit":0,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe -m pytest B:/develop/moat/projects/torch-linear-assignment/src/tests/ -v --tb=short"}
+{"kind": "tokens", "ts": "2026-06-20T07:04:47Z", "tokens": 53329, "source": "validator (gfx1101)"}

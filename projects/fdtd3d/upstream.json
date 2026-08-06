@@ -1,0 +1,10 @@
+{
+  "full_name": "zer011b/fdtd3d",
+  "upstream_url": "https://github.com/zer011b/fdtd3d",
+  "default_branch": "master",
+  "fork_url": "https://github.com/AMD-Ecosystem/fdtd3d",
+  "ext_type": "cmake",
+  "base_sha": null,
+  "license_spdx": "GPL-2.0",
+  "license_source": "GitHub and the licence text agree"
+}

@@ -1,0 +1,13 @@
+{
+  "full_name": "karpathy/llm.c",
+  "upstream_url": "https://github.com/karpathy/llm.c",
+  "default_branch": "master",
+  "fork_url": "https://github.com/AMD-Ecosystem/llm.c",
+  "ext_type": "makefile",
+  "base_sha": "f1e2ace651495b74ae22d45d1723443fd00ecd3a",
+  "pr_url": "https://github.com/karpathy/llm.c/pull/854",
+  "pr_number": 854,
+  "pr_state": "open",
+  "license_spdx": "MIT",
+  "license_source": "GitHub and the licence text agree"
+}

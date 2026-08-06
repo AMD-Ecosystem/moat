@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "name": "llm.c",
+  "upstream_url": "https://github.com/karpathy/llm.c",
+  "fork_url": "https://github.com/AMD-Ecosystem/llm.c",
+  "fork_default_branch": "master",
+  "priority": 6.667,
+  "ext_type": "makefile",
+  "adopted_at": "2026-05-29T23:30:02Z",
+  "updated_at": "2026-06-24T00:02:17Z",
+  "head_sha": "de1dd620184356193b9864118dd4162b11938dd7",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d19a3220d7b61af86c4d7a8a978a76f94dbbaa71",
+      "started_at": "2026-05-31T00:24:03Z",
+      "completed_at": "2026-06-04T06:37:40Z",
+      "updated_at": "2026-06-05T19:24:41Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "3282a74bc323a737fd55d53c2a88b1d8fe651619",
+        "to": "d19a3220d7b61af86c4d7a8a978a76f94dbbaa71",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-06-04T06:59:06Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "de1dd620184356193b9864118dd4162b11938dd7",
+      "started_at": "2026-05-31T01:25:00Z",
+      "completed_at": "2026-06-24T00:02:17Z",
+      "updated_at": "2026-06-24T00:02:17Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-05-31T01:25:00Z",
+        "last_session_at": "2026-05-31T02:30:00Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "de1dd620184356193b9864118dd4162b11938dd7",
+        "method": "binary-equiv",
+        "detail": "Makefile-only build-detection change (pin --gcc-install-dir when hipcc's chosen GCC lacks libstdc++ headers; locate amdgpu-arch via hipconfig). No device or host source touched; in a correctly-configu",
+        "at": "2026-06-24T00:02:17Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "de1dd620184356193b9864118dd4162b11938dd7",
+      "started_at": null,
+      "completed_at": "2026-06-24T00:02:17Z",
+      "updated_at": "2026-06-24T00:02:17Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "de1dd620184356193b9864118dd4162b11938dd7",
+        "method": "binary-equiv",
+        "detail": "Makefile-only build-detection change (pin --gcc-install-dir when hipcc's chosen GCC lacks libstdc++ headers; locate amdgpu-arch via hipconfig). No device or host source touched; in a correctly-configu",
+        "at": "2026-06-24T00:02:17Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "de1dd620184356193b9864118dd4162b11938dd7",
+      "started_at": null,
+      "completed_at": "2026-06-24T00:02:17Z",
+      "updated_at": "2026-06-24T00:02:17Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "de1dd620184356193b9864118dd4162b11938dd7",
+        "method": "binary-equiv",
+        "detail": "Makefile-only build-detection change (pin --gcc-install-dir when hipcc's chosen GCC lacks libstdc++ headers; locate amdgpu-arch via hipconfig). No device or host source touched; in a correctly-configu",
+        "at": "2026-06-24T00:02:17Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "de1dd620184356193b9864118dd4162b11938dd7",
+      "started_at": null,
+      "completed_at": "2026-06-24T00:02:17Z",
+      "updated_at": "2026-06-24T00:02:17Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "de1dd620184356193b9864118dd4162b11938dd7",
+        "method": "binary-equiv",
+        "detail": "Makefile-only build-detection change (pin --gcc-install-dir when hipcc's chosen GCC lacks libstdc++ headers; locate amdgpu-arch via hipconfig). No device or host source touched; in a correctly-configu",
+        "at": "2026-06-24T00:02:17Z"
+      }
+    }
+  },
+  "depends_on": [],
+  "pr_url": "https://github.com/karpathy/llm.c/pull/854",
+  "pr_number": 854,
+  "pr_opened_at": "2026-06-05T19:24:41Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open"
+}

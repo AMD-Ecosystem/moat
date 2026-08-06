@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "name": "Pointcept",
+  "upstream_url": "https://github.com/Pointcept/Pointcept",
+  "fork_url": "https://github.com/AMD-Ecosystem/Pointcept",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "torch-extension",
+  "adopted_at": "2026-06-08T13:34:12Z",
+  "updated_at": "2026-07-06T02:49:04Z",
+  "head_sha": "95f4a51cafc42523364ada3381e71a85a860cd68",
+  "depends_on": [
+    "spconv"
+  ],
+  "platforms": {
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-12T08:22:02Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "95f4a51cafc42523364ada3381e71a85a860cd68",
+      "started_at": "2026-06-12T06:36:59Z",
+      "completed_at": "2026-06-19T15:28:41Z",
+      "updated_at": "2026-07-06T02:49:04Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "moat-checkup",
+      "carry_forward": {
+        "from": "105c4a8b479874f993383109a8dcf0f3fd397d35",
+        "to": "21cbaedbde6dd413f8f8015708e3f96cab66b28f",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-06-24T18:19:14Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "95f4a51cafc42523364ada3381e71a85a860cd68",
+      "started_at": null,
+      "completed_at": "2026-06-18T19:53:35Z",
+      "updated_at": "2026-06-24T18:19:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "from": "105c4a8b479874f993383109a8dcf0f3fd397d35",
+        "to": "21cbaedbde6dd413f8f8015708e3f96cab66b28f",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-06-24T18:19:14Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "95f4a51cafc42523364ada3381e71a85a860cd68",
+      "started_at": null,
+      "completed_at": "2026-06-20T04:56:03Z",
+      "updated_at": "2026-06-24T18:19:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "105c4a8b479874f993383109a8dcf0f3fd397d35",
+        "to": "21cbaedbde6dd413f8f8015708e3f96cab66b28f",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-06-24T18:19:14Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "95f4a51cafc42523364ada3381e71a85a860cd68",
+      "started_at": null,
+      "completed_at": "2026-06-17T06:10:47Z",
+      "updated_at": "2026-06-24T18:19:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "from": "105c4a8b479874f993383109a8dcf0f3fd397d35",
+        "to": "21cbaedbde6dd413f8f8015708e3f96cab66b28f",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-06-24T18:19:14Z"
+      }
+    }
+  },
+  "pr_url": "https://github.com/Pointcept/Pointcept/pull/604",
+  "pr_number": 604,
+  "pr_opened_at": "2026-06-24T18:20:48Z",
+  "pr_merged_at": "2026-07-06T02:49:04Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged"
+}

@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "name": "anari-visionaray",
+  "upstream_url": "https://github.com/szellmann/anari-visionaray",
+  "fork_url": "https://github.com/AMD-Ecosystem/anari-visionaray",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-06-23T14:02:30Z",
+  "updated_at": "2026-06-25T17:31:32Z",
+  "head_sha": "1b6b35a8115e27f1facba0e5db6b1c061086590c",
+  "depends_on": [
+    "visionaray"
+  ],
+  "platforms": {
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-24T14:20:17Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "1b6b35a8115e27f1facba0e5db6b1c061086590c",
+      "started_at": null,
+      "completed_at": "2026-06-25T13:53:11Z",
+      "updated_at": "2026-06-25T15:01:38Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "from": "dd719ef1bc07f705e72b851431e46fd2f82f7a81",
+        "to": "b5112759c1b56a1bcf892c916d7b726a423dc833",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-06-25T07:04:41Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "1b6b35a8115e27f1facba0e5db6b1c061086590c",
+      "started_at": null,
+      "completed_at": "2026-06-25T07:32:47Z",
+      "updated_at": "2026-06-25T15:01:38Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "to": "c7ac989c35b04ed877fbf4bc2e672f1a3875abbc",
+        "method": "binary-equiv",
+        "detail": "device ISA identical on gfx1100; exported symbol diff is host-side inlining of DevicePointer dtor (hipDeviceSynchronize removal); GPU code objects unchanged",
+        "at": "2026-06-25T07:32:47Z"
+      }
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "1b6b35a8115e27f1facba0e5db6b1c061086590c",
+      "started_at": "2026-06-24T00:23:42Z",
+      "completed_at": "2026-06-25T07:32:40Z",
+      "updated_at": "2026-06-25T17:31:32Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
+    },
+    "windows-gfx1101": {
+      "state": "port-ready",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-24T14:20:17Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "pr_url": "https://github.com/szellmann/anari-visionaray/pull/10",
+  "pr_number": 10,
+  "pr_opened_at": "2026-06-25T17:31:32Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open"
+}

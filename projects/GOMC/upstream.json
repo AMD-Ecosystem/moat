@@ -1,0 +1,10 @@
+{
+  "full_name": "GOMC-WSU/GOMC",
+  "upstream_url": "https://github.com/GOMC-WSU/GOMC",
+  "default_branch": "main",
+  "fork_url": null,
+  "ext_type": "cmake",
+  "base_sha": null,
+  "license_spdx": "MIT",
+  "license_source": "GitHub and the licence text agree"
+}

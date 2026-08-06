@@ -1,0 +1,50 @@
+## Validation policy
+
+- A port is validated only when the project's real test suite builds and passes on a real AMD GPU for the target arch, with no regression in non-GPU tests.
+- Coverage is expressed as GATES -- wave64, wave32, windows -- and a gate is satisfied by ANY arch carrying that attribute. No arch leads: whichever host picks the project up ports it, and the rest validate the same branch independently and in parallel.
+- A validation must not introduce a NEW fork commit for anything non-essential (CI YAML, formatting, comments). Advancing head_sha forces every already-passed arch back to `revalidate` for a zero-GPU-effect change -- pure churn. If your arch needs no code change, leave the commit untouched; amend in only a genuinely necessary build/source fix (e.g. configurable arch).
+- A CPU-only docker build (image `rocm/dev-ubuntu-24.04:7.2.4-complete`) proves the code compiles and links under ROCm. It cannot observe any Fault-class bug above, since no GPU runs, so it is never a validation gate. Do NOT wire it into the fork's GitHub Actions: a yml change bumps the fork HEAD sha and forces every platform to revalidate (churn), and the run just fails and emails. Disable Actions on the fork instead; run a CPU-only docker build locally if you want a manual compile check.
+- gfx90a and gfx942 are CDNA (wave64); the gfx11xx/gfx12xx parts are RDNA (wave32). A change that passes on one width can still fail on the other via the warp-size class, which is why each arch validates on its own hardware rather than inheriting a result.
+- PR-prep gate -- nvcc CUDA-build check: before opening any PR whose claim is "the CUDA/NVIDIA build is unchanged", compile the CUDA path (`USE_HIP=OFF`) with nvcc on this GPU-less host (conda `cuda-nvcc`; full recipe in memory `moat-cuda-compile-check-on-rocm-host`). nvcc compiles without an NVIDIA GPU, so this is available on a ROCm-only host, and GPU validation on AMD cannot see a broken CUDA path -- "notes.md says the CUDA path is preserved" is NOT the same as having compiled it. State it honestly in the PR ("compile-checked with nvcc, not run"). REQUIRED when the port adds a CUDA/HIP-split backend (e.g. `Foo_cuda.cpp` vs `Foo_hip.cpp`): that CUDA file is never compiled during HIP-only porting and can be badly broken. The check must reach the LINK stage (build one real target/demo, not compile-only of a single TU) -- the undefined-reference class (e.g. explicit instantiations that do not match real call-site signatures) only surfaces at link. If the fix is HIP-binary-equivalent (codeobj_diff identical), it carries forward with no GPU re-validation.
+  - Setup: point `-I` at the project's deps (vcpkg include dir, plus any CUDA-Samples headers it uses -- `helper_cuda.h`, `helper_math.h`, `helper_string.h`) and select the project's non-MATLAB/Python build macro. For a Thrust/CUB project also install `cuda-cccl`: on CUDA 13.x they ship there under `include/cccl/{thrust,cub}` (nvcc finds them automatically, but a host-compiler OpenMP-backend check needs that path on `-I` explicitly, and stdgpu's CMake wants `THRUST_INCLUDE_DIR` pointed at it).
+  - For a header-only or template library the changed headers only compile when instantiated: CMake-configure the CUDA backend to generate its config headers, then `nvcc -c` a small TU that `template class`-instantiates the affected containers, rather than compiling headers alone.
+  - The class this catches that a HIP-only build cannot: an unconditional device-header include reaching host translation units. Used on 8 projects in one six-week window; it caught a template-shadow regression in Velvet and an stdgpu regression of exactly that include class. (stdgpu, SCAMP, cuSZ, mahout, lc0, cuPDLPx, TIGRE, Velvet)
+## Platforms
+
+A platform is `<os>-<gfx>`, and the set is open: whatever GPU your host reports is a
+platform, and the gates it satisfies follow from its name -- the wavefront width from the
+architecture family, `windows` from the OS. Nothing needs adding anywhere first. The only
+thing that must be known in advance is the wavefront width of a family, because guessing
+it wrong mis-sizes shared memory silently; an unrecognised family is refused with the
+one-line fix (`[wave]` in `config/arches.toml`).
+
+Ones seen so far, for orientation rather than as a roster:
+
+- gfx90a: MI200-class CDNA2, wavefront 64. Satisfies wave64.
+- gfx942: MI300-class CDNA3, wavefront 64. Additive evidence alongside gfx90a; exercises fp8 paths gfx90a cannot.
+- gfx1100: RDNA3 (Radeon), wavefront 32. Watch warp-size assumptions and RDNA occupancy.
+- gfx1201: RDNA4 (RX 9070 XT), wavefront 32. On Windows it satisfies wave32 and windows together; the same GPU on Linux satisfies wave32 alone.
+- gfx1101, gfx1151: wavefront 32. Records already made against them still satisfy gates -- a validation does not stop being true because a machine changed.
+
+## Windows: use TheRock ROCm, not the Windows HIP SDK
+
+**Build and run against a full ROCm distribution from TheRock (its PyTorch wheels and the
+venv around them), never the Windows HIP SDK.** The HIP SDK is a compiler-and-headers
+package: its runtime and library set are narrower than a full ROCm, and a build that picks
+up its `amdhip64` runtime -- or mixes its libraries with TheRock's -- fails at RUNTIME in
+ways that look exactly like a broken port. Symptoms are misleading and widespread rather
+than localized: a process exiting 127, "DLL"/"cannot load"/"image not found", or
+`hipErrorLaunchFailure` (719) on the FIRST kernel launch.
+
+Triage that class as an environment fault, not a GPU or port fault. Fix the environment
+once -- confirm which ROCm the process actually loaded -- and do NOT rebuild in response to
+a DLL-load error; rebuilding a correct binary against a broken runtime is the single
+biggest time sink on Windows. A port is not "broken on Windows" until it has been run
+against a full ROCm distribution.
+
+## Diagnosing a suspected AMD fault before escalating
+
+Two patterns that each cost a deep investigation before the real cause was found.
+
+- **A "data-dependent, later-data-corrupts-earlier, per-tile" corruption signature is the fingerprint of a REPRODUCER bug, not a codegen fault.** cuSZ chased a suspected miscompile to a BLOCKED state and an IR bisect; the actual cause was the test input -- `np.arange(..., dtype=float32) * (python float)` promotes to float64, so `.tofile()` wrote 8 bytes per element and the tool read the stream as f32. Validate the byte width and dtype of any binary test input before escalating to an ISA bisect or a ROCm bug report. (cuSZ)
+- **Triangulate single- against double-precision before blaming the wavefront.** When a warp-collective rewrite shows SP divergence, run a second GPU variant and compare both to the DP oracle. If both GPU variants diverge from DP identically at the same positions, and the DP path is bit-identical to the CPU oracle, it is floating-point reassociation at a comparison boundary -- not a wave-size fault. SCAMP used this to clear a ~0.5 divergence at 10/8093 positions as a threshold-boundary artifact. (SCAMP)

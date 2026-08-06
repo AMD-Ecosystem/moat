@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "name": "FastGeodis",
+  "upstream_url": "https://github.com/masadcv/FastGeodis",
+  "fork_url": "https://github.com/AMD-Ecosystem/FastGeodis",
+  "fork_default_branch": "master",
+  "priority": 0.0,
+  "ext_type": "torch-extension",
+  "adopted_at": "2026-06-05T01:24:38Z",
+  "updated_at": "2026-08-05T16:07:17Z",
+  "head_sha": "5fc19ecea7e516778ab4db264e584230c83676b4",
+  "depends_on": [],
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "5fc19ecea7e516778ab4db264e584230c83676b4",
+      "started_at": "2026-06-05T07:02:42Z",
+      "completed_at": "2026-06-08T01:39:34Z",
+      "updated_at": "2026-06-08T01:39:34Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "5fc19ecea7e516778ab4db264e584230c83676b4",
+      "started_at": null,
+      "completed_at": "2026-06-08T01:46:07Z",
+      "updated_at": "2026-06-08T01:46:07Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "5fc19ecea7e516778ab4db264e584230c83676b4",
+        "method": "binary-equiv",
+        "detail": "Windows-only /ALTERNATENAME guard never executes on Linux; codeobj_diff identical (552 exports, device ISA identical)",
+        "at": "2026-06-08T01:46:07Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "5fc19ecea7e516778ab4db264e584230c83676b4",
+      "started_at": null,
+      "completed_at": "2026-06-19T23:52:46Z",
+      "updated_at": "2026-06-19T23:52:46Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "5fc19ecea7e516778ab4db264e584230c83676b4",
+      "started_at": null,
+      "completed_at": "2026-06-08T00:59:17Z",
+      "updated_at": "2026-06-08T00:59:17Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T07:18:35Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "porting": null,
+  "waivers": {}
+}

@@ -1,0 +1,10 @@
+{
+  "full_name": "SJTU-IPADS/PhoenixOS",
+  "upstream_url": "https://github.com/SJTU-IPADS/PhoenixOS",
+  "default_branch": "v0",
+  "fork_url": null,
+  "ext_type": "meson",
+  "base_sha": null,
+  "license_spdx": "Apache-2.0",
+  "license_source": "GitHub and the licence text agree"
+}

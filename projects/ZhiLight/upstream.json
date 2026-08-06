@@ -1,0 +1,10 @@
+{
+  "full_name": "zhihu/ZhiLight",
+  "upstream_url": "https://github.com/zhihu/ZhiLight",
+  "default_branch": "main",
+  "fork_url": "https://github.com/AMD-Ecosystem/ZhiLight",
+  "ext_type": "cmake",
+  "base_sha": null,
+  "license_spdx": "Apache-2.0",
+  "license_source": "GitHub and the licence text agree"
+}

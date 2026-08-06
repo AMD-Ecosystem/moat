@@ -1,0 +1,173 @@
+{
+  "schema_version": 1,
+  "name": "evogp",
+  "upstream_url": "https://github.com/EMI-Group/evogp",
+  "fork_url": "https://github.com/AMD-Ecosystem/evogp",
+  "fork_default_branch": "main",
+  "priority": 4.627,
+  "ext_type": "torch-extension",
+  "adopted_at": "2026-05-30T01:04:51Z",
+  "updated_at": "2026-08-06T02:33:28Z",
+  "head_sha": "0d2e5711cf423e47065f83b96885e8f3c0eb23f6",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "0d2e5711cf423e47065f83b96885e8f3c0eb23f6",
+      "started_at": "2026-06-02T01:09:24Z",
+      "completed_at": "2026-06-02T01:55:59Z",
+      "updated_at": "2026-06-18T18:54:00Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "moat-checkup",
+      "carry_forward": {
+        "from": "6bbf08f",
+        "to": "c0538eeed656a4386420f7b8f35337cfffb16857",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-06-17T14:41:25Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "0d2e5711cf423e47065f83b96885e8f3c0eb23f6",
+      "started_at": "2026-06-02T02:02:00Z",
+      "completed_at": "2026-06-02T02:10:00Z",
+      "updated_at": "2026-06-17T14:42:13Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 39,
+          "test": 7,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-02T02:02:00Z",
+        "last_session_at": "2026-06-02T02:10:00Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "6bbf08f",
+        "to": "c0538eeed656a4386420f7b8f35337cfffb16857",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-06-17T14:41:25Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "0d2e5711cf423e47065f83b96885e8f3c0eb23f6",
+      "started_at": "2026-06-05T00:03:00Z",
+      "completed_at": "2026-06-06T00:06:55Z",
+      "updated_at": "2026-06-17T14:42:13Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 29,
+          "test": 10,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-06T00:03:00Z",
+        "last_session_at": "2026-06-06T00:06:55Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "6bbf08f",
+        "to": "c0538eeed656a4386420f7b8f35337cfffb16857",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-06-17T14:41:25Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "0d2e5711cf423e47065f83b96885e8f3c0eb23f6",
+      "started_at": "2026-06-07T04:30:00Z",
+      "completed_at": "2026-06-07T04:33:41Z",
+      "updated_at": "2026-06-17T14:42:13Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 29,
+          "test": 7,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "6bbf08f",
+        "to": "c0538eeed656a4386420f7b8f35337cfffb16857",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-06-17T14:41:25Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": true,
+      "blocked_reason": "windows-gfx1151 host retired (superseded by the gfx1101/gfx1201 machine); validation moved to windows-gfx1101 and windows-gfx1201",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T19:41:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "pr_url": "https://github.com/EMI-Group/evogp/pull/12",
+  "pr_number": 12,
+  "pr_opened_at": "2026-06-17T14:45:14Z",
+  "pr_merged_at": "2026-06-18T18:54:00Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged",
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:33:28Z",
+    "tier": 3,
+    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
+  }
+}

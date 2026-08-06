@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "name": "cuBQL",
+  "upstream_url": "https://github.com/NVIDIA/cuBQL",
+  "fork_url": "https://github.com/AMD-Ecosystem/cuBQL",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-06-15T22:09:37Z",
+  "updated_at": "2026-06-19T21:43:21Z",
+  "head_sha": "b0ea6a1712b40809df28950c9bb3746bc6e99083",
+  "depends_on": [],
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "b0ea6a1712b40809df28950c9bb3746bc6e99083",
+      "started_at": "2026-06-15T22:19:19Z",
+      "completed_at": "2026-06-17T00:28:41Z",
+      "updated_at": "2026-06-18T18:54:00Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "moat-checkup",
+      "carry_forward": {
+        "to": "aa597e99b5a9b8a4408ab60006ec95b703fb50c5",
+        "method": "source-class",
+        "detail": "comment-only fix to a CMake comment; no code change",
+        "at": "2026-06-17T00:28:41Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "b0ea6a1712b40809df28950c9bb3746bc6e99083",
+      "started_at": null,
+      "completed_at": "2026-06-17T00:28:42Z",
+      "updated_at": "2026-06-17T00:28:43Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "to": "aa597e99b5a9b8a4408ab60006ec95b703fb50c5",
+        "method": "source-class",
+        "detail": "comment-only fix to a CMake comment; no code change",
+        "at": "2026-06-17T00:28:42Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "b0ea6a1712b40809df28950c9bb3746bc6e99083",
+      "started_at": null,
+      "completed_at": "2026-06-19T21:43:21Z",
+      "updated_at": "2026-06-19T21:43:21Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "b0ea6a1712b40809df28950c9bb3746bc6e99083",
+      "started_at": null,
+      "completed_at": "2026-06-17T00:28:41Z",
+      "updated_at": "2026-06-17T00:28:43Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "to": "aa597e99b5a9b8a4408ab60006ec95b703fb50c5",
+        "method": "source-class",
+        "detail": "comment-only fix to a CMake comment; no code change",
+        "at": "2026-06-17T00:28:41Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-15T23:05:46Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "pr_url": "https://github.com/NVIDIA/cuBQL/pull/35",
+  "pr_number": 35,
+  "pr_opened_at": "2026-06-17T00:33:21Z",
+  "pr_merged_at": "2026-06-18T18:53:23Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged"
+}

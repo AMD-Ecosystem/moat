@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "name": "op43dgs",
+  "upstream_url": "https://github.com/LetianHuang/op43dgs",
+  "fork_url": "https://github.com/AMD-Ecosystem/op43dgs",
+  "fork_default_branch": "main",
+  "priority": 3.393,
+  "ext_type": "torch-extension",
+  "adopted_at": "2026-05-30T01:04:50Z",
+  "updated_at": "2026-08-06T02:41:27Z",
+  "head_sha": "87173958ed14a2924349187e9e9f2744cee2c93a",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "87173958ed14a2924349187e9e9f2744cee2c93a",
+      "started_at": "2026-06-01T00:39:24Z",
+      "completed_at": "2026-06-08T00:26:12Z",
+      "updated_at": "2026-06-08T00:26:12Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "87173958ed14a2924349187e9e9f2744cee2c93a",
+      "started_at": "2026-06-01T20:35:00Z",
+      "completed_at": "2026-06-08T00:54:41Z",
+      "updated_at": "2026-06-08T00:54:41Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-01T20:35:00Z",
+        "last_session_at": "2026-06-01T20:47:00Z"
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "87173958ed14a2924349187e9e9f2744cee2c93a",
+      "started_at": null,
+      "completed_at": "2026-06-20T04:25:35Z",
+      "updated_at": "2026-06-20T04:25:35Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "87173958ed14a2924349187e9e9f2744cee2c93a",
+      "started_at": "2026-06-07T22:17:32Z",
+      "completed_at": "2026-06-07T22:17:32Z",
+      "updated_at": "2026-06-07T22:17:32Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": true,
+      "blocked_reason": "windows-gfx1151 host retired (superseded by the gfx1101/gfx1201 machine); validation moved to windows-gfx1101 and windows-gfx1201",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T19:41:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "porting": null,
+  "waivers": {},
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:41:27Z",
+    "tier": 4,
+    "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
+  }
+}

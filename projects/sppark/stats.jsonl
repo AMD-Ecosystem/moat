@@ -1,0 +1,54 @@
+{"kind": "tokens", "ts": "2026-06-04T21:47:19Z", "tokens": 109612, "source": "planner"}
+{"kind":"phase","ts":"2026-06-04T22:18:08Z","phase":"compile","seconds":0.036,"exit":101,"cmd":"cargo build --release --features=rocm,bls12_381"}
+{"kind": "tokens", "ts": "2026-06-04T22:26:53Z", "tokens": 104032, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-05T14:16:33Z", "tokens": 174565, "source": "porter (MSM attempt)"}
+{"kind": "tokens", "ts": "2026-06-05T14:39:31Z", "tokens": 186859, "source": "porter (host/device guards attempt)"}
+{"kind": "tokens", "ts": "2026-06-05T14:57:17Z", "tokens": 168786, "source": "porter (host/device stubs attempt)"}
+{"kind": "tokens", "ts": "2026-06-05T15:25:49Z", "tokens": 154528, "source": "porter (host/device analysis)"}
+{"kind":"session","ts":"2026-06-11T23:06:31Z","epoch":1781219191.412227317,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-06-11T23:27:26Z","phase":"compile","seconds":9.892,"exit":101,"cmd":"bash agent_space/sppark_build_msm.sh"}
+{"kind":"phase","ts":"2026-06-11T23:35:53Z","phase":"compile","seconds":9.350,"exit":0,"cmd":"bash agent_space/sppark_build_msm.sh"}
+{"kind":"phase","ts":"2026-06-11T23:36:14Z","phase":"test","seconds":8.846,"exit":101,"cmd":"bash agent_space/sppark_test_msm.sh"}
+{"kind":"phase","ts":"2026-06-12T00:19:10Z","phase":"test","seconds":103.552,"exit":0,"cmd":"bash agent_space/sppark_validate.sh"}
+{"kind":"session","ts":"2026-06-12T00:20:33Z","epoch":1781223633.029249471,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-06-12T05:07:40Z", "tokens": 110424, "source": "reviewer"}
+{"kind":"phase","ts":"2026-06-12T05:22:57Z","phase":"compile","seconds":0.034,"exit":101,"cmd":"cargo build --release --features=bls12_381"}
+{"kind":"phase","ts":"2026-06-12T05:23:11Z","phase":"compile","seconds":5.966,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/sppark/src/poc/msm-cuda && cargo build --release --features=bls12_381"}
+{"kind":"phase","ts":"2026-06-12T05:23:26Z","phase":"test","seconds":8.925,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/sppark/src/poc/msm-cuda && TEST_NPOW=15 cargo test --release --features=bls12_381 -- --nocapture"}
+{"kind":"phase","ts":"2026-06-12T05:23:41Z","phase":"test","seconds":7.648,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/sppark/src/poc/msm-cuda && TEST_NPOW=14 cargo test --release --features=bls12_377 -- --nocapture"}
+{"kind": "tokens", "ts": "2026-06-12T06:20:47Z", "tokens": 64426, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-12T06:35:35Z", "tokens": 56402, "source": "reviewer"}
+{"kind":"phase","ts":"2026-06-12T06:36:39Z","phase":"compile","seconds":0.035,"exit":101,"cmd":"cargo build --release --features=bls12_381"}
+{"kind":"phase","ts":"2026-06-12T06:36:43Z","phase":"compile","seconds":0.034,"exit":101,"cmd":"cargo build --release --features=bls12_381"}
+{"kind":"phase","ts":"2026-06-12T06:36:56Z","phase":"compile","seconds":0.093,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/sppark/src/poc/msm-cuda && cargo build --release --features=bls12_381"}
+{"kind":"phase","ts":"2026-06-12T06:37:02Z","phase":"test","seconds":0.675,"exit":101,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/sppark/src/poc/msm-cuda && TEST_NPOW=15 cargo test --release --features=bls12_381 -- --nocapture 2>&1"}
+{"kind":"phase","ts":"2026-06-12T06:48:20Z","phase":"compile","seconds":0.024,"exit":101,"cmd":"env NVCC=off HIPCC=/opt/rocm/bin/hipcc cargo build --release --features=bls12_381"}
+{"kind":"phase","ts":"2026-06-12T06:48:25Z","phase":"compile","seconds":0.036,"exit":101,"cmd":"env NVCC=off HIPCC=/opt/rocm/bin/hipcc cargo build --release --features=bls12_381"}
+{"kind": "phase", "ts": "2026-06-12T00:00:00Z", "phase": "compile", "seconds": 0.092, "exit": 0, "cmd": "NVCC=off HIPCC=/opt/rocm/bin/hipcc cargo build --release --features=bls12_381"}
+{"kind": "tokens", "ts": "2026-06-12T00:21:34Z", "tokens": 432339, "source": "porter"}
+{"kind":"session","ts":"2026-06-12T07:16:04Z","epoch":1781248564.916253501,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-06-12T07:16:12Z","phase":"compile","seconds":0.027,"exit":101,"cmd":"cargo build --release --features=bls12_381"}
+{"kind":"phase","ts":"2026-06-12T07:16:42Z","phase":"compile","seconds":0.026,"exit":101,"cmd":"cargo build --release --features=bls12_377"}
+{"kind":"phase","ts":"2026-06-12T07:16:55Z","phase":"compile","seconds":4.239,"exit":0,"cmd":"cargo build --release --features=bls12_377"}
+{"kind":"phase","ts":"2026-06-12T07:17:02Z","phase":"compile","seconds":0.080,"exit":0,"cmd":"cargo build --release --features=bls12_381"}
+{"kind":"phase","ts":"2026-06-12T07:17:24Z","phase":"test","seconds":6.830,"exit":0,"cmd":"cargo test --release --features=bls12_381 TEST_NPOW=15"}
+{"kind":"phase","ts":"2026-06-12T07:17:35Z","phase":"test","seconds":1.326,"exit":0,"cmd":"cargo test --release --features=bls12_377 TEST_NPOW=14"}
+{"kind":"phase","ts":"2026-06-12T07:17:48Z","phase":"test","seconds":5.675,"exit":0,"cmd":"cargo build --release --features=bn254 (gate check)"}
+{"kind":"phase","ts":"2026-06-12T07:18:53Z","phase":"test","seconds":13.276,"exit":0,"cmd":"ntt-cuda cargo test --release --features=bls12_381"}
+{"kind":"session","ts":"2026-06-12T07:20:20Z","epoch":1781248820.308574714,"event":"end","platform":"linux-gfx1100"}
+{"kind": "tokens", "ts": "2026-06-12T07:21:19Z", "tokens": 56168, "source": "validator"}
+{"kind":"phase","ts":"2026-06-12T08:46:46Z","phase":"compile","seconds":0.146,"exit":101,"cmd":"env NVCC=off HIPCC=B:/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_devel/bin/hipcc.exe HIP_VISIBLE_DEVICES=1 B:/develop/moat/agent_space/cargo/bin/cargo build --release --features=bls12_381"}
+{"kind": "tokens", "ts": "2026-06-12T09:06:30Z", "tokens": 148231, "source": "validator (windows-gfx1201 first-validation)"}
+{"kind": "tokens", "ts": "2026-06-12T15:20:54Z", "tokens": 60756, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-12T07:20:01Z", "tokens": 73698, "source": "validator"}
+{"kind":"phase","ts":"2026-06-12T18:38:56Z","phase":"compile","seconds":0.039,"exit":0,"cmd":"bash -c export HIP_VISIBLE_DEVICES=0 NVCC=off HIPCC=/opt/rocm/bin/hipcc PATH=/var/lib/jenkins/.cargo/bin:$PATH && \\\n  cargo build --release --features=bls12_381 2>&1 | tail -20 && echo \"bls12_381 BUILD EXIT: $?\""}
+{"kind":"phase","ts":"2026-06-12T18:39:31Z","phase":"compile","seconds":0.178,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/sppark/src/poc/msm-cuda && \\\n  export PATH=/var/lib/jenkins/.cargo/bin:$PATH && \\\n  HIP_VISIBLE_DEVICES=0 NVCC=off HIPCC=/opt/rocm/bin/hipcc cargo build --release --features=bls12_381 2>&1 | grep -E \"(Finished|error)\" && \\\n  HIP_VISIBLE_DEVICES=0 NVCC=off HIPCC=/opt/rocm/bin/hipcc cargo build --release --features=bls12_377 2>&1 | grep -E \"(Finished|error)\""}
+{"kind":"phase","ts":"2026-06-12T18:40:34Z","phase":"test","seconds":5.884,"exit":0,"cmd":"bash -c \n    export PATH=/var/lib/jenkins/.cargo/bin:$PATH\n    export HIP_VISIBLE_DEVICES=0 NVCC=off HIPCC=/opt/rocm/bin/hipcc TEST_NPOW=15\n    cd /var/lib/jenkins/moat/projects/sppark/src/poc/msm-cuda\n    cargo test --release --features=bls12_381 -- --nocapture 2>&1 | grep -E \"(running|test msm|result|ok|FAILED)\"\n    export TEST_NPOW=14\n    cargo test --release --features=bls12_377 -- --nocapture 2>&1 | grep -E \"(running|test msm|result|ok|FAILED)\"\n    export SPPARK_FORCE_NONCOOP=1 TEST_NPOW=12\n    cargo test --release --features=bls12_381 msm_correctness_sizes -- --nocapture 2>&1 | grep -E \"(running|test msm|result|ok|FAILED)\"\n  "}
+{"kind": "tokens", "ts": "2026-06-12T18:42:15Z", "tokens": 63148, "source": "validator"}
+{"kind":"phase","ts":"2026-06-15T23:07:04Z","phase":"compile","seconds":0.027,"exit":101,"cmd":"cargo build --release --features=bls12_381"}
+{"kind":"phase","ts":"2026-06-15T23:07:16Z","phase":"compile","seconds":6.201,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/sppark/src/poc/msm-cuda && cargo build --release --features=bls12_381"}
+{"kind":"phase","ts":"2026-06-15T23:07:29Z","phase":"compile","seconds":4.157,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/sppark/src/poc/msm-cuda && cargo build --release --features=bls12_377"}
+{"kind":"phase","ts":"2026-06-15T23:07:36Z","phase":"test","seconds":2.367,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/sppark/src/poc/msm-cuda && cargo test --release --features=bls12_381 -- --nocapture"}
+{"kind":"phase","ts":"2026-06-15T23:07:47Z","phase":"test","seconds":2.083,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/sppark/src/poc/msm-cuda && cargo test --release --features=bls12_377 -- --nocapture"}
+{"kind": "tokens", "ts": "2026-06-15T23:11:11Z", "tokens": 75368, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-20T00:30:00Z", "tokens": 42897, "source": "porter (PR-prep + nvcc check)"}

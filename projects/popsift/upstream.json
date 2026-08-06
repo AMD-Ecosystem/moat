@@ -1,0 +1,15 @@
+{
+  "full_name": "alicevision/popsift",
+  "upstream_url": "https://github.com/alicevision/popsift",
+  "default_branch": "develop",
+  "fork_url": null,
+  "ext_type": "unknown",
+  "base_sha": null,
+  "pr_url": "https://github.com/alicevision/popsift/pull/186",
+  "pr_number": 186,
+  "pr_head_sha": "5ee4973c7420f4303392363f10f9ac0c4724f30d",
+  "pr_opened_at": "2026-06-03",
+  "pr_state": "open",
+  "license_spdx": "MPL-2.0",
+  "license_source": "GitHub and the licence text agree"
+}

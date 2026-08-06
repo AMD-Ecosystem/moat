@@ -1,0 +1,12 @@
+{
+  "full_name": "brian-team/brian2cuda",
+  "upstream_url": "https://github.com/brian-team/brian2cuda",
+  "default_branch": "master",
+  "fork_url": "https://github.com/AMD-Ecosystem/brian2cuda",
+  "ext_type": "codegen",
+  "base_sha": "d7758060e93aae0f4593842474775e372f34f736",
+  "outcome_note": "Contribution cleared 2026-08-05. Covers CONTRIBUTING a fix upstream only -- not using this project in AMD software, shipping it, or depending on it. A non-commercial licence in particular bars use while leaving contribution unremarkable, so if this ever becomes a dependency rather than a contribution, that is a new question.",
+  "license_spdx": "GPL-3.0",
+  "approved_at": "2026-08-05T23:10:07Z",
+  "approval_scope": "contribute-only"
+}

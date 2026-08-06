@@ -1,0 +1,82 @@
+{"kind": "tokens", "ts": "2026-06-04T04:31:38Z", "tokens": 81811}
+{"kind":"phase","ts":"2026-06-04T04:51:12Z","phase":"compile","seconds":62.494,"exit":0,"cmd":"bash -c cd projects/3/src/cuda && make wrappers CUDA_CC=gfx90a 2>&1 | tail -25"}
+{"kind":"phase","ts":"2026-06-04T04:51:26Z","phase":"compile","seconds":0.439,"exit":0,"cmd":"bash -c cd projects/3/src && go build ./cuda/ 2>&1 | grep -viE \"deprecated|declared here|hipError_t|cgo-gcc-prolog|note:|\\^|^\\s+[0-9]+ \\||In function|In file included|from cuda\" | head -40; echo \"cuda build exit ${PIPESTATUS[0]}\""}
+{"kind":"phase","ts":"2026-06-04T04:55:07Z","phase":"compile","seconds":5.411,"exit":0,"cmd":"bash -c cd projects/3/src && go build ./... 2>/tmp/allbuild.txt; echo \"go build ./... exit $?\"; grep -iE \"\\.go:[0-9]+:[0-9]+:|error:|undefined\" /tmp/allbuild.txt | grep -viE \"deprecated|declared here\" | head -30"}
+{"kind":"phase","ts":"2026-06-04T04:57:13Z","phase":"compile","seconds":1.711,"exit":0,"cmd":"bash -c cd projects/3/src && go install github.com/mumax/3/... 2>/tmp/inst.txt; echo \"install exit $?\"; grep -iE \"error\" /tmp/inst.txt | grep -viE \"deprecated\" | head"}
+{"kind":"phase","ts":"2026-06-04T05:00:18Z","phase":"test","seconds":0.219,"exit":0,"cmd":"bash -c cd projects/3/src/test && /var/lib/jenkins/go/bin/mumax3 -vet *.mx3 2>&1 | tail -5; echo \"vet exit ${PIPESTATUS[0]}\""}
+{"kind": "tokens", "ts": "2026-06-04T05:14:47Z", "tokens": 249115}
+{"kind": "tokens", "ts": "2026-06-04T05:20:26Z", "tokens": 127434}
+{"kind":"phase","ts":"2026-06-04T06:08:41Z","phase":"compile","seconds":0.005,"exit":2,"cmd":"make wrappers CUDA_CC=gfx1100"}
+{"kind":"phase","ts":"2026-06-04T06:08:54Z","phase":"compile","seconds":0.005,"exit":2,"cmd":"make wrappers CUDA_CC=gfx1100"}
+{"kind":"phase","ts":"2026-06-04T06:10:27Z","phase":"compile","seconds":0.118,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/build_mumax3_gfx1100.sh"}
+{"kind":"phase","ts":"2026-06-04T06:20:52Z","phase":"test","seconds":603.995,"exit":1,"cmd":"bash /var/lib/jenkins/moat/agent_space/test_cuda_gfx1100.sh"}
+{"kind":"phase","ts":"2026-06-04T06:22:13Z","phase":"test","seconds":1.150,"exit":1,"cmd":"bash /var/lib/jenkins/moat/agent_space/test_cuda_gfx1100.sh"}
+{"kind":"phase","ts":"2026-06-04T06:24:12Z","phase":"test","seconds":3.241,"exit":1,"cmd":"bash /var/lib/jenkins/moat/agent_space/test_all_go_gfx1100.sh"}
+{"kind":"phase","ts":"2026-06-04T06:25:52Z","phase":"test","seconds":0.142,"exit":1,"cmd":"bash /var/lib/jenkins/moat/agent_space/test_vet_gfx1100.sh"}
+{"kind":"phase","ts":"2026-06-04T06:38:21Z","phase":"test","seconds":719.960,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/test_full_gfx1100.sh"}
+{"kind": "tokens", "ts": "2026-06-04T05:35:26Z", "tokens": 62149}
+{"kind":"phase","ts":"2026-06-04T17:53:08Z","phase":"compile","seconds":0.022,"exit":0,"cmd":"go install github.com/mumax/3/..."}
+{"kind": "tokens", "ts": "2026-06-04T06:42:44Z", "tokens": 87359, "source": "validator"}
+{"kind":"phase","ts":"2026-06-07T22:33:21Z","phase":"compile","seconds":3.692,"exit":0,"cmd":"bash -c \n  cd 'B:/develop/moat/projects/3/src/cuda'\n  export HIP_VISIBLE_DEVICES=0\n  HIPCC='B:/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_devel/bin/hipcc'\n  HIPCCFLAGS='-O3 -Wall -Werror -Wno-bitwise-instead-of-logical --genco -include hip/hip_runtime.h -I.'\n  \n  # Compile all .cu files in parallel (up to 32 jobs)\n  compile_cu() {\n    local cufile=\"$1\"\n    local base=\"${cufile%.cu}\"\n    rm -f \"${base}\"_*.co\n    $HIPCC $HIPCCFLAGS --offload-arch=gfx1201 \"$cufile\" -o \"${base}_gfx1201.co\" 2>&1\n    local exit_code=$?\n    if [ $exit_code -eq 0 ]; then\n      echo \"  OK: ${base}_gfx1201.co\"\n    else\n      echo \"  FAIL: $cufile (exit $exit_code)\" >&2\n      exit $exit_code\n    fi\n  }\n  export -f compile_cu\n  export HIPCC HIPCCFLAGS\n  \n  ls *.cu | xargs -P32 -I{} bash -c 'compile_cu \"$@\"' _ {}\n"}
+{"kind":"phase","ts":"2026-06-07T22:33:46Z","phase":"compile","seconds":0.047,"exit":0,"cmd":"B:/develop/go_root/go/bin/go install -v github.com/mumax/3/..."}
+{"kind":"phase","ts":"2026-06-07T22:48:04Z","phase":"test","seconds":7.327,"exit":0,"cmd":"python3 B:/develop/moat/agent_space/run_mumax3_tests2.py"}
+{"kind":"phase","ts":"2026-06-08T00:18:23Z","phase":"compile","seconds":0.010,"exit":1,"cmd":"go install ./..."}
+{"kind":"phase","ts":"2026-06-08T00:18:30Z","phase":"compile","seconds":2.195,"exit":1,"cmd":"go install github.com/mumax/3"}
+{"kind":"phase","ts":"2026-06-08T00:18:38Z","phase":"compile","seconds":0.014,"exit":0,"cmd":"go install github.com/mumax/3/..."}
+{"kind":"phase","ts":"2026-06-08T00:18:56Z","phase":"compile","seconds":0.010,"exit":1,"cmd":"go install ./..."}
+{"kind":"phase","ts":"2026-06-08T00:19:01Z","phase":"compile","seconds":0.010,"exit":1,"cmd":"go build -v ./cmd/mumax3/..."}
+{"kind":"phase","ts":"2026-06-08T00:45:12Z","phase":"compile","seconds":0.004,"exit":2,"cmd":"make wrappers CUDA_CC=gfx1100"}
+{"kind":"phase","ts":"2026-06-08T00:45:20Z","phase":"compile","seconds":0.004,"exit":2,"cmd":"make CUDA_CC=gfx1100"}
+{"kind":"phase","ts":"2026-06-08T00:45:32Z","phase":"compile","seconds":0.006,"exit":2,"cmd":"make CUDA_CC=gfx1100"}
+{"kind":"phase","ts":"2026-06-08T00:46:28Z","phase":"compile","seconds":45.721,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/3/src/cuda && make CUDA_CC=gfx1100"}
+{"kind":"phase","ts":"2026-06-08T00:49:16Z","phase":"compile","seconds":47.800,"exit":0,"cmd":"bash -c \nexport GOROOT=/var/lib/jenkins/goroot\nexport PATH=/var/lib/jenkins/goroot/bin:/opt/rocm/bin:$PATH\nexport GOPATH=/var/lib/jenkins/go\nexport CGO_ENABLED=1\nexport GOFLAGS=-mod=mod\nexport HIP_VISIBLE_DEVICES=0\ncd /var/lib/jenkins/moat/projects/3/src/cuda\nmake CUDA_CC=gfx1100\necho \"=== Make exit $? ===\"\ncd ..\ngo build ./cmd/mumax3 2>&1\necho \"=== Build exit $? ===\"\n"}
+{"kind": "tokens", "ts": "2026-06-08T00:56:26Z", "tokens": 69538, "source": "validator"}
+{"kind":"phase","ts":"2026-06-08T04:15:51Z","phase":"test","seconds":12.851,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/3/src/test && for s in demag2D.mx3 cubicanisotropy.mx3 anisenergyconservation.mx3 dmi.mx3; do echo \"=== $s ===\"; HIP_VISIBLE_DEVICES=0 /var/lib/jenkins/go/bin/mumax3 -cache /tmp -http \"\" \"$s\" 2>&1 | grep -iE \": OK|FAIL|expect|panic|error\" | grep -v \"deprecated\" | head -6; done"}
+{"kind": "tokens", "ts": "2026-06-08T04:21:27Z", "tokens": 209138, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-08T04:33:18Z", "tokens": 123473, "source": "reviewer"}
+{"kind":"phase","ts":"2026-06-08T04:39:24Z","phase":"compile","seconds":0.035,"exit":2,"cmd":"make wrappers BACKEND=hip CUDA_CC=gfx90a"}
+{"kind":"phase","ts":"2026-06-08T04:43:05Z","phase":"compile","seconds":0.015,"exit":0,"cmd":"go install -tags hip github.com/mumax/3/..."}
+{"kind": "tokens", "ts": "2026-06-08T13:45:29Z", "tokens": 54130, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-07T22:55:55Z", "tokens": 44226, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-08T20:54:53Z", "tokens": 26777, "source": "revalidate-batch"}
+{"kind":"phase","ts":"2026-06-08T21:17:56Z","phase":"compile","seconds":0.057,"exit":0,"cmd":"go install -tags hip -v github.com/mumax/3/..."}
+{"kind":"phase","ts":"2026-06-08T21:18:14Z","phase":"compile","seconds":0.048,"exit":1,"cmd":"go install -tags hip ./..."}
+{"kind":"phase","ts":"2026-06-08T21:18:56Z","phase":"test","seconds":0.045,"exit":1,"cmd":"go test -tags hip -v -count=1 ./cuda/cu/..."}
+{"kind":"phase","ts":"2026-06-08T21:21:07Z","phase":"compile","seconds":0.048,"exit":1,"cmd":"go build -tags hip ./..."}
+{"kind":"phase","ts":"2026-06-08T21:21:16Z","phase":"compile","seconds":0.398,"exit":0,"cmd":"bash -c cd projects/3/src && go build -tags hip github.com/mumax/3/... 2>&1 | grep -v deprecated | grep -v declared | grep -v 'note:' | grep -v cgo-gcc | tail -5"}
+{"kind":"phase","ts":"2026-06-08T21:21:32Z","phase":"test","seconds":6.942,"exit":0,"cmd":"bash -c \ncd projects/3/src &&\ngo test -tags hip -count=1 github.com/mumax/3/cuda/cu &&\ngo test -tags hip -count=1 github.com/mumax/3/cuda &&\ngo test -tags hip -count=1 github.com/mumax/3/cuda/cufft &&\ngo test -tags hip -count=1 github.com/mumax/3/data github.com/mumax/3/httpfs\n"}
+{"kind":"phase","ts":"2026-06-10T20:08:45Z","phase":"compile","seconds":43.565,"exit":0,"cmd":"bash -c cd projects/3/src/cuda && make wrappers BACKEND=hip 2>&1 | tail -20"}
+{"kind":"phase","ts":"2026-06-10T20:09:45Z","phase":"compile","seconds":2.524,"exit":0,"cmd":"bash -c cd projects/3/src && go install -tags hip github.com/mumax/3/... 2>&1 | tail -25"}
+{"kind":"phase","ts":"2026-06-10T20:10:06Z","phase":"test","seconds":8.231,"exit":0,"cmd":"bash -c cd projects/3/src && go test -tags hip -count=1 ./cuda/... ./cuda/cu/... 2>&1 | tail -40"}
+{"kind":"phase","ts":"2026-06-10T20:11:00Z","phase":"test","seconds":9.387,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/3/src && /var/lib/jenkins/go/bin/mumax3 -paranoid=false -cache /tmp -http \"\" test/standardproblem4.mx3 2>&1 | tail -30"}
+{"kind": "tokens", "ts": "2026-06-10T20:16:15Z", "tokens": 104571, "source": "porter (amdgcnspirv re-port)"}
+{"kind":"phase","ts":"2026-06-10T21:52:45Z","phase":"compile","seconds":0.035,"exit":0,"cmd":"go install -tags hip github.com/mumax/3/..."}
+{"kind":"phase","ts":"2026-06-10T21:54:26Z","phase":"compile","seconds":0.014,"exit":0,"cmd":"go install -tags hip github.com/mumax/3/..."}
+{"kind":"phase","ts":"2026-06-10T21:54:58Z","phase":"compile","seconds":0.011,"exit":1,"cmd":"go install -tags hip ./..."}
+{"kind":"phase","ts":"2026-06-10T21:55:09Z","phase":"compile","seconds":0.014,"exit":0,"cmd":"go install -tags hip github.com/mumax/3/..."}
+{"kind":"phase","ts":"2026-06-10T21:55:23Z","phase":"compile","seconds":0.009,"exit":1,"cmd":"go install -tags hip ./cmd/mumax3 ./cmd/mumax3-convert ./cmd/mumax3-httpfsd"}
+{"kind":"phase","ts":"2026-06-10T21:55:32Z","phase":"compile","seconds":0.224,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/3/src && go install -tags hip ./cmd/mumax3 ./cmd/mumax3-convert ./cmd/mumax3-httpfsd"}
+{"kind":"phase","ts":"2026-06-10T21:55:58Z","phase":"test","seconds":17.918,"exit":0,"cmd":"bash -c \ncd /var/lib/jenkins/moat/projects/3/src\necho '=== cuda/ tests ===' && go test -v -tags hip -count=1 ./cuda/ 2>&1\necho '=== cuda/cu/ tests ===' && go test -v -tags hip -count=1 ./cuda/cu/ 2>&1\necho '=== cuda/cufft/ tests ===' && go test -v -tags hip -count=1 ./cuda/cufft/ 2>&1\necho '=== data/httpfs tests ===' && go test -tags hip -count=1 ./data/... ./httpfs/... 2>&1\n"}
+{"kind": "tokens", "ts": "2026-06-10T21:58:38Z", "tokens": 69149, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-08T21:23:38Z", "tokens": 70101, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-10T21:54:01Z", "tokens": 101241, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-10T23:38:20Z", "tokens": 101945, "source": "validator"}
+{"kind":"phase","ts":"2026-06-19T18:11:14Z","phase":"compile","seconds":0.038,"exit":1,"cmd":"go install -tags hip ./..."}
+{"kind":"phase","ts":"2026-06-19T18:11:22Z","phase":"compile","seconds":0.497,"exit":0,"cmd":"go install -tags hip github.com/mumax/3/..."}
+{"kind":"phase","ts":"2026-06-19T18:11:34Z","phase":"compile","seconds":0.038,"exit":1,"cmd":"go install -tags hip ./cmd/mumax3 ./cmd/mumax3-convert ./cmd/mumax3-httpfsd"}
+{"kind":"phase","ts":"2026-06-19T18:11:41Z","phase":"compile","seconds":0.035,"exit":1,"cmd":"go install -tags hip ./cmd/mumax3 ./cmd/mumax3-convert ./cmd/mumax3-httpfsd"}
+{"kind":"phase","ts":"2026-06-19T18:12:22Z","phase":"compile","seconds":0.304,"exit":0,"cmd":"go -C /b/develop/moat/projects/3/src install -tags hip ./cmd/mumax3 ./cmd/mumax3-convert ./cmd/mumax3-httpfsd"}
+{"kind":"phase","ts":"2026-06-19T18:13:24Z","phase":"test","seconds":0.324,"exit":1,"cmd":"B:/develop/moat/agent_space/mumax3-gfx1101-test/cu.test.exe -test.v -test.count=1"}
+{"kind":"phase","ts":"2026-06-19T18:15:32Z","phase":"test","seconds":0.017,"exit":127,"cmd":"./cu.test.exe -test.v -test.count=1"}
+{"kind":"phase","ts":"2026-06-19T19:16:23Z","phase":"test","seconds":2553.304,"exit":0,"cmd":"B:/develop/go_path_gfx1101/bin/mumax3.exe -paranoid=false -http  /b/develop/moat/projects/3/src/test/standardproblem4.mx3"}
+{"kind": "tokens", "ts": "2026-06-19T19:52:30Z", "tokens": 48320, "source": "validator (gfx1101, in progress)"}
+{"kind": "tokens", "ts": "2026-06-19T19:54:37Z", "tokens": 30856, "source": "validator (gfx1101, runaway segment)"}
+{"kind": "phase", "ts": "2026-06-19T19:54:15Z", "phase": "test", "seconds": 2254.0, "exit": 0, "cmd": "B:/develop/go_path_gfx1101/bin/mumax3.exe -paranoid=false -http  /b/develop/moat/projects/3/src/test/standardproblem5.mx3"}
+{"kind":"session","ts":"2026-06-19T19:56:42Z","epoch":1781899002.864312500,"event":"start","platform":"windows-gfx1101"}
+{"kind": "tokens", "ts": "2026-06-19T19:57:25Z", "tokens": 63771, "source": "validator (gfx1101 final/PASS)"}
+{"kind": "tokens", "ts": "2026-06-08T04:45:28Z", "tokens": 65513, "source": "validator"}
+{"kind":"phase","ts":"2026-06-08T13:30:14Z","phase":"compile","seconds":0.006,"exit":2,"cmd":"bash -c make realclean && make wrappers CUDA_CC=gfx1100"}
+{"kind":"phase","ts":"2026-06-08T13:30:30Z","phase":"compile","seconds":0.005,"exit":2,"cmd":"make wrappers CUDA_CC=gfx1100"}
+{"kind":"phase","ts":"2026-06-08T13:30:51Z","phase":"compile","seconds":0.003,"exit":2,"cmd":"make wrappers CUDA_CC=gfx1100"}
+{"kind":"phase","ts":"2026-06-08T13:31:03Z","phase":"compile","seconds":0.004,"exit":2,"cmd":"make wrappers CUDA_CC=gfx1100"}
+{"kind":"phase","ts":"2026-06-08T13:32:47Z","phase":"compile","seconds":0.004,"exit":2,"cmd":"make wrappers BACKEND=hip CUDA_CC=gfx1100"}

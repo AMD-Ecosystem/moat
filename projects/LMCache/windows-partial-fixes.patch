@@ -1,0 +1,24 @@
+diff --git a/csrc/storage_manager/bitmap.cpp b/csrc/storage_manager/bitmap.cpp
+index b43f69de..15c9af7e 100644
+--- a/csrc/storage_manager/bitmap.cpp
++++ b/csrc/storage_manager/bitmap.cpp
+@@ -2,6 +2,19 @@
+ 
+ #include "bitmap.h"
+ 
++#if defined(_MSC_VER)
++// MSVC (the host compiler on Windows) lacks the GCC/Clang bit builtins used below.
++#include <intrin.h>
++static inline int __builtin_popcount(unsigned x) {
++  return static_cast<int>(__popcnt(x));
++}
++static inline int __builtin_ctz(unsigned x) {
++  unsigned long index;
++  _BitScanForward(&index, x);
++  return static_cast<int>(index);
++}
++#endif
++
+ namespace lmcache {
+ namespace storage_manager {
+ 

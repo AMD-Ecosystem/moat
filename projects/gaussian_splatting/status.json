@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "name": "gaussian_splatting",
+  "upstream_url": "https://github.com/joeyan/gaussian_splatting",
+  "fork_url": "https://github.com/AMD-Ecosystem/gaussian_splatting",
+  "fork_default_branch": "main",
+  "priority": 3.571,
+  "ext_type": "torch-extension",
+  "adopted_at": "2026-05-30T03:26:35Z",
+  "updated_at": "2026-06-20T01:45:50Z",
+  "head_sha": "dfb1dd1cbcc508e08c7395b27953620121dad1fc",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "dfb1dd1cbcc508e08c7395b27953620121dad1fc",
+      "started_at": "2026-05-31T23:28:52Z",
+      "completed_at": "2026-06-08T00:14:21Z",
+      "updated_at": "2026-06-17T21:38:21Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "dfb1dd1cbcc508e08c7395b27953620121dad1fc",
+        "method": "source-class",
+        "detail": "tree-identical squash collapse of validated content (280bc3ac -> dfb1dd1); lead stays pr-open for PR #37",
+        "at": "2026-06-17T21:38:21Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "dfb1dd1cbcc508e08c7395b27953620121dad1fc",
+      "started_at": "2026-06-01T20:20:00Z",
+      "completed_at": "2026-06-08T00:31:22Z",
+      "updated_at": "2026-06-17T21:38:21Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 39,
+          "test": 190,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-01T20:20:00Z",
+        "last_session_at": "2026-06-01T20:35:00Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "d7f2227cb285966c290c36efaf7f8240f10379cb",
+        "to": "280bc3acb0bb24c15ae1e4252aa8436df46ad8be",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-06-17T06:03:56Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "dfb1dd1cbcc508e08c7395b27953620121dad1fc",
+      "started_at": null,
+      "completed_at": "2026-06-20T01:45:49Z",
+      "updated_at": "2026-06-20T01:45:49Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "dfb1dd1cbcc508e08c7395b27953620121dad1fc",
+      "started_at": null,
+      "completed_at": "2026-06-07T21:56:30Z",
+      "updated_at": "2026-06-17T21:38:21Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "from": "d7f2227cb285966c290c36efaf7f8240f10379cb",
+        "to": "280bc3acb0bb24c15ae1e4252aa8436df46ad8be",
+        "method": "source-class",
+        "class": "doc-only",
+        "detail": "no changes",
+        "at": "2026-06-17T06:03:56Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": true,
+      "blocked_reason": "windows-gfx1151 host retired (superseded by the gfx1101/gfx1201 machine); validation moved to windows-gfx1101 and windows-gfx1201",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T19:41:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "pr_url": "https://github.com/joeyan/gaussian_splatting/pull/37",
+  "pr_number": 37,
+  "pr_opened_at": "2026-06-17T14:06:59Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open"
+}

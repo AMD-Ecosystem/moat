@@ -1,0 +1,30 @@
+{"kind":"phase","ts":"2026-05-30T07:56:58Z","phase":"compile","seconds":0.256,"exit":1,"cmd":"env HIP_VISIBLE_DEVICES=0 PYTORCH_ROCM_ARCH=gfx1100 python -m pip install -e . --no-build-isolation -v"}
+{"kind":"phase","ts":"2026-05-30T07:57:46Z","phase":"compile","seconds":37.471,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/fused-ssim/src && HIP_VISIBLE_DEVICES=0 PYTORCH_ROCM_ARCH=gfx1100 python -m pip install -e . --no-build-isolation -v"}
+{"kind":"phase","ts":"2026-05-30T07:58:40Z","phase":"test","seconds":1.816,"exit":1,"cmd":"bash -c cd /tmp && HIP_VISIBLE_DEVICES=0 python /var/lib/jenkins/moat/projects/fused-ssim/src/tests/test.py"}
+{"kind":"phase","ts":"2026-05-30T08:01:19Z","phase":"test","seconds":140.812,"exit":0,"cmd":"bash -c cd /tmp && HIP_VISIBLE_DEVICES=0 python /var/lib/jenkins/moat/projects/fused-ssim/src/tests/test.py"}
+{"kind":"phase","ts":"2026-05-30T08:02:11Z","phase":"test","seconds":43.382,"exit":0,"cmd":"bash -c cd /tmp && HIP_VISIBLE_DEVICES=0 python /var/lib/jenkins/moat/projects/fused-ssim/src/tests/test_3D.py"}
+{"kind":"phase","ts":"2026-05-30T08:03:04Z","phase":"test","seconds":2.541,"exit":1,"cmd":"bash -c cd /tmp && HIP_VISIBLE_DEVICES=0 python /var/lib/jenkins/moat/agent_space/fused_ssim_validate_gfx1100.py"}
+{"kind":"phase","ts":"2026-05-30T08:03:24Z","phase":"test","seconds":3.726,"exit":1,"cmd":"bash -c cd /tmp && HIP_VISIBLE_DEVICES=0 python /var/lib/jenkins/moat/agent_space/fused_ssim_validate_gfx1100.py"}
+{"kind":"phase","ts":"2026-05-30T08:03:40Z","phase":"test","seconds":2.453,"exit":0,"cmd":"bash -c cd /tmp && HIP_VISIBLE_DEVICES=0 python /var/lib/jenkins/moat/agent_space/fused_ssim_validate_gfx1100.py"}
+{"kind":"phase","ts":"2026-06-03T20:05:29Z","phase":"compile","seconds":53.625,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/fused-ssim/src && HIP_VISIBLE_DEVICES=0 PYTORCH_ROCM_ARCH=gfx90a python -m pip install -e . --no-build-isolation -v 2>&1 | tail -30"}
+{"kind":"phase","ts":"2026-06-03T20:08:03Z","phase":"test","seconds":146.252,"exit":0,"cmd":"bash -c cd /tmp && HIP_VISIBLE_DEVICES=0 python /var/lib/jenkins/moat/projects/fused-ssim/src/tests/test.py 2>&1"}
+{"kind":"phase","ts":"2026-06-03T20:08:39Z","phase":"test","seconds":3.874,"exit":0,"cmd":"bash -c cd /tmp && HIP_VISIBLE_DEVICES=0 python /var/lib/jenkins/moat/agent_space/fused_ssim_validate.py 2>&1"}
+{"kind": "tokens", "ts": "2026-06-03T21:15:14Z", "tokens": 29435}
+{"kind":"phase","ts":"2026-06-07T18:00:56Z","phase":"compile","seconds":0.487,"exit":1,"cmd":"B:\\develop\\TheRock\\external-builds\\pytorch\\.venv\\Scripts\\python.exe -m pip install -e . --no-build-isolation -v"}
+{"kind":"phase","ts":"2026-06-07T18:05:27Z","phase":"compile","seconds":37.773,"exit":0,"cmd":"B:\\develop\\TheRock\\external-builds\\pytorch\\.venv\\Scripts\\python.exe B:\\develop\\moat\\agent_space\\fused_ssim_build_gfx1201.py"}
+{"kind":"phase","ts":"2026-06-07T18:08:22Z","phase":"compile","seconds":31.139,"exit":0,"cmd":"B:\\develop\\TheRock\\external-builds\\pytorch\\.venv\\Scripts\\python.exe B:\\develop\\moat\\agent_space\\fused_ssim_build_gfx1201.py"}
+{"kind":"phase","ts":"2026-06-07T18:11:08Z","phase":"test","seconds":145.311,"exit":0,"cmd":"B:\\develop\\TheRock\\external-builds\\pytorch\\.venv\\Scripts\\python.exe B:\\develop\\moat\\projects\\fused-ssim\\src\\tests\\test.py"}
+{"kind":"phase","ts":"2026-06-07T18:14:35Z","phase":"test","seconds":78.502,"exit":0,"cmd":"B:\\develop\\TheRock\\external-builds\\pytorch\\.venv\\Scripts\\python.exe B:\\develop\\moat\\projects\\fused-ssim\\src\\tests\\test_3D.py"}
+{"kind":"phase","ts":"2026-06-07T19:12:23Z","phase":"compile","seconds":53.876,"exit":0,"cmd":"conda run -n py_3.12 bash -c cd /tmp/fused-ssim-old && pip install -e . --no-build-isolation -v --prefix=/tmp/fused-ssim-build-old 2>&1 | tail -30"}
+{"kind":"phase","ts":"2026-06-07T19:13:34Z","phase":"compile","seconds":54.603,"exit":0,"cmd":"conda run -n py_3.12 bash -c cd /tmp/fused-ssim-new && pip install -e . --no-build-isolation -v 2>&1 | tail -30"}
+{"kind":"phase","ts":"2026-06-07T20:07:41Z","phase":"compile","seconds":77.188,"exit":0,"cmd":"bash -c cd /tmp/fused-ssim-old && HIP_VISIBLE_DEVICES=0 PYTORCH_ROCM_ARCH=gfx1100 python -m pip install -e . --no-build-isolation -q && echo 'old build done' && cd /tmp/fused-ssim-new && HIP_VISIBLE_DEVICES=0 PYTORCH_ROCM_ARCH=gfx1100 python -m pip install -e . --no-build-isolation -q && echo 'new build done'"}
+{"kind": "tokens", "ts": "2026-06-07T18:22:30Z", "tokens": 103259, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-15T12:15:42Z", "tokens": 51286, "source": "pr-prep"}
+{"kind":"session","ts":"2026-06-16T10:11:09Z","epoch":1781604669.871019000,"event":"start","platform":"windows-gfx1101"}
+{"kind":"phase","ts":"2026-06-16T10:11:47Z","phase":"compile","seconds":32.311,"exit":0,"cmd":"B:\\develop\\TheRock\\external-builds\\pytorch\\.venv\\Scripts\\python.exe B:\\develop\\moat\\agent_space\\fused_ssim_build_gfx1101.py"}
+{"kind":"phase","ts":"2026-06-16T10:26:31Z","phase":"test","seconds":850.793,"exit":0,"cmd":"bash -c \ncd C:/Windows/Temp &&\nHIP_VISIBLE_DEVICES=0 'B:\\develop\\TheRock\\external-builds\\pytorch\\.venv\\Scripts\\python.exe' 'B:\\develop\\moat\\projects\\fused-ssim\\src\\tests\\test.py'\n"}
+{"kind":"phase","ts":"2026-06-16T10:32:25Z","phase":"test","seconds":331.987,"exit":0,"cmd":"bash -c \ncd C:/Windows/Temp &&\nHIP_VISIBLE_DEVICES=0 'B:\\develop\\TheRock\\external-builds\\pytorch\\.venv\\Scripts\\python.exe' 'B:\\develop\\moat\\projects\\fused-ssim\\src\\tests\\test_3D.py'\n"}
+{"kind":"session","ts":"2026-06-16T10:33:01Z","epoch":1781605981.481356900,"event":"end","platform":"windows-gfx1101"}
+{"kind": "tokens", "ts": "2026-06-16T06:35:36Z", "tokens": 18110, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-16T10:35:00Z", "tokens": 67099, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-07T20:09:09Z", "tokens": 42006, "source": "validator"}

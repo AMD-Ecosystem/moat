@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "name": "Open3D",
+  "upstream_url": "https://github.com/isl-org/Open3D",
+  "fork_url": "https://github.com/AMD-Ecosystem/Open3D",
+  "fork_default_branch": "main",
+  "priority": 7.305,
+  "ext_type": "cmake",
+  "adopted_at": "2026-05-29T23:30:03Z",
+  "updated_at": "2026-07-02T19:32:07Z",
+  "head_sha": "50bb2505b",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "50bb2505b",
+      "started_at": "2026-05-31T00:22:40Z",
+      "completed_at": "2026-06-07T19:21:16Z",
+      "updated_at": "2026-07-02T19:32:07Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "50bb2505b",
+        "method": "binary-equiv",
+        "detail": "Rebase onto upstream/main: upstream changes are CPU-only (io/visualization/pybind); no .cu/.cuh touched. Doc-scrub (gfx90a pin removal + comment cleanup) confirmed device-ISA-identical vs 24de0d419 by",
+        "at": "2026-07-02T19:32:07Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "50bb2505b",
+      "started_at": "2026-05-31T08:26:00Z",
+      "completed_at": "2026-07-02T19:20:01Z",
+      "updated_at": "2026-07-02T19:20:01Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "50bb2505b",
+        "method": "binary-equiv",
+        "detail": "Rebase onto upstream/main: upstream io/viz/pybind churn, no HIP kernel changed; device ISA + exports identical on gfx1100 (29 code objects)",
+        "at": "2026-07-02T19:20:01Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "port-ready",
+      "blocked": true,
+      "blocked_reason": "Bundled 3rdparty (TBB -fPIC, then VTK/assimp/embree) fails to build under the all-clang toolchain USE_HIP forces on Windows; host build infra, not the GPU/HIP port (validated on gfx90a+gfx1100, 499 tests). Arch-independent. Reversible: supply system libs via vcpkg USE_SYSTEM_*. See notes.md Validation 2026-06-04.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T20:43:16Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1201": {
+      "state": "revalidate",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "973905116",
+      "started_at": null,
+      "completed_at": "2026-06-23T21:09:42Z",
+      "updated_at": "2026-07-02T18:57:21Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "46b25be",
+        "to": "973905116",
+        "method": "source-class",
+        "class": "comment-only",
+        "detail": "3rdparty/find_dependencies.cmake: comment-only (comments/format only); cpp/open3d/core/hashmap/CUDA/SlabMacros.h: comment-only (comments/format only); cpp/open3d/t/geometry/kernel/NPPImage.cpp: commen",
+        "at": "2026-07-02T18:36:15Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": true,
+      "blocked_reason": "Configures cleanly on Windows all-clang for gfx1151 (HIP/stdgpu side fine); `tests` build blocked at ninja 185/813 on BUNDLED HOST 3rdparty Windows-clang builds: libjpeg-turbo BuildPackages.cmake missing win/projectTargets-release.cmake.in, and curl FindOpenSSL fails (boringssl unbuilt). Host I/O/TLS libs needed only to link the monolithic tests binary, not the GPU port -- out of ROCm-port scope (cf. LMCache/llm.c). Port validated on gfx90a+gfx1100.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-05-31T00:00:00Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "pr_url": "https://github.com/isl-org/Open3D/pull/7509",
+  "pr_state": "open",
+  "pr_number": 7509,
+  "pr_opened_at": "2026-06-08T16:22:56Z",
+  "porting": null,
+  "waivers": {}
+}

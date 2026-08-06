@@ -1,0 +1,10 @@
+{
+  "full_name": "IBM/aihwkit",
+  "upstream_url": "https://github.com/IBM/aihwkit",
+  "default_branch": "master",
+  "fork_url": "https://github.com/AMD-Ecosystem/aihwkit",
+  "ext_type": "cmake",
+  "base_sha": "4d73afd",
+  "license_spdx": "MIT",
+  "license_source": "GitHub and the licence text agree"
+}

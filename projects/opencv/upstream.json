@@ -1,0 +1,11 @@
+{
+  "full_name": "opencv/opencv",
+  "upstream_url": "https://github.com/opencv/opencv",
+  "default_branch": "main",
+  "fork_url": null,
+  "ext_type": "unknown",
+  "base_sha": null,
+  "license_spdx": "Apache-2.0",
+  "license_source": "read from LICENSE",
+  "note": "Dependency fork supporting the opencv_contrib port: the cv::cuda modules in contrib cannot build without the HIP-ported core. Carries a moat-port branch that predates being tracked here, so it has no validation record: the port exists, its state is unverified."
+}

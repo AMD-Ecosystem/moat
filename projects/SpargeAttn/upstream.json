@@ -1,0 +1,10 @@
+{
+  "full_name": "thu-ml/SpargeAttn",
+  "upstream_url": "https://github.com/thu-ml/SpargeAttn",
+  "default_branch": "main",
+  "fork_url": null,
+  "ext_type": "torch-extension",
+  "base_sha": null,
+  "license_spdx": "Apache-2.0",
+  "license_source": "GitHub and the licence text agree"
+}

@@ -1,0 +1,71 @@
+{"kind": "tokens", "ts": "2026-06-04T23:30:06Z", "tokens": 78346, "source": "planner"}
+{"kind":"phase","ts":"2026-06-04T23:48:17Z","phase":"compile","seconds":0.304,"exit":1,"cmd":"pip install . --no-build-isolation -v"}
+{"kind":"phase","ts":"2026-06-04T23:48:29Z","phase":"compile","seconds":0.308,"exit":1,"cmd":"pip install . --no-build-isolation -v"}
+{"kind":"phase","ts":"2026-06-04T23:49:06Z","phase":"compile","seconds":30.126,"exit":120,"cmd":"pip install /var/lib/jenkins/moat/projects/CuMesh/src --no-build-isolation -v"}
+{"kind":"phase","ts":"2026-06-04T23:50:47Z","phase":"compile","seconds":83.852,"exit":1,"cmd":"pip install /var/lib/jenkins/moat/projects/CuMesh/src --no-build-isolation -v"}
+{"kind":"phase","ts":"2026-06-04T23:55:28Z","phase":"compile","seconds":179.263,"exit":0,"cmd":"pip install /var/lib/jenkins/moat/projects/CuMesh/src --no-build-isolation -v"}
+{"kind":"phase","ts":"2026-06-04T23:55:52Z","phase":"test","seconds":0.025,"exit":2,"cmd":"python3 simplify.py"}
+{"kind": "tokens", "ts": "2026-06-04T23:58:59Z", "tokens": 146637, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-05T00:01:50Z", "tokens": 55774, "source": "reviewer"}
+{"kind":"phase","ts":"2026-06-05T00:02:27Z","phase":"compile","seconds":0.313,"exit":1,"cmd":"pip install . --no-build-isolation -v"}
+{"kind":"phase","ts":"2026-06-05T00:02:35Z","phase":"compile","seconds":0.306,"exit":1,"cmd":"pip install . --no-build-isolation -v"}
+{"kind":"phase","ts":"2026-06-05T00:02:51Z","phase":"compile","seconds":8.988,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/CuMesh/src && pip install . --no-build-isolation -v"}
+{"kind":"phase","ts":"2026-06-05T00:03:04Z","phase":"test","seconds":0.024,"exit":2,"cmd":"python3 simplify.py"}
+{"kind":"phase","ts":"2026-06-05T00:03:10Z","phase":"test","seconds":3.593,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/CuMesh/src/examples && python3 simplify.py"}
+{"kind":"session","ts":"2026-06-05T01:16:10Z","epoch":1780622170.228450143,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-06-05T01:16:21Z","phase":"linux-gfx1100","seconds":0.003,"exit":127,"cmd":"compile -- bash -c GPU_ARCHS=gfx1100 pip install . --no-build-isolation -v 2>&1 | tee build.log"}
+{"kind":"phase","ts":"2026-06-05T01:16:28Z","phase":"compile","seconds":0.391,"exit":0,"cmd":"bash -c GPU_ARCHS=gfx1100 pip install . --no-build-isolation -v 2>&1 | tee build.log"}
+{"kind":"phase","ts":"2026-06-05T01:16:48Z","phase":"compile","seconds":0.003,"exit":127,"cmd":"GPU_ARCHS=gfx1100 pip install . --no-build-isolation -v"}
+{"kind":"phase","ts":"2026-06-05T01:16:53Z","phase":"compile","seconds":0.282,"exit":1,"cmd":"bash -c GPU_ARCHS=gfx1100 pip install . --no-build-isolation -v"}
+{"kind":"phase","ts":"2026-06-05T01:19:06Z","phase":"compile","seconds":130.410,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/CuMesh/src && GPU_ARCHS=gfx1100 pip install . --no-build-isolation -v"}
+{"kind":"phase","ts":"2026-06-05T01:19:22Z","phase":"test","seconds":1.794,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/CuMesh/src/examples && python3 simplify.py 2>&1"}
+{"kind":"phase","ts":"2026-06-05T01:19:55Z","phase":"test","seconds":23.871,"exit":0,"cmd":"bash -c \ncd /var/lib/jenkins/moat/projects/CuMesh/src/examples\necho '=== simplify.py ==='\npython3 simplify.py\necho '=== fill_holes.py ==='\npython3 fill_holes.py\necho '=== remove_duplicate_faces.py ==='\npython3 remove_duplicate_faces.py\necho '=== unify_orientations.py ==='\npython3 unify_orientations.py\necho '=== uv_unwrap.py ==='\npython3 uv_unwrap.py\necho '=== remesh.py ==='\npython3 remesh.py\necho '=== All tests completed ==='\n"}
+{"kind":"session","ts":"2026-06-05T01:20:00Z","epoch":1780622400.586571207,"event":"end","platform":"linux-gfx1100"}
+{"kind": "tokens", "ts": "2026-06-05T01:21:33Z", "tokens": 55482, "source": "validator (gfx1100)"}
+{"kind":"phase","ts":"2026-06-07T22:53:20Z","phase":"compile","seconds":0.059,"exit":2,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe setup.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-06-07T22:53:33Z","phase":"compile","seconds":7.703,"exit":1,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe B:/develop/moat/projects/CuMesh/src/setup.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-06-07T22:53:38Z","phase":"compile","seconds":0.059,"exit":2,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe setup.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-06-07T22:53:59Z","phase":"compile","seconds":8.483,"exit":1,"cmd":"bash -c cd 'B:/develop/moat/projects/CuMesh/src' && 'B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe' setup.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-06-07T22:56:12Z","phase":"compile","seconds":76.581,"exit":1,"cmd":"bash -c cd 'B:/develop/moat/projects/CuMesh/src' && 'B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe' setup.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-06-07T22:59:13Z","phase":"compile","seconds":89.724,"exit":1,"cmd":"bash -c cd 'B:/develop/moat/projects/CuMesh/src' && 'B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe' setup.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-06-08T00:25:33Z","phase":"compile","seconds":0.020,"exit":0,"cmd":""}
+{"kind": "tokens", "ts": "2026-06-08T00:36:16Z", "tokens": 59519, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-15T12:15:39Z", "tokens": 51286, "source": "pr-prep"}
+{"kind":"phase","ts":"2026-06-19T14:51:23Z","phase":"compile","seconds":0.284,"exit":0,"cmd":"bash -c GPU_ARCHS=gfx1100 pip install . --no-build-isolation -v 2>&1 | tail -50"}
+{"kind":"phase","ts":"2026-06-19T14:54:40Z","phase":"test","seconds":21.097,"exit":0,"cmd":"bash -c \nset -e\nexport HIP_VISIBLE_DEVICES=0\ncd /var/lib/jenkins/moat/projects/CuMesh/src/examples\n\necho '=== simplify.py ==='\npython3 simplify.py 2>&1\necho 'simplify.py PASS'\n\necho '=== fill_holes.py ==='\npython3 fill_holes.py 2>&1\necho 'fill_holes.py PASS'\n\necho '=== remove_duplicate_faces.py ==='\npython3 remove_duplicate_faces.py 2>&1\necho 'remove_duplicate_faces.py PASS'\n\necho '=== unify_orientations.py ==='\npython3 unify_orientations.py 2>&1\necho 'unify_orientations.py PASS'\n\necho '=== uv_unwrap.py ==='\npython3 uv_unwrap.py 2>&1\necho 'uv_unwrap.py PASS'\n\necho '=== remesh.py ==='\npython3 remesh.py 2>&1\necho 'remesh.py PASS'\n\necho '=== ALL TESTS PASSED ==='\n"}
+{"kind":"phase","ts":"2026-06-19T14:42:39Z","phase":"compile","seconds":53.216,"exit":0,"cmd":"python /b/develop/moat/agent_space/run_cumesh_reval.py"}
+{"kind":"phase","ts":"2026-06-19T14:53:42Z","phase":"compile","seconds":44.311,"exit":0,"cmd":"python /b/develop/moat/agent_space/run_cumesh_reval.py"}
+{"kind":"phase","ts":"2026-06-19T14:54:31Z","phase":"test","seconds":10.572,"exit":0,"cmd":"python /b/develop/moat/agent_space/run_cumesh_tests_reval.py"}
+{"kind":"phase","ts":"2026-06-19T14:55:19Z","phase":"test","seconds":20.718,"exit":0,"cmd":"python /b/develop/moat/agent_space/run_cumesh_tests_reval2.py"}
+{"kind": "tokens", "ts": "2026-06-19T15:02:02Z", "tokens": 139126, "source": "validator"}
+{"kind":"phase","ts":"2026-06-19T15:32:41Z","phase":"compile","seconds":0.037,"exit":2,"cmd":"python setup.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-06-19T15:39:10Z","phase":"compile","seconds":9.875,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/CuMesh/src && GPU_ARCHS=gfx90a pip install . --no-build-isolation -v"}
+{"kind":"phase","ts":"2026-06-19T15:40:22Z","phase":"test","seconds":60.837,"exit":0,"cmd":"bash -c \nset -e\ncd /var/lib/jenkins/moat/projects/CuMesh/src/examples\necho '=== simplify.py ===' && HIP_VISIBLE_DEVICES=0 python simplify.py && echo 'PASS'\necho '=== fill_holes.py ===' && HIP_VISIBLE_DEVICES=0 python fill_holes.py && echo 'PASS'\necho '=== remove_duplicate_faces.py ===' && HIP_VISIBLE_DEVICES=0 python remove_duplicate_faces.py && echo 'PASS'\necho '=== unify_orientations.py ===' && HIP_VISIBLE_DEVICES=0 python unify_orientations.py && echo 'PASS'\necho '=== uv_unwrap.py ===' && HIP_VISIBLE_DEVICES=0 python uv_unwrap.py && echo 'PASS'\necho '=== remesh.py ===' && HIP_VISIBLE_DEVICES=0 python remesh.py && echo 'PASS'\necho '=== ALL TESTS PASSED ==='\n"}
+{"kind":"phase","ts":"2026-06-19T15:49:15Z","phase":"compile","seconds":116.458,"exit":1,"cmd":"cmd.exe //c B:\\develop\\moat\\agent_space\\build_cumesh.bat"}
+{"kind":"phase","ts":"2026-06-19T16:02:07Z","phase":"compile","seconds":149.584,"exit":0,"cmd":"cmd.exe //c B:\\develop\\moat\\agent_space\\build_cumesh.bat"}
+{"kind":"phase","ts":"2026-06-19T16:02:34Z","phase":"test","seconds":10.604,"exit":0,"cmd":"cmd.exe //c B:\\develop\\moat\\agent_space\\run_examples.bat"}
+{"kind":"phase","ts":"2026-06-19T16:03:23Z","phase":"test","seconds":20.752,"exit":0,"cmd":"cmd.exe //c B:\\develop\\moat\\agent_space\\run_examples.bat"}
+{"kind": "tokens", "ts": "2026-06-19T15:45:25Z", "tokens": 78020, "source": "validator (gfx90a revalidate + cubvh submodule fix)"}
+{"kind": "tokens", "ts": "2026-06-19T14:55:55Z", "tokens": 61219, "source": "validator"}
+{"kind":"phase","ts":"2026-06-19T17:04:56Z","phase":"compile","seconds":0.003,"exit":127,"cmd":"GPU_ARCHS=gfx1100 pip install . --no-build-isolation -v"}
+{"kind":"phase","ts":"2026-06-19T17:05:00Z","phase":"compile","seconds":0.288,"exit":1,"cmd":"env GPU_ARCHS=gfx1100 pip install . --no-build-isolation -v"}
+{"kind":"phase","ts":"2026-06-19T17:05:06Z","phase":"compile","seconds":0.292,"exit":1,"cmd":"env GPU_ARCHS=gfx1100 pip install . --no-build-isolation -v"}
+{"kind":"phase","ts":"2026-06-19T17:05:11Z","phase":"compile","seconds":0.272,"exit":1,"cmd":"env GPU_ARCHS=gfx1100 pip install . --no-build-isolation -v"}
+{"kind":"phase","ts":"2026-06-19T17:05:20Z","phase":"compile","seconds":0.262,"exit":1,"cmd":"pip install . --no-build-isolation -v"}
+{"kind":"phase","ts":"2026-06-19T17:06:23Z","phase":"compile","seconds":57.061,"exit":0,"cmd":"pip install /var/lib/jenkins/moat/projects/CuMesh/src --no-build-isolation -v"}
+{"kind": "tokens", "ts": "2026-06-19T16:47:25Z", "tokens": 47756, "source": "validator (gfx90a revalidate, binary-equiv carry-forward)"}
+{"kind":"phase","ts":"2026-06-19T18:06:37Z","phase":"compile","seconds":9.396,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/CuMesh/src && GPU_ARCHS=gfx90a pip install . --no-build-isolation -v 2>&1 | tail -80"}
+{"kind":"phase","ts":"2026-06-19T18:08:32Z","phase":"compile","seconds":79.170,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/CuMesh/src && GPU_ARCHS=gfx90a pip install . --no-build-isolation -v 2>&1 | tail -100"}
+{"kind":"phase","ts":"2026-06-19T18:09:15Z","phase":"test","seconds":29.204,"exit":0,"cmd":"bash -c \ncd /var/lib/jenkins/moat/projects/CuMesh/src/examples\nHIP_VISIBLE_DEVICES=0\n\necho '=== simplify.py ==='\nHIP_VISIBLE_DEVICES=0 python3 simplify.py 2>&1\necho 'simplify exit:' 0\n\necho '=== fill_holes.py ==='\nHIP_VISIBLE_DEVICES=0 python3 fill_holes.py 2>&1\necho 'fill_holes exit:' 0\n\necho '=== remove_duplicate_faces.py ==='\nHIP_VISIBLE_DEVICES=0 python3 remove_duplicate_faces.py 2>&1\necho 'remove_duplicate_faces exit:' 0\n\necho '=== unify_orientations.py ==='\nHIP_VISIBLE_DEVICES=0 python3 unify_orientations.py 2>&1\necho 'unify_orientations exit:' 0\n\necho '=== uv_unwrap.py ==='\nHIP_VISIBLE_DEVICES=0 python3 uv_unwrap.py 2>&1\necho 'uv_unwrap exit:' 0\n\necho '=== remesh.py ==='\nHIP_VISIBLE_DEVICES=0 python3 remesh.py 2>&1\necho 'remesh exit:' 0\n"}
+{"kind": "tokens", "ts": "2026-06-19T18:11:32Z", "tokens": 60019, "source": "validator (gfx90a revalidate, cubvh e5a657a, full GPU run)"}
+{"kind":"phase","ts":"2026-06-19T18:46:18Z","phase":"compile","seconds":0.042,"exit":0,"cmd":"cmd.exe /c B:\\develop\\moat\\agent_space\\build_cumesh_gfx1201.bat"}
+{"kind":"phase","ts":"2026-06-19T18:48:36Z","phase":"compile","seconds":0.033,"exit":0,"cmd":"cmd /c B:\\develop\\moat\\agent_space\\build_cumesh_and_log.bat"}
+{"kind": "tokens", "ts": "2026-06-19T17:07:59Z", "tokens": 41698, "source": "validator"}
+{"kind":"phase","ts":"2026-06-19T18:59:14Z","phase":"compile","seconds":0.044,"exit":0,"cmd":"bash -c GPU_ARCHS=gfx1100 python setup.py build_ext --build-lib /var/lib/jenkins/moat/agent_space/CuMesh-0cdf194-gfx1100 2>&1 | tail -50"}
+{"kind": "tokens", "ts": "2026-06-19T19:01:14Z", "tokens": 46835, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-19T18:58:27Z", "tokens": 95056, "source": "validator (gfx1201 revalidate)"}
+{"kind":"session","ts":"2026-06-19T21:57:48Z","epoch":1781906268.653108900,"event":"start","platform":"windows-gfx1101"}
+{"kind":"phase","ts":"2026-06-19T21:58:24Z","phase":"compile","seconds":0.040,"exit":0,"cmd":"cmd /c B:\\develop\\moat\\agent_space\\build_cumesh_gfx1101.bat"}
+{"kind":"phase","ts":"2026-06-19T22:02:22Z","phase":"test","seconds":22.186,"exit":0,"cmd":"cmd //c B:\\develop\\moat\\agent_space\\run_cumesh_tests_gfx1101.bat"}
+{"kind":"session","ts":"2026-06-19T22:03:16Z","epoch":1781906596.986633300,"event":"end","platform":"windows-gfx1101"}
+{"kind": "tokens", "ts": "2026-06-19T22:03:59Z", "tokens": 68234, "source": "validator (gfx1101)"}

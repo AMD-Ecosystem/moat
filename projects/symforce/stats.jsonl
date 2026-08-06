@@ -1,0 +1,57 @@
+{"kind": "tokens", "ts": "2026-06-04T23:29:53Z", "tokens": 98786, "source": "planner"}
+{"kind":"phase","ts":"2026-06-05T00:27:02Z","phase":"compile","seconds":0.137,"exit":1,"cmd":"cmake --build . -j128"}
+{"kind":"phase","ts":"2026-06-05T00:27:05Z","phase":"compile","seconds":0.007,"exit":2,"cmd":"make -j128"}
+{"kind":"phase","ts":"2026-06-05T00:27:11Z","phase":"compile","seconds":0.007,"exit":2,"cmd":"make VERBOSE=1 -j128"}
+{"kind":"phase","ts":"2026-06-05T00:29:12Z","phase":"compile","seconds":11.514,"exit":0,"cmd":"make -C /var/lib/jenkins/moat/projects/symforce/src/symforce/caspar/source/runtime/build -j128"}
+{"kind": "tokens", "ts": "2026-06-05T00:33:49Z", "tokens": 130385, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-05T00:36:51Z", "tokens": 113412, "source": "reviewer"}
+{"kind":"phase","ts":"2026-06-05T00:39:22Z","phase":"compile","seconds":0.006,"exit":2,"cmd":"make -j128"}
+{"kind":"phase","ts":"2026-06-05T00:39:39Z","phase":"compile","seconds":11.625,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/symforce/src/symforce/caspar/source/runtime/build -j128"}
+{"kind": "tokens", "ts": "2026-06-05T00:41:26Z", "tokens": 82324, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-05T00:44:09Z", "tokens": 75002, "source": "reviewer"}
+{"kind": "tokens", "ts": "2026-06-05T00:50:43Z", "tokens": 52762, "source": "validator"}
+{"kind":"phase","ts":"2026-06-05T00:52:54Z","phase":"compile","seconds":23.920,"exit":1,"cmd":"python3 /var/lib/jenkins/moat/agent_space/test_symforce_hip.py"}
+{"kind":"phase","ts":"2026-06-05T00:53:50Z","phase":"compile","seconds":24.080,"exit":1,"cmd":"python3 /var/lib/jenkins/moat/agent_space/test_symforce_hip.py"}
+{"kind":"phase","ts":"2026-06-05T00:55:51Z","phase":"compile","seconds":24.586,"exit":1,"cmd":"python3 /var/lib/jenkins/moat/agent_space/test_symforce_hip.py"}
+{"kind":"phase","ts":"2026-06-05T00:56:37Z","phase":"compile","seconds":24.273,"exit":1,"cmd":"python3 /var/lib/jenkins/moat/agent_space/test_symforce_hip.py"}
+{"kind":"phase","ts":"2026-06-05T00:58:43Z","phase":"compile","seconds":25.947,"exit":1,"cmd":"python3 /var/lib/jenkins/moat/agent_space/test_symforce_hip.py"}
+{"kind":"phase","ts":"2026-06-05T00:59:31Z","phase":"compile","seconds":31.245,"exit":1,"cmd":"python3 /var/lib/jenkins/moat/agent_space/test_symforce_hip.py"}
+{"kind":"phase","ts":"2026-06-05T01:00:20Z","phase":"compile","seconds":35.941,"exit":0,"cmd":"python3 /var/lib/jenkins/moat/agent_space/test_symforce_hip.py"}
+{"kind":"phase","ts":"2026-06-05T01:01:00Z","phase":"compile","seconds":35.860,"exit":0,"cmd":"python3 /var/lib/jenkins/moat/agent_space/test_symforce_hip.py"}
+{"kind":"phase","ts":"2026-06-05T01:01:40Z","phase":"compile","seconds":35.357,"exit":0,"cmd":"python3 /var/lib/jenkins/moat/agent_space/test_symforce_hip.py"}
+{"kind": "tokens", "ts": "2026-06-05T01:02:56Z", "tokens": 101920, "source": "porter"}
+{"kind":"phase","ts":"2026-06-05T01:04:48Z","phase":"test","seconds":35.529,"exit":1,"cmd":"python3 /var/lib/jenkins/moat/projects/symforce/test_hip_validation.py"}
+{"kind":"phase","ts":"2026-06-05T01:06:53Z","phase":"test","seconds":35.896,"exit":0,"cmd":"python3 /var/lib/jenkins/moat/projects/symforce/test_hip_validation.py"}
+{"kind":"phase","ts":"2026-06-05T01:06:57Z","phase":"compile","seconds":0.138,"exit":1,"cmd":"cmake .. -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a"}
+{"kind":"phase","ts":"2026-06-05T01:54:04Z","phase":"compile","seconds":9.946,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/symforce/src/symforce/caspar/source/runtime && rm -rf build && mkdir build && cd build && cmake .. -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 && make -j$(nproc)"}
+{"kind":"phase","ts":"2026-06-05T01:56:19Z","phase":"test","seconds":2.302,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/symforce && HIP_VISIBLE_DEVICES=0 python3 test_hip_validation.py"}
+{"kind":"phase","ts":"2026-06-05T01:56:59Z","phase":"test","seconds":23.658,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/symforce && HIP_VISIBLE_DEVICES=0 python3 test_hip_validation.py"}
+{"kind":"phase","ts":"2026-06-05T01:58:44Z","phase":"test","seconds":24.031,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/symforce && HIP_VISIBLE_DEVICES=0 python3 test_hip_validation.py 2>&1 | tail -30"}
+{"kind": "tokens", "ts": "2026-06-05T01:59:59Z", "tokens": 55518, "source": "validator (gfx1100)"}
+{"kind":"phase","ts":"2026-06-08T19:25:17Z","phase":"compile","seconds":1.421,"exit":1,"cmd":"cmake --build B:/develop/moat/agent_space/symforce_hip_test/runtime_build --parallel 24"}
+{"kind":"phase","ts":"2026-06-08T19:25:55Z","phase":"compile","seconds":11.259,"exit":0,"cmd":"cmake --build B:/develop/moat/agent_space/symforce_hip_test/runtime_build --parallel 24"}
+{"kind":"phase","ts":"2026-06-08T19:26:15Z","phase":"compile","seconds":3.403,"exit":0,"cmd":"cmake --build B:/develop/moat/agent_space/symforce_hip_test/test_build --parallel 24"}
+{"kind":"phase","ts":"2026-06-08T19:26:41Z","phase":"test","seconds":0.253,"exit":0,"cmd":"B:/develop/moat/agent_space/symforce_hip_test/test_build/test_caspar_runtime.exe"}
+{"kind":"phase","ts":"2026-06-08T19:38:38Z","phase":"test","seconds":1.765,"exit":1,"cmd":"B:\\develop\\TheRock\\external-builds\\pytorch\\.venv\\Scripts\\python.exe B:/develop/moat/agent_space/test_symforce_hip_gfx1201.py"}
+{"kind":"phase","ts":"2026-06-08T19:39:00Z","phase":"test","seconds":2.556,"exit":1,"cmd":"B:\\develop\\TheRock\\external-builds\\pytorch\\.venv\\Scripts\\python.exe B:/develop/moat/agent_space/test_symforce_hip_gfx1201.py"}
+{"kind":"phase","ts":"2026-06-08T19:40:46Z","phase":"test","seconds":90.962,"exit":1,"cmd":"B:\\develop\\TheRock\\external-builds\\pytorch\\.venv\\Scripts\\python.exe B:/develop/moat/agent_space/test_symforce_hip_gfx1201.py"}
+{"kind":"phase","ts":"2026-06-08T19:41:21Z","phase":"test","seconds":10.728,"exit":1,"cmd":"B:\\develop\\TheRock\\external-builds\\pytorch\\.venv\\Scripts\\python.exe B:/develop/moat/agent_space/test_symforce_hip_gfx1201.py"}
+{"kind":"phase","ts":"2026-06-08T19:42:03Z","phase":"test","seconds":17.673,"exit":0,"cmd":"B:\\develop\\TheRock\\external-builds\\pytorch\\.venv\\Scripts\\python.exe B:/develop/moat/agent_space/test_symforce_hip_gfx1201.py"}
+{"kind":"phase","ts":"2026-06-08T22:07:57Z","phase":"compile","seconds":11.879,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/agent_space/symforce_build_d99faf9b_gfx90a -j16"}
+{"kind":"phase","ts":"2026-06-08T22:08:21Z","phase":"compile","seconds":11.779,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/agent_space/symforce_build_ba1b64db_gfx90a -j16"}
+{"kind":"phase","ts":"2026-06-08T22:09:38Z","phase":"compile","seconds":10.883,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/agent_space/symforce_build_d99faf9b_gfx1100 -j16"}
+{"kind":"phase","ts":"2026-06-08T22:09:38Z","phase":"compile","seconds":11.212,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/agent_space/symforce_build_ba1b64db_gfx1100 -j16"}
+{"kind": "tokens", "ts": "2026-06-08T22:18:24Z", "tokens": 49696, "source": "validator (binary-equiv revalidation gfx90a+gfx1100)"}
+{"kind": "tokens", "ts": "2026-06-08T20:00:16Z", "tokens": 31940, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-15T12:15:43Z", "tokens": 45603, "source": "pr-prep"}
+{"kind":"session","ts":"2026-06-16T17:54:52Z","epoch":1781632492.080009700,"event":"start","platform":"windows-gfx1201"}
+{"kind":"phase","ts":"2026-06-16T17:55:07Z","phase":"compile","seconds":0.048,"exit":1,"cmd":"cmake symforce/caspar/source/runtime -B /b/develop/moat/agent_space/symforce_old_gfx1201 -G Ninja -DCMAKE_C_COMPILER=clang.exe -DCMAKE_CXX_COMPILER=clang++.exe -DCMAKE_HIP_COMPILER=clang++.exe -DCMAKE_PREFIX_PATH=/b/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_devel/lib/cmake -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201"}
+{"kind":"session","ts":"2026-06-16T17:59:04Z","epoch":1781632744.725082500,"event":"end","platform":"windows-gfx1201"}
+{"kind": "tokens", "ts": "2026-06-16T18:05:16Z", "tokens": 64137, "source": "validator"}
+{"kind":"session","ts":"2026-06-20T06:46:26Z","epoch":1781937986.762885300,"event":"start","platform":"windows-gfx1101"}
+{"kind":"phase","ts":"2026-06-20T06:46:37Z","phase":"compile","seconds":3.315,"exit":0,"cmd":"cmake B:/develop/moat/agent_space/symforce_hip_test -B B:/develop/moat/agent_space/symforce_hip_test/test_build_gfx1101 -G Ninja -DCMAKE_CXX_COMPILER=B:/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++.exe -DCMAKE_HIP_COMPILER=B:/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++.exe -DCMAKE_PREFIX_PATH=B:/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_devel/lib/cmake -DCMAKE_HIP_ARCHITECTURES=gfx1101"}
+{"kind":"phase","ts":"2026-06-20T06:46:48Z","phase":"compile","seconds":3.428,"exit":0,"cmd":"cmake --build B:/develop/moat/agent_space/symforce_hip_test/test_build_gfx1101 --parallel 64"}
+{"kind":"phase","ts":"2026-06-20T06:47:19Z","phase":"test","seconds":0.265,"exit":0,"cmd":"B:/develop/moat/agent_space/symforce_hip_test/test_build_gfx1101/test_caspar_runtime.exe"}
+{"kind":"session","ts":"2026-06-20T06:48:16Z","epoch":1781938096.515161800,"event":"end","platform":"windows-gfx1101"}
+{"kind": "tokens", "ts": "2026-06-20T06:49:35Z", "tokens": 50677, "source": "validator (gfx1101)"}
+{"kind": "tokens", "ts": "2026-06-23T22:25:32Z", "tokens": 20289, "source": "gfx90a dead-code cleanup (batch D subagent, shared)"}

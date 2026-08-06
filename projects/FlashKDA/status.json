@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "name": "FlashKDA",
+  "upstream_url": "https://github.com/MoonshotAI/FlashKDA",
+  "fork_url": null,
+  "fork_default_branch": "master",
+  "priority": 4.918,
+  "ext_type": "torch-extension",
+  "adopted_at": "2026-05-30T00:46:51Z",
+  "updated_at": "2026-06-04T21:23:22Z",
+  "head_sha": null,
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "planned",
+      "blocked": true,
+      "blocked_reason": "cant-port: 100% CUTLASS/CuTe SM90+ (Hopper/Blackwell) implementation with TMA, wgmma, cluster-launched persistent warp-spec kernels; no portable HIP path exists. CUTLASS does not port to ROCm (per PORTING_GUIDE 2026-05-30). An AMD-native reimplementation against Composable Kernel (CK/ck_tile) of the KDA chunked-delta-rule attention is possible but is multi-day kernel engineering, not a mechanical port. Defer to a CK reimplementation backlog alongside raft/cuvs/SpargeAttn/CUDA-L2. See plan.md.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T21:22:42Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "planner"
+    },
+    "linux-gfx1100": {
+      "state": "awaiting-port",
+      "blocked": true,
+      "blocked_reason": "Lead platform (linux-gfx90a) blocked: cant-port (100% CUTLASS/CuTe SM90+, no portable HIP path). No follower work possible.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T21:23:22Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1101": {
+      "state": "awaiting-port",
+      "blocked": true,
+      "blocked_reason": "Lead platform (linux-gfx90a) blocked: cant-port (100% CUTLASS/CuTe SM90+, no portable HIP path). No follower work possible.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T21:23:22Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1201": {
+      "state": "awaiting-port",
+      "blocked": true,
+      "blocked_reason": "Lead platform (linux-gfx90a) blocked: cant-port (100% CUTLASS/CuTe SM90+, no portable HIP path). No follower work possible.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T21:23:22Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1151": {
+      "state": "awaiting-port",
+      "blocked": true,
+      "blocked_reason": "windows-gfx1151 host retired (superseded by the gfx1101/gfx1201 machine); validation moved to windows-gfx1101 and windows-gfx1201",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T19:41:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "porting": null,
+  "waivers": {}
+}

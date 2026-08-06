@@ -1,0 +1,5 @@
+{"kind": "tokens", "ts": "2026-06-05T00:23:45Z", "tokens": 81533, "source": "planner"}
+{"kind":"phase","ts":"2026-06-05T00:30:08Z","phase":"compile","seconds":0.006,"exit":2,"cmd":"make configure"}
+{"kind":"phase","ts":"2026-06-05T00:30:16Z","phase":"compile","seconds":0.218,"exit":1,"cmd":"cabal build"}
+{"kind":"phase","ts":"2026-06-05T00:30:19Z","phase":"compile","seconds":0.025,"exit":1,"cmd":"cabal build"}
+{"kind":"phase","ts":"2026-06-05T00:51:29Z","phase":"test","seconds":0.016,"exit":1,"cmd":"futhark test tests -c --backend=hip --tuning=tuning_gpu"}

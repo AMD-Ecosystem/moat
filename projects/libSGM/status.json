@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "name": "libSGM",
+  "upstream_url": "https://github.com/fixstars/libSGM",
+  "fork_url": "https://github.com/AMD-Ecosystem/libSGM",
+  "fork_default_branch": "master",
+  "priority": 4.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-05-30T17:07:50Z",
+  "updated_at": "2026-06-23T22:21:42Z",
+  "head_sha": "bbbbd1d805323ab173bd9c4a11a8db931911cbc9",
+  "depends_on": [],
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "bbbbd1d805323ab173bd9c4a11a8db931911cbc9",
+      "started_at": "2026-06-02T00:47:02Z",
+      "completed_at": "2026-06-04T06:12:09Z",
+      "updated_at": "2026-06-23T22:21:42Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-02T04:00:00Z",
+        "last_session_at": "2026-06-02T04:30:00Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "bbbbd1d805323ab173bd9c4a11a8db931911cbc9",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:21:42Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "bbbbd1d805323ab173bd9c4a11a8db931911cbc9",
+      "started_at": "2026-06-02T01:00:00Z",
+      "completed_at": "2026-06-23T22:21:42Z",
+      "updated_at": "2026-06-23T22:21:42Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-02T01:00:00Z",
+        "last_session_at": "2026-06-02T01:30:00Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "bbbbd1d805323ab173bd9c4a11a8db931911cbc9",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:21:42Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "bbbbd1d805323ab173bd9c4a11a8db931911cbc9",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:21:42Z",
+      "updated_at": "2026-06-23T22:21:42Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "bbbbd1d805323ab173bd9c4a11a8db931911cbc9",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:21:42Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "bbbbd1d805323ab173bd9c4a11a8db931911cbc9",
+      "started_at": "2026-06-07T19:43:51Z",
+      "completed_at": "2026-06-23T22:21:42Z",
+      "updated_at": "2026-06-23T22:21:42Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 45,
+          "test": 20,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-07T19:44:00Z",
+        "last_session_at": "2026-06-07T19:44:00Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "bbbbd1d805323ab173bd9c4a11a8db931911cbc9",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:21:42Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "bbbbd1d805323ab173bd9c4a11a8db931911cbc9",
+      "started_at": "2026-06-03T18:01:47.223805Z",
+      "completed_at": "2026-06-23T22:21:42Z",
+      "updated_at": "2026-06-23T22:21:42Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 155,
+          "test": 20,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-03T18:01:47.223805Z",
+        "last_session_at": "2026-06-03T19:30:00Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "bbbbd1d805323ab173bd9c4a11a8db931911cbc9",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:21:42Z"
+      }
+    }
+  },
+  "pr_url": "https://github.com/fixstars/libSGM/pull/89",
+  "pr_number": 89,
+  "pr_opened_at": "2026-06-08T16:24:31Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open"
+}

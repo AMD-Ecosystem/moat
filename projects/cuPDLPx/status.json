@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "name": "cuPDLPx",
+  "upstream_url": "https://github.com/MIT-Lu-Lab/cuPDLPx",
+  "fork_url": "https://github.com/AMD-Ecosystem/cuPDLPx",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-06-05T01:23:49Z",
+  "updated_at": "2026-08-06T16:04:18Z",
+  "head_sha": "7c713c6",
+  "depends_on": [],
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "7c713c6912140feb3055859b021e999f3d501f59",
+      "started_at": "2026-06-05T07:47:51Z",
+      "completed_at": "2026-06-19T20:05:39Z",
+      "updated_at": "2026-07-06T00:00:00Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "linux-gfx1100": {
+      "state": "revalidate",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "5c056c2f90bea08a882a3ddd7e1bca2eba64d896",
+      "started_at": null,
+      "completed_at": "2026-07-02T20:08:21Z",
+      "updated_at": "2026-07-06T03:02:44Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 26.346,
+          "test": 5.06,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1101": {
+      "state": "revalidate",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "29d545f",
+      "started_at": null,
+      "completed_at": "2026-06-22T18:26:40Z",
+      "updated_at": "2026-07-02T18:32:02Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "29d545f",
+        "method": "binary-equiv",
+        "detail": "CUDA-only header fix unreachable on HIP path; same dead-code argument as gfx90a/gfx1100/gfx1201 (codeobj identical)",
+        "at": "2026-06-22T18:26:40Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "revalidate",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "29d545f",
+      "started_at": null,
+      "completed_at": "2026-06-22T18:26:40Z",
+      "updated_at": "2026-07-02T18:32:02Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "29d545f",
+        "method": "binary-equiv",
+        "detail": "CUDA-only header fix (cub include moved inside #else CUDA / #ifdef __cplusplus); codeobj_diff: device ISA + 151 exports identical to 9d73c35 for windows-gfx1201",
+        "at": "2026-06-22T18:26:40Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "port-ready",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T08:03:57Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "pr_url": "https://github.com/MIT-Lu-Lab/cuPDLPx/pull/94",
+  "pr_number": 94,
+  "pr_opened_at": "2026-06-19T20:16:10Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged",
+  "pr_merged_at": "2026-08-06T16:04:18Z"
+}

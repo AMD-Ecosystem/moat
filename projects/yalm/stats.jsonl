@@ -1,0 +1,57 @@
+{"kind":"phase","ts":"2026-06-02T02:08:37Z","phase":"compile","seconds":0.006,"exit":2,"cmd":"make test USE_HIP=1 HIPARCH=gfx90a"}
+{"kind":"phase","ts":"2026-06-02T02:09:00Z","phase":"compile","seconds":0.009,"exit":2,"cmd":"bash -c make test USE_HIP=1 HIPARCH=gfx90a"}
+{"kind":"phase","ts":"2026-06-02T02:09:14Z","phase":"compile","seconds":5.514,"exit":2,"cmd":"make -C projects/yalm/src test USE_HIP=1 HIPARCH=gfx90a"}
+{"kind":"phase","ts":"2026-06-02T02:09:28Z","phase":"compile","seconds":0.097,"exit":2,"cmd":"make -C projects/yalm/src test USE_HIP=1 HIPARCH=gfx90a"}
+{"kind":"phase","ts":"2026-06-02T02:09:47Z","phase":"compile","seconds":5.596,"exit":0,"cmd":"make -C projects/yalm/src test USE_HIP=1 HIPARCH=gfx90a"}
+{"kind":"phase","ts":"2026-06-02T02:09:53Z","phase":"test","seconds":0.268,"exit":0,"cmd":"projects/yalm/src/build/test"}
+{"kind":"phase","ts":"2026-06-02T02:18:14Z","phase":"compile","seconds":0.009,"exit":2,"cmd":"bash -c make clean && make test USE_HIP=1 HIPARCH=gfx90a"}
+{"kind":"phase","ts":"2026-06-02T02:18:46Z","phase":"compile","seconds":5.457,"exit":0,"cmd":"/var/lib/jenkins/moat/agent_space/yalm_build_run1.sh"}
+{"kind":"phase","ts":"2026-06-02T02:18:52Z","phase":"test","seconds":0.228,"exit":0,"cmd":"/var/lib/jenkins/moat/projects/yalm/src/build/test"}
+{"kind":"phase","ts":"2026-06-02T02:19:03Z","phase":"test","seconds":0.239,"exit":0,"cmd":"/var/lib/jenkins/moat/projects/yalm/src/build/test"}
+{"kind":"phase","ts":"2026-06-02T02:29:42Z","phase":"compile","seconds":0.006,"exit":2,"cmd":"make test USE_HIP=1 HIPARCH=gfx1100"}
+{"kind":"phase","ts":"2026-06-02T02:30:00Z","phase":"compile","seconds":0.005,"exit":2,"cmd":"make test USE_HIP=1 HIPARCH=gfx1100"}
+{"kind":"phase","ts":"2026-06-02T02:30:26Z","phase":"compile","seconds":4.252,"exit":0,"cmd":"make test USE_HIP=1 HIPARCH=gfx1100"}
+{"kind":"phase","ts":"2026-06-02T02:31:31Z","phase":"test","seconds":0.178,"exit":0,"cmd":"HIP_VISIBLE_DEVICES=0 ./build/test"}
+{"kind":"phase","ts":"2026-06-07T18:30:03Z","phase":"compile","seconds":0.143,"exit":1,"cmd":"bash B:/develop/moat/agent_space/build_yalm_gfx1201.sh"}
+{"kind":"phase","ts":"2026-06-07T18:30:36Z","phase":"compile","seconds":18.893,"exit":1,"cmd":"bash B:/develop/moat/agent_space/build_yalm_gfx1201.sh"}
+{"kind":"phase","ts":"2026-06-07T18:34:04Z","phase":"compile","seconds":3.167,"exit":1,"cmd":"bash B:/develop/moat/agent_space/build_yalm_gfx1201.sh"}
+{"kind":"phase","ts":"2026-06-07T18:34:36Z","phase":"compile","seconds":6.582,"exit":0,"cmd":"bash B:/develop/moat/agent_space/build_yalm_gfx1201.sh"}
+{"kind":"phase","ts":"2026-06-07T18:39:44Z","phase":"compile","seconds":6.617,"exit":0,"cmd":"bash B:/develop/moat/agent_space/build_yalm_gfx1201.sh"}
+{"kind":"phase","ts":"2026-06-07T18:39:54Z","phase":"test","seconds":0.043,"exit":127,"cmd":"bash -c HIP_VISIBLE_DEVICES=0 ./test.exe && HIP_VISIBLE_DEVICES=0 ./test.exe"}
+{"kind":"phase","ts":"2026-06-07T18:39:59Z","phase":"test","seconds":0.591,"exit":0,"cmd":"bash -c HIP_VISIBLE_DEVICES=0 \"B:/develop/moat/projects/yalm/src/build/win/test.exe\" && HIP_VISIBLE_DEVICES=0 \"B:/develop/moat/projects/yalm/src/build/win/test.exe\""}
+{"kind":"phase","ts":"2026-06-07T20:10:27Z","phase":"compile","seconds":0.008,"exit":2,"cmd":"bash -c make clean && make test USE_HIP=1 HIPARCH=gfx1100 && cp src/infer.cu.o /var/lib/jenkins/moat/lfs-old-gfx1100/infer.cu.o"}
+{"kind":"phase","ts":"2026-06-07T20:10:37Z","phase":"compile","seconds":0.006,"exit":2,"cmd":"make test USE_HIP=1 HIPARCH=gfx1100"}
+{"kind":"phase","ts":"2026-06-07T20:10:46Z","phase":"compile","seconds":0.005,"exit":2,"cmd":"make USE_HIP=1 HIPARCH=gfx1100 test"}
+{"kind":"phase","ts":"2026-06-07T20:11:09Z","phase":"compile","seconds":0.005,"exit":2,"cmd":"make test USE_HIP=1 HIPARCH=gfx1100"}
+{"kind":"phase","ts":"2026-06-07T20:11:22Z","phase":"compile","seconds":4.251,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/yalm/src && make test USE_HIP=1 HIPARCH=gfx1100"}
+{"kind": "tokens", "ts": "2026-06-07T18:44:58Z", "tokens": 139735, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-15T12:15:44Z", "tokens": 45603, "source": "pr-prep"}
+{"kind":"session","ts":"2026-06-16T10:41:24Z","epoch":1781606484.499000500,"event":"start","platform":"windows-gfx1101"}
+{"kind":"phase","ts":"2026-06-16T10:41:36Z","phase":"compile","seconds":6.613,"exit":0,"cmd":"bash agent_space/build_yalm_gfx1101.sh"}
+{"kind":"phase","ts":"2026-06-16T10:41:42Z","phase":"test","seconds":0.361,"exit":0,"cmd":"bash -c HIP_VISIBLE_DEVICES=0 \"B:/develop/moat/projects/yalm/src/build/win_gfx1101/test.exe\""}
+{"kind":"session","ts":"2026-06-16T10:42:49Z","epoch":1781606569.425036800,"event":"end","platform":"windows-gfx1101"}
+{"kind": "tokens", "ts": "2026-06-16T06:35:35Z", "tokens": 18594, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-17T18:31:36Z", "tokens": 59502, "source": "pr-prep"}
+{"kind":"phase","ts":"2026-06-17T18:51:11Z","phase":"compile","seconds":157.110,"exit":0,"cmd":"make USE_HIP=1 HIPARCH=gfx1100"}
+{"kind":"phase","ts":"2026-06-17T18:53:25Z","phase":"compile","seconds":0.669,"exit":0,"cmd":"make USE_HIP=1 HIPARCH=gfx1100"}
+{"kind":"phase","ts":"2026-06-17T18:53:50Z","phase":"compile","seconds":4.197,"exit":0,"cmd":"make -C projects/yalm/src USE_HIP=1 HIPARCH=gfx1100"}
+{"kind":"phase","ts":"2026-06-17T18:54:50Z","phase":"test","seconds":11.487,"exit":0,"cmd":"bash -c HIP_VISIBLE_DEVICES=0 projects/yalm/src/build/main /var/lib/jenkins/moat/agent_space/yalm-e2e/mistral-7b-instruct-fp16.yalm -d cuda -m c -i \"What is a large language model?\" -n 100 -t 0.7"}
+{"kind":"phase","ts":"2026-06-17T20:57:19Z","phase":"compile","seconds":4.243,"exit":0,"cmd":"bash -c make -C projects/yalm/src clean && make -C projects/yalm/src USE_HIP=1 HIPARCH=gfx1100 2>&1"}
+{"kind":"phase","ts":"2026-06-17T20:57:27Z","phase":"compile","seconds":2.524,"exit":0,"cmd":"bash -c make -C projects/yalm/src USE_HIP=1 HIPARCH=gfx1100 test 2>&1"}
+{"kind": "tokens", "ts": "2026-06-17T20:59:32Z", "tokens": 42077, "source": "porter"}
+{"kind":"phase","ts":"2026-06-17T21:00:30Z","phase":"compile","seconds":4.264,"exit":0,"cmd":"bash -c make -C projects/yalm/src clean && make -C projects/yalm/src test USE_HIP=1 HIPARCH=gfx1100"}
+{"kind":"phase","ts":"2026-06-17T21:00:37Z","phase":"test","seconds":0.489,"exit":0,"cmd":"bash -c HIP_VISIBLE_DEVICES=0 /var/lib/jenkins/moat/projects/yalm/src/build/test && echo '--- RUN 1 DONE ---' && HIP_VISIBLE_DEVICES=0 /var/lib/jenkins/moat/projects/yalm/src/build/test && echo '--- RUN 2 DONE ---'"}
+{"kind":"phase","ts":"2026-06-17T21:01:00Z","phase":"e2e","seconds":10.982,"exit":0,"cmd":"bash -c HIP_VISIBLE_DEVICES=0 /var/lib/jenkins/moat/projects/yalm/src/build/main /var/lib/jenkins/moat/agent_space/yalm-e2e/mistral-7b-instruct-fp16.yalm -d cuda -m c -i 'What is a large language model?' -n 100 -t 0.7"}
+{"kind":"phase","ts":"2026-06-17T21:43:52Z","phase":"compile","seconds":0.024,"exit":2,"cmd":"bash -c make clean && make test USE_HIP=1 HIPARCH=gfx90a"}
+{"kind":"phase","ts":"2026-06-17T21:44:28Z","phase":"compile","seconds":5.340,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/yalm/src && make clean && make test USE_HIP=1 HIPARCH=gfx90a"}
+{"kind":"phase","ts":"2026-06-17T21:44:34Z","phase":"test","seconds":0.238,"exit":0,"cmd":"bash -c HIP_VISIBLE_DEVICES=2 /var/lib/jenkins/moat/projects/yalm/src/build/test"}
+{"kind": "tokens", "ts": "2026-06-17T21:46:47Z", "tokens": 57923, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-16T10:46:03Z", "tokens": 56603, "source": "validator"}
+{"kind":"phase","ts":"2026-06-17T22:05:48Z","phase":"compile","seconds":6.908,"exit":0,"cmd":"bash agent_space/build_yalm_gfx1201.sh"}
+{"kind":"phase","ts":"2026-06-17T22:05:58Z","phase":"test","seconds":0.419,"exit":0,"cmd":"B:/develop/moat/projects/yalm/src/build/win/test.exe"}
+{"kind": "tokens", "ts": "2026-06-17T21:04:03Z", "tokens": 45274, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-17T22:07:39Z", "tokens": 46688, "source": "validator (gfx1201 revalidate)"}
+{"kind":"phase","ts":"2026-06-19T18:04:55Z","phase":"compile","seconds":7.068,"exit":0,"cmd":"bash agent_space/build_yalm_gfx1101.sh"}
+{"kind":"phase","ts":"2026-06-19T18:05:26Z","phase":"test","seconds":0.419,"exit":0,"cmd":"bash -c HIP_VISIBLE_DEVICES=1 projects/yalm/src/build/win_gfx1101/test.exe"}
+{"kind": "tokens", "ts": "2026-06-19T18:08:23Z", "tokens": 53532, "source": "validator (gfx1101 revalidate)"}
+{"kind": "tokens", "ts": "2026-06-07T20:12:36Z", "tokens": 44145, "source": "validator"}

@@ -1,0 +1,160 @@
+{
+  "schema_version": 1,
+  "name": "GPUMD",
+  "upstream_url": "https://github.com/brucefan1983/GPUMD",
+  "fork_url": "https://github.com/AMD-Ecosystem/GPUMD",
+  "fork_default_branch": "master",
+  "priority": 5.508,
+  "ext_type": "unknown",
+  "adopted_at": "2026-05-29T23:57:04Z",
+  "updated_at": "2026-08-06T02:33:28Z",
+  "head_sha": "6231243f",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "6231243f",
+      "started_at": "2026-05-30T06:58:13Z",
+      "completed_at": "2026-06-03T22:51:48Z",
+      "updated_at": "2026-06-05T19:24:45Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "moat-checkup",
+      "carry_forward": {
+        "to": "6231243f",
+        "method": "source-class",
+        "detail": "makefile.hip drops explicit -std=c++17; hipcc defaults to C++17 (verified: rocPRIM compiles at default, errors at c++14), effective standard unchanged; build-flag only, no source change",
+        "at": "2026-06-03T22:51:48Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "6231243f",
+      "started_at": null,
+      "completed_at": "2026-06-03T22:51:48Z",
+      "updated_at": "2026-06-03T22:51:48Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "6231243f",
+        "method": "source-class",
+        "detail": "makefile.hip drops explicit -std=c++17; hipcc defaults to C++17 (verified: rocPRIM compiles at default, errors at c++14), effective standard unchanged; build-flag only, no source change",
+        "at": "2026-06-03T22:51:48Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "6231243f",
+      "started_at": null,
+      "completed_at": "2026-06-04T21:27:57Z",
+      "updated_at": "2026-06-04T21:27:57Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "6231243f",
+      "started_at": null,
+      "completed_at": "2026-06-04T21:27:57Z",
+      "updated_at": "2026-06-04T21:27:57Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1151": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "6231243f",
+      "started_at": null,
+      "completed_at": "2026-06-03T22:51:48Z",
+      "updated_at": "2026-06-03T22:51:48Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "6231243f",
+        "method": "source-class",
+        "detail": "makefile.hip drops explicit -std=c++17; hipcc defaults to C++17 (verified: rocPRIM compiles at default, errors at c++14), effective standard unchanged; build-flag only, no source change",
+        "at": "2026-06-03T22:51:48Z"
+      }
+    }
+  },
+  "pr_url": "https://github.com/brucefan1983/GPUMD/pull/1538",
+  "pr_number": 1538,
+  "pr_opened_at": "2026-06-05T19:24:45Z",
+  "pr_merged_at": "2026-06-05T19:24:45Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged",
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:33:28Z",
+    "tier": 3,
+    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
+  }
+}

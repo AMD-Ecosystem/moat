@@ -1,0 +1,10 @@
+{
+  "full_name": "rusty1s/pytorch_scatter",
+  "upstream_url": "https://github.com/rusty1s/pytorch_scatter",
+  "default_branch": "master",
+  "fork_url": null,
+  "ext_type": "torch-extension",
+  "base_sha": null,
+  "license_spdx": "MIT",
+  "license_source": "GitHub and the licence text agree"
+}

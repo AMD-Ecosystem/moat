@@ -1,0 +1,13 @@
+{
+  "full_name": "zju3dv/EnvGS",
+  "upstream_url": "https://github.com/zju3dv/EnvGS",
+  "default_branch": "main",
+  "fork_url": "https://github.com/AMD-Ecosystem/EnvGS",
+  "ext_type": "torch-extension",
+  "base_sha": "4dce5a41b2f614faca3169a94637ad02caba25b6",
+  "outcome_note": "Contribution cleared 2026-08-05. Covers CONTRIBUTING a fix upstream only -- not using this project in AMD software, shipping it, or depending on it. A non-commercial licence in particular bars use while leaving contribution unremarkable, so if this ever becomes a dependency rather than a contribution, that is a new question.",
+  "license_spdx": "unlicensed core (Inria-derived)",
+  "approved_at": "2026-08-05T23:10:07Z",
+  "approval_scope": "contribute-only",
+  "license_scrutiny": "Scrutiny before any upstream PR: the core rasterizer is Inria-derived and non-commercial, vendored under a top level that says nothing. Confirm our diff does not touch the Inria-derived core. Note the diff-surfel-tracing submodule has since added a licence on an unrelated history -- re-read it rather than relying on what we recorded."
+}

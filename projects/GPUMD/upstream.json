@@ -1,0 +1,17 @@
+{
+  "full_name": "brucefan1983/GPUMD",
+  "upstream_url": "https://github.com/brucefan1983/GPUMD",
+  "default_branch": "master",
+  "fork_url": "https://github.com/AMD-Ecosystem/GPUMD",
+  "ext_type": "make",
+  "base_sha": "c5597219e8b71cd1b3469d93d49d40e242676910",
+  "pr_url": "https://github.com/brucefan1983/GPUMD/pull/1538",
+  "pr_number": 1538,
+  "pr_head_sha": "6231243fdaabe33217b44dce15aa75c138a3468b",
+  "pr_opened_at": "2026-06-02",
+  "pr_state": "merged",
+  "outcome_note": "Contribution cleared 2026-08-05. Covers CONTRIBUTING a fix upstream only -- not using this project in AMD software, shipping it, or depending on it. A non-commercial licence in particular bars use while leaving contribution unremarkable, so if this ever becomes a dependency rather than a contribution, that is a new question.",
+  "license_spdx": "GPL-3.0",
+  "approved_at": "2026-08-05T23:10:07Z",
+  "approval_scope": "contribute-only"
+}

@@ -1,0 +1,95 @@
+# Discovery + ranking knobs for utils/discover.py.
+# Honest limit: this is a best-effort union of targeted GitHub searches, not a
+# census of every CUDA repo. GitHub search caps at 1000 results per query and
+# language:Cuda only catches repos whose dominant language is Cuda.
+
+[search]
+since_months = 12
+min_stars = 75
+per_query_limit = 1000        # gh --limit; GitHub caps search at 1000 regardless
+throttle_seconds = 2.5        # pause between queries to respect the search rate limit
+exclude = ["pytorch/pytorch", "microsoft/onnxruntime"]
+# Whole orgs to drop: AMD's own GPU orgs (already ROCm/HIP) and NVIDIA's orgs
+# (a ROCm port has nowhere to upstream, so it is not worth the effort).
+exclude_orgs = ["ROCm", "ROCm-Developer-Tools", "ROCmSoftwarePlatform", "NVlabs", "nv-tlabs"]
+# Drop any owner whose name contains one of these substrings; catches every
+# NVIDIA sub-org (NVIDIA, nvidia-isaac, NVIDIA-AI-IOT, NVIDIAGameWorks, ...).
+exclude_org_substrings = ["nvidia"]
+# Forks are dropped by default. Allowlist a fork here (owner/repo) when upstream
+# is dead and maintenance has moved to it.
+fork_exceptions = []
+# A candidate is kept only if the repo actually contains at least this many bytes
+# of CUDA code (GitHub languages API), not just a text mention. 0 means any .cu.
+min_cuda_bytes = 0
+
+# Each entry is one `gh search repos` query string. High-signal queries plus two
+# recall queries for C++/Python repos that contain .cu but are not Cuda-dominant;
+# the languages-API check (min_cuda_bytes) then removes text-only mentions.
+queries = [
+  "language:Cuda",
+  "topic:cuda",
+  "topic:gpu topic:cuda",
+  "cuda language:C++",
+  "cuda language:Python",
+]
+# Note: we deliberately do NOT enumerate domain topics (point-cloud, slam, fft, ...)
+# -- that pigeonholes discovery to anticipated domains and misses a cool CUDA
+# project in an unforeseen topic. Breadth comes instead from topic-agnostic
+# signals: language:Cuda (any Cuda-dominant repo, any topic) plus the
+# [code_search] pass below, which matches CUDA SOURCE (__global__, cudaMalloc,
+# torch extensions) in ANY repo regardless of topic/name/dominant language. The
+# lowered min_stars then reaches further down each of those topic-blind nets.
+
+# Code-search surfacing pass (utils/discover.py --code-search). The repo-search
+# pass above (gh search repos) only indexes name+description+topics, so a
+# CUDA library is invisible if its dominant language is not Cuda AND its
+# name/description/topics lack "cuda" -- even with substantial .cu code
+# (exemplar: facebookresearch/pytorch3d). The REST code-search API indexes
+# CUDA SOURCE, catching that blind-spot class. Constraints (empirical):
+# max 1000 results/query, no star sort (relevance/recency order), ~10
+# requests/min rate limit -- so throttle and prefer the narrow high-signal
+# queries over exhausting the broad one.
+[code_search]
+# Narrow, high-signal queries FIRST (they page first, so the budget lands on
+# them); the broad __global__ one is LAST -- ~98k matches, mostly sub-200-star,
+# low yield, so it only fills leftover budget. Indicative result counts, kept
+# tractable per query (a few thousand each, not 98k):
+#   CUDAExtension extension:py filename:setup ........... 2344  torch ext setup
+#   cpp_extension.load extension:py .................... 1244  JIT torch ext
+#   BuildExtension extension:py filename:setup ......... 6464  torch ext setup
+#   load_inline extension:py .......................... 2324  inline torch ext
+#   torch.utils.cpp_extension extension:py ............. 2060  torch ext import
+#   AT_DISPATCH_FLOATING_TYPES extension:cu ............ 7432  torch .cu kernels
+#   cudaMalloc extension:cuh ........................... 3988  CUDA headers
+#   __global__ extension:cu ........................... 98176  broad (last)
+queries = [
+  "CUDAExtension extension:py filename:setup",
+  "CUDA_HOME extension:py filename:setup",
+  "cpp_extension.load extension:py",
+  "BuildExtension extension:py filename:setup",
+  "load_inline extension:py",
+  "torch.utils.cpp_extension extension:py",
+  "AT_DISPATCH_FLOATING_TYPES extension:cu",
+  "cudaMalloc extension:cuh",
+  "__global__ extension:cu",
+]
+page_cap = 10                 # pages per query; API hard cap is 10 (100/page -> 1000)
+throttle_seconds = 12         # pause between code-search calls. Documented limit
+                              # is ~10 req/min, but GitHub also enforces a
+                              # stricter undocumented SECONDARY/abuse limit keyed
+                              # on request density; 12s headroom (plus the
+                              # exponential backoff in code_search()) keeps a
+                              # multi-query sweep from tripping it.
+# Bound on per-repo metadata fetches for NEW repos. Sized for a deeper sweep
+# across the narrow high-signal queries (they page first, so the broad
+# supplementary __global__ query is what gets truncated). Each fetch is
+# core-API (5000/hr), not the tight code-search limit, so this can be generous.
+max_new_repo_fetches = 1500
+
+[weights]
+# priority = stars*log10(stars+1) + forks*log10(forks+1)
+#          + recency * 0.5 ** (days_since_push / half_life_days)
+stars = 1.0
+forks = 0.5
+recency = 1.5
+half_life_days = 180.0

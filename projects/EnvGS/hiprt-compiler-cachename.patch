@@ -1,0 +1,16 @@
+diff --git a/hiprt/impl/Compiler.cpp b/hiprt/impl/Compiler.cpp
+index 7fb18e9..5448457 100644
+--- a/hiprt/impl/Compiler.cpp
++++ b/hiprt/impl/Compiler.cpp
+@@ -636,6 +636,11 @@ std::string Compiler::getCacheFilename(
+ 	std::string driverVersion = context.getDriverVersion();
+ 	std::string deviceName	  = context.getDeviceName();
+ 	deviceName				  = deviceName.substr( 0, deviceName.find( ":" ) );
++	// MOAT probe patch: some AMD device names (e.g. "AMD Instinct MI250X / MI250")
++	// contain '/', which std::filesystem::path treats as a directory separator and
++	// breaks cache file creation. Sanitize path-hostile characters.
++	for ( char& c : deviceName )
++		if ( c == '/' || c == '\\' ) c = '_';
+ 
+ 	std::string moduleHash = moduleName.string() + src;
+ 	moduleHash			   = Utility::format( "%08x", Utility::hashString( moduleHash ) );

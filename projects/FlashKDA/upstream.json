@@ -1,0 +1,10 @@
+{
+  "full_name": "MoonshotAI/FlashKDA",
+  "upstream_url": "https://github.com/MoonshotAI/FlashKDA",
+  "default_branch": "master",
+  "fork_url": null,
+  "ext_type": "torch-extension",
+  "base_sha": "d2ff19a6a0c82f39f796f637ebd1c36090b1268f",
+  "license_spdx": "MIT",
+  "license_source": "GitHub and the licence text agree"
+}

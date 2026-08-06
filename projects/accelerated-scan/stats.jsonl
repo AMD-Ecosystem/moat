@@ -1,0 +1,32 @@
+{"kind": "tokens", "ts": "2026-06-05T07:35:57Z", "tokens": 81882, "source": "planner"}
+{"kind":"phase","ts":"2026-06-05T07:38:26Z","phase":"compile","seconds":16.757,"exit":1,"cmd":"python3 -c \nimport torch\nprint('Testing warp (C++) backend...')\nfrom accelerated_scan.warp import scan as scan_warp\nprint('Warp module compiled successfully!')\n"}
+{"kind":"phase","ts":"2026-06-05T07:39:15Z","phase":"compile","seconds":26.118,"exit":1,"cmd":"python3 -c \nimport torch\nprint('Testing warp (C++) backend...')\nfrom accelerated_scan.warp import scan as scan_warp\nprint('Warp module compiled successfully!')\n"}
+{"kind":"phase","ts":"2026-06-05T07:40:02Z","phase":"compile","seconds":32.532,"exit":1,"cmd":"python3 -c \nimport torch\nprint('Testing warp (C++) backend...')\nfrom accelerated_scan.warp import scan as scan_warp\nprint('Warp module compiled successfully!')\n"}
+{"kind":"phase","ts":"2026-06-05T07:41:43Z","phase":"compile","seconds":75.470,"exit":0,"cmd":"python3 -c \nimport torch\nprint('Testing warp (C++) backend...')\nfrom accelerated_scan.warp import scan as scan_warp\nprint('Warp module compiled successfully!')\n"}
+{"kind":"phase","ts":"2026-06-05T07:47:33Z","phase":"compile","seconds":75.093,"exit":0,"cmd":"python3 -c \nimport torch\nprint('Compiling warp (C++) backend...')\nfrom accelerated_scan.warp import scan as scan_warp\nprint('Warp module compiled successfully!')\n"}
+{"kind":"phase","ts":"2026-06-05T07:53:21Z","phase":"test","seconds":0.406,"exit":4,"cmd":"pytest tests/test_eq.py -v"}
+{"kind":"phase","ts":"2026-06-05T07:53:41Z","phase":"test","seconds":14.376,"exit":1,"cmd":"pytest /var/lib/jenkins/moat/projects/accelerated-scan/src/tests/test_eq.py -v"}
+{"kind": "tokens", "ts": "2026-06-05T07:55:45Z", "tokens": 113038, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-05T07:57:56Z", "tokens": 62349, "source": "reviewer"}
+{"kind":"session","ts":"2026-06-05T07:58:22Z","epoch":1780646302.837894898,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-06-05T07:58:43Z","phase":"build","seconds":0.332,"exit":1,"cmd":"pip install -e ."}
+{"kind":"phase","ts":"2026-06-05T07:58:52Z","phase":"build","seconds":2.639,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/accelerated-scan/src && pip install -e ."}
+{"kind":"phase","ts":"2026-06-05T07:59:08Z","phase":"test","seconds":10.764,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/accelerated-scan/src && export HIP_VISIBLE_DEVICES=1 && pytest tests/test_eq.py -v"}
+{"kind":"phase","ts":"2026-06-05T07:59:44Z","phase":"test","seconds":14.539,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/accelerated-scan/src && export HIP_VISIBLE_DEVICES=1 && pytest tests/tests_eq_complex.py -v 2>&1 | tail -50"}
+{"kind":"session","ts":"2026-06-05T08:00:49Z","epoch":1780646449.961195043,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-06-05T14:34:52Z", "tokens": 44184, "source": "validator (gfx1100)"}
+{"kind":"phase","ts":"2026-06-08T02:54:21Z","phase":"compile","seconds":5.047,"exit":0,"cmd":"bash -c cd B:/develop/moat/projects/accelerated-scan/src && HIP_VISIBLE_DEVICES=0 B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/pip.exe install -e . 2>&1"}
+{"kind":"phase","ts":"2026-06-08T02:54:41Z","phase":"test","seconds":12.363,"exit":0,"cmd":"bash -c cd B:/develop/moat/projects/accelerated-scan/src && HIP_VISIBLE_DEVICES=0 B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/pytest.exe tests/test_eq.py -v 2>&1"}
+{"kind":"phase","ts":"2026-06-08T02:55:15Z","phase":"test","seconds":24.399,"exit":0,"cmd":"bash -c cd B:/develop/moat/projects/accelerated-scan/src && HIP_VISIBLE_DEVICES=0 B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/pytest.exe tests/tests_eq_complex.py -v 2>&1"}
+{"kind":"phase","ts":"2026-06-08T16:52:03Z","phase":"build","seconds":0.003,"exit":127,"cmd":"pip install -e projects/accelerated-scan/src"}
+{"kind":"phase","ts":"2026-06-08T16:52:32Z","phase":"compile","seconds":19.004,"exit":0,"cmd":"pip install -e projects/accelerated-scan/src"}
+{"kind":"phase","ts":"2026-06-08T16:52:53Z","phase":"test","seconds":10.204,"exit":1,"cmd":"bash -c cd projects/accelerated-scan/src && python3 -m pytest tests/test_eq.py -q -k \"reverse or bindings\" 2>/dev/null"}
+{"kind":"phase","ts":"2026-06-08T16:53:44Z","phase":"test","seconds":28.709,"exit":1,"cmd":"bash -c cd projects/accelerated-scan/src && python3 -m pytest tests/test_eq.py tests/tests_eq_complex.py -q 2>/dev/null"}
+{"kind": "tokens", "ts": "2026-06-08T16:59:38Z", "tokens": 56703, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-08T02:57:06Z", "tokens": 46853, "source": "validator"}
+{"kind":"session","ts":"2026-06-19T20:07:27Z","epoch":1781899647.451757200,"event":"start","platform":"windows-gfx1101"}
+{"kind":"phase","ts":"2026-06-19T20:07:38Z","phase":"compile","seconds":4.899,"exit":0,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe -m pip install -e B:/develop/moat/projects/accelerated-scan/src"}
+{"kind":"phase","ts":"2026-06-19T20:08:08Z","phase":"test","seconds":15.901,"exit":0,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe -m pytest B:/develop/moat/projects/accelerated-scan/src/tests/test_eq.py -v --tb=short"}
+{"kind":"phase","ts":"2026-06-19T20:09:07Z","phase":"test","seconds":34.983,"exit":0,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe -m pytest B:/develop/moat/projects/accelerated-scan/src/tests/tests_eq_complex.py -v --tb=short"}
+{"kind":"session","ts":"2026-06-19T20:09:52Z","epoch":1781899792.900000900,"event":"end","platform":"windows-gfx1101"}
+{"kind": "tokens", "ts": "2026-06-19T20:10:19Z", "tokens": 52516, "source": "validator (gfx1101)"}

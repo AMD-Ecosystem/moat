@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "name": "Gpufit",
+  "upstream_url": "https://github.com/gpufit/Gpufit",
+  "fork_url": "https://github.com/AMD-Ecosystem/Gpufit",
+  "fork_default_branch": "master",
+  "priority": 4.647,
+  "ext_type": "unknown",
+  "adopted_at": "2026-05-30T01:04:51Z",
+  "updated_at": "2026-06-23T22:51:05Z",
+  "head_sha": "02fc60fd02e4e9e6e4e9645dffeb1af190322b20",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "02fc60fd02e4e9e6e4e9645dffeb1af190322b20",
+      "started_at": "2026-05-30T05:07:21Z",
+      "completed_at": "2026-06-23T22:51:05Z",
+      "updated_at": "2026-06-23T22:51:05Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "02fc60fd02e4e9e6e4e9645dffeb1af190322b20",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:51:05Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "02fc60fd02e4e9e6e4e9645dffeb1af190322b20",
+      "started_at": "2026-05-30T06:15:16Z",
+      "completed_at": "2026-06-23T22:51:05Z",
+      "updated_at": "2026-06-23T22:51:05Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "02fc60fd02e4e9e6e4e9645dffeb1af190322b20",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:51:05Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "02fc60fd02e4e9e6e4e9645dffeb1af190322b20",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:51:05Z",
+      "updated_at": "2026-06-23T22:51:05Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "02fc60fd02e4e9e6e4e9645dffeb1af190322b20",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:51:05Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "02fc60fd02e4e9e6e4e9645dffeb1af190322b20",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:51:05Z",
+      "updated_at": "2026-06-23T22:51:05Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "02fc60fd02e4e9e6e4e9645dffeb1af190322b20",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:51:05Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "validation-failed",
+      "blocked": true,
+      "blocked_reason": "gfx1151-specific LM-solver numerical divergence (defer to gfx1101 box, not chased on this APU host). Build is GOOD -- two general Windows-toolchain fixes landed at 0a1b3d6 (CMAKE_HIP_COMPILE_OBJECT /Fo device-fatbin drop; /FI force-include for clang-cl), all binaries + gfx1151 device code build. GPU gate 8/10 PASS; Gpufit_Test_Gauss_Fit_2D_Elliptic + Cpufit_Gpufit_Test_Consistency(gauss_2d_elliptic) FAIL: the GAUSS_2D_ELLIPTIC Levenberg-Marquardt fit false-converges to a wrong point (sigma terms diverge to 28-58, chi2=16.3) on gfx1151 only; gfx90a+gfx1100 pass, CPU passes in 6 iters. RDNA3.5 vs RDNA3 FP-accumulation difference in the GJ gradient/hessian step. Preserve 0a1b3d6 build fixes; reopen on gfx1101 to chase the solver divergence.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T09:07:53Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "pr_url": "https://github.com/gpufit/Gpufit/pull/149",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open"
+}

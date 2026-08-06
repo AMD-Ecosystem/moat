@@ -1,0 +1,11 @@
+{
+  "full_name": "uos/rmagine",
+  "upstream_url": "https://github.com/uos/rmagine",
+  "default_branch": "main",
+  "fork_url": null,
+  "ext_type": "unknown",
+  "base_sha": null,
+  "license_spdx": "BSD-3-Clause",
+  "license_source": "read from LICENSE",
+  "note": "Dependency fork supporting the rmcl port: rmcl's CUDA correspondence code builds against rmagine. Carries a moat-port branch that predates being tracked here, so it has no validation record: the port exists, its state is unverified."
+}
