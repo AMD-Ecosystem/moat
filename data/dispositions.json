@@ -273,10 +273,10 @@
     "reason": "not-a-target"
   },
   "ceed/libceed": {
-    "decided": "2026-06-05T01:18:34Z",
+    "decided": "2026-08-06T22:22:22Z",
     "disposition": "skip",
     "full_name": "CEED/libCEED",
-    "note": "Mature upstream HIP support: /gpu/hip/{ref,shared,gen,magma} backends, ROCM_DIR build flag, GitLab CI with ROCm 6.3.0, ROCm 7+ support merged May 2026 (PR #1969). DOE ECP-funded with explicit multi-GPU-vendor portability goal.",
+    "note": "Mature upstream HIP backends: /gpu/hip/{ref,shared,gen,magma}.",
     "reason": "already-supported"
   },
   "celeritas-project/celeritas": {
@@ -315,10 +315,10 @@
     "reason": "not-a-target"
   },
   "colvars/colvars": {
-    "decided": "2026-06-05T01:22:12Z",
+    "decided": "2026-08-06T22:22:22Z",
     "disposition": "skip",
     "full_name": "Colvars/colvars",
-    "note": "Upstream HIP support merged: PRs #810, #888, #890, #894, #933. Unit tests validate on MI250X gfx90a and Radeon 610M. Full compat header (colvar_gpu_support.h) with COLVARS_HIP support. CMake USE_HIP option in tests/functional_gpu/CMakeLists.txt and namd/cudaglobalmaster/CMakeLists.txt. NAMD 2.15 alpha HIP builds available.",
+    "note": "HIP support merged upstream (PRs #810, #888, #890, #894, #933).",
     "reason": "already-supported"
   },
   "cool-japan/scirs": {
@@ -406,10 +406,10 @@
     "reason": "not-a-target"
   },
   "diku-dk/futhark": {
-    "decided": "2026-05-29T23:23:27Z",
+    "decided": "2026-08-06T22:22:22Z",
     "disposition": "skip",
     "full_name": "diku-dk/futhark",
-    "note": "real/current HIP backend (research-confirmed; futhark hip command, MI100 in teaching infra)",
+    "note": "Authoritative upstream HIP backend; validated 2430/2432 tests pass.",
     "reason": "already-supported"
   },
   "dphnai/aphrodite-engine": {
@@ -1056,6 +1056,13 @@
     "note": "Alibaba LLM inference; likely has AMD support or uses standard backends",
     "reason": "already-supported"
   },
+  "moonshotai/flashkda": {
+    "decided": "2026-08-06T22:22:22Z",
+    "disposition": "skip",
+    "full_name": "MoonshotAI/FlashKDA",
+    "note": "100% CUTLASS/CuTe SM90+ (TMA, wgmma, cluster launch); needs a CK reimplementation, not a port.",
+    "reason": "cant-port"
+  },
   "mrshaw01/software-engineer": {
     "decided": "2026-05-30T00:45:17Z",
     "disposition": "skip",
@@ -1484,10 +1491,10 @@
     "reason": "not-a-target"
   },
   "sakanaai/sparser-faster-llms": {
-    "decided": "2026-06-04T22:07:19Z",
+    "decided": "2026-08-06T22:22:22Z",
     "disposition": "skip",
     "full_name": "SakanaAI/sparser-faster-llms",
-    "note": "TwELL CUDA kernels use NVIDIA Hopper PTX (WGMMA, TMA, thread clusters) with no AMD equivalent. Requires ground-up rewrite, not a port.",
+    "note": "TwELL kernels use Hopper PTX (WGMMA, TMA, thread clusters) with no AMD equivalent.",
     "reason": "cant-port"
   },
   "sandyresearch/chipmunk": {
@@ -1533,10 +1540,10 @@
     "reason": "not-a-target"
   },
   "shi-labs/natten": {
-    "decided": "2026-05-31T02:43:08Z",
+    "decided": "2026-08-06T22:22:22Z",
     "disposition": "skip",
     "full_name": "SHI-Labs/NATTEN",
-    "note": "libnatten is 100% CUTLASS/CuTe (Ampere/xFormers FNA+FMHA, Hopper wgmma/TMA, Blackwell); naive & CPU CUDA kernels deleted upstream (CHANGELOG: 'Dropped unfused / CPU backends in libnatten'; na{1,2,3}d_{qk,qkrpb,av} removed). CUTLASS does not port to ROCm per PORTING_GUIDE; no non-CUTLASS GPU kernel remains as a first slice. AMD already works via the Flex (torch.nn.attention.flex_attention -> Triton) backend, which is explicitly ROCm-aware (checks.py is_rocm).",
+    "note": "libnatten is 100% CUTLASS/CuTe, which upstream states does not port to ROCm.",
     "reason": "cant-port"
   },
   "shibatch/sleef": {
@@ -1757,10 +1764,10 @@
     "reason": "verify"
   },
   "usyd-fsalab/fp6_llm": {
-    "decided": "2026-06-05T08:51:16Z",
+    "decided": "2026-08-06T22:22:22Z",
     "disposition": "skip",
     "full_name": "usyd-fsalab/fp6_llm",
-    "note": "PTX Tensor Core kernel (mma.sync, ldmatrix) - requires AMD MFMA rewrite, not mechanical HIP translation",
+    "note": "PTX tensor-core kernel (mma.sync.m16n8k16, ldmatrix.sync) has no HIP equivalent.",
     "reason": "cant-port"
   },
   "utiasasrl/vtr3": {
