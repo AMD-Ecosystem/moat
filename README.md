@@ -188,6 +188,7 @@ The project name links upstream.
 | [RWKV-CUDA](https://github.com/BlinkDL/RWKV-CUDA) ([fork](https://github.com/AMD-Ecosystem/RWKV-CUDA/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [RXMesh](https://github.com/owensgroup/RXMesh) ([fork](https://github.com/AMD-Ecosystem/RXMesh/tree/moat-port)) | 🔄 | ✅ | ✅ | 🟢 [#73](https://github.com/owensgroup/RXMesh/pull/73) |
 | [SCAMP](https://github.com/zpzim/SCAMP) ([fork](https://github.com/AMD-Ecosystem/SCAMP/tree/moat-port)) | 🔄 | ✅ | ✅ | 🟢 [#145](https://github.com/zpzim/SCAMP/pull/145) |
+| [sonar](https://github.com/dphnAI/sonar) | — | — | — | — |
 | [SpargeAttn](https://github.com/thu-ml/SpargeAttn) | 🚫 | ⬜ | ⬜ | — |
 | [sparser-faster-llms](https://github.com/SakanaAI/sparser-faster-llms) | 🚫 | 🚫 | 🚫 | — |
 | [spconv](https://github.com/traveller59/spconv) | 🚫 | ⬜ | ⬜ | — |
