@@ -1510,6 +1510,14 @@
     "reason": "not-a-target",
     "repo_id": 355252375
   },
+  "pegainfer-project/pegainfer": {
+    "decided": "2026-08-07T15:10:48Z",
+    "disposition": "skip",
+    "full_name": "pegainfer-project/pegainfer",
+    "note": "Decided by jeffdaily on intake queue issue #5, 2026-08-07. The GPU layer runs through the cudarc Rust crate, which has no ROCm backend anywhere in the Rust ecosystem, and the GLM5.2/Kimi-K2 kernels are Blackwell-only tcgen05/CUTLASS.",
+    "reason": "cant-port",
+    "repo_id": 1159983293
+  },
   "pennylaneai/pennylane-lightning": {
     "decided": "2026-06-05T01:24:20Z",
     "disposition": "skip",
@@ -1549,6 +1557,14 @@
     "note": "tutorial/educational/samples, not a library to port",
     "reason": "not-a-target",
     "repo_id": 882914578
+  },
+  "project-hami/hami-core": {
+    "decided": "2026-08-07T15:10:47Z",
+    "disposition": "skip",
+    "full_name": "Project-HAMi/HAMi-core",
+    "note": "Decided by jeffdaily on intake queue issue #5, 2026-08-07. An AMD-native equivalent already exists in the same upstream org: Project-HAMi/amd-hami-core hooks HIP and uses ROC_GLOBAL_CU_MASK, verified on MI300X across ROCm 6.2-7.2.",
+    "reason": "already-supported",
+    "repo_id": 747110621
   },
   "proteneer/timemachine": {
     "decided": "2026-06-05T01:23:31Z",
