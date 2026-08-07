@@ -129,4 +129,19 @@ answers are possible.
   decline has decided, not proposed -- and a wrong one is invisible afterwards,
   because the project simply stops appearing.
 
-Commit with `moatlib.py commit-project <name> "<msg>"`.
+**Record the recommendation as data, either way.** The write-up is the argument; this
+is the row a person reads in the queue:
+
+    python3 utils/moatlib.py set-intake <name> <fork|decline> \
+      --summary "<one line: what it is and what decides it>" \
+      --duplicate "<existing AMD/ROCm effort, or none>" --viable <yes|no|unknown> \
+      [--reason <SKIP_REASON>]        # required when declining
+
+Prose in notes.md cannot be rendered into a table, and a queue nobody can read at a
+glance is one people approve without reading. `--summary` is the whole of what most
+reviewers will see, so make it the sentence you would want them to decide on.
+
+Then commit with `moatlib.py commit-project <name> "<msg>"`. Your screen joins the
+single intake queue -- `python3 utils/intake_queue.py publish --apply` -- where one
+person decides the whole batch at once. Do NOT open a per-project pull request for
+the screen: four of those on 2026-08-06 cost four sets of clicks for one question.

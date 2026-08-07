@@ -609,6 +609,27 @@ def license_gate(name):
     return (False, f"tier {tier} ({spdx}): needs approval before it can be offered upstream")
 
 
+# Intake's verdict, as data. The write-up in notes.md is the argument; this is the
+# row in the queue a person reads. It is a RECOMMENDATION and never a decision --
+# `verdict: decline` records what intake would choose, and only a person turns that
+# into a disposition (see the autonomy boundary).
+INTAKE_VERDICTS = ("fork", "decline")
+
+
+def set_intake(name, verdict, summary, reason=None, duplicate=None, viable=None):
+    """Record intake's recommendation on the project."""
+    if verdict not in INTAKE_VERDICTS:
+        raise ValueError(f"verdict must be one of {INTAKE_VERDICTS}")
+    if verdict == "decline" and reason not in SKIP_REASONS:
+        raise ValueError(f"a decline must name a reason from {SKIP_REASONS}")
+    obj = load_status(name)
+    obj["intake"] = {"verdict": verdict, "reason": reason,
+                     "duplicate_effort": duplicate, "viable": viable,
+                     "summary": summary, "at": now_iso()}
+    save_status(name, obj)
+    return obj["intake"]
+
+
 def record_license_clearance(name, approved_by, note=None):
     """Record a person's decision to allow a tier 3/4 project upstream."""
     obj = load_status(name)
@@ -1587,6 +1608,13 @@ def main(argv=None):
     s = sub.add_parser("pr-ready", help="check PR readiness: every required gate satisfied by a completed arch or an approved waiver")
     s.add_argument("name")
 
+    si = sub.add_parser("set-intake", help="record intake's recommendation (not a decision)")
+    si.add_argument("name")
+    si.add_argument("verdict", choices=list(INTAKE_VERDICTS))
+    si.add_argument("--summary", required=True, help="one line for the queue table")
+    si.add_argument("--reason", choices=SKIP_REASONS, help="required when declining")
+    si.add_argument("--duplicate", help="existing AMD/ROCm effort, or 'none'")
+    si.add_argument("--viable", choices=["yes", "no", "unknown"])
     s = sub.add_parser("record-license-clearance",
                        help="record a person's decision to allow a tier 3/4 project upstream")
     s.add_argument("name")
@@ -1716,6 +1744,11 @@ def main(argv=None):
                   + ", ".join(f"{p}={s}" for p, s in blocking))
         if nonviable:
             print("  non-viable (does not block; scope the PR body): " + ", ".join(nonviable))
+    elif args.cmd == "set-intake":
+        viable = {"yes": True, "no": False, "unknown": None}.get(args.viable)
+        _print_json(set_intake(args.name, args.verdict, args.summary,
+                               reason=args.reason, duplicate=args.duplicate,
+                               viable=viable))
     elif args.cmd == "record-license-clearance":
         c = record_license_clearance(args.name, args.by, args.note)
         print(f"{args.name}: tier {c['tier']} cleared upstream by {c['approved_by']}")

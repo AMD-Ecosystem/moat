@@ -18,7 +18,7 @@ Five agents. The reviewer can bounce back to the porter (changes-requested); the
 
 Either intake or the planner may terminate a project; both terminations are recorded as a disposition and merged, so a negative outcome is still a deliverable.
 
-Intake does everything except the fork: the branch, the project folder, the write-up, the draft PR. Then it sets `awaiting-fork` and stops. **The fork appearing in the org is what releases the project** -- agents cannot create one, so its existence is a deliberate act by someone who can, and that carries the decision without anything needing to model who made it. `moatlib.py release-forks` advances waiting projects; orient.sh runs `upstream.py --forks --apply` before every selection, which does that AND records any decline label, so no one has to notice a new fork by hand.
+Intake does everything except the fork: the branch, the project folder, the write-up, and a typed recommendation (`moatlib.py set-intake`). Then it sets `awaiting-fork` and stops. Screens collect into ONE issue -- `python3 utils/intake_queue.py publish --apply`, the `intake-queue` skill -- so a batch is one decision rather than one per project; a person answers in prose, an agent round-trips that reading as a small PR recording only the declines, and their approval of THAT is the record. Accepts need no PR at all. **The fork appearing in the org is what releases the project** -- agents cannot create one, so its existence is a deliberate act by someone who can, and that carries the decision without anything needing to model who made it. `moatlib.py release-forks` advances waiting projects; orient.sh runs `upstream.py --forks --apply` before every selection, which does that AND records any decline label, so no one has to notice a new fork by hand.
 
 Coverage is expressed as GATES, not a platform list: `wave64`, `wave32`, `windows` (config/arches.toml). Platforms are NOT enumerated anywhere -- a platform is `<os>-<gfx>`, whatever a host reports, and its gates follow from its name, so a machine with a new GPU works with no config change. Only an unknown wavefront family is refused, since guessing that wrong corrupts memory silently. A gate is satisfied by ANY arch carrying that attribute, so gfx90a/Linux covers wave64 while gfx1201/Windows covers wave32 and windows together -- two hosts suffice. Linux is not gated because wave64 is only satisfiable there. Extra archs are additive evidence and gate nothing. `windows` is the one waivable gate, and **every waiver needs maintainer approval** -- agents may only suggest one.
 
@@ -137,6 +137,7 @@ If uncertain, choose the simpler, more concise implementation.
 # Where things live
 
 - `.claude/skills/cuda-to-rocm/` -- the porting knowledge: SKILL.md is the always-loaded index, references/ hold the detail.
+- `.claude/skills/intake-queue/` -- publishing the batch queue and carrying a decision back into state.
 - projects/<name>/ -- plan.md, notes.md, status.json, stats.jsonl per project.
 - utils/ -- orient.sh (entrypoint), moatlib.py (state machine + sync), discover.py, gen_readme.py.
 - .claude/agents/ -- intake, planner, porter, reviewer, validator.
