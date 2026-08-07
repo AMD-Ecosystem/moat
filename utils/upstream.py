@@ -225,17 +225,11 @@ def fork_poll(apply=False, stale_weeks=3):
     session. This only makes the project eligible and tells someone.
     """
     import datetime
-    released, waiting, elsewhere = [], [], []
+    released, waiting = [], []
     for name, d, where in all_records():
         blocks = {a: b for a, b in (d.get("platforms") or {}).items()
                   if b.get("state") == "awaiting-fork"}
         if not blocks:
-            continue
-        if where == "branch":
-            # Releasing writes to the record, and the record is not in this checkout.
-            # Report it rather than skipping: a fork that appeared for a project whose
-            # branch nobody has out is exactly the thing this exists to notice.
-            elsewhere.append({"name": name, "archs": sorted(blocks)})
             continue
         slug = (d.get("fork_url") or f"https://github.com/AMD-Ecosystem/{name}") \
             .replace("https://github.com/", "")
@@ -245,13 +239,10 @@ def fork_poll(apply=False, stale_weeks=3):
             since = min((b.get("updated_at") or "") for b in blocks.values())
             waiting.append({"name": name, "slug": slug, "since": since})
             continue
-        released.append({"name": name, "slug": slug, "archs": sorted(blocks)})
+        released.append({"name": name, "slug": slug, "archs": sorted(blocks),
+                         "where": where})
 
-    print(f"fork-poll: {len(released)} released, {len(waiting)} still waiting, "
-          f"{len(elsewhere)} on another branch\n")
-    for e in elsewhere:
-        print(f"  ELSEWHERE  {e['name']:26} awaiting-fork on port/{e['name']} -- "
-              f"check that branch out to release it")
+    print(f"fork-poll: {len(released)} released, {len(waiting)} still waiting\n")
     for r in released:
         print(f"  RELEASED   {r['name']:26} fork exists: {r['slug']}")
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -270,43 +261,17 @@ def fork_poll(apply=False, stale_weeks=3):
     if not apply or not released:
         return released, waiting
 
-    # Restore whatever branch the caller was on. orient.sh runs this BEFORE selecting,
-    # so leaving the session parked on someone else's port branch would silently change
-    # which project the next command operates on. `checkout -B` also resets the local
-    # branch pointer to the remote, so the wrong branch is not merely inconvenient.
-    started_on = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(REPO),
-                                capture_output=True, text=True).stdout.strip()
-    for r in released:
-        branch = f"port/{r['name']}"
-        def git(*a):
-            return subprocess.run(["git", *a], cwd=str(REPO), capture_output=True, text=True)
-        if git("fetch", "-q", "origin", branch).returncode:
-            print(f"  {r['name']}: no {branch} on the remote; state left alone")
-            continue
-        git("checkout", "-q", "-B", branch, f"origin/{branch}")
-        obj = json.loads((REPO / "projects" / r["name"] / "status.json").read_text())
-        for a in r["archs"]:
-            obj["platforms"][a]["state"] = "screened"
-        (REPO / "projects" / r["name"] / "status.json").write_text(
-            json.dumps(obj, indent=2) + "\n")
-        git("add", "-A")
-        git("commit", "-q", "-m",
-            f"{r['name']}: fork exists, releasing for planning\n\n"
-            f"{r['slug']} was created, which is the decision to take this project up.")
-        git("push", "-q", "origin", branch)
-        pr = gh_json(["pr", "list", "--head", branch, "--state", "open",
-                      "--json", "number"]) or []
-        if pr:
-            subprocess.run(
-                ["gh", "pr", "comment", str(pr[0]["number"]), "--body",
-                 f"`{r['slug']}` now exists, so this project is released for planning. "
-                 f"State advanced to `screened`; the next session on a suitable host "
-                 f"will pick it up."],
-                cwd=str(REPO), capture_output=True, text=True)
-
-    if started_on and started_on != "HEAD":
-        subprocess.run(["git", "checkout", "-q", started_on], cwd=str(REPO),
-                       capture_output=True, text=True)
+    # One implementation, in moatlib. This used to keep its own: check the branch out,
+    # edit the file, commit, push, restore the caller's branch, then look for the
+    # project's draft PR to comment on. That last step has found nothing since draft
+    # PRs stopped being opened per project, and the checkout dance is unnecessary now
+    # that release_awaiting_fork writes a branch through git plumbing. Two
+    # implementations of "release a fork" had already drifted: this one advanced
+    # branch-resident projects while `moatlib.py release-forks` reported none waiting.
+    sys.path.insert(0, str(REPO / "utils"))
+    import moatlib
+    for name, slug in moatlib.release_awaiting_fork():
+        print(f"  ADVANCED   {name:26} -> screened ({slug})")
     return released, waiting
 
 

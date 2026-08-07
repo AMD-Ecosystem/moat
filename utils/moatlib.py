@@ -1124,20 +1124,57 @@ def known_platforms():
 
 
 def all_projects():
-    """{name: where} for every project this repo knows about, across refs."""
+    """{name: where} for every project this repo knows about, across refs.
+
+    `where` agrees with project_record: a project's own branch outranks a copy of it
+    on the trunk or in this working tree, unless that branch is the one checked out.
+    The two used to disagree for exactly one project -- colmap, the only one carrying
+    both a branch and a trunk stub -- and the disagreement led opposite ways. The
+    resolver said screened-on-a-branch; everything reading this map said
+    unclaimed-and-local, so the "actionable elsewhere, go check it out" hint filtered
+    it away while the selector offered to screen it a second time."""
     out = {}
-    for ref in port_branches():
+    branches = port_branches()
+    for ref in branches:
         out[ref] = "branch"
+
+    def _shadowed(n):
+        return n in branches and current_branch() != f"port/{n}"
+
     r = _git("ls-tree", "--name-only", "origin/main", "projects/", check=False)
     for line in r.stdout.splitlines():
         n = line.strip().rstrip("/").split("/")[-1]
-        if n and n != "README.md":
+        if n and n != "README.md" and not _shadowed(n):
             out[n] = "trunk"
     if PROJECTS.exists():
         for d in PROJECTS.iterdir():
-            if (d / "status.json").exists():
+            if (d / "status.json").exists() and not _shadowed(d.name):
                 out[d.name] = "local"
     return out
+
+
+def project_records():
+    """(name, obj, where) for every project, resolved the way the rest of MOAT reads.
+
+    The selector walked projects/ off disk while gen_readme, check.py, upstream.py and
+    fleet all went through project_record, so the two answered differently for any
+    project whose branch record differs from its copy on the trunk. Everything that
+    asks "what is the state of every project" comes through here now."""
+    for name, _where in sorted(all_projects().items()):
+        obj, where = project_record(name)
+        if obj is not None:
+            yield name, obj, where
+
+
+def writable_here(name, where):
+    """May this checkout edit this project's record in place?
+
+    A branch-resident project is READABLE from anywhere and writable only from its own
+    branch -- you cannot edit files that are not in your tree. `commit_to_branch` is
+    the exception and writes one without a checkout; the selector deliberately does
+    not use it, because dispatching an agent at a project whose folder is absent would
+    hand it a plan and notes it cannot open."""
+    return where in ("local", "trunk") or current_branch() == f"port/{name}"
 
 
 def project_port_state(name):
@@ -1223,13 +1260,39 @@ def dep_report(obj):
             if dep_status(d)[0] != "ok"]
 
 
+# States that describe the PROJECT and not an architecture. There is no such thing as
+# "screened on gfx90a": a screen, a plan, and waiting on a fork are each one fact about
+# one fork. They live in the per-arch map only because that is the only map there is,
+# which is the last of the lead/follower model -- see `awaiting-port`, whose entire
+# meaning is "a port exists and this arch has not been let in yet".
+#
+# Until they move to a project-level field, an arch with no record of its own reads the
+# project's stage rather than defaulting to `unclaimed`. Without this, a project
+# screened and parked on one arch was offered for a SECOND intake screen on every other
+# arch -- cuda_voxelizer, h2o4gpu and tsne-cuda all did exactly that, and TornadoVM
+# escaped only because someone hand-seeded five arch records, which is the wrong fix:
+# copying a project-level fact N times is what you do when platforms are a fixed list.
+PRE_PORT_STATES = ("unclaimed", "screened", "planned", "awaiting-fork",
+                   "awaiting-upstream")
+
+
+def project_stage(obj):
+    """The project's own stage before any port exists, or None. The furthest along
+    wins, so one arch left at `unclaimed` cannot drag a screened project backwards."""
+    seen = [b.get("state") for b in validations(obj).values()
+            if b.get("state") in PRE_PORT_STATES]
+    return max(seen, key=PRE_PORT_STATES.index) if seen else None
+
+
 def platform_state(obj, platform):
     """This platform's state, defaulting an absent record the way set_state does.
     A record that is not there means no host has touched this platform yet."""
     blk = validations(obj).get(platform)
     if blk:
         return blk["state"]
-    return "awaiting-port" if obj.get("head_sha") else "unclaimed"
+    if obj.get("head_sha"):
+        return "awaiting-port"
+    return project_stage(obj) or "unclaimed"
 
 
 def actionable(obj, platform):
@@ -1249,8 +1312,7 @@ def actionable(obj, platform):
     # Bailing here deadlocked every newly adopted project: the record is created by
     # working the project, and working it required the record. opencv, rmagine and
     # the two diff-surfel repos sat forked and unoffered from June because of it.
-    blk = vals.get(platform) or _platform_block(
-        "awaiting-port" if obj.get("head_sha") else "unclaimed")
+    blk = vals.get(platform) or _platform_block(platform_state(obj, platform))
     if blk["blocked"]:
         return False
     if blk["state"] in INERT:
@@ -1272,31 +1334,23 @@ def dep_blocked(platform):
     do or a project is waiting on a dependency nobody has adopted. That silence is
     the failure mode: deps-first ordering becomes deps-never and nothing says so."""
     out = []
-    if not PROJECTS.exists():
-        return out
-    for d in sorted(PROJECTS.iterdir()):
-        if not (d / "status.json").exists():
-            continue
-        try:
-            obj = load_status(d.name)
-        except (ValueError, json.JSONDecodeError):
-            continue
-        if obj.get("on_hold"):
+    for name, obj, where in project_records():
+        if obj.get("on_hold") or not writable_here(name, where):
             continue
         # Would it be pickable if the dependency cleared? Same test as actionable(),
         # minus the dependency check itself.
-        disp = disposition_for_project(obj.get("name") or "")
+        disp = disposition_for_project(name)
         if disp and disp.get("disposition") == "skip":
             continue
         blk = validations(obj).get(platform) or _platform_block(
-            "awaiting-port" if obj.get("head_sha") else "unclaimed")
+            platform_state(obj, platform))
         if blk.get("blocked") or blk.get("state") in INERT:
             continue
         if blk.get("state") not in STAGE_FOR_STATE:
             continue
         report = dep_report(obj)
         if report:
-            out.append((d.name, report))
+            out.append((name, report))
     return out
 
 
@@ -1316,7 +1370,7 @@ def fleet(platform):
         if disp and disp.get("disposition") == "skip":
             continue
         blk = validations(obj).get(platform) or _platform_block(
-            "awaiting-port" if obj.get("head_sha") else "unclaimed")
+            platform_state(obj, platform))
         if blk.get("blocked") or blk.get("state") in INERT:
             continue
         stage = STAGE_FOR_STATE.get(blk.get("state"))
@@ -1329,23 +1383,21 @@ def fleet(platform):
 
 
 def next_task(platform):
-    """Pick the single next project for this platform. Returns dict or None."""
+    """Pick the single next project for this platform. Returns dict or None.
+
+    Resolved, and restricted to what this checkout can actually edit. Reading the
+    working tree directly offered a project its own branch had already moved past --
+    colmap was screened and decided on `port/colmap` while the trunk stub still said
+    unclaimed, so the trunk offered to screen it a second time and `fleet` said
+    planner. Anything a branch owns is reported by `fleet` instead, with the branch
+    to check out."""
     cands = []
-    if not PROJECTS.exists():
-        return None
-    for d in sorted(PROJECTS.iterdir()):
-        sp = d / "status.json"
-        if not sp.exists():
-            continue
-        try:
-            obj = load_status(d.name)
-        except (ValueError, json.JSONDecodeError):
-            continue
-        if not actionable(obj, platform):
+    for name, obj, where in project_records():
+        if not writable_here(name, where) or not actionable(obj, platform):
             continue
         state = platform_state(obj, platform)
         cands.append((SELECT_RANK.get(state, 99), -float(obj.get("priority", 0)),
-                      d.name, state))
+                      name, state))
     if not cands:
         return None
     cands.sort()
@@ -1362,53 +1414,58 @@ def release_awaiting_fork(org="AMD-Ecosystem", dry_run=False):
     nothing needs to: the fork either exists or it does not, which is checkable by
     anyone and cannot drift from whatever a document claims.
 
-    Returns [(name, fork_url)] for the projects released."""
+    Returns [(name, fork_url)] for the projects released.
+
+    Resolved across refs and written across them too. Every project waiting on a fork
+    now lives on its own branch, so walking the working tree reported "nothing waiting
+    on a fork" while four waited -- a clean bill of health that was false, and the one
+    report anyone would trust to tell them a fork had appeared. `commit_to_branch`
+    writes the release without checking the branch out, which is safe here in a way it
+    would not be for the selector: this advances a record, it does not hand an agent a
+    project whose files are absent."""
     released = []
-    if not PROJECTS.exists():
-        return released
-    for d in sorted(PROJECTS.iterdir()):
-        if not (d / "status.json").exists():
-            continue
-        try:
-            obj = load_status(d.name)
-        except (ValueError, json.JSONDecodeError):
-            continue
+    for name, obj, where in project_records():
         vals = validations(obj)
         waiting = [a for a, b in vals.items() if b.get("state") == "awaiting-fork"]
         if not waiting:
             continue
-        fork = obj.get("fork_url") or f"https://github.com/{org}/{d.name}"
+        fork = obj.get("fork_url") or f"https://github.com/{org}/{name}"
         slug = fork.replace("https://github.com/", "")
         r = subprocess.run(["gh", "api", f"repos/{slug}", "--jq", ".full_name"],
                            capture_output=True, text=True, timeout=60)
         if r.returncode:
             continue                       # still no fork; leave it waiting
         if dry_run:
-            released.append((d.name, slug))
+            released.append((name, slug))
             continue
         for a in waiting:
             vals[a]["state"] = "screened"
             vals[a]["updated_at"] = now_iso()
         obj["fork_url"] = f"https://github.com/{slug}"
-        save_status(d.name, obj)
-        released.append((d.name, slug))
+        obj["updated_at"] = now_iso()
+        if writable_here(name, where):
+            save_status(name, obj)
+        else:
+            commit_to_branch(
+                f"port/{name}", {f"projects/{name}/status.json":
+                                 json.dumps(obj, indent=2) + "\n"},
+                f"{name}: fork exists, releasing for planning\n\n"
+                f"{slug} was created, which is the decision to take this project up.")
+        released.append((name, slug))
     return released
 
 
 def unblock_all_followers():
     """Flip awaiting-port -> port-ready wherever a port now exists to validate.
-    Called by orient.sh before selection so waiting archs become pickable."""
+    Called by orient.sh before selection so waiting archs become pickable.
+
+    Only where this checkout owns the record. Unlike the fork release, this runs on
+    every orient and would otherwise push to a handful of branches on each one; a
+    session that checks a branch out does its own. The name is residue of the
+    lead/follower model -- see PRE_PORT_STATES."""
     changed = []
-    if not PROJECTS.exists():
-        return changed
-    for d in sorted(PROJECTS.iterdir()):
-        if not (d / "status.json").exists():
-            continue
-        try:
-            obj = load_status(d.name)
-        except (ValueError, json.JSONDecodeError):
-            continue
-        if not port_done(obj):
+    for name, obj, where in project_records():
+        if not writable_here(name, where) or not port_done(obj):
             continue
         touched = False
         for plat, blk in validations(obj).items():
@@ -1419,8 +1476,8 @@ def unblock_all_followers():
                 blk["updated_at"] = now_iso()
                 touched = True
         if touched:
-            save_status(d.name, obj)
-            changed.append(d.name)
+            save_status(name, obj)
+            changed.append(name)
     return changed
 
 
@@ -2182,7 +2239,7 @@ def main(argv=None):
         print(f"{args.name}: approval-valid={ok} ({why})")
         return 0 if ok else 1
     elif args.cmd == "pr-candidates":
-        names = [d.name for d in sorted(PROJECTS.iterdir()) if (d / "status.json").exists()]
+        names = [n for n, _o, _w in project_records()]
         ready_names = []
         for n in names:
             try:
@@ -2206,8 +2263,8 @@ def main(argv=None):
               "a project listed here has passed both. What it cannot judge is whether "
               "the change is worth sending -- read the diff before opening.")
     elif args.cmd == "audit-clean":
-        names = [args.name] if args.name else [d.name for d in sorted(PROJECTS.iterdir())
-                                               if (d / "status.json").exists()]
+        names = ([args.name] if args.name
+                 else [n for n, _o, _w in project_records()])
         real_gap = False
         for n in names:
             files = uncommitted_source_files(n)
@@ -2246,7 +2303,17 @@ def main(argv=None):
         rel = release_awaiting_fork(dry_run=args.dry_run)
         for name, slug in rel:
             print(f"{'would release' if args.dry_run else 'released'} {name} -> {slug}")
-        if not rel:
+        # "Nothing released" and "nothing waiting" are different answers and this
+        # printed the second for both, so four projects waiting on a fork nobody had
+        # created yet read as a clean bill of health.
+        waiting = sorted(n for n, o, _w in project_records()
+                         if any(b.get("state") == "awaiting-fork"
+                                for b in validations(o).values()))
+        still = [n for n in waiting if n not in {r[0] for r in rel}]
+        if still:
+            print(f"release-forks: {len(still)} still waiting on a fork that does not "
+                  f"exist yet -- {', '.join(still)}")
+        elif not rel:
             print("release-forks: nothing waiting on a fork")
         return 0
     elif args.cmd == "fleet":
@@ -2279,20 +2346,14 @@ def main(argv=None):
         print(f"{args.name} depends_on = {args.deps}")
     elif args.cmd == "deps":
         any_dep = False
-        for d in sorted(PROJECTS.iterdir()):
-            if not (d / "status.json").exists():
-                continue
-            try:
-                obj = load_status(d.name)
-            except (ValueError, json.JSONDecodeError):
-                continue
+        for d_name, obj, _where in project_records():
             deps = obj.get("depends_on", [])
             if not deps:
                 continue
             any_dep = True
             unmet = unmet_deps(obj)
             mark = "READY (deps complete)" if not unmet else ("WAITING on " + ", ".join(unmet))
-            print(f"{d.name}: depends_on={deps} -> {mark}")
+            print(f"{d_name}: depends_on={deps} -> {mark}")
         if not any_dep:
             print("(no inter-project dependencies recorded)")
     return 0

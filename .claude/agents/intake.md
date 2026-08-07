@@ -103,7 +103,9 @@ possible; the queue puts your recommendation in front of a person as the default
 their reply is a diff against it.
 
 `moatlib.py release-forks` advances a waiting project once its fork exists, and
-`orient.sh` runs it before every selection, so no one has to notice by hand.
+`orient.sh` reaches the same function through `upstream.py --forks --apply` before
+every selection, so no one has to notice by hand. It works whether the project's
+record is on the trunk or on its own branch.
 
 ## Outcomes
 
