@@ -233,7 +233,10 @@ def upstream_full_name(name):
     """The upstream repo as `owner/repo`, from the URL status.json already holds.
     This is the key dispositions.json is written under, so it is how a project record
     finds its own disposition."""
-    url = (load_status(name).get("upstream_url") or "").rstrip("/")
+    try:
+        url = (load_status(name).get("upstream_url") or "").rstrip("/")
+    except (FileNotFoundError, ValueError, json.JSONDecodeError):
+        return None          # not adopted here; callers treat that as "no record"
     tail = url.replace("https://github.com/", "")
     return tail if tail.count("/") == 1 else None
 
@@ -827,11 +830,70 @@ def project_port_state(name):
     return next(iter(states), None)
 
 
+# What a dependency's disposition means for whatever depends on it. A disposition is
+# not one answer: some of them say the dependency needs no port, and some say it will
+# never have one. Treating them alike would release a dependent to fail at build time,
+# which costs a whole porter attempt to rediscover what the disposition already
+# recorded.
+DEP_SATISFIED_BY_DISPOSITION = ("already-supported", "ported-elsewhere")
+DEP_DOOMED_BY_DISPOSITION = ("cant-port", "license-blocked", "not-a-target",
+                             "duplicate", "declined", "other")
+
+
+def disposition_for_project(name):
+    """A recorded decision about a project named by its MOAT short name.
+
+    `depends_on` holds short names; dispositions are keyed by `owner/repo`. Normally
+    the project's own status.json maps between them -- but a decided project has no
+    folder on the trunk, which is exactly the case this has to answer, so fall back
+    to matching the repo basename. An ambiguous match returns None rather than
+    guessing: two owners can publish the same repo name, and silently picking one
+    would apply somebody else's decision to this dependency."""
+    full = upstream_full_name(name)
+    if full:
+        return get_disposition(full)
+    hits = [v for k, v in load_dispositions().items()
+            if k.rsplit("/", 1)[-1] == name.lower()]
+    return hits[0] if len(hits) == 1 else None
+
+
+def dep_status(dep):
+    """Where a dependency stands, for a project that needs it built.
+
+    Returns (verdict, detail). Verdicts:
+      ok        -- usable now: a port validated, or upstream needs no port
+      waiting   -- adopted and in the pipeline; will clear on its own
+      doomed    -- dispositioned in a way that means it will never be portable, so
+                   whatever depends on it cannot be built either
+      unknown   -- not adopted and not dispositioned; nobody has looked at it yet,
+                   so it needs an intake request before anything can proceed
+    """
+    state = project_port_state(dep)
+    if state in PORT_DONE_STATES:
+        return ("ok", state)
+    disp = disposition_for_project(dep) or {}
+    reason = disp.get("reason") if disp.get("disposition") == "skip" else None
+    if reason in DEP_SATISFIED_BY_DISPOSITION:
+        return ("ok", reason)
+    if reason in DEP_DOOMED_BY_DISPOSITION:
+        return ("doomed", reason)
+    if state is not None:
+        return ("waiting", state)
+    return ("unknown", "not adopted")
+
+
 def unmet_deps(obj):
-    """MOAT-internal projects this one depends_on that are not yet validated, or not
-    adopted. A project is not portable until these are done: its build links/uses the
-    ported dependency. See DEPENDENCIES.md."""
-    return [d for d in obj.get("depends_on", []) if project_port_state(d) not in PORT_DONE_STATES]
+    """MOAT-internal projects this one depends_on that cannot be built against yet.
+    A project is not portable until these clear: its build links/uses the ported
+    dependency. See DEPENDENCIES.md."""
+    return [d for d in obj.get("depends_on", []) if dep_status(d)[0] != "ok"]
+
+
+def dep_report(obj):
+    """Every unmet dependency with its verdict, for explaining a block to a person.
+    `unmet_deps` answers "may this be selected"; this answers "why not"."""
+    return [(d, *dep_status(d)) for d in obj.get("depends_on", [])
+            if dep_status(d)[0] != "ok"]
 
 
 def actionable(obj, platform):
@@ -854,6 +916,37 @@ def actionable(obj, platform):
     if unmet_deps(obj):  # deps-first ordering: wait until depended-on ports complete
         return False
     return blk["state"] in STAGE_FOR_STATE
+
+
+def dep_blocked(platform):
+    """Projects this platform would otherwise work, held back only by a dependency.
+
+    `next_task` returning NONE looks identical whether there is genuinely nothing to
+    do or a project is waiting on a dependency nobody has adopted. That silence is
+    the failure mode: deps-first ordering becomes deps-never and nothing says so."""
+    out = []
+    if not PROJECTS.exists():
+        return out
+    for d in sorted(PROJECTS.iterdir()):
+        if not (d / "status.json").exists():
+            continue
+        try:
+            obj = load_status(d.name)
+        except (ValueError, json.JSONDecodeError):
+            continue
+        if obj.get("on_hold"):
+            continue
+        blk = validations(obj).get(platform)
+        # Would it be pickable if the dependency cleared? Same test as actionable(),
+        # minus the dependency check itself.
+        if not blk or blk.get("blocked") or blk.get("state") in INERT:
+            continue
+        if blk.get("state") not in STAGE_FOR_STATE:
+            continue
+        report = dep_report(obj)
+        if report:
+            out.append((d.name, report))
+    return out
 
 
 def next_task(platform):
@@ -975,6 +1068,19 @@ SKIP_REASONS = ["already-supported", "ported-elsewhere",
 #   lives in a SEPARATE repo, fork, or effort; only use it with a found reference.
 
 
+def github_repo_id(full_name):
+    """GitHub's numeric repo id, which survives renames and owner transfers.
+    None if the repo is unreachable -- caller must not read that as "no such repo"."""
+    r = subprocess.run(["gh", "api", f"repos/{full_name}", "--jq", ".id"],
+                       capture_output=True, text=True, timeout=60)
+    if r.returncode:
+        return None
+    try:
+        return int(r.stdout.strip())
+    except ValueError:
+        return None
+
+
 def load_dispositions():
     if DISPOSITIONS.exists():
         try:
@@ -991,16 +1097,34 @@ def save_dispositions(d):
         f.write("\n")
 
 
-def get_disposition(full_name):
-    return load_dispositions().get(full_name.lower())
+def get_disposition(full_name, repo_id=None):
+    """A recorded decision about this repo, by name or by GitHub repo id.
+
+    The id is what makes this survive a rename. `owner/repo` is not stable: lucebox
+    was skipped in May as luce-org/lucebox-hub, was renamed, and came back through
+    discovery under the new name because the key matched nothing. GitHub resolves an
+    old name to the new one but not the reverse, so the only thing that closes it in
+    both directions is the numeric id."""
+    d = load_dispositions()
+    hit = d.get(full_name.lower())
+    if hit:
+        return hit
+    if repo_id is not None:
+        for v in d.values():
+            if v.get("repo_id") == repo_id:
+                return v
+    return None
 
 
-def set_disposition(full_name, disposition, reason, note=""):
+def set_disposition(full_name, disposition, reason, note="", repo_id=None):
     if disposition == "skip" and reason not in SKIP_REASONS:
         raise ValueError(f"reason must be one of {SKIP_REASONS}")
     d = load_dispositions()
+    if repo_id is None:
+        repo_id = github_repo_id(full_name)      # best effort; None when offline
     d[full_name.lower()] = {"full_name": full_name, "disposition": disposition,
-                            "reason": reason, "note": note, "decided": now_iso()}
+                            "reason": reason, "note": note, "decided": now_iso(),
+                            "repo_id": repo_id}
     save_dispositions(d)
     return d[full_name.lower()]
 
@@ -1463,6 +1587,9 @@ def main(argv=None):
     rf = sub.add_parser("release-forks",
                         help="advance awaiting-fork projects whose fork now exists")
     rf.add_argument("--dry-run", action="store_true")
+    db = sub.add_parser("dep-blocked",
+                        help="projects held back only by a dependency, and why")
+    db.add_argument("platform")
     bs = sub.add_parser("branch-sync",
                         help="merge the trunk into this port branch, but only if "
                              "something a port can feel has changed there")
@@ -1624,6 +1751,13 @@ def main(argv=None):
         if not rel:
             print("release-forks: nothing waiting on a fork")
         return 0
+    elif args.cmd == "dep-blocked":
+        rows = dep_blocked(args.platform)
+        for name, report in rows:
+            for dep, verdict, detail in report:
+                print(f"{name}\t{dep}\t{verdict}\t{detail}")
+        if not rows:
+            print("", end="")
     elif args.cmd == "branch-sync":
         action, detail = branch_sync(apply=args.apply)
         print(f"branch-sync: {action} -- {detail}")
