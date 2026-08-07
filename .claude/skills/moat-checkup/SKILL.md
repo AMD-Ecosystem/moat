@@ -203,6 +203,13 @@ who was not there. Before this had a writer, the determination was made once and
 hand-copied onto the second Windows arch in prose -- "carried from windows-gfx1101
 determination" -- which is what a finding with nowhere to go looks like.
 
+Refusing is an answer too, and the queue has to empty both ways or an unanswered
+suggestion is reprinted forever and the only escape is approving it:
+`moatlib.py refuse-waiver <name> <gate> --by <who> --note '<what to investigate>'`. The
+note is required, because a refusal without one leaves the next agent where the last one
+was and it will suggest the same waiver again. The gate stays unsatisfied either way; the
+refusal just makes the block a known quantity.
+
 Waiving is not the only answer, and often not the right one. A gate that no arch can
 satisfy because the CODEBASE cannot be ported is `set-not-portable`; a gate failing on
 one card because of a toolchain or library defect is a per-arch `blocked` flag with the

@@ -87,6 +87,12 @@ def build():
                         "suggested_at": {"type": "string"},
                         "approved_by": {"type": "string", "minLength": 1},
                         "at": {"type": "string"},
+                        # A refusal is an answer too, and is kept rather than deleting
+                        # the suggestion: the next agent to hit the same wall needs to
+                        # know it was asked, answered, and what to look at instead.
+                        "refused_by": {"type": "string", "minLength": 1},
+                        "refused_at": {"type": "string"},
+                        "refused_note": {"type": "string", "minLength": 1},
                     },
                 },
             },

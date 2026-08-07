@@ -131,6 +131,17 @@
           },
           "at": {
             "type": "string"
+          },
+          "refused_by": {
+            "type": "string",
+            "minLength": 1
+          },
+          "refused_at": {
+            "type": "string"
+          },
+          "refused_note": {
+            "type": "string",
+            "minLength": 1
           }
         }
       }

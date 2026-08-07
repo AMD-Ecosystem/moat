@@ -967,13 +967,44 @@ def approve_waiver(name, gate, by, reason=None):
     return w
 
 
+def refuse_waiver(name, gate, by, note):
+    """A person declining a suggested waiver, with what they want done instead.
+
+    The answer has to be recordable in BOTH directions or the queue only empties one
+    way: an unanswered suggestion is reprinted by every orient forever, and the only
+    way to silence it is approving it or hand-editing the file -- which is pressure in
+    exactly the wrong direction, on the one gate that may be escaped at all.
+
+    The refusal stays in the record rather than deleting the suggestion, because the
+    next agent to hit the same wall needs to know it was asked and answered, and what
+    to investigate instead. The gate stays unsatisfied either way."""
+    if not (by or "").strip():
+        raise ValueError(f"{name}: --by is required; a refusal is a person's answer too")
+    if not (note or "").strip():
+        raise ValueError(
+            f"{name}: --note is required. A refusal without one leaves the next agent "
+            f"exactly where the last one was, and it will suggest the same waiver again")
+    obj = load_status(name)
+    w = dict((obj.get("waivers") or {}).get(gate) or {})
+    if not w:
+        raise ValueError(f"{name}: no waiver suggested for {gate}")
+    if w.get("approved_by"):
+        raise ValueError(f"{name}: {gate} is already approved by {w['approved_by']}; "
+                         f"withdrawing an approval is that person's call, not a refusal")
+    w.update({"refused_by": by, "refused_at": now_iso(), "refused_note": note})
+    obj.setdefault("waivers", {})[gate] = w
+    save_status(name, obj)
+    return w
+
+
 def pending_waivers():
-    """Every suggested-but-unapproved waiver, across all refs. These BLOCK their
-    project's PR, and the only thing that clears one is a person."""
+    """Every waiver awaiting an answer, across all refs. These BLOCK their project's
+    PR, and the only thing that resolves one is a person. A refused one is answered and
+    so is not here -- it still blocks, and the block is now a known quantity."""
     out = []
     for name, obj, _where in project_records():
         for gate, w in (obj.get("waivers") or {}).items():
-            if not w.get("approved_by"):
+            if not w.get("approved_by") and not w.get("refused_by"):
                 out.append((name, gate, w.get("reason") or "", w.get("suggested_at") or ""))
     return sorted(out)
 
@@ -2157,6 +2188,10 @@ def pr_ready(name):
                 nonviable.extend(a for a in archs
                                  if vals[a].get("state") != "completed" and vals[a].get("blocked"))
             continue
+        if w and w.get("refused_by"):
+            blocking.append((gate, f"waiver REFUSED by {w['refused_by']} -- "
+                                   f"{(w.get('refused_note') or '')[:120]}"))
+            continue
         if w and not w.get("approved_by"):
             blocking.append((gate, "waiver suggested but not approved by a maintainer"))
             continue
@@ -2274,6 +2309,13 @@ def main(argv=None):
     s.add_argument("name")
     s.add_argument("gate")
     s.add_argument("--reason", required=True, help="the obstacle, in checkable detail")
+
+    s = sub.add_parser("refuse-waiver",
+                       help="a maintainer declining a suggested waiver, saying what to do instead")
+    s.add_argument("name")
+    s.add_argument("gate")
+    s.add_argument("--by", required=True, help="who decided; never an agent")
+    s.add_argument("--note", required=True, help="what to investigate instead")
 
     s = sub.add_parser("approve-waiver",
                        help="a maintainer approving a suggested waiver, which is what makes it count")
@@ -2459,6 +2501,11 @@ def main(argv=None):
         print(f"{args.name}: {args.gate} waiver SUGGESTED -- {w['reason'][:100]}")
         print("   satisfies nothing until a maintainer approves it; it blocks pr-ready "
               "meanwhile", file=sys.stderr)
+    elif args.cmd == "refuse-waiver":
+        w = refuse_waiver(args.name, args.gate, args.by, args.note)
+        print(f"{args.name}: {args.gate} waiver REFUSED by {w['refused_by']} -- {w['refused_note'][:100]}")
+        print("   the gate stays unsatisfied; the refusal says what to do about it "
+              "instead", file=sys.stderr)
     elif args.cmd == "approve-waiver":
         w = approve_waiver(args.name, args.gate, args.by, args.reason)
         print(f"{args.name}: {args.gate} waived by {w['approved_by']} -- {w['reason'][:100]}")

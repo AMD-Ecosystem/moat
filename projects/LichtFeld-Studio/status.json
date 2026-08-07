@@ -7,14 +7,17 @@
   "priority": 6.263,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-08-07T22:59:41Z",
+  "updated_at": "2026-08-07T23:06:58Z",
   "head_sha": "5cbfdf1a7b1b6a6553ce077a5aa8d6209fd3f51c",
   "depends_on": [],
   "porting": null,
   "waivers": {
     "windows": {
       "reason": "The obstacle is the Windows toolchain, not the GPU: on a TheRock Windows build torch::cuda::is_available() returns false inside a standalone C++ executable because the CUDAHooksRegistry entry in torch_hip.dll is never registered, so no AMD card can run the tests there. Determined on windows-gfx1101 and confirmed host-wide on windows-gfx1201. Linux wave64 (gfx90a) and wave32 (gfx1100) both validated at head.",
-      "suggested_at": "2026-08-07T22:59:41Z"
+      "suggested_at": "2026-08-07T22:59:41Z",
+      "refused_by": "jeffdaily",
+      "refused_at": "2026-08-07T23:06:58Z",
+      "refused_note": "Not a platform obstacle -- a build issue that was not explored far enough. The port itself works on Windows: 320/914 tests pass on real gfx1101 including the custom HIP reduction kernels, and the GPU is fully visible (torch._C._cuda_getDeviceCount() > 0 via the ctypes path). All 564 failures fail at ASSERT_TRUE(torch::cuda::is_available()) in the harness before reaching any ported code, because lld-link omits .CRT from torch_hip.dll so REGISTER_CUDA_HOOKS static initializers never run. That is a fixable defect in TheRock's PyTorch Windows build, not a property of Windows, and notes.md itself says a TheRock fix would take this to completed. Investigate before asking again: file the TheRock defect (now in data/deferred.json); try forcing the registration (/WHOLEARCHIVE or a reference into the hooks TU, or _initterm on the DLL CRT section directly); and try running a thread after load, since notes.md records TLS callbacks at known RVAs that fire on DLL_THREAD_ATTACH. None of those was tried."
     }
   },
   "license_clearance": {
