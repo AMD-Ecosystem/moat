@@ -75,11 +75,18 @@ def gate_schema():
     except ImportError:
         problems.append("jsonschema not installed; cannot validate status files")
         return problems
+    import moatlib as m
     schema = json.loads((REPO / "schema" / "status.schema.json").read_text())
     v = jsonschema.Draft202012Validator(schema)
-    for sp in sorted((REPO / "projects").glob("*/status.json")):
-        for e in sorted(v.iter_errors(json.loads(sp.read_text())), key=lambda e: list(e.path))[:1]:
-            problems.append(f"{sp.relative_to(REPO)}: {'.'.join(map(str, e.path))}: {e.message[:120]}")
+    # Across refs: a record on its own branch still has to validate, and a checkout
+    # that cannot see it must not report the file as fine by not looking.
+    for name in sorted(m.all_projects()):
+        obj, where = m.project_record(name)
+        if obj is None:
+            continue
+        for e in sorted(v.iter_errors(obj), key=lambda e: list(e.path))[:1]:
+            problems.append(f"projects/{name}/status.json ({where}): "
+                            f"{'.'.join(map(str, e.path))}: {e.message[:120]}")
     return problems
 
 
@@ -147,20 +154,22 @@ def gate_states():
     written by an older checkout after a state rename."""
     import moatlib as m
     problems = []
-    for sp in sorted((REPO / "projects").glob("*/status.json")):
-        d = json.loads(sp.read_text())
+    for name in sorted(m.all_projects()):
+        d, _where = m.project_record(name)
+        if d is None:
+            continue
         for arch, blk in (d.get("platforms") or {}).items():
             if m.platform_problem(arch):
-                problems.append(f"{sp.parent.name}: unknown arch {arch!r} "
+                problems.append(f"{name}: unknown arch {arch!r} "
                                 f"(add it to config/arches.toml)")
             if blk.get("state") not in m.STATES:
-                problems.append(f"{sp.parent.name}/{arch}: unknown state {blk.get('state')!r}")
+                problems.append(f"{name}/{arch}: unknown state {blk.get('state')!r}")
         w = d.get("waivers") or {}
         for gate, rec in w.items():
             if gate not in m.WAIVABLE_GATES:
-                problems.append(f"{sp.parent.name}: gate {gate!r} is not waivable")
+                problems.append(f"{name}: gate {gate!r} is not waivable")
             elif not rec.get("approved_by"):
-                problems.append(f"{sp.parent.name}: waiver on {gate!r} has no approved_by "
+                problems.append(f"{name}: waiver on {gate!r} has no approved_by "
                                 f"-- an agent cannot self-certify past a gate")
     return problems
 
