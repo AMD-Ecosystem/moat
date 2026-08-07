@@ -104,19 +104,24 @@ def local_port_branch():
 def gate_readme():
     """The generated project table matches the data it claims to describe.
 
-    Skipped for a LOCAL push to a port branch, and only there. Mid-port the tree is
-    the trunk plus one project, so the table differs for a row that belongs on the
-    trunk once the port lands; making every push regenerate it is friction with no
-    payoff. Three of the four agents on the 2026-08-06 dry run regenerated the README
-    purely to get a push through.
+    Only where the port branches are visible. The table now renders across refs, so a
+    project in flight appears on the board -- which means the table cannot be
+    reproduced without the refs it was generated from. A CI checkout fetches one
+    branch, so it sees neither the branch-only rows nor the current state of a project
+    that exists on both the trunk and its own branch, and calls both differences
+    staleness. Eight runs failed that way, then four more after the first fix, every
+    one a false alarm.
 
-    It is NOT skipped in CI. A pull request builds the merge commit, so `gen_readme`
-    there describes the trunk as it will be, and the gate fails on the pull request
-    that has to fix it. An earlier version of this skipped on the branch name alone,
-    which let the offending PR go green and dropped the failure on whoever next
-    pushed to the trunk -- a stale table is one command to fix, but it should not be
-    a stranger's command."""
-    if local_port_branch():
+    Fetching every ref in CI would trade those for something worse: with the branches
+    visible, any push to any port branch stales the trunk's table and fails the trunk's
+    next push, for whoever happens to make it.
+
+    So this is judged where it can be judged -- a full clone, which is what the
+    pre-push hook runs in -- and skipped, loudly, where it cannot."""
+    if not _run(["git", "for-each-ref", "--format=%(refname)",
+                 "refs/remotes/origin/port/"]).stdout.strip():
+        print("readme: skipped -- no port branches in this checkout, so the table "
+              "cannot be verified here", file=sys.stderr)
         return []
     r = _run([sys.executable, "utils/gen_readme.py", "--check"])
     return [] if r.returncode == 0 else ["README table is stale (run utils/gen_readme.py)"]
