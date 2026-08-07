@@ -22,6 +22,11 @@ every host and person working that project pushes state to it. **The branch exis
 remote is the claim** -- it is how another host knows the project is in flight, so there is
 no separate lock file.
 
+The branch is deleted when its pull request merges -- that is what retires the claim. A
+`port/<name>` left behind reads as live work forever, and the selector has no timeout
+that would notice; taking over one that is genuinely stale is a human decision, not an
+expiry.
+
 A project opens a **draft PR** into the trunk as soon as it is under consideration, not when
 it is finished. That makes work visible, runs CI continuously rather than once at the end,
 and lets a reviewer object to the approach on day one. The PR is marked ready when there is
@@ -38,7 +43,10 @@ is a deliberate act by someone who can, so its existence carries the decision.
 `orient.sh` runs `upstream.py --forks --apply` before every selection, so the state
 advances and the PR gets its comment the next time anyone starts work.
 
-**No is a label on the draft PR:**
+**No is a label on the draft PR**, applied by a person. An agent writes the case for a
+decline and recommends a reason; it never records one. Declining is a decision exactly as
+forking is, and a wrong decline is invisible afterwards because the project simply stops
+appearing.
 
 | label | recorded as |
 |---|---|
@@ -70,7 +78,11 @@ pull requests, every notification, and the trunk's history after it merges:
 | a port | `port/<name>` | `<project>: what changed` |
 | a change to MOAT | anything else | say what it changes |
 
-Under 72 characters, and never open a MOAT change with a project name -- it will read
+Never put a stage or a verdict in a title -- not `intake`, not `declined`, not
+`screened`. Each names a moment, and the branch outlives it: one PR carries the screen,
+the plan, the port and the validation records. A neutral title also survives a reversal,
+so a decline later overturned needs no retitle. Under 72 characters, and never open a
+MOAT change with a project name -- it will read
 as that project's work everywhere the branch is not shown. CI checks the title and
 fails on it, which costs one click to fix. It also reports where the diff disagrees
 with the branch: a port reaching into tooling, or touching projects it did not claim.
