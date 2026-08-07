@@ -15,7 +15,10 @@
   ],
   "properties": {
     "schema_version": {
-      "const": 1
+      "enum": [
+        1,
+        2
+      ]
     },
     "name": {
       "type": "string"
@@ -287,6 +290,21 @@
           "type": "string"
         }
       }
+    },
+    "stage": {
+      "enum": [
+        "awaiting-fork",
+        "awaiting-upstream",
+        "changes-requested",
+        "delta-ported",
+        "planned",
+        "ported",
+        "porting",
+        "review-passed",
+        "screened",
+        "unclaimed",
+        "validation-failed"
+      ]
     },
     "platforms": {
       "type": "object",

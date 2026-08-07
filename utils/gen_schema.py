@@ -29,7 +29,9 @@ def build():
         "required": ["schema_version", "name", "upstream_url", "fork_default_branch",
                      "priority", "ext_type", "platforms"],
         "properties": {
-            "schema_version": {"const": m.SCHEMA_VERSION},
+            # Both versions while the migration runs, matching validate_status --
+            # a const here would fail every record not yet stamped.
+            "schema_version": {"enum": list(m.READABLE_SCHEMA_VERSIONS)},
             "name": {"type": "string"},
             "upstream_url": {"type": "string"},
             # GitHub's numeric repo id, which survives a rename or an org transfer.
@@ -159,6 +161,11 @@ def build():
                     "review_pr": {"type": "string"},
                 },
             },
+            # Where the PORT is. One fork, one answer -- as against platforms[arch],
+            # which records only what a given GPU proved. Not required: records
+            # written before this field existed are still readable while they are
+            # migrated (see READABLE_SCHEMA_VERSIONS).
+            "stage": {"enum": sorted(m.STAGE_STATES)},
             # Open platform map. A key is any well-formed <os>-<gfx>, checked by
             # shape rather than against a roster, so a host with a new GPU records a
             # validation without a schema change. Absent means "never worked here".

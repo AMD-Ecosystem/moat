@@ -151,6 +151,8 @@ def gate_states():
         d, _where = m.project_record(name)
         if d is None:
             continue
+        if "stage" in d and d["stage"] not in m.STAGE_STATES:
+            problems.append(f"{name}: unknown stage {d['stage']!r}")
         for arch, blk in (d.get("platforms") or {}).items():
             if m.platform_problem(arch):
                 problems.append(f"{name}: unknown arch {arch!r} "

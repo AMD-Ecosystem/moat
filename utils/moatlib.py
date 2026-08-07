@@ -19,7 +19,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROJECTS = REPO_ROOT / "projects"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+# Records written before `stage` existed still READ. They are migrated in place, one
+# ref at a time, and a checkout must not refuse the ones the migration has not
+# reached -- 138 records would become unreadable the moment this bump landed, since
+# load_status validates. The window closes when every record carries 2.
+READABLE_SCHEMA_VERSIONS = (1, 2)
 
 def _load_arches():
     """config/arches.toml is the single source of truth for gates.
@@ -130,6 +135,35 @@ ALLOWED = {
     "completed": {"revalidate"},
 }
 STATES = set(ALLOWED) | {s for v in ALLOWED.values() for s in v}
+
+# Which of those states are facts about the PROJECT and which are facts about one
+# GPU. A project-level fact stored per arch is stored N times and the copies
+# disagree; `stage` holds the project's answer once. Nothing reads it yet -- it is
+# written alongside the arch block so the two can be compared before either the
+# records or the readers move.
+#
+# The sets OVERLAP on validation-failed, deliberately: a failed run is evidence this
+# arch produced, and is also what sends the whole port back to the porter. Every
+# other state belongs to exactly one side.
+#
+# `port-ready` and `revalidate` are arch-level but are not facts anyone recorded --
+# they are conclusions about (stage, validated_sha, head_sha) that a sweep writes
+# into the file. They stay stored until that derivation replaces them, along with
+# `awaiting-port`, whose only meaning is "no port exists here yet" -- which an absent
+# record already says.
+STAGE_STATES = {
+    "unclaimed", "screened", "planned", "awaiting-fork", "awaiting-upstream",
+    "porting", "ported", "delta-ported", "changes-requested", "review-passed",
+    "validation-failed",
+}
+ARCH_STATES = {"completed", "validation-failed",
+               "awaiting-port", "port-ready", "revalidate"}
+# A state that lands on neither side would be silently unrepresentable after the
+# split, so it fails at import instead (the model is gen_readme's _UNGROUPED).
+_UNSIDED = STATES - STAGE_STATES - ARCH_STATES
+_UNKNOWN_SIDED = (STAGE_STATES | ARCH_STATES) - STATES
+assert not _UNSIDED, f"moatlib: states on neither side of the split: {sorted(_UNSIDED)}"
+assert not _UNKNOWN_SIDED, f"moatlib: sided states moatlib lacks: {sorted(_UNKNOWN_SIDED)}"
 
 # Project-level upstream PR lifecycle, orthogonal to every arch's state. A port can
 # be validated everywhere with no PR, or carry a merged PR while an arch is
@@ -320,8 +354,10 @@ def validate_status(obj):
               "priority", "ext_type", "platforms"):
         if k not in obj:
             raise ValueError(f"status.json missing required key: {k}")
-    if obj["schema_version"] != SCHEMA_VERSION:
+    if obj["schema_version"] not in READABLE_SCHEMA_VERSIONS:
         raise ValueError(f"unsupported schema_version: {obj['schema_version']}")
+    if "stage" in obj and obj["stage"] not in STAGE_STATES:
+        raise ValueError(f"invalid stage: {obj['stage']!r}")
     unknown = {p for p in obj["platforms"] if platform_problem(p)}
     if unknown:
         raise ValueError(f"unknown arch(es) {sorted(unknown)}; add them to config/arches.toml")
@@ -374,6 +410,11 @@ def set_state(name, platform, new_state, agent=None, save=True):
         obj["porting"] = {"arch": platform, "since": now_iso()}
     elif cur == "porting" and (obj.get("porting") or {}).get("arch") == platform:
         obj["porting"] = None
+    # Both places, for now. The stage is where this belongs and the arch block is
+    # what every reader still reads; writing both is what lets the migration be
+    # checked against the field it replaces rather than trusted.
+    if new_state in STAGE_STATES:
+        obj["stage"] = new_state
     blk["state"] = new_state
     ts = now_iso()
     blk["updated_at"] = ts
@@ -1273,14 +1314,20 @@ def dep_report(obj):
 # which is the last of the lead/follower model -- see `awaiting-port`, whose entire
 # meaning is "a port exists and this arch has not been let in yet".
 #
-# Until they move to a project-level field, an arch with no record of its own reads the
+# That project-level field is `stage` (see STAGE_STATES), which is written but not yet
+# read. Until the readers move to it, an arch with no record of its own reads the
 # project's stage rather than defaulting to `unclaimed`. Without this, a project
 # screened and parked on one arch was offered for a SECOND intake screen on every other
 # arch -- cuda_voxelizer, h2o4gpu and tsne-cuda all did exactly that, and TornadoVM
 # escaped only because someone hand-seeded five arch records, which is the wrong fix:
 # copying a project-level fact N times is what you do when platforms are a fixed list.
+#
+# Ordered, unlike STAGE_STATES: this one is read with max() to resolve N disagreeing
+# arch records, and furthest-along is the tie-break. It is the pre-port PREFIX of
+# STAGE_STATES, so a state may not appear here without being a stage.
 PRE_PORT_STATES = ("unclaimed", "screened", "planned", "awaiting-fork",
                    "awaiting-upstream")
+assert set(PRE_PORT_STATES) <= STAGE_STATES, sorted(set(PRE_PORT_STATES) - STAGE_STATES)
 
 
 def project_stage(obj):
@@ -1631,6 +1678,7 @@ def scaffold_project(full_name, upstream_url=None, default_branch="main",
         "fork_default_branch": default_branch,
         "priority": float(priority),
         "ext_type": ext_type,
+        "stage": "unclaimed",
         "adopted_at": now_iso(),
         "updated_at": now_iso(),
         "head_sha": None,
