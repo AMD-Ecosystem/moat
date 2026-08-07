@@ -73,10 +73,19 @@ def load_projects():
 GATE_RANK = ["proven", "stale", "working", "queued", "blocked", "none"]
 GATE_GLYPH = {"proven": "✅", "stale": "🔄", "working": "🔧",
               "queued": "⬜", "blocked": "🚫", "none": "—"}
-WORKING_STATES = {"porting", "ported", "delta-ported", "review-passed", "validating",
+WORKING_STATES = {"porting", "ported", "delta-ported", "review-passed",
                   "changes-requested", "validation-failed", "planned", "screened"}
 QUEUED_STATES = {"port-ready", "awaiting-port", "awaiting-fork", "awaiting-upstream",
                  "unclaimed"}
+# `completed` and `revalidate` are read before these sets, so between them the four
+# groups must partition moatlib.STATES exactly. Checked rather than trusted: this
+# carried a "validating" state that moatlib has never had, and the failure mode of a
+# state landing in no group is a silent "—" in the table -- a cell that says nothing
+# is recorded about a project someone is actively working on.
+_UNGROUPED = set(moatlib.STATES) - WORKING_STATES - QUEUED_STATES - {"completed", "revalidate"}
+_UNKNOWN = (WORKING_STATES | QUEUED_STATES) - set(moatlib.STATES)
+assert not _UNGROUPED, f"gen_readme: states in no glyph group: {sorted(_UNGROUPED)}"
+assert not _UNKNOWN, f"gen_readme: glyph groups name states moatlib lacks: {sorted(_UNKNOWN)}"
 
 
 def gate_state(project, gate):
@@ -102,7 +111,8 @@ def gate_state(project, gate):
         # block on every platform, and the port really did run. What that means for
         # the contribution is the Outcome column's job, not this one's.
         if state == "completed":
-            verdict = "proven" if (not head or blk.get("validated_sha") == head) else "stale"
+            verdict = ("proven" if (not head or moatlib.same_commit(blk.get("validated_sha"), head))
+                       else "stale")
         elif blk.get("blocked"):
             verdict = "blocked"
         elif state == "revalidate":
@@ -123,7 +133,7 @@ def gate_cell(project, gate):
     column of architecture names is noise in a table 152 rows long, and the gate is
     the claim being made."""
     verdict, _ = gate_state(project, gate)
-    return "⚖️" if verdict == "waived" else GATE_GLYPH[verdict]
+    return "🎫" if verdict == "waived" else GATE_GLYPH[verdict]
 
 
 def _validated_arch_count(p):
@@ -202,7 +212,7 @@ def render_table(projects):
         "| 🔧 | in progress | | 🔴 | pull request closed |",
         "| ⬜ | not started | | 🔵 | upstream already supported AMD; we verified it |",
         "| 🚫 | blocked, with a reason recorded | | ⚖️ | licence bars contributing the port |",
-        "| ⚖️ | not required for this project | | ⚪ | set aside, with the reason recorded |",
+        "| 🎫 | waived for this project, with maintainer approval | | ⚪ | set aside, with the reason recorded |",
         "| — | nothing recorded | | — | nothing recorded |",
         "",
         "The project name links upstream.",

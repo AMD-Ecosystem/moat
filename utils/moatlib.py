@@ -178,6 +178,40 @@ def now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def same_commit(a, b):
+    """True when two recorded shas name the same commit.
+
+    Shas arrive at whatever length whoever wrote them used -- `git rev-parse HEAD`
+    gives 40, `--short` gives 7 or more, a person pasting from GitHub gives 8 -- and
+    every staleness test used to be an equality. Five projects held a validated_sha
+    that WAS the head commit at a different abbreviation and so read as stale
+    forever; two of them blocked their upstream PR behind a line that said
+    `linux-gfx90a=completed`, which is not a legible reason to be blocked.
+
+    Compare on the shorter of the two, which is what git does for an abbreviated
+    rev. Below 7 hex chars, or on anything that is not hex, fall back to equality
+    rather than guessing -- a 4-character prefix is not evidence of identity."""
+    if not a or not b:
+        return False
+    a, b = a.strip().lower(), b.strip().lower()
+    n = min(len(a), len(b))
+    if n < 7 or any(c not in "0123456789abcdef" for c in a[:n] + b[:n]):
+        return a == b
+    return a[:n] == b[:n]
+
+
+def full_sha(sha, repo=None):
+    """Expand an abbreviated sha to its full 40 using the fork clone, so the record
+    stops accumulating mixed lengths. Returns sha unchanged when there is no clone
+    to ask -- the record is still readable, because same_commit tolerates it."""
+    if not sha or not repo or len(sha) >= 40:
+        return sha
+    r = subprocess.run(["git", "rev-parse", f"{sha}^{{commit}}"], cwd=str(repo),
+                       capture_output=True, text=True)
+    out = r.stdout.strip()
+    return out if r.returncode == 0 and len(out) == 40 else sha
+
+
 def claim_ttl_seconds():
     """Read claim TTL from config/moat.toml; default 30 min. A .claim file
     untouched for longer than this is stale (its CLI crashed) and reclaimable."""
@@ -651,7 +685,7 @@ def pr_approval_status(name, live=True):
         return ("none", "approval record has no approved_by")
     if not live:
         head = obj.get("head_sha")
-        if head and a.get("head_sha") != head:
+        if head and not same_commit(a.get("head_sha"), head):
             return ("stale-commits", f"approved {(a.get('head_sha') or '?')[:8]}, fork is "
                                      f"now at {head[:8]} -- the code changed")
         return ("ok", f"recorded approval by {a['approved_by']} at {a['at']} "
@@ -676,7 +710,7 @@ def pr_approval_status(name, live=True):
     if _content_digest(pr) != a.get("content_sha256"):
         return ("record-mismatch", "the recorded approval does not match the review PR's "
                                    "current title/body")
-    if review.get("commit") and a.get("head_sha") != review["commit"]:
+    if review.get("commit") and not same_commit(a.get("head_sha"), review["commit"]):
         return ("record-mismatch",
                 f"the recorded approval names {(a.get('head_sha') or '?')[:8]}, but the "
                 f"approval on GitHub is against {review['commit'][:8]}")
@@ -900,11 +934,12 @@ def advance_head(name, new_sha, repo=None):
 
     On any classification failure the platform revalidates -- the safe default."""
     obj = load_status(name)
-    obj["head_sha"] = new_sha
     repo = repo or _fork_repo(name)
+    new_sha = full_sha(new_sha, repo)
+    obj["head_sha"] = new_sha
     for plat in list(obj["platforms"]):
         blk = obj["platforms"][plat]
-        if blk["state"] != "completed" or blk.get("validated_sha") == new_sha:
+        if blk["state"] != "completed" or same_commit(blk.get("validated_sha"), new_sha):
             continue
         old = blk.get("validated_sha")
         verdict = _classify_safe(repo, old, new_sha)
@@ -932,6 +967,7 @@ def carry_forward(name, platform, new_sha, method, detail):
     blk = obj["platforms"][platform]
     if blk["state"] not in ("completed", "revalidate"):
         raise ValueError(f"{name}/{platform}: carry_forward needs completed/revalidate, not {blk['state']}")
+    new_sha = full_sha(new_sha, _fork_repo(name))
     ts = now_iso()
     blk["state"] = "completed"
     blk["completed_at"] = ts
@@ -1671,14 +1707,26 @@ def commit_and_push(paths, message, push=True, retries=3):
     _git("commit", "-m", message)
     if not push:
         return True
+    # Name the remote and branch explicitly. A bare `git push` needs an upstream, and
+    # a freshly created port/<name> has none -- so the first push of a new project
+    # branch failed all three retries and returned False behind one stderr line, which
+    # reads as a network problem rather than a branch that was never published.
+    # Read fresh rather than via current_branch(), whose answer is cached for the
+    # process and could predate a checkout. "HEAD" means detached, where there is no
+    # branch to name and the bare push is the only sensible attempt.
+    branch = _git("rev-parse", "--abbrev-ref", "HEAD", check=False).stdout.strip()
+    if branch == "HEAD":
+        branch = ""
     for _ in range(retries):
         # --autostash so a concurrent agent's unstaged files in the shared
         # working tree don't abort our rebase (multi-agent MOAT runs).
         _git("pull", "--rebase", "--autostash", check=False)
-        r = _git("push", check=False)
+        r = (_git("push", "-u", "origin", branch, check=False) if branch
+             else _git("push", check=False))
         if r.returncode == 0:
             return True
-    sys.stderr.write("commit_and_push: push failed after retries; left committed locally\n")
+    sys.stderr.write(f"commit_and_push: push of {branch or 'HEAD'} failed after "
+                     f"{retries} attempts; left committed locally\n")
     return False
 
 
@@ -1702,6 +1750,7 @@ def squash_carry_forward(name, new_sha, repo=None):
     irrelevant to them. Returns (ok, info)."""
     obj = load_status(name)
     repo = repo or _fork_repo(name)
+    new_sha = full_sha(new_sha, repo)
     old_head = obj.get("head_sha")
 
     def _tree(sha):
@@ -1788,7 +1837,8 @@ def pr_ready(name):
         # Satisfied by evidence: completed, and against the current head if we have
         # one -- a validation of superseded content proves nothing about this port.
         if any(vals[a].get("state") == "completed"
-               and (not head or vals[a].get("validated_sha") == head) for a in archs):
+               and (not head or same_commit(vals[a].get("validated_sha"), head))
+               for a in archs):
             nonviable.extend(a for a in archs
                              if vals[a].get("state") != "completed" and vals[a].get("blocked"))
             continue

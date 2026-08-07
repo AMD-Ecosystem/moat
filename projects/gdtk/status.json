@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "makefile",
   "adopted_at": "2026-06-05T04:44:12Z",
-  "updated_at": "2026-08-07T07:05:09Z",
+  "updated_at": "2026-08-07T18:37:35Z",
   "head_sha": "8aadf2185510930b523c786e21fde116c22b2809",
   "depends_on": [],
   "platforms": {
@@ -15,7 +15,7 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "8aadf218",
+      "validated_sha": "8aadf2185510930b523c786e21fde116c22b2809",
       "started_at": "2026-06-05T08:59:35Z",
       "completed_at": "2026-06-08T19:03:35Z",
       "updated_at": "2026-06-08T19:03:35Z",

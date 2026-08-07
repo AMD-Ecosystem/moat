@@ -7,8 +7,8 @@
   "priority": 0.0,
   "ext_type": "codegen",
   "adopted_at": "2026-06-05T04:44:12Z",
-  "updated_at": "2026-08-07T07:04:55Z",
-  "head_sha": "aca06c7",
+  "updated_at": "2026-08-07T18:37:35Z",
+  "head_sha": "aca06c783be9d2519549d571bb5ea517b4226ba5",
   "depends_on": [],
   "platforms": {
     "linux-gfx90a": {
