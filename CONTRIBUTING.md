@@ -45,25 +45,17 @@ is a deliberate act by someone who can, so its existence carries the decision.
 `orient.sh` runs `upstream.py --forks --apply` before every selection, so the state
 advances and the PR gets its comment the next time anyone starts work.
 
-**No is a label on the draft PR**, applied by a person. An agent writes the case for a
-decline and recommends a reason; it never records one. Declining is a decision exactly as
-forking is, and a wrong decline is invisible afterwards because the project simply stops
-appearing.
+**No is recorded by a person, through the intake queue.** An agent writes the case and
+recommends a reason; it never records one. Screens collect into one issue
+(`utils/intake_queue.py publish --apply`), a person replies in prose, and an agent
+round-trips that reading as a small pull request carrying only the declines. Approving
+that is the record. Reasons are the `SKIP_REASONS` in `moatlib`; `declined` exists for a
+deliberate no whose reasoning is intentionally not written down, since this repo is
+public and a written reason is permanent and quotable.
 
-| label | recorded as |
-|---|---|
-| `declined:license` | `license-blocked` |
-| `declined:already-supported` | `already-supported` |
-| `declined` | `declined` -- a decision was made, the reasoning deliberately not recorded |
-
-The bare label exists on purpose. This repo is public, so a written reason is
-permanent and quotable, and a project can be reconsidered later without anything to
-walk back.
-
-A decline **merges** its PR rather than closing it. The disposition has to reach
-`data/dispositions.json` on the trunk, or the project is simply proposed again and the
-work repeats; `scaffold` then refuses it unless forced, so revisiting stays possible
-but deliberate.
+A decline reaches `data/dispositions.json` on the trunk or the project is simply
+proposed again and the work repeats; `scaffold` then refuses it unless forced, so
+revisiting stays possible but deliberate.
 
 ## What a pull request should look like
 

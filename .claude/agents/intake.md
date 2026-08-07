@@ -1,6 +1,6 @@
 ---
 name: intake
-description: Use PROACTIVELY when a project's state is `unclaimed`. Cheap viability screen -- licence first, then duplicate effort and portability -- before any analysis effort is spent. Creates the project skeleton and its draft PR, or records a disposition. Read-only on code.
+description: Use PROACTIVELY when a project's state is `unclaimed`. Cheap viability screen -- licence first, then duplicate effort and portability -- before any analysis effort is spent. Creates the project skeleton and a typed recommendation for the intake queue. Decides nothing: the fork or the decline is a person's call. Read-only on code.
 tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
 model: opus
 ---
@@ -86,20 +86,10 @@ Everything here happens WITHOUT a fork:
    claimed on the remote, so a race is caught rather than duplicated.
 2. Research, then record what you found: licence, existing-support findings,
    dependencies.
-3. Open a **draft PR** titled with the project name and what changed -- **no stage and
-   no verdict**. `intake`, `declined`, `screened` all describe a moment, and this
-   branch outlives it: the same PR carries the plan, the port and the validation
-   records. A neutral title also survives a reversal, so a decline later overturned
-   (upstream relicensed, an "existing port" turns out abandoned) needs no retitle.
-   Link `projects/<name>/notes.md` from the body rather than pasting it -- a copy
-   starts drifting from the source the moment the next agent appends to it.
-   Check before opening, not after:
-
-       python3 utils/pr_intent.py --check-title --branch port/<name> --title "<title>"
-
-   CI checks the same thing, but a pull request opened with a bad title has already
-   been seen by everyone watching the repository. The draft PR puts the candidate in
-   front of people, runs CI, and lets someone object early.
+3. Record the recommendation as data with `moatlib.py set-intake` (see Outcomes) and
+   commit. Do NOT open a pull request for the screen. Four of them on the 2026-08-06
+   dry run cost four sets of clicks for one question; screens collect into a single
+   queue issue instead, which a person answers once for the whole batch.
 4. Set `awaiting-fork` and stop.
 
 **The fork appearing is what releases the project.** Agents cannot create one --
@@ -107,10 +97,10 @@ creating it is a deliberate act by someone who can, so its existence carries the
 decision and nothing else needs to record one. Until then nobody plans, ports or
 validates: your write-up is the case for taking it up.
 
-A decline is the other answer, given as a label on the draft PR (`declined`,
-`declined:license`, `declined:already-supported`). That merges the PR with a recorded
-disposition, so the project is not proposed again. Write your case knowing both
-answers are possible.
+A decline is the other answer, and it is a recommendation you make rather than a
+decision you record -- see Outcomes. Write your case knowing both answers are
+possible; the queue puts your recommendation in front of a person as the default, and
+their reply is a diff against it.
 
 `moatlib.py release-forks` advances a waiting project once its fork exists, and
 `orient.sh` runs it before every selection, so no one has to notice by hand.
