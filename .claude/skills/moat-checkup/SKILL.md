@@ -20,14 +20,18 @@ would hand everything back anyway -- and the round trip costs more than doing it
 ## The checkup, in order
 
     bash utils/orient.sh                         # approved ports, fork releases, next work
+    python3 utils/upstream.py --review           # finished ports with no review PR open
     python3 utils/upstream.py --attention        # who is waiting on us
     python3 utils/upstream.py --approvals        # approvals overtaken by a push or a body edit
     python3 utils/upstream.py --dry-run          # where our record disagrees with GitHub
 
 The first names any port whose approval is standing and whose gates are met. The second
-lists open PRs where a maintainer asked for something, had the last word, or has gone
-quiet. The third catches a review GitHub still shows as green over content nobody
-approved. The fourth is bookkeeping.
+is where work piles up: a port cannot be approved until its review PR exists, and
+nothing opens one automatically, so ports sit finished and unreviewable -- 28 of them
+when this was written. `--review --apply --name <p> --title '<t>' --body-file <f>` opens
+one. The third lists open PRs where a maintainer asked for something, had the last word,
+or has gone quiet. The fourth catches a review GitHub still shows as green over content
+nobody approved. The fifth is bookkeeping.
 
 Nothing runs on a schedule. This checkup IS the sweep, so the record only reconciles when
 someone runs it -- which is why `orient.sh` reports how long it has been.
@@ -161,10 +165,18 @@ colmap is the standing example.
 
 ## 5. Fork requests
 
-Agents cannot create forks in the org. `python3 utils/upstream.py --forks` lists the projects
-sitting in `awaiting-fork`; collect them and emit the batch for an admin. Do not attempt
-`gh repo fork` against the org -- it will fail, and an accidental re-fork once recreated a
-public repo that had been deliberately deleted.
+    python3 utils/upstream.py --forks
+
+Projects screened and waiting for someone to create the fork. Agents cannot create
+one, so this is a list for a person, and `orient.sh` prints it on every run.
+
+A project whose folder lives on its own `port/<name>` branch is REPORTED rather than
+advanced: releasing writes to its record and the record is not in this checkout. Check
+that branch out to release it, or let the next session on it do so.
+
+Declines do not happen here. They are recorded through the intake queue --
+`intake_queue.py apply --decline`, carrying a person's answer -- and the labels that
+older documents describe record nothing.
 
 ## Stop and ask
 

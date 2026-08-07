@@ -102,12 +102,18 @@ PORT_BRANCH = "moat-port"  # the topic branch that holds the port on each fork
 # in the README because `upstream-landed` had displaced `completed`). It lives in the
 # project-level `pr_state` instead -- see PR_STATES.
 ALLOWED = {
-    "unclaimed": {"screened", "planned"},
+    # awaiting-fork is reachable from unclaimed because that is what intake does: it
+    # screens an unadopted project and parks it for the fork decision, in one step.
+    # Requiring screened first made the documented instruction illegal, and agents
+    # compensated by transitioning twice -- which worked, and hid the contradiction.
+    "unclaimed": {"screened", "planned", "awaiting-fork"},
     "screened": {"awaiting-fork", "planned"},
     "awaiting-fork": {"screened", "planned", "porting"},
     "awaiting-upstream": {"planned", "porting", "unclaimed"},
     "awaiting-port": {"port-ready"},
-    "planned": {"porting", "awaiting-upstream"},
+    # The porter reaches awaiting-fork when it finds no fork to push to, which
+    # porter.md has always instructed and the table has always refused.
+    "planned": {"porting", "awaiting-upstream", "awaiting-fork"},
     "porting": {"ported"},
     "ported": {"review-passed", "changes-requested"},
     "changes-requested": {"porting", "delta-ported"},

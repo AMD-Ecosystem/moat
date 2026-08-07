@@ -15,7 +15,7 @@ You hold the fork-write lock while you work. Take it by setting `porting` to {ar
 - reviewer/validator findings in notes.md (when state is changes-requested / validation-failed)
 
 ## Steps
-1. The fork must already exist. **You cannot create one** -- fork creation in the org is admin-only, and intake requests it in batches. If `fork_url` is unset or the repo is missing, set `awaiting-fork` and stop; do not run `gh repo fork`.
+1. The fork must already exist. **You cannot create one** -- fork creation in the org is admin-only, and a person creates it. If `fork_url` is unset or the repo is missing, set `awaiting-fork` and stop; do not run `gh repo fork`.
 2. Ensure projects/<name>/src/ has the fork from `status.json.fork_url` as a remote. Put the port on a `moat-port` topic branch; the fork's default branch stays a clean mirror of upstream. The single upstream PR is `moat-port` -> upstream default.
 3. Apply plan.md. Strategy A: add the single `cuda_to_hip.h` compat header, `enable_language(HIP)` + `set_source_files_properties(... LANGUAGE HIP)`, keep other files in CUDA spelling. Strategy B: rely on torch build-time hipify; fix only what hipify cannot.
 4. Honor the fault classes (`cuda-to-rocm` skill): a warp_size abstraction (never literal 32), rule-of-five on texture/resource handles, clamp OOB neighbor reads, 256B texture pitch, library swaps. Any fix to shared (non-arch-guarded) code MUST be arch-unified (correct on wave32 AND wave64), never a per-arch hack that ping-pongs platforms.

@@ -65,7 +65,11 @@ fi
 # Releases projects whose fork has appeared AND records any decline label, which
 # `release-forks` alone does not. Both are writes to a project branch, so they
 # belong in a session rather than in a scheduled job.
-python3 utils/upstream.py --forks --apply >/dev/null 2>&1 || true
+# Not silenced: this is the only thing that says a fork appeared for a project whose
+# branch nobody has checked out, and discarding it made "no one has to notice by hand"
+# false. Only the routine "nothing to do" lines are dropped.
+python3 utils/upstream.py --forks --apply 2>/dev/null \
+  | grep -E "RELEASED|ELSEWHERE|CONFLICT" | sed 's/^/forks    : /' || true
 python3 utils/moatlib.py unblock-followers >/dev/null 2>&1 || true
 
 # Serialize select+claim so two same-host CLIs never grab the same project.

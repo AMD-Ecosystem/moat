@@ -39,7 +39,7 @@ A project we will not port still merges -- merging is what records the decision,
 not proposed again.
 
 - [ ] Disposition and a concrete reason in `data/dispositions.json` (`utils/triage.py skip <owner/repo> --reason <reason> --note "..."`)
-- [ ] If this is a decline rather than a screening result, the `declined`, `declined:license` or `declined:already-supported` label is on this PR
+- [ ] If this records a decline, it came from `intake_queue.py apply --decline` carrying a person's answer on the queue issue. Labels record nothing.
 
 ## Notes for the reviewer
 

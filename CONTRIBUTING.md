@@ -151,6 +151,7 @@ fork-side work and neither reaches the part that matters.
 
 | gate | why |
 |---|---|
+| `code` | the Python resolves: no undefined names, no dead imports or locals (pyflakes). Two NameErrors shipped on success paths before this existed, one of them in the approval gate |
 | `schema` | `status.json` validates against a schema generated from `moatlib`, so the two cannot disagree |
 | `readme` | the generated project table matches the data it describes. Skipped for a local push to a `port/<name>` branch, where the tree is the trunk plus one project mid-port; enforced everywhere else, including CI on the pull request -- which builds the merge commit, so it describes the trunk as it will be and fails on the PR that has to fix it (`python3 utils/gen_readme.py`) |
 | `licenses` | tier lists are well-formed and no identifier sits in two tiers, which would silently disable the review gate |
