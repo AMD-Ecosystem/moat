@@ -25,10 +25,25 @@ if [ -z "${MOAT_ALLOW_TRUNK:-}" ]; then
 fi
 
 # Sync the latest MOAT state. Best-effort: offline or local-only is fine.
+# This pulls the CURRENT branch -- for a port branch that is the shared per-project
+# state another host may have pushed, which is what the selection below reads.
 if git remote 2>/dev/null | grep -q .; then
   git pull --rebase --autostash >/dev/null 2>&1 \
     || echo "orient: pull --rebase skipped (offline or local conflicts)" >&2
 fi
+
+# The trunk carries the tooling, the agent definitions and the porting knowledge, and
+# a port branch keeps whatever those looked like the day it was cut. Merging on every
+# trunk push would put a merge commit on every branch for a README regeneration, so
+# look first and merge only when something a port can actually feel has moved. No-op
+# on the trunk itself.
+SYNC=$(python3 utils/moatlib.py branch-sync --apply 2>/dev/null)
+case "$SYNC" in
+  *"skip --"*|*"current --"*) ;;
+  *"conflict --"*) echo "${SYNC/branch-sync: /branch   : }" >&2 ;;
+  "") ;;
+  *) echo "${SYNC/branch-sync: /branch   : }" ;;
+esac
 
 if ! arch_out=$(bash utils/detect_arch.sh 2>/dev/null); then
   echo "== MOAT orient =="

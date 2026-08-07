@@ -1067,6 +1067,76 @@ def ensure_git_config():
     _git("config", "merge.moat-status.driver", drv, check=False)
 
 
+# Paths on the trunk whose change cannot alter how a port is done: the generated
+# README, the discovery/disposition registries, and OTHER projects' records. A port
+# branch may sit behind the trunk on all of these without any risk to the work.
+#
+# Deliberately a DENYLIST. Anything not listed here counts as substantive, so a path
+# added to the repo later -- a new config file, a new skill directory -- defaults to
+# "merge" rather than being silently skipped by a rule nobody remembered to update.
+PORT_INERT = ("README.md", "data/")
+
+
+def branch_drift(branch, base_ref="origin/main"):
+    """What has landed on the trunk that this port branch has not seen, split into
+    the changes a port can feel and the ones it cannot.
+
+    Returns (substantive, inert) as sorted path lists. Both empty means the branch
+    already carries everything on the trunk."""
+    project = branch[len("port/"):] if branch.startswith("port/") else None
+    base = _git("merge-base", "HEAD", base_ref, check=False).stdout.strip()
+    if not base:
+        return ([], [])
+    out = _git("diff", "--name-only", base, base_ref, check=False).stdout
+    substantive, inert = [], []
+    for p in out.splitlines():
+        p = p.strip()
+        if not p:
+            continue
+        # This project's own record is substantive even though other projects' are
+        # not: someone else may have pushed state for it.
+        own = project and p.startswith(f"projects/{project}/")
+        if not own and (p in PORT_INERT or p.startswith(PORT_INERT)
+                        or p.startswith("projects/")):
+            inert.append(p)
+        else:
+            substantive.append(p)
+    return (sorted(substantive), sorted(inert))
+
+
+def branch_sync(apply=False, base_ref="origin/main"):
+    """Bring a port branch up to the trunk's tooling, but only when that is worth a
+    merge commit. Returns (action, detail) for the caller to print.
+
+    Merging on every trunk push would put a merge commit on every port branch for a
+    README regeneration. Merging on none of them means a port runs whatever skills
+    and agent definitions existed the day its branch was cut. So: look first, and
+    merge only when something a port can actually feel has moved."""
+    branch = _git("rev-parse", "--abbrev-ref", "HEAD", check=False).stdout.strip()
+    if not branch.startswith("port/"):
+        return ("skip", "not a port branch")
+    if _git("status", "--porcelain", check=False).stdout.strip():
+        return ("dirty", "uncommitted changes -- not merging; commit or stash first")
+    _git("fetch", "-q", "origin", base_ref.split("/", 1)[-1], check=False)
+    substantive, inert = branch_drift(branch, base_ref)
+    if not substantive:
+        if not inert:
+            return ("current", "up to date with the trunk")
+        return ("inert", f"trunk moved, nothing a port can see ({len(inert)} path(s))")
+    if not apply:
+        return ("would-merge", ", ".join(substantive[:4]))
+    ensure_git_config()
+    r = _git("merge", "--no-edit", base_ref, check=False)
+    if r.returncode:
+        _git("merge", "--abort", check=False)
+        return ("conflict", f"merging {base_ref} conflicts -- resolve by hand: "
+                            f"{', '.join(substantive[:4])}")
+    # Push so a sibling host reuses this merge instead of making its own; the branch
+    # is shared, and two independent merges of the same trunk diverge for no reason.
+    _git("push", "-q", "origin", branch, check=False)
+    return ("merged", ", ".join(substantive[:4]))
+
+
 def commit_and_push(paths, message, push=True, retries=3):
     """The single MOAT-repo write path: stage, commit-on-top, pull --rebase,
     push, bounded retry. Never amends, never force-pushes. No-op if nothing
@@ -1393,6 +1463,10 @@ def main(argv=None):
     rf = sub.add_parser("release-forks",
                         help="advance awaiting-fork projects whose fork now exists")
     rf.add_argument("--dry-run", action="store_true")
+    bs = sub.add_parser("branch-sync",
+                        help="merge the trunk into this port branch, but only if "
+                             "something a port can feel has changed there")
+    bs.add_argument("--apply", action="store_true")
     s = sub.add_parser("validate")
     s.add_argument("name")
     s = sub.add_parser("show")
@@ -1550,6 +1624,10 @@ def main(argv=None):
         if not rel:
             print("release-forks: nothing waiting on a fork")
         return 0
+    elif args.cmd == "branch-sync":
+        action, detail = branch_sync(apply=args.apply)
+        print(f"branch-sync: {action} -- {detail}")
+        return 1 if action == "conflict" else 0
     elif args.cmd == "unblock-followers":
         changed = unblock_all_followers()
         print(" ".join(changed) if changed else "(none)")
