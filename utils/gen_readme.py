@@ -58,29 +58,14 @@ def load_projects():
         except json.JSONDecodeError:
             sys.stderr.write(f"gen_readme: skipping unparseable {sp}\n")
             continue
-        # Delivery tracking: PR fields can be in status.json (new workflow) or
-        # upstream.json (legacy). status.json takes precedence. pr_state (open/merged/closed)
-        # drives the PR glyph; `outcome` records the terminal disposition for
-        # projects whose success is NOT an upstream PR (e.g. we GPU-validated an
-        # existing ROCm backend across archs). See outcome_cell() for the vocab.
-
-        # Check status.json first (new PR tracking)
-        if "pr_url" in rec:
-            # PR fields already in rec from status.json
-            pass
-        else:
-            # Fall back to upstream.json (legacy)
-            up = d / "upstream.json"
-            if up.exists():
-                try:
-                    u = json.loads(up.read_text(encoding="utf-8"))
-                    rec["pr_url"] = u.get("pr_url")
-                    rec["pr_number"] = u.get("pr_number")
-                    rec["pr_state"] = u.get("pr_state")
-                    rec["outcome"] = u.get("outcome")
-                    rec["outcome_note"] = u.get("outcome_note")
-                except json.JSONDecodeError:
-                    pass
+        # Delivery tracking. pr_state (open/merged/closed) drives the PR glyph; a
+        # recorded disposition covers the projects whose success is NOT an upstream PR
+        # (e.g. we GPU-validated an existing ROCm backend across archs). See
+        # outcome_cell() for the vocabulary.
+        disp = moatlib.get_disposition(moatlib.upstream_full_name(d.name) or "")
+        if disp and disp.get("disposition") == "skip":
+            rec["disposition"] = disp.get("reason")
+            rec["disposition_note"] = disp.get("note")
         out.append(rec)
     return out
 
@@ -151,19 +136,16 @@ def _validated_arch_count(p):
 
 def outcome_cell(p):
     """The Outcome column: what this project actually delivered. An upstream PR
-    (any state) is shown by its glyph + number. Projects without a PR carry an
-    explicit `outcome` in upstream.json:
-      validated  -- upstream already had a ROCm path; we GPU-validated it across
-                    N archs (often extending coverage, e.g. first CDNA). 🔵
-      fork       -- delivered as a working standalone fork; an upstream PR is not
-                    appropriate (e.g. a kernel-experiments repo). 🍴
-      superseded -- upstream/community already covers our archs; no value-add. ⚪
-      blocked    -- non-viable. ⛔
-      license-blocked -- the port works, but the upstream license (non-commercial,
+    (any state) is shown by its glyph + number. Projects without a PR carry a recorded
+    disposition in data/dispositions.json:
+      already-supported -- upstream already had a ROCm path; where we GPU-validated
+                    it across N archs the count is shown. 🔵
+      license-blocked -- the port may work, but the upstream license (non-commercial,
                     no-derivative, or otherwise incompatible) bars contributing it.
-                    Nothing we could do about it; the platform cells stay truthful
-                    (the port was built/validated) and the outcome carries ⚖️.
-    No PR and no outcome yet -> pending (—)."""
+                    The platform cells stay truthful (the port was built/validated)
+                    and the outcome carries ⚖️.
+      cant-port / not-a-target / duplicate / ported-elsewhere / declined -- set aside. ⚪
+    No PR and no disposition -> pending (—)."""
     if p.get("pr_url"):
         # pr_state is the authority: the PR lifecycle is one project-level fact, not
         # something an arch's validation record carries. pr_merged_at backs it up for
@@ -175,22 +157,17 @@ def outcome_cell(p):
             tail = p["pr_url"].rstrip("/").rsplit("/", 1)[-1]
             num = tail if tail.isdigit() else "?"
         return f"{glyph} [#{num}]({p['pr_url']})"
-    oc = p.get("outcome")
-    if oc == "validated":
+    disp = p.get("disposition")
+    if disp == "already-supported":
         n = _validated_arch_count(p)
-        return f"🔵 validated ({n} arch)" if n else "🔵 validated"
-    if oc == "fork":
-        fu = p.get("fork_url")
-        return f"🍴 [fork]({fu}/tree/{p.get('fork_branch') or moatlib.PORT_BRANCH})" if fu else "🍴 fork"
-    if oc == "superseded":
-        return "⚪ superseded"
-    if oc == "blocked":
-        return "⛔ blocked"
-    if oc == "license-blocked":
-        # First sentence only: the full reasoning lives in upstream.json, and a
-        # paragraph inside a table cell wraps the row into unreadability.
-        note = (p.get("outcome_note") or "").split(".")[0].strip()
+        return f"🔵 validated ({n} arch)" if n else "🔵 already supported"
+    if disp == "license-blocked":
+        # First sentence only: the full reasoning lives in the project's notes.md, and
+        # a paragraph inside a table cell wraps the row into unreadability.
+        note = (p.get("disposition_note") or "").split(".")[0].strip()
         return f"⚖️ license-restricted -- {note}" if note else "⚖️ license-restricted"
+    if disp:
+        return f"⚪ {disp}"
     return "—"
 
 
@@ -226,9 +203,9 @@ def render_table(projects):
         "| 🔄 | proven earlier; the code has moved since | | 🟢 | pull request open |",
         "| 🔧 | in progress | | 🔴 | pull request closed |",
         "| ⬜ | not started | | 🔵 | upstream already supported AMD; we verified it |",
-        "| 🚫 | blocked, with a reason recorded | | 🍴 | delivered as a fork; upstream PR not appropriate |",
-        "| ⚖️ | not required for this project | | ⚖️ | licence bars contributing the port |",
-        "| — | nothing recorded | | ⚪ | superseded by other work |",
+        "| 🚫 | blocked, with a reason recorded | | ⚖️ | licence bars contributing the port |",
+        "| ⚖️ | not required for this project | | ⚪ | set aside, with the reason recorded |",
+        "| — | nothing recorded | | — | nothing recorded |",
         "",
         "The project name links upstream.",
     ])

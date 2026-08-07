@@ -92,9 +92,9 @@ Preconditions, all of them:
 - A standing approval: `moatlib.py pr-approval <name>` must pass.
 - Every required gate satisfied (`moatlib.py pr-ready <name>`), or a maintainer-approved
   waiver. An agent-suggested waiver satisfies nothing.
-- `upstream.json` carries no terminal `outcome`. A project with one has been settled
-  some other way -- delivered as a validation record, a fork, or determined non-viable
-  -- and is not a PR candidate.
+- No disposition recorded in `data/dispositions.json`. A project with one has been
+  settled some other way -- delivered as a validation record, already supported
+  upstream, or set aside -- and is not a PR candidate.
 - The fork's working tree is clean. A validation built against uncommitted edits produces
   an unbuildable PR; this stranded baspacho and arrayfire.
 
@@ -127,8 +127,9 @@ This is the bulk of the work and where the value is.
   lawyerly. Answer the question asked.
 
 If a maintainer signals they will not take the contribution, stop and record it rather
-than pushing. Set the appropriate outcome in `upstream.json`; a declined PR is a real
-result and belongs in the record.
+than pushing. Record it with `moatlib.py set-pr-closed <name> --note "<why>"`, and if the
+project is settled for good ask for a disposition; a declined PR is a real result and
+belongs in the record.
 
 ## 3. Merge and after
 

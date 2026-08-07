@@ -13,7 +13,7 @@ time. Answer "should we start this at all", not "how would we do it".
     python3 utils/licenses.py check <owner/repo>
 
 Tiers are defined in `config/licenses.toml`. Record what you find in
-`upstream.json.license_spdx` and carry on -- your job is to establish the licence as a
+`status.json.license_spdx` and carry on -- your job is to establish the licence as a
 FACT, not to gate on it. Tiers 1 and 2 are cleared to contribute. The tier decides nothing about whether the
 project is taken up -- a fork appearing is that decision, and only an admin makes it --
 so a tier-1 licence buys no head start.

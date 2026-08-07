@@ -149,5 +149,6 @@
   "pr_opened_at": "2026-06-08T17:26:30Z",
   "porting": null,
   "waivers": {},
-  "pr_state": "open"
+  "pr_state": "open",
+  "license_spdx": "MIT"
 }

@@ -1,9 +1,0 @@
-{
-  "full_name": "NVlabs/nvdiffrast",
-  "upstream_url": "https://github.com/NVlabs/nvdiffrast",
-  "default_branch": "main",
-  "ext_type": "torch-extension",
-  "outcome_note": "Wholly under the NVIDIA Source Code License, a proprietary non-commercial licence. The clearance for NVIDIA-authored repositories was conditional on confirming that no file carries a proprietary licence; here the entire repository does, so the condition fails at the top level rather than per file. Not a candidate for an upstream contribution.",
-  "license_spdx": "NVIDIA Source Code License",
-  "outcome": "license-blocked"
-}

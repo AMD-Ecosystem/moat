@@ -5,7 +5,7 @@
   "fork_url": "https://github.com/AMD-Ecosystem/GOMC",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
+  "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:24:38Z",
   "updated_at": "2026-08-05T16:07:17Z",
   "head_sha": "2e3e59120593e88d48c74c3c7becc78c62381c05",
@@ -150,5 +150,6 @@
     }
   },
   "porting": null,
-  "waivers": {}
+  "waivers": {},
+  "license_spdx": "MIT"
 }

@@ -155,7 +155,7 @@ knowledge the work produced. `utils/moatlib.py scaffold <owner/repo>` creates th
 
 Licence is established at intake, before any porting effort, as a FACT rather than a
 judgement: read what upstream actually publishes and record the SPDX identifier in
-`upstream.json`. Do not trust GitHub's licence field alone -- it fails to parse a fifth of
+`status.json.license_spdx`. Do not trust GitHub's licence field alone -- it fails to parse a fifth of
 repos -- and do not leave it blank. An unrecorded licence blocks the route upstream exactly
 as a restrictive one does, and it is the worse of the two failures, because a restrictive
 licence announces itself while an empty field looks like nothing is wrong.

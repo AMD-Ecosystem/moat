@@ -10,5 +10,6 @@
   "head_sha": null,
   "depends_on": [],
   "platforms": {},
-  "updated_at": "2026-08-06T00:00:00Z"
+  "updated_at": "2026-08-06T00:00:00Z",
+  "license_spdx": "NVIDIA Source Code License"
 }

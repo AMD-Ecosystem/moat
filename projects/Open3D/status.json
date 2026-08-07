@@ -149,5 +149,6 @@
   "pr_number": 7509,
   "pr_opened_at": "2026-06-08T16:22:56Z",
   "porting": null,
-  "waivers": {}
+  "waivers": {},
+  "license_spdx": "MIT"
 }

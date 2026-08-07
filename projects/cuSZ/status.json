@@ -142,5 +142,6 @@
   "pr_opened_at": "2026-06-25T21:25:23Z",
   "porting": null,
   "waivers": {},
-  "pr_state": "open"
+  "pr_state": "open",
+  "license_spdx": "BSD-3-Clause"
 }
