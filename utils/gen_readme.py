@@ -57,9 +57,8 @@ def load_projects():
             continue
         d = REPO_ROOT / "projects" / name
         # Delivery tracking. pr_state (open/merged/closed) drives the PR glyph; a
-        # recorded disposition covers the projects whose success is NOT an upstream PR
-        # (e.g. we GPU-validated an existing ROCm backend across archs). See
-        # outcome_cell() for the vocabulary.
+        # recorded disposition covers the projects that ended some other way, such as
+        # a licence that bars contributing a port that works. See outcome_cell().
         disp = moatlib.get_disposition(moatlib.upstream_full_name(d.name) or "")
         if disp and disp.get("disposition") == "skip":
             rec["disposition"] = disp.get("reason")
@@ -136,18 +135,14 @@ def gate_cell(project, gate):
     return "🎫" if verdict == "waived" else GATE_GLYPH[verdict]
 
 
-def _validated_arch_count(p):
-    """Number of platforms validated on real hardware (completed, not blocked)."""
-    return sum(1 for b in p.get("platforms", {}).values()
-               if b.get("state") == "completed" and not b.get("blocked"))
-
-
 def outcome_cell(p):
     """The Outcome column: what this project actually delivered. An upstream PR
     (any state) is shown by its glyph + number. Projects without a PR carry a recorded
     disposition in data/dispositions.json:
-      already-supported -- upstream already had a ROCm path; where we GPU-validated
-                    it across N archs the count is shown. 🔵
+      already-supported -- upstream already had a ROCm path, so there is no port to
+                    show. It is a screening result, not a row on a porting board:
+                    data/dispositions.json is its record and the table stays about
+                    ports. Falls through to ⚪ if such a project ever keeps a folder.
       license-blocked -- the port may work, but the upstream license (non-commercial,
                     no-derivative, or otherwise incompatible) bars contributing it.
                     The platform cells stay truthful (the port was built/validated)
@@ -166,9 +161,6 @@ def outcome_cell(p):
             num = tail if tail.isdigit() else "?"
         return f"{glyph} [#{num}]({p['pr_url']})"
     disp = p.get("disposition")
-    if disp == "already-supported":
-        n = _validated_arch_count(p)
-        return f"🔵 validated ({n} arch)" if n else "🔵 already supported"
     if disp == "license-blocked":
         # First sentence only: the full reasoning lives in the project's notes.md, and
         # a paragraph inside a table cell wraps the row into unreadability.
@@ -210,10 +202,10 @@ def render_table(projects):
         "| ✅ | proven on the current code | | 🟣 | contribution merged upstream |",
         "| 🔄 | proven earlier; the code has moved since | | 🟢 | pull request open |",
         "| 🔧 | in progress | | 🔴 | pull request closed |",
-        "| ⬜ | not started | | 🔵 | upstream already supported AMD; we verified it |",
-        "| 🚫 | blocked, with a reason recorded | | ⚖️ | licence bars contributing the port |",
-        "| 🎫 | waived for this project, with maintainer approval | | ⚪ | set aside, with the reason recorded |",
-        "| — | nothing recorded | | — | nothing recorded |",
+        "| ⬜ | not started | | ⚖️ | licence bars contributing the port |",
+        "| 🚫 | blocked, with a reason recorded | | ⚪ | set aside, with the reason recorded |",
+        "| 🎫 | waived for this project, with maintainer approval | | — | nothing recorded |",
+        "| — | nothing recorded | | | |",
         "",
         "The project name links upstream.",
     ])

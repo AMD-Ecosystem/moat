@@ -13,7 +13,6 @@ import json
 import re
 import subprocess
 import sys
-import time
 import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
@@ -216,28 +215,6 @@ def full_sha(sha, repo=None):
                        capture_output=True, text=True)
     out = r.stdout.strip()
     return out if r.returncode == 0 and len(out) == 40 else sha
-
-
-def claim_ttl_seconds():
-    """Read claim TTL from config/moat.toml; default 30 min. A .claim file
-    untouched for longer than this is stale (its CLI crashed) and reclaimable."""
-    cfg = REPO_ROOT / "config" / "moat.toml"
-    minutes = 30
-    if cfg.exists():
-        try:
-            minutes = tomllib.loads(cfg.read_text()).get("claims", {}).get("claim_ttl_minutes", 30)
-        except (tomllib.TOMLDecodeError, OSError):
-            pass
-    return float(minutes) * 60.0
-
-
-def claim_live(name):
-    """True if projects/<name>/.claim exists and was refreshed within the TTL.
-    Same-host coordination via the shared filesystem; .claim is gitignored."""
-    cf = PROJECTS / name / ".claim"
-    if not cf.exists():
-        return False
-    return (time.time() - cf.stat().st_mtime) < claim_ttl_seconds()
 
 
 def _empty_stats():
@@ -1283,8 +1260,6 @@ def actionable(obj, platform):
     lock = obj.get("porting")
     if lock and lock.get("arch") != platform and STAGE_FOR_STATE.get(blk["state"]) == "porter":
         return False
-    if claim_live(obj.get("name") or ""):
-        return False          # another CLI on this host is working it right now
     if unmet_deps(obj):  # deps-first ordering: wait until depended-on ports complete
         return False
     return blk["state"] in STAGE_FOR_STATE

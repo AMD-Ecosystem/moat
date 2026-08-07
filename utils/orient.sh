@@ -135,12 +135,6 @@ fi
 read -r PROJECT STATE STAGE < <(echo "$NEXT" | python3 -c \
   'import sys,json;d=json.load(sys.stdin);print(d["project"],d["state"],d["stage"])')
 
-# Advisory claim: we hold the selection lock, and next-task excludes projects whose
-# .claim is still fresh (moatlib.claim_live, TTL from config/moat.toml). The dispatched CLI should refresh this .claim while
-# working so it stays live (heartbeat); a stale .claim is reclaimable.
-printf '{"host":"%s","pid":%s,"platform":"%s","started":"%s"}\n' \
-  "$(hostname)" "$$" "$PLATFORM" "$(date -u +%FT%TZ)" > "projects/$PROJECT/.claim"
-
 echo "next     : projects/$PROJECT  state=$STATE  -> dispatch: $STAGE"
 echo "triple   : $GFX_TRIPLE"
 echo "action   : Use the $STAGE subagent on projects/$PROJECT"

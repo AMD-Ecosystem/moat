@@ -42,10 +42,10 @@ widths are proven separately rather than assumed to follow from each other.
 | ✅ | proven on the current code | | 🟣 | contribution merged upstream |
 | 🔄 | proven earlier; the code has moved since | | 🟢 | pull request open |
 | 🔧 | in progress | | 🔴 | pull request closed |
-| ⬜ | not started | | 🔵 | upstream already supported AMD; we verified it |
-| 🚫 | blocked, with a reason recorded | | ⚖️ | licence bars contributing the port |
-| 🎫 | waived for this project, with maintainer approval | | ⚪ | set aside, with the reason recorded |
-| — | nothing recorded | | — | nothing recorded |
+| ⬜ | not started | | ⚖️ | licence bars contributing the port |
+| 🚫 | blocked, with a reason recorded | | ⚪ | set aside, with the reason recorded |
+| 🎫 | waived for this project, with maintainer approval | | — | nothing recorded |
+| — | nothing recorded | | | |
 
 The project name links upstream.
 
