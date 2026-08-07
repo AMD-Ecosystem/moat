@@ -19,3 +19,13 @@ Recording `license_spdx: "Apache-2.0 OR GPL-2.0-only WITH Classpath-exception-2.
 AMD GPUs are already reachable through TornadoVM's own default OpenCL backend -- this is not a partial/parked port by another team, it is upstream's own shipped functionality, so `already-supported` is the closer fit than `not-a-target` even though the CUDA-only slice (PTX backend, CUTLASS/cuBLAS/cuDNN/cuFFT/cuSPARSE JNI bindings) is also, independently, a code-generation/library-binding target rather than in-tree CUDA kernels -- the same reimplement-not-port shape as mirage/SpargeAttn/FlashRT. Recommending decline on both grounds: the goal (Java code running on AMD GPUs) is already met without any port, and the part that is CUDA-specific would not be a port even if pursued.
 
 Upstream is active (not archived); no dependency on any other MOAT project.
+
+## Approved against intake's recommendation, 2026-08-07
+
+Intake recommended declining this as already-supported, on the grounds that TornadoVM's own default OpenCL backend already reaches AMD hardware. jeffdaily overrode that on intake queue issue #5: "Approve TornadoVM because it looks like an interesting challenge to port, but I acknowledge the OpenCL path already works on AMD hardware."
+
+So the scope is NOT enablement. AMD users can run TornadoVM today. What this port is for is native AMDGPU code generation: a backend beside `tornado-drivers/ptx` that emits GCN/HSACO and loads it through hipRTC/hipModule, rather than reaching AMD through OpenCL.
+
+That makes it a third shape, neither Strategy A nor Strategy B. There are no CUDA kernels to translate: the repo has 3 `.cu` files, one generated and one a CUTLASS JNI wrapper. The CUDA-specific surface is a JIT compiler backend emitting PTX assembly text, so the equivalent work is writing a code generator rather than diffing existing kernels. The one thing that makes it tractable where mirage and pegainfer are not is that TornadoVM already abstracts its backend interface across OpenCL, PTX and Metal, so there is a defined seam to implement against instead of a rewrite of the engine.
+
+Licence note for the planner: the recorded `license_spdx` reads as an OR expression, but TornadoVM is per-MODULE licensed, which is not the same thing. What governs a contribution is the licence of the files changed, and the modules this work touches -- Tornado-Runtime and Tornado-Drivers -- are GPL-2.0 with Classpath Exception, tier 2, cleared to contribute. The Apache-2.0 and MIT modules are the user-facing API, which this work would not modify.
