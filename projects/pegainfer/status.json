@@ -7,10 +7,19 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-08-07T07:07:33Z",
-  "updated_at": "2026-08-07T07:07:33Z",
+  "updated_at": "2026-08-07T07:08:36Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "Apache-2.0",
+  "intake": {
+    "verdict": "decline",
+    "reason": "cant-port",
+    "duplicate_effort": "none for pegainfer itself; AMD-Ecosystem/flashinfer already ROCm-ports one of its four vendored third-party kernel libs",
+    "viable": false,
+    "summary": "Pure Rust + CUDA LLM inference engine; GPU layer runs on cudarc (no ROCm/HIP backend anywhere in the Rust ecosystem) and its GLM5.2/Kimi-K2 kernels are Blackwell-only tcgen05/CUTLASS-CuTe PTX (DeepGEMM/FlashMLA/DeepEP submodules), matching the project's existing cant-port pattern (flashinfer, FlashKDA, mirage).",
+    "at": "2026-08-07T07:08:36Z"
+  }
 }
