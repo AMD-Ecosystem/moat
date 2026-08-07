@@ -7,10 +7,45 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-08-07T06:47:29Z",
-  "updated_at": "2026-08-07T06:47:29Z",
+  "updated_at": "2026-08-07T06:50:42Z",
   "head_sha": null,
-  "depends_on": [],
+  "depends_on": [
+    "faiss"
+  ],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "awaiting-fork",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-07T06:50:42Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "BSD-3-Clause",
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none",
+    "viable": true,
+    "summary": "Active CUDA t-SNE (FIt-SNE) implementation w/ cuBLAS/cuFFT/cuSPARSE/Thrust + hard GPU-FAISS dep (FAISS already ported, completed on linux-gfx90a); BSD-3-Clause tier 1, no duplicate AMD effort found.",
+    "at": "2026-08-07T06:50:24Z"
+  }
 }
