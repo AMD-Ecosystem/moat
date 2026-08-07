@@ -152,7 +152,7 @@ fork-side work and neither reaches the part that matters.
 | gate | why |
 |---|---|
 | `schema` | `status.json` validates against a schema generated from `moatlib`, so the two cannot disagree |
-| `readme` | the generated project table matches the data it describes -- **checked on the trunk only**. A `port/<name>` branch carries the trunk's projects plus its own, so its table legitimately differs; enforcing it there would have every branch regenerate the same file for a row that belongs on the trunk once, conflicting on each merge. The cost is that merging a port leaves the trunk's table stale, and the next push to the trunk fails this gate: run `python3 utils/gen_readme.py` and commit it with the merge. |
+| `readme` | the generated project table matches the data it describes. Skipped for a local push to a `port/<name>` branch, where the tree is the trunk plus one project mid-port; enforced everywhere else, including CI on the pull request -- which builds the merge commit, so it describes the trunk as it will be and fails on the PR that has to fix it (`python3 utils/gen_readme.py`) |
 | `licenses` | tier lists are well-formed and no identifier sits in two tiers, which would silently disable the review gate |
 | `blobs` | nothing tracked that looks like build output (`.a`, `.so`, `.o`, archives, wheels, model weights) and nothing over 1 MB without an entry in the allowlist saying why it is data rather than spill |
 | `states` | every state is one `moatlib` knows, every platform is a well-formed `<os>-<gfx>` with a known wavefront width, and no waiver lacks a maintainer's approval |
