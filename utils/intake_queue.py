@@ -11,8 +11,12 @@ This collects finished screens into a single issue instead.
 
 Three properties matter more than the mechanics.
 
-ONE ISSUE, regenerated in place. A second issue would split the queue and neither
-would be the real one. `publish` finds the open `intake-queue` issue and edits it.
+ONE OPEN ISSUE AT A TIME, and each one is a SNAPSHOT. `publish` edits the open
+queue while it is still undecided, so re-running it before anyone answers does not
+litter. But the moment a decision lands, that issue closes and the remainder comes
+back as a new one -- because the body is mutable and the comment thread is not.
+Regenerating under an answered comment turned "decline the other two" into a
+sentence pointing at a table with no two to decline.
 
 THE RECOMMENDATION IS THE DEFAULT. Every row carries what intake would choose, so
 a reviewer's reply is a diff against it -- "accept all but X and Y" -- rather than
@@ -156,9 +160,10 @@ def render(rows):
                 "the merge closes this issue. Nothing is recorded without that.", ""]
         out += [f"- `{r['full_name']}` -- suggested reason `{r.get('reason')}`"
                 for r in declines]
-    out += ["", "---", "_Regenerated in place by "
-            "`python3 utils/intake_queue.py publish --apply`; this issue is never "
-            "duplicated._"]
+    out += ["", "---", "_This table is a snapshot. It is regenerated in place only "
+            "while nobody has answered; once a decision is recorded this issue closes "
+            "and anything still undecided returns as a new one, so a reply always "
+            "refers to the table above it._"]
     return "\n".join(out) + "\n"
 
 
@@ -179,6 +184,10 @@ def publish(apply=False):
         gh(["issue", "edit", str(existing["number"]), "--repo", REPO, "--body", body],
            check=True)
         return ("updated", existing["url"])
+    prev = gh_json(["issue", "list", "--repo", REPO, "--label", LABEL, "--state",
+                    "closed", "--limit", "1", "--json", "number"]) or []
+    if prev:
+        body += f"\nContinues from #{prev[0]['number']}, which was closed when its batch was decided.\n"
     r = gh(["issue", "create", "--repo", REPO, "--label", LABEL,
             "--title", TITLE, "--body", body], check=True)
     return ("opened", r.stdout.strip())
@@ -275,9 +284,9 @@ def apply_decisions(declines, note, apply=False):
               "bypassing is disallowed, which for a single-maintainer repository means "
               "nothing can ever merge.\n\n"
               "Accepts are not here: a fork appearing is what records those.\n"
-            + (f"\nPart of #{issue['number']}. It stays open: declines are only half "
-               f"an answer, and the accepts remain until their forks exist.\n"
-               if issue else ""))
+            + (f"\nCloses #{issue['number']}. Whatever is still undecided comes back "
+               f"as a fresh queue, because a decision comment refers to the table it "
+               f"was written under.\n" if issue else ""))
     r = gh(["pr", "create", "--repo", REPO, "--head", BRANCH, "--base", "main",
             "--title", "intake: record declines from the queue", "--body", body])
     if r.returncode and "already exists" in (r.stderr + r.stdout):
