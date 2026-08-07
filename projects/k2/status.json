@@ -7,7 +7,7 @@
   "priority": 5.757,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-07-02T17:17:26Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "92912b1c12273c36368279ec4a3410e428503e20",
   "platforms": {
     "windows-gfx1201": {
@@ -97,28 +97,6 @@
         "class": "comment-only",
         "detail": "cmake/torch.cmake: comment-only (comments/format only)",
         "at": "2026-06-11T17:25:17Z"
-      }
-    },
-    "windows-gfx1151": {
-      "state": "port-ready",
-      "blocked": true,
-      "blocked_reason": "windows-gfx1151 host retired (superseded by the gfx1101/gfx1201 machine); validation moved to windows-gfx1101 and windows-gfx1201",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-04T19:41:52Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
       }
     },
     "linux-gfx1100": {

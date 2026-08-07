@@ -7,34 +7,12 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-23T14:02:30Z",
-  "updated_at": "2026-06-25T17:31:32Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "1b6b35a8115e27f1facba0e5db6b1c061086590c",
   "depends_on": [
     "visionaray"
   ],
   "platforms": {
-    "windows-gfx1151": {
-      "state": "port-ready",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-24T14:20:17Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
     "windows-gfx1201": {
       "state": "completed",
       "blocked": false,

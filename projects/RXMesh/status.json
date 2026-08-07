@@ -7,7 +7,7 @@
   "priority": 4.792,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T00:36:13Z",
-  "updated_at": "2026-06-23T21:32:38Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "df10bfe",
   "platforms": {
     "linux-gfx90a": {
@@ -122,8 +122,8 @@
     },
     "windows-gfx1151": {
       "state": "completed",
-      "blocked": true,
-      "blocked_reason": "windows-gfx1151 host retired (superseded by the gfx1101/gfx1201 machine)",
+      "blocked": false,
+      "blocked_reason": null,
       "validated_sha": "df10bfe",
       "started_at": null,
       "completed_at": "2026-06-23T21:32:38Z",

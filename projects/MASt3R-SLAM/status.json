@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-04T03:56:07Z",
-  "updated_at": "2026-08-06T02:41:26Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "07385a228e2ff7701ffd8f136d257051fa6c0fda",
   "depends_on": [],
   "platforms": {
@@ -100,28 +100,6 @@
       "started_at": null,
       "completed_at": "2026-06-08T01:33:33Z",
       "updated_at": "2026-06-08T01:33:33Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1151": {
-      "state": "port-ready",
-      "blocked": true,
-      "blocked_reason": "windows-gfx1151 host retired (superseded by the gfx1101/gfx1201 machine); validation moved to windows-gfx1101 and windows-gfx1201",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-04T19:41:52Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,

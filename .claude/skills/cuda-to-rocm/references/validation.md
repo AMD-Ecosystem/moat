@@ -42,6 +42,19 @@ a DLL-load error; rebuilding a correct binary against a broken runtime is the si
 biggest time sink on Windows. A port is not "broken on Windows" until it has been run
 against a full ROCm distribution.
 
+## Two GPUs visible to one process can crash the runtime
+
+On ROCm 7.14 a process that could see a mixed RDNA3 + RDNA4 pair crashed in the HIP
+runtime before any kernel ran. It presents as a launch-time failure of a port that is
+correct, so it is easy to spend an afternoon on the wrong suspect. If a machine has
+more than one GPU and they are not the same architecture, pin `HIP_VISIBLE_DEVICES`
+to exactly one per process and see whether the fault survives.
+
+Do not carry an index in a script. Which index a card holds depends on what is
+installed in that machine, so a pinned `HIP_VISIBLE_DEVICES=1` copied from older
+notes silently selects a different card, or none. Read the device list at the time
+you use it (`rocminfo`, `hipInfo`).
+
 ## Diagnosing a suspected AMD fault before escalating
 
 Two patterns that each cost a deep investigation before the real cause was found.

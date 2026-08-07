@@ -7,7 +7,7 @@
   "priority": 6.967,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-08-05T16:07:17Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "8ffe6460645b2ed0076de5ebe6e2e5a7567940f6",
   "platforms": {
     "linux-gfx90a": {
@@ -102,28 +102,6 @@
       "started_at": null,
       "completed_at": null,
       "updated_at": "2026-06-06T23:40:22Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1151": {
-      "state": "port-ready",
-      "blocked": true,
-      "blocked_reason": "Never Windows-ported (even for CUDA): zero _WIN32 guards in csrc/. The ROCm/HIP GPU kernels hipify cleanly, but the c_ops host allocator (csrc/mem_alloc.cpp: POSIX sys/mman/unistd mmap+hugepage+shm pinned allocators, called by memory_management.py) and storage backends (redis/event_notifier: unistd.h/eventfd) have no Windows port. Validating on Windows needs a POSIX->Win32 host porting effort (allocators + networking) SEPARATE from the ROCm port and out of scope. Not a ROCm/gfx1151 defect (gfx90a/gfx1100 pass). Partial Windows fixes in windows-partial-fixes.patch.",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-05-31T06:34:55Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,

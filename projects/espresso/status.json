@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:43:45Z",
-  "updated_at": "2026-08-07T05:39:00Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "8e228b5d0b5113e32c201d6b9b930fdc111c64b9",
   "depends_on": [],
   "platforms": {
@@ -99,28 +99,6 @@
       "started_at": null,
       "completed_at": null,
       "updated_at": "2026-06-08T15:24:19Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1151": {
-      "state": "port-ready",
-      "blocked": true,
-      "blocked_reason": "windows-gfx1151 host retired (superseded by the gfx1101/gfx1201 machine); validation moved to windows-gfx1101 and windows-gfx1201",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-04T19:41:52Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,

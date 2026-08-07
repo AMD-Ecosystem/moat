@@ -7,33 +7,9 @@
   "priority": 6.361,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-07-06T02:49:04Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "444d12bbbbb625c50828cf509296c587fcdac674",
   "platforms": {
-    "windows-gfx1151": {
-      "state": "delta-ported",
-      "blocked": true,
-      "blocked_reason": "Host stability, not a port defect: alien's full EngineTests GPU validation is a ~26min sustained GPU-compute run on this Strix Halo APU, which repeatedly hard-reboots the host with HYPERVISOR_ERROR 0x20001 (recurred 2026-06-03). HIP port is SOLVED and working at 47ab2c9 (toolchain fixed, compiles+links, 1 GPU test PASSED on gfx1151). Validated on gfx90a+gfx1100 at 2973/2978. Skipping windows-gfx1151 full-suite validation until host is stabilized (disable HVCI/VBS, TDP cap, newer KMD) and run can be batched into short gtest_filter chunks. See gfx1151-host-power-reboots.",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-04T01:26:55Z",
-      "note": "Toolchain blocker SOLVED at 47ab2c9 (TheRock#5615 -o workaround + hip_link_win.py device-link wrapper + __has_include cg::reduce guard). Compiles+links on gfx1151; 1 real GPU test (AttackerTests.maxRawEnergyThreshold_belowThreshold) PASSED on hardware. Full EngineTests suite (~26min sustained GPU) NOT completed -- the run triggered a host HYPERVISOR_ERROR 0x20001 reboot. Remaining gap is HOST STABILITY, not the port; complete via short batched gtest_filter runs once host is stabilized. See notes.md + [[gfx1151-host-power-reboots]].",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator"
-    },
     "windows-gfx1101": {
       "state": "revalidate",
       "blocked": false,

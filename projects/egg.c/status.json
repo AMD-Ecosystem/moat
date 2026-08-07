@@ -7,7 +7,7 @@
   "priority": 4.12,
   "ext_type": "make",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-08-06T02:41:27Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "f565358f3f87a6db2a311b56ce24ce2db113ca8a",
   "platforms": {
     "windows-gfx1201": {
@@ -66,28 +66,6 @@
         "method": "binary-equiv",
         "detail": "gfx1100 codeobj_diff identical for adam + mgpu (cross-compiled before/after, build-only)",
         "at": "2026-06-18T17:10:54Z"
-      }
-    },
-    "windows-gfx1151": {
-      "state": "port-ready",
-      "blocked": true,
-      "blocked_reason": "windows-gfx1151 host retired (superseded by the gfx1101/gfx1201 machine); validation moved to windows-gfx1101 and windows-gfx1201",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-04T19:41:52Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
       }
     },
     "linux-gfx90a": {

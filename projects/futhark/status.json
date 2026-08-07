@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "compiler-with-hip-backend",
   "adopted_at": "2026-06-05T00:19:54Z",
-  "updated_at": "2026-06-05T01:01:44Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": null,
   "depends_on": [],
   "platforms": {
@@ -79,28 +79,6 @@
       }
     },
     "windows-gfx1201": {
-      "state": "awaiting-port",
-      "blocked": true,
-      "blocked_reason": "Not a MOAT port target - authoritative upstream HIP backend exists",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-05T01:01:44Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1151": {
       "state": "awaiting-port",
       "blocked": true,
       "blocked_reason": "Not a MOAT port target - authoritative upstream HIP backend exists",

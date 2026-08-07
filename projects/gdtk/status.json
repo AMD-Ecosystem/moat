@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "makefile",
   "adopted_at": "2026-06-05T04:44:12Z",
-  "updated_at": "2026-08-06T02:33:28Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "8aadf2185510930b523c786e21fde116c22b2809",
   "depends_on": [],
   "platforms": {
@@ -100,28 +100,6 @@
       "started_at": "2026-06-08T18:00:29Z",
       "completed_at": "2026-06-08T18:00:29Z",
       "updated_at": "2026-06-08T18:00:29Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1151": {
-      "state": "port-ready",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-05T09:11:44Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,

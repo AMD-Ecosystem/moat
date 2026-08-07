@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "go-cgo-driver-api",
   "adopted_at": "2026-06-04T04:24:21Z",
-  "updated_at": "2026-08-06T03:29:00Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "a76378a35fc663eb93b841e3b17a101eb2092a28",
   "depends_on": [],
   "platforms": {
@@ -124,28 +124,6 @@
         "class": "doc-only",
         "detail": "no changes",
         "at": "2026-06-10T23:50:47Z"
-      }
-    },
-    "windows-gfx1151": {
-      "state": "port-ready",
-      "blocked": true,
-      "blocked_reason": "windows-gfx1151 host retired (superseded by the gfx1101/gfx1201 machine); validation moved to windows-gfx1101 and windows-gfx1201",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-04T19:41:52Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
       }
     }
   },

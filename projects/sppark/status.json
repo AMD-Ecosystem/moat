@@ -7,7 +7,7 @@
   "priority": 4.666,
   "ext_type": "rust-cc",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-06-20T00:31:15Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "005cd878d3233376c13198898ad81952426edabf",
   "platforms": {
     "linux-gfx90a": {
@@ -124,28 +124,6 @@
         "method": "source-class",
         "detail": "doc-only: one sentence in README Platform Compatibility noting AMD MSM/NTT via ROCm/HIP; device code identical",
         "at": "2026-06-20T00:30:09Z"
-      }
-    },
-    "windows-gfx1151": {
-      "state": "awaiting-port",
-      "blocked": true,
-      "blocked_reason": "windows-gfx1151 host retired (superseded by the gfx1101/gfx1201 machine); validation moved to windows-gfx1101 and windows-gfx1201",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-04T19:41:52Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
       }
     }
   },
