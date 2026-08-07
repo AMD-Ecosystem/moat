@@ -37,6 +37,22 @@ def load_candidates():
 def cmd_review(args):
     disp = moatlib.load_dispositions()
     skips = {k for k, v in disp.items() if v.get("disposition") == "skip"}
+    # Also by GitHub repo id, because owner/repo is not stable. Two candidates in the
+    # 2026-08-07 rerun were decided months earlier under their old names -- sonar is
+    # dphnAI/aphrodite-engine and lucebox is Luce-Org/lucebox-hub -- and `scaffold`
+    # refused both on the id while this listing still offered them, so two agents were
+    # dispatched to re-screen settled projects. candidates.json has no id, so the map
+    # is built from the dispositions that do.
+    skip_ids = {v["repo_id"] for v in disp.values()
+                if v.get("disposition") == "skip" and v.get("repo_id")}
+    id_cache = {}
+
+    def decided_by_id(full_name):
+        if not skip_ids:
+            return False
+        if full_name not in id_cache:
+            id_cache[full_name] = moatlib.github_repo_id(full_name)
+        return id_cache[full_name] in skip_ids
     # Keyed on owner/repo, not on the directory name. A project folder is named after
     # the repo's basename, so matching on that alone makes foo/bar and baz/bar the same
     # project -- a different upstream would read as already adopted and vanish from the
@@ -51,11 +67,19 @@ def cmd_review(args):
     def is_adopted(fn):
         return fn.lower() in adopted
 
-    pending = [c for c in cands if c["full_name"].lower() not in skips and not is_adopted(c["full_name"])]
-    n_skip = sum(1 for c in cands if c["full_name"].lower() in skips)
+    pending = [c for c in cands
+               if c["full_name"].lower() not in skips and not is_adopted(c["full_name"])]
+    # The id check costs an API call per surviving row, so it runs only on what is left.
+    renamed = [c for c in pending if decided_by_id(c["full_name"])]
+    pending = [c for c in pending if c not in renamed]
+    n_skip = sum(1 for c in cands if c["full_name"].lower() in skips) + len(renamed)
     n_adopt = sum(1 for c in cands if is_adopted(c["full_name"]))
     shown = pending if args.all else pending[:args.top]
     print(f"# {len(pending)} pending ({n_skip} skipped, {n_adopt} adopted) of {len(cands)}; showing {len(shown)}")
+    for c in renamed:
+        d = moatlib.get_disposition(c["full_name"], id_cache.get(c["full_name"])) or {}
+        print(f"  renamed since a decision: {c['full_name']} is {d.get('full_name')} "
+              f"({d.get('reason')}) -- not offered")
     print(f"{'#':>3}  {'prio':>5}  {'stars':>7}  project -- description")
     for i, c in enumerate(shown, 1):
         tag = " [verify]" if c["full_name"].lower() in disp else ""
