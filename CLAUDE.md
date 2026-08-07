@@ -28,6 +28,19 @@ The AMD targets share one unified ROCm port, so a functional change re-validates
 
 Strategies and fault classes live in the `cuda-to-rocm` skill.
 
+# Branches: two different things both called "the port branch"
+
+Keep these apart; they are in different repositories and do different jobs.
+
+- **`port/<name>` in THIS repo** holds a project's control-plane state -- its `projects/<name>/` folder. `main` is protected, so state reaches it by pull request, and the branch existing on the remote IS the claim that a project is in flight. It is shared: every host working that project pushes to it. Deleted when its PR merges.
+- **`moat-port` on the FORK** (`AMD-Ecosystem/<project>`) holds the actual code port. This is what gets reviewed and what the upstream PR is opened from.
+
+Work a project by checking out its `port/<name>`. The trunk carries projects that reached a terminal state; a project in flight lives only on its own branch, so `next-task` on the trunk cannot offer it -- you cannot edit files that are not in your tree. `python3 utils/moatlib.py fleet <platform>` lists actionable work across every ref and names the branch to check out, and orient prints it when nothing local is actionable.
+
+Anything asking "what do we know about project X" must go through `moatlib.project_record` / `all_projects`, which resolve across the trunk and the port branches. Reading `projects/` directly answers "not adopted" for a project that is merely elsewhere, and those lead opposite ways: one must not be re-screened, the other must be.
+
+`orient.sh` merges the trunk into your port branch, but only when something a port can feel changed there -- the skill, the agents, the tooling -- not for a README regeneration. A branch owns its own `projects/<name>/` and never takes the trunk's version of it.
+
 # Autonomy boundary
 
 Auto mode is maximal within these bounds.
