@@ -68,6 +68,21 @@ UNTRUSTED = {
 }
 
 
+def all_records():
+    """(name, record, where) for every project across refs, not just this checkout.
+
+    Everything below used to glob the local tree. That was equivalent while every
+    project's folder sat on the trunk, and stops being so the moment one moves to its
+    own branch: a sweep run from any single branch would silently skip the rest, and a
+    skipped project is indistinguishable from one with nothing to report."""
+    sys.path.insert(0, str(REPO / "utils"))
+    import moatlib
+    for name in sorted(moatlib.all_projects()):
+        obj, where = moatlib.project_record(name)
+        if obj is not None:
+            yield name, obj, where
+
+
 def gh_json(args):
     r = subprocess.run(["gh"] + args, capture_output=True, text=True, timeout=90)
     if r.returncode:
@@ -81,8 +96,7 @@ def gh_json(args):
 def recorded():
     """Every project with an upstream PR recorded, and what we think its state is."""
     out = []
-    for sp in sorted((REPO / "projects").glob("*/status.json")):
-        d = json.loads(sp.read_text())
+    for name, d, _where in all_records():
         pr = d.get("pr_url") or next(
             (b.get("pr_url") for b in (d.get("platforms") or {}).values() if b.get("pr_url")), None)
         if not pr:
@@ -91,7 +105,7 @@ def recorded():
         if not m:
             continue
         ours = d.get("pr_state") or ("merged" if d.get("pr_merged_at") else None)
-        out.append({"name": sp.parent.name, "repo": m.group(1), "num": m.group(2),
+        out.append({"name": name, "repo": m.group(1), "num": m.group(2),
                     "url": pr, "ours": ours})
     return out
 
@@ -243,13 +257,17 @@ def fork_poll(apply=False, stale_weeks=3):
     session. This only makes the project eligible and tells someone.
     """
     import datetime
-    released, waiting, declined, conflicts = [], [], [], []
-    for sp in sorted((REPO / "projects").glob("*/status.json")):
-        d = json.loads(sp.read_text())
-        name = sp.parent.name
+    released, waiting, declined, conflicts, elsewhere = [], [], [], [], []
+    for name, d, where in all_records():
         blocks = {a: b for a, b in (d.get("platforms") or {}).items()
                   if b.get("state") == "awaiting-fork"}
         if not blocks:
+            continue
+        if where == "branch":
+            # Releasing writes to the record, and the record is not in this checkout.
+            # Report it rather than skipping: a fork that appeared for a project whose
+            # branch nobody has out is exactly the thing this exists to notice.
+            elsewhere.append({"name": name, "archs": sorted(blocks)})
             continue
         slug = (d.get("fork_url") or f"https://github.com/AMD-Ecosystem/{name}") \
             .replace("https://github.com/", "")
@@ -262,7 +280,11 @@ def fork_poll(apply=False, stale_weeks=3):
         released.append({"name": name, "slug": slug, "archs": sorted(blocks)})
 
     print(f"fork-poll: {len(released)} released, {len(declined)} declined, "
-          f"{len(waiting)} still waiting, {len(conflicts)} conflicted\n")
+          f"{len(waiting)} still waiting, {len(conflicts)} conflicted, "
+          f"{len(elsewhere)} on another branch\n")
+    for e in elsewhere:
+        print(f"  ELSEWHERE  {e['name']:26} awaiting-fork on port/{e['name']} -- "
+              f"check that branch out to release it")
     for r in released:
         print(f"  RELEASED   {r['name']:26} fork exists: {r['slug']}")
     for r in declined:
@@ -364,11 +386,9 @@ def approval_drift():
     import moatlib
 
     rows = []
-    for sp in sorted((REPO / "projects").glob("*/status.json")):
-        d = json.loads(sp.read_text())
+    for name, d, _where in all_records():
         if not d.get("pr_approval") or d.get("pr_state"):
             continue          # never approved, or already published
-        name = sp.parent.name
         code, why = moatlib.pr_approval_status(name, live=True)
         if code != "ok":
             rows.append({"name": name, "code": code, "why": why,
@@ -443,12 +463,10 @@ def publishable():
     import moatlib
 
     out = []
-    for sp in sorted((REPO / "projects").glob("*/status.json")):
-        d = json.loads(sp.read_text())
+    for name, d, _where in all_records():
         url = (d.get("pr_approval") or {}).get("review_pr") or d.get("review_pr")
         if not url or d.get("pr_state"):
             continue                      # no review PR, or already submitted
-        name = sp.parent.name
         pr = moatlib.fetch_review_pr(url)
         if pr is None or moatlib._approving_review(pr) is None:
             continue                      # not approved (yet), or unreachable
