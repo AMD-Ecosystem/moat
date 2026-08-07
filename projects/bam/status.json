@@ -5,7 +5,7 @@
   "fork_url": "https://github.com/AMD-Ecosystem/bam",
   "fork_default_branch": "master",
   "priority": 4.468,
-  "ext_type": "unknown",
+  "ext_type": "cmake",
   "adopted_at": "2026-05-30T03:26:35Z",
   "updated_at": "2026-08-05T16:06:59Z",
   "head_sha": "b7d9a4a3699786cf60482c55ff32da80c3b31e32",
@@ -123,5 +123,6 @@
     }
   },
   "porting": null,
-  "waivers": {}
+  "waivers": {},
+  "license_spdx": "BSD-2-Clause"
 }

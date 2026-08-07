@@ -154,5 +154,6 @@
   "pr_opened_at": "2026-06-11T06:53:55Z",
   "porting": null,
   "waivers": {},
-  "pr_state": "open"
+  "pr_state": "open",
+  "license_spdx": "Apache-2.0"
 }

@@ -5,7 +5,7 @@
   "fork_url": "https://github.com/AMD-Ecosystem/sppark",
   "fork_default_branch": "main",
   "priority": 4.666,
-  "ext_type": "unknown",
+  "ext_type": "rust-cc",
   "adopted_at": "2026-05-30T01:04:51Z",
   "updated_at": "2026-06-20T00:31:15Z",
   "head_sha": "005cd878d3233376c13198898ad81952426edabf",
@@ -154,5 +154,6 @@
   "pr_opened_at": "2026-06-20T00:31:15Z",
   "porting": null,
   "waivers": {},
-  "pr_state": "open"
+  "pr_state": "open",
+  "license_spdx": "Apache-2.0"
 }

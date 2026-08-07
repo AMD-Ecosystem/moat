@@ -144,5 +144,6 @@
     "at": "2026-08-06T02:41:26Z",
     "tier": 4,
     "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
-  }
+  },
+  "license_spdx": "CC-BY-NC"
 }

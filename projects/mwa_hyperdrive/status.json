@@ -123,5 +123,6 @@
     }
   },
   "porting": null,
-  "waivers": {}
+  "waivers": {},
+  "license_spdx": "MPL-2.0"
 }

@@ -129,5 +129,6 @@
     "at": "2026-08-06T03:29:00Z",
     "tier": 3,
     "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
-  }
+  },
+  "license_spdx": "GPL-3.0"
 }

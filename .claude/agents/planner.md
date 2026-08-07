@@ -12,14 +12,13 @@ You run AFTER intake, so licence and duplicate-effort are already settled -- do 
 There is no lead platform. Plan the port itself; any arch may execute it, and each validates independently.
 
 ## Inputs
-- projects/<name>/upstream.json (upstream URL, default branch, ext_type if known)
-- projects/<name>/status.json (state must be `screened`)
+- projects/<name>/status.json (upstream URL, default branch, ext_type if known; state must be `screened`)
 - the `cuda-to-rocm` skill (invoke it; load references/ as needed)
 
 ## Steps
-1. Invoke the `cuda-to-rocm` skill and read upstream.json.
+1. Invoke the `cuda-to-rocm` skill and read status.json.
 2. Clone the upstream read-only into projects/<name>/src/: `gh repo clone <full_name> projects/<name>/src -- --depth=1`. Do not branch or commit.
-3. Classify the build (the skill's build classification): pure CMake -> Strategy A; pytorch extension -> Strategy B. Record the exact files/lines that decide it. Set ext_type in upstream.json and status.json.
+3. Classify the build (the skill's build classification): pure CMake -> Strategy A; pytorch extension -> Strategy B. Record the exact files/lines that decide it. Set ext_type in status.json.
 4. Inventory the CUDA surface: kernels, `__global__`/`__device__`, warp intrinsics (`__shfl*`, `__ballot`, `warpSize`, any hardcoded 32), textures/surfaces, cuBLAS/cuFFT/cuRAND/cuSPARSE/Thrust/CUB usage, pinned/managed memory, streams/events. Map each to its ROCm/HIP equivalent or flag it as a risk.
 5. Enumerate the real test suite and the exact build + GPU-test commands (this feeds the validator). Note the non-GPU tests that must not regress.
 6. Write projects/<name>/plan.md.

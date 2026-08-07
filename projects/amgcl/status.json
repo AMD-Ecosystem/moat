@@ -154,5 +154,6 @@
   "pr_merged_at": "2026-06-10T14:23:02Z",
   "porting": null,
   "waivers": {},
-  "pr_state": "merged"
+  "pr_state": "merged",
+  "license_spdx": "MIT"
 }

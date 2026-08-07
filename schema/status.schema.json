@@ -121,6 +121,12 @@
         }
       }
     },
+    "license_spdx": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "license_clearance": {
       "type": [
         "object",

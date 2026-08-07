@@ -28,7 +28,7 @@ git -C projects/<name>/src diff <base>...HEAD
 git -C projects/<name>/src log <base>..HEAD --oneline
 ```
 
-The base is the upstream default branch the fork started from (see `projects/<name>/upstream.json`). Use the branch name in the review header.
+The base is the upstream default branch the fork started from (`fork_default_branch` in `projects/<name>/status.json`). Use the branch name in the review header.
 
 ### PR Number / URL Mode
 

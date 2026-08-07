@@ -133,5 +133,6 @@
     }
   },
   "porting": null,
-  "waivers": {}
+  "waivers": {},
+  "license_spdx": "unlicensed core (Inria-derived)"
 }

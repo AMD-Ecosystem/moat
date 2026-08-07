@@ -5,7 +5,7 @@
   "fork_url": "https://github.com/AMD-Ecosystem/Fast-Poisson-Image-Editing",
   "fork_default_branch": "main",
   "priority": 4.518,
-  "ext_type": "unknown",
+  "ext_type": "cmake",
   "adopted_at": "2026-05-30T03:26:35Z",
   "updated_at": "2026-06-05T19:24:58Z",
   "head_sha": "4c6411be2d3801babf65fba4b5166a15f5a3d883",
@@ -154,5 +154,6 @@
   "pr_merged_at": "2026-06-05T19:24:58Z",
   "porting": null,
   "waivers": {},
-  "pr_state": "merged"
+  "pr_state": "merged",
+  "license_spdx": "MIT"
 }

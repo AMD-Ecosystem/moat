@@ -131,14 +131,16 @@ def main():
         return 0
 
     if a.cmd == "audit":
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+        import moatlib
         rows = []
         for sp in sorted((REPO_ROOT / "projects").glob("*/status.json")):
-            up = sp.parent / "upstream.json"
-            outcome = json.loads(up.read_text()).get("outcome") if up.is_file() else None
-            rows.append((sp.parent.name, outcome))
+            n = sp.parent.name
+            disp = moatlib.get_disposition(moatlib.upstream_full_name(n) or "") or {}
+            rows.append((n, disp.get("reason")))
         print(f"{len(rows)} adopted projects; run `check <owner/repo>` per project "
               f"for live tiering (this listing is offline).")
-        blocked = [n for n, o in rows if o in ("license-blocked",)]
+        blocked = [n for n, o in rows if o == "license-blocked"]
         print(f"  recorded license-blocked: {len(blocked)}")
         for n in blocked:
             print(f"    {n}")

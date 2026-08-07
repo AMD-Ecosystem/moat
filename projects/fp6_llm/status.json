@@ -122,5 +122,6 @@
     }
   },
   "porting": null,
-  "waivers": {}
+  "waivers": {},
+  "license_spdx": "Apache-2.0"
 }

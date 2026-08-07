@@ -493,11 +493,13 @@ def open_upstream(name, row):
     import moatlib
 
     d = json.loads((REPO / "projects" / name / "status.json").read_text())
-    up = json.loads((REPO / "projects" / name / "upstream.json").read_text())
-    slug = up.get("full_name") or d["upstream_url"].split("github.com/", 1)[-1]
+    slug = d["upstream_url"].split("github.com/", 1)[-1]
     fork_owner = d["fork_url"].split("github.com/", 1)[-1].split("/")[0]
     branch = d.get("fork_branch") or moatlib.PORT_BRANCH
-    base = up.get("default_branch") or "main"
+    # The fork's default branch is kept a clean mirror of upstream's, so it IS the
+    # upstream base. Formerly upstream.json.default_branch, which disagreed with this
+    # field on 10 projects until GitHub was asked which was right.
+    base = d.get("fork_default_branch") or "main"
 
     r = subprocess.run(
         ["gh", "pr", "create", "--repo", slug, "--base", base,

@@ -136,5 +136,6 @@
   "on_hold": false,
   "on_hold_reason": null,
   "porting": null,
-  "waivers": {}
+  "waivers": {},
+  "license_spdx": "BSD-3-Clause"
 }

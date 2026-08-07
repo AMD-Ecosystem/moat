@@ -3,7 +3,7 @@
   "name": "arbor",
   "upstream_url": "https://github.com/arbor-sim/arbor",
   "fork_url": "https://github.com/AMD-Ecosystem/arbor",
-  "fork_default_branch": "main",
+  "fork_default_branch": "master",
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T00:05:54Z",
@@ -144,5 +144,6 @@
   "pr_merged_at": "2026-07-02T17:17:26Z",
   "porting": null,
   "waivers": {},
-  "pr_state": "merged"
+  "pr_state": "merged",
+  "license_spdx": "BSD-3-Clause"
 }

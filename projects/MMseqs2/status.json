@@ -149,5 +149,6 @@
     }
   },
   "porting": null,
-  "waivers": {}
+  "waivers": {},
+  "license_spdx": "MIT"
 }

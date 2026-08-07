@@ -433,6 +433,13 @@
     "note": "Tutorial/example code collection",
     "reason": "not-a-target"
   },
+  "drli-ming/ddn-slam": {
+    "decided": "2026-08-07T00:29:52Z",
+    "disposition": "skip",
+    "full_name": "DrLi-Ming/DDN-SLAM",
+    "note": "Builds on instant-ngp-kf, under the NVIDIA Source Code License (non-commercial).",
+    "reason": "license-blocked"
+  },
   "dtolm/vkfft": {
     "decided": "2026-05-30T00:04:57Z",
     "disposition": "skip",
@@ -909,6 +916,13 @@
     "note": "LLNL HPC solver; has HIP backend (src/Utils/hipKernels.cpp)",
     "reason": "already-supported"
   },
+  "lmcache/lmcache": {
+    "decided": "2026-08-07T00:29:52Z",
+    "disposition": "skip",
+    "full_name": "LMCache/LMCache",
+    "note": "Upstream HIP path validated on gfx90a (wave64) and gfx1100 (wave32).",
+    "reason": "already-supported"
+  },
   "lmk123568/pyvideoproc": {
     "decided": "2026-05-30T03:40:13Z",
     "disposition": "skip",
@@ -1196,6 +1210,13 @@
     "note": "AMD equivalent is Composable Kernel (CK) for GEMM/attention/conv kernels, rocWMMA for tensor core abstractions, and FlyDSL for CuTe-style Python DSL. CUTLASS is deeply tied to NVIDIA PTX inline assembly (~3100 asm blocks) and tensor core ISA (mma.sync, ldmatrix) which have no HIP equivalent. See projects/cutlass/plan.md for full assessment.",
     "reason": "already-supported"
   },
+  "nvlabs/nvdiffrast": {
+    "decided": "2026-08-07T00:29:52Z",
+    "disposition": "skip",
+    "full_name": "NVlabs/nvdiffrast",
+    "note": "Wholly under the NVIDIA Source Code License, proprietary non-commercial.",
+    "reason": "license-blocked"
+  },
   "oneapi-src/oneapi-samples": {
     "decided": "2026-05-29T23:13:18Z",
     "disposition": "skip",
@@ -1239,10 +1260,10 @@
     "reason": "already-supported"
   },
   "opennmt/ctranslate2": {
-    "decided": "2026-06-16T05:12:31Z",
+    "decided": "2026-08-07T00:29:52Z",
     "disposition": "skip",
     "full_name": "OpenNMT/CTranslate2",
-    "note": "Ships a mature in-tree HIP backend (WITH_HIP=ON); already runs on AMD. Our only delta was adding gfx90a to the ROCm arch lists -- not worth a separate upstream PR. All 5 MOAT platforms validated/completed at 7bedc88. Decision by jeff 2026-06-16: no PR.",
+    "note": "Upstream ships a mature RDNA-only HIP backend; validated, no port needed.",
     "reason": "already-supported"
   },
   "openucx/ucc": {
@@ -1299,6 +1320,13 @@
     "disposition": "skip",
     "full_name": "PennyLaneAI/pennylane-lightning",
     "note": "Mature ROCm/HIP support via lightning.kokkos and lightning.amdgpu backends. Pre-built PyPI wheels for MI300 (gfx942) with ROCm 7.0+. Active CI/wheel pipelines maintained by PennyLaneAI/Xanadu. Docker target wheel-lightning-kokkos-rocm. Demonstrated at scale on Frontier/LUMI with MI250X GPUs.",
+    "reason": "already-supported"
+  },
+  "pghysels/strumpack": {
+    "decided": "2026-08-07T00:29:52Z",
+    "disposition": "skip",
+    "full_name": "pghysels/STRUMPACK",
+    "note": "Already supports HIP/ROCm and runs on AMD GPUs (Frontier at OLCF).",
     "reason": "already-supported"
   },
   "phys-sim-book/solid-sim-tutorial-gpu": {
@@ -1369,6 +1397,13 @@
     "disposition": "skip",
     "full_name": "QMCPACK/qmcpack",
     "note": "Mature ROCm/HIP backend: HIP in repo languages, README cites HIP + gfx90, 'full performance portable GPU support'. DOE production code (colleague: DOE projects have mature AMD ports).",
+    "reason": "already-supported"
+  },
+  "rahul-goel/fused-ssim": {
+    "decided": "2026-08-07T00:29:52Z",
+    "disposition": "skip",
+    "full_name": "rahul-goel/fused-ssim",
+    "note": "Upstream ROCm support validated on gfx90a (wave64) and gfx1100 (wave32).",
     "reason": "already-supported"
   },
   "rapidsai/cucim": {

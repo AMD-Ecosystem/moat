@@ -5,7 +5,7 @@
   "fork_url": "https://github.com/AMD-Ecosystem/CuMesh",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
+  "ext_type": "torch-extension",
   "adopted_at": "2026-06-04T23:25:55Z",
   "updated_at": "2026-06-23T14:01:49Z",
   "head_sha": "d5c1355",
@@ -154,5 +154,6 @@
   "pr_opened_at": "2026-06-19T18:11:32Z",
   "porting": null,
   "waivers": {},
-  "pr_state": "open"
+  "pr_state": "open",
+  "license_spdx": "MIT"
 }

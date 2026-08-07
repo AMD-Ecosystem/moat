@@ -92,17 +92,6 @@ def validations(obj):
 
 PORT_BRANCH = "moat-port"  # the topic branch that holds the port on each fork
 
-# Terminal upstream outcomes (upstream.json `outcome`): a documented FINAL decision
-# that the single upstream PR is settled and the project is no longer a PR
-# candidate -- delivered as a validation-only record (upstream already supports
-# ROCm), as a standalone fork, superseded by other work, or determined non-viable.
-# pr_ready treats any of these as not-a-PR-candidate so a decided project (e.g.
-# CTranslate2, outcome=validated, all platforms completed) stops re-surfacing in
-# every "next PR to prep" scan. This is the rule the per-project notes already
-# prescribe; centralizing it here makes every CLI honor it instead of relying on a
-# human-read note.
-TERMINAL_OUTCOMES = {"validated", "fork", "superseded", "blocked", "license-blocked"}
-
 # Per-arch pipeline. `awaiting-port` is where an arch waits until a port exists to
 # validate (formerly blocked-needs-gfx90a, which named a lead that no longer exists).
 # The `blocked` boolean (needs user input) is orthogonal and set separately.
@@ -240,13 +229,13 @@ def load_status(name):
     return obj
 
 
-def load_upstream(name):
-    """upstream.json (PR/outcome metadata) for a project, or {} if absent."""
-    p = PROJECTS / name / "upstream.json"
-    if not p.exists():
-        return {}
-    with open(p) as f:
-        return json.load(f)
+def upstream_full_name(name):
+    """The upstream repo as `owner/repo`, from the URL status.json already holds.
+    This is the key dispositions.json is written under, so it is how a project record
+    finds its own disposition."""
+    url = (load_status(name).get("upstream_url") or "").rstrip("/")
+    tail = url.replace("https://github.com/", "")
+    return tail if tail.count("/") == 1 else None
 
 
 def save_status(name, obj):
@@ -583,8 +572,7 @@ def license_tier(name):
     """The project's licence tier, from utils/licenses.py. Unknown is tier 4."""
     sys.path.insert(0, str(REPO_ROOT / "utils"))
     import licenses
-    up = load_upstream(name)
-    return licenses.tier_of(up.get("license_spdx"))
+    return licenses.tier_of(load_status(name).get("license_spdx"))
 
 
 def license_gate(name):
@@ -602,19 +590,19 @@ def license_gate(name):
     would put a hundred unread licences in front of a person as though each were a
     judgement call. Reading a repo's licence establishes a FACT and any agent may do
     it; deciding to contribute under a restrictive one is a decision and never is."""
-    up = load_upstream(name)
-    spdx = up.get("license_spdx")
+    obj = load_status(name)
+    spdx = obj.get("license_spdx")
     tier = license_tier(name)
     if tier <= 2:
         return (True, f"tier {tier} ({spdx})")
-    c = load_status(name).get("license_clearance") or {}
+    c = obj.get("license_clearance") or {}
     if c.get("approved_by"):
         return (True, f"tier {tier}, cleared by {c['approved_by']} at {c.get('at')}")
     if c:
         return (False, f"tier {tier}: a clearance is recorded but nobody approved it")
     if not spdx:
         return (False, "licence not recorded -- read the repo's licence and record it "
-                       "in upstream.json; do not assume")
+                       "in status.json.license_spdx; do not assume")
     return (False, f"tier {tier} ({spdx}): needs approval before it can be offered upstream")
 
 
@@ -1060,17 +1048,6 @@ def scaffold_project(full_name, upstream_url=None, default_branch="main",
         "platforms": {},
     }
     save_status(name, obj)
-    upstream = {
-        "full_name": full_name,
-        "upstream_url": upstream_url,
-        "default_branch": default_branch,
-        "fork_url": None,
-        "ext_type": ext_type,
-        "base_sha": None,
-    }
-    with open(pdir / "upstream.json", "w") as f:
-        json.dump(upstream, f, indent=2)
-        f.write("\n")
     (pdir / "notes.md").write_text(f"# {name} notes\n")
     return name
 
@@ -1193,16 +1170,16 @@ def pr_ready(name):
     Returns (ready, blocking, nonviable)."""
     obj = load_status(name)
 
-    # A documented FINAL decision in upstream.json settles the PR question: the
-    # project is delivered as a validation-only record / fork / superseded /
-    # non-viable, not as an upstream contribution.
-    up = load_upstream(name)
-    outcome = up.get("outcome")
-    if outcome in TERMINAL_OUTCOMES:
-        return (False, [("upstream-outcome",
-                         f"{outcome} (final decision in upstream.json; not a PR candidate)")], [])
-    if up.get("pr_url") or up.get("pr_number"):
-        return (False, [("pr-exists", "PR already recorded in upstream.json")], [])
+    # A recorded disposition settles the PR question: the project was delivered as a
+    # validation-only record, or set aside as already-supported / non-viable /
+    # licence-blocked. Either way it is not an upstream contribution. This replaces the
+    # old upstream.json `outcome` field -- both said "settled", and one file saying it
+    # is enough.
+    disp = get_disposition(upstream_full_name(name) or "")
+    if disp and disp.get("disposition") == "skip":
+        return (False, [("dispositioned",
+                         f"{disp.get('reason')} (recorded in dispositions.json; "
+                         f"not a PR candidate)")], [])
 
     pr_state = obj.get("pr_state")
     if pr_state:
@@ -1282,16 +1259,14 @@ def record_tokens(name, tokens, source=None):
 
 def commit_project(name, message, extra_paths=()):
     """Commit a project's control-plane artifacts together: status.json,
-    upstream.json, notes.md, plan.md, and stats.jsonl (whichever exist), plus any
-    extra_paths. upstream.json is in the set because intake's mandatory output --
-    license_spdx -- lives there, and a licence fact left untracked blocks the
-    upstream PR exactly as a missing one does. Agents call
+    notes.md, plan.md, and stats.jsonl (whichever exist), plus any extra_paths.
+    Agents call
     this for every state transition so the per-phase telemetry in stats.jsonl
     (compile/test wall-clock etc., written by timeit.sh -- the README/blog metrics)
     is persisted WITH the transition and never accumulates uncommitted in the
     shared working tree. Prefer this over commit_and_push for project transitions."""
     paths = [f"projects/{name}/{fn}" for fn in
-             ("status.json", "upstream.json", "notes.md", "plan.md", "stats.jsonl")
+             ("status.json", "notes.md", "plan.md", "stats.jsonl")
              if (PROJECTS / name / fn).exists()]
     paths.extend(str(p) for p in extra_paths)
     return commit_and_push(paths, message)
@@ -1391,7 +1366,7 @@ def main(argv=None):
                    help="check the recorded snapshot only, without re-reading GitHub")
 
     sub.add_parser("pr-candidates",
-                   help="list projects whose upstream PR is ready to open (honors upstream.json terminal outcomes; "
+                   help="list projects whose upstream PR is ready to open (honors recorded dispositions; "
                         "use this instead of scanning raw state==completed)")
 
     s = sub.add_parser("audit-clean", help="report forks with uncommitted tracked source/build edits (integrity-gap fingerprint)")

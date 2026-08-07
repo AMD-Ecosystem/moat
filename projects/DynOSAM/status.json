@@ -123,5 +123,6 @@
     }
   },
   "porting": null,
-  "waivers": {}
+  "waivers": {},
+  "license_spdx": "BSD-3-Clause"
 }

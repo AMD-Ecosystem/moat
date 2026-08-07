@@ -124,5 +124,6 @@
   },
   "depends_on": [],
   "porting": null,
-  "waivers": {}
+  "waivers": {},
+  "license_spdx": "MIT"
 }

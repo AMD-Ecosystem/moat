@@ -155,5 +155,6 @@
   "pr_merged_at": "2026-07-02T17:17:26Z",
   "porting": null,
   "waivers": {},
-  "pr_state": "merged"
+  "pr_state": "merged",
+  "license_spdx": "Apache-2.0"
 }

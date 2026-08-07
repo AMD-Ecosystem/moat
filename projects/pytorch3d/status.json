@@ -132,5 +132,6 @@
   "pr_merged_at": "2026-06-05T19:24:30Z",
   "porting": null,
   "waivers": {},
-  "pr_state": "merged"
+  "pr_state": "merged",
+  "license_spdx": "BSD-3-Clause"
 }
