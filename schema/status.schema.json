@@ -127,6 +127,48 @@
         "null"
       ]
     },
+    "intake": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "verdict",
+        "summary"
+      ],
+      "properties": {
+        "verdict": {
+          "enum": [
+            "fork",
+            "decline"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "duplicate_effort": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "viable": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        }
+      }
+    },
     "license_clearance": {
       "type": [
         "object",

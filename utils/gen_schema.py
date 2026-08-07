@@ -78,14 +78,29 @@ def build():
                     },
                 },
             },
-            # Permission to offer a tier 3/4 project upstream. Tiers 1-2 need none.
-            # Like a gate waiver, a record without approved_by satisfies nothing, so
             # The licence as READ from the repo -- a fact any agent may establish, and
             # the input to license_tier()/license_gate(). Distinct from the clearance
-            # below, which is a person's decision about that fact. Both live here so
+            # below, which is a person's DECISION about that fact. Both live here so
             # one file answers "may this go upstream on licence grounds?".
             "license_spdx": {"type": ["string", "null"]},
-            # an agent cannot self-certify past it; and it clears ONE project rather
+            # Intake's recommendation, never its decision. A verdict of "decline"
+            # says what intake would choose; dispositions.json records what a person
+            # actually chose, and only that gates anything.
+            "intake": {
+                "type": ["object", "null"],
+                "required": ["verdict", "summary"],
+                "properties": {
+                    "verdict": {"enum": list(m.INTAKE_VERDICTS)},
+                    "reason": {"type": ["string", "null"]},
+                    "duplicate_effort": {"type": ["string", "null"]},
+                    "viable": {"type": ["boolean", "null"]},
+                    "summary": {"type": "string"},
+                    "at": {"type": "string"},
+                },
+            },
+            # Permission to offer a tier 3/4 project upstream; tiers 1-2 need none.
+            # Like a gate waiver, a record without approved_by satisfies nothing, so
+            # an agent cannot self-certify past it, and it clears ONE project rather
             # than its whole tier.
             "license_clearance": {
                 "type": ["object", "null"],
