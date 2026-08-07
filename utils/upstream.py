@@ -503,6 +503,7 @@ def open_review_pr(row, title, body, apply=False):
     sys.path.insert(0, str(REPO / "utils"))
     import moatlib
     import jargon
+    import prose
 
     terms, allow = jargon.load()
     hits = (jargon.scan_text(title, "title", terms, allow)
@@ -510,6 +511,9 @@ def open_review_pr(row, title, body, apply=False):
     if hits:
         return ("jargon", "in-house vocabulary an external maintainer will not know: "
                 + ", ".join(sorted({h[2] for h in hits})))
+    wrapped = prose.check(body, "body")
+    if wrapped:
+        return ("wrapped", wrapped[0])
     if row.get("problem"):
         return ("blocked", row["problem"])
     if not apply:
@@ -534,6 +538,7 @@ def publish_blockers(name, row):
     sys.path.insert(0, str(REPO / "utils"))
     import moatlib
     import jargon
+    import prose
 
     bad = []
     # The approval must still cover this exact content. Judged from the PR itself,
@@ -555,6 +560,10 @@ def publish_blockers(name, row):
     if hits:
         bad.append(f"in-house vocabulary in the title/body: "
                    + ", ".join(sorted({h[2] for h in hits})[:4]))
+    # The approved body is about to be republished verbatim upstream, so it is checked
+    # here too rather than trusted from when the review PR was opened -- a maintainer
+    # may have asked for an edit, and an edit is where hand-wrapping creeps back in.
+    bad += prose.check(row["body"], "body")
     return bad
 
 
