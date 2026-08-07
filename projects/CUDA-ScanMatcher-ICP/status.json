@@ -3,11 +3,11 @@
   "name": "CUDA-ScanMatcher-ICP",
   "upstream_url": "https://github.com/botforge/CUDA-ScanMatcher-ICP",
   "fork_url": "https://github.com/AMD-Ecosystem/CUDA-ScanMatcher-ICP",
-  "fork_default_branch": "main",
+  "fork_default_branch": "master",
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:23:54Z",
-  "updated_at": "2026-06-23T22:18:29Z",
+  "updated_at": "2026-08-07T05:38:18Z",
   "head_sha": "26073aa3ee515b2dfa50db2706c3ce6ae78e4eee",
   "depends_on": [],
   "platforms": {

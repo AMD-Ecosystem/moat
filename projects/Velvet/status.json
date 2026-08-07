@@ -3,11 +3,11 @@
   "name": "Velvet",
   "upstream_url": "https://github.com/vitalight/Velvet",
   "fork_url": "https://github.com/AMD-Ecosystem/Velvet",
-  "fork_default_branch": "main",
+  "fork_default_branch": "master",
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-06-23T22:21:53Z",
+  "updated_at": "2026-08-07T05:38:43Z",
   "head_sha": "bb06b44",
   "depends_on": [],
   "platforms": {

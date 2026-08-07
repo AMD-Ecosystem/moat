@@ -3,11 +3,11 @@
   "name": "stdgpu",
   "upstream_url": "https://github.com/stotko/stdgpu",
   "fork_url": "https://github.com/AMD-Ecosystem/stdgpu",
-  "fork_default_branch": "main",
+  "fork_default_branch": "master",
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:23:31Z",
-  "updated_at": "2026-08-06T16:04:18Z",
+  "updated_at": "2026-08-07T05:39:25Z",
   "head_sha": "a0c404b71a19872c4d175f931378b74a682e3f09",
   "depends_on": [],
   "platforms": {

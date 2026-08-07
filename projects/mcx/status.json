@@ -3,11 +3,11 @@
   "name": "mcx",
   "upstream_url": "https://github.com/fangq/mcx",
   "fork_url": "https://github.com/AMD-Ecosystem/mcx",
-  "fork_default_branch": "main",
+  "fork_default_branch": "master",
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:23:31Z",
-  "updated_at": "2026-08-06T02:33:28Z",
+  "updated_at": "2026-08-07T05:39:15Z",
   "head_sha": "d38c7aaa2f8d",
   "depends_on": [],
   "platforms": {

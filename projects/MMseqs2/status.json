@@ -3,11 +3,11 @@
   "name": "MMseqs2",
   "upstream_url": "https://github.com/soedinglab/MMseqs2",
   "fork_url": "https://github.com/AMD-Ecosystem/MMseqs2",
-  "fork_default_branch": "main",
+  "fork_default_branch": "master",
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:24:21Z",
-  "updated_at": "2026-08-05T16:07:17Z",
+  "updated_at": "2026-08-07T05:38:34Z",
   "head_sha": "75a9b029",
   "depends_on": [],
   "platforms": {
