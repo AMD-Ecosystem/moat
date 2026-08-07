@@ -60,7 +60,7 @@ STICKY = ("upstream_repo_id", "fork_url", "review_pr", "pr_approval",
           "pr_opened_at", "pr_merged_at", "pr_closed_at", "pr_closed_note",
           "adopted_at")
 UNION = ("platforms", "waivers")
-RESET = ("on_hold", "on_hold_reason", "porting")
+RESET = ("on_hold", "on_hold_reason")
 
 
 def _load(p):
@@ -90,6 +90,37 @@ def _union(pa, pb):
         else:
             out[k] = vb
     return out
+
+
+def _merge_lock(a, b):
+    """Reconcile the fork-write lock. FIRST ACQUIRE WINS, deterministically.
+
+    This is the one field where latest-writer-wins is actively wrong, and the
+    reason is worth stating: two hosts that acquire concurrently do NOT get a
+    push conflict. status.json carries `merge=moat-status` precisely so it never
+    hard-conflicts, so the textual conflict git would otherwise raise on the same
+    line is resolved by this driver instead -- and under recency the SECOND host
+    to push silently takes a lock the first already held.
+
+    So the tie is broken here, on the lock's own `since`: the earliest acquisition
+    wins, ties broken on arch name so every host computes the same winner from the
+    same pair. That makes the loser discoverable -- it re-reads after pushing, sees
+    an arch that is not its own, and backs off -- which is what actually delivers
+    mutual exclusion. Without it the guard in `actionable` only ever sees a lock
+    that agrees with whoever asked last.
+
+    One side holding no lock is ambiguous: a release, or a writer that never had
+    one. A record written AFTER the lock was taken and not carrying it is a
+    release; one written before simply never saw it."""
+    la, lb = a.get("porting"), b.get("porting")
+    if la and lb:
+        if la.get("arch") == lb.get("arch"):
+            return lb if _b_is_later(la.get("since"), lb.get("since")) else la
+        return min((la, lb), key=lambda l: (l.get("since") or "", l.get("arch") or ""))
+    lock, other = (la, b) if la else (lb, a)
+    if not lock:
+        return None
+    return None if (other.get("updated_at") or "") > (lock.get("since") or "") else lock
 
 
 def _merge_intake(a, b, newer):
@@ -127,6 +158,13 @@ def merge(a, b):
         out.pop(k, None)
         if k in newer:
             out[k] = newer[k]
+
+    if "porting" in a or "porting" in b:
+        lock = _merge_lock(a, b)
+        if lock is None:
+            out.pop("porting", None)
+        else:
+            out["porting"] = lock
 
     for k in UNION:
         if k in a or k in b:

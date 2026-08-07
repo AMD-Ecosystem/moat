@@ -114,11 +114,17 @@ ALLOWED = {
     # The porter reaches awaiting-fork when it finds no fork to push to, which
     # porter.md has always instructed and the table has always refused.
     "planned": {"porting", "awaiting-upstream", "awaiting-fork"},
-    "porting": {"ported"},
+    # `delta-ported` is reached THROUGH `porting`, not around it. It used to be a
+    # direct hop from changes-requested/validation-failed, which meant a fix could
+    # be written to the fork without ever entering the one state that takes the
+    # fork-write lock -- so two archs recovering from the same failed validation
+    # could both write it. No project has ever been in delta-ported, so routing it
+    # this way costs nothing and closes the hole.
+    "porting": {"ported", "delta-ported"},
     "ported": {"review-passed", "changes-requested"},
-    "changes-requested": {"porting", "delta-ported"},
+    "changes-requested": {"porting"},
     "review-passed": {"completed", "validation-failed"},
-    "validation-failed": {"porting", "delta-ported"},
+    "validation-failed": {"porting"},
     "port-ready": {"completed", "validation-failed"},
     "delta-ported": {"review-passed", "changes-requested"},
     "revalidate": {"completed", "validation-failed"},
@@ -371,6 +377,26 @@ def set_state(name, platform, new_state, agent=None, save=True):
         return obj
     if new_state not in ALLOWED.get(cur, set()):
         raise ValueError(f"{name}/{platform}: illegal transition {cur} -> {new_state}")
+    # The fork-write lock, taken and released by the transition rather than by an
+    # agent remembering to. porter.md has told porters to set `porting` by hand
+    # since the field existed and no project has ever carried one, which is what a
+    # protocol with no mechanism gets you.
+    #
+    # Only `porting` acquires. `validation-failed` and `changes-requested` are
+    # porter-stage too, but ENTERING them is recording that a run failed, and two
+    # archs can legitimately fail the same head at once -- refusing to record that
+    # would be a worse bug than the one this prevents. Serialising the porter's
+    # DISPATCH is `actionable`'s job, and its guard already reads this field.
+    if new_state == "porting":
+        held = obj.get("porting")
+        if held and held.get("arch") != platform:
+            raise ValueError(
+                f"{name}: the fork-write lock is held by {held['arch']} since "
+                f"{held.get('since')}. Takeover is a person's decision, not a "
+                f"timeout -- ask, then `moatlib.py port-lock {name} --take {platform}`")
+        obj["porting"] = {"arch": platform, "since": now_iso()}
+    elif cur == "porting" and (obj.get("porting") or {}).get("arch") == platform:
+        obj["porting"] = None
     blk["state"] = new_state
     ts = now_iso()
     blk["updated_at"] = ts
@@ -407,8 +433,30 @@ def set_blocked(name, platform, blocked, reason=None):
     blk["blocked"] = bool(blocked)
     blk["blocked_reason"] = reason if blocked else None
     blk["updated_at"] = now_iso()
+    # An arch that gave up is not writing the fork. Without this the lock outlives
+    # the only state machine path that releases it, and the next arch needs a human
+    # takeover to work a project nobody is working.
+    if blocked and (obj.get("porting") or {}).get("arch") == platform:
+        obj["porting"] = None
     save_status(name, obj)
     return obj
+
+
+def port_lock(name, take=None, release=False):
+    """Show, take over, or release the fork-write lock. Returns the lock or None.
+
+    Takeover is deliberately a command a person runs and never a timeout: an agent
+    that stops mid-port leaves a held lock, and the difference between that and an
+    agent still working is not visible from here."""
+    obj = load_status(name)
+    if release or take:
+        held = obj.get("porting")
+        obj["porting"] = {"arch": take, "since": now_iso()} if take else None
+        save_status(name, obj)
+        what = f"taken by {take}" if take else "released"
+        prev = f" (was {held['arch']} since {held.get('since')})" if held else ""
+        sys.stderr.write(f"{name}: fork-write lock {what}{prev}\n")
+    return obj.get("porting")
 
 
 def set_hold(name, on_hold, reason=None):
@@ -1952,6 +2000,11 @@ def main(argv=None):
     s.add_argument("platform", help="<os>-<gfx>, e.g. linux-gfx90a")
     s.add_argument("reason")
 
+    s = sub.add_parser("port-lock", help="show, take over, or release a project's fork-write lock")
+    s.add_argument("name")
+    s.add_argument("--take", metavar="ARCH", help="take the lock for ARCH (a person's decision)")
+    s.add_argument("--release", action="store_true", help="release it (e.g. an agent stopped mid-port)")
+
     s = sub.add_parser("set-hold", help="postpone a whole project (selector skips it on every platform); off resumes it")
     s.add_argument("name")
     s.add_argument("on_off", choices=["on", "off"])
@@ -2083,6 +2136,10 @@ def main(argv=None):
     elif args.cmd == "set-blocked":
         set_blocked(args.name, args.platform, True, args.reason)
         print(f"{args.name}/{args.platform} blocked: {args.reason}")
+    elif args.cmd == "port-lock":
+        lock = port_lock(args.name, take=args.take, release=args.release)
+        print(f"{args.name}: fork-write lock held by {lock['arch']} since {lock['since']}"
+              if lock else f"{args.name}: no fork-write lock held")
     elif args.cmd == "set-hold":
         on = args.on_off == "on"
         set_hold(args.name, on, args.reason)

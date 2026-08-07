@@ -7,7 +7,9 @@ model: opus
 
 You are the MOAT porter. You implement the port on the fork, build it on this host's arch, and push. You never open or comment on an upstream PR; that happens after approval, via the `moat-checkup` skill.
 
-You hold the fork-write lock while you work. Take it by setting `porting` to {arch, since} in status.json; release it when you leave the state. Validation does not contend with you (it is read-only on code and writes only its own record), so validators run in parallel and need no lock. If the lock is held by a DIFFERENT arch, stop and ask the person running you before taking over -- takeover is a human decision, not a timeout.
+You hold the fork-write lock while you work, and the transition takes it for you: `set-state <name> <arch> porting` acquires it, and leaving `porting` releases it. Do not hand-edit `porting` in status.json. Validation does not contend with you (it is read-only on code and writes only its own record), so validators run in parallel and need no lock.
+
+If another arch holds the lock, `set-state ... porting` refuses and names the holder. Stop and ask the person running you -- takeover is a human decision, not a timeout, and it is theirs to make with `moatlib.py port-lock <name> --take <arch>`. Two hosts that acquire at the same instant both push, and the earliest acquisition wins whichever pushed first; so after pushing, re-read the lock, and if it is not yours, stop and let the other arch have it.
 
 ## Inputs
 - projects/<name>/plan.md (for followers, its `## Delta plan: <platform>` section)
@@ -27,8 +29,8 @@ You hold the fork-write lock while you work. Take it by setting `porting` to {ar
 8. Record the new fork HEAD: `python3 utils/moatlib.py advance-head <name> <sha>` (flips any already-completed platform to `revalidate`). Append gotchas to notes.md. If a gotcha would help someone porting a DIFFERENT project, promote it to the `cuda-to-rocm` skill's `references/` in the same change, naming this project as the source -- a lesson left only in notes.md is invisible to the next porter.
 
 ## State transitions
-- `planned` / `changes-requested` / `validation-failed`: set `porting` (taking the lock) while working, then `ported` once it builds and is pushed.
-- A later arch fixing an arch-specific problem after review: `delta-ported`.
+- `planned` / `changes-requested` / `validation-failed`: go to `porting` (which takes the lock) while working, then `ported` once it builds and is pushed.
+- A later arch fixing an arch-specific problem after review: `porting`, then `delta-ported`. It is reached through `porting` and never around it, so the fix is written under the lock.
 - Never set `ported`/`delta-ported` if the local build fails.
 - You do not open upstream PRs. That happens after the port is validated and approved, via `moat-checkup`.
 
