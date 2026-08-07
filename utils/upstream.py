@@ -528,6 +528,22 @@ def open_review_pr(row, title, body, apply=False):
         return ("error", (r.stderr or r.stdout).strip())
     url = r.stdout.strip().splitlines()[-1]
     moatlib.set_review_pr(row["name"], url)
+    # How to approve goes in a COMMENT, never in the body: the body is republished
+    # verbatim as the upstream pull request, and an external maintainer has no use for
+    # our approval command.
+    subprocess.run(
+        ["gh", "pr", "comment", url, "--body",
+         f"To approve this port, leave a **review** comment containing this line by "
+         f"itself:\n\n```\n{moatlib.APPROVE_COMMAND}\n```\n\n"
+         f"Use *Review changes -> Comment*, or "
+         f"`gh pr review {url} --comment --body '{moatlib.APPROVE_COMMAND}'`. It has to "
+         f"be a review rather than an ordinary comment, because a review records which "
+         f"commit you were looking at, and that is what proves the approval covers this "
+         f"code and not an earlier push.\n\n"
+         f"The title and body above are what gets opened upstream, verbatim, so approving "
+         f"here approves all three: the code, the title and the body. Anything pushed "
+         f"afterwards, or any edit to the title or body, voids it and needs a fresh one."],
+        capture_output=True, text=True, timeout=90)
     return ("opened", url)
 
 

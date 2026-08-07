@@ -419,6 +419,8 @@ def fetch_review_pr(url):
                           "state": r.get("state"),
                           "at": r.get("submitted_at"),
                           "commit": r.get("commit_id"),
+                          "body": r.get("body") or "",
+                          "assoc": r.get("author_association"),
                           "id": r.get("id")} for r in raw]
     pr["slug"], pr["number"] = slug, num
     owner, repo = slug.split("/", 1)
@@ -428,6 +430,29 @@ def fetch_review_pr(url):
     pr["lastEditedAt"] = (((g or {}).get("data") or {}).get("repository") or {}
                           ).get("pullRequest", {}).get("lastEditedAt")
     return pr
+
+
+# The approval command. GitHub will not let a pull request's author approve it, and
+# MOAT is authored and reviewed by the same person: agents run on the maintainer's
+# credentials, so every review PR is self-authored and the APPROVED button is greyed
+# out. A separate bot identity would fix that and is not available.
+#
+# So the signal is a REVIEW comment carrying this exact line. A review comment is
+# allowed on your own pull request AND carries `commit_id`, which an ordinary issue
+# comment does not -- that binding is the whole reason the gate can tell an approval
+# of this code from an approval of something three pushes ago. Requiring the line to
+# stand alone keeps "/moat approve is premature here" from reading as consent.
+APPROVE_COMMAND = "/moat approve"
+# Who may give it. Anyone can comment; these are the associations GitHub reports for
+# someone with write access to the repository.
+APPROVE_ASSOC = ("OWNER", "MEMBER", "COLLABORATOR")
+
+
+def _is_approval_comment(review):
+    if review.get("assoc") not in APPROVE_ASSOC:
+        return False
+    return any(ln.strip() == APPROVE_COMMAND
+               for ln in (review.get("body") or "").splitlines())
 
 
 def _approving_review(pr):
@@ -440,14 +465,17 @@ def _approving_review(pr):
     still objecting is the thing this is here to prevent."""
     latest = {}
     for r in pr.get("review_list") or []:
-        if not r.get("login") or r.get("state") in ("COMMENTED", "PENDING"):
+        if not r.get("login") or r.get("state") == "PENDING":
             continue
+        if r.get("state") == "COMMENTED" and not _is_approval_comment(r):
+            continue          # ordinary review chatter is not a decision
         latest[r["login"]] = r
     if any(r.get("state") == "CHANGES_REQUESTED" for r in latest.values()):
         return None
     if pr.get("reviewDecision") == "CHANGES_REQUESTED":
         return None
-    return next((r for r in latest.values() if r.get("state") == "APPROVED"), None)
+    return next((r for r in latest.values()
+                 if r.get("state") == "APPROVED" or _is_approval_comment(r)), None)
 
 
 def _content_digest(pr):
