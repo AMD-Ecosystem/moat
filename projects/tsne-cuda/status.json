@@ -46,6 +46,11 @@
     "duplicate_effort": "none",
     "viable": true,
     "summary": "Active CUDA t-SNE (FIt-SNE) implementation w/ cuBLAS/cuFFT/cuSPARSE/Thrust + hard GPU-FAISS dep (FAISS already ported, completed on linux-gfx90a); BSD-3-Clause tier 1, no duplicate AMD effort found.",
-    "at": "2026-08-07T06:50:24Z"
+    "at": "2026-08-07T06:50:24Z",
+    "decided": {
+      "choice": "fork",
+      "by": "jeffdaily",
+      "at": "2026-08-07T15:27:20Z"
+    }
   }
 }
