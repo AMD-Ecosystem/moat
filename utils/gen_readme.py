@@ -21,27 +21,6 @@ END = "<!-- MOAT:TABLE:END -->"
 EMPTY = ("_No projects adopted yet. Run `python3 utils/discover.py` then adopt "
          "rows from `data/candidates.json`._")
 
-# Per-platform state -> status glyph (legend is emitted by render_table).
-EMOJI = {
-    "completed": "✅",
-    "validated": "✅",
-    "port-ready": "🟡",       # ported at head_sha, not yet validated on this arch
-    "revalidate": "🔄",       # was validated here; HEAD moved -> re-check
-    "validating": "🔧",
-    "review-passed": "🔧",
-    "ported": "🔧",
-    "delta-ported": "🔧",
-    "porting": "🔧",
-    "changes-requested": "🔧",
-    "validation-failed": "🔧",
-    "planned": "🔧",
-    "unclaimed": "⬜",
-    "awaiting-port": "⬜",          # no port exists yet to validate
-    "screened": "⬜",               # passed intake, not yet planned
-    "awaiting-fork": "⬜",          # waiting on an org admin to create the fork
-    "awaiting-upstream": "⏸",       # viable but parked on an external event
-}
-
 
 def load_projects():
     """Every project across refs, not just the ones whose folder is on this branch.

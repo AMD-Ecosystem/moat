@@ -11,7 +11,8 @@ Usage:
   python3 utils/triage.py skipped
   python3 utils/triage.py backfill-ids
 
-Reasons: already-ported, already-supported, cant-port, not-a-target, duplicate, other
+Reasons: already-supported, ported-elsewhere, cant-port, not-a-target, duplicate,
+         license-blocked, declined, other  (moatlib.SKIP_REASONS is the source)
 """
 
 import argparse

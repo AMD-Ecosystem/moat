@@ -1243,6 +1243,13 @@ def dep_status(dep):
         return ("doomed", reason)
     if state is not None:
         return ("waiting", state)
+    # Adopted, but with no per-arch record yet -- a project re-opened for a second
+    # screen has `platforms: {}` until a host touches it. That is squarely "in the
+    # pipeline", and calling it unknown sent the caller to file an intake request that
+    # port_request.py then correctly refused as already adopted. The two disagreed
+    # about the same project (spconv), and only one of them can be right.
+    if project_record(dep)[0] is not None:
+        return ("waiting", "adopted, no arch has started")
     return ("unknown", "not adopted")
 
 

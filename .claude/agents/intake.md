@@ -41,9 +41,10 @@ found.
 Two checks that are per-file, not top-level:
 
 - Any file carrying an **NVIDIA proprietary licence** needs a decision before
-  proceeding. Match licence TEXT, not copyright lines: a grep for "NVIDIA" flags every
-  CUDA project, and an NVIDIA copyright under Apache-2.0 is clean. The markers are in
-  `utils/licenses.py`.
+  proceeding. Run `python3 utils/licenses.py scan-nvidia <dir|project>`; it matches
+  licence TEXT rather than copyright lines, because a grep for "NVIDIA" flags every
+  CUDA project and an NVIDIA copyright under Apache-2.0 is clean. Do not hand-roll the
+  grep -- the markers live in `config/licenses.toml` and change.
 - **Recurse into submodules and vendored directories.** A permissive top-level licence
   over an unlicensed vendored component is the case that bites.
 

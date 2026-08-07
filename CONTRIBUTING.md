@@ -29,16 +29,19 @@ The branch is deleted when its pull request merges -- that is what retires the c
 that would notice; taking over one that is genuinely stale is a human decision, not an
 expiry.
 
-A project opens a **draft PR** into the trunk as soon as it is under consideration, not when
-it is finished. That makes work visible, runs CI continuously rather than once at the end,
-and lets a reviewer object to the approach on day one. The PR is marked ready when there is
-a terminal answer -- **including a negative one**. A project that fails its licence screen or
-turns out not to be portable still merges its PR: that merge is what records the
-disposition. Do not silently drop a project.
+A project does **not** open a pull request per screen. That was the earlier model and it
+cost a decision per project; screens collect into one issue instead, so a batch is one
+decision. What still holds is the part that mattered: do not silently drop a project. A
+project that fails its licence screen or turns out not to be portable reaches a terminal
+answer that gets recorded -- as a disposition in `data/dispositions.json` -- and a negative
+outcome is still a deliverable.
+
+A port opens its pull request when it has something to review. The branch existing is what
+makes the work visible before then.
 
 ## Saying yes, and saying no
 
-A project's draft PR sits in `awaiting-fork` until someone decides.
+A project sits in `awaiting-fork` until someone decides.
 
 **Yes is a fork.** Creating `AMD-Ecosystem/<name>` releases the project -- creating one
 is a deliberate act by someone who can, so its existence carries the decision.
@@ -153,7 +156,7 @@ fork-side work and neither reaches the part that matters.
 |---|---|
 | `code` | the Python resolves: no undefined names, no dead imports or locals (pyflakes). Two NameErrors shipped on success paths before this existed, one of them in the approval gate |
 | `schema` | `status.json` validates against a schema generated from `moatlib`, so the two cannot disagree |
-| `readme` | the generated project table matches the data it describes. Skipped for a local push to a `port/<name>` branch, where the tree is the trunk plus one project mid-port; enforced everywhere else, including CI on the pull request -- which builds the merge commit, so it describes the trunk as it will be and fails on the PR that has to fix it (`python3 utils/gen_readme.py`) |
+| `readme` | the generated project table matches the data it describes. The table renders across refs, so it can only be judged where those refs are visible: enforced in a full clone, which is what the pre-push hook runs in, and skipped -- loudly -- in a CI checkout, which fetches one branch and would call every branch-only row stale (`python3 utils/gen_readme.py`) |
 | `licenses` | tier lists are well-formed and no identifier sits in two tiers, which would silently disable the review gate |
 | `blobs` | nothing tracked that looks like build output (`.a`, `.so`, `.o`, archives, wheels, model weights) and nothing over 1 MB without an entry in the allowlist saying why it is data rather than spill |
 | `states` | every state is one `moatlib` knows, every platform is a well-formed `<os>-<gfx>` with a known wavefront width, and no waiver lacks a maintainer's approval |

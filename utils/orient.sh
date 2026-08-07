@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # MOAT entrypoint. Pull the latest MOAT state, detect this host's AMD arch, pick
 # the single next project + stage for this platform, and print a dispatch
-# summary. Read-only on state except an advisory claim and follower-unblock
+# summary. Read-only on state except fork releases and follower-unblock
 # bookkeeping. Run this (or /port-next) when starting a CLI in the MOAT repo.
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -62,14 +62,15 @@ if PROBLEM=$(python3 -c 'import sys; sys.path.insert(0, "utils"); import moatlib
   exit 0
 fi
 
-# Releases projects whose fork has appeared AND records any decline label, which
-# `release-forks` alone does not. Both are writes to a project branch, so they
-# belong in a session rather than in a scheduled job.
+# Releases projects whose fork has appeared, wherever the record lives. A write to
+# a project branch, so it belongs in a session rather than a scheduled job.
+# Declines are NOT recorded here -- labels record nothing; intake_queue.py apply
+# --decline carries a person's answer and is the only route.
 # Not silenced: this is the only thing that says a fork appeared for a project whose
 # branch nobody has checked out, and discarding it made "no one has to notice by hand"
 # false. Only the routine "nothing to do" lines are dropped.
 python3 utils/upstream.py --forks --apply 2>/dev/null \
-  | grep -E "RELEASED|ELSEWHERE|CONFLICT" | sed 's/^/forks    : /' || true
+  | grep -E "RELEASED|ADVANCED|WAITING" | sed 's/^/forks    : /' || true
 python3 utils/moatlib.py unblock-followers >/dev/null 2>&1 || true
 
 # Serialize select+claim so two same-host CLIs never grab the same project.

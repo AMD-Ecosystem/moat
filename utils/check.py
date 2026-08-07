@@ -15,7 +15,6 @@ own name, so a CI log says which gate to look at.
 import argparse
 import importlib.util
 import json
-import os
 import pathlib
 import subprocess
 import sys
@@ -88,17 +87,6 @@ def gate_schema():
             problems.append(f"projects/{name}/status.json ({where}): "
                             f"{'.'.join(map(str, e.path))}: {e.message[:120]}")
     return problems
-
-
-def local_port_branch():
-    """True only when this is a local run on a port branch -- not CI.
-
-    CI sets GITHUB_* ; a pull request there builds the MERGE commit, so the tree is
-    exactly what the trunk will become and every gate should see it."""
-    if os.environ.get("GITHUB_ACTIONS") or os.environ.get("GITHUB_HEAD_REF"):
-        return False
-    r = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
-    return r.returncode == 0 and r.stdout.strip().startswith("port/")
 
 
 def gate_readme():
@@ -206,10 +194,24 @@ def gate_surface():
     explicitly scoped out with a reason. The gate is ACCOUNTING, not coverage: a
     scoped-out component is a deliberate, reviewable decision, and the failure being
     eliminated is the SILENT omission -- a port that claimed success while covering a
-    subset. Projects with no surface.json yet are not failed; the planner generates
-    one, and requiring it retroactively for 164 existing projects would just be noise."""
+    subset.
+
+    It has never judged anything. Zero projects have a surface.json, because nothing
+    writes one: `utils/surface.py` is named in no agent instruction, and planner.md
+    describes the idea while telling the planner to write prose into plan.md, which
+    this never reads. So the gate passes vacuously and reports a count of zero as if
+    it were a clean bill.
+
+    Left in place and made honest rather than deleted: the accounting it describes is
+    worth having, and the missing piece is one instruction in planner.md plus a
+    `surface.py generate` anyone can run. Saying "0 accounted for" out loud is what
+    stops it reading as nine gates passing when it is eight."""
     r = _run([sys.executable, "utils/surface.py", "check", "--all"])
     if r.returncode == 0:
+        if not list((REPO / "projects").glob("*/surface.json")):
+            print("surface: VACUOUS -- no project has a surface.json, so this gate "
+                  "judged nothing (see planner.md; `surface.py generate <name>`)",
+                  file=sys.stderr)
         return []
     return [l.replace("surface: ", "") for l in r.stdout.splitlines() if l.strip()][:20]
 

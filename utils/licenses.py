@@ -112,7 +112,8 @@ def repo_license(full_name):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", nargs="?", choices=["tier", "check", "audit"])
+    ap.add_argument("cmd", nargs="?",
+                    choices=["tier", "check", "audit", "scan-nvidia"])
     ap.add_argument("arg", nargs="?")
     ap.add_argument("--check-config", action="store_true")
     a = ap.parse_args()
@@ -151,6 +152,30 @@ def main():
         t = tier_of(lic, cfg)
         print(f"{a.arg}: license={lic} tier={t}\n  {route(t)}")
         return 0
+
+    if a.cmd == "scan-nvidia":
+        # intake.md tells the screener that a file carrying an NVIDIA proprietary
+        # licence needs a decision and that "the markers are in utils/licenses.py".
+        # They were, with no way to run them, so every screen that did this did it by
+        # hand -- cuda_voxelizer's vendored CUDA-Samples headers were found that way.
+        target = a.arg or "."
+        if not pathlib.Path(target).exists():
+            src = REPO_ROOT / "projects" / target / "src"
+            if not src.exists():
+                print(f"licenses: no such directory {target} (and no fork clone at "
+                      f"{src})", file=sys.stderr)
+                return 2
+            target = src
+        hits = scan_nvidia(target, cfg)
+        if not hits:
+            print(f"scan-nvidia: no NVIDIA proprietary licence text under {target}")
+            return 0
+        print(f"scan-nvidia: {len(hits)} file(s) under {target} carry NVIDIA "
+              f"proprietary licence text -- tier 3 regardless of the top-level "
+              f"licence, and each needs a decision before the port goes upstream:")
+        for h in hits:
+            print(f"  {h}")
+        return 1
 
     if a.cmd == "audit":
         sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))

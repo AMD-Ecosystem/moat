@@ -94,7 +94,7 @@ Canonical here so no agent restates it. Budget roughly 60 minutes wall-clock / 3
 - Never re-run an IDENTICAL failing command more than twice. A third identical retry is forbidden -- the next action must be a different hypothesis or a stop. Re-running a broken build hoping it changes is the single biggest token sink.
 - Triage the error CLASS before grinding. On Windows an exit 127, a "DLL"/"cannot load"/"image not found" message, or `hipErrorLaunchFailure (719)` on first launch is a runtime-environment problem, not a GPU or port fault. Fix the environment once; do NOT rebuild in response to a DLL-load error.
 - Always leave partial value. Even when stopping, record what BUILT, which suites PASSED, and the verbatim blocking error with magnitudes, so the next run resumes from there rather than from zero. A crisp diagnosis beats an hour of grinding.
-- After `max_attempts` (config/moat.toml, default 3) failed cycles with unclear root cause, set `blocked` with a concrete reason and move on. Never thrash.
+- After `max_attempts` (3; config/moat.toml states it, no code enforces it) failed cycles with unclear root cause, set `blocked` with a concrete reason and move on. Never thrash.
 
 # Integrity gate (every agent that touches a fork)
 

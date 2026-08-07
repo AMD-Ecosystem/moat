@@ -28,7 +28,7 @@ would hand everything back anyway -- and the round trip costs more than doing it
 The first names any port whose approval is standing and whose gates are met. The second
 is where work piles up: a port cannot be approved until its review PR exists, and
 nothing opens one automatically, so ports sit finished and unreviewable -- 28 of them
-when this was written. `--review --apply --name <p> --title '<t>' --body-file <f>` opens
+when this was written (30 now). `--review --apply --name <p> --title '<t>' --body-file <f>` opens
 one. The third lists open PRs where a maintainer asked for something, had the last word,
 or has gone quiet. The fourth catches a review GitHub still shows as green over content
 nobody approved. The fifth is bookkeeping.
@@ -161,7 +161,8 @@ the table silently rots.
 
 Also reactivate `awaiting-upstream` projects: those are parked on an external event (a
 third party's PR landing, say), and when it happens the project becomes workable again.
-colmap is the standing example.
+No project is in that state at the moment, so there is nothing to check here until one
+is parked -- the state exists for the case, not the other way round.
 
 ## 5. Fork requests
 
