@@ -241,7 +241,31 @@ def main(argv=None):
     current = README.read_text(encoding="utf-8")
     new = splice(current, render_table(load_projects()))
     if args.check:
-        if new != current:
+        # Compare only the rows this checkout can actually be responsible for.
+        #
+        # The table covers projects across refs, but a row for an in-flight project is
+        # rendered from that project's own branch, and two things follow. A CI
+        # checkout does not fetch other branches, so it cannot see those rows at all
+        # and would call every one of them stale -- which is what broke eight runs in
+        # a row. And where the branches ARE visible, any push to any port branch
+        # would stale the trunk's table and fail the trunk's next push, for whoever
+        # happens to make it.
+        #
+        # So a branch-resident row is a report, refreshed when convenient, and only
+        # trunk-resident rows are gated. A genuinely stale row for a finished project
+        # is still caught, which is what the gate is for.
+        verifiable = {n for n, where in moatlib.all_projects().items()
+                      if where in ("local", "trunk")}
+        def gated(text):
+            out = []
+            for ln in text.splitlines():
+                if ln.startswith("| ["):
+                    name = ln[3:].split("]", 1)[0]
+                    if name not in verifiable:
+                        continue          # rendered from a branch this checkout lacks
+                out.append(ln)
+            return out
+        if gated(new) != gated(current):
             sys.stderr.write("gen_readme: README.md is out of date (run gen_readme.py)\n")
             return 1
         print("README.md table is up to date")
