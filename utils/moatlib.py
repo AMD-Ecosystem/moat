@@ -335,7 +335,7 @@ def set_hold(name, on_hold, reason=None):
     """Project-wide postponement. A held project is skipped by the selector on
     every platform (actionable() returns False) without touching any platform
     state, so the hold is reversible and leaves resume points intact. Used to
-    park a whole stack (e.g. RAPIDS) that we are deliberately not working yet."""
+    park a whole stack that we are deliberately not working yet."""
     obj = load_status(name)
     if on_hold:
         obj["on_hold"] = True
@@ -907,7 +907,7 @@ def platform_state(obj, platform):
 
 def actionable(obj, platform):
     """Is this platform pickable by an agent on this host right now?"""
-    if obj.get("on_hold"):  # project-wide postponement (e.g. the RAPIDS stack)
+    if obj.get("on_hold"):  # project-wide postponement of a whole dependency stack
         return False
     # A decided project is not work, whatever its per-arch records say. Without this
     # a dispositioned project whose folder is still on the trunk gets offered for
@@ -1755,9 +1755,9 @@ def main(argv=None):
             print(f"{n}{scope}")
         print(f"-- {len(ready_names)} PR-ready project(s); terminal-outcome, already-open, "
               "and all-blocked projects excluded")
-        print("NOTE: license vetting (non-commercial/no-license = DO-NOT-PR) and RAPIDS "
-              "ROCm-DS ownership are separate MANUAL gates this tool cannot see -- "
-              "vet each before opening.")
+        print("NOTE: pr_ready checks the licence gate and recorded dispositions itself; "
+              "a project listed here has passed both. What it cannot judge is whether "
+              "the change is worth sending -- read the diff before opening.")
     elif args.cmd == "audit-clean":
         names = [args.name] if args.name else [d.name for d in sorted(PROJECTS.iterdir())
                                                if (d / "status.json").exists()]

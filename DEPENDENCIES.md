@@ -1,11 +1,16 @@
 # MOAT project dependencies
 
-Some target projects build on top of other targets -- e.g. most of RAPIDS builds on `rmm`, and `cuml`/`cugraph` build on `raft`/`cudf`. MOAT models this so projects port in the right order and a porter knows how to consume an already-ported dependency instead of re-porting it.
+Some target projects build on top of other targets -- e.g. `barney` builds on `cuBQL`, `anari-visionaray` on `visionaray`, `plvs` on `opencv_contrib`. MOAT models this so projects port in the right order and a porter knows how to consume an already-ported dependency instead of re-porting it.
 
 ## The model
 
 - Each project's `status.json` carries `depends_on: [<MOAT project name>, ...]` -- the OTHER MOAT targets its build links or uses.
-- The selector (`next_task` / `orient.sh`) will NOT pick a project until every entry in `depends_on` has its LEAD platform (`linux-gfx90a`) at state `completed`. That is the deps-first ordering: base libraries port first; dependents wait. `moatlib.py deps` shows the graph and what is waiting on what.
+- The selector (`next_task` / `orient.sh`) will NOT pick a project until every entry in `depends_on` clears. There is no lead platform: ANY arch at `completed` satisfies a dependency, because a validated port is a validated port whoever ran it. `moatlib.py deps` shows the graph; `moatlib.py dep-blocked <platform>` shows what is waiting and why.
+- A dependency clears four different ways, and they are NOT the same answer:
+  - **ok** -- some arch reached `completed`, OR the dependency is dispositioned `already-supported` / `ported-elsewhere`, meaning it needs no port from us. Build against it.
+  - **waiting** -- adopted and in the pipeline. It clears on its own.
+  - **doomed** -- dispositioned `cant-port` / `license-blocked`. It will never be portable, so neither is anything that links it. Scope the dependent around that feature or recommend a disposition for it too; do not proceed and find out at build time.
+  - **unknown** -- nobody has looked at it. File an intake request with `python3 utils/port_request.py file <owner/repo> --blocks <project> --why "..." --apply`, record the edge with `set-deps`, and stop. A person decides whether to fork it.
 - `depends_on` is for HARD build dependencies of the project's CORE. A *module-level* optional dependency (only one extra feature needs another project) is documented in the project's `notes.md`, not added to `depends_on`, so it does not gate the whole port.
 
 ## Recording dependencies

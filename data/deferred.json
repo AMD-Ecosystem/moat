@@ -140,7 +140,7 @@
       "component": null,
       "summary": "GDS/cuFile (no ROCm equivalent) and nvjpeg GPU JPEG decode scoped out (CPU libjpeg fallback); nvimgcodec/cuslide2 not built.",
       "refs": [
-        "projects/cucim/notes.md"
+        "projects/cucim/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
       ],
       "status": "open",
       "upstream_issue": null,
@@ -153,7 +153,7 @@
       "component": null,
       "summary": "Partial cudf port: many .cu omitted from cudf_hip_sources.cmake (full lists/strings/dictionary/structs, quantiles, scan_inclusive for strings/structs); core plus reductions/merge in scope.",
       "refs": [
-        "projects/cudf/notes.md Scoped OUT"
+        "projects/cudf/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
       ],
       "status": "open",
       "upstream_issue": null,
@@ -218,7 +218,7 @@
       "component": null,
       "summary": "Hardware decompression path (no HIP equivalent) not ported.",
       "refs": [
-        "projects/rmm/notes.md"
+        "projects/rmm/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
       ],
       "status": "open",
       "upstream_issue": null,
@@ -270,7 +270,7 @@
       "component": null,
       "summary": "All ANN/vector-search algorithms deferred behind CUVS_HIP_SLICE=distance; only pairwise-distance + fused-NN (43/264 .cu, ~16%) is built/validated. Deferred: brute-force, IVF-Flat, IVF-PQ, CAGRA, NN-Descent, Vamana/DiskANN, ball_cover, HNSW interop, multi-GPU, plus cluster/selection/preprocessing/stats/embed and spectral/lanczos. completed status is scoped to the distance subsystem only.",
       "refs": [
-        "projects/cuvs/notes.md"
+        "projects/cuvs/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
       ],
       "status": "open",
       "upstream_issue": null,
@@ -283,7 +283,7 @@
       "component": null,
       "summary": "neighbors/ ANN (CAGRA, IVF-Flat, IVF-PQ, NN-Descent, HNSW) and cluster/ (kmeans, kmeans_balanced, single_linkage) are header-only and were never compiled or GPU-validated under HIP; warp intrinsics + ~28 wave64 0xffffffff masks in detail/cagra and detail/ivf_pq need the faiss_select treatment. Reasonable to scope out (upstream deprecated these to cuVS, de-compiled after 24.12). Validated surface: faiss_select top-k, ball_cover, KNN brute force, EpsNeighRbc, rmat, header primitives.",
       "refs": [
-        "projects/raft/notes.md"
+        "projects/raft/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
       ],
       "status": "open",
       "upstream_issue": null,
@@ -296,7 +296,7 @@
       "component": null,
       "summary": "Entire metrics module deferred though 10 cuvs-FREE metrics are buildable today (accuracy_score, adjusted_rand_index, completeness_score, entropy, homogeneity_score, kl_divergence, mutual_info_score, r2_score, rand_index, v_measure); plan option-a (split metrics target) not taken. Also deferred: dbscan/knn/tsne/umap/kmeans/hdbscan/svm/FIL/tree_shap/spectral/multi-GPU/Python and standalone hierarchy/linkage.cu. The 10 metrics are shippable now (raft headers present, no CUML_LINK_CUVS); shipping triggers gfx90a/gfx1100 revalidation.",
       "refs": [
-        "projects/cuml/notes.md"
+        "projects/cuml/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
       ],
       "status": "open",
       "upstream_issue": null,
@@ -400,7 +400,7 @@
       "component": null,
       "summary": "linux-gfx90a/gfx1100 marked completed but GPU validation exercised only 3 of 46 built SG algorithms (BFS, SSSP, PageRank); 44 linked SG test binaries never run on GPU. Unvalidated algorithms share the prim machinery where real wave64 bugs were found+fixed. Resolve by running the full in-scope SG gtest set from cugraph_hip_tests, or scope the completed claim to BFS/SSSP/PageRank.",
       "refs": [
-        "projects/cugraph/notes.md"
+        "projects/cugraph/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
       ],
       "status": "open",
       "upstream_issue": null,
@@ -452,7 +452,7 @@
       "component": null,
       "summary": "build-hip src HEAD drifted one functional commit beyond the validated/recorded sha, undocumented and unvalidated. Reconcile status.json with the live tree (re-validate the drift or reset to the validated sha).",
       "refs": [
-        "projects/cuCollections/notes.md"
+        "projects/cuCollections/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
       ],
       "status": "done",
       "upstream_issue": null,
@@ -465,8 +465,8 @@
       "component": null,
       "summary": "Comparison vs ROCm/hipCollections (canonical AMD port, ROCm-DS-owned): our net-new asset is sub-word int8/int16 atomic CAS emulation (include/cuco/detail/hip_subword_atomic.cuh) -- hipColl packed_cas handles only 4/8-byte and would corrupt int8/int16-keyed static_set/map (no small-key tests there). Secondary candidates: gfx1100/wave32 validation evidence to promote hipColl experimental wave32 + extend arch allowlist to RDNA4/Windows; newer-cuco features (roaring_bitmap, bloom merge/intersect, dynamic_map) via a cuco rebase. NOT contributions (hipColl already has them): pre-Volta __CUDA_ARCH__ guard byte-identical, bloom host-gate (theirs better). hipCollections is ROCm-DS-owned so DEFER PRs until ROCm-DS collaboration resumes (jeff 2026-06-07).",
       "refs": [
-        "projects/cuCollections/notes.md",
-        "agent_space/hipCollections-cmp"
+        "agent_space/hipCollections-cmp",
+        "projects/cuCollections/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
       ],
       "status": "open",
       "upstream_issue": null,
