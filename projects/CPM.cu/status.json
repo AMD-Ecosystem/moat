@@ -7,13 +7,13 @@
   "priority": 3.979,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T03:26:34Z",
-  "updated_at": "2026-08-07T07:04:25Z",
+  "updated_at": "2026-08-07T22:41:31Z",
   "head_sha": null,
   "porting": null,
   "waivers": {},
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 997189733,
-  "stage": "planned",
+  "stage": "not-portable",
   "platforms": {
     "linux-gfx90a": {
       "blocked": true,
@@ -37,5 +37,10 @@
       },
       "last_agent": "planner"
     }
+  },
+  "not_portable": {
+    "reason": "The compute core is CUTLASS/CuTe FlashAttention-2 plus Marlin W4A16 in raw sm80 PTX (mma.sync, ldmatrix, cp.async, lop3, prmt), and the module hard-includes flash_api.hpp so the dependency cannot be scoped out.",
+    "by": "jeffdaily",
+    "at": "2026-08-07T22:41:31Z"
   }
 }

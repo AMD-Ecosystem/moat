@@ -7,13 +7,13 @@
   "priority": 5.025,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-08-07T07:04:47Z",
+  "updated_at": "2026-08-07T22:41:31Z",
   "head_sha": null,
   "porting": null,
   "waivers": {},
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 938664587,
-  "stage": "unclaimed",
+  "stage": "not-portable",
   "platforms": {
     "linux-gfx90a": {
       "blocked": true,
@@ -36,5 +36,10 @@
         "last_session_at": null
       }
     }
+  },
+  "not_portable": {
+    "reason": "Every compute kernel is hand-written NVIDIA tensor-core and async PTX (mma.sync, ldmatrix, wgmma, cp.async) with the 32-lane MMA fragment layout baked into the algorithm, so there is nothing to translate.",
+    "by": "jeffdaily",
+    "at": "2026-08-07T22:41:31Z"
   }
 }

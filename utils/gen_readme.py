@@ -162,6 +162,14 @@ def outcome_cell(p):
         return f"⚖️ license-restricted -- {note}" if note else "⚖️ license-restricted"
     if disp:
         return f"⚪ {disp}"
+    # A recorded verdict that this codebase cannot be ported. Not a disposition -- the
+    # project was adopted, screened, often planned and attempted, and that write-up is
+    # the deliverable -- but it is settled the same way, so it reads the same way. A
+    # blank here would file a decision under "pending".
+    if p.get("stage") == "not-portable":
+        return "⚪ not-portable"
+    if p.get("on_hold"):
+        return "⏸ on hold"
     return "—"
 
 

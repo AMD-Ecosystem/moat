@@ -7,13 +7,13 @@
   "priority": 4.566,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-08-07T07:04:34Z",
+  "updated_at": "2026-08-07T22:41:31Z",
   "head_sha": null,
   "porting": null,
   "waivers": {},
   "license_spdx": "BSD-3-Clause",
   "upstream_repo_id": 796490340,
-  "stage": "unclaimed",
+  "stage": "not-portable",
   "platforms": {
     "linux-gfx90a": {
       "blocked": true,
@@ -36,5 +36,10 @@
         "last_session_at": null
       }
     }
+  },
+  "not_portable": {
+    "reason": "Depends on cuBLASDx, NVSHMEM and CUTLASS, none of which has an AMD equivalent; delivering it means a ground-up AMD-native implementation rather than a translation.",
+    "by": "jeffdaily",
+    "at": "2026-08-07T22:41:31Z"
   }
 }

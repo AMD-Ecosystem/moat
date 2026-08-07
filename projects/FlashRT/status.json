@@ -7,13 +7,13 @@
   "priority": 4.64,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T03:26:34Z",
-  "updated_at": "2026-08-07T07:05:47Z",
+  "updated_at": "2026-08-07T22:41:31Z",
   "head_sha": null,
   "porting": null,
   "waivers": {},
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 1223749848,
-  "stage": "unclaimed",
+  "stage": "not-portable",
   "platforms": {
     "linux-gfx90a": {
       "blocked": true,
@@ -36,5 +36,10 @@
         "last_session_at": null
       }
     }
+  },
+  "not_portable": {
+    "reason": "CUTLASS-heavy throughout; meaningful AMD support requires reimplementing every GEMM and attention kernel on Composable Kernel, which is new work rather than a port.",
+    "by": "jeffdaily",
+    "at": "2026-08-07T22:41:31Z"
   }
 }

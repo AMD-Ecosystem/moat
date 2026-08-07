@@ -1434,7 +1434,10 @@ def stalled(obj):
     only worked while every such project happened to carry those records. This says
     the same thing on purpose, and reports it (`moatlib.py stalled`) instead of leaving
     a project silently unpickable."""
-    if (project_stage(obj) or "unclaimed") == "review-passed":
+    stage = project_stage(obj) or "unclaimed"
+    # Answered, or deliberately parked. A recorded verdict is the person's move having
+    # been made, so the project stops asking for one.
+    if stage == "review-passed" or stage in INERT_STAGES or obj.get("on_hold"):
         return False
     blocks = list(validations(obj).values())
     return bool(blocks) and all(b.get("blocked") for b in blocks)

@@ -7,13 +7,13 @@
   "priority": 4.565,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T03:26:34Z",
-  "updated_at": "2026-08-07T07:04:26Z",
+  "updated_at": "2026-08-07T22:41:31Z",
   "head_sha": null,
   "porting": null,
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 1108459020,
-  "stage": "unclaimed",
+  "stage": "not-portable",
   "platforms": {
     "linux-gfx90a": {
       "blocked": true,
@@ -36,5 +36,10 @@
         "last_session_at": null
       }
     }
+  },
+  "not_portable": {
+    "reason": "3560 of 3736 kernels are pure CUTLASS/CuTe with no ROCm path, over an Ampere cp.async/ldmatrix and Hopper warp-specialised core; the nvcuda::wmma minority is not representative of the codebase, so this is an AMD-native rewrite rather than a port.",
+    "by": "jeffdaily",
+    "at": "2026-08-07T22:41:31Z"
   }
 }

@@ -7,7 +7,7 @@
   "priority": 3.805,
   "ext_type": "meson",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-08-07T07:04:43Z",
+  "updated_at": "2026-08-07T22:41:31Z",
   "head_sha": null,
   "porting": null,
   "waivers": {},
@@ -37,5 +37,7 @@
       },
       "last_agent": "planner"
     }
-  }
+  },
+  "on_hold": true,
+  "on_hold_reason": "Deferred by choice, not blocked: the API interception system is weeks-to-months of work and was postponed in favour of smaller mechanical ports. Portable in principle; resume when there is room for a large effort."
 }

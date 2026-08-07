@@ -7,13 +7,13 @@
   "priority": 4.457,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-08-07T07:05:16Z",
+  "updated_at": "2026-08-07T22:41:31Z",
   "head_sha": null,
   "porting": null,
   "waivers": {},
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 1064878674,
-  "stage": "planned",
+  "stage": "not-portable",
   "platforms": {
     "linux-gfx90a": {
       "blocked": true,
@@ -37,5 +37,10 @@
       },
       "last_agent": "planner"
     }
+  },
+  "not_portable": {
+    "reason": "Hopper/sm89-and-later tensor-core PTX (mma.sync.aligned.m16n8k32 e4m3/bf16, ldmatrix, cp.async) plus thread-block clusters in gemm_mma.cu and tensor_core_utils.cuh; the hardware features it is written against have no AMD counterpart.",
+    "by": "jeffdaily",
+    "at": "2026-08-07T22:41:31Z"
   }
 }
