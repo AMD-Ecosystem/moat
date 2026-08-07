@@ -224,8 +224,14 @@ def apply_decisions(declines, note, apply=False):
               "possible: agents open pull requests with the maintainer's credentials, so "
               "this is self-authored and GitHub greys out Approve for an author -- but it "
               "never blocks merging your own pull request, and the merge is the act of "
-              "record. If the trunk is later protected, require status checks rather than "
-              "approving reviews, or a single-maintainer repository can merge nothing.\n\n"
+              "record.\n\nThat holds under branch protection too, with one exception. "
+              "Requiring a pull request and requiring status checks are both fine: "
+              "neither needs a second person. Requiring APPROVING REVIEWS is the one "
+              "that bites, because an author cannot approve their own -- though a "
+              "repository admin can still merge via the bypass GitHub offers by "
+              "default. It only becomes a hard stop if approvals are required AND "
+              "bypassing is disallowed, which for a single-maintainer repository means "
+              "nothing can ever merge.\n\n"
               "Accepts are not here: a fork appearing is what records those.\n"
             + (f"\nCloses #{issue['number']}\n" if issue else ""))
     r = gh(["pr", "create", "--repo", REPO, "--head", BRANCH, "--base", "main",
