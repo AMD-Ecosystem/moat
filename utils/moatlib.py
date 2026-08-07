@@ -1162,14 +1162,43 @@ def clear_disposition(full_name):
 
 # ---- scaffolding -----------------------------------------------------------
 
+def existing_claim(name):
+    """Why this project is already taken, or None.
+
+    The local working tree is not the whole picture: `port/<name>` on the remote IS
+    the claim, and it is what another host has when it starts work. Checking only the
+    local tree means two hosts handed the same candidate both do the full screen
+    before either discovers the other.
+
+    A remote we cannot reach returns a warning rather than None. An outage must not
+    read as "nobody has this" -- that is the failure this exists to prevent."""
+    if not _git("remote", check=False).stdout.strip():
+        return None                       # local-only clone; nothing to contend with
+    r = _git("ls-remote", "--heads", "origin", f"refs/heads/port/{name}", check=False)
+    if r.returncode:
+        return (f"UNVERIFIED -- could not reach the remote to check for port/{name}; "
+                f"this is not a clean bill of health")
+    if r.stdout.strip():
+        return f"port/{name} exists on the remote"
+    if _git("cat-file", "-e", f"origin/main:projects/{name}/status.json",
+            check=False).returncode == 0:
+        return f"projects/{name}/ already exists on the trunk"
+    return None
+
+
 def scaffold_project(full_name, upstream_url=None, default_branch="main",
                      ext_type="unknown", priority=0.0, force=False, depends_on=None):
-    disp = get_disposition(full_name)
+    disp = get_disposition(full_name, github_repo_id(full_name))
     if disp and disp.get("disposition") == "skip" and not force:
         raise ValueError(
             f"{full_name} is marked skip ({disp.get('reason')}): {disp.get('note', '')}. "
             f"Use force=True / --force to adopt anyway.")
     name = full_name.split("/")[-1]
+    if not force:
+        held = existing_claim(name)
+        if held:
+            raise ValueError(f"{name} is already claimed: {held}. "
+                             f"Use force=True / --force to adopt anyway.")
     pdir = PROJECTS / name
     pdir.mkdir(parents=True, exist_ok=True)
     if status_path(name).exists():

@@ -77,12 +77,22 @@ Cheap checks only. Deep analysis is the planner's job.
 
 Everything here happens WITHOUT a fork:
 
-1. Create the `port/<name>` branch. **The branch existing on the remote is the claim**,
-   visible to every host without a lock file.
-2. Scaffold `projects/<name>/` (`moatlib.py scaffold`) and record what you found:
-   licence, existing-support findings, dependencies.
-3. Open a **draft PR**, titled `<name>: <what this establishes>` -- the list of open
-   pull requests is the index of what is in flight, so it reads as project names.
+1. Create the `port/<name>` branch, scaffold `projects/<name>/`
+   (`moatlib.py scaffold`), and **push the branch immediately** -- before any research.
+   The branch existing on the remote IS the claim, so pushing it last means the claim
+   lands after the work rather than before it: on the 2026-08-06 dry run the branch
+   appeared roughly 50 minutes after the screen began, and two hosts handed the same
+   candidate would each have done the whole thing. `scaffold` refuses a name already
+   claimed on the remote, so a race is caught rather than duplicated.
+2. Research, then record what you found: licence, existing-support findings,
+   dependencies.
+3. Open a **draft PR** titled with the project name and what changed -- **no stage and
+   no verdict**. `intake`, `declined`, `screened` all describe a moment, and this
+   branch outlives it: the same PR carries the plan, the port and the validation
+   records. A neutral title also survives a reversal, so a decline later overturned
+   (upstream relicensed, an "existing port" turns out abandoned) needs no retitle.
+   Link `projects/<name>/notes.md` from the body rather than pasting it -- a copy
+   starts drifting from the source the moment the next agent appends to it.
    Check before opening, not after:
 
        python3 utils/pr_intent.py --check-title --branch port/<name> --title "<title>"
@@ -109,8 +119,14 @@ answers are possible.
 
 - Worth taking up: `moatlib.py set-state <name> <arch> awaiting-fork --agent intake`
   (or `screened` if a fork already exists).
-- Not worth it: `triage.py skip <repo> --reason <reason>` with a concrete note, then
-  mark the draft PR ready. **A negative outcome is still a deliverable** -- merging it
-  is what records the disposition.
+- Not worth it: **recommend the decline, never record it.** Write the case in
+  `notes.md`, say plainly which `SKIP_REASON` you would use and why, and stop. **A
+  negative outcome is still a deliverable** -- the write-up IS the deliverable.
+
+  Do NOT run `triage.py skip`, and do not label or merge the PR. Declining is a
+  person's decision, the same way creating the fork is: `dispositions.json` is
+  written only by someone carrying a human's answer. An agent that records its own
+  decline has decided, not proposed -- and a wrong one is invisible afterwards,
+  because the project simply stops appearing.
 
 Commit with `moatlib.py commit-project <name> "<msg>"`.

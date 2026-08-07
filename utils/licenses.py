@@ -123,11 +123,21 @@ def main():
 
     if a.cmd == "check":
         lic = repo_license(a.arg)
+        # NOASSERTION/NONE is GitHub failing to PARSE, not a restrictive licence, and
+        # roughly a fifth of repos hit it -- an SPDX header inside a markdown comment,
+        # a prose COPYING file. Reporting that as "tier 4" reads as a verdict and
+        # invites an agent to record a restriction that is not there. colmap is the
+        # example: plainly BSD-3-Clause in COPYING.txt, reported NOASSERTION tier=4.
+        # So say UNPARSED and refuse to name a tier; the caller must read the file.
+        if lic in ("NOASSERTION", "NONE", None):
+            print(f"{a.arg}: license=UNPARSED (GitHub returned {lic})")
+            print("  NOT a tier -- GitHub could not classify it, which is not the same "
+                  "as restrictive.")
+            print("  Read the licence file yourself and record the SPDX id in "
+                  "status.json.license_spdx.")
+            return 3
         t = tier_of(lic, cfg)
         print(f"{a.arg}: license={lic} tier={t}\n  {route(t)}")
-        if lic in ("NOASSERTION", "NONE"):
-            print("  NOTE: GitHub could not classify this; read the licence file "
-                  "before trusting the tier.")
         return 0
 
     if a.cmd == "audit":

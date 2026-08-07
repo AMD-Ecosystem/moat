@@ -37,13 +37,22 @@ def load_candidates():
 def cmd_review(args):
     disp = moatlib.load_dispositions()
     skips = {k for k, v in disp.items() if v.get("disposition") == "skip"}
+    # Keyed on owner/repo, not on the directory name. A project folder is named after
+    # the repo's basename, so matching on that alone makes foo/bar and baz/bar the same
+    # project -- a different upstream would read as already adopted and vanish from the
+    # queue. Dispositions have always keyed on the full name; this now agrees with them.
     adopted = set()
     if moatlib.PROJECTS.exists():
-        adopted = {p.name for p in moatlib.PROJECTS.iterdir() if (p / "status.json").exists()}
+        for d in moatlib.PROJECTS.iterdir():
+            if not (d / "status.json").exists():
+                continue
+            full = moatlib.upstream_full_name(d.name)
+            if full:
+                adopted.add(full.lower())
     cands = load_candidates()
 
     def is_adopted(fn):
-        return fn.split("/")[-1] in adopted
+        return fn.lower() in adopted
 
     pending = [c for c in cands if c["full_name"].lower() not in skips and not is_adopted(c["full_name"])]
     n_skip = sum(1 for c in cands if c["full_name"].lower() in skips)
