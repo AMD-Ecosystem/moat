@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-19T04:40:36Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:04:58Z",
   "head_sha": "e5a657a",
   "depends_on": [],
   "platforms": {
@@ -132,5 +132,6 @@
   "porting": null,
   "waivers": {},
   "pr_state": "merged",
-  "license_spdx": "MIT"
+  "license_spdx": "MIT",
+  "upstream_repo_id": 573716613
 }

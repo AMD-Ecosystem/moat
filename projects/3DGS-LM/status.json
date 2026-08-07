@@ -7,7 +7,7 @@
   "priority": 3.618,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:04:23Z",
   "head_sha": "6cb3a0bbf83cb6d86eb12056ed1906cc753171d0",
   "platforms": {
     "linux-gfx90a": {
@@ -133,5 +133,6 @@
     "tier": 4,
     "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
   },
-  "license_spdx": "non-commercial (MIT wrapper)"
+  "license_spdx": "non-commercial (MIT wrapper)",
+  "upstream_repo_id": 854499915
 }

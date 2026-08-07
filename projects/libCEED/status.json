@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-06-05T01:16:31Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:05:14Z",
   "head_sha": null,
   "depends_on": [],
   "platforms": {
@@ -102,5 +102,6 @@
   },
   "porting": null,
   "waivers": {},
-  "license_spdx": "BSD-2-Clause"
+  "license_spdx": "BSD-2-Clause",
+  "upstream_repo_id": 113349904
 }

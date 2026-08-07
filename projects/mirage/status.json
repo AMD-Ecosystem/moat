@@ -7,7 +7,7 @@
   "priority": 6.018,
   "ext_type": "cmake-cython",
   "adopted_at": "2026-05-30T00:04:57Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:05:19Z",
   "head_sha": null,
   "platforms": {
     "linux-gfx90a": {
@@ -101,5 +101,6 @@
   },
   "porting": null,
   "waivers": {},
-  "license_spdx": "Apache-2.0"
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 797553215
 }

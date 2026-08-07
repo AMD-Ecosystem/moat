@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:23:49Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:04:58Z",
   "head_sha": "7c713c6",
   "depends_on": [],
   "platforms": {
@@ -123,5 +123,6 @@
   "waivers": {},
   "pr_state": "merged",
   "pr_merged_at": "2026-08-06T16:04:18Z",
-  "license_spdx": "Apache-2.0"
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 1049404280
 }

@@ -7,7 +7,7 @@
   "priority": 6.494,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-08-05T16:07:17Z",
+  "updated_at": "2026-08-07T07:04:25Z",
   "head_sha": "7bedc88617d18ce8222309faae7eba883f161003",
   "platforms": {
     "linux-gfx90a": {
@@ -168,5 +168,6 @@
   },
   "porting": null,
   "waivers": {},
-  "license_spdx": "MIT"
+  "license_spdx": "MIT",
+  "upstream_repo_id": 210299376
 }

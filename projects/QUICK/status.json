@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-06-05T00:05:54Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:04:44Z",
   "head_sha": "d369e07",
   "depends_on": [],
   "platforms": {
@@ -104,5 +104,6 @@
   },
   "porting": null,
   "waivers": {},
-  "license_spdx": "MPL-2.0"
+  "license_spdx": "MPL-2.0",
+  "upstream_repo_id": 172423631
 }

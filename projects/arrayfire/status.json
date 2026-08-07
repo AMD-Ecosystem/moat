@@ -7,7 +7,7 @@
   "priority": 6.146,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T00:04:57Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:04:53Z",
   "head_sha": "6800d5586",
   "platforms": {
     "linux-gfx90a": {
@@ -139,5 +139,6 @@
   "porting": null,
   "waivers": {},
   "pr_state": "open",
-  "license_spdx": "BSD-3-Clause"
+  "license_spdx": "BSD-3-Clause",
+  "upstream_repo_id": 25889802
 }

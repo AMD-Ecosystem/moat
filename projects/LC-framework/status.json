@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-25T21:02:13Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:04:38Z",
   "head_sha": "040743e79b757cb54811044d412dba06a761d147",
   "depends_on": [],
   "platforms": {
@@ -104,5 +104,6 @@
   },
   "porting": null,
   "waivers": {},
-  "license_spdx": "BSD-3-Clause"
+  "license_spdx": "BSD-3-Clause",
+  "upstream_repo_id": 401500215
 }

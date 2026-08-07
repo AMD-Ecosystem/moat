@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-06-09T22:04:50Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:05:24Z",
   "head_sha": "041d5528286a81465828a668d014035e149f6a97",
   "depends_on": [],
   "platforms": {
@@ -123,5 +123,6 @@
   "porting": null,
   "waivers": {},
   "pr_state": "open",
-  "license_spdx": "Apache-2.0"
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 12756992
 }

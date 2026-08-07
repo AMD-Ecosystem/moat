@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:16:31Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:04:32Z",
   "head_sha": "a290861",
   "depends_on": [],
   "platforms": {
@@ -124,5 +124,6 @@
     "tier": 3,
     "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
   },
-  "license_spdx": "AGPL-3.0"
+  "license_spdx": "AGPL-3.0",
+  "upstream_repo_id": 34064755
 }

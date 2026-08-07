@@ -7,7 +7,7 @@
   "priority": 4.918,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:04:34Z",
   "head_sha": null,
   "platforms": {
     "linux-gfx90a": {
@@ -102,5 +102,6 @@
   },
   "porting": null,
   "waivers": {},
-  "license_spdx": "MIT"
+  "license_spdx": "MIT",
+  "upstream_repo_id": 1215986180
 }

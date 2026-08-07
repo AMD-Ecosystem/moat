@@ -7,7 +7,7 @@
   "priority": 4.12,
   "ext_type": "make",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:05:02Z",
   "head_sha": "f565358f3f87a6db2a311b56ce24ce2db113ca8a",
   "platforms": {
     "windows-gfx1201": {
@@ -132,5 +132,6 @@
     "tier": 4,
     "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
   },
-  "license_spdx": "no licence file"
+  "license_spdx": "no licence file",
+  "upstream_repo_id": 1102818249
 }

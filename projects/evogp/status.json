@@ -7,7 +7,7 @@
   "priority": 4.627,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:05:03Z",
   "head_sha": "0d2e5711cf423e47065f83b96885e8f3c0eb23f6",
   "platforms": {
     "linux-gfx90a": {
@@ -148,5 +148,6 @@
     "tier": 3,
     "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
   },
-  "license_spdx": "GPL-3.0"
+  "license_spdx": "GPL-3.0",
+  "upstream_repo_id": 874628727
 }

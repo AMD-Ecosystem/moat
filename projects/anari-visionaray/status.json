@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-23T14:02:30Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:04:52Z",
   "head_sha": "1b6b35a8115e27f1facba0e5db6b1c061086590c",
   "depends_on": [
     "visionaray"
@@ -123,5 +123,6 @@
   "porting": null,
   "waivers": {},
   "pr_state": "open",
-  "license_spdx": "Apache-2.0"
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 674837115
 }

@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "setuptools-cuda",
   "adopted_at": "2026-06-04T01:07:42Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:04:47Z",
   "head_sha": "cf873a288e8469d7292470c96272f825dc355dba",
   "depends_on": [],
   "platforms": {
@@ -127,5 +127,6 @@
   "porting": null,
   "waivers": {},
   "pr_state": "open",
-  "license_spdx": "BSD-3-Clause"
+  "license_spdx": "BSD-3-Clause",
+  "upstream_repo_id": 61034131
 }

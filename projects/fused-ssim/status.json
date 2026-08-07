@@ -7,7 +7,7 @@
   "priority": 4.269,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:05:07Z",
   "head_sha": "6f9a6201df9cb774d8256cf802832c6cc1f6fb03",
   "platforms": {
     "linux-gfx90a": {
@@ -128,5 +128,6 @@
   },
   "porting": null,
   "waivers": {},
-  "license_spdx": "MIT"
+  "license_spdx": "MIT",
+  "upstream_repo_id": 840265857
 }

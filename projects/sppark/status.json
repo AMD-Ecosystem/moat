@@ -7,7 +7,7 @@
   "priority": 4.666,
   "ext_type": "rust-cc",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:05:31Z",
   "head_sha": "005cd878d3233376c13198898ad81952426edabf",
   "platforms": {
     "linux-gfx90a": {
@@ -133,5 +133,6 @@
   "porting": null,
   "waivers": {},
   "pr_state": "open",
-  "license_spdx": "Apache-2.0"
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 503455959
 }
