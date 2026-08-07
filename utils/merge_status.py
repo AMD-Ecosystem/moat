@@ -4,14 +4,63 @@
 
 git invokes: merge_status.py <ancestor O> <ours A> <theirs B> [path P]
 We write the merged result into the OURS file (A), which git uses as the merge
-result, and exit 0. Strategy: latest-writer-wins per platform block (by the
-block's updated_at), max / most-advanced for top-level scalars. The ancestor is
-not needed: per-platform state is monotonic, so latest-writer-wins converges."""
+result, and exit 0.
+
+The default is LATEST-WRITER-WINS per field, decided by the record's top-level
+updated_at. That default matters more than any of the rules below: this driver
+used to start from `out = dict(a)` and then reconcile five named fields, so the
+other twenty-five silently took OURS. A concurrent merge could drop an approval
+snapshot, a licence clearance, a person's intake decision, the whole PR
+lifecycle, or the fork-write lock -- and the lock is the one that fails OPEN,
+letting a second arch start writing the fork. Recency is symmetric and drops
+nothing on its own, and a field added to the schema later inherits it without
+anyone remembering to come back here.
+
+On top of that default, three kinds of field get a rule, because recency alone
+would lose real information:
+
+  STICKY   a value that RECORDS A DECISION -- an approval, a clearance, a PR
+           number. A writer who simply never had it must not erase it, so a
+           non-null beats a null regardless of which is newer. Deliberate
+           removal is rare and is a human editing the file, not a merge.
+  UNION    per-key maps (platforms, waivers) where two hosts legitimately write
+           different keys at the same time. Merge key by key, latest writer wins
+           within a key.
+  RANKED   pr_state, which advances through a lifecycle. See _pr_rank.
+
+  RESET    a field cleared by REMOVING it, where absence is the new value rather
+           than a writer who never had it. `set-hold off` pops on_hold, and the
+           fork-write lock releases the same way, so these are taken from the
+           newer record whether or not it still has them.
+
+Everything else is recency: for those the current value is the point, and a key
+missing from one side means that writer never had it rather than deleted it.
+"""
 
 import json
+import os
 import sys
 
-PR_RANK = {None: 0, "none": 0, "approved": 1, "open": 2, "merged": 3}
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    from moatlib import PR_STATES
+except Exception:  # a merge must still resolve if moatlib will not import
+    PR_STATES = ("open", "merged", "closed")
+
+# open -> {merged, closed}; both ends are terminal and mutually exclusive, so a
+# tie between them resolves by recency rather than by an invented ordering. The
+# old table here predated PR_STATES: it ranked a "approved" state that no longer
+# exists and omitted "closed", which therefore ranked below "open" -- so a
+# recorded close was undone by the next merge from a host that had not seen it.
+_TERMINAL_PR = {"merged", "closed"}
+_PR_RANKABLE = set(PR_STATES) == {"open"} | _TERMINAL_PR
+
+STICKY = ("upstream_repo_id", "fork_url", "review_pr", "pr_approval",
+          "license_clearance", "license_spdx", "pr_number", "pr_url",
+          "pr_opened_at", "pr_merged_at", "pr_closed_at", "pr_closed_note",
+          "adopted_at")
+UNION = ("platforms", "waivers")
+RESET = ("on_hold", "on_hold_reason", "porting")
 
 
 def _load(p):
@@ -24,28 +73,74 @@ def _b_is_later(a_ts, b_ts):
     return (b_ts or "") >= (a_ts or "")
 
 
-def merge(a, b):
-    out = dict(a)  # start from ours
-    a_top, b_top = a.get("updated_at") or "", b.get("updated_at") or ""
-    newer = b if b_top > a_top else a
-    out["updated_at"] = max(a_top, b_top)
-    out["head_sha"] = newer.get("head_sha", out.get("head_sha"))
-    if "pr_state" in a or "pr_state" in b:
-        out["pr_state"] = max((a.get("pr_state"), b.get("pr_state")),
-                              key=lambda s: PR_RANK.get(s, 0))
-    if a.get("pr_url") or b.get("pr_url"):
-        out["pr_url"] = newer.get("pr_url") or a.get("pr_url") or b.get("pr_url")
-    pa, pb = a.get("platforms", {}), b.get("platforms", {})
-    merged = {}
-    for plat in set(pa) | set(pb):
-        ba, bb = pa.get(plat), pb.get(plat)
-        if ba is None:
-            merged[plat] = bb
-        elif bb is None:
-            merged[plat] = ba
+def _pr_rank(s):
+    return 0 if not s or s == "none" else (2 if s in _TERMINAL_PR else 1)
+
+
+def _union(pa, pb):
+    """Per-key merge of two maps, latest writer winning within a key. Blocks carry
+    their own updated_at; anything without one resolves to B."""
+    out = {}
+    for k in set(pa) | set(pb):
+        va, vb = pa.get(k), pb.get(k)
+        if va is None or vb is None:
+            out[k] = vb if va is None else va
+        elif isinstance(va, dict) and isinstance(vb, dict):
+            out[k] = vb if _b_is_later(va.get("updated_at"), vb.get("updated_at")) else va
         else:
-            merged[plat] = bb if _b_is_later(ba.get("updated_at"), bb.get("updated_at")) else ba
-    out["platforms"] = merged
+            out[k] = vb
+    return out
+
+
+def _merge_intake(a, b, newer):
+    """intake carries two different things: a recommendation an agent wrote, and
+    `decided`, a person's answer to it. Take the newer recommendation, but keep
+    whichever side actually has the decision -- a host still holding the
+    pre-decision record would otherwise erase the answer."""
+    ia, ib = a.get("intake"), b.get("intake")
+    if not ia or not ib:
+        return ib or ia
+    out = dict(newer.get("intake") or {})
+    decided = (ia.get("decided"), ib.get("decided"))
+    if any(decided):
+        da, db = decided
+        out["decided"] = (db if da is None else
+                          da if db is None else
+                          db if _b_is_later(da.get("at"), db.get("at")) else da)
+    return out
+
+
+def merge(a, b):
+    a_top, b_top = a.get("updated_at") or "", b.get("updated_at") or ""
+    newer, older = (b, a) if b_top > a_top else (a, b)
+    out = dict(older)
+    out.update(newer)                       # default: latest writer wins per field
+    out["updated_at"] = max(a_top, b_top)
+
+    for k in STICKY:
+        if out.get(k) is None:
+            out[k] = a.get(k) if a.get(k) is not None else b.get(k)
+        if k in out and out[k] is None:
+            del out[k]
+
+    for k in RESET:
+        out.pop(k, None)
+        if k in newer:
+            out[k] = newer[k]
+
+    for k in UNION:
+        if k in a or k in b:
+            out[k] = _union(a.get(k) or {}, b.get(k) or {})
+
+    if "intake" in a or "intake" in b:
+        out["intake"] = _merge_intake(a, b, newer)
+
+    if "pr_state" in a or "pr_state" in b:
+        sa, sb = a.get("pr_state"), b.get("pr_state")
+        if _PR_RANKABLE and _pr_rank(sa) != _pr_rank(sb):
+            out["pr_state"] = sa if _pr_rank(sa) > _pr_rank(sb) else sb
+        else:
+            out["pr_state"] = newer.get("pr_state") or sa or sb
     return out
 
 
