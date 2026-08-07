@@ -42,6 +42,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import moatlib  # noqa: E402
+import prose  # noqa: E402
 
 REPO = "AMD-Ecosystem/moat"
 LABEL = "intake-queue"
@@ -104,7 +105,6 @@ def queue():
             "license": obj.get("license_spdx") or "UNRECORDED",
             "tier": moatlib.license_tier(d.name),
             "flagged": flagged, "flag_note": disp.get("note") if flagged else None,
-            "chose": (rec.get("decided") or {}).get("choice"),
             **rec,
         })
     # Declines first, then by priority: the rows a reviewer must actually think
@@ -119,39 +119,41 @@ def render(rows):
                 "Re-run `python3 utils/intake_queue.py publish --apply` after the next "
                 "batch of screens.\n")
     out = [
-        f"{len(rows)} project(s) screened and waiting. Each row is a **recommendation**; "
-        "reply in one comment saying what you want, e.g. *\"accept all but X and Y -- "
-        "X because ..., Y because ...\"*.\n",
+        f"{len(rows)} project(s) screened and waiting. Each row is a "
+        "**recommendation**; reply in one comment saying what you want, e.g. "
+        "*\"accept all but X and Y -- X because ..., Y because ...\"*. Rows marked "
+        "**on hold** are asking something else and are listed under Held back "
+        "below.\n",
         "| # | project | licence | duplicate effort | viable | recommend |",
         "|---|---|---|---|---|---|",
     ]
     for i, r in enumerate(rows, 1):
         viable = {True: "yes", False: "no", None: "?"}[r.get("viable")]
-        rec = ("**decline** (" + (r.get("reason") or "?") + ")"
+        # A held row keeps its number -- it IS a decision waiting on you, just not a
+        # fork-or-decline one -- but carries no verdict. Composing "ON HOLD" onto
+        # "**fork**" recommended forking the very thing we were saying needs an answer
+        # first, and the paragraph below then called it excluded from the decision.
+        rec = ("**on hold**" if r.get("flagged") else
+               "**decline** (" + (r.get("reason") or "?") + ")"
                if r["verdict"] == "decline" else "**fork**")
-        if r.get("chose") == "fork":
-            rec = "APPROVED -- awaiting the fork"
-        if r.get("flagged"):
-            rec = "ON HOLD -- " + rec
         out.append(f"| {i} | [{r['name']}](https://github.com/{r['full_name']}) "
                    f"| {r['license']} (t{r['tier']}) | {r.get('duplicate_effort') or '-'} "
                    f"| {viable} | {rec} |")
     out.append("")
     for r in rows:
-        out.append(f"- **{r['name']}** -- {r['summary']}  \n"
-                   f"  full write-up: `projects/{r['name']}/notes.md`")
+        # A nested list item, not a two-space hard break onto an indented line. The
+        # latter is indistinguishable from hand-wrapped prose -- utils/prose.py flagged
+        # every body this renderer has ever produced, and the publish path never ran it.
+        out.append(f"- **{r['name']}** -- {r['summary']}\n"
+                   f"  - full write-up: `projects/{r['name']}/notes.md`")
     held = [r for r in rows if r.get("flagged")]
     if held:
         out += ["", "### Held back", "",
-                "Flagged with `triage.py verify`, so they are deliberately not part of "
-                "this decision. They stay on the queue until someone clears the flag "
-                "(`triage.py unskip <owner/repo>`) or decides them.", ""]
-        out += [f"- `{r['full_name']}` -- {r.get('flag_note') or 'no note'}" for r in held]
-    held = [r for r in rows if r.get("flagged")]
-    if held:
-        out += ["", "### Held back", "",
-                "Flagged with `triage.py verify`. Still undecided, deliberately -- they "
-                "stay here until someone answers them or clears the flag.", ""]
+                "Flagged with `triage.py verify` because something needs settling "
+                "before fork-or-decline is even the right question. They are in the "
+                "table above and they do need an answer -- just an answer to what is "
+                "written here. Clearing the flag (`triage.py unskip <owner/repo>`) "
+                "returns one to an ordinary row.", ""]
         out += [f"- `{r['full_name']}` -- {r.get('flag_note') or 'no note'}" for r in held]
     out += ["", "---", "_This table is a snapshot. It is regenerated in place only "
             "while nobody has answered; once a decision is recorded this issue closes "
@@ -169,6 +171,14 @@ def find_issue():
 
 def publish(apply=False):
     body = render(queue())
+    # The review-PR and publish paths in upstream.py check this; the queue never did,
+    # and it posts to GitHub exactly as they do. A project summary is free text an
+    # intake agent wrote, so the hard-wrapping this catches arrives from outside this
+    # file and no amount of care in the renderer prevents it.
+    wrapped = prose.check(body, "issue body")
+    if wrapped:
+        raise SystemExit("intake_queue: " + "; ".join(wrapped) +
+                         "\n  write each paragraph as one line; GitHub reflows it")
     existing = find_issue()
     if not apply:
         return ("would-" + ("update" if existing else "open"),
