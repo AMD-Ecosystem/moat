@@ -209,7 +209,12 @@ def apply_decisions(declines, note, apply=False):
     moatlib._git("checkout", "-q", "-B", BRANCH, "origin/main", check=True)
     for full, reason, why in parsed:
         moatlib.set_disposition(full, "skip", reason, why)
-    moatlib._git("add", "--", "data/dispositions.json")
+    # A disposition changes the project's Outcome cell, so the generated table moves
+    # with it. Committing only dispositions.json left this tool opening a pull request
+    # that failed the repository's own README gate.
+    subprocess.run([sys.executable, "utils/gen_readme.py"], cwd=str(moatlib.REPO_ROOT),
+                   capture_output=True, text=True)
+    moatlib._git("add", "--", "data/dispositions.json", "README.md")
     if not moatlib._git("diff", "--cached", "--name-only", check=False).stdout.strip():
         return ("nothing", "these dispositions are already recorded")
     msg = ("intake: record declines from the queue\n\n" +
