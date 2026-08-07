@@ -102,6 +102,20 @@ def build():
                     "viable": {"type": ["boolean", "null"]},
                     "summary": {"type": "string"},
                     "at": {"type": "string"},
+                    # The person's answer to the recommendation above. Recorded
+                    # because the gap between deciding to fork and the fork existing
+                    # is unbounded, and the queue otherwise reverts to arguing the
+                    # recommendation -- worst exactly where they disagree.
+                    "decided": {
+                        "type": ["object", "null"],
+                        "required": ["choice", "by", "at"],
+                        "properties": {
+                            "choice": {"enum": ["fork", "decline"]},
+                            "by": {"type": "string", "minLength": 1},
+                            "at": {"type": "string"},
+                            "note": {"type": "string"},
+                        },
+                    },
                 },
             },
             # Permission to offer a tier 3/4 project upstream; tiers 1-2 need none.

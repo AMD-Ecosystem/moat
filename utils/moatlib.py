@@ -1606,6 +1606,42 @@ def branch_sync(apply=False, base_ref="origin/main"):
     return ("merged", ", ".join(substantive[:4]))
 
 
+def commit_to_branch(branch, files, message):
+    """Commit files onto a branch WITHOUT checking it out, and push. Returns the sha.
+
+    Plumbing rather than checkout because the branch may be held by a worktree, and
+    because switching the working tree to write one file is a large side effect for a
+    small edit. This is also the shape the migration needs generally: an in-flight
+    project's record lives on its own branch, and a decision recorded on the trunk has
+    to reach it somehow."""
+    import os
+    import tempfile
+    base = _git("rev-parse", f"origin/{branch}", check=False).stdout.strip()
+    if not base:
+        raise ValueError(f"origin/{branch} does not exist")
+    fd, idx = tempfile.mkstemp(prefix="moat-index-")
+    os.close(fd)
+    os.unlink(idx)
+    env = {**os.environ, "GIT_INDEX_FILE": idx}
+
+    def g(*args, stdin=None):
+        r = subprocess.run(["git", *args], cwd=str(REPO_ROOT), env=env, input=stdin,
+                           capture_output=True, text=True, check=True)
+        return r.stdout.strip()
+    try:
+        g("read-tree", base)
+        for path, content in files.items():
+            blob = g("hash-object", "-w", "--stdin", stdin=content)
+            g("update-index", "--add", "--cacheinfo", f"100644,{blob},{path}")
+        tree = g("write-tree")
+        commit = g("commit-tree", tree, "-p", base, "-m", message)
+        g("push", "-q", "origin", f"{commit}:refs/heads/{branch}")
+        return commit
+    finally:
+        if os.path.exists(idx):
+            os.unlink(idx)
+
+
 def commit_and_push(paths, message, push=True, retries=3):
     """The single MOAT-repo write path: stage, commit-on-top, pull --rebase,
     push, bounded retry. Never amends, never force-pushes. No-op if nothing

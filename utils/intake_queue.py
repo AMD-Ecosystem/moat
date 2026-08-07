@@ -93,6 +93,7 @@ def queue():
             "license": obj.get("license_spdx") or "UNRECORDED",
             "tier": moatlib.license_tier(d.name),
             "flagged": flagged, "flag_note": disp.get("note") if flagged else None,
+            "chose": (rec.get("decided") or {}).get("choice"),
             **rec,
         })
     # Declines first, then by priority: the rows a reviewer must actually think
@@ -117,6 +118,8 @@ def render(rows):
         viable = {True: "yes", False: "no", None: "?"}[r.get("viable")]
         rec = ("**decline** (" + (r.get("reason") or "?") + ")"
                if r["verdict"] == "decline" else "**fork**")
+        if r.get("chose") == "fork":
+            rec = "APPROVED -- awaiting the fork"
         if r.get("flagged"):
             rec = "ON HOLD -- " + rec
         out.append(f"| {i} | [{r['name']}](https://github.com/{r['full_name']}) "
@@ -133,7 +136,9 @@ def render(rows):
                 "this decision. They stay on the queue until someone clears the flag "
                 "(`triage.py unskip <owner/repo>`) or decides them.", ""]
         out += [f"- `{r['full_name']}` -- {r.get('flag_note') or 'no note'}" for r in held]
-    forks = [r for r in rows if r["verdict"] == "fork" and not r.get("flagged")]
+    forks = [r for r in rows
+             if (r["verdict"] == "fork" or r.get("chose") == "fork")
+             and not r.get("flagged")]
     if forks:
         out += ["", "### Accepting", "",
                 "Delete any line you are rejecting, then run it. The forks appearing "
@@ -142,7 +147,8 @@ def render(rows):
         out += [f"gh repo fork {r['full_name']} --org AMD-Ecosystem --clone=false"
                 for r in forks]
         out += ["```"]
-    declines = [r for r in rows if r["verdict"] == "decline" and not r.get("flagged")]
+    declines = [r for r in rows if r["verdict"] == "decline"
+                and not r.get("flagged") and r.get("chose") != "fork"]
     if declines:
         out += ["", "### Declining", "",
                 "Say so in a comment. An agent will read it back to you and open a "
@@ -176,6 +182,37 @@ def publish(apply=False):
     r = gh(["issue", "create", "--repo", REPO, "--label", LABEL,
             "--title", TITLE, "--body", body], check=True)
     return ("opened", r.stdout.strip())
+
+
+def record_accepts(accepts, by, apply=False):
+    """Record that a person chose to fork, on each project's own branch.
+
+    The fork appearing is still what releases a project. This records the answer for
+    the window before that, which is unbounded -- an admin question can sit for days --
+    and during which the queue otherwise re-proposes intake's recommendation. That is
+    worst on an override, where the recommendation argues against the decision that
+    was actually made."""
+    out = []
+    for full in accepts:
+        name = full.split("/")[-1]
+        obj, where = moatlib.project_record(name)
+        if obj is None:
+            out.append((full, "no record found")); continue
+        if where != "branch":
+            out.append((full, f"record is on the {where}, not a port branch")); continue
+        rec = dict(obj.get("intake") or {})
+        if not rec:
+            out.append((full, "not screened, so there is no recommendation to answer"))
+            continue
+        rec["decided"] = {"choice": "fork", "by": by, "at": moatlib.now_iso()}
+        obj["intake"] = rec
+        if not apply:
+            out.append((full, f"would record fork on port/{name}")); continue
+        sha = moatlib.commit_to_branch(
+            f"port/{name}", {f"projects/{name}/status.json": json.dumps(obj, indent=2) + "\n"},
+            f"{name}: {by} chose to fork, answering intake's recommendation")
+        out.append((full, f"recorded on port/{name} at {sha[:9]}"))
+    return out
 
 
 def apply_decisions(declines, note, apply=False):
@@ -260,6 +297,9 @@ def main(argv=None):
     a.add_argument("--note", action="append", default=[],
                    help="the reviewer's words for the matching --decline; repeatable "
                         "and paired positionally")
+    a.add_argument("--accept", action="append", default=[], metavar="owner/repo",
+                   help="record that a person chose to fork; repeatable")
+    a.add_argument("--by", help="who decided; defaults to the authenticated account")
     a.add_argument("--apply", action="store_true")
     args = ap.parse_args(argv)
 
@@ -270,9 +310,12 @@ def main(argv=None):
         action, detail = publish(apply=args.apply)
         print(f"intake-queue: {action}\n{detail}")
         return 0
+    if args.accept:
+        by = args.by or (gh(["api", "user", "--jq", ".login"]).stdout.strip() or "unknown")
+        for full, detail in record_accepts(args.accept, by, apply=args.apply):
+            print(f"  accept {full}: {detail}")
     if not args.decline:
-        print("intake-queue: nothing to record -- pass --decline owner/repo:reason")
-        return 1
+        return 0 if args.accept else 1
     action, detail = apply_decisions(args.decline, args.note, apply=args.apply)
     print(f"intake-queue: {action} -- {detail}")
     return 0
