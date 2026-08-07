@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-05T01:25:53Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:05:33Z",
   "head_sha": "c65c0b823fe81f022e060291a47374ac8483cfc8",
   "depends_on": [],
   "platforms": {
@@ -132,5 +132,6 @@
   "porting": null,
   "waivers": {},
   "pr_state": "open",
-  "license_spdx": "Apache-2.0"
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 774831838
 }

@@ -244,6 +244,23 @@ def load_status(name):
     raise FileNotFoundError(str(p))
 
 
+def adopted_repo_ids():
+    """{repo id: project name} for every adopted project that records one.
+
+    Adoption used to be matched on a name -- the basename in one place and the full
+    owner/repo in another, so one conflated foo/bar with baz/bar and the other missed
+    every transfer. Neither survives a repository moving, which happens: FlashRT went
+    from LiangSu8899 to the flashrt-project org and came back through discovery as a
+    fresh candidate."""
+    out = {}
+    for n in all_projects():
+        obj, _ = project_record(n)
+        rid = (obj or {}).get("upstream_repo_id")
+        if rid:
+            out[int(rid)] = n
+    return out
+
+
 def upstream_full_name(name):
     """The upstream repo as `owner/repo`, from the URL status.json already holds.
     This is the key dispositions.json is written under, so it is how a project record
@@ -945,6 +962,17 @@ def port_done(obj):
 # `triage review` re-listed a planned project as an un-adopted candidate.
 
 _REF_CACHE = {}
+_BRANCH = []          # one-element cache: the branch cannot change mid-process
+
+
+def current_branch():
+    """The checked-out branch, resolved once. project_record asks per project, and
+    spawning `git rev-parse` 156 times per scan was slow enough to time out a
+    `triage review`."""
+    if not _BRANCH:
+        _BRANCH.append(_git("rev-parse", "--abbrev-ref", "HEAD",
+                            check=False).stdout.strip())
+    return _BRANCH[0]
 
 
 def _ref_read(ref, path):
@@ -984,10 +1012,19 @@ def project_record(name):
     special case -- the working tree IS the branch then, so the local read is both
     correct and cheaper."""
     path = f"projects/{name}/status.json"
-    on_branch = _git("rev-parse", "--abbrev-ref", "HEAD",
-                     check=False).stdout.strip() == f"port/{name}"
+    on_branch = current_branch() == f"port/{name}"
     if not on_branch:
-        raw = _ref_read(f"origin/port/{name}", path)
+        # Case-tolerant: a branch created as port/hami-core for the project HAMi-core
+        # resolved to nothing, so a finished screen was invisible to the queue and to
+        # every sweep. The convention is exact, but a mismatch must fail loudly rather
+        # than silently drop the project.
+        ref = f"origin/port/{name}"
+        if name.lower() != name:
+            for cand in port_branches():
+                if cand.lower() == name.lower():
+                    ref = f"origin/port/{cand}"
+                    break
+        raw = _ref_read(ref, path)
         if raw:
             try:
                 return (json.loads(raw), "branch")

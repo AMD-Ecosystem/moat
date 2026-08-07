@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "compiler-with-hip-backend",
   "adopted_at": "2026-06-05T00:19:54Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:05:07Z",
   "head_sha": null,
   "depends_on": [],
   "platforms": {
@@ -103,5 +103,6 @@
   },
   "porting": null,
   "waivers": {},
-  "license_spdx": "ISC"
+  "license_spdx": "ISC",
+  "upstream_repo_id": 7960131
 }

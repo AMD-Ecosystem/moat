@@ -23,6 +23,12 @@
     "upstream_url": {
       "type": "string"
     },
+    "upstream_repo_id": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
     "fork_url": {
       "type": [
         "string",

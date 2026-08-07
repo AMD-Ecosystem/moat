@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:23:49Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:05:05Z",
   "head_sha": "65dd8979417a14745e736cb1675558e5bc6b467d",
   "depends_on": [],
   "platforms": {
@@ -128,5 +128,6 @@
   },
   "porting": null,
   "waivers": {},
-  "license_spdx": "GPL-2.0"
+  "license_spdx": "GPL-2.0",
+  "upstream_repo_id": 42934567
 }

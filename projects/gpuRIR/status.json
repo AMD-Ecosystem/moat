@@ -7,7 +7,7 @@
   "priority": 4.22,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-08-06T02:33:28Z",
+  "updated_at": "2026-08-07T07:05:10Z",
   "head_sha": "1ae7c3034b319b6f3cca896d6cf5f07d6b8f8396",
   "platforms": {
     "linux-gfx90a": {
@@ -164,5 +164,6 @@
     "tier": 3,
     "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
   },
-  "license_spdx": "AGPL-3.0"
+  "license_spdx": "AGPL-3.0",
+  "upstream_repo_id": 152045184
 }

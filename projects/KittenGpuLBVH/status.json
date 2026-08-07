@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-19T04:22:08Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:04:38Z",
   "head_sha": "33c0f78be3d46d2eaa077d5d3fed792906eac60e",
   "depends_on": [],
   "platforms": {
@@ -109,5 +109,6 @@
   "porting": null,
   "waivers": {},
   "pr_state": "open",
-  "license_spdx": "MIT"
+  "license_spdx": "MIT",
+  "upstream_repo_id": 779080210
 }

@@ -7,7 +7,7 @@
   "priority": 3.979,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T03:26:34Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:04:25Z",
   "head_sha": null,
   "platforms": {
     "linux-gfx90a": {
@@ -102,5 +102,6 @@
   },
   "porting": null,
   "waivers": {},
-  "license_spdx": "Apache-2.0"
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 997189733
 }

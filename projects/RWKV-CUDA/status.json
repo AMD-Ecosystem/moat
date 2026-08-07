@@ -7,7 +7,7 @@
   "priority": 3.923,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-08-06T02:41:26Z",
+  "updated_at": "2026-08-07T07:04:45Z",
   "head_sha": "3efd11d28f61ac354469fa33d948098f9f390689",
   "platforms": {
     "linux-gfx90a": {
@@ -139,5 +139,6 @@
     "tier": 4,
     "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
   },
-  "license_spdx": "no licence file"
+  "license_spdx": "no licence file",
+  "upstream_repo_id": 465862399
 }

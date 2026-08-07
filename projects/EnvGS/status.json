@@ -7,7 +7,7 @@
   "priority": 4.133,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-08-07T06:37:06Z",
+  "updated_at": "2026-08-07T07:04:31Z",
   "head_sha": "7528e8dbd94fca6e56c845f6b53b8dcce04ac29b",
   "platforms": {
     "linux-gfx90a": {
@@ -118,5 +118,6 @@
     "at": "2026-08-05T23:10:07Z",
     "tier": 4,
     "note": "restored verbatim from the upstream.json record deleted in 03ba288: 'Contribution cleared 2026-08-05. Covers CONTRIBUTING a fix upstream only -- not using this project in AMD software, shipping it, or depending on it.' approval_scope was contribute-only. Re-confirm if the attribution is wrong."
-  }
+  },
+  "upstream_repo_id": 905861027
 }

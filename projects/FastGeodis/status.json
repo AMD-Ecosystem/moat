@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-05T01:24:38Z",
-  "updated_at": "2026-08-07T06:21:39Z",
+  "updated_at": "2026-08-07T07:04:33Z",
   "head_sha": "5fc19ecea7e516778ab4db264e584230c83676b4",
   "depends_on": [],
   "platforms": {
@@ -124,5 +124,6 @@
   "pr_url": "https://github.com/masadcv/FastGeodis/pull/68",
   "pr_number": 68,
   "pr_opened_at": "2026-08-07T06:21:39Z",
-  "pr_state": "open"
+  "pr_state": "open",
+  "upstream_repo_id": 375526483
 }

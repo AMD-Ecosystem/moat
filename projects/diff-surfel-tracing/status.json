@@ -7,11 +7,12 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-08-06T06:58:03Z",
-  "updated_at": "2026-08-06T06:58:03Z",
+  "updated_at": "2026-08-07T07:05:02Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
   "platforms": {},
-  "license_spdx": "MIT"
+  "license_spdx": "MIT",
+  "upstream_repo_id": 911002454
 }

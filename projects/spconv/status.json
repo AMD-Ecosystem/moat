@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "pccm-codegen",
   "adopted_at": "2026-06-08T13:34:12Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:05:30Z",
   "head_sha": null,
   "depends_on": [],
   "platforms": {
@@ -102,5 +102,6 @@
   },
   "porting": null,
   "waivers": {},
-  "license_spdx": "Apache-2.0"
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 166499614
 }

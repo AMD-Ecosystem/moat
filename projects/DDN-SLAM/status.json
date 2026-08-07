@@ -10,6 +10,7 @@
   "head_sha": null,
   "depends_on": [],
   "platforms": {},
-  "updated_at": "2026-08-06T00:00:00Z",
-  "license_spdx": "GPL-3.0 + NVIDIA-NC dep"
+  "updated_at": "2026-08-07T07:04:29Z",
+  "license_spdx": "GPL-3.0 + NVIDIA-NC dep",
+  "upstream_repo_id": 689268253
 }

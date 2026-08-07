@@ -32,6 +32,12 @@ def build():
             "schema_version": {"const": m.SCHEMA_VERSION},
             "name": {"type": "string"},
             "upstream_url": {"type": "string"},
+            # GitHub's numeric repo id, which survives a rename or an org transfer.
+            # upstream_url does not: FlashRT moved from LiangSu8899 to the
+            # flashrt-project org and the recorded URL became a name nobody uses.
+            # Adoption is matched on this so a transferred project cannot re-enter
+            # discovery looking unclaimed.
+            "upstream_repo_id": {"type": ["integer", "null"]},
             "fork_url": {"type": ["string", "null"]},
             "fork_default_branch": {"type": "string"},
             "fork_branch": {"type": "string",

@@ -7,7 +7,7 @@
   "priority": 6.245,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:05:13Z",
   "head_sha": "223ee63914f3c7c1da020d63072e133523b2df91",
   "platforms": {
     "linux-gfx90a": {
@@ -125,5 +125,6 @@
     "tier": 3,
     "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
   },
-  "license_spdx": "GPL-3.0"
+  "license_spdx": "GPL-3.0",
+  "upstream_repo_id": 135489692
 }

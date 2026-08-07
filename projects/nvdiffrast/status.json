@@ -10,6 +10,7 @@
   "head_sha": null,
   "depends_on": [],
   "platforms": {},
-  "updated_at": "2026-08-06T00:00:00Z",
-  "license_spdx": "NVIDIA Source Code License"
+  "updated_at": "2026-08-07T07:05:21Z",
+  "license_spdx": "NVIDIA Source Code License",
+  "upstream_repo_id": 309488075
 }

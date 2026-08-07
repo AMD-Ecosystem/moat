@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "go-cgo-driver-api",
   "adopted_at": "2026-06-04T04:24:21Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:05:20Z",
   "head_sha": "a76378a35fc663eb93b841e3b17a101eb2092a28",
   "depends_on": [],
   "platforms": {
@@ -139,5 +139,6 @@
     "tier": 3,
     "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
   },
-  "license_spdx": "GPL-3.0"
+  "license_spdx": "GPL-3.0",
+  "upstream_repo_id": 12974128
 }

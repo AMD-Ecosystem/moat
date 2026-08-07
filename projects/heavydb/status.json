@@ -7,7 +7,7 @@
   "priority": 5.679,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:05Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:05:11Z",
   "head_sha": null,
   "platforms": {
     "linux-gfx90a": {
@@ -101,5 +101,6 @@
   },
   "porting": null,
   "waivers": {},
-  "license_spdx": "Apache-2.0"
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 90541149
 }
