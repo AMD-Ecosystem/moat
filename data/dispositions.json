@@ -639,6 +639,14 @@
     "reason": "not-a-target",
     "repo_id": 1211475186
   },
+  "forceflow/cuda_voxelizer": {
+    "decided": "2026-08-07T14:41:14Z",
+    "disposition": "verify",
+    "full_name": "Forceflow/cuda_voxelizer",
+    "note": "vendored NVIDIA CUDA-Samples headers under the old EULA notice; admin deciding whether forking is acceptable",
+    "reason": "verify",
+    "repo_id": 19234691
+  },
   "forceinjection/ai-fundamentals": {
     "decided": "2026-05-29T23:57:04Z",
     "disposition": "skip",
