@@ -20,6 +20,11 @@
     "duplicate_effort": "none from AMD-Ecosystem/ROCm, but upstream's own default OpenCL backend already runs on AMD/Intel/NVIDIA GPUs -- functionally already-supported",
     "viable": false,
     "summary": "Java-to-GPU JIT compiler (OpenCL/CUDA-PTX/Metal/CPU backends); AMD is already reachable via its own default OpenCL backend, and the CUDA-only slice (PTX codegen + NVIDIA library JNI bindings) is a compiler code-generation target, not CUDA kernels to hipify.",
-    "at": "2026-08-07T07:07:05Z"
+    "at": "2026-08-07T07:07:05Z",
+    "decided": {
+      "choice": "fork",
+      "by": "jeffdaily",
+      "at": "2026-08-07T15:27:07Z"
+    }
   }
 }
