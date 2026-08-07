@@ -77,8 +77,14 @@ def queue():
         if not rec:
             continue                       # not screened yet
         full = moatlib.upstream_full_name(d.name)
-        if moatlib.get_disposition(full or d.name):
+        disp = moatlib.get_disposition(full or d.name) or {}
+        if disp.get("disposition") == "skip":
             continue                       # already declined by a person
+        # A `verify` is the opposite of a decision -- "somebody look at this" -- so it
+        # must stay ON the queue and say so. Testing the disposition for truthiness
+        # dropped these silently, which hid exactly the rows a person had flagged as
+        # needing a second look.
+        flagged = disp.get("disposition") == "verify"
         states = {b.get("state") for b in moatlib.validations(obj).values()}
         if states and not states & {"awaiting-fork", "unclaimed"}:
             continue                       # released (a fork appeared) or already worked
@@ -86,6 +92,7 @@ def queue():
             "name": d.name, "full_name": full, "priority": obj.get("priority", 0),
             "license": obj.get("license_spdx") or "UNRECORDED",
             "tier": moatlib.license_tier(d.name),
+            "flagged": flagged, "flag_note": disp.get("note") if flagged else None,
             **rec,
         })
     # Declines first, then by priority: the rows a reviewer must actually think
@@ -110,6 +117,8 @@ def render(rows):
         viable = {True: "yes", False: "no", None: "?"}[r.get("viable")]
         rec = ("**decline** (" + (r.get("reason") or "?") + ")"
                if r["verdict"] == "decline" else "**fork**")
+        if r.get("flagged"):
+            rec = "ON HOLD -- " + rec
         out.append(f"| {i} | [{r['name']}](https://github.com/{r['full_name']}) "
                    f"| {r['license']} (t{r['tier']}) | {r.get('duplicate_effort') or '-'} "
                    f"| {viable} | {rec} |")
@@ -117,7 +126,14 @@ def render(rows):
     for r in rows:
         out.append(f"- **{r['name']}** -- {r['summary']}  \n"
                    f"  full write-up: `projects/{r['name']}/notes.md`")
-    forks = [r for r in rows if r["verdict"] == "fork"]
+    held = [r for r in rows if r.get("flagged")]
+    if held:
+        out += ["", "### Held back", "",
+                "Flagged with `triage.py verify`, so they are deliberately not part of "
+                "this decision. They stay on the queue until someone clears the flag "
+                "(`triage.py unskip <owner/repo>`) or decides them.", ""]
+        out += [f"- `{r['full_name']}` -- {r.get('flag_note') or 'no note'}" for r in held]
+    forks = [r for r in rows if r["verdict"] == "fork" and not r.get("flagged")]
     if forks:
         out += ["", "### Accepting", "",
                 "Delete any line you are rejecting, then run it. The forks appearing "
@@ -126,7 +142,7 @@ def render(rows):
         out += [f"gh repo fork {r['full_name']} --org AMD-Ecosystem --clone=false"
                 for r in forks]
         out += ["```"]
-    declines = [r for r in rows if r["verdict"] == "decline"]
+    declines = [r for r in rows if r["verdict"] == "decline" and not r.get("flagged")]
     if declines:
         out += ["", "### Declining", "",
                 "Say so in a comment. An agent will read it back to you and open a "
