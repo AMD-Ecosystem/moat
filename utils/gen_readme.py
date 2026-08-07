@@ -45,19 +45,18 @@ EMOJI = {
 
 
 def load_projects():
+    """Every project across refs, not just the ones whose folder is on this branch.
+
+    The table is the progress board, so work in flight has to appear on it. An
+    in-flight project's folder lives on its own port branch, and reading the working
+    tree alone would silently drop it -- which is the opposite of what a progress
+    board is for: it would show MOAT doing less precisely while it does more."""
     out = []
-    pdir = REPO_ROOT / "projects"
-    if not pdir.exists():
-        return out
-    for d in sorted(pdir.iterdir()):
-        sp = d / "status.json"
-        if not sp.exists():
+    for name in sorted(moatlib.all_projects()):
+        rec, _where = moatlib.project_record(name)
+        if rec is None:
             continue
-        try:
-            rec = json.loads(sp.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            sys.stderr.write(f"gen_readme: skipping unparseable {sp}\n")
-            continue
+        d = REPO_ROOT / "projects" / name
         # Delivery tracking. pr_state (open/merged/closed) drives the PR glyph; a
         # recorded disposition covers the projects whose success is NOT an upstream PR
         # (e.g. we GPU-validated an existing ROCm backend across archs). See
