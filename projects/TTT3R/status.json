@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "TTT3R",
   "upstream_url": "https://github.com/Inception3D/TTT3R",
   "fork_url": "https://github.com/AMD-Ecosystem/TTT3R",
@@ -10,6 +10,17 @@
   "updated_at": "2026-08-07T18:37:35Z",
   "head_sha": "d064cc9a55b88763e5a3873dfa4a6b45e2751e00",
   "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:41:26Z",
+    "tier": 4,
+    "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
+  },
+  "license_spdx": "CC-BY-NC",
+  "upstream_repo_id": 1067506893,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -115,15 +126,5 @@
       },
       "last_agent": "validator"
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_clearance": {
-    "approved_by": "jeffdaily",
-    "at": "2026-08-06T02:41:26Z",
-    "tier": 4,
-    "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
-  },
-  "license_spdx": "CC-BY-NC",
-  "upstream_repo_id": 1067506893
+  }
 }

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "llm.c",
   "upstream_url": "https://github.com/karpathy/llm.c",
   "fork_url": "https://github.com/AMD-Ecosystem/llm.c",
@@ -9,6 +9,16 @@
   "adopted_at": "2026-05-29T23:30:02Z",
   "updated_at": "2026-08-07T07:05:15Z",
   "head_sha": "de1dd620184356193b9864118dd4162b11938dd7",
+  "depends_on": [],
+  "pr_url": "https://github.com/karpathy/llm.c/pull/854",
+  "pr_number": 854,
+  "pr_opened_at": "2026-06-05T19:24:41Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "MIT",
+  "upstream_repo_id": 783833344,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -157,14 +167,5 @@
         "at": "2026-06-24T00:02:17Z"
       }
     }
-  },
-  "depends_on": [],
-  "pr_url": "https://github.com/karpathy/llm.c/pull/854",
-  "pr_number": 854,
-  "pr_opened_at": "2026-06-05T19:24:41Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "MIT",
-  "upstream_repo_id": 783833344
+  }
 }

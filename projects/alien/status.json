@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "alien",
   "upstream_url": "https://github.com/chrxh/alien",
   "fork_url": "https://github.com/AMD-Ecosystem/alien",
@@ -9,6 +9,16 @@
   "adopted_at": "2026-05-29T23:30:02Z",
   "updated_at": "2026-08-07T07:04:51Z",
   "head_sha": "444d12bbbbb625c50828cf509296c587fcdac674",
+  "pr_url": "https://github.com/chrxh/alien/pull/710",
+  "pr_number": 710,
+  "pr_opened_at": "2026-06-08T18:27:33Z",
+  "pr_merged_at": "2026-07-06T02:49:04Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged",
+  "license_spdx": "BSD-3-Clause",
+  "upstream_repo_id": 305438235,
+  "stage": "review-passed",
   "platforms": {
     "windows-gfx1101": {
       "state": "revalidate",
@@ -124,14 +134,5 @@
       },
       "last_agent": "validator"
     }
-  },
-  "pr_url": "https://github.com/chrxh/alien/pull/710",
-  "pr_number": 710,
-  "pr_opened_at": "2026-06-08T18:27:33Z",
-  "pr_merged_at": "2026-07-06T02:49:04Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "merged",
-  "license_spdx": "BSD-3-Clause",
-  "upstream_repo_id": 305438235
+  }
 }

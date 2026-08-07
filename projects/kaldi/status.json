@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "kaldi",
   "upstream_url": "https://github.com/kaldi-asr/kaldi",
   "fork_url": "https://github.com/AMD-Ecosystem/kaldi",
@@ -9,6 +9,16 @@
   "adopted_at": "2026-05-29T23:30:03Z",
   "updated_at": "2026-08-07T07:05:12Z",
   "head_sha": "014a2179c29f2c0437898a8ded09f57501eb9fb7",
+  "depends_on": [],
+  "pr_url": "https://github.com/kaldi-asr/kaldi/pull/4986",
+  "pr_number": 4986,
+  "pr_opened_at": "2026-06-12T18:33:50Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 34275045,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -112,14 +122,5 @@
         "last_session_at": null
       }
     }
-  },
-  "depends_on": [],
-  "pr_url": "https://github.com/kaldi-asr/kaldi/pull/4986",
-  "pr_number": 4986,
-  "pr_opened_at": "2026-06-12T18:33:50Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "Apache-2.0",
-  "upstream_repo_id": 34275045
+  }
 }

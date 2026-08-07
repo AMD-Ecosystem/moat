@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "gpuRIR",
   "upstream_url": "https://github.com/DavidDiazGuerra/gpuRIR",
   "fork_url": "https://github.com/AMD-Ecosystem/gpuRIR",
@@ -9,6 +9,17 @@
   "adopted_at": "2026-05-30T01:04:51Z",
   "updated_at": "2026-08-07T07:05:10Z",
   "head_sha": "1ae7c3034b319b6f3cca896d6cf5f07d6b8f8396",
+  "porting": null,
+  "waivers": {},
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:33:28Z",
+    "tier": 3,
+    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
+  },
+  "license_spdx": "AGPL-3.0",
+  "upstream_repo_id": 152045184,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -155,15 +166,5 @@
         "at": "2026-06-23T22:50:33Z"
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_clearance": {
-    "approved_by": "jeffdaily",
-    "at": "2026-08-06T02:33:28Z",
-    "tier": 3,
-    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
-  },
-  "license_spdx": "AGPL-3.0",
-  "upstream_repo_id": 152045184
+  }
 }

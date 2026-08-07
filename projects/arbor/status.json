@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "arbor",
   "upstream_url": "https://github.com/arbor-sim/arbor",
   "fork_url": "https://github.com/AMD-Ecosystem/arbor",
@@ -10,6 +10,16 @@
   "updated_at": "2026-08-07T07:04:52Z",
   "head_sha": "3e750fac",
   "depends_on": [],
+  "pr_url": "https://github.com/arbor-sim/arbor/pull/2512",
+  "pr_number": 2512,
+  "pr_opened_at": "2026-06-08T19:44:18Z",
+  "pr_merged_at": "2026-07-02T17:17:26Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged",
+  "license_spdx": "BSD-3-Clause",
+  "upstream_repo_id": 69863074,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -115,14 +125,5 @@
         "at": "2026-06-19T20:51:16Z"
       }
     }
-  },
-  "pr_url": "https://github.com/arbor-sim/arbor/pull/2512",
-  "pr_number": 2512,
-  "pr_opened_at": "2026-06-08T19:44:18Z",
-  "pr_merged_at": "2026-07-02T17:17:26Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "merged",
-  "license_spdx": "BSD-3-Clause",
-  "upstream_repo_id": 69863074
+  }
 }

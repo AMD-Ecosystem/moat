@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "libSGM",
   "upstream_url": "https://github.com/fixstars/libSGM",
   "fork_url": "https://github.com/AMD-Ecosystem/libSGM",
@@ -10,6 +10,15 @@
   "updated_at": "2026-08-07T07:05:14Z",
   "head_sha": "bbbbd1d805323ab173bd9c4a11a8db931911cbc9",
   "depends_on": [],
+  "pr_url": "https://github.com/fixstars/libSGM/pull/89",
+  "pr_number": 89,
+  "pr_opened_at": "2026-06-08T16:24:31Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 51573776,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -156,13 +165,5 @@
         "at": "2026-06-23T22:21:42Z"
       }
     }
-  },
-  "pr_url": "https://github.com/fixstars/libSGM/pull/89",
-  "pr_number": 89,
-  "pr_opened_at": "2026-06-08T16:24:31Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "Apache-2.0",
-  "upstream_repo_id": 51573776
+  }
 }

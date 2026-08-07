@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "CV-CUDA",
   "upstream_url": "https://github.com/CVCUDA/CV-CUDA",
   "fork_url": "https://github.com/AMD-Ecosystem/CV-CUDA",
@@ -9,6 +9,15 @@
   "adopted_at": "2026-05-29T23:30:03Z",
   "updated_at": "2026-08-07T07:04:27Z",
   "head_sha": "642b352642d1228f412cf98883117cd6fe17f695",
+  "pr_url": "https://github.com/CVCUDA/CV-CUDA/pull/293",
+  "pr_number": 293,
+  "pr_opened_at": "2026-06-18T21:22:26Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 527819251,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -112,13 +121,5 @@
         "last_session_at": null
       }
     }
-  },
-  "pr_url": "https://github.com/CVCUDA/CV-CUDA/pull/293",
-  "pr_number": 293,
-  "pr_opened_at": "2026-06-18T21:22:26Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "Apache-2.0",
-  "upstream_repo_id": 527819251
+  }
 }

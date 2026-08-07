@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "LEAP",
   "upstream_url": "https://github.com/llnl/LEAP",
   "fork_url": "https://github.com/AMD-Ecosystem/LEAP",
@@ -9,6 +9,11 @@
   "adopted_at": "2026-05-30T01:04:51Z",
   "updated_at": "2026-08-07T07:04:39Z",
   "head_sha": "4e102c9cfd371b5900c68461bdc8f2a320d71017",
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "MIT",
+  "upstream_repo_id": 644559794,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -119,9 +124,5 @@
         "at": "2026-06-16T06:33:12Z"
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "MIT",
-  "upstream_repo_id": 644559794
+  }
 }

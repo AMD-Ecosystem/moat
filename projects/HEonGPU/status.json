@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "HEonGPU",
   "upstream_url": "https://github.com/Alisah-Ozcan/HEonGPU",
   "fork_url": "https://github.com/AMD-Ecosystem/HEonGPU",
@@ -10,9 +10,13 @@
   "updated_at": "2026-08-07T07:04:37Z",
   "head_sha": "b91755dfdabeeed350688eac555a32efc61a961d",
   "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 866783897,
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
-      "state": "porting",
       "blocked": true,
       "blocked_reason": "Attempt 3: tree rebuilt for gfx90a (lib + all 15 tests compile); crypto still fails. ROOT CAUSE ISOLATED: GPU-NTT INVERSE merge kernel (GentlemanSande/InverseCore, thirdparty/GPU-NTT/src/lib/ntt_merge/ntt.cu) miscomputes on gfx90a -- INTT(NTT(x))!=x (4096/4096 corrupt). Verified CORRECT: ntt/intt tables (psi^N==q-1, intt psi==psi^-1), n_inverse==N^-1, forward NTT (matches CPU ref exactly, bit-reversed), Barrett mult. Forward fine, inverse broken. ALSO: submodule HIP forks (GPU-NTT/FFT/RNGonGPU) were never pushed and the moat-port branch pins lost SHAs -- recovery patches in agent_space/HEonGPU-attempt3/. Attempt 4: bisect inverse single- vs multi-kernel, check inverse-only #pragma unroll loop-not-unrolled / amdclang miscompile.",
       "validated_sha": null,
@@ -100,9 +104,5 @@
         "last_session_at": null
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "Apache-2.0",
-  "upstream_repo_id": 866783897
+  }
 }

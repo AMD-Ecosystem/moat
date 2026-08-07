@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "mHC.cu",
   "upstream_url": "https://github.com/AndreSlavescu/mHC.cu",
   "fork_url": "https://github.com/AMD-Ecosystem/mHC.cu",
@@ -9,6 +9,11 @@
   "adopted_at": "2026-05-30T01:04:50Z",
   "updated_at": "2026-08-07T07:05:17Z",
   "head_sha": "20d02324fd5abece21edfc41c42ab12cb719236b",
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "MIT",
+  "upstream_repo_id": 1126346976,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -125,9 +130,5 @@
         "at": "2026-06-23T22:45:38Z"
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "MIT",
-  "upstream_repo_id": 1126346976
+  }
 }

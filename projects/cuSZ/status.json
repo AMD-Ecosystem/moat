@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "cuSZ",
   "upstream_url": "https://github.com/szcompressor/cuSZ",
   "fork_url": "https://github.com/AMD-Ecosystem/cuSZ",
@@ -10,6 +10,15 @@
   "updated_at": "2026-08-07T07:04:58Z",
   "head_sha": "11140547",
   "depends_on": [],
+  "pr_url": "https://github.com/szcompressor/cuSZ/pull/91",
+  "pr_number": 91,
+  "pr_opened_at": "2026-06-25T21:25:23Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "BSD-3-Clause",
+  "upstream_repo_id": 260815204,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -63,28 +72,6 @@
         "at": "2026-06-25T21:19:33Z"
       }
     },
-    "windows-gfx1101": {
-      "state": "unclaimed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-25T05:36:25Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
     "windows-gfx1201": {
       "state": "completed",
       "blocked": false,
@@ -114,13 +101,5 @@
         "at": "2026-06-25T21:19:33Z"
       }
     }
-  },
-  "pr_url": "https://github.com/szcompressor/cuSZ/pull/91",
-  "pr_number": 91,
-  "pr_opened_at": "2026-06-25T21:25:23Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "BSD-3-Clause",
-  "upstream_repo_id": 260815204
+  }
 }

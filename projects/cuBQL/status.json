@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "cuBQL",
   "upstream_url": "https://github.com/NVIDIA/cuBQL",
   "fork_url": "https://github.com/AMD-Ecosystem/cuBQL",
@@ -10,6 +10,16 @@
   "updated_at": "2026-08-07T07:04:56Z",
   "head_sha": "b0ea6a1712b40809df28950c9bb3746bc6e99083",
   "depends_on": [],
+  "pr_url": "https://github.com/NVIDIA/cuBQL/pull/35",
+  "pr_number": 35,
+  "pr_opened_at": "2026-06-17T00:33:21Z",
+  "pr_merged_at": "2026-06-18T18:53:23Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged",
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 1072553476,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -118,14 +128,5 @@
         "at": "2026-06-17T00:28:41Z"
       }
     }
-  },
-  "pr_url": "https://github.com/NVIDIA/cuBQL/pull/35",
-  "pr_number": 35,
-  "pr_opened_at": "2026-06-17T00:33:21Z",
-  "pr_merged_at": "2026-06-18T18:53:23Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "merged",
-  "license_spdx": "Apache-2.0",
-  "upstream_repo_id": 1072553476
+  }
 }

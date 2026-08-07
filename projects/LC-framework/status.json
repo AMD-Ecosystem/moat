@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "LC-framework",
   "upstream_url": "https://github.com/burtscher/LC-framework",
   "fork_url": "https://github.com/AMD-Ecosystem/LC-framework",
@@ -10,6 +10,11 @@
   "updated_at": "2026-08-07T07:04:38Z",
   "head_sha": "040743e79b757cb54811044d412dba06a761d147",
   "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "BSD-3-Clause",
+  "upstream_repo_id": 401500215,
+  "stage": "review-passed",
   "platforms": {
     "windows-gfx1101": {
       "state": "port-ready",
@@ -101,9 +106,5 @@
       },
       "last_agent": "validator"
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "BSD-3-Clause",
-  "upstream_repo_id": 401500215
+  }
 }

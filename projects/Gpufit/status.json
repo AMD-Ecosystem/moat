@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "Gpufit",
   "upstream_url": "https://github.com/gpufit/Gpufit",
   "fork_url": "https://github.com/AMD-Ecosystem/Gpufit",
@@ -9,6 +9,13 @@
   "adopted_at": "2026-05-30T01:04:51Z",
   "updated_at": "2026-08-07T07:04:37Z",
   "head_sha": "02fc60fd02e4e9e6e4e9645dffeb1af190322b20",
+  "pr_url": "https://github.com/gpufit/Gpufit/pull/149",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "MIT",
+  "upstream_repo_id": 99810999,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -126,11 +133,5 @@
         "at": "2026-06-23T22:51:05Z"
       }
     }
-  },
-  "pr_url": "https://github.com/gpufit/Gpufit/pull/149",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "MIT",
-  "upstream_repo_id": 99810999
+  }
 }

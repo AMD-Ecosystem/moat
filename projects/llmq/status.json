@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "llmq",
   "upstream_url": "https://github.com/IST-DASLab/llmq",
   "fork_url": null,
@@ -9,9 +9,13 @@
   "adopted_at": "2026-05-30T01:04:50Z",
   "updated_at": "2026-08-07T07:05:16Z",
   "head_sha": null,
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 1064878674,
+  "stage": "planned",
   "platforms": {
     "linux-gfx90a": {
-      "state": "planned",
       "blocked": true,
       "blocked_reason": "Hopper/sm89+ tensor-core PTX (mma.sync.aligned.m16n8k32 e4m3/bf16, ldmatrix, cp.async) in gemm_mma.cu/tensor_core_utils.cuh + thread-block clusters/TMA/DSMEM in fused_classifier_tma.cu + cuDNN-frontend attention + cuBLASLt FP8: AMD-native rewrite (rocWMMA/CK/ck_tile + MFMA), NOT a mechanical CUDA->HIP port. FP8 needs gfx942 MFMA, unsupported on gfx90a/MI250X; recommend retarget lead to gfx942 and fund a CK kernel track. ext_type=cmake.",
       "validated_sha": null,
@@ -99,9 +103,5 @@
         "last_session_at": null
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "Apache-2.0",
-  "upstream_repo_id": 1064878674
+  }
 }

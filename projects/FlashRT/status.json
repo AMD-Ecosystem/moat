@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "FlashRT",
   "upstream_url": "https://github.com/flashrt-project/FlashRT",
   "fork_url": null,
@@ -9,9 +9,13 @@
   "adopted_at": "2026-05-30T03:26:34Z",
   "updated_at": "2026-08-07T07:05:47Z",
   "head_sha": null,
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 1223749848,
+  "stage": "unclaimed",
   "platforms": {
     "linux-gfx90a": {
-      "state": "unclaimed",
       "blocked": true,
       "blocked_reason": "CUTLASS-heavy codebase requires Composable Kernel (CK) reimplementation of all GEMM and attention kernels for meaningful AMD support. This is substantial new development (~months of kernel engineering), not a mechanical HIP port. The exec/ backend abstraction is porting-ready, but the core kernel library (139 .cu files) is architecture-locked to NVIDIA (CUTLASS 4.4.2, SM100/110/120 TMA, Flash Attention 2 vendor source). See plan.md for full analysis.",
       "validated_sha": null,
@@ -98,9 +102,5 @@
         "last_session_at": null
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "Apache-2.0",
-  "upstream_repo_id": 1223749848
+  }
 }

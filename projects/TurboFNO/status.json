@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "TurboFNO",
   "upstream_url": "https://github.com/shixun404/TurboFNO",
   "fork_url": "https://github.com/AMD-Ecosystem/TurboFNO",
@@ -10,6 +10,16 @@
   "updated_at": "2026-08-07T07:04:48Z",
   "head_sha": "ec49bcf5d5f2a662f00c3232d0759ac6c2dbe5c2",
   "depends_on": [],
+  "pr_url": "https://github.com/shixun404/TurboFNO/pull/3",
+  "pr_number": 3,
+  "pr_opened_at": "2026-06-24T22:49:43Z",
+  "pr_merged_at": "2026-07-02T17:17:26Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged",
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 916975166,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -128,14 +138,5 @@
         "at": "2026-06-24T22:26:52Z"
       }
     }
-  },
-  "pr_url": "https://github.com/shixun404/TurboFNO/pull/3",
-  "pr_number": 3,
-  "pr_opened_at": "2026-06-24T22:49:43Z",
-  "pr_merged_at": "2026-07-02T17:17:26Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "merged",
-  "license_spdx": "Apache-2.0",
-  "upstream_repo_id": 916975166
+  }
 }

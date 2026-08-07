@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "EnvGS",
   "upstream_url": "https://github.com/zju3dv/EnvGS",
   "fork_url": "https://github.com/AMD-Ecosystem/EnvGS",
@@ -9,6 +9,17 @@
   "adopted_at": "2026-05-30T01:04:50Z",
   "updated_at": "2026-08-07T07:04:31Z",
   "head_sha": "7528e8dbd94fca6e56c845f6b53b8dcce04ac29b",
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "unlicensed core (Inria-derived)",
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-05T23:10:07Z",
+    "tier": 4,
+    "note": "restored verbatim from the upstream.json record deleted in 03ba288: 'Contribution cleared 2026-08-05. Covers CONTRIBUTING a fix upstream only -- not using this project in AMD software, shipping it, or depending on it.' approval_scope was contribute-only. Re-confirm if the attribution is wrong."
+  },
+  "upstream_repo_id": 905861027,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -109,15 +120,5 @@
       },
       "last_agent": "validator"
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "unlicensed core (Inria-derived)",
-  "license_clearance": {
-    "approved_by": "jeffdaily",
-    "at": "2026-08-05T23:10:07Z",
-    "tier": 4,
-    "note": "restored verbatim from the upstream.json record deleted in 03ba288: 'Contribution cleared 2026-08-05. Covers CONTRIBUTING a fix upstream only -- not using this project in AMD software, shipping it, or depending on it.' approval_scope was contribute-only. Re-confirm if the attribution is wrong."
-  },
-  "upstream_repo_id": 905861027
+  }
 }

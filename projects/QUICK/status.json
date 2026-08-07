@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "QUICK",
   "upstream_url": "https://github.com/merzlab/QUICK",
   "fork_url": "https://github.com/AMD-Ecosystem/QUICK",
@@ -10,6 +10,11 @@
   "updated_at": "2026-08-07T07:04:44Z",
   "head_sha": "d369e07",
   "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "MPL-2.0",
+  "upstream_repo_id": 172423631,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -101,9 +106,5 @@
         "last_session_at": null
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "MPL-2.0",
-  "upstream_repo_id": 172423631
+  }
 }

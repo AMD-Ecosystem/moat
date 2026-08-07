@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "visionaray",
   "upstream_url": "https://github.com/szellmann/visionaray",
   "fork_url": "https://github.com/AMD-Ecosystem/visionaray",
@@ -10,6 +10,16 @@
   "updated_at": "2026-08-07T07:05:34Z",
   "head_sha": "f4f3b3612d75efdb3264e2c2b731257f97e4b6ef",
   "depends_on": [],
+  "pr_url": "https://github.com/szellmann/visionaray/pull/51",
+  "pr_number": 51,
+  "pr_opened_at": "2026-06-19T06:51:34Z",
+  "pr_merged_at": "2026-06-23T06:05:14Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged",
+  "license_spdx": "MIT",
+  "upstream_repo_id": 29935622,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -124,14 +134,5 @@
         "at": "2026-06-24T18:42:45Z"
       }
     }
-  },
-  "pr_url": "https://github.com/szellmann/visionaray/pull/51",
-  "pr_number": 51,
-  "pr_opened_at": "2026-06-19T06:51:34Z",
-  "pr_merged_at": "2026-06-23T06:05:14Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "merged",
-  "license_spdx": "MIT",
-  "upstream_repo_id": 29935622
+  }
 }

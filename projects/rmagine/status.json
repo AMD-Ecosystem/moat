@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "rmagine",
   "upstream_url": "https://github.com/uos/rmagine",
   "fork_url": "https://github.com/AMD-Ecosystem/rmagine",
@@ -12,6 +12,9 @@
   "depends_on": [],
   "porting": null,
   "waivers": {},
+  "license_spdx": "BSD-3-Clause",
+  "upstream_repo_id": 467155160,
+  "stage": "review-passed",
   "platforms": {
     "windows-gfx1201": {
       "state": "completed",
@@ -104,7 +107,5 @@
         "last_session_at": null
       }
     }
-  },
-  "license_spdx": "BSD-3-Clause",
-  "upstream_repo_id": 467155160
+  }
 }

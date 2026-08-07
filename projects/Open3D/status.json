@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "Open3D",
   "upstream_url": "https://github.com/isl-org/Open3D",
   "fork_url": "https://github.com/AMD-Ecosystem/Open3D",
@@ -9,6 +9,15 @@
   "adopted_at": "2026-05-29T23:30:03Z",
   "updated_at": "2026-08-07T07:04:43Z",
   "head_sha": "50bb2505b",
+  "pr_url": "https://github.com/isl-org/Open3D/pull/7509",
+  "pr_state": "open",
+  "pr_number": 7509,
+  "pr_opened_at": "2026-06-08T16:22:56Z",
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "MIT",
+  "upstream_repo_id": 75413130,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -121,13 +130,5 @@
         "at": "2026-07-02T18:36:15Z"
       }
     }
-  },
-  "pr_url": "https://github.com/isl-org/Open3D/pull/7509",
-  "pr_state": "open",
-  "pr_number": 7509,
-  "pr_opened_at": "2026-06-08T16:22:56Z",
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "MIT",
-  "upstream_repo_id": 75413130
+  }
 }

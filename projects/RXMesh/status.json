@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "RXMesh",
   "upstream_url": "https://github.com/owensgroup/RXMesh",
   "fork_url": "https://github.com/AMD-Ecosystem/RXMesh",
@@ -9,6 +9,18 @@
   "adopted_at": "2026-05-30T00:36:13Z",
   "updated_at": "2026-08-07T07:04:45Z",
   "head_sha": "df10bfe",
+  "depends_on": [
+    "STRUMPACK"
+  ],
+  "pr_url": "https://github.com/owensgroup/RXMesh/pull/73",
+  "pr_number": 73,
+  "pr_opened_at": "2026-06-05T20:34:20Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "BSD-2-Clause",
+  "upstream_repo_id": 357954110,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -148,16 +160,5 @@
         "at": "2026-06-23T21:32:38Z"
       }
     }
-  },
-  "depends_on": [
-    "STRUMPACK"
-  ],
-  "pr_url": "https://github.com/owensgroup/RXMesh/pull/73",
-  "pr_number": 73,
-  "pr_opened_at": "2026-06-05T20:34:20Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "BSD-2-Clause",
-  "upstream_repo_id": 357954110
+  }
 }

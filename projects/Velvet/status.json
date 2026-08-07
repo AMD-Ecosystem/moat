@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "Velvet",
   "upstream_url": "https://github.com/vitalight/Velvet",
   "fork_url": "https://github.com/AMD-Ecosystem/Velvet",
@@ -10,6 +10,15 @@
   "updated_at": "2026-08-07T07:04:48Z",
   "head_sha": "bb06b44",
   "depends_on": [],
+  "pr_url": "https://github.com/vitalight/Velvet/pull/9",
+  "pr_number": 9,
+  "pr_opened_at": "2026-06-19T23:45:16Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "MIT",
+  "upstream_repo_id": 483176101,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -127,13 +136,5 @@
         "at": "2026-06-23T22:21:53Z"
       }
     }
-  },
-  "pr_url": "https://github.com/vitalight/Velvet/pull/9",
-  "pr_number": 9,
-  "pr_opened_at": "2026-06-19T23:45:16Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "MIT",
-  "upstream_repo_id": 483176101
+  }
 }

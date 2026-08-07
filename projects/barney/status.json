@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "barney",
   "upstream_url": "https://github.com/NVIDIA/barney",
   "fork_url": "https://github.com/AMD-Ecosystem/barney",
@@ -12,6 +12,16 @@
   "depends_on": [
     "cuBQL"
   ],
+  "pr_url": "https://github.com/NVIDIA/barney/pull/46",
+  "pr_number": 46,
+  "pr_opened_at": "2026-06-19T04:15:57Z",
+  "pr_merged_at": "2026-07-02T17:17:26Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged",
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 1076528530,
+  "stage": "review-passed",
   "platforms": {
     "windows-gfx1101": {
       "state": "completed",
@@ -126,14 +136,5 @@
         "at": "2026-06-23T22:18:20Z"
       }
     }
-  },
-  "pr_url": "https://github.com/NVIDIA/barney/pull/46",
-  "pr_number": 46,
-  "pr_opened_at": "2026-06-19T04:15:57Z",
-  "pr_merged_at": "2026-07-02T17:17:26Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "merged",
-  "license_spdx": "Apache-2.0",
-  "upstream_repo_id": 1076528530
+  }
 }

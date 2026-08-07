@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "opencv_contrib",
   "upstream_url": "https://github.com/opencv/opencv_contrib",
   "fork_url": "https://github.com/AMD-Ecosystem/opencv_contrib",
@@ -10,6 +10,15 @@
   "updated_at": "2026-08-07T07:05:24Z",
   "head_sha": "041d5528286a81465828a668d014035e149f6a97",
   "depends_on": [],
+  "pr_url": "https://github.com/opencv/opencv_contrib/pull/4147",
+  "pr_number": 4147,
+  "pr_opened_at": "2026-06-11T14:11:52Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 12756992,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx1100": {
       "state": "completed",
@@ -116,13 +125,5 @@
       },
       "last_agent": "validator"
     }
-  },
-  "pr_url": "https://github.com/opencv/opencv_contrib/pull/4147",
-  "pr_number": 4147,
-  "pr_opened_at": "2026-06-11T14:11:52Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "Apache-2.0",
-  "upstream_repo_id": 12756992
+  }
 }

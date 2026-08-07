@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "foldseek",
   "upstream_url": "https://github.com/steineggerlab/foldseek",
   "fork_url": "https://github.com/AMD-Ecosystem/foldseek",
@@ -10,6 +10,17 @@
   "updated_at": "2026-08-07T07:05:06Z",
   "head_sha": "e296e43ec267ec824e5056d7f99c3661f2551643",
   "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:33:28Z",
+    "tier": 3,
+    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
+  },
+  "license_spdx": "GPL-3.0",
+  "upstream_repo_id": 166769317,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -127,15 +138,5 @@
         "at": "2026-06-16T06:34:31Z"
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_clearance": {
-    "approved_by": "jeffdaily",
-    "at": "2026-08-06T02:33:28Z",
-    "tier": 3,
-    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
-  },
-  "license_spdx": "GPL-3.0",
-  "upstream_repo_id": 166769317
+  }
 }

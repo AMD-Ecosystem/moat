@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "cuda-efficient-features",
   "upstream_url": "https://github.com/fixstars/cuda-efficient-features",
   "fork_url": "https://github.com/AMD-Ecosystem/cuda-efficient-features",
@@ -10,6 +10,15 @@
   "updated_at": "2026-08-07T07:04:59Z",
   "head_sha": "aaf32c9f7714c94c8ec90792e0362d294dff48a8",
   "depends_on": [],
+  "pr_url": "https://github.com/fixstars/cuda-efficient-features/pull/3",
+  "pr_number": 3,
+  "pr_opened_at": "2026-06-10T04:31:59Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 714562821,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -125,13 +134,5 @@
         "at": "2026-06-23T22:22:01Z"
       }
     }
-  },
-  "pr_url": "https://github.com/fixstars/cuda-efficient-features/pull/3",
-  "pr_number": 3,
-  "pr_opened_at": "2026-06-10T04:31:59Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "Apache-2.0",
-  "upstream_repo_id": 714562821
+  }
 }

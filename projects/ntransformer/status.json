@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "ntransformer",
   "upstream_url": "https://github.com/xaskasdf/ntransformer",
   "fork_url": "https://github.com/AMD-Ecosystem/ntransformer",
@@ -9,6 +9,17 @@
   "adopted_at": "2026-05-30T03:26:34Z",
   "updated_at": "2026-08-07T07:05:21Z",
   "head_sha": "1b74f283755d01ef25350d6ce7a646eb04b333e4",
+  "porting": null,
+  "waivers": {},
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:41:27Z",
+    "tier": 4,
+    "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
+  },
+  "license_spdx": "no licence file",
+  "upstream_repo_id": 1161267371,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -155,15 +166,5 @@
         "at": "2026-06-23T22:48:53Z"
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_clearance": {
-    "approved_by": "jeffdaily",
-    "at": "2026-08-06T02:41:27Z",
-    "tier": 4,
-    "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
-  },
-  "license_spdx": "no licence file",
-  "upstream_repo_id": 1161267371
+  }
 }

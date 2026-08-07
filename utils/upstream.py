@@ -225,22 +225,20 @@ def fork_poll(apply=False, stale_weeks=3):
     session. This only makes the project eligible and tells someone.
     """
     import datetime
+    import moatlib
     released, waiting = [], []
     for name, d, where in all_records():
-        blocks = {a: b for a, b in (d.get("platforms") or {}).items()
-                  if b.get("state") == "awaiting-fork"}
-        if not blocks:
+        if moatlib.project_stage(d) != "awaiting-fork":
             continue
         slug = (d.get("fork_url") or f"https://github.com/AMD-Ecosystem/{name}") \
             .replace("https://github.com/", "")
         exists = gh_json(["api", f"repos/{slug}", "--jq", ".full_name"]) is not None or \
             subprocess.run(["gh", "api", f"repos/{slug}"], capture_output=True).returncode == 0
         if not exists:
-            since = min((b.get("updated_at") or "") for b in blocks.values())
-            waiting.append({"name": name, "slug": slug, "since": since})
+            waiting.append({"name": name, "slug": slug,
+                            "since": d.get("updated_at") or ""})
             continue
-        released.append({"name": name, "slug": slug, "archs": sorted(blocks),
-                         "where": where})
+        released.append({"name": name, "slug": slug, "where": where})
 
     print(f"fork-poll: {len(released)} released, {len(waiting)} still waiting\n")
     for r in released:

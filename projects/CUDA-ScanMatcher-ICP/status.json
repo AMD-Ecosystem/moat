@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "CUDA-ScanMatcher-ICP",
   "upstream_url": "https://github.com/botforge/CUDA-ScanMatcher-ICP",
   "fork_url": "https://github.com/AMD-Ecosystem/CUDA-ScanMatcher-ICP",
@@ -10,6 +10,15 @@
   "updated_at": "2026-08-07T07:04:26Z",
   "head_sha": "26073aa3ee515b2dfa50db2706c3ce6ae78e4eee",
   "depends_on": [],
+  "pr_url": "https://github.com/botforge/CUDA-ScanMatcher-ICP/pull/10",
+  "pr_number": 10,
+  "pr_opened_at": "2026-06-11T22:01:14Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "MIT",
+  "upstream_repo_id": 213039374,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -124,13 +133,5 @@
         "at": "2026-06-23T22:18:29Z"
       }
     }
-  },
-  "pr_url": "https://github.com/botforge/CUDA-ScanMatcher-ICP/pull/10",
-  "pr_number": 10,
-  "pr_opened_at": "2026-06-11T22:01:14Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "MIT",
-  "upstream_repo_id": 213039374
+  }
 }

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "prismatic",
   "upstream_url": "https://github.com/prism-em/prismatic",
   "fork_url": "https://github.com/AMD-Ecosystem/prismatic",
@@ -10,6 +10,17 @@
   "updated_at": "2026-08-07T07:05:26Z",
   "head_sha": "840f6f30012196488eba9130e1f4c4c1398dc2f6",
   "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:33:28Z",
+    "tier": 3,
+    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
+  },
+  "license_spdx": "GPL-3.0",
+  "upstream_repo_id": 96109091,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx1100": {
       "state": "completed",
@@ -124,15 +135,5 @@
         "at": "2026-06-23T22:49:00Z"
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_clearance": {
-    "approved_by": "jeffdaily",
-    "at": "2026-08-06T02:33:28Z",
-    "tier": 3,
-    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
-  },
-  "license_spdx": "GPL-3.0",
-  "upstream_repo_id": 96109091
+  }
 }

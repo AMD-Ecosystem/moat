@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "faiss",
   "upstream_url": "https://github.com/facebookresearch/faiss",
   "fork_url": "https://github.com/AMD-Ecosystem/faiss",
@@ -10,6 +10,11 @@
   "updated_at": "2026-08-07T07:05:04Z",
   "head_sha": "ab1dcf71",
   "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "MIT",
+  "upstream_repo_id": 81227005,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -143,9 +148,5 @@
         "at": "2026-06-08T03:47:04Z"
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "MIT",
-  "upstream_repo_id": 81227005
+  }
 }

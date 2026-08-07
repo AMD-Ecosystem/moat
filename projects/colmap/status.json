@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "colmap",
   "upstream_url": "https://github.com/colmap/colmap",
   "fork_url": "https://github.com/AMD-Ecosystem/colmap",
@@ -10,108 +10,12 @@
   "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": null,
   "depends_on": [],
-  "platforms": {
-    "linux-gfx90a": {
-      "state": "unclaimed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-08-05T14:34:23Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "pr_url": null,
-      "pr_number": null
-    },
-    "linux-gfx1100": {
-      "state": "unclaimed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-08-05T14:34:23Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "pr_url": null,
-      "pr_number": null
-    },
-    "windows-gfx1101": {
-      "state": "unclaimed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-08-05T14:34:23Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "pr_url": null,
-      "pr_number": null
-    },
-    "windows-gfx1201": {
-      "state": "unclaimed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-08-05T14:34:23Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "pr_url": null,
-      "pr_number": null
-    }
-  },
   "fork_branch": "moat-port",
   "on_hold": false,
   "on_hold_reason": null,
   "porting": null,
   "waivers": {},
-  "license_spdx": "BSD-3-Clause"
+  "license_spdx": "BSD-3-Clause",
+  "stage": "unclaimed",
+  "platforms": {}
 }

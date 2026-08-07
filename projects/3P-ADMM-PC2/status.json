@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "3P-ADMM-PC2",
   "upstream_url": "https://github.com/Samarvivian/3P-ADMM-PC2",
   "fork_url": "https://github.com/AMD-Ecosystem/3P-ADMM-PC2",
@@ -9,6 +9,22 @@
   "adopted_at": "2026-05-30T00:46:51Z",
   "updated_at": "2026-08-07T07:04:24Z",
   "head_sha": "2c1cafae0204fc8a728e046caae153e9ee1df834",
+  "pr_url": "https://github.com/Samarvivian/3P-ADMM-PC2/pull/10",
+  "pr_state": "merged",
+  "pr_number": 10,
+  "pr_opened_at": "2026-06-08T16:22:00Z",
+  "pr_merged_at": "2026-06-10T14:23:02Z",
+  "porting": null,
+  "waivers": {},
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:41:26Z",
+    "tier": 4,
+    "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
+  },
+  "license_spdx": "no licence file",
+  "upstream_repo_id": 1092826294,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -154,20 +170,5 @@
         "at": "2026-06-08T18:11:05Z"
       }
     }
-  },
-  "pr_url": "https://github.com/Samarvivian/3P-ADMM-PC2/pull/10",
-  "pr_state": "merged",
-  "pr_number": 10,
-  "pr_opened_at": "2026-06-08T16:22:00Z",
-  "pr_merged_at": "2026-06-10T14:23:02Z",
-  "porting": null,
-  "waivers": {},
-  "license_clearance": {
-    "approved_by": "jeffdaily",
-    "at": "2026-08-06T02:41:26Z",
-    "tier": 4,
-    "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
-  },
-  "license_spdx": "no licence file",
-  "upstream_repo_id": 1092826294
+  }
 }

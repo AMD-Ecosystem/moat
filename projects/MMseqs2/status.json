@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "MMseqs2",
   "upstream_url": "https://github.com/soedinglab/MMseqs2",
   "fork_url": "https://github.com/AMD-Ecosystem/MMseqs2",
@@ -10,6 +10,11 @@
   "updated_at": "2026-08-07T07:04:41Z",
   "head_sha": "75a9b029",
   "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "MIT",
+  "upstream_repo_id": 63755587,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -125,9 +130,5 @@
         "at": "2026-06-23T22:43:21Z"
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "MIT",
-  "upstream_repo_id": 63755587
+  }
 }

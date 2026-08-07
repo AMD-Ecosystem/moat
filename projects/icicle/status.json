@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "icicle",
   "upstream_url": "https://github.com/ingonyama-zk/icicle",
   "fork_url": "https://github.com/AMD-Ecosystem/icicle",
@@ -9,6 +9,11 @@
   "adopted_at": "2026-05-30T03:26:35Z",
   "updated_at": "2026-08-07T07:05:11Z",
   "head_sha": "2609ca44361c7ebc6c3b8ca5af7985a256b5b79f",
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "MIT",
+  "upstream_repo_id": 611226044,
+  "stage": "review-passed",
   "platforms": {
     "windows-gfx1201": {
       "state": "port-ready",
@@ -112,9 +117,5 @@
         "last_session_at": null
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "MIT",
-  "upstream_repo_id": 611226044
+  }
 }

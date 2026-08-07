@@ -179,7 +179,10 @@ def build():
             "state": {"enum": sorted(m.STATES)},
             "arch": {
                 "type": "object",
-                "required": ["state", "blocked"],
+                # `state` is not required: a migrated block holds only what this arch
+                # can know, and for an arch that never validated that is `blocked`
+                # alone. The project's own progress lives in `stage`.
+                "required": ["blocked"],
                 "properties": {
                     "state": {"$ref": "#/$defs/state"},
                     "blocked": {"type": "boolean"},

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "fdtd3d",
   "upstream_url": "https://github.com/zer011b/fdtd3d",
   "fork_url": "https://github.com/AMD-Ecosystem/fdtd3d",
@@ -10,6 +10,11 @@
   "updated_at": "2026-08-07T07:05:05Z",
   "head_sha": "65dd8979417a14745e736cb1675558e5bc6b467d",
   "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "GPL-2.0",
+  "upstream_repo_id": 42934567,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -125,9 +130,5 @@
         "at": "2026-06-23T22:48:19Z"
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "GPL-2.0",
-  "upstream_repo_id": 42934567
+  }
 }

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "plvs",
   "upstream_url": "https://github.com/luigifreda/plvs",
   "fork_url": "https://github.com/AMD-Ecosystem/plvs",
@@ -12,6 +12,17 @@
   "depends_on": [
     "opencv_contrib"
   ],
+  "porting": null,
+  "waivers": {},
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:33:28Z",
+    "tier": 3,
+    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
+  },
+  "license_spdx": "GPL-3.0",
+  "upstream_repo_id": 693793222,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx1100": {
       "state": "completed",
@@ -94,7 +105,6 @@
       }
     },
     "windows-gfx1201": {
-      "state": "ported",
       "blocked": true,
       "blocked_reason": "Full-SLAM gfx1201 GPU run blocked by a clang-cl + boost.serialization toolchain miscompilation (not a port defect): static type-registration recurses infinitely (0xC00000FD in oserializer<KeyFrame>::save_object_data) at startup before any GPU call. CONFIRMED independent of static-vs-dynamic boost (rebuilt the whole boost+PCL stack as x64-windows-static-md, single static boost.serialization, still crashes), of -O0, and of the Pangolin viewer (headless build crashes identically). Same code is GPU-validated and clean on Linux gfx90a+gfx1100. Full SLAM stack now BUILDS+LINKS cleanly on Windows static-md (commit 57212e2). gfx1201 GPU independently proven by the libsgm-stereo PASS on record. Needs a boost-header patch for the clang-MSVC ABI, MSVC cl.exe for the serialization TUs, or a fixed ROCm clang. See notes.md 2026-06-16.",
       "validated_sha": null,
@@ -116,15 +126,5 @@
       },
       "last_agent": "validator"
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_clearance": {
-    "approved_by": "jeffdaily",
-    "at": "2026-08-06T02:33:28Z",
-    "tier": 3,
-    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
-  },
-  "license_spdx": "GPL-3.0",
-  "upstream_repo_id": 693793222
+  }
 }

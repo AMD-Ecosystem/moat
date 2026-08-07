@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "accelerated-scan",
   "upstream_url": "https://github.com/proger/accelerated-scan",
   "fork_url": "https://github.com/AMD-Ecosystem/accelerated-scan",
@@ -10,6 +10,15 @@
   "updated_at": "2026-08-07T07:04:50Z",
   "head_sha": "84770b4d7d7c1ab7e8add748bd26213a59d4411c",
   "depends_on": [],
+  "pr_url": "https://github.com/proger/accelerated-scan/pull/17",
+  "pr_number": 17,
+  "pr_opened_at": "2026-06-08T17:26:30Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "MIT",
+  "upstream_repo_id": 741400326,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx1100": {
       "state": "completed",
@@ -121,13 +130,5 @@
         "at": "2026-06-08T16:59:38Z"
       }
     }
-  },
-  "pr_url": "https://github.com/proger/accelerated-scan/pull/17",
-  "pr_number": 17,
-  "pr_opened_at": "2026-06-08T17:26:30Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "MIT",
-  "upstream_repo_id": 741400326
+  }
 }

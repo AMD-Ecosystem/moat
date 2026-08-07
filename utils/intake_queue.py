@@ -97,8 +97,7 @@ def queue():
         flagged = disp.get("disposition") == "verify"
         if (rec.get("decided") or {}).get("choice"):
             continue                       # a person already answered this one
-        states = {b.get("state") for b in moatlib.validations(obj).values()}
-        if states and not states & {"awaiting-fork", "unclaimed"}:
+        if moatlib.project_stage(obj) not in ("awaiting-fork", "unclaimed", None):
             continue                       # already being worked
         rows.append({
             "name": d.name, "full_name": full, "priority": obj.get("priority", 0),
@@ -218,19 +217,11 @@ def record_accepts(accepts, by, apply=False):
             continue
         rec["decided"] = {"choice": "fork", "by": by, "at": moatlib.now_iso()}
         obj["intake"] = rec
-        # A project intake recommended DECLINING has no platform records -- correctly,
-        # since it was never going to be forked. Overriding that to fork leaves nothing
-        # in `awaiting-fork`, so `--forks` would not see it and its fork would never
-        # release it. Seed the wait on the platforms this repo works on.
-        plats = obj.get("platforms") or {}
-        if not any(b.get("state") == "awaiting-fork" for b in plats.values()):
-            targets = list(plats) or sorted(moatlib.known_platforms())
-            for a in targets:
-                blk = plats.get(a) or moatlib._platform_block("unclaimed")
-                if blk.get("state") in ("unclaimed", None):
-                    blk["state"] = "awaiting-fork"
-                plats[a] = blk
-            obj["platforms"] = plats
+        # A project intake recommended DECLINING was never going to be forked, so
+        # nothing was waiting on one. Overriding that to fork has to say so, or
+        # `--forks` never looks at it and its fork never releases it. One field: this
+        # used to seed an arch record per platform to express a fact about the project.
+        obj["stage"] = "awaiting-fork"
         if not apply:
             out.append((full, f"would record fork on port/{name}")); continue
         sha = moatlib.commit_to_branch(

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "gRASPA",
   "upstream_url": "https://github.com/snurr-group/gRASPA",
   "fork_url": "https://github.com/AMD-Ecosystem/gRASPA",
@@ -10,6 +10,11 @@
   "updated_at": "2026-08-07T07:05:08Z",
   "head_sha": "471060045dad654d6fcb50ec45a3cd3345da3d8a",
   "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "MIT",
+  "upstream_repo_id": 629335275,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx1100": {
       "state": "completed",
@@ -127,9 +132,5 @@
         "at": "2026-06-23T22:49:26Z"
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "MIT",
-  "upstream_repo_id": 629335275
+  }
 }

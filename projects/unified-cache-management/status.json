@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "unified-cache-management",
   "upstream_url": "https://github.com/ModelEngine-Group/unified-cache-management",
   "fork_url": "https://github.com/AMD-Ecosystem/unified-cache-management",
@@ -9,6 +9,15 @@
   "adopted_at": "2026-05-30T00:46:51Z",
   "updated_at": "2026-08-07T07:05:33Z",
   "head_sha": "8545865f0939361bbbebb742369e25f95fd19b36",
+  "pr_url": "https://github.com/ModelEngine-Group/unified-cache-management/pull/1021",
+  "pr_number": 1021,
+  "pr_opened_at": "2026-06-11T22:34:50Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "MIT",
+  "upstream_repo_id": 1017089821,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -120,13 +129,5 @@
         "at": "2026-06-23T21:15:41Z"
       }
     }
-  },
-  "pr_url": "https://github.com/ModelEngine-Group/unified-cache-management/pull/1021",
-  "pr_number": 1021,
-  "pr_opened_at": "2026-06-11T22:34:50Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "MIT",
-  "upstream_repo_id": 1017089821
+  }
 }

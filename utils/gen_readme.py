@@ -83,7 +83,7 @@ def gate_state(project, gate):
         blk = plats[arch]
         if gate not in moatlib.gates_for(arch):
             continue
-        state = blk.get("state")
+        state = moatlib.platform_state(project, arch)
         # A completed validation is evidence, and stays evidence even if the platform
         # was later marked blocked -- projects withdrawn on licence grounds carry a
         # block on every platform, and the port really did run. What that means for
@@ -103,6 +103,19 @@ def gate_state(project, gate):
             verdict = "none"
         if GATE_RANK.index(verdict) < GATE_RANK.index(best):
             best, best_arch = verdict, arch
+    # No architecture has recorded anything here. For a project that is live in the
+    # pipeline that is "not started", not "nothing recorded" -- the gate is waiting on
+    # hardware, which is exactly what an `awaiting-port` record used to say once per
+    # arch before the stage held it once.
+    #
+    # Queued and not "working", whatever the stage: this cell is about ONE GATE, and
+    # rendering a project at `porting` as in-progress under wave32 would claim work on
+    # hardware nobody has touched. How far the project has got is the Outcome column's
+    # business. Narrow by design -- a project that HAS arch records keeps answering
+    # from them.
+    if best == "none" and moatlib.project_stage(project) \
+            and not any(b.get("state") for b in plats.values()):
+        best = "queued"
     return (best, best_arch)
 
 

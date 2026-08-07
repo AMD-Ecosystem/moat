@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "DynOSAM",
   "upstream_url": "https://github.com/ACFR-RPG/DynOSAM",
   "fork_url": null,
@@ -14,5 +14,6 @@
   ],
   "porting": null,
   "waivers": {},
+  "stage": "unclaimed",
   "platforms": {}
 }

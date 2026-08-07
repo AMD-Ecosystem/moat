@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "DiffPhysDrone",
   "upstream_url": "https://github.com/HenryHuYu/DiffPhysDrone",
   "fork_url": "https://github.com/AMD-Ecosystem/DiffPhysDrone",
@@ -9,6 +9,21 @@
   "adopted_at": "2026-05-30T01:04:51Z",
   "updated_at": "2026-08-07T07:04:30Z",
   "head_sha": "c018c93b2c008c09eed798243c24edee10be5251",
+  "pr_url": "https://github.com/HenryHuYu/DiffPhysDrone/pull/45",
+  "pr_number": 45,
+  "pr_opened_at": "2026-06-25T22:36:44Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:41:26Z",
+    "tier": 4,
+    "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
+  },
+  "license_spdx": "no licence file",
+  "upstream_repo_id": 968137978,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -134,19 +149,5 @@
         "at": "2026-06-25T22:23:40Z"
       }
     }
-  },
-  "pr_url": "https://github.com/HenryHuYu/DiffPhysDrone/pull/45",
-  "pr_number": 45,
-  "pr_opened_at": "2026-06-25T22:36:44Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_clearance": {
-    "approved_by": "jeffdaily",
-    "at": "2026-08-06T02:41:26Z",
-    "tier": 4,
-    "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
-  },
-  "license_spdx": "no licence file",
-  "upstream_repo_id": 968137978
+  }
 }

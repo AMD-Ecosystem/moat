@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "dietgpu",
   "upstream_url": "https://github.com/facebookresearch/dietgpu",
   "fork_url": "https://github.com/AMD-Ecosystem/dietgpu",
@@ -9,6 +9,11 @@
   "adopted_at": "2026-05-30T01:04:51Z",
   "updated_at": "2026-08-07T07:05:01Z",
   "head_sha": "df33d83b6d1de3994f2505bd15a02008f4582bc7",
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "MIT",
+  "upstream_repo_id": 449427230,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -126,9 +131,5 @@
         "at": "2026-06-23T22:44:08Z"
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "MIT",
-  "upstream_repo_id": 449427230
+  }
 }

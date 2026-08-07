@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "pytorch3d",
   "upstream_url": "https://github.com/facebookresearch/pytorch3d",
   "fork_url": null,
@@ -10,6 +10,16 @@
   "updated_at": "2026-08-07T07:05:26Z",
   "head_sha": "b73d735ecf194c31de812feffef3a55cc3726128",
   "depends_on": [],
+  "pr_url": "https://github.com/facebookresearch/pytorch3d/pull/2039",
+  "pr_number": 2039,
+  "pr_opened_at": "2026-06-05T19:24:30Z",
+  "pr_merged_at": "2026-06-05T19:24:30Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged",
+  "license_spdx": "BSD-3-Clause",
+  "upstream_repo_id": 217433767,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -125,14 +135,5 @@
       },
       "last_agent": "validator"
     }
-  },
-  "pr_url": "https://github.com/facebookresearch/pytorch3d/pull/2039",
-  "pr_number": 2039,
-  "pr_opened_at": "2026-06-05T19:24:30Z",
-  "pr_merged_at": "2026-06-05T19:24:30Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "merged",
-  "license_spdx": "BSD-3-Clause",
-  "upstream_repo_id": 217433767
+  }
 }

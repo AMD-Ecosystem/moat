@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "LiteGS",
   "upstream_url": "https://github.com/MooreThreads/LiteGS",
   "fork_url": "https://github.com/AMD-Ecosystem/LiteGS",
@@ -9,6 +9,17 @@
   "adopted_at": "2026-05-30T03:26:35Z",
   "updated_at": "2026-08-07T07:04:40Z",
   "head_sha": "d65b6ab9ec19bbff45641c989002c8dc746119bc",
+  "porting": null,
+  "waivers": {},
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:41:26Z",
+    "tier": 4,
+    "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
+  },
+  "license_spdx": "non-commercial",
+  "upstream_repo_id": 877079178,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -119,15 +130,5 @@
         "at": "2026-06-16T09:38:57Z"
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_clearance": {
-    "approved_by": "jeffdaily",
-    "at": "2026-08-06T02:41:26Z",
-    "tier": 4,
-    "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
-  },
-  "license_spdx": "non-commercial",
-  "upstream_repo_id": 877079178
+  }
 }

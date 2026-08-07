@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "ffpa-attn",
   "upstream_url": "https://github.com/xlite-dev/ffpa-attn",
   "fork_url": "https://github.com/AMD-Ecosystem/ffpa-attn",
@@ -9,6 +9,16 @@
   "adopted_at": "2026-05-30T01:04:50Z",
   "updated_at": "2026-08-07T07:05:05Z",
   "head_sha": "3886c6195328ec84f3e2f51ab53c6be5e14d69c3",
+  "pr_url": "https://github.com/xlite-dev/ffpa-attn/pull/268",
+  "pr_number": 268,
+  "pr_opened_at": "2026-06-17T21:03:07Z",
+  "pr_merged_at": "2026-06-23T06:05:13Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged",
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 896023715,
+  "stage": "validation-failed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -125,14 +135,5 @@
         "at": "2026-06-24T00:07:47Z"
       }
     }
-  },
-  "pr_url": "https://github.com/xlite-dev/ffpa-attn/pull/268",
-  "pr_number": 268,
-  "pr_opened_at": "2026-06-17T21:03:07Z",
-  "pr_merged_at": "2026-06-23T06:05:13Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "merged",
-  "license_spdx": "Apache-2.0",
-  "upstream_repo_id": 896023715
+  }
 }

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "DEM-Engine",
   "upstream_url": "https://github.com/projectchrono/DEM-Engine",
   "fork_url": "https://github.com/AMD-Ecosystem/DEM-Engine",
@@ -10,6 +10,15 @@
   "updated_at": "2026-08-07T07:04:30Z",
   "head_sha": "02fb43f2",
   "depends_on": [],
+  "pr_url": "https://github.com/projectchrono/DEM-Engine/pull/69",
+  "pr_number": 69,
+  "pr_opened_at": "2026-06-19T23:44:19Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "BSD-3-Clause",
+  "upstream_repo_id": 360655520,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -125,13 +134,5 @@
         "at": "2026-06-23T22:19:54Z"
       }
     }
-  },
-  "pr_url": "https://github.com/projectchrono/DEM-Engine/pull/69",
-  "pr_number": 69,
-  "pr_opened_at": "2026-06-19T23:44:19Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "BSD-3-Clause",
-  "upstream_repo_id": 360655520
+  }
 }

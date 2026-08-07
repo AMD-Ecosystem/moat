@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "CudaSift",
   "upstream_url": "https://github.com/Celebrandil/CudaSift",
   "fork_url": "https://github.com/AMD-Ecosystem/CudaSift",
@@ -9,6 +9,15 @@
   "adopted_at": "2026-05-29T23:57:04Z",
   "updated_at": "2026-08-07T07:04:29Z",
   "head_sha": "fa25871",
+  "pr_url": "https://github.com/Celebrandil/CudaSift/pull/97",
+  "pr_number": 97,
+  "pr_opened_at": "2026-06-12T01:04:29Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "MIT",
+  "upstream_repo_id": 10821793,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -155,13 +164,5 @@
         "at": "2026-06-23T22:18:22Z"
       }
     }
-  },
-  "pr_url": "https://github.com/Celebrandil/CudaSift/pull/97",
-  "pr_number": 97,
-  "pr_opened_at": "2026-06-12T01:04:29Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "MIT",
-  "upstream_repo_id": 10821793
+  }
 }

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "faster-gaussian-splatting",
   "upstream_url": "https://github.com/nerficg-project/faster-gaussian-splatting",
   "fork_url": "https://github.com/AMD-Ecosystem/faster-gaussian-splatting",
@@ -10,6 +10,11 @@
   "updated_at": "2026-08-07T07:05:04Z",
   "head_sha": "be2217e32bc51e3bb23c2ec716a989b3b4dfab30",
   "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 1154833948,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -103,9 +108,5 @@
       },
       "last_agent": "validator"
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "Apache-2.0",
-  "upstream_repo_id": 1154833948
+  }
 }

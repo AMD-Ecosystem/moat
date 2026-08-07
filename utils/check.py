@@ -157,8 +157,8 @@ def gate_states():
             if m.platform_problem(arch):
                 problems.append(f"{name}: unknown arch {arch!r} "
                                 f"(add it to config/arches.toml)")
-            if blk.get("state") not in m.STATES:
-                problems.append(f"{name}/{arch}: unknown state {blk.get('state')!r}")
+            if blk.get("state") is not None and blk["state"] not in m.STATES:
+                problems.append(f"{name}/{arch}: unknown state {blk['state']!r}")
         w = d.get("waivers") or {}
         for gate, rec in w.items():
             if gate not in m.WAIVABLE_GATES:

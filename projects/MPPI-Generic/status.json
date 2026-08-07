@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "MPPI-Generic",
   "upstream_url": "https://github.com/ACDSLab/MPPI-Generic",
   "fork_url": "https://github.com/AMD-Ecosystem/MPPI-Generic",
@@ -9,6 +9,11 @@
   "adopted_at": "2026-05-30T00:36:14Z",
   "updated_at": "2026-08-07T07:04:41Z",
   "head_sha": "00567cbc5c02d809967c96fef8935e4f1ed60773",
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "BSD-2-Clause",
+  "upstream_repo_id": 833210393,
+  "stage": "review-passed",
   "platforms": {
     "windows-gfx1101": {
       "state": "completed",
@@ -124,9 +129,5 @@
         "at": "2026-06-23T22:44:48Z"
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "BSD-2-Clause",
-  "upstream_repo_id": 833210393
+  }
 }

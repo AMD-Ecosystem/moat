@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "diff-surfel-tracing",
   "upstream_url": "https://github.com/xbillowy/diff-surfel-tracing",
   "fork_url": "https://github.com/AMD-Ecosystem/diff-surfel-tracing",
@@ -12,7 +12,8 @@
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {},
   "license_spdx": "MIT",
-  "upstream_repo_id": 911002454
+  "upstream_repo_id": 911002454,
+  "stage": "unclaimed",
+  "platforms": {}
 }

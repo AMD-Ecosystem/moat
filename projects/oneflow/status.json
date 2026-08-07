@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "oneflow",
   "upstream_url": "https://github.com/Oneflow-Inc/oneflow",
   "fork_url": "https://github.com/AMD-Ecosystem/oneflow",
@@ -9,6 +9,11 @@
   "adopted_at": "2026-05-29T23:30:03Z",
   "updated_at": "2026-08-07T07:05:22Z",
   "head_sha": "2729bee55d33698b8c55080e99337a24305a6a1c",
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 81634683,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -112,9 +117,5 @@
         "last_session_at": null
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "Apache-2.0",
-  "upstream_repo_id": 81634683
+  }
 }

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "mumax3",
   "upstream_url": "https://github.com/mumax/3",
   "fork_url": "https://github.com/AMD-Ecosystem/mumax3",
@@ -10,6 +10,21 @@
   "updated_at": "2026-08-07T07:05:20Z",
   "head_sha": "a76378a35fc663eb93b841e3b17a101eb2092a28",
   "depends_on": [],
+  "pr_url": "https://github.com/mumax/3/pull/400",
+  "pr_number": 400,
+  "pr_opened_at": "2026-06-11T00:02:34Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T03:29:00Z",
+    "tier": 3,
+    "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
+  },
+  "license_spdx": "GPL-3.0",
+  "upstream_repo_id": 12974128,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -126,19 +141,5 @@
         "at": "2026-06-10T23:50:47Z"
       }
     }
-  },
-  "pr_url": "https://github.com/mumax/3/pull/400",
-  "pr_number": 400,
-  "pr_opened_at": "2026-06-11T00:02:34Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_clearance": {
-    "approved_by": "jeffdaily",
-    "at": "2026-08-06T03:29:00Z",
-    "tier": 3,
-    "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
-  },
-  "license_spdx": "GPL-3.0",
-  "upstream_repo_id": 12974128
+  }
 }

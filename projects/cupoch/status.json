@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "cupoch",
   "upstream_url": "https://github.com/neka-nat/cupoch",
   "fork_url": "https://github.com/AMD-Ecosystem/cupoch",
@@ -9,6 +9,16 @@
   "adopted_at": "2026-05-29T23:57:04Z",
   "updated_at": "2026-08-07T07:05:00Z",
   "head_sha": "867834485e70d6f2bf131a3419f296fcb9373304",
+  "pr_url": "https://github.com/neka-nat/cupoch/pull/143",
+  "pr_number": 143,
+  "pr_opened_at": "2026-06-24T21:53:11Z",
+  "pr_merged_at": "2026-07-02T17:17:26Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged",
+  "license_spdx": "MIT",
+  "upstream_repo_id": 216847240,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx1100": {
       "state": "completed",
@@ -121,14 +131,5 @@
         "at": "2026-06-24T00:39:01Z"
       }
     }
-  },
-  "pr_url": "https://github.com/neka-nat/cupoch/pull/143",
-  "pr_number": 143,
-  "pr_opened_at": "2026-06-24T21:53:11Z",
-  "pr_merged_at": "2026-07-02T17:17:26Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "merged",
-  "license_spdx": "MIT",
-  "upstream_repo_id": 216847240
+  }
 }

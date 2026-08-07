@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "diff-surfel-rasterizations",
   "upstream_url": "https://github.com/xbillowy/diff-surfel-rasterizations",
   "fork_url": "https://github.com/AMD-Ecosystem/diff-surfel-rasterizations",
@@ -12,7 +12,6 @@
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {},
   "license_clearance": {
     "approved_by": "jeffdaily",
     "at": "2026-08-06T16:10:16Z",
@@ -20,5 +19,7 @@
     "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
   },
   "license_spdx": "no licence file",
-  "upstream_repo_id": 826182513
+  "upstream_repo_id": 826182513,
+  "stage": "unclaimed",
+  "platforms": {}
 }

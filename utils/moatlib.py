@@ -362,7 +362,10 @@ def validate_status(obj):
     if unknown:
         raise ValueError(f"unknown arch(es) {sorted(unknown)}; add them to config/arches.toml")
     for plat, blk in obj["platforms"].items():
-        if blk.get("state") not in STATES:
+        # A migrated block may carry no state at all: what survives the split is what
+        # an arch can know, and for an arch that never validated, that is only
+        # `blocked` and its reason. Absent is a value here, not a missing field.
+        if blk.get("state") is not None and blk["state"] not in STATES:
             raise ValueError(f"{plat}: invalid state {blk.get('state')!r}")
         if not isinstance(blk.get("blocked"), bool):
             raise ValueError(f"{plat}: blocked must be boolean")
@@ -385,7 +388,8 @@ def set_state(name, platform, new_state, agent=None, save=True):
         obj["platforms"][platform] = _platform_block(
             "awaiting-port" if obj.get("head_sha") else "unclaimed")
     blk = obj["platforms"][platform]
-    cur = blk["state"]
+    # A migrated block carries no state of its own, so the project answers for it.
+    cur = blk.get("state") or platform_state(obj, platform)
     if new_state == cur:
         return obj
     if new_state not in ALLOWED.get(cur, set()):
@@ -906,7 +910,7 @@ def _open_validation_season(obj):
     for plat, blk in validations(obj).items():
         if blk.get("blocked"):
             continue
-        if blk["state"] == "awaiting-port":
+        if blk.get("state") == "awaiting-port":
             blk["state"] = "port-ready"
             blk["updated_at"] = now_iso()
 
@@ -1005,7 +1009,7 @@ def advance_head(name, new_sha, repo=None):
     obj["head_sha"] = new_sha
     for plat in list(obj["platforms"]):
         blk = obj["platforms"][plat]
-        if blk["state"] != "completed" or same_commit(blk.get("validated_sha"), new_sha):
+        if blk.get("state") != "completed" or same_commit(blk.get("validated_sha"), new_sha):
             continue
         old = blk.get("validated_sha")
         verdict = _classify_safe(repo, old, new_sha)
@@ -1031,8 +1035,8 @@ def carry_forward(name, platform, new_sha, method, detail):
     arch-independent source classes itself. Records provenance for audit."""
     obj = load_status(name)
     blk = obj["platforms"][platform]
-    if blk["state"] not in ("completed", "revalidate"):
-        raise ValueError(f"{name}/{platform}: carry_forward needs completed/revalidate, not {blk['state']}")
+    if blk.get("state") not in ("completed", "revalidate"):
+        raise ValueError(f"{name}/{platform}: carry_forward needs completed/revalidate, not {blk.get('state')}")
     new_sha = full_sha(new_sha, _fork_repo(name))
     ts = now_iso()
     blk["state"] = "completed"
@@ -1322,27 +1326,40 @@ def dep_report(obj):
 # escaped only because someone hand-seeded five arch records, which is the wrong fix:
 # copying a project-level fact N times is what you do when platforms are a fixed list.
 #
-# Ordered, unlike STAGE_STATES: this one is read with max() to resolve N disagreeing
-# arch records, and furthest-along is the tie-break. It is the pre-port PREFIX of
-# STAGE_STATES, so a state may not appear here without being a stage.
-PRE_PORT_STATES = ("unclaimed", "screened", "planned", "awaiting-fork",
-                   "awaiting-upstream")
-assert set(PRE_PORT_STATES) <= STAGE_STATES, sorted(set(PRE_PORT_STATES) - STAGE_STATES)
+# Ordered, unlike STAGE_STATES: this is read with max() to collapse N disagreeing arch
+# records into the one answer, and furthest-along is the tie-break. That is the
+# opposite of how the merge driver reconciles `stage` -- deliberately, because these
+# are different questions. Here the copies are STALE, and the arch that got furthest
+# is the one that was looked at last; there, two hosts wrote the same single field and
+# the later write is the current one. `validation-failed` is absent because it is not
+# lifted: it is evidence one arch produced, and stays in that arch's block.
+STAGE_ORDER = ("unclaimed", "screened", "planned", "awaiting-fork", "awaiting-upstream",
+               "porting", "ported", "delta-ported", "changes-requested", "review-passed")
+assert set(STAGE_ORDER) <= STAGE_STATES, sorted(set(STAGE_ORDER) - STAGE_STATES)
 
 
 def project_stage(obj):
-    """The project's own stage before any port exists, or None. The furthest along
-    wins, so one arch left at `unclaimed` cannot drag a screened project backwards."""
+    """The project's stage: the stored field, or the furthest along of the per-arch
+    copies for a record the migration has not reached. Returns None if neither says.
+
+    Furthest-along matters for the legacy path: one arch left at `unclaimed` must not
+    drag a screened project backwards."""
+    if obj.get("stage"):
+        return obj["stage"]
     seen = [b.get("state") for b in validations(obj).values()
-            if b.get("state") in PRE_PORT_STATES]
-    return max(seen, key=PRE_PORT_STATES.index) if seen else None
+            if b.get("state") in STAGE_ORDER]
+    return max(seen, key=STAGE_ORDER.index) if seen else None
 
 
 def platform_state(obj, platform):
     """This platform's state, defaulting an absent record the way set_state does.
-    A record that is not there means no host has touched this platform yet."""
+    A record that is not there means no host has touched this platform yet.
+
+    A record that is THERE but carries no `state` is a migrated block: it holds only
+    what an arch can know -- that it is blocked, and why -- so the project answers for
+    it exactly as if it had no record at all."""
     blk = validations(obj).get(platform)
-    if blk:
+    if blk and blk.get("state"):
         return blk["state"]
     if obj.get("head_sha"):
         return "awaiting-port"
@@ -1366,19 +1383,23 @@ def actionable(obj, platform):
     # Bailing here deadlocked every newly adopted project: the record is created by
     # working the project, and working it required the record. opencv, rmagine and
     # the two diff-surfel repos sat forked and unoffered from June because of it.
-    blk = vals.get(platform) or _platform_block(platform_state(obj, platform))
-    if blk["blocked"]:
+    #
+    # `blocked` is the arch's own; the state comes from platform_state, which answers
+    # for a block that carries none because it was migrated.
+    blk = vals.get(platform) or {}
+    if blk.get("blocked"):
         return False
-    if blk["state"] in INERT:
+    state = platform_state(obj, platform)
+    if state in INERT:
         return False
     # Only one arch may WRITE to the fork at a time. Validation is read-only on code
     # and writes only its own record, so it never contends.
     lock = obj.get("porting")
-    if lock and lock.get("arch") != platform and STAGE_FOR_STATE.get(blk["state"]) == "porter":
+    if lock and lock.get("arch") != platform and STAGE_FOR_STATE.get(state) == "porter":
         return False
     if unmet_deps(obj):  # deps-first ordering: wait until depended-on ports complete
         return False
-    return blk["state"] in STAGE_FOR_STATE
+    return state in STAGE_FOR_STATE
 
 
 def dep_blocked(platform):
@@ -1396,11 +1417,10 @@ def dep_blocked(platform):
         disp = disposition_for_project(name)
         if disp and disp.get("disposition") == "skip":
             continue
-        blk = validations(obj).get(platform) or _platform_block(
-            platform_state(obj, platform))
-        if blk.get("blocked") or blk.get("state") in INERT:
+        state = platform_state(obj, platform)
+        if (validations(obj).get(platform) or {}).get("blocked") or state in INERT:
             continue
-        if blk.get("state") not in STAGE_FOR_STATE:
+        if state not in STAGE_FOR_STATE:
             continue
         report = dep_report(obj)
         if report:
@@ -1423,14 +1443,13 @@ def fleet(platform):
         disp = disposition_for_project(name)
         if disp and disp.get("disposition") == "skip":
             continue
-        blk = validations(obj).get(platform) or _platform_block(
-            platform_state(obj, platform))
-        if blk.get("blocked") or blk.get("state") in INERT:
+        state = platform_state(obj, platform)
+        if (validations(obj).get(platform) or {}).get("blocked") or state in INERT:
             continue
-        stage = STAGE_FOR_STATE.get(blk.get("state"))
+        stage = STAGE_FOR_STATE.get(state)
         if not stage or unmet_deps(obj):
             continue
-        out.append({"project": name, "where": where, "state": blk["state"],
+        out.append({"project": name, "where": where, "state": state,
                     "stage": stage, "priority": float(obj.get("priority", 0))})
     out.sort(key=lambda r: (SELECT_RANK.get(r["state"], 99), -r["priority"], r["project"]))
     return out
@@ -1479,9 +1498,7 @@ def release_awaiting_fork(org="AMD-Ecosystem", dry_run=False):
     project whose files are absent."""
     released = []
     for name, obj, where in project_records():
-        vals = validations(obj)
-        waiting = [a for a, b in vals.items() if b.get("state") == "awaiting-fork"]
-        if not waiting:
+        if project_stage(obj) != "awaiting-fork":
             continue
         fork = obj.get("fork_url") or f"https://github.com/{org}/{name}"
         slug = fork.replace("https://github.com/", "")
@@ -1492,9 +1509,9 @@ def release_awaiting_fork(org="AMD-Ecosystem", dry_run=False):
         if dry_run:
             released.append((name, slug))
             continue
-        for a in waiting:
-            vals[a]["state"] = "screened"
-            vals[a]["updated_at"] = now_iso()
+        # One project, one release. This used to flip N arch records to `screened`,
+        # which is the same project-level fact written once per arch.
+        obj["stage"] = "screened"
         obj["fork_url"] = f"https://github.com/{slug}"
         obj["updated_at"] = now_iso()
         if writable_here(name, where):
@@ -1516,7 +1533,7 @@ def unblock_all_followers():
     Only where this checkout owns the record. Unlike the fork release, this runs on
     every orient and would otherwise push to a handful of branches on each one; a
     session that checks a branch out does its own. The name is residue of the
-    lead/follower model -- see PRE_PORT_STATES."""
+    lead/follower model -- see STAGE_ORDER."""
     changed = []
     for name, obj, where in project_records():
         if not writable_here(name, where) or not port_done(obj):
@@ -1525,7 +1542,7 @@ def unblock_all_followers():
         for plat, blk in validations(obj).items():
             if blk.get("blocked"):
                 continue
-            if blk["state"] == "awaiting-port":
+            if blk.get("state") == "awaiting-port":
                 blk["state"] = "port-ready"
                 blk["updated_at"] = now_iso()
                 touched = True
@@ -2362,8 +2379,7 @@ def main(argv=None):
         # printed the second for both, so four projects waiting on a fork nobody had
         # created yet read as a clean bill of health.
         waiting = sorted(n for n, o, _w in project_records()
-                         if any(b.get("state") == "awaiting-fork"
-                                for b in validations(o).values()))
+                         if project_stage(o) == "awaiting-fork")
         still = [n for n in waiting if n not in {r[0] for r in rel}]
         if still:
             print(f"release-forks: {len(still)} still waiting on a fork that does not "

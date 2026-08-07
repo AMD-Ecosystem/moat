@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "Quest",
   "upstream_url": "https://github.com/mit-han-lab/Quest",
   "fork_url": "https://github.com/AMD-Ecosystem/Quest",
@@ -9,9 +9,14 @@
   "adopted_at": "2026-05-30T01:04:50Z",
   "updated_at": "2026-08-07T07:04:44Z",
   "head_sha": "6697cd9e28449b29225d5b985a2e372920a0c492",
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "MIT",
+  "upstream_repo_id": 815507746,
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
-      "state": "porting",
       "blocked": true,
       "blocked_reason": "raft select_k API incompatibility: radix_topk_one_block_kernel overload resolution fails in Quest's decode_select_k wrapper. PyTorch ROCm 2.13.0a0 development build has __HIP_NO_HALF_CONVERSIONS__ requiring explicit conversion calls. Need to investigate raft select_k integration pattern.",
       "validated_sha": null,
@@ -99,10 +104,5 @@
         "last_session_at": null
       }
     }
-  },
-  "depends_on": [],
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "MIT",
-  "upstream_repo_id": 815507746
+  }
 }

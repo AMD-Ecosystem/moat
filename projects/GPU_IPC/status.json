@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "GPU_IPC",
   "upstream_url": "https://github.com/KemengHuang/GPU_IPC",
   "fork_url": "https://github.com/AMD-Ecosystem/GPU_IPC",
@@ -10,9 +10,13 @@
   "updated_at": "2026-08-07T07:04:36Z",
   "head_sha": "e66c864ef7658b83581cc732a19e87e62c168c67",
   "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "MPL-2.0",
+  "upstream_repo_id": 782798953,
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
-      "state": "porting",
       "blocked": true,
       "blocked_reason": "HIP/ROCm port started but incomplete; blocked by Eigen (fork moat-port e66c864e). Not actionable until the Eigen/HIP issue is resolved.",
       "validated_sha": null,
@@ -100,9 +104,5 @@
         "last_session_at": null
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "MPL-2.0",
-  "upstream_repo_id": 782798953
+  }
 }

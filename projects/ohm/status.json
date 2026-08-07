@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "ohm",
   "upstream_url": "https://github.com/csiro-robotics/ohm",
   "fork_url": "https://github.com/AMD-Ecosystem/ohm",
@@ -10,6 +10,11 @@
   "updated_at": "2026-08-07T07:05:22Z",
   "head_sha": "141e35662a4fe0c56db54d01a6f830e9574b0bed",
   "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "BSD-3-Clause",
+  "upstream_repo_id": 150693169,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -126,9 +131,5 @@
         "at": "2026-06-23T22:44:43Z"
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "BSD-3-Clause",
-  "upstream_repo_id": 150693169
+  }
 }

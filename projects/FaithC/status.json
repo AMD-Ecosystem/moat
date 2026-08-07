@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "FaithC",
   "upstream_url": "https://github.com/Luo-Yihao/FaithC",
   "fork_url": "https://github.com/AMD-Ecosystem/FaithC",
@@ -9,6 +9,15 @@
   "adopted_at": "2026-05-30T01:04:51Z",
   "updated_at": "2026-08-07T07:04:32Z",
   "head_sha": "5e7e93aa38a53937a552b5758e060fa9b0d642ab",
+  "pr_url": "https://github.com/Luo-Yihao/FaithC/pull/12",
+  "pr_number": 12,
+  "pr_opened_at": "2026-06-17T14:57:45Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 1090730680,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -118,13 +127,5 @@
       },
       "last_agent": "validator"
     }
-  },
-  "pr_url": "https://github.com/Luo-Yihao/FaithC/pull/12",
-  "pr_number": 12,
-  "pr_opened_at": "2026-06-17T14:57:45Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "Apache-2.0",
-  "upstream_repo_id": 1090730680
+  }
 }

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "qrack",
   "upstream_url": "https://github.com/unitaryfoundation/qrack",
   "fork_url": "https://github.com/AMD-Ecosystem/qrack",
@@ -10,6 +10,17 @@
   "updated_at": "2026-08-07T07:05:28Z",
   "head_sha": "7086bdbd2608ad6e69cb2fd6c9e2aa7dcd5cf63c",
   "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:33:28Z",
+    "tier": 3,
+    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
+  },
+  "license_spdx": "LGPL-3.0",
+  "upstream_repo_id": 114947047,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx1100": {
       "state": "completed",
@@ -127,15 +138,5 @@
         "at": "2026-06-23T22:49:59Z"
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_clearance": {
-    "approved_by": "jeffdaily",
-    "at": "2026-08-06T02:33:28Z",
-    "tier": 3,
-    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
-  },
-  "license_spdx": "LGPL-3.0",
-  "upstream_repo_id": 114947047
+  }
 }

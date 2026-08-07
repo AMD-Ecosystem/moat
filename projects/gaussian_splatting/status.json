@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "gaussian_splatting",
   "upstream_url": "https://github.com/joeyan/gaussian_splatting",
   "fork_url": "https://github.com/AMD-Ecosystem/gaussian_splatting",
@@ -9,6 +9,15 @@
   "adopted_at": "2026-05-30T03:26:35Z",
   "updated_at": "2026-08-07T07:05:08Z",
   "head_sha": "dfb1dd1cbcc508e08c7395b27953620121dad1fc",
+  "pr_url": "https://github.com/joeyan/gaussian_splatting/pull/37",
+  "pr_number": 37,
+  "pr_opened_at": "2026-06-17T14:06:59Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "MIT",
+  "upstream_repo_id": 745697813,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -122,13 +131,5 @@
         "at": "2026-06-17T06:03:56Z"
       }
     }
-  },
-  "pr_url": "https://github.com/joeyan/gaussian_splatting/pull/37",
-  "pr_number": 37,
-  "pr_opened_at": "2026-06-17T14:06:59Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "MIT",
-  "upstream_repo_id": 745697813
+  }
 }

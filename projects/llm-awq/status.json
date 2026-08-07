@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "llm-awq",
   "upstream_url": "https://github.com/mit-han-lab/llm-awq",
   "fork_url": "https://github.com/AMD-Ecosystem/llm-awq",
@@ -10,6 +10,11 @@
   "updated_at": "2026-08-07T07:05:15Z",
   "head_sha": "f843012a4f708ed362741252b703dc1a704233cb",
   "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "MIT",
+  "upstream_repo_id": 647984858,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -103,9 +108,5 @@
       },
       "last_agent": "validator"
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "MIT",
-  "upstream_repo_id": 647984858
+  }
 }

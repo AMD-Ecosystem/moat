@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "cuPDLPx",
   "upstream_url": "https://github.com/MIT-Lu-Lab/cuPDLPx",
   "fork_url": "https://github.com/AMD-Ecosystem/cuPDLPx",
@@ -10,6 +10,16 @@
   "updated_at": "2026-08-07T18:37:35Z",
   "head_sha": "7c713c6912140feb3055859b021e999f3d501f59",
   "depends_on": [],
+  "pr_url": "https://github.com/MIT-Lu-Lab/cuPDLPx/pull/94",
+  "pr_number": 94,
+  "pr_opened_at": "2026-06-19T20:16:10Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged",
+  "pr_merged_at": "2026-08-06T16:04:18Z",
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 1049404280,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -115,14 +125,5 @@
         "at": "2026-06-22T18:26:40Z"
       }
     }
-  },
-  "pr_url": "https://github.com/MIT-Lu-Lab/cuPDLPx/pull/94",
-  "pr_number": 94,
-  "pr_opened_at": "2026-06-19T20:16:10Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "merged",
-  "pr_merged_at": "2026-08-06T16:04:18Z",
-  "license_spdx": "Apache-2.0",
-  "upstream_repo_id": 1049404280
+  }
 }

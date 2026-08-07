@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "AutoDock-GPU",
   "upstream_url": "https://github.com/ccsb-scripps/AutoDock-GPU",
   "fork_url": "https://github.com/AMD-Ecosystem/AutoDock-GPU",
@@ -9,6 +9,15 @@
   "adopted_at": "2026-05-30T00:46:51Z",
   "updated_at": "2026-08-07T07:04:25Z",
   "head_sha": "2966dcd",
+  "pr_url": "https://github.com/ccsb-scripps/AutoDock-GPU/pull/320",
+  "pr_number": 320,
+  "pr_opened_at": "2026-06-10T04:03:06Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "GPL-2.0",
+  "upstream_repo_id": 191935321,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -132,13 +141,5 @@
         "at": "2026-07-02T18:26:40Z"
       }
     }
-  },
-  "pr_url": "https://github.com/ccsb-scripps/AutoDock-GPU/pull/320",
-  "pr_number": 320,
-  "pr_opened_at": "2026-06-10T04:03:06Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "GPL-2.0",
-  "upstream_repo_id": 191935321
+  }
 }

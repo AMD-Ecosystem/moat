@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "kaldifeat",
   "upstream_url": "https://github.com/csukuangfj/kaldifeat",
   "fork_url": "https://github.com/AMD-Ecosystem/kaldifeat",
@@ -10,6 +10,11 @@
   "updated_at": "2026-08-07T07:05:13Z",
   "head_sha": "aa90013",
   "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 342163168,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -120,9 +125,5 @@
         "at": "2026-06-12T13:17:07Z"
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "Apache-2.0",
-  "upstream_repo_id": 342163168
+  }
 }

@@ -339,7 +339,6 @@
     "arch": {
       "type": "object",
       "required": [
-        "state",
         "blocked"
       ],
       "properties": {

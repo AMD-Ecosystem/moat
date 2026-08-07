@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "CuMesh",
   "upstream_url": "https://github.com/JeffreyXiang/CuMesh",
   "fork_url": "https://github.com/AMD-Ecosystem/CuMesh",
@@ -10,6 +10,15 @@
   "updated_at": "2026-08-07T07:04:28Z",
   "head_sha": "d5c1355",
   "depends_on": [],
+  "pr_url": "https://github.com/JeffreyXiang/CuMesh/pull/36",
+  "pr_number": 36,
+  "pr_opened_at": "2026-06-19T18:11:32Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "MIT",
+  "upstream_repo_id": 1097063193,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -126,13 +135,5 @@
         "at": "2026-06-23T14:01:49Z"
       }
     }
-  },
-  "pr_url": "https://github.com/JeffreyXiang/CuMesh/pull/36",
-  "pr_number": 36,
-  "pr_opened_at": "2026-06-19T18:11:32Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "MIT",
-  "upstream_repo_id": 1097063193
+  }
 }

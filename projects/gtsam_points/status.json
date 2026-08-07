@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "gtsam_points",
   "upstream_url": "https://github.com/koide3/gtsam_points",
   "fork_url": "https://github.com/AMD-Ecosystem/gtsam_points",
@@ -9,6 +9,15 @@
   "adopted_at": "2026-05-30T00:36:13Z",
   "updated_at": "2026-08-07T07:05:10Z",
   "head_sha": "4c12edc25f09b770d51120efa3762d32649df6cb",
+  "pr_url": "https://github.com/koide3/gtsam_points/pull/99",
+  "pr_number": 99,
+  "pr_opened_at": "2026-06-11T23:15:09Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "MIT",
+  "upstream_repo_id": 819211095,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -126,13 +135,5 @@
         "at": "2026-06-23T22:20:13Z"
       }
     }
-  },
-  "pr_url": "https://github.com/koide3/gtsam_points/pull/99",
-  "pr_number": 99,
-  "pr_opened_at": "2026-06-11T23:15:09Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "MIT",
-  "upstream_repo_id": 819211095
+  }
 }

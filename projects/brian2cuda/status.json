@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "brian2cuda",
   "upstream_url": "https://github.com/brian-team/brian2cuda",
   "fork_url": "https://github.com/AMD-Ecosystem/brian2cuda",
@@ -10,6 +10,21 @@
   "updated_at": "2026-08-07T18:37:35Z",
   "head_sha": "aca06c783be9d2519549d571bb5ea517b4226ba5",
   "depends_on": [],
+  "pr_url": "https://github.com/brian-team/brian2cuda/pull/327",
+  "pr_number": 327,
+  "pr_opened_at": "2026-06-09T17:18:58Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:33:28Z",
+    "tier": 3,
+    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
+  },
+  "license_spdx": "GPL-3.0",
+  "upstream_repo_id": 45057564,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -109,19 +124,5 @@
         "at": "2026-06-09T16:31:20Z"
       }
     }
-  },
-  "pr_url": "https://github.com/brian-team/brian2cuda/pull/327",
-  "pr_number": 327,
-  "pr_opened_at": "2026-06-09T17:18:58Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_clearance": {
-    "approved_by": "jeffdaily",
-    "at": "2026-08-06T02:33:28Z",
-    "tier": 3,
-    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
-  },
-  "license_spdx": "GPL-3.0",
-  "upstream_repo_id": 45057564
+  }
 }

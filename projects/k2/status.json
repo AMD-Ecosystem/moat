@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "k2",
   "upstream_url": "https://github.com/k2-fsa/k2",
   "fork_url": "https://github.com/AMD-Ecosystem/k2",
@@ -9,6 +9,16 @@
   "adopted_at": "2026-05-29T23:57:04Z",
   "updated_at": "2026-08-07T07:05:12Z",
   "head_sha": "92912b1c12273c36368279ec4a3410e428503e20",
+  "pr_url": "https://github.com/k2-fsa/k2/pull/1353",
+  "pr_number": 1353,
+  "pr_opened_at": "2026-06-11T17:27:05Z",
+  "pr_merged_at": "2026-07-02T17:17:26Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged",
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 256463281,
+  "stage": "review-passed",
   "platforms": {
     "windows-gfx1201": {
       "state": "completed",
@@ -128,14 +138,5 @@
         "at": "2026-06-23T22:08:43Z"
       }
     }
-  },
-  "pr_url": "https://github.com/k2-fsa/k2/pull/1353",
-  "pr_number": 1353,
-  "pr_opened_at": "2026-06-11T17:27:05Z",
-  "pr_merged_at": "2026-07-02T17:17:26Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "merged",
-  "license_spdx": "Apache-2.0",
-  "upstream_repo_id": 256463281
+  }
 }

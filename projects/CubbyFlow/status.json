@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "CubbyFlow",
   "upstream_url": "https://github.com/utilForever/CubbyFlow",
   "fork_url": "https://github.com/AMD-Ecosystem/CubbyFlow",
@@ -10,6 +10,15 @@
   "updated_at": "2026-08-07T07:04:28Z",
   "head_sha": "62f4604c834e0c25ec8f5a829fc1670db23d3cb0",
   "depends_on": [],
+  "pr_url": "https://github.com/utilForever/CubbyFlow/pull/145",
+  "pr_number": 145,
+  "pr_opened_at": "2026-06-19T05:05:08Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "MIT",
+  "upstream_repo_id": 132249264,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -127,13 +136,5 @@
         "at": "2026-06-23T22:20:44Z"
       }
     }
-  },
-  "pr_url": "https://github.com/utilForever/CubbyFlow/pull/145",
-  "pr_number": 145,
-  "pr_opened_at": "2026-06-19T05:05:08Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "MIT",
-  "upstream_repo_id": 132249264
+  }
 }

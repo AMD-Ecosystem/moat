@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "FlashMoE",
   "upstream_url": "https://github.com/osayamenja/FlashMoE",
   "fork_url": null,
@@ -9,9 +9,13 @@
   "adopted_at": "2026-05-30T01:04:50Z",
   "updated_at": "2026-08-07T07:04:34Z",
   "head_sha": null,
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "BSD-3-Clause",
+  "upstream_repo_id": 796490340,
+  "stage": "unclaimed",
   "platforms": {
     "linux-gfx90a": {
-      "state": "unclaimed",
       "blocked": true,
       "blocked_reason": "Depends on cuBLASDx/NVSHMEM/CUTLASS which have no AMD equivalents; requires ground-up AMD-native implementation, not a CUDA-to-HIP port",
       "validated_sha": null,
@@ -98,9 +102,5 @@
         "last_session_at": null
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "BSD-3-Clause",
-  "upstream_repo_id": 796490340
+  }
 }

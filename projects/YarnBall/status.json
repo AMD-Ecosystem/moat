@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "YarnBall",
   "upstream_url": "https://github.com/jerry060599/YarnBall",
   "fork_url": "https://github.com/AMD-Ecosystem/YarnBall",
@@ -10,6 +10,21 @@
   "updated_at": "2026-08-07T07:04:49Z",
   "head_sha": "0797ae3",
   "depends_on": [],
+  "pr_url": "https://github.com/jerry060599/YarnBall/pull/5",
+  "pr_number": 5,
+  "pr_opened_at": "2026-06-19T15:19:13Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:33:28Z",
+    "tier": 3,
+    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
+  },
+  "license_spdx": "GPL-3.0",
+  "upstream_repo_id": 754376133,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -156,19 +171,5 @@
         "at": "2026-06-23T22:23:54Z"
       }
     }
-  },
-  "pr_url": "https://github.com/jerry060599/YarnBall/pull/5",
-  "pr_number": 5,
-  "pr_opened_at": "2026-06-19T15:19:13Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_clearance": {
-    "approved_by": "jeffdaily",
-    "at": "2026-08-06T02:33:28Z",
-    "tier": 3,
-    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
-  },
-  "license_spdx": "GPL-3.0",
-  "upstream_repo_id": 754376133
+  }
 }

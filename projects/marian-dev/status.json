@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "marian-dev",
   "upstream_url": "https://github.com/marian-nmt/marian-dev",
   "fork_url": "https://github.com/AMD-Ecosystem/marian-dev",
@@ -9,6 +9,11 @@
   "adopted_at": "2026-05-30T03:26:35Z",
   "updated_at": "2026-08-07T07:05:18Z",
   "head_sha": "ba0ec806b9f949acac6bb2dcc623017b47d71e75",
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "MIT",
+  "upstream_repo_id": 57997461,
+  "stage": "validation-failed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -119,9 +124,5 @@
         "at": "2026-06-23T22:46:45Z"
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "MIT",
-  "upstream_repo_id": 57997461
+  }
 }

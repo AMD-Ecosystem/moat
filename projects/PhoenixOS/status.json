@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "PhoenixOS",
   "upstream_url": "https://github.com/SJTU-IPADS/PhoenixOS",
   "fork_url": null,
@@ -9,9 +9,13 @@
   "adopted_at": "2026-05-30T03:26:35Z",
   "updated_at": "2026-08-07T07:04:43Z",
   "head_sha": null,
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 876630817,
+  "stage": "planned",
   "platforms": {
     "linux-gfx90a": {
-      "state": "planned",
       "blocked": true,
       "blocked_reason": "large-effort (deferred): weeks-to-months work for API interception system; postponed in favor of smaller mechanical ports",
       "validated_sha": null,
@@ -99,9 +103,5 @@
         "last_session_at": null
       }
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "Apache-2.0",
-  "upstream_repo_id": 876630817
+  }
 }
