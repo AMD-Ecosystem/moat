@@ -192,32 +192,34 @@ def apply_decisions(declines, note, apply=False):
     `triage.py skip` directly is simpler still and skips this entirely -- the round
     trip earns its cost when the batch is large enough that mis-reading the prose is
     a real risk."""
+    # One note per decline, positionally. A single shared note put every project's
+    # reasoning on every record, so HAMi-core's disposition explained pegainfer too --
+    # tolerable for two, useless for thirty, and the note is the only thing a person
+    # sees when the project resurfaces years later.
     parsed = []
-    for spec in declines:
+    for i, spec in enumerate(declines):
         full, _, reason = spec.partition(":")
         if reason not in moatlib.SKIP_REASONS:
             raise ValueError(f"{full}: reason must be one of {moatlib.SKIP_REASONS}")
-        parsed.append((full, reason))
+        parsed.append((full, reason, note[i] if i < len(note) else ""))
     if not apply:
-        return ("would-record", "; ".join(f"{f} -> {r}" for f, r in parsed))
+        return ("would-record", "; ".join(f"{f} -> {r}: {n[:60]}" for f, r, n in parsed))
 
     moatlib._git("fetch", "-q", "origin", "main", check=False)
     moatlib._git("checkout", "-q", "-B", BRANCH, "origin/main", check=True)
-    for full, reason in parsed:
-        moatlib.set_disposition(full, "skip", reason, note or "")
+    for full, reason, why in parsed:
+        moatlib.set_disposition(full, "skip", reason, why)
     moatlib._git("add", "--", "data/dispositions.json")
     if not moatlib._git("diff", "--cached", "--name-only", check=False).stdout.strip():
         return ("nothing", "these dispositions are already recorded")
     msg = ("intake: record declines from the queue\n\n" +
-           "\n".join(f"{f} -> {r}" for f, r in parsed) +
-           ("\n\n" + note if note else ""))
+           "\n".join(f"{f} -> {r}\n  {w}" for f, r, w in parsed))
     moatlib._git("commit", "-q", "-m", msg)
     moatlib._git("push", "-q", "--force-with-lease", "-u", "origin", BRANCH, check=True)
     issue = find_issue()
     body = ("Recorded from the intake queue"
             + (f" ({issue['url']})" if issue else "") + ":\n\n"
-            + "\n".join(f"- `{f}` -- `{r}`" for f, r in parsed)
-            + ("\n\n" + note if note else "")
+            + "\n".join(f"- `{f}` -- `{r}`  \n  {w}" for f, r, w in parsed)
             + "\n\n**Merge this to record them.** No approving review is needed or "
               "possible: agents open pull requests with the maintainer's credentials, so "
               "this is self-authored and GitHub greys out Approve for an author -- but it "
@@ -244,7 +246,9 @@ def main(argv=None):
     a = sub.add_parser("apply", help="record the declines a person asked for")
     a.add_argument("--decline", action="append", default=[],
                    metavar="owner/repo:reason", help="repeatable")
-    a.add_argument("--note", help="the reviewer's words, recorded with the disposition")
+    a.add_argument("--note", action="append", default=[],
+                   help="the reviewer's words for the matching --decline; repeatable "
+                        "and paired positionally")
     a.add_argument("--apply", action="store_true")
     args = ap.parse_args(argv)
 
