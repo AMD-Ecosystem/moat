@@ -7,7 +7,7 @@
   "priority": 7.305,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-07-02T19:32:07Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "50bb2505b",
   "platforms": {
     "linux-gfx90a": {
@@ -119,28 +119,6 @@
         "class": "comment-only",
         "detail": "3rdparty/find_dependencies.cmake: comment-only (comments/format only); cpp/open3d/core/hashmap/CUDA/SlabMacros.h: comment-only (comments/format only); cpp/open3d/t/geometry/kernel/NPPImage.cpp: commen",
         "at": "2026-07-02T18:36:15Z"
-      }
-    },
-    "windows-gfx1151": {
-      "state": "port-ready",
-      "blocked": true,
-      "blocked_reason": "Configures cleanly on Windows all-clang for gfx1151 (HIP/stdgpu side fine); `tests` build blocked at ninja 185/813 on BUNDLED HOST 3rdparty Windows-clang builds: libjpeg-turbo BuildPackages.cmake missing win/projectTargets-release.cmake.in, and curl FindOpenSSL fails (boringssl unbuilt). Host I/O/TLS libs needed only to link the monolithic tests binary, not the GPU port -- out of ROCm-port scope (cf. LMCache/llm.c). Port validated on gfx90a+gfx1100.",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-05-31T00:00:00Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
       }
     }
   },

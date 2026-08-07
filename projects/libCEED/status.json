@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-06-05T01:16:31Z",
-  "updated_at": "2026-06-05T01:19:00.068324+00:00",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": null,
   "depends_on": [],
   "platforms": {
@@ -78,28 +78,6 @@
       }
     },
     "windows-gfx1201": {
-      "state": "awaiting-port",
-      "blocked": true,
-      "blocked_reason": "Mature upstream HIP support: /gpu/hip/{ref,shared,gen,magma} backends, ROCM_DIR build flag, GitLab CI with ROCm 6.3.0, ROCm 7+ support merged May 2026 (PR #1969). DOE ECP-funded, no port needed.",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-05T01:19:00.068324+00:00",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1151": {
       "state": "awaiting-port",
       "blocked": true,
       "blocked_reason": "Mature upstream HIP support: /gpu/hip/{ref,shared,gen,magma} backends, ROCM_DIR build flag, GitLab CI with ROCm 6.3.0, ROCm 7+ support merged May 2026 (PR #1969). DOE ECP-funded, no port needed.",

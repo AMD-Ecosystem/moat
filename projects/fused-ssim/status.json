@@ -7,7 +7,7 @@
   "priority": 4.269,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-08-05T16:07:17Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "6f9a6201df9cb774d8256cf802832c6cc1f6fb03",
   "platforms": {
     "linux-gfx90a": {
@@ -123,28 +123,6 @@
         "class": "comment-only",
         "detail": "setup.py: comment-only (comments/format only)",
         "at": "2026-06-16T06:32:05Z"
-      }
-    },
-    "windows-gfx1151": {
-      "state": "port-ready",
-      "blocked": true,
-      "blocked_reason": "torch-wheel/clang toolchain bug: c10.dll (clang-cl) does not export inherited ctor c10::ValueError(SourceLocation,std::string) -> PYBIND11 ext LNK2001. LLVM#182706 fixes only trivial-param inherited ctors, not callee-cleanup (by-value std::string); pytorch#175340 explicit-ctor workaround still needed. Port itself correct (validates gfx90a+gfx1100).",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-05-31T00:00:00Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
       }
     }
   },

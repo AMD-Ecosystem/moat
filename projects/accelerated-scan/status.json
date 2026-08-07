@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-05T01:25:53Z",
-  "updated_at": "2026-06-19T20:09:32Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "84770b4d7d7c1ab7e8add748bd26213a59d4411c",
   "depends_on": [],
   "platforms": {
@@ -119,28 +119,6 @@
         "method": "source-class",
         "detail": "reverse+exports prep RE-RUN on real gfx90a: full suite 832/833 (1 pre-existing flake), 192 new test_eq_reverse cases + bindings test all pass",
         "at": "2026-06-08T16:59:38Z"
-      }
-    },
-    "windows-gfx1151": {
-      "state": "port-ready",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-05T08:01:13Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
       }
     }
   },

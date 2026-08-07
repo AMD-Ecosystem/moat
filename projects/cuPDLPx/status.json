@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:23:49Z",
-  "updated_at": "2026-08-06T16:04:18Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "7c713c6",
   "depends_on": [],
   "platforms": {
@@ -113,28 +113,6 @@
         "method": "binary-equiv",
         "detail": "CUDA-only header fix (cub include moved inside #else CUDA / #ifdef __cplusplus); codeobj_diff: device ISA + 151 exports identical to 9d73c35 for windows-gfx1201",
         "at": "2026-06-22T18:26:40Z"
-      }
-    },
-    "windows-gfx1151": {
-      "state": "port-ready",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-05T08:03:57Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
       }
     }
   },

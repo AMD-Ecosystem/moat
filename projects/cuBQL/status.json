@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-15T22:09:37Z",
-  "updated_at": "2026-06-19T21:43:21Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "b0ea6a1712b40809df28950c9bb3746bc6e99083",
   "depends_on": [],
   "platforms": {
@@ -116,28 +116,6 @@
         "method": "source-class",
         "detail": "comment-only fix to a CMake comment; no code change",
         "at": "2026-06-17T00:28:41Z"
-      }
-    },
-    "windows-gfx1151": {
-      "state": "port-ready",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-15T23:05:46Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
       }
     }
   },

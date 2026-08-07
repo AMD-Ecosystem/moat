@@ -7,7 +7,7 @@
   "priority": 5.284,
   "ext_type": "unknown",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-07-02T17:17:26Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "867834485e70d6f2bf131a3419f296fcb9373304",
   "platforms": {
     "linux-gfx1100": {
@@ -88,28 +88,6 @@
         "method": "binary-equiv",
         "detail": "device ISA (.text) identical across 63 gfx1201 device objects; delta e1b8b1f9..4ea28fee removes CUPOCH_CORE_ONLY cmake option only, no change to USE_HIP code path",
         "at": "2026-06-24T21:29:28Z"
-      }
-    },
-    "windows-gfx1151": {
-      "state": "port-ready",
-      "blocked": true,
-      "blocked_reason": "Retired host (gfx1151 APU, integrated GPU). Build issues that blocked it (stdgpu -fPIC, C++17, min/max macros, M_PI, cudaStream_t) were all fixed in fdc5694 for the discrete GPU hosts (gfx1101/gfx1201). The gfx1151 host is retired; no new validation scheduled.",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-05T17:40:03Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
       }
     },
     "windows-gfx1101": {

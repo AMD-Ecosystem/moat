@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-06-25T21:25:23Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "11140547",
   "depends_on": [],
   "platforms": {
@@ -112,28 +112,6 @@
         "method": "source-class",
         "detail": "squash 252224e3->11140547 collapses history + clang-format whitespace in 2 host files (verinfo_hip.cu, compare.hh); gfx90a codeobj_diff proved device .text byte-identical in all 5 HIP libs, arch-indep",
         "at": "2026-06-25T21:19:33Z"
-      }
-    },
-    "windows-gfx1151": {
-      "state": "unclaimed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-25T05:36:25Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
       }
     }
   },

@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:16:31Z",
-  "updated_at": "2026-08-06T02:33:28Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "41a57265a46478ccf98b51a8fdc3d59af38ebbd3",
   "depends_on": [],
   "platforms": {
@@ -125,28 +125,6 @@
         "class": "comment-only",
         "detail": "lib/foldseek/lib/mmseqs/lib/libmarv/src/cuda_to_hip.h: comment-only (comments/format only)",
         "at": "2026-06-16T06:32:14Z"
-      }
-    },
-    "windows-gfx1151": {
-      "state": "validation-failed",
-      "blocked": true,
-      "blocked_reason": "gfx1151 APU/runtime gaps, NOT a port defect (port correct + validated on gfx90a, gfx1100, gfx1201). Two blockers: (1) Marv() ctor hipMalloc(~72GB) hangs on the APU (memory-query/HUMA behavior); (2) after capping it, the exe crashes with C++ exception 0xE06D7363 in HIP __hip_module_ctor fatbin registration (static init, before main) -- a ROCm-7.14/Windows/gfx1151 comgr-JIT toolchain gap no foldmason source change fixes. See notes.md 2026-06-08.",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-09T00:50:46Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
       }
     }
   },

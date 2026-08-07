@@ -7,7 +7,7 @@
   "priority": 4.879,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-07-02T19:51:32Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "8545865f0939361bbbebb742369e25f95fd19b36",
   "platforms": {
     "linux-gfx90a": {
@@ -113,34 +113,6 @@
         "last_session_at": null
       },
       "last_agent": "validator",
-      "carry_forward": {
-        "to": "57b2443",
-        "method": "source-class",
-        "detail": "CMake default-path simplification (drop dead gfx90a fallback + dedup; rely on enable_language); explicit -D builds byte-identical",
-        "at": "2026-06-23T21:15:41Z"
-      }
-    },
-    "windows-gfx1151": {
-      "state": "revalidate",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "57b2443",
-      "started_at": null,
-      "completed_at": "2026-06-23T21:15:41Z",
-      "updated_at": "2026-07-02T18:40:09Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
       "carry_forward": {
         "to": "57b2443",
         "method": "source-class",

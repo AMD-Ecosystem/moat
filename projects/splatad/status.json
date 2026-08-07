@@ -7,7 +7,7 @@
   "priority": 3.923,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-06-25T01:19:23Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "6044f4d",
   "platforms": {
     "linux-gfx90a": {
@@ -124,28 +124,6 @@
         "method": "source-class",
         "detail": "setup.py use_ninja guarded behind torch.version.hip: value passed to BuildExtension is identical on every AMD arch (Linux+ROCm=False, Windows+ROCm=True, both unchanged from validated); only the never-",
         "at": "2026-06-25T01:16:07Z"
-      }
-    },
-    "windows-gfx1151": {
-      "state": "port-ready",
-      "blocked": true,
-      "blocked_reason": "windows-gfx1151 host retired (superseded by the gfx1101/gfx1201 machine); validation moved to windows-gfx1101 and windows-gfx1201",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-04T19:41:52Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
       }
     }
   },

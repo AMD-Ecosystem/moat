@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-08-06T02:33:28Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "be91acd9d8f97d55547e32b817ae181bba33d23f",
   "depends_on": [
     "opencv_contrib"
@@ -115,28 +115,6 @@
         "last_session_at": null
       },
       "last_agent": "validator"
-    },
-    "windows-gfx1151": {
-      "state": "port-ready",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-12T08:45:05Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
     }
   },
   "porting": null,

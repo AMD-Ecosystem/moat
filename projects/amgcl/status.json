@@ -7,7 +7,7 @@
   "priority": 5.432,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T00:04:57Z",
-  "updated_at": "2026-06-10T14:23:02Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "d505eff",
   "platforms": {
     "linux-gfx90a": {
@@ -123,28 +123,6 @@
         "method": "source-class",
         "detail": "copyright/author attribution comments; __LINE__ shift in AMGCL_CALL_HIP affects only error-message text on untriggered failure path",
         "at": "2026-06-09T16:10:47Z"
-      }
-    },
-    "windows-gfx1151": {
-      "state": "port-ready",
-      "blocked": true,
-      "blocked_reason": "HIP backend compiles clean; CPU backend solves. GPU validation blocked by a TheRock PACKAGING gap: the rocm-sdk-libraries 7.14.0a20260519 wheel ships blas/fft/rand gfx1151 kpacks but NOT sparse_lib_gfx1151.kpack, so rocSPARSE has no gfx1151 device kernels (hipSPARSE fails: kpack_load_code_object error 13 / hipErrorInvalidImage). Not the APU hardware, not the driver blit bug. Recheck on a newer TheRock nightly shipping the rocSPARSE gfx1151 kpack.",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-05-31T00:40:21Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
       }
     }
   },

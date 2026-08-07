@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-05T01:25:53Z",
-  "updated_at": "2026-06-20T00:50:38Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "1ff4c69b407bfc756e4d084bcdcdbda89171e358",
   "depends_on": [],
   "platforms": {
@@ -125,28 +125,6 @@
         "method": "binary-equiv",
         "detail": "pre-commit.ci formatting (yapf/clang-format/flake8 wrap); device changes are include-reordering confined to CUDA #else branches + build-script only, so HIP preprocessed source is byte-identical -> dev",
         "at": "2026-06-20T00:50:38Z"
-      }
-    },
-    "windows-gfx1151": {
-      "state": "port-ready",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-05T09:10:36Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
       }
     }
   },

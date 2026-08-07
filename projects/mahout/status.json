@@ -7,7 +7,7 @@
   "priority": 6.322,
   "ext_type": "rust-cc-cuda",
   "adopted_at": "2026-05-30T00:04:57Z",
-  "updated_at": "2026-07-02T19:30:05Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "fd8c7a38ac725b31f6b5ce1cc9e969cd357066f8",
   "platforms": {
     "linux-gfx90a": {
@@ -118,34 +118,6 @@
         "method": "binary-equiv",
         "detail": "gfx1100 libkernels.a (6 .cu kernel TUs) identical at f84b39ae vs fd8c7a38; delta is upstream conflict resolution + reviewer fixes (validator stream sync, pointer-attr build-time check, cuComplex.h #if",
         "at": "2026-07-02T19:30:05Z"
-      }
-    },
-    "windows-gfx1151": {
-      "state": "revalidate",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "f3f7db33cc9942f5c1a7ffdbe95aea68c85532f5",
-      "started_at": null,
-      "completed_at": "2026-06-11T06:30:24Z",
-      "updated_at": "2026-06-11T15:30:54Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "carry_forward": {
-        "to": "a8d63e21764900618a344efb09a3a9ee23a019da",
-        "method": "source-class",
-        "detail": "PR-prep: comment/doc/attribution-only delta (AMD copyright+author headers, DEVELOPMENT.md+README ROCm build docs, one comment reword). Verified every changed .rs/.cu/.h line is a // comment; zero func",
-        "at": "2026-06-11T06:30:24Z"
       }
     }
   },

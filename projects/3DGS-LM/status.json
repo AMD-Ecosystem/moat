@@ -7,7 +7,7 @@
   "priority": 3.618,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-08-06T00:00:00Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "6cb3a0bbf83cb6d86eb12056ed1906cc753171d0",
   "platforms": {
     "linux-gfx90a": {
@@ -118,28 +118,6 @@
         "method": "source-class",
         "detail": "count-safe index_map 6cb3a0b; USE_ROCM-guarded, CUDA byte-identical; validated gfx942 full-garden + gfx90a real-LM no-fault; inert for prior synthetic runs (reserved slots overwritten absent under-fil",
         "at": "2026-06-10T20:15:25Z"
-      }
-    },
-    "windows-gfx1151": {
-      "state": "port-ready",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-07-06T02:49:05Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
       }
     }
   },

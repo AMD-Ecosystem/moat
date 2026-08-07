@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T00:05:54Z",
-  "updated_at": "2026-07-02T17:17:26Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "3e750fac",
   "depends_on": [],
   "platforms": {
@@ -113,28 +113,6 @@
         "method": "binary-equiv",
         "detail": "test_intrin.cu: extend gfx110 to relaxed expm1 bound; gfx1201 device ISA unchanged (kernel not modified); 12/12 critical GPU tests verified on gfx1201 at 3e750fac",
         "at": "2026-06-19T20:51:16Z"
-      }
-    },
-    "windows-gfx1151": {
-      "state": "port-ready",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-05T01:15:28Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
       }
     }
   },

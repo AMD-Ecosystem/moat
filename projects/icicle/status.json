@@ -7,7 +7,7 @@
   "priority": 4.507,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-08-05T16:07:17Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "2609ca44361c7ebc6c3b8ca5af7985a256b5b79f",
   "platforms": {
     "windows-gfx1201": {
@@ -88,28 +88,6 @@
         "method": "source-class",
         "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
         "at": "2026-06-23T22:43:50Z"
-      }
-    },
-    "windows-gfx1151": {
-      "state": "validation-failed",
-      "blocked": true,
-      "blocked_reason": "no-windows-support-in-icicle-host-framework: runtime.cpp uses POSIX dlopen/dlfcn.h/dirent.h and contains #error Unsupported operating system for non-Linux/macOS; utils.h uses cxxabi.h (GCC ABI, no Windows equivalent); test_base.h uses POSIX setenv. This is upstream icicle framework missing Windows support, not a HIP-PQC backend issue.",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-04T09:17:14Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
       }
     },
     "windows-gfx1101": {

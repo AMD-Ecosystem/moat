@@ -7,7 +7,7 @@
   "priority": 6.245,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-08-06T02:33:28Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "223ee63914f3c7c1da020d63072e133523b2df91",
   "platforms": {
     "linux-gfx90a": {
@@ -98,28 +98,6 @@
       "started_at": null,
       "completed_at": null,
       "updated_at": "2026-06-05T12:02:56Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1151": {
-      "state": "port-ready",
-      "blocked": true,
-      "blocked_reason": "Value-head numerical defect on gfx1151 only: builds+runs (hip backend benchmark clean), policy head bit-identical to blas (~1e-6) but value head off 4-6e-2 absolute with sign flips (rel up to 2.0) at the atol=1e-3 bar that gfx90a+gfx1100 pass. Localized to the value head (trunk/policy provably correct); leading hypothesis is a gfx1151 rocBLAS/Tensile fallback kernel for the value GEMM shape or the value SE/globalAvgPool reduction. Prior session did not converge. See notes.md windows-gfx1151 section.",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-04T08:02:51Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,

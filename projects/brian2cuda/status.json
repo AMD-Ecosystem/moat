@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "codegen",
   "adopted_at": "2026-06-05T04:44:12Z",
-  "updated_at": "2026-08-06T02:33:28Z",
+  "updated_at": "2026-08-07T05:41:00Z",
   "head_sha": "aca06c7",
   "depends_on": [],
   "platforms": {
@@ -107,28 +107,6 @@
         "method": "source-class",
         "detail": "580eda1 is a Python refactor (remove dead hipgputools.py, consolidate is_hip_backend into utils/hip_backend.py, wire HIP prefs) + a template pref-source swap (gpu_heap_size); new prefs' defaults repro",
         "at": "2026-06-09T16:31:20Z"
-      }
-    },
-    "windows-gfx1151": {
-      "state": "port-ready",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-05T08:47:28Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
       }
     }
   },
