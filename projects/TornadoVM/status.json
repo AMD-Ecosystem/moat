@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "name": "TornadoVM",
+  "upstream_url": "https://github.com/beehive-lab/TornadoVM",
+  "fork_url": null,
+  "fork_default_branch": "master",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "adopted_at": "2026-08-07T07:05:11Z",
+  "updated_at": "2026-08-07T07:05:11Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
