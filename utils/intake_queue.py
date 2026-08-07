@@ -11,6 +11,10 @@ This collects finished screens into a single issue instead.
 
 Three properties matter more than the mechanics.
 
+ONLY WHAT IS STILL OPEN. A row leaves the queue when it has been answered, not when
+the answer has been carried out -- an approved project awaiting its fork is a job to
+do, not a question to ask, and listing it re-raises a decision already taken.
+
 ONE OPEN ISSUE AT A TIME, and each one is a SNAPSHOT. `publish` edits the open
 queue while it is still undecided, so re-running it before anyone answers does not
 litter. But the moment a decision lands, that issue closes and the remainder comes
@@ -65,12 +69,13 @@ def gh_json(args):
 def queue():
     """Projects whose screen is finished and whose decision has not been made.
 
-    A decision shows up as one of two facts in the world, not as a field someone
-    remembered to set. YES is the fork existing, which `upstream.py --forks --apply`
-    turns into `screened` on the next orient run; anything past `awaiting-fork` is
-    therefore decided. NO is a disposition. Either drops the row, which is what makes
-    re-running safe -- a partly executed batch just produces a shorter list, and a
-    fork created for 36 of 38 leaves exactly the two stragglers behind."""
+    A row leaves when it has been ANSWERED, not when the answer has been executed.
+    Fork existence used to stand in for that, which put "APPROVED, awaiting the fork"
+    rows on a queue whose whole job is to ask questions -- resurfacing a decision
+    already made. The decision is recorded now (intake.decided for a fork, a
+    disposition for a decline), so the queue can ask only what is still open. What
+    happens next -- the fork actually being created -- is execution, and
+    `upstream.py --forks` is what reports it."""
     rows = []
     for name in sorted(moatlib.all_projects()):
         obj, _where = moatlib.project_record(name)
@@ -89,9 +94,11 @@ def queue():
         # dropped these silently, which hid exactly the rows a person had flagged as
         # needing a second look.
         flagged = disp.get("disposition") == "verify"
+        if (rec.get("decided") or {}).get("choice"):
+            continue                       # a person already answered this one
         states = {b.get("state") for b in moatlib.validations(obj).values()}
         if states and not states & {"awaiting-fork", "unclaimed"}:
-            continue                       # released (a fork appeared) or already worked
+            continue                       # already being worked
         rows.append({
             "name": d.name, "full_name": full, "priority": obj.get("priority", 0),
             "license": obj.get("license_spdx") or "UNRECORDED",
@@ -140,26 +147,12 @@ def render(rows):
                 "this decision. They stay on the queue until someone clears the flag "
                 "(`triage.py unskip <owner/repo>`) or decides them.", ""]
         out += [f"- `{r['full_name']}` -- {r.get('flag_note') or 'no note'}" for r in held]
-    forks = [r for r in rows
-             if (r["verdict"] == "fork" or r.get("chose") == "fork")
-             and not r.get("flagged")]
-    if forks:
-        out += ["", "### Accepting", "",
-                "Delete any line you are rejecting, then run it. The forks appearing "
-                "IS the decision -- `orient.sh` turns that into state on its next run, "
-                "so nothing here needs recording by hand.", "", "```bash"]
-        out += [f"gh repo fork {r['full_name']} --org AMD-Ecosystem --clone=false"
-                for r in forks]
-        out += ["```"]
-    declines = [r for r in rows if r["verdict"] == "decline"
-                and not r.get("flagged") and r.get("chose") != "fork"]
-    if declines:
-        out += ["", "### Declining", "",
-                "Say so in a comment. An agent will read it back to you and open a "
-                "small PR recording exactly those dispositions -- one approval, and "
-                "the merge closes this issue. Nothing is recorded without that.", ""]
-        out += [f"- `{r['full_name']}` -- suggested reason `{r.get('reason')}`"
-                for r in declines]
+    held = [r for r in rows if r.get("flagged")]
+    if held:
+        out += ["", "### Held back", "",
+                "Flagged with `triage.py verify`. Still undecided, deliberately -- they "
+                "stay here until someone answers them or clears the flag.", ""]
+        out += [f"- `{r['full_name']}` -- {r.get('flag_note') or 'no note'}" for r in held]
     out += ["", "---", "_This table is a snapshot. It is regenerated in place only "
             "while nobody has answered; once a decision is recorded this issue closes "
             "and anything still undecided returns as a new one, so a reply always "
@@ -215,6 +208,19 @@ def record_accepts(accepts, by, apply=False):
             continue
         rec["decided"] = {"choice": "fork", "by": by, "at": moatlib.now_iso()}
         obj["intake"] = rec
+        # A project intake recommended DECLINING has no platform records -- correctly,
+        # since it was never going to be forked. Overriding that to fork leaves nothing
+        # in `awaiting-fork`, so `--forks` would not see it and its fork would never
+        # release it. Seed the wait on the platforms this repo works on.
+        plats = obj.get("platforms") or {}
+        if not any(b.get("state") == "awaiting-fork" for b in plats.values()):
+            targets = list(plats) or sorted(moatlib.known_platforms())
+            for a in targets:
+                blk = plats.get(a) or moatlib._platform_block("unclaimed")
+                if blk.get("state") in ("unclaimed", None):
+                    blk["state"] = "awaiting-fork"
+                plats[a] = blk
+            obj["platforms"] = plats
         if not apply:
             out.append((full, f"would record fork on port/{name}")); continue
         sha = moatlib.commit_to_branch(
@@ -224,7 +230,14 @@ def record_accepts(accepts, by, apply=False):
     return out
 
 
-def apply_decisions(declines, note, apply=False):
+def fork_commands(accepts):
+    """The commands that carry out an accept. They belong with the decision, not on
+    the queue: the queue asks what is undecided, and this is what to do once it is."""
+    return "\n".join(f"gh repo fork {f} --org AMD-Ecosystem --clone=false"
+                      for f in accepts)
+
+
+def apply_decisions(declines, note, apply=False, accepts=()):
     """Record the declines a person asked for, on a branch, for one approval.
 
     Only what is passed in is written. There is deliberately no "apply the
@@ -271,6 +284,8 @@ def apply_decisions(declines, note, apply=False):
     body = ("Recorded from the intake queue"
             + (f" ({issue['url']})" if issue else "") + ":\n\n"
             + "\n".join(f"- `{f}` -- `{r}`  \n  {w}" for f, r, w in parsed)
+            + (("\n\nApproved in the same batch, still to be forked:\n\n```bash\n"
+                + fork_commands(accepts) + "\n```\n") if accepts else "")
             + "\n\n**Merge this to record them.** No approving review is needed or "
               "possible: agents open pull requests with the maintainer's credentials, so "
               "this is self-authored and GitHub greys out Approve for an author -- but it "
@@ -325,9 +340,12 @@ def main(argv=None):
         by = args.by or (gh(["api", "user", "--jq", ".login"]).stdout.strip() or "unknown")
         for full, detail in record_accepts(args.accept, by, apply=args.apply):
             print(f"  accept {full}: {detail}")
+        print("\nCreate the forks -- that is what releases these projects:\n")
+        print(fork_commands(args.accept))
     if not args.decline:
         return 0 if args.accept else 1
-    action, detail = apply_decisions(args.decline, args.note, apply=args.apply)
+    action, detail = apply_decisions(args.decline, args.note, apply=args.apply,
+                                     accepts=args.accept)
     print(f"intake-queue: {action} -- {detail}")
     return 0
 

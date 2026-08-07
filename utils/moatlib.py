@@ -1046,6 +1046,16 @@ def project_record(name):
     return (None, None)
 
 
+def known_platforms():
+    """Every platform any project records. Derived rather than configured: a platform
+    exists because a host reported it, so the roster is whatever the records contain."""
+    out = set()
+    for name in all_projects():
+        obj, _ = project_record(name)
+        out |= set((obj or {}).get("platforms") or {})
+    return out
+
+
 def all_projects():
     """{name: where} for every project this repo knows about, across refs."""
     out = {}
