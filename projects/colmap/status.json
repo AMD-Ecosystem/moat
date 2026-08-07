@@ -7,18 +7,18 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-06-10T13:58:57Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T06:51:11Z",
   "head_sha": null,
   "depends_on": [],
   "platforms": {
     "linux-gfx90a": {
-      "state": "unclaimed",
+      "state": "screened",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-08-05T14:34:23Z",
+      "updated_at": "2026-08-07T06:51:11Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -33,7 +33,8 @@
         "last_session_at": null
       },
       "pr_url": null,
-      "pr_number": null
+      "pr_number": null,
+      "last_agent": "intake"
     },
     "linux-gfx1100": {
       "state": "unclaimed",
@@ -113,5 +114,13 @@
   "on_hold_reason": null,
   "porting": null,
   "waivers": {},
-  "license_spdx": "BSD-3-Clause"
+  "license_spdx": "BSD-3-Clause",
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none competing; AMD-Ecosystem/colmap fork exists but carries no moat-port/rocm branch -- the only prior work is our own (jeffdaily/colmap: rocm-sift-gpu, rocm-sdk-autodetect, rocm-support*), parked and not yet re-derived onto post-#4420 upstream",
+    "viable": true,
+    "summary": "BSD-3-Clause (tier 1); dense-reconstruction CUDA->HIP already merged upstream (#4420, our own prior work); remaining gap is GPU SIFT (SiftGPU/ProgramCU.cu, UNC non-commercial vendored licence, contribute-only scope) plus a newly-added, out-of-scope-by-default CASPAR bundle-adjustment CUDA surface (484 generated .cu, Apache-2.0, CASPAR_ENABLED=OFF).",
+    "at": "2026-08-07T06:51:11Z"
+  }
 }
