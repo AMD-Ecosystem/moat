@@ -422,6 +422,19 @@ def fetch_review_pr(url):
                           "body": r.get("body") or "",
                           "assoc": r.get("author_association"),
                           "id": r.get("id")} for r in raw]
+    # Ordinary conversation comments count too, so the approver can just type in the
+    # box GitHub puts in front of them. See _approving_review for what that costs.
+    raw_c = _gh_json("api", f"repos/{slug}/issues/{num}/comments") or []
+    pr["comment_list"] = [{"login": (c.get("user") or {}).get("login"),
+                           "state": "ISSUE_COMMENT",
+                           "at": c.get("created_at"),
+                           "commit": None,
+                           "body": c.get("body") or "",
+                           "assoc": c.get("author_association")} for c in raw_c]
+    # When an approval carries no commit of its own, this is what it is compared
+    # against: anything pushed after it was written.
+    head = _gh_json("api", f"repos/{slug}/commits/{pr.get('headRefOid')}")
+    pr["head_at"] = (((head or {}).get("commit") or {}).get("committer") or {}).get("date")
     pr["slug"], pr["number"] = slug, num
     owner, repo = slug.split("/", 1)
     q = ('{repository(owner:"%s",name:"%s"){pullRequest(number:%s){lastEditedAt}}}'
@@ -437,11 +450,15 @@ def fetch_review_pr(url):
 # credentials, so every review PR is self-authored and the APPROVED button is greyed
 # out. A separate bot identity would fix that and is not available.
 #
-# So the signal is a REVIEW comment carrying this exact line. A review comment is
-# allowed on your own pull request AND carries `commit_id`, which an ordinary issue
-# comment does not -- that binding is the whole reason the gate can tell an approval
-# of this code from an approval of something three pushes ago. Requiring the line to
-# stand alone keeps "/moat approve is premature here" from reading as consent.
+# So the signal is a comment carrying this exact line, in either place GitHub offers:
+# a review comment or the ordinary conversation box. The review form is stronger,
+# because GitHub stamps it with `commit_id` and the gate can compare that against the
+# branch tip directly. A conversation comment carries no commit, so it is judged by
+# time instead -- an approval is stale if anything was pushed after it was written.
+# Both are accepted because the box a reviewer is actually looking at is the
+# conversation box, and a gate people have to be told twice about is a gate people
+# route around. Requiring the line to stand alone keeps "/moat approve is premature
+# here" from reading as consent.
 APPROVE_COMMAND = "/moat approve"
 # Who may give it. Anyone can comment; these are the associations GitHub reports for
 # someone with write access to the repository.
@@ -464,11 +481,14 @@ def _approving_review(pr):
     blocks, even alongside somebody else's approval -- publishing while a reviewer is
     still objecting is the thing this is here to prevent."""
     latest = {}
-    for r in pr.get("review_list") or []:
+    events = sorted((pr.get("review_list") or []) + (pr.get("comment_list") or []),
+                    key=lambda r: r.get("at") or "")
+    for r in events:
         if not r.get("login") or r.get("state") == "PENDING":
             continue
-        if r.get("state") == "COMMENTED" and not _is_approval_comment(r):
-            continue          # ordinary review chatter is not a decision
+        if r.get("state") in ("COMMENTED", "ISSUE_COMMENT") \
+                and not _is_approval_comment(r):
+            continue          # ordinary chatter is not a decision, and does not undo one
         latest[r["login"]] = r
     if any(r.get("state") == "CHANGES_REQUESTED" for r in latest.values()):
         return None
@@ -499,6 +519,9 @@ def record_pr_approval(name, review_pr=None):
     pr = fetch_review_pr(url)
     if pr is None:
         raise ValueError(f"{name}: could not read the review PR at {url}")
+    if pr.get("state") and pr.get("state") != "OPEN":
+        return ("closed", f"the review PR is {str(pr['state']).lower()} -- reopen it to "
+                          f"submit, or the approval on it is not a live decision")
     review = _approving_review(pr)
     if review is None:
         raise ValueError(f"{name}: no standing approval on {url}")
@@ -556,6 +579,9 @@ def approval_currency(pr):
     Deliberately needs nothing we recorded, so it answers for a port whose approval
     has only just been clicked and never snapshotted -- the case that matters, since
     the click is the entire signal that a port may be submitted."""
+    if pr.get("state") and pr.get("state") != "OPEN":
+        return ("closed", f"the review PR is {str(pr['state']).lower()} -- reopen it to "
+                          f"submit, or the approval on it is not a live decision")
     review = _approving_review(pr)
     if review is None:
         # Withdrawn, dismissed, or overridden by a changes-requested review. Whoever
@@ -568,6 +594,20 @@ def approval_currency(pr):
     if review.get("commit") and tip and review["commit"] != tip:
         return ("stale-commits", f"approved {review['commit'][:8]} but the branch is now "
                                  f"at {tip[:8]} -- commits landed after the approval")
+    # An approval given in the conversation box carries no commit, so compare times:
+    # anything pushed after it was written is content nobody approved.
+    head_at, at = pr.get("head_at"), review.get("at")
+    if not review.get("commit"):
+        if not head_at or not at:
+            # Cannot tell whether anything landed after the approval. That is not the
+            # same as "nothing did", and the precedent here is that an unreachable
+            # review PR refuses rather than passing.
+            return ("unverifiable", "no commit on the approval and the branch tip's "
+                                    "date could not be read -- cannot show that "
+                                    "nothing landed after it")
+        if head_at > at:
+            return ("stale-commits", f"approved at {at} but the branch tip dates from "
+                                     f"{head_at} -- commits landed after the approval")
 
     # Was the title or body rewritten after the approval? GitHub leaves an approval
     # standing through an edit, so this is the only thing that catches it.
