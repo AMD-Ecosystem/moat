@@ -223,10 +223,25 @@ def status_path(name):
 
 
 def load_status(name):
-    with open(status_path(name)) as f:
-        obj = json.load(f)
-    validate_status(obj)
-    return obj
+    """A project's record. Reads the working tree first, then falls back to the refs.
+
+    The fallback exists because 29 call sites take a project name and expect a
+    record, and after the migration an in-flight project's folder is on its own
+    branch rather than in this checkout. Making each caller resolve separately is how
+    a few of them silently answer "not adopted" instead."""
+    p = status_path(name)
+    if p.exists():
+        with open(p) as f:
+            obj = json.load(f)
+        validate_status(obj)
+        return obj
+    for ref in ("origin/main", f"origin/port/{name}"):
+        raw = _ref_read(ref, f"projects/{name}/status.json")
+        if raw:
+            obj = json.loads(raw)
+            validate_status(obj)
+            return obj
+    raise FileNotFoundError(str(p))
 
 
 def upstream_full_name(name):
@@ -242,6 +257,14 @@ def upstream_full_name(name):
 
 
 def save_status(name, obj):
+    # Writing a project whose record lives on another branch would create a second
+    # copy here and diverge from the one being worked. Say where it lives instead.
+    if not status_path(name).exists():
+        for ref in ("origin/main", f"origin/port/{name}"):
+            if _ref_read(ref, f"projects/{name}/status.json"):
+                raise RuntimeError(
+                    f"{name} is not in this checkout -- its record is on {ref}. "
+                    f"Check out that branch to write it.")
     validate_status(obj)
     obj["updated_at"] = now_iso()
     p = status_path(name)

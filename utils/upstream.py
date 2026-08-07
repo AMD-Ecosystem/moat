@@ -24,6 +24,7 @@ branch and opens a PR, and a human decides -- the same path everything else take
     python3 utils/upstream.py --forks --apply    # release the ones whose fork exists
     python3 utils/upstream.py --approvals        # report approvals overtaken by a push or edit
     python3 utils/upstream.py --approvals --apply # dismiss them and re-request review
+    python3 utils/upstream.py --review           # report ports needing a review PR
     python3 utils/upstream.py --publish          # report approved ports ready to submit
     python3 utils/upstream.py --publish --apply  # open the upstream PRs
 
@@ -456,6 +457,76 @@ def publishable():
     return out
 
 
+def review_candidates():
+    """Ports whose gates are met and which have no review PR yet.
+
+    The gap this fills: everything after a review PR existed was automated -- fetch
+    it, snapshot the approval, verify it still covers the content, publish -- and
+    nothing opened one. Twenty-eight ports sat PR-ready with none open."""
+    sys.path.insert(0, str(REPO / "utils"))
+    import moatlib
+
+    out = []
+    for name in sorted(moatlib.all_projects()):
+        d, _where = moatlib.project_record(name)
+        if d is None or d.get("review_pr") or d.get("pr_state") or d.get("pr_url"):
+            continue
+        ready, blocking, _ = moatlib.pr_ready(name)
+        if not ready:
+            continue
+        fork = (d.get("fork_url") or "").replace("https://github.com/", "")
+        branch = d.get("fork_branch") or moatlib.PORT_BRANCH
+        base = d.get("fork_default_branch") or "main"
+        if not fork:
+            continue
+        # The port branch has to exist and differ from the base. pr_ready never
+        # checked this, so a fork with no port at all could present as ready.
+        cmp = gh_json(["api", f"repos/{fork}/compare/{base}...{branch}",
+                       "--jq", "{commits:.total_commits,files:(.files|length)}"])
+        if not cmp:
+            out.append({"name": name, "fork": fork, "branch": branch, "base": base,
+                        "problem": f"cannot compare {base}...{branch} on the fork"})
+            continue
+        if not cmp.get("commits"):
+            out.append({"name": name, "fork": fork, "branch": branch, "base": base,
+                        "problem": f"{branch} has no commits over {base}"})
+            continue
+        out.append({"name": name, "fork": fork, "branch": branch, "base": base,
+                    "commits": cmp["commits"], "files": cmp["files"], "problem": None})
+    return out
+
+
+def open_review_pr(row, title, body, apply=False):
+    """Open the review PR on our own fork. The title and body ARE the upstream PR's,
+    so they are checked for in-house vocabulary before anyone sees them -- this is
+    the last point where that is cheap to fix."""
+    sys.path.insert(0, str(REPO / "utils"))
+    import moatlib
+    import jargon
+
+    terms, allow = jargon.load()
+    hits = (jargon.scan_text(title, "title", terms, allow)
+            + jargon.scan_text(body, "body", terms, allow))
+    if hits:
+        return ("jargon", "in-house vocabulary an external maintainer will not know: "
+                + ", ".join(sorted({h[2] for h in hits})))
+    if row.get("problem"):
+        return ("blocked", row["problem"])
+    if not apply:
+        return ("would-open",
+                f"{row['fork']}: {row['branch']} -> {row['base']} "
+                f"({row['commits']} commits, {row['files']} files)\n\n{title}\n\n{body}")
+    r = subprocess.run(["gh", "pr", "create", "--repo", row["fork"],
+                        "--head", row["branch"], "--base", row["base"],
+                        "--title", title, "--body", body],
+                       capture_output=True, text=True, timeout=90)
+    if r.returncode:
+        return ("error", (r.stderr or r.stdout).strip())
+    url = r.stdout.strip().splitlines()[-1]
+    moatlib.set_review_pr(row["name"], url)
+    return ("opened", url)
+
+
 def publish_blockers(name, row):
     """Everything that must hold before a port is submitted upstream, as a list of
     reasons it must not be. Checked at publish time rather than trusted from earlier:
@@ -597,6 +668,11 @@ def main():
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--dry-run", action="store_true", default=True)
     g.add_argument("--apply", action="store_true")
+    ap.add_argument("--review", action="store_true",
+                    help="ports whose gates are met with no review PR open yet")
+    ap.add_argument("--name", help="with --review --apply: which project to open")
+    ap.add_argument("--title", help="with --review --apply: the upstream PR title")
+    ap.add_argument("--body-file", help="with --review --apply: file holding the body")
     ap.add_argument("--forks", action="store_true",
                     help="poll for forks of awaiting-fork projects instead of PR state")
     ap.add_argument("--approvals", action="store_true",
@@ -612,6 +688,31 @@ def main():
         return 0
     if a.approvals:
         return report_approvals(apply=a.apply)
+    if a.review:
+        rows = review_candidates()
+        if not a.apply:
+            for r in rows:
+                if r["problem"]:
+                    print(f"  BLOCKED  {r['name']:22} {r['problem']}")
+                else:
+                    print(f"  READY    {r['name']:22} {r['branch']} -> {r['base']} "
+                          f"({r['commits']} commits, {r['files']} files)")
+            print(f"-- {sum(1 for r in rows if not r['problem'])} port(s) need a review PR; "
+                  f"{sum(1 for r in rows if r['problem'])} blocked")
+            print("   open one: --review --apply --name <p> --title '<t>' --body-file <f>")
+            return 0
+        if not (a.name and a.title and a.body_file):
+            print("--review --apply needs --name, --title and --body-file", file=sys.stderr)
+            return 2
+        row = next((r for r in rows if r["name"] == a.name), None)
+        if row is None:
+            print(f"{a.name} is not awaiting a review PR (already has one, or not "
+                  f"PR-ready)", file=sys.stderr)
+            return 2
+        body = pathlib.Path(a.body_file).read_text()
+        action, detail = open_review_pr(row, a.title, body, apply=True)
+        print(f"review-pr: {action} -- {detail}")
+        return 0 if action == "opened" else 1
     if a.publish:
         return report_publish(apply=a.apply)
     if a.attention:

@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-05T01:24:38Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T05:47:50Z",
   "head_sha": "5fc19ecea7e516778ab4db264e584230c83676b4",
   "depends_on": [],
   "platforms": {
@@ -112,5 +112,6 @@
   },
   "porting": null,
   "waivers": {},
-  "license_spdx": "BSD-3-Clause"
+  "license_spdx": "BSD-3-Clause",
+  "review_pr": "https://github.com/AMD-Ecosystem/FastGeodis/pull/1"
 }
