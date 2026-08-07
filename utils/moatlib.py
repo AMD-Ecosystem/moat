@@ -911,6 +911,73 @@ def set_intake(name, verdict, summary, reason=None, duplicate=None, viable=None)
     return obj["intake"]
 
 
+def suggest_waiver(name, gate, reason):
+    """Record an agent's CASE for waiving a gate. Satisfies nothing by itself.
+
+    Written at the moment the evidence is in hand, which is the point of it. The
+    obstacle a waiver answers is found mid-port, often by an unattended run with
+    nobody to ask, and a finding with nowhere to go is one the next porter rediscovers
+    -- ZhiLight and LichtFeld-Studio each had their Windows determination made once and
+    then hand-copied onto the second Windows arch, "carried from windows-gfx1101
+    determination", because this field had no writer.
+
+    An unapproved waiver BLOCKS `pr_ready` rather than clearing anything, so recording
+    a suggestion can never let a port out early. It only makes the case findable."""
+    if gate not in WAIVABLE_GATES:
+        raise ValueError(f"{gate!r} is not waivable (config/arches.toml waivable = "
+                         f"{sorted(WAIVABLE_GATES)}). A gate nobody may waive is a gate "
+                         f"that has to be satisfied or the port scoped around it")
+    if not (reason or "").strip():
+        raise ValueError(f"{name}: --reason is required; the case IS the record")
+    obj = load_status(name)
+    existing = (obj.get("waivers") or {}).get(gate) or {}
+    if existing.get("approved_by"):
+        raise ValueError(
+            f"{name}: {gate} is already waived by {existing['approved_by']}. Overwriting "
+            f"an approval with a suggestion would quietly un-approve it")
+    obj.setdefault("waivers", {})[gate] = {"reason": reason, "suggested_at": now_iso()}
+    save_status(name, obj)
+    return obj["waivers"][gate]
+
+
+def approve_waiver(name, gate, by, reason=None):
+    """A maintainer's approval of a gate waiver, which is what makes it satisfy.
+
+    Approves a specific CASE: without a suggestion on file, a reason must be given
+    here, so the record always says what was waived and why rather than only that
+    something was."""
+    if gate not in WAIVABLE_GATES:
+        raise ValueError(f"{gate!r} is not waivable (config/arches.toml waivable = "
+                         f"{sorted(WAIVABLE_GATES)})")
+    if not (by or "").strip():
+        raise ValueError(
+            f"{name}: --by is required. A waiver without it satisfies nothing, which is "
+            f"what stops an agent certifying its own way past the one escapable gate")
+    obj = load_status(name)
+    w = dict((obj.get("waivers") or {}).get(gate) or {})
+    if reason:
+        w["reason"] = reason
+    if not w.get("reason"):
+        raise ValueError(f"{name}: no waiver suggested for {gate}; pass --reason to "
+                         f"record what is being waived")
+    w["approved_by"] = by
+    w["at"] = now_iso()
+    obj.setdefault("waivers", {})[gate] = w
+    save_status(name, obj)
+    return w
+
+
+def pending_waivers():
+    """Every suggested-but-unapproved waiver, across all refs. These BLOCK their
+    project's PR, and the only thing that clears one is a person."""
+    out = []
+    for name, obj, _where in project_records():
+        for gate, w in (obj.get("waivers") or {}).items():
+            if not w.get("approved_by"):
+                out.append((name, gate, w.get("reason") or "", w.get("suggested_at") or ""))
+    return sorted(out)
+
+
 def record_license_clearance(name, approved_by, note=None):
     """Record a person's decision to allow a tier 3/4 project upstream."""
     obj = load_status(name)
@@ -2200,6 +2267,21 @@ def main(argv=None):
 
     sub.add_parser("stalled", help="projects every architecture gave up on, before review")
 
+    sub.add_parser("waivers", help="gate waivers suggested but not yet approved")
+
+    s = sub.add_parser("suggest-waiver",
+                       help="record the case for waiving a gate (an agent may; it satisfies nothing)")
+    s.add_argument("name")
+    s.add_argument("gate")
+    s.add_argument("--reason", required=True, help="the obstacle, in checkable detail")
+
+    s = sub.add_parser("approve-waiver",
+                       help="a maintainer approving a suggested waiver, which is what makes it count")
+    s.add_argument("name")
+    s.add_argument("gate")
+    s.add_argument("--by", required=True, help="who approved; never an agent")
+    s.add_argument("--reason", help="required only when nothing was suggested first")
+
     s = sub.add_parser("set-not-portable",
                        help="record a person's verdict that this codebase cannot be ported")
     s.add_argument("name")
@@ -2364,6 +2446,22 @@ def main(argv=None):
             print(f"-- {len(rows)} project(s) waiting on a person: continue on other "
                   f"hardware, or `set-not-portable <name> --reason ... --by <who>`",
                   file=sys.stderr)
+    elif args.cmd == "waivers":
+        rows = pending_waivers()
+        for name, gate, reason, at in rows:
+            print(f"{name}\t{gate}\t{at}\t{reason[:120]}")
+        if rows:
+            print(f"-- {len(rows)} waiver(s) awaiting a maintainer; each BLOCKS its "
+                  f"project's PR until approved: "
+                  f"`moatlib.py approve-waiver <name> <gate> --by <who>`", file=sys.stderr)
+    elif args.cmd == "suggest-waiver":
+        w = suggest_waiver(args.name, args.gate, args.reason)
+        print(f"{args.name}: {args.gate} waiver SUGGESTED -- {w['reason'][:100]}")
+        print("   satisfies nothing until a maintainer approves it; it blocks pr-ready "
+              "meanwhile", file=sys.stderr)
+    elif args.cmd == "approve-waiver":
+        w = approve_waiver(args.name, args.gate, args.by, args.reason)
+        print(f"{args.name}: {args.gate} waived by {w['approved_by']} -- {w['reason'][:100]}")
     elif args.cmd == "set-not-portable":
         obj = set_not_portable(args.name, args.reason, args.by, clear=args.clear)
         if args.clear:

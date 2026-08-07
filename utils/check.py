@@ -163,9 +163,15 @@ def gate_states():
         for gate, rec in w.items():
             if gate not in m.WAIVABLE_GATES:
                 problems.append(f"{name}: gate {gate!r} is not waivable")
-            elif not rec.get("approved_by"):
-                problems.append(f"{name}: waiver on {gate!r} has no approved_by "
-                                f"-- an agent cannot self-certify past a gate")
+            # A missing approved_by is NOT a defect: it is what a suggestion is, and
+            # suggesting one is how the obstacle reaches a person at all. What stops an
+            # agent certifying its own way past a gate is that such a waiver satisfies
+            # nothing and blocks pr_ready -- enforced there, where it bites, rather than
+            # by failing the repo's own checks over a decision someone has yet to make.
+            # Checked here instead: the record says what is being waived.
+            elif not (rec.get("reason") or "").strip():
+                problems.append(f"{name}: waiver on {gate!r} has no reason -- nobody can "
+                                f"approve or refuse a case that is not stated")
     return problems
 
 

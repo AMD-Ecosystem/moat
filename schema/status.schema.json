@@ -119,10 +119,15 @@
         ],
         "properties": {
           "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "suggested_at": {
             "type": "string"
           },
           "approved_by": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "at": {
             "type": "string"

@@ -85,6 +85,14 @@ if [ -n "${READY// /}" ]; then
   echo "           (opens the PR with the approved title and body, then closes the review PR)"
 fi
 
+# A suggested waiver blocks its project's PR and only a person can clear it, so it has
+# to be visible from a session that is not the one that suggested it. The porter that
+# found the obstacle may have run unattended hours ago; without this the case sits in
+# the file and the port sits finished-but-unsubmittable, which is the state MOAT is
+# worst at noticing.
+python3 utils/moatlib.py waivers 2>/dev/null \
+  | awk -F'\t' 'NF>1 {printf "waiver   :   AWAITING   %-26s %s -- %.70s\n", $1, $2, $4}' || true
+
 # Nothing reconciles the record on a schedule, so the only thing that can say it has
 # gone unchecked is how long since someone swept. Reads a stored date, costs no API
 # call, and names the command rather than making anyone remember it.

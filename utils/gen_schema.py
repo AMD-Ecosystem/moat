@@ -80,8 +80,12 @@ def build():
                     "type": "object",
                     "required": ["reason"],
                     "properties": {
-                        "reason": {"type": "string"},
-                        "approved_by": {"type": "string"},
+                        "reason": {"type": "string", "minLength": 1},
+                        # When an agent made the case, as against when a maintainer
+                        # approved it (`at`). Both are kept: the gap between them is
+                        # how long a finished port sat waiting on one decision.
+                        "suggested_at": {"type": "string"},
+                        "approved_by": {"type": "string", "minLength": 1},
                         "at": {"type": "string"},
                     },
                 },
