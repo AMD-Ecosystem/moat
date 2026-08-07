@@ -59,3 +59,11 @@ These are called per-element inside CUDA kernels, making host-side computation i
 - GPU_IPC/femEnergy.cu
 - All .cu files: fixed kernel launch syntax spacing
 - CMakeLists.txt
+
+## Resuming (2026-08-07)
+
+The port continues: this was judged a port worth finishing rather than an unportable
+codebase, so linux-gfx90a is no longer marked blocked. The blocker as last recorded, which
+is where to pick it up:
+
+HIP/ROCm port started but incomplete; blocked by Eigen (fork moat-port e66c864e). Not actionable until the Eigen/HIP issue is resolved.

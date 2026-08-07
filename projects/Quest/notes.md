@@ -41,3 +41,11 @@ The raft select_k integration needs investigation. The Quest code captures a fun
 the RAPIDS domain), so it is an ordinary external build dependency here rather than
 something this pipeline builds first. If the build needs it, install it from the
 environment like any other third-party library.
+
+## Resuming (2026-08-07)
+
+The port continues: this was judged a port worth finishing rather than an unportable
+codebase, so linux-gfx90a is no longer marked blocked. The blocker as last recorded, which
+is where to pick it up:
+
+raft select_k API incompatibility: radix_topk_one_block_kernel overload resolution fails in Quest's decode_select_k wrapper. PyTorch ROCm 2.13.0a0 development build has __HIP_NO_HALF_CONVERSIONS__ requiring explicit conversion calls. Need to investigate raft select_k integration pattern.

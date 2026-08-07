@@ -309,3 +309,11 @@ breaks under the amdclang code generation.
    optimizer miscompile (amdclang) rather than a logic port bug.
 5. The probe in agent_space reproduces the failure in seconds without running
    the full gtest -- use it as the inner loop.
+
+## Resuming (2026-08-07)
+
+The port continues: this was judged a port worth finishing rather than an unportable
+codebase, so linux-gfx90a is no longer marked blocked. The blocker as last recorded, which
+is where to pick it up:
+
+Attempt 3: tree rebuilt for gfx90a (lib + all 15 tests compile); crypto still fails. ROOT CAUSE ISOLATED: GPU-NTT INVERSE merge kernel (GentlemanSande/InverseCore, thirdparty/GPU-NTT/src/lib/ntt_merge/ntt.cu) miscomputes on gfx90a -- INTT(NTT(x))!=x (4096/4096 corrupt). Verified CORRECT: ntt/intt tables (psi^N==q-1, intt psi==psi^-1), n_inverse==N^-1, forward NTT (matches CPU ref exactly, bit-reversed), Barrett mult. Forward fine, inverse broken. ALSO: submodule HIP forks (GPU-NTT/FFT/RNGonGPU) were never pushed and the moat-port branch pins lost SHAs -- recovery patches in agent_space/HEonGPU-attempt3/. Attempt 4: bisect inverse single- vs multi-kernel, check inverse-only #pragma unroll loop-not-unrolled / amdclang miscompile.

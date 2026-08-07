@@ -2190,10 +2190,13 @@ def main(argv=None):
     s.add_argument("new_state")
     s.add_argument("--agent")
 
-    s = sub.add_parser("set-blocked")
+    s = sub.add_parser("set-blocked",
+                       help="record that an arch cannot run this, or clear that record")
     s.add_argument("name")
     s.add_argument("platform", help="<os>-<gfx>, e.g. linux-gfx90a")
-    s.add_argument("reason")
+    s.add_argument("reason", nargs="?")
+    s.add_argument("--clear", action="store_true",
+                   help="resume: this arch is not blocked after all")
 
     sub.add_parser("stalled", help="projects every architecture gave up on, before review")
 
@@ -2338,8 +2341,19 @@ def main(argv=None):
         set_state(args.name, args.platform, args.new_state, agent=args.agent)
         print(f"{args.name}/{args.platform} -> {args.new_state}")
     elif args.cmd == "set-blocked":
-        set_blocked(args.name, args.platform, True, args.reason)
-        print(f"{args.name}/{args.platform} blocked: {args.reason}")
+        if args.clear:
+            # The reason is not carried forward: it described a state of affairs that
+            # someone has just decided is over. Its home is the project's notes.md,
+            # where the next porter reads it, and clearing here without recording it
+            # there loses the diagnosis.
+            set_blocked(args.name, args.platform, False)
+            print(f"{args.name}/{args.platform} unblocked")
+        elif not args.reason:
+            print("set-blocked: a reason is required (or pass --clear)", file=sys.stderr)
+            return 1
+        else:
+            set_blocked(args.name, args.platform, True, args.reason)
+            print(f"{args.name}/{args.platform} blocked: {args.reason}")
     elif args.cmd == "stalled":
         rows = [(n, o) for n, o, _w in project_records() if stalled(o)]
         for n, o in sorted(rows):

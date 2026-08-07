@@ -7,7 +7,7 @@
   "priority": 3.866,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-08-07T07:04:44Z",
+  "updated_at": "2026-08-07T22:51:45Z",
   "head_sha": "6697cd9e28449b29225d5b985a2e372920a0c492",
   "depends_on": [],
   "porting": null,
@@ -17,12 +17,12 @@
   "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
-      "blocked": true,
-      "blocked_reason": "raft select_k API incompatibility: radix_topk_one_block_kernel overload resolution fails in Quest's decode_select_k wrapper. PyTorch ROCm 2.13.0a0 development build has __HIP_NO_HALF_CONVERSIONS__ requiring explicit conversion calls. Need to investigate raft select_k integration pattern.",
+      "blocked": false,
+      "blocked_reason": null,
       "validated_sha": null,
       "started_at": "2026-06-04T21:24:50Z",
       "completed_at": null,
-      "updated_at": "2026-06-04T21:41:24Z",
+      "updated_at": "2026-08-07T22:51:45Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,

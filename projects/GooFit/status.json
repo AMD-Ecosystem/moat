@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T00:04:16Z",
-  "updated_at": "2026-08-07T07:04:36Z",
+  "updated_at": "2026-08-07T22:51:45Z",
   "head_sha": "d95236e57ecd6cfb94e53d731b104b694d4da2ea",
   "depends_on": [],
   "porting": null,
@@ -23,12 +23,12 @@
   "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
-      "blocked": true,
-      "blocked_reason": "Build/link blocker RESOLVED (cross-TU device visibility fixed via -fgpu-rdc + OBJECT-libs-to-single-shared-lib device link; core+basic+combine PDFs and 24 test/example exes build and link on gfx90a). NEW blocker: unbinned NLL fits diverge to a parameter bound because the device reads garbage normalization values (6.25e-310 uninitialized-double pattern) from the hipMemcpyToSymbol-published __device__ d_normalizations during the per-event reduction; analytic normalize() and per-event device eval are correct in isolation. See notes.md attempt 2 for the minimal repro and next steps. Physics PDFs scoped out (GOOFIT_PHYSICS=OFF; MCBooster+device Eigen complex inverse deferred, WIP patch saved).",
+      "blocked": false,
+      "blocked_reason": null,
       "validated_sha": null,
       "started_at": "2026-06-05T00:09:14Z",
       "completed_at": null,
-      "updated_at": "2026-06-12T00:02:46Z",
+      "updated_at": "2026-08-07T22:51:45Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,

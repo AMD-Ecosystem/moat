@@ -134,3 +134,11 @@ Eigen Array<thrust::complex>/Array<double> operator() not EIGEN_DEVICE_FUNC
 (compute_inverse5.h, FOCUS.cu); omp_get_thread_num in HIP path of
 Generate.h/EvaluateArray.h; thrust hip_rocprim vs cpp tag mismatch in copy_if;
 __thrust_forceinline__ unknown in GSpline.cu.
+
+## Resuming (2026-08-07)
+
+The port continues: this was judged a port worth finishing rather than an unportable
+codebase, so linux-gfx90a is no longer marked blocked. The blocker as last recorded, which
+is where to pick it up:
+
+Build/link blocker RESOLVED (cross-TU device visibility fixed via -fgpu-rdc + OBJECT-libs-to-single-shared-lib device link; core+basic+combine PDFs and 24 test/example exes build and link on gfx90a). NEW blocker: unbinned NLL fits diverge to a parameter bound because the device reads garbage normalization values (6.25e-310 uninitialized-double pattern) from the hipMemcpyToSymbol-published __device__ d_normalizations during the per-event reduction; analytic normalize() and per-event device eval are correct in isolation. See notes.md attempt 2 for the minimal repro and next steps. Physics PDFs scoped out (GOOFIT_PHYSICS=OFF; MCBooster+device Eigen complex inverse deferred, WIP patch saved).
