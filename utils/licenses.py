@@ -35,9 +35,22 @@ def tier_of(spdx, cfg=None):
     cfg = cfg or load()
     if not spdx or spdx in ("NOASSERTION", "NONE", "null"):
         return 4
+    spdx = spdx.strip()
     for n in (1, 2, 3):
         if spdx in cfg[f"tier{n}"]["spdx"]:
             return n
+    # SPDX expressions, which exact matching reported as tier 4 -- the worst answer --
+    # for licences that are individually fine. TornadoVM is "Apache-2.0 OR MIT OR
+    # GPL-2.0-only WITH Classpath-exception-2.0": tiers 1, 1 and 2, and it read as 4.
+    #   OR   -- the recipient chooses, so the best (lowest) tier applies
+    #   AND  -- all of them bind, so the worst applies
+    #   WITH -- an exception grants extra permission on a base licence; tier the base
+    if " WITH " in spdx:
+        return tier_of(spdx.split(" WITH ", 1)[0], cfg)
+    for sep, pick in ((" OR ", min), (" AND ", max)):
+        if sep in spdx:
+            parts = [p.strip(" ()") for p in spdx.split(sep)]
+            return pick(tier_of(p, cfg) for p in parts)
     return 4
 
 
