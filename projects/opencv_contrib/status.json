@@ -3,11 +3,11 @@
   "name": "opencv_contrib",
   "upstream_url": "https://github.com/opencv/opencv_contrib",
   "fork_url": "https://github.com/AMD-Ecosystem/opencv_contrib",
-  "fork_default_branch": "main",
+  "fork_default_branch": "4.x",
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-06-09T22:04:50Z",
-  "updated_at": "2026-06-20T04:47:32Z",
+  "updated_at": "2026-08-07T05:39:19Z",
   "head_sha": "041d5528286a81465828a668d014035e149f6a97",
   "depends_on": [],
   "platforms": {

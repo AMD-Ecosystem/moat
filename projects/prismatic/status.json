@@ -3,11 +3,11 @@
   "name": "prismatic",
   "upstream_url": "https://github.com/prism-em/prismatic",
   "fork_url": "https://github.com/AMD-Ecosystem/prismatic",
-  "fork_default_branch": "main",
+  "fork_default_branch": "master",
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:24:38Z",
-  "updated_at": "2026-08-06T02:33:28Z",
+  "updated_at": "2026-08-07T05:39:22Z",
   "head_sha": "840f6f30012196488eba9130e1f4c4c1398dc2f6",
   "depends_on": [],
   "platforms": {

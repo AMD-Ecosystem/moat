@@ -3,11 +3,11 @@
   "name": "espresso",
   "upstream_url": "https://github.com/espressomd/espresso",
   "fork_url": "https://github.com/AMD-Ecosystem/espresso",
-  "fork_default_branch": "main",
+  "fork_default_branch": "python",
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:43:45Z",
-  "updated_at": "2026-08-06T02:33:28Z",
+  "updated_at": "2026-08-07T05:39:00Z",
   "head_sha": "8e228b5d0b5113e32c201d6b9b930fdc111c64b9",
   "depends_on": [],
   "platforms": {

@@ -3,11 +3,11 @@
   "name": "STRUMPACK",
   "upstream_url": "https://github.com/pghysels/STRUMPACK",
   "fork_url": "https://github.com/AMD-Ecosystem/STRUMPACK",
-  "fork_default_branch": "main",
+  "fork_default_branch": "master",
   "priority": 5.0,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T17:39:43Z",
-  "updated_at": "2026-08-05T16:07:17Z",
+  "updated_at": "2026-08-07T05:38:40Z",
   "head_sha": "ab5396f0f71e2c16955b6676399a68b21a601159",
   "depends_on": [],
   "platforms": {

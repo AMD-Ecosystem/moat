@@ -3,11 +3,11 @@
   "name": "QUICK",
   "upstream_url": "https://github.com/merzlab/QUICK",
   "fork_url": "https://github.com/AMD-Ecosystem/QUICK",
-  "fork_default_branch": "main",
+  "fork_default_branch": "master",
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-06-05T00:05:54Z",
-  "updated_at": "2026-08-05T16:07:17Z",
+  "updated_at": "2026-08-07T05:38:37Z",
   "head_sha": "d369e07",
   "depends_on": [],
   "platforms": {
