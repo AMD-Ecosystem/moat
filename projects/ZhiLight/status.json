@@ -7,7 +7,7 @@
   "priority": 5.095,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T00:46:50Z",
-  "updated_at": "2026-08-07T22:59:41Z",
+  "updated_at": "2026-08-07T23:11:14Z",
   "head_sha": "1b7a1c9e3bb6774ca76efb6b316ff752e2f15fd3",
   "pr_url": "https://github.com/zhihu/ZhiLight/pull/81",
   "pr_number": 81,
@@ -16,7 +16,9 @@
   "waivers": {
     "windows": {
       "reason": "The obstacle is the operating system, not the GPU: bmengine's host runtime uses Linux POSIX APIs throughout (execinfo.h, sys/time.h, sched.h, pthread.h, sys/syscall.h), so it fails to build on Windows identically on every AMD card. Determined on windows-gfx1101 and confirmed host-wide on windows-gfx1201. Linux wave64 (gfx90a) and wave32 (gfx1100) both validated at head.",
-      "suggested_at": "2026-08-07T22:59:41Z"
+      "suggested_at": "2026-08-07T22:59:41Z",
+      "approved_by": "jeffdaily",
+      "at": "2026-08-07T23:11:14Z"
     }
   },
   "pr_state": "open",

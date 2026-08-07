@@ -188,7 +188,7 @@ The project name links upstream.
 | [visionaray](https://github.com/szellmann/visionaray) ([fork](https://github.com/AMD-Ecosystem/visionaray/tree/moat-port)) | 🔄 | ✅ | ✅ | 🟣 [#51](https://github.com/szellmann/visionaray/pull/51) |
 | [yalm](https://github.com/andrewkchan/yalm) ([fork](https://github.com/AMD-Ecosystem/yalm/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#12](https://github.com/andrewkchan/yalm/pull/12) |
 | [YarnBall](https://github.com/jerry060599/YarnBall) ([fork](https://github.com/AMD-Ecosystem/YarnBall/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#5](https://github.com/jerry060599/YarnBall/pull/5) |
-| [ZhiLight](https://github.com/zhihu/ZhiLight) ([fork](https://github.com/AMD-Ecosystem/ZhiLight/tree/moat-port)) | ✅ | ✅ | 🚫 | 🟢 [#81](https://github.com/zhihu/ZhiLight/pull/81) |
+| [ZhiLight](https://github.com/zhihu/ZhiLight) ([fork](https://github.com/AMD-Ecosystem/ZhiLight/tree/moat-port)) | ✅ | ✅ | 🎫 | 🟢 [#81](https://github.com/zhihu/ZhiLight/pull/81) |
 <!-- MOAT:TABLE:END -->
 
 ## Layout
