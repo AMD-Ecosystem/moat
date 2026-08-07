@@ -7,10 +7,43 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-08-07T07:05:27Z",
-  "updated_at": "2026-08-07T07:05:27Z",
+  "updated_at": "2026-08-07T07:06:56Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "awaiting-fork",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-07T07:06:42Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "Apache-2.0",
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none",
+    "viable": true,
+    "summary": "GPU ML solver library (GLM/k-means/PCA/ALS/ARIMA) with real, self-contained CUDA (~30 own .cu/.cuh under src/gpu); Apache-2.0 tier-1, no existing AMD effort, but upstream is dormant (last real merge 2024, before that 2021) so budget for fork-only.",
+    "at": "2026-08-07T07:06:56Z"
+  }
 }
