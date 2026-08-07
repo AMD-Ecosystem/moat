@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "name": "cuda_voxelizer",
+  "upstream_url": "https://github.com/Forceflow/cuda_voxelizer",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "adopted_at": "2026-08-07T07:03:06Z",
+  "updated_at": "2026-08-07T07:03:06Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
