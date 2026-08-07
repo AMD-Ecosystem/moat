@@ -64,32 +64,33 @@ def gate_schema():
     return problems
 
 
-def current_branch():
-    """The branch being checked. In GitHub Actions a pull request builds a detached
-    merge commit, so HEAD names no branch and GITHUB_HEAD_REF is what identifies the
-    source."""
-    ref = os.environ.get("GITHUB_HEAD_REF") or os.environ.get("GITHUB_REF_NAME")
-    if ref:
-        return ref
+def local_port_branch():
+    """True only when this is a local run on a port branch -- not CI.
+
+    CI sets GITHUB_* ; a pull request there builds the MERGE commit, so the tree is
+    exactly what the trunk will become and every gate should see it."""
+    if os.environ.get("GITHUB_ACTIONS") or os.environ.get("GITHUB_HEAD_REF"):
+        return False
     r = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
-    return r.stdout.strip() if r.returncode == 0 else ""
+    return r.returncode == 0 and r.stdout.strip().startswith("port/")
 
 
 def gate_readme():
     """The generated project table matches the data it claims to describe.
 
-    Only on the trunk. README.md is generated from every project present, and a port
-    branch carries the trunk's projects plus its own -- so the table legitimately
-    differs there, and enforcing it would make each of N branches regenerate the same
-    file for a row that only belongs on the trunk once the port lands. That is a
-    conflict on every merge, in a generated file with no merge driver, for no gain.
-    Three of the four agents on the 2026-08-06 dry run had to regenerate the README
+    Skipped for a LOCAL push to a port branch, and only there. Mid-port the tree is
+    the trunk plus one project, so the table differs for a row that belongs on the
+    trunk once the port lands; making every push regenerate it is friction with no
+    payoff. Three of the four agents on the 2026-08-06 dry run regenerated the README
     purely to get a push through.
 
-    The trunk is where it matters and where it is enforced: whatever merges there
-    regenerates the table, and this fails if it did not."""
-    branch = current_branch()
-    if branch.startswith("port/"):
+    It is NOT skipped in CI. A pull request builds the merge commit, so `gen_readme`
+    there describes the trunk as it will be, and the gate fails on the pull request
+    that has to fix it. An earlier version of this skipped on the branch name alone,
+    which let the offending PR go green and dropped the failure on whoever next
+    pushed to the trunk -- a stale table is one command to fix, but it should not be
+    a stranger's command."""
+    if local_port_branch():
         return []
     r = _run([sys.executable, "utils/gen_readme.py", "--check"])
     return [] if r.returncode == 0 else ["README table is stale (run utils/gen_readme.py)"]
