@@ -18,7 +18,7 @@ Five agents. The reviewer can bounce back to the porter (changes-requested); the
 
 Either intake or the planner may terminate a project; both terminations are recorded as a disposition and merged, so a negative outcome is still a deliverable.
 
-Intake does everything except the fork: the branch, the project folder, the write-up, the draft PR. Then it sets `awaiting-fork` and stops. **The fork appearing in the org is what releases the project** -- agents cannot create one, so its existence is a deliberate act by someone who can, and that carries the decision without anything needing to model who made it. `moatlib.py release-forks` advances waiting projects and orient.sh runs it before every selection.
+Intake does everything except the fork: the branch, the project folder, the write-up, the draft PR. Then it sets `awaiting-fork` and stops. **The fork appearing in the org is what releases the project** -- agents cannot create one, so its existence is a deliberate act by someone who can, and that carries the decision without anything needing to model who made it. `moatlib.py release-forks` advances waiting projects; orient.sh runs `upstream.py --forks --apply` before every selection, which does that AND records any decline label, so no one has to notice a new fork by hand.
 
 Coverage is expressed as GATES, not a platform list: `wave64`, `wave32`, `windows` (config/arches.toml). Platforms are NOT enumerated anywhere -- a platform is `<os>-<gfx>`, whatever a host reports, and its gates follow from its name, so a machine with a new GPU works with no config change. Only an unknown wavefront family is refused, since guessing that wrong corrupts memory silently. A gate is satisfied by ANY arch carrying that attribute, so gfx90a/Linux covers wave64 while gfx1201/Windows covers wave32 and windows together -- two hosts suffice. Linux is not gated because wave64 is only satisfiable there. Extra archs are additive evidence and gate nothing. `windows` is the one waivable gate, and **every waiver needs maintainer approval** -- agents may only suggest one.
 
@@ -139,7 +139,7 @@ If uncertain, choose the simpler, more concise implementation.
 - `.claude/skills/cuda-to-rocm/` -- the porting knowledge: SKILL.md is the always-loaded index, references/ hold the detail.
 - projects/<name>/ -- plan.md, notes.md, status.json, stats.jsonl per project.
 - utils/ -- orient.sh (entrypoint), moatlib.py (state machine + sync), discover.py, gen_readme.py.
-- .claude/agents/ -- planner, porter, reviewer, validator.
+- .claude/agents/ -- intake, planner, porter, reviewer, validator.
 - data/candidates.json -- ranked discovery output.
 - findings/<slug>/ -- prepared ROCm-component bug reports and reproducers. Gitignored, so it is local to a working copy and not published: an unfiled report in a porting repo is one the component owners will never see. `data/deferred.json` is the durable record of what was found and whether it was filed; file the report properly rather than leaving it here.
 - data/deferred.json -- the deferred-work registry (what we postponed and where to resume). Ask MOAT "what did we defer?" with `python3 utils/deferred.py list`; record a deferral with `utils/deferred.py add` (kinds: rocm-bug-report, feature-port, other). When you scope a sub-feature out of a port or prepare a findings/ bug report you do not file, register it here so it is not lost.
@@ -150,7 +150,7 @@ Review candidates with `python3 utils/triage.py review`. **Declining is a person
 
 # Project dependencies
 
-Some targets build on other targets (RAPIDS: most build on rmm; cuml/cugraph on raft/cudf). A project's status.json `depends_on` lists the MOAT projects its build needs, and the selector will not pick a project until each one clears (`moatlib.py deps` shows the graph). A dep clears four different ways and they are NOT the same answer -- `moatlib.py dep-blocked <platform>` prints the verdict and the fix:
+Some targets build on other targets (`barney` on `cuBQL`; `anari-visionaray` on `visionaray`; `plvs` on `opencv_contrib`). A project's status.json `depends_on` lists the MOAT projects its build needs, and the selector will not pick a project until each one clears (`moatlib.py deps` shows the graph). A dep clears four different ways and they are NOT the same answer -- `moatlib.py dep-blocked <platform>` prints the verdict and the fix:
 
 - **ok** -- a port validated on some arch, or the dep is dispositioned `already-supported`/`ported-elsewhere` so it needs no port. Build against it.
 - **waiting** -- adopted and in the pipeline. It clears on its own; nothing to do.
