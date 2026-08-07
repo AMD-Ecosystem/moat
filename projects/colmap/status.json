@@ -121,6 +121,11 @@
     "duplicate_effort": "none competing; AMD-Ecosystem/colmap fork exists but carries no moat-port/rocm branch -- the only prior work is our own (jeffdaily/colmap: rocm-sift-gpu, rocm-sdk-autodetect, rocm-support*), parked and not yet re-derived onto post-#4420 upstream",
     "viable": true,
     "summary": "BSD-3-Clause (tier 1); dense-reconstruction CUDA->HIP already merged upstream (#4420, our own prior work); remaining gap is GPU SIFT (SiftGPU/ProgramCU.cu, UNC non-commercial vendored licence, contribute-only scope) plus a newly-added, out-of-scope-by-default CASPAR bundle-adjustment CUDA surface (484 generated .cu, Apache-2.0, CASPAR_ENABLED=OFF).",
-    "at": "2026-08-07T06:51:11Z"
+    "at": "2026-08-07T06:51:11Z",
+    "decided": {
+      "choice": "fork",
+      "by": "jeffdaily",
+      "at": "2026-08-07T15:27:11Z"
+    }
   }
 }
