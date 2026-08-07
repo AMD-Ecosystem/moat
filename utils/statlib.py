@@ -12,6 +12,31 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+RETIRED = REPO_ROOT / "data" / "retired_stats.jsonl"
+
+
+def retired_records(project=None):
+    """Telemetry from projects whose folder has been removed.
+
+    A screen that ended in a decline still cost time and tokens, and dropping that
+    when the folder goes makes the cost story flattering rather than true -- 1.87M
+    tokens across 25 projects at the first cleanup. Records carry a `project` field
+    so they aggregate the same way the live ones do."""
+    if not RETIRED.exists():
+        return []
+    out = []
+    for line in RETIRED.read_text().splitlines():
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if project is None or rec.get("project") == project:
+            out.append(rec)
+    return out
+
+
 def read_records(project):
     p = REPO_ROOT / "projects" / project / "stats.jsonl"
     recs = []
@@ -63,7 +88,7 @@ def tokens(recs):
 
 
 def aggregate(project):
-    recs = read_records(project)
+    recs = read_records(project) or retired_records(project)
     phase = wall_by_phase(recs)
     swall = session_wall(recs)
     thinking = max(0.0, swall - sum(phase.values()))
