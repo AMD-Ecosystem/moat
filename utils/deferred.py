@@ -31,7 +31,6 @@ report cannot silently fall off the radar.
 import argparse
 import json
 import sys
-from pathlib import Path
 
 import moatlib
 

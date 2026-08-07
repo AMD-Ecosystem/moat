@@ -32,7 +32,7 @@ A real-GPU pass is required to mark success. If no GPU is present, set `validati
 INTEGRITY: see CLAUDE.md. You are the first line -- a clean tree at completion is required, not optional.
 
 ## Stop discipline
-See CLAUDE.md -- it applies to you and is stated once there. One arch-specific addition: a clean build producing WRONG NUMBERS on gfx1151 only (iterative solver, LM/Newton fit, or an FP regression head, while gfx90a and gfx1100 pass) is a known hard class, RDNA3.5 FP-accumulation divergence. Record the error magnitude and stop; do not chase it deep on this host.
+See CLAUDE.md -- it applies to you and is stated once there. One addition: a clean build producing WRONG NUMBERS on ONE architecture while the others pass is a known hard class, not a port bug to chase deep. Record the error magnitude and stop. The arch-specific instances live in the `cuda-to-rocm` skill's references/validation.md, which is where they stay current.
 
 ## State transitions
 - review-passed -> completed on a real-GPU pass; else validation-failed (back to the porter).

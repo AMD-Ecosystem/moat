@@ -658,8 +658,8 @@ def pr_approval_status(name, live=True):
                 f"the recorded approval names {(a.get('head_sha') or '?')[:8]}, but the "
                 f"approval on GitHub is against {review['commit'][:8]}")
 
-    return ("ok", f"approved by {review['login']} at {at} on {url}, "
-                  f"still standing at {(tip or '?')[:8]}")
+    return ("ok", f"approved by {review['login']} at {review.get('at')} on {url}, "
+                  f"still standing at {(pr.get('headRefOid') or '?')[:8]}")
 
 
 def license_tier(name):
@@ -1130,6 +1130,8 @@ def actionable(obj, platform):
     lock = obj.get("porting")
     if lock and lock.get("arch") != platform and STAGE_FOR_STATE.get(blk["state"]) == "porter":
         return False
+    if claim_live(obj.get("name") or ""):
+        return False          # another CLI on this host is working it right now
     if unmet_deps(obj):  # deps-first ordering: wait until depended-on ports complete
         return False
     return blk["state"] in STAGE_FOR_STATE
@@ -1483,7 +1485,6 @@ def branch_drift(branch, base_ref="origin/main"):
 
     Returns (substantive, inert) as sorted path lists. Both empty means the branch
     already carries everything on the trunk."""
-    project = branch[len("port/"):] if branch.startswith("port/") else None
     base = _git("merge-base", "HEAD", base_ref, check=False).stdout.strip()
     if not base:
         return ([], [])
@@ -1768,7 +1769,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="moatlib")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    s = sub.add_parser("scaffold", help="create projects/<name>/{status,upstream}.json")
+    s = sub.add_parser("scaffold", help="create projects/<name>/{status.json,notes.md}")
     s.add_argument("full_name")
     s.add_argument("--url")
     s.add_argument("--branch", default="main")

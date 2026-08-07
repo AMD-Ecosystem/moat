@@ -30,7 +30,7 @@
 # project in AMD software, shipping it, or depending on it. A non-commercial licence
 # in particular bars use while leaving contribution unremarkable. So a project at any
 # tier that later becomes a dependency rather than a contribution is a new question.
-# Projects record approval_scope in upstream.json for that reason.
+# Projects record that scope in status.json.license_clearance.note for that reason.
 #
 # HOW A PROJECT GETS TAKEN UP: the fork appearing in the org. Creating one is a
 # deliberate act by someone who can, so its existence carries the decision. Nothing

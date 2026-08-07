@@ -20,7 +20,9 @@ CI. To see what will be checked:
 `main` is protected. Work happens on a per-project branch, `port/<name>`, which is shared:
 every host and person working that project pushes state to it. **The branch existing on the
 remote is the claim** -- it is how another host knows the project is in flight, so there is
-no separate lock file.
+no separate lock file for adoption. (`projects/<name>/.claim` is a different thing: a
+short-lived, gitignored heartbeat that stops two CLIs on the SAME host picking the same
+project in the same minute. The branch is the durable claim; .claim is the local one.)
 
 The branch is deleted when its pull request merges -- that is what retires the claim. A
 `port/<name>` left behind reads as live work forever, and the selector has no timeout

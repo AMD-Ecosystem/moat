@@ -8,7 +8,6 @@ Usage:
   python3 utils/gen_readme.py --check    # exit 1 if README is stale (CI)"""
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -220,7 +219,6 @@ def render_table(projects):
             proj = f"[{name}]({up}) ([fork]({p['fork_url']}/tree/{p.get('fork_branch') or moatlib.PORT_BRANCH}))"
         else:
             proj = f"[{name}]({up})"
-        plats = p.get("platforms", {})
         cells = [gate_cell(p, g) for g in gates]
         lines.append("| " + " | ".join([proj] + cells + [outcome_cell(p)]) + " |")
     return "\n".join(lines)

@@ -31,7 +31,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install check dependencies
-        run: pip install --quiet jsonschema
+        run: pip install --quiet jsonschema pyflakes
 
       - name: Title and shape (backstop -- the real check runs before the PR is opened)
         # Whoever opens a pull request checks the title first, with

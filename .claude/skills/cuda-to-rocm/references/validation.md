@@ -55,6 +55,14 @@ installed in that machine, so a pinned `HIP_VISIBLE_DEVICES=1` copied from older
 notes silently selects a different card, or none. Read the device list at the time
 you use it (`rocminfo`, `hipInfo`).
 
+## One architecture gets wrong numbers while the others pass
+
+A clean build that produces wrong results on exactly one architecture -- an iterative
+solver, an LM/Newton fit, an FP regression head -- is usually floating-point
+accumulation divergence rather than a port bug, and RDNA3.5 (gfx1151) is where it has
+shown up. Record the error magnitude and stop rather than chasing it deep: the
+comparison that matters is against the other architectures, not against a fix.
+
 ## Diagnosing a suspected AMD fault before escalating
 
 Two patterns that each cost a deep investigation before the real cause was found.
