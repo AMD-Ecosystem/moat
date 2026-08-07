@@ -71,10 +71,16 @@ def known(full_name):
     canon, repo_id = canonical(full_name)
     names = {full_name} | ({canon} if canon else set())
 
+    # Across refs, not just the working tree: an in-flight project lives on its own
+    # port branch, and asking the local tree alone reports it as never adopted.
+    known_projects = moatlib.all_projects()
     for n in names:
         short = n.split("/")[-1]
-        if (moatlib.PROJECTS / short / "status.json").exists():
-            return f"already adopted as projects/{short}"
+        where = known_projects.get(short)
+        if where:
+            adj = {"branch": "in flight on port/" + short,
+                   "trunk": "on the trunk", "local": "in this checkout"}[where]
+            return f"already adopted as projects/{short} ({adj})"
     # By id as well as by name: a rename changes the name and not the id, and GitHub
     # resolves old->new but never new->old.
     disp = next((moatlib.get_disposition(n, repo_id) for n in names

@@ -113,6 +113,16 @@ if [ "$NEXT" = "NONE" ] || [ -z "$NEXT" ]; then
       echo "           $proj <- $dep ($verdict) -- $fix"
     done
   fi
+  # A project whose folder lives on its own branch is invisible to next-task here,
+  # and correctly so -- you cannot work files that are not in your tree. But that
+  # must not read as "there is nothing to do", so name it and say where it is.
+  ELSEWHERE=$(python3 utils/moatlib.py fleet "$PLATFORM" 2>/dev/null | awk -F'\t' '$2=="branch"')
+  if [ -n "$ELSEWHERE" ]; then
+    echo "elsewhere: actionable on another branch --"
+    printf '%s\n' "$ELSEWHERE" | while IFS=$'\t' read -r proj where state stage; do
+      echo "           $proj ($state -> $stage): git checkout port/$proj"
+    done
+  fi
   echo "hint     : adopt a project from data/candidates.json:"
   echo "           python3 utils/moatlib.py scaffold <owner/repo>"
   exit 0

@@ -42,13 +42,10 @@ def cmd_review(args):
     # project -- a different upstream would read as already adopted and vanish from the
     # queue. Dispositions have always keyed on the full name; this now agrees with them.
     adopted = set()
-    if moatlib.PROJECTS.exists():
-        for d in moatlib.PROJECTS.iterdir():
-            if not (d / "status.json").exists():
-                continue
-            full = moatlib.upstream_full_name(d.name)
-            if full:
-                adopted.add(full.lower())
+    for name in moatlib.all_projects():
+        full = moatlib.upstream_full_name(name)
+        if full:
+            adopted.add(full.lower())
     cands = load_candidates()
 
     def is_adopted(fn):

@@ -233,10 +233,10 @@ def upstream_full_name(name):
     """The upstream repo as `owner/repo`, from the URL status.json already holds.
     This is the key dispositions.json is written under, so it is how a project record
     finds its own disposition."""
-    try:
-        url = (load_status(name).get("upstream_url") or "").rstrip("/")
-    except (FileNotFoundError, ValueError, json.JSONDecodeError):
-        return None          # not adopted here; callers treat that as "no record"
+    obj, _where = project_record(name)
+    if obj is None:
+        return None          # not adopted anywhere; callers treat that as "no record"
+    url = (obj.get("upstream_url") or "").rstrip("/")
     tail = url.replace("https://github.com/", "")
     return tail if tail.count("/") == 1 else None
 
@@ -839,11 +839,96 @@ def port_done(obj):
     return any(b.get("state") in PORT_DONE_STATES for b in validations(obj).values())
 
 
+# ---- where a project's record lives ---------------------------------------
+#
+# A project is in exactly one of three places and the difference matters:
+#   local   -- projects/<name>/ in the working tree, whatever branch that is
+#   trunk   -- on origin/main: it reached a terminal state
+#   branch  -- on origin/port/<name>: adopted and in flight
+# Absent from all three means genuinely not adopted.
+#
+# Reading only the working tree conflates "in flight elsewhere" with "nobody has
+# looked at it", and those lead opposite ways: the first must not be re-screened,
+# the second must be. The PhoenixOS migration canary proved it -- with the folder
+# moved to its branch, `port_request check` said "a request would be new" and
+# `triage review` re-listed a planned project as an un-adopted candidate.
+
+_REF_CACHE = {}
+
+
+def _ref_read(ref, path):
+    """A file's contents at a git ref, or None. Local object store, no network."""
+    key = (ref, path)
+    if key not in _REF_CACHE:
+        r = _git("show", f"{ref}:{path}", check=False)
+        _REF_CACHE[key] = r.stdout if r.returncode == 0 else None
+    return _REF_CACHE[key]
+
+
+def port_branches():
+    """{project name: ref} for every port/<name> branch the remote is known to have.
+
+    Reads local remote-tracking refs, so it is only as fresh as the last fetch --
+    orient.sh fetches before it asks."""
+    out = {}
+    r = _git("for-each-ref", "--format=%(refname)", "refs/remotes/origin/port/",
+             check=False)
+    for ref in r.stdout.splitlines():
+        ref = ref.strip()
+        if ref:
+            out[ref.rsplit("/", 1)[-1]] = ref
+    return out
+
+
+def project_record(name):
+    """(status object, where) for a project, from wherever its record lives.
+
+    `where` is "local", "trunk", "branch" or None. Local wins: if the folder is in
+    the working tree that IS the project as this checkout sees it."""
+    if status_path(name).exists():
+        try:
+            return (load_status(name), "local")
+        except (ValueError, json.JSONDecodeError):
+            return (None, None)
+    path = f"projects/{name}/status.json"
+    for ref, where in (("origin/main", "trunk"),
+                       (f"origin/port/{name}", "branch")):
+        raw = _ref_read(ref, path)
+        if raw:
+            try:
+                return (json.loads(raw), where)
+            except json.JSONDecodeError:
+                pass
+    return (None, None)
+
+
+def all_projects():
+    """{name: where} for every project this repo knows about, across refs."""
+    out = {}
+    for ref in port_branches():
+        out[ref] = "branch"
+    r = _git("ls-tree", "--name-only", "origin/main", "projects/", check=False)
+    for line in r.stdout.splitlines():
+        n = line.strip().rstrip("/").split("/")[-1]
+        if n and n != "README.md":
+            out[n] = "trunk"
+    if PROJECTS.exists():
+        for d in PROJECTS.iterdir():
+            if (d / "status.json").exists():
+                out[d.name] = "local"
+    return out
+
+
 def project_port_state(name):
-    """Best per-arch state of another project, or None if it is not adopted."""
+    """Best per-arch state of another project, or None if it is not adopted.
+    Resolved across refs, so an in-flight project on its own branch is not mistaken
+    for one nobody has adopted."""
+    obj, _where = project_record(name)
+    if obj is None:
+        return None
     try:
-        states = {b.get("state") for b in validations(load_status(name)).values()}
-    except (FileNotFoundError, ValueError, json.JSONDecodeError, KeyError):
+        states = {b.get("state") for b in validations(obj).values()}
+    except (AttributeError, KeyError):
         return None
     for st in PORT_DONE_STATES:
         if st in states:
@@ -991,6 +1076,34 @@ def dep_blocked(platform):
         report = dep_report(obj)
         if report:
             out.append((d.name, report))
+    return out
+
+
+def fleet(platform):
+    """Actionable work across every ref, not just this checkout.
+
+    After a project's folder moves to its own branch, `next_task` cannot see it --
+    correctly, since you cannot work a project whose files are not in your tree. But
+    then nothing answers "what is out there", and work becomes invisible rather than
+    merely elsewhere. This scans the refs and says which branch to check out."""
+    out = []
+    for name, where in sorted(all_projects().items()):
+        obj, _ = project_record(name)
+        if obj is None or obj.get("on_hold"):
+            continue
+        disp = disposition_for_project(name)
+        if disp and disp.get("disposition") == "skip":
+            continue
+        blk = validations(obj).get(platform) or _platform_block(
+            "awaiting-port" if obj.get("head_sha") else "unclaimed")
+        if blk.get("blocked") or blk.get("state") in INERT:
+            continue
+        stage = STAGE_FOR_STATE.get(blk.get("state"))
+        if not stage or unmet_deps(obj):
+            continue
+        out.append({"project": name, "where": where, "state": blk["state"],
+                    "stage": stage, "priority": float(obj.get("priority", 0))})
+    out.sort(key=lambda r: (SELECT_RANK.get(r["state"], 99), -r["priority"], r["project"]))
     return out
 
 
@@ -1666,6 +1779,8 @@ def main(argv=None):
     rf = sub.add_parser("release-forks",
                         help="advance awaiting-fork projects whose fork now exists")
     rf.add_argument("--dry-run", action="store_true")
+    fl = sub.add_parser("fleet", help="actionable work across all refs, not just this checkout")
+    fl.add_argument("platform")
     db = sub.add_parser("dep-blocked",
                         help="projects held back only by a dependency, and why")
     db.add_argument("platform")
@@ -1835,6 +1950,9 @@ def main(argv=None):
         if not rel:
             print("release-forks: nothing waiting on a fork")
         return 0
+    elif args.cmd == "fleet":
+        for r in fleet(args.platform):
+            print(f"{r['project']}\t{r['where']}\t{r['state']}\t{r['stage']}")
     elif args.cmd == "dep-blocked":
         rows = dep_blocked(args.platform)
         for name, report in rows:
