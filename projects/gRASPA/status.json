@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "gRASPA",
   "upstream_url": "https://github.com/snurr-group/gRASPA",
   "fork_url": "https://github.com/AMD-Ecosystem/gRASPA",

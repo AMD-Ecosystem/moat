@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "Fast-Poisson-Image-Editing",
   "upstream_url": "https://github.com/Trinkle23897/Fast-Poisson-Image-Editing",
   "fork_url": "https://github.com/AMD-Ecosystem/Fast-Poisson-Image-Editing",

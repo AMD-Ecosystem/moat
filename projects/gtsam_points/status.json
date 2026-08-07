@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "gtsam_points",
   "upstream_url": "https://github.com/koide3/gtsam_points",
   "fork_url": "https://github.com/AMD-Ecosystem/gtsam_points",

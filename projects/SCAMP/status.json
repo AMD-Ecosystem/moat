@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "SCAMP",
   "upstream_url": "https://github.com/zpzim/SCAMP",
   "fork_url": "https://github.com/AMD-Ecosystem/SCAMP",
@@ -52,7 +52,7 @@
       }
     },
     "windows-gfx1101": {
-      "state": "revalidate",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "19801ac3dfebeb3cb39b0742337cf11f26cac6e6",

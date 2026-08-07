@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "AutoDock-GPU",
   "upstream_url": "https://github.com/ccsb-scripps/AutoDock-GPU",
   "fork_url": "https://github.com/AMD-Ecosystem/AutoDock-GPU",

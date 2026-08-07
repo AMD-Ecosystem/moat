@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "gdtk",
   "upstream_url": "https://github.com/gdtk-uq/gdtk",
   "fork_url": "https://github.com/AMD-Ecosystem/gdtk",

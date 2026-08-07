@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "icicle",
   "upstream_url": "https://github.com/ingonyama-zk/icicle",
   "fork_url": "https://github.com/AMD-Ecosystem/icicle",
@@ -16,7 +16,6 @@
   "stage": "review-passed",
   "platforms": {
     "windows-gfx1201": {
-      "state": "port-ready",
       "blocked": true,
       "blocked_reason": "no-windows-support-in-icicle-host-framework: same blockers as windows-gfx1151 confirmed at d8e04fd -- runtime.cpp uses POSIX dlopen/dlfcn.h/dirent.h and emits #error Unsupported operating system for non-Linux/macOS; utils.h uses cxxabi.h (no Windows equivalent); test_base.h uses POSIX setenv. Upstream icicle framework missing Windows support; HIP-PQC GPU kernels are correct (validated on gfx90a and gfx1100).",
       "validated_sha": null,
@@ -96,7 +95,6 @@
       }
     },
     "windows-gfx1101": {
-      "state": "port-ready",
       "blocked": true,
       "blocked_reason": "Host-wide block, GPU-independent (carried from windows-gfx1201/gfx1151 determination): icicle upstream host framework has no Windows support -- runtime.cpp uses POSIX dlfcn.h/dirent.h/sys/stat.h with an explicit #error 'Unsupported operating system', plus cxxabi.h demangler and setenv(); HIP GPU kernels are fine but the backend loader is POSIX-only. Windows port is upstream-scope. Identical on gfx1101.",
       "validated_sha": null,

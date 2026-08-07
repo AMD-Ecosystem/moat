@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "lc0",
   "upstream_url": "https://github.com/LeelaChessZero/lc0",
   "fork_url": "https://github.com/AMD-Ecosystem/lc0",
@@ -55,7 +55,7 @@
       }
     },
     "linux-gfx1100": {
-      "state": "revalidate",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "a80a7be",
@@ -84,7 +84,6 @@
       }
     },
     "windows-gfx1101": {
-      "state": "port-ready",
       "blocked": true,
       "blocked_reason": "Value-head numerical defect identical to gfx1151: builds+runs (344 targets, benchmark clean, 8/8 CPU gtest), policy bit-identical (~4.6e-07) but value wrong 4.4e-02 absolute (sign flips) at atol=1e-3 bar. Defect appears identically on gfx1201 under same TheRock ROCm 7.14 Windows SDK. Exhaustive investigation: graph capture off, use_gemm_ex=false, Conv1Layer loop replacement, standalone BLAS tests all PASS -- BLAS is correct for all relevant dimensions. Root cause unresolved; suspected TheRock ROCm 7.14 Windows HIP runtime issue in custom kernel path. Linux gfx90a+gfx1100 pass the same check on ROCm 7.2.1.",
       "validated_sha": null,
@@ -106,7 +105,6 @@
       }
     },
     "windows-gfx1201": {
-      "state": "port-ready",
       "blocked": true,
       "blocked_reason": "Value-head numerical defect identical to gfx1151 and gfx1101: builds+runs (344 targets, benchmark clean, 8/8 CPU gtest), policy bit-identical (~4.6e-07) but value wrong 4.4e-02 absolute (sign flips) at atol=1e-3 bar. Defect appears identically on gfx1101 under same TheRock ROCm 7.14 Windows SDK. Exhaustive investigation: graph capture off, use_gemm_ex=false, Conv1Layer loop replacement, standalone BLAS tests all PASS -- BLAS is correct for all relevant dimensions. Root cause unresolved; suspected TheRock ROCm 7.14 Windows HIP runtime issue in custom kernel path. Linux gfx90a+gfx1100 pass the same check on ROCm 7.2.1.",
       "validated_sha": null,

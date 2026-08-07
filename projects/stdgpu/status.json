@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "stdgpu",
   "upstream_url": "https://github.com/stotko/stdgpu",
   "fork_url": "https://github.com/AMD-Ecosystem/stdgpu",

@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "QUICK",
   "upstream_url": "https://github.com/merzlab/QUICK",
   "fork_url": "https://github.com/AMD-Ecosystem/QUICK",
@@ -63,7 +63,6 @@
       "last_agent": "validator"
     },
     "windows-gfx1101": {
-      "state": "port-ready",
       "blocked": true,
       "blocked_reason": "Windows host has no MSVC-ABI Fortran compiler; QUICK is a mixed Fortran/HIP build (.f90 modules, gfortran, rocBLAS/rocSOLVER Fortran bindings) -- not buildable on Windows.",
       "validated_sha": null,
@@ -85,7 +84,6 @@
       }
     },
     "windows-gfx1201": {
-      "state": "port-ready",
       "blocked": true,
       "blocked_reason": "Windows host has no MSVC-ABI Fortran compiler; QUICK is a mixed Fortran/HIP build (.f90 modules, gfortran, rocBLAS/rocSOLVER Fortran bindings) -- not buildable on Windows.",
       "validated_sha": null,

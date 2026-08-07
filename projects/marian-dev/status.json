@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "marian-dev",
   "upstream_url": "https://github.com/marian-nmt/marian-dev",
   "fork_url": "https://github.com/AMD-Ecosystem/marian-dev",

@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "bellhopcuda",
   "upstream_url": "https://github.com/A-New-BellHope/bellhopcuda",
   "fork_url": "https://github.com/AMD-Ecosystem/bellhopcuda",

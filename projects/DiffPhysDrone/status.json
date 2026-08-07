@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "DiffPhysDrone",
   "upstream_url": "https://github.com/HenryHuYu/DiffPhysDrone",
   "fork_url": "https://github.com/AMD-Ecosystem/DiffPhysDrone",

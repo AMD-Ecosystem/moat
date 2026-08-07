@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "splatad",
   "upstream_url": "https://github.com/carlinds/splatad",
   "fork_url": "https://github.com/AMD-Ecosystem/splatad",

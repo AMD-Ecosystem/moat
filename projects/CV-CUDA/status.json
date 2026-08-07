@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "CV-CUDA",
   "upstream_url": "https://github.com/CVCUDA/CV-CUDA",
   "fork_url": "https://github.com/AMD-Ecosystem/CV-CUDA",
@@ -78,7 +78,6 @@
       }
     },
     "windows-gfx1101": {
-      "state": "port-ready",
       "blocked": true,
       "blocked_reason": "Not Windows-ready: the CV-CUDA port is Linux-only (validated on linux-gfx90a + linux-gfx1100); no Windows build work was implemented and the Windows platforms are untried followers reusing the Linux branch. Per maintainer call, not ready for Windows -- do not validate.",
       "validated_sha": null,
@@ -100,7 +99,6 @@
       }
     },
     "windows-gfx1201": {
-      "state": "port-ready",
       "blocked": true,
       "blocked_reason": "Not Windows-ready: the CV-CUDA port is Linux-only (validated on linux-gfx90a + linux-gfx1100); no Windows build work was implemented and the Windows platforms are untried followers reusing the Linux branch. Per maintainer call, not ready for Windows -- do not validate.",
       "validated_sha": null,

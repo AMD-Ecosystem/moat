@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "gaussian_splatting",
   "upstream_url": "https://github.com/joeyan/gaussian_splatting",
   "fork_url": "https://github.com/AMD-Ecosystem/gaussian_splatting",

@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "ZhiLight",
   "upstream_url": "https://github.com/zhihu/ZhiLight",
   "fork_url": "https://github.com/AMD-Ecosystem/ZhiLight",
@@ -100,7 +100,6 @@
       }
     },
     "windows-gfx1201": {
-      "state": "port-ready",
       "blocked": true,
       "blocked_reason": "Host-wide block, GPU-independent (carried from windows-gfx1101 determination): bmengine host runtime uses Linux POSIX APIs (execinfo.h, sys/time.h, sched.h, pthread, sys/syscall) with no _WIN32 guards; GPU kernels compile for gfx1201 but host infra does not. Same Windows host.",
       "validated_sha": null,

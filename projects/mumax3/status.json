@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "mumax3",
   "upstream_url": "https://github.com/mumax/3",
   "fork_url": "https://github.com/AMD-Ecosystem/mumax3",

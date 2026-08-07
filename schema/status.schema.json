@@ -16,8 +16,8 @@
   "properties": {
     "schema_version": {
       "enum": [
-        1,
-        2
+        2,
+        3
       ]
     },
     "name": {
@@ -297,6 +297,7 @@
         "awaiting-upstream",
         "changes-requested",
         "delta-ported",
+        "not-portable",
         "planned",
         "ported",
         "porting",
@@ -305,6 +306,30 @@
         "unclaimed",
         "validation-failed"
       ]
+    },
+    "not_portable": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "reason",
+        "by",
+        "at"
+      ],
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string"
+        }
+      }
     },
     "platforms": {
       "type": "object",
@@ -317,22 +342,9 @@
     }
   },
   "$defs": {
-    "state": {
+    "archstate": {
       "enum": [
-        "awaiting-fork",
-        "awaiting-port",
-        "awaiting-upstream",
-        "changes-requested",
         "completed",
-        "delta-ported",
-        "planned",
-        "port-ready",
-        "ported",
-        "porting",
-        "revalidate",
-        "review-passed",
-        "screened",
-        "unclaimed",
         "validation-failed"
       ]
     },
@@ -343,7 +355,7 @@
       ],
       "properties": {
         "state": {
-          "$ref": "#/$defs/state"
+          "$ref": "#/$defs/archstate"
         },
         "blocked": {
           "type": "boolean"

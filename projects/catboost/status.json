@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "catboost",
   "upstream_url": "https://github.com/catboost/catboost",
   "fork_url": "https://github.com/AMD-Ecosystem/catboost-moat",

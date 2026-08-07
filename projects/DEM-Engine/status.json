@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "DEM-Engine",
   "upstream_url": "https://github.com/projectchrono/DEM-Engine",
   "fork_url": "https://github.com/AMD-Ecosystem/DEM-Engine",

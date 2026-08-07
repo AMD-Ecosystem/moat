@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "YarnBall",
   "upstream_url": "https://github.com/jerry060599/YarnBall",
   "fork_url": "https://github.com/AMD-Ecosystem/YarnBall",

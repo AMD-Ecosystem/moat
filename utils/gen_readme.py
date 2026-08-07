@@ -53,8 +53,8 @@ GATE_GLYPH = {"proven": "✅", "stale": "🔄", "working": "🔧",
               "queued": "⬜", "blocked": "🚫", "none": "—"}
 WORKING_STATES = {"porting", "ported", "delta-ported", "review-passed",
                   "changes-requested", "validation-failed", "planned", "screened"}
-QUEUED_STATES = {"port-ready", "awaiting-port", "awaiting-fork", "awaiting-upstream",
-                 "unclaimed"}
+QUEUED_STATES = {"port-ready", "awaiting-fork", "awaiting-upstream",
+                 "unclaimed", "not-portable"}
 # `completed` and `revalidate` are read before these sets, so between them the four
 # groups must partition moatlib.STATES exactly. Checked rather than trusted: this
 # carried a "validating" state that moatlib has never had, and the failure mode of a
@@ -103,18 +103,20 @@ def gate_state(project, gate):
             verdict = "none"
         if GATE_RANK.index(verdict) < GATE_RANK.index(best):
             best, best_arch = verdict, arch
-    # No architecture has recorded anything here. For a project that is live in the
-    # pipeline that is "not started", not "nothing recorded" -- the gate is waiting on
-    # hardware, which is exactly what an `awaiting-port` record used to say once per
-    # arch before the stage held it once.
+    # No architecture carrying this gate has recorded anything. If the gate is still
+    # UNSATISFIED the honest cell is "not started" rather than "nothing recorded": it
+    # is waiting on hardware, which is what an `awaiting-port` record used to say once
+    # per arch. If the gate IS satisfied, some other arch proved it and the branches
+    # above already said so.
     #
     # Queued and not "working", whatever the stage: this cell is about ONE GATE, and
     # rendering a project at `porting` as in-progress under wave32 would claim work on
     # hardware nobody has touched. How far the project has got is the Outcome column's
-    # business. Narrow by design -- a project that HAS arch records keeps answering
-    # from them.
-    if best == "none" and moatlib.project_stage(project) \
-            and not any(b.get("state") for b in plats.values()):
+    # business. A project judged unportable is not waiting on hardware at all, so it
+    # keeps the blank.
+    stage = moatlib.project_stage(project)
+    if (best == "none" and stage and stage != "not-portable"
+            and gate in moatlib.unsatisfied_gates(project)):
         best = "queued"
     return (best, best_arch)
 

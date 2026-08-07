@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "anari-visionaray",
   "upstream_url": "https://github.com/szellmann/anari-visionaray",
   "fork_url": "https://github.com/AMD-Ecosystem/anari-visionaray",
@@ -102,28 +102,6 @@
         "last_session_at": null
       },
       "last_agent": "reviewer"
-    },
-    "windows-gfx1101": {
-      "state": "port-ready",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-24T14:20:17Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
     }
   }
 }

@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "oneflow",
   "upstream_url": "https://github.com/Oneflow-Inc/oneflow",
   "fork_url": "https://github.com/AMD-Ecosystem/oneflow",
@@ -74,7 +74,6 @@
       }
     },
     "windows-gfx1101": {
-      "state": "port-ready",
       "blocked": true,
       "blocked_reason": "Windows not viable: RCCL Linux-only (find_package rccl REQUIRED, nccl.h in cuda_util.h/core files); POSIX ibv/pthread_fork syscalls; platform.cmake MSVC flags clash with all-clang; 32 third-party deps Linux-centric ExternalProject; oneflow never shipped on Windows upstream. GPU port complete on linux-gfx90a+gfx1100.",
       "validated_sha": null,
@@ -96,7 +95,6 @@
       }
     },
     "windows-gfx1201": {
-      "state": "port-ready",
       "blocked": true,
       "blocked_reason": "Windows not viable (same as gfx1101): RCCL Linux-only; POSIX ibv/pthread_fork syscalls; platform.cmake MSVC flags clash with all-clang; 32 third-party deps Linux-centric. GPU port complete on linux-gfx90a+gfx1100.",
       "validated_sha": null,

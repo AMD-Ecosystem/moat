@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "FastGeodis",
   "upstream_url": "https://github.com/masadcv/FastGeodis",
   "fork_url": "https://github.com/AMD-Ecosystem/FastGeodis",

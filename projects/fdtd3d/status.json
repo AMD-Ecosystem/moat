@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "fdtd3d",
   "upstream_url": "https://github.com/zer011b/fdtd3d",
   "fork_url": "https://github.com/AMD-Ecosystem/fdtd3d",

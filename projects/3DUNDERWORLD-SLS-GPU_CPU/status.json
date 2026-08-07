@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "3DUNDERWORLD-SLS-GPU_CPU",
   "upstream_url": "https://github.com/theICTlab/3DUNDERWORLD-SLS-GPU_CPU",
   "fork_url": "https://github.com/AMD-Ecosystem/3DUNDERWORLD-SLS-GPU_CPU",
@@ -86,7 +86,7 @@
       }
     },
     "windows-gfx1101": {
-      "state": "revalidate",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "4584f0deed39a6abec9f9b85861bafc66b44c935",
@@ -114,7 +114,7 @@
       }
     },
     "windows-gfx1201": {
-      "state": "revalidate",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "4584f0deed39a6abec9f9b85861bafc66b44c935",

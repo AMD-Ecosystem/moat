@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "diff-surfel-rasterizations",
   "upstream_url": "https://github.com/xbillowy/diff-surfel-rasterizations",
   "fork_url": "https://github.com/AMD-Ecosystem/diff-surfel-rasterizations",

@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "alien",
   "upstream_url": "https://github.com/chrxh/alien",
   "fork_url": "https://github.com/AMD-Ecosystem/alien",
@@ -21,7 +21,7 @@
   "stage": "review-passed",
   "platforms": {
     "windows-gfx1101": {
-      "state": "revalidate",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "f98ff86e0",
@@ -106,7 +106,7 @@
       }
     },
     "windows-gfx1201": {
-      "state": "revalidate",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "f56285aecda717d238c957bc839cf504db425e7f",

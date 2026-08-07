@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "qrack",
   "upstream_url": "https://github.com/unitaryfoundation/qrack",
   "fork_url": "https://github.com/AMD-Ecosystem/qrack",

@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "plvs",
   "upstream_url": "https://github.com/luigifreda/plvs",
   "fork_url": "https://github.com/AMD-Ecosystem/plvs",
@@ -54,7 +54,6 @@
       }
     },
     "windows-gfx1101": {
-      "state": "port-ready",
       "blocked": true,
       "blocked_reason": "Same host-wide Windows toolchain blocker as windows-gfx1201 (same physical machine, same TheRock clang-cl): full-SLAM binary crashes at startup in boost.serialization static type-registration (0xC00000FD infinite recursion in oserializer<KeyFrame>::save_object_data) BEFORE any GPU call. Confirmed GPU-independent and host-wide (independent of static/dynamic boost, -O0, and the Pangolin viewer). gfx1101 GPU itself is proven by other passes (e.g. libSGM). Not a port defect; needs a boost-header patch for the clang-MSVC ABI, MSVC cl.exe for the serialization TUs, or a fixed ROCm clang.",
       "validated_sha": null,

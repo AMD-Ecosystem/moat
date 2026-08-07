@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "3DGS-LM",
   "upstream_url": "https://github.com/lukasHoel/3DGS-LM",
   "fork_url": "https://github.com/AMD-Ecosystem/3DGS-LM",

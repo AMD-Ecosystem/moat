@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "kaldifeat",
   "upstream_url": "https://github.com/csukuangfj/kaldifeat",
   "fork_url": "https://github.com/AMD-Ecosystem/kaldifeat",

@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "k2",
   "upstream_url": "https://github.com/k2-fsa/k2",
   "fork_url": "https://github.com/AMD-Ecosystem/k2",

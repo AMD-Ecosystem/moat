@@ -166,6 +166,20 @@ def build():
             # written before this field existed are still readable while they are
             # migrated (see READABLE_SCHEMA_VERSIONS).
             "stage": {"enum": sorted(m.STAGE_STATES)},
+            # A person's verdict that the codebase cannot be ported at all, which is
+            # what `stage: not-portable` stands on. Like a gate waiver and a licence
+            # clearance, a record without `by` satisfies nothing -- an agent may build
+            # the case and may not sign it. An OS that refuses the port is a `windows`
+            # waiver instead, and a toolchain defect on one card is a per-arch block.
+            "not_portable": {
+                "type": ["object", "null"],
+                "required": ["reason", "by", "at"],
+                "properties": {
+                    "reason": {"type": "string", "minLength": 1},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                },
+            },
             # Open platform map. A key is any well-formed <os>-<gfx>, checked by
             # shape rather than against a roster, so a host with a new GPU records a
             # validation without a schema change. Absent means "never worked here".
@@ -176,7 +190,9 @@ def build():
             },
         },
         "$defs": {
-            "state": {"enum": sorted(m.STATES)},
+            # Only what an ARCHITECTURE can record. port-ready and revalidate are
+            # derived from (stage, validated_sha, head_sha) and never stored.
+            "archstate": {"enum": sorted(m.ARCH_STATES)},
             "arch": {
                 "type": "object",
                 # `state` is not required: a migrated block holds only what this arch
@@ -184,7 +200,7 @@ def build():
                 # alone. The project's own progress lives in `stage`.
                 "required": ["blocked"],
                 "properties": {
-                    "state": {"$ref": "#/$defs/state"},
+                    "state": {"$ref": "#/$defs/archstate"},
                     "blocked": {"type": "boolean"},
                     "blocked_reason": {"type": ["string", "null"]},
                     "validated_sha": {"type": ["string", "null"],

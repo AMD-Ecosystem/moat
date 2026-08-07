@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "mHC.cu",
   "upstream_url": "https://github.com/AndreSlavescu/mHC.cu",
   "fork_url": "https://github.com/AMD-Ecosystem/mHC.cu",

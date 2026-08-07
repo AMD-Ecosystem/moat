@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "MPPI-Generic",
   "upstream_url": "https://github.com/ACDSLab/MPPI-Generic",
   "fork_url": "https://github.com/AMD-Ecosystem/MPPI-Generic",

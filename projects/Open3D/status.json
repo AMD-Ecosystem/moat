@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "Open3D",
   "upstream_url": "https://github.com/isl-org/Open3D",
   "fork_url": "https://github.com/AMD-Ecosystem/Open3D",
@@ -78,7 +78,6 @@
       }
     },
     "windows-gfx1101": {
-      "state": "port-ready",
       "blocked": true,
       "blocked_reason": "Bundled 3rdparty (TBB -fPIC, then VTK/assimp/embree) fails to build under the all-clang toolchain USE_HIP forces on Windows; host build infra, not the GPU/HIP port (validated on gfx90a+gfx1100, 499 tests). Arch-independent. Reversible: supply system libs via vcpkg USE_SYSTEM_*. See notes.md Validation 2026-06-04.",
       "validated_sha": null,
@@ -100,7 +99,7 @@
       }
     },
     "windows-gfx1201": {
-      "state": "revalidate",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "973905116",

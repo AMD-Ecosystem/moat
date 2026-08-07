@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "visionaray",
   "upstream_url": "https://github.com/szellmann/visionaray",
   "fork_url": "https://github.com/AMD-Ecosystem/visionaray",
@@ -53,7 +53,7 @@
       }
     },
     "windows-gfx1101": {
-      "state": "revalidate",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "1b0b5813",

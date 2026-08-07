@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "egg.c",
   "upstream_url": "https://github.com/d0rc/egg.c",
   "fork_url": "https://github.com/AMD-Ecosystem/egg.c",
@@ -113,7 +113,6 @@
       }
     },
     "windows-gfx1101": {
-      "state": "port-ready",
       "blocked": true,
       "blocked_reason": "gfx1101 TDR-removed mid-kernel: hipInfo returns 0100 immediately, PRO V710 absent from wmic; train_sequence_kernel dispatched (AMD_LOG_LEVEL=3 confirmed) then TDR fired; build succeeded at f565358; cannot reboot (sibling CLIs active)",
       "validated_sha": null,

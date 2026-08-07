@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "cupoch",
   "upstream_url": "https://github.com/neka-nat/cupoch",
   "fork_url": "https://github.com/AMD-Ecosystem/cupoch",
@@ -101,7 +101,7 @@
       }
     },
     "windows-gfx1101": {
-      "state": "revalidate",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "be446573bc604e2bcb4f532dd3c1b36ef4f6b29f",

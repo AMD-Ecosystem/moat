@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "dietgpu",
   "upstream_url": "https://github.com/facebookresearch/dietgpu",
   "fork_url": "https://github.com/AMD-Ecosystem/dietgpu",
@@ -74,7 +74,7 @@
       }
     },
     "windows-gfx1101": {
-      "state": "revalidate",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "a7c4674c62789743b9f8c3bb35aa1fa7bca4d24b",
@@ -103,7 +103,7 @@
       }
     },
     "windows-gfx1201": {
-      "state": "revalidate",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "a7c4674c62789743b9f8c3bb35aa1fa7bca4d24b",

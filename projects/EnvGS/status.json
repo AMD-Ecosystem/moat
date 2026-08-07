@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "EnvGS",
   "upstream_url": "https://github.com/zju3dv/EnvGS",
   "fork_url": "https://github.com/AMD-Ecosystem/EnvGS",

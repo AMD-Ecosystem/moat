@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "brian2cuda",
   "upstream_url": "https://github.com/brian-team/brian2cuda",
   "fork_url": "https://github.com/AMD-Ecosystem/brian2cuda",
@@ -73,7 +73,7 @@
       "last_agent": "validator"
     },
     "windows-gfx1101": {
-      "state": "revalidate",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "add2c0ebbd65445731a96f1cb624f7d72af068a1",
@@ -96,7 +96,7 @@
       "last_agent": "validator"
     },
     "windows-gfx1201": {
-      "state": "revalidate",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "add2c0ebbd65445731a96f1cb624f7d72af068a1",

@@ -19,12 +19,16 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROJECTS = REPO_ROOT / "projects"
-SCHEMA_VERSION = 2
-# Records written before `stage` existed still READ. They are migrated in place, one
-# ref at a time, and a checkout must not refuse the ones the migration has not
-# reached -- 138 records would become unreadable the moment this bump landed, since
-# load_status validates. The window closes when every record carries 2.
-READABLE_SCHEMA_VERSIONS = (1, 2)
+SCHEMA_VERSION = 3
+# Records are migrated in place, one ref at a time, so a checkout must not refuse the
+# ones the migration has not reached yet -- load_status validates, and a hard bump
+# makes every record unreadable the moment it lands. The window is one version wide
+# and closes when the migration finishes.
+#
+# 3 is a real break rather than an addition: `revalidate` became a `completed` block
+# whose validated_sha is not the head, so a version-2 reader would see that block and
+# conclude the arch is up to date on code it has never run.
+READABLE_SCHEMA_VERSIONS = (2, 3)
 
 def _load_arches():
     """config/arches.toml is the single source of truth for gates.
@@ -96,16 +100,15 @@ def validations(obj):
 
 PORT_BRANCH = "moat-port"  # the topic branch that holds the port on each fork
 
-# Per-arch pipeline. `awaiting-port` is where an arch waits until a port exists to
-# validate (formerly blocked-needs-gfx90a, which named a lead that no longer exists).
-# The `blocked` boolean (needs user input) is orthogonal and set separately.
+# Where the PORT is. One fork, one answer, so this is a property of the project and
+# never of an architecture -- there is no such thing as "screened on gfx90a".
 #
-# The upstream PR is NOT in here. It is one fact about the project, not about any
-# arch: opening it changes nothing an arch validated, and parking it on one arch's
-# record overwrote that arch's real state (a merged PR rendered as an unknown status
-# in the README because `upstream-landed` had displaced `completed`). It lives in the
-# project-level `pr_state` instead -- see PR_STATES.
-ALLOWED = {
+# The upstream PR is NOT in here. It is one fact about the project too, but an
+# orthogonal one: opening it changes nothing any arch validated, and parking it on an
+# arch's record overwrote that arch's real state (a merged PR rendered as an unknown
+# status in the README because `upstream-landed` had displaced `completed`). It lives
+# in `pr_state` -- see PR_STATES.
+STAGE_TRANSITIONS = {
     # awaiting-fork is reachable from unclaimed because that is what intake does: it
     # screens an unadopted project and parks it for the fork decision, in one step.
     # Requiring screened first made the documented instruction illegal, and agents
@@ -114,7 +117,6 @@ ALLOWED = {
     "screened": {"awaiting-fork", "planned"},
     "awaiting-fork": {"screened", "planned", "porting"},
     "awaiting-upstream": {"planned", "porting", "unclaimed"},
-    "awaiting-port": {"port-ready"},
     # The porter reaches awaiting-fork when it finds no fork to push to, which
     # porter.md has always instructed and the table has always refused.
     "planned": {"porting", "awaiting-upstream", "awaiting-fork"},
@@ -126,44 +128,40 @@ ALLOWED = {
     # this way costs nothing and closes the hole.
     "porting": {"ported", "delta-ported"},
     "ported": {"review-passed", "changes-requested"},
-    "changes-requested": {"porting"},
-    "review-passed": {"completed", "validation-failed"},
-    "validation-failed": {"porting"},
-    "port-ready": {"completed", "validation-failed"},
     "delta-ported": {"review-passed", "changes-requested"},
-    "revalidate": {"completed", "validation-failed"},
-    "completed": {"revalidate"},
+    "changes-requested": {"porting"},
+    # review-passed has no exit to `completed`: completing is an ARCH's fact now, and
+    # a project stays review-passed while its architectures validate independently.
+    "review-passed": {"validation-failed"},
+    "validation-failed": {"porting"},
+    # A person may revive a project judged unportable -- ROCm gains a library, an
+    # upstream rewrite lands. Nothing else leads out.
+    "not-portable": {"planned", "porting"},
 }
-STATES = set(ALLOWED) | {s for v in ALLOWED.values() for s in v}
+# Any stage may end here, which is why `not-portable` is not in the table above: the
+# judgement can be reached from a planner's analysis, from a porter failing over and
+# over, or from a validator. Only a person may record it (see set_not_portable).
+STAGE_STATES = set(STAGE_TRANSITIONS) | {s for v in STAGE_TRANSITIONS.values() for s in v}
 
-# Which of those states are facts about the PROJECT and which are facts about one
-# GPU. A project-level fact stored per arch is stored N times and the copies
-# disagree; `stage` holds the project's answer once. Nothing reads it yet -- it is
-# written alongside the arch block so the two can be compared before either the
-# records or the readers move.
-#
-# The sets OVERLAP on validation-failed, deliberately: a failed run is evidence this
-# arch produced, and is also what sends the whole port back to the porter. Every
-# other state belongs to exactly one side.
-#
-# `port-ready` and `revalidate` are arch-level but are not facts anyone recorded --
-# they are conclusions about (stage, validated_sha, head_sha) that a sweep writes
-# into the file. They stay stored until that derivation replaces them, along with
-# `awaiting-port`, whose only meaning is "no port exists here yet" -- which an absent
-# record already says.
-STAGE_STATES = {
-    "unclaimed", "screened", "planned", "awaiting-fork", "awaiting-upstream",
-    "porting", "ported", "delta-ported", "changes-requested", "review-passed",
-    "validation-failed",
+# What an ARCHITECTURE knows, which is only whether it ran the tests on this code.
+# `blocked` is orthogonal and set separately: it means "this arch cannot run it, here
+# is why", and after the split that is the only thing it may mean -- a verdict on the
+# codebase is `not-portable` and a verdict on the OS is a gate waiver.
+ARCH_TRANSITIONS = {
+    None: {"completed", "validation-failed"},
+    "completed": {"validation-failed"},
+    "validation-failed": {"completed"},
 }
-ARCH_STATES = {"completed", "validation-failed",
-               "awaiting-port", "port-ready", "revalidate"}
-# A state that lands on neither side would be silently unrepresentable after the
-# split, so it fails at import instead (the model is gen_readme's _UNGROUPED).
-_UNSIDED = STATES - STAGE_STATES - ARCH_STATES
-_UNKNOWN_SIDED = (STAGE_STATES | ARCH_STATES) - STATES
-assert not _UNSIDED, f"moatlib: states on neither side of the split: {sorted(_UNSIDED)}"
-assert not _UNKNOWN_SIDED, f"moatlib: sided states moatlib lacks: {sorted(_UNKNOWN_SIDED)}"
+ARCH_STATES = {s for s in ARCH_TRANSITIONS if s} | \
+              {s for v in ARCH_TRANSITIONS.values() for s in v}
+
+# Never stored. `port-ready` and `revalidate` were conclusions about (stage,
+# validated_sha, head_sha) that a sweep wrote into the file, and a stored conclusion
+# is a thing that goes stale; arch_task computes them instead. They remain in the
+# vocabulary because agents and the selector still speak them.
+DERIVED_ARCH_STATES = {"port-ready", "revalidate"}
+
+STATES = STAGE_STATES | ARCH_STATES | DERIVED_ARCH_STATES
 
 # Project-level upstream PR lifecycle, orthogonal to every arch's state. A port can
 # be validated everywhere with no PR, or carry a merged PR while an arch is
@@ -172,6 +170,10 @@ PR_STATES = ("open", "merged", "closed")
 
 # Which agent handles each state, and selection priority (lower = sooner).
 # Resume-before-start: drain work in flight before opening new fronts.
+#
+# Everything up to review is the PROJECT's work and one agent does it once. From
+# review-passed on it is each architecture's, which is why the two derived states are
+# here alongside the stages: what arch_task hands back is one or the other.
 STAGE_FOR_STATE = {
     "unclaimed": "intake",
     "screened": "planner",
@@ -202,15 +204,20 @@ SELECT_RANK = {
     "screened": 9,
     "unclaimed": 10,
 }
-# States that take no agent action: terminal, gated on a human, or waiting on
-# something outside our control. `awaiting-fork` waits on an org admin to create the
-# fork; `awaiting-upstream` waits on an external event (a third party's PR landing,
-# say) and is viable-but-parked rather than dead.
+# Stages that take no agent action: gated on a human, or waiting on something outside
+# our control. `awaiting-fork` waits on an org admin to create the fork -- creating one
+# is a deliberate act by someone who can, so its existence carries the decision and
+# nothing else needs to record one. `awaiting-upstream` waits on an external event (a
+# third party's PR landing, say) and is viable-but-parked rather than dead.
 #
-# `awaiting-fork` is where a project waits to be taken up. The fork appearing in the
-# org is what releases it: creating one is a deliberate act by someone who can, so
-# its existence carries the decision and nothing else needs to record one.
-INERT = {"completed", "awaiting-port", "awaiting-fork", "awaiting-upstream"}
+# `not-portable` is the judgement that this codebase cannot be ported at all: reached
+# when a planner's analysis says so, or a porter has failed repeatedly, and recorded
+# only by a person. It is deliberately NOT a disposition -- a dispositioned project is
+# one that left the pipeline before anyone worked it, and every `cant-port`
+# disposition in this repo is a project that was never adopted. These have a folder, a
+# plan, notes and often weeks of porter work, and a negative outcome is a deliverable.
+INERT_STAGES = {"awaiting-fork", "awaiting-upstream", "not-portable"}
+INERT = INERT_STAGES | {"completed"}
 
 
 def now_iso():
@@ -358,6 +365,10 @@ def validate_status(obj):
         raise ValueError(f"unsupported schema_version: {obj['schema_version']}")
     if "stage" in obj and obj["stage"] not in STAGE_STATES:
         raise ValueError(f"invalid stage: {obj['stage']!r}")
+    # A verdict nobody signed satisfies nothing, so the stage cannot stand without one.
+    if obj.get("stage") == "not-portable" and not (obj.get("not_portable") or {}).get("by"):
+        raise ValueError("stage is not-portable but not_portable.by is missing -- "
+                         "an agent cannot self-certify a project unportable")
     unknown = {p for p in obj["platforms"] if platform_problem(p)}
     if unknown:
         raise ValueError(f"unknown arch(es) {sorted(unknown)}; add them to config/arches.toml")
@@ -376,6 +387,11 @@ def validate_status(obj):
 def set_state(name, platform, new_state, agent=None, save=True):
     """Validate and apply a transition with its side effects.
 
+    One entry point for two machines, routed on which the state belongs to: a stage
+    moves the PROJECT and every arch sees it, an arch state records what THIS GPU
+    proved. Agents say `set-state <name> <arch> <state>` for both, and pass the arch
+    either way -- for a stage it says who is doing the work, not whose fact it is.
+
     A platform's record is created on first use rather than pre-seeded, so a host
     whose GPU nothing has recorded before simply starts working and its record
     appears. The platform still has to be well-formed and its wavefront width
@@ -383,17 +399,28 @@ def set_state(name, platform, new_state, agent=None, save=True):
     problem = platform_problem(platform)
     if problem:
         raise ValueError(problem)
+    if new_state == "not-portable":
+        raise ValueError(
+            f"{name}: `not-portable` is a person's verdict on the codebase, not a "
+            f"transition -- an agent may write the case but never the judgement. "
+            f"`moatlib.py set-not-portable {name} --reason '<why>' --by <who>`")
+    if new_state in DERIVED_ARCH_STATES:
+        raise ValueError(
+            f"{name}/{platform}: {new_state} is derived from (stage, validated_sha, "
+            f"head_sha) and is never stored -- see arch_task")
     obj = load_status(name)
-    if platform not in obj["platforms"]:
-        obj["platforms"][platform] = _platform_block(
-            "awaiting-port" if obj.get("head_sha") else "unclaimed")
-    blk = obj["platforms"][platform]
-    # A migrated block carries no state of its own, so the project answers for it.
-    cur = blk.get("state") or platform_state(obj, platform)
+    is_stage = new_state in STAGE_STATES
+    cur = project_stage(obj) or "unclaimed" if is_stage else \
+        (obj["platforms"].get(platform) or {}).get("state")
     if new_state == cur:
         return obj
-    if new_state not in ALLOWED.get(cur, set()):
-        raise ValueError(f"{name}/{platform}: illegal transition {cur} -> {new_state}")
+    table = STAGE_TRANSITIONS if is_stage else ARCH_TRANSITIONS
+    if new_state not in table.get(cur, set()):
+        kind = "stage" if is_stage else f"{platform}"
+        raise ValueError(f"{name}/{kind}: illegal transition {cur} -> {new_state}")
+    if platform not in obj["platforms"]:
+        obj["platforms"][platform] = _platform_block(None)
+    blk = obj["platforms"][platform]
     # The fork-write lock, taken and released by the transition rather than by an
     # agent remembering to. porter.md has told porters to set `porting` by hand
     # since the field existed and no project has ever carried one, which is what a
@@ -414,17 +441,15 @@ def set_state(name, platform, new_state, agent=None, save=True):
         obj["porting"] = {"arch": platform, "since": now_iso()}
     elif cur == "porting" and (obj.get("porting") or {}).get("arch") == platform:
         obj["porting"] = None
-    # Both places, for now. The stage is where this belongs and the arch block is
-    # what every reader still reads; writing both is what lets the migration be
-    # checked against the field it replaces rather than trusted.
-    if new_state in STAGE_STATES:
-        obj["stage"] = new_state
-    blk["state"] = new_state
     ts = now_iso()
+    if is_stage:
+        obj["stage"] = new_state
+    else:
+        blk["state"] = new_state
     blk["updated_at"] = ts
     if agent:
         blk["last_agent"] = agent  # informational; not in strict schema
-    if new_state in ("porting", "port-ready", "delta-ported") and not blk.get("started_at"):
+    if new_state in ("porting", "delta-ported") and not blk.get("started_at"):
         blk["started_at"] = ts
     if new_state == "completed":
         blk["completed_at"] = ts
@@ -432,7 +457,6 @@ def set_state(name, platform, new_state, agent=None, save=True):
         # A real-GPU validation supersedes any prior carry-forward tag; drop the
         # stale annotation so the metadata reflects how this completion was reached.
         blk.pop("carry_forward", None)
-        _open_validation_season(obj)
         # Integrity backstop: completing while the fork has uncommitted source/build
         # edits means the validated content may not be in the branch. Warn loudly
         # (the validator must commit it first); pr_ready hard-blocks on the same.
@@ -446,6 +470,45 @@ def set_state(name, platform, new_state, agent=None, save=True):
     obj["platforms"][platform] = blk
     if save:
         save_status(name, obj)
+    return obj
+
+
+def set_not_portable(name, reason, by, clear=False):
+    """Record, or lift, the judgement that this codebase cannot be ported.
+
+    A PROJECT-level verdict, because that is the shape the evidence has: the reasons
+    that reach it -- the compute core is CUTLASS/CuTe with no ROCm path, it needs
+    NVSHMEM, it wants a ground-up Composable Kernel rewrite -- are facts about the
+    source, true on every architecture at once. They were being recorded as a `blocked`
+    flag on whichever arch happened to look, which reads as "this GPU cannot run it"
+    and left every other arch free to be sent at the same wall.
+
+    Two OTHER things look like this and are not:
+
+      an OS that will not take the port -- ZhiLight's host runtime is POSIX to the
+      bone -- is a GATE WAIVER on `windows`, which already exists and already needs
+      maintainer approval;
+      a toolchain or library defect on one platform -- a Triton codegen bug on
+      gfx1100, rocBLAS picking a generic kernel on one Windows arch -- is genuinely
+      per-arch and stays a `blocked` flag, with the report filed in data/deferred.json.
+
+    `by` is required and never defaulted: an agent may assemble the case and must not
+    return the verdict, exactly as with a licence clearance or a gate waiver."""
+    obj = load_status(name)
+    if clear:
+        obj.pop("not_portable", None)
+        obj["stage"] = "planned"
+    else:
+        if not (by or "").strip():
+            raise ValueError(
+                f"{name}: --by is required. Judging a project unportable is a person's "
+                f"call; an agent recording its own verdict would satisfy nothing")
+        if not (reason or "").strip():
+            raise ValueError(f"{name}: --reason is required")
+        obj["not_portable"] = {"reason": reason, "by": by, "at": now_iso()}
+        obj["stage"] = "not-portable"
+    obj["updated_at"] = now_iso()
+    save_status(name, obj)
     return obj
 
 
@@ -901,20 +964,6 @@ def set_pr_closed(name, note=None):
     return obj
 
 
-def _open_validation_season(obj):
-    """A port exists at head_sha with no porting lock held, so every other arch may
-    validate. There is no lead: this is not "the lead finished", it is "there is now
-    something to validate", which any arch's completion establishes."""
-    if not obj.get("head_sha"):
-        return
-    for plat, blk in validations(obj).items():
-        if blk.get("blocked"):
-            continue
-        if blk.get("state") == "awaiting-port":
-            blk["state"] = "port-ready"
-            blk["updated_at"] = now_iso()
-
-
 def _fork_repo(name):
     return PROJECTS / name / "src"
 
@@ -1019,9 +1068,10 @@ def advance_head(name, new_sha, repo=None):
             blk["carry_forward"] = {"from": old, "to": new_sha, "method": "source-class",
                                     "class": verdict.cls, "detail": verdict.detail[:200],
                                     "at": now_iso()}
-        else:
-            blk["state"] = "revalidate"
-            blk["updated_at"] = now_iso()
+        # No else. A block that cannot be carried forward keeps its `completed` and its
+        # old validated_sha, which IS the record: this arch proved that commit and has
+        # not proved this one. `revalidate` follows from the two shas differing, so
+        # writing it down would only be a second copy that can go stale.
     save_status(name, obj)
     return obj
 
@@ -1035,8 +1085,9 @@ def carry_forward(name, platform, new_sha, method, detail):
     arch-independent source classes itself. Records provenance for audit."""
     obj = load_status(name)
     blk = obj["platforms"][platform]
-    if blk.get("state") not in ("completed", "revalidate"):
-        raise ValueError(f"{name}/{platform}: carry_forward needs completed/revalidate, not {blk.get('state')}")
+    if blk.get("state") != "completed":
+        raise ValueError(f"{name}/{platform}: carry_forward needs a completed validation "
+                         f"to carry, not {blk.get('state')}")
     new_sha = full_sha(new_sha, _fork_repo(name))
     ts = now_iso()
     blk["state"] = "completed"
@@ -1351,19 +1402,98 @@ def project_stage(obj):
     return max(seen, key=STAGE_ORDER.index) if seen else None
 
 
-def platform_state(obj, platform):
-    """This platform's state, defaulting an absent record the way set_state does.
-    A record that is not there means no host has touched this platform yet.
+def gate_satisfied(obj, gate):
+    """Is this gate met -- by a validation of the CURRENT head on any arch carrying
+    the attribute, or by a waiver a maintainer approved? The one definition; pr_ready
+    asks the same question and must get the same answer."""
+    head = obj.get("head_sha")
+    if any(gate in gates_for(a) and b.get("state") == "completed"
+           and (not head or same_commit(b.get("validated_sha"), head))
+           for a, b in validations(obj).items()):
+        return True
+    w = (obj.get("waivers") or {}).get(gate)
+    return bool(w and w.get("approved_by") and gate in WAIVABLE_GATES)
 
-    A record that is THERE but carries no `state` is a migrated block: it holds only
-    what an arch can know -- that it is blocked, and why -- so the project answers for
-    it exactly as if it had no record at all."""
-    blk = validations(obj).get(platform)
-    if blk and blk.get("state"):
+
+def unsatisfied_gates(obj):
+    return {g for g in REQUIRED_GATES if not gate_satisfied(obj, g)}
+
+
+def stalled(obj):
+    """Every architecture that has a record here has given up, before review.
+
+    Nobody is working the project and the last host that tried stopped, so the next
+    move is a person's: continue on other hardware, or record `not-portable`. Not
+    auto-dispatched either way, because the reasons that reach this state are usually
+    facts about the SOURCE -- the compute core is CUTLASS/CuTe with no ROCm path, it
+    wants NVSHMEM -- which were recorded as a `blocked` flag on whichever arch looked.
+    Sending three more architectures at the same wall is the failure this prevents.
+
+    `awaiting-port` used to prevent it by accident: an arch with no record read as
+    "waiting for a port" and so was never picked. That was never what it meant, and it
+    only worked while every such project happened to carry those records. This says
+    the same thing on purpose, and reports it (`moatlib.py stalled`) instead of leaving
+    a project silently unpickable."""
+    if (project_stage(obj) or "unclaimed") == "review-passed":
+        return False
+    blocks = list(validations(obj).values())
+    return bool(blocks) and all(b.get("blocked") for b in blocks)
+
+
+def arch_task(obj, platform):
+    """What this architecture should do now, as (agent, state), or None.
+
+    The whole state machine in one place. Up to review the answer is the project's
+    stage and one agent does that work once; from `review-passed` on, every arch
+    validates independently and the answer is derived from its own evidence:
+
+      validated this exact head -> nothing to do
+      validated an older head   -> revalidate
+      never validated           -> port-ready
+
+    Those two used to be STORED, flipped in by a sweep that ran on every orient
+    (`unblock_all_followers`) and by `advance_head`. A stored conclusion is one that
+    can disagree with the facts it was drawn from, and keeping it current is what the
+    sweep was for. Computed here, it cannot be stale and there is no sweep."""
+    stage = project_stage(obj) or "unclaimed"
+    if stage in INERT_STAGES:
+        return None
+    blk = validations(obj).get(platform) or {}
+    if blk.get("blocked") or stalled(obj):
+        return None
+    if stage != "review-passed":
+        agent = STAGE_FOR_STATE.get(stage)
+        return (agent, stage) if agent else None
+    if blk.get("state") == "completed":
+        if same_commit(blk.get("validated_sha"), obj.get("head_sha")):
+            return None                  # this arch has proved this code
+        return ("validator", "revalidate")  # it proved an older one; refresh it
+    # Never validated here. Offer it only where a REQUIRED GATE still needs it.
+    # Coverage is gates, and an arch beyond the one satisfying a gate is additive
+    # evidence that gates nothing -- welcome when someone asks for it, and not work
+    # the selector should invent. Without this, every arch that has never touched any
+    # finished port becomes a validation task: 315 of them here, ranked ahead of
+    # screening anything new.
+    if gates_for(platform) & unsatisfied_gates(obj):
+        return ("validator", "port-ready")
+    return None
+
+
+def platform_state(obj, platform):
+    """The state this platform is IN, whether or not anything is to be done about it.
+
+    `arch_task` answers "what now"; this answers "where is it", which the board needs
+    for an arch that is finished or blocked. None means this architecture has recorded
+    nothing and nothing is being asked of it -- which used to be spelled
+    `awaiting-port`, a word that claimed a port was pending when often none was."""
+    blk = validations(obj).get(platform) or {}
+    if blk.get("state") == "completed":
+        return ("completed" if same_commit(blk.get("validated_sha"), obj.get("head_sha"))
+                else "revalidate")
+    if blk.get("state"):
         return blk["state"]
-    if obj.get("head_sha"):
-        return "awaiting-port"
-    return project_stage(obj) or "unclaimed"
+    task = arch_task(obj, platform)
+    return task[1] if task else None
 
 
 def actionable(obj, platform):
@@ -1376,30 +1506,22 @@ def actionable(obj, platform):
     disp = disposition_for_project(obj.get("name") or "")
     if disp and disp.get("disposition") == "skip":
         return False
-    vals = validations(obj)
     # An ABSENT record means "no host has touched this platform yet", which is what
-    # `scaffold` documents ("one appears when a host first works the project") -- so
-    # default it the same way set_state does rather than treating it as unselectable.
-    # Bailing here deadlocked every newly adopted project: the record is created by
-    # working the project, and working it required the record. opencv, rmagine and
-    # the two diff-surfel repos sat forked and unoffered from June because of it.
-    #
-    # `blocked` is the arch's own; the state comes from platform_state, which answers
-    # for a block that carries none because it was migrated.
-    blk = vals.get(platform) or {}
-    if blk.get("blocked"):
-        return False
-    state = platform_state(obj, platform)
-    if state in INERT:
+    # `scaffold` documents ("one appears when a host first works the project"). Bailing
+    # on that deadlocked every newly adopted project: the record is created by working
+    # the project, and working it required the record. opencv, rmagine and the two
+    # diff-surfel repos sat forked and unoffered from June because of it.
+    task = arch_task(obj, platform)
+    if task is None:
         return False
     # Only one arch may WRITE to the fork at a time. Validation is read-only on code
     # and writes only its own record, so it never contends.
     lock = obj.get("porting")
-    if lock and lock.get("arch") != platform and STAGE_FOR_STATE.get(state) == "porter":
+    if lock and lock.get("arch") != platform and task[0] == "porter":
         return False
     if unmet_deps(obj):  # deps-first ordering: wait until depended-on ports complete
         return False
-    return state in STAGE_FOR_STATE
+    return True
 
 
 def dep_blocked(platform):
@@ -1417,10 +1539,7 @@ def dep_blocked(platform):
         disp = disposition_for_project(name)
         if disp and disp.get("disposition") == "skip":
             continue
-        state = platform_state(obj, platform)
-        if (validations(obj).get(platform) or {}).get("blocked") or state in INERT:
-            continue
-        if state not in STAGE_FOR_STATE:
+        if arch_task(obj, platform) is None:
             continue
         report = dep_report(obj)
         if report:
@@ -1443,14 +1562,12 @@ def fleet(platform):
         disp = disposition_for_project(name)
         if disp and disp.get("disposition") == "skip":
             continue
-        state = platform_state(obj, platform)
-        if (validations(obj).get(platform) or {}).get("blocked") or state in INERT:
+        task = arch_task(obj, platform)
+        if task is None or unmet_deps(obj):
             continue
-        stage = STAGE_FOR_STATE.get(state)
-        if not stage or unmet_deps(obj):
-            continue
+        agent, state = task
         out.append({"project": name, "where": where, "state": state,
-                    "stage": stage, "priority": float(obj.get("priority", 0))})
+                    "stage": agent, "priority": float(obj.get("priority", 0))})
     out.sort(key=lambda r: (SELECT_RANK.get(r["state"], 99), -r["priority"], r["project"]))
     return out
 
@@ -1468,7 +1585,7 @@ def next_task(platform):
     for name, obj, where in project_records():
         if not writable_here(name, where) or not actionable(obj, platform):
             continue
-        state = platform_state(obj, platform)
+        state = arch_task(obj, platform)[1]
         cands.append((SELECT_RANK.get(state, 99), -float(obj.get("priority", 0)),
                       name, state))
     if not cands:
@@ -1524,32 +1641,6 @@ def release_awaiting_fork(org="AMD-Ecosystem", dry_run=False):
                 f"{slug} was created, which is the decision to take this project up.")
         released.append((name, slug))
     return released
-
-
-def unblock_all_followers():
-    """Flip awaiting-port -> port-ready wherever a port now exists to validate.
-    Called by orient.sh before selection so waiting archs become pickable.
-
-    Only where this checkout owns the record. Unlike the fork release, this runs on
-    every orient and would otherwise push to a handful of branches on each one; a
-    session that checks a branch out does its own. The name is residue of the
-    lead/follower model -- see STAGE_ORDER."""
-    changed = []
-    for name, obj, where in project_records():
-        if not writable_here(name, where) or not port_done(obj):
-            continue
-        touched = False
-        for plat, blk in validations(obj).items():
-            if blk.get("blocked"):
-                continue
-            if blk.get("state") == "awaiting-port":
-                blk["state"] = "port-ready"
-                blk["updated_at"] = now_iso()
-                touched = True
-        if touched:
-            save_status(name, obj)
-            changed.append(name)
-    return changed
 
 
 # ---- dispositions (candidates we will NOT port, and why) -------------------
@@ -1980,24 +2071,21 @@ def pr_ready(name):
         return (False, [("pr-exists", "a PR is already recorded in status.json")], [])
 
     vals = validations(obj)
-    head = obj.get("head_sha")
     blocking, nonviable = [], []
     waivers = obj.get("waivers") or {}
 
     for gate in REQUIRED_GATES:
         archs = [a for a in vals if gate in gates_for(a)]
-        # Satisfied by evidence: completed, and against the current head if we have
-        # one -- a validation of superseded content proves nothing about this port.
-        if any(vals[a].get("state") == "completed"
-               and (not head or same_commit(vals[a].get("validated_sha"), head))
-               for a in archs):
-            nonviable.extend(a for a in archs
-                             if vals[a].get("state") != "completed" and vals[a].get("blocked"))
-            continue
-        # Satisfied by an approved waiver.
         w = waivers.get(gate)
-        if w and w.get("approved_by") and gate in WAIVABLE_GATES:
-            nonviable.append(f"{gate} (waived by {w['approved_by']})")
+        # Satisfied by evidence at the current head, or by an approved waiver. One
+        # definition, shared with arch_task, so the gate that dispatches a validation
+        # and the gate that clears the PR cannot disagree.
+        if gate_satisfied(obj, gate):
+            if w and w.get("approved_by"):
+                nonviable.append(f"{gate} (waived by {w['approved_by']})")
+            else:
+                nonviable.extend(a for a in archs
+                                 if vals[a].get("state") != "completed" and vals[a].get("blocked"))
             continue
         if w and not w.get("approved_by"):
             blocking.append((gate, "waiver suggested but not approved by a maintainer"))
@@ -2104,6 +2192,16 @@ def main(argv=None):
     s.add_argument("platform", help="<os>-<gfx>, e.g. linux-gfx90a")
     s.add_argument("reason")
 
+    sub.add_parser("stalled", help="projects every architecture gave up on, before review")
+
+    s = sub.add_parser("set-not-portable",
+                       help="record a person's verdict that this codebase cannot be ported")
+    s.add_argument("name")
+    s.add_argument("--reason", help="why, in a sentence someone else can check")
+    s.add_argument("--by", help="who decided; required, and never an agent")
+    s.add_argument("--clear", action="store_true",
+                   help="lift the verdict and return the project to planned")
+
     s = sub.add_parser("port-lock", help="show, take over, or release a project's fork-write lock")
     s.add_argument("name")
     s.add_argument("--take", metavar="ARCH", help="take the lock for ARCH (a person's decision)")
@@ -2199,7 +2297,6 @@ def main(argv=None):
     s.add_argument("name")
     s.add_argument("new_sha")
 
-    sub.add_parser("unblock-followers")
     rf = sub.add_parser("release-forks",
                         help="advance awaiting-fork projects whose fork now exists")
     rf.add_argument("--dry-run", action="store_true")
@@ -2240,6 +2337,23 @@ def main(argv=None):
     elif args.cmd == "set-blocked":
         set_blocked(args.name, args.platform, True, args.reason)
         print(f"{args.name}/{args.platform} blocked: {args.reason}")
+    elif args.cmd == "stalled":
+        rows = [(n, o) for n, o, _w in project_records() if stalled(o)]
+        for n, o in sorted(rows):
+            why = next((b.get("blocked_reason") or "" for b in validations(o).values()
+                        if b.get("blocked")), "")
+            print(f"{n}\t{project_stage(o)}\t{why[:100]}")
+        if rows:
+            print(f"-- {len(rows)} project(s) waiting on a person: continue on other "
+                  f"hardware, or `set-not-portable <name> --reason ... --by <who>`",
+                  file=sys.stderr)
+    elif args.cmd == "set-not-portable":
+        obj = set_not_portable(args.name, args.reason, args.by, clear=args.clear)
+        if args.clear:
+            print(f"{args.name}: not-portable lifted; stage=planned")
+        else:
+            np = obj["not_portable"]
+            print(f"{args.name}: not-portable, by {np['by']} -- {np['reason']}")
     elif args.cmd == "port-lock":
         lock = port_lock(args.name, take=args.take, release=args.release)
         print(f"{args.name}: fork-write lock held by {lock['arch']} since {lock['since']}"
@@ -2401,9 +2515,6 @@ def main(argv=None):
         action, detail = branch_sync(apply=args.apply)
         print(f"branch-sync: {action} -- {detail}")
         return 1 if action == "conflict" else 0
-    elif args.cmd == "unblock-followers":
-        changed = unblock_all_followers()
-        print(" ".join(changed) if changed else "(none)")
     elif args.cmd == "validate":
         load_status(args.name)
         print(f"{args.name} status.json valid")

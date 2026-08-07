@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "LiteGS",
   "upstream_url": "https://github.com/MooreThreads/LiteGS",
   "fork_url": "https://github.com/AMD-Ecosystem/LiteGS",

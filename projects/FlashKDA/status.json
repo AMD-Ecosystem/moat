@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "FlashKDA",
   "upstream_url": "https://github.com/MoonshotAI/FlashKDA",
   "fork_url": null,

@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "FLAMEGPU2",
   "upstream_url": "https://github.com/FLAMEGPU/FLAMEGPU2",
   "fork_url": "https://github.com/AMD-Ecosystem/FLAMEGPU2",

@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "LichtFeld-Studio",
   "upstream_url": "https://github.com/MrNeRF/LichtFeld-Studio",
   "fork_url": "https://github.com/AMD-Ecosystem/LichtFeld-Studio",
@@ -104,7 +104,6 @@
       "last_agent": "validator"
     },
     "windows-gfx1201": {
-      "state": "port-ready",
       "blocked": true,
       "blocked_reason": "Host-wide block, GPU-independent (carried from windows-gfx1101 determination): TheRock Windows torch_hip.dll (lld-link, no .CRT$XCU) leaves torch::cuda::is_available()==false in the standalone C++ test exe; native HIP kernels pass but torch-gated tests cannot run. Host toolchain bug, identical on gfx1201.",
       "validated_sha": null,

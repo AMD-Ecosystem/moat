@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "cuBQL",
   "upstream_url": "https://github.com/NVIDIA/cuBQL",
   "fork_url": "https://github.com/AMD-Ecosystem/cuBQL",

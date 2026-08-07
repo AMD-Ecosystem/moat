@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "unified-cache-management",
   "upstream_url": "https://github.com/ModelEngine-Group/unified-cache-management",
   "fork_url": "https://github.com/AMD-Ecosystem/unified-cache-management",
@@ -72,7 +72,7 @@
       "last_agent": "validator"
     },
     "windows-gfx1101": {
-      "state": "revalidate",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "57b2443",
@@ -101,7 +101,7 @@
       }
     },
     "windows-gfx1201": {
-      "state": "revalidate",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "57b2443",

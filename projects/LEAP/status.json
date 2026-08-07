@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "LEAP",
   "upstream_url": "https://github.com/llnl/LEAP",
   "fork_url": "https://github.com/AMD-Ecosystem/LEAP",

@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "mahout",
   "upstream_url": "https://github.com/apache/mahout",
   "fork_url": "https://github.com/AMD-Ecosystem/mahout",
@@ -49,7 +49,7 @@
       }
     },
     "windows-gfx1101": {
-      "state": "revalidate",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "f84b39aef62e3dbddaa36f877ff29969f4dd49f2",
@@ -78,7 +78,7 @@
       }
     },
     "windows-gfx1201": {
-      "state": "revalidate",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "f84b39aef62e3dbddaa36f877ff29969f4dd49f2",

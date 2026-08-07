@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "cuPDLPx",
   "upstream_url": "https://github.com/MIT-Lu-Lab/cuPDLPx",
   "fork_url": "https://github.com/AMD-Ecosystem/cuPDLPx",
@@ -45,7 +45,7 @@
       "last_agent": "validator"
     },
     "linux-gfx1100": {
-      "state": "revalidate",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "5c056c2f90bea08a882a3ddd7e1bca2eba64d896",
@@ -68,7 +68,7 @@
       "last_agent": "validator"
     },
     "windows-gfx1101": {
-      "state": "revalidate",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "29d545f",
@@ -97,7 +97,7 @@
       }
     },
     "windows-gfx1201": {
-      "state": "revalidate",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "29d545f",

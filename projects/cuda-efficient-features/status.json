@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "cuda-efficient-features",
   "upstream_url": "https://github.com/fixstars/cuda-efficient-features",
   "fork_url": "https://github.com/AMD-Ecosystem/cuda-efficient-features",

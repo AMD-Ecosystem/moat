@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "ElasticFusion",
   "upstream_url": "https://github.com/mp3guy/ElasticFusion",
   "fork_url": "https://github.com/AMD-Ecosystem/ElasticFusion",

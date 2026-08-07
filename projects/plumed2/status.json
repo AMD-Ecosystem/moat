@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "plumed2",
   "upstream_url": "https://github.com/plumed/plumed2",
   "fork_url": "https://github.com/AMD-Ecosystem/plumed2",
@@ -23,7 +23,6 @@
   "stage": "review-passed",
   "platforms": {
     "windows-gfx1101": {
-      "state": "port-ready",
       "blocked": true,
       "blocked_reason": "PLUMED build system is Linux-only for the GPU plugin: requires autotools (autoconf/automake, absent on this Windows host) and emits POSIX .so plugins via dlopen -- configure.ac detects only .so/.dylib, no Windows .dll/LoadLibrary path. Not buildable on Windows without an upstream build-system port.",
       "validated_sha": null,
@@ -45,7 +44,6 @@
       }
     },
     "windows-gfx1201": {
-      "state": "port-ready",
       "blocked": true,
       "blocked_reason": "plumed2 requires autotools+POSIX build toolchain (autoconf/automake absent on Windows host); PLUMED main library uses ./configure+make producing .so/.dlopen -- no Windows-native build path; plugin prereq plumed binary unavailable without building PLUMED first",
       "validated_sha": null,

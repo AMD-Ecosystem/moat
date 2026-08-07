@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "GOMC",
   "upstream_url": "https://github.com/GOMC-WSU/GOMC",
   "fork_url": "https://github.com/AMD-Ecosystem/GOMC",

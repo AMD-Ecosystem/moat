@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "espresso",
   "upstream_url": "https://github.com/espressomd/espresso",
   "fork_url": "https://github.com/AMD-Ecosystem/espresso",
@@ -81,7 +81,6 @@
       }
     },
     "windows-gfx1101": {
-      "state": "port-ready",
       "blocked": true,
       "blocked_reason": "ESPResSo requires MPI 3.0 (msmpi.dll on Windows); MS-MPI installer requires admin elevation unavailable in automated validation. Same host-wide infrastructure blocker as windows-gfx1201 (this is the same physical machine), not a port defect or GPU-specific issue.",
       "validated_sha": null,
@@ -103,7 +102,6 @@
       }
     },
     "windows-gfx1201": {
-      "state": "port-ready",
       "blocked": true,
       "blocked_reason": "ESPResSo requires MPI 3.0 (msmpi.dll on Windows); MS-MPI installer requires admin elevation which is not available in automated validation. Host infrastructure blocker, not a port defect.",
       "validated_sha": null,

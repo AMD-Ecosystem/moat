@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "arbor",
   "upstream_url": "https://github.com/arbor-sim/arbor",
   "fork_url": "https://github.com/AMD-Ecosystem/arbor",

@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "op43dgs",
   "upstream_url": "https://github.com/LetianHuang/op43dgs",
   "fork_url": "https://github.com/AMD-Ecosystem/op43dgs",

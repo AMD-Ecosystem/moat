@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "yalm",
   "upstream_url": "https://github.com/andrewkchan/yalm",
   "fork_url": "https://github.com/AMD-Ecosystem/yalm",

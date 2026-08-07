@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "gpu4pyscf",
   "upstream_url": "https://github.com/pyscf/gpu4pyscf",
   "fork_url": "https://github.com/AMD-Ecosystem/gpu4pyscf",
@@ -78,7 +78,6 @@
       }
     },
     "windows-gfx1101": {
-      "state": "port-ready",
       "blocked": true,
       "blocked_reason": "cupy-rocm has no Windows distribution (manylinux2014-only wheels); gpu4pyscf Python layer is entirely CuPy-ROCm-based (cupy.ndarray, cupy_backends.cuda.libs.*); no CuPy-ROCm on Windows means no GPU test path is exercisable on this host",
       "validated_sha": null,
@@ -100,7 +99,6 @@
       }
     },
     "windows-gfx1201": {
-      "state": "port-ready",
       "blocked": true,
       "blocked_reason": "cupy-rocm has no Windows distribution (manylinux2014-only wheels); same host as gfx1101, same blocker",
       "validated_sha": null,

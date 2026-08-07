@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "metaeuk",
   "upstream_url": "https://github.com/soedinglab/metaeuk",
   "fork_url": "https://github.com/AMD-Ecosystem/metaeuk",

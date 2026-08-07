@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "foldmason",
   "upstream_url": "https://github.com/steineggerlab/foldmason",
   "fork_url": "https://github.com/AMD-Ecosystem/foldmason",

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # MOAT entrypoint. Pull the latest MOAT state, detect this host's AMD arch, pick
 # the single next project + stage for this platform, and print a dispatch
-# summary. Read-only on state except fork releases and follower-unblock
-# bookkeeping. Run this (or /port-next) when starting a CLI in the MOAT repo.
+# summary. Read-only on state except fork releases. Run this (or /port-next) when starting a CLI in the MOAT repo.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -71,7 +70,6 @@ fi
 # false. Only the routine "nothing to do" lines are dropped.
 python3 utils/upstream.py --forks --apply 2>/dev/null \
   | grep -E "RELEASED|ADVANCED|WAITING" | sed 's/^/forks    : /' || true
-python3 utils/moatlib.py unblock-followers >/dev/null 2>&1 || true
 
 # Serialize select+claim so two same-host CLIs never grab the same project.
 exec 9>"projects/.selection.lock"
