@@ -896,14 +896,34 @@ def dep_report(obj):
             if dep_status(d)[0] != "ok"]
 
 
+def platform_state(obj, platform):
+    """This platform's state, defaulting an absent record the way set_state does.
+    A record that is not there means no host has touched this platform yet."""
+    blk = validations(obj).get(platform)
+    if blk:
+        return blk["state"]
+    return "awaiting-port" if obj.get("head_sha") else "unclaimed"
+
+
 def actionable(obj, platform):
     """Is this platform pickable by an agent on this host right now?"""
     if obj.get("on_hold"):  # project-wide postponement (e.g. the RAPIDS stack)
         return False
-    vals = validations(obj)
-    if platform not in vals:
+    # A decided project is not work, whatever its per-arch records say. Without this
+    # a dispositioned project whose folder is still on the trunk gets offered for
+    # intake again -- re-screening something already declined.
+    disp = disposition_for_project(obj.get("name") or "")
+    if disp and disp.get("disposition") == "skip":
         return False
-    blk = vals[platform]
+    vals = validations(obj)
+    # An ABSENT record means "no host has touched this platform yet", which is what
+    # `scaffold` documents ("one appears when a host first works the project") -- so
+    # default it the same way set_state does rather than treating it as unselectable.
+    # Bailing here deadlocked every newly adopted project: the record is created by
+    # working the project, and working it required the record. opencv, rmagine and
+    # the two diff-surfel repos sat forked and unoffered from June because of it.
+    blk = vals.get(platform) or _platform_block(
+        "awaiting-port" if obj.get("head_sha") else "unclaimed")
     if blk["blocked"]:
         return False
     if blk["state"] in INERT:
@@ -936,10 +956,14 @@ def dep_blocked(platform):
             continue
         if obj.get("on_hold"):
             continue
-        blk = validations(obj).get(platform)
         # Would it be pickable if the dependency cleared? Same test as actionable(),
         # minus the dependency check itself.
-        if not blk or blk.get("blocked") or blk.get("state") in INERT:
+        disp = disposition_for_project(obj.get("name") or "")
+        if disp and disp.get("disposition") == "skip":
+            continue
+        blk = validations(obj).get(platform) or _platform_block(
+            "awaiting-port" if obj.get("head_sha") else "unclaimed")
+        if blk.get("blocked") or blk.get("state") in INERT:
             continue
         if blk.get("state") not in STAGE_FOR_STATE:
             continue
@@ -962,11 +986,9 @@ def next_task(platform):
             obj = load_status(d.name)
         except (ValueError, json.JSONDecodeError):
             continue
-        if platform not in validations(obj):
-            continue
         if not actionable(obj, platform):
             continue
-        state = validations(obj)[platform]["state"]
+        state = platform_state(obj, platform)
         cands.append((SELECT_RANK.get(state, 99), -float(obj.get("priority", 0)),
                       d.name, state))
     if not cands:
