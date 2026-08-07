@@ -44,6 +44,11 @@
     "duplicate_effort": "none",
     "viable": true,
     "summary": "GPU ML solver library (GLM/k-means/PCA/ALS/ARIMA) with real, self-contained CUDA (~30 own .cu/.cuh under src/gpu); Apache-2.0 tier-1, no existing AMD effort, but upstream is dormant (last real merge 2024, before that 2021) so budget for fork-only.",
-    "at": "2026-08-07T07:06:56Z"
+    "at": "2026-08-07T07:06:56Z",
+    "decided": {
+      "choice": "fork",
+      "by": "jeffdaily",
+      "at": "2026-08-07T15:27:16Z"
+    }
   }
 }
