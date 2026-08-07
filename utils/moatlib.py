@@ -1402,11 +1402,14 @@ def branch_drift(branch, base_ref="origin/main"):
         p = p.strip()
         if not p:
             continue
-        # This project's own record is substantive even though other projects' are
-        # not: someone else may have pushed state for it.
-        own = project and p.startswith(f"projects/{project}/")
-        if not own and (p in PORT_INERT or p.startswith(PORT_INERT)
-                        or p.startswith("projects/")):
+        # The branch OWNS projects/<its-name>/ -- every host working this project
+        # pushes to this branch, not to the trunk -- so a trunk change there is never
+        # a reason to merge. It used to be classified substantive on the theory that
+        # someone might push state via the trunk; the bam canary disproved that. Once
+        # the project migrates, the trunk's version of that path is a DELETION, and
+        # calling it substantive merged the deletion into the branch that owns it.
+        if (p in PORT_INERT or p.startswith(PORT_INERT)
+                or p.startswith("projects/")):
             inert.append(p)
         else:
             substantive.append(p)
@@ -1435,11 +1438,23 @@ def branch_sync(apply=False, base_ref="origin/main"):
     if not apply:
         return ("would-merge", ", ".join(substantive[:4]))
     ensure_git_config()
+    project = branch[len("port/"):]
+    pre = _git("rev-parse", "HEAD", check=False).stdout.strip()
     r = _git("merge", "--no-edit", base_ref, check=False)
     if r.returncode:
         _git("merge", "--abort", check=False)
         return ("conflict", f"merging {base_ref} conflicts -- resolve by hand: "
                             f"{', '.join(substantive[:4])}")
+    # The trunk does not carry an in-flight project's folder, and a branch with no
+    # commits of its own fast-forwards straight onto that absence -- which is how the
+    # bam canary lost its own state to a routine sync. Whatever the merge did to this
+    # branch's project, the branch's version wins.
+    if _git("cat-file", "-e", f"{pre}:projects/{project}/status.json",
+            check=False).returncode == 0:
+        _git("checkout", pre, "--", f"projects/{project}/", check=False)
+        if _git("diff", "--cached", "--name-only", check=False).stdout.strip():
+            _git("commit", "-q", "-m",
+                 f"{project}: keep this branch's project state across the trunk merge")
     # Push so a sibling host reuses this merge instead of making its own; the branch
     # is shared, and two independent merges of the same trunk diverge for no reason.
     _git("push", "-q", "origin", branch, check=False)
