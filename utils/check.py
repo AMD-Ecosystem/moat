@@ -13,10 +13,10 @@ own name, so a CI log says which gate to look at.
 """
 
 import argparse
+import importlib.util
 import json
 import os
 import pathlib
-import re
 import subprocess
 import sys
 
@@ -43,6 +43,25 @@ BLOB_ALLOW = {
 
 def _run(cmd, **kw):
     return subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO), **kw)
+
+
+def gate_code():
+    """The Python actually resolves: no undefined names, no dead imports or locals.
+
+    check.py validated data thoroughly and code not at all, and py_compile -- the only
+    code check any Test Plan ran -- cannot see an undefined name. Two shipped that way,
+    both on SUCCESS paths, which is the shape only production traffic finds: the
+    approval gate raised NameError precisely when it meant to authorize, and the
+    record-sync PR raised when opening a new one rather than updating.
+
+    Fails when pyflakes is absent rather than skipping, on the same principle as the
+    schema gate: a check that quietly does not run is worse than one that is missing."""
+    if importlib.util.find_spec("pyflakes") is None:
+        return ["pyflakes not installed (pip install pyflakes); cannot check code"]
+    files = sorted(str(p) for p in (REPO / "utils").glob("*.py"))
+    r = _run([sys.executable, "-m", "pyflakes", *files])
+    out = (r.stdout + r.stderr).strip()
+    return [ln.replace(str(REPO) + "/", "") for ln in out.splitlines() if ln.strip()]
 
 
 def gate_schema():
@@ -191,6 +210,7 @@ def gate_forks():
 
 
 GATES = {
+    "code": (gate_code, False),
     "schema": (gate_schema, False),
     "readme": (gate_readme, False),
     "licenses": (gate_licenses, False),

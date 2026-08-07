@@ -1,6 +1,6 @@
 # MOAT is a control-plane repo. It tracks tracking artifacts (status.json,
 # plan.md, notes.md, stats.jsonl) but NOT the working clones of the forks or
-# any scratch. The actual port lives in each project's jeffdaily fork.
+# any scratch. The actual port lives in each project's AMD-Ecosystem fork.
 
 projects/*/src/
 projects/*/src-core/

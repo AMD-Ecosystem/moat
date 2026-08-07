@@ -574,7 +574,7 @@ def publish_blockers(name, row):
     hits = (jargon.scan_text(row["title"], "title", terms, allow)
             + jargon.scan_text(row["body"], "body", terms, allow))
     if hits:
-        bad.append(f"in-house vocabulary in the title/body: "
+        bad.append("in-house vocabulary in the title/body: "
                    + ", ".join(sorted({h[2] for h in hits})[:4]))
     # The approved body is about to be republished verbatim upstream, so it is checked
     # here too rather than trusted from when the review PR was opened -- a maintainer
@@ -821,7 +821,8 @@ def publish(applied):
         return 0
 
     names = ", ".join(r["name"] for r in applied)
-    git("commit", "-q", "-m", f"records: record upstream merges ({names})")
+    subject = f"records: upstream merges ({names})"
+    git("commit", "-q", "-m", subject)
     git("push", "-q", "--force-with-lease", "-u", "origin", BRANCH)
 
     existing = gh_json(["pr", "list", "--head", BRANCH, "--state", "open",

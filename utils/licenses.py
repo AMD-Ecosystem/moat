@@ -13,7 +13,6 @@ early still costs nothing and means the answer is known before the work is done.
 """
 
 import argparse
-import json
 import pathlib
 import re
 import subprocess

@@ -1022,3 +1022,11 @@ HIP_VISIBLE_DEVICES=0 bash utils/timeit.sh EnvGS test -- \
 
 The harness is arch-agnostic and ready to run on gfx90a and gfx1201 hosts with only
 the `PYTORCH_ROCM_ARCH` change and a fresh build per arch.
+
+## Licence scrutiny before any upstream PR
+
+Carried over from the upstream.json record deleted in 03ba288, where it had no typed home and was nearly lost.
+
+The core rasterizer is Inria-derived and non-commercial, vendored under a top level that says nothing about it. Confirm our diff does not touch the Inria-derived core before submitting. The diff-surfel-tracing submodule has since added a licence on an unrelated history, so re-read it rather than relying on what was recorded here.
+
+The clearance is contribute-only: it covers offering a fix upstream, not using this project in AMD software, shipping it, or depending on it. If it ever becomes a dependency rather than a contribution, that is a new question.
