@@ -9,6 +9,7 @@ Usage:
   python3 utils/triage.py skip <owner/repo> --reason <r> [--note "..."]
   python3 utils/triage.py unskip <owner/repo>
   python3 utils/triage.py skipped
+  python3 utils/triage.py backfill-ids
 
 Reasons: already-ported, already-supported, cant-port, not-a-target, duplicate, other
 """
@@ -87,6 +88,31 @@ def cmd_skipped(args):
     return 0
 
 
+def cmd_backfill_ids(args):
+    """Record the GitHub repo id on dispositions written before ids were kept.
+
+    Without it a rename slips a decided project back into discovery, which is what
+    happened to lucebox. One pass, then new dispositions carry the id themselves."""
+    d = moatlib.load_dispositions()
+    todo = [k for k, v in d.items() if v.get("repo_id") is None]
+    print(f"{len(todo)} disposition(s) without a repo id")
+    filled = gone = 0
+    for k in todo:
+        rid = moatlib.github_repo_id(d[k].get("full_name") or k)
+        if rid is None:
+            gone += 1
+            continue
+        d[k]["repo_id"] = rid
+        filled += 1
+        if filled % 25 == 0:
+            moatlib.save_dispositions(d)
+            print(f"  ...{filled} filled")
+    moatlib.save_dispositions(d)
+    print(f"filled {filled}; {gone} unreachable (deleted, private or renamed away) "
+          f"-- those stay name-keyed")
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="triage")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -108,6 +134,8 @@ def main(argv=None):
     u.set_defaults(fn=cmd_unskip)
     k = sub.add_parser("skipped", help="list all dispositions")
     k.set_defaults(fn=cmd_skipped)
+    b = sub.add_parser("backfill-ids", help="record GitHub repo ids on old dispositions")
+    b.set_defaults(fn=cmd_backfill_ids)
     args = ap.parse_args(argv)
     return args.fn(args)
 

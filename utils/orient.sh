@@ -99,6 +99,20 @@ elif d >= 14:
 NEXT=$(python3 utils/moatlib.py next-task "$PLATFORM" 2>/dev/null || echo NONE)
 if [ "$NEXT" = "NONE" ] || [ -z "$NEXT" ]; then
   echo "next     : NONE actionable on $PLATFORM"
+  # "Nothing to do" and "waiting on a dependency nobody adopted" print the same way
+  # otherwise, and the second one never resolves by itself.
+  BLOCKED=$(python3 utils/moatlib.py dep-blocked "$PLATFORM" 2>/dev/null)
+  if [ -n "$BLOCKED" ]; then
+    echo "blocked  : held only by a dependency --"
+    printf '%s\n' "$BLOCKED" | while IFS=$'\t' read -r proj dep verdict detail; do
+      case "$verdict" in
+        unknown) fix="needs intake: python3 utils/port_request.py file <owner/repo> --blocks $proj" ;;
+        doomed)  fix="$dep will not be ported ($detail); scope $proj around it or disposition it" ;;
+        *)       fix="$dep is $detail; it clears on its own" ;;
+      esac
+      echo "           $proj <- $dep ($verdict) -- $fix"
+    done
+  fi
   echo "hint     : adopt a project from data/candidates.json:"
   echo "           python3 utils/moatlib.py scaffold <owner/repo>"
   exit 0
