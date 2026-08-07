@@ -183,7 +183,15 @@ def apply_decisions(declines, note, apply=False):
 
     Only what is passed in is written. There is deliberately no "apply the
     recommendations" mode: that would let the queue decide, and the whole point of
-    the round trip is that a person's words become a diff they can check."""
+    the round trip is that a person's words become a diff they can check.
+
+    The diff is confirmed by MERGING, not by approving. Approve is unavailable on a
+    self-authored pull request and everything here is self-authored, since agents run
+    on the maintainer's credentials. Merging is not blocked that way and carries the
+    same actor and timestamp, so it is the signal. For a handful of declines, running
+    `triage.py skip` directly is simpler still and skips this entirely -- the round
+    trip earns its cost when the batch is large enough that mis-reading the prose is
+    a real risk."""
     parsed = []
     for spec in declines:
         full, _, reason = spec.partition(":")
@@ -210,8 +218,13 @@ def apply_decisions(declines, note, apply=False):
             + (f" ({issue['url']})" if issue else "") + ":\n\n"
             + "\n".join(f"- `{f}` -- `{r}`" for f, r in parsed)
             + ("\n\n" + note if note else "")
-            + "\n\nApproving this merges the dispositions. Accepts are not here: a fork "
-              "appearing is what records those.\n"
+            + "\n\n**Merge this to record them.** No approving review is needed or "
+              "possible: agents open pull requests with the maintainer's credentials, so "
+              "this is self-authored and GitHub greys out Approve for an author -- but it "
+              "never blocks merging your own pull request, and the merge is the act of "
+              "record. If the trunk is later protected, require status checks rather than "
+              "approving reviews, or a single-maintainer repository can merge nothing.\n\n"
+              "Accepts are not here: a fork appearing is what records those.\n"
             + (f"\nCloses #{issue['number']}\n" if issue else ""))
     r = gh(["pr", "create", "--repo", REPO, "--head", BRANCH, "--base", "main",
             "--title", "intake: record declines from the queue", "--body", body])
