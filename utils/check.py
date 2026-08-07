@@ -14,6 +14,7 @@ own name, so a CI log says which gate to look at.
 
 import argparse
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -63,8 +64,33 @@ def gate_schema():
     return problems
 
 
+def current_branch():
+    """The branch being checked. In GitHub Actions a pull request builds a detached
+    merge commit, so HEAD names no branch and GITHUB_HEAD_REF is what identifies the
+    source."""
+    ref = os.environ.get("GITHUB_HEAD_REF") or os.environ.get("GITHUB_REF_NAME")
+    if ref:
+        return ref
+    r = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
 def gate_readme():
-    """The generated project table matches the data it claims to describe."""
+    """The generated project table matches the data it claims to describe.
+
+    Only on the trunk. README.md is generated from every project present, and a port
+    branch carries the trunk's projects plus its own -- so the table legitimately
+    differs there, and enforcing it would make each of N branches regenerate the same
+    file for a row that only belongs on the trunk once the port lands. That is a
+    conflict on every merge, in a generated file with no merge driver, for no gain.
+    Three of the four agents on the 2026-08-06 dry run had to regenerate the README
+    purely to get a push through.
+
+    The trunk is where it matters and where it is enforced: whatever merges there
+    regenerates the table, and this fails if it did not."""
+    branch = current_branch()
+    if branch.startswith("port/"):
+        return []
     r = _run([sys.executable, "utils/gen_readme.py", "--check"])
     return [] if r.returncode == 0 else ["README table is stale (run utils/gen_readme.py)"]
 
