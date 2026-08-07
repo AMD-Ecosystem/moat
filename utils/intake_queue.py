@@ -275,7 +275,9 @@ def apply_decisions(declines, note, apply=False):
               "bypassing is disallowed, which for a single-maintainer repository means "
               "nothing can ever merge.\n\n"
               "Accepts are not here: a fork appearing is what records those.\n"
-            + (f"\nCloses #{issue['number']}\n" if issue else ""))
+            + (f"\nPart of #{issue['number']}. It stays open: declines are only half "
+               f"an answer, and the accepts remain until their forks exist.\n"
+               if issue else ""))
     r = gh(["pr", "create", "--repo", REPO, "--head", BRANCH, "--base", "main",
             "--title", "intake: record declines from the queue", "--body", body])
     if r.returncode and "already exists" in (r.stderr + r.stdout):
