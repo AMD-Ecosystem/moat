@@ -9,6 +9,8 @@ Per-project files:
 - `notes.md` -- project-specific gotchas, review records, validation records. Append-only with dated headings.
 - `stats.jsonl` -- append-only phase wall-clock, session, and token records.
 - `src/` -- gitignored clone of the fork (the porter's working tree).
-- `.lock` / `.claim` -- gitignored same-host claim + heartbeat for race protection.
+- `.claim` -- gitignored, written by `orient.sh` so two CLIs on the SAME host do not
+  select the same project in the same minute. The durable claim is the `port/<name>`
+  branch existing on the remote; this is only local coordination.
 
 Scaffold a new project with `utils/moatlib.py` (`scaffold_project`) after adopting a row from `data/candidates.json`.
