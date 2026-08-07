@@ -41,7 +41,12 @@ happens here rather than on a schedule, because the credentials to open a PR on 
 else's repository belong in a session and not in a standing secret.
 
 The approval happens in ONE place -- that PR page -- and the maintainer does one thing
-there: approve it. Do not ask them to also read a copy of the body somewhere in this repo.
+there: leave a review comment containing `/moat approve` on a line by itself. Not the
+Approved button: they authored the pull request, because agents open it with their
+credentials, and GitHub greys the button out for an author. A review comment is allowed
+and carries the commit it was written against, so the gate can still tell an approval of
+this code from an approval of an earlier push. Do not ask them to also read a copy of the
+body somewhere in this repo.
 
 Your job is to snapshot what they approved:
 

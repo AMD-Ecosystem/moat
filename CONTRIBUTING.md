@@ -102,6 +102,12 @@ approving it alone would approve a file that merely *asserts* the port works; th
 is the actual diff, and review comments there attach to the code and persist for whoever
 picks the project up next.
 
+Approve it with a review comment containing `/moat approve` on a line by itself. The
+Approved button is unavailable: agents open the pull request with the maintainer's
+credentials, so it is self-authored, and GitHub does not let an author approve. A review
+comment records the commit it was written against, which is what the staleness checks
+rest on.
+
 That fork PR carries the title and body the upstream PR will use, so **one approval covers
 the code, the title and the body together** -- write them for the external maintainer from
 the start, not as a draft to be rewritten. Approving it is the decision to submit; the
