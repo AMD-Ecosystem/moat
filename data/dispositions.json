@@ -63,14 +63,6 @@
     "reason": "not-a-target",
     "repo_id": 268618098
   },
-  "acfr-rpg/dynosam": {
-    "decided": "2026-06-04T23:52:13Z",
-    "disposition": "skip",
-    "full_name": "ACFR-RPG/DynOSAM",
-    "note": "TensorRT (NVIDIA proprietary) is core dependency with no ROCm equivalent. OpenCV CUDA modules also have no ROCm build. Would require complete inference backend rewrite, not a CUDA-to-HIP port. Analysis retained in history: `git show b40576d53399:projects/DynOSAM/plan.md` (plan.md). REVISIT: both premises have changed. TensorRT use is ONNX-load-plus-inference in one file (YoloV8ObjectDetector.cc), which is MIGraphX's shape; and cv::cuda is now covered by MOAT's own opencv_contrib port, completed on four archs, opencv/opencv_contrib#4147. See references/no-hip-equivalent.md.",
-    "reason": "cant-port",
-    "repo_id": 661488734
-  },
   "ai-hpc/ai-hardware-engineer-roadmap": {
     "decided": "2026-06-05T01:16:26Z",
     "disposition": "skip",
@@ -1230,14 +1222,6 @@
     "reason": "already-supported",
     "repo_id": 780323643
   },
-  "moonshotai/flashkda": {
-    "decided": "2026-08-06T22:22:22Z",
-    "disposition": "skip",
-    "full_name": "MoonshotAI/FlashKDA",
-    "note": "100% CUTLASS/CuTe SM90+ (TMA, wgmma, cluster launch); needs a CK reimplementation, not a port. Analysis retained in history: `git show b40576d53399:projects/FlashKDA/plan.md` (notes.md, plan.md). Decided before FlyDSL existed. One bf16 KDA forward kernel; CuTe layout algebra has a counterpart in FlyDSL, but the Hopper structure it is built on (TMA, thread clusters, wgmma) has no AMD analogue, so this is an algorithmic reimplementation of a single kernel rather than a port. See references/no-hip-equivalent.md.",
-    "reason": "cant-port",
-    "repo_id": 1215986180
-  },
   "mrshaw01/software-engineer": {
     "decided": "2026-05-30T00:45:17Z",
     "disposition": "skip",
@@ -2011,14 +1995,6 @@
     "note": "real/current HIP backend (research-confirmed; cubecl-hip crate, ROCm 7.1.1 bindings)",
     "reason": "already-supported",
     "repo_id": 815155760
-  },
-  "traveller59/spconv": {
-    "decided": "2026-06-11T04:14:50Z",
-    "disposition": "skip",
-    "full_name": "traveller59/spconv",
-    "note": "GPU kernels are not static .cu but generated at build time by cumm (FindDefinition/cumm), a CUTLASS-derived pccm/Python codegen GEMM+implicit-conv engine. Build is PCCMExtension, not torch CUDAExtension, so hipify has nothing to translate. Porting spconv == porting cumm's entire CUTLASS/CuTe-style tensor-core (Volta/Turing/Ampere mma.sync + inline-PTX) codegen backend to ROCm; PORTING_GUIDE: CUTLASS does not port, must be reimplemented vs Composable Kernel. Unbounded out-of-scope effort; no authoritative AMD/ROCm spconv port exists upstream. Analysis retained in history: `git show b40576d53399:projects/spconv/plan.md` (notes.md, plan.md). Decided before FlyDSL existed. The blocker is cumm, a PYTHON code generator emitting CUTLASS-style kernels -- and FlyDSL is a Python DSL emitting AMD tensor-core kernels with CuTe-like layout algebra, so a cumm backend targeting FlyDSL is a closer correspondence than CK C++ templates. Still large, but bounded by cumm's GEMM/conv templates rather than unbounded. See references/no-hip-equivalent.md.",
-    "reason": "cant-port",
-    "repo_id": 166499614
   },
   "uccl-project/mkernel": {
     "decided": "2026-06-05T01:18:36Z",

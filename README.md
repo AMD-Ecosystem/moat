@@ -92,6 +92,7 @@ The project name links upstream.
 | [diff-surfel-rasterizations](https://github.com/xbillowy/diff-surfel-rasterizations) ([fork](https://github.com/AMD-Ecosystem/diff-surfel-rasterizations/tree/moat-port)) | — | — | — | — |
 | [diff-surfel-tracing](https://github.com/xbillowy/diff-surfel-tracing) ([fork](https://github.com/AMD-Ecosystem/diff-surfel-tracing/tree/moat-port)) | — | — | — | — |
 | [DiffPhysDrone](https://github.com/HenryHuYu/DiffPhysDrone) ([fork](https://github.com/AMD-Ecosystem/DiffPhysDrone/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#45](https://github.com/HenryHuYu/DiffPhysDrone/pull/45) |
+| [DynOSAM](https://github.com/ACFR-RPG/DynOSAM) | — | — | — | — |
 | [egg.c](https://github.com/d0rc/egg.c) ([fork](https://github.com/AMD-Ecosystem/egg.c/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#8](https://github.com/d0rc/egg.c/pull/8) |
 | [ElasticFusion](https://github.com/mp3guy/ElasticFusion) ([fork](https://github.com/AMD-Ecosystem/ElasticFusion/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [EnvGS](https://github.com/zju3dv/EnvGS) ([fork](https://github.com/AMD-Ecosystem/EnvGS/tree/moat-port)) | ✅ | ✅ | ✅ | — |
@@ -105,6 +106,7 @@ The project name links upstream.
 | [fdtd3d](https://github.com/zer011b/fdtd3d) ([fork](https://github.com/AMD-Ecosystem/fdtd3d/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [ffpa-attn](https://github.com/xlite-dev/ffpa-attn) ([fork](https://github.com/AMD-Ecosystem/ffpa-attn/tree/moat-port)) | 🔄 | ✅ | ✅ | 🟣 [#268](https://github.com/xlite-dev/ffpa-attn/pull/268) |
 | [FLAMEGPU2](https://github.com/FLAMEGPU/FLAMEGPU2) ([fork](https://github.com/AMD-Ecosystem/FLAMEGPU2/tree/moat-port)) | ✅ | ✅ | ✅ | — |
+| [FlashKDA](https://github.com/MoonshotAI/FlashKDA) | — | — | — | — |
 | [FlashMoE](https://github.com/osayamenja/FlashMoE) | 🚫 | ⬜ | ⬜ | — |
 | [FlashRT](https://github.com/flashrt-project/FlashRT) | 🚫 | ⬜ | ⬜ | — |
 | [foldmason](https://github.com/steineggerlab/foldmason) ([fork](https://github.com/AMD-Ecosystem/foldmason/tree/moat-port)) | ✅ | ✅ | ✅ | — |
@@ -171,6 +173,7 @@ The project name links upstream.
 | [RXMesh](https://github.com/owensgroup/RXMesh) ([fork](https://github.com/AMD-Ecosystem/RXMesh/tree/moat-port)) | 🔄 | ✅ | ✅ | 🟢 [#73](https://github.com/owensgroup/RXMesh/pull/73) |
 | [SCAMP](https://github.com/zpzim/SCAMP) ([fork](https://github.com/AMD-Ecosystem/SCAMP/tree/moat-port)) | 🔄 | ✅ | ✅ | 🟢 [#145](https://github.com/zpzim/SCAMP/pull/145) |
 | [SpargeAttn](https://github.com/thu-ml/SpargeAttn) | 🚫 | ⬜ | ⬜ | — |
+| [spconv](https://github.com/traveller59/spconv) | — | — | — | — |
 | [splatad](https://github.com/carlinds/splatad) ([fork](https://github.com/AMD-Ecosystem/splatad/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#24](https://github.com/carlinds/splatad/pull/24) |
 | [sppark](https://github.com/supranational/sppark) ([fork](https://github.com/AMD-Ecosystem/sppark/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#82](https://github.com/supranational/sppark/pull/82) |
 | [stdgpu](https://github.com/stotko/stdgpu) ([fork](https://github.com/AMD-Ecosystem/stdgpu/tree/moat-port)) | 🔄 | ✅ | ✅ | 🟣 [#484](https://github.com/stotko/stdgpu/pull/484) |

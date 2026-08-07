@@ -1878,7 +1878,12 @@ def main(argv=None):
     s.add_argument("full_name")
     s.add_argument("--url")
     s.add_argument("--branch", default="main")
-    s.add_argument("--ext", default="unknown", choices=["cmake", "torch-extension", "unknown"])
+    # Free-form, matching the schema. The three canonical values drive Strategy A vs B,
+    # but the field records what the build IS, and reality includes pccm-codegen,
+    # rust-cc-cuda, cmake-cupy-plugin and makefile -- all already in use. The schema was
+    # widened for exactly this and the flag was not, so scaffolding spconv failed on the
+    # value its own analysis had recorded.
+    s.add_argument("--ext", default="unknown", metavar="TYPE")
     s.add_argument("--priority", type=float, default=0.0)
     s.add_argument("--force", action="store_true", help="adopt even if marked skip")
     s.add_argument("--deps", nargs="*", default=[], help="MOAT project name(s) this depends on")
