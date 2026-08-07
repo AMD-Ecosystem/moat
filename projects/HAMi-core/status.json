@@ -7,10 +7,19 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-08-07T07:05:29Z",
-  "updated_at": "2026-08-07T07:05:29Z",
+  "updated_at": "2026-08-07T07:06:48Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "no licence file",
+  "intake": {
+    "verdict": "decline",
+    "reason": "already-supported",
+    "duplicate_effort": "Project-HAMi/amd-hami-core (same org, HIP-hook + ROC_GLOBAL_CU_MASK, verified MI300X ROCm 6.2/7.0/7.1/7.2)",
+    "viable": null,
+    "summary": "In-container CUDA driver-API interceptor for k8s GPU sharing; a GPU-verified AMD-native equivalent (Project-HAMi/amd-hami-core, MI300X/ROCm 6.2-7.2) already exists in the same upstream org.",
+    "at": "2026-08-07T07:06:48Z"
+  }
 }
