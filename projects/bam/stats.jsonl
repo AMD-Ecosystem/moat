@@ -1,2 +1,0 @@
-{"kind": "tokens", "ts": "2026-06-04T22:04:32Z", "tokens": 107299, "source": "planner"}
-{"kind":"phase","ts":"2026-06-04T23:04:06Z","phase":"compile","seconds":0.007,"exit":2,"cmd":"make benchmarks -j128"}
