@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "cuda_voxelizer",
   "upstream_url": "https://github.com/Forceflow/cuda_voxelizer",
   "fork_url": null,
@@ -12,31 +12,6 @@
   "depends_on": [],
   "porting": null,
   "waivers": {},
-  "platforms": {
-    "linux-gfx90a": {
-      "state": "awaiting-fork",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-08-07T07:08:14Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "intake"
-    }
-  },
   "license_spdx": "MIT",
   "intake": {
     "verdict": "fork",
@@ -45,5 +20,7 @@
     "viable": true,
     "summary": "Small, actively-maintained MIT CUDA mesh voxelizer with a real GPU kernel path and no existing AMD/ROCm port; two vendored NVIDIA CUDA-Samples helper headers (helper_cuda.h, helper_string.h) carry old restrictive EULA-style text and should be reviewed/replaced during the port even though the project's own code is clean MIT.",
     "at": "2026-08-07T07:08:00Z"
-  }
+  },
+  "stage": "awaiting-fork",
+  "platforms": {}
 }
