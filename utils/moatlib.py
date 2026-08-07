@@ -974,14 +974,30 @@ def port_branches():
 def project_record(name):
     """(status object, where) for a project, from wherever its record lives.
 
-    `where` is "local", "trunk", "branch" or None. Local wins: if the folder is in
-    the working tree that IS the project as this checkout sees it."""
+    `where` is "local", "trunk", "branch" or None.
+
+    The project's OWN branch wins over the working tree, because an in-flight project
+    is worked there and the trunk may still carry a copy that predates it. colmap hit
+    this on the 2026-08-07 rerun: the screen was recorded on port/colmap while a
+    scaffold stub of the same project sat on the trunk, and reading local-first made
+    the queue see a project with no intake record. Being ON that branch is not a
+    special case -- the working tree IS the branch then, so the local read is both
+    correct and cheaper."""
+    path = f"projects/{name}/status.json"
+    on_branch = _git("rev-parse", "--abbrev-ref", "HEAD",
+                     check=False).stdout.strip() == f"port/{name}"
+    if not on_branch:
+        raw = _ref_read(f"origin/port/{name}", path)
+        if raw:
+            try:
+                return (json.loads(raw), "branch")
+            except json.JSONDecodeError:
+                pass
     if status_path(name).exists():
         try:
             return (load_status(name), "local")
         except (ValueError, json.JSONDecodeError):
             return (None, None)
-    path = f"projects/{name}/status.json"
     for ref, where in (("origin/main", "trunk"),
                        (f"origin/port/{name}", "branch")):
         raw = _ref_read(ref, path)
