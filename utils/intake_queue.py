@@ -68,13 +68,11 @@ def queue():
     re-running safe -- a partly executed batch just produces a shorter list, and a
     fork created for 36 of 38 leaves exactly the two stragglers behind."""
     rows = []
-    for d in sorted(moatlib.PROJECTS.iterdir()):
-        if not (d / "status.json").exists():
+    for name in sorted(moatlib.all_projects()):
+        obj, _where = moatlib.project_record(name)
+        if obj is None:
             continue
-        try:
-            obj = moatlib.load_status(d.name)
-        except (ValueError, json.JSONDecodeError):
-            continue
+        d = moatlib.PROJECTS / name
         rec = obj.get("intake")
         if not rec:
             continue                       # not screened yet
