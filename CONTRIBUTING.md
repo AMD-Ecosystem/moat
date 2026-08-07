@@ -34,8 +34,9 @@ disposition. Do not silently drop a project.
 A project's draft PR sits in `awaiting-fork` until someone decides.
 
 **Yes is a fork.** Creating `AMD-Ecosystem/<name>` releases the project -- creating one
-is a deliberate act by someone who can, so its existence carries the decision. A
-scheduled job advances the state and comments on the PR; nobody has to notice by hand.
+is a deliberate act by someone who can, so its existence carries the decision.
+`orient.sh` runs `upstream.py --forks --apply` before every selection, so the state
+advances and the PR gets its comment the next time anyone starts work.
 
 **No is a label on the draft PR:**
 
@@ -91,14 +92,16 @@ picks the project up next.
 
 That fork PR carries the title and body the upstream PR will use, so **one approval covers
 the code, the title and the body together** -- write them for the external maintainer from
-the start, not as a draft to be rewritten. Approving it is the decision to submit: a
-scheduled job opens the upstream PR with exactly that content, records it, and closes the
-review PR.
+the start, not as a draft to be rewritten. Approving it is the decision to submit; the
+publishing step below opens the upstream PR with exactly that content, records it, and
+closes the review PR.
 
 An approval covers what was on screen when it was given. A commit pushed afterwards, or an
-edited title or body, voids it: the job dismisses the stale approval and asks for a fresh
-look rather than publishing something nobody read. Editing the record does not revive it,
-and only a person can approve.
+edited title or body, voids it. `upstream.py --approvals` reports those, and
+`--approvals --apply` dismisses the stale approval and asks for a fresh look rather than
+publishing something nobody read. Nothing surfaces them on its own, so the report is a step
+of the `moat-checkup` skill. Editing the record does not revive an approval, and only a
+person can approve.
 
 Everything after that first post -- replies to maintainers, follow-up comments, a re-request
 for review -- is its own act and needs its own yes.
@@ -115,15 +118,16 @@ names any project waiting on it, so an agent picking up work sees it without bei
 
 This is deliberately not automated. Opening a pull request on someone else's repository
 needs write access to public repositories generally -- GitHub offers no narrower way to
-reach a third-party upstream -- and that is more than a scheduled job should hold
-unattended. Keeping the credential in a human session costs one command and removes a
-standing key.
+reach a third-party upstream -- and that is more than an unattended job should hold.
+Keeping the credential in a human session costs one command and removes a standing key.
 
-What the scheduled jobs can and cannot do follows from one fact: the token a workflow gets
-is scoped to this repository. So they read public state anywhere and write only here --
-they poll upstream pull requests, release projects whose fork has appeared, and report
-approvals that a later push or edit has overtaken. Acting on any of that touches a fork or
-an upstream, so it waits for a session.
+**Nothing here runs on a schedule.** Record maintenance -- polling upstream pull requests,
+releasing projects whose fork has appeared, reporting overtaken approvals -- happens when
+someone runs the `moat-checkup` skill or `orient.sh`, not on a timer. That is a real
+trade: drift accumulates silently between sweeps, and on one measured sweep 6 of 74
+records disagreed with GitHub, two of them merges nobody had noticed. `orient.sh` reports
+how long it has been since the last reconciliation so the gap stays visible. The only
+workflow left is `ci.yml`, which gates pull requests and holds `contents: read`.
 
 Two mechanisms that look like they would close the gap do not. A **GitHub App** acts only
 where it is installed, and we cannot install one in someone else's repository. A

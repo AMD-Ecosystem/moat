@@ -67,6 +67,20 @@ if [ -n "${READY// /}" ]; then
   echo "           (opens the PR with the approved title and body, then closes the review PR)"
 fi
 
+# Nothing reconciles the record on a schedule, so the only thing that can say it has
+# gone unchecked is how long since someone swept. Reads a stored date, costs no API
+# call, and names the command rather than making anyone remember it.
+STALE=$(python3 -c '
+import sys; sys.path.insert(0, "utils")
+import upstream
+d = upstream.reconciled_age_days(upstream.TODAY)
+if d is None:
+    print("never reconciled -- run /moat-checkup")
+elif d >= 14:
+    print(f"last reconciled {d} days ago -- run /moat-checkup")
+' 2>/dev/null)
+[ -n "$STALE" ] && echo "records  : $STALE"
+
 NEXT=$(python3 utils/moatlib.py next-task "$PLATFORM" 2>/dev/null || echo NONE)
 if [ "$NEXT" = "NONE" ] || [ -z "$NEXT" ]; then
   echo "next     : NONE actionable on $PLATFORM"

@@ -19,13 +19,18 @@ would hand everything back anyway -- and the round trip costs more than doing it
 
 ## The checkup, in order
 
-    bash utils/orient.sh                              # approved ports, fork releases, next work
+    bash utils/orient.sh                         # approved ports, fork releases, next work
     python3 utils/upstream.py --attention        # who is waiting on us
+    python3 utils/upstream.py --approvals        # approvals overtaken by a push or a body edit
     python3 utils/upstream.py --dry-run          # where our record disagrees with GitHub
 
 The first names any port whose approval is standing and whose gates are met. The second
 lists open PRs where a maintainer asked for something, had the last word, or has gone
-quiet. The third is bookkeeping, and the weekly job usually gets there first.
+quiet. The third catches a review GitHub still shows as green over content nobody
+approved. The fourth is bookkeeping.
+
+Nothing runs on a schedule. This checkup IS the sweep, so the record only reconciles when
+someone runs it -- which is why `orient.sh` reports how long it has been.
 
 ## The gate is the approval, and it covers exactly what was approved
 
@@ -66,9 +71,10 @@ even though `status.json` is a file agents can write. **Editing the record does 
 stale approval valid**, and an agent may neither grant one nor repair one. When it fails,
 the answer is a fresh approval.
 
-A scheduled job REPORTS overtaken approvals (`upstream.py --approvals`) but cannot act on one: dismissing a review is a write on the fork, and nothing running unattended
-holds credentials for that. You do it, with `--approvals --apply`, when you see one
-reported or when you are working the project anyway. GitHub goes on showing "Approved"
+`upstream.py --approvals` REPORTS overtaken approvals; `--approvals --apply` dismisses
+them and re-requests review. Nothing surfaces these on its own, so running the report is
+a step of this checkup rather than something you react to. Dismissing is a write on the
+fork and needs your credentials. GitHub goes on showing "Approved"
 through both a later push and a body edit, so the page otherwise claims someone signed off
 on content they never saw. Leave alone an approval already withdrawn -- no nagging -- and
 any case where our record merely disagrees with GitHub, which is a human's to sort out and

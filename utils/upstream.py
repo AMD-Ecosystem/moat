@@ -19,7 +19,7 @@ contribution on the strength of a field that lies for that repo. So it writes a
 branch and opens a PR, and a human decides -- the same path everything else takes.
 
     python3 utils/upstream.py --dry-run          # report PR drift, change nothing
-    python3 utils/upstream.py --apply            # update the moatbot-sync branch + PR
+    python3 utils/upstream.py --apply            # update the record-sync branch + PR
     python3 utils/upstream.py --forks            # report projects awaiting a fork
     python3 utils/upstream.py --forks --apply    # release the ones whose fork exists
     python3 utils/upstream.py --approvals        # report approvals overtaken by a push or edit
@@ -47,8 +47,9 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 TODAY = subprocess.run(["date", "-u", "+%Y-%m-%d"],
                        capture_output=True, text=True).stdout.strip()
 # One stable branch, deliberately not date-stamped: see publish().
-# Named for the identity that pushes it, which is what a reader sees.
-BRANCH = "moatbot-sync"
+# Named for what it carries, not for who pushes it: every run of this is a person
+# in a session, so there is no bot identity for a reader to recognise.
+BRANCH = "record-sync"
 
 # GitHub PR state -> the project-level pr_state it implies. A closed PR says
 # nothing about whether the port itself is good, so it is reported for a human
@@ -118,7 +119,7 @@ def poll(rows):
     return drift, unreviewed, errors
 
 
-OURS = {"jeffdaily", "moatbot"}          # accounts that speak for this project
+OURS = {"jeffdaily"}                     # accounts that speak for this project
 # A CI bot having the last word means nobody is waiting on us. Matching the [bot]
 # suffix catches most of them; the rest post under ordinary accounts and are listed.
 BOTS = {"codacy-production", "codecov-commenter", "sonarcloud", "coderabbitai",
@@ -562,6 +563,32 @@ def moatlib_record(name):
     return moatlib.record_pr_approval(name)
 
 
+RECONCILED = REPO / "data" / "reconciled.json"
+
+
+def stamp_reconciled(n_records, n_drift):
+    """Record that the upstream sweep ran. Written on every full poll, applied or not:
+    the question this answers is "has anyone LOOKED", not "did anything change"."""
+    RECONCILED.parent.mkdir(parents=True, exist_ok=True)
+    RECONCILED.write_text(json.dumps(
+        {"at": TODAY, "records": n_records, "drifted": n_drift}, indent=2) + "\n")
+
+
+def reconciled_age_days(today):
+    """Days since the last full sweep, or None if it has never run. The stamp is
+    committed rather than local: whether the record has been checked is a fact about
+    the project, not about one clone."""
+    import datetime
+    try:
+        at = json.loads(RECONCILED.read_text())["at"]
+    except (OSError, ValueError, KeyError):
+        return None
+    try:
+        return (datetime.date.fromisoformat(today) - datetime.date.fromisoformat(at)).days
+    except ValueError:
+        return None
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -591,6 +618,11 @@ def main():
     rows = recorded()
     drift, unreviewed, errors = poll(rows)
     skipped = [r for r in rows if r.get("skipped")]
+    # The sweep just happened, so stamp it whether or not anything is applied.
+    # Nothing runs on a schedule any more, so this timestamp is the only thing that
+    # can tell anyone the record has gone unchecked; orient.sh reads it every run.
+    if not errors:
+        stamp_reconciled(len(rows), len(drift))
 
     print(f"upstream: {len(rows)} recorded PRs, {len(drift)} drifted, "
           f"{len(unreviewed)} awaiting our response, {len(skipped)} skipped, "
@@ -661,7 +693,7 @@ def publish(applied):
         return 0
 
     names = ", ".join(r["name"] for r in applied)
-    git("commit", "-q", "-m", f"moatbot: record upstream merges ({names})")
+    git("commit", "-q", "-m", f"records: record upstream merges ({names})")
     git("push", "-q", "--force-with-lease", "-u", "origin", BRANCH)
 
     existing = gh_json(["pr", "list", "--head", BRANCH, "--state", "open",
