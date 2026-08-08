@@ -63,18 +63,7 @@ subgroup whatever the physical width.
 **A compat `__ballot_sync` that casts `__ballot()` to `uint32_t` takes the LOW 32 lanes**,
 which are the wrong lanes for any logical warp not at the wavefront base -- with
 `blockDim (32,32)`, odd `threadIdx.y` rows sit in the high lanes. Arch-unified form:
-`(uint32_t)(__ballot(PRED) >> (__lane_id() & ~31u))`, where the shift is 0 on wave32. (cuSZ,
-GPU_IPC.)
-
-**The rest of that same compat layer needs the width pinned too.** A CUDA warp is always 32
-lanes, so `__shfl_down_sync(0xffffffff, v, d)` is BY DEFINITION a 32-lane operation; mapping
-it to the unqualified `__shfl_down(v, d)` silently retargets it to the WAVEFRONT width,
-which is right on RDNA and wrong on CDNA. Write the whole family with the width in it --
-`__shfl(v, lane, 32)`, `__shfl_down(v, d, 32)`, `__shfl_up`, `__shfl_xor` -- and the header
-is correct on both wavefront sizes with no arch branch. Worth checking even when the ballot
-looks handled: GPU_IPC's header had a plausible-looking ballot and unqualified shuffles, and
-the shuffles were the half that would have broken CDNA, since its PCG and BVH reductions
-loop `delta = 1,2,4,8,16` over logical 32-element groups. (GPU_IPC.)
+`(uint32_t)(__ballot(PRED) >> (__lane_id() & ~31u))`, where the shift is 0 on wave32. (cuSZ)
 
 **An over-wide `__shfl*` width does not error, it silently degenerates.**
 `__shfl_up(v, delta, 64)` lowers to `__builtin_amdgcn_ds_bpermute` with a clamp of
@@ -139,21 +128,6 @@ at runtime. dietgpu's rANS archive serializes one coder state per lane
 wave64 archive byte-identical to its old format, and lets a wave32 device use the first 32
 slots. (dietgpu)
 
-**HIP's warp-sync builtins take a 64-bit participation mask, and a 32-bit literal is a hard
-error, not a truncation.** With `HIP_ENABLE_WARP_SYNC_BUILTINS` defined -- a ROCm PyTorch
-build defines it for every extension it compiles -- `__shfl_xor_sync(0xffffffff, ...)` fails
-a static_assert reading "The mask must be a 64-bit integer", because a wavefront can name 64
-lanes. Widen the literal on the AMD side only (`0xffffffffffffffffULL`); CUDA's parameter is
-`unsigned`, so a single shared literal narrows there.
-
-Worth knowing alongside it: an EXPLICIT `width` argument on `__shfl_*_sync` makes the
-surrounding reduction wave-agnostic for free. `__shfl_xor_sync(mask, v, lane, 32)` keeps the
-butterfly inside a 32-lane group on a 64-wide wavefront too, so the `tid >> 5` / `tid & 0x1f`
-lane-and-warp indexing that goes with it stays correct with no change at all. The warp-size
-fault class above is about code that lets the width DEFAULT to the physical wavefront; code
-that states the width is already portable, and rewriting it to `warpSize` is a regression
-risk for no gain. (Quest)
-
 ## Memory and lifetime
 
 **Out-of-bounds reads.** CUDA often tolerates a read one element past an allocation; AMD
@@ -212,21 +186,6 @@ everything else passes. (qrack: `_PopQueue` under `UniformlyControlledSingleBit`
 **`hipFree` is synchronizing** (`hipFreeAsync` is not), so an explicit
 `hipDeviceSynchronize()` before it is redundant. (anari-visionaray)
 
-**Device-side `new[]`/`delete[]` inside a kernel or functor is a trap on HIP.** The device
-malloc heap is small and its behaviour under a per-thread allocation in a hot loop is not
-reliable; a functor that allocates a scratch array per thread can return wrong values
-without faulting, so the symptom is a numerically wrong result rather than a crash. Replace
-it with a fixed-size per-thread automatic array bounded by the constant the code already has
-(GooFit's binned integration used a device `new[]` sized by the observable count;
-`fptype[MAX_NUM_OBSERVABLES]` fixed it and immediately corrected a fitted parameter). This
-is arch-unified and correct on CUDA too, so it needs no guard -- prefer it to raising the
-device heap limit. (GooFit)
-
-**HIP's `__ldg` accepts only scalar types**, while CUDA projects commonly route arbitrary
-types through it via a generics wrapper that relies on `__CUDA_ARCH__` and PTX aliasing. A
-read-only-cache macro (`RO_CACHE(x)`) should expand to a plain `(x)` load on HIP; the AMD
-hardware takes the same path. (GooFit)
-
 ## Textures
 
 **Texture pitch alignment is 256 bytes on AMD against 32 on NVIDIA**, and it bites in two
@@ -234,15 +193,7 @@ distinct ways.
 
 - At the BIND: pitched 2D texture binds need 256-byte rows, so widths that work on CUDA can
   fail. If a kernel only point-samples, a linear (`tex1Dfetch`-style) bind avoids pitch
-  entirely. The swap is EXACT, not an approximation, when two conditions hold: the sampler
-  is `cudaFilterModePoint`, and the kernels already clamp their coordinates to the image so
-  hardware addressing never applies. Then `tex2D(t, x, y)` over a pitch2D bind whose pitch
-  is the packed row is by definition `tex1Dfetch(t, int(y) * width + int(x))` over a linear
-  bind, and both backends can take the one code path. Check the clamping before believing
-  it; if a kernel relies on the address mode, you need the mode emulated instead. Do not
-  reach for `cudaMallocPitch`: repitching the buffer changes the row indexing of every
-  kernel in the file for no gain. (colmap `BindTexture2D`, where a 640x480 input fails at
-  the 80-wide float2 pyramid level, a 640-byte row.)
+  entirely. (colmap BindTexture2D.)
 - Through the ATTRIBUTE: `cudaDevAttrTexturePitchAlignment` (`hipDeviceAttributeTexturePitchAlignment`) reports 256 on gfx90a,
   so libraries deriving a row pitch from it pad more on AMD -- a tight 640-byte uchar row
   becomes 768. Tests that fill the valid region, run the op, then compare the WHOLE strided
@@ -313,17 +264,6 @@ LC-framework's nvcc recipe uses `-fmad=false -mno-fma -ffp-contract=off`, so pin
 there would diverge. Integer-only components are unaffected. (CV-CUDA OpWarpPerspective;
 LC-framework.)
 
-**`-ffast-math` is NOT the HIP translation of nvcc's `--use_fast_math`, and reaching for it
-because the CUDA flags line has one is a real mistranslation.** nvcc's flag swaps single
-precision transcendentals and division for the fast device intrinsics and leaves double
-precision and IEEE exception behaviour alone. clang's `-ffast-math` additionally turns on
-`-ffinite-math-only`, `-fassociative-math`, `-freciprocal-math`, `-fno-signed-zeros` and
-`-ffp-contract=fast`, for DOUBLE precision as well. Geometric predicates -- continuous
-collision detection, intersection and orientation tests, anything whose sign is the answer
--- are exactly what reassociation and no-NaN assumptions break, and the symptom is a solver
-that stops converging rather than a wrong pixel. Translate `--use_fast_math` as at most
-`-ffp-contract=<upstream's setting>`, and leave everything else IEEE. (GPU_IPC.)
-
 **An exact float-equality branch fed by approximate division can HANG, not just drift.**
 HIP's `__fdividef` differs ~1 ULP from CUDA, so a downstream exact-equality test on the
 quotient -- selecting a loop start or end index -- can flip on AMD. When that index feeds an
@@ -349,30 +289,6 @@ headers into g++ and fails there. Put the shim in the lowest common layer, keep 
 includes (`hip_runtime.h`, `hipfft.h`) unconditional, and gate device-only ones behind
 `__CUDACC__` or `__HIPCC__ || __HIP_DEVICE_COMPILE__`. (SCAMP, stdgpu)
 
-Same rule catches HELPER FUNCTIONS added to a shim, not just includes. A `__device__` helper
-written at file scope in the compat header is parsed by g++ for every plain `.cpp` in the
-project, where `__device__` expands to nothing and `__ballot`/`__lane_id` are undeclared, so
-the header stops being host-includable the moment you replace a macro with a function. Wrap
-such a helper in `#if defined(__HIPCC__)` and leave the macro that calls it unconditional --
-the macro only expands inside device code, so the host TUs never name it. (GPU_IPC.)
-
-**A name collision with the standard library must NOT be guarded on
-`__CUDA_ARCH__`/`__HIP_DEVICE_COMPILE__`.** Those macros answer "am I in the device
-pass", not "is this name already taken", and the two standard libraries in the fleet
-answer the second question differently: libstdc++'s `<math.h>` does `using std::lerp;`
-at global scope (arriving transitively via `<torch/extension.h>`), while the MSVC STL
-declares `lerp` in namespace `std` only. So a pass-keyed guard fixes one host and breaks
-the other -- Windows' host pass found NO viable `lerp(float,float,float)` and failed to
-parse the device function body, then supplying one unconditionally made Linux's host pass
-find TWO ("declaration conflicts with target of using declaration already in scope"). Any
-C++20 name the standard library also declares is exposed to this: `lerp`, `midpoint`,
-`clamp`, `hypot`, `gcd`. The fix is not a better `#if` and never `_WIN32`/`_MSC_VER` as a
-proxy for the standard library: give the helper a name the standard library does not use
-and define it once, unconditionally, as `__device__ __host__` so it resolves in both
-passes on every toolchain. Keep only the same-name overloads whose PARAMETER TYPES differ
-from the standard one (`lerp(float2,...)` never conflicted). (faster-gaussian-splatting,
-NVIDIA `helper_math.h` scalar `lerp`)
-
 **`__HIP_PLATFORM_AMD__` is undefined until `hip/hip_runtime.h` has been included in that
 TU.** A wave-width gate in a header included BEFORE the runtime header silently takes the
 CUDA branch and picks width 32. hipify-perl prepends the runtime include at line 1, which
@@ -386,14 +302,6 @@ Fix additively -- it helps the CUDA build too. (LC-framework)
 **A force-included compat header creates no build dependency edge.** After editing a header
 injected with `-include`, object files are NOT rebuilt: wipe them manually or you validate
 stale code and get a silent false pass. (lc0)
-
-**nvcc accepts partial specialization of a FUNCTION template; clang rejects it.** The EDG
-frontend takes `template <size_t N> void cast<float, half>(float*, const half*)` as an
-extension, and every HIP compile of that header is a hard error ("function template partial
-specialization is not allowed"). Rewrite the dispatch onto a class template with a static
-`apply`, keeping a thin function wrapper so call sites are unchanged. Vendored NVIDIA-only
-kernel headers are where this shows up, and it is arch-independent, so the rewrite is
-correct for the CUDA build too. (Quest, in flashinfer's vec_dtypes.cuh)
 
 **MSVC-only upstreams accept code that clang and gcc reject**, so the HIP build (and the
 CUDA build under nvcc) is a stricter compiler than the project has ever seen. Velvet carried
@@ -417,26 +325,6 @@ codegen. (cuSZ, lc0)
 **Never name the pointee struct of an opaque CUDA handle.** `CUstream_st`/`CUevent_st` do
 not exist under HIP. Spell it `std::remove_pointer_t<cudaStream_t>` so it survives the
 typedef swap. (cuSZ)
-
-**Eigen DECOMPOSITIONS called from `__device__` code do not survive the move to hipcc, even
-though Eigen's core arithmetic does.** Eigen defines `EIGEN_DEVICE_FUNC` as
-`__host__ __device__` for hipcc just as it does for nvcc, so `Matrix`, `Map`, coefficient
-access, `.cross()`, small products and the DIRECT 2x2/3x3 `SelfAdjointEigenSolver` path all
-compile. Above 3x3 the solver instead reduces through a Householder sequence, and that path
-calls Eigen's general matrix-matrix product kernels (`scaleAndAddTo`, `applyThisOnTheLeft`,
-`BlasUtil`'s `extractScalarFactor`), which are host-only. The diagnostic is a handful of
-`reference to __host__ function ... in __host__ __device__ function` errors deep in Eigen
-headers, all tracing to ONE kernel -- read the `note: called by` line and fix the call site,
-do not conclude Eigen is unusable on the device. Physics and graphics codebases hit this
-because per-element positive-semi-definite projection of a small Hessian is a standard
-move. Replace with a cyclic Jacobi sweep over plain `Scalar[N][N]` arrays: no workspace, no
-matrix product, backward stable on symmetric input, and it is one implementation for both
-back ends rather than a `#ifdef` fork. Do the reconstruction with explicit loops as well,
-since a fixed-size 12x12 `V * D * V.transpose()` re-enters the same host-only product path.
-Verify it on the HOST against the Eigen original over a few thousand random symmetric
-matrices before touching the GPU: that separates "my replacement is wrong" from every other
-hypothesis in about five minutes. (GPU_IPC: `PDSNK<double,12>`, agreed to 1.5e-14 relative
-over 20000 trials.)
 
 **`char` vs `signed char` vector base types differ.** HIP defines
 `using char4 = HIP_vector_type<char, N>` with plain `char` members; NVIDIA's `char4` has
