@@ -7,7 +7,7 @@
   "priority": 6.245,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-08-08T02:03:02Z",
+  "updated_at": "2026-08-08T23:24:36Z",
   "head_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
   "pr_url": "https://github.com/LeelaChessZero/lc0/pull/2420",
   "pr_number": 2420,
@@ -29,10 +29,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "d83b6d171eda425ef79092849185830ba5f15623",
+      "validated_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
       "started_at": "2026-05-31T01:38:05Z",
-      "completed_at": "2026-06-11T07:03:11Z",
-      "updated_at": "2026-06-11T07:21:22Z",
+      "completed_at": "2026-08-08T23:24:36Z",
+      "updated_at": "2026-08-08T23:24:36Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -48,10 +48,10 @@
       },
       "last_agent": "validator",
       "carry_forward": {
-        "to": "d4fdecacbe2760029246c2a28ec1e14c10131ce5",
-        "method": "source-class",
-        "detail": "PR-prep doc/comment/attribution only: README.md and AUTHORS are non-compiled; hip_compat.h delta is the AMD copyright/author comment lines inside the existing header block; meson.build delta is a sing",
-        "at": "2026-06-11T07:03:11Z"
+        "to": "7727fa32c1992ef6702eacc1b8568715803b0701",
+        "method": "full-revalidation",
+        "detail": "Fresh full real-GPU revalidation at 7727fa3 (not a binary-equiv/source-class shortcut, class=mixed): 321-target build (gfx90a code objects, 28 SE_Layer_NHWC instantiations), 8/8 CPU gtest (timeout-mul",
+        "at": "2026-08-08T23:24:36Z"
       }
     },
     "linux-gfx1100": {
