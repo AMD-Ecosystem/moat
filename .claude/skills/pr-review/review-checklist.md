@@ -45,6 +45,19 @@ Use with SKILL.md. Spawn sub-agents to verify items against the actual code. Rep
 - [ ] Body explains the change and mentions Claude by name; NO Co-Authored-By noreply trailer; has a Test Plan section.
 - [ ] History pushed with --force-with-lease; no bare --force; no ghstack. Multi-commit history on the port branch is fine -- the single-curated-commit rule was retired.
 - [ ] The fork the PR is opened from matches `status.json.fork_url`.
+- [ ] The port branch is not behind the fork's default branch:
+      `git rev-list --count moat-port..origin/main -C projects/<name>/src` must be 0.
+      No DIFF will reveal this. `git diff origin/main...HEAD` is merge-base relative, so it
+      shows only what the port added and stays clean no matter how far behind the branch is,
+      and `git merge-tree` reports no conflict whenever the hunks do not textually collide.
+      It matters most in exactly the case where it is least visible: upstream changing a
+      function the port also edits, a few lines away. On faster-gaussian-splatting the branch
+      sat two commits behind for three reviews while upstream's tile-culling fix rewrote the
+      same function the port renamed a call in, ten lines above the port's own hunk. Rebasing
+      is nearly free before a validation or an approval lands on the head and expensive after:
+      it moves the head sha, so every arch revalidates and `approval_currency` refuses with
+      `stale-commits`. Ask for the rebase at review time, then have the validator run once on
+      the rebased sha.
 - [ ] A test added to an AMD-specific file exercises AMD-specific behaviour. A device-generic
       test parked in a HIP-only file never runs on the CUDA path, and a regression test for a
       wave64 fault that does not actually exercise wave64 proves nothing -- it just runs on an

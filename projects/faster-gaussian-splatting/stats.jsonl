@@ -42,3 +42,6 @@
 {"kind": "tokens", "ts": "2026-08-08T17:40:17Z", "tokens": 81196, "source": "reviewer"}
 {"kind": "tokens", "ts": "2026-08-08T17:57:20Z", "tokens": 79504, "source": "porter"}
 {"kind": "tokens", "ts": "2026-08-08T18:41:24Z", "tokens": 129228, "source": "reviewer"}
+{"kind":"phase","ts":"2026-08-08T18:45:37Z","phase":"compile","seconds":43.887,"exit":0,"cmd":"pip install -e projects/faster-gaussian-splatting/src/FasterGSCudaBackend --no-build-isolation"}
+{"kind":"phase","ts":"2026-08-08T18:49:36Z","phase":"compile","seconds":45.539,"exit":0,"cmd":"pip install -e projects/faster-gaussian-splatting/src/FasterGSCudaBackend --no-build-isolation"}
+{"kind":"phase","ts":"2026-08-08T18:49:49Z","phase":"test","seconds":2.183,"exit":0,"cmd":"env PYTHONPATH=/var/lib/jenkins/moat-worktrees/faster-gaussian-splatting/projects/faster-gaussian-splatting/src/FasterGSCudaBackend python agent_space/fgs_test.py"}

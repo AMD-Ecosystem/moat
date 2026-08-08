@@ -11,7 +11,7 @@ Torch hipifies extension sources at build time. Do not add a compat header and d
 
 Torch hipify writes its output into the working tree on every build, usually as SIBLING FILES next to the CUDA sources. They are build output that happens to land in the source tree, and `git add -A` after a build sweeps all of them in.
 
-`torch/utils/hipify/hipify_python.get_hip_file_path` (reached from `cpp_extension.py` via `hipify(..., is_pytorch_extension=True)`) decides each output path, and it does NOT always append `_hip`. It first rewrites `cuda`->`hip`, `CUDA`->`HIP` and `THC`->`THH` in the directory components and in the filename stem, and always rewrites a `.cu` extension to `.hip`. It appends `_hip` to the stem ONLY when that rewrite left both the directory and the full filename unchanged; otherwise the mirror is simply the renamed path. So where the output lands depends on whether the source path already contains the word:
+`torch/utils/hipify/hipify_python.get_hip_file_path` (reached from `cpp_extension.py` via `hipify(..., is_pytorch_extension=True)`) decides each output path, and it does NOT always append `_hip`. It rewrites `cuda`->`hip`, `CUDA`->`HIP` and `THC`->`THH` and always rewrites a `.cu` extension to `.hip`. It appends `_hip` to the stem ONLY when that rewrite left both the directory and the full filename unchanged; otherwise the mirror is simply the renamed path. So where the output lands depends on whether the source path already contains the word:
 
 | source | hipified output |
 | --- | --- |
@@ -19,12 +19,15 @@ Torch hipify writes its output into the working tree on every build, usually as 
 | `src/kernel.cuh` | `src/kernel_hip.cuh` |
 | `src/util.h` | `src/util_hip.h` |
 | `src/cuda/kernel.cuh` | `src/hip/kernel.cuh` -- new directory, filename unchanged |
+| `src/cuda_kernels/kernel.cuh` | `src/hip_kernels/kernel.cuh` -- substring, not a whole component |
 | `src/cuda_utils.cuh` | `src/hip_utils.cuh` -- same directory, no `_hip` suffix |
 | `src/THCFoo.h` | `src/THHFoo.h` |
 
-A `cuda/` directory or a `cuda`-prefixed filename is common in CUDA projects, so the renaming rows are not exotic. Copying a suffix-only ignore list into such a project produces a list that misses the entire mirror.
+The directory rewrite is a plain substring `replace` over the whole dirpath string, not a match on path components, so `cuda_kernels/` and `my_cuda/` are rewritten exactly like `cuda/` is. A `cuda`-containing directory or filename is common in CUDA projects, so the renaming rows are not exotic. Copying a suffix-only ignore list into such a project produces a list that misses the entire mirror.
 
-Committing them is worse than noise. A maintainer opening the PR sees a machine translation of their own kernels sitting beside the originals, dwarfing the real diff -- faster-gaussian-splatting pushed 26 such files, 5,871 of 5,903 added lines, for an 88-line port. It is also a staleness trap that defeats the integrity gate: hipify rewrites the files in place, so a from-clean build leaves `git status` clean and everything looks fine, but the next source edit dirties TRACKED files, which then either get committed out of sync with the sources or read as a dirty fork.
+A mirror appears only where hipify actually CHANGES the content. `preprocess_file_and_save_result` returns `[skipped, no changes]` and writes no file when the translated output is byte-identical to the input and the dirpath did not move (`hipify_python.py:966-974`). So the table predicts WHERE a mirror lands, not THAT one exists: a source hipify leaves alone produces nothing at all. That is why faster-gaussian-splatting's 17 `.h` files yielded only 10 `_hip.h`, and why its `bindings.cpp` yielded no mirror despite being an eligible input. Deriving the ignore list from the table therefore over-predicts, which is harmless; what it must not do is under-predict, so verify against a real build rather than against a count.
+
+Committing them is worse than noise. A maintainer opening the PR sees a machine translation of their own kernels sitting beside the originals, dwarfing the real diff -- faster-gaussian-splatting pushed 26 such files, 5,883 of 5,971 added lines, for an 88-line port. It is also a staleness trap that defeats the integrity gate: hipify rewrites the files in place, so a from-clean build leaves `git status` clean and everything looks fine, but the next source edit dirties TRACKED files, which then either get committed out of sync with the sources or read as a dirty fork.
 
 So in any Strategy B port, before the first commit, put in the project's `.gitignore`, in its existing style:
 
@@ -32,7 +35,7 @@ So in any Strategy B port, before the first commit, put in the project's `.gitig
     *_hip.h
     *_hip.cuh
 
-Those three cover the suffix case only, which is the whole mirror only when no source path contains `cuda`/`CUDA`/`THC`. Derive the rest from the table: a source directory named `cuda`/`CUDA` puts its mirror in a sibling `hip`/`HIP` directory, so ignore that directory (`src/hip/`); a `cuda`/`CUDA`/`THC` in a filename gives a mirror with the rewritten name in the same directory, so ignore that name (`hip_utils.cuh`, or `hip_*` if there are many and the project has no hand-written ones).
+Those three cover the suffix case only, which is the whole mirror only when no source path contains `cuda`/`CUDA`/`THC`. Derive the rest from the table: a directory path CONTAINING `cuda`/`CUDA`/`THC` anywhere in it puts its mirror in a sibling directory with that substring rewritten, so ignore that directory (`src/hip/` for `src/cuda/`, `src/hip_kernels/` for `src/cuda_kernels/`); a `cuda`/`CUDA`/`THC` in a filename gives a mirror with the rewritten name in the same directory, so ignore that name (`hip_utils.cuh`, or `hip_*` if there are many and the project has no hand-written ones).
 
 Do not trust the derivation on its own -- verify. `git clean -fdx`, full build, and `git status --porcelain` must print nothing: no tracked file modified AND no generated file newly untracked. The second half is the part that catches this; a tree where the artifacts are tracked passes the first half. It also catches a rename you did not predict, which is why it is the check that matters rather than the pattern list. If the project genuinely hand-writes a `.hip` file or already has a `hip/` directory (Strategy B ports normally do not), narrow the pattern rather than dropping it. (faster-gaussian-splatting)
 

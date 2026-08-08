@@ -856,3 +856,111 @@ Changes requested. The history rewrite itself is clean and complete -- tree iden
 jargon gone, no validation forfeited, `squash-carry-forward` correctly left alone. What
 blocks is that the branch is not based on the code it will be merged into, in the one
 function it edits, and the cost of fixing that only goes up from here.
+
+## Port fix 2026-08-08 (linux-gfx1100) -- rebase onto fork main, commit b0d21d5
+
+Addresses the blocking finding of the re-review above. Head moves
+1b37161 -> b0d21d5 (`--force-with-lease=moat-port:1b37161`, no bare force).
+No arch had `validated_sha == 1b37161` (all four were at 98be02d / be2217e,
+already stale), so the rewrite forfeited nothing that was not already forfeit.
+
+### The rebase
+
+`git rebase origin/main moat-port` applied cleanly, no conflict. Afterwards
+`git rev-list --count moat-port..origin/main` is 0, and the branch now sits on
+ae2bf80, which is byte-identical to upstream nerficg-project@ae2bf80.
+
+The two commits picked up:
+
+- `44a13d1` "Fix bug in tile-based culling logic" -- rewrites
+  `will_primitive_contribute` in `rasterization/include/kernel_utils.cuh`,
+  turning `x_min_diff > 0.0f` into `>= 0.0f` and the same for `y_min_diff`, so a
+  splat whose 2d mean lands bit-exactly on the pixel centre at a tile's left or
+  upper boundary is no longer culled from that tile.
+- `ae2bf80` "Allow disabling diffuse/specular color during rendering" -- Python
+  only (Model.py, Renderer.py, utils.py, fastergs_garden.yaml). No CUDA source,
+  so it cannot interact with the port.
+
+### The rename and the upstream boundary change coexist
+
+Both edits are in the same function and both survived, at their own lines:
+
+    72:  const float x_min_diff = rect_min.x - mean.x;
+    73:  const float x_left = static_cast<float>(x_min_diff >= 0.0f);   <- upstream 44a13d1
+    ...
+    84:      lerp_scalar(rect_max.x, rect_min.x, x_left),               <- port
+    85:      lerp_scalar(rect_max.y, rect_min.y, y_above)               <- port
+
+`grep -rn lerp` over the tree (excluding the hipify mirrors and helper_math.h
+itself) returns exactly those two lines, so every scalar-lerp call site in the
+new upstream code is renamed and none was missed. The float2/float3/float4
+`lerp` overloads are untouched, as before. `git diff --stat origin/main..HEAD`
+is the same 7 files / +91 / -15 as before the rebase.
+
+### GPU re-run, before versus after (linux-gfx1100, HIP_VISIBLE_DEVICES=0)
+
+The rebase changes the tree, so the earlier 16/16 no longer carried. Rebuilt
+from clean and re-ran; then, to measure the upstream semantic change directly,
+built 1b37161 (pre-rebase) from clean with the same toolchain and compared the
+output tensors bit for bit against the rebased build.
+
+```bash
+source /opt/conda/etc/profile.d/conda.sh && conda activate py_3.12
+export HIP_VISIBLE_DEVICES=0 PYTORCH_ROCM_ARCH=gfx1100
+rm -rf FasterGSCudaBackend/build FasterGSCudaBackend/FasterGSCudaBackend/_C*.so
+pip install -e projects/faster-gaussian-splatting/src/FasterGSCudaBackend --no-build-isolation
+PYTHONPATH=.../src/FasterGSCudaBackend python agent_space/fgs_test.py
+```
+
+Build: PASS from clean, AMD Radeon Pro W7800 48GB (gfx1100), torch
+2.14.0a0+gitb81488e (hip 7.2.53211).
+Tests: **16/16 PASS**, same 16 cases as the pre-rebase run (Gaussian-count
+sweep 10..10000 at 256x256; 128x128 / 256x256 / 512x512 / 800x600 at n=500;
+SH bases 1/4/8/16; the 20000-Gaussian spread scene at 800x600 sh=16; bit-exact
+determinism across two runs). All outputs finite, correctly shaped, in [0,1].
+
+Bit-for-bit before/after over 13 rendered scenes:
+
+| scene | before (1b37161) vs after (b0d21d5) |
+| --- | --- |
+| 12 of 13 scenes | bit-identical |
+| n=20000, 800x600, sh=16 (tile-overlap) | 30 differing pixels of 480,000, max abs delta 1.19e-07 (1 ULP), 3 tiles touched, frame mean unchanged at 0.6414862 to 7 digits |
+
+That single difference is the upstream fix doing exactly what it says. The
+differing pixels cluster at y=587..590, x=625..629, i.e. against the tile
+boundaries at multiples of 16 (592 = 37*16, 624 = 39*16): a splat sitting on a
+boundary that the old `>` predicate culled from the neighbouring tile now
+contributes to it, worth one ULP in 30 pixels. It also confirms the rebased
+binary really carries 44a13d1 rather than the port's old base. Every other
+scene is bit-identical, so the rebase changed nothing about the port's own
+numerics.
+
+### Commit message
+
+Reworded the opening paragraph: "translates the .cu and .cuh sources" became
+"translates the .cu, .cuh and .h sources", since 10 of this tree's 17 plain `.h`
+headers get a `_hip.h` mirror, which the same message's `.gitignore` paragraph
+already conceded. Nothing else in the message changed. `jargon.py --commits
+origin/main..moat-port` and `--diff origin/main...moat-port` are both clean;
+title 39 chars, ASCII only, no em-dash, no `Co-Authored-By` trailer.
+
+### Skill corrections shipped with this (staying on this branch)
+
+Three factual errors the reviewer found in the hipify naming rule are fixed in
+`references/strategy-b-torch.md`: the directory rewrite is a substring `replace`
+over the whole dirpath, not a path-component match (so `src/cuda_kernels/`
+becomes `src/hip_kernels/`, now its own table row); a mirror is written only
+when hipify actually CHANGES the content (`hipify_python.py:966-974` returns
+`[skipped, no changes]` otherwise), which is why 17 `.h` yielded 10 `_hip.h` and
+`bindings.cpp` yielded nothing; and the line counts are now the measured
+5,883 of 5,971. The pr-review checklist gains the check this round came from:
+a port branch can be behind its fork's default branch in a way no diff reveals,
+because `git diff origin/main...HEAD` is merge-base relative and
+`git merge-tree` sees no conflict when the hunks do not collide, so
+`git rev-list --count moat-port..origin/main` is the check.
+
+These global files stay on `port/faster-gaussian-splatting` rather than going to
+main in their own PR: they reach main when this project's own MOAT PR merges,
+which is after a reviewer has vetted them. This round is the argument for that
+ordering -- three factual errors in the hipify rule would have shipped to every
+agent had the file gone to main before review.
