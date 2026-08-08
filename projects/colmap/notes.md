@@ -524,18 +524,41 @@ it never supported "unreachable".
 **Risk 5 still closes, on a different and stronger reason.** What risk 5 feared is a
 compute user silently downgraded to GLSL because an earlier GLSL user cleared the global
 `_UseCUDA`. That cannot happen, and the reason is structural rather than per-host:
-`SiftGPU::ParseParam` re-asserts `GlobalUtil::_UseCUDA = 1` on every fresh `SiftGPU`
-object (`SiftGPU.cpp:773-776`, guarded only by `!_initialized`), and
-`SiftMatchGPU::SetLanguage(SIFTMATCH_CUDA*)` makes `SiftMatch.cpp:686-691` bypass the
-`_UseCUDA` test entirely. Measured, GLSL user first and a compute extractor second in one
-process, `_UseCUDA` reads 0 after the first and 1 after the second -- the cleared flag does
-not survive into the next object, so no ordering of users can downgrade a compute one.
+`SiftGPU::ParseParam` re-asserts `GlobalUtil::_UseCUDA = 1` on every fresh `SiftGPU` object
+that is given `-cuda` (`SiftGPU.cpp:771-776`: `case MAKEINT4(c,u,d,a)`, inside `#if
+defined(SIFTGPU_CUDA_ENABLED)`, then `if(!_initialized)`, and `_initialized` is a per-object
+member zeroed at `SiftGPU.cpp:90`), and COLMAP's compute extractors always pass `-cuda`
+(`sift.cc:583-590`). The re-assert is therefore not "any fresh object resets the flag": a
+fresh GLSL object is exactly the one that does NOT, which is why a cleared `_UseCUDA`
+persists until the next `-cuda` object rather than until the next construction. Every
+compute user is a `-cuda` object, so none of them can be the one that inherits it.
+Independently, `SiftMatchGPU::SetLanguage(SIFTMATCH_CUDA*)` makes `SiftMatch.cpp:686-691`
+bypass the `_UseCUDA` test entirely. Measured, GLSL user first and a compute extractor
+second in one process, `_UseCUDA` reads 0 after the first and 1 after the second -- the
+cleared flag does not survive into the next compute object, so no ordering of users can
+downgrade a compute one.
 
-The real residual is a different fault from the one the risk described, and it is
-pre-existing upstream: a failed GLSL user leaves `_GoodOpenGL = 0`, and `InitSiftGPU`
-early-returns on that for every later extractor in the process, compute included, so
-COLMAP falls back to CPU SIFT. Identical on a CUDA build; not a port defect, and not
-something this port changes.
+The real residual is a different fault from the one the risk described, it is worse than a
+downgrade, and it is pre-existing upstream. A failed GLSL user leaves `_GoodOpenGL = 0`,
+`GlobalUtil.cpp:324` returns immediately whenever it is 0 so it is never retried, and
+`InitSiftGPU` early-returns on it (`SiftGPU.cpp:131`) for every later extractor in the
+process, compute included. **COLMAP does not fall back to CPU SIFT there.**
+`VerifyContextGL` then returns at most `SIFTGPU_PARTIAL_SUPPORTED`
+(`SiftGPU.cpp:1296-1300`), so `SiftGPUFeatureExtractor::Create` returns `nullptr`
+(`sift.cc:668-671`); with `use_gpu` true `CreateSiftFeatureExtractor` has no CPU branch to
+take (`sift.cc:757-760`, the CPU branch at `:764-767` needs `use_gpu` false); and the null
+is a hard failure, since `feature_extraction.cc:164-168` logs "Failed to create feature
+extractor.", calls `SignalInvalidSetup()` and extracts nothing, while pycolmap throws
+(`THROW_CHECK_NOTNULL` at `pycolmap/feature/extraction.cc:49` and `:74`). The only non-test
+`use_gpu = false` writes in the tree are `feature_extraction.cc:408` (domain-size-pooling /
+affine-shape, chosen up front) and `bundle_adjustment_ceres.cc:594` (a CPU retry for Ceres
+bundle adjustment, a different subsystem); neither one catches a failed GPU extractor.
+
+Identical on a CUDA build and upstream's design, so not a port defect, and the port touches
+neither `GlobalUtil.cpp` nor `SiftGPU.cpp`. It is not true that the port changes nothing
+here, though: `use_gpu` defaults to false without `COLMAP_GPU_ENABLED` (`extractor.h:72-76`),
+so before this change no ROCm build had a compute extractor to be poisoned. The port is what
+makes the path reachable on ROCm -- new exposure, same behaviour as CUDA.
 
 Two traps worth recording:
 
@@ -633,9 +656,16 @@ Xvfb display.** It is a race in display teardown, not a deterministic function o
 Under `xvfb-run -a ctest -jN` it hung at `MatchGuidedSiftFeaturesGPU.TypeMismatch` in the
 porter's two `-j8`/`-j16` attempts (reported as `Timeout` at ctest's default 1500 s cap),
 and the reviewer then ran `-j16` four times on this host: one full pass (159/159, 8.76 s)
-and three timeouts, so roughly 3 in 4 at `-j16` on this machine. Standalone the same binary
-passes 5 out of 5 in under 3 s. One green high-`-j` run does not clear the hazard. The
-stack of a hung process is not COLMAP's:
+and three timeouts. Re-measured in review round 3 on the same host with everything the
+earlier sessions could name held constant (same `libgallium-25.2.8`, same 64 cores, same
+`build-hip-gui`, same `xvfb-run -a ctest -j16`): eight runs, seven passes (8.7-9.5 s) and
+one timeout, and that hang fell between clean runs. The counts are what is recorded here; a
+rate is not, because the sessions do not fit one -- P(<= 1 hang in 8) is about 4e-4 if three
+in four hang -- and nothing measured explains the difference. The round-3 session ran with
+`HIP_VISIBLE_DEVICES=2` where the earlier ones likely saw four GPUs, and the machine carried
+other load; neither appears in the stack. Standalone the same binary passes 5 out of 5 in
+under 3 s. One green high-`-j` run does not clear the hazard, and a run of green ones does
+not either. The stack of a hung process is not COLMAP's:
 
     #3  __pthread_clockjoin_ex
     #4-#8   libgallium-25.2.8.so
@@ -831,8 +861,9 @@ generalised a measurement into a law.
    structural reason instead (`ParseParam` re-asserts `_UseCUDA = 1` per fresh `SiftGPU`,
    `SetLanguage(SIFTMATCH_CUDA*)` bypasses the test in `SiftMatch.cpp`), which is what
    actually holds across GPUs and drivers, plus a line on the real residual: a failed GLSL
-   user leaves `_GoodOpenGL = 0` and every later extractor falls back to CPU SIFT,
-   pre-existing upstream and identical on CUDA.
+   user leaves `_GoodOpenGL = 0` and every later extractor is created as a null, pre-existing
+   upstream and identical on CUDA. (Round 3 corrected this sentence: it originally said
+   "falls back to CPU SIFT", and COLMAP has no such fallback -- see the round-3 response.)
 
 2. **The forward-declaration claim is reversed.** Recorded now as measured: gated include
    alone 4 errors, gated include plus `struct hiprandState;` 0 errors. `hiprandState` is a
@@ -940,3 +971,54 @@ once it is 0) and poisons every later user that would have worked. Add a sentenc
 structural argument shows flag A cannot survive, check what else the failing path wrote,
 because the state that bites is rarely the state the risk named. That is the finding of this
 round and it currently lives only in the project notes.
+
+## Review response round 3 on linux-gfx1100 2026-08-08 (porter, wave32 host)
+
+Prose only again. The fork was not touched: `head_sha` stays `4c531f5e`, `git -C
+projects/colmap/src status --porcelain` is empty, HEAD is `4c531f5e` on `moat-port`. Nothing
+was re-run for this round -- no build, no suite, no trace; the source claims below were
+re-read from the clean clone at that sha, which is a read.
+
+1. **The CPU-SIFT fallback claim is withdrawn.** COLMAP has no CPU fallback for a failed GPU
+   extractor. Verified from the tree: `VerifyContextGL` is `(_GoodOpenGL > 0) +
+   _FullSupported` (`SiftGPU.cpp:1296-1300`) so a zeroed `_GoodOpenGL` caps it at
+   `SIFTGPU_PARTIAL_SUPPORTED` (1) and `SiftGPUFeatureExtractor::Create` returns `nullptr`
+   (`sift.cc:668-671`); `CreateSiftFeatureExtractor` reaches the CPU branch only with
+   `use_gpu` false (`sift.cc:757-767`); the null is fatal at
+   `feature_extraction.cc:164-168` ("Failed to create feature extractor.",
+   `SignalInvalidSetup()`, return) and throws in pycolmap
+   (`pycolmap/feature/extraction.cc:49,74`). The two non-test `use_gpu = false` writes are
+   `feature_extraction.cc:408` (chosen up front for domain-size-pooling / affine-shape) and
+   `bundle_adjustment_ceres.cc:594` (a CPU retry inside Ceres bundle adjustment, a different
+   subsystem); neither catches a failed extractor. Corrected in the risk-5 residual here, in
+   plan.md risk 5, and in the round-2 response summary, which is annotated rather than
+   silently rewritten. The residual is therefore worse than recorded, not milder, and the
+   "not something this port changes" clause is now split: the port edits neither
+   `GlobalUtil.cpp` nor `SiftGPU.cpp`, but `use_gpu` defaults false without
+   `COLMAP_GPU_ENABLED` (`extractor.h:72-76`), so the port is what makes the path reachable
+   on ROCm at all. New exposure, identical behaviour to CUDA.
+
+2. **The "3 in 4" hang rate is gone; the hazard stays.** Both sessions are now recorded as
+   counts (2 of 2, then 1 pass and 3 timeouts in 4, then 7 passes and 1 timeout in 8 with
+   every named variable held constant), with the statement that the frequency is unstable
+   across conditions nobody has isolated and the one recorded confound (`HIP_VISIBLE_DEVICES`
+   pinned to a single GPU in the last session, plus other machine load). The reviewer's run 3
+   hanging between clean runs is the demonstration that one green run settles nothing, and
+   the skill entry now says to report counts and conditions rather than a rate.
+
+3. **The `_UseCUDA` re-assert is no longer described as guarded only by `!_initialized`.**
+   It sits in `case MAKEINT4(c,u,d,a)` under `#if defined(SIFTGPU_CUDA_ENABLED)`, so it
+   requires `-cuda` in `argv`. Both notes and plan now say "every fresh `SiftGPU` that is
+   given `-cuda`" and spell out the consequence: the GLSL user is exactly the object that
+   does NOT reset the flag, so a cleared `_UseCUDA` persists until the next `-cuda` object
+   rather than until the next construction. Risk 5 still closes, because every compute user
+   is a `-cuda` object (`sift.cc:583-590`) and the matcher leg holds independently through
+   `SetLanguage`.
+
+4. **The residual is promoted** into the skill's "Closing a 'it might silently fall back'
+   risk" section (`references/validation.md`), at project-independent altitude: when a
+   structural argument proves flag A cannot persist, enumerate the other writes the failing
+   path made, because a sibling flag that is sticky-on-failure, process-wide and read by a
+   later healthy user is what actually bites -- and the absence of a fallback turns that into
+   a hard failure rather than a silent degrade, which is louder but no less a defect. colmap
+   is named as the source.

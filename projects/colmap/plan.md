@@ -322,16 +322,31 @@ back to point filtering for layered textures; leave it alone.
    The risk closes for a structural reason instead, and that one does hold independently of
    the vendor string, the GL driver and the GPU. A cleared `_UseCUDA` cannot downgrade a
    later compute user, because `SiftGPU::ParseParam` re-asserts `GlobalUtil::_UseCUDA = 1`
-   on every fresh `SiftGPU` object (`SiftGPU.cpp:773-776`, guarded only by `!_initialized`)
-   and `SiftMatchGPU::SetLanguage(SIFTMATCH_CUDA*)` bypasses the `_UseCUDA` test at
-   `SiftMatch.cpp:686-691`. Measured with a GLSL user first and a compute extractor second
+   on every fresh `SiftGPU` object that is given `-cuda` (`SiftGPU.cpp:771-776`: `case
+   MAKEINT4(c,u,d,a)` inside `#if defined(SIFTGPU_CUDA_ENABLED)`, then `!_initialized`, a
+   per-object member), and COLMAP's compute extractors always pass `-cuda`
+   (`sift.cc:583-590`). A fresh GLSL object is precisely the one that does not re-assert, so
+   a cleared flag persists until the next `-cuda` object rather than until the next
+   construction -- but every compute user is a `-cuda` object, so none inherits it.
+   Independently, `SiftMatchGPU::SetLanguage(SIFTMATCH_CUDA*)` bypasses the `_UseCUDA` test
+   at `SiftMatch.cpp:686-691`. Measured with a GLSL user first and a compute extractor second
    in one process, `_UseCUDA` is 0 after the first and 1 after the second. No code change,
    and the gfx90a-versus-RDNA distinction does not matter.
 
-   What a GLSL user does leave behind is a different fault from the one this risk states:
-   `_GoodOpenGL = 0` persists, and `InitSiftGPU` early-returns on it for every later
-   extractor including compute ones, so COLMAP falls back to CPU SIFT. That is pre-existing
-   upstream behaviour, identical on a CUDA build, and out of scope here.
+   What a GLSL user does leave behind is a different fault from the one this risk states, and
+   it is a hard failure rather than a downgrade. `_GoodOpenGL = 0` persists
+   (`GlobalUtil.cpp:324` returns whenever it is 0, so it is never retried), `InitSiftGPU`
+   early-returns on it for every later extractor including compute ones, and
+   `VerifyContextGL` then falls short of `SIFTGPU_FULL_SUPPORTED`
+   (`SiftGPU.cpp:1296-1300`), so `SiftGPUFeatureExtractor::Create` returns `nullptr`
+   (`sift.cc:668-671`). COLMAP does NOT fall back to CPU SIFT: with `use_gpu` true
+   `CreateSiftFeatureExtractor` has no CPU branch (`sift.cc:757-760`; the CPU branch at
+   `:764-767` needs `use_gpu` false), and the null makes `feature_extraction.cc:164-168` log
+   "Failed to create feature extractor." and call `SignalInvalidSetup()` while pycolmap throws
+   (`THROW_CHECK_NOTNULL`, `pycolmap/feature/extraction.cc:49` and `:74`). Extraction produces
+   nothing at all. Pre-existing upstream behaviour, identical on a CUDA build, and out of
+   scope as code -- but this port is what makes the path reachable on ROCm, since `use_gpu`
+   defaults to false without `COLMAP_GPU_ENABLED` (`extractor.h:72-76`).
 
 6. **Wave32 versus wave64.** Low risk, stated explicitly because the gate demands both.
    There are no warp intrinsics and no `warpSize`. The three hardcoded 32s are block
