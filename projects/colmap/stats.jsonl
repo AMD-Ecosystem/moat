@@ -23,3 +23,4 @@
 {"kind":"phase","ts":"2026-08-08T21:19:45Z","phase":"test","seconds":11.819,"exit":0,"cmd":"xvfb-run -a ctest --test-dir projects/colmap/src/build-hip-gui -j4 --timeout 600 --output-on-failure"}
 {"kind":"phase","ts":"2026-08-08T21:24:00Z","phase":"compile","seconds":5.302,"exit":0,"cmd":"cmake --build projects/colmap/src/build-hip-gui -j64"}
 {"kind":"phase","ts":"2026-08-08T21:24:17Z","phase":"test","seconds":11.851,"exit":0,"cmd":"xvfb-run -a ctest --test-dir projects/colmap/src/build-hip-gui -j4 --timeout 600"}
+{"kind": "tokens", "ts": "2026-08-08T22:21:29Z", "tokens": 214988, "source": "porter"}
