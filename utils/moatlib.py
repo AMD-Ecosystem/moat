@@ -2107,7 +2107,14 @@ def stranded_shared_changes(base_ref="origin/main"):
     every other port, which is the one audience it was written for.
 
     Found by accident once (alien's codeobj_diff false-positive diagnostic, worth more
-    than the validation it came from). Reported on purpose from here on."""
+    than the validation it came from). Reported on purpose from here on.
+
+    A PROMPT TO LOOK, not a verdict. It cannot tell new content from superseded: when
+    the trunk rewrites a passage a branch still holds the old wording of, the branch's
+    line is absent from the trunk and reads as stranded. Two branches carrying the old
+    two-line texture-pitch entry reported that way while the trunk held colmap's
+    sharpened four-line replacement -- nothing was lost and the trunk was ahead.
+    Read the diff before rescuing anything; the check is here to make you look."""
     out = []
     for ref in _git("for-each-ref", "--format=%(refname:short)",
                     "refs/remotes/origin/port/", check=False).stdout.split():
@@ -2692,8 +2699,9 @@ def main(argv=None):
         for name, paths in rows:
             print(f"{name}\t{','.join(paths[:4])}")
         if rows:
-            print(f"-- {len(rows)} branch(es) carry a shared change the trunk does not "
-                  f"have; a skill lesson stranded on a port branch reaches nobody",
+            print(f"-- {len(rows)} branch(es) differ from the trunk on a shared path. "
+                  f"Read each diff: a lesson stranded on a port branch reaches nobody, "
+                  f"but a branch holding superseded wording is the trunk being ahead",
                   file=sys.stderr)
     elif args.cmd == "misplaced":
         rows = misplaced_folders()
