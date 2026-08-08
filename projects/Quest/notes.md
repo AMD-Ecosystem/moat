@@ -395,3 +395,124 @@ non-sticky `set()` form verbatim, and promoting it early would have made this de
 documented recipe for the next CMake-driven torch extension port. That block now carries the
 `CACHE ... FORCE` form and a paragraph on why the cache entry matters, plus the
 configure-then-reconfigure test as the way to check it.
+
+## Review 2026-08-08 (pass 3)
+
+Re-reviewed fork sha `c1d7fff` (moat-port vs `01c1623`) on linux-gfx1100, scoped to the one
+defect pass 2 raised and to the skill entries this branch publishes. The delta
+`3465b34..c1d7fff` is six lines of `quest/ops/CMakeLists.txt` plus commit-message text, so the
+shim headers, the force-include mechanism, the rms_norm mask and the scoped-out suites were not
+re-litigated. Verdict: changes-requested, for one defect in a global skill reference. The fork
+code itself is correct at this sha and needs no change.
+
+### The architecture fix: independently reproduced, both directions
+
+Ran the regression test myself rather than reading the porter's table. Fresh build directories,
+configure only, host env carrying `PYTORCH_ROCM_ARCH=gfx90a;gfx942;gfx950;gfx1100` except where
+noted, `--offload-arch` read off `compile_commands.json`.
+
+Pre-fix tree (`3465b34`, checked out into a scratch worktree with `kernels/3rdparty` linked in
+so the pybind submodule resolves) -- the defect is real and bites exactly as described:
+
+| step | result |
+|---|---|
+| `PYTORCH_ROCM_ARCH=gfx908 cmake -S quest/ops -B b_pre ...` | exit 0, `--offload-arch=gfx908`, **no `CMAKE_HIP_ARCHITECTURES` line in `CMakeCache.txt`** |
+| `env -u PYTORCH_ROCM_ARCH cmake -S quest/ops -B b_pre` | **exit 1**, `HIP_ARCHITECTURES is empty for target "_kernels"` |
+
+Fixed tree (`c1d7fff`), four cases plus one the porter did not run:
+
+| case | `--offload-arch` | `CMakeCache.txt` | exit |
+|---|---|---|---|
+| `-DCMAKE_HIP_ARCHITECTURES=gfx1201` | `gfx1201` | `UNINITIALIZED=gfx1201` | 0 |
+| env `PYTORCH_ROCM_ARCH=gfx908`, no `-D` | `gfx908` | `STRING=gfx908` | 0 |
+| neither set | `gfx1100` | `STRING=gfx1100;gfx1100;gfx1100;gfx1100` | 0 |
+| **reconfigure of case 2 with `env -u PYTORCH_ROCM_ARCH`** | **`gfx908`** | `STRING=gfx908` | **0** |
+| reconfigure of case 1 with the wheel list still in the env | `gfx1201` | `UNINITIALIZED=gfx1201` | 0 |
+
+All match the porter's table. The last row is mine: it is the direct test that `FORCE` cannot
+clobber a user's `-D`, and it holds because `if(NOT CMAKE_HIP_ARCHITECTURES ...)` at
+`quest/ops/CMakeLists.txt:32` is already false on the second configure, so the `set(... FORCE)`
+at :34 is never reached. `build.ninja` in that directory carries a `RERUN_CMAKE` edge on
+`quest/ops/CMakeLists.txt`, so the reconfigure the defect breaks is one ninja performs by itself.
+
+Behaviour worth knowing but not a defect: with the cache entry in place, changing
+`PYTORCH_ROCM_ARCH` in an EXISTING build directory no longer changes the architecture
+(reconfiguring the gfx908 directory with `PYTORCH_ROCM_ARCH=gfx942` still yields gfx908). That is
+ordinary CMake cache stickiness, it is the same thing `-D` does, and it is the price of the fix.
+
+Independent re-run of the four in-scope suites on GPU 1 (gfx1100, ROCm 7.2.3, torch 2.14.0a0):
+`test_rope.py` + `test_estimate.py` + `test_decode_attention.py` + `test_approx_attention.py` =
+**121 passed in 4.67s**, unchanged. `llvm-objdump --offloading` on the built module shows
+`hipv4-amdgcn-amd-amdhsa--gfx1100` only. Jargon clean over `01c1623..moat-port` for both commit
+messages and diff content; `HEAD == origin/moat-port == status.json.head_sha == c1d7fff`; fork
+tree clean; title `[ROCm] Build the end-to-end operators for AMD GPUs` is 50 chars, Claude named,
+no noreply trailer, commit message ASCII with no em-dash.
+
+### Defect: the skill entry states, wrongly, that a set after enable_language is dead code
+
+`.claude/skills/cuda-to-rocm/references/strategy-b-torch.md:56-57` -- "Anything that sets it
+AFTER that line is dead code." That is false, and it is contradicted by point 2 of the same
+section eleven lines further down, which is entirely about a `set()` after
+`enable_language(HIP)` taking effect and stealing the architecture.
+
+`enable_language(HIP)` writes CMAKE_HIP_ARCHITECTURES to the CACHE. A NORMAL variable set after
+it shadows that cache entry and still initialises the target property at target creation.
+Measured with a standalone probe on this host:
+
+```
+project(probe LANGUAGES CXX)
+enable_language(HIP)                  # cache becomes gfx1100;gfx1100;gfx1100;gfx1100
+set(CMAKE_HIP_ARCHITECTURES gfx908)   # normal variable, AFTER enable_language
+add_library(probe_lib STATIC k.cpp)   # TARGET HIP_ARCHITECTURES=gfx908, --offload-arch=gfx908
+```
+
+That is precisely what `Caffe2/public/LoadHIP.cmake:107` does, and why this port has to snapshot
+into QUEST_HIP_ARCHITECTURES at all. What IS dead after `enable_language()` is a set GUARDED on
+the variable being unset, and a `set(... CACHE ...)` without FORCE. Quest's own CUDA leg proves
+the distinction: at `ff80217` the line was `if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)` at :29
+wrapping `set(... native)` at :30, immediately after `enable_language(CUDA)` at :27 -- dead
+because of its own guard, not because a later set cannot win. Review pass 1's item 3 reached the
+right conclusion by a mechanism the skill has now generalised incorrectly.
+
+An agent reading the sentence as written concludes that torch's post-`enable_language` assignment
+is harmless and skips the snapshot, which reproduces the exact bug the section exists to prevent.
+Fix: replace the sentence with the guarded/cache distinction, e.g. "after that line the variable
+is DEFINED, so any set guarded on it being unset is dead and a `set(... CACHE ...)` without FORCE
+is a no-op; an unguarded normal set still wins at target creation, which is what point 2 below is
+about."
+
+### The rest of the skill delta is accurate
+
+Checked against the sources it names, not against the porter's summary.
+
+- `CMakeDetermineHIPCompiler.cmake:296` is `elseif(NOT DEFINED CMAKE_HIP_ARCHITECTURES)` in both
+  cmake 3.28 and 3.31, and :328/:330 are the only writes of that cache entry, so the
+  "suppresses the branch that would have persisted it" argument at strategy-b-torch.md:92-107 is
+  exactly right, and the code block at :75-84 is the fixed `CACHE STRING ... FORCE` form.
+- `CMakeDetermineCUDACompiler.cmake:261` is `if("${CMAKE_CUDA_ARCHITECTURES}" STREQUAL "")`.
+- `Caffe2/public/LoadHIP.cmake:107` and `Caffe2/public/utils.cmake:280`
+  (`torch_hip_get_arch_list`, environment first then `rocm_agent_enumerator`) are as quoted.
+- `amd_warp_sync_functions.h:177` static_asserts `sizeof(MaskT) == 8` with "The mask must be a
+  64-bit integer", and `-DHIP_ENABLE_WARP_SYNC_BUILTINS` is on this extension's compile line via
+  `Caffe2Targets.cmake:109`, so the fault-classes.md entry and its "explicit width is already
+  wave-agnostic" correction both hold. `rms_norm.cu` widens the literal on the AMD side only and
+  leaves the CUDA value numerically identical.
+- SKILL.md:102-105 index lines match the reference entries they point at.
+
+### README.md on this branch: restore main's copy, do not leave it to the sync
+
+Not a port defect; recorded because it was asked. `README.md` is generated output covering EVERY
+project, and a port branch owns only its own `projects/<name>/`, so this branch's copy is
+authoritative for nothing. It has diverged in BOTH directions against main -- this branch is
+ahead for alien and catboost, main is ahead for faster-gaussian-splatting, GooFit, GPU_IPC and
+HEonGPU -- so a textual merge at sync time can silently regress main's table for the second
+group. Restore it now (`git checkout origin/main -- README.md` on `port/Quest`) and let main
+regenerate; that turns a conflict with a wrong-answer resolution into a no-op. Regenerating the
+table on a port branch is the thing to stop doing, not just this instance of it.
+
+Observation, not a defect and no change requested: the commit title's "the end-to-end operators"
+echoes upstream README.md:51 ("4. Build end-to-end operators with PyBind"), which is the build
+step this change touches, but the same README uses "end-to-end" for the full model pipeline in
+five other places, and that pipeline is exactly what this port cannot run. The body says so
+plainly in its fifth paragraph, so a maintainer reading both is not misled. Weigh a retitle
+before the PR opens rather than amending for it now.
