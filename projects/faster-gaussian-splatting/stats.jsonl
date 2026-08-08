@@ -35,3 +35,4 @@
 {"kind":"phase","ts":"2026-08-08T03:37:52Z","phase":"compile","seconds":45.243,"exit":0,"cmd":"pip install -e projects/faster-gaussian-splatting/src/FasterGSCudaBackend --no-build-isolation"}
 {"kind":"phase","ts":"2026-08-08T03:38:35Z","phase":"test","seconds":1.811,"exit":1,"cmd":"python /tmp/claude-1000/-var-lib-jenkins-moat/24651482-ac41-425e-8ae4-2016b58aa9bb/scratchpad/fgs_test.py"}
 {"kind":"phase","ts":"2026-08-08T03:38:45Z","phase":"test","seconds":2.363,"exit":0,"cmd":"python /tmp/claude-1000/-var-lib-jenkins-moat/24651482-ac41-425e-8ae4-2016b58aa9bb/scratchpad/fgs_test.py"}
+{"kind": "tokens", "ts": "2026-08-08T03:43:22Z", "tokens": 82486, "source": "porter"}
