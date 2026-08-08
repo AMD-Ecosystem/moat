@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "visionaray-hip-device-rng",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "GPU random number generator not enabled on HIP: include/visionaray/random_generator.h guards the thrust include and rand_engine device path under #if defined(__CUDACC__) only, so device RNG is unavailable under __HIPCC__. Small fix (extend both guards to accept __HIPCC__/__HIP_DEVICE_COMPILE__); needs GPU revalidation of any sampler path using it.",
+      "refs": [
+        "projects/visionaray/notes.md"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T19:04:23Z",
+      "decided": null
+    },
+    {
+      "id": "visionaray-hip-texture-linear-float-cdna",
+      "kind": "rocm-bug-report",
+      "component": "include/visionaray/texture/detail/hip_texture{1d,2d,3d}.inl",
+      "summary": "hipCreateTextureObject with filterMode=Linear + readMode=ElementType over float faults on gfx90a/CDNA2 at sample time (tex3D). CUDA hardware supports HW linear-float filtering; CDNA2 does not. Surfaces and nearest-filtered volumes render fine on gfx90a; only linear-filtered float textures (e.g. structuredRegular volume default filter=linear) fault. Fix in base visionaray: software-emulate linear filtering for float readMode=ElementType on devices lacking HW support (or document the limitation). Surfaced validating anari-visionaray structuredRegular volumes on MI250X.",
+      "refs": [
+        "https://github.com/AMD-Ecosystem/visionaray"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-24T00:56:08Z",
+      "decided": null
+    },
+    {
+      "id": "visionaray-device-vector-upstream-pr",
+      "kind": "other",
+      "component": null,
+      "summary": "visionaray hip::device_vector host-side container interface (reserve/push_back/emplace_back/clear, std::vector<T,A> ctor+conversion, capacity_) was added to the fork (moat-port 421da19b) to mirror cuda::device_vector, required by anari-visionaray's GPU BVH-builder path. visionaray gfx90a already landed upstream (1b0b5813) WITHOUT this, so it needs its own upstream follow-up PR to szellmann/visionaray. Until then, consumers (anari-visionaray reviewer/validator + any other host) must build against AMD-Ecosystem/visionaray @ moat-port, not upstream. advance-head flipped visionaray's non-gfx90a platforms to revalidate.",
+      "refs": [
+        "projects/visionaray/notes.md",
+        "https://github.com/AMD-Ecosystem/visionaray"
+      ],
+      "status": "done",
+      "upstream_issue": "https://github.com/szellmann/visionaray/pull/54",
+      "created_at": "2026-06-24T01:02:31Z",
+      "decided": null
+    }
+  ]
+}
