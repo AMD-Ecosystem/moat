@@ -7,8 +7,8 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T00:04:16Z",
-  "updated_at": "2026-08-08T03:50:21Z",
-  "head_sha": "d95236e57ecd6cfb94e53d731b104b694d4da2ea",
+  "updated_at": "2026-08-08T18:05:52Z",
+  "head_sha": "df9aaa298469079c6070f5f8fc1a1743190991a6",
   "depends_on": [],
   "porting": null,
   "waivers": {},
@@ -20,7 +20,7 @@
   },
   "license_spdx": "LGPL-3.0",
   "upstream_repo_id": 9017446,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "linux-gfx90a": {
       "blocked": false,
@@ -43,8 +43,28 @@
         "last_session_at": null
       },
       "last_agent": "planner"
+    },
+    "linux-gfx1100": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-08T18:05:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "porter"
     }
-  },
-  "on_hold": true,
-  "on_hold_reason": "No write access to AMD-Ecosystem/GooFit (gh api reports push:false for this fork; sibling forks report push:true), so no host can push the port branch. Nothing technical is outstanding: at d95236e57 the HIP build completes and all 24 GPU tests pass on gfx1100. Clear this hold once an org write grant is restored, then apply projects/GooFit/rocm-build-docs.patch and advance-head."
+  }
 }
