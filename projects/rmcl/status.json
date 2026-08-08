@@ -1,0 +1,21 @@
+{
+  "schema_version": 3,
+  "name": "rmcl",
+  "upstream_url": "https://github.com/uos/rmcl",
+  "fork_url": "https://github.com/AMD-Ecosystem/rmcl",
+  "fork_default_branch": "main",
+  "priority": 4.281,
+  "ext_type": "cmake",
+  "adopted_at": "2026-05-30T03:40:15Z",
+  "updated_at": "2026-08-07T07:05:29Z",
+  "head_sha": null,
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "BSD-3-Clause",
+  "depends_on": [
+    "rmagine"
+  ],
+  "upstream_repo_id": 553482246,
+  "stage": "unclaimed",
+  "platforms": {}
+}
