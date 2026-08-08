@@ -766,3 +766,112 @@ This is the exact same preprocess-once/execute-many pattern as cusparseSpMVOp. M
 (c) No prototype warranted. The current path is validated correct and numerically identical to the CUDA SpMVOp path.
 
 (d) What's technically absent: `hipsparseSpMVOp` by name doesn't exist in hipSPARSE. The rocSPARSE v2 equivalent (`rocsparse_v2_spmv` + `rocsparse_spmv_descr`) exists but is not surfaced through hipSPARSE. This is a pure API-surface gap with zero functional or performance impact on cuPDLPx. A hipSPARSE feature request for `hipsparseSpMVOp` (wrapping `rocsparse_v2_spmv`) would be a parity add, not a correctness fix.
+
+## Revalidation 2026-08-08 (linux-gfx1100)
+
+Post-merge revalidation. Upstream PR #94 merged 2026-08-06; this run is purely about
+keeping the linux-gfx1100 arch record current, no upstream action taken.
+
+Platform: AMD Radeon Pro W7800 48GB, gfx1100 RDNA3 (HIP_VISIBLE_DEVICES=0), ROCm 7.2.1 (host).
+Head sha: 7c713c6912140feb3055859b021e999f3d501f59
+Previous validated_sha (this arch): 5c056c2f90bea08a882a3ddd7e1bca2eba64d896
+
+### Delta classification
+
+`python3 utils/moatlib.py classify cuPDLPx 5c056c2 7c713c6` -> `class=unknown
+arch_independent=False (classification failed -> revalidate)`. Span (same as the
+gfx90a 2026-07-06 revalidation already recorded above): 5ba1c5f (clang-format, inert),
+cdcc1a0 (CI yml, inert), c39974c (drop duplicate CUDA header includes -- ROCm source
+change), 8599563 (#97 SpMVOp CUDA-API update, guarded by `CUPDLPX_HAS_SPMVOP`, forced
+0 on HIP), b202137 (merge commit), 7c713c6 (missing `#endif` fix in cusparse_compat.h
+dropped during the merge-conflict resolution -- a real source change to the header the
+HIP branch also takes). Not arch-independent (touches compiled HIP sources), so per
+CLAUDE.md's "any classification uncertainty defaults to full revalidation" this got a
+full GPU run rather than a codeobj-diff carry-forward, matching what gfx90a already did
+at this same head_sha (its result is evidence for wave64, not for gfx1100/wave32).
+
+### Build
+
+```bash
+cmake -S projects/cuPDLPx/src -B agent_space/cupdlpx_gfx1100_7c713c6 \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCUPDLPX_BUILD_CLI=ON -DCUPDLPX_BUILD_TESTS=ON -DCUPDLPX_BUILD_PYTHON=OFF \
+  -DCMAKE_BUILD_TYPE=Release
+cmake --build agent_space/cupdlpx_gfx1100_7c713c6 \
+  --target cupdlpx_core cupdlpx_shared test_interface cupdlpx_cli -j$(nproc)
+```
+
+Build result: SUCCESS (warnings only, same warnings as every prior gfx1100 build).
+
+### Test results (HIP_VISIBLE_DEVICES=0)
+
+`tests/test_interface` (9/9 PASS, RC=0):
+- Tests 1-4: LP solve via Dense/CSR/CSC/COO matrix formats -> OPTIMAL (primal obj=3, presolve reduces to 0 rows)
+- Tests 5-8: same with warm start -> OPTIMAL (warm start ignored as documented)
+- Test 9: CSR with presolve=false, eps=1e-8 -> GPU PDLP solver, 1000 iterations:
+  Primal objective 3.000000001, gap 4.636e-11, primal infeas 9.088e-11, dual infeas
+  1.122e-09, x=[1,2] -- matches the gfx90a 7c713c6 revalidation and every prior gfx1100
+  run exactly.
+
+CLI LP test (`2club200v15p5scn.mps.gz`, 17013 rows, 200 cols), `-v`:
+- Status: OPTIMAL
+- Primal objective: -121.2216698, Dual objective: -121.2221271
+- Objective gap: 1.879e-06, Primal infeas: 4.889e-06, Dual infeas: 2.399e-05
+- Iterations: 3000
+- Matches every prior gfx1100/gfx90a validation of this instance exactly.
+
+Result: PASS. No regression from the 5c056c2..7c713c6 span on gfx1100 RDNA3.
+
+### CUDA no-regression gate
+
+Not previously recorded at head 7c713c6 (the 2026-07-02 CUDA compile-check in this file
+covers 5c056c2, before the #97 SpMVOp CUDA-API change landed). Ran it here since this is
+the first Linux arch validating at 7c713c6 with the toolkit available.
+
+`/opt/conda/envs/cuda-12.8/bin/nvcc` did not exist on this host; created via
+`conda create -y -n cuda-12.8 -c nvidia cuda-toolkit=12.8` (cuda-toolkit 12.8.93, host
+gcc 13.3.0). Pinned `-DCMAKE_CUDA_ARCHITECTURES=80` (no NVIDIA GPU on this host).
+`cusparse.h` in this toolkit reports a version below the `CUSPARSE_VERSION >= 12801`
+gate the #97 change added, so `CUPDLPX_HAS_SPMVOP` is 0 here too -- the CUDA build takes
+the same `hipsparseSpMV`-equivalent (`cusparseSpMV`) branch as HIP, not the new SpMVOp
+branch (that branch is source-verified only, not exercised by this toolkit version).
+
+```bash
+cmake -S projects/cuPDLPx/src -B agent_space/cupdlpx_cuda_7c713c6 \
+  -DUSE_HIP=OFF -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc \
+  -DCMAKE_CUDA_ARCHITECTURES=80 -DCUPDLPX_BUILD_CLI=ON -DCUPDLPX_BUILD_TESTS=ON \
+  -DCUPDLPX_BUILD_PYTHON=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build agent_space/cupdlpx_cuda_7c713c6 \
+  --target cupdlpx_core cupdlpx_shared cupdlpx_cli test_interface -j$(nproc)
+```
+
+Result: SUCCESS -- zero errors. All four artifacts built (libcupdlpx_core.a,
+libcupdlpx.so, cupdlpx CLI, tests/test_interface). Confirms the c39974c duplicate-include
+drop and the 7c713c6 `#endif` fix are pure passthroughs on the CUDA side; no CUDA
+regression at this head_sha.
+
+### State
+
+linux-gfx1100 validated_sha advanced 5c056c2 -> 7c713c6. `git status --porcelain` on the
+fork clone is clean (no code edits made this run). Upstream PR #94 is already merged;
+nothing posted or touched outside the fork/MOAT repos.
+
+### moatlib.py tooling note (not a cuPDLPx issue)
+
+`python3 utils/moatlib.py set-state cuPDLPx linux-gfx1100 completed` was a no-op here:
+`set_state`'s `new_state == cur` short-circuit fires before the `completed`-branch logic
+that advances `validated_sha`, because since the Aug 7 schema-3 change (`dac5b99`,
+"Stop storing what the record already implies") a stale-but-passing arch's stored
+`state` is already the literal string `"completed"` (`revalidate` is now computed, not
+stored) -- so `cur == new_state == "completed"` and the call returns unchanged.
+`ARCH_TRANSITIONS["completed"]` also does not include `"completed"` as a legal target,
+so this is not reachable through the table either. `carry_forward()` requires a
+`method` of `source-class`/`binary-equiv`, both meaning "no GPU rerun happened" -- not
+accurate for this run, which was a full build+test on real gfx1100 hardware. Advanced
+`validated_sha`/`completed_at`/`updated_at` directly via `moatlib.load_status` /
+`save_status` (the library's own read/validate/write path, not a hand JSON edit),
+replicating exactly what `set_state`'s `completed` branch does. Left `state` as
+`"completed"` throughout, matching schema-3 intent. Someone should decide whether
+`set_state` should special-case "arch already completed at an older head, now passing
+again" (that path last worked pre-schema-3, when `revalidate` was itself a stored,
+distinct state).
