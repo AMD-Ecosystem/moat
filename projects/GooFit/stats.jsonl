@@ -22,3 +22,5 @@
 {"kind":"phase","ts":"2026-08-08T03:41:00Z","phase":"test","seconds":9.752,"exit":0,"cmd":"ctest --test-dir projects/GooFit/src/build-hip --output-on-failure -j1"}
 {"kind": "tokens", "ts": "2026-08-08T03:52:17Z", "tokens": 150991, "source": "porter"}
 {"kind": "tokens", "ts": "2026-08-08T19:41:57Z", "tokens": 140583, "source": "reviewer"}
+{"kind":"phase","ts":"2026-08-08T19:52:29Z","phase":"compile","seconds":59.249,"exit":0,"cmd":"cmake --build projects/GooFit/src/build-hip -j32"}
+{"kind":"phase","ts":"2026-08-08T19:53:05Z","phase":"test","seconds":17.122,"exit":0,"cmd":"ctest --test-dir projects/GooFit/src/build-hip --output-on-failure"}

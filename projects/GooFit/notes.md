@@ -461,3 +461,124 @@ mechanism worth checking there first.
 
 Whoever picks up gfx90a: re-run the committed tree before debugging SmartVector, exactly as
 attempt 3 advises.
+
+## Port attempt 4 (2026-08-08, linux-gfx1100) -- review bounce addressed; branch rewritten
+
+Fork now AMD-Ecosystem/GooFit @ moat-port 6601ce1f7, two commits on 5c6ca525c.
+The old d95236e57/df9aaa298 pair was rewritten (no arch had a validated_sha, so
+nothing was orphaned).
+
+### The relocatable-device-code finding was wrong; the reviewer was right
+
+The recorded claim -- "the HIP device link only sees device objects passed
+DIRECTLY on the link line, objects inside a .a are invisible to it" -- is false.
+Reproduced the reviewer's minimal fix on the real project: reverted every
+GooFit library to the upstream `add_library(${GNAME} ${GOOFIT_LIB_TYPE} ...)`
+(STATIC), deleted the OBJECT-library gathering and the single SHARED goofit_lib,
+and added one line:
+
+    target_link_options(GooFit_Common INTERFACE "$<$<LINK_LANGUAGE:HIP>:-fgpu-rdc>")
+
+195/195 targets build, 24/24 tests pass on GPU 1 (Radeon Pro W7800, gfx1100,
+ROCm 7.2.3). The generated link line confirms the mechanism exactly:
+
+    LINK_FLAGS = --hip-link --rtlib=compiler-rt -unwindlib=libgcc -fgpu-rdc ...
+
+`--hip-link` was always there (CMake adds it for a HIP link language); only
+`-fgpu-rdc` was missing, and `HIP_SEPARABLE_COMPILATION` does not add it. Every
+GooFit library on that link line is a plain `.a` and the device link resolves
+the cross-TU `__device__` globals and function-pointer tables through them.
+
+**So the OBJECT-library restructuring was NOT needed.** It was the largest piece
+of the diff; CMakeLists.txt went from +160 to +132 lines against upstream and the
+HIP build now has the same target shape as the CUDA and CPU builds.
+
+Corrected in the skill: `references/strategy-a-cmake.md` now leads with
+"-fgpu-rdc is needed on the LINK line too", carries the reproducer shape and the
+link-line evidence, and states explicitly that archives are NOT invisible so the
+next porter does not re-derive the wrong version. The real archive caveat (the
+host linker only extracts a member that resolves an undefined HOST symbol;
+`--whole-archive` for that case) is kept and labelled as the different statement
+it is.
+
+### __ldg: the HIP arm was unnecessary and its stated reason was wrong twice
+
+Both the port's claim ("HIP __ldg only accepts scalar types") and the review's
+counter-claim ("the real blocker is extern/generics/ldg.h's inline PTX") are
+wrong. `extern/generics/generics/ldg.h` contains no PTX; it is guarded on
+`__CUDA_ARCH__ >= 350`, which is false under hipcc, so it falls back to `*ptr`.
+Compiling a two-line hipcc TU that includes it and calls `__ldg` on `const
+double*` and `const int*` succeeds with no diagnostic. And ROCm's `__ldg`
+overloads are each literally `return ptr[0]`, so `(x)` and `__ldg(&x)` are the
+same code on AMD.
+
+The whole `#ifdef __HIPCC__` RO_CACHE arm was therefore deleted and GooFit uses
+its original `#include <generics/ldg.h>` / `RO_CACHE(x) __ldg(&x)` on both
+backends. Promoted to `references/fault-classes.md` as "check before working
+around it", with the two-line test that settles it.
+
+### Other review items
+
+- `GlobalCudaDefines.h` driver_types.h guard: restored to the original
+  `THRUST_DEVICE_SYSTEM == THRUST_DEVICE_SYSTEM_CUDA` include, with the stub
+  enum moved to an `#elif !GOOFIT_DEVICE_IS_GPU` arm. The CUDA preprocessor
+  outcome is now bit-for-bit what upstream had; on HIP neither arm fires because
+  cuda_to_hip.h has already mapped cudaError_t onto hipError_t. UNVERIFIED by
+  execution -- no host in this effort has nvcc -- which is why it was made
+  neutral by construction rather than by testing.
+- Copyright and Author lines removed from both new headers; the explanatory
+  comments stay. GooFit's only two copyright lines are on vendored third-party
+  files.
+- GOOFIT_PHYSICS is now honored everywhere: examples/CMakeLists.txt gates
+  dalitz, pipipi0DPFit, SigGen, DP4 and TDDP4 (the five that include
+  goofit/PDFs/physics or mcbooster); python/PDFs gates the physics subdirectory,
+  and python/CMakeLists.txt stops linking _Physics while python/goofit.cpp
+  guards the physics init declarations and calls behind a GOOFIT_PHYSICS
+  compile definition -- gating only the subdirectory would have left an
+  unresolved _Physics on the module link. The option now defaults OFF on HIP and
+  ON elsewhere, and an explicit `-DGOOFIT_PHYSICS=ON` with HIP is a FATAL_ERROR
+  instead of a wall of template errors. A plain `-DGOOFIT_DEVICE=HIP` configure
+  needs no extra flag now.
+- README/SYSTEM_INSTALL now claim only what was run: ROCm 7.2, gfx1100. The
+  wave64/gfx942 claim and "ROCm 6.0+" are gone.
+- Application.cpp's floating-point-exception message no longer says "CUDA" on a
+  ROCm build.
+- Dead `if(NOT DEFINED hip_lang)` fallback removed; the IPO guard in
+  GOOFIT_ADD_EXECUTABLE removed too (that line references an undefined ${GNAME}
+  upstream, so guarding it changed nothing).
+- A CMake 3.21 version check now fires inside GOOFIT_OPTIONAL_HIP, since
+  cmake_minimum_required still allows 3.16 and enable_language(HIP) needs 3.21.
+
+### extern/thrust is unfetchable, and the configure guard had to move
+
+`CMakeLists.txt`'s submodule check required `extern/thrust/README.md` to exist
+even on HIP, so a HIP configure could not succeed with that submodule deinited
+-- and it cannot be initialised at all: `.gitmodules` gives it the relative url
+`../../thrust/thrust.git`, which now redirects to NVIDIA/cccl, and cccl does not
+contain the recorded commit 8551c9787 ("not our ref"). This affects upstream
+GooFit identically. The check for that one submodule moved into the non-HIP
+Thrust branch, where it also produces a clear message instead of the FindThrust
+parse error a wrong checkout gives. Verified: `-DGOOFIT_DEVICE=CPP` now stops
+with "The extern/thrust submodule was not downloaded!" rather than a CMake error
+inside FindThrust.cmake:44. Leave extern/thrust deinited.
+
+Consequence: the CPP/OMP no-regression build still cannot be configured on this
+host, for that upstream reason and not for anything the port did. No nvcc
+anywhere, so the CUDA no-regression compile remains unrun; the CUDA path is
+protected by construction (every CMake change is inside a
+`GOOFIT_DEVICE STREQUAL HIP` guard or is an additive DEVICE_LISTING entry, and
+the one shared header guard was restored to its exact original condition).
+
+### Not chased: the gfx90a NLL divergence
+
+Ruled out as a review blocker -- the diff has no arch-conditional code. The
+review's analysis is the one to carry: `6.25e-310` is a pointer bit pattern read
+as a double, and the iteration-count dependence points at accumulated
+device-side state, which is exactly what the device `new fptype[10]` in the
+binned `MetricTaker::operator()` produced. That operator is the normalization
+integrator an unbinned fit calls once per iteration, and attempt 2's notes say
+it was still being removed while the NLL debugging ran, so the gfx90a repro was
+most likely built from a tree that is not the committed one. The stale-duplicate
+`d_normalizations`-across-two-device-images hypothesis is now MOOT: there is
+only one device image again, since the shared-library gathering is gone.
+Whoever has a gfx90a: build 6601ce1f7 and run ctest before debugging anything.
