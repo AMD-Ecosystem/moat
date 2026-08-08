@@ -1022,3 +1022,56 @@ re-read from the clean clone at that sha, which is a read.
    later healthy user is what actually bites -- and the absence of a fallback turns that into
    a hard failure rather than a silent degrade, which is louder but no less a defect. colmap
    is named as the source.
+
+## Review 2026-08-08 round 4 on linux-gfx1100 (reviewer, narrow prose round)
+
+Passed. Scope was the round-3 prose corrections and the promoted skill entry only; the fork
+was confirmed untouched (`head_sha` `4c531f5e`, `git -C projects/colmap/src status
+--porcelain` empty, HEAD `4c531f5e` on `moat-port`, `porting` lock null, `jargon.py --port
+colmap` clean). One correction to make on the next touch of this file, and one finding of
+the previous review withdrawn.
+
+**The exhaustive `use_gpu = false` enumeration is not exhaustive.** The risk-5 residual
+paragraph and round-3 response item 1 both say "the only non-test `use_gpu = false` writes in
+the tree are `feature_extraction.cc:408` ... and `bundle_adjustment_ceres.cc:594`". There is
+a third: `src/pycolmap/pipeline/match_features.cc:62`, which sets
+`FeatureMatchingOptions::use_gpu = false` unconditionally in `VerifyMatches` so geometric
+verification runs on CPU. It is not a fallback and not on the extraction path, so every
+conclusion drawn from the enumeration stands and is in fact strengthened -- but the sentence
+scopes itself to the whole tree ("in the tree", and it deliberately reaches into a different
+subsystem to cite `bundle_adjustment_ceres.cc`), so it cannot be read as extraction-scoped
+and is false as written. Recorded rather than bounced because the enumeration is
+corroborating, not load-bearing: what proves no fallback catches a failed extractor is the
+branch structure at `sift.cc:757-767`, which holds independently. Correct the clause to name
+three writes, or narrow it to "on the extraction path", whenever this file is next edited.
+
+Also `pycolmap/feature/extraction.cc:49,74` is really `src/pycolmap/feature/extraction.cc`;
+the line numbers are exact.
+
+Verified this round, so nobody re-derives it:
+
+- `VerifyContextGL` is `(GlobalUtil::_GoodOpenGL > 0) + GlobalUtil::_FullSupported`
+  (`SiftGPU.cpp:1296-1300`, exact). `_FullSupported` is initialized to 1
+  (`GlobalUtil.cpp:88`) and is only ever assigned 0 elsewhere, so with `_GoodOpenGL` zeroed
+  the sum is at most 1 = `SIFTGPU_PARTIAL_SUPPORTED` and can never reach
+  `SIFTGPU_FULL_SUPPORTED` = 2 (`SiftGPU.h:117-119`). The porter's sharper claim holds.
+  `GlobalUtil.cpp:324` is exactly the `_GoodOpenGL == 0` early return, `sift.cc:668-671` is
+  the `!= SIFTGPU_FULL_SUPPORTED -> nullptr`, `sift.cc:757-760`/`:764-767` are the GPU and
+  CPU branches, `feature_extraction.cc:164-168` is the fatal path. All exact.
+
+- **The round-3 reviewer finding on `bundle_adjustment_ceres.cc:594` was wrong and the porter
+  is right.** The enclosing function is named `SolveWithGpuFallback` (`:574`): on
+  `ceres::FAILURE` with `options.ceres->use_gpu` set and a recognised message, it copies the
+  options, clears `use_gpu`, and re-solves. That is a genuine CPU retry. It is confined to
+  the Ceres bundle-adjustment solver -- a different options struct
+  (`CeresBundleAdjustmentOptions::use_gpu`, `bundle_adjustment_ceres.h:50`) reached from
+  bundle adjustment, never from `CreateSiftFeatureExtractor` -- so it cannot catch a failed
+  extractor. "There is one, elsewhere, that does not help here" is the true claim; "there is
+  no CPU retry anywhere" was not.
+
+- The hang counts and their arithmetic. P(<= 1 hang in 8) at p = 0.75 is 3.81e-4, so "about
+  4e-4" is right, and it is the correct test to aim at the 3-in-4 rate being retracted.
+  Checked further, since "these do not fit one frequency" is stronger than that one number
+  shows: a likelihood-ratio test of the three sessions (2/2, 3/4, 1/8 hangs) against a common
+  pooled p = 6/14 gives LRT 8.59 on 2 df, p ~ 0.014. Heterogeneity is real and the sentence
+  stands.
