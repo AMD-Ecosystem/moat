@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "gdtk-eilmer-gpu-chem",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Eilmer GPU finite-rate chemistry (src/eilmer/cuda_gpu_chem.d driver + utils/alpha_qss_kernel_cuda_tmplt.cu, makefile target eilmer-cuda-gpu-chem under WITH_CUDA_GPU_CHEM) not ported; opt-in non-default separate binary, plain runtime API + one hand-written kernel (cublas imported but never called) so HIP-portable. chicken is the ported primary GPU path.",
+      "refs": [
+        "projects/gdtk/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T19:04:23Z",
+      "decided": null
+    }
+  ]
+}
