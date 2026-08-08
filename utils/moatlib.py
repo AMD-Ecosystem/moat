@@ -2437,6 +2437,16 @@ def make_worktree(name, path=None, base_ref="origin/main"):
     sync = subprocess.run([sys.executable, "utils/moatlib.py", "branch-sync", "--apply"],
                           cwd=str(path), capture_output=True, text=True)
     detail = (sync.stdout or sync.stderr).strip().replace("branch-sync: ", "")
+    # A worktree that did not sync is the thing this command exists to prevent, so it
+    # is not handed back. Returning the path with a warning attached would be worse
+    # than the hand-rolled version it replaces: a caller gets something that looks
+    # ready, and the warning is one line above the path they are about to paste.
+    if not detail.startswith(("merged", "current", "inert")):
+        _git("worktree", "remove", "--force", str(path), check=False)
+        raise ValueError(
+            f"{name}: the worktree was not synced, so it was not created -- {detail}. "
+            f"Resolve it on the branch first: `git checkout port/{name}` in a checkout "
+            f"you own, merge origin/main by hand, push, then run this again.")
     return (str(path), detail)
 
 
