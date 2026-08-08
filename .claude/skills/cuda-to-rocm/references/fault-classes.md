@@ -76,19 +76,29 @@ looks handled: GPU_IPC's header had a plausible-looking ballot and unqualified s
 the shuffles were the half that would have broken CDNA, since its PCG and BVH reductions
 loop `delta = 1,2,4,8,16` over logical 32-element groups. (GPU_IPC.)
 
-**A branch uniform over a 32-lane GROUP is not uniform over a 64-lane wavefront, so hoist
-the collective out of it.** Code that partitions work into fixed 32-element clusters
-(GPU_IPC's `BANKSIZE 32` preconditioner banks) commonly guards a warp reduction on a
-cluster-uniform predicate -- `if (__popc(connectMsk) == BANKSIZE) { for (d = 1; d < 32;
-d <<= 1) v += shfl_down(v, d, 32); }`. On CUDA that branch is warp-uniform by construction.
-At wave64 one cluster can take it while its sibling in the same wavefront does not, and the
-shuffles then execute with half the wavefront inactive. Computing the reduction BEFORE the
-branch and using the value inside costs the other half five shuffles, is identical at
-wave32, wave64 and on CUDA, and removes the dependence on the alignment entirely. Do this
-even where it currently measures clean: with the width pinned to 32 a cluster IS exactly one
-half-wavefront and `ds_bpermute` clamps inside it, so the old form can pass a hardware test
-while resting on a coincidence plus inactive-lane semantics. (GPU_IPC
-`__buildMultiLevelR_optimized`.)
+**A fixed-cluster warp reduction is wavefront-safe exactly when the cluster size equals the
+pinned shuffle width AND the clusters are aligned to it -- check that, do not restructure
+the branch.** Code that partitions work into fixed 32-element clusters (GPU_IPC's
+`BANKSIZE 32` preconditioner banks) commonly guards a reduction on a cluster-uniform
+predicate: `if (__popc(connectMsk) == BANKSIZE) { for (d = 1; d < 32; d <<= 1) v +=
+shfl_down(v, d, 32); }`. At wave64 one cluster can take that branch while its sibling in the
+same wavefront does not, which invites the "fix" of hoisting the reduction above the branch
+so the whole wavefront participates. Resist it. Once the compat layer pins the width to 32
+(see the shuffle entry above) `ds_bpermute` clamps every source index with `self &
+~(width-1)`, so a lane only ever reads its own 32-lane group; with `laneId = threadIdx.x %
+BANKSIZE` that group IS the cluster, and the reduction is correct at wave32, at wave64 and
+on CUDA no matter what the sibling cluster did. The invariant to verify is cluster size ==
+pinned width, cluster base aligned to it, predicate uniform over the cluster -- the same
+invariant that makes the reduction meaningful on CUDA in the first place.
+
+Hoisting is not merely unnecessary, it can ADD a fault: check for an earlier early-return
+that leaves a PARTIAL group. GPU_IPC launches this kernel over `totalNodes = vertNum`, which
+is not padded to BANKSIZE (38386 vertices, so 18 live lanes in the last bank and 14 that
+already returned). The guarded form never shuffles there, because a partial bank cannot
+reach `popc == BANKSIZE`; the hoisted form does, with a full `0xffffffff` member mask naming
+returned lanes -- an undefined source-lane read on both back ends, bought for nothing. (GPU_IPC
+`__buildMultiLevelR_optimized`, where the hoist was written, measured clean, and then
+reverted for exactly this reason.)
 
 **An over-wide `__shfl*` width does not error, it silently degenerates.**
 `__shfl_up(v, delta, 64)` lowers to `__builtin_amdgcn_ds_bpermute` with a clamp of

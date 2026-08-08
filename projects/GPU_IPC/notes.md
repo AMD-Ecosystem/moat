@@ -2,10 +2,11 @@
 
 ## Port status
 
-Builds, links and runs on gfx1100 (linux-gfx1100), fork `moat-port` @ b474148,
-now a single commit on top of 46594e0. The Eigen blocker recorded below is
-resolved. Not yet validated on any arch. Review 2026-08-08 addressed; see
-"## Response to review 2026-08-08".
+Builds, links and runs on gfx1100 (linux-gfx1100), fork `moat-port` @ 3798cb2,
+a single commit on top of 46594e0. The Eigen blocker recorded below is
+resolved. Not yet validated on any arch. Both rounds of review 2026-08-08 are
+addressed; see "## Response to review 2026-08-08" and "## Response to review
+2026-08-08 (round 2)".
 
 ## Build recipe (Linux)
 
@@ -346,8 +347,18 @@ attributable to this port**. Two measurements:
    (MASPreconditioner.cu:1376) rather than out of any kernel in this project.
 
 So the crash is rocPRIM/rocThrust under forced wave64 on an RDNA target, a
-configuration ROCm does not validate: the libraries an application links are
-built for gfx11's native wave32.
+configuration ROCm does not validate. The mechanism is a compile-time constant,
+not a prebuilt binary: rocPRIM and rocThrust are header-only (`/opt/rocm/lib`
+holds no library for either, and both compile with the application's own flags),
+and rocPRIM takes its wavefront constant from the target ARCHITECTURE macro
+rather than from the effective wavefront mode. `min_size()` in
+`/opt/rocm/include/rocprim/intrinsics/arch.hpp:68-77` returns `32u` whenever
+`ROCPRIM_NAVI`, so under `-mwavefrontsize64` on gfx1100 `warpSize` is 64 while
+`rocprim::arch::wavefront::min_size()` is still 32, and rocPRIM sizes its shared
+memory and per-warp partials for the wrong wave. (An earlier version of this
+section said "the libraries an application links are built for gfx11's native
+wave32", which is wrong and would send the next reader hunting a rebuilt rocPRIM
+that does not exist.)
 
 Confirming it: a mixed build with `-mwavefrontsize64` everywhere EXCEPT the three
 rocThrust translation units (GIPC.cu, mlbvh.cu, MASPreconditioner.cu, given
@@ -378,6 +389,9 @@ cmake -S . -B buildmix -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
 ```
 
 ### MASPreconditioner.cu, finding 2
+
+SUPERSEDED: round 2 reverted this hoist; see "Response to review 2026-08-08
+(round 2)" below. What follows is the record of what round 1 did.
 
 Fixed. `__buildMultiLevelR_optimized` now computes the 32-lane bank sum BEFORE
 the `if(__popc(connectMsk) == BANKSIZE)` branch and uses it inside; banks taking
@@ -585,3 +599,86 @@ of the guard and add only the HIP one.
   hardcoded-32 fault class: those are logical cluster sizes, and pinning the
   compat shuffles to width 32 is what makes them arch-unified. No textures,
   surfaces or pitched allocations exist in this codebase.
+
+## Response to review 2026-08-08 (round 2)
+
+Fork history rewritten once more: 3798cb2 on top of 46594e0, still a single
+commit. `validated_sha` was null on both Linux archs, so nothing was orphaned.
+The only tree change against b474148 is MASPreconditioner.cu.
+
+### 1. MASPreconditioner.cu reverted to upstream's form
+
+Done. `__buildMultiLevelR_optimized` is byte-identical to upstream again: the
+bank reduction is back inside `if(__popc(connectMsk) == BANKSIZE)`, operating on
+`r` rather than a hoisted `bankSum`, and the comment that asserted the
+inactive-lane mechanism is gone. The corresponding paragraph in the commit
+message now says what is true and much shorter: BANKSIZE is 32 and a bank's lane
+index is `threadIdx.x % BANKSIZE`, so with the shuffle width pinned to 32 in
+cuda_to_hip.h the shuffle group IS the bank on either wavefront size, and no
+kernel needed restructuring.
+
+The reviewer's second reason is the one that settles it independently of the
+mechanism argument. `totalNodes = vertNum` (MASPreconditioner.cu:1482) is not
+padded to BANKSIZE, so the shipped scene's last bank has 18 live lanes and 14
+that returned at line 875. The guarded form never shuffles there (a partial bank
+cannot reach `popc == 32`); the hoisted form did, with a full `0xffffffff`
+member mask naming returned lanes. The value was discarded, so it was not a live
+bug, but it is an undefined source-lane read on both back ends bought for
+nothing.
+
+### 3. rocPRIM mechanism corrected
+
+Corrected in the wave64 section above and in the skill's `validation.md`. The
+statement that "the libraries an application links are built for gfx11's native
+wave32" was wrong: there are no such libraries. Verified here --
+`/opt/rocm/lib` contains no rocPRIM or rocThrust binary, both are header-only,
+and `min_size()` at
+`/opt/rocm/include/rocprim/intrinsics/arch.hpp:68-77` returns `32u` under
+`ROCPRIM_NAVI` from the target arch macro alone, with no reference to the
+wavefront mode. So `-mwavefrontsize64` on gfx1100 desynchronizes rocPRIM's
+compile-time wave constant (32) from `warpSize` (64) and its algorithms lay out
+shared memory and per-warp partials for the wrong wave. The conclusion -- the
+crash is not a port defect -- is unchanged and was reproduced independently by
+the reviewer (4197 out-of-range slots, 33760 duplicates).
+
+### 2, 4. Skill entries corrected in place
+
+Both entries added by 3a6ca69 were rewritten on this branch rather than lifted
+to main, so the reviewer sees them with the work that produced them and they
+reach other projects when this branch's own PR merges.
+
+- `references/fault-classes.md`: the "hoist the collective" entry now teaches
+  the opposite and narrower rule -- a fixed-cluster warp reduction is
+  wavefront-safe exactly when the cluster size equals the pinned shuffle width
+  and the clusters are aligned to it, so verify that invariant and pin the width
+  instead of restructuring the branch; and before hoisting any collective, check
+  whether an earlier early-return leaves a partial group, with GPU_IPC's
+  unpadded last bank as the worked example.
+- `references/validation.md`: carries the corrected rocPRIM mechanism above; no
+  longer claims mixing is unconditionally legal (it states the condition -- the
+  per-source recipe is sound only when nothing reachable across the TU boundary
+  uses `warpSize`, `__AMDGCN_WAVEFRONT_SIZE__` or a cross-lane op, which is why
+  it held here); and states what the mixed build does and does not cover.
+  PCG_SOLVER.cu is one of the five wave64 TUs and the only file outside the
+  three rocThrust TUs using both `WARP_SHFL_DOWN` and `WARP_BALLOT`, so the run
+  does exercise both cuda_to_hip.h lane fixes on 64-lane hardware; it does NOT
+  cover MASPreconditioner, which was compiled `-mno-wavefrontsize64`.
+
+### 5. MASPreconditioner.cu include set
+
+Fixed. All three of upstream's cooperative-groups includes are back on the CUDA
+side of the guard (`<cooperative_groups.h>`, `<cooperative_groups/reduce.h>` and
+the duplicate quoted form); the HIP side has only
+`<hip/hip_cooperative_groups.h>`, which is needed because `using namespace
+cooperative_groups;` at line 24 requires the namespace to exist. The CUDA
+include set for this file is now unchanged from upstream apart from
+`device_launch_parameters.h`, which reaches it transitively through
+cuda_tools.h -> cuda_to_hip.h as the reviewer confirmed.
+
+### Post-revert run, gfx1100 wave32, GPU 2
+
+Same harness, build @ 3798cb2: 36 frames at 205-238 ms/frame, then the same
+line-search wedge on the same vertex cluster (12866-12893). No HIP error, no
+NaN. No regression from the revert; the wedge frame continues to vary between
+runs of the same binary (25, 26, 32, 32, 36 so far), which is expected from the
+float `atomicAdd` accumulation order.

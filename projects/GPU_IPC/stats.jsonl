@@ -18,3 +18,4 @@
 {"kind":"phase","ts":"2026-08-08T18:19:02Z","phase":"test","seconds":99.244,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/run_gipc.sh /var/lib/jenkins/moat-worktrees/GPU_IPC/projects/GPU_IPC/src/build/gipc 90"}
 {"kind": "tokens", "ts": "2026-08-08T18:25:36Z", "tokens": 166290, "source": "porter"}
 {"kind": "tokens", "ts": "2026-08-08T18:43:19Z", "tokens": 148093, "source": "reviewer"}
+{"kind":"phase","ts":"2026-08-08T18:46:17Z","phase":"compile","seconds":11.436,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat-worktrees/GPU_IPC/projects/GPU_IPC/src && cmake --build build -j32 2>&1 | tail -20"}
