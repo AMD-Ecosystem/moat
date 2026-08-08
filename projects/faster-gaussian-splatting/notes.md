@@ -964,3 +964,137 @@ main in their own PR: they reach main when this project's own MOAT PR merges,
 which is after a reviewer has vetted them. This round is the argument for that
 ordering -- three factual errors in the hipify rule would have shipped to every
 agent had the file gone to main before review.
+
+## Review 2026-08-08 (reviewer) -- b0d21d5, rebased onto ae2bf80
+
+Changes requested. **The port code is clean and I found nothing wrong with it.**
+Everything blocking is in the global `.claude/` payload this branch publishes to every
+agent, which the checklist makes the reviewer the sole gate for. Four fixes, all small.
+
+### Verified clean, no action needed
+
+- **Coexistence (the thing this round existed to prevent).** Upstream's `>=` survives at
+  `kernel_utils.cuh:73` and `:78`; the port's renames are at `:84` and `:85`. `git grep -n
+  lerp` over all tracked files returns exactly those two call sites plus the definitions in
+  `helper_math.h` -- no scalar-lerp call site in the rewritten `will_primitive_contribute`
+  was missed, and there are no other scalar `lerp` calls anywhere in the tree. The
+  float2/3/4 overloads have no callers at all and are correctly left untouched.
+- **The numerical delta is upstream's, and the proof is stronger than the one argued.**
+  `git diff 1b37161 b0d21d5` over `*.cu *.cuh *.h *.cpp` is exactly upstream's two-character
+  `>` -> `>=` change and nothing else; the `lerp_scalar` lines are byte-identical across both
+  heads. Since `lerp_scalar`'s body (`a + t*(b-a)`) is character-for-character the old
+  `lerp`'s, the rename cannot move a bit, so the 30-pixel delta is attributable to `44a13d1`
+  by construction, independent of any pixel-position reasoning. The clustering argument is
+  sound corroboration but is the weaker leg: `tile_width`/`tile_height` are 16
+  (`rasterization_config.h:53-54`), and the mechanism holds (for a mean bit-exactly on a
+  tile's left boundary but outside it in y, the old predicate put `closest_corner.x` at
+  `rect_max.x`, a spurious 15px, inflating the power and culling; the new one puts it at
+  `rect_min.x`, so the splat contributes). 1 ULP is the expected magnitude, not a suspicious
+  one: a splat that sits on the culling threshold contributes epsilon by definition. 16/16
+  PASS plus this delta is the right conclusion.
+- **`fault-classes.md` lerp/std-collision entry is correct.** Checked against the source, not
+  the summary: `/usr/include/c++/13/math.h:183` is `using std::lerp;` inside `#if __cplusplus
+  > 201703L` (line 182), and `std::lerp(float,float,float)` is `cmath:3642`. The
+  pass-macro-vs-visibility distinction is right and the entry is worth publishing as written.
+- **`strategy-b-torch.md` naming rule.** All 7 table rows reproduce exactly by calling
+  `get_hip_file_path(..., is_pytorch_extension=True)` on torch 2.14.0a0. The `_hip` condition
+  is literally `if is_pytorch_extension and dirpath == orig_dirpath and (root + ext) ==
+  orig_filename` (`hipify_python.py:611`). The substring-vs-component correction is right and
+  valuable: the code is `dirpath.replace('cuda','hip')` (`:600`) while torch's OWN comment
+  three lines up says "If there is a directory component named cuda", so the doc is correcting
+  torch's comment, not just restating it. Confirmed `src/my_cuda/foo.cuh -> src/my_hip/foo.cuh`.
+- **Line counts exact.** 26 generated files, 5883 of 5971 added, 88-line port. Reproduced.
+- **Commit message, jargon, hygiene.** Title 39 chars with `[ROCm]`; Claude named; no
+  `Co-Authored-By`; Test Plan with fenced literal commands; ASCII only (zero codepoints >127);
+  no em-dash; ROCm/HIP used correctly throughout; opening reads "translates the .cu, .cuh and
+  .h sources"; no AMD-internal account references (only public product names); prose paragraphs
+  with a stated read order rather than a bullet list. `jargon.py --commits origin/main..HEAD`
+  and `--diff origin/main...HEAD` both clean. Fork tree clean, `porting` null, `head_sha`
+  b0d21d5.
+
+### Blocking 1: the new section-8 command does not run
+
+`.claude/skills/pr-review/review-checklist.md:44-45`
+
+    git rev-list --count moat-port..origin/main -C projects/<name>/src
+
+`-C` is a git GLOBAL option and must precede the subcommand. As written it runs in the MOAT
+repo, which has no `moat-port` ref, and dies:
+
+    fatal: ambiguous argument 'moat-port..origin/main': unknown revision or path not in the working tree.
+
+Correct form, which returns 0 here:
+
+    git -C projects/<name>/src rev-list --count moat-port..origin/main
+
+This is the exact failure the checklist's own item 9 warns about ("check that any code block
+in it is the FIXED form"). The check's entire justification is that no diff reveals the
+problem, so a reviewer who copies the command, gets a fatal, and moves on is left with no
+check at all.
+
+### Blocking 2: the same check hardcodes `origin/main`
+
+`.claude/skills/pr-review/review-checklist.md:45`
+
+The prose says "the fork's default branch" but the command says `origin/main`.
+`fork_default_branch` is not `main` for 19 of the 50 projects on the trunk: 16 `master`, plus
+`develop`, `dev`, and `v0` (and `features`, `AdaLovelace` on port branches). On any of those
+the command fails, or -- worse, in a fork that carries both refs -- returns a plausible wrong
+number. Write `origin/<fork_default_branch>` and say to read it from status.json.
+
+### Blocking 3: item 4 is only half benign, and the other half conflicts with main
+
+The porter's claim is correct for the three files it names. `strategy-a-cmake.md` and
+`validation.md` are not touched by this branch at all (they do not appear in `git diff
+origin/main...HEAD -- .claude/`), so the two-dot deletions there are purely main-ahead and a
+three-way merge takes main's side cleanly; `fault-classes.md` is touched but auto-merges.
+
+But the claim does not cover the two files that do conflict. `git merge-tree --write-tree
+--messages origin/main HEAD` reports:
+
+    CONFLICT (content): Merge conflict in .claude/agents/validator.md
+    CONFLICT (content): Merge conflict in .claude/skills/pr-review/review-checklist.md
+
+Both conflicts are the same lesson landed twice. Main's `c0cd6cb` ("Scope the jargon check to
+the whole branch, not the newest commit (#12)") already carries it, in a better form: it adds
+`jargon.py --port <name>`, which derives the range from the project record so the caller
+cannot mis-scope it, and main's `utils/jargon.py:135` has that flag while this branch's does
+not. This branch instead documents the older `--commits`/`--diff` form and says `<base>` must
+be the fork default branch -- the same fix, stated as a caller discipline that `--port`
+removes the need for.
+
+Resolved toward the branch, that merge reverts main's `--port` guidance while main's tool
+still has `--port`, leaving the docs pointing at the more error-prone form. Resolved toward
+main it is a no-op. Either way a human has to resolve it, on a file where both sides look
+deliberate.
+
+Fix: drop this branch's `review-checklist.md` section-7 edit and the `validator.md:22` edit
+entirely. Main already has that lesson. Keep only the section-8 addition, which is genuinely
+new -- main has no behind-the-default-branch check (`grep -n 'rev-list\|behind\|merge-base'`
+on main's checklist finds nothing relevant). That reduces this branch's `.claude/` payload to
+three non-conflicting files.
+
+### Blocking 4: strategy-b-torch.md names the wrong function
+
+`.claude/skills/cuda-to-rocm/references/strategy-b-torch.md` (the new no-changes paragraph):
+
+> `preprocess_file_and_save_result` returns `[skipped, no changes]` and writes no file ...
+> (`hipify_python.py:966-974`)
+
+The line range is exactly right -- 966 is the `if`, 974 the `return`, and the condition is
+precisely content-identical AND dirpath-unmoved (`orig_output_source == output_source and
+os.path.dirname(fin_path) == os.path.dirname(fout_path)`). The function is wrong:
+966-974 is inside `preprocessor()` (817-1003). `preprocess_file_and_save_result()` is 197-219
+and only calls it and prints the status. Line numbers drift between torch versions and
+function names do not, so the wrong name is the more durable error in a doc whose value is
+that the next agent can re-check it. Say `preprocessor()`.
+
+The paragraph's substance is otherwise confirmed, including the `bindings.cpp` case:
+`get_hip_file_path('src/bindings.cpp')` does return `src/bindings_hip.cpp`, so the path
+function predicts a mirror and the content-unchanged skip is indeed the only reason none
+appears -- exactly the point the paragraph makes.
+
+### Not re-litigated
+
+The `lerp_scalar` fix and its Windows safety argument, the hipify-artifact cleanup, and the
+squashed commit message were accepted in prior rounds and are unchanged here.
