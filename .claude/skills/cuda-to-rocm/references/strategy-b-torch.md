@@ -53,22 +53,32 @@ lines sit, not what they say.
 **1. Enabling the language decides the architecture, so decide it first.**
 `CMakeDetermineHIPCompiler.cmake` caches `CMAKE_HIP_ARCHITECTURES` from
 `rocm_agent_enumerator` the moment `enable_language(HIP)` runs and the variable is not
-already defined (`elseif(NOT DEFINED CMAKE_HIP_ARCHITECTURES)`). Anything that sets it
-AFTER that line is dead code. `CMakeDetermineCUDACompiler.cmake` does the same for
-`CMAKE_CUDA_ARCHITECTURES` (`if("${CMAKE_CUDA_ARCHITECTURES}" STREQUAL "")`), which is why
-upstream projects put `set(CMAKE_CUDA_ARCHITECTURES native)` above `project()`. Restructuring
-a `project(... LANGUAGES CUDA CXX)` into `project(... LANGUAGES CXX)` + a `USE_HIP`-branched
+already defined (`elseif(NOT DEFINED CMAKE_HIP_ARCHITECTURES)`). After that line the variable
+is DEFINED, and that kills exactly two spellings: a `set()` GUARDED on it being unset, and a
+`set(... CACHE ...)` WITHOUT `FORCE`. An unguarded normal `set()` after `enable_language(HIP)`
+still wins -- it shadows the cache entry and initialises `HIP_ARCHITECTURES` on every target
+created after it, which is precisely what point 2 below is about. So the danger of a late line
+is not that it is inert: a project's own default is almost always written in one of the two
+dead spellings, while the assignment that takes the architecture away from you is not.
+`CMakeDetermineCUDACompiler.cmake` does the same for `CMAKE_CUDA_ARCHITECTURES`
+(`if("${CMAKE_CUDA_ARCHITECTURES}" STREQUAL "")`), which is why upstream projects put
+`set(CMAKE_CUDA_ARCHITECTURES native)` above `project()`. Restructuring a
+`project(... LANGUAGES CUDA CXX)` into `project(... LANGUAGES CXX)` + a `USE_HIP`-branched
 `enable_language()` moves that line below the decision point and QUIETLY BREAKS THE NVIDIA
-BUILD -- on Quest the CUDA path lost `native` and would have fallen back to nvcc's default,
-which ptxas rejects for the `cp.async`/`mma.sync` the vendored flashinfer kernels emit. Both
-architecture defaults, and any compiler pins, belong above `project()` under `if(NOT USE_HIP)`;
-`option(USE_HIP ...)` can precede `project()` so the guard is available there.
+BUILD -- on Quest the CUDA path's `set(CMAKE_CUDA_ARCHITECTURES native)` carried its own
+`if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)` guard, so with `enable_language(CUDA)` above it
+the guard was already false, `native` was lost, and the build would have fallen back to
+nvcc's default, which ptxas rejects for the `cp.async`/`mma.sync` the vendored flashinfer
+kernels emit. Both architecture defaults, and any compiler pins, belong above `project()`
+under `if(NOT USE_HIP)`; `option(USE_HIP ...)` can precede `project()` so the guard is
+available there.
 
 **2. `find_package(Torch)` then overwrites it with PyTorch's OWN list.**
-`Caffe2/public/LoadHIP.cmake` does `set(CMAKE_HIP_ARCHITECTURES ${PYTORCH_ROCM_ARCH})` -- a
-NORMAL variable that shadows your cache entry for the rest of the directory scope (and it
-calls `enable_language(HIP)` itself). `PYTORCH_ROCM_ARCH` there comes from the environment,
-else from `rocm_agent_enumerator` (`Caffe2/public/utils.cmake`, `torch_hip_get_arch_list`).
+`Caffe2/public/LoadHIP.cmake` does `set(CMAKE_HIP_ARCHITECTURES ${PYTORCH_ROCM_ARCH})` -- the
+unguarded normal `set()` of point 1, in somebody else's listfile, shadowing your cache entry
+for the rest of the directory scope (and it calls `enable_language(HIP)` itself).
+`PYTORCH_ROCM_ARCH` there comes from the environment, else from `rocm_agent_enumerator`
+(`Caffe2/public/utils.cmake`, `torch_hip_get_arch_list`).
 So `set_target_properties(mod PROPERTIES HIP_ARCHITECTURES "${CMAKE_HIP_ARCHITECTURES}")`
 written after `find_package(Torch)` re-applies the multi-arch list the torch WHEEL was built
 for, and `-DCMAKE_HIP_ARCHITECTURES=<yours>` has no effect at all. Snapshot the resolved

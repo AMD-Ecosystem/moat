@@ -516,3 +516,49 @@ step this change touches, but the same README uses "end-to-end" for the full mod
 five other places, and that pipeline is exactly what this port cannot run. The body says so
 plainly in its fifth paragraph, so a maintainer reading both is not misled. Weigh a retitle
 before the PR opens rather than amending for it now.
+
+## Port round 4 (2026-08-08, linux-gfx1100) -- control-plane only, fork untouched
+
+Review pass 3 found the fork code correct at `c1d7fff`, so nothing in `projects/Quest/src`
+changed and `head_sha` is unchanged. No rebuild and no re-run: the reviewer independently
+re-ran the four in-scope suites at this sha (121 passed on GPU 1). Fork tree clean,
+`HEAD == origin/moat-port == status.json.head_sha == c1d7fff`.
+
+Corrected the false claim in `.claude/skills/cuda-to-rocm/references/strategy-b-torch.md`,
+point 1 of the CMake-driven-torch-extension entry. It said "Anything that sets it AFTER that
+line is dead code", which point 2 eleven lines below already contradicted. What
+`enable_language(HIP)` does is make the variable DEFINED, and that kills exactly two
+spellings -- a `set()` guarded on it being unset, and a `set(... CACHE ...)` without `FORCE`.
+An unguarded normal `set()` afterwards still wins: it shadows the cache entry and initialises
+`HIP_ARCHITECTURES` on every target created after it, which is exactly the
+`Caffe2/public/LoadHIP.cmake:107` assignment point 2 is about. Point 1 now says that, names
+point 2 as the case where the late set does win, and point 2 opens by naming itself as that
+unguarded set, so the two read as one account. The Quest CUDA-leg example now states the
+actual mechanism: at `ff80217` the `set(CMAKE_CUDA_ARCHITECTURES native)` carried its own
+`if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)` guard, so moving `enable_language(CUDA)` above it
+made the guard false -- dead because of the guard, not because a later set cannot win. The
+rest of that entry was verified accurate by the reviewer against the CMake and torch sources
+and is unchanged.
+
+Why this mattered enough to bounce the port: an agent who believes a late set is inert
+concludes torch's post-`enable_language` assignment is harmless, skips the snapshot into
+`QUEST_HIP_ARCHITECTURES`, and reproduces the exact bug the section exists to prevent.
+
+`README.md` restore was a no-op. `git checkout origin/main -- README.md` changed nothing:
+this branch's copy and `origin/main`'s are already the same blob (`562ad7a`), because main's
+own regeneration (`048c6ba`) reads project records across the port branches and so picked up
+the alien and catboost rows this branch's copy had. The standing rule holds anyway -- a port
+branch owns only its own `projects/<name>/` and must not regenerate the board -- and the
+three "Regenerate the README table" commits on this branch (`a837a4e`, `6f04063`, `0b0954a`)
+are the instances to stop repeating, not to revert now that the content agrees.
+
+### Open item for whoever opens the upstream PR
+
+The commit title `[ROCm] Build the end-to-end operators for AMD GPUs` keeps its wording for
+now, by the reviewer's judgement, and is the one thing to weigh before the PR goes out.
+"End-to-end operators" is upstream's own name for the build step this change touches
+(`README.md:51`, "4. Build end-to-end operators with PyBind"), but the same README uses
+"end-to-end" for the full model pipeline in five other places, and the full pipeline is
+precisely what this port does not claim to run. The body says so plainly in its fifth
+paragraph. Decide it at PR time; if you retitle, it is a new commit on top, never an amend,
+because by then an arch may have validated `c1d7fff`.
