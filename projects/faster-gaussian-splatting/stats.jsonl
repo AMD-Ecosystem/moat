@@ -30,3 +30,4 @@
 {"kind":"phase","ts":"2026-06-19T23:46:57Z","phase":"test","seconds":1.639,"exit":0,"cmd":"bash -c HIP_VISIBLE_DEVICES=1 B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe /b/develop/moat/agent_space/fgs_test_gfx1201.py"}
 {"kind":"session","ts":"2026-06-19T23:47:44Z","epoch":1781912864.601519900,"event":"end","platform":"windows-gfx1101"}
 {"kind": "tokens", "ts": "2026-06-19T23:48:15Z", "tokens": 63829, "source": "validator (gfx1101)"}
+{"kind":"phase","ts":"2026-08-08T03:21:08Z","phase":"compile","seconds":102.067,"exit":1,"cmd":"pip install -e projects/faster-gaussian-splatting/src/FasterGSCudaBackend --no-build-isolation"}
