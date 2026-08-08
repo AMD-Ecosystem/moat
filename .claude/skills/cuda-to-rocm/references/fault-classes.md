@@ -310,6 +310,34 @@ by Clang and GCC. Expect missing `typename`/`template` disambiguators, two-phase
 failures and narrowing conversions. Fixes are additive and arch-independent, so they help
 the CUDA build too and are not HIP-specific hacks. (Velvet)
 
+**"Portable" is a claim, not a fact -- verify it against nvcc too.** A NVPTX-only device
+primitive replaced by something that reads as backend-neutral can still be HIP-only in
+practice. 3DUNDERWORLD-SLS-GPU_CPU swapped a never-taken overflow guard's
+`asm("trap;")` (illegal on amdgcn) for `__builtin_trap()`, unconditionally, with the
+commit message asserting "portable" and "output is unaffected on either backend." True
+for clang/HIP (device-callable there); false for nvcc, which rejects `__builtin_trap()`
+as a host-only function called from `__device__` and fails the CUDA build outright. Any
+edit inside a `.cu`/`.cuh` file touched for HIP needs the SAME question asked of it as a
+type-alias define: does this identical text also compile under nvcc, or does it only
+happen to build because the port never tried? Guard behind `USE_HIP` (keep
+`asm("trap;")` for CUDA) rather than trusting the portability claim. This is the same
+fault family as the type-alias/deleted-workaround shapes in the validator's CUDA
+no-regression gate, just at the level of a single intrinsic rather than a define or a
+whole code path.
+
+**Legacy `FindCUDA` (`find_package(CUDA)`) vs. a conda `cuda-toolkit` env.** conda's
+`cuda-toolkit=12.x` packages put `cuda_runtime.h` under
+`$ENV/targets/x86_64-linux/include/`, not directly under `$ENV/include/`; the deprecated
+`FindCUDA` module (still used by projects that predate `enable_language(CUDA)`) looks
+for `CUDA_TOOLKIT_ROOT_DIR/include` and reports "CUDA_INCLUDE_DIRS missing" even though
+`nvcc --version` and `CUDA_TOOLKIT_ROOT_DIR` resolve fine. Passing `-DCUDA_INCLUDE_DIRS=`
+directly does not help (FindCUDA recomputes it). Fix: build a throwaway directory of
+symlinks (`bin -> $ENV/bin`, `include -> $ENV/targets/x86_64-linux/include`, `lib` and
+`lib64 -> $ENV/lib`) and point `-DCUDA_TOOLKIT_ROOT_DIR` at that instead of the env
+directly. No arch pin trap applies to this class of project (no
+`CMAKE_CUDA_ARCHITECTURES`, so no `native` autodetect risk) -- pin via
+`CUDA_NVCC_FLAGS="-arch=sm_80"` instead. (3DUNDERWORLD-SLS-GPU_CPU)
+
 ## Types, dispatch and platform limits
 
 **Library swaps.** cuBLAS -> hipBLAS, cuFFT -> hipFFT, cuRAND -> hipRAND, cuSPARSE ->
