@@ -18,3 +18,4 @@
 {"kind":"phase","ts":"2026-08-08T17:42:09Z","phase":"compile","seconds":2.896,"exit":0,"cmd":"cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON"}
 {"kind":"phase","ts":"2026-08-08T17:43:00Z","phase":"compile","seconds":43.668,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j64"}
 {"kind":"phase","ts":"2026-08-08T17:43:18Z","phase":"test","seconds":11.650,"exit":8,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure --timeout 900"}
+{"kind": "tokens", "ts": "2026-08-08T17:57:43Z", "tokens": 135345, "source": "porter"}
