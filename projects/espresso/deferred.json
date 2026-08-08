@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "espresso-walberla-lb-ek-gpu",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "waLBerla LB/EK GPU backend (60 generated CUDA.cu lattice-Boltzmann + electrokinetics + reaction kernels in src/walberla_bridge) scoped out via ESPRESSO_BUILD_WITH_WALBERLA=OFF. waLBerla is a separate upstream with its own CUDA gpu backend; porting it means HIP-ifying walberla::gpu itself.",
+      "refs": [
+        "projects/espresso/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T19:04:23Z",
+      "decided": null
+    }
+  ]
+}
