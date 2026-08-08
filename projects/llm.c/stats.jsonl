@@ -12,3 +12,5 @@
 {"kind":"phase","ts":"2026-06-01T19:32:49Z","phase":"test","seconds":1.815,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/llm.c/src && HIP_VISIBLE_DEVICES=0 ./test_gpt2fp32cu"}
 {"kind":"phase","ts":"2026-06-01T19:33:01Z","phase":"test","seconds":5.236,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/llm.c/src && HIP_VISIBLE_DEVICES=0 ./test_gpt2cu"}
 {"kind":"phase","ts":"2026-06-01T19:33:22Z","phase":"test","seconds":10.053,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/llm.c/src && HIP_VISIBLE_DEVICES=0 OMP_NUM_THREADS=8 ./train_gpt2cu 2>&1 | tail -30"}
+{"kind":"phase","ts":"2026-08-08T03:29:57Z","phase":"compile","seconds":5.683,"exit":0,"cmd":"bash -c cd ../llmc_old && make USE_HIP=1 AMDGPU_TARGETS=gfx90a NO_MULTI_GPU=1 NO_USE_MPI=1 -j16 test_gpt2fp32cu test_gpt2cu train_gpt2cu"}
+{"kind":"phase","ts":"2026-08-08T03:30:10Z","phase":"compile","seconds":5.905,"exit":0,"cmd":"bash -c cd ../llmc_new && make USE_HIP=1 AMDGPU_TARGETS=gfx90a NO_MULTI_GPU=1 NO_USE_MPI=1 -j16 test_gpt2fp32cu test_gpt2cu train_gpt2cu"}

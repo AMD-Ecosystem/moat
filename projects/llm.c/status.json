@@ -7,7 +7,7 @@
   "priority": 6.667,
   "ext_type": "makefile",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-08-07T07:05:15Z",
+  "updated_at": "2026-08-08T03:30:38Z",
   "head_sha": "de1dd620184356193b9864118dd4162b11938dd7",
   "depends_on": [],
   "pr_url": "https://github.com/karpathy/llm.c/pull/854",
@@ -24,10 +24,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "d19a3220d7b61af86c4d7a8a978a76f94dbbaa71",
+      "validated_sha": "de1dd620184356193b9864118dd4162b11938dd7",
       "started_at": "2026-05-31T00:24:03Z",
-      "completed_at": "2026-06-04T06:37:40Z",
-      "updated_at": "2026-06-05T19:24:41Z",
+      "completed_at": "2026-08-08T03:30:38Z",
+      "updated_at": "2026-08-08T03:30:38Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -43,12 +43,10 @@
       },
       "last_agent": "validator",
       "carry_forward": {
-        "from": "3282a74bc323a737fd55d53c2a88b1d8fe651619",
-        "to": "d19a3220d7b61af86c4d7a8a978a76f94dbbaa71",
-        "method": "source-class",
-        "class": "doc-only",
-        "detail": "no changes",
-        "at": "2026-06-04T06:59:06Z"
+        "to": "de1dd620184356193b9864118dd4162b11938dd7",
+        "method": "binary-equiv",
+        "detail": "Makefile build-detection fallback (gcc-install-dir pin, hipconfig amdgpu-arch lookup) + README doc addition; codeobj_diff.py confirms test_gpt2fp32cu/test_gpt2cu/train_gpt2cu byte-identical device ISA",
+        "at": "2026-08-08T03:30:38Z"
       }
     },
     "linux-gfx1100": {

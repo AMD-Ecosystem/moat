@@ -632,3 +632,63 @@ proven by it. Same determination on gfx1101/gfx1201 as gfx1151.
 
 State: windows-gfx1101 + windows-gfx1201 port-ready -> completed (validated_sha d19a322,
 fork unchanged). All five platforms terminal -> PR-ready.
+
+## Validation 2026-08-08 (linux-gfx90a, revalidate) -- carry-forward, no GPU re-run
+
+GPU: AMD Instinct MI250X (gfx90a), HIP_VISIBLE_DEVICES=2 (confirmed via `rocm-smi
+--showproductname`: GPU index 2 is gfx90a). ROCm 7.2.1.
+
+Prior validated_sha: d19a3220d7b61af86c4d7a8a978a76f94dbbaa71. New head_sha:
+de1dd620184356193b9864118dd4162b11938dd7 (two commits: `e33cc58` README AMD quick
+start, `de1dd62` HIP build fix for partial-GCC installs / off-PATH amdgpu-arch).
+`utils/moatlib.py classify` returned `unknown` (classification failed), so per
+validator.md the carry-forward shortcut requires the binary-equivalence check
+rather than the source classifier alone.
+
+### Delta
+
+`git diff d19a322 de1dd62 --stat`: Makefile (+25/-3), README.md (+11). README is
+doc-only. The Makefile hunk is the same build-detection fallback already carried
+forward for linux-gfx1100/windows-gfx1101/windows-gfx1201/windows-gfx1151 at this
+exact head_sha: (1) locate `amdgpu-arch` via `hipconfig --rocmpath` when it is not
+on PATH, (2) probe hipcc's libstdc++-header visibility and pin
+`--gcc-install-dir` to the newest GCC with matching `/usr/include/c++/<ver>`
+headers when the probe fails. Both are Makefile-shell probes guarded by whether
+the tool/headers are already resolvable -- no effect when they already are, which
+is the case in every prior validated build on this host (hipcc already finds
+libstdc++ headers, amdgpu-arch was never relied upon since AMDGPU_TARGETS is
+always pinned explicitly in our build commands).
+
+### Binary-equivalence check (utils/codeobj_diff.py)
+
+Built both shas into separate clones with the identical validated recipe:
+
+```
+export HIP_VISIBLE_DEVICES=2
+make USE_HIP=1 AMDGPU_TARGETS=gfx90a NO_MULTI_GPU=1 NO_USE_MPI=1 -j16 \
+     test_gpt2fp32cu test_gpt2cu train_gpt2cu
+```
+
+Both builds: hipcc exit 0, only the pre-existing benign cudaGetLastError/
+cudaFreeHost/cudaGetDeviceProperties/cudaMemcpy nodiscard warnings (unchanged
+from every prior gfx90a build log).
+
+```
+python3 utils/codeobj_diff.py <old_build>/test_gpt2fp32cu <new_build>/test_gpt2fp32cu
+python3 utils/codeobj_diff.py <old_build>/test_gpt2cu      <new_build>/test_gpt2cu
+python3 utils/codeobj_diff.py <old_build>/train_gpt2cu     <new_build>/train_gpt2cu
+```
+
+All three: `verdict=identical` (exported symbols + device ISA byte-identical).
+Note: `codeobj_diff.py`'s directory walker only recognizes `.so`/lib-prefixed
+binaries, so plain executables must be passed as individual file paths rather
+than the containing directory (directory-mode returned `verdict=indeterminate,
+no binaries found`) -- worth knowing for any other Makefile-built (non-CMake/
+non-.so) project using this tool.
+
+### Verdict
+
+Compiled program provably unchanged on gfx90a -> carried forward, no GPU test
+re-run needed. Recorded via
+`moatlib.py carry-forward llm.c linux-gfx90a de1dd62... binary-equiv "..."`.
+State: revalidate -> completed. validated_sha: de1dd620184356193b9864118dd4162b11938dd7.
