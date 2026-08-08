@@ -1122,6 +1122,18 @@ addition, which main has nothing equivalent to.
 No CONFLICT lines. The `.claude/` payload is now three files: `fault-classes.md`,
 `strategy-b-torch.md`, `review-checklist.md`.
 
+One conflict came back afterwards, in `README.md`, and it is a different animal. The pre-push
+gate refused the push with "README table is stale": GPU_IPC and Quest changed state on their
+own branches while this branch's copy of the generated board was frozen, so `gen_readme.py`
+had to run before anything could be pushed. Main's board was generated from the older state,
+so both sides now differ from the merge base. `check.py:gate_readme` says this outright -- with
+every ref visible, "any push to any port branch stales the trunk's table" -- so a board
+conflict between a long-lived port branch and main is structural, not a defect, and it is
+resolved by taking either side and re-running `python3 utils/gen_readme.py`. It is also likely
+to evaporate on its own: main's board is stale right now too, and the next push to main
+regenerates it from the same state this branch just did. What matters is that the two conflicts
+the review was about are gone; no generated file can make a doc contradict its own tool.
+
 ### The section-8 check now runs, and reads the default branch from the record
 
 `-C` is a git global option, so the reviewed form died with `fatal: ambiguous argument
