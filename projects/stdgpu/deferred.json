@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "rocthrust-transform-reduce-rdna4-hang",
+      "kind": "rocm-bug-report",
+      "component": "rocThrust",
+      "summary": "rocThrust single-block thrust::transform_reduce hangs in its result-copy (hipMemcpyWithStream) path on RDNA4 (gfx1201) and the RDNA3.5 APU (gfx1151) when reducing over stdgpu's degenerate capacity-1 full collision-chain table in valid(); gfx90a/gfx1100 unaffected. Worked around in stdgpu PR #484 (transform_reduce_index_device in numeric_detail.h). NEEDS A STANDALONE REPRODUCER before filing upstream: prior attempts (t5 thrust::transform_reduce with bigfunc/lockseq variants, t6 raw-HIP reduction) all PASS; bug only triggers with the genuine unordered_base device object captured by value. RETRY ON THE gfx1201 WINDOWS HOST (RDNA4, RX 9070 XT) -- not reproducible on this gfx90a host. Next attempt: capture the real createDeviceObject(1) unordered_base in its exact post-2-fill state into a minimal reduce functor, stripping stdgpu/rocThrust scaffolding incrementally.",
+      "refs": [
+        "projects/stdgpu/notes.md (failure class B / valid()-reduce sections, 2026-06-08)",
+        "https://github.com/stotko/stdgpu/pull/484#issuecomment-4772283915"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-22T19:37:10Z",
+      "decided": null
+    },
+    {
+      "id": "rocthrust-host-mixed-compiler",
+      "kind": "other",
+      "component": "rocThrust",
+      "summary": "rocThrust unconditionally includes device-compiler builtins (e.g. __builtin_amdgcn_wavefrontsize) in headers reachable from host-side thrust use, so host-only thrust algorithms (thrust::host) cannot compile with a plain CXX compiler as CCCL thrust allows; forces stdgpu HIP-backend consumers to compile affected TUs with the HIP compiler. stotko asked (stdgpu#484 thread) that this limitation be raised with the rocThrust team.",
+      "refs": [
+        "https://github.com/stotko/stdgpu/pull/484"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-07-02T18:40:55Z",
+      "decided": null
+    }
+  ]
+}
