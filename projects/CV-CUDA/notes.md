@@ -333,3 +333,40 @@ Across all 3 runs: every failure is confined to exactly the two documented resid
 Verified the NVIDIA build (USE_HIP=OFF) compiles before opening the PR, using conda env cuda-12.8 (nvcc 12.8) on this ROCm host. Needed static math libs: `mamba install -n cuda-12.8 -c nvidia libcublas-static libcusolver-static libcusparse-static cuda-cudart-static` (CV-CUDA links CUDA::{cublas,cublasLt,cusolver,cudart}_static). Build dir build-cuda; `cmake --build build-cuda -j16 -- -k 0`. nvcv .so link fails on git-LFS-pointer stub .so (src/nvcv/util/stubs/*_stub.so not fetched) -- environment artifact, not the port; all 470 TUs compile.
 
 FOUND + FIXED a real CUDA regression: OpPairwiseMatcher.cu PointT used an unconditional `union Cache { RT words[]; T elems[]; }` (the HIP strict-aliasing fix). When T is const-qualified (PointT<const uint32_t,NB> etc.), the union has a const variant member, which makes PointT's defaulted default ctor DELETED under nvcc -> compile error at the `Point p2;` / `PointT<ST,NB> p;` default-constructions. clang/HIP accepted it. Fix: gate the union behind `#if defined(__HIP__)`, restore the original RT-array + reinterpret_cast on the CUDA `#else`. Verified the gfx90a HIP device object OpPairwiseMatcher.cu.o is byte-identical (sha256) before/after the gate, so AMD validation carries forward (binary-equiv); CUDA now compiles clean. Lesson: a union introduced to defeat clang/HIP strict-aliasing must be HIP-gated -- a const variant member deletes the default ctor under nvcc.
+
+## Validation 2026-08-08 (linux-gfx90a, revalidate, carry-forward)
+
+RESULT: carried forward -> completed. validated_sha b623dffa -> 642b352642d1228f412cf98883117cd6fe17f695 (head_sha unchanged from status.json). GPU: 4x MI250X (gfx90a), HIP_VISIBLE_DEVICES=2, confirmed via `rocm-smi --showproductname` (all 4 report GFX Version gfx90a).
+
+Delta since last gfx90a validation (`python3 utils/moatlib.py classify CV-CUDA b623dffa 642b352642d1228f412cf98883117cd6fe17f695`): `class=mixed` (CMakeLists.txt token count differs), so not eligible for the automatic doc/comment-only carry-forward. Two commits landed since b623dffa: `681ce6af` (docs-only: pass `-DCMAKE_PREFIX_PATH=/opt/rocm`) and `642b3526` (drops the `CMAKE_HIP_ARCHITECTURES` gfx90a default-pin, relies on `enable_language(HIP)` auto-detect; explicit `-DCMAKE_HIP_ARCHITECTURES=<arch>` builds -- how every platform in this project validates -- are unaffected). This is the same delta linux-gfx1100 already carried forward on (source-class) back on 2026-06-23.
+
+Took the binary-equivalence route per validator.md instead of source-class, since `classify` returned mixed: cloned the fork fresh into this worktree (`projects/CV-CUDA/src`), checked out `b623dffa` and built to `build-hip-old`, then checked out `642b352642d1228f412cf98883117cd6fe17f695` (moat-port HEAD) in the SAME checkout and built to `build-hip-new` -- same absolute source path both times, so `__FILE__` strings match and cannot spuriously mark identical code as `differ`. Both builds used the recorded recipe (`build-hip.sh` / notes.md), `-DCMAKE_HIP_ARCHITECTURES=gfx90a` pinned explicitly on both:
+
+```
+cmake -S projects/CV-CUDA/src -B projects/CV-CUDA/src/build-hip-<old|new> -G Ninja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=/opt/rocm \
+  -DBUILD_PYTHON=OFF -DBUILD_TESTS=ON -DBUILD_TESTS_CPP=ON -DBUILD_TESTS_PYTHON=OFF \
+  -DBUILD_BENCH=OFF -DBUILD_DOCS=OFF -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
+cmake --build projects/CV-CUDA/src/build-hip-<old|new> -j 16
+```
+
+Both builds CLEAN (377/377 steps each), no source/CMake edit needed (arch pinned explicitly, so the auto-detect change never triggers).
+
+`utils/codeobj_diff.py`:
+- `lib/libcvcuda.so.0.16.0`: verdict `identical` (exported symbols + device ISA identical, 135 exports)
+- `lib/libnvcv_types.so.0.16.0`: codeobj_diff reported `indeterminate` (`roc-obj-ls`: "No kernel section found" -- this lib compiles no `.hip`/`.cu` TUs, so there is no device-code section to extract from either build; the tool's device-ISA path does not apply). Fell back to `sha256sum`: **byte-for-byte identical** (`b88d3031...eb7c31` both builds) and `nm -D --defined-only` symbol lists identical (213/213 lines, `diff` empty). Stronger than a codeobj_diff "identical" verdict for a host-only lib.
+- `bin/cvcuda_test_system`: verdict `identical` (20 exports, device ISA identical) -- this is the operator-correctness gate binary.
+- `bin/nvcv_test_cudatools_system`: verdict `identical` (36 exports, device ISA identical).
+- The directory-level `codeobj_diff.py build-hip-old build-hip-new` run also flagged the three `tests/nvcv_types/standalone/nvcv/util/stubs/lib{dl,pthread,rt}-2.17_stub.so` as `indeterminate` (`nm failed`); these are the git-LFS pointer-stub artifacts already documented under "CUDA compile-check 2026-06-18" -- not real ELF, not part of the port, present identically in both checkouts.
+
+Both compiled-artifact classes that matter for GPU behavior (the shared libs the tests link, and the test binaries themselves) are proven binary-equivalent -> the compiled program is unchanged on gfx90a. Carried forward per validator.md's carry-forward shortcut, no GPU test rerun: `python3 utils/moatlib.py carry-forward CV-CUDA linux-gfx90a 642b352642d1228f412cf98883117cd6fe17f695 binary-equiv "..."`.
+
+CUDA no-regression gate: SKIPPED (carried-forward revalidation, per validator.md step 3's explicit skip condition; the CUDA compile-check already on record from 2026-06-18 remains the most recent CUDA-toolchain evidence for this branch).
+
+Jargon (`python3 utils/jargon.py --commits ef50300b..moat-port` and `--diff ef50300b..moat-port`, run from the fork clone): clean on both.
+
+Documentation: README.md still links "Building for AMD GPUs (ROCm)" to `docs/sphinx/installation.rst`; unchanged by this delta (already reviewer-verified 2026-05-31).
+
+Fork tree confirmed clean (`git status --porcelain` empty on tracked files) after returning to `moat-port` HEAD; no source/build edit was made or needed this cycle. Wall clock: two full from-scratch builds (~old ~6 min, new ~6 min per ninja step count) + codeobj_diff/sha256/jargon checks, well under the 60-minute budget.
