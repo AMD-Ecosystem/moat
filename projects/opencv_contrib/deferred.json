@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "opencv-dnn-miopen-backend",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "opencv dnn module CUDA backend (cuda4dnn/cuDNN) -> MIOpen backend: separate sizable project, out of cv::cuda port scope per jeff 2026-06-10 decision (plan.md open-decision-5)",
+      "refs": [
+        "projects/opencv_contrib/plan.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-10T23:39:47Z",
+      "decided": null
+    },
+    {
+      "id": "opencv-cudalegacy-graphcut",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "cudalegacy graphcut/graphcut8 (NPP maxflow) has no ROCm analog; HIP takes the same stub path a modern CUDART>=8000 CUDA build does (NPP removed graphcut at 8.0). A GPU push-relabel/maxflow kernel could restore it later.",
+      "refs": [
+        "projects/opencv_contrib/plan.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-11T00:58:29Z",
+      "decided": null
+    },
+    {
+      "id": "opencv-cudaoptflow-nvof",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "cudaoptflow NvidiaOpticalFlow_1_0/2_0 hardware optical-flow classes gated off on ROCm (StsNotImplemented): AMD GPUs have no dedicated HW optical-flow engine and AMF exposes no optical-flow API. Public symbols kept; the software flows (Brox/SparsePyrLK/DensePyrLK/Farneback/TVL1) are the substitute and are ported+validated. Genuine HW feature loss.",
+      "refs": [
+        "projects/opencv_contrib/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-11T03:01:37Z",
+      "decided": null
+    },
+    {
+      "id": "opencv-cudacodec-native-encode",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "cudacodec VideoWriter native hardware encode gated off on ROCm (StsNotImplemented): no ROCm-native encoder exists; AMF is a Vulkan/DX stack outside ROCm needing HIP<->Vulkan external-memory interop. Users are directed to the FFmpeg videoio backend (CAP_FFMPEG) with the AMF encoders h264_amf/hevc_amf/av1_amf. A native in-tree AMF encoder bridge is the deferred follow-up.",
+      "refs": [
+        "projects/opencv_contrib/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-11T03:01:49Z",
+      "decided": null
+    },
+    {
+      "id": "opencv-cudacodec-rocdecode-videoreader",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "cudacodec VideoReader rocDecode decode implementation deferred to the RDNA followers. The WITH_ROCDECODE/HAVE_ROCDECODE CMake gates, FFmpeg-only demuxer wiring, and graceful decode-off runtime errors are in place and the module build-validates on gfx90a with decode off. The full cuvid->rocDec API mirror (video_decoder/parser/reader, CUVID struct translation, ColorSpace NV12->RGB pipeline activation) is NOT written/validated because gfx90a (MI250X, CDNA2) has no VCN video-decode engine and the ROCm-repo mesa-amdgpu-va-drivers needed by the rocDecode runtime is uninstallable on this headless node, so neither compile-against-runtime nor GPU validation is possible here. Implement + validate on gfx1100/gfx1201 (which carry VCN). rocDecode lacks MPEG-1/2, VC-1, VP8, MJPEG vs NVDEC: those are genuine codec losses to skip/StsUnsupported cleanly.",
+      "refs": [
+        "projects/opencv_contrib/notes.md"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-06-11T03:01:49Z",
+      "decided": null
+    }
+  ]
+}
