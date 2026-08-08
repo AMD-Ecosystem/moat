@@ -4,9 +4,10 @@ MOAT (Moat Obliteration via Automated Translation) is a Claude-driven effort to 
 
 # On startup, do this
 
-1. Run `bash utils/orient.sh` (or `/port-next`). It pulls the latest MOAT state, detects this host's AMD arch, and prints the single next project to work on, the stage (planner, porter, reviewer, or validator), and a ready-to-paste dispatch line.
-2. Dispatch the named subagent scoped to that project. State in `projects/<name>/status.json` gates every handoff; never skip a state.
-3. Operate in auto mode within the Autonomy boundary below. Stop only at the two halts: the upstream-PR gate, and genuine blockers.
+1. Be on a `port/<name>` branch. **`orient.sh` refuses `main` and exits 2**, because an in-flight project's folder lives only on its own branch and that branch existing on the remote is what claims the project -- so the trunk has nothing to hand you and would offer to re-screen work already under way. Check out the branch for the project you mean to work (`git checkout port/<name>`), or create one when adopting. `MOAT_ALLOW_TRUNK=1` overrides for control-plane work that is not a port (tooling, docs) but still wants the platform detection. If you do not know which project yet, `python3 utils/moatlib.py fleet <platform>` names the branches with actionable work.
+2. Run `bash utils/orient.sh` (or `/port-next`). It pulls the latest MOAT state, detects this host's AMD arch, and prints the single next project to work on, the stage (intake, planner, porter, reviewer or validator), and a ready-to-paste dispatch line.
+3. Dispatch the named subagent scoped to that project. State in `projects/<name>/status.json` gates every handoff; never skip a state.
+4. Operate in auto mode within the Autonomy boundary below. Stop only at the two halts: the upstream-PR gate, and genuine blockers.
 
 # Pipeline
 

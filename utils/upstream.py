@@ -203,12 +203,25 @@ def report_attention(rows, today):
 def apply_one(r):
     """Record a merge. Only MERGED is applied automatically: it is unambiguous and
     additive. A CLOSED PR needs a human -- withdrawn on licence grounds, rejected by
-    a maintainer, and superseded are different outcomes that look identical here."""
+    a maintainer, and superseded are different outcomes that look identical here.
+
+    Returns where the record landed -- "local" for a working-tree edit the record-sync
+    PR below then carries to the protected trunk, "branch" for one written straight to
+    the project's own port branch -- or False if there was nothing to apply. The two
+    are not the same afterwards: a branch write is already published, and treating it
+    as a pending working-tree edit is how `publish` came to report nothing to do while
+    having just recorded several merges."""
     if r["real"] != "MERGED":
         return False
-    subprocess.run([sys.executable, "utils/moatlib.py", "set-pr-merged", r["name"]],
-                   cwd=str(REPO), capture_output=True, text=True)
-    return True
+    sys.path.insert(0, str(REPO / "utils"))
+    import moatlib
+    local = moatlib.status_path(r["name"]).exists()
+    try:
+        moatlib.set_pr_merged(r["name"])
+    except Exception as e:                      # noqa: BLE001 - reported, not raised
+        print(f"  COULD NOT record {r['name']} as merged: {e}")
+        return False
+    return "local" if local else "branch"
 
 
 def fork_poll(apply=False, stale_weeks=3):
@@ -519,11 +532,18 @@ def publish_blockers(name, row):
 
 
 def open_upstream(name, row):
-    """Open the upstream PR with the approved title and body, verbatim."""
+    """Open the upstream PR with the approved title and body, verbatim.
+
+    The record is resolved across refs like everything else here: a project with a
+    standing approval and no PR yet lives on its own `port/<name>` branch by
+    construction, so reading the working tree found nothing unless the session
+    happened to be standing on that branch."""
     sys.path.insert(0, str(REPO / "utils"))
     import moatlib
 
-    d = json.loads((REPO / "projects" / name / "status.json").read_text())
+    d, _where = moatlib.project_record(name)
+    if d is None:
+        return (None, f"no record for {name} in this checkout or on the refs")
     slug = d["upstream_url"].split("github.com/", 1)[-1]
     fork_owner = d["fork_url"].split("github.com/", 1)[-1].split("/")[0]
     branch = d.get("fork_branch") or moatlib.PORT_BRANCH
@@ -542,8 +562,13 @@ def open_upstream(name, row):
     url = next((l.strip() for l in r.stdout.splitlines()
                 if "github.com" in l and "/pull/" in l), "")
     num = url.rstrip("/").rsplit("/", 1)[-1]
-    subprocess.run([sys.executable, "utils/moatlib.py", "set-pr-open", name, url, num],
-                   cwd=str(REPO), capture_output=True, text=True)
+    # Called rather than shelled out to, so a record that will not write is reported
+    # here instead of vanishing into a subprocess nobody read the exit code of. The PR
+    # is already open at this point, so failing to record it is worth saying loudly.
+    try:
+        moatlib.set_pr_open(name, url, num)
+    except Exception as e:                      # noqa: BLE001 - reported, not raised
+        return (url, f"opened {url} but could NOT record it: {e}")
 
     # The review PR has done its job -- the change it was reviewing is now in front of
     # the maintainers. Close it pointing at where the conversation continues, rather
@@ -552,7 +577,7 @@ def open_upstream(name, row):
     # that branch is the upstream PR's head.
     if url:
         subprocess.run(
-            ["gh", "pr", "close", d["review_pr"], "--comment",
+            ["gh", "pr", "close", row["url"], "--comment",
              f"Submitted upstream as {url} with the title and body approved here. "
              f"Closing this review PR; the discussion continues on the upstream one."],
             capture_output=True, text=True, cwd=str(REPO))
@@ -586,7 +611,10 @@ def report_publish(apply):
             print(f"  FAILED to record the approval for {r['name']}: {e}")
             continue
         url, err = open_upstream(r["name"], r)
-        print(f"  {'opened ' + url if url else 'FAILED: ' + (err or '?')}  ({r['name']})")
+        if url and err:          # the PR is open but the record did not take
+            print(f"  PARTIAL  {r['name']}: {err}")
+        else:
+            print(f"  {'opened ' + url if url else 'FAILED: ' + (err or '?')}  ({r['name']})")
     return 0
 
 
@@ -707,13 +735,20 @@ def main():
                   f"merge(s) and opens a PR; closures need a human decision.")
         return 0
 
-    applied = [r for r in drift if apply_one(r)]
-    if not applied:
+    landed = [(r, apply_one(r)) for r in drift]
+    on_branch = [r for r, where in landed if where == "branch"]
+    local = [r for r, where in landed if where == "local"]
+    if not (on_branch or local):
         print("\nupstream: nothing to apply automatically")
+        return 0
+    for r in on_branch:
+        print(f"\nupstream: recorded {r['name']} as merged on its own port branch "
+              f"(already pushed; not part of the record-sync PR)")
+    if not local:
         return 0
     subprocess.run([sys.executable, "utils/gen_readme.py"], cwd=str(REPO),
                    capture_output=True)
-    return publish(applied)
+    return publish(local)
 
 
 def publish(applied):

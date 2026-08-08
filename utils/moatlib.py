@@ -388,6 +388,42 @@ def save_status(name, obj):
         f.write("\n")
 
 
+def save_record(name, obj, message):
+    """Persist a project's record wherever it lives -- this checkout, or its own branch.
+
+    `save_status` refuses a record that is not in this tree, and that is right for
+    anything that WORKS a project: a second copy here would diverge from the one being
+    worked. A few callers do something else entirely -- they record a FACT about the
+    project and never open its files: a fork appearing, an approval snapshot, the
+    upstream PR opening or closing. Refusing those buys nothing and costs the fact.
+
+    It cost the whole route upstream. Every publishable project is branch-resident by
+    construction (`belongs_on_branch` is true while `pr_state` is unset), so
+    `upstream.py --publish --apply` -- the one documented submission command -- could
+    only ever run from the project's own branch, and anywhere else reported the refusal
+    as a failure to record an approval and moved on.
+
+    Same shape as `release_awaiting_fork`, which had this right first: advancing a
+    record is safe to write to a branch, handing an agent a project whose files are
+    absent is not. Returns the branch sha when it wrote to a branch, else None."""
+    _cur, where = project_record(name)
+    if status_path(name).exists() and writable_here(name, where):
+        save_status(name, obj)
+        return None
+    branch = port_branch_of(name)
+    if branch is None:
+        raise RuntimeError(
+            f"{name}: its record is on the trunk and this checkout is on "
+            f"{current_branch()}, which may not write it. `main` is protected, so that "
+            f"record reaches it by pull request: check out `main` (or a branch off it) "
+            f"and record it there.")
+    obj["updated_at"] = now_iso()
+    validate_status(obj)
+    return commit_to_branch(
+        branch, {f"projects/{name}/status.json": json.dumps(obj, indent=2) + "\n"},
+        message)
+
+
 def validate_status(obj):
     """Light hand-rolled validation (no jsonschema dependency). Raises ValueError."""
     for k in ("schema_version", "name", "upstream_url", "fork_default_branch",
@@ -791,7 +827,10 @@ def record_pr_approval(name, review_pr=None):
         "content_sha256": _content_digest(pr),
         "review_pr": obj["review_pr"],
     }
-    save_status(name, obj)
+    save_record(name, obj,
+                f"{name}: snapshot the approval standing on the review PR\n\n"
+                f"Approved by {obj['pr_approval']['approved_by']} for "
+                f"{(obj['pr_approval'].get('head_sha') or '?')[:12]}.")
     return obj["pr_approval"]
 
 
@@ -1114,6 +1153,11 @@ def set_review_pr(name, url):
     return obj
 
 
+# The PR lifecycle is recorded through save_record rather than save_status: each of
+# these states a fact about a project without touching its files, and the project is
+# branch-resident at exactly the moment they are called. Opening one from a session
+# standing anywhere else used to fail, which is how the documented submission command
+# could not submit.
 def set_pr_open(name, pr_url, pr_number):
     """Record the upstream PR. Project-level: it changes nothing an arch validated."""
     obj = load_status(name)
@@ -1121,7 +1165,7 @@ def set_pr_open(name, pr_url, pr_number):
     obj["pr_number"] = int(pr_number)
     obj["pr_opened_at"] = now_iso()
     obj["pr_state"] = "open"
-    save_status(name, obj)
+    save_record(name, obj, f"{name}: upstream PR opened -- {obj['pr_url']}")
     return obj
 
 
@@ -1132,7 +1176,7 @@ def set_pr_merged(name):
         raise ValueError(f"{name}: no PR recorded, cannot mark as merged")
     obj["pr_merged_at"] = now_iso()
     obj["pr_state"] = "merged"
-    save_status(name, obj)
+    save_record(name, obj, f"{name}: upstream PR merged -- {obj['pr_url']}")
     return obj
 
 
@@ -1145,7 +1189,8 @@ def set_pr_closed(name, note=None):
     obj["pr_closed_at"] = now_iso()
     if note:
         obj["pr_closed_note"] = note
-    save_status(name, obj)
+    save_record(name, obj, f"{name}: upstream PR closed without merging -- "
+                           f"{note or obj['pr_url']}")
     return obj
 
 
@@ -1332,19 +1377,38 @@ def _ref_read(ref, path):
     return _REF_CACHE[key]
 
 
+_PORT_BRANCH_MAP = []   # one-element cache, for the same reason as _BRANCH above
+
+
 def port_branches():
     """{project name: ref} for every port/<name> branch the remote is known to have.
 
     Reads local remote-tracking refs, so it is only as fresh as the last fetch --
-    orient.sh fetches before it asks."""
-    out = {}
-    r = _git("for-each-ref", "--format=%(refname)", "refs/remotes/origin/port/",
-             check=False)
-    for ref in r.stdout.splitlines():
-        ref = ref.strip()
-        if ref:
-            out[ref.rsplit("/", 1)[-1]] = ref
-    return out
+    orient.sh fetches before it asks. Resolved once per process: every project
+    resolution asks for it, and a `for-each-ref` per project is what made a scan slow
+    enough to time out."""
+    if not _PORT_BRANCH_MAP:
+        out = {}
+        r = _git("for-each-ref", "--format=%(refname)", "refs/remotes/origin/port/",
+                 check=False)
+        for ref in r.stdout.splitlines():
+            ref = ref.strip()
+            if ref:
+                out[ref.rsplit("/", 1)[-1]] = ref
+        _PORT_BRANCH_MAP.append(out)
+    return _PORT_BRANCH_MAP[0]
+
+
+def port_branch_of(name):
+    """`port/<name>` as the remote actually spells it, or None if there is none.
+
+    The convention is exact, but a mismatch must fail loudly rather than silently drop
+    the project: a branch cut as `port/hami-core` for the project `HAMi-core` resolved
+    to nothing, and a finished screen went invisible to the queue and to every sweep."""
+    branches = port_branches()
+    if name in branches:
+        return f"port/{name}"
+    return next((f"port/{c}" for c in branches if c.lower() == name.lower()), None)
 
 
 def project_record(name):
@@ -1362,17 +1426,7 @@ def project_record(name):
     path = f"projects/{name}/status.json"
     on_branch = current_branch() == f"port/{name}"
     if not on_branch:
-        # Case-tolerant: a branch created as port/hami-core for the project HAMi-core
-        # resolved to nothing, so a finished screen was invisible to the queue and to
-        # every sweep. The convention is exact, but a mismatch must fail loudly rather
-        # than silently drop the project.
-        ref = f"origin/port/{name}"
-        if name.lower() != name:
-            for cand in port_branches():
-                if cand.lower() == name.lower():
-                    ref = f"origin/port/{cand}"
-                    break
-        raw = _ref_read(ref, path)
+        raw = _ref_read(f"origin/{port_branch_of(name) or f'port/{name}'}", path)
         if raw:
             try:
                 return (json.loads(raw), "branch")
@@ -1903,12 +1957,12 @@ def release_awaiting_fork(org="AMD-Ecosystem", dry_run=False):
     Resolved across refs and written across them too. Every project waiting on a fork
     now lives on its own branch, so walking the working tree reported "nothing waiting
     on a fork" while four waited -- a clean bill of health that was false, and the one
-    report anyone would trust to tell them a fork had appeared. `commit_to_branch`
-    writes the release without checking the branch out, which is safe here in a way it
-    would not be for the selector: this advances a record, it does not hand an agent a
-    project whose files are absent."""
+    report anyone would trust to tell them a fork had appeared. `save_record` writes the
+    release without checking the branch out, which is safe here in a way it would not be
+    for the selector: this advances a record, it does not hand an agent a project whose
+    files are absent."""
     released = []
-    for name, obj, where in project_records():
+    for name, obj, _where in project_records():
         if project_stage(obj) != "awaiting-fork":
             continue
         fork = obj.get("fork_url") or f"https://github.com/{org}/{name}"
@@ -1925,14 +1979,10 @@ def release_awaiting_fork(org="AMD-Ecosystem", dry_run=False):
         obj["stage"] = "screened"
         obj["fork_url"] = f"https://github.com/{slug}"
         obj["updated_at"] = now_iso()
-        if writable_here(name, where):
-            save_status(name, obj)
-        else:
-            commit_to_branch(
-                f"port/{name}", {f"projects/{name}/status.json":
-                                 json.dumps(obj, indent=2) + "\n"},
-                f"{name}: fork exists, releasing for planning\n\n"
-                f"{slug} was created, which is the decision to take this project up.")
+        save_record(name, obj,
+                    f"{name}: fork exists, releasing for planning\n\n"
+                    f"{slug} was created, which is the decision to take this "
+                    f"project up.")
         released.append((name, slug))
     return released
 
