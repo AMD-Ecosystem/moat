@@ -186,15 +186,20 @@ everything else passes. (qrack: `_PopQueue` under `UniformlyControlledSingleBit`
 **`hipFree` is synchronizing** (`hipFreeAsync` is not), so an explicit
 `hipDeviceSynchronize()` before it is redundant. (anari-visionaray)
 
-**Device-side `new[]`/`delete[]` inside a kernel or functor is a trap on HIP.** The device
-malloc heap is small and its behaviour under a per-thread allocation in a hot loop is not
-reliable; a functor that allocates a scratch array per thread can return wrong values
-without faulting, so the symptom is a numerically wrong result rather than a crash. Replace
-it with a fixed-size per-thread automatic array bounded by the constant the code already has
-(GooFit's binned integration used a device `new fptype[10]` with a hardcoded 10;
-`fptype[MAX_NUM_OBSERVABLES]`, which is also 10, fixed it and immediately corrected a fitted
-parameter, so the bound did not change). This is arch-unified and correct on CUDA too, so it
-needs no guard -- prefer it to raising the device heap limit. (GooFit)
+**Device-side `new[]`/`delete[]` per thread is worth replacing, but it is NOT a known
+correctness fault -- do not go hunting one.** An earlier revision of this entry claimed a
+per-thread device `new[]` "can return wrong values without faulting" and cited GooFit as
+having seen a fitted parameter corrected by the fix. That claim did not survive: restoring
+GooFit's original `new fptype[10]`/`delete[]` and rebuilding on gfx1100 / ROCm 7.2.3 gave
+24/24 tests passing and a fitted `alpha` identical to the fixed version, digit for digit.
+The original observation was on gfx90a and could not be reproduced from the committed tree.
+What remains true is the ordinary reason to avoid it: device-side dynamic allocation
+serializes on a global heap whose default size is modest, and can return nullptr under
+realistic thread counts. Replacing it with a fixed-size automatic array bounded by the
+constant the code already has (GooFit: `new fptype[10]` -> `fptype[MAX_NUM_OBSERVABLES]`,
+which is also 10) is arch-unified, correct on CUDA too, and needs no guard. Upstream GooFit
+made the identical change to its own `CompositePdf` (#384) on those grounds. Treat it as
+hygiene worth doing in passing, not as a bug to chase when your numbers are wrong. (GooFit)
 
 **`__ldg` is usually a non-problem on HIP; check before working around it.** ROCm ships
 `__ldg` overloads for the scalar AND vector types (`hip/amd_detail/hip_ldg.h`: `char2`,

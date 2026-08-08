@@ -834,3 +834,132 @@ upstream fixes rather than anything the port would need to invent:
 `0c1ed9efc fix: correct device index-cursor and data-pointer corruption in amplitude
 PDFs (#382)` and `d8e1102cf perf: avoid per-event device heap allocation in CompositePdf
 (#384)`. Rebase first, then re-run on gfx90a before debugging anything.
+
+## Port attempt 5 (2026-08-08, linux-gfx1100) -- rebased onto upstream master; six review items
+
+Branch rewritten from 6601ce1f7 (base 5c6ca525c) to 19f29809b (base 5fe1221a8).
+Both archs' `validated_sha` were null before and after, so no validation was
+orphaned.
+
+### The rebase (review item 2)
+
+19 upstream commits. Three conflicts, all in files the port touches:
+
+- **CMakeLists.txt submodule check.** Resolved to upstream's version verbatim.
+  The port no longer touches that block at all -- see item 4 below.
+- **CMakeLists.txt Thrust block.** `249baaa71` replaced `find_package(Thrust)` +
+  `GOOFIT_FORCE_LOCAL_THRUST` with a bundled-CCCL path (three include roots,
+  `.gitmodules` repointed at NVIDIA/cccl). The port's version of that block no
+  longer exists, so it was re-derived rather than re-applied. The new shape adds
+  four lines and re-indents nothing: upstream's `option()` stays put, and its
+  `if(GOOFIT_FORCE_LOCAL_THRUST)` becomes
+  `if(GOOFIT_DEVICE STREQUAL HIP) ... elseif(GOOFIT_FORCE_LOCAL_THRUST)`. Both
+  upstream bodies are byte-identical to master. The reason is unchanged and is
+  now the only reason: rocThrust supplies Thrust, and either the bundled CCCL or
+  the toolkit copy on the include path would shadow rocThrust's headers.
+- **GlobalCudaDefines.h.** Upstream merged two different conditions into one
+  `#if THRUST_DEVICE_SYSTEM != THRUST_DEVICE_SYSTEM_CUDA`: the `__host__`/
+  `__device__` fallback, and `__align__`/`cudaDeviceSynchronize`/`__shared__`/
+  `__constant__`. On HIP that block is TAKEN (device system is `..._HIP`), and
+  taking the second half would be fatal. Resolved by splitting them: the
+  `__host__`/`__device__` fallback keeps upstream's condition, the CPU-fallback
+  definitions get `#if !GOOFIT_DEVICE_IS_GPU`. Measured that the split is safe:
+  under hipcc both `__host__` and `__device__` are already defined as macros at
+  the user force-include point (clang preincludes
+  `__clang_hip_runtime_wrapper.h` before any `-include`), so upstream's `#ifndef`
+  guards make that half inert in HIP device compilation and it still fires in
+  HIP host-only TUs, where it is needed.
+
+**`d8e1102cf` does not make any of the port redundant.** It is
+`src/PDFs/combine/CompositePdf.cu`; the port's change is
+`src/PDFs/MetricTaker.cu`, which upstream did not touch. Same pattern, different
+file. It is precedent for the change, not a duplicate of it, and the commit
+message now cites #384 instead of claiming a HIP bug.
+
+`git rev-list --count moat-port..origin/master` = 0.
+
+### Item 1: `HIP_SEPARABLE_COMPILATION` removed
+
+Confirmed not a CMake property (3.31.6). Both `set_target_properties` calls
+deleted, the CMakeLists comment and the commit message reworded to say CMake has
+no HIP counterpart to `CUDA_SEPARABLE_COMPILATION` so both halves are manual, and
+`references/strategy-a-cmake.md` rewritten the same way with the measurement in
+it.
+
+### Item 5: the IPO guard is load-bearing on master, and the LTO reason is narrower
+
+The reviewer measured `SUPPORTS_IPO:INTERNAL=NO` at the old base. **On master it
+is YES**: this configure prints `Compiler supports IPO: YES` and the cached
+`SUPPORTS_IPO` is NO only because the port forces it. So the guard does work
+now; something in the 19 commits (most likely `ec50729ef`'s CMake floor) changed
+what `check_ipo_supported()` answers.
+
+The guard moved from a per-target `if()` in `GOOFIT_ADD_LIBRARY` to upstream's
+own backend switch next to the existing CUDA exclusion. That is one line instead
+of four, matches house style, and fixes a real hole: `GOOFIT_ADD_EXECUTABLE`
+never had the per-target guard, so executables would have taken IPO.
+
+`-fgpu-rdc` + LTO measured three ways on ROCm 7.2.3 / gfx1100, two-TU
+`__device__`-global reproducer:
+
+| how `-flto` is applied | result |
+| --- | --- |
+| compile + link in one `hipcc` command | links |
+| `-flto` only on the link line | links |
+| `-flto` on the compile line, separate link (what CMake IPO does) | **fails** |
+
+Failure is `ld.lld: error: undefined symbol: __hip_fatbin_<hash>` referenced by
+`__hip_fatbin_wrapper`. A one-command reproducer reports success, which is
+almost certainly why the review found LTO "fine".
+
+### Item 6: `GOOFIT_PHYSICS` declared where the others are
+
+Moved from `src/PDFs/CMakeLists.txt` to the `### Options ###` block beside
+`GOOFIT_KMATRIX`, using upstream's own `IS_NOT_CUDA` idiom (a parallel
+`IS_NOT_HIP`), plus `feature_option(GOOFIT_PHYSICS)`. `src/PDFs/CMakeLists.txt`
+keeps only the FATAL_ERROR and the gating. It now appears in the configure
+summary, and no longer depends on `add_subdirectory` ordering. A plain
+`-DGOOFIT_DEVICE=HIP` with no `-DGOOFIT_PHYSICS=OFF` configures correctly.
+
+### Item 4: `extern/thrust` is fetchable; the special-cased check is gone
+
+`git submodule update --init --recursive` checks out CCCL `af8cce4ca` cleanly at
+the new base, and `extern/thrust/README.md` exists, so upstream's top-of-file
+check needs no change. The port's relocated check and its `if(NOT ... HIP)`
+wrapper are both deleted -- they existed only for the false "cannot be fetched"
+premise. HIP now requires the submodule like every other backend and simply does
+not put it on the include path. The two doc sentences claiming it "need not check
+out" were corrected to say it is kept off the include path.
+
+### Item 3: bug claim removed
+
+The `MetricTaker.cu` comment no longer claims HIP's device heap is unreliable;
+it gives the CompositePdf/#384 reason. The commit message likewise. The
+`fault-classes.md` entry is rewritten to say explicitly that the fitted-parameter
+claim did not reproduce on gfx1100, and to present the change as hygiene rather
+than a fault to chase.
+
+### Results after the rebase (gfx1100, ROCm 7.2.3, CMake 3.31.6, GPU 1)
+
+HIP: 306/306 targets, `ctest` 25/25 in 9.57 s.
+`examples/exponential/exponential` -> `alpha = -1.001102381 +/- 0.003165763921`,
+digit-identical to the pre-rebase run.
+
+CPP no-regression (the build attempt 4 wrongly said could not be configured):
+375/375 targets, 26/26 tests, `GOOFIT_PHYSICS:BOOL=ON`, `SUPPORTS_IPO=YES`
+(untouched by the HIP guard). Python bindings on CPP build and `import goofit`
+still exposes `Amp3Body`, `Amp3BodyBase`, `Amp3Body_IS`, `Amp3Body_TD`,
+`DalitzPlotPdf`, `DalitzPlotter`.
+
+Target and test counts rose (195->306, 24->25 HIP, 25->26 CPP) because upstream
+added `AddNormTest` and more example targets, not because of anything here.
+
+### Skill changes on this branch
+
+- `references/strategy-a-cmake.md`: the rdc entry now leads with "there is no
+  `HIP_SEPARABLE_COMPILATION`"; the LTO prohibition replaced by the measured
+  three-row table and the `check_ipo_supported()` note.
+- `references/fault-classes.md`: device-`new[]` entry demoted from fault class
+  to hygiene, with the failed reproduction recorded.
+- `references/validation.md`: new PR-prep gate for upstream drift, including why
+  `git diff <default>...<branch>` hides it.

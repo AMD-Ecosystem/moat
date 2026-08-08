@@ -54,22 +54,31 @@ A heavily-templated library (cudf: rocThrust/rocPRIM `DeviceReduce`/`DeviceScan`
 
 Fix: add `--offload-compress` to the HIP compile options (`target_compile_options(<tgt> PRIVATE $<$<COMPILE_LANGUAGE:HIP>:--offload-compress>)`). A documented ROCm clang HIP flag (7.2.1+: "Compress offload device binaries (HIP only)") that stores the embedded device bundle in the compressed CCOB format; the HIP runtime decompresses it on load. Measured on a cudf rocPRIM reduce TU @ gfx90a: object 207.8 MB -> 52.1 MB (3.99x), `.hip_fatbin` 158.6 MB -> 2.89 MB (54.9x) -- the device ISA matrix is hugely redundant so it compresses ~55x. This let cudf's full reductions + aggregation + groupby + join surface link into ONE ~540 MB libcudf.so with no multi-.so split and no `-mcmodel=large`. For a non-RDC build (no `-fgpu-rdc` device-link step) the per-TU compile is the only place the bundle is formed, so there is no separate device-link to also flag. Prefer this BEFORE splitting a library or capping the template matrix. Also build a single target arch (no multi-arch fatbin) and add `-ffunction-sections -fdata-sections` + `--gc-sections` to prune unreachable host instantiations. (cudf.)
 
-### Relocatable device code: `-fgpu-rdc` is needed on the LINK line too
+### Relocatable device code: CMake has no HIP property, so BOTH halves are manual
 
 A project that declares `__device__`/`__constant__` globals or device function-pointer
 tables in HEADERS and defines them in a separate `.cu` needs relocatable device code on
 HIP, exactly as it needs `CUDA_SEPARABLE_COMPILATION` on NVIDIA. The first symptom is a
 link error naming a `__device__` member, e.g.
 `lld: error: undefined hidden symbol: MetricTaker::operator()(thrust::tuple<...>) const`.
-Adding `-fgpu-rdc` to `target_compile_options` plus `HIP_SEPARABLE_COMPILATION ON` fixes
-that one and produces a SECOND, much more confusing failure:
+
+**There is no `HIP_SEPARABLE_COMPILATION` property. Do not set one.** Measured on CMake
+3.31.6: `cmake --help-property HIP_SEPARABLE_COMPILATION` reports it is not a property, and
+`cmake --help-property-list | grep SEPARABLE` lists only `CUDA_SEPARABLE_COMPILATION`.
+Setting it is silently accepted and produces a byte-identical `build.ninja`. So unlike the
+CUDA path, where one property does everything, on HIP you add `-fgpu-rdc` yourself in TWO
+places: the compile line and the link line. Earlier revisions of this entry credited the
+property with the compile half; that was wrong, and a port shipped two dead
+`set_target_properties` calls into somebody else's build system because of it.
+
+Adding `-fgpu-rdc` to `target_compile_options` alone fixes the first error and produces a
+SECOND, much more confusing failure:
 
     ld.lld: error: undefined hidden symbol: __hip_gpubin_handle_b33c4363e66c5890
     ld.lld: error: undefined symbol: __hip_fatbin_b33c4363e66c5890
 
-**Cause: `-fgpu-rdc` must be on the final LINK line as well as on every compile, and
-CMake's `HIP_SEPARABLE_COMPILATION` property does not put it there.** Dump the generated
-link line before theorising; it says so directly:
+**Cause: `-fgpu-rdc` must be on the final LINK line as well.** Dump the generated link
+line before theorising; it says so directly:
 
     clang++ --offload-arch=gfx1100 --hip-link ... main.cu.o -o myexe libmylib.a
 
@@ -106,10 +115,29 @@ Two smaller companions from the same port: mark BOTH `.cu` files and any `.cpp` 
 includes rocThrust as `LANGUAGE HIP` (CMake otherwise drops the `.cu` objects from the
 device link once the project enabled HIP rather than CUDA), and delete host globals that
 take the address of a `__device__` function (`device_function_ptr p = device_Step;` at
-namespace scope) -- that is invalid on HIP and dead code on CUDA. IPO/LTO also cannot be
-combined with HIP relocatable device code, so disable `INTERPROCEDURAL_OPTIMIZATION` on
-that path. (GooFit; first seen on RXMesh, where only the compile-side `-fgpu-rdc` was
-needed because the device code was already in one target.)
+namespace scope) -- that is invalid on HIP and dead code on CUDA. (GooFit; first seen on
+RXMesh, where only the compile-side `-fgpu-rdc` was needed because the device code was
+already in one target.)
+
+**Turn `INTERPROCEDURAL_OPTIMIZATION` off wherever you turned `-fgpu-rdc` on**, because
+CMake's IPO puts `-flto` on the COMPILE line and that is the combination that breaks.
+Measured on ROCm 7.2.3 / gfx1100 with a two-TU `__device__`-global reproducer; the
+distinction matters, because two of the three configurations are fine:
+
+| how `-flto` is applied alongside `-fgpu-rdc`                 | result |
+| ------------------------------------------------------------ | ------ |
+| compile and link in ONE `hipcc` invocation                     | links  |
+| `-flto` only on the LINK line, objects compiled without it     | links  |
+| `-flto` on the COMPILE line, then a separate link (CMake's IPO) | fails  |
+
+The failure is `ld.lld: error: undefined symbol: __hip_fatbin_<hash>`, `referenced by
+__hip_fatbin_wrapper`: the object is LLVM bitcode, and the fatbinary symbol its wrapper
+references is only produced by the separate device-link step. A one-command build hides
+this, so a reproducer that compiles and links in one go will tell you LTO is fine when it
+is not -- that mistake is why this table exists. Note also that `check_ipo_supported()`
+answers YES under hipcc, so a project's own IPO probe will not save you; the exclusion has
+to be explicit and belongs next to any existing per-backend one (GooFit already disabled
+IPO for CUDA in the same place). (GooFit.)
 
 ## The shim-header method: a port with zero source edits
 
