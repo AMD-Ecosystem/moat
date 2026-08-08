@@ -137,9 +137,18 @@ STAGE_TRANSITIONS = {
     "delta-ported": {"review-passed", "changes-requested"},
     "changes-requested": {"porting"},
     # review-passed has no exit to `completed`: completing is an ARCH's fact now, and
-    # a project stays review-passed while its architectures validate independently.
-    "review-passed": {"validation-failed"},
-    "validation-failed": {"porting"},
+    # a project stays review-passed while its architectures validate independently --
+    # including when one of them FAILS. `validation-failed` used to be a stage here as
+    # well as an arch state, and being in both machines is what broke it: set_state
+    # resolves the collision by checking STAGE_STATES first, so a validator recording
+    # one arch's failure moved the whole project out of review-passed and left the
+    # arch's own record untouched. Leaving review-passed switches off the per-arch
+    # derivation in arch_task, so every arch -- including ones completed at head --
+    # routed to the porter, and the only edge back was through a port. A waiver being
+    # approved or a sibling arch satisfying the gate could not move it, so four
+    # projects sat advertising porter work that did not exist. It is an arch state
+    # only now, and the porter is reached from review-passed directly.
+    "review-passed": {"porting"},
     # A person may revive a project judged unportable -- ROCm gains a library, an
     # upstream rewrite lands. Nothing else leads out.
     "not-portable": {"planned", "porting"},
@@ -433,13 +442,6 @@ def set_state(name, platform, new_state, agent=None, save=True):
             f"{name}/{platform}: {new_state} is derived from (stage, validated_sha, "
             f"head_sha) and is never stored -- see arch_task")
     obj = load_status(name)
-    # `validation-failed` is the one state both machines own, and it means both things
-    # at once: THIS GPU failed on this code, and the PORT now needs a porter. Routing
-    # on "is it a stage" alone made it purely a stage, so an architecture's failure
-    # could not be written down at all -- four arch records hold one from before the
-    # split and nothing could produce a fifth. A validator that tried got the project's
-    # stage moved and its own result dropped.
-    both = new_state in (STAGE_STATES & ARCH_STATES)
     is_stage = new_state in STAGE_STATES
     cur = project_stage(obj) or "unclaimed" if is_stage else \
         (obj["platforms"].get(platform) or {}).get("state")
@@ -465,28 +467,28 @@ def set_state(name, platform, new_state, agent=None, save=True):
                    and not same_commit(
                        (obj["platforms"].get(platform) or {}).get("validated_sha"),
                        obj.get("head_sha")))
-    # "Same value" is not "nothing happened", and this is the third distinct way that
-    # assumption has been wrong: a second host entering a stage the first holds, an arch
-    # revalidating a newer head, and now a second arch failing a head the first already
-    # failed. Ask whether there is anything left to RECORD, not whether a token matches.
-    nothing_to_record = new_state == cur and not revalidated
-    if both:
-        nothing_to_record = (nothing_to_record and
-                             (obj["platforms"].get(platform) or {}).get("state") == new_state)
-    if nothing_to_record:
+    # The other same-state call that is not a no-op: entering an exclusive stage the
+    # project is ALREADY in while holding no lock. That is the ordinary case of picking
+    # up work another host put down, and it is the half the exclusivity check above does
+    # not close -- that refuses when someone ELSE holds the lock, and a FREE lock fell
+    # through to the short-circuit and returned before the acquisition below, leaving
+    # the project in an exclusive stage nobody held while reporting success. A GooFit
+    # porter hit exactly that and reached for `port-lock --take` against a free lock.
+    #
+    # "Same value" is not "nothing happened", and that has now been wrong three distinct
+    # ways: a second host entering a stage the first holds, an arch revalidating a newer
+    # head, and this. Ask what is left to RECORD, not whether a token matches.
+    acquires = (new_state in EXCLUSIVE_STAGES
+                and (obj.get("porting") or {}).get("arch") != platform)
+    same = new_state == cur
+    if same and not (revalidated or acquires):
         return obj
     table = STAGE_TRANSITIONS if is_stage else ARCH_TRANSITIONS
-    # Only a CHANGE is a transition. A `both` state whose stage side is already where it
-    # is going still has an arch side to record, and validating the no-op half as a
-    # move rejects the half that matters.
-    if not revalidated and new_state != cur and new_state not in table.get(cur, set()):
+    # Reached only when the state really changes, or when one of the cases above
+    # deliberately fell through -- neither has a self-edge in the table to satisfy.
+    if not same and new_state not in table.get(cur, set()):
         kind = "stage" if is_stage else f"{platform}"
         raise ValueError(f"{name}/{kind}: illegal transition {cur} -> {new_state}")
-    if both:
-        arch_cur = (obj["platforms"].get(platform) or {}).get("state")
-        if new_state != arch_cur and new_state not in ARCH_TRANSITIONS.get(arch_cur, set()):
-            raise ValueError(f"{name}/{platform}: illegal transition "
-                             f"{arch_cur} -> {new_state}")
     if platform not in obj["platforms"]:
         obj["platforms"][platform] = _platform_block(None)
     blk = obj["platforms"][platform]
@@ -507,7 +509,7 @@ def set_state(name, platform, new_state, agent=None, save=True):
     ts = now_iso()
     if is_stage:
         obj["stage"] = new_state
-    if both or not is_stage:
+    else:
         blk["state"] = new_state
     blk["updated_at"] = ts
     if agent:
@@ -1725,6 +1727,14 @@ def arch_task(obj, platform):
     if stage != "review-passed":
         agent = STAGE_FOR_STATE.get(stage)
         return (agent, stage) if agent else None
+    # This arch tried and failed. Only IT is sent to the porter: a wave32 fault does
+    # not invalidate a wave64 arch's evidence, and what actually keeps a broken port
+    # from being submitted is pr_ready, which needs a `completed` arch at head_sha for
+    # every required gate -- a failed arch leaves its gate unsatisfied on its own. The
+    # porter's fix advances head_sha, which makes every other arch stale and route to
+    # revalidate, so the rest of the fleet catches up without the stage broadcasting.
+    if blk.get("state") == "validation-failed":
+        return ("porter", "validation-failed")
     if blk.get("state") == "completed":
         if same_commit(blk.get("validated_sha"), obj.get("head_sha")):
             return None                  # this arch has proved this code
