@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "egg-advanced-trainers-deferred",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Only the basic CUDA trainer (full_cuda_train_egg.cu) ported; 1 of 5 trainers, 0 advanced/distributed. Deferred: full_cuda_train_egg_transformer.cu + _adam.cu (EGG_WARP_SIZE=32 on off=16 shfl_down reductions, RoPE shfl_xor width-32); full_cuda_train_transformer_adam_mgpu.cu (Int8NativeFormer) + muon_internal.cuh (cuBLAS->hipBLAS Newton-Schulz + multi-GPU); d-eggs/ distributed coordinator/worker (hipGraph capture, managed-memory atomic audit).",
+      "refs": [
+        "projects/egg.c/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T19:04:23Z",
+      "decided": null
+    },
+    {
+      "id": "egg-deggs-warp-shim-collapse",
+      "kind": "other",
+      "component": null,
+      "summary": "Collapse the #if __HIP__ eggShflDownSync / #else __shfl_down_sync guards in d-eggs (adaptive_norm.cuh x2, layers.cuh x2). Blocked on extracting the portable warp shims out of the HIP-only d-eggs/include/utils/hip_compat.cuh (whole body is #if defined(__HIP__)) into a separate always-included header (d-eggs analogue of egg_warp_compat.cuh) so the shim exists on the nvcc path; then collapse + binary-equiv carry-forward like commits 1180017/f565358.",
+      "refs": [
+        "projects/egg.c/notes.md: PR-prep cleanup 2026-06-18 (cont.)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-18T17:11:28Z",
+      "decided": null
+    }
+  ]
+}

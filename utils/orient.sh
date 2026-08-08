@@ -102,6 +102,13 @@ python3 utils/moatlib.py waivers 2>/dev/null \
 python3 utils/moatlib.py misplaced 2>/dev/null \
   | awk -F'\t' 'NF>1 {printf "misplaced:   %-26s %s\n", $1, $3}' || true
 
+# Work somebody set aside without anybody deciding it should be. A deferral is cheap to
+# record and easy to forget, and the failure is silent: "we will get to it" becomes
+# nobody ever looked. Only a person can rule on one, so the list has to reach a person.
+python3 utils/deferred.py pending 2>/dev/null \
+  | awk -F'\t' 'NF>2 {printf "deferred :   UNRULED    %-24s %-16s %.60s\n", $1, $2, $4}' \
+  | head -5 || true
+
 # Nothing reconciles the record on a schedule, so the only thing that can say it has
 # gone unchecked is how long since someone swept. Reads a stored date, costs no API
 # call, and names the command rather than making anyone remember it.
