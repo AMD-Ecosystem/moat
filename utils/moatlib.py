@@ -305,6 +305,7 @@ def _platform_block(initial_state):
         "blocked": False,
         "blocked_reason": None,
         "validated_sha": None,
+        "failed_sha": None,
         "started_at": None,
         "completed_at": None,
         "updated_at": now_iso(),
@@ -568,6 +569,10 @@ def set_state(name, platform, new_state, agent=None, save=True):
                 f"{len(dirty)} UNCOMMITTED source/build file(s) -- validated content "
                 f"may not be in the branch (integrity gap). Commit or discard: "
                 f"{', '.join(p for _, p in dirty[:6])}\n")
+    if new_state == "validation-failed":
+        # WHICH commit failed, so a failure reads the way a validation does: evidence
+        # about one commit, not a permanent property of the arch. See failure_stands.
+        blk["failed_sha"] = obj.get("head_sha")
     obj["platforms"][platform] = blk
     if save:
         save_status(name, obj)
@@ -1281,27 +1286,61 @@ def advance_head(name, new_sha, repo=None):
         with a binary-equivalence check before re-running GPU tests; unbuildable
         arches simply revalidate.
 
-    On any classification failure the platform revalidates -- the safe default."""
+    On any classification failure the platform revalidates -- the safe default.
+
+    A platform that FAILED is re-examined the same way and for the same reason. Its
+    failure is evidence about the commit it happened on, so a HEAD move normally
+    retires it and sends the arch back to a validator (see failure_stands) -- but a
+    delta that cannot change compiled output cannot be the fix, so the failure is
+    carried forward to the new head instead."""
     obj = load_status(name)
     repo = repo or _fork_repo(name)
     new_sha = full_sha(new_sha, repo)
+    prev_head = obj.get("head_sha")
     obj["head_sha"] = new_sha
     for plat in list(obj["platforms"]):
         blk = obj["platforms"][plat]
-        if blk.get("state") != "completed" or same_commit(blk.get("validated_sha"), new_sha):
-            continue
-        old = blk.get("validated_sha")
-        verdict = _classify_safe(repo, old, new_sha)
-        if verdict is not None and verdict.arch_independent:
-            blk["validated_sha"] = new_sha
-            blk["updated_at"] = now_iso()
-            blk["carry_forward"] = {"from": old, "to": new_sha, "method": "source-class",
-                                    "class": verdict.cls, "detail": verdict.detail[:200],
-                                    "at": now_iso()}
-        # No else. A block that cannot be carried forward keeps its `completed` and its
-        # old validated_sha, which IS the record: this arch proved that commit and has
-        # not proved this one. `revalidate` follows from the two shas differing, so
-        # writing it down would only be a second copy that can go stale.
+        state = blk.get("state")
+        if state == "completed":
+            old = blk.get("validated_sha")
+            if same_commit(old, new_sha):
+                continue
+            verdict = _classify_safe(repo, old, new_sha)
+            if verdict is not None and verdict.arch_independent:
+                blk["validated_sha"] = new_sha
+                blk["updated_at"] = now_iso()
+                blk["carry_forward"] = {"from": old, "to": new_sha,
+                                        "method": "source-class", "class": verdict.cls,
+                                        "detail": verdict.detail[:200], "at": now_iso()}
+            # No else. A block that cannot be carried forward keeps its `completed` and
+            # its old validated_sha, which IS the record: this arch proved that commit
+            # and has not proved this one. `revalidate` follows from the two shas
+            # differing, so writing it down would only be a second copy that can go
+            # stale.
+        elif state == "validation-failed":
+            # The same guard facing the other way. A HEAD move retires a failure (see
+            # failure_stands), which is right when the commit was a fix and wrong when
+            # it was a README edit -- a delta that cannot change any target's compiled
+            # output cannot have fixed anything, so carry the FAILURE forward and let
+            # the arch keep asking the porter for a real one.
+            #
+            # A block written before failures carried a sha is stamped with the head
+            # being superseded, which is the head it failed against -- so a legacy
+            # record heals itself the first time a porter advances the branch, rather
+            # than needing five port branches migrated by hand.
+            old = blk.get("failed_sha") or prev_head
+            if not old or same_commit(old, new_sha):
+                continue
+            verdict = _classify_safe(repo, old, new_sha)
+            # Inert: not the fix, so the failure moves up to the new head and goes on
+            # standing. Anything else retires it -- and the sha is written down either
+            # way, because a block that says only `validation-failed` cannot be judged
+            # at all and would ask the porter for a fix it has already had.
+            failed = (new_sha if verdict is not None and verdict.arch_independent
+                      else old)
+            if failed != blk.get("failed_sha"):
+                blk["failed_sha"] = failed
+                blk["updated_at"] = now_iso()
     save_status(name, obj)
     return obj
 
@@ -1779,6 +1818,27 @@ def stalled(obj):
     return bool(blocks) and all(b.get("blocked") for b in blocks)
 
 
+def failure_stands(obj, blk):
+    """Does this arch's recorded failure still describe the code on the branch?
+
+    A `validation-failed` block is evidence about ONE commit, exactly as a `completed`
+    block is, and it stops describing the port the moment a fix advances head_sha.
+
+    Nothing used to say so, and the cycle never closed: the arch went to the porter,
+    the porter's fix moved head, the reviewer passed it, and the arch went to the
+    porter again -- forever, because the only thing that clears the stored word is a
+    validator recording `completed`, and the selector never sent one. It stayed latent
+    only because every arch that had failed was also `blocked`, which arch_task bails
+    on first.
+
+    A record with no `failed_sha` predates this and cannot be judged, so it stands:
+    inventing staleness for it would claim a fix that may never have happened."""
+    if blk.get("state") != "validation-failed":
+        return False
+    failed = blk.get("failed_sha")
+    return not failed or same_commit(failed, obj.get("head_sha"))
+
+
 def arch_task(obj, platform):
     """What this architecture should do now, as (agent, state), or None.
 
@@ -1803,24 +1863,35 @@ def arch_task(obj, platform):
     if stage != "review-passed":
         agent = STAGE_FOR_STATE.get(stage)
         return (agent, stage) if agent else None
-    # This arch tried and failed. Only IT is sent to the porter: a wave32 fault does
-    # not invalidate a wave64 arch's evidence, and what actually keeps a broken port
-    # from being submitted is pr_ready, which needs a `completed` arch at head_sha for
-    # every required gate -- a failed arch leaves its gate unsatisfied on its own. The
-    # porter's fix advances head_sha, which makes every other arch stale and route to
-    # revalidate, so the rest of the fleet catches up without the stage broadcasting.
-    if blk.get("state") == "validation-failed":
+    # This arch tried and failed at the code that is still on the branch. Only IT is
+    # sent to the porter: a wave32 fault does not invalidate a wave64 arch's evidence,
+    # and what actually keeps a broken port from being submitted is pr_ready, which
+    # needs a `completed` arch at head_sha for every required gate -- a failed arch
+    # leaves its gate unsatisfied on its own. The porter's fix advances head_sha, which
+    # makes every other arch stale and route to revalidate, so the rest of the fleet
+    # catches up without the stage broadcasting.
+    #
+    # That same advance is what releases THIS arch: the failure it recorded is about a
+    # commit no longer at the head, so it falls through to the un-validated case below
+    # and a validator is sent to judge the fix. Nothing rewrites the block to make that
+    # happen -- the record keeps saying what it saw, and staleness follows from the two
+    # shas, which is the same reason `revalidate` is not stored either.
+    if failure_stands(obj, blk):
         return ("porter", "validation-failed")
     if blk.get("state") == "completed":
         if same_commit(blk.get("validated_sha"), obj.get("head_sha")):
             return None                  # this arch has proved this code
         return ("validator", "revalidate")  # it proved an older one; refresh it
-    # Never validated here. Offer it only where a REQUIRED GATE still needs it.
-    # Coverage is gates, and an arch beyond the one satisfying a gate is additive
-    # evidence that gates nothing -- welcome when someone asks for it, and not work
-    # the selector should invent. Without this, every arch that has never touched any
-    # finished port becomes a validation task: 315 of them here, ranked ahead of
-    # screening anything new.
+    # Nothing this arch has proved covers the current head: it never validated, or its
+    # failure has been superseded by a fix. `port-ready` either way, which is the full
+    # run -- an arch coming back from a failure has no standing claim to carry forward
+    # from, even if an older `validated_sha` is still in its block.
+    #
+    # Offered only where a REQUIRED GATE still needs it. Coverage is gates, and an arch
+    # beyond the one satisfying a gate is additive evidence that gates nothing --
+    # welcome when someone asks for it, and not work the selector should invent.
+    # Without this, every arch that has never touched any finished port becomes a
+    # validation task: 315 of them here, ranked ahead of screening anything new.
     if gates_for(platform) & unsatisfied_gates(obj):
         return ("validator", "port-ready")
     return None
@@ -1837,8 +1908,14 @@ def platform_state(obj, platform):
     if blk.get("state") == "completed":
         return ("completed" if same_commit(blk.get("validated_sha"), obj.get("head_sha"))
                 else "revalidate")
-    if blk.get("state"):
-        return blk["state"]
+    st = blk.get("state")
+    # A failure a later commit has superseded is history, not where this arch is now.
+    # Reported as whatever it is owed instead, so the board and the selector cannot
+    # disagree -- one saying the arch is mid-fix while the other asks it to validate.
+    if st == "validation-failed" and not failure_stands(obj, blk):
+        st = None
+    if st:
+        return st
     task = arch_task(obj, platform)
     return task[1] if task else None
 
