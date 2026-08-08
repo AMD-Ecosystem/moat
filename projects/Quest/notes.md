@@ -171,3 +171,76 @@ Checked and correct, so nobody re-derives it:
 - Lesson promotion (6d42e1d) is correctly filed and item 3's outcome is reflected accurately:
   fault-classes.md states that an explicit width is already wave-agnostic and that rewriting it
   to `warpSize` is a regression risk, which is the correction the plan needed.
+
+## Porter pass 2 (2026-08-08, linux-gfx1100) -- review defects 1-7
+
+Fork sha `3465b34` on `moat-port`, amended over `ff80217` (nothing had validated it: both
+`validated_sha` were null at the time). All seven review defects addressed; the porting
+approach itself was not revisited.
+
+1. **`-DCMAKE_HIP_ARCHITECTURES` was inert.** Root cause exactly as the reviewer diagnosed:
+   `Caffe2/public/LoadHIP.cmake:107` `set(CMAKE_HIP_ARCHITECTURES ${PYTORCH_ROCM_ARCH})` is a
+   NORMAL variable that shadows the cache entry for the rest of the directory scope, so
+   `set_target_properties(... HIP_ARCHITECTURES "${CMAKE_HIP_ARCHITECTURES}")` after
+   `find_package(Torch)` re-applied torch's list. Fix: resolve the target before
+   `enable_language(HIP)` (env `PYTORCH_ROCM_ARCH` consulted only when the cache is empty, so
+   an explicit `-D` wins), snapshot it into `QUEST_HIP_ARCHITECTURES` before
+   `find_package(Torch)`, and set the target property from the snapshot.
+   `list(REMOVE_DUPLICATES)` because `rocm_agent_enumerator` repeats an arch per device.
+
+   Measured off `compile_commands.json` (`-DCMAKE_EXPORT_COMPILE_COMMANDS=ON`), with the
+   host env carrying `PYTORCH_ROCM_ARCH=gfx90a;gfx942;gfx950;gfx1100` throughout:
+
+   | case | before (`ff80217`) | after (`3465b34`) |
+   |---|---|---|
+   | `-DCMAKE_HIP_ARCHITECTURES=gfx1201` | `gfx90a gfx942 gfx950 gfx1100` | `gfx1201` |
+   | no `-D`, `PYTORCH_ROCM_ARCH=gfx908` | `gfx908` | `gfx908` |
+   | no `-D`, env var unset | (n/a, FATAL_ERROR path dead) | `gfx1100` (deduped from 4) |
+
+   `llvm-objdump --offloading` on the built module shows `hipv4-amdgcn-amd-amdhsa--gfx1100`
+   only. Note this bug HIDES on any host whose GPU is in the torch wheel's list, which is why
+   reading the compile line is the gate rather than a successful local run.
+
+2. **Dead `PYTORCH_ROCM_ARCH` / `FATAL_ERROR` block.** Made reachable rather than removed:
+   the env-var branch now sits ABOVE `enable_language(HIP)`, which is the only place it can
+   do anything (`CMakeDetermineHIPCompiler.cmake:296` is `elseif(NOT DEFINED
+   CMAKE_HIP_ARCHITECTURES)`). The `FATAL_ERROR` is gone: with the ordering fixed, falling
+   through to CMake's own `rocm_agent_enumerator` detection is the better default, and CMake
+   raises its own fatal error when that finds nothing.
+
+3. **CUDA `native` lost.** `if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES) set(... native)` moved
+   back above `project()`, where upstream had it, under `if(NOT USE_HIP)`.
+   `CMakeDetermineCUDACompiler.cmake:261` is `if("${CMAKE_CUDA_ARCHITECTURES}" STREQUAL "")`,
+   so a value set before the language is enabled survives and one set after is ignored.
+   **UNVERIFIED and stated as such in the commit message: there is no nvcc on this host, so
+   the CUDA configure cannot be run at all** (`/usr/bin/gcc-11` is also absent). What WAS
+   verified: (a) the guard logic itself, with a standalone `project(probe LANGUAGES NONE)`
+   probe -- `USE_HIP=OFF` yields the gcc-11 pins and `native`, an explicit
+   `-DCMAKE_CUDA_ARCHITECTURES=80` still wins, `USE_HIP=ON` leaves all three untouched; and
+   (b) the same normal-variable-before-`enable_language` mechanism on the HIP side, which is
+   the identical code path in the sibling CMake module and is proven by the table above.
+
+4. **gcc-11 / g++-11 pins.** Restored above `project()` under the same `if(NOT USE_HIP)`
+   guard. `option(USE_HIP ...)` already precedes `project()`, so the guard is available.
+
+5. **README arch sentence.** Rewritten to the real precedence: `CMAKE_HIP_ARCHITECTURES` when
+   passed, else `PYTORCH_ROCM_ARCH`, else the GPUs in the build machine.
+
+6. **README end-to-end gap.** The paragraph now says that both missing operators are reached
+   from `quest/models/QuestAttention.py`, so the model wrappers, the accuracy evaluation
+   described immediately below, the end-to-end efficiency scripts and the examples do not run
+   on ROCm yet, and points at `quest/tests` for what does.
+
+7. **bsk_ops reordering.** Upstream declaration and `m.def` order restored; the guards are now
+   wrapped in place. The `.cu` diff is 4 added `#if`/`#endif` lines and the `.h` diff is the
+   three guards plus the explanatory comment. No moved lines in either file.
+
+GPU re-run after the fix (`HIP_VISIBLE_DEVICES=1`, gfx1100, ROCm 7.2.3, torch 2.14.0a0):
+`test_rope.py` + `test_estimate.py` + `test_decode_attention.py` + `test_approx_attention.py`
+= **121 passed in 4.72s**. Unchanged from the pre-fix run, which is the point: the build
+changes did not disturb them.
+
+Lesson promoted to the `cuda-to-rocm` skill, `references/strategy-b-torch.md`, as
+"CMake-driven torch extension: `find_package(Torch)` takes the GPU architecture away from
+you" -- it covers both the LoadHIP shadowing and the enable_language ordering, and it will
+bite any torch extension built through CMake rather than `CUDAExtension`.

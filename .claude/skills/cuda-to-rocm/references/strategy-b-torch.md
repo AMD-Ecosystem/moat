@@ -42,6 +42,62 @@ older torch -- so a guard keyed on the wrong axis silently breaks the other plat
 build. That fault class, with the two regressions that produced it, is in
 `fault-classes.md` under "Types, dispatch and platform limits". (aihwkit)
 
+### CMake-driven torch extension: `find_package(Torch)` takes the GPU architecture away from you
+
+A torch extension built through CMake rather than `CUDAExtension` (`find_package(Torch)` +
+`pybind11_add_module`, the Strategy-B environment with Strategy-A mechanics) has an
+architecture-selection trap that silently ships a module with no code object for the user's
+GPU. Two independent things go wrong, and both are ORDERING bugs -- the fix is where the
+lines sit, not what they say.
+
+**1. Enabling the language decides the architecture, so decide it first.**
+`CMakeDetermineHIPCompiler.cmake` caches `CMAKE_HIP_ARCHITECTURES` from
+`rocm_agent_enumerator` the moment `enable_language(HIP)` runs and the variable is not
+already defined (`elseif(NOT DEFINED CMAKE_HIP_ARCHITECTURES)`). Anything that sets it
+AFTER that line is dead code. `CMakeDetermineCUDACompiler.cmake` does the same for
+`CMAKE_CUDA_ARCHITECTURES` (`if("${CMAKE_CUDA_ARCHITECTURES}" STREQUAL "")`), which is why
+upstream projects put `set(CMAKE_CUDA_ARCHITECTURES native)` above `project()`. Restructuring
+a `project(... LANGUAGES CUDA CXX)` into `project(... LANGUAGES CXX)` + a `USE_HIP`-branched
+`enable_language()` moves that line below the decision point and QUIETLY BREAKS THE NVIDIA
+BUILD -- on Quest the CUDA path lost `native` and would have fallen back to nvcc's default,
+which ptxas rejects for the `cp.async`/`mma.sync` the vendored flashinfer kernels emit. Both
+architecture defaults, and any compiler pins, belong above `project()` under `if(NOT USE_HIP)`;
+`option(USE_HIP ...)` can precede `project()` so the guard is available there.
+
+**2. `find_package(Torch)` then overwrites it with PyTorch's OWN list.**
+`Caffe2/public/LoadHIP.cmake` does `set(CMAKE_HIP_ARCHITECTURES ${PYTORCH_ROCM_ARCH})` -- a
+NORMAL variable that shadows your cache entry for the rest of the directory scope (and it
+calls `enable_language(HIP)` itself). `PYTORCH_ROCM_ARCH` there comes from the environment,
+else from `rocm_agent_enumerator` (`Caffe2/public/utils.cmake`, `torch_hip_get_arch_list`).
+So `set_target_properties(mod PROPERTIES HIP_ARCHITECTURES "${CMAKE_HIP_ARCHITECTURES}")`
+written after `find_package(Torch)` re-applies the multi-arch list the torch WHEEL was built
+for, and `-DCMAKE_HIP_ARCHITECTURES=<yours>` has no effect at all. Snapshot the resolved
+target into a private variable before `find_package(Torch)` and apply THAT:
+
+    if(NOT CMAKE_HIP_ARCHITECTURES AND DEFINED ENV{PYTORCH_ROCM_ARCH})
+      string(REPLACE " " ";" CMAKE_HIP_ARCHITECTURES "$ENV{PYTORCH_ROCM_ARCH}")
+    endif()
+    enable_language(HIP)
+    set(<PROJ>_HIP_ARCHITECTURES ${CMAKE_HIP_ARCHITECTURES})
+    list(REMOVE_DUPLICATES <PROJ>_HIP_ARCHITECTURES)   # enumerator repeats per device
+    ...
+    find_package(Torch REQUIRED)
+    ...
+    set_target_properties(mod PROPERTIES HIP_ARCHITECTURES "${<PROJ>_HIP_ARCHITECTURES}")
+
+That gives the precedence a user expects: `-DCMAKE_HIP_ARCHITECTURES` wins, then
+`PYTORCH_ROCM_ARCH`, then the local GPUs.
+
+**Do not settle this by reading the CMake. Read the generated compile line.** Configure with
+`-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` and
+`grep -o -- "--offload-arch=[^ \"]*" build/compile_commands.json | sort -u`, once per
+precedence case, and confirm the shipped binary with
+`llvm-objdump --offloading <mod>.so`. On Quest, `-DCMAKE_HIP_ARCHITECTURES=gfx1201` was
+producing `gfx90a,gfx942,gfx950,gfx1100` and no gfx1201; nothing in the CMake said so, and
+the only symptom a user sees is `hipErrorNoBinaryForGpu` at import. Note that the bug HIDES
+on a host whose GPU is in the torch wheel's list -- which is most build machines -- so the
+compile-line check is the gate, not a successful local run. (Quest)
+
 ### Dependency environment for PyTorch projects (the install path is part of the port)
 
 For a PyTorch-ecosystem project the in-repo `.cu` (above) is only half the bring-up: the project also `pip install`s a dependency graph that defaults to CUDA wheels, and getting a ROCm environment that actually EXERCISES your ported code is its own recurring task. The failure modes repeat across the whole 3D-vision / point-cloud / VLA / world-model space, so they generalize. (AMD's rocm3d -- Andy Luo and David Li, 2026, andyluo7.github.io -- catalogs these as reusable recipes for that domain; the dependency-family patterns below are the transferable core. Note the model: these are environment substitutions to get a project RUNNING on ROCm, not upstreamed source ports -- MOAT's deliverable is still the in-repo HIP port + multi-arch PR, so confirm your ported code is the code under test, not a swapped-in prebuilt wheel.)
