@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "gpurir-mixed-precision",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Mixed-precision half2 device kernels not ported; mixed precision reports unsupported on HIP and is forced off.",
+      "refs": [
+        "projects/gpuRIR/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T18:21:59Z",
+      "decided": null
+    }
+  ]
+}
