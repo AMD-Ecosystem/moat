@@ -1,5 +1,0 @@
-{"kind":"phase","ts":"2026-05-30T18:10:40Z","phase":"compile","seconds":18.358,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/STRUMPACK/build-gfx1100 -j64"}
-{"kind":"phase","ts":"2026-05-30T18:13:27Z","phase":"test","seconds":4.193,"exit":0,"cmd":"/var/lib/jenkins/moat/agent_space/strumpack_validate_gfx1100 40"}
-{"kind":"phase","ts":"2026-06-05T18:56:27Z","phase":"compile","seconds":0.022,"exit":0,"cmd":"echo no compile attempted"}
-{"kind": "tokens", "ts": "2026-06-05T18:57:47Z", "tokens": 99177, "source": "validator"}
-{"kind": "tokens", "ts": "2026-06-15T12:15:41Z", "tokens": 51286, "source": "pr-prep"}

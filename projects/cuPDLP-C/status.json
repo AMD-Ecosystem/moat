@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "name": "cuPDLP-C",
   "upstream_url": "https://github.com/COPT-Public/cuPDLP-C",
   "fork_url": "https://github.com/AMD-Ecosystem/cuPDLP-C",
@@ -7,9 +7,18 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T07:45:23Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:04:57Z",
   "head_sha": "d380bcab9f7bf75bbaa7b14366f6c7902c2a8f91",
   "depends_on": [],
+  "pr_url": "https://github.com/COPT-Public/cuPDLP-C/pull/41",
+  "pr_number": 41,
+  "pr_opened_at": "2026-06-12T06:41:52Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "MIT",
+  "upstream_repo_id": 730543473,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -126,12 +135,5 @@
         "at": "2026-06-23T22:21:06Z"
       }
     }
-  },
-  "pr_url": "https://github.com/COPT-Public/cuPDLP-C/pull/41",
-  "pr_number": 41,
-  "pr_opened_at": "2026-06-12T06:41:52Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "MIT"
+  }
 }
