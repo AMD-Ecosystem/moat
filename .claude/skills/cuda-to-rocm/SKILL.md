@@ -102,6 +102,7 @@ Scan this list against what you are doing. If any line could apply, open
 - nvcc accepts partial specialization of a function template; clang rejects it. Move the dispatch onto a class template.
 - A sibling-relative `#include "x.cuh"` beats the include path, so shadow headers cannot shadow it; force-include the replacement instead.
 - A `-include`d compat header creates no dependency edge: wipe objects after editing it or you validate stale code.
+- Resolving `CMAKE_HIP_ARCHITECTURES` before `enable_language(HIP)` must write the CACHE; a normal variable suppresses the entry and the build directory hard-fails on its next configure.
 
 **Types, dispatch and platform limits**
 - Never name the pointee struct of an opaque handle (`CUstream_st`); use `std::remove_pointer_t<cudaStream_t>`.

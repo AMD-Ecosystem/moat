@@ -75,7 +75,8 @@ for, and `-DCMAKE_HIP_ARCHITECTURES=<yours>` has no effect at all. Snapshot the 
 target into a private variable before `find_package(Torch)` and apply THAT:
 
     if(NOT CMAKE_HIP_ARCHITECTURES AND DEFINED ENV{PYTORCH_ROCM_ARCH})
-      string(REPLACE " " ";" CMAKE_HIP_ARCHITECTURES "$ENV{PYTORCH_ROCM_ARCH}")
+      string(REPLACE " " ";" _proj_hip_archs "$ENV{PYTORCH_ROCM_ARCH}")
+      set(CMAKE_HIP_ARCHITECTURES "${_proj_hip_archs}" CACHE STRING "HIP architectures" FORCE)
     endif()
     enable_language(HIP)
     set(<PROJ>_HIP_ARCHITECTURES ${CMAKE_HIP_ARCHITECTURES})
@@ -87,6 +88,24 @@ target into a private variable before `find_package(Torch)` and apply THAT:
 
 That gives the precedence a user expects: `-DCMAKE_HIP_ARCHITECTURES` wins, then
 `PYTORCH_ROCM_ARCH`, then the local GPUs.
+
+**`CACHE ... FORCE` on that line is load bearing, and a plain `set()` is a trap that passes
+every test you are likely to run.** The branch in `CMakeDetermineHIPCompiler.cmake` that
+writes the cache entry is an `elseif(NOT DEFINED CMAKE_HIP_ARCHITECTURES)`, so setting a
+NORMAL variable ahead of `enable_language(HIP)` both supplies the value AND suppresses the
+only thing that would have persisted it: `CMakeCache.txt` ends up with no
+`CMAKE_HIP_ARCHITECTURES` entry at all and the architecture lives for exactly one configure.
+The build works, the compile line is right, the tests pass. Then any later configure in that
+directory without the variable still in the environment -- and ninja re-runs cmake by itself
+whenever a listfile changes -- resolves it to empty and hard-fails with `HIP_ARCHITECTURES
+is empty for target "<tgt>"`. Writing it to the cache is what makes the value survive the
+configure that discovered it. `FORCE` cannot clobber a user's `-DCMAKE_HIP_ARCHITECTURES`,
+because the enclosing `if(NOT CMAKE_HIP_ARCHITECTURES ...)` has already excluded that case.
+Note the failure mode this replaces is a REGRESSION the port introduces: before the fix
+torch's own `LoadHIP.cmake` re-read the environment every configure, so the build directory
+never went empty. Test it explicitly -- configure with the variable set, then reconfigure the
+SAME build directory with `env -u PYTORCH_ROCM_ARCH`, and require both a zero exit and the
+original architecture on the compile line. (Quest)
 
 **Do not settle this by reading the CMake. Read the generated compile line.** Configure with
 `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` and

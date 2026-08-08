@@ -349,3 +349,49 @@ as a normal variable) and `Caffe2/public/utils.cmake:280` (`torch_hip_get_arch_l
 first then `rocm_agent_enumerator`) both check out against the installed torch, as does the
 "read the compile line, not the CMake" gate. Lift it to main once its code block carries the
 `CACHE ... FORCE` correction above.
+
+## Port round 3 (2026-08-08, linux-gfx1100) -- sticky architecture cache entry
+
+Fixes the one defect from review pass 2. Fork head `3465b34` -> `c1d7fff` (amended; both
+platforms' `validated_sha` were null, so no validated commit was orphaned).
+
+`quest/ops/CMakeLists.txt:28-33` now writes the resolved architecture to the cache:
+
+```cmake
+if(NOT CMAKE_HIP_ARCHITECTURES AND DEFINED ENV{PYTORCH_ROCM_ARCH})
+  string(REPLACE " " ";" _quest_hip_archs "$ENV{PYTORCH_ROCM_ARCH}")
+  set(CMAKE_HIP_ARCHITECTURES "${_quest_hip_archs}" CACHE STRING "HIP architectures" FORCE)
+endif()
+```
+
+Defect reproduced on the pre-fix tree first, so the regression test is known to bite: with
+the old normal-variable form the first configure succeeded with no `CMAKE_HIP_ARCHITECTURES`
+line in `CMakeCache.txt` at all, and `env -u PYTORCH_ROCM_ARCH cmake -S quest/ops -B <same>`
+exited 1 with `HIP_ARCHITECTURES is empty for target "_kernels"`.
+
+Four cases re-measured off `compile_commands.json` and `CMakeCache.txt`, configure only,
+host env carrying `PYTORCH_ROCM_ARCH=gfx90a;gfx942;gfx950;gfx1100`:
+
+| case | `--offload-arch` | `CMakeCache.txt` | exit |
+|---|---|---|---|
+| `-DCMAKE_HIP_ARCHITECTURES=gfx1201` | `gfx1201` | `UNINITIALIZED=gfx1201` | 0 |
+| no `-D`, `PYTORCH_ROCM_ARCH=gfx908` | `gfx908` | `STRING=gfx908` | 0 |
+| no `-D`, env unset | `gfx1100` | `STRING=gfx1100;gfx1100;gfx1100;gfx1100` | 0 |
+| **reconfigure of case 2 with env unset** | **`gfx908`** | `STRING=gfx908` | **0** |
+
+The last row is the regression test for this defect. Case 1 keeps `UNINITIALIZED` because a
+`-D` on the command line never reaches the `set(... FORCE)` -- the guard excludes it -- which
+is the same evidence that `FORCE` cannot clobber a user's choice. Case 3 shows the enumerator
+still writes the per-device duplicate list, so `REMOVE_DUPLICATES` at :39 stays load bearing.
+
+Clean rebuild for gfx1100 and the four suites re-run on GPU 1: **121 passed in 4.69s**,
+unchanged. Jargon clean over `01c1623..moat-port` for both commit messages and diff content.
+
+The skill entries from this port (`SKILL.md`, `fault-classes.md`, `strategy-a-cmake.md`,
+`strategy-b-torch.md`) stay on `port/Quest` rather than being lifted to main: they reach main
+when this branch's own MOAT PR merges, which is after a reviewer has vetted them. This round
+is the argument for that policy -- the `strategy-b-torch.md` code block reproduced the
+non-sticky `set()` form verbatim, and promoting it early would have made this defect the
+documented recipe for the next CMake-driven torch extension port. That block now carries the
+`CACHE ... FORCE` form and a paragraph on why the cache entry matters, plus the
+configure-then-reconfigure test as the way to check it.
