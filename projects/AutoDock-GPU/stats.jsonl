@@ -58,3 +58,4 @@
 {"kind":"phase","ts":"2026-08-08T23:52:10Z","phase":"cuda-compile","seconds":20.925,"exit":0,"cmd":"/tmp/claude-1000/-var-lib-jenkins-moat/cac2074a-dc3d-4ccc-a639-f6184732c4ca/scratchpad/cudabuild/build_port.sh"}
 {"kind":"phase","ts":"2026-08-08T23:52:24Z","phase":"cuda-compile","seconds":0.051,"exit":2,"cmd":"/tmp/claude-1000/-var-lib-jenkins-moat/cac2074a-dc3d-4ccc-a639-f6184732c4ca/scratchpad/cudabuild/build_port.sh"}
 {"kind":"phase","ts":"2026-08-08T23:53:26Z","phase":"cuda-compile","seconds":22.218,"exit":0,"cmd":"/tmp/claude-1000/-var-lib-jenkins-moat/cac2074a-dc3d-4ccc-a639-f6184732c4ca/scratchpad/cudabuild/build_port.sh"}
+{"kind": "tokens", "ts": "2026-08-08T23:55:36Z", "tokens": 95468, "source": "validator"}
