@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "k2-moderngpu-warp32",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "moderngpu path (warp_size=32, inline PTX) not ported; k2/csrc/moderngpu_shim.h.",
+      "refs": [
+        "projects/k2/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T18:21:59Z",
+      "decided": null
+    },
+    {
+      "id": "k2-torch-decoder-kaldifeat",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "k2/torch (the standalone libtorch C++ decoder layer, ~28 files) is deferred on the ROCm build: k2/CMakeLists.txt skips the k2/torch subdir on HIP because it pulls in kaldifeat (csukuangfj/kaldifeat), a separate feature-extraction project. The core _k2 Python module + csrc gtest suite (what icefall/sherpa consume) are ported and validated. UN-DEFER once the kaldifeat MOAT project's lead is completed: then build/install AMD-Ecosystem/kaldifeat @ moat-port and re-enable the k2/torch subdir on HIP. Tracked as a depends_on(kaldifeat) relationship.",
+      "refs": [
+        "projects/k2/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-11T15:50:21Z",
+      "decided": null
+    },
+    {
+      "id": "k2-segmented-sort-global",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "k2 moderngpu_shim segmented_sort: replace host-side SegmentsToHost sync + per-segment thrust::stable_sort_by_key loop with a single global stable_sort_by_key using a composite (row_id, key) comparator via ComputeRowIds (gemini bot #1353 review). Perf optimization; current impl is correct+validated. Do as a benchmarked follow-up, not in the enablement PR.",
+      "refs": [
+        "https://github.com/k2-fsa/k2/pull/1353"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-11T22:07:24Z",
+      "decided": null
+    }
+  ]
+}
