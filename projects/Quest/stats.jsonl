@@ -1,3 +1,0 @@
-{"kind":"phase","ts":"2026-06-04T21:34:40Z","phase":"compile","seconds":19.744,"exit":1,"cmd":"cmake --build /var/lib/jenkins/moat/projects/Quest/src/quest/ops/build -j128"}
-{"kind":"phase","ts":"2026-06-04T21:37:02Z","phase":"compile","seconds":19.086,"exit":1,"cmd":"cmake --build /var/lib/jenkins/moat/projects/Quest/src/quest/ops/build -j128"}
-{"kind": "tokens", "ts": "2026-06-04T21:42:46Z", "tokens": 194785, "source": "porter"}
