@@ -75,3 +75,11 @@
 {"kind":"phase","ts":"2026-06-12T06:21:47Z","phase":"test","seconds":2603.698,"exit":1,"cmd":"B:/develop/moat/projects/catboost/src/build_hip/cm/catboost/cuda/methods/ut/catboost-cuda-methods-ut.exe --show-fails"}
 {"kind": "tokens", "ts": "2026-06-12T06:24:28Z", "tokens": 40450, "source": "validator (windows-gfx1101 revalidate)"}
 {"kind": "tokens", "ts": "2026-06-23T21:32:23Z", "tokens": 35514, "source": "gfx90a audit fix (general-purpose subagent)"}
+{"kind":"phase","ts":"2026-08-08T03:49:30Z","phase":"compile","seconds":785.253,"exit":0,"cmd":"ninja -C projects/catboost/src/build_hip/cm -j16 catboost-cuda-cuda_util-ut catboost-cuda-gpu_data-ut catboost-cuda-methods-ut catboost/app/catboost"}
+{"kind":"phase","ts":"2026-08-08T03:57:35Z","phase":"test","seconds":465.241,"exit":0,"cmd":"projects/catboost/src/build_hip/cm/catboost/cuda/cuda_util/ut/catboost-cuda-cuda_util-ut --show-fails"}
+{"kind":"phase","ts":"2026-08-08T04:46:37Z","phase":"cuda-compile","seconds":0.299,"exit":1,"cmd":"ninja -C projects/catboost/src/build_cuda -j16 catboost-cuda-cuda_util-ut"}
+{"kind":"phase","ts":"2026-08-08T04:48:09Z","phase":"cuda-compile","seconds":46.407,"exit":1,"cmd":"ninja -C projects/catboost/src/build_cuda -j16 catboost-cuda-cuda_util-ut"}
+{"kind":"phase","ts":"2026-08-08T04:49:53Z","phase":"cuda-compile","seconds":71.355,"exit":1,"cmd":"ninja -C projects/catboost/src/build_cuda -j16 catboost-cuda-cuda_util-ut"}
+{"kind":"phase","ts":"2026-08-08T04:50:50Z","phase":"cuda-compile","seconds":3.658,"exit":1,"cmd":"ninja -C projects/catboost/src/build_cuda -j16 catboost-cuda-cuda_util-ut"}
+{"kind":"phase","ts":"2026-08-08T04:51:40Z","phase":"cuda-compile","seconds":3.361,"exit":1,"cmd":"ninja -C projects/catboost/src/build_cuda -j16 catboost-cuda-cuda_util-ut"}
+{"kind":"phase","ts":"2026-08-08T04:53:27Z","phase":"cuda-compile","seconds":3.558,"exit":1,"cmd":"ninja -C projects/catboost/src/build_cuda -j16 catboost-cuda-cuda_util-ut"}

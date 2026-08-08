@@ -1048,3 +1048,39 @@ NOT filed (the "4th" was a false item): the segmented_sort SortPairs sizing is a
 (rocPRIM sizes SortKeys == SortPairs, verified by reproducer); the gap-element behavior is the
 rocPRIM finding rocprim-segmented-radix-sort-gap (verdict: by-design, not filed). The rocPRIM
 DeviceScan unaligned-temp bug is filed separately as rocm-libraries#8263.
+
+## Validation 2026-08-08 (validator, linux-gfx90a, revalidate) -- 7c047b9 -> completed
+
+Platform: linux-gfx90a (AMD Instinct MI250X, gfx90a, ROCm 7.2.1), GPU index 1 of 4 (HIP_VISIBLE_DEVICES=1; confirmed gfx90a via rocm-smi before use, other 3 GCDs busy with concurrent agents).
+
+### Delta (4f42ad54 -> 7c047b9)
+Single file, `cmake/cuda.cmake`: `python3 utils/moatlib.py classify catboost 4f42ad54... 7c047b9...` -> `class=mixed` (token count differs; not pure comment/format). Diff confirmed entirely inside the `if (HAVE_HIP)` block: drops the `set(CMAKE_HIP_ARCHITECTURES "gfx90a")` default-when-unset and lets `enable_language(HIP)` auto-detect the host GPU when `-DCMAKE_HIP_ARCHITECTURES` is not passed explicitly. CUDA path untouched. Our build recipe always passes `-DCMAKE_HIP_ARCHITECTURES=gfx90a` explicitly, so the delta is inert for this arch's build. `jargon.py --diff` on the range: clean.
+
+Chose a full real-GPU revalidation over the codeobj_diff carry-forward shortcut: building the project twice (once per sha) to diff code objects would cost as much or more wall-clock than just building once at head and running the test suite (full clean build here is ~13 min), so the "cannot build cheaply" carve-out in validator.md pointed at a normal revalidation.
+
+### Build (full clean build; conan/openjdk installed fresh this host)
+```
+conda create... (existing); pip install 'conan>=2.0.5' 'Cython>=3.0.10'; conda install -n py_3.12 -c conda-forge openjdk
+conan profile detect   # clang (rocm llvm) profile
+cd projects/catboost/src && conan install . --output-folder=build_hip --build=missing -s build_type=Release -s compiler.cppstd=20
+cmake -G Ninja -S . -B build_hip/cm -DCMAKE_BUILD_TYPE=Release -DHAVE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ -DCMAKE_CXX_STANDARD_LIBRARIES="-lc -lm" -DCMAKE_HIP_STANDARD_LIBRARIES="-lc -lm" \
+  -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=cmake/conan_provider.cmake -DCMAKE_PREFIX_PATH=/opt/rocm
+utils/timeit.sh catboost compile -- ninja -C projects/catboost/src/build_hip/cm -j16 \
+  catboost-cuda-cuda_util-ut catboost-cuda-gpu_data-ut catboost-cuda-methods-ut catboost/app/catboost
+```
+Result: SUCCESS, 4709/4709 targets, exit 0, 785.3s.
+
+### GPU tests (HIP_VISIBLE_DEVICES=1, real MI250X, device string "AMD Instinct MI250X / MI250 (compute capability 9.0)" printed by every ut binary)
+- `catboost-cuda-cuda_util-ut --show-fails`: run 1 ok:48, run 2 ok:48; `[good]` line sets sorted+diffed IDENTICAL across runs (deterministic, no residual wave64 race). 465s/run.
+- `catboost-cuda-gpu_data-ut --show-fails`: ok:20 (BinarizationsTests 16/16, BinBuilderTest 3/3, TGridBuilderPerftest 1/1).
+- `catboost-cuda-methods-ut --show-fails`: ok:29, err:1 -- TExactLeavesEstimationTest 15/15, TPairwiseHistogramTest 4/4, TPointwiseHistogramTest 4/4, TPointwiseMultiStatHistogramTest 6/6; TAddingLangevinNoiseTest 0/1 FAIL (established pre-existing, proven not-AMD, see 2026-06-02 entry above). Matches the established gfx90a/gfx1100/windows bar (29/30 effective).
+- e2e GPU training (`catboost/app/catboost fit --task-type GPU --devices 0`, fresh synthetic 4000/1000-row 10-feature dataset seed 42, 200 trees depth 6 Logloss): two same-seed runs, `test_error.tsv` byte-for-byte IDENTICAL, bestTest 0.3682654798 both runs -> deterministic GBDT training on this GPU/build.
+
+### CUDA no-regression gate -- NOT VALIDATED (environmental toolchain wall, pre-existing, not a port regression)
+First time this gate was attempted for catboost (no prior head_sha recorded it). Confirmed via `nvcc --version` (12.6, conda env `cuda`) that no NVIDIA GPU/driver needed, toolkit-only. Configured `-DHAVE_CUDA=yes -DCMAKE_CUDA_ARCHITECTURES=80` and got past several genuine pre-existing (non-ROCm) obstacles: FindThreads misfiring under conan's auto-selected profile (worked around with `-DTHREADS_HAVE_PTHREAD_ARG=1` etc.); catboost's own CMake unconditionally emits clang-only host flags (`-fcolor-diagnostics`, `-fdebug-default-version=4`, `-fuse-init-array`, `-Wimport-preprocessor-directive-pedantic`) derived from whatever `CMAKE_CXX_COMPILER` is configured, but catboost's custom `cmake/cuda.cmake` `target_cuda_cflags()` bakes those into a per-target `CUDA_FLAGS` property directly (not through the standard `CMAKE_CUDA_FLAGS`/`-ccbin` plumbing), so nvcc always shells out to whatever `gcc` its own internal default resolves to, ignoring `CMAKE_CUDA_HOST_COMPILER` and even a `PATH`-based `gcc`/`g++` wrapper redirecting to ROCm clang. This is a gap in catboost's own Yandex-derived CUDA CMake wiring (it assumes host compiler == device-adjacent nvcc default, i.e. system gcc, with no path for a clang host compiler even on the plain NVIDIA/CUDA side) -- entirely unrelated to our `if (HAVE_HIP)` diff, which the delta-diff for this sha confirms doesn't touch the CUDA branch at all. Not attributable to the port; recorded per the "environmental wall" carve-out rather than ground down further (stop-discipline: this secondary gate is budgeted ~15 min and had already run well past it chasing a pre-existing catboost/CMake quirk). `cuda-not-validated: catboost's target_cuda_cflags() does not route CMAKE_CUDA_HOST_COMPILER/-ccbin to nvcc, so building HAVE_CUDA=yes with a non-default (clang) host toolchain fails independent of the ROCm port; needs a catboost-side CMake fix, not a port fix.`
+
+### Fork state
+`git status --porcelain` in `projects/catboost/src`: clean (only untracked build dirs `build_hip/`, `bin/`). No source edits made or needed for this arch at this sha.
+
+Result: PASS (GPU). validated_sha: 7c047b9b91f3fa6d60b61444858193d44e404aff -> completed.
