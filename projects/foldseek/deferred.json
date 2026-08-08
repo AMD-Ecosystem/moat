@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "foldseek-prostt5-gpu",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "ProstT5 GPU inference (--gpu 1) not enabled on ROCm: top-level CMakeLists sets GGML_CUDA from ENABLE_CUDA but never GGML_HIP from USE_HIP, so createdb --prostt5-model --gpu 1 silently falls back to CPU. ggml ships a vendored GGML_HIP backend (lib/prostt5/ggml/src/ggml-hip); a follow-up could wire USE_HIP->GGML_HIP and validate (needs rocBLAS/hipBLAS + weights, egress-bound). Structure-search GPU path IS delivered.",
+      "refs": [
+        "projects/foldseek/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T19:04:23Z",
+      "decided": null
+    }
+  ]
+}
