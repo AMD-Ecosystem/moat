@@ -114,7 +114,13 @@ STAGE_TRANSITIONS = {
     # Requiring screened first made the documented instruction illegal, and agents
     # compensated by transitioning twice -- which worked, and hid the contradiction.
     "unclaimed": {"screened", "planned", "awaiting-fork"},
-    "screened": {"awaiting-fork", "planned"},
+    "screened": {"awaiting-fork", "planning", "planned"},
+    # `planning` exists to be ACQUIRED. A planner writes plan.md, which is one shared
+    # artifact on a shared branch, and two of them produce two different strategies
+    # that no merge can reconcile -- plan.md has no merge driver, so the second push
+    # hard-conflicts and one analysis is stranded. The porter had this solved and the
+    # planner did not, on the reasoning that only the fork needs serialising.
+    "planning": {"planned", "screened"},
     "awaiting-fork": {"screened", "planned", "porting"},
     "awaiting-upstream": {"planned", "porting", "unclaimed"},
     # The porter reaches awaiting-fork when it finds no fork to push to, which
@@ -177,6 +183,7 @@ PR_STATES = ("open", "merged", "closed")
 STAGE_FOR_STATE = {
     "unclaimed": "intake",
     "screened": "planner",
+    "planning": "planner",
     "planned": "porter",
     "porting": "porter",
     "changes-requested": "porter",
@@ -197,6 +204,7 @@ SELECT_RANK = {
     "changes-requested": 2,
     "porting": 3,
     "delta-ported": 4,
+    "planning": 4,
     "planned": 5,
     "ported": 6,
     "review-passed": 7,
@@ -216,6 +224,14 @@ SELECT_RANK = {
 # one that left the pipeline before anyone worked it, and every `cant-port`
 # disposition in this repo is a project that was never adopted. These have a folder, a
 # plan, notes and often weeks of porter work, and a negative outcome is a deliverable.
+# Stages whose work writes content the whole project shares, so exactly one
+# architecture may hold them: the fork's port branch for `porting`, plan.md for
+# `planning`. Entering one acquires the lock and leaving releases it, rather than an
+# agent being told to set a field by hand -- which is what the porter's lock was
+# before it had a mechanism, and no project ever carried one.
+EXCLUSIVE_STAGES = {"porting", "planning"}
+EXCLUSIVE_AGENTS = {"porter", "planner"}
+
 INERT_STAGES = {"awaiting-fork", "awaiting-upstream", "not-portable"}
 INERT = INERT_STAGES | {"completed"}
 
@@ -412,6 +428,18 @@ def set_state(name, platform, new_state, agent=None, save=True):
     is_stage = new_state in STAGE_STATES
     cur = project_stage(obj) or "unclaimed" if is_stage else \
         (obj["platforms"].get(platform) or {}).get("state")
+    # Exclusivity is checked BEFORE the no-op short-circuit, because "the project is
+    # already in this stage" does not mean "you are the one holding it". `cur` is the
+    # PROJECT's stage now, shared by every arch, so a second host entering the stage a
+    # first host already entered would short-circuit out and never reach the lock --
+    # which is how the split silently reopened the hole the lock was built to close.
+    if new_state in EXCLUSIVE_STAGES:
+        held = obj.get("porting")
+        if held and held.get("arch") != platform:
+            raise ValueError(
+                f"{name}: the work lock is held by {held['arch']} since "
+                f"{held.get('since')}. Takeover is a person's decision, not a "
+                f"timeout -- ask, then `moatlib.py port-lock {name} --take {platform}`")
     if new_state == cur:
         return obj
     table = STAGE_TRANSITIONS if is_stage else ARCH_TRANSITIONS
@@ -431,15 +459,9 @@ def set_state(name, platform, new_state, agent=None, save=True):
     # archs can legitimately fail the same head at once -- refusing to record that
     # would be a worse bug than the one this prevents. Serialising the porter's
     # DISPATCH is `actionable`'s job, and its guard already reads this field.
-    if new_state == "porting":
-        held = obj.get("porting")
-        if held and held.get("arch") != platform:
-            raise ValueError(
-                f"{name}: the fork-write lock is held by {held['arch']} since "
-                f"{held.get('since')}. Takeover is a person's decision, not a "
-                f"timeout -- ask, then `moatlib.py port-lock {name} --take {platform}`")
+    if new_state in EXCLUSIVE_STAGES:          # refused above if another arch holds it
         obj["porting"] = {"arch": platform, "since": now_iso()}
-    elif cur == "porting" and (obj.get("porting") or {}).get("arch") == platform:
+    elif cur in EXCLUSIVE_STAGES and (obj.get("porting") or {}).get("arch") == platform:
         obj["porting"] = None
     ts = now_iso()
     if is_stage:
@@ -1712,10 +1734,11 @@ def actionable(obj, platform):
     task = arch_task(obj, platform)
     if task is None:
         return False
-    # Only one arch may WRITE to the fork at a time. Validation is read-only on code
-    # and writes only its own record, so it never contends.
+    # Only one arch at a time may do work that writes SHARED content -- the fork's port
+    # branch for a porter, plan.md for a planner. Validation is exempt because it is
+    # read-only on code and writes only its own arch's record, which merges.
     lock = obj.get("porting")
-    if lock and lock.get("arch") != platform and task[0] == "porter":
+    if lock and lock.get("arch") != platform and task[0] in EXCLUSIVE_AGENTS:
         return False
     if unmet_deps(obj):  # deps-first ordering: wait until depended-on ports complete
         return False

@@ -1,0 +1,23 @@
+Serialise planning the way porting is, and close the hole the split reopened
+
+A planner writes plan.md, and plan.md is one shared artifact on a shared branch with no merge driver. Two hosts asked for work on the same screened project both get the planner, both analyse it independently, and both write a strategy; the second push hard-conflicts and one analysis is stranded in a conflict marker. Even if git could merge them it should not -- a plan is a single decision about how to approach a port, and two of them are not two halves of anything.
+
+The lock for this already existed and covered only the fork, on the reasoning that a validator is read-only on code and writes just its own arch's record. That is true of the validator and not of the planner. So `planning` joins `porting` as a stage that must be held: entering acquires, leaving releases, and the transition does it rather than an agent being told to set a field by hand -- which is what the fork-write lock was before it had a mechanism, and no project ever carried one. `actionable` refuses to dispatch either agent to an architecture that does not hold it.
+
+The more serious half of this was already shipped and silent. `set_state` short-circuits when the new state equals the current one, and after the stage split `cur` is the PROJECT's stage rather than the architecture's -- so a second host entering a stage the first host had already entered returned early and never reached the lock check at all. The fork-write lock has been open that way since the split: two porters on two hosts would both have been told yes. Exclusivity is now checked before the short-circuit, because "the project is already in this stage" does not mean "you are the one holding it", and the porter's own test now refuses the second architecture where a moment ago it did not.
+
+`screened -> planned` stays legal, so a planner already running against the old instructions still lands.
+
+Test Plan:
+
+```
+python3 - <<'PY'
+import sys, copy; sys.path.insert(0,'utils'); import moatlib as m
+# gfx1100 takes planning; gfx90a is refused and told who holds it; gfx1100
+# reaching planned releases it. Same three steps for porting.
+PY
+python3 utils/check.py --fast      # gen_readme's _UNGROUPED assert caught `planning`
+                                   # having no glyph group, which is what it is for
+```
+
+Authored with Claude Code.
