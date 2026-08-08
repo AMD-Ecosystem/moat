@@ -12,3 +12,4 @@
 {"kind":"phase","ts":"2026-08-08T03:55:51Z","phase":"compile","seconds":97.657,"exit":0,"cmd":"ninja -C projects/Quest/src/quest/ops/build"}
 {"kind":"phase","ts":"2026-08-08T03:56:03Z","phase":"test","seconds":7.371,"exit":1,"cmd":"python3 -m pytest projects/Quest/src/quest/tests/ -q"}
 {"kind": "tokens", "ts": "2026-08-08T17:01:43Z", "tokens": 191930, "source": "porter"}
+{"kind": "tokens", "ts": "2026-08-08T17:36:32Z", "tokens": 140211, "source": "reviewer"}
