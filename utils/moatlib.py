@@ -1085,9 +1085,31 @@ def record_license_clearance(name, approved_by, note=None):
 
 
 def set_review_pr(name, url):
-    """Record the review PR on our own fork -- where the port gets approved."""
+    """Record the review PR on our own fork -- where the port gets approved.
+
+    REFUSED while a required gate is unsatisfied. Approving that PR is what opens the
+    upstream one, so recording it for an unfinished port puts that decision in front of
+    a person early, asserting the work is ready when it is not.
+
+    `upstream.py --review --apply` already refuses to OPEN one before the gates pass.
+    This refuses to RECORD one, which is the half that closes the route around it: the
+    instruction not to reach for `gh pr create` is what three reviewers broke in a
+    single session, each in a different way, and an instruction is the weakest thing to
+    put in front of a behaviour that has already failed three times.
+
+    Clearing is always allowed. Undoing a mistake must not require the gates to pass --
+    the two PRs opened this way had to be retracted before anything could be fixed."""
     obj = load_status(name)
-    obj["review_pr"] = url
+    if url:
+        unmet = sorted(unsatisfied_gates(obj))
+        if unmet:
+            raise ValueError(
+                f"{name}: cannot record a review PR while {', '.join(unmet)} "
+                f"{'is' if len(unmet) == 1 else 'are'} unsatisfied. The review PR is "
+                f"where a person approves the FINISHED port, and their approval on it "
+                f"opens the upstream PR. Finish the gates, then "
+                f"`upstream.py --review --apply --name {name}` opens and records it.")
+    obj["review_pr"] = url or None
     save_status(name, obj)
     return obj
 
@@ -2630,7 +2652,9 @@ def main(argv=None):
 
     s = sub.add_parser("set-review-pr", help="record the fork review PR where the port is approved")
     s.add_argument("name")
-    s.add_argument("url")
+    s.add_argument("url", nargs="?")
+    s.add_argument("--clear", action="store_true",
+                   help="retract a recorded review PR; always allowed")
 
     s = sub.add_parser("record-pr-approval",
                        help="snapshot the approval standing on the fork review PR")
@@ -2834,7 +2858,7 @@ def main(argv=None):
         print(f"{args.name}: license-ok={ok} ({why})")
         return 0 if ok else 1
     elif args.cmd == "set-review-pr":
-        set_review_pr(args.name, args.url)
+        set_review_pr(args.name, None if args.clear else args.url)
         print(f"{args.name}: review PR -> {args.url}")
     elif args.cmd == "record-pr-approval":
         a = record_pr_approval(args.name, args.review_pr)
