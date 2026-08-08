@@ -429,6 +429,20 @@ def open_review_pr(row, title, body, apply=False):
     terms, allow = jargon.load()
     hits = (jargon.scan_text(title, "title", terms, allow)
             + jargon.scan_text(body, "body", terms, allow))
+    # The BRANCH too, not just the title and body. Every commit on it ships upstream
+    # whichever round wrote it, and the porter's own check is an instruction nothing
+    # verified: faster-gaussian-splatting carried "Strategy B (torch hipify)" in the
+    # commit its branch starts from through a full review and a changes-requested
+    # round, because each round scanned only what that round added. This is the last
+    # point where fixing it is cheap -- after the review PR, a rewrite costs every
+    # architecture its validation.
+    try:
+        repo, commits, diff = jargon.port_range(row["name"])
+        hits += jargon.scan_commits(repo, commits, terms, allow)
+        hits += jargon.scan_diff(repo, diff, terms, allow)
+    except ValueError as e:
+        # Never silently skip. A gate that cannot run is not a gate that passed.
+        return ("jargon", f"cannot check the branch for in-house vocabulary: {e}")
     if hits:
         return ("jargon", "in-house vocabulary an external maintainer will not know: "
                 + ", ".join(sorted({h[2] for h in hits})))

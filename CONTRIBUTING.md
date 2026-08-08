@@ -187,7 +187,7 @@ are in `config/licenses.toml`.
 Commit messages, PR bodies and code comments on a fork reach maintainers who do not know
 our vocabulary. Check before pushing:
 
-    python3 utils/jargon.py --commits <base>..HEAD -C projects/<name>/src
+    python3 utils/jargon.py --port <name>
 
 Terms and their replacements are in `config/jargon.toml`. If you find in-house vocabulary
 the checker missed, add it in the same change.
