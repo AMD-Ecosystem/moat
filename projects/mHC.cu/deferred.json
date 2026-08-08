@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "mhc-torch-extension",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "PyTorch extension mhc_cuda (primary advertised interface: setup.py CUDAExtension, consumed by mhc/ops.py + trainer) not ported to ROCm; hipify leaves cuBLASLt symbols un-renamed (cublasLtOrder_t, CUBLASLT_ORDER_ROW, CUBLASLT_MATRIX_LAYOUT_ORDER), needs const-void* hipFuncSetAttribute cast and the row-major to col-major hipBLASLt swap. Standalone CMake kernel harness validated on gfx90a/gfx1100 as the correctness gate.",
+      "refs": [
+        "projects/mHC.cu/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T19:04:23Z",
+      "decided": null
+    }
+  ]
+}
