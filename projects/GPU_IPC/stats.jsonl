@@ -12,3 +12,7 @@
 {"kind":"phase","ts":"2026-08-08T04:05:16Z","phase":"test","seconds":311.197,"exit":0,"cmd":"bash /tmp/claude-1000/-var-lib-jenkins-moat/24651482-ac41-425e-8ae4-2016b58aa9bb/scratchpad/run_gipc.sh 300 /tmp/claude-1000/-var-lib-jenkins-moat/24651482-ac41-425e-8ae4-2016b58aa9bb/scratchpad/run5.log"}
 {"kind": "tokens", "ts": "2026-08-08T17:01:54Z", "tokens": 152530, "source": "porter"}
 {"kind": "tokens", "ts": "2026-08-08T17:57:31Z", "tokens": 215158, "source": "reviewer"}
+{"kind":"phase","ts":"2026-08-08T18:12:11Z","phase":"compile","seconds":2.238,"exit":0,"cmd":"cmake -S projects/GPU_IPC/src -B projects/GPU_IPC/src/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release"}
+{"kind":"phase","ts":"2026-08-08T18:12:34Z","phase":"compile","seconds":17.002,"exit":0,"cmd":"cmake --build projects/GPU_IPC/src/build -j32"}
+{"kind":"phase","ts":"2026-08-08T18:17:16Z","phase":"compile","seconds":11.286,"exit":0,"cmd":"cmake --build projects/GPU_IPC/src/build -j32"}
+{"kind":"phase","ts":"2026-08-08T18:19:02Z","phase":"test","seconds":99.244,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/run_gipc.sh /var/lib/jenkins/moat-worktrees/GPU_IPC/projects/GPU_IPC/src/build/gipc 90"}

@@ -2,8 +2,10 @@
 
 ## Port status
 
-Builds, links and runs on gfx1100 (linux-gfx1100), fork `moat-port` @ 291c612.
-The Eigen blocker recorded below is resolved. Not yet validated on any arch.
+Builds, links and runs on gfx1100 (linux-gfx1100), fork `moat-port` @ b474148,
+now a single commit on top of 46594e0. The Eigen blocker recorded below is
+resolved. Not yet validated on any arch. Review 2026-08-08 addressed; see
+"## Response to review 2026-08-08".
 
 ## Build recipe (Linux)
 
@@ -73,19 +75,36 @@ What is known:
 - It is not `-ffast-math`. Removing it changed the flag-related numerics (and was
   removed on its own merits, see below) but the wedge still occurs.
 
-Not yet ruled out, in the order worth trying:
+Not yet ruled out, in the order worth trying (re-ranked at review; this is the
+validator's to settle, not the porter's):
 
-1. Uninitialized device memory. ROCm does not hand back zeroed pages where CUDA's
-   allocator often does. GIPC allocates collision-pair and Hessian buffers sized
-   for the worst case (`maxCollisionPairsNum_CCD: 2499840`) and relies on counters
-   to say how much is live; any read past the live count sees garbage on ROCm and
-   zeros on CUDA. Audit `device_fem_data.cu` and `GIPC.cu` for a `cudaMalloc` with
-   no matching `cudaMemset`.
-2. Whether upstream does the same thing on an NVIDIA GPU at some frame. No NVIDIA
-   hardware was available in this session, so there is no baseline. This is the
-   single most valuable next datapoint and it is cheap for anyone who has a card.
+1. Whether upstream does the same thing on an NVIDIA GPU at some frame. There is
+   still no baseline. Until it exists every other hypothesis is speculation, and
+   one run settles port-versus-upstream. Cheap for anyone with a card.
+2. Uninitialized device memory -- but test it DECISIVELY rather than by audit:
+   temporarily make `hipMalloc` also `hipMemset(p, 0, n)`, then separately 0xFF,
+   and see whether the stall frame moves or becomes reproducible. ROCm does not
+   hand back zeroed pages where CUDA's allocator often does, and GIPC sizes its
+   collision-pair and Hessian buffers for the worst case
+   (`maxCollisionPairsNum_CCD: 2499840`) while relying on counters to say how
+   much is live. Auditing every `cudaMalloc` for a matching `cudaMemset` is slow
+   and easy to get wrong.
 3. Whether the scene is simply meant to be stopped before this point. The demo has
    a `totalFrames` exit that upstream left commented out (gl_main.cpp:943-946).
+
+Two mechanisms were TESTED AND RULED OUT at review; do not repeat them.
+
+- The second-stage reduction in `add_reduction` and `PCG_add_Reduction_*` shuffles
+  past `warpNum` after an early `return`, which reads like an uninitialized-register
+  read. A faithful replica measured EXACT against a CPU sum at 13 sizes, including
+  non-power-of-two `warpNum` (352, 416, 448, 480, 100000, 100001).
+- The partial-block `__syncthreads()` reached only by threads that passed
+  `if (idx >= numbers) return` neither hangs nor corrupts on this hardware.
+
+Also not the cause: wave64. See the review response below -- the wave64
+application failure is rocThrust under a forced wavefront size on RDNA, and a
+build whose non-thrust kernels all run wave64 reaches this same wedge at the same
+frame.
 
 ## Resolved: the Eigen device eigensolver blocker
 
@@ -93,11 +112,19 @@ The previous session stopped here, and the diagnosis in it was half right. Eigen
 does support HIP device compilation -- `EIGEN_DEVICE_FUNC` expands to
 `__host__ __device__` for hipcc exactly as it does for nvcc, and Eigen 3.4's
 `SelfAdjointEigenSolver` header carries 23 of those annotations. Core arithmetic,
-`Map`, `.cross()`, small products and the direct 2x2/3x3 solver path all compile
-fine. What does not compile is the reduction path taken ABOVE 3x3: it goes through
-a Householder sequence whose inner products are Eigen's general matrix-matrix
-product kernels (`scaleAndAddTo`, `applyThisOnTheLeft`, `BlasUtil::extract`,
-`extractScalarFactor`), and those are host-only.
+`Map`, `.cross()` and small products all compile fine.
+
+The boundary is `computeDirect()` versus the general `compute()` path, NOT a
+matrix size. An earlier version of this note said "above 3x3", which is wrong and
+was corrected after the review: a 3x3 `SelfAdjointEigenSolver` CONSTRUCTOR also
+fails to compile in a `__device__` function, at `Tridiagonalization.h:434`
+(reconfirmed here directly with hipcc against Eigen 3.4). `computeDirect()`
+exists only for 2x2 and 3x3 and is the only device-safe entry point; the general
+`compute()` path -- which the constructor runs, at every size -- reduces through
+a Householder tridiagonalization whose inner products are Eigen's general
+matrix-matrix product kernels (`scaleAndAddTo`, `applyThisOnTheLeft`,
+`BlasUtil::extract`, `extractScalarFactor`), and those are host-only. That is why
+femEnergy.cu:1116-1117 survives: it is a `computeDirect` call.
 
 The whole blocker was 8 errors, all with `note: called by
 '_calculate_bending_gradient_hessian'`, i.e. ONE call site:
@@ -134,11 +161,11 @@ finite-math-only, reassociation and reciprocal math in DOUBLE precision, which i
 not what nvcc's flag does and is not survivable for geometric predicates.
 `-ffp-contract=on` replaces it to match nvcc's expression-scope contraction.
 
-MASPreconditioner.cu was reviewed and needs nothing: `BANKSIZE 32` is a logical
-cluster size, its lane indices come from `idx % BANKSIZE` rather than a hardware
-lane id, and its cross-lane communication goes through `__shared__` arrays (the
-`WARP_SHFL` calls are commented out upstream). It is wavefront-size independent
-as written.
+MASPreconditioner.cu was reviewed and cleared. **That clearance was wrong on its
+facts and the file has since been changed** -- see the review response below.
+`WARP_BALLOT` (line 1047) and `WARP_SHFL_DOWN` (893-895, 1054) are live in it,
+not commented out. What remains true: `BANKSIZE 32` is a logical cluster size and
+its lane indices come from `idx % BANKSIZE` rather than a hardware lane id.
 
 ## Not done
 
@@ -288,3 +315,119 @@ faithful replica measured exact against a CPU sum at 13 sizes including
 non-power-of-two `warpNum` (352, 416, 448, 480, 100000, 100001). The
 partial-block `__syncthreads()` reached only by threads that passed
 `if (idx >= numbers) return` neither hangs nor corrupts on this hardware.
+
+## Response to review 2026-08-08
+
+Fork history was rewritten to a single commit, b474148 on top of 46594e0.
+`validated_sha` was null on both Linux archs and there is no Windows arch, so
+nothing was orphaned. The tree was checked identical across the rewrite
+(`git diff --exit-code <pre> HEAD`).
+
+### wave64: what was measured, and what it does and does not show
+
+The two wave64 fixes in `cuda_to_hip.h` stand. The reviewer verified their lane
+logic on gfx1100 in wave64 mode and that result holds: `-mwavefrontsize64` on
+gfx1100 produces genuine wave64 kernels (measured here: `warpSize` 64, `__ballot`
+popcount 64), so the semantics being compared are faithful.
+
+The full-application wave64 failure is a different matter, and it is **not
+attributable to this port**. Two measurements:
+
+1. A standalone program doing exactly what `sortGeometry` does -- `thrust::sequence`
+   then `thrust::sort_by_key` on 38386 uint64 morton keys -- returns a valid
+   permutation when compiled for gfx1100 normally and a **corrupt** one when the
+   only change is `-mwavefrontsize64`: 10156 of 38386 slots out of range and
+   27913 duplicates, first bad slot holding 361654435 against a bound of 38386.
+   `_updateVertexes` then does `sortMapIndex[sortIndex[idx]] = idx`, which at that
+   index writes about 1.4 GB past the allocation. That is the reported
+   `hipErrorIllegalAddress`, arriving one kernel downstream of its cause.
+2. Running the full `-mwavefrontsize64` binary makes the same point directly: it
+   dies before frame 1 with the error thrown out of `thrust::exclusive_scan`
+   (MASPreconditioner.cu:1376) rather than out of any kernel in this project.
+
+So the crash is rocPRIM/rocThrust under forced wave64 on an RDNA target, a
+configuration ROCm does not validate: the libraries an application links are
+built for gfx11's native wave32.
+
+Confirming it: a mixed build with `-mwavefrontsize64` everywhere EXCEPT the three
+rocThrust translation units (GIPC.cu, mlbvh.cu, MASPreconditioner.cu, given
+`-mno-wavefrontsize64`) starts normally and runs to **frame 32 at 225 ms/frame**,
+reaching the same line-search wedge as the wave32 build. That build runs
+PCG_SOLVER.cu, femEnergy.cu, ACCD.cu, gpu_eigen_libs.cu and device_fem_data.cu at
+wave64 on real hardware, including the PCG shuffle reductions and the shifted
+ballot the two fixes target.
+
+State this plainly: **this is not evidence of a port defect and not evidence
+against one.** The wave64 verdict is owed to a real gfx90a or gfx942 run. The
+`-mwavefrontsize64`-on-RDNA trick is useful for checking lane LOGIC and useless
+for judging a whole application that links rocPRIM.
+
+To reproduce the mixed build (the cmake fragment is not committed):
+
+```cmake
+set_source_files_properties(
+    "${CMAKE_CURRENT_SOURCE_DIR}/GPU_IPC/GIPC.cu"
+    "${CMAKE_CURRENT_SOURCE_DIR}/GPU_IPC/mlbvh.cu"
+    "${CMAKE_CURRENT_SOURCE_DIR}/GPU_IPC/MASPreconditioner.cu"
+    PROPERTIES COMPILE_OPTIONS "-mno-wavefrontsize64")
+```
+```bash
+cmake -S . -B buildmix -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+      -DCMAKE_BUILD_TYPE=Release -DCMAKE_HIP_FLAGS=-mwavefrontsize64 \
+      -DCMAKE_PROJECT_INCLUDE=/path/to/that/fragment.cmake
+```
+
+### MASPreconditioner.cu, finding 2
+
+Fixed. `__buildMultiLevelR_optimized` now computes the 32-lane bank sum BEFORE
+the `if(__popc(connectMsk) == BANKSIZE)` branch and uses it inside; banks taking
+the other branch discard it. The mask is uniform across a 32-vertex bank but not
+across a 64-lane wavefront, so with the reduction inside the branch the shuffles
+run with half the wavefront inactive. This is arch-unified -- identical result at
+wave32, at wave64 and on CUDA -- and costs the else-path banks five shuffles.
+
+An honesty note on the mechanism, because it changes what the fix is buying. The
+reviewer's stated failure mode was the shuffle "reading inactive lanes", and with
+the width pinned to 32 in `cuda_to_hip.h` that does not currently happen: a
+BANKSIZE group is exactly one 32-lane half of a 64-lane wavefront, and
+`__shfl_down(v, d, 32)` clamps its source index inside that half. A replica of
+the exact kernel logic run at wave64 on gfx1100, with bank 0 of every wavefront
+taking the shuffle path and bank 1 taking the other, produced the exact 32-lane
+sum in all 128 shuffle-path banks. The fix was made anyway: the old form is
+correct only because of an alignment coincidence plus `ds_bpermute` semantics
+for inactive lanes, and neither is something to depend on.
+
+### The other items
+
+3. Eigen boundary corrected in all three places: the commit message, the
+   "Resolved" section above, and the `cuda-to-rocm` skill entry. Reconfirmed by
+   compiling a 3x3 `SelfAdjointEigenSolver` constructor in a `__device__`
+   function with hipcc -- it fails at `Tridiagonalization.h:434`, exactly as the
+   reviewer reported, while `computeDirect()` on the same type compiles clean.
+4, 5. The two commits are squashed into one. `jargon.py --commits
+   46594e0..moat-port` is clean over the whole branch, and the new message does
+   not bullet-list changes -- it names the order to read the diff in.
+6. The Test Plan no longer claims the wedge is independent of this change. It
+   states the frame range, that the frame varies between runs, and that no
+   NVIDIA measurement exists.
+7. Jacobi overflow fixed: the matrix is normalized by its largest coefficient
+   before the sweeps and the eigenvalues are scaled back at the end.
+8. The dead gfx90a default is gone. CMake initialises `CMAKE_HIP_ARCHITECTURES`
+   from the build host inside `project(... HIP)`, so the `NOT DEFINED` test could
+   never fire; the README already documents passing the flag.
+9. `/opt/rocm/include` is gone. `find_package(hip REQUIRED)` plus linking
+   `hip::host` supplies the include path and `__HIP_PLATFORM_AMD__` to the plain
+   C++ sources, so the manual `target_compile_definitions` went too.
+10. `cmake_minimum_required` is back to 3.18 at the top, raised to 3.21 only
+    inside the `USE_HIP` branch that needs it.
+11. `device_launch_parameters.h` is restored on the CUDA side of
+    `cuda_to_hip.h`, so the CUDA build's include set is unchanged.
+12. All 18 comment-only launch-syntax lines reverted (GIPC.cu 15,
+    PCG_SOLVER.cu 2, MASPreconditioner.cu 1). GIPC.cu is now byte-identical to
+    upstream: every change that file carried was comment churn.
+
+### Post-fix run, gfx1100 wave32
+
+Same harness, build @ b474148: 25 frames at 206-229 ms/frame, then the same
+line-search wedge on the same vertex cluster (12866-12893). No regression from
+any of the above.
