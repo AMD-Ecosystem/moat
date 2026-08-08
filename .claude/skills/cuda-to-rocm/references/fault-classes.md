@@ -128,6 +128,21 @@ at runtime. dietgpu's rANS archive serializes one coder state per lane
 wave64 archive byte-identical to its old format, and lets a wave32 device use the first 32
 slots. (dietgpu)
 
+**HIP's warp-sync builtins take a 64-bit participation mask, and a 32-bit literal is a hard
+error, not a truncation.** With `HIP_ENABLE_WARP_SYNC_BUILTINS` defined -- a ROCm PyTorch
+build defines it for every extension it compiles -- `__shfl_xor_sync(0xffffffff, ...)` fails
+a static_assert reading "The mask must be a 64-bit integer", because a wavefront can name 64
+lanes. Widen the literal on the AMD side only (`0xffffffffffffffffULL`); CUDA's parameter is
+`unsigned`, so a single shared literal narrows there.
+
+Worth knowing alongside it: an EXPLICIT `width` argument on `__shfl_*_sync` makes the
+surrounding reduction wave-agnostic for free. `__shfl_xor_sync(mask, v, lane, 32)` keeps the
+butterfly inside a 32-lane group on a 64-wide wavefront too, so the `tid >> 5` / `tid & 0x1f`
+lane-and-warp indexing that goes with it stays correct with no change at all. The warp-size
+fault class above is about code that lets the width DEFAULT to the physical wavefront; code
+that states the width is already portable, and rewriting it to `warpSize` is a regression
+risk for no gain. (Quest)
+
 ## Memory and lifetime
 
 **Out-of-bounds reads.** CUDA often tolerates a read one element past an allocation; AMD
@@ -185,6 +200,21 @@ everything else passes. (qrack: `_PopQueue` under `UniformlyControlledSingleBit`
 
 **`hipFree` is synchronizing** (`hipFreeAsync` is not), so an explicit
 `hipDeviceSynchronize()` before it is redundant. (anari-visionaray)
+
+**Device-side `new[]`/`delete[]` inside a kernel or functor is a trap on HIP.** The device
+malloc heap is small and its behaviour under a per-thread allocation in a hot loop is not
+reliable; a functor that allocates a scratch array per thread can return wrong values
+without faulting, so the symptom is a numerically wrong result rather than a crash. Replace
+it with a fixed-size per-thread automatic array bounded by the constant the code already has
+(GooFit's binned integration used a device `new[]` sized by the observable count;
+`fptype[MAX_NUM_OBSERVABLES]` fixed it and immediately corrected a fitted parameter). This
+is arch-unified and correct on CUDA too, so it needs no guard -- prefer it to raising the
+device heap limit. (GooFit)
+
+**HIP's `__ldg` accepts only scalar types**, while CUDA projects commonly route arbitrary
+types through it via a generics wrapper that relies on `__CUDA_ARCH__` and PTX aliasing. A
+read-only-cache macro (`RO_CACHE(x)`) should expand to a plain `(x)` load on HIP; the AMD
+hardware takes the same path. (GooFit)
 
 ## Textures
 
@@ -297,6 +327,23 @@ headers into g++ and fails there. Put the shim in the lowest common layer, keep 
 includes (`hip_runtime.h`, `hipfft.h`) unconditional, and gate device-only ones behind
 `__CUDACC__` or `__HIPCC__ || __HIP_DEVICE_COMPILE__`. (SCAMP, stdgpu)
 
+**A name collision with the standard library must NOT be guarded on
+`__CUDA_ARCH__`/`__HIP_DEVICE_COMPILE__`.** Those macros answer "am I in the device
+pass", not "is this name already taken", and the two standard libraries in the fleet
+answer the second question differently: libstdc++'s `<math.h>` does `using std::lerp;`
+at global scope (arriving transitively via `<torch/extension.h>`), while the MSVC STL
+declares `lerp` in namespace `std` only. So a pass-keyed guard fixes one host and breaks
+the other -- Windows' host pass found NO viable `lerp(float,float,float)` and failed to
+parse the device function body, then supplying one unconditionally made Linux's host pass
+find TWO ("declaration conflicts with target of using declaration already in scope"). Any
+C++20 name the standard library also declares is exposed to this: `lerp`, `midpoint`,
+`clamp`, `hypot`, `gcd`. The fix is not a better `#if` and never `_WIN32`/`_MSC_VER` as a
+proxy for the standard library: give the helper a name the standard library does not use
+and define it once, unconditionally, as `__device__ __host__` so it resolves in both
+passes on every toolchain. Keep only the same-name overloads whose PARAMETER TYPES differ
+from the standard one (`lerp(float2,...)` never conflicted). (faster-gaussian-splatting,
+NVIDIA `helper_math.h` scalar `lerp`)
+
 **`__HIP_PLATFORM_AMD__` is undefined until `hip/hip_runtime.h` has been included in that
 TU.** A wave-width gate in a header included BEFORE the runtime header silently takes the
 CUDA branch and picks width 32. hipify-perl prepends the runtime include at line 1, which
@@ -310,6 +357,14 @@ Fix additively -- it helps the CUDA build too. (LC-framework)
 **A force-included compat header creates no build dependency edge.** After editing a header
 injected with `-include`, object files are NOT rebuilt: wipe them manually or you validate
 stale code and get a silent false pass. (lc0)
+
+**nvcc accepts partial specialization of a FUNCTION template; clang rejects it.** The EDG
+frontend takes `template <size_t N> void cast<float, half>(float*, const half*)` as an
+extension, and every HIP compile of that header is a hard error ("function template partial
+specialization is not allowed"). Rewrite the dispatch onto a class template with a static
+`apply`, keeping a thin function wrapper so call sites are unchanged. Vendored NVIDIA-only
+kernel headers are where this shows up, and it is arch-independent, so the rewrite is
+correct for the CUDA build too. (Quest, in flashinfer's vec_dtypes.cuh)
 
 **MSVC-only upstreams accept code that clang and gcc reject**, so the HIP build (and the
 CUDA build under nvcc) is a stricter compiler than the project has ever seen. Velvet carried
