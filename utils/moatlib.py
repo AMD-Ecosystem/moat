@@ -2150,26 +2150,27 @@ def branch_drift(branch, base_ref="origin/main"):
     return (sorted(substantive), sorted(inert))
 
 
-def stranded_shared_changes(base_ref="origin/main"):
-    """Edits a port branch made OUTSIDE its own project folder that the trunk lacks.
+def branch_lessons(base_ref="origin/main"):
+    """Global edits sitting on port branches: (name, paths, orphaned).
 
-    A port branch owns `projects/<name>/` and nothing else, so anything it changes
-    elsewhere is shared: the `cuda-to-rocm` skill, an agent definition, a tool in
-    utils/. CLAUDE.md tells every agent to promote a lesson to the skill at the moment
-    of learning, and an agent working on a port branch does exactly that -- onto a
-    branch that reaches the trunk only when the project closes, which for a project
-    whose upstream PR already merged may be never. The lesson is then invisible to the
-    every other port, which is the one audience it was written for.
+    A global edit is anything outside the branch's own `projects/<name>/` -- the
+    `cuda-to-rocm` skill, an agent definition, a tool in utils/.
 
-    Found by accident once (alien's codeobj_diff false-positive diagnostic, worth more
-    than the validation it came from). Reported on purpose from here on.
+    On a LIVE port branch that is the CORRECT place for one. A lesson learned while
+    porting is project-scoped until a person approves it, so it rides the branch and
+    the port's own review is what publishes it. Lifting one to the trunk early is not
+    a rescue, it is publishing an unreviewed claim to every agent: of four lessons
+    written in one session, three were wrong in ways only review caught -- one
+    reproduced verbatim the CMake defect it documented, one named a prebuilt rocPRIM
+    library that does not exist, one stated the inverse of the rule it described.
 
-    A PROMPT TO LOOK, not a verdict. It cannot tell new content from superseded: when
-    the trunk rewrites a passage a branch still holds the old wording of, the branch's
-    line is absent from the trunk and reads as stranded. Two branches carrying the old
-    two-line texture-pitch entry reported that way while the trunk held colmap's
-    sharpened four-line replacement -- nothing was lost and the trunk was ahead.
-    Read the diff before rescuing anything; the check is here to make you look."""
+    `orphaned` is the defect, and it is the only thing worth acting on. The port is
+    FINISHED -- nothing outstanding, so its folder belongs back on the trunk and its
+    branch is about to be deleted -- while a global edit on it is still absent from the
+    trunk. No review is coming to carry it, so deleting the branch loses it.
+
+    Superseded wording reads the same as new wording here, because both are lines the
+    branch has and the trunk does not. Read the diff before concluding anything."""
     out = []
     for ref in _git("for-each-ref", "--format=%(refname:short)",
                     "refs/remotes/origin/port/", check=False).stdout.split():
@@ -2181,18 +2182,17 @@ def stranded_shared_changes(base_ref="origin/main"):
         cands = [c.strip() for c in changed
                  if c.strip() and not c.startswith(f"projects/{name}/")
                  and c.strip() not in ("README.md",)]
-        # Changed-since-merge-base finds the CANDIDATES; it does not mean still
-        # stranded, because the trunk may have picked the change up since. Ask what the
-        # branch has that the trunk lacks -- added lines going trunk -> branch -- or the
-        # report keeps naming work already rescued and stops being worth reading.
         shared = []
         for c in cands:
             d = _git("diff", base_ref, ref, "--", c, check=False).stdout.splitlines()
             if any(l.startswith("+") and not l.startswith("+++") for l in d):
                 shared.append(c)
-        if shared:
-            out.append((name, sorted(shared)))
-    return out
+        if not shared:
+            continue
+        obj, _where = project_record(name)
+        orphaned = obj is not None and not belongs_on_branch(obj)
+        out.append((name, sorted(shared), orphaned))
+    return sorted(out)
 
 
 def branch_sync(apply=False, base_ref="origin/main"):
@@ -2562,7 +2562,10 @@ def main(argv=None):
 
     sub.add_parser("misplaced", help="projects whose folder is not where their state says")
 
-    sub.add_parser("stranded", help="shared edits sitting on a port branch the trunk lacks")
+    s = sub.add_parser("lessons",
+                       help="global edits on port branches; only the orphaned ones need acting on")
+    s.add_argument("--pending", action="store_true",
+                   help="also list the ones correctly awaiting their port's review")
 
     sub.add_parser("waivers", help="gate waivers suggested but not yet approved")
 
@@ -2752,14 +2755,24 @@ def main(argv=None):
             print(f"-- {len(rows)} project(s) waiting on a person: continue on other "
                   f"hardware, or `set-not-portable <name> --reason ... --by <who>`",
                   file=sys.stderr)
-    elif args.cmd == "stranded":
-        rows = stranded_shared_changes()
-        for name, paths in rows:
-            print(f"{name}\t{','.join(paths[:4])}")
-        if rows:
-            print(f"-- {len(rows)} branch(es) differ from the trunk on a shared path. "
-                  f"Read each diff: a lesson stranded on a port branch reaches nobody, "
-                  f"but a branch holding superseded wording is the trunk being ahead",
+    elif args.cmd == "lessons":
+        rows = branch_lessons()
+        orphaned = [r for r in rows if r[2]]
+        pending = [r for r in rows if not r[2]]
+        for name, paths, _o in orphaned:
+            print(f"{name}\tORPHANED\t{','.join(paths[:4])}")
+        if args.pending:
+            for name, paths, _o in pending:
+                print(f"{name}\tpending-review\t{','.join(paths[:4])}")
+        if orphaned:
+            print(f"-- {len(orphaned)} finished port(s) carry a global edit the trunk "
+                  f"does not have. Their branches are about to be deleted and nothing "
+                  f"will carry it: read each diff, then land it with the port",
+                  file=sys.stderr)
+        elif args.pending and pending:
+            print(f"-- {len(pending)} branch(es) carry a lesson awaiting their port's "
+                  f"review, which is where it belongs. Do NOT lift these to the trunk: "
+                  f"the review is what makes a lesson trustworthy",
                   file=sys.stderr)
     elif args.cmd == "misplaced":
         rows = misplaced_folders()
