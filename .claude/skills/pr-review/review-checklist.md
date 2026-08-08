@@ -46,11 +46,14 @@ Use with SKILL.md. Spawn sub-agents to verify items against the actual code. Rep
 - [ ] History pushed with --force-with-lease; no bare --force; no ghstack. Multi-commit history on the port branch is fine -- the single-curated-commit rule was retired.
 - [ ] The fork the PR is opened from matches `status.json.fork_url`.
 - [ ] The port branch is not behind the fork's default branch. Read that branch from
-      `status.json.fork_default_branch` rather than assuming `main`: 19 of the trunk's 50
-      projects use something else (16 `master`, plus `develop`, `dev`, `v0`), and in a fork
-      that carries both refs a hardcoded `origin/main` returns a plausible wrong number
-      instead of failing. This must print 0:
-      `git -C projects/<name>/src rev-list --count moat-port..origin/$(python3 -c "import json;print(json.load(open('projects/<name>/status.json'))['fork_default_branch'])")`
+      `status.json.fork_default_branch` rather than assuming `main`: 20 of the trunk's 50
+      projects use something else (16 `master`, plus `develop`, `dev`, `v0`, `AdaLovelace`),
+      and in a fork that carries both refs a hardcoded `origin/main` returns a plausible
+      wrong number instead of failing. Fetch as part of the check: `origin/<default>` is
+      otherwise only whatever that clone last saw, so a reviewer on a clone that has not
+      fetched gets 0 and reads it as clean -- the exact false negative this item exists to
+      prevent. This must print 0:
+      `SRC=projects/<name>/src; DEF=$(python3 -c "import json;print(json.load(open('projects/<name>/status.json'))['fork_default_branch'])"); git -C $SRC fetch -q origin && git -C $SRC rev-list --count moat-port..origin/$DEF`
       No DIFF will reveal this. `git diff origin/<default>...HEAD` is merge-base relative, so it
       shows only what the port added and stays clean no matter how far behind the branch is,
       and `git merge-tree` reports no conflict whenever the hunks do not textually collide.

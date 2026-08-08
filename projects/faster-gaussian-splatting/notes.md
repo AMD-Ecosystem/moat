@@ -1287,3 +1287,67 @@ row -- another project's, moved on its own branch minutes earlier -- not this pr
 branch is made to own rows it has no stake in, purely to push its own state. That is
 `gate_readme`'s structural claim demonstrated rather than argued, and it is why the divergence
 from main is not something the porter did wrong.
+
+## Porter 2026-08-08 (linux-gfx1100) -- trunk merge, fork untouched
+
+Control-plane round only. The fork was not touched: `head_sha` stays `b0d21d5`,
+`git -C projects/faster-gaussian-splatting/src status --porcelain` is empty, and no arch
+revalidates.
+
+### Merging the trunk was safe here, and the check that says so
+
+The standing caution against `git merge origin/main` on a port branch is about a branch with no
+unique commits: that merge FAST-FORWARDS onto the trunk and the branch's `projects/<name>/`
+folder disappears, which happened to two projects earlier the same day. The precondition is
+mechanical, so check it rather than reasoning about it:
+
+    $ git rev-list --count origin/main..HEAD
+    34
+
+Non-zero means the merge is a real three-way merge and cannot fast-forward, so the folder is
+safe. It was verified intact afterwards (`status.json`, `plan.md`, `notes.md`, `stats.jsonl`,
+`src/` all present, and the folder still differs from main by its full 1659 lines).
+
+The merge brought 15 trunk commits, `c48d1b5..7e06959`. `README.md` was the only conflict, as
+the review predicted; everything else auto-merged, including `fault-classes.md` and
+`review-checklist.md`. The README was resolved by taking one side and then running
+`python3 utils/gen_readme.py`, so what landed is the regenerated board rather than whichever
+side was picked; `gen_readme.py --check` passes and the pre-push `readme` gate accepted it
+without `--no-verify`.
+
+### What the merge fixed
+
+`python3 utils/jargon.py --port faster-gaussian-splatting` now prints `jargon: clean` instead of
+exiting 2. `c0cd6cb` is in the ancestry, so the tool and the docs that call it are back in
+agreement and the validator's step-4 gate can run as written. The other two forms stay clean
+over the whole branch, against the fork clone:
+
+    $ python3 utils/jargon.py --commits origin/main..moat-port -C projects/faster-gaussian-splatting/src
+    jargon: clean
+    $ python3 utils/jargon.py --diff origin/main...moat-port -C projects/faster-gaussian-splatting/src
+    jargon: clean
+
+`git merge-tree --write-tree --messages origin/main HEAD` now emits a bare tree sha with no
+messages of any kind, and `branch-sync` reports `current -- up to date with the trunk` instead
+of refusing. `.claude/agents/{porter,reviewer,validator}.md` and `cuda-to-rocm/SKILL.md` are now
+byte-identical to main, so the branch is no longer running stale agent definitions.
+
+The branch now differs from `origin/main` by exactly four things: its own project folder, the
+two deliberate global entries (`strategy-b-torch.md` +32, `review-checklist.md` +17), and the
+regenerated `README.md`. Section 7 of the checklist remains byte-identical to main's.
+
+### The two section-8 defects
+
+Both fixed in the checklist item itself. The trunk count is 20 of 50 non-`main`, not 19, and the
+fifth distinct value `AdaLovelace` was missing; recounting from every
+`origin/main:projects/*/status.json` gives 30 `main`, 16 `master`, and one each of `develop`,
+`dev`, `v0`, `AdaLovelace`. The command now fetches as part of the check, since `origin/<default>`
+is otherwise only whatever that clone last saw and an unfetched clone returns 0 -- a pass
+indistinguishable from a real one. The published form was run verbatim and prints 0:
+
+    $ SRC=projects/faster-gaussian-splatting/src; DEF=$(python3 -c "import json;print(json.load(open('projects/faster-gaussian-splatting/status.json'))['fork_default_branch'])"); git -C $SRC fetch -q origin && git -C $SRC rev-list --count moat-port..origin/$DEF
+    0
+
+Nothing else the round confirmed was touched: the torch attribution, the 7 table rows, the
+`_hip` condition, the line counts, the substring-vs-component correction, and `validator.md`
+matching main all stand as reviewed.
