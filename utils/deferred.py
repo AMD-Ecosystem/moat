@@ -42,7 +42,9 @@ silently fall off the radar, and `pending` lists the ones no person has ruled on
 """
 
 import argparse
+import functools
 import json
+import subprocess
 import sys
 
 import moatlib
@@ -67,18 +69,51 @@ def _project_path(name):
     return moatlib.PROJECTS / name / "deferred.json"
 
 
-def _load_project(name):
-    """A project's deferrals, from the working tree or from its branch.
+@functools.lru_cache(maxsize=1)
+def _branches_by_lowercase():
+    """{lowercased name: actual branch name}, read once per run.
 
-    Resolved across refs for the same reason project_record is: an in-flight
-    project's folder lives on `port/<name>`, and reading only the working tree
-    answers "nothing deferred" for a project that deferred plenty."""
+    `port_branches` shells out, and every resolution asks for it, so leaving it
+    uncached put a subprocess per project on a path orient runs every time."""
+    return {b.lower(): b for b in moatlib.port_branches()}
+
+
+def _port_ref(name):
+    """`origin/port/<name>`, tolerating a branch created under a different case.
+
+    project_record carries the same fallback because the mismatch happened: a branch
+    cut as `port/hami-core` for the project `HAMi-core` resolved to nothing, and a
+    finished screen went invisible to every sweep."""
+    return f"origin/port/{_branches_by_lowercase().get(name.lower(), name)}"
+
+
+def _resolve_project(name):
+    """(obj, where, ref) for a project's deferrals, resolved as project_record does.
+
+    The project's OWN branch wins over the working tree, and that order is not
+    cosmetic: an in-flight project is worked on its branch while the trunk may still
+    carry a copy that predates it, and reading the trunk first is what made colmap's
+    intake record invisible on the 2026-08-07 rerun. Being ON that branch is not a
+    special case -- the working tree IS the branch then, so the local read is both
+    correct and cheaper."""
+    path = f"projects/{name}/deferred.json"
+    ref = _port_ref(name)
     p = _project_path(name)
+    if moatlib.current_branch() == f"port/{name}":
+        return ((json.loads(p.read_text()) if p.exists() else _empty()), "local", ref)
+    raw = moatlib._ref_read(ref, path)
+    if raw:
+        return (json.loads(raw), "branch", ref)
     if p.exists():
-        return json.loads(p.read_text())
-    raw = (moatlib._ref_read("origin/main", f"projects/{name}/deferred.json")
-           or moatlib._ref_read(f"origin/port/{name}", f"projects/{name}/deferred.json"))
-    return json.loads(raw) if raw else _empty()
+        return (json.loads(p.read_text()), "local", ref)
+    raw = moatlib._ref_read("origin/main", path)
+    if raw:
+        return (json.loads(raw), "trunk", ref)
+    return (_empty(), "local" if p.parent.exists() else "trunk", ref)
+
+
+def _load_project(name):
+    return _resolve_project(name)[0]
 
 
 def _load_all():
@@ -92,13 +127,51 @@ def _load_all():
     return items
 
 
-def _save_project(name, obj):
-    p = _project_path(name)
-    if not p.parent.exists():
-        raise SystemExit(
-            f"deferred: projects/{name}/ is not in this checkout -- its folder lives on "
-            f"port/{name}. Check that branch out to record a deferral against it.")
-    p.write_text(json.dumps(obj, indent=2) + "\n")
+def _save_project(name, obj, message):
+    """Write a project's deferrals to its own folder, wherever that folder lives.
+
+    A ruling is a RECORD, not a working file. Whoever makes it already has the entry
+    from `pending`, and nothing here opens plan.md or notes.md -- so this is the
+    `release-forks` case rather than the selector's, and a project whose folder is on
+    its own branch gets written there through `commit_to_branch` instead of refused.
+    Refusing bought nothing: the ruling still had to reach that branch, and the
+    person was sent to check out one branch per deferral.
+
+    Presence is not ownership. A `port/<name>` branch carries every folder the trunk
+    had when it was cut, so `projects/<other>/` existing in this tree says nothing
+    about whether this checkout may write it. Gating on the path instead of on
+    `writable_here` wrote one project's ruling into another project's branch, exit 0
+    and silent -- the same canary bug that reverted the first folder migration.
+
+    Returns the sha when the write went to a branch, else None."""
+    _, where, ref = _resolve_project(name)
+    if moatlib.writable_here(name, where):
+        p = _project_path(name)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(obj, indent=2) + "\n")
+        return None
+    if where == "branch":
+        branch = ref.replace("origin/", "", 1)
+        try:
+            return moatlib.commit_to_branch(
+                branch,
+                {f"projects/{name}/deferred.json": json.dumps(obj, indent=2) + "\n"},
+                message)
+        except subprocess.CalledProcessError as e:
+            # commit_to_branch parents on origin/<branch> as it reads it and pushes
+            # unforced, so a branch that moved under us is REJECTED rather than
+            # clobbered. That is the behaviour we want; it just needs to say so,
+            # because the raw git failure reads like a broken tool.
+            raise SystemExit(
+                f"deferred: could not write {name}'s record to {branch} -- the branch "
+                f"moved since this checkout last fetched it, so the push was refused "
+                f"rather than overwriting somebody else's commit. `git fetch origin` "
+                f"and run this again.\n{(e.stderr or '').strip()}")
+    raise SystemExit(
+        f"deferred: {name}'s record lives on the trunk, and this checkout is on "
+        f"{moatlib.current_branch()}, which may not write it. `main` is protected, so a "
+        f"trunk project's ruling reaches it by pull request: check out `main` (or a "
+        f"branch off it) and record it there.")
 
 
 def _save_global(obj):
@@ -134,8 +207,20 @@ def _owner(item_id):
     return (None, None)
 
 
-def _store(where, obj):
-    _save_global(obj) if where == "global" else _save_project(where, obj)
+def _store(where, obj, message):
+    """Write a store and say where it landed, so the caller can report it.
+
+    Returns the sha when the write went to a branch this checkout does not hold,
+    else None -- a branch write is a commit by construction, since there is no
+    working tree to leave dirty."""
+    if where == "global":
+        _save_global(obj)
+        return None
+    return _save_project(where, obj, message)
+
+
+def _report(where, sha, what):
+    print(f"{what} on {where}" + (f" ({sha[:9]}, pushed to port/{where})" if sha else ""))
 
 
 def add(args):
@@ -160,9 +245,11 @@ def add(args):
     if where == "global":
         item["project"] = None
     obj["items"].append(item)
-    _store(where, obj)
-    _maybe_commit(args, where, f"deferred: register {args.id} ({args.kind})")
-    print(f"registered {args.id} on {where}")
+    msg = f"deferred: register {args.id} ({args.kind})"
+    sha = _store(where, obj, msg)
+    if not sha:
+        _maybe_commit(args, where, msg)
+    _report(where, sha, f"registered {args.id}")
 
 
 def set_status(args):
@@ -173,9 +260,11 @@ def set_status(args):
     it["status"] = args.status
     if args.upstream:
         it["upstream_issue"] = args.upstream
-    _store(where, obj)
-    _maybe_commit(args, where, f"deferred: {args.id} -> {args.status}")
-    print(f"{args.id} -> {args.status}")
+    msg = f"deferred: {args.id} -> {args.status}"
+    sha = _store(where, obj, msg)
+    if not sha:
+        _maybe_commit(args, where, msg)
+    _report(where, sha, f"{args.id} -> {args.status}")
 
 
 def decide(args):
@@ -193,9 +282,11 @@ def decide(args):
     it = _find(obj, args.id)
     it["decided"] = {"choice": args.choice, "by": args.by, "at": moatlib.now_iso(),
                      **({"note": args.note} if args.note else {})}
-    _store(where, obj)
-    _maybe_commit(args, where, f"deferred: {args.id} -> {args.choice} ({args.by})")
-    print(f"{args.id}: {args.choice}, by {args.by}")
+    msg = f"deferred: {args.id} -> {args.choice} ({args.by})"
+    sha = _store(where, obj, msg)
+    if not sha:
+        _maybe_commit(args, where, msg)
+    _report(where, sha, f"{args.id}: {args.choice}, by {args.by}")
 
 
 def pending(args):

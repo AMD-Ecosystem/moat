@@ -236,6 +236,14 @@ notes and the plan it came out of, so it is reviewed with the port that produced
 against a ROCm component with no port attached, and the record of work deferred by a
 project that has since been removed.
 
+You do not have to check anything out to rule on one. A ruling is a record rather than
+a working file -- `pending` already gave you the entry, and nothing in `decide` opens a
+plan or a note -- so a deferral whose folder is on a port branch is written straight
+there and pushed, and `decide` prints which branch it landed on. Working the whole list
+from wherever you happen to be is the intended use. The one refusal is a trunk-resident
+project while you are on a port branch: `main` is protected, so that ruling has to
+arrive by pull request like any other trunk change.
+
 ## Stop and ask
 
 - Any upstream-visible post: draft, show, wait.
