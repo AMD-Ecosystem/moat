@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "plvs-blocked-on-opencv-rocm",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "plvs GPU port (ORB/FAST feature kernels + libelas-gpu + libsgm stereo) compiles for gfx90a against the MOAT OpenCV-with-HIP fork but is blocked on: (1) OpenCV core PR #29285 + opencv_contrib PR #4147 landing upstream so cv::cuda-on-ROCm is a consumable released dep; (2) building the full non-GPU SLAM stack (PCL/Pangolin/DBoW2/g2o/voxblox/chisel) + stereo datasets to validate on GPU, including verifying libsgm wave64 disparity correctness (WARP_SIZE=64 reductions, may need logical-32 rework per the OpenCV cudastereo conclusion). Resume when OpenCV PRs land. Fork moat-port HEAD f932ab5.",
+      "refs": [
+        "projects/plvs/notes.md",
+        "AMD-Ecosystem/plvs@f932ab5"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-11T23:24:39Z",
+      "decided": null
+    },
+    {
+      "id": "plvs-windows-slam-bundled-deps",
+      "kind": "other",
+      "component": null,
+      "summary": "plvs gfx1201 HIP device code is PROVEN on Windows (libsgm stereo PASS: coverage 0.841, agreement 0.972, matches Linux), but the full mono-TUM SLAM cannot run on Windows: bundled ROS-adjacent CPU libs (DBoW2, g2o, line_descriptor, voxblox, open_chisel, chisel_server, voxblox_server) hardcode Unix .so/.a outputs in their CMakeLists; PCL unavailable (not in vcpkg, github TLS-blocked); Pangolin version mismatch (vcpkg 0.9.5 vs required fe57db5/v0.6+patch); main CMakeLists uses -fPIC/-pthread/pkg_check_modules(GLFW) without WIN32 guards. Upstream Windows-portability gap, not an AMD/HIP defect. gfx1201 is redundant/optional Windows tier and NOT PR-required (Linux completed). To complete: Windows-guard the bundled-lib CMakeLists + supply PCL/Pangolin, or validate the SLAM path on gfx1101 instead.",
+      "refs": [
+        "projects/plvs/notes.md",
+        "fork AMD-Ecosystem/plvs @ b9210a8"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-12T15:00:56Z",
+      "decided": null
+    }
+  ]
+}
