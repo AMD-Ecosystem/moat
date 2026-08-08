@@ -37,3 +37,4 @@
 {"kind":"phase","ts":"2026-08-08T03:38:45Z","phase":"test","seconds":2.363,"exit":0,"cmd":"python /tmp/claude-1000/-var-lib-jenkins-moat/24651482-ac41-425e-8ae4-2016b58aa9bb/scratchpad/fgs_test.py"}
 {"kind": "tokens", "ts": "2026-08-08T03:43:22Z", "tokens": 82486, "source": "porter"}
 {"kind": "tokens", "ts": "2026-08-08T17:22:35Z", "tokens": 131519, "source": "reviewer"}
+{"kind":"phase","ts":"2026-08-08T17:27:08Z","phase":"compile","seconds":43.894,"exit":0,"cmd":"bash -c source /opt/conda/etc/profile.d/conda.sh && conda activate py_3.12 && export HIP_VISIBLE_DEVICES=0 PYTORCH_ROCM_ARCH=gfx1100 && pip install -e /var/lib/jenkins/moat-worktrees/faster-gaussian-splatting/projects/faster-gaussian-splatting/src/FasterGSCudaBackend --no-build-isolation"}

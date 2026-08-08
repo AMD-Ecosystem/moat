@@ -7,6 +7,20 @@ Torch hipifies extension sources at build time. Do not add a compat header and d
 - Build against a ROCm torch. If the tree was hipified once and is stale after edits, re-run the project's hipify step before rebuilding (a known incremental-build gotcha: edits to `.cu` can recompile the stale hipified mirror unless you re-hipify first).
 - For projects shipping their own `.cu` plus a setup.py, the change is often just: build against a ROCm torch and fix the fault classes below.
 
+### Never commit the hipified mirror; add it to .gitignore instead
+
+Torch hipify writes its output as SIBLING FILES next to the CUDA sources, in the working tree, on every build. `torch/utils/hipify/hipify_python.get_hip_file_path` (reached from `cpp_extension.py` via `hipify(..., is_pytorch_extension=True)`) maps `.cu` -> `.hip`, and `.h`/`.cuh` -> `_hip.h`/`_hip.cuh`. They are build output that happens to land in the source tree, and `git add -A` after a build sweeps all of them in.
+
+Committing them is worse than noise. A maintainer opening the PR sees a machine translation of their own kernels sitting beside the originals, dwarfing the real diff -- faster-gaussian-splatting pushed 26 such files, 5,871 of 5,903 added lines, for an 88-line port. It is also a staleness trap that defeats the integrity gate: hipify rewrites the files in place, so a from-clean build leaves `git status` clean and everything looks fine, but the next source edit dirties TRACKED files, which then either get committed out of sync with the sources or read as a dirty fork.
+
+So in any Strategy B port, before the first commit:
+
+    *.hip
+    *_hip.h
+    *_hip.cuh
+
+in the project's `.gitignore`, in its existing style. Then verify: `git clean -fdx`, full build, and `git status --porcelain` must print nothing -- no tracked file modified AND no generated file newly untracked. The second half is the part that catches this; a tree where the artifacts are tracked passes the first half. If the project genuinely hand-writes a `.hip` file (Strategy B ports normally do not), narrow the pattern rather than dropping it. (faster-gaussian-splatting)
+
 ### hipify generation: v1 renames, v2 masquerades
 
 Which generation runs decides what the `c10`/`at` CUDA classes are called, so it is worth
