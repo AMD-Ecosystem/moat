@@ -21,27 +21,6 @@ END = "<!-- MOAT:TABLE:END -->"
 EMPTY = ("_No projects adopted yet. Run `python3 utils/discover.py` then adopt "
          "rows from `data/candidates.json`._")
 
-# Per-platform state -> status glyph (legend is emitted by render_table).
-EMOJI = {
-    "completed": "✅",
-    "validated": "✅",
-    "port-ready": "🟡",       # ported at head_sha, not yet validated on this arch
-    "revalidate": "🔄",       # was validated here; HEAD moved -> re-check
-    "validating": "🔧",
-    "review-passed": "🔧",
-    "ported": "🔧",
-    "delta-ported": "🔧",
-    "porting": "🔧",
-    "changes-requested": "🔧",
-    "validation-failed": "🔧",
-    "planned": "🔧",
-    "unclaimed": "⬜",
-    "awaiting-port": "⬜",          # no port exists yet to validate
-    "screened": "⬜",               # passed intake, not yet planned
-    "awaiting-fork": "⬜",          # waiting on an org admin to create the fork
-    "awaiting-upstream": "⏸",       # viable but parked on an external event
-}
-
 
 def load_projects():
     """Every project across refs, not just the ones whose folder is on this branch.
@@ -57,9 +36,8 @@ def load_projects():
             continue
         d = REPO_ROOT / "projects" / name
         # Delivery tracking. pr_state (open/merged/closed) drives the PR glyph; a
-        # recorded disposition covers the projects whose success is NOT an upstream PR
-        # (e.g. we GPU-validated an existing ROCm backend across archs). See
-        # outcome_cell() for the vocabulary.
+        # recorded disposition covers the projects that ended some other way, such as
+        # a licence that bars contributing a port that works. See outcome_cell().
         disp = moatlib.get_disposition(moatlib.upstream_full_name(d.name) or "")
         if disp and disp.get("disposition") == "skip":
             rec["disposition"] = disp.get("reason")
@@ -73,10 +51,19 @@ def load_projects():
 GATE_RANK = ["proven", "stale", "working", "queued", "blocked", "none"]
 GATE_GLYPH = {"proven": "✅", "stale": "🔄", "working": "🔧",
               "queued": "⬜", "blocked": "🚫", "none": "—"}
-WORKING_STATES = {"porting", "ported", "delta-ported", "review-passed", "validating",
+WORKING_STATES = {"porting", "ported", "delta-ported", "review-passed",
                   "changes-requested", "validation-failed", "planned", "screened"}
-QUEUED_STATES = {"port-ready", "awaiting-port", "awaiting-fork", "awaiting-upstream",
-                 "unclaimed"}
+QUEUED_STATES = {"port-ready", "awaiting-fork", "awaiting-upstream",
+                 "unclaimed", "not-portable"}
+# `completed` and `revalidate` are read before these sets, so between them the four
+# groups must partition moatlib.STATES exactly. Checked rather than trusted: this
+# carried a "validating" state that moatlib has never had, and the failure mode of a
+# state landing in no group is a silent "—" in the table -- a cell that says nothing
+# is recorded about a project someone is actively working on.
+_UNGROUPED = set(moatlib.STATES) - WORKING_STATES - QUEUED_STATES - {"completed", "revalidate"}
+_UNKNOWN = (WORKING_STATES | QUEUED_STATES) - set(moatlib.STATES)
+assert not _UNGROUPED, f"gen_readme: states in no glyph group: {sorted(_UNGROUPED)}"
+assert not _UNKNOWN, f"gen_readme: glyph groups name states moatlib lacks: {sorted(_UNKNOWN)}"
 
 
 def gate_state(project, gate):
@@ -96,13 +83,14 @@ def gate_state(project, gate):
         blk = plats[arch]
         if gate not in moatlib.gates_for(arch):
             continue
-        state = blk.get("state")
+        state = moatlib.platform_state(project, arch)
         # A completed validation is evidence, and stays evidence even if the platform
         # was later marked blocked -- projects withdrawn on licence grounds carry a
         # block on every platform, and the port really did run. What that means for
         # the contribution is the Outcome column's job, not this one's.
         if state == "completed":
-            verdict = "proven" if (not head or blk.get("validated_sha") == head) else "stale"
+            verdict = ("proven" if (not head or moatlib.same_commit(blk.get("validated_sha"), head))
+                       else "stale")
         elif blk.get("blocked"):
             verdict = "blocked"
         elif state == "revalidate":
@@ -115,6 +103,21 @@ def gate_state(project, gate):
             verdict = "none"
         if GATE_RANK.index(verdict) < GATE_RANK.index(best):
             best, best_arch = verdict, arch
+    # No architecture carrying this gate has recorded anything. If the gate is still
+    # UNSATISFIED the honest cell is "not started" rather than "nothing recorded": it
+    # is waiting on hardware, which is what an `awaiting-port` record used to say once
+    # per arch. If the gate IS satisfied, some other arch proved it and the branches
+    # above already said so.
+    #
+    # Queued and not "working", whatever the stage: this cell is about ONE GATE, and
+    # rendering a project at `porting` as in-progress under wave32 would claim work on
+    # hardware nobody has touched. How far the project has got is the Outcome column's
+    # business. A project judged unportable is not waiting on hardware at all, so it
+    # keeps the blank.
+    stage = moatlib.project_stage(project)
+    if (best == "none" and stage and stage != "not-portable"
+            and gate in moatlib.unsatisfied_gates(project)):
+        best = "queued"
     return (best, best_arch)
 
 
@@ -123,21 +126,17 @@ def gate_cell(project, gate):
     column of architecture names is noise in a table 152 rows long, and the gate is
     the claim being made."""
     verdict, _ = gate_state(project, gate)
-    return "⚖️" if verdict == "waived" else GATE_GLYPH[verdict]
-
-
-def _validated_arch_count(p):
-    """Number of platforms validated on real hardware (completed, not blocked)."""
-    return sum(1 for b in p.get("platforms", {}).values()
-               if b.get("state") == "completed" and not b.get("blocked"))
+    return "🎫" if verdict == "waived" else GATE_GLYPH[verdict]
 
 
 def outcome_cell(p):
     """The Outcome column: what this project actually delivered. An upstream PR
     (any state) is shown by its glyph + number. Projects without a PR carry a recorded
     disposition in data/dispositions.json:
-      already-supported -- upstream already had a ROCm path; where we GPU-validated
-                    it across N archs the count is shown. 🔵
+      already-supported -- upstream already had a ROCm path, so there is no port to
+                    show. It is a screening result, not a row on a porting board:
+                    data/dispositions.json is its record and the table stays about
+                    ports. Falls through to ⚪ if such a project ever keeps a folder.
       license-blocked -- the port may work, but the upstream license (non-commercial,
                     no-derivative, or otherwise incompatible) bars contributing it.
                     The platform cells stay truthful (the port was built/validated)
@@ -156,9 +155,6 @@ def outcome_cell(p):
             num = tail if tail.isdigit() else "?"
         return f"{glyph} [#{num}]({p['pr_url']})"
     disp = p.get("disposition")
-    if disp == "already-supported":
-        n = _validated_arch_count(p)
-        return f"🔵 validated ({n} arch)" if n else "🔵 already supported"
     if disp == "license-blocked":
         # First sentence only: the full reasoning lives in the project's notes.md, and
         # a paragraph inside a table cell wraps the row into unreadability.
@@ -166,6 +162,14 @@ def outcome_cell(p):
         return f"⚖️ license-restricted -- {note}" if note else "⚖️ license-restricted"
     if disp:
         return f"⚪ {disp}"
+    # A recorded verdict that this codebase cannot be ported. Not a disposition -- the
+    # project was adopted, screened, often planned and attempted, and that write-up is
+    # the deliverable -- but it is settled the same way, so it reads the same way. A
+    # blank here would file a decision under "pending".
+    if p.get("stage") == "not-portable":
+        return "⚪ not-portable"
+    if p.get("on_hold"):
+        return "⏸ on hold"
     return "—"
 
 
@@ -200,10 +204,10 @@ def render_table(projects):
         "| ✅ | proven on the current code | | 🟣 | contribution merged upstream |",
         "| 🔄 | proven earlier; the code has moved since | | 🟢 | pull request open |",
         "| 🔧 | in progress | | 🔴 | pull request closed |",
-        "| ⬜ | not started | | 🔵 | upstream already supported AMD; we verified it |",
-        "| 🚫 | blocked, with a reason recorded | | ⚖️ | licence bars contributing the port |",
-        "| ⚖️ | not required for this project | | ⚪ | set aside, with the reason recorded |",
-        "| — | nothing recorded | | — | nothing recorded |",
+        "| ⬜ | not started | | ⚖️ | licence bars contributing the port |",
+        "| 🚫 | blocked, with a reason recorded | | ⚪ | set aside, with the reason recorded |",
+        "| 🎫 | waived for this project, with maintainer approval | | — | nothing recorded |",
+        "| — | nothing recorded | | | |",
         "",
         "The project name links upstream.",
     ])
@@ -239,31 +243,10 @@ def main(argv=None):
     current = README.read_text(encoding="utf-8")
     new = splice(current, render_table(load_projects()))
     if args.check:
-        # Compare only the rows this checkout can actually be responsible for.
-        #
-        # The table covers projects across refs, but a row for an in-flight project is
-        # rendered from that project's own branch, and two things follow. A CI
-        # checkout does not fetch other branches, so it cannot see those rows at all
-        # and would call every one of them stale -- which is what broke eight runs in
-        # a row. And where the branches ARE visible, any push to any port branch
-        # would stale the trunk's table and fail the trunk's next push, for whoever
-        # happens to make it.
-        #
-        # So a branch-resident row is a report, refreshed when convenient, and only
-        # trunk-resident rows are gated. A genuinely stale row for a finished project
-        # is still caught, which is what the gate is for.
-        verifiable = {n for n, where in moatlib.all_projects().items()
-                      if where in ("local", "trunk")}
-        def gated(text):
-            out = []
-            for ln in text.splitlines():
-                if ln.startswith("| ["):
-                    name = ln[3:].split("]", 1)[0]
-                    if name not in verifiable:
-                        continue          # rendered from a branch this checkout lacks
-                out.append(ln)
-            return out
-        if gated(new) != gated(current):
+        # Judged only where the port refs exist -- check.py's readme gate skips it
+        # otherwise, because the table renders across refs and cannot be reproduced
+        # without them.
+        if new != current:
             sys.stderr.write("gen_readme: README.md is out of date (run gen_readme.py)\n")
             return 1
         print("README.md table is up to date")

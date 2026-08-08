@@ -11,7 +11,8 @@ Usage:
   python3 utils/triage.py skipped
   python3 utils/triage.py backfill-ids
 
-Reasons: already-ported, already-supported, cant-port, not-a-target, duplicate, other
+Reasons: already-supported, ported-elsewhere, cant-port, not-a-target, duplicate,
+         license-blocked, declined, other  (moatlib.SKIP_REASONS is the source)
 """
 
 import argparse
@@ -35,6 +36,8 @@ def load_candidates():
 
 
 def cmd_review(args):
+    cands_all = load_candidates()
+    cands = cands_all
     disp = moatlib.load_dispositions()
     skips = {k for k, v in disp.items() if v.get("disposition") == "skip"}
     # Also by GitHub repo id, because owner/repo is not stable. Two candidates in the
@@ -45,13 +48,18 @@ def cmd_review(args):
     # is built from the dispositions that do.
     skip_ids = {v["repo_id"] for v in disp.values()
                 if v.get("disposition") == "skip" and v.get("repo_id")}
-    id_cache = {}
+    # Resolved ids are written back into candidates.json. Asking GitHub for ~40 of them
+    # takes a couple of minutes and the answer never changes, so it is paid once. A
+    # candidate that discovery has not seen before still costs one call.
+    id_cache = {c["full_name"]: c["repo_id"] for c in cands_all if c.get("repo_id")}
+    resolved_now = []
 
     def decided_by_id(full_name):
         if not skip_ids:
             return False
         if full_name not in id_cache:
             id_cache[full_name] = moatlib.github_repo_id(full_name)
+            resolved_now.append(full_name)
         return id_cache[full_name] in skip_ids
     # Keyed on owner/repo, not on the directory name. A project folder is named after
     # the repo's basename, so matching on that alone makes foo/bar and baz/bar the same
@@ -62,10 +70,20 @@ def cmd_review(args):
         full = moatlib.upstream_full_name(name)
         if full:
             adopted.add(full.lower())
-    cands = load_candidates()
+    adopted_ids = moatlib.adopted_repo_ids()
+
 
     def is_adopted(fn):
-        return fn.lower() in adopted
+        # By name, then by repo id. The id is what survives a transfer: FlashRT moved
+        # from LiangSu8899 to the flashrt-project org and came back through discovery
+        # looking unclaimed, while the project sat adopted and blocked the whole time.
+        if fn.lower() in adopted:
+            return True
+        if not adopted_ids:
+            return False
+        if fn not in id_cache:
+            id_cache[fn] = moatlib.github_repo_id(fn)
+        return id_cache[fn] in adopted_ids
 
     pending = [c for c in cands
                if c["full_name"].lower() not in skips and not is_adopted(c["full_name"])]
@@ -74,6 +92,13 @@ def cmd_review(args):
     pending = [c for c in pending if c not in renamed]
     n_skip = sum(1 for c in cands if c["full_name"].lower() in skips) + len(renamed)
     n_adopt = sum(1 for c in cands if is_adopted(c["full_name"]))
+    if resolved_now:
+        for c in cands_all:
+            if c["full_name"] in id_cache and id_cache[c["full_name"]]:
+                c["repo_id"] = id_cache[c["full_name"]]
+        CANDIDATES.write_text(json.dumps(cands_all, indent=1) + "\n")
+        print(f"# cached {len(resolved_now)} newly resolved repo id(s) into "
+              f"data/candidates.json")
     shown = pending if args.all else pending[:args.top]
     print(f"# {len(pending)} pending ({n_skip} skipped, {n_adopt} adopted) of {len(cands)}; showing {len(shown)}")
     for c in renamed:

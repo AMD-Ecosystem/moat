@@ -15,7 +15,6 @@ own name, so a CI log says which gate to look at.
 import argparse
 import importlib.util
 import json
-import os
 import pathlib
 import subprocess
 import sys
@@ -90,33 +89,27 @@ def gate_schema():
     return problems
 
 
-def local_port_branch():
-    """True only when this is a local run on a port branch -- not CI.
-
-    CI sets GITHUB_* ; a pull request there builds the MERGE commit, so the tree is
-    exactly what the trunk will become and every gate should see it."""
-    if os.environ.get("GITHUB_ACTIONS") or os.environ.get("GITHUB_HEAD_REF"):
-        return False
-    r = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
-    return r.returncode == 0 and r.stdout.strip().startswith("port/")
-
-
 def gate_readme():
     """The generated project table matches the data it claims to describe.
 
-    Skipped for a LOCAL push to a port branch, and only there. Mid-port the tree is
-    the trunk plus one project, so the table differs for a row that belongs on the
-    trunk once the port lands; making every push regenerate it is friction with no
-    payoff. Three of the four agents on the 2026-08-06 dry run regenerated the README
-    purely to get a push through.
+    Only where the port branches are visible. The table now renders across refs, so a
+    project in flight appears on the board -- which means the table cannot be
+    reproduced without the refs it was generated from. A CI checkout fetches one
+    branch, so it sees neither the branch-only rows nor the current state of a project
+    that exists on both the trunk and its own branch, and calls both differences
+    staleness. Eight runs failed that way, then four more after the first fix, every
+    one a false alarm.
 
-    It is NOT skipped in CI. A pull request builds the merge commit, so `gen_readme`
-    there describes the trunk as it will be, and the gate fails on the pull request
-    that has to fix it. An earlier version of this skipped on the branch name alone,
-    which let the offending PR go green and dropped the failure on whoever next
-    pushed to the trunk -- a stale table is one command to fix, but it should not be
-    a stranger's command."""
-    if local_port_branch():
+    Fetching every ref in CI would trade those for something worse: with the branches
+    visible, any push to any port branch stales the trunk's table and fails the trunk's
+    next push, for whoever happens to make it.
+
+    So this is judged where it can be judged -- a full clone, which is what the
+    pre-push hook runs in -- and skipped, loudly, where it cannot."""
+    if not _run(["git", "for-each-ref", "--format=%(refname)",
+                 "refs/remotes/origin/port/"]).stdout.strip():
+        print("readme: skipped -- no port branches in this checkout, so the table "
+              "cannot be verified here", file=sys.stderr)
         return []
     r = _run([sys.executable, "utils/gen_readme.py", "--check"])
     return [] if r.returncode == 0 else ["README table is stale (run utils/gen_readme.py)"]
@@ -158,19 +151,27 @@ def gate_states():
         d, _where = m.project_record(name)
         if d is None:
             continue
+        if "stage" in d and d["stage"] not in m.STAGE_STATES:
+            problems.append(f"{name}: unknown stage {d['stage']!r}")
         for arch, blk in (d.get("platforms") or {}).items():
             if m.platform_problem(arch):
                 problems.append(f"{name}: unknown arch {arch!r} "
                                 f"(add it to config/arches.toml)")
-            if blk.get("state") not in m.STATES:
-                problems.append(f"{name}/{arch}: unknown state {blk.get('state')!r}")
+            if blk.get("state") is not None and blk["state"] not in m.STATES:
+                problems.append(f"{name}/{arch}: unknown state {blk['state']!r}")
         w = d.get("waivers") or {}
         for gate, rec in w.items():
             if gate not in m.WAIVABLE_GATES:
                 problems.append(f"{name}: gate {gate!r} is not waivable")
-            elif not rec.get("approved_by"):
-                problems.append(f"{name}: waiver on {gate!r} has no approved_by "
-                                f"-- an agent cannot self-certify past a gate")
+            # A missing approved_by is NOT a defect: it is what a suggestion is, and
+            # suggesting one is how the obstacle reaches a person at all. What stops an
+            # agent certifying its own way past a gate is that such a waiver satisfies
+            # nothing and blocks pr_ready -- enforced there, where it bites, rather than
+            # by failing the repo's own checks over a decision someone has yet to make.
+            # Checked here instead: the record says what is being waived.
+            elif not (rec.get("reason") or "").strip():
+                problems.append(f"{name}: waiver on {gate!r} has no reason -- nobody can "
+                                f"approve or refuse a case that is not stated")
     return problems
 
 
@@ -201,10 +202,24 @@ def gate_surface():
     explicitly scoped out with a reason. The gate is ACCOUNTING, not coverage: a
     scoped-out component is a deliberate, reviewable decision, and the failure being
     eliminated is the SILENT omission -- a port that claimed success while covering a
-    subset. Projects with no surface.json yet are not failed; the planner generates
-    one, and requiring it retroactively for 164 existing projects would just be noise."""
+    subset.
+
+    It has never judged anything. Zero projects have a surface.json, because nothing
+    writes one: `utils/surface.py` is named in no agent instruction, and planner.md
+    describes the idea while telling the planner to write prose into plan.md, which
+    this never reads. So the gate passes vacuously and reports a count of zero as if
+    it were a clean bill.
+
+    Left in place and made honest rather than deleted: the accounting it describes is
+    worth having, and the missing piece is one instruction in planner.md plus a
+    `surface.py generate` anyone can run. Saying "0 accounted for" out loud is what
+    stops it reading as nine gates passing when it is eight."""
     r = _run([sys.executable, "utils/surface.py", "check", "--all"])
     if r.returncode == 0:
+        if not list((REPO / "projects").glob("*/surface.json")):
+            print("surface: VACUOUS -- no project has a surface.json, so this gate "
+                  "judged nothing (see planner.md; `surface.py generate <name>`)",
+                  file=sys.stderr)
         return []
     return [l.replace("surface: ", "") for l in r.stdout.splitlines() if l.strip()][:20]
 

@@ -211,38 +211,6 @@ def apply_one(r):
     return True
 
 
-# A decline is expressed as a label on the project's draft PR. Approval can live
-# outside MOAT -- a fork in the org IS the record -- but a decline cannot: it has to
-# reach data/dispositions.json on the trunk, or the project simply gets proposed
-# again and the work repeats. So a decline MERGES the draft PR rather than closing it.
-#
-# `declined` on its own is deliberate. The repo is public, so a written reason is
-# permanent and quotable, and a project can be reconsidered later without anything to
-# walk back. It records that a decision was made, not why.
-DECLINE_LABELS = {
-    "declined:license": "license-blocked",
-    "declined:already-supported": "already-supported",
-    "declined": "declined",
-}
-
-
-def _draft_pr(branch):
-    prs = gh_json(["pr", "list", "--head", branch, "--state", "open",
-                   "--json", "number,labels,url"]) or []
-    return prs[0] if prs else None
-
-
-def _decline_reason(pr):
-    """The reason a decline label maps to, or None. A more specific label wins over
-    the bare one, so `declined` plus `declined:license` records the licence."""
-    names = {l["name"] for l in pr.get("labels", [])}
-    specific = [DECLINE_LABELS[n] for n in names
-                if n in DECLINE_LABELS and n != "declined"]
-    if specific:
-        return specific[0]
-    return DECLINE_LABELS["declined"] if "declined" in names else None
-
-
 def fork_poll(apply=False, stale_weeks=3):
     """Release projects whose fork has appeared, and flag ones waiting too long.
 
@@ -257,41 +225,24 @@ def fork_poll(apply=False, stale_weeks=3):
     session. This only makes the project eligible and tells someone.
     """
     import datetime
-    released, waiting, declined, conflicts, elsewhere = [], [], [], [], []
+    import moatlib
+    released, waiting = [], []
     for name, d, where in all_records():
-        blocks = {a: b for a, b in (d.get("platforms") or {}).items()
-                  if b.get("state") == "awaiting-fork"}
-        if not blocks:
-            continue
-        if where == "branch":
-            # Releasing writes to the record, and the record is not in this checkout.
-            # Report it rather than skipping: a fork that appeared for a project whose
-            # branch nobody has out is exactly the thing this exists to notice.
-            elsewhere.append({"name": name, "archs": sorted(blocks)})
+        if moatlib.project_stage(d) != "awaiting-fork":
             continue
         slug = (d.get("fork_url") or f"https://github.com/AMD-Ecosystem/{name}") \
             .replace("https://github.com/", "")
         exists = gh_json(["api", f"repos/{slug}", "--jq", ".full_name"]) is not None or \
             subprocess.run(["gh", "api", f"repos/{slug}"], capture_output=True).returncode == 0
         if not exists:
-            since = min((b.get("updated_at") or "") for b in blocks.values())
-            waiting.append({"name": name, "slug": slug, "since": since})
+            waiting.append({"name": name, "slug": slug,
+                            "since": d.get("updated_at") or ""})
             continue
-        released.append({"name": name, "slug": slug, "archs": sorted(blocks)})
+        released.append({"name": name, "slug": slug, "where": where})
 
-    print(f"fork-poll: {len(released)} released, {len(declined)} declined, "
-          f"{len(waiting)} still waiting, {len(conflicts)} conflicted, "
-          f"{len(elsewhere)} on another branch\n")
-    for e in elsewhere:
-        print(f"  ELSEWHERE  {e['name']:26} awaiting-fork on port/{e['name']} -- "
-              f"check that branch out to release it")
+    print(f"fork-poll: {len(released)} released, {len(waiting)} still waiting\n")
     for r in released:
         print(f"  RELEASED   {r['name']:26} fork exists: {r['slug']}")
-    for r in declined:
-        print(f"  DECLINED   {r['name']:26} reason={r['reason']:18} PR #{r['pr']}")
-    for c in conflicts:
-        print(f"  CONFLICT   {c['name']:26} declined ({c['reason']}) but "
-              f"{c['slug']} exists -- resolve by hand")
     now = datetime.datetime.now(datetime.timezone.utc)
     for w in waiting:
         old = ""
@@ -305,69 +256,21 @@ def fork_poll(apply=False, stale_weeks=3):
                 pass
         print(f"  WAITING    {w['name']:26} no fork at {w['slug']}{old}")
 
-    if not apply or not (released or declined):
-        return released, waiting, declined, conflicts
+    if not apply or not released:
+        return released, waiting
 
-    for r in released:
-        branch = f"port/{r['name']}"
-        def git(*a):
-            return subprocess.run(["git", *a], cwd=str(REPO), capture_output=True, text=True)
-        if git("fetch", "-q", "origin", branch).returncode:
-            print(f"  {r['name']}: no {branch} on the remote; state left alone")
-            continue
-        git("checkout", "-q", "-B", branch, f"origin/{branch}")
-        obj = json.loads((REPO / "projects" / r["name"] / "status.json").read_text())
-        for a in r["archs"]:
-            obj["platforms"][a]["state"] = "screened"
-        (REPO / "projects" / r["name"] / "status.json").write_text(
-            json.dumps(obj, indent=2) + "\n")
-        git("add", "-A")
-        git("commit", "-q", "-m",
-            f"{r['name']}: fork exists, releasing for planning\n\n"
-            f"{r['slug']} was created, which is the decision to take this project up.")
-        git("push", "-q", "origin", branch)
-        pr = gh_json(["pr", "list", "--head", branch, "--state", "open",
-                      "--json", "number"]) or []
-        if pr:
-            subprocess.run(
-                ["gh", "pr", "comment", str(pr[0]["number"]), "--body",
-                 f"`{r['slug']}` now exists, so this project is released for planning. "
-                 f"State advanced to `screened`; the next session on a suitable host "
-                 f"will pick it up."],
-                cwd=str(REPO), capture_output=True, text=True)
-
-    for c in declined:
-        branch = f"port/{c['name']}"
-        def git(*a):
-            return subprocess.run(["git", *a], cwd=str(REPO), capture_output=True, text=True)
-        if git("fetch", "-q", "origin", branch).returncode:
-            print(f"  {c['name']}: no {branch} on the remote; disposition not written")
-            continue
-        git("checkout", "-q", "-B", branch, f"origin/{branch}")
-        # The disposition on the trunk is what makes the decline durable: scaffold
-        # refuses a skipped project, so nobody re-proposes it by accident.
-        repo_slug = (c["upstream"] or "").replace("https://github.com/", "")
-        r = subprocess.run([sys.executable, "utils/triage.py", "skip", repo_slug,
-                            "--reason", c["reason"], "--note", "declined via PR label"],
-                           cwd=str(REPO), capture_output=True, text=True)
-        if r.returncode:
-            print(f"  {c['name']}: triage skip failed: {r.stderr.strip()[:120]}")
-            continue
-        git("add", "-A")
-        git("commit", "-q", "-m",
-            f"{c['name']}: declined ({c['reason']})\n\n"
-            f"Recorded so the project is not proposed again. Merging this is what "
-            f"makes the decision durable; closing the PR would lose it.")
-        git("push", "-q", "origin", branch)
-        subprocess.run(["gh", "pr", "ready", str(c["pr"])], cwd=str(REPO),
-                       capture_output=True, text=True)
-        subprocess.run(
-            ["gh", "pr", "comment", str(c["pr"]), "--body",
-             f"Declined (`{c['reason']}`). The disposition is recorded on this branch; "
-             f"merging makes it durable, so the project will not be proposed again. "
-             f"It can be revisited later with `scaffold --force`."],
-            cwd=str(REPO), capture_output=True, text=True)
-    return released, waiting, declined, conflicts
+    # One implementation, in moatlib. This used to keep its own: check the branch out,
+    # edit the file, commit, push, restore the caller's branch, then look for the
+    # project's draft PR to comment on. That last step has found nothing since draft
+    # PRs stopped being opened per project, and the checkout dance is unnecessary now
+    # that release_awaiting_fork writes a branch through git plumbing. Two
+    # implementations of "release a fork" had already drifted: this one advanced
+    # branch-resident projects while `moatlib.py release-forks` reported none waiting.
+    sys.path.insert(0, str(REPO / "utils"))
+    import moatlib
+    for name, slug in moatlib.release_awaiting_fork():
+        print(f"  ADVANCED   {name:26} -> screened ({slug})")
+    return released, waiting
 
 
 # An approval covers the code, title and body that were on screen when it was given.

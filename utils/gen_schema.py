@@ -29,9 +29,17 @@ def build():
         "required": ["schema_version", "name", "upstream_url", "fork_default_branch",
                      "priority", "ext_type", "platforms"],
         "properties": {
-            "schema_version": {"const": m.SCHEMA_VERSION},
+            # Both versions while the migration runs, matching validate_status --
+            # a const here would fail every record not yet stamped.
+            "schema_version": {"enum": list(m.READABLE_SCHEMA_VERSIONS)},
             "name": {"type": "string"},
             "upstream_url": {"type": "string"},
+            # GitHub's numeric repo id, which survives a rename or an org transfer.
+            # upstream_url does not: FlashRT moved from LiangSu8899 to the
+            # flashrt-project org and the recorded URL became a name nobody uses.
+            # Adoption is matched on this so a transferred project cannot re-enter
+            # discovery looking unclaimed.
+            "upstream_repo_id": {"type": ["integer", "null"]},
             "fork_url": {"type": ["string", "null"]},
             "fork_default_branch": {"type": "string"},
             "fork_branch": {"type": "string",
@@ -72,9 +80,19 @@ def build():
                     "type": "object",
                     "required": ["reason"],
                     "properties": {
-                        "reason": {"type": "string"},
-                        "approved_by": {"type": "string"},
+                        "reason": {"type": "string", "minLength": 1},
+                        # When an agent made the case, as against when a maintainer
+                        # approved it (`at`). Both are kept: the gap between them is
+                        # how long a finished port sat waiting on one decision.
+                        "suggested_at": {"type": "string"},
+                        "approved_by": {"type": "string", "minLength": 1},
                         "at": {"type": "string"},
+                        # A refusal is an answer too, and is kept rather than deleting
+                        # the suggestion: the next agent to hit the same wall needs to
+                        # know it was asked, answered, and what to look at instead.
+                        "refused_by": {"type": "string", "minLength": 1},
+                        "refused_at": {"type": "string"},
+                        "refused_note": {"type": "string", "minLength": 1},
                     },
                 },
             },
@@ -96,6 +114,20 @@ def build():
                     "viable": {"type": ["boolean", "null"]},
                     "summary": {"type": "string"},
                     "at": {"type": "string"},
+                    # The person's answer to the recommendation above. Recorded
+                    # because the gap between deciding to fork and the fork existing
+                    # is unbounded, and the queue otherwise reverts to arguing the
+                    # recommendation -- worst exactly where they disagree.
+                    "decided": {
+                        "type": ["object", "null"],
+                        "required": ["choice", "by", "at"],
+                        "properties": {
+                            "choice": {"enum": ["fork", "decline"]},
+                            "by": {"type": "string", "minLength": 1},
+                            "at": {"type": "string"},
+                            "note": {"type": "string"},
+                        },
+                    },
                 },
             },
             # Permission to offer a tier 3/4 project upstream; tiers 1-2 need none.
@@ -139,6 +171,25 @@ def build():
                     "review_pr": {"type": "string"},
                 },
             },
+            # Where the PORT is. One fork, one answer -- as against platforms[arch],
+            # which records only what a given GPU proved. Not required: records
+            # written before this field existed are still readable while they are
+            # migrated (see READABLE_SCHEMA_VERSIONS).
+            "stage": {"enum": sorted(m.STAGE_STATES)},
+            # A person's verdict that the codebase cannot be ported at all, which is
+            # what `stage: not-portable` stands on. Like a gate waiver and a licence
+            # clearance, a record without `by` satisfies nothing -- an agent may build
+            # the case and may not sign it. An OS that refuses the port is a `windows`
+            # waiver instead, and a toolchain defect on one card is a per-arch block.
+            "not_portable": {
+                "type": ["object", "null"],
+                "required": ["reason", "by", "at"],
+                "properties": {
+                    "reason": {"type": "string", "minLength": 1},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                },
+            },
             # Open platform map. A key is any well-formed <os>-<gfx>, checked by
             # shape rather than against a roster, so a host with a new GPU records a
             # validation without a schema change. Absent means "never worked here".
@@ -149,12 +200,17 @@ def build():
             },
         },
         "$defs": {
-            "state": {"enum": sorted(m.STATES)},
+            # Only what an ARCHITECTURE can record. port-ready and revalidate are
+            # derived from (stage, validated_sha, head_sha) and never stored.
+            "archstate": {"enum": sorted(m.ARCH_STATES)},
             "arch": {
                 "type": "object",
-                "required": ["state", "blocked"],
+                # `state` is not required: a migrated block holds only what this arch
+                # can know, and for an arch that never validated that is `blocked`
+                # alone. The project's own progress lives in `stage`.
+                "required": ["blocked"],
                 "properties": {
-                    "state": {"$ref": "#/$defs/state"},
+                    "state": {"$ref": "#/$defs/archstate"},
                     "blocked": {"type": "boolean"},
                     "blocked_reason": {"type": ["string", "null"]},
                     "validated_sha": {"type": ["string", "null"],

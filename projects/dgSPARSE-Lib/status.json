@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "name": "dgSPARSE-Lib",
   "upstream_url": "https://github.com/dgSPARSE/dgSPARSE-Lib",
   "fork_url": "https://github.com/AMD-Ecosystem/dgSPARSE-Lib",
@@ -7,9 +7,18 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-05T01:25:53Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:05:00Z",
   "head_sha": "1ff4c69b407bfc756e4d084bcdcdbda89171e358",
   "depends_on": [],
+  "pr_url": "https://github.com/dgSPARSE/dgSPARSE-Lib/pull/39",
+  "pr_number": 39,
+  "pr_opened_at": "2026-06-20T00:42:17Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "MIT",
+  "upstream_repo_id": 381729183,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -127,12 +136,5 @@
         "at": "2026-06-20T00:50:38Z"
       }
     }
-  },
-  "pr_url": "https://github.com/dgSPARSE/dgSPARSE-Lib/pull/39",
-  "pr_number": 39,
-  "pr_opened_at": "2026-06-20T00:42:17Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "MIT"
+  }
 }

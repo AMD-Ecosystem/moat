@@ -492,6 +492,13 @@ text_markers = [
   "NVIDIA Software License Agreement",
   "NVIDIA CORPORATION and its licensors retain all intellectual property",
   "NVIDIA End User License Agreement",
+  # The older CUDA Samples headers (helper_cuda.h, helper_string.h) point at the EULA
+  # rather than naming it, so none of the markers above fire on them. cuda_voxelizer
+  # vendors two, and the intake agent found them only by reading the files. NVIDIA
+  # relicensed the samples to BSD-3-Clause in 2022, so a current copy is clean and it
+  # is specifically the pre-2017 vintage that matters.
+  "refer to the NVIDIA end user license agreement",
+  "outside the terms of the EULA",
 ]
 
 [scan]

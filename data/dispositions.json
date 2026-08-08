@@ -63,14 +63,6 @@
     "reason": "not-a-target",
     "repo_id": 268618098
   },
-  "acfr-rpg/dynosam": {
-    "decided": "2026-06-04T23:52:13Z",
-    "disposition": "skip",
-    "full_name": "ACFR-RPG/DynOSAM",
-    "note": "TensorRT (NVIDIA proprietary) is core dependency with no ROCm equivalent. OpenCV CUDA modules also have no ROCm build. Would require complete inference backend rewrite, not a CUDA-to-HIP port.",
-    "reason": "cant-port",
-    "repo_id": 661488734
-  },
   "ai-hpc/ai-hardware-engineer-roadmap": {
     "decided": "2026-06-05T01:16:26Z",
     "disposition": "skip",
@@ -363,7 +355,7 @@
     "decided": "2026-08-06T22:22:22Z",
     "disposition": "skip",
     "full_name": "Colvars/colvars",
-    "note": "HIP support merged upstream (PRs #810, #888, #890, #894, #933).",
+    "note": "HIP support merged upstream (PRs #810, #888, #890, #894, #933). Analysis retained in history: `git show b40576d53399:projects/colvars/plan.md` (notes.md, plan.md).",
     "reason": "already-supported",
     "repo_id": 10252992
   },
@@ -467,7 +459,7 @@
     "decided": "2026-08-06T22:22:22Z",
     "disposition": "skip",
     "full_name": "diku-dk/futhark",
-    "note": "Authoritative upstream HIP backend; validated 2430/2432 tests pass.",
+    "note": "Authoritative upstream HIP backend; validated 2430/2432 tests pass. Analysis retained in history: `git show b40576d53399:projects/futhark/plan.md` (notes.md, plan.md).",
     "reason": "already-supported",
     "repo_id": 7960131
   },
@@ -639,6 +631,14 @@
     "reason": "not-a-target",
     "repo_id": 1211475186
   },
+  "forceflow/cuda_voxelizer": {
+    "decided": "2026-08-07T14:41:14Z",
+    "disposition": "verify",
+    "full_name": "Forceflow/cuda_voxelizer",
+    "note": "vendored NVIDIA CUDA-Samples headers under the old EULA notice; admin deciding whether forking is acceptable",
+    "reason": "verify",
+    "repo_id": 19234691
+  },
   "forceinjection/ai-fundamentals": {
     "decided": "2026-05-29T23:57:04Z",
     "disposition": "skip",
@@ -771,7 +771,7 @@
     "decided": "2026-05-31T02:45:23Z",
     "disposition": "skip",
     "full_name": "heavyai/heavydb",
-    "note": "GPU queries run via a runtime LLVM NVVM->NVPTX codegen pipeline (NativeCodegen.cpp lookupTarget(nvptx64)/triple nvptx64-nvidia-cuda/nvvm.annotations/libdevice) JIT-linked to cubin by the CUDA driver (NvidiaKernel.cpp cuLink*) and launched via the CUDA driver API. No static GPU kernel to translate and no isolated GPU unit test -> no correctness-first slice. A ROCm port needs a new LLVM-AMDGPU codegen backend + ROCm device-libs link + hipRTC/comgr runtime-compile + a port of ~70 CUDA-driver-coupled files and the warpcore CG hash table: upstream-engineering scale. The analogous Intel SPIR-V+Level-Zero backend (PRs 671/683/688-691/697) was attempted and closed unmerged; only an inert L0 memory-manager stub remains. Not a tractable mechanical MOAT port; not GPU-validatable in-pipeline. See projects/heavydb/plan.md.",
+    "note": "GPU queries run via a runtime LLVM NVVM->NVPTX codegen pipeline (NativeCodegen.cpp lookupTarget(nvptx64)/triple nvptx64-nvidia-cuda/nvvm.annotations/libdevice) JIT-linked to cubin by the CUDA driver (NvidiaKernel.cpp cuLink*) and launched via the CUDA driver API. No static GPU kernel to translate and no isolated GPU unit test -> no correctness-first slice. A ROCm port needs a new LLVM-AMDGPU codegen backend + ROCm device-libs link + hipRTC/comgr runtime-compile + a port of ~70 CUDA-driver-coupled files and the warpcore CG hash table: upstream-engineering scale. The analogous Intel SPIR-V+Level-Zero backend (PRs 671/683/688-691/697) was attempted and closed unmerged; only an inert L0 memory-manager stub remains. Not a tractable mechanical MOAT port; not GPU-validatable in-pipeline. See projects/heavydb/plan.md. Analysis retained in history: `git show b40576d53399:projects/heavydb/plan.md` (notes.md, plan.md).",
     "reason": "cant-port",
     "repo_id": 90541149
   },
@@ -1050,7 +1050,7 @@
     "decided": "2026-08-07T00:29:52Z",
     "disposition": "skip",
     "full_name": "LMCache/LMCache",
-    "note": "Upstream HIP path validated on gfx90a (wave64) and gfx1100 (wave32).",
+    "note": "Upstream HIP path validated on gfx90a (wave64) and gfx1100 (wave32). Analysis retained in history: `git show b40576d53399:projects/LMCache/plan.md` (notes.md, plan.md).",
     "reason": "already-supported",
     "repo_id": 807305060
   },
@@ -1082,7 +1082,7 @@
     "decided": "2026-06-05T00:06:37Z",
     "disposition": "skip",
     "full_name": "luigifreda/pyslam",
-    "note": "Framework composition layer with no native CUDA code. All CUDA in bundled thirdparty submodules (lietorch, diff-gaussian-rasterization, simple-knn) which are separate porting targets. pyslam core is pure Python/C++. See plan.md for full analysis.",
+    "note": "Framework composition layer with no native CUDA code. All CUDA in bundled thirdparty submodules (lietorch, diff-gaussian-rasterization, simple-knn) which are separate porting targets. pyslam core is pure Python/C++. See plan.md for full analysis. Analysis retained in history: `git show b40576d53399:projects/pyslam/plan.md` (plan.md).",
     "reason": "not-a-target",
     "repo_id": 179858671
   },
@@ -1194,7 +1194,7 @@
     "decided": "2026-05-31T01:40:26Z",
     "disposition": "skip",
     "full_name": "mirage-project/mirage",
-    "note": "CUTLASS/CuTe-centric tensor superoptimizer + NVIDIA-arch-locked megakernel codegen (PTX mma/wgmma/TMA/cp.async, sm_80/sm_90a/sm_100a, NVSHMEM, NVRTC); no tractable correctness-first HIP target -- AMD support would be a ground-up CK/ck_tile+HIP backend, not a mechanical port",
+    "note": "CUTLASS/CuTe-centric tensor superoptimizer + NVIDIA-arch-locked megakernel codegen (PTX mma/wgmma/TMA/cp.async, sm_80/sm_90a/sm_100a, NVSHMEM, NVRTC); no tractable correctness-first HIP target -- AMD support would be a ground-up CK/ck_tile+HIP backend, not a mechanical port Analysis retained in history: `git show b40576d53399:projects/mirage/plan.md` (notes.md, plan.md). Decided before FlyDSL existed. FlyDSL would be a plausible codegen TARGET for mirage's megakernel emitter, but that addresses only one of the blockers: NVSHMEM, NVRTC-at-runtime against sm_90a/sm_100a, and raw PTX remain. Determination unchanged. See references/no-hip-equivalent.md.",
     "reason": "cant-port",
     "repo_id": 797553215
   },
@@ -1221,14 +1221,6 @@
     "note": "Alibaba LLM inference; likely has AMD support or uses standard backends",
     "reason": "already-supported",
     "repo_id": 780323643
-  },
-  "moonshotai/flashkda": {
-    "decided": "2026-08-06T22:22:22Z",
-    "disposition": "skip",
-    "full_name": "MoonshotAI/FlashKDA",
-    "note": "100% CUTLASS/CuTe SM90+ (TMA, wgmma, cluster launch); needs a CK reimplementation, not a port.",
-    "reason": "cant-port",
-    "repo_id": 1215986180
   },
   "mrshaw01/software-engineer": {
     "decided": "2026-05-30T00:45:17Z",
@@ -1266,7 +1258,7 @@
     "decided": "2026-06-05T09:15:24Z",
     "disposition": "skip",
     "full_name": "MWATelescope/mwa_hyperdrive",
-    "note": "Mature upstream HIP support since v0.3.0 (2023-09-27); actively deployed on Pawsey Setonix MI250 (gfx90a); ROCm 6.x support in v0.4.0",
+    "note": "Mature upstream HIP support since v0.3.0 (2023-09-27); actively deployed on Pawsey Setonix MI250 (gfx90a); ROCm 6.x support in v0.4.0 Analysis retained in history: `git show b40576d53399:projects/mwa_hyperdrive/plan.md` (plan.md).",
     "reason": "already-supported",
     "repo_id": 248674669
   },
@@ -1322,7 +1314,7 @@
     "decided": "2026-06-04T23:56:48Z",
     "disposition": "skip",
     "full_name": "nv-tlabs/3dgrut",
-    "note": "OptiX RT cores (no HIPRT equivalent API), tiny-cuda-nn (PTX inline asm), NVRTC runtime compilation, Slang->CUDA (no HIP target). Each is independently blocking; project is fundamentally NVIDIA-exclusive.",
+    "note": "OptiX RT cores (no HIPRT equivalent API), tiny-cuda-nn (PTX inline asm), NVRTC runtime compilation, Slang->CUDA (no HIP target). Each is independently blocking; project is fundamentally NVIDIA-exclusive. Analysis retained in history: `git show b40576d53399:projects/3dgrut/plan.md` (plan.md).",
     "reason": "cant-port",
     "repo_id": 951600229
   },
@@ -1370,7 +1362,7 @@
     "decided": "2026-06-04T23:09:44Z",
     "disposition": "skip",
     "full_name": "NVIDIA/cuEquivariance",
-    "note": "Closed-source binary kernels: cuequivariance-ops-* packages ship CUDA kernels as prebuilt binary wheels (no source on PyPI or GitHub). The open Apache-2.0 repo contains only Python frontends. A ROCm port would require greenfield kernel reimplementation, not CUDA->HIP translation.",
+    "note": "Closed-source binary kernels: cuequivariance-ops-* packages ship CUDA kernels as prebuilt binary wheels (no source on PyPI or GitHub). The open Apache-2.0 repo contains only Python frontends. A ROCm port would require greenfield kernel reimplementation, not CUDA->HIP translation. Analysis retained in history: `git show b40576d53399:projects/cuEquivariance/plan.md` (notes.md, plan.md).",
     "reason": "cant-port",
     "repo_id": 876809949
   },
@@ -1402,7 +1394,7 @@
     "decided": "2026-06-11T04:03:22Z",
     "disposition": "skip",
     "full_name": "open-mmlab/mmcv",
-    "note": "mmcv already has mature, upstream-merged ROCm/HIP support: MMCV_WITH_HIP guards across all 58 CUDA kernels (warp size 64, __shfl_down vs __shfl_down_sync, etc.), setup.py detects ROCm PyTorch via torch.version.hip and builds the CUDAExtension path with -DMMCV_WITH_HIP (torch hipifies at build time), and docs/en/get_started/build.md documents the AMD ROCm build. PR1206 refactored mmcv/ops/csrc explicitly to support AMD GPUs. is_rocm_pytorch helpers in Python ops. No port needed; would duplicate AMD/upstream work.",
+    "note": "mmcv already has mature, upstream-merged ROCm/HIP support: MMCV_WITH_HIP guards across all 58 CUDA kernels (warp size 64, __shfl_down vs __shfl_down_sync, etc.), setup.py detects ROCm PyTorch via torch.version.hip and builds the CUDAExtension path with -DMMCV_WITH_HIP (torch hipifies at build time), and docs/en/get_started/build.md documents the AMD ROCm build. PR1206 refactored mmcv/ops/csrc explicitly to support AMD GPUs. is_rocm_pytorch helpers in Python ops. No port needed; would duplicate AMD/upstream work. Analysis retained in history: `git show b40576d53399:projects/mmcv/plan.md` (notes.md, plan.md).",
     "reason": "already-supported",
     "repo_id": 145670155
   },
@@ -1442,7 +1434,7 @@
     "decided": "2026-08-07T00:29:52Z",
     "disposition": "skip",
     "full_name": "OpenNMT/CTranslate2",
-    "note": "Upstream ships a mature RDNA-only HIP backend; validated, no port needed.",
+    "note": "Upstream ships a mature RDNA-only HIP backend; validated, no port needed. Analysis retained in history: `git show b40576d53399:projects/CTranslate2/plan.md` (notes.md, plan.md).",
     "reason": "already-supported",
     "repo_id": 210299376
   },
@@ -1502,6 +1494,14 @@
     "reason": "not-a-target",
     "repo_id": 355252375
   },
+  "pegainfer-project/pegainfer": {
+    "decided": "2026-08-07T15:10:48Z",
+    "disposition": "skip",
+    "full_name": "pegainfer-project/pegainfer",
+    "note": "Decided by jeffdaily on intake queue issue #5, 2026-08-07. The GPU layer runs through the cudarc Rust crate, which has no ROCm backend anywhere in the Rust ecosystem, and the GLM5.2/Kimi-K2 kernels are Blackwell-only tcgen05/CUTLASS.",
+    "reason": "cant-port",
+    "repo_id": 1159983293
+  },
   "pennylaneai/pennylane-lightning": {
     "decided": "2026-06-05T01:24:20Z",
     "disposition": "skip",
@@ -1514,7 +1514,7 @@
     "decided": "2026-08-07T00:29:52Z",
     "disposition": "skip",
     "full_name": "pghysels/STRUMPACK",
-    "note": "Already supports HIP/ROCm and runs on AMD GPUs (Frontier at OLCF).",
+    "note": "Already supports HIP/ROCm and runs on AMD GPUs (Frontier at OLCF). Analysis retained in history: `git show b40576d53399:projects/STRUMPACK/plan.md` (notes.md, plan.md).",
     "reason": "already-supported",
     "repo_id": 93773766
   },
@@ -1541,6 +1541,14 @@
     "note": "tutorial/educational/samples, not a library to port",
     "reason": "not-a-target",
     "repo_id": 882914578
+  },
+  "project-hami/hami-core": {
+    "decided": "2026-08-07T15:10:47Z",
+    "disposition": "skip",
+    "full_name": "Project-HAMi/HAMi-core",
+    "note": "Decided by jeffdaily on intake queue issue #5, 2026-08-07. An AMD-native equivalent already exists in the same upstream org: Project-HAMi/amd-hami-core hooks HIP and uses ROC_GLOBAL_CU_MASK, verified on MI300X across ROCm 6.2-7.2.",
+    "reason": "already-supported",
+    "repo_id": 747110621
   },
   "proteneer/timemachine": {
     "decided": "2026-06-05T01:23:31Z",
@@ -1600,7 +1608,7 @@
     "decided": "2026-08-07T00:29:52Z",
     "disposition": "skip",
     "full_name": "rahul-goel/fused-ssim",
-    "note": "Upstream ROCm support validated on gfx90a (wave64) and gfx1100 (wave32).",
+    "note": "Upstream ROCm support validated on gfx90a (wave64) and gfx1100 (wave32). Analysis retained in history: `git show b40576d53399:projects/fused-ssim/plan.md` (notes.md, plan.md).",
     "reason": "already-supported",
     "repo_id": 840265857
   },
@@ -1712,7 +1720,7 @@
     "decided": "2026-06-11T04:07:26Z",
     "disposition": "skip",
     "full_name": "rusty1s/pytorch_cluster",
-    "note": "Upstream already merged ROCm build support: PR #149 'Enable ROCm build' (MERGED 2022-10-17) added the torch.version.hip->USE_ROCM + build-time hipify path (setup.py L19,80-84,125-126; csrc/version.cpp), present in tree today. The .cu kernels carry ZERO fault classes (no warpSize/__shfl/__ballot -- only __syncthreads tree reductions; no cub/thrust/cuBLAS/cuFFT; no textures/PTX; only device-API cuRAND in rw_cuda.cu which torch hipify maps cleanly to hipRAND/rocRAND), so no source delta exists to contribute -- the kernels build/run unmodified via torch hipify, which is why #149 changed no .cu. Maintained community ROCm wheels exist (Looong01/pyg-rocm-build, torch-cluster-rocm on PyPI; track ROCm 7.2.2/PyTorch 2.11, Apr 2026) building the unmodified source. Repo is deprecated in favor of pyg-lib (#271) and AMD states PyG is not on its ROCm roadmap (ROCm/ROCm #3655). An upstream PR would be a no-op into a deprecated repo.",
+    "note": "Upstream already merged ROCm build support: PR #149 'Enable ROCm build' (MERGED 2022-10-17) added the torch.version.hip->USE_ROCM + build-time hipify path (setup.py L19,80-84,125-126; csrc/version.cpp), present in tree today. The .cu kernels carry ZERO fault classes (no warpSize/__shfl/__ballot -- only __syncthreads tree reductions; no cub/thrust/cuBLAS/cuFFT; no textures/PTX; only device-API cuRAND in rw_cuda.cu which torch hipify maps cleanly to hipRAND/rocRAND), so no source delta exists to contribute -- the kernels build/run unmodified via torch hipify, which is why #149 changed no .cu. Maintained community ROCm wheels exist (Looong01/pyg-rocm-build, torch-cluster-rocm on PyPI; track ROCm 7.2.2/PyTorch 2.11, Apr 2026) building the unmodified source. Repo is deprecated in favor of pyg-lib (#271) and AMD states PyG is not on its ROCm roadmap (ROCm/ROCm #3655). An upstream PR would be a no-op into a deprecated repo. Analysis retained in history: `git show b40576d53399:projects/pytorch_cluster/notes.md` (notes.md).",
     "reason": "already-supported",
     "repo_id": 117287184
   },
@@ -1720,7 +1728,7 @@
     "decided": "2026-06-11T04:10:52Z",
     "disposition": "skip",
     "full_name": "rusty1s/pytorch_scatter",
-    "note": "Mature AUTHORITATIVE merged upstream ROCm support. setup.py L19/L78-82 has the torch.version.hip build-time hipify path + USE_ROCM define + __HIP_NO_HALF_CONVERSIONS__ undef. csrc/cuda/utils.cuh is a USE_ROCM-guarded warp-shuffle shim (maskless __shfl_up/__shfl_down + at::Half overloads + warp_mask_t 64-bit). atomics.cuh + version.cpp ROCm-guarded. Merged PRs: #325 (ROCm org, enable_rocm, 2022-09) foundational; #411 (ashwinma/AMD, 2024-01) at::Half shfl; #498 (Looong01, 2025-08) ROCm 6.4.3+. Our own jeffdaily PR #493 was CLOSED (superseded). Maintained ROCm wheels: Looong01/pyg-rocm-build, latest 2026-04-21, ROCm up to 7.2.2, torch 2.11, py3.10-3.14. segment_coo/segment_csr warp reductions are wave-relative (TB<=32, contiguity-guarded, atomic flush) and wave64-correct as shipped. No unported fault class. Same posture as sibling mmcv + pytorch_cluster skips.",
+    "note": "Mature AUTHORITATIVE merged upstream ROCm support. setup.py L19/L78-82 has the torch.version.hip build-time hipify path + USE_ROCM define + __HIP_NO_HALF_CONVERSIONS__ undef. csrc/cuda/utils.cuh is a USE_ROCM-guarded warp-shuffle shim (maskless __shfl_up/__shfl_down + at::Half overloads + warp_mask_t 64-bit). atomics.cuh + version.cpp ROCm-guarded. Merged PRs: #325 (ROCm org, enable_rocm, 2022-09) foundational; #411 (ashwinma/AMD, 2024-01) at::Half shfl; #498 (Looong01, 2025-08) ROCm 6.4.3+. Our own jeffdaily PR #493 was CLOSED (superseded). Maintained ROCm wheels: Looong01/pyg-rocm-build, latest 2026-04-21, ROCm up to 7.2.2, torch 2.11, py3.10-3.14. segment_coo/segment_csr warp reductions are wave-relative (TB<=32, contiguity-guarded, atomic flush) and wave64-correct as shipped. No unported fault class. Same posture as sibling mmcv + pytorch_cluster skips. Analysis retained in history: `git show b40576d53399:projects/pytorch_scatter/notes.md` (notes.md).",
     "reason": "already-supported",
     "repo_id": 114475042
   },
@@ -1728,7 +1736,7 @@
     "decided": "2026-06-12T07:02:57Z",
     "disposition": "skip",
     "full_name": "rusty1s/pytorch_sparse",
-    "note": "Authoritative merged upstream ROCm support (PRs #282 dkbhaskaran/AMD, #296 miaoneng, #360 ashwinma/AMD) + maintained torch-sparse-rocm wheels (pyg-rocm-build, ROCm 7.2.2, 2026-04). Same rusty1s/PyG family as pytorch_scatter/mmcv/pytorch_cluster, all skipped. setup.py torch.version.hip path + USE_ROCM SHFL shim already in tree. See plan.md.",
+    "note": "Authoritative merged upstream ROCm support (PRs #282 dkbhaskaran/AMD, #296 miaoneng, #360 ashwinma/AMD) + maintained torch-sparse-rocm wheels (pyg-rocm-build, ROCm 7.2.2, 2026-04). Same rusty1s/PyG family as pytorch_scatter/mmcv/pytorch_cluster, all skipped. setup.py torch.version.hip path + USE_ROCM SHFL shim already in tree. See plan.md. Analysis retained in history: `git show b40576d53399:projects/pytorch_sparse/plan.md` (notes.md, plan.md).",
     "reason": "already-supported",
     "repo_id": 142701935
   },
@@ -1744,7 +1752,7 @@
     "decided": "2026-08-06T22:22:22Z",
     "disposition": "skip",
     "full_name": "SakanaAI/sparser-faster-llms",
-    "note": "TwELL kernels use Hopper PTX (WGMMA, TMA, thread clusters) with no AMD equivalent.",
+    "note": "TwELL kernels use Hopper PTX (WGMMA, TMA, thread clusters) with no AMD equivalent. Analysis retained in history: `git show b40576d53399:projects/sparser-faster-llms/plan.md` (notes.md, plan.md).",
     "reason": "cant-port",
     "repo_id": 1183136898
   },
@@ -1800,7 +1808,7 @@
     "decided": "2026-08-06T22:22:22Z",
     "disposition": "skip",
     "full_name": "SHI-Labs/NATTEN",
-    "note": "libnatten is 100% CUTLASS/CuTe, which upstream states does not port to ROCm.",
+    "note": "libnatten is 100% CUTLASS/CuTe, which upstream states does not port to ROCm. Analysis retained in history: `git show b40576d53399:projects/NATTEN/plan.md` (notes.md, plan.md).",
     "reason": "cant-port",
     "repo_id": 547878629
   },
@@ -1988,14 +1996,6 @@
     "reason": "already-supported",
     "repo_id": 815155760
   },
-  "traveller59/spconv": {
-    "decided": "2026-06-11T04:14:50Z",
-    "disposition": "skip",
-    "full_name": "traveller59/spconv",
-    "note": "GPU kernels are not static .cu but generated at build time by cumm (FindDefinition/cumm), a CUTLASS-derived pccm/Python codegen GEMM+implicit-conv engine. Build is PCCMExtension, not torch CUDAExtension, so hipify has nothing to translate. Porting spconv == porting cumm's entire CUTLASS/CuTe-style tensor-core (Volta/Turing/Ampere mma.sync + inline-PTX) codegen backend to ROCm; PORTING_GUIDE: CUTLASS does not port, must be reimplemented vs Composable Kernel. Unbounded out-of-scope effort; no authoritative AMD/ROCm spconv port exists upstream.",
-    "reason": "cant-port",
-    "repo_id": 166499614
-  },
   "uccl-project/mkernel": {
     "decided": "2026-06-05T01:18:36Z",
     "disposition": "skip",
@@ -2056,7 +2056,7 @@
     "decided": "2026-08-06T22:22:22Z",
     "disposition": "skip",
     "full_name": "usyd-fsalab/fp6_llm",
-    "note": "PTX tensor-core kernel (mma.sync.m16n8k16, ldmatrix.sync) has no HIP equivalent.",
+    "note": "PTX tensor-core kernel (mma.sync.m16n8k16, ldmatrix.sync) has no HIP equivalent. Analysis retained in history: `git show b40576d53399:projects/fp6_llm/plan.md` (notes.md, plan.md).",
     "reason": "cant-port",
     "repo_id": 766704459
   },

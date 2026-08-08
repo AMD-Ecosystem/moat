@@ -15,13 +15,22 @@
   ],
   "properties": {
     "schema_version": {
-      "const": 1
+      "enum": [
+        2,
+        3
+      ]
     },
     "name": {
       "type": "string"
     },
     "upstream_url": {
       "type": "string"
+    },
+    "upstream_repo_id": {
+      "type": [
+        "integer",
+        "null"
+      ]
     },
     "fork_url": {
       "type": [
@@ -110,13 +119,29 @@
         ],
         "properties": {
           "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "suggested_at": {
             "type": "string"
           },
           "approved_by": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "at": {
             "type": "string"
+          },
+          "refused_by": {
+            "type": "string",
+            "minLength": 1
+          },
+          "refused_at": {
+            "type": "string"
+          },
+          "refused_note": {
+            "type": "string",
+            "minLength": 1
           }
         }
       }
@@ -166,6 +191,35 @@
         },
         "at": {
           "type": "string"
+        },
+        "decided": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": [
+            "choice",
+            "by",
+            "at"
+          ],
+          "properties": {
+            "choice": {
+              "enum": [
+                "fork",
+                "decline"
+              ]
+            },
+            "by": {
+              "type": "string",
+              "minLength": 1
+            },
+            "at": {
+              "type": "string"
+            },
+            "note": {
+              "type": "string"
+            }
+          }
         }
       }
     },
@@ -253,6 +307,46 @@
         }
       }
     },
+    "stage": {
+      "enum": [
+        "awaiting-fork",
+        "awaiting-upstream",
+        "changes-requested",
+        "delta-ported",
+        "not-portable",
+        "planned",
+        "ported",
+        "porting",
+        "review-passed",
+        "screened",
+        "unclaimed",
+        "validation-failed"
+      ]
+    },
+    "not_portable": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "reason",
+        "by",
+        "at"
+      ],
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string"
+        }
+      }
+    },
     "platforms": {
       "type": "object",
       "propertyNames": {
@@ -264,34 +358,20 @@
     }
   },
   "$defs": {
-    "state": {
+    "archstate": {
       "enum": [
-        "awaiting-fork",
-        "awaiting-port",
-        "awaiting-upstream",
-        "changes-requested",
         "completed",
-        "delta-ported",
-        "planned",
-        "port-ready",
-        "ported",
-        "porting",
-        "revalidate",
-        "review-passed",
-        "screened",
-        "unclaimed",
         "validation-failed"
       ]
     },
     "arch": {
       "type": "object",
       "required": [
-        "state",
         "blocked"
       ],
       "properties": {
         "state": {
-          "$ref": "#/$defs/state"
+          "$ref": "#/$defs/archstate"
         },
         "blocked": {
           "type": "boolean"
