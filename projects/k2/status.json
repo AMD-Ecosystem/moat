@@ -7,7 +7,7 @@
   "priority": 5.757,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-08-07T07:05:12Z",
+  "updated_at": "2026-08-08T23:49:05Z",
   "head_sha": "92912b1c12273c36368279ec4a3410e428503e20",
   "pr_url": "https://github.com/k2-fsa/k2/pull/1353",
   "pr_number": 1353,
@@ -18,7 +18,7 @@
   "pr_state": "merged",
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 256463281,
-  "stage": "review-passed",
+  "stage": "validation-failed",
   "platforms": {
     "windows-gfx1201": {
       "state": "completed",
@@ -85,7 +85,7 @@
       "validated_sha": "efb407d8338c626f54386c730fc5cba817a3b3de",
       "started_at": "2026-05-31T02:39:49Z",
       "completed_at": "2026-06-11T16:05:09Z",
-      "updated_at": "2026-07-02T17:17:26Z",
+      "updated_at": "2026-08-08T23:49:05Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -99,7 +99,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "moat-checkup",
+      "last_agent": "validator",
       "carry_forward": {
         "from": "c8e1cf6fc7c080fc1af0f1e689a12b608ce79096",
         "to": "fd3c31a5dcbd7874d85aec64da7732ed1b98157e",

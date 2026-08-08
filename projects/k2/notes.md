@@ -1155,3 +1155,169 @@ and runs correctly on gfx90a. The 5 pytest failures are pre-existing or
 intermittent (no regressions). A secondary pip dependency resolution issue
 (torch replacement by CUDA packages) is worth noting to csukuangfj; it is
 separate from the reported fix and is a known ROCm packaging limitation.
+
+## Revalidate 2026-08-08 (linux-gfx90a) -- validation-failed on jargon gate
+
+Platform: linux-gfx90a (MI250X, gfx90a, ROCm 7.2.1, GCD 3 / HIP_VISIBLE_DEVICES=3,
+idle, no KFD PIDs). Trigger: HEAD moved efb407d8 -> 92912b1c since last
+validated_sha.
+
+### Delta classification
+
+`moatlib.py classify` returned `class=unknown arch_independent=False`
+(classification failed -> revalidate). Direct diff of the two commits on the
+delta (18a20fe cpplint fixes + 92912b1 CMake auto-detect-arch) touches
+CMakeLists.txt (removes the hardcoded gfx90a default when
+CMAKE_HIP_ARCHITECTURES is unset; irrelevant here since the build always
+passes an explicit -D) plus 8 source files -- every change in those 8 files is
+comment reflow / NOLINT annotations only (verified by reading the full diff;
+no token/logic change).
+
+### Binary-equivalence attempt (inconclusive, fell through to full GPU revalidation)
+
+Built both efb407d8 and 92912b1c at the SAME absolute source path
+(`projects/k2/src`, checked out sequentially into `build_old/` and
+`build_head/`) with an identical configure line (gfx90a, C++20, libhipcxx from
+a fresh `_deps/libhipcxx` clone). `utils/codeobj_diff.py build_old build_head`:
+
+```
+verdict=indeterminate
+  lib/_k2.cpython-312-x86_64-linux-gnu.so: identical (exported symbols + device ISA identical (1902 exports))
+  lib/libk2context.so: identical (exported symbols + device ISA identical (3527 exports))
+  lib/libgtest.so.1.13.0, libgtest_main.so.1.13.0, libk2_log.so, libk2fsa.so, libtest_utils.so: indeterminate (device-code extraction failed)
+```
+
+Root cause of the "indeterminate" on the 5 host-only libraries: `roc-obj-ls`
+exits 255 with "Error: No kernel section found" on a binary with NO device
+code at all (rather than returning empty), and `codeobj_diff.py` treats a
+nonzero exit as a tooling failure (conservatively indeterminate), not as "no
+device code". This is a real gap in the tool for pure-host libraries, worth
+recording: **it cannot currently confirm binary-equivalence for a host-only
+.so** (libgtest, libk2_log, libk2fsa, libtest_utils here). Manually confirmed
+via direct `llvm-objdump -d` diff that libk2fsa.so's disassembly is
+byte-identical between the two builds (only the objdump self-referential
+filename header line differs); the two libraries that DO carry device code
+(the exact ones touched by this delta: _k2.so and libk2context.so) were
+independently confirmed identical by the tool itself. sha256 differs across
+all 5 host libs due to a random `.note.gnu.build-id` per link, not source
+content. Given the validator rule to never carry forward on uncertainty, and
+the overall tool verdict was `indeterminate` (not `identical`), proceeded to a
+full real-GPU revalidation rather than carry-forward.
+
+### Commands (fresh build at head, HIP_VISIBLE_DEVICES=3)
+
+```
+cmake -S projects/k2/src -B projects/k2/src/build_head \
+  -DCMAKE_BUILD_TYPE=Release -DK2_WITH_HIP:BOOL=ON -DK2_WITH_CUDA:BOOL=OFF \
+  -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_CXX_STANDARD=20 \
+  -DK2_LIBHIPCXX_INCLUDE_DIR=$PWD/_deps/libhipcxx/include \
+  -DPYTHON_EXECUTABLE=$(which python3) -DK2_ENABLE_TESTS=ON -DK2_ENABLE_BENCHMARK=OFF
+bash utils/timeit.sh k2 compile -- cmake --build projects/k2/src/build_head -j 16
+bash utils/timeit.sh k2 test -- bash agent_space/k2_gtest_gfx90a_revalidate.sh
+HIP_VISIBLE_DEVICES=3 PYTHONPATH=projects/k2/src/k2/python:projects/k2/src/build_head/lib \
+  bash utils/timeit.sh k2 test -- python3 -m pytest projects/k2/src/k2/python/tests/ --tb=short -q
+```
+
+Compile: 563s, exit 0. C++ gtests: 87s, all 44 executables (30 `cu_*` GPU +
+14 host-only) exit 0. `cu_*` individual test count: 256 (matches the
+per-executable breakdown recorded in every prior gfx90a/gfx1100 validation
+entry above -- note those entries' printed "298" grand total does not actually
+sum their own listed per-executable counts, which sum to 256; this appears to
+be a stale copy-paste total carried across entries, not a real discrepancy in
+this run).
+
+Python slice: 230 passed, 5 failed, 83s. All 5 failures are the documented
+pre-existing artifacts (no new failures):
+- `ragged_test.py::test_pickle_ragged`, `ragged_tensor_test.py::test_setstate_2axes`/
+  `test_setstate_3axes` -- torch 2.6+ `weights_only=True` refuses
+  `_k2.ragged.RaggedTensor`. Device-independent.
+- `ragged_ops_test.py::test_normalize_scores_use_log_non_zero_stride` (float32
+  only) -- catastrophic-cancellation artifact, float64 exact.
+- `ctc_loss_test.py::test_random_case2` -- documented intermittent flake
+  (PyTorch native CTC gradient NaN on an unlucky random seed; k2's own gradient
+  is correct). Torch confirmed on GPU: `torch.cuda.is_available()=True`,
+  device = AMD Instinct MI250X / MI250.
+
+GPU real-hardware pass confirmed (not a CPU-only or skipped run): every
+`cu_*_test` exercises HIP kernels internally comparing CPU vs GPU results, and
+the Python slice ran against the compiled `_k2` extension with
+`torch.cuda.is_available()=True` on gfx90a.
+
+### CUDA no-regression gate (first run at this head_sha)
+
+No `cuda-compile` gate had been recorded for k2 at any sha before now. Ran it
+(nvcc 12.8 from a throwaway `cuda-12.8` conda env; no NVIDIA GPU needed,
+compile-only; pinned `-DCMAKE_CUDA_ARCHITECTURES=80` and
+`-DTORCH_CUDA_ARCH_LIST=8.0`). Needed a CUDA-enabled torch, which was not
+present on this host; installed `torch==2.11.0+cu128` in a throwaway venv via
+`pip install torch --index-url https://download.pytorch.org/whl/cu128`.
+
+Configure fails identically on both the port head (92912b1c) and the upstream
+merge-base (e625cb97) with the exact same error, verbatim:
+
+```
+nvcc fatal   : Unsupported gpu architecture 'compute_35'
+```
+
+This happens inside PyTorch's own `Caffe2Config.cmake` -> `public/cuda.cmake`
+`enable_language(CUDA)` test-compile, which uses `CMAKE_CUDA_FLAGS` baked into
+the torch-2.11.0+cu128 pip wheel's exported CMake config (it still emits
+`-gencode arch=compute_35,code=sm_35`), before k2's own
+`cmake/torch.cmake:21-44` compute_35-stripping workaround ever runs. That
+stripping code is 100% pre-existing upstream (verified via
+`git diff e625cb97..efb407d8 -- cmake/torch.cmake`: the port only adds
+K2_WITH_HIP blocks, does not touch the K2_WITH_CUDA branch at all). CUDA 12.x
+dropped Kepler (sm_35) entirely, so any torch pip wheel of this vintage that
+still exports compute_35 in its Caffe2Config trips this on a modern
+toolkit -- independent of k2, independent of this port. Pre-existing upstream
+breakage with this torch/CUDA-toolkit combination; not a port regression, not
+a gate. Did not attempt to patch it (would touch the CUDA-only branch, which
+is out of scope for a HIP port and the failure is toolchain-level, not
+port-level).
+
+Verdict: CUDA gate = pre-existing-breakage-confirmed-identical-upstream,
+recorded once for head_sha 92912b1c (do not re-run on a future head_sha
+carry-forward classified as behavior-preserving relative to this one).
+
+### Jargon gate -- FAILED, blocks completion
+
+```
+python3 utils/jargon.py --commits e625cb971dbe945c6a0a67426bb2c1db0b8320d1..92912b1c12273c36368279ec4a3410e428503e20 -C projects/k2/src
+```
+
+```
+jargon: 1 instance(s) of in-house vocabulary in upstream-visible text
+commit efb407d83:113: 'Followers' -- name the GPUs
+    Followers (gfx1100/gfx1201) build with only
+EXIT=1
+```
+
+The squashed port commit efb407d8's Test Plan ends with "Followers
+(gfx1100/gfx1201) build with only -DCMAKE_HIP_ARCHITECTURES=<arch> changed and
+pass at identical counts." -- MOAT's internal "lead/follower" vocabulary
+leaked into the upstream-visible commit message and survived the PR-prep
+squash. `--diff` on the same range is clean (no jargon in added source/doc
+lines); only the commit message is affected. This is a genuine port-finish
+gap per validator.md step 4 ("Before marking completed... Jargon... must be
+clean... Neither is yours to fix quietly: send it back with
+validation-failed"). Documentation gate (step 4b) is fine: the "Building with
+ROCm (AMD GPUs)" section in docs/source/installation/from_source.rst and the
+README pointer are both present and unaffected by this delta.
+
+### Verdict
+
+Real GPU pass (44/44 C++ executables incl. 30/30 `cu_*` GPU tests at 256/256
+individual tests; Python 230/235 passed with the 5 failures all documented
+pre-existing/flake). CUDA no-regression gate passed (pre-existing breakage
+confirmed identical on upstream base, not a port regression). BUT the jargon
+gate is dirty on the current head_sha (92912b1c) commit message. Per
+validator.md this blocks `completed` regardless of the clean GPU run:
+transition set to `validation-failed` on linux-gfx90a, reason "jargon: commit
+efb407d83's Test Plan uses 'Followers' (MOAT internal term) -- reword to name
+the GPUs directly, e.g. 'gfx1100 and gfx1201 build with only ... changed'".
+Needs a porter commit (new commit on top, do NOT amend efb407d8 -- it is an
+ancestor other archs have already validated at) fixing the commit-message
+wording; every arch re-validates the fixed head via the normal revalidate
+path. Bench builds (`build_old/`, `build_head/`, `build_cuda*`) and the
+throwaway `cuda-12.8`-torch venv are local scratch under this worktree, not
+committed to the fork.
