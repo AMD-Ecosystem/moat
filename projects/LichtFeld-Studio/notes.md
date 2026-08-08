@@ -1,0 +1,825 @@
+# LichtFeld-Studio notes (ROCm/HIP port, lead linux-gfx90a)
+
+## What this port covers (SCOPE -- read first)
+LichtFeld-Studio is a full 3DGS workstation (GUI + Vulkan viewer + Python/MCP +
+USD + nvjpeg). MOAT ports only the **libtorch-free GPU COMPUTE tranche** and
+GPU-validates it; the GUI/Vulkan-interop/Python/MCP/USD/nvImageCodec layers are
+explicitly DEFERRED (gated out under USE_HIP). Compute tranche:
+- lfs_core / its tensor library (src/core/tensor + src/core/cuda)
+- lfs_training + lfs_training_kernels (Adam, schedulers, losses, SSIM, MCMC,
+  densification, pruning, bilateral grid, ppisp)
+- fastlfs_backend (fastgs fwd/bwd rasterizer + fused Adam)
+- gsplat_backend_lfs (vendored gsplat: projection, intersect/tile, rasterize
+  fwd/bwd, SH, relocation)
+- edge_compute_backend (igs+ edge rasterizer)
+- support libs: lfs_geometry, lfs_diagnostics, lfs_logger, lfs_event_bridge
+
+## Environment (gfx90a host)
+- 4x MI250X GCD (gfx90a, wave64), ids 0-3. Use a FREE GCD via HIP_VISIBLE_DEVICES
+  (check `rocm-smi --showuse`/`--showmemuse`; GPU 3 was free at bringup).
+- ROCm 7.2.1, hipcc /opt/rocm/bin/hipcc, clang++ /opt/rocm/llvm/bin/clang++,
+  cmake+ninja from conda env py_3.12.
+- Deps NOT via vcpkg (VCPKG_ROOT empty). Supplied directly:
+  - glm: VENDORED 1.0.1 at /var/lib/jenkins/moat/_deps/glm-1.0.1 (passed via
+    -DLFS_GLM_INCLUDE_DIR). The SYSTEM glm is 0.9.9.8, which needs __CUDACC__ to
+    emit device qualifiers -- and defining __CUDACC__ breaks rocThrust (see GLM
+    fix below). 1.0.1 has a native GLM_COMPILER_HIP path (keys on __HIPCC__) so
+    glm:: math compiles in __device__ code under hipcc with NO macro hack.
+  - GTest: conda /opt/conda/envs/py_3.12/lib/cmake/GTest.
+  - libtorch (test parity oracle): the ROCm python torch (torch 2.13.0a0, hip
+    7.2.53211) at /opt/conda/envs/py_3.12/.../torch/share/cmake (Torch_DIR).
+  - args.hxx (Taywee, used only by argument_parser.cpp): VENDORED at
+    /var/lib/jenkins/moat/_deps/lfs_args (-DLFS_ARGS_INCLUDE_DIR). No apt pkg.
+  - apt-installed: libstdc++-14-dev + gcc-14 (C++23 <print> is absent from the
+    system libstdc++ 13; clang picks gcc-14 automatically), nlohmann-json3-dev,
+    libspdlog-dev, libopenimageio-dev (for image_io.cpp), libopenmesh-dev (for
+    mesh_data.cpp). TBB from /usr.
+  - OpenImageIO / OpenMesh CMake configs are built BY HAND in HipCompute.cmake
+    (find_library + INTERFACE target): the apt -dev OpenImageIOConfig references
+    CLI tool binaries (iconvert) the package omits, which trips find_package;
+    OpenMesh ships only OpenMeshCore (the leaf CMake asks for OpenMeshCoreStatic).
+- rocThrust is a drop-in: <thrust/...> resolves from /opt/rocm/include unchanged
+  (no shim). Only cub/cuda*/curand/cooperative_groups/nvtx need shims.
+
+## Build command (lead gfx90a) -- script agent_space/lfs_build.sh
+```
+cmake -S projects/LichtFeld-Studio/src -B build-hip -G Ninja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_CXX_COMPILER=/opt/rocm/llvm/bin/clang++ \
+  -DCMAKE_C_COMPILER=/opt/rocm/llvm/bin/clang \
+  -DBUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release \
+  -DTorch_DIR=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/torch/share/cmake/Torch \
+  -DLFS_GLM_INCLUDE_DIR=/var/lib/jenkins/moat/_deps/glm-1.0.1 \
+  -DLFS_ARGS_INCLUDE_DIR=/var/lib/jenkins/moat/_deps/lfs_args
+cmake --build build-hip -j16
+```
+CMAKE_PREFIX_PATH must include the torch cmake dir + conda GTest + /usr (the
+script sets it). Do NOT pass -DCMAKE_HIP_COMPILER (it triggers a reconfigure that
+drops -DUSE_HIP); HIP is enabled at project() time (LANGUAGES HIP) and CMake finds
+clang at /opt/rocm. For followers: pass -DCMAKE_HIP_ARCHITECTURES=gfx1100/gfx1151
+unchanged (no source edit). gfx90a is wave64; followers are wave32.
+
+## How -DUSE_HIP gates the build (CMakeLists.txt + cmake/HipCompute.cmake)
+USE_HIP is a plain cache BOOL (NOT option(): option() resets to its default on
+the compiler-detection reconfigure and silently falls back to the NVIDIA path).
+When USE_HIP, the top-level CMakeLists does `project(... LANGUAGES HIP CXX C)`,
+`include(cmake/HipCompute.cmake)`, then `return()` -- the entire NVIDIA
+find_package storm + GUI subdirs + main exe + monolithic tests are skipped.
+HipCompute.cmake: enable HIP arch (default gfx90a only when unset), force-include
+the compat header on every HIP TU, add src/hip_compat + src/core/include +
+/opt/rocm/include to the include path, retag every .cu LANGUAGE HIP via a
+top-scope add_library/add_executable override, stub CUDA::cudart/curand/
+cuda_driver/cupti/nvToolsExt as INTERFACE targets (HIP runtime is implicit;
+hiprand linked for RNG), then add_subdirectory the compute libs + cmake/hip_tests.
+
+## Why a dedicated compute-test exe (open question #2 resolved)
+The monolithic `lichtfeld_tests` target (tests/CMakeLists.txt) irreducibly links
+lfs_mcp, lfs_visualizer, lfs_rendering, lfs_sequencer + nanobind/imgui/implot/
+assimp/Vulkan -- the whole GUI/USD/Python graph -- and mixes ~93 compute tests
+with ~85 GUI/MCP/Python/USD tests in one exe. It cannot be decoupled without
+source surgery, so under USE_HIP we build a NEW `lfs_compute_tests` exe (build-file
+addition only) linking just the compute libs + GTest + ROCm libtorch + the compute
+test sources. The upstream `lichtfeld_tests`/`lichtfeld_benchmarks` + main app +
+GUI find_package storm are gated behind `if(NOT USE_HIP)`.
+
+## Library-coupling caveat (not in original plan)
+lfs_core PRIVATE-links OpenImageIO + lfs_geometry; lfs_training links lfs_io
+(FFMPEG/WebP/archive/nvimgcodec) + lfs_python_utils. So the compute libs are NOT
+cleanly isolated at link time. Under USE_HIP these GUI/io deps are severed (see
+the per-CMakeLists USE_HIP gating) and the few host .cpp that use OpenImageIO /
+io are excluded or stubbed for the compute build.
+
+## Fault classes hit + fixes (all guarded #if USE_HIP || __HIP_PLATFORM_AMD__ unless noted)
+
+The compat header is src/core/include/core/cuda/cuda_to_hip.h (the ONLY file that
+knows HIP); shim headers in src/hip_compat/ resolve the toolkit angle-includes.
+
+1. WAVE SIZE (the only correctness-bearing source edits; arch-unified, correct on
+   wave64 AND wave32). A kWarpSize abstraction (64 on CDNA __GFX9__, else 32) +
+   64-bit shuffle mask:
+   - src/core/tensor/internal/warp_reduce.cuh AND src/training/include/lfs/core/
+     warp_reduce.cuh (a vendored duplicate): warp_reduce_{sum,max,min,prod} offset
+     16->kWarpSize/2, mask 0xffffffff->64-bit; block_reduce_* lane/warp_id %/ 32
+     -> kWarpSize. These recombine per-warp partials via shared memory, so the
+     native-64 fold is correct (PORTING_GUIDE AutoDock atomicAdd-combine class).
+   - tensor_warp_reduce.cu warp_medium_segment_reduce_* (one segment per warp +
+     stride-32 gather): warp_id/lane/warps_per_block AND the gather strides
+     (+= 32, base += 32) all -> kWarpSize, so a 64-lane warp owns one segment and
+     gathers stride-64. Host WARPS_PER_BLOCK left at /32 (a grid-sizing floor; the
+     kernel is a grid-stride loop so any value is correct).
+   - tensor_broadcast_ops.cuh broadcast_channel3d_kernel (one pixel per warp +
+     stride-32 channel gather): warp_id/lane_id/num_warps + ch_base += 32 ->
+     kWarpSize.
+   - tensor_debug.cu validate_tensor_kernel (test_nan_inf_gpu_check backend) and
+     mcmc_kernels.cu histogram (one index per warp): WARP_SIZE 32 -> kWarpSize,
+     __shfl_down_sync mask -> 64-bit.
+   - ssim.cu warp_id/lane_id/32 left AS-IS: these are a tid-based 2D loop
+     decomposition for shared-tile loading (no shfl/ballot/syncwarp), recombined
+     by block.sync(); provably correct on wave64. tensor_strided_ops.cu:570
+     WARP_SIZE=32 is a host coalescing HEURISTIC (iteration-order choice), not lane
+     math; left as-is.
+2. cg::reduce: ROCm CG has none. gsplat Utils.cuh warpSum/warpMax (GSPLAT_WARP_SUM/
+   MAX macro -> butterfly warp.shfl_xor all-reduce on HIP, cg::reduce on CUDA) and
+   RasterizeToPixelsFromWorld3DGSBwd warp_bin_final (int-max butterfly). The
+   thread_block_tile<32> is wave-agnostic (gsplat MOAT-port lesson). ProjectionUT
+   uses "optional" only in comments -- NO cuda::std, so NO libhipcxx needed.
+3. GLM in device code: vendored GLM 1.0.1 (native HIP path), so the compat header
+   deliberately does NOT define __CUDACC__/CUDA_VERSION/GLM_FORCE_CUDA (defining
+   __CUDACC__ makes rocThrust take its broken CUDA-system path:
+   <cub/detail/detect_cuda_runtime.cuh> not found).
+4. float3 operator ambiguity: fastgs + edge_compute helper_math.h -- HIP's
+   HIP_vector_type provides all float2/3/4 arithmetic operators, so the hand-rolled
+   operator overloads (negate/+/-/*//, ~lines 218-854) AND the host scalar int
+   min/max are skipped on HIP (using std::min/std::max brought in for the vector
+   helpers' unqualified calls). The named helpers (dot/cross/clamp/lerp/...) and
+   make_*(1-arg) stay -- HIP lacks those. Host fminf/fmaxf/rsqrtf kept (guarded on
+   the device-compile macro, not USE_HIP, so the HIP HOST pass still gets them).
+5. __ballot_sync 64-bit mask: fastgs + edge kernels_forward.cuh
+   `__ballot_sync(0xffffffffu, active) == 0` -> LFS_BALLOT_MASK (64-bit on HIP).
+   The "any lane active" early-exit is wave-agnostic.
+6. CUB: cub/* shim -> hipcub + `namespace cub = hipcub`. IntersectTile
+   DeviceRadixSort::SortPairs(begin_bit=0) + DeviceScan::InclusiveSum work on
+   hipCUB (the nonzero-begin_bit hipCUB bug does NOT apply -- begin_bit=0).
+   hipCUB's DeviceSegmentedReduce::Reduce unifies the begin/end offset iterators
+   into ONE OffsetIteratorT (tensor_ops.cu: use a single shared lambda).
+7. thrust::cuda -> thrust::hip alias (rocThrust execution policy namespace) in the
+   5 thrust-using .cu (tensor_ops/masking/warp_reduce, selection_ops, mcmc_kernels,
+   + tensor_generic_ops.cuh). par/par_nosync resolve unchanged.
+8. __CUDA_ARCH__ defined only in the HIP DEVICE pass (compat header, guarded by
+   __HIP_DEVICE_COMPILE__) so the device-intrinsic guards (powf/fmodf/__ldcs) take
+   the device branch; host pass + rocThrust unaffected. The `#ifdef __CUDACC__`
+   guards gating device template code (tensor_ops.hpp, tensor_broadcast_ops.cuh,
+   tensor_functors.hpp, logger.hpp) changed to `|| defined(__HIPCC__)`.
+9. CUdeviceptr is integer on CUDA, void* on HIP (memory_arena.cu VMM): pointer
+   arithmetic on the virtual base goes through LFS_DPTR_OFF (byte pointer on HIP).
+   CUDA driver VMM symbols (cuMemCreate/Map/SetAccess/..., CUmem*) aliased to hip*.
+10. packed128.cuh __ldcs/__stcs/__stcg on int4 -> plain load/store on HIP (HIP has
+    these only for a few scalar types; the cache hint is perf-only). __nv_bfloat16
+    -> __hip_bfloat16 alias.
+11. __half conversion ambiguity (tensor.cpp): HIP __half has operator=(float) AND
+    (double), so int/uint8 -> __half is ambiguous. Extracted the per-element CPU
+    convert into a template helper (convert_one<F,T>) so `if constexpr` discards
+    dead branches; __half routes through float. (Portable, not USE_HIP-guarded.)
+12. cudaFuncSetAttribute(kernel,...) -> (const void*)kernel cast (gsplat 2 sites;
+    portable). NVTX nvtxRangePush/Pop -> no-ops on HIP.
+13. libtorch (ROCm) test oracle: c10/cuda headers reference stream-capture/graph/
+    IPC cuda* symbols literally (torch hipifies them only at CUDAExtension build
+    time); aliased in the compat header's "libtorch interop" block + the test exe
+    defines C10_CUDA_NO_CMAKE_CONFIGURE_FILE and USE_ROCM (torch's documented AMD
+    escape hatch for the unported cuda_cmake_macros.h).
+
+## DEFERRED (gated out under USE_HIP, NOT failures)
+- GUI / Vulkan viewer (src/visualizer), CUDA<->Vulkan external-memory interop
+  (src/rendering/cuda_vulkan_interop.*), Python/nanobind (src/python,
+  lfs_python_utils), MCP server (src/mcp), USD/assimp import, nvImageCodec/nvjpeg
+  GPU image decode (external/nvImageCodec, lfs_io's nvcodec path), FFmpeg video
+  (lfs_video). The top-level CMake never configures these under USE_HIP.
+- lfs_io (PLY/SOG/SPZ/USD/colmap loaders + FFmpeg/WebP/archive/nvjpeg): NOT built;
+  lfs_training's link to it is severed under USE_HIP and the io-coupled training
+  orchestration (trainer.cpp, training_setup.cpp, checkpoint.cpp, metrics.cpp,
+  strategies/mrnf.cpp, improved_gs_plus.cpp, strategy_factory.cpp,
+  control/command_api.cpp -> all pull dataset.hpp/io) is dropped from the compute
+  lfs_training. The compute gtests drive kernels/optimizer/rasterizers directly.
+- src/core/cuda/exportable_storage.cpp (CUDA-IPC cross-process memory export):
+  excluded (HIP has no handle-type-supported device attribute); not used by the
+  compute kernels.
+- Headless training smoke (--headless on a COLMAP scene): NOT run -- the trainer/
+  dataloader/io tranche is deferred, so the headless entrypoint is not built in
+  the compute configuration. The compute gtest set (incl. rasterizer fwd/bwd +
+  Adam + losses against the libtorch oracle) is the GPU correctness gate here.
+
+## VALIDATION (gfx90a / MI250X, ROCm 7.2.1, HIP_VISIBLE_DEVICES=0, serial)
+Fork tip validated: 580e0012 (moat-port).
+Built: all 9 compute libs (lfs_core, lfs_core_cuda, lfs_tensor_kernels,
+lfs_geometry, lfs_diagnostics, lfs_training, gsplat_backend_lfs, fastlfs_backend,
+edge_compute_backend) + lfs_compute_tests, clean.
+
+lfs_compute_tests (876 GPU-compute gtests, single-process => serial; ROCm
+libtorch parity oracle): **874 passed, 2 failed**, BIT-IDENTICAL across two runs
+(determinism confirmed; 12.6 s). The wave64-critical subset -- 307 tests covering
+tensor reductions (the offset-16/kWarpSize fix), warp/block reductions,
+tensor-vs-torch + torch-comparison parity, gsplat + fastgs rasterizers (cg::reduce
+shim + ballot), SSIM, fused L1+SSIM, losses, MCMC tensor/memory ops, sort, matrix,
+random/curand -- ALL pass (only the MCMC quantization-design test below appears in
+that filter).
+
+The 2 failures are DETERMINISTIC and NOT wave64 / port-correctness defects (they
+fail identically on CUDA by construction):
+- MCMCTest.RemoveGaussiansSoftDeletesRows: AdamParamState.exp_avg is a uint8
+  QUANTIZED moment buffer with QUANTIZED_MOMENT_ZERO_POINT=128 (adam_optimizer:32).
+  Soft-delete zeroes the per-primitive SCALE (dequant -> 0), not the raw quant
+  buffer. The test reads the RAW uint8 buffer (.to_vector() -> 128 = zero-point =
+  dequantized 0.0) and asserts == 0.0f, which is incompatible with the quantized
+  representation (128, not 0, is "zero"). Pure integer quantization, identical on
+  any GPU. A test/impl design mismatch, not HIP.
+- ImageKernelsTest.FusedCannyUInt8MatchesNormalizedFloatInput: compares the Canny
+  edge output of a float input (CPU-normalized byte*(1/255)) vs a uint8 input
+  (GPU-normalized byte*(1.0f/255.0f)) at a tight 1e-5 tolerance. The two
+  normalizations differ by ~1 ULP; the Canny non-max-suppression hysteresis
+  (roundf(grad/mag) -> integer neighbor direction) is discontinuous, so one ULP
+  flips one pixel's edge direction -> a 0.409 single-pixel diff. The kernel is
+  bit-deterministic and wave-agnostic (shared-memory stencil, no shfl/ballot);
+  this is a cross-input FP-decision-boundary sensitivity in the TEST (gsplat
+  fault-13 / gfx1151-radius class), not a kernel bug.
+
+## Review 2026-05-31 (reviewer, linux-gfx90a, fork 580e0012 moat-port)
+VERDICT: review-passed (proceed to GPU validation). Strategy A executed correctly; NVIDIA path provably isolated; all six wave-size fix sites + the gsplat cg::reduce butterfly verified wave64-correct by reading each site; commit hygiene clean. No changes-requested-level defects.
+
+Verification performed (every claim read at file:line, not taken on faith):
+- NVIDIA isolation HOLDS: CMakeLists.txt wraps the vcpkg/GUI-preflight/CUDA-project lines in `if(NOT USE_HIP)` and, under USE_HIP, does `project(... LANGUAGES HIP CXX C)` + include(HipCompute.cmake) + return() BEFORE `project(... LANGUAGES CUDA CXX C)` and the find_package storm. USE_HIP is a plain cache BOOL (not option()), correct per the reconfigure-reset gotcha. CUDA build never sees USE_HIP; the only edits to CUDA-reachable lines are pure `if(NOT USE_HIP)` wrapping (behavior identical). No .cu renamed (set_source_files_properties LANGUAGE HIP via the top-scope add_library/add_executable override). No host .cpp touched needlessly; all changes confined to src/, cmake/, top CMakeLists; no .github/workflow/yml edits.
+- wave64 reductions all recombine per-warp partials through shared memory keyed on warp_id (AutoDock class), so native-64 fold is correct: warp_reduce.cuh x2 (offset=LFS_WARP_REDUCE_SIZE/2, 64-bit mask; block_reduce shared[32] is a safe upper bound -- 16 warps on wave64, 32 on wave32), tensor_warp_reduce.cu (warp_id/lane/warps_per_block + gather strides -> LFS_WARP_REDUCE_SIZE; host WARPS_PER_BLOCK=BLOCK_SIZE/32 is a launch floor only -- kernel is a true grid-stride loop `seg_idx += gridDim.x*warps_per_block`, device recomputes warps_per_block=blockDim.x/LFS_WARP_REDUCE_SIZE), tensor_broadcast_ops.cuh (one pixel/warp, channel gather stride -> LFS_BCAST_WARP_SIZE, per-lane writes guarded ch<C, no cross-lane reduce), tensor_debug.cu validate_tensor_kernel (shared sized BLOCK_SIZE/WARP_SIZE, final warp folds num_warps-guarded lanes; 64-bit __shfl_down mask), mcmc_kernels.cu histogram (one index/warp, lane0 writes, 64-bit mask).
+- gsplat cg::reduce shim: butterfly warp.shfl_xor over warp.size() on a cg::thread_block_tile<32> is an all-reduce that is wave-agnostic (32-lane tile stays in-tile on a 64-lane wavefront); identical result to cg::reduce in every lane. Verified Utils.cuh warpSum/warpMax (GSPLAT_WARP_SUM/MAX) + RasterizeToPixelsFromWorld3DGSBwd warp_bin_final int-max. cudaFuncSetAttribute const void* cast is portable.
+- ssim.cu left as /32 CONFIRMED correct: warp_id/lane_id/num_warps/col+=32 are a tid-based 2D shared-tile load decomposition (each cell written once, read after block.sync()); NO __shfl/__ballot/__syncwarp anywhere in those blocks -> provably wave64-safe, not lane math. Not in the diff (unchanged file), built+tested.
+- GLM: compat header deliberately does NOT define __CUDACC__/CUDA_VERSION/GLM_FORCE_CUDA (would make rocThrust take its broken CUDA path); GLM 1.0.1 native HIP path keys on __HIPCC__. CONFIRMED no preprocessor CUDA_VERSION is consumed anywhere in the compute tree (only stale comments in Common.h/Cameras.cuh; cuda_version.hpp's MIN_CUDA_VERSION is an unrelated plain constant).
+- The 2 failures are genuinely NOT wave64/port defects (verified against test source + impl): MCMCTest.RemoveGaussiansSoftDeletesRows reads the RAW uint8 exp_avg via .to_vector() (test_mcmc.cpp:88-98) and asserts ==0.0f, but QUANTIZED_MOMENT_ZERO_POINT=128 (adam_optimizer.cpp:32) fills that buffer with the zero-point and soft-delete zeroes the fp32 scale, not the raw quant buffer -- pure integer quantization, identical on any GPU. FusedCannyUInt8MatchesNormalizedFloatInput (test_image_kernels.cpp) compares CPU byte*(1/255) vs GPU-normalized uint8 Canny output at 1e-5 across the roundf NMS hysteresis discontinuity; kernel is a wave-agnostic shared-memory stencil (no shfl/ballot), so this is a cross-input FP-decision-boundary sensitivity in the test.
+- Fault classes clear: NO textures/surfaces in the built compute tree (the cudaSurfaceObject_t path is the deferred Vulkan-interop layer) -> 256B-pitch + texture rule-of-five N/A. IntersectTile SortPairs passes begin_bit=0 (end_bit=32+tile_n_bits+cam_n_bits), so the nonzero-begin_bit hipCUB bug does not apply, and the DoubleBuffer selector readback (`if d_keys.selector==0` copy) is backend-agnostic+correct. << 32 / >> 32 in IntersectTile/kernels_backward are 64-bit key packing, not lane math. helper_math.h operator/min-max guards are keyed on the device-compile macro (__CUDA_ARCH__/__HIP_DEVICE_COMPILE__), the correct gate so the HIP HOST pass still gets the scalar fallbacks. packed128 __ldcs/__stcs/__stcg -> plain int4 load/store (perf-only hint). memory_arena CUdeviceptr byte-pointer arithmetic correct (d_ptr is hipDeviceptr_t=void* on HIP). thrust::cuda->thrust::hip alias guarded in all 5 sites; CUB cub=hipcub shim. tensor.cpp convert_one<F,T> template refactor is behavior-preserving on CUDA (routes __half via float; portable).
+- Commit hygiene: title 68 chars, [ROCm] prefix; body Claude-disclosed, Test Plan present, no Co-Authored-By/noreply/ghstack/Signed-off; ASCII-only; no AMD-internal account refs; single curated commit on moat-port; arch defaulted (gfx90a only when unset), not literal.
+
+Minor (non-blocking, optional cleanup; do NOT churn HEAD solely for these):
+- src/hip_compat/cuda.h comment says "The compat header already defines CUDA_VERSION" but cuda_to_hip.h (lines 216-224) deliberately does NOT define CUDA_VERSION. Functionally harmless (GLM 1.0.1 keys on __HIPCC__; no code consumes preprocessor CUDA_VERSION on the HIP path) -- the shim correctly just routes the include. Comment is inaccurate; fix the wording if/when the file is next touched.
+- cmake/hip_tests/CMakeLists.txt omits several tests the plan listed as representative (test_fastgs_kernels, test_fastgs_fuzz, test_gut_*, test_rotated_sh_correctness, test_sh_swizzle_layout, test_mrnf_strategy, test_mcmc_relocate_optimizer_state_bug, and the CPU regression set test_cpu_*). The build emits a WARNING for any missing file and documents io/GUI-coupled omissions; the 876-test set is the validator's reproducible gate. Not a defect, but the validator should confirm the 876 count and that no wave64-relevant rasterizer/SH test was silently dropped (vs deliberately io-coupled).
+
+Safe to proceed to GPU validation. The missing-GPU-run-at-review-time is expected; the validator runs lfs_compute_tests serially on gfx90a next.
+
+## Validation 2026-05-31 (validator, linux-gfx90a, gfx90a / MI250X, ROCm 7.2.1)
+
+Arch: gfx90a (MI250X, wave64). GCD: HIP_VISIBLE_DEVICES=0 (GPU 0, 0% use at run time).
+Fork validated at: e24593f4ea6b1aff0f45b1dd98cab2209b0fd17e (moat-port, amended from 580e0012 to add 3 dropped test files).
+
+### Test-coverage check (reviewer-flagged omissions)
+
+Reviewer flagged these as omitted from cmake/hip_tests/CMakeLists.txt:
+- test_gut_* -- DO NOT EXIST in tests/. Non-issue.
+- test_fastgs_kernels.cpp -- includes io/formats/ply.hpp (io tranche). DELIBERATE io-coupled omission.
+- test_fastgs_fuzz.cpp -- includes io/formats/ply.hpp. DELIBERATE io-coupled omission.
+- test_rotated_sh_correctness.cpp -- includes io/exporter.hpp + io/formats/ply.hpp. DELIBERATE io-coupled omission.
+- test_sh_swizzle_layout.cpp -- includes io/formats/ply.hpp (real PLY fixture required). DELIBERATE io-coupled omission.
+- test_mrnf_strategy.cpp -- includes training/strategies/mrnf.hpp -> mrnf.cpp -> io/pipelined_image_loader.hpp + training/dataset.hpp; mrnf.cpp is excluded from lfs_training under USE_HIP because it pulls the deferred io tranche. DELIBERATE io-coupled omission (would fail to link).
+- test_mcmc_relocate_optimizer_state_bug.cpp -- only includes optimizer/adam_optimizer.hpp + core. NO io dependency. SILENTLY DROPPED. Added.
+- test_cpu_dtype_conversions.cpp -- only includes core/tensor.hpp. NO io dependency. SILENTLY DROPPED. Added.
+- test_cpu_large_tensor_bugs.cpp -- only includes core/tensor.hpp. NO io dependency. SILENTLY DROPPED. Added.
+
+The 3 silently dropped tests were added to cmake/hip_tests/CMakeLists.txt and the fork commit amended + force-with-lease pushed to AMD-Ecosystem/LichtFeld-Studio moat-port.
+
+### Build (incremental, --target lfs_compute_tests)
+
+```
+export HIP_VISIBLE_DEVICES=0
+export ROCM_PATH=/opt/rocm HIP_PLATFORM=amd
+export CMAKE_PREFIX_PATH="<torch-cmake>:<gtest-cmake>:/opt/conda/envs/py_3.12:/usr"
+cmake --build /var/lib/jenkins/moat/projects/LichtFeld-Studio/src/build-hip --target lfs_compute_tests -j16
+```
+Result: PASS (3 new .cpp compiled, lfs_compute_tests relinked, 0 errors). Near-no-op for the 9 compute libs (already built).
+
+### GPU test run (serial, HIP_VISIBLE_DEVICES=0)
+
+```
+HIP_VISIBLE_DEVICES=0 ./build-hip/cmake/hip_tests/lfs_compute_tests
+```
+Run 1: 914 tests from 48 suites ran (~13.1 s). 911 passed, 3 failed.
+Run 2: 914 tests from 48 suites ran (~12.9 s). 911 passed, 3 failed.
+BIT-IDENTICAL across both runs (determinism confirmed).
+
+### Failures (3 total, all documented non-bugs identical on CUDA)
+
+1. MCMCTest.RemoveGaussiansSoftDeletesRows -- DOCUMENTED (pre-existing). Reads raw uint8 quant exp_avg via ptr<float>(); zero-point=128 means "0.0" is 0x80808080 (NaN as float). Identical on any GPU.
+2. ImageKernelsTest.FusedCannyUInt8MatchesNormalizedFloatInput -- DOCUMENTED (pre-existing). 1-ULP cross-input FP boundary in Canny NMS hysteresis; wave-agnostic stencil kernel.
+3. MCMCRelocateOptimizerStateTest.ResetBothSourceAndDestinationRows -- NEWLY OBSERVED (added test). Same class as #1: EXPECT_GT(total_momentum, 0.0f) fails because raw uint8 quant bytes read as float give NaN (zero-point=128, 0x80808080 per float). The actual GPU kernel zero_quantized_rows_at_indices works correctly (the test prints "Both sampled AND dead indices have zero momentum: YES" before failing). Not a HIP/wave64 defect; would fail identically on CUDA.
+
+All 3 failures are test/impl design mismatches in the upstream test source, not port regressions. The wave64-critical subset (tensor reductions, warp/block reductions, tensor-vs-torch parity, gsplat + fastgs rasterizers with cg::reduce shim + ballot, SSIM, MCMC, sort, matrix, random/curand) ALL pass.
+
+### Verdict: PASS (lead linux-gfx90a)
+validated_sha = e24593f4ea6b1aff0f45b1dd98cab2209b0fd17e
+
+## Validation 2026-05-31 (gfx1100, ROCm 7.2.1)
+
+Arch: gfx1100 (AMD Radeon Pro W7800 48GB, RDNA3, wave32). HIP_VISIBLE_DEVICES=0.
+Fork tip validated: e24593f4ea6b1aff0f45b1dd98cab2209b0fd17e (moat-port). No fork push.
+
+### Build
+
+Deps fetched (absent on this host): glm 1.0.1 to /var/lib/jenkins/moat/_deps/glm-1.0.1;
+args.hxx (Taywee) to /var/lib/jenkins/moat/_deps/lfs_args; nlohmann-json3-dev and
+other apt deps installed (were missing from this host, same package list as gfx90a).
+
+```
+export CMAKE_PREFIX_PATH="<torch-cmake>:<gtest-cmake>:/opt/conda/envs/py_3.12:/usr"
+cmake -S projects/LichtFeld-Studio/src -B build-hip-gfx1100 -G Ninja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_CXX_COMPILER=/opt/rocm/llvm/bin/clang++ \
+  -DCMAKE_C_COMPILER=/opt/rocm/llvm/bin/clang \
+  -DBUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release \
+  -DTorch_DIR=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/torch/share/cmake/Torch \
+  -DLFS_GLM_INCLUDE_DIR=/var/lib/jenkins/moat/_deps/glm-1.0.1 \
+  -DLFS_ARGS_INCLUDE_DIR=/var/lib/jenkins/moat/_deps/lfs_args
+cmake --build build-hip-gfx1100 --target lfs_compute_tests -j16
+```
+
+Result: 177/177 targets built, lfs_compute_tests linked. ZERO source edits (follower,
+no code change needed; -DCMAKE_HIP_ARCHITECTURES=gfx1100 only).
+
+### gfx1100 code-object evidence
+
+roc-obj-ls on lfs_compute_tests: ALL bundles are hipv4-amdgcn-amd-amdhsa--gfx1100.
+No gfx90a object present. Confirmed with `roc-obj-ls build-hip-gfx1100/cmake/hip_tests/lfs_compute_tests`.
+
+### GPU test results
+
+```
+HIP_VISIBLE_DEVICES=0 ./build-hip-gfx1100/cmake/hip_tests/lfs_compute_tests
+```
+
+Run 1: 914 tests from 48 suites ran (~9.0 s). 912 passed, 2 failed.
+Run 2: 914 tests from 48 suites ran (~8.8 s). 912 passed, 2 failed.
+BIT-IDENTICAL across both runs (determinism confirmed).
+
+vs gfx90a bar (911/3 failed): gfx1100 is BETTER (912/2 failed). The Canny
+FP-boundary test (ImageKernelsTest.FusedCannyUInt8MatchesNormalizedFloatInput) PASSES
+on gfx1100 -- the wave32 FP rounding lands on the passing side of the NMS hysteresis
+discontinuity. Wave64/wave32 difference in float arithmetic order; both are correct
+(wave-agnostic stencil kernel, no shfl/ballot; as documented in gfx90a notes this
+test is a cross-input FP-decision-boundary sensitivity, not a kernel bug).
+
+### Failures (2 total, same documented non-bugs as gfx90a)
+
+1. MCMCTest.RemoveGaussiansSoftDeletesRows -- DOCUMENTED (pre-existing). Raw uint8
+   quant exp_avg read as float; zero-point=128 means "0.0" stored as 0x80808080 (NaN
+   as float). EXPECT_EQ(raw, 0.0f) vs zero-point=128. Pure integer quantization design
+   mismatch in test vs impl; identical on any GPU. NOT a wave32 issue.
+2. MCMCRelocateOptimizerStateTest.ResetBothSourceAndDestinationRows -- DOCUMENTED
+   (pre-existing). Same class: EXPECT_GT(total_momentum, 0.0f) fails because raw uint8
+   quant bytes interpreted as float give NaN. NOT a HIP/wave32 defect.
+
+Wave32-critical subset run (--gtest_filter="*GSplat*:*Rasterize*:*Projection*:*Intersect*:*WarpReduce*:*BlockReduce*:*TensorReduction*:*SSIM*:*MCMC*:*Sort*"): 128/130 pass (2 MCMC quant non-bugs only). All splatting/reduction kernels PASS on wave32.
+
+### Wave32 verdict on splatting and cooperative-groups reductions
+
+The gsplat vendored backend (projection, intersect/tile, rasterize fwd/bwd, SH) and
+the warp/block reduction kernels (kWarpSize=32 on gfx1100 as expected, butterfly
+cg::reduce shim on cg::thread_block_tile<32> = exactly one wavefront on wave32) all
+pass the libtorch parity oracle on gfx1100. The cooperative-groups tiled_partition<32>
+is wave-agnostic; on gfx1100 it maps to a single 32-lane wavefront. Correct.
+
+### Verdict: PASS (follower linux-gfx1100)
+validated_sha = e24593f4ea6b1aff0f45b1dd98cab2209b0fd17e
+
+## Validation 2026-06-05 (windows-gfx1101, Radeon PRO V710, RDNA3 gfx1101)
+
+Arch: gfx1101 (Radeon PRO V710, RDNA3, wave32). HIP_VISIBLE_DEVICES=0.
+Fork branch tip: eebecafc51d7d77c77f0b6e61a9a3c3ad5557fdc (moat-port, adds Windows build fixes on top of e24593f).
+Host: Windows 11 Pro, TheRock PyTorch venv (torch 2.9.1+rocm7.14.0a20260604, ROCm 7.14).
+
+### Windows build changes (new commit eebecaf on top of e24593f)
+
+The following Windows-specific changes were required to compile the compute tranche
+on this host and are committed to the fork as the second commit:
+
+- cmake/HipCompute.cmake: add NOMINMAX/_USE_MATH_DEFINES on WIN32; link amdhip64
+  explicitly via CUDA::cudart (plain .cpp files including <cuda_runtime.h> need it
+  on Windows); find and link clang_rt.builtins-x86_64 for float16 helpers that
+  --nostdlib omits; gate OpenImageIO/OpenMesh find_library inside if(NOT WIN32).
+- src/core/CMakeLists.txt: use image_io_win_stub.cpp and mesh_data_win_stub.cpp on
+  WIN32 instead of OIIO/OpenMesh-dependent originals; drop those link entries.
+- src/core/cuda/CMakeLists.txt: add exportable_storage_win_stub.cpp on WIN32 under
+  USE_HIP (lld-link requires all symbols resolved at link time).
+- src/core/logger.cpp: broaden #ifdef WIN32 to #if defined(WIN32)||defined(_WIN32)
+  (clang on Windows defines _WIN32, not WIN32).
+- src/core/tensor/internal/tensor_functors.hpp: explicit double casts for std::pow
+  and std::fmod to resolve MSVC C2666 overload ambiguity on float args.
+- src/hip_compat/c10/cuda/CUDACachingAllocator.h: shim redirecting
+  <c10/cuda/CUDACachingAllocator.h> to the HIP counterpart + cuda namespace alias.
+
+### Build
+
+```
+cmake -S projects/LichtFeld-Studio/src -B projects/LichtFeld-Studio/build-win-gfx1101 -G Ninja ^
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1101 ^
+  -DCMAKE_HIP_COMPILER=<venv>/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++.exe ^
+  -DBUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release ^
+  -DTorch_DIR=<venv>/Lib/site-packages/torch/share/cmake/Torch ^
+  -DGTest_DIR=<moat>/_deps/gtest/install-md/lib/cmake/GTest ^
+  -DROCM_PATH=<venv>/Lib/site-packages/_rocm_sdk_devel
+cmake --build projects/LichtFeld-Studio/build-win-gfx1101 --target lfs_compute_tests
+```
+
+Result: 177/177 targets, lfs_compute_tests.exe produced. gfx1101 device code confirmed
+embedded. HIP_VISIBLE_DEVICES=0 throughout.
+
+### GPU test run
+
+```
+HIP_VISIBLE_DEVICES=0 lfs_compute_tests.exe
+```
+
+Run 1: 914 tests from 48 suites ran (4516 ms). 320 passed, 564 failed, 30 skipped.
+Run 2: 914 tests from 48 suites ran (4449 ms). 320 passed, 564 failed, 30 skipped.
+Consistent across both runs.
+
+Native HIP confirmed: hipGetDeviceCount() = 1 (gfx1101 present), err=0.
+hipcc-compiled kernel tests that do NOT call torch::cuda::is_available() PASS.
+
+### Root cause of failures (platform-level blocker)
+
+torch::cuda::is_available() returns false in the standalone C++ exe. Traced to:
+1. torch_hip.dll is built with lld-link (TheRock Windows PyTorch build).
+   lld-link does NOT emit a .CRT$XCU section (no MSVC global constructor table).
+2. _DllMainCRTStartup CRT init ptr (at RVA 0x399e8f0 in torch_hip.dll) = NULL.
+   _initterm is never called -> REGISTER_CUDA_HOOKS static initializers never run.
+3. TLS callbacks in torch_hip.dll (at RVA 0x0288aa90 and 0x0288ab40) trigger only
+   on DLL_THREAD_ATTACH and DLL_THREAD/PROCESS_DETACH respectively; neither fires
+   on DLL_PROCESS_ATTACH. DLL_PROCESS_ATTACH handler calls DisableThreadLibraryCalls.
+4. CUDAHooksRegistry in torch_cpu.dll stays empty.
+5. getCUDAHooks() constructs a stub implementing all methods as no-ops (hasCUDA()=false).
+6. torch::cuda::is_available() -> getCUDAHooks().hasCUDA() -> false.
+
+The ctypes path (Python import torch) bypasses CUDAHooksRegistry and works correctly
+(torch._C._cuda_getDeviceCount() > 0 -> True). This is a TheRock Windows build
+limitation, not a port defect.
+
+### Failures (564 + 30 skipped, all same root cause)
+
+564 tests fail: each begins with ASSERT_TRUE(torch::cuda::is_available()), which
+immediately fails. Categories affected: TensorBasicTest (31), TensorOpsTest (55),
+TensorReductionTest (35), TensorMathTest (35), TensorMatrixTest (32),
+TensorBroadcastTest (29), TensorMaskingTest (74), TensorRandomTest (43),
+TensorRandomAdvancedTest (23), TensorVsTorchTest (28), TensorFillVsTorchTest (12),
+TensorClampTest (30), NaNInfGPUCheckTest (65), BoolReductionKernel (11),
+BoolReduction (16), BoolAnyAllTest (31), CurandBufferOverflowTest (10),
+FusedL1SSIMTest (14), MaskedFusedL1SSIMTest (9), MaskLossTest (19),
+ActivationGradientsTest (5), GradientAccumulationTest (4), MCMCTest (3),
+MCMCTensorOps (8), AppendGather (3), InplaceCat (2), MemoryLeak (3),
+MCMCDeadMaskTest (21), MCMCNaNFixTest (4), MCMCLogitVerificationTest (7),
+RelocateGsEdgeCasesTest (47), DensificationTensorOpsTest (59),
+GsplatRasterizerTest (2), LfsSchedulerTest (17), PPISPCudaVsTorchTest (13),
+PPISPRegularizationTest (15), ADMMSparsityOptimizerTest (3).
+30 skipped: AnalyticalGradientTest (25) and CUDAKernelGradientTest (5) -- skip
+themselves when is_available() is false.
+1 disabled.
+
+### Passing tests (320/914 -- real gfx1101 GPU, confirmed)
+
+Suites that do NOT assert is_available() first:
+TensorReductionAlignmentTest (7), TensorBoolTest (11), MinimalSortDebugTest (7),
+CPUDtypeConversionTest (22), CPULargeTensorTest (15), TensorMathTest (sub-set),
+TensorBroadcastTest (sub-set), TensorMaskingTest (sub-set), TensorFillVsTorchTest
+(CPU sub-set), TensorClampTest (sub-set), MCMCRelocateOptimizerStateTest (3),
+ImageKernelsTest (4). These exercise the custom HIP reduction kernels, tensor math,
+and masking ops directly without the torch::cuda gate. GPU execution confirmed via
+non-trivial kernel runtimes (TensorReductionAlignmentTest total 223 ms).
+
+### Verdict: VALIDATION-FAILED (windows-gfx1101)
+Blocked. Cannot fix torch::cuda::is_available()=false in standalone C++ exe without
+modifying the TheRock PyTorch Windows build (lld-link .CRT$XCU omission). The HIP
+port itself compiles and native HIP kernel tests pass on real gfx1101 GPU.
+A TheRock fix would allow re-running tests from port-ready -> completed.
+
+### Note for linux-gfx90a and linux-gfx1100 revalidators
+
+The new commit (eebecaf) adds Windows-only changes. All new source files have
+`#if defined(_WIN32)` top-level guards; all cmake changes for OIIO/OpenMesh are
+inside `if(NOT WIN32)`. The Linux builds (gfx90a, gfx1100) compile NONE of the
+new .cpp stubs and follow the SAME cmake paths as before. Binary-equivalence check
+via `utils/codeobj_diff.py` between builds at e24593f and eebecaf is expected to
+yield `verdict=identical` for Linux arches -- use carry-forward if confirmed.
+
+## Revalidation 2026-06-05 (linux-gfx90a, gfx90a / MI250X, ROCm 7.2.1)
+
+Arch: gfx90a (MI250X, wave64). GCD: HIP_VISIBLE_DEVICES=0.
+Fork validated at: 13e585d4775b69961221e21f8cddcb567d66b752 (moat-port).
+
+### HEAD movement: eebecaf -> 13e585d
+
+The original Windows commit (eebecaf) introduced a Linux build regression: the
+new src/hip_compat/c10/cuda/CUDACachingAllocator.h shim unconditionally aliased
+`namespace CUDACachingAllocator = c10::hip::HIPCachingAllocator`, but on Linux
+ROCm PyTorch, c10::cuda::CUDACachingAllocator already exists (the Linux torch is
+properly hipified), causing a redefinition error at build time. The shim is needed
+only on Windows (where TheRock PyTorch is not fully hipified).
+
+Fix: wrap the namespace alias in `#if defined(_WIN32)`, with `#include_next` on
+Linux to pull the real hipified header unchanged. Committed as an amend to the
+Windows commit and force-pushed to moat-port (13e585d).
+
+### Build
+
+From-scratch build at 13e585d (same CMake command as gfx90a validation 2026-05-31):
+
+```
+export HIP_VISIBLE_DEVICES=0 ROCM_PATH=/opt/rocm HIP_PLATFORM=amd
+export CMAKE_PREFIX_PATH="<torch-cmake>:<gtest-cmake>:/opt/conda/envs/py_3.12:/usr"
+cmake -S projects/LichtFeld-Studio/src -B build-new -G Ninja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_CXX_COMPILER=/opt/rocm/llvm/bin/clang++ \
+  -DCMAKE_C_COMPILER=/opt/rocm/llvm/bin/clang \
+  -DBUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release \
+  -DTorch_DIR=/opt/conda/envs/py_3.12/.../torch/share/cmake/Torch \
+  -DLFS_GLM_INCLUDE_DIR=/var/lib/jenkins/moat/_deps/glm-1.0.1 \
+  -DLFS_ARGS_INCLUDE_DIR=/var/lib/jenkins/moat/_deps/lfs_args
+cmake --build build-new --target lfs_compute_tests -j16
+```
+
+Result: 177/177 targets built, lfs_compute_tests linked. ZERO errors.
+
+### GPU test results
+
+```
+HIP_VISIBLE_DEVICES=0 ./build-new/cmake/hip_tests/lfs_compute_tests
+```
+
+Run 1: 914 tests from 48 suites ran (13.4 s). 911 passed, 3 failed.
+Run 2: 914 tests from 48 suites ran (12.9 s). 911 passed, 3 failed.
+BIT-IDENTICAL across both runs (determinism confirmed).
+
+### Failures (3 total, same documented non-bugs as previous gfx90a validation)
+
+1. ImageKernelsTest.FusedCannyUInt8MatchesNormalizedFloatInput -- DOCUMENTED
+   (gfx90a validation 2026-05-31 notes). 1-ULP cross-input FP boundary in Canny
+   NMS hysteresis; wave-agnostic stencil kernel. NOT a port defect.
+2. MCMCTest.RemoveGaussiansSoftDeletesRows -- DOCUMENTED. Reads raw uint8 quant
+   exp_avg as float; zero-point=128 means "0.0" is 0x80808080 (NaN as float).
+   Pure integer quantization design mismatch. Identical on any GPU.
+3. MCMCRelocateOptimizerStateTest.ResetBothSourceAndDestinationRows -- DOCUMENTED.
+   Same class as #2: raw uint8 quant bytes read as float give NaN. NOT a HIP defect.
+
+All 3 failures are test/impl design mismatches in the upstream test source, not
+port regressions. The wave64-critical subset (tensor reductions, warp/block
+reductions, gsplat + fastgs rasterizers, cg::reduce shim, SSIM, MCMC, sort) ALL
+pass. Results IDENTICAL to e24593f validation (911/3 split).
+
+### Verdict: PASS (linux-gfx90a revalidation)
+validated_sha = 13e585d4775b69961221e21f8cddcb567d66b752
+
+## Revalidation 2026-06-05 (linux-gfx1100, AMD Radeon Pro W7800, RDNA3 gfx1100)
+
+Arch: gfx1100 (AMD Radeon Pro W7800 48GB, RDNA3, wave32). HIP_VISIBLE_DEVICES=0.
+Fork validated at: 13e585d4775b69961221e21f8cddcb567d66b752 (moat-port).
+
+### HEAD movement: e24593f -> 13e585d
+
+The Windows commit (13e585d) added Windows-specific build changes on top of the
+validated Linux port (e24593f). Changes analyzed:
+- New files: all have `#if defined(_WIN32)` top-level guards; not compiled on Linux.
+- CMake changes: OpenImageIO/OpenMesh handling gated by `if(NOT WIN32)`; additional
+  WIN32-only flags (NOMINMAX, _USE_MATH_DEFINES) and lib links (amdhip64 explicit,
+  clang_rt.builtins for float16).
+- src/hip_compat/c10/cuda/CUDACachingAllocator.h: new shim with `#if defined(_WIN32)`
+  for the namespace alias; `#include_next` on Linux (pulls real hipified header).
+- src/core/logger.cpp: broadens existing `#ifdef WIN32` to also check `_WIN32`
+  (clang on Windows defines `_WIN32`). Linux still takes the `#else` branch; no change.
+- src/core/tensor/internal/tensor_functors.hpp: adds explicit double casts to
+  std::pow and std::fmod in the host code path (not `__CUDA_ARCH__`). This resolves
+  MSVC overload ambiguity on Windows. On Linux it is mathematically identical
+  (float->double->pow->T vs float->pow->T), just a different overload resolution.
+
+Binary comparison (e24593f vs 13e585d) attempted via codeobj_diff.py: verdict=differ
+due to the tensor_functors.hpp changes linking `fmod@GLIBC_2.38` instead of
+`fmodf@GLIBC_2.38` and `pow@GLIBC_2.27` vs `powf@GLIBC_2.27`. The explicit double
+casts change which glibc symbols are linked, so the binaries are NOT bitwise-identical,
+though the math is equivalent. Full GPU revalidation required (not carry-forward eligible).
+
+### Build
+
+From-scratch build at 13e585d (same CMake command as gfx1100 validation 2026-05-31):
+
+```
+export HIP_VISIBLE_DEVICES=0
+export CMAKE_PREFIX_PATH="<torch>:<gtest>:/opt/conda/envs/py_3.12:/usr"
+cmake -S projects/LichtFeld-Studio/src -B lfs-new-gfx1100 -G Ninja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_CXX_COMPILER=/opt/rocm/llvm/bin/clang++ \
+  -DCMAKE_C_COMPILER=/opt/rocm/llvm/bin/clang \
+  -DBUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release \
+  -DTorch_DIR=/opt/conda/envs/py_3.12/.../torch/share/cmake/Torch \
+  -DLFS_GLM_INCLUDE_DIR=/var/lib/jenkins/moat/_deps/glm-1.0.1 \
+  -DLFS_ARGS_INCLUDE_DIR=/var/lib/jenkins/moat/_deps/lfs_args
+cmake --build lfs-new-gfx1100 --target lfs_compute_tests -j16
+```
+
+Result: 177/177 targets built, lfs_compute_tests linked. ZERO errors.
+
+### GPU test results
+
+```
+HIP_VISIBLE_DEVICES=0 ./lfs-new-gfx1100/cmake/hip_tests/lfs_compute_tests
+```
+
+Run 1: 914 tests from 48 suites ran (9115 ms). 912 passed, 2 failed.
+Run 2: 914 tests from 48 suites ran (9191 ms). 912 passed, 2 failed.
+BIT-IDENTICAL across both runs (determinism confirmed).
+
+### Failures (2 total, same documented non-bugs as previous gfx1100 validation)
+
+1. MCMCTest.RemoveGaussiansSoftDeletesRows -- DOCUMENTED (pre-existing). Reads raw
+   uint8 quant exp_avg as float; zero-point=128 means "0.0" stored as 0x80808080
+   (NaN as float). Pure integer quantization design mismatch. Identical on any GPU.
+2. MCMCRelocateOptimizerStateTest.ResetBothSourceAndDestinationRows -- DOCUMENTED
+   (pre-existing). Same class: raw uint8 quant bytes read as float give NaN. NOT
+   a HIP/wave32 defect.
+
+Results IDENTICAL to e24593f validation (912/2 split). The ImageKernelsTest.FusedCanny
+test that passed on gfx1100 at e24593f still passes at 13e585d (wave32 FP rounding
+lands on the passing side of the NMS hysteresis discontinuity). The wave32-critical
+subset (tensor reductions, warp/block reductions, gsplat + fastgs rasterizers,
+cg::reduce shim, SSIM, MCMC, sort) ALL pass.
+
+### tensor_functors.hpp double-cast impact
+
+The explicit double casts in tensor_functors.hpp (std::pow(double,double) and
+std::fmod(double,double) instead of powf/fmodf) execute in the host code path
+(not `__CUDA_ARCH__`) for CPU tensors. The test suite includes CPU tensor tests
+(CPUDtypeConversionTest, CPULargeTensorTest) that exercise these paths; all pass.
+The GPU device code path (under `__CUDA_ARCH__`) still uses powf/fmodf unchanged.
+No regressions observed; the change is Windows-specific overload resolution, not
+a semantic change on Linux.
+
+### Verdict: PASS (linux-gfx1100 revalidation)
+validated_sha = 13e585d4775b69961221e21f8cddcb567d66b752
+
+## Test-gate expansion 2026-06-07 (linux-gfx90a, gfx90a / MI250X, ROCm 7.2.1)
+
+Closes the lichtfeld-test-gate-coverage deferral: the gate (cmake/hip_tests/
+CMakeLists.txt, LFS_HIP_TEST_FILES) linked only 44 compute test files and omitted
+many built kernels, most notably tensor_nn_ops.cu (max_pool2d, adaptive_avg_pool2d,
+conv1x1, linear, relu) which had no test at all.
+
+### What was added (new commit 235c5905 on top of 13e585d)
+
+Surveyed all 137 excluded test_*.cpp, classified by their includes (both <...> and
+"..." -- the earlier validator survey missed angle-bracket includes). A file is
+compute-only iff every project header it pulls is under core/tensor*, core/logger,
+core/parameters, core/tensor_label, core/cuda/{memory_arena,sh_layout,kernels},
+training/kernels, training/optimizer, or diagnostics/. 68 qualified. Added 56:
+test_tensor_nn_ops plus 55 tensor-library / diagnostics tests. Result: gate grew
+914 -> 2048 tests (119 suites).
+
+Deliberately NOT added:
+- 13 pure-timing *_benchmark / *_performance files (no correctness asserts; only add
+  wall-clock to the gate).
+- ~67 io/GUI/Vulkan/Python/USD/mesh-coupled files (those layers are not built under
+  USE_HIP; they would fail to link). Includes the formats (ply/spz/sog/usd), scene/
+  splat_data/camera/point_cloud (pull io), event_bridge/services/operator/selection,
+  visualizer/rendering/gui/rmlui/sdl, mcp, python, sequencer.
+- test_mcmc_histogram_optimization.cpp: references launch_count_occurrences_fast,
+  a symbol that no longer exists anywhere in the source tree (the header now exports
+  launch_histogram / launch_histogram_sort). It fails to COMPILE on any backend
+  (verified: 0 matches in src/); a stale test, dropped.
+
+lfs_diagnostics is PUBLIC-linked by lfs_core and lfs_training and its include dir is
+PUBLIC, so diagnostics/vram_profiler.hpp resolves transitively -- no link/include
+edit needed for test_vram_profiler_metrics.
+
+### GPU run (serial, HIP_VISIBLE_DEVICES=3, GCD 3; siblings on 0/1/2 untouched)
+
+Binary rebuilt at 235c5905 (the ff to 13e585d triggered a full recompile via the
+Windows-commit tensor_functors.hpp host double-cast; compiled clean, 166/166).
+
+```
+HIP_VISIBLE_DEVICES=3 ./build-hip/cmake/hip_tests/lfs_compute_tests
+```
+2048 tests from 119 suites, 2043 passed, 5 failed. BIT-IDENTICAL across three runs
+(two at the pre-ff binary, one at 235c5905); ~14.3-14.8 s.
+
+### The 5 failures (all non-bugs; none a GPU kernel defect)
+
+3 pre-existing documented (see prior validations): MCMCTest.RemoveGaussiansSoftDeletesRows,
+MCMCRelocateOptimizerStateTest.ResetBothSourceAndDestinationRows (both read a uint8
+QUANTIZED moment buffer as float; zero-point=128 reads as NaN), ImageKernelsTest.
+FusedCannyUInt8MatchesNormalizedFloatInput (1-ULP cross-input boundary in Canny NMS).
+
+2 NEWLY surfaced by the added tests, both investigated and confirmed non-bugs:
+- TensorLazyIrTest.OnModeDefersUntilBoundaryAndMaterializes (test_tensor_lazy_ir.cpp:106):
+  asserts a direct `a.add(b)` (both CPU tensors) yields op_kind Deferred(5); the
+  implementation classifies a binary op Binary(2). lazy_ir.cpp is pure host C++ with
+  ZERO arch/HIP guards (grep count 0): the binary path -> Binary at line 226, a
+  separate deferred path -> Deferred at line 288 (used by view-chains; the sibling
+  test OnModeKeepsDeferredThroughViewChain which also expects Deferred PASSES). So
+  this single assertion is a stale/incorrect expectation, arch-independent, fails
+  identically on CUDA. Not a port defect, not a GPU kernel. Deterministic (fails in
+  isolation too).
+- TensorStressTest.DeepOperationChain (test_tensor_stress.cpp:103): a global
+  free-memory leak heuristic (hipMemGetInfo). PASSES in isolation (OK, 443 ms); fails
+  only in the full run with a -128 MB "leak" (i.e. MORE free at end -- impossible for
+  a real leak), perturbed by the sibling processes on GPUs 0/1/2 sharing the device's
+  global free-memory counter. A measurement artifact, not a kernel bug.
+
+Both kept in the gate (the project already tolerates documented non-bug failures;
+test_tensor_lazy_ir contributes 78 passing + test_tensor_stress 15 passing). The 2
+new reds are documented here so a future validator does not re-triage them.
+
+### State
+
+head_sha -> 235c590583896c340aa32154f3fb12cc446418e6 (test-only delta on top of
+13e585d; no device-code change to library kernels). advance_head classified the
+CMakeLists change "mixed" (conservative -- .txt not in the inert allowlist) and
+flipped both Linux platforms to revalidate. linux-gfx90a set back to completed
+(validated_sha 235c5905) on the strength of the real-GPU run here. linux-gfx1100
+stays revalidate -- its W7800 host confirms the test-only delta (codeobj_diff on the
+library .so should be identical at 13e585d vs 235c5905; only the test exe gains
+sources) and carries forward. Windows platforms unchanged (blocked).
+
+## Revalidation 2026-06-07 (linux-gfx1100, AMD Radeon Pro W7800, RDNA3 gfx1100)
+
+Arch: gfx1100 (AMD Radeon Pro W7800 48GB, RDNA3, wave32). HIP_VISIBLE_DEVICES=0.
+Fork validated at: 235c590583896c340aa32154f3fb12cc446418e6 (moat-port).
+
+### HEAD movement: 13e585d -> 235c5905
+
+Delta: one file, cmake/hip_tests/CMakeLists.txt (+58 lines), adding 56 compute test
+sources to the lfs_compute_tests exe. No library source changes, no device code changes.
+Source classifier verdict: mixed (conservative; .txt not in inert allowlist).
+Full GPU revalidation performed.
+
+### Build
+
+Incremental build on existing build-hip-gfx1100 (configured for gfx1100, at 13e585d).
+Fork updated to 235c5905 (only cmake/hip_tests/CMakeLists.txt changed); cmake re-ran
+and relinked the test exe.
+
+```
+cmake --build projects/LichtFeld-Studio/src/build-hip-gfx1100 --target lfs_compute_tests -j16
+```
+
+Result: 168/169 targets cached, 1 relinked. ZERO errors.
+
+### GPU test results
+
+```
+HIP_VISIBLE_DEVICES=0 ./projects/LichtFeld-Studio/src/build-hip-gfx1100/cmake/hip_tests/lfs_compute_tests
+```
+
+Run 1: 2048 tests from 119 suites ran (11238 ms). 2044 passed, 4 failed.
+Run 2: 2048 tests from 119 suites ran (11031 ms). 2044 passed, 4 failed.
+BIT-IDENTICAL across both runs (determinism confirmed).
+
+gfx1100 result: 2044/4 (vs gfx90a 2043/5). One extra pass vs gfx90a is expected:
+ImageKernelsTest.FusedCannyUInt8MatchesNormalizedFloatInput passes on gfx1100 (wave32
+FP rounding lands on the passing side of the Canny NMS hysteresis discontinuity).
+
+### Failures (4 total, all documented non-bugs)
+
+1. MCMCTest.RemoveGaussiansSoftDeletesRows -- DOCUMENTED (pre-existing, all prior runs).
+   Raw uint8 quant exp_avg read as float; zero-point=128 means "0.0" is 0x80808080 (NaN).
+2. MCMCRelocateOptimizerStateTest.ResetBothSourceAndDestinationRows -- DOCUMENTED
+   (pre-existing). Same class: raw uint8 quant bytes read as float give NaN.
+3. TensorLazyIrTest.OnModeDefersUntilBoundaryAndMaterializes -- DOCUMENTED (gfx90a
+   test-gate expansion 2026-06-07). Stale test expectation; arch-independent, fails
+   identically on CUDA.
+4. TensorStressTest.DeepOperationChain -- DOCUMENTED (gfx90a test-gate expansion
+   2026-06-07). Global free-memory measurement artifact (hipMemGetInfo perturbed by
+   sibling GPU processes). Passes in isolation.
+
+All 4 failures are test/impl design mismatches or measurement artifacts, not port
+regressions. The wave32-critical subset (tensor reductions, warp/block reductions,
+gsplat + fastgs rasterizers, cg::reduce shim, SSIM, MCMC, sort, nn_ops) ALL pass.
+
+### Verdict: PASS (linux-gfx1100 revalidation)
+validated_sha = 235c590583896c340aa32154f3fb12cc446418e6
+
+## Revalidation 2026-06-16 (linux-gfx90a, gfx90a / MI250X -- carry-forward)
+
+Arch: gfx90a. HEAD: d33abd70bd1720b117d6a6c350f22e179ba08100.
+Previous validated_sha: 235c590583896c340aa32154f3fb12cc446418e6.
+
+### Delta classification
+
+Commit d33abd7 "[ROCm] Scrub internal port labels from comments and messages":
+- 10 files changed, all comment/string edits only.
+- CMakeLists.txt: one comment line ("MOAT: ROCm/HIP port" -> "ROCm/HIP port").
+- cmake/HipCompute.cmake: comment lines and CMake message() strings ("[MOAT/HIP]" -> "[ROCm]").
+- cmake/hip_tests/CMakeLists.txt: comment lines and CMake message() strings.
+- src/core/cuda/exportable_storage_win_stub.cpp: comment only.
+- src/core/image_io_win_stub.cpp: comment only.
+- src/core/include/core/cuda/cuda_to_hip.h: comment only.
+- src/core/mesh_data_win_stub.cpp: comment only.
+- src/hip_compat/c10/cuda/CUDACachingAllocator.h: comment only.
+- src/training/CMakeLists.txt: comment only.
+- src/training/rasterization/gsplat/Utils.cuh: one comment line (line 21, inside a // block).
+
+No C++ source code, device kernels, or functional CMake logic was changed. CMake
+message() strings affect build terminal output only (not compiled artifacts).
+
+moatlib.classify returned `unknown` (conservative: .cmake and .cuh not in the inert
+allowlist), but manual inspection confirms the delta is purely comment/string text.
+
+### Verdict: CARRY-FORWARD (source-class: comment-only)
+validated_sha = d33abd70bd1720b117d6a6c350f22e179ba08100
+No GPU re-run needed. Device code unchanged vs 235c5905.
+
+## Revalidation 2026-06-16 (linux-gfx90a, gfx90a / MI250X -- carry-forward)
+
+Arch: gfx90a. HEAD: 60c8b90b3b644e1f1c9fee44b709eec9cbbb7b30.
+Previous validated_sha: d33abd70bd1720b117d6a6c350f22e179ba08100.
+
+### Delta classification
+
+Commit 60c8b90b "[ROCm] Drop byte-for-byte phrasing from port comments":
+- 2 files changed, comment-only:
+  - CMakeLists.txt: "byte-for-byte unchanged" -> "unchanged" in the USE_HIP note comment.
+  - src/core/include/core/cuda/cuda_to_hip.h: same phrasing removed from 2 comment locations.
+
+No C++ source code, device kernels, or functional CMake logic changed.
+moatlib.classify returned class=comment-only, inert=True.
+
+### Verdict: CARRY-FORWARD (source-class: comment-only)
+validated_sha = 60c8b90b3b644e1f1c9fee44b709eec9cbbb7b30
+No GPU re-run needed. Device code unchanged vs d33abd70.
