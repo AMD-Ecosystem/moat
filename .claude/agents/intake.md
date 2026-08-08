@@ -41,9 +41,10 @@ found.
 Two checks that are per-file, not top-level:
 
 - Any file carrying an **NVIDIA proprietary licence** needs a decision before
-  proceeding. Match licence TEXT, not copyright lines: a grep for "NVIDIA" flags every
-  CUDA project, and an NVIDIA copyright under Apache-2.0 is clean. The markers are in
-  `utils/licenses.py`.
+  proceeding. Run `python3 utils/licenses.py scan-nvidia <dir|project>`; it matches
+  licence TEXT rather than copyright lines, because a grep for "NVIDIA" flags every
+  CUDA project and an NVIDIA copyright under Apache-2.0 is clean. Do not hand-roll the
+  grep -- the markers live in `config/licenses.toml` and change.
 - **Recurse into submodules and vendored directories.** A permissive top-level licence
   over an unlicensed vendored component is the case that bites.
 
@@ -103,7 +104,9 @@ possible; the queue puts your recommendation in front of a person as the default
 their reply is a diff against it.
 
 `moatlib.py release-forks` advances a waiting project once its fork exists, and
-`orient.sh` runs it before every selection, so no one has to notice by hand.
+`orient.sh` reaches the same function through `upstream.py --forks --apply` before
+every selection, so no one has to notice by hand. It works whether the project's
+record is on the trunk or on its own branch.
 
 ## Outcomes
 

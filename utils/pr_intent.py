@@ -82,6 +82,22 @@ VAGUE = re.compile(r"^(update|updates|fix|fixes|wip|changes?|misc|cleanup|tweaks
 TITLE_MAX = 72
 
 
+def _known_projects():
+    """Every project across refs, not just this checkout.
+
+    Built from the working tree, this quietly stopped catching the thing it exists for:
+    a project whose folder moved to its own branch is no longer "known", so a MOAT
+    change titled `bam: ...` reads as ordinary text and the check passes. Falls back to
+    the tree if moatlib cannot be imported, since this also runs in CI."""
+    try:
+        import sys
+        sys.path.insert(0, str(REPO / "utils"))
+        import moatlib
+        return set(moatlib.all_projects())
+    except Exception:
+        return {d.name for d in (REPO / "projects").iterdir() if d.is_dir()}
+
+
 def check_title(title, claimed, known_projects):
     """Problems with a pull-request title, most important first.
 
@@ -148,7 +164,7 @@ def main():
     if a.check_title:
         branch = branch_name(a.branch)
         claimed = branch.split("/", 1)[1] if branch.startswith("port/") else None
-        known = {d.name for d in (REPO / "projects").iterdir() if d.is_dir()}
+        known = _known_projects()
         problems = check_title(a.title, claimed, known)
         if not a.title:
             print("pr-intent: no title given")
@@ -170,7 +186,7 @@ def main():
     projects, authored, record, knowledge, infra = classify(paths)
     branch = branch_name(a.branch)
     claimed = branch.split("/", 1)[1] if branch.startswith("port/") else None
-    known = {d.name for d in (REPO / "projects").iterdir() if d.is_dir()}
+    known = _known_projects()
     title_problems = check_title(a.title, claimed, known)
 
     if claimed:

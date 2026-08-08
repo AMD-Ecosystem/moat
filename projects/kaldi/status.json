@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "name": "kaldi",
   "upstream_url": "https://github.com/kaldi-asr/kaldi",
   "fork_url": "https://github.com/AMD-Ecosystem/kaldi",
@@ -7,8 +7,18 @@
   "priority": 6.626,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:05:12Z",
   "head_sha": "014a2179c29f2c0437898a8ded09f57501eb9fb7",
+  "depends_on": [],
+  "pr_url": "https://github.com/kaldi-asr/kaldi/pull/4986",
+  "pr_number": 4986,
+  "pr_opened_at": "2026-06-12T18:33:50Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 34275045,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -69,7 +79,6 @@
       }
     },
     "windows-gfx1101": {
-      "state": "port-ready",
       "blocked": true,
       "blocked_reason": "kaldi ROCm build is POSIX-only: src/configure configure_rocm() hard-gates on uname==Linux and exits 1 on Windows/MSYS (arch-independent). Same non-viability as windows-gfx1151; no Windows arch can build. Scope the PR to Linux.",
       "validated_sha": null,
@@ -91,7 +100,6 @@
       }
     },
     "windows-gfx1201": {
-      "state": "port-ready",
       "blocked": true,
       "blocked_reason": "kaldi ROCm build is POSIX-only: src/configure configure_rocm() hard-gates on uname==Linux and exits 1 on Windows/MSYS (arch-independent). Same non-viability as windows-gfx1151; no Windows arch can build. Scope the PR to Linux.",
       "validated_sha": null,
@@ -112,13 +120,5 @@
         "last_session_at": null
       }
     }
-  },
-  "depends_on": [],
-  "pr_url": "https://github.com/kaldi-asr/kaldi/pull/4986",
-  "pr_number": 4986,
-  "pr_opened_at": "2026-06-12T18:33:50Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "Apache-2.0"
+  }
 }

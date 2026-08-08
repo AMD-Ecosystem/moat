@@ -57,6 +57,8 @@ to inherit. Cheapest high-signal check first: grep the upstream's own docs for
 `amd|rocm|hip|gfx[0-9]`, because reference repos routinely link platform forks.
 `references/assess-existing-support.md`.
 
+Some CUDA has no HIP analogue to translate INTO, so hipify succeeds at doing nothing and the port looks small. CUTLASS reimplements against Composable Kernel; CuTe has a real structural correspondence in AMD's FlyDSL, whose layout algebra is modelled on it. That is a reimplementation with a defined target, not the same verdict as "no target exists" -- and both get written `cant-port` unless you say which. `references/no-hip-equivalent.md`.
+
 ## Fault classes -- the index
 
 Scan this list against what you are doing. If any line could apply, open

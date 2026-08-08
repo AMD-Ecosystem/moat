@@ -13,7 +13,6 @@ projects/*/install/
 projects/*/install-*/
 projects/*/install_*/
 projects/*/.lock
-projects/*/.claim
 projects/.selection.lock
 agent_space/
 

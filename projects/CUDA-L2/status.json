@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "name": "CUDA-L2",
   "upstream_url": "https://github.com/deepreinforce-ai/CUDA-L2",
   "fork_url": null,
@@ -7,11 +7,15 @@
   "priority": 4.565,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T03:26:34Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T22:41:31Z",
   "head_sha": null,
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "MIT",
+  "upstream_repo_id": 1108459020,
+  "stage": "not-portable",
   "platforms": {
     "linux-gfx90a": {
-      "state": "unclaimed",
       "blocked": true,
       "blocked_reason": "CUTLASS/CuTe + Ampere cp.async/ldmatrix + Hopper warp-spec core; 3560/3736 kernels pure CuTe (no ROCm path), nvcuda::wmma minority is non-representative and needs an MFMA/wave64 rewrite; no portable GPU-validatable slice. reimplement-not-port (cant-port). See plan.md.",
       "validated_sha": null,
@@ -31,75 +35,11 @@
         "first_session_at": null,
         "last_session_at": null
       }
-    },
-    "linux-gfx1100": {
-      "state": "awaiting-port",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-05-30T03:26:34Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1101": {
-      "state": "awaiting-port",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-04T19:41:52Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1201": {
-      "state": "awaiting-port",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-04T19:41:52Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
     }
   },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "MIT"
+  "not_portable": {
+    "reason": "3560 of 3736 kernels are pure CUTLASS/CuTe with no ROCm path, over an Ampere cp.async/ldmatrix and Hopper warp-specialised core; the nvcuda::wmma minority is not representative of the codebase, so this is an AMD-native rewrite rather than a port.",
+    "by": "jeffdaily",
+    "at": "2026-08-07T22:41:31Z"
+  }
 }

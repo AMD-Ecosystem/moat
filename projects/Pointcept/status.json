@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "name": "Pointcept",
   "upstream_url": "https://github.com/Pointcept/Pointcept",
   "fork_url": "https://github.com/AMD-Ecosystem/Pointcept",
@@ -7,11 +7,21 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-08T13:34:12Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:04:44Z",
   "head_sha": "95f4a51cafc42523364ada3381e71a85a860cd68",
   "depends_on": [
     "spconv"
   ],
+  "pr_url": "https://github.com/Pointcept/Pointcept/pull/604",
+  "pr_number": 604,
+  "pr_opened_at": "2026-06-24T18:20:48Z",
+  "pr_merged_at": "2026-07-06T02:49:04Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged",
+  "license_spdx": "MIT",
+  "upstream_repo_id": 617093311,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -135,13 +145,5 @@
         "at": "2026-06-24T18:19:14Z"
       }
     }
-  },
-  "pr_url": "https://github.com/Pointcept/Pointcept/pull/604",
-  "pr_number": 604,
-  "pr_opened_at": "2026-06-24T18:20:48Z",
-  "pr_merged_at": "2026-07-06T02:49:04Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "merged",
-  "license_spdx": "MIT"
+  }
 }

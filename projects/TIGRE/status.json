@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "name": "TIGRE",
   "upstream_url": "https://github.com/CERN/TIGRE",
   "fork_url": "https://github.com/AMD-Ecosystem/TIGRE",
@@ -7,9 +7,18 @@
   "priority": 0.0,
   "ext_type": "setuptools-cuda",
   "adopted_at": "2026-06-04T01:07:42Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:04:47Z",
   "head_sha": "cf873a288e8469d7292470c96272f825dc355dba",
   "depends_on": [],
+  "pr_url": "https://github.com/CERN/TIGRE/pull/747",
+  "pr_number": 747,
+  "pr_opened_at": "2026-06-19T22:58:31Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "BSD-3-Clause",
+  "upstream_repo_id": 61034131,
+  "stage": "review-passed",
   "platforms": {
     "windows-gfx1101": {
       "state": "completed",
@@ -120,12 +129,5 @@
         "at": "2026-06-19T22:54:42Z"
       }
     }
-  },
-  "pr_url": "https://github.com/CERN/TIGRE/pull/747",
-  "pr_number": 747,
-  "pr_opened_at": "2026-06-19T22:58:31Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "BSD-3-Clause"
+  }
 }

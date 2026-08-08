@@ -20,14 +20,20 @@ would hand everything back anyway -- and the round trip costs more than doing it
 ## The checkup, in order
 
     bash utils/orient.sh                         # approved ports, fork releases, next work
+    python3 utils/upstream.py --review           # finished ports with no review PR open
     python3 utils/upstream.py --attention        # who is waiting on us
     python3 utils/upstream.py --approvals        # approvals overtaken by a push or a body edit
     python3 utils/upstream.py --dry-run          # where our record disagrees with GitHub
+    python3 utils/moatlib.py waivers             # gate waivers waiting on a maintainer
 
 The first names any port whose approval is standing and whose gates are met. The second
-lists open PRs where a maintainer asked for something, had the last word, or has gone
-quiet. The third catches a review GitHub still shows as green over content nobody
-approved. The fourth is bookkeeping.
+is where work piles up: a port cannot be approved until its review PR exists, and
+nothing opens one automatically, so ports sit finished and unreviewable -- 28 of them
+when this was written (30 now). `--review --apply --name <p> --title '<t>' --body-file <f>` opens
+one. The third lists open PRs where a maintainer asked for something, had the last word,
+or has gone quiet. The fourth catches a review GitHub still shows as green over content
+nobody approved. The fifth is bookkeeping. The sixth is section 6: a waiver nobody has
+answered is a finished port that cannot be submitted.
 
 Nothing runs on a schedule. This checkup IS the sweep, so the record only reconciles when
 someone runs it -- which is why `orient.sh` reports how long it has been.
@@ -157,14 +163,58 @@ the table silently rots.
 
 Also reactivate `awaiting-upstream` projects: those are parked on an external event (a
 third party's PR landing, say), and when it happens the project becomes workable again.
-colmap is the standing example.
+No project is in that state at the moment, so there is nothing to check here until one
+is parked -- the state exists for the case, not the other way round.
 
 ## 5. Fork requests
 
-Agents cannot create forks in the org. `python3 utils/upstream.py --forks` lists the projects
-sitting in `awaiting-fork`; collect them and emit the batch for an admin. Do not attempt
-`gh repo fork` against the org -- it will fail, and an accidental re-fork once recreated a
-public repo that had been deliberately deleted.
+    python3 utils/upstream.py --forks
+
+Projects screened and waiting for someone to create the fork. Agents cannot create
+one, so this is a list for a person, and `orient.sh` prints it on every run.
+
+A project whose folder lives on its own `port/<name>` branch is REPORTED rather than
+advanced: releasing writes to its record and the record is not in this checkout. Check
+that branch out to release it, or let the next session on it do so.
+
+Declines do not happen here. They are recorded through the intake queue --
+`intake_queue.py apply --decline`, carrying a person's answer -- and the labels that
+older documents describe record nothing.
+
+## 6. Gate waivers awaiting a maintainer
+
+    python3 utils/moatlib.py waivers
+
+A port whose obstacle is the PLATFORM rather than the GPU -- a host runtime written to
+POSIX, a Windows toolchain that will not load the runtime library -- can still go
+upstream, but only behind a waiver on the `windows` gate, the one gate
+`config/arches.toml` marks waivable. The porter that hit the obstacle records the case
+(`moatlib.py suggest-waiver <name> windows --reason '<what stops it>'`); it satisfies
+nothing and BLOCKS `pr-ready` until a maintainer answers, so suggesting one can never
+let a port out early.
+
+Approving is a person's act and never an agent's:
+`moatlib.py approve-waiver <name> windows --by <who>`. Show them the reason and the
+platform records behind it, and wait.
+
+This list exists because the two ends are far apart in time. The obstacle is found
+mid-port, often by an unattended run with nobody to ask; the answer comes from a person
+who was not there. Before this had a writer, the determination was made once and then
+hand-copied onto the second Windows arch in prose -- "carried from windows-gfx1101
+determination" -- which is what a finding with nowhere to go looks like.
+
+Refusing is an answer too, and the queue has to empty both ways or an unanswered
+suggestion is reprinted forever and the only escape is approving it:
+`moatlib.py refuse-waiver <name> <gate> --by <who> --note '<what to investigate>'`. The
+note is required, because a refusal without one leaves the next agent where the last one
+was and it will suggest the same waiver again. The gate stays unsatisfied either way; the
+refusal just makes the block a known quantity.
+
+Waiving is not the only answer, and often not the right one. A gate that no arch can
+satisfy because the CODEBASE cannot be ported is `set-not-portable`; a gate failing on
+one card because of a toolchain or library defect is a per-arch `blocked` flag with the
+report filed in `data/deferred.json`, and it gates nothing as long as a sibling arch
+carrying the same attribute passes.
 
 ## Stop and ask
 

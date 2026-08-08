@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "name": "CPM.cu",
   "upstream_url": "https://github.com/OpenBMB/CPM.cu",
   "fork_url": null,
@@ -7,11 +7,15 @@
   "priority": 3.979,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T03:26:34Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T22:41:31Z",
   "head_sha": null,
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 997189733,
+  "stage": "not-portable",
   "platforms": {
     "linux-gfx90a": {
-      "state": "planned",
       "blocked": true,
       "blocked_reason": "CUTLASS/CuTe FlashAttention-2 + Marlin W4A16 raw sm80 PTX (mma.sync/ldmatrix/cp.async/lop3/prmt); monolithic module hard-includes flash_api.hpp so no portable-only validatable slice -- multi-week AMD-native CK/MFMA reimplement, not a mechanical port. Defer (jeff: skip-vs-fund-rewrite).",
       "validated_sha": null,
@@ -32,75 +36,11 @@
         "last_session_at": null
       },
       "last_agent": "planner"
-    },
-    "linux-gfx1100": {
-      "state": "awaiting-port",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-05-30T03:26:34Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1101": {
-      "state": "awaiting-port",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-04T19:41:52Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1201": {
-      "state": "awaiting-port",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-04T19:41:52Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
     }
   },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "Apache-2.0"
+  "not_portable": {
+    "reason": "The compute core is CUTLASS/CuTe FlashAttention-2 plus Marlin W4A16 in raw sm80 PTX (mma.sync, ldmatrix, cp.async, lop3, prmt), and the module hard-includes flash_api.hpp so the dependency cannot be scoped out.",
+    "by": "jeffdaily",
+    "at": "2026-08-07T22:41:31Z"
+  }
 }
