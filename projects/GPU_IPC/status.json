@@ -7,14 +7,14 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:23:54Z",
-  "updated_at": "2026-08-08T18:52:35Z",
+  "updated_at": "2026-08-08T19:11:58Z",
   "head_sha": "3798cb295f5eca470b46ee817aab546227c15b5b",
   "depends_on": [],
   "porting": null,
   "waivers": {},
   "license_spdx": "MPL-2.0",
   "upstream_repo_id": 782798953,
-  "stage": "ported",
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "blocked": false,
@@ -44,7 +44,7 @@
       "validated_sha": null,
       "started_at": "2026-08-08T18:04:03Z",
       "completed_at": null,
-      "updated_at": "2026-08-08T18:52:35Z",
+      "updated_at": "2026-08-08T19:11:58Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -58,7 +58,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "porter"
+      "last_agent": "reviewer"
     }
   }
 }

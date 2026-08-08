@@ -682,3 +682,113 @@ line-search wedge on the same vertex cluster (12866-12893). No HIP error, no
 NaN. No regression from the revert; the wedge frame continues to vary between
 runs of the same binary (25, 26, 32, 32, 36 so far), which is expected from the
 float `atomicAdd` accumulation order.
+
+## Review 2026-08-08 (round 3)
+
+Reviewed fork sha 3798cb2 (`moat-port`) against 46594e0, single commit. Verdict:
+review-passed, no findings. No pull request was opened anywhere.
+
+Narrow round. `git diff b474148 HEAD` is one file, 13 insertions / 18 deletions
+in MASPreconditioner.cu, plus the commit-message rewrite; everything round 2
+recorded as clean was left alone.
+
+### The revert is genuinely byte-identical
+
+`git diff origin/main...HEAD -- GPU_IPC/MASPreconditioner.cu` is 7 changed lines
+and all 7 are includes, which is a stronger statement than inspecting the
+function: `__buildMultiLevelR_optimized` cannot differ from upstream by a byte.
+The hoisting comment is gone with it.
+
+The include split is right on both paths. The `#else` arm carries all three of
+upstream's cooperative-groups includes in upstream's order
+(MASPreconditioner.cu:20-22); the HIP arm carries only
+`<hip/hip_cooperative_groups.h>` (line 19), which is what `using namespace
+cooperative_groups;` at line 26 needs, and nothing in the file names a cg symbol
+so the missing `reduce.h` on the HIP side costs nothing. Dropping upstream's
+`"device_launch_parameters.h"` is safe on CUDA: cuda_tools.h -> cuda_to_hip.h:78
+supplies the angled form.
+
+The commit message's new one-sentence reason is the true one and I confirmed
+both halves at the source. `BANKSIZE 32` (MASPreconditioner.cu:43) and `laneId =
+threadIdx.x % BANKSIZE` (line 883), and with the width pinned to 32 by
+cuda_to_hip.h:70-73 a lane cannot read outside its own 32-aligned group -- HIP's
+`__shfl_down` clamps the index to `self` when `(self & (width-1)) + delta >=
+width` (amd_warp_functions.h:375-381). Measured rather than argued: a two-TU
+`-fgpu-rdc` program, one TU `-mwavefrontsize64` and one `-mno-wavefrontsize64`,
+sharing a header-defined `__forceinline__` wrapper around `__shfl_down(v, d,
+32)`, returns the same 32-lane sum 496 from both TUs while `warpSize` reads 64
+and 32 respectively (gfx1100, GPU 2). That also settles the mixed-build
+soundness question the other way round from how validation.md states it: the
+shared cross-lane wrapper is not deduped across the wavefront-mode boundary, so
+mlbvh.cu and MASPreconditioner.cu keep their own wave32 copies.
+
+### The two skill entries
+
+Both hold up. Every claim was checked against the source it describes.
+
+`references/fault-classes.md`, the fixed-cluster rule: the invariant is stated
+correctly and the `self & ~(width-1)` group-base term is really in the HIP
+headers (`__shfl` line 144, `__shfl_up` line 260, `__shfl_xor` line 494;
+`__shfl_down` expresses the same containment as a different comparison). The
+worked example is exact -- `totalNodes = vertNum` at MASPreconditioner.cu:1477,
+38386 vertices, so the last bank has 18 live lanes and 14 that returned at line
+875. "A partial bank cannot reach `popc == BANKSIZE`" is not an assumption: both
+writers of the mask set bits only within a bank and only for real vertex ids
+(`_buildCML0` lines 64-68, `BuildCollisionConnection` lines 1290-1293 and
+1331-1334), so 18 is the ceiling there. Round 2's separate point that
+`_preparePrefixSumL0` (lines 101-115) replaces each mask with its bank's
+transitive closure is what makes the predicate bank-uniform, so the entry's
+"predicate uniform over the cluster" is satisfied here rather than assumed.
+
+`references/validation.md`, the rocPRIM mechanism: the quoted `min_size()` is
+verbatim from `/opt/rocm/include/rocprim/intrinsics/arch.hpp:68-77` on this host
+(ROCm 7.2.3), and `/opt/rocm/lib` has no rocPRIM or rocThrust binary, so
+header-only is right and the retracted "prebuilt for wave32" wording is
+retracted where it needs to be -- validation.md tells the reader there is
+nothing to rebuild, and notes.md:357-360 quotes the old sentence and says why it
+was wrong, which is the form that stops a re-derivation.
+
+The coverage claim is exact. Eight `.cu` files, three name thrust (GIPC.cu,
+mlbvh.cu, MASPreconditioner.cu), leaving five at wave64; of those five only
+PCG_SOLVER.cu uses `WARP_SHFL_DOWN` and `WARP_BALLOT` (ACCD.cu, femEnergy.cu,
+gpu_eigen_libs.cu, device_fem_data.cu have no `WARP_*` call at all, which is
+also what makes the TU-boundary condition hold). MASPreconditioner.cu carries
+the other `WARP_BALLOT` site that the shifted-ballot fix exists for
+(lines 1049-1051, `__brev`/`__clz` on a 32-bit mark) and it is indeed
+uncovered by the mixed build.
+
+### The post-revert run
+
+Reading it as no regression is right, and the reasoning is available without
+leaning on the frame count. The revert restores upstream source byte for byte
+and the delta is confined to one kernel's control flow, where the removed work
+was five shuffles on the else-path banks whose result was discarded; there is no
+mechanism by which it could regress. The run corroborates rather than carries
+it: 36 frames is the top of the observed range, 205-238 ms/frame overlaps the
+pre-revert 206-229, and the wedge signature and locus are unchanged. A wedge
+frame that varies (25, 26, 32, 32, 36) while the failing vertex cluster stays
+12866-12893 is consistent -- nondeterministic float accumulation moves when the
+solver reaches the scene's contact hot spot, not where it is.
+
+### Checked and clean, so nobody re-checks it
+
+Fork tree clean and pushed (origin/moat-port == 3798cb2), `porting` lock null,
+`jargon.py --commits origin/main..HEAD` clean over the whole branch, no
+non-ASCII in the changed skill files or notes, no added copyright or author
+lines, no textures/surfaces/pitched allocations anywhere in the codebase, and
+the four CUDA math libraries the CMake still links on the NVIDIA path are
+genuinely dead (every cuBLAS/cuSOLVER reference in the tree is commented out).
+`timeCost.txt` never entered any commit on any branch (`git log --all --
+'*timeCost*'` is empty) and is absent from the working tree; the main checkout
+has no `projects/GPU_IPC` directory.
+
+The only hardcoded 32s the diff adds are the four width pins in cuda_to_hip.h,
+which are the arch-unified form rather than the fault class. `mlbvh.cu:517,543,548`
+adds `return false`/`return true` to two functions that fell off the end; the
+value is ignored at both live call sites (lines 1068, 1083) and the fullCCD
+variant's call sites are commented out, so this is a compile fix with no
+behavior change.
+
+Not reviewed here, by scope: the line-search wedge itself. It is the validator's
+item and the NVIDIA baseline ranks first, since the commit message already says
+the state has not been measured on an NVIDIA build.
