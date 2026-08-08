@@ -9,6 +9,7 @@
   - Setup: point `-I` at the project's deps (vcpkg include dir, plus any CUDA-Samples headers it uses -- `helper_cuda.h`, `helper_math.h`, `helper_string.h`) and select the project's non-MATLAB/Python build macro. For a Thrust/CUB project also install `cuda-cccl`: on CUDA 13.x they ship there under `include/cccl/{thrust,cub}` (nvcc finds them automatically, but a host-compiler OpenMP-backend check needs that path on `-I` explicitly, and stdgpu's CMake wants `THRUST_INCLUDE_DIR` pointed at it).
   - For a header-only or template library the changed headers only compile when instantiated: CMake-configure the CUDA backend to generate its config headers, then `nvcc -c` a small TU that `template class`-instantiates the affected containers, rather than compiling headers alone.
   - The class this catches that a HIP-only build cannot: an unconditional device-header include reaching host translation units. Used on 8 projects in one six-week window; it caught a template-shadow regression in Velvet and an stdgpu regression of exactly that include class. (stdgpu, SCAMP, cuSZ, mahout, lc0, cuPDLPx, TIGRE, Velvet)
+  - **`nvcc fatal: Unsupported gpu architecture 'compute_35'` at the very first `enable_language(CUDA)` test-compile (inside `Caffe2Config.cmake`/`public/cuda.cmake`, before the project's own CMakeLists runs at all) is a torch-pip-wheel/toolkit mismatch, not a port fault.** A `pip install torch --index-url .../cu128` wheel's exported `CMAKE_CUDA_FLAGS` can still contain `-gencode arch=compute_35,code=sm_35` (Kepler), which CUDA >= 12.0's nvcc no longer accepts (sm_35 support was dropped). This fires for a project that does a plain `find_package(Torch REQUIRED)` before it ever gets a chance to run its own arch-filtering logic, if it has any. Confirm by building the identical merge-base upstream commit with the identical toolchain/torch pip wheel: if it fails with the exact same message at the exact same call stack, this is pre-existing breakage from the torch/toolkit pairing you chose for the compile-check, not something the port introduced -- pick an older CUDA toolkit (e.g. 12.1) or an older matching torch wheel to actually exercise the gate, or record it as `cuda-not-validated` if none is readily available. Do not spend time patching the project's own CMake for this; the failure is inside PyTorch's shipped CMake config, upstream of anything a HIP port could touch. (k2)
 ## Platforms
 
 A platform is `<os>-<gfx>`, and the set is open: whatever GPU your host reports is a
@@ -87,6 +88,43 @@ solver, an LM/Newton fit, an FP regression head -- is usually floating-point
 accumulation divergence rather than a port bug, and RDNA3.5 (gfx1151) is where it has
 shown up. Record the error magnitude and stop rather than chasing it deep: the
 comparison that matters is against the other architectures, not against a fix.
+
+## codeobj_diff binary-equivalence: a host-only library always reads "indeterminate"
+
+`utils/codeobj_diff.py` extracts device code with `roc-obj-ls` before comparing
+ISA. On a binary with NO device code at all (a pure-host `.so`: vendored
+gtest, a host-only utility/algorithms library, a plain-C++ logging TU),
+`roc-obj-ls` exits 255 with "Error: No kernel section found" instead of
+returning empty output, and the tool -- correctly conservative -- reports that
+as `indeterminate`, the same bucket as an actual extraction failure. A
+multi-binary build tree with any host-only `.so` in it will therefore never
+reach an overall `identical` verdict from the tool alone, even when the
+device-carrying binaries (the ones that actually matter) come back identical.
+
+Do not read `verdict=indeterminate` here as "the source might have changed
+device behavior" -- per-binary, check which ones are `identical` (exported
+symbols + device ISA both matched) versus `indeterminate` (extraction
+failed). If every binary that plausibly carries the touched source is
+`identical`, and the `indeterminate` ones are host-only libraries you can
+independently confirm are byte-identical (`llvm-objdump -d` the two `.so`s and
+diff, ignoring the self-referential "file format" header line each shows;
+`sha256sum` will differ even on identical code because `.note.gnu.build-id`
+is a fresh random hash per link), that is real evidence of no change on
+those binaries too -- record both facts, but per validator.md, an
+`indeterminate` overall verdict still means "never carry forward on
+uncertainty": route to a full real-GPU revalidation rather than declaring
+binary-equivalence from partial evidence, unless every one of your own
+higher-level checks (diffing the actual source range line by line) already
+independently proves the delta is comment/formatting-only. (k2)
+
+**Always build both shas at the identical absolute source path.** A HIP
+translation unit embeds a `__hip_cuid_*` compilation-unit-hash symbol derived
+from the source file's path; building the old and new sha at two different
+absolute paths (e.g. two different scratch checkouts) makes an otherwise
+byte-identical device object compare as `differ` purely from that one
+symbol/reloc, a false negative that looks exactly like a real change. Check
+out old-sha, build, checkout new-sha in the SAME directory, build again (into
+a different build subdir is fine -- only the source path matters). (k2)
 
 ## Diagnosing a suspected AMD fault before escalating
 
