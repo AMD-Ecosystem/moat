@@ -16,3 +16,4 @@
 {"kind":"phase","ts":"2026-08-08T18:12:34Z","phase":"compile","seconds":17.002,"exit":0,"cmd":"cmake --build projects/GPU_IPC/src/build -j32"}
 {"kind":"phase","ts":"2026-08-08T18:17:16Z","phase":"compile","seconds":11.286,"exit":0,"cmd":"cmake --build projects/GPU_IPC/src/build -j32"}
 {"kind":"phase","ts":"2026-08-08T18:19:02Z","phase":"test","seconds":99.244,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/run_gipc.sh /var/lib/jenkins/moat-worktrees/GPU_IPC/projects/GPU_IPC/src/build/gipc 90"}
+{"kind": "tokens", "ts": "2026-08-08T18:25:36Z", "tokens": 166290, "source": "porter"}
