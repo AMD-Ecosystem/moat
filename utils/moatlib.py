@@ -2116,11 +2116,20 @@ def stranded_shared_changes(base_ref="origin/main"):
         if not base:
             continue
         changed = _git("diff", "--name-only", base, ref, check=False).stdout.splitlines()
-        shared = sorted(c.strip() for c in changed
-                        if c.strip() and not c.startswith(f"projects/{name}/")
-                        and not c.strip() in ("README.md",))
+        cands = [c.strip() for c in changed
+                 if c.strip() and not c.startswith(f"projects/{name}/")
+                 and c.strip() not in ("README.md",)]
+        # Changed-since-merge-base finds the CANDIDATES; it does not mean still
+        # stranded, because the trunk may have picked the change up since. Ask what the
+        # branch has that the trunk lacks -- added lines going trunk -> branch -- or the
+        # report keeps naming work already rescued and stops being worth reading.
+        shared = []
+        for c in cands:
+            d = _git("diff", base_ref, ref, "--", c, check=False).stdout.splitlines()
+            if any(l.startswith("+") and not l.startswith("+++") for l in d):
+                shared.append(c)
         if shared:
-            out.append((name, shared))
+            out.append((name, sorted(shared)))
     return out
 
 
