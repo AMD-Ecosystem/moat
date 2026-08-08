@@ -7,7 +7,7 @@
   "priority": 4.951,
   "ext_type": "makefile",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-08-07T07:04:25Z",
+  "updated_at": "2026-08-08T23:50:38Z",
   "head_sha": "2966dcd",
   "pr_url": "https://github.com/ccsb-scripps/AutoDock-GPU/pull/320",
   "pr_number": 320,
@@ -23,10 +23,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "bb2f0624b28563b119ce5424893bc1abb85420f0",
+      "validated_sha": "2966dcd741d2ff210c7c41170f4f73a11f45408a",
       "started_at": "2026-05-30T06:52:18Z",
-      "completed_at": "2026-06-10T03:48:57Z",
-      "updated_at": "2026-06-10T04:03:06Z",
+      "completed_at": "2026-08-08T23:50:38Z",
+      "updated_at": "2026-08-08T23:50:38Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -42,10 +42,10 @@
       },
       "last_agent": "porter",
       "carry_forward": {
-        "to": "d1b5e7b5afdbc923030e2ee9185d5f96f6505414",
+        "to": "2966dcd741d2ff210c7c41170f4f73a11f45408a",
         "method": "source-class",
-        "detail": "Squash to one clean commit d1b5e7b5; delta vs the validated c2f2f6f is doc/comment/copyright-only (verified by full diff: Makefile.Hip comment jargon-scrub, README TENSOR=ON doc, AMD copyright lines i",
-        "at": "2026-06-10T03:48:57Z"
+        "detail": "doc-only delta bb2f062->2966dcd (README NUMWI=64 hint sentence only); classify verdict class=doc-only arch_independent=True inert=True; no code/build file touched",
+        "at": "2026-08-08T23:50:38Z"
       }
     },
     "linux-gfx1100": {

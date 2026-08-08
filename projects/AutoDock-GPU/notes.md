@@ -1062,3 +1062,74 @@ unrelated to this PR. input/7cpa/derived/7cpa_protein.maps.fld references
 `7cpa_rec.A.map`. The port does not touch input/ (git diff 28a6139..moat-port --
 input/ is empty), so this is a data-file naming mismatch in upstream's bundled
 input, not a port fault. Noted as such in the PR reply; a separate fix if pursued.
+
+## Validation 2026-08-08 (linux-gfx90a, revalidate -- carry-forward, doc-only delta)
+
+Trigger: fork head moved bb2f062 -> 2966dcd (the 2026-07-02 NUMWI=64 README hint)
+after linux-gfx90a's prior `validated_sha` (bb2f062); other 3 platforms had already
+been advanced, gfx90a had not.
+
+### Delta classification
+
+    python3 utils/moatlib.py classify AutoDock-GPU bb2f062 2966dcd
+    -> class=doc-only arch_independent=True inert=True
+
+`git diff bb2f062 2966dcd` confirms: single-line README.md hint sentence addition
+("On AMD GPUs, `NUMWI=64` was fastest...") -- no source, Makefile, or build-manifest
+file touched.
+
+### Carry-forward
+
+    python3 utils/moatlib.py carry-forward AutoDock-GPU linux-gfx90a 2966dcd \
+      source-class "doc-only delta bb2f062->2966dcd (README NUMWI=64 hint sentence
+      only); classify verdict class=doc-only arch_independent=True inert=True;
+      no code/build file touched"
+
+No GPU re-run needed; prior gfx90a GPU results (see "## Validation -- REAL GPU,
+gfx90a" and the TENSOR=ON rocWMMA section above) stand unchanged at 2966dcd.
+GPU confirmed present for this session: `rocm-smi --showproductname` on
+HIP_VISIBLE_DEVICES=0 -> AMD Instinct MI250X, GFX Version gfx90a (index 0 of the
+4x MI250X host).
+
+### CUDA no-regression gate -- run (not previously recorded at this head_sha)
+
+nvcc from the dedicated conda env (`/opt/conda/envs/cuda-12.8/bin/nvcc`, CUDA 12.8),
+host g++ 13. Arch pinned via `TARGETS=80` (Makefile.Cuda's own gencode-list variable,
+not CMake `native` autodetection -- confirmed the build only emitted
+`-gencode arch=compute_80,code=sm_80`, i.e. sm_80, not a downlevel fallback arch).
+
+    git clone https://github.com/AMD-Ecosystem/AutoDock-GPU.git <tmp>/src
+    git -C <tmp>/src checkout -b moat-port origin/moat-port   # HEAD 2966dcd
+    export PATH=/opt/conda/envs/cuda-12.8/bin:$PATH
+    export LIBRARY_PATH=/opt/conda/envs/cuda-12.8/targets/x86_64-linux/lib/stubs:/opt/conda/envs/cuda-12.8/targets/x86_64-linux/lib
+    DEVICE=CUDA NUMWI=64 TARGETS=80 \
+      NVCC=/opt/conda/envs/cuda-12.8/bin/nvcc \
+      GPU_INCLUDE_PATH=/opt/conda/envs/cuda-12.8/targets/x86_64-linux/include \
+      GPU_LIBRARY_PATH=/opt/conda/envs/cuda-12.8/targets/x86_64-linux/lib \
+      make
+
+(LIBRARY_PATH addition is only needed so `test_cuda.sh`'s own `-lcuda` driver-stub
+probe link succeeds -- the CUDA toolkit conda env ships `libcuda.so` only under a
+`lib/stubs/` subdirectory, not in the main lib dir the Makefile passes as
+GPU_LIBRARY_PATH for the real build; the final host link only needs -lcudart/-lcurand
+which ARE in the main dir, so GPU_LIBRARY_PATH itself is left untouched.)
+
+Result: PASS. `make` selected DEVICE=CUDA (nvcc probe succeeded), compiled
+cuda/kernels.cu for sm_80 only (ptxas info confirms 6 kernel entry points, all
+`for 'sm_80'`), linked `autodock_gpu_128wi` + `adgpu_analysis` cleanly. Zero errors,
+zero warnings beyond pre-existing upstream ones. No `asm("trap;")`/`__builtin_trap()`
+divergence, no HIP-only type alias silently swapped -- `cuda/cuda_to_hip.h` is a
+plain passthrough `<cuda_runtime.h>` include on NVIDIA (verified in an earlier
+porter round; unchanged by this delta). Wall time 22.2s (utils/timeit.sh, phase
+cuda-compile). CUDA gate is a project-wide, per-head_sha fact (not per-arch); this
+satisfies it for head_sha 2966dcd and does not need re-running by sibling archs at
+this head.
+
+### Jargon / docs gate
+
+`python3 utils/jargon.py --port AutoDock-GPU` -> clean. README.md documents
+DEVICE=HIP (and TENSOR=ON via rocWMMA) alongside DEVICE=CUDA in house style
+(unchanged by this delta; verified present at 2966dcd).
+
+VERDICT: linux-gfx90a completed at 2966dcd (carry-forward, no GPU re-run). CUDA
+no-regression gate PASS at 2966dcd.
