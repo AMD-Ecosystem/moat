@@ -34,3 +34,6 @@
 {"kind":"phase","ts":"2026-07-02T19:24:15Z","phase":"compile","seconds":63.728,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/build-alien-444d12bbb-gfx1100 -j16"}
 {"kind": "tokens", "ts": "2026-07-02T19:25:23Z", "tokens": 148159, "source": "porter (HIP file reorg to top-level hip/, gfx90a + CUDA reval)"}
 {"kind": "tokens", "ts": "2026-07-02T19:25:37Z", "tokens": 66813, "source": "validator"}
+{"kind":"phase","ts":"2026-08-08T03:36:03Z","phase":"compile","seconds":93.565,"exit":0,"cmd":"cmake --build /tmp/claude-1000/-var-lib-jenkins-moat/cac2074a-dc3d-4ccc-a639-f6184732c4ca/scratchpad/wt-alien/projects/alien/src/build-head -j 16"}
+{"kind":"phase","ts":"2026-08-08T03:38:18Z","phase":"compile","seconds":79.956,"exit":0,"cmd":"cmake --build /tmp/claude-1000/-var-lib-jenkins-moat/cac2074a-dc3d-4ccc-a639-f6184732c4ca/scratchpad/alien-old/build-old -j 16"}
+{"kind":"phase","ts":"2026-08-08T03:42:19Z","phase":"compile","seconds":97.246,"exit":0,"cmd":"cmake --build /tmp/claude-1000/-var-lib-jenkins-moat/cac2074a-dc3d-4ccc-a639-f6184732c4ca/scratchpad/wt-alien/projects/alien/src/build-old-samepath -j 16"}

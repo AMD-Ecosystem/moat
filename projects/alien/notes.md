@@ -575,3 +575,58 @@ EngineInterfaceTests: host-only (indeterminate/no device section -- expected)
 ```
 
 Device ISA for gfx1100 is byte-identical at 444d12bbb vs f56285aec. Carry-forward applied: linux-gfx1100 -> completed, validated_sha -> 444d12bbb.
+
+## Validation 2026-08-08 (linux-gfx90a revalidate carry-forward at 444d12bbb)
+
+Revalidate triggered because linux-gfx90a's `validated_sha` (f56285aec) trailed `head_sha` (444d12bbb, the source/->hip/ file-move from the "PR fix-round 2026-07-02" section). `python3 utils/moatlib.py classify alien f56285aecda717d238c957bc839cf504db425e7f 444d12bbbbb625c50828cf509296c587fcdac674` -> `class=mixed` (rename-only across the moved files), which per validator.md is a verdict that reaches the validator for a binary-equivalence check rather than an automatic revalidate.
+
+GPU: AMD Instinct MI250X GCD index 3 of 4 (`HIP_VISIBLE_DEVICES=3`, confirmed gfx90a via `rocm-smi --showproductname`, confirmed idle via `rocm-smi --showuse`/`--showpids` before use). ROCm 7.2.1. Fresh clone of AMD-Ecosystem/alien moat-port into a scratch worktree (vcpkg submodule full-cloned; the host's `~/.cache/vcpkg/archives` cache made the vcpkg install step ~1s instead of the documented 15-25 min cold).
+
+### Pitfall found: cross-directory codeobj_diff false positive
+
+First attempt built f56285aec in a separate `git worktree add ../alien-old <sha>` (a DIFFERENT absolute path than the main clone) and compared against the head build with `utils/codeobj_diff.py` -> `verdict=differ` on all 4 GPU-bearing executables. Root-caused before trusting it: `roc-obj-ls` reported the SAME device-code offset/size (847872 / 1643856 bytes) on both, and raw byte diff isolated the divergence to `.dynstr`/`.rodata`/`.strtab` string-table sizes. `strings` on the extracted code object showed the only differing content was five ABSOLUTE SOURCE PATHS (`.../alien-old/source/EngineKernels/{ConstructorProcessor.cuh,DebugKernels.cu,NeuronProcessor.cuh,ObjectConnectionProcessor.cuh,TestKernels.cu}` vs `.../wt-alien/projects/alien/src/source/EngineKernels/...`) -- `assert()`/`__FILE__` in those (unrelated, unmoved) device TUs embeds the build's absolute source path as a string literal, so ANY two builds done from clones at different absolute paths will show `codeobj_diff differ` even with byte-identical logic. This is a confound of the comparison method, not evidence of a real difference. **Fix: build both shas from the SAME absolute source-tree path** (checkout sha A in place, build, checkout sha B in the same tree, build to a different `-B` dir, compare) rather than a second `git worktree`/clone at a different path. Promoted to the cuda-to-rocm skill's validation.md.
+
+### Commands run
+
+```
+git clone --branch moat-port https://github.com/AMD-Ecosystem/alien.git projects/alien/src
+cd projects/alien/src
+git submodule update --init external/vcpkg
+bash external/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+# HEAD (444d12bbb) build
+cmake -S $SRC -B $SRC/build-head -G Ninja -DCMAKE_TOOLCHAIN_FILE=$SRC/external/vcpkg/scripts/buildsystems/vcpkg.cmake \
+  -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=/opt/rocm
+cmake --build $SRC/build-head -j 16   # 253/253
+
+# validated_sha (f56285aec), SAME source path (in-place checkout, not a second clone)
+git checkout f56285aecda717d238c957bc839cf504db425e7f
+cmake -S $SRC -B $SRC/build-old-samepath -G Ninja ... (identical flags)
+cmake --build $SRC/build-old-samepath -j 16   # 253/253
+git checkout moat-port   # back to 444d12bbb, tree unchanged (build-head untouched)
+
+python3 utils/codeobj_diff.py $SRC/build-old-samepath/EngineTests $SRC/build-head/EngineTests
+python3 utils/codeobj_diff.py $SRC/build-old-samepath/cli $SRC/build-head/cli
+python3 utils/codeobj_diff.py $SRC/build-old-samepath/alien $SRC/build-head/alien
+python3 utils/codeobj_diff.py $SRC/build-old-samepath/PersisterTests $SRC/build-head/PersisterTests
+python3 utils/codeobj_diff.py $SRC/build-old-samepath/EngineInterfaceTests $SRC/build-head/EngineInterfaceTests
+```
+
+### Result (same-absolute-path comparison)
+
+```
+EngineTests           -> verdict=identical (exported symbols + device ISA identical, 39 exports)
+cli                    -> verdict=identical (39 exports)
+alien                  -> verdict=identical (57 exports)
+PersisterTests         -> verdict=identical (35 exports)
+EngineInterfaceTests   -> verdict=indeterminate (device-code extraction failed -- host-only binary, no device section, expected)
+```
+
+Device ISA for gfx90a is byte-identical at 444d12bbb vs f56285aec once the comparison path confound is removed. The SPH-reduce ObjectProcessor kernels (partial-tile active-lane hardened path) are unchanged. Matches the same delta's `identical` verdict already recorded for linux-gfx1100 (2026-07-02).
+
+CUDA no-regression gate: already recorded in notes.md at this head_sha (444d12bbb, "PR fix-round 2026-07-02" section, USE_HIP=OFF nvcc build compiled cleanly) -- not re-run, per validator.md (once per head_sha).
+
+Carry-forward applied (no GPU test re-run needed): `python3 utils/moatlib.py carry-forward alien linux-gfx90a 444d12bbbbb625c50828cf509296c587fcdac674 binary-equiv "..."`. linux-gfx90a: `completed`, validated_sha f56285aec -> 444d12bbb.
+
+Wall clock: ~15 min total (clone + vcpkg bootstrap ~2 min thanks to cached archives; two full 253-target builds ~5 min each; codeobj_diff debugging + reruns ~3 min).

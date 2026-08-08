@@ -7,7 +7,7 @@
   "priority": 6.361,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-08-07T07:04:51Z",
+  "updated_at": "2026-08-08T03:42:59Z",
   "head_sha": "444d12bbbbb625c50828cf509296c587fcdac674",
   "pr_url": "https://github.com/chrxh/alien/pull/710",
   "pr_number": 710,
@@ -80,10 +80,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "f56285aecda717d238c957bc839cf504db425e7f",
+      "validated_sha": "444d12bbbbb625c50828cf509296c587fcdac674",
       "started_at": "2026-05-31T00:42:20Z",
-      "completed_at": "2026-06-24T23:58:40Z",
-      "updated_at": "2026-07-06T02:49:04Z",
+      "completed_at": "2026-08-08T03:42:59Z",
+      "updated_at": "2026-08-08T03:42:59Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -99,10 +99,10 @@
       },
       "last_agent": "moat-checkup",
       "carry_forward": {
-        "to": "f56285aecda717d238c957bc839cf504db425e7f",
-        "method": "gpu-revalidate",
-        "detail": "Rebased onto upstream develop (resolved CMakeLists/README/SimulationCudaFacade conflicts); full EngineTests re-run on MI250X gfx90a, both -d and graph paths: 3042 ran, 3037 passed, 3 skipped, same 2 documented non-defects.",
-        "at": "2026-06-24T23:58:40Z"
+        "to": "444d12bbbbb625c50828cf509296c587fcdac674",
+        "method": "binary-equiv",
+        "detail": "Pure file-move of HIP compat headers (source/EngineKernels+hip_compat -> hip/) from f56285aec; device ISA identical on gfx90a (codeobj_diff: EngineTests/cli/alien/PersisterTests all verdict=identical,",
+        "at": "2026-08-08T03:42:59Z"
       }
     },
     "windows-gfx1201": {
