@@ -1,0 +1,164 @@
+{
+  "schema_version": 3,
+  "name": "RXMesh",
+  "upstream_url": "https://github.com/owensgroup/RXMesh",
+  "fork_url": "https://github.com/AMD-Ecosystem/RXMesh",
+  "fork_default_branch": "main",
+  "priority": 4.792,
+  "ext_type": "unknown",
+  "adopted_at": "2026-05-30T00:36:13Z",
+  "updated_at": "2026-08-07T07:04:45Z",
+  "head_sha": "df10bfe",
+  "depends_on": [
+    "STRUMPACK"
+  ],
+  "pr_url": "https://github.com/owensgroup/RXMesh/pull/73",
+  "pr_number": 73,
+  "pr_opened_at": "2026-06-05T20:34:20Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "BSD-2-Clause",
+  "upstream_repo_id": 357954110,
+  "stage": "review-passed",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a48ee1f6",
+      "started_at": "2026-05-30T09:21:09Z",
+      "completed_at": "2026-06-05T20:34:19Z",
+      "updated_at": "2026-06-05T20:34:20Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "df10bfe",
+      "started_at": "2026-05-30T21:08:00Z",
+      "completed_at": "2026-06-23T21:32:38Z",
+      "updated_at": "2026-06-23T21:32:38Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-05-30T21:08:00Z",
+        "last_session_at": "2026-05-30T21:10:45Z"
+      },
+      "last_agent": "orchestrator",
+      "carry_forward": {
+        "to": "df10bfe",
+        "method": "source-class",
+        "detail": "CMake default-path change (drop gfx90a pin, rely on project(LANGUAGES HIP) auto-detect); explicit -D builds byte-identical",
+        "at": "2026-06-23T21:32:38Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "df10bfe",
+      "started_at": null,
+      "completed_at": "2026-06-23T21:32:38Z",
+      "updated_at": "2026-06-23T21:32:38Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "orchestrator",
+      "carry_forward": {
+        "to": "df10bfe",
+        "method": "source-class",
+        "detail": "CMake default-path change (drop gfx90a pin, rely on project(LANGUAGES HIP) auto-detect); explicit -D builds byte-identical",
+        "at": "2026-06-23T21:32:38Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "df10bfe",
+      "started_at": null,
+      "completed_at": "2026-06-23T21:32:38Z",
+      "updated_at": "2026-06-23T21:32:38Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "orchestrator",
+      "carry_forward": {
+        "to": "df10bfe",
+        "method": "source-class",
+        "detail": "CMake default-path change (drop gfx90a pin, rely on project(LANGUAGES HIP) auto-detect); explicit -D builds byte-identical",
+        "at": "2026-06-23T21:32:38Z"
+      }
+    },
+    "windows-gfx1151": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "df10bfe",
+      "started_at": null,
+      "completed_at": "2026-06-23T21:32:38Z",
+      "updated_at": "2026-06-23T21:32:38Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "to": "df10bfe",
+        "method": "source-class",
+        "detail": "CMake default-path change (drop gfx90a pin, rely on project(LANGUAGES HIP) auto-detect); explicit -D builds byte-identical",
+        "at": "2026-06-23T21:32:38Z"
+      }
+    }
+  }
+}
