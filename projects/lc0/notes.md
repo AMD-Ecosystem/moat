@@ -1383,3 +1383,145 @@ otherwise). No further staleness found.
 
 `git -C projects/lc0/src status --porcelain`: clean. validated_sha = 7727fa3. Transition:
 revalidate -> completed.
+
+## Revalidation 2026-08-08 (validator, linux-gfx90a) -- COMPLETED at 7727fa3
+
+linux-gfx90a's `validated_sha` was `d83b6d1` (the PR-prep round) while the fork head had
+moved to `7727fa3` through two porter/reviewer rounds (co-build cherry-picks + debug
+barrier guard + fp16-gating refactor, then the README fix). Fresh worktree/clone, no
+prior `build-hip` on this host.
+
+### Delta classification (d83b6d1 -> 7727fa3)
+```
+python3 utils/moatlib.py classify lc0 d83b6d171eda425ef79092849185830ba5f15623 \
+  7727fa32c1992ef6702eacc1b8568715803b0701
+```
+`class=mixed arch_independent=False inert=False`. Same verdict linux-gfx1100 already
+reached for the overlapping `a80a7be -> 223ee639` co-build/barrier-guard delta (namespace
+wrap renames every exported symbol, `lc0SyncThreads()` is genuinely new code, the
+SKIP_FP16_BITS -> HAS_FP16_SUPPORT guard inversion touches fp16 kernel bodies). Not a
+binary-equivalence candidate -- proceeded straight to a full real-GPU revalidation rather
+than spending a build-twice-and-diff cycle on a delta already known to change the
+compiled output.
+
+### GPU pinning
+`rocm-smi --showproductname`: GPU 0 = gfx90a (MI250X), 0% busy. `HIP_VISIBLE_DEVICES=0`
+used for every build/test command (indices 1-3 reserved for concurrent validators on
+this host).
+
+### Fork clone
+Fresh clone of `AMD-Ecosystem/lc0` @ `moat-port` into this worktree's
+`projects/lc0/src` (this is a separate worktree from any prior session's checkout).
+HEAD `7727fa3`, matches `head_sha`. `d83b6d1` confirmed a reachable ancestor.
+
+### Build
+```
+bash utils/timeit.sh lc0 compile -- \
+  meson setup projects/lc0/src/build-hip projects/lc0/src \
+  -Dhip=true -Damd_gfx=gfx90a \
+  -Dplain_cuda=false -Dcudnn=false -Dcutlass=false -Dnvcc=false \
+  -Dgtest=true -Dblas=true -Dopencl=false -Donnx=false \
+  -Db_lto=false -Dnative_arch=false \
+  -Dhip_libdirs=/opt/rocm/lib -Dhip_include=/opt/rocm/include
+bash utils/timeit.sh lc0 compile -- ninja -C projects/lc0/src/build-hip -j16
+```
+321/321 targets, clean link, warnings only (benign nodiscard). `roc-obj-ls
+build-hip/lc0`: two code objects, both `hipv4-amdgcn-amd-amdhsa--gfx90a` (1167744 and
+2106656 bytes). `nm -C fp16_kernels.hip.o` shows 28 non-empty `SE_Layer_NHWC`
+instantiations (fp16-gating refactor still compiles conv-SE bodies in).
+
+### CPU gtest (non-GPU regression)
+```
+bash utils/timeit.sh lc0 test -- meson test -C projects/lc0/src/build-hip
+```
+First pass: 7/8 OK, `ChessBoard` TIMEOUT at the default 90s meson timeout (host load
+average ~44 on a 128-core box from the concurrent validators on GPUs 1-3). Ran
+`chessboard_test` standalone: 21/21 gtest cases PASS in 84.8s wall -- a real result, not
+a hang, just short of the default budget under contention. Re-ran `meson test
+--timeout-multiplier 4`: 8/8 OK (FP16, HashCat, PositionTest, OptionsParserTest,
+SyzygyTest, EncodePositionForNN, EngineTest, ChessBoard, 86.6s). CPU-contention artifact
+of this host at this moment, not a port regression -- recorded so a later reader is not
+surprised by a stray TIMEOUT line in the raw log.
+
+### maia-1100 conv-SE cross-check (THE gate)
+```
+HIP_VISIBLE_DEVICES=0 bash utils/timeit.sh lc0 test -- \
+  projects/lc0/src/build-hip/lc0 backendbench --backend=check \
+  "--backend-opts=hip(),blas(),mode=check,atol=1e-3,rtol=1e-2,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz --start-batch-size=1 --max-batch-size=55 --batches=4
+```
+fp32: 222/222 "Check passed", 0 ERROR. Same command with `hip-fp16()` at
+atol=1.1e-1/rtol=2e-1: 222/222 passed, 0 ERROR. Both match every prior gfx90a/gfx1100 run
+exactly.
+
+### Attention testnet regression (fp32 + fp16)
+Same pattern against `testnet.pb.gz`, atol=1e-3/rtol=1e-2 (fp32) and
+atol=2.5e-2/rtol=1e-1 (fp16), batch 1-32: 130/130 passed + 0 ERROR each.
+
+### Benchmark (fault-free, batch 1-256)
+`--backend=hip` and `--backend=hip-fp16` on maia-1100, batch 1-256: both exit 0, no
+crash/SIGABRT/hang.
+
+### Device dispatch (AMD_LOG_LEVEL=3)
+Named lc0 kernels confirmed on device (filtered `Cijk|Cannot find|hip_code|hip_module`
+Tensile chatter per the documented gotcha): InputTransform_kernel, OutputTransform_kernel,
+addBias_NCHW_kernel, copyTypeConverted_kernel, expandPlanes_kernel, filterTransform_kernel,
+policyMap_kernel.
+
+### Determinism
+Run-to-run at batch=8, fp32 hip-vs-blas display mode, `--batches=4` (2 repeats): value abs
+err 6.0e-08, policy abs err 6.3e-07 -- bit-identical to the original 2026-05-31 gfx90a
+validation's determinism numbers at the same batch size. No reduction race from the
+namespace-wrap/barrier-guard/fp16-gating changes.
+
+Aside (harness quirk, not a port defect): the same `mode=display` check with `--batches=1`
+instead of `--batches=4` SIGABRTs after printing correct value/policy numbers, in
+`std::vector::operator[]` inside the benchmark's own stats-summary code
+(`stl_vector.h:1128`, an OOB index building the timing table for a single-sample series).
+Reproduced twice, unrelated to `HIP_VISIBLE_DEVICES`/GPU correctness -- every check in this
+session and every prior recorded session uses `--batches=4`, which does not hit it. Not
+filed as a ROCm defect (it is host-side C++ container code, no device involvement); noting
+for anyone who reruns the determinism check by hand with a smaller `--batches`.
+
+### CUDA no-regression gate
+Not re-run. Already recorded at `223ee639` (2026-07-06 porter session, nvcc 12.6, both
+fp16-refactor TUs compiled clean). The only commits between `223ee639` and `7727fa3`
+touch README.md, which is not a CUDA build input; `classify(223ee639, 7727fa3)` =
+`doc-only` (confirmed independently by both the porter and reviewer in the entries above).
+Per validator.md the gate is once-per-head_sha; this head_sha's CUDA-relevant content is
+unchanged from the sha it was already checked at.
+
+### Jargon scrub
+```
+python3 utils/jargon.py --commits d8ce482..7727fa3 -C projects/lc0/src
+python3 utils/jargon.py --diff d8ce482...7727fa3 -C projects/lc0/src
+```
+Both `jargon: clean`. (This checkout's `utils/jargon.py` has no `--port` flag; used the
+`--commits`/`--diff` invocation the prior gfx1100 sessions established against the same
+base `d8ce482`, covering the whole branch's added lines and commit messages.)
+
+### Documentation
+README.md's "### HIP (ROCm)" section (the arch-detection sentence fixed in `7727fa3`)
+re-read against meson.build:642-661 / meson_options.txt:201-204: still matches (autodetect
+takes the first `rocm_agent_enumerator` line under meson >=1.2.0, `error()`s with no
+fallback otherwise). No staleness found.
+
+### Summary
+
+| Check | Result |
+|-------|--------|
+| Build (321/321 targets, gfx90a code objects) | PASS |
+| CPU gtest 8/8 (timeout-multiplier needed once under host contention) | PASS |
+| maia-1100 fp32 conv-SE check (222 batches) | PASS |
+| maia-1100 fp16 conv-SE check (222 batches) | PASS |
+| attention testnet fp32 check (130 batches) | PASS |
+| attention testnet fp16 check (130 batches) | PASS |
+| backendbench fp32 + fp16 batch 1-256 | PASS (no fault) |
+| Device dispatch confirmed | PASS |
+| Run-to-run determinism | PASS (bit-identical to 2026-05-31 baseline) |
+| CUDA no-regression gate | unchanged since 223ee639 (README-only delta, not a CUDA input) |
+| jargon scrub (commits + diff, base d8ce482) | clean |
+| ROCm build documentation | current, verified against meson.build |
+
+`git -C projects/lc0/src status --porcelain`: clean. validated_sha = 7727fa3. Transition:
+completed (validated_sha bumped from d83b6d1) -> completed.
