@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "cvcuda-osd-ops",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "OpOSD, OpBndBox, OpBoxBlur (cuOSD 3rdparty) scoped out.",
+      "refs": [
+        "projects/CV-CUDA/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T18:21:59Z",
+      "decided": null
+    }
+  ]
+}
