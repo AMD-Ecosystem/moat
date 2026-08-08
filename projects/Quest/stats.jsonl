@@ -1,3 +1,13 @@
 {"kind":"phase","ts":"2026-06-04T21:34:40Z","phase":"compile","seconds":19.744,"exit":1,"cmd":"cmake --build /var/lib/jenkins/moat/projects/Quest/src/quest/ops/build -j128"}
 {"kind":"phase","ts":"2026-06-04T21:37:02Z","phase":"compile","seconds":19.086,"exit":1,"cmd":"cmake --build /var/lib/jenkins/moat/projects/Quest/src/quest/ops/build -j128"}
 {"kind": "tokens", "ts": "2026-06-04T21:42:46Z", "tokens": 194785, "source": "porter"}
+{"kind":"phase","ts":"2026-08-08T03:44:52Z","phase":"compile","seconds":13.577,"exit":1,"cmd":"ninja -C projects/Quest/src/quest/ops/build"}
+{"kind":"phase","ts":"2026-08-08T03:45:25Z","phase":"compile","seconds":12.764,"exit":1,"cmd":"ninja -C projects/Quest/src/quest/ops/build"}
+{"kind":"phase","ts":"2026-08-08T03:47:46Z","phase":"compile","seconds":13.178,"exit":1,"cmd":"ninja -C projects/Quest/src/quest/ops/build"}
+{"kind":"phase","ts":"2026-08-08T03:50:00Z","phase":"compile","seconds":30.902,"exit":1,"cmd":"ninja -C projects/Quest/src/quest/ops/build"}
+{"kind":"phase","ts":"2026-08-08T03:52:04Z","phase":"compile","seconds":31.236,"exit":0,"cmd":"ninja -C projects/Quest/src/quest/ops/build"}
+{"kind":"phase","ts":"2026-08-08T03:52:51Z","phase":"test","seconds":2.589,"exit":2,"cmd":"python3 -m pytest projects/Quest/src/quest/tests/test_rope.py projects/Quest/src/quest/tests/test_estimate.py -q"}
+{"kind":"phase","ts":"2026-08-08T03:53:03Z","phase":"test","seconds":3.703,"exit":1,"cmd":"python3 -m pytest projects/Quest/src/quest/tests/test_rope.py projects/Quest/src/quest/tests/test_estimate.py -q"}
+{"kind":"phase","ts":"2026-08-08T03:54:01Z","phase":"compile","seconds":18.371,"exit":1,"cmd":"ninja -C projects/Quest/src/quest/ops/build"}
+{"kind":"phase","ts":"2026-08-08T03:55:51Z","phase":"compile","seconds":97.657,"exit":0,"cmd":"ninja -C projects/Quest/src/quest/ops/build"}
+{"kind":"phase","ts":"2026-08-08T03:56:03Z","phase":"test","seconds":7.371,"exit":1,"cmd":"python3 -m pytest projects/Quest/src/quest/tests/ -q"}

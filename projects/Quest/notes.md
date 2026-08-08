@@ -49,3 +49,58 @@ codebase, so linux-gfx90a is no longer marked blocked. The blocker as last recor
 is where to pick it up:
 
 raft select_k API incompatibility: radix_topk_one_block_kernel overload resolution fails in Quest's decode_select_k wrapper. PyTorch ROCm 2.13.0a0 development build has __HIP_NO_HALF_CONVERSIONS__ requiring explicit conversion calls. Need to investigate raft select_k integration pattern.
+
+## Port on linux-gfx1100 (2026-08-08)
+
+Fork sha `ff80217` on `moat-port`, replacing the earlier WIP commit (nothing had validated
+it, so it was collapsed rather than built on).
+
+Environment: Radeon Pro W7800 (gfx1100, wave32), ROCm 7.2.3, PyTorch 2.14.0a0 ROCm build,
+python 3.12. The test suite needs `transformers==4.37.2` with `tokenizers==0.15.2`.
+
+Build (from `quest/ops`, and note that a stale build directory must be wiped after editing
+anything under `kernels/include/hip_compat`, since two of those headers are force-included
+and carry no dependency edge):
+
+```
+mkdir -p build && cd build
+cmake -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_PREFIX_PATH=$(python3 -c 'import torch;print(torch.utils.cmake_prefix_path)') ..
+ninja
+ln -sf $PWD/_kernels*.so ../../     # setup.sh puts it in quest/, NOT quest/ops/
+```
+
+Do NOT pass `-DCMAKE_HIP_COMPILER=...`: cmake then reports "variables have changed, cache
+must be deleted", re-runs configure without the command-line `-DUSE_HIP=ON`, and falls into
+the CUDA branch looking for nvcc. Leave the compiler to `enable_language(HIP)`.
+
+GPU results (`HIP_VISIBLE_DEVICES=1`, from the repo root with it on PYTHONPATH):
+
+| suite | result |
+|---|---|
+| test_rope.py | 64 passed |
+| test_estimate.py | 9 passed |
+| test_decode_attention.py | 6 passed |
+| test_approx_attention.py | 42 passed |
+| test_topk.py | 49 failed (topk_filtering not built) |
+| test_prefill_attention.py | 29 failed (prefill_with_paged_kv_cache not built) |
+
+What is out of scope and why, so the next session does not re-derive it:
+
+- `topk.cu` -> RAFT `radix_topk_one_block_kernel`. The previous session's blocker (an
+  overload-resolution failure capturing the kernel function pointer) was never resolved and
+  is now moot in a different way: no RAFT is installed on this host and RAFT is no longer a
+  MOAT project. Replacing it with a self-contained per-block top-k over the page scores
+  (batch 32, len 1024-8192, k 64-256) is the obvious next deliverable and needs no external
+  library. `test_topk.py` is its gate.
+- `prefill.cuh` -> `mma_sync_m16n16k16_*` and `ldmatrix_m8n8x4`. Genuine AMD-native rewrite
+  (WMMA on gfx11, MFMA on CDNA). `test_prefill_attention.py` is its gate.
+
+Things that turned out NOT to be problems, contrary to the plan:
+
+- `cp_async` needed nothing. flashinfer's `cp_async.cuh` guards its PTX on
+  `__CUDACC_VER_MAJOR__ >= 11` and already carries a plain vectorized-load fallback, which
+  is what a HIP compile selects. That alone is what put decode attention in reach.
+- The `rms_norm.cu` reduction is wave-portable as written, because the shuffles state an
+  explicit width of 32. Only the mask literal had to change. The `>>5` / `&0x1f` / `[33]`
+  shapes the plan flagged are correct on wave64 and were left alone.
