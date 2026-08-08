@@ -54,6 +54,7 @@ Use with SKILL.md. Spawn sub-agents to verify items against the actual code. Rep
 
 ## 9. Generalizable lessons promoted
 - [ ] If this port produced knowledge that would help someone port a DIFFERENT project -- a new fault class, a strategy improvement, a diagnostic method, or a correction to an existing entry -- it is in the `cuda-to-rocm` skill's `references/`, with the source project named. A lesson left only in `projects/<name>/notes.md` is invisible to the next porter, and the same bug then gets paid for twice. A correction counts as much as an addition.
+- [ ] **Read the lesson as carefully as the code, because merging this branch publishes it to every agent.** It rides the port branch deliberately so that you are the gate; there is no second review later. Check the claim against the source it describes, not against the porter's summary, and check that any code block in it is the FIXED form -- one entry reproduced verbatim the CMake defect it was documenting, which would have made that bug the recipe for every future port of that kind. A wrong lesson is a Request Changes on its own: the whole point of it reaching `main` is that others will follow it.
 
 ## 10. General code quality
 - [ ] Matches the project's existing style and patterns (read the surrounding code).
