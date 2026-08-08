@@ -140,5 +140,5 @@ build a pure passthrough. `references/validation.md`.
 ## Writing it up
 
 Commit messages, PR bodies and code comments go to upstream maintainers who do not know
-our vocabulary. Check with `python3 utils/jargon.py` before pushing; terms and their
-replacements are in `config/jargon.toml`.
+our vocabulary. Check with `python3 utils/jargon.py --port <name>` before pushing -- the whole branch,
+not the commit you just wrote; terms and their replacements are in `config/jargon.toml`.
