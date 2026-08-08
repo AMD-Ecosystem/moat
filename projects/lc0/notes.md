@@ -1212,3 +1212,83 @@ linux-gfx90a has not run since `d83b6d1` and needs a real run either way.
 
 Nothing to send upstream. LeelaChessZero/lc0#2420 is built from this branch, so the push
 shows up there on its own; no comment was posted.
+
+## Review 2026-08-08 (reviewer, linux-gfx1100) -- head 7727fa3 -- REVIEW-PASSED
+
+Reviewed `223ee639..7727fa3` (README.md, 1 line). Per the pr-review skill only problems are
+recorded; the accuracy, prose, jargon and hygiene checks below produced none and are listed
+only where a later agent would otherwise redo the work.
+
+No review PR was opened on the fork. The mechanism exists to get a diff approved before it
+is published and to hold line comments on the code; upstream PR LeelaChessZero/lc0#2420 is
+already open and already carries this exact commit, `upstream.py --review` does not list
+lc0, and the one finding below is not on fork code at all, so there is no line to comment
+on. Nothing was posted upstream.
+
+### Finding (MOAT repo, not the fork -- does not gate this port)
+
+The promoted rule is in the right reference file but the skill INDEX routes its reader away
+from it. `.claude/skills/cuda-to-rocm/SKILL.md:38` still reads
+
+    | anything else | neither | driver-API, runtime PTX, Go/cgo, meson, qmake and codegen builds exist -- see the runtime-PTX fault class |
+
+so a porter classifying a meson build follows the table to the runtime-PTX fault class and
+never opens `references/strategy-a-cmake.md`, which is where the new arch-selection rule
+lives. lc0 is the counter-evidence: plan.md:22-28 classifies it meson and ports it
+"Strategy A, adapted to Meson", and it is the only meson mention in the whole skill outside
+the file the rule was added to. Correct the row so a meson/Makefile build routes to
+Strategy A (the "How to tell" paragraph at SKILL.md:44 already says "pure CMake (or
+Makefile) project -- Strategy A"; the table contradicts it). This is a one-line MOAT-repo
+edit, touches no fork content, and must not produce a fork commit -- head_sha stays
+`7727fa3` so nothing revalidates.
+
+### Checks that passed (recorded so they are not repeated)
+
+Accuracy, read from meson.build rather than from the porter's summary. meson.build:645-661
+resolves `hip_gfx` as: `get_option('amd_gfx')` first; if empty, `find_program` on
+`rocm_agent_enumerator` (with an absolute `/opt/rocm/bin` fallback, `required: false`)
+guarded by `meson.version().version_compare('>=1.2.0')`, taking the first line that
+`startswith('gfx')` and is not `gfx000`; if still empty, `error(...)` at line 660. The
+option carries `value: ''` (meson_options.txt:201-204) and the project's own floor is
+`meson_version: '>=0.60'` (meson.build:19), so the README's "needs meson 1.2.0 or newer"
+caveat is meaningful rather than redundant. The error-path sentence matches line 660's text.
+`rocm_agent_enumerator` on this ROCm emits no `gfx000` line at all (the filter is defensive
+against older versions), so "the first architecture reported" is accurate as written.
+
+Documentation-only: `git show --stat` is `README.md | 2 +-`; no compiled source, no
+meson.build, no meson_options.txt. `changeclass.classify(223ee639, 7727fa3)` = `doc-only`,
+`arch_independent=True`.
+
+Prose and style: ASCII clean, no em-dash, "ROCm" cased correctly. The changed line is a
+single unwrapped line, matching every other paragraph in this README (upstream text, so
+prose.py's MOAT-markdown rules are not the standard here). Lowercase "meson 1.2.0" matches
+existing README prose usage at lines 57, 70 and 108 (the file is internally inconsistent;
+both cases appear).
+
+Hygiene: title `[ROCm] Fix README claim about the default AMD GPU architecture` (62 chars),
+no `Co-Authored-By: noreply` trailer, Claude named in the body, Test Plan with literal
+commands, no bullet list, no AMD-internal account or tracker references.
+`utils/jargon.py --commits 223ee639..7727fa3`: clean.
+
+### Record integrity, checked for the validator (no arch record changed here)
+
+**Zero carry-forward is correct, not a bug.** `advance_head` classifies each arch's own
+`validated_sha -> new head`, and neither Linux arch was at `223ee639`.
+`classify(d83b6d1, 7727fa3)` = `mixed` and `classify(a80a7be, 7727fa3)` = `mixed`, both
+because of the five commits that landed before this one, not because of this one. Confirmed
+by running changeclass directly. Both archs were already stale at `223ee639`.
+
+**linux-gfx90a's `carry_forward.to` = `d4fdeca` is orphaned, not missing.** State it that
+way: the commit is `[ROCm] Document the HIP backend and add AMD attribution` (2026-06-11,
+parent `c757400`), it is NOT an ancestor of `origin/moat-port`, and no ref reaches it, but
+it is still in the fork's object store and `git fetch origin d4fdeca` retrieves it. It was
+rewritten out of the branch when the AMD attribution lines were dropped -- the exact hazard
+CLAUDE.md names about amending away validated content.
+
+Impact is nil and needs no repair. `carry_forward()` always writes `validated_sha` and
+`carry_forward.to` to the same value, so the two disagreeing is the fingerprint of a manual
+repair afterwards, and that repair landed on the safe side: `validated_sha` is `d83b6d1`, a
+reachable ancestor, and that is the only field the gates read (`pr_ready`, `advance_head`
+and the staleness tests all compare `validated_sha`; nothing outside `gen_schema.py` reads
+`carry_forward` at all). The stale block is inert provenance and `set_state(..., completed)`
+pops it, so linux-gfx90a's next real validation clears it on its own. Do not hand-edit it.
