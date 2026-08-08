@@ -128,6 +128,21 @@ at runtime. dietgpu's rANS archive serializes one coder state per lane
 wave64 archive byte-identical to its old format, and lets a wave32 device use the first 32
 slots. (dietgpu)
 
+**HIP's warp-sync builtins take a 64-bit participation mask, and a 32-bit literal is a hard
+error, not a truncation.** With `HIP_ENABLE_WARP_SYNC_BUILTINS` defined -- a ROCm PyTorch
+build defines it for every extension it compiles -- `__shfl_xor_sync(0xffffffff, ...)` fails
+a static_assert reading "The mask must be a 64-bit integer", because a wavefront can name 64
+lanes. Widen the literal on the AMD side only (`0xffffffffffffffffULL`); CUDA's parameter is
+`unsigned`, so a single shared literal narrows there.
+
+Worth knowing alongside it: an EXPLICIT `width` argument on `__shfl_*_sync` makes the
+surrounding reduction wave-agnostic for free. `__shfl_xor_sync(mask, v, lane, 32)` keeps the
+butterfly inside a 32-lane group on a 64-wide wavefront too, so the `tid >> 5` / `tid & 0x1f`
+lane-and-warp indexing that goes with it stays correct with no change at all. The warp-size
+fault class above is about code that lets the width DEFAULT to the physical wavefront; code
+that states the width is already portable, and rewriting it to `warpSize` is a regression
+risk for no gain. (Quest)
+
 ## Memory and lifetime
 
 **Out-of-bounds reads.** CUDA often tolerates a read one element past an allocation; AMD
@@ -342,6 +357,14 @@ Fix additively -- it helps the CUDA build too. (LC-framework)
 **A force-included compat header creates no build dependency edge.** After editing a header
 injected with `-include`, object files are NOT rebuilt: wipe them manually or you validate
 stale code and get a silent false pass. (lc0)
+
+**nvcc accepts partial specialization of a FUNCTION template; clang rejects it.** The EDG
+frontend takes `template <size_t N> void cast<float, half>(float*, const half*)` as an
+extension, and every HIP compile of that header is a hard error ("function template partial
+specialization is not allowed"). Rewrite the dispatch onto a class template with a static
+`apply`, keeping a thin function wrapper so call sites are unchanged. Vendored NVIDIA-only
+kernel headers are where this shows up, and it is arch-independent, so the rewrite is
+correct for the CUDA build too. (Quest, in flashinfer's vec_dtypes.cuh)
 
 **MSVC-only upstreams accept code that clang and gcc reject**, so the HIP build (and the
 CUDA build under nvcc) is a stricter compiler than the project has ever seen. Velvet carried

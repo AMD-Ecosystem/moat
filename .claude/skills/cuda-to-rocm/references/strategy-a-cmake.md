@@ -131,6 +131,23 @@ Prefer this when the project includes CUDA headers by name. It does not apply wh
 use CUDA symbols without including a CUDA header, or where the build already injects a
 compat header with `-include`.
 
+**A sibling-relative include cannot be shadowed by the include path, and that is the one
+real hole in this method.** A quoted `#include "math.cuh"` inside `vendor/include/pkg/`
+resolves against the includING FILE's own directory before any `-I` is consulted, so a
+`hip_compat/pkg/math.cuh` never wins no matter how early the directory is prepended. The
+fix costs one line and keeps the source tree untouched: force-include the shadow copy, and
+let the header's own upstream include guard turn the original into a no-op.
+
+    target_compile_options(<tgt> PRIVATE
+      $<$<COMPILE_LANGUAGE:HIP>:-include${HIP_COMPAT_DIR}/pkg/math.cuh>)
+
+Give the shadow file the SAME include guard macro as the header it replaces; that is what
+makes the later sibling-relative include collapse. Note the cost this pulls in: a
+force-included header creates no dependency edge, so wipe the build directory after editing
+one (see fault-classes, "Headers, includes and build"). Diagnose it by reading the "In file
+included from" chain in the first error and checking whether the includer sits in the same
+directory as the header it names. (Quest)
+
 ## Build hygiene
 
 - **Do not pin `--offload-arch` or `CMAKE_HIP_ARCHITECTURES` in the committed build.** Pass
