@@ -193,7 +193,15 @@ distinct ways.
 
 - At the BIND: pitched 2D texture binds need 256-byte rows, so widths that work on CUDA can
   fail. If a kernel only point-samples, a linear (`tex1Dfetch`-style) bind avoids pitch
-  entirely. (colmap BindTexture2D.)
+  entirely. The swap is EXACT, not an approximation, when two conditions hold: the sampler
+  is `cudaFilterModePoint`, and the kernels already clamp their coordinates to the image so
+  hardware addressing never applies. Then `tex2D(t, x, y)` over a pitch2D bind whose pitch
+  is the packed row is by definition `tex1Dfetch(t, int(y) * width + int(x))` over a linear
+  bind, and both backends can take the one code path. Check the clamping before believing
+  it; if a kernel relies on the address mode, you need the mode emulated instead. Do not
+  reach for `cudaMallocPitch`: repitching the buffer changes the row indexing of every
+  kernel in the file for no gain. (colmap `BindTexture2D`, where a 640x480 input fails at
+  the 80-wide float2 pyramid level, a 640-byte row.)
 - Through the ATTRIBUTE: `cudaDevAttrTexturePitchAlignment` (`hipDeviceAttributeTexturePitchAlignment`) reports 256 on gfx90a,
   so libraries deriving a row pitch from it pad more on AMD -- a tight 640-byte uchar row
   becomes 768. Tests that fill the valid region, run the op, then compare the WHOLE strided
