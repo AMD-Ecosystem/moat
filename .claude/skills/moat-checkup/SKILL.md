@@ -61,10 +61,17 @@ Your job is to snapshot what they approved:
     python3 utils/upstream.py --publish --apply    # open it, close the review PR
 
 That second command is the whole submission: it re-checks the approval, the gates, the
-licence and the vocabulary, opens the upstream PR with the approved title and body
+licence, the fork's cleanliness, and the title and body -- for in-house vocabulary and
+for hand-wrapping, since a maintainer may have asked for an edit and an edit is where
+both creep back in. It then opens the upstream PR with the approved title and body
 verbatim, records it, and closes the review PR. It runs where a human's credentials are --
 your session -- because opening a pull request on someone else's repository needs access
 no scheduled job can safely hold. `orient.sh` names any project waiting on it.
+
+The BRANCH's vocabulary is not re-scanned here, and does not need to be: every commit on
+it was scanned when the review PR was opened (`--review --apply` refuses on a hit, over
+the whole branch rather than the newest round), and nothing may land on it afterwards
+without voiding the approval. If a commit did land, the approval check catches it first.
 
 Under the hood it snapshots the approval first:
 
@@ -220,8 +227,8 @@ refusal just makes the block a known quantity.
 Waiving is not the only answer, and often not the right one. A gate that no arch can
 satisfy because the CODEBASE cannot be ported is `set-not-portable`; a gate failing on
 one card because of a toolchain or library defect is a per-arch `blocked` flag with the
-report filed in `data/deferred.json`, and it gates nothing as long as a sibling arch
-carrying the same attribute passes.
+report registered against that project (`deferred.py add --project <name>`, see section
+7), and it gates nothing as long as a sibling arch carrying the same attribute passes.
 
 ## 7. Deferrals nobody has ruled on
 

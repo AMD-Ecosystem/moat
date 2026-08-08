@@ -44,8 +44,8 @@ widths are proven separately rather than assumed to follow from each other.
 | 🔧 | in progress | | 🔴 | pull request closed |
 | ⬜ | not started | | ⚖️ | licence bars contributing the port |
 | 🚫 | blocked, with a reason recorded | | ⚪ | set aside, with the reason recorded |
-| 🎫 | waived for this project, with maintainer approval | | — | nothing recorded |
-| — | nothing recorded | | | |
+| 🎫 | waived for this project, with maintainer approval | | ⏸ | on hold, deliberately not being worked |
+| — | nothing recorded | | — | nothing recorded |
 
 The project name links upstream.
 
