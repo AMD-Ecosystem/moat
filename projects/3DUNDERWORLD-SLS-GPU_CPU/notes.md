@@ -576,3 +576,103 @@ delta forward via codeobj_diff since it changes no compiled output.
 
 Upstream reply to v3c70r drafted but NOT posted (orchestrator halted all
 upstream-visible communication pending Jeff's review). Draft returned to Jeff.
+
+## Validation 2026-08-08 (linux-gfx90a, ROCm) -- revalidate at 3626150ec2f -- CUDA regression, validation-failed
+
+Platform: linux-gfx90a. GPU: AMD Instinct MI250X (gfx90a, CDNA2, wave64),
+HIP_VISIBLE_DEVICES=2 (confirmed via `rocm-smi`, index 2 = gfx90a). Revalidate
+trigger: recorded `validated_sha` (4584f0deed39a6abec9f9b85861bafc66b44c935)
+was force-pushed away by the 2026-07-02 rebase (object no longer resolvable,
+`classify` fails with `bad object`); the "PR-open freeze" note that had kept
+this arch's record pinned to that orphaned sha is not part of the current
+process, so this run re-validates for real rather than trusting the freeze.
+
+### HIP GPU build + test -- PASS
+
+```bash
+cd projects/3DUNDERWORLD-SLS-GPU_CPU/src
+git clone --depth 1 https://github.com/theICTlab/3DUNDERWORLD-SLS-DATA.git data
+rm -rf build_hip && mkdir build_hip
+HIP_VISIBLE_DEVICES=2 cmake -S . -B build_hip \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ -DGTEST=ON -DCMAKE_BUILD_TYPE=Release
+bash utils/timeit.sh 3DUNDERWORLD-SLS-GPU_CPU compile -- cmake --build build_hip -j$(nproc)
+```
+
+Build: success. `roc-obj-ls build_hip/bin/SLS_GPU`: 3 code objects, all
+`hipv4-amdgcn-amd-amdhsa--gfx90a`, sizes 7336/13424/27136 -- byte-identical to
+every prior gfx90a record.
+
+GPU reconstruction (alexander dataset, 1024x768), 2 runs + CPU reference:
+point counts GPU run1 = GPU run2 = CPU = 146064 (matches every prior platform
+exactly). GPU vs CPU nearest-neighbor (own compare.py, brute-force cKDTree,
+not committed): mean 3.609e-5, p99.9 1.005e-3, max 2.516e-3 world units, 100%
+coverage @tol=0.5 and @tol=10. Determinism run1 vs run2: mean 1.812e-5, max
+1.020e-3, 100% coverage @tol=0.5/@tol=10 -- matches the original gfx90a record
+to the ASCII-PLY print-precision ceiling.
+
+CPU gtest (`ctest --output-on-failure`): 3/3 pass (RunCPUTest.Arch 9.96s,
+RunCPUTest.Alexander 26.28s, CPU_TEST 37.67s). No regression in non-GPU tests.
+
+Jargon (`python3 utils/jargon.py --port 3DUNDERWORLD-SLS-GPU_CPU`): clean.
+Documentation: README.md already documents `-DUSE_HIP=ON` /
+`CMAKE_HIP_ARCHITECTURES` alongside the CUDA build instructions.
+
+### CUDA no-regression gate -- FAIL (genuine port regression, not pre-existing)
+
+Not previously recorded at any sha reachable from head, so due to run. Built
+port head (3626150) as CUDA: `conda create -n cuda-12.8 -c nvidia
+cuda-toolkit=12.8` (nvcc 12.8.93), host gcc-13, arch pinned `-arch=sm_80` via
+`CUDA_NVCC_FLAGS` (legacy `FindCUDA`, no `CMAKE_CUDA_ARCHITECTURES` in this
+project -- confirmed no `native` autodetect trap applies here). The conda
+toolkit ships `include/` only under `targets/x86_64-linux/`, not directly
+under the env root, so legacy `FindCUDA` can't locate `CUDA_INCLUDE_DIRS`
+until a `bin/include/lib/lib64` symlink tree is built pointing at it
+(`CUDA_TOOLKIT_ROOT_DIR=<that tree>`) -- worth carrying into the skill as a
+FindCUDA-vs-conda-toolkit layout note.
+
+```bash
+cmake -S . -B build_cuda -DENABLE_CUDA=ON \
+  -DCUDA_TOOLKIT_ROOT_DIR=<symlink-tree-over-conda-env> \
+  -DCUDA_HOST_COMPILER=/usr/bin/gcc-13 -DCUDA_NVCC_FLAGS="-arch=sm_80" \
+  -DCMAKE_BUILD_TYPE=Release
+bash utils/timeit.sh 3DUNDERWORLD-SLS-GPU_CPU cuda-compile -- \
+  cmake --build build_cuda --target SLS_GPU -j$(nproc)
+```
+
+Fails:
+
+```
+.../src/lib/ReconstructorCUDA/./DynamicBits.cuh(88): error: calling a
+__host__ function("__builtin_trap") from a __device__ function
+("SLS::Dynamic_Bitset_Array_GPU::to_uint const") is not allowed
+```
+
+Root cause: commit 513385e ("Add AMD GPU support to the GPU reconstructor")
+changed `DynamicBits.cuh`'s never-taken overflow guard from `asm("trap;")` to
+`__builtin_trap()` **unconditionally** (no `USE_HIP` guard), on the claim it
+is "portable" and "output is unaffected on either backend." That's true for
+HIP/clang (where `__builtin_trap()` is device-callable) but false for nvcc:
+nvcc does not treat `__builtin_trap()` as device-callable, so the CUDA
+`ENABLE_CUDA=ON` path -- which the commit explicitly claims stays "unchanged"
+-- no longer compiles. Confirmed this is new-on-the-port, not pre-existing
+bit-rot: `git show c87fe37:.../DynamicBits.cuh` (the upstream merge-base
+before any port commit) still has `asm("trap;")` at that line, which compiles
+cleanly under nvcc. This is the exact "fix added for HIP, not defined/kept for
+the CUDA branch" fault class in the validator's own instructions.
+
+The fix belongs to the porter: guard fix #3 behind `USE_HIP` (or
+`__HIP_DEVICE_COMPILE__`) so nvcc keeps `asm("trap;")` and clang/HIP gets
+`__builtin_trap()`, matching how every other change in this port is already
+`USE_HIP`-guarded. Not fixed here -- validator does not edit the fork.
+
+### Verdict
+
+HIP GPU validation on gfx90a PASSES on every measure (build, code objects,
+reconstruction accuracy, determinism, CPU gtest, jargon, docs). The CUDA
+no-regression gate FAILS: this specific port commit breaks the CUDA build,
+violating "the CUDA build must be a pure passthrough." State set to
+`validation-failed` for linux-gfx90a with this finding; sent back to the
+porter. No source/CMake changes were made to the fork by this validation run
+(`git status` clean in `src/` aside from gitignored `build_*`/`data`
+directories).
