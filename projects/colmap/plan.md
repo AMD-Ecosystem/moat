@@ -257,8 +257,8 @@ back to point filtering for layered textures; leave it alone.
    `index - 1`, `index + 1`, `index - width`, `index + width`. At the first and last pixel
    those are outside the bound buffer. The texture object is `cudaResourceTypeLinear`, where
    `addressMode` does not apply, so it is a real out-of-range fetch and not a clamp. Fix:
-   clamp the neighbour indices to image bounds. Prefer clamping unconditionally over an
-   `#ifdef COLMAP_HIP_ENABLED` guard if the CUDA numbers are unchanged, because a
+   clamp the neighbour indices to image bounds. Clamp UNCONDITIONALLY (decided; see Open
+   questions 1) rather than behind an `#ifdef COLMAP_HIP_ENABLED` guard, because a
    correctness fix that both backends want is a better upstream contribution than a
    platform-conditional; measure before deciding.
 
@@ -357,10 +357,22 @@ back to point filtering for layered textures; leave it alone.
 
 | file | change |
 |---|---|
-| `ProgramCU.cu` | include `colmap/util/cuda_to_hip.h` under `COLMAP_HIP_ENABLED` instead of the CUDA headers; clamp the four `ComputeDOG_Kernel` neighbour indices; replace the 3 `tex2D<float2>` fetches with `tex1Dfetch<float2>` and the 2 `BindTexture2D` call sites with `BindTexture` |
+| `ProgramCU.cu` | include `colmap/util/cuda_to_hip.h` under `COLMAP_HIP_ENABLED` instead of the CUDA headers; clamp the four `ComputeDOG_Kernel` neighbour indices UNCONDITIONALLY (not `#ifdef`-guarded -- Open questions 1); replace the 3 `tex2D<float2>` fetches with `tex1Dfetch<float2>` and the 2 `BindTexture2D` call sites with `BindTexture`, also unconditionally |
 | `CuTexImage.h` | give `CuTexObj` `handle = 0`, an explicit move constructor and move assignment that null the source, deleted copies, and a destructor guarded on `handle != 0` |
 | `CuTexImage.cpp` | same include switch; compile the four `cudaGL*` PBO regions out under `COLMAP_HIP_ENABLED` with a comment naming `hipGraphicsGLRegisterBuffer` as the modern API and stating that COLMAP does not reach the PBO path |
 | `PyramidCU.cpp`, `SiftMatchCU.cpp` | include switch only |
+
+### Test infrastructure (headless GPU tests -- Open questions 2)
+
+| file | change |
+|---|---|
+| `src/colmap/util/opengl_utils.h` | `RunThreadWithOpenGLContext` is an empty inline when `GUI_ENABLED=OFF`, which silently turns every GPU test body into a no-op that reports PASS. Give it a headless path that actually runs the thread; a GPU test needs a GPU, not a window |
+| `src/colmap/feature/sift_test.cc` | `RunGpuTest` (line 116) must execute its body on a headless host. Keep the windowed path for a GUI build |
+| test | `opengl_utils_test` moves back INTO scope -- it covers the function being changed, and it was scoped out only while this was not our work |
+
+Both backends get this. It is shared test infrastructure and the pull request body must say so
+plainly, naming the no-op it removes: this project has already reported "145 tests passed" with
+every GPU body skipped, and that is the failure being fixed.
 
 ### Dispatch sites (widen `COLMAP_CUDA_ENABLED` to `COLMAP_CUDA_ENABLED || COLMAP_HIP_ENABLED`)
 
@@ -489,19 +501,25 @@ an agent may only suggest one.
 
 ## Open questions
 
-1. **Should the `ComputeDOG` clamp and the `tex2D`-to-linear change be unconditional or
-   `#ifdef COLMAP_HIP_ENABLED`?** The prior work guarded both to keep the CUDA path
-   byte-identical, which is the safe default and what I plan for. But both are arguably
-   plain correctness fixes that CUDA wants too, and an unconditional fix is a better
-   contribution and a smaller diff. Decide with measurements: if the CUDA numbers are
-   unchanged, propose it unconditional and let the maintainer choose. Do not make that call
-   silently.
+1. **DECIDED (jeffdaily, 2026-08-08): unconditional, not `#ifdef`.** The `ComputeDOG`
+   neighbour clamp and the `tex2D`-to-linear rebind both go in for every backend. They are
+   correctness fixes rather than AMD workarounds -- the out-of-bounds read is out of bounds
+   on NVIDIA too -- and guarding a correctness fix behind the platform that happened to
+   surface it leaves the bug in place for everyone else and makes the diff harder to review.
+   The CUDA no-regression run (see Test plan) is still required and is now the evidence for
+   the change rather than the trigger for a decision: run it, report the numbers, and if
+   CUDA results MOVE, stop and say so rather than reaching for the guard.
 
-2. **Should the port make `RunGpuTest` work headless?** It would turn every future headless
-   ROCm and CUDA run into real GPU coverage instead of a silent no-op (risk 4). It is also a
-   change to shared test infrastructure that affects NVIDIA, in a pull request that is
-   otherwise about AMD support. Recommendation: keep it out of this change and raise it
-   separately, so a reviewer is not asked to weigh two unrelated things at once.
+2. **DECIDED (jeffdaily, 2026-08-08): make `RunGpuTest` work headless, in this change.**
+   The point is to test as much as possible on headless platforms, which is what MOAT's
+   hosts are. Leaving it out preserves the exact trap that already produced one false green
+   on this project -- 145 tests "passing" while every GPU body was skipped -- and every
+   headless run after it, ours and upstream's, would keep reporting coverage it does not
+   have. That it also helps NVIDIA is an argument for it, not against.
+
+   Say so plainly in the pull request body: it is shared test infrastructure, it is
+   deliberate, and here is the no-op it removes. A reviewer weighing two things is a smaller
+   cost than a reviewer trusting a green run that proved nothing.
 
 3. **Symforce-Caspar.** Scoped out above with reasons. If it is ever wanted, the work starts
    at `caspar_generate.py` and at HIP's cooperative-groups coverage, not at the 482 generated
