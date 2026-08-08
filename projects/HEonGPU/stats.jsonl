@@ -1,0 +1,16 @@
+{"kind": "tokens", "ts": "2026-06-05T01:24:21Z", "tokens": 88450, "source": "planner"}
+{"kind":"phase","ts":"2026-06-05T05:39:15Z","phase":"compile","seconds":6.417,"exit":0,"cmd":"make -j128"}
+{"kind":"phase","ts":"2026-06-05T05:53:02Z","phase":"compile","seconds":0.140,"exit":1,"cmd":"cmake --build . -j128"}
+{"kind":"phase","ts":"2026-06-05T05:58:07Z","phase":"compile","seconds":0.138,"exit":1,"cmd":"cmake --build . -j128"}
+{"kind": "tokens", "ts": "2026-06-05T06:04:29Z", "tokens": 135744, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-05T06:08:02Z", "tokens": 121473, "source": "reviewer"}
+{"kind":"phase","ts":"2026-06-05T06:12:25Z","phase":"compile","seconds":0.137,"exit":1,"cmd":"cmake --build . -j128"}
+{"kind": "tokens", "ts": "2026-06-05T06:20:26Z", "tokens": 86924, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-05T06:26:33Z", "tokens": 113947, "source": "reviewer"}
+{"kind": "tokens", "ts": "2026-06-05T07:01:41Z", "tokens": 191595, "source": "porter"}
+{"kind":"session","ts":"2026-06-11T23:06:27Z","epoch":1781219187.740182449,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-06-11T23:13:03Z","phase":"compile","seconds":8.959,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/HEonGPU/src/build && cmake --build . -j128 2>&1 | tail -50"}
+{"kind":"phase","ts":"2026-06-11T23:13:53Z","phase":"compile","seconds":4.108,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/HEonGPU/src/build && cmake --build . -j128 2>&1 | grep -iE \"error:|error [0-9]|fatal|Built target|Linking\" | grep -ivE \"warning|generate-line\" | tail -50"}
+{"kind":"phase","ts":"2026-06-11T23:15:29Z","phase":"compile","seconds":47.386,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/HEonGPU/src/build && cmake --build . -j128 2>&1 | grep -iE \"error:|error [0-9]|fatal|Built target|Linking HIP|Linking CXX.*heongpu\" | grep -ivE \"warning|generate-line\" | tail -40"}
+{"kind":"session","ts":"2026-06-11T23:28:43Z","epoch":1781220523.644553187,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-06-12T00:03:16Z", "tokens": 199055, "source": "porter"}
