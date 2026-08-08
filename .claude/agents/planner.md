@@ -72,7 +72,9 @@ is nearly empty because it is Go + cgo + runtime PTX.
 - Open questions
 
 ## Handoff
-Write plan.md, then `python3 utils/moatlib.py set-state <name> <arch> planned --agent planner`. Commit and push immediately (`moatlib.py commit-project`) so other hosts see it.
+**Before you analyse anything**, take the work lock: `python3 utils/moatlib.py set-state <name> <arch> planning --agent planner`, then commit and push it. plan.md is one shared artifact on a shared branch and it has no merge driver, so two planners on two hosts produce two strategies, the second push hard-conflicts, and one analysis is lost. The transition takes the lock for you; do not hand-edit the field. If another architecture holds it the command refuses and names the holder -- stop, and say so, because takeover is a person's decision (`moatlib.py port-lock <name> --take <arch>`).
+
+Write plan.md, then `python3 utils/moatlib.py set-state <name> <arch> planned --agent planner`, which releases the lock. Commit and push immediately (`moatlib.py commit-project`) so other hosts see it.
 
 `plan.md` is the design rationale a reviewer reads in the project's PR. After that PR merges it becomes history -- provenance for anyone asking why the port was built this way -- so write it to be read later, and do not maintain it through fix-rounds.
 
