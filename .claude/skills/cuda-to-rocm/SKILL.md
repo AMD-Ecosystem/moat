@@ -35,12 +35,15 @@ Classify the build first -- implementing the wrong strategy correctly is still w
 |---|---|---|
 | pure CMake | **A** (preferred) | one `cuda_to_hip.h` compat header, `enable_language(HIP)`, `set_source_files_properties(... LANGUAGE HIP)`; sources keep CUDA spelling |
 | pytorch extension | **B** | rely on torch's build-time hipify; fix only what it cannot |
-| anything else | neither | driver-API, runtime PTX, Go/cgo, meson, qmake and codegen builds exist -- see the runtime-PTX fault class |
+| anything else | neither | driver-API, runtime PTX, Go/cgo, qmake and codegen builds exist -- see the runtime-PTX fault class |
 
 **How to tell:** look for `find_package(Torch)`, `torch.utils.cpp_extension`,
 `CUDAExtension`, or a torch dependency in `setup.py`/`pyproject.toml`. If any is present it
-is a pytorch extension -- Strategy B. Otherwise treat it as a pure CMake (or Makefile)
-project -- Strategy A.
+is a pytorch extension -- Strategy B. Otherwise treat it as a pure CMake (or Makefile, or
+meson) project -- Strategy A. The build system does not pick the strategy; what the sources
+look like does. lc0 is meson and ports Strategy-A-shaped -- it just means writing by hand
+what `enable_language(HIP)` would have given you, and `references/strategy-a-cmake.md` says
+what.
 
 Strategy A is the minimal-footprint model: the compat header is a no-op on NVIDIA, so the
 CUDA build is untouched. Where the project includes CUDA headers by name, prefer the
