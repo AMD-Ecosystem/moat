@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "oneflow-libcuxx-lru-cache",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "lru_cache.cu (cuda::std::semaphore, no ROCm libcu++) not ported.",
+      "refs": [
+        "projects/oneflow/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T18:21:59Z",
+      "decided": null
+    }
+  ]
+}
