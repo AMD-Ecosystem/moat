@@ -38,16 +38,20 @@ Use with SKILL.md. Spawn sub-agents to verify items against the actual code. Rep
 - [ ] Any CPU-only docker smoketest is treated as a compile-only tripwire, never the validation gate.
 
 ## 7. No in-house vocabulary in upstream-visible text
-- [ ] Commit messages, PR title/body, code comments and docs contain no MOAT jargon: "lead"/"follower", "Strategy A/B", "head_sha", "validated_sha", "revalidate", "curated commit", "moat-port", "port-ready", or "MOAT" itself. External maintainers do not know these terms, and their appearance has repeatedly caused review churn. Run `python3 utils/jargon.py --commits <base>..HEAD -C projects/<name>/src` and `--diff <base>...HEAD`; both must be clean. `<base>` is the FORK'S DEFAULT BRANCH (`origin/main`), never the previously reviewed head: every commit on the branch ships upstream, so a re-review scoped to the newest commit passes a branch whose base commit still carries jargon. That is how "Strategy B" survived a review on faster-gaussian-splatting, and nothing catches it later -- `upstream.py`'s review-PR and publish gates scan the PR title and body only, never the commit range. If you find in-house vocabulary the checker missed, add it to `config/jargon.toml` in the same change. Keep the technical rationale, drop the in-house label -- say "a compatibility header", not "Strategy A"; name the GPU, not "the lead platform".
+- [ ] Commit messages, PR title/body, code comments and docs contain no MOAT jargon: "lead"/"follower", "Strategy A/B", "head_sha", "validated_sha", "revalidate", "curated commit", "moat-port", "port-ready", or "MOAT" itself. External maintainers do not know these terms, and their appearance has repeatedly caused review churn. Run `python3 utils/jargon.py --port <name>`; it must be clean. It scans the WHOLE branch every time, never just the round you are reviewing: a commit that passed an earlier round is still in the branch and still ships. faster-gaussian-splatting carried "Strategy B (torch hipify)" in its base commit through a full review because the check was scoped to the newest commit. If you find in-house vocabulary the checker missed, add it to `config/jargon.toml` in the same change. Keep the technical rationale, drop the in-house label -- say "a compatibility header", not "Strategy A"; name the GPU, not "the lead platform".
 
 ## 8. Commit hygiene
 - [ ] Title prefixed [ROCm], <= 72 chars.
 - [ ] Body explains the change and mentions Claude by name; NO Co-Authored-By noreply trailer; has a Test Plan section.
 - [ ] History pushed with --force-with-lease; no bare --force; no ghstack. Multi-commit history on the port branch is fine -- the single-curated-commit rule was retired.
 - [ ] The fork the PR is opened from matches `status.json.fork_url`.
-- [ ] The port branch is not behind the fork's default branch:
-      `git rev-list --count moat-port..origin/main -C projects/<name>/src` must be 0.
-      No DIFF will reveal this. `git diff origin/main...HEAD` is merge-base relative, so it
+- [ ] The port branch is not behind the fork's default branch. Read that branch from
+      `status.json.fork_default_branch` rather than assuming `main`: 19 of the trunk's 50
+      projects use something else (16 `master`, plus `develop`, `dev`, `v0`), and in a fork
+      that carries both refs a hardcoded `origin/main` returns a plausible wrong number
+      instead of failing. This must print 0:
+      `git -C projects/<name>/src rev-list --count moat-port..origin/$(python3 -c "import json;print(json.load(open('projects/<name>/status.json'))['fork_default_branch'])")`
+      No DIFF will reveal this. `git diff origin/<default>...HEAD` is merge-base relative, so it
       shows only what the port added and stays clean no matter how far behind the branch is,
       and `git merge-tree` reports no conflict whenever the hunks do not textually collide.
       It matters most in exactly the case where it is least visible: upstream changing a

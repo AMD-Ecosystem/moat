@@ -1098,3 +1098,60 @@ appears -- exactly the point the paragraph makes.
 
 The `lerp_scalar` fix and its Windows safety argument, the hipify-artifact cleanup, and the
 squashed commit message were accepted in prior rounds and are unchanged here.
+
+## Porter 2026-08-08 (linux-gfx1100) -- payload fixes only, fork untouched
+
+All four review items were in the global `.claude/` payload this branch publishes. The fork
+was not touched: `projects/faster-gaussian-splatting/src` stayed clean at `b0d21d5`, no
+rebuild and no re-run, so the 16/16 result and every `validated_sha` stand.
+
+### The two merge conflicts with main, resolved by dropping the duplicate
+
+Main's `c0cd6cb` had already landed this branch's jargon-scoping lesson, in the better form:
+a `jargon.py --port <name>` flag that derives the range from the project record, so the caller
+cannot mis-scope it. This branch's copy of `utils/jargon.py` predates that flag, so merging
+this branch's doc wording would have reverted main's `--port` guidance while main's tool still
+supported it. Dropped both duplicate edits -- the `review-checklist.md` section-7 rewrite and
+`validator.md:22` -- by restoring main's version of each file, keeping only the section-8
+addition, which main has nothing equivalent to.
+
+    $ git merge-tree --write-tree --messages origin/main HEAD
+    Auto-merging .claude/skills/cuda-to-rocm/references/fault-classes.md
+    Auto-merging .claude/skills/pr-review/review-checklist.md
+
+No CONFLICT lines. The `.claude/` payload is now three files: `fault-classes.md`,
+`strategy-b-torch.md`, `review-checklist.md`.
+
+### The section-8 check now runs, and reads the default branch from the record
+
+`-C` is a git global option, so the reviewed form died with `fatal: ambiguous argument
+'moat-port..origin/main'`. It also hardcoded `main`, which is wrong for 19 of the 50 trunk
+projects. Both fixed in one line, verified verbatim from the MOAT repo root:
+
+    $ git -C projects/faster-gaussian-splatting/src rev-list --count moat-port..origin/$(python3 -c "import json;print(json.load(open('projects/faster-gaussian-splatting/status.json'))['fork_default_branch'])")
+    0
+
+The checklist carries it with `<name>` in both places. Reading `fork_default_branch` rather
+than assuming `main` matters most in a fork that carries both refs, where a hardcoded
+`origin/main` returns a plausible wrong number instead of failing loudly.
+
+### strategy-b-torch.md attribution corrected
+
+The `[skipped, no changes]` early return is in `hipify_python.preprocessor` (817-1003 on torch
+2.14.0a0), not in `preprocess_file_and_save_result` (197-219), which only calls it and prints
+the status. The doc now names `preprocessor` and drops the line range entirely: line numbers
+drift between torch versions and function names do not, which is the whole point of a citation
+the next agent is expected to re-check. Verified with `inspect.getsourcelines` on the
+installed torch. Nothing else in that section changed -- the 7 table rows, the `_hip`
+condition and the line counts were all confirmed correct by the reviewer.
+
+### For whoever opens the upstream PR: the numerical delta, stated by construction
+
+The 30-pixel/1-ULP delta between `1b37161` and `b0d21d5` is upstream's, and the argument for
+that does not depend on where the pixels landed. `git diff 1b37161 b0d21d5 -- '*.cu' '*.cuh'
+'*.h' '*.cpp'` is upstream's two-character `>` to `>=` and nothing else, and `lerp_scalar`'s
+body is character-for-character the old `lerp`'s (`a + t*(b-a)`), so the rename cannot move a
+bit. The delta is therefore attributable to `44a13d1` by construction. Lead with that; the
+tile-boundary clustering is corroboration, not the proof. And 1 ULP is the expected magnitude
+rather than a suspicious one: a splat sitting on the culling threshold contributes epsilon by
+definition, so a predicate change at the threshold can only ever move the result by epsilon.

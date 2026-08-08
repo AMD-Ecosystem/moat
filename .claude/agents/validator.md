@@ -19,7 +19,7 @@ You need no lock: validation is read-only on code and writes only your own arch'
    - Environmental wall (needs cuDNN/NCCL or other NVIDIA-only deps not in the conda toolkit, or a CUDA floor above 12.8): record `cuda-not-validated: <reason>` in notes; not a gate.
    - This is a secondary, compile-only gate: budget ~15 min inside the overall attempt, never grind on it, and never claim NVIDIA runtime behavior from it.
 4. Before marking `completed`, confirm the port is actually finished -- there is no later prep phase, so this is the last check before the diff is offered upstream. Both are cheap and both have reached PRs when nobody looked:
-   - **Jargon**: `python3 utils/jargon.py --commits <base>..HEAD -C projects/<name>/src` and `--diff <base>...HEAD` must be clean. `<base>` is the fork's default branch (`origin/main`), never the previously validated head -- every commit on the branch ships upstream, and no publish gate ever scans the commit range. Commit messages, code comments and docs are all upstream-visible.
+   - **Jargon**: `python3 utils/jargon.py --port <name>` must be clean. It scans commit messages and added lines over the whole branch, working the range out from the project's record: everything on the branch ships, whichever round wrote it. Commit messages, code comments and docs are all upstream-visible.
    - **Documentation**: the ROCm build is documented wherever the project documents its CUDA build, in that project's house style (porter.md step 7). A port whose build nobody can reproduce is not done.
 
    Neither is yours to fix quietly: send it back with `validation-failed` and say which, so the porter's commit carries it and every arch validates the same content.
