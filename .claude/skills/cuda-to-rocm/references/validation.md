@@ -62,9 +62,22 @@ function, breakpoint each backend's constructor, and put a hardware watchpoint o
 
 Counts answer the question outright: how many times the decision function was entered and
 with what argument, how many times each backend was constructed, and every value the flag
-ever took. In colmap this turned a "did not materialise on the machine we happened to use"
-into "the clearing line is unreachable, because the only caller always requests the compute
-backend" -- a statement that holds on every GPU and every GL driver rather than on one host.
+ever took. In colmap that turned "did not materialise on the machine we happened to use"
+into "the clearing line did not run once in this binary, and the flag was written exactly
+once, `0 -> 1`".
+
+**Then be careful what you claim from it, because this is where a trace gets oversold.** A
+trace covers the paths the binary you ran actually took, with the options it ran with. It
+is evidence for "not reached in this configuration"; it is never evidence for
+"unreachable". colmap's first write-up made exactly that jump -- "the clearing line is
+unreachable, because the only caller always requests the compute backend" -- and review
+disproved it with one probe: a public option (`darkness_adaptivity`, combined with the
+default negative GPU index) makes the caller omit the flag that selects the compute
+backend, and the supposedly dead line runs. Upgrading "not reached here" to "cannot happen"
+takes an argument from the CODE, not a bigger trace. In colmap the argument that did hold
+was that the API re-asserts the flag on every freshly constructed object, so no earlier
+user can leave it cleared for a later one -- true on every GPU and every driver, and it is
+what actually closed the risk. Trace to find the mechanism; read the code to bound it.
 
 Two traps that each produce a confidently wrong answer:
 
@@ -157,21 +170,29 @@ you use it (`rocminfo`, `hipInfo`).
 A test that passes standalone and hangs in the suite is not a GPU fault and rarely a port
 fault. Get the stack before theorising -- `sudo gdb -p <pid> -batch -ex "bt"`, since
 `ptrace_scope` normally blocks a plain attach -- and read which library the top frames are
-in. colmap's `feature/sift_test` hung twice out of two under `xvfb-run -a ctest -jN` and
-passed 5 out of 5 standalone; the stack was `XCloseDisplay -> libGLX_mesa -> libgallium ->
-pthread_join`, i.e. Mesa llvmpipe deadlocking on its own worker threads while closing the X
-display with other GL clients live on it. Nothing COLMAP or ROCm wrote appears in the
-trace.
+in. colmap's `feature/sift_test` hung under `xvfb-run -a ctest -jN` while passing 5 out of
+5 standalone; the stack was `RunGpuTest -> ~QApplicationPrivate -> ~QXcbIntegration ->
+XCloseDisplay -> libGLX_mesa -> libgallium -> pthread_clockjoin`, i.e. Mesa llvmpipe
+deadlocking on its own worker threads while closing the X display with other GL clients
+live on it. Nothing COLMAP or ROCm wrote appears in the trace, and the Qt frames name the
+trigger: a `QApplication` built and destroyed per test.
+
+**It is a race, so treat one green run as proving nothing.** Measured on one host at
+`-j16`: 4 runs, 1 full pass (159/159, 8.76 s) and 3 timeouts, plus 2 out of 2 hangs in
+earlier `-j8`/`-j16` attempts. A reader whose first high-`-j` run comes back green will
+conclude the hazard is imaginary; it is about 3 in 4 there, and both the rate and the
+threshold will differ with core count, Mesa version and test order.
 
 The shape generalizes to any suite whose GPU tests build a windowing-toolkit context per
 test: many short-lived GL clients on one Xvfb, and the teardown races. Isolate the two
 variables separately before blaming either -- running the one test alone against a
 PRE-EXISTING shared display distinguishes "shared display" from "concurrent clients"; in
-colmap it was the latter. Fix by lowering `-j`: colmap hung at `-j8` and `-j16` and ran the
-whole 159-test suite in 11.6 s at `-j4`, which is also the shape of the evidence -- the
-suite is not slow, one test is stuck. Note that ctest reports this as `Timeout` against its default
-1500 s cap, which reads like a slow test rather than a deadlock: a suite wall time sitting
-exactly at the cap with one test blamed is the tell. (colmap)
+colmap it was the latter. The reliable workaround is lowering `-j`: colmap ran the whole
+159-test suite in 11.6-12.3 s at `-j4` with no hang observed, which is also the shape of
+the evidence -- the suite is not slow, one test is stuck. Note that ctest reports the hang
+as `Timeout` against its default 1500 s cap, which reads like a slow test rather than a
+deadlock: a suite wall time sitting exactly at the cap with one test blamed is the tell.
+(colmap)
 
 ## One architecture gets wrong numbers while the others pass
 

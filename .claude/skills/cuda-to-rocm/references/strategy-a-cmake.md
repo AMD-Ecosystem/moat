@@ -78,17 +78,29 @@ In colmap, `grep curandState src/**/*.cc` is empty, but `mvs/gpu_mat.h` declares
 `FillWithRandomNumbers(..., const GpuMat<curandState>&)` and `mvs/gpu_mat_prng.h` declares
 `class GpuMatPRNG : public GpuMat<curandState>`; `mvs/patch_match.cc` is host-compiled and
 reaches both through `patch_match_cuda.h -> cuda_texture.h -> gpu_mat.h`. The gated header
-fails that TU with `'curandState' was not declared in this scope`. A forward declaration
-does not save it: `GpuMat<curandState>` needs `sizeof(T)` in host code, and `hiprandState`
-is a typedef of `rocrand_state_xorwow` rather than a class you can portably forward-declare.
+fails that TU with `'curandState' was not declared in this scope` (measured: gated include
+4 errors, unmodified header 0).
 
-The fix that IS available, and the one that matters: make every target that includes the
-compat header declare the library whose header it therefore pulls in -- `hip::hiprand` and
-`roc::rocrand` alongside `hip::host`, mirroring whatever the CUDA arm already lists
-(`CUDA::curand`). A monolithic `/opt/rocm` hides an omission here because every ROCm header
-sits under one prefix; a split `rocm-sdk`/TheRock install does not, and that is where the
-missing declaration surfaces as a not-found include. Leave a one-line comment at the include
-saying it cannot be narrowed, or the next reader will try the gate again. (colmap)
+A forward declaration of the state type does compile that TU -- measured on the same TU
+with the same command, gated include plus `struct hiprandState;` gives 0 errors, because a
+class template's members are instantiated lazily and neither a base-class use nor a
+reference parameter needs the type complete. Do not carry over the opposite claim; and note
+the declaration is not portable as one line, because the two backends spell the type
+differently: `hiprandState` is a CLASS (`hiprand_kernel_rocm.h` expands
+`DEFINE_HIPRAND_STATE(hiprandState, rocrand_state_xorwow)` to
+`struct hiprandState : public rocrand_state_xorwow`), while `curandState` is a TYPEDEF on
+the CUDA side (`typedef struct curandStateXORWOW curandState;`).
+
+Prefer the CMake fix anyway, because it repairs something the forward declaration does not:
+make every target that includes the compat header declare the library whose header it
+therefore pulls in -- `hip::hiprand` and `roc::rocrand` alongside `hip::host`, mirroring
+whatever the CUDA arm already lists (`CUDA::curand`). A monolithic `/opt/rocm` hides an
+omission here because every ROCm header sits under one prefix; a split `rocm-sdk`/TheRock
+install does not, and that is where the missing declaration surfaces as a not-found include.
+Gating plus a forward declaration would instead leave an installed header whose meaning
+depends on which TU includes it, and leave that dependency still undeclared. Leave a
+one-line comment at the include saying why it is not narrowed, or the next reader will try
+the gate again. (colmap)
 
 This is how colmap was ported (PR 4420 plus follow-ups): one compat header, `.cu` marked `LANGUAGE HIP`, a few guarded fixes. PyTorch validated that this isolates HIP: on an MI250 build only the HIP translation units receive `-x hip`; host files are untouched.
 

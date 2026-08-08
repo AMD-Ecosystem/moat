@@ -304,16 +304,34 @@ back to point filtering for layered textures; leave it alone.
    alone and behaves differently in-suite, and check the "[SiftGPU Language]" line
    (`SiftGPU.cpp:163`). Prefer widening the vendor test over adding a new global.
 
-   **CLOSED 2026-08-08 on linux-gfx1100, by tracing rather than by inference** (notes.md,
-   "Review response on linux-gfx1100"). Over a full `sift_test` run: `InitGLParam` is
-   entered exactly once and with `NotTargetGL=1`, so it returns at
-   `GlobalUtil.cpp:326-328` before `glewInit()`; `glGetString` is called 16 times and never
-   with `GL_VENDOR`; `PyramidGL` is constructed zero times; and a hardware watchpoint sees
-   `_UseCUDA` written once, `0 -> 1`, and never cleared. Line 370 is unreachable from
-   COLMAP because COLMAP always passes `-cuda <index>`, so no GLSL user exists in the
-   process. This does not depend on the vendor string or the GL driver, which is why the
-   gfx90a-versus-RDNA distinction turns out not to matter. No code change; the latent
-   hazard remains for a caller that does use the GLSL backend.
+   **CLOSED 2026-08-08 on linux-gfx1100** (notes.md, "Review response on
+   linux-gfx1100", as corrected in review round 2). Two separate results, and the second
+   is the one that closes the risk.
+
+   Measured over a full `sift_test` run: `InitGLParam` is entered exactly once and with
+   `NotTargetGL=1`, so it returns at `GlobalUtil.cpp:326-328` before `glewInit()`;
+   `glGetString` is called 16 times and never with `GL_VENDOR`; `PyramidGL` is constructed
+   zero times; and a hardware watchpoint sees `_UseCUDA` written once, `0 -> 1`, and never
+   cleared. That establishes line 370 is not reached in THIS configuration, which is all a
+   single binary with default options can establish. It is not unreachable: `sift.cc:583-590`
+   omits `-cuda` when `darkness_adaptivity` is true and `gpu_index` is negative, and
+   `gpu_index` defaults to `"-1"` (`feature/extractor.h:80`), so a
+   `CreateSiftFeatureExtractor` with `darkness_adaptivity=1` runs the GLSL path and line 370
+   with it (measured: `_UseCUDA=0 _GoodOpenGL=0`).
+
+   The risk closes for a structural reason instead, and that one does hold independently of
+   the vendor string, the GL driver and the GPU. A cleared `_UseCUDA` cannot downgrade a
+   later compute user, because `SiftGPU::ParseParam` re-asserts `GlobalUtil::_UseCUDA = 1`
+   on every fresh `SiftGPU` object (`SiftGPU.cpp:773-776`, guarded only by `!_initialized`)
+   and `SiftMatchGPU::SetLanguage(SIFTMATCH_CUDA*)` bypasses the `_UseCUDA` test at
+   `SiftMatch.cpp:686-691`. Measured with a GLSL user first and a compute extractor second
+   in one process, `_UseCUDA` is 0 after the first and 1 after the second. No code change,
+   and the gfx90a-versus-RDNA distinction does not matter.
+
+   What a GLSL user does leave behind is a different fault from the one this risk states:
+   `_GoodOpenGL = 0` persists, and `InitSiftGPU` early-returns on it for every later
+   extractor including compute ones, so COLMAP falls back to CPU SIFT. That is pre-existing
+   upstream behaviour, identical on a CUDA build, and out of scope here.
 
 6. **Wave32 versus wave64.** Low risk, stated explicitly because the gate demands both.
    There are no warp intrinsics and no `warpSize`. The three hardcoded 32s are block

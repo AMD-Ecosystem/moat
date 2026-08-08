@@ -482,12 +482,13 @@ Verified directly rather than by inspection, because COLMAP itself cannot reach 
     Unable To Copy From PBO: this build has no pixel buffer object interop
     after  CopyFromPBO: out[0]=0 out[n-1]=0 sum=0
 
-### Item 4: what `_UseCUDA` actually resolves to on RDNA -- risk 5 is closed by tracing
+### Item 4: what `_UseCUDA` actually resolves to on RDNA -- risk 5 is closed
 
-**`_UseCUDA` is 1 and stays 1 for the whole of `sift_test` on this host.** The result is
-much stronger than "did not materialise": the `_IsNvidia == 0` clearing at
-`GlobalUtil.cpp:370` is UNREACHABLE from COLMAP, and it is unreachable for a structural
-reason, not because of anything about the vendor string or the GPU.
+**Measured: `_UseCUDA` is 1 and stays 1 for the whole of `sift_test` on this host, and the
+`_IsNvidia == 0` clearing at `GlobalUtil.cpp:370` never runs in that binary.** That is a
+statement about `sift_test` with default options, which is all one binary with one
+configuration can support. It is NOT "line 370 is unreachable from COLMAP" -- the
+correction below, measured in round 2, shows a public option that reaches it.
 
 Traced under gdb on the Release binary (no debug info needed; `GlobalParam::_UseCUDA`,
 `_IsNvidia` and `_GoodOpenGL` are ordinary global symbols, and `GlobalUtil::InitGLParam`,
@@ -503,10 +504,38 @@ Traced under gdb on the Release binary (no debug info needed; `GlobalParam::_Use
 | writes that change `_UseCUDA` (hardware watchpoint) | 1 | `0 -> 1` |
 
 `InitGLParam(1)` takes the early branch at `GlobalUtil.cpp:326-328` (`NotTargetGL &&
-!_UseSiftGPUEX`), sets `_GoodOpenGL = 1` and returns before `glewInit()`, so the vendor
-string is never read and line 370 never runs. `PyramidGL` is never constructed at all,
-because COLMAP always passes `-cuda <index>` (`sift.cc:588`), so the second-call hazard
-plan.md risk 5 describes needs a GLSL user that COLMAP does not contain.
+!_UseSiftGPUEX`), sets `_GoodOpenGL = 1` and returns before `glewInit()`, so on this run
+the vendor string is never read and line 370 never runs. `PyramidGL` is never constructed,
+because every extractor `sift_test` builds passes `-cuda <index>` (`sift.cc:588`).
+
+**Correction, measured in review round 2: line 370 IS reachable from COLMAP.**
+`sift.cc:583-590` omits `-cuda` when `darkness_adaptivity` is true and `gpu_index` is
+negative, and `gpu_index` defaults to `"-1"` (`feature/extractor.h:80`);
+`darkness_adaptivity` is public API (`pycolmap/feature/extraction.cc:163`). Driving the
+real `CreateSiftFeatureExtractor` in a Qt GL context, default `gpu_index`:
+
+    darkness_adaptivity=0:  _UseCUDA=1 _GoodOpenGL=1  extractor=created
+    darkness_adaptivity=1:  _UseCUDA=0 _GoodOpenGL=0  extractor=nullptr
+
+`_GoodOpenGL=0` is reachable only through the `else` branch, so `glewInit()`, the vendor
+read and line 370 all ran. The trace above supports "not reached in this configuration";
+it never supported "unreachable".
+
+**Risk 5 still closes, on a different and stronger reason.** What risk 5 feared is a
+compute user silently downgraded to GLSL because an earlier GLSL user cleared the global
+`_UseCUDA`. That cannot happen, and the reason is structural rather than per-host:
+`SiftGPU::ParseParam` re-asserts `GlobalUtil::_UseCUDA = 1` on every fresh `SiftGPU`
+object (`SiftGPU.cpp:773-776`, guarded only by `!_initialized`), and
+`SiftMatchGPU::SetLanguage(SIFTMATCH_CUDA*)` makes `SiftMatch.cpp:686-691` bypass the
+`_UseCUDA` test entirely. Measured, GLSL user first and a compute extractor second in one
+process, `_UseCUDA` reads 0 after the first and 1 after the second -- the cleared flag does
+not survive into the next object, so no ordering of users can downgrade a compute one.
+
+The real residual is a different fault from the one the risk described, and it is
+pre-existing upstream: a failed GLSL user leaves `_GoodOpenGL = 0`, and `InitSiftGPU`
+early-returns on that for every later extractor in the process, compute included, so
+COLMAP falls back to CPU SIFT. Identical on a CUDA build; not a port defect, and not
+something this port changes.
 
 Two traps worth recording:
 
@@ -544,11 +573,25 @@ override include directory and compiled the real TU with the real compile comman
     gpu_mat.h:137:43: error: 'curandState' was not declared in this scope
     gpu_mat_prng.h:37:34: error: 'curandState' was not declared in this scope
 
-(unmodified header: 0 errors). A forward declaration does not rescue it either --
-`GpuMat<curandState>` needs `sizeof(T)` in host code, and `hiprandState` is a typedef of
-`rocrand_state_xorwow`, not a class that can be forward-declared portably.
+(unmodified header: 0 errors). What the gate as literally requested does is therefore
+settled by measurement, and it breaks the build.
 
-So the *other* remedy the review offered was taken, and it is the one that fixes the only
+**Correction, measured in review round 2: a forward declaration does compile that TU.**
+Same command and override include dir: gated include alone gives 4 errors, gated include
+plus `struct hiprandState;` gives 0, unmodified header 0. Class template members are
+instantiated lazily, so neither the base class nor the reference parameter needs the type
+complete, and the earlier claim that `GpuMat<curandState>` needs `sizeof(T)` in host code
+is wrong. So is the type claim attached to it. `hiprandState` is a CLASS:
+`hiprand_kernel_rocm.h:43-50` expands `DEFINE_HIPRAND_STATE(hiprandState,
+rocrand_state_xorwow)` to `struct hiprandState : public rocrand_state_xorwow { ... };`.
+It is `curandState` on the CUDA side that is the typedef (`curand_kernel.h:302`,
+`typedef struct curandStateXORWOW curandState;`), so one `struct X;` line does not cover
+both arms.
+
+The forward declaration is still not the remedy to take: it leaves an installed compat
+header whose meaning depends on which TU includes it, needs a different spelling per
+backend, and does nothing about the dependency that is actually missing. The *other*
+remedy the review offered was taken instead, and it is the one that fixes the only
 thing that can actually fail: `src/thirdparty/SiftGPU/CMakeLists.txt` now lists
 `hip::hiprand` and `roc::rocrand` next to `hip::host`. That mirrors upstream's own CUDA
 arm, which has listed `CUDA::curand` for `colmap_sift_gpu` since before this port, and it
@@ -585,23 +628,32 @@ ColMatch x24, ComputeKEY x18, InitHist x18, ListGen x14, MultiplyDescriptorGRay 
 MultiplyDescriptor x9, NormalizeDescriptor x5, ComputeOrientation x5, ComputeDescriptor x5,
 DownsampleKernel x5, MultiplyDescriptorG x4, UpsampleKernel x1.
 
-**`sift_test` deadlocks in Mesa, not in COLMAP, when the suite shares one Xvfb display.**
-Under `xvfb-run -a ctest -jN` it hung at `MatchGuidedSiftFeaturesGPU.TypeMismatch` twice
-out of two (reported as `Timeout` at ctest's default 1500 s cap the first time), while the
-same binary passes standalone 5 times out of 5 in under 3 s. The stack of the hung process
-is not COLMAP's:
+**`sift_test` INTERMITTENTLY deadlocks in Mesa, not in COLMAP, when the suite shares one
+Xvfb display.** It is a race in display teardown, not a deterministic function of `-j`.
+Under `xvfb-run -a ctest -jN` it hung at `MatchGuidedSiftFeaturesGPU.TypeMismatch` in the
+porter's two `-j8`/`-j16` attempts (reported as `Timeout` at ctest's default 1500 s cap),
+and the reviewer then ran `-j16` four times on this host: one full pass (159/159, 8.76 s)
+and three timeouts, so roughly 3 in 4 at `-j16` on this machine. Standalone the same binary
+passes 5 out of 5 in under 3 s. One green high-`-j` run does not clear the hazard. The
+stack of a hung process is not COLMAP's:
 
     #3  __pthread_clockjoin_ex
-    #4-#8  libgallium-25.2.8.so
-    #9-#10 libGLX_mesa.so.0
+    #4-#8   libgallium-25.2.8.so
+    #9-#10  libGLX_mesa.so.0
     #11 XCloseDisplay
+    #12 QXcbBasicConnection::~QXcbBasicConnection
+    #13-14  QXcbIntegration::~QXcbIntegration
+    #15 QGuiApplicationPrivate::~QGuiApplicationPrivate
+    #16 QApplicationPrivate::~QApplicationPrivate
+    #17 colmap::(anonymous namespace)::RunGpuTest
 
 `RunGpuTest` builds a `QApplication` per test, so each test opens and closes the X display,
-and llvmpipe's thread pool deadlocks joining its workers on close when other GL clients are
-live on the same display. Isolating the variables: sift_test alone on a **pre-existing
-shared** `Xvfb :77` passes (2.9 s), so it is concurrency, not the shared display; and the
-GPU is not involved at any point. `-j4` is clear of it here and runs the whole suite in
-11.6 s; `-j8` and `-j16` both hung.
+and llvmpipe's thread pool sometimes deadlocks joining its workers on close while other GL
+clients are live on the same display. Isolating the variables: sift_test alone on a
+**pre-existing shared** `Xvfb :77` passes (2.9 s), so it is concurrency, not the shared
+display; and the GPU is not involved at any point. `-j4` is the reliable workaround here
+and runs the whole suite in 11.6 s (12.3 s on the reviewer's rerun), with no hang observed
+at that width.
 
 ## Review 2026-08-08 (reviewer, linux-gfx1100 / wave32 host, round 2)
 
@@ -763,3 +815,40 @@ that one green high-`-j` run does not clear it.
   on which TU includes it. Correct call.
 - Build is current with the tree (`ninja: no work to do`), and `opengl_utils_test` passes
   as a non-GUI-gated test.
+
+## Review response round 2 on linux-gfx1100 2026-08-08 (porter, wave32 host)
+
+Prose only. No source, build or commit-message change, and the fork clone was not touched:
+`head_sha` stays `4c531f5e` and `git -C projects/colmap/src status --porcelain` is empty, so
+nothing here disturbs validation and the gfx1100 and gfx90a runs can start immediately.
+
+Three corrections, in this file, in plan.md risk 5, and in the two skill entries that had
+generalised a measurement into a law.
+
+1. **"Line 370 is unreachable from COLMAP" is gone.** The trace stands as what it is -- line
+   370 is not reached by `sift_test` with default options -- and the reviewer's
+   `darkness_adaptivity=1` probe is recorded as reaching it. Risk 5 now closes on the
+   structural reason instead (`ParseParam` re-asserts `_UseCUDA = 1` per fresh `SiftGPU`,
+   `SetLanguage(SIFTMATCH_CUDA*)` bypasses the test in `SiftMatch.cpp`), which is what
+   actually holds across GPUs and drivers, plus a line on the real residual: a failed GLSL
+   user leaves `_GoodOpenGL = 0` and every later extractor falls back to CPU SIFT,
+   pre-existing upstream and identical on CUDA.
+
+2. **The forward-declaration claim is reversed.** Recorded now as measured: gated include
+   alone 4 errors, gated include plus `struct hiprandState;` 0 errors. `hiprandState` is a
+   class (`DEFINE_HIPRAND_STATE` expands to `struct hiprandState : public
+   rocrand_state_xorwow`); `curandState` is the typedef. The CMake substitute stays and is
+   still the right remedy -- it is what closes the split `rocm-sdk` gap, which a forward
+   declaration does not -- but the skill no longer justifies it with a false fact about
+   ROCm's RNG headers.
+
+3. **The Mesa teardown hang is recorded as intermittent**, with the reviewer's rate (4 runs
+   at `-j16`: 1 pass at 8.76 s, 3 timeouts) and an explicit warning that one green high-`-j`
+   run does not clear it. `-j4` stays the reliable workaround. The stack in the skill entry
+   now carries the Qt frames (`RunGpuTest -> ~QApplicationPrivate -> ~QXcbIntegration ->
+   XCloseDisplay`) that name the per-test `QApplication` as the trigger.
+
+The general lesson, taken: record what was measured and under what conditions. A trace
+bounds the run you took, and promoting it to "cannot happen" needs an argument from the
+code. The skill's tracing entry now says so in those words, since that is the mistake it
+was itself demonstrating.
