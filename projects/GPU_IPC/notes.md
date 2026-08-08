@@ -146,3 +146,145 @@ as written.
   by inspection (compat header inert without `USE_HIP`, all CMake edits inside the
   `USE_HIP` branch, `PDSNK` now backend-neutral), but it has not been compiled.
 - No wave64 run. The two warp fixes above are unexercised.
+
+## Review 2026-08-08
+
+Reviewed fork sha 291c612 (`moat-port`) against 46594e0. Verdict:
+changes-requested. No review PR was opened: gates are wave64/wave32/windows and
+none are satisfied, so `upstream.py --review` correctly refuses, and finding 1
+means there is nothing to approve yet.
+
+### Blocking
+
+**1. The port does not run at wave64.** gfx1100 supports wave64, so this is
+testable on the existing host without a CDNA card. Rebuilding this exact branch
+with `-DCMAKE_HIP_FLAGS=-mwavefrontsize64` (confirmed to reach the device
+compile) gives a binary that dies during startup with `hipErrorIllegalAddress`,
+before frame 1, reproducibly across runs. The wave32 build from the same tree,
+same GPU, same Xvfb harness reaches the known line-search wedge as documented.
+Under `AMD_SERIALIZE_KERNEL=3 AMD_LOG_LEVEL=4` the last dispatch before the
+memory fault is `_updateVertexes` (GIPC.cu:190), the mesh re-sort just after
+`_reduct_max_box` and the thrust sort; `_updateVertexes` indexes everything
+through `sortIndex[idx]`, so the corruption is upstream of it. gfx90a builds
+clean (`-DCMAKE_HIP_ARCHITECTURES=gfx90a`, exit 0), so this is a runtime gap and
+not a build gap. The two blind wave64 fixes are individually correct (below) but
+they are not sufficient, and `-mwavefrontsize64` makes this closable by the
+porter rather than something to discover on gfx90a later.
+
+**2. `MASPreconditioner.cu` does need something, and the recorded reason for
+clearing it is wrong.** notes.md:137-141 says the file is wavefront-size
+independent because its cross-lane traffic goes through `__shared__` and "the
+`WARP_SHFL` calls are commented out upstream". They are not: `WARP_SHFL_DOWN` at
+893-895 and 1054 and `WARP_BALLOT` at 1047 are all live. The concrete defect is
+MASPreconditioner.cu:886-896: `if(__popc(connectMsk) == BANKSIZE)` is uniform
+across a 32-vertex bank but NOT across a 64-lane wavefront, so on wave64 one bank
+can take the branch while its sibling does not, and the width-32
+`WARP_SHFL_DOWN` reduction at 891-895 then executes with half the wavefront
+inactive and reads inactive lanes. `__shfl` lowers to `ds_bpermute`, which
+returns stale register contents rather than faulting, so this is silent. Same
+class as the "Intra-wave barrier divergence" entry already in
+references/fault-classes.md.
+
+### Analysis accuracy (this text goes upstream)
+
+**3. The "above 3x3" boundary is wrong**, in the commit message, notes.md:96-100
+and the skill entry. Compiling `SelfAdjointEigenSolver<Matrix<double,3,3>>`
+inside a `__device__` function with hipcc fails too, at
+`Tridiagonalization.h:434`. The real boundary is `computeDirect()` (which exists
+only for sizes up to 3x3) versus the general `compute()`/constructor path, which
+is host-only at EVERY size. That is why femEnergy.cu:1116-1117 survives: it is a
+`computeDirect` call. As written the entry tells the next porter a 3x3
+`SelfAdjointEigenSolver` constructor is device-safe, and it is not. Fix all
+three; the skill entry matters most.
+
+The rest of the diagnosis is confirmed independently: `EIGEN_DEVICE_FUNC` does
+expand to `__host__ __device__` for hipcc exactly as for nvcc (Macros.h:479-521,
+974), the errors do all trace to one call site, and the replacement was necessary
+rather than a workaround for a misread.
+
+**4. Commit e66c864 would go upstream saying something now false.** Its title is
+"[ROCm] Add HIP/ROCm build support (incomplete - blocked by Eigen)" and its body
+claims "NVCC has special Eigen handling that HIP/clang lacks", which 291c612
+disproves. It also bullet-lists individual changes, against the commit-message
+rule. Squash the two commits or rewrite this one.
+
+**5. `jargon.py` fails.** `python3 utils/jargon.py --commits 46594e0..HEAD -C
+projects/GPU_IPC/src` exits 1: "Strategy A" in e66c864. The same squash fixes it.
+
+**6. The Test Plan asserts the frame-30 stall "is independent of this change".**
+No NVIDIA baseline exists, so that is unsupported. State what is known instead.
+
+### Code
+
+**7. femEnergy.cu:874-878, the convergence test overflows.** `off` and `on` are
+sums of squares, so for a matrix with Frobenius norm above about 1.3e154 both
+become inf and `off <= eps * eps * (on + off)` is `inf <= inf`, true. The sweep
+exits at sweep 0 with V = I and returns `diag(max(A_ii, 0))`, quietly laundering
+a blown-up Hessian into a plausible-looking PSD matrix instead of letting the
+blow-up propagate. Measured at scale 1e155: the eigenvalue error is the full
+magnitude of the input. Eigen scales by the max coefficient first, so the
+original did not do this. Two lines: divide by `max|a_ij|` up front and scale the
+eigenvalues back.
+
+Verified fine, so nobody re-tests it: the sweep count is hard-bounded at 32 and
+the observed maximum over 23000 matrices was 13 (7 for random symmetric, 13 for
+deliberately clustered +/-1 spectra); exact repeated eigenvalues, tightly
+clustered eigenvalues, the zero matrix, rank-deficient input, denormal
+off-diagonals and theta overflow all produce no NaN and no non-convergence. The
+rotation, the eigenvector accumulation and the `V D V^T` reconstruction are
+algebraically correct, and the clamp semantics match the Eigen original exactly.
+The two wave64 mappings in cuda_to_hip.h are also both correct: forcing wave64 on
+gfx1100 shows the shifted ballot returning the right 32-lane half for lanes 32-63
+where truncation returns the lower half's bits, and on the exact
+`__PCG_Solve_AX3_b` segment logic the ported mapping differs from the naive one
+on 31 of 64 lanes, with the ported values being the correct ones.
+
+**8. CMakeLists.txt:16-18, the gfx90a default is dead code.** `project(... HIP)`
+initialises `CMAKE_HIP_ARCHITECTURES` from the build host's GPUs before the
+`NOT DEFINED` test runs, so an unqualified configure here prints
+"HIP architectures: gfx1100;gfx1100;gfx1100;gfx1100" -- this machine's GPUs, one
+duplicate per device -- and never gfx90a. Set the default before `project()`, or
+drop the block and its comment.
+
+**9. CMakeLists.txt:131 hardcodes `/opt/rocm/include`.** Use
+`find_package(hip REQUIRED)` and `hip::host`, or at least `$ENV{ROCM_PATH}`. An
+upstream maintainer will not take an absolute path.
+
+**10. `cmake_minimum_required` was raised 3.18 -> 3.21 for BOTH builds.** Only
+the HIP branch needs 3.21. An opt-in feature should not drop existing CUDA users
+on cmake 3.18-3.20.
+
+**11. `device_launch_parameters.h` was removed from the CUDA path**, in
+femEnergy.cuh, mlbvh.cuh, MASPreconditioner.cu, PCG_SOLVER.cu and gl_main.cpp.
+That changes the CUDA build's include set to fix the HIP build, and the CUDA
+build has never been compiled (notes.md:145-147 admits it). Restore parity with
+one line: `#include "device_launch_parameters.h"` in the non-HIP branch of
+cuda_to_hip.h.
+
+**12. Comment-only churn.** The `<< <` to `<<<` reflow was applied to about 20
+commented-out kernel launches (GIPC.cu, PCG_SOLVER.cu, mlbvh.cu,
+MASPreconditioner.cu:1655). Dead code does not need the fix and it pads the diff
+a maintainer has to read. Revert the comment-only hunks.
+
+### On the open wedge, and what the validator should do
+
+`ported` was the right state to set. The wedge is real, unexplained, and in a
+loop that is upstream's; the stage that decides whether the evidence bar is met
+is validation, and stop discipline says leave partial value rather than grind.
+What is not right is the hypothesis ranking.
+
+Reorder it. (1) Get the NVIDIA baseline, currently ranked second. Until it exists
+every other hypothesis is speculation, and it settles port-versus-upstream in one
+run. (2) wave64, now a demonstrated defect (finding 1) and reproducible on this
+RDNA host. (3) Uninitialized device memory, but test it decisively rather than by
+audit: temporarily make `hipMalloc` also `hipMemset(p, 0, n)`, then separately
+0xFF, and see whether the stall frame moves or becomes reproducible. Auditing
+every `cudaMalloc` for a matching `cudaMemset` is slow and easy to get wrong.
+
+Two mechanisms tested and ruled out here, so nobody repeats them. The second-stage
+reduction in `add_reduction` and `PCG_add_Reduction_*` shuffles past `warpNum`
+after an early `return`, which looks like an uninitialized-register read, but a
+faithful replica measured exact against a CPU sum at 13 sizes including
+non-power-of-two `warpNum` (352, 416, 448, 480, 100000, 100001). The
+partial-block `__syncthreads()` reached only by threads that passed
+`if (idx >= numbers) return` neither hangs nor corrupts on this hardware.
