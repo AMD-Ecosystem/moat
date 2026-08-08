@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "open3d-npp",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "NPP-based GPU image filters have no ROCm equivalent; ops report unsupported and the CPU/IPP path is used. A rocfft/rocAL or hand-written HIP image-filter path could restore GPU acceleration",
+      "refs": [
+        "projects/Open3D/notes.md NPP scope-out"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T16:00:58Z",
+      "decided": null
+    },
+    {
+      "id": "open3d-slabhash",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Non-default SlabHash hashmap backend is wave64-incorrect (32-lane __ffs/__ballot election); compiles but tests excluded under USE_HIP. A wave64-correct rewrite would re-enable it (default StdGPU backend already works)",
+      "refs": [
+        "projects/Open3D/notes.md SlabHash scope-out"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T16:00:58Z",
+      "decided": null
+    }
+  ]
+}
