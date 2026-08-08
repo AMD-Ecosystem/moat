@@ -431,3 +431,157 @@ for inactive lanes, and neither is something to depend on.
 Same harness, build @ b474148: 25 frames at 206-229 ms/frame, then the same
 line-search wedge on the same vertex cluster (12866-12893). No regression from
 any of the above.
+
+## Review 2026-08-08 (round 2)
+
+Reviewed fork sha b474148 (`moat-port`) against 46594e0, single commit. Verdict:
+changes-requested. Everything from round 1 that was code or build is fixed and
+verified (items 3-12 below). What remains is one change whose stated reason its
+own author measured to be false, and two global skill entries that carry a
+mechanism that is wrong on the facts.
+
+No pull request was opened anywhere; findings live here.
+
+### Blocking
+
+**1. MASPreconditioner.cu:889-902 -- the hoist is unnecessary, and the reason
+given for it in code and in the commit message is the one the porter's own
+experiment refuted.**
+
+The branch `if(__popc(connectMsk) == BANKSIZE)` IS uniform across a 32-vertex
+bank, at every wavefront size. `_preparePrefixSumL0` (MASPreconditioner.cu:101-113)
+is the last writer of `_fineConnectMsk` before this kernel -- `ReorderRealtime`
+calls `BuildCollisionConnection` at 1510 BEFORE `PreparePrefixSumL0` at 1512 --
+and it replaces each lane's mask with the transitive closure of its bank, so
+`popc == BANKSIZE` implies a single component spanning the bank and every lane
+in that bank holding the identical full mask. With the shuffle pinned to width
+32 in cuda_to_hip.h and `laneId = threadIdx.x % BANKSIZE`, the shuffle group is
+exactly the bank and all 32 of its lanes are active. Nothing reads an inactive
+lane at wave32, at wave64, or on CUDA. That matches what was measured and
+written in the honesty note at notes.md:389-398.
+
+The problem is that MASPreconditioner.cu:889-894 and the corresponding commit
+message paragraph still present the inactive-lane mechanism as the reason for
+touching the kernel. That text is what an upstream maintainer reads as the
+justification for a change to their code, and it asserts a failure mode the
+author has measured does not occur.
+
+The hoist also introduces something upstream did not do. `totalNodes = vertNum`
+(MASPreconditioner.cu:1482) is not padded to a multiple of BANKSIZE -- the
+shipped scene has 38386 vertices, so the last bank has 18 live lanes and 14 that
+returned at line 875. Upstream never shuffled in that bank (a partial bank
+cannot reach `popc == 32`, since mask bits are only ever set for real vertices);
+the hoisted form does, with the full `0xffffffff` member mask in
+`gipc::WARP_SHFL_DOWN` naming the returned lanes. The result is provably
+discarded, so this is not a live bug -- it is an undefined-source-lane read on
+both back ends bought for no benefit.
+
+Revert to the upstream form. If it is kept instead, the comment and the commit
+message have to say what is true: that the guarded form is safe because BANKSIZE
+equals the pinned shuffle width and the banks are aligned to it.
+
+**2. The same claim was promoted to the global skill and generalizes the
+mistake.** `.claude/skills/cuda-to-rocm/references/fault-classes.md`, the entry
+"A branch uniform over a 32-lane GROUP is not uniform over a 64-lane wavefront",
+tells the next porter to hoist collectives out of cluster-uniform branches "even
+where it currently measures clean", describing the working form as "a
+coincidence plus inactive-lane semantics". It is not a coincidence: `BANKSIZE ==
+32 == the pinned shuffle width` and the lane id is `threadIdx.x % BANKSIZE`,
+which is the same invariant that makes the reduction meaningful on CUDA in the
+first place. And the transformation it prescribes is exactly the one that, in
+this kernel, moves a full-mask collective into threads an earlier `return`
+excluded.
+
+Rewrite it as the opposite lesson, which is the durable one: a fixed-cluster
+warp reduction is wavefront-size-safe precisely when the cluster size equals the
+pinned shuffle width and clusters are aligned to it, so pin the width and check
+that alignment rather than restructuring the branch; and before hoisting any
+collective, check whether an earlier early-return leaves a partial group.
+
+**3. The rocPRIM attribution is right and the stated mechanism is wrong**
+(notes.md:348-350 and the new `references/validation.md` section).
+
+Reproduced independently on gfx1100 (GPU 2, ROCm 7.2): with only
+`-mwavefrontsize64` added, `warpSize` is 64 while
+`rocprim::arch::wavefront::min_size()` still returns **32**, and
+`thrust::sort_by_key` over 38386 uint64 keys returns 4197 out-of-range slots and
+33760 duplicates where the default-width build returns a clean permutation. So
+the conclusion stands and is now mechanically pinned.
+
+The cause is `/opt/rocm/include/rocprim/intrinsics/arch.hpp:68-77`: `min_size()`
+returns `32u` whenever `ROCPRIM_NAVI`, i.e. rocPRIM derives its compile-time
+wavefront constant from the target ARCHITECTURE macro, not from the effective
+wavefront mode, so `-mwavefrontsize64` desynchronizes rocPRIM's constant from
+the hardware. Nothing is prebuilt: `/opt/rocm/lib` contains no rocPRIM or
+rocThrust library, both are header-only and compile with the application's own
+flags. "The libraries an application links are built for gfx11's native wave32"
+sends the next porter looking for a rebuilt rocPRIM that does not exist, when
+the actual rule is that rocPRIM's wave size follows the target arch and never
+the flag.
+
+**4. `references/validation.md`: "Mixing is legal -- the wavefront size is a
+per-kernel field in the code object, not a per-binary one" is over-broad.**
+Measured here: a wave32 TU calling a `__device__` function from a
+`-mwavefrontsize64` TU under `-fgpu-rdc` links and runs, but the callee's
+`warpSize` is folded to 64 while the dispatch is 32. The per-source recipe is
+sound only when nothing crossing the boundary uses `warpSize`,
+`__AMDGCN_WAVEFRONT_SIZE__` or a cross-lane op. That happens to hold for GPU_IPC
+-- ACCD.cu, femEnergy.cu, gpu_eigen_libs.cu and device_fem_data.cu contain no
+`WARP_*` calls -- which is why the mixed build is trustworthy here. State the
+condition with the recipe.
+
+Findings 2-4 are corrections to skill files that exist only on this branch
+(added by 3a6ca69) and are not on moat main, so fix them here; no separate PR
+against main is needed.
+
+### Minimal footprint
+
+**5. MASPreconditioner.cu:15-22 drops `<cooperative_groups/reduce.h>` from the
+CUDA include set.** Same class as round-1 finding 11, which was fixed for
+`device_launch_parameters.h` and missed here. Nothing in the file uses
+cooperative groups at all, so keep both of upstream's includes on the CUDA side
+of the guard and add only the HIP one.
+
+### Verified, so nobody re-checks it
+
+- The wave64 chain (round-1 finding 1) is sound and independently reproduced;
+  see finding 3 for the one correction. The mixed build does cover both
+  `cuda_to_hip.h` fixes: PCG_SOLVER.cu is one of the five wave64 TUs and is the
+  only file outside the three thrust TUs that uses both `WARP_SHFL_DOWN`
+  (51-367, 531-1141) and `WARP_BALLOT` (526-1128). It does NOT exercise the
+  MASPreconditioner change, since that TU is compiled `-mno-wavefrontsize64`;
+  notes.md:356-358 does not claim otherwise.
+- The Jacobi replacement is numerically sound. Re-derived: the rotation
+  annihilates `a[p][q]`, `A <- R A R^T` with `V <- V R^T` preserves
+  `V A V^T == A0`, so columns of `eigenvectors` are eigenvectors and the
+  `sum_k V[i][k] d[k] V[j][k]` reconstruction is `V D V^T`; the clamp semantics
+  match Eigen's early-out exactly, and the result is order-independent so the
+  loss of Eigen's ascending sort does not matter. Re-measured against Eigen on
+  the host: 20000 random symmetric 12x12, worst relative 1.2e-14, worst absolute
+  3.6e-14; at scale 1e155 relative 4.5e-15 (the normalization fix works); all
+  zeros, zeros containing -0.0, negative identity, 1e-160 scaling, rank-1 and a
+  1e-300 negative eigenvalue all exact against the Eigen path. All-zeros takes
+  `scale == 0`, skips the division, converges at sweep 0 and returns the input
+  untouched.
+- The two missing-return fixes are behavior-neutral: every caller of
+  `_checkPTintersection` / `_checkPTintersection_fullCCD` (mlbvh.cu:1068, 1083)
+  discards the value, and `__project_StabbleNHK_H_3D_makePD`'s only call site
+  (femEnergy.cu:1236) discards it too.
+- GIPC.cu is byte-identical to upstream (`git diff 46594e0...b474148 --
+  GPU_IPC/GIPC.cu` is empty).
+- Eigen `computeDirect()` versus `compute()` is stated correctly in all three
+  places.
+- All four build items are as described: no gfx90a default, `find_package(hip)`
+  + `hip::host` with no install prefix named, 3.18 at the top with 3.21 only
+  inside `if(USE_HIP)`, `device_launch_parameters.h` restored on the CUDA side
+  of cuda_to_hip.h (and reaching MASPreconditioner.cu and PCG_SOLVER.cu
+  transitively via cuda_tools.h / PCG_SOLVER.cuh).
+- `jargon.py` is clean in both the `--commits` and the `--diff` form over
+  46594e0..moat-port.
+- Commit hygiene: title `[ROCm] Add a HIP build path for AMD GPUs` (40 chars),
+  Claude named, no trailers, ASCII, no em-dash, no internal references, no added
+  copyright or author lines, fork tree clean and pushed.
+- The project's pervasive `threadIdx.x % 32` / `>> 5` grouping is not the
+  hardcoded-32 fault class: those are logical cluster sizes, and pinning the
+  compat shuffles to width 32 is what makes them arch-unified. No textures,
+  surfaces or pitched allocations exist in this codebase.
