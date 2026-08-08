@@ -88,6 +88,33 @@ accumulation divergence rather than a port bug, and RDNA3.5 (gfx1151) is where i
 shown up. Record the error magnitude and stop rather than chasing it deep: the
 comparison that matters is against the other architectures, not against a fix.
 
+## CUDA no-regression gate: an old pinned dependency can wall it before your own code is even reached
+
+A project that vendors an external NVIDIA library at a specific pinned tag (RAPIDS/RAFT,
+a CUB/Thrust snapshot, anything fetched by CPM/FetchContent) can fail its OWN CMake
+configure against a modern CUDA toolkit, before the port's `.cu` files are ever compiled.
+Quest pins RAFT to `branch-24.02` (~early 2024); against CUDA 12.8 + CMake 3.31, RAFT's
+CMakeLists still links the legacy `CUDA::nvToolsExt` imported target, but
+`FindCUDAToolkit` no longer creates it -- NVTX became header-only
+(`nvtx3/nvToolsExt.h`) and the shared-library target it backed was retired. Configure
+dies inside `_deps/raft-src/cpp/CMakeLists.txt`, nowhere near anything the port touched.
+
+Tell this apart from a real CUDA regression by WHERE the error sits: a fault in a
+`_deps/<external>-src/` path, or any file this port did not edit, is the dependency's
+own version skew against the toolchain you happened to use to test -- it would equally
+block an unmodified upstream build under the same CUDA-toolkit + CMake combination, so
+it says nothing about the port. A fault inside the project's own source, especially one
+that traces to a HIP-only define/branch leaking into the CUDA leg, is the real gate and
+must go back to the porter. Do not try to work around the dependency's own build system
+(stubbing an imported target, patching its CMakeLists) to force the CUDA leg further --
+that fix belongs upstream in the dependency, not in this port, and patching it locally
+proves nothing about the port either. Record it as `cuda-not-validated: <precise error
+and where it sits>` and say plainly how far the pinned-arch mechanism WAS exercised
+(e.g. `enable_language(CUDA)` succeeding with the pin surviving to the cache is real,
+new evidence even when the wall stops you one step later) versus what remains
+unexercised (no compile line was ever seen for the port's own kernels). Don't let the
+record imply more than what was actually run.
+
 ## Diagnosing a suspected AMD fault before escalating
 
 Two patterns that each cost a deep investigation before the real cause was found.
