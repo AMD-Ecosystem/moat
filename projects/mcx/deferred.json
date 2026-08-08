@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "hipcc-frontend-codegen-mcx",
+      "kind": "rocm-bug-report",
+      "component": "rocm-compiler",
+      "summary": "hipcc (C++/HIP frontend) emits ~3.4x more dynamic instructions than the OpenCL-C frontend for the equivalent MCX photon kernel on the same gfx90a backend; root cause of mcx-vs-mcxcl 4.6x gap after the atomics fix. Reduced repro + ISA/counter evidence + porting playbook prepared.",
+      "refs": [
+        "findings/hipcc-frontend-codegen-mcx/README.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-17T15:23:27Z",
+      "decided": null
+    }
+  ]
+}
