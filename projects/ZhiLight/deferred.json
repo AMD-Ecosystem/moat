@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "zhilight-moe-amd",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "MoE path unsupported on AMD; fp16/bf16 and cublasLt-int8 Linear are supported.",
+      "refs": [
+        "projects/ZhiLight/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T18:21:58Z",
+      "decided": null
+    },
+    {
+      "id": "zhilight-nvidia-fastpaths",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "ZhiLight HIP port gated off the NVIDIA tensor-core / Hopper-only fast paths: Marlin/AWQ/FP8/GPTQ quant kernels (mma.sync, ldmatrix, cp.async, cvt.e4m3x2, prmt.b32, lop3, __vsub4), WMMA attention decode, int8-quantized-KV attention, deep_gemm FP8-block + flash_mla MLA H20 static libs (DeepSeek-V3 FP8-block + MLA), flash-attn prefill, and GPTQ/AWQ/Marlin/fp8 quantized MoE. These throw a clear error or fall back on HIP; reimplement-not-port for AMD (MFMA/WMMA, hipBLASLt FP8) to fully finish the port.",
+      "refs": [
+        "projects/ZhiLight/src commit f8974f5 body 'Deferred' section",
+        "PR https://github.com/zhihu/ZhiLight/pull/81"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-18T21:21:53Z",
+      "decided": null
+    },
+    {
+      "id": "zhilight-windows-bmengine-posix",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "ZhiLight Windows ROCm build blocked: bundled bmengine host runtime uses Linux-only POSIX APIs (execinfo.h, sched.h, pthread.h, sys/syscall.h, sys/time.h) with no _WIN32 guards. GPU kernel TUs compile for gfx1101/gfx1201, but the host infra needs a Windows-compat layer. Resume to add Windows support to the port.",
+      "refs": [
+        "projects/ZhiLight/status.json windows-gfx1101 blocked_reason"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-18T21:21:53Z",
+      "decided": null
+    }
+  ]
+}
