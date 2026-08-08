@@ -60,6 +60,41 @@ Ones seen so far, for orientation rather than as a roster:
 - gfx1201: RDNA4 (RX 9070 XT), wavefront 32. On Windows it satisfies wave32 and windows together; the same GPU on Linux satisfies wave32 alone.
 - gfx1101, gfx1151: wavefront 32. Records already made against them still satisfy gates -- a validation does not stop being true because a machine changed.
 
+## `-mwavefrontsize64` on an RDNA card checks LANE LOGIC, and cannot judge an application
+
+It is tempting to treat gfx1100 as a stand-in for a wave64 platform, and half of that works.
+The mode is real: on gfx1100 the flag produces genuine wave64 kernels -- measured `warpSize`
+64, `__ballot` popcount 64, a width-64 `__shfl_down` reduction summing 64 lanes -- so a
+shuffle mapping, a ballot shift or a width-32 group reduction can be compared against a
+naive version and the comparison MEANS something. Use it for that; it is much faster than
+waiting for CDNA hardware and it caught real lane-indexing questions on GPU_IPC.
+
+What it cannot do is judge a whole application, because the ROCm libraries the application
+links are prebuilt for gfx11's NATIVE wave32 and the mixed configuration is not one ROCm
+validates. rocPRIM is the one that bites, since rocThrust is header-only and every
+`thrust::` call in a `-mwavefrontsize64` TU compiles its device code at the forced width
+while the surrounding machinery still assumes the native one. Measured on GPU_IPC:
+`thrust::sequence` + `thrust::sort_by_key` over 38386 uint64 keys returns a valid
+permutation at the default width and a CORRUPT one with only `-mwavefrontsize64` added --
+10156 of 38386 slots out of range, 27913 duplicates. Downstream that is an
+`hipErrorIllegalAddress` in whichever kernel next indexes with the result, which reads
+exactly like a port defect and is not one. The full application died in
+`thrust::exclusive_scan` before frame 1.
+
+So: a crash in a forced-wave64 RDNA build is UNATTRIBUTED until you separate the two. The
+separation is cheap. Give the rocThrust/rocPRIM translation units
+`-mno-wavefrontsize64` per-source and leave the project's own kernels at wave64:
+
+```cmake
+set_source_files_properties(a.cu b.cu PROPERTIES COMPILE_OPTIONS "-mno-wavefrontsize64")
+```
+
+Mixing is legal -- the wavefront size is a per-kernel field in the code object, not a
+per-binary one. On GPU_IPC that build ran the whole simulation at the same frame rate and to
+the same point as the wave32 build. Record the result as what it is: evidence that the
+port's own wave64 paths execute, NOT a wave64 validation. The gate is still owed a gfx90a or
+gfx942 run. (GPU_IPC.)
+
 ## Windows: use TheRock ROCm, not the Windows HIP SDK
 
 **Build and run against a full ROCm distribution from TheRock (its PyTorch wheels and the
