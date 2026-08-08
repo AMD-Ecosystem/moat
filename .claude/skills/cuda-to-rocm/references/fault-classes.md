@@ -186,6 +186,21 @@ everything else passes. (qrack: `_PopQueue` under `UniformlyControlledSingleBit`
 **`hipFree` is synchronizing** (`hipFreeAsync` is not), so an explicit
 `hipDeviceSynchronize()` before it is redundant. (anari-visionaray)
 
+**Device-side `new[]`/`delete[]` inside a kernel or functor is a trap on HIP.** The device
+malloc heap is small and its behaviour under a per-thread allocation in a hot loop is not
+reliable; a functor that allocates a scratch array per thread can return wrong values
+without faulting, so the symptom is a numerically wrong result rather than a crash. Replace
+it with a fixed-size per-thread automatic array bounded by the constant the code already has
+(GooFit's binned integration used a device `new[]` sized by the observable count;
+`fptype[MAX_NUM_OBSERVABLES]` fixed it and immediately corrected a fitted parameter). This
+is arch-unified and correct on CUDA too, so it needs no guard -- prefer it to raising the
+device heap limit. (GooFit)
+
+**HIP's `__ldg` accepts only scalar types**, while CUDA projects commonly route arbitrary
+types through it via a generics wrapper that relies on `__CUDA_ARCH__` and PTX aliasing. A
+read-only-cache macro (`RO_CACHE(x)`) should expand to a plain `(x)` load on HIP; the AMD
+hardware takes the same path. (GooFit)
+
 ## Textures
 
 **Texture pitch alignment is 256 bytes on AMD against 32 on NVIDIA**, and it bites in two

@@ -17,3 +17,6 @@
 {"kind":"phase","ts":"2026-06-11T23:32:43Z","phase":"compile","seconds":61.769,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/GooFit/src/build-hip -j128"}
 {"kind":"phase","ts":"2026-06-11T23:32:58Z","phase":"test","seconds":0.140,"exit":0,"cmd":"ctest --output-on-failure -j8"}
 {"kind": "tokens", "ts": "2026-06-12T00:03:47Z", "tokens": 294039, "source": "porter"}
+{"kind":"phase","ts":"2026-08-08T03:40:01Z","phase":"compile","seconds":3.308,"exit":0,"cmd":"cmake -S projects/GooFit/src -B projects/GooFit/src/build-hip -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DGOOFIT_DEVICE=HIP -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DGOOFIT_TESTS=ON -DGOOFIT_EXAMPLES=ON -DGOOFIT_CERNROOT=OFF -DGOOFIT_PYTHON=OFF -DGOOFIT_PHYSICS=OFF"}
+{"kind":"phase","ts":"2026-08-08T03:40:36Z","phase":"compile","seconds":29.908,"exit":0,"cmd":"cmake --build projects/GooFit/src/build-hip -j32"}
+{"kind":"phase","ts":"2026-08-08T03:41:00Z","phase":"test","seconds":9.752,"exit":0,"cmd":"ctest --test-dir projects/GooFit/src/build-hip --output-on-failure -j1"}

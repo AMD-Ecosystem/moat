@@ -54,6 +54,39 @@ A heavily-templated library (cudf: rocThrust/rocPRIM `DeviceReduce`/`DeviceScan`
 
 Fix: add `--offload-compress` to the HIP compile options (`target_compile_options(<tgt> PRIVATE $<$<COMPILE_LANGUAGE:HIP>:--offload-compress>)`). A documented ROCm clang HIP flag (7.2.1+: "Compress offload device binaries (HIP only)") that stores the embedded device bundle in the compressed CCOB format; the HIP runtime decompresses it on load. Measured on a cudf rocPRIM reduce TU @ gfx90a: object 207.8 MB -> 52.1 MB (3.99x), `.hip_fatbin` 158.6 MB -> 2.89 MB (54.9x) -- the device ISA matrix is hugely redundant so it compresses ~55x. This let cudf's full reductions + aggregation + groupby + join surface link into ONE ~540 MB libcudf.so with no multi-.so split and no `-mcmodel=large`. For a non-RDC build (no `-fgpu-rdc` device-link step) the per-TU compile is the only place the bundle is formed, so there is no separate device-link to also flag. Prefer this BEFORE splitting a library or capping the template matrix. Also build a single target arch (no multi-arch fatbin) and add `-ffunction-sections -fdata-sections` + `--gc-sections` to prune unreachable host instantiations. (cudf.)
 
+### Relocatable device code: the HIP device link never sees inside a `.a`
+
+A project that declares `__device__`/`__constant__` globals or device function-pointer
+tables in HEADERS and defines them in a separate `.cu` needs relocatable device code on
+HIP, exactly as it needs `CUDA_SEPARABLE_COMPILATION` on NVIDIA. The symptom is a link
+error naming a `__device__` member, e.g.
+`lld: error: undefined hidden symbol: MetricTaker::operator()(thrust::tuple<...>) const`.
+Turning on `-fgpu-rdc` plus `HIP_SEPARABLE_COMPILATION ON` is necessary but often not
+sufficient, and the missing piece is not documented anywhere obvious:
+
+**The HIP device link only sees device objects passed DIRECTLY on the link line. Objects
+inside a static archive are invisible to it.** A project built as many small
+`add_library(... STATIC)` targets therefore performs a device link that finds no device
+objects at all, and the failure mutates into undefined `__hip_fatbin_*` /
+`__hip_gpubin_handle_*` symbols rather than a clear diagnostic. nvcc's device linker does
+pull device code out of archives, so the CUDA build never shows this.
+
+Fix by restructuring the HIP build only: make each GooFit-style component an
+`add_library(<name> OBJECT ...)` with `POSITION_INDEPENDENT_CODE ON`, record the target in
+a global property, and gather every object library into ONE shared library that performs a
+single device link spanning all translation units. That resolves every cross-TU
+`__device__`/`__constant__` global and every device function-pointer table at once. Keep it
+inside `if(GOOFIT_DEVICE STREQUAL HIP)`-style guards so the CUDA and CPU builds keep their
+archives. Note also that IPO/LTO cannot be combined with HIP relocatable device code, so
+disable `INTERPROCEDURAL_OPTIMIZATION` on that path.
+
+Two smaller companions from the same port: mark BOTH `.cu` files and any `.cpp` that
+includes rocThrust as `LANGUAGE HIP` (CMake otherwise drops the `.cu` objects from the
+device link once the project enabled HIP rather than CUDA), and delete host globals that
+take the address of a `__device__` function (`device_function_ptr p = device_Step;` at
+namespace scope) -- that is invalid on HIP and dead code on CUDA. (GooFit; first seen on
+RXMesh, where only the `-fgpu-rdc` half was needed.)
+
 ## The shim-header method: a port with zero source edits
 
 The plain Strategy A shape adds `#include "cuda_to_hip.h"` to every `.cu`/`.cuh` that needs

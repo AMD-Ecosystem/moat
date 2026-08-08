@@ -135,6 +135,98 @@ Eigen Array<thrust::complex>/Array<double> operator() not EIGEN_DEVICE_FUNC
 Generate.h/EvaluateArray.h; thrust hip_rocprim vs cpp tag mismatch in copy_if;
 __thrust_forceinline__ unknown in GSpline.cu.
 
+## Port attempt 3 (2026-08-08, linux-gfx1100) -- builds and PASSES; blocked only on fork write access
+
+Resumed from AMD-Ecosystem/GooFit @ moat-port d95236e57 (the gfx90a work). No
+source change was needed to make it build or pass on gfx1100.
+
+### Build (gfx1100, ROCm 7.2.53211-c2d9476115, CMake 3.31.6, Ninja)
+```
+cmake -S . -B build-hip -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DGOOFIT_DEVICE=HIP -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DGOOFIT_TESTS=ON -DGOOFIT_EXAMPLES=ON -DGOOFIT_CERNROOT=OFF \
+  -DGOOFIT_PYTHON=OFF -DGOOFIT_PHYSICS=OFF
+cmake --build build-hip -j32
+```
+185/185 targets built and linked clean, first try, no edits.
+
+### Tests: 24/24 PASS on GPU 3 (gfx1100), 9.62 s total
+`ctest --test-dir build-hip --output-on-failure`. Repeated 3x, 24/24 every
+time. NormalizeTest, SimpleTest, BinningTest, BlindTest, MonteCarloTest,
+GenArgusTest, GenGaussianTest, the 15 tests/convert PDF tests (including
+ConvolutionTest, 3.43 s), exponential_Example, exponential2_Example.
+
+### The gfx90a "garbage normalization" blocker does NOT reproduce on gfx1100
+Attempt 2 recorded that unbinned NLL fits diverge to a parameter bound because
+the device reads 6.25e-310 from the hipMemcpyToSymbol-published
+`d_normalizations`. On gfx1100 with the same committed tree the unbinned
+maximum-likelihood fit converges correctly:
+
+    examples/exponential/exponential   ->  alpha = -1.001102381 +/- 0.003165763921
+
+against a generated alpha of -1, which is inside the [-1.01, -0.99] window the
+example itself asserts (it returns 1 otherwise). Run 10 times: bit-identical
+every time, 35 function calls, Edm 2.7e-07. So there is no race visible here.
+The remaining hypotheses for gfx90a, in the order worth testing there: (a) it
+was fixed between the ROCm the gfx90a session used (7.2.1) and 7.2.5; (b) it is
+genuinely gfx90a-specific; (c) the gfx90a repro was built from the uncommitted
+tree rather than d95236e57. Whoever next has a gfx90a should re-run the
+committed tree BEFORE re-debugging SmartVector -- the note in attempt 2 may be
+describing a state that no longer exists.
+
+### BLOCKER (not technical): no push access to the fork
+`git push` to AMD-Ecosystem/GooFit is refused:
+
+    remote: Permission to AMD-Ecosystem/GooFit.git denied to jeffdaily.
+    fatal: ... The requested URL returned error: 403
+
+`gh api repos/AMD-Ecosystem/GooFit --jq .permissions` reports
+`{"admin":false,"maintain":false,"pull":true,"push":false,"triage":false}`,
+while sibling forks (visionaray, cuBQL) report `push:true,triage:true`. So this
+one repository is missing the collaborator/team grant the others have; it is an
+org access-configuration fix, not a porting problem. The gfx90a session pushed
+d95236e57 to it, so the grant existed and was lost.
+
+Pending work saved as `projects/GooFit/rocm-build-docs.patch` (one commit,
+df9aaa298 locally): documents the ROCm build in README.md (requirements
+collapsible + backend-selection section) and docs/SYSTEM_INSTALL.md (an Ubuntu
+ROCm build recipe next to the existing per-OS recipes). Apply with
+`git am` on moat-port once push access is restored, then `advance-head`.
+
+### The CPP/OMP no-regression build cannot be configured on this host
+Unrelated upstream submodule rot: `.gitmodules` gives `extern/thrust` the
+relative url `../../thrust/thrust.git`, which now redirects to NVIDIA/cccl, and
+cccl does not contain the recorded commit 8551c9787. `git submodule update`
+fails with "not our ref", leaving extern/thrust at CCCL v3.3.3, whose layout
+FindThrust.cmake cannot parse ("CMake Error at
+extern/cmake_utils/FindThrust.cmake:44 (file)"). This affects upstream GooFit
+identically and is not caused by the port; the HIP build is unaffected because
+it skips extern/thrust and uses rocThrust. No nvcc on this host, so the CUDA
+no-regression compile was not run either.
+
+### Reviewed, not changed
+- `src/PDFs/utilities/DebugTools.cu` was not deleted by the port, it moved from
+  PDFCore to `src/PDFs/physics/CMakeLists.txt`; it is only referenced by the
+  physics PDFs, so the CUDA build is unaffected.
+- Every CMakeLists.txt change is inside `GOOFIT_DEVICE STREQUAL HIP` guards or
+  is the additive `HIP` entry in `DEVICE_LISTING`; the CUDA path is untouched.
+- No `warpSize`, `__shfl*`, `__ballot` or `__activemask` anywhere in src/ or
+  include/, so nothing is wavefront-width dependent. The one `__shared__` use
+  (ConvolutionPdf.cu) is guarded so that every thread that enters the functor
+  reaches both `THREAD_SYNCH` points. Threads that thrust masks off never enter
+  the functor at all, which is the usual latent wave64 barrier-divergence risk;
+  ConvolutionTest passes here and reportedly built on gfx90a, but it is the
+  first place to look if gfx90a hangs.
+
+### MOAT tooling gap found while starting
+`moatlib.set_state(name, arch, "porting")` short-circuits at
+`if new_state == cur and not revalidated: return obj` when the PROJECT stage is
+already `porting` (left there by an earlier host), so it prints the transition,
+writes nothing, and never reaches the `obj["porting"] = {...}` acquisition ten
+lines below. The lock had to be taken with `moatlib.py port-lock GooFit --take
+linux-gfx1100`. The acquisition needs to happen before that short-circuit, the
+same way the exclusivity refusal already does.
+
 ## Resuming (2026-08-07)
 
 The port continues: this was judged a port worth finishing rather than an unportable

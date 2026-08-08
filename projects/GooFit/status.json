@@ -7,13 +7,10 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T00:04:16Z",
-  "updated_at": "2026-08-08T03:38:13Z",
+  "updated_at": "2026-08-08T03:50:21Z",
   "head_sha": "d95236e57ecd6cfb94e53d731b104b694d4da2ea",
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx1100",
-    "since": "2026-08-08T03:38:13Z"
-  },
+  "porting": null,
   "waivers": {},
   "license_clearance": {
     "approved_by": "jeffdaily",
@@ -47,5 +44,7 @@
       },
       "last_agent": "planner"
     }
-  }
+  },
+  "on_hold": true,
+  "on_hold_reason": "No write access to AMD-Ecosystem/GooFit (gh api reports push:false for this fork; sibling forks report push:true), so no host can push the port branch. Nothing technical is outstanding: at d95236e57 the HIP build completes and all 24 GPU tests pass on gfx1100. Clear this hold once an org write grant is restored, then apply projects/GooFit/rocm-build-docs.patch and advance-head."
 }
