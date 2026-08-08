@@ -136,7 +136,7 @@ The project name links upstream.
 | [LichtFeld-Studio](https://github.com/MrNeRF/LichtFeld-Studio) ([fork](https://github.com/AMD-Ecosystem/LichtFeld-Studio/tree/moat-port)) | ✅ | ✅ | 🚫 | — |
 | [LiteGS](https://github.com/MooreThreads/LiteGS) ([fork](https://github.com/AMD-Ecosystem/LiteGS/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [llm-awq](https://github.com/mit-han-lab/llm-awq) ([fork](https://github.com/AMD-Ecosystem/llm-awq/tree/moat-port)) | ✅ | ✅ | ✅ | — |
-| [llm.c](https://github.com/karpathy/llm.c) ([fork](https://github.com/AMD-Ecosystem/llm.c/tree/moat-port)) | 🔄 | ✅ | ✅ | 🟢 [#854](https://github.com/karpathy/llm.c/pull/854) |
+| [llm.c](https://github.com/karpathy/llm.c) ([fork](https://github.com/AMD-Ecosystem/llm.c/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#854](https://github.com/karpathy/llm.c/pull/854) |
 | [llmq](https://github.com/IST-DASLab/llmq) | 🚫 | — | — | ⚪ not-portable |
 | [mahout](https://github.com/apache/mahout) ([fork](https://github.com/AMD-Ecosystem/mahout/tree/moat-port)) | ✅ | ✅ | 🔄 | 🟢 [#1399](https://github.com/apache/mahout/pull/1399) |
 | [marian-dev](https://github.com/marian-nmt/marian-dev) ([fork](https://github.com/AMD-Ecosystem/marian-dev/tree/moat-port)) | ✅ | ✅ | ✅ | — |
