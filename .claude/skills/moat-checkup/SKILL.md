@@ -174,9 +174,15 @@ is parked -- the state exists for the case, not the other way round.
 Projects screened and waiting for someone to create the fork. Agents cannot create
 one, so this is a list for a person, and `orient.sh` prints it on every run.
 
-A project whose folder lives on its own `port/<name>` branch is REPORTED rather than
-advanced: releasing writes to its record and the record is not in this checkout. Check
-that branch out to release it, or let the next session on it do so.
+`--forks --apply` releases them, wherever the record lives. A project whose folder is on
+its own `port/<name>` branch is advanced there directly, through git plumbing that needs
+no checkout, so you do not have to be standing on a branch to release the project it
+holds -- and every project waiting on a fork is branch-resident, so reporting those
+rather than advancing them once meant the one command for the job released nothing.
+
+Safe here for the reason it would not be for the selector: this advances a RECORD.
+Handing an agent a project whose plan and notes are absent from its tree is the thing
+that must not happen, and releasing a fork does not do that.
 
 Declines do not happen here. They are recorded through the intake queue --
 `intake_queue.py apply --decline`, carrying a person's answer -- and the labels that
