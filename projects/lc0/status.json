@@ -7,7 +7,7 @@
   "priority": 6.245,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-08-07T07:05:13Z",
+  "updated_at": "2026-08-08T01:36:28Z",
   "head_sha": "223ee63914f3c7c1da020d63072e133523b2df91",
   "pr_url": "https://github.com/LeelaChessZero/lc0/pull/2420",
   "pr_number": 2420,
@@ -23,7 +23,7 @@
   },
   "license_spdx": "GPL-3.0",
   "upstream_repo_id": 135489692,
-  "stage": "review-passed",
+  "stage": "validation-failed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -61,7 +61,7 @@
       "validated_sha": "a80a7be",
       "started_at": "2026-05-31T05:46:00Z",
       "completed_at": "2026-07-02T19:35:45Z",
-      "updated_at": "2026-07-06T03:31:39Z",
+      "updated_at": "2026-08-08T01:36:28Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,

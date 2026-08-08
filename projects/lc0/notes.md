@@ -984,3 +984,163 @@ which never false-fired.
 advance-head 223ee639 classified the change functional: linux-gfx1100 -> revalidate (its
 own host), linux-gfx90a stays pr-open (validated here at 223ee639, PR update pending Jeff),
 Windows stays blocked. gfx90a is re-validated on real GPU at the new head.
+
+## Validation 2026-08-08 (validator, linux-gfx1100) -- VALIDATION-FAILED (documentation stale)
+
+Platform: 4x AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), ROCm 7.2.1, hipcc clang 19,
+meson 1.11.1, ninja. GPU 0 (all 4 free, `rocm-smi --showuse` 0% everywhere). Fresh clone of
+`AMD-Ecosystem/lc0` @ moat-port, HEAD 223ee63914f3c7c1da020d63072e133523b2df91 (matches
+`head_sha`). `libopenblas-dev` installed for the CPU `blas` reference backend (was not present
+on this host). Fetched `maia1100.pb.gz` (CSSLab/maia-chess) and `testnet.pb.gz`
+(t1-256x10-distilled-swa-2432500.pb.gz from storage.lczero.org) into `agent_space/` (gitignored
+per-host, not present from a prior session on this host).
+
+### Delta classification (a80a7be -> 223ee639, the last real-GPU pass recorded for gfx1100)
+
+```
+python3 utils/moatlib.py classify lc0 a80a7be 223ee639
+```
+
+Verdict: `class=mixed arch_independent=False`. Real functional/device-code changes for
+this arch: the Menkib64 co-build cherry-picks wrap every shared TU in a `namespace
+NS_BACKEND` (renames all mangled symbols: `mixed`/`rename-only` per file), and the new
+`lc0SyncThreads()` debug-barrier-assert wrapper is a genuinely new function called at all
+19 barrier sites (active in the default `debug` buildtype). Not a candidate for the
+binary-equivalence carry-forward shortcut -- proceeded straight to a full real-GPU
+revalidation rather than spending a build-twice-and-diff cycle on a delta already known
+to change the compiled output.
+
+### Build (gfx1100, debug buildtype -- so the new barrier-guard asserts are ACTIVE)
+
+```
+bash utils/timeit.sh lc0 compile -- \
+  meson setup /var/lib/jenkins/moat/projects/lc0/src/build-hip /var/lib/jenkins/moat/projects/lc0/src \
+  -Dhip=true -Damd_gfx=gfx1100 \
+  -Dplain_cuda=false -Dcudnn=false -Dcutlass=false -Dnvcc=false \
+  -Dgtest=true -Dblas=true -Dopencl=false -Donnx=false \
+  -Db_lto=false -Dnative_arch=false \
+  -Dhip_libdirs=/opt/rocm/lib -Dhip_include=/opt/rocm/include
+bash utils/timeit.sh lc0 compile -- \
+  ninja -C /var/lib/jenkins/moat/projects/lc0/src/build-hip -j16
+```
+
+Result: 331/331 targets, clean link, warnings only (benign nodiscard). `roc-obj-ls
+build-hip/lc0`: two code objects, both `hipv4-amdgcn-amd-amdhsa--gfx1100` (1163256 and
+2205056 bytes) -- no gfx90a anywhere. `nm -C fp16_kernels.hip.o` shows 28 non-empty
+`SE_Layer_NHWC` instantiations (the fp16-gating refactor still compiles the conv-SE bodies
+in on this arch).
+
+### CPU gtest (non-GPU regression)
+
+```
+bash utils/timeit.sh lc0 test -- meson test -C /var/lib/jenkins/moat/projects/lc0/src/build-hip
+```
+
+Result: 8/8 OK (FP16, HashCat, PositionTest, OptionsParserTest, SyzygyTest,
+EncodePositionForNN, EngineTest, ChessBoard). 0 failures. Matches every prior run.
+
+### maia-1100 conv-SE cross-check (THE gate; also exercises all 19 barrier-guard sites)
+
+```
+HIP_VISIBLE_DEVICES=0 bash utils/timeit.sh lc0 test -- \
+  build-hip/lc0 backendbench --backend=check \
+  "--backend-opts=hip(),blas(),mode=check,atol=1e-3,rtol=1e-2,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz --start-batch-size=1 --max-batch-size=55 --batches=4
+```
+
+fp32: 222/222 "Check passed", 0 ERROR (identical count to every prior gfx1100/gfx90a run).
+
+```
+HIP_VISIBLE_DEVICES=0 bash utils/timeit.sh lc0 test -- \
+  build-hip/lc0 backendbench --backend=check \
+  "--backend-opts=hip-fp16(),blas(),mode=check,atol=1.1e-1,rtol=2e-1,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz --start-batch-size=1 --max-batch-size=55 --batches=4
+```
+
+fp16: 222/222 passed, 0 ERROR.
+
+### Attention testnet regression (fp32 + fp16)
+
+Same commands as prior sessions (see above), swapped to `testnet.pb.gz`, atol=1e-3/rtol=1e-2
+(fp32) and atol=2.5e-2/rtol=1e-1 (fp16), batch 1-32. fp32: 130/130 passed, 0 ERROR. fp16:
+130/130 passed, 0 ERROR. Both match every prior run exactly.
+
+### Benchmark (fault-free, batch 1-256, debug build so the barrier-guard asserts are live)
+
+```
+HIP_VISIBLE_DEVICES=0 bash utils/timeit.sh lc0 test -- \
+  build-hip/lc0 backendbench --backend=hip --weights=agent_space/maia1100.pb.gz --batches=3
+HIP_VISIBLE_DEVICES=0 bash utils/timeit.sh lc0 test -- \
+  build-hip/lc0 backendbench --backend=hip-fp16 --weights=agent_space/maia1100.pb.gz --batches=3
+```
+
+Both exit 0, batch 1-256, no crash/SIGABRT/hang. The `lc0SyncThreads()` debug assert (new
+this round, checks the active-lane mask at all 19 barrier sites before every `__syncthreads`)
+never fired across any of the above runs -- real stress evidence that the barrier-guard
+addition is not itself introducing a wave32 regression on this arch.
+
+### CUDA no-regression gate
+
+Already recorded at this exact head_sha: see "PR review round 2 2026-07-06 (porter,
+linux-gfx90a)" above -- "nvcc 12.6 compile-check of common_kernels.cu + fp16_kernels.cu
+(CUDA path, NS_BACKEND=cudnn_backend, barrier wrapper no-op): both exit 0. CUDA path
+preserved." Per validator.md this gate runs once per head_sha; skipped here.
+
+### Jargon scrub
+
+```
+python3 utils/jargon.py --commits d8ce482..223ee639 -C projects/lc0/src
+python3 utils/jargon.py --diff d8ce482...223ee639 -C projects/lc0/src
+```
+
+Both: `jargon: clean`.
+
+### Documentation check -- FOUND A REAL STALENESS (this is why this is validation-failed, not completed)
+
+README.md:165 (the "### HIP (ROCm)" section, added in the PR-prep round) reads: "The
+target GPU architecture is taken from `-Damd_gfx` (e.g. `-Damd_gfx=gfx90a`); if it is
+omitted it is autodetected with `rocm_agent_enumerator`, **defaulting to `gfx90a`**."
+
+That claim is no longer true. The 2026-07-02 PR-review-round-2 commit (item 1, "arch
+autodetect failure now error()s") REMOVED the silent gfx90a fallback: meson.build:645-661
+now does `error('Could not autodetect an AMD GPU architecture. Set -Damd_gfx explicitly,
+e.g. -Damd_gfx=gfx90a.')` when `rocm_agent_enumerator` is missing or finds nothing, and
+`meson_options.txt:203` defaults the `amd_gfx` option to `''` (no default value anywhere).
+README.md was never updated to match, so it now describes the OLD (silently-defaulting)
+behavior that this fork specifically replaced with a hard, user-facing error. Confirmed by
+reading meson.build:642-661 and meson_options.txt:201-204 directly -- not a hypothesis.
+
+This is a real, previously-uncaught doc/code drift: the 2026-07-02/2026-07-06 rounds were
+porter self-reports responding to the upstream PR reviewer's code-review comments and were
+never run back through our own reviewer agent (no `## Review` entry exists between
+2026-05-31 and this validation), so this is the first pass that actually checked the
+documentation against the current meson.build. The recipe commands themselves are still
+correct (they always pass `-Damd_gfx=` explicitly), so the build is reproducible; only the
+prose description of the omitted-flag fallback path is wrong.
+
+Per validator.md: "Neither is yours to fix quietly: send it back with validation-failed
+and say which." Not editing README.md here. Fix needed (for the porter): reword README.md:165
+to say autodetection failure now errors out and asks the user to set -Damd_gfx explicitly,
+instead of claiming a silent gfx90a default.
+
+### Summary
+
+| Check | Result |
+|-------|--------|
+| Build (331/331 targets, gfx1100 code objects) | PASS |
+| CPU gtest 8/8 | PASS |
+| maia-1100 fp32 conv-SE check (222 batches) | PASS |
+| maia-1100 fp16 conv-SE check (222 batches) | PASS |
+| attention testnet fp32 check (130 batches) | PASS |
+| attention testnet fp16 check (130 batches) | PASS |
+| backendbench fp32 + fp16 batch 1-256, barrier-guard live | PASS (no fault, no assert) |
+| CUDA no-regression gate | already recorded at 223ee639 (gfx90a porter session) |
+| jargon scrub (commits + diff, base d8ce482) | clean |
+| ROCm build documentation | STALE (README.md:165 fallback-arch claim) |
+
+All GPU technical checks pass cleanly on real gfx1100 hardware, matching every prior
+session's magnitudes exactly. The sole reason this is not `completed` is the README
+staleness above. Transition: `review-passed -> validation-failed` (project stage, not a
+per-arch fact -- every arch's existing `completed` record is left untouched; a doc-only
+porter fix should classify as arch-independent and auto-carry-forward every already-passed
+arch with no GPU rerun needed).
