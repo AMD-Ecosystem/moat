@@ -448,10 +448,20 @@ def set_state(name, platform, new_state, agent=None, save=True):
                 f"{name}: the work lock is held by {held['arch']} since "
                 f"{held.get('since')}. Takeover is a person's decision, not a "
                 f"timeout -- ask, then `moatlib.py port-lock {name} --take {platform}`")
-    if new_state == cur:
+    # A `completed` arch revalidating a NEWER head is the one same-state call that is
+    # not a no-op. `revalidate` is DERIVED from validated_sha lagging head_sha (see
+    # arch_task), so the stored word stays `completed` while the fact being recorded --
+    # this GPU proved THIS code -- is new. Short-circuiting it sent both validators
+    # that hit it off to write validated_sha their own way, one of them tagging a full
+    # GPU rerun as a carry_forward, which is the opposite of what that field means.
+    revalidated = (not is_stage and new_state == cur == "completed"
+                   and not same_commit(
+                       (obj["platforms"].get(platform) or {}).get("validated_sha"),
+                       obj.get("head_sha")))
+    if new_state == cur and not revalidated:
         return obj
     table = STAGE_TRANSITIONS if is_stage else ARCH_TRANSITIONS
-    if new_state not in table.get(cur, set()):
+    if not revalidated and new_state not in table.get(cur, set()):
         kind = "stage" if is_stage else f"{platform}"
         raise ValueError(f"{name}/{kind}: illegal transition {cur} -> {new_state}")
     if platform not in obj["platforms"]:
