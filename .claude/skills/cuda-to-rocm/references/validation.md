@@ -75,17 +75,33 @@ disproved it with one probe: a public option (`darkness_adaptivity`, combined wi
 default negative GPU index) makes the caller omit the flag that selects the compute
 backend, and the supposedly dead line runs. Upgrading "not reached here" to "cannot happen"
 takes an argument from the CODE, not a bigger trace. In colmap the argument that did hold
-was that the API re-asserts the flag on every freshly constructed object, so no earlier
-user can leave it cleared for a later one -- true on every GPU and every driver, and it is
-what actually closed the risk. Trace to find the mechanism; read the code to bound it.
+was that the API re-asserts the flag on every freshly constructed object that requests the
+compute backend, so no earlier user can leave it cleared for a later one -- true on every
+GPU and every driver, and it is what actually closed the risk. Trace to find the mechanism;
+read the code to bound it.
+
+**When that argument holds, ask what ELSE the failing path wrote.** Proving flag A cannot
+persist closes the risk you named, not the failure mode. The initialization that clears A
+usually sets siblings in the same function, and one of those is what reaches the next user.
+In colmap the failed GLSL init also zeroes a second global meaning "this process has no
+usable GL", it is sticky (the init function returns immediately once it is 0 and never
+retries), and every later extractor -- including the compute ones the structural argument
+had just protected -- early-returns on it and is constructed as a null. There is no fallback
+on that path at all, so the consequence is a hard failure with nothing extracted, not the
+silent degrade the risk was written about; a project WITHOUT a fallback fails loudly instead
+of passing green, which is the better of the two symptoms and still a live defect. So:
+enumerate every write on the failure path, not just the flag you suspected, and for each ask
+who resets it and who reads it later. Sticky-on-failure, process-wide, and consulted by a
+user that would otherwise have worked is the shape that bites; the state that bites is
+rarely the state the risk named.
 
 Two traps that each produce a confidently wrong answer:
 
 - **Reading a global AFTER the inferior exits gives the ELF initial value, not the last
   live value.** gdb falls back to the executable's `.data`/`.bss` image once the process is
-  gone, and prints it without complaint. In colmap that printed exactly the fallback state
-  the reviewer had predicted, from a run where the flag was never cleared. Read the flag at
-  a breakpoint inside the live process, or watch it.
+  gone, and prints it without complaint. In colmap that printed exactly the cleared-flag
+  state the reviewer had predicted, from a run where the flag was never cleared. Read the
+  flag at a breakpoint inside the live process, or watch it.
 - **`LD_PRELOAD` on a GL/driver entry point does not intercept a Qt (or any
   `GetProcAddress`-style) caller.** Qt resolves GL through `QOpenGLFunctions` /
   `eglGetProcAddress`, so the preloaded symbol is bypassed while a directly-linked caller in
@@ -177,11 +193,18 @@ deadlocking on its own worker threads while closing the X display with other GL 
 live on it. Nothing COLMAP or ROCm wrote appears in the trace, and the Qt frames name the
 trigger: a `QApplication` built and destroyed per test.
 
-**It is a race, so treat one green run as proving nothing.** Measured on one host at
-`-j16`: 4 runs, 1 full pass (159/159, 8.76 s) and 3 timeouts, plus 2 out of 2 hangs in
-earlier `-j8`/`-j16` attempts. A reader whose first high-`-j` run comes back green will
-conclude the hazard is imaginary; it is about 3 in 4 there, and both the rate and the
-threshold will differ with core count, Mesa version and test order.
+**It is a race, so one green run proves nothing -- and a string of green ones does not
+establish a rate either.** Counts from one host at `-j16`, in the order they were taken: 2
+hangs in 2 initial `-j8`/`-j16` attempts; then 4 runs giving 1 full pass (159/159, 8.76 s)
+and 3 timeouts; then, in a later session holding constant every variable those runs could
+name (same machine and 64 cores, same Mesa build, same build directory, same command), 8
+runs giving 7 passes (8.7-9.5 s) and 1 timeout, with the hang between clean runs. Those
+sessions do not fit a single frequency -- P(<= 1 hang in 8) is about 4e-4 if three in four
+hang -- so the frequency is unstable across conditions nobody has isolated. The only
+differences on record are GPU visibility (`HIP_VISIBLE_DEVICES` pinned to one card in the
+last session) and background machine load, and the stack implicates neither. Report the
+counts you observed and the conditions you held; do not publish a rate, and do not let a
+green run retire the hazard.
 
 The shape generalizes to any suite whose GPU tests build a windowing-toolkit context per
 test: many short-lived GL clients on one Xvfb, and the teardown races. Isolate the two
