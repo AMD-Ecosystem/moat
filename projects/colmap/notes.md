@@ -852,3 +852,91 @@ The general lesson, taken: record what was measured and under what conditions. A
 bounds the run you took, and promoting it to "cannot happen" needs an argument from the
 code. The skill's tracing entry now says so in those words, since that is the mistake it
 was itself demonstrating.
+
+## Review 2026-08-08 (reviewer, linux-gfx1100 / wave32 host, round 3)
+
+Prose-only round, reviewed as one. Verified from the tree rather than re-run: `head_sha` is
+`4c531f5e` and unchanged, the fork clone is clean (`git -C projects/colmap/src status
+--porcelain` empty, HEAD `4c531f5e` on `moat-port`), `status.json.porting` is null, and
+`jargon.py --port colmap` is clean over the branch. NOT re-executed: the build, the nvcc
+compile check, the gdb traces, the forward-declaration compile experiment, the end-to-end
+runs. Re-executed: the `-j16` suite eight times, to sanity-check the recorded hang rate.
+
+Two of the four corrections are fully sound. Item 1's structural closure of risk 5 holds:
+`_initialized` is a per-object member (`SiftGPU.h:135`, zeroed at `SiftGPU.cpp:90`), so a
+fresh `SiftGPU` given `-cuda` re-asserts `_UseCUDA = 1` at `SiftGPU.cpp:776`, and COLMAP's
+compute extractors always pass `-cuda` (`sift.cc:583-590`); the matcher leg holds too, since
+`sift.cc:1374-1385` always calls `SetLanguage` with `SIFTMATCH_CUDA` or
+`SIFTMATCH_CUDA_DEVICE0 + i` on a CUDA/HIP build, and `SiftMatch.cpp:686` takes the empty
+branch that never consults `_UseCUDA`. Item 3's type facts check out against the installed
+headers (`hiprand_kernel_rocm.h:43-48` expands to `struct hiprandState : public
+rocrand_state_xorwow`; `curand_kernel.h:302` is `typedef struct curandStateXORWOW
+curandState;`), and the lazy-instantiation reason is right, since `sizeof(T)` appears only in
+the out-of-line ctor at `gpu_mat.h:186` while the member is `T* array_ptr_` at
+`gpu_mat.h:162`. Four problems below.
+
+### 1. `notes.md:537`, `notes.md:834`, `plan.md:333`: COLMAP does not fall back to CPU SIFT
+
+The residual paragraph ends "so COLMAP falls back to CPU SIFT". It does not. With `use_gpu`
+true there is no CPU branch: `CreateSiftFeatureExtractor` returns
+`SiftGPUFeatureExtractor::Create(options)` (`sift.cc:757-760`), which returns `nullptr` at
+`sift.cc:668-671` when `VerifyContextGL() != SIFTGPU_FULL_SUPPORTED`; the CPU branch at
+`sift.cc:764-767` is reachable only when `use_gpu` is false. The null then propagates to a
+hard failure, not a downgrade: `feature_extraction.cc:164-168` logs "Failed to create feature
+extractor.", calls `SignalInvalidSetup()` and returns without extracting, and pycolmap throws
+(`pycolmap/feature/extraction.cc:49` and `:74` both wrap the call in `THROW_CHECK_NOTNULL`).
+The only non-test `use_gpu = false` assignments in the tree are
+`feature_extraction.cc:408` (domain-size-pooling / affine-shape) and
+`bundle_adjustment_ceres.cc:594` (Ceres BA); neither is a fallback for a failed GPU
+extractor. Restate the consequence as feature extraction failing outright. The claim entered
+at `notes.md:729` in the round-2 review text and was carried forward; correcting the two live
+statements plus `plan.md:333` is enough, the historical entry can stand.
+
+While correcting it, the surrounding "not something this port changes" needs one clause. True
+of the code -- the port touches neither `GlobalUtil.cpp` nor `SiftGPU.cpp` (`git show --stat
+4c531f5e`) -- but the port is what makes the consequence reachable on ROCm at all, because
+`use_gpu` defaults to false without `COLMAP_GPU_ENABLED` (`extractor.h:72-76`), so before this
+change no ROCm compute extractor existed to be poisoned. Still identical to CUDA, still
+upstream's design; say that rather than implying no new exposure.
+
+### 2. `validation.md:181-184`, `notes.md:635-636`: the "3 in 4" hang rate is not reproducible
+
+Recorded as "roughly 3 in 4 at `-j16` on this machine" and promoted to the skill as "it is
+about 3 in 4 there". Measured again on the same host (linux-gfx1100, same
+`libgallium-25.2.8`, 64 cores, same `build-hip-gui`, same `xvfb-run -a ctest -j16`): eight
+runs, seven passes (159/159, 8.7 to 9.5 s) and one timeout. One hang in eight against a
+claimed three in four is a factor of six, and P(<= 1 hang in 8 | p = 0.75) is about 4e-4, so
+this is not sampling noise. The entry's stated sources of variance -- core count, Mesa version
+and test order -- explain none of it, since none of them changed.
+
+The hazard itself is confirmed real and the entry's conclusion is untouched: my run 3 hung
+after two clean runs and was followed by five more clean ones, which is a cleaner
+demonstration of "one green high-`-j` run proves nothing" than the original 1-of-4. Fix the
+number, not the lesson. Pool the observations honestly (2 of 2 in the porter's attempts, 3 of
+4 in round 2, 1 of 8 here) or drop the rate and say the run-to-run variance is itself
+unexplained, which is the actionable part. Confound worth naming in the record: this run had
+`HIP_VISIBLE_DEVICES=2`, so one GPU was visible where earlier sessions likely saw four, and
+the machine carried other load.
+
+### 3. `notes.md:528`, `plan.md:325`: "guarded only by `!_initialized`" understates the guards
+
+`SiftGPU.cpp:776` sits inside `case MAKEINT4(c,u,d,a)` under `#if
+defined(SIFTGPU_CUDA_ENABLED)`, so the re-assertion also requires `-cuda` to be present in
+`argv`. The conclusion is unaffected, because a compute user always passes it, but as written
+a reader infers that any fresh `SiftGPU` resets the flag. It does not, and the GLSL user is
+exactly the object that does not: that is why a cleared `_UseCUDA` persists until the next
+`-cuda` object rather than being reset by the next construction. Say "on every fresh `SiftGPU`
+that is given `-cuda`".
+
+### 4. `validation.md:69-95`: the residual is the transferable half and it is not promoted
+
+The tracing entry now carries the correction and the general rule, and both are at the right
+altitude. What it drops is the part that generalises best and that belongs to this section's
+own theme. The section already warns that a project with a fallback "will happily pass its
+whole suite on the fallback"; colmap's residual is a sharper instance of it -- proving the
+flag you were worried about cannot persist does not close the risk, because a SIBLING flag
+set on the same failure path (`_GoodOpenGL`) is sticky (`GlobalUtil.cpp:324` never retries
+once it is 0) and poisons every later user that would have worked. Add a sentence: when a
+structural argument shows flag A cannot survive, check what else the failing path wrote,
+because the state that bites is rarely the state the risk named. That is the finding of this
+round and it currently lives only in the project notes.
