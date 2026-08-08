@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # MOAT entrypoint. Pull the latest MOAT state, detect this host's AMD arch, pick
 # the single next project + stage for this platform, and print a dispatch
-# summary. Read-only on state except an advisory claim and follower-unblock
-# bookkeeping. Run this (or /port-next) when starting a CLI in the MOAT repo.
+# summary. Read-only on state except fork releases. Run this (or /port-next) when starting a CLI in the MOAT repo.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -62,11 +61,15 @@ if PROBLEM=$(python3 -c 'import sys; sys.path.insert(0, "utils"); import moatlib
   exit 0
 fi
 
-# Releases projects whose fork has appeared AND records any decline label, which
-# `release-forks` alone does not. Both are writes to a project branch, so they
-# belong in a session rather than in a scheduled job.
-python3 utils/upstream.py --forks --apply >/dev/null 2>&1 || true
-python3 utils/moatlib.py unblock-followers >/dev/null 2>&1 || true
+# Releases projects whose fork has appeared, wherever the record lives. A write to
+# a project branch, so it belongs in a session rather than a scheduled job.
+# Declines are NOT recorded here -- labels record nothing; intake_queue.py apply
+# --decline carries a person's answer and is the only route.
+# Not silenced: this is the only thing that says a fork appeared for a project whose
+# branch nobody has checked out, and discarding it made "no one has to notice by hand"
+# false. Only the routine "nothing to do" lines are dropped.
+python3 utils/upstream.py --forks --apply 2>/dev/null \
+  | grep -E "RELEASED|ADVANCED|WAITING" | sed 's/^/forks    : /' || true
 
 # Serialize select+claim so two same-host CLIs never grab the same project.
 exec 9>"projects/.selection.lock"
@@ -81,6 +84,23 @@ if [ -n "${READY// /}" ]; then
   echo "approved : ${READY}-- submit upstream: python3 utils/upstream.py --publish --apply"
   echo "           (opens the PR with the approved title and body, then closes the review PR)"
 fi
+
+# A suggested waiver blocks its project's PR and only a person can clear it, so it has
+# to be visible from a session that is not the one that suggested it. The porter that
+# found the obstacle may have run unattended hours ago; without this the case sits in
+# the file and the port sits finished-but-unsubmittable, which is the state MOAT is
+# worst at noticing.
+python3 utils/moatlib.py waivers 2>/dev/null \
+  | awk -F'\t' 'NF>1 {printf "waiver   :   AWAITING   %-26s %s -- %.70s\n", $1, $2, $4}' || true
+
+# A folder in the wrong place is invisible until it bites, and it bites differently at
+# each end: one on the trunk with work outstanding turns every status write into a pull
+# request once the trunk is protected, and one on a branch with nothing left owed is a
+# branch nobody will ever delete. Placement follows state and state moves, so this is a
+# standing check rather than a migration step -- a maintainer asking for a rewrite after
+# the PR merged puts a finished project back in flight.
+python3 utils/moatlib.py misplaced 2>/dev/null \
+  | awk -F'\t' 'NF>1 {printf "misplaced:   %-26s %s\n", $1, $3}' || true
 
 # Nothing reconciles the record on a schedule, so the only thing that can say it has
 # gone unchecked is how long since someone swept. Reads a stored date, costs no API
@@ -130,12 +150,6 @@ fi
 
 read -r PROJECT STATE STAGE < <(echo "$NEXT" | python3 -c \
   'import sys,json;d=json.load(sys.stdin);print(d["project"],d["state"],d["stage"])')
-
-# Advisory claim: we hold the selection lock, and next-task excludes projects whose
-# .claim is still fresh (moatlib.claim_live, TTL from config/moat.toml). The dispatched CLI should refresh this .claim while
-# working so it stays live (heartbeat); a stale .claim is reclaimable.
-printf '{"host":"%s","pid":%s,"platform":"%s","started":"%s"}\n' \
-  "$(hostname)" "$$" "$PLATFORM" "$(date -u +%FT%TZ)" > "projects/$PROJECT/.claim"
 
 echo "next     : projects/$PROJECT  state=$STATE  -> dispatch: $STAGE"
 echo "triple   : $GFX_TRIPLE"

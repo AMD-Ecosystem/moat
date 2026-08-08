@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "name": "SpargeAttn",
   "upstream_url": "https://github.com/thu-ml/SpargeAttn",
   "fork_url": null,
@@ -7,11 +7,15 @@
   "priority": 5.025,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T22:41:31Z",
   "head_sha": null,
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 938664587,
+  "stage": "not-portable",
   "platforms": {
     "linux-gfx90a": {
-      "state": "unclaimed",
       "blocked": true,
       "blocked_reason": "All compute kernels are hand-written NVIDIA tensor-core + async PTX (mma.sync/ldmatrix/wgmma/cp.async) with the 32-lane MMA fragment layout baked into smem addressing and softmax shuffle reductions; no portable path, no hipify translation. Correct gfx90a needs an AMD-native MFMA (rocWMMA/CK) reimplementation of ~7k LOC of attention kernels; FP8 (sm89/sm90) has no gfx90a matrix HW. Reimplement-not-port, deferred. See plan.md.",
       "validated_sha": null,
@@ -31,75 +35,11 @@
         "first_session_at": null,
         "last_session_at": null
       }
-    },
-    "linux-gfx1100": {
-      "state": "awaiting-port",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-05-30T01:04:51Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1101": {
-      "state": "awaiting-port",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-04T19:41:52Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1201": {
-      "state": "awaiting-port",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-04T19:41:52Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
     }
   },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "Apache-2.0"
+  "not_portable": {
+    "reason": "Every compute kernel is hand-written NVIDIA tensor-core and async PTX (mma.sync, ldmatrix, wgmma, cp.async) with the 32-lane MMA fragment layout baked into the algorithm, so there is nothing to translate.",
+    "by": "jeffdaily",
+    "at": "2026-08-07T22:41:31Z"
+  }
 }

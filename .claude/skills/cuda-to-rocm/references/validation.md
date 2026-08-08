@@ -42,6 +42,31 @@ a DLL-load error; rebuilding a correct binary against a broken runtime is the si
 biggest time sink on Windows. A port is not "broken on Windows" until it has been run
 against a full ROCm distribution.
 
+## Windows: static initializers in TheRock's DLLs may never run
+
+**A C++ test that gates on `torch::cuda::is_available()` can fail on Windows against a
+port that works perfectly.** TheRock's PyTorch Windows build links `torch_hip.dll` with
+`lld-link`, which emits no `.CRT$XCU` section; `_DllMainCRTStartup`'s CRT init pointer is
+NULL, `_initterm` never runs, and so `REGISTER_CUDA_HOOKS`'s static initializers never
+execute. `CUDAHooksRegistry` in `torch_cpu.dll` stays empty, `getCUDAHooks()` returns a
+no-op stub, and `is_available()` answers false on a machine whose GPU is fine.
+
+The tell is the split: Python `import torch` reports devices correctly
+(`torch._C._cuda_getDeviceCount() > 0`), because the ctypes path does not go through the
+registry, while the standalone C++ executable says there is no GPU. Kernel tests that do
+not call `is_available()` first pass on the same run. If those three things are true
+together, this is the cause and the port is not at fault.
+
+Do not read it as "the project does not work on Windows" -- that mistake cost
+LichtFeld-Studio a wrongly-suggested gate waiver, on a port where 320 of 914 tests were
+passing on real gfx1101 hardware. It is a defect in a third-party build, so it is a
+`data/deferred.json` bug report (`therock-windows-lld-link-crt-xcu`) plus a workaround,
+not a property of the platform. Worth trying, none of them yet tested: `/WHOLEARCHIVE` or
+a forced reference into the hooks translation unit so the linker cannot drop it; calling
+`_initterm` on the DLL's CRT section directly; spawning a thread after load, since the
+TLS callbacks that do exist fire on `DLL_THREAD_ATTACH` and `DLL_PROCESS_ATTACH` calls
+`DisableThreadLibraryCalls`.
+
 ## Two GPUs visible to one process can crash the runtime
 
 On ROCm 7.14 a process that could see a mixed RDNA3 + RDNA4 pair crashed in the HIP

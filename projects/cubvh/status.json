@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "name": "cubvh",
   "upstream_url": "https://github.com/ashawkey/cubvh",
   "fork_url": "https://github.com/AMD-Ecosystem/cubvh",
@@ -7,9 +7,17 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-19T04:40:36Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:04:58Z",
   "head_sha": "e5a657a",
   "depends_on": [],
+  "pr_url": "https://github.com/ashawkey/cubvh/pull/33",
+  "pr_merged_at": "2026-06-23T13:54:59Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged",
+  "license_spdx": "MIT",
+  "upstream_repo_id": 573716613,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -126,11 +134,5 @@
         "at": "2026-06-19T17:51:26Z"
       }
     }
-  },
-  "pr_url": "https://github.com/ashawkey/cubvh/pull/33",
-  "pr_merged_at": "2026-06-23T13:54:59Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "merged",
-  "license_spdx": "MIT"
+  }
 }

@@ -1,4 +1,8 @@
-# Orchestration knobs for utils/orient.sh and the agents.
+# Orchestration guidance for the AGENTS. Nothing in utils/ reads this file: these
+# are limits an agent is asked to honour while working, not settings any code
+# enforces. Treat a value here as documentation with a number in it, and if
+# something ever needs to enforce one, make it read this rather than hardcoding a
+# second copy.
 
 [pipeline]
 max_inflight_build = 1     # heavy build/test stages at once per host (single GPU)

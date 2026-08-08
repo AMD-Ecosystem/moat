@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "name": "llmq",
   "upstream_url": "https://github.com/IST-DASLab/llmq",
   "fork_url": null,
@@ -7,11 +7,15 @@
   "priority": 4.457,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T22:41:31Z",
   "head_sha": null,
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 1064878674,
+  "stage": "not-portable",
   "platforms": {
     "linux-gfx90a": {
-      "state": "planned",
       "blocked": true,
       "blocked_reason": "Hopper/sm89+ tensor-core PTX (mma.sync.aligned.m16n8k32 e4m3/bf16, ldmatrix, cp.async) in gemm_mma.cu/tensor_core_utils.cuh + thread-block clusters/TMA/DSMEM in fused_classifier_tma.cu + cuDNN-frontend attention + cuBLASLt FP8: AMD-native rewrite (rocWMMA/CK/ck_tile + MFMA), NOT a mechanical CUDA->HIP port. FP8 needs gfx942 MFMA, unsupported on gfx90a/MI250X; recommend retarget lead to gfx942 and fund a CK kernel track. ext_type=cmake.",
       "validated_sha": null,
@@ -32,75 +36,11 @@
         "last_session_at": null
       },
       "last_agent": "planner"
-    },
-    "linux-gfx1100": {
-      "state": "awaiting-port",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-05-30T01:04:50Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1101": {
-      "state": "awaiting-port",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-04T19:41:52Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1201": {
-      "state": "awaiting-port",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-04T19:41:52Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
     }
   },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "Apache-2.0"
+  "not_portable": {
+    "reason": "Hopper/sm89-and-later tensor-core PTX (mma.sync.aligned.m16n8k32 e4m3/bf16, ldmatrix, cp.async) plus thread-block clusters in gemm_mma.cu and tensor_core_utils.cuh; the hardware features it is written against have no AMD counterpart.",
+    "by": "jeffdaily",
+    "at": "2026-08-07T22:41:31Z"
+  }
 }

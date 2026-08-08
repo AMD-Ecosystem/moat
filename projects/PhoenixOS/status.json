@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "name": "PhoenixOS",
   "upstream_url": "https://github.com/SJTU-IPADS/PhoenixOS",
   "fork_url": null,
@@ -7,11 +7,15 @@
   "priority": 3.805,
   "ext_type": "meson",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T22:41:31Z",
   "head_sha": null,
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 876630817,
+  "stage": "planned",
   "platforms": {
     "linux-gfx90a": {
-      "state": "planned",
       "blocked": true,
       "blocked_reason": "large-effort (deferred): weeks-to-months work for API interception system; postponed in favor of smaller mechanical ports",
       "validated_sha": null,
@@ -32,75 +36,8 @@
         "last_session_at": null
       },
       "last_agent": "planner"
-    },
-    "linux-gfx1100": {
-      "state": "awaiting-port",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-05-30T03:26:35Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1101": {
-      "state": "awaiting-port",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-04T19:41:52Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1201": {
-      "state": "awaiting-port",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-04T19:41:52Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
     }
   },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "Apache-2.0"
+  "on_hold": true,
+  "on_hold_reason": "Deferred by choice, not blocked: the API interception system is weeks-to-months of work and was postponed in favour of smaller mechanical ports. Portable in principle; resume when there is room for a large effort."
 }
