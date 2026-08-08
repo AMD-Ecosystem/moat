@@ -1075,3 +1075,77 @@ Verified this round, so nobody re-derives it:
   shows: a likelihood-ratio test of the three sessions (2/2, 3/4, 1/8 hangs) against a common
   pooled p = 6/14 gives LRT 8.59 on 2 df, p ~ 0.014. Heterogeneity is real and the sentence
   stands.
+
+## Validation 2026-08-08 (validator, linux-gfx1100 / wave32, Radeon Pro W7800, GPU index 2)
+
+First validation of this arch. Fork `4c531f5e51f18eeb145309f8650a8da58453c8af` on
+`AMD-Ecosystem/colmap:moat-port`, unchanged from every round-4 review above; nothing was
+built, edited, or committed to the fork this round.
+
+### Build
+
+`build-hip-gui` from the porter/reviewer sessions was already configured
+(`CUDA_ENABLED=OFF`, `HIP_ENABLED=ON`, `CMAKE_HIP_ARCHITECTURES=gfx1100`,
+`GUI_ENABLED=ON`, `TESTS_ENABLED=ON`, `CMAKE_BUILD_TYPE=Release`) and current with the
+tree:
+
+    HIP_VISIBLE_DEVICES=2 utils/timeit.sh colmap compile -- \
+      cmake --build projects/colmap/src/build-hip-gui -j"$(nproc)"
+    -> ninja: no work to do.
+
+### Test, at -j4 per the dispatch instructions (the Mesa teardown race above)
+
+    HIP_VISIBLE_DEVICES=2 utils/timeit.sh colmap test -- \
+      xvfb-run -a ctest --test-dir projects/colmap/src/build-hip-gui -j4 --output-on-failure
+
+**159 of 159 pass, 11.54 s wall.** No non-GPU regression: this is the same full suite the
+porter and reviewer ran, and the count matches theirs (159/159) with no new failures. No
+hang encountered at `-j4`, consistent with the recorded counts (`-j4` has never hung across
+any session).
+
+### Anti-no-op: kernel dispatches, not wall time
+
+    HIP_VISIBLE_DEVICES=2 AMD_LOG_LEVEL=3 xvfb-run -a \
+      projects/colmap/src/build-hip-gui/src/colmap/feature/sift_test
+
+32 of 32 `sift_test` cases pass in 2.8 s. Grepping the log for `ShaderName :` (both the
+non-templated kernels and the templated `void Foo<N>` ones the first, naive grep missed)
+gives dispatch counts that match the round-2 reviewer's recorded numbers on this same host
+exactly: ReduceHist x45, ComputeDOG x30, RowMatch x25, ColMatch x24, ComputeKEY x18,
+InitHist x18, ListGen x14, MultiplyDescriptorGRay x12, MultiplyDescriptor x9,
+NormalizeDescriptor x5, ComputeOrientation x5, ComputeDescriptor x5, MultiplyDescriptorG x4,
+FilterH x31, FilterV x31, DownsampleKernel x5, UpsampleKernel x1. GPU bodies genuinely
+execute; this is not a green suite that skipped the compute path.
+
+### CUDA no-regression gate
+
+Already recorded at this exact head_sha. The "Items 2 and 5" porter response (this file,
+the section right before "Test results on gfx1100" round 1) produced the commit that became
+`4c531f5e`, and it recorded an actual nvcc **build**, not just a configure: `nvcc 13.3.73`
+(conda `-c nvidia cuda-nvcc cuda-cudart-dev libcurand-dev cuda-cccl`),
+`-DCUDA_ENABLED=ON -DCMAKE_CUDA_ARCHITECTURES=80`, with `colmap_sift_gpu`,
+`colmap_mvs_cuda`, `colmap_feature_sift_test` and `colmap_main` all compiling and linking.
+No commit has landed since (every round after that was prose-only, confirmed by each
+review's own `head_sha` check). Per the validator's dispatch instructions this gate runs
+once per head_sha, so it is **skipped here as already satisfied**, not re-run.
+
+### Jargon and documentation, re-checked rather than trusted to the review record
+
+    python3 utils/jargon.py --port colmap
+    -> jargon: clean
+
+`doc/install.rst:140-142` documents the ROCm build in COLMAP's own house style (the same
+section that documents the CUDA build, right above it) and its content is accurate as of
+this sha: "The HIP backend accelerates dense reconstruction (patch_match_stereo) and GPU
+SIFT feature extraction and matching" -- true, GPU SIFT is exactly what this port adds on
+top of the already-merged dense-reconstruction port. The `rocm-sdk` auto-detect paragraph
+(`doc/install.rst:145-152`) and the flag table above it are unchanged from #4420 and remain
+accurate.
+
+### Integrity
+
+    git -C projects/colmap/src status --porcelain
+    -> (empty)
+
+Fork tree clean, nothing to commit. `status.json` updated: `linux-gfx1100.state = completed`,
+`validated_sha = 4c531f5e51f18eeb145309f8650a8da58453c8af`.
