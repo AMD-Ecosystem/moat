@@ -119,25 +119,55 @@ namespace scope) -- that is invalid on HIP and dead code on CUDA. (GooFit; first
 RXMesh, where only the compile-side `-fgpu-rdc` was needed because the device code was
 already in one target.)
 
-**Turn `INTERPROCEDURAL_OPTIMIZATION` off wherever you turned `-fgpu-rdc` on**, because
-CMake's IPO puts `-flto` on the COMPILE line and that is the combination that breaks.
-Measured on ROCm 7.2.3 / gfx1100 with a two-TU `__device__`-global reproducer; the
+**`-flto` on the COMPILE line does not survive a `-fgpu-rdc` device link.** Measured with
+RAW `hipcc` on ROCm 7.2.3 / gfx1100, using a two-TU `__device__`-global reproducer. The
 distinction matters, because two of the three configurations are fine:
 
-| how `-flto` is applied alongside `-fgpu-rdc`                 | result |
-| ------------------------------------------------------------ | ------ |
-| compile and link in ONE `hipcc` invocation                     | links  |
-| `-flto` only on the LINK line, objects compiled without it     | links  |
-| `-flto` on the COMPILE line, then a separate link (CMake's IPO) | fails  |
+| how `-flto` is applied alongside `-fgpu-rdc`, driving hipcc by hand | result |
+| ------------------------------------------------------------------ | ------ |
+| compile and link in ONE `hipcc` invocation                          | links  |
+| `-flto` only on the LINK line, objects compiled without it          | links  |
+| `-flto` on the COMPILE line, then a separate link                   | fails  |
 
 The failure is `ld.lld: error: undefined symbol: __hip_fatbin_<hash>`, `referenced by
 __hip_fatbin_wrapper`: the object is LLVM bitcode, and the fatbinary symbol its wrapper
 references is only produced by the separate device-link step. A one-command build hides
 this, so a reproducer that compiles and links in one go will tell you LTO is fine when it
-is not -- that mistake is why this table exists. Note also that `check_ipo_supported()`
-answers YES under hipcc, so a project's own IPO probe will not save you; the exclusion has
-to be explicit and belongs next to any existing per-backend one (GooFit already disabled
-IPO for CUDA in the same place). (GooFit.)
+is not -- that mistake is why this table exists.
+
+Those rows are about hipcc, not about CMake, and the two do not currently meet. **As of
+CMake 3.31, `INTERPROCEDURAL_OPTIMIZATION` does nothing to HIP sources**, so the bad
+combination cannot arise through that property. Verified at the shape a real port has -- a
+HIP `STATIC` library plus a HIP executable, `-fgpu-rdc` on compile and link, the property
+`ON` for both -- where the generated flags carry no `-flto` and the link succeeds, while a
+plain CXX target in the same project does receive `-flto=thin`. The reason is a language
+filter in the generator, not a missing flag: `Compiler/Clang-HIP.cmake` calls
+`__compiler_clang(HIP)` and so `CMAKE_HIP_COMPILE_OPTIONS_IPO` really is set to
+`-flto=thin`, but CMake only applies IPO to C, CXX, CUDA and Fortran, so it is never used.
+**Settle any "which flags does this build actually use" question by reading the generated
+`build.ninja`, never by grepping the build system's sources.** On GooFit that grep produced
+two confident and opposite wrong answers in successive rounds. It fails in two ways at
+once: CMake assigns most per-language variables through `CMAKE_${lang}_...`, so the
+expanded name you are searching for is not in the source at all; and a `grep -r` over a
+directory that does not exist prints nothing and looks exactly like a clean no-match (the
+module path is wherever *your* `cmake` lives -- check `CMAKE_ROOT`, which for a conda or
+pip cmake is not `/usr/share/cmake-<ver>`). `cmake --system-information | grep CMAKE_ROOT`
+gets you the right directory; `message(STATUS "[${CMAKE_HIP_COMPILE_OPTIONS_IPO}]")` in a
+throwaway `CMakeLists.txt` gets you the value; `build.ninja` gets you the truth.
+
+`check_ipo_supported()` cannot tell you any of this. It only probes C, CXX, CUDA and
+Fortran (`CheckIPOSupported.cmake` drops everything else): asked for `LANGUAGES HIP` it
+returns NO with `language(s) 'HIP' not supported`, and asked with no languages it filters
+`ENABLED_LANGUAGES` down to those four, so a YES from it is a statement about the host C++
+compiler and never about hipcc.
+
+So excluding HIP from a project's IPO switch is precautionary, not a fix -- worth doing if
+the project already has a per-backend exclusion to sit next to (GooFit disables IPO for
+CUDA in the same place, because CUDA device LTO hangs the device linker), but say in the
+comment that it is precautionary. A CMake that later drives HIP IPO would make the third
+row above reachable. Pin any claim here to a CMake version; this one is 3.31.6. (GooFit,
+where the reverse claim -- that the exclusion was load-bearing -- was wrong twice before
+being measured this way.)
 
 ## The shim-header method: a port with zero source edits
 

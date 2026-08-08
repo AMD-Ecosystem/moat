@@ -7,8 +7,8 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T00:04:16Z",
-  "updated_at": "2026-08-08T23:25:47Z",
-  "head_sha": "19f29809bd162169a7ade1fad2d18120c7bae69c",
+  "updated_at": "2026-08-08T23:40:56Z",
+  "head_sha": "18fca9e4a2ea1e062fb7e80c970ac78df6376408",
   "depends_on": [],
   "porting": null,
   "waivers": {},
@@ -20,7 +20,7 @@
   },
   "license_spdx": "LGPL-3.0",
   "upstream_repo_id": 9017446,
-  "stage": "changes-requested",
+  "stage": "ported",
   "platforms": {
     "linux-gfx90a": {
       "blocked": false,
@@ -50,7 +50,7 @@
       "validated_sha": null,
       "started_at": "2026-08-08T19:43:29Z",
       "completed_at": null,
-      "updated_at": "2026-08-08T23:25:47Z",
+      "updated_at": "2026-08-08T23:40:56Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,

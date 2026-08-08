@@ -1,10 +1,17 @@
 # Plan: GooFit
 
+> **Status: this plan has been superseded by what shipped.** The inventory,
+> risk and test sections below held up, but the original design (a `USE_HIP`
+> option layered on `GOOFIT_DEVICE=CUDA`, and dropping the bundled Thrust)
+> was not what got built. The "Port strategy", "File-by-file change list"
+> and "Build commands" sections have been rewritten to describe the built
+> port; `notes.md` (attempt 5 onward) is the authoritative record.
+
 ## Project
 
 - Name: GooFit
 - Upstream: https://github.com/GooFit/GooFit
-- Default branch: main
+- Default branch: master
 - Description: Massively-parallel fitting framework using Thrust for CUDA/OpenMP, for maximum-likelihood fits in High Energy Physics
 
 ## Existing AMD support
@@ -39,7 +46,7 @@ The project uses Thrust's compile-time backend selection (`THRUST_DEVICE_SYSTEM`
 
 ## Port strategy
 
-**Strategy A: Pure CMake, compat-header approach**
+**Pure CMake, compat-header approach (as built)**
 
 Rationale:
 1. GooFit is a standalone CMake project with `.cu` sources and heavy Thrust usage
@@ -47,12 +54,35 @@ Rationale:
 3. The project already abstracts device/host via Thrust macros, making HIP integration straightforward
 4. GooFit's `GlobalCudaDefines.h` already provides CUDA stub implementations for non-CUDA backends
 
-Approach:
-1. Add a `cuda_to_hip.h` compat header for CUDA runtime API symbol mapping
-2. Add `USE_HIP` CMake option, enable HIP language, mark `.cu` files `LANGUAGE HIP`
-3. Use rocThrust (ships with ROCm) instead of the bundled thrust submodule
-4. The `THRUST_DEVICE_SYSTEM=THRUST_DEVICE_SYSTEM_CUDA` define already exists; keep it (rocThrust maps this)
-5. Minimal guards for HIP-specific includes
+What shipped, which differs from the original sketch in four ways:
+
+1. **HIP is a first-class value of the existing `GOOFIT_DEVICE` switch**, not a
+   separate `USE_HIP` option layered on `GOOFIT_DEVICE=CUDA`. `GOOFIT_DEVICE=HIP`
+   sits beside CUDA/OMP/TBB/CPP, which is where a GooFit reader expects to find a
+   backend and avoids a second, contradictory way to say the same thing. A helper
+   `IS_NOT_HIP` keeps the CUDA-only branches readable.
+2. **`cuda_to_hip.h` is force-included, not `#include`d.** No `.cu` file names it;
+   `GOOFIT_ADD_LIBRARY`/`GOOFIT_ADD_EXECUTABLE` pass
+   `-include <cuda_to_hip.h>` on HIP translation units only, so the CUDA spelling
+   of every source is left untouched.
+3. **The bundled Thrust is left alone.** The plan was to disable
+   `GOOFIT_FORCE_LOCAL_THRUST`; instead the HIP branch simply keeps
+   `extern/thrust` off the include path so rocThrust's own headers are not
+   shadowed. Upstream's `option()` and both of its branches are byte-identical to
+   upstream, which keeps the diff at four added lines.
+4. **The physics PDFs are scoped out behind a new `GOOFIT_PHYSICS` option**,
+   defaulting ON everywhere except HIP. They depend on MCBooster and on a
+   device-side Eigen complex matrix inverse, neither of which compiles under
+   hipcc yet. This was not foreseen in the risk list below, which rated MCBooster
+   "Medium / likely works".
+
+Also load-bearing, and not in the original sketch: `GlobalCudaDefines.h` had to be
+split rather than left intact. Upstream's single non-CUDA block would otherwise
+have redefined `__shared__` to empty on top of the definition clang preincludes
+via `__clang_hip_runtime_wrapper.h`. That is a warning, not an error, and it
+silently turns `__shared__ fptype modelCache[...]` in `ConvolutionPdf.cu` into
+per-thread private scratch with no LDS, leaving the surrounding `__syncthreads()`
+meaningless.
 
 ## CUDA surface inventory
 
@@ -125,64 +155,60 @@ Approach:
 ## File-by-file change list
 
 ### New files
-- `include/goofit/detail/cuda_to_hip.h` -- CUDA-to-HIP compat header
+- `include/goofit/detail/cuda_to_hip.h` -- CUDA-to-HIP runtime symbol map, force-included on HIP translation units
 
 ### Modified files
 1. **CMakeLists.txt**
-   - Add `option(USE_HIP "Build with HIP for AMD GPUs" OFF)`
-   - Add HIP language enable and arch configuration under `USE_HIP`
-   - Set `CMAKE_HIP_ARCHITECTURES` default to gfx90a when unset
-   - Mark `.cu` sources as `LANGUAGE HIP` when `USE_HIP`
-   - Bump `CMAKE_CXX_STANDARD` and `CMAKE_HIP_STANDARD` to 17 (rocThrust requires C++17)
-   - Find rocThrust when USE_HIP
+   - `GOOFIT_DEVICE=HIP` as a value of the existing backend switch, with `enable_language(HIP)`
+   - `goofit_mark_hip_sources()` marks both `.cu` and the rocThrust-including `.cpp` as `LANGUAGE HIP`; without this CMake drops the `.cu` objects from the device link
+   - `-fgpu-rdc` on compile *and* on the final link (see notes.md; the link side is the non-obvious half)
+   - `-include cuda_to_hip.h` on HIP translation units only
+   - New `GOOFIT_PHYSICS` option, declared next to `GOOFIT_KMATRIX`, default ON except on HIP
+   - Keeps `extern/thrust` off the include path on HIP so it cannot shadow rocThrust
+   - IPO exclusion for HIP alongside the existing CUDA one -- precautionary only; CMake 3.31 applies `INTERPROCEDURAL_OPTIMIZATION` to C/CXX/CUDA/Fortran and never to HIP
 
 2. **include/goofit/GlobalCudaDefines.h**
-   - Add `#include "cuda_to_hip.h"` at top when `USE_HIP` or `__HIP_PLATFORM_AMD__`
-   - No other changes needed; CUDA runtime symbols will be remapped via the compat header
+   - Split upstream's single non-CUDA block so the half that redefines `__shared__`, `__constant__`, `__host__`, `__device__` does not fire under hipcc, which already defines them
+   - The CPU-fallback half (including the `cudaError_t` enum) is unchanged for CPP/OMP/TBB
 
-3. **src/goofit/Application.cpp**
-   - Add HIP equivalents for device query (`hipGetDeviceCount`, `hipGetDeviceProperties`, `hipSetDevice`)
-   - Guard `CUDART_VERSION` references
+3. **include/goofit/detail/CudaCompat.h**
+   - `GOOFIT_DEVICE_IS_GPU`, true for the CUDA and HIP Thrust systems alike; the guards that used to test `THRUST_DEVICE_SYSTEM_CUDA` now test this
 
-4. **include/goofit/PDFs/MetricTaker.h**
-   - Ensure `cudaError_t`/`cudaSuccess` are mapped via compat header
+4. **src/goofit/Application.cpp**
+   - HIP version banner, and device-info output that reports the backend name and the gfx architecture rather than "CUDA" and a compute capability
+
+5. **src/PDFs/MetricTaker.cu**
+   - Fixed `MAX_NUM_OBSERVABLES` scratch array in place of device-side `new[]`/`delete[]`, matching upstream's own #384 change to `CompositePdf.cu`
+
+6. **src/PDFs/CMakeLists.txt, src/PDFs/physics/CMakeLists.txt**
+   - `utilities/DebugTools.cu` moves from `PDFCore` to `PDFPhysics` on every backend: it reads the `AmpIndices` `__constant__` defined by `Amp4BodyGlobals.cu`, so it cannot link with the physics sources excluded
+
+7. **src/PDFs/basic/StepPdf.cu**
+   - Drops an unused host-side global taking the address of a `__device__` function; invalid on HIP, dead code on CUDA
 
 ### Files unchanged
-- All `.cu` files remain unchanged (symbol mapping via compat header)
+- Every other `.cu` keeps its CUDA spelling (symbol mapping via the force-included compat header)
 - All Thrust usage unchanged (rocThrust is API-compatible)
 
 ## Build commands
 
-### Configure (gfx90a)
+### Configure and build
 ```bash
 cd projects/GooFit/src
 git submodule update --init --recursive
-mkdir build && cd build
-cmake .. \
-  -DUSE_HIP=ON \
-  -DCMAKE_HIP_ARCHITECTURES=gfx90a \
-  -DCMAKE_CXX_STANDARD=17 \
-  -DGOOFIT_DEVICE=CUDA \
-  -DGOOFIT_TESTS=ON \
-  -DGOOFIT_EXAMPLES=ON \
-  -DGOOFIT_CERNROOT=OFF
+cmake -S . -B build-hip -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DGOOFIT_DEVICE=HIP -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DGOOFIT_TESTS=ON -DGOOFIT_EXAMPLES=ON -DGOOFIT_CERNROOT=OFF \
+  -DGOOFIT_PYTHON=OFF
+cmake --build build-hip -j32
 ```
 
-Note: `GOOFIT_DEVICE=CUDA` is kept because the Thrust backend define `THRUST_DEVICE_SYSTEM_CUDA` is what rocThrust uses on HIP. The CMake detects CUDA language but we override to HIP.
+`GOOFIT_DEVICE=HIP` selects the backend on its own; there is no `USE_HIP` option and
+no `GOOFIT_DEVICE=CUDA` override. `GOOFIT_PHYSICS` defaults OFF here, so passing it
+is unnecessary. HIP is never chosen by `GOOFIT_DEVICE=Auto` and must be named.
 
-### Build
-```bash
-cmake --build . -j$(nproc)
-```
-
-### Follower platforms
-```bash
-# gfx1100
-cmake .. -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 ...
-
-# gfx1101/gfx1201 (Windows)
-cmake .. -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1101 ...
-```
+Other architectures differ only in `CMAKE_HIP_ARCHITECTURES`; nothing in the
+backend is architecture-specific.
 
 ## Test plan
 
@@ -213,12 +239,20 @@ The same tests run on CPU when built with `GOOFIT_DEVICE=OMP` or `GOOFIT_DEVICE=
 
 These examples run fits on synthetic data; successful completion indicates GPU execution works.
 
-## Open questions
+## Open questions (resolved)
 
-1. **MCBooster compatibility**: MCBooster is a Thrust-based phase-space generator bundled as a submodule. It should work with rocThrust, but needs GPU validation.
+1. **MCBooster compatibility**: does not compile under hipcc. Together with a
+   device-side Eigen complex matrix inverse, this is what put the physics PDFs
+   behind `GOOFIT_PHYSICS`. Registered as scoped-out work, not a defect.
 
-2. **Python bindings**: The scikit-build setup.py invokes CMake. The Python bindings should work with the HIP port if CMake is configured correctly, but need testing.
+2. **Python bindings**: build and pass on CPP. Not exercised on HIP, since the
+   bindings export physics classes that `GOOFIT_PHYSICS=OFF` excludes.
 
-3. **ROOT integration**: Tests skip ROOT if not found (`GOOFIT_CERNROOT=OFF`). The Minuit2 fallback is pure C++ and should work unchanged.
+3. **ROOT integration**: unchanged, as expected. Built with `GOOFIT_CERNROOT=OFF`;
+   the Minuit2 fallback is pure C++ and needed no attention.
 
-4. **Thrust version**: The bundled Thrust (extern/thrust) is old. ROCm's rocThrust is more recent. The project has `GOOFIT_FORCE_LOCAL_THRUST` to prefer the bundled one, but on HIP we should use system rocThrust. May need to disable this option.
+4. **Thrust version**: resolved without touching `GOOFIT_FORCE_LOCAL_THRUST`. The
+   HIP branch keeps `extern/thrust` off the include path, so rocThrust supplies
+   Thrust and upstream's option keeps its exact meaning on every other backend.
+   Note that upstream has since moved `extern/thrust` to modern CCCL (#391), which
+   is one of the commits the rebase picked up.

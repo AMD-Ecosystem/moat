@@ -1195,3 +1195,113 @@ macros for the two different jobs. No library substitution beyond Thrust -> rocT
 `Assisted-by` line; no copyright or author lines added; no non-ASCII and no em-dash in the
 diff; no AMD-internal account, host or MOAT vocabulary in any upstream-visible text; fork
 tree clean.
+
+## Attempt 6 (porter, linux-gfx1100, fork 18fca9e4a) -- answering review of 19f29809b
+
+Fork head 19f29809b -> 18fca9e4a. Both `validated_sha` were null before and after
+the rewrite, re-checked immediately before the force-push, so nothing was orphaned.
+`655ba62c0` was amended (now `32c825112`) and the docs commit rebased on top.
+
+### The IPO question, settled by measurement (third round on this entry)
+
+The reviewer's conclusion was right -- the guard is inert -- but the stated reason
+was wrong, and it was wrong in a way worth recording because it is a general trap.
+
+The claim was "CMake 3.31 defines no `CMAKE_HIP_COMPILE_OPTIONS_IPO` at all",
+supported by a grep that returned nothing. That grep returned nothing for two
+independent reasons, neither of them the one intended:
+
+1. It ran against `/usr/share/cmake-3.31/Modules/`, which does not exist on this
+   host. `cmake` here is `/opt/conda/envs/py_3.12/bin/cmake` and its modules live
+   under `.../site-packages/cmake/data/share/cmake-3.31`. A `grep` over a missing
+   directory exits 2 and prints nothing, which reads exactly like "no matches".
+2. The literal string `CMAKE_HIP_COMPILE_OPTIONS_IPO` never appears in the
+   sources anyway. `Compiler/Clang.cmake` assigns
+   `CMAKE_${lang}_COMPILE_OPTIONS_IPO`, and `Compiler/Clang-HIP.cmake` calls
+   `__compiler_clang(HIP)`, so the variable IS defined, as `-flto=thin`.
+
+Confirmed by configuring a project and printing it:
+
+```
+-- CMAKE_HIP_COMPILE_OPTIONS_IPO = [-flto=thin]
+-- _CMAKE_HIP_IPO_SUPPORTED_BY_CMAKE = [YES]
+```
+
+So why is there no `-flto` on a HIP compile line? Because the *generator* only
+applies IPO to C, CXX, CUDA and Fortran. Demonstrated with one project holding
+both a HIP and a CXX target carrying the identical
+`INTERPROCEDURAL_OPTIMIZATION ON` property (CMake 3.31.6, ROCm 7.2.3, gfx1100,
+Ninja): a HIP `STATIC` lib + HIP executable, both with `-fgpu-rdc` on compile and
+link, plus a plain CXX `STATIC` lib. From the generated `build.ninja`:
+
+```
+  FLAGS = -O3 -DNDEBUG -std=gnu++17 --offload-arch=gfx1100 -fgpu-rdc   # blib (HIP)
+  FLAGS = -O3 -DNDEBUG -std=gnu++17 --offload-arch=gfx1100 -fgpu-rdc   # bexe (HIP)
+  FLAGS = -O3 -DNDEBUG -flto=thin                                      # clib (CXX)
+```
+
+It builds, links, and runs (`ok`) on GPU 1. Same property, same project, and only
+the CXX target gets the flag.
+
+`check_ipo_supported()` cannot answer this either way. `CheckIPOSupported.cmake`
+drops every language outside C/CXX/CUDA/Fortran (the `list(REMOVE_ITEM ...)` in
+the argument-checking block), so `LANGUAGES HIP` returns
+`NO / language(s) 'HIP' not supported`, and with no `LANGUAGES` it filters
+`ENABLED_LANGUAGES` down to the same four -- meaning the project-wide YES that
+GooFit caches is a statement about `/usr/bin/c++`.
+
+Net: the three-row raw-hipcc LTO table stands and is unchanged; only its
+generalisation to CMake was wrong. The guard stays, relabelled precautionary in
+`CMakeLists.txt` and in the commit body.
+
+**The transferable lesson, promoted to the skill this round**: do not settle a
+"which flags does the build use" question by grepping build-system sources. Read
+the generated `build.ninja`. Two greps in a row produced confident and opposite
+wrong answers here. Where the grep is unavoidable, remember that CMake builds most
+per-language variables through `CMAKE_${lang}_...`, so the expanded name is not in
+the source, and verify the directory you are grepping actually exists.
+
+### Other review items
+
+- `Application.cpp` no longer prints `CUDA:` on a HIP build. A `GOOFIT_GPU_LABEL`
+  macro follows the backend, and a small `goofit_device_arch()` reports
+  `Architecture: gfx1100` on AMD instead of `Compute 11.0`, since `devProp.major`
+  and `.minor` carry no compute capability there. Both print sites use it, so the
+  `--gpu-dev` block and the device-enumeration `GOOFIT_INFO` agree.
+- The `DebugTools.cu` move from `PDFCore` to `PDFPhysics` is now in the commit
+  body. Re-verified before writing it: the file's `copyAmpIndicesToHost` does
+  `MEMCPY_FROM_SYMBOL(..., AmpIndices, ...)`, `AmpIndices[500]` is defined only in
+  `src/PDFs/physics/Amp4BodyGlobals.cu`, and its one live caller is
+  `src/PDFs/physics/detail/AmpCalc_TD.cu` (the `Amp4Body_TD.cu` references are all
+  commented out).
+- `plan.md` rewritten. It carries a superseded header and its strategy, file-list
+  and build-command sections now describe the `GOOFIT_DEVICE=HIP` backend that was
+  built, not the `USE_HIP`-over-`GOOFIT_DEVICE=CUDA` design that was not. The four
+  open questions are resolved in place.
+
+### Re-validation on GPU 1 (gfx1100, ROCm 7.2.3, CMake 3.31.6)
+
+`Application.cpp` and `CMakeLists.txt` are compiled, so both suites were re-run.
+
+```
+cmake --build build-hip -j32          # 28 targets relinked, clean
+HIP_VISIBLE_DEVICES=1 ctest --test-dir build-hip --output-on-failure
+  -> 100% tests passed, 0 failed out of 25, 9.64 s
+cmake --build build-cpp -j32          # 29 targets, clean
+ctest --test-dir build-cpp
+  -> 100% tests passed, 0 failed out of 26, 6.42 s
+```
+
+`exponential` still gives `alpha = -1.001102381 +/- 0.003165763921`, digit-identical
+to attempt 5 and to the reviewer's reproduction, so the print-path edit changed no
+numerics. Device block now reads:
+
+```
+HIP 7.2
+HIP: Number of devices: 1
+HIP: Device 0: AMD Radeon Pro W7800 48GB
+HIP: Architecture: gfx1100
+```
+
+Whole-branch jargon scan (`jargon.py --port GooFit`, `master..moat-port` for
+commits and `master...moat-port` for added lines) reports clean.
