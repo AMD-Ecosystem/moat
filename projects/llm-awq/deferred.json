@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "llm-awq-mfma-w4a16-gemm",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "AMD-native MFMA/rocWMMA W4A16 GEMM to replace the correctness-first SIMT GEMM",
+      "refs": [
+        "projects/llm-awq/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-11T04:23:04Z",
+      "decided": null
+    },
+    {
+      "id": "llm-awq-w8a8-mfma-gemm",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "int8 MFMA W8A8 GEMM (w8a8_gemm_*), currently build-only on ROCm",
+      "refs": [
+        "projects/llm-awq/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-11T04:23:04Z",
+      "decided": null
+    },
+    {
+      "id": "llm-awq-ft-attention-hip",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "FasterTransformer single-query masked-MHA HIP rewrite (currently excluded from ROCm build)",
+      "refs": [
+        "projects/llm-awq/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-11T04:23:04Z",
+      "decided": null
+    }
+  ]
+}
