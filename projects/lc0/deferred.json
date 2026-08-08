@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "lc0-ck-fused-mha",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "lc0's attention-body fused-MHA is CUTLASS example #41 (memory-efficient/flash attention, Sm80), gated USE_CUTLASS and opt-in even on NVIDIA (use_fused_mha defaults off unless sm80+ fp16 and FFN activation != RELU_2). The ROCm port takes the functionally-identical UNFUSED cuBLAS attention path (batched Q.K^T + softmax + .V), the same path NVIDIA uses without CUTLASS. AMD-native fused MHA via CK/ck_tile (per PORTING_GUIDE: CUTLASS->CK, prefer ck_tile) is a PERF follow-up, not a correctness gap. NOT a drop-in: lc0 passes a smolgen learned additive attention bias (cutlass_kernels.cu attn_bias_ptr = skip), so the ck_tile fmha instance must support a general additive bias; instantiate for lc0 head dims, gate behind the same dispatch, keep the unfused cuBLAS twin as fallback, validate through backendbench --backend=check vs blas. Expected gain is BOUNDED because lc0's attention sequence length is 64 (8x8 board squares), where flash/fused attention's HBM-traffic win is small vs an LLM's long S.",
+      "refs": [
+        "projects/lc0/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-11T07:12:13Z",
+      "decided": null
+    }
+  ]
+}
