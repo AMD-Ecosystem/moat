@@ -433,6 +433,13 @@ def set_state(name, platform, new_state, agent=None, save=True):
             f"{name}/{platform}: {new_state} is derived from (stage, validated_sha, "
             f"head_sha) and is never stored -- see arch_task")
     obj = load_status(name)
+    # `validation-failed` is the one state both machines own, and it means both things
+    # at once: THIS GPU failed on this code, and the PORT now needs a porter. Routing
+    # on "is it a stage" alone made it purely a stage, so an architecture's failure
+    # could not be written down at all -- four arch records hold one from before the
+    # split and nothing could produce a fifth. A validator that tried got the project's
+    # stage moved and its own result dropped.
+    both = new_state in (STAGE_STATES & ARCH_STATES)
     is_stage = new_state in STAGE_STATES
     cur = project_stage(obj) or "unclaimed" if is_stage else \
         (obj["platforms"].get(platform) or {}).get("state")
@@ -458,12 +465,28 @@ def set_state(name, platform, new_state, agent=None, save=True):
                    and not same_commit(
                        (obj["platforms"].get(platform) or {}).get("validated_sha"),
                        obj.get("head_sha")))
-    if new_state == cur and not revalidated:
+    # "Same value" is not "nothing happened", and this is the third distinct way that
+    # assumption has been wrong: a second host entering a stage the first holds, an arch
+    # revalidating a newer head, and now a second arch failing a head the first already
+    # failed. Ask whether there is anything left to RECORD, not whether a token matches.
+    nothing_to_record = new_state == cur and not revalidated
+    if both:
+        nothing_to_record = (nothing_to_record and
+                             (obj["platforms"].get(platform) or {}).get("state") == new_state)
+    if nothing_to_record:
         return obj
     table = STAGE_TRANSITIONS if is_stage else ARCH_TRANSITIONS
-    if not revalidated and new_state not in table.get(cur, set()):
+    # Only a CHANGE is a transition. A `both` state whose stage side is already where it
+    # is going still has an arch side to record, and validating the no-op half as a
+    # move rejects the half that matters.
+    if not revalidated and new_state != cur and new_state not in table.get(cur, set()):
         kind = "stage" if is_stage else f"{platform}"
         raise ValueError(f"{name}/{kind}: illegal transition {cur} -> {new_state}")
+    if both:
+        arch_cur = (obj["platforms"].get(platform) or {}).get("state")
+        if new_state != arch_cur and new_state not in ARCH_TRANSITIONS.get(arch_cur, set()):
+            raise ValueError(f"{name}/{platform}: illegal transition "
+                             f"{arch_cur} -> {new_state}")
     if platform not in obj["platforms"]:
         obj["platforms"][platform] = _platform_block(None)
     blk = obj["platforms"][platform]
@@ -484,7 +507,7 @@ def set_state(name, platform, new_state, agent=None, save=True):
     ts = now_iso()
     if is_stage:
         obj["stage"] = new_state
-    else:
+    if both or not is_stage:
         blk["state"] = new_state
     blk["updated_at"] = ts
     if agent:
