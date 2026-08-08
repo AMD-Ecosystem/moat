@@ -639,3 +639,130 @@ on a port branch as noise, and do not reach for `git push --no-verify` when the 
 
 Verdict: review-passed. The one thing still open for whoever opens the upstream PR is the
 commit-title wording recorded above; it is a judgement call at PR time, not a defect.
+
+## Validation 2026-08-08 (linux-gfx1100)
+
+Real-GPU validation of fork sha `c1d7fff` on Radeon Pro W7800 (gfx1100, wave32), ROCm 7.2.3,
+PyTorch 2.14.0a0+gitb81488e, python 3.12, `HIP_VISIBLE_DEVICES=1`. Clean rebuild (wiped
+`quest/ops/build` first, per the note above about force-included headers under
+`kernels/include/hip_compat`):
+
+```
+mkdir -p quest/ops/build && cd quest/ops/build
+cmake -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_PREFIX_PATH=$(python3 -c 'import torch;print(torch.utils.cmake_prefix_path)') ..
+ninja
+ln -sf $PWD/_kernels*.so ../../
+```
+
+Wrapped `utils/timeit.sh Quest compile -- ninja -C quest/ops/build`. Configure and build both
+clean (6/6 objects, two pre-existing nodiscard-`hipError_t` warnings, no errors).
+`llvm-objdump --offloading` on the built `.so` shows `hipv4-amdgcn-amd-amdhsa--gfx1100` in
+every offload bundle and no other arch -- confirms the architecture-selection fix independently,
+by inspecting the linked module rather than re-deriving the CMake mechanism (already measured
+five ways by the porter and two reviewers; not repeated here).
+
+GPU tests, wrapped `utils/timeit.sh Quest test -- python3 -m pytest ...`:
+
+| suite | result |
+|---|---|
+| test_rope.py | 64 passed |
+| test_estimate.py | 9 passed |
+| test_decode_attention.py | 6 passed |
+| test_approx_attention.py | 42 passed |
+| **in-scope total** | **121 passed in 4.67s** |
+| test_topk.py | 49 failed, 15 skipped |
+| test_prefill_attention.py | 29 failed, 13 skipped |
+| **scoped-out total** | **78 failed** (matches prior sessions exactly) |
+
+Confirmed the scoped-out failure mode is still `AttributeError`, not a wrong answer, with `-x`
+on both files: `AttributeError: module 'quest._kernels' has no attribute 'topk_filtering'` and
+`AttributeError: module 'quest._kernels' has no attribute 'prefill_with_paged_kv_cache'`. No
+non-GPU regression to check against an upstream baseline -- this project has no CPU-only test
+path; all six suites require the compiled extension and a GPU.
+
+### CUDA no-regression gate: partial, walled by an external dependency, recorded honestly
+
+No CUDA gate recorded at `c1d7fff` before this run, so it was owed once for this head_sha.
+This host has no NVIDIA GPU. `/opt/conda/envs/cuda-12.8` already existed with nvcc 12.8.93.
+`gcc-11`/`g++-11` (the project's pinned CUDA-leg host compiler, `quest/ops/CMakeLists.txt:7-8`)
+were absent and installed via `apt-get install -y gcc-11 g++-11` (standard Ubuntu noble
+universe packages, within the standing "install missing build deps via apt" allowance).
+
+Configure attempt, throwaway build dir, arch pinned per the standing instruction rather than
+left to `native` (no NVIDIA GPU on this host to autodetect against):
+
+```
+cd quest/ops && mkdir build-cuda && cd build-cuda
+cmake -GNinja -DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=80 \
+  -DCMAKE_PREFIX_PATH=$(python3 -c 'import torch;print(torch.utils.cmake_prefix_path)') ..
+```
+
+Result: `enable_language(CUDA)` succeeded with the conda nvcc
+(`CMAKE_CUDA_COMPILER:FILEPATH=/opt/conda/envs/cuda-12.8/bin/nvcc` in `CMakeCache.txt`), and the
+pinned arch survived to the cache untouched (`CMAKE_CUDA_ARCHITECTURES:UNINITIALIZED=80`) --
+new evidence beyond the porter's/reviewer's standalone `project(probe LANGUAGES NONE)` probes,
+because this is the real project's own `CMakeLists.txt` guard (`if(NOT DEFINED
+CMAKE_CUDA_ARCHITECTURES) set(... native)` at line 11) exercised for real: with an explicit `-D`
+already defining the variable, the guard is false, `native` is correctly skipped, and the `-D`
+value reaches `enable_language(CUDA)` unclobbered. This confirms the *mechanism* item 3 relies on
+(a value set before `enable_language(CUDA)` survives; `project()` does not clear it) end to end
+for the first time, though it still does not exercise the actual `native` default path -- that
+remains correctly untested, deliberately, per the standing instruction to always pin.
+
+Configure then failed downstream, before reaching any of Quest's own `.cu` files or the
+`pybind11_add_module(_kernels ...)` target:
+
+```
+CMake Error at build-cuda/_deps/raft-src/cpp/CMakeLists.txt:262 (target_link_libraries):
+  The link interface of target "raft" contains:
+    CUDA::nvToolsExt
+  but the target was not found.
+```
+
+Root cause: RAFT is pinned to `branch-24.02` (`quest/ops/cmake/get_raft.cmake`, ~early 2024) and
+its CMakeLists still links the legacy `CUDA::nvToolsExt` imported target. Modern CMake's
+`FindCUDAToolkit` (3.31, shipped with this environment) no longer creates that target against a
+CUDA 12.8 toolkit layout -- NVTX is header-only (`nvtx3/nvToolsExt.h`, present here under
+`nsight-compute-2025.1.1/.../nvtx/include/`, not at the legacy top-level include path
+`FindCUDAToolkit` probes) and the shared-library target it backed was retired. This is a version
+mismatch between an old pinned RAPIDS dependency and a modern CUDA toolkit, entirely external to
+Quest's and this port's own code -- it would equally block an upstream CUDA build attempted with
+this same CUDA 12.8 + CMake 3.31 combination, independent of anything USE_HIP touches. Not
+attempted as a local workaround (e.g. stubbing the imported target) because that patches RAFT's
+build system, not Quest's, and the fix belongs with RAPIDS/raft's own CMake modernization, not
+with this port.
+
+**`cuda-not-validated: RAFT (pinned branch-24.02) requires the legacy CUDA::nvToolsExt CMake
+target, which FindCUDAToolkit no longer creates against a CUDA 12.8 toolkit (NVTX is
+header-only in 12.x); configure fails inside RAFT's own CMakeLists before Quest's own .cu
+sources or the pybind11 target are ever reached.`** The CUDA path is therefore unexercised
+beyond `enable_language(CUDA)` and the architecture-cache mechanism above: no nvcc invocation
+for any of Quest's own kernels was observed, and item 3's fix (native-arch preservation via
+ordering) remains reasoned-and-partially-probed rather than fully run, exactly as recorded by
+the porter and reviewers. Budget: approx 15 minutes on this leg, consistent with the standing
+"do not grind" instruction; stopped after establishing the wall rather than patching RAFT.
+
+Throwaway `quest/ops/build-cuda` directory removed before completion; `gcc-11`/`g++-11` left
+installed at the host level (apt package, not part of the fork tree).
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --commits 01c1623..HEAD -C projects/Quest/src` and
+`python3 utils/jargon.py --diff 01c1623..HEAD -C projects/Quest/src` (this checkout predates
+`--port`): both `jargon: clean`.
+
+README.md's "Building on AMD GPUs (ROCm)" section matches the commands run above verbatim,
+states the real precedence (`CMAKE_HIP_ARCHITECTURES` when passed, else `PYTORCH_ROCM_ARCH`,
+else the build machine's GPUs), and names both scoped-out ops and everything downstream of them
+(model wrappers, accuracy evaluation, end-to-end scripts, examples) as not running on ROCm yet.
+No inaccuracy found; nothing sent back.
+
+`git -C projects/Quest/src status --porcelain`: clean. `HEAD` at `c1d7fff`, matching
+`status.json.head_sha`.
+
+State: `review-passed` -> `completed` on linux-gfx1100, `validated_sha = c1d7fff`. wave32 gate
+satisfied by this arch. wave64 and windows remain open (`pr-ready` still reports
+linux-gfx90a=None and windows=no viable arch yet); this arch does not carry either attribute
+and gates neither. CUDA gate: not satisfied (environmental wall, recorded above), carries no
+penalty per the gate's own rules -- it is secondary and compile-only.
