@@ -1351,3 +1351,47 @@ indistinguishable from a real one. The published form was run verbatim and print
 Nothing else the round confirmed was touched: the torch attribution, the 7 table rows, the
 `_hip` condition, the line counts, the substring-vs-component correction, and `validator.md`
 matching main all stand as reviewed.
+
+## Review 2026-08-08 (reviewer) -- trunk-merge confirmation, review-passed
+
+Scope: the trunk merge only. The port code, the rebase onto `ae2bf80`, and the 30-pixel 1-ULP
+delta were reviewed and passed in earlier rounds and were not re-examined; the fork was not
+touched this round (`projects/faster-gaussian-splatting/src` is clean and at `b0d21d5`, the
+`[ROCm] Add support for AMD GPUs via HIP` commit on top of upstream `ae2bf80`).
+
+No blocking findings.
+
+One correction to the porter's entry above: the `review-checklist.md` addition is **+20 lines**,
+not +17 (`git diff --numstat origin/main HEAD` gives `32 0` for `strategy-b-torch.md` and
+`20 0` for `review-checklist.md`). The content is what was described; only the figure was off.
+
+What was verified:
+
+- The merge is complete. `git merge-tree --write-tree --messages origin/main HEAD` emits a bare
+  tree sha (`801ec34`) with no CONFLICT lines and no messages, and `git rev-list --left-right
+  --count origin/main...HEAD` is `0 37` -- nothing of the trunk is missing. The project folder
+  survived intact: `status.json`, `plan.md`, `notes.md`, `stats.jsonl`, `src/`.
+- The tool/doc mismatch is gone. `python3 utils/jargon.py --port faster-gaussian-splatting`
+  reports `jargon: clean` and exits 0, so the validator's step-4 gate now runs the command
+  section 7 publishes instead of exiting 2. The whole-branch forms are clean too:
+  `--commits ae2bf80..moat-port -C <src>` and `--diff ae2bf80..moat-port -C <src>`.
+- The branch differs from `origin/main` by exactly the four claimed things and nothing else:
+  the project folder (4 added files), `strategy-b-torch.md`, `review-checklist.md`, and the
+  regenerated `README.md`. Both global entries survived the merge in full; section 7 of the
+  checklist and `.claude/agents/validator.md` are byte-identical to main.
+- The section-8 count was recounted independently from every `origin/main:projects/*/status.json`
+  (50 files, all carrying `fork_default_branch`): 30 `main`, 16 `master`, one each of `master`'s
+  siblings `develop`, `dev`, `v0`, `AdaLovelace` -- 20 of 50 non-`main` with `AdaLovelace` as the
+  fifth distinct value, matching the corrected text exactly. The published command form was run
+  verbatim and prints `0`.
+- The `strategy-b-torch.md` mechanism claims were spot-checked against the installed
+  `torch.utils.hipify.hipify_python.get_hip_file_path`: the dirpath rewrite is a plain substring
+  `replace` of `cuda`/`CUDA`/`THC` (not a path-component match), `.cu` always becomes `.hip`, and
+  `_hip` is appended only under `is_pytorch_extension and dirpath == orig_dirpath and
+  (root + ext) == orig_filename`. The entry's table follows from that.
+- State invariants hold: `head_sha` still `b0d21d5`, `porting` null, no `validated_sha` moved
+  (`98be02d` on both Linux archs, `be2217e` on both Windows archs).
+
+Pre-existing and correct, not a finding: all four `validated_sha` predate `head_sha`, so
+`moatlib.py pr-ready` reports every arch unsatisfied and each reads `revalidate`. That is the
+rebase round's functional change, and validation is the next stage.
