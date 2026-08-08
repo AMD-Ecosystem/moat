@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "marian-topk-cub-segsort",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "topk.cu CUB segmented-sort path not ported; Sort() falls back to an alternative.",
+      "refs": [
+        "projects/marian-dev/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T18:21:59Z",
+      "decided": null
+    },
+    {
+      "id": "marian-gfx1101-batched-gemm-spirv",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "marian-dev gfx1101 (Windows) e2e decoder fails: rocBLAS grouped-batched GEMM falls back to a generic SPIR-V (ISA000) kernel that Windows kpack_load_code_object can't load (hipErrorInvalidImage). Fix: add a _WIN32 && USE_HIP path in src/tensors/gpu/prod.cpp ProdBatchedTyped using hipblasGemmStridedBatchedEx (marian batched matrices are contiguous) or a sequential hipblasGemmEx loop -- ELF Tensile dispatch present for gfx1101. Optional platform; advancing head revalidates gfx90a/gfx1100/gfx1201.",
+      "refs": [
+        "projects/marian-dev/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-20T03:07:56Z",
+      "decided": null
+    }
+  ]
+}
