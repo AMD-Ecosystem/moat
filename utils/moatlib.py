@@ -1600,7 +1600,13 @@ def misplaced_folders():
     out = []
     for name, obj, where in project_records():
         want_branch = belongs_on_branch(obj)
-        on_branch = where != "local"
+        # Whether a branch EXISTS, not where this checkout happens to resolve the
+        # record from. Standing on `port/<name>`, that project's folder is in the
+        # working tree and reads `local` -- correctly -- so asking `where` reports
+        # every branch as misplaced from its own branch, which is every orient run a
+        # porter makes.
+        on_branch = bool(_git("rev-parse", "--verify", "-q",
+                              f"origin/port/{name}", check=False).stdout.strip())
         if want_branch and not on_branch:
             out.append((name, "trunk", "should be on port/%s" % name, outstanding(obj)))
         elif on_branch and not want_branch:
