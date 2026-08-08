@@ -9,40 +9,6 @@
   - Setup: point `-I` at the project's deps (vcpkg include dir, plus any CUDA-Samples headers it uses -- `helper_cuda.h`, `helper_math.h`, `helper_string.h`) and select the project's non-MATLAB/Python build macro. For a Thrust/CUB project also install `cuda-cccl`: on CUDA 13.x they ship there under `include/cccl/{thrust,cub}` (nvcc finds them automatically, but a host-compiler OpenMP-backend check needs that path on `-I` explicitly, and stdgpu's CMake wants `THRUST_INCLUDE_DIR` pointed at it).
   - For a header-only or template library the changed headers only compile when instantiated: CMake-configure the CUDA backend to generate its config headers, then `nvcc -c` a small TU that `template class`-instantiates the affected containers, rather than compiling headers alone.
   - The class this catches that a HIP-only build cannot: an unconditional device-header include reaching host translation units. Used on 8 projects in one six-week window; it caught a template-shadow regression in Velvet and an stdgpu regression of exactly that include class. (stdgpu, SCAMP, cuSZ, mahout, lc0, cuPDLPx, TIGRE, Velvet)
-## Prove a GPU test RAN; do not infer it from a green result or from wall time
-
-A GPU test that never touched the GPU reports PASS. This is common enough to plan for:
-a test-fixture helper compiled to an empty stub without a windowing toolkit, a
-`skipIf(not is_available())` that evaluates true because the runtime is not visible in
-that shell, an entire suite gated behind a `GPU_ENABLED` that a headless configure turned
-off. The suite says "100% tests passed" and the port is unvalidated.
-
-Wall time is the obvious heuristic and it is NOT reliable. Use kernel dispatches:
-
-    AMD_LOG_LEVEL=3 ./the_test --gtest_filter='TheGpuTest.*' 2>&1 \
-      | grep -oE 'YourKernelName|OtherKernelName' | sort | uniq -c
-
-The HIP runtime names every kernel it launches. Zero dispatches of your kernels means the
-body did not run, whatever the result line says. This is direct evidence, cheap, and it
-works on any project without instrumenting the code.
-
-colmap is the source. Its GPU SIFT tests run through a `RunGpuTest` helper that calls
-`RunThreadWithOpenGLContext`, which is an empty inline when the GUI is disabled -- so a
-headless build silently skipped every GPU test body and reported 145 tests passing. Worse
-for the timing heuristic: after the fix, the GPU matcher tests take 0-3 ms in the headless
-build and ~200 ms in the GUI build, and the difference is entirely Qt constructing an
-offscreen context. Timing would have labelled the real run a skipped one and the skipped
-run a real one. The dispatch count was right both times.
-
-Two follow-ons worth taking:
-
-- When a project's test infrastructure has such a stub, FIXING it is porting work, not
-  scope creep, and it is not platform-specific: the same trap was hiding the same thing
-  from the CUDA build. Add a test that asserts the body ran, so the no-op cannot return.
-- The dispatch log also tells you WHICH backend ran. A project with both a compute and a
-  GLSL/CPU fallback will happily pass its whole suite on the fallback; seeing your kernel
-  names is what distinguishes "the port works" from "the fallback works".
-
 ## Platforms
 
 A platform is `<os>-<gfx>`, and the set is open: whatever GPU your host reports is a
@@ -121,28 +87,6 @@ solver, an LM/Newton fit, an FP regression head -- is usually floating-point
 accumulation divergence rather than a port bug, and RDNA3.5 (gfx1151) is where it has
 shown up. Record the error magnitude and stop rather than chasing it deep: the
 comparison that matters is against the other architectures, not against a fix.
-
-## codeobj_diff needs both builds from the SAME absolute source path
-
-`utils/codeobj_diff.py` compares device ISA byte-for-byte after stripping addresses, but it
-cannot strip a source PATH that got compiled into the binary as a string literal. A device
-TU that calls `assert()` embeds `__FILE__` -- the compiler's absolute path to that source
-file -- into `.rodata`/`.strtab`, unconditionally, even in a Release build with no debug
-info. Building the "old" sha in a second `git worktree`/clone at a different absolute path
-than the "new" build changes that embedded string for every TU with an `assert()`, so
-`codeobj_diff` reports `differ` on binaries whose actual instruction stream is unchanged --
-a false positive that looks exactly like a real regression.
-
-The tell: `roc-obj-ls` reports the identical device-code offset and size on both binaries,
-and the byte-level divergence is confined to `.dynstr`/`.rodata`/`.strtab` string-table
-sizes, not instruction bytes; `strings` on the extracted code object shows the only diff is
-an absolute path prefix, not project-relative content. Fix by building both shas from the
-SAME absolute source-tree path: checkout sha A in place, build to `-B dirA`, checkout sha B
-in the SAME tree, build to `-B dirB`, then diff `dirA` vs `dirB`. Never stand up a second
-worktree/clone at a different path for this comparison. (alien, gfx90a revalidate of a pure
-header-file-move delta: cross-path compare said `differ` on all 4 GPU executables; the
-same-path rebuild said `identical`, matching the sibling gfx1100/gfx1201 carry-forwards
-already recorded for the identical source delta.)
 
 ## Diagnosing a suspected AMD fault before escalating
 
