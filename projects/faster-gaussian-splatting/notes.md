@@ -574,3 +574,98 @@ and verify with `git clean -fdx` + build + an EMPTY `git status --porcelain`;
 checking only "no tracked file modified" passes even when the artifacts are
 tracked. Promoted to the `cuda-to-rocm` skill
 (references/strategy-b-torch.md, "Never commit the hipified mirror").
+
+## Review 2026-08-08 (re-review of 932a8b7, linux-gfx1100)
+
+Focused re-review of the fix for the blocking finding above. The accepted content
+(`lerp_scalar`, README, the three ROCm guards) was confirmed byte-identical and is not
+re-litigated.
+
+### Confirmed
+
+- `git diff --name-status 6b18628 932a8b7` is exactly 26 `D` plus `M .gitignore`. Commit
+  932a8b7 is 4 files, +23 -18; `origin/main...HEAD` is 7 files, +91 -15. Both numbers as
+  claimed. No `*.hip` / `*_hip.*` path is tracked anywhere in the branch.
+- **Amend safety.** No arch had `validated_sha == 6b18628`: linux-gfx90a and linux-gfx1100
+  at 98be02d, windows-gfx1101 and windows-gfx1201 at be2217e. `git merge-base --is-ancestor`
+  puts both of those shas under 932a8b7, so every `validated_sha` is still reachable and the
+  regression guard can still classify. 6b18628 is orphaned and nothing pointed at it. The
+  amend was legitimate.
+- **The ignore set is exact, not over-broad.** `git clean -fdxn` on a built tree lists 27
+  paths: the 26 hipify outputs plus `_C.cpython-312-x86_64-linux-gnu.so`, which upstream's
+  own `*.so` already covered. Counts line up with the sources: 9 `.cu` -> 9 `.hip`,
+  7 `.cuh` -> 7 `_hip.cuh`, 10 of the 17 `.h` -> 10 `_hip.h`. No tracked path contains
+  `cuda`/`CUDA`/`THC` (case-sensitive), so `get_hip_file_path` appends `_hip` for every file
+  here rather than renaming, and the three patterns cover the whole generated set.
+- **The stronger verification holds now, independently.** The tree has been built (the
+  regenerated `.hip`/`_hip.*` files and the `.so` are on disk) and `git status --porcelain`
+  prints nothing. That is the empty-status check, not the weaker "no tracked file modified"
+  that a tracked mirror also passes.
+- Commit hygiene on 932a8b7: `[ROCm]` prefix, 52-char title, Claude named, no
+  `Co-Authored-By` / noreply trailer, ASCII only, no em-dash, Test Plan with literal
+  commands. `jargon.py --diff origin/main...HEAD` clean.
+- The `__cplusplus < 202002L` correction now reads correctly (dead on the ROCm build; live
+  in the nvcc host pass on Windows because setup.py does not pass `/Zc:__cplusplus`).
+
+### Blocking: the deferred jargon hit has no mechanism behind it, and its window is closing
+
+The verdict to not rebase 98be02d today was right in isolation, but the premise it rests on
+is no longer true, and the recorded handoff points at a moment where the fix is no longer
+free.
+
+**Nothing mechanical will ever catch it.** `utils/upstream.py:494-499` (`publish_blockers`)
+and `utils/upstream.py:429-433` (`open_review_pr`) run `jargon.scan_text` over the PR
+**title and body only**. No gate anywhere scans the commit range, and nothing on the publish
+path reads notes.md. So "Strategy B (torch hipify)" in 98be02d's message ships upstream
+silently. This is not a note-and-move-on item; it is a standing-rule violation with no
+backstop.
+
+**Rewriting those commits is not the cost it was.** `moatlib.py pr-ready` reports all four
+archs blocking: head is 932a8b7 and every `validated_sha` is 98be02d or be2217e. The delta
+spans the Windows link fix and the `lerp_scalar` rename, which `advance_head` will not
+classify as arch-independent-inert, so all four archs must revalidate at head regardless of
+what happens to the history. Rewriting 98be02d and be2217e right now therefore forfeits no
+validation that is not already forfeit -- the standing rule protects a `validated_sha` that
+is still load-bearing, and neither of these is.
+
+**The recorded plan names the wrong moment.** The note hands the job to "whoever prepares
+the upstream PR", i.e. after approval. By then the review PR (AMD-Ecosystem#1, currently at
+932a8b7 with no approval on it, only a COMMENTED review) has been approved against a
+specific commit, and `moatlib.approval_currency` (utils/moatlib.py:813-816) refuses with
+`stale-commits` the moment the tip differs from the approved sha. A squash after approval
+invalidates the approval and sends it back to the person who gave it.
+`squash_carry_forward` also must not run before revalidation: it advances every `completed`
+arch to the new sha on tree-identity alone, which today would falsely certify the
+`lerp_scalar` fix as validated on gfx90a and both Windows archs.
+
+Required, before the validator runs: remove the in-house vocabulary from the branch's commit
+messages. How is open -- squash the three commits into one, or reword 98be02d alone and
+replay be2217e -- but do it now, while no arch is validated at head and no approval exists.
+Then `python3 utils/jargon.py --commits origin/main..HEAD -C projects/faster-gaussian-splatting/src`
+must be clean over the whole branch, and the validator validates the final sha once. Update
+the "Open item" section to record what was done instead of what to do later.
+
+### Also required
+
+- `.claude/skills/cuda-to-rocm/references/strategy-b-torch.md:12` states the naming rule as
+  `.h`/`.cuh` -> `_hip.h`/`_hip.cuh`. That is only the case this project hit.
+  `get_hip_file_path` appends `_hip` **only when the cuda->hip substring rewrite leaves both
+  the directory and the filename unchanged**; otherwise it renames, so `src/cuda/foo.cuh`
+  becomes `src/hip/foo.cuh` and `cuda_utils.cuh` becomes `hip_utils.cuh` -- neither matched
+  by any of the three patterns. `cuda/` directories and `cuda`-prefixed filenames are common
+  in CUDA projects, so a porter who copies the three lines into such a project and skips the
+  verification step gets a silently incomplete ignore list. Add the condition to that
+  paragraph. The rest of the section is the right file and the right altitude.
+- The meta-lesson (scoping the jargon check to the newest commit is how this survived a
+  review) is recorded only in this project's notes, which is where it will die.
+  `.claude/skills/pr-review/review-checklist.md:41` and `.claude/agents/validator.md:22`
+  both already say `--commits <base>..HEAD`; the porter, the prior reviewer and the validator
+  all read `<base>` as the previous head. Make it explicit in the pr-review checklist -- the
+  base is the fork's default branch, the whole branch, never the previous head -- since that
+  checklist is the one a reviewer actually runs.
+
+### Verdict
+
+Changes requested. The artifact fix itself is correct and complete; what blocks is the
+jargon item, which is free to fix today and stops being free once validation or approval
+lands on this branch.
