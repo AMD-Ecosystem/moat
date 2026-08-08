@@ -21,3 +21,5 @@
 {"kind":"phase","ts":"2026-08-08T20:26:03Z","phase":"compile","seconds":101.719,"exit":0,"cmd":"cmake --build projects/colmap/src/build-cuda --target colmap_sift_gpu colmap_feature_sift_test colmap_main -j64"}
 {"kind":"phase","ts":"2026-08-08T20:34:11Z","phase":"test","seconds":1501.995,"exit":8,"cmd":"xvfb-run -a ctest --test-dir projects/colmap/src/build-hip-gui -j16 --output-on-failure"}
 {"kind":"phase","ts":"2026-08-08T21:19:45Z","phase":"test","seconds":11.819,"exit":0,"cmd":"xvfb-run -a ctest --test-dir projects/colmap/src/build-hip-gui -j4 --timeout 600 --output-on-failure"}
+{"kind":"phase","ts":"2026-08-08T21:24:00Z","phase":"compile","seconds":5.302,"exit":0,"cmd":"cmake --build projects/colmap/src/build-hip-gui -j64"}
+{"kind":"phase","ts":"2026-08-08T21:24:17Z","phase":"test","seconds":11.851,"exit":0,"cmd":"xvfb-run -a ctest --test-dir projects/colmap/src/build-hip-gui -j4 --timeout 600"}
