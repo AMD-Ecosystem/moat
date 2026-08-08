@@ -35,3 +35,4 @@
 {"kind":"phase","ts":"2026-08-08T22:54:14Z","phase":"test","seconds":6.517,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/moat-worktrees/GooFit/projects/GooFit/src/build-cpp"}
 {"kind":"phase","ts":"2026-08-08T22:54:32Z","phase":"compile","seconds":1.198,"exit":0,"cmd":"cmake -S /var/lib/jenkins/moat-worktrees/GooFit/projects/GooFit/src -B /var/lib/jenkins/moat-worktrees/GooFit/projects/GooFit/src/build-py -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DGOOFIT_DEVICE=CPP -DGOOFIT_PYTHON=ON -DGOOFIT_TESTS=OFF -DGOOFIT_EXAMPLES=OFF -DGOOFIT_CERNROOT=OFF"}
 {"kind":"phase","ts":"2026-08-08T22:55:17Z","phase":"compile","seconds":44.377,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat-worktrees/GooFit/projects/GooFit/src/build-py -j32"}
+{"kind": "tokens", "ts": "2026-08-08T23:27:07Z", "tokens": 156637, "source": "reviewer"}
