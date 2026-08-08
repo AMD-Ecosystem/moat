@@ -7,13 +7,16 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-10T13:58:57Z",
-  "updated_at": "2026-08-08T01:27:20Z",
+  "updated_at": "2026-08-08T03:25:19Z",
   "head_sha": null,
   "depends_on": [],
   "fork_branch": "moat-port",
   "on_hold": false,
   "on_hold_reason": null,
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx90a",
+    "since": "2026-08-08T03:25:19Z"
+  },
   "waivers": {},
   "license_spdx": "BSD-3-Clause",
   "intake": {
@@ -29,15 +32,15 @@
       "at": "2026-08-07T15:27:11Z"
     }
   },
-  "stage": "planned",
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": null,
-      "started_at": null,
+      "started_at": "2026-08-08T03:25:19Z",
       "completed_at": null,
-      "updated_at": "2026-08-08T01:27:20Z",
+      "updated_at": "2026-08-08T03:25:19Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -51,7 +54,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "planner"
+      "last_agent": "porter"
     }
   }
 }
