@@ -194,6 +194,44 @@ REPRODUCIBLE at the same frame. Codes that accumulate with `atomicAdd` on floats
 run to run, so the same binary reaching a different frame on two runs is expected and is
 NOT by itself evidence of uninitialized memory or a race. (GPU_IPC.)
 
+## Testing "uninitialized device memory" decisively: fill-pattern differential, not audit
+
+"Maybe it's reading a live-but-uninitialized allocation" is a common hypothesis for an
+unattributed wedge/crash/wrong-result on a project that over-allocates worst-case buffers
+(a collision-pair or candidate-list buffer sized for the theoretical max and governed by a
+live counter is the classic shape) -- ROCm's allocator does not hand back zeroed pages the
+way CUDA's often does, so a stale-read bug that never showed on NVIDIA can show on AMD.
+Auditing every `hipMalloc` for a matching `hipMemset` is slow and easy to get wrong, and it
+proves nothing about whether an unaudited site actually matters at runtime. Test it
+instead: temporarily wrap the allocator to force every fresh allocation to a controlled
+fill, gated by a compile define so the unmodified build stays a pure passthrough, and run
+the SAME binary three ways -- unmodified, zero-fill, and 0xFF-fill:
+
+```cpp
+#if defined(DEBUG_MALLOC_FILL)
+template <typename T>
+inline hipError_t debug_hipMalloc(T** ptr, size_t size) {
+    hipError_t err = hipMalloc(ptr, size);
+    if (err == hipSuccess) hipMemset(*ptr, DEBUG_MALLOC_FILL, size);
+    return err;
+}
+#define cudaMalloc(ptr, size) debug_hipMalloc(ptr, size)
+#endif
+```
+
+0xFF is the decisive pattern, not 0x00: as an IEEE-754 float or double every byte-0xFF
+value is NaN, and as a signed or unsigned index it is -1 / UINT_MAX. A genuine
+live-uninitialized read anywhere on the hot path shows up as one of three unmistakable
+things under 0xFF-fill -- an immediate NaN cascade, a crash on an out-of-range index, or a
+wildly different run length -- none of which a healthy program produces by chance. On
+GPU_IPC (gfx1100) the unmodified, zero-fill and 0xFF-fill builds all wedged in the same
+narrow frame window (31-37, inside the pre-existing 25-36 range) with zero NaN and zero HIP
+errors across hundreds of recorded lines each, and every reported index in all three builds
+was small and in-range -- that is what a buffer correctly gated behind a live counter looks
+like under adversarial fill, and it rules the hypothesis OUT rather than leaving it
+unaudited. Revert the patch before completing validation; it is a throwaway diagnostic, not
+something to land.
+
 ## One architecture gets wrong numbers while the others pass
 
 A clean build that produces wrong results on exactly one architecture -- an iterative
