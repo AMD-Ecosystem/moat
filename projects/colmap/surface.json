@@ -1556,10 +1556,6 @@
       "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
     },
     {
-      "id": "test:opengl_utils_test",
-      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
-    },
-    {
       "id": "test:option_manager_test",
       "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
     },
