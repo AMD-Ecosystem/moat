@@ -244,3 +244,108 @@ Lesson promoted to the `cuda-to-rocm` skill, `references/strategy-b-torch.md`, a
 "CMake-driven torch extension: `find_package(Torch)` takes the GPU architecture away from
 you" -- it covers both the LoadHIP shadowing and the enable_language ordering, and it will
 bite any torch extension built through CMake rather than `CUDAExtension`.
+
+## Review 2026-08-08 (pass 2)
+
+Re-reviewed fork sha `3465b34` (moat-port vs `01c1623`) on linux-gfx1100, scoped to the seven
+defects from the first round. The delta `ff80217..3465b34` touches only README.md,
+quest/ops/CMakeLists.txt and csrc/bsk_ops.{cu,h}, so the shim headers, the force-include
+mechanism and the rms_norm mask are unchanged and were not re-litigated. Verdict:
+changes-requested, for one defect introduced by the fix to item 1.
+
+Reproduction of the item 1 measurement (independent, off `compile_commands.json`, configure
+only, host env carrying `PYTORCH_ROCM_ARCH=gfx90a;gfx942;gfx950;gfx1100`):
+
+| case | `--offload-arch` |
+|---|---|
+| `-DCMAKE_HIP_ARCHITECTURES=gfx1201` | `gfx1201` |
+| no `-D`, `PYTORCH_ROCM_ARCH=gfx908` | `gfx908` |
+| no `-D`, env unset | `gfx1100` (cache holds `gfx1100;gfx1100;gfx1100;gfx1100`, so REMOVE_DUPLICATES is load bearing) |
+
+All three match the porter's table. The precedence the README states is the precedence the
+code produces.
+
+### Defect: the PYTORCH_ROCM_ARCH path is not sticky, and a later reconfigure hard-fails
+
+`quest/ops/CMakeLists.txt:28-30` sets `CMAKE_HIP_ARCHITECTURES` from the environment as a
+NORMAL variable. Nothing ever writes it to the cache on that path:
+`CMakeDetermineHIPCompiler.cmake:296` is `elseif(NOT DEFINED CMAKE_HIP_ARCHITECTURES)`, so the
+normal variable suppresses the enumerator branch that would have cached it, and
+`CMakeCache.txt` ends up with no `CMAKE_HIP_ARCHITECTURES` entry at all. The value therefore
+exists only for the configure that saw the environment variable.
+
+Any later cmake run in that build directory without the variable in the environment -- which
+ninja does by itself whenever a listfile changes -- resolves `CMAKE_HIP_ARCHITECTURES` to
+empty, so `QUEST_HIP_ARCHITECTURES` at :35 is empty and :83 sets an empty target property.
+Reproduced on this branch:
+
+```
+PYTORCH_ROCM_ARCH=gfx908 cmake -S quest/ops -B b -GNinja -DUSE_HIP=ON ...   # ok, gfx908
+env -u PYTORCH_ROCM_ARCH cmake -S quest/ops -B b                            # exit 1
+  HIP_ARCHITECTURES is empty for target "_kernels".
+  CMake Generate step failed.  Build files cannot be regenerated correctly.
+```
+
+This is a new failure mode: at `ff80217` the environment variable reached the compile line
+through torch's own `LoadHIP.cmake`, which re-reads it every configure and falls back to
+`rocm_agent_enumerator`, so the build directory never went empty. It is also the middle rung of
+the precedence the README now documents at README.md:69.
+
+Fix, at :28-30 -- make the resolved value a cache entry so it survives the configure that set
+it. The surrounding `if(NOT CMAKE_HIP_ARCHITECTURES ...)` means `FORCE` can never clobber a
+user's `-D`:
+
+```
+if(NOT CMAKE_HIP_ARCHITECTURES AND DEFINED ENV{PYTORCH_ROCM_ARCH})
+  string(REPLACE " " ";" _quest_hip_archs "$ENV{PYTORCH_ROCM_ARCH}")
+  set(CMAKE_HIP_ARCHITECTURES "${_quest_hip_archs}" CACHE STRING "HIP architectures" FORCE)
+endif()
+```
+
+Verified against all three precedence cases plus a reconfigure with the variable removed:
+`-D` still wins, the environment variable is still consulted only when nothing else set it,
+and the second configure now reports `gfx908` instead of empty.
+
+The same fix is needed in the code block the lesson promotes to
+`.claude/skills/cuda-to-rocm/references/strategy-b-torch.md`, which currently reproduces the
+non-cached form verbatim.
+
+### Items 2-7
+
+Verified fixed and correct.
+
+- Item 2: `CMakeDetermineHIPCompiler.cmake:296-334` confirms the reachability claim and confirms
+  CMake raises `Failed to find a default HIP architecture.` itself, so dropping the project's own
+  FATAL_ERROR loses no diagnostic.
+- Item 3: reasoning holds. `CMakeDetermineCUDACompiler.cmake:261` is
+  `if("${CMAKE_CUDA_ARCHITECTURES}" STREQUAL "")`, and `project()` does not clear normal variables,
+  so `native` set at CMakeLists.txt:11-13 survives to `enable_language(CUDA)` at :41 and to target
+  creation at :79. The mechanism is the same one measured on the HIP side above. The commit
+  message's Test Plan discloses that the CUDA build was not exercised and why; that is adequate.
+  Residual untested surface, not a defect and nothing to change: the rapids-cmake `include()`
+  calls now sit after `project()`/`enable_language(CUDA)` (CMakeLists.txt:43-51) rather than before
+  `project()`; they only define functions and `rapids_cuda_init_architectures` is not called, and
+  get_raft.cmake's relative order to CUDA enablement is unchanged.
+- Item 4: pins restored at CMakeLists.txt:7-8 under the same guard.
+- Item 5: README.md:69 matches the measured precedence exactly.
+- Item 6: README.md:71 is accurate. `quest/utils/__init__.py:157,229` reference the two missing
+  ops inside function bodies, so `import quest.utils` still succeeds and only the call paths fail;
+  `quest/models/QuestAttention.py:117` and the decode_topk path reach both through those wrappers.
+- Item 7: `git diff 01c1623...HEAD` on both files is additions only -- 4 lines in bsk_ops.cu, 10 in
+  bsk_ops.h -- with no moved upstream line and no trailing-newline change.
+
+Hygiene re-checked at this sha: `[ROCm]` title 50 chars, Claude named, no noreply trailer, no
+added copyright or author lines (the two `Copyright (c) 2023 by FlashInfer team.` lines are the
+preserved upstream headers on the copied shims), jargon clean over `01c1623..HEAD`, added lines
+ASCII, no arch-conditional code anywhere under `kernels/include/hip_compat`, fork tree clean.
+
+### Needs a PR against moat main, not this branch
+
+`.claude/skills/cuda-to-rocm/**` is global and is currently only on `port/Quest` (commits
+`6d42e1d`, `d7a6a61`). The `strategy-b-torch.md` section "CMake-driven torch extension:
+`find_package(Torch)` takes the GPU architecture away from you" is correct and well stated -- its
+claims about `Caffe2/public/LoadHIP.cmake:107` (`set(CMAKE_HIP_ARCHITECTURES ${PYTORCH_ROCM_ARCH})`
+as a normal variable) and `Caffe2/public/utils.cmake:280` (`torch_hip_get_arch_list`, environment
+first then `rocm_agent_enumerator`) both check out against the installed torch, as does the
+"read the compile line, not the CMake" gate. Lift it to main once its code block carries the
+`CACHE ... FORCE` correction above.
