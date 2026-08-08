@@ -7,7 +7,7 @@
   "priority": 6.245,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-08-08T01:52:05Z",
+  "updated_at": "2026-08-08T02:03:02Z",
   "head_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
   "pr_url": "https://github.com/LeelaChessZero/lc0/pull/2420",
   "pr_number": 2420,
@@ -58,10 +58,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "a80a7be",
+      "validated_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
       "started_at": "2026-05-31T05:46:00Z",
-      "completed_at": "2026-07-02T19:35:45Z",
-      "updated_at": "2026-08-08T01:52:05Z",
+      "completed_at": "2026-08-08T02:03:02Z",
+      "updated_at": "2026-08-08T02:03:02Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -77,10 +77,10 @@
       },
       "last_agent": "reviewer",
       "carry_forward": {
-        "to": "a80a7be",
-        "method": "binary-equiv",
-        "detail": "c++17->c++20 and SKIP_FP16_BITS->HAS_FP16_SUPPORT refactor: device ISA identical (213 exports)",
-        "at": "2026-07-02T19:35:45Z"
+        "to": "7727fa32c1992ef6702eacc1b8568715803b0701",
+        "method": "full-revalidation",
+        "detail": "Fresh full real-GPU revalidation at 7727fa3 (not a binary-equiv/source-class shortcut): 331-target build (no rebuild needed, README-only delta), 8/8 CPU gtest, 222/222+222/222 maia-1100 conv-SE fp32/f",
+        "at": "2026-08-08T02:03:02Z"
       }
     },
     "windows-gfx1101": {

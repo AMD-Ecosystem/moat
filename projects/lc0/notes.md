@@ -1292,3 +1292,94 @@ reachable ancestor, and that is the only field the gates read (`pr_ready`, `adva
 and the staleness tests all compare `validated_sha`; nothing outside `gen_schema.py` reads
 `carry_forward` at all). The stale block is inert provenance and `set_state(..., completed)`
 pops it, so linux-gfx90a's next real validation clears it on its own. Do not hand-edit it.
+
+## Revalidation 2026-08-08 (validator, linux-gfx1100) -- COMPLETED at 7727fa3
+
+State was `revalidate` (linux-gfx1100 `validated_sha=a80a7be`, head moved to `7727fa3`
+via the porter's README fix + reviewer pass above). `classify(a80a7be, 7727fa3)` =
+`mixed`, so the automatic carry-forward path does not apply and CLAUDE.md's "any
+classification uncertainty defaults to full revalidation" governs. Decision: re-run the
+full real-GPU suite fresh at `7727fa3` rather than stitch together the 2026-08-08
+`validation-failed` session's evidence (full suite passed at `223ee639`) with the
+porter's/reviewer's confirmed doc-only classification of `223ee639..7727fa3`. Both
+would have been defensible -- the doc-only delta is provable by inspection (README.md
+is not a build input) -- but the dispatch explicitly invited a re-run when in any doubt
+and the suite is cheap on this host (4x idle W7800), so re-running produces a clean,
+self-contained record at the actual head_sha instead of one that requires a reader to
+cross-reference two sessions. No source/build file needed changing for this arch.
+
+Platform: 4x AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), ROCm 7.2.1, hipcc
+clang 19, meson 1.11.1, ninja. GPU 0 (`rocm-smi --showuse` 0% on all 4). Existing
+`build-hip/` from the prior session (configured at `223ee639`) reused. Fork clean at
+`7727fa3`.
+
+### Build
+```
+bash utils/timeit.sh lc0 compile -- ninja -C /var/lib/jenkins/moat/projects/lc0/src/build-hip -j16
+```
+`ninja: no work to do` -- confirms README.md is not a ninja build input (nothing to
+rebuild between `223ee639` and `7727fa3`). `roc-obj-ls build-hip/lc0`: two code objects,
+both `hipv4-amdgcn-amd-amdhsa--gfx1100` (1163256 and 2205056 bytes), no gfx90a.
+
+### CPU gtest (non-GPU regression)
+```
+bash utils/timeit.sh lc0 test -- meson test -C /var/lib/jenkins/moat/projects/lc0/src/build-hip
+```
+8/8 OK (FP16, HashCat, PositionTest, OptionsParserTest, SyzygyTest, EncodePositionForNN,
+EngineTest, ChessBoard). 0 failures.
+
+### maia-1100 conv-SE cross-check (THE gate)
+```
+HIP_VISIBLE_DEVICES=0 bash utils/timeit.sh lc0 test -- \
+  build-hip/lc0 backendbench --backend=check \
+  "--backend-opts=hip(),blas(),mode=check,atol=1e-3,rtol=1e-2,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz --start-batch-size=1 --max-batch-size=55 --batches=4
+```
+fp32: 222/222 "Check passed", 0 ERROR. Same command with `hip-fp16()` at
+atol=1.1e-1/rtol=2e-1: 222/222 passed, 0 ERROR. Both match every prior gfx1100/gfx90a run.
+
+### Attention testnet regression (fp32 + fp16)
+Same pattern against `testnet.pb.gz`, atol=1e-3/rtol=1e-2 (fp32) and
+atol=2.5e-2/rtol=1e-1 (fp16), batch 1-32: 130/130 passed + 0 ERROR each. Matches every
+prior run.
+
+### Benchmark (fault-free, batch 1-256, debug build so barrier-guard asserts are live)
+`--backend=hip` and `--backend=hip-fp16` on maia-1100, batch 1-256: both exit 0, no
+crash/SIGABRT/hang, `lc0SyncThreads()` guard never fired.
+
+### CUDA no-regression gate
+Not re-run. Recorded at `223ee639` (2026-07-06, nvcc 12.6); the only delta since is
+README.md, which is not a compiled input on either the CUDA or HIP path, so the CUDA
+build result at `7727fa3` is provably identical. Re-running nvcc here would test the
+README, which nvcc does not read.
+
+### Jargon scrub
+```
+python3 utils/jargon.py --commits d8ce482..7727fa3 -C projects/lc0/src
+python3 utils/jargon.py --diff d8ce482...7727fa3 -C projects/lc0/src
+```
+Both `jargon: clean`.
+
+### Documentation
+README.md:165 (now the "### HIP (ROCm)" section's arch-detection sentence) re-read
+against meson.build:642-661 / meson_options.txt:201-204: matches (autodetect takes the
+first `rocm_agent_enumerator` line under meson >=1.2.0, `error()`s with no fallback
+otherwise). No further staleness found.
+
+### Summary
+
+| Check | Result |
+|-------|--------|
+| Build (no rebuild needed, gfx1100 code objects confirmed) | PASS |
+| CPU gtest 8/8 | PASS |
+| maia-1100 fp32 conv-SE check (222 batches) | PASS |
+| maia-1100 fp16 conv-SE check (222 batches) | PASS |
+| attention testnet fp32 check (130 batches) | PASS |
+| attention testnet fp16 check (130 batches) | PASS |
+| backendbench fp32 + fp16 batch 1-256, barrier-guard live | PASS (no fault, no assert) |
+| CUDA no-regression gate | unchanged from 223ee639 (README-only delta, not a CUDA input) |
+| jargon scrub (commits + diff, base d8ce482) | clean |
+| ROCm build documentation | current, verified against meson.build |
+
+`git -C projects/lc0/src status --porcelain`: clean. validated_sha = 7727fa3. Transition:
+revalidate -> completed.
