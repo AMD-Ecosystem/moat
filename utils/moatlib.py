@@ -380,6 +380,13 @@ def save_status(name, obj):
                     f"{name} is not in this checkout -- its record is on {ref}. "
                     f"Check out that branch to write it.")
     validate_status(obj)
+    stale = check_against_trunk(obj)
+    if stale:
+        raise ValueError(
+            f"{obj.get('name')}: this checkout would write {'; '.join(stale)}, which the "
+            f"TRUNK's schema does not accept -- your tooling predates it. check.py judges "
+            f"every ref, so writing it blocks pushes for every project from every host. "
+            f"Run `python3 utils/moatlib.py branch-sync --apply`, then redo this.")
     obj["updated_at"] = now_iso()
     p = status_path(name)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -387,6 +394,59 @@ def save_status(name, obj):
         json.dump(obj, f, indent=2, sort_keys=False)
         f.write("\n")
 
+
+_TRUNK_VOCAB = None
+
+
+def trunk_vocabulary(base_ref="origin/main"):
+    """The value sets the TRUNK's schema accepts, or None if it cannot be read.
+
+    Read from `schema/status.schema.json`, which is generated FROM moatlib, so it is
+    the trunk's own answer rather than a guess parsed out of its source. Cached: this
+    is consulted on every write and it is one git call."""
+    global _TRUNK_VOCAB
+    if _TRUNK_VOCAB is None:
+        raw = _ref_read(base_ref, "schema/status.schema.json")
+        try:
+            d = json.loads(raw) if raw else None
+            _TRUNK_VOCAB = {
+                "schema_version": d["properties"]["schema_version"].get("enum"),
+                "stage": d["properties"]["stage"].get("enum"),
+                "archstate": d["$defs"]["archstate"].get("enum"),
+            } if d else False
+        except (KeyError, TypeError, json.JSONDecodeError):
+            _TRUNK_VOCAB = False
+    return _TRUNK_VOCAB or None
+
+
+def check_against_trunk(obj):
+    """Reasons this record would be rejected by the TRUNK's schema, not just by ours.
+
+    A worktree runs whatever tooling its branch last merged, so an agent can hold a
+    vocabulary the trunk has moved past and write a value that no longer exists. That
+    is not caught by validating against the local schema -- the local schema agrees
+    with the local code, which is the problem. It surfaces later as a repo-wide gate
+    failure, and because check.py judges every ref it blocks pushes for every project
+    from every host, not just the one that wrote it. That happened today.
+
+    Read-only and advisory about the TRUNK: it never rejects a value the trunk knows
+    and we do not, since that direction is just a branch being behind on a value it is
+    not using."""
+    vocab = trunk_vocabulary()
+    if not vocab:
+        return []
+    bad = []
+    sv, stage = obj.get("schema_version"), obj.get("stage")
+    if vocab["schema_version"] and sv is not None and sv not in vocab["schema_version"]:
+        bad.append(f"schema_version {sv} (trunk accepts {vocab['schema_version']})")
+    if vocab["stage"] and stage is not None and stage not in vocab["stage"]:
+        bad.append(f"stage {stage!r}")
+    if vocab["archstate"]:
+        for plat, blk in (obj.get("platforms") or {}).items():
+            st = blk.get("state")
+            if st is not None and st not in vocab["archstate"]:
+                bad.append(f"{plat} state {st!r}")
+    return bad
 
 def save_record(name, obj, message):
     """Persist a project's record wherever it lives -- this checkout, or its own branch.
@@ -419,6 +479,16 @@ def save_record(name, obj, message):
             f"and record it there.")
     obj["updated_at"] = now_iso()
     validate_status(obj)
+    # The branch path skips save_status, so it would skip its trunk check too. A stale
+    # checkout recording a fact onto someone else's branch is exactly the case that
+    # check cannot afford to miss: the record it writes is judged by every ref sweep,
+    # and validate_status above only asks whether THIS checkout's vocabulary is happy.
+    stale = check_against_trunk(obj)
+    if stale:
+        raise ValueError(
+            f"{name}: this checkout would write {'; '.join(stale)} to {branch}, which "
+            f"the TRUNK's schema does not accept -- your tooling predates it. Run "
+            f"`python3 utils/moatlib.py branch-sync --apply`, then redo this.")
     return commit_to_branch(
         branch, {f"projects/{name}/status.json": json.dumps(obj, indent=2) + "\n"},
         message)
@@ -2245,6 +2315,39 @@ def branch_lessons(base_ref="origin/main"):
     return sorted(out)
 
 
+def make_worktree(name, path=None, base_ref="origin/main"):
+    """Create a worktree on `port/<name>` and bring it up to the trunk. Returns the path.
+
+    One command because the sync is the part that gets skipped. A worktree cut from a
+    port branch runs whatever tooling that branch last merged, which can be days old,
+    and the agent then writes records with old code against today's schema. Both of
+    today's bad records came from exactly that: one wrote a stage the trunk had just
+    stopped recognising, which failed the repo-wide gates and blocked every push from
+    every host; the other recorded a full GPU rerun as a carry-forward because its copy
+    of `set_state` still no-opped on a same-state call.
+
+    Advice would not have prevented either -- it was advice, and I was the one skipping
+    it. So there is no unsynced way to get a worktree."""
+    path = Path(path) if path else (REPO_ROOT / "agent_space" / f"wt-{name}")
+    if path.exists():
+        raise ValueError(f"{path} already exists -- remove it or pass another --path")
+    ref = f"origin/port/{name}"
+    if not _git("rev-parse", "--verify", "-q", ref, check=False).stdout.strip():
+        raise ValueError(f"{ref} does not exist; this project has no port branch")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    r = _git("worktree", "add", "-q", "-B", f"port/{name}", str(path), ref, check=False)
+    if r.returncode:
+        raise ValueError(f"could not create the worktree: {(r.stderr or r.stdout).strip()}")
+    # Sync using the WORKTREE's own moatlib, which is what an agent there would run,
+    # and unconditionally: `branch_sync` skips when the trunk's drift looks inert, and
+    # stale tooling is precisely the case where that judgement is being made by the
+    # stale copy.
+    sync = subprocess.run([sys.executable, "utils/moatlib.py", "branch-sync", "--apply"],
+                          cwd=str(path), capture_output=True, text=True)
+    detail = (sync.stdout or sync.stderr).strip().replace("branch-sync: ", "")
+    return (str(path), detail)
+
+
 def branch_sync(apply=False, base_ref="origin/main"):
     """Bring a port branch up to the trunk's tooling, but only when that is worth a
     merge commit. Returns (action, detail) for the caller to print.
@@ -2608,6 +2711,11 @@ def main(argv=None):
     s.add_argument("--clear", action="store_true",
                    help="resume: this arch is not blocked after all")
 
+    s = sub.add_parser("worktree",
+                       help="create a worktree on a project's port branch, synced to the trunk")
+    s.add_argument("name")
+    s.add_argument("--path", help="where to put it (default agent_space/wt-<name>)")
+
     sub.add_parser("stalled", help="projects every architecture gave up on, before review")
 
     sub.add_parser("misplaced", help="projects whose folder is not where their state says")
@@ -2795,6 +2903,10 @@ def main(argv=None):
         else:
             set_blocked(args.name, args.platform, True, args.reason)
             print(f"{args.name}/{args.platform} blocked: {args.reason}")
+    elif args.cmd == "worktree":
+        path, detail = make_worktree(args.name, args.path)
+        print(path)
+        print(f"   trunk sync: {detail}", file=sys.stderr)
     elif args.cmd == "stalled":
         rows = [(n, o) for n, o, _w in project_records() if stalled(o)]
         for n, o in sorted(rows):
