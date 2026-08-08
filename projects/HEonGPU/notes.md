@@ -317,3 +317,93 @@ codebase, so linux-gfx90a is no longer marked blocked. The blocker as last recor
 is where to pick it up:
 
 Attempt 3: tree rebuilt for gfx90a (lib + all 15 tests compile); crypto still fails. ROOT CAUSE ISOLATED: GPU-NTT INVERSE merge kernel (GentlemanSande/InverseCore, thirdparty/GPU-NTT/src/lib/ntt_merge/ntt.cu) miscomputes on gfx90a -- INTT(NTT(x))!=x (4096/4096 corrupt). Verified CORRECT: ntt/intt tables (psi^N==q-1, intt psi==psi^-1), n_inverse==N^-1, forward NTT (matches CPU ref exactly, bit-reversed), Barrett mult. Forward fine, inverse broken. ALSO: submodule HIP forks (GPU-NTT/FFT/RNGonGPU) were never pushed and the moat-port branch pins lost SHAs -- recovery patches in agent_space/HEonGPU-attempt3/. Attempt 4: bisect inverse single- vs multi-kernel, check inverse-only #pragma unroll loop-not-unrolled / amdclang miscompile.
+
+## Porter Attempt 4 (2026-08-08, linux-gfx1100)
+
+### The build is now durable in git (the main deliverable of this attempt)
+
+The attempt-3 patches in `agent_space/` were gone again, as predicted -- that path is
+gitignored and did not survive. The submodule port has now been reconstructed a third time
+and committed to the fork so this cannot recur:
+
+- The gitlinks are reset to the real upstream commits the branch was based on
+  (GPU-FFT `b743607`, GPU-NTT `8a4daf1`, RNGonGPU `d9aaa6b`). The branch is clonable again;
+  previously `git submodule update --init` failed on three SHAs that exist nowhere.
+- The submodule HIP support lives in `thirdparty/patches/{GPU-NTT,GPU-FFT,RNGonGPU}.patch`,
+  applied by `thirdparty/build.sh` (which CMake already invokes at configure time) and only
+  when `USE_HIP=ON`. Applying is skipped when `git apply --reverse --check` succeeds, so
+  repeated configures are idempotent.
+- `.gitmodules` carries `ignore = dirty` per submodule, because applying the patches
+  permanently dirties those working trees and would otherwise read as an unclean tree.
+- `thirdparty/hip_compat/` gained `curand_mtgp32_host.h` and `curand_mtgp32dc_p_11213.h`
+  shims and a `CUDART_VERSION 10000` define (steers `base_rng.cu` to the
+  `hipPointerAttribute_t.type` branch).
+
+A fresh clone of `moat-port` now configures and builds with no manual repair.
+
+### Build result (gfx1100, ROCm)
+
+Configure + build clean, 100%: `libheongpu.a`, `libntt-1.0.a`, `libfft-1.0.a`,
+`librngongpu-1.0.a` and all 15 test executables. Build deps needed: `libgmp-dev`,
+`libntl-dev` (plus `libssl-dev`, already present).
+
+```bash
+cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build -DUSE_HIP=ON \
+    -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON
+cmake --build projects/HEonGPU/src/build -j$(nproc)
+ctest --test-dir projects/HEonGPU/src/build --output-on-failure
+```
+
+### DECISIVE FINDING: the fault is NOT wavefront-width dependent
+
+`ctest` on gfx1100: **2/20 pass, 18/20 fail, in 11.5s** -- the SAME two passes
+(`BFV_Encoding`, `CKKS_Encoding`) and the same 18 failures as the gfx90a run in the
+2026-06-05 review.
+
+gfx1100 is **wave32**, identical in wavefront width to a CUDA warp. Every warp-size
+hypothesis carried since attempt 1 -- the `& 31` / `>> 5` patterns, the 32 vs 64 lane masks,
+the shared-memory warp-count sizing -- is therefore **ruled out as the cause of the current
+failure**. Whatever is wrong is in shared port logic and is arch-independent. Stop looking
+at wave width.
+
+### The attempt-3 root cause is contradicted by the test results and should not be inherited
+
+Attempt 3 concluded the GPU-NTT inverse merge kernel miscomputes (INTT(NTT(x)) != x,
+4096/4096 corrupt). That cannot be globally true: the two tests that PASS are the encoding
+tests, and encode/decode round-trips through that same inverse NTT. Attempt 1 independently
+recorded "Encode/decode roundtrip: works perfectly". The attempt-3 probe built its own
+tables and accessors and most likely mismatched the library's conventions rather than
+finding a real kernel fault.
+
+The honest common factor across the 18 failures, and the 2 passes, is: **encoding is the
+only path that does no random polynomial generation and no key generation.** Everything that
+fails goes through `rngongpu::RNG<Mode::AES>` and/or keygen. That is where attempt 5 should
+start, not the NTT.
+
+### Verified correct by inspection this attempt (do not re-audit)
+
+- `bigintegerarith.cuh` HIP carry/borrow predicates. Case analysis confirms both are exactly
+  right, including the `carry_in=1, b=2^64-1` edge where the sum equals `a` and a carry is
+  still produced. Attempt 1 also verified these empirically.
+- GPU-NTT `modular_arith.cuh` limb order. From the PTX operand numbering (outputs numbered
+  before inputs), `value.x` is the LOW limb and `value.y` the HIGH limb; the C++ shift
+  operators agree. The `__umul64hi` and manual-borrow replacements match.
+
+### Known gfx90a-only risk, not the current bug
+
+`RNGonGPU/src/lib/common/aes.cu` uses `int warpThreadIndex = threadIdx.x & 31;` at three
+sites (174, 381, 557). On wave32 this is exactly the lane id, so it is inert on gfx1100 and
+cannot explain today's failure -- but on wave64 it is a genuine warp-size assumption and
+will need an arch-unified fix (correct on both widths) once the shared bug is found.
+
+### Next steps (attempt 5)
+
+1. Start at the RNG, not the NTT. Compare `rngongpu::RNG<Mode::AES>` output on ROCm against
+   the AES vectors / a CPU reference; the AES round keys and T-tables are uploaded with
+   plain `cudaMalloc` + copy in `aes_rng.cu`, so also check for any buffer read before it is
+   written (ROCm does not zero fresh allocations; CUDA often appears to).
+2. Then key generation, which is the other thing every failing test shares.
+3. Build GPU-NTT's own `example/ntt_merge/test_merge_ntt.cu` and `test_merge_intt.cu`
+   (upstream's own CPU-vs-GPU checks) for a clean, independent verdict on the NTT rather
+   than a hand-written probe. This needs the examples' CMakeLists taught about HIP, which
+   the current patches do not cover.

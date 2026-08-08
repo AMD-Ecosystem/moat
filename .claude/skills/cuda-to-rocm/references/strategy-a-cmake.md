@@ -161,3 +161,41 @@ directory as the header it names. (Quest)
   before compiling. Un-hipified files surface as "undeclared identifier cudaMalloc". Note
   that hipify prepends `#include "hip/hip_runtime.h"`, which breaks a g++ CPU reference
   build, so build that from a separate non-hipified copy. (LC-framework)
+
+## Submodules pinned to commits that do not exist
+
+**A port that edits a git submodule in place is lost the moment the clone is deleted, and
+the branch it leaves behind cannot even be cloned.** HEonGPU pins GPU-NTT, GPU-FFT and
+RNGonGPU as submodules. A porter edited each submodule's working tree, committed the
+resulting gitlinks in the parent, and never pushed the submodule commits anywhere. The
+gitlinks then named three SHAs that existed in no repository on earth. Two later sessions
+each rebuilt the same submodule port from scratch before discovering this, and the second
+one saved its reconstruction only as patch files in gitignored scratch space, so it was
+lost a third time.
+
+Check for it early: `git ls-tree HEAD <submodule-path>` in the port branch, then
+`git submodule update --init`. If the update cannot find the commit, the branch is
+unbuildable and no amount of local success proves otherwise.
+
+Forking every submodule is usually not available (fork creation is admin-only, and a chain
+of forks has to be re-pointed in `.gitmodules` and kept in sync). The durable shape that
+needs no new repositories is to **reset the gitlinks to the real upstream commits and carry
+the submodule changes as patch files in the parent repo**, applied by whatever script the
+project already runs at configure time:
+
+    git submodule update --init --recursive
+    if [ "${1:-OFF}" = "ON" ]; then                       # only for AMD builds
+        for name in ...; do
+            patch="$here/patches/$name.patch"
+            git -C "$here/$name" apply --reverse --check "$patch" 2>/dev/null && continue
+            git -C "$here/$name" apply "$patch"
+        done
+    fi
+
+The reverse-check is what makes repeated configures idempotent. Pass the AMD flag in from
+CMake so an NVIDIA build sees the submodules untouched. Add `ignore = dirty` to each entry
+in `.gitmodules`: applying the patches permanently dirties those working trees, and without
+this every later `git status` reads as an unclean tree and trips the integrity gate, while
+a genuine gitlink bump still shows. This also states the honest upstream position -- these
+changes belong in the submodules' own repositories, and the patch files are exactly the
+diffs to send there. (HEonGPU)

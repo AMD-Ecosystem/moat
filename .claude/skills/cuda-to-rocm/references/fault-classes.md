@@ -465,3 +465,54 @@ When such a delta flips a passed arch to revalidate, REBUILD it rather than carr
 on "it is Windows-gated" reasoning. A binary-equivalence carry-forward inherently builds,
 which is how both regressions above were caught; a reasoning-only skip would have shipped a
 broken build. (aihwkit, MMseqs2)
+
+## PTX carry-chain arithmetic (multi-word integers)
+
+Big-integer and modular-reduction code reaches for PTX because CUDA exposes the carry flag
+and C++ does not: `add.cc.u64` / `addc.cc.u64` / `subc.u64` chains, and `mul.lo.u64` +
+`mul.hi.u64` pairs. None of it survives hipify, so it is hand-translated, and the
+translation is easy to get subtly wrong in a way that compiles, runs, and silently corrupts
+results. Guard the original with `#ifdef __HIP_PLATFORM_AMD__` and leave the NVIDIA path
+byte-identical rather than replacing it for both.
+
+The two replacements, with the predicates spelled out, since these are what get fumbled:
+
+    // mul.lo/mul.hi -> 128-bit product
+    lo = a * b;
+    hi = __umul64hi(a, b);
+
+    // add.cc/addc chain -> carry out of a + b + carry_in
+    sum   = a + b + carry;
+    carry = (sum < a || (carry && sum == a)) ? 1 : 0;
+
+    // sub.cc/subc chain -> borrow out of a - b - borrow_in
+    diff   = a - b - borrow;
+    borrow = (a < b || (a == b && borrow)) ? 1 : 0;
+
+The add predicate needs both clauses. With `carry_in = 1` and `b == 2^64 - 1` the sum equals
+`a` exactly and a carry is nevertheless produced; testing only `sum < a` drops it. The
+symmetric case is why the borrow predicate tests `a == b && borrow` and reads the ORIGINAL
+`a` and `b`, not the computed difference.
+
+**Establish the limb order from the asm operand numbering before writing anything.** Outputs
+are numbered before inputs, so in
+
+    : "=l"(v.y), "=l"(v.x)        // %0 = v.y, %1 = v.x
+    : "l"(a), "l"(b)              // %2 = a,   %3 = b
+    mul.lo.u64 %1, %2, %3;        // -> v.x is the LOW limb
+
+a struct whose members are named `x` and `y` can carry low in either one, and the surrounding
+C++ shift operators are the cross-check. Getting this backwards produces plausible-looking
+garbage. (HEonGPU)
+
+## Do not trust a bisection that contradicts a passing test
+
+When a probe says a primitive is broken but a shipping test that exercises that same
+primitive passes, the probe is wrong until proven otherwise. On HEonGPU a session concluded
+the inverse NTT miscomputed on gfx90a while the encode/decode tests -- which round-trip
+through exactly that inverse NTT -- kept passing. The contradiction was recorded in the same
+notes file and not reconciled, and the next session inherited the wrong suspect. Reconcile
+first: either the passing test does not use the path you think it does, or the probe set up
+its inputs differently from the library (mismatched tables, wrong API overload, wrong
+ordering convention). Write the probe against the library's OWN generated parameters and
+public entry points, never against parameters you regenerate by hand. (HEonGPU)

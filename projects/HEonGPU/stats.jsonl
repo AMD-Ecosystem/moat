@@ -14,3 +14,7 @@
 {"kind":"phase","ts":"2026-06-11T23:15:29Z","phase":"compile","seconds":47.386,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/HEonGPU/src/build && cmake --build . -j128 2>&1 | grep -iE \"error:|error [0-9]|fatal|Built target|Linking HIP|Linking CXX.*heongpu\" | grep -ivE \"warning|generate-line\" | tail -40"}
 {"kind":"session","ts":"2026-06-11T23:28:43Z","epoch":1781220523.644553187,"event":"end","platform":"linux-gfx90a"}
 {"kind": "tokens", "ts": "2026-06-12T00:03:16Z", "tokens": 199055, "source": "porter"}
+{"kind":"phase","ts":"2026-08-08T17:41:47Z","phase":"compile","seconds":2.757,"exit":1,"cmd":"cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON"}
+{"kind":"phase","ts":"2026-08-08T17:42:09Z","phase":"compile","seconds":2.896,"exit":0,"cmd":"cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON"}
+{"kind":"phase","ts":"2026-08-08T17:43:00Z","phase":"compile","seconds":43.668,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j64"}
+{"kind":"phase","ts":"2026-08-08T17:43:18Z","phase":"test","seconds":11.650,"exit":8,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure --timeout 900"}
