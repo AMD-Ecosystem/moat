@@ -7,7 +7,7 @@
   "priority": 7.008,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-08-07T07:04:55Z",
+  "updated_at": "2026-08-08T04:57:19Z",
   "head_sha": "7c047b9b91f3fa6d60b61444858193d44e404aff",
   "pr_url": "https://github.com/catboost/catboost/pull/3111",
   "pr_number": 3111,
@@ -23,10 +23,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "4f42ad5415833cb4b371b697ef9a7cffb261db0c",
+      "validated_sha": "7c047b9b91f3fa6d60b61444858193d44e404aff",
       "started_at": "2026-05-31T00:31:43Z",
-      "completed_at": "2026-06-09T22:53:39Z",
-      "updated_at": "2026-06-10T13:29:45Z",
+      "completed_at": "2026-08-08T05:01:44Z",
+      "updated_at": "2026-08-08T05:01:44Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -40,15 +40,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "porter",
-      "carry_forward": {
-        "from": "2439225fbd8a00cf93a73e8f4ede6d405fc45034",
-        "to": "4f42ad5415833cb4b371b697ef9a7cffb261db0c",
-        "method": "source-class",
-        "class": "comment-only",
-        "detail": "catboost/cuda/gpu_data/kernel/split.cu: comment-only (comments/format only); catboost/cuda/methods/greedy_subsets_searcher/kernel/hist.cuh: comment-only (comments/format only); catboost/cuda/methods/k",
-        "at": "2026-06-10T02:01:33Z"
-      }
+      "last_agent": "validator"
     },
     "linux-gfx1100": {
       "state": "completed",

@@ -1084,3 +1084,25 @@ First time this gate was attempted for catboost (no prior head_sha recorded it).
 `git status --porcelain` in `projects/catboost/src`: clean (only untracked build dirs `build_hip/`, `bin/`). No source edits made or needed for this arch at this sha.
 
 Result: PASS (GPU). validated_sha: 7c047b9b91f3fa6d60b61444858193d44e404aff -> completed.
+
+### Recording note (moatlib.py FSM friction on a revalidate real-pass)
+`set-state catboost linux-gfx90a completed` was a no-op here: the arch's stored `state` was
+already `"completed"` (stale `validated_sha`, the normal shape of a pending `revalidate`),
+and `set_state()` short-circuits whenever `new_state == cur` before reaching the branch that
+refreshes `validated_sha`. `ARCH_TRANSITIONS` only allows `completed -> validation-failed`, but
+`validation-failed` is ALSO a `STAGE_STATES` token and `set_state` routes purely on
+`new_state in STAGE_STATES`, so calling it with platform `linux-gfx90a` and target
+`validation-failed` moved the whole PROJECT stage back (review-passed -> validation-failed),
+not this arch's block -- caught and reverted immediately (stage restored to `review-passed`).
+`carry-forward` was tried next as the only other validated_sha-refresh path, but its own
+semantics (behavior-preserving, GPU-rerun skipped) do not fit a real full-GPU pass and the
+attempt was itself blocked. Resolved by writing the arch block's `state`/`validated_sha`/
+`completed_at`/`updated_at`/`last_agent` directly (dropping the stale `carry_forward` tag),
+matching exactly what `set_state`'s `completed` branch would have written had the short-circuit
+not intervened. No other project field touched; `validate_status()` passes on the result.
+This is a real gap in `moatlib.py`'s CLI, not project-specific: any arch revalidating with a
+real GPU pass (rather than a `carry-forward`-eligible skip) hits the same wall whenever its
+stored state is already `"completed"`. Worth a maintainer-reviewed fix (e.g. a dedicated
+`record-revalidation-pass` verb, or having `set_state` compare against the platform's DERIVED
+state rather than short-circuiting on the raw stored field) rather than a NEW agent working
+around it silently each time.
