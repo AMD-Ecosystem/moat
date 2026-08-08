@@ -963,3 +963,235 @@ added `AddNormTest` and more example targets, not because of anything here.
   to hygiene, with the failed reproduction recorded.
 - `references/validation.md`: new PR-prep gate for upstream drift, including why
   `git diff <default>...<branch>` hides it.
+
+## Review 2026-08-08 (reviewer, linux-gfx1100, fork 19f29809b vs 5fe1221a8)
+
+Verdict: changes-requested. The rebase is correct and four of the six bounced items are
+fixed and verified below. What blocks is item 5: the porter's correction to my IPO finding
+refuted my *reason* but landed on the wrong *conclusion*, and that wrong conclusion is now
+shipped in a comment in GooFit's own CMakeLists, in the commit message, and in two skill
+entries.
+
+Reproduced on this host before reviewing: HIP build (gfx1100, ROCm 7.2.3, CMake 3.31.6,
+GPU 1) `ctest` 25/25 in 9.52 s; `examples/exponential/exponential` gives
+`alpha = -1.001102381 +/- 0.003165763921`, digit-identical to the reported run. CPP
+no-regression build 26/26 with `GOOFIT_PHYSICS:BOOL=ON` and `SUPPORTS_IPO:INTERNAL=YES`.
+
+### 1. The IPO guard is still a no-op, for a different reason than I gave, and both the CMake comment and the commit message now state a mechanism that does not occur
+
+CMakeLists.txt:582-589 excludes HIP from `SUPPORTS_IPO` with the comment "IPO puts -flto on
+the compile line, and a bitcode object's reference to the fatbinary symbol is left
+undefined by the separate device link". CMake never puts `-flto` on a HIP line, so that
+does not happen. Three independent measurements:
+
+```
+$ check_ipo_supported(RESULT R OUTPUT O LANGUAGES HIP)
+-- HIP-only IPO probe = NO / language(s) 'HIP' not supported
+$ grep -rn "HIP_COMPILE_OPTIONS_IPO\|HIP_LINK_OPTIONS_IPO" /usr/share/cmake-3.31/Modules/
+(no matches -- CMake 3.31 defines no IPO flags for the HIP language at all)
+```
+
+and, at this port's exact shape (a HIP `STATIC` lib plus a HIP executable, `-fgpu-rdc` on
+compile and link, `INTERPROCEDURAL_OPTIMIZATION ON` on both):
+
+```
+  FLAGS = -O2 -g -DNDEBUG -std=gnu++17 --offload-arch=gfx1100 -fgpu-rdc
+  LINK_FLAGS = -fgpu-rdc --hip-link --rtlib=compiler-rt -unwindlib=libgcc ...
+[4/4] Linking HIP executable bexe
+```
+
+No `-flto` anywhere and it links. `CheckIPOSupported.cmake:207-230` shows why the default
+probe answered YES: with no `LANGUAGES` it filters `ENABLED_LANGUAGES` down to
+C/CXX/CUDA/Fortran, so it measured `/usr/bin/c++`, never hipcc.
+
+`SUPPORTS_IPO` is read at exactly two sites, CMakeLists.txt:646 and :686
+(`GOOFIT_ADD_LIBRARY` / `GOOFIT_ADD_EXECUTABLE`). On the HIP backend every target those
+create is pure HIP language, because `goofit_mark_hip_sources` marks both `.cu` and `.cpp`;
+the only CXX object in the whole HIP build is `tests/catch_main.cpp`, and `catch_main` is a
+plain `add_library` (tests/CMakeLists.txt:1) that never receives the property. So the guard
+changes no flag on any line in any configuration this port supports.
+
+Fix, either way:
+
+- Drop `OR GOOFIT_DEVICE STREQUAL HIP` and its comment. The upstream CUDA exclusion stays.
+- Or keep it and say what is true: CMake 3.31 attaches no IPO flags to HIP sources, so the
+  exclusion is precautionary against a CMake that later does; the hazard it anticipates is
+  `-flto` on the compile line followed by a separate device link.
+
+Either is fine. What cannot ship is a comment in someone else's build system asserting a
+mechanism that a two-minute reproducer contradicts -- that is the third round in a row this
+project has bounced on exactly that. Commit 655ba62c0's body carries the same sentence
+("INTERPROCEDURAL_OPTIMIZATION puts -flto on the compile line, and the resulting bitcode
+object's reference to the fatbinary symbol is left undefined by the separate device link")
+and needs the same correction.
+
+Note the guard is not harmful, only inert, so this is about the recorded reason rather than
+the build. Moving it to upstream's backend switch is an improvement and should stay.
+
+### 2. `references/strategy-a-cmake.md` generalises a raw-hipcc result into a CMake claim that does not hold
+
+The three-row table is right and I reproduced every row on ROCm 7.2.3 / gfx1100, including
+the failure text (`ld.lld: error: undefined symbol: __hip_fatbin_819d4f029a7672c7`,
+`referenced by ... __hip_fatbin_wrapper`). Keep it. Three statements around it are wrong:
+
+- The heading imperative "Turn `INTERPROCEDURAL_OPTIMIZATION` off wherever you turned
+  `-fgpu-rdc` on, because CMake's IPO puts `-flto` on the COMPILE line". It does not, for
+  HIP.
+- Row 3's parenthetical "(CMake's IPO)". The row is real; the attribution is not.
+- "Note also that `check_ipo_supported()` answers YES under hipcc". It never probes hipcc.
+  An explicit `LANGUAGES HIP` probe answers `NO / language(s) 'HIP' not supported`, and the
+  default probe answers about the host C++ compiler.
+
+Rewrite so the table is scoped to raw hipcc, add that CMake 3.31 has no HIP IPO support so
+the bad combination cannot presently arise through `INTERPROCEDURAL_OPTIMIZATION`, and say
+what `check_ipo_supported()` actually measures. The version scope matters: this is a
+statement about CMake, and CMake may gain HIP IPO later.
+
+### 3. `references/validation.md`'s drift entry ends on the same wrong conclusion
+
+The entry is otherwise the best thing on this branch and the `<default>...<branch>`
+merge-base trap is exactly right. Its closing clause is not: "GooFit's
+`check_ipo_supported()` flipped NO -> YES across the rebase, turning a guard the reviewer
+had measured as a no-op into a load-bearing one". The flip is real (`build-cpp`'s cache is
+`SUPPORTS_IPO:INTERNAL=YES` now, and was NO at the old base), but the guard is still a
+no-op per finding 1. Keep the observation, drop the conclusion: the durable lesson is that a
+project-wide probe can answer differently after a rebase, so re-measure it rather than
+trusting a cached value or an earlier review -- which is true, useful, and does not depend
+on how the GooFit guard turned out.
+
+### 4. The HIP backend prints CUDA labels for AMD devices
+
+`src/goofit/Application.cpp:103-118` and `:157` are inside `#if GOOFIT_DEVICE_IS_GPU` and
+hardcode a `CUDA:` prefix. Run on gfx1100:
+
+```
+$ ./exponential --gpu-dev 0
+GooFit: Version 2.4.0 (release) Commit:
+HIP 7.2
+CUDA: Number of devices: 1
+CUDA: Device 0: AMD Radeon Pro W7800 48GB
+CUDA: Compute 11.0
+CUDA: Total global memory: 48.301604864 GB
+CUDA: Multiprocessors: 35
+CUDA: 0 AMD Radeon Pro W7800 48GB: Compute 11.0; Memory 44.984375 GB
+```
+
+The version line was ported and the rest was not, and "Compute 11.0" is a gfx arch wearing
+a CUDA compute-capability label. This is the first thing a GooFit maintainer will see when
+they try the new backend. The same commit already genericised the neighbouring message at
+`:296` ("GPU devices do not support floating point exceptions"), so the intent is
+established; carry it through here, either with a backend-dependent prefix string or a
+second arm under the existing `__HIP_PLATFORM_AMD__` check.
+
+### 5. `DebugTools.cu` changes libraries on every backend and no commit message mentions it
+
+`src/PDFs/CMakeLists.txt:16` drops `utilities/DebugTools.cu` from `PDFCore` and
+`src/PDFs/physics/CMakeLists.txt:12` adds it to `PDFPhysics`. The move is justified --
+`DebugTools::copyAmpIndicesToHost` does `MEMCPY_FROM_SYMBOL(..., AmpIndices, ...)` on the
+`__constant__` from `Amp4BodyGlobals.h`, so the file cannot link with `GOOFIT_PHYSICS=OFF`,
+and its only callers are `Amp4Body_TD.cu` and `detail/AmpCalc_TD.cu`, both physics. But on
+CUDA and CPP, where nothing else about the option changes, it silently relocates a symbol
+from `libPDFCore` to `libPDFPhysics`. Commit 655ba62c0's scope paragraph lists the physics
+PDFs, examples, Python bindings and the one test; add this, in one sentence, with the
+reason.
+
+### 6. plan.md still describes a design that was not built
+
+`projects/GooFit/plan.md:40-56, 131-141, 154-171` specify a `USE_HIP` option, keeping
+`-DGOOFIT_DEVICE=CUDA` and overriding it, and disabling `GOOFIT_FORCE_LOCAL_THRUST`. What
+shipped is a first-class `GOOFIT_DEVICE=HIP` backend with `IS_NOT_HIP`, `GOOFIT_PHYSICS`,
+and upstream's Thrust block left intact. This is the file the next agent reads before
+notes.md. Rewrite the strategy and file-list sections, or head it as superseded by the
+attempt-5 notes.
+
+### Adjudications
+
+**Item 1, the `GlobalCudaDefines.h` split: correct, and the argument holds. Verified, not
+taken on trust.** Probing with `-include probe.h` under `hipcc -x hip --offload-arch=gfx1100`
+(the exact position `cuda_to_hip.h` occupies) reports `__host__`, `__device__`, `__shared__`
+and `__constant__` all already defined, in BOTH the device pass and the host pass -- clang
+preincludes `__clang_hip_runtime_wrapper.h` ahead of any user `-include`. So upstream's
+`#ifndef` guards on the first half are genuinely inert under hipcc.
+
+The second half is what mattered, and the porter's read of the danger is right. Those four
+lines are unguarded, so upstream's merged block would have won by redefinition. Emulated it
+directly:
+
+```
+redef.hip:4:9: warning: '__shared__' macro redefined [-Wmacro-redefined]
+/opt/rocm/lib/llvm/lib/clang/22/include/__clang_hip_runtime_wrapper.h:24:9:
+   note: previous definition is here
+3 warnings generated when compiling for gfx1100.
+        .amdhsa_group_segment_fixed_size 0
+        .amdhsa_private_segment_fixed_size 1040
+```
+
+A warning, not an error, and the kernel's `__shared__ float cache[256]` becomes 1040 bytes
+of per-thread scratch with zero LDS -- every thread gets a private copy and the
+`__syncthreads()` around it means nothing. Silent, and it would have hit
+`ConvolutionPdf.cu`'s `modelCache`. The split is load-bearing, not cosmetic.
+
+Preprocessor outcome against upstream, per backend: CUDA takes neither block (upstream:
+neither) and CPP/OMP/TBB take both (upstream: both), so both are byte-identical to upstream
+behaviour. The one delta is a HIP-build translation unit compiled as plain C++ rather than
+`-x hip`: rocThrust reports `THRUST_DEVICE_SYSTEM_HIP` even under g++ (verified), so
+`GOOFIT_DEVICE_IS_GPU` is 1 there and the CPU-fallback definitions -- including the
+`cudaError_t` enum at :134 -- would not be defined where upstream's merged block defined
+them. No such TU exists: the HIP build has 74 HIP objects and exactly one CXX object,
+`tests/catch_main.cpp`, which includes only Catch2. Nothing to fix; the notes' claim that
+the first half "still fires in HIP host-only TUs, where it is needed" describes a case this
+build does not contain, so do not lean on it as evidence.
+
+**Item 5, the LTO correction: the porter is right and I was wrong.** All three rows
+reproduce exactly as tabulated -- one `hipcc` command with `-flto` links, `-flto` at link
+only links, and `-flto` on the compile line with a separate link fails on
+`__hip_fatbin_<hash>`. My earlier reproducer was the one-command shape, which is row 1, so
+"LTO is fine" was a measurement of the wrong thing. The table is the correct
+generalisation and belongs in the skill. Its framing does not (findings 1-3).
+
+**Item 5, the `SUPPORTS_IPO` correction: the porter is right that it answers YES.** My
+"`SUPPORTS_IPO:INTERNAL=NO`, so the guard is a no-op" cited a cache written by a configure
+that had already forced it. `build-cpp` now caches YES and a clean probe answers YES.
+Moving the guard from a per-target `if()` in `GOOFIT_ADD_LIBRARY` to upstream's backend
+switch is right on both counts the porter gives: one line instead of four, and
+`GOOFIT_ADD_EXECUTABLE` never carried the per-target guard. Only the conclusion drawn from
+the YES is wrong (finding 1).
+
+**Item 2, the rebase: clean.** `git rev-list --count moat-port..origin/master` is 0 and the
+fork's `master` (5fe1221a8) is `GooFit/GooFit@master` as of today, checked against
+`git ls-remote`. Both `validated_sha` were null, so the rewrite orphaned nothing.
+
+**Item 3, the Thrust block: byte-identity confirmed.** The whole delta is four added lines
+(`if(GOOFIT_DEVICE STREQUAL HIP)` plus a three-line comment) and `if(` -> `elseif(` on
+upstream's line. Upstream's `option()`, its `GOOFIT_FORCE_LOCAL_THRUST` body and its
+`else()` body are unchanged character for character against `5fe1221a8:CMakeLists.txt`. The
+empty leading branch is unusual CMake but it is what keeps the diff at four lines, and I
+would not trade that for a `NOT` wrapper that re-indents upstream's block.
+
+**Item 4, `d8e1102cf`: not redundant, confirmed.** `git show --stat` gives one file,
+`src/PDFs/combine/CompositePdf.cu`; the port touches `src/PDFs/MetricTaker.cu` and leaves
+`CompositePdf.cu` alone. Precedent, not duplication, and the commit message now cites #384
+without claiming a HIP bug. The array bound is unchanged too: upstream's `new fptype[10]`
+and the port's `fptype[MAX_NUM_OBSERVABLES]` are both 10, and the only write is
+`events[id]`, so the change introduces no new out-of-bounds exposure in either direction.
+
+**Item 6, the submodule check: confirmed safe.** `extern/thrust` is at `af8cce4ca` (CCCL
+v3.3.3) with `README.md` present, upstream's check at CMakeLists.txt:75-87 is untouched,
+and the HIP build configures and passes through it. Deleting the relocated check and its
+`if(NOT ... HIP)` wrapper is right -- they existed for a premise that turned out false.
+
+**Fault classes: nothing to report.** The only `warpSize` in the tree is
+`Application.cpp:117`'s printout; no `__shfl`, `__ballot`, `__activemask`, no lane mask, no
+texture, atomic or resource handle anywhere, so no rule-of-five, pitch or wavefront exposure
+exists. No arch-conditional code in the diff; every fix is arch-unified. The compat shim
+covers every `cuda*` symbol the tree actually uses -- diffing the used set against the
+mapped set leaves only `cudaArray` (commented out), `cudaErrCheck_` and `cudaPlus` (GooFit's
+own names). `Log.h` correctly uses `__HIP_DEVICE_COMPILE__` (device pass only) where
+`ParameterContainer.cu` correctly uses `__HIPCC__` (both passes) -- those are the right two
+macros for the two different jobs. No library substitution beyond Thrust -> rocThrust.
+
+**Hygiene: clean.** `jargon.py --commits 5fe1221a8..HEAD` reports clean; both titles are
+`[ROCm]`-prefixed at 56 and 44 chars; no `Co-Authored-By` or `noreply` trailer; no
+`Assisted-by` line; no copyright or author lines added; no non-ASCII and no em-dash in the
+diff; no AMD-internal account, host or MOAT vocabulary in any upstream-visible text; fork
+tree clean.
