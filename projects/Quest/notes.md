@@ -562,3 +562,80 @@ now, by the reviewer's judgement, and is the one thing to weigh before the PR go
 precisely what this port does not claim to run. The body says so plainly in its fifth
 paragraph. Decide it at PR time; if you retitle, it is a new commit on top, never an amend,
 because by then an arch may have validated `c1d7fff`.
+
+## Review 2026-08-08 (pass 4, linux-gfx1100) -- narrow confirmation, PASS
+
+No problems found. Round 4 is control-plane only: `head_sha` unchanged at `c1d7fff`, fork
+tree clean, `HEAD == origin/moat-port == status.json.head_sha`, `porting` null, and
+`jargon.py` clean over both `origin/main..HEAD` here and `01c1623..c1d7fff` on the fork.
+The port code, the build fix and the test results were not re-reviewed; pass 3 settled them.
+
+The corrected sentence in `strategy-b-torch.md:56-59` is now true, and the NEGATIVE half --
+that the two named spellings are the dead ones -- was checked here rather than taken on
+trust. A standalone probe (cmake 3.31.6, `cmake_minimum_required(VERSION 3.21)`, real
+`enable_language(HIP)` on this host) ran all three spellings against one cache entry left by
+`enable_language(HIP)` (`gfx1100;gfx1100;gfx1100;gfx1100`):
+
+- `if(NOT DEFINED CMAKE_HIP_ARCHITECTURES)` evaluated FALSE, so a guarded `set()` never runs.
+  DEAD.
+- `set(CMAKE_HIP_ARCHITECTURES gfx801 CACHE STRING "nf")` left both the cache entry and the
+  read value unchanged. DEAD. It also does not clobber an existing normal-variable shadow
+  (CMP0126 is NEW at this minimum), so it is inert in both directions.
+- An unguarded `set(CMAKE_HIP_ARCHITECTURES gfx1100)` won: the read value became `gfx1100`
+  while `get_property(... CACHE ...)` still showed the four-entry cache, i.e. a shadow, and
+  it propagated into a subdirectory added after it.
+
+The "every target created after it" qualifier is exact, not loose. A second probe created one
+HIP executable before the unguarded `set()` and one after: the earlier target got the cache
+value (`gfx1100;gfx1100;gfx1100;gfx1100`) and kept it on re-read after the `set()`, while the
+later target got `gfx942`. So the shadow initialises `HIP_ARCHITECTURES` at target-creation
+time for the rest of the directory scope and cannot reach back.
+
+The upstream citations behind the entry hold: `CMakeDetermineHIPCompiler.cmake:296`
+(`elseif(NOT DEFINED CMAKE_HIP_ARCHITECTURES)`), `CMakeDetermineCUDACompiler.cmake:261`
+(`if("${CMAKE_CUDA_ARCHITECTURES}" STREQUAL "")` -> cache set at :264, and it FATAL_ERRORs
+rather than leaving the variable undefined, so a later `if(NOT DEFINED ...)` guard is always
+false on a configure that succeeds), and `LoadHIP.cmake:107`
+(`set(CMAKE_HIP_ARCHITECTURES ${PYTORCH_ROCM_ARCH})`, unguarded and normal, with that file's
+own `enable_language(HIP)` at :139 below it -- so point 2's parenthetical is correctly
+ordered).
+
+The rewritten Quest CUDA-leg example is accurate against the fork: at `ff80217`,
+`quest/ops/CMakeLists.txt` has `enable_language(CUDA)` immediately above its own
+`if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES) set(CMAKE_CUDA_ARCHITECTURES native)`, so the guard
+is what killed it. The pre-port file at `01c1623` had that same guarded set ABOVE
+`project(_kernels LANGUAGES CUDA CXX)`, where it worked -- which is exactly why the old wording
+read as if bare ordering were the mechanism.
+
+Points 1 and 2 read as one account with no residual contradiction: point 1 forward-references
+point 2 as the case where a late set does win, and point 2 opens by naming itself as that
+unguarded normal `set()`. The rest of the file is untouched -- the round-4 delta is two hunks,
+23 insertions / 13 deletions, confined to those two paragraphs, and a word-diff shows the
+surviving CUDA and "belong above `project()`" sentences are reflow only. Longest added line is
+94 chars, matching the file's wrap.
+
+`README.md` needed no restore: blob `562ad7a9b88b66b2faf6e84f1912c9df46e6ae61` on all three of
+`origin/main:README.md`, `HEAD:README.md`, and the worktree. The porter's MECHANISM is right --
+`gen_readme.py:33-34` builds every row from `moatlib.all_projects()` + `project_record()`, both of
+which resolve across the port branches, so a regeneration run on main already carries in-flight
+branches, which is why main's copy converged on this branch's content by itself (main's README
+carries the Quest row at line 166 today).
+
+The CONCLUSION the porter drew from it is wrong, and this review nearly repeated it. "A port
+branch must not regenerate the board, and the three `Regenerate the README table` commits
+(`a837a4e`, `6f04063`, `0b0954a`) are the instances to stop repeating" does not survive contact
+with `utils/check.py:109-115`: the readme gate runs on EVERY pre-push from a full clone,
+regardless of branch, and `gen_readme.py --check` sees this branch's own state.json. Setting a
+stage on a port branch therefore stales the branch's table and the next push is refused -- which
+is exactly what happened to this review's push, and is what those three commits were doing. They
+are the gate being satisfied, not a habit to break.
+
+Both statements are true at once and they are about different things. The board CONVERGES without
+a port branch's help, so a branch never has to regenerate it to make main correct; the gate still
+REQUIRES the branch's own copy to be fresh at push time, so in practice every state transition on
+a port branch carries a regeneration with it. Do not treat a `Regenerate the README table` commit
+on a port branch as noise, and do not reach for `git push --no-verify` when the readme gate fires
+-- run `python3 utils/gen_readme.py` and include the result in the same commit.
+
+Verdict: review-passed. The one thing still open for whoever opens the upstream PR is the
+commit-title wording recorded above; it is a judgement call at PR time, not a defect.
