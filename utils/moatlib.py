@@ -403,7 +403,21 @@ def trunk_vocabulary(base_ref="origin/main"):
 
     Read from `schema/status.schema.json`, which is generated FROM moatlib, so it is
     the trunk's own answer rather than a guess parsed out of its source. Cached: this
-    is consulted on every write and it is one git call."""
+    is consulted on every write and it is one git call.
+
+    Two limits, both deliberate, and both worth knowing because they bound how much
+    this guard is worth. `origin/main` is a LOCAL ref and nothing here fetches, so the
+    check is only as current as the last fetch -- and a checkout stale enough to hold
+    old tooling may hold an old trunk ref too, in which case this reads a schema that
+    AGREES with the stale code and passes. Fetching from a path consulted on every
+    write would cost more than it returns, so orient.sh's fetch is what keeps it
+    honest. The cache then lives for the process, so a long session that outlives a
+    trunk change keeps the old answer.
+
+    Both fail in the same direction: a value the trunk has dropped can slip through,
+    never a good one refused. That is the right direction for a guard that sits in
+    front of every write, but it means this narrows the window rather than closing
+    it -- starting from a synced worktree is still what actually prevents the case."""
     global _TRUNK_VOCAB
     if _TRUNK_VOCAB is None:
         raw = _ref_read(base_ref, "schema/status.schema.json")
@@ -447,6 +461,7 @@ def check_against_trunk(obj):
             if st is not None and st not in vocab["archstate"]:
                 bad.append(f"{plat} state {st!r}")
     return bad
+
 
 def save_record(name, obj, message):
     """Persist a project's record wherever it lives -- this checkout, or its own branch.
