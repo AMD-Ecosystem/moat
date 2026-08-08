@@ -7,8 +7,8 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-10T13:58:57Z",
-  "updated_at": "2026-08-08T19:45:04Z",
-  "head_sha": "512dbe91fbe9321acada2628b1dd80cb8d128990",
+  "updated_at": "2026-08-08T21:22:57Z",
+  "head_sha": "4c531f5e51f18eeb145309f8650a8da58453c8af",
   "depends_on": [],
   "fork_branch": "moat-port",
   "on_hold": false,
@@ -29,7 +29,7 @@
       "at": "2026-08-07T15:27:11Z"
     }
   },
-  "stage": "changes-requested",
+  "stage": "ported",
   "platforms": {
     "linux-gfx90a": {
       "blocked": false,
@@ -52,6 +52,27 @@
         "last_session_at": null
       },
       "last_agent": "porter"
+    },
+    "linux-gfx1100": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": "2026-08-08T21:22:33Z",
+      "completed_at": null,
+      "updated_at": "2026-08-08T21:22:57Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
     }
   }
 }

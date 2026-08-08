@@ -304,6 +304,17 @@ back to point filtering for layered textures; leave it alone.
    alone and behaves differently in-suite, and check the "[SiftGPU Language]" line
    (`SiftGPU.cpp:163`). Prefer widening the vendor test over adding a new global.
 
+   **CLOSED 2026-08-08 on linux-gfx1100, by tracing rather than by inference** (notes.md,
+   "Review response on linux-gfx1100"). Over a full `sift_test` run: `InitGLParam` is
+   entered exactly once and with `NotTargetGL=1`, so it returns at
+   `GlobalUtil.cpp:326-328` before `glewInit()`; `glGetString` is called 16 times and never
+   with `GL_VENDOR`; `PyramidGL` is constructed zero times; and a hardware watchpoint sees
+   `_UseCUDA` written once, `0 -> 1`, and never cleared. Line 370 is unreachable from
+   COLMAP because COLMAP always passes `-cuda <index>`, so no GLSL user exists in the
+   process. This does not depend on the vendor string or the GL driver, which is why the
+   gfx90a-versus-RDNA distinction turns out not to matter. No code change; the latent
+   hazard remains for a caller that does use the GLSL backend.
+
 6. **Wave32 versus wave64.** Low risk, stated explicitly because the gate demands both.
    There are no warp intrinsics and no `warpSize`. The three hardcoded 32s are block
    dimensions, not warp assumptions: `ROWMATCH_BLOCK_WIDTH 32`, `COLMATCH_BLOCK_WIDTH 32`,

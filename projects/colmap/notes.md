@@ -449,3 +449,156 @@ Recorded so the next reviewer does not repeat it.
   CuTexObj rule-of-five entries (`references/fault-classes.md:148-155`) all hold. The
   640x480 arithmetic in the pitch entry checks out: the 80-wide float2 level is a 640-byte
   row, not a multiple of 256. This branch adds no skill entries.
+
+## Review response on linux-gfx1100 2026-08-08 (porter, wave32 host)
+
+All five review items addressed. Everything below was measured on this host (Radeon Pro
+W7800, gfx1100, ROCm 7.2.3, GPU index 2) against the amended tree, not carried over from
+the gfx90a run. The wavefront analysis was NOT redone; the reviewer's reading stands and
+plan.md risk 6 is unchanged.
+
+### Build recipe additions for this host
+
+The gfx90a package list in the section above is complete except for **`libopencv-dev`**,
+which is not a COLMAP dependency at all: `find_package(OpenImageIO)` fails configure with
+`Imported target "OpenImageIO::OpenImageIO" includes non-existent path
+"/usr/include/opencv4"` because Ubuntu's OpenImageIO exports an interface include
+directory it does not itself install. Same class of trap as the `openimageio-tools` note.
+
+### Item 1: `CuTexImage::CopyFromPBO` now fails loudly
+
+`CuTexImage.cpp:257-278`. The ROCm arm gained an `#else` that writes
+`Unable To Copy From PBO: this build has no pixel buffer object interop` to `std::cerr`
+and then `cudaMemset`s `_cuData` to zero, so the caller gets a diagnostic and a defined
+buffer rather than uninitialized device memory. The `#else` is inside
+`#if defined(SIFTGPU_GL_INTEROP_ENABLED)`, which is defined on every CUDA build, so the
+CUDA object code is untouched.
+
+Verified directly rather than by inspection, because COLMAP itself cannot reach the call:
+`agent_space/pbo_check.cpp` links `libcolmap_sift_gpu.a`, fills a 64x64 CuTexImage with
+12345.0f, calls `CopyFromPBO(64, 64, 0)` and reads back.
+
+    before CopyFromPBO: out[0]=12345 out[n-1]=12345
+    Unable To Copy From PBO: this build has no pixel buffer object interop
+    after  CopyFromPBO: out[0]=0 out[n-1]=0 sum=0
+
+### Item 4: what `_UseCUDA` actually resolves to on RDNA -- risk 5 is closed by tracing
+
+**`_UseCUDA` is 1 and stays 1 for the whole of `sift_test` on this host.** The result is
+much stronger than "did not materialise": the `_IsNvidia == 0` clearing at
+`GlobalUtil.cpp:370` is UNREACHABLE from COLMAP, and it is unreachable for a structural
+reason, not because of anything about the vendor string or the GPU.
+
+Traced under gdb on the Release binary (no debug info needed; `GlobalParam::_UseCUDA`,
+`_IsNvidia` and `_GoodOpenGL` are ordinary global symbols, and `GlobalUtil::InitGLParam`,
+`PyramidCU::PyramidCU`, `PyramidGL::PyramidGL` are in the symbol table). Over one full
+`xvfb-run` of `sift_test`:
+
+| probe | count | value |
+|---|---|---|
+| `GlobalUtil::InitGLParam` entered | 1 | `NotTargetGL=1`, `_UseCUDA=1`, `_GoodOpenGL=-1` |
+| `PyramidCU::PyramidCU` (compute backend) | 1 | -- |
+| `PyramidGL::PyramidGL` (GLSL backend) | **0** | -- |
+| `glGetString` | 16 | every one is `GL_VERSION` (0x1f02); `GL_VENDOR` (0x1f00) **never** |
+| writes that change `_UseCUDA` (hardware watchpoint) | 1 | `0 -> 1` |
+
+`InitGLParam(1)` takes the early branch at `GlobalUtil.cpp:326-328` (`NotTargetGL &&
+!_UseSiftGPUEX`), sets `_GoodOpenGL = 1` and returns before `glewInit()`, so the vendor
+string is never read and line 370 never runs. `PyramidGL` is never constructed at all,
+because COLMAP always passes `-cuda <index>` (`sift.cc:588`), so the second-call hazard
+plan.md risk 5 describes needs a GLSL user that COLMAP does not contain.
+
+Two traps worth recording:
+
+- **Reading a global after the inferior exits gives the ELF initial value, not the last
+  live value.** A first pass printed `AT-EXIT: _UseCUDA=0 _GoodOpenGL=-1` and that looked
+  exactly like the fallback the reviewer predicted. Those are the initializers at
+  `GlobalUtil.cpp:48` and `:99`: gdb was reading the `.data` image from the file after the
+  process was gone. The watchpoint is the honest instrument; a post-exit read is not.
+- **An `LD_PRELOAD` shim on `glGetString` does not intercept Qt.** Qt resolves GL through
+  `QOpenGLFunctions`/`eglGetProcAddress`, so a preloaded `glGetString` is bypassed. It
+  would work for SiftGPU, which calls the symbol directly, but a breakpoint proves more
+  with less setup and no positive control needed.
+
+For the record on what GL is actually available here: `xvfb-run` gives Mesa llvmpipe
+(vendor `Mesa`), same as the gfx90a host. A real AMD driver IS reachable on this machine
+via surfaceless EGL -- `EGL_PLATFORM=surfaceless QT_QPA_PLATFORM=eglfs` yields vendor
+`AMD`, renderer `AMD Radeon Pro W7800 48GB (radeonsi, navi31)` -- but COLMAP cannot use
+it: `OpenGLContextManager` asks for a 2.1 CompatibilityProfile
+(`opengl_utils.cc:46-51`), and eglfs offers GLES, so `QOpenGLContext::create()` fails with
+EGL 3009. So on this host COLMAP's GL context is llvmpipe either way, and per the trace
+above that makes no difference to the backend choice.
+
+### Item 3: the requested gate is NOT safe, and this was proven, not argued
+
+The review asked to gate `<hiprand/hiprand_kernel.h>` / `<curand_kernel.h>` in
+`cuda_to_hip.h` behind `__HIPCC__` / `__CUDACC__`. **That breaks the build.** The review's
+premise -- "nothing outside a `.cu` names `curandState`" -- holds for `.cc`/`.cpp` files
+but not for headers: `gpu_mat.h:137` declares
+`FillWithRandomNumbers(..., const GpuMat<curandState>&)` and `gpu_mat_prng.h:37` declares
+`class GpuMatPRNG : public GpuMat<curandState>`, and `patch_match.cc` (host-compiled by
+`/usr/bin/c++` into `colmap_mvs_cuda`) reaches both through
+`patch_match_cuda.h -> cuda_texture.h -> gpu_mat.h`. Built the gated header into an
+override include directory and compiled the real TU with the real compile command:
+
+    gpu_mat.h:137:43: error: 'curandState' was not declared in this scope
+    gpu_mat_prng.h:37:34: error: 'curandState' was not declared in this scope
+
+(unmodified header: 0 errors). A forward declaration does not rescue it either --
+`GpuMat<curandState>` needs `sizeof(T)` in host code, and `hiprandState` is a typedef of
+`rocrand_state_xorwow`, not a class that can be forward-declared portably.
+
+So the *other* remedy the review offered was taken, and it is the one that fixes the only
+thing that can actually fail: `src/thirdparty/SiftGPU/CMakeLists.txt` now lists
+`hip::hiprand` and `roc::rocrand` next to `hip::host`. That mirrors upstream's own CUDA
+arm, which has listed `CUDA::curand` for `colmap_sift_gpu` since before this port, and it
+matches `colmap_mvs_cuda`. The declared dependency now covers the header the target
+actually includes, which is what would have broken on a split `rocm-sdk` install where
+hiprand headers are not on `hip::host`'s include path. A comment at `cuda_to_hip.h:47-50`
+records why the include cannot be narrowed, so the next reader does not retry it.
+
+Footprint, for the record: the RNG header is 24.6k of the compat header's 56.0k
+preprocessed lines. Real, but not worth an opt-out macro plus per-target CMake plumbing
+that makes an installed header non-self-contained.
+
+### Items 2 and 5: commit message
+
+Commit amended (no arch had a `validated_sha`, so nothing was orphaned). The Test Plan now
+carries the nvcc configuration, run again on THIS host against the amended tree
+(nvcc 13.3.73 from conda `-c nvidia cuda-nvcc cuda-cudart-dev libcurand-dev cuda-cccl`
+into `agent_space/cuda`; `colmap_sift_gpu`, `colmap_mvs_cuda`, `colmap_feature_sift_test`
+and `colmap_main` all compile and link), a plain statement that the CUDA path was compile-
+checked and not executed with no numerical comparison made, and the border-only scope of
+the ComputeDOG clamp. The `RunThreadWithOpenGLContext` paragraph now names the eight
+production call sites (`exe/feature.cc` x7, `exe/sfm.cc` x1) and gives the reachability
+argument instead of calling the function test infrastructure.
+
+### Test results on gfx1100
+
+Full suite: **159 of 159 pass**, `xvfb-run -a ctest -j4`, 11.6 s wall. (The 1501 s of the
+`-j16` attempt was entirely the Mesa deadlock below, not slowness -- everything except the
+hung test finishes in seconds at any `-j`.)
+
+`sift_test` standalone: 32 of 32 in 2.7 s. Kernel dispatches for that run, by
+`AMD_LOG_LEVEL=3`: FilterH x31, FilterV x31, ReduceHist x45, ComputeDOG x30, RowMatch x25,
+ColMatch x24, ComputeKEY x18, InitHist x18, ListGen x14, MultiplyDescriptorGRay x12,
+MultiplyDescriptor x9, NormalizeDescriptor x5, ComputeOrientation x5, ComputeDescriptor x5,
+DownsampleKernel x5, MultiplyDescriptorG x4, UpsampleKernel x1.
+
+**`sift_test` deadlocks in Mesa, not in COLMAP, when the suite shares one Xvfb display.**
+Under `xvfb-run -a ctest -jN` it hung at `MatchGuidedSiftFeaturesGPU.TypeMismatch` twice
+out of two (reported as `Timeout` at ctest's default 1500 s cap the first time), while the
+same binary passes standalone 5 times out of 5 in under 3 s. The stack of the hung process
+is not COLMAP's:
+
+    #3  __pthread_clockjoin_ex
+    #4-#8  libgallium-25.2.8.so
+    #9-#10 libGLX_mesa.so.0
+    #11 XCloseDisplay
+
+`RunGpuTest` builds a `QApplication` per test, so each test opens and closes the X display,
+and llvmpipe's thread pool deadlocks joining its workers on close when other GL clients are
+live on the same display. Isolating the variables: sift_test alone on a **pre-existing
+shared** `Xvfb :77` passes (2.9 s), so it is concurrency, not the shared display; and the
+GPU is not involved at any point. `-j4` is clear of it here and runs the whole suite in
+11.6 s; `-j8` and `-j16` both hung.

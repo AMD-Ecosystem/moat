@@ -13,3 +13,11 @@
 {"kind":"phase","ts":"2026-08-08T03:49:23Z","phase":"test","seconds":10.049,"exit":0,"cmd":"ctest --test-dir projects/colmap/src/build-hip -j16 --output-on-failure"}
 {"kind": "tokens", "ts": "2026-08-08T03:53:43Z", "tokens": 230107, "source": "porter"}
 {"kind": "tokens", "ts": "2026-08-08T19:46:01Z", "tokens": 211579, "source": "reviewer"}
+{"kind":"phase","ts":"2026-08-08T19:51:36Z","phase":"compile","seconds":6.778,"exit":1,"cmd":"bash -c cd projects/colmap/src && cmake -S . -B build-hip-gui -GNinja -DCUDA_ENABLED=OFF -DHIP_ENABLED=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release -DTESTS_ENABLED=ON -DGUI_ENABLED=ON -DCGAL_ENABLED=OFF -DDOWNLOAD_ENABLED=OFF -DONNX_ENABLED=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON"}
+{"kind":"phase","ts":"2026-08-08T19:51:55Z","phase":"compile","seconds":1.437,"exit":0,"cmd":"bash -c cd projects/colmap/src && cmake -S . -B build-hip-gui -GNinja -DCUDA_ENABLED=OFF -DHIP_ENABLED=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release -DTESTS_ENABLED=ON -DGUI_ENABLED=ON -DCGAL_ENABLED=OFF -DDOWNLOAD_ENABLED=OFF -DONNX_ENABLED=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON"}
+{"kind":"phase","ts":"2026-08-08T19:55:50Z","phase":"compile","seconds":227.935,"exit":0,"cmd":"cmake --build projects/colmap/src/build-hip-gui -j64"}
+{"kind":"phase","ts":"2026-08-08T20:07:05Z","phase":"compile","seconds":55.715,"exit":0,"cmd":"cmake --build projects/colmap/src/build-hip-gui -j64"}
+{"kind":"phase","ts":"2026-08-08T20:24:08Z","phase":"compile","seconds":156.230,"exit":0,"cmd":"cmake --build projects/colmap/src/build-cuda --target colmap_sift_gpu colmap_mvs_cuda -j64"}
+{"kind":"phase","ts":"2026-08-08T20:26:03Z","phase":"compile","seconds":101.719,"exit":0,"cmd":"cmake --build projects/colmap/src/build-cuda --target colmap_sift_gpu colmap_feature_sift_test colmap_main -j64"}
+{"kind":"phase","ts":"2026-08-08T20:34:11Z","phase":"test","seconds":1501.995,"exit":8,"cmd":"xvfb-run -a ctest --test-dir projects/colmap/src/build-hip-gui -j16 --output-on-failure"}
+{"kind":"phase","ts":"2026-08-08T21:19:45Z","phase":"test","seconds":11.819,"exit":0,"cmd":"xvfb-run -a ctest --test-dir projects/colmap/src/build-hip-gui -j4 --timeout 600 --output-on-failure"}
