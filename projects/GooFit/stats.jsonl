@@ -41,3 +41,4 @@
 {"kind":"phase","ts":"2026-08-08T23:33:16Z","phase":"compile","seconds":4.997,"exit":0,"cmd":"cmake --build projects/GooFit/src/build-cpp -j32"}
 {"kind":"phase","ts":"2026-08-08T23:33:27Z","phase":"test","seconds":6.534,"exit":0,"cmd":"ctest --test-dir projects/GooFit/src/build-cpp"}
 {"kind": "tokens", "ts": "2026-08-08T23:42:55Z", "tokens": 104314, "source": "porter"}
+{"kind": "tokens", "ts": "2026-08-08T23:56:13Z", "tokens": 114968, "source": "reviewer"}
