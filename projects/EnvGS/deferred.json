@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "envgs-optix-reflection",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Environment-Gaussian reflection path not ported: diff-surfel-tracing uses OptiX (optixModuleCreate), which has no ROCm equivalent. Core 3DGS rasterization path works.",
+      "refs": [
+        "projects/EnvGS/notes.md OptiX scope-out"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T18:21:58Z",
+      "decided": null
+    },
+    {
+      "id": "envgs-diff-surfel-tracing-diverged-history",
+      "kind": "other",
+      "component": null,
+      "summary": "EnvGS submodule AMD-Ecosystem/diff-surfel-tracing@moat-port is a clean GPU-validated OptiX->HIPRT port, but upstream xbillowy/diff-surfel-tracing re-licensed/rewrote history after EnvGS pinned gitlink 9b86cbf (now ahead 2, behind 3 = diverged). Decision needed: rebase port onto current upstream main vs PR against pinned base. Also LFS pointer-stub .dlls lack a .gitattributes.",
+      "refs": [
+        "https://github.com/xbillowy/diff-surfel-tracing/compare/main...jeffdaily:diff-surfel-tracing:moat-port"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-16T06:15:34Z",
+      "decided": null
+    },
+    {
+      "id": "diff-surfel-standalone-gfx90a-gfx1201",
+      "kind": "other",
+      "component": null,
+      "summary": "Hold diff-surfel-rasterizations upstream PR until the standalone harness runs on gfx90a and gfx1201 (gfx1100 done: all 3 variants PASS -- finite img/grads, FD opacity slope 1.000, fit converges). Turnkey on each host: set PYTORCH_ROCM_ARCH=<gfx90a|gfx1201>, rebuild the 3 -wet variants (pip install -e), then python3 projects/EnvGS/validation/validate_diff_surfel_rocm.py ; expect PASS per variant (gfx90a ~95% loss drop / ~25-26dB). gfx1201 via Windows TheRock venv. Also still needs the pre-open squash to drop the 'Strategy-B' commit-message wording. Parent EnvGS already validated all 3 archs transitively.",
+      "refs": [
+        "projects/EnvGS/validation/validate_diff_surfel_rocm.py",
+        "https://github.com/xbillowy/diff-surfel-rasterizations/compare/main...jeffdaily:diff-surfel-rasterizations:moat-port"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-17T00:05:13Z",
+      "decided": null
+    },
+    {
+      "id": "envgs-submodules-personal-account",
+      "kind": "other",
+      "component": "fork hygiene",
+      "summary": "Resolved 2026-08-06. Both submodules are in AMD-Ecosystem and both are cleared to contribute -- diff-surfel-tracing is MIT, and diff-surfel-rasterizations is cleared on the same basis as the other unlicensed projects. What still holds EnvGS is its own Inria-derived core, which is a question about EnvGS rather than about its submodules.",
+      "refs": [
+        "https://github.com/AMD-Ecosystem/EnvGS/blob/moat-port/.gitmodules"
+      ],
+      "status": "resolved",
+      "upstream_issue": null,
+      "created_at": "2026-08-06T06:51:22Z",
+      "decided": null
+    }
+  ]
+}
