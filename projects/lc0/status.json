@@ -7,7 +7,7 @@
   "priority": 6.245,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-08-08T23:24:36Z",
+  "updated_at": "2026-08-08T23:29:09Z",
   "head_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
   "pr_url": "https://github.com/LeelaChessZero/lc0/pull/2420",
   "pr_number": 2420,
@@ -32,7 +32,7 @@
       "validated_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
       "started_at": "2026-05-31T01:38:05Z",
       "completed_at": "2026-08-08T23:24:36Z",
-      "updated_at": "2026-08-08T23:24:36Z",
+      "updated_at": "2026-08-08T23:29:09Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -46,13 +46,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
-      "carry_forward": {
-        "to": "7727fa32c1992ef6702eacc1b8568715803b0701",
-        "method": "full-revalidation",
-        "detail": "Fresh full real-GPU revalidation at 7727fa3 (not a binary-equiv/source-class shortcut, class=mixed): 321-target build (gfx90a code objects, 28 SE_Layer_NHWC instantiations), 8/8 CPU gtest (timeout-mul",
-        "at": "2026-08-08T23:24:36Z"
-      }
+      "last_agent": "validator"
     },
     "linux-gfx1100": {
       "state": "completed",
