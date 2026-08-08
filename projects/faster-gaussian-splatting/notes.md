@@ -1167,3 +1167,123 @@ bit. The delta is therefore attributable to `44a13d1` by construction. Lead with
 tile-boundary clustering is corroboration, not the proof. And 1 ULP is the expected magnitude
 rather than a suspicious one: a splat sitting on the culling threshold contributes epsilon by
 definition, so a predicate change at the threshold can only ever move the result by epsilon.
+
+## Review 2026-08-08 (reviewer) -- payload confirmation round, changes-requested
+
+Narrow round: the fork was not touched (`head_sha` b0d21d5, `git -C .../src status --porcelain`
+empty, branch `moat-port`, `porting` null). Port code, rebase and the numerical evidence were
+all confirmed in the previous round and were not re-reviewed. Jargon is clean over the whole
+branch (`--commits origin/main..HEAD` and `--diff origin/main...HEAD` against the fork clone,
+both `jargon: clean`).
+
+Three of the four fixes land correctly and are not restated here. What follows is what still
+needs doing.
+
+### `jargon.py --port` is now instructed on a branch whose tool does not have it
+
+`.claude/agents/validator.md:22` and `.claude/skills/pr-review/review-checklist.md:41` were
+restored from main's tip, and both now say to run `python3 utils/jargon.py --port <name>`. This
+branch carries `utils/jargon.py` at `a2bac89`, which is main's version from before `c0cd6cb`:
+
+    $ python3 utils/jargon.py --port faster-gaussian-splatting
+    usage: jargon.py [-h] [--commits RANGE] [--diff RANGE] [-C REPO] [paths ...]
+    jargon.py: error: unrecognized arguments: --port
+    exit=2
+
+`c0cd6cb` ("Scope the jargon check to the whole branch, not the newest commit") added the flag
+and is not in this branch's ancestry. `check.py:gate_jargon` only validates that
+`config/jargon.toml` compiles, so no pre-push gate catches this; it fails only when an agent
+runs the command, and the validator is instructed to run it as a step-4 completion gate. Before
+`3b8dd42` this branch's `validator.md` carried the two-invocation form, which works here, so
+this round made the branch strictly worse on that point.
+
+The right fix is not to re-edit the doc -- main's wording is correct and the branch should not
+fork it again, which is the mistake this round just undid. Merge `origin/main` into
+`port/faster-gaussian-splatting` and bring the tool forward with the text.
+
+### The README conflict is blocking that merge, not just sitting there
+
+`git merge-tree --write-tree --messages origin/main HEAD` auto-merges `fault-classes.md` and
+`review-checklist.md` and reports exactly one CONFLICT, `README.md`. `moatlib.branch_sync`
+(moatlib.py:2125-2133) auto-resolves a conflict only when every conflicted path is under the
+branch's own `projects/<name>/`; anything else aborts the merge and returns `conflict`. So the
+trunk sync is refused for this branch, and the dry run shows what is being refused:
+
+    $ python3 utils/moatlib.py branch-sync
+    branch-sync: would-merge -- .claude/agents/porter.md, .claude/agents/reviewer.md,
+                 .claude/agents/validator.md, .claude/skills/cuda-to-rocm/SKILL.md
+
+The branch is therefore running stale porter, reviewer and SKILL definitions on top of the
+`--port` break above, and orient cannot fix any of it while `README.md` conflicts.
+
+The conflict itself is the porter's account of it: the contested rows are GPU_IPC and Quest,
+and both sides moved them off the merge base (`72234ef`).
+
+    base        GPU_IPC/Quest | wave64 | wave32 | windows |   -> base had them at 3 kinds of cell
+    origin/main GPU_IPC/Quest    porting  porting  blank
+    HEAD        GPU_IPC/Quest    blank    blank    blank
+
+`gen_readme.py --check` passes on HEAD, and both projects are `stage: review-passed` with every
+platform state null on their own branches, so HEAD's rows are the correct rendering and main's
+are the stale ones. The regeneration was forced and correct, and refusing `--no-verify` was
+right.
+
+Content-wise this does self-resolve: main's next board regeneration produces the same two rows,
+both sides then carry an identical change, and git stops calling it a conflict. But it does not
+self-resolve on any schedule this branch controls, and until it does the trunk sync stays
+wedged. Resolve it here rather than waiting: merge `origin/main`, take either side of
+`README.md`, run `python3 utils/gen_readme.py`, and commit the regenerated board. That single
+merge clears the conflict, delivers `jargon.py --port`, and brings the three stale agent
+definitions forward. Nothing about it touches the fork, so no arch revalidates.
+
+### review-checklist.md:48-50 miscounts the trunk
+
+The new section-8 text says "19 of the trunk's 50 projects use something else (16 `master`,
+plus `develop`, `dev`, `v0`)". Reading `fork_default_branch` from every
+`origin/main:projects/*/status.json` gives 50 projects, 30 `main` and 20 non-`main`: 16
+`master`, and one each of `develop`, `dev`, `v0` and `AdaLovelace`. The count is off by one and
+the enumeration omits a fifth value. The point the sentence supports is unaffected, but a
+figure quoted to justify not hardcoding a branch name should survive being checked.
+
+### The section-8 command reads whatever the fork clone last fetched
+
+The command is correct and returns 0 for this project, run verbatim from the repo root:
+
+    $ git -C projects/faster-gaussian-splatting/src rev-list --count moat-port..origin/$(python3 -c "import json;print(json.load(open('projects/faster-gaussian-splatting/status.json'))['fork_default_branch'])")
+    0
+
+The old form does fail rather than silently misreport, so the fix is not documenting a
+non-problem:
+
+    $ git rev-list --count moat-port..origin/main -C projects/faster-gaussian-splatting/src
+    fatal: ambiguous argument 'moat-port..origin/main': unknown revision or path not in the
+    working tree.
+
+A `master`-default project gets the right answer: the one-liner reads the field, and a fork
+clone tracks its own default branch as `origin/<that name>`. What it does not do is fetch.
+`origin/<default>` is whatever that clone last saw, so a reviewer on a clone nobody has fetched
+gets 0 and reads it as clean -- the exact false negative the item exists to prevent, and
+indistinguishable from a real pass. Prefix the check with
+`git -C projects/<name>/src fetch -q origin &&`. Here it made no difference (the clone was
+already at `ae2bf80` before and after a fetch, count 0 either way), which is why it needs
+writing down rather than discovering.
+
+### Confirmed, for the record
+
+`.claude/agents/validator.md` is byte-identical to `origin/main` (empty diff).
+`review-checklist.md` differs from main only by the 17-line section-8 addition, no removals,
+and its section 7 (line 41) is byte-identical to main's, so the branch no longer carries its
+own wording of the jargon-scoping lesson. `strategy-b-torch.md` changed by exactly one line;
+`inspect.getsourcelines` on the installed torch 2.14.0a0 gives `preprocessor` 817-1003 and
+`preprocess_file_and_save_result` 197-219, the deleted `hipify_python.py:966-974` citation
+falls inside `preprocessor`, and the `[skipped, no changes]` assignment is in fact at 966-974
+inside it while `preprocess_file_and_save_result` does nothing but call `preprocessor` and
+print `result.status`. The attribution correction is right and nothing else in that section
+moved.
+
+Recording this review reproduced the loop from the other side. Pushing the state change was
+refused with `readme: README table is stale`, and the regeneration it forced changed a Quest
+row -- another project's, moved on its own branch minutes earlier -- not this project's. So the
+branch is made to own rows it has no stake in, purely to push its own state. That is
+`gate_readme`'s structural claim demonstrated rather than argued, and it is why the divergence
+from main is not something the porter did wrong.
