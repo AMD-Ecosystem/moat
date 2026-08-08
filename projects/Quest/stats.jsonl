@@ -26,3 +26,4 @@
 {"kind":"phase","ts":"2026-08-08T19:17:03Z","phase":"compile","seconds":35.923,"exit":0,"cmd":"ninja -C projects/Quest/src/quest/ops/build"}
 {"kind":"phase","ts":"2026-08-08T19:17:25Z","phase":"test","seconds":5.507,"exit":0,"cmd":"python3 -m pytest projects/Quest/src/quest/tests/test_rope.py projects/Quest/src/quest/tests/test_estimate.py projects/Quest/src/quest/tests/test_decode_attention.py projects/Quest/src/quest/tests/test_approx_attention.py -q"}
 {"kind":"phase","ts":"2026-08-08T19:17:33Z","phase":"test","seconds":4.209,"exit":1,"cmd":"python3 -m pytest projects/Quest/src/quest/tests/test_topk.py projects/Quest/src/quest/tests/test_prefill_attention.py -q"}
+{"kind": "tokens", "ts": "2026-08-08T19:24:56Z", "tokens": 103015, "source": "validator"}
