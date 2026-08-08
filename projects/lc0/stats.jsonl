@@ -84,3 +84,4 @@
 {"kind":"phase","ts":"2026-08-08T01:59:22Z","phase":"test","seconds":50.094,"exit":0,"cmd":"/var/lib/jenkins/moat/projects/lc0/src/build-hip/lc0 backendbench --backend=check --backend-opts=hip-fp16(),blas(),mode=check,atol=2.5e-2,rtol=1e-1,freq=1.0 --weights=/var/lib/jenkins/moat/agent_space/testnet.pb.gz --start-batch-size=1 --max-batch-size=32 --batches=4"}
 {"kind":"phase","ts":"2026-08-08T01:59:34Z","phase":"test","seconds":5.858,"exit":0,"cmd":"/var/lib/jenkins/moat/projects/lc0/src/build-hip/lc0 backendbench --backend=hip --weights=/var/lib/jenkins/moat/agent_space/maia1100.pb.gz --batches=3"}
 {"kind":"phase","ts":"2026-08-08T01:59:39Z","phase":"test","seconds":5.641,"exit":0,"cmd":"/var/lib/jenkins/moat/projects/lc0/src/build-hip/lc0 backendbench --backend=hip-fp16 --weights=/var/lib/jenkins/moat/agent_space/maia1100.pb.gz --batches=3"}
+{"kind": "tokens", "ts": "2026-08-08T02:04:38Z", "tokens": 109489, "source": "validator"}
