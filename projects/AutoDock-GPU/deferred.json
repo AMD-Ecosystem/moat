@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "autodock-gpu-tensor-core-reduction",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "CDNA matrix cores DONE: TENSOR=ON ported to rocWMMA (native fp32 MFMA), gfx90a-validated (matches non-tensor docking; 1.57x faster at NUMWI=128), commit 3d466a4. REMAINING (follow-up): RDNA (gfx1100/1101/1201) has no native f32 WMMA input, so TENSOR=ON there needs a bf16 error-correction path (the AMD analog of the NVIDIA tf32+EC tcec). Currently CDNA-only; the Makefile should guard TENSOR=ON to CDNA archs.",
+      "refs": [
+        "projects/AutoDock-GPU/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-08T22:26:23Z",
+      "updated_at": "2026-06-09T00:00:00Z",
+      "decided": null
+    }
+  ]
+}
