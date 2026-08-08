@@ -2072,18 +2072,35 @@ def branch_sync(apply=False, base_ref="origin/main"):
     ensure_git_config()
     project = branch[len("port/"):]
     pre = _git("rev-parse", "HEAD", check=False).stdout.strip()
+    own = f"projects/{project}/"
     r = _git("merge", "--no-edit", base_ref, check=False)
     if r.returncode:
-        _git("merge", "--abort", check=False)
-        return ("conflict", f"merging {base_ref} conflicts -- resolve by hand: "
-                            f"{', '.join(substantive[:4])}")
+        conflicted = [c.strip() for c in
+                      _git("diff", "--name-only", "--diff-filter=U",
+                           check=False).stdout.splitlines() if c.strip()]
+        # A conflict confined to this branch's OWN project folder has a settled answer
+        # and does not need a person: the branch owns that path. It happens on every
+        # sync now rather than rarely -- the trunk deleted the folder when the project
+        # moved here, so any branch that has edited its own state since collides with
+        # that deletion. Aborting on it left five branches unable to take a trunk
+        # merge at all, running tooling old enough that it could not read the very
+        # records it was holding, and silently offering another project's work.
+        if conflicted and all(c.startswith(own) for c in conflicted):
+            _git("checkout", pre, "--", own, check=False)
+            _git("add", "--", own, check=False)
+            _git("commit", "--no-edit", "-q", check=False)
+        else:
+            _git("merge", "--abort", check=False)
+            return ("conflict", f"merging {base_ref} conflicts outside "
+                                f"{own} -- resolve by hand: "
+                                f"{', '.join(conflicted[:4] or substantive[:4])}")
     # The trunk does not carry an in-flight project's folder, and a branch with no
     # commits of its own fast-forwards straight onto that absence -- which is how the
     # bam canary lost its own state to a routine sync. Whatever the merge did to this
     # branch's project, the branch's version wins.
     if _git("cat-file", "-e", f"{pre}:projects/{project}/status.json",
             check=False).returncode == 0:
-        _git("checkout", pre, "--", f"projects/{project}/", check=False)
+        _git("checkout", pre, "--", own, check=False)
         if _git("diff", "--cached", "--name-only", check=False).stdout.strip():
             _git("commit", "-q", "-m",
                  f"{project}: keep this branch's project state across the trunk merge")
