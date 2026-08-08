@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "cupoch-full-pipeline-modules",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Only the core point-cloud/geometry slice (utility/camera/knn/geometry, CUPOCH_CORE_ONLY=ON) is built/validated on ROCm. Deferred GPU modules: registration (ICP/GICP/Colored/FGR/FilterReg), odometry, integration (TSDF/KinectFusion), collision, planning, kinfu, imageproc (libSGM stereo), io-beyond-geometry, visualization, Python module. Causes: (a) visualization/imageproc/io/pybind need OpenGL/GLEW/GLFW + libSGM + urdfdom host stack; (b) four geometry-factory .cu have strict-clang blockers re-enablable without OpenGL.",
+      "refs": [
+        "projects/cupoch/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T19:04:23Z",
+      "decided": null
+    },
+    {
+      "id": "cupoch-imageproc-libsgm",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "cupoch imageproc (libSGM stereo) HIP port: imageproc wraps CUDA-only libSGM (warp-intrinsic kernels); skipped on HIP automatically; needs a libSGM->HIP port first",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-24T08:08:12Z",
+      "decided": null
+    },
+    {
+      "id": "cupoch-scalable-tsdf",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "cupoch ScalableTSDFVolume HIP redesign: device stdgpu::unordered_map stores 80KB VolumeUnit by value; emplace needs ~164KB stack frame past AMDGPU ~128KB scratch limit; needs upstream out-of-line voxel-block redesign; UniformTSDFVolume works",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-24T08:08:12Z",
+      "decided": null
+    }
+  ]
+}
