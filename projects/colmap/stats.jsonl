@@ -11,3 +11,4 @@
 {"kind":"phase","ts":"2026-08-08T03:44:45Z","phase":"compile","seconds":237.764,"exit":0,"cmd":"cmake --build projects/colmap/src/build-hip -j128"}
 {"kind":"phase","ts":"2026-08-08T03:49:00Z","phase":"compile","seconds":253.471,"exit":0,"cmd":"cmake --build projects/colmap/src/build-cuda -j128 --target colmap_sift_gpu colmap sift_test"}
 {"kind":"phase","ts":"2026-08-08T03:49:23Z","phase":"test","seconds":10.049,"exit":0,"cmd":"ctest --test-dir projects/colmap/src/build-hip -j16 --output-on-failure"}
+{"kind": "tokens", "ts": "2026-08-08T03:53:43Z", "tokens": 230107, "source": "porter"}
