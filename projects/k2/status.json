@@ -18,7 +18,7 @@
   "pr_state": "merged",
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 256463281,
-  "stage": "validation-failed",
+  "stage": "review-passed",
   "platforms": {
     "windows-gfx1201": {
       "state": "completed",
