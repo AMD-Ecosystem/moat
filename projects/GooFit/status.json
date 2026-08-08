@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T00:04:16Z",
-  "updated_at": "2026-08-08T19:57:18Z",
+  "updated_at": "2026-08-08T22:39:44Z",
   "head_sha": "6601ce1f71f6b282d2b11a13337944db3b448058",
   "depends_on": [],
   "porting": null,
@@ -20,7 +20,7 @@
   },
   "license_spdx": "LGPL-3.0",
   "upstream_repo_id": 9017446,
-  "stage": "ported",
+  "stage": "changes-requested",
   "platforms": {
     "linux-gfx90a": {
       "blocked": false,
@@ -50,7 +50,7 @@
       "validated_sha": null,
       "started_at": "2026-08-08T19:43:29Z",
       "completed_at": null,
-      "updated_at": "2026-08-08T19:57:18Z",
+      "updated_at": "2026-08-08T22:39:44Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
