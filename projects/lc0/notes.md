@@ -1144,3 +1144,71 @@ staleness above. Transition: `review-passed -> validation-failed` (project stage
 per-arch fact -- every arch's existing `completed` record is left untouched; a doc-only
 porter fix should classify as arch-independent and auto-carry-forward every already-passed
 arch with no GPU rerun needed).
+
+## Port fix 2026-08-08 (porter, linux-gfx1100) -- README arch-autodetect staleness
+
+Fixes the sole defect from the 2026-08-08 validation. Documentation only; no compiled
+source, meson.build or meson_options.txt touched, deliberately, so the delta is
+arch-independent.
+
+New fork head: `7727fa3` ([ROCm] Fix README claim about the default AMD GPU architecture),
+a NEW commit on top of `223ee639` (no amend: `223ee639`/`a80a7be` are validated content).
+
+README.md:165 before:
+
+> The target GPU architecture is taken from `-Damd_gfx` (e.g. `-Damd_gfx=gfx90a`); if it is
+> omitted it is autodetected with `rocm_agent_enumerator`, defaulting to `gfx90a`.
+
+after:
+
+> The target GPU architecture is taken from `-Damd_gfx` (e.g. `-Damd_gfx=gfx90a`); if it is
+> omitted, the first architecture reported by `rocm_agent_enumerator` is used, which needs
+> meson 1.2.0 or newer. There is no default architecture: when nothing can be detected the
+> build stops and asks for an explicit `-Damd_gfx`, rather than guessing an architecture the
+> machine may not have.
+
+Three facts from reading meson.build:642-661 and meson_options.txt:201-204 rather than
+deleting the stale clause: (a) autodetect takes the FIRST non-`gfx000` line of
+`rocm_agent_enumerator`, so a mixed-arch host is a coin toss and the flag is the answer;
+(b) the autodetect branch is guarded on `meson.version().version_compare('>=1.2.0')`, so on
+older meson the flag is effectively mandatory and the error is what a user hits;
+(c) `error()` on failure, and `amd_gfx` has value `''`, so there is no default anywhere.
+
+Verified, not assumed: `meson setup <builddir> -Dhip=true ...` with NO `-Damd_gfx` on this
+gfx1100 host prints `Message: HIP target architecture: gfx1100` and configures 19 targets.
+The error branch could not be exercised on this host (`rocm_agent_enumerator` ignores
+`HIP_VISIBLE_DEVICES`/`ROCR_VISIBLE_DEVICES` and still reports gfx1100, and meson.build
+falls back to the absolute `/opt/rocm/bin/rocm_agent_enumerator` so hiding it from `PATH`
+does not work either); its wording is quoted verbatim from meson.build:660.
+`ninja -C build-hip`: `no work to do` -- no build input changed.
+
+`python3 utils/jargon.py --commits 223ee639..7727fa3` and `--diff 223ee639...7727fa3`: both
+clean.
+
+### Regression guard: doc-only, but nothing to carry forward (read this before revalidating)
+
+`moatlib._classify_safe(223ee639 -> 7727fa3)` = `doc-only`, `arch_independent=True`. So MY
+delta carries forward by construction. `advance-head` nevertheless carried NO arch forward,
+and that is correct rather than a bug: it classifies each arch's own `validated_sha ->
+new head`, and neither Linux arch was at `223ee639` to begin with.
+
+- linux-gfx90a `validated_sha=d83b6d1`; `d83b6d1..7727fa3` classifies `mixed`.
+- linux-gfx1100 `validated_sha=a80a7be`; `a80a7be..7727fa3` classifies `mixed`
+  (rename-only on common_kernels.cu plus the four upstream-merge commits and the
+  barrier-guard commit).
+
+Both were already stale at `223ee639`, before this fix: the 2026-07-02 and 2026-07-06 porter
+rounds advanced head five commits (`d0c4eab`, `f94a8a1`, `03d8bff`, `72ef79f`, `223ee63`)
+and the 2026-08-08 validation ended `validation-failed`, so it never recorded a
+`completed` at `223ee639`.
+
+For the validator: the 2026-08-08 session above ran the FULL suite at `223ee639` on
+linux-gfx1100 and every technical check passed (331/331 build, 8/8 gtest, 222/222 + 222/222
+conv-SE, 130/130 + 130/130 attention, backendbench 1-256 fp32+fp16 under the live
+barrier-guard asserts). The only delta from that tree to `7727fa3` is this README line.
+Whether that provenance is enough to `carry_forward` linux-gfx1100 to `7727fa3` without a
+GPU rerun is the validator's call, not the porter's, so nothing was written here.
+linux-gfx90a has not run since `d83b6d1` and needs a real run either way.
+
+Nothing to send upstream. LeelaChessZero/lc0#2420 is built from this branch, so the push
+shows up there on its own; no comment was posted.
