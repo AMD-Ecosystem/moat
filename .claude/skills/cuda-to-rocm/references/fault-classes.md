@@ -191,15 +191,23 @@ malloc heap is small and its behaviour under a per-thread allocation in a hot lo
 reliable; a functor that allocates a scratch array per thread can return wrong values
 without faulting, so the symptom is a numerically wrong result rather than a crash. Replace
 it with a fixed-size per-thread automatic array bounded by the constant the code already has
-(GooFit's binned integration used a device `new[]` sized by the observable count;
-`fptype[MAX_NUM_OBSERVABLES]` fixed it and immediately corrected a fitted parameter). This
-is arch-unified and correct on CUDA too, so it needs no guard -- prefer it to raising the
-device heap limit. (GooFit)
+(GooFit's binned integration used a device `new fptype[10]` with a hardcoded 10;
+`fptype[MAX_NUM_OBSERVABLES]`, which is also 10, fixed it and immediately corrected a fitted
+parameter, so the bound did not change). This is arch-unified and correct on CUDA too, so it
+needs no guard -- prefer it to raising the device heap limit. (GooFit)
 
-**HIP's `__ldg` accepts only scalar types**, while CUDA projects commonly route arbitrary
-types through it via a generics wrapper that relies on `__CUDA_ARCH__` and PTX aliasing. A
-read-only-cache macro (`RO_CACHE(x)`) should expand to a plain `(x)` load on HIP; the AMD
-hardware takes the same path. (GooFit)
+**`__ldg` is usually a non-problem on HIP; check before working around it.** ROCm ships
+`__ldg` overloads for the scalar AND vector types (`hip/amd_detail/hip_ldg.h`: `char2`,
+`int4`, `longlong2`, ...; `amd_hip_fp16.h` adds `__half`/`__half2`), and every one of them
+is literally `return ptr[0]`, because AMD has no separate read-only-cache instruction to
+select. So a `RO_CACHE(x)` macro over scalars needs no HIP arm at all, and `(x)` and
+`__ldg(&x)` are the same code. Only an arbitrary USER type is unsupported. A CUDA generics
+wrapper that provides `__ldg` for arbitrary types by aliasing (`generics/ldg.h`, guarded on
+`__CUDA_ARCH__ >= 350`) also compiles under hipcc: the guard is false, so it falls back to
+`*ptr`, and its non-template HIP competitors win overload resolution for the scalar calls.
+GooFit's port first added a HIP-only `RO_CACHE(x) (x)` on the belief that neither worked;
+compiling a two-line hipcc test against the wrapper disproved it and the whole arm was
+deleted. Test the actual header before adding a guard. (GooFit)
 
 ## Textures
 
