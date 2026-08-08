@@ -104,3 +104,70 @@ Things that turned out NOT to be problems, contrary to the plan:
 - The `rms_norm.cu` reduction is wave-portable as written, because the shuffles state an
   explicit width of 32. Only the mask literal had to change. The `>>5` / `&0x1f` / `[33]`
   shapes the plan flagged are correct on wave64 and were left alone.
+
+## Review 2026-08-08
+
+Reviewed fork sha `ff80217` (moat-port vs `01c1623`) on linux-gfx1100. Verdict:
+changes-requested. Review PR (never merged, feedback lives as line comments):
+https://github.com/AMD-Ecosystem/Quest/pull/1
+
+The shim-header approach is sound and the analysis behind it checks out; the defects are
+all in the build file and the README.
+
+1. `quest/ops/CMakeLists.txt:72` -- `-DCMAKE_HIP_ARCHITECTURES` is INERT. `find_package(Torch)`
+   pulls `Caffe2/public/LoadHIP.cmake:107`, `set(CMAKE_HIP_ARCHITECTURES ${PYTORCH_ROCM_ARCH})`,
+   a normal variable that shadows the cache entry, so `set_target_properties(... HIP_ARCHITECTURES
+   "${CMAKE_HIP_ARCHITECTURES}")` re-applies torch's list. Measured: configuring with
+   `-DCMAKE_HIP_ARCHITECTURES=gfx1201` produces `--offload-arch=gfx90a,gfx942,gfx950,gfx1100`
+   and no gfx1201; `PYTORCH_ROCM_ARCH=gfx908` with no `-D` produces gfx908 alone. So the env
+   var is the only working knob, the reverse of what the README says, and any user on an arch
+   outside torch's default list gets hipErrorNoBinaryForGpu. The comment "Override Torch's
+   multi-arch flags" says the opposite of what the line does.
+2. `CMakeLists.txt:17` -- the `PYTORCH_ROCM_ARCH` / FATAL_ERROR block is dead. `enable_language(HIP)`
+   on line 14 already defines `CMAKE_HIP_ARCHITECTURES` (CMakeDetermineHIPCompiler.cmake:296-334,
+   via rocm_agent_enumerator, else CMake's own fatal error). Cache after configure reads
+   `gfx1100;gfx1100;gfx1100;gfx1100` even with PYTORCH_ROCM_ARCH=gfx908 set. Hoist above
+   `enable_language(HIP)`.
+3. `CMakeLists.txt:29` -- same ordering bug on the CUDA leg, and it changes the NVIDIA build:
+   `enable_language(CUDA)` runs first and CMakeDetermineCUDACompiler.cmake:261-267 caches nvcc's
+   default arch, so `set(CMAKE_CUDA_ARCHITECTURES native)` never applies. Upstream had it before
+   `project()` where it did. Likely a hard failure, not a slow path: flashinfer emits cp.async /
+   mma.sync PTX that ptxas rejects below sm_80. Read off the CMake module; no nvcc on this host.
+4. `CMakeLists.txt:4` -- the upstream `gcc-11`/`g++-11` compiler pins were deleted rather than
+   guarded, contradicting the commit message's "nothing the NVIDIA build compiles or includes
+   changes". `option(USE_HIP)` precedes `project()`, so `if(NOT USE_HIP)` restores them.
+5. `README.md:69` -- the PYTORCH_ROCM_ARCH sentence is backwards (follows from 1).
+6. `README.md:60` -- does not say the end-to-end path is unavailable. QuestAttention.py:117,127,151
+   reach `_kernels.prefill_with_paged_kv_cache` and `_kernels.topk_filtering`, so scripts/passkey.sh
+   and everything under evaluation/ -- the section immediately below this text -- cannot run.
+7. `quest/ops/csrc/bsk_ops.{cu,h}` -- gratuitous reordering (apply_rope_in_place moved in both
+   files, the guarded m.defs relocated to the bottom) turns a four-line additive diff into a
+   whole-file reshuffle. Guard in place.
+
+Checked and correct, so nobody re-derives it:
+
+- Force-include mechanism: both shadow headers reuse the original guard macros
+  (`FLASHINFER_MATH_CUH_`, `VEC_DTYPES_CUH_`), so the sibling-relative include of the original
+  collapses. vec_dtypes.cuh differs from the vendored file ONLY in the vec_cast dispatch.
+- math.cuh replacement is symbol-complete and numerically appropriate: ex2.approx -> exp2f
+  (`v_exp_f32`), rcp.approx -> `__frcp_rn` (correctly rounded); both at least as accurate as the
+  approximate instructions, against a 5e-3 reference. shfl.sync.bfly with clamp operand 0x1f is
+  a 32-lane segment, which `__shfl_xor(x, mask, 32)` reproduces on both wavefront widths.
+- rms_norm.cu mask change is required: amd_warp_sync_functions.h:307 static_asserts
+  `sizeof(MaskT) == 8`, and torch's Caffe2Targets.cmake puts `-DHIP_ENABLE_WARP_SYNC_BUILTINS`
+  on every extension compile.
+- **Item 3 adjudicated: the porter is right, the plan was wrong.** Every shuffle in
+  `blockReduceSum` states width 32, so `lane`/`wid` keep their meaning on wave64 and
+  `shared[NUM][33]` still bounds `blockDim.x/32 <= 32` entries. Rewriting to `warpSize` would
+  have been a regression for no gain. Same for the in-scope decode path: decode_attn.cuh:102,158
+  reduce over offsets < bdx with `static_assert(bdx <= 32)` at 824/923/1118.
+- Scoped-out suites are honest: 49 + 29 failures re-run on gfx1100, all 78 `AttributeError:
+  module 'quest._kernels' has no attribute ...`. Exported list is exactly the six ops the
+  README names.
+- Empty `cuda/pipeline` shim is correct: included by permuted_smem.cuh / decode.cuh /
+  decode_attn.cuh, but no `cuda::pipeline` object is declared in the compiled sources.
+- Commit hygiene clean: `[ROCm]` title 50 chars, Claude named, no noreply trailer, jargon clean,
+  no non-ASCII and no em-dash in added lines, fork tree clean.
+- Lesson promotion (6d42e1d) is correctly filed and item 3's outcome is reflected accurately:
+  fault-classes.md states that an explicit width is already wave-agnostic and that rewriting it
+  to `warpSize` is a regression risk, which is the correction the plan needed.

@@ -7,14 +7,14 @@
   "priority": 3.866,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-08-08T03:58:56Z",
+  "updated_at": "2026-08-08T17:35:39Z",
   "head_sha": "ff80217e4246fd16faa07576738f68c7b17daf56",
   "depends_on": [],
   "porting": null,
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 815507746,
-  "stage": "ported",
+  "stage": "changes-requested",
   "platforms": {
     "linux-gfx90a": {
       "blocked": false,
@@ -44,7 +44,7 @@
       "validated_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-08-08T03:58:56Z",
+      "updated_at": "2026-08-08T17:35:39Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -59,5 +59,6 @@
         "last_session_at": null
       }
     }
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/Quest/pull/1"
 }
