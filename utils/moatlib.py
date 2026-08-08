@@ -137,9 +137,18 @@ STAGE_TRANSITIONS = {
     "delta-ported": {"review-passed", "changes-requested"},
     "changes-requested": {"porting"},
     # review-passed has no exit to `completed`: completing is an ARCH's fact now, and
-    # a project stays review-passed while its architectures validate independently.
-    "review-passed": {"validation-failed"},
-    "validation-failed": {"porting"},
+    # a project stays review-passed while its architectures validate independently --
+    # including when one of them FAILS. `validation-failed` used to be a stage here as
+    # well as an arch state, and being in both machines is what broke it: set_state
+    # resolves the collision by checking STAGE_STATES first, so a validator recording
+    # one arch's failure moved the whole project out of review-passed and left the
+    # arch's own record untouched. Leaving review-passed switches off the per-arch
+    # derivation in arch_task, so every arch -- including ones completed at head --
+    # routed to the porter, and the only edge back was through a port. A waiver being
+    # approved or a sibling arch satisfying the gate could not move it, so four
+    # projects sat advertising porter work that did not exist. It is an arch state
+    # only now, and the porter is reached from review-passed directly.
+    "review-passed": {"porting"},
     # A person may revive a project judged unportable -- ROCm gains a library, an
     # upstream rewrite lands. Nothing else leads out.
     "not-portable": {"planned", "porting"},
@@ -458,10 +467,26 @@ def set_state(name, platform, new_state, agent=None, save=True):
                    and not same_commit(
                        (obj["platforms"].get(platform) or {}).get("validated_sha"),
                        obj.get("head_sha")))
-    if new_state == cur and not revalidated:
+    # The other same-state call that is not a no-op: entering an exclusive stage the
+    # project is ALREADY in while holding no lock. That is the ordinary case of picking
+    # up work another host put down, and it is the half the exclusivity check above does
+    # not close -- that refuses when someone ELSE holds the lock, and a FREE lock fell
+    # through to the short-circuit and returned before the acquisition below, leaving
+    # the project in an exclusive stage nobody held while reporting success. A GooFit
+    # porter hit exactly that and reached for `port-lock --take` against a free lock.
+    #
+    # "Same value" is not "nothing happened", and that has now been wrong three distinct
+    # ways: a second host entering a stage the first holds, an arch revalidating a newer
+    # head, and this. Ask what is left to RECORD, not whether a token matches.
+    acquires = (new_state in EXCLUSIVE_STAGES
+                and (obj.get("porting") or {}).get("arch") != platform)
+    same = new_state == cur
+    if same and not (revalidated or acquires):
         return obj
     table = STAGE_TRANSITIONS if is_stage else ARCH_TRANSITIONS
-    if not revalidated and new_state not in table.get(cur, set()):
+    # Reached only when the state really changes, or when one of the cases above
+    # deliberately fell through -- neither has a self-edge in the table to satisfy.
+    if not same and new_state not in table.get(cur, set()):
         kind = "stage" if is_stage else f"{platform}"
         raise ValueError(f"{name}/{kind}: illegal transition {cur} -> {new_state}")
     if platform not in obj["platforms"]:
@@ -1702,6 +1727,14 @@ def arch_task(obj, platform):
     if stage != "review-passed":
         agent = STAGE_FOR_STATE.get(stage)
         return (agent, stage) if agent else None
+    # This arch tried and failed. Only IT is sent to the porter: a wave32 fault does
+    # not invalidate a wave64 arch's evidence, and what actually keeps a broken port
+    # from being submitted is pr_ready, which needs a `completed` arch at head_sha for
+    # every required gate -- a failed arch leaves its gate unsatisfied on its own. The
+    # porter's fix advances head_sha, which makes every other arch stale and route to
+    # revalidate, so the rest of the fleet catches up without the stage broadcasting.
+    if blk.get("state") == "validation-failed":
+        return ("porter", "validation-failed")
     if blk.get("state") == "completed":
         if same_commit(blk.get("validated_sha"), obj.get("head_sha")):
             return None                  # this arch has proved this code
@@ -2095,6 +2128,51 @@ def branch_drift(branch, base_ref="origin/main"):
     return (sorted(substantive), sorted(inert))
 
 
+def stranded_shared_changes(base_ref="origin/main"):
+    """Edits a port branch made OUTSIDE its own project folder that the trunk lacks.
+
+    A port branch owns `projects/<name>/` and nothing else, so anything it changes
+    elsewhere is shared: the `cuda-to-rocm` skill, an agent definition, a tool in
+    utils/. CLAUDE.md tells every agent to promote a lesson to the skill at the moment
+    of learning, and an agent working on a port branch does exactly that -- onto a
+    branch that reaches the trunk only when the project closes, which for a project
+    whose upstream PR already merged may be never. The lesson is then invisible to the
+    every other port, which is the one audience it was written for.
+
+    Found by accident once (alien's codeobj_diff false-positive diagnostic, worth more
+    than the validation it came from). Reported on purpose from here on.
+
+    A PROMPT TO LOOK, not a verdict. It cannot tell new content from superseded: when
+    the trunk rewrites a passage a branch still holds the old wording of, the branch's
+    line is absent from the trunk and reads as stranded. Two branches carrying the old
+    two-line texture-pitch entry reported that way while the trunk held colmap's
+    sharpened four-line replacement -- nothing was lost and the trunk was ahead.
+    Read the diff before rescuing anything; the check is here to make you look."""
+    out = []
+    for ref in _git("for-each-ref", "--format=%(refname:short)",
+                    "refs/remotes/origin/port/", check=False).stdout.split():
+        name = ref.split("port/", 1)[1]
+        base = _git("merge-base", ref, base_ref, check=False).stdout.strip()
+        if not base:
+            continue
+        changed = _git("diff", "--name-only", base, ref, check=False).stdout.splitlines()
+        cands = [c.strip() for c in changed
+                 if c.strip() and not c.startswith(f"projects/{name}/")
+                 and c.strip() not in ("README.md",)]
+        # Changed-since-merge-base finds the CANDIDATES; it does not mean still
+        # stranded, because the trunk may have picked the change up since. Ask what the
+        # branch has that the trunk lacks -- added lines going trunk -> branch -- or the
+        # report keeps naming work already rescued and stops being worth reading.
+        shared = []
+        for c in cands:
+            d = _git("diff", base_ref, ref, "--", c, check=False).stdout.splitlines()
+            if any(l.startswith("+") and not l.startswith("+++") for l in d):
+                shared.append(c)
+        if shared:
+            out.append((name, sorted(shared)))
+    return out
+
+
 def branch_sync(apply=False, base_ref="origin/main"):
     """Bring a port branch up to the trunk's tooling, but only when that is worth a
     merge commit. Returns (action, detail) for the caller to print.
@@ -2461,6 +2539,8 @@ def main(argv=None):
 
     sub.add_parser("misplaced", help="projects whose folder is not where their state says")
 
+    sub.add_parser("stranded", help="shared edits sitting on a port branch the trunk lacks")
+
     sub.add_parser("waivers", help="gate waivers suggested but not yet approved")
 
     s = sub.add_parser("suggest-waiver",
@@ -2646,6 +2726,15 @@ def main(argv=None):
         if rows:
             print(f"-- {len(rows)} project(s) waiting on a person: continue on other "
                   f"hardware, or `set-not-portable <name> --reason ... --by <who>`",
+                  file=sys.stderr)
+    elif args.cmd == "stranded":
+        rows = stranded_shared_changes()
+        for name, paths in rows:
+            print(f"{name}\t{','.join(paths[:4])}")
+        if rows:
+            print(f"-- {len(rows)} branch(es) differ from the trunk on a shared path. "
+                  f"Read each diff: a lesson stranded on a port branch reaches nobody, "
+                  f"but a branch holding superseded wording is the trunk being ahead",
                   file=sys.stderr)
     elif args.cmd == "misplaced":
         rows = misplaced_folders()

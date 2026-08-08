@@ -1249,6 +1249,20 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-08-07T23:07:19Z"
+    },
+    {
+      "id": "colmap-symforce-caspar-hip",
+      "kind": "feature-port",
+      "project": "colmap",
+      "component": null,
+      "summary": "Symforce-Caspar CASPAR-accelerated bundle adjustment (src/thirdparty/Symforce-Caspar, 482 generated .cu, Apache-2.0) scoped out of the colmap GPU SIFT port. Blocker is cooperative groups, not symbol renaming: 2392 references including cg::labeled_partition, cg::binary_partition, cg::coalesced_threads, cg::memcpy_async, cg::reduce and cg::this_grid, several of which have no HIP analogue. generated/{f32,f64}/CMakeLists.txt pins CMAKE_CUDA_ARCHITECTURES 75 80 86 89 with the comment 'sm_75 minimum required by cooperative_groups::reduce'. cub::DeviceReduce::Sum and cub::DeviceRadixSort::SortPairs/SortKeys map to hipCUB cleanly and are not the blocker. The code is generated, so a real fix belongs in caspar_generate.py rather than in the generated files. CASPAR_ENABLED defaults OFF and CASPAR_ENABLED AND NOT CUDA_ENABLED is already a FATAL_ERROR, so a ROCm build is unaffected today.",
+      "refs": [
+        "projects/colmap/plan.md",
+        "src/thirdparty/Symforce-Caspar/caspar_generate.py"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-08T01:27:34Z"
     }
   ]
 }
