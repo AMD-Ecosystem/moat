@@ -7,14 +7,14 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-05T01:19:27Z",
-  "updated_at": "2026-08-08T03:41:26Z",
+  "updated_at": "2026-08-08T17:16:17Z",
   "head_sha": "6b18628449dbbbedc57a1f74304a0029588a50a7",
   "depends_on": [],
   "porting": null,
   "waivers": {},
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 1154833948,
-  "stage": "ported",
+  "stage": "changes-requested",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -46,7 +46,7 @@
       "validated_sha": "98be02d4095ff01ac22cbf884ade6c9d950644a0",
       "started_at": "2026-08-08T03:35:52Z",
       "completed_at": "2026-06-05T15:21:47Z",
-      "updated_at": "2026-08-08T03:41:26Z",
+      "updated_at": "2026-08-08T17:16:17Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -108,5 +108,6 @@
       },
       "last_agent": "validator"
     }
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/faster-gaussian-splatting/pull/1"
 }

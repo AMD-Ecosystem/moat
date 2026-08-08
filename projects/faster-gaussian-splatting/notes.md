@@ -394,3 +394,90 @@ this name already taken", and the two standard libraries in the fleet answer the
 second question differently. Give the helper a name the standard library does not
 use and define it unconditionally as `__device__ __host__`. Promoted to the
 `cuda-to-rocm` skill (references/fault-classes.md, "Headers, includes and build").
+
+## Review 2026-08-08 (linux-gfx1100) -- changes-requested
+
+Reviewed `moat-port` 6b18628 (on top of be2217e) against the fork's `main`.
+Review PR: https://github.com/AMD-Ecosystem/faster-gaussian-splatting/pull/1
+(review-only, never merged; carries the title and body the upstream PR will use).
+
+### Blocking: 6b18628 commits 26 hipify-generated files
+
+5,871 of the commit's 5,903 added lines are build output: `utils/helper_math_hip.h`,
+`utils/utils_hip.h`, the six `rasterization/include/*_hip.h`, the six
+`rasterization/include/*_hip.cuh`, the three `densification/include/*_hip.*`, and the
+nine `*/src/*.hip`. These are what torch's hipify writes at build time
+(`torch/utils/cpp_extension.py` -> `hipify_python.hipify(..., is_pytorch_extension=True)`;
+`hipify_python.get_hip_file_path` is the `.cu` -> `.hip` and `.h`/`.cuh` -> `_hip.h`/`_hip.cuh`
+naming). They were untracked at be2217e (`git ls-tree -r be2217e | grep -c _hip` -> 0) and the
+2026-08-08 validation entry above records deleting them with `git clean -fdx`.
+
+The port's real footprint is 6 files / 88 lines; as committed the branch reads as 29 files /
+5,903 lines, most of it a machine translation of the maintainer's own kernels sitting beside
+the originals. It is also a staleness trap: hipify rewrites those files in place on every
+build, so they are byte-identical today (verified: a from-clean `setup.py build_ext --inplace`
+leaves `git status` clean) but the next source edit dirties tracked files, which either get
+committed mismatched or mask a dirty tree from the integrity gate.
+
+Fix: no arch validated 6b18628, so amend it (or `git rm --cached` in a follow-up) down to the
+six real files, and add `*.hip`, `*_hip.h`, `*_hip.cuh` to `.gitignore` beside the `*.so` and
+`build/` entries it already has. Nothing here is a hand-written `.hip`. Re-check the commit
+message afterwards; it already describes the three-file change it should have been.
+
+### The lerp fix itself: correct, no changes needed
+
+Verified independently rather than from the porter's summary.
+
+- `lerp_scalar` (helper_math.h:1246) is defined once, unconditionally, `__device__ __host__`.
+  It therefore exists in both compiler passes on every toolchain, which is what the
+  `__HIP_DEVICE_COMPILE__`-keyed version could not guarantee, and no standard library declares
+  that name, so neither the Linux collision nor the Windows missing-overload failure can recur.
+  Strictly stronger than be2217e, not a trade of one OS for the other. Windows re-validation is
+  still the evidence, but the argument does not depend on it.
+- helper_math.h:1256-1268: the float2/float3/float4 overloads take parameter types `std::lerp`
+  does not, so they never participated. Untouched, correctly.
+- kernel_utils.cuh:84-85 are the only scalar-lerp call sites in the tree. `git grep lerp` over
+  every tracked `.cu`/`.cuh`/`.h`/`.cpp` (excluding generated mirrors) finds no other caller;
+  the vector overloads have no callers at all.
+- Not keying on `_WIN32`/`_MSC_VER` is right, and is the generalizable part: the axis is which
+  standard library is in scope, not which OS.
+- README: accurate (`PYTORCH_ROCM_ARCH` is read by torch's `_get_rocm_arch_flags`; setup.py's
+  `IS_ROCM` comes from `torch.version.hip`, so the documented command does build for ROCm) and
+  it matches the file's own paragraph-per-line style with no hard breaks.
+- Standing rules clean: `jargon.py --commits be2217e..6b18628` clean, ASCII only, no em-dash,
+  title 52 chars with the `[ROCm]` prefix, Claude named in the body, no noreply trailer.
+- Promotion confirmed: `references/fault-classes.md` "Headers, includes and build" states the
+  rule generally (pass macro vs name visibility), names the two standard libraries and both
+  failure directions, lists the exposed C++20 names, and rejects `_WIN32` as a proxy. Right
+  file, right altitude.
+
+### Non-blocking correction to the fix write-up
+
+The claim that the `#if __cplusplus < 202002L` arm (helper_math.h:1250) is dead "on any
+platform, Windows included" holds for the ROCm build only. be2217e's Windows failure is itself
+the proof: it only occurs if the C++20 branch was taken in the Windows host pass, so hipcc's
+clang reports `__cplusplus >= 202002L` there. Under nvcc on Windows, cl.exe reports
+`__cplusplus == 199711L` unless `/Zc:__cplusplus` is passed and setup.py does not pass it, so
+the arm is live in the nvcc host pass. That is harmless -- the MSVC standard library declares
+`lerp` in namespace `std` only, so nothing collides, and the arm restores exactly the
+definition the header carried before this series. No code change wanted; the reasoning is what
+needed correcting, since "setup.py forces C++20 so `__cplusplus` is 202002" is not true of
+MSVC.
+
+### Verified while reviewing, no action
+
+- The C++17 -> C++20 bump in setup.py is required by PyTorch itself, not by ROCm: compiling
+  `bindings.cpp` against this torch at `-std=c++17` fails with `torch/all.h:5: #error C++20 or
+  later compatible compiler is required to use PyTorch`. It fixes the CUDA build on modern
+  torch too, and it is also what exposes the `std::lerp` collision at all (C++17 has no
+  `std::lerp`), which means upstream's own CUDA build hits the same conflict the moment they
+  bump. Worth saying in the upstream PR body, and it is.
+- `sys.platform == "win32"` gates the `/ALTERNATENAME` link arg on OS rather than on vendor, so
+  it applies to CUDA/Windows too. Correct as written: the missing `c10::ValueError` ctor export
+  is an MSVC/torch defect, not an AMD one, and `/ALTERNATENAME` is inert when the symbol
+  resolves.
+- `kernels_mcmc.cuh:20` `rsqrt` -> `1 / std::sqrt` is in `init_relocation_coefficients()`,
+  which is host code, so no device numerics change.
+- No new wavefront assumptions. The `cg::tiled_partition<32>` / `warp.ballot()` /
+  `previous_lanes_mask` code is untouched upstream code, tile-relative throughout, and already
+  validated on wave64 (gfx90a).
