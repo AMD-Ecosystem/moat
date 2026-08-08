@@ -1,0 +1,108 @@
+{
+  "schema_version": 3,
+  "name": "QUICK",
+  "upstream_url": "https://github.com/merzlab/QUICK",
+  "fork_url": "https://github.com/AMD-Ecosystem/QUICK",
+  "fork_default_branch": "master",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "adopted_at": "2026-06-05T00:05:54Z",
+  "updated_at": "2026-08-07T07:04:44Z",
+  "head_sha": "d369e07",
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "MPL-2.0",
+  "upstream_repo_id": 172423631,
+  "stage": "review-passed",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "1bedbbb",
+      "started_at": "2026-06-05T00:11:32Z",
+      "completed_at": "2026-06-05T07:43:54.086671Z",
+      "updated_at": "2026-06-05T07:43:43Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "d369e07",
+      "started_at": null,
+      "completed_at": "2026-06-05T14:30:35Z",
+      "updated_at": "2026-06-05T14:30:35Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1101": {
+      "blocked": true,
+      "blocked_reason": "Windows host has no MSVC-ABI Fortran compiler; QUICK is a mixed Fortran/HIP build (.f90 modules, gfortran, rocBLAS/rocSOLVER Fortran bindings) -- not buildable on Windows.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-08T01:43:25Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1201": {
+      "blocked": true,
+      "blocked_reason": "Windows host has no MSVC-ABI Fortran compiler; QUICK is a mixed Fortran/HIP build (.f90 modules, gfortran, rocBLAS/rocSOLVER Fortran bindings) -- not buildable on Windows.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-08T01:43:25Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  }
+}
