@@ -16,3 +16,4 @@
 {"kind":"phase","ts":"2026-08-08T17:43:53Z","phase":"compile","seconds":39.578,"exit":0,"cmd":"bash -c cmake -S projects/Quest/src/quest/ops -B projects/Quest/src/quest/ops/build -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_PREFIX_PATH=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/torch/share/cmake && cmake --build projects/Quest/src/quest/ops/build"}
 {"kind":"phase","ts":"2026-08-08T17:44:13Z","phase":"test","seconds":5.639,"exit":0,"cmd":"bash -c cd projects/Quest/src && HIP_VISIBLE_DEVICES=1 PYTHONPATH=$PWD python -m pytest quest/tests/test_rope.py quest/tests/test_estimate.py quest/tests/test_decode_attention.py quest/tests/test_approx_attention.py -q"}
 {"kind": "tokens", "ts": "2026-08-08T17:57:47Z", "tokens": 115563, "source": "porter"}
+{"kind": "tokens", "ts": "2026-08-08T18:40:10Z", "tokens": 104116, "source": "reviewer"}
