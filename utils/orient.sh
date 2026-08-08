@@ -93,6 +93,13 @@ fi
 python3 utils/moatlib.py waivers 2>/dev/null \
   | awk -F'\t' 'NF>1 {printf "waiver   :   AWAITING   %-26s %s -- %.70s\n", $1, $2, $4}' || true
 
+# A lesson on a live port branch is where it belongs -- the port's own review is what
+# publishes it -- so this reports only the case nothing will ever carry: a FINISHED
+# port whose branch still holds a global edit the trunk lacks. That branch is about to
+# be deleted. `lessons --pending` shows the rest, and they are not to be lifted.
+python3 utils/moatlib.py lessons 2>/dev/null \
+  | awk -F'\t' '$2=="ORPHANED" {printf "lesson   :   ORPHANED   %-24s %.60s\n", $1, $3}' || true
+
 # A folder in the wrong place is invisible until it bites, and it bites differently at
 # each end: one on the trunk with work outstanding turns every status write into a pull
 # request once the trunk is protected, and one on a branch with nothing left owed is a
@@ -101,6 +108,24 @@ python3 utils/moatlib.py waivers 2>/dev/null \
 # the PR merged puts a finished project back in flight.
 python3 utils/moatlib.py misplaced 2>/dev/null \
   | awk -F'\t' 'NF>1 {printf "misplaced:   %-26s %s\n", $1, $3}' || true
+
+# Work somebody set aside without anybody deciding it should be. A deferral is cheap to
+# record and easy to forget, and the failure is silent: "we will get to it" becomes
+# nobody ever looked. Only a person can rule on one, so the list has to reach a person.
+#
+# Print the ID, because that is the argument `decide` takes. The first cut printed the
+# project, the kind and the summary -- everything except the one field you need to act
+# -- so the nag named a command you then had to go look up the argument for. The count
+# is here for the same reason: the list is sorted, so a bare `head` shows the same five
+# forever and gives no sign that seventy others are behind them.
+DEFERRED=$(python3 utils/deferred.py pending 2>/dev/null || true)
+if [ -n "$DEFERRED" ]; then
+  echo "$DEFERRED" | awk -F'\t' 'NF>2 {printf "deferred :   UNRULED    %-34s %.48s\n", $3, $4}' \
+    | head -5
+  N=$(printf '%s\n' "$DEFERRED" | grep -c . || true)
+  [ "$N" -gt 5 ] && echo "deferred :   ...and $((N - 5)) more: python3 utils/deferred.py pending"
+  echo "deferred :   rule it:   python3 utils/deferred.py decide <id> --choice defer|now --by <who>"
+fi
 
 # Nothing reconciles the record on a schedule, so the only thing that can say it has
 # gone unchecked is how long since someone swept. Reads a stored date, costs no API
