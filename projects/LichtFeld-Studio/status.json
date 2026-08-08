@@ -7,7 +7,7 @@
   "priority": 6.263,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-08-07T23:06:58Z",
+  "updated_at": "2026-08-08T17:15:21Z",
   "head_sha": "5cbfdf1a7b1b6a6553ce077a5aa8d6209fd3f51c",
   "depends_on": [],
   "porting": null,
@@ -28,7 +28,7 @@
   },
   "license_spdx": "GPL-3.0",
   "upstream_repo_id": 672651553,
-  "stage": "validation-failed",
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
