@@ -1529,6 +1529,85 @@ def unsatisfied_gates(obj):
     return {g for g in REQUIRED_GATES if not gate_satisfied(obj, g)}
 
 
+def settled(obj):
+    """Nothing will be done with this project again, so nothing is owed.
+
+    A `verify` disposition is NOT this: it flags a project for a closer look, which is
+    the opposite of settled, and only a `skip` retires one. Reading any disposition as
+    terminal put two projects on the wrong side of that."""
+    disp = disposition_for_project(obj.get("name") or "")
+    return bool((disp and disp.get("disposition") == "skip")
+                or obj.get("stage") == "not-portable" or obj.get("on_hold"))
+
+
+def outstanding(obj):
+    """Work this project still owes, as a list of (arch, state). Empty means done.
+
+    "Done" is not "an upstream PR exists". A PR opens once every gate is satisfied at
+    the head of the day, and then the fork moves: a follow-up commit advances head_sha,
+    the architectures that revalidate catch up, and any that do not are left holding
+    evidence for code that is no longer there. Thirty projects on the trunk are in
+    exactly that position, all but one of them missing wave64, because gfx90a validated
+    before a later commit and nothing said so -- `revalidate` was a stored word that
+    only a sweep wrote, so a stale validation read as `completed` to every reader.
+
+    A merged PR is not done either, and that is the direction that would hurt: leaving a
+    shipped port alone on the assumption it is finished, when a gate it claims is
+    actually unproven at the code that shipped."""
+    if settled(obj):
+        return []
+    out = []
+    for arch in sorted(validations(obj)) or []:
+        t = arch_task(obj, arch)
+        if t:
+            out.append((arch, t[1]))
+    # A project nothing has recorded still owes whatever its stage asks for.
+    if not validations(obj):
+        t = arch_task(obj, "linux-gfx90a")
+        if t:
+            out.append(("(any)", t[1]))
+    return out
+
+
+def belongs_on_branch(obj):
+    """Should this project's folder live on `port/<name>` rather than on the trunk?
+
+    The trunk holds what is finished; work in flight lives where the work is. This is a
+    FUNCTION of current state and not a one-way door, which is the whole point: a
+    maintainer asking for a rewrite after the upstream PR merged makes a finished
+    project unfinished again, and its folder has to go back. Same for a fork commit
+    that stales an architecture's evidence.
+
+    Finished takes BOTH halves. A port with every gate proven and no upstream PR is not
+    done -- nobody has offered it to anyone, and thirty of those were sitting in the
+    review backlog when this was written. A port with a PR but a stale architecture is
+    not done either. Only a verdict ends it outright, because there is nothing left to
+    prove or to offer."""
+    if settled(obj):
+        return False
+    if not obj.get("pr_state"):
+        return True
+    return bool(outstanding(obj))
+
+
+def misplaced_folders():
+    """Projects whose folder is not where their state says it should be.
+
+    Both directions. A folder on the trunk with work outstanding is the one that
+    matters under branch protection -- every status write it attracts becomes a pull
+    request against a protected trunk. A branch with nothing outstanding is the other
+    half: its pull request should merge and the branch should go."""
+    out = []
+    for name, obj, where in project_records():
+        want_branch = belongs_on_branch(obj)
+        on_branch = where != "local"
+        if want_branch and not on_branch:
+            out.append((name, "trunk", "should be on port/%s" % name, outstanding(obj)))
+        elif on_branch and not want_branch:
+            out.append((name, "branch", "nothing outstanding; merge port/%s to main" % name, []))
+    return sorted(out)
+
+
 def stalled(obj):
     """Every architecture that has a record here has given up, before review.
 
@@ -2314,6 +2393,8 @@ def main(argv=None):
 
     sub.add_parser("stalled", help="projects every architecture gave up on, before review")
 
+    sub.add_parser("misplaced", help="projects whose folder is not where their state says")
+
     sub.add_parser("waivers", help="gate waivers suggested but not yet approved")
 
     s = sub.add_parser("suggest-waiver",
@@ -2499,6 +2580,16 @@ def main(argv=None):
         if rows:
             print(f"-- {len(rows)} project(s) waiting on a person: continue on other "
                   f"hardware, or `set-not-portable <name> --reason ... --by <who>`",
+                  file=sys.stderr)
+    elif args.cmd == "misplaced":
+        rows = misplaced_folders()
+        for name, where, what, work in rows:
+            todo = ",".join(f"{a}={st}" for a, st in work[:3])
+            print(f"{name}\t{where}\t{what}\t{todo}")
+        if rows:
+            n = sum(1 for r in rows if r[1] == "trunk")
+            print(f"-- {len(rows)} misplaced ({n} on the trunk with work outstanding, "
+                  f"which under branch protection turns every status write into a PR)",
                   file=sys.stderr)
     elif args.cmd == "waivers":
         rows = pending_waivers()
