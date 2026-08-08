@@ -263,3 +263,189 @@ rather than on a measured CUDA run, and the reviewer should weigh them as such:
   NOT materialise: the compute path reaches `InitGLParam(1)`, and the full in-suite run shows
   GPU kernels dispatching, so no widening of the vendor test was needed. It remains a latent
   hazard if the GLSL and compute paths are ever initialised in the other order.
+
+## Review 2026-08-08 (reviewer, linux-gfx1100 / wave32 host)
+
+Reviewed fork `512dbe91` on `AMD-Ecosystem/colmap:moat-port` against its parent
+`d6d2bc8e` (single commit). Verdict: changes-requested. Nothing here says the port is
+wrong; five items must land before the pull request is drafted.
+
+Read-only review: no wave64 hardware here, so everything below is from reading the source,
+not from running it. The porter's own gfx90a results were not re-measured.
+
+**Reviewed against the fork's default branch as well.** `moat-port..origin/main` is 0, so
+the branch is not behind. Note the fork's `main` is itself two upstream commits behind
+`moat-port`'s parent, so `git diff origin/main...moat-port` shows unrelated upstream work
+(`homography_matrix*`, `two_view_geometry*`); the port diff is `d6d2bc8e..512dbe91` only.
+`jargon.py --port colmap` is clean over the whole branch. Title is 59 chars, `[ROCm]`
+prefixed, Claude named, no `Co-Authored-By: noreply`, ASCII, no em-dash.
+
+### 1. Compiling out `CuTexImage::CopyFromPBO` turns a transfer failure into silent garbage
+
+`src/thirdparty/SiftGPU/CuTexImage.cpp:257-270`. On ROCm the body is entirely inside
+`#if defined(SIFTGPU_GL_INTEROP_ENABLED)`, so the function returns having copied nothing
+and having reported nothing. `PyramidCU::ConvertInputToCU`
+(`src/thirdparty/SiftGPU/PyramidCU.cpp:936-941`) then does
+
+    if(input->_rgb_converted && input->CopyToPBO(_bufferPBO, ws, hs, GL_LUMINANCE))
+    {
+        _inputTex->InitTexture(ws, hs, 1);
+        _inputTex->CopyFromPBO(ws, hs, _bufferPBO);
+    }
+
+`input->CopyToPBO` here is `GLTexImage::CopyToPBO`, which is pure OpenGL and still
+succeeds on ROCm, so the branch is taken; `InitTexture` `cudaMalloc`s without zeroing and
+`CopyFromPBO` does nothing, so SIFT runs on uninitialized device memory with no
+diagnostic. The other three compiled-out sites degrade correctly and are fine:
+`CuTexImage::CopyToPBO` returns 0 (`CuTexImage.cpp:272-296`) so `ConvertTexCU2GL` sets
+`_bufferTEX` to 0x0, and the 4-arg `CuTexImage(w,h,n,pbo)` constructor leaves `_cuData`
+NULL (`CuTexImage.cpp:108-119`) which `ConvertTexCU2GL` explicitly tests
+(`PyramidCU.cpp:878,886,895`). `CopyFromPBO` is the only one with no failure signal.
+
+The reachability argument in the comment at `CuTexImage.cpp:35-42` is correct for COLMAP
+and I verified it: `sift.cc:694` calls `RunSIFT(pitch, height, data, ...)`, so
+`input->_pixel_data` is non-null and `PyramidCU.cpp:930` takes the
+`InitTexture`/`CopyFromHost` branch. But this is vendored SiftGPU that upstream ships to
+other consumers, and "correct for the one caller in this repository" is a weaker claim
+than the code should rest on. Make the ROCm `CopyFromPBO` fail loudly -- a `std::cerr`
+line matching the existing "Unable To Convert Intput" style at `PyramidCU.cpp:945` is
+enough.
+
+### 2. The Test Plan omits the nvcc check and does not disclose that CUDA was never run
+
+Two of the three fixes are unconditional and therefore change what upstream's CUDA build
+computes: the `ComputeDOG_Kernel` border clamp (`ProgramCU.cu:479-494`) and the pitched-to-
+linear rebind (`ProgramCU.cu:991`, `ProgramCU.cu:1205`, with the three fetches at
+`ProgramCU.cu:862`, `1051`, `1124`). notes.md records honestly that the CUDA path was
+compile-checked with nvcc 13.3.73 and never executed, and that the equivalence rests on
+argument. The commit's Test Plan lists only the gfx90a run and says nothing about either.
+
+This is the exact question ahojnnes already asked on #4420 (`notes.md:36-38`, "tested e2e /
+CUDA-HIP equivalent?"). Put the nvcc configuration in the Test Plan and state plainly that
+the CUDA path is compile-checked and not run, and that the clamp changes the first and
+last row and column on both backends. The skill's own instruction is to say
+"compile-checked with nvcc, not run"; saying it unprompted is much cheaper than saying it
+in a review round.
+
+I did verify the two equivalence arguments by reading, and both hold:
+
+- The clamp is exact in the interior. `index = IMUL(row, width) + col` at
+  `ProgramCU.cu:475`, and the new `IMUL(row, width) + coln` etc. agree with the old
+  `index +/- 1`, `index +/- width` for every non-border pixel. `IMUL` is `__mul24`
+  (`ProgramCU.cu:36`), which returns the full 32-bit product of two 24-bit operands, so
+  there is no new range limit.
+- The `tex2D` to `tex1Dfetch` swap is exact. All three fetches are `cudaFilterModePoint`,
+  the pitch was the packed row (`_imgWidth * _numChannel * sizeof(float)` in the deleted
+  `BindTexture2D`), `InitTexture` allocates packed with plain `cudaMalloc`
+  (`CuTexImage.cpp:163-194`, no `cudaMallocPitch`), and all three kernels clamp x to
+  `[1.5, width-1.5]` and y to `[1.5, height-1.5]` before fetching (`ProgramCU.cu:846-849`,
+  `1032-1035`, `1105-1108`), so the coordinates are strictly positive and `int()`
+  truncation equals `floor()`.
+
+### 3. `cuda_to_hip.h` drags a device RNG header into host translation units
+
+`src/colmap/util/cuda_to_hip.h:48` and `:147` include `<hiprand/hiprand_kernel.h>` and
+`<curand_kernel.h>` unconditionally. This change newly routes
+`src/thirdparty/SiftGPU/CuTexImage.h:27`, `CuTexImage.cpp:34` and `SiftMatchCU.cpp:34`
+through that header, and those are host-compiled `.cpp` files -- only `ProgramCU.cu` is
+marked `LANGUAGE HIP` (`src/thirdparty/SiftGPU/CMakeLists.txt:29`). SiftGPU uses no RNG at
+all; `grep -rn curand src/thirdparty/SiftGPU/` hits only the CMake `CUDA::curand` line.
+
+The header already carries a scar from exactly this fault class: the `<cstdio>` workaround
+at `cuda_to_hip.h:41-45` exists because rocrand's mtgp32 header omits an include and host
+TUs tripped over it. Nothing outside a `.cu` names `curandState` (checked across
+`src/colmap/`), so gating both includes behind `__HIPCC__` / `__CUDACC__` is safe and
+retires that workaround.
+
+I checked whether this is a live break rather than just exposure: CUDA's
+`crt/host_defines.h:191-195` empties `__annotate__` when `__CUDACC__` is undefined, so
+`curand_kernel.h` is host-includable by design on every host compiler, and a local
+`g++ -std=c++17 -c` of `<cuda_runtime.h>` + `<curand_kernel.h>` succeeds. So this is
+footprint and fault-class hygiene, not a broken build today.
+
+Related and fixed by the same change: SiftGPU's HIP arm links only `hip::host`
+(`src/thirdparty/SiftGPU/CMakeLists.txt:30-32`) while it transitively includes a hiprand
+header, whereas `colmap_mvs_cuda` declares `hip::hiprand` and `roc::rocrand` for the same
+header (`src/colmap/mvs/CMakeLists.txt:302-306`). It builds on a monolithic `/opt/rocm`,
+but `cmake/FindDependencies.cmake:129-151` goes to real trouble to support split
+`rocm-sdk` installs where that is not guaranteed. Gate the include and the mismatch is
+moot; otherwise add `hip::hiprand`.
+
+### 4. plan.md risk 5 is recorded as closed on evidence that only covers gfx90a
+
+`GlobalUtil.cpp:370` still reads `if(GlobalUtil::_IsNvidia == 0) GlobalUtil::_UseCUDA = 0;`
+inside `InitGLParam(0)`, and `PyramidGL.cpp:178` / `SiftMatch.cpp:136` still call it in the
+same process that runs the compute tests. notes.md:262-265 records that this "did NOT
+materialise". That observation is gfx90a-specific: the only OpenGL context available on a
+compute-only CDNA part is Mesa llvmpipe under Xvfb, and an RDNA host has a real AMD GL
+driver reporting an AMD vendor string, which reaches the same `_IsNvidia == 0`. The failure
+mode is a silent fall back to GLSL with a fully green suite, so it cannot be detected from
+the test result.
+
+No code change requested. Write into notes.md that the wave32 validation must confirm the
+backend by kernel dispatch (`AMD_LOG_LEVEL=3`, the same check the porter used at
+notes.md:206-224), not by ctest passing, and that a GLSL fallback there is a validation
+failure and not a pass.
+
+### 5. The commit body calls the `RunThreadWithOpenGLContext` change test infrastructure
+
+`src/colmap/util/opengl_utils.h:96-104`. Seven production call sites route through the same
+function: `src/colmap/exe/feature.cc:146,218,269,297,325,353,381` and
+`src/colmap/exe/sfm.cc:165`. Their reachability on a non-GUI build is genuinely narrow --
+`cmake/FindDependencies.cmake:633-635` forces `OPENGL_ENABLED` off without the GUI, and
+`src/colmap/feature/extractor.h:71-75` defaults `use_gpu` to false without
+`COLMAP_GPU_ENABLED` -- so in practice the change is test-only. But a maintainer reading
+"That is shared test infrastructure" will go and check that themselves, and one sentence
+naming `exe/feature.cc` and `exe/sfm.cc` plus the reachability argument saves the round
+trip.
+
+### Checked and clean
+
+Recorded so the next reviewer does not repeat it.
+
+- **Wavefront portability, the thing this host is best placed to judge and worst placed to
+  test.** `ProgramCU.cu` has no `__shfl*`, no `__ballot`, no `__activemask`, no
+  `__syncwarp`, no `warpSize` and no lane mask of any kind. The three literal 32s
+  (`ROWMATCH_BLOCK_WIDTH`, `COLMATCH_BLOCK_WIDTH`, `FILTERV_BLOCK_HEIGHT` at
+  `ProgramCU.cu:1890`, `1963`, `50`) are block dimensions; no shared array is sized from a
+  warp count. `RowMatch_Kernel`'s tree reduction (`ProgramCU.cu:1929-1941`) puts
+  `__syncthreads()` outside the `if(threadIdx.x < step)` at every step, so it is correct
+  at either width and does not rely on warp-synchronous execution. Every early `return` in
+  every kernel follows that kernel's last `__syncthreads()` -- checked one by one at
+  `ProgramCU.cu:154/155`, `212/214`, `1456/1459`, `1574,1579/1580`, `1758,1765/1766` -- so
+  the intra-wave barrier-divergence class does not apply. Largest static shared allocation
+  is FilterV's, about 10 KB, and the largest block is 512 threads (16x32), both fine on
+  RDNA. plan.md risk 6 is correct as written.
+- Strategy A is implemented as the shape already in the tree: one `cuda_to_hip.h`,
+  no second HIP-aware header, `enable_language(HIP)` central, `LANGUAGE HIP` on
+  `ProgramCU.cu` rather than a rename, CUDA spelling preserved in the sources.
+- `CuTexObj` rule-of-five (`CuTexImage.h:48-71`) is right: NSDMI `handle = 0`, deleted
+  copies, move ctor and move assignment that null the source, guarded `Destroy()`. Every
+  use in `ProgramCU.cu` is either copy-init from a prvalue or move-assign from one; nothing
+  copies. The two default-constructed-and-never-bound cases (`texObjList` on the
+  existing-keypoint path, `texObjF4` when `_SubpixelLocalization` is 0) now pass handle 0
+  instead of stack garbage, and the kernel does not dereference either under COLMAP's
+  settings (`_KeepExtremumSign` is only set by SiftGPU's `-sign` argument, which COLMAP
+  does not pass, and `_SubpixelLocalization` defaults to 1).
+- Linear-bind sizing is safe: `BindTexture` uses `_numBytes` (`CuTexImage.cpp:76`), and
+  `InitTexture` only grows the allocation (`if(size <= _numBytes) return true;`), so the
+  binding is never smaller than the current image.
+- No hardware-linear-filter assumption anywhere; both static `cudaTextureDesc` singletons
+  are `cudaFilterModePoint`.
+- No library substitution is needed or made; SiftGPU uses no cuBLAS/cuFFT/cuRAND/CUB.
+- Dispatch-site widening is complete. The only remaining `COLMAP_CUDA_ENABLED`-alone sites
+  are the deliberate scope-outs (`onnx_utils.cc:145`, `bundle_adjustment_ceres.cc:141`,
+  `global_positioning.cc:361`, and their test), the `#endif` label comments in
+  `exe/mvs.cc`, the compat header's own `#elif`, and `cuda.cc:56` where the guard covers
+  only the CUDA-specific no-device error codes.
+- `extractor.cc:139` dropping `&& !defined(COLMAP_CUDA_ENABLED)` is behaviour-preserving:
+  `COLMAP_GPU_ENABLED` is defined whenever `CUDA_ENABLED` is
+  (`cmake/FindDependencies.cmake:644`).
+- Generalizable lessons: already present in the skill on `main` and each one checked
+  against this source rather than against the porter's summary. The `AMD_LOG_LEVEL=3`
+  dispatch-count method and its "wall time is not reliable" refinement
+  (`references/validation.md:12-44`), the pitched-to-linear exactness rule with its two
+  preconditions (`references/fault-classes.md:224-234`), the ComputeDOG clamp and the
+  CuTexObj rule-of-five entries (`references/fault-classes.md:148-155`) all hold. The
+  640x480 arithmetic in the pitch entry checks out: the 80-wide float2 level is a 640-byte
+  row, not a multiple of 256. This branch adds no skill entries.
