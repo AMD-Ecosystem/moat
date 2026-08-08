@@ -1367,8 +1367,20 @@ def writable_here(name, where):
     branch -- you cannot edit files that are not in your tree. `commit_to_branch` is
     the exception and writes one without a checkout; the selector deliberately does
     not use it, because dispatching an agent at a project whose folder is absent would
-    hand it a plan and notes it cannot open."""
-    return where in ("local", "trunk") or current_branch() == f"port/{name}"
+    hand it a plan and notes it cannot open.
+
+    A `port/<name>` branch owns exactly one project and may write only that one, even
+    though it CARRIES every folder the trunk had when it was cut. Presence is not
+    ownership: while the folder migration is in progress the trunk still holds dozens
+    of in-flight projects, so a port branch is a full copy of them, every one reads
+    `local`, and the selector would hand you somebody else's project and land its state
+    on this branch. That is the canary bug that reverted the first migration attempt.
+    Once the trunk holds only terminal projects the distinction stops mattering, since
+    none of them is actionable -- but it matters for the whole of the migration."""
+    branch = current_branch() or ""
+    if branch.startswith("port/"):
+        return branch == f"port/{name}"
+    return where in ("local", "trunk")
 
 
 def project_port_state(name):
