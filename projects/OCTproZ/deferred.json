@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "octproz-app-kernel-validation",
+      "kind": "other",
+      "component": null,
+      "summary": "Validation used a proxy microbenchmark; never exercised OCTproZ app kernels, GL-interop, or the 3D-volume surface-write path (riskiest ported feature compiled but not run) on real GPU. Re-validate by launching the built app through its OCT processing pipeline.",
+      "refs": [
+        "projects/OCTproZ/notes.md"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T19:04:23Z",
+      "decided": null
+    }
+  ]
+}
