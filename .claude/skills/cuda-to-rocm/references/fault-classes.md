@@ -186,6 +186,21 @@ everything else passes. (qrack: `_PopQueue` under `UniformlyControlledSingleBit`
 **`hipFree` is synchronizing** (`hipFreeAsync` is not), so an explicit
 `hipDeviceSynchronize()` before it is redundant. (anari-visionaray)
 
+**Device-side `new[]`/`delete[]` inside a kernel or functor is a trap on HIP.** The device
+malloc heap is small and its behaviour under a per-thread allocation in a hot loop is not
+reliable; a functor that allocates a scratch array per thread can return wrong values
+without faulting, so the symptom is a numerically wrong result rather than a crash. Replace
+it with a fixed-size per-thread automatic array bounded by the constant the code already has
+(GooFit's binned integration used a device `new[]` sized by the observable count;
+`fptype[MAX_NUM_OBSERVABLES]` fixed it and immediately corrected a fitted parameter). This
+is arch-unified and correct on CUDA too, so it needs no guard -- prefer it to raising the
+device heap limit. (GooFit)
+
+**HIP's `__ldg` accepts only scalar types**, while CUDA projects commonly route arbitrary
+types through it via a generics wrapper that relies on `__CUDA_ARCH__` and PTX aliasing. A
+read-only-cache macro (`RO_CACHE(x)`) should expand to a plain `(x)` load on HIP; the AMD
+hardware takes the same path. (GooFit)
+
 ## Textures
 
 **Texture pitch alignment is 256 bytes on AMD against 32 on NVIDIA**, and it bites in two
@@ -193,7 +208,15 @@ distinct ways.
 
 - At the BIND: pitched 2D texture binds need 256-byte rows, so widths that work on CUDA can
   fail. If a kernel only point-samples, a linear (`tex1Dfetch`-style) bind avoids pitch
-  entirely. (colmap BindTexture2D.)
+  entirely. The swap is EXACT, not an approximation, when two conditions hold: the sampler
+  is `cudaFilterModePoint`, and the kernels already clamp their coordinates to the image so
+  hardware addressing never applies. Then `tex2D(t, x, y)` over a pitch2D bind whose pitch
+  is the packed row is by definition `tex1Dfetch(t, int(y) * width + int(x))` over a linear
+  bind, and both backends can take the one code path. Check the clamping before believing
+  it; if a kernel relies on the address mode, you need the mode emulated instead. Do not
+  reach for `cudaMallocPitch`: repitching the buffer changes the row indexing of every
+  kernel in the file for no gain. (colmap `BindTexture2D`, where a 640x480 input fails at
+  the 80-wide float2 pyramid level, a 640-byte row.)
 - Through the ATTRIBUTE: `cudaDevAttrTexturePitchAlignment` (`hipDeviceAttributeTexturePitchAlignment`) reports 256 on gfx90a,
   so libraries deriving a row pitch from it pad more on AMD -- a tight 640-byte uchar row
   becomes 768. Tests that fill the valid region, run the op, then compare the WHOLE strided
