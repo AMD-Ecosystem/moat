@@ -51,7 +51,7 @@ def load_projects():
 GATE_RANK = ["proven", "stale", "working", "queued", "blocked", "none"]
 GATE_GLYPH = {"proven": "✅", "stale": "🔄", "working": "🔧",
               "queued": "⬜", "blocked": "🚫", "none": "—"}
-WORKING_STATES = {"porting", "ported", "delta-ported", "review-passed",
+WORKING_STATES = {"porting", "planning", "ported", "delta-ported", "review-passed",
                   "changes-requested", "validation-failed", "planned", "screened"}
 QUEUED_STATES = {"port-ready", "awaiting-fork", "awaiting-upstream",
                  "unclaimed", "not-portable"}
