@@ -71,3 +71,4 @@
 {"kind":"phase","ts":"2026-08-08T23:31:52Z","phase":"compile","seconds":562.747,"exit":0,"cmd":"cmake --build /tmp/claude-1000/-var-lib-jenkins-moat/cac2074a-dc3d-4ccc-a639-f6184732c4ca/scratchpad/wt-k2/projects/k2/src/build_head -j 16"}
 {"kind":"phase","ts":"2026-08-08T23:37:57Z","phase":"test","seconds":87.069,"exit":0,"cmd":"bash agent_space/k2_gtest_gfx90a_revalidate.sh"}
 {"kind":"phase","ts":"2026-08-08T23:40:17Z","phase":"test","seconds":85.274,"exit":1,"cmd":"python3 -m pytest projects/k2/src/k2/python/tests/ --tb=short -q"}
+{"kind": "tokens", "ts": "2026-08-08T23:55:29Z", "tokens": 203284, "source": "validator"}
