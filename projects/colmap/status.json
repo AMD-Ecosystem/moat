@@ -32,7 +32,6 @@
   "stage": "planned",
   "platforms": {
     "linux-gfx90a": {
-      "state": null,
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": null,
