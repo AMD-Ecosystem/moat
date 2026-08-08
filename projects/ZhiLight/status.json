@@ -7,7 +7,7 @@
   "priority": 5.095,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T00:46:50Z",
-  "updated_at": "2026-08-07T23:11:14Z",
+  "updated_at": "2026-08-08T17:15:22Z",
   "head_sha": "1b7a1c9e3bb6774ca76efb6b316ff752e2f15fd3",
   "pr_url": "https://github.com/zhihu/ZhiLight/pull/81",
   "pr_number": 81,
@@ -24,7 +24,7 @@
   "pr_state": "open",
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 899491463,
-  "stage": "validation-failed",
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
