@@ -69,6 +69,7 @@ Scan this list against what you are doing. If any line could apply, open
 - Warp-derived array sizing: quantities scaling WITH `warpSize` need the 64 upper bound, quantities scaling as `blockDim/warpSize` need the 32 LOWER bound. Getting it backwards writes out of bounds.
 - A compat `__ballot_sync` that casts `__ballot()` to `uint32_t` returns the wrong 32 lanes on wave64.
 - An over-wide `__shfl*` width silently clamps to the physical wavefront instead of erroring; the symptom is a metric shift, not a crash.
+- HIP's `__shfl_*_sync` mask must be 64-bit; a `0xffffffff` literal is a compile error. An explicit width of 32 already makes a reduction wave-agnostic.
 - Intra-wave barrier divergence: a per-row early return before `__syncthreads()` is benign on CUDA, faults on wave64.
 - `cub`/`hipCUB` block-collective `TempStorage` reuse races on a 64-thread block without an explicit `__syncthreads`.
 - `__smid()` can EXCEED `multiProcessorCount` on AMD, unlike NVIDIA.
@@ -98,6 +99,8 @@ Scan this list against what you are doing. If any line could apply, open
 - A shared compat header must be host-includable: gate device-only includes behind `__CUDACC__`/`__HIPCC__`, or CUB leaks into host TUs. Hit independently by two projects.
 - `__HIP_PLATFORM_AMD__` is undefined until `hip_runtime.h` is included; a gate placed before it silently picks the CUDA branch.
 - Missing includes in a HIP port are usually pre-existing upstream omissions unmasked by the narrower include graph.
+- nvcc accepts partial specialization of a function template; clang rejects it. Move the dispatch onto a class template.
+- A sibling-relative `#include "x.cuh"` beats the include path, so shadow headers cannot shadow it; force-include the replacement instead.
 - A `-include`d compat header creates no dependency edge: wipe objects after editing it or you validate stale code.
 
 **Types, dispatch and platform limits**
