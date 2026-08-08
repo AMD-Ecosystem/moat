@@ -548,7 +548,7 @@ not re-run here: the tree differs from the already-tested 6b18628 only by
 
 `jargon.py --commits be2217e..HEAD`: clean.
 
-### Open item for whoever prepares the upstream PR
+### Open item for whoever prepares the upstream PR (CLOSED 2026-08-08 -- see "Port 2026-08-08" below)
 
 `jargon.py --commits origin/main..HEAD` reports one hit that is NOT in this commit:
 the base commit 98be02d's message says "Strategy B (torch hipify): ...". That is
@@ -563,17 +563,21 @@ check to the last commit is how this survived a review.
 
 ### Gotcha #8
 
-Torch's build-time hipify writes its output as sibling files IN THE SOURCE TREE
-(`.cu` -> `.hip`, `.h`/`.cuh` -> `_hip.h`/`_hip.cuh`, per
-`hipify_python.get_hip_file_path`), so a `git add -A` after a build commits a
+Torch's build-time hipify writes its output as sibling files IN THE SOURCE TREE,
+so a `git add -A` after a build commits a
 machine translation of the project's own kernels. Worse, because hipify rewrites
 them in place, a tracked mirror looks clean on a from-clean build and only dirties
 the tree on the NEXT source edit -- which is exactly when the integrity gate is
-supposed to be trustworthy. Gitignore the three patterns before the first commit,
-and verify with `git clean -fdx` + build + an EMPTY `git status --porcelain`;
+supposed to be trustworthy. Gitignore the artifacts before the first commit, and
+verify with `git clean -fdx` + build + an EMPTY `git status --porcelain`;
 checking only "no tracked file modified" passes even when the artifacts are
-tracked. Promoted to the `cuda-to-rocm` skill
-(references/strategy-b-torch.md, "Never commit the hipified mirror").
+tracked. `*.hip`, `*_hip.h`, `*_hip.cuh` is the whole list HERE only because no
+path in this project contains `cuda`/`CUDA`/`THC`: `get_hip_file_path` appends
+`_hip` only when its `cuda`->`hip` rewrite changes neither the directory nor the
+filename, and otherwise renames (`src/cuda/foo.cuh` -> `src/hip/foo.cuh`,
+`cuda_utils.cuh` -> `hip_utils.cuh`). Promoted to the `cuda-to-rocm` skill
+(references/strategy-b-torch.md, "Never commit the hipified mirror"), with the
+rename cases tabulated there.
 
 ## Review 2026-08-08 (re-review of 932a8b7, linux-gfx1100)
 
@@ -669,3 +673,55 @@ the "Open item" section to record what was done instead of what to do later.
 Changes requested. The artifact fix itself is correct and complete; what blocks is the
 jargon item, which is free to fix today and stops being free once validation or approval
 lands on this branch.
+
+## Port 2026-08-08 (history rewrite, linux-gfx1100)
+
+Addresses the blocking finding of the re-review above: in-house vocabulary in the
+branch's commit messages, which nothing on the publish path would have caught
+(`upstream.py` scans the PR title and body only, never the commit range).
+
+**What was done.** Squashed the three commits (98be02d, be2217e, 932a8b7) into one:
+`git reset --soft 7bc0593` (the merge base with `origin/main`) followed by a single
+commit, so the index -- and therefore the tree -- was never touched. New sha
+`1b3716140ae6c6e01133d6aba8ad2ca380a9800c`, pushed with
+`--force-with-lease=moat-port:932a8b7...`.
+
+Squash rather than reword-and-replay because the second and third commits are fix-ups
+of the first that never existed upstream, and 932a8b7's message narrated that internal
+history ("Previous attempts keyed the definition on __CUDA_ARCH__ ..."), which reads as
+a reference to nothing once the branch is a single commit. Squashing also removed
+be2217e's model-name credit and gave the Windows link fix a Test Plan it lacked.
+
+**Verification.**
+
+```
+git diff --stat 932a8b7 HEAD          # empty: tree identical, only history changed
+python3 utils/jargon.py --commits origin/main..moat-port -C projects/faster-gaussian-splatting/src   # clean
+python3 utils/jargon.py --diff origin/main...moat-port -C projects/faster-gaussian-splatting/src     # clean
+git status --porcelain                # empty (built tree, artifacts ignored)
+```
+
+The whole-branch range is the one that matters: `origin/main..`, not the previously
+reviewed head. GPU numerics were NOT re-run and did not need to be -- the tree is
+byte-identical to 932a8b7, so the 16/16 gfx1100 result recorded above stands unchanged.
+
+**Consequence for validation.** All four archs were already going to revalidate at head:
+their `validated_sha` was 98be02d or be2217e, and the delta to head spans the Windows
+link fix and the `lerp_scalar` rename, which `advance_head` will not classify as
+arch-independent-inert. The rewrite therefore forfeited no validation that was not
+already forfeit. The old shas are now unreachable, so `_classify_safe` returns None and
+every arch falls to the safe default, which is the intended outcome. Do NOT run
+`squash-carry-forward` here: it certifies on tree-identity alone and would falsely mark
+the `lerp_scalar` fix validated on gfx90a and the two Windows archs.
+
+**Skill correction shipped with this.** `references/strategy-b-torch.md` stated the
+hipify output naming as a plain `_hip` suffix. `get_hip_file_path` appends `_hip` only
+when its `cuda`->`hip` / `CUDA`->`HIP` / `THC`->`THH` rewrite leaves BOTH the directory
+and the filename unchanged; otherwise it renames, so `src/cuda/kernel.cuh` becomes
+`src/hip/kernel.cuh` and `cuda_utils.cuh` becomes `hip_utils.cuh`. The section now
+tabulates both behaviours and tells the porter to derive the extra ignore entries from
+the project's own paths, with the empty-`git status` check after `git clean -fdx` kept
+as the thing that actually catches a rename nobody predicted. The pr-review checklist
+and validator agent now state that the jargon `<base>` is the fork's default branch,
+never the previously reviewed head -- scoping that check to the newest commit is how
+this hit survived a review.
