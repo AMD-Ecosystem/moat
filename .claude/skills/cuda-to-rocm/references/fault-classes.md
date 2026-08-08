@@ -289,6 +289,23 @@ headers into g++ and fails there. Put the shim in the lowest common layer, keep 
 includes (`hip_runtime.h`, `hipfft.h`) unconditional, and gate device-only ones behind
 `__CUDACC__` or `__HIPCC__ || __HIP_DEVICE_COMPILE__`. (SCAMP, stdgpu)
 
+**A name collision with the standard library must NOT be guarded on
+`__CUDA_ARCH__`/`__HIP_DEVICE_COMPILE__`.** Those macros answer "am I in the device
+pass", not "is this name already taken", and the two standard libraries in the fleet
+answer the second question differently: libstdc++'s `<math.h>` does `using std::lerp;`
+at global scope (arriving transitively via `<torch/extension.h>`), while the MSVC STL
+declares `lerp` in namespace `std` only. So a pass-keyed guard fixes one host and breaks
+the other -- Windows' host pass found NO viable `lerp(float,float,float)` and failed to
+parse the device function body, then supplying one unconditionally made Linux's host pass
+find TWO ("declaration conflicts with target of using declaration already in scope"). Any
+C++20 name the standard library also declares is exposed to this: `lerp`, `midpoint`,
+`clamp`, `hypot`, `gcd`. The fix is not a better `#if` and never `_WIN32`/`_MSC_VER` as a
+proxy for the standard library: give the helper a name the standard library does not use
+and define it once, unconditionally, as `__device__ __host__` so it resolves in both
+passes on every toolchain. Keep only the same-name overloads whose PARAMETER TYPES differ
+from the standard one (`lerp(float2,...)` never conflicted). (faster-gaussian-splatting,
+NVIDIA `helper_math.h` scalar `lerp`)
+
 **`__HIP_PLATFORM_AMD__` is undefined until `hip/hip_runtime.h` has been included in that
 TU.** A wave-width gate in a header included BEFORE the runtime header silently takes the
 CUDA branch and picks width 32. hipify-perl prepends the runtime include at line 1, which

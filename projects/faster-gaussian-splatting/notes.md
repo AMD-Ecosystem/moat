@@ -276,3 +276,121 @@ This is a build regression on Linux introduced by commit `be2217e`, not a pre-ex
 Cleaned untracked hipify-generated mirror files (`*_hip.h`/`*_hip.cuh`/`*.hip`) and `build/` after the failed attempt (`git clean -fdx FasterGSCudaBackend/`); fork tree left clean, no tracked-file changes made by this validation.
 
 linux-gfx1100 arch record: no state change was made to the arch's own `state`/`validated_sha` (setting the project `stage` to `validation-failed` is what routes the whole port back to the porter; the arch's own `completed`/`validated_sha=98be02d` fields are stale historical fact from the earlier successful run and were left as-is since ARCH_TRANSITIONS has no `completed -> validation-failed` path applicable here -- the failure is recorded at the project-stage level, matching "review-passed -> validation-failed" in CLAUDE.md's state-transition table).
+
+## Port fix 2026-08-08 (linux-gfx1100) -- scalar lerp guard, commit 6b18628
+
+Fixes the Linux build regression reported in the entry above. Head moves
+be2217e -> 6b18628, so windows-gfx1101 and windows-gfx1201 (both completed at
+be2217e) go stale and must re-run; that is expected, the change is functional.
+
+### What changed
+
+`utils/helper_math.h`: the whole `#if __cplusplus < 202002L / #elif device / #else`
+ladder around the scalar `lerp` is gone. In its place:
+
+```c++
+inline __device__ __host__ float lerp_scalar(float a, float b, float t)
+{
+    return a + t*(b-a);
+}
+#if __cplusplus < 202002L
+inline __device__ __host__ float lerp(float a, float b, float t)
+{
+    return lerp_scalar(a, b, t);
+}
+#endif
+```
+
+`rasterization/include/kernel_utils.cuh`: the two calls in
+`will_primitive_contribute` (the only scalar-lerp call sites in the tree) now say
+`lerp_scalar`. The float2/float3/float4 `lerp` overloads are untouched.
+
+README: added the AMD/ROCm build documentation, which the port had never carried
+(Requirements bullet + a `PYTORCH_ROCM_ARCH=gfx1100 pip install ...` block beside
+the existing CUDA pip command, in the README's own style).
+
+### Why the old guards could not work, on either toolchain
+
+The guard was keyed on `__CUDA_ARCH__ || __HIP_DEVICE_COMPILE__`, i.e. on *which
+compiler pass is running*. The actual constraint is *whether `std::lerp` is
+visible as an unqualified global name*, which is a property of the standard
+library, not of the pass. Those two axes are independent, and each OS failed on a
+different one:
+
+- Windows (clang-cl + MSVC STL): MSVC declares `lerp` in namespace `std` only; it
+  does not inject it into the global namespace. In the host pass
+  (`__HIP_DEVICE_COMPILE__` unset) there was therefore NO viable
+  `lerp(float,float,float)` at all, and parsing the device function body failed.
+  That is what be2217e's `#else` arm was fixing.
+- Linux (hipcc + libstdc++ 13): glibc/libstdc++ `<math.h>` does `using std::lerp;`
+  at global scope, and `<torch/extension.h>` pulls it in. So in the host pass there
+  was already a global `lerp(float,float,float)`, and be2217e's new definition is a
+  redeclaration conflict ("declaration conflicts with target of using declaration
+  already in scope") at 4 call sites.
+
+Any guard that keys on the pass macro fixes one and breaks the other. Keying on
+`_WIN32` / `_MSC_VER` would "work" but encodes the wrong axis (OS as a proxy for
+standard library) and would break again on, say, libc++ on Windows.
+
+### Why this is safe on Windows (for the Windows host to verify)
+
+`lerp_scalar` is defined unconditionally as `__device__ __host__`. Consequences:
+
+1. It exists in BOTH compiler passes on every toolchain, so the pass-macro
+   divergence that motivated be2217e is no longer load-bearing anywhere. This is
+   strictly stronger than be2217e's fix, which only supplied a definition in the
+   pass where `__HIP_DEVICE_COMPILE__` happened to be unset.
+2. `lerp_scalar` is not a name any standard library declares, so nothing can
+   collide with it regardless of whether the STL injects names into the global
+   namespace. The Linux failure mode cannot recur, and it cannot appear on
+   Windows either if TheRock ever switches standard library.
+3. It is `__device__ __host__`, so calling it from `__device__ inline
+   will_primitive_contribute` is valid in the device pass as well; there is no
+   host-only fallback left to be silently selected.
+4. Numerics are unchanged: same expression `a + t*(b-a)`, same type, same call
+   sites. Previously the Linux host pass resolved these calls to `std::lerp`
+   (a *different* algorithm, the two-point-guaranteed form) while the device pass
+   resolved them to the local one; only the device pass generates code, so the
+   emitted math is identical to before on both OSes. Expect bit-identical
+   rasterizer output vs the be2217e Windows runs.
+5. The `#if __cplusplus < 202002L` scalar `lerp` is retained purely so the header
+   keeps its documented interface for pre-C++20 consumers. This extension always
+   builds with C++20 (setup.py forces `-std=c++20` / `/std:c++20`), so that arm is
+   not compiled here on any platform, Windows included.
+
+The only Windows-visible risk is a build error, not a behavior change; there is no
+code path where Windows takes a different definition than Linux does.
+
+### Build + test (linux-gfx1100)
+
+```bash
+source /opt/conda/etc/profile.d/conda.sh && conda activate py_3.12
+export HIP_VISIBLE_DEVICES=0 PYTORCH_ROCM_ARCH=gfx1100
+pip install -e projects/faster-gaussian-splatting/src/FasterGSCudaBackend --no-build-isolation
+```
+Build: PASS, 45.2 s (from clean: no `build/`, no `_C*.so`). AMD Radeon Pro W7800
+48GB (gfx1100), ROCm/torch 2.14.0a0+gitb81488e (hip 7.2.53211). Extension contains
+exactly one code object, `amdgcn-amd-amdhsa--gfx1100`.
+
+Test (`PYTHONPATH=.../src/FasterGSCudaBackend`, script kept at
+scratch `fgs_test.py`, same shape as the earlier Windows script plus one case):
+16/16 PASS -- n = 10/100/500/1000/5000/10000 at 256x256; 128x128, 256x256,
+512x512, 800x600 at n=500; SH bases 1/4/8/16; bit-exact determinism across two
+runs; and n=20000 spread over a 800x600 frame with sh=16 to drive the tile-overlap
+path where `lerp_scalar` is actually called. All outputs finite, correctly shaped,
+within [0,1]. The 256x256 sh=1 series reproduces the gfx1201/gfx1101 Windows
+numbers to 4 decimals (e.g. n=10 range [0.1714, 0.5558] vs [0.1714, 0.5559]).
+
+Note the sh=4/8/16 and non-256x256 ranges differ from the Windows log because this
+script centers the principal point at width/2, height/2 while the Windows script
+pinned it at (128,128) for every resolution. Same code, different scene.
+
+### Gotcha #7
+
+Do not guard a helper-function definition on `__CUDA_ARCH__` /
+`__HIP_DEVICE_COMPILE__` when the thing you are avoiding is a NAME COLLISION with
+the standard library. The pass macro answers "am I compiling for device", not "is
+this name already taken", and the two standard libraries in the fleet answer the
+second question differently. Give the helper a name the standard library does not
+use and define it unconditionally as `__device__ __host__`. Promoted to the
+`cuda-to-rocm` skill (references/fault-classes.md, "Headers, includes and build").
