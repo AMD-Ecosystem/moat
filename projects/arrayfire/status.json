@@ -7,7 +7,7 @@
   "priority": 6.146,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T00:04:57Z",
-  "updated_at": "2026-08-07T07:04:53Z",
+  "updated_at": "2026-08-08T23:21:17Z",
   "head_sha": "6800d5586",
   "pr_url": "https://github.com/arrayfire/arrayfire/pull/3708",
   "pr_number": 3708,
@@ -17,16 +17,16 @@
   "pr_state": "open",
   "license_spdx": "BSD-3-Clause",
   "upstream_repo_id": 25889802,
-  "stage": "review-passed",
+  "stage": "validation-failed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": "ported at fork 3782728 (was revalidate at 2378586). Extended the completed core: (1) SPARSE subsystem implemented on hipSPARSE -- the generic API (CreateCsr/Csc/Coo, SpMV/SpMM, DenseToSparse/SparseToDense, SpMatGetSize, Csr/CscSetPointers), legacy sort/conversion (Xcsrsort/Xcoosort/Xcsr2coo/Xcoo2csr/CreateIdentityPermutation), and typed csrgeam2 all map 1:1 (NO hipSPARSE gaps; coverage map in UPSTREAM_FINDINGS B5). Replaced the AF_ERR_NOT_SUPPORTED stubs in sparse.cu/sparse_arith.cu/sparse_blas.cu; new nvrtc_shims/cusparse_v2.h forwarding shim; cusparse.hpp/.cpp/descriptor-helpers rewritten with tag-keyed TaggedHandle for the void*-aliasing descriptors (DnVec/DnMat both typedef void*); two JIT fixes in kernel/sparse_arith (arith_op::operator() __device__, all-defines per launcher). (2) int8 gemm closed (B2): schar -> hipblasGemmEx HIP_R_8I in / HIP_R_32I out / COMPUTE_32I, cast to f32. (3) FreeImage on (AF_WITH_IMAGEIO=ON). FULL CUDA.* ctest on gfx90a (GCD 2) = 132/132 binaries (100%, 0 failed) -- all 6 prior residuals closed, no regression. Was 126/132. CUDA backend byte-for-byte unchanged. Next: reviewer -> validator -> completed.",
-      "validated_sha": "a464f0972796f8aa5f6dd66c58d8543aa1eb376f",
+      "validated_sha": "6800d55867f38cac1087500fd5f536264c7b46af",
       "started_at": "2026-05-31T02:38:19Z",
-      "completed_at": "2026-05-31T23:08:31Z",
-      "updated_at": "2026-06-09T14:21:59Z",
+      "completed_at": "2026-08-08T23:19:52Z",
+      "updated_at": "2026-08-08T23:21:17Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -42,10 +42,10 @@
       },
       "last_agent": "validator",
       "carry_forward": {
-        "to": "a464f0972796f8aa5f6dd66c58d8543aa1eb376f",
-        "method": "source-class",
-        "detail": "a464f097 (compile_module dir handling) is purely #if defined(_WIN32) guarded; on Linux the #else (dirent.h/opendir) path is byte-identical, so the Linux compiled output is unchanged.",
-        "at": "2026-06-09T14:21:59Z"
+        "to": "6800d55867f38cac1087500fd5f536264c7b46af",
+        "method": "binary-equiv",
+        "detail": "codeobj_diff verdict=identical on libafcuda.so (20066 exported symbols + device ISA byte-identical) between validated_sha a464f0972 and head_sha 6800d558; delta is CMAKE_HIP_ARCHITECTURES auto-detect ",
+        "at": "2026-08-08T23:19:52Z"
       }
     },
     "linux-gfx1100": {

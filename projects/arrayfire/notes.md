@@ -1626,3 +1626,94 @@ Run gotcha (gfx1101 hipRTC JIT): the validated ctest recipe unsets ROCM_PATH, bu
 hip/compile_module.cpp derives the hipRTC JIT include path from ROCM_PATH, so JIT-heavy
 benchmarks crash with "'hip/hip_fp16.h' file not found" until ROCM_PATH is exported at run time.
 ctest passed because its kernels are mostly AOT-static.
+
+## Validation 2026-08-08 (revalidate, linux-gfx90a) -- RESULT: validation-failed (jargon, not GPU)
+
+Trigger: linux-gfx90a was `completed` at validated_sha a464f0972796f8aa5f6dd66c58d8543aa1eb376f
+while fork head had moved to 6800d5586. GPU: 4x MI250X (gfx90a), confirmed index 1 via
+`rocm-smi --showproductname` before use, `HIP_VISIBLE_DEVICES=1` for every command. Fresh clone
+of AMD-Ecosystem/arrayfire @ moat-port into the worktree (`projects/arrayfire/src`), clean at
+6800d5586 throughout (`git status --porcelain` empty before and after).
+
+### Delta classification and carry-forward (binary-equivalence, no GPU test run needed)
+`python3 utils/moatlib.py classify arrayfire a464f0972796f8aa5f6dd66c58d8543aa1eb376f 6800d5586`
+-> `mixed` (3 CMake files touched: CMakeLists.txt, CMakeModules/boost_package.cmake,
+src/backend/hip/CMakeLists.txt -- token-count differs so the source classifier can't clear it
+alone). Read the actual diff: 2 of 3 hunks are `if(WIN32)` guarded (Boost stacktrace windbg define,
+force `-shared` link) so inert on Linux; the third drops the `CMAKE_HIP_ARCHITECTURES` default-to-
+gfx90a fallback in favor of `enable_language(HIP)` auto-detection, but ONLY when the caller does
+not pass `-DCMAKE_HIP_ARCHITECTURES` -- our documented build recipe always pins it explicitly, so
+it is a no-op for the validated configuration.
+
+Confirmed with the real tool rather than by inspection alone: built the `afcuda` CMake target
+(headless: `AF_BUILD_TESTS=OFF -DAF_BUILD_CPU=OFF -DAF_BUILD_UNIFIED=OFF`, otherwise the
+documented gfx90a flags) at BOTH shas from the SAME absolute source path
+(`projects/arrayfire/src`, checked out in place: `git checkout a464f0972...` -> build to
+`build-old/`, then `git checkout 6800d5586` -> build to `build-new/`) so `__FILE__` strings do not
+spuriously differ. `python3 utils/codeobj_diff.py projects/arrayfire/src/build-old
+projects/arrayfire/src/build-new` -> `verdict=identical` (`libafcuda.so.3.10.0: identical
+(exported symbols + device ISA identical (20066 exports))`). Carried forward:
+`python3 utils/moatlib.py carry-forward arrayfire linux-gfx90a 6800d55867f38cac1087500fd5f536264c7b46af
+binary-equiv "..."`. No GPU test run was needed or performed for this delta (correctly -- the
+compiled artifact is provably unchanged). CUDA no-regression gate: SKIPPED per validator.md
+(carried-forward revalidation).
+
+Wall-clock: config+build afcuda old sha ~2 min, new sha ~2 min (headless HIP-only config,
+`-j 32`); codeobj_diff a few seconds. Both under `utils/timeit.sh arrayfire compile`.
+
+### Pre-completion jargon gate -- FAILED, project bounced to validation-failed (NOT a GPU fault)
+
+Before marking anything `completed`, ran the branch-wide jargon check the fork actually has
+(`--port` is not a flag this checkout's `utils/jargon.py` supports; used the two-call form
+`validator.md` on this branch specifies, base_sha 492718b from notes.md "Fork:" line):
+
+```
+python3 utils/jargon.py --commits 492718b..HEAD -C projects/arrayfire/src
+python3 utils/jargon.py --diff 492718b...HEAD -C projects/arrayfire/src
+```
+
+Both dirty:
+- `--commits`: commit 6800d5586's body says "verified inert with the MOAT regression classifier
+  (comment/doc-only, carries prior validation forward on every platform)" -- "MOAT" is in-house
+  vocabulary, upstream-visible in the fork's own commit history (which becomes the upstream PR).
+- `--diff`: 6 instances of "fault class" in added code comments across the HIP backend (e.g.
+  `hip_unique_handle.hpp`: "amgcl void*-aliasing fault class"; `kernel/topk.hpp`-adjacent:
+  "PORTING_GUIDE warp-size fault class"; a shfl_intrinsics comment: "AutoDock-GPU fault class";
+  a device/host-attribute comment: "cudaKDTree/gsplat fault class"). These reference OTHER MOAT
+  ported-project codenames (amgcl, AutoDock-GPU, cudaKDTree/gsplat) and the internal
+  "PORTING_GUIDE"/"fault class" vocabulary that mean nothing to an ArrayFire maintainer.
+
+This defect predates this validation cycle -- it is baked into the SAME head_sha (6800d5586) that
+linux-gfx1100, windows-gfx1101 and windows-gfx1201 already carried forward to `completed` at
+(2026-06-24 through 2026-07-02), so it was never caught by an earlier jargon pass on this branch.
+It is a whole-branch, content-level defect (commit messages + code comments), not a per-arch GPU
+fault, so per validator.md this is a PROJECT-level bounce, not a note on my arch alone.
+
+Documentation gate: checked for completeness -- CMakeLists.txt (`option(AF_BUILD_HIP ...)` plus
+the porter's added comment block on ROCm 7.0 minimum / mutual exclusivity with AF_BUILD_CUDA) is
+where this project documents backend build options; `AF_BUILD_CUDA` itself has zero presence in
+`docs/pages/*.md` (grepped, no hits), so the CMakeLists.txt comment block matches the project's
+own house style for CUDA and is not itself a blocker. README.md's cross-platform bullet already
+mentions "AMD GPUs via ROCm/HIP" (landed with the original HIP-backend commit 62f0a39ff). This
+gate is fine; jargon is the sole blocker.
+
+Action taken: `python3 utils/moatlib.py set-state arrayfire linux-gfx90a validation-failed
+--agent validator` (routes as a STAGE-level transition since "validation-failed" is shared
+vocabulary between STAGE_TRANSITIONS and ARCH_TRANSITIONS and the CLI always resolves it as the
+project stage when both apply -- `stage: review-passed -> validation-failed`, bounces to porter).
+linux-gfx90a's own arch record is left `completed` at the newly-carried-forward validated_sha
+6800d55867f38cac1087500fd5f536264c7b46af: the binary-equivalence proof of unchanged GPU behavior
+for THIS content stands on its own technical merits and is unaffected by the jargon finding: it
+is a fact about compiled code, not about commit-message prose. Once the porter lands a jargon-fix
+commit, head_sha advances past 6800d5586 again and every `completed` arch (mine included)
+correctly falls stale (`revalidate`) until reclassified against the new head -- which is exactly
+the "every arch validates the same content" outcome validator.md asks for. Expect the jargon fix
+itself to be comment/commit-message-only and therefore a trivial carry-forward, not a full GPU
+re-run, on every arch.
+
+For the porter: reword commit 6800d5586's body to drop "MOAT"/"regression classifier" (say
+"verified inert: a CMake-comment-only change, no source or device code differs" or similar); and
+either delete the "fault class" phrasing from the 6 flagged code comments or replace it with a
+plain description of the actual hazard (e.g. "the void*-aliasing hazard also seen when several
+hipsparse descriptor types share one C typedef" instead of naming amgcl/AutoDock-GPU/cudaKDTree by
+MOAT codename) per `config/jargon.toml`.
