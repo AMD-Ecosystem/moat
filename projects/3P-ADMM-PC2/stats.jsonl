@@ -12,3 +12,5 @@
 {"kind": "tokens", "ts": "2026-06-04T18:05:34Z", "tokens": 74493, "source": "validator"}
 {"kind":"phase","ts":"2026-06-02T06:26:57Z","phase":"compile","seconds":2.378,"exit":0,"cmd":"bash projects/3P-ADMM-PC2/src/gpu/build_hip.sh"}
 {"kind":"phase","ts":"2026-06-02T06:28:26Z","phase":"test","seconds":13.720,"exit":0,"cmd":"python3 /var/lib/jenkins/moat/agent_space/3p-admm-gfx1100/validate.py"}
+{"kind":"phase","ts":"2026-08-08T23:51:37Z","phase":"cuda-compile","seconds":1.166,"exit":0,"cmd":"/opt/conda/envs/cuda-12.8/bin/nvcc -arch=sm_80 -O2 --compiler-options -fPIC -dc projects/3P-ADMM-PC2/src/gpu/cufft_modexp.cu -o /tmp/cufft_modexp_cudacheck.o"}
+{"kind":"phase","ts":"2026-08-08T23:51:50Z","phase":"cuda-compile","seconds":0.998,"exit":0,"cmd":"bash -c \n/opt/conda/envs/cuda-12.8/bin/nvcc -arch=sm_80 -O2 --compiler-options \"-fPIC\" -dc /tmp/wr_cufft_cudacheck.cu -o /tmp/wr_cufft_cudacheck.o &&\n/opt/conda/envs/cuda-12.8/bin/nvcc -arch=sm_80 --compiler-options \"-fPIC\" -dlink /tmp/cufft_modexp_cudacheck.o /tmp/wr_cufft_cudacheck.o -o /tmp/dl_cufft_cudacheck.o\n"}

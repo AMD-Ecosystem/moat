@@ -364,3 +364,61 @@ HIP_VISIBLE_DEVICES=1 LIB_CUFFT=.../lib_cufft_gfx1201.dll .../python.exe agent_s
 
 VERDICT: PASS -- port-ready -> completed. Both Windows archs (gfx1101 + gfx1201) now match
 gfx90a/gfx1100/gfx1151 exactly; all five platforms terminal -> PR-ready.
+
+## Validation 2026-08-08 (revalidate, linux-gfx90a, GCD 1)
+
+linux-gfx90a was still `completed` at validated_sha `096cc8f37bbd3cb974f159416579aae93cb3ea9a`
+while fork head had moved to `2c1cafae0204fc8a728e046caae153e9ee1df834` (the other four platforms
+had already been carried forward at 2026-06-08T18:11:05Z for the same delta; gfx90a's
+`advance_head` pass apparently ran without the fork cloned locally, so `_classify_safe` returned
+None and it fell back to conservative revalidate -- lagged rather than actually regressed).
+
+Delta (validated_sha..head_sha) is exactly one commit:
+```
+2c1cafa [ROCm] Document the AMD GPU (ROCm/HIP) build in the README
+```
+```
+git diff --stat 096cc8f37bbd3cb974f159416579aae93cb3ea9a..2c1cafae0204fc8a728e046caae153e9ee1df834
+ README.md | 6 ++++++
+ 1 file changed, 6 insertions(+)
+```
+
+Classification:
+```
+python3 utils/moatlib.py classify 3P-ADMM-PC2 096cc8f37bbd3cb974f159416579aae93cb3ea9a 2c1cafae0204fc8a728e046caae153e9ee1df834
+class=doc-only arch_independent=True inert=True
+```
+Doc-only, arch-independent, inert -- the carry-forward shortcut applies (validator.md step 1-2).
+No GPU re-run needed; carried forward without touching the .so or re-running the modexp gold
+gate that already passed at 096cc8f.
+
+```
+python3 utils/moatlib.py carry-forward 3P-ADMM-PC2 linux-gfx90a 2c1cafae0204fc8a728e046caae153e9ee1df834 source-class "README: document ROCm/HIP build (doc-only); classify verdict class=doc-only arch_independent=True inert=True"
+```
+
+### CUDA no-regression gate (not previously recorded at this head_sha)
+
+nvcc 12.8 via `/opt/conda/envs/cuda-12.8/bin/nvcc`, arch pinned `-arch=sm_80` (no NVIDIA GPU on
+this host; native autodetection would silently degrade). `gpu/cuda_to_hip.h` falls through to
+the original CUDA headers when `__HIP__`/`__HIP_PLATFORM_AMD__`/`USE_HIP` are undefined, so the
+CUDA branch of the shim is exercised unmodified.
+```
+bash utils/timeit.sh 3P-ADMM-PC2 cuda-compile -- \
+  /opt/conda/envs/cuda-12.8/bin/nvcc -arch=sm_80 -O2 --compiler-options '-fPIC' \
+    -dc projects/3P-ADMM-PC2/src/gpu/cufft_modexp.cu -o /tmp/cufft_modexp_cudacheck.o
+# wrapper + device link (mirrors README steps 2-4)
+/opt/conda/envs/cuda-12.8/bin/nvcc -arch=sm_80 -O2 --compiler-options '-fPIC' -dc /tmp/wr_cufft_cudacheck.cu -o /tmp/wr_cufft_cudacheck.o
+/opt/conda/envs/cuda-12.8/bin/nvcc -arch=sm_80 --compiler-options '-fPIC' -dlink /tmp/cufft_modexp_cudacheck.o /tmp/wr_cufft_cudacheck.o -o /tmp/dl_cufft_cudacheck.o
+```
+Result: PASS, no errors or warnings on any of the three nvcc invocations -- pure passthrough
+confirmed, no CUDA regression. (This gate is per head_sha, not per arch; recorded here so no
+other arch re-runs it for `2c1cafae0204fc8a728e046caae153e9ee1df834`.)
+
+### Other gates
+- `python3 utils/jargon.py --port 3P-ADMM-PC2` -> clean.
+- ROCm build documented in README.md sec.1 alongside the CUDA nvcc recipe (house style; already
+  present from the 2c1cafa commit that motivated this revalidation).
+- Fork working tree: clean after classification/CUDA-compile checks (compile artifacts written
+  only to /tmp, nothing under `projects/3P-ADMM-PC2/src` modified).
+
+VERDICT: PASS (carried forward, no GPU re-run) -- linux-gfx90a completed @ 2c1cafae0204fc8a728e046caae153e9ee1df834.

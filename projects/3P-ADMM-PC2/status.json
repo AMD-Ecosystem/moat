@@ -7,7 +7,7 @@
   "priority": 4.906,
   "ext_type": "nvcc-shared",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-08-07T07:04:24Z",
+  "updated_at": "2026-08-08T23:52:05Z",
   "head_sha": "2c1cafae0204fc8a728e046caae153e9ee1df834",
   "pr_url": "https://github.com/Samarvivian/3P-ADMM-PC2/pull/10",
   "pr_state": "merged",
@@ -30,10 +30,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "096cc8f37bbd3cb974f159416579aae93cb3ea9a",
+      "validated_sha": "2c1cafae0204fc8a728e046caae153e9ee1df834",
       "started_at": "2026-06-02T06:08:10Z",
-      "completed_at": "2026-06-07T15:15:22Z",
-      "updated_at": "2026-06-10T14:23:02Z",
+      "completed_at": "2026-08-08T23:52:05Z",
+      "updated_at": "2026-08-08T23:52:05Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -49,10 +49,10 @@
       },
       "last_agent": "moat-checkup",
       "carry_forward": {
-        "to": "096cc8f37bbd3cb974f159416579aae93cb3ea9a",
+        "to": "2c1cafae0204fc8a728e046caae153e9ee1df834",
         "method": "source-class",
-        "detail": "bash comment-only edit in gpu/build_hip.sh (jargon scrub); comments are never executed so the build recipe runs byte-identical commands and produces an identical .so on every arch -- inert",
-        "at": "2026-06-07T15:15:22Z"
+        "detail": "README: document ROCm/HIP build (doc-only); classify verdict class=doc-only arch_independent=True inert=True",
+        "at": "2026-08-08T23:52:05Z"
       }
     },
     "linux-gfx1100": {
