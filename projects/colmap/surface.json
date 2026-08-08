@@ -1137,7 +1137,148 @@
       "where": "src/colmap/mvs/CMakeLists.txt"
     }
   ],
-  "covered": [],
+  "covered": [
+    {
+      "id": "buildgate:GPU_ENABLED",
+      "arch": "linux-gfx90a",
+      "note": "cmake/FindDependencies.cmake now sets GPU_ENABLED for HIP_ENABLED too, so add_subdirectory(SiftGPU), colmap_feature's link to colmap_sift_gpu and COLMAP_GPU_ENABLED all apply on a ROCm build."
+    },
+    {
+      "id": "dispatch:colmap-cuda-only-conditionals",
+      "arch": "linux-gfx90a",
+      "note": "All COLMAP_CUDA_ENABLED dispatch sites in feature/, controllers/, ui/ and pycolmap/ widened to COLMAP_CUDA_ENABLED || COLMAP_HIP_ENABLED. The Ceres and ONNX Runtime sites are deliberately untouched (out of scope, see plan.md)."
+    },
+    {
+      "id": "doc:rocm-coverage-statement",
+      "arch": "linux-gfx90a",
+      "note": "doc/install.rst now states the HIP backend accelerates dense reconstruction and GPU SIFT feature extraction and matching."
+    },
+    {
+      "id": "executable:colmap_main",
+      "arch": "linux-gfx90a",
+      "note": "Built and exercised end to end on gfx90a: feature_extractor and exhaustive_matcher with use_gpu 1 at 640x480 and 1024x768."
+    },
+    {
+      "id": "library:colmap_mvs_cuda",
+      "arch": "linux-gfx90a",
+      "note": "Regression surface, untouched. mvs/gpu_mat_test passes in both the GUI and headless ROCm builds."
+    },
+    {
+      "id": "library:colmap_sift_gpu",
+      "arch": "linux-gfx90a",
+      "note": "Built on ROCm via a parallel HIP arm in src/thirdparty/SiftGPU/CMakeLists.txt with ProgramCU.cu marked LANGUAGE HIP. Three faults fixed: CuTexObj rule-of-five, ComputeDOG neighbour clamp, tex2D pitch2D binding replaced by a linear binding."
+    },
+    {
+      "id": "library:colmap_util_cuda",
+      "arch": "linux-gfx90a",
+      "note": "Regression surface, untouched apart from additive aliases in cuda_to_hip.h. Now also linked by colmap_controllers on HIP."
+    },
+    {
+      "id": "option:CUDA_ENABLED",
+      "arch": "linux-gfx90a",
+      "note": "Unchanged behaviour; compile-checked with nvcc 13.3 (colmap_sift_gpu, the colmap executable and sift_test link)."
+    },
+    {
+      "id": "option:GUI_ENABLED",
+      "arch": "linux-gfx90a",
+      "note": "Both GUI_ENABLED=ON (under Xvfb) and GUI_ENABLED=OFF configurations built and tested on gfx90a; the OFF path no longer silently skips GPU test bodies."
+    },
+    {
+      "id": "option:HIP_ENABLED",
+      "arch": "linux-gfx90a",
+      "note": "Now also selects the SiftGPU compute backend, GPU_ENABLED and the colmap_controllers GPU link."
+    },
+    {
+      "id": "option:MVS_ENABLED",
+      "arch": "linux-gfx90a",
+      "note": "Exercised on ROCm via the widened controllers/CMakeLists.txt HIP arm and automatic_reconstruction."
+    },
+    {
+      "id": "option:OPENGL_ENABLED",
+      "arch": "linux-gfx90a",
+      "note": "Unchanged; the GLSL SiftGPU fallback is untouched and CreateSiftGPUMatcherOpenGL.Nominal passes."
+    },
+    {
+      "id": "option:TESTS_ENABLED",
+      "arch": "linux-gfx90a",
+      "note": "159 tests registered and passing in both ROCm configurations."
+    },
+    {
+      "id": "python_module:_core",
+      "arch": "linux-gfx90a",
+      "note": "pycolmap source guards widened; not built here (separate CMake project). Flagged for the reviewer."
+    },
+    {
+      "id": "python_module:pycolmap-gpu-bindings",
+      "arch": "linux-gfx90a",
+      "note": "util/cuda.cc, util/bindings.cc, pipeline/mvs.cc and utils.h now expose get_num_cuda_devices, the MVS bindings and Device.AUTO on a ROCm build. Source change only; not compiled here."
+    },
+    {
+      "id": "source:src/thirdparty/SiftGPU/CuTexImage.cpp",
+      "arch": "linux-gfx90a",
+      "note": "Include routed through cuda_to_hip.h; CuTexObj destructor guarded; BindTexture2D removed with its only callers; legacy cudaGL* PBO interop compiled out on ROCm with a comment naming hipGraphicsGLRegisterBuffer and the reason COLMAP never reaches it."
+    },
+    {
+      "id": "source:src/thirdparty/SiftGPU/ProgramCU.cu",
+      "arch": "linux-gfx90a",
+      "note": "Compiled as LANGUAGE HIP for gfx90a. All 28 kernels build; FilterH, FilterV, ComputeDOG, ComputeKEY, InitHist, ListGen, ComputeOrientation, ComputeDescriptor, RowMatch, ColMatch and MultiplyDescriptor dispatches observed on device via AMD_LOG_LEVEL=3."
+    },
+    {
+      "id": "source:src/thirdparty/SiftGPU/PyramidCU.cpp",
+      "arch": "linux-gfx90a",
+      "note": "Builds unmodified on ROCm; cuda_to_hip.h reaches it through CuTexImage.h."
+    },
+    {
+      "id": "source:src/thirdparty/SiftGPU/SiftMatchCU.cpp",
+      "arch": "linux-gfx90a",
+      "note": "Include routed through cuda_to_hip.h; matcher kernels observed on device."
+    },
+    {
+      "id": "test:automatic_reconstruction_test",
+      "arch": "linux-gfx90a",
+      "note": "Passes in both ROCm configurations; the patch match stereo dispatch site is now reachable on ROCm."
+    },
+    {
+      "id": "test:extractor_test",
+      "arch": "linux-gfx90a",
+      "note": "Passes in both ROCm configurations."
+    },
+    {
+      "id": "test:feature_extraction_test",
+      "arch": "linux-gfx90a",
+      "note": "Passes in both ROCm configurations."
+    },
+    {
+      "id": "test:feature_matching_test",
+      "arch": "linux-gfx90a",
+      "note": "Passes in both ROCm configurations."
+    },
+    {
+      "id": "test:feature_matching_utils_test",
+      "arch": "linux-gfx90a",
+      "note": "Passes in both ROCm configurations."
+    },
+    {
+      "id": "test:gpu_mat_test",
+      "arch": "linux-gfx90a",
+      "note": "Real HIP GPU test; passes in both ROCm configurations (regression surface for the merged MVS port)."
+    },
+    {
+      "id": "test:matcher_test",
+      "arch": "linux-gfx90a",
+      "note": "Passes in both ROCm configurations."
+    },
+    {
+      "id": "test:opengl_utils_test",
+      "arch": "linux-gfx90a",
+      "note": "Now built for every configuration, not only GUI_ENABLED, and gains RunThreadWithOpenGLContext.RunsThreadBody which asserts the thread body actually ran."
+    },
+    {
+      "id": "test:sift_test",
+      "arch": "linux-gfx90a",
+      "note": "The gate. 32 tests pass on gfx90a in both configurations, with GPU kernel dispatches confirmed via AMD_LOG_LEVEL=3 rather than inferred from a green result. MatchSiftFeaturesCPUvsGPU.Nominal and MatchGuidedSiftFeaturesCPUvsGPUGuided.EssentialMatrix compare GPU against CPU in-suite."
+    }
+  ],
   "scoped_out": [
     {
       "id": "benchmark:benchmark_bundle_adjustment",

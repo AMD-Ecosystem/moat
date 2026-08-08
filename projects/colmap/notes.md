@@ -148,3 +148,118 @@ Re-ran the whole checklist from scratch against upstream `711b23a7994f9a6b31bf88
 **Viability.** Confirmed 489 `.cu`/`.cuh` files in three groups, matching the prior count exactly: (1) `src/colmap/mvs` (4 files, `gpu_mat_test.cu`, `patch_match_cuda.cu`, `gpu_mat_prng.cu`, `gpu_mat_ref_image.cu`) -- already ported, `LANGUAGE HIP` set in `src/colmap/mvs/CMakeLists.txt` under `if(HIP_ENABLED)`, top-level `CMakeLists.txt:41` defines `HIP_ENABLED` mutually exclusive with `CUDA_ENABLED`. (2) `src/thirdparty/SiftGPU/ProgramCU.cu` (the only `.cu` in that directory) -- `grep -r hip` across the whole `SiftGPU` dir returns zero matches, and `CMakeLists.txt:12` gates it strictly `if(CUDA_ENABLED)`; this is the unported gap. (3) `src/thirdparty/Symforce-Caspar` (484 generated `.cu`/`.h` files, `CASPAR_ENABLED` OFF by default at `CMakeLists.txt:77`, hard `FATAL_ERROR` if `CASPAR_ENABLED AND NOT CUDA_ENABLED`) -- confirmed 12 occurrences of `cub::` across 4 generated kernel files, so it is a real (if default-off) NVIDIA-CUB dependency, separate and much larger question than SIFT. No MOAT-project dependency: `src/thirdparty/CMakeLists.txt:56-73` FetchContents faiss v1.14.1 with `set(FAISS_ENABLE_GPU OFF)` explicitly, so the MOAT `faiss` port is not on the critical path; Caspar's vendored generated code has no relation to the MOAT `symforce` project. `depends_on` stays `[]`. Upstream activity confirmed live via `gh api repos/colmap/colmap`: not archived, pushed 2026-08-06T18:15:33Z, 12.4k stars, 2106 forks, 707 open issues.
 
 Nothing in this pass contradicts the 2026-08-06 write-up; the `Verdict` and `The one thing the planner must not get wrong` sections above stand as written and this section only adds independent confirmation of the load-bearing facts (licence texts, PR-merge state, `.cu` counts, `cub::` count, `FAISS_ENABLE_GPU`).
+
+## Port implemented on linux-gfx90a 2026-08-08 (porter)
+
+Re-derived fresh against upstream `d6d2bc8e0d3b4ba37139982d0b80f11af93deaf3` per plan.md; the
+parked `jeffdaily/colmap:rocm-sift-gpu` branch was read for WHAT and WHY only, never rebased.
+Fork HEAD `512dbe91fbe9321acada2628b1dd80cb8d128990` on `AMD-Ecosystem/colmap:moat-port`.
+
+### Build recipes (this host, ROCm 7.2, MI250X gfx90a)
+
+System packages installed for the build: `libboost-{program-options,graph,system,filesystem,test}-dev
+libeigen3-dev libflann-dev libfreeimage-dev libmetis-dev libgoogle-glog-dev libgflags-dev
+libgtest-dev libgmock-dev libsqlite3-dev libglew-dev libsuitesparse-dev libceres-dev
+libopenimageio-dev openimageio-tools libcurl4-openssl-dev libssl-dev libcrypto++-dev
+qt6-base-dev qt6-svg-dev libqt6opengl6-dev libgl1-mesa-dev libglu1-mesa-dev mesa-utils xvfb
+libxkbcommon-dev`.
+
+`openimageio-tools` is easy to miss and the failure is confusing: without it,
+`find_package(OpenImageIO)` aborts configure with "imported target OpenImageIO::iconvert
+references the file /usr/bin/iconvert but this file does not exist". The `-dev` package alone
+is not enough because the exported CMake targets include the command-line tools.
+
+Validation build (GUI, this is the one that can prove GPU SIFT):
+
+    cmake -S . -B build-hip-gui -GNinja \
+      -DCUDA_ENABLED=OFF -DHIP_ENABLED=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+      -DCMAKE_BUILD_TYPE=Release -DTESTS_ENABLED=ON -DGUI_ENABLED=ON \
+      -DCGAL_ENABLED=OFF -DDOWNLOAD_ENABLED=OFF -DONNX_ENABLED=OFF
+    cmake --build build-hip-gui -j"$(nproc)"
+    xvfb-run -a ctest --test-dir build-hip-gui -j16 --output-on-failure
+
+Headless build is the same with `-DGUI_ENABLED=OFF` into `build-hip` and needs no `xvfb-run`.
+
+`-DCMAKE_PREFIX_PATH=/opt/rocm` and `-DCMAKE_HIP_COMPILER=...` turned out NOT to be needed: the
+`ROCM_PATH` detection already in `cmake/FindDependencies.cmake` resolves `/opt/rocm` and CMake
+finds `/opt/rocm/lib/llvm/bin/clang++` on its own. Verified by configuring with neither flag.
+plan.md predicted they would be required; they were not, so doc/install.rst was left alone on
+that point.
+
+### Results
+
+Both configurations: 159/159 ctest pass, including `feature/sift_test`, `mvs/gpu_mat_test`
+(the merged MVS port, no regression) and `util/opengl_utils_test`.
+
+`sift_test` alone: 32/32, of which 15 are GPU tests, including the two in-suite GPU-versus-CPU
+comparisons `MatchSiftFeaturesCPUvsGPU.Nominal` and
+`MatchGuidedSiftFeaturesCPUvsGPUGuided.EssentialMatrix`.
+
+End to end at two resolutions, one of which (640x480) is the case that used to fail the
+256-byte texture pitch check:
+
+| input | keypoints per image | matched pairs / matches | verified |
+|---|---|---|---|
+| 640x480 | 1037, 1047, 948 | 3 / 1419 | 3 / 1419 |
+| 1024x768 | 3124, 3071, 3062 | 3 / 4740 | 3 / 4740 |
+
+### Anti-no-op evidence (plan.md risk 4)
+
+A green `sift_test` is worthless on its own here, so the GPU tests were proven to execute by
+counting kernel dispatches rather than by trusting the result. `AMD_LOG_LEVEL=3` on the test
+binary names every kernel the HIP runtime launches:
+
+    AMD_LOG_LEVEL=3 ./sift_test --gtest_filter='ExtractSiftFeaturesGPU.Nominal'
+      -> FilterH x31, FilterV x31, ComputeDOG x30, ComputeOrientation x5, ComputeDescriptor x5
+    AMD_LOG_LEVEL=3 ./sift_test --gtest_filter='MatchSiftFeaturesCPUvsGPU.Nominal:...'
+      -> RowMatch x10, ColMatch x9, MultiplyDescriptor x7, MultiplyDescriptorGRay x3
+
+Same check on the end-to-end `feature_extractor` run: ComputeDOG x90, FilterH/FilterV x93,
+ComputeKEY x54, InitHist x54, ListGen x113, ComputeOrientation x26, ComputeDescriptor x26.
+
+This is a better signal than wall time. In the HEADLESS build the GPU matcher tests report
+0-3 ms each, which looks exactly like the old no-op, but `AMD_LOG_LEVEL=3` shows RowMatch x7,
+ColMatch x6 and MultiplyDescriptor x7 for `MatchSiftFeaturesCPUvsGPU.Nominal`: the ~200 ms per
+test in the GUI build is Qt building an offscreen GL context, not GPU work. Timing alone would
+have mislabelled a real run as a skipped one.
+
+`RunThreadWithOpenGLContext` was the empty inline; it now starts and waits for the thread, and
+`opengl_utils_test` (built for every configuration now, not only `GUI_ENABLED`) gained
+`RunThreadWithOpenGLContext.RunsThreadBody`, which fails if the body does not run.
+
+### CUDA no-regression
+
+Compile-checked only; there is no NVIDIA GPU on this host, so CUDA results were not measured
+and no numerical comparison was made. `nvcc 13.3.73` (conda `-c nvidia cuda-nvcc
+cuda-cudart-dev libcurand-dev cuda-cccl`), `-DCUDA_ENABLED=ON -DCMAKE_CUDA_ARCHITECTURES=80`:
+`colmap_sift_gpu`, the `colmap` executable and `sift_test` all compile and link.
+
+The two unconditional correctness fixes (plan.md Open questions 1) therefore rest on argument
+rather than on a measured CUDA run, and the reviewer should weigh them as such:
+
+- The `ComputeDOG` clamp changes only the first/last column and row, where the old code read
+  the previous row's last pixel or past the end of the buffer. Interior pixels are
+  byte-identical.
+- The `tex2D` to `tex1Dfetch` rebind is exact, not approximate: all three fetches are
+  `cudaFilterModePoint` and all three kernels clamp x to [1.5, width-1.5] and y to
+  [1.5, height-1.5] before fetching, so hardware addressing never applies, and point sampling
+  over a pitch2D binding whose pitch is the packed row IS `tex1Dfetch(tex, int(y)*width+int(x))`.
+
+### Left for the reviewer
+
+- `src/pycolmap` guards were widened in source but pycolmap was NOT built here; it is a
+  separate CMake project under `python/` consuming `find_package(colmap)`. The export list
+  (`CMakeLists.txt:467`) already carried `if(CUDA_ENABLED OR HIP_ENABLED)`, and `GPU_ENABLED`
+  now covers HIP, so `colmap_sift_gpu`, `colmap_util_cuda` and `colmap_mvs_cuda` are all
+  exported on a ROCm build; the linkage should be fine but is unverified.
+- `SiftBackend` (a file-local enum in `feature/sift.cc`) was renamed `CUDA` -> `COMPUTE`, since
+  it now names either compute backend. `SiftMatchGPU::SIFTMATCH_CUDA*` is SiftGPU's own API and
+  was left spelled as upstream has it.
+- `CuTexImage::BindTexture2D` was deleted along with its only two callers. `InitTexture2D` /
+  `CopyToTexture2D` / `_cuData2D` were already dead before this change (nothing ever bound
+  `_cuData2D`; `BindTexture2D` bound the linear `_cuData` pointer) and were left alone as
+  pre-existing dead code.
+- plan.md risk 5 (`_IsNvidia == 0` forcing `_UseCUDA = 0` in `GlobalUtil::InitGLParam(0)`) did
+  NOT materialise: the compute path reaches `InitGLParam(1)`, and the full in-suite run shows
+  GPU kernels dispatching, so no widening of the vendor test was needed. It remains a latent
+  hazard if the GLSL and compute paths are ever initialised in the other order.

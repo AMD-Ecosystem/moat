@@ -1,3 +1,13 @@
 {"kind": "tokens", "ts": "2026-08-07T06:52:50Z", "tokens": 76740, "source": "intake"}
 {"kind":"phase","ts":"2026-08-08T01:19:39Z","phase":"surface-generate","seconds":1.772,"exit":0,"cmd":"python3 utils/surface.py generate colmap"}
 {"kind": "tokens", "ts": "2026-08-08T01:43:35Z", "tokens": 238143, "source": "planner"}
+{"kind":"phase","ts":"2026-08-08T03:34:08Z","phase":"compile","seconds":1.221,"exit":1,"cmd":"cmake -S projects/colmap/src -B projects/colmap/src/build-hip-gui -GNinja -DCUDA_ENABLED=OFF -DHIP_ENABLED=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=/opt/rocm -DCMAKE_BUILD_TYPE=Release -DTESTS_ENABLED=ON -DGUI_ENABLED=ON -DCGAL_ENABLED=OFF -DDOWNLOAD_ENABLED=OFF -DONNX_ENABLED=OFF"}
+{"kind":"phase","ts":"2026-08-08T03:34:29Z","phase":"compile","seconds":6.820,"exit":0,"cmd":"cmake -S projects/colmap/src -B projects/colmap/src/build-hip-gui -GNinja -DCUDA_ENABLED=OFF -DHIP_ENABLED=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=/opt/rocm -DCMAKE_BUILD_TYPE=Release -DTESTS_ENABLED=ON -DGUI_ENABLED=ON -DCGAL_ENABLED=OFF -DDOWNLOAD_ENABLED=OFF -DONNX_ENABLED=OFF"}
+{"kind":"phase","ts":"2026-08-08T03:38:47Z","phase":"compile","seconds":252.799,"exit":0,"cmd":"cmake --build projects/colmap/src/build-hip-gui -j128"}
+{"kind":"phase","ts":"2026-08-08T03:39:09Z","phase":"test","seconds":0.143,"exit":0,"cmd":"ctest -R feature/sift_test --output-on-failure"}
+{"kind":"phase","ts":"2026-08-08T03:39:20Z","phase":"test","seconds":4.264,"exit":0,"cmd":"ctest --test-dir projects/colmap/src/build-hip-gui -R feature/sift_test --output-on-failure"}
+{"kind":"phase","ts":"2026-08-08T03:40:24Z","phase":"test","seconds":10.651,"exit":0,"cmd":"ctest --test-dir projects/colmap/src/build-hip-gui -j16 --output-on-failure"}
+{"kind":"phase","ts":"2026-08-08T03:44:35Z","phase":"compile","seconds":0.178,"exit":1,"cmd":"cmake --build projects/colmap/src/build-cuda -j128 --target colmap_sift_gpu colmap_exe_colmap colmap_feature_sift_test"}
+{"kind":"phase","ts":"2026-08-08T03:44:45Z","phase":"compile","seconds":237.764,"exit":0,"cmd":"cmake --build projects/colmap/src/build-hip -j128"}
+{"kind":"phase","ts":"2026-08-08T03:49:00Z","phase":"compile","seconds":253.471,"exit":0,"cmd":"cmake --build projects/colmap/src/build-cuda -j128 --target colmap_sift_gpu colmap sift_test"}
+{"kind":"phase","ts":"2026-08-08T03:49:23Z","phase":"test","seconds":10.049,"exit":0,"cmd":"ctest --test-dir projects/colmap/src/build-hip -j16 --output-on-failure"}
