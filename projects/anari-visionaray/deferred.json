@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "anari-visionaray-nanovdb-hip",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Port NanoVDB volume spatial field to HIP. Vendored external/nanovdb provides only a CUDA DeviceBuffer (util/cuda/CudaDeviceBuffer.h) and NanoVDBField.cpp is CUDA-only; upstream excludes VDB from HIP (message WARNING No VDB support with HIP). Resume: add a hip-backed nanovdb DeviceBuffer shim + a WITH_HIP arm in NanoVDBField.cpp, add NanoVDBField.hip to the _hip target, drop the warning. Non-VDB spatial fields (structured/unstructured/AMR) are ported in the main port.",
+      "refs": [
+        "projects/anari-visionaray/plan.md",
+        "https://github.com/szellmann/anari-visionaray"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-06-23T14:24:42Z",
+      "decided": null
+    }
+  ]
+}

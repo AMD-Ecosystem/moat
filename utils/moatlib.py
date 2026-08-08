@@ -2509,7 +2509,8 @@ def commit_project(name, message, extra_paths=()):
     is persisted WITH the transition and never accumulates uncommitted in the
     shared working tree. Prefer this over commit_and_push for project transitions."""
     paths = [f"projects/{name}/{fn}" for fn in
-             ("status.json", "notes.md", "plan.md", "stats.jsonl", "surface.json")
+             ("status.json", "notes.md", "plan.md", "stats.jsonl", "surface.json",
+              "deferred.json")
              if (PROJECTS / name / fn).exists()]
     paths.extend(str(p) for p in extra_paths)
     return commit_and_push(paths, message)
