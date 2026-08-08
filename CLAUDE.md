@@ -14,7 +14,7 @@ MOAT (Moat Obliteration via Automated Translation) is a Claude-driven effort to 
 
 Five agents. The reviewer can bounce back to the porter (changes-requested); the validator can bounce back to the porter (validation-failed). Review comes before validation deliberately: it is the cheap filter ahead of hours of GPU build.
 
-**intake** decides viability -- licence first and gating, then duplicate effort and portability -- before any analysis effort is spent. **planner** decides scope and strategy. **porter** implements. **reviewer** checks the diff on a review-only PR inside the fork. **validator** proves it on real GPU. What follows approval -- submitting the PR, maintainer rounds, merge, and post-merge staleness -- is not an agent but the `moat-checkup` skill, because every step of it ends at a person.
+**intake** decides viability -- licence first and gating, then duplicate effort and portability -- before any analysis effort is spent. **planner** decides scope and strategy. **porter** implements. **reviewer** checks the diff on the fork branch itself and writes findings to notes.md -- it opens no pull request anywhere, because the one PR on a fork exists for a person's approval of a finished port and is opened only when every gate passes. **validator** proves it on real GPU. What follows approval -- submitting the PR, maintainer rounds, merge, and post-merge staleness -- is not an agent but the `moat-checkup` skill, because every step of it ends at a person.
 
 Either intake or the planner may terminate a project; both terminations are recorded as a disposition and merged, so a negative outcome is still a deliverable.
 
