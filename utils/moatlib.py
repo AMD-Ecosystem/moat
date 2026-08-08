@@ -137,9 +137,18 @@ STAGE_TRANSITIONS = {
     "delta-ported": {"review-passed", "changes-requested"},
     "changes-requested": {"porting"},
     # review-passed has no exit to `completed`: completing is an ARCH's fact now, and
-    # a project stays review-passed while its architectures validate independently.
-    "review-passed": {"validation-failed"},
-    "validation-failed": {"porting"},
+    # a project stays review-passed while its architectures validate independently --
+    # including when one of them FAILS. `validation-failed` used to be a stage here as
+    # well as an arch state, and being in both machines is what broke it: set_state
+    # resolves the collision by checking STAGE_STATES first, so a validator recording
+    # one arch's failure moved the whole project out of review-passed and left the
+    # arch's own record untouched. Leaving review-passed switches off the per-arch
+    # derivation in arch_task, so every arch -- including ones completed at head --
+    # routed to the porter, and the only edge back was through a port. A waiver being
+    # approved or a sibling arch satisfying the gate could not move it, so four
+    # projects sat advertising porter work that did not exist. It is an arch state
+    # only now, and the porter is reached from review-passed directly.
+    "review-passed": {"porting"},
     # A person may revive a project judged unportable -- ROCm gains a library, an
     # upstream rewrite lands. Nothing else leads out.
     "not-portable": {"planned", "porting"},
@@ -1725,6 +1734,14 @@ def arch_task(obj, platform):
     if stage != "review-passed":
         agent = STAGE_FOR_STATE.get(stage)
         return (agent, stage) if agent else None
+    # This arch tried and failed. Only IT is sent to the porter: a wave32 fault does
+    # not invalidate a wave64 arch's evidence, and what actually keeps a broken port
+    # from being submitted is pr_ready, which needs a `completed` arch at head_sha for
+    # every required gate -- a failed arch leaves its gate unsatisfied on its own. The
+    # porter's fix advances head_sha, which makes every other arch stale and route to
+    # revalidate, so the rest of the fleet catches up without the stage broadcasting.
+    if blk.get("state") == "validation-failed":
+        return ("porter", "validation-failed")
     if blk.get("state") == "completed":
         if same_commit(blk.get("validated_sha"), obj.get("head_sha")):
             return None                  # this arch has proved this code
