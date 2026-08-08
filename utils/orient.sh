@@ -93,6 +93,15 @@ fi
 python3 utils/moatlib.py waivers 2>/dev/null \
   | awk -F'\t' 'NF>1 {printf "waiver   :   AWAITING   %-26s %s -- %.70s\n", $1, $2, $4}' || true
 
+# A folder in the wrong place is invisible until it bites, and it bites differently at
+# each end: one on the trunk with work outstanding turns every status write into a pull
+# request once the trunk is protected, and one on a branch with nothing left owed is a
+# branch nobody will ever delete. Placement follows state and state moves, so this is a
+# standing check rather than a migration step -- a maintainer asking for a rewrite after
+# the PR merged puts a finished project back in flight.
+python3 utils/moatlib.py misplaced 2>/dev/null \
+  | awk -F'\t' 'NF>1 {printf "misplaced:   %-26s %s\n", $1, $3}' || true
+
 # Nothing reconciles the record on a schedule, so the only thing that can say it has
 # gone unchecked is how long since someone swept. Reads a stored date, costs no API
 # call, and names the command rather than making anyone remember it.
