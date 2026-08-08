@@ -22,3 +22,7 @@
 {"kind":"phase","ts":"2026-08-08T18:54:01Z","phase":"test","seconds":343.110,"exit":0,"cmd":"bash /tmp/claude-1000/-var-lib-jenkins-moat/24651482-ac41-425e-8ae4-2016b58aa9bb/scratchpad/run_gipc.sh 330"}
 {"kind": "tokens", "ts": "2026-08-08T18:59:34Z", "tokens": 93678, "source": "porter"}
 {"kind": "tokens", "ts": "2026-08-08T19:12:51Z", "tokens": 127615, "source": "reviewer"}
+{"kind":"phase","ts":"2026-08-08T19:14:20Z","phase":"compile","seconds":16.829,"exit":0,"cmd":"cmake --build projects/GPU_IPC/src/build -j16"}
+{"kind":"phase","ts":"2026-08-08T19:18:07Z","phase":"compile","seconds":17.295,"exit":0,"cmd":"cmake --build projects/GPU_IPC/src/build_zerofill -j16"}
+{"kind":"phase","ts":"2026-08-08T19:20:01Z","phase":"compile","seconds":17.119,"exit":0,"cmd":"cmake --build projects/GPU_IPC/src/build_ff -j16"}
+{"kind":"phase","ts":"2026-08-08T19:23:15Z","phase":"cuda-compile","seconds":19.087,"exit":2,"cmd":"cmake --build projects/GPU_IPC/src/build_cuda -j16"}

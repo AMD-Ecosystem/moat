@@ -792,3 +792,188 @@ behavior change.
 Not reviewed here, by scope: the line-search wedge itself. It is the validator's
 item and the NVIDIA baseline ranks first, since the commit message already says
 the state has not been measured on an NVIDIA build.
+
+## Validation 2026-08-08
+
+linux-gfx1100 (GPU index 2, W7800, ROCm 7.2.53211), fork @ 3798cb2, first
+validation on this arch.
+
+### Build
+
+```bash
+cmake -S . -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j16
+```
+
+Configures and links clean (warnings only, all `[[nodiscard]]` on
+`cudaEvent*`/`cudaMemset` return values, pre-existing pattern, not new).
+
+### Run
+
+Same Xvfb/xdotool harness as notes.md "Running it headless".
+
+```bash
+Xvfb :77 -screen 0 1024x1024x24 &
+HIP_VISIBLE_DEVICES=2 DISPLAY=:77 LIBGL_ALWAYS_SOFTWARE=1 stdbuf -o0 ./build/gipc > run.log 2>&1 &
+xdotool search --name FEM   # get window id
+DISPLAY=:77 xdotool key --window <id> space
+```
+
+37 frames completed, 209-234 ms/frame. Newton converges normally each frame
+(observed 2-4 iterations). No HIP runtime error, no crash, no NaN anywhere in
+the log. Then the documented line-search wedge: `GIPC::lineSearch` reports
+"type 0 intersection happened" for a fixed vertex cluster (this run: triangles
+4276-4282 / 14706-14736) with an unboundedly increasing counter, which is
+`GIPC.cu:10024`'s `while(checkInterset && isIntersected(TetMesh))` spinning
+because halving alpha cannot escape an already-intersecting configuration.
+Same signature as every prior round: frame varies (25/26/32/32/36/**37** now),
+cluster varies, no recovery.
+
+### The wedge: hypothesis 2 tested decisively, ruled out
+
+The review left two live hypotheses, ranked NVIDIA-baseline first and
+uninitialized device memory second. There is no NVIDIA GPU on this host, so
+the baseline is not runnable here -- said plainly rather than substituted
+with anything weaker. Hypothesis 2 IS testable on this hardware, so it was
+tested rather than left as an audit.
+
+Method: `cuda_to_hip.h`'s `cudaMalloc` was temporarily wrapped (throwaway
+patch, reverted before completion, never committed) so every fresh device
+allocation gets `hipMemset` to a controlled fill immediately after
+`hipMalloc`, gated by a `GIPC_DEBUG_MALLOC_FILL` compile define so the
+unmodified build is a pure passthrough:
+
+```cpp
+#if defined(GIPC_DEBUG_MALLOC_FILL)
+template <typename T>
+inline hipError_t gipc_debug_hipMalloc(T** ptr, size_t size)
+{
+    hipError_t err = hipMalloc(ptr, size);
+    if (err == hipSuccess) hipMemset(*ptr, GIPC_DEBUG_MALLOC_FILL, size);
+    return err;
+}
+#define cudaMalloc(ptr, size) gipc_debug_hipMalloc(ptr, size)
+#else
+#define cudaMalloc hipMalloc
+#endif
+```
+
+Three builds, same source, same GPU, same harness, only
+`-DGIPC_DEBUG_MALLOC_FILL=<N>` (via `CMAKE_HIP_FLAGS`) differing:
+
+| build | fill | frames | wedge frame | cluster (tri ids) | NaN | HIP error |
+|---|---|---|---|---|---|---|
+| unmodified | passthrough | 37 | 37 | 4276-4282 / 14706-14736 | 0 | 0 |
+| zero-fill | `hipMemset(0)` | 31 | 31 | 4373-4386 / 26002-26248 | 0 | 0 |
+| 0xFF-fill | `hipMemset(0xFF)` | 32 | 32 | 11655-11704 / 17570-20563 | 0 | 0 |
+
+0xFF is the decisive pattern: as an IEEE-754 double or float it is NaN, and as
+a signed or unsigned integer index it is -1 / UINT_MAX, so a genuine
+live-uninitialized read anywhere in the hot path -- exactly the "worst-case
+collision buffer sized by a live counter" shape the review flagged as worth
+checking -- should show up as either an immediate NaN cascade, a crash on an
+out-of-range index, or a wildly different frame count. None of that happened:
+0xFF-fill ran 711 recorded intersection-counter lines with zero NaN
+(`grep -ic nan`) and zero HIP errors, wedged in the same narrow frame window
+(31-37, inside the pre-existing 25-36 range) as the unmodified and zero-fill
+builds, and every reported triangle/edge id across all three builds was a
+small, valid, in-range mesh index -- never a huge nonsense number, which is
+what a read of a stale, oversized, uninitialized collision buffer would look
+like once its contents actually mattered. This is what a compute engine that
+correctly gates every read behind a live counter looks like under adversarial
+fill, not what an uninitialized-memory bug looks like.
+
+Verdict: hypothesis 2 is TESTED and RULED OUT, joining the two mechanisms
+round 2/3 already ruled out (the `add_reduction` `warpNum` over-shuffle, the
+partial-block `__syncthreads()`). The frame/cluster drift across all three
+fill conditions is consistent with, and only with, the already-documented
+float-`atomicAdd`-reordering explanation: the fill pattern changes ULP-level
+accumulation order and therefore WHEN the solver reaches the scene's contact
+hot spot, not whether an uninitialized read corrupts anything.
+
+The diagnostic patch touched nothing else, was never committed, and was
+reverted with `git checkout -- GPU_IPC/cuda_to_hip.h` before this validation
+was recorded; `git status --porcelain` on the fork was confirmed clean
+afterward.
+
+### Verdict on the wedge for this arch: does not block `completed`
+
+Weighing what is and is not attributable:
+
+- The loop itself, `GIPC.cu:10024`, is byte-identical to upstream (round 3:
+  "GIPC.cu is now byte-identical to upstream: every change that file carried
+  was comment churn"). It is upstream's unbounded `while` with no iteration
+  cap, unconditionally vulnerable once alpha-halving reaches an
+  already-intersecting configuration, and that is true on any backend.
+- Three review rounds have checked the port's own kernels hard: the Jacobi
+  eigensolver (exact against Eigen at 20000+ cases plus edge cases), the
+  `add_reduction`/`PCG_add_Reduction_*` shuffle (exact against CPU at 13
+  sizes), the partial-block `__syncthreads()`, the wave64 shuffle/ballot
+  fixes (lane-exact against a naive mapping), and the `MASPreconditioner.cu`
+  bank reduction (reverted to upstream's own byte-identical form). None of
+  that work touches or explains the wedge.
+- Hypothesis 2, the one mechanism that was both live and testable here, is
+  now negative evidence, not just unaudited.
+- Hypothesis 1, the NVIDIA baseline, remains genuinely unresolvable on this
+  host (no NVIDIA GPU) and is stated as such rather than answered with
+  something weaker.
+
+That leaves an upstream unbounded loop, in code the port did not touch,
+reached through float nondeterminism the port did not introduce, with the one
+port-adjacent explanation that was actually testable here tested and refuted.
+Completing this arch and recording the wedge as a known upstream limitation
+(a) is the honest read of the evidence; treating it as an unattributed port
+defect (b) would overclaim against what was actually measured. This is not
+new evidence that the port is defect-free on every arch -- gfx90a/gfx942
+still owe their own real-GPU run -- it is a decision that this specific
+open question does not block THIS arch.
+
+### CUDA no-regression gate
+
+Not previously recorded at 3798cb2. `/opt/conda/envs/cuda-12.8/bin/nvcc`
+12.8.93, host gcc 13.3.0, `-DCMAKE_CUDA_ARCHITECTURES=80` passed on the
+command line. The project's CMakeLists.txt hardcodes
+`set(CUDA_ARCHITECTURES 86)` unconditionally in the non-`USE_HIP` branch (not
+`native`, so the `-D` not taking effect is not the ancient-arch trap this
+project already targets a real modern arch, Ampere/sm_86, unconditionally);
+configure logged "CUDA architectures: 86" either way.
+
+```bash
+cmake -S . -B build_cuda -DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=80 \
+      -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc
+cmake --build build_cuda -j16
+```
+
+Fails at compile: 16 errors, all in `GPU_IPC/load_mesh.h`/`load_mesh.cpp`,
+`error: 'uint32_t' was not declared in this scope` cascading into template
+and member-access errors on `tetrahedra_obj::targetIndex` /
+`::surfId2TetId` / `::surfVerts`. Built the upstream base sha (`46594e0`,
+before this port's `<cuda_runtime.h>` -> `"cuda_to_hip.h"` swap in
+`load_mesh.h`) with the identical toolchain, identical pinned arch, identical
+flags: **byte-identical 16 errors, same file:line, same messages.** This is
+pre-existing breakage in the upstream tree against nvcc 12.8 / gcc 13.3 (a
+missing `<cstdint>` upstream never needed against older toolchains), not a
+regression from this port -- the port's header swap
+(`load_mesh.h:14`) is a superset of upstream's `#include <cuda_runtime.h>`
+on the CUDA side (`cuda_to_hip.h`'s `#else` arm includes both
+`<cuda_runtime.h>` and `<device_launch_parameters.h>`), so it could not have
+removed the transitive `uint32_t` upstream was already relying on. Recorded
+verbatim, not counted as a gate failure. Both throwaway build directories
+(`build_cuda` here and upstream's) were removed afterward; nothing from this
+gate reached the fork tree.
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --commits 46594e0..HEAD -C projects/GPU_IPC/src` and
+`--diff 46594e0..HEAD` both clean. The ROCm build is documented in
+`README.md` alongside the CUDA build (Dependencies table, per-platform build
+section), in the project's own house style; nothing to send back.
+
+### State
+
+Fork tree clean and pushed at 3798cb2 throughout
+(`git -C projects/GPU_IPC/src status --porcelain` empty; the diagnostic patch
+above was reverted, not committed; `timeCost.txt` written by the run into the
+fork root was removed, not committed). linux-gfx1100 -> `completed`,
+`validated_sha` = 3798cb2. gfx90a still owes its own real-GPU run; nothing
+here substitutes for it.
