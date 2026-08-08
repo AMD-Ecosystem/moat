@@ -1,0 +1,23 @@
+Judge a port's surface only once it claims to work, and stop writing a null state
+
+Two bugs the first real surface.json found, both of which stopped pushes on a shared repo rather than on the project that hit them.
+
+`gate_surface` demands every component be covered or explicitly scoped out. Its own words say what it is for: a port that CLAIMED SUCCESS while covering a subset. It was judging every project that had a surface.json, including one that is merely `planned` -- where nothing is covered yet by definition, because the surface.json IS the inventory the porter is about to work through. So the first project ever to carry one failed the gate immediately, and since check.py is repo-wide and the pre-push hook runs it, that failure blocked every push from every host for every project. The gate had never judged anything before, so this had no way of being noticed until something wrote the file.
+
+It now judges a project only when the port asserts it works -- stage `ported` or later, or any architecture `completed`. Silent while planning, 27 problems on colmap the moment its stage says the port is done, which is the accounting the gate was written to demand.
+
+Second, `_platform_block` wrote `"state": null` when a STAGE transition created an arch row -- the row exists to hang `last_agent` and timestamps on, and the architecture has no state of its own. `validate_status` allowed it, the generated JSON schema did not, since absent and null are different things and the enum has no null member. So `set-state <name> <arch> planned` recorded the transition and then failed the schema gate on the record it had just written. The key is omitted now, which is what absent already means everywhere else.
+
+Test Plan:
+
+```
+python3 utils/check.py --fast          # was: surface failed for the whole repo
+python3 - <<'PY'                       # fixed, not disabled
+# stage=planned -> 0 problems; stage=ported -> 27; stage=review-passed -> 27
+PY
+python3 -c "import sys;sys.path.insert(0,'utils');import moatlib as m;\
+print('state' in m._platform_block(None), 'state' in m._platform_block('completed'))"
+# False True -- omitted when there is none, kept when there is
+```
+
+Authored with Claude Code.
