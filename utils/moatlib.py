@@ -2095,6 +2095,35 @@ def branch_drift(branch, base_ref="origin/main"):
     return (sorted(substantive), sorted(inert))
 
 
+def stranded_shared_changes(base_ref="origin/main"):
+    """Edits a port branch made OUTSIDE its own project folder that the trunk lacks.
+
+    A port branch owns `projects/<name>/` and nothing else, so anything it changes
+    elsewhere is shared: the `cuda-to-rocm` skill, an agent definition, a tool in
+    utils/. CLAUDE.md tells every agent to promote a lesson to the skill at the moment
+    of learning, and an agent working on a port branch does exactly that -- onto a
+    branch that reaches the trunk only when the project closes, which for a project
+    whose upstream PR already merged may be never. The lesson is then invisible to the
+    every other port, which is the one audience it was written for.
+
+    Found by accident once (alien's codeobj_diff false-positive diagnostic, worth more
+    than the validation it came from). Reported on purpose from here on."""
+    out = []
+    for ref in _git("for-each-ref", "--format=%(refname:short)",
+                    "refs/remotes/origin/port/", check=False).stdout.split():
+        name = ref.split("port/", 1)[1]
+        base = _git("merge-base", ref, base_ref, check=False).stdout.strip()
+        if not base:
+            continue
+        changed = _git("diff", "--name-only", base, ref, check=False).stdout.splitlines()
+        shared = sorted(c.strip() for c in changed
+                        if c.strip() and not c.startswith(f"projects/{name}/")
+                        and not c.strip() in ("README.md",))
+        if shared:
+            out.append((name, shared))
+    return out
+
+
 def branch_sync(apply=False, base_ref="origin/main"):
     """Bring a port branch up to the trunk's tooling, but only when that is worth a
     merge commit. Returns (action, detail) for the caller to print.
@@ -2461,6 +2490,8 @@ def main(argv=None):
 
     sub.add_parser("misplaced", help="projects whose folder is not where their state says")
 
+    sub.add_parser("stranded", help="shared edits sitting on a port branch the trunk lacks")
+
     sub.add_parser("waivers", help="gate waivers suggested but not yet approved")
 
     s = sub.add_parser("suggest-waiver",
@@ -2646,6 +2677,14 @@ def main(argv=None):
         if rows:
             print(f"-- {len(rows)} project(s) waiting on a person: continue on other "
                   f"hardware, or `set-not-portable <name> --reason ... --by <who>`",
+                  file=sys.stderr)
+    elif args.cmd == "stranded":
+        rows = stranded_shared_changes()
+        for name, paths in rows:
+            print(f"{name}\t{','.join(paths[:4])}")
+        if rows:
+            print(f"-- {len(rows)} branch(es) carry a shared change the trunk does not "
+                  f"have; a skill lesson stranded on a port branch reaches nobody",
                   file=sys.stderr)
     elif args.cmd == "misplaced":
         rows = misplaced_folders()
