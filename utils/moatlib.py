@@ -286,7 +286,12 @@ def _empty_stats():
 
 
 def _platform_block(initial_state):
-    return {
+    """A fresh arch record. `state` is OMITTED rather than set to null when there is
+    none: absent means "this architecture has recorded nothing", and null is a value
+    the schema's enum has no member for. A stage transition creates the row to hang
+    `last_agent` and timestamps on, and wrote a null into it that the schema gate then
+    rejected -- on a project the transition had just successfully recorded."""
+    block = {
         "state": initial_state,
         "blocked": False,
         "blocked_reason": None,
@@ -296,6 +301,9 @@ def _platform_block(initial_state):
         "updated_at": now_iso(),
         "stats": _empty_stats(),
     }
+    if initial_state is None:
+        del block["state"]
+    return block
 
 
 def status_path(name):
