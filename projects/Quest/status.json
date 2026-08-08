@@ -7,7 +7,7 @@
   "priority": 3.866,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-08-08T17:50:47Z",
+  "updated_at": "2026-08-08T18:03:47Z",
   "head_sha": "3465b34b49b5c4713ec48c4587b49511f9788899",
   "depends_on": [],
   "porting": null,
@@ -59,6 +59,5 @@
         "last_session_at": null
       }
     }
-  },
-  "review_pr": "https://github.com/AMD-Ecosystem/Quest/pull/1"
+  }
 }
