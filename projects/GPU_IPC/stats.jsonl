@@ -1,0 +1,4 @@
+{"kind": "tokens", "ts": "2026-06-05T07:18:14Z", "tokens": 87370, "source": "planner"}
+{"kind":"phase","ts":"2026-06-05T07:23:00Z","phase":"compile","seconds":0.140,"exit":1,"cmd":"cmake --build . -j128"}
+{"kind":"phase","ts":"2026-06-05T07:23:03Z","phase":"compile","seconds":0.142,"exit":0,"cmd":"make -j128"}
+{"kind":"phase","ts":"2026-06-05T07:24:54Z","phase":"compile","seconds":0.138,"exit":1,"cmd":"cmake --build . -j128"}
