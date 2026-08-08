@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "name": "cudaKDTree",
   "upstream_url": "https://github.com/ingowald/cudaKDTree",
   "fork_url": "https://github.com/AMD-Ecosystem/cudaKDTree",
@@ -7,8 +7,18 @@
   "priority": 3.907,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-06-18T18:54:00Z",
+  "updated_at": "2026-08-07T07:04:59Z",
   "head_sha": "93a838d776f5ffc1b4069291c7906129689ed1be",
+  "pr_url": "https://github.com/ingowald/cudaKDTree/pull/40",
+  "pr_number": 40,
+  "pr_opened_at": "2026-06-11T22:35:11Z",
+  "pr_merged_at": "2026-06-18T18:54:00Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged",
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 553718268,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -165,13 +175,5 @@
         "at": "2026-06-11T22:18:52Z"
       }
     }
-  },
-  "pr_url": "https://github.com/ingowald/cudaKDTree/pull/40",
-  "pr_number": 40,
-  "pr_opened_at": "2026-06-11T22:35:11Z",
-  "pr_merged_at": "2026-06-18T18:54:00Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "merged",
-  "license_spdx": "Apache-2.0"
+  }
 }

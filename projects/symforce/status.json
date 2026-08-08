@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "name": "symforce",
   "upstream_url": "https://github.com/symforce-org/symforce",
   "fork_url": "https://github.com/AMD-Ecosystem/symforce",
@@ -7,9 +7,18 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T07:05:32Z",
   "head_sha": "e994ef0b441d5502b07cd58e21a0fc2489eccec3",
   "depends_on": [],
+  "pr_url": "https://github.com/symforce-org/symforce/pull/465",
+  "pr_number": 465,
+  "pr_opened_at": "2026-06-16T18:19:20Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 444900243,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -127,12 +136,5 @@
         "at": "2026-06-23T22:23:19Z"
       }
     }
-  },
-  "pr_url": "https://github.com/symforce-org/symforce/pull/465",
-  "pr_number": 465,
-  "pr_opened_at": "2026-06-16T18:19:20Z",
-  "porting": null,
-  "waivers": {},
-  "pr_state": "open",
-  "license_spdx": "Apache-2.0"
+  }
 }

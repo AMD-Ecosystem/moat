@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "name": "FlashMoE",
   "upstream_url": "https://github.com/osayamenja/FlashMoE",
   "fork_url": null,
@@ -7,11 +7,15 @@
   "priority": 4.566,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-08-07T05:41:00Z",
+  "updated_at": "2026-08-07T22:41:31Z",
   "head_sha": null,
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "BSD-3-Clause",
+  "upstream_repo_id": 796490340,
+  "stage": "not-portable",
   "platforms": {
     "linux-gfx90a": {
-      "state": "unclaimed",
       "blocked": true,
       "blocked_reason": "Depends on cuBLASDx/NVSHMEM/CUTLASS which have no AMD equivalents; requires ground-up AMD-native implementation, not a CUDA-to-HIP port",
       "validated_sha": null,
@@ -31,75 +35,11 @@
         "first_session_at": null,
         "last_session_at": null
       }
-    },
-    "linux-gfx1100": {
-      "state": "awaiting-port",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-05-30T01:04:50Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1101": {
-      "state": "awaiting-port",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-04T19:41:52Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1201": {
-      "state": "awaiting-port",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-04T19:41:52Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
     }
   },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "BSD-3-Clause"
+  "not_portable": {
+    "reason": "Depends on cuBLASDx, NVSHMEM and CUTLASS, none of which has an AMD equivalent; delivering it means a ground-up AMD-native implementation rather than a translation.",
+    "by": "jeffdaily",
+    "at": "2026-08-07T22:41:31Z"
+  }
 }

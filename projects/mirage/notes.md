@@ -1,1 +1,0 @@
-# mirage notes

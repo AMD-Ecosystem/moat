@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "name": "FastGeodis",
   "upstream_url": "https://github.com/masadcv/FastGeodis",
   "fork_url": "https://github.com/AMD-Ecosystem/FastGeodis",
@@ -7,9 +7,26 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-05T01:24:38Z",
-  "updated_at": "2026-08-07T06:21:39Z",
+  "updated_at": "2026-08-07T07:04:33Z",
   "head_sha": "5fc19ecea7e516778ab4db264e584230c83676b4",
   "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "BSD-3-Clause",
+  "review_pr": "https://github.com/AMD-Ecosystem/FastGeodis/pull/1",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-07T06:17:54Z",
+    "head_sha": "5fc19ecea7e516778ab4db264e584230c83676b4",
+    "content_sha256": "67dbcd15f9189bece7b93c5cf1a4f81bd8831f9840969052e9ca529a9af1f4ae",
+    "review_pr": "https://github.com/AMD-Ecosystem/FastGeodis/pull/1"
+  },
+  "pr_url": "https://github.com/masadcv/FastGeodis/pull/68",
+  "pr_number": 68,
+  "pr_opened_at": "2026-08-07T06:21:39Z",
+  "pr_state": "open",
+  "upstream_repo_id": 375526483,
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -109,20 +126,5 @@
       },
       "last_agent": "validator"
     }
-  },
-  "porting": null,
-  "waivers": {},
-  "license_spdx": "BSD-3-Clause",
-  "review_pr": "https://github.com/AMD-Ecosystem/FastGeodis/pull/1",
-  "pr_approval": {
-    "approved_by": "jeffdaily",
-    "at": "2026-08-07T06:17:54Z",
-    "head_sha": "5fc19ecea7e516778ab4db264e584230c83676b4",
-    "content_sha256": "67dbcd15f9189bece7b93c5cf1a4f81bd8831f9840969052e9ca529a9af1f4ae",
-    "review_pr": "https://github.com/AMD-Ecosystem/FastGeodis/pull/1"
-  },
-  "pr_url": "https://github.com/masadcv/FastGeodis/pull/68",
-  "pr_number": 68,
-  "pr_opened_at": "2026-08-07T06:21:39Z",
-  "pr_state": "open"
+  }
 }

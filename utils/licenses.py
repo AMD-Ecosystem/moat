@@ -35,9 +35,22 @@ def tier_of(spdx, cfg=None):
     cfg = cfg or load()
     if not spdx or spdx in ("NOASSERTION", "NONE", "null"):
         return 4
+    spdx = spdx.strip()
     for n in (1, 2, 3):
         if spdx in cfg[f"tier{n}"]["spdx"]:
             return n
+    # SPDX expressions, which exact matching reported as tier 4 -- the worst answer --
+    # for licences that are individually fine. TornadoVM is "Apache-2.0 OR MIT OR
+    # GPL-2.0-only WITH Classpath-exception-2.0": tiers 1, 1 and 2, and it read as 4.
+    #   OR   -- the recipient chooses, so the best (lowest) tier applies
+    #   AND  -- all of them bind, so the worst applies
+    #   WITH -- an exception grants extra permission on a base licence; tier the base
+    if " WITH " in spdx:
+        return tier_of(spdx.split(" WITH ", 1)[0], cfg)
+    for sep, pick in ((" OR ", min), (" AND ", max)):
+        if sep in spdx:
+            parts = [p.strip(" ()") for p in spdx.split(sep)]
+            return pick(tier_of(p, cfg) for p in parts)
     return 4
 
 
@@ -99,7 +112,8 @@ def repo_license(full_name):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", nargs="?", choices=["tier", "check", "audit"])
+    ap.add_argument("cmd", nargs="?",
+                    choices=["tier", "check", "audit", "scan-nvidia"])
     ap.add_argument("arg", nargs="?")
     ap.add_argument("--check-config", action="store_true")
     a = ap.parse_args()
@@ -138,6 +152,30 @@ def main():
         t = tier_of(lic, cfg)
         print(f"{a.arg}: license={lic} tier={t}\n  {route(t)}")
         return 0
+
+    if a.cmd == "scan-nvidia":
+        # intake.md tells the screener that a file carrying an NVIDIA proprietary
+        # licence needs a decision and that "the markers are in utils/licenses.py".
+        # They were, with no way to run them, so every screen that did this did it by
+        # hand -- cuda_voxelizer's vendored CUDA-Samples headers were found that way.
+        target = a.arg or "."
+        if not pathlib.Path(target).exists():
+            src = REPO_ROOT / "projects" / target / "src"
+            if not src.exists():
+                print(f"licenses: no such directory {target} (and no fork clone at "
+                      f"{src})", file=sys.stderr)
+                return 2
+            target = src
+        hits = scan_nvidia(target, cfg)
+        if not hits:
+            print(f"scan-nvidia: no NVIDIA proprietary licence text under {target}")
+            return 0
+        print(f"scan-nvidia: {len(hits)} file(s) under {target} carry NVIDIA "
+              f"proprietary licence text -- tier 3 regardless of the top-level "
+              f"licence, and each needs a decision before the port goes upstream:")
+        for h in hits:
+            print(f"  {h}")
+        return 1
 
     if a.cmd == "audit":
         sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
