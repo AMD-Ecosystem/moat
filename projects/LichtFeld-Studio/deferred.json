@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "lichtfeld-test-gate-coverage",
+      "kind": "other",
+      "component": null,
+      "summary": "HIP validation gate omits built GPU kernels: tensor_nn_ops.cu (max_pool2d, adaptive_avg_pool2d, bias_relu, relu) has no test, and ~51 compute-only test files are excluded from LFS_HIP_TEST_FILES (beyond the 3 the validator caught). Add test_tensor_nn_ops.cpp and the compute-only tests to the gate.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T19:04:23Z",
+      "decided": null
+    },
+    {
+      "id": "therock-windows-lld-link-crt-xcu",
+      "kind": "rocm-bug-report",
+      "component": "TheRock",
+      "summary": "TheRock's PyTorch Windows build links torch_hip.dll with lld-link, which emits no .CRT$XCU section, so _DllMainCRTStartup's CRT init pointer is NULL and _initterm never runs. REGISTER_CUDA_HOOKS static initializers therefore never execute, CUDAHooksRegistry in torch_cpu.dll stays empty, getCUDAHooks() returns a no-op stub, and torch::cuda::is_available() returns false in any standalone C++ executable -- while the GPU is fully functional (the Python ctypes path reports devices correctly). Any C++ test harness gating on is_available() then fails wholesale against a working port: LichtFeld-Studio loses 564 of 914 tests this way while 320 pass on real gfx1101. Traced on Windows 11, torch 2.9.1+rocm7.14.0a20260604: CRT init ptr at RVA 0x399e8f0 = NULL; TLS callbacks at RVA 0x0288aa90 and 0x0288ab40 fire only on DLL_THREAD_ATTACH/DETACH, and DLL_PROCESS_ATTACH calls DisableThreadLibraryCalls. Untried workarounds: /WHOLEARCHIVE or a forced reference into the hooks TU, calling _initterm on the DLL CRT section directly, or spawning a thread after load to fire the TLS callbacks. Not reported upstream to TheRock yet.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-07T23:07:19Z",
+      "decided": null
+    }
+  ]
+}
