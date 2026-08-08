@@ -116,7 +116,11 @@ Three destinations existed and the one wired into agents' instructions won, so s
 
 **Promote at the moment of learning, not in a later sweep.** A separate lessons file that no agent was instructed to open went unused from the day it was created; the destination has to be one agents are actually told to write to, with something checking it happened.
 
-The reviewer checks that promotion happened (see the pr-review checklist). Correcting an existing entry counts: SCAMP proved the warp-count sizing rule in the skill was wrong in one direction, and that correction was worth more than any addition.
+**Write it on the PORT BRANCH and let the branch's own PR carry it to `main`. Do not lift it to `main` early.** A skill entry written on `port/<name>` is invisible to other projects until that branch merges, and that looks like a problem worth fixing by opening a PR against `main` as soon as the lesson is found. It is not: the port branch's PR is where the lesson gets REVIEWED, and an unreviewed lesson on `main` is worse than a stranded one, because every agent then follows it. Three of four lessons written in one session were wrong in a way only review caught -- one reproduced verbatim the very CMake defect it was documenting, so lifting it would have made that bug the recipe for every future torch-extension port; another named a prebuilt rocPRIM library that does not exist, sending the next porter after a rebuild that cannot be done; a third told porters to hoist collectives out of cluster-uniform branches "even where it currently measures clean", the inverse of the actual rule. The reviewer reads a lesson in the same round as the code that produced it, which is the only moment anyone has the context to judge it.
+
+The cost is real and accepted: a correction to an existing rule sits unseen while its branch is open, and other ports keep following the old rule meanwhile. The remedy is merging port branches promptly, not routing around the review that makes the lesson trustworthy.
+
+The reviewer checks that promotion happened (see the pr-review checklist) and that what it says is TRUE, because merging the branch publishes it to every agent. Correcting an existing entry counts: SCAMP proved the warp-count sizing rule in the skill was wrong in one direction, and that correction was worth more than any addition.
 
 # Scratch space
 
