@@ -602,3 +602,164 @@ live on the same display. Isolating the variables: sift_test alone on a **pre-ex
 shared** `Xvfb :77` passes (2.9 s), so it is concurrency, not the shared display; and the
 GPU is not involved at any point. `-j4` is clear of it here and runs the whole suite in
 11.6 s; `-j8` and `-j16` both hung.
+
+## Review 2026-08-08 (reviewer, linux-gfx1100 / wave32 host, round 2)
+
+Reviewed fork `4c531f5e` against parent `d6d2bc8e`. Verdict: **changes-requested**, and
+none of it is a code change. The code is right: all five previous items are genuinely
+addressed, the build is current with the tree, and I re-measured the suite (159/159 at
+`-j4`, 12.3 s) and the kernel dispatches (ReduceHist x45, ComputeDOG x30, RowMatch x25,
+ColMatch x24, ComputeKEY x18, InitHist x18, ListGen x14, MultiplyDescriptorGRay x12,
+MultiplyDescriptor x9, NormalizeDescriptor x5, ComputeOrientation x5, ComputeDescriptor x5,
+MultiplyDescriptorG x4), so the GPU bodies really execute.
+
+What must change is the recorded ANALYSIS, in plan.md, in this file, and above all in the
+three skill entries this branch adds. Two of the three state something I disproved by
+running it. A wrong entry in the skill is worse than no entry, because the next port
+inherits it as established fact.
+
+Standing rules are clean and re-checked: `jargon.py --port colmap` clean over the whole
+branch; title 59 chars, `[ROCm]` prefix, Claude named, no `Co-Authored-By: noreply`, ASCII,
+no em-dash, no AMD-internal account references; fork tree clean
+(`git status --porcelain` empty); `moat-port..origin/main` is 0 so the branch is not behind
+the fork default; remote `moat-port` == local HEAD == `4c531f5e`. The commit body's
+"eight call sites" is accurate (`exe/feature.cc` x7 at 146/218/269/297/325/353/381,
+`exe/sfm.cc` x1 at 165, plus `sift_test.cc:136`), and both the nvcc paragraph and the
+`RunThreadWithOpenGLContext` paragraph read correctly to an outside maintainer.
+
+### 1. "Line 370 is unreachable from COLMAP" is false -- disproved on this host
+
+`plan.md:305-316` (risk 5 CLOSED), `notes.md:485-509`, and the new
+`references/validation.md` entry all rest on the claim that `GlobalUtil.cpp:370` cannot be
+reached because "COLMAP always passes `-cuda <index>`". COLMAP does not always pass it.
+`feature/sift.cc:583-590` omits `-cuda` when `sift->darkness_adaptivity` is true and
+`gpu_index` is negative -- and `gpu_index` defaults to `"-1"` (`feature/extractor.h:80`).
+`darkness_adaptivity` is public API: `pycolmap/feature/extraction.cc:163` exposes it as
+`SiftExtractionOptions.darkness_adaptivity`.
+
+That path reaches line 370: `sift.cc:668` calls `VerifyContextGL()`, which is
+`SiftGPU.cpp:1296-1298` -> `InitSiftGPU()` -> `_UseCUDA == 0` so `new PyramidGL(*this)`
+(`SiftGPU.cpp:168ff`) -> `PyramidGL::PyramidGL` calls `InitializeContext()`
+(`PyramidGL.cpp:166`) -> `InitGLParam(0)` (`PyramidGL.cpp:177`) -> the `else` branch that
+contains line 370.
+
+Measured, not read. A probe driving the real `CreateSiftFeatureExtractor` inside a Qt GL
+context, default `gpu_index="-1"`:
+
+    darkness_adaptivity=0:  after Create  _UseCUDA=1 _GoodOpenGL=1  extractor=created
+    darkness_adaptivity=1:  after Create  _UseCUDA=0 _GoodOpenGL=0  extractor=nullptr
+
+`_GoodOpenGL=1` is the `NotTargetGL` early return at `GlobalUtil.cpp:326-328` -- that is
+the porter's trace, and it is correct for the default configuration, which is what
+`sift_test` exercises. `_GoodOpenGL=0` is only reachable through the `else` branch, i.e.
+`glewInit()`, the vendor read, and line 370 all ran. So the trace supports **"not reached
+in this configuration"**, which is what a single binary with default options can support.
+It does not support "unreachable", and it certainly does not support the skill's
+"a statement that holds on every GPU and every GL driver rather than on one host".
+
+**The conclusion survives; the reason has to change.** Risk 5's actual fear was a compute
+user silently downgraded to GLSL by a cleared `_UseCUDA`. That cannot happen, for a
+structural reason that does hold everywhere: `SiftGPU::ParseParam` re-asserts
+`GlobalUtil::_UseCUDA = 1` on every fresh `SiftGPU` object (`SiftGPU.cpp:773-776`, guarded
+only by `!_initialized`), and `SiftMatchGPU::SetLanguage(SIFTMATCH_CUDA*)` makes
+`SiftMatch.cpp:686-691` bypass the `_UseCUDA` test entirely. Measured, GLSL user first,
+then a compute extractor in the same process:
+
+    1st: darkness(GLSL)   extractor=nullptr  _UseCUDA=0 _GoodOpenGL=0
+    2nd: compute          extractor=nullptr  _UseCUDA=1 _GoodOpenGL=0
+
+`_UseCUDA` is back to 1, as predicted. Rewrite risk 5's closure around that, and drop the
+unreachability claim.
+
+Worth one line while you are there, because it is the real residual and it is not what the
+risk said: a failed GLSL user sets `_GoodOpenGL = 0`, and `InitSiftGPU` early-returns on
+`_GoodOpenGL == 0` for every later extractor in the process, compute included -- so the
+second extractor above is `nullptr` too and COLMAP falls back to CPU SIFT. Pre-existing
+upstream, identical on a CUDA build, not a port defect, and not something to fix here.
+
+### 2. The forward-declaration claim is false, and `hiprandState` is not a typedef
+
+`notes.md:547-549` and the new `references/strategy-a-cmake.md` entry both say: "A forward
+declaration does not save it: `GpuMat<curandState>` needs `sizeof(T)` in host code, and
+`hiprandState` is a typedef of `rocrand_state_xorwow` rather than a class you can portably
+forward-declare." Both halves are wrong.
+
+`hiprandState` is a class. `/opt/rocm/include/hiprand/hiprand_kernel_rocm.h:43-50` expands
+`DEFINE_HIPRAND_STATE(hiprandState, rocrand_state_xorwow)` to
+`struct hiprandState : public rocrand_state_xorwow { typedef rocrand_state_xorwow base; };`.
+It is `curandState` on the CUDA side that is a typedef
+(`curand_kernel.h:302`, `typedef struct curandStateXORWOW curandState;`).
+
+And the forward declaration does work. Compiling the real `patch_match.cc` with its real
+command (`/usr/bin/c++ ... -DCOLMAP_HIP_ENABLED`) against an override include dir:
+
+    gated include only                        -> 4 errors (gpu_mat.h:137, gpu_mat_prng.h:37)
+    gated include + `struct hiprandState;`    -> 0 errors
+    unmodified header (control)               -> 0 errors
+
+**This does not reopen the decision.** The refusal was right and the substitute is right --
+see the adjudication below -- so keep the code exactly as it is. Only the justification is
+wrong, and it is wrong in the skill, where it will be read as a general fact about ROCm's
+RNG headers. Cut that sentence to what holds: the gate as literally requested breaks the
+build, reproduced above; the fix that matters is declaring the RNG library on every target
+that includes the compat header.
+
+### 3. The Mesa teardown hang is a race, and the entry states it as deterministic
+
+`references/validation.md` records "hung twice out of two" and prescribes lowering `-j`.
+The diagnosis is right and I confirmed the stack, with the Qt frames the earlier record did
+not show -- these matter because they name the per-test `QApplication` as the trigger:
+
+    #3  __pthread_clockjoin_ex
+    #4-#8   libgallium-25.2.8
+    #9-#10  libGLX_mesa.so.0
+    #11 XCloseDisplay
+    #12 QXcbBasicConnection::~QXcbBasicConnection
+    #13-14  QXcbIntegration::~QXcbIntegration
+    #15 QGuiApplicationPrivate::~QGuiApplicationPrivate
+    #16 QApplicationPrivate::~QApplicationPrivate
+    #17 colmap::(anonymous namespace)::RunGpuTest
+
+But it is intermittent, not a function of `-j` alone. Four full-suite runs at `-j16` here:
+one passed (159/159, 8.76 s), three timed out on `feature/sift_test`. The entry as written
+tells a reader that `-j16` hangs; that reader's first `-j16` run may well be green, and
+they will conclude the entry is wrong. Say it is a race, give the observed rate, and say
+that one green high-`-j` run does not clear it.
+
+### Checked and clean
+
+- **Item 1, `CopyFromPBO`, verified and the remedy is right.** `<iostream>` is included
+  (`CuTexImage.cpp:25`) with `using namespace std;`, so `std::cerr` resolves. `_numBytes`
+  is the allocation size and `InitTexture` only ever grows it
+  (`CuTexImage.cpp:183`, `if(size <= _numBytes) return true;`), so
+  `cudaMemset(_cuData, 0, _numBytes)` is always in bounds and never under-zeroes the
+  current image. The `#else` sits inside `#if defined(SIFTGPU_GL_INTEROP_ENABLED)`, which
+  `CuTexImage.cpp:35-47` defines on every non-HIP build, so this hunk changes no CUDA
+  object code. On whether zeroing papers over a caller bug: it does not. The entry point
+  returns void into a buffer the caller already allocated, so the only alternatives are
+  changing the vendored signature or aborting; a diagnostic plus a defined black image
+  matches the existing "Unable To Convert Intput" style at `PyramidCU.cpp:945` and is the
+  right weight for vendored third-party code. `esize` stays used on the HIP arm
+  (`CuTexImage.cpp:100-105`), so no unused-variable warning.
+- **The `ComputeDOG` clamp is interior-exact.** `height` is a kernel parameter,
+  `index = IMUL(row, width) + col` (`ProgramCU.cu:475`), and the four clamped fetches
+  reduce to the old `index +/- 1` / `index +/- width` for every non-border pixel. The
+  second `ComputeDOG_Kernel` overload (`ProgramCU.cu:499-510`) does no neighbour reads and
+  correctly needed no change.
+- **The pitched-to-linear rebind is exact.** `width`/`height` passed to
+  `ComputeOrientation_Kernel` come from `got` itself (`ProgramCU.cu:965`), the same image
+  that is bound, so `IMUL(int(y), width) + int(x)` is the element `tex2D` point-sampling
+  would have returned over a pitch of `width * sizeof(float2)`. All three kernels clamp x
+  to `[1.5, width-1.5]` and y to `[1.5, height-1.5]` (`ProgramCU.cu:848-851`, `1032-1035`,
+  `1107-1110`), so coordinates are strictly positive, `int()` equals `floor()`, and the
+  largest index is `(height-2)*width + (width-2)`, in bounds.
+- **Item 3's substitute is the right remedy** (adjudication): `find_package(hiprand)` and
+  `find_package(rocrand)` are already unconditional under `HIP_ENABLED`
+  (`FindDependencies.cmake:152-153`), the CUDA arm of SiftGPU has always declared
+  `CUDA::curand`, and `colmap_mvs_cuda` already lists `hip::hiprand` + `roc::rocrand`
+  (`mvs/CMakeLists.txt:302-306`) for the identical header. The SiftGPU HIP arm now mirrors
+  both. It closes a real gap on a split `rocm-sdk` install and keeps the compat header
+  self-contained; a forward declaration would trade that for a header whose meaning depends
+  on which TU includes it. Correct call.
+- Build is current with the tree (`ninja: no work to do`), and `opengl_utils_test` passes
+  as a non-GUI-gated test.
