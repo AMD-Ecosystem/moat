@@ -234,3 +234,230 @@ codebase, so linux-gfx90a is no longer marked blocked. The blocker as last recor
 is where to pick it up:
 
 Build/link blocker RESOLVED (cross-TU device visibility fixed via -fgpu-rdc + OBJECT-libs-to-single-shared-lib device link; core+basic+combine PDFs and 24 test/example exes build and link on gfx90a). NEW blocker: unbinned NLL fits diverge to a parameter bound because the device reads garbage normalization values (6.25e-310 uninitialized-double pattern) from the hipMemcpyToSymbol-published __device__ d_normalizations during the per-event reduction; analytic normalize() and per-event device eval are correct in isolation. See notes.md attempt 2 for the minimal repro and next steps. Physics PDFs scoped out (GOOFIT_PHYSICS=OFF; MCBooster+device Eigen complex inverse deferred, WIP patch saved).
+
+## Review 2026-08-08 (reviewer, linux-gfx1100, fork df9aaa298 vs 5c6ca525c)
+
+Verdict: changes-requested. The port strategy is right (Strategy A: one compat header,
+`enable_language(HIP)`, `LANGUAGE HIP` rather than renamed sources, CUDA path guarded), no
+wavefront-width assumption exists anywhere in the diff, and the jargon check is clean over
+the whole branch. What forces a bounce is that the central technical finding of this port
+is wrong, it was promoted to the shared skill in that wrong form, and it drove a large
+build-system restructuring that is probably unnecessary.
+
+### 1. The relocatable-device-code finding is factually wrong (blocking)
+
+Claimed in `.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md:57-88`, repeated
+verbatim in `projects/GooFit/src/CMakeLists.txt:585-589` and in the body of commit
+d95236e57:
+
+> The HIP device link only sees device objects passed DIRECTLY on the link line. Objects
+> inside a static archive are invisible to it.
+
+That is not true on ROCm 7.2.3. Disproved on this host, gfx1100, two ways.
+
+Raw hipcc: `__device__ int g_val` and `__device__ int helper(int)` defined in `a.hip`,
+called from a kernel in `b.hip`, `a.o` archived into `liba.a`; `hipcc -fgpu-rdc --hip-link
+b.o liba.a` links and runs correctly (`result=10`). The archive participates in the device
+link.
+
+CMake, at GooFit's actual shape (two STATIC libraries aggregated by an INTERFACE library,
+a cross-TU `__device__` global and a device function-pointer table registered from one
+archive and called from another): the build FAILS with exactly the symptom recorded here --
+
+    ld.lld: error: undefined hidden symbol: __hip_gpubin_handle_b33c4363e66c5890
+    ld.lld: error: undefined symbol: __hip_fatbin_b33c4363e66c5890
+
+and the generated link line shows the cause:
+
+    clang++ --offload-arch=gfx1100 --hip-link ... main.cu.o -o myexe libmylib.a
+
+`--hip-link` is there, `-fgpu-rdc` is NOT. Adding one line --
+`target_link_options(myexe PRIVATE -fgpu-rdc --hip-link)` -- and changing nothing else
+(libraries stay STATIC, no OBJECT libraries, no gathering into a shared library) makes it
+link and produce the correct answer.
+
+So the actual lesson is: `-fgpu-rdc` must be on the LINK line as well as the compile line.
+CMake's `HIP_SEPARABLE_COMPILATION` property does not add it, so putting `-fgpu-rdc` only in
+`target_compile_options` leaves the final link non-relocatable, and the failure surfaces as
+undefined `__hip_fatbin_*`/`__hip_gpubin_handle_*` rather than as a clear diagnostic. The
+porter did discover this for the aggregate library (`CMakeLists.txt:759`) but attributed it
+to the archive rather than to the missing flag.
+
+One caveat that IS true and worth keeping in the rewritten lesson: the host linker only
+extracts an archive member that resolves an undefined HOST symbol, so a member whose device
+code is needed but whose host symbols are never referenced will not be pulled in, and
+`-Wl,--whole-archive` is the fix for that specific case. That is a different statement from
+"archives are invisible to the device link".
+
+Required:
+- Rewrite `strategy-a-cmake.md:57-88` around the real cause. Its current form prescribes an
+  invasive restructuring for a two-line problem, and it would misdirect every future porter.
+- Fix the same claim in `CMakeLists.txt:585-589` and in the d95236e57 commit body.
+
+### 2. The OBJECT-library / single-shared-library restructuring is likely unnecessary
+
+Following from 1: `CMakeLists.txt:590-594` turns every GooFit library into an OBJECT library
+on HIP, and `CMakeLists.txt:746-767` gathers them into one SHARED `goofit_lib` with a
+hand-written dependency list, because the object libraries are deliberately not linked and
+so their usage requirements do not propagate. That is the largest single piece of the diff
+and it makes the HIP build structurally different from the CUDA and CPU builds for a reason
+that does not hold.
+
+Re-test the minimal form first: keep `add_library(${GNAME} ${GOOFIT_LIB_TYPE} ...)` as the
+CUDA path does, keep the `INTERFACE goofit_lib`, and add `-fgpu-rdc --hip-link` to the link
+options of `goofit_lib` consumers (the executables created by `GOOFIT_ADD_EXECUTABLE`). If
+that builds and passes, the CMake diff shrinks to roughly the language enable, the compat
+header force-include, the source marking, and the link options -- which is what a minimal
+Strategy A footprint should look like. Only if it genuinely fails should the heavier
+structure stay, and then the commit and the skill must record the real reason it was needed.
+
+### 3. CUDA-path regression risk in the driver_types.h guard
+
+`include/goofit/GlobalCudaDefines.h:122-128` narrowed the guard from
+`THRUST_DEVICE_SYSTEM == THRUST_DEVICE_SYSTEM_CUDA` to `defined(__CUDACC__)`. Those are not
+the same condition. In a CUDA build GooFit compiles `.cpp` files with the host compiler
+(`GOOFIT_ADD_LIBRARY` sets no LANGUAGE property on the CUDA path), so `__CUDACC__` is not
+defined in them, and `src/PDFs/GooPdf.cpp`, `src/PDFs/detail/Globals.cpp`,
+`src/goofit/PdfBase.cpp`, `src/goofit/MathUtils.cpp` and `src/goofit/Application.cpp` all
+include this header and then need `cudaError_t` for the declarations at lines 134-135.
+Upstream's unconditional include under the CUDA Thrust system is evidence those host TUs
+relied on it. No host in this effort has nvcc, so this cannot be tested here -- which is
+precisely why the change must be made provably neutral rather than plausibly harmless:
+guard on HIP (`#if !defined(__HIPCC__) && !defined(__HIP_PLATFORM_AMD__)`), or restore the
+original CUDA condition with an added HIP arm, so the CUDA preprocessor state is bit-for-bit
+what it was.
+
+### 4. Copyright and author lines do not match GooFit's house style
+
+`include/goofit/detail/cuda_to_hip.h:3-4` and `include/goofit/detail/CudaCompat.h:3-4` add
+
+    // Copyright (c) 2026 Advanced Micro Devices, Inc.
+    // Author: Jeff Daily <jeff.daily@amd.com>
+
+GooFit carries copyright lines on exactly two files, both vendored third-party code
+(`include/goofit/cpp/landau.h`, from the ROOT MathLib team, and
+`include/goofit/utilities/Uncertain.h`, from its original author). No GooFit-authored file
+carries a copyright or an author line. Remove both lines from both headers; the explanatory
+comment beneath them is useful and should stay.
+
+### 5. Commit d95236e57 advertises the port as not working
+
+Its body ends:
+
+> This is work in progress: the core library and the basic/combine PDFs build and link on
+> gfx90a, but unbinned NLL fits do not yet converge on HIP ...
+
+and its Test Plan claims only "SimpleTest passes". This is the branch's base commit and it
+ships to the upstream maintainers exactly as written. Its title,
+"[ROCm] Add HIP/ROCm GPU backend (core library builds and links)", reads the same way. No
+arch has a `validated_sha` yet, so rewording by rebase orphans nothing; do it before the
+next validation run rather than after.
+
+### 6. The __ldg lesson is inaccurate and misidentifies the blocker
+
+`GlobalCudaDefines.h:70` and `.claude/skills/cuda-to-rocm/references/fault-classes.md:199`
+both say HIP's `__ldg` only accepts scalar types. `/opt/rocm/include/hip/amd_detail/hip_ldg.h`
+overloads it for scalars AND vector types (`char2`, `char4`, `short2`, `short4`, `int2`,
+`int4`, `longlong2`, ...), and `amd_hip_fp16.h` adds `__half`/`__half2`; what it does not
+accept is an arbitrary user type. More to the point, it is not GooFit's blocker: every
+`RO_CACHE` call site passes an `int` or an `fptype` (double), both of which HIP's `__ldg`
+handles. The actual reason the macro has to change is that `extern/generics/ldg.h` is a
+CUDA-only wrapper built on inline PTX and `__CUDA_ARCH__`, which cannot compile under hipcc.
+Say that in both places.
+
+While correcting that entry, also fix `fault-classes.md:189-197`: the GooFit case was a
+`new fptype[10]` with a hardcoded 10, not an allocation "sized by the observable count".
+
+### 7. Documentation claims support that was never observed
+
+`README.md:51` states that both wave64 (`gfx90a`, `gfx942`) and wave32 (`gfx1100`) parts are
+supported. The only wave64 evidence on record is a failure (the gfx90a NLL divergence in
+attempt 2), gfx942 has never been built, and no arch is `completed`. `README.md:50` states
+"ROCm 6.0+", which nothing has tested -- 7.2.x is the only ROCm this has run on. Both lines
+go upstream. State what was tested, or say the backend is developed against ROCm 7.x on
+gfx1100 and expected to work on other supported parts.
+
+Also `docs/SYSTEM_INSTALL.md` tells ROCm users to `git clone --recursive` two lines after
+the README says the bundled `extern/thrust` is not used. That submodule currently cannot be
+initialised at all (see the entry below in attempt 3), so the recipe as written fails at
+step two for a reason the ROCm build does not care about. Use a plain clone there.
+
+### 8. GOOFIT_PHYSICS is honored in two places and ignored in two others
+
+The new option (`src/PDFs/CMakeLists.txt:34`) gates `src/PDFs/physics` and, correctly,
+`tests/simple/VectorsTest`. It does not gate:
+
+- `examples/CMakeLists.txt:61-75`: `dalitz`, `pipipi0DPFit`, `SigGen`, `DP4`, `TDDP4`
+  (and `TDDP4WeightedMC`) all include `goofit/PDFs/physics/...` or `mcbooster/...` and are
+  gated only on `ROOT_FOUND`. `-DGOOFIT_PHYSICS=OFF` with ROOT installed does not build.
+- `python/PDFs/CMakeLists.txt:6`: `add_subdirectory(physics)` is unconditional, so
+  `-DGOOFIT_PYTHON=ON -DGOOFIT_PHYSICS=OFF` does not build.
+
+Both were invisible in the gfx1100 run because it set `GOOFIT_CERNROOT=OFF` and
+`GOOFIT_PYTHON=OFF`. Gate both on `GOOFIT_PHYSICS`. Separately, nothing stops
+`-DGOOFIT_DEVICE=HIP -DGOOFIT_PHYSICS=ON`, which the docs say must not be done; a
+`message(FATAL_ERROR ...)` for that combination turns a wall of template errors into one
+sentence.
+
+### 9. Smaller items
+
+- `src/goofit/Application.cpp:300` prints "CUDA does not support floating point exceptions"
+  on a ROCm build. The guard became `GOOFIT_DEVICE_IS_GPU`; the message did not follow.
+- `CMakeLists.txt:421`: the `if(NOT DEFINED hip_lang) set(hip_lang 0)` fallback is dead --
+  `hip_lang` is used only inside the `GOOFIT_DEVICE STREQUAL HIP` block that defines it,
+  unlike `cuda_lang`, which is consumed later in `cuda_lang_rel`.
+- `CMakeLists.txt:1` keeps `cmake_minimum_required(VERSION 3.16...3.23)` while
+  `enable_language(HIP)` needs 3.21. README says 3.21, but a user on 3.16-3.20 gets an
+  unhelpful error; a version check inside `GOOFIT_OPTIONAL_HIP` costs two lines.
+
+### Checked and clean
+
+Strategy A shape (single compat header at `include/goofit/detail/cuda_to_hip.h`, no-op
+outside HIP via the `__HIP__`/`__HIPCC__`/`__HIP_PLATFORM_AMD__` guard, no second HIP-aware
+header, `.cu` marked `LANGUAGE HIP` rather than renamed). Every CUDA runtime symbol the
+sources actually use is in the map. No `warpSize`, `__shfl*`, `__ballot`, `__activemask` or
+literal 32 anywhere in `src/` or `include/`; the one `__shared__` user
+(`src/PDFs/combine/ConvolutionPdf.cu:94-139`) sizes its load count from `BLOCKDIM`, not from
+a wave width, and both `THREAD_SYNCH` points are reached by every thread that enters the
+functor -- the pre-existing hazard flagged in its own comment is about PDF mixing, not about
+wavefront size, so wave64 changes nothing here. `MAX_NUM_OBSERVABLES` is 10, identical to
+the `new fptype[10]` it replaced, so that fix changes no bound. `hptr_to_Step` has no other
+reference in the tree, so removing it is safe. `DebugTools.cu` is referenced only by
+`Amp4Body_TD.cu` and `detail/AmpCalc_TD.cu`, so moving it into PDFPhysics does not affect
+the non-physics build. `IncoherentSumTest` is already commented out upstream.
+`python3 utils/jargon.py` is clean over the whole branch, both `--commits` and `--diff`.
+Commit titles are `[ROCm]`-prefixed and 62 and 56 chars; both bodies name Claude, carry a
+Test Plan, and have no `Co-Authored-By` trailer; no non-ASCII and no em-dash in any added
+line or commit message. The fork clone is clean (`git status --porcelain` empty), so the
+deinited `extern/thrust` submodule leaves no uncommitted state.
+
+### On the gfx90a NLL question: not a review blocker
+
+This does not gate the review. The reviewable artifact is the diff, and the diff contains no
+arch-conditional code at all -- there is no `__GFX9__`, no wavefront branch, no per-arch
+guard -- so there is nothing in it a porter could change in response to the gfx90a report.
+Settling it needs a gfx90a host running the committed tree, which is the validator's step.
+
+Of the three hypotheses recorded in attempt 3, (c) the gfx90a repro was built from a tree
+that is not d95236e57 is the most likely, and the reason is in the shape of the symptom
+rather than in a guess about ROCm versions. The report says early fit iterations read a
+plausible normalization and later ones read 6.25e-310. Two things follow. That value is a
+pointer bit pattern read as a double, not arithmetic gone wrong. And an iteration-count
+dependence points at accumulated device-side state, which is exactly what the device
+`new fptype[10]` in the binned `MetricTaker::operator()` produced -- and that operator is
+the normalization integrator an unbinned fit calls once per iteration, so it ran on the
+failing path. Attempt 2's own notes say replacing it "alone fixed the alpha parameter in
+GaussianTest", i.e. it was still being removed while the NLL debugging was going on. The
+committed tree has the fix.
+
+Hypothesis (a), a 7.2.1-to-7.2.5 difference, is the second candidate and is cheap to
+distinguish: the gfx90a host runs the committed tree on whatever ROCm it has. Hypothesis
+(b), genuinely gfx90a-specific, is the least likely from the code -- the publication path is
+a host-side `hipMemcpyToSymbol` into a `__device__` pointer, with no wavefront dependence and
+no intra-wave timing to be sensitive to -- but note that if the restructuring in finding 2
+turns out to be load-bearing after all, then it is a device-linking question and a stale
+duplicate of the `d_normalizations` symbol across two device images becomes a plausible
+mechanism worth checking there first.
+
+Whoever picks up gfx90a: re-run the committed tree before debugging SmartVector, exactly as
+attempt 3 advises.
