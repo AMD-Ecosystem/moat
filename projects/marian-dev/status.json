@@ -7,7 +7,7 @@
   "priority": 3.968,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-08-07T07:05:18Z",
+  "updated_at": "2026-08-08T03:38:31Z",
   "head_sha": "ba0ec806b9f949acac6bb2dcc623017b47d71e75",
   "porting": null,
   "waivers": {},
@@ -124,5 +124,6 @@
         "at": "2026-06-23T22:46:45Z"
       }
     }
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/marian-dev/pull/1"
 }
