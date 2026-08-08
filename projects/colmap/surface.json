@@ -1,0 +1,1842 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "d6d2bc8e0d3b",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "src/colmap/mvs/cuda_flip.h",
+      "src/colmap/mvs/cuda_rotate.h",
+      "src/colmap/mvs/cuda_texture.h",
+      "src/colmap/mvs/cuda_transpose.h",
+      "src/colmap/mvs/gpu_mat.h",
+      "src/colmap/mvs/gpu_mat_prng.cu",
+      "src/colmap/mvs/gpu_mat_prng.h",
+      "src/colmap/mvs/gpu_mat_ref_image.cu",
+      "src/colmap/mvs/gpu_mat_ref_image.h",
+      "src/colmap/mvs/gpu_mat_test.cu",
+      "src/colmap/mvs/patch_match_cuda.cu",
+      "src/colmap/util/cuda_to_hip.h",
+      "src/thirdparty/SiftGPU/CuTexImage.cpp",
+      "src/thirdparty/SiftGPU/CuTexImage.h",
+      "src/thirdparty/SiftGPU/ProgramCU.cu",
+      "src/thirdparty/SiftGPU/ProgramCU.h",
+      "src/thirdparty/SiftGPU/PyramidCU.cpp",
+      "src/thirdparty/SiftGPU/PyramidCU.h",
+      "src/thirdparty/SiftGPU/SiftMatchCU.cpp",
+      "src/thirdparty/SiftGPU/SiftMatchCU.h",
+      "src/thirdparty/Symforce-Caspar/generated/f32/ (241 .cu)",
+      "src/thirdparty/Symforce-Caspar/generated/f64/ (241 .cu)"
+    ],
+    "markers": {
+      "device_code": 51,
+      "kernel": 12,
+      "launch": 13,
+      "texture": 25
+    },
+    "libraries": {
+      "curand": 29
+    },
+    "planner_added": {
+      "why": "utils/surface.py skips thirdparty/ trees; colmap's remaining CUDA surface is entirely vendored.",
+      "siftgpu": {
+        "global_kernels": 28,
+        "tex1Dfetch": 61,
+        "tex2D": 3,
+        "cudaTextureObject_t": 44,
+        "warp_intrinsics": 0,
+        "cuda_gl_interop": "cudaGLRegisterBufferObject/MapBufferObject/UnmapBufferObject/UnregisterBufferObject -- no HIP equivalent"
+      },
+      "caspar": {
+        "generated_cu": 482,
+        "cooperative_groups_refs": 2392,
+        "cub": [
+          "DeviceReduce::Sum",
+          "DeviceRadixSort::SortPairs",
+          "DeviceRadixSort::SortKeys"
+        ],
+        "generator": "src/thirdparty/Symforce-Caspar/caspar_generate.py"
+      },
+      "absent": "no driver API, no NVRTC/runtime PTX, no cuBLAS/cuFFT/cuRAND/cuSPARSE/Thrust in SiftGPU, no non-C++ build path"
+    }
+  },
+  "components": [
+    {
+      "id": "benchmark:benchmark_bundle_adjustment",
+      "kind": "benchmark",
+      "where": "benchmark/runtime/CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:benchmark_bundle_adjustment_convergence",
+      "kind": "benchmark",
+      "where": "benchmark/runtime/CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:benchmark_cost_functions",
+      "kind": "benchmark",
+      "where": "benchmark/runtime/CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:benchmark_fundamental_matrix_degensac",
+      "kind": "benchmark",
+      "where": "benchmark/runtime/CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:benchmark_global_positioning",
+      "kind": "benchmark",
+      "where": "benchmark/runtime/CMakeLists.txt"
+    },
+    {
+      "id": "benchmark:benchmark_incremental_mapping",
+      "kind": "benchmark",
+      "where": "benchmark/runtime/CMakeLists.txt"
+    },
+    {
+      "id": "buildgate:GPU_ENABLED",
+      "kind": "build_gate",
+      "where": "cmake/FindDependencies.cmake:643-648",
+      "note": "set to ON only for OPENGL_ENABLED OR CUDA_ENABLED; gates add_subdirectory(SiftGPU), colmap_feature's link, and COLMAP_GPU_ENABLED.",
+      "added_by": "planner"
+    },
+    {
+      "id": "dispatch:colmap-cuda-only-conditionals",
+      "kind": "dispatch",
+      "where": "src/colmap/{feature,controllers,ui}",
+      "note": "Nine #if defined(COLMAP_CUDA_ENABLED) sites that decide whether the GPU path is taken; see plan.md table.",
+      "added_by": "planner"
+    },
+    {
+      "id": "doc:rocm-coverage-statement",
+      "kind": "doc",
+      "where": "doc/install.rst:141",
+      "note": "'The HIP backend currently accelerates dense reconstruction (patch_match_stereo)' -- the sentence that states the covered scope.",
+      "added_by": "planner"
+    },
+    {
+      "id": "executable:colmap_main",
+      "kind": "executable",
+      "where": "src/colmap/exe/CMakeLists.txt:119",
+      "note": "Already has an if(HIP_ENABLED) link arm.",
+      "added_by": "planner"
+    },
+    {
+      "id": "library:caspar_lib_core",
+      "kind": "library",
+      "where": "src/thirdparty/Symforce-Caspar/generated/{f32,f64}/CMakeLists.txt",
+      "note": "CASPAR bundle adjustment, 482 generated .cu, CASPAR_ENABLED=OFF by default.",
+      "added_by": "planner"
+    },
+    {
+      "id": "library:colmap_mvs_cuda",
+      "kind": "library",
+      "where": "src/colmap/mvs/CMakeLists.txt:292",
+      "note": "Already ported and merged (HIP arm exists). Regression surface.",
+      "added_by": "planner"
+    },
+    {
+      "id": "library:colmap_sift_gpu",
+      "kind": "library",
+      "where": "src/thirdparty/SiftGPU/CMakeLists.txt",
+      "note": "GPU SIFT extraction and matching. The main gap: gated if(CUDA_ENABLED) at line 12, zero 'hip' matches in the directory.",
+      "added_by": "planner"
+    },
+    {
+      "id": "library:colmap_util_cuda",
+      "kind": "library",
+      "where": "src/colmap/util/CMakeLists.txt:263",
+      "note": "Already ported and merged (HIP arm exists). Regression surface.",
+      "added_by": "planner"
+    },
+    {
+      "id": "option:ALL_SOURCE_TARGET",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Whether to create a target for all source files (for Visual Studio / XCode devel"
+    },
+    {
+      "id": "option:ASAN_ENABLED",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Whether to enable AddressSanitizer flags"
+    },
+    {
+      "id": "option:BENCHMARK_ENABLED",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Whether to enable runtime benchmarking support"
+    },
+    {
+      "id": "option:BUILD_SHARED_LIBS",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Whether to build shared libraries (faster linktime, slower runtime)"
+    },
+    {
+      "id": "option:CASPAR_ENABLED",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Whether to enable CASPAR-accelerated bundle adjustment"
+    },
+    {
+      "id": "option:CASPAR_USE_DOUBLE",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Use double precision in Caspar solver"
+    },
+    {
+      "id": "option:CCACHE_ENABLED",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Whether to enable compiler caching, if available"
+    },
+    {
+      "id": "option:CGAL_ENABLED",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Whether to enable the CGAL library"
+    },
+    {
+      "id": "option:COVERAGE_ENABLED",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Whether to enable code coverage"
+    },
+    {
+      "id": "option:CUDA_ENABLED",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Whether to enable CUDA, if available"
+    },
+    {
+      "id": "option:DOWNLOAD_ENABLED",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Whether to enable (automatic) download of resources (requires Curl/OpenSSL)"
+    },
+    {
+      "id": "option:FETCH_FAISS",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Whether to consume faiss using FetchContent or find_package"
+    },
+    {
+      "id": "option:FETCH_ONNX",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Whether to consume ONNX using FetchContent or find_package"
+    },
+    {
+      "id": "option:FETCH_POSELIB",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Whether to consume PoseLib using FetchContent or find_package"
+    },
+    {
+      "id": "option:GENERATE_STUBS",
+      "kind": "option",
+      "where": "python/CMakeLists.txt",
+      "default": "ON",
+      "doc": "Whether to generate stubs"
+    },
+    {
+      "id": "option:GUI_ENABLED",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Whether to enable the graphical UI"
+    },
+    {
+      "id": "option:HIP_ENABLED",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Whether to enable AMD GPU support via HIP/ROCm"
+    },
+    {
+      "id": "option:IPO_ENABLED",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Whether to enable interprocedural optimization"
+    },
+    {
+      "id": "option:LSD_ENABLED",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Whether to enable the LSD library"
+    },
+    {
+      "id": "option:MVS_ENABLED",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Whether to enable the Multi-View Stereo module"
+    },
+    {
+      "id": "option:ONNX_ENABLED",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Whether to enable ONNX, if available"
+    },
+    {
+      "id": "option:OPENGL_ENABLED",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Whether to enable OpenGL, if available"
+    },
+    {
+      "id": "option:OPENMP_ENABLED",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Whether to enable OpenMP parallelization"
+    },
+    {
+      "id": "option:PROFILING_ENABLED",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Whether to enable google-perftools linker flags"
+    },
+    {
+      "id": "option:SIMD_ENABLED",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Whether to enable SIMD optimizations"
+    },
+    {
+      "id": "option:TESTS_ENABLED",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Whether to build test binaries"
+    },
+    {
+      "id": "option:TSAN_ENABLED",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Whether to enable ThreadSanitizer flags"
+    },
+    {
+      "id": "option:UBSAN_ENABLED",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Whether to enable UndefinedBehaviorSanitizer flags"
+    },
+    {
+      "id": "option:UNINSTALL_ENABLED",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "ON",
+      "doc": "Whether to create a target to 'uninstall' colmap"
+    },
+    {
+      "id": "option:WERROR_ENABLED",
+      "kind": "option",
+      "where": "CMakeLists.txt",
+      "default": "OFF",
+      "doc": "Whether to treat compiler warnings as errors"
+    },
+    {
+      "id": "python_module:_core",
+      "kind": "python_module",
+      "where": "python/CMakeLists.txt"
+    },
+    {
+      "id": "python_module:pycolmap-gpu-bindings",
+      "kind": "python_module",
+      "where": "src/pycolmap/{util/cuda.cc,util/bindings.cc,pipeline/mvs.cc,utils.h}",
+      "note": "pycolmap exposes no MVS bindings, no get_num_cuda_devices, and Device.AUTO resolves to CPU on a ROCm build.",
+      "added_by": "planner"
+    },
+    {
+      "id": "source:src/thirdparty/SiftGPU/CuTexImage.cpp",
+      "kind": "cuda_host_source",
+      "where": "src/thirdparty/SiftGPU/CuTexImage.cpp",
+      "note": "Device-memory wrapper, texture binds, CuTexObj RAII handle, legacy cudaGL* PBO interop.",
+      "added_by": "planner"
+    },
+    {
+      "id": "source:src/thirdparty/SiftGPU/ProgramCU.cu",
+      "kind": "cuda_source",
+      "where": "src/thirdparty/SiftGPU/ProgramCU.cu",
+      "note": "1978 lines, 28 __global__ kernels, all SIFT device code.",
+      "added_by": "planner"
+    },
+    {
+      "id": "source:src/thirdparty/SiftGPU/PyramidCU.cpp",
+      "kind": "cuda_host_source",
+      "where": "src/thirdparty/SiftGPU/PyramidCU.cpp",
+      "note": "SIFT pyramid host driver.",
+      "added_by": "planner"
+    },
+    {
+      "id": "source:src/thirdparty/SiftGPU/SiftMatchCU.cpp",
+      "kind": "cuda_host_source",
+      "where": "src/thirdparty/SiftGPU/SiftMatchCU.cpp",
+      "note": "SIFT matcher host driver.",
+      "added_by": "planner"
+    },
+    {
+      "id": "test:NAME",
+      "kind": "test",
+      "where": "cmake/CMakeHelper.cmake"
+    },
+    {
+      "id": "test:absolute_pose_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/solvers/CMakeLists.txt"
+    },
+    {
+      "id": "test:advancing_front_meshing_test",
+      "kind": "test",
+      "where": "src/colmap/mvs/CMakeLists.txt"
+    },
+    {
+      "id": "test:affine_transform_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/solvers/CMakeLists.txt"
+    },
+    {
+      "id": "test:alignment_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/CMakeLists.txt"
+    },
+    {
+      "id": "test:aliked_test",
+      "kind": "test",
+      "where": "src/colmap/feature/CMakeLists.txt"
+    },
+    {
+      "id": "test:automatic_reconstruction_test",
+      "kind": "test",
+      "where": "src/colmap/controllers/CMakeLists.txt"
+    },
+    {
+      "id": "test:base_controller_test",
+      "kind": "test",
+      "where": "src/colmap/util/CMakeLists.txt"
+    },
+    {
+      "id": "test:base_option_manager_test",
+      "kind": "test",
+      "where": "src/colmap/controllers/CMakeLists.txt"
+    },
+    {
+      "id": "test:bbox_test",
+      "kind": "test",
+      "where": "src/colmap/geometry/CMakeLists.txt"
+    },
+    {
+      "id": "test:bitmap_test",
+      "kind": "test",
+      "where": "src/colmap/sensor/CMakeLists.txt"
+    },
+    {
+      "id": "test:bundle_adjustment_caspar_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/CMakeLists.txt"
+    },
+    {
+      "id": "test:bundle_adjustment_ceres_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/CMakeLists.txt"
+    },
+    {
+      "id": "test:bundle_adjustment_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/CMakeLists.txt"
+    },
+    {
+      "id": "test:cache_test",
+      "kind": "test",
+      "where": "src/colmap/util/CMakeLists.txt"
+    },
+    {
+      "id": "test:calibration_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/cost_functions/CMakeLists.txt"
+    },
+    {
+      "id": "test:camera_test",
+      "kind": "test",
+      "where": "src/colmap/scene/CMakeLists.txt"
+    },
+    {
+      "id": "test:combination_sampler_test",
+      "kind": "test",
+      "where": "src/colmap/optim/CMakeLists.txt"
+    },
+    {
+      "id": "test:connected_components_test",
+      "kind": "test",
+      "where": "src/colmap/math/CMakeLists.txt"
+    },
+    {
+      "id": "test:consistency_graph_test",
+      "kind": "test",
+      "where": "src/colmap/mvs/CMakeLists.txt"
+    },
+    {
+      "id": "test:controller_thread_test",
+      "kind": "test",
+      "where": "src/colmap/util/CMakeLists.txt"
+    },
+    {
+      "id": "test:coordinate_frame_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/CMakeLists.txt"
+    },
+    {
+      "id": "test:correspondence_graph_test",
+      "kind": "test",
+      "where": "src/colmap/scene/CMakeLists.txt"
+    },
+    {
+      "id": "test:covariance_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/CMakeLists.txt"
+    },
+    {
+      "id": "test:database_cache_test",
+      "kind": "test",
+      "where": "src/colmap/scene/CMakeLists.txt"
+    },
+    {
+      "id": "test:database_test",
+      "kind": "test",
+      "where": "src/colmap/sensor/CMakeLists.txt"
+    },
+    {
+      "id": "test:delaunay_meshing_test",
+      "kind": "test",
+      "where": "src/colmap/mvs/CMakeLists.txt"
+    },
+    {
+      "id": "test:depth_map_test",
+      "kind": "test",
+      "where": "src/colmap/mvs/CMakeLists.txt"
+    },
+    {
+      "id": "test:eigen_matchers_test",
+      "kind": "test",
+      "where": "src/colmap/util/CMakeLists.txt"
+    },
+    {
+      "id": "test:endian_test",
+      "kind": "test",
+      "where": "src/colmap/util/CMakeLists.txt"
+    },
+    {
+      "id": "test:enum_utils_test",
+      "kind": "test",
+      "where": "src/colmap/util/CMakeLists.txt"
+    },
+    {
+      "id": "test:essential_matrix_test",
+      "kind": "test",
+      "where": "src/colmap/geometry/CMakeLists.txt"
+    },
+    {
+      "id": "test:extractor_test",
+      "kind": "test",
+      "where": "src/colmap/feature/CMakeLists.txt"
+    },
+    {
+      "id": "test:feature_extraction_test",
+      "kind": "test",
+      "where": "src/colmap/controllers/CMakeLists.txt"
+    },
+    {
+      "id": "test:feature_matching_test",
+      "kind": "test",
+      "where": "src/colmap/controllers/CMakeLists.txt"
+    },
+    {
+      "id": "test:feature_matching_utils_test",
+      "kind": "test",
+      "where": "src/colmap/controllers/CMakeLists.txt"
+    },
+    {
+      "id": "test:file_test",
+      "kind": "test",
+      "where": "src/colmap/util/CMakeLists.txt"
+    },
+    {
+      "id": "test:frame_test",
+      "kind": "test",
+      "where": "src/colmap/scene/CMakeLists.txt"
+    },
+    {
+      "id": "test:fundamental_matrix_degensac_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/CMakeLists.txt"
+    },
+    {
+      "id": "test:fundamental_matrix_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/solvers/CMakeLists.txt"
+    },
+    {
+      "id": "test:fusion_test",
+      "kind": "test",
+      "where": "src/colmap/mvs/CMakeLists.txt"
+    },
+    {
+      "id": "test:generalized_absolute_pose_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/solvers/CMakeLists.txt"
+    },
+    {
+      "id": "test:generalized_pose_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/CMakeLists.txt"
+    },
+    {
+      "id": "test:generalized_relative_pose_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/solvers/CMakeLists.txt"
+    },
+    {
+      "id": "test:geometry_test",
+      "kind": "test",
+      "where": "src/colmap/retrieval/CMakeLists.txt"
+    },
+    {
+      "id": "test:global_mapper_test",
+      "kind": "test",
+      "where": "src/colmap/sfm/CMakeLists.txt"
+    },
+    {
+      "id": "test:global_pipeline_test",
+      "kind": "test",
+      "where": "src/colmap/controllers/CMakeLists.txt"
+    },
+    {
+      "id": "test:global_positioning_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/CMakeLists.txt"
+    },
+    {
+      "id": "test:gps_test",
+      "kind": "test",
+      "where": "src/colmap/geometry/CMakeLists.txt"
+    },
+    {
+      "id": "test:gpu_mat_test",
+      "kind": "test",
+      "where": "src/colmap/mvs/CMakeLists.txt"
+    },
+    {
+      "id": "test:graph_cut_test",
+      "kind": "test",
+      "where": "src/colmap/math/CMakeLists.txt"
+    },
+    {
+      "id": "test:gravity_refinement_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/CMakeLists.txt"
+    },
+    {
+      "id": "test:hierarchical_pipeline_test",
+      "kind": "test",
+      "where": "src/colmap/controllers/CMakeLists.txt"
+    },
+    {
+      "id": "test:homography_matrix_test",
+      "kind": "test",
+      "where": "src/colmap/geometry/CMakeLists.txt"
+    },
+    {
+      "id": "test:image_reader_test",
+      "kind": "test",
+      "where": "src/colmap/controllers/CMakeLists.txt"
+    },
+    {
+      "id": "test:image_test",
+      "kind": "test",
+      "where": "src/colmap/mvs/CMakeLists.txt"
+    },
+    {
+      "id": "test:incremental_mapper_test",
+      "kind": "test",
+      "where": "src/colmap/sfm/CMakeLists.txt"
+    },
+    {
+      "id": "test:incremental_pipeline_test",
+      "kind": "test",
+      "where": "src/colmap/controllers/CMakeLists.txt"
+    },
+    {
+      "id": "test:incremental_triangulator_test",
+      "kind": "test",
+      "where": "src/colmap/sfm/CMakeLists.txt"
+    },
+    {
+      "id": "test:index_test",
+      "kind": "test",
+      "where": "src/colmap/feature/CMakeLists.txt"
+    },
+    {
+      "id": "test:inverted_file_entry_test",
+      "kind": "test",
+      "where": "src/colmap/retrieval/CMakeLists.txt"
+    },
+    {
+      "id": "test:least_absolute_deviations_test",
+      "kind": "test",
+      "where": "src/colmap/optim/CMakeLists.txt"
+    },
+    {
+      "id": "test:line_test",
+      "kind": "test",
+      "where": "src/colmap/image/CMakeLists.txt"
+    },
+    {
+      "id": "test:logging_test",
+      "kind": "test",
+      "where": "src/colmap/util/CMakeLists.txt"
+    },
+    {
+      "id": "test:loransac_test",
+      "kind": "test",
+      "where": "src/colmap/optim/CMakeLists.txt"
+    },
+    {
+      "id": "test:mat_test",
+      "kind": "test",
+      "where": "src/colmap/mvs/CMakeLists.txt"
+    },
+    {
+      "id": "test:matcher_cache_test",
+      "kind": "test",
+      "where": "src/colmap/controllers/CMakeLists.txt"
+    },
+    {
+      "id": "test:matcher_test",
+      "kind": "test",
+      "where": "src/colmap/feature/CMakeLists.txt"
+    },
+    {
+      "id": "test:math_test",
+      "kind": "test",
+      "where": "src/colmap/math/CMakeLists.txt"
+    },
+    {
+      "id": "test:matrix_test",
+      "kind": "test",
+      "where": "src/colmap/math/CMakeLists.txt"
+    },
+    {
+      "id": "test:mesh_simplification_test",
+      "kind": "test",
+      "where": "src/colmap/mvs/CMakeLists.txt"
+    },
+    {
+      "id": "test:misc_test",
+      "kind": "test",
+      "where": "src/colmap/util/CMakeLists.txt"
+    },
+    {
+      "id": "test:model_test",
+      "kind": "test",
+      "where": "src/colmap/mvs/CMakeLists.txt"
+    },
+    {
+      "id": "test:models_jacobian_test",
+      "kind": "test",
+      "where": "src/colmap/sensor/CMakeLists.txt"
+    },
+    {
+      "id": "test:models_test",
+      "kind": "test",
+      "where": "src/colmap/sensor/CMakeLists.txt"
+    },
+    {
+      "id": "test:motion_averaging_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/cost_functions/CMakeLists.txt"
+    },
+    {
+      "id": "test:normal_map_test",
+      "kind": "test",
+      "where": "src/colmap/mvs/CMakeLists.txt"
+    },
+    {
+      "id": "test:normalization_test",
+      "kind": "test",
+      "where": "src/colmap/geometry/CMakeLists.txt"
+    },
+    {
+      "id": "test:observation_manager_test",
+      "kind": "test",
+      "where": "src/colmap/sfm/CMakeLists.txt"
+    },
+    {
+      "id": "test:onnx_matchers_test",
+      "kind": "test",
+      "where": "src/colmap/feature/CMakeLists.txt"
+    },
+    {
+      "id": "test:opengl_utils_test",
+      "kind": "test",
+      "where": "src/colmap/util/CMakeLists.txt"
+    },
+    {
+      "id": "test:option_manager_test",
+      "kind": "test",
+      "where": "src/colmap/controllers/CMakeLists.txt"
+    },
+    {
+      "id": "test:pairing_test",
+      "kind": "test",
+      "where": "src/colmap/controllers/CMakeLists.txt"
+    },
+    {
+      "id": "test:ply_test",
+      "kind": "test",
+      "where": "src/colmap/util/CMakeLists.txt"
+    },
+    {
+      "id": "test:point2d_test",
+      "kind": "test",
+      "where": "src/colmap/scene/CMakeLists.txt"
+    },
+    {
+      "id": "test:point3d_test",
+      "kind": "test",
+      "where": "src/colmap/scene/CMakeLists.txt"
+    },
+    {
+      "id": "test:poisson_meshing_test",
+      "kind": "test",
+      "where": "src/colmap/mvs/CMakeLists.txt"
+    },
+    {
+      "id": "test:polynomial_test",
+      "kind": "test",
+      "where": "src/colmap/math/CMakeLists.txt"
+    },
+    {
+      "id": "test:pose_graph_test",
+      "kind": "test",
+      "where": "src/colmap/scene/CMakeLists.txt"
+    },
+    {
+      "id": "test:pose_prior_test",
+      "kind": "test",
+      "where": "src/colmap/geometry/CMakeLists.txt"
+    },
+    {
+      "id": "test:pose_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/CMakeLists.txt"
+    },
+    {
+      "id": "test:poselib_utils_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/solvers/CMakeLists.txt"
+    },
+    {
+      "id": "test:progressive_sampler_test",
+      "kind": "test",
+      "where": "src/colmap/optim/CMakeLists.txt"
+    },
+    {
+      "id": "test:projection_test",
+      "kind": "test",
+      "where": "src/colmap/scene/CMakeLists.txt"
+    },
+    {
+      "id": "test:quaternion_utils_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/cost_functions/CMakeLists.txt"
+    },
+    {
+      "id": "test:random_eigen_test",
+      "kind": "test",
+      "where": "src/colmap/math/CMakeLists.txt"
+    },
+    {
+      "id": "test:random_sampler_test",
+      "kind": "test",
+      "where": "src/colmap/optim/CMakeLists.txt"
+    },
+    {
+      "id": "test:random_test",
+      "kind": "test",
+      "where": "src/colmap/math/CMakeLists.txt"
+    },
+    {
+      "id": "test:ransac_test",
+      "kind": "test",
+      "where": "src/colmap/optim/CMakeLists.txt"
+    },
+    {
+      "id": "test:reconstruction_clustering_test",
+      "kind": "test",
+      "where": "src/colmap/scene/CMakeLists.txt"
+    },
+    {
+      "id": "test:reconstruction_io_test",
+      "kind": "test",
+      "where": "src/colmap/scene/CMakeLists.txt"
+    },
+    {
+      "id": "test:reconstruction_manager_test",
+      "kind": "test",
+      "where": "src/colmap/scene/CMakeLists.txt"
+    },
+    {
+      "id": "test:reconstruction_matchers_test",
+      "kind": "test",
+      "where": "src/colmap/scene/CMakeLists.txt"
+    },
+    {
+      "id": "test:reconstruction_pruning_test",
+      "kind": "test",
+      "where": "src/colmap/scene/CMakeLists.txt"
+    },
+    {
+      "id": "test:reconstruction_test",
+      "kind": "test",
+      "where": "src/colmap/scene/CMakeLists.txt"
+    },
+    {
+      "id": "test:relpose_one_sided_focal_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/solvers/CMakeLists.txt"
+    },
+    {
+      "id": "test:relpose_shared_focal_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/solvers/CMakeLists.txt"
+    },
+    {
+      "id": "test:reprojection_error_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/cost_functions/CMakeLists.txt"
+    },
+    {
+      "id": "test:rig_test",
+      "kind": "test",
+      "where": "src/colmap/sensor/CMakeLists.txt"
+    },
+    {
+      "id": "test:rigid3_matchers_test",
+      "kind": "test",
+      "where": "src/colmap/geometry/CMakeLists.txt"
+    },
+    {
+      "id": "test:rigid3_test",
+      "kind": "test",
+      "where": "src/colmap/geometry/CMakeLists.txt"
+    },
+    {
+      "id": "test:rotation_averaging_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/CMakeLists.txt"
+    },
+    {
+      "id": "test:sampson_error_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/cost_functions/CMakeLists.txt"
+    },
+    {
+      "id": "test:scene_clustering_test",
+      "kind": "test",
+      "where": "src/colmap/scene/CMakeLists.txt"
+    },
+    {
+      "id": "test:sfm_test",
+      "kind": "test",
+      "where": "src/colmap/exe/CMakeLists.txt"
+    },
+    {
+      "id": "test:sift_test",
+      "kind": "test",
+      "where": "src/colmap/feature/CMakeLists.txt"
+    },
+    {
+      "id": "test:sim3_matchers_test",
+      "kind": "test",
+      "where": "src/colmap/geometry/CMakeLists.txt"
+    },
+    {
+      "id": "test:sim3_test",
+      "kind": "test",
+      "where": "src/colmap/geometry/CMakeLists.txt"
+    },
+    {
+      "id": "test:similarity_transform_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/solvers/CMakeLists.txt"
+    },
+    {
+      "id": "test:spanning_tree_test",
+      "kind": "test",
+      "where": "src/colmap/math/CMakeLists.txt"
+    },
+    {
+      "id": "test:sparse_cholesky_test",
+      "kind": "test",
+      "where": "src/colmap/optim/CMakeLists.txt"
+    },
+    {
+      "id": "test:sprt_test",
+      "kind": "test",
+      "where": "src/colmap/optim/CMakeLists.txt"
+    },
+    {
+      "id": "test:string_test",
+      "kind": "test",
+      "where": "src/colmap/util/CMakeLists.txt"
+    },
+    {
+      "id": "test:support_measurement_test",
+      "kind": "test",
+      "where": "src/colmap/optim/CMakeLists.txt"
+    },
+    {
+      "id": "test:synthetic_test",
+      "kind": "test",
+      "where": "src/colmap/scene/CMakeLists.txt"
+    },
+    {
+      "id": "test:texture_mapping_test",
+      "kind": "test",
+      "where": "src/colmap/mvs/CMakeLists.txt"
+    },
+    {
+      "id": "test:threading_test",
+      "kind": "test",
+      "where": "src/colmap/util/CMakeLists.txt"
+    },
+    {
+      "id": "test:timer_test",
+      "kind": "test",
+      "where": "src/colmap/util/CMakeLists.txt"
+    },
+    {
+      "id": "test:timestamp_test",
+      "kind": "test",
+      "where": "src/colmap/util/CMakeLists.txt"
+    },
+    {
+      "id": "test:tiny_manifold_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/cost_functions/CMakeLists.txt"
+    },
+    {
+      "id": "test:tiny_sampson_error_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/cost_functions/CMakeLists.txt"
+    },
+    {
+      "id": "test:tiny_solver_test",
+      "kind": "test",
+      "where": "src/colmap/optim/CMakeLists.txt"
+    },
+    {
+      "id": "test:track_test",
+      "kind": "test",
+      "where": "src/colmap/scene/CMakeLists.txt"
+    },
+    {
+      "id": "test:translation_transform_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/solvers/CMakeLists.txt"
+    },
+    {
+      "id": "test:triangulation_test",
+      "kind": "test",
+      "where": "src/colmap/geometry/CMakeLists.txt"
+    },
+    {
+      "id": "test:two_view_geometry_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/CMakeLists.txt"
+    },
+    {
+      "id": "test:types_test",
+      "kind": "test",
+      "where": "src/colmap/feature/CMakeLists.txt"
+    },
+    {
+      "id": "test:undistorters_test",
+      "kind": "test",
+      "where": "src/colmap/controllers/CMakeLists.txt"
+    },
+    {
+      "id": "test:undistortion_test",
+      "kind": "test",
+      "where": "src/colmap/image/CMakeLists.txt"
+    },
+    {
+      "id": "test:union_find_test",
+      "kind": "test",
+      "where": "src/colmap/math/CMakeLists.txt"
+    },
+    {
+      "id": "test:utils_test",
+      "kind": "test",
+      "where": "src/colmap/retrieval/CMakeLists.txt"
+    },
+    {
+      "id": "test:version_test",
+      "kind": "test",
+      "where": "src/colmap/util/CMakeLists.txt"
+    },
+    {
+      "id": "test:view_graph_calibration_test",
+      "kind": "test",
+      "where": "src/colmap/estimators/CMakeLists.txt"
+    },
+    {
+      "id": "test:visibility_pyramid_test",
+      "kind": "test",
+      "where": "src/colmap/scene/CMakeLists.txt"
+    },
+    {
+      "id": "test:visual_index_test",
+      "kind": "test",
+      "where": "src/colmap/retrieval/CMakeLists.txt"
+    },
+    {
+      "id": "test:vote_and_verify_test",
+      "kind": "test",
+      "where": "src/colmap/retrieval/CMakeLists.txt"
+    },
+    {
+      "id": "test:warp_test",
+      "kind": "test",
+      "where": "src/colmap/image/CMakeLists.txt"
+    },
+    {
+      "id": "test:workspace_test",
+      "kind": "test",
+      "where": "src/colmap/mvs/CMakeLists.txt"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [
+    {
+      "id": "benchmark:benchmark_bundle_adjustment",
+      "reason": "Benchmark of CPU bundle adjustment / mapping / estimator code. BENCHMARK_ENABLED defaults OFF, no GPU path of ours runs in it, and the only GPU it can touch is Ceres' own CUDA linear solver, which is out of scope (Ceres has no ROCm backend upstream)."
+    },
+    {
+      "id": "benchmark:benchmark_bundle_adjustment_convergence",
+      "reason": "Benchmark of CPU bundle adjustment / mapping / estimator code. BENCHMARK_ENABLED defaults OFF, no GPU path of ours runs in it, and the only GPU it can touch is Ceres' own CUDA linear solver, which is out of scope (Ceres has no ROCm backend upstream)."
+    },
+    {
+      "id": "benchmark:benchmark_cost_functions",
+      "reason": "Benchmark of CPU bundle adjustment / mapping / estimator code. BENCHMARK_ENABLED defaults OFF, no GPU path of ours runs in it, and the only GPU it can touch is Ceres' own CUDA linear solver, which is out of scope (Ceres has no ROCm backend upstream)."
+    },
+    {
+      "id": "benchmark:benchmark_fundamental_matrix_degensac",
+      "reason": "Benchmark of CPU bundle adjustment / mapping / estimator code. BENCHMARK_ENABLED defaults OFF, no GPU path of ours runs in it, and the only GPU it can touch is Ceres' own CUDA linear solver, which is out of scope (Ceres has no ROCm backend upstream)."
+    },
+    {
+      "id": "benchmark:benchmark_global_positioning",
+      "reason": "Benchmark of CPU bundle adjustment / mapping / estimator code. BENCHMARK_ENABLED defaults OFF, no GPU path of ours runs in it, and the only GPU it can touch is Ceres' own CUDA linear solver, which is out of scope (Ceres has no ROCm backend upstream)."
+    },
+    {
+      "id": "benchmark:benchmark_incremental_mapping",
+      "reason": "Benchmark of CPU bundle adjustment / mapping / estimator code. BENCHMARK_ENABLED defaults OFF, no GPU path of ours runs in it, and the only GPU it can touch is Ceres' own CUDA linear solver, which is out of scope (Ceres has no ROCm backend upstream)."
+    },
+    {
+      "id": "library:caspar_lib_core",
+      "reason": "CASPAR bundle adjustment scoped out of this port: 482 GENERATED .cu with 2392 cooperative-groups references including cg::labeled_partition, cg::binary_partition, cg::coalesced_threads and cg::memcpy_async, which HIP does not cover; the generated CMake pins CMAKE_CUDA_ARCHITECTURES 75-89 because cooperative_groups::reduce needs sm_75; and a correct fix belongs in caspar_generate.py, not in 482 generated files. CASPAR_ENABLED defaults OFF and CASPAR_ENABLED AND NOT CUDA_ENABLED is already a FATAL_ERROR, so a ROCm build is unaffected. See plan.md and data/deferred.json."
+    },
+    {
+      "id": "option:ALL_SOURCE_TARGET",
+      "reason": "Build option unrelated to the GPU backend selection (sanitizers, packaging, caching, dependency fetching, IPO, SIMD, coverage, docs). Neither the CUDA nor the HIP path reads it."
+    },
+    {
+      "id": "option:ASAN_ENABLED",
+      "reason": "Build option unrelated to the GPU backend selection (sanitizers, packaging, caching, dependency fetching, IPO, SIMD, coverage, docs). Neither the CUDA nor the HIP path reads it."
+    },
+    {
+      "id": "option:BENCHMARK_ENABLED",
+      "reason": "Build option unrelated to the GPU backend selection (sanitizers, packaging, caching, dependency fetching, IPO, SIMD, coverage, docs). Neither the CUDA nor the HIP path reads it."
+    },
+    {
+      "id": "option:BUILD_SHARED_LIBS",
+      "reason": "Build option unrelated to the GPU backend selection (sanitizers, packaging, caching, dependency fetching, IPO, SIMD, coverage, docs). Neither the CUDA nor the HIP path reads it."
+    },
+    {
+      "id": "option:CASPAR_ENABLED",
+      "reason": "CASPAR bundle adjustment scoped out of this port: 482 GENERATED .cu with 2392 cooperative-groups references including cg::labeled_partition, cg::binary_partition, cg::coalesced_threads and cg::memcpy_async, which HIP does not cover; the generated CMake pins CMAKE_CUDA_ARCHITECTURES 75-89 because cooperative_groups::reduce needs sm_75; and a correct fix belongs in caspar_generate.py, not in 482 generated files. CASPAR_ENABLED defaults OFF and CASPAR_ENABLED AND NOT CUDA_ENABLED is already a FATAL_ERROR, so a ROCm build is unaffected. See plan.md and data/deferred.json."
+    },
+    {
+      "id": "option:CASPAR_USE_DOUBLE",
+      "reason": "CASPAR bundle adjustment scoped out of this port: 482 GENERATED .cu with 2392 cooperative-groups references including cg::labeled_partition, cg::binary_partition, cg::coalesced_threads and cg::memcpy_async, which HIP does not cover; the generated CMake pins CMAKE_CUDA_ARCHITECTURES 75-89 because cooperative_groups::reduce needs sm_75; and a correct fix belongs in caspar_generate.py, not in 482 generated files. CASPAR_ENABLED defaults OFF and CASPAR_ENABLED AND NOT CUDA_ENABLED is already a FATAL_ERROR, so a ROCm build is unaffected. See plan.md and data/deferred.json."
+    },
+    {
+      "id": "option:CCACHE_ENABLED",
+      "reason": "Build option unrelated to the GPU backend selection (sanitizers, packaging, caching, dependency fetching, IPO, SIMD, coverage, docs). Neither the CUDA nor the HIP path reads it."
+    },
+    {
+      "id": "option:CGAL_ENABLED",
+      "reason": "Build option unrelated to the GPU backend selection (sanitizers, packaging, caching, dependency fetching, IPO, SIMD, coverage, docs). Neither the CUDA nor the HIP path reads it."
+    },
+    {
+      "id": "option:COVERAGE_ENABLED",
+      "reason": "Build option unrelated to the GPU backend selection (sanitizers, packaging, caching, dependency fetching, IPO, SIMD, coverage, docs). Neither the CUDA nor the HIP path reads it."
+    },
+    {
+      "id": "option:DOWNLOAD_ENABLED",
+      "reason": "Build option unrelated to the GPU backend selection (sanitizers, packaging, caching, dependency fetching, IPO, SIMD, coverage, docs). Neither the CUDA nor the HIP path reads it."
+    },
+    {
+      "id": "option:FETCH_FAISS",
+      "reason": "Build option unrelated to the GPU backend selection (sanitizers, packaging, caching, dependency fetching, IPO, SIMD, coverage, docs). Neither the CUDA nor the HIP path reads it."
+    },
+    {
+      "id": "option:FETCH_ONNX",
+      "reason": "Build option unrelated to the GPU backend selection (sanitizers, packaging, caching, dependency fetching, IPO, SIMD, coverage, docs). Neither the CUDA nor the HIP path reads it."
+    },
+    {
+      "id": "option:FETCH_POSELIB",
+      "reason": "Build option unrelated to the GPU backend selection (sanitizers, packaging, caching, dependency fetching, IPO, SIMD, coverage, docs). Neither the CUDA nor the HIP path reads it."
+    },
+    {
+      "id": "option:GENERATE_STUBS",
+      "reason": "Build option unrelated to the GPU backend selection (sanitizers, packaging, caching, dependency fetching, IPO, SIMD, coverage, docs). Neither the CUDA nor the HIP path reads it."
+    },
+    {
+      "id": "option:IPO_ENABLED",
+      "reason": "Build option unrelated to the GPU backend selection (sanitizers, packaging, caching, dependency fetching, IPO, SIMD, coverage, docs). Neither the CUDA nor the HIP path reads it."
+    },
+    {
+      "id": "option:LSD_ENABLED",
+      "reason": "Build option unrelated to the GPU backend selection (sanitizers, packaging, caching, dependency fetching, IPO, SIMD, coverage, docs). Neither the CUDA nor the HIP path reads it."
+    },
+    {
+      "id": "option:ONNX_ENABLED",
+      "reason": "Build option unrelated to the GPU backend selection (sanitizers, packaging, caching, dependency fetching, IPO, SIMD, coverage, docs). Neither the CUDA nor the HIP path reads it."
+    },
+    {
+      "id": "option:OPENMP_ENABLED",
+      "reason": "Build option unrelated to the GPU backend selection (sanitizers, packaging, caching, dependency fetching, IPO, SIMD, coverage, docs). Neither the CUDA nor the HIP path reads it."
+    },
+    {
+      "id": "option:PROFILING_ENABLED",
+      "reason": "Build option unrelated to the GPU backend selection (sanitizers, packaging, caching, dependency fetching, IPO, SIMD, coverage, docs). Neither the CUDA nor the HIP path reads it."
+    },
+    {
+      "id": "option:SIMD_ENABLED",
+      "reason": "Build option unrelated to the GPU backend selection (sanitizers, packaging, caching, dependency fetching, IPO, SIMD, coverage, docs). Neither the CUDA nor the HIP path reads it."
+    },
+    {
+      "id": "option:TSAN_ENABLED",
+      "reason": "Build option unrelated to the GPU backend selection (sanitizers, packaging, caching, dependency fetching, IPO, SIMD, coverage, docs). Neither the CUDA nor the HIP path reads it."
+    },
+    {
+      "id": "option:UBSAN_ENABLED",
+      "reason": "Build option unrelated to the GPU backend selection (sanitizers, packaging, caching, dependency fetching, IPO, SIMD, coverage, docs). Neither the CUDA nor the HIP path reads it."
+    },
+    {
+      "id": "option:UNINSTALL_ENABLED",
+      "reason": "Build option unrelated to the GPU backend selection (sanitizers, packaging, caching, dependency fetching, IPO, SIMD, coverage, docs). Neither the CUDA nor the HIP path reads it."
+    },
+    {
+      "id": "option:WERROR_ENABLED",
+      "reason": "Build option unrelated to the GPU backend selection (sanitizers, packaging, caching, dependency fetching, IPO, SIMD, coverage, docs). Neither the CUDA nor the HIP path reads it."
+    },
+    {
+      "id": "test:NAME",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:absolute_pose_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:advancing_front_meshing_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:affine_transform_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:alignment_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:aliked_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:base_controller_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:base_option_manager_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:bbox_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:bitmap_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:bundle_adjustment_caspar_test",
+      "reason": "CASPAR bundle adjustment scoped out of this port: 482 GENERATED .cu with 2392 cooperative-groups references including cg::labeled_partition, cg::binary_partition, cg::coalesced_threads and cg::memcpy_async, which HIP does not cover; the generated CMake pins CMAKE_CUDA_ARCHITECTURES 75-89 because cooperative_groups::reduce needs sm_75; and a correct fix belongs in caspar_generate.py, not in 482 generated files. CASPAR_ENABLED defaults OFF and CASPAR_ENABLED AND NOT CUDA_ENABLED is already a FATAL_ERROR, so a ROCm build is unaffected. See plan.md and data/deferred.json."
+    },
+    {
+      "id": "test:bundle_adjustment_ceres_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:bundle_adjustment_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:cache_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:calibration_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:camera_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:combination_sampler_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:connected_components_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:consistency_graph_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:controller_thread_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:coordinate_frame_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:correspondence_graph_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:covariance_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:database_cache_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:database_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:delaunay_meshing_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:depth_map_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:eigen_matchers_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:endian_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:enum_utils_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:essential_matrix_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:file_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:frame_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:fundamental_matrix_degensac_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:fundamental_matrix_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:fusion_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:generalized_absolute_pose_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:generalized_pose_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:generalized_relative_pose_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:geometry_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:global_mapper_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:global_pipeline_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:global_positioning_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:gps_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:graph_cut_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:gravity_refinement_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:hierarchical_pipeline_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:homography_matrix_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:image_reader_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:image_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:incremental_mapper_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:incremental_pipeline_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:incremental_triangulator_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:index_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:inverted_file_entry_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:least_absolute_deviations_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:line_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:logging_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:loransac_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:mat_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:matcher_cache_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:math_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:matrix_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:mesh_simplification_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:misc_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:model_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:models_jacobian_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:models_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:motion_averaging_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:normal_map_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:normalization_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:observation_manager_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:onnx_matchers_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:opengl_utils_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:option_manager_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:pairing_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:ply_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:point2d_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:point3d_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:poisson_meshing_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:polynomial_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:pose_graph_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:pose_prior_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:pose_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:poselib_utils_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:progressive_sampler_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:projection_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:quaternion_utils_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:random_eigen_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:random_sampler_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:random_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:ransac_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:reconstruction_clustering_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:reconstruction_io_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:reconstruction_manager_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:reconstruction_matchers_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:reconstruction_pruning_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:reconstruction_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:relpose_one_sided_focal_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:relpose_shared_focal_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:reprojection_error_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:rig_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:rigid3_matchers_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:rigid3_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:rotation_averaging_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:sampson_error_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:scene_clustering_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:sfm_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:sim3_matchers_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:sim3_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:similarity_transform_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:spanning_tree_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:sparse_cholesky_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:sprt_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:string_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:support_measurement_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:synthetic_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:texture_mapping_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:threading_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:timer_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:timestamp_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:tiny_manifold_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:tiny_sampson_error_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:tiny_solver_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:track_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:translation_transform_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:triangulation_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:two_view_geometry_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:types_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:undistorters_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:undistortion_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:union_find_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:utils_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:version_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:view_graph_calibration_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:visibility_pyramid_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:visual_index_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:vote_and_verify_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:warp_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    },
+    {
+      "id": "test:workspace_test",
+      "reason": "Non-GPU test with no GPU code path. Not port work; it is the regression set. The full ctest run in plan.md's Test plan must show it unchanged."
+    }
+  ],
+  "removed_from_floor": [
+    {
+      "id": "library:NAME",
+      "reason": "Parse artifact: colmap declares libraries via COLMAP_ADD_LIBRARY(NAME <x> ...) so the scanner captured the literal keyword, not a target. Replaced by the named GPU-bearing libraries added below."
+    },
+    {
+      "id": "executable:NAME",
+      "reason": "Same parse artifact, for COLMAP_ADD_EXECUTABLE. Replaced by executable:colmap_main."
+    },
+    {
+      "id": "example:example",
+      "reason": "Parse artifact from src/colmap/tools/CMakeLists.txt; colmap ships no examples directory."
+    }
+  ],
+  "planner_note": "Floor augmented by the planner: utils/surface.py skips thirdparty/, which is where colmap's whole remaining CUDA surface lives, and colmap's macro-based CMake defeated the library/executable scan. See projects/colmap/plan.md. scoped_out was pre-populated by the planner for the components a ROCm port does not touch; the entries left unaccounted are exactly the port's work and the porter marks them covered."
+}

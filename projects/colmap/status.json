@@ -5,9 +5,9 @@
   "fork_url": "https://github.com/AMD-Ecosystem/colmap",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
+  "ext_type": "cmake",
   "adopted_at": "2026-06-10T13:58:57Z",
-  "updated_at": "2026-08-07T06:51:11Z",
+  "updated_at": "2026-08-08T01:27:20Z",
   "head_sha": null,
   "depends_on": [],
   "fork_branch": "moat-port",
@@ -29,6 +29,30 @@
       "at": "2026-08-07T15:27:11Z"
     }
   },
-  "stage": "screened",
-  "platforms": {}
+  "stage": "planned",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": null,
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-08T01:27:20Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "planner"
+    }
+  }
 }

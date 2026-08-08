@@ -1,1 +1,2 @@
 {"kind": "tokens", "ts": "2026-08-07T06:52:50Z", "tokens": 76740, "source": "intake"}
+{"kind":"phase","ts":"2026-08-08T01:19:39Z","phase":"surface-generate","seconds":1.772,"exit":0,"cmd":"python3 utils/surface.py generate colmap"}
