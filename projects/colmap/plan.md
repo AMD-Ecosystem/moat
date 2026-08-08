@@ -96,7 +96,7 @@ the program.
     endif()
 
 `HIP_ENABLED` is absent. `GPU_ENABLED` is what gates `add_subdirectory(SiftGPU)`
-(`src/thirdparty/CMakeLists.txt:28`) and linking `colmap_sift_gpu` into `colmap_feature`
+(`src/thirdparty/CMakeLists.txt:29`) and linking `colmap_sift_gpu` into `colmap_feature`
 (`src/colmap/feature/CMakeLists.txt:73`), and `COLMAP_GPU_ENABLED` is what compiles the
 whole `SiftGPUFeatureExtractor` / `SiftGPUFeatureMatcher` region of
 `src/colmap/feature/sift.cc`. So on a headless ROCm build today COLMAP has no GPU feature
@@ -213,7 +213,7 @@ reaches them:
 
 - `PyramidCU::ConvertInputToCU` (`PyramidCU.cpp:925-951`) takes the
   `if(input->_pixel_data)` branch, which is `InitTexture` + `CopyFromHost`. COLMAP always
-  supplies host pixel data: `sift.cc:693` calls `RunSIFT(pitch, height, data, GL_LUMINANCE,
+  supplies host pixel data: `sift.cc:694` calls `RunSIFT(pitch, height, data, GL_LUMINANCE,
   GL_UNSIGNED_BYTE)`.
 - The PBO branches live in `PyramidCU::ConvertTexCU2GL`, reachable only via
   `GetLevelTexture`, which is called only from `SiftGPU.cpp:491,544,588` inside SiftGPU's own
@@ -302,7 +302,7 @@ back to point filtering for layered textures; leave it alone.
    state. If a GLSL test initializes GL first, a later compute test on an AMD GL context
    sees `_UseCUDA` cleared and silently falls back to GLSL. Watch for a GPU test that passes
    alone and behaves differently in-suite, and check the "[SiftGPU Language]" line
-   (`SiftGPU.cpp:164`). Prefer widening the vendor test over adding a new global.
+   (`SiftGPU.cpp:163`). Prefer widening the vendor test over adding a new global.
 
 6. **Wave32 versus wave64.** Low risk, stated explicitly because the gate demands both.
    There are no warp intrinsics and no `warpSize`. The three hardcoded 32s are block
