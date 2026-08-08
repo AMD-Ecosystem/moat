@@ -80,6 +80,24 @@ installed in that machine, so a pinned `HIP_VISIBLE_DEVICES=1` copied from older
 notes silently selects a different card, or none. Read the device list at the time
 you use it (`rocminfo`, `hipInfo`).
 
+## Validating a demo whose only entry point is an interactive GL window
+
+A research code with no test suite often puts the whole computation inside a GLUT display
+callback, gated on a keypress. It still validates on a headless host: run it under
+`Xvfb :N -screen 0 1024x1024x24` with `LIBGL_ALWAYS_SOFTWARE=1` so the rendering falls to
+llvmpipe while the compute stays on the AMD GPU, then drive the keypress with
+`xdotool search --name <window title>` plus `xdotool key --window <id> <key>`. Read the
+source for the flag the key toggles before assuming the program hung -- GPU_IPC starts with
+`bool stop = true` and does nothing at all until it sees a space, which for two runs looked
+exactly like a wedged GPU. Also run it through `stdbuf -o0`: `printf` to a redirected file
+is block-buffered, so a killed run reports zero progress no matter how far it got.
+
+Such a demo usually has no convergence criterion and no iteration cap either, so the
+evidence to record is frames completed and the per-frame wall time, and whether a stall is
+REPRODUCIBLE at the same frame. Codes that accumulate with `atomicAdd` on floats reorder
+run to run, so the same binary reaching a different frame on two runs is expected and is
+NOT by itself evidence of uninitialized memory or a race. (GPU_IPC.)
+
 ## One architecture gets wrong numbers while the others pass
 
 A clean build that produces wrong results on exactly one architecture -- an iterative

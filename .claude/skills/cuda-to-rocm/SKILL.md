@@ -91,6 +91,7 @@ Scan this list against what you are doing. If any line could apply, open
 **Floating point**
 - `__fsqrt_rn` is not always correctly rounded on gfx90a (1 ULP high); CUDA's is IEEE-correct.
 - clang(HIP) defaults to `-ffp-contract=fast` and forms FMAs ACROSS expressions; nvcc contracts expression-only.
+- `-ffast-math` is NOT the translation of `--use_fast_math`: clang's also reassociates and drops NaNs, in double precision.
 - Exact float-equality branches fed by `__fdividef` produce out-of-range indices.
 - HIP device `cuda::min`/`max` NaN-selection can differ from host `std::min`/`max`.
 
@@ -108,6 +109,7 @@ Scan this list against what you are doing. If any line could apply, open
 - Library swaps: cuBLAS -> hipBLAS, cuFFT -> hipFFT, cuRAND -> hipRAND, cuSPARSE -> hipSPARSE, cuDNN -> MIOpen, Thrust/CUB -> rocThrust/hipCUB. Handle types and v2-enum signatures differ.
 - Runtime PTX + CUDA Driver API is a third build class beyond A and B.
 - MSVC-only upstreams accept code gcc/clang reject; the HIP build is a stricter compiler.
+- Eigen DECOMPOSITIONS above 3x3 in `__device__` code reach Eigen's host-only matrix product; its core arithmetic is fine.
 - No graphics pipeline on compute-only CDNA: OpenGL/Vulkan-interop apps build but cannot run on gfx90a.
 - An arch-specific fix keyed on OS or ROCm version can BREAK an already-validated arch.
 

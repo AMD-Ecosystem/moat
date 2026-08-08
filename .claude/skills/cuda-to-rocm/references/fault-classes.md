@@ -63,7 +63,18 @@ subgroup whatever the physical width.
 **A compat `__ballot_sync` that casts `__ballot()` to `uint32_t` takes the LOW 32 lanes**,
 which are the wrong lanes for any logical warp not at the wavefront base -- with
 `blockDim (32,32)`, odd `threadIdx.y` rows sit in the high lanes. Arch-unified form:
-`(uint32_t)(__ballot(PRED) >> (__lane_id() & ~31u))`, where the shift is 0 on wave32. (cuSZ)
+`(uint32_t)(__ballot(PRED) >> (__lane_id() & ~31u))`, where the shift is 0 on wave32. (cuSZ,
+GPU_IPC.)
+
+**The rest of that same compat layer needs the width pinned too.** A CUDA warp is always 32
+lanes, so `__shfl_down_sync(0xffffffff, v, d)` is BY DEFINITION a 32-lane operation; mapping
+it to the unqualified `__shfl_down(v, d)` silently retargets it to the WAVEFRONT width,
+which is right on RDNA and wrong on CDNA. Write the whole family with the width in it --
+`__shfl(v, lane, 32)`, `__shfl_down(v, d, 32)`, `__shfl_up`, `__shfl_xor` -- and the header
+is correct on both wavefront sizes with no arch branch. Worth checking even when the ballot
+looks handled: GPU_IPC's header had a plausible-looking ballot and unqualified shuffles, and
+the shuffles were the half that would have broken CDNA, since its PCG and BVH reductions
+loop `delta = 1,2,4,8,16` over logical 32-element groups. (GPU_IPC.)
 
 **An over-wide `__shfl*` width does not error, it silently degenerates.**
 `__shfl_up(v, delta, 64)` lowers to `__builtin_amdgcn_ds_bpermute` with a clamp of
@@ -264,6 +275,17 @@ LC-framework's nvcc recipe uses `-fmad=false -mno-fma -ffp-contract=off`, so pin
 there would diverge. Integer-only components are unaffected. (CV-CUDA OpWarpPerspective;
 LC-framework.)
 
+**`-ffast-math` is NOT the HIP translation of nvcc's `--use_fast_math`, and reaching for it
+because the CUDA flags line has one is a real mistranslation.** nvcc's flag swaps single
+precision transcendentals and division for the fast device intrinsics and leaves double
+precision and IEEE exception behaviour alone. clang's `-ffast-math` additionally turns on
+`-ffinite-math-only`, `-fassociative-math`, `-freciprocal-math`, `-fno-signed-zeros` and
+`-ffp-contract=fast`, for DOUBLE precision as well. Geometric predicates -- continuous
+collision detection, intersection and orientation tests, anything whose sign is the answer
+-- are exactly what reassociation and no-NaN assumptions break, and the symptom is a solver
+that stops converging rather than a wrong pixel. Translate `--use_fast_math` as at most
+`-ffp-contract=<upstream's setting>`, and leave everything else IEEE. (GPU_IPC.)
+
 **An exact float-equality branch fed by approximate division can HANG, not just drift.**
 HIP's `__fdividef` differs ~1 ULP from CUDA, so a downstream exact-equality test on the
 quotient -- selecting a loop start or end index -- can flip on AMD. When that index feeds an
@@ -288,6 +310,13 @@ ordinary headers, so an unconditional `#include <cub/...>` or `<hipcub/...>` lea
 headers into g++ and fails there. Put the shim in the lowest common layer, keep host-safe
 includes (`hip_runtime.h`, `hipfft.h`) unconditional, and gate device-only ones behind
 `__CUDACC__` or `__HIPCC__ || __HIP_DEVICE_COMPILE__`. (SCAMP, stdgpu)
+
+Same rule catches HELPER FUNCTIONS added to a shim, not just includes. A `__device__` helper
+written at file scope in the compat header is parsed by g++ for every plain `.cpp` in the
+project, where `__device__` expands to nothing and `__ballot`/`__lane_id` are undeclared, so
+the header stops being host-includable the moment you replace a macro with a function. Wrap
+such a helper in `#if defined(__HIPCC__)` and leave the macro that calls it unconditional --
+the macro only expands inside device code, so the host TUs never name it. (GPU_IPC.)
 
 **`__HIP_PLATFORM_AMD__` is undefined until `hip/hip_runtime.h` has been included in that
 TU.** A wave-width gate in a header included BEFORE the runtime header silently takes the
@@ -325,6 +354,26 @@ codegen. (cuSZ, lc0)
 **Never name the pointee struct of an opaque CUDA handle.** `CUstream_st`/`CUevent_st` do
 not exist under HIP. Spell it `std::remove_pointer_t<cudaStream_t>` so it survives the
 typedef swap. (cuSZ)
+
+**Eigen DECOMPOSITIONS called from `__device__` code do not survive the move to hipcc, even
+though Eigen's core arithmetic does.** Eigen defines `EIGEN_DEVICE_FUNC` as
+`__host__ __device__` for hipcc just as it does for nvcc, so `Matrix`, `Map`, coefficient
+access, `.cross()`, small products and the DIRECT 2x2/3x3 `SelfAdjointEigenSolver` path all
+compile. Above 3x3 the solver instead reduces through a Householder sequence, and that path
+calls Eigen's general matrix-matrix product kernels (`scaleAndAddTo`, `applyThisOnTheLeft`,
+`BlasUtil`'s `extractScalarFactor`), which are host-only. The diagnostic is a handful of
+`reference to __host__ function ... in __host__ __device__ function` errors deep in Eigen
+headers, all tracing to ONE kernel -- read the `note: called by` line and fix the call site,
+do not conclude Eigen is unusable on the device. Physics and graphics codebases hit this
+because per-element positive-semi-definite projection of a small Hessian is a standard
+move. Replace with a cyclic Jacobi sweep over plain `Scalar[N][N]` arrays: no workspace, no
+matrix product, backward stable on symmetric input, and it is one implementation for both
+back ends rather than a `#ifdef` fork. Do the reconstruction with explicit loops as well,
+since a fixed-size 12x12 `V * D * V.transpose()` re-enters the same host-only product path.
+Verify it on the HOST against the Eigen original over a few thousand random symmetric
+matrices before touching the GPU: that separates "my replacement is wrong" from every other
+hypothesis in about five minutes. (GPU_IPC: `PDSNK<double,12>`, agreed to 1.5e-14 relative
+over 20000 trials.)
 
 **`char` vs `signed char` vector base types differ.** HIP defines
 `using char4 = HIP_vector_type<char, N>` with plain `char` members; NVIDIA's `char4` has
