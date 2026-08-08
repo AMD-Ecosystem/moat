@@ -93,6 +93,13 @@ fi
 python3 utils/moatlib.py waivers 2>/dev/null \
   | awk -F'\t' 'NF>1 {printf "waiver   :   AWAITING   %-26s %s -- %.70s\n", $1, $2, $4}' || true
 
+# A lesson on a live port branch is where it belongs -- the port's own review is what
+# publishes it -- so this reports only the case nothing will ever carry: a FINISHED
+# port whose branch still holds a global edit the trunk lacks. That branch is about to
+# be deleted. `lessons --pending` shows the rest, and they are not to be lifted.
+python3 utils/moatlib.py lessons 2>/dev/null \
+  | awk -F'\t' '$2=="ORPHANED" {printf "lesson   :   ORPHANED   %-24s %.60s\n", $1, $3}' || true
+
 # A folder in the wrong place is invisible until it bites, and it bites differently at
 # each end: one on the trunk with work outstanding turns every status write into a pull
 # request once the trunk is protected, and one on a branch with nothing left owed is a
