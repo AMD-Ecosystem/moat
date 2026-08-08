@@ -1395,3 +1395,115 @@ What was verified:
 Pre-existing and correct, not a finding: all four `validated_sha` predate `head_sha`, so
 `moatlib.py pr-ready` reports every arch unsatisfied and each reads `revalidate`. That is the
 rebase round's functional change, and validation is the next stage.
+
+## Validation 2026-08-08 (linux-gfx1100, revalidate at b0d21d5)
+
+Platform: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), ROCm (`py_3.12` conda env),
+torch 2.14.0a0+gitb81488e (hip 7.2.53211). `HIP_VISIBLE_DEVICES=0`.
+
+Trigger: revalidate, `validated_sha=98be02d` (stale) -> `head_sha=b0d21d5`.
+`python3 utils/moatlib.py classify faster-gaussian-splatting 98be02d b0d21d5` returns
+`class=mixed arch_independent=False inert=False` (real source changes across the rebase and
+both port-fix rounds), so per the regression-guard policy this is a full real-GPU
+revalidation, not a carry-forward candidate. Consistent with the porter's own prediction in
+the rebase entry above.
+
+### Build (from clean)
+
+```bash
+git -C projects/faster-gaussian-splatting/src clean -fdx   # removed the 26 hipify mirrors + .so, nothing else
+source /opt/conda/etc/profile.d/conda.sh && conda activate py_3.12
+pip uninstall -y FasterGSCudaBackend
+export HIP_VISIBLE_DEVICES=0 PYTORCH_ROCM_ARCH=gfx1100
+utils/timeit.sh faster-gaussian-splatting compile -- \
+  pip install -e projects/faster-gaussian-splatting/src/FasterGSCudaBackend --no-build-isolation
+```
+
+Result: PASS. `llvm-objdump --offloading` on the built
+`_C.cpython-312-x86_64-linux-gnu.so` shows exactly 7 offload bundles, all
+`hipv4-amdgcn-amd-amdhsa--gfx1100` -- one code object, the expected arch, no stray gfx target.
+
+### Test (GPU, real hardware)
+
+```bash
+export HIP_VISIBLE_DEVICES=0 PYTHONPATH=projects/faster-gaussian-splatting/src/FasterGSCudaBackend
+utils/timeit.sh faster-gaussian-splatting test -- python agent_space/fgs_test.py
+```
+
+Result: **16/16 PASS** -- Gaussian-count sweep 10/100/500/1000/5000/10000 at 256x256;
+128x128/256x256/512x512/800x600 at n=500; SH bases 1/4/8/16; bit-exact determinism across
+two runs; and the n=20000, 800x600, sh=16 spread scene that drives the tile-overlap path
+where `lerp_scalar` is actually called. All outputs finite, correctly shaped, in [0,1]. The
+tile-overlap case reproduces the porter's recorded frame mean, 0.641486, to 6 digits (this
+run: mean=0.641486, range=[0.3787, 0.9739]), corroborating that the rebased build carries
+upstream's `44a13d1` boundary fix and the port's own numerics are unchanged from the earlier
+16/16 result at 1b37161. Independent bit-for-bit comparison across scenes was not re-run
+here since the porter's entry above already isolated the single 1-ULP delta to upstream's
+two-character predicate change by construction (`git diff 1b37161 b0d21d5` over source files
+is exactly that change; `lerp_scalar`'s body is byte-identical across both heads).
+
+### CUDA no-regression gate
+
+No CUDA gate was recorded at any prior head for this project, so this is the first run of
+it. This is a torch extension (Strategy B): `setup.py` selects CUDA vs HIP purely from
+`torch.version.hip`, so the gate needs a CUDA-built torch, not just nvcc. Installed one:
+
+```bash
+python -m venv <scratch>/cuda-venv
+source <scratch>/cuda-venv/bin/activate
+pip install --index-url https://download.pytorch.org/whl/cu121 torch==2.2.2  # + setuptools
+export PATH=/opt/conda/envs/cuda-12.8/bin:$PATH   # nvcc 12.8
+export CUDA_HOME=/opt/conda/envs/cuda-12.8
+export TORCH_CUDA_ARCH_LIST=8.0                    # pin, no NVIDIA GPU on this host
+cd <scratch-copy-of-src>/FasterGSCudaBackend        # git archive of the fork tree, HEAD=b0d21d5
+utils/timeit.sh faster-gaussian-splatting cuda-compile -- python setup.py build_ext --inplace
+```
+
+Built in a scratch copy of the fork tree (`git archive HEAD`), not in
+`projects/faster-gaussian-splatting/src`, so the working tree never carries CUDA build
+artifacts. Pinned `TORCH_CUDA_ARCH_LIST=8.0` per the standing instruction: this host has no
+NVIDIA GPU, so unpinned autodetection would silently degrade to an ancient arch rather than
+fail loudly.
+
+Result: **PASS**, reaches link (exit 0). All 9 `.cu` translation units compiled with
+`-gencode=arch=compute_80,code=sm_80` and the extension linked against
+`libtorch/libtorch_cpu/libtorch_python/libcudart/libc10_cuda/libtorch_cuda`, producing
+`_C.cpython-312-x86_64-linux-gnu.so`. `cuobjdump --list-elf` on the built `.so` confirms 9
+`sm_80` cubins, matching the pin -- not the `atomicAdd(double*)`/ancient-arch fingerprint
+that a missed pin would produce. This is compile-and-link only: no NVIDIA GPU is present on
+this host, so no CUDA runtime behavior is claimed, only that the CUDA build path still
+compiles and links after the port's changes.
+
+This directly tests the claim in the commit message and in the `re-review of 932a8b7` entry
+above (upstream's own CUDA build would hit the `std::lerp`/C++20 collision the moment it
+bumps standards) is about upstream's *unmodified* code, not about this port -- the port
+itself, with `lerp_scalar` renamed and the `#if __cplusplus < 202002L` fallback intact, is
+what was just built with nvcc, and it built clean. `_GLIBCXX_USE_CXX11_ABI=0` and libstdc++'s
+`using std::lerp;` (the exact mechanism that broke the Linux HIP build at `be2217e`) are both
+present in this nvcc host-compiler pass too, and `lerp_scalar`'s unconditional
+non-standard-library name avoided the same collision here as on the HIP side -- direct
+evidence for Gotcha #7's generalization beyond the one toolchain that surfaced it.
+
+### Completion checks
+
+- `python3 utils/jargon.py --port faster-gaussian-splatting` -> `jargon: clean`.
+- README (`projects/faster-gaussian-splatting/src/README.md`): the ROCm build section sits
+  beside the CUDA one in the Requirements and Setup sections, in the file's own style. Checked
+  for accuracy, not just presence: `PYTORCH_ROCM_ARCH` is the real env var torch's
+  `_get_rocm_arch_flags` reads, `IS_ROCM` in `setup.py` really is
+  `torch.version.hip is not None`, and the documented command
+  (`PYTORCH_ROCM_ARCH=gfx1100 pip install ...`) is the literal command this validation ran and
+  it built successfully.
+- `git -C projects/faster-gaussian-splatting/src status --porcelain` -> empty (checked after
+  `git clean -fdx` + build; the ROCm `.so` and the 26 hipify mirrors are present but ignored,
+  nothing untracked-and-unignored, nothing tracked modified).
+
+### Verdict
+
+**completed**, `linux-gfx1100`, `validated_sha=b0d21d5`. `python3 utils/moatlib.py set-state
+faster-gaussian-splatting linux-gfx1100 completed --agent validator` recorded it (the
+`state==cur==completed` revalidation path in `set_arch_state`, which updates
+`validated_sha` to `head_sha` rather than short-circuiting as a no-op).
+`moatlib.py pr-ready` now reports `linux-gfx90a`, `windows-gfx1101`, `windows-gfx1201` as the
+three still owing revalidation at this head; `linux-gfx1100`'s gates (wave32, linux) are
+satisfied.
