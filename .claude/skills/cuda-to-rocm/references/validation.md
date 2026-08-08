@@ -43,6 +43,44 @@ Two follow-ons worth taking:
   GLSL/CPU fallback will happily pass its whole suite on the fallback; seeing your kernel
   names is what distinguishes "the port works" from "the fallback works".
 
+### Closing a "it might silently fall back" risk: trace it, do not reason about it
+
+Dispatch counts prove the backend ran on the run you measured. When the worry is that some
+ORDER of events could flip a global backend flag -- "if the fallback initializes first, the
+compute flag gets cleared and the suite still goes green" -- the answer is a trace, and a
+Release build with no debug info is enough for one. Statics like `Foo::_UseBackend` and
+ordinary member functions are in the symbol table, so gdb can breakpoint the decision
+function, breakpoint each backend's constructor, and put a hardware watchpoint on the flag:
+
+    break *0x<addr of the decision fn>
+    commands
+    silent
+    printf "decide(arg=%d) flag=%d\n", (int)$rdi, *(int*)0x<addr of flag>
+    continue
+    end
+    watch *(int*)0x<addr of flag>
+
+Counts answer the question outright: how many times the decision function was entered and
+with what argument, how many times each backend was constructed, and every value the flag
+ever took. In colmap this turned a "did not materialise on the machine we happened to use"
+into "the clearing line is unreachable, because the only caller always requests the compute
+backend" -- a statement that holds on every GPU and every GL driver rather than on one host.
+
+Two traps that each produce a confidently wrong answer:
+
+- **Reading a global AFTER the inferior exits gives the ELF initial value, not the last
+  live value.** gdb falls back to the executable's `.data`/`.bss` image once the process is
+  gone, and prints it without complaint. In colmap that printed exactly the fallback state
+  the reviewer had predicted, from a run where the flag was never cleared. Read the flag at
+  a breakpoint inside the live process, or watch it.
+- **`LD_PRELOAD` on a GL/driver entry point does not intercept a Qt (or any
+  `GetProcAddress`-style) caller.** Qt resolves GL through `QOpenGLFunctions` /
+  `eglGetProcAddress`, so the preloaded symbol is bypassed while a directly-linked caller in
+  the same process IS intercepted. If you use a preload shim to fake an environment, prove
+  it fires with a positive control first; a breakpoint needs no such control.
+
+(colmap)
+
 ## Platforms
 
 A platform is `<os>-<gfx>`, and the set is open: whatever GPU your host reports is a
@@ -113,6 +151,27 @@ Do not carry an index in a script. Which index a card holds depends on what is
 installed in that machine, so a pinned `HIP_VISIBLE_DEVICES=1` copied from older
 notes silently selects a different card, or none. Read the device list at the time
 you use it (`rocminfo`, `hipInfo`).
+
+## A GPU test that hangs only under `ctest -jN` is usually the software GL stack
+
+A test that passes standalone and hangs in the suite is not a GPU fault and rarely a port
+fault. Get the stack before theorising -- `sudo gdb -p <pid> -batch -ex "bt"`, since
+`ptrace_scope` normally blocks a plain attach -- and read which library the top frames are
+in. colmap's `feature/sift_test` hung twice out of two under `xvfb-run -a ctest -jN` and
+passed 5 out of 5 standalone; the stack was `XCloseDisplay -> libGLX_mesa -> libgallium ->
+pthread_join`, i.e. Mesa llvmpipe deadlocking on its own worker threads while closing the X
+display with other GL clients live on it. Nothing COLMAP or ROCm wrote appears in the
+trace.
+
+The shape generalizes to any suite whose GPU tests build a windowing-toolkit context per
+test: many short-lived GL clients on one Xvfb, and the teardown races. Isolate the two
+variables separately before blaming either -- running the one test alone against a
+PRE-EXISTING shared display distinguishes "shared display" from "concurrent clients"; in
+colmap it was the latter. Fix by lowering `-j`: colmap hung at `-j8` and `-j16` and ran the
+whole 159-test suite in 11.6 s at `-j4`, which is also the shape of the evidence -- the
+suite is not slow, one test is stuck. Note that ctest reports this as `Timeout` against its default
+1500 s cap, which reads like a slow test rather than a deadlock: a suite wall time sitting
+exactly at the cap with one test blamed is the tell. (colmap)
 
 ## One architecture gets wrong numbers while the others pass
 

@@ -64,6 +64,32 @@ Goal: only `.cu`/`.hip` translation units see the HIP toolchain; host C++ is unt
 
 3. Guard genuinely divergent code with `#if defined(USE_HIP)`; keep such guards rare. Dispatch sites that accept either backend use `#if defined(USE_CUDA) || defined(USE_HIP)`.
 
+### Do not gate the compat header's device-library includes on `__HIPCC__`/`__CUDACC__`
+
+The compat header ends up included by HOST translation units too, because it is where the
+runtime and error types live. It is tempting to shrink that -- a cuRAND/rocRAND kernel
+header is ~25k preprocessed lines, and a host file that only wants `cudaError_t` has no use
+for it -- by wrapping the RNG include in `#if defined(__HIPCC__) || defined(__CUDACC__)`.
+Check before you do, and check HEADERS, not just `.cc`/`.cpp`: a host TU often does not
+CALL any device-RNG function yet still NAMES the state type in a declaration it picks up
+through a header chain, and that is enough to break.
+
+In colmap, `grep curandState src/**/*.cc` is empty, but `mvs/gpu_mat.h` declares
+`FillWithRandomNumbers(..., const GpuMat<curandState>&)` and `mvs/gpu_mat_prng.h` declares
+`class GpuMatPRNG : public GpuMat<curandState>`; `mvs/patch_match.cc` is host-compiled and
+reaches both through `patch_match_cuda.h -> cuda_texture.h -> gpu_mat.h`. The gated header
+fails that TU with `'curandState' was not declared in this scope`. A forward declaration
+does not save it: `GpuMat<curandState>` needs `sizeof(T)` in host code, and `hiprandState`
+is a typedef of `rocrand_state_xorwow` rather than a class you can portably forward-declare.
+
+The fix that IS available, and the one that matters: make every target that includes the
+compat header declare the library whose header it therefore pulls in -- `hip::hiprand` and
+`roc::rocrand` alongside `hip::host`, mirroring whatever the CUDA arm already lists
+(`CUDA::curand`). A monolithic `/opt/rocm` hides an omission here because every ROCm header
+sits under one prefix; a split `rocm-sdk`/TheRock install does not, and that is where the
+missing declaration surfaces as a not-found include. Leave a one-line comment at the include
+saying it cannot be narrowed, or the next reader will try the gate again. (colmap)
+
 This is how colmap was ported (PR 4420 plus follow-ups): one compat header, `.cu` marked `LANGUAGE HIP`, a few guarded fixes. PyTorch validated that this isolates HIP: on an MI250 build only the HIP translation units receive `-x hip`; host files are untouched.
 
 ### Large libraries: `--offload-compress` to fit the host image under the 2 GiB x86-64 relocation reach
