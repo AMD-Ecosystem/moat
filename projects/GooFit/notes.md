@@ -1305,3 +1305,115 @@ HIP: Architecture: gfx1100
 
 Whole-branch jargon scan (`jargon.py --port GooFit`, `master..moat-port` for
 commits and `master...moat-port` for added lines) reports clean.
+
+## Review 2026-08-08 (reviewer, linux-gfx1100, fork 18fca9e4a vs 5fe1221a8)
+
+Verdict: **review-passed**. Narrow round. The IPO/LTO correction is confirmed by
+independent measurement, the four other items check out, and no defect blocks
+validation. Two non-blocking precision items are recorded below; fold them into
+the next commit that touches those files rather than opening a round for them.
+
+### Amend safety, tree state, jargon
+
+Both platforms' `validated_sha` were null when the force-with-lease ran, so
+`655ba62c0` -> `32c825112` orphaned no validated commit. `git status --porcelain`
+in the fork is empty. `jargon.py --commits 5fe1221a8..HEAD` and
+`jargon.py --diff 5fe1221a8...HEAD` are both clean. Commit titles are 44 and 56
+chars, both `[ROCm]`, no `Co-Authored-By`/noreply trailer.
+
+This worktree's `utils/jargon.py` has no `--port` flag (the trunk copy does, 4
+hits). The porter's workaround was correct and the two modes that exist here cover
+the same ground. **A trunk merge should be done before this branch goes further**
+-- it is safe and it fixes the tool version so the next agent does not rediscover
+this.
+
+### Three-target IPO experiment: reproduced independently
+
+Rebuilt from scratch (HIP `STATIC` lib + HIP executable, both `-fgpu-rdc`, plus a
+plain CXX `STATIC` lib, all three `INTERPROCEDURAL_OPTIMIZATION ON`), CMake 3.31.6
+/ ROCm 7.2.3 / gfx1100. Generated `build.ninja`:
+
+```
+FLAGS = -O3 -DNDEBUG -std=gnu++17 --offload-arch=gfx1100 -fgpu-rdc   # hiplib
+FLAGS = -O3 -DNDEBUG -std=gnu++17 --offload-arch=gfx1100 -fgpu-rdc   # hipexe
+LINK_FLAGS = -fgpu-rdc --hip-link ...                                # hipexe link
+FLAGS = -O3 -DNDEBUG -flto=auto -fno-fat-lto-objects                 # cxxlib
+```
+
+Configure-time probes: `CMAKE_HIP_COMPILE_OPTIONS_IPO = [-flto=thin]`,
+`_CMAKE_HIP_IPO_SUPPORTED_BY_CMAKE = [YES]`,
+`check_ipo_supported(LANGUAGES HIP)` -> `NO`, `language(s) 'HIP' not supported`.
+The project builds and links. Defined, never applied: confirmed.
+
+Both of the previous round's grep failure modes are confirmed on this host.
+`/usr/share/cmake-3.31/Modules/` does not exist (`CMAKE_ROOT` is under
+`site-packages/cmake/data/share/cmake-3.31`), and `grep -r` over it exits 2
+printing nothing. Separately, the literal `CMAKE_HIP_COMPILE_OPTIONS_IPO` does not
+occur anywhere in the real module tree (grep exit 1, a genuine no-match), because
+`Compiler/Clang.cmake:79` assigns `CMAKE_${lang}_COMPILE_OPTIONS_IPO` and
+`Compiler/Clang-HIP.cmake:3` calls `__compiler_clang(HIP)`.
+`CheckIPOSupported.cmake:238` does `list(REMOVE_ITEM ... "C" "CXX" "CUDA"
+"Fortran")`. GooFit's own `build-hip/build.ninja`: 0 occurrences of `flto`, 99 of
+`fgpu-rdc`.
+
+### Item-by-item
+
+1. **Precautionary guard, keep it.** `CMakeLists.txt:584-590` and the commit body
+   both say it changes no flag today and name what it guards against. Keeping a
+   labelled no-op is the better of the two defensible options here: it sits
+   directly beside the existing CUDA exclusion, so deleting it would leave a
+   backend list that reads as an oversight and invite someone to "fix" it by
+   enabling HIP IPO; and the honest label costs a reader nothing, whereas
+   rediscovering the hipcc failure costs a round. The comment pins the CMake
+   version, which is what makes it maintainable.
+2. **No unverified CMake mechanism is asserted anywhere.** The three-row table is
+   scoped to "driving hipcc by hand"; the CMake paragraph states only the measured
+   result. `validation.md`'s drift entry keeps the NO->YES observation and now ends
+   at "settle a flag argument by reading the generated build.ninja".
+3. **Promoted lesson: sound, and it earns its place.** Both failure modes are
+   named, the remedy is a three-step ladder (`--system-information` for the
+   directory, a throwaway `message(STATUS ...)` for the value, `build.ninja` for
+   the truth), and nothing in it is GooFit-specific beyond the citation. See the
+   generality gap below.
+4. **Branding verified.** On gfx1100 `hipDeviceProp_t` reports `major=11 minor=0`
+   and `gcnArchName=gfx1100`: major/minor carry the gfx version, so the old format
+   would print "Compute 11.0", which is not a CUDA compute capability. Both print
+   sites use `goofit_device_arch()` -- `Application.cpp:120` (`goofit_info_device`)
+   and `Application.cpp:176` (`print_goofit_info`) -- and the CUDA arm returns
+   "Compute {}.{}", so CUDA output is byte-identical to before.
+5. **DebugTools relocation verified.** `DebugTools.cu:42` does
+   `MEMCPY_FROM_SYMBOL(..., AmpIndices, ...)`; `AmpIndices[500]` is defined only at
+   `physics/Amp4BodyGlobals.cu:11`; the only live caller is
+   `physics/detail/AmpCalc_TD.cu:94` and `:135`. The three `Amp4Body_TD.cu`
+   references (633, 659, 682) are all commented out. Moving it to PDFPhysics is
+   correct.
+6. **plan.md** is accurate and its superseded header is honest about which four
+   things differ from the sketch. Its "no warp intrinsics / no wave64-wave32
+   concern" finding is independently confirmed: every `warpSize`/`__shfl`/ballot
+   hit in the tree is in vendored `extern/` (Eigen, fmt, pybind11, thrust), none in
+   GooFit's own sources, and there are no textures and no resource handles needing
+   rule-of-five.
+7. **Suites reproduced on GPU 1** after bringing `build-hip` current (it relinked
+   28 targets on first invocation, so the numbers below are from the current tree):
+   HIP 25/25 in 9.62 s, CPP 26/26 in 6.39 s, and `exponential` gives
+   `alpha = -1.001102381 +/- 0.003165763921`, digit-identical.
+
+### Non-blocking, fold in opportunistically
+
+- **`-flto=thin` is host-compiler-dependent and stated flatly.**
+  `strategy-a-cmake.md` ("a plain CXX target in the same project does receive
+  `-flto=thin`") and the `32c825112` commit body ("while a CXX target in the same
+  project does get -flto=thin") both name one spelling. `Compiler/GNU.cmake:107`
+  sets `CMAKE_${lang}_COMPILE_OPTIONS_IPO` to `${__lto_flags}`, and
+  `Compiler/Clang.cmake:79-81` picks `-flto=thin` or `-flto` on `_CMAKE_LTO_THIN`.
+  Measured here: clang host -> `-flto=thin`, GCC host -> `-flto=auto
+  -fno-fat-lto-objects`. The load-bearing contrast (CXX gets an LTO flag, HIP gets
+  none) is correct either way. Since the commit body is upstream-visible, prefer
+  "does get an `-flto` flag" there so a maintainer building with GCC does not read
+  it as wrong.
+- **The promoted lesson names only `build.ninja`.** A porter on the "Unix
+  Makefiles" generator has no such file; the per-target compile flags live in
+  `CMakeFiles/<target>.dir/flags.make` (verified: a Makefiles-generator tree with
+  `INTERPROCEDURAL_OPTIMIZATION ON` puts `CXX_FLAGS = -O3 -DNDEBUG -flto=auto
+  -fno-fat-lto-objects` there). One clause naming that equivalent would close the
+  gap in an entry whose whole point is that it generalises.
