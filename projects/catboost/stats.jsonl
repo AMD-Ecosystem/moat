@@ -83,3 +83,4 @@
 {"kind":"phase","ts":"2026-08-08T04:50:50Z","phase":"cuda-compile","seconds":3.658,"exit":1,"cmd":"ninja -C projects/catboost/src/build_cuda -j16 catboost-cuda-cuda_util-ut"}
 {"kind":"phase","ts":"2026-08-08T04:51:40Z","phase":"cuda-compile","seconds":3.361,"exit":1,"cmd":"ninja -C projects/catboost/src/build_cuda -j16 catboost-cuda-cuda_util-ut"}
 {"kind":"phase","ts":"2026-08-08T04:53:27Z","phase":"cuda-compile","seconds":3.558,"exit":1,"cmd":"ninja -C projects/catboost/src/build_cuda -j16 catboost-cuda-cuda_util-ut"}
+{"kind": "tokens", "ts": "2026-08-08T05:08:13Z", "tokens": 261369, "source": "validator"}
