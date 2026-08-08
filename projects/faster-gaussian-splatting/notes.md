@@ -725,3 +725,134 @@ as the thing that actually catches a rename nobody predicted. The pr-review chec
 and validator agent now state that the jargon `<base>` is the fork's default branch,
 never the previously reviewed head -- scoping that check to the newest commit is how
 this hit survived a review.
+
+## Review 2026-08-08 (re-review of 1b37161 after the history rewrite, linux-gfx1100)
+
+Narrow re-review: the round changed history only. The accepted substance (`lerp_scalar`,
+README, hipify-artifact cleanup) is not re-litigated.
+
+### Confirmed
+
+- **The tree is unchanged, independently verified.** `git rev-parse 932a8b7^{tree}` and
+  `git rev-parse HEAD^{tree}` are both `47d40ae3d821b880eba1248117f96eaff36d1851`, and
+  `git diff --exit-code 932a8b7 HEAD` exits 0. Identical tree objects are a stronger
+  statement than an empty diff (no mode, no rename, no submodule delta can hide in one),
+  so not re-running the numerics was correct: a byte-identical tree compiled by the same
+  toolchain produces the same code object, and the recorded 16/16 gfx1100 result carries.
+- **The rewrite was safe.** The branch forked at `7bc0593`, so `git reset --soft 7bc0593`
+  landed on the same base it already had rather than moving it. No arch had
+  `validated_sha == 932a8b7`; all four were at `98be02d` / `be2217e`, already stale
+  against head, and the delta to head is functional, so all four owed a revalidation
+  either way and the rewrite forfeited nothing. `origin/moat-port` and local `HEAD` both
+  read `1b37161`; the force-with-lease landed.
+- **`squash-carry-forward` was not run.** status.json still carries the old
+  `validated_sha` values and no `carry_forward` block on any platform. Correct: on
+  tree-identity alone it would have certified the `lerp_scalar` fix as validated on
+  gfx90a and both Windows archs, which never ran it.
+- **Jargon is clean over the whole branch.** `jargon.py --commits origin/main..moat-port`
+  and `--diff origin/main...moat-port` both report clean.
+- **Commit hygiene.** Title 39 chars with the `[ROCm]` prefix, Claude named, no
+  `Co-Authored-By` / noreply trailer, ASCII only, no em-dash, Test Plan with literal
+  commands in fenced blocks, no in-house vocabulary, no branch-internal narration, no
+  AMD-internal account references.
+- **The wavefront claim in the commit message is right.** Checked against the ROCm 7.2
+  headers rather than taken on trust: `thread_block_tile_base::ballot`
+  (`amd_hip_cooperative_groups.h:868`) builds a tile mask from
+  `(thread_rank() % warpSize) / numThreads` and passes it through
+  `internal::helper::adjust_mask` (`hip_cooperative_groups_helper.h:113`), which COMPACTS
+  the wave-relative mask down to tile-relative bits. So on wave64 a `tiled_partition<32>`
+  ballot still returns a 32-bit tile-relative mask; storing it in a `uint`
+  (kernels_forward.cuh:283), `__popc`-ing it, `__fns(mask, 0, n+1)`
+  (kernels_forward.cuh:295, and HIP's `__fns` at `amd_device_functions.h:149` takes a
+  32-bit mask) and `previous_lanes_mask = (1 << lane_idx) - 1` are all correct at both
+  widths. `meta_group_rank()` is parent-relative, so `warp_start = warp_idx * 32` indexes
+  the block-sized shared arrays correctly on wave64 too. No hardcoded-32 fault.
+- **The .gitignore set is complete, reproduced from scratch.** Copied the tree to a
+  scratch dir and ran the hipify pass under a ROCm torch: 26 generated files, every one
+  matched by `*.hip` / `*_hip.h` / `*_hip.cuh`, and `git status --porcelain` prints
+  nothing. `bindings.cpp` produces no mirror at all (hipify changes nothing in it, so
+  `preprocess` returns `[skipped, no changes]` and writes no file), which is why the
+  absence of a `*_hip.cpp` pattern is not a gap here.
+
+### Blocking: the branch is based on pre-fix upstream code in the function it edits
+
+`moat-port` forked at `7bc0593` and is 2 commits behind the fork's `main`, which is
+byte-identical to upstream `nerficg-project/faster-gaussian-splatting@ae2bf80` (checked
+via `gh api`). One of those two commits is not incidental:
+
+    44a13d1  2026-07-11  Fix bug in tile-based culling logic
+
+It changes `will_primitive_contribute` in
+`FasterGSCudaBackend/FasterGSCudaBackend/rasterization/include/kernel_utils.cuh` -- the
+same function, the same file, ten lines above the port's only kernel edit at
+`kernel_utils.cuh:84-85`. Upstream turned `x_min_diff > 0.0f` into `>= 0.0f` (and the
+same for `y_min_diff`) because a splat whose 2d mean lands bit-exactly on the pixel
+centre at a tile's left or upper boundary was being culled from that tile.
+
+The hunks do not textually collide, so `git merge-tree` reports zero conflicts and
+`git diff origin/main...HEAD` (merge-base relative) shows nothing wrong. That is exactly
+why three reviews have walked past it. The check that surfaces it is
+`git rev-list --count moat-port..origin/main`.
+
+Why it blocks now rather than later:
+
+- The validation this port rests on was measured against the OLD culling predicate. The
+  commit message's Test Plan specifically claims "a 20000-Gaussian spread scene that
+  drives the tile boundary path where lerp_scalar is called" -- the tile boundary path is
+  precisely what 44a13d1 changed, so the one test named as covering that path exercises
+  semantics that no longer exist upstream. The bit-exact-repeatability and
+  four-decimal cross-arch claims are on the same footing.
+- Rebasing changes head_sha. Do it now and it costs nothing, because no arch is validated
+  at head and no approval exists. Do it after the validator runs and all four archs
+  revalidate a second time; do it after approval and `approval_currency` refuses with
+  `stale-commits`. This is the same window argument that forced the squash last round, and
+  it is open for the same reason.
+
+Required: rebase `moat-port` onto `origin/main` (`ae2bf80`) before the validator runs,
+confirm `git rev-list --count moat-port..origin/main` is 0, re-check both `jargon.py`
+forms, and let the validator validate the rebased sha once.
+
+While the commit is being touched anyway, one wording fix: the message opens with
+"PyTorch's build system translates the .cu and .cuh sources to HIP as part of the build".
+It also translates plain `.h` headers -- 10 of the 17 in this tree -- which the same
+message's own `.gitignore` paragraph acknowledges with `*_hip.h`. "the .cu, .cuh and .h
+sources" removes the inconsistency.
+
+### Also required, but as a PR against moat main, not on this branch
+
+`references/strategy-b-torch.md`, `references/fault-classes.md`,
+`.claude/skills/pr-review/review-checklist.md` and `.claude/agents/validator.md` are
+global files carrying lessons every agent needs, and on `port/faster-gaussian-splatting`
+they are stranded until this port merges. They belong in a PR off `origin/main`.
+
+The rewritten hipify naming rule in `strategy-b-torch.md` was checked line by line against
+`torch/utils/hipify/hipify_python.get_hip_file_path` (torch 2.14.0a0). The stated
+condition -- `_hip` is appended only when the `cuda`->`hip` / `CUDA`->`HIP` / `THC`->`THH`
+rewrite leaves both the directory and the full filename unchanged -- is exactly the source
+(`if is_pytorch_extension and dirpath == orig_dirpath and (root + ext) == orig_filename`),
+and all six table rows reproduce. Three corrections to fold into that PR:
+
+- `strategy-b-torch.md:14` and `:35`. The rewrite is a plain substring `replace` over the
+  whole dirpath string, not a match on directory components, so `src/cuda_kernels/foo.cuh`
+  becomes `src/hip_kernels/foo.cuh`. The derivation at :35 says "a source directory named
+  `cuda`/`CUDA`", which reads as exact-match and under-covers that case -- the same class
+  of incomplete ignore list the section exists to prevent. Say "a directory component
+  CONTAINING `cuda`/`CUDA`/`THC`".
+- `strategy-b-torch.md:14-21`. A mirror is written only when hipify actually CHANGES the
+  file's content. `preprocess_file_and_save_result` returns `[skipped, no changes]` and
+  writes nothing when the output is identical and the dirpath did not move
+  (`hipify_python.py:966-974`), so a source hipify leaves alone produces no mirror at all.
+  That is why this tree's 17 `.h` files yielded only 10 `_hip.h`, and why `bindings.cpp`
+  yielded nothing. As written the table reads as unconditional, which over-predicts the
+  ignore list -- harmless, but it also hides the reason the counts never line up.
+- `strategy-b-torch.md:27`. The line counts are wrong. `git diff --numstat 7bc0593
+  6b18628` gives 26 generated files at +5883 and 6 real files at +88/-15, total +5971.
+  The correct sentence is "26 such files, 5,883 of 5,971 added lines, for an 88-line
+  port".
+
+### Verdict
+
+Changes requested. The history rewrite itself is clean and complete -- tree identical,
+jargon gone, no validation forfeited, `squash-carry-forward` correctly left alone. What
+blocks is that the branch is not based on the code it will be merged into, in the one
+function it edits, and the cost of fixing that only goes up from here.
