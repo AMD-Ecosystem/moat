@@ -106,6 +106,14 @@ def gate_readme():
 
     So this is judged where it can be judged -- a full clone, which is what the
     pre-push hook runs in -- and skipped, loudly, where it cannot."""
+    # The board is a TRUNK artifact. A port branch carries whatever copy it inherited,
+    # regenerating it there produces a commit that is discarded when the branch merges,
+    # and judging it there is what serialises concurrent work: every record any host
+    # pushes stales every other checkout's copy, so three agents pushing three
+    # unrelated projects each fail on a table none of them touched.
+    branch = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
+    if branch.startswith("port/"):
+        return []
     if not _run(["git", "for-each-ref", "--format=%(refname)",
                  "refs/remotes/origin/port/"]).stdout.strip():
         print("readme: skipped -- no port branches in this checkout, so the table "
