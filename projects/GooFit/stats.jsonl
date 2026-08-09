@@ -49,3 +49,7 @@
 {"kind":"phase","ts":"2026-08-09T00:06:08Z","phase":"test","seconds":6.514,"exit":0,"cmd":"ctest --test-dir projects/GooFit/src/build-cpp-validate --output-on-failure"}
 {"kind":"phase","ts":"2026-08-09T00:07:00Z","phase":"cuda-compile","seconds":11.047,"exit":1,"cmd":"cmake --build projects/GooFit/src/build-cuda-validate -j32"}
 {"kind": "tokens", "ts": "2026-08-09T00:11:42Z", "tokens": 149031, "source": "validator"}
+{"kind":"phase","ts":"2026-08-09T15:30:22Z","phase":"compile","seconds":77.959,"exit":0,"cmd":"cmake --build projects/GooFit/src/build-hip-validate -j32"}
+{"kind":"phase","ts":"2026-08-09T15:30:45Z","phase":"test","seconds":11.044,"exit":8,"cmd":"ctest --test-dir projects/GooFit/src/build-hip-validate --output-on-failure"}
+{"kind":"phase","ts":"2026-08-09T15:32:43Z","phase":"compile","seconds":33.837,"exit":0,"cmd":"bash -c \ncd projects/GooFit/src\ncmake -S . -B build-cpp-validate -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DGOOFIT_DEVICE=CPP \\\n  -DGOOFIT_TESTS=ON -DGOOFIT_EXAMPLES=ON -DGOOFIT_CERNROOT=OFF -DGOOFIT_PYTHON=OFF\ncmake --build build-cpp-validate -j32\n"}
+{"kind":"phase","ts":"2026-08-09T15:32:59Z","phase":"test","seconds":9.172,"exit":0,"cmd":"ctest --test-dir projects/GooFit/src/build-cpp-validate --output-on-failure"}

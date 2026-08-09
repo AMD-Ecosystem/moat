@@ -1578,3 +1578,107 @@ for gfx1100 -- so no new commit and no `gen_readme.py` run for this branch
 (6.40s), alpha digit-identical, CUDA gate passthrough-confirmed pre-existing
 breakage (not a regression), jargon clean, docs accurate. gfx90a question remains
 open pending a gfx90a re-run of this exact sha.
+
+## Validation 2026-08-09 (validator, linux-gfx90a, fork 18fca9e4a vs 5fe1221a8) -- FAILS: gfx90a-specific NLL divergence CONFIRMED at the committed sha
+
+GPU 3 of 4 MI250X (gfx90a) confirmed via `rocm-smi` (Node ID 5, GFX Version gfx90a).
+Fresh clone of `AMD-Ecosystem/GooFit`, checked out `moat-port` at `18fca9e4a`
+(matches `status.json.head_sha` exactly), submodules initialised
+(`extern/thrust` at CCCL `af8cce4ca`). `git status --porcelain` clean throughout.
+
+### Build (gfx90a, ROCm 7.2.1 series -- `hipcc --version`: "HIP version:
+7.2.53211-e1a6bc5663", "AMD clang version 22.0.0git ... roc-7.2.1", CMake 4.0.3, Ninja)
+
+```
+cmake -S . -B build-hip-validate -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DGOOFIT_DEVICE=HIP -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DGOOFIT_TESTS=ON -DGOOFIT_EXAMPLES=ON -DGOOFIT_CERNROOT=OFF \
+  -DGOOFIT_PYTHON=OFF -DGOOFIT_PHYSICS=OFF
+cmake --build build-hip-validate -j32
+```
+306/306 targets built and linked, exit 0. `roc-obj-ls` on `examples/exponential/exponential`
+and `tests/simple/SimpleTest` shows exactly one device offload entry each,
+`hipv4-amdgcn-amd-amdhsa--gfx90a` -- gfx90a only, no other arch bundled.
+
+### Tests: 4/25 PASS, 21/25 FAIL -- reproduces the "garbage normalization" NLL
+divergence recorded in porter attempt 2, now confirmed at the CURRENT committed sha
+
+```
+HIP_VISIBLE_DEVICES=3 ctest --test-dir build-hip-validate --output-on-failure
+  -> 16% tests passed, 21 tests failed out of 25 (10.90 s)
+```
+Passing: SimpleTest, BlindTest, StepTest, exponential2_Example. Every failure is
+an unbinned/binned maximum-likelihood fit converging to a fitted parameter's upper
+bound instead of the true value, e.g.:
+```
+$ HIP_VISIBLE_DEVICES=3 ./examples/exponential/exponential
+  Pos |    Name    |  type   |      Value       |    Error +/-
+    0 |      alpha | limited |      9.999998048 | 5.928732527e-08
+FunctionMinimum is invalid: Edm is above max
+```
+Expected (matches the CPP backend below, and every prior gfx1100 run):
+`alpha = -1.001102381 +/- 0.003165763921/38`, well inside the example's own
+`[-1.01, -0.99]` assertion window. The GPU value instead lands exactly at the
+parameter's upper bound (10), the classic "solver hit the wall" signature the
+earlier attempt-2 repro described (the underlying `d_normalizations` symbol read
+6.25e-310 there, an uninitialized-double bit pattern).
+
+### Confirmed this is real GPU execution, not a harness/CPU-fallback artifact
+
+```
+AMD_LOG_LEVEL=3 ./examples/exponential/exponential
+  -> 112 hipLaunchKernel dispatches, HIP: Architecture: gfx90a:sramecc+:xnack-
+```
+`roc-obj-ls` (above) confirms the binary carries only a gfx90a code object. So the
+wrong numbers come from real kernels executing on real gfx90a hardware.
+
+### No non-GPU regression: CPP backend 26/26, correct answer
+
+```
+cmake -S . -B build-cpp-validate -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DGOOFIT_DEVICE=CPP -DGOOFIT_TESTS=ON -DGOOFIT_EXAMPLES=ON \
+  -DGOOFIT_CERNROOT=OFF -DGOOFIT_PYTHON=OFF
+cmake --build build-cpp-validate -j32      # 375/375, clean
+ctest --test-dir build-cpp-validate        # 100% tests passed, 26/26, 9.03 s
+./examples/exponential/exponential -> alpha = -1.001102381 +/- 0.003165763938
+```
+Digit-identical to gfx1100's HIP run and to every prior CPP run. The algorithm and
+the non-HIP paths are unaffected; this is isolated to the HIP/gfx90a execution path.
+
+### This settles the standing "which hypothesis" question from attempts 3-6/reviews:
+genuinely gfx90a (wave64) specific, not a stale tree and not a ROCm-version artifact
+
+Per the review's three candidate hypotheses (notes above, "The gfx90a NLL question"):
+(c) stale/uncommitted tree is ruled out -- this is a fresh clone of the exact
+validated `head_sha`, tree clean before and after. (a) a 7.2.1-to-7.2.5 ROCm
+difference is ruled out -- this host's hipcc reports the same `roc-7.2.1` series
+attempt 2 used. That leaves (b): the divergence is reproducible, real-GPU, and
+specific to gfx90a while gfx1100 and CPP both give the correct answer on the
+identical committed tree. Promoted the diagnostic ladder (rule out stale tree and
+toolchain version before accepting "arch-specific") to
+`.claude/skills/cuda-to-rocm/references/validation.md` so the next porter/validator
+does not have to re-derive it from six rounds of notes.
+
+Per the stop-discipline rule for a clean build producing wrong numbers on one
+arch while others pass: not chased further here. The magnitude and repro are
+recorded above for whoever picks this up next (porter, to attempt a fix, or to
+set `blocked` after a real attempt).
+
+### CUDA gate: already recorded at this head_sha, not re-run
+
+Per the validator's own rule (once per head_sha), skipped: this exact head_sha
+(`18fca9e4a`) already has a CUDA-compile-gate result recorded above (gfx1100
+validation session, same date) -- pre-existing upstream breakage
+(`driver_types.h: No such file or directory` under CUDA 12.8, reproduced
+identically on pristine upstream `5fe1221a8`), not a port regression.
+
+### Result: linux-gfx90a -> validation-failed at 18fca9e4a
+
+Build clean (306/306), but 21/25 ctest failures are a genuine numerical fault on
+real gfx90a GPU execution (confirmed via kernel-dispatch and code-object evidence
+above), not a harness issue. This is an ARCH-state failure, not a project-stage
+regression -- `stage` stays `review-passed`; only `platforms.linux-gfx90a` records
+the failure. Recorded `failed_sha=18fca9e4a2ea1e062fb7e80c970ac78df6376408`. No
+source or build files were edited on the fork this round (`git -C
+projects/GooFit/src status --porcelain` empty before and after); the only change
+is a documentation lesson in the `cuda-to-rocm` skill on this port branch.
