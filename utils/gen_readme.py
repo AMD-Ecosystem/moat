@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Regenerate the MOAT project table in README.md between sentinel markers,
-preserving all hand-written prose outside them. Reads every
-projects/*/status.json. Idempotent: same data -> identical bytes.
+preserving all hand-written prose outside them. Reads every project's record across
+refs, not just the folders on this branch -- the table is the progress board, so work
+in flight has to appear on it (see load_projects). Idempotent: same data -> identical
+bytes, given the same refs.
 
 Usage:
   python3 utils/gen_readme.py            # rewrite README.md
@@ -206,8 +208,8 @@ def render_table(projects):
         "| 🔧 | in progress | | 🔴 | pull request closed |",
         "| ⬜ | not started | | ⚖️ | licence bars contributing the port |",
         "| 🚫 | blocked, with a reason recorded | | ⚪ | set aside, with the reason recorded |",
-        "| 🎫 | waived for this project, with maintainer approval | | — | nothing recorded |",
-        "| — | nothing recorded | | | |",
+        "| 🎫 | waived for this project, with maintainer approval | | ⏸ | on hold, deliberately not being worked |",
+        "| — | nothing recorded | | — | nothing recorded |",
         "",
         "The project name links upstream.",
     ])

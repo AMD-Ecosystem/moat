@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "sppark-g2-fp2-msm",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "G2 (fp2 extension field) MSM on ROCm/HIP. fp2 reciprocal needs vt_inverse_mod_x (~400 lines of shuffle-based Montgomery-ladder modular inverse) which the NTT-trimmed ff/mont_t.hip does not implement. G1 MSM is complete and validated; the fp2 entry points (mult_pippenger_fp2_inf) are compiled only for CUDA. To finish G2: port vt_inverse_mod_x + the fp2 device reciprocal path into mont_t.hip, then drop the SPPARK_MSM_FP2/feature=rocm guards in poc/msm-cuda.",
+      "refs": [
+        "projects/sppark/notes.md MSM HIP Port BREAKTHROUGH"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-12T00:19:57Z",
+      "decided": null
+    },
+    {
+      "id": "sppark-bn254-g1-msm-rocm",
+      "kind": "feature-port",
+      "component": "msm/pippenger (bn254/alt_bn128 G1)",
+      "summary": "bn254 (alt_bn128) G1 MSM hangs the GPU on ROCm/HIP at TEST_NPOW>=12 (gfx90a wave64, 100% busy, no completion); bls12_381/bls12_377 G1 finish in <1s. Gated off on ROCm (poc/msm-cuda/build.rs panics for rocm+bn254; cuda/pippenger_inf.cu #error). Likely a bn254-specific wave64 / sort-partitioning / cooperative-grid-sync edge case for the 254-bit field. Resume by root-causing the hang, then drop both gates.",
+      "refs": [
+        "projects/sppark/notes.md (bn254 G1 MSM hangs section)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-12T05:23:55Z",
+      "decided": null
+    },
+    {
+      "id": "sppark-msm-noncoop-fallback",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "sppark MSM (Pippenger sort/accumulate) uses hipLaunchCooperativeKernel; gfx1201 on TheRock ROCm 7.14 Windows reports cooperativeLaunch=0 and the cooperative launch returns hipErrorLaunchFailure(719) even for a 1x1 grid, so MSM bls12_381/bls12_377 fail there (NTT 7/7 pass). To complete the Windows tier on gfx1201 either validate on gfx1101 (currently driver-wedged) or implement a non-cooperative kernel fallback for MSM when cooperativeLaunch==0.",
+      "refs": [
+        "projects/sppark/notes.md",
+        "fork AMD-Ecosystem/sppark @ 00cb1a7"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-12T09:06:38Z",
+      "decided": null
+    }
+  ]
+}
