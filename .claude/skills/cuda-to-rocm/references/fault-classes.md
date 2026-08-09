@@ -408,7 +408,8 @@ there are three:
 
 - **OS and toolchain** -> `_WIN32`: MSVC-vs-MinGW linkage, DLL import libs, path
   separators. (The `/ALTERNATENAME` workaround for missing inherited-constructor exports
-  belongs here; the reproducer is in the local `findings/` area, and `data/deferred.json` records whether it was filed.)
+  belongs here; the reproducer is in the local `findings/` area, and the project's own
+  `deferred.json` records whether it was filed.)
 - **HIP runtime version** -> `HIP_VERSION_MAJOR`/`MINOR`: header behaviour, added or
   removed symbols. (MMseqs2: a Windows commit defined `HIP_DISABLE_WARP_SYNC_BUILTINS`
   unconditionally because `<amd_hip_bf16.h>` defines `__shfl_*_sync` on ROCm 7.14+, but on
