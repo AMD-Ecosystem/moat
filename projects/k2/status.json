@@ -7,7 +7,7 @@
   "priority": 5.757,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-08-08T23:49:05Z",
+  "updated_at": "2026-08-09T00:12:30Z",
   "head_sha": "92912b1c12273c36368279ec4a3410e428503e20",
   "pr_url": "https://github.com/k2-fsa/k2/pull/1353",
   "pr_number": 1353,
@@ -79,13 +79,13 @@
       }
     },
     "linux-gfx90a": {
-      "state": "completed",
+      "state": "validation-failed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "efb407d8338c626f54386c730fc5cba817a3b3de",
       "started_at": "2026-05-31T02:39:49Z",
       "completed_at": "2026-06-11T16:05:09Z",
-      "updated_at": "2026-08-08T23:49:05Z",
+      "updated_at": "2026-08-09T00:12:30Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -107,7 +107,8 @@
         "class": "comment-only",
         "detail": "cmake/torch.cmake: comment-only (comments/format only)",
         "at": "2026-06-11T17:25:17Z"
-      }
+      },
+      "failed_sha": "92912b1c12273c36368279ec4a3410e428503e20"
     },
     "linux-gfx1100": {
       "state": "completed",
