@@ -762,11 +762,12 @@ force-pushing over published, validated history.
 
 **Verdict**: Request Changes
 
-The round's commit (4440182) is correct and I could not fault it; the findings below are
-one pre-existing source line, one gap in the lesson this branch publishes to every agent,
-and a set of upstream-visible defects in already-published commit messages that need a
-person's decision. Detail on the four questions the fix was to be judged against is at the
-end, since the validator needs it.
+The round's commit (4440182) is correct and I could not fault it. The verdict rests on one
+source line on the fork and two problems in the lesson this branch publishes to every
+agent, all three fixable with new commits and none of them requiring history to be touched.
+Detail on the four questions the fix was to be judged against is at the end, since the
+validator needs it. A settled decision about the published commit messages is recorded
+below the findings so it is not re-raised.
 
 ### Fork branch
 
@@ -785,51 +786,7 @@ all of `hip_cuda_compat/`) carry none, so the line is inconsistent inside the po
 as against the project. Remove it. The cost is nil: a comment-only delta is
 carry-forward-eligible, so no arch re-runs.
 
-**2. Four upstream-visible defects sit in commit messages that are already published in
-PR #36. The notes raise one of them and do not name the remedy.**
-
-The porter was right to refuse a silent force-push over history three archs validated, and
-the jargon finding is correctly deferred. But the same commits carry three more problems,
-and the decision a person is being asked to make should list all four and the way to fix
-them together:
-
-- `d5c1355` body: `moat-port` / `moat` (this is the recorded `jargon.py` exit 1).
-- `d5c1355` title is 77 characters, over the 72 limit.
-- `e5ae38f` Test Plan runs `python test/simplify.py` and five siblings. There is no
-  `test/` directory at any commit on this branch or at the base (`git ls-tree main` lists
-  `examples`, not `test`); the scripts are `examples/simplify.py` and so on. A Test Plan
-  that cannot be run as written is worse than none in a PR to an outside maintainer.
-- `e5ae38f` body states that "every AMD-specific change is additive and gated behind
-  USE_ROCM / IS_HIP_EXTENSION / HIP-platform macros" and that the NVIDIA build compiles
-  "the same sources it did before". Three deliberate changes to the CUDA path are neither
-  gated nor same-source, and none is disclosed as such:
-  - the `_cubvh` visibility flags apply to the CUDA build too (`setup.py:231,239`), which
-    is exactly what the nvcc failure proved;
-  - `-std=c++17` becomes `-std=c++20` for Linux CUDA (`setup.py:113-120` against the base
-    file's `else` branch), unguarded;
-  - `third_party/cubvh` moves off the maintainer's own `JeffreyXiang/cubvh@trellis.2` pin
-    onto `ashawkey/cubvh@main`, so the NVIDIA build compiles different cubvh sources, and
-    the single commit that fork carried over its merge-base ("wrap cubvh API with cumesh
-    namespace to avoid symbol conflicts", ce92267) is dropped and replaced by hidden
-    visibility.
-
-  Each of the three is defensible. The C++20 bump is inside the documented floor
-  (`README.md:15` requires CUDA >= 12.4) and helps CUDA users on newer torch as much as
-  ROCm ones; the visibility flags are wanted on CUDA; the submodule move is how the port
-  consumes merged upstream cubvh, and `README.md:71` already credits ashawkey as the
-  origin. What is not defensible is asserting the opposite to the maintainer. The
-  namespace-wrap removal in particular is the most consequential thing in the PR for them
-  (it undoes a fix they wrote deliberately) and the reasoning for the substitution lives
-  only in `setup.py:228-230` and this notes file.
-
-  Remedy to put in front of whoever decides: collapsing the three commits into one
-  tree-identical commit with a corrected message fixes all four at once, and
-  `python3 utils/moatlib.py squash-carry-forward CuMesh <new-sha>` carries every completed
-  arch forward with no GPU re-run and no CUDA re-check. The only real question is whether
-  to force-push over an open upstream PR, which is a person's call, not a revalidation
-  cost.
-
-**3. `simplify.py`'s face count has never been pinned down and the record now spans 6.5%.**
+**2. `simplify.py`'s face count has never been pinned down and the record now spans 6.5%.**
 
 The attribution of 9890-against-9949 to order-sensitive QEM rather than to this commit is
 sound, and I confirmed the mechanical half of it independently (see below): the ROCm flag
@@ -847,7 +804,7 @@ finding before the port is called done.
 
 ### Skill lesson (published to every agent when this branch merges)
 
-**4. `.claude/skills/cuda-to-rocm/references/validation.md:18` ends with a false
+**3. `.claude/skills/cuda-to-rocm/references/validation.md:18` ends with a false
 instruction: "unset `ROCM_HOME` so `IS_HIP_EXTENSION` resolves False".**
 
 It does not. `IS_HIP_EXTENSION = bool(ROCM_HOME is not None and torch.version.hip is not
@@ -867,7 +824,7 @@ switch, `BUILD_TARGET=cuda` forces it directly (`setup.py:79-80`). The same impr
 in this file at the "IS_HIP detection on Windows" note above, which is worth correcting in
 the same edit.
 
-**5. The porter-facing half of the lesson is filed where only a validator will read it.**
+**4. The porter-facing half of the lesson is filed where only a validator will read it.**
 
 All five bullets sit under validation.md's PR-prep nvcc-check gate. The diagnostic half
 belongs there. The half that would have PREVENTED the bug does not: that the `"nvcc"` and
@@ -878,6 +835,43 @@ is the file they open; it currently says nothing about compile flags at all beyo
 `strategy-b-torch.md:8`. Put the rule there and leave the pointer in validation.md, per the
 filing rule. The porter who wrote the original unconditional append would not have opened
 validation.md.
+
+### Settled: the published commit messages stand (maintainer decision, 2026-08-09)
+
+Not a finding, and not open. `python3 utils/jargon.py --port CuMesh` exits 1 on `moat-port`
+and `moat` in commit `d5c1355`'s message. The maintainer has decided that line stays: the
+commit is public in upstream PR #36 and three architectures validated at it, and the
+porter's refusal to rewrite published, validated history was correct. The allowlist in
+`config/jargon.toml` will not be extended to clear it either. Both escapes are closed
+deliberately, so a rewrite, a squash and an allowlist entry are all off the table rather
+than merely unattempted.
+
+Known consequence, recorded as state: `upstream.py --review` scans the whole branch's
+commit messages, so CuMesh cannot open a review PR through the tooling while that line
+stands, and the review PR is the only route to the upstream PR.
+
+Two further observations about the same frozen commits, recorded so a later reader does not
+mistake them for new problems and reach for the same closed remedies. `d5c1355`'s title is
+77 characters against the 72 limit. `e5ae38f`'s Test Plan runs `python test/simplify.py`
+and five siblings, and there is no `test/` directory at any commit on this branch or at the
+base (`git ls-tree main` lists `examples`); the scripts are `examples/simplify.py` and so
+on.
+
+One substantive fact about the branch that its own commit messages understate, useful to
+anyone reading PR #36 rather than something to act on here: `e5ae38f` says every
+AMD-specific change is gated behind USE_ROCM / IS_HIP_EXTENSION / HIP-platform macros and
+that the NVIDIA build compiles the same sources as before, but three changes touch the CUDA
+path ungated. The `_cubvh` visibility flags apply to the CUDA build too (`setup.py:231,239`,
+which is what the nvcc failure exposed); `-std=c++17` becomes `-std=c++20` for Linux CUDA
+(`setup.py:113-120` against the base file's `else` branch); and `third_party/cubvh` moves
+off the maintainer's own `JeffreyXiang/cubvh@trellis.2` pin onto `ashawkey/cubvh@main`, so
+the NVIDIA build compiles different cubvh sources and the one commit that fork carried over
+its merge-base ("wrap cubvh API with cumesh namespace to avoid symbol conflicts", ce92267)
+is dropped, its job taken over by hidden visibility. All three are defensible on the
+merits: C++20 is inside the documented floor (`README.md:15` requires CUDA >= 12.4) and
+helps CUDA users on newer torch as much as ROCm ones, the visibility flags are wanted on
+CUDA, and `README.md:71` already credits ashawkey as cubvh's origin. The reasoning for the
+namespace-wrap substitution lives in `setup.py:228-230` and in the 2026-06-19 note above.
 
 ### On the four questions this round was to be judged against
 
