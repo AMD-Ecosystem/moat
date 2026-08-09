@@ -1391,3 +1391,86 @@ pr-open (PR #145).
 
 No upstream reply posted from this round -- the orchestrator writes the
 maintainer reply.
+
+## Validation 2026-08-09 (linux-gfx90a, revalidate, sha 08cb196)
+
+SHA: 08cb19658f4020db39ea95f04403159e4ed05973 (delta vs prior validated_sha ef990d0)
+GPU: AMD Instinct MI250X (gfx90a), HIP_VISIBLE_DEVICES=2, 4-GPU host
+
+Triggered by a HEAD move since linux-gfx90a's recorded validated_sha (ef990d0, the
+PR-prep squash). `moatlib.py classify SCAMP ef990d0 08cb196` failed the first time
+(no `projects/SCAMP/src` clone present in this fresh worktree -- `_classify_safe`
+needs the fork checked out at that path to diff). Cloned the fork (moat-port branch)
+into `projects/SCAMP/src`, init'd only the submodules the default build needs
+(gflags, cpu_features, eigen -- grpc/pybind11 are BUILD_CLIENT_SERVER/BUILD_PYTHON_MODULE
+only, not needed and skipped to avoid grpc's huge nested-submodule fetch tree). Re-ran
+classify: `class=doc-only arch_independent=True inert=True` -- the delta is exactly the
+"PR fix-round" commits (8254324 kernel-authoring doc, 3e3dd51/08cb196 compile-only HIP
+CI job): `.github/workflows/build-hip.yml`, `docs/CUDA_HIP_KERNELS.md`, `CONTRIBUTING.md`
+link. No source file touched.
+
+Carried forward per the doc-only shortcut, but also ran a full fresh build+GPU test as
+belt-and-suspenders confirmation before recording (this arch had never been validated at
+any sha in the 8254324..08cb196 range, only linux-gfx1100/windows-gfx1201 had via the
+earlier advance-head auto-carry -- so getting the classify tool working, not just trusting
+the earlier note's description, mattered here):
+
+### Build (08cb196, gfx90a, fresh dir)
+
+```bash
+cmake -S projects/SCAMP/src -B projects/SCAMP/src/build \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DBUILD_SCAMP_TESTS=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build projects/SCAMP/src/build -j$(nproc)
+```
+
+Build: PASS (100%, warnings only -- all pre-existing nodiscard). Binary 8,020,288 bytes,
+matching the b999b33/2b5b1a3 binary size exactly (expected: no device or host functional
+change, only CI/doc files added).
+
+### Test (HIP_VISIBLE_DEVICES=2)
+
+```bash
+cd projects/SCAMP/src/test
+HIP_VISIBLE_DEVICES=2 bash run_tests.sh ../build/SCAMP /tmp/scamp-08cb196-results.txt ""
+```
+
+Results: 50/50 tests PASSED ("All Tests Passed!"), max MP value difference
+1.6639858...e-06, 0 index differences -- identical to every prior gfx90a validation
+(b999b33, 2b5b1a3, 8226072). Real GPU execution confirmed (default run_tests.sh invokes
+the GPU path; HIP_VISIBLE_DEVICES pinned to device 2, an MI250X per rocm-smi).
+
+### CUDA gate
+
+Not re-run: this is a carried-forward revalidation on a doc-only delta (no CUDA-compiled
+source touched), which the CLAUDE.md CUDA-gate rule exempts explicitly. The last real nvcc
+compile-check is recorded above at sha 2b5b1a3 (tree-identical to the ef990d0 squash this
+delta builds on) and remains valid: PASS, full SCAMP binary compiles+links under nvcc 12.8
+sm_75 with USE_HIP=OFF FORCE_CUDA=ON.
+
+### Jargon / carry-forward record
+
+`python3 utils/jargon.py --port SCAMP` -> clean.
+
+```bash
+python3 utils/moatlib.py carry-forward SCAMP linux-gfx90a 08cb196 source-class \
+  "doc-only/inert delta ef990d0->08cb196 (.github/workflows/build-hip.yml + \
+   docs/CUDA_HIP_KERNELS.md + CONTRIBUTING.md link, no source touched); classify \
+   verdict class=doc-only arch_independent=True inert=True. Confirmed with a full \
+   fresh gfx90a build+GPU test run: 100% build, binary 8020288 bytes matching prior \
+   b999b33/2b5b1a3 builds, 50/50 tests All Tests Passed, max MP diff 1.66e-06, \
+   0 index diffs (HIP_VISIBLE_DEVICES=2, MI250X)."
+```
+
+linux-gfx90a: revalidate -> completed, validated_sha=08cb196.
+
+### Note for future validators: classify needs the fork clone in place
+
+`moatlib.py classify <name> <old> <new>` silently returns `class=unknown
+(classification failed -> revalidate)` whenever `projects/<name>/src` is not a git
+checkout of the fork -- this is by design (`_classify_safe` is conservative and treats
+a missing clone as unclassifiable, never a false carry-forward), but the error message
+does not say why it failed. In a fresh worktree with no prior `src/` clone, clone the
+fork's moat-port branch into `projects/<name>/src` FIRST, then classify -- do not treat
+an `unknown` verdict as proof the delta is functional without checking whether the clone
+even existed.

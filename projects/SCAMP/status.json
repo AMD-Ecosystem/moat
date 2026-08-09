@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-08-07T07:04:46Z",
+  "updated_at": "2026-08-09T00:25:45Z",
   "head_sha": "08cb196",
   "depends_on": [],
   "pr_url": "https://github.com/zpzim/SCAMP/pull/145",
@@ -116,10 +116,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "ef990d0edfc40560a7eb6316b955672fdd2d8c36",
+      "validated_sha": "08cb19658f4020db39ea95f04403159e4ed05973",
       "started_at": "2026-06-05T00:07:16Z",
-      "completed_at": "2026-06-25T21:06:43Z",
-      "updated_at": "2026-06-25T21:29:55Z",
+      "completed_at": "2026-08-09T00:25:45Z",
+      "updated_at": "2026-08-09T00:25:45Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -135,10 +135,10 @@
       },
       "last_agent": "validator",
       "carry_forward": {
-        "to": "2b5b1a3",
-        "method": "binary-equiv",
-        "detail": "qt_helper FFT/complex/stream renames now masquerade through the shim; host-side only; device ISA + exported symbols identical to b999b33 (3 exports, codeobj_diff verdict=identical, fresh gfx90a builds",
-        "at": "2026-06-25T21:06:43Z"
+        "to": "08cb19658f4020db39ea95f04403159e4ed05973",
+        "method": "source-class",
+        "detail": "doc-only/inert delta ef990d0->08cb196 (.github/workflows/build-hip.yml + docs/CUDA_HIP_KERNELS.md + CONTRIBUTING.md link, no source touched); classify verdict class=doc-only arch_independent=True iner",
+        "at": "2026-08-09T00:25:45Z"
       }
     }
   }
