@@ -1149,3 +1149,88 @@ accurate.
 
 Fork tree clean, nothing to commit. `status.json` updated: `linux-gfx1100.state = completed`,
 `validated_sha = 4c531f5e51f18eeb145309f8650a8da58453c8af`.
+
+## Validation 2026-08-09 (validator, linux-gfx90a, MI250X, GPU index 0)
+
+First validation of this arch. `HIP_VISIBLE_DEVICES=0` for every command;
+`rocm-smi --showproductname` confirmed index 0 is `gfx90a` (MI250X/MI250) before relying on it.
+Fork `4c531f5e51f18eeb145309f8650a8da58453c8af` on `AMD-Ecosystem/colmap:moat-port`, unchanged
+from every round-4 review above.
+
+### Checkout note
+
+`projects/colmap/src` (this host, owned by the porter/reviewer sessions above) was still on
+the pre-amend commit `512dbe91` while the fork's `moat-port` had moved to the amended
+`4c531f5e` (the "Items 2 and 5" amend recorded above). `git status --porcelain` was empty
+first (nothing local to lose), then `git fetch fork moat-port && git checkout -B moat-port
+fork/moat-port` brought the checkout to `4c531f5e`. `git diff --stat 512dbe91 4c531f5e` is 3
+files / 16 lines, matching exactly the "Items 2 and 5" diff already described above
+(`cuda_to_hip.h`, `SiftGPU/CMakeLists.txt`, `CuTexImage.cpp`).
+
+### Build
+
+    HIP_VISIBLE_DEVICES=0 utils/timeit.sh colmap compile -- \
+      cmake --build projects/colmap/src/build-hip-gui -j"$(nproc)"
+
+Incremental: 22 targets rebuilt from the small diff above (the existing `build-hip-gui`
+configure -- `CUDA_ENABLED=OFF HIP_ENABLED=ON CMAKE_HIP_ARCHITECTURES=gfx90a GUI_ENABLED=ON
+TESTS_ENABLED=ON CMAKE_BUILD_TYPE=Release` -- was current with the tree, no reconfigure
+needed). No warnings, no errors.
+
+### Test, -j4 per the recorded Mesa-teardown workaround
+
+    HIP_VISIBLE_DEVICES=0 utils/timeit.sh colmap test -- \
+      xvfb-run -a ctest --test-dir projects/colmap/src/build-hip-gui -j4 --output-on-failure
+
+**159 of 159 pass, 12.28 s wall.** Same full suite as every prior round on gfx1100; count
+matches (159/159), no non-GPU regression, no hang at `-j4` (consistent with every prior
+session -- `-j4` has never hung).
+
+### Anti-no-op: kernel dispatches, not wall time or ctest green
+
+    HIP_VISIBLE_DEVICES=0 xvfb-run -a env AMD_LOG_LEVEL=3 \
+      projects/colmap/src/build-hip-gui/src/colmap/feature/sift_test
+
+32 of 32 `sift_test` cases pass in 3.1 s. Grepped `ShaderName :` (both plain and templated
+`void Foo<N>(...)` forms, collapsing the template args to the base kernel name) for dispatch
+counts:
+
+    ReduceHist_Kernel x45, ComputeDOG_Kernel x30, RowMatch_Kernel x25, ColMatch_Kernel x24,
+    ComputeKEY_Kernel x18, InitHist_Kernel x18, ListGen_Kernel x14,
+    MultiplyDescriptorGRay_Kernel x12, MultiplyDescriptor_Kernel x9,
+    NormalizeDescriptor_Kernel x5, ComputeOrientation_Kernel x5, ComputeDescriptor_Kernel x5,
+    MultiplyDescriptorG_Kernel x4, FilterH x31, FilterV x31, DownsampleKernel x5,
+    UpsampleKernel x1.
+
+**Exact match, kernel-for-kernel and count-for-count, to the gfx1100 baseline recorded above**
+(`notes.md:1111-1117`), which is the expected result: `sift_test` runs the same fixed input
+images and SIFT parameters on both arches, so dispatch counts are architecture-independent
+even though the underlying wavefront width differs. GPU bodies genuinely execute on gfx90a;
+this is not a green suite that skipped the compute path.
+
+### CUDA no-regression gate
+
+Already recorded at this exact head_sha (this file, the "Items 2 and 5" section: nvcc
+13.3.73, `-DCUDA_ENABLED=ON -DCMAKE_CUDA_ARCHITECTURES=80`, `colmap_sift_gpu`,
+`colmap_mvs_cuda`, `colmap_feature_sift_test`, `colmap_main` all compile and link), and
+confirmed unchanged since -- the gfx1100 validator skipped it for the same reason above, and
+no commit has landed on `moat-port` since. Skipped here too, per the once-per-head_sha rule.
+
+### Jargon and documentation, re-checked
+
+    python3 utils/jargon.py --port colmap
+    -> jargon: clean
+
+`doc/install.rst:110-142` documents the ROCm/HIP build in the same section, and in the same
+house style, as the CUDA build immediately above it -- config flags, architecture table,
+`rocm-sdk` auto-detect precedence, and the "accelerates dense reconstruction ... and GPU SIFT
+feature extraction and matching" line, all read correct and current at this sha.
+
+### Integrity
+
+    git -C projects/colmap/src status --porcelain
+    -> (empty)
+
+Fork tree clean, nothing to commit (the checkout-sync above only moved which commit the local
+branch pointer named; it introduced no local diff). `status.json` updated:
+`linux-gfx90a.state = completed`, `validated_sha = 4c531f5e51f18eeb145309f8650a8da58453c8af`.
