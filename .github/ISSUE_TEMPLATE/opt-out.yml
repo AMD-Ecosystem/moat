@@ -1,0 +1,43 @@
+name: Do not send pull requests to my repositories
+description: Ask this effort to stop, for one repository or for everything you own
+title: "[opt-out] <owner or owner/repo>"
+labels: ["opt-out"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        No reason needed and none will be asked for. Filing this stops the work: the
+        repositories are dropped from our candidate list, no new project can be adopted
+        from them, and nothing can be submitted to them even if a port is already
+        finished. Anything of ours already open is closed by a person.
+
+        A comment on one of our pull requests works just as well as this form. This
+        exists so you do not have to wait for one to arrive.
+
+  - type: input
+    id: who
+    attributes:
+      label: Owner, or owner/repo
+      description: >
+        A GitHub username or organisation covers everything you own, now and later. Give
+        owner/repo instead if this is only about one repository.
+      placeholder: my-org
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: authority
+    attributes:
+      label: Confirm
+      options:
+        - label: I maintain these repositories, or I am asking on behalf of the people who do
+          required: true
+
+  - type: textarea
+    id: note
+    attributes:
+      label: Anything else (optional)
+      description: >
+        Only if it is useful to you. For instance, if you would take an AMD support
+        change filed as an issue first rather than as a pull request, say so and we will
+        do that instead of stopping.

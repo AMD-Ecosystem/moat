@@ -205,6 +205,45 @@ def gate_jargon():
     return problems
 
 
+def gate_optout():
+    """The opt-out record is well-formed, and nothing it covers is still adopted.
+
+    A malformed entry here fails open -- the filters would stop matching and the
+    repos would quietly come back into the queue -- so the shape is checked rather
+    than assumed. The second half catches the case that matters: an opt-out recorded
+    while a project from that owner is still in the pipeline. pr_ready blocks the
+    route upstream on its own, but the project sitting there adopted reads as live
+    work, and someone has to retire it."""
+    import moatlib as m
+    problems = []
+    d = m.load_optouts()
+    if not isinstance(d, dict):
+        return ["data/optout.json is not an object"]
+    for key, v in d.items():
+        if not isinstance(v, dict):
+            problems.append(f"{key}: not an object")
+            continue
+        if key != (v.get("who") or "").lower():
+            problems.append(f"{key}: key does not match who={v.get('who')!r}")
+        if v.get("scope") not in ("owner", "repo"):
+            problems.append(f"{key}: scope must be owner or repo, got {v.get('scope')!r}")
+        if not v.get("source"):
+            problems.append(f"{key}: no source -- an opt-out must say where it was asked for")
+    for name in sorted(m.all_projects()):
+        rec, _where = m.project_record(name)
+        if not rec:
+            continue
+        full = (rec.get("upstream_url") or "").split("github.com/", 1)[-1]
+        if not full or not m.optout_for(full):
+            continue
+        disp = m.get_disposition(full) or {}
+        if disp.get("disposition") != "skip":
+            problems.append(f"{name} ({full}): its owner opted out but the project is "
+                            f"still live at stage {rec.get('stage')} -- "
+                            f"python3 utils/optout.py record retires it")
+    return problems
+
+
 def gate_surface():
     """Where a project has a surface.json, every component is either covered or
     explicitly scoped out with a reason. The gate is ACCOUNTING, not coverage: a
@@ -249,6 +288,7 @@ GATES = {
     "blobs": (gate_blobs, False),
     "states": (gate_states, False),
     "jargon": (gate_jargon, False),
+    "optout": (gate_optout, False),
     "surface": (gate_surface, False),
     "forks": (gate_forks, True),      # slow: shells out per fork clone
 }
