@@ -2305,7 +2305,18 @@ def record_optout(who, source, note=""):
     return d[who.lower()]
 
 
-def clear_optout(who):
+def clear_optout(who, by):
+    """Withdraw an opt-out. Requires `by`, and requires it HERE rather than only in
+    optout.py, because this is the one direction that resumes contact with someone who
+    asked us to stop. Every comparable control in this file refuses in the library --
+    set_not_portable, approve_waiver, refuse_waiver -- so that a caller reaching past
+    the command line cannot skip what the command line was enforcing. Recording an
+    opt-out is the opposite and needs nobody: it can only ever cause less work."""
+    if not (by or "").strip():
+        raise ValueError(
+            f"{who}: --by is required. Withdrawing an opt-out resumes contact with "
+            f"someone who asked us to stop, so the record has to say who authorised it "
+            f"-- an agent may carry that decision but never make it")
     d = load_optouts()
     if who.lower() in d:
         del d[who.lower()]

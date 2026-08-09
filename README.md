@@ -17,8 +17,8 @@ branch. There is no bot that follows up on a schedule -- every reply to you is a
 separate decision by a person, in a session they are sitting in front of.
 
 **We do not open it until the port has been built and its real test suite has been run
-on AMD hardware**, on at least one GPU per coverage gate (see the table below). A
-compile is not evidence and does not count.
+on AMD hardware**, on both wavefront widths (see the table below) -- that is where a
+CUDA port most often breaks. A compile is not evidence and does not count.
 
 **You can tell us to stop, and that is the end of it.** No reason needed. Either:
 
@@ -31,8 +31,10 @@ has looked at yet. It is recorded in [`data/optout.json`](data/optout.json), and
 not a promise to remember: the record is enforced in three places in the tooling --
 your repositories drop out of the candidate list, no project can be adopted from them,
 and nothing can be submitted to them even if the port is already finished and approved.
-Anything of ours already open gets closed and the fork deleted. Withdrawing an opt-out
-needs a person on our side and someone asking on yours; an agent cannot do it.
+Closing anything of ours still open and deleting the fork are done by a person, because
+anything that touches your repository always is. Withdrawing an opt-out needs a person
+on our side and someone asking on yours; an agent may carry that decision into the
+record but never make it.
 
 If a pull request is not how you would like to receive this, say that instead. Filing
 an issue with the findings and no code, or waiting for a release window, is a smaller

@@ -59,28 +59,36 @@ def cmd_record(args):
     rows = affected(rec["who"])
     if not rows:
         print("nothing of ours is on their repositories.")
-        return 0
-    # Retiring the adopted projects is part of recording, not a follow-up someone
-    # might forget. An opted-out project left in the pipeline keeps being selected,
-    # and the next agent to pick it up spends an attempt on work that can never be
-    # submitted. This is the one disposition an agent may write, for the same reason
-    # the opt-out itself is: the decision was made by the maintainer.
-    print(f"\n{len(rows)} adopted project(s) covered by this:")
-    for r in rows:
-        moatlib.set_disposition(r["full_name"], "skip", "opted-out",
-                                f"maintainer asked us to stop: {rec['source']}")
-        print(f"  {r['name']} ({r['full_name']}) was {r['stage']} -- retired "
-              f"in data/dispositions.json")
-    print("\nWhat is left is visible on their repositories, so it stays with a person:")
-    for r in rows:
-        if r["review_pr"]:
-            print(f"  close our review PR: gh pr close {r['review_pr']} --comment \"...\"")
-        if r["pr"] and r["pr_state"] not in ("merged", "closed"):
-            print(f"  close {r['pr']}, then: python3 utils/moatlib.py "
-                  f"set-pr-closed {r['name']} --note \"maintainer opted out\"")
-        if r["fork"]:
-            print("  delete the fork: gh repo delete "
-                  f"{r['fork'].split('github.com/', 1)[-1]} --yes")
+    else:
+        # Retiring the adopted projects is part of recording, not a follow-up someone
+        # might forget. An opted-out project left in the pipeline keeps being selected,
+        # and the next agent to pick it up spends an attempt on work that can never be
+        # submitted. This is the one disposition an agent may write, for the same reason
+        # the opt-out itself is: the decision was made by the maintainer.
+        print(f"\n{len(rows)} adopted project(s) covered by this:")
+        for r in rows:
+            moatlib.set_disposition(r["full_name"], "skip", "opted-out",
+                                    f"maintainer asked us to stop: {rec['source']}")
+            print(f"  {r['name']} ({r['full_name']}) was {r['stage']} -- retired "
+                  f"in data/dispositions.json")
+        print("\nWhat is left is visible on their repositories, so it stays with a person:")
+        for r in rows:
+            if r["review_pr"]:
+                print(f"  close our review PR: gh pr close {r['review_pr']} --comment \"...\"")
+            if r["pr"] and r["pr_state"] not in ("merged", "closed"):
+                print(f"  close {r['pr']}, then: python3 utils/moatlib.py "
+                      f"set-pr-closed {r['name']} --note \"maintainer opted out\"")
+            if r["fork"]:
+                print("  delete the fork: gh repo delete "
+                      f"{r['fork'].split('github.com/', 1)[-1]} --yes")
+    # Both files are working-tree writes, so this binds THIS checkout and nothing else
+    # until it reaches the trunk. Every other host still has no opt-out recorded, and
+    # `--publish` runs from whichever session someone happens to be in -- so the window
+    # between recording and merging is a window where the request is not yet honoured
+    # anywhere but here. Said at the end because it is the last thing left to do.
+    print("\nNot binding anywhere else yet: data/optout.json (and any disposition above) "
+          "are working-tree writes.\nCommit them and open the pull request now -- until "
+          "it merges, another host can still adopt, port and submit for this owner.")
     return 0
 
 
@@ -112,7 +120,7 @@ def cmd_remove(args):
         print("removing an opt-out resumes contact with someone who asked us to stop; "
               "--by <who authorised it> is required", file=sys.stderr)
         return 2
-    if moatlib.clear_optout(args.who):
+    if moatlib.clear_optout(args.who, args.by):
         print(f"removed the opt-out for {args.who}, authorised by {args.by}")
         return 0
     print("no opt-out recorded for that owner or repo")

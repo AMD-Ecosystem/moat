@@ -63,6 +63,15 @@ BRANCH = "record-sync"
 # SUBMISSION_MARKER is what the publish gate looks for. Keep it a stable substring of
 # the note: editing the wording is fine, editing the marker orphans every review PR
 # already approved.
+#
+# EDITING THE NOTE: the jargon checker cannot see the paragraph carrying the repo URL.
+# `MOAT` is a jargon term, and config/jargon.toml allows any line matching
+# `https?://\S*moat` or `github\.com/\S+` so ordinary links do not trip it -- but the
+# allowance skips the WHOLE line, and a GitHub body is written one line per paragraph,
+# so everything beside that URL goes unscanned. Dropping "the lead platform validated at
+# head_sha" into it yields zero hits; the same words on their own line yield three. So
+# check any wording change here by eye: this is the one paragraph the gate below cannot
+# check for you.
 SUBMISSION_MARKER = "prepared with the help of an AI assistant"
 SUBMISSION_NOTE = (
     "---\n\n"
