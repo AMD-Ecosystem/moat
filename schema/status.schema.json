@@ -389,6 +389,13 @@
           ],
           "description": "head this arch last validated"
         },
+        "failed_sha": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "head this arch last failed to validate"
+        },
         "pr_url": {
           "type": [
             "string",
