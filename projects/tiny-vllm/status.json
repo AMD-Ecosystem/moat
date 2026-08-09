@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-08-07T07:05:32Z",
+  "updated_at": "2026-08-09T15:26:43Z",
   "head_sha": "d6b1ab3a24dc86220c9eee136102ec5859684c24",
   "depends_on": [],
   "pr_url": "https://github.com/jmaczan/tiny-vllm/pull/2",
@@ -25,10 +25,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "ace290fe32e4597ddb7f86ae6dc58a353eb064af",
+      "validated_sha": "d6b1ab3a24dc86220c9eee136102ec5859684c24",
       "started_at": "2026-06-05T00:05:19Z",
-      "completed_at": "2026-06-05T05:27:33Z",
-      "updated_at": "2026-07-06T02:49:04Z",
+      "completed_at": "2026-08-09T15:26:43Z",
+      "updated_at": "2026-08-09T15:26:43Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -44,10 +44,10 @@
       },
       "last_agent": "moat-checkup",
       "carry_forward": {
-        "to": "ace290fe32e4597ddb7f86ae6dc58a353eb064af",
+        "to": "d6b1ab3a24dc86220c9eee136102ec5859684c24",
         "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:24:33Z"
+        "detail": "src/cuda_to_hip.h: comment-only (comments/format only), removed AMD copyright/author lines per maintainer request; identical to the delta already carried forward for gfx1100/gfx1101/gfx1201",
+        "at": "2026-08-09T15:26:43Z"
       }
     },
     "linux-gfx1100": {

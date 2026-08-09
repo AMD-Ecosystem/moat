@@ -377,3 +377,26 @@ Action taken:
 - Replied to the maintainer's review thread (comment id 3492833093, reply id 3515308604) explaining the contribution is under the project's Apache-2.0 terms and the copyright line was dropped. Thread left unresolved for the maintainer to close.
 
 No build/test re-run needed (comment-only). No functional change.
+
+## Validation 2026-08-09 (linux-gfx90a revalidate)
+
+Fork head had moved past `linux-gfx90a`'s `validated_sha` (ace290f -> d6b1ab3). Cloned the fork fresh into `projects/tiny-vllm/src` (moat-port branch) to classify against a real checkout.
+
+```
+python3 utils/moatlib.py classify tiny-vllm ace290fe32e4597ddb7f86ae6dc58a353eb064af d6b1ab3a24dc86220c9eee136102ec5859684c24
+-> class=comment-only arch_independent=True inert=True
+   src/cuda_to_hip.h: comment-only (comments/format only)
+```
+
+Confirmed with `git diff ace290f d6b1ab3` directly: the only change is removal of two comment lines (`// Copyright (c) 2026 Advanced Micro Devices, Inc.` and `// Author: Jeff Daily <jeff.daily@amd.com>`) from `src/cuda_to_hip.h` -- the same PR-fix-round-2026-07-02 commit already carried forward to linux-gfx1100/windows-gfx1101/windows-gfx1201. No code, no CMake, nothing that touches codegen.
+
+Carried forward with no rebuild and no GPU re-run:
+```
+python3 utils/moatlib.py carry-forward tiny-vllm linux-gfx90a d6b1ab3a24dc86220c9eee136102ec5859684c24 source-class "src/cuda_to_hip.h: comment-only ..."
+```
+
+CUDA no-regression gate: skipped per policy (carried-forward revalidation; the delta cannot affect the CUDA build either).
+
+Jargon: `python3 utils/jargon.py --port tiny-vllm` -> clean.
+
+`linux-gfx90a` state: completed, validated_sha now d6b1ab3a24dc86220c9eee136102ec5859684c24 (matches head_sha). No GPU tests re-run; the last real GPU evidence for this arch remains the 2026-06-05 validation above (device detection, embedding gather, 64-bit-mask warp shuffle, hipBLAS bf16 GEMM, all PASS on MI250X).
