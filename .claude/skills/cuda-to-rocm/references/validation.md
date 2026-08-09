@@ -42,6 +42,14 @@ Two follow-ons worth taking:
 - The dispatch log also tells you WHICH backend ran. A project with both a compute and a
   GLSL/CPU fallback will happily pass its whole suite on the fallback; seeing your kernel
   names is what distinguishes "the port works" from "the fallback works".
+- When a second arch validates the same fixed test inputs, DIFF the dispatch counts against
+  the first arch's recorded numbers rather than just checking they are nonzero. If the test
+  data and algorithm are deterministic (colmap's `sift_test` runs fixed images through fixed
+  SIFT parameters), the per-kernel counts are architecture-independent even though wavefront
+  width differs -- gfx1100 (wave32) and gfx90a (wave64) produced the identical kernel-for-
+  kernel, count-for-count table for colmap. An exact match is stronger corroboration than a
+  second "it's nonzero" check; a mismatch with no code difference between the two validations
+  would be a signal worth chasing, not a footnote.
 
 ### Closing a "it might silently fall back" risk: trace it, do not reason about it
 
