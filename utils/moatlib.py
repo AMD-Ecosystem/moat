@@ -3127,8 +3127,24 @@ def main(argv=None):
         print(f"{args.name}: license-ok={ok} ({why})")
         return 0 if ok else 1
     elif args.cmd == "set-review-pr":
+        # Retracting has its own flag, so the bare form must not also retract. `url` is
+        # optional, and omitting it -- a typo, a shell that ate the argument, or reading
+        # `set-review-pr <name>` as "show me this project's review PR" -- used to take
+        # the same path as `--clear`: it skipped the gate check, wrote null, printed
+        # `review PR -> None` and exited 0. That erases the one field saying where the
+        # port's approval lives, so the port drops out of `--publish` and comes back in
+        # `--review` as needing a PR it already has.
+        if not args.url and not args.clear:
+            try:
+                cur = load_status(args.name).get("review_pr") or "none recorded"
+            except (FileNotFoundError, ValueError) as e:
+                cur = f"unreadable -- {e}"
+            print(f"set-review-pr: no URL given. Pass one to record it, or --clear to "
+                  f"retract the recorded one. {args.name} currently: {cur}",
+                  file=sys.stderr)
+            return 2
         set_review_pr(args.name, None if args.clear else args.url)
-        print(f"{args.name}: review PR -> {args.url}")
+        print(f"{args.name}: review PR -> {'(cleared)' if args.clear else args.url}")
     elif args.cmd == "record-pr-approval":
         a = record_pr_approval(args.name, args.review_pr)
         print(f"{args.name}: approved by {a['approved_by']} for "
