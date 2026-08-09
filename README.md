@@ -2,11 +2,81 @@
 
 MOAT ports popular CUDA GitHub projects to ROCm/HIP, one repo at a time. Coverage is expressed as gates -- wave64, wave32, windows -- so a port is proven once each gate has an architecture that validated it on real hardware. It is driven by Claude: intake screens a candidate, a planner analyses it, a porter applies the change on a fork in the AMD-Ecosystem org, a reviewer checks it, and a validator runs the real tests on AMD GPUs. Submitting the result upstream, and everything that follows with a maintainer, stays with a person. This repo is the control plane; it tracks progress and holds the porting knowledge in the `cuda-to-rocm` skill.
 
+## If you maintain a project we might send a pull request to
+
+Read this section and skip the rest; it is what concerns you.
+
+**Every pull request from this effort is written by an AI agent and read by a person
+before it is opened.** It says so in its own body, along with a link back here. The
+person who approves it is approving the diff, the title and the body together, on one
+page, before any of it is visible on your repository.
+
+**You get at most one pull request per project.** It is opened from a fork under the
+[AMD-Ecosystem](https://github.com/AMD-Ecosystem) organisation against your default
+branch. There is no bot that follows up on a schedule -- every reply to you is a
+separate decision by a person, in a session they are sitting in front of.
+
+**We do not open it until the port has been built and its real test suite has been run
+on AMD hardware**, on both wavefront widths (see the table below) -- that is where a
+CUDA port most often breaks. A compile is not evidence and does not count.
+
+**You can tell us to stop, and that is the end of it.** No reason needed. Either:
+
+- comment on any pull request of ours saying so, or
+- [open an opt-out issue](https://github.com/AMD-Ecosystem/moat/issues/new?template=opt-out.yml)
+  naming your username, your organisation, or one repository.
+
+An owner-level opt-out covers everything you own, including repositories nobody here
+has looked at yet. It is recorded in [`data/optout.json`](data/optout.json), and it is
+not a promise to remember: the record is enforced in three places in the tooling --
+your repositories drop out of the candidate list, no project can be adopted from them,
+and nothing can be submitted to them even if the port is already finished and approved.
+Closing anything of ours still open and deleting the fork are done by a person, because
+anything that touches your repository always is. Withdrawing an opt-out needs a person
+on our side and someone asking on yours; an agent may carry that decision into the
+record but never make it.
+
+If a pull request is not how you would like to receive this, say that instead. Filing
+an issue with the findings and no code, or waiting for a release window, is a smaller
+ask than stopping and we would rather do it.
+
 ## How it works
+
+Five agents run in sequence, and each hands over through a state file rather than a
+conversation, so any Claude CLI on any host can pick up where the last one stopped:
+**intake** screens a candidate for licence and viability, **planner** analyses the
+build system and the CUDA surface, **porter** writes the port on the fork, **reviewer**
+reads the diff, and **validator** builds it and runs the project's own tests on a real
+AMD GPU. The reviewer and the validator can both send it back to the porter. What
+happens after approval -- submitting the pull request, maintainer rounds, merge -- is
+not an agent at all, because every step of it ends at a person.
 
 Each project gets a folder under `projects/` holding its plan, notes, and a per-platform status file. A fresh Claude CLI run in this repo detects its AMD architecture, finds the next actionable project, and continues the pipeline. No platform leads: whichever host picks the project up first does the porting, and the rest validate the same fork branch independently and in parallel, since the AMD targets share one unified ROCm port.
 
 A platform is an architecture on an operating system, and it carries the gates implied by both -- its wavefront size, which is fixed by the architecture, and its OS. The same GPU on a different OS is a different platform covering different gates. A gate is satisfied once any one platform carrying that attribute has validated, so the gates can be covered by as few as two hosts.
+
+## What a person decides, and what agents may never do
+
+Four decisions are held by a person. Each is enforced by the tooling rather than by an
+instruction an agent is asked to remember, and none of them is a checkbox an agent can
+tick on its own.
+
+| the decision | how it is made | what an agent may do |
+|---|---|---|
+| **Is this project's licence one we may contribute to?** | Permissive licences are cleared in advance by tier (`config/licenses.toml`); anything else waits for a named person, one project at a time | Read the licence and record which one it is. That is a fact. The clearance is not, and a record without a name satisfies nothing |
+| **Do we take this project up at all?** | Someone creates the fork in the AMD-Ecosystem org. Agents have no permission to create one, so its existence *is* the decision and nothing else has to record it | Write the case for and against, and recommend |
+| **Do we decline it?** | Screens collect into one issue, a person answers in prose, and their approval of a small pull request recording the declines is the record | Write the case. Never the verdict |
+| **Does this port go upstream, exactly as written?** | A review pull request on our own fork carries the diff, the title and the body together. A person approves it there, and their approval is bound to that commit and that text | Open the review pull request and read the answer. It may never write the approval line |
+
+The last one is the gate that matters to a maintainer receiving this. An approval
+covers what was on screen when it was given: a commit pushed afterwards, or an edit to
+the title or body, voids it and the submission step refuses. That check compares GitHub
+against GitHub -- the commit the review was attached to against the branch tip now --
+because the local record is a file agents can write and the approval is not.
+
+Opening the upstream pull request is one command run by a person in their own session,
+never by an unattended job. Doing it on a schedule would mean a standing credential with
+write access to public repositories generally, which is more than this work should hold.
 
 ## Licence
 
@@ -55,11 +125,11 @@ The project name links upstream.
 | [3DUNDERWORLD-SLS-GPU_CPU](https://github.com/theICTlab/3DUNDERWORLD-SLS-GPU_CPU) ([fork](https://github.com/AMD-Ecosystem/3DUNDERWORLD-SLS-GPU_CPU/tree/moat-port)) | 🔧 | ✅ | 🔄 | 🟢 [#33](https://github.com/theICTlab/3DUNDERWORLD-SLS-GPU_CPU/pull/33) |
 | [3P-ADMM-PC2](https://github.com/Samarvivian/3P-ADMM-PC2) ([fork](https://github.com/AMD-Ecosystem/3P-ADMM-PC2/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#10](https://github.com/Samarvivian/3P-ADMM-PC2/pull/10) |
 | [accelerated-scan](https://github.com/proger/accelerated-scan) ([fork](https://github.com/AMD-Ecosystem/accelerated-scan/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#17](https://github.com/proger/accelerated-scan/pull/17) |
-| [aihwkit](https://github.com/IBM/aihwkit) ([fork](https://github.com/AMD-Ecosystem/aihwkit/tree/moat-port)) | 🔄 | ✅ | ✅ | 🟢 [#770](https://github.com/IBM/aihwkit/pull/770) |
+| [aihwkit](https://github.com/IBM/aihwkit) ([fork](https://github.com/AMD-Ecosystem/aihwkit/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#770](https://github.com/IBM/aihwkit/pull/770) |
 | [alien](https://github.com/chrxh/alien) ([fork](https://github.com/AMD-Ecosystem/alien/tree/moat-port)) | ✅ | ✅ | 🔄 | 🟣 [#710](https://github.com/chrxh/alien/pull/710) |
 | [amgcl](https://github.com/ddemidov/amgcl) ([fork](https://github.com/AMD-Ecosystem/amgcl/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#315](https://github.com/ddemidov/amgcl/pull/315) |
 | [anari-visionaray](https://github.com/szellmann/anari-visionaray) ([fork](https://github.com/AMD-Ecosystem/anari-visionaray/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#10](https://github.com/szellmann/anari-visionaray/pull/10) |
-| [arbor](https://github.com/arbor-sim/arbor) ([fork](https://github.com/AMD-Ecosystem/arbor/tree/moat-port)) | 🔄 | ✅ | ✅ | 🟣 [#2512](https://github.com/arbor-sim/arbor/pull/2512) |
+| [arbor](https://github.com/arbor-sim/arbor) ([fork](https://github.com/AMD-Ecosystem/arbor/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#2512](https://github.com/arbor-sim/arbor/pull/2512) |
 | [arrayfire](https://github.com/arrayfire/arrayfire) ([fork](https://github.com/AMD-Ecosystem/arrayfire/tree/moat-port)) | 🔧 | ✅ | ✅ | 🟢 [#3708](https://github.com/arrayfire/arrayfire/pull/3708) |
 | [AutoDock-GPU](https://github.com/ccsb-scripps/AutoDock-GPU) ([fork](https://github.com/AMD-Ecosystem/AutoDock-GPU/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#320](https://github.com/ccsb-scripps/AutoDock-GPU/pull/320) |
 | [bam](https://github.com/ZaidQureshi/bam) ([fork](https://github.com/AMD-Ecosystem/bam/tree/moat-port)) | 🚫 | 🚫 | 🚫 | ⏸ on hold |
@@ -125,7 +195,7 @@ The project name links upstream.
 | [h2o4gpu](https://github.com/h2oai/h2o4gpu) | ⬜ | ⬜ | ⬜ | — |
 | [HEonGPU](https://github.com/Alisah-Ozcan/HEonGPU) ([fork](https://github.com/AMD-Ecosystem/HEonGPU/tree/moat-port)) | 🔧 | 🚫 | ⬜ | — |
 | [icicle](https://github.com/ingonyama-zk/icicle) ([fork](https://github.com/AMD-Ecosystem/icicle/tree/moat-port)) | ✅ | ✅ | 🚫 | — |
-| [k2](https://github.com/k2-fsa/k2) ([fork](https://github.com/AMD-Ecosystem/k2/tree/moat-port)) | 🔧 | ✅ | ✅ | 🟣 [#1353](https://github.com/k2-fsa/k2/pull/1353) |
+| [k2](https://github.com/k2-fsa/k2) ([fork](https://github.com/AMD-Ecosystem/k2/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#1353](https://github.com/k2-fsa/k2/pull/1353) |
 | [kaldi](https://github.com/kaldi-asr/kaldi) ([fork](https://github.com/AMD-Ecosystem/kaldi/tree/moat-port)) | ✅ | ✅ | 🚫 | 🟢 [#4986](https://github.com/kaldi-asr/kaldi/pull/4986) |
 | [kaldifeat](https://github.com/csukuangfj/kaldifeat) ([fork](https://github.com/AMD-Ecosystem/kaldifeat/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [KittenGpuLBVH](https://github.com/jerry060599/KittenGpuLBVH) ([fork](https://github.com/AMD-Ecosystem/KittenGpuLBVH/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#5](https://github.com/jerry060599/KittenGpuLBVH/pull/5) |
@@ -141,7 +211,7 @@ The project name links upstream.
 | [mahout](https://github.com/apache/mahout) ([fork](https://github.com/AMD-Ecosystem/mahout/tree/moat-port)) | ✅ | ✅ | 🔄 | 🟢 [#1399](https://github.com/apache/mahout/pull/1399) |
 | [marian-dev](https://github.com/marian-nmt/marian-dev) ([fork](https://github.com/AMD-Ecosystem/marian-dev/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [MASt3R-SLAM](https://github.com/rmurai0610/MASt3R-SLAM) ([fork](https://github.com/AMD-Ecosystem/MASt3R-SLAM/tree/moat-port)) | ✅ | ✅ | ✅ | — |
-| [mcx](https://github.com/fangq/mcx) ([fork](https://github.com/AMD-Ecosystem/mcx/tree/moat-port)) | 🔄 | ✅ | ✅ | 🟣 [#264](https://github.com/fangq/mcx/pull/264) |
+| [mcx](https://github.com/fangq/mcx) ([fork](https://github.com/AMD-Ecosystem/mcx/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#264](https://github.com/fangq/mcx/pull/264) |
 | [metaeuk](https://github.com/soedinglab/metaeuk) ([fork](https://github.com/AMD-Ecosystem/metaeuk/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [mHC.cu](https://github.com/AndreSlavescu/mHC.cu) ([fork](https://github.com/AMD-Ecosystem/mHC.cu/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [MMseqs2](https://github.com/soedinglab/MMseqs2) ([fork](https://github.com/AMD-Ecosystem/MMseqs2/tree/moat-port)) | ✅ | ✅ | ✅ | — |
@@ -169,12 +239,12 @@ The project name links upstream.
 | [rmcl](https://github.com/uos/rmcl) ([fork](https://github.com/AMD-Ecosystem/rmcl/tree/moat-port)) | ⬜ | ⬜ | ⬜ | — |
 | [RWKV-CUDA](https://github.com/BlinkDL/RWKV-CUDA) ([fork](https://github.com/AMD-Ecosystem/RWKV-CUDA/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [RXMesh](https://github.com/owensgroup/RXMesh) ([fork](https://github.com/AMD-Ecosystem/RXMesh/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#73](https://github.com/owensgroup/RXMesh/pull/73) |
-| [SCAMP](https://github.com/zpzim/SCAMP) ([fork](https://github.com/AMD-Ecosystem/SCAMP/tree/moat-port)) | 🔄 | ✅ | ✅ | 🟢 [#145](https://github.com/zpzim/SCAMP/pull/145) |
+| [SCAMP](https://github.com/zpzim/SCAMP) ([fork](https://github.com/AMD-Ecosystem/SCAMP/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#145](https://github.com/zpzim/SCAMP/pull/145) |
 | [SpargeAttn](https://github.com/thu-ml/SpargeAttn) | 🚫 | — | — | ⚪ not-portable |
 | [spconv](https://github.com/traveller59/spconv) | ⬜ | ⬜ | ⬜ | — |
 | [splatad](https://github.com/carlinds/splatad) ([fork](https://github.com/AMD-Ecosystem/splatad/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#24](https://github.com/carlinds/splatad/pull/24) |
 | [sppark](https://github.com/supranational/sppark) ([fork](https://github.com/AMD-Ecosystem/sppark/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#82](https://github.com/supranational/sppark/pull/82) |
-| [stdgpu](https://github.com/stotko/stdgpu) ([fork](https://github.com/AMD-Ecosystem/stdgpu/tree/moat-port)) | 🔄 | ✅ | ✅ | 🟣 [#484](https://github.com/stotko/stdgpu/pull/484) |
+| [stdgpu](https://github.com/stotko/stdgpu) ([fork](https://github.com/AMD-Ecosystem/stdgpu/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#484](https://github.com/stotko/stdgpu/pull/484) |
 | [symforce](https://github.com/symforce-org/symforce) ([fork](https://github.com/AMD-Ecosystem/symforce/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#465](https://github.com/symforce-org/symforce/pull/465) |
 | [TIGRE](https://github.com/CERN/TIGRE) ([fork](https://github.com/AMD-Ecosystem/TIGRE/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#747](https://github.com/CERN/TIGRE/pull/747) |
 | [tiny-vllm](https://github.com/jmaczan/tiny-vllm) ([fork](https://github.com/AMD-Ecosystem/tiny-vllm/tree/moat-port)) | 🔄 | ✅ | ✅ | 🟣 [#2](https://github.com/jmaczan/tiny-vllm/pull/2) |
@@ -185,7 +255,7 @@ The project name links upstream.
 | [TurboFNO](https://github.com/shixun404/TurboFNO) ([fork](https://github.com/AMD-Ecosystem/TurboFNO/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#3](https://github.com/shixun404/TurboFNO/pull/3) |
 | [unified-cache-management](https://github.com/ModelEngine-Group/unified-cache-management) ([fork](https://github.com/AMD-Ecosystem/unified-cache-management/tree/moat-port)) | ✅ | ✅ | 🔄 | 🟢 [#1021](https://github.com/ModelEngine-Group/unified-cache-management/pull/1021) |
 | [Velvet](https://github.com/vitalight/Velvet) ([fork](https://github.com/AMD-Ecosystem/Velvet/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#9](https://github.com/vitalight/Velvet/pull/9) |
-| [visionaray](https://github.com/szellmann/visionaray) ([fork](https://github.com/AMD-Ecosystem/visionaray/tree/moat-port)) | 🔄 | ✅ | ✅ | 🟣 [#51](https://github.com/szellmann/visionaray/pull/51) |
+| [visionaray](https://github.com/szellmann/visionaray) ([fork](https://github.com/AMD-Ecosystem/visionaray/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#51](https://github.com/szellmann/visionaray/pull/51) |
 | [yalm](https://github.com/andrewkchan/yalm) ([fork](https://github.com/AMD-Ecosystem/yalm/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#12](https://github.com/andrewkchan/yalm/pull/12) |
 | [YarnBall](https://github.com/jerry060599/YarnBall) ([fork](https://github.com/AMD-Ecosystem/YarnBall/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#5](https://github.com/jerry060599/YarnBall/pull/5) |
 | [ZhiLight](https://github.com/zhihu/ZhiLight) ([fork](https://github.com/AMD-Ecosystem/ZhiLight/tree/moat-port)) | ✅ | ✅ | 🎫 | 🟢 [#81](https://github.com/zhihu/ZhiLight/pull/81) |
