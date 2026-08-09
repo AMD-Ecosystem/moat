@@ -46,18 +46,6 @@ point they have answered wastes their patience rather than yours.
 
 Add `detailed` for line-by-line specific comments.
 
-### GitHub Actions Mode
-
-If the prompt carries `<formatted_context>`, `<pr_or_issue_body>` or `<comments>` tags, you
-were invoked from a GitHub workflow rather than a terminal. The PR body, comments and
-review state are already in those tags -- do not re-fetch them, and do not reach for `gh`,
-which is not available there. Use git alone:
-
-```bash
-git diff <base>...HEAD
-git log <base>..HEAD
-```
-
 ## Review Philosophy
 
 A single line can have deep cross-cutting implications: a hardcoded `32` silently corrupts results on a wave64 GPU; a missing index clamp faults on AMD where CUDA tolerated it; a per-arch hack that fixes wave32 regresses wave64. Treat every line as potentially load-bearing.

@@ -51,4 +51,4 @@ A `revalidate` is triggered by a HEAD move since this platform's `validated_sha`
 3. Any other verdict (`differ`/`indeterminate`), or if you cannot build both shas, do the normal full real-GPU revalidation. Never carry forward on uncertainty.
 This is most useful for cosmetic comment reworks that shift `__LINE__` and for reformatting (the source classifier flags those as not-arch-independent, but they compile to identical code). An exported-symbol rename correctly shows as `differ` (external callers reference it by name), forcing a real revalidation.
 
-Push with `moatlib.py commit-project` and wrap phases in `utils/timeit.sh` (CLAUDE.md). Escalate hard failures back to the porter rather than root-causing deeply yourself.
+Push with `moatlib.py commit-project`, wrap phases in `utils/timeit.sh`, and bracket the whole run with `utils/session.sh <name> <platform> start|end` so session wall-clock is recorded (CLAUDE.md). Escalate hard failures back to the porter rather than root-causing deeply yourself.

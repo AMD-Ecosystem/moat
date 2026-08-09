@@ -238,7 +238,7 @@ def fork_commands(accepts):
                       for f in accepts)
 
 
-def apply_decisions(declines, note, apply=False, accepts=()):
+def apply_decisions(declines, note, by, apply=False, accepts=()):
     """Record the declines a person asked for, on a branch, for one approval.
 
     Only what is passed in is written. There is deliberately no "apply the
@@ -268,7 +268,7 @@ def apply_decisions(declines, note, apply=False, accepts=()):
     moatlib._git("fetch", "-q", "origin", "main", check=False)
     moatlib._git("checkout", "-q", "-B", BRANCH, "origin/main", check=True)
     for full, reason, why in parsed:
-        moatlib.set_disposition(full, "skip", reason, why)
+        moatlib.set_disposition(full, "skip", reason, why, by=by)
     # A disposition changes the project's Outcome cell, so the generated table moves
     # with it. Committing only dispositions.json left this tool opening a pull request
     # that failed the repository's own README gate.
@@ -337,15 +337,15 @@ def main(argv=None):
         action, detail = publish(apply=args.apply)
         print(f"intake-queue: {action}\n{detail}")
         return 0
+    by = args.by or (gh(["api", "user", "--jq", ".login"]).stdout.strip() or "unknown")
     if args.accept:
-        by = args.by or (gh(["api", "user", "--jq", ".login"]).stdout.strip() or "unknown")
         for full, detail in record_accepts(args.accept, by, apply=args.apply):
             print(f"  accept {full}: {detail}")
         print("\nCreate the forks -- that is what releases these projects:\n")
         print(fork_commands(args.accept))
     if not args.decline:
         return 0 if args.accept else 1
-    action, detail = apply_decisions(args.decline, args.note, apply=args.apply,
+    action, detail = apply_decisions(args.decline, args.note, by, apply=args.apply,
                                      accepts=args.accept)
     print(f"intake-queue: {action} -- {detail}")
     return 0

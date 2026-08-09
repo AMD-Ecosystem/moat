@@ -6,7 +6,7 @@ block accidental adoption (moatlib scaffold refuses a skipped project).
 
 Usage:
   python3 utils/triage.py review [--top N] [--all]
-  python3 utils/triage.py skip <owner/repo> --reason <r> [--note "..."]
+  python3 utils/triage.py skip <owner/repo> --reason <r> --by <who> [--note "..."]
   python3 utils/triage.py unskip <owner/repo>
   python3 utils/triage.py skipped
   python3 utils/triage.py backfill-ids
@@ -124,8 +124,9 @@ def cmd_review(args):
 
 
 def cmd_skip(args):
-    d = moatlib.set_disposition(args.repo, "skip", args.reason, args.note or "")
-    print(f"skip {d['full_name']} ({d['reason']}) {d['note']}".rstrip())
+    d = moatlib.set_disposition(args.repo, "skip", args.reason, args.note or "",
+                                by=args.by)
+    print(f"skip {d['full_name']} ({d['reason']}, by {d['by']}) {d['note']}".rstrip())
     return 0
 
 
@@ -186,6 +187,9 @@ def main(argv=None):
     s = sub.add_parser("skip", help="mark a project not-to-port")
     s.add_argument("repo")
     s.add_argument("--reason", required=True, choices=moatlib.SKIP_REASONS)
+    s.add_argument("--by", required=True,
+                   help="who decided -- declining is a person's call, and the "
+                        "record must say whose")
     s.add_argument("--note")
     s.set_defaults(fn=cmd_skip)
     v = sub.add_parser("verify", help="flag a project to investigate (not a skip)")

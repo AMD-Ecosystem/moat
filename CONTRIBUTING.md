@@ -154,7 +154,9 @@ for review -- is its own act and needs its own yes.
 
 ## Who opens the upstream pull request
 
-A person, from a session on their own machine, running one command:
+An attended session on the maintainer's own machine, running one command -- the
+person, or the agent working with them, since the content it publishes was already
+approved wholesale on the review PR and running it adds no new judgement:
 
     python3 utils/upstream.py --publish --apply
 

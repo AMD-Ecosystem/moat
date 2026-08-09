@@ -9,7 +9,7 @@ Some target projects build on top of other targets -- e.g. `barney` builds on `c
 - A dependency clears four different ways, and they are NOT the same answer:
   - **ok** -- some arch reached `completed`, OR the dependency is dispositioned `already-supported` / `ported-elsewhere`, meaning it needs no port from us. Build against it.
   - **waiting** -- adopted and in the pipeline. It clears on its own.
-  - **doomed** -- dispositioned `cant-port` / `license-blocked`. It will never be portable, so neither is anything that links it. Scope the dependent around that feature or recommend a disposition for it too; do not proceed and find out at build time.
+  - **doomed** -- dispositioned as anything short of a port existing: `cant-port`, `license-blocked`, `declined`, `duplicate`, `not-a-target` or `other`. It will not be ported, so neither is anything that links it. Scope the dependent around that feature or recommend a disposition for it too; do not proceed and find out at build time.
   - **unknown** -- nobody has looked at it. File an intake request with `python3 utils/port_request.py file <owner/repo> --blocks <project> --why "..." --apply`, record the edge with `set-deps`, and stop. A person decides whether to fork it.
 - `depends_on` is for HARD build dependencies of the project's CORE. A *module-level* optional dependency (only one extra feature needs another project) is documented in the project's `notes.md`, not added to `depends_on`, so it does not gate the whole port.
 
@@ -21,7 +21,7 @@ Some target projects build on top of other targets -- e.g. `barney` builds on `c
 
 ## Porting a project that has dependencies
 
-When `orient.sh` hands you a project P, check `depends_on` (it is in `status.json`, or run `moatlib.py deps`). Because P only became actionable once its deps reached `completed`, each dependency D is already ported to a fork. To build P against D:
+When `orient.sh` hands you a project P, check `depends_on` (it is in `status.json`, or run `moatlib.py deps`). Because P only became actionable once each dep cleared, a dependency D is either already ported to a fork, or dispositioned `already-supported`/`ported-elsewhere` -- in that case build against the upstream package and skip the rest of this section. To build P against a ported D:
 
 1. Clone the ported dependency (the `moat-port` branch is the deliverable):
    `git clone -b moat-port https://github.com/AMD-Ecosystem/<D> _deps/<D>/src`

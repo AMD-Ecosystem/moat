@@ -33,8 +33,10 @@ but X and Y -- X because the licence is wrong, Y because upstream already does i
 That is the point of the recommendation column; their effort scales with disagreement
 rather than with the size of the batch.
 
-**Accepts need nothing from you.** The fork appearing IS the decision, and the issue
-carries a prefilled `gh repo fork` block for exactly that. Do not record an accept.
+**Accepts need no PR.** The fork appearing IS the decision, and the issue carries a
+prefilled `gh repo fork` block for exactly that. Recording one is still useful when
+the fork will lag the decision: `apply --accept <owner/repo>` writes the intake
+decision to the project's branch so the queue stops re-proposing it meanwhile.
 
 ## 3. Round-trip the declines
 
@@ -47,9 +49,12 @@ that:
       --decline foo/bar:already-supported \
       --note "<their words, quoted>" --apply
 
-That branches from the trunk, writes only those dispositions, and opens one small PR.
-The person approves it -- one click, on a diff they can check at a glance -- and the
-merge records the declines and closes the issue.
+That branches from the trunk, writes those dispositions (plus the regenerated board,
+which moves with them), and opens one small PR. The person MERGES it -- one click, on
+a diff they can check at a glance -- and the merge is the act of record: approving is
+impossible on a self-authored PR, and everything here is self-authored because agents
+run on the maintainer's credentials. Merging records the declines and closes the
+issue.
 
 The round trip is the safeguard, not ceremony. Parsing an approval out of free prose
 puts a model inside a trust boundary, and MOAT is emphatic elsewhere that **an agent

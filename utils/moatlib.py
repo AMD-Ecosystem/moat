@@ -626,7 +626,11 @@ def set_state(name, platform, new_state, agent=None, save=True):
     # DISPATCH is `actionable`'s job, and its guard already reads this field.
     if new_state in EXCLUSIVE_STAGES:          # refused above if another arch holds it
         obj["porting"] = {"arch": platform, "since": now_iso()}
-    elif cur in EXCLUSIVE_STAGES and (obj.get("porting") or {}).get("arch") == platform:
+    elif cur in EXCLUSIVE_STAGES and obj.get("porting"):
+        # Leaving an exclusive stage ends what the lock protected, so ANY arch
+        # legally recording the exit releases it. Requiring the holder to be the
+        # one leaving left the lock held forever when a different arch drove
+        # porting -> ported, with only `port-lock --release` to clean it up.
         obj["porting"] = None
     ts = now_iso()
     if is_stage:
@@ -876,8 +880,13 @@ def _approving_review(pr):
         return None
     if pr.get("reviewDecision") == "CHANGES_REQUESTED":
         return None
+    # An APPROVED review passes the same write-access test as the comment form:
+    # on a public fork ANYONE can submit an approving review, and a drive-by
+    # approval from an outsider must not open the gate.
     return next((r for r in latest.values()
-                 if r.get("state") == "APPROVED" or _is_approval_comment(r)), None)
+                 if (r.get("state") == "APPROVED"
+                     and r.get("assoc") in APPROVE_ASSOC)
+                 or _is_approval_comment(r)), None)
 
 
 def _content_digest(pr):
@@ -902,8 +911,11 @@ def record_pr_approval(name, review_pr=None):
     if pr is None:
         raise ValueError(f"{name}: could not read the review PR at {url}")
     if pr.get("state") and pr.get("state") != "OPEN":
-        return ("closed", f"the review PR is {str(pr['state']).lower()} -- reopen it to "
-                          f"submit, or the approval on it is not a live decision")
+        # Raise like the other refusals here: the old ("closed", msg) tuple return
+        # crashed the CLI, which indexed it as a snapshot dict.
+        raise ValueError(
+            f"{name}: the review PR is {str(pr['state']).lower()} -- reopen it to "
+            f"submit, or the approval on it is not a live decision")
     review = _approving_review(pr)
     if review is None:
         raise ValueError(f"{name}: no standing approval on {url}")
@@ -930,8 +942,8 @@ def record_pr_approval(name, review_pr=None):
 # and the reviewer should be asked again, while `withdrawn` means that already
 # happened and nobody should be pinged a second time -- so the verdict is a code
 # rather than prose to be pattern-matched.
-APPROVAL_CODES = ("ok", "none", "withdrawn", "stale-commits", "stale-content",
-                  "record-mismatch", "unreachable")
+APPROVAL_CODES = ("ok", "none", "withdrawn", "closed", "stale-commits",
+                  "stale-content", "record-mismatch", "unverifiable", "unreachable")
 
 
 def pr_approval_valid(name, live=True):
@@ -1782,10 +1794,12 @@ def gate_satisfied(obj, gate):
     """Is this gate met -- by a validation of the CURRENT head on any arch carrying
     the attribute, or by a waiver a maintainer approved? The one definition; pr_ready
     asks the same question and must get the same answer."""
+    # No recorded head means there is no current content for a validation to
+    # prove, so a completed arch satisfies nothing -- only a waiver can.
     head = obj.get("head_sha")
-    if any(gate in gates_for(a) and b.get("state") == "completed"
-           and (not head or same_commit(b.get("validated_sha"), head))
-           for a, b in validations(obj).items()):
+    if head and any(gate in gates_for(a) and b.get("state") == "completed"
+                    and same_commit(b.get("validated_sha"), head)
+                    for a, b in validations(obj).items()):
         return True
     w = (obj.get("waivers") or {}).get(gate)
     return bool(w and w.get("approved_by") and gate in WAIVABLE_GATES)
@@ -2077,8 +2091,13 @@ def fleet(platform):
         if task is None or unmet_deps(obj):
             continue
         agent, state = task
+        # The branch as the remote actually spells it, so a caller can print a
+        # checkout command that works even when the branch case-folds the name
+        # (port/hami-core for HAMi-core). Reconstructing port/<project> does not.
+        branch = (port_branch_of(name) or "") if where == "branch" else ""
         out.append({"project": name, "where": where, "state": state,
-                    "stage": agent, "priority": float(obj.get("priority", 0))})
+                    "stage": agent, "branch": branch,
+                    "priority": float(obj.get("priority", 0))})
     out.sort(key=lambda r: (SELECT_RANK.get(r["state"], 99), -r["priority"], r["project"]))
     return out
 
@@ -2224,15 +2243,23 @@ def get_disposition(full_name, repo_id=None):
     return None
 
 
-def set_disposition(full_name, disposition, reason, note="", repo_id=None):
+def set_disposition(full_name, disposition, reason, note="", repo_id=None, by=None):
     if disposition == "skip" and reason not in SKIP_REASONS:
         raise ValueError(f"reason must be one of {SKIP_REASONS}")
+    # Declining is a person's decision, exactly as creating the fork is. An agent
+    # may carry that decision into the record, but a skip without a named decider
+    # satisfies nothing -- the same rule set-not-portable and license clearances
+    # already enforce.
+    if disposition == "skip" and not by:
+        raise ValueError(
+            f"{full_name}: a skip needs --by <who decided>; an agent may write "
+            f"the case but never the verdict")
     d = load_dispositions()
     if repo_id is None:
         repo_id = github_repo_id(full_name)      # best effort; None when offline
     d[full_name.lower()] = {"full_name": full_name, "disposition": disposition,
                             "reason": reason, "note": note, "decided": now_iso(),
-                            "repo_id": repo_id}
+                            "by": by, "repo_id": repo_id}
     save_dispositions(d)
     return d[full_name.lower()]
 
@@ -2733,7 +2760,10 @@ def squash_carry_forward(name, new_sha, repo=None):
     already-validated commits and changed no content -- which is the case when the
     squash is done at PR-prep AFTER every platform is terminal (pr_ready). Then the
     squashed commit is known to work everywhere it already worked:
-      - each `completed` platform: validated_sha advanced to new_sha, stays completed;
+      - each platform `completed` AT THE OLD HEAD: validated_sha advanced to
+        new_sha, stays completed. A completed platform whose validated_sha lags
+        the old head validated some earlier tree, is owed a revalidation, and is
+        reported as `stale` rather than carried;
       - each `blocked` (non-viable, e.g. Windows-unportable) platform: left UNTOUCHED
         -- never flipped from non-viable to passing;
       - an arch left un-validated because a sibling already satisfies every gate it
@@ -2762,25 +2792,33 @@ def squash_carry_forward(name, new_sha, repo=None):
                        f"validate the new content first / use advance_head")
     obj["head_sha"] = new_sha
     vals = validations(obj)
-    # A gate already satisfied by some completed arch needs nothing more; an arch
+    # Only an arch validated at the OLD HEAD proved the tree the squash preserved.
+    # A completed arch whose validated_sha lags it was owed a revalidation before
+    # the squash and still is -- promoting it would mark content it never ran as
+    # proven -- so it neither carries forward nor counts toward a satisfied gate.
+    current = {a for a, b in vals.items()
+               if b.get("state") == "completed" and not b.get("blocked")
+               and same_commit(b.get("validated_sha"), old_head)}
+    # A gate already satisfied by some carried arch needs nothing more; an arch
     # that could only have satisfied such a gate is optional, not a blocker.
-    satisfied = {g for a, b in vals.items() if b.get("state") == "completed"
-                 and not b.get("blocked") for g in gates_for(a)}
-    carried, kept_blocked, skipped, optional = [], [], [], []
+    satisfied = {g for a in current for g in gates_for(a)}
+    carried, kept_blocked, skipped, optional, stale = [], [], [], [], []
     for plat, blk in vals.items():
         if blk.get("blocked"):
             kept_blocked.append(plat)
-        elif blk.get("state") == "completed":
+        elif plat in current:
             blk["validated_sha"] = new_sha
             blk["updated_at"] = now_iso()
             carried.append(plat)
+        elif blk.get("state") == "completed":
+            stale.append((plat, (blk.get("validated_sha") or "?")[:8]))
         elif gates_for(plat) <= satisfied:
             optional.append((plat, blk.get("state")))
         else:
             skipped.append((plat, blk.get("state")))
     save_status(name, obj)
     return (True, {"carried": carried, "kept_blocked": kept_blocked,
-                   "skipped": skipped, "optional": optional})
+                   "skipped": skipped, "optional": optional, "stale": stale})
 
 
 def pr_ready(name):
@@ -2804,7 +2842,13 @@ def pr_ready(name):
     can scope its claim, and unscheduled archs (hardware gone) are never blockers.
 
     Returns (ready, blocking, nonviable)."""
-    obj = load_status(name)
+    # The freshest record, not the nearest: load_status prefers the working tree,
+    # so a checkout carrying a stale trunk-era copy of this project's folder would
+    # have the gate judge that copy while the enumeration around it read the
+    # project's branch. project_record puts the project's own branch first.
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
 
     # Checked here and not only at adoption, because an opt-out usually arrives after
     # we have already sent this owner a pull request -- that is what prompts it. This
@@ -3266,6 +3310,9 @@ def main(argv=None):
             msg = f"{args.name} -> {args.new_sha[:8]}: carried {info['carried']}; kept-blocked {info['kept_blocked']}"
             if info.get("optional"):
                 msg += f"; not blocking (gates already satisfied, or unscheduled) {info['optional']}"
+            if info.get("stale"):
+                msg += (f"; STALE completed {info['stale']} (validated an older head; "
+                        f"owed a revalidation, not carried)")
             if info["skipped"]:
                 msg += f"; SKIPPED actionable {info['skipped']} (should not squash yet)"
             print(msg)
@@ -3396,7 +3443,8 @@ def main(argv=None):
         return 0
     elif args.cmd == "fleet":
         for r in fleet(args.platform):
-            print(f"{r['project']}\t{r['where']}\t{r['state']}\t{r['stage']}")
+            print(f"{r['project']}\t{r['where']}\t{r['state']}\t{r['stage']}"
+                  f"\t{r['branch']}")
     elif args.cmd == "dep-blocked":
         rows = dep_blocked(args.platform)
         for name, report in rows:

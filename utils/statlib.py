@@ -97,11 +97,14 @@ def aggregate(project):
         "tokens_total": tok,
         "tokens_approx": approx,
         "tokens_source": source,
+        # Every phase label agents actually wrote, not a fixed bucket list: a
+        # label outside compile|test|misc (validators log cuda-compile for the
+        # CUDA baseline) was being subtracted from thinking yet reported
+        # nowhere, so wall_seconds no longer summed to session wall.
         "wall_seconds": {
             "thinking": round(thinking, 1),
-            "compile": round(phase.get("compile", 0.0), 1),
-            "test": round(phase.get("test", 0.0), 1),
-            "misc": round(phase.get("misc", 0.0), 1),
+            **{k: round(phase.get(k, 0.0), 1)
+               for k in sorted({"compile", "test", "misc", *phase})},
         },
         "session_count": sum(1 for r in recs
                              if r.get("kind") == "session" and r.get("event") == "start"),

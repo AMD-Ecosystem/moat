@@ -149,6 +149,20 @@ elif d >= 14:
 ' 2>/dev/null)
 [ -n "$STALE" ] && echo "records  : $STALE"
 
+# Control-plane mode never dispatches a port. The trunk only carries projects in
+# terminal states plus stubs a branch may have moved past, so a dispatch line
+# printed here offers work that is stale or already claimed -- the override is for
+# tooling and docs sessions that want the platform detection, nothing more.
+case "$_branch" in
+  main|master)
+    echo "next     : NONE -- control-plane mode on '$_branch'; ports dispatch from a port/<name> branch"
+    python3 utils/moatlib.py fleet "$PLATFORM" 2>/dev/null | awk -F'\t' '$2=="branch"' \
+      | while IFS=$'\t' read -r proj where state stage branch; do
+          echo "           $proj ($state -> $stage): git checkout ${branch:-port/$proj}"
+        done
+    exit 0 ;;
+esac
+
 NEXT=$(python3 utils/moatlib.py next-task "$PLATFORM" 2>/dev/null || echo NONE)
 if [ "$NEXT" = "NONE" ] || [ -z "$NEXT" ]; then
   echo "next     : NONE actionable on $PLATFORM"
@@ -172,8 +186,10 @@ if [ "$NEXT" = "NONE" ] || [ -z "$NEXT" ]; then
   ELSEWHERE=$(python3 utils/moatlib.py fleet "$PLATFORM" 2>/dev/null | awk -F'\t' '$2=="branch"')
   if [ -n "$ELSEWHERE" ]; then
     echo "elsewhere: actionable on another branch --"
-    printf '%s\n' "$ELSEWHERE" | while IFS=$'\t' read -r proj where state stage; do
-      echo "           $proj ($state -> $stage): git checkout port/$proj"
+    # The 5th field is the branch as the remote spells it (port/hami-core for
+    # HAMi-core); reconstructing port/$proj here printed checkouts that failed.
+    printf '%s\n' "$ELSEWHERE" | while IFS=$'\t' read -r proj where state stage branch; do
+      echo "           $proj ($state -> $stage): git checkout ${branch:-port/$proj}"
     done
   fi
   echo "hint     : adopt a project from data/candidates.json:"

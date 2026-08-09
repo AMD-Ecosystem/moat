@@ -270,34 +270,39 @@ def fork_poll(apply=False, stale_weeks=3):
     """Release projects whose fork has appeared, and flag ones waiting too long.
 
     A project sits in `awaiting-fork` until someone with the rights creates the fork;
-    that act is the decision to take it up. Nobody should have to notice by hand, and
-    -- more to the point -- whoever created the fork gets no confirmation unless
-    something says so. This closes both ends: it advances the state and comments on
-    the project's draft PR.
+    that act is the decision to take it up. Nobody should have to notice by hand, so
+    this advances the state and prints what it found.
 
-    State lives on the project's own `port/<name>` branch, not the trunk, so this
-    pushes directly. It does NOT start any work: porting needs a GPU host and a
-    session. This only makes the project eligible and tells someone.
+    Detection AND the write are `moatlib.release_awaiting_fork` -- the one
+    implementation. This used to run its own fork-existence poll first and only
+    delegated when its poll found something, so the two polls could disagree and the
+    disagreement decided whether anything advanced. Now the same sweep that reports
+    is the sweep that writes; only the ones it released are re-derived here for the
+    WAITING report.
+
+    State lives on the project's own `port/<name>` branch, not the trunk, so the
+    release pushes directly. It does NOT start any work: porting needs a GPU host and
+    a session. This only makes the project eligible and tells someone.
     """
     import datetime
+    sys.path.insert(0, str(REPO / "utils"))
     import moatlib
-    released, waiting = [], []
-    for name, d, where in all_records():
-        if moatlib.project_stage(d) != "awaiting-fork":
+    released = [{"name": n, "slug": s}
+                for n, s in moatlib.release_awaiting_fork(dry_run=not apply)]
+    got = {r["name"] for r in released}
+    waiting = []
+    for name, d, _where in all_records():
+        if name in got or moatlib.project_stage(d) != "awaiting-fork":
             continue
         slug = (d.get("fork_url") or f"https://github.com/AMD-Ecosystem/{name}") \
             .replace("https://github.com/", "")
-        exists = gh_json(["api", f"repos/{slug}", "--jq", ".full_name"]) is not None or \
-            subprocess.run(["gh", "api", f"repos/{slug}"], capture_output=True).returncode == 0
-        if not exists:
-            waiting.append({"name": name, "slug": slug,
-                            "since": d.get("updated_at") or ""})
-            continue
-        released.append({"name": name, "slug": slug, "where": where})
+        waiting.append({"name": name, "slug": slug, "since": d.get("updated_at") or ""})
 
     print(f"fork-poll: {len(released)} released, {len(waiting)} still waiting\n")
     for r in released:
-        print(f"  RELEASED   {r['name']:26} fork exists: {r['slug']}")
+        verb = "ADVANCED" if apply else "RELEASED"
+        note = "-> screened" if apply else "fork exists:"
+        print(f"  {verb:10} {r['name']:26} {note} {r['slug']}")
     now = datetime.datetime.now(datetime.timezone.utc)
     for w in waiting:
         old = ""
@@ -310,21 +315,6 @@ def fork_poll(apply=False, stale_weeks=3):
             except ValueError:
                 pass
         print(f"  WAITING    {w['name']:26} no fork at {w['slug']}{old}")
-
-    if not apply or not released:
-        return released, waiting
-
-    # One implementation, in moatlib. This used to keep its own: check the branch out,
-    # edit the file, commit, push, restore the caller's branch, then look for the
-    # project's draft PR to comment on. That last step has found nothing since draft
-    # PRs stopped being opened per project, and the checkout dance is unnecessary now
-    # that release_awaiting_fork writes a branch through git plumbing. Two
-    # implementations of "release a fork" had already drifted: this one advanced
-    # branch-resident projects while `moatlib.py release-forks` reported none waiting.
-    sys.path.insert(0, str(REPO / "utils"))
-    import moatlib
-    for name, slug in moatlib.release_awaiting_fork():
-        print(f"  ADVANCED   {name:26} -> screened ({slug})")
     return released, waiting
 
 
