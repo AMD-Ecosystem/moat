@@ -79,10 +79,18 @@ if command -v flock >/dev/null 2>&1; then flock -w 10 9 || true; fi
 # per-arch selector below will never surface it. It comes first because it is cheap,
 # finished work waiting on one command -- and because a port sitting approved but
 # unsubmitted is the most wasteful state MOAT has.
-READY=$(python3 utils/upstream.py --publish 2>/dev/null | sed -n 's/^  READY *\([^ ]*\).*/\1/p' | tr '\n' ' ')
+PUBLISH=$(python3 utils/upstream.py --publish 2>/dev/null)
+READY=$(printf '%s\n' "$PUBLISH" | sed -n 's/^  READY *\([^ ]*\).*/\1/p' | tr '\n' ' ')
 if [ -n "${READY// /}" ]; then
   echo "approved : ${READY}-- submit upstream: python3 utils/upstream.py --publish --apply"
   echo "           (opens the PR with the approved title and body, then closes the review PR)"
+fi
+# A review PR that could not be READ is not a port with nothing to submit, and this
+# line is the only place anyone would notice the difference: the grep above finds no
+# READY either way, so an outage used to look exactly like an empty queue.
+UNREACHABLE=$(printf '%s\n' "$PUBLISH" | sed -n 's/^  UNREACHABLE *\([^ ]*\).*/\1/p' | tr '\n' ' ')
+if [ -n "${UNREACHABLE// /}" ]; then
+  echo "unknown  : ${UNREACHABLE}-- review PR(s) unreadable, approval state UNKNOWN (not 'nothing to submit')"
 fi
 
 # A suggested waiver blocks its project's PR and only a person can clear it, so it has
