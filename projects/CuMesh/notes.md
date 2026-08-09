@@ -755,3 +755,163 @@ message ("jeffdaily/cubvh@moat-port"), not in the new commit. Clearing them mean
 rewriting a commit that three archs have validated and that is already public in
 upstream PR #36. That is a person's call, not a porter's -- raising it rather than
 force-pushing over published, validated history.
+
+## Review 2026-08-09
+
+**Reviewer**: MOAT reviewer agent (local-branch mode, `moat-port` vs `main`, base 12289e1)
+
+**Verdict**: Request Changes
+
+The round's commit (4440182) is correct and I could not fault it; the findings below are
+one pre-existing source line, one gap in the lesson this branch publishes to every agent,
+and a set of upstream-visible defects in already-published commit messages that need a
+person's decision. Detail on the four questions the fix was to be judged against is at the
+end, since the validator needs it.
+
+### Fork branch
+
+**1. `src/cubvh_bindings_winhip.cu:1` carries an added AMD copyright line.**
+
+```
+// Copyright (c) 2026 Advanced Micro Devices, Inc.
+```
+
+The standing rule is to add no copyright or author line unless the project's house style
+clearly carries per-company parallel lines for outside contributions. CuMesh's does not:
+`LICENSE` and the only two files with a notice (`src/hash/api.h:1-10`,
+`src/remesh/api.h:1-10`) all carry the sole author's copyright, MIT, single owner. The
+port's own twelve other new files (`src/ext_winhip.cu`, `third_party/xatlas/*_winhip.cu`,
+all of `hip_cuda_compat/`) carry none, so the line is inconsistent inside the port as well
+as against the project. Remove it. The cost is nil: a comment-only delta is
+carry-forward-eligible, so no arch re-runs.
+
+**2. Four upstream-visible defects sit in commit messages that are already published in
+PR #36. The notes raise one of them and do not name the remedy.**
+
+The porter was right to refuse a silent force-push over history three archs validated, and
+the jargon finding is correctly deferred. But the same commits carry three more problems,
+and the decision a person is being asked to make should list all four and the way to fix
+them together:
+
+- `d5c1355` body: `moat-port` / `moat` (this is the recorded `jargon.py` exit 1).
+- `d5c1355` title is 77 characters, over the 72 limit.
+- `e5ae38f` Test Plan runs `python test/simplify.py` and five siblings. There is no
+  `test/` directory at any commit on this branch or at the base (`git ls-tree main` lists
+  `examples`, not `test`); the scripts are `examples/simplify.py` and so on. A Test Plan
+  that cannot be run as written is worse than none in a PR to an outside maintainer.
+- `e5ae38f` body states that "every AMD-specific change is additive and gated behind
+  USE_ROCM / IS_HIP_EXTENSION / HIP-platform macros" and that the NVIDIA build compiles
+  "the same sources it did before". Three deliberate changes to the CUDA path are neither
+  gated nor same-source, and none is disclosed as such:
+  - the `_cubvh` visibility flags apply to the CUDA build too (`setup.py:231,239`), which
+    is exactly what the nvcc failure proved;
+  - `-std=c++17` becomes `-std=c++20` for Linux CUDA (`setup.py:113-120` against the base
+    file's `else` branch), unguarded;
+  - `third_party/cubvh` moves off the maintainer's own `JeffreyXiang/cubvh@trellis.2` pin
+    onto `ashawkey/cubvh@main`, so the NVIDIA build compiles different cubvh sources, and
+    the single commit that fork carried over its merge-base ("wrap cubvh API with cumesh
+    namespace to avoid symbol conflicts", ce92267) is dropped and replaced by hidden
+    visibility.
+
+  Each of the three is defensible. The C++20 bump is inside the documented floor
+  (`README.md:15` requires CUDA >= 12.4) and helps CUDA users on newer torch as much as
+  ROCm ones; the visibility flags are wanted on CUDA; the submodule move is how the port
+  consumes merged upstream cubvh, and `README.md:71` already credits ashawkey as the
+  origin. What is not defensible is asserting the opposite to the maintainer. The
+  namespace-wrap removal in particular is the most consequential thing in the PR for them
+  (it undoes a fix they wrote deliberately) and the reasoning for the substitution lives
+  only in `setup.py:228-230` and this notes file.
+
+  Remedy to put in front of whoever decides: collapsing the three commits into one
+  tree-identical commit with a corrected message fixes all four at once, and
+  `python3 utils/moatlib.py squash-carry-forward CuMesh <new-sha>` carries every completed
+  arch forward with no GPU re-run and no CUDA re-check. The only real question is whether
+  to force-push over an open upstream PR, which is a person's call, not a revalidation
+  cost.
+
+**3. `simplify.py`'s face count has never been pinned down and the record now spans 6.5%.**
+
+The attribution of 9890-against-9949 to order-sensitive QEM rather than to this commit is
+sound, and I confirmed the mechanical half of it independently (see below): the ROCm flag
+lists are identical across 4440182, so the binaries cannot differ. But the wider claim is
+untested. This file records 9949, 9830, 9895, 9865, 9367, 9303, 9793, 9920, 9845, 9930 and
+now 9890 for `target_faces = 10000` (`examples/simplify.py:17`), across four archs and
+across trees that were proven binary-identical to each other. Nobody has established
+whether that spread is run-to-run nondeterminism on a fixed binary, or something
+environmental moving it, and no CUDA baseline for `simplify` exists anywhere in the record,
+so "matches upstream" has never been checked for the one operation with a visible numeric
+output. The cheap experiment is two consecutive runs of `examples/simplify.py` against one
+installed build: if the count moves, it is inherent to the algorithm and should be written
+down as such; if it is stable per binary, something else is moving it and that is worth
+finding before the port is called done.
+
+### Skill lesson (published to every agent when this branch merges)
+
+**4. `.claude/skills/cuda-to-rocm/references/validation.md:18` ends with a false
+instruction: "unset `ROCM_HOME` so `IS_HIP_EXTENSION` resolves False".**
+
+It does not. `IS_HIP_EXTENSION = bool(ROCM_HOME is not None and torch.version.hip is not
+None)`, and `_find_rocm_home()` falls back through `_rocm_sdk_core`, `hipcc` on PATH, and
+`/opt/rocm` when neither `ROCM_HOME` nor `ROCM_PATH` is set. Checked on this host:
+
+```
+$ env -u ROCM_HOME -u ROCM_PATH python3 -c "import torch.utils.cpp_extension as c; print(c.ROCM_HOME, c.IS_HIP_EXTENSION)"
+/opt/rocm-7.2.1 True
+```
+
+An agent following that clause on a ROCm host would get a HIP build and misread the result.
+What actually makes the recipe work is the thing the entry already prescribes, the
+CUDA-only torch wheel in the scratch venv, whose `torch.version.hip` is None. Drop the
+clause or replace it with the real lever; for a project with CuMesh's `BUILD_TARGET`
+switch, `BUILD_TARGET=cuda` forces it directly (`setup.py:79-80`). The same imprecision is
+in this file at the "IS_HIP detection on Windows" note above, which is worth correcting in
+the same edit.
+
+**5. The porter-facing half of the lesson is filed where only a validator will read it.**
+
+All five bullets sit under validation.md's PR-prep nvcc-check gate. The diagnostic half
+belongs there. The half that would have PREVENTED the bug does not: that the `"nvcc"` and
+`"cxx"` keys of `extra_compile_args` are different command lines, that a GCC/clang flag on
+the nvcc key needs `-Xcompiler=`, and that the guard is three-way. That is something a
+porter learns while editing a torch extension's `setup.py`, and `references/strategy-b-torch.md`
+is the file they open; it currently says nothing about compile flags at all beyond
+`strategy-b-torch.md:8`. Put the rule there and leave the pointer in validation.md, per the
+filing rule. The porter who wrote the original unconditional append would not have opened
+validation.md.
+
+### On the four questions this round was to be judged against
+
+Recorded because the validator inherits them.
+
+- **`-Xcompiler=` over an `IS_HIP` gate**: right call, and the idiom claim checks out. The
+  `-Xcompiler=/std:c++17` block is upstream's own, at lines 42-45 of the base `setup.py`
+  (`git show main:setup.py`), not something the port introduced, so the file's convention
+  argument holds. Gating the flags off for CUDA would have left the CUDA build without the
+  symbol isolation that replaced the dropped namespace wrap, which is the wrong trade.
+- **The three-way guard**: correct on all four arms. I dumped each extension's
+  `extra_compile_args` at d5c1355 and 4440182 with `setuptools.setup` and `CUDAExtension`
+  stubbed, forcing `platform.system` for the Windows arms. Linux+HIP and Windows+HIP are
+  byte-identical across the commit; Linux CUDA changes only the two nvcc-key entries from
+  bare to `-Xcompiler=`-wrapped and leaves the cxx key bare, which is right for g++;
+  Windows CUDA drops both, leaving a flag list that is upstream's plus the port's unrelated
+  additions. No configuration that can use the flags loses them, and MSVC is never handed
+  a `-f` flag on either key.
+- **Additive on CUDA**: yes for this commit. The ROCm claim is not merely asserted, it is
+  reproducible: `BUILD_TARGET=rocm` produces identical dumps either side, so the three
+  completed archs face a provable no-op and this commit cannot be the cause of any numeric
+  difference. (The port's other CUDA-path changes predate this commit; see finding 2.)
+- **Evidence that the flag takes effect**: the right evidence. `cubvh::` symbols come
+  mostly from `bvh.cu` and `api_gpu.cu`, the two translation units on the nvcc key, so a
+  `-Xcompiler=` that failed to arrive would leave them at default visibility and exported,
+  as the ROCm-side 189-to-7 measurement in the 2026-06-19 note shows happens without the
+  flags. 309 local `cubvh::` symbols against `PyInit__cubvh` alone in the dynamic table
+  distinguishes "delivered" from "accepted and ignored", which is what was asked.
+
+Fault classes: none apply and I re-checked rather than inheriting the plan's claim. No
+`__shfl*`, `__ballot`, `__activemask` or `warpSize` anywhere in `src/` or in the vendored
+cubvh; no texture objects, `cudaArray` or `tex2D`; no hardcoded 32 in a lane context. The
+CUB-to-hipCUB swap goes through torch hipify, and the one place it cannot reach
+(`src/clean_up.cu:245-255`, `rocprim::tuple` for the `int3_decomposer`) is guarded on
+`__HIP_PLATFORM_AMD__` and leaves the CCCL spelling on the CUDA side. Fork tree is clean;
+no `Co-Authored-By` trailer, no non-ASCII, no AMD-internal account or host references in
+any message or added line.
