@@ -807,6 +807,126 @@ All device kernel register configurations, shared memory allocations, wave64 bal
 sub-warp fixes, and ShmemMutex critical_section() paths are byte-for-byte identical.
 Carry-forward applied: validated_sha -> e80e1a0. No GPU re-run needed.
 
+## Validation 2026-08-09 (linux-gfx90a) -- revalidate at df10bfe, real GPU run
+
+Platform: linux-gfx90a (AMD Instinct MI250X, gfx90a / CDNA2, wave64), ROCm 7.2.1,
+HIP_VISIBLE_DEVICES=2 (4-GPU host; index 2 confirmed gfx90a via rocminfo/rocm-smi).
+Revalidate from validated_sha a48ee1f6 (status.json) to head_sha df10bfe2.
+
+### Delta
+
+2 commits, same as already carried forward on linux-gfx1100/windows-*:
+- `CMakeLists.txt`: drops the hardcoded `set(CMAKE_HIP_ARCHITECTURES "gfx90a")`
+  default and relies on `project(... LANGUAGES HIP)` auto-detection when
+  `-DCMAKE_HIP_ARCHITECTURES` is not passed explicitly. Our build recipe always
+  passes `-DCMAKE_HIP_ARCHITECTURES=gfx90a` explicitly, so this is inert for us.
+- `README.md`: doc-only (adds one line noting AMD/ROCm support).
+
+`classify` returned `mixed` (CMakeLists.txt token count differs, so not
+doc-only), not eligible for the automatic doc-only carry-forward.
+
+### Binary-equivalence attempt
+
+Built both a48ee1f6 and df10bfe for gfx90a from the SAME absolute source path
+(`.../wt-RXMesh/projects/RXMesh/src`, checked out sha-by-sha into build_old/
+build_new), identical cmake flags (USE_HIP=ON, CMAKE_HIP_ARCHITECTURES=gfx90a
+explicit, Release). Both built clean (103/103 steps, 0 errors).
+
+`codeobj_diff.py` returned `differ (device ISA differs)`. Manual section
+analysis of `bin/RXMesh_test`'s single gfx90a code object (roc-obj-ls: exactly
+one `hipv4-amdgcn-amd-amdhsa--gfx90a` object each, sizes differ by 88 bytes):
+- `.text`: SAME size (0x4d5d04 bytes). Exactly 1 byte differs (offset 0x9490
+  within the section) -- the PC-relative kernel-descriptor self-pointer
+  constant, same class as the prior windows-delta gfx90a analysis on this
+  project (see the 2026-06-04 binary-equivalence entry above).
+- `.rodata`: SAME size (0x71200 bytes). 9053 byte diffs, ALL 9053 confined to
+  bytes 16-18 of the 64-byte kernel-descriptor structs (the KD self-pointer
+  field) -- 0 diffs anywhere else, confirmed exhaustively (RSRC1/2/3 fields
+  identical).
+- `.note`/`.dynstr` size shift (24/21 bytes) matches clang's `.intern.<hash>`
+  name-string recompute over full TU content (unrelated host-only diff
+  elsewhere in the TU changes the hash), same mechanism documented previously.
+
+This is the same false-positive "differ" class already characterized for this
+exact CMake delta on gfx1100/gfx90a (2026-06-04 entries above): no device
+kernel logic, register allocation, or shared-memory sizing changed. However,
+per the current validator protocol, a `differ` verdict does NOT carry forward
+automatically -- it requires a real GPU run. Ran that below rather than
+re-asserting the prior analysis alone.
+
+### Real GPU test run (RXMesh_test, HIP_VISIBLE_DEVICES=2, head df10bfe build)
+
+Filter: RXMeshStatic.*:RXMesh.*:Util.*:RXMeshDynamic.PatchScheduler:
+RXMeshDynamic.PatchLock:RXMeshDynamic.Validate:RXMeshDynamic.RandomFlips:
+RXMeshDynamic.RandomCollapse:RXMeshDynamic.TriangleRefinement:
+RXMeshDynamic.PatchSlicing (the same 25-test filter used on gfx1100/gfx1151).
+
+Run 1: 25/25 PASSED (1517 ms).
+Run 2: 24/25 PASSED (RXMeshDynamic.PatchLock FAILED; the other 24 passed).
+PatchLock in isolation, 5 repeated runs: 4/5 PASSED, 1/5 FAILED.
+
+This matches the ALREADY-DOCUMENTED pre-existing flake (blocker (5), see the
+2026-05-30 run-2 entry above): "RXMeshDynamic.PatchLock is a distributed
+deadlock-avoidance lock test... genuinely flaky on gfx90a: 8/10 pass in
+isolation; it also fails when run right after the heavy RXMeshStatic.Queries /
+MultiQueries tests." Confirmed again here (4/5 isolated pass rate is
+consistent with the documented 8/10). Not a regression from the CMake/README
+delta -- PatchLock's code path is untouched by it, and the flake is a wave64
+SIMT lock-protocol limitation in acquire_lock, not the CMake arch-detection
+change. All other 24 tests (core mesh-query path, LP hashtable, Util/hipCUB,
+dynamic editing incl. slicing/flips/collapse/refinement) passed deterministically
+in both runs, exercising real GPU kernels (query dispatch, atomics, shared
+memory, cavity management) on the MI250X.
+
+### CUDA no-regression gate (first recording for this project; nvcc, arch pinned)
+
+No prior CUDA gate was recorded anywhere in this project's notes/status, so run
+it now (Linux host, nvcc available via conda).
+
+Toolchain: `/opt/conda/envs/cuda-12.8/bin/nvcc` (CUDA 12.8.93), host gcc 13.3.0,
+`-DCMAKE_CUDA_ARCHITECTURES=80` pinned explicitly (no `native` autodetect --
+this host has no NVIDIA GPU).
+
+Built both df10bfe (port) and 30a4137b (pristine upstream, pre-port base sha)
+with identical flags: `-DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_CUDA_COMPILER=.../nvcc
+-DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER=gcc -DRX_USE_POLYSCOPE=OFF
+-DRX_BUILD_APPS=OFF -DRX_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release`, `ninja -k 0`
+(keep going past the first failure so nothing is masked).
+
+Upstream 30a4137b's CMakeLists does not gate the OpenMesh FetchContent fetch by
+RX_BUILD_APPS (that gate is a port addition in ThirdParty.cmake, "OpenMesh is
+only used by the apps... skip it otherwise"), so upstream's stock config always
+tries to fetch OpenMesh from its flaky non-standard-port git server regardless
+of -DRX_BUILD_APPS=OFF. Worked around with a THROWAWAY local edit to
+cmake/openmesh.cmake (`return()` before the FetchContent call) purely to reach
+the compile step on this pristine-upstream scratch checkout; discarded via
+`git checkout --` before finishing, never committed, never pushed.
+
+Result: BOTH builds fail with exactly ONE identical error, nothing else, under
+`-k 0`:
+```
+tests/RXMesh_test/test_multiple_meshes.cu(31): error: class "rxmesh::RXMeshStatic"
+has no member "get_polyscope_mesh"
+    rx.get_polyscope_mesh()->updateVertexPositions(x);
+```
+`get_polyscope_mesh()` is declared `#if USE_POLYSCOPE`-guarded in
+rxmesh_static.h, but the call site in test_multiple_meshes.cu is unguarded --
+a pre-existing upstream bug (present verbatim in 30a4137b, before any ROCm
+work) that only surfaces when polyscope is disabled. Verified byte-identical
+error text/line/column on both shas with the same toolchain/arch/flags.
+
+Verdict: CUDA no-regression gate PASSES (pre-existing upstream breakage, not a
+port regression). Recorded so no future validator needs to re-run this gate
+at df10bfe.
+
+### Verdict
+
+linux-gfx90a real-GPU revalidation at df10bfe: 25/24 (run1/run2) of 25 tests
+pass, with the sole intermittent failure (PatchLock) being an already-
+documented pre-existing wave64 flake unrelated to this delta. CUDA
+no-regression gate passes (identical pre-existing upstream error, not a
+regression). validated_sha -> df10bfe2. State: completed.
+
 ## Validation 2026-06-04 (windows-gfx1101 + windows-gfx1201, one FAT binary) -- follower, NO source change
 
 validated_sha: e80e1a0 (zero-churn followers; the 3-file Windows delta -fuse-ld reset,

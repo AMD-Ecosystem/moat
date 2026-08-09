@@ -7,7 +7,7 @@
   "priority": 4.792,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T00:36:13Z",
-  "updated_at": "2026-08-07T07:04:45Z",
+  "updated_at": "2026-08-09T00:11:58Z",
   "head_sha": "df10bfe",
   "depends_on": [
     "STRUMPACK"
@@ -26,10 +26,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "a48ee1f6",
+      "validated_sha": "df10bfe",
       "started_at": "2026-05-30T09:21:09Z",
-      "completed_at": "2026-06-05T20:34:19Z",
-      "updated_at": "2026-06-05T20:34:20Z",
+      "completed_at": "2026-08-09T00:11:58Z",
+      "updated_at": "2026-08-09T00:11:58Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
