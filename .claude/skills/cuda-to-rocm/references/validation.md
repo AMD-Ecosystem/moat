@@ -95,3 +95,29 @@ Two patterns that each cost a deep investigation before the real cause was found
 
 - **A "data-dependent, later-data-corrupts-earlier, per-tile" corruption signature is the fingerprint of a REPRODUCER bug, not a codegen fault.** cuSZ chased a suspected miscompile to a BLOCKED state and an IR bisect; the actual cause was the test input -- `np.arange(..., dtype=float32) * (python float)` promotes to float64, so `.tofile()` wrote 8 bytes per element and the tool read the stream as f32. Validate the byte width and dtype of any binary test input before escalating to an ISA bisect or a ROCm bug report. (cuSZ)
 - **Triangulate single- against double-precision before blaming the wavefront.** When a warp-collective rewrite shows SP divergence, run a second GPU variant and compare both to the DP oracle. If both GPU variants diverge from DP identically at the same positions, and the DP path is bit-identical to the CPU oracle, it is floating-point reassociation at a comparison boundary -- not a wave-size fault. SCAMP used this to clear a ~0.5 divergence at 10/8093 positions as a threshold-boundary artifact. (SCAMP)
+
+## A recorded head_sha that resolves to no git object anywhere
+
+`status.json.head_sha` (and a `validated_sha`) is sometimes a 40-char string that
+`git cat-file -t` cannot find in the fork clone, any of its remote branches, or
+upstream -- not truncated, not abbreviated, just absent. This is not a validator's
+job to diagnose from first principles: check whether the upstream PR was rebased
+onto a moving base between the commit being written into notes.md and the actual
+push (`git rebase` rewrites every hash in the range even when content is
+unchanged), and whether `advance_head` was actually called afterward with the real
+pushed sha rather than the pre-rebase local one. Confirm the real content by
+matching commit MESSAGES (rebases preserve these) between the phantom sha's
+description in notes.md and the actual branch tip, and cross-check the real tip
+against `gh api repos/<upstream>/pulls/<n> --jq .head.sha` if the PR merged --
+GitHub's recorded PR head is ground truth for what actually built.
+
+Do not silently repair the project-wide record yourself: `advance_head` reclassifies
+every OTHER `completed` platform's delta too, and a classify that cannot resolve the
+old (phantom) sha falls back to the unsafe default and leaves those platforms
+needing revalidation -- a much bigger blast radius than the one arch you were
+dispatched for. Validate your own arch against the actual, resolvable fork tip
+(clone and build that), record your own arch's completion (accepting that
+`set-state completed` stamps whatever is currently in `head_sha`, phantom or not,
+consistent with how the other already-completed platforms are recorded), and leave
+a clear, explicit note documenting the real tip and the discrepancy so a maintainer
+or a later session can decide whether to run `advance-head` project-wide. (stdgpu)

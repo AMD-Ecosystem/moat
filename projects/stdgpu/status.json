@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:23:31Z",
-  "updated_at": "2026-08-07T07:05:31Z",
+  "updated_at": "2026-08-09T00:37:18Z",
   "head_sha": "a0c404b71a19872c4d175f931378b74a682e3f09",
   "depends_on": [],
   "pr_url": "https://github.com/stotko/stdgpu/pull/484",
@@ -82,10 +82,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "c563696e805cdfff1ce92e851061a1eee877e54c",
+      "validated_sha": "a0c404b71a19872c4d175f931378b74a682e3f09",
       "started_at": "2026-06-04T23:45:57Z",
-      "completed_at": "2026-06-19T23:54:58Z",
-      "updated_at": "2026-06-20T00:07:15Z",
+      "completed_at": "2026-08-09T00:37:18Z",
+      "updated_at": "2026-08-09T00:37:18Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -99,13 +99,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
-      "carry_forward": {
-        "to": "dd4312ec378472c0daeccd3d0cb77031eb45ba72",
-        "method": "source-class",
-        "detail": "PR-prep squash to one commit; only delta vs validated 4db4d21 is the wave_lock.h copyright year 2024->2026 (comment); device code identical",
-        "at": "2026-06-19T23:54:58Z"
-      }
+      "last_agent": "validator"
     },
     "linux-gfx1100": {
       "state": "completed",

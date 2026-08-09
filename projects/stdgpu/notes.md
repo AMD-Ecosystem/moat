@@ -1112,3 +1112,59 @@ Validation on this host (gfx90a, ROCm 7.2.1, wave64), all three with `-DCMAKE_VE
 Binary-equivalence carry-forward: built 9f1c6ef in a worktree and ran `codeobj_diff .../9f1c6ef/build/bin/teststdgpu build/bin/teststdgpu` -> verdict=identical (exported symbols + device ISA identical, 21 exports). The guard swap + file rename are compile-front-end only; device ISA is byte-identical. advance-head a0c404b flipped linux-gfx1100/windows-gfx1201/windows-gfx1101 completed->revalidate; carried all three forward to a0c404b (binary-equiv, no GPU re-run). linux-gfx90a stays pr-open; windows-gfx1151 stays blocked (platform fault).
 
 Upstream posting DEFERRED to Jeff (orchestrator constraint: no upstream-visible actions this round). Did NOT post the 3 inline replies, did NOT resolve threads, did NOT re-request review. Draft reply text returned to the orchestrator for Jeff to review/post. Re-request review would 404 as before (jeffdaily has pull-only permission on stotko/stdgpu).
+
+## Validation 2026-08-09 (linux-gfx90a) -- REVALIDATE, PR #484 already merged upstream
+
+**Platform:** AMD Instinct MI250X (gfx90a), ROCm 7.2.1 (HIP 7.2.53211), wave64
+**GPU pinned:** `HIP_VISIBLE_DEVICES=3` (confirmed via a small hipGetDeviceProperties probe: exactly one device visible, `gcnArchName=gfx90a:sramecc+:xnack-`, AMD Instinct MI250X / MI250)
+
+**Context / head_sha discrepancy found:** `status.json` recorded `validated_sha=c563696e805cdfff1ce92e851061a1eee877e54c` and `head_sha=a0c404b71a19872c4d175f931378b74a682e3f09`. Neither sha resolves to any git object in a fresh clone of the fork (`AMD-Ecosystem/stdgpu`, all branches fetched), nor in upstream `stotko/stdgpu` (also fetched). `moatlib.py classify` reported `class=mixed arch_independent=False` via its safe fallback after `git diff` failed with `fatal: bad object c563696e...`.
+
+Root cause (established, not guessed): upstream PR #484 was merged 2026-07-08 (`pr_state: merged`, `pr_merged_at: 2026-08-06` in this record -- note the PR itself actually merged 2026-07-08 per `gh api repos/stotko/stdgpu/pulls/484`, well before this record's `pr_merged_at` timestamp was written; that field is stale too). `gh api repos/stotko/stdgpu/pulls/484 --jq '.head.sha'` returns `5e660960902821dbcb3b370b3e0cd2c66959bdea`, which IS present in the fork clone as the actual current tip of `moat-port`, with commit message `[ROCm] Use IS_DEVICE_COMPILED guard; rename execution_detail.cuh` -- word-for-word the commit notes.md called "a0c404b" in the 2026-07-06 fix-round entry above. The branch was evidently rebased onto an updated `master` (upstream picked up new commits like `General: Add support for CUDA 13.1`, `cmake: Update support for CMake 4.2`, etc. in between) after that session wrote its local hash into notes.md, and `advance_head` was never re-run with the real pushed sha -- so `head_sha` (and, going further back, `validated_sha`) in `status.json` are phantom values from before that rebase. This affects `linux-gfx1100`, `windows-gfx1201`, and `windows-gfx1101` too (all recorded `completed` at the same phantom `a0c404b`) -- flagged here, not fixed project-wide (see below). Promoted this fault class to the `cuda-to-rocm` skill (`references/validation.md`, "A recorded head_sha that resolves to no git object anywhere").
+
+**Action taken:** validated against the actual, real, resolvable fork tip `5e66096` (content-identical to what the record calls `a0c404b`), rather than trying to `git checkout` a sha that does not exist. Did NOT run `moatlib.py advance-head` (that would reclassify every other `completed` platform's delta against the same unresolvable old sha and could flip `linux-gfx1100`/`windows-gfx1201`/`windows-gfx1101` to `revalidate` on a bookkeeping bug rather than a real behavior change -- out of scope for a single-arch validator; left for a maintainer/later session to decide).
+
+**Build command:**
+```bash
+git clone --branch moat-port https://github.com/AMD-Ecosystem/stdgpu projects/stdgpu/src
+cd projects/stdgpu/src   # HEAD = 5e66096 (real tip; status.json head_sha a0c404b is phantom, see above)
+HIP_VISIBLE_DEVICES=3 cmake -B build -S . \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DSTDGPU_BACKEND=STDGPU_BACKEND_HIP \
+  -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DSTDGPU_BUILD_EXAMPLES=ON \
+  -DSTDGPU_BUILD_TESTS=ON \
+  -DSTDGPU_BUILD_BENCHMARKS=OFF
+HIP_VISIBLE_DEVICES=3 cmake --build build --config Release --parallel $(nproc)
+```
+**Build result:** SUCCESS, 100% targets (`libstdgpu.a`, all 9 examples, `teststdgpu`).
+
+**Test command:**
+```bash
+HIP_VISIBLE_DEVICES=3 build/bin/teststdgpu
+```
+**Test results:** ALL 702 tests PASS on two separate full runs (71.4s and 80.0s), zero memory leaks both times (364762/364762 device, 360829/360829 host). Deterministic.
+
+Spot-checked the historically-fragile classes (wave_lock_serialize contention + the valid()-reduction fix), all PASS: `stdgpu_deque.simultaneous_push_{back_and_pop_back,front_and_pop_front,front_and_pop_back,back_and_pop_front}`, `stdgpu_vector.simultaneous_push_back_and_pop_back`, `stdgpu_unordered_{map,set}.{insert_while_full,insert_multiple_while_full,insert_while_excess_empty,insert_parallel_while_one_free,insert_parallel_while_excess_empty,emplace_parallel_while_one_free,emplace_parallel_while_excess_empty,insert_range_unique_parallel(_custom_execution_policy),erase_range_unique_parallel(_custom_execution_policy)}`.
+
+**CUDA no-regression gate:** last recorded 2026-07-02 at commit `9f1c6ef` (pre-`a0c404b`/`5e66096`); the current head touches `execution.h`/`execution_detail.h` again (the exact files involved in that prior CUDA regression), so re-ran at the current real tip.
+```bash
+cmake -B build-cuda -S . -DCMAKE_BUILD_TYPE=Release \
+  -DSTDGPU_BACKEND=STDGPU_BACKEND_CUDA \
+  -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc \
+  -DCMAKE_CUDA_ARCHITECTURES=80 \
+  -DSTDGPU_BUILD_TESTS=ON \
+  -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/gcc-13
+cmake --build build-cuda --parallel $(nproc)
+```
+**Result:** SUCCESS, 100% targets including `teststdgpu` linked (nvcc 12.8.93, gcc-13, `-DCMAKE_CUDA_ARCHITECTURES=80` pinned since this host has no NVIDIA GPU; compile+link only, not run). No regression from the IS_DEVICE_COMPILED guard / `.cuh` rename change.
+
+**Jargon:** `python3 utils/jargon.py --port stdgpu` -> clean (needed a local `master` branch tracking `origin/master` in the fresh clone first, since the tool diffs local branch names).
+
+**Documentation:** ROCm/HIP build already documented in the project's own house style at `docs/getting_started/building_from_source.md` (HIP tab alongside the CUDA tab, README backend list) -- not new this round, confirmed present.
+
+**Working tree:** clean (only untracked `build/`, `build-cuda/`; no tracked modifications) -- integrity gate satisfied.
+
+**Verdict:** VALIDATED at the real fork tip 5e66096 -- linux-gfx90a revalidate -> completed. `set-state` will stamp `validated_sha` from the current (phantom) `head_sha` field for consistency with the other already-`completed` platforms' records; see the head_sha discrepancy section above for what to fix and how, next time anyone touches this project's `status.json`.
+
+Wall-clock: HIP build ~2 min, test suite 2x ~76s, CUDA compile-check build ~2 min. Well under budget.
