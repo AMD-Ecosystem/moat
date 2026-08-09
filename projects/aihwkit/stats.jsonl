@@ -61,3 +61,9 @@
 {"kind": "tokens", "ts": "2026-06-19T20:34:19Z", "tokens": 157196, "source": "validator (gfx1101)"}
 {"kind": "tokens", "ts": "2026-06-08T15:01:20Z", "tokens": 100929, "source": "porter"}
 {"kind": "tokens", "ts": "2026-06-23T22:08:43Z", "tokens": 38016, "source": "gfx90a audit cross-file fix (general-purpose subagent)"}
+{"kind":"phase","ts":"2026-08-09T00:32:24Z","phase":"compile","seconds":135.757,"exit":0,"cmd":"cmake --build projects/aihwkit/src/build_old -j16"}
+{"kind":"phase","ts":"2026-08-09T00:37:10Z","phase":"compile","seconds":136.898,"exit":0,"cmd":"cmake --build projects/aihwkit/src/build_new -j16"}
+{"kind":"phase","ts":"2026-08-09T00:59:13Z","phase":"cuda-compile","seconds":660.559,"exit":0,"cmd":"cmake --build projects/aihwkit/src/build_cuda_head -j16"}
+{"kind":"phase","ts":"2026-08-09T01:00:46Z","phase":"test","seconds":7.784,"exit":0,"cmd":"bash -c cd projects/aihwkit/src && HIP_VISIBLE_DEVICES=2 PYTHONPATH=src python -m pytest tests/test_specific_tiles.py -q 2>&1 | tail -40"}
+{"kind":"phase","ts":"2026-08-09T01:01:46Z","phase":"test","seconds":55.814,"exit":0,"cmd":"bash -c cd projects/aihwkit/src && HIP_VISIBLE_DEVICES=2 PYTHONPATH=src python -m pytest tests/test_simulator_tiles.py tests/test_bindings_tiles.py -q -k Cuda 2>&1 | tail -20"}
+{"kind":"phase","ts":"2026-08-09T01:02:01Z","phase":"test","seconds":9.320,"exit":0,"cmd":"bash -c cd projects/aihwkit/src && HIP_VISIBLE_DEVICES=2 PYTHONPATH=src python -m pytest tests/test_inference_tiles.py -q -k Cuda 2>&1 | tail -20"}

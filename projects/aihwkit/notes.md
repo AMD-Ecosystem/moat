@@ -601,3 +601,80 @@ Test results (PYTHONPATH=src, HIP_VISIBLE_DEVICES=1):
 
 Total GPU-gated tests: 1521 passed, 383 skipped, 0 failed. Identical pass count to gfx90a.
 Verdict: PASS. Transitioning windows-gfx1101 to completed (validated_sha 42e0465).
+
+## Revalidation 2026-08-09 (linux-gfx90a)
+
+State: revalidate (validated_sha 4bc09a0 -> head_sha 70577b5).
+GPU: AMD Instinct MI250X / MI250 (gfx90a, wave64). ROCm 7.2.1. HIP_VISIBLE_DEVICES=2.
+
+Delta 4bc09a0..70577b5 (1 commit, CMakeLists.txt only, +2/-3): drops the
+`if(NOT DEFINED CMAKE_HIP_ARCHITECTURES) set(... "gfx90a" ...) endif()` pin,
+leaving CMAKE_HIP_ARCHITECTURES to `enable_language(HIP)`'s own auto-detect
+when a builder does not pass `-DCMAKE_HIP_ARCHITECTURES` explicitly. Our build
+recipe always passes `-DCMAKE_HIP_ARCHITECTURES=gfx90a` explicitly, so this is
+a default-path-only change here. `moatlib.py classify` returned `mixed`
+(CMakeLists.txt token count differs), so did NOT auto-carry; ran the binary-
+equivalence check per the mixed/unknown protocol.
+
+Binary equivalence check (both shas built from the same absolute checkout
+path, fresh build dirs, explicit CMAKE_HIP_ARCHITECTURES=gfx90a):
+```
+cd projects/aihwkit/src
+git checkout 4bc09a0fa9a76d3038e6729ea03615fcc0beb76b
+cmake -S . -B build_old -GNinja -DUSE_HIP=ON -DUSE_CUDA=OFF -DRPU_CXX_STANDARD=20 \
+  -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH="$TORCH_CMAKE;/opt/rocm" -DRPU_BLAS=OpenBLAS -DBUILD_TEST=OFF \
+  -DRPU_USE_TORCH_BUFFERS=OFF
+cmake --build build_old -j16
+git checkout 70577b578b7faa661611e905c0b9ec1a1d85bf33
+cmake -S . -B build_new -GNinja <same flags>
+cmake --build build_new -j16
+python3 utils/codeobj_diff.py projects/aihwkit/src/build_old projects/aihwkit/src/build_new
+```
+Result: overall verdict `indeterminate`, but that came ONLY from CMake's own
+compiler-ABI-detection scratch binaries (CMakeDetermineCompilerABI_*.bin,
+CompilerIdC/CompilerIdCXX/CompilerIdHIP a.out, FindOpenMP ompver_*.bin) --
+plain host x86-64 ELF test programs with no HIP device code at all (confirmed
+via `file` + `nm -D`: only libc/GCC weak symbols, identical between old and
+new). These are not part of the aihwkit build output and never ship. The one
+real artifact, `rpu_base.cpython-312-x86_64-linux-gnu.so`, reported
+**identical** -- exported symbols + device ISA identical (53232 exports).
+
+GPU corroboration (HIP_VISIBLE_DEVICES=2, gfx90a wave64), rpu_base.so from the
+head-sha build (build_new) copied into src/aihwkit/simulator/:
+- Import smoke: `rpu_base.cuda.is_compiled()` True, `torch.cuda.get_device_name(0)`
+  = "AMD Instinct MI250X / MI250".
+- tests/test_specific_tiles.py: **18/18 PASSED** (CRITICAL -- bit_line_maker +
+  pulsed-weight-update warp-size path).
+- tests/test_simulator_tiles.py + tests/test_bindings_tiles.py `-k Cuda`:
+  **284 passed, 47 skipped, 0 failed**.
+- tests/test_inference_tiles.py `-k Cuda`: **32 passed, 22 skipped, 0 failed**.
+
+CUDA no-regression gate: never previously recorded for this project at any
+head_sha, so ran it here (compile-only, no NVIDIA GPU on host). Worked around
+the two known environmental walls (ROCm-build torch/include missing
+c10/cuda/impl/cuda_cmake_macros.h; torch/headeronly/util/complex.h duplicated-
+token #if guard) by building against a scratch venv with pip-installed
+`torch==2.11.0+cu128` (CUDA wheel). RPU_CUDA_ARCHITECTURES is already a fixed
+cache-var list ("75;80;89", includes 80) in CMakeLists.txt -- not `native`
+autodetect -- so no arch-pin patch was needed.
+```
+python3 -m venv venv && source venv/bin/activate
+pip install --index-url https://download.pytorch.org/whl/cu128 torch==2.11.0+cu128
+pip install numpy pybind11 scikit-build cmake
+cd projects/aihwkit/src   # at head_sha 70577b578b7faa661611e905c0b9ec1a1d85bf33
+cmake -S . -B build_cuda_head -GNinja -DUSE_CUDA=ON -DUSE_HIP=OFF -DRPU_CXX_STANDARD=17 \
+  -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES=80 \
+  -DCMAKE_PREFIX_PATH="$TORCH_CMAKE" -DRPU_BLAS=OpenBLAS -DBUILD_TEST=OFF -DRPU_USE_TORCH_BUFFERS=OFF
+cmake --build build_cuda_head -j16
+```
+Result: clean build, exit 0, produced rpu_base.cpython-312-x86_64-linux-gnu.so
+(198 MB) with real CUDA sm_75/sm_80/sm_89 code objects for bit_line_maker.cu
+and all RPU_GPU .cu sources. No `-fvisibility=hidden`-on-nvcc-style failure,
+no `atomicAdd(double*)` overload failure (would have signaled a wrong/native
+arch pin). CUDA path is a pure passthrough -- no regression.
+
+Jargon: `python3 utils/jargon.py --port aihwkit` -> clean.
+
+Verdict: PASS (binary-equivalence carry-forward, corroborated by real-GPU
+smoke). Transitioning linux-gfx90a to completed (validated_sha 70577b5).
