@@ -298,3 +298,53 @@ python -m pytest projects/ffpa-attn/src/tests/ --ignore=projects/ffpa-attn/src/t
 ### Summary
 
 GPU validation PASSED on gfx1201. Results are identical to gfx1101: all forward/backward Triton kernels including large headdim (D=320, 512, 640) produce correct results on RDNA4. The gfx1100 codegen bug (headdim 288-512 failures) does NOT affect gfx1201.
+
+## Validation 2026-08-09 (linux-gfx90a revalidate)
+
+### Delta
+
+`validated_sha` `8f1c950` (`[ROCm] Add AMD GPU support via the Triton backend`) -> `head_sha` `3886c61`. Fork head moved by four `Update README.md` commits (`f8a14f3`, `eb6ee81`, `2d629bb`, `3886c61`).
+
+```bash
+python3 utils/moatlib.py classify ffpa-attn 8f1c9506d2e43ef111df21831eb08b1dca4026ec 3886c6195328ec84f3e2f51ab53c6be5e14d69c3
+# class=doc-only arch_independent=True inert=True
+```
+
+`git diff 8f1c950..3886c61` confirmed the only change across the four commits is a single-line wording edit in `README.md`'s ROCm support note (no code, no test, no build-file change). Carried forward without a GPU re-run:
+
+```bash
+python3 utils/moatlib.py carry-forward ffpa-attn linux-gfx90a 3886c6195328ec84f3e2f51ab53c6be5e14d69c3 source-class "README wording tweak only (doc-only, arch_independent=True per classify); no code/test change since prior validated_sha 8f1c950"
+```
+
+### CUDA no-regression gate
+
+Not previously recorded at any head_sha for this project, so ran it now (once per head_sha rule). ffpa-attn ships an optional CUDA extension (`ffpa_attn._C`, `ENABLE_FFPA_CUDA_IMPL=1`, guarded off by default) alongside the pure-Triton backend the port validates; the port's own diff (`git diff 67e3fff..8f1c950`) touches only `README.md`, `docs/index.md`, `functional.py` (adds a `try/except` import guard around the CuTeDSL import), and test files -- no file under `csrc/cuffpa/` is touched, so the CUDA extension source is byte-identical to upstream.
+
+This host has a pre-provisioned CUDA-12.8 venv (torch 2.11.0+cu128) from earlier gate work in this session; used it directly instead of building against the ROCm dev PyTorch (which is the one that hits the `torch/headeronly/util/complex.h` duplicated-token wall described in the validator brief).
+
+```bash
+cd projects/ffpa-attn/src
+export CUDA_HOME=/opt/conda/envs/cuda-12.8
+export PATH=/opt/conda/envs/cuda-12.8/bin:$PATH
+export TORCH_CUDA_ARCH_LIST=8.0
+export FFPA_BUILD_ARCH=80
+export ENABLE_FFPA_CUDA_IMPL=1
+unset ROCM_HOME
+<cuda-venv>/bin/python setup.py build_ext --build-lib <out>
+```
+
+**Result: PASS.** 27 generated CUDA TUs + `ffpa_attn_api.cc` compiled with nvcc 12.8 pinned to `sm_80`, linked cleanly into `ffpa_attn/_C.cpython-312-x86_64-linux-gnu.so` (51 MB), zero errors. Wall 125.5s. This is a real compile-only gate (no NVIDIA GPU on this host), consistent with the port making no CUDA-source changes.
+
+### Jargon and docs
+
+```bash
+python3 utils/jargon.py --port ffpa-attn   # clean
+```
+
+README already documents the ROCm/Triton build in-place (the very line the four commits reworded); no separate doc gap.
+
+### Result
+
+`linux-gfx90a` carried forward to `head_sha=3886c61` at `completed`, no GPU re-run needed (behavior-preserving doc delta). CUDA gate recorded at this head_sha: PASS.
+
+Wall clock this session: ~4 min (classify + diff inspection ~30s, CUDA compile 125.5s wrapped in `utils/timeit.sh ffpa-attn cuda-compile`, jargon check ~2s).

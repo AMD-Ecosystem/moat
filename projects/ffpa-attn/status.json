@@ -7,7 +7,7 @@
   "priority": 4.62,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-08-08T17:15:22Z",
+  "updated_at": "2026-08-09T00:10:07Z",
   "head_sha": "3886c6195328ec84f3e2f51ab53c6be5e14d69c3",
   "pr_url": "https://github.com/xlite-dev/ffpa-attn/pull/268",
   "pr_number": 268,
@@ -24,10 +24,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "8f1c9506d2e43ef111df21831eb08b1dca4026ec",
+      "validated_sha": "3886c6195328ec84f3e2f51ab53c6be5e14d69c3",
       "started_at": "2026-06-04T22:27:16Z",
-      "completed_at": "2026-06-07T19:12:18Z",
-      "updated_at": "2026-06-23T06:05:13Z",
+      "completed_at": "2026-08-09T00:10:07Z",
+      "updated_at": "2026-08-09T00:10:07Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -43,12 +43,10 @@
       },
       "last_agent": "moat-checkup",
       "carry_forward": {
-        "from": "22b7301",
-        "to": "8f1c9506d2e43ef111df21831eb08b1dca4026ec",
+        "to": "3886c6195328ec84f3e2f51ab53c6be5e14d69c3",
         "method": "source-class",
-        "class": "format-only",
-        "detail": "yapf reflow + dead-import removal in test files + single-commit squash; no kernel/test-outcome change",
-        "at": "2026-06-17T21:35:18Z"
+        "detail": "README wording tweak only (doc-only, arch_independent=True per classify); no code/test change since prior validated_sha 8f1c950",
+        "at": "2026-08-09T00:10:07Z"
       }
     },
     "linux-gfx1100": {
