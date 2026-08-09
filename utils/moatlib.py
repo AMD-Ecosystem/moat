@@ -2333,16 +2333,16 @@ def ensure_git_config():
 PORT_INERT = ("README.md", "data/")
 
 
-def branch_drift(branch, base_ref="origin/main"):
+def branch_drift(branch, base_ref="origin/main", cwd=None):
     """What has landed on the trunk that this port branch has not seen, split into
     the changes a port can feel and the ones it cannot.
 
     Returns (substantive, inert) as sorted path lists. Both empty means the branch
     already carries everything on the trunk."""
-    base = _git("merge-base", "HEAD", base_ref, check=False).stdout.strip()
+    base = _git("merge-base", "HEAD", base_ref, cwd=cwd, check=False).stdout.strip()
     if not base:
         return ([], [])
-    out = _git("diff", "--name-only", base, base_ref, check=False).stdout
+    out = _git("diff", "--name-only", base, base_ref, cwd=cwd, check=False).stdout
     substantive, inert = [], []
     for p in out.splitlines():
         p = p.strip()
@@ -2430,18 +2430,16 @@ def make_worktree(name, path=None, base_ref="origin/main"):
     r = _git("worktree", "add", "-q", "-B", f"port/{name}", str(path), ref, check=False)
     if r.returncode:
         raise ValueError(f"could not create the worktree: {(r.stderr or r.stdout).strip()}")
-    # Sync using the WORKTREE's own moatlib, which is what an agent there would run,
-    # and unconditionally: `branch_sync` skips when the trunk's drift looks inert, and
-    # stale tooling is precisely the case where that judgement is being made by the
-    # stale copy.
-    sync = subprocess.run([sys.executable, "utils/moatlib.py", "branch-sync", "--apply"],
-                          cwd=str(path), capture_output=True, text=True)
-    detail = (sync.stdout or sync.stderr).strip().replace("branch-sync: ", "")
+    # Sync with THIS copy of the code, pointed at the new worktree. Running the
+    # worktree's own moatlib is circular: the branch that most needs a sync is the one
+    # whose syncer is too old to perform it.
+    action, detail = branch_sync(apply=True, base_ref=base_ref, cwd=path)
+    detail = f"{action} -- {detail}"
     # A worktree that did not sync is the thing this command exists to prevent, so it
     # is not handed back. Returning the path with a warning attached would be worse
     # than the hand-rolled version it replaces: a caller gets something that looks
     # ready, and the warning is one line above the path they are about to paste.
-    if not detail.startswith(("merged", "current", "inert")):
+    if action not in ("merged", "current", "inert"):
         _git("worktree", "remove", "--force", str(path), check=False)
         raise ValueError(
             f"{name}: the worktree was not synced, so it was not created -- {detail}. "
@@ -2450,21 +2448,30 @@ def make_worktree(name, path=None, base_ref="origin/main"):
     return (str(path), detail)
 
 
-def branch_sync(apply=False, base_ref="origin/main"):
+def branch_sync(apply=False, base_ref="origin/main", cwd=None):
     """Bring a port branch up to the trunk's tooling, but only when that is worth a
     merge commit. Returns (action, detail) for the caller to print.
 
     Merging on every trunk push would put a merge commit on every port branch for a
     README regeneration. Merging on none of them means a port runs whatever skills
     and agent definitions existed the day its branch was cut. So: look first, and
-    merge only when something a port can actually feel has moved."""
-    branch = _git("rev-parse", "--abbrev-ref", "HEAD", check=False).stdout.strip()
+    merge only when something a port can actually feel has moved.
+
+    `cwd` runs this against ANOTHER checkout -- a fresh worktree -- while the merging
+    is still done by THIS copy of the code. That distinction is the whole point: a
+    worktree cut from a port branch carries that branch's tooling, and a branch old
+    enough to need syncing is old enough that its own `branch_sync` cannot do it. The
+    ffpa-attn branch predates the rule that a branch keeps its own project folder
+    across a trunk merge, so its copy hit that conflict and gave up, reporting four
+    files that had merged cleanly. Syncing a branch with the branch's own syncer is
+    circular exactly when it matters."""
+    branch = _git("rev-parse", "--abbrev-ref", "HEAD", check=False, cwd=cwd).stdout.strip()
     if not branch.startswith("port/"):
         return ("skip", "not a port branch")
-    if _git("status", "--porcelain", check=False).stdout.strip():
+    if _git("status", "--porcelain", check=False, cwd=cwd).stdout.strip():
         return ("dirty", "uncommitted changes -- not merging; commit or stash first")
-    _git("fetch", "-q", "origin", base_ref.split("/", 1)[-1], check=False)
-    substantive, inert = branch_drift(branch, base_ref)
+    _git("fetch", "-q", "origin", base_ref.split("/", 1)[-1], check=False, cwd=cwd)
+    substantive, inert = branch_drift(branch, base_ref, cwd=cwd)
     if not substantive:
         if not inert:
             return ("current", "up to date with the trunk")
@@ -2473,13 +2480,13 @@ def branch_sync(apply=False, base_ref="origin/main"):
         return ("would-merge", ", ".join(substantive[:4]))
     ensure_git_config()
     project = branch[len("port/"):]
-    pre = _git("rev-parse", "HEAD", check=False).stdout.strip()
+    pre = _git("rev-parse", "HEAD", check=False, cwd=cwd).stdout.strip()
     own = f"projects/{project}/"
-    r = _git("merge", "--no-edit", base_ref, check=False)
+    r = _git("merge", "--no-edit", base_ref, check=False, cwd=cwd)
     if r.returncode:
         conflicted = [c.strip() for c in
                       _git("diff", "--name-only", "--diff-filter=U",
-                           check=False).stdout.splitlines() if c.strip()]
+                           check=False, cwd=cwd).stdout.splitlines() if c.strip()]
         # A conflict confined to this branch's OWN project folder has a settled answer
         # and does not need a person: the branch owns that path. It happens on every
         # sync now rather than rarely -- the trunk deleted the folder when the project
@@ -2487,28 +2494,39 @@ def branch_sync(apply=False, base_ref="origin/main"):
         # that deletion. Aborting on it left five branches unable to take a trunk
         # merge at all, running tooling old enough that it could not read the very
         # records it was holding, and silently offering another project's work.
-        if conflicted and all(c.startswith(own) for c in conflicted):
-            _git("checkout", pre, "--", own, check=False)
-            _git("add", "--", own, check=False)
-            _git("commit", "--no-edit", "-q", check=False)
+        # README.md is GENERATED, so a conflict there is not a disagreement: both
+        # sides ran gen_readme against different sets of records. The trunk's board is
+        # the published one and gate_readme does not judge a port branch, so the
+        # trunk's version wins and the branch's own regeneration is simply dropped.
+        # Left unhandled it collides on every branch that ever regenerated the board,
+        # which is all of them.
+        settled = [c for c in conflicted if c.startswith(own) or c == "README.md"]
+        if conflicted and len(settled) == len(conflicted):
+            if any(c.startswith(own) for c in conflicted):
+                _git("checkout", pre, "--", own, check=False, cwd=cwd)
+                _git("add", "--", own, check=False, cwd=cwd)
+            if "README.md" in conflicted:
+                _git("checkout", base_ref, "--", "README.md", check=False, cwd=cwd)
+                _git("add", "--", "README.md", check=False, cwd=cwd)
+            _git("commit", "--no-edit", "-q", check=False, cwd=cwd)
         else:
-            _git("merge", "--abort", check=False)
+            _git("merge", "--abort", check=False, cwd=cwd)
             return ("conflict", f"merging {base_ref} conflicts outside "
-                                f"{own} -- resolve by hand: "
+                                f"{own} and README.md -- resolve by hand: "
                                 f"{', '.join(conflicted[:4] or substantive[:4])}")
     # The trunk does not carry an in-flight project's folder, and a branch with no
     # commits of its own fast-forwards straight onto that absence -- which is how the
     # bam canary lost its own state to a routine sync. Whatever the merge did to this
     # branch's project, the branch's version wins.
     if _git("cat-file", "-e", f"{pre}:projects/{project}/status.json",
-            check=False).returncode == 0:
-        _git("checkout", pre, "--", own, check=False)
-        if _git("diff", "--cached", "--name-only", check=False).stdout.strip():
+            check=False, cwd=cwd).returncode == 0:
+        _git("checkout", pre, "--", own, check=False, cwd=cwd)
+        if _git("diff", "--cached", "--name-only", check=False, cwd=cwd).stdout.strip():
             _git("commit", "-q", "-m",
-                 f"{project}: keep this branch's project state across the trunk merge")
+                 f"{project}: keep this branch's project state across the trunk merge", cwd=cwd)
     # Push so a sibling host reuses this merge instead of making its own; the branch
     # is shared, and two independent merges of the same trunk diverge for no reason.
-    _git("push", "-q", "origin", branch, check=False)
+    _git("push", "-q", "origin", branch, check=False, cwd=cwd)
     return ("merged", ", ".join(substantive[:4]))
 
 
