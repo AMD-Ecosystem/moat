@@ -586,3 +586,96 @@ GPU dispatch confirmed: hipcc compiled with --offload-arch=gfx1101; .pyd contain
 Fork source tree: clean (only untracked .pyd build artifact, gitignored).
 
 Verdict: completed. validated_sha=5e7e93a (windows-gfx1101).
+
+## Validation 2026-08-09 (linux-gfx90a carry-forward)
+
+Platform: linux-gfx90a (AMD Instinct MI250X, gfx90a), HIP_VISIBLE_DEVICES=0
+Fork: AMD-Ecosystem/FaithC @ moat-port 5e7e93a
+Validator: claude-opus-5-1m
+
+### Delta assessed: 1d47e7a (prior linux-gfx90a validated_sha) -> 5e7e93a (head_sha)
+
+`python3 utils/moatlib.py classify FaithC 1d47e7a58d2062961ba543d871da3524f6b616fb
+5e7e93aa38a53937a552b5758e060fa9b0d642ab` -> `class=mixed` (token count differs in
+setup.py), so full revalidation would normally apply; confirmed binary equivalence
+instead per the carry-forward shortcut.
+
+`git diff 1d47e7a 5e7e93a` touches only `setup.py`: adds a `BuildExtension` subclass
+that appends `.hip` to MSVC's `_cpp_extensions` list, entirely inside
+`if sys.platform == "win32" and hasattr(self.compiler, "_cpp_extensions"):`. Same
+single commit already assessed as Linux-inert by the 2026-06-18 linux-gfx1100
+revalidation (full GPU re-run there since its old validated_sha was an unreachable
+pre-rebase phantom). Here the old SHA (1d47e7a) is reachable, so binary equivalence
+was provable directly instead of a fresh 16/16 GPU run.
+
+### Binary-equivalence build (same absolute source path, per codeobj_diff.py caveat
+### that __FILE__ strings make identical code compare as differ otherwise)
+
+```
+# old: git checkout 1d47e7a58d2062961ba543d871da3524f6b616fb (detached)
+rm -f src/faithcontour/_C/kernels.hip src/faithcontour/_C*.so && rm -rf build/
+HIP_VISIBLE_DEVICES=0 PYTORCH_ROCM_ARCH=gfx90a python setup.py build_ext --inplace
+cp src/faithcontour/_C.cpython-312-x86_64-linux-gnu.so .../faithc-cmp-old/
+
+# new: git checkout 5e7e93aa38a53937a552b5758e060fa9b0d642ab (detached)
+rm -f src/faithcontour/_C/kernels.hip src/faithcontour/_C*.so && rm -rf build/
+HIP_VISIBLE_DEVICES=0 PYTORCH_ROCM_ARCH=gfx90a python setup.py build_ext --inplace
+cp src/faithcontour/_C.cpython-312-x86_64-linux-gnu.so .../faithc-cmp-new/
+```
+
+Both builds: PASS (exit 0, same loop-unroll advisories on sat_centroid/sat_clip as
+every prior gfx90a build).
+
+```
+python3 utils/codeobj_diff.py faithc-cmp-old faithc-cmp-new
+verdict=identical
+  _C.cpython-312-x86_64-linux-gnu.so: identical (exported symbols + device ISA identical (139 exports))
+```
+
+No GPU re-run needed -- the compiled program on gfx90a is provably unchanged.
+`python3 utils/moatlib.py carry-forward FaithC linux-gfx90a 5e7e93aa38a53937a552b5758e060fa9b0d642ab binary-equiv "..."`.
+
+### CUDA no-regression gate: cuda-not-validated
+
+Attempted `nvcc -c src/faithcontour/_C/kernels.cu -arch=sm_80 -std=c++20
+--expt-relaxed-constexpr` (pinned arch per policy; ccbin g++-13) against this host's
+only PyTorch install (ROCm dev build `2.14.0a0+gitb6b444c`) since no CUDA-flavored
+PyTorch is installed here. Failed with ~100 errors, all rooted at
+`torch/headeronly/util/complex.h:9`:
+
+```
+#if defined(__HIPCC__) || defined(__HIPCC__)
+#include <thrust/complex.h>
+#endif
+```
+
+That guard checks `__HIPCC__` twice (evidently meant `__CUDACC__ || __HIPCC__`), so
+under nvcc (`__CUDACC__` defined, `__HIPCC__` not) the file never includes
+`<thrust/complex.h>`, while `c10/util/complex.h`/`complex_math.h` unconditionally
+reference `thrust::complex`/`thrust::abs` under `#if defined(__CUDACC__) ||
+defined(__HIPCC__)`, producing "identifier thrust is undefined" cascades. This is a
+pre-existing defect in the installed dev-build PyTorch's own headers, unrelated to
+FaithC: it fires on ANY torch/extension.h-including TU compiled with nvcc against
+this install, regardless of project content. `grep -n
+'__builtin_trap|__trap|__HIP|hip[A-Z]|amdgcn|USE_ROCM'` over the three port sources
+(kernels.cu, bindings.cpp, kernels.h) found nothing -- no HIP-only symbols, no
+asm/trap constructs, confirming the port's own diff contains nothing nvcc-illegal.
+
+Recording `cuda-not-validated: no CUDA-flavored PyTorch install on this host to
+build the CUDAExtension against; the only torch (ROCm dev build) has an unrelated
+__HIPCC__/__HIPCC__ typo in torch/headeronly/util/complex.h that blocks any
+torch-extension nvcc compile here, independent of port content`. Not a gate;
+environmental wall per validator policy (a real CUDA-flavored torch install is an
+NVIDIA-only dependency graph, not in the conda cuda-12.8 toolkit env).
+
+### Jargon / docs
+
+`python3 utils/jargon.py --port FaithC` -> clean. README.md AMD GPU (ROCm) section
+(collapsible `<summary>` alongside the CUDA instructions) already documents the
+ROCm build; no change needed.
+
+Fork clone: clean at 5e7e93a (checked out/rebuilt twice for the binary-equivalence
+compare, restored to head with no tracked-file diff).
+
+Verdict: completed (carry-forward, binary-equiv). validated_sha=5e7e93a
+(linux-gfx90a). CUDA gate: cuda-not-validated (environmental wall, see above).
