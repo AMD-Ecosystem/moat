@@ -42,3 +42,4 @@
 {"kind":"phase","ts":"2026-08-09T00:04:01Z","phase":"compile","seconds":143.798,"exit":0,"cmd":"bash -c cd projects/QUICK/src/build_new && make -j32 2>&1 | tail -80"}
 {"kind":"phase","ts":"2026-08-09T00:07:51Z","phase":"compile","seconds":143.391,"exit":0,"cmd":"bash -c cd projects/QUICK/src/build_old && make -j32 2>&1 | tail -80"}
 {"kind":"phase","ts":"2026-08-09T00:11:40Z","phase":"cuda-compile","seconds":112.238,"exit":0,"cmd":"bash -c cd projects/QUICK/src_cuda/build_cuda && make -j32 2>&1 | tail -150"}
+{"kind": "tokens", "ts": "2026-08-09T00:15:47Z", "tokens": 129012, "source": "validator"}
