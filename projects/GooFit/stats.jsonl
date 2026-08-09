@@ -42,3 +42,9 @@
 {"kind":"phase","ts":"2026-08-08T23:33:27Z","phase":"test","seconds":6.534,"exit":0,"cmd":"ctest --test-dir projects/GooFit/src/build-cpp"}
 {"kind": "tokens", "ts": "2026-08-08T23:42:55Z", "tokens": 104314, "source": "porter"}
 {"kind": "tokens", "ts": "2026-08-08T23:56:13Z", "tokens": 114968, "source": "reviewer"}
+{"kind":"phase","ts":"2026-08-08T23:59:53Z","phase":"compile","seconds":17.690,"exit":1,"cmd":"cmake --build projects/GooFit/src/build-hip-validate -j32"}
+{"kind":"phase","ts":"2026-08-09T00:04:18Z","phase":"compile","seconds":34.957,"exit":0,"cmd":"cmake --build projects/GooFit/src/build-hip-validate -j32"}
+{"kind":"phase","ts":"2026-08-09T00:04:45Z","phase":"test","seconds":9.767,"exit":0,"cmd":"env HIP_VISIBLE_DEVICES=1 ctest --test-dir projects/GooFit/src/build-hip-validate --output-on-failure"}
+{"kind":"phase","ts":"2026-08-09T00:05:57Z","phase":"compile","seconds":23.649,"exit":0,"cmd":"cmake --build projects/GooFit/src/build-cpp-validate -j32"}
+{"kind":"phase","ts":"2026-08-09T00:06:08Z","phase":"test","seconds":6.514,"exit":0,"cmd":"ctest --test-dir projects/GooFit/src/build-cpp-validate --output-on-failure"}
+{"kind":"phase","ts":"2026-08-09T00:07:00Z","phase":"cuda-compile","seconds":11.047,"exit":1,"cmd":"cmake --build projects/GooFit/src/build-cuda-validate -j32"}

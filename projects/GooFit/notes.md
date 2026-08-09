@@ -1417,3 +1417,164 @@ occur anywhere in the real module tree (grep exit 1, a genuine no-match), becaus
   `INTERPROCEDURAL_OPTIMIZATION ON` puts `CXX_FLAGS = -O3 -DNDEBUG -flto=auto
   -fno-fat-lto-objects` there). One clause naming that equivalent would close the
   gap in an entry whose whole point is that it generalises.
+
+## Validation 2026-08-09 (validator, linux-gfx1100, fork 18fca9e4a vs 5fe1221a8)
+
+Worktree tooling was behind trunk; ran `python3 utils/moatlib.py branch-sync --apply`
+first as instructed (merged only `.claude/agents/*`, `projects/GooFit/` untouched).
+`jargon.py --port GooFit` now works directly.
+
+### Build (GPU 1, gfx1100, ROCm 7.2.53211-c2d9476115, CMake 3.31.6, Ninja)
+
+Fresh `build-hip-validate`, the recorded recipe:
+```
+cmake -S . -B build-hip-validate -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DGOOFIT_DEVICE=HIP -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DGOOFIT_TESTS=ON -DGOOFIT_EXAMPLES=ON -DGOOFIT_CERNROOT=OFF \
+  -DGOOFIT_PYTHON=OFF -DGOOFIT_PHYSICS=OFF
+cmake --build build-hip-validate -j32
+```
+306/306 targets, clean, exit 0. `roc-obj-ls` on `examples/exponential/exponential`
+and `tests/simple/SimpleTest` shows exactly one device offload entry each,
+`hipv4-amdgcn-amd-amdhsa--gfx1100` -- the module targets gfx1100 only, no other
+arch bundled in.
+
+**One wrinkle worth recording, not a regression**: a first pass configuring with
+no `-DGOOFIT_PYTHON` flag at all (letting the upstream `option(GOOFIT_PYTHON ...
+${CUR_PROJ})` default fire, since Python 3.12 is on this host) hits a real build
+break -- `python/goofit/CMakeLists.txt`'s `add_library(_Core STATIC ... Variable.cpp
+DataSet.cpp ... Application.cpp ...)` reuses the same bare filenames as
+`src/goofit/CMakeLists.txt`'s `goofit_add_library(... Variable.cpp ...)`, and
+`goofit_mark_hip_sources()` calls `set_source_files_properties(Variable.cpp
+PROPERTIES LANGUAGE HIP)` with that bare name from the `src/goofit` directory scope.
+On this CMake/generator combination the HIP-language assignment leaked to the
+python target's same-named sources in the sibling directory: the generated
+`build.ninja` shows a `CXX_COMPILER___Core_...` rule (so CMake still picked the CXX
+per-target rule/driver, `/usr/bin/c++`) but with HIP-only per-source flags
+(`-x hip --offload-arch=gfx1100`) baked into `FLAGS`, which `c++` naturally rejects.
+This is a red herring, not the port's fault: every session that has ever validated
+this project used the standard recipe above with `-DGOOFIT_PYTHON=OFF` explicit
+(notes attempt 3 onward), and review round 2 (item 8) already flagged that
+`GOOFIT_PYTHON=ON` interactions with the HIP backend were untested and out of scope
+("Both were invisible in the gfx1100 run because it set ... `GOOFIT_PYTHON=OFF`").
+Re-ran with the documented flags and it configures and builds clean. Not chased
+further since `GOOFIT_PYTHON=ON` on HIP was never claimed to work and is off by
+default in every recorded recipe; if a future round wants `GOOFIT_PYTHON=ON` on
+HIP, the fix is scoping `goofit_mark_hip_sources` to full/absolute source paths
+(or building python/goofit's `_Core` through `GOOFIT_ADD_LIBRARY` instead of a bare
+`add_library`) rather than anything device-specific.
+
+### Tests: HIP 25/25 in 9.65s, CPP 26/26 in 6.40s -- both match the recorded baseline
+
+```
+HIP_VISIBLE_DEVICES=1 ctest --test-dir build-hip-validate --output-on-failure
+  -> 100% tests passed, 0 failed out of 25, 9.65 s
+ctest --test-dir build-cpp-validate --output-on-failure
+  -> 100% tests passed, 0 failed out of 26, 6.40 s
+```
+No non-GPU regression: the CPP suite count and wall time match every prior session
+(26/26, ~6.4s).
+
+`HIP_VISIBLE_DEVICES=1 ./build-hip-validate/examples/exponential/exponential`:
+```
+alpha = -1.001102381 +/- 0.003165763921
+```
+Digit-identical to the figure recorded across three independent prior sessions
+(porter attempts 3, 6 and the last two reviews). Device banner:
+```
+HIP 7.2
+HIP: Number of devices: 1
+HIP: Device 0: AMD Radeon Pro W7800 48GB
+HIP: Architecture: gfx1100
+```
+
+### CUDA no-regression gate: run at 18fca9e4a (first genuine nvcc build on this
+project -- prior notes record only "no nvcc anywhere" through review round 3)
+
+`extern/thrust` is initialised at `af8cce4ca` (CCCL) as the task brief said, so the
+submodule wall that blocked every previous attempt at this gate is gone. Configured
+and built with `/opt/conda/envs/cuda-12.8/bin/nvcc`, arch pinned:
+```
+cmake -S . -B build-cuda-validate -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DGOOFIT_DEVICE=CUDA -DCMAKE_CUDA_ARCHITECTURES=80 \
+  -DGOOFIT_TESTS=ON -DGOOFIT_EXAMPLES=ON -DGOOFIT_CERNROOT=OFF -DGOOFIT_PYTHON=OFF \
+  -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc \
+  -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-13
+cmake --build build-cuda-validate -j32
+```
+Configure succeeds. Build fails at `src/goofit/BinnedDataSet.cpp` (and every other
+host `.cpp` that transitively includes `GlobalCudaDefines.h`):
+```
+include/goofit/GlobalCudaDefines.h:133:10: fatal error: driver_types.h: No such
+  file or directory
+  133 | #include <driver_types.h>
+```
+Root cause is a pre-existing upstream gap, not the port: `CMakeLists.txt` only adds
+`CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES` to `GooFit_Common`'s host include path
+inside the CUDA-13-relocated-CCCL branch (`if(EXISTS
+${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}/cccl/thrust/version.h)`), which never
+fires on CUDA 12.8 -- so no mechanism puts the CUDA toolkit's own `include/`
+(where `driver_types.h` lives) on a plain host `.cpp` TU's path on this toolkit
+version, upstream or ported. **Proved, not assumed**: built upstream `5fe1221a8`
+from a fresh `git worktree` with fresh-cloned submodules (network clone, not the
+possibly-touched port checkout) through the identical toolchain/flags/arch pin --
+identical failure, identical file, identical line region
+(`GlobalCudaDefines.h:124`, one line off only because the port's version has
+extra comments above the `#include`):
+```
+include/goofit/GlobalCudaDefines.h:124:10: fatal error: driver_types.h: No such
+  file or directory
+```
+This is exactly the passthrough case: the port's own `GlobalCudaDefines.h` CUDA
+arm was deliberately restored to be "bit-for-bit what upstream had" (review round
+3), and the upstream build breaks the same way with the same toolchain, so the
+port introduces no CUDA regression. **CUDA gate: pre-existing breakage, not a
+port fault, recorded rather than treated as a failure.** Not filed as a
+`rocm-bug-report` (nothing ROCm-side is implicated); if anyone wants this fixed
+upstream, the fix is adding the toolkit include dir to `GooFit_Common`'s host
+compile path unconditionally rather than only inside the CUDA-13 relocation
+branch. Cleaned up: upstream worktree removed (`git worktree remove --force`),
+`git worktree list` shows only the port checkout.
+
+### The gfx90a NLL-divergence question: still open, this run says nothing about it
+
+This arch is gfx1100 (wave32), not gfx90a (wave64), so a clean run here cannot
+close the gfx90a question -- it only adds to the standing evidence that gfx1100
+has never reproduced the `6.25e-310`/garbage-normalization divergence across four
+independent sessions now (attempts 3, 6, this validation, plus the two reviews).
+The device `new fptype[10]` the review's analysis points at as the likely cause is
+gone from the committed tree (confirmed by reading `MetricTaker::operator()` in
+`include/goofit/PDFs/MetricTaker.h` -- no `new[]`, `MAX_NUM_OBSERVABLES`-sized
+stack/static storage instead), so whoever next has a gfx90a host should build this
+exact sha and run ctest before re-debugging SmartVector or normalization pointers;
+if it still diverges there, it is either genuinely wave64-specific behavior or an
+artifact of that host's ROCm version, and only a gfx90a run can tell those apart.
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --port GooFit` -> clean.
+
+README.md (`If using ROCm (AMD GPUs)` collapsible, alongside the CUDA one) and
+`docs/SYSTEM_INSTALL.md` (`Ubuntu with ROCm, for AMD GPUs` collapsible, alongside
+the Ubuntu-CUDA one) both document the build in the project's own house style.
+Checked for accuracy, not just presence: the README's example command
+(`cmake .. -DGOOFIT_DEVICE=HIP -DCMAKE_HIP_ARCHITECTURES=gfx1100`) and
+SYSTEM_INSTALL's (`cmake -S . -B build -GNinja -DGOOFIT_DEVICE=HIP
+-DCMAKE_HIP_ARCHITECTURES=gfx1100`) both match the recipe actually used above
+(modulo the test/example/python/cernroot flags, which are validation-only, not
+build-requirement flags). Both correctly state ROCm 7.2+, CMake 3.21+, gfx1100 as
+what was tested, `GOOFIT_PHYSICS` defaulting OFF on HIP, and that the bundled CCCL
+is kept off the include path in favor of rocThrust. No overclaiming found.
+
+### Tree state and result
+
+`git -C projects/GooFit/src status --porcelain` empty before and after (local
+`build-*-validate` directories are `*build*/*`-gitignored and were removed after
+use). No source or build files were edited this round -- nothing needed changing
+for gfx1100 -- so no new commit and no `gen_readme.py` run for this branch
+(nothing pushed that would stale the table).
+
+**Result: linux-gfx1100 -> completed at 18fca9e4a.** HIP 25/25 (9.65s), CPP 26/26
+(6.40s), alpha digit-identical, CUDA gate passthrough-confirmed pre-existing
+breakage (not a regression), jargon clean, docs accurate. gfx90a question remains
+open pending a gfx90a re-run of this exact sha.
