@@ -1,0 +1,78 @@
+{"kind": "tokens", "ts": "2026-06-05T00:10:54Z", "tokens": 68636, "source": "planner"}
+{"kind":"phase","ts":"2026-06-05T00:17:41Z","phase":"compile","seconds":11.128,"exit":2,"cmd":"cmake --build /var/lib/jenkins/moat/projects/arbor/src/build -j128"}
+{"kind":"phase","ts":"2026-06-05T00:21:09Z","phase":"compile","seconds":73.192,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/arbor/src/build -j128"}
+{"kind":"phase","ts":"2026-06-05T00:35:37Z","phase":"test","seconds":0.186,"exit":1,"cmd":"/var/lib/jenkins/moat/projects/arbor/src/build/bin/unit --gtest_filter=*reduce_by_key*"}
+{"kind":"phase","ts":"2026-06-05T00:42:56Z","phase":"test","seconds":0.198,"exit":1,"cmd":"/var/lib/jenkins/moat/projects/arbor/src/build/bin/unit --gtest_filter=*reduce_by_key*"}
+{"kind":"phase","ts":"2026-06-05T00:48:47Z","phase":"test","seconds":0.202,"exit":1,"cmd":"/var/lib/jenkins/moat/projects/arbor/src/build/bin/unit --gtest_filter=*reduce_by_key*"}
+{"kind":"phase","ts":"2026-06-05T00:52:33Z","phase":"test","seconds":0.196,"exit":0,"cmd":"/var/lib/jenkins/moat/projects/arbor/src/build/bin/unit --gtest_filter=*reduce_by_key*"}
+{"kind":"phase","ts":"2026-06-05T00:52:39Z","phase":"test","seconds":1.218,"exit":0,"cmd":"/var/lib/jenkins/moat/projects/arbor/src/build/bin/unit --gtest_filter=*gpu*:*event_stream*:*stack*:*vector*:*spikes*"}
+{"kind":"phase","ts":"2026-06-05T00:52:54Z","phase":"test","seconds":12.269,"exit":0,"cmd":"/var/lib/jenkins/moat/projects/arbor/src/build/bin/unit"}
+{"kind": "tokens", "ts": "2026-06-05T00:54:57Z", "tokens": 104504, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-05T00:56:41Z", "tokens": 63436, "source": "reviewer"}
+{"kind":"phase","ts":"2026-06-05T00:57:02Z","phase":"compile","seconds":0.137,"exit":1,"cmd":"cmake --build . -j128"}
+{"kind":"phase","ts":"2026-06-05T00:57:11Z","phase":"compile","seconds":0.126,"exit":1,"cmd":"cmake --build . -j128"}
+{"kind":"phase","ts":"2026-06-05T01:10:47Z","phase":"test","seconds":13.640,"exit":0,"cmd":"/var/lib/jenkins/moat/projects/arbor/src/build/bin/unit"}
+{"kind": "tokens", "ts": "2026-06-05T01:12:05Z", "tokens": 54582, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-05T01:13:47Z", "tokens": 49275, "source": "reviewer"}
+{"kind":"phase","ts":"2026-06-05T01:14:23Z","phase":"test","seconds":11.838,"exit":0,"cmd":"/var/lib/jenkins/moat/projects/arbor/src/build/bin/unit"}
+{"kind":"phase","ts":"2026-06-05T01:32:25Z","phase":"linux-gfx1100","seconds":0.003,"exit":127,"cmd":"compile -- bash -c cd /var/lib/jenkins/moat/projects/arbor/src/build && cmake --build . -j$(nproc)"}
+{"kind":"phase","ts":"2026-06-05T01:33:34Z","phase":"compile","seconds":60.020,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/arbor/src/build && cmake --build . -j$(nproc)"}
+{"kind":"phase","ts":"2026-06-05T01:40:16Z","phase":"test","seconds":0.006,"exit":126,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/arbor/src/build && ./test/unit 2>&1"}
+{"kind":"phase","ts":"2026-06-05T01:45:58Z","phase":"test","seconds":7.975,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/arbor/src/build && ./bin/unit 2>&1"}
+{"kind": "tokens", "ts": "2026-06-05T01:53:20Z", "tokens": 80259, "source": "validator (gfx1100)"}
+{"kind":"phase","ts":"2026-06-05T02:04:23Z","phase":"compile","seconds":0.120,"exit":1,"cmd":"cmake --build . --target unit -j64"}
+{"kind":"phase","ts":"2026-06-05T02:10:22Z","phase":"test","seconds":0.003,"exit":127,"cmd":"./bin/unit"}
+{"kind": "tokens", "ts": "2026-06-05T01:16:16Z", "tokens": 32618, "source": "validator"}
+{"kind":"phase","ts":"2026-06-05T04:50:27Z","phase":"compile","seconds":0.649,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/arbor/src/build && /opt/conda/envs/py_3.12/lib/python3.12/site-packages/cmake/data/bin/cmake --build . -j$(nproc)"}
+{"kind":"phase","ts":"2026-06-05T04:50:43Z","phase":"test","seconds":12.904,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/arbor/src/build && HIP_VISIBLE_DEVICES=0 ./bin/unit"}
+{"kind": "tokens", "ts": "2026-06-05T02:12:45Z", "tokens": 96180, "source": "porter (gfx1100 delta-port)"}
+{"kind": "tokens", "ts": "2026-06-05T04:57:52Z", "tokens": 63218, "source": "reviewer (gfx1100 delta-port)"}
+{"kind": "tokens", "ts": "2026-06-05T05:34:44Z", "tokens": 43301, "source": "validator (gfx1100)"}
+{"kind":"phase","ts":"2026-06-08T03:01:03Z","phase":"compile","seconds":0.043,"exit":1,"cmd":"cmake --build . -j32"}
+{"kind":"phase","ts":"2026-06-08T03:01:19Z","phase":"compile","seconds":5.341,"exit":1,"cmd":"cmake --build B:/develop/moat/projects/arbor/src/build-gfx1201 -j32"}
+{"kind":"phase","ts":"2026-06-08T03:01:58Z","phase":"compile","seconds":3.845,"exit":1,"cmd":"cmake --build B:/develop/moat/projects/arbor/src/build-gfx1201 -j32"}
+{"kind":"phase","ts":"2026-06-08T03:02:47Z","phase":"compile","seconds":0.174,"exit":1,"cmd":"cmake --build B:/develop/moat/projects/arbor/src/build-gfx1201 -j32 --target unit"}
+{"kind":"phase","ts":"2026-06-08T03:04:36Z","phase":"compile","seconds":5.346,"exit":1,"cmd":"cmake --build B:/develop/moat/projects/arbor/src/build-gfx1201 -j32 --target unit"}
+{"kind":"phase","ts":"2026-06-08T03:24:10Z","phase":"test","seconds":202.004,"exit":1,"cmd":"B:/develop/moat/projects/arbor/src/build-gfx1201/bin/unit.exe"}
+{"kind":"phase","ts":"2026-06-08T03:28:00Z","phase":"compile","seconds":0.089,"exit":0,"cmd":"cmake --build B:/develop/moat/projects/arbor/src/build-gfx1201 -j32 --target unit"}
+{"kind": "tokens", "ts": "2026-06-08T03:30:41Z", "tokens": 157549, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-08T04:04:41Z", "tokens": 64570, "source": "investigator"}
+{"kind":"phase","ts":"2026-06-08T13:12:03Z","phase":"compile","seconds":33.640,"exit":0,"cmd":"cmake --build projects/arbor/src/build-gfx1201 --target unit -j24"}
+{"kind":"phase","ts":"2026-06-08T13:15:35Z","phase":"test","seconds":197.020,"exit":1,"cmd":"./projects/arbor/src/build-gfx1201/bin/unit.exe"}
+{"kind":"phase","ts":"2026-06-08T13:58:29Z","phase":"test","seconds":196.636,"exit":1,"cmd":"./projects/arbor/src/build-gfx1201/bin/unit.exe"}
+{"kind":"phase","ts":"2026-06-08T15:16:25Z","phase":"compile","seconds":85.526,"exit":0,"cmd":"cmake /var/lib/jenkins/moat/projects/arbor/src-old -DARB_GPU=hip -DARB_HIP_ARCHITECTURES=gfx90a -DARB_WITH_PYTHON=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=hipcc -DCMAKE_C_COMPILER=clang"}
+{"kind":"phase","ts":"2026-06-08T15:18:37Z","phase":"compile","seconds":126.164,"exit":0,"cmd":"cmake --build . --target unit -j128"}
+{"kind":"phase","ts":"2026-06-08T15:18:43Z","phase":"compile","seconds":0.146,"exit":1,"cmd":"cmake /var/lib/jenkins/moat/projects/arbor/src -DARB_GPU=hip -DARB_HIP_ARCHITECTURES=gfx90a -DARB_WITH_PYTHON=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=hipcc -DCMAKE_C_COMPILER=clang"}
+{"kind":"phase","ts":"2026-06-08T15:18:49Z","phase":"compile","seconds":0.147,"exit":1,"cmd":"cmake /var/lib/jenkins/moat/projects/arbor/src -DARB_GPU=hip -DARB_HIP_ARCHITECTURES=gfx90a -DARB_WITH_PYTHON=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=hipcc -DCMAKE_C_COMPILER=clang"}
+{"kind":"phase","ts":"2026-06-08T15:27:08Z","phase":"test","seconds":12.406,"exit":0,"cmd":"/var/lib/jenkins/moat/projects/arbor/build-new2/bin/unit"}
+{"kind":"phase","ts":"2026-06-08T16:53:05Z","phase":"compile","seconds":0.123,"exit":1,"cmd":"cmake --build . --target unit -j64"}
+{"kind":"phase","ts":"2026-06-08T16:55:38Z","phase":"compile","seconds":2.906,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/arbor/src/build --target unit -j64"}
+{"kind":"phase","ts":"2026-06-08T16:55:59Z","phase":"test","seconds":16.172,"exit":0,"cmd":"/var/lib/jenkins/moat/projects/arbor/src/build/bin/unit"}
+{"kind": "tokens", "ts": "2026-06-08T17:01:19Z", "tokens": 50119, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-08T15:30:04Z", "tokens": 60977, "source": "validator"}
+{"kind":"phase","ts":"2026-06-09T17:36:54Z","phase":"compile","seconds":16.329,"exit":1,"cmd":"cmake --build /var/lib/jenkins/moat/projects/arbor/wt-parent/build-parent --target unit -j64"}
+{"kind":"phase","ts":"2026-06-09T17:40:25Z","phase":"compile","seconds":115.380,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/arbor/wt-parent/build-parent --target unit -j64"}
+{"kind":"phase","ts":"2026-06-09T17:42:40Z","phase":"compile","seconds":115.599,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/arbor/src/build-refactor --target unit -j64"}
+{"kind":"phase","ts":"2026-06-09T17:43:25Z","phase":"test","seconds":0.004,"exit":127,"cmd":"./build-refactor/bin/unit --gtest_filter=*reduce_by_key*:*reduce*:gpu_intrinsics.*"}
+{"kind":"phase","ts":"2026-06-09T17:43:32Z","phase":"test","seconds":0.223,"exit":0,"cmd":"/var/lib/jenkins/moat/projects/arbor/src/build-refactor/bin/unit --gtest_filter=*reduce_by_key*:*reduce*:gpu_intrinsics.*"}
+{"kind":"phase","ts":"2026-06-09T17:44:04Z","phase":"test","seconds":14.455,"exit":0,"cmd":"/var/lib/jenkins/moat/projects/arbor/src/build-refactor/bin/unit"}
+{"kind": "tokens", "ts": "2026-06-09T17:49:05Z", "tokens": 85197, "source": "porter (move warp-intrinsic ifdefs into gpu api headers per review; codeobj_diff identical, 1182/1182 gfx90a)"}
+{"kind":"phase","ts":"2026-06-09T19:03:33Z","phase":"compile","seconds":0.126,"exit":2,"cmd":"cmake --build . --target unit -j64"}
+{"kind":"phase","ts":"2026-06-09T19:03:41Z","phase":"compile","seconds":0.123,"exit":2,"cmd":"cmake --build . --target unit-local -j64"}
+{"kind":"phase","ts":"2026-06-09T19:06:05Z","phase":"compile","seconds":0.004,"exit":2,"cmd":"make unit -j64"}
+{"kind": "tokens", "ts": "2026-06-09T19:08:18Z", "tokens": 49455, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-08T14:05:48Z", "tokens": 79568, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-08T14:45:31Z", "tokens": 85392, "source": "investigator"}
+{"kind":"phase","ts":"2026-06-09T19:14:15Z","phase":"compile","seconds":16.589,"exit":1,"cmd":"sh -c cd 'B:/develop/moat/projects/arbor/src' && HIP_VISIBLE_DEVICES=0 cmake --build build-gfx1201 --target unit -j64"}
+{"kind":"phase","ts":"2026-06-09T19:17:05Z","phase":"compile","seconds":98.334,"exit":0,"cmd":"sh -c cd 'B:/develop/moat/projects/arbor/src' && HIP_VISIBLE_DEVICES=0 cmake --build build-gfx1201 --target unit -j64 2>&1 | tail -20"}
+{"kind":"phase","ts":"2026-06-09T19:20:28Z","phase":"test","seconds":196.016,"exit":1,"cmd":"sh -c cd 'B:/develop/moat/projects/arbor/src/build-gfx1201' && HIP_VISIBLE_DEVICES=0 ./bin/unit.exe 2>&1"}
+{"kind": "tokens", "ts": "2026-06-09T19:26:12Z", "tokens": 68641, "source": "validator"}
+{"kind":"phase","ts":"2026-06-19T20:38:17Z","phase":"compile","seconds":99.152,"exit":0,"cmd":"cmake --build /b/develop/moat/projects/arbor/src/build-gfx1101 --target unit -j64"}
+{"kind":"phase","ts":"2026-06-19T20:38:40Z","phase":"test","seconds":0.022,"exit":127,"cmd":"./unit.exe"}
+{"kind":"phase","ts":"2026-06-19T20:38:47Z","phase":"test","seconds":0.020,"exit":127,"cmd":"./build-gfx1101/bin/unit.exe"}
+{"kind":"phase","ts":"2026-06-19T20:41:56Z","phase":"test","seconds":184.091,"exit":1,"cmd":"B:/develop/moat/projects/arbor/src/build-gfx1101/bin/unit.exe"}
+{"kind":"phase","ts":"2026-06-19T20:48:36Z","phase":"test","seconds":194.870,"exit":1,"cmd":"B:/develop/moat/projects/arbor/src/build-gfx1101/bin/unit.exe"}
+{"kind": "tokens", "ts": "2026-06-19T20:53:43Z", "tokens": 93452, "source": "validator (gfx1101, delta-port exprelr tol)"}
+{"kind":"phase","ts":"2026-06-19T21:46:39Z","phase":"compile","seconds":22.747,"exit":0,"cmd":"bash -c HIP_VISIBLE_DEVICES=1 cmake --build /var/lib/jenkins/moat/projects/arbor/src/build --target unit -j64 2>&1 | tail -20"}
+{"kind":"phase","ts":"2026-06-19T21:47:16Z","phase":"test","seconds":7.932,"exit":0,"cmd":"bash -c HIP_VISIBLE_DEVICES=1 /var/lib/jenkins/moat/projects/arbor/src/build/bin/unit 2>&1 | tail -30"}
+{"kind": "tokens", "ts": "2026-06-19T21:48:49Z", "tokens": 53132, "source": "validator"}
