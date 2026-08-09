@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-05T01:25:53Z",
-  "updated_at": "2026-08-07T07:04:50Z",
+  "updated_at": "2026-08-09T00:17:11Z",
   "head_sha": "84770b4d7d7c1ab7e8add748bd26213a59d4411c",
   "depends_on": [],
   "pr_url": "https://github.com/proger/accelerated-scan/pull/17",
@@ -105,10 +105,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "64ac44f3f850a99f025ecbabcc0f3e8cb4d58e40",
+      "validated_sha": "84770b4d7d7c1ab7e8add748bd26213a59d4411c",
       "started_at": null,
-      "completed_at": "2026-06-08T16:59:38Z",
-      "updated_at": "2026-06-08T17:26:30Z",
+      "completed_at": "2026-08-09T00:17:11Z",
+      "updated_at": "2026-08-09T00:17:11Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -124,10 +124,10 @@
       },
       "last_agent": "validator",
       "carry_forward": {
-        "to": "64ac44f3f850a99f025ecbabcc0f3e8cb4d58e40",
+        "to": "84770b4d7d7c1ab7e8add748bd26213a59d4411c",
         "method": "source-class",
-        "detail": "reverse+exports prep RE-RUN on real gfx90a: full suite 832/833 (1 pre-existing flake), 192 new test_eq_reverse cases + bindings test all pass",
-        "at": "2026-06-08T16:59:38Z"
+        "detail": "README: document ROCm/AMD support (doc-only); sole diff vs prior validated_sha is README.md +4 lines, matches linux-gfx1100/windows-gfx1201 carry-forward at same head_sha",
+        "at": "2026-08-09T00:17:11Z"
       }
     }
   }

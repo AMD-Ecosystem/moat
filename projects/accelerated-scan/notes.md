@@ -229,3 +229,86 @@ All Triton-based scan operations (scalar and complex) execute correctly on gfx12
 - Data types: float32, bfloat16, float16 all work correctly
 
 The Triton `tl.associative_scan` implementation is wave-size agnostic and handles gfx1201 (RDNA4, wave32) correctly.
+
+## Validation 2026-08-09 (linux-gfx90a revalidate, carry-forward)
+
+Revalidation triggered: fork head moved from `64ac44f3f850a99f025ecbabcc0f3e8cb4d58e40` (prior
+`validated_sha` on linux-gfx90a) to `84770b4d7d7c1ab7e8add748bd26213a59d4411c`.
+
+### Classification
+
+`python3 utils/moatlib.py classify accelerated-scan 64ac44f3f850a99f025ecbabcc0f3e8cb4d58e40 84770b4d7d7c1ab7e8add748bd26213a59d4411c`
+returned `unknown` (classifier does not special-case markdown). Manual inspection of the delta:
+
+```
+git log --oneline 64ac44f..84770b4d
+84770b4 [ROCm] Document AMD GPU (ROCm) support in the README
+
+git show 84770b4d --stat
+ README.md | 4 ++++
+```
+
+The sole change is a 4-line README.md addition documenting AMD/ROCm support -- the identical
+commit already carried forward for linux-gfx1100 and windows-gfx1201 at this same head_sha
+(`source-class`, "README: document ROCm/AMD support (doc-only)"). Carried forward rather than
+re-running the GPU suite:
+
+```
+python3 utils/moatlib.py carry-forward accelerated-scan linux-gfx90a 84770b4d7d7c1ab7e8add748bd26213a59d4411c source-class \
+  "README: document ROCm/AMD support (doc-only); sole diff vs prior validated_sha is README.md +4 lines, matches linux-gfx1100/windows-gfx1201 carry-forward at same head_sha"
+```
+
+No GPU test re-run was needed; the last real GPU run on this arch remains the 2026-06-08 gfx90a
+run recorded above (832/833, 1 pre-existing flake).
+
+### CUDA no-regression gate
+
+Not previously recorded at this head_sha, so run now (compile-only; no NVIDIA GPU on this host,
+`nvcc` from `/opt/conda/envs/cuda-12.8/bin/nvcc`, arch pinned `sm_80`).
+
+This project is a torch C++/CUDA extension (`warp.cuh` built via `torch.utils.cpp_extension.load_inline`
+on the non-ROCm path). This host's only installed PyTorch is the ROCm dev build at
+`/var/lib/jenkins/pytorch` (`torch.version.hip` set). Attempting to compile the extension's
+CUDA source against `torch.utils.cpp_extension.include_paths()` with nvcc hits an environmental
+wall, not a port fault:
+
+```
+/opt/conda/envs/cuda-12.8/bin/nvcc -arch=sm_80 -c warp_check.cu -o warp_check.o \
+  -I/var/lib/jenkins/pytorch/torch/include -I/var/lib/jenkins/pytorch/torch/include/torch/csrc/api/include ...
+```
+```
+/var/lib/jenkins/pytorch/torch/include/c10/cuda/CUDAMacros.h:9:10: fatal error:
+  c10/cuda/impl/cuda_cmake_macros.h: No such file or directory
+```
+
+That header is emitted by PyTorch's cmake configure only when `USE_CUDA=1`; this install was
+configured `USE_ROCM=1` only, so the shipped `torch/include` tree cannot support an nvcc build
+of ANY torch extension on this host, regardless of the port. (This host's PyTorch also carries
+the previously-known `torch/headeronly/util/complex.h` duplicated-token guard
+`#if defined(__HIPCC__) || defined(__HIPCC__)`, a second symptom of the same ROCm-only build --
+confirmed present but not reached before the header-not-found error above.)
+
+Recorded: `cuda-not-validated: torch/include is a ROCm-only build (USE_ROCM=1) and is missing
+c10/cuda/impl/cuda_cmake_macros.h, which nvcc needs for any torch-extension compile on this
+host; not a port fault.`
+
+As a source-level substitute, diffed `main..moat-port` for the CUDA-facing code:
+
+```
+git diff main moat-port -- accelerated_scan/warp.cuh accelerated_scan/warp.py
+```
+
+- `warp.cuh`: adds a `FULL_WARP_MASK` macro (`0xffffffff` on non-ROCm, unchanged from the
+  original literal) and adds an explicit `width=kNThreadsPerWarp` argument to `__shfl_up_sync`
+  (equal to 32, the same as the previous implicit default on CUDA). Both are no-ops on the CUDA
+  path.
+- `warp.py`: the `else` (non-ROCm) branch is the original `load_inline`-based CUDA extension
+  build, moved under an `if is_rocm: ... else:` split but not otherwise modified -- a pure
+  passthrough.
+
+No HIP-only construct leaks into the CUDA branch. This is the same class of pure-passthrough
+delta the reviewer already signed off on (see "Review 2026-06-05" above).
+
+### Wall-clock
+
+Classification + carry-forward + CUDA-gate attempt: ~10 minutes.
