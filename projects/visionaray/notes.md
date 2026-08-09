@@ -616,3 +616,117 @@ PASS: device random_generator produced finite, varied values
 **Result**: PASS (both tests, 2/2). The updated BVH traversal logic (full-stack path for HIP) and union-based type-pun in `reinterpret_as_int/float` compile and execute correctly on RDNA4 wave32. Device RNG produces identical statistics to all prior validations (min~1.2e-5, max~0.99997, mean~0.500).
 
 **Validated at**: def3f13b1a29bdf944023f135eaee157aa2d4b2f
+
+## Validation 2026-08-09 (linux-gfx90a, revalidate 1b0b5813 -> f4f3b361)
+
+**Purpose**: linux-gfx90a's `validated_sha` had lagged at 1b0b5813 (its last full
+GPU pass) while the fork head advanced through 421da19b (device_vector host
+interface), 512a7d4f (Windows-only aligned_allocator guard), def3f13b (BVH
+traversal fix: HIP now always uses full-stack traversal instead of the
+stackless trail-bit path; `reinterpret_as_int/float` switched memcpy -> union
+type-pun), and f4f3b361 (`reinterpret_as_int/float` switched union type-pun ->
+`__builtin_memcpy`). `classify` returned `class=mixed arch_independent=False
+inert=False` (intersect.inl and device_vector headers show real token-count
+deltas, not just renames) so this was a full real-GPU revalidation, not a
+carry-forward. def3f13b was already proven NOT binary-equivalent by the
+windows-gfx1101 validator's `.hip_fat` sha256 comparison, so no
+codeobj_diff attempt was made here either.
+
+**GPU**: AMD Instinct MI250X / MI250 (gfx90a, wave64), HIP_VISIBLE_DEVICES=0
+(pinned; other 3 MI250X on host held by sibling validators)
+
+**Build**: fresh clone of the fork (`projects/visionaray/src` was absent in
+this worktree) at moat-port head f4f3b3612d75efdb3264e2c2b731257f97e4b6ef,
+submodules initialized (needed for VSNRAY_ENABLE_COMMON=ON per notes.md's
+Linux recipe; hip_test/hip_random_test themselves need none). Required
+`apt-get install -y libboost-iostreams-dev` (present boost 1.83 was missing
+the iostreams component; standard package, no code change).
+
+```bash
+cd projects/visionaray/src
+git submodule update --init --recursive
+cmake -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DVSNRAY_ENABLE_HIP=ON \
+  -DVSNRAY_ENABLE_CUDA=OFF \
+  -DVSNRAY_ENABLE_UNITTESTS=OFF \
+  -DVSNRAY_ENABLE_COMMON=ON \
+  -DVSNRAY_ENABLE_VIEWER=OFF \
+  -DVSNRAY_ENABLE_EXAMPLES=OFF \
+  -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH=/opt/rocm
+bash utils/timeit.sh visionaray compile -- cmake --build build -j$(nproc)
+```
+
+Build result: exit 0, warnings only (pre-existing stringop-overread /
+nonnull notes in src/common loaders, unrelated to the port).
+
+**Tests run** (HIP_VISIBLE_DEVICES=0):
+
+```bash
+bash utils/timeit.sh visionaray test -- bash -c \
+  "HIP_VISIBLE_DEVICES=0 ./build/test/hip_test && HIP_VISIBLE_DEVICES=0 ./build/test/hip_random_test"
+```
+
+**Output**:
+```
+Testing visionaray HIP support...
+Device: AMD Instinct MI250X / MI250
+Warp size: 64
+PASS: Basic HIP test succeeded
+Testing visionaray device random_generator (HIP)...
+Device: AMD Instinct MI250X / MI250
+Warp size: 64
+samples=32768 min=1.2144e-05 max=0.99997 mean=0.499811
+PASS: device random_generator produced finite, varied values
+```
+
+**Result**: PASS (2/2), both binaries executed on real gfx90a hardware
+(`hipGetDeviceProperties` reports the actual MI250X, not a CPU fallback).
+Identical RNG statistics to every prior arch (gfx1100, gfx1201, gfx1101) --
+consistent, not coincidental. As noted at the original port review, hip_test
+and hip_random_test do not directly exercise the BVH traversal path touched
+by def3f13b/intersect.inl; the same limitation applied when linux-gfx1100 and
+windows-gfx1201 validated this identical delta, so this is consistent
+existing project practice, not a new gap.
+
+**CUDA no-regression gate** (not previously recorded at f4f3b361): built with
+`/opt/conda/envs/cuda-12.8/bin/nvcc` (12.8.93), `-DCMAKE_CUDA_ARCHITECTURES=80`
+pinned, gcc-13 host compiler. `raytracinginoneweekend_cuda` link-failed on
+`undefined reference to visionaray::viewer_glut::*` -- pre-existing, caused by
+this validator's own config (`VSNRAY_ENABLE_VIEWER=OFF`, freeglut not
+installed on this host), not a port regression; that example genuinely needs
+the viewer. The `cuda_unified_memory` example (no viewer dependency, same
+math/detail/math.h and BVH/intersect headers touched by the delta) compiled
+and linked cleanly:
+
+```bash
+cmake -B build_cuda \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DVSNRAY_ENABLE_HIP=OFF \
+  -DVSNRAY_ENABLE_CUDA=ON \
+  -DVSNRAY_ENABLE_UNITTESTS=OFF \
+  -DVSNRAY_ENABLE_COMMON=ON \
+  -DVSNRAY_ENABLE_VIEWER=OFF \
+  -DVSNRAY_ENABLE_EXAMPLES=ON \
+  -DCMAKE_CUDA_ARCHITECTURES=80 \
+  -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc \
+  -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/gcc-13
+bash utils/timeit.sh visionaray cuda-compile -- cmake --build build_cuda -j$(nproc) --target cuda_unified_memory
+```
+
+Result: exit 0 ("Built target cuda_unified_memory"). `reinterpret_as_int/float`
+is unguarded (`__builtin_memcpy`, common to both CUDA and HIP device code) so
+this confirms the f4f3b361 change compiles for CUDA device code too. CUDA
+gate: PASS.
+
+**Jargon**: `python3 utils/jargon.py --port visionaray` -> clean.
+
+**Documentation**: `## Build (HIP/ROCm)` in this file already matches the
+recipe used above; no changes needed.
+
+**Wall clock**: compile ~15s (config+build), test <1s, cuda-compile ~40s
+(config+two targets). Full session well under budget.
+
+**Validated at**: f4f3b3612d75efdb3264e2c2b731257f97e4b6ef
