@@ -39,12 +39,21 @@ Two things to record in plan.md because they change the delivery vehicle:
   Kernel, MFMA). Decide port-vs-rewrite and say which; a correctness-first mechanical port
   is a valid first step even when a later AMD-native pass is wanted.
 
-## The port surface (this feeds the completeness gate)
+## The port surface
 
-`plan.md` must enumerate what the port has to cover, because CI checks that every item ends
-up either ported or explicitly scoped out. The recurring failure this prevents is a port
-that claimed success while covering a subset, caught only by a human saying "you didn't go
-far enough".
+`plan.md` must enumerate what the port has to cover. The recurring failure this prevents is
+a port that claimed success while covering a subset, caught only by a human saying "you
+didn't go far enough".
+
+**Nothing checks the prose.** The enumeration in plan.md is read by the porter and the
+reviewer, and that is its whole enforcement today. There IS a machine-checked form --
+`python3 utils/surface.py generate <name>` writes `projects/<name>/surface.json`, and
+check.py's `surface` gate then refuses to let that project claim success with a component
+neither `covered` nor `scoped_out` with a reason -- but it judges only projects that carry
+the file, and no project currently does. Generating one is worth it for a project with many
+components (a library plus its tests, benchmarks and examples), and it is what turns "the
+plan says so" into something that fails a push. Do not describe the accounting as enforced
+unless you generated the file.
 
 Tooling generates a floor you may ADD to but never silently delete from -- removing a
 generated entry needs a recorded reason:
