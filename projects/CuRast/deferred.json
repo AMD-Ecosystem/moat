@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "curast-vulkan-hip-interop",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "HIP-Vulkan texture interop stubbed (importToCuda mipmapped-array export): hipExternalMemoryGetMappedMipmappedArray is not exported by libamdhip64 in ROCm 7.2. Core rasterization works.",
+      "refs": [
+        "projects/CuRast/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-07T18:21:58Z",
+      "decided": null
+    },
+    {
+      "id": "curast-launch-member-dispatch-fault",
+      "kind": "rocm-bug-report",
+      "component": null,
+      "summary": "gfx90a ROCm 7.2.1: hipModuleLaunchKernel dispatches from inside HipModularProgram::launch()/launch2D memory-fault (addr nil, xnack-) while byte-identical inline sequences at the same call sites pass. Exhaustively bisected (args/Timer/launch API/module/order/sync/kernarg-lifetime/fast-math eliminated; machine code verified). Repro: CURAST_LADDER=1 on AMD-Ecosystem/CuRast branch bench. Workaround shipped: inline dispatch (INLINE_LAUNCH_1D/2D). Needs ROCm runtime-level debug (kernarg pool / queue state).",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-10T21:51:35Z",
+      "decided": null
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "tigre-tex-probe-rdna",
+      "kind": "other",
+      "component": "texture filtering",
+      "summary": "Run fp32 element-read linear-texture probe on gfx1100 (Linux) and gfx1201 (Windows): build+run projects/TIGRE/probe/tex_filter_probe.cpp, record verdict (REJECTED/LINEAR/POINT) in probe/README.md table. Baseline gfx90a=REJECTED. Lets us scope the TIGRE PR texture claim and PORTING_GUIDE arch-scope precisely.",
+      "refs": [
+        "projects/TIGRE/probe/README.md"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-06-19T20:53:49Z",
+      "decided": null
+    }
+  ]
+}

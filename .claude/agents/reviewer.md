@@ -20,10 +20,25 @@ Review scope: check code, strategy, and analysis correctness. The validator stag
 - Problems: `python3 utils/moatlib.py set-state <name> <platform> changes-requested` (back to the porter).
 - Push with `moatlib.py commit-project` (see CLAUDE.md).
 
-## The fork review PR
+## Do NOT open a PR on the fork
 
-The moat PR contains status.json and markdown; the PORT is in another repository entirely, so approving the moat PR alone approves a state file that merely *asserts* the port works. Open a review-only PR inside the fork (`moat-port` -> the fork's default branch) and review there. It is never merged: it exists so feedback attaches to the code as line comments that persist for the next agent, and it is exactly the diff that becomes the upstream PR.
+You review the fork branch in the working tree -- `git diff`, `git log`, the files
+themselves. You do not open a pull request anywhere, on the fork or upstream, and you
+do not run `upstream.py --review --apply`.
 
-Give it the title and body the UPSTREAM PR will carry, written for the external maintainer. This PR is where the port gets approved, and that single approval covers the code, the title and the body together -- so a placeholder title here means the real one never gets read by anyone. Record the URL: `moatlib.py set-review-pr <name> <url>`.
+There is exactly ONE PR on a fork, opened once, at the very end, when the port is
+finished and every required gate passes. It is where a person reviews the completed
+work, and their approval on it is what opens the upstream PR. Opening one mid-review
+puts a page in front of that person that says the port is ready for their decision
+when it is not, and it is the wrong artifact for review feedback anyway: it is created
+for the approval, not for the round trip.
 
-Every finding must be actionable and cite a file:line on the fork branch.
+`upstream.py --review --apply` enforces this by refusing a port that is not PR-ready.
+If it refuses you, that is the correct answer and the work is not finished -- do not
+reach around it with `gh pr create`: `moatlib.py set-review-pr` refuses to record one
+while any required gate is unsatisfied, so a hand-opened PR cannot enter the record
+anyway. Only the agent opening the final PR calls it, and by then the gates pass.
+
+Your findings go in notes.md, which is where the porter and the next reviewer read
+them. Every finding must be actionable and cite a file:line on the fork branch, so a
+comment thread buys nothing a `path:line` in notes.md does not.
