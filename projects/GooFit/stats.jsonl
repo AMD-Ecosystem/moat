@@ -53,3 +53,4 @@
 {"kind":"phase","ts":"2026-08-09T15:30:45Z","phase":"test","seconds":11.044,"exit":8,"cmd":"ctest --test-dir projects/GooFit/src/build-hip-validate --output-on-failure"}
 {"kind":"phase","ts":"2026-08-09T15:32:43Z","phase":"compile","seconds":33.837,"exit":0,"cmd":"bash -c \ncd projects/GooFit/src\ncmake -S . -B build-cpp-validate -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DGOOFIT_DEVICE=CPP \\\n  -DGOOFIT_TESTS=ON -DGOOFIT_EXAMPLES=ON -DGOOFIT_CERNROOT=OFF -DGOOFIT_PYTHON=OFF\ncmake --build build-cpp-validate -j32\n"}
 {"kind":"phase","ts":"2026-08-09T15:32:59Z","phase":"test","seconds":9.172,"exit":0,"cmd":"ctest --test-dir projects/GooFit/src/build-cpp-validate --output-on-failure"}
+{"kind": "tokens", "ts": "2026-08-09T21:40:34Z", "tokens": 70455, "source": "porter"}
