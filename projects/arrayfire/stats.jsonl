@@ -70,3 +70,4 @@
 {"kind":"phase","ts":"2026-08-09T15:44:54Z","phase":"compile","seconds":19.484,"exit":1,"cmd":"cmake --build projects/arrayfire/src/build-old -j 32"}
 {"kind":"phase","ts":"2026-08-09T15:49:55Z","phase":"compile","seconds":30.868,"exit":0,"cmd":"cmake -S projects/arrayfire/src -B projects/arrayfire/src/build-new -GNinja -DCMAKE_BUILD_TYPE=Release -DAF_BUILD_HIP=ON -DAF_BUILD_CUDA=OFF -DAF_BUILD_CPU=OFF -DAF_BUILD_OPENCL=OFF -DAF_BUILD_ONEAPI=OFF -DAF_BUILD_UNIFIED=OFF -DAF_BUILD_EXAMPLES=OFF -DAF_BUILD_FORGE=OFF -DAF_WITH_CUDNN=OFF -DAF_WITH_IMAGEIO=OFF -DAF_BUILD_DOCS=OFF -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++"}
 {"kind":"phase","ts":"2026-08-09T15:52:51Z","phase":"compile","seconds":164.699,"exit":0,"cmd":"cmake --build projects/arrayfire/src/build-new -j 32 --target afcuda"}
+{"kind": "tokens", "ts": "2026-08-09T21:40:34Z", "tokens": 105999, "source": "porter"}
