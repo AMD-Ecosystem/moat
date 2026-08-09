@@ -77,8 +77,7 @@ against GitHub -- the commit the review was attached to against the branch tip n
 because the local record is a file agents can write and the approval is not.
 
 Opening the upstream pull request is one command run by a person in their own session,
-never by an unattended job. Doing it on a schedule would mean a standing credential with
-write access to public repositories generally, which is more than this work should hold.
+never by an unattended job.
 
 ## Licence
 
