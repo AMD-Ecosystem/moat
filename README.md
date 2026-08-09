@@ -2,11 +2,79 @@
 
 MOAT ports popular CUDA GitHub projects to ROCm/HIP, one repo at a time. Coverage is expressed as gates -- wave64, wave32, windows -- so a port is proven once each gate has an architecture that validated it on real hardware. It is driven by Claude: intake screens a candidate, a planner analyses it, a porter applies the change on a fork in the AMD-Ecosystem org, a reviewer checks it, and a validator runs the real tests on AMD GPUs. Submitting the result upstream, and everything that follows with a maintainer, stays with a person. This repo is the control plane; it tracks progress and holds the porting knowledge in the `cuda-to-rocm` skill.
 
+## If you maintain a project we might send a pull request to
+
+Read this section and skip the rest; it is what concerns you.
+
+**Every pull request from this effort is written by an AI agent and read by a person
+before it is opened.** It says so in its own body, along with a link back here. The
+person who approves it is approving the diff, the title and the body together, on one
+page, before any of it is visible on your repository.
+
+**You get at most one pull request per project.** It is opened from a fork under the
+[AMD-Ecosystem](https://github.com/AMD-Ecosystem) organisation against your default
+branch. There is no bot that follows up on a schedule -- every reply to you is a
+separate decision by a person, in a session they are sitting in front of.
+
+**We do not open it until the port has been built and its real test suite has been run
+on AMD hardware**, on at least one GPU per coverage gate (see the table below). A
+compile is not evidence and does not count.
+
+**You can tell us to stop, and that is the end of it.** No reason needed. Either:
+
+- comment on any pull request of ours saying so, or
+- [open an opt-out issue](https://github.com/AMD-Ecosystem/moat/issues/new?template=opt-out.yml)
+  naming your username, your organisation, or one repository.
+
+An owner-level opt-out covers everything you own, including repositories nobody here
+has looked at yet. It is recorded in [`data/optout.json`](data/optout.json), and it is
+not a promise to remember: the record is enforced in three places in the tooling --
+your repositories drop out of the candidate list, no project can be adopted from them,
+and nothing can be submitted to them even if the port is already finished and approved.
+Anything of ours already open gets closed and the fork deleted. Withdrawing an opt-out
+needs a person on our side and someone asking on yours; an agent cannot do it.
+
+If a pull request is not how you would like to receive this, say that instead. Filing
+an issue with the findings and no code, or waiting for a release window, is a smaller
+ask than stopping and we would rather do it.
+
 ## How it works
+
+Five agents run in sequence, and each hands over through a state file rather than a
+conversation, so any Claude CLI on any host can pick up where the last one stopped:
+**intake** screens a candidate for licence and viability, **planner** analyses the
+build system and the CUDA surface, **porter** writes the port on the fork, **reviewer**
+reads the diff, and **validator** builds it and runs the project's own tests on a real
+AMD GPU. The reviewer and the validator can both send it back to the porter. What
+happens after approval -- submitting the pull request, maintainer rounds, merge -- is
+not an agent at all, because every step of it ends at a person.
 
 Each project gets a folder under `projects/` holding its plan, notes, and a per-platform status file. A fresh Claude CLI run in this repo detects its AMD architecture, finds the next actionable project, and continues the pipeline. No platform leads: whichever host picks the project up first does the porting, and the rest validate the same fork branch independently and in parallel, since the AMD targets share one unified ROCm port.
 
 A platform is an architecture on an operating system, and it carries the gates implied by both -- its wavefront size, which is fixed by the architecture, and its OS. The same GPU on a different OS is a different platform covering different gates. A gate is satisfied once any one platform carrying that attribute has validated, so the gates can be covered by as few as two hosts.
+
+## What a person decides, and what agents may never do
+
+Four decisions are held by a person. Each is enforced by the tooling rather than by an
+instruction an agent is asked to remember, and none of them is a checkbox an agent can
+tick on its own.
+
+| the decision | how it is made | what an agent may do |
+|---|---|---|
+| **Is this project's licence one we may contribute to?** | Permissive licences are cleared in advance by tier (`config/licenses.toml`); anything else waits for a named person, one project at a time | Read the licence and record which one it is. That is a fact. The clearance is not, and a record without a name satisfies nothing |
+| **Do we take this project up at all?** | Someone creates the fork in the AMD-Ecosystem org. Agents have no permission to create one, so its existence *is* the decision and nothing else has to record it | Write the case for and against, and recommend |
+| **Do we decline it?** | Screens collect into one issue, a person answers in prose, and their approval of a small pull request recording the declines is the record | Write the case. Never the verdict |
+| **Does this port go upstream, exactly as written?** | A review pull request on our own fork carries the diff, the title and the body together. A person approves it there, and their approval is bound to that commit and that text | Open the review pull request and read the answer. It may never write the approval line |
+
+The last one is the gate that matters to a maintainer receiving this. An approval
+covers what was on screen when it was given: a commit pushed afterwards, or an edit to
+the title or body, voids it and the submission step refuses. That check compares GitHub
+against GitHub -- the commit the review was attached to against the branch tip now --
+because the local record is a file agents can write and the approval is not.
+
+Opening the upstream pull request is one command run by a person in their own session,
+never by an unattended job. Doing it on a schedule would mean a standing credential with
+write access to public repositories generally, which is more than this work should hold.
 
 ## Licence
 

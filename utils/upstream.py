@@ -52,6 +52,39 @@ TODAY = subprocess.run(["date", "-u", "+%Y-%m-%d"],
 # in a session, so there is no bot identity for a reader to recognise.
 BRANCH = "record-sync"
 
+# What every pull request we send says about where it came from, appended to the body
+# when the review PR is opened so it is part of what gets approved and part of what
+# gets published verbatim. Three things a maintainer receiving an unsolicited PR is
+# owed: that a machine wrote it, that a person read it before it was sent, and how to
+# make it stop. It is added by the tool rather than left to whoever writes the body,
+# because a disclosure that depends on remembering is one that eventually goes missing
+# from the one PR where it mattered.
+#
+# SUBMISSION_MARKER is what the publish gate looks for. Keep it a stable substring of
+# the note: editing the wording is fine, editing the marker orphans every review PR
+# already approved.
+SUBMISSION_MARKER = "prepared with the help of an AI assistant"
+SUBMISSION_NOTE = (
+    "---\n\n"
+    "This pull request was prepared with the help of an AI assistant (Claude) and was "
+    "read and approved by a person before it was opened. It comes from an ongoing "
+    "effort to add AMD GPU support to widely used CUDA projects, one repository at a "
+    "time: https://github.com/AMD-Ecosystem/moat -- that repository describes how the "
+    "work is done and what a person checks before anything is submitted.\n\n"
+    "If you would rather not receive pull requests from this effort, say so here or "
+    "open an issue at https://github.com/AMD-Ecosystem/moat/issues/new/choose and we "
+    "will close this and stop. That can cover this repository alone or everything you "
+    "own, whichever you prefer.")
+
+
+def with_submission_note(body):
+    """The body as it will be published. Idempotent, so a body that already carries
+    the note (a maintainer-requested edit, a re-opened review PR) is left alone."""
+    if SUBMISSION_MARKER in body:
+        return body
+    return body.rstrip() + "\n\n" + SUBMISSION_NOTE + "\n"
+
+
 # GitHub PR state -> the project-level pr_state it implies. A closed PR says
 # nothing about whether the port itself is good, so it is reported for a human
 # rather than applied.
@@ -439,6 +472,10 @@ def open_review_pr(row, title, body, apply=False):
     import jargon
     import prose
 
+    # Attached before the checks below, not after, so the note is scanned like the
+    # rest of the body and shown in the --review preview exactly as it will publish.
+    body = with_submission_note(body)
+
     terms, allow = jargon.load()
     hits = (jargon.scan_text(title, "title", terms, allow)
             + jargon.scan_text(body, "body", terms, allow))
@@ -528,6 +565,13 @@ def publish_blockers(name, row):
     # here too rather than trusted from when the review PR was opened -- a maintainer
     # may have asked for an edit, and an edit is where hand-wrapping creeps back in.
     bad += prose.check(row["body"], "body")
+    # The disclosure has to survive to the thing that actually gets opened. It is
+    # added when the review PR is opened, so its absence here means the body was
+    # edited afterwards -- which voids the approval anyway, and this says why.
+    if SUBMISSION_MARKER not in (row["body"] or ""):
+        bad.append("the body no longer says the change was AI-prepared and "
+                   "human-approved, or where to opt out; restore the note from "
+                   "upstream.py SUBMISSION_NOTE and get a fresh approval")
     return bad
 
 
