@@ -1682,3 +1682,75 @@ the failure. Recorded `failed_sha=18fca9e4a2ea1e062fb7e80c970ac78df6376408`. No
 source or build files were edited on the fork this round (`git -C
 projects/GooFit/src status --porcelain` empty before and after); the only change
 is a documentation lesson in the `cuda-to-rocm` skill on this port branch.
+
+## Attempt 3 (2026-08-09): no run -- GitHub unreachable; analysis from the record only
+
+No fork clone, no build, no GPU run. 12 clone attempts over ~45 minutes failed
+identically at `Failed to connect to github.com port 443`. Outbound routing to
+AS36459 (140.82.0.0/16) and the Azure github endpoints was black-holed while
+general egress worked (`objects.githubusercontent.com` and `1.1.1.1` both
+connected). Environment fault, not a port fault: `blocked` was deliberately NOT
+set on linux-gfx90a and this does NOT count as one of the three attempts,
+because recording "no network" in an arch record misattributes the failure.
+linux-gfx90a stays `validation-failed` at 18fca9e4a, which is where the next
+porter needs it.
+
+### The wave64-reduction hypothesis is weakly supported -- do not lead with it
+
+The dispatching orchestrator's brief pointed at a wave-size-dependent reduction.
+The record does not support it. Review round 1 (above) establishes there is no
+`warpSize`, `__shfl*`, `__ballot` or `__activemask` anywhere in `src/` or
+`include/`, and no arch-conditional code in the diff. The likelihood sum runs
+through rocThrust's `transform_reduce`, which is not GooFit code and is not
+width-sized by GooFit. There is no hardcoded-32 site to find.
+
+### Stale device pointer is the better fit for the symptom
+
+Two features of the recorded mechanism are load-bearing:
+
+1. The bad value is `6.25e-310` -- a subnormal whose 52-bit mantissa is ~1.27e14,
+   i.e. a pointer bit pattern read as a double (round-1 reviewer). That is a read
+   of the wrong BYTES, not arithmetic that went wrong.
+2. It is TEMPORAL: early fit iterations read a plausible norm (~0.67), later ones
+   read garbage. A duplicate `d_normalizations` across two device images would be
+   wrong from iteration zero, so that hypothesis does not fit.
+
+Temporal decay of a symbol-published pointer is the signature of a stale pointer.
+`SmartVectorGPU::sync` publishes `thrust::device_vector::data()` into the
+`__device__ fptype *d_normalizations` via `hipMemcpyToSymbol`; the vector is
+later reallocated, or the per-iteration `smart_sync` path writes elements without
+re-publishing against a buffer that moved. Attempt 2 already noticed the
+supporting contrast: `normRanges`, a raw `gooMalloc` pointer handed straight to
+thrust, works, and only the symbol-published pointer rots.
+
+This explains the arch split with NO wave64 mechanism at all, which is why it is
+the stronger hypothesis. A read through a stale pointer is undefined, not
+deterministically wrong. On gfx1100 the freed block plausibly still holds the old
+values, so the fit converges and even reproduces bit-identically across ten runs
+-- a false pass, the "deterministic, non-zero and plausible" trap the skill's
+popsift entry warns about. On an MI250X GCD with a different allocation pattern
+the block is reused and the read returns adjacent pointer bytes. Under this
+reading gfx1100's four clean sessions are not evidence the code is correct; they
+are evidence the bug is LATENT there.
+
+### What attempt 4 should do first
+
+One run discriminates between the two hypotheses:
+
+- On gfx90a, log `d_normalizations` (the pointer value itself, via a one-element
+  `hipMemcpyFromSymbol`) alongside the device_vector's `data()` at every fit
+  iteration. If the symbol stops matching the vector after a resize, that is the
+  bug. The fix is arch-unified: give the normalizations a stable `gooMalloc`'d
+  buffer `hipMemcpy`'d on each sync, the way `normRanges` already works, instead
+  of publishing a container-owned pointer. Attempt 2 listed this as its own next
+  step and it was never carried out.
+- Try to reproduce on gfx1100 with the allocator perturbed
+  (`HSA_DISABLE_FRAGMENT_ALLOCATOR=1`, or forcing a reallocation between
+  iterations). If gfx1100 breaks too, this is not an arch fault and the port has
+  a lifetime bug that three architectures are currently hiding.
+- Only if the pointer tracks the vector for the whole fit is the reduction worth
+  looking at, and then the first suspect is `ConvolutionPdf.cu`'s
+  `__shared__`/`THREAD_SYNCH` pair -- the one intra-block barrier in the codebase.
+
+`exponential2_Example` PASSES on gfx90a while `exponential` fails. They differ in
+fit setup, and diffing them is probably the shortest path to a minimal reproducer.
