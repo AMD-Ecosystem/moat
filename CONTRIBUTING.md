@@ -10,8 +10,10 @@ Install the hooks once per clone:
 
     python3 utils/install_hooks.py
 
-They run the same gates as CI (`utils/check.py`), so a push that passes locally passes in
-CI. To see what will be checked:
+They run the same `check.py` gates as CI. CI runs one more check the hook cannot: the
+pull request's title (`utils/pr_intent.py`), which does not exist at push time -- so a
+locally-clean push can still fail CI on its title, and only on that. To see what will
+be checked:
 
     python3 utils/check.py
 
@@ -46,13 +48,17 @@ A project sits in `awaiting-fork` until someone decides.
 **Yes is a fork.** Creating `AMD-Ecosystem/<name>` releases the project -- creating one
 is a deliberate act by someone who can, so its existence carries the decision.
 `orient.sh` runs `upstream.py --forks --apply` before every selection, so the state
-advances and the PR gets its comment the next time anyone starts work.
+advances the next time anyone starts work. Nothing posts a comment anywhere: the
+fork poll's stdout (orient's `forks :` line) and the state change are the only
+confirmation.
 
 **No is recorded by a person, through the intake queue.** An agent writes the case and
 recommends a reason; it never records one. Screens collect into one issue
 (`utils/intake_queue.py publish --apply`), a person replies in prose, and an agent
-round-trips that reading as a small pull request carrying only the declines. Approving
-that is the record. Reasons are the `SKIP_REASONS` in `moatlib`; `declined` exists for a
+round-trips that reading as a small pull request carrying the declines (plus the
+regenerated board, which moves with them). Merging that is the record -- approving is
+impossible on a self-authored pull request, and the merge carries the same actor and
+timestamp. Reasons are the `SKIP_REASONS` in `moatlib`; `declined` exists for a
 deliberate no whose reasoning is intentionally not written down, since this repo is
 public and a written reason is permanent and quotable.
 
@@ -173,8 +179,9 @@ Keeping the credential in a human session costs one command and removes a standi
 releasing projects whose fork has appeared, reporting overtaken approvals -- happens when
 someone runs the `moat-checkup` skill or `orient.sh`, not on a timer. That is a real
 trade: drift accumulates silently between sweeps, and on one measured sweep 6 of 74
-records disagreed with GitHub, two of them merges nobody had noticed. `orient.sh` reports
-how long it has been since the last reconciliation so the gap stays visible. The only
+records disagreed with GitHub, two of them merges nobody had noticed. `orient.sh` nags
+when reconciliation has never run or is two weeks stale (it is silent below that), so
+the gap cannot grow unbounded without someone seeing it. The only
 workflow left is `ci.yml`, which gates pull requests and holds `contents: read`.
 
 Two mechanisms that look like they would close the gap do not. A **GitHub App** acts only
@@ -195,7 +202,7 @@ fork-side work and neither reaches the part that matters.
 | `states` | every state is one `moatlib` knows, every platform is a well-formed `<os>-<gfx>` with a known wavefront width, every waiver names a gate that may be waived, and every waiver states its case. It deliberately does NOT require a maintainer's approval: an unapproved waiver is what a *suggestion* is, and suggesting one is how the obstacle reaches a person at all. What stops an agent certifying its own way past a gate is that such a waiver satisfies nothing and blocks `pr_ready` -- enforced where it bites, not by failing the repo's checks over a decision nobody has made yet |
 | `jargon` | the in-house-vocabulary config loads and its patterns compile |
 | `optout` | every opt-out record is well-formed, and no project whose owner opted out is still live in the pipeline. A malformed entry fails open -- the filters stop matching and the repos quietly return to the queue -- so the shape is checked rather than assumed |
-| `surface` | for a project carrying a `surface.json`, every component is covered or explicitly scoped out with a reason -- accounting, not coverage, so the failure it prevents is the silent omission. It judges only projects that have the file and only once the port claims success; **no project currently has one**, so this gate presently judges nothing and says so out loud. `utils/surface.py generate <name>` opts a project in |
+| `surface` | for a project carrying a `surface.json`, every component is covered or explicitly scoped out with a reason -- accounting, not coverage, so the failure it prevents is the silent omission. It judges only projects that have the file and only once the port claims success. Few projects carry one (colmap, on its own branch, was the first), and the gate sees only the current checkout, so where none is present it judges nothing and says so out loud. `utils/surface.py generate <name>` opts a project in |
 | `forks` | no fork carries uncommitted source edits (local only -- needs the clones) |
 
 ## Adding a project

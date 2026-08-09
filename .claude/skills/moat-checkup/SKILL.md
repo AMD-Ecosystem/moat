@@ -167,8 +167,10 @@ This is the bulk of the work and where the value is.
 
 - Read the whole thread before responding, including review comments on specific lines
   (`gh pr view <n> --repo <upstream> --json comments,reviews`).
-- Distinguish a request for a code change (route to the porter, state
-  `changes-requested`) from a question you can answer.
+- Distinguish a request for a code change (route to the porter: set state `porting`,
+  which takes the fork-write lock -- `changes-requested` is not reachable from
+  `review-passed`, the stage an open upstream PR sits at) from a question you can
+  answer.
 - When a fix lands, the fork HEAD moves, which flips validated platforms to `revalidate`.
   That is correct and expected -- do not suppress it.
 - Reply tone: plain and short. No "happy to...", no employer name-dropping, nothing

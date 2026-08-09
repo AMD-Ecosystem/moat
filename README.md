@@ -65,9 +65,9 @@ tick on its own.
 
 | the decision | how it is made | what an agent may do |
 |---|---|---|
-| **Is this project's licence one we may contribute to?** | Permissive licences are cleared in advance by tier (`config/licenses.toml`); anything else waits for a named person, one project at a time | Read the licence and record which one it is. That is a fact. The clearance is not, and a record without a name satisfies nothing |
+| **Is this project's licence one we may contribute to?** | Two tiers are cleared in advance (`config/licenses.toml`): permissive licences, and the copyleft licences approved for contributing to third-party projects; anything else waits for a named person, one project at a time | Read the licence and record which one it is. That is a fact. The clearance is not, and a record without a name satisfies nothing |
 | **Do we take this project up at all?** | Someone creates the fork in the AMD-Ecosystem org. Agents have no permission to create one, so its existence *is* the decision and nothing else has to record it | Write the case for and against, and recommend |
-| **Do we decline it?** | Screens collect into one issue, a person answers in prose, and their approval of a small pull request recording the declines is the record | Write the case. Never the verdict |
+| **Do we decline it?** | Screens collect into one issue, a person answers in prose, and merging a small pull request recording the declines is the record -- approving is impossible on a self-authored pull request, and the merge carries the same actor and timestamp | Write the case. Never the verdict |
 | **Does this port go upstream, exactly as written?** | A review pull request on our own fork carries the diff, the title and the body together. A person approves it there, and their approval is bound to that commit and that text | Open the review pull request and read the answer. It may never write the approval line |
 
 The last one is the gate that matters to a maintainer receiving this. An approval

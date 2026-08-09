@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Aggregate projects/<name>/stats.jsonl into the numbers the README and a
-future blog want. Compile/test wall-clock is accurate. Thinking time is a
-residual (unattributed wall: model latency plus human-in-the-loop), not pure
-model thinking. Tokens are approximate. Nothing here fabricates a number;
-approximate values carry approx=True."""
+"""Aggregate projects/<name>/stats.jsonl into summary numbers. The stats are
+provenance of the MOAT endeavor: what the ports cost in compile/test wall,
+session wall, and tokens is a notable fact about the work, recorded so a person
+can look later. Nothing in the pipeline consumes them. Compile/test wall-clock
+is accurate. Thinking time is a residual (unattributed wall: model latency plus
+human-in-the-loop), not pure model thinking. Tokens are approximate. Nothing
+here fabricates a number; approximate values carry approx=True."""
 
 import json
 import sys

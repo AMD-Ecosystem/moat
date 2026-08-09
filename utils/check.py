@@ -251,20 +251,18 @@ def gate_surface():
     eliminated is the SILENT omission -- a port that claimed success while covering a
     subset.
 
-    It has never judged anything. Zero projects have a surface.json: planner.md now
-    instructs `surface.py generate`, but every existing project predates that
-    instruction and nothing backfills one. So the gate passes vacuously and reports
-    a count of zero as if it were a clean bill.
-
-    Left in place and made honest rather than deleted: the accounting it describes is
-    worth having, and it starts judging as soon as plans produce surface files.
-    Saying "0 accounted for" out loud is what stops it reading as nine gates passing
-    when it is eight."""
+    Few projects carry one: planner.md now instructs `surface.py generate`, most
+    existing projects predate that instruction, and nothing backfills one (colmap,
+    on its own branch, was the first). The check globs THIS working tree only --
+    a surface.json on another project's branch is invisible here -- so on most
+    checkouts the gate passes vacuously and says so out loud rather than reading
+    as a clean bill."""
     r = _run([sys.executable, "utils/surface.py", "check", "--all"])
     if r.returncode == 0:
         if not list((REPO / "projects").glob("*/surface.json")):
-            print("surface: VACUOUS -- no project has a surface.json, so this gate "
-                  "judged nothing (see planner.md; `surface.py generate <name>`)",
+            print("surface: VACUOUS -- no project in this checkout has a "
+                  "surface.json, so this gate judged nothing here (see planner.md; "
+                  "`surface.py generate <name>`)",
                   file=sys.stderr)
         return []
     return [l.replace("surface: ", "") for l in r.stdout.splitlines() if l.strip()][:20]

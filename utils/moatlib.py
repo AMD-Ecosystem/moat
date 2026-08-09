@@ -2999,7 +2999,7 @@ def commit_project(name, message, extra_paths=()):
     uncommitted it fails the check on the next push, from whichever host makes it.
     Agents call
     this for every state transition so the per-phase telemetry in stats.jsonl
-    (compile/test wall-clock etc., written by timeit.sh -- the README/blog metrics)
+    (compile/test wall-clock etc., written by timeit.sh -- provenance of the endeavor)
     is persisted WITH the transition and never accumulates uncommitted in the
     shared working tree. Prefer this over commit_and_push for project transitions."""
     paths = [f"projects/{name}/{fn}" for fn in

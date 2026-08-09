@@ -184,12 +184,24 @@ def main():
         # counted 50 of 138 adopted projects and called it the total, so a licence
         # question about any project in flight was answered by not looking at it.
         rows = []
-        for n, _obj, _where in moatlib.project_records():
+        blocked = []
+        for n, obj, _where in moatlib.project_records():
+            spdx = obj.get("license_spdx")
+            rows.append((n, spdx, tier_of(spdx, cfg) if spdx else None))
             disp = moatlib.get_disposition(moatlib.upstream_full_name(n) or "") or {}
-            rows.append((n, disp.get("reason")))
-        print(f"{len(rows)} adopted projects; run `check <owner/repo>` per project "
-              f"for live tiering (this listing is offline).")
-        blocked = [n for n, o in rows if o == "license-blocked"]
+            if disp.get("reason") == "license-blocked":
+                blocked.append(n)
+        print(f"{len(rows)} adopted projects, tiered from recorded license_spdx "
+              f"(offline; `check <owner/repo>` re-reads GitHub live)")
+        for t in (1, 2, 3, 4):
+            names = sorted(n for n, _s, tt in rows if tt == t)
+            if names:
+                detail = f": {', '.join(names)}" if t >= 3 else ""
+                print(f"  tier {t}: {len(names)}{detail}")
+        unrecorded = sorted(n for n, s, _t in rows if not s)
+        if unrecorded:
+            print(f"  no license_spdx recorded ({len(unrecorded)} -- reading the "
+                  f"licence is a fact any agent may record): {', '.join(unrecorded)}")
         print(f"  recorded license-blocked: {len(blocked)}")
         for n in blocked:
             print(f"    {n}")
