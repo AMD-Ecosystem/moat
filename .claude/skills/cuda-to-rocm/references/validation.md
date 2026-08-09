@@ -89,6 +89,18 @@ accumulation divergence rather than a port bug, and RDNA3.5 (gfx1151) is where i
 shown up. Record the error magnitude and stop rather than chasing it deep: the
 comparison that matters is against the other architectures, not against a fix.
 
+## `classify` needs the fork already cloned at `projects/<name>/src`
+
+`moatlib.py classify <name> <old_sha> <new_sha>` diffs the fork's git history, so it
+reads `projects/<name>/src` as a checkout, not a description. In a fresh worktree
+(the common case: a validator dispatched to revalidate rarely has yesterday's build
+directory lying around) that path does not exist yet, and the tool fails closed --
+`class=unknown arch_independent=False (classification failed -> revalidate)` -- which
+is indistinguishable from a genuine indeterminate verdict. Clone the fork's port
+branch into `projects/<name>/src` FIRST (or point it at an existing checkout), then
+classify; do not read an `unknown` verdict as evidence the delta is functional before
+checking whether the clone was even there. (SCAMP)
+
 ## Diagnosing a suspected AMD fault before escalating
 
 Two patterns that each cost a deep investigation before the real cause was found.
