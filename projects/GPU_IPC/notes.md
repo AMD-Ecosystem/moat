@@ -977,3 +977,90 @@ above was reverted, not committed; `timeCost.txt` written by the run into the
 fork root was removed, not committed). linux-gfx1100 -> `completed`,
 `validated_sha` = 3798cb2. gfx90a still owes its own real-GPU run; nothing
 here substitutes for it.
+
+## Validation 2026-08-09
+
+linux-gfx90a (GPU index 0, MI250X, ROCm 7.2.53211), fork @ 3798cb2, first
+validation on this arch. `HIP_VISIBLE_DEVICES=0` pinned for every command;
+`rocm-smi` confirmed index 0 is gfx90a before use.
+
+### Build
+
+```bash
+sudo apt-get install -y freeglut3-dev xdotool   # not preinstalled on this host
+cmake -S . -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
+```
+
+Configures and links clean; same warning set as the gfx1100 build (`[[nodiscard]]`
+on `cudaEvent*`/`cudaMemset` return values, pre-existing pattern, not new).
+`timeit.sh GPU_IPC compile` wraps the full configure+build.
+
+### Run
+
+Same Xvfb/xdotool headless harness as notes.md "Running it headless", with
+`AMD_LOG_LEVEL=3` to capture kernel dispatch:
+
+```bash
+Xvfb :77 -screen 0 1024x1024x24 &
+HIP_VISIBLE_DEVICES=0 DISPLAY=:77 LIBGL_ALWAYS_SOFTWARE=1 AMD_LOG_LEVEL=3 stdbuf -o0 ./build/gipc > run.log 2>&1 &
+DISPLAY=:77 xdotool search --name FEM   # window id
+DISPLAY=:77 xdotool key --window <id> space
+```
+
+Kernel dispatch confirmed directly from the `AMD_LOG_LEVEL=3` trace: `hipLaunchKernel`
+entries with `ShaderName` resolving to project kernels (`_selfQuery_ee`,
+`_GroundCollisionDetect`, `_computeXTilta`, `_updateSurfaces`,
+`__PCG_constraintFilter`, and others across the run) -- this is real device
+execution, not a CPU-only or skipped run.
+
+`vertNum: 38386      tetraNum: 159870      faceNum: 41664` -- same default
+scene as every prior round on any arch. 31 frames completed (`frame id: 1`
+through `frame id: 31` in the log), Newton converging normally each frame
+(observed iteration k 2-3). `Kappa: 2824.037412` throughout, matching the
+gfx1100 runs exactly (same scene, same physical constant, unaffected by
+backend). Zero NaN in the run log (`grep -ic nan`), zero HIP runtime errors
+(only benign `hipGetLastError()` trace lines, no failing status).
+
+Then the same documented line-search wedge as every gfx1100 round:
+`GIPC::lineSearch` (`GIPC.cu:10024`) reports "type 0 intersection happened"
+with a monotonically increasing counter starting at frame 32 and never
+recovering -- the process was killed after the counter passed 5000 with no
+change in behavior, consistent with the known unbounded `while(checkInterset
+&& isIntersected(TetMesh))` loop in upstream code. Wedge frame (32) falls
+inside the range already observed across gfx1100 rounds (25/26/32/32/36/37),
+and the mechanism (float `atomicAdd` accumulation-order nondeterminism
+changing WHEN the solver reaches the scene's contact hot spot) is
+backend-independent and already fully investigated in the gfx1100 validation
+above -- see "Verdict on the wedge for this arch: does not block `completed`".
+That reasoning is not backend-specific (the loop is byte-identical to
+upstream, hypothesis 2 was tested and ruled out on the same fill-pattern
+method, hypothesis 1 remains genuinely unresolvable without an NVIDIA GPU on
+either host) and applies unchanged here: this arch also has no NVIDIA GPU, so
+hypothesis 1 stays unresolvable, and there is nothing gfx90a-specific to add
+-- the wedge reproduces with the same signature (same loop, same counter
+growth, no crash, no NaN, no divergence in scene stats or convergence
+behavior) as gfx1100.
+
+### CUDA no-regression gate
+
+Already recorded at this head_sha (3798cb2) in the linux-gfx1100 validation
+above. Per policy this gate runs once per head_sha, not once per arch --
+skipped here rather than re-run.
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --port GPU_IPC`: clean. Documentation status
+unchanged since the gfx1100 validation (README.md documents the ROCm build
+alongside the CUDA build); nothing new to check since head_sha is unchanged.
+
+### State
+
+Fork tree clean throughout this session
+(`git -C projects/GPU_IPC/src status --porcelain` empty before and after;
+`run.log` and `timeCost.txt` were build/run artifacts in the fork working
+tree, both untracked and removed, never committed). No source or build edit
+was needed for this arch. linux-gfx90a -> `completed`, `validated_sha` =
+3798cb295f5eca470b46ee817aab546227c15b5b. Both Linux arches (wave32 via
+gfx1100, wave64 via gfx90a) are now validated; `windows` remains the only
+open gate.
