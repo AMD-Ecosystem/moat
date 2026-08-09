@@ -60,8 +60,9 @@ together, this is the cause and the port is not at fault.
 Do not read it as "the project does not work on Windows" -- that mistake cost
 LichtFeld-Studio a wrongly-suggested gate waiver, on a port where 320 of 914 tests were
 passing on real gfx1101 hardware. It is a defect in a third-party build, so it is a
-`data/deferred.json` bug report (`therock-windows-lld-link-crt-xcu`) plus a workaround,
-not a property of the platform. Worth trying, none of them yet tested: `/WHOLEARCHIVE` or
+deferred bug report (`therock-windows-lld-link-crt-xcu`, registered against
+LichtFeld-Studio -- `deferred.py list` finds it across refs) plus a workaround, not a
+property of the platform. Worth trying, none of them yet tested: `/WHOLEARCHIVE` or
 a forced reference into the hooks translation unit so the linker cannot drop it; calling
 `_initterm` on the DLL's CRT section directly; spawning a thread after load, since the
 TLS callbacks that do exist fire on `DLL_THREAD_ATTACH` and `DLL_PROCESS_ATTACH` calls

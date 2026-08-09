@@ -87,6 +87,12 @@ def cmd_review(args):
 
     pending = [c for c in cands
                if c["full_name"].lower() not in skips and not is_adopted(c["full_name"])]
+    # Opted-out owners never reach the queue. Discovery keeps finding their repos --
+    # it searches GitHub, and nothing about a repo says its owner asked us to stop --
+    # so the filter has to be here, where a project would otherwise be offered for
+    # screening and someone would spend a screen on it.
+    n_optout = sum(1 for c in pending if moatlib.optout_for(c["full_name"]))
+    pending = [c for c in pending if not moatlib.optout_for(c["full_name"])]
     # The id check costs an API call per surviving row, so it runs only on what is left.
     renamed = [c for c in pending if decided_by_id(c["full_name"])]
     pending = [c for c in pending if c not in renamed]
@@ -100,7 +106,9 @@ def cmd_review(args):
         print(f"# cached {len(resolved_now)} newly resolved repo id(s) into "
               f"data/candidates.json")
     shown = pending if args.all else pending[:args.top]
-    print(f"# {len(pending)} pending ({n_skip} skipped, {n_adopt} adopted) of {len(cands)}; showing {len(shown)}")
+    print(f"# {len(pending)} pending ({n_skip} skipped, {n_adopt} adopted"
+          + (f", {n_optout} opted out" if n_optout else "")
+          + f") of {len(cands)}; showing {len(shown)}")
     for c in renamed:
         d = moatlib.get_disposition(c["full_name"], id_cache.get(c["full_name"])) or {}
         print(f"  renamed since a decision: {c['full_name']} is {d.get('full_name')} "
