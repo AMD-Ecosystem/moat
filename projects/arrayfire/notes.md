@@ -1717,3 +1717,66 @@ either delete the "fault class" phrasing from the 6 flagged code comments or rep
 plain description of the actual hazard (e.g. "the void*-aliasing hazard also seen when several
 hipsparse descriptor types share one C typedef" instead of naming amgcl/AutoDock-GPU/cudaKDTree by
 MOAT codename) per `config/jargon.toml`.
+
+## Port fix 2026-08-09 (porter, linux-gfx90a) -- in-house vocabulary out of the code comments
+
+Clears the `validation-failed` recorded at 6800d5586, which was a text defect, not a GPU fault.
+Scope was narrowed by the maintainer to the CODE COMMENTS only: the commit body of 6800d5586 also
+carries in-house vocabulary ("MOAT regression classifier") and he explicitly decided not to care,
+so history was NOT rewritten. Three arches have validated at that commit and amending it would
+orphan what they point at.
+
+New commit on `moat-port`: **a70f74f6d** `[ROCm] Make the HIP backend comments self-contained`.
+9 files, 36 insertions / 33 deletions, every changed line a `//` comment (verified:
+`git diff -U0 | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -vE '^[+-]\s*//'` prints nothing).
+
+### What was reworded
+The checker flagged 6 comments saying "fault class"; a grep found 5 MORE naming the same sibling
+projects without that phrase, and all 11 were fixed together since they are one defect:
+
+- `hip_unique_handle.hpp`, `cublas.hpp`, `platform.cpp`, `cusparse.hpp`,
+  `cusparse_descriptor_helpers.hpp`, `sparse.cu` -- "the amgcl void*-aliasing fault class"/"fix"
+  -> state the hazard: ROCm typedefs several logically distinct library handles to the same
+  `void*`, so anything keyed on the handle type cannot separate them.
+- `math.hpp` (3 sites) -- "cudaKDTree/gsplat fault class", "the gsplat target-attribute rule" (x2)
+  -> the attribute rule itself: clang enforces matching `__host__ __device__` attributes between a
+  specialization and its primary template where nvcc does not.
+- `kernel/config.hpp` -- "(PORTING_GUIDE warp-size fault class.)" -> deleted; the preceding
+  sentences already state the wave64/wave32 rule.
+- `kernel/shfl_intrinsics.hpp` -- "(AutoDock-GPU fault class.)" -> deleted, same reason.
+
+Technical content is preserved everywhere; only the labels and the cross-project references went.
+Paragraphs were re-wrapped to the files' 80-column style, so a few unchanged sentences move lines.
+
+### Build
+gfx90a (MI250X, `HIP_VISIBLE_DEVICES=1`, ROCm 7.2.1), headless HIP-only config, `--target afcuda`:
+425/425 steps, exit 0, no errors. This was the point of the rebuild -- an unterminated block comment
+is the realistic failure mode for a comment edit and it is the one thing not to push unverified.
+Test suite deliberately not re-run.
+
+NOTE for whoever reclassifies this delta: do NOT expect binary equivalence. The rewrap changes line
+counts in these files, so `__LINE__` shifts, and clang's per-TU `__hip_cuid_<hash>` symbols move
+whenever any byte of an included header changes (confirmed: `nm -D` differs only in the 50
+`__hip_cuid_*` entries; the other 20066 exported symbols and the device ISA compared identical via
+`utils/codeobj_diff.py`, which excludes those symbols by design). Full re-tests on the other arches
+are the correct and safe outcome here.
+
+### BLOCKED: not pushed -- github.com unreachable from this host
+The commit is LOCAL ONLY at a70f74f6d. `git push --force-with-lease origin moat-port` failed twice
+with `Failed to connect to github.com port 443`; DNS resolves (140.82.112.3) but TCP 443 and 22 are
+both refused, in and out of the sandbox, and `gh auth status` hangs the same way. No proxy is
+configured. Polled ~9 minutes with no recovery. This is a host network outage, NOT an auth or repo
+problem.
+
+Consequently `advance-head` was NOT run: it records the FORK head, and naming a sha the fork does
+not have would mark the other arches stale against a commit nobody can fetch. To resume:
+
+```
+git -C projects/arrayfire/src push --force-with-lease origin moat-port
+python3 utils/moatlib.py advance-head arrayfire a70f74f6d653955832909c434e77abfb6e207048
+```
+
+### Remaining jargon hit -- expected, leave it
+After this fix `python3 utils/jargon.py --port arrayfire` still exits 1 with exactly ONE hit:
+`commit 6800d5586:18: 'MOAT'` in that commit's body. That is the maintainer's explicit decision
+(no history rewrite), not an outstanding defect. All 6 previously flagged comment hits are gone.
