@@ -986,3 +986,58 @@ HIP_VISIBLE_DEVICES=1 /var/lib/jenkins/moat/projects/arbor/src/build/bin/unit
 ### Conclusion
 
 codeobj_diff IDENTICAL (device ISA + 43 exports unchanged) + 1182/1182 tests pass on real gfx1100 GPU. The exprelr test passes under both the strict and relaxed bound on gfx1100 Linux ROCm 7.x. linux-gfx1100 -> completed at 3e750fac.
+
+## Validation 2026-08-09 (linux-gfx90a revalidate carry-forward)
+
+**Platform**: linux-gfx90a (CDNA2, wave64)
+**GPU**: AMD Instinct MI250X / MI250 (gfx90a), HIP_VISIBLE_DEVICES=1 (device index 1 confirmed gfx90a via `rocm-smi --showproductname`)
+**Trigger**: revalidate from c5f27d01d4eeaaa4dcc614388b5b5095c92c9e55 (prior validated_sha, carried forward at 2026-06-09) to 3e750fac (HEAD)
+
+### Delta classification
+
+`python3 utils/moatlib.py classify arbor c5f27d01d4eeaaa4dcc614388b5b5095c92c9e55 3e750fac` -> `class=unknown arch_independent=False (classification failed -> revalidate)`. Manual inspection: single commit 3e750fac touches only `test/unit/test_intrin.cu` (+9/-7), extending the `gpu_intrinsics.exprelr` 2-ULP tolerance runtime arch-string check from `gfx12`-only to `gfx110x || gfx12x` (see the linux-gfx1100/windows-gfx1101 validations above for the same delta). Host-side test-tolerance logic only; no reduce_by_key/hip_api/warp-primitive code touched.
+
+### Binary equivalence check
+
+Cloned the fork fresh into `projects/arbor/src` (moat-port @ 3e750fac) and a worktree at c5f27d01 (`agent_space/arbor_old`, discarded after the diff). Built the `unit` target at both SHAs on gfx90a, identical flags:
+```bash
+cmake -S <src> -B <build> -DARB_GPU=hip -DARB_HIP_ARCHITECTURES=gfx90a \
+  -DARB_WITH_PYTHON=OFF -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_CXX_COMPILER=hipcc -DCMAKE_C_COMPILER=clang
+cmake --build <build> --target unit -j$(nproc)
+```
+(Required installing cmake>=4.0.0 via pip into the py_3.12 conda env; the project's cmake_minimum_required floor is 4.0.0 per the notes above.)
+
+```
+python3 utils/codeobj_diff.py agent_space/arbor_old/build/bin/unit projects/arbor/src/build/bin/unit
+verdict=identical (exported symbols + device ISA identical (43 exports))
+```
+
+Device code is byte-identical between c5f27d01 and 3e750fac on gfx90a, despite the two builds using different absolute source paths (arbor_old vs projects/arbor/src) -- the diff is symbol/ISA based, not sensitive to embedded __FILE__ strings here. Consistent with the code reading: `gcnArchName=gfx90a` matches neither the `gfx110x` nor `gfx12x` branch added/extended by this commit, so the runtime tolerance bound is unchanged (stays the strict 1-ULP `deps` bound) on this arch.
+
+```
+python3 utils/moatlib.py carry-forward arbor linux-gfx90a 3e750fac binary-equiv "..."
+-> arbor/linux-gfx90a carried forward -> 3e750fac (binary-equiv)
+```
+
+No GPU test re-run was needed per the carry-forward shortcut (codeobj_diff verdict=identical). Prior gfx90a validated run at c5f27d01 already confirmed 1182/1182 unit tests passing on this exact device (see the "Review feedback 2026-06-09" section above).
+
+### CUDA no-regression gate
+
+Not previously recorded for arbor at any sha. Ran it now (compile-only, no NVIDIA GPU on this host): `/opt/conda/envs/cuda-12.8/bin/nvcc` (CUDA 12.8), host gcc-13, `-DCMAKE_CUDA_ARCHITECTURES=80` pinned.
+
+```bash
+cmake -S projects/arbor/src -B <build> -DARB_GPU=cuda -DCMAKE_CUDA_ARCHITECTURES=80 \
+  -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc -DARB_WITH_PYTHON=OFF \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc-13 -DCMAKE_CXX_COMPILER=g++-13
+```
+
+**Result**: configure fails at `CMakeLists.txt:182 find_package(CUDA ${major} REQUIRED)`: "By not providing FindCUDA.cmake ... CMake did not find one (CUDAConfig.cmake / cuda-config.cmake)". Root cause: CMake >= 3.27 introduced policy CMP0146 ("the FindCUDA module is removed"), and this project's `cmake_minimum_required(VERSION 4.0.0)` (>= 3.27) makes CMP0146 default to NEW, which makes the legacy `FindCUDA.cmake` module a no-op even though the file is present on disk (confirmed via `--debug-find-pkg=CUDA`: the module file IS found, but `cmake_policy(GET CMP0146 ...)` inside it returns NEW so it self-disables and `find_package` falls through to (nonexistent) Config-mode search). Tried `-DCMAKE_POLICY_DEFAULT_CMP0146=OLD`: does NOT take effect for this policy once `cmake_minimum_required` requests a version at/above the policy's introduction (verified in an isolated minimal CMakeLists.txt reproducer -- the DEFAULT variable is silently ignored, only an explicit in-project `cmake_policy(SET CMP0146 OLD)` works, which would require editing the project's own CMakeLists.txt).
+
+**Upstream comparison**: the `find_package(CUDA...)` block at CMakeLists.txt:182 (and the whole `ARB_GPU STREQUAL "cuda"` branch) is byte-identical between the port's base commit ab103098 and its first HIP commit cf6a1102 (`git diff ab103098 cf6a1102 -- CMakeLists.txt` only touches the HIP branch and adds a Windows-only `find_library(AMDHIP64_LIB...)` block). Built the pristine upstream base sha (ab103098) with the identical toolchain/flags (cmake 4.0.3, nvcc 12.8, gcc-13, arch 80): **identical failure**, same error at the same line. This is pre-existing upstream breakage against a CMake-4.x-class toolchain (arbor's own CUDA path is broken by its own `cmake_minimum_required(4.0.0)` floor colliding with CMP0146), not a ROCm-port regression -- the port's CUDA branch is a pure passthrough.
+
+**Recorded as**: `cuda-not-validated: upstream find_package(CUDA REQUIRED) legacy-module path is broken under CMake>=3.27 (CMP0146 removes FindCUDA.cmake); reproduces identically on pristine upstream base sha ab103098 with the same cmake 4.0.3/nvcc 12.8/gcc-13 toolchain, so this is pre-existing upstream breakage, not a port regression. Not a gate.`
+
+### Conclusion
+
+linux-gfx90a -> completed at 3e750fac via binary-equivalence carry-forward (no GPU re-run required; codeobj_diff identical). CUDA gate: not a regression (pre-existing upstream CMake/CMP0146 incompatibility, reproduced identically on upstream base sha), recorded as cuda-not-validated, not gating. Jargon scan (`python3 utils/jargon.py --port arbor`) clean. Wall-clock: ~35 min (cmake install + two gfx90a builds ~10 min each + codeobj_diff + upstream CUDA repro build).

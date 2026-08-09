@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T00:05:54Z",
-  "updated_at": "2026-08-07T07:04:52Z",
+  "updated_at": "2026-08-09T00:28:51Z",
   "head_sha": "3e750fac",
   "depends_on": [],
   "pr_url": "https://github.com/arbor-sim/arbor/pull/2512",
@@ -25,10 +25,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "c5f27d01d4eeaaa4dcc614388b5b5095c92c9e55",
+      "validated_sha": "3e750fac69d5dc87585d3748c4375c442507eca5",
       "started_at": "2026-06-05T00:11:13Z",
-      "completed_at": "2026-06-08T19:42:49Z",
-      "updated_at": "2026-07-02T17:17:26Z",
+      "completed_at": "2026-08-09T00:28:51Z",
+      "updated_at": "2026-08-09T00:28:51Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -44,10 +44,10 @@
       },
       "last_agent": "moat-checkup",
       "carry_forward": {
-        "to": "c5f27d01d4eeaaa4dcc614388b5b5095c92c9e55",
+        "to": "3e750fac69d5dc87585d3748c4375c442507eca5",
         "method": "binary-equiv",
-        "detail": "Refactor: moved warp-intrinsic #ifdefs into gpu api helpers (count_leading_zeros/find_first_set). codeobj_diff IDENTICAL on gfx90a (unit device ISA + exports unchanged) AND full unit suite 1182/1182 p",
-        "at": "2026-06-09T17:49:51Z"
+        "detail": "Delta c5f27d01..3e750fac is test_intrin.cu only: extends exprelr 2-ULP tolerance runtime arch-string check from gfx12-only to gfx110x||gfx12x (host-side test tolerance, no kernel/device-code change). ",
+        "at": "2026-08-09T00:28:51Z"
       }
     },
     "linux-gfx1100": {
