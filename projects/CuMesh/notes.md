@@ -612,6 +612,75 @@ only (nodiscard, non-trivially-copyable memcpy, abstract non-virtual destructor)
 All GPU operations (BVH construction, mesh simplification, hole filling, remeshing) executed
 successfully on gfx1101. No TDR or wedge events observed.
 
+## Validation 2026-08-09 (linux-gfx90a revalidate -> CUDA gate FAILED)
+
+**Platform**: linux-gfx90a (MI250X, index 1 of 4, gfx90a)
+
+**Revalidate trigger**: head moved from e5ae38f to d5c1355 (1 commit: cubvh submodule
+repointed AMD-Ecosystem/cubvh@moat-port -> ashawkey/cubvh@main after the ROCm PR merged
+upstream).
+
+**Delta classification**: `python3 utils/moatlib.py classify CuMesh e5ae38f d5c1355` returned
+`unknown` (submodule gitlink changes are not source-classifiable). Manual proof instead:
+`git diff e5ae38f..d5c1355 --stat` touches only `.gitmodules` (url/branch text) and the
+`third_party/cubvh` gitlink (`e5a657a` -> `757b913b`). `git rev-parse e5a657a^{tree}` and
+`git rev-parse 757b913b^{tree}` are the IDENTICAL tree `f16858ee411cf768bdbfce2a443d3c09669d9ddf`
+(757b913b is the upstream merge commit of our e5a657a ROCm PR, so its tree is byte-identical
+to what gfx90a already validated at e5ae38f). CuMesh's own tree is otherwise unchanged.
+This matches exactly the carry-forward already recorded for linux-gfx1100 and both windows
+archs at this same delta. gfx90a's ROCm build/GPU-test side would carry forward cleanly.
+
+**CUDA no-regression gate: FAILED.** Never previously recorded for this project (checked:
+zero prior "CUDA gate" entries in this file), so it was run now rather than skipped.
+`nvcc` (conda `cuda-12.8` env, `-gencode=arch=compute_80,code=sm_80`, CUDA-enabled
+torch 2.11.0+cu128 in a scratch venv) compiling the `cumesh._cubvh` extension:
+
+```
+nvcc fatal   : Unknown option '-fvisibility=hidden'
+```
+
+**Root cause**: `setup.py`'s `cumesh._cubvh` extension appends
+`["-fvisibility=hidden", "-fvisibility-inlines-hidden"]` unconditionally to BOTH `cxx` and
+`nvcc` `extra_compile_args` (added in the 2026-06-19 "cubvh submodule consolidation" commit,
+to keep the hidden-visibility cubvh symbols isolated -- see that note above). Under HIP,
+the `"nvcc"` key's flags go to `hipcc`, which is clang-based and accepts `-fvisibility=`
+directly, so the HIP/ROCm build never saw a problem. Real `nvcc` treats `"nvcc"` key flags
+as its own command line, not the host compiler's, and rejects a raw GCC/clang-style flag
+outright -- it must be wrapped `-Xcompiler=-fvisibility=hidden` (or `--compiler-options
+-fvisibility=hidden`) to reach the host compiler. Confirmed this is new code, not
+pre-existing breakage: `git show 12289e1:setup.py | grep fvisibility` (upstream base, before
+the port) returns nothing -- the flag does not exist anywhere in the pre-port file, so there
+is no upstream error to compare against and no ambiguity about which side introduced it.
+
+This is a genuine CUDA regression (same fault class as the sibling `asm("trap;")` /
+`__builtin_trap()` case noted in the validator brief: valid under HIP/clang, rejected by
+nvcc), not an environmental wall. Fix belongs in `setup.py`: wrap those two flags as
+`-Xcompiler=-fvisibility=hidden -Xcompiler=-fvisibility-inlines-hidden` for the `"nvcc"` key
+(or gate them `if IS_HIP` for that key and add the `-Xcompiler=` wrapped form for the CUDA
+`else` branch); the `"cxx"` key is fine as-is (that host-compiler list is shared and
+`-fvisibility=hidden` is valid GCC/clang syntax there either way).
+
+**Build environment for this check** (documented for repeat use): `python3.12 -m venv`
+scratch env, `pip install --index-url https://download.pytorch.org/whl/cu128
+torch==2.11.0+cu128` (matches the conda `cuda-12.8` toolkit major.minor), then:
+```bash
+export CUDA_HOME=/opt/conda/envs/cuda-12.8
+export PATH=$CUDA_HOME/bin:$PATH
+export TORCH_CUDA_ARCH_LIST=8.0
+export CPLUS_INCLUDE_PATH=/opt/conda/envs/cuda-12.8/targets/x86_64-linux/include:$CPLUS_INCLUDE_PATH
+export C_INCLUDE_PATH=/opt/conda/envs/cuda-12.8/targets/x86_64-linux/include:$C_INCLUDE_PATH
+cd projects/CuMesh/src && python setup.py build_ext --build-lib <scratch-dir>
+```
+Note: the nvidia-channel conda `cuda-toolkit` package puts `cuda.h`/`cuda_runtime.h` etc.
+under `targets/x86_64-linux/include/`, not directly under `include/` -- the host compiler
+(g++, for non-`.cu` translation units that still `#include <cuda.h>`) needs that path added
+explicitly; `nvcc` itself finds its own headers regardless.
+
+**Verdict**: validation-failed. The ROCm/gfx90a side is carry-forward-clean, but the CUDA
+no-regression gate -- required before marking any arch `completed` at this head_sha -- fails
+with a build-breaking regression in `setup.py`. Sending back to the porter; this is a
+one-line-class fix (wrap the two flags for the nvcc branch), not a design issue.
+
 ## cubvh submodule repointed to upstream (2026-06-23)
 
 ashawkey/cubvh#33 (our ROCm port) merged upstream (merge 757b913b on main), so

@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-08-07T07:04:28Z",
+  "updated_at": "2026-08-09T00:16:16Z",
   "head_sha": "d5c1355",
   "depends_on": [],
   "pr_url": "https://github.com/JeffreyXiang/CuMesh/pull/36",
@@ -21,13 +21,13 @@
   "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
-      "state": "completed",
+      "state": "validation-failed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "e5ae38f",
       "started_at": "2026-06-04T23:45:55Z",
       "completed_at": "2026-06-19T18:09:56Z",
-      "updated_at": "2026-06-19T19:00:16Z",
+      "updated_at": "2026-08-09T00:16:16Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -47,7 +47,8 @@
         "method": "source-class",
         "detail": "tree-identical squash of validated 0cdf194 (7 ROCm commits collapsed to 1; same tree SHA, cubvh pin e5a657a preserved)",
         "at": "2026-06-19T19:00:16Z"
-      }
+      },
+      "failed_sha": "d5c1355"
     },
     "linux-gfx1100": {
       "state": "completed",

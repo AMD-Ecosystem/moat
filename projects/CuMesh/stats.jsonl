@@ -69,3 +69,6 @@
 {"kind":"phase","ts":"2026-06-19T22:02:22Z","phase":"test","seconds":22.186,"exit":0,"cmd":"cmd //c B:\\develop\\moat\\agent_space\\run_cumesh_tests_gfx1101.bat"}
 {"kind":"session","ts":"2026-06-19T22:03:16Z","epoch":1781906596.986633300,"event":"end","platform":"windows-gfx1101"}
 {"kind": "tokens", "ts": "2026-06-19T22:03:59Z", "tokens": 68234, "source": "validator (gfx1101)"}
+{"kind":"phase","ts":"2026-08-09T00:08:15Z","phase":"cuda-compile","seconds":1.854,"exit":1,"cmd":"/tmp/claude-1000/-var-lib-jenkins-moat/cac2074a-dc3d-4ccc-a639-f6184732c4ca/scratchpad/cuda_build_run.sh"}
+{"kind":"phase","ts":"2026-08-09T00:09:45Z","phase":"cuda-compile","seconds":78.407,"exit":1,"cmd":"/tmp/claude-1000/-var-lib-jenkins-moat/cac2074a-dc3d-4ccc-a639-f6184732c4ca/scratchpad/cuda_build_run.sh"}
+{"kind":"phase","ts":"2026-08-09T00:13:41Z","phase":"cuda-compile","seconds":109.523,"exit":1,"cmd":"/tmp/claude-1000/-var-lib-jenkins-moat/cac2074a-dc3d-4ccc-a639-f6184732c4ca/scratchpad/cuda_build_run.sh"}
