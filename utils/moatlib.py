@@ -305,6 +305,7 @@ def _platform_block(initial_state):
         "blocked": False,
         "blocked_reason": None,
         "validated_sha": None,
+        "failed_sha": None,
         "started_at": None,
         "completed_at": None,
         "updated_at": now_iso(),
@@ -380,12 +381,133 @@ def save_status(name, obj):
                     f"{name} is not in this checkout -- its record is on {ref}. "
                     f"Check out that branch to write it.")
     validate_status(obj)
+    stale = check_against_trunk(obj)
+    if stale:
+        raise ValueError(
+            f"{obj.get('name')}: this checkout would write {'; '.join(stale)}, which the "
+            f"TRUNK's schema does not accept -- your tooling predates it. check.py judges "
+            f"every ref, so writing it blocks pushes for every project from every host. "
+            f"Run `python3 utils/moatlib.py branch-sync --apply`, then redo this.")
     obj["updated_at"] = now_iso()
     p = status_path(name)
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "w") as f:
         json.dump(obj, f, indent=2, sort_keys=False)
         f.write("\n")
+
+
+_TRUNK_VOCAB = None
+
+
+def trunk_vocabulary(base_ref="origin/main"):
+    """The value sets the TRUNK's schema accepts, or None if it cannot be read.
+
+    Read from `schema/status.schema.json`, which is generated FROM moatlib, so it is
+    the trunk's own answer rather than a guess parsed out of its source. Cached: this
+    is consulted on every write and it is one git call.
+
+    Two limits, both deliberate, and both worth knowing because they bound how much
+    this guard is worth. `origin/main` is a LOCAL ref and nothing here fetches, so the
+    check is only as current as the last fetch -- and a checkout stale enough to hold
+    old tooling may hold an old trunk ref too, in which case this reads a schema that
+    AGREES with the stale code and passes. Fetching from a path consulted on every
+    write would cost more than it returns, so orient.sh's fetch is what keeps it
+    honest. The cache then lives for the process, so a long session that outlives a
+    trunk change keeps the old answer.
+
+    Both fail in the same direction: a value the trunk has dropped can slip through,
+    never a good one refused. That is the right direction for a guard that sits in
+    front of every write, but it means this narrows the window rather than closing
+    it -- starting from a synced worktree is still what actually prevents the case."""
+    global _TRUNK_VOCAB
+    if _TRUNK_VOCAB is None:
+        raw = _ref_read(base_ref, "schema/status.schema.json")
+        try:
+            d = json.loads(raw) if raw else None
+            _TRUNK_VOCAB = {
+                "schema_version": d["properties"]["schema_version"].get("enum"),
+                "stage": d["properties"]["stage"].get("enum"),
+                "archstate": d["$defs"]["archstate"].get("enum"),
+            } if d else False
+        except (KeyError, TypeError, json.JSONDecodeError):
+            _TRUNK_VOCAB = False
+    return _TRUNK_VOCAB or None
+
+
+def check_against_trunk(obj):
+    """Reasons this record would be rejected by the TRUNK's schema, not just by ours.
+
+    A worktree runs whatever tooling its branch last merged, so an agent can hold a
+    vocabulary the trunk has moved past and write a value that no longer exists. That
+    is not caught by validating against the local schema -- the local schema agrees
+    with the local code, which is the problem. It surfaces later as a repo-wide gate
+    failure, and because check.py judges every ref it blocks pushes for every project
+    from every host, not just the one that wrote it. That happened today.
+
+    Read-only and advisory about the TRUNK: it never rejects a value the trunk knows
+    and we do not, since that direction is just a branch being behind on a value it is
+    not using."""
+    vocab = trunk_vocabulary()
+    if not vocab:
+        return []
+    bad = []
+    sv, stage = obj.get("schema_version"), obj.get("stage")
+    if vocab["schema_version"] and sv is not None and sv not in vocab["schema_version"]:
+        bad.append(f"schema_version {sv} (trunk accepts {vocab['schema_version']})")
+    if vocab["stage"] and stage is not None and stage not in vocab["stage"]:
+        bad.append(f"stage {stage!r}")
+    if vocab["archstate"]:
+        for plat, blk in (obj.get("platforms") or {}).items():
+            st = blk.get("state")
+            if st is not None and st not in vocab["archstate"]:
+                bad.append(f"{plat} state {st!r}")
+    return bad
+
+
+def save_record(name, obj, message):
+    """Persist a project's record wherever it lives -- this checkout, or its own branch.
+
+    `save_status` refuses a record that is not in this tree, and that is right for
+    anything that WORKS a project: a second copy here would diverge from the one being
+    worked. A few callers do something else entirely -- they record a FACT about the
+    project and never open its files: a fork appearing, an approval snapshot, the
+    upstream PR opening or closing. Refusing those buys nothing and costs the fact.
+
+    It cost the whole route upstream. Every publishable project is branch-resident by
+    construction (`belongs_on_branch` is true while `pr_state` is unset), so
+    `upstream.py --publish --apply` -- the one documented submission command -- could
+    only ever run from the project's own branch, and anywhere else reported the refusal
+    as a failure to record an approval and moved on.
+
+    Same shape as `release_awaiting_fork`, which had this right first: advancing a
+    record is safe to write to a branch, handing an agent a project whose files are
+    absent is not. Returns the branch sha when it wrote to a branch, else None."""
+    _cur, where = project_record(name)
+    if status_path(name).exists() and writable_here(name, where):
+        save_status(name, obj)
+        return None
+    branch = port_branch_of(name)
+    if branch is None:
+        raise RuntimeError(
+            f"{name}: its record is on the trunk and this checkout is on "
+            f"{current_branch()}, which may not write it. `main` is protected, so that "
+            f"record reaches it by pull request: check out `main` (or a branch off it) "
+            f"and record it there.")
+    obj["updated_at"] = now_iso()
+    validate_status(obj)
+    # The branch path skips save_status, so it would skip its trunk check too. A stale
+    # checkout recording a fact onto someone else's branch is exactly the case that
+    # check cannot afford to miss: the record it writes is judged by every ref sweep,
+    # and validate_status above only asks whether THIS checkout's vocabulary is happy.
+    stale = check_against_trunk(obj)
+    if stale:
+        raise ValueError(
+            f"{name}: this checkout would write {'; '.join(stale)} to {branch}, which "
+            f"the TRUNK's schema does not accept -- your tooling predates it. Run "
+            f"`python3 utils/moatlib.py branch-sync --apply`, then redo this.")
+    return commit_to_branch(
+        branch, {f"projects/{name}/status.json": json.dumps(obj, indent=2) + "\n"},
+        message)
 
 
 def validate_status(obj):
@@ -532,6 +654,10 @@ def set_state(name, platform, new_state, agent=None, save=True):
                 f"{len(dirty)} UNCOMMITTED source/build file(s) -- validated content "
                 f"may not be in the branch (integrity gap). Commit or discard: "
                 f"{', '.join(p for _, p in dirty[:6])}\n")
+    if new_state == "validation-failed":
+        # WHICH commit failed, so a failure reads the way a validation does: evidence
+        # about one commit, not a permanent property of the arch. See failure_stands.
+        blk["failed_sha"] = obj.get("head_sha")
     obj["platforms"][platform] = blk
     if save:
         save_status(name, obj)
@@ -555,7 +681,8 @@ def set_not_portable(name, reason, by, clear=False):
       maintainer approval;
       a toolchain or library defect on one platform -- a Triton codegen bug on
       gfx1100, rocBLAS picking a generic kernel on one Windows arch -- is genuinely
-      per-arch and stays a `blocked` flag, with the report filed in data/deferred.json.
+      per-arch and stays a `blocked` flag, with the report registered against that
+      project (projects/<name>/deferred.json, via `deferred.py add --project`).
 
     `by` is required and never defaulted: an agent may assemble the case and must not
     return the verdict, exactly as with a licence clearance or a gate waiver."""
@@ -791,7 +918,10 @@ def record_pr_approval(name, review_pr=None):
         "content_sha256": _content_digest(pr),
         "review_pr": obj["review_pr"],
     }
-    save_status(name, obj)
+    save_record(name, obj,
+                f"{name}: snapshot the approval standing on the review PR\n\n"
+                f"Approved by {obj['pr_approval']['approved_by']} for "
+                f"{(obj['pr_approval'].get('head_sha') or '?')[:12]}.")
     return obj["pr_approval"]
 
 
@@ -1114,6 +1244,11 @@ def set_review_pr(name, url):
     return obj
 
 
+# The PR lifecycle is recorded through save_record rather than save_status: each of
+# these states a fact about a project without touching its files, and the project is
+# branch-resident at exactly the moment they are called. Opening one from a session
+# standing anywhere else used to fail, which is how the documented submission command
+# could not submit.
 def set_pr_open(name, pr_url, pr_number):
     """Record the upstream PR. Project-level: it changes nothing an arch validated."""
     obj = load_status(name)
@@ -1121,7 +1256,7 @@ def set_pr_open(name, pr_url, pr_number):
     obj["pr_number"] = int(pr_number)
     obj["pr_opened_at"] = now_iso()
     obj["pr_state"] = "open"
-    save_status(name, obj)
+    save_record(name, obj, f"{name}: upstream PR opened -- {obj['pr_url']}")
     return obj
 
 
@@ -1132,7 +1267,7 @@ def set_pr_merged(name):
         raise ValueError(f"{name}: no PR recorded, cannot mark as merged")
     obj["pr_merged_at"] = now_iso()
     obj["pr_state"] = "merged"
-    save_status(name, obj)
+    save_record(name, obj, f"{name}: upstream PR merged -- {obj['pr_url']}")
     return obj
 
 
@@ -1145,7 +1280,8 @@ def set_pr_closed(name, note=None):
     obj["pr_closed_at"] = now_iso()
     if note:
         obj["pr_closed_note"] = note
-    save_status(name, obj)
+    save_record(name, obj, f"{name}: upstream PR closed without merging -- "
+                           f"{note or obj['pr_url']}")
     return obj
 
 
@@ -1236,27 +1372,61 @@ def advance_head(name, new_sha, repo=None):
         with a binary-equivalence check before re-running GPU tests; unbuildable
         arches simply revalidate.
 
-    On any classification failure the platform revalidates -- the safe default."""
+    On any classification failure the platform revalidates -- the safe default.
+
+    A platform that FAILED is re-examined the same way and for the same reason. Its
+    failure is evidence about the commit it happened on, so a HEAD move normally
+    retires it and sends the arch back to a validator (see failure_stands) -- but a
+    delta that cannot change compiled output cannot be the fix, so the failure is
+    carried forward to the new head instead."""
     obj = load_status(name)
     repo = repo or _fork_repo(name)
     new_sha = full_sha(new_sha, repo)
+    prev_head = obj.get("head_sha")
     obj["head_sha"] = new_sha
     for plat in list(obj["platforms"]):
         blk = obj["platforms"][plat]
-        if blk.get("state") != "completed" or same_commit(blk.get("validated_sha"), new_sha):
-            continue
-        old = blk.get("validated_sha")
-        verdict = _classify_safe(repo, old, new_sha)
-        if verdict is not None and verdict.arch_independent:
-            blk["validated_sha"] = new_sha
-            blk["updated_at"] = now_iso()
-            blk["carry_forward"] = {"from": old, "to": new_sha, "method": "source-class",
-                                    "class": verdict.cls, "detail": verdict.detail[:200],
-                                    "at": now_iso()}
-        # No else. A block that cannot be carried forward keeps its `completed` and its
-        # old validated_sha, which IS the record: this arch proved that commit and has
-        # not proved this one. `revalidate` follows from the two shas differing, so
-        # writing it down would only be a second copy that can go stale.
+        state = blk.get("state")
+        if state == "completed":
+            old = blk.get("validated_sha")
+            if same_commit(old, new_sha):
+                continue
+            verdict = _classify_safe(repo, old, new_sha)
+            if verdict is not None and verdict.arch_independent:
+                blk["validated_sha"] = new_sha
+                blk["updated_at"] = now_iso()
+                blk["carry_forward"] = {"from": old, "to": new_sha,
+                                        "method": "source-class", "class": verdict.cls,
+                                        "detail": verdict.detail[:200], "at": now_iso()}
+            # No else. A block that cannot be carried forward keeps its `completed` and
+            # its old validated_sha, which IS the record: this arch proved that commit
+            # and has not proved this one. `revalidate` follows from the two shas
+            # differing, so writing it down would only be a second copy that can go
+            # stale.
+        elif state == "validation-failed":
+            # The same guard facing the other way. A HEAD move retires a failure (see
+            # failure_stands), which is right when the commit was a fix and wrong when
+            # it was a README edit -- a delta that cannot change any target's compiled
+            # output cannot have fixed anything, so carry the FAILURE forward and let
+            # the arch keep asking the porter for a real one.
+            #
+            # A block written before failures carried a sha is stamped with the head
+            # being superseded, which is the head it failed against -- so a legacy
+            # record heals itself the first time a porter advances the branch, rather
+            # than needing five port branches migrated by hand.
+            old = blk.get("failed_sha") or prev_head
+            if not old or same_commit(old, new_sha):
+                continue
+            verdict = _classify_safe(repo, old, new_sha)
+            # Inert: not the fix, so the failure moves up to the new head and goes on
+            # standing. Anything else retires it -- and the sha is written down either
+            # way, because a block that says only `validation-failed` cannot be judged
+            # at all and would ask the porter for a fix it has already had.
+            failed = (new_sha if verdict is not None and verdict.arch_independent
+                      else old)
+            if failed != blk.get("failed_sha"):
+                blk["failed_sha"] = failed
+                blk["updated_at"] = now_iso()
     save_status(name, obj)
     return obj
 
@@ -1332,19 +1502,38 @@ def _ref_read(ref, path):
     return _REF_CACHE[key]
 
 
+_PORT_BRANCH_MAP = []   # one-element cache, for the same reason as _BRANCH above
+
+
 def port_branches():
     """{project name: ref} for every port/<name> branch the remote is known to have.
 
     Reads local remote-tracking refs, so it is only as fresh as the last fetch --
-    orient.sh fetches before it asks."""
-    out = {}
-    r = _git("for-each-ref", "--format=%(refname)", "refs/remotes/origin/port/",
-             check=False)
-    for ref in r.stdout.splitlines():
-        ref = ref.strip()
-        if ref:
-            out[ref.rsplit("/", 1)[-1]] = ref
-    return out
+    orient.sh fetches before it asks. Resolved once per process: every project
+    resolution asks for it, and a `for-each-ref` per project is what made a scan slow
+    enough to time out."""
+    if not _PORT_BRANCH_MAP:
+        out = {}
+        r = _git("for-each-ref", "--format=%(refname)", "refs/remotes/origin/port/",
+                 check=False)
+        for ref in r.stdout.splitlines():
+            ref = ref.strip()
+            if ref:
+                out[ref.rsplit("/", 1)[-1]] = ref
+        _PORT_BRANCH_MAP.append(out)
+    return _PORT_BRANCH_MAP[0]
+
+
+def port_branch_of(name):
+    """`port/<name>` as the remote actually spells it, or None if there is none.
+
+    The convention is exact, but a mismatch must fail loudly rather than silently drop
+    the project: a branch cut as `port/hami-core` for the project `HAMi-core` resolved
+    to nothing, and a finished screen went invisible to the queue and to every sweep."""
+    branches = port_branches()
+    if name in branches:
+        return f"port/{name}"
+    return next((f"port/{c}" for c in branches if c.lower() == name.lower()), None)
 
 
 def project_record(name):
@@ -1362,17 +1551,7 @@ def project_record(name):
     path = f"projects/{name}/status.json"
     on_branch = current_branch() == f"port/{name}"
     if not on_branch:
-        # Case-tolerant: a branch created as port/hami-core for the project HAMi-core
-        # resolved to nothing, so a finished screen was invisible to the queue and to
-        # every sweep. The convention is exact, but a mismatch must fail loudly rather
-        # than silently drop the project.
-        ref = f"origin/port/{name}"
-        if name.lower() != name:
-            for cand in port_branches():
-                if cand.lower() == name.lower():
-                    ref = f"origin/port/{cand}"
-                    break
-        raw = _ref_read(ref, path)
+        raw = _ref_read(f"origin/{port_branch_of(name) or f'port/{name}'}", path)
         if raw:
             try:
                 return (json.loads(raw), "branch")
@@ -1725,6 +1904,27 @@ def stalled(obj):
     return bool(blocks) and all(b.get("blocked") for b in blocks)
 
 
+def failure_stands(obj, blk):
+    """Does this arch's recorded failure still describe the code on the branch?
+
+    A `validation-failed` block is evidence about ONE commit, exactly as a `completed`
+    block is, and it stops describing the port the moment a fix advances head_sha.
+
+    Nothing used to say so, and the cycle never closed: the arch went to the porter,
+    the porter's fix moved head, the reviewer passed it, and the arch went to the
+    porter again -- forever, because the only thing that clears the stored word is a
+    validator recording `completed`, and the selector never sent one. It stayed latent
+    only because every arch that had failed was also `blocked`, which arch_task bails
+    on first.
+
+    A record with no `failed_sha` predates this and cannot be judged, so it stands:
+    inventing staleness for it would claim a fix that may never have happened."""
+    if blk.get("state") != "validation-failed":
+        return False
+    failed = blk.get("failed_sha")
+    return not failed or same_commit(failed, obj.get("head_sha"))
+
+
 def arch_task(obj, platform):
     """What this architecture should do now, as (agent, state), or None.
 
@@ -1749,24 +1949,35 @@ def arch_task(obj, platform):
     if stage != "review-passed":
         agent = STAGE_FOR_STATE.get(stage)
         return (agent, stage) if agent else None
-    # This arch tried and failed. Only IT is sent to the porter: a wave32 fault does
-    # not invalidate a wave64 arch's evidence, and what actually keeps a broken port
-    # from being submitted is pr_ready, which needs a `completed` arch at head_sha for
-    # every required gate -- a failed arch leaves its gate unsatisfied on its own. The
-    # porter's fix advances head_sha, which makes every other arch stale and route to
-    # revalidate, so the rest of the fleet catches up without the stage broadcasting.
-    if blk.get("state") == "validation-failed":
+    # This arch tried and failed at the code that is still on the branch. Only IT is
+    # sent to the porter: a wave32 fault does not invalidate a wave64 arch's evidence,
+    # and what actually keeps a broken port from being submitted is pr_ready, which
+    # needs a `completed` arch at head_sha for every required gate -- a failed arch
+    # leaves its gate unsatisfied on its own. The porter's fix advances head_sha, which
+    # makes every other arch stale and route to revalidate, so the rest of the fleet
+    # catches up without the stage broadcasting.
+    #
+    # That same advance is what releases THIS arch: the failure it recorded is about a
+    # commit no longer at the head, so it falls through to the un-validated case below
+    # and a validator is sent to judge the fix. Nothing rewrites the block to make that
+    # happen -- the record keeps saying what it saw, and staleness follows from the two
+    # shas, which is the same reason `revalidate` is not stored either.
+    if failure_stands(obj, blk):
         return ("porter", "validation-failed")
     if blk.get("state") == "completed":
         if same_commit(blk.get("validated_sha"), obj.get("head_sha")):
             return None                  # this arch has proved this code
         return ("validator", "revalidate")  # it proved an older one; refresh it
-    # Never validated here. Offer it only where a REQUIRED GATE still needs it.
-    # Coverage is gates, and an arch beyond the one satisfying a gate is additive
-    # evidence that gates nothing -- welcome when someone asks for it, and not work
-    # the selector should invent. Without this, every arch that has never touched any
-    # finished port becomes a validation task: 315 of them here, ranked ahead of
-    # screening anything new.
+    # Nothing this arch has proved covers the current head: it never validated, or its
+    # failure has been superseded by a fix. `port-ready` either way, which is the full
+    # run -- an arch coming back from a failure has no standing claim to carry forward
+    # from, even if an older `validated_sha` is still in its block.
+    #
+    # Offered only where a REQUIRED GATE still needs it. Coverage is gates, and an arch
+    # beyond the one satisfying a gate is additive evidence that gates nothing --
+    # welcome when someone asks for it, and not work the selector should invent.
+    # Without this, every arch that has never touched any finished port becomes a
+    # validation task: 315 of them here, ranked ahead of screening anything new.
     if gates_for(platform) & unsatisfied_gates(obj):
         return ("validator", "port-ready")
     return None
@@ -1783,8 +1994,14 @@ def platform_state(obj, platform):
     if blk.get("state") == "completed":
         return ("completed" if same_commit(blk.get("validated_sha"), obj.get("head_sha"))
                 else "revalidate")
-    if blk.get("state"):
-        return blk["state"]
+    st = blk.get("state")
+    # A failure a later commit has superseded is history, not where this arch is now.
+    # Reported as whatever it is owed instead, so the board and the selector cannot
+    # disagree -- one saying the arch is mid-fix while the other asks it to validate.
+    if st == "validation-failed" and not failure_stands(obj, blk):
+        st = None
+    if st:
+        return st
     task = arch_task(obj, platform)
     return task[1] if task else None
 
@@ -1903,12 +2120,12 @@ def release_awaiting_fork(org="AMD-Ecosystem", dry_run=False):
     Resolved across refs and written across them too. Every project waiting on a fork
     now lives on its own branch, so walking the working tree reported "nothing waiting
     on a fork" while four waited -- a clean bill of health that was false, and the one
-    report anyone would trust to tell them a fork had appeared. `commit_to_branch`
-    writes the release without checking the branch out, which is safe here in a way it
-    would not be for the selector: this advances a record, it does not hand an agent a
-    project whose files are absent."""
+    report anyone would trust to tell them a fork had appeared. `save_record` writes the
+    release without checking the branch out, which is safe here in a way it would not be
+    for the selector: this advances a record, it does not hand an agent a project whose
+    files are absent."""
     released = []
-    for name, obj, where in project_records():
+    for name, obj, _where in project_records():
         if project_stage(obj) != "awaiting-fork":
             continue
         fork = obj.get("fork_url") or f"https://github.com/{org}/{name}"
@@ -1925,14 +2142,10 @@ def release_awaiting_fork(org="AMD-Ecosystem", dry_run=False):
         obj["stage"] = "screened"
         obj["fork_url"] = f"https://github.com/{slug}"
         obj["updated_at"] = now_iso()
-        if writable_here(name, where):
-            save_status(name, obj)
-        else:
-            commit_to_branch(
-                f"port/{name}", {f"projects/{name}/status.json":
-                                 json.dumps(obj, indent=2) + "\n"},
-                f"{name}: fork exists, releasing for planning\n\n"
-                f"{slug} was created, which is the decision to take this project up.")
+        save_record(name, obj,
+                    f"{name}: fork exists, releasing for planning\n\n"
+                    f"{slug} was created, which is the decision to take this "
+                    f"project up.")
         released.append((name, slug))
     return released
 
@@ -1950,6 +2163,11 @@ SKIP_REASONS = ["already-supported", "ported-elsewhere",
                 # written reason is permanent and quotable, and a project can be
                 # reconsidered later without anything to walk back.
                 "declined",
+                # The maintainer asked not to receive our pull requests. Their decision,
+                # not ours, and the only skip reason an agent may record on its own --
+                # see data/optout.json, which is the owner-scoped record this retires a
+                # single adopted project against.
+                "opted-out",
                 "other"]
 # already-supported: this upstream repo already supports ROCm/HIP, by any means
 #   (CUDA path ported to HIP, or a native/designed-in backend); provenance is
@@ -2028,6 +2246,85 @@ def clear_disposition(full_name):
     return False
 
 
+# ---- opt-out (maintainers who asked not to receive our pull requests) -------
+
+# Deliberately NOT a disposition, though both stop work on a repo. A disposition is
+# our judgement about a project -- not a target, already supported, cannot be ported.
+# An opt-out is somebody else's decision about us, and the two must not be filed under
+# one word: a reader of dispositions.json is reading what we concluded, and an entry
+# saying "declined" where a maintainer actually asked us to stop misreports whose
+# decision it was. It is also scoped differently. A disposition is one repo, keyed by
+# its numeric id; an opt-out is usually a whole owner and has to bind repos nobody has
+# discovered yet, which an id cannot do.
+OPTOUTS = REPO_ROOT / "data" / "optout.json"
+
+
+def load_optouts():
+    if OPTOUTS.exists():
+        try:
+            return json.loads(OPTOUTS.read_text())
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def save_optouts(d):
+    OPTOUTS.parent.mkdir(parents=True, exist_ok=True)
+    with open(OPTOUTS, "w") as f:
+        json.dump(d, f, indent=2, sort_keys=True)
+        f.write("\n")
+
+
+def optout_for(full_name):
+    """The opt-out covering `owner/repo`, or None.
+
+    An owner-scoped entry covers every repo that owner has, including ones discovery
+    has not reached, which is what "stop sending me these" actually means."""
+    if not full_name:
+        return None
+    key = full_name.lower()
+    d = load_optouts()
+    return d.get(key) or d.get(key.split("/")[0])
+
+
+def record_optout(who, source, note=""):
+    """Record that `who` (an owner, or one owner/repo) asked not to receive our PRs.
+
+    An agent MAY write this one, unlike a disposition or a licence clearance. Those
+    are our judgement and need a person; this is carrying somebody else's decision
+    into the record, and the only thing it can do is less work. `source` is required
+    so the record says where the request was made and anyone can go read it."""
+    if not source:
+        raise ValueError("an opt-out needs a source: where the request was made")
+    if who.count("/") > 1 or who.startswith("/") or who.endswith("/"):
+        raise ValueError(f"expected an owner or owner/repo, got {who!r}")
+    d = load_optouts()
+    d[who.lower()] = {"who": who, "scope": "repo" if "/" in who else "owner",
+                      "requested_at": now_iso(), "source": source, "note": note}
+    save_optouts(d)
+    return d[who.lower()]
+
+
+def clear_optout(who, by):
+    """Withdraw an opt-out. Requires `by`, and requires it HERE rather than only in
+    optout.py, because this is the one direction that resumes contact with someone who
+    asked us to stop. Every comparable control in this file refuses in the library --
+    set_not_portable, approve_waiver, refuse_waiver -- so that a caller reaching past
+    the command line cannot skip what the command line was enforcing. Recording an
+    opt-out is the opposite and needs nobody: it can only ever cause less work."""
+    if not (by or "").strip():
+        raise ValueError(
+            f"{who}: --by is required. Withdrawing an opt-out resumes contact with "
+            f"someone who asked us to stop, so the record has to say who authorised it "
+            f"-- an agent may carry that decision but never make it")
+    d = load_optouts()
+    if who.lower() in d:
+        del d[who.lower()]
+        save_optouts(d)
+        return True
+    return False
+
+
 # ---- scaffolding -----------------------------------------------------------
 
 def existing_claim(name):
@@ -2056,6 +2353,14 @@ def existing_claim(name):
 
 def scaffold_project(full_name, upstream_url=None, default_branch="main",
                      ext_type="unknown", priority=0.0, force=False, depends_on=None):
+    # No `force` on this one. Everything else here is our own decision and a person
+    # may overrule it; this is the maintainer's, and there is nobody on our side who
+    # can overrule it.
+    opt = optout_for(full_name)
+    if opt:
+        raise ValueError(
+            f"{opt['who']} asked not to receive pull requests from this effort "
+            f"({opt['source']}). Recorded in data/optout.json; not adoptable.")
     disp = get_disposition(full_name, github_repo_id(full_name))
     if disp and disp.get("disposition") == "skip" and not force:
         raise ValueError(
@@ -2121,16 +2426,16 @@ def ensure_git_config():
 PORT_INERT = ("README.md", "data/")
 
 
-def branch_drift(branch, base_ref="origin/main"):
+def branch_drift(branch, base_ref="origin/main", cwd=None):
     """What has landed on the trunk that this port branch has not seen, split into
     the changes a port can feel and the ones it cannot.
 
     Returns (substantive, inert) as sorted path lists. Both empty means the branch
     already carries everything on the trunk."""
-    base = _git("merge-base", "HEAD", base_ref, check=False).stdout.strip()
+    base = _git("merge-base", "HEAD", base_ref, cwd=cwd, check=False).stdout.strip()
     if not base:
         return ([], [])
-    out = _git("diff", "--name-only", base, base_ref, check=False).stdout
+    out = _git("diff", "--name-only", base, base_ref, cwd=cwd, check=False).stdout
     substantive, inert = [], []
     for p in out.splitlines():
         p = p.strip()
@@ -2195,21 +2500,102 @@ def branch_lessons(base_ref="origin/main"):
     return sorted(out)
 
 
-def branch_sync(apply=False, base_ref="origin/main"):
+def make_worktree(name, path=None, base_ref="origin/main"):
+    """Create a worktree on `port/<name>` and bring it up to the trunk. Returns the path.
+
+    One command because the sync is the part that gets skipped. A worktree cut from a
+    port branch runs whatever tooling that branch last merged, which can be days old,
+    and the agent then writes records with old code against today's schema. Both of
+    today's bad records came from exactly that: one wrote a stage the trunk had just
+    stopped recognising, which failed the repo-wide gates and blocked every push from
+    every host; the other recorded a full GPU rerun as a carry-forward because its copy
+    of `set_state` still no-opped on a same-state call.
+
+    Advice would not have prevented either -- it was advice, and I was the one skipping
+    it. So there is no unsynced way to get a worktree."""
+    path = Path(path) if path else (REPO_ROOT / "agent_space" / f"wt-{name}")
+    if path.exists():
+        raise ValueError(f"{path} already exists -- remove it or pass another --path")
+    ref = f"origin/port/{name}"
+    if not _git("rev-parse", "--verify", "-q", ref, check=False).stdout.strip():
+        raise ValueError(f"{ref} does not exist; this project has no port branch")
+    # The `-B` below force-resets an existing local port/<name> onto the remote, which
+    # is what makes a worktree reproducible and is silent when the local branch holds
+    # work the remote does not. That is not hypothetical: commit_and_push gives up
+    # after three failed pushes and says so, leaving the work committed locally.
+    #
+    # Count by PATCH-ID rather than ancestry. A remote that was rebased, squashed or
+    # re-cut leaves the local ref on an old line whose shas are all absent from the
+    # remote while every CHANGE on it is already there; ancestry calls that 37 commits
+    # at risk when the honest answer is none, and a check that cries wolf that loudly
+    # is one people learn to skip. `git cherry` marks those `-` and only genuinely new
+    # work `+`, and when everything is `-` the reset discards nothing and should just
+    # proceed -- which is the common case.
+    local = f"port/{name}"
+    if _git("rev-parse", "--verify", "-q", local, check=False).stdout.strip():
+        only_here = [f"{sha[:9]} {subject[:60]}" for sha, _, subject in
+                     (ln[2:].strip().partition(" ") for ln in
+                      _git("cherry", "-v", ref, local, check=False).stdout.splitlines()
+                      if ln.startswith("+"))]
+        if only_here:
+            raise ValueError(
+                f"{name}: {len(only_here)} commit(s) exist only on the local {local}, and "
+                f"creating the worktree would reset it onto {ref} and discard them: "
+                f"{'; '.join(only_here[:3])}. Push them first.")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    r = _git("worktree", "add", "-q", "-B", local, str(path), ref, check=False)
+    if r.returncode:
+        raise ValueError(f"could not create the worktree: {(r.stderr or r.stdout).strip()}")
+    # Sync with THIS copy of the code, pointed at the new worktree. Running the
+    # worktree's own moatlib is circular: the branch that most needs a sync is the one
+    # whose syncer is too old to perform it.
+    action, detail = branch_sync(apply=True, base_ref=base_ref, cwd=path)
+    detail = f"{action} -- {detail}"
+    # A worktree that did not sync is the thing this command exists to prevent, so it
+    # is not handed back. Returning the path with a warning attached would be worse
+    # than the hand-rolled version it replaces: a caller gets something that looks
+    # ready, and the warning is one line above the path they are about to paste.
+    if action not in ("merged", "current", "inert"):
+        # Say which of the two happened. If the removal fails, "it was not created" is
+        # false, the directory is still there, and the next run reports "already
+        # exists" -- a different problem than the one that occurred.
+        removed = _git("worktree", "remove", "--force", str(path), check=False)
+        if removed.returncode:
+            raise ValueError(
+                f"{name}: the worktree at {path} did not sync ({detail}), and removing "
+                f"it failed: {(removed.stderr or removed.stdout).strip()}. It is still "
+                f"on disk and is NOT synced -- do not use it; remove it by hand.")
+        raise ValueError(
+            f"{name}: the worktree was not synced, so it was not created -- {detail}. "
+            f"Resolve it on the branch first: `git checkout port/{name}` in a checkout "
+            f"you own, merge origin/main by hand, push, then run this again.")
+    return (str(path), detail)
+
+
+def branch_sync(apply=False, base_ref="origin/main", cwd=None):
     """Bring a port branch up to the trunk's tooling, but only when that is worth a
     merge commit. Returns (action, detail) for the caller to print.
 
     Merging on every trunk push would put a merge commit on every port branch for a
     README regeneration. Merging on none of them means a port runs whatever skills
     and agent definitions existed the day its branch was cut. So: look first, and
-    merge only when something a port can actually feel has moved."""
-    branch = _git("rev-parse", "--abbrev-ref", "HEAD", check=False).stdout.strip()
+    merge only when something a port can actually feel has moved.
+
+    `cwd` runs this against ANOTHER checkout -- a fresh worktree -- while the merging
+    is still done by THIS copy of the code. That distinction is the whole point: a
+    worktree cut from a port branch carries that branch's tooling, and a branch old
+    enough to need syncing is old enough that its own `branch_sync` cannot do it. The
+    ffpa-attn branch predates the rule that a branch keeps its own project folder
+    across a trunk merge, so its copy hit that conflict and gave up, reporting four
+    files that had merged cleanly. Syncing a branch with the branch's own syncer is
+    circular exactly when it matters."""
+    branch = _git("rev-parse", "--abbrev-ref", "HEAD", check=False, cwd=cwd).stdout.strip()
     if not branch.startswith("port/"):
         return ("skip", "not a port branch")
-    if _git("status", "--porcelain", check=False).stdout.strip():
+    if _git("status", "--porcelain", check=False, cwd=cwd).stdout.strip():
         return ("dirty", "uncommitted changes -- not merging; commit or stash first")
-    _git("fetch", "-q", "origin", base_ref.split("/", 1)[-1], check=False)
-    substantive, inert = branch_drift(branch, base_ref)
+    _git("fetch", "-q", "origin", base_ref.split("/", 1)[-1], check=False, cwd=cwd)
+    substantive, inert = branch_drift(branch, base_ref, cwd=cwd)
     if not substantive:
         if not inert:
             return ("current", "up to date with the trunk")
@@ -2218,13 +2604,13 @@ def branch_sync(apply=False, base_ref="origin/main"):
         return ("would-merge", ", ".join(substantive[:4]))
     ensure_git_config()
     project = branch[len("port/"):]
-    pre = _git("rev-parse", "HEAD", check=False).stdout.strip()
+    pre = _git("rev-parse", "HEAD", check=False, cwd=cwd).stdout.strip()
     own = f"projects/{project}/"
-    r = _git("merge", "--no-edit", base_ref, check=False)
+    r = _git("merge", "--no-edit", base_ref, check=False, cwd=cwd)
     if r.returncode:
         conflicted = [c.strip() for c in
                       _git("diff", "--name-only", "--diff-filter=U",
-                           check=False).stdout.splitlines() if c.strip()]
+                           check=False, cwd=cwd).stdout.splitlines() if c.strip()]
         # A conflict confined to this branch's OWN project folder has a settled answer
         # and does not need a person: the branch owns that path. It happens on every
         # sync now rather than rarely -- the trunk deleted the folder when the project
@@ -2232,28 +2618,39 @@ def branch_sync(apply=False, base_ref="origin/main"):
         # that deletion. Aborting on it left five branches unable to take a trunk
         # merge at all, running tooling old enough that it could not read the very
         # records it was holding, and silently offering another project's work.
-        if conflicted and all(c.startswith(own) for c in conflicted):
-            _git("checkout", pre, "--", own, check=False)
-            _git("add", "--", own, check=False)
-            _git("commit", "--no-edit", "-q", check=False)
+        # README.md is GENERATED, so a conflict there is not a disagreement: both
+        # sides ran gen_readme against different sets of records. The trunk's board is
+        # the published one and gate_readme does not judge a port branch, so the
+        # trunk's version wins and the branch's own regeneration is simply dropped.
+        # Left unhandled it collides on every branch that ever regenerated the board,
+        # which is all of them.
+        settled = [c for c in conflicted if c.startswith(own) or c == "README.md"]
+        if conflicted and len(settled) == len(conflicted):
+            if any(c.startswith(own) for c in conflicted):
+                _git("checkout", pre, "--", own, check=False, cwd=cwd)
+                _git("add", "--", own, check=False, cwd=cwd)
+            if "README.md" in conflicted:
+                _git("checkout", base_ref, "--", "README.md", check=False, cwd=cwd)
+                _git("add", "--", "README.md", check=False, cwd=cwd)
+            _git("commit", "--no-edit", "-q", check=False, cwd=cwd)
         else:
-            _git("merge", "--abort", check=False)
+            _git("merge", "--abort", check=False, cwd=cwd)
             return ("conflict", f"merging {base_ref} conflicts outside "
-                                f"{own} -- resolve by hand: "
+                                f"{own} and README.md -- resolve by hand: "
                                 f"{', '.join(conflicted[:4] or substantive[:4])}")
     # The trunk does not carry an in-flight project's folder, and a branch with no
     # commits of its own fast-forwards straight onto that absence -- which is how the
     # bam canary lost its own state to a routine sync. Whatever the merge did to this
     # branch's project, the branch's version wins.
     if _git("cat-file", "-e", f"{pre}:projects/{project}/status.json",
-            check=False).returncode == 0:
-        _git("checkout", pre, "--", own, check=False)
-        if _git("diff", "--cached", "--name-only", check=False).stdout.strip():
+            check=False, cwd=cwd).returncode == 0:
+        _git("checkout", pre, "--", own, check=False, cwd=cwd)
+        if _git("diff", "--cached", "--name-only", check=False, cwd=cwd).stdout.strip():
             _git("commit", "-q", "-m",
-                 f"{project}: keep this branch's project state across the trunk merge")
+                 f"{project}: keep this branch's project state across the trunk merge", cwd=cwd)
     # Push so a sibling host reuses this merge instead of making its own; the branch
     # is shared, and two independent merges of the same trunk diverge for no reason.
-    _git("push", "-q", "origin", branch, check=False)
+    _git("push", "-q", "origin", branch, check=False, cwd=cwd)
     return ("merged", ", ".join(substantive[:4]))
 
 
@@ -2409,6 +2806,19 @@ def pr_ready(name):
     Returns (ready, blocking, nonviable)."""
     obj = load_status(name)
 
+    # Checked here and not only at adoption, because an opt-out usually arrives after
+    # we have already sent this owner a pull request -- that is what prompts it. This
+    # is the last gate before anything reaches their repository and the one both routes
+    # upstream pass through (the review PR and the publish step), so a request to stop
+    # binds work already finished, not just work not yet started. `optout.py record`
+    # also writes a disposition, which the next block would catch; this does not rely
+    # on that having happened.
+    opt = optout_for(upstream_full_name(name) or "")
+    if opt:
+        return (False, [("opted-out",
+                         f"{opt['who']} asked not to receive pull requests from this "
+                         f"effort ({opt['source']})")], [])
+
     # A recorded disposition settles the PR question: the project was delivered as a
     # validation-only record, or set aside as already-supported / non-viable /
     # licence-blocked. Either way it is not an upstream contribution. This replaces the
@@ -2557,6 +2967,11 @@ def main(argv=None):
     s.add_argument("reason", nargs="?")
     s.add_argument("--clear", action="store_true",
                    help="resume: this arch is not blocked after all")
+
+    s = sub.add_parser("worktree",
+                       help="create a worktree on a project's port branch, synced to the trunk")
+    s.add_argument("name")
+    s.add_argument("--path", help="where to put it (default agent_space/wt-<name>)")
 
     sub.add_parser("stalled", help="projects every architecture gave up on, before review")
 
@@ -2745,6 +3160,10 @@ def main(argv=None):
         else:
             set_blocked(args.name, args.platform, True, args.reason)
             print(f"{args.name}/{args.platform} blocked: {args.reason}")
+    elif args.cmd == "worktree":
+        path, detail = make_worktree(args.name, args.path)
+        print(path)
+        print(f"   trunk sync: {detail}", file=sys.stderr)
     elif args.cmd == "stalled":
         rows = [(n, o) for n, o, _w in project_records() if stalled(o)]
         for n, o in sorted(rows):
@@ -2872,8 +3291,24 @@ def main(argv=None):
         print(f"{args.name}: license-ok={ok} ({why})")
         return 0 if ok else 1
     elif args.cmd == "set-review-pr":
+        # Retracting has its own flag, so the bare form must not also retract. `url` is
+        # optional, and omitting it -- a typo, a shell that ate the argument, or reading
+        # `set-review-pr <name>` as "show me this project's review PR" -- used to take
+        # the same path as `--clear`: it skipped the gate check, wrote null, printed
+        # `review PR -> None` and exited 0. That erases the one field saying where the
+        # port's approval lives, so the port drops out of `--publish` and comes back in
+        # `--review` as needing a PR it already has.
+        if not args.url and not args.clear:
+            try:
+                cur = load_status(args.name).get("review_pr") or "none recorded"
+            except (FileNotFoundError, ValueError) as e:
+                cur = f"unreadable -- {e}"
+            print(f"set-review-pr: no URL given. Pass one to record it, or --clear to "
+                  f"retract the recorded one. {args.name} currently: {cur}",
+                  file=sys.stderr)
+            return 2
         set_review_pr(args.name, None if args.clear else args.url)
-        print(f"{args.name}: review PR -> {args.url}")
+        print(f"{args.name}: review PR -> {'(cleared)' if args.clear else args.url}")
     elif args.cmd == "record-pr-approval":
         a = record_pr_approval(args.name, args.review_pr)
         print(f"{args.name}: approved by {a['approved_by']} for "

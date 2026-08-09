@@ -52,6 +52,48 @@ TODAY = subprocess.run(["date", "-u", "+%Y-%m-%d"],
 # in a session, so there is no bot identity for a reader to recognise.
 BRANCH = "record-sync"
 
+# What every pull request we send says about where it came from, appended to the body
+# when the review PR is opened so it is part of what gets approved and part of what
+# gets published verbatim. Three things a maintainer receiving an unsolicited PR is
+# owed: that a machine wrote it, that a person read it before it was sent, and how to
+# make it stop. It is added by the tool rather than left to whoever writes the body,
+# because a disclosure that depends on remembering is one that eventually goes missing
+# from the one PR where it mattered.
+#
+# SUBMISSION_MARKER is what the publish gate looks for. Keep it a stable substring of
+# the note: editing the wording is fine, editing the marker orphans every review PR
+# already approved.
+#
+# EDITING THE NOTE: the jargon checker cannot see the paragraph carrying the repo URL.
+# `MOAT` is a jargon term, and config/jargon.toml allows any line matching
+# `https?://\S*moat` or `github\.com/\S+` so ordinary links do not trip it -- but the
+# allowance skips the WHOLE line, and a GitHub body is written one line per paragraph,
+# so everything beside that URL goes unscanned. Dropping "the lead platform validated at
+# head_sha" into it yields zero hits; the same words on their own line yield three. So
+# check any wording change here by eye: this is the one paragraph the gate below cannot
+# check for you.
+SUBMISSION_MARKER = "prepared with the help of an AI assistant"
+SUBMISSION_NOTE = (
+    "---\n\n"
+    "This pull request was prepared with the help of an AI assistant (Claude) and was "
+    "read and approved by a person before it was opened. It comes from an ongoing "
+    "effort to add AMD GPU support to widely used CUDA projects, one repository at a "
+    "time: https://github.com/AMD-Ecosystem/moat -- that repository describes how the "
+    "work is done and what a person checks before anything is submitted.\n\n"
+    "If you would rather not receive pull requests from this effort, say so here or "
+    "open an issue at https://github.com/AMD-Ecosystem/moat/issues/new/choose and we "
+    "will close this and stop. That can cover this repository alone or everything you "
+    "own, whichever you prefer.")
+
+
+def with_submission_note(body):
+    """The body as it will be published. Idempotent, so a body that already carries
+    the note (a maintainer-requested edit, a re-opened review PR) is left alone."""
+    if SUBMISSION_MARKER in body:
+        return body
+    return body.rstrip() + "\n\n" + SUBMISSION_NOTE + "\n"
+
+
 # GitHub PR state -> the project-level pr_state it implies. A closed PR says
 # nothing about whether the port itself is good, so it is reported for a human
 # rather than applied.
@@ -203,12 +245,25 @@ def report_attention(rows, today):
 def apply_one(r):
     """Record a merge. Only MERGED is applied automatically: it is unambiguous and
     additive. A CLOSED PR needs a human -- withdrawn on licence grounds, rejected by
-    a maintainer, and superseded are different outcomes that look identical here."""
+    a maintainer, and superseded are different outcomes that look identical here.
+
+    Returns where the record landed -- "local" for a working-tree edit the record-sync
+    PR below then carries to the protected trunk, "branch" for one written straight to
+    the project's own port branch -- or False if there was nothing to apply. The two
+    are not the same afterwards: a branch write is already published, and treating it
+    as a pending working-tree edit is how `publish` came to report nothing to do while
+    having just recorded several merges."""
     if r["real"] != "MERGED":
         return False
-    subprocess.run([sys.executable, "utils/moatlib.py", "set-pr-merged", r["name"]],
-                   cwd=str(REPO), capture_output=True, text=True)
-    return True
+    sys.path.insert(0, str(REPO / "utils"))
+    import moatlib
+    local = moatlib.status_path(r["name"]).exists()
+    try:
+        moatlib.set_pr_merged(r["name"])
+    except Exception as e:                      # noqa: BLE001 - reported, not raised
+        print(f"  COULD NOT record {r['name']} as merged: {e}")
+        return False
+    return "local" if local else "branch"
 
 
 def fork_poll(apply=False, stale_weeks=3):
@@ -358,24 +413,43 @@ def report_approvals(apply):
 def publishable():
     """Ports whose review PR carries a standing approval and are ready to submit.
 
-    This is what makes clicking Approve mean something. It looks for the approval on
-    GitHub rather than for a snapshot in our files, because the click is the whole
-    signal -- a project nobody has run record-pr-approval on yet is exactly the case
-    that needs finding."""
+    Returns (ready, unreachable). This is what makes clicking Approve mean something.
+    It looks for the approval on GitHub rather than for a snapshot in our files,
+    because the click is the whole signal -- a project nobody has run
+    record-pr-approval on yet is exactly the case that needs finding.
+
+    A review PR we cannot READ is returned separately rather than skipped, because
+    those two answers are not the same and this printed the wrong one for both. "Not
+    approved" is a fact about the port; "could not reach GitHub" is a fact about the
+    network, and folding it into a count of zero says nothing is waiting when a
+    finished, approved port may be. It happened on an ordinary day: the GraphQL
+    endpoint timed out while REST kept working, `fetch_review_pr` opens with a
+    `gh pr view --json` call, and `--publish` reported "0 approved port(s) awaiting
+    submission" while marian-dev sat approved -- with orient.sh, which greps this
+    output for READY, going quiet along with it.
+
+    The rest of this file already settled the principle three times over: an
+    unreachable review PR refuses rather than passing (pr_approval_status), an
+    unreachable remote is a warning and not a clean bill (existing_claim), and
+    "nothing released" is not "nothing waiting" (release-forks). This was the one
+    place still reading an outage as an answer."""
     sys.path.insert(0, str(REPO / "utils"))
     import moatlib
 
-    out = []
+    out, unreachable = [], []
     for name, d, _where in all_records():
         url = (d.get("pr_approval") or {}).get("review_pr") or d.get("review_pr")
         if not url or d.get("pr_state"):
             continue                      # no review PR, or already submitted
         pr = moatlib.fetch_review_pr(url)
-        if pr is None or moatlib._approving_review(pr) is None:
-            continue                      # not approved (yet), or unreachable
+        if pr is None:
+            unreachable.append({"name": name, "url": url})
+            continue
+        if moatlib._approving_review(pr) is None:
+            continue                      # genuinely not approved yet -- a real answer
         out.append({"name": name, "url": url, "pr": pr,
                     "title": pr.get("title") or "", "body": pr.get("body") or ""})
-    return out
+    return out, unreachable
 
 
 def review_candidates():
@@ -425,6 +499,10 @@ def open_review_pr(row, title, body, apply=False):
     import moatlib
     import jargon
     import prose
+
+    # Attached before the checks below, not after, so the note is scanned like the
+    # rest of the body and shown in the --review preview exactly as it will publish.
+    body = with_submission_note(body)
 
     terms, allow = jargon.load()
     hits = (jargon.scan_text(title, "title", terms, allow)
@@ -515,15 +593,29 @@ def publish_blockers(name, row):
     # here too rather than trusted from when the review PR was opened -- a maintainer
     # may have asked for an edit, and an edit is where hand-wrapping creeps back in.
     bad += prose.check(row["body"], "body")
+    # The disclosure has to survive to the thing that actually gets opened. It is
+    # added when the review PR is opened, so its absence here means the body was
+    # edited afterwards -- which voids the approval anyway, and this says why.
+    if SUBMISSION_MARKER not in (row["body"] or ""):
+        bad.append("the body no longer says the change was AI-prepared and "
+                   "human-approved, or where to opt out; restore the note from "
+                   "upstream.py SUBMISSION_NOTE and get a fresh approval")
     return bad
 
 
 def open_upstream(name, row):
-    """Open the upstream PR with the approved title and body, verbatim."""
+    """Open the upstream PR with the approved title and body, verbatim.
+
+    The record is resolved across refs like everything else here: a project with a
+    standing approval and no PR yet lives on its own `port/<name>` branch by
+    construction, so reading the working tree found nothing unless the session
+    happened to be standing on that branch."""
     sys.path.insert(0, str(REPO / "utils"))
     import moatlib
 
-    d = json.loads((REPO / "projects" / name / "status.json").read_text())
+    d, _where = moatlib.project_record(name)
+    if d is None:
+        return (None, f"no record for {name} in this checkout or on the refs")
     slug = d["upstream_url"].split("github.com/", 1)[-1]
     fork_owner = d["fork_url"].split("github.com/", 1)[-1].split("/")[0]
     branch = d.get("fork_branch") or moatlib.PORT_BRANCH
@@ -542,8 +634,13 @@ def open_upstream(name, row):
     url = next((l.strip() for l in r.stdout.splitlines()
                 if "github.com" in l and "/pull/" in l), "")
     num = url.rstrip("/").rsplit("/", 1)[-1]
-    subprocess.run([sys.executable, "utils/moatlib.py", "set-pr-open", name, url, num],
-                   cwd=str(REPO), capture_output=True, text=True)
+    # Called rather than shelled out to, so a record that will not write is reported
+    # here instead of vanishing into a subprocess nobody read the exit code of. The PR
+    # is already open at this point, so failing to record it is worth saying loudly.
+    try:
+        moatlib.set_pr_open(name, url, num)
+    except Exception as e:                      # noqa: BLE001 - reported, not raised
+        return (url, f"opened {url} but could NOT record it: {e}")
 
     # The review PR has done its job -- the change it was reviewing is now in front of
     # the maintainers. Close it pointing at where the conversation continues, rather
@@ -552,7 +649,7 @@ def open_upstream(name, row):
     # that branch is the upstream PR's head.
     if url:
         subprocess.run(
-            ["gh", "pr", "close", d["review_pr"], "--comment",
+            ["gh", "pr", "close", row["url"], "--comment",
              f"Submitted upstream as {url} with the title and body approved here. "
              f"Closing this review PR; the discussion continues on the upstream one."],
             capture_output=True, text=True, cwd=str(REPO))
@@ -560,8 +657,10 @@ def open_upstream(name, row):
 
 
 def report_publish(apply):
-    rows = publishable()
-    print(f"upstream: {len(rows)} approved port(s) awaiting submission\n")
+    rows, unreachable = publishable()
+    print(f"upstream: {len(rows)} approved port(s) awaiting submission"
+          + (f", {len(unreachable)} review PR(s) UNREACHABLE" if unreachable else "")
+          + "\n")
     ready, held = [], []
     for r in rows:
         bad = publish_blockers(r["name"], r)
@@ -572,6 +671,14 @@ def report_publish(apply):
         print(f"  HELD       {r['name']:26} {r['blockers'][0][:78]}")
         for b in r["blockers"][1:]:
             print(f"             {'':26} {b[:78]}")
+    # Printed even with --apply, and before anything is opened: a run that could not
+    # read some review PRs has not seen the whole picture, and saying so is the point.
+    for r in unreachable:
+        print(f"  UNREACHABLE {r['name']:25} could not read {r['url']}")
+    if unreachable:
+        print(f"\n  {len(unreachable)} review PR(s) could not be read, so their approval "
+              f"state is UNKNOWN -- that is not the same as nothing to submit. Re-run "
+              f"when GitHub is reachable.")
     if not apply:
         if ready:
             print(f"\n  --apply opens {len(ready)} upstream PR(s) with the approved "
@@ -586,7 +693,10 @@ def report_publish(apply):
             print(f"  FAILED to record the approval for {r['name']}: {e}")
             continue
         url, err = open_upstream(r["name"], r)
-        print(f"  {'opened ' + url if url else 'FAILED: ' + (err or '?')}  ({r['name']})")
+        if url and err:          # the PR is open but the record did not take
+            print(f"  PARTIAL  {r['name']}: {err}")
+        else:
+            print(f"  {'opened ' + url if url else 'FAILED: ' + (err or '?')}  ({r['name']})")
     return 0
 
 
@@ -707,13 +817,20 @@ def main():
                   f"merge(s) and opens a PR; closures need a human decision.")
         return 0
 
-    applied = [r for r in drift if apply_one(r)]
-    if not applied:
+    landed = [(r, apply_one(r)) for r in drift]
+    on_branch = [r for r, where in landed if where == "branch"]
+    local = [r for r, where in landed if where == "local"]
+    if not (on_branch or local):
         print("\nupstream: nothing to apply automatically")
+        return 0
+    for r in on_branch:
+        print(f"\nupstream: recorded {r['name']} as merged on its own port branch "
+              f"(already pushed; not part of the record-sync PR)")
+    if not local:
         return 0
     subprocess.run([sys.executable, "utils/gen_readme.py"], cwd=str(REPO),
                    capture_output=True)
-    return publish(applied)
+    return publish(local)
 
 
 def publish(applied):
