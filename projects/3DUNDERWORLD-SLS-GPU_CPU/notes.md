@@ -25,8 +25,12 @@ CUDA->HIP port.
    aliases the cuda* surface to hip*. Else plain `<cuda_runtime.h>`.
    Force-included (CMake `-include`) on the HIP GPU targets so it precedes GLM.
 2. `CUDA_Error.cuh` -- include `cuda_to_hip.h` instead of bare `<cuda_runtime.h>`.
-3. `DynamicBits.cuh` -- `asm("trap;")` (NVPTX, illegal on amdgcn) ->
-   `__builtin_trap()` (portable). Never-taken overflow guard; no output effect.
+3. `DynamicBits.cuh` -- `asm("trap;")` (NVPTX, illegal on amdgcn) -> `gpuTrap()`,
+   a per-backend macro in `cuda_to_hip.h`: `__builtin_trap()` on HIP,
+   `asm("trap;")` on CUDA. Never-taken overflow guard; no output effect on
+   either backend. (Corrected at 7dc3a24 -- the first attempt used a bare
+   unconditional `__builtin_trap()`, which nvcc rejects in device code and
+   which broke the CUDA build; see the 2026-08-09 section.)
 4. `ReconstructorCUDA.cu` / `FileReaderCUDA.cu` -- guard the NVIDIA-only
    `<device_launch_parameters.h>` include behind `!USE_HIP` (HIP provides those
    builtins intrinsically).
@@ -47,7 +51,8 @@ CUDA->HIP port.
 - wave64 / warp size: NONE apply. No warp primitives, no hardcoded 32, no
   warp-sized shared arrays. Grid-stride, per-thread-independent kernels. (Implies
   gfx1100/gfx1151 RDNA wave32 should pass with no delta.)
-- NVPTX inline asm: `asm("trap;")` -> `__builtin_trap()` (fix #3).
+- NVPTX inline asm: `asm("trap;")` -> per-backend `gpuTrap()` (fix #3). Both
+  spellings are backend-only -- neither compiles under the other toolchain.
 - OOB reads: audited, already safe (add2Bucket clamps bktIdx; buildBuckets
   checks projector bounds + mask; color idx are in-bounds pixel indices;
   atomicInc wraps at bucket capacity so the row write stays in-bounds). No clamp
@@ -676,3 +681,95 @@ violating "the CUDA build must be a pure passthrough." State set to
 porter. No source/CMake changes were made to the fork by this validation run
 (`git status` clean in `src/` aside from gitignored `build_*`/`data`
 directories).
+
+## Port fix 2026-08-09 (linux-gfx90a, ROCm 7.2.1) -- CUDA regression closed at 7dc3a24
+
+Answers the 2026-08-08 `validation-failed` above. GPU: MI250X gfx90a,
+`HIP_VISIBLE_DEVICES=3` (index 3 confirmed gfx90a via `rocm-smi`).
+
+Root cause, confirmed by rebuilding 3626150 under nvcc before touching anything:
+change #3 of 513385e replaced `asm("trap;")` in `DynamicBits.cuh` with an
+UNCONDITIONAL `__builtin_trap()`. clang makes that device-callable; nvcc treats
+it as `__host__`, so `-DENABLE_CUDA=ON` died with
+
+```
+DynamicBits.cuh(88): error: calling a __host__ function("__builtin_trap") from a
+__device__ function("SLS::Dynamic_Bitset_Array_GPU::to_uint const") is not allowed
+```
+
+Neither spelling compiles on both toolchains (`trap;` has no amdgcn form,
+`__builtin_trap()` is host-only under nvcc), so the choice is necessarily
+per-backend.
+
+Fix: a `gpuTrap()` macro in `cuda_to_hip.h` -- the compat header already owns the
+backend condition and the rest of the cuda*->hip* mapping, so this keeps the
+`#if` in one file instead of open-coding a second copy of it in `DynamicBits.cuh`.
+Matches the project's own `gpuErrchk` naming. The CUDA branch expands to
+upstream's exact text.
+
+### CUDA no-regression -- PASS
+
+nvcc 12.8.93 (`/opt/conda/envs/cuda-12.8`), gcc-13 host compiler, `-arch=sm_80`.
+`CUDA_TOOLKIT_ROOT_DIR` points at the symlink tree over the conda env described
+in the skill's FindCUDA-vs-conda note (`bin`, `include ->
+targets/x86_64-linux/include`, `lib`, `lib64`).
+
+```bash
+CT=<symlink-tree>
+cmake -S . -B build_cuda -DENABLE_CUDA=ON -DCUDA_TOOLKIT_ROOT_DIR=$CT \
+  -DCUDA_HOST_COMPILER=/usr/bin/gcc-13 -DCUDA_NVCC_FLAGS="-arch=sm_80" \
+  -DCMAKE_BUILD_TYPE=Release
+cmake --build build_cuda -j$(nproc)     # full `all`, not just SLS_GPU
+```
+
+Full `all` target builds clean (SLS, SLS_GPU, calibrateCamera, generateGraycode,
+sync_main). Only warning is pre-existing upstream (`sync_main.cc:24`, missing
+return). `cuobjdump -sass bin/SLS_GPU | grep -c BPT` -> 3, so the trap really is
+emitted rather than optimized away.
+
+Byte-level proof the CUDA path is RESTORED, not merely compiling: PTX of
+`DynamicBits.cu` from this branch vs from the pre-port merge-base c87fe37 is
+IDENTICAL (`diff` exit 0, 9328 bytes each).
+
+```bash
+git archive c87fe37 src/lib/ReconstructorCUDA | tar -x -C base
+nvcc -arch=sm_80 -ptx -I base/src/lib -I $SRC/src/lib -o base.ptx \
+  base/src/lib/ReconstructorCUDA/DynamicBits.cu
+nvcc -arch=sm_80 -ptx -I src/lib -o port.ptx src/lib/ReconstructorCUDA/DynamicBits.cu
+diff base.ptx port.ptx
+```
+
+The base tree needs the PORT's include path as a SECOND `-I` (it has no
+`core/Log.hpp` of its own under the archived subtree); base's own `-I` comes
+first so its headers still win.
+
+### ROCm gfx90a -- PASS (unchanged by the fix)
+
+```bash
+export HIP_VISIBLE_DEVICES=3
+cmake -S . -B build_hip -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ -DGTEST=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build_hip -j$(nproc)
+ctest --test-dir build_hip --output-on-failure
+```
+
+`roc-obj-ls build_hip/bin/SLS_GPU`: 3 code objects, all
+`hipv4-amdgcn-amd-amdhsa--gfx90a`, sizes 7336/13424/27136 -- identical to every
+prior gfx90a record, i.e. the device code is untouched (expected: `gpuTrap()`
+expands to the same `__builtin_trap()` it had). Links `libamdhip64.so.7`.
+
+alexander 1024x768, 2 GPU runs + CPU reference: 146064 points in all three, no
+NaN/Inf. GPU vs CPU nearest-neighbor both directions: mean 3.578e-5, p99.9
+1.005e-3, max 2.516e-3 world units, 100% coverage @tol=0.5 and @tol=10.
+Determinism run1 vs run2: mean 1.771e-5, max 1.010e-3, 100% coverage. Matches
+the 2026-08-08 numbers to the ASCII-PLY print-precision ceiling.
+
+`ctest`: 3/3 pass (RunCPUTest.Arch 10.00s, RunCPUTest.Alexander 26.37s, CPU_TEST
+39.54s).
+
+Jargon scan clean. README already documents the ROCm build; no doc change needed.
+
+Lesson promoted to the skill (fault-classes.md, extending the entry the failing
+run had already opened): the repair SHAPE (per-backend macro in the compat header
+rather than an `#if` at the use site) and the PTX-diff-against-merge-base method
+for proving the CUDA path is byte-restored.

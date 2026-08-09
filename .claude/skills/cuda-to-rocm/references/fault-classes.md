@@ -325,6 +325,30 @@ fault family as the type-alias/deleted-workaround shapes in the validator's CUDA
 no-regression gate, just at the level of a single intrinsic rather than a define or a
 whole code path.
 
+The repair shape that keeps this from recurring: put the per-backend spelling in the
+compat header as a macro (`#define gpuTrap() __builtin_trap()` on the HIP side,
+`#define gpuTrap() asm("trap;")` on the CUDA side) and call `gpuTrap()` at the use site,
+rather than open-coding an `#if defined(USE_HIP)` in the `.cuh`. The backend condition
+then lives in exactly one file -- the same file that owns the `cuda*`-to-`hip*` aliases
+-- and the CUDA branch reproduces upstream's text verbatim instead of a paraphrase of it.
+A device intrinsic with no cross-toolchain spelling is a compat-header entry like any
+other alias; it only looks different because it is a statement rather than a type name.
+
+Prove the CUDA path is byte-restored rather than merely compiling, by diffing PTX against
+the pre-port sources -- much stronger than "the build went green", and it costs one
+command per TU:
+
+```bash
+nvcc -arch=sm_80 -ptx -I src/lib -o after.ptx src/lib/<X>.cu
+git archive <merge-base> src/lib | tar -x -C base
+nvcc -arch=sm_80 -ptx -I base/src/lib -I src/lib -o before.ptx base/src/lib/<X>.cu
+diff before.ptx after.ptx
+```
+
+Give the extracted base tree the PORT's include path as a fallback (`-I src/lib` second)
+when the port added headers the base does not have; the base's own `-I` comes first so
+its versions still win, and the diff stays honest. (3DUNDERWORLD-SLS-GPU_CPU)
+
 **Legacy `FindCUDA` (`find_package(CUDA)`) vs. a conda `cuda-toolkit` env.** conda's
 `cuda-toolkit=12.x` packages put `cuda_runtime.h` under
 `$ENV/targets/x86_64-linux/include/`, not directly under `$ENV/include/`; the deprecated

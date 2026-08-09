@@ -7,12 +7,15 @@
   "priority": 5.001,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-08-08T23:33:52Z",
+  "updated_at": "2026-08-09T15:37:37Z",
   "head_sha": "3626150",
   "pr_url": "https://github.com/theICTlab/3DUNDERWORLD-SLS-GPU_CPU/pull/33",
   "pr_number": 33,
   "pr_opened_at": "2026-06-08T15:48:54Z",
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx90a",
+    "since": "2026-08-09T15:37:37Z"
+  },
   "waivers": {},
   "pr_state": "open",
   "license_clearance": {
@@ -23,7 +26,7 @@
   },
   "license_spdx": "LGPL-3.0",
   "upstream_repo_id": 51601478,
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
       "state": "validation-failed",
@@ -32,7 +35,7 @@
       "validated_sha": "4584f0deed39a6abec9f9b85861bafc66b44c935",
       "started_at": "2026-05-30T07:07:24Z",
       "completed_at": "2026-06-08T15:38:45Z",
-      "updated_at": "2026-08-08T23:33:52Z",
+      "updated_at": "2026-08-09T15:37:37Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
