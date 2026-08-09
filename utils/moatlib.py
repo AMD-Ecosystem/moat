@@ -2426,8 +2426,23 @@ def make_worktree(name, path=None, base_ref="origin/main"):
     ref = f"origin/port/{name}"
     if not _git("rev-parse", "--verify", "-q", ref, check=False).stdout.strip():
         raise ValueError(f"{ref} does not exist; this project has no port branch")
+    # The `-B` below force-resets an existing local port/<name> onto the remote, which
+    # is what makes a worktree reproducible and is silent when the local branch is
+    # AHEAD. That is not hypothetical: commit_and_push gives up after three failed
+    # pushes and says so, leaving the work committed locally and nowhere else.
+    local = f"port/{name}"
+    if _git("rev-parse", "--verify", "-q", local, check=False).stdout.strip():
+        ahead = [ln.strip() for ln in
+                 _git("log", "--oneline", f"{ref}..{local}", check=False).stdout.splitlines()
+                 if ln.strip()]
+        if ahead:
+            raise ValueError(
+                f"{name}: local {local} is {len(ahead)} commit(s) ahead of {ref}, and "
+                f"creating the worktree would reset it and discard them: "
+                f"{'; '.join(ahead[:3])}. Push them, or delete the local branch if they "
+                f"are not wanted.")
     path.parent.mkdir(parents=True, exist_ok=True)
-    r = _git("worktree", "add", "-q", "-B", f"port/{name}", str(path), ref, check=False)
+    r = _git("worktree", "add", "-q", "-B", local, str(path), ref, check=False)
     if r.returncode:
         raise ValueError(f"could not create the worktree: {(r.stderr or r.stdout).strip()}")
     # Sync with THIS copy of the code, pointed at the new worktree. Running the
@@ -2440,7 +2455,15 @@ def make_worktree(name, path=None, base_ref="origin/main"):
     # than the hand-rolled version it replaces: a caller gets something that looks
     # ready, and the warning is one line above the path they are about to paste.
     if action not in ("merged", "current", "inert"):
-        _git("worktree", "remove", "--force", str(path), check=False)
+        # Say which of the two happened. If the removal fails, "it was not created" is
+        # false, the directory is still there, and the next run reports "already
+        # exists" -- a different problem than the one that occurred.
+        removed = _git("worktree", "remove", "--force", str(path), check=False)
+        if removed.returncode:
+            raise ValueError(
+                f"{name}: the worktree at {path} did not sync ({detail}), and removing "
+                f"it failed: {(removed.stderr or removed.stdout).strip()}. It is still "
+                f"on disk and is NOT synced -- do not use it; remove it by hand.")
         raise ValueError(
             f"{name}: the worktree was not synced, so it was not created -- {detail}. "
             f"Resolve it on the branch first: `git checkout port/{name}` in a checkout "
