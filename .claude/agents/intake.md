@@ -46,7 +46,9 @@ Two checks that are per-file, not top-level:
   CUDA project and an NVIDIA copyright under Apache-2.0 is clean. Do not hand-roll the
   grep -- the markers live in `config/licenses.toml` and change.
 - **Recurse into submodules and vendored directories.** A permissive top-level licence
-  over an unlicensed vendored component is the case that bites.
+  over an unlicensed vendored component is the case that bites: EnvGS was blocked by an
+  unlicensed SUBMODULE, not by its top-level licence, so a main-tree scan alone misses
+  the case that actually happened.
 
 ## 2. Duplicate effort
 
