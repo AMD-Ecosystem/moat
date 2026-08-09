@@ -694,3 +694,64 @@ parent), so the cubvh content CuMesh builds is byte-for-byte unchanged; AMD
 platforms carried forward (source-class), no GPU re-run. This supersedes the
 earlier moat-windows/moat-port submodule notes above -- CuMesh now consumes
 upstream cubvh directly. The PR no longer depends on a personal cubvh fork.
+
+## Port fix 2026-08-09 (linux-gfx90a, CUDA no-regression failure)
+
+Fixes the `nvcc fatal : Unknown option '-fvisibility=hidden'` recorded in
+"Validation 2026-08-09". New commit 4440182 on top of d5c1355 (NOT an amend --
+d5c1355 is the validated_sha of linux-gfx1100, windows-gfx1101 and
+windows-gfx1201, and it is already published in upstream PR #36).
+
+**Fix**: `setup.py` now builds the visibility flags once and derives the nvcc
+form from them, instead of appending the same bare list to both compiler keys:
+
+```python
+if IS_WINDOWS and not IS_HIP:
+    visibility_flags = []
+    visibility_nvcc_flags = []
+else:
+    visibility_flags = ["-fvisibility=hidden", "-fvisibility-inlines-hidden"]
+    visibility_nvcc_flags = (
+        visibility_flags if IS_HIP
+        else [f"-Xcompiler={flag}" for flag in visibility_flags]
+    )
+```
+
+Chose `-Xcompiler=` over an `if IS_HIP` gate because the flags are WANTED on the
+CUDA path too (they are what keeps cubvh's symbols from interposing), and because
+`-Xcompiler=` is already this file's idiom for host-compiler flags on the nvcc key
+(see the `-Xcompiler=/std:c++17` block for Windows CUDA). The guard is three-way,
+not two: MSVC has no `-fvisibility` equivalent, so a Windows CUDA build drops the
+flags rather than making cl.exe emit D9002 on every TU.
+
+**Verified both ways** (the point being that one build cannot see the other's
+breakage):
+
+1. CUDA. Negative control first: with `setup.py` stashed back to d5c1355 the
+   build fails with the exact recorded error on both `api_gpu.o` and `bvh.o`, so
+   the repro environment is faithful. With the fix it compiles clean. nvcc 12.8,
+   torch 2.11.0+cu128 in a scratch venv, `-gencode=arch=compute_80,code=sm_80`
+   (recipe as documented in the 2026-08-09 validation note above). Confirmed the
+   flag is not merely accepted-and-dropped: the resulting `_cubvh.so` exports only
+   `PyInit__cubvh` while all 309 `cubvh::` symbols are local, i.e. `-Xcompiler=`
+   really delivered the hiding.
+2. ROCm. Flag lists generated under `BUILD_TARGET=rocm` are IDENTICAL before and
+   after this commit (diffed by dumping each extension's `extra_compile_args`),
+   so the compiled output cannot differ; no `-Xcompiler` leaks into any hipcc
+   line. Rebuilt on MI250X (gfx90a, ROCm 7.2.53211, torch 2.14.0a0) and re-ran the
+   six examples: simplify 69451 -> 9890 faces, fill_holes -> 69594, duplicate
+   removal and orientation unification unchanged at 69451, remesh -> 204916,
+   uv_unwrap 90 clusters. All pass.
+
+Note the simplify result is 9890 faces here vs 9949 recorded on 2026-06-19. That
+is not attributable to this commit -- the ROCm flag lists are provably identical
+across it -- and the run is on a newer torch/ROCm than the earlier note; QEM
+decimation to a face target is order-sensitive. Flagging it so the next validator
+does not read the difference as a regression from this change.
+
+**Pre-existing jargon finding, deliberately NOT fixed.** `python3
+utils/jargon.py --port CuMesh` exits 1, but both hits are in d5c1355's commit
+message ("jeffdaily/cubvh@moat-port"), not in the new commit. Clearing them means
+rewriting a commit that three archs have validated and that is already public in
+upstream PR #36. That is a person's call, not a porter's -- raising it rather than
+force-pushing over published, validated history.
