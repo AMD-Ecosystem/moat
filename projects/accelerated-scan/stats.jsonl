@@ -30,3 +30,4 @@
 {"kind":"phase","ts":"2026-06-19T20:09:07Z","phase":"test","seconds":34.983,"exit":0,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe -m pytest B:/develop/moat/projects/accelerated-scan/src/tests/tests_eq_complex.py -v --tb=short"}
 {"kind":"session","ts":"2026-06-19T20:09:52Z","epoch":1781899792.900000900,"event":"end","platform":"windows-gfx1101"}
 {"kind": "tokens", "ts": "2026-06-19T20:10:19Z", "tokens": 52516, "source": "validator (gfx1101)"}
+{"kind": "tokens", "ts": "2026-08-09T00:20:57Z", "tokens": 61842, "source": "validator"}
