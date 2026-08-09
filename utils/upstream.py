@@ -413,24 +413,43 @@ def report_approvals(apply):
 def publishable():
     """Ports whose review PR carries a standing approval and are ready to submit.
 
-    This is what makes clicking Approve mean something. It looks for the approval on
-    GitHub rather than for a snapshot in our files, because the click is the whole
-    signal -- a project nobody has run record-pr-approval on yet is exactly the case
-    that needs finding."""
+    Returns (ready, unreachable). This is what makes clicking Approve mean something.
+    It looks for the approval on GitHub rather than for a snapshot in our files,
+    because the click is the whole signal -- a project nobody has run
+    record-pr-approval on yet is exactly the case that needs finding.
+
+    A review PR we cannot READ is returned separately rather than skipped, because
+    those two answers are not the same and this printed the wrong one for both. "Not
+    approved" is a fact about the port; "could not reach GitHub" is a fact about the
+    network, and folding it into a count of zero says nothing is waiting when a
+    finished, approved port may be. It happened on an ordinary day: the GraphQL
+    endpoint timed out while REST kept working, `fetch_review_pr` opens with a
+    `gh pr view --json` call, and `--publish` reported "0 approved port(s) awaiting
+    submission" while marian-dev sat approved -- with orient.sh, which greps this
+    output for READY, going quiet along with it.
+
+    The rest of this file already settled the principle three times over: an
+    unreachable review PR refuses rather than passing (pr_approval_status), an
+    unreachable remote is a warning and not a clean bill (existing_claim), and
+    "nothing released" is not "nothing waiting" (release-forks). This was the one
+    place still reading an outage as an answer."""
     sys.path.insert(0, str(REPO / "utils"))
     import moatlib
 
-    out = []
+    out, unreachable = [], []
     for name, d, _where in all_records():
         url = (d.get("pr_approval") or {}).get("review_pr") or d.get("review_pr")
         if not url or d.get("pr_state"):
             continue                      # no review PR, or already submitted
         pr = moatlib.fetch_review_pr(url)
-        if pr is None or moatlib._approving_review(pr) is None:
-            continue                      # not approved (yet), or unreachable
+        if pr is None:
+            unreachable.append({"name": name, "url": url})
+            continue
+        if moatlib._approving_review(pr) is None:
+            continue                      # genuinely not approved yet -- a real answer
         out.append({"name": name, "url": url, "pr": pr,
                     "title": pr.get("title") or "", "body": pr.get("body") or ""})
-    return out
+    return out, unreachable
 
 
 def review_candidates():
@@ -638,8 +657,10 @@ def open_upstream(name, row):
 
 
 def report_publish(apply):
-    rows = publishable()
-    print(f"upstream: {len(rows)} approved port(s) awaiting submission\n")
+    rows, unreachable = publishable()
+    print(f"upstream: {len(rows)} approved port(s) awaiting submission"
+          + (f", {len(unreachable)} review PR(s) UNREACHABLE" if unreachable else "")
+          + "\n")
     ready, held = [], []
     for r in rows:
         bad = publish_blockers(r["name"], r)
@@ -650,6 +671,14 @@ def report_publish(apply):
         print(f"  HELD       {r['name']:26} {r['blockers'][0][:78]}")
         for b in r["blockers"][1:]:
             print(f"             {'':26} {b[:78]}")
+    # Printed even with --apply, and before anything is opened: a run that could not
+    # read some review PRs has not seen the whole picture, and saying so is the point.
+    for r in unreachable:
+        print(f"  UNREACHABLE {r['name']:25} could not read {r['url']}")
+    if unreachable:
+        print(f"\n  {len(unreachable)} review PR(s) could not be read, so their approval "
+              f"state is UNKNOWN -- that is not the same as nothing to submit. Re-run "
+              f"when GitHub is reachable.")
     if not apply:
         if ready:
             print(f"\n  --apply opens {len(ready)} upstream PR(s) with the approved "
