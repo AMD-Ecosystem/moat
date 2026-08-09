@@ -681,7 +681,8 @@ def set_not_portable(name, reason, by, clear=False):
       maintainer approval;
       a toolchain or library defect on one platform -- a Triton codegen bug on
       gfx1100, rocBLAS picking a generic kernel on one Windows arch -- is genuinely
-      per-arch and stays a `blocked` flag, with the report filed in data/deferred.json.
+      per-arch and stays a `blocked` flag, with the report registered against that
+      project (projects/<name>/deferred.json, via `deferred.py add --project`).
 
     `by` is required and never defaulted: an agent may assemble the case and must not
     return the verdict, exactly as with a licence clearance or a gate waiver."""
@@ -2162,6 +2163,11 @@ SKIP_REASONS = ["already-supported", "ported-elsewhere",
                 # written reason is permanent and quotable, and a project can be
                 # reconsidered later without anything to walk back.
                 "declined",
+                # The maintainer asked not to receive our pull requests. Their decision,
+                # not ours, and the only skip reason an agent may record on its own --
+                # see data/optout.json, which is the owner-scoped record this retires a
+                # single adopted project against.
+                "opted-out",
                 "other"]
 # already-supported: this upstream repo already supports ROCm/HIP, by any means
 #   (CUDA path ported to HIP, or a native/designed-in backend); provenance is
@@ -2240,6 +2246,85 @@ def clear_disposition(full_name):
     return False
 
 
+# ---- opt-out (maintainers who asked not to receive our pull requests) -------
+
+# Deliberately NOT a disposition, though both stop work on a repo. A disposition is
+# our judgement about a project -- not a target, already supported, cannot be ported.
+# An opt-out is somebody else's decision about us, and the two must not be filed under
+# one word: a reader of dispositions.json is reading what we concluded, and an entry
+# saying "declined" where a maintainer actually asked us to stop misreports whose
+# decision it was. It is also scoped differently. A disposition is one repo, keyed by
+# its numeric id; an opt-out is usually a whole owner and has to bind repos nobody has
+# discovered yet, which an id cannot do.
+OPTOUTS = REPO_ROOT / "data" / "optout.json"
+
+
+def load_optouts():
+    if OPTOUTS.exists():
+        try:
+            return json.loads(OPTOUTS.read_text())
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def save_optouts(d):
+    OPTOUTS.parent.mkdir(parents=True, exist_ok=True)
+    with open(OPTOUTS, "w") as f:
+        json.dump(d, f, indent=2, sort_keys=True)
+        f.write("\n")
+
+
+def optout_for(full_name):
+    """The opt-out covering `owner/repo`, or None.
+
+    An owner-scoped entry covers every repo that owner has, including ones discovery
+    has not reached, which is what "stop sending me these" actually means."""
+    if not full_name:
+        return None
+    key = full_name.lower()
+    d = load_optouts()
+    return d.get(key) or d.get(key.split("/")[0])
+
+
+def record_optout(who, source, note=""):
+    """Record that `who` (an owner, or one owner/repo) asked not to receive our PRs.
+
+    An agent MAY write this one, unlike a disposition or a licence clearance. Those
+    are our judgement and need a person; this is carrying somebody else's decision
+    into the record, and the only thing it can do is less work. `source` is required
+    so the record says where the request was made and anyone can go read it."""
+    if not source:
+        raise ValueError("an opt-out needs a source: where the request was made")
+    if who.count("/") > 1 or who.startswith("/") or who.endswith("/"):
+        raise ValueError(f"expected an owner or owner/repo, got {who!r}")
+    d = load_optouts()
+    d[who.lower()] = {"who": who, "scope": "repo" if "/" in who else "owner",
+                      "requested_at": now_iso(), "source": source, "note": note}
+    save_optouts(d)
+    return d[who.lower()]
+
+
+def clear_optout(who, by):
+    """Withdraw an opt-out. Requires `by`, and requires it HERE rather than only in
+    optout.py, because this is the one direction that resumes contact with someone who
+    asked us to stop. Every comparable control in this file refuses in the library --
+    set_not_portable, approve_waiver, refuse_waiver -- so that a caller reaching past
+    the command line cannot skip what the command line was enforcing. Recording an
+    opt-out is the opposite and needs nobody: it can only ever cause less work."""
+    if not (by or "").strip():
+        raise ValueError(
+            f"{who}: --by is required. Withdrawing an opt-out resumes contact with "
+            f"someone who asked us to stop, so the record has to say who authorised it "
+            f"-- an agent may carry that decision but never make it")
+    d = load_optouts()
+    if who.lower() in d:
+        del d[who.lower()]
+        save_optouts(d)
+        return True
+    return False
+
+
 # ---- scaffolding -----------------------------------------------------------
 
 def existing_claim(name):
@@ -2268,6 +2353,14 @@ def existing_claim(name):
 
 def scaffold_project(full_name, upstream_url=None, default_branch="main",
                      ext_type="unknown", priority=0.0, force=False, depends_on=None):
+    # No `force` on this one. Everything else here is our own decision and a person
+    # may overrule it; this is the maintainer's, and there is nobody on our side who
+    # can overrule it.
+    opt = optout_for(full_name)
+    if opt:
+        raise ValueError(
+            f"{opt['who']} asked not to receive pull requests from this effort "
+            f"({opt['source']}). Recorded in data/optout.json; not adoptable.")
     disp = get_disposition(full_name, github_repo_id(full_name))
     if disp and disp.get("disposition") == "skip" and not force:
         raise ValueError(
@@ -2333,16 +2426,16 @@ def ensure_git_config():
 PORT_INERT = ("README.md", "data/")
 
 
-def branch_drift(branch, base_ref="origin/main"):
+def branch_drift(branch, base_ref="origin/main", cwd=None):
     """What has landed on the trunk that this port branch has not seen, split into
     the changes a port can feel and the ones it cannot.
 
     Returns (substantive, inert) as sorted path lists. Both empty means the branch
     already carries everything on the trunk."""
-    base = _git("merge-base", "HEAD", base_ref, check=False).stdout.strip()
+    base = _git("merge-base", "HEAD", base_ref, cwd=cwd, check=False).stdout.strip()
     if not base:
         return ([], [])
-    out = _git("diff", "--name-only", base, base_ref, check=False).stdout
+    out = _git("diff", "--name-only", base, base_ref, cwd=cwd, check=False).stdout
     substantive, inert = [], []
     for p in out.splitlines():
         p = p.strip()
@@ -2426,35 +2519,83 @@ def make_worktree(name, path=None, base_ref="origin/main"):
     ref = f"origin/port/{name}"
     if not _git("rev-parse", "--verify", "-q", ref, check=False).stdout.strip():
         raise ValueError(f"{ref} does not exist; this project has no port branch")
+    # The `-B` below force-resets an existing local port/<name> onto the remote, which
+    # is what makes a worktree reproducible and is silent when the local branch holds
+    # work the remote does not. That is not hypothetical: commit_and_push gives up
+    # after three failed pushes and says so, leaving the work committed locally.
+    #
+    # Count by PATCH-ID rather than ancestry. A remote that was rebased, squashed or
+    # re-cut leaves the local ref on an old line whose shas are all absent from the
+    # remote while every CHANGE on it is already there; ancestry calls that 37 commits
+    # at risk when the honest answer is none, and a check that cries wolf that loudly
+    # is one people learn to skip. `git cherry` marks those `-` and only genuinely new
+    # work `+`, and when everything is `-` the reset discards nothing and should just
+    # proceed -- which is the common case.
+    local = f"port/{name}"
+    if _git("rev-parse", "--verify", "-q", local, check=False).stdout.strip():
+        only_here = [f"{sha[:9]} {subject[:60]}" for sha, _, subject in
+                     (ln[2:].strip().partition(" ") for ln in
+                      _git("cherry", "-v", ref, local, check=False).stdout.splitlines()
+                      if ln.startswith("+"))]
+        if only_here:
+            raise ValueError(
+                f"{name}: {len(only_here)} commit(s) exist only on the local {local}, and "
+                f"creating the worktree would reset it onto {ref} and discard them: "
+                f"{'; '.join(only_here[:3])}. Push them first.")
     path.parent.mkdir(parents=True, exist_ok=True)
-    r = _git("worktree", "add", "-q", "-B", f"port/{name}", str(path), ref, check=False)
+    r = _git("worktree", "add", "-q", "-B", local, str(path), ref, check=False)
     if r.returncode:
         raise ValueError(f"could not create the worktree: {(r.stderr or r.stdout).strip()}")
-    # Sync using the WORKTREE's own moatlib, which is what an agent there would run,
-    # and unconditionally: `branch_sync` skips when the trunk's drift looks inert, and
-    # stale tooling is precisely the case where that judgement is being made by the
-    # stale copy.
-    sync = subprocess.run([sys.executable, "utils/moatlib.py", "branch-sync", "--apply"],
-                          cwd=str(path), capture_output=True, text=True)
-    detail = (sync.stdout or sync.stderr).strip().replace("branch-sync: ", "")
+    # Sync with THIS copy of the code, pointed at the new worktree. Running the
+    # worktree's own moatlib is circular: the branch that most needs a sync is the one
+    # whose syncer is too old to perform it.
+    action, detail = branch_sync(apply=True, base_ref=base_ref, cwd=path)
+    detail = f"{action} -- {detail}"
+    # A worktree that did not sync is the thing this command exists to prevent, so it
+    # is not handed back. Returning the path with a warning attached would be worse
+    # than the hand-rolled version it replaces: a caller gets something that looks
+    # ready, and the warning is one line above the path they are about to paste.
+    if action not in ("merged", "current", "inert"):
+        # Say which of the two happened. If the removal fails, "it was not created" is
+        # false, the directory is still there, and the next run reports "already
+        # exists" -- a different problem than the one that occurred.
+        removed = _git("worktree", "remove", "--force", str(path), check=False)
+        if removed.returncode:
+            raise ValueError(
+                f"{name}: the worktree at {path} did not sync ({detail}), and removing "
+                f"it failed: {(removed.stderr or removed.stdout).strip()}. It is still "
+                f"on disk and is NOT synced -- do not use it; remove it by hand.")
+        raise ValueError(
+            f"{name}: the worktree was not synced, so it was not created -- {detail}. "
+            f"Resolve it on the branch first: `git checkout port/{name}` in a checkout "
+            f"you own, merge origin/main by hand, push, then run this again.")
     return (str(path), detail)
 
 
-def branch_sync(apply=False, base_ref="origin/main"):
+def branch_sync(apply=False, base_ref="origin/main", cwd=None):
     """Bring a port branch up to the trunk's tooling, but only when that is worth a
     merge commit. Returns (action, detail) for the caller to print.
 
     Merging on every trunk push would put a merge commit on every port branch for a
     README regeneration. Merging on none of them means a port runs whatever skills
     and agent definitions existed the day its branch was cut. So: look first, and
-    merge only when something a port can actually feel has moved."""
-    branch = _git("rev-parse", "--abbrev-ref", "HEAD", check=False).stdout.strip()
+    merge only when something a port can actually feel has moved.
+
+    `cwd` runs this against ANOTHER checkout -- a fresh worktree -- while the merging
+    is still done by THIS copy of the code. That distinction is the whole point: a
+    worktree cut from a port branch carries that branch's tooling, and a branch old
+    enough to need syncing is old enough that its own `branch_sync` cannot do it. The
+    ffpa-attn branch predates the rule that a branch keeps its own project folder
+    across a trunk merge, so its copy hit that conflict and gave up, reporting four
+    files that had merged cleanly. Syncing a branch with the branch's own syncer is
+    circular exactly when it matters."""
+    branch = _git("rev-parse", "--abbrev-ref", "HEAD", check=False, cwd=cwd).stdout.strip()
     if not branch.startswith("port/"):
         return ("skip", "not a port branch")
-    if _git("status", "--porcelain", check=False).stdout.strip():
+    if _git("status", "--porcelain", check=False, cwd=cwd).stdout.strip():
         return ("dirty", "uncommitted changes -- not merging; commit or stash first")
-    _git("fetch", "-q", "origin", base_ref.split("/", 1)[-1], check=False)
-    substantive, inert = branch_drift(branch, base_ref)
+    _git("fetch", "-q", "origin", base_ref.split("/", 1)[-1], check=False, cwd=cwd)
+    substantive, inert = branch_drift(branch, base_ref, cwd=cwd)
     if not substantive:
         if not inert:
             return ("current", "up to date with the trunk")
@@ -2463,13 +2604,13 @@ def branch_sync(apply=False, base_ref="origin/main"):
         return ("would-merge", ", ".join(substantive[:4]))
     ensure_git_config()
     project = branch[len("port/"):]
-    pre = _git("rev-parse", "HEAD", check=False).stdout.strip()
+    pre = _git("rev-parse", "HEAD", check=False, cwd=cwd).stdout.strip()
     own = f"projects/{project}/"
-    r = _git("merge", "--no-edit", base_ref, check=False)
+    r = _git("merge", "--no-edit", base_ref, check=False, cwd=cwd)
     if r.returncode:
         conflicted = [c.strip() for c in
                       _git("diff", "--name-only", "--diff-filter=U",
-                           check=False).stdout.splitlines() if c.strip()]
+                           check=False, cwd=cwd).stdout.splitlines() if c.strip()]
         # A conflict confined to this branch's OWN project folder has a settled answer
         # and does not need a person: the branch owns that path. It happens on every
         # sync now rather than rarely -- the trunk deleted the folder when the project
@@ -2477,28 +2618,39 @@ def branch_sync(apply=False, base_ref="origin/main"):
         # that deletion. Aborting on it left five branches unable to take a trunk
         # merge at all, running tooling old enough that it could not read the very
         # records it was holding, and silently offering another project's work.
-        if conflicted and all(c.startswith(own) for c in conflicted):
-            _git("checkout", pre, "--", own, check=False)
-            _git("add", "--", own, check=False)
-            _git("commit", "--no-edit", "-q", check=False)
+        # README.md is GENERATED, so a conflict there is not a disagreement: both
+        # sides ran gen_readme against different sets of records. The trunk's board is
+        # the published one and gate_readme does not judge a port branch, so the
+        # trunk's version wins and the branch's own regeneration is simply dropped.
+        # Left unhandled it collides on every branch that ever regenerated the board,
+        # which is all of them.
+        settled = [c for c in conflicted if c.startswith(own) or c == "README.md"]
+        if conflicted and len(settled) == len(conflicted):
+            if any(c.startswith(own) for c in conflicted):
+                _git("checkout", pre, "--", own, check=False, cwd=cwd)
+                _git("add", "--", own, check=False, cwd=cwd)
+            if "README.md" in conflicted:
+                _git("checkout", base_ref, "--", "README.md", check=False, cwd=cwd)
+                _git("add", "--", "README.md", check=False, cwd=cwd)
+            _git("commit", "--no-edit", "-q", check=False, cwd=cwd)
         else:
-            _git("merge", "--abort", check=False)
+            _git("merge", "--abort", check=False, cwd=cwd)
             return ("conflict", f"merging {base_ref} conflicts outside "
-                                f"{own} -- resolve by hand: "
+                                f"{own} and README.md -- resolve by hand: "
                                 f"{', '.join(conflicted[:4] or substantive[:4])}")
     # The trunk does not carry an in-flight project's folder, and a branch with no
     # commits of its own fast-forwards straight onto that absence -- which is how the
     # bam canary lost its own state to a routine sync. Whatever the merge did to this
     # branch's project, the branch's version wins.
     if _git("cat-file", "-e", f"{pre}:projects/{project}/status.json",
-            check=False).returncode == 0:
-        _git("checkout", pre, "--", own, check=False)
-        if _git("diff", "--cached", "--name-only", check=False).stdout.strip():
+            check=False, cwd=cwd).returncode == 0:
+        _git("checkout", pre, "--", own, check=False, cwd=cwd)
+        if _git("diff", "--cached", "--name-only", check=False, cwd=cwd).stdout.strip():
             _git("commit", "-q", "-m",
-                 f"{project}: keep this branch's project state across the trunk merge")
+                 f"{project}: keep this branch's project state across the trunk merge", cwd=cwd)
     # Push so a sibling host reuses this merge instead of making its own; the branch
     # is shared, and two independent merges of the same trunk diverge for no reason.
-    _git("push", "-q", "origin", branch, check=False)
+    _git("push", "-q", "origin", branch, check=False, cwd=cwd)
     return ("merged", ", ".join(substantive[:4]))
 
 
@@ -2653,6 +2805,19 @@ def pr_ready(name):
 
     Returns (ready, blocking, nonviable)."""
     obj = load_status(name)
+
+    # Checked here and not only at adoption, because an opt-out usually arrives after
+    # we have already sent this owner a pull request -- that is what prompts it. This
+    # is the last gate before anything reaches their repository and the one both routes
+    # upstream pass through (the review PR and the publish step), so a request to stop
+    # binds work already finished, not just work not yet started. `optout.py record`
+    # also writes a disposition, which the next block would catch; this does not rely
+    # on that having happened.
+    opt = optout_for(upstream_full_name(name) or "")
+    if opt:
+        return (False, [("opted-out",
+                         f"{opt['who']} asked not to receive pull requests from this "
+                         f"effort ({opt['source']})")], [])
 
     # A recorded disposition settles the PR question: the project was delivered as a
     # validation-only record, or set aside as already-supported / non-viable /
@@ -3126,8 +3291,24 @@ def main(argv=None):
         print(f"{args.name}: license-ok={ok} ({why})")
         return 0 if ok else 1
     elif args.cmd == "set-review-pr":
+        # Retracting has its own flag, so the bare form must not also retract. `url` is
+        # optional, and omitting it -- a typo, a shell that ate the argument, or reading
+        # `set-review-pr <name>` as "show me this project's review PR" -- used to take
+        # the same path as `--clear`: it skipped the gate check, wrote null, printed
+        # `review PR -> None` and exited 0. That erases the one field saying where the
+        # port's approval lives, so the port drops out of `--publish` and comes back in
+        # `--review` as needing a PR it already has.
+        if not args.url and not args.clear:
+            try:
+                cur = load_status(args.name).get("review_pr") or "none recorded"
+            except (FileNotFoundError, ValueError) as e:
+                cur = f"unreadable -- {e}"
+            print(f"set-review-pr: no URL given. Pass one to record it, or --clear to "
+                  f"retract the recorded one. {args.name} currently: {cur}",
+                  file=sys.stderr)
+            return 2
         set_review_pr(args.name, None if args.clear else args.url)
-        print(f"{args.name}: review PR -> {args.url}")
+        print(f"{args.name}: review PR -> {'(cleared)' if args.clear else args.url}")
     elif args.cmd == "record-pr-approval":
         a = record_pr_approval(args.name, args.review_pr)
         print(f"{args.name}: approved by {a['approved_by']} for "

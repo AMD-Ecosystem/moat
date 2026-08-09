@@ -19,6 +19,7 @@ would hand everything back anyway -- and the round trip costs more than doing it
 
 ## The checkup, in order
 
+    gh issue list --repo AMD-Ecosystem/moat --label opt-out --state open   # anyone who asked us to stop
     bash utils/orient.sh                         # approved ports, fork releases, next work
     python3 utils/upstream.py --review           # finished ports with no review PR open
     python3 utils/upstream.py --attention        # who is waiting on us
@@ -27,13 +28,15 @@ would hand everything back anyway -- and the round trip costs more than doing it
     python3 utils/moatlib.py waivers             # gate waivers waiting on a maintainer
     python3 utils/deferred.py pending            # deferrals nobody has ruled on
 
-The first names any port whose approval is standing and whose gates are met. The second
+The first is section 0 and comes before everything else: a maintainer who asked us to
+stop is the one item here where continuing to work is worse than doing nothing. The
+second names any port whose approval is standing and whose gates are met. The third
 is where work piles up: a port cannot be approved until its review PR exists, and
 nothing opens one automatically, so ports sit finished and unreviewable -- 28 of them
 when this was written (30 now). `--review --apply --name <p> --title '<t>' --body-file <f>` opens
-one. The third lists open PRs where a maintainer asked for something, had the last word,
-or has gone quiet. The fourth catches a review GitHub still shows as green over content
-nobody approved. The fifth is bookkeeping. The sixth is section 6: a waiver nobody has
+one. The fourth lists open PRs where a maintainer asked for something, had the last word,
+or has gone quiet. The fifth catches a review GitHub still shows as green over content
+nobody approved. The sixth is bookkeeping. The seventh is section 6: a waiver nobody has
 answered is a finished port that cannot be submitted.
 
 Nothing runs on a schedule. This checkup IS the sweep, so the record only reconciles when
@@ -61,10 +64,17 @@ Your job is to snapshot what they approved:
     python3 utils/upstream.py --publish --apply    # open it, close the review PR
 
 That second command is the whole submission: it re-checks the approval, the gates, the
-licence and the vocabulary, opens the upstream PR with the approved title and body
+licence, the fork's cleanliness, and the title and body -- for in-house vocabulary and
+for hand-wrapping, since a maintainer may have asked for an edit and an edit is where
+both creep back in. It then opens the upstream PR with the approved title and body
 verbatim, records it, and closes the review PR. It runs where a human's credentials are --
 your session -- because opening a pull request on someone else's repository needs access
 no scheduled job can safely hold. `orient.sh` names any project waiting on it.
+
+The BRANCH's vocabulary is not re-scanned here, and does not need to be: every commit on
+it was scanned when the review PR was opened (`--review --apply` refuses on a hit, over
+the whole branch rather than the newest round), and nothing may land on it afterwards
+without voiding the approval. If a commit did land, the approval check catches it first.
 
 Under the hood it snapshots the approval first:
 
@@ -97,6 +107,26 @@ comments, an edited body, a re-request for review: none of these were read by an
 is its own act, and each needs its own explicit yes. Draft it, show it, wait. **You never
 speak for the project unprompted**, and an approval given for one post never carries to the
 next.
+
+## 0. Anyone who asked us to stop
+
+    gh issue list --repo AMD-Ecosystem/moat --label opt-out --state open
+    python3 utils/optout.py record <owner|owner/repo> --source <issue or comment URL>
+
+A request can arrive as an issue here or as a comment on any of our pull requests, so
+`--attention` (section 2) is the other place it turns up. Read it as an opt-out on the
+plainest reading and do not ask for a reason -- nobody owes us one, and the cost of
+honouring an ambiguous no is one project.
+
+Recording it is the one decision of this kind an agent may make alone: it is the
+maintainer's decision, carried into the record, and it can only ever cause less work.
+It retires the projects it covers and blocks discovery, adoption and both routes
+upstream. What is left over -- closing the open pull request, deleting the fork -- is
+visible on their repository and stays with a person; the command prints exactly what
+to run.
+
+Then reply once on the thread, saying it is done and that nothing further will arrive.
+That is an upstream-visible post like any other and needs its own approval.
 
 ## 1. Opening the PR
 
@@ -220,8 +250,8 @@ refusal just makes the block a known quantity.
 Waiving is not the only answer, and often not the right one. A gate that no arch can
 satisfy because the CODEBASE cannot be ported is `set-not-portable`; a gate failing on
 one card because of a toolchain or library defect is a per-arch `blocked` flag with the
-report filed in `data/deferred.json`, and it gates nothing as long as a sibling arch
-carrying the same attribute passes.
+report registered against that project (`deferred.py add --project <name>`, see section
+7), and it gates nothing as long as a sibling arch carrying the same attribute passes.
 
 ## 7. Deferrals nobody has ruled on
 

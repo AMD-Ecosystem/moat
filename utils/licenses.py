@@ -180,9 +180,11 @@ def main():
     if a.cmd == "audit":
         sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
         import moatlib
+        # Across refs, not the folders on this branch. Globbing the working tree
+        # counted 50 of 138 adopted projects and called it the total, so a licence
+        # question about any project in flight was answered by not looking at it.
         rows = []
-        for sp in sorted((REPO_ROOT / "projects").glob("*/status.json")):
-            n = sp.parent.name
+        for n, _obj, _where in moatlib.project_records():
             disp = moatlib.get_disposition(moatlib.upstream_full_name(n) or "") or {}
             rows.append((n, disp.get("reason")))
         print(f"{len(rows)} adopted projects; run `check <owner/repo>` per project "
