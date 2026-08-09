@@ -134,7 +134,9 @@ Prose in notes.md cannot be rendered into a table, and a queue nobody can read a
 glance is one people approve without reading. `--summary` is the whole of what most
 reviewers will see, so make it the sentence you would want them to decide on.
 
-Then commit with `moatlib.py commit-project <name> "<msg>"`. Your screen joins the
+Then commit with `moatlib.py commit-project <name> "<msg>"`. Bracket the whole run
+with `utils/session.sh <name> <platform> start|end` so session wall-clock is
+recorded (CLAUDE.md, Telemetry and committing). Your screen joins the
 single intake queue -- `python3 utils/intake_queue.py publish --apply` -- where one
 person decides the whole batch at once. Do NOT open a per-project pull request for
 the screen: four of those on 2026-08-06 cost four sets of clicks for one question.

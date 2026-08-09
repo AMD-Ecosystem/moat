@@ -32,9 +32,9 @@ The first is section 0 and comes before everything else: a maintainer who asked 
 stop is the one item here where continuing to work is worse than doing nothing. The
 second names any port whose approval is standing and whose gates are met. The third
 is where work piles up: a port cannot be approved until its review PR exists, and
-nothing opens one automatically, so ports sit finished and unreviewable -- 28 of them
-when this was written (30 now). `--review --apply --name <p> --title '<t>' --body-file <f>` opens
-one. The fourth lists open PRs where a maintainer asked for something, had the last word,
+nothing opens one automatically, so ports sit finished and unreviewable -- the report
+names them all; do not trust any remembered count.
+`--review --apply --name <p> --title '<t>' --body-file <f>` opens one. The fourth lists open PRs where a maintainer asked for something, had the last word,
 or has gone quiet. The fifth catches a review GitHub still shows as green over content
 nobody approved. The sixth is bookkeeping. The seventh is section 6: a waiver nobody has
 answered is a finished port that cannot be submitted.
@@ -64,7 +64,9 @@ Your job is to snapshot what they approved:
     python3 utils/upstream.py --publish --apply    # open it, close the review PR
 
 That second command is the whole submission: it re-checks the approval, the gates, the
-licence, the fork's cleanliness, and the title and body -- for in-house vocabulary and
+licence, the fork's cleanliness (only where this host has the fork clone -- a host
+without one has nothing to judge and the report says so, since the check already ran
+on the hosts that validated), and the title and body -- for in-house vocabulary and
 for hand-wrapping, since a maintainer may have asked for an edit and an edit is where
 both creep back in. It then opens the upstream PR with the approved title and body
 verbatim, records it, and closes the review PR. It runs where a human's credentials are --
@@ -134,9 +136,10 @@ Preconditions, all of them:
 - A standing approval: `moatlib.py pr-approval <name>` must pass.
 - Every required gate satisfied (`moatlib.py pr-ready <name>`), or a maintainer-approved
   waiver. An agent-suggested waiver satisfies nothing.
-- No disposition recorded in `data/dispositions.json`. A project with one has been
-  settled some other way -- delivered as a validation record, already supported
-  upstream, or set aside -- and is not a PR candidate.
+- No skip disposition recorded in `data/dispositions.json`. A skip means the project
+  was settled some other way -- delivered as a validation record, already supported
+  upstream, or set aside -- and is not a PR candidate. (A `verify` flag from
+  `triage.py verify` settles nothing and does not block.)
 - The fork's working tree is clean. A validation built against uncommitted edits produces
   an unbuildable PR; this stranded baspacho and arrayfire.
 
@@ -150,8 +153,11 @@ have no idea what those mean. Keep the technical rationale, drop the in-house la
 which GPUs it was tested on and what passed.
 
 Check it mechanically before showing it for approval -- `python3 utils/jargon.py -` on the
-drafted body, and `--commits <base>..HEAD` on the branch. This rule was written down and
-still kept reaching PRs, which is why it is now a command rather than a reminder.
+drafted body, and `--port <name>` on the branch. Never a hand-typed `--commits` range:
+that is how the check once got scoped to the newest commit and stayed that way through
+a full review, and a bare range also skips the added-lines scan the review gate runs.
+This rule was written down and still kept reaching PRs, which is why it is now a
+command rather than a reminder.
 
 Then record it: `moatlib.py set-pr-open <name> <pr_url> <pr_number>`.
 

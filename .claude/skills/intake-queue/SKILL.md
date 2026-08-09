@@ -45,9 +45,14 @@ Never act on your reading of prose directly. Reply in-thread with what you under
 that:
 
     python3 utils/intake_queue.py apply \
-      --decline uos/rmagine:cant-port \
-      --decline foo/bar:already-supported \
-      --note "<their words, quoted>" --apply
+      --decline uos/rmagine:cant-port --note "<their words on rmagine, quoted>" \
+      --decline foo/bar:already-supported --note "<their words on foo/bar, quoted>" \
+      --apply
+
+Notes pair with declines positionally -- one `--note` per `--decline`, each carrying
+what the person said about THAT project. A single shared note puts every project's
+reasoning on every record, and the note is the only thing a person sees when the
+project resurfaces years later.
 
 That branches from the trunk, writes those dispositions (plus the regenerated board,
 which moves with them), and opens one small PR. The person MERGES it -- one click, on

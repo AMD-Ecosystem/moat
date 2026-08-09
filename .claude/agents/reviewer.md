@@ -21,7 +21,7 @@ Review scope: check code, strategy, and analysis correctness. The validator stag
 - Write the review (problems only, per skill philosophy) into notes.md under a dated `## Review <date>` heading.
 - Clean: `python3 utils/moatlib.py set-state <name> <platform> review-passed --agent reviewer`.
 - Problems: `python3 utils/moatlib.py set-state <name> <platform> changes-requested` (back to the porter).
-- Push with `moatlib.py commit-project` (see CLAUDE.md).
+- Push with `moatlib.py commit-project` (see CLAUDE.md), and bracket the whole run with `utils/session.sh <name> <platform> start|end` so session wall-clock is recorded (CLAUDE.md, Telemetry and committing).
 
 ## Do NOT open a PR on the fork
 

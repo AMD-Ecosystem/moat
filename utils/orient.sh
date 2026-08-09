@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # MOAT entrypoint. Pull the latest MOAT state, detect this host's AMD arch, pick
 # the single next project + stage for this platform, and print a dispatch
-# summary. Read-only on state except fork releases. Run this (or /port-next) when starting a CLI in the MOAT repo.
+# summary. Standing upkeep on the way writes and pushes: hook/merge-driver
+# registration, the trunk-into-branch sync merge, and fork releases. Selection
+# itself is read-only. Run this (or /port-next) when starting a CLI in the MOAT repo.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 

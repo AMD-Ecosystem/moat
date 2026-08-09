@@ -113,13 +113,21 @@ STAGE_TRANSITIONS = {
     # screens an unadopted project and parks it for the fork decision, in one step.
     # Requiring screened first made the documented instruction illegal, and agents
     # compensated by transitioning twice -- which worked, and hid the contradiction.
-    "unclaimed": {"screened", "planned", "awaiting-fork"},
-    "screened": {"awaiting-fork", "planning", "planned"},
+    "unclaimed": {"screened", "awaiting-fork"},
+    "screened": {"awaiting-fork", "planning"},
     # `planning` exists to be ACQUIRED. A planner writes plan.md, which is one shared
     # artifact on a shared branch, and two of them produce two different strategies
     # that no merge can reconcile -- plan.md has no merge driver, so the second push
     # hard-conflicts and one analysis is stranded. The porter had this solved and the
     # planner did not, on the reasoning that only the fork needs serialising.
+    #
+    # unclaimed and screened had direct `-> planned` edges from before the lock
+    # existed, and they survived its introduction -- a planner taking either one wrote
+    # plan.md having never entered the stage that serialises writing it. Removed:
+    # any route that is about to WRITE a plan goes through `planning`. The stages
+    # that RESTORE an already-written plan (awaiting-fork, awaiting-upstream,
+    # not-portable below) keep their direct edge, because re-entering `planned`
+    # there records a fact about an existing plan.md, not a new analysis.
     "planning": {"planned", "screened"},
     "awaiting-fork": {"screened", "planned", "porting"},
     "awaiting-upstream": {"planned", "porting", "unclaimed"},
@@ -2110,6 +2118,12 @@ def fleet(platform):
         if task is None or unmet_deps(obj):
             continue
         agent, state = task
+        # The same exclusion `actionable` applies: porter/planner work whose lock
+        # another arch holds is not dispatchable anywhere, and naming its branch
+        # here sends a checkout at a guaranteed `next: NONE`.
+        lock = obj.get("porting")
+        if lock and lock.get("arch") != platform and agent in EXCLUSIVE_AGENTS:
+            continue
         # The branch as the remote actually spells it, so a caller can print a
         # checkout command that works even when the branch case-folds the name
         # (port/hami-core for HAMi-core). Reconstructing port/<project> does not.
@@ -3345,6 +3359,12 @@ def main(argv=None):
     elif args.cmd == "pr-ready":
         ready, blocking, nonviable = pr_ready(args.name)
         print(f"{args.name}: PR-ready={ready}")
+        if not _fork_repo(args.name).is_dir():
+            # The cleanliness gate needs the clone: absent, there is nothing to
+            # judge, and silence here read as "checked and clean" when it meant
+            # "not checkable on this host".
+            print("  note: no local fork clone, so fork cleanliness was NOT "
+                  "re-checked here -- it was enforced on the hosts that validated")
         if blocking:
             print("  BLOCKING (every required gate needs ONE completed arch at head_sha, "
                   "or an approved waiver; fork must be clean): "

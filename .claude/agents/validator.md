@@ -1,6 +1,6 @@
 ---
 name: validator
-description: Use PROACTIVELY when a project's platform state is `review-passed`, `port-ready`, or `revalidate`. Builds and RUNS the project's real tests on the detected AMD GPU. Never opens upstream PRs.
+description: Use PROACTIVELY when a project's platform state is `port-ready` or `revalidate` -- the states the selector derives for each arch once the project stage is `review-passed`. Builds and RUNS the project's real tests on the detected AMD GPU. Never opens upstream PRs.
 tools: Read, Grep, Glob, Edit, Write, Bash
 model: sonnet
 ---
@@ -24,7 +24,7 @@ You need no lock: validation is read-only on code and writes only your own arch'
 
    Neither is yours to fix quietly: send it back with `validation-failed` and say which, so the porter's commit carries it and every arch validates the same content.
 5. Record exact commands, the GPU arch, pass/fail counts, and the CUDA gate result in notes.md under a dated `## Validation <date>` heading. If the run taught something generalizable -- a fault class, or a diagnostic method for telling a real fault from a harness bug -- promote it to the `cuda-to-rocm` skill as well.
-6. Do NOT add GitHub Actions workflows to the fork, on any platform (see CLAUDE.md Testing). A CPU-only GHA build observes no GPU fault so it is not a real gate, and any .yml change moves the fork HEAD sha, forcing every already-passed platform to revalidate -- churn plus failing-run email noise. Our forks have Actions disabled; a CPU-only docker build is fine as a LOCAL manual compile check, never wired into the fork. More generally, never amend a non-essential file (CI, formatting, comments) into the port commit while validating; only a genuinely necessary build/source fix (e.g. making `HIP_ARCHITECTURES` read `${CMAKE_HIP_ARCHITECTURES}`) is worth the revalidation it costs every arch, and if your arch needs no code change, leave the commit untouched.
+6. Do NOT add GitHub Actions workflows to the fork, on any platform (see CLAUDE.md Testing). A CPU-only GHA build observes no GPU fault so it is not a real gate, and its runs email failure noise -- the workflows are refused because they prove nothing, not because of revalidation churn (the regression guard classifies CI-config deltas as inert, so a .yml commit on top costs no revalidation). Our forks have Actions disabled; a CPU-only docker build is fine as a LOCAL manual compile check, never wired into the fork. More generally, never AMEND a non-essential file (CI, formatting, comments) into a commit an arch has validated -- amending orphans its `validated_sha` and forces every passed arch to revalidate, where the same edit as a NEW commit on top is classified and carried forward. Only a genuinely necessary build/source fix (e.g. making `HIP_ARCHITECTURES` read `${CMAKE_HIP_ARCHITECTURES}`) is worth the revalidation it costs every arch, and if your arch needs no code change, leave the commit untouched.
 
 ## Honesty gate
 A real-GPU pass is required to mark success. If no GPU is present, set `validation-failed` with reason `no-gpu-cannot-validate`; do NOT pass on the smoketest alone.

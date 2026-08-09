@@ -655,8 +655,17 @@ def report_publish(apply):
     for r in rows:
         bad = publish_blockers(r["name"], r)
         (held if bad else ready).append({**r, "blockers": bad})
+    clone_less = [r for r in ready
+                  if not (REPO / "projects" / r["name"] / "src").is_dir()]
     for r in ready:
         print(f"  READY      {r['name']:26} \"{r['title'][:58]}\"")
+    if clone_less:
+        # pr_ready's cleanliness gate has nothing to judge without the clone, and
+        # saying nothing read as "checked and clean" on submission hosts that had
+        # never built the port. The check binds where the validations ran.
+        print(f"  note: no local fork clone for "
+              f"{', '.join(r['name'] for r in clone_less)} -- fork cleanliness was "
+              f"not re-checked here, only on the hosts that validated")
     for r in held:
         print(f"  HELD       {r['name']:26} {r['blockers'][0][:78]}")
         for b in r["blockers"][1:]:

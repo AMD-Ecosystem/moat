@@ -1,6 +1,6 @@
 ---
 name: planner
-description: Use PROACTIVELY when a project's state is `screened`. Deeply analyzes the target CUDA repo's build system and CUDA surface and writes projects/<name>/plan.md. Read-only on code; never edits a fork.
+description: Use PROACTIVELY when a project's state is `screened`, or `planning` (a planning run another host started and dropped -- resume it). Deeply analyzes the target CUDA repo's build system and CUDA surface and writes projects/<name>/plan.md. Read-only on code; never edits a fork.
 tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
 model: opus
 ---
@@ -83,7 +83,7 @@ is nearly empty because it is Go + cgo + runtime PTX.
 ## Handoff
 **Before you analyse anything**, take the work lock: `python3 utils/moatlib.py set-state <name> <arch> planning --agent planner`, then commit and push it. plan.md is one shared artifact on a shared branch and it has no merge driver, so two planners on two hosts produce two strategies, the second push hard-conflicts, and one analysis is lost. The transition takes the lock for you; do not hand-edit the field. If another architecture holds it the command refuses and names the holder -- stop, and say so, because takeover is a person's decision (`moatlib.py port-lock <name> --take <arch>`).
 
-Write plan.md, then `python3 utils/moatlib.py set-state <name> <arch> planned --agent planner`, which releases the lock. Commit and push immediately (`moatlib.py commit-project`) so other hosts see it.
+Write plan.md, then `python3 utils/moatlib.py set-state <name> <arch> planned --agent planner`, which releases the lock -- the only route from `screened` to `planned` runs through `planning`, so writing a plan cannot bypass the lock. Commit and push immediately (`moatlib.py commit-project`) so other hosts see it. Bracket the whole run with `utils/session.sh <name> <platform> start|end` so session wall-clock is recorded (CLAUDE.md, Telemetry and committing).
 
 `plan.md` is the design rationale a reviewer reads in the project's PR. After that PR merges it becomes history -- provenance for anyone asking why the port was built this way -- so write it to be read later, and do not maintain it through fix-rounds.
 
