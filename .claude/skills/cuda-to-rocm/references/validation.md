@@ -90,6 +90,34 @@ accumulation divergence rather than a port bug, and RDNA3.5 (gfx1151) is where i
 shown up. Record the error magnitude and stop rather than chasing it deep: the
 comparison that matters is against the other architectures, not against a fix.
 
+### Ruling out "stale tree" and "toolchain version" before accepting "genuinely arch-specific"
+
+GooFit's HIP backend diverges an unbinned maximum-likelihood fit to a fitted
+parameter's upper bound on gfx90a (`alpha` lands at the +10 bound instead of the
+true -1, `FunctionMinimum is invalid: Edm is above max`, 21/25 ctest failures) while
+the identical committed tree passes cleanly on gfx1100 (wave32) and on the CPP/OMP
+backend, both giving the correct `alpha = -1.001102381`. Before accepting "genuinely
+wave64-specific" as the conclusion, rule out the two cheaper explanations first,
+because both have produced a false "arch-specific" report on this same project
+before a validator settled it:
+
+1. **Stale/uncommitted tree.** Reproduce from a *fresh clone* of the exact
+   `head_sha`, not a working tree that may have accumulated local edits from earlier
+   debugging. `git status --porcelain` clean before the build is necessary but not
+   sufficient -- clone fresh if there is any doubt.
+2. **Toolchain/driver version drift.** Compare the ROCm/clang version string
+   (`hipcc --version`) against whatever version the passing arch's record names. A
+   divergence that appears only on a newer or older ROCm than the passing run's is a
+   toolchain regression to report, not an arch fault.
+
+Only once both are pinned identical to a passing run does "wrong on this arch only"
+stand as a finding. For GooFit specifically: same ROCm 7.2.1 series hipcc that an
+earlier passing gfx90a attempt used, freshly cloned at the validated `head_sha`, and
+kernels do dispatch (`AMD_LOG_LEVEL=3` shows 112 `hipLaunchKernel` calls, `roc-obj-ls`
+shows one gfx90a code object) -- so the divergence is real GPU execution producing a
+wrong answer, not a build or environment artifact. That is when this becomes the "one
+architecture gets wrong numbers" case below rather than something to keep debugging.
+
 ## Diagnosing a suspected AMD fault before escalating
 
 Two patterns that each cost a deep investigation before the real cause was found.
