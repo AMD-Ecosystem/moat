@@ -883,3 +883,124 @@ defects. No TDR or GPU wedge. State -> completed at d38c7aa.
 Arch: gfx1101 (Radeon PRO V710, RDNA3)
 ROCm: TheRock 7.14.0a20260604
 Test suite: 36/40 PASS
+
+## Revalidation 2026-08-09 (linux-gfx90a, MI250X)
+
+Triggered by HEAD advancing a7ecad7 -> d38c7aa on record (status.json still
+carried gfx90a's validated_sha at a7ecad7 even though the 2026-06-17
+performance-investigation note claimed gfx90a was already re-checked at
+d38c7aa -- the state transition to `completed` at d38c7aa was never actually
+recorded for this arch, so this run makes it real). `src` was absent in this
+worktree; cloned the fork fresh from `https://github.com/AMD-Ecosystem/mcx.git`
+and checked out `moat-port` (HEAD d38c7aa, 2 commits: a7ecad7 port + d38c7aa
+atomics/fast-math). GPU: AMD Instinct MI250X (gfx90a), HIP_VISIBLE_DEVICES=0,
+confirmed via `rocm-smi` and `mcx -L`.
+
+### Classification
+
+```
+python3 utils/moatlib.py classify mcx a7ecad73548d91e935f8d6e1a992664f0b9c1346 d38c7aaa2f8d
+class=mixed arch_independent=False inert=False
+src/CMakeLists.txt: mixed (literal token differs)
+```
+
+The delta is exactly `-munsafe-fp-atomics -ffast-math` added to
+`CMAKE_HIP_FLAGS` (HIP branch only; CUDA else-branch untouched) -- a
+functional codegen change, not comment/format-only. Consistent with the
+gfx1100/gfx1201 revalidations of this same delta, which both required a full
+real-GPU run rather than binary-equivalence carry-forward. No carry-forward
+attempted; ran the real suite.
+
+### Build
+
+```bash
+export HIP_VISIBLE_DEVICES=0
+cd projects/mcx/src
+rm -rf build && mkdir build && cd build
+cmake ../src -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+    -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ \
+    -DBUILD_MEX=OFF -DBUILD_PYTHON=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build . -j128
+```
+
+Build: success, no errors (pre-existing gcc fortify/uninitialized warnings in
+mcx_utils.c only, unrelated to this port). Confirmed flags in
+`CMakeFiles/mcx.dir/flags.make`: `-DUSE_HIP -DUSE_ATOMIC -DSAVE_DETECTORS
+-munsafe-fp-atomics -ffast-math -O3 --offload-arch=gfx90a`.
+
+### Physics benchmarks (1e6 photons, GPU-executed)
+
+| Benchmark    | Result   | Expected |
+|--------------|----------|----------|
+| cube60       | 17.85%   | ~17%     |
+| cube60b      | 27.39%   | ~27%     |
+| cube60planar | 25.51%   | ~25%     |
+| spherebox    | 11.06%   | ~11%     |
+| skinvessel   | 39.80%   | ~39%     |
+
+Determinism: `-E 12345` gives 27.39674% identically on two independent runs.
+Reflection fix and native-atomics/fast-math flags both confirmed correct on
+gfx90a.
+
+### Test suite
+
+```
+HIP_VISIBLE_DEVICES=0 bash test/testmcx.sh   # run from test/
+```
+
+Result: **36/40 PASS** (4 non-blocking, identical set to the 2026-06-12
+gfx90a validation):
+1. "dump json input with volume": greps an exact zlib base64 string; our
+   zlib emits a valid but different header. Host-zlib artifact, arch-independent.
+2. "saving photon seeds": greps an exact "after encoding: 13x.x%" string;
+   compression-ratio brittleness, same host-zlib issue.
+3. "photon replay -E" / 4. "photon replay": test script requests
+   `replaytest_detp.jdat`; code produces `.jdt` (upstream renamed the
+   extension in 6d7a81a, pre-dating this port). Verified manually with the
+   correct extension: `simulated 2999 == detected 2999`, absorbed 35.62%
+   (expected 30-38% band) -- replay is correct. Upstream test staleness, not
+   a port defect.
+
+### CUDA no-regression gate
+
+Not previously recorded at head_sha d38c7aa (only recorded at the earlier
+0803c7c-equivalent sha). Re-ran since only the HIP branch changed:
+
+```bash
+export PATH=/opt/conda/envs/cuda-12.8/bin:/opt/conda/envs/cuda-12.8/nvvm/bin:$PATH
+cd projects/mcx/src
+rm -rf build_cuda && mkdir build_cuda && cd build_cuda
+cmake ../src -DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=80 \
+    -DBUILD_MEX=OFF -DBUILD_PYTHON=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build . -j$(nproc)
+```
+
+Result: PASS, no errors (legacy FindCUDA path, same warnings-only build as
+the 2026-06-12 gate). Confirms the atomics/fast-math flag addition is scoped
+to the HIP branch only and does not touch CUDA compilation.
+
+### Jargon / documentation gate
+
+`python3 utils/jargon.py --port mcx` -> clean. README.md documents the ROCm
+build (`-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a`) directly alongside
+the CUDA build instructions (house style).
+
+### Fork state
+
+Cloned fresh, checked out `moat-port` @ d38c7aa. `git status --porcelain`:
+only untracked build directories and test-run output artifacts (`.jnii`,
+`.jdt`, `bin/`, `build*/`, `lib/`); no modified tracked files. No source
+changes needed for this arch.
+
+### Verdict: PASS
+
+36/40 tests pass; the 4 failures are the same documented upstream/host
+staleness as every prior gfx90a/gfx1100/gfx1201 run. All physics benchmarks
+within expected ranges; native-atomics + fast-math flags verified correct on
+gfx90a (MI250X). CUDA gate passes. State -> completed at d38c7aa.
+
+Arch: gfx90a (MI250X)
+ROCm: 7.2 (system), CUDA gate via conda cuda-12.8 (nvcc 12.8.93)
+Test suite: 36/40 PASS
+Wall clock (utils/timeit.sh): compile 57.6s, test suite 125.9s (exit 4 = 4
+failing tests, script itself ran clean), cuda-compile 56.9s

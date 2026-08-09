@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:23:31Z",
-  "updated_at": "2026-08-07T07:05:18Z",
+  "updated_at": "2026-08-09T00:27:13Z",
   "head_sha": "d38c7aaa2f8d",
   "depends_on": [],
   "pr_url": "https://github.com/fangq/mcx/pull/264",
@@ -100,10 +100,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "a7ecad73548d91e935f8d6e1a992664f0b9c1346",
+      "validated_sha": "d38c7aaa2f8d",
       "started_at": "2026-06-04T23:45:54Z",
-      "completed_at": "2026-06-12T14:30:16Z",
-      "updated_at": "2026-06-18T18:54:00Z",
+      "completed_at": "2026-08-09T00:27:13Z",
+      "updated_at": "2026-08-09T00:27:13Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -117,15 +117,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "moat-checkup",
-      "carry_forward": {
-        "from": "cd4b395",
-        "to": "dcbd61d",
-        "method": "source-class",
-        "class": "comment-only",
-        "detail": "src/cuda_to_hip.h: comment-only (comments/format only); src/mcx_vector_types.h: comment-only (comments/format only)",
-        "at": "2026-06-16T16:37:58Z"
-      }
+      "last_agent": "validator"
     }
   }
 }

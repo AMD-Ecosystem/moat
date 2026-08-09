@@ -86,3 +86,6 @@
 {"kind":"phase","ts":"2026-06-20T03:18:53Z","phase":"test","seconds":7.756,"exit":4,"cmd":"bash -c cd '/b/develop/moat/projects/mcx/src/test' && bash testmcx.sh"}
 {"kind":"session","ts":"2026-06-20T03:19:12Z","epoch":1781925552.451998400,"event":"end","platform":"windows-gfx1101"}
 {"kind": "tokens", "ts": "2026-06-20T03:20:49Z", "tokens": 70513, "source": "validator (gfx1101)"}
+{"kind":"phase","ts":"2026-08-09T00:22:23Z","phase":"compile","seconds":57.594,"exit":0,"cmd":"cmake --build projects/mcx/src/build -j128"}
+{"kind":"phase","ts":"2026-08-09T00:25:08Z","phase":"test","seconds":125.910,"exit":4,"cmd":"bash -c cd projects/mcx/src/test && HIP_VISIBLE_DEVICES=0 bash testmcx.sh"}
+{"kind":"phase","ts":"2026-08-09T00:26:53Z","phase":"cuda-compile","seconds":56.894,"exit":0,"cmd":"cmake --build projects/mcx/src/build_cuda -j128"}
