@@ -7,8 +7,8 @@
   "priority": 5.757,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-08-09T00:12:30Z",
-  "head_sha": "92912b1c12273c36368279ec4a3410e428503e20",
+  "updated_at": "2026-08-09T00:27:49Z",
+  "head_sha": "b6f7db06b05d92fd5bb5aede987e191793457e98",
   "pr_url": "https://github.com/k2-fsa/k2/pull/1353",
   "pr_number": 1353,
   "pr_opened_at": "2026-06-11T17:27:05Z",
@@ -24,10 +24,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "92912b1c12273c36368279ec4a3410e428503e20",
+      "validated_sha": "b6f7db06b05d92fd5bb5aede987e191793457e98",
       "started_at": null,
       "completed_at": "2026-06-23T22:08:43Z",
-      "updated_at": "2026-06-23T22:08:43Z",
+      "updated_at": "2026-08-09T00:27:26Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -53,10 +53,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "92912b1c12273c36368279ec4a3410e428503e20",
+      "validated_sha": "b6f7db06b05d92fd5bb5aede987e191793457e98",
       "started_at": null,
       "completed_at": "2026-06-23T22:08:43Z",
-      "updated_at": "2026-06-23T22:08:43Z",
+      "updated_at": "2026-08-09T00:27:26Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -79,13 +79,13 @@
       }
     },
     "linux-gfx90a": {
-      "state": "validation-failed",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "efb407d8338c626f54386c730fc5cba817a3b3de",
+      "validated_sha": "b6f7db06b05d92fd5bb5aede987e191793457e98",
       "started_at": "2026-05-31T02:39:49Z",
-      "completed_at": "2026-06-11T16:05:09Z",
-      "updated_at": "2026-08-09T00:12:30Z",
+      "completed_at": "2026-08-09T00:27:49Z",
+      "updated_at": "2026-08-09T00:27:49Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -100,24 +100,16 @@
         "last_session_at": null
       },
       "last_agent": "validator",
-      "carry_forward": {
-        "from": "c8e1cf6fc7c080fc1af0f1e689a12b608ce79096",
-        "to": "fd3c31a5dcbd7874d85aec64da7732ed1b98157e",
-        "method": "source-class",
-        "class": "comment-only",
-        "detail": "cmake/torch.cmake: comment-only (comments/format only)",
-        "at": "2026-06-11T17:25:17Z"
-      },
       "failed_sha": "92912b1c12273c36368279ec4a3410e428503e20"
     },
     "linux-gfx1100": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "92912b1c12273c36368279ec4a3410e428503e20",
+      "validated_sha": "b6f7db06b05d92fd5bb5aede987e191793457e98",
       "started_at": "2026-05-31T08:47:00Z",
       "completed_at": "2026-06-23T22:08:43Z",
-      "updated_at": "2026-06-23T22:08:43Z",
+      "updated_at": "2026-08-09T00:27:26Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,

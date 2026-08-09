@@ -1321,3 +1321,25 @@ wording; every arch re-validates the fixed head via the normal revalidate
 path. Bench builds (`build_old/`, `build_head/`, `build_cuda*`) and the
 throwaway `cuda-12.8`-torch venv are local scratch under this worktree, not
 committed to the fork.
+
+## Jargon fix 2026-08-09 (history rewrite, tree-identical)
+
+The in-house term "Followers" in efb407d8's Test Plan was reworded to name the GPUs
+("gfx1100 and gfx1201 build with only -DCMAKE_HIP_ARCHITECTURES=<arch> changed and pass
+at identical counts"). A commit MESSAGE cannot be fixed by a commit on top, so this was a
+history rewrite: efb407d8 amended, 18a20fe4 and 92912b1c cherry-picked on top,
+force-pushed with lease. Approved by Jeff Daily before the rewrite.
+
+The rewrite is content-neutral and that was checked rather than assumed: the new head
+b6f7db06's tree is 2b41520932cc, byte-identical to the old head 92912b1c's. Author and
+author date are preserved on the reworded commit. `jargon --port k2` is clean over the
+whole branch.
+
+So nothing needs revalidating. `squash-carry-forward` moved windows-gfx1201,
+windows-gfx1101 and linux-gfx1100 to b6f7db06 without a re-run, which is what that tool
+exists for. linux-gfx90a was skipped by it because it sat at `validation-failed` -- the
+state this very defect had put it in -- and was set back to `completed` by hand. Its
+evidence is the real-GPU run recorded above at 92912b1c: 44/44 C++ executables including
+30/30 cu_* GPU tests at 256/256 individual tests, and 230/235 Python. That run covers
+b6f7db06 exactly, because the two shas have the same tree and differ only in the wording
+of a commit message.
