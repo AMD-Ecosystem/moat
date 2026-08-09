@@ -2427,20 +2427,28 @@ def make_worktree(name, path=None, base_ref="origin/main"):
     if not _git("rev-parse", "--verify", "-q", ref, check=False).stdout.strip():
         raise ValueError(f"{ref} does not exist; this project has no port branch")
     # The `-B` below force-resets an existing local port/<name> onto the remote, which
-    # is what makes a worktree reproducible and is silent when the local branch is
-    # AHEAD. That is not hypothetical: commit_and_push gives up after three failed
-    # pushes and says so, leaving the work committed locally and nowhere else.
+    # is what makes a worktree reproducible and is silent when the local branch holds
+    # work the remote does not. That is not hypothetical: commit_and_push gives up
+    # after three failed pushes and says so, leaving the work committed locally.
+    #
+    # Count by PATCH-ID rather than ancestry. A remote that was rebased, squashed or
+    # re-cut leaves the local ref on an old line whose shas are all absent from the
+    # remote while every CHANGE on it is already there; ancestry calls that 37 commits
+    # at risk when the honest answer is none, and a check that cries wolf that loudly
+    # is one people learn to skip. `git cherry` marks those `-` and only genuinely new
+    # work `+`, and when everything is `-` the reset discards nothing and should just
+    # proceed -- which is the common case.
     local = f"port/{name}"
     if _git("rev-parse", "--verify", "-q", local, check=False).stdout.strip():
-        ahead = [ln.strip() for ln in
-                 _git("log", "--oneline", f"{ref}..{local}", check=False).stdout.splitlines()
-                 if ln.strip()]
-        if ahead:
+        only_here = [f"{sha[:9]} {subject[:60]}" for sha, _, subject in
+                     (ln[2:].strip().partition(" ") for ln in
+                      _git("cherry", "-v", ref, local, check=False).stdout.splitlines()
+                      if ln.startswith("+"))]
+        if only_here:
             raise ValueError(
-                f"{name}: local {local} is {len(ahead)} commit(s) ahead of {ref}, and "
-                f"creating the worktree would reset it and discard them: "
-                f"{'; '.join(ahead[:3])}. Push them, or delete the local branch if they "
-                f"are not wanted.")
+                f"{name}: {len(only_here)} commit(s) exist only on the local {local}, and "
+                f"creating the worktree would reset it onto {ref} and discard them: "
+                f"{'; '.join(only_here[:3])}. Push them first.")
     path.parent.mkdir(parents=True, exist_ok=True)
     r = _git("worktree", "add", "-q", "-B", local, str(path), ref, check=False)
     if r.returncode:
