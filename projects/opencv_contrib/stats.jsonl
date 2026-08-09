@@ -157,3 +157,5 @@
 {"kind":"phase","ts":"2026-06-20T04:46:54Z","phase":"test","seconds":5.831,"exit":1,"cmd":"B:/develop/moat/projects/opencv_contrib/build_gfx1101/bin/opencv_test_cudaoptflow.exe"}
 {"kind":"session","ts":"2026-06-20T04:48:21Z","epoch":1781930901.333481600,"event":"end","platform":"windows-gfx1101"}
 {"kind": "tokens", "ts": "2026-06-20T04:49:11Z", "tokens": 106460, "source": "validator (gfx1101)"}
+{"kind":"phase","ts":"2026-08-09T15:33:06Z","phase":"compile","seconds":93.985,"exit":0,"cmd":"cmake --build projects/opencv_contrib/build_codeobj_new --target opencv_cudacodec -j128"}
+{"kind":"phase","ts":"2026-08-09T15:35:20Z","phase":"compile","seconds":91.190,"exit":0,"cmd":"cmake --build projects/opencv_contrib/build_codeobj_old --target opencv_cudacodec -j128"}

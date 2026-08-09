@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-06-09T22:04:50Z",
-  "updated_at": "2026-08-07T07:05:24Z",
+  "updated_at": "2026-08-09T15:37:37Z",
   "head_sha": "041d5528286a81465828a668d014035e149f6a97",
   "depends_on": [],
   "pr_url": "https://github.com/opencv/opencv_contrib/pull/4147",
@@ -106,10 +106,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "ad105bb5914a256335dad33abdd66b360dd91634",
+      "validated_sha": "041d5528286a81465828a668d014035e149f6a97",
       "started_at": "2026-06-10T23:48:26Z",
-      "completed_at": "2026-06-11T13:55:03Z",
-      "updated_at": "2026-06-11T14:11:52Z",
+      "completed_at": "2026-08-09T15:37:37Z",
+      "updated_at": "2026-08-09T15:37:37Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -123,7 +123,13 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator"
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "041d5528286a81465828a668d014035e149f6a97",
+        "method": "binary-equiv",
+        "detail": "3 commits since ad105bb (615f246 cudacodec msg/comment reword, 1c3b2fd+041d5528 README doc fixes) are source-classify=mixed (literal token differs in video_reader.cpp) but codeobj_diff on a scoped ope",
+        "at": "2026-08-09T15:37:37Z"
+      }
     }
   }
 }

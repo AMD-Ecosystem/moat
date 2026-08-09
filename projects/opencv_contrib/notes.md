@@ -1576,3 +1576,85 @@ per-builder logs or bot comments accessible from the CLI. Nothing actionable on
 our side. When opencv's CI recovers it will re-evaluate the paired build; only
 then (or via the dashboard when it is up) can we see whether any real build issue
 exists. The port itself is validated on real AMD GPUs (gfx90a/gfx1100/gfx1201).
+
+## Validation 2026-08-09 (revalidate, linux-gfx90a) -- carried forward, binary-equiv
+
+**State: completed** -- validated_sha advanced ad105bb5914a256335dad33abdd66b360dd91634
+(stale, recorded pre-PR-squash before three follow-up commits) -> 041d5528286a81465828a668d014035e149f6a97
+(current project head_sha). GPU: MI250X, gfx90a, HIP_VISIBLE_DEVICES=0 (index 0 confirmed
+gfx90a via `rocm-smi`). No test re-run was needed or performed; see method below.
+
+### Delta
+`git diff ad105bb..041d5528 --stat` in contrib: `README.md | 2 +-`, `modules/cudacodec/src/video_reader.cpp | 12 ++++++------`.
+Three commits, all already narrated in notes.md: 615f246c (trim the rocDecode-unavailable
+CV_Error message + reword a comment, both in video_reader.cpp), 1c3b2fd4 + 041d5528 (two
+README.md wording fixes, doc-only). `python3 utils/moatlib.py classify opencv_contrib
+ad105bb.. 041d5528..` returned `class=mixed arch_independent=False inert=False` because
+video_reader.cpp is source, not a doc/comment file, so the classifier correctly declines to
+call it inert automatically -- even though inspection shows both hunks are message-text/
+comment-only. Went to the codeobj_diff route rather than assuming.
+
+### Method: codeobj_diff (binary-equivalence carry-forward), not a GPU re-run
+Cloned a second contrib checkout at ad105bb (`src-old-codeobj`, throwaway, deleted after) next
+to the existing `src` (already at head 041d5528) and `src-core` (moat-port tip). Built a scoped
+target twice, same flags, gfx90a, differing only in `OPENCV_EXTRA_MODULES_PATH`:
+```
+cmake -G Ninja src-core -DWITH_HIP=ON -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/amdclang++ \
+  -DCMAKE_PREFIX_PATH=/opt/rocm -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DOPENCV_EXTRA_MODULES_PATH=<src-old-codeobj|src>/modules \
+  -DBUILD_LIST="core,cudev,cudaarithm,cudawarping,cudacodec,imgproc,imgcodecs,videoio,highgui,ts" \
+  -DBUILD_TESTS=ON -DWITH_CUDA=OFF -DWITH_OPENCL=OFF -DWITH_PYTHON=OFF \
+  -DWITH_FFMPEG=ON -DWITH_ROCDECODE=ON -DWITH_GSTREAMER=OFF
+cmake --build . --target opencv_cudacodec -j$(nproc)   # 403/403, warnings only (pre-existing nodiscard)
+```
+`cvconfig.h` confirmed `HAVE_ROCDECODE` undefined in both builds (rocdecode-dev not installed;
+gfx90a has no VCN engine), matching every prior gfx90a validation of this project.
+`python3 utils/codeobj_diff.py build_codeobj_old build_codeobj_new`:
+```
+verdict=indeterminate
+  CMakeFiles/4.0.3/CMakeDetermineCompilerABI_*.bin / CompilerId*/a.out: indeterminate (device-code extraction failed)
+  lib/libopencv_core.so: identical (exported symbols + device ISA identical, 2644 exports)
+  lib/libopencv_cudaarithm.so: identical (3152 exports)
+  lib/libopencv_cudacodec.so: identical (83 exports)
+  lib/libopencv_cudawarping.so: identical (5710 exports)
+  lib/libopencv_cudev.so / imgcodecs.so / imgproc.so / videoio.so: indeterminate (device-code extraction failed)
+```
+Two indeterminate classes, both benign per the calibration in the dispatch:
+- `CMakeFiles/.../CompilerIdC(XX|HIP)` and `CMakeDetermineCompilerABI_*.bin`: CMake's own
+  toolchain-probe scratch binaries, identical in both trees by construction (same cmake/compiler),
+  not project output -- ignored per instruction.
+- `libopencv_cudev/imgcodecs/imgproc/videoio.so`: `roc-obj-ls` exits 255 with `Error: No kernel
+  section found` on these (confirmed manually) -- they are pure host libraries with zero embedded
+  gfx code objects, and codeobj_diff's `device-code extraction failed` branch cannot distinguish
+  that from a real tooling failure (a gap in the tool, noted in codeobj_diff.py's own docstring:
+  `_device_isa` is supposed to return `""` for a host-only binary but `roc-obj-ls` errors instead
+  of reporting zero slices). Fell back to `llvm-nm -D --defined-only <lib> | awk '{print $NF}' |
+  sort` on all four, old vs new: zero diff lines in every case, i.e. byte-identical exported symbol
+  sets. Combined with the fact that `compare_binary()` only reaches the device-ISA step *after*
+  confirming exported symbols already match (`sa == sb`), the symbol match plus the manual nm
+  confirmation is sufficient: nothing in the compiled program differs.
+Also confirmed the changed lines cannot possibly reach the GPU or the CUDA path: the trimmed
+`CV_Error` string sits inside `#ifdef __HIP_PLATFORM_AMD__` (the `else` branch, `throw_no_cuda()`,
+is what nvcc takes -- untouched), and the reworded comment sits inside `#ifdef HAVE_ROCDECODE`,
+which is off in this build (no VCN on gfx90a) so that whole block does not even compile here.
+
+**Verdict: carry forward.** `python3 utils/moatlib.py carry-forward opencv_contrib linux-gfx90a
+041d5528286a81465828a668d014035e149f6a97 binary-equiv "<reason>"` -- recorded, no GPU test run.
+
+### CUDA no-regression gate
+Skipped: this is a carried-forward revalidation (rule explicitly exempts it), and independently
+the delta is proven not to reach the CUDA path at all (see above) -- the CUDA-compile-clean
+verdict already on file at ad105bb/adcd50c (see "CUDA no-regression compile gate 2026-06-11")
+still describes the current head.
+
+### Jargon + integrity
+`python3 utils/jargon.py --port opencv_contrib`: clean (needed a local `4.x` branch tracking
+`origin/4.x` in the fresh `src` clone; `fork_default_branch` is `4.x` and the tool diffs
+`4.x..moat-port` locally). `git status --porcelain` clean in both `src` and `src-core` throughout;
+the throwaway `src-old-codeobj` clone and both `build_codeobj_*` dirs were deleted after use
+(not part of the tracked build layout, not referenced by any "## Install as a dependency" section).
+No changes to the "Install as a dependency" recipe -- untouched by this delta.
+
+Wall-clock: two scoped cmake configures (~30s each) + two scoped `opencv_cudacodec` builds
+(~a few minutes each, 403/403 targets) + codeobj_diff (seconds). No full-suite GPU test run,
+which is the point of the carry-forward path.
