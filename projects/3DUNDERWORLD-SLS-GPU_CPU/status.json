@@ -7,15 +7,12 @@
   "priority": 5.001,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-08-09T15:37:37Z",
-  "head_sha": "3626150",
+  "updated_at": "2026-08-09T21:39:32Z",
+  "head_sha": "7dc3a245924838d3aea44e11e656026701ad31d1",
   "pr_url": "https://github.com/theICTlab/3DUNDERWORLD-SLS-GPU_CPU/pull/33",
   "pr_number": 33,
   "pr_opened_at": "2026-06-08T15:48:54Z",
-  "porting": {
-    "arch": "linux-gfx90a",
-    "since": "2026-08-09T15:37:37Z"
-  },
+  "porting": null,
   "waivers": {},
   "pr_state": "open",
   "license_clearance": {
@@ -26,7 +23,7 @@
   },
   "license_spdx": "LGPL-3.0",
   "upstream_repo_id": 51601478,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "linux-gfx90a": {
       "state": "validation-failed",
@@ -35,7 +32,7 @@
       "validated_sha": "4584f0deed39a6abec9f9b85861bafc66b44c935",
       "started_at": "2026-05-30T07:07:24Z",
       "completed_at": "2026-06-08T15:38:45Z",
-      "updated_at": "2026-08-09T15:37:37Z",
+      "updated_at": "2026-08-09T21:39:32Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -49,13 +46,14 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
+      "last_agent": "porter",
       "carry_forward": {
         "to": "4584f0deed39a6abec9f9b85861bafc66b44c935",
         "method": "source-class",
         "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
         "at": "2026-06-23T22:18:01Z"
-      }
+      },
+      "failed_sha": "3626150"
     },
     "linux-gfx1100": {
       "state": "completed",
