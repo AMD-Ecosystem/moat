@@ -95,8 +95,9 @@ together, this is the cause and the port is not at fault.
 Do not read it as "the project does not work on Windows" -- that mistake cost
 LichtFeld-Studio a wrongly-suggested gate waiver, on a port where 320 of 914 tests were
 passing on real gfx1101 hardware. It is a defect in a third-party build, so it is a
-`data/deferred.json` bug report (`therock-windows-lld-link-crt-xcu`) plus a workaround,
-not a property of the platform. Worth trying, none of them yet tested: `/WHOLEARCHIVE` or
+deferred bug report (`therock-windows-lld-link-crt-xcu`, registered against
+LichtFeld-Studio -- `deferred.py list` finds it across refs) plus a workaround, not a
+property of the platform. Worth trying, none of them yet tested: `/WHOLEARCHIVE` or
 a forced reference into the hooks translation unit so the linker cannot drop it; calling
 `_initterm` on the DLL's CRT section directly; spawning a thread after load, since the
 TLS callbacks that do exist fire on `DLL_THREAD_ATTACH` and `DLL_PROCESS_ATTACH` calls
@@ -122,28 +123,6 @@ solver, an LM/Newton fit, an FP regression head -- is usually floating-point
 accumulation divergence rather than a port bug, and RDNA3.5 (gfx1151) is where it has
 shown up. Record the error magnitude and stop rather than chasing it deep: the
 comparison that matters is against the other architectures, not against a fix.
-
-## codeobj_diff needs both builds from the SAME absolute source path
-
-`utils/codeobj_diff.py` compares device ISA byte-for-byte after stripping addresses, but it
-cannot strip a source PATH that got compiled into the binary as a string literal. A device
-TU that calls `assert()` embeds `__FILE__` -- the compiler's absolute path to that source
-file -- into `.rodata`/`.strtab`, unconditionally, even in a Release build with no debug
-info. Building the "old" sha in a second `git worktree`/clone at a different absolute path
-than the "new" build changes that embedded string for every TU with an `assert()`, so
-`codeobj_diff` reports `differ` on binaries whose actual instruction stream is unchanged --
-a false positive that looks exactly like a real regression.
-
-The tell: `roc-obj-ls` reports the identical device-code offset and size on both binaries,
-and the byte-level divergence is confined to `.dynstr`/`.rodata`/`.strtab` string-table
-sizes, not instruction bytes; `strings` on the extracted code object shows the only diff is
-an absolute path prefix, not project-relative content. Fix by building both shas from the
-SAME absolute source-tree path: checkout sha A in place, build to `-B dirA`, checkout sha B
-in the SAME tree, build to `-B dirB`, then diff `dirA` vs `dirB`. Never stand up a second
-worktree/clone at a different path for this comparison. (alien, gfx90a revalidate of a pure
-header-file-move delta: cross-path compare said `differ` on all 4 GPU executables; the
-same-path rebuild said `identical`, matching the sibling gfx1100/gfx1201 carry-forwards
-already recorded for the identical source delta.)
 
 ## Diagnosing a suspected AMD fault before escalating
 
