@@ -296,3 +296,74 @@ HIP_VISIBLE_DEVICES=0 ./runtest --hip --opt --api
 ### Verdict
 
 gfx1100 (RDNA3) port validated successfully with full test coverage. All 38 tests passed including SPD basis sets that had performance issues on gfx90a.
+
+## Revalidation 2026-08-09 (linux-gfx90a, carried forward)
+
+linux-gfx90a was `completed` at validated_sha 1bedbbb (2026-06-05) while the fork head had moved to d369e07 (gfx1100 support added). `python3 utils/moatlib.py classify QUICK 1bedbbb d369e07` returned `unknown/mixed` (the only changed file, `quick-cmake/QUICKCudaConfig.cmake`, is CMake, which the tokenizer classifier does not understand), so per the carry-forward protocol I proved binary equivalence on gfx90a instead of assuming it from the diff.
+
+### Delta
+
+```
+git diff 1bedbbb..d369e07 --stat
+ quick-cmake/QUICKCudaConfig.cmake | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+```
+
+The change adds one new `if("${QUICK_USER_ARCH}" STREQUAL "gfx1100")` branch (sets `-DUSE_LEGACY_ATOMICS` and marks FOUND) purely for gfx1100, and extends the `FATAL_ERROR` message text. Nothing in the gfx90a branch (`gfx90a` -> `-munsafe-fp-atomics`) changed.
+
+### Method: build both shas, same source checkout, compare device code
+
+Built HEAD (d369e07) and validated_sha (1bedbbb) for gfx90a from the SAME `projects/QUICK/src` clone (checked out sequentially, not two clones, to avoid spurious `__FILE__`-string diffs from differing absolute paths) into `build_new` and `build_old`:
+
+```bash
+export ROCM_PATH=/opt/rocm
+cmake .. -DHIP=ON -DCOMPILER=GNU -DQUICK_USER_ARCH=gfx90a -DCMAKE_BUILD_TYPE=Release
+make -j32
+```
+
+`python3 utils/codeobj_diff.py projects/QUICK/src/build_old projects/QUICK/src/build_new`:
+
+```
+verdict=indeterminate
+  src/libquick_hip.so: identical (exported symbols + device ISA identical (2779 exports))
+  src/quick.hip, src/test-api.hip, src/quick, src/test-api, src/libquick.so: indeterminate (device-code extraction failed)
+```
+
+`libquick_hip.so` (the actual HIP device-code library) came back `identical`. The other binaries are host-only executables/libraries that link against it dynamically and carry no embedded device code of their own, so `indeterminate` is the expected result for a host-only artifact, not a `differ` -- fell back to sha256 + `nm -D` per the carry-forward protocol:
+
+- sha256 differed on all 5 (expected: distinct build directories embed different build-id/timestamp bytes).
+- `nm -D` (exported dynamic symbols) diffed to 0 lines for `quick`, `quick.hip`, `test-api`, `test-api.hip`. `libquick.so` diffed on exactly 1 symbol: `__hip_cuid_<hash>` (a HIP per-compilation-unit ABI-check ID that changes every recompile regardless of source content, not a functional export). Every real exported symbol matched.
+
+Conclusion: the gfx90a device code and host-visible ABI are byte-for-byte unaffected by the gfx1100 CMake addition. Carried forward without a GPU re-run: `python3 utils/moatlib.py carry-forward QUICK linux-gfx90a d369e07 binary-equiv "..."`.
+
+### CUDA no-regression gate (recorded at head_sha d369e07, first time recorded for this project)
+
+QUICK's CMake CUDA path (`quick-cmake/QUICKCudaConfig.cmake`, legacy `FindCUDA` module, gated `if(CUDA AND NOT HIP)`) is untouched by any HIP-side change on this branch. Compiled with `/opt/conda/envs/cuda-12.8/bin/nvcc` (no NVIDIA GPU on this host, compile-only check), pinned to sm_80 via `-DQUICK_USER_ARCH=ampere` (this project uses named-arch strings, not `CMAKE_CUDA_ARCHITECTURES`, so the numeric pin does not apply here):
+
+```bash
+export PATH=/opt/conda/envs/cuda-12.8/bin:$PATH
+/usr/bin/cmake ..  -DCUDA=ON -DCOMPILER=GNU -DQUICK_USER_ARCH=ampere -DCMAKE_BUILD_TYPE=Release \
+  -DCUDA_TOOLKIT_ROOT_DIR=/opt/conda/envs/cuda-12.8 \
+  -DCMAKE_INCLUDE_PATH=/opt/conda/envs/cuda-12.8/targets/x86_64-linux/include \
+  -DCUDA_TOOLKIT_INCLUDE=/opt/conda/envs/cuda-12.8/targets/x86_64-linux/include
+make -j32
+```
+
+Note: `find_package(CUDA)` (legacy FindCUDA module) does not see the conda CUDA toolkit's split layout (`nvcc` under `cuda-12.8/bin`, headers under `cuda-12.8/targets/x86_64-linux/include`) by default -- `CUDA_TOOLKIT_TARGET_DIR` gets forced equal to `CUDA_TOOLKIT_ROOT_DIR` for non-cross-compiles (FindCUDA.cmake line ~929), so pointing `CUDA_TOOLKIT_TARGET_DIR` at the `targets/` subdir is silently overridden; the fix is `-DCMAKE_INCLUDE_PATH=.../targets/x86_64-linux/include` (checked by FindCUDA's default, non-`NO_DEFAULT_PATH` `find_path` call) plus `-DCUDA_TOOLKIT_INCLUDE=...` directly. Also needed CMake <=3.28 (`/usr/bin/cmake`, not the conda 3.31 one) since CMake 3.31 tightened `CMP0146` (FindCUDA removed) enough that even the include-path workaround did not get picked up when the module was invoked through 3.31's deprecation shim.
+
+Result: **clean build, exit 0**, `quick.cuda` and `test-api.cuda` linked successfully. Pure passthrough -- no regression from any port change.
+
+### Jargon and documentation gates
+
+`python3 utils/jargon.py --port QUICK` (after `git fetch origin master:master` in the fork clone so the `master..moat-port` range resolves): `jargon: clean`.
+
+Documentation: the port did not need to add ROCm/HIP build docs -- upstream's own `configure --help` already documents `--hip`/`--hipmpi` symmetrically next to `--cuda`/`--cudampi` (this predates the port; HIP support was authored upstream and only re-enabled by this port), and README.md already describes "CUDA/HIP for Nvidia/AMD GPUs" generically. `CMake-Options.md` documents only a subset of CUDA-specific cmake flags and says explicitly other options exist outside its scope, so its HIP omission is consistent with the project's existing house style, not a gap introduced by this port.
+
+### Wall-clock
+
+- gfx90a HIP build_new (head_sha): 143.8s (`make -j32`)
+- gfx90a HIP build_old (validated_sha): 143.4s (`make -j32`)
+- CUDA compile-only gate: 112.2s (`make -j32`)
+- Total validator wall time: ~25 minutes including clone, cmake config debugging for the conda CUDA split layout, and codeobj_diff/nm analysis.
+
+No GPU test re-run was needed or performed (carry-forward, not full revalidation) -- MI250X index 3 (gfx90a) was confirmed present via `rocm-smi` but not exercised this round; the prior real-GPU pass (2026-06-05) at validated_sha 1bedbbb remains the basis, now extended to d369e07 by binary equivalence.

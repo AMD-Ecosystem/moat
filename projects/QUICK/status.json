@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-06-05T00:05:54Z",
-  "updated_at": "2026-08-07T07:04:44Z",
+  "updated_at": "2026-08-09T00:13:53Z",
   "head_sha": "d369e07",
   "depends_on": [],
   "porting": null,
@@ -20,10 +20,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "1bedbbb",
+      "validated_sha": "d369e071b2fbf5641fe239dcb4aab54334719aa5",
       "started_at": "2026-06-05T00:11:32Z",
-      "completed_at": "2026-06-05T07:43:54.086671Z",
-      "updated_at": "2026-06-05T07:43:43Z",
+      "completed_at": "2026-08-09T00:13:53Z",
+      "updated_at": "2026-08-09T00:13:53Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -37,7 +37,13 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer"
+      "last_agent": "reviewer",
+      "carry_forward": {
+        "to": "d369e071b2fbf5641fe239dcb4aab54334719aa5",
+        "method": "binary-equiv",
+        "detail": "Delta 1bedbbb..d369e07 is a single additive gfx1100 elseif branch in QUICKCudaConfig.cmake never taken for QUICK_USER_ARCH=gfx90a; built both shas from the same src checkout into build_old/build_new, ",
+        "at": "2026-08-09T00:13:53Z"
+      }
     },
     "linux-gfx1100": {
       "state": "completed",
