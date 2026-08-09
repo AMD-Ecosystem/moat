@@ -25,6 +25,7 @@ would hand everything back anyway -- and the round trip costs more than doing it
     python3 utils/upstream.py --approvals        # approvals overtaken by a push or a body edit
     python3 utils/upstream.py --dry-run          # where our record disagrees with GitHub
     python3 utils/moatlib.py waivers             # gate waivers waiting on a maintainer
+    python3 utils/deferred.py pending            # deferrals nobody has ruled on
 
 The first names any port whose approval is standing and whose gates are met. The second
 is where work piles up: a port cannot be approved until its review PR exists, and
@@ -60,10 +61,17 @@ Your job is to snapshot what they approved:
     python3 utils/upstream.py --publish --apply    # open it, close the review PR
 
 That second command is the whole submission: it re-checks the approval, the gates, the
-licence and the vocabulary, opens the upstream PR with the approved title and body
+licence, the fork's cleanliness, and the title and body -- for in-house vocabulary and
+for hand-wrapping, since a maintainer may have asked for an edit and an edit is where
+both creep back in. It then opens the upstream PR with the approved title and body
 verbatim, records it, and closes the review PR. It runs where a human's credentials are --
 your session -- because opening a pull request on someone else's repository needs access
 no scheduled job can safely hold. `orient.sh` names any project waiting on it.
+
+The BRANCH's vocabulary is not re-scanned here, and does not need to be: every commit on
+it was scanned when the review PR was opened (`--review --apply` refuses on a hit, over
+the whole branch rather than the newest round), and nothing may land on it afterwards
+without voiding the approval. If a commit did land, the approval check catches it first.
 
 Under the hood it snapshots the approval first:
 
@@ -173,9 +181,15 @@ is parked -- the state exists for the case, not the other way round.
 Projects screened and waiting for someone to create the fork. Agents cannot create
 one, so this is a list for a person, and `orient.sh` prints it on every run.
 
-A project whose folder lives on its own `port/<name>` branch is REPORTED rather than
-advanced: releasing writes to its record and the record is not in this checkout. Check
-that branch out to release it, or let the next session on it do so.
+`--forks --apply` releases them, wherever the record lives. A project whose folder is on
+its own `port/<name>` branch is advanced there directly, through git plumbing that needs
+no checkout, so you do not have to be standing on a branch to release the project it
+holds -- and every project waiting on a fork is branch-resident, so reporting those
+rather than advancing them once meant the one command for the job released nothing.
+
+Safe here for the reason it would not be for the selector: this advances a RECORD.
+Handing an agent a project whose plan and notes are absent from its tree is the thing
+that must not happen, and releasing a fork does not do that.
 
 Declines do not happen here. They are recorded through the intake queue --
 `intake_queue.py apply --decline`, carrying a person's answer -- and the labels that
@@ -213,8 +227,35 @@ refusal just makes the block a known quantity.
 Waiving is not the only answer, and often not the right one. A gate that no arch can
 satisfy because the CODEBASE cannot be ported is `set-not-portable`; a gate failing on
 one card because of a toolchain or library defect is a per-arch `blocked` flag with the
-report filed in `data/deferred.json`, and it gates nothing as long as a sibling arch
-carrying the same attribute passes.
+report registered against that project (`deferred.py add --project <name>`, see section
+7), and it gates nothing as long as a sibling arch carrying the same attribute passes.
+
+## 7. Deferrals nobody has ruled on
+
+    python3 utils/deferred.py pending
+
+Work a port set aside, with no person having decided it should stay set aside. A
+deferral is cheap to record and easy to forget, and it fails silently: "we will get to
+it" becomes nobody ever looked, and the port ships covering less than anyone realises.
+
+`deferred.py decide <id> --choice defer|now --by <who>` records the ruling. `--by` is
+required and never defaulted, the same rule as a licence clearance or a gate waiver: an
+agent may surface a deferral and may not rule on one, because deciding a scoped-out
+feature stays scoped out is a judgement about what MOAT is delivering.
+
+A deferral lives in `projects/<name>/deferred.json` on that project's branch, with the
+notes and the plan it came out of, so it is reviewed with the port that produced it.
+`data/deferred.json` keeps only what is genuinely not project-scoped: a bug isolated
+against a ROCm component with no port attached, and the record of work deferred by a
+project that has since been removed.
+
+You do not have to check anything out to rule on one. A ruling is a record rather than
+a working file -- `pending` already gave you the entry, and nothing in `decide` opens a
+plan or a note -- so a deferral whose folder is on a port branch is written straight
+there and pushed, and `decide` prints which branch it landed on. Working the whole list
+from wherever you happen to be is the intended use. The one refusal is a trunk-resident
+project while you are on a port branch: `main` is protected, so that ruling has to
+arrive by pull request like any other trunk change.
 
 ## Stop and ask
 

@@ -9,10 +9,18 @@ outside this repo, and it caused repeated review churn.
 The rule was written down and still kept reaching PRs, because a rule nobody runs
 is a rule nobody follows. This makes it checkable.
 
+    python3 utils/jargon.py --port <name>        # a port's WHOLE branch (use this)
     python3 utils/jargon.py <file>...            # scan files
     python3 utils/jargon.py --commits <range>    # scan commit messages in a fork
     python3 utils/jargon.py --diff <range>       # scan ADDED lines only
     echo "text" | python3 utils/jargon.py -      # scan stdin (a drafted PR body)
+
+Prefer `--port`. Passing a range by hand is how the check got scoped to the newest
+commit and stayed that way through a full review: faster-gaussian-splatting shipped
+"Strategy B (torch hipify)" in the commit its branch starts from, because every round
+checked only what that round added. Everything on the branch goes upstream, whichever
+round wrote it, so the range is the fork's default branch to `moat-port` -- which
+`--port` works out from the project's own record rather than asking anyone to type it.
 
 Exit 1 if anything is found.
 """
@@ -66,6 +74,55 @@ def scan_text(text, label, terms, allow):
     return hits
 
 
+def port_range(name):
+    """(repo, commits_range, diff_range) for a project's whole port branch.
+
+    Read from the project's own record so nobody types a range: the base is
+    `fork_default_branch`, never the previous head. Raises if the project or its fork
+    clone is not here, because a check that silently scans nothing passes."""
+    sys.path.insert(0, str(REPO_ROOT / "utils"))
+    import moatlib
+    obj, _where = moatlib.project_record(name)
+    if obj is None:
+        raise ValueError(f"{name}: no record found in this checkout or on the refs")
+    repo = REPO_ROOT / "projects" / name / "src"
+    if not (repo / ".git").exists():
+        raise ValueError(f"{name}: no fork clone at {repo} -- nothing to scan")
+    base = obj.get("fork_default_branch") or "main"
+    branch = obj.get("fork_branch") or moatlib.PORT_BRANCH
+    rng = f"{base}..{branch}"
+    n = subprocess.run(["git", "-C", str(repo), "rev-list", "--count", rng],
+                       capture_output=True, text=True)
+    if n.returncode or not n.stdout.strip().isdigit():
+        raise ValueError(f"{name}: cannot resolve {rng} in {repo} -- "
+                         f"is the fork clone fetched?")
+    if int(n.stdout.strip()) == 0:
+        raise ValueError(f"{name}: {rng} contains no commits -- a range that scans "
+                         f"nothing reports clean, which is worse than not running")
+    return (str(repo), rng, f"{base}...{branch}")
+
+
+def scan_commits(repo, rng, terms, allow):
+    """Commit messages in a range. Extracted from main so a gate can call it."""
+    r = subprocess.run(["git", "-C", repo, "log", "--format=%H%n%B%n--END--", rng],
+                       capture_output=True, text=True)
+    hits = []
+    for block in r.stdout.split("--END--"):
+        if block.strip():
+            sha = block.strip().split("\n")[0][:9]
+            hits += scan_text(block, f"commit {sha}", terms, allow)
+    return hits
+
+
+def scan_diff(repo, rng, terms, allow):
+    """Lines ADDED in a range -- code comments and docs the port introduces."""
+    r = subprocess.run(["git", "-C", repo, "diff", "--unified=0", rng],
+                       capture_output=True, text=True)
+    added = "\n".join(l[1:] for l in r.stdout.splitlines()
+                      if l.startswith("+") and not l.startswith("+++"))
+    return scan_text(added, "added lines", terms, allow)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -75,24 +132,23 @@ def main():
     ap.add_argument("--diff", metavar="RANGE",
                     help="scan lines ADDED in a git range")
     ap.add_argument("-C", dest="repo", default=".", help="git repo")
+    ap.add_argument("--port", metavar="NAME",
+                    help="scan a project's whole port branch, range worked out for you")
     a = ap.parse_args()
     terms, allow = load()
     hits = []
 
-    if a.commits:
-        r = subprocess.run(["git", "-C", a.repo, "log", "--format=%H%n%B%n--END--", a.commits],
-                           capture_output=True, text=True)
-        for block in r.stdout.split("--END--"):
-            if block.strip():
-                sha = block.strip().split("\n")[0][:9]
-                hits += scan_text(block, f"commit {sha}", terms, allow)
+    if a.port:
+        try:
+            a.repo, a.commits, a.diff = port_range(a.port)
+        except ValueError as e:
+            print(f"jargon: {e}", file=sys.stderr)
+            return 1
 
+    if a.commits:
+        hits += scan_commits(a.repo, a.commits, terms, allow)
     if a.diff:
-        r = subprocess.run(["git", "-C", a.repo, "diff", "--unified=0", a.diff],
-                           capture_output=True, text=True)
-        added = "\n".join(l[1:] for l in r.stdout.splitlines()
-                          if l.startswith("+") and not l.startswith("+++"))
-        hits += scan_text(added, "added lines", terms, allow)
+        hits += scan_diff(a.repo, a.diff, terms, allow)
 
     for p in a.paths:
         if p == "-":

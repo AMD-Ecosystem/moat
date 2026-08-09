@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "barney-cone-capsule-preexisting-gpu-fault",
+      "kind": "other",
+      "component": null,
+      "summary": "Pre-existing upstream barney GPU fault (NOT a ROCm/HIP port defect): the 'cone' geometry intersect faults identically on BOTH the software (cuBQL) backend and the HIPRT backend on gfx90a, even at 1 primitive; device intersect code is byte-identical to upstream NVIDIA barney (the port changes only runtime spellings, not the cone math). Capsules and N>=8 cylinders also fault on the cuBQL software backend only (a separate pre-existing cuBQL two-level traversal issue) while the HIPRT backend renders them correctly. Cannot confirm on stock CUDA barney here (host has no NVIDIA GPU). The Backend-2 HIPRT count-scaling intersect-thunk corruption was the porter's bug and is FIXED (cylinders/capsules render, pixel-identical to B1 where B1 works). Scope: file upstream against NVIDIA/barney once an NVIDIA GPU is available to confirm; not blocking the ROCm port.",
+      "refs": [
+        "projects/barney/notes.md ## Validation 2026-06-16 (validator, Backend 2)",
+        "agent_space/barney_val/val_geom.cpp"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-16T05:48:58Z",
+      "decided": null
+    },
+    {
+      "id": "barney-cubql-repin-after-pr35",
+      "kind": "other",
+      "component": null,
+      "summary": "Re-pin submodules/cuBQL to NVIDIA/cuBQL after NVIDIA/cuBQL#35 merges",
+      "refs": [
+        "NVIDIA/cuBQL#35"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-17T01:09:01Z",
+      "decided": null
+    }
+  ]
+}
