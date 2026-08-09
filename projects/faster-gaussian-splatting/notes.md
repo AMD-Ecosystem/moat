@@ -1507,3 +1507,99 @@ faster-gaussian-splatting linux-gfx1100 completed --agent validator` recorded it
 `moatlib.py pr-ready` now reports `linux-gfx90a`, `windows-gfx1101`, `windows-gfx1201` as the
 three still owing revalidation at this head; `linux-gfx1100`'s gates (wave32, linux) are
 satisfied.
+
+## Validation 2026-08-09 (linux-gfx90a, revalidate at b0d21d5)
+
+Platform: AMD Instinct MI250X (gfx90a:sramecc+:xnack-), ROCm (`py_3.12` conda env), torch
+2.14.0a0+gitb6b444c (hip 7.2.53211). `HIP_VISIBLE_DEVICES=2` (confirmed gfx90a via
+`rocm-smi --showproductname`, all four cards on this host report gfx90a).
+
+Trigger: revalidate, `validated_sha=98be02d` (stale) -> `head_sha=b0d21d5`. Fork clone was
+absent at `projects/faster-gaussian-splatting/src`; cloned it first
+(`git clone --branch moat-port https://github.com/AMD-Ecosystem/faster-gaussian-splatting`)
+so `classify` had a real checkout to diff rather than answering `unknown`.
+
+### Delta classification
+
+```
+python3 utils/moatlib.py classify faster-gaussian-splatting 98be02d4095ff01ac22cbf884ade6c9d950644a0 b0d21d5a1c20e60efc92d7047552f19683cd1b1a
+```
+Returns `class=mixed arch_independent=False inert=False` (the tool notes `98be02d` is
+unreachable in this clone -- it was rewritten away by the 2026-08-08 squash/rebase rounds
+recorded above -- but still classifies from the stored delta metadata). Matches the
+linux-gfx1100 revalidation's classification of the same range exactly, and is consistent
+with the notes above: the range spans the Windows link/lerp fixes, the `lerp_scalar` rename,
+and the rebase onto upstream `44a13d1` (tile-boundary culling predicate, `>` -> `>=`), all
+real source changes. Per policy this is a full real-GPU revalidation, not a carry-forward
+candidate; no binary-equivalence shortcut attempted.
+
+### Build (from clean)
+
+```bash
+source /opt/conda/etc/profile.d/conda.sh && conda activate py_3.12
+export HIP_VISIBLE_DEVICES=2 PYTORCH_ROCM_ARCH=gfx90a
+utils/timeit.sh faster-gaussian-splatting compile -- \
+  pip install -e projects/faster-gaussian-splatting/src/FasterGSCudaBackend --no-build-isolation
+```
+Result: PASS, 61.2 s (from clean clone, no prior build/`.so`). `llvm-objdump --offloading`
+on the built `_C.cpython-312-x86_64-linux-gnu.so` shows exactly 7 offload bundles, all
+`hipv4-amdgcn-amd-amdhsa--gfx90a` -- one code object, the expected arch, no stray gfx target.
+
+### Test (GPU, real hardware)
+
+```bash
+export HIP_VISIBLE_DEVICES=2 PYTHONPATH=projects/faster-gaussian-splatting/src/FasterGSCudaBackend
+utils/timeit.sh faster-gaussian-splatting test -- python <scratch>/fgs_test.py
+```
+Result: **19/19 PASS** (one more case than the earlier 16-case script: two extra
+resolution-sweep repeats plus a dedicated determinism pair). Gaussian-count sweep
+10/100/500/1000/5000/10000 at 256x256; 128x128/256x256/512x512/800x600 at n=500; SH bases
+1/4/8/16; bit-exact determinism across two independent runs; and the n=20000, 800x600,
+sh=16 spread scene that drives the tile-overlap path where `lerp_scalar` is called. All
+outputs finite, correctly shaped, in [0,1]. The 256x256 sh=1 series matches the recorded
+gfx1100/Windows numbers to 4 decimals (e.g. n=10 range [0.1714, 0.5558] here vs
+[0.1714, 0.5559]/[0.1714, 0.5558] on the other archs), corroborating the same numerics
+across wave64 (this run) and wave32 (gfx1100, gfx1101, gfx1201).
+
+**GPU dispatch confirmed directly, not inferred from a green summary.** Re-ran the test
+script with `AMD_LOG_LEVEL=3` and grepped the log for the rasterizer's actual kernel
+names (from `git grep '__global__ void'` over the tracked, non-hipify-mirror `.cuh`
+sources: `preprocess_cu`, `blend_cu`, `create_instances_cu`, `apply_depth_ordering_cu`,
+`extract_instance_ranges_cu`). 90 `ShaderName` lines matched, e.g.:
+```
+rocvirtual.cpp :3595: ... ShaderName : faster_gs::rasterization::kernels::inference::preprocess_cu(...)
+rocvirtual.cpp :3595: ... ShaderName : faster_gs::rasterization::kernels::inference::blend_cu(...)
+```
+confirming the real device kernels dispatch on hardware rather than a trivial/no-op path.
+Deleted the debug code-object dump files (`_C...so.N.hipv4-amdgcn-...`/`.host-x86_64-...`)
+this run produced afterward; they are untracked and outside `.gitignore`'s patterns
+(`*.so.N.<target>` is not matched by the plain `*.so` entry) but are not build inputs or
+outputs the branch needs to track.
+
+### CUDA no-regression gate
+
+Already recorded at this exact `head_sha` (b0d21d5) by the linux-gfx1100 revalidation
+entry directly above (PASS, nvcc 12.8, `TORCH_CUDA_ARCH_LIST=8.0` pinned, 9 `sm_80`
+cubins). Per the once-per-head_sha rule, not re-run here.
+
+### Completion checks
+
+- `python3 utils/jargon.py --port faster-gaussian-splatting` -> `jargon: clean`. Needed a
+  local `main` branch in the fresh clone tracking `origin/main` first (`port_range()` reads
+  local ref names, not `origin/<default>`); once added, both the commit-message and diff
+  scans over the whole `main..moat-port` range are clean.
+- README (`projects/faster-gaussian-splatting/src/README.md`): ROCm build section present
+  beside the CUDA one (Requirements + Setup), documenting `PYTORCH_ROCM_ARCH` and a ROCm
+  pip-install command; unchanged since the linux-gfx1100 validation confirmed its accuracy.
+- `git -C projects/faster-gaussian-splatting/src status --porcelain` -> empty after the
+  build and the debug-dump cleanup above (the ROCm `.so` and the hipify mirrors are present
+  but ignored; nothing untracked-and-unignored, nothing tracked modified).
+
+### Verdict
+
+**completed**, `linux-gfx90a`, `validated_sha=b0d21d5a1c20e60efc92d7047552f19683cd1b1a`.
+`python3 utils/moatlib.py set-state faster-gaussian-splatting linux-gfx90a completed
+--agent validator`. `linux-gfx1100`, `windows-gfx1101` and `windows-gfx1201` remain the
+archs owing revalidation at this head (gfx90a's own gates, wave64 and linux, were already
+satisfied by this project's very first validation and remain satisfied here at the new
+head).
