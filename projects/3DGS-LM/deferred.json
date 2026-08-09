@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "3dgs-lm-garden-lm-offbyone",
+      "kind": "other",
+      "component": null,
+      "summary": "Real-scene garden fit faults at the LM step on gfx90a (MI250X, wave64). Root-caused to an off-by-one between the sparse-Jacobian EMIT kernel (gsgn.cu ~269-298) and forward.cu renderCUDA is_gaussian_hit: a boundary Gaussian the forward pass excludes via the transmittance terminator gets map_visible_gaussians=-1, so apply_jt_kernel reads geomBuffer[-1] -> HSA memory access fault on ROCm (benign in-chunk over-read on NVIDIA, which also zero-fills torch::empty). The emit kernel counts contributors with a wavefront WarpScan, so it MIGHT be wave64-specific. DIAGNOSTIC NEEDED on gfx1100 (wave32) to disambiguate: run a real Mip-NeRF360 garden fit (recipe + MOAT_PY MAPVIS_OOB probe in notes.md). If gfx1100 ALSO faults / MAPVIS_OOB -> the off-by-one is UPSTREAM (report to lukasHoel; ROCm just makes the latent over-read fatal). If gfx1100 completes cleanly -> WAVE64-SPECIFIC emit/WarpScan fix in the port. Both Linux + gfx1201 are already validated on synthetic scenes; this only affects real-scene fits.",
+      "refs": [
+        "projects/3DGS-LM/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-10T14:46:48Z",
+      "decided": null
+    }
+  ]
+}
