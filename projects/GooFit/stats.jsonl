@@ -48,3 +48,4 @@
 {"kind":"phase","ts":"2026-08-09T00:05:57Z","phase":"compile","seconds":23.649,"exit":0,"cmd":"cmake --build projects/GooFit/src/build-cpp-validate -j32"}
 {"kind":"phase","ts":"2026-08-09T00:06:08Z","phase":"test","seconds":6.514,"exit":0,"cmd":"ctest --test-dir projects/GooFit/src/build-cpp-validate --output-on-failure"}
 {"kind":"phase","ts":"2026-08-09T00:07:00Z","phase":"cuda-compile","seconds":11.047,"exit":1,"cmd":"cmake --build projects/GooFit/src/build-cuda-validate -j32"}
+{"kind": "tokens", "ts": "2026-08-09T00:11:42Z", "tokens": 149031, "source": "validator"}
