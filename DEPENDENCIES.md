@@ -9,7 +9,7 @@ Some target projects build on top of other targets -- e.g. `barney` builds on `c
 - A dependency clears four different ways, and they are NOT the same answer:
   - **ok** -- some arch reached `completed`, OR the dependency is dispositioned `already-supported` / `ported-elsewhere`, meaning it needs no port from us. Build against it.
   - **waiting** -- adopted and in the pipeline. It clears on its own.
-  - **doomed** -- dispositioned as anything short of a port existing: `cant-port`, `license-blocked`, `declined`, `duplicate`, `not-a-target` or `other`. It will not be ported, so neither is anything that links it. Scope the dependent around that feature or recommend a disposition for it too; do not proceed and find out at build time.
+  - **doomed** -- dispositioned as anything short of a port existing: `cant-port`, `license-blocked`, `declined`, `duplicate`, `not-a-target`, `opted-out` or `other`. It will not be ported, so neither is anything that links it. Scope the dependent around that feature or recommend a disposition for it too; do not proceed and find out at build time.
   - **unknown** -- nobody has looked at it. File an intake request with `python3 utils/port_request.py file <owner/repo> --blocks <project> --why "..." --apply`, record the edge with `set-deps`, and stop. A person decides whether to fork it.
 - `depends_on` is for HARD build dependencies of the project's CORE. A *module-level* optional dependency (only one extra feature needs another project) is documented in the project's `notes.md`, not added to `depends_on`, so it does not gate the whole port.
 

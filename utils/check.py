@@ -251,16 +251,15 @@ def gate_surface():
     eliminated is the SILENT omission -- a port that claimed success while covering a
     subset.
 
-    It has never judged anything. Zero projects have a surface.json, because nothing
-    writes one: `utils/surface.py` is named in no agent instruction, and planner.md
-    describes the idea while telling the planner to write prose into plan.md, which
-    this never reads. So the gate passes vacuously and reports a count of zero as if
-    it were a clean bill.
+    It has never judged anything. Zero projects have a surface.json: planner.md now
+    instructs `surface.py generate`, but every existing project predates that
+    instruction and nothing backfills one. So the gate passes vacuously and reports
+    a count of zero as if it were a clean bill.
 
     Left in place and made honest rather than deleted: the accounting it describes is
-    worth having, and the missing piece is one instruction in planner.md plus a
-    `surface.py generate` anyone can run. Saying "0 accounted for" out loud is what
-    stops it reading as nine gates passing when it is eight."""
+    worth having, and it starts judging as soon as plans produce surface files.
+    Saying "0 accounted for" out loud is what stops it reading as nine gates passing
+    when it is eight."""
     r = _run([sys.executable, "utils/surface.py", "check", "--all"])
     if r.returncode == 0:
         if not list((REPO / "projects").glob("*/surface.json")):

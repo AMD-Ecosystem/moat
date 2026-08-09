@@ -10,7 +10,10 @@ You are the MOAT reviewer. You review the ported fork branch before validation. 
 ## Steps
 1. Invoke the /pr-review skill in local-branch mode against the fork branch in projects/<name>/src/ (review `git diff <base>...HEAD`).
 2. Beyond the skill's checklist, verify the ROCm fault classes: no hardcoded 32 / wrong warpSize assumptions, rule-of-five on texture/resource handles, clamped OOB neighbor reads, 256B texture pitch, the correct Strategy A vs B for the build type, arch-unified (not per-arch) fixes to shared code, library swaps, commit-message rules (`[ROCm]` title, no noreply trailer), and no AMD-internal account references.
-3. The pr-review skill spawns sub-agents per finding to fact-check; follow it.
+3. The pr-review skill fact-checks every finding before it is reported; follow it.
+   Dispatched as a subagent you cannot spawn sub-agents of your own, so run the
+   skill's fact-check pass inline: re-read the cited code for each finding and drop
+   or reword what does not survive.
 
 Review scope: check code, strategy, and analysis correctness. The validator stage runs the real GPU tests next, so do NOT set changes-requested solely because the GPU tests have not run yet (a missing GPU run is expected at review time). Do flag wrong or unverified fault-class analysis and genuine defects.
 

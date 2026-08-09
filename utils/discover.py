@@ -277,6 +277,7 @@ def fetch_repo_meta(full_name):
         return None
     return {
         "fullName": d.get("full_name") or full_name,
+        "id": d.get("id"),
         "url": d.get("html_url") or f"https://github.com/{full_name}",
         "defaultBranch": d.get("default_branch"),
         "stargazersCount": d.get("stargazers_count") or 0,
@@ -290,15 +291,21 @@ def fetch_repo_meta(full_name):
     }
 
 
-def already_decided(full_name):
+def already_decided(full_name, repo_id=None):
     """True for a repo a person has already ruled on: a maintainer opt-out or a
     skip disposition. Discovery drops these on the way in, so the queue never
     re-offers a decided repo -- the opt-out binding is mechanical, not something
     the triage view alone remembers. `verify` dispositions pass through: they
-    mean investigate, and `triage.py review` tags them rather than hiding them."""
+    mean investigate, and `triage.py review` tags them rather than hiding them.
+
+    Pass the numeric repo id when a call site has one (the code-search pass does,
+    from fetch_repo_meta): the id is what survives a rename. The metadata pass has
+    only the search result, which carries no numeric id, so a renamed decided repo
+    can re-enter candidates.json from that pass by name -- `triage.py review` tags
+    it and `scaffold` refuses it by id, so the decision itself cannot leak."""
     sys.path.insert(0, str(Path(__file__).parent))
     import moatlib
-    d = moatlib.get_disposition(full_name)
+    d = moatlib.get_disposition(full_name, repo_id)
     return bool(moatlib.optout_for(full_name)
                 or (d and d.get("disposition") == "skip"))
 
@@ -404,6 +411,12 @@ def run_code_search_pass(cfg, out_path):
             sys.stderr.write(f"discover: code-search progress {i + 1}/{len(new_repos)}\n")
         if meta is None:
             n_meta += 1
+            continue
+        # Re-check now that the numeric id (and, after a rename redirect, the
+        # current name) is known: the name-only check above cannot catch a decided
+        # repo that was renamed since the decision.
+        if already_decided(meta["fullName"], meta.get("id")):
+            n_decided += 1
             continue
         owner = meta["fullName"].split("/")[0].lower()
         if owner in excl_orgs or any(sub in owner for sub in excl_substr):

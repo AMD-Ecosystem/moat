@@ -818,16 +818,26 @@ def fetch_review_pr(url):
                            "body": c.get("body") or "",
                            "assoc": c.get("author_association")} for c in raw_c]
     # When an approval carries no commit of its own, this is what it is compared
-    # against: anything pushed after it was written.
+    # against. GitHub does not expose push time, so the tip's COMMITTER date stands
+    # in for it: a new or rebased commit trips the comparison, but an older commit
+    # pushed after the approval slips past. The review form's commit binding has no
+    # such gap, which is one more reason it is the preferred box.
     head = _gh_json("api", f"repos/{slug}/commits/{pr.get('headRefOid')}")
     pr["head_at"] = (((head or {}).get("commit") or {}).get("committer") or {}).get("date")
     pr["slug"], pr["number"] = slug, num
     owner, repo = slug.split("/", 1)
-    q = ('{repository(owner:"%s",name:"%s"){pullRequest(number:%s){lastEditedAt}}}'
+    # lastEditedAt tracks BODY edits only; a title rename is a RenamedTitleEvent on
+    # the timeline and does not move it, so both are fetched.
+    q = ('{repository(owner:"%s",name:"%s"){pullRequest(number:%s){lastEditedAt '
+         'timelineItems(itemTypes:RENAMED_TITLE_EVENT,last:1){nodes{'
+         '... on RenamedTitleEvent{createdAt}}}}}}'
          % (owner, repo, num))
     g = _gh_json("api", "graphql", "-f", f"query={q}")
-    pr["lastEditedAt"] = (((g or {}).get("data") or {}).get("repository") or {}
-                          ).get("pullRequest", {}).get("lastEditedAt")
+    node = ((((g or {}).get("data") or {}).get("repository") or {})
+            .get("pullRequest") or {})
+    pr["lastEditedAt"] = node.get("lastEditedAt")
+    renames = (node.get("timelineItems") or {}).get("nodes") or []
+    pr["titleRenamedAt"] = (renames[0] or {}).get("createdAt") if renames else None
     return pr
 
 
@@ -1007,10 +1017,16 @@ def approval_currency(pr):
                                      f"{head_at} -- commits landed after the approval")
 
     # Was the title or body rewritten after the approval? GitHub leaves an approval
-    # standing through an edit, so this is the only thing that catches it.
+    # standing through an edit, so this is the only thing that catches it. Body and
+    # title move different clocks (lastEditedAt vs the rename event), so both are
+    # checked -- either one edited after the approval is content nobody approved.
     edited, at = pr.get("lastEditedAt"), review.get("at")
     if edited and at and edited > at:
-        return ("stale-content", f"the title or body was edited at {edited}, after the "
+        return ("stale-content", f"the body was edited at {edited}, after the "
+                                 f"approval at {at}")
+    renamed = pr.get("titleRenamedAt")
+    if renamed and at and renamed > at:
+        return ("stale-content", f"the title was renamed at {renamed}, after the "
                                  f"approval at {at}")
     return ("ok", f"approved by {review['login']} at {at}")
 
@@ -1685,7 +1701,7 @@ def project_port_state(name):
 # recorded.
 DEP_SATISFIED_BY_DISPOSITION = ("already-supported", "ported-elsewhere")
 DEP_DOOMED_BY_DISPOSITION = ("cant-port", "license-blocked", "not-a-target",
-                             "duplicate", "declined", "other")
+                             "duplicate", "declined", "opted-out", "other")
 
 
 def disposition_for_project(name):
@@ -1911,8 +1927,11 @@ def stalled(obj):
     a project silently unpickable."""
     stage = project_stage(obj) or "unclaimed"
     # Answered, or deliberately parked. A recorded verdict is the person's move having
-    # been made, so the project stops asking for one.
-    if stage == "review-passed" or stage in INERT_STAGES or obj.get("on_hold"):
+    # been made, so the project stops asking for one. `settled` covers the verdicts
+    # recorded as dispositions -- an opt-out retirement leaves the arch records in
+    # place, and without this check the project would reappear here asking a person
+    # for a decision that was already given.
+    if stage == "review-passed" or stage in INERT_STAGES or settled(obj):
         return False
     blocks = list(validations(obj).values())
     return bool(blocks) and all(b.get("blocked") for b in blocks)
@@ -2908,9 +2927,16 @@ def pr_ready(name):
                       if not vals[a].get("blocked")]
         if candidates:
             blocking.extend(candidates)   # completing any ONE clears the gate
-        else:
+        elif archs:
+            # Every arch that tried has a documented reason it cannot: no evidence
+            # can exist, so the correct move is a waiver request or a scoped claim.
             blocking.append((gate, "no viable arch can satisfy this gate"))
             nonviable.extend(a for a in archs if vals[a].get("blocked"))
+        else:
+            # Nothing has TRIED. That is not the same as "cannot": the remedy is a
+            # validation on a host carrying the attribute, not a waiver.
+            blocking.append((gate, "no arch has attempted this gate yet -- validate "
+                                   f"on a host with the {gate} attribute"))
 
     # Licence gate. Here rather than only in the publisher so that EVERY route to an
     # upstream PR passes it, whoever is doing the opening.
@@ -3298,7 +3324,7 @@ def main(argv=None):
             print(v.detail)
     elif args.cmd == "commit-project":
         ok = commit_project(args.name, args.message)
-        print(f"committed projects/{args.name} (status/notes/plan/stats)" if ok else "(nothing to commit)")
+        print(f"committed projects/{args.name} (status/notes/plan/surface/deferred/stats)" if ok else "(nothing to commit)")
     elif args.cmd == "record-tokens":
         r = record_tokens(args.name, args.tokens, args.source)
         print(f"recorded {r['tokens']} tokens for {args.name}" + (f" ({args.source})" if args.source else ""))

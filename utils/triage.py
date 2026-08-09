@@ -7,12 +7,15 @@ block accidental adoption (moatlib scaffold refuses a skipped project).
 Usage:
   python3 utils/triage.py review [--top N] [--all]
   python3 utils/triage.py skip <owner/repo> --reason <r> --by <who> [--note "..."]
+  python3 utils/triage.py verify <owner/repo> [--note "..."]
   python3 utils/triage.py unskip <owner/repo>
   python3 utils/triage.py skipped
   python3 utils/triage.py backfill-ids
 
 Reasons: already-supported, ported-elsewhere, cant-port, not-a-target, duplicate,
-         license-blocked, declined, other  (moatlib.SKIP_REASONS is the source)
+         license-blocked, declined, opted-out, other
+         (moatlib.SKIP_REASONS is the source; opted-out is normally written by
+         `optout.py record`, not by hand)
 """
 
 import argparse

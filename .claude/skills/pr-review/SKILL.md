@@ -64,6 +64,11 @@ A single line can have deep cross-cutting implications: a hardcoded `32` silentl
 
 The checklist is large and the fault classes need code reading. Spawn sub-agents to investigate whether checks apply (read the kernel, the CMake, the surrounding code, the tests that should exist). Spawn them in parallel for independent areas. A typical port should spawn 3-8 sub-agents.
 
+Running WITHOUT the ability to spawn sub-agents (the dispatched reviewer agent is
+itself a subagent): every step below marked for sub-agents still happens, done
+inline by you -- the investigation and the fact-check are the requirement, the
+parallelism is only how a top-level session affords them.
+
 ## Review Workflow
 
 ### Step 1: Understand context
@@ -82,7 +87,7 @@ Evaluate per [bc-guidelines.md](bc-guidelines.md): the port must not change the 
 Organize findings by the categories below. Every finding is traceable to a file:line.
 
 ### Step 5: Fact-check
-Spawn a sub-agent per reported issue (in parallel) to independently verify by re-reading the code. Each returns valid / invalid / needs rewording. Drop invalid issues; reword the rest; keep low-confidence ones flagged as such.
+Spawn a sub-agent per reported issue (in parallel) to independently verify by re-reading the code; without sub-agents, re-read the cited code yourself, one finding at a time. Each check returns valid / invalid / needs rewording. Drop invalid issues; reword the rest; keep low-confidence ones flagged as such.
 
 ## Output Format
 
