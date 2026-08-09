@@ -766,3 +766,93 @@ satisfied by this arch. wave64 and windows remain open (`pr-ready` still reports
 linux-gfx90a=None and windows=no viable arch yet); this arch does not carry either attribute
 and gates neither. CUDA gate: not satisfied (environmental wall, recorded above), carries no
 penalty per the gate's own rules -- it is secondary and compile-only.
+
+## Validation 2026-08-09 (linux-gfx90a)
+
+First real-GPU validation of fork sha `c1d7fff` on this arch (`port-ready`, no prior
+`validated_sha`). MI250X (gfx90a, wave64), `HIP_VISIBLE_DEVICES=1` (index 1 confirmed gfx90a
+via `rocm-smi --showhw`), ROCm 7.2.1, PyTorch 2.14.0a0+gitb6b444c (hip 7.2.53211), python
+3.12.13. Cloned the fork fresh into `projects/Quest/src` and checked out `moat-port`
+(`HEAD == c1d7fff == status.json.head_sha`). Submodules `kernels/3rdparty/{flashinfer,pybind}`
+initialized (needed for the shim force-include mechanism and the vendored pybind11 CMake
+target respectively; `raft`/`googletest`/`nvbench` left uninitialized, matching the scoped-out
+CUDA-only/RAFT-only surface). Installed `transformers==4.37.2` `tokenizers==0.15.2` per this
+file's earlier recipe.
+
+Build, wrapped `utils/timeit.sh Quest compile -- ninja -C quest/ops/build`:
+
+```
+mkdir -p quest/ops/build && cd quest/ops/build
+cmake -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_PREFIX_PATH=$(python3 -c 'import torch;print(torch.utils.cmake_prefix_path)') ..
+ninja
+ln -sf $PWD/_kernels*.so ../../
+```
+
+Configure and build both clean (6/6 objects, same two pre-existing nodiscard-`hipError_t`
+warnings on `decode_handler.cuh:165` and `approx_attn.cu:65` as every prior session, no new
+warnings, no errors). `llvm-objdump --offloading _kernels*.so` shows
+`hipv4-amdgcn-amd-amdhsa--gfx90a` in every offload bundle and no other arch -- independent
+reconfirmation of the architecture-selection fix (item 1) on a second, wave64 arch.
+`python3 -c "import quest._kernels as k; print(dir(k))"` lists exactly the six ops the README
+names (`BatchDecodeWithPagedKVCachePyTorchWrapper`, `append_kv_cache_decode`,
+`append_kv_cache_prefill`, `apply_rope_in_place`, `estimate_attn_score`, `rms_norm_forward`).
+
+GPU tests, wrapped `utils/timeit.sh Quest test -- python3 -m pytest ...`:
+
+| suite | result |
+|---|---|
+| test_rope.py | 64 passed |
+| test_estimate.py | 9 passed |
+| test_decode_attention.py | 6 passed |
+| test_approx_attention.py | 42 passed |
+| **in-scope total** | **121 passed in 8.56s** |
+| test_topk.py | 49 failed, 15 skipped |
+| test_prefill_attention.py | 29 failed, 13 skipped |
+| **scoped-out total** | **78 failed, 28 skipped** (matches gfx1100 exactly) |
+
+Confirmed real GPU dispatch, not a CPU/skip pass: `AMD_LOG_LEVEL=3` on `test_decode_attention.py`
+and on `test_rope.py`+`test_estimate.py`+`test_approx_attention.py` shows `hipLaunchKernel`
+calls returning `hipSuccess` with `ShaderName` entries for Quest's own compiled kernels --
+`flashinfer::AppendPagedKVCacheDecodeKernel`, `AppendPagedKVCachePrefillKernel`,
+`BatchDecodeWithPagedKVCacheKernel`, `VariableLengthMergeStatesKernel`,
+`MaxPossibleSampleWithPagedKVCacheKernel`, `QKApplyRotaryInPlaceKernel` -- interleaved with
+PyTorch's own RNG/copy/fill kernels, i.e. actual device execution, not a mock. No dedicated
+`rms_norm` test exists in this suite (pre-existing gap, not introduced by the port); the op
+still built and links (symbol present in `dir(quest._kernels)`).
+
+Confirmed the scoped-out failure mode is still `AttributeError`, not a wrong answer, with `-x`
+on both files: `AttributeError: module 'quest._kernels' has no attribute 'topk_filtering'`
+(`test_topk.py:53`) and `AttributeError: module 'quest._kernels' has no attribute
+'prefill_with_paged_kv_cache'` (`quest/utils/__init__.py:157`). No non-GPU regression to check
+against an upstream baseline -- this project has no CPU-only test path; all six suites require
+the compiled extension and a GPU.
+
+### CUDA no-regression gate
+
+Not repeated: already recorded at this head_sha (`c1d7fff`) by the linux-gfx1100 validation
+above as `cuda-not-validated` (environmental wall -- RAFT branch-24.02 pinning
+`CUDA::nvToolsExt`, which `FindCUDAToolkit` no longer creates against a CUDA 12.8 toolkit; the
+configure fails inside RAFT's own CMakeLists before Quest's own `.cu` sources are reached).
+Runs once per head_sha per the standing rule; not re-run here.
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --port Quest`: `jargon: clean`.
+
+README.md's "Building on AMD GPUs (ROCm)" section matches the commands run above verbatim
+(only the `--offload-arch` differs, gfx90a vs gfx1100, which is exactly the
+`CMAKE_HIP_ARCHITECTURES` argument the doc says to pass) and correctly states that
+`topk_filtering` and `prefill_with_paged_kv_cache` -- and everything downstream of them -- do
+not run on ROCm yet. No inaccuracy found; nothing sent back.
+
+`git -C projects/Quest/src status --porcelain`: clean. `HEAD` at `c1d7fff`, matching
+`status.json.head_sha`. No source or build edit was needed on this arch (the CMake
+architecture-cache fix from the gfx1100 rounds already covers gfx90a; verified by the
+`--offload-arch=gfx90a`-only objdump result above).
+
+State: `port-ready` -> `completed` on linux-gfx90a, `validated_sha = c1d7fff`. wave64 gate now
+satisfied (this arch carries wave64). windows remains open. CUDA gate unaffected (recorded once
+already at this head_sha, per the standing rule); no penalty. Wall clock: build ~50s, in-scope
+tests ~9s, scoped-out re-runs and AMD_LOG_LEVEL evidence runs a few minutes more; well under the
+~60 minute budget.
