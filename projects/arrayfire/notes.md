@@ -1780,3 +1780,17 @@ python3 utils/moatlib.py advance-head arrayfire a70f74f6d653955832909c434e77abfb
 After this fix `python3 utils/jargon.py --port arrayfire` still exits 1 with exactly ONE hit:
 `commit 6800d5586:18: 'MOAT'` in that commit's body. That is the maintainer's explicit decision
 (no history rewrite), not an outstanding defect. All 6 previously flagged comment hits are gone.
+
+### Watch this when advance-head is finally run
+Read-only check of what the guard will decide:
+`python3 utils/moatlib.py classify arrayfire 6800d5586 a70f74f6d` ->
+`class=comment-only arch_independent=True inert=True` (all 9 files "comments/format only").
+
+So the three `completed` arches (linux-gfx1100, windows-gfx1101, windows-gfx1201) carry forward
+with no re-run, which is right. But the same rule cuts the wrong way for linux-gfx90a: an inert
+delta carries a FAILURE forward too, on the reasoning that a change which cannot alter compiled
+output cannot have been the fix. That reasoning does not hold here -- the failure WAS the comment
+text, so a comment-only delta is exactly the fix. Expect linux-gfx90a to stay `validation-failed`
+at the new head and to need a person to hand it back to a validator (or to accept it, since the
+GPU evidence at 6800d5586 stands and this delta provably cannot disturb it). Flagging rather than
+working around it; an agent should not rewrite its own failure record.
