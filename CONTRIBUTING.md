@@ -60,6 +60,30 @@ A decline reaches `data/dispositions.json` on the trunk or the project is simply
 proposed again and the work repeats; `scaffold` then refuses it unless forced, so
 revisiting stays possible but deliberate.
 
+## When a maintainer asks us to stop
+
+    python3 utils/optout.py record <owner|owner/repo> --source <where they asked>
+
+Anyone may ask, on any pull request of ours or through the opt-out issue template, and
+they need give no reason. **This is the one decision of this kind an agent may record
+without asking**, and the exception is narrow for a specific reason: everything else in
+this file that needs a person is *our* judgement about a project, while this is somebody
+else's decision about us, carried into the record. The only thing recording it can do is
+less work, so the failure mode of getting it wrong points the safe way.
+
+Recording it retires the adopted projects it covers and blocks the rest mechanically:
+discovery stops offering those repos, `scaffold` refuses them, and `pr_ready` refuses
+them, which is what both routes upstream pass through. That last one is the point --
+an opt-out normally arrives *because* a pull request showed up, so it has to bind work
+that is already finished, not only work not yet started.
+
+What is left is visible on somebody else's repository and stays with a person: closing
+the open pull request and deleting the fork. `optout.py record` prints the commands and
+stops there.
+
+Removing an opt-out resumes contact with someone who asked us to stop, so it takes a
+person and `--by`.
+
 ## What a pull request should look like
 
 Two kinds arrive here and they want opposite readings. A port carries one project and
@@ -111,6 +135,13 @@ the start, not as a draft to be rewritten. Approving it is the decision to submi
 publishing step below opens the upstream PR with exactly that content, records it, and
 closes the review PR.
 
+Opening the review PR appends a standing note to the body (`SUBMISSION_NOTE` in
+`utils/upstream.py`): that the change was prepared by an AI assistant and approved by a
+person, a link back here, and how to opt out. Do not write it into the body by hand --
+the tool adds it, so what gets approved is what gets published, and the publish gate
+refuses a body that has lost it. Everything a maintainer is owed about where the change
+came from is therefore on the same page as the change.
+
 An approval covers what was on screen when it was given. A commit pushed afterwards, or an
 edited title or body, voids it. `upstream.py --approvals` reports those, and
 `--approvals --apply` dismisses the stale approval and asks for a fresh look rather than
@@ -156,11 +187,12 @@ fork-side work and neither reaches the part that matters.
 |---|---|
 | `code` | the Python resolves: no undefined names, no dead imports or locals (pyflakes). Two NameErrors shipped on success paths before this existed, one of them in the approval gate |
 | `schema` | `status.json` validates against a schema generated from `moatlib`, so the two cannot disagree |
-| `readme` | the generated project table matches the data it describes. The table renders across refs, so it can only be judged where those refs are visible: enforced in a full clone, which is what the pre-push hook runs in, and skipped -- loudly -- in a CI checkout, which fetches one branch and would call every branch-only row stale (`python3 utils/gen_readme.py`) |
+| `readme` | the generated project table matches the data it describes (`python3 utils/gen_readme.py`). Judged only where it can be: the table renders across refs, so a CI checkout -- one branch, no port refs -- would call every branch-only row stale, and it skips there loudly. It also skips on a `port/<name>` branch, which is where most pushes come from: the board is a TRUNK artifact, regenerating it on a branch produces a commit thrown away at merge, and judging it there serialises the fleet, since every record any host pushes stales every other checkout's copy. So in practice it gates pushes from the trunk, and any port branch can be behind it |
 | `licenses` | tier lists are well-formed and no identifier sits in two tiers, which would silently disable the review gate |
 | `blobs` | nothing tracked that looks like build output (`.a`, `.so`, `.o`, archives, wheels, model weights) and nothing over 1 MB without an entry in the allowlist saying why it is data rather than spill |
 | `states` | every state is one `moatlib` knows, every platform is a well-formed `<os>-<gfx>` with a known wavefront width, every waiver names a gate that may be waived, and every waiver states its case. It deliberately does NOT require a maintainer's approval: an unapproved waiver is what a *suggestion* is, and suggesting one is how the obstacle reaches a person at all. What stops an agent certifying its own way past a gate is that such a waiver satisfies nothing and blocks `pr_ready` -- enforced where it bites, not by failing the repo's checks over a decision nobody has made yet |
 | `jargon` | the in-house-vocabulary config loads and its patterns compile |
+| `optout` | every opt-out record is well-formed, and no project whose owner opted out is still live in the pipeline. A malformed entry fails open -- the filters stop matching and the repos quietly return to the queue -- so the shape is checked rather than assumed |
 | `surface` | for a project carrying a `surface.json`, every component is covered or explicitly scoped out with a reason -- accounting, not coverage, so the failure it prevents is the silent omission. It judges only projects that have the file and only once the port claims success; **no project currently has one**, so this gate presently judges nothing and says so out loud. `utils/surface.py generate <name>` opts a project in |
 | `forks` | no fork carries uncommitted source edits (local only -- needs the clones) |
 

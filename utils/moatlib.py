@@ -681,7 +681,8 @@ def set_not_portable(name, reason, by, clear=False):
       maintainer approval;
       a toolchain or library defect on one platform -- a Triton codegen bug on
       gfx1100, rocBLAS picking a generic kernel on one Windows arch -- is genuinely
-      per-arch and stays a `blocked` flag, with the report filed in data/deferred.json.
+      per-arch and stays a `blocked` flag, with the report registered against that
+      project (projects/<name>/deferred.json, via `deferred.py add --project`).
 
     `by` is required and never defaulted: an agent may assemble the case and must not
     return the verdict, exactly as with a licence clearance or a gate waiver."""
@@ -2162,6 +2163,11 @@ SKIP_REASONS = ["already-supported", "ported-elsewhere",
                 # written reason is permanent and quotable, and a project can be
                 # reconsidered later without anything to walk back.
                 "declined",
+                # The maintainer asked not to receive our pull requests. Their decision,
+                # not ours, and the only skip reason an agent may record on its own --
+                # see data/optout.json, which is the owner-scoped record this retires a
+                # single adopted project against.
+                "opted-out",
                 "other"]
 # already-supported: this upstream repo already supports ROCm/HIP, by any means
 #   (CUDA path ported to HIP, or a native/designed-in backend); provenance is
@@ -2240,6 +2246,85 @@ def clear_disposition(full_name):
     return False
 
 
+# ---- opt-out (maintainers who asked not to receive our pull requests) -------
+
+# Deliberately NOT a disposition, though both stop work on a repo. A disposition is
+# our judgement about a project -- not a target, already supported, cannot be ported.
+# An opt-out is somebody else's decision about us, and the two must not be filed under
+# one word: a reader of dispositions.json is reading what we concluded, and an entry
+# saying "declined" where a maintainer actually asked us to stop misreports whose
+# decision it was. It is also scoped differently. A disposition is one repo, keyed by
+# its numeric id; an opt-out is usually a whole owner and has to bind repos nobody has
+# discovered yet, which an id cannot do.
+OPTOUTS = REPO_ROOT / "data" / "optout.json"
+
+
+def load_optouts():
+    if OPTOUTS.exists():
+        try:
+            return json.loads(OPTOUTS.read_text())
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def save_optouts(d):
+    OPTOUTS.parent.mkdir(parents=True, exist_ok=True)
+    with open(OPTOUTS, "w") as f:
+        json.dump(d, f, indent=2, sort_keys=True)
+        f.write("\n")
+
+
+def optout_for(full_name):
+    """The opt-out covering `owner/repo`, or None.
+
+    An owner-scoped entry covers every repo that owner has, including ones discovery
+    has not reached, which is what "stop sending me these" actually means."""
+    if not full_name:
+        return None
+    key = full_name.lower()
+    d = load_optouts()
+    return d.get(key) or d.get(key.split("/")[0])
+
+
+def record_optout(who, source, note=""):
+    """Record that `who` (an owner, or one owner/repo) asked not to receive our PRs.
+
+    An agent MAY write this one, unlike a disposition or a licence clearance. Those
+    are our judgement and need a person; this is carrying somebody else's decision
+    into the record, and the only thing it can do is less work. `source` is required
+    so the record says where the request was made and anyone can go read it."""
+    if not source:
+        raise ValueError("an opt-out needs a source: where the request was made")
+    if who.count("/") > 1 or who.startswith("/") or who.endswith("/"):
+        raise ValueError(f"expected an owner or owner/repo, got {who!r}")
+    d = load_optouts()
+    d[who.lower()] = {"who": who, "scope": "repo" if "/" in who else "owner",
+                      "requested_at": now_iso(), "source": source, "note": note}
+    save_optouts(d)
+    return d[who.lower()]
+
+
+def clear_optout(who, by):
+    """Withdraw an opt-out. Requires `by`, and requires it HERE rather than only in
+    optout.py, because this is the one direction that resumes contact with someone who
+    asked us to stop. Every comparable control in this file refuses in the library --
+    set_not_portable, approve_waiver, refuse_waiver -- so that a caller reaching past
+    the command line cannot skip what the command line was enforcing. Recording an
+    opt-out is the opposite and needs nobody: it can only ever cause less work."""
+    if not (by or "").strip():
+        raise ValueError(
+            f"{who}: --by is required. Withdrawing an opt-out resumes contact with "
+            f"someone who asked us to stop, so the record has to say who authorised it "
+            f"-- an agent may carry that decision but never make it")
+    d = load_optouts()
+    if who.lower() in d:
+        del d[who.lower()]
+        save_optouts(d)
+        return True
+    return False
+
+
 # ---- scaffolding -----------------------------------------------------------
 
 def existing_claim(name):
@@ -2268,6 +2353,14 @@ def existing_claim(name):
 
 def scaffold_project(full_name, upstream_url=None, default_branch="main",
                      ext_type="unknown", priority=0.0, force=False, depends_on=None):
+    # No `force` on this one. Everything else here is our own decision and a person
+    # may overrule it; this is the maintainer's, and there is nobody on our side who
+    # can overrule it.
+    opt = optout_for(full_name)
+    if opt:
+        raise ValueError(
+            f"{opt['who']} asked not to receive pull requests from this effort "
+            f"({opt['source']}). Recorded in data/optout.json; not adoptable.")
     disp = get_disposition(full_name, github_repo_id(full_name))
     if disp and disp.get("disposition") == "skip" and not force:
         raise ValueError(
@@ -2712,6 +2805,19 @@ def pr_ready(name):
 
     Returns (ready, blocking, nonviable)."""
     obj = load_status(name)
+
+    # Checked here and not only at adoption, because an opt-out usually arrives after
+    # we have already sent this owner a pull request -- that is what prompts it. This
+    # is the last gate before anything reaches their repository and the one both routes
+    # upstream pass through (the review PR and the publish step), so a request to stop
+    # binds work already finished, not just work not yet started. `optout.py record`
+    # also writes a disposition, which the next block would catch; this does not rely
+    # on that having happened.
+    opt = optout_for(upstream_full_name(name) or "")
+    if opt:
+        return (False, [("opted-out",
+                         f"{opt['who']} asked not to receive pull requests from this "
+                         f"effort ({opt['source']})")], [])
 
     # A recorded disposition settles the PR question: the project was delivered as a
     # validation-only record, or set aside as already-supported / non-viable /
@@ -3185,8 +3291,24 @@ def main(argv=None):
         print(f"{args.name}: license-ok={ok} ({why})")
         return 0 if ok else 1
     elif args.cmd == "set-review-pr":
+        # Retracting has its own flag, so the bare form must not also retract. `url` is
+        # optional, and omitting it -- a typo, a shell that ate the argument, or reading
+        # `set-review-pr <name>` as "show me this project's review PR" -- used to take
+        # the same path as `--clear`: it skipped the gate check, wrote null, printed
+        # `review PR -> None` and exited 0. That erases the one field saying where the
+        # port's approval lives, so the port drops out of `--publish` and comes back in
+        # `--review` as needing a PR it already has.
+        if not args.url and not args.clear:
+            try:
+                cur = load_status(args.name).get("review_pr") or "none recorded"
+            except (FileNotFoundError, ValueError) as e:
+                cur = f"unreadable -- {e}"
+            print(f"set-review-pr: no URL given. Pass one to record it, or --clear to "
+                  f"retract the recorded one. {args.name} currently: {cur}",
+                  file=sys.stderr)
+            return 2
         set_review_pr(args.name, None if args.clear else args.url)
-        print(f"{args.name}: review PR -> {args.url}")
+        print(f"{args.name}: review PR -> {'(cleared)' if args.clear else args.url}")
     elif args.cmd == "record-pr-approval":
         a = record_pr_approval(args.name, args.review_pr)
         print(f"{args.name}: approved by {a['approved_by']} for "
