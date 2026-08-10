@@ -1655,3 +1655,72 @@ follows ("compile-check against 12.1 headers or older") is right as it stands.
 - Not re-reviewed, deliberately: the compiled code, which is unchanged from
   29ec0725 apart from the one comment, and whose review is in #2.  No GPU run is
   expected for a comment-only delta and its absence is not part of this verdict.
+
+## Porter response to review 2026-08-10 #3 (linux-gfx1100)
+
+Both findings were wording; no compiled code changed.  The top two fork commits
+were rewritten in place (`git reset --hard 82755003`, re-apply the pooling
+commit with the corrected comment and body, cherry-pick the MIOpen-names commit
+unchanged), so the branch is now
+`82755003 -> fd8ef1ff -> 1d0822bd` where it was `82755003 -> d4bc6433 ->
+4d25e3f1`.  `ba0ec806` and `1381ed77` remain reachable ancestors, and the two
+titles are byte-identical to the ones they replace.
+
+### 1. The free is deferred, not saved -- fixed in both places
+
+Agreed, and the correction is the reviewer's own reading: `DeviceBuffer` is a
+`shared_ptr<void>` with a `hipFree` deleter, the wrapper is a by-value member of
+`PoolingOp`, and `ExpressionGraph::clear()` drops the node per batch, so the
+malloc/free counts per batch are unchanged by the commit and only the moment of
+the free moves.  `cudnn_wrappers.cu:457-462` now reads:
+
+```
+  // As with the convolution gradients, the accumulating form is a pooling
+  // backward into staging plus a tensor add. The buffer is a cached member for
+  // consistency with that path, but the wrapper lives on its node and the
+  // graph drops it for the next batch, so per batch nothing is saved: the
+  // allocation still happens once per pooling node, and the free moves from
+  // the end of backward to node teardown.
+```
+
+The commit body's second paragraph lost the "What this removes is the free
+rather than the allocation" claim and now says the same thing the comment does
+-- per batch this saves nothing, the allocation still happens once per pooling
+node per batch, the free moves from the end of the backward call to node
+teardown -- and states the consistency-with-the-convolution-gradient-path
+rationale as what carries the change.  Nothing else in that message moved; the
+Test Plan and the title are untouched.
+
+### 2. The skill's 11.0 floor was marian's -- reworded
+
+Agreed.  Nothing on this branch tested toolkits older than 11.0 in either
+direction, and 11.0 is only where `prod_sparse.cpp:15` starts selecting the
+header that carries the cast.  `fault-classes.md:337` now says "so every release
+up to 12.1 is affected, plus any 12.2-or-newer build that defines the disable
+macro", dropping the floor rather than restating it as marian's -- the sentence
+above it already scopes the fault correctly, and the bisected upper boundary is
+the actionable half.  82755003's body keeps 11.0, where it is right, because
+that message is about marian.
+
+### Verification (no rebuild, no GPU run)
+
+The delta is comment-and-message-only, so nothing was rebuilt and no GPU test
+was run; the compiled evidence is the one recorded for `ba0ec806` and the
+per-arch validation states are unchanged by this round.
+
+- `git diff 4d25e3f1 1d0822bd --stat` is one file,
+  `src/tensors/gpu/cudnn_wrappers.cu`, 4 insertions and 3 deletions, all inside
+  the one comment block.
+- `changeclass.py projects/marian-dev/src 4d25e3f1 1d0822bd` reads
+  `class=comment-only arch_independent=False inert=True` -- inert, but flagged
+  for the line-shift hazard, since `MIOPEN_CALL` prints `__LINE__` and the
+  comment grew by a line.  So no arch is carried forward on the source class
+  alone; that costs nothing here, because every arch's `validated_sha` was
+  already `ba0ec806` and behind the head before this round.
+  `windows-gfx1101`'s `failed_sha` stays `ba0ec806`, so its failure is retired
+  by the head move and the arch is owed a validation rather than another fix.
+- `python3 utils/jargon.py --port marian-dev` clean over the whole branch.
+- Both rewritten titles byte-identical to their predecessors (48 and 52 chars);
+  Claude named in each body; no `Co-Authored-By` and no noreply trailer; ASCII
+  throughout.
+- Fork worktree clean at `1d0822bd`; pushed with `--force-with-lease`.
