@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Regenerate the MOAT project table in README.md between sentinel markers,
-preserving all hand-written prose outside them. Reads every
-projects/*/status.json. Idempotent: same data -> identical bytes.
+preserving all hand-written prose outside them. Reads every project's record across
+refs, not just the folders on this branch -- the table is the progress board, so work
+in flight has to appear on it (see load_projects). Idempotent: same data -> identical
+bytes, given the same refs.
 
 Usage:
   python3 utils/gen_readme.py            # rewrite README.md
@@ -51,7 +53,7 @@ def load_projects():
 GATE_RANK = ["proven", "stale", "working", "queued", "blocked", "none"]
 GATE_GLYPH = {"proven": "✅", "stale": "🔄", "working": "🔧",
               "queued": "⬜", "blocked": "🚫", "none": "—"}
-WORKING_STATES = {"porting", "ported", "delta-ported", "review-passed",
+WORKING_STATES = {"porting", "planning", "ported", "delta-ported", "review-passed",
                   "changes-requested", "validation-failed", "planned", "screened"}
 QUEUED_STATES = {"port-ready", "awaiting-fork", "awaiting-upstream",
                  "unclaimed", "not-portable"}
@@ -142,6 +144,9 @@ def outcome_cell(p):
                     The platform cells stay truthful (the port was built/validated)
                     and the outcome carries ⚖️.
       cant-port / not-a-target / duplicate / ported-elsewhere / declined -- set aside. ⚪
+      opted-out -- the maintainer asked not to receive our pull requests. Reads the
+                    same ⚪, and deliberately so: whose decision it was belongs in the
+                    record, not in a glyph on a board about ports.
     No PR and no disposition -> pending (—)."""
     if p.get("pr_url"):
         # pr_state is the authority: the PR lifecycle is one project-level fact, not
@@ -206,8 +211,8 @@ def render_table(projects):
         "| 🔧 | in progress | | 🔴 | pull request closed |",
         "| ⬜ | not started | | ⚖️ | licence bars contributing the port |",
         "| 🚫 | blocked, with a reason recorded | | ⚪ | set aside, with the reason recorded |",
-        "| 🎫 | waived for this project, with maintainer approval | | — | nothing recorded |",
-        "| — | nothing recorded | | | |",
+        "| 🎫 | waived for this project, with maintainer approval | | ⏸ | on hold, deliberately not being worked |",
+        "| — | nothing recorded | | — | nothing recorded |",
         "",
         "The project name links upstream.",
     ])

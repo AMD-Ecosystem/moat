@@ -3,7 +3,9 @@
 
 CI catches a bad push at PR time. The hook catches it before it exists, which is the
 difference between a rule you are told to follow and one you cannot skip under time
-pressure. Both call utils/check.py, so they enforce the same thing.
+pressure. Both call utils/check.py; CI additionally checks the pull request's title
+(utils/pr_intent.py), which does not exist at push time, so a locally-clean push can
+still fail CI on its title -- and only on that.
 
     python3 utils/install_hooks.py              # install
     python3 utils/install_hooks.py --check      # is it installed and current?
@@ -28,8 +30,9 @@ MARKER = "# moat-hook v1"
 
 PRE_PUSH = f"""#!/usr/bin/env bash
 {MARKER}
-# Runs MOAT's gates before a push leaves this machine. Same gates as CI
-# (utils/check.py), so passing here means passing there.
+# Runs MOAT's gates before a push leaves this machine. Same check.py gates as CI;
+# CI additionally checks the PR title (utils/pr_intent.py), which does not exist
+# at push time, so that one check can still fail there.
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)" || exit 0
 
