@@ -93,9 +93,8 @@ def platform_problem(platform):
 
 
 def validations(obj):
-    """Per-arch validation records. Accepts the legacy `platforms` key so a
-    status.json written before the gate model still reads."""
-    return obj.get("validations") or obj.get("platforms") or {}
+    """Per-arch validation records -- status.json's `platforms` map."""
+    return obj.get("platforms") or {}
 
 
 PORT_BRANCH = "moat-port"  # the topic branch that holds the port on each fork
@@ -113,13 +112,21 @@ STAGE_TRANSITIONS = {
     # screens an unadopted project and parks it for the fork decision, in one step.
     # Requiring screened first made the documented instruction illegal, and agents
     # compensated by transitioning twice -- which worked, and hid the contradiction.
-    "unclaimed": {"screened", "planned", "awaiting-fork"},
-    "screened": {"awaiting-fork", "planning", "planned"},
+    "unclaimed": {"screened", "awaiting-fork"},
+    "screened": {"awaiting-fork", "planning"},
     # `planning` exists to be ACQUIRED. A planner writes plan.md, which is one shared
     # artifact on a shared branch, and two of them produce two different strategies
     # that no merge can reconcile -- plan.md has no merge driver, so the second push
     # hard-conflicts and one analysis is stranded. The porter had this solved and the
     # planner did not, on the reasoning that only the fork needs serialising.
+    #
+    # unclaimed and screened had direct `-> planned` edges from before the lock
+    # existed, and they survived its introduction -- a planner taking either one wrote
+    # plan.md having never entered the stage that serialises writing it. Removed:
+    # any route that is about to WRITE a plan goes through `planning`. The stages
+    # that RESTORE an already-written plan (awaiting-fork, awaiting-upstream,
+    # not-portable below) keep their direct edge, because re-entering `planned`
+    # there records a fact about an existing plan.md, not a new analysis.
     "planning": {"planned", "screened"},
     "awaiting-fork": {"screened", "planned", "porting"},
     "awaiting-upstream": {"planned", "porting", "unclaimed"},
@@ -626,7 +633,11 @@ def set_state(name, platform, new_state, agent=None, save=True):
     # DISPATCH is `actionable`'s job, and its guard already reads this field.
     if new_state in EXCLUSIVE_STAGES:          # refused above if another arch holds it
         obj["porting"] = {"arch": platform, "since": now_iso()}
-    elif cur in EXCLUSIVE_STAGES and (obj.get("porting") or {}).get("arch") == platform:
+    elif cur in EXCLUSIVE_STAGES and obj.get("porting"):
+        # Leaving an exclusive stage ends what the lock protected, so ANY arch
+        # legally recording the exit releases it. Requiring the holder to be the
+        # one leaving left the lock held forever when a different arch drove
+        # porting -> ported, with only `port-lock --release` to clean it up.
         obj["porting"] = None
     ts = now_iso()
     if is_stage:
@@ -814,16 +825,33 @@ def fetch_review_pr(url):
                            "body": c.get("body") or "",
                            "assoc": c.get("author_association")} for c in raw_c]
     # When an approval carries no commit of its own, this is what it is compared
-    # against: anything pushed after it was written.
+    # against. GitHub does not expose push time, so the tip's COMMITTER date stands
+    # in for it: a new or rebased commit trips the comparison, but an older commit
+    # pushed after the approval slips past. The review form's commit binding has no
+    # such gap, which is one more reason it is the preferred box.
     head = _gh_json("api", f"repos/{slug}/commits/{pr.get('headRefOid')}")
     pr["head_at"] = (((head or {}).get("commit") or {}).get("committer") or {}).get("date")
     pr["slug"], pr["number"] = slug, num
     owner, repo = slug.split("/", 1)
-    q = ('{repository(owner:"%s",name:"%s"){pullRequest(number:%s){lastEditedAt}}}'
+    # lastEditedAt tracks BODY edits only; a title rename is a RenamedTitleEvent on
+    # the timeline and does not move it, so both are fetched.
+    q = ('{repository(owner:"%s",name:"%s"){pullRequest(number:%s){lastEditedAt '
+         'timelineItems(itemTypes:RENAMED_TITLE_EVENT,last:1){nodes{'
+         '... on RenamedTitleEvent{createdAt}}}}}}'
          % (owner, repo, num))
     g = _gh_json("api", "graphql", "-f", f"query={q}")
-    pr["lastEditedAt"] = (((g or {}).get("data") or {}).get("repository") or {}
-                          ).get("pullRequest", {}).get("lastEditedAt")
+    if g is None:
+        # The REST fetches above refuse on failure and this must too: an edit clock
+        # nobody could read is not "never edited". Returning the PR with both clocks
+        # None would let approval_currency skip the edit checks and pass an approval
+        # whose title or body may have been rewritten -- the one incident on record
+        # is the GraphQL endpoint timing out while REST kept working.
+        return None
+    node = ((((g or {}).get("data") or {}).get("repository") or {})
+            .get("pullRequest") or {})
+    pr["lastEditedAt"] = node.get("lastEditedAt")
+    renames = (node.get("timelineItems") or {}).get("nodes") or []
+    pr["titleRenamedAt"] = (renames[0] or {}).get("createdAt") if renames else None
     return pr
 
 
@@ -842,26 +870,60 @@ def fetch_review_pr(url):
 # route around. Requiring the line to stand alone keeps "/moat approve is premature
 # here" from reading as consent.
 APPROVE_COMMAND = "/moat approve"
+# The author's Request Changes button is greyed out for the same reason Approve is,
+# so an objection needs a command form exactly as consent does. It supersedes the
+# same author's earlier approval and blocks anyone else's until they approve again.
+CHANGES_COMMAND = "/moat changes-requested"
+MOAT_COMMANDS = (APPROVE_COMMAND, CHANGES_COMMAND)
 # Who may give it. Anyone can comment; these are the associations GitHub reports for
 # someone with write access to the repository.
 APPROVE_ASSOC = ("OWNER", "MEMBER", "COLLABORATOR")
 
 
+def _moat_command_lines(body):
+    """Stand-alone `/moat ...` lines in a body, with fenced code blocks skipped.
+
+    The fence rule is load-bearing: every review PR opens with an instructions
+    comment that QUOTES the approval line inside a fence, and before this rule the
+    gate matched that quotation and read its own instructions as the maintainer's
+    standing approval (marian-dev went upstream over an explicit rejection)."""
+    fenced = False
+    for ln in (body or "").splitlines():
+        s = ln.strip()
+        if s.startswith("```"):
+            fenced = not fenced
+            continue
+        if not fenced and s.startswith("/moat"):
+            yield s
+
+
+def _command_of(review):
+    """The decision this event's body carries: 'approve', 'changes-requested',
+    None for chatter, or 'unknown' for a /moat line matching no known command.
+    Unknown fails closed downstream -- a maintainer's typo must read as an
+    unanswered question, never as chatter to publish over. A body carrying both
+    commands is an objection: the ambiguity is theirs to resolve, not ours."""
+    cmds = set(_moat_command_lines(review.get("body")))
+    if not cmds:
+        return None
+    if cmds - set(MOAT_COMMANDS):
+        return "unknown"
+    if CHANGES_COMMAND in cmds:
+        return "changes-requested"
+    return "approve"
+
+
 def _is_approval_comment(review):
-    if review.get("assoc") not in APPROVE_ASSOC:
-        return False
-    return any(ln.strip() == APPROVE_COMMAND
-               for ln in (review.get("body") or "").splitlines())
+    return (review.get("assoc") in APPROVE_ASSOC
+            and _command_of(review) == "approve")
 
 
-def _approving_review(pr):
-    """A standing approval on the review PR, or None.
+def _decision_events(pr):
+    """The latest decision-carrying event per author, oldest input first.
 
-    Only the latest review per author counts: someone who approves and then requests
-    changes has withdrawn the approval, and honouring the earlier APPROVED event
-    would publish over an objection. An outstanding CHANGES_REQUESTED from ANYONE
-    blocks, even alongside somebody else's approval -- publishing while a reviewer is
-    still objecting is the thing this is here to prevent."""
+    Chatter -- a comment or COMMENTED review with no /moat command -- neither is a
+    decision nor undoes one; a /moat command in either box is a decision and
+    supersedes the same author's earlier one."""
     latest = {}
     events = sorted((pr.get("review_list") or []) + (pr.get("comment_list") or []),
                     key=lambda r: r.get("at") or "")
@@ -869,15 +931,64 @@ def _approving_review(pr):
         if not r.get("login") or r.get("state") == "PENDING":
             continue
         if r.get("state") in ("COMMENTED", "ISSUE_COMMENT") \
-                and not _is_approval_comment(r):
+                and _command_of(r) is None:
             continue          # ordinary chatter is not a decision, and does not undo one
         latest[r["login"]] = r
+    return latest
+
+
+def _approving_review(pr):
+    """A standing approval on the review PR, or None.
+
+    Only the latest decision per author counts: someone who approves and then
+    requests changes -- by review or by `/moat changes-requested` -- has withdrawn
+    the approval, and honouring the earlier event would publish over an objection.
+    An outstanding objection from ANYONE with write access blocks, even alongside
+    somebody else's approval, and so does an unrecognized /moat command from them:
+    publishing while a reviewer may still be objecting is what this prevents."""
+    latest = _decision_events(pr)
     if any(r.get("state") == "CHANGES_REQUESTED" for r in latest.values()):
         return None
     if pr.get("reviewDecision") == "CHANGES_REQUESTED":
         return None
+    if any(_command_of(r) in ("changes-requested", "unknown")
+           for r in latest.values() if r.get("assoc") in APPROVE_ASSOC):
+        return None
+    # An APPROVED review passes the same write-access test as the comment form:
+    # on a public fork ANYONE can submit an approving review, and a drive-by
+    # approval from an outsider must not open the gate.
     return next((r for r in latest.values()
-                 if r.get("state") == "APPROVED" or _is_approval_comment(r)), None)
+                 if (r.get("state") == "APPROVED"
+                     and r.get("assoc") in APPROVE_ASSOC)
+                 or _is_approval_comment(r)), None)
+
+
+def moat_command_audit(pr):
+    """(blockers, notes) -- every /moat command on the review PR, judged.
+
+    Run before anything opens upstream, so a command the gate did not understand
+    surfaces to a person by name instead of being read as chatter. Blockers are
+    standing objections and unrecognized commands from someone with write access,
+    judged on each author's LATEST decision so a superseded typo does not block
+    forever. Notes list commands from authors without write access -- they decide
+    nothing, but a person should know someone tried."""
+    blockers, notes = [], []
+    for r in _decision_events(pr).values():
+        cmd = _command_of(r)
+        if cmd is None:
+            continue
+        who = f"{r.get('login')} at {r.get('at')}"
+        if r.get("assoc") not in APPROVE_ASSOC:
+            notes.append(f"{cmd!r} from {who}, who has no write access -- ignored")
+        elif cmd == "unknown":
+            bad = [c for c in _moat_command_lines(r.get("body"))
+                   if c not in MOAT_COMMANDS]
+            blockers.append(f"unrecognized command {', '.join(map(repr, bad))} from "
+                            f"{who} -- known: {', '.join(MOAT_COMMANDS)}")
+        elif cmd == "changes-requested":
+            blockers.append(f"changes requested by {who} ({CHANGES_COMMAND}) -- "
+                            f"standing until they post {APPROVE_COMMAND}")
+    return blockers, notes
 
 
 def _content_digest(pr):
@@ -902,8 +1013,14 @@ def record_pr_approval(name, review_pr=None):
     if pr is None:
         raise ValueError(f"{name}: could not read the review PR at {url}")
     if pr.get("state") and pr.get("state") != "OPEN":
-        return ("closed", f"the review PR is {str(pr['state']).lower()} -- reopen it to "
-                          f"submit, or the approval on it is not a live decision")
+        # Raise like the other refusals here: the old ("closed", msg) tuple return
+        # crashed the CLI, which indexed it as a snapshot dict.
+        raise ValueError(
+            f"{name}: the review PR is {str(pr['state']).lower()} -- reopen it to "
+            f"submit, or the approval on it is not a live decision")
+    blockers, _notes = moat_command_audit(pr)
+    if blockers:
+        raise ValueError(f"{name}: " + "; ".join(blockers))
     review = _approving_review(pr)
     if review is None:
         raise ValueError(f"{name}: no standing approval on {url}")
@@ -930,8 +1047,9 @@ def record_pr_approval(name, review_pr=None):
 # and the reviewer should be asked again, while `withdrawn` means that already
 # happened and nobody should be pinged a second time -- so the verdict is a code
 # rather than prose to be pattern-matched.
-APPROVAL_CODES = ("ok", "none", "withdrawn", "stale-commits", "stale-content",
-                  "record-mismatch", "unreachable")
+APPROVAL_CODES = ("ok", "none", "withdrawn", "closed", "stale-commits",
+                  "stale-content", "record-mismatch", "unverifiable", "unreachable",
+                  "bad-command")
 
 
 def pr_approval_valid(name, live=True):
@@ -967,6 +1085,12 @@ def approval_currency(pr):
     if pr.get("state") and pr.get("state") != "OPEN":
         return ("closed", f"the review PR is {str(pr['state']).lower()} -- reopen it to "
                           f"submit, or the approval on it is not a live decision")
+    blockers, _notes = moat_command_audit(pr)
+    if blockers:
+        # Say WHICH command blocks rather than the generic "no standing approval":
+        # a typo'd /moat line and a standing objection both need a person, and they
+        # need to be told what to look at.
+        return ("bad-command", "; ".join(blockers))
     review = _approving_review(pr)
     if review is None:
         # Withdrawn, dismissed, or overridden by a changes-requested review. Whoever
@@ -995,10 +1119,16 @@ def approval_currency(pr):
                                      f"{head_at} -- commits landed after the approval")
 
     # Was the title or body rewritten after the approval? GitHub leaves an approval
-    # standing through an edit, so this is the only thing that catches it.
+    # standing through an edit, so this is the only thing that catches it. Body and
+    # title move different clocks (lastEditedAt vs the rename event), so both are
+    # checked -- either one edited after the approval is content nobody approved.
     edited, at = pr.get("lastEditedAt"), review.get("at")
     if edited and at and edited > at:
-        return ("stale-content", f"the title or body was edited at {edited}, after the "
+        return ("stale-content", f"the body was edited at {edited}, after the "
+                                 f"approval at {at}")
+    renamed = pr.get("titleRenamedAt")
+    if renamed and at and renamed > at:
+        return ("stale-content", f"the title was renamed at {renamed}, after the "
                                  f"approval at {at}")
     return ("ok", f"approved by {review['login']} at {at}")
 
@@ -1047,14 +1177,23 @@ def pr_approval_status(name, live=True):
                   f"still standing at {(pr.get('headRefOid') or '?')[:8]}")
 
 
-def license_tier(name):
-    """The project's licence tier, from utils/licenses.py. Unknown is tier 4."""
+def license_tier(name, obj=None):
+    """The project's licence tier, from utils/licenses.py. Unknown is tier 4.
+
+    Resolves the record branch-first via project_record, like every other "what do
+    we know about X" question -- load_status prefers the working tree, which let a
+    stale trunk-era copy shadow a licence recorded on the project's own branch.
+    Pass `obj` when the caller already holds the record, so both judge the same one."""
     sys.path.insert(0, str(REPO_ROOT / "utils"))
     import licenses
-    return licenses.tier_of(load_status(name).get("license_spdx"))
+    if obj is None:
+        obj, _where = project_record(name)
+        if obj is None:
+            raise FileNotFoundError(str(status_path(name)))
+    return licenses.tier_of(obj.get("license_spdx"))
 
 
-def license_gate(name):
+def license_gate(name, obj=None):
     """(ok, reason) -- may this port be offered upstream on licence grounds?
 
     Tiers 1 and 2 are cleared to contribute and pass. Tier 3 and tier 4 ALWAYS wait
@@ -1069,9 +1208,12 @@ def license_gate(name):
     would put a hundred unread licences in front of a person as though each were a
     judgement call. Reading a repo's licence establishes a FACT and any agent may do
     it; deciding to contribute under a restrictive one is a decision and never is."""
-    obj = load_status(name)
+    if obj is None:
+        obj, _where = project_record(name)
+        if obj is None:
+            raise FileNotFoundError(str(status_path(name)))
     spdx = obj.get("license_spdx")
-    tier = license_tier(name)
+    tier = license_tier(name, obj)
     if tier <= 2:
         return (True, f"tier {tier} ({spdx})")
     c = obj.get("license_clearance") or {}
@@ -1158,7 +1300,7 @@ def approve_waiver(name, gate, by, reason=None):
     w["approved_by"] = by
     w["at"] = now_iso()
     obj.setdefault("waivers", {})[gate] = w
-    save_status(name, obj)
+    save_record(name, obj, f"{name}: {gate} waiver approved by {by}")
     return w
 
 
@@ -1188,7 +1330,7 @@ def refuse_waiver(name, gate, by, note):
                          f"withdrawing an approval is that person's call, not a refusal")
     w.update({"refused_by": by, "refused_at": now_iso(), "refused_note": note})
     obj.setdefault("waivers", {})[gate] = w
-    save_status(name, obj)
+    save_record(name, obj, f"{name}: {gate} waiver refused by {by}")
     return w
 
 
@@ -1208,9 +1350,9 @@ def record_license_clearance(name, approved_by, note=None):
     """Record a person's decision to allow a tier 3/4 project upstream."""
     obj = load_status(name)
     obj["license_clearance"] = {"approved_by": approved_by, "at": now_iso(),
-                                "tier": license_tier(name),
+                                "tier": license_tier(name, obj),
                                 **({"note": note} if note else {})}
-    save_status(name, obj)
+    save_record(name, obj, f"{name}: licence clearance recorded, approved by {approved_by}")
     return obj["license_clearance"]
 
 
@@ -1240,7 +1382,8 @@ def set_review_pr(name, url):
                 f"opens the upstream PR. Finish the gates, then "
                 f"`upstream.py --review --apply --name {name}` opens and records it.")
     obj["review_pr"] = url or None
-    save_status(name, obj)
+    save_record(name, obj, f"{name}: review PR "
+                           + (f"recorded -- {url}" if url else "cleared"))
     return obj
 
 
@@ -1673,7 +1816,7 @@ def project_port_state(name):
 # recorded.
 DEP_SATISFIED_BY_DISPOSITION = ("already-supported", "ported-elsewhere")
 DEP_DOOMED_BY_DISPOSITION = ("cant-port", "license-blocked", "not-a-target",
-                             "duplicate", "declined", "other")
+                             "duplicate", "declined", "opted-out", "other")
 
 
 def disposition_for_project(name):
@@ -1739,6 +1882,39 @@ def dep_report(obj):
             if dep_status(d)[0] != "ok"]
 
 
+INSTALL_DEP_HEADING = re.compile(r"^## Install as a dependency\s*$", re.M)
+
+
+def dep_doc_gaps():
+    """Dependency providers whose notes.md lacks '## Install as a dependency'.
+
+    DEPENDENCIES.md makes the section a MUST for any MOAT project another target's
+    depends_on names: it is the recipe the dependent's porter follows into _deps/.
+    Nothing verified it, so providers shipped without one and a porter following the
+    documented workflow found nothing there. A dependency satisfied by disposition
+    (already-supported upstream) has no MOAT record and needs no section, so only
+    providers with a record are judged. Returns (provider, [dependents]) rows."""
+    dependents = {}
+    for name, obj, _where in project_records():
+        for dep in obj.get("depends_on") or []:
+            dependents.setdefault(dep, []).append(name)
+    rows = []
+    for dep, users in sorted(dependents.items()):
+        obj, _where = project_record(dep)
+        if obj is None:
+            continue
+        p = PROJECTS / dep / "notes.md"
+        notes = p.read_text() if p.exists() else None
+        if notes is None:
+            for ref in (f"origin/port/{dep}", "origin/main"):
+                notes = _ref_read(ref, f"projects/{dep}/notes.md")
+                if notes:
+                    break
+        if not notes or not INSTALL_DEP_HEADING.search(notes):
+            rows.append((dep, sorted(users)))
+    return rows
+
+
 # States that describe the PROJECT and not an architecture. There is no such thing as
 # "screened on gfx90a": a screen, a plan, and waiting on a fork are each one fact about
 # one fork. They live in the per-arch map only because that is the only map there is,
@@ -1782,10 +1958,12 @@ def gate_satisfied(obj, gate):
     """Is this gate met -- by a validation of the CURRENT head on any arch carrying
     the attribute, or by a waiver a maintainer approved? The one definition; pr_ready
     asks the same question and must get the same answer."""
+    # No recorded head means there is no current content for a validation to
+    # prove, so a completed arch satisfies nothing -- only a waiver can.
     head = obj.get("head_sha")
-    if any(gate in gates_for(a) and b.get("state") == "completed"
-           and (not head or same_commit(b.get("validated_sha"), head))
-           for a, b in validations(obj).items()):
+    if head and any(gate in gates_for(a) and b.get("state") == "completed"
+                    and same_commit(b.get("validated_sha"), head)
+                    for a, b in validations(obj).items()):
         return True
     w = (obj.get("waivers") or {}).get(gate)
     return bool(w and w.get("approved_by") and gate in WAIVABLE_GATES)
@@ -1897,8 +2075,11 @@ def stalled(obj):
     a project silently unpickable."""
     stage = project_stage(obj) or "unclaimed"
     # Answered, or deliberately parked. A recorded verdict is the person's move having
-    # been made, so the project stops asking for one.
-    if stage == "review-passed" or stage in INERT_STAGES or obj.get("on_hold"):
+    # been made, so the project stops asking for one. `settled` covers the verdicts
+    # recorded as dispositions -- an opt-out retirement leaves the arch records in
+    # place, and without this check the project would reappear here asking a person
+    # for a decision that was already given.
+    if stage == "review-passed" or stage in INERT_STAGES or settled(obj):
         return False
     blocks = list(validations(obj).values())
     return bool(blocks) and all(b.get("blocked") for b in blocks)
@@ -2077,8 +2258,19 @@ def fleet(platform):
         if task is None or unmet_deps(obj):
             continue
         agent, state = task
+        # The same exclusion `actionable` applies: porter/planner work whose lock
+        # another arch holds is not dispatchable anywhere, and naming its branch
+        # here sends a checkout at a guaranteed `next: NONE`.
+        lock = obj.get("porting")
+        if lock and lock.get("arch") != platform and agent in EXCLUSIVE_AGENTS:
+            continue
+        # The branch as the remote actually spells it, so a caller can print a
+        # checkout command that works even when the branch case-folds the name
+        # (port/hami-core for HAMi-core). Reconstructing port/<project> does not.
+        branch = (port_branch_of(name) or "") if where == "branch" else ""
         out.append({"project": name, "where": where, "state": state,
-                    "stage": agent, "priority": float(obj.get("priority", 0))})
+                    "stage": agent, "branch": branch,
+                    "priority": float(obj.get("priority", 0))})
     out.sort(key=lambda r: (SELECT_RANK.get(r["state"], 99), -r["priority"], r["project"]))
     return out
 
@@ -2224,15 +2416,23 @@ def get_disposition(full_name, repo_id=None):
     return None
 
 
-def set_disposition(full_name, disposition, reason, note="", repo_id=None):
+def set_disposition(full_name, disposition, reason, note="", repo_id=None, by=None):
     if disposition == "skip" and reason not in SKIP_REASONS:
         raise ValueError(f"reason must be one of {SKIP_REASONS}")
+    # Declining is a person's decision, exactly as creating the fork is. An agent
+    # may carry that decision into the record, but a skip without a named decider
+    # satisfies nothing -- the same rule set-not-portable and license clearances
+    # already enforce.
+    if disposition == "skip" and not by:
+        raise ValueError(
+            f"{full_name}: a skip needs --by <who decided>; an agent may write "
+            f"the case but never the verdict")
     d = load_dispositions()
     if repo_id is None:
         repo_id = github_repo_id(full_name)      # best effort; None when offline
     d[full_name.lower()] = {"full_name": full_name, "disposition": disposition,
                             "reason": reason, "note": note, "decided": now_iso(),
-                            "repo_id": repo_id}
+                            "by": by, "repo_id": repo_id}
     save_dispositions(d)
     return d[full_name.lower()]
 
@@ -2733,7 +2933,10 @@ def squash_carry_forward(name, new_sha, repo=None):
     already-validated commits and changed no content -- which is the case when the
     squash is done at PR-prep AFTER every platform is terminal (pr_ready). Then the
     squashed commit is known to work everywhere it already worked:
-      - each `completed` platform: validated_sha advanced to new_sha, stays completed;
+      - each platform `completed` AT THE OLD HEAD: validated_sha advanced to
+        new_sha, stays completed. A completed platform whose validated_sha lags
+        the old head validated some earlier tree, is owed a revalidation, and is
+        reported as `stale` rather than carried;
       - each `blocked` (non-viable, e.g. Windows-unportable) platform: left UNTOUCHED
         -- never flipped from non-viable to passing;
       - an arch left un-validated because a sibling already satisfies every gate it
@@ -2762,25 +2965,33 @@ def squash_carry_forward(name, new_sha, repo=None):
                        f"validate the new content first / use advance_head")
     obj["head_sha"] = new_sha
     vals = validations(obj)
-    # A gate already satisfied by some completed arch needs nothing more; an arch
+    # Only an arch validated at the OLD HEAD proved the tree the squash preserved.
+    # A completed arch whose validated_sha lags it was owed a revalidation before
+    # the squash and still is -- promoting it would mark content it never ran as
+    # proven -- so it neither carries forward nor counts toward a satisfied gate.
+    current = {a for a, b in vals.items()
+               if b.get("state") == "completed" and not b.get("blocked")
+               and same_commit(b.get("validated_sha"), old_head)}
+    # A gate already satisfied by some carried arch needs nothing more; an arch
     # that could only have satisfied such a gate is optional, not a blocker.
-    satisfied = {g for a, b in vals.items() if b.get("state") == "completed"
-                 and not b.get("blocked") for g in gates_for(a)}
-    carried, kept_blocked, skipped, optional = [], [], [], []
+    satisfied = {g for a in current for g in gates_for(a)}
+    carried, kept_blocked, skipped, optional, stale = [], [], [], [], []
     for plat, blk in vals.items():
         if blk.get("blocked"):
             kept_blocked.append(plat)
-        elif blk.get("state") == "completed":
+        elif plat in current:
             blk["validated_sha"] = new_sha
             blk["updated_at"] = now_iso()
             carried.append(plat)
+        elif blk.get("state") == "completed":
+            stale.append((plat, (blk.get("validated_sha") or "?")[:8]))
         elif gates_for(plat) <= satisfied:
             optional.append((plat, blk.get("state")))
         else:
             skipped.append((plat, blk.get("state")))
     save_status(name, obj)
     return (True, {"carried": carried, "kept_blocked": kept_blocked,
-                   "skipped": skipped, "optional": optional})
+                   "skipped": skipped, "optional": optional, "stale": stale})
 
 
 def pr_ready(name):
@@ -2804,7 +3015,13 @@ def pr_ready(name):
     can scope its claim, and unscheduled archs (hardware gone) are never blockers.
 
     Returns (ready, blocking, nonviable)."""
-    obj = load_status(name)
+    # The freshest record, not the nearest: load_status prefers the working tree,
+    # so a checkout carrying a stale trunk-era copy of this project's folder would
+    # have the gate judge that copy while the enumeration around it read the
+    # project's branch. project_record puts the project's own branch first.
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
 
     # Checked here and not only at adoption, because an opt-out usually arrives after
     # we have already sent this owner a pull request -- that is what prompts it. This
@@ -2864,13 +3081,22 @@ def pr_ready(name):
                       if not vals[a].get("blocked")]
         if candidates:
             blocking.extend(candidates)   # completing any ONE clears the gate
-        else:
+        elif archs:
+            # Every arch that tried has a documented reason it cannot: no evidence
+            # can exist, so the correct move is a waiver request or a scoped claim.
             blocking.append((gate, "no viable arch can satisfy this gate"))
             nonviable.extend(a for a in archs if vals[a].get("blocked"))
+        else:
+            # Nothing has TRIED. That is not the same as "cannot": the remedy is a
+            # validation on a host carrying the attribute, not a waiver.
+            blocking.append((gate, "no arch has attempted this gate yet -- validate "
+                                   f"on a host with the {gate} attribute"))
 
     # Licence gate. Here rather than only in the publisher so that EVERY route to an
-    # upstream PR passes it, whoever is doing the opening.
-    lic_ok, lic_why = license_gate(name)
+    # upstream PR passes it, whoever is doing the opening. Judged on the same record
+    # as the gates above, not re-resolved through load_status's working-tree-first
+    # order, so a stale local copy cannot shadow a clearance recorded on the branch.
+    lic_ok, lic_why = license_gate(name, obj)
     if not lic_ok:
         blocking.append(("license", lic_why))
 
@@ -2910,12 +3136,12 @@ def record_tokens(name, tokens, source=None):
 
 def commit_project(name, message, extra_paths=()):
     """Commit a project's control-plane artifacts together: status.json,
-    notes.md, plan.md, stats.jsonl and surface.json (whichever exist), plus any
-    extra_paths. surface.json is here because it is judged by a gate: left
+    notes.md, plan.md, stats.jsonl, surface.json and deferred.json (whichever
+    exist), plus any extra_paths. surface.json is here because it is judged by a gate: left
     uncommitted it fails the check on the next push, from whichever host makes it.
     Agents call
     this for every state transition so the per-phase telemetry in stats.jsonl
-    (compile/test wall-clock etc., written by timeit.sh -- the README/blog metrics)
+    (compile/test wall-clock etc., written by timeit.sh -- provenance of the endeavor)
     is persisted WITH the transition and never accumulates uncommitted in the
     shared working tree. Prefer this over commit_and_push for project transitions."""
     paths = [f"projects/{name}/{fn}" for fn in
@@ -3085,6 +3311,10 @@ def main(argv=None):
     s.add_argument("--offline", action="store_true",
                    help="check the recorded snapshot only, without re-reading GitHub")
 
+    s = sub.add_parser("pr-commands",
+                       help="audit every /moat command on the review PR; nonzero if any blocks publishing")
+    s.add_argument("name")
+
     sub.add_parser("pr-candidates",
                    help="list projects whose upstream PR is ready to open (honors recorded dispositions; "
                         "use this instead of scanning raw state==completed)")
@@ -3131,6 +3361,9 @@ def main(argv=None):
     s.add_argument("deps", nargs="*")
 
     sub.add_parser("deps", help="print inter-project dependencies and what is blocked on them")
+    sub.add_parser("dep-doc-gaps",
+                   help="dependency providers whose notes.md lacks the required "
+                        "'## Install as a dependency' section")
 
     args = ap.parse_args(argv)
 
@@ -3254,7 +3487,7 @@ def main(argv=None):
             print(v.detail)
     elif args.cmd == "commit-project":
         ok = commit_project(args.name, args.message)
-        print(f"committed projects/{args.name} (status/notes/plan/stats)" if ok else "(nothing to commit)")
+        print(f"committed projects/{args.name} (status/notes/plan/surface/deferred/stats)" if ok else "(nothing to commit)")
     elif args.cmd == "record-tokens":
         r = record_tokens(args.name, args.tokens, args.source)
         print(f"recorded {r['tokens']} tokens for {args.name}" + (f" ({args.source})" if args.source else ""))
@@ -3266,12 +3499,21 @@ def main(argv=None):
             msg = f"{args.name} -> {args.new_sha[:8]}: carried {info['carried']}; kept-blocked {info['kept_blocked']}"
             if info.get("optional"):
                 msg += f"; not blocking (gates already satisfied, or unscheduled) {info['optional']}"
+            if info.get("stale"):
+                msg += (f"; STALE completed {info['stale']} (validated an older head; "
+                        f"owed a revalidation, not carried)")
             if info["skipped"]:
                 msg += f"; SKIPPED actionable {info['skipped']} (should not squash yet)"
             print(msg)
     elif args.cmd == "pr-ready":
         ready, blocking, nonviable = pr_ready(args.name)
         print(f"{args.name}: PR-ready={ready}")
+        if not _fork_repo(args.name).is_dir():
+            # The cleanliness gate needs the clone: absent, there is nothing to
+            # judge, and silence here read as "checked and clean" when it meant
+            # "not checkable on this host".
+            print("  note: no local fork clone, so fork cleanliness was NOT "
+                  "re-checked here -- it was enforced on the hosts that validated")
         if blocking:
             print("  BLOCKING (every required gate needs ONE completed arch at head_sha, "
                   "or an approved waiver; fork must be clean): "
@@ -3317,6 +3559,31 @@ def main(argv=None):
         ok, why = pr_approval_valid(args.name, live=not args.offline)
         print(f"{args.name}: approval-valid={ok} ({why})")
         return 0 if ok else 1
+    elif args.cmd == "pr-commands":
+        obj, _where = project_record(args.name)
+        url = ((obj or {}).get("pr_approval") or {}).get("review_pr") \
+            or (obj or {}).get("review_pr")
+        if not url:
+            print(f"{args.name}: no review PR recorded")
+            return 1
+        pr = fetch_review_pr(url)
+        if pr is None:
+            print(f"{args.name}: could not reach the review PR at {url} -- "
+                  f"an outage is not an answer")
+            return 1
+        latest = _decision_events(pr)
+        for r in sorted(latest.values(), key=lambda e: e.get("at") or ""):
+            what = _command_of(r) or str(r.get("state") or "").lower()
+            print(f"  {r.get('at')}  {r.get('login')} ({r.get('assoc')}): {what}")
+        if not latest:
+            print("  no decisions on the review PR")
+        blockers, notes = moat_command_audit(pr)
+        for n in notes:
+            print(f"  note: {n}")
+        for b in blockers:
+            print(f"  BLOCKS: {b}")
+        print(f"{args.name}: {'BLOCKED' if blockers else 'clear'} on {url}")
+        return 1 if blockers else 0
     elif args.cmd == "pr-candidates":
         names = [n for n, _o, _w in project_records()]
         ready_names = []
@@ -3345,7 +3612,14 @@ def main(argv=None):
         names = ([args.name] if args.name
                  else [n for n, _o, _w in project_records()])
         real_gap = False
+        judged = 0
         for n in names:
+            # A missing clone is not evidence of cleanliness, so it must not count
+            # toward the clean bill printed below -- same rule as pr-ready, which
+            # says the check did not run rather than silently passing.
+            if not _fork_repo(n).is_dir():
+                continue
+            judged += 1
             files = uncommitted_source_files(n)
             if not files:
                 continue
@@ -3365,9 +3639,16 @@ def main(argv=None):
                 print(f"    {code:3} {p}")
         if real_gap:
             sys.exit(1)
+        elif judged == 0:
+            print("audit-clean: NO local fork clone to judge here"
+                  + (f" ({args.name})" if args.name else "")
+                  + " -- the check did not run; it binds on the hosts holding the clones")
         else:
-            print("OK: no fork with a completed/pr platform has uncommitted source edits" +
-                  (f" ({args.name})" if args.name else ""))
+            print(f"OK: no fork with a completed/pr platform has uncommitted source "
+                  f"edits ({judged} local clone(s) judged"
+                  + (f"; {len(names) - judged} project(s) have no clone here"
+                     if len(names) > judged else "")
+                  + (f" ({args.name})" if args.name else "") + ")")
     elif args.cmd == "set-pr-open":
         set_pr_open(args.name, args.pr_url, args.pr_number)
         print(f"{args.name}: PR opened -> {args.pr_url}")
@@ -3396,7 +3677,8 @@ def main(argv=None):
         return 0
     elif args.cmd == "fleet":
         for r in fleet(args.platform):
-            print(f"{r['project']}\t{r['where']}\t{r['state']}\t{r['stage']}")
+            print(f"{r['project']}\t{r['where']}\t{r['state']}\t{r['stage']}"
+                  f"\t{r['branch']}")
     elif args.cmd == "dep-blocked":
         rows = dep_blocked(args.platform)
         for name, report in rows:
@@ -3431,6 +3713,15 @@ def main(argv=None):
             print(f"{d_name}: depends_on={deps} -> {mark}")
         if not any_dep:
             print("(no inter-project dependencies recorded)")
+    elif args.cmd == "dep-doc-gaps":
+        rows = dep_doc_gaps()
+        for dep, users in rows:
+            print(f"{dep}\t{','.join(users)}")
+        if rows:
+            print(f"-- {len(rows)} provider(s) lack the '## Install as a dependency' "
+                  f"section DEPENDENCIES.md requires, so a dependent's porter has no "
+                  f"recipe to follow. Write it in the provider's notes.md on its own "
+                  f"branch", file=sys.stderr)
     return 0
 
 
