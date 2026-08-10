@@ -1724,3 +1724,74 @@ per-arch validation states are unchanged by this round.
   Claude named in each body; no `Co-Authored-By` and no noreply trailer; ASCII
   throughout.
 - Fork worktree clean at `1d0822bd`; pushed with `--force-with-lease`.
+
+## Review 2026-08-10 #4 (reviewer, linux-gfx1100, fork moat-port 4d25e3f1 -> 1d0822bd)
+
+Verdict: PASS.  No findings.  Scope was the two wording corrections from review
+#3 and the standing invariants; rounds 1-3 covered the compiled code, which is
+byte-identical to what they reviewed apart from one comment block.
+
+### 1. The pooling cache comment is now exactly true
+
+`src/tensors/gpu/cudnn_wrappers.cu:457-462` and fd8ef1ff's second paragraph both
+now say: per batch nothing is saved, the allocation still happens once per
+pooling node, and the free moves from the end of `backward` to node teardown.
+That matches the ownership chain end to end, checked against the code rather
+than against the porter's account of it:
+
+- `DeviceBuffer` is `std::shared_ptr<void>` (`cudnn_wrappers.h:37`) and
+  `allocateDeviceBuffer` (`cudnn_wrappers.cu:40-52`) attaches a `hipFree`
+  deleter, so the last owner going away IS the free.
+- `PoolingWrapper pooling_` is a by-value member of `PoolingOp`
+  (`node_operators_unary.h:1379`), so the wrapper and its `gradStaging_` die
+  with the node.
+- Nodes are held by `nodesForward_` (`expression_graph.cpp:51`) and dropped by
+  `ExpressionGraph::clear()` (`expression_graph.h:726-734`), which runs per
+  batch on both live paths -- `encoder_decoder.cpp:236` for training and
+  `model_lenet.h:15,24` for the MNIST LeNet example, the only live caller of
+  avg_pooling/max_pooling.  `PoolingOp` is not memoized (`memoize_` defaults
+  false, `node.h:26`), so nothing keeps the node past a clear.
+- A fresh node starts with `gradStagingSize_ == 0`, so `ensureBuffer`
+  (`cudnn_wrappers.cu:57-61`) allocates on the first `backward`, and `backward`
+  runs once per node per backprop.  Against `82755003:cudnn_wrappers.cu:459-460`
+  (a local `DeviceBuffer` freed at scope exit) the malloc and free counts per
+  batch are identical; only the moment of the free moves.
+
+Neither over- nor understated: it does not claim a saving, and it does not
+claim the free was eliminated.  The consistency-with-the-convolution-path
+rationale carries the change, and both the comment and the body say so.
+
+### 2. The skill's 11.0 floor is gone and nothing adjacent moved
+
+`fault-classes.md:337` now reads "so every release up to 12.1 is affected, plus
+any 12.2-or-newer build that defines the disable macro".  0f2eec4 is a
+one-line, one-file change; the `if constexpr` explanation, the `(ScalarType)0`
+trap, the `#if defined(__CUDACC__)` boundary sentence above it, the macro
+spelling, the float-literal advice and the "compile-check against 12.1 headers
+or older ... 12.1 fails and 12.2.53 onward compiles" instruction are all
+unchanged.  82755003's body keeps "11.0 through 12.1", which is right there:
+`prod_sparse.cpp:15` gates the header carrying the cast on
+`CUDA_VERSION >= 11000`, so that floor is marian's own and the message is about
+marian.
+
+### Invariants
+
+- `git diff 4d25e3f1 1d0822bd --stat`: one file,
+  `src/tensors/gpu/cudnn_wrappers.cu`, 4 insertions 3 deletions, all inside the
+  one comment block.  `changeclass.py` reads
+  `class=comment-only arch_independent=False inert=True`.
+- `ba0ec806`, `1381ed77` and `82755003` are all reachable ancestors of
+  `1d0822bd` (`git merge-base --is-ancestor`).
+- Titles byte-identical to the ones they replaced ("[ROCm] Cache the pooling
+  backward staging buffer", 48; "[ROCm] Report MIOpen failures by name, not by
+  number", 52); longest title on the branch is 61 chars, every one `[ROCm]`.
+- `1d0822bd`'s body diffs empty against `4d25e3f1`'s.
+- All 14 branch commits name Claude; no `Co-Authored-By` and no noreply
+  trailer; ASCII throughout; no internal account, host or path in messages or
+  in the branch diff (the toolkit paths in 82755003's Test Plan are
+  placeholders).
+- `python3 utils/jargon.py --port marian-dev` clean over the whole branch.
+- Fork worktree clean; `origin/moat-port` == local HEAD == `1d0822bd`.
+- No GPU run this round and none expected: the delta cannot change compiled
+  behavior beyond `__LINE__` in a `MIOPEN_CALL` diagnostic.  Its absence is not
+  part of this verdict.
