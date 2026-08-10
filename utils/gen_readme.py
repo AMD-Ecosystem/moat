@@ -144,6 +144,9 @@ def outcome_cell(p):
                     The platform cells stay truthful (the port was built/validated)
                     and the outcome carries ⚖️.
       cant-port / not-a-target / duplicate / ported-elsewhere / declined -- set aside. ⚪
+      opted-out -- the maintainer asked not to receive our pull requests. Reads the
+                    same ⚪, and deliberately so: whose decision it was belongs in the
+                    record, not in a glyph on a board about ports.
     No PR and no disposition -> pending (—)."""
     if p.get("pr_url"):
         # pr_state is the authority: the PR lifecycle is one project-level fact, not

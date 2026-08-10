@@ -5,7 +5,7 @@ CI and the pre-push hook both call this, so they cannot drift. Adding a gate her
 adds it to both; implementing it twice is how the two ended up disagreeing before.
 
     python3 utils/check.py              # everything
-    python3 utils/check.py --fast       # skip anything that shells out to git/gh
+    python3 utils/check.py --fast       # skip the forks gate (walks every fork clone)
     python3 utils/check.py schema readme
 
 Exit 1 if any gate fails. Each gate prints one line per problem, prefixed with its
@@ -205,6 +205,45 @@ def gate_jargon():
     return problems
 
 
+def gate_optout():
+    """The opt-out record is well-formed, and nothing it covers is still adopted.
+
+    A malformed entry here fails open -- the filters would stop matching and the
+    repos would quietly come back into the queue -- so the shape is checked rather
+    than assumed. The second half catches the case that matters: an opt-out recorded
+    while a project from that owner is still in the pipeline. pr_ready blocks the
+    route upstream on its own, but the project sitting there adopted reads as live
+    work, and someone has to retire it."""
+    import moatlib as m
+    problems = []
+    d = m.load_optouts()
+    if not isinstance(d, dict):
+        return ["data/optout.json is not an object"]
+    for key, v in d.items():
+        if not isinstance(v, dict):
+            problems.append(f"{key}: not an object")
+            continue
+        if key != (v.get("who") or "").lower():
+            problems.append(f"{key}: key does not match who={v.get('who')!r}")
+        if v.get("scope") not in ("owner", "repo"):
+            problems.append(f"{key}: scope must be owner or repo, got {v.get('scope')!r}")
+        if not v.get("source"):
+            problems.append(f"{key}: no source -- an opt-out must say where it was asked for")
+    for name in sorted(m.all_projects()):
+        rec, _where = m.project_record(name)
+        if not rec:
+            continue
+        full = (rec.get("upstream_url") or "").split("github.com/", 1)[-1]
+        if not full or not m.optout_for(full):
+            continue
+        disp = m.get_disposition(full) or {}
+        if disp.get("disposition") != "skip":
+            problems.append(f"{name} ({full}): its owner opted out but the project is "
+                            f"still live at stage {rec.get('stage')} -- "
+                            f"python3 utils/optout.py record retires it")
+    return problems
+
+
 def gate_surface():
     """Where a project has a surface.json, every component is either covered or
     explicitly scoped out with a reason. The gate is ACCOUNTING, not coverage: a
@@ -212,21 +251,18 @@ def gate_surface():
     eliminated is the SILENT omission -- a port that claimed success while covering a
     subset.
 
-    It has never judged anything. Zero projects have a surface.json, because nothing
-    writes one: `utils/surface.py` is named in no agent instruction, and planner.md
-    describes the idea while telling the planner to write prose into plan.md, which
-    this never reads. So the gate passes vacuously and reports a count of zero as if
-    it were a clean bill.
-
-    Left in place and made honest rather than deleted: the accounting it describes is
-    worth having, and the missing piece is one instruction in planner.md plus a
-    `surface.py generate` anyone can run. Saying "0 accounted for" out loud is what
-    stops it reading as nine gates passing when it is eight."""
+    Few projects carry one: planner.md now instructs `surface.py generate`, most
+    existing projects predate that instruction, and nothing backfills one (colmap,
+    on its own branch, was the first). The check globs THIS working tree only --
+    a surface.json on another project's branch is invisible here -- so on most
+    checkouts the gate passes vacuously and says so out loud rather than reading
+    as a clean bill."""
     r = _run([sys.executable, "utils/surface.py", "check", "--all"])
     if r.returncode == 0:
         if not list((REPO / "projects").glob("*/surface.json")):
-            print("surface: VACUOUS -- no project has a surface.json, so this gate "
-                  "judged nothing (see planner.md; `surface.py generate <name>`)",
+            print("surface: VACUOUS -- no project in this checkout has a "
+                  "surface.json, so this gate judged nothing here (see planner.md; "
+                  "`surface.py generate <name>`)",
                   file=sys.stderr)
         return []
     return [l.replace("surface: ", "") for l in r.stdout.splitlines() if l.strip()][:20]
@@ -249,6 +285,7 @@ GATES = {
     "blobs": (gate_blobs, False),
     "states": (gate_states, False),
     "jargon": (gate_jargon, False),
+    "optout": (gate_optout, False),
     "surface": (gate_surface, False),
     "forks": (gate_forks, True),      # slow: shells out per fork clone
 }
