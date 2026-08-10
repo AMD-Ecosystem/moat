@@ -8,6 +8,12 @@ Per-project files:
 - `plan.md` -- planner output: build classification, port strategy, CUDA-surface inventory, risk list, file-by-file change list, build + GPU test plan.
 - `notes.md` -- project-specific gotchas, review records, validation records. Append-only with dated headings.
 - `stats.jsonl` -- append-only phase wall-clock, session, and token records.
+- `surface.json` (if present) -- the machine-checked port-surface accounting
+  (`../utils/surface.py generate`); check.py's `surface` gate refuses success while a
+  component is neither `covered` nor `scoped_out` with a reason.
+- `deferred.json` (if present) -- work this project postponed (scoped-out features,
+  unfiled ROCm bug reports), registered via `../utils/deferred.py add --project <name>`
+  and ruled on by a person.
 - `src/` -- gitignored clone of the fork (the porter's working tree).
 There is no lock file here. A project is claimed by its `port/<name>` branch existing
 on the remote, and writes to the fork are serialised by the `porting` lock inside
