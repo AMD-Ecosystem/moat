@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Aggregate projects/<name>/stats.jsonl into the numbers the README and a
-future blog want. Compile/test wall-clock is accurate. Thinking time is a
-residual (unattributed wall: model latency plus human-in-the-loop), not pure
-model thinking. Tokens are approximate. Nothing here fabricates a number;
-approximate values carry approx=True."""
+"""Aggregate projects/<name>/stats.jsonl into summary numbers. The stats are
+provenance of the MOAT endeavor: what the ports cost in compile/test wall,
+session wall, and tokens is a notable fact about the work, recorded so a person
+can look later. Nothing in the pipeline consumes them. Compile/test wall-clock
+is accurate. Thinking time is a residual (unattributed wall: model latency plus
+human-in-the-loop), not pure model thinking. Tokens are approximate. Nothing
+here fabricates a number; approximate values carry approx=True."""
 
 import json
 import sys
@@ -87,8 +89,7 @@ def tokens(recs):
     return total, True, source  # always approximate
 
 
-def aggregate(project):
-    recs = read_records(project) or retired_records(project)
+def _summarize(recs):
     phase = wall_by_phase(recs)
     swall = session_wall(recs)
     thinking = max(0.0, swall - sum(phase.values()))
@@ -97,22 +98,41 @@ def aggregate(project):
         "tokens_total": tok,
         "tokens_approx": approx,
         "tokens_source": source,
+        # Every phase label agents actually wrote, not a fixed bucket list: a
+        # label outside compile|test|misc (validators log cuda-compile for the
+        # CUDA baseline) was being subtracted from thinking yet reported
+        # nowhere, so wall_seconds no longer summed to session wall.
         "wall_seconds": {
             "thinking": round(thinking, 1),
-            "compile": round(phase.get("compile", 0.0), 1),
-            "test": round(phase.get("test", 0.0), 1),
-            "misc": round(phase.get("misc", 0.0), 1),
+            **{k: round(phase.get(k, 0.0), 1)
+               for k in sorted({"compile", "test", "misc", *phase})},
         },
         "session_count": sum(1 for r in recs
                              if r.get("kind") == "session" and r.get("event") == "start"),
     }
 
 
+def aggregate(project):
+    return _summarize(read_records(project) or retired_records(project))
+
+
+def aggregate_retired():
+    """The retired file as one summary -- the cost story it exists to preserve.
+
+    Per-project aggregation consults retired records only as a fallback, so without
+    this the file's whole-endeavor number was unreachable from the CLI."""
+    recs = retired_records()
+    out = _summarize(recs)
+    out["project_count"] = len({r.get("project") for r in recs if r.get("project")})
+    return out
+
+
 def main(argv):
     if not argv:
-        sys.stderr.write("usage: statlib.py <project>\n")
+        sys.stderr.write("usage: statlib.py <project> | statlib.py --retired\n")
         return 2
-    json.dump(aggregate(argv[0]), sys.stdout, indent=2)
+    result = aggregate_retired() if argv[0] == "--retired" else aggregate(argv[0])
+    json.dump(result, sys.stdout, indent=2)
     sys.stdout.write("\n")
     return 0
 
