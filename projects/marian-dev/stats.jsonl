@@ -128,3 +128,4 @@
 {"kind":"phase","ts":"2026-08-10T18:51:40Z","phase":"test","seconds":1.508,"exit":0,"cmd":"agent_space/marian-build-gfx1100-full/marian-decoder -m agent_space/rccl_sync_validate.npz -v /var/lib/jenkins/moat/agent_space/marian-e2e/vocab.src.yml /var/lib/jenkins/moat/agent_space/marian-e2e/vocab.tgt.yml -i /var/lib/jenkins/moat/agent_space/marian-e2e/test.src -b 6 --devices 0"}
 {"kind":"phase","ts":"2026-08-10T18:52:52Z","phase":"test","seconds":1.530,"exit":0,"cmd":"agent_space/marian-build-gfx1100-full/marian-decoder -m agent_space/det_validate.npz -v /var/lib/jenkins/moat/agent_space/marian-e2e/vocab.src.yml /var/lib/jenkins/moat/agent_space/marian-e2e/vocab.tgt.yml -i /var/lib/jenkins/moat/agent_space/marian-e2e/test.src -b 6 --devices 0"}
 {"kind":"session","ts":"2026-08-10T18:59:28Z","epoch":1786388368.662931081,"event":"end","platform":"linux-gfx1100"}
+{"kind": "tokens", "ts": "2026-08-10T19:00:26Z", "tokens": 146785, "source": "validator"}
