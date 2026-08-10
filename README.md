@@ -4,6 +4,15 @@ MOAT ports popular CUDA GitHub projects to ROCm/HIP, one repo at a time. Coverag
 
 Prefer pictures? [VISUAL.md](VISUAL.md) walks through all of this in twelve diagrams.
 
+- [If you maintain a project we might send a pull request to](#if-you-maintain-a-project-we-might-send-a-pull-request-to)
+- [How it works](#how-it-works)
+- [What a person decides, and what agents may never do](#what-a-person-decides-and-what-agents-may-never-do)
+- [Suggest a project to port](#suggest-a-project-to-port)
+- [Licence](#licence)
+- [Scope and honesty](#scope-and-honesty)
+- [Projects](#projects)
+- [Layout](#layout)
+
 ## If you maintain a project we might send a pull request to
 
 Read this section and skip the rest; it is what concerns you.
