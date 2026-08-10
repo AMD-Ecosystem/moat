@@ -84,3 +84,19 @@
 {"kind":"session","ts":"2026-08-10T17:19:42Z","epoch":1786382382.333450051,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-10T17:38:28Z","epoch":1786383508.011065636,"event":"end","platform":"linux-gfx1100"}
 {"kind": "tokens", "ts": "2026-08-10T17:39:14Z", "tokens": 200485, "source": "reviewer"}
+{"kind":"session","ts":"2026-08-10T17:40:08Z","epoch":1786383608.477965215,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-10T17:45:38Z","phase":"compile-cuda-check","seconds":2.986,"exit":1,"cmd":"cmake --build /var/lib/jenkins/moat/agent_space/marian-build-cuda -j 28"}
+{"kind":"phase","ts":"2026-08-10T17:48:12Z","phase":"compile-cuda-check","seconds":99.026,"exit":1,"cmd":"cmake --build /var/lib/jenkins/moat/agent_space/marian-build-cuda -j 28"}
+{"kind":"phase","ts":"2026-08-10T17:49:44Z","phase":"compile","seconds":74.226,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/agent_space/marian-build-gfx1100 -j 28"}
+{"kind":"phase","ts":"2026-08-10T17:50:10Z","phase":"test","seconds":2.772,"exit":0,"cmd":"/var/lib/jenkins/moat/agent_space/marian-build-gfx1100/src/tests/units/run_operator_tests"}
+{"kind":"phase","ts":"2026-08-10T17:50:20Z","phase":"test","seconds":0.404,"exit":0,"cmd":"/var/lib/jenkins/moat/agent_space/marian-build-gfx1100/src/tests/units/run_graph_tests"}
+{"kind":"phase","ts":"2026-08-10T17:50:22Z","phase":"test","seconds":1.753,"exit":0,"cmd":"/var/lib/jenkins/moat/agent_space/marian-build-gfx1100/src/tests/units/run_attention_tests"}
+{"kind":"phase","ts":"2026-08-10T17:50:23Z","phase":"test","seconds":1.765,"exit":0,"cmd":"/var/lib/jenkins/moat/agent_space/marian-build-gfx1100/src/tests/units/run_transformer_tests"}
+{"kind":"phase","ts":"2026-08-10T17:50:24Z","phase":"test","seconds":0.174,"exit":0,"cmd":"/var/lib/jenkins/moat/agent_space/marian-build-gfx1100/src/tests/units/run_binary_tests"}
+{"kind":"phase","ts":"2026-08-10T17:50:24Z","phase":"test","seconds":0.168,"exit":0,"cmd":"/var/lib/jenkins/moat/agent_space/marian-build-gfx1100/src/tests/units/run_fastopt_tests"}
+{"kind":"phase","ts":"2026-08-10T17:50:24Z","phase":"test","seconds":0.173,"exit":0,"cmd":"/var/lib/jenkins/moat/agent_space/marian-build-gfx1100/src/tests/units/run_utils_tests"}
+{"kind":"phase","ts":"2026-08-10T17:50:26Z","phase":"test","seconds":2.151,"exit":3,"cmd":"/var/lib/jenkins/moat/agent_space/marian-build-gfx1100/src/tests/units/run_rnn_tests"}
+{"kind":"phase","ts":"2026-08-10T17:51:37Z","phase":"compile-cuda-check","seconds":193.190,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/agent_space/marian-build-cuda -j 28"}
+{"kind":"phase","ts":"2026-08-10T17:51:38Z","phase":"test","seconds":0.594,"exit":0,"cmd":"/var/lib/jenkins/moat/agent_space/conv_pool_check"}
+{"kind":"phase","ts":"2026-08-10T17:55:22Z","phase":"test","seconds":143.008,"exit":0,"cmd":"/var/lib/jenkins/moat/agent_space/marian-build-gfx1100/marian --type char-s2s --char-highway 0 --dim-emb 64 --dim-rnn 64 --enc-type bidirectional --enc-depth 1 --dec-depth 1 --mini-batch 16 --workspace 2048 --after 1000u --disp-freq 100 --learn-rate 0.0001 --optimizer adam --clip-norm 1 --seed 2222 --devices 0 --train-sets /var/lib/jenkins/moat/agent_space/marian-e2e/train.src /var/lib/jenkins/moat/agent_space/marian-e2e/train.tgt --vocabs /var/lib/jenkins/moat/agent_space/marian-e2e/vocab.src.yml /var/lib/jenkins/moat/agent_space/marian-e2e/vocab.tgt.yml --model /var/lib/jenkins/moat/agent_space/marian-e2e/charfix.npz --overwrite"}
+{"kind":"session","ts":"2026-08-10T17:58:56Z","epoch":1786384736.776296138,"event":"end","platform":"linux-gfx1100"}

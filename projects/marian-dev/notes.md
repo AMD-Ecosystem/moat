@@ -111,7 +111,15 @@ Other gotchas:
   because the gnu++11 3rd_party libs (intgemm) choke on the HIP headers.
 - HIPBLASLT_USE_ROCROLLER define is injected by find_package(hipblaslt); benign.
 
-## Deferred follow-ups (separable, NOT blockers for the dense NMT path)
+## Deferred follow-ups (SUPERSEDED 2026-08-10 -- historical, all three are done)
+This section recorded the scope of the first round. The maintainer rejected that
+scope (see "2026-08-10: Sent back by the maintainer") and all three features are
+now implemented, built and exercised on GPU (see "2026-08-10: the three
+scope-outs ported"): the hipSPARSE SpMM path is correct for fp32 and fp16, the
+convolution/pooling path runs on MIOpen with USE_CUDNN=ON, the collectives run
+on RCCL with USE_NCCL=ON, and the `pooling` app test is back in the HIP build.
+Kept for history; read the 2026-08-10 sections for the current state.
+
 1. cuSPARSE sparse-attention CSRProd (prod_sparse_cu11.h): hipSPARSE SpMM with
    the row/col-major + CSR_ALG2 setup gives wrong fp32 results and rejects fp16
    (HIPSPARSE_STATUS_NOT_SUPPORTED). This is the only failing unit path
@@ -1224,3 +1232,113 @@ rather than leaving two sections that contradict each other.
 ba0ec806 and earlier, which three platforms already validated.  GPU test runs
 for these five commits are the validator's job and their absence is not part of
 this verdict.
+
+## 2026-08-10: review findings fixed (linux-gfx1100, porter)
+
+All four findings of the 2026-08-10 review are addressed. Fork moat-port
+1381ed77 -> 29ec0725, three new commits, nothing amended (1381ed77 stays a
+reachable ancestor).
+
+```
+32d65345 [ROCm] Keep the sparse GEMM compiling for NVIDIA
+4ff41294 [ROCm] Cache the pooling backward staging buffer
+29ec0725 [ROCm] Report MIOpen failures by name, not by number
+```
+
+### 1. Blocker: the CUDA build (prod_sparse_cu11.h)
+
+Confirmed exactly as the review described, and fixed with `if constexpr` on
+both `resultNeedsCast()` blocks (188, 256) plus a float literal in the beta
+comparison. The reviewer's diagnosis was right down to the line: with the
+pre-fix source, the REAL translation unit (not just a repro shape) fails.
+
+Repro, marian's own prod_sparse.cpp host-compile command with the CUDA 12.1
+fp16 headers ahead of the 12.8 ones (cusparse.h still comes from 12.8; only
+cuda_fp16.h version matters here):
+
+```
+prod_sparse_cu11.h:191:22: error: call of overloaded '__half(int)' is ambiguous
+  191 |     if(betaScalar == (ScalarType)0)
+/opt/conda/envs/cuda-12.1-hdr/include/cuda_fp16.hpp:215:25: note: candidate: '__half::__half(double)'
+/opt/conda/envs/cuda-12.1-hdr/include/cuda_fp16.hpp:214:25: note: candidate: '__half::__half(float)'
+```
+
+instantiated from `TypedSparseGemm<__half>::CSRProd` at prod_sparse.cpp:37.
+With the fix the same command compiles clean.
+
+CUDA 12.1 headers came from `conda create -n cuda-12.1-hdr -c nvidia
+cuda-cudart-dev=12.1 cuda-cccl=12.1` (cuda-cccl is needed too, or cuda_fp16.hpp
+fails on `#include <nv/target>`); CUDART_VERSION 12010, host g++ 13.3.
+
+Full nvcc CUDA-build check per the skill: configure with `-DUSE_HIP=OFF
+-DCUDA_TOOLKIT_ROOT_DIR=/opt/conda/envs/cuda-12.8/targets/x86_64-linux` and the
+arch pinned to sm_80 (marian uses the legacy FindCUDA COMPILE_<arch> switches,
+NOT CMAKE_CUDA_ARCHITECTURES: pass `-DCOMPILE_AMPERE=on` with KEPLER/MAXWELL/
+PASCAL/VOLTA/TURING/AMPERE_RTX off). 161/161 targets, all five executables
+LINKED. Compile-and-link only; no NVIDIA GPU here, nothing was run.
+
+Two environment gotchas for the next CUDA check on a conda toolkit, both local
+to this host and not port defects:
+- FindCUDA wants `CUDA_TOOLKIT_ROOT_DIR` at `targets/x86_64-linux` (that is
+  where `include/cuda_runtime.h` lives), but nvcc then resolves its internal
+  tools relative to `targets/x86_64-linux/bin`, which holds only nvcc, and the
+  build dies with `sh: 1: cudafe++: not found`. Symlink cudafe++, ptxas,
+  nvlink, fatbinary, cicc, bin2c, crt and nvcc.profile into that bin. Also
+  symlink `lib64 -> lib` in the env root, or marian's cublasLt find fails.
+- `cumsum.cu` uses `thrust::unary_function`, which CUDA 12.8's Thrust
+  deprecates, and marian compiles with -Werror: add
+  `-DCUDA_NVCC_FLAGS=-Xcompiler;-Wno-deprecated-declarations`. Upstream code,
+  untouched by this port, and it fails identically without our changes.
+
+The cuDNN half of the CUDA path could NOT be compile-checked: marian's cuDNN
+code is written against the cuDNN 7 algorithm API, which cuDNN 8 removed, so
+USE_CUDNN=ON does not build on the CUDA side with any cuDNN available today --
+independent of this port. USE_CUDNN=OFF for the check.
+
+### 2. Pooling backward staging buffer
+
+Now `ensureBuffer(gradStaging_, gradStagingSize_, ...)` with the members beside
+the existing pooling workspace, matching the convolution gradients. No
+hipMalloc/hipFree per pooling node per batch.
+
+### 3. MIOPEN_CALL
+
+Prints `miopenGetErrorString(_s)`. Verified the decoder returns names
+(`3 -> miopenStatusBadParm`, `8 -> miopenStatusUnsupportedOp`).
+
+### 4. notes.md deferred section
+
+Marked SUPERSEDED in place with a pointer to the 2026-08-10 sections; the
+original text is kept for history.
+
+### Re-test (gfx1100, GPU 0, USE_CUDNN=ON USE_NCCL=ON, incremental rebuild)
+
+No regressions against the numbers before this round:
+
+- operator_tests 603/603 assertions, 4 test cases (csr-dot and the fp16
+  sections included) -- PASS.
+- graph 10/10, attention 6/6, transformer 3/3, binary 9/9, fastopt 23/23,
+  utils 8/8 -- PASS.
+- rnn_tests 21/24 -- the three documented hipRAND-vs-cuRAND reference
+  mismatches, unchanged.
+- Convolution/pooling reference program (agent_space/conv_pool_check.cpp,
+  relinked against the rebuilt library): ALL CHECKS PASSED -- conv forward,
+  d/dinput, d/dkernel, d/dbias, max and average pooling forward+backward, and
+  the character-encoder-shaped multi-channel conv.
+- char-s2s training smoke, 1000 updates on GPU 0, exercising pooling backward
+  with the cached buffer: cost 3.22 -> 1.70, gNorm finite throughout, no NaN.
+  Matches the 1.70 of the previous round.
+
+Multi-GPU RCCL and the end-to-end determinism gate were NOT re-run this round;
+neither touches the three changed files, and both are the validator's to
+confirm at this head.
+
+### Rebuilding here: the submodules must be re-initialised
+
+The sentencepiece deinit at the end of the last round leaves simd_utils and
+simple-websocket-server missing too. Before any rebuild:
+`git submodule update --init src/3rd_party/simd_utils
+src/3rd_party/simple-websocket-server`, then the sentencepiece recovery
+documented above (init fails on the unfetchable pin, then
+`git -C src/3rd_party/sentencepiece checkout -f master`). NEVER stage the
+resulting sentencepiece gitlink change.
