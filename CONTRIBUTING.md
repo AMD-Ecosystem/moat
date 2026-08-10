@@ -10,10 +10,15 @@ Install the hooks once per clone:
 
     python3 utils/install_hooks.py
 
-They run the same gates as CI (`utils/check.py`), so a push that passes locally passes in
-CI. To see what will be checked:
+They run the same `check.py` gates as CI (both run `check.py --fast`, which skips the
+local-only `forks` scan). CI runs one more check the hook cannot: the pull request's
+title (`utils/pr_intent.py`), which does not exist at push time -- so a locally-clean
+push can still fail CI on its title, and only on that. To run what they run:
 
-    python3 utils/check.py
+    python3 utils/check.py --fast
+
+A bare `python3 utils/check.py` runs the `forks` scan too, which needs the local
+clones and is not part of either gate.
 
 ## Branch model
 
@@ -46,19 +51,47 @@ A project sits in `awaiting-fork` until someone decides.
 **Yes is a fork.** Creating `AMD-Ecosystem/<name>` releases the project -- creating one
 is a deliberate act by someone who can, so its existence carries the decision.
 `orient.sh` runs `upstream.py --forks --apply` before every selection, so the state
-advances and the PR gets its comment the next time anyone starts work.
+advances the next time anyone starts work. Nothing posts a comment anywhere: the
+fork poll's stdout (orient's `forks :` line) and the state change are the only
+confirmation.
 
 **No is recorded by a person, through the intake queue.** An agent writes the case and
 recommends a reason; it never records one. Screens collect into one issue
 (`utils/intake_queue.py publish --apply`), a person replies in prose, and an agent
-round-trips that reading as a small pull request carrying only the declines. Approving
-that is the record. Reasons are the `SKIP_REASONS` in `moatlib`; `declined` exists for a
+round-trips that reading as a small pull request carrying the declines (plus the
+regenerated board, which moves with them). Merging that is the record -- approving is
+impossible on a self-authored pull request, and the merge carries the same actor and
+timestamp. Reasons are the `SKIP_REASONS` in `moatlib`; `declined` exists for a
 deliberate no whose reasoning is intentionally not written down, since this repo is
 public and a written reason is permanent and quotable.
 
 A decline reaches `data/dispositions.json` on the trunk or the project is simply
 proposed again and the work repeats; `scaffold` then refuses it unless forced, so
 revisiting stays possible but deliberate.
+
+## When a maintainer asks us to stop
+
+    python3 utils/optout.py record <owner|owner/repo> --source <where they asked>
+
+Anyone may ask, on any pull request of ours or through the opt-out issue template, and
+they need give no reason. **This is the one decision of this kind an agent may record
+without asking**, and the exception is narrow for a specific reason: everything else in
+this file that needs a person is *our* judgement about a project, while this is somebody
+else's decision about us, carried into the record. The only thing recording it can do is
+less work, so the failure mode of getting it wrong points the safe way.
+
+Recording it retires the adopted projects it covers and blocks the rest mechanically:
+discovery stops offering those repos, `scaffold` refuses them, and `pr_ready` refuses
+them, which is what both routes upstream pass through. That last one is the point --
+an opt-out normally arrives *because* a pull request showed up, so it has to bind work
+that is already finished, not only work not yet started.
+
+What is left is visible on somebody else's repository and stays with a person: closing
+the open pull request and deleting the fork. `optout.py record` prints the commands and
+stops there.
+
+Removing an opt-out resumes contact with someone who asked us to stop, so it takes a
+person and `--by`.
 
 ## What a pull request should look like
 
@@ -99,11 +132,20 @@ approving it alone would approve a file that merely *asserts* the port works; th
 is the actual diff, and review comments there attach to the code and persist for whoever
 picks the project up next.
 
-Approve it with a review comment containing `/moat approve` on a line by itself. The
+Approve it with a comment carrying `/moat approve` on a line by itself -- either box
+GitHub offers counts, a review comment or an ordinary conversation comment. The
 Approved button is unavailable: agents open the pull request with the maintainer's
-credentials, so it is self-authored, and GitHub does not let an author approve. A review
-comment records the commit it was written against, which is what the staleness checks
-rest on.
+credentials, so it is self-authored, and GitHub does not let an author approve. Prefer
+the review form: it records the commit it was written against, which is what the
+staleness checks rest on, while a conversation comment is judged only by its time
+against the branch tip.
+
+Send it back the same way: `/moat changes-requested` on a line by itself -- the
+Request Changes button is greyed out for an author exactly as Approve is. It stands,
+and blocks submission, until the same person posts `/moat approve`. Your latest
+command is the one that counts; a command quoted inside a code fence is ignored, and
+an unrecognized `/moat` line blocks submission until it is cleaned up rather than
+being read as chatter.
 
 That fork PR carries the title and body the upstream PR will use, so **one approval covers
 the code, the title and the body together** -- write them for the external maintainer from
@@ -111,19 +153,30 @@ the start, not as a draft to be rewritten. Approving it is the decision to submi
 publishing step below opens the upstream PR with exactly that content, records it, and
 closes the review PR.
 
+Opening the review PR appends a standing note to the body (`SUBMISSION_NOTE` in
+`utils/upstream.py`): that the change was prepared by an AI assistant and approved by a
+person, a link back here, and how to opt out. Do not write it into the body by hand --
+the tool adds it, so what gets approved is what gets published, and the publish gate
+refuses a body that has lost it. Everything a maintainer is owed about where the change
+came from is therefore on the same page as the change.
+
 An approval covers what was on screen when it was given. A commit pushed afterwards, or an
-edited title or body, voids it. `upstream.py --approvals` reports those, and
-`--approvals --apply` dismisses the stale approval and asks for a fresh look rather than
-publishing something nobody read. Nothing surfaces them on its own, so the report is a step
-of the `moat-checkup` skill. Editing the record does not revive an approval, and only a
-person can approve.
+edited title or body, voids it. `upstream.py --approvals` reports those -- whether or not a
+snapshot was recorded yet, since the usual drift happens before publish time -- and
+`--approvals --apply` marks the stale approval as such on the review PR (dismissing it
+where GitHub allows, a comment asking for a fresh one where the approval was itself a
+comment) rather than publishing something nobody read. Nothing surfaces them on its own, so
+the report is a step of the `moat-checkup` skill. Editing the record does not revive an
+approval, and only a person can approve.
 
 Everything after that first post -- replies to maintainers, follow-up comments, a re-request
 for review -- is its own act and needs its own yes.
 
 ## Who opens the upstream pull request
 
-A person, from a session on their own machine, running one command:
+An attended session on the maintainer's own machine, running one command -- the
+person, or the agent working with them, since the content it publishes was already
+approved wholesale on the review PR and running it adds no new judgement:
 
     python3 utils/upstream.py --publish --apply
 
@@ -140,8 +193,9 @@ Keeping the credential in a human session costs one command and removes a standi
 releasing projects whose fork has appeared, reporting overtaken approvals -- happens when
 someone runs the `moat-checkup` skill or `orient.sh`, not on a timer. That is a real
 trade: drift accumulates silently between sweeps, and on one measured sweep 6 of 74
-records disagreed with GitHub, two of them merges nobody had noticed. `orient.sh` reports
-how long it has been since the last reconciliation so the gap stays visible. The only
+records disagreed with GitHub, two of them merges nobody had noticed. `orient.sh` nags
+when reconciliation has never run or is two weeks stale (it is silent below that), so
+the gap cannot grow unbounded without someone seeing it. The only
 workflow left is `ci.yml`, which gates pull requests and holds `contents: read`.
 
 Two mechanisms that look like they would close the gap do not. A **GitHub App** acts only
@@ -161,7 +215,8 @@ fork-side work and neither reaches the part that matters.
 | `blobs` | nothing tracked that looks like build output (`.a`, `.so`, `.o`, archives, wheels, model weights) and nothing over 1 MB without an entry in the allowlist saying why it is data rather than spill |
 | `states` | every state is one `moatlib` knows, every platform is a well-formed `<os>-<gfx>` with a known wavefront width, every waiver names a gate that may be waived, and every waiver states its case. It deliberately does NOT require a maintainer's approval: an unapproved waiver is what a *suggestion* is, and suggesting one is how the obstacle reaches a person at all. What stops an agent certifying its own way past a gate is that such a waiver satisfies nothing and blocks `pr_ready` -- enforced where it bites, not by failing the repo's checks over a decision nobody has made yet |
 | `jargon` | the in-house-vocabulary config loads and its patterns compile |
-| `surface` | for a project carrying a `surface.json`, every component is covered or explicitly scoped out with a reason -- accounting, not coverage, so the failure it prevents is the silent omission. It judges only projects that have the file and only once the port claims success; **no project currently has one**, so this gate presently judges nothing and says so out loud. `utils/surface.py generate <name>` opts a project in |
+| `optout` | every opt-out record is well-formed, and no project whose owner opted out is still live in the pipeline. A malformed entry fails open -- the filters stop matching and the repos quietly return to the queue -- so the shape is checked rather than assumed |
+| `surface` | for a project carrying a `surface.json`, every component is covered or explicitly scoped out with a reason -- accounting, not coverage, so the failure it prevents is the silent omission. It judges only projects that have the file and only once the port claims success. Few projects carry one (colmap, on its own branch, was the first), and the gate sees only the current checkout, so where none is present it judges nothing and says so out loud. `utils/surface.py generate <name>` opts a project in |
 | `forks` | no fork carries uncommitted source edits (local only -- needs the clones) |
 
 ## Adding a project
