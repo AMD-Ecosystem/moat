@@ -1,0 +1,30 @@
+{"kind":"phase","ts":"2026-05-31T03:24:59Z","phase":"compile","seconds":10.098,"exit":1,"cmd":"cmake --build projects/oneflow/src/build -j 16 --target oneflow"}
+{"kind":"phase","ts":"2026-05-31T03:32:19Z","phase":"compile","seconds":0.169,"exit":1,"cmd":"cmake --build build -j 16 --target oneflow -- -k 0"}
+{"kind":"phase","ts":"2026-05-31T04:10:48Z","phase":"compile","seconds":1764.538,"exit":1,"cmd":"cmake --build /var/lib/jenkins/moat/projects/oneflow/src/build -j 16 --target oneflow -- -k 0"}
+{"kind":"phase","ts":"2026-05-31T06:43:43Z","phase":"compile","seconds":0.137,"exit":1,"cmd":"cmake --build build -j16 --target oneflow -k 0"}
+{"kind":"phase","ts":"2026-05-31T06:43:49Z","phase":"compile","seconds":0.142,"exit":1,"cmd":"cmake --build build -j16 --target oneflow -- -k 0"}
+{"kind":"phase","ts":"2026-05-31T06:52:24Z","phase":"compile","seconds":506.638,"exit":1,"cmd":"cmake --build /var/lib/jenkins/moat/projects/oneflow/src/build -j16 --target oneflow -- -k 0"}
+{"kind":"phase","ts":"2026-05-31T07:22:27Z","phase":"compile","seconds":1392.362,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/oneflow/src/build -j16 --target oneflow -- -k 0"}
+{"kind":"phase","ts":"2026-05-31T07:26:15Z","phase":"compile","seconds":202.662,"exit":1,"cmd":"cmake --build /var/lib/jenkins/moat/projects/oneflow/src/build -j16 -- -k 0"}
+{"kind":"phase","ts":"2026-05-31T07:28:10Z","phase":"compile","seconds":34.531,"exit":1,"cmd":"cmake --build /var/lib/jenkins/moat/projects/oneflow/src/build -j16 -- -k 0"}
+{"kind":"phase","ts":"2026-05-31T07:29:55Z","phase":"compile","seconds":12.540,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/oneflow/src/build -j16 -- -k 0"}
+{"kind":"phase","ts":"2026-05-31T07:56:47Z","phase":"compile","seconds":1407.117,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/oneflow/src/build -j16 -- -k 0"}
+{"kind":"phase","ts":"2026-05-31T07:59:34Z","phase":"compile","seconds":17.052,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/oneflow/src/build -j16 -- -k 0"}
+{"kind":"phase","ts":"2026-05-31T08:01:43Z","phase":"compile","seconds":11.759,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/oneflow/src/build -j16 -- -k 0"}
+{"kind":"phase","ts":"2026-05-31T08:33:45Z","phase":"compile","seconds":1347.976,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/oneflow/src/build -j16 -- -k 0"}
+{"kind":"phase","ts":"2026-05-31T08:56:26Z","phase":"compile","seconds":316.123,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/oneflow/src/build -j16 --target oneflow -- -k 0"}
+{"kind":"phase","ts":"2026-05-31T08:56:45Z","phase":"compile","seconds":8.905,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/oneflow/src/build -j16 --target oneflow_internal -- -k 0"}
+{"kind":"phase","ts":"2026-05-31T09:01:31Z","phase":"compile","seconds":162.865,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/oneflow/src/build -j16 --target oneflow_internal -- -k 0"}
+{"kind":"phase","ts":"2026-05-31T09:09:16Z","phase":"compile","seconds":211.843,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/oneflow/src/build -j16 --target oneflow_internal -- -k 0"}
+{"kind":"phase","ts":"2026-05-31T09:14:14Z","phase":"compile","seconds":111.628,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/oneflow/src/build -j16 --target oneflow_internal -- -k 0"}
+{"kind":"phase","ts":"2026-05-31T09:42:28Z","phase":"test","seconds":36.586,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/oneflow/src && source build/source.sh && HIP_VISIBLE_DEVICES=1 python3 -m pytest python/oneflow/test/modules/test_add.py python/oneflow/test/modules/test_cast.py python/oneflow/test/modules/test_where.py python/oneflow/test/modules/test_masked_fill.py python/oneflow/test/modules/test_broadcast_ops.py python/oneflow/test/modules/test_transpose.py python/oneflow/test/modules/test_softmax.py python/oneflow/test/modules/test_layer_norm.py python/oneflow/test/modules/test_matmul.py -q -p no:cacheprovider 2>&1 | tail -5"}
+{"kind":"phase","ts":"2026-05-31T09:42:45Z","phase":"compile","seconds":9.158,"exit":0,"cmd":"bash -c cmake --build /var/lib/jenkins/moat/projects/oneflow/src/build -j16 --target oneflow 2>&1 | tail -5"}
+{"kind":"phase","ts":"2026-05-31T10:06:41Z","phase":"compile","seconds":1178.304,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/oneflow_build_gfx1100.sh"}
+{"kind":"phase","ts":"2026-05-31T10:08:18Z","phase":"test","seconds":28.132,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/oneflow_test_gfx1100.sh"}
+{"kind": "tokens", "ts": "2026-06-05T12:10:34Z", "tokens": 79633, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-15T12:15:43Z", "tokens": 51286, "source": "pr-prep"}
+{"kind": "tokens", "ts": "2026-06-16T06:09:33Z", "tokens": 41984, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-16T06:35:35Z", "tokens": 18802, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-17T00:20:58Z", "tokens": 36279, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-16T06:11:17Z", "tokens": 41984, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-23T22:50:53Z", "tokens": 14704, "source": "gfx90a in-pipeline cleanup (batch 5 subagent, shared)"}

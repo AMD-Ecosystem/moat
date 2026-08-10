@@ -1,0 +1,119 @@
+{
+  "schema_version": 3,
+  "name": "oneflow",
+  "upstream_url": "https://github.com/Oneflow-Inc/oneflow",
+  "fork_url": "https://github.com/AMD-Ecosystem/oneflow",
+  "fork_default_branch": "master",
+  "priority": 6.236,
+  "ext_type": "cmake",
+  "adopted_at": "2026-05-29T23:30:03Z",
+  "updated_at": "2026-08-07T07:05:22Z",
+  "head_sha": "2729bee55d33698b8c55080e99337a24305a6a1c",
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 81634683,
+  "stage": "review-passed",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": "ported + GPU-validated. liboneflow.so (1.3GB) and the _oneflow_internal pybind module LINK; the ep/cuda/primitive slice GPU-validates vs PyTorch-ROCm (device='cuda' == HIP backend, fwd+bwd): test_add/cast/where/masked_fill/broadcast_ops/transpose/softmax/layer_norm = 64 passed, matmul core = 9 passed. Monolith built with the ROCm clang; hip::host+roc::rccl linked (not hip::device); 17 .cu deferred (cuDNN/cuBLASLt/cuSOLVER/CUTLASS+wmma/libcu++/P2P) with their host registrations guarded or stubbed (NewLruCache, GridSampleKernelUtil<kCUDA> -> CPU-only). GPU faults fixed: hipblasSetMathMode no-op on CDNA, __launch_bounds__(1024) on the norm block kernels, CUDNN_BN_MIN_EPSILON=0.0, and the wave64 LayerNormParamGrad reduction (tile/launch/shared/width all 32, width-confined shfl). Fork 68718f0.",
+      "validated_sha": "2729bee55d33698b8c55080e99337a24305a6a1c",
+      "started_at": "2026-05-31T01:37:32Z",
+      "completed_at": "2026-06-23T22:46:09Z",
+      "updated_at": "2026-06-23T22:46:09Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "2729bee55d33698b8c55080e99337a24305a6a1c",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:46:09Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": "GPU-validated on gfx1100 (RDNA3, wave32, ROCm 7.2.1). Fresh build from fork HEAD 68718f03: 190 gfx1100 code objects, OF_GPU_WARP_SIZE=32. Test slice: 73 passed / 2 failed (same pre-existing artifacts as gfx90a -- numpy __bool__ dtype-interop, not GPU faults). Wave32 warp reductions: softmax/layer_norm/rms_norm all produce correct results (softmax max_abs_diff=1.49e-08, layer_norm bwd gamma/beta no NaN, rms_norm bwd weight no NaN). LayerNormParamGrad wave64 fix is correct on wave32 (tile=32, block_dim_x=32, width=32 matches native wavefront). No fork changes needed. Fork 68718f0.",
+      "validated_sha": "2729bee55d33698b8c55080e99337a24305a6a1c",
+      "started_at": "2026-05-31T10:07:00Z",
+      "completed_at": "2026-06-23T22:46:36Z",
+      "updated_at": "2026-06-23T22:46:36Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 1140,
+          "test": 28,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-05-31T10:07:00Z",
+        "last_session_at": "2026-05-31T10:09:00Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "2729bee55d33698b8c55080e99337a24305a6a1c",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:46:36Z"
+      }
+    },
+    "windows-gfx1101": {
+      "blocked": true,
+      "blocked_reason": "Windows not viable: RCCL Linux-only (find_package rccl REQUIRED, nccl.h in cuda_util.h/core files); POSIX ibv/pthread_fork syscalls; platform.cmake MSVC flags clash with all-clang; 32 third-party deps Linux-centric ExternalProject; oneflow never shipped on Windows upstream. GPU port complete on linux-gfx90a+gfx1100.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T12:08:57Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1201": {
+      "blocked": true,
+      "blocked_reason": "Windows not viable (same as gfx1101): RCCL Linux-only; POSIX ibv/pthread_fork syscalls; platform.cmake MSVC flags clash with all-clang; 32 third-party deps Linux-centric. GPU port complete on linux-gfx90a+gfx1100.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T12:09:10Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  }
+}
