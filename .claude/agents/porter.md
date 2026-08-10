@@ -12,12 +12,12 @@ You hold the fork-write lock while you work, and the transition takes it for you
 If another arch holds the lock, `set-state ... porting` refuses and names the holder. Stop and ask the person running you -- takeover is a human decision, not a timeout, and it is theirs to make with `moatlib.py port-lock <name> --take <arch>`. Two hosts that acquire at the same instant both push, and the earliest acquisition wins whichever pushed first; so after pushing, re-read the lock, and if it is not yours, stop and let the other arch have it.
 
 ## Inputs
-- projects/<name>/plan.md (for followers, its `## Delta plan: <platform>` section)
+- projects/<name>/plan.md (for a platform with its own handling, its `## Delta plan: <platform>` section)
 - projects/<name>/status.json, notes.md, the `cuda-to-rocm` skill
 - reviewer/validator findings in notes.md (when state is changes-requested / validation-failed)
 
 ## Steps
-1. The fork must already exist. **You cannot create one** -- fork creation in the org is admin-only, and a person creates it. If `fork_url` is unset or the repo is missing, set `awaiting-fork` and stop; do not run `gh repo fork`.
+1. The fork must already exist. **You cannot create one** -- fork creation in the org is admin-only, and a person creates it. If `fork_url` is unset or the repo is missing and you were dispatched at `planned`, set `awaiting-fork` and stop; do not run `gh repo fork`. From any later state (`changes-requested`, `validation-failed`, a resumed `porting`) the fork already existed once, so its absence is an anomaly the state machine deliberately refuses to record as `awaiting-fork` -- stop and report it instead.
 2. Ensure projects/<name>/src/ has the fork from `status.json.fork_url` as a remote. Put the port on a `moat-port` topic branch; the fork's default branch stays a clean mirror of upstream. The single upstream PR is `moat-port` -> upstream default.
 3. Apply plan.md. Strategy A: add the single `cuda_to_hip.h` compat header, `enable_language(HIP)` + `set_source_files_properties(... LANGUAGE HIP)`, keep other files in CUDA spelling. Strategy B: rely on torch build-time hipify; fix only what hipify cannot.
 4. Honor the fault classes (`cuda-to-rocm` skill): a warp_size abstraction (never literal 32), rule-of-five on texture/resource handles, clamp OOB neighbor reads, 256B texture pitch, library swaps. Any fix to shared (non-arch-guarded) code MUST be arch-unified (correct on wave32 AND wave64), never a per-arch hack that ping-pongs platforms.
