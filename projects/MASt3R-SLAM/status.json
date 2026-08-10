@@ -1,0 +1,129 @@
+{
+  "schema_version": 3,
+  "name": "MASt3R-SLAM",
+  "upstream_url": "https://github.com/rmurai0610/MASt3R-SLAM",
+  "fork_url": "https://github.com/AMD-Ecosystem/MASt3R-SLAM",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "torch-extension",
+  "adopted_at": "2026-06-04T03:56:07Z",
+  "updated_at": "2026-08-07T07:04:40Z",
+  "head_sha": "07385a228e2ff7701ffd8f136d257051fa6c0fda",
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:41:26Z",
+    "tier": 4,
+    "note": "carries the org review of 2026-08-06: the risk is in USING these projects, not in contributing to them; covers this project only"
+  },
+  "license_spdx": "CC-BY-NC",
+  "upstream_repo_id": 938231495,
+  "stage": "review-passed",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "07385a228e2ff7701ffd8f136d257051fa6c0fda",
+      "started_at": "2026-06-04T04:05:48Z",
+      "completed_at": "2026-06-08T04:05:25Z",
+      "updated_at": "2026-06-08T04:05:25Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "07385a228e2ff7701ffd8f136d257051fa6c0fda",
+        "method": "binary-equiv",
+        "detail": "long->int64_t identical on x86_64 Linux; sys.platform=win32 linker flags Linux-inert; codeobj_diff verdict=identical (200+66 exports, device ISA)",
+        "at": "2026-06-08T04:05:25Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "07385a228e2ff7701ffd8f136d257051fa6c0fda",
+      "started_at": null,
+      "completed_at": "2026-06-08T13:33:37Z",
+      "updated_at": "2026-06-08T13:33:37Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "07385a228e2ff7701ffd8f136d257051fa6c0fda",
+        "method": "binary-equiv",
+        "detail": "long->int64_t identical on x86_64 Linux; sys.platform=win32 linker flags Linux-inert; codeobj_diff verdict=identical (200+66 exports, device ISA)",
+        "at": "2026-06-08T13:33:37Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "07385a228e2ff7701ffd8f136d257051fa6c0fda",
+      "started_at": null,
+      "completed_at": "2026-06-20T03:13:12Z",
+      "updated_at": "2026-06-20T03:13:12Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "07385a228e2ff7701ffd8f136d257051fa6c0fda",
+      "started_at": null,
+      "completed_at": "2026-06-08T01:33:33Z",
+      "updated_at": "2026-06-08T01:33:33Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  }
+}
