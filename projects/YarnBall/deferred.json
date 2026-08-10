@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "kittengpulbvh-standalone-gfx90a-gfx1201",
+      "kind": "other",
+      "component": null,
+      "summary": "Hold KittenGpuLBVH upstream PR until its own testLBVH() runs STANDALONE on gfx90a and gfx1201 (gfx1100 done: 338 GPU==CPU collision pairs, BVH self-check OK). Turnkey on each host: in the AMD-Ecosystem/KittenGpuLBVH moat-port clone, cmake -B build -DUSE_HIP=ON -DCMAKE_HIP_COMPILER=hipcc -DCMAKE_HIP_ARCHITECTURES=<gfx90a|gfx1201> && cmake --build build && ./build/lbvh_test ; expect 'CPU and GPU results match' + self-check pass. gfx1201 builds via the Windows TheRock PyTorch venv. Parent YarnBall already validated all 3 archs transitively.",
+      "refs": [
+        "https://github.com/jerry060599/KittenGpuLBVH/compare/main...jeffdaily:KittenGpuLBVH:moat-port"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-17T00:05:13Z",
+      "decided": null
+    },
+    {
+      "id": "yarnball-pr-blocked-on-lbvh",
+      "kind": "other",
+      "component": null,
+      "summary": "YarnBall draft PR is OPEN at jerry060599/YarnBall#5 but BLOCKED on jerry060599/KittenGpuLBVH#5 (LBVH HIP support, still open) -- it cannot merge until #5 lands. The moat-port .gitmodules points the KittenGpuLBVH submodule at AMD-Ecosystem/KittenGpuLBVH @ 33c0f78 (head of LBVH PR #5, fork-only) -- un-mergeable upstream; the PR body carries a blocked banner explaining this. Resolution (Jeff): after LBVH #5 merges, repoint YarnBall .gitmodules to the upstream jerry060599/KittenGpuLBVH URL (drop the branch line) at the merged SHA, set the gitlink to that SHA, re-validate YarnBall headless on gfx90a/gfx1100 + Windows (real re-run, submodule content changes), squash -> squash-carry-forward, then gh pr ready #5.",
+      "refs": [
+        "https://github.com/jerry060599/KittenGpuLBVH/pull/5",
+        "https://github.com/jerry060599/YarnBall/pull/5",
+        "projects/KittenGpuLBVH/notes.md",
+        "projects/YarnBall/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-19T04:25:35Z",
+      "decided": null
+    },
+    {
+      "id": "yarnball-gui-gl-interop-gfx1151",
+      "kind": "other",
+      "component": null,
+      "summary": "Validate the interactive GUI GPU<->GL interop (806b534) on the physical (non-RDP) gfx1151 Windows host. gfx1201/RDP cannot test it (no AMD-GPU display context; interop swallows return codes). On the gfx1151 console: dispatch the validator manually on YarnBall (gfx1151 is OPTIONAL so orient won't auto-pick). PASS = GL_RENDERER is the AMD GPU + every hipGraphics* call returns hipSuccess + GPU-written verts confirmed in GL (readback/screenshot). Then mark windows-gfx1151 completed at 806b534 and lift the YarnBall on_hold.",
+      "refs": [
+        "projects/YarnBall/notes.md#GL-interop validation retracted"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-06-19T06:11:54Z",
+      "decided": null
+    }
+  ]
+}

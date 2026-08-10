@@ -1,0 +1,63 @@
+{
+  "schema_version": 3,
+  "name": "bam",
+  "upstream_url": "https://github.com/ZaidQureshi/bam",
+  "fork_url": "https://github.com/AMD-Ecosystem/bam",
+  "fork_default_branch": "master",
+  "priority": 4.468,
+  "ext_type": "cmake",
+  "adopted_at": "2026-05-30T03:26:35Z",
+  "updated_at": "2026-08-07T22:51:58Z",
+  "head_sha": "b7d9a4a3699786cf60482c55ff32da80c3b31e32",
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "BSD-2-Clause",
+  "stage": "porting",
+  "platforms": {
+    "linux-gfx90a": {
+      "blocked": true,
+      "blocked_reason": "Requires specialized hardware: custom kernel module for NVMe P2P access, dedicated NVMe drive unbound from kernel, IOMMU disabled. Additionally needs warp-size fixes (32-bit masks -> 64-bit for HIP wave64). Partial port committed to fork.",
+      "validated_sha": null,
+      "started_at": "2026-06-04T22:55:43Z",
+      "completed_at": null,
+      "updated_at": "2026-06-04T23:06:31Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "planner"
+    },
+    "windows-gfx1151": {
+      "blocked": true,
+      "blocked_reason": "windows-gfx1151 host retired (superseded by the gfx1101/gfx1201 machine); validation moved to windows-gfx1101 and windows-gfx1201",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-04T19:41:52Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "on_hold": true,
+  "on_hold_reason": "Requires hardware we do not have rather than source we cannot translate: a custom kernel module for NVMe P2P access, and a dedicated NVMe drive. Portable in principle; resume if such a host appears."
+}
