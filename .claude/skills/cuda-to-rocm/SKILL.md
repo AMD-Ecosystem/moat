@@ -35,15 +35,12 @@ Classify the build first -- implementing the wrong strategy correctly is still w
 |---|---|---|
 | pure CMake | **A** (preferred) | one `cuda_to_hip.h` compat header, `enable_language(HIP)`, `set_source_files_properties(... LANGUAGE HIP)`; sources keep CUDA spelling |
 | pytorch extension | **B** | rely on torch's build-time hipify; fix only what it cannot |
-| anything else | neither | driver-API, runtime PTX, Go/cgo, qmake and codegen builds exist -- see the runtime-PTX fault class |
+| anything else | neither | driver-API, runtime PTX, Go/cgo, meson, qmake and codegen builds exist -- see the runtime-PTX fault class |
 
 **How to tell:** look for `find_package(Torch)`, `torch.utils.cpp_extension`,
 `CUDAExtension`, or a torch dependency in `setup.py`/`pyproject.toml`. If any is present it
-is a pytorch extension -- Strategy B. Otherwise treat it as a pure CMake (or Makefile, or
-meson) project -- Strategy A. The build system does not pick the strategy; what the sources
-look like does. lc0 is meson and ports Strategy-A-shaped -- it just means writing by hand
-what `enable_language(HIP)` would have given you, and `references/strategy-a-cmake.md` says
-what.
+is a pytorch extension -- Strategy B. Otherwise treat it as a pure CMake (or Makefile)
+project -- Strategy A.
 
 Strategy A is the minimal-footprint model: the compat header is a no-op on NVIDIA, so the
 CUDA build is untouched. Where the project includes CUDA headers by name, prefer the
@@ -72,7 +69,6 @@ Scan this list against what you are doing. If any line could apply, open
 - Warp-derived array sizing: quantities scaling WITH `warpSize` need the 64 upper bound, quantities scaling as `blockDim/warpSize` need the 32 LOWER bound. Getting it backwards writes out of bounds.
 - A compat `__ballot_sync` that casts `__ballot()` to `uint32_t` returns the wrong 32 lanes on wave64.
 - An over-wide `__shfl*` width silently clamps to the physical wavefront instead of erroring; the symptom is a metric shift, not a crash.
-- HIP's `__shfl_*_sync` mask must be 64-bit; a `0xffffffff` literal is a compile error. An explicit width of 32 already makes a reduction wave-agnostic.
 - Intra-wave barrier divergence: a per-row early return before `__syncthreads()` is benign on CUDA, faults on wave64.
 - `cub`/`hipCUB` block-collective `TempStorage` reuse races on a 64-thread block without an explicit `__syncthreads`.
 - `__smid()` can EXCEED `multiProcessorCount` on AMD, unlike NVIDIA.
@@ -102,8 +98,6 @@ Scan this list against what you are doing. If any line could apply, open
 - A shared compat header must be host-includable: gate device-only includes behind `__CUDACC__`/`__HIPCC__`, or CUB leaks into host TUs. Hit independently by two projects.
 - `__HIP_PLATFORM_AMD__` is undefined until `hip_runtime.h` is included; a gate placed before it silently picks the CUDA branch.
 - Missing includes in a HIP port are usually pre-existing upstream omissions unmasked by the narrower include graph.
-- nvcc accepts partial specialization of a function template; clang rejects it. Move the dispatch onto a class template.
-- A sibling-relative `#include "x.cuh"` beats the include path, so shadow headers cannot shadow it; force-include the replacement instead.
 - A `-include`d compat header creates no dependency edge: wipe objects after editing it or you validate stale code.
 
 **Types, dispatch and platform limits**
@@ -140,5 +134,5 @@ build a pure passthrough. `references/validation.md`.
 ## Writing it up
 
 Commit messages, PR bodies and code comments go to upstream maintainers who do not know
-our vocabulary. Check with `python3 utils/jargon.py` before pushing; terms and their
-replacements are in `config/jargon.toml`.
+our vocabulary. Check with `python3 utils/jargon.py --port <name>` before pushing -- the whole branch,
+not the commit you just wrote; terms and their replacements are in `config/jargon.toml`.

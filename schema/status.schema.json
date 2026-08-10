@@ -320,8 +320,7 @@
         "porting",
         "review-passed",
         "screened",
-        "unclaimed",
-        "validation-failed"
+        "unclaimed"
       ]
     },
     "not_portable": {
@@ -389,6 +388,13 @@
             "null"
           ],
           "description": "head this arch last validated"
+        },
+        "failed_sha": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "head this arch last failed to validate"
         },
         "pr_url": {
           "type": [
