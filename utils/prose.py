@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Catch hard-wrapped prose before it reaches GitHub.
+"""Catch hard-wrapped, non-ASCII, or ROCm-miscased prose before it reaches GitHub.
 
 GitHub reflows markdown to the reader's width. Text wrapped by hand at 80 columns
 renders with the author's line breaks frozen in, which looks broken on a wide screen
@@ -18,6 +18,7 @@ issue bodies. It is not run over the repo's own markdown, which is wrapped
 throughout and is read in an editor as often as on the web.
 """
 
+import re
 import sys
 
 # Below this, a line break is plausibly deliberate (a short heading, a table cell, a
@@ -62,14 +63,63 @@ def hard_wrapped(text):
     return out
 
 
+# Standalone rocm/Rocm/ROCM in prose; "ROCm" is the platform's casing. The
+# lookarounds keep identifiers and paths out of it: USE_ROCM (preceded by _),
+# rocm-smi and rocminfo (followed by - or letters), /opt/rocm and URLs
+# (preceded by /), version dots. Inline code spans are stripped first and
+# fenced blocks skipped -- code is content, not prose.
+ROCM_MISCASED = re.compile(r"(?<![\w/.\-])([Rr][Oo][Cc][Mm])(?![\w.\-])")
+
+
+def _prose_lines(text):
+    """(line number, line with inline code removed) for non-fenced lines."""
+    fenced = False
+    for i, line in enumerate(text.splitlines(), 1):
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+            continue
+        if not fenced:
+            yield i, re.sub(r"`[^`]*`", "", line)
+
+
+def non_ascii(text):
+    """[(line number, [offending chars])] -- ASCII only, and no em-dash."""
+    out = []
+    for i, line in _prose_lines(text):
+        bad = sorted({ch for ch in line if ord(ch) > 127})
+        if bad:
+            out.append((i, bad))
+    return out
+
+
+def miscased_rocm(text):
+    """[(line number, word)] for rocm spelled any way but ROCm."""
+    return [(i, m.group(1)) for i, line in _prose_lines(text)
+            for m in ROCM_MISCASED.finditer(line) if m.group(1) != "ROCm"]
+
+
 def check(text, label="text"):
-    """[] or a one-line problem, shaped for a gate's problem list."""
+    """[] or one-line problems, shaped for a gate's problem list."""
+    problems = []
     hits = hard_wrapped(text)
-    if not hits:
-        return []
-    where = ", ".join(f"line {n}" for n, _ in hits[:4])
-    return [f"{label} is hard-wrapped ({where}) -- GitHub reflows markdown, so write "
-            f"each paragraph as one line and let it wrap for the reader"]
+    if hits:
+        where = ", ".join(f"line {n}" for n, _ in hits[:4])
+        problems.append(
+            f"{label} is hard-wrapped ({where}) -- GitHub reflows markdown, so write "
+            f"each paragraph as one line and let it wrap for the reader")
+    na = non_ascii(text)
+    if na:
+        where = ", ".join(f"line {n} ({', '.join(repr(c) for c in chars[:3])})"
+                          for n, chars in na[:4])
+        problems.append(
+            f"{label} has non-ASCII characters ({where}) -- ASCII only; write -- "
+            f"rather than an em-dash")
+    mc = miscased_rocm(text)
+    if mc:
+        where = ", ".join(f"line {n} ({w!r})" for n, w in mc[:4])
+        problems.append(f"{label} miscases ROCm ({where}) -- the platform is "
+                        f"written 'ROCm'")
+    return problems
 
 
 def main(argv=None):
