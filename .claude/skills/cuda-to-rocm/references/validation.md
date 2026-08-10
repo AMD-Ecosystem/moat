@@ -81,6 +81,26 @@ installed in that machine, so a pinned `HIP_VISIBLE_DEVICES=1` copied from older
 notes silently selects a different card, or none. Read the device list at the time
 you use it (`rocminfo`, `hipInfo`).
 
+## RCCL collectives need the whole multi-GPU host at once
+
+NCCL->RCCL is a mechanical swap (RCCL is API-compatible and ships in ROCm), but
+validating it is unlike validating a kernel: collectives are a multi-GPU feature, so
+the test process must hold two or more same-architecture GPUs SIMULTANEOUSLY. Two
+consequences for scheduling on a multi-GPU host:
+
+- Parallelising ports across a host's GPUs -- one build or validation pinned per
+  device with `HIP_VISIBLE_DEVICES` -- is suspended for the duration of a
+  collectives run. The run owns every device it uses; another port's job landing on
+  a sibling GPU mid-run contends with it, and both results are suspect.
+- The one-device-per-process pin the mixed-arch section above prescribes must be
+  LIFTED for the collectives process: give it exactly the same-architecture devices
+  it should use (read the device list at run time, never a remembered index), and
+  keep mixed-architecture pairs out of one process regardless.
+
+A single-GPU host cannot exercise the collectives path at all; record that as the
+arch's limitation rather than letting a collectives-off run stand in for it
+silently. (marian-dev, the first MOAT port to exercise RCCL)
+
 ## One architecture gets wrong numbers while the others pass
 
 A clean build that produces wrong results on exactly one architecture -- an iterative
