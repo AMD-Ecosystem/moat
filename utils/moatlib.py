@@ -93,9 +93,8 @@ def platform_problem(platform):
 
 
 def validations(obj):
-    """Per-arch validation records. Accepts the legacy `platforms` key so a
-    status.json written before the gate model still reads."""
-    return obj.get("validations") or obj.get("platforms") or {}
+    """Per-arch validation records -- status.json's `platforms` map."""
+    return obj.get("platforms") or {}
 
 
 PORT_BRANCH = "moat-port"  # the topic branch that holds the port on each fork
@@ -1083,14 +1082,23 @@ def pr_approval_status(name, live=True):
                   f"still standing at {(pr.get('headRefOid') or '?')[:8]}")
 
 
-def license_tier(name):
-    """The project's licence tier, from utils/licenses.py. Unknown is tier 4."""
+def license_tier(name, obj=None):
+    """The project's licence tier, from utils/licenses.py. Unknown is tier 4.
+
+    Resolves the record branch-first via project_record, like every other "what do
+    we know about X" question -- load_status prefers the working tree, which let a
+    stale trunk-era copy shadow a licence recorded on the project's own branch.
+    Pass `obj` when the caller already holds the record, so both judge the same one."""
     sys.path.insert(0, str(REPO_ROOT / "utils"))
     import licenses
-    return licenses.tier_of(load_status(name).get("license_spdx"))
+    if obj is None:
+        obj, _where = project_record(name)
+        if obj is None:
+            raise FileNotFoundError(str(status_path(name)))
+    return licenses.tier_of(obj.get("license_spdx"))
 
 
-def license_gate(name):
+def license_gate(name, obj=None):
     """(ok, reason) -- may this port be offered upstream on licence grounds?
 
     Tiers 1 and 2 are cleared to contribute and pass. Tier 3 and tier 4 ALWAYS wait
@@ -1105,9 +1113,12 @@ def license_gate(name):
     would put a hundred unread licences in front of a person as though each were a
     judgement call. Reading a repo's licence establishes a FACT and any agent may do
     it; deciding to contribute under a restrictive one is a decision and never is."""
-    obj = load_status(name)
+    if obj is None:
+        obj, _where = project_record(name)
+        if obj is None:
+            raise FileNotFoundError(str(status_path(name)))
     spdx = obj.get("license_spdx")
-    tier = license_tier(name)
+    tier = license_tier(name, obj)
     if tier <= 2:
         return (True, f"tier {tier} ({spdx})")
     c = obj.get("license_clearance") or {}
@@ -1244,7 +1255,7 @@ def record_license_clearance(name, approved_by, note=None):
     """Record a person's decision to allow a tier 3/4 project upstream."""
     obj = load_status(name)
     obj["license_clearance"] = {"approved_by": approved_by, "at": now_iso(),
-                                "tier": license_tier(name),
+                                "tier": license_tier(name, obj),
                                 **({"note": note} if note else {})}
     save_status(name, obj)
     return obj["license_clearance"]
@@ -2953,8 +2964,10 @@ def pr_ready(name):
                                    f"on a host with the {gate} attribute"))
 
     # Licence gate. Here rather than only in the publisher so that EVERY route to an
-    # upstream PR passes it, whoever is doing the opening.
-    lic_ok, lic_why = license_gate(name)
+    # upstream PR passes it, whoever is doing the opening. Judged on the same record
+    # as the gates above, not re-resolved through load_status's working-tree-first
+    # order, so a stale local copy cannot shadow a clearance recorded on the branch.
+    lic_ok, lic_why = license_gate(name, obj)
     if not lic_ok:
         blocking.append(("license", lic_why))
 
@@ -3438,7 +3451,14 @@ def main(argv=None):
         names = ([args.name] if args.name
                  else [n for n, _o, _w in project_records()])
         real_gap = False
+        judged = 0
         for n in names:
+            # A missing clone is not evidence of cleanliness, so it must not count
+            # toward the clean bill printed below -- same rule as pr-ready, which
+            # says the check did not run rather than silently passing.
+            if not _fork_repo(n).is_dir():
+                continue
+            judged += 1
             files = uncommitted_source_files(n)
             if not files:
                 continue
@@ -3458,9 +3478,16 @@ def main(argv=None):
                 print(f"    {code:3} {p}")
         if real_gap:
             sys.exit(1)
+        elif judged == 0:
+            print("audit-clean: NO local fork clone to judge here"
+                  + (f" ({args.name})" if args.name else "")
+                  + " -- the check did not run; it binds on the hosts holding the clones")
         else:
-            print("OK: no fork with a completed/pr platform has uncommitted source edits" +
-                  (f" ({args.name})" if args.name else ""))
+            print(f"OK: no fork with a completed/pr platform has uncommitted source "
+                  f"edits ({judged} local clone(s) judged"
+                  + (f"; {len(names) - judged} project(s) have no clone here"
+                     if len(names) > judged else "")
+                  + (f" ({args.name})" if args.name else "") + ")")
     elif args.cmd == "set-pr-open":
         set_pr_open(args.name, args.pr_url, args.pr_number)
         print(f"{args.name}: PR opened -> {args.pr_url}")

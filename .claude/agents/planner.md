@@ -21,7 +21,8 @@ There is no lead platform. Plan the port itself; any arch may execute it, and ea
 3. Classify the build (the skill's build classification): pure CMake -> Strategy A; pytorch extension -> Strategy B. Record the exact files/lines that decide it. Set ext_type in status.json.
 4. Inventory the CUDA surface: kernels, `__global__`/`__device__`, warp intrinsics (`__shfl*`, `__ballot`, `warpSize`, any hardcoded 32), textures/surfaces, cuBLAS/cuFFT/cuRAND/cuSPARSE/Thrust/CUB usage, pinned/managed memory, streams/events. Map each to its ROCm/HIP equivalent or flag it as a risk.
 5. Enumerate the real test suite and the exact build + GPU-test commands (this feeds the validator). Note the non-GPU tests that must not regress.
-6. Write projects/<name>/plan.md.
+6. Write projects/<name>/plan.md, and generate the machine-checked surface accounting:
+   `python3 utils/surface.py generate <name>` (see "The port surface" below).
 
 ## Existing AMD support
 
@@ -46,14 +47,15 @@ a port that claimed success while covering a subset, caught only by a human sayi
 didn't go far enough".
 
 **Nothing checks the prose.** The enumeration in plan.md is read by the porter and the
-reviewer, and that is its whole enforcement today. There IS a machine-checked form --
-`python3 utils/surface.py generate <name>` writes `projects/<name>/surface.json`, and
-check.py's `surface` gate then refuses to let that project claim success with a component
-neither `covered` nor `scoped_out` with a reason -- but it judges only projects that carry
-the file, and no project currently does. Generating one is worth it for a project with many
-components (a library plus its tests, benchmarks and examples), and it is what turns "the
-plan says so" into something that fails a push. Do not describe the accounting as enforced
-unless you generated the file.
+reviewer. The machine-checked form is what gives it teeth: `python3 utils/surface.py
+generate <name>` writes `projects/<name>/surface.json`, and check.py's `surface` gate then
+refuses to let that project claim success with a component neither `covered` nor
+`scoped_out` with a reason. **Generate one as a standard step of every new plan** -- it is
+what turns "the plan says so" into something that fails a push. The gate judges only
+projects that carry the file (colmap was the first; most pre-existing ports have none), so
+do not describe the accounting as enforced unless the file exists. If a surface.json is
+already there -- a resumed planning run, a delta plan -- read it first and reconcile
+plan.md's enumeration with it rather than re-deriving the list from scratch.
 
 Tooling generates a floor you may ADD to but never silently delete from -- removing a
 generated entry needs a recorded reason:
@@ -91,4 +93,4 @@ Write plan.md, then `python3 utils/moatlib.py set-state <name> <arch> planned --
 When a later arch needs its own handling (wave32 vs wave64, RDNA specifics), you are invoked for a short delta-plan appended as `## Delta plan: <arch>`. Do not re-plan from scratch.
 
 ## Stop and ask
-If the build system is unrecognizable, dependencies are unobtainable, or the right strategy is genuinely unclear, set `blocked` with a concrete reason and ask rather than guessing. If deep analysis shows the port is not technically possible, say so -- that terminates the project the same way an intake rejection does, and the disposition is merged as the record.
+If the build system is unrecognizable, dependencies are unobtainable, or the right strategy is genuinely unclear, set `blocked` with a concrete reason and ask rather than guessing. If deep analysis shows the port is not technically possible, write the case in notes.md and stop. The terminal verdict is `not-portable` in the project's own status.json -- deliberately NOT a disposition, because a dispositioned project is one that left the pipeline before anyone worked it -- and recording it is a person's decision: `moatlib.py set-not-portable <name> --reason ... --by <who>`. You write the case, never the verdict.

@@ -74,133 +74,6 @@
       "decided": null
     },
     {
-      "id": "cucim-gds-nvjpeg",
-      "kind": "feature-port",
-      "project": "cucim",
-      "component": null,
-      "summary": "GDS/cuFile (no ROCm equivalent) and nvjpeg GPU JPEG decode scoped out (CPU libjpeg fallback); nvimgcodec/cuslide2 not built.",
-      "refs": [
-        "projects/cucim/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T18:21:58Z",
-      "decided": null
-    },
-    {
-      "id": "cudf-scoped-sources",
-      "kind": "feature-port",
-      "project": "cudf",
-      "component": null,
-      "summary": "Partial cudf port: many .cu omitted from cudf_hip_sources.cmake (full lists/strings/dictionary/structs, quantiles, scan_inclusive for strings/structs); core plus reductions/merge in scope.",
-      "refs": [
-        "projects/cudf/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T18:21:59Z",
-      "decided": null
-    },
-    {
-      "id": "rmm-hw-decompress",
-      "kind": "feature-port",
-      "project": "rmm",
-      "component": null,
-      "summary": "Hardware decompression path (no HIP equivalent) not ported.",
-      "refs": [
-        "projects/rmm/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T18:21:59Z",
-      "decided": null
-    },
-    {
-      "id": "cuvs-ann-deferred",
-      "kind": "feature-port",
-      "project": "cuvs",
-      "component": null,
-      "summary": "All ANN/vector-search algorithms deferred behind CUVS_HIP_SLICE=distance; only pairwise-distance + fused-NN (43/264 .cu, ~16%) is built/validated. Deferred: brute-force, IVF-Flat, IVF-PQ, CAGRA, NN-Descent, Vamana/DiskANN, ball_cover, HNSW interop, multi-GPU, plus cluster/selection/preprocessing/stats/embed and spectral/lanczos. completed status is scoped to the distance subsystem only.",
-      "refs": [
-        "projects/cuvs/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T19:04:23Z",
-      "decided": null
-    },
-    {
-      "id": "raft-ann-cluster-deferred",
-      "kind": "feature-port",
-      "project": "raft",
-      "component": null,
-      "summary": "neighbors/ ANN (CAGRA, IVF-Flat, IVF-PQ, NN-Descent, HNSW) and cluster/ (kmeans, kmeans_balanced, single_linkage) are header-only and were never compiled or GPU-validated under HIP; warp intrinsics + ~28 wave64 0xffffffff masks in detail/cagra and detail/ivf_pq need the faiss_select treatment. Reasonable to scope out (upstream deprecated these to cuVS, de-compiled after 24.12). Validated surface: faiss_select top-k, ball_cover, KNN brute force, EpsNeighRbc, rmat, header primitives.",
-      "refs": [
-        "projects/raft/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T19:04:23Z",
-      "decided": null
-    },
-    {
-      "id": "cuml-metrics-and-deferrals",
-      "kind": "feature-port",
-      "project": "cuml",
-      "component": null,
-      "summary": "Entire metrics module deferred though 10 cuvs-FREE metrics are buildable today (accuracy_score, adjusted_rand_index, completeness_score, entropy, homogeneity_score, kl_divergence, mutual_info_score, r2_score, rand_index, v_measure); plan option-a (split metrics target) not taken. Also deferred: dbscan/knn/tsne/umap/kmeans/hdbscan/svm/FIL/tree_shap/spectral/multi-GPU/Python and standalone hierarchy/linkage.cu. The 10 metrics are shippable now (raft headers present, no CUML_LINK_CUVS); shipping triggers gfx90a/gfx1100 revalidation.",
-      "refs": [
-        "projects/cuml/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T19:04:23Z",
-      "decided": null
-    },
-    {
-      "id": "cugraph-sg-validation-coverage",
-      "kind": "other",
-      "project": "cugraph",
-      "component": null,
-      "summary": "linux-gfx90a/gfx1100 marked completed but GPU validation exercised only 3 of 46 built SG algorithms (BFS, SSSP, PageRank); 44 linked SG test binaries never run on GPU. Unvalidated algorithms share the prim machinery where real wave64 bugs were found+fixed. Resolve by running the full in-scope SG gtest set from cugraph_hip_tests, or scope the completed claim to BFS/SSSP/PageRank.",
-      "refs": [
-        "projects/cugraph/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T19:04:23Z",
-      "decided": null
-    },
-    {
-      "id": "cucollections-head-drift",
-      "kind": "other",
-      "project": "cuCollections",
-      "component": null,
-      "summary": "build-hip src HEAD drifted one functional commit beyond the validated/recorded sha, undocumented and unvalidated. Reconcile status.json with the live tree (re-validate the drift or reset to the validated sha).",
-      "refs": [
-        "projects/cuCollections/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
-      ],
-      "status": "done",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T19:04:23Z",
-      "decided": null
-    },
-    {
-      "id": "cucollections-contribute-to-hipcollections",
-      "kind": "other",
-      "project": "cuCollections",
-      "component": null,
-      "summary": "Comparison vs ROCm/hipCollections (canonical AMD port, ROCm-DS-owned): our net-new asset is sub-word int8/int16 atomic CAS emulation (include/cuco/detail/hip_subword_atomic.cuh) -- hipColl packed_cas handles only 4/8-byte and would corrupt int8/int16-keyed static_set/map (no small-key tests there). Secondary candidates: gfx1100/wave32 validation evidence to promote hipColl experimental wave32 + extend arch allowlist to RDNA4/Windows; newer-cuco features (roaring_bitmap, bloom merge/intersect, dynamic_map) via a cuco rebase. NOT contributions (hipColl already has them): pre-Volta __CUDA_ARCH__ guard byte-identical, bloom host-gate (theirs better). hipCollections is ROCm-DS-owned so DEFER PRs until ROCm-DS collaboration resumes (jeff 2026-06-07).",
-      "refs": [
-        "agent_space/hipCollections-cmp",
-        "projects/cuCollections/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T20:43:48Z",
-      "decided": null
-    },
-    {
       "id": "hipblaslt-gfx1201-fp32-heuristic-segfault",
       "kind": "rocm-bug-report",
       "project": null,
@@ -228,18 +101,6 @@
       "decided": null
     },
     {
-      "id": "trt-shim-rocm-trtexec",
-      "kind": "feature-port",
-      "project": null,
-      "component": "trt-shim-rocm",
-      "summary": "trtexec build against trt-shim-rocm: needs full TensorRT sample inference framework (sampleDevice/sampleInference/sampleEngines) -> large CUDA-runtime surface (cudaDeviceProp CUDA layout, cudaMemGetInfo, managed/host alloc, cudaLaunchHostFunc, real cudaGraph capture, cudaProfiler) + broad nvinfer1 optimization-profile/inference API the shim stubs. Multi-day harness port, not a shim gap. Shim correctness proven via stock sampleOnnxMNIST + ResNet-50 fp16/serialize. Resume by expanding include/compat for device/graph surface and implementing real IOptimizationProfile + enqueueV3.",
-      "refs": [],
-      "status": "done",
-      "upstream_issue": null,
-      "created_at": "2026-06-12T07:13:26Z",
-      "decided": null
-    },
-    {
       "id": "migraphx-dynamic-concat-codegen",
       "kind": "rocm-bug-report",
       "project": null,
@@ -252,18 +113,6 @@
       "decided": null
     },
     {
-      "id": "trt-shim-rocm-int8-cache",
-      "kind": "feature-port",
-      "project": null,
-      "component": "trt-shim-rocm",
-      "summary": "trt-shim-rocm int8 calibration cache not implemented. TensorRT's IInt8Calibrator has readCalibrationCache/writeCalibrationCache so the computed per-tensor int8 dynamic ranges can be persisted and reused, skipping recalibration on later builds (and enabling calibration-data-free builds). The shim runs calibration every build and ignores the cache: it neither consumes a provided cache (readCalibrationCache) nor emits one (writeCalibrationCache). Gap: MIGraphX does not expose the int8 scales it computes (no setDynamicRange/get-scales equivalent), so producing or consuming a TensorRT-compatible calibration cache needs either a MIGraphX scale accessor or a Q/DQ-in-ONNX explicit-quantization path. Resume by mapping readCalibrationCache to a Q/DQ pre-quantized model path, or request a MIGraphX scale get/set API.",
-      "refs": [],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-12T15:00:08Z",
-      "decided": null
-    },
-    {
       "id": "migraphx-dynamic-offloadcopy-false-crash",
       "kind": "rocm-bug-report",
       "project": null,
@@ -273,20 +122,6 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-06-12T16:22:50Z",
-      "decided": null
-    },
-    {
-      "id": "migraphx-gfx1100-fp32-zerocopy-saveload",
-      "kind": "rocm-bug-report",
-      "project": "trt-shim-rocm",
-      "component": "migraphx",
-      "summary": "MIGraphX gfx1100: offload_copy=false fp32 eval returns zeros after double-compile + save/load round-trip. Blocks fp32 static engine correctness on gfx1100. fp16 and dynamic paths unaffected; gfx90a unaffected.",
-      "refs": [
-        "findings/migraphx-trt-shim-gaps/"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-15T23:41:18Z",
       "decided": null
     },
     {
@@ -315,20 +150,6 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-06-16T05:01:15Z",
-      "decided": null
-    },
-    {
-      "id": "ddn-slam-submodule-chain",
-      "kind": "other",
-      "project": "DDN-SLAM",
-      "component": null,
-      "summary": "Closed 2026-08-06. The chain never had to be resolved: the neural core at the bottom of it is under the NVIDIA Source Code License, so DDN-SLAM could never have been contributed. The forks are deleted and no PR was ever opened.",
-      "refs": [
-        "https://github.com/MarvinChung/instant-ngp-kf/compare/master...jeffdaily:instant-ngp-kf:moat-port"
-      ],
-      "status": "done",
-      "upstream_issue": null,
-      "created_at": "2026-06-16T06:15:34Z",
       "decided": null
     },
     {

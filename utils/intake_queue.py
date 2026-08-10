@@ -102,7 +102,7 @@ def queue():
         rows.append({
             "name": d.name, "full_name": full, "priority": obj.get("priority", 0),
             "license": obj.get("license_spdx") or "UNRECORDED",
-            "tier": moatlib.license_tier(d.name),
+            "tier": moatlib.license_tier(d.name, obj),
             "flagged": flagged, "flag_note": disp.get("note") if flagged else None,
             **rec,
         })

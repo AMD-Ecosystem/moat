@@ -51,12 +51,14 @@ happens here rather than on a schedule, because the credentials to open a PR on 
 else's repository belong in a session and not in a standing secret.
 
 The approval happens in ONE place -- that PR page -- and the maintainer does one thing
-there: leave a review comment containing `/moat approve` on a line by itself. Not the
+there: leave a comment containing `/moat approve` on a line by itself, in either box
+GitHub offers -- a review comment or an ordinary conversation comment. Not the
 Approved button: they authored the pull request, because agents open it with their
-credentials, and GitHub greys the button out for an author. A review comment is allowed
-and carries the commit it was written against, so the gate can still tell an approval of
-this code from an approval of an earlier push. Do not ask them to also read a copy of the
-body somewhere in this repo.
+credentials, and GitHub greys the button out for an author. The review form is the
+better box because it carries the commit it was written against, so the gate can tell
+an approval of this code from an approval of an earlier push; a conversation comment
+counts too, judged by its time against the branch tip. Do not ask them to also read a
+copy of the body somewhere in this repo.
 
 Your job is to snapshot what they approved:
 
@@ -73,10 +75,11 @@ verbatim, records it, and closes the review PR. It runs where a human's credenti
 your session -- because opening a pull request on someone else's repository needs access
 no scheduled job can safely hold. `orient.sh` names any project waiting on it.
 
-The BRANCH's vocabulary is not re-scanned here, and does not need to be: every commit on
-it was scanned when the review PR was opened (`--review --apply` refuses on a hit, over
-the whole branch rather than the newest round), and nothing may land on it afterwards
-without voiding the approval. If a commit did land, the approval check catches it first.
+The BRANCH's vocabulary is re-scanned here too, read from the pull request itself
+(commit messages and added lines), so no local clone is needed. The open-time scan
+covered the whole branch, but a commit that lands between the review PR opening and the
+approval is seen by neither that scan nor the staleness check -- the approval is given
+against the new tip -- so publish is the one gate that can catch it.
 
 Under the hood it snapshots the approval first:
 

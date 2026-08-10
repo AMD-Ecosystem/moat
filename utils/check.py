@@ -5,7 +5,7 @@ CI and the pre-push hook both call this, so they cannot drift. Adding a gate her
 adds it to both; implementing it twice is how the two ended up disagreeing before.
 
     python3 utils/check.py              # everything
-    python3 utils/check.py --fast       # skip anything that shells out to git/gh
+    python3 utils/check.py --fast       # skip the forks gate (walks every fork clone)
     python3 utils/check.py schema readme
 
 Exit 1 if any gate fails. Each gate prints one line per problem, prefixed with its

@@ -73,8 +73,8 @@ Cheap checks only. Deep analysis is the planner's job.
 - Is upstream archived or abandoned? **Note it, do not block on it.** An archived
   upstream cannot accept a pull request, so the port has no upstream destination --
   but the port itself still has value: someone looking for AMD support will find our
-  fork and can build from it. Record the outcome as fork-only so nobody later waits
-  for a PR that can never be opened.
+  fork and can build from it. Say so in notes.md and the queue write-up, so nobody
+  later waits for a PR that can never be opened.
 
 ## 4. Claim it, then stop at the fork
 

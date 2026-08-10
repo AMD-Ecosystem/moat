@@ -46,22 +46,13 @@ case "$SYNC" in
   *) echo "${SYNC/branch-sync: /branch   : }" ;;
 esac
 
-if ! arch_out=$(bash utils/detect_arch.sh 2>/dev/null); then
-  echo "== MOAT orient =="
-  echo "platform : UNKNOWN (no AMD GPU detected)"
-  echo "next     : NONE"
-  exit 0
-fi
-eval "$arch_out"   # sets GFX_ARCH GFX_TRIPLE PLATFORM
-
 echo "== MOAT orient =="
-echo "platform : $PLATFORM (gfx=$GFX_ARCH)"
-# Any AMD GPU is a platform. What it needs is a known wavefront width, since that
-# is the one property the name does not carry; moatlib says so and names the fix.
-if PROBLEM=$(python3 -c 'import sys; sys.path.insert(0, "utils"); import moatlib; print(moatlib.platform_problem(sys.argv[1]) or "", end="")' "$PLATFORM") && [ -n "$PROBLEM" ]; then
-  echo "next     : NONE -- $PROBLEM"
-  exit 0
-fi
+
+# Standing upkeep and the nags below need no GPU, so they run BEFORE platform
+# detection: a host whose GPU vanished (or that never had one) still releases
+# forks and still sees approved ports waiting on publish, suggested waivers and
+# unruled deferrals. Exiting on detection failure used to skip all of it, which
+# made a broken ROCm install read exactly like "nothing waiting".
 
 # Releases projects whose fork has appeared, wherever the record lives. A write to
 # a project branch, so it belongs in a session rather than a scheduled job.
@@ -72,10 +63,6 @@ fi
 # false. Only the routine "nothing to do" lines are dropped.
 python3 utils/upstream.py --forks --apply 2>/dev/null \
   | grep -E "RELEASED|ADVANCED|WAITING" | sed 's/^/forks    : /' || true
-
-# Serialize select+claim so two same-host CLIs never grab the same project.
-exec 9>"projects/.selection.lock"
-if command -v flock >/dev/null 2>&1; then flock -w 10 9 || true; fi
 
 # Publishing is a project-level step and belongs to nobody's architecture, so the
 # per-arch selector below will never surface it. It comes first because it is cheap,
@@ -150,6 +137,30 @@ elif d >= 14:
     print(f"last reconciled {d} days ago -- run /moat-checkup")
 ' 2>/dev/null)
 [ -n "$STALE" ] && echo "records  : $STALE"
+
+# Selection below is per-arch and needs a platform. Everything above already ran,
+# so a host with no detectable GPU still did the upkeep and showed the nags.
+if ! arch_out=$(bash utils/detect_arch.sh 2>/dev/null); then
+  echo "platform : UNKNOWN (no AMD GPU detected)"
+  echo "next     : NONE -- per-arch dispatch needs a platform"
+  echo "hint     : GPU-independent stages (intake, planning, review) can still be"
+  echo "           worked by setting MOAT_PLATFORM=<os>-<gfx> to bypass detection;"
+  echo "           building and validating still need real hardware"
+  exit 0
+fi
+eval "$arch_out"   # sets GFX_ARCH GFX_TRIPLE PLATFORM
+
+echo "platform : $PLATFORM (gfx=$GFX_ARCH)"
+# Any AMD GPU is a platform. What it needs is a known wavefront width, since that
+# is the one property the name does not carry; moatlib says so and names the fix.
+if PROBLEM=$(python3 -c 'import sys; sys.path.insert(0, "utils"); import moatlib; print(moatlib.platform_problem(sys.argv[1]) or "", end="")' "$PLATFORM") && [ -n "$PROBLEM" ]; then
+  echo "next     : NONE -- $PROBLEM"
+  exit 0
+fi
+
+# Serialize select+claim so two same-host CLIs never grab the same project.
+exec 9>"projects/.selection.lock"
+if command -v flock >/dev/null 2>&1; then flock -w 10 9 || true; fi
 
 # Control-plane mode never dispatches a port. The trunk only carries projects in
 # terminal states plus stubs a branch may have moved past, so a dispatch line

@@ -514,7 +514,7 @@ def open_review_pr(row, title, body, apply=False):
     if hits:
         return ("jargon", "in-house vocabulary an external maintainer will not know: "
                 + ", ".join(sorted({h[2] for h in hits})))
-    wrapped = prose.check(body, "body")
+    wrapped = prose.check(title, "title") + prose.check(body, "body")
     if wrapped:
         return ("wrapped", wrapped[0])
     if row.get("problem"):
@@ -536,13 +536,14 @@ def open_review_pr(row, title, body, apply=False):
     # our approval command.
     subprocess.run(
         ["gh", "pr", "comment", url, "--body",
-         f"To approve this port, leave a **review** comment containing this line by "
+         f"To approve this port, leave a comment containing this line by "
          f"itself:\n\n```\n{moatlib.APPROVE_COMMAND}\n```\n\n"
-         f"Use *Review changes -> Comment*, or "
-         f"`gh pr review {url} --comment --body '{moatlib.APPROVE_COMMAND}'`. It has to "
-         f"be a review rather than an ordinary comment, because a review records which "
-         f"commit you were looking at, and that is what proves the approval covers this "
-         f"code and not an earlier push.\n\n"
+         f"Either box works: a review comment (*Review changes -> Comment*, or "
+         f"`gh pr review {url} --comment --body '{moatlib.APPROVE_COMMAND}'`) or an "
+         f"ordinary conversation comment. Prefer the review form -- it records which "
+         f"commit you were looking at, which is what proves the approval covers this "
+         f"code and not an earlier push; a conversation comment counts too, judged by "
+         f"its time against the branch tip.\n\n"
          f"The title and body above are what gets opened upstream, verbatim, so approving "
          f"here approves all three: the code, the title and the body. Anything pushed "
          f"afterwards, or any edit to the title or body, voids it and needs a fresh one."],
@@ -579,9 +580,41 @@ def publish_blockers(name, row):
     if hits:
         bad.append("in-house vocabulary in the title/body: "
                    + ", ".join(sorted({h[2] for h in hits})[:4]))
-    # The approved body is about to be republished verbatim upstream, so it is checked
-    # here too rather than trusted from when the review PR was opened -- a maintainer
-    # may have asked for an edit, and an edit is where hand-wrapping creeps back in.
+    # The BRANCH again, not just the title and body, and read from the PR itself
+    # rather than a local clone so it runs on submission hosts that never built the
+    # port. The open-time scan cannot see a commit that landed between the review PR
+    # opening and the approval -- the approval is given against the new tip, so the
+    # staleness check will not catch it either -- and this is the last gate before
+    # that commit ships.
+    pr = row["pr"]
+    msgs = subprocess.run(
+        ["gh", "api", "--paginate",
+         f"repos/{pr['slug']}/pulls/{pr['number']}/commits",
+         "--jq", ".[].commit.message"],
+        capture_output=True, text=True, timeout=90)
+    if msgs.returncode:
+        bad.append("cannot re-check the branch's commit messages for in-house "
+                   "vocabulary (gh api failed) -- a gate that cannot run is not a "
+                   "gate that passed")
+    else:
+        bhits = jargon.scan_text(msgs.stdout, "branch commits", terms, allow)
+        diff = subprocess.run(["gh", "pr", "diff", row["url"]],
+                              capture_output=True, text=True, timeout=180)
+        if diff.returncode:
+            bad.append("cannot re-check the branch's added lines for in-house "
+                       "vocabulary (gh pr diff failed)")
+        else:
+            added = "\n".join(l[1:] for l in diff.stdout.splitlines()
+                              if l.startswith("+") and not l.startswith("+++"))
+            bhits += jargon.scan_text(added, "branch added lines", terms, allow)
+        if bhits:
+            bad.append("in-house vocabulary on the branch: "
+                       + ", ".join(sorted({h[2] for h in bhits})[:4]))
+    # The approved title and body are about to be republished verbatim upstream, so
+    # they are checked here too rather than trusted from when the review PR was
+    # opened -- a maintainer may have asked for an edit, and an edit is where
+    # hand-wrapping (and a stray em-dash or miscased ROCm) creeps back in.
+    bad += prose.check(row["title"], "title")
     bad += prose.check(row["body"], "body")
     # The disclosure has to survive to the thing that actually gets opened. It is
     # added when the review PR is opened, so its absence here means the body was
