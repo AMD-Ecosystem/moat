@@ -7,7 +7,7 @@
   "priority": 3.968,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-08-08T17:15:22Z",
+  "updated_at": "2026-08-10T15:41:36Z",
   "head_sha": "ba0ec806b9f949acac6bb2dcc623017b47d71e75",
   "porting": null,
   "waivers": {},
@@ -125,5 +125,12 @@
       }
     }
   },
-  "review_pr": "https://github.com/AMD-Ecosystem/marian-dev/pull/1"
+  "review_pr": "https://github.com/AMD-Ecosystem/marian-dev/pull/1",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-09T00:27:47Z",
+    "head_sha": "ba0ec806b9f949acac6bb2dcc623017b47d71e75",
+    "content_sha256": "1d91624e72a1b62acde37454c28cbe07261a3d479b6e6f680c057b12277467e8",
+    "review_pr": "https://github.com/AMD-Ecosystem/marian-dev/pull/1"
+  }
 }
