@@ -1076,3 +1076,151 @@ when you are done building. Upstream problem, not ours.
   functional change). Both need USE_CUDNN=ON/USE_NCCL=ON runs; note the
   Windows arch has no MIOpen/RCCL story validated yet, and RCCL there needs
   2+ same-arch GPUs in one process.
+
+## Review 2026-08-10 (reviewer, linux-gfx1100, fork moat-port ba0ec806..1381ed77)
+
+Verdict: CHANGES REQUESTED. One blocker (the CUDA build no longer compiles),
+two smaller code fixes, one record fix. The MIOpen, RCCL and hipSPARSE work is
+otherwise sound; the detail of what was checked is at the end.
+
+### Blocker: the CUDA build stops compiling (fp16 sparse GEMM)
+
+`src/tensors/gpu/prod_sparse_cu11.h:191`
+
+```cpp
+if(betaScalar == (ScalarType)0)
+```
+
+On the CUDA path `ScalarType` is `ElementType` (line 38), so for the half
+instantiation this is `(__half)0` -- a cast from an `int` literal.  Outside
+`__CUDACC__`, older CUDA headers expose only the `float` and `double`
+constructors of `__half` (the integer converts sit behind
+`#if defined(__CUDACC__)`), and `int` converts to both at the same rank, so the
+call is ambiguous.  `prod_sparse.cpp` is a plain host TU on the CUDA path (the
+legacy `cuda_add_library` sends only `.cu` to nvcc), it defines `COMPILE_FP16`
+whenever `CUDA_FOUND` is set (`common/types.h:44`), and it instantiates
+`TypedSparseGemm<half>` at `prod_sparse.cpp:36`, so the branch is instantiated
+even though `resultNeedsCast()` is constant-false there.
+
+Reproduced with the exact template shape and real CUDA headers, host compiler:
+
+```
+error: call of overloaded '__half(int)' is ambiguous
+   note: candidate: '__half::__half(double)'
+   note: candidate: '__half::__half(float)'
+```
+
+with CUDA 12.1 headers; CUDA 12.8 headers compile it, because that release made
+the integer converts visible to host compilers
+(`__CUDA_FP16_DISABLE_IMPLICIT_INTEGER_CONVERTS_FOR_HOST_COMPILERS__`).  This
+file exists for `CUDA_VERSION >= 11000`, so the broken range covers most of what
+it is meant to serve, and 4a257f29's message ("The CUDA path is unchanged apart
+from the buffer-size condition") does not hold as written.
+
+Fix: use a float literal (`(ScalarType)0.f`) or compare in float
+(`(float)betaScalar == 0.f`).  Better, make both `if(resultNeedsCast())` blocks
+(lines 188 and 256) `if constexpr` -- the project is C++17, and that stops the
+CUDA build from instantiating a block that can never run there at all.
+
+Then compile-check it: a host-compile of `prod_sparse.cpp` against a CUDA
+toolkit older than 12.2 is what catches this class, and neither the HIP build
+nor a 12.8 host compile will.
+
+### Pooling backward allocates and frees device memory on every call
+
+`src/tensors/gpu/cudnn_wrappers.cu:459-460`
+
+```cpp
+DeviceBuffer staging
+    = allocateDeviceBuffer(xGrad->shape().elements() * sizeof(float));
+```
+
+`allocateDeviceBuffer` is `hipMalloc`, and the `shared_ptr` deleter `hipFree`s
+at scope exit, so this is a device allocation and a (synchronizing) free per
+pooling node per batch on the training path.  The convolution gradients in the
+same file solve the identical problem with a cached member and the `ensureBuffer`
+helper (`cudnn_wrappers.cu:294`), and `PoolingWrapper` already carries the
+member pattern for its index workspace.  Add a second member (`gradStaging_` /
+`gradStagingSize_`) and use `ensureBuffer`.
+
+### MIOPEN_CALL reports a bare status number
+
+`src/tensors/gpu/cudnn_wrappers.cu:33`
+
+`printf("Error (%d) ...", (int)_s)` where the cuDNN macro it mirrors prints
+`cudnnGetErrorString(x)`.  MIOpen has the same decoder (`miopenGetErrorString`,
+`miopen.h:138`); use it, so a failure in the field says what failed.
+
+### notes.md still says the three features are deferred
+
+`projects/marian-dev/notes.md:114-126` ("Deferred follow-ups") asserts that the
+sparse path is broken, that cuDNN is CUDA-only, that RCCL is a follow-up and
+that "the `pooling` app test is dropped from the HIP build".  All four are now
+false, and that section is read before the 2026-08-10 one.  Mark it superseded
+rather than leaving two sections that contradict each other.
+
+### Checked and clean
+
+- fp16 affine fix (ea834eb1): `cublasLtMatmul` has exactly one call site
+  (prod.cpp:674) reached by exactly two typed overloads; the half one now widens
+  and the float one already matched the 32F scale type, so the fix is complete.
+  `alpha`/`beta` reach it as host pointers (`&alpha` of a local in
+  `affineTyped`, prod.cpp:776), so the host-side dereference is valid, and the
+  `#else` arm is character-identical to the original CUDA call.
+- hipSPARSE rework (4a257f29): the mixed-precision selection matches the table
+  in `rocsparse_spmm.h` (A/B f16_r, C f32_r, compute f32_r) -- descS/descD 16F,
+  descC 32F, float scalars.  The beta!=0 seeding of the float scratch is the
+  correct accumulate form.  Dropping the `bufferSize > 0` guard leaves cuSPARSE
+  behaviour intact in every case where it previously ran, and fixes the case
+  where it silently did not.
+- MIOpen find calls (6cd25824): all three finds get a destination that is about
+  to be overwritten -- forward takes the real `y` (overwritten by the following
+  `miopenConvolutionForward` with beta=0), and both backward finds take the
+  staging buffer, never the live `x`/kernel tensors.  Workspace sizing is queried
+  per direction before each find, `ensureBuffer` only grows, and passing a
+  capacity larger than the queried need is safe.  Pooling has no find.
+- Every MIOpen signature used was checked against `/opt/rocm/include/miopen/miopen.h`
+  argument by argument (`miopenSet2dPoolingDescriptor`, `miopenPoolingBackward`,
+  `miopenPoolingGetWorkSpaceSizeV2`, the three convolution calls, `miopenOpTensor`),
+  and the alpha=1/beta=0 restriction the port designs around is documented at
+  miopen.h:1831, 1877 and 2184.
+- Stream safety: `miopenCreate` leaves the handle on the NULL stream (probed on
+  this host: `miopenGetStream` returns nil), which is where marian's kernels
+  launch, so the MIOpen work is ordered against them exactly as cuDNN's is.  No
+  hidden private-stream race.
+- The two upstream defects are genuinely platform-neutral: `Get<std::pair<int,int>>`
+  is required by `layers/convolution.cpp:13-16`, yaml-cpp has `convert<std::pair>`
+  (`3rd_party/yaml-cpp/node/convert.h:283`) and fastopt has `As<std::pair>`, so the
+  instantiation is well-formed in every configuration; `PoolingOp` (guarded by
+  `#ifdef CUDNN`) now asks the wrapper for its shape the way `ConvolutionOp`
+  always did.  Neither can regress a working CUDA user, since nothing linked with
+  USE_CUDNN=ON before the first of them.
+- RCCL: `find_package(rccl)`/`roc::rccl` and `find_package(miopen)`/`MIOpen` are
+  the real ROCm package and target names (verified in /opt/rocm/lib/cmake).  The
+  quoted `#include "nccl.h"` in communicator_nccl.h resolves through the compat
+  dir already on the marian target's include path; `USE_NCCL` is referenced only
+  by host TUs, so its absence from CMAKE_HIP_FLAGS is correct.  The vendored NCCL
+  ExternalProject is skipped by `CUDA_FOUND AND NOT USE_HIP`, leaving the NVIDIA
+  branch untouched.
+- Re-adding the `pooling` app test to the HIP build is safe with USE_CUDNN=OFF:
+  `src/tests/pooling.cpp` has its whole pooling body commented out upstream and
+  names no CUDNN-gated type.
+- Fault classes: no new device code at all in these five commits -- no kernel
+  launch, no warp intrinsic, no literal 32, no texture or surface.  The new
+  resource holders are `shared_ptr` with a `hipFree` deleter, which leaves the
+  wrappers exactly as copyable as the cuDNN versions were.
+- Skill lessons: both new fault-classes entries and both validation.md entries
+  are true as written and correctly filed.  Spot-checked against the sources they
+  cite -- the MIOpen alpha/beta restriction and the rocSPARSE mixed-precision
+  table are in the installed headers, and the Catch2 section-abort behaviour
+  matches what the 284->603 assertion jump shows.  The RCCL scheduling lesson
+  reads correctly now that the host turned out to have four gfx1100.
+- Hygiene: `jargon.py --port marian-dev` clean; five `[ROCm]` titles, longest 58
+  chars; Claude named in every body, no noreply trailer, no AMD-internal account
+  or hostname; ASCII throughout the diff and the messages; fork worktree clean.
+
+### Not re-litigated
+
+ba0ec806 and earlier, which three platforms already validated.  GPU test runs
+for these five commits are the validator's job and their absence is not part of
+this verdict.
