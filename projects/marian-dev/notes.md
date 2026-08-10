@@ -1795,3 +1795,155 @@ marian.
 - No GPU run this round and none expected: the delta cannot change compiled
   behavior beyond `__LINE__` in a `MIOPEN_CALL` diagnostic.  Its absence is not
   part of this verdict.
+
+## Validation 2026-08-10 (linux-gfx1100, 4x AMD Radeon Pro W7800 48GB, real GPU)
+
+Verdict: PASS. `linux-gfx1100` revalidated at head `1d0822bd` (was `ba0ec806`).
+Host: 4x gfx1100 (RDNA3, wave32), ROCm 7.2.3. Fork clone verified clean and at
+`origin/moat-port` == `1d0822bd` before and after the run (sentencepiece
+gitlink recovered per notes above, never staged, deinited when done).
+
+### Build
+
+Submodules: `git submodule update --init src/3rd_party/simd_utils
+src/3rd_party/simple-websocket-server`, then the sentencepiece recovery (init
+fails on the unfetchable pin, `git -C src/3rd_party/sentencepiece checkout -f
+master`, 1ca221c).
+
+```
+cmake -S projects/marian-dev/src -B agent_space/marian-build-gfx1100-full -G Ninja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ \
+  -DCOMPILE_CUDA=ON -DUSE_CUDNN=ON -DUSE_NCCL=ON \
+  -DUSE_FBGEMM=OFF -DCOMPILE_CPU=ON -DCMAKE_BUILD_TYPE=Release \
+  -DCOMPILE_TESTS=ON -DUSE_MKL=OFF -DUSE_TCMALLOC=OFF -DUSE_DOXYGEN=OFF \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DBUILD_ARCH=native
+cmake --build agent_space/marian-build-gfx1100-full -j64
+```
+
+294/294 targets, no errors (compile 3.9s configure + 108.2s build). All three
+maintainer-requested features on: USE_CUDNN=ON (MIOpen), USE_NCCL=ON (RCCL).
+
+### Unit suites (HIP_VISIBLE_DEVICES=0)
+
+Matches the porter's numbers exactly:
+
+- operator_tests: 603/603 assertions, 4 test cases -- PASS (csr-dot + fp16
+  sections included).
+- graph 10/10, attention 6/6, transformer 3/3, binary 9/9, fastopt 23/23,
+  utils 8/8 -- PASS.
+- rnn_tests 21/24 -- the three documented hipRAND-vs-cuRAND reference
+  mismatches; not a regression.
+
+### Conv/pool reference program
+
+`agent_space/conv_pool_check.cpp` (the validation aid at
+`/var/lib/jenkins/moat/agent_space/conv_pool_check.cpp`, not committed to the
+fork) recompiled against this build's `libmarian.a`/`libmarian_cuda.a` with
+the same flags/libs `test_prod` links with, and run on GPU 0:
+
+```
+conv forward             OK
+conv grad wrt input      OK
+conv grad wrt kernel     OK
+conv grad wrt bias       OK
+max pool forward         OK
+max pool grad            OK
+avg pool forward         OK
+avg pool grad            OK
+charcnn conv forward     OK
+charcnn conv grads       OK (finite)
+ALL CHECKS PASSED
+```
+
+### char-s2s training smoke (GPU 0)
+
+`marian --type char-s2s --char-highway 0 --dim-emb 64 --dim-rnn 64
+--enc-type bidirectional --enc-depth 1 --dec-depth 1 --mini-batch 16
+--workspace 2048 --after 1000u --learn-rate 0.0001 --optimizer adam
+--clip-norm 1 --seed 2222 --devices 0` against the same toy reverse-copy
+corpus/vocab as the e2e gate (`/var/lib/jenkins/moat/agent_space/marian-e2e`).
+Cost 3.22 (Up.100) -> 1.66 (Up.1000), gNorm finite throughout, no NaN/Inf in
+the run -- matches the documented ~3.2 -> ~1.7 pattern (small run-to-run
+numeric drift is expected; hipRAND streams and reduction order are not
+required to be bit-identical across processes). Note: a first attempt through
+`timeit.sh` was killed by the harness's default 2-minute foreground timeout
+before the training's own ~142s completed; that killed attempt is NOT the
+result reported here (GPU was confirmed idle both before and after, and the
+attempt was discarded). The reported run was launched standalone, monitored
+to completion, and is the sole writer of its output path.
+
+### Multi-GPU RCCL (4x gfx1100, exclusive use of the host's four GPUs)
+
+Per the skill's validation.md RCCL section: no other GPU job ran during this
+window (`rocm-smi --showuse` confirmed all four idle immediately before
+start).
+
+```
+marian --type transformer -t train.src train.tgt -m rccl_sync_validate.npz \
+  --vocabs vocab.src.yml vocab.tgt.yml --dim-emb 64 --transformer-dim-ffn 128 \
+  --transformer-heads 2 --enc-depth 2 --dec-depth 2 --after 3000u \
+  --devices 0 1 2 3 --sync-sgd --overwrite
+```
+
+Log confirms `[comm] Using NCCL 4.7.7 for GPU communication` and
+`[comm] NCCLCommunicators constructed successfully`. Synchronous SGD across
+all 4 devices converges: cost 0.00568 @3000u (started from the same corpus as
+the char-s2s/e2e gates). Decoding the resulting model on GPU 0 (beam=6)
+reproduces the reverse-copy task exactly -- every output line is the exact
+reverse of the corresponding input line in `test.src`. Not just a
+start-and-not-crash: the communicators construct, training converges across
+every device, and the trained model decodes correctly.
+
+### Single-GPU e2e determinism gate (GPU 0)
+
+Trained a fresh transformer (same toy task, `--after 3000u --devices 0`,
+default async) to cost 0.0106, then decoded beam=6 twice on GPU and once on
+CPU (`--cpu-threads 1`):
+
+```
+diff gpu1.out gpu2.out   # IDENTICAL
+diff gpu1.out cpu.out    # IDENTICAL
+```
+
+GPU run1 == GPU run2 (deterministic) and GPU == CPU. The wave32 topk/nth_element
+fix still holds at this head.
+
+### CUDA no-regression gate: not re-run, and why that is sound
+
+The porter's nvcc 12.8 compile-and-link check (161/161 targets, USE_CUDNN=OFF
+because cuDNN 8 removed the algorithm API this file targets) was recorded at
+`82755003`, two commits behind this head (`1d0822bd`). Checked whether that
+gap matters rather than assuming it does not:
+`git diff 82755003 1d0822bd --stat` touches exactly two files,
+`src/tensors/gpu/cudnn_wrappers.cu` (34 lines) and
+`src/tensors/gpu/cudnn_wrappers.h` (2 lines). Both hunks fall entirely inside
+`#if defined(CUDNN) && defined(USE_HIP)` (the `.cu`, lines 7-508) or
+`#if defined(USE_HIP)` (the `.h`, the `PoolingWrapper` HIP branch, lines
+19-156) -- neither compiles when `USE_HIP` is not defined, i.e. never on the
+CUDA path regardless of `USE_CUDNN`. So the object code nvcc would produce at
+`1d0822bd` is identical to what it produced at `82755003`, and the recorded
+161/161 link result still stands. No rebuild performed; this is a source-level
+proof of the CUDA gate, not a skip on trust.
+
+### Jargon and docs (finished-port gate)
+
+- `python3 utils/jargon.py --port marian-dev`: clean.
+- ROCm build documented in marian's own house style: `CHANGELOG.md` names the
+  `-DUSE_HIP=on`/`-DCMAKE_HIP_ARCHITECTURES` switches and the hipBLAS,
+  hipBLASLt, hipSPARSE, hipRAND, rocThrust, MIOpen (`-DUSE_CUDNN=on`), RCCL
+  (`-DUSE_NCCL=on`) library set; `README.md`'s feature line now says ROCm/AMD
+  alongside CUDA/NVIDIA. Full build instructions live off-repo (the project
+  website) for CUDA too, so nothing is duplicated -- matches house style.
+
+### Fork clone hygiene
+
+`git status --porcelain` in `projects/marian-dev/src` clean before and after
+(the sentencepiece gitlink recovery is transient and deinited at the end,
+never staged). `origin/moat-port` == local HEAD == `1d0822bd` throughout.
+
+### Verdict
+
+`linux-gfx1100`: **completed** at `validated_sha` = `1d0822bd`. All 5
+requested checks pass; no regressions against the porter's numbers; RCCL and
+MIOpen both exercised for real on GPU, not compile-only.
