@@ -1,0 +1,19 @@
+{
+  "schema_version": 3,
+  "name": "diff-surfel-tracing",
+  "upstream_url": "https://github.com/xbillowy/diff-surfel-tracing",
+  "fork_url": "https://github.com/AMD-Ecosystem/diff-surfel-tracing",
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "adopted_at": "2026-08-06T06:58:03Z",
+  "updated_at": "2026-08-07T07:05:02Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "MIT",
+  "upstream_repo_id": 911002454,
+  "stage": "unclaimed",
+  "platforms": {}
+}
