@@ -56,7 +56,7 @@ else
   fi
   distinct=$(rocm_agent_enumerator 2>/dev/null | grep -E '^gfx[0-9a-f]+' | grep -v '^gfx000$' | sort -u | wc -l)
   if [ "${distinct:-1}" -gt 1 ]; then
-    echo "detect_arch: multiple GPU archs present; using $arch (set HIP_VISIBLE_DEVICES to pin)" >&2
+    echo "detect_arch: multiple GPU archs present; using $arch (set MOAT_PLATFORM=linux-<gfx> to pin -- HIP_VISIBLE_DEVICES does not mask the HSA tools this reads)" >&2
   fi
   if command -v rocminfo >/dev/null 2>&1; then
     triple=$(rocminfo 2>/dev/null | grep -oE 'amdgcn-amd-amdhsa--gfx[0-9a-f:+-]+' | head -1)
