@@ -330,12 +330,15 @@ NVIDIA build -- and nothing on ROCm notices, because there it is the branch that
 such branches `if constexpr`: the discarded arm of a condition that is not value-dependent
 after instantiation is never instantiated, which is exactly the guarantee a
 platform-conditional block needs. The trap that found it: `(ScalarType)0` with
-`ScalarType = __half`. In a HOST translation unit, CUDA headers before 12.8 keep `__half`'s
+`ScalarType = __half`. In a HOST translation unit, CUDA headers up to 12.1 keep `__half`'s
 integer converts behind `#if defined(__CUDACC__)`, so `int` converts to `float` and to
 `double` at equal rank and the cast is ambiguous ("call of overloaded `__half(int)` is
-ambiguous"); 12.8 made those converts visible to host compilers, so the newest toolkit hides
-the bug. Prefer a float literal (`0.f`) in half comparisons anywhere, and compile-check the
-CUDA path against an OLD toolkit, not only the newest one installed. (marian-dev)
+ambiguous"). CUDA 12.2 relaxed that gate to `#if !defined(__CUDA_FP16_DISABLE_IMPLICIT_INTEGER_CONVERTS_FOR_HOST_COMPILERS__) || defined(__CUDACC__)`,
+so the affected range is 11.0 through 12.1 plus any 12.2-or-newer build that defines the
+disable macro; a recent toolkit hides the bug unless the project opts out. Prefer a float
+literal (`0.f`) in half comparisons anywhere, and compile-check the CUDA path against 12.1
+headers or older, not only the newest toolkit installed -- bisected against the real
+headers, 12.1 fails and 12.2.53 onward compiles. (marian-dev)
 
 **A scalar's WIDTH follows the compute/scale type, not the matrix type.** When a ROCm
 library refuses the narrow compute type its CUDA counterpart accepted and you widen it to
