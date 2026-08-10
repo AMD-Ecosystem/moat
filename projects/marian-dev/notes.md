@@ -1342,3 +1342,167 @@ src/3rd_party/simple-websocket-server`, then the sentencepiece recovery
 documented above (init fails on the unfetchable pin, then
 `git -C src/3rd_party/sentencepiece checkout -f master`). NEVER stage the
 resulting sentencepiece gitlink change.
+
+## Review 2026-08-10 #2 (reviewer, linux-gfx1100, fork moat-port 1381ed77..29ec0725)
+
+Verdict: CHANGES REQUESTED. The three code fixes are correct -- I re-derived
+the sparse-GEMM fault and the fix myself, and the pooling and MIOPEN_CALL
+changes hold up. What blocks is the TEXT around them: the CUDA version
+boundary is wrong in the skill lesson this branch publishes and in an upstream
+commit message, and the pooling commit's Test Plan credits a program that does
+not reach the changed code.
+
+### 1. The "before 12.8" boundary is wrong -- it is 12.2 (blocker: it ships twice)
+
+`.claude/skills/cuda-to-rocm/references/fault-classes.md:333,336`,
+`.claude/skills/cuda-to-rocm/references/validation.md:11`, and the body of
+fork commit 32d65345 ("broke the CUDA build on every toolkit older than 12.8",
+"CUDA headers before 12.8 keep `__half`'s integer converts behind
+`#if defined(__CUDACC__)`", "CUDA 12.8 made those converts visible").
+
+`__half`'s integer converts became host-visible in CUDA **12.2**, not 12.8. I
+bisected it with the real headers, compiling the pre-fix template shape
+(`(ScalarType)0` with `ScalarType = __half`, host `g++ -std=gnu++17`, no
+`__CUDACC__`) against each release's `cuda_fp16.h`/`.hpp`:
+
+```
+12.1 (/opt/conda/envs/cuda-12.1-hdr, CUDART_VERSION 12010)  -> ambiguous, bug present
+12.2.53  (nvidia-cuda-runtime-cu12 wheel headers)           -> compiles
+12.2.140 / 12.3.101 / 12.4.127                              -> compiles
+12.8 (/opt/conda/envs/cuda-12.8, CUDART_VERSION 12080)      -> compiles
+```
+
+The mechanism is visible in the headers: 12.1 gates the integer constructors
+on `#if defined(__CUDACC__)` (cuda_fp16.hpp:224), while 12.2 onward gates them
+on `#if !(defined __CUDA_FP16_DISABLE_IMPLICIT_INTEGER_CONVERTS_FOR_HOST_COMPILERS__)
+|| (defined __CUDACC__)` (cuda_fp16.hpp:139) -- host-visible unless a project
+opts out with that macro.
+
+So the true affected range for this file is CUDA 11.0 through 12.1 (the header
+is selected at `prod_sparse.cpp:15`, `CUDA_VERSION >= 11000`), plus any 12.2+
+build that defines the disable macro. That is still a real break and the fix is
+still right; only the range is wrong.
+
+This originated in my own 2026-08-10 review (notes.md:1121-1123), which
+asserted the 12.8 boundary from a single 12.8-compiles observation; the porter
+carried it into the commit body and then into the skill. Correct all four
+places -- the two skill lines, the commit body of 32d65345, and leave this
+section as the record for notes.md. The skill is the one that must not merge
+wrong: it tells every future porter which toolkit to check against, and "get
+anything older than 12.8" versus "get 12.1 or older" is the difference between
+a check that reproduces and one that quietly passes.
+
+### 2. The pooling Test Plan credits a program that does not run the changed code
+
+Body of fork commit 4ff41294: "Character-CNN training, the only consumer of the
+pooling path, converges as before over 1000 updates", and notes.md:1328
+("char-s2s training smoke ... exercising pooling backward with the cached
+buffer").
+
+`PoolingWrapper` is reached only through `avg_pooling`/`max_pooling`
+(`src/graph/expression_operators.cpp:966,977` -> `PoolingOp`,
+`src/graph/node_operators_unary.h:1344`). The character encoder does not use
+them: `src/layers/convolution.h:64` calls `pooling_with_masking`, which is
+`PoolingWithMaskingOp` (`src/graph/node_operators_unary.h:1383`) with its own
+`PoolingWithMaskingForward/Backward` kernels and no MIOpen wrapper at all. The
+only in-tree caller of `max_pooling` is `src/examples/mnist/model_lenet.h:50`.
+The char-CNN run does exercise `ConvolutionWrapper`, so it is evidence for the
+port, but not for this commit.
+
+The real evidence for this change is the standalone reference program (max and
+average pooling forward and backward against hand-computed values), which the
+same body already cites. Drop the char-CNN sentence from 4ff41294's Test Plan
+or re-attribute it to the convolution path, and fix the notes line. An upstream
+maintainer who knows this codebase will check what `pooling_with_masking` is.
+
+### 3. The cached buffer does not survive a training step, so the comment overstates it
+
+`src/tensors/gpu/cudnn_wrappers.cu:457-459` ("The buffer is a cached member so
+that a training step does not allocate and free device memory per node") and
+the matching paragraph in 4ff41294's body.
+
+`PoolingWrapper` is a by-value member of `PoolingOp`
+(`src/graph/node_operators_unary.h:1379`), and node objects do not outlive one
+graph build: `ExpressionGraph::clear()` drops `nodesForward_`/`nodesBackward_`
+and `topNodes_` (`src/graph/expression_graph.h:726-734`), and it runs per batch
+via `EncoderDecoder::clear` (`src/models/encoder_decoder.cpp:180`, reached from
+`build`/`stepAll` at :236). `backward` is called once per node per build, so a
+buffer first allocated there is allocated exactly as often as the old local was
+-- one `hipMalloc` per pooling node per batch either way, with the `hipFree`
+merely deferred to node destruction.
+
+The convolution case is different and the pattern is right there: one buffer
+serves three gradients inside a single `backward` (`cudnn_wrappers.cu:290-294`,
+used at :315, :330, :336), so caching genuinely removes two allocations per
+call. Keep the pooling change (consistency with the convolution path is a fine
+reason on its own), but say what is true: it is one allocation per wrapper
+rather than per call, and the wrapper lives for one graph build. If the intent
+really is to amortize across batches, the buffer has to hang off something with
+a longer life than the node, which is a larger change than this commit.
+
+I reasoned this from the code above rather than instrumenting a run; if a
+counted `hipMalloc` trace over two batches shows otherwise, say so and this
+one drops.
+
+### Verified against the code (the fixes themselves are sound)
+
+- `prod_sparse_cu11.h:188,256` are both `if constexpr` and :191 compares
+  `(ScalarType)0.f`. `resultNeedsCast()` is `static constexpr`
+  (:34, :39), the function is a member of a class template, so the discarded
+  arm is not instantiated -- which is what unbreaks the CUDA path. I
+  reproduced both directions with the real 12.1 headers: the pre-fix form
+  fails with "call of overloaded `__half(int)` is ambiguous", the post-fix form
+  compiles clean.
+- HIP semantics unchanged by the conversion: `resultNeedsCast()` is a compile
+  time constant on both paths, so `if constexpr` selects exactly the branch the
+  runtime `if` took -- true for half on ROCm, false for float on ROCm and for
+  everything on CUDA.
+- No other int-to-`ScalarType` conversion of this class remains, in that file or
+  in any file the branch touches (`(ScalarType|ElementType|half|__half)` cast of
+  an integer literal: none). `ScalarType alpha = 1.0` at :181 is a double, an
+  exact match for `__half(double)`, which 12.1 does expose to the host --
+  compile-checked.
+- Pooling buffer: `ensureBuffer` only grows (`cudnn_wrappers.cu:57-62`) and is
+  called with the current `xGrad->shape().elements() * sizeof(float)` on every
+  call (:460-462), so a growing shape reallocates and a shrinking one reuses a
+  larger buffer, which is safe because `miopenPoolingBackward` runs with beta=0
+  over `xDesc` only. No aliasing with the convolution staging: `gradStaging_` is
+  a separate member of a separate class (`cudnn_wrappers.h:114` in
+  `ConvolutionWrapper`, :154 in `PoolingWrapper`; neither derives from the
+  other), each wrapper is owned by value by its own node, and within
+  `PoolingWrapper` the staging is distinct from `workspace_`, which pooling
+  backward passes to MIOpen in the same call (:477) -- the two are never the
+  same allocation.
+- `MIOPEN_CALL` (`cudnn_wrappers.cu:29-38`) now prints
+  `miopenGetErrorString(_s)` (declared `/opt/rocm/include/miopen/miopen.h:138`)
+  and is otherwise byte-for-byte the same control flow: same `do/while(0)`,
+  same print-and-continue with no abort and no return, and the same message
+  format as the cuDNN macro it mirrors (:509-517).
+- notes.md:114-121 marks the old deferred section SUPERSEDED with a pointer to
+  the current sections and keeps the history. The four findings of the previous
+  review are answered point by point at notes.md:1248-1312.
+- The lesson's C++ claims are right where the version is wrong: a plain `if` in
+  a template does instantiate both arms, and `if constexpr` does not instantiate
+  the discarded arm once the condition is no longer value-dependent. Filing is
+  right too -- the fault class in fault-classes.md, the "check against an old
+  toolkit" habit in validation.md under the nvcc CUDA-build gate, cross-linked.
+- Hygiene: `jargon.py --port marian-dev` clean over the whole branch; the three
+  new titles are 48, 48 and 52 chars, all `[ROCm]`; Claude named in each body;
+  no `Co-Authored-By` and no noreply trailer; ASCII throughout the messages and
+  the diff; no internal account, host or path (the toolkit paths are
+  placeholders); fork worktree clean.
+- Fault classes: no device code in these three commits -- no kernel, no warp
+  intrinsic, no literal 32, no texture. The C++17 `if constexpr` is available on
+  every compiler this build uses (`CMakeLists.txt:15`, `:335`, `:483`, and
+  `:684` for nvcc), and `prod_sparse_cu11.h` is included only by the host TU
+  `prod_sparse.cpp:16`.
+
+### Taken on trust
+
+The 161-target nvcc 12.8 configure-build-link (the `build-cuda` tree is gone
+from this checkout, so there is nothing left to inspect) and the operator/graph
+suite numbers from the porter's re-run. Both are the validator's to confirm at
+this head; their absence here is not part of this verdict. The two conda envs
+the notes name do exist and their versions match, and the fault and its fix I
+reproduced independently, so the part of the claim that carries the fix is not
+on trust.

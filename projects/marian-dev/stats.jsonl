@@ -101,3 +101,5 @@
 {"kind":"phase","ts":"2026-08-10T17:55:22Z","phase":"test","seconds":143.008,"exit":0,"cmd":"/var/lib/jenkins/moat/agent_space/marian-build-gfx1100/marian --type char-s2s --char-highway 0 --dim-emb 64 --dim-rnn 64 --enc-type bidirectional --enc-depth 1 --dec-depth 1 --mini-batch 16 --workspace 2048 --after 1000u --disp-freq 100 --learn-rate 0.0001 --optimizer adam --clip-norm 1 --seed 2222 --devices 0 --train-sets /var/lib/jenkins/moat/agent_space/marian-e2e/train.src /var/lib/jenkins/moat/agent_space/marian-e2e/train.tgt --vocabs /var/lib/jenkins/moat/agent_space/marian-e2e/vocab.src.yml /var/lib/jenkins/moat/agent_space/marian-e2e/vocab.tgt.yml --model /var/lib/jenkins/moat/agent_space/marian-e2e/charfix.npz --overwrite"}
 {"kind":"session","ts":"2026-08-10T17:58:56Z","epoch":1786384736.776296138,"event":"end","platform":"linux-gfx1100"}
 {"kind": "tokens", "ts": "2026-08-10T18:00:41Z", "tokens": 154957, "source": "porter"}
+{"kind":"session","ts":"2026-08-10T18:01:16Z","epoch":1786384876.407428796,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-10T18:11:21Z","epoch":1786385481.390828029,"event":"end","platform":"linux-gfx1100"}
