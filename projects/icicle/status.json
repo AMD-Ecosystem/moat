@@ -1,0 +1,119 @@
+{
+  "schema_version": 3,
+  "name": "icicle",
+  "upstream_url": "https://github.com/ingonyama-zk/icicle",
+  "fork_url": "https://github.com/AMD-Ecosystem/icicle",
+  "fork_default_branch": "main",
+  "priority": 4.507,
+  "ext_type": "cmake",
+  "adopted_at": "2026-05-30T03:26:35Z",
+  "updated_at": "2026-08-07T07:05:11Z",
+  "head_sha": "2609ca44361c7ebc6c3b8ca5af7985a256b5b79f",
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "MIT",
+  "upstream_repo_id": 611226044,
+  "stage": "review-passed",
+  "platforms": {
+    "windows-gfx1201": {
+      "blocked": true,
+      "blocked_reason": "no-windows-support-in-icicle-host-framework: same blockers as windows-gfx1151 confirmed at d8e04fd -- runtime.cpp uses POSIX dlopen/dlfcn.h/dirent.h and emits #error Unsupported operating system for non-Linux/macOS; utils.h uses cxxabi.h (no Windows equivalent); test_base.h uses POSIX setenv. Upstream icicle framework missing Windows support; HIP-PQC GPU kernels are correct (validated on gfx90a and gfx1100).",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-07T04:36:11Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "2609ca44361c7ebc6c3b8ca5af7985a256b5b79f",
+      "started_at": "2026-06-02T03:20:00Z",
+      "completed_at": "2026-06-23T22:43:50Z",
+      "updated_at": "2026-06-23T22:43:50Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 18,
+          "test": 39,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-02T03:20:00Z",
+        "last_session_at": "2026-06-02T04:30:00Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "2609ca44361c7ebc6c3b8ca5af7985a256b5b79f",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:43:50Z"
+      }
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "2609ca44361c7ebc6c3b8ca5af7985a256b5b79f",
+      "started_at": "2026-06-02T02:42:47Z",
+      "completed_at": "2026-06-23T22:43:50Z",
+      "updated_at": "2026-06-23T22:43:50Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 394,
+          "test": 43,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-02T02:50:00Z",
+        "last_session_at": "2026-06-02T03:15:00Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "2609ca44361c7ebc6c3b8ca5af7985a256b5b79f",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:43:50Z"
+      }
+    },
+    "windows-gfx1101": {
+      "blocked": true,
+      "blocked_reason": "Host-wide block, GPU-independent (carried from windows-gfx1201/gfx1151 determination): icicle upstream host framework has no Windows support -- runtime.cpp uses POSIX dlfcn.h/dirent.h/sys/stat.h with an explicit #error 'Unsupported operating system', plus cxxabi.h demangler and setenv(); HIP GPU kernels are fine but the backend loader is POSIX-only. Windows port is upstream-scope. Identical on gfx1101.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-07T04:37:53Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  }
+}
