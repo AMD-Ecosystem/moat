@@ -1,6 +1,8 @@
 # MOAT: Moat Obliteration via Automated Translation
 
-MOAT ports popular CUDA GitHub projects to ROCm/HIP, one repo at a time. Coverage is expressed as gates -- wave64, wave32, windows -- so a port is proven once each gate has an architecture that validated it on real hardware. It is driven by Claude: intake screens a candidate, a planner analyses it, a porter applies the change on a fork in the AMD-Ecosystem org, a reviewer checks it, and a validator runs the real tests on AMD GPUs. Submitting the result upstream, and everything that follows with a maintainer, stays with a person. This repo is the control plane; it tracks progress and holds the porting knowledge in the `cuda-to-rocm` skill.
+MOAT ports popular CUDA GitHub projects to ROCm/HIP, one repo at a time.
+Prefer pictures? [VISUAL.md](VISUAL.md) walks through all of this in twelve
+diagrams. Coverage is expressed as gates -- wave64, wave32, windows -- so a port is proven once each gate has an architecture that validated it on real hardware. It is driven by Claude: intake screens a candidate, a planner analyses it, a porter applies the change on a fork in the AMD-Ecosystem org, a reviewer checks it, and a validator runs the real tests on AMD GPUs. Submitting the result upstream, and everything that follows with a maintainer, stays with a person. This repo is the control plane; it tracks progress and holds the porting knowledge in the `cuda-to-rocm` skill.
 
 ## If you maintain a project we might send a pull request to
 
@@ -264,4 +266,4 @@ The project name links upstream.
 
 ## Layout
 
-See `projects/README.md` for the per-project files, the `cuda-to-rocm` skill for porting strategy and fault classes, and `CLAUDE.md` for how a Claude CLI drives the pipeline.
+See [VISUAL.md](VISUAL.md) for a diagram walkthrough of everything above, `projects/README.md` for the per-project files, the `cuda-to-rocm` skill for porting strategy and fault classes, and `CLAUDE.md` for how a Claude CLI drives the pipeline.
