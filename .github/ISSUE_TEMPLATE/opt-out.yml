@@ -6,13 +6,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        No reason needed and none will be asked for. Filing this stops the work: the
-        repositories are dropped from our candidate list, no new project can be adopted
-        from them, and nothing can be submitted to them even if a port is already
-        finished. Anything of ours already open is closed by a person.
+        No reason needed and none will be asked for. Filing this stops the work: the repositories are dropped from our candidate list, no new project can be adopted from them, and nothing can be submitted to them even if a port is already finished. Anything of ours already open is closed by a person.
 
-        A comment on one of our pull requests works just as well as this form. This
-        exists so you do not have to wait for one to arrive.
+        A comment on one of our pull requests works just as well as this form. This exists so you do not have to wait for one to arrive.
 
   - type: input
     id: who
