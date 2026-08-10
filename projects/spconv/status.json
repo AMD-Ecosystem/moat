@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "spconv",
+  "upstream_url": "https://github.com/traveller59/spconv",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "pccm-codegen",
+  "adopted_at": "2026-08-07T17:06:38Z",
+  "updated_at": "2026-08-07T17:06:38Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "stage": "unclaimed",
+  "platforms": {}
+}
