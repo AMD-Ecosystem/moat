@@ -81,6 +81,13 @@ because the local record is a file agents can write and the approval is not.
 Opening the upstream pull request is one command run by a person in their own session,
 never by an unattended job.
 
+## Suggest a project to port
+
+Anyone can ask for a CUDA project to be ported:
+[file a port request](https://github.com/AMD-Ecosystem/moat/issues/new?template=port-request.yml).
+It lands in the same queue our own discovery feeds, and a person decides
+whether to take it up before any work starts.
+
 ## Licence
 
 MIT, matching the ROCm projects this work targets. See [LICENSE](LICENSE). The ports
