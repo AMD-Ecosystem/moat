@@ -47,6 +47,10 @@ NM = f"{ROCM}/llvm/bin/llvm-nm"
 ROC_OBJ_LS = f"{ROCM}/bin/roc-obj-ls"
 
 BIN_SUFFIXES = (".so", ".hsaco")
+# Build intermediates. An object or a static archive is real ELF, so the magic test
+# below would take them, and comparing thousands of them says nothing the linked
+# output does not say better.
+SKIP_SUFFIXES = (".o", ".obj", ".a", ".lo", ".d")
 
 
 def _run(args):
@@ -54,11 +58,21 @@ def _run(args):
 
 
 def _is_binary(path):
+    if path.endswith(SKIP_SUFFIXES):
+        return False
     if path.endswith(BIN_SUFFIXES):
         return True
     if os.path.basename(path).startswith("lib") and ".so" in path:
         return True
-    return False
+    # Otherwise ask the file, not its name. A cmake project ships `libfoo.so` and was
+    # found; a Makefile project ships `train_gpt2cu` and was not, so walking its build
+    # tree found nothing and the tool answered `indeterminate` -- correct, and useless.
+    # The validator then had to know to pass each executable as an explicit path.
+    try:
+        with open(path, "rb") as f:
+            return f.read(4) == b"\x7fELF"
+    except OSError:
+        return False
 
 
 def _gather(root):
