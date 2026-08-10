@@ -1,0 +1,126 @@
+{
+  "schema_version": 3,
+  "name": "espresso",
+  "upstream_url": "https://github.com/espressomd/espresso",
+  "fork_url": "https://github.com/AMD-Ecosystem/espresso",
+  "fork_default_branch": "python",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-06-04T04:43:45Z",
+  "updated_at": "2026-08-07T07:05:03Z",
+  "head_sha": "8e228b5d0b5113e32c201d6b9b930fdc111c64b9",
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:33:28Z",
+    "tier": 3,
+    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
+  },
+  "license_spdx": "GPL-3.0",
+  "upstream_repo_id": 1524644,
+  "stage": "review-passed",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "8e228b5d0b5113e32c201d6b9b930fdc111c64b9",
+      "started_at": "2026-06-04T04:51:40Z",
+      "completed_at": "2026-06-23T22:45:22Z",
+      "updated_at": "2026-06-23T22:45:22Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "8e228b5d0b5113e32c201d6b9b930fdc111c64b9",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:45:22Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "8e228b5d0b5113e32c201d6b9b930fdc111c64b9",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:45:22Z",
+      "updated_at": "2026-06-23T22:45:22Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "8e228b5d0b5113e32c201d6b9b930fdc111c64b9",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:45:22Z"
+      }
+    },
+    "windows-gfx1101": {
+      "blocked": true,
+      "blocked_reason": "ESPResSo requires MPI 3.0 (msmpi.dll on Windows); MS-MPI installer requires admin elevation unavailable in automated validation. Same host-wide infrastructure blocker as windows-gfx1201 (this is the same physical machine), not a port defect or GPU-specific issue.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-19T23:24:29Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1201": {
+      "blocked": true,
+      "blocked_reason": "ESPResSo requires MPI 3.0 (msmpi.dll on Windows); MS-MPI installer requires admin elevation which is not available in automated validation. Host infrastructure blocker, not a port defect.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-08T15:24:19Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  }
+}
