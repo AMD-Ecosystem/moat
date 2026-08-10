@@ -108,3 +108,4 @@
 {"kind":"session","ts":"2026-08-10T18:20:10Z","epoch":1786386010.631727964,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-10T18:26:15Z","epoch":1786386375.777543490,"event":"end","platform":"linux-gfx1100"}
 {"kind": "tokens", "ts": "2026-08-10T18:27:10Z", "tokens": 84740, "source": "reviewer"}
+{"kind": "tokens", "ts": "2026-08-10T18:33:22Z", "tokens": 59319, "source": "porter"}
