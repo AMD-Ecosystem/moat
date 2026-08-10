@@ -334,7 +334,7 @@ platform-conditional block needs. The trap that found it: `(ScalarType)0` with
 integer converts behind `#if defined(__CUDACC__)`, so `int` converts to `float` and to
 `double` at equal rank and the cast is ambiguous ("call of overloaded `__half(int)` is
 ambiguous"). CUDA 12.2 relaxed that gate to `#if !defined(__CUDA_FP16_DISABLE_IMPLICIT_INTEGER_CONVERTS_FOR_HOST_COMPILERS__) || defined(__CUDACC__)`,
-so the affected range is 11.0 through 12.1 plus any 12.2-or-newer build that defines the
+so every release up to 12.1 is affected, plus any 12.2-or-newer build that defines the
 disable macro; a recent toolkit hides the bug unless the project opts out. Prefer a float
 literal (`0.f`) in half comparisons anywhere, and compile-check the CUDA path against 12.1
 headers or older, not only the newest toolkit installed -- bisected against the real
