@@ -486,7 +486,6 @@ spdx = [
 # CUDA project; projects/cuBQL/notes.md records the counterexample -- 66 SPDX tags
 # with NVIDIA copyrights all under Apache-2.0, which is clean.
 [tier3.nvidia_proprietary]
-requires_osrb = true
 text_markers = [
   "NVIDIA Source Code License",
   "NVIDIA Software License Agreement",
@@ -501,13 +500,8 @@ text_markers = [
   "outside the terms of the EULA",
 ]
 
-[scan]
-# GitHub's licenseInfo is not sufficient on its own: it reports NOASSERTION or NONE
-# for roughly a fifth of repos, most of which carry an ordinary approved licence it
-# could not parse. Use a real detector and fall back to reading the licence file.
-trust_github_license_field = false
-detector = "licensee"
-# EnvGS was blocked by an unlicensed SUBMODULE, not by its top-level licence, so a
-# main-tree scan alone misses the case that actually bit us.
-recurse_submodules = true
-recurse_vendored = true
+# There is no [scan] table: HOW to establish a licence (distrust GitHub's field,
+# read the file, recurse into submodules and vendored trees) is the intake agent's
+# instruction set, in .claude/agents/intake.md. A [scan] block sat here from the
+# first commit describing a licensee-based detector no code ever ran, and config
+# that nothing reads is a promise the tooling does not keep.
