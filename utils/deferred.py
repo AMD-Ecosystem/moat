@@ -2,7 +2,7 @@
 """MOAT deferred-work registry: the answer to "what did we defer, and where do
 we resume it?"
 
-Two kinds of deferred work accumulate during a port and are easy to lose track
+Three kinds of deferred work accumulate during a port and are easy to lose track
 of because they live in prose:
 
   - rocm-bug-report: a bug isolated against a ROCm component (rocPRIM, hipCUB,
