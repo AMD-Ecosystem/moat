@@ -1,6 +1,6 @@
 # MOAT
 
-MOAT (Moat Obliteration via Automated Translation) is a Claude-driven effort to port popular CUDA GitHub projects to ROCm/HIP, one repo at a time. Coverage is expressed as gates -- wave64, wave32, windows (config/arches.toml) -- not as a fixed list of architectures. Each port lives on a fork in the AMD-Ecosystem org. This repo is the control plane: it tracks progress, holds the porting knowledge, and lets any Claude CLI resume where the last one stopped.
+MOAT (Migration Orchestration via Automated Translation) is a Claude-driven effort to port popular CUDA GitHub projects to ROCm/HIP, one repo at a time. Coverage is expressed as gates -- wave64, wave32, windows (config/arches.toml) -- not as a fixed list of architectures. Each port lives on a fork in the AMD-Ecosystem org. This repo is the control plane: it tracks progress, holds the porting knowledge, and lets any Claude CLI resume where the last one stopped.
 
 # On startup, do this
 
