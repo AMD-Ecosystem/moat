@@ -1559,3 +1559,99 @@ GPU re-run was done for this round, deliberately: nothing compiled changed.
    review allowed.
 
 `python3 utils/jargon.py --port marian-dev`: clean over the whole branch.
+
+## Review 2026-08-10 #3 (reviewer, linux-gfx1100, fork moat-port 29ec0725 -> 4d25e3f1)
+
+Verdict: CHANGES REQUESTED, narrowly.  Scope of this round was the three text
+corrections from review #2 and nothing broader.  Two of the three landed and are
+correct; the third (the pooling cache comment) replaced an overstatement with a
+smaller one that the surrounding code still contradicts.  One further wording
+point in the skill entry that merges with this branch.  Both are wording; no
+code change is being asked for, so the delta stays comment/message-only and
+`classify` should still read inert.
+
+### 1. "It saves only the free" -- the free is not saved, it is deferred
+
+`src/tensors/gpu/cudnn_wrappers.cu:457-461` ("the buffer is a cached member for
+consistency with that path, but here it saves only the free") and the matching
+sentence in d4bc6433's body ("What this removes is the free rather than the
+allocation").
+
+`DeviceBuffer` is `std::shared_ptr<void>` with a `hipFree` deleter
+(`cudnn_wrappers.h:37`, `cudnn_wrappers.cu:50-53`), so destroying the wrapper
+frees the buffer.  `PoolingWrapper` is a by-value member of `PoolingOp`
+(`node_operators_unary.h:1379`), every node is held by `nodesForward_`
+(`expression_graph.cpp:51`) until `ExpressionGraph::clear()` drops it
+(`expression_graph.h:726-734`), and that runs per batch.  So the free happens
+once per pooling node per batch either way: with the old local it ran at the end
+of `backward`, with the cached member it runs at node teardown.  The counts of
+`hipMalloc` and `hipFree` per batch are unchanged by this commit; only the
+moment of the free moves.  The comment's own reasoning says as much -- the node
+being dropped for the next batch is exactly what performs the free -- so a
+maintainer reading the two clauses together finds them in tension.
+
+Fix both places to say what happens: the allocation still occurs once per
+pooling node per batch, and the free moves out of the backward call to node
+teardown.  The consistency-with-the-convolution-path rationale carries the
+change on its own and is already there.
+
+### 2. The skill entry's "11.0" floor is marian's, not the fault's
+
+`.claude/skills/cuda-to-rocm/references/fault-classes.md:336-338` ("so the
+affected range is 11.0 through 12.1 plus any 12.2-or-newer build that defines
+the disable macro").
+
+11.0 is where *this project* starts using the header that carries the cast
+(`prod_sparse.cpp:15`, `CUDA_VERSION >= 11000`; `prod_sparse_cu10.h` has no
+`(ScalarType)0`), so it is right in 82755003's body, which is about marian.  The
+skill entry states it as the general range of the fault class, and nothing in
+this branch establishes that releases older than 11.0 are unaffected -- they
+were not tested in either direction, and the sentence just above it already says
+the correct general thing ("CUDA headers up to 12.1 keep `__half`'s integer
+converts behind `#if defined(__CUDACC__)`").  Say "every release up to 12.1"
+there, or name 11.0 as marian's own floor.  The actionable instruction that
+follows ("compile-check against 12.1 headers or older") is right as it stands.
+
+### Verified this round
+
+- CUDA boundary: correct as now written everywhere it appears.  I re-read the
+  real headers rather than taking the bisection on trust:
+  `/opt/conda/envs/cuda-12.1-hdr/include/cuda_fp16.hpp:224` gates the `__half`
+  integer constructors (`short`, `unsigned short`, `int`, `unsigned int`,
+  `long long`, `unsigned long long`) on `#if defined(__CUDACC__)` alone, and
+  `/opt/conda/envs/cuda-12.8/targets/x86_64-linux/include/cuda_fp16.hpp:141`
+  gates the same block on `#if !(defined
+  __CUDA_FP16_DISABLE_IMPLICIT_INTEGER_CONVERTS_FOR_HOST_COMPILERS__) ||
+  (defined __CUDACC__)`.  82755003's body, `fault-classes.md:333-341`,
+  `validation.md:11` and the bracketed correction at notes.md:1124-1126 all
+  state 12.2, the opt-out macro and the 11.0-12.1 range consistently, and the
+  macro spelling matches the header.  The 11.0 floor is right for marian (see
+  finding 2 for the skill).
+- Pooling Test Plan (d4bc6433): the standalone reference program is now the
+  credited evidence; "avg_pooling and max_pooling are the only callers of this
+  wrapper" holds (`PoolingOp` is constructed only there), and "in this tree only
+  the MNIST LeNet example uses them" holds -- `model_lenet.h:50` is the only
+  live caller, `tests/pooling.cpp` has its pooling entirely commented out, and
+  `tests/conv_char.cu:69` uses a `MaxPooling` class that has no definition
+  anywhere in the tree and is not in any CMake target list.  char-s2s is
+  re-attributed to the convolution wrapper and training as a whole, with
+  `pooling_with_masking` named as where its pooling goes; no claim that
+  char-CNN reaches this file remains.  notes.md:1330-1335 matches.
+- Tree identity: `git diff 29ec0725 4d25e3f1 --stat` is one file,
+  `src/tensors/gpu/cudnn_wrappers.cu`, 4 insertions and 2 deletions, all inside
+  the one comment block.  ba0ec806 and 1381ed77 are both reachable ancestors of
+  4d25e3f1.
+- Hygiene: the three titles are byte-identical to the ones they replaced (48,
+  48, 52 chars, all `[ROCm]`); Claude named in each body; no `Co-Authored-By`
+  and no noreply trailer; ASCII throughout the three messages; no in-house
+  vocabulary in the new body text (`jargon.py --port marian-dev` clean over the
+  whole branch); no internal account, host or path -- the toolkit paths in
+  82755003's Test Plan are placeholders; fork worktree clean at 4d25e3f1.
+- Skill edit is surgical: 7d49e68 touches only the two boundary sentences in
+  `fault-classes.md` and the one in `validation.md`.  The `if constexpr` claims,
+  the float-literal advice, the cross-link and the surrounding entries are
+  unchanged, and the 12.1-header conda recipe in `validation.md` still matches
+  the env that exists.
+- Not re-reviewed, deliberately: the compiled code, which is unchanged from
+  29ec0725 apart from the one comment, and whose review is in #2.  No GPU run is
+  expected for a comment-only delta and its absence is not part of this verdict.
