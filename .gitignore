@@ -85,3 +85,6 @@ findings/
 
 # Claude Code agent worktrees (isolated checkouts; their commits live on their own branches)
 .claude/worktrees/
+
+# Scratch: commit messages are written to the session scratchpad, never here.
+msg.txt

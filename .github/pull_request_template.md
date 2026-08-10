@@ -30,7 +30,7 @@ will read as that project's work everywhere the branch is not shown.
 - [ ] That PR's title and body are the ones the upstream PR will carry, written for the external maintainer. Approving it approves all three of code, title and body at once, so a placeholder title means the real one is never read
 - [ ] Coverage gates satisfied, or a waiver approved by a maintainer (`moatlib.py pr-ready <name>`)
 - [ ] Fork working tree clean; nothing validated against uncommitted edits
-- [ ] No in-house vocabulary in fork commits (`utils/jargon.py --commits <range> -C projects/<name>/src`)
+- [ ] No in-house vocabulary anywhere on the fork branch (`utils/jargon.py --port <name>` -- the whole branch, not the newest commit)
 - [ ] Generalizable lessons promoted to the `cuda-to-rocm` skill, in the file their reader would open, with the source project named
 
 ## For a negative outcome
@@ -38,7 +38,7 @@ will read as that project's work everywhere the branch is not shown.
 A project we will not port still merges -- merging is what records the decision, so it is
 not proposed again.
 
-- [ ] Disposition and a concrete reason in `data/dispositions.json` (`utils/triage.py skip <owner/repo> --reason <reason> --note "..."`)
+- [ ] Disposition and a concrete reason in `data/dispositions.json` (`utils/triage.py skip <owner/repo> --reason <reason> --by <who> --note "..."`)
 - [ ] If this records a decline, it came from `intake_queue.py apply --decline` carrying a person's answer on the queue issue. Labels record nothing.
 
 ## Notes for the reviewer
