@@ -277,6 +277,7 @@ def fetch_repo_meta(full_name):
         return None
     return {
         "fullName": d.get("full_name") or full_name,
+        "id": d.get("id"),
         "url": d.get("html_url") or f"https://github.com/{full_name}",
         "defaultBranch": d.get("default_branch"),
         "stargazersCount": d.get("stargazers_count") or 0,
@@ -288,6 +289,25 @@ def fetch_repo_meta(full_name):
         "language": d.get("language"),
         "description": d.get("description") or "",
     }
+
+
+def already_decided(full_name, repo_id=None):
+    """True for a repo a person has already ruled on: a maintainer opt-out or a
+    skip disposition. Discovery drops these on the way in, so the queue never
+    re-offers a decided repo -- the opt-out binding is mechanical, not something
+    the triage view alone remembers. `verify` dispositions pass through: they
+    mean investigate, and `triage.py review` tags them rather than hiding them.
+
+    Pass the numeric repo id when a call site has one (the code-search pass does,
+    from fetch_repo_meta): the id is what survives a rename. The metadata pass has
+    only the search result, which carries no numeric id, so a renamed decided repo
+    can re-enter candidates.json from that pass by name -- `triage.py review` tags
+    it and `scaffold` refuses it by id, so the decision itself cannot leak."""
+    sys.path.insert(0, str(Path(__file__).parent))
+    import moatlib
+    d = moatlib.get_disposition(full_name, repo_id)
+    return bool(moatlib.optout_for(full_name)
+                or (d and d.get("disposition") == "skip"))
 
 
 def adopted_projects():
@@ -345,9 +365,10 @@ def run_code_search_pass(cfg, out_path):
         surfaced = code_search_repos(cfg, disk=disk, save=_save_cache)
     n_unique = len(surfaced)
 
-    # Partition: skip repos already known (in candidates.json) or already adopted.
+    # Partition: skip repos already known (in candidates.json), already adopted,
+    # or already ruled on (opt-out or skip disposition).
     new_repos = []
-    n_known = n_adopted = 0
+    n_known = n_adopted = n_decided = 0
     for fn, q in surfaced:
         low = fn.lower()
         if low in known:
@@ -355,6 +376,9 @@ def run_code_search_pass(cfg, out_path):
             continue
         if low.split("/")[-1] in adopted_names:
             n_adopted += 1
+            continue
+        if already_decided(fn):
+            n_decided += 1
             continue
         new_repos.append((fn, q))
 
@@ -387,6 +411,12 @@ def run_code_search_pass(cfg, out_path):
             sys.stderr.write(f"discover: code-search progress {i + 1}/{len(new_repos)}\n")
         if meta is None:
             n_meta += 1
+            continue
+        # Re-check now that the numeric id (and, after a rename redirect, the
+        # current name) is known: the name-only check above cannot catch a decided
+        # repo that was renamed since the decision.
+        if already_decided(meta["fullName"], meta.get("id")):
+            n_decided += 1
             continue
         owner = meta["fullName"].split("/")[0].lower()
         if owner in excl_orgs or any(sub in owner for sub in excl_substr):
@@ -425,6 +455,7 @@ def run_code_search_pass(cfg, out_path):
         "unique_repos": n_unique,
         "already_known": n_known,
         "already_adopted": n_adopted,
+        "already_decided": n_decided,
         "new_evaluated": len(new_repos),
         "truncated": truncated,
         "meta_errors": n_meta,
@@ -465,7 +496,7 @@ def main(argv=None):
     threshold = max(1, int(s.get("min_cuda_bytes", 0)))
     cache = {}
     recs = []
-    n_filter = n_org = n_nocuda = 0
+    n_filter = n_org = n_nocuda = n_decided = 0
     for h in raw_hits:
         if not passes(h, cfg):
             n_filter += 1
@@ -473,6 +504,9 @@ def main(argv=None):
         owner = h["fullName"].split("/")[0].lower()
         if owner in excl_orgs or any(sub in owner for sub in excl_substr):
             n_org += 1
+            continue
+        if already_decided(h["fullName"]):
+            n_decided += 1
             continue
         if not args.no_verify and h.get("language") != "Cuda":
             cb = cuda_bytes(h["fullName"], cache)
@@ -517,7 +551,8 @@ def main(argv=None):
     sys.stderr.write(
         f"discover: {len(raw_hits)} unique hits -> {len(recs)} candidates "
         f"({len(preserved)} code-search records preserved; dropped {n_filter} filters, "
-        f"{n_org} excluded-org, {n_nocuda} no-CUDA-code) -> {out_path}\n")
+        f"{n_org} excluded-org, {n_decided} already-decided, "
+        f"{n_nocuda} no-CUDA-code) -> {out_path}\n")
     return 0
 
 
