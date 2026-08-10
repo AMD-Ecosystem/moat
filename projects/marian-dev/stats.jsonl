@@ -83,3 +83,4 @@
 {"kind": "tokens", "ts": "2026-08-10T17:18:45Z", "tokens": 297970, "source": "porter"}
 {"kind":"session","ts":"2026-08-10T17:19:42Z","epoch":1786382382.333450051,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-10T17:38:28Z","epoch":1786383508.011065636,"event":"end","platform":"linux-gfx1100"}
+{"kind": "tokens", "ts": "2026-08-10T17:39:14Z", "tokens": 200485, "source": "reviewer"}
