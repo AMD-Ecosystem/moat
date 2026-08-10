@@ -270,34 +270,39 @@ def fork_poll(apply=False, stale_weeks=3):
     """Release projects whose fork has appeared, and flag ones waiting too long.
 
     A project sits in `awaiting-fork` until someone with the rights creates the fork;
-    that act is the decision to take it up. Nobody should have to notice by hand, and
-    -- more to the point -- whoever created the fork gets no confirmation unless
-    something says so. This closes both ends: it advances the state and comments on
-    the project's draft PR.
+    that act is the decision to take it up. Nobody should have to notice by hand, so
+    this advances the state and prints what it found.
 
-    State lives on the project's own `port/<name>` branch, not the trunk, so this
-    pushes directly. It does NOT start any work: porting needs a GPU host and a
-    session. This only makes the project eligible and tells someone.
+    Detection AND the write are `moatlib.release_awaiting_fork` -- the one
+    implementation. This used to run its own fork-existence poll first and only
+    delegated when its poll found something, so the two polls could disagree and the
+    disagreement decided whether anything advanced. Now the same sweep that reports
+    is the sweep that writes; only the ones it released are re-derived here for the
+    WAITING report.
+
+    State lives on the project's own `port/<name>` branch, not the trunk, so the
+    release pushes directly. It does NOT start any work: porting needs a GPU host and
+    a session. This only makes the project eligible and tells someone.
     """
     import datetime
+    sys.path.insert(0, str(REPO / "utils"))
     import moatlib
-    released, waiting = [], []
-    for name, d, where in all_records():
-        if moatlib.project_stage(d) != "awaiting-fork":
+    released = [{"name": n, "slug": s}
+                for n, s in moatlib.release_awaiting_fork(dry_run=not apply)]
+    got = {r["name"] for r in released}
+    waiting = []
+    for name, d, _where in all_records():
+        if name in got or moatlib.project_stage(d) != "awaiting-fork":
             continue
         slug = (d.get("fork_url") or f"https://github.com/AMD-Ecosystem/{name}") \
             .replace("https://github.com/", "")
-        exists = gh_json(["api", f"repos/{slug}", "--jq", ".full_name"]) is not None or \
-            subprocess.run(["gh", "api", f"repos/{slug}"], capture_output=True).returncode == 0
-        if not exists:
-            waiting.append({"name": name, "slug": slug,
-                            "since": d.get("updated_at") or ""})
-            continue
-        released.append({"name": name, "slug": slug, "where": where})
+        waiting.append({"name": name, "slug": slug, "since": d.get("updated_at") or ""})
 
     print(f"fork-poll: {len(released)} released, {len(waiting)} still waiting\n")
     for r in released:
-        print(f"  RELEASED   {r['name']:26} fork exists: {r['slug']}")
+        verb = "ADVANCED" if apply else "RELEASED"
+        note = "-> screened" if apply else "fork exists:"
+        print(f"  {verb:10} {r['name']:26} {note} {r['slug']}")
     now = datetime.datetime.now(datetime.timezone.utc)
     for w in waiting:
         old = ""
@@ -310,21 +315,6 @@ def fork_poll(apply=False, stale_weeks=3):
             except ValueError:
                 pass
         print(f"  WAITING    {w['name']:26} no fork at {w['slug']}{old}")
-
-    if not apply or not released:
-        return released, waiting
-
-    # One implementation, in moatlib. This used to keep its own: check the branch out,
-    # edit the file, commit, push, restore the caller's branch, then look for the
-    # project's draft PR to comment on. That last step has found nothing since draft
-    # PRs stopped being opened per project, and the checkout dance is unnecessary now
-    # that release_awaiting_fork writes a branch through git plumbing. Two
-    # implementations of "release a fork" had already drifted: this one advanced
-    # branch-resident projects while `moatlib.py release-forks` reported none waiting.
-    sys.path.insert(0, str(REPO / "utils"))
-    import moatlib
-    for name, slug in moatlib.release_awaiting_fork():
-        print(f"  ADVANCED   {name:26} -> screened ({slug})")
     return released, waiting
 
 
@@ -339,27 +329,54 @@ ACTIONABLE_APPROVAL = {"stale-commits", "stale-content"}
 
 
 def approval_drift():
-    """Projects whose recorded approval no longer covers their review PR."""
+    """Projects whose approval no longer covers their review PR.
+
+    Looks for the approval on GitHub, not only for a snapshot in our files -- the
+    same principle publishable() settled. The drift window this report exists for is
+    an approval clicked and then a push landing before anyone submits, and
+    record_pr_approval normally runs at publish time, so that window has no snapshot
+    by construction. A project with a snapshot gets the full provenance check on top
+    (pr_approval_status); one without is judged from the PR alone
+    (approval_currency), and a port still awaiting its first approval is not drift
+    and is not reported."""
     sys.path.insert(0, str(REPO / "utils"))
     import moatlib
 
     rows = []
     for name, d, _where in all_records():
-        if not d.get("pr_approval") or d.get("pr_state"):
-            continue          # never approved, or already published
-        code, why = moatlib.pr_approval_status(name, live=True)
-        if code != "ok":
-            rows.append({"name": name, "code": code, "why": why,
-                         "url": (d["pr_approval"].get("review_pr") or d.get("review_pr"))})
+        if d.get("pr_state"):
+            continue          # already published
+        url = (d.get("pr_approval") or {}).get("review_pr") or d.get("review_pr")
+        if not url:
+            continue          # no review PR for an approval to drift from
+        if d.get("pr_approval"):
+            code, why = moatlib.pr_approval_status(name, live=True)
+            if code != "ok":
+                rows.append({"name": name, "code": code, "why": why, "url": url})
+            continue
+        pr = moatlib.fetch_review_pr(url)
+        if pr is None:
+            # An outage is not an answer; see publishable().
+            rows.append({"name": name, "code": "unreachable",
+                         "why": f"could not reach the review PR at {url}", "url": url})
+            continue
+        code, why = moatlib.approval_currency(pr)
+        if code != "ok" and code != "withdrawn":
+            rows.append({"name": name, "code": code, "why": why, "url": url})
     return rows
 
 
 def refresh_approval(r):
-    """Dismiss the overtaken approval and ask the same reviewer to look again.
+    """Surface the overtaken approval on its review PR and ask for a fresh one.
 
-    Dismissing rather than only commenting is the point: the PR must stop displaying
-    "Approved" for content nobody approved, and the submission gate refuses either
-    way, so leaving the green check up only misleads a human reading the page.
+    A plain APPROVED review is dismissed, so the PR stops displaying "Approved" for
+    content nobody approved. An approval given as a `/moat approve` comment -- the
+    form every self-authored review PR uses, since GitHub greys out the button for
+    the author -- has no green state to mislead anyone and GitHub's dismissal
+    endpoint takes only APPROVED review objects, so for those the stale notice is a
+    comment on the PR. The submission gate refuses either way; this is about what a
+    human reading the page is told. No review re-request: on a self-authored PR the
+    approver IS the author, and GitHub refuses a review request naming the author.
 
     This is our own fork, inside the autonomy boundary -- unlike anything upstream,
     which always needs its own explicit yes."""
@@ -370,23 +387,21 @@ def refresh_approval(r):
     if pr is None:
         return False
     review = moatlib._approving_review(pr)
-    if review is None or not review.get("id"):
+    if review is None:
         return False
     slug, num = pr["slug"], pr["number"]
-    msg = (f"Dismissing this approval automatically: {r['why']}.\n\n"
+    msg = (f"This approval is stale: {r['why']}.\n\n"
            "The approval covered the code, title and body as they stood when it was "
            "given, so it no longer describes what would be submitted upstream. "
            "Nothing is published while it is stale. Please re-approve if the change "
            "still looks right.")
-    ok = gh_json(["api", "-X", "PUT",
-                  f"repos/{slug}/pulls/{num}/reviews/{review['id']}/dismissals",
-                  "-f", f"message={msg}", "-f", "event=DISMISS"]) is not None
-    if not ok:
-        return False
-    # Re-request so it lands in their review queue rather than waiting to be noticed.
-    gh_json(["api", "-X", "POST", f"repos/{slug}/pulls/{num}/requested_reviewers",
-             "-f", f"reviewers[]={review['login']}"])
-    return True
+    if review.get("id") and review.get("state") == "APPROVED":
+        return gh_json(["api", "-X", "PUT",
+                        f"repos/{slug}/pulls/{num}/reviews/{review['id']}/dismissals",
+                        "-f", f"message={msg}", "-f", "event=DISMISS"]) is not None
+    res = subprocess.run(["gh", "pr", "comment", r["url"], "--body", msg],
+                         capture_output=True, text=True, timeout=90)
+    return res.returncode == 0
 
 
 def report_approvals(apply):
@@ -401,36 +416,62 @@ def report_approvals(apply):
         return 0
     if not apply:
         if actionable:
-            print(f"\n  --apply dismisses {len(actionable)} overtaken approval(s) "
-                  f"and re-requests review.")
+            print(f"\n  --apply marks {len(actionable)} overtaken approval(s) stale on "
+                  f"their review PR (dismissed, or a comment where nothing is "
+                  f"dismissible) and asks for a fresh one.")
         return 0
     for r in actionable:
         done = refresh_approval(r)
-        print(f"  {'dismissed + re-requested' if done else 'COULD NOT dismiss'} {r['name']}")
+        print(f"  {'marked stale, fresh approval requested' if done else 'COULD NOT mark stale'} {r['name']}")
     return 0
 
 
 def publishable():
     """Ports whose review PR carries a standing approval and are ready to submit.
 
-    This is what makes clicking Approve mean something. It looks for the approval on
-    GitHub rather than for a snapshot in our files, because the click is the whole
-    signal -- a project nobody has run record-pr-approval on yet is exactly the case
-    that needs finding."""
+    Returns (ready, unreachable). This is what makes clicking Approve mean something.
+    It looks for the approval on GitHub rather than for a snapshot in our files,
+    because the click is the whole signal -- a project nobody has run
+    record-pr-approval on yet is exactly the case that needs finding.
+
+    A review PR we cannot READ is returned separately rather than skipped, because
+    those two answers are not the same and this printed the wrong one for both. "Not
+    approved" is a fact about the port; "could not reach GitHub" is a fact about the
+    network, and folding it into a count of zero says nothing is waiting when a
+    finished, approved port may be. It happened on an ordinary day: the GraphQL
+    endpoint timed out while REST kept working, `fetch_review_pr` opens with a
+    `gh pr view --json` call, and `--publish` reported "0 approved port(s) awaiting
+    submission" while marian-dev sat approved -- with orient.sh, which greps this
+    output for READY, going quiet along with it.
+
+    The rest of this file already settled the principle three times over: an
+    unreachable review PR refuses rather than passing (pr_approval_status), an
+    unreachable remote is a warning and not a clean bill (existing_claim), and
+    "nothing released" is not "nothing waiting" (release-forks). This was the one
+    place still reading an outage as an answer."""
     sys.path.insert(0, str(REPO / "utils"))
     import moatlib
 
-    out = []
+    out, unreachable, objected = [], [], []
     for name, d, _where in all_records():
         url = (d.get("pr_approval") or {}).get("review_pr") or d.get("review_pr")
         if not url or d.get("pr_state"):
             continue                      # no review PR, or already submitted
         pr = moatlib.fetch_review_pr(url)
-        if pr is None or moatlib._approving_review(pr) is None:
-            continue                      # not approved (yet), or unreachable
+        if pr is None:
+            unreachable.append({"name": name, "url": url})
+            continue
+        if moatlib._approving_review(pr) is None:
+            # Not approved is a real answer, but a standing /moat objection or a
+            # command the gate did not recognize is also WORK -- route to the
+            # porter, or fix the typo -- and skipping it silently hid both.
+            blockers, _notes = moatlib.moat_command_audit(pr)
+            if blockers:
+                objected.append({"name": name, "url": url, "why": blockers})
+            continue
         out.append({"name": name, "url": url, "pr": pr,
                     "title": pr.get("title") or "", "body": pr.get("body") or ""})
-    return out
+    return out, unreachable, objected
 
 
 def review_candidates():
@@ -505,7 +546,7 @@ def open_review_pr(row, title, body, apply=False):
     if hits:
         return ("jargon", "in-house vocabulary an external maintainer will not know: "
                 + ", ".join(sorted({h[2] for h in hits})))
-    wrapped = prose.check(body, "body")
+    wrapped = prose.check(title, "title") + prose.check(body, "body")
     if wrapped:
         return ("wrapped", wrapped[0])
     if row.get("problem"):
@@ -527,13 +568,20 @@ def open_review_pr(row, title, body, apply=False):
     # our approval command.
     subprocess.run(
         ["gh", "pr", "comment", url, "--body",
-         f"To approve this port, leave a **review** comment containing this line by "
+         f"To approve this port, leave a comment containing this line by "
          f"itself:\n\n```\n{moatlib.APPROVE_COMMAND}\n```\n\n"
-         f"Use *Review changes -> Comment*, or "
-         f"`gh pr review {url} --comment --body '{moatlib.APPROVE_COMMAND}'`. It has to "
-         f"be a review rather than an ordinary comment, because a review records which "
-         f"commit you were looking at, and that is what proves the approval covers this "
-         f"code and not an earlier push.\n\n"
+         f"To send it back to the porter instead:\n\n"
+         f"```\n{moatlib.CHANGES_COMMAND}\n```\n\n"
+         f"Both are commands because GitHub greys out the Approve and Request Changes "
+         f"buttons for a pull request's author, and this PR was opened on your "
+         f"credentials. Your latest command is the one that stands, and a command "
+         f"quoted in a code fence -- like the two above -- is ignored.\n\n"
+         f"Either box works: a review comment (*Review changes -> Comment*, or "
+         f"`gh pr review {url} --comment --body '{moatlib.APPROVE_COMMAND}'`) or an "
+         f"ordinary conversation comment. Prefer the review form -- it records which "
+         f"commit you were looking at, which is what proves the approval covers this "
+         f"code and not an earlier push; a conversation comment counts too, judged by "
+         f"its time against the branch tip.\n\n"
          f"The title and body above are what gets opened upstream, verbatim, so approving "
          f"here approves all three: the code, the title and the body. Anything pushed "
          f"afterwards, or any edit to the title or body, voids it and needs a fresh one."],
@@ -557,6 +605,12 @@ def publish_blockers(name, row):
     code, why = moatlib.approval_currency(row["pr"])
     if code != "ok":
         bad.append(f"approval {code}: {why}")
+    # Every /moat command on the review PR, judged again at the last gate before
+    # anything opens upstream. approval_currency already refuses on these; this
+    # repeats the check independently so a drift between the two implementations
+    # fails closed rather than publishing over an objection nobody re-read.
+    blockers, _notes = moatlib.moat_command_audit(row["pr"])
+    bad += blockers
     # Gates, clean fork, no terminal outcome, no PR already open.
     ready, blocking, _ = moatlib.pr_ready(name)
     if not ready:
@@ -570,9 +624,41 @@ def publish_blockers(name, row):
     if hits:
         bad.append("in-house vocabulary in the title/body: "
                    + ", ".join(sorted({h[2] for h in hits})[:4]))
-    # The approved body is about to be republished verbatim upstream, so it is checked
-    # here too rather than trusted from when the review PR was opened -- a maintainer
-    # may have asked for an edit, and an edit is where hand-wrapping creeps back in.
+    # The BRANCH again, not just the title and body, and read from the PR itself
+    # rather than a local clone so it runs on submission hosts that never built the
+    # port. The open-time scan cannot see a commit that landed between the review PR
+    # opening and the approval -- the approval is given against the new tip, so the
+    # staleness check will not catch it either -- and this is the last gate before
+    # that commit ships.
+    pr = row["pr"]
+    msgs = subprocess.run(
+        ["gh", "api", "--paginate",
+         f"repos/{pr['slug']}/pulls/{pr['number']}/commits",
+         "--jq", ".[].commit.message"],
+        capture_output=True, text=True, timeout=90)
+    if msgs.returncode:
+        bad.append("cannot re-check the branch's commit messages for in-house "
+                   "vocabulary (gh api failed) -- a gate that cannot run is not a "
+                   "gate that passed")
+    else:
+        bhits = jargon.scan_text(msgs.stdout, "branch commits", terms, allow)
+        diff = subprocess.run(["gh", "pr", "diff", row["url"]],
+                              capture_output=True, text=True, timeout=180)
+        if diff.returncode:
+            bad.append("cannot re-check the branch's added lines for in-house "
+                       "vocabulary (gh pr diff failed)")
+        else:
+            added = "\n".join(l[1:] for l in diff.stdout.splitlines()
+                              if l.startswith("+") and not l.startswith("+++"))
+            bhits += jargon.scan_text(added, "branch added lines", terms, allow)
+        if bhits:
+            bad.append("in-house vocabulary on the branch: "
+                       + ", ".join(sorted({h[2] for h in bhits})[:4]))
+    # The approved title and body are about to be republished verbatim upstream, so
+    # they are checked here too rather than trusted from when the review PR was
+    # opened -- a maintainer may have asked for an edit, and an edit is where
+    # hand-wrapping (and a stray em-dash or miscased ROCm) creeps back in.
+    bad += prose.check(row["title"], "title")
     bad += prose.check(row["body"], "body")
     # The disclosure has to survive to the thing that actually gets opened. It is
     # added when the review PR is opened, so its absence here means the body was
@@ -638,18 +724,45 @@ def open_upstream(name, row):
 
 
 def report_publish(apply):
-    rows = publishable()
-    print(f"upstream: {len(rows)} approved port(s) awaiting submission\n")
+    rows, unreachable, objected = publishable()
+    print(f"upstream: {len(rows)} approved port(s) awaiting submission"
+          + (f", {len(objected)} with a standing objection" if objected else "")
+          + (f", {len(unreachable)} review PR(s) UNREACHABLE" if unreachable else "")
+          + "\n")
+    for r in objected:
+        print(f"  OBJECTED   {r['name']:26} {r['why'][0][:78]}")
+        for b in r["why"][1:]:
+            print(f"             {'':26} {b[:78]}")
+    if objected:
+        print(f"  a standing objection routes the port back to the porter; publish "
+              f"stays closed until the objector posts {'/moat approve'!r}\n")
     ready, held = [], []
     for r in rows:
         bad = publish_blockers(r["name"], r)
         (held if bad else ready).append({**r, "blockers": bad})
+    clone_less = [r for r in ready
+                  if not (REPO / "projects" / r["name"] / "src").is_dir()]
     for r in ready:
         print(f"  READY      {r['name']:26} \"{r['title'][:58]}\"")
+    if clone_less:
+        # pr_ready's cleanliness gate has nothing to judge without the clone, and
+        # saying nothing read as "checked and clean" on submission hosts that had
+        # never built the port. The check binds where the validations ran.
+        print(f"  note: no local fork clone for "
+              f"{', '.join(r['name'] for r in clone_less)} -- fork cleanliness was "
+              f"not re-checked here, only on the hosts that validated")
     for r in held:
         print(f"  HELD       {r['name']:26} {r['blockers'][0][:78]}")
         for b in r["blockers"][1:]:
             print(f"             {'':26} {b[:78]}")
+    # Printed even with --apply, and before anything is opened: a run that could not
+    # read some review PRs has not seen the whole picture, and saying so is the point.
+    for r in unreachable:
+        print(f"  UNREACHABLE {r['name']:25} could not read {r['url']}")
+    if unreachable:
+        print(f"\n  {len(unreachable)} review PR(s) could not be read, so their approval "
+              f"state is UNKNOWN -- that is not the same as nothing to submit. Re-run "
+              f"when GitHub is reachable.")
     if not apply:
         if ready:
             print(f"\n  --apply opens {len(ready)} upstream PR(s) with the approved "
@@ -731,7 +844,7 @@ def main():
         return report_approvals(apply=a.apply)
     if a.review:
         rows = review_candidates()
-        if not a.apply:
+        if not a.apply and not a.name:
             for r in rows:
                 if r["problem"]:
                     print(f"  BLOCKED  {r['name']:22} {r['problem']}")
@@ -741,9 +854,11 @@ def main():
             print(f"-- {sum(1 for r in rows if not r['problem'])} port(s) need a review PR; "
                   f"{sum(1 for r in rows if r['problem'])} blocked")
             print("   open one: --review --apply --name <p> --title '<t>' --body-file <f>")
+            print("   (same command without --apply previews it and runs the gates)")
             return 0
         if not (a.name and a.title and a.body_file):
-            print("--review --apply needs --name, --title and --body-file", file=sys.stderr)
+            print("--review --name needs --title and --body-file "
+                  "(add --apply to open the PR rather than preview it)", file=sys.stderr)
             return 2
         row = next((r for r in rows if r["name"] == a.name), None)
         if row is None:
@@ -751,9 +866,9 @@ def main():
                   f"PR-ready)", file=sys.stderr)
             return 2
         body = pathlib.Path(a.body_file).read_text()
-        action, detail = open_review_pr(row, a.title, body, apply=True)
+        action, detail = open_review_pr(row, a.title, body, apply=a.apply)
         print(f"review-pr: {action} -- {detail}")
-        return 0 if action == "opened" else 1
+        return 0 if action in ("opened", "would-open") else 1
     if a.publish:
         return report_publish(apply=a.apply)
     if a.attention:

@@ -38,7 +38,7 @@ will read as that project's work everywhere the branch is not shown.
 A project we will not port still merges -- merging is what records the decision, so it is
 not proposed again.
 
-- [ ] Disposition and a concrete reason in `data/dispositions.json` (`utils/triage.py skip <owner/repo> --reason <reason> --note "..."`)
+- [ ] Disposition and a concrete reason in `data/dispositions.json` (`utils/triage.py skip <owner/repo> --reason <reason> --by <who> --note "..."`)
 - [ ] If this records a decline, it came from `intake_queue.py apply --decline` carrying a person's answer on the queue issue. Labels record nothing.
 
 ## Notes for the reviewer
