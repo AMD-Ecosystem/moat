@@ -46,18 +46,6 @@ point they have answered wastes their patience rather than yours.
 
 Add `detailed` for line-by-line specific comments.
 
-### GitHub Actions Mode
-
-If the prompt carries `<formatted_context>`, `<pr_or_issue_body>` or `<comments>` tags, you
-were invoked from a GitHub workflow rather than a terminal. The PR body, comments and
-review state are already in those tags -- do not re-fetch them, and do not reach for `gh`,
-which is not available there. Use git alone:
-
-```bash
-git diff <base>...HEAD
-git log <base>..HEAD
-```
-
 ## Review Philosophy
 
 A single line can have deep cross-cutting implications: a hardcoded `32` silently corrupts results on a wave64 GPU; a missing index clamp faults on AMD where CUDA tolerated it; a per-arch hack that fixes wave32 regresses wave64. Treat every line as potentially load-bearing.
@@ -75,6 +63,11 @@ A single line can have deep cross-cutting implications: a hardcoded `32` silentl
 ### Using sub-agents
 
 The checklist is large and the fault classes need code reading. Spawn sub-agents to investigate whether checks apply (read the kernel, the CMake, the surrounding code, the tests that should exist). Spawn them in parallel for independent areas. A typical port should spawn 3-8 sub-agents.
+
+Running WITHOUT the ability to spawn sub-agents (the dispatched reviewer agent is
+itself a subagent): every step below marked for sub-agents still happens, done
+inline by you -- the investigation and the fact-check are the requirement, the
+parallelism is only how a top-level session affords them.
 
 ## Review Workflow
 
@@ -94,7 +87,7 @@ Evaluate per [bc-guidelines.md](bc-guidelines.md): the port must not change the 
 Organize findings by the categories below. Every finding is traceable to a file:line.
 
 ### Step 5: Fact-check
-Spawn a sub-agent per reported issue (in parallel) to independently verify by re-reading the code. Each returns valid / invalid / needs rewording. Drop invalid issues; reword the rest; keep low-confidence ones flagged as such.
+Spawn a sub-agent per reported issue (in parallel) to independently verify by re-reading the code; without sub-agents, re-read the cited code yourself, one finding at a time. Each check returns valid / invalid / needs rewording. Drop invalid issues; reword the rest; keep low-confidence ones flagged as such.
 
 ## Output Format
 
