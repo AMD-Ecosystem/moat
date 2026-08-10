@@ -8,6 +8,7 @@ early still costs nothing and means the answer is known before the work is done.
 
     python3 utils/licenses.py tier MIT              # -> 1
     python3 utils/licenses.py check <owner/repo>    # classify a GitHub repo
+    python3 utils/licenses.py scan-nvidia <dir|project>  # find NVIDIA-proprietary files
     python3 utils/licenses.py audit                 # re-tier every adopted project
     python3 utils/licenses.py --check-config        # CI: validate licenses.toml
 """
@@ -154,10 +155,12 @@ def main():
         return 0
 
     if a.cmd == "scan-nvidia":
-        # intake.md tells the screener that a file carrying an NVIDIA proprietary
-        # licence needs a decision and that "the markers are in utils/licenses.py".
-        # They were, with no way to run them, so every screen that did this did it by
-        # hand -- cuda_voxelizer's vendored CUDA-Samples headers were found that way.
+        # intake.md sends the screener here for files carrying an NVIDIA proprietary
+        # licence (the markers live in config/licenses.toml). The markers used to sit
+        # in this file with no way to run them, so every screen that did this did it
+        # by hand -- cuda_voxelizer's vendored CUDA-Samples headers were found that
+        # way. At intake there is no fork clone yet, so the screener passes a scratch
+        # checkout of upstream as <dir>; the <project> form serves later stages.
         target = a.arg or "."
         if not pathlib.Path(target).exists():
             src = REPO_ROOT / "projects" / target / "src"
@@ -184,12 +187,24 @@ def main():
         # counted 50 of 138 adopted projects and called it the total, so a licence
         # question about any project in flight was answered by not looking at it.
         rows = []
-        for n, _obj, _where in moatlib.project_records():
+        blocked = []
+        for n, obj, _where in moatlib.project_records():
+            spdx = obj.get("license_spdx")
+            rows.append((n, spdx, tier_of(spdx, cfg) if spdx else None))
             disp = moatlib.get_disposition(moatlib.upstream_full_name(n) or "") or {}
-            rows.append((n, disp.get("reason")))
-        print(f"{len(rows)} adopted projects; run `check <owner/repo>` per project "
-              f"for live tiering (this listing is offline).")
-        blocked = [n for n, o in rows if o == "license-blocked"]
+            if disp.get("reason") == "license-blocked":
+                blocked.append(n)
+        print(f"{len(rows)} adopted projects, tiered from recorded license_spdx "
+              f"(offline; `check <owner/repo>` re-reads GitHub live)")
+        for t in (1, 2, 3, 4):
+            names = sorted(n for n, _s, tt in rows if tt == t)
+            if names:
+                detail = f": {', '.join(names)}" if t >= 3 else ""
+                print(f"  tier {t}: {len(names)}{detail}")
+        unrecorded = sorted(n for n, s, _t in rows if not s)
+        if unrecorded:
+            print(f"  no license_spdx recorded ({len(unrecorded)} -- reading the "
+                  f"licence is a fact any agent may record): {', '.join(unrecorded)}")
         print(f"  recorded license-blocked: {len(blocked)}")
         for n in blocked:
             print(f"    {n}")
