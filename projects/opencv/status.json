@@ -1,0 +1,19 @@
+{
+  "schema_version": 3,
+  "name": "opencv",
+  "upstream_url": "https://github.com/opencv/opencv",
+  "fork_url": "https://github.com/AMD-Ecosystem/opencv",
+  "fork_default_branch": "4.x",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "adopted_at": "2026-08-06T06:58:03Z",
+  "updated_at": "2026-08-07T07:05:23Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 5108051,
+  "stage": "unclaimed",
+  "platforms": {}
+}
