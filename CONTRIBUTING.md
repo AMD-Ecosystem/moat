@@ -140,6 +140,13 @@ the review form: it records the commit it was written against, which is what the
 staleness checks rest on, while a conversation comment is judged only by its time
 against the branch tip.
 
+Send it back the same way: `/moat changes-requested` on a line by itself -- the
+Request Changes button is greyed out for an author exactly as Approve is. It stands,
+and blocks submission, until the same person posts `/moat approve`. Your latest
+command is the one that counts; a command quoted inside a code fence is ignored, and
+an unrecognized `/moat` line blocks submission until it is cleaned up rather than
+being read as chatter.
+
 That fork PR carries the title and body the upstream PR will use, so **one approval covers
 the code, the title and the body together** -- write them for the external maintainer from
 the start, not as a draft to be rewritten. Approving it is the decision to submit; the

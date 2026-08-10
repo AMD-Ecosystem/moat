@@ -60,6 +60,15 @@ an approval of this code from an approval of an earlier push; a conversation com
 counts too, judged by its time against the branch tip. Do not ask them to also read a
 copy of the body somewhere in this repo.
 
+Rejection is a command too, because the author's Request Changes button is greyed out
+exactly as Approve is: `/moat changes-requested` on a line by itself sends the port
+back to the porter and blocks publish until that person posts `/moat approve`. Only
+each author's latest command stands, a command quoted inside a code fence is ignored
+(the instructions comment quotes both), and an unrecognized `/moat` line from someone
+with write access blocks publish rather than being read as chatter. Audit a review
+PR's command traffic with `python3 utils/moatlib.py pr-commands <name>`; `--publish`
+lists ports with a standing objection as OBJECTED.
+
 Your job is to snapshot what they approved:
 
     python3 utils/upstream.py --publish            # what is approved and ready

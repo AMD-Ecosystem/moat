@@ -452,7 +452,7 @@ def publishable():
     sys.path.insert(0, str(REPO / "utils"))
     import moatlib
 
-    out, unreachable = [], []
+    out, unreachable, objected = [], [], []
     for name, d, _where in all_records():
         url = (d.get("pr_approval") or {}).get("review_pr") or d.get("review_pr")
         if not url or d.get("pr_state"):
@@ -462,10 +462,16 @@ def publishable():
             unreachable.append({"name": name, "url": url})
             continue
         if moatlib._approving_review(pr) is None:
-            continue                      # genuinely not approved yet -- a real answer
+            # Not approved is a real answer, but a standing /moat objection or a
+            # command the gate did not recognize is also WORK -- route to the
+            # porter, or fix the typo -- and skipping it silently hid both.
+            blockers, _notes = moatlib.moat_command_audit(pr)
+            if blockers:
+                objected.append({"name": name, "url": url, "why": blockers})
+            continue
         out.append({"name": name, "url": url, "pr": pr,
                     "title": pr.get("title") or "", "body": pr.get("body") or ""})
-    return out, unreachable
+    return out, unreachable, objected
 
 
 def review_candidates():
@@ -564,6 +570,12 @@ def open_review_pr(row, title, body, apply=False):
         ["gh", "pr", "comment", url, "--body",
          f"To approve this port, leave a comment containing this line by "
          f"itself:\n\n```\n{moatlib.APPROVE_COMMAND}\n```\n\n"
+         f"To send it back to the porter instead:\n\n"
+         f"```\n{moatlib.CHANGES_COMMAND}\n```\n\n"
+         f"Both are commands because GitHub greys out the Approve and Request Changes "
+         f"buttons for a pull request's author, and this PR was opened on your "
+         f"credentials. Your latest command is the one that stands, and a command "
+         f"quoted in a code fence -- like the two above -- is ignored.\n\n"
          f"Either box works: a review comment (*Review changes -> Comment*, or "
          f"`gh pr review {url} --comment --body '{moatlib.APPROVE_COMMAND}'`) or an "
          f"ordinary conversation comment. Prefer the review form -- it records which "
@@ -593,6 +605,12 @@ def publish_blockers(name, row):
     code, why = moatlib.approval_currency(row["pr"])
     if code != "ok":
         bad.append(f"approval {code}: {why}")
+    # Every /moat command on the review PR, judged again at the last gate before
+    # anything opens upstream. approval_currency already refuses on these; this
+    # repeats the check independently so a drift between the two implementations
+    # fails closed rather than publishing over an objection nobody re-read.
+    blockers, _notes = moatlib.moat_command_audit(row["pr"])
+    bad += blockers
     # Gates, clean fork, no terminal outcome, no PR already open.
     ready, blocking, _ = moatlib.pr_ready(name)
     if not ready:
@@ -706,10 +724,18 @@ def open_upstream(name, row):
 
 
 def report_publish(apply):
-    rows, unreachable = publishable()
+    rows, unreachable, objected = publishable()
     print(f"upstream: {len(rows)} approved port(s) awaiting submission"
+          + (f", {len(objected)} with a standing objection" if objected else "")
           + (f", {len(unreachable)} review PR(s) UNREACHABLE" if unreachable else "")
           + "\n")
+    for r in objected:
+        print(f"  OBJECTED   {r['name']:26} {r['why'][0][:78]}")
+        for b in r["why"][1:]:
+            print(f"             {'':26} {b[:78]}")
+    if objected:
+        print(f"  a standing objection routes the port back to the porter; publish "
+              f"stays closed until the objector posts {'/moat approve'!r}\n")
     ready, held = [], []
     for r in rows:
         bad = publish_blockers(r["name"], r)

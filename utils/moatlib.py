@@ -870,26 +870,60 @@ def fetch_review_pr(url):
 # route around. Requiring the line to stand alone keeps "/moat approve is premature
 # here" from reading as consent.
 APPROVE_COMMAND = "/moat approve"
+# The author's Request Changes button is greyed out for the same reason Approve is,
+# so an objection needs a command form exactly as consent does. It supersedes the
+# same author's earlier approval and blocks anyone else's until they approve again.
+CHANGES_COMMAND = "/moat changes-requested"
+MOAT_COMMANDS = (APPROVE_COMMAND, CHANGES_COMMAND)
 # Who may give it. Anyone can comment; these are the associations GitHub reports for
 # someone with write access to the repository.
 APPROVE_ASSOC = ("OWNER", "MEMBER", "COLLABORATOR")
 
 
+def _moat_command_lines(body):
+    """Stand-alone `/moat ...` lines in a body, with fenced code blocks skipped.
+
+    The fence rule is load-bearing: every review PR opens with an instructions
+    comment that QUOTES the approval line inside a fence, and before this rule the
+    gate matched that quotation and read its own instructions as the maintainer's
+    standing approval (marian-dev went upstream over an explicit rejection)."""
+    fenced = False
+    for ln in (body or "").splitlines():
+        s = ln.strip()
+        if s.startswith("```"):
+            fenced = not fenced
+            continue
+        if not fenced and s.startswith("/moat"):
+            yield s
+
+
+def _command_of(review):
+    """The decision this event's body carries: 'approve', 'changes-requested',
+    None for chatter, or 'unknown' for a /moat line matching no known command.
+    Unknown fails closed downstream -- a maintainer's typo must read as an
+    unanswered question, never as chatter to publish over. A body carrying both
+    commands is an objection: the ambiguity is theirs to resolve, not ours."""
+    cmds = set(_moat_command_lines(review.get("body")))
+    if not cmds:
+        return None
+    if cmds - set(MOAT_COMMANDS):
+        return "unknown"
+    if CHANGES_COMMAND in cmds:
+        return "changes-requested"
+    return "approve"
+
+
 def _is_approval_comment(review):
-    if review.get("assoc") not in APPROVE_ASSOC:
-        return False
-    return any(ln.strip() == APPROVE_COMMAND
-               for ln in (review.get("body") or "").splitlines())
+    return (review.get("assoc") in APPROVE_ASSOC
+            and _command_of(review) == "approve")
 
 
-def _approving_review(pr):
-    """A standing approval on the review PR, or None.
+def _decision_events(pr):
+    """The latest decision-carrying event per author, oldest input first.
 
-    Only the latest review per author counts: someone who approves and then requests
-    changes has withdrawn the approval, and honouring the earlier APPROVED event
-    would publish over an objection. An outstanding CHANGES_REQUESTED from ANYONE
-    blocks, even alongside somebody else's approval -- publishing while a reviewer is
-    still objecting is the thing this is here to prevent."""
+    Chatter -- a comment or COMMENTED review with no /moat command -- neither is a
+    decision nor undoes one; a /moat command in either box is a decision and
+    supersedes the same author's earlier one."""
     latest = {}
     events = sorted((pr.get("review_list") or []) + (pr.get("comment_list") or []),
                     key=lambda r: r.get("at") or "")
@@ -897,12 +931,28 @@ def _approving_review(pr):
         if not r.get("login") or r.get("state") == "PENDING":
             continue
         if r.get("state") in ("COMMENTED", "ISSUE_COMMENT") \
-                and not _is_approval_comment(r):
+                and _command_of(r) is None:
             continue          # ordinary chatter is not a decision, and does not undo one
         latest[r["login"]] = r
+    return latest
+
+
+def _approving_review(pr):
+    """A standing approval on the review PR, or None.
+
+    Only the latest decision per author counts: someone who approves and then
+    requests changes -- by review or by `/moat changes-requested` -- has withdrawn
+    the approval, and honouring the earlier event would publish over an objection.
+    An outstanding objection from ANYONE with write access blocks, even alongside
+    somebody else's approval, and so does an unrecognized /moat command from them:
+    publishing while a reviewer may still be objecting is what this prevents."""
+    latest = _decision_events(pr)
     if any(r.get("state") == "CHANGES_REQUESTED" for r in latest.values()):
         return None
     if pr.get("reviewDecision") == "CHANGES_REQUESTED":
+        return None
+    if any(_command_of(r) in ("changes-requested", "unknown")
+           for r in latest.values() if r.get("assoc") in APPROVE_ASSOC):
         return None
     # An APPROVED review passes the same write-access test as the comment form:
     # on a public fork ANYONE can submit an approving review, and a drive-by
@@ -911,6 +961,34 @@ def _approving_review(pr):
                  if (r.get("state") == "APPROVED"
                      and r.get("assoc") in APPROVE_ASSOC)
                  or _is_approval_comment(r)), None)
+
+
+def moat_command_audit(pr):
+    """(blockers, notes) -- every /moat command on the review PR, judged.
+
+    Run before anything opens upstream, so a command the gate did not understand
+    surfaces to a person by name instead of being read as chatter. Blockers are
+    standing objections and unrecognized commands from someone with write access,
+    judged on each author's LATEST decision so a superseded typo does not block
+    forever. Notes list commands from authors without write access -- they decide
+    nothing, but a person should know someone tried."""
+    blockers, notes = [], []
+    for r in _decision_events(pr).values():
+        cmd = _command_of(r)
+        if cmd is None:
+            continue
+        who = f"{r.get('login')} at {r.get('at')}"
+        if r.get("assoc") not in APPROVE_ASSOC:
+            notes.append(f"{cmd!r} from {who}, who has no write access -- ignored")
+        elif cmd == "unknown":
+            bad = [c for c in _moat_command_lines(r.get("body"))
+                   if c not in MOAT_COMMANDS]
+            blockers.append(f"unrecognized command {', '.join(map(repr, bad))} from "
+                            f"{who} -- known: {', '.join(MOAT_COMMANDS)}")
+        elif cmd == "changes-requested":
+            blockers.append(f"changes requested by {who} ({CHANGES_COMMAND}) -- "
+                            f"standing until they post {APPROVE_COMMAND}")
+    return blockers, notes
 
 
 def _content_digest(pr):
@@ -940,6 +1018,9 @@ def record_pr_approval(name, review_pr=None):
         raise ValueError(
             f"{name}: the review PR is {str(pr['state']).lower()} -- reopen it to "
             f"submit, or the approval on it is not a live decision")
+    blockers, _notes = moat_command_audit(pr)
+    if blockers:
+        raise ValueError(f"{name}: " + "; ".join(blockers))
     review = _approving_review(pr)
     if review is None:
         raise ValueError(f"{name}: no standing approval on {url}")
@@ -967,7 +1048,8 @@ def record_pr_approval(name, review_pr=None):
 # happened and nobody should be pinged a second time -- so the verdict is a code
 # rather than prose to be pattern-matched.
 APPROVAL_CODES = ("ok", "none", "withdrawn", "closed", "stale-commits",
-                  "stale-content", "record-mismatch", "unverifiable", "unreachable")
+                  "stale-content", "record-mismatch", "unverifiable", "unreachable",
+                  "bad-command")
 
 
 def pr_approval_valid(name, live=True):
@@ -1003,6 +1085,12 @@ def approval_currency(pr):
     if pr.get("state") and pr.get("state") != "OPEN":
         return ("closed", f"the review PR is {str(pr['state']).lower()} -- reopen it to "
                           f"submit, or the approval on it is not a live decision")
+    blockers, _notes = moat_command_audit(pr)
+    if blockers:
+        # Say WHICH command blocks rather than the generic "no standing approval":
+        # a typo'd /moat line and a standing objection both need a person, and they
+        # need to be told what to look at.
+        return ("bad-command", "; ".join(blockers))
     review = _approving_review(pr)
     if review is None:
         # Withdrawn, dismissed, or overridden by a changes-requested review. Whoever
@@ -3223,6 +3311,10 @@ def main(argv=None):
     s.add_argument("--offline", action="store_true",
                    help="check the recorded snapshot only, without re-reading GitHub")
 
+    s = sub.add_parser("pr-commands",
+                       help="audit every /moat command on the review PR; nonzero if any blocks publishing")
+    s.add_argument("name")
+
     sub.add_parser("pr-candidates",
                    help="list projects whose upstream PR is ready to open (honors recorded dispositions; "
                         "use this instead of scanning raw state==completed)")
@@ -3467,6 +3559,31 @@ def main(argv=None):
         ok, why = pr_approval_valid(args.name, live=not args.offline)
         print(f"{args.name}: approval-valid={ok} ({why})")
         return 0 if ok else 1
+    elif args.cmd == "pr-commands":
+        obj, _where = project_record(args.name)
+        url = ((obj or {}).get("pr_approval") or {}).get("review_pr") \
+            or (obj or {}).get("review_pr")
+        if not url:
+            print(f"{args.name}: no review PR recorded")
+            return 1
+        pr = fetch_review_pr(url)
+        if pr is None:
+            print(f"{args.name}: could not reach the review PR at {url} -- "
+                  f"an outage is not an answer")
+            return 1
+        latest = _decision_events(pr)
+        for r in sorted(latest.values(), key=lambda e: e.get("at") or ""):
+            what = _command_of(r) or str(r.get("state") or "").lower()
+            print(f"  {r.get('at')}  {r.get('login')} ({r.get('assoc')}): {what}")
+        if not latest:
+            print("  no decisions on the review PR")
+        blockers, notes = moat_command_audit(pr)
+        for n in notes:
+            print(f"  note: {n}")
+        for b in blockers:
+            print(f"  BLOCKS: {b}")
+        print(f"{args.name}: {'BLOCKED' if blockers else 'clear'} on {url}")
+        return 1 if blockers else 0
     elif args.cmd == "pr-candidates":
         names = [n for n, _o, _w in project_records()]
         ready_names = []
