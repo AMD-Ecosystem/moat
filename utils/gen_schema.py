@@ -215,6 +215,12 @@ def build():
                     "blocked_reason": {"type": ["string", "null"]},
                     "validated_sha": {"type": ["string", "null"],
                                       "description": "head this arch last validated"},
+                    # The counterpart, and read the same way: a failure is evidence
+                    # about ONE commit. Once a fix moves head past it the arch is owed
+                    # a validation rather than another porter round, which is derived
+                    # from these two shas and never stored (see failure_stands).
+                    "failed_sha": {"type": ["string", "null"],
+                                   "description": "head this arch last failed to validate"},
                     "pr_url": {"type": ["string", "null"]},
                     "pr_number": {"type": ["number", "null"]},
                     "started_at": {"type": ["string", "null"]},
