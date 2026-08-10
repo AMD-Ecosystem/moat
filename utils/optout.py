@@ -68,7 +68,8 @@ def cmd_record(args):
         print(f"\n{len(rows)} adopted project(s) covered by this:")
         for r in rows:
             moatlib.set_disposition(r["full_name"], "skip", "opted-out",
-                                    f"maintainer asked us to stop: {rec['source']}")
+                                    f"maintainer asked us to stop: {rec['source']}",
+                                    by=rec["who"])
             print(f"  {r['name']} ({r['full_name']}) was {r['stage']} -- retired "
                   f"in data/dispositions.json")
         print("\nWhat is left is visible on their repositories, so it stays with a person:")
