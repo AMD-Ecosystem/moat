@@ -918,3 +918,161 @@ linux-gfx1100, windows-gfx1201) flip to revalidate as fixes land -- expected,
 do not suppress. The existing deferrals (marian-topk-cub-segsort,
 marian-gfx1101-batched-gemm-spirv) are separate items, untouched by this
 ruling.
+
+## 2026-08-10: the three scope-outs ported (linux-gfx1100, porter)
+
+All three features the maintainer sent the port back for are implemented,
+built and exercised on real GPU here. Fork moat-port ba0ec806 -> 1381ed77
+(five commits, none amended; ba0ec806 stays a reachable ancestor).
+
+```
+4a257f29 [ROCm] Make the sparse GEMM path work under hipSPARSE
+ea834eb1 [ROCm] Fix half-precision scaling in the fused affine GEMM
+bd190deb [ROCm] Build the multi-GPU collectives against RCCL
+6cd25824 [ROCm] Run convolution and pooling on MIOpen
+1381ed77 [ROCm] Document AMD GPU support
+```
+
+Host: 4x AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), ROCm 7.2.3.
+
+### 1. cuSPARSE SpMM -> hipSPARSE (prod_sparse_cu11.h)
+
+Two separate causes, neither the order/alg guess the deferral assumed.
+`HIPSPARSE_ORDER_ROW` with `CSR_ALG2` is in fact correct and matches a host
+reference for both transS values; a standalone probe over every
+{ORDER_ROW,ORDER_COL} x {ALG_DEFAULT,CSR_ALG1,CSR_ALG2,CSR_ALG3} combination
+showed ORDER_ROW right in all four.
+
+- fp32 wrong results: upstream calls SpMM only inside `if(bufferSize > 0)`.
+  cuSPARSE always wants scratch for CSR_ALG2 so the shortcut never fires on
+  NVIDIA; hipSPARSE reports 0 for these shapes, so the product was never
+  issued and C kept its previous contents. Fixed by making the call
+  unconditional and only the allocation conditional.
+- fp16 HIPSPARSE_STATUS_NOT_SUPPORTED: hipSPARSE has no uniform half SpMM.
+  rocsparse_spmm.h tabulates the supported combinations: half A/B are accepted
+  only with a FLOAT C and float compute. The half instantiation now multiplies
+  into a float scratch matrix and casts back with CopyCast, seeding the scratch
+  from C when beta is non-zero. Also the pre-existing HIP workaround set the
+  compute type to 32F while still passing a `half` alpha -- a four-byte read of
+  a two-byte value; scalars are now float on this path.
+
+Note `gpu::CopyCast` must be called qualified: unqualified lookup finds
+`marian::gpu::CopyCast` while ADL on `marian::Tensor` also finds the
+`marian::CopyCast` dispatcher, and the call is ambiguous.
+
+### 2. The affine bug the sparse failure was hiding
+
+With csr-dot fixed, operator_tests went from 287 assertions to 603: Catch2
+had been aborting the whole test case at the csr-dot exception, so every
+section after it never ran on any platform. Three of the newly reached
+assertions failed at once (operator_tests.cpp:648,653,658, "affine
+transformation", fp16 GPU case only): `affine()` returned +/-inf and
+`affineWithReluDropout()` returned the bias alone.
+
+Cause: the hipBLASLt matmul descriptor uses a 32F scale type on HIP (16F is
+rejected), but the half overload of `cublasLtAffineTyped` still passed
+`const half*` alpha/beta. Same four-byte-read-of-two-bytes fault as above.
+Fixed by widening both scalars to float in that overload.
+
+This is the load-bearing lesson of the session and is promoted to the skill:
+a failing section's assertion count is a lower bound on what went untested.
+
+### 3. NCCL -> RCCL (multi-GPU collectives)
+
+`find_package(rccl)` + link `roc::rccl`; a `hip_compat/nccl.h` forwarding to
+`<rccl/rccl.h>` (RCCL keeps the NCCL names, so communicator_nccl.h is
+unchanged); the vendored NCCL ExternalProject is skipped under USE_HIP; and
+`cudaStreamCreate`/`cudaStreamDestroy` added to the compat header.
+USE_NCCL=ON is now the working default.
+
+Validated for real on four GPUs, not compile-only -- this host has 4x gfx1100,
+contrary to the single-GPU assumption in the dispatch. Log shows
+`[comm] Using NCCL 4.7.7 for GPU communication` and `NCCLCommunicators
+constructed successfully`; synchronous SGD over `--devices 0 1 2 3` converges
+(cost 0.52 @1500u -> 0.057 @3000u) and the trained model decodes the toy
+reverse-copy task correctly. Asynchronous (default) multi-GPU also converges.
+
+### 4. cuDNN -> MIOpen (convolution and pooling)
+
+cudnn_wrappers.{h,cu} keep one set of class declarations; the handle and
+descriptor types are aliased to MIOpen's (MIOpen uses an ordinary tensor
+descriptor for conv weights, not a filter type) and the MIOpen implementation
+is a self-contained block ahead of the untouched cuDNN one.
+
+Three MIOpen-vs-cuDNN differences drove the shape of it:
+- Explicit workspace + an algorithm chosen by benchmarking. THE TRAP: the
+  `miopenFindConvolution*Algorithm` calls WRITE to whatever tensor is named as
+  their output. Passing the live `x` and kernel buffers to the backward finds
+  (which the signatures accept) silently corrupted the model -- char-s2s
+  training produced NaN from update 1 and a multi-output-channel conv gave
+  results ~4000x too large with the right sign pattern. Each find now gets a
+  destination that is about to be overwritten anyway. Cached per input shape.
+- Only alpha=1/beta=0 are honoured in 2D, so the accumulating backward form is
+  a conv into a staging buffer plus `miopenOpTensor(miopenTensorOpAdd,...)`.
+  Bias addition likewise: `miopenConvolutionForwardBias` overwrites, so the
+  forward bias is an OpTensor add.
+- Pooling backward reads the indices its forward recorded, so that workspace is
+  a wrapper member, not a local.
+
+Two upstream defects in the same CUDNN-gated code had to be fixed to make it
+work at all, and both affect the CUDA build identically:
+- `Options` never instantiated `Get<std::pair<int,int>>`, which is how the
+  convolution layer reads kernel-dims/paddings/strides. Nothing linked with
+  USE_CUDNN=ON on ANY platform. Added the instantiation (yaml-cpp already has
+  a `convert<std::pair>`).
+- `PoolingOp` kept its input's shape instead of asking the wrapper for the
+  pooled one, so any window that actually shrinks the input left most of the
+  output unwritten. Now calls `getOutputShape` the way `ConvolutionOp` does.
+
+The `pooling` app test is back in the HIP build (it is nearly all commented
+out upstream and proves only that the graph constructs).
+
+### Test results (clean rebuild, gfx1100, all three features ON)
+
+Configure/build: `-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100
+-DUSE_CUDNN=ON -DUSE_NCCL=ON` (rest as the recipe above). 294/294 targets.
+
+- operator_tests: 603/603 assertions, 4 test cases -- PASS (was 284/287 with
+  the case aborting). fp32 GPU 202/202, fp16 GPU 202/202, CPU 198/198.
+- graph 10/10, attention 6/6, transformer 3/3, binary 9/9, fastopt 23/23,
+  utils 8/8 -- all PASS.
+- rnn_tests 21/24 -- the three documented hipRAND-vs-cuRAND reference
+  mismatches, unchanged. Not a port bug.
+- App tests: logger, dropout, prod, pooling exit 0. sqlite and cli abort for
+  want of command-line arguments (pre-existing, they take required args).
+- Convolution/pooling correctness: a standalone program linked against the
+  built library checks conv forward, d/dinput, d/dkernel, d/dbias, and max and
+  average pooling forward+backward against hand-computed references, plus a
+  multi-output-channel conv of the character-encoder's shape against a host
+  reference. All agree. Source: agent_space/conv_pool_check.cpp (not committed
+  to the fork; it is a validation aid, not a project test).
+- char-s2s (the character-CNN encoder, the only consumer of the conv path)
+  trains on GPU: cost 2.97 -> 1.70 over 1000 updates. Needs
+  `--char-highway 0`: the highway network calls `sigmoid(vector<Expr>)`, which
+  upstream ABORTs with "Not implemented" on every platform. Unrelated to ROCm,
+  not fixed here.
+- End-to-end determinism gate (single GPU): transformer trained to cost 0.044
+  @3000u, beam-6 decode run1 == run2 AND GPU == CPU. The wave-size fix in
+  topk/nth_element still holds.
+- Multi-GPU: see feature 3 above.
+
+### Gotcha: the sentencepiece submodule pin is unfetchable
+
+`git submodule update --init src/3rd_party/sentencepiece` fails with
+`upload-pack: not our ref f006008f97c8a724d2dee306fb5347b109dbb893` -- the
+commit marian-dev pins is gone from marian-nmt/sentencepiece. Recovery: let the
+clone land, then `git -C src/3rd_party/sentencepiece checkout -f master`
+(1ca221c, v0.1.95), which has the spm_* targets marian's CMake expects and
+builds fine. This leaves the gitlink showing as modified; NEVER stage it, and
+`git submodule deinit -f src/3rd_party/sentencepiece` restores a clean tree
+when you are done building. Upstream problem, not ours.
+
+### Owed / not done
+
+- Nothing from the maintainer's three items is outstanding.
+- The fp16 SpMM path adds a cast round-trip per call. Correct but not tuned;
+  if sparse-attention fp16 throughput ever matters, revisit.
+- gfx90a and windows-gfx1201 flip to revalidate at 1381ed77 (expected: real
+  functional change). Both need USE_CUDNN=ON/USE_NCCL=ON runs; note the
+  Windows arch has no MIOpen/RCCL story validated yet, and RCCL there needs
+  2+ same-arch GPUs in one process.

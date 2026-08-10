@@ -111,3 +111,22 @@ cuSPARSE, NCCL) and the scoping sentence of the final PROCEED paragraph.
 The upstream PR (marian-nmt/marian-dev#1043) is open as a draft and waits on
 these three; RCCL validation needs a multi-GPU same-arch host (see notes.md
 2026-08-10 and the skill's validation.md).
+
+## Scope revision implemented (2026-08-10, linux-gfx1100)
+
+All three are done at fork moat-port 1381ed77; see notes.md for the detail.
+The dependency-contract verdicts above are superseded accordingly:
+
+- cuSPARSE: the generic SpMM path works on hipSPARSE. Order/alg were never the
+  problem -- ORDER_ROW + CSR_ALG2 is correct; an upstream `if(bufferSize > 0)`
+  guard skipped the call, and half needs hipSPARSE's mixed-precision mode
+  (float result matrix) because it has no uniform half SpMM.
+- cuDNN: MIOpen backs the convolution/pooling wrappers, USE_CUDNN=ON builds and
+  the character-CNN encoder trains on GPU. The "MIOpen is unnecessary" verdict
+  is retired; it was true of the dense NMT path only.
+- NCCL: RCCL, found via its CMake package. USE_NCCL=ON is the working default
+  and was validated on four gfx1100 in one process.
+
+Two upstream defects had to be fixed for USE_CUDNN=ON to link and run at all
+(a missing `Options::Get<std::pair<int,int>>` instantiation, and `PoolingOp`
+not taking its shape from the wrapper). Both affect the CUDA build too.

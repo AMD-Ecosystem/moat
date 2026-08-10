@@ -7,16 +7,13 @@
   "priority": 3.968,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-08-10T16:05:06Z",
-  "head_sha": "ba0ec806b9f949acac6bb2dcc623017b47d71e75",
-  "porting": {
-    "arch": "linux-gfx1100",
-    "since": "2026-08-10T16:05:06Z"
-  },
+  "updated_at": "2026-08-10T17:16:55Z",
+  "head_sha": "1381ed7730bdf4b3c3ea1e421c68f67a88579f90",
+  "porting": null,
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 57997461,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -54,7 +51,7 @@
       "validated_sha": "ba0ec806b9f949acac6bb2dcc623017b47d71e75",
       "started_at": "2026-06-02T05:35:00Z",
       "completed_at": "2026-06-23T22:46:44Z",
-      "updated_at": "2026-08-10T16:05:06Z",
+      "updated_at": "2026-08-10T17:16:55Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -83,7 +80,7 @@
       "validated_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-06-20T03:07:37Z",
+      "updated_at": "2026-08-10T17:16:47Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -96,7 +93,8 @@
         "session_count": 0,
         "first_session_at": null,
         "last_session_at": null
-      }
+      },
+      "failed_sha": "ba0ec806b9f949acac6bb2dcc623017b47d71e75"
     },
     "windows-gfx1201": {
       "state": "completed",
