@@ -1,0 +1,133 @@
+{
+  "schema_version": 3,
+  "name": "mahout",
+  "upstream_url": "https://github.com/apache/mahout",
+  "fork_url": "https://github.com/AMD-Ecosystem/mahout",
+  "fork_default_branch": "main",
+  "priority": 6.322,
+  "ext_type": "rust-cc-cuda",
+  "adopted_at": "2026-05-30T00:04:57Z",
+  "updated_at": "2026-08-07T07:05:17Z",
+  "head_sha": "fd8c7a38ac725b31f6b5ce1cc9e969cd357066f8",
+  "pr_url": "https://github.com/apache/mahout/pull/1399",
+  "pr_number": 1399,
+  "pr_opened_at": "2026-06-11T06:53:55Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 20089859,
+  "stage": "review-passed",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "fd8c7a38ac725b31f6b5ce1cc9e969cd357066f8",
+      "started_at": "2026-05-31T01:00:42Z",
+      "completed_at": "2026-06-24T00:17:35Z",
+      "updated_at": "2026-07-02T18:52:44Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "porter",
+      "carry_forward": {
+        "to": "fd8c7a38ac725b31f6b5ce1cc9e969cd357066f8",
+        "method": "gpu-rerun",
+        "detail": "PR review round: rebased onto upstream main (conflict resolve) + functional fixes (validator stream sync, pointer-attr build check). Full gfx90a GPU re-run: cargo build+test 358 passed 0 failed; Pytho",
+        "at": "2026-07-02T18:52:44Z"
+      }
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "f84b39aef62e3dbddaa36f877ff29969f4dd49f2",
+      "started_at": null,
+      "completed_at": "2026-06-24T18:41:53Z",
+      "updated_at": "2026-07-02T18:51:15Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "f84b39aef62e3dbddaa36f877ff29969f4dd49f2",
+        "method": "binary-equiv",
+        "detail": "gfx1101 GPU ISA section identical across all 6 kernel TUs (amplitude.cu, angle.cu, basis.cu, iqp.cu, phase.cu, validation.cu); delta d97db73a..f84b39ae is upstream non-QDP commits (doc, website, arrow",
+        "at": "2026-06-24T18:41:53Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "f84b39aef62e3dbddaa36f877ff29969f4dd49f2",
+      "started_at": null,
+      "completed_at": "2026-06-24T14:24:33Z",
+      "updated_at": "2026-07-02T18:51:16Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "fd8c7a38ac725b31f6b5ce1cc9e969cd357066f8",
+      "started_at": null,
+      "completed_at": "2026-07-02T19:30:05Z",
+      "updated_at": "2026-07-02T19:30:05Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "fd8c7a38ac725b31f6b5ce1cc9e969cd357066f8",
+        "method": "binary-equiv",
+        "detail": "gfx1100 libkernels.a (6 .cu kernel TUs) identical at f84b39ae vs fd8c7a38; delta is upstream conflict resolution + reviewer fixes (validator stream sync, pointer-attr build-time check, cuComplex.h #if",
+        "at": "2026-07-02T19:30:05Z"
+      }
+    }
+  }
+}
