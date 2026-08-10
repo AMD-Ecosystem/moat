@@ -192,10 +192,34 @@ def generate(name, src=None):
     }
 
 
+def claims_success(name):
+    """Has this project asserted that its port WORKS? Until it does, an uncovered
+    component is work not yet done rather than an omission."""
+    sys.path.insert(0, str(REPO / "utils"))
+    import moatlib
+    obj, _where = moatlib.project_record(name)
+    if obj is None:
+        return False
+    if obj.get("stage") in ("ported", "delta-ported", "review-passed"):
+        return True
+    return any(b.get("state") == "completed"
+               for b in (obj.get("platforms") or {}).values())
+
+
 def check(name):
     """Every component either covered or explicitly scoped out with a reason. The
     gate is ACCOUNTING, not coverage: a scoped-out component is a deliberate,
-    reviewable decision, and the failure being eliminated is the silent omission."""
+    reviewable decision, and the failure being eliminated is the silent omission.
+
+    Judged only once a port CLAIMS SUCCESS, which is the failure the gate names: a
+    port that said it worked while covering a subset. A project that is merely
+    `planned` has covered nothing yet BY DEFINITION -- its surface.json is the
+    inventory the porter is about to work through -- so judging it there fails every
+    time, and because check.py is repo-wide that failure blocks pushes for every
+    project on a shared repo rather than only the one being planned. colmap was the
+    first project ever to carry a surface.json and wedged the trunk within minutes."""
+    if not claims_success(name):
+        return []
     p = REPO / "projects" / name / "surface.json"
     if not p.is_file():
         return [f"{name}: no surface.json (run: utils/surface.py generate {name})"]
