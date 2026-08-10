@@ -6,13 +6,16 @@ block accidental adoption (moatlib scaffold refuses a skipped project).
 
 Usage:
   python3 utils/triage.py review [--top N] [--all]
-  python3 utils/triage.py skip <owner/repo> --reason <r> [--note "..."]
+  python3 utils/triage.py skip <owner/repo> --reason <r> --by <who> [--note "..."]
+  python3 utils/triage.py verify <owner/repo> [--note "..."]
   python3 utils/triage.py unskip <owner/repo>
   python3 utils/triage.py skipped
   python3 utils/triage.py backfill-ids
 
 Reasons: already-supported, ported-elsewhere, cant-port, not-a-target, duplicate,
-         license-blocked, declined, other  (moatlib.SKIP_REASONS is the source)
+         license-blocked, declined, opted-out, other
+         (moatlib.SKIP_REASONS is the source; opted-out is normally written by
+         `optout.py record`, not by hand)
 """
 
 import argparse
@@ -87,6 +90,12 @@ def cmd_review(args):
 
     pending = [c for c in cands
                if c["full_name"].lower() not in skips and not is_adopted(c["full_name"])]
+    # Opted-out owners never reach the queue. Discovery keeps finding their repos --
+    # it searches GitHub, and nothing about a repo says its owner asked us to stop --
+    # so the filter has to be here, where a project would otherwise be offered for
+    # screening and someone would spend a screen on it.
+    n_optout = sum(1 for c in pending if moatlib.optout_for(c["full_name"]))
+    pending = [c for c in pending if not moatlib.optout_for(c["full_name"])]
     # The id check costs an API call per surviving row, so it runs only on what is left.
     renamed = [c for c in pending if decided_by_id(c["full_name"])]
     pending = [c for c in pending if c not in renamed]
@@ -100,7 +109,9 @@ def cmd_review(args):
         print(f"# cached {len(resolved_now)} newly resolved repo id(s) into "
               f"data/candidates.json")
     shown = pending if args.all else pending[:args.top]
-    print(f"# {len(pending)} pending ({n_skip} skipped, {n_adopt} adopted) of {len(cands)}; showing {len(shown)}")
+    print(f"# {len(pending)} pending ({n_skip} skipped, {n_adopt} adopted"
+          + (f", {n_optout} opted out" if n_optout else "")
+          + f") of {len(cands)}; showing {len(shown)}")
     for c in renamed:
         d = moatlib.get_disposition(c["full_name"], id_cache.get(c["full_name"])) or {}
         print(f"  renamed since a decision: {c['full_name']} is {d.get('full_name')} "
@@ -110,14 +121,15 @@ def cmd_review(args):
         tag = " [verify]" if c["full_name"].lower() in disp else ""
         desc = (c.get("description") or "")[:64]
         print(f"{i:>3}  {c['priority']:>5}  {c['stars']:>7}  {c['full_name']}{tag} -- {desc}")
-    print(f"\nskip:   python3 utils/triage.py skip <owner/repo> --reason <{'|'.join(moatlib.SKIP_REASONS)}> --note \"...\"")
+    print(f"\nskip:   python3 utils/triage.py skip <owner/repo> --reason <{'|'.join(moatlib.SKIP_REASONS)}> --by <who> --note \"...\"")
     print("verify: python3 utils/triage.py verify <owner/repo> --note \"...\"")
     return 0
 
 
 def cmd_skip(args):
-    d = moatlib.set_disposition(args.repo, "skip", args.reason, args.note or "")
-    print(f"skip {d['full_name']} ({d['reason']}) {d['note']}".rstrip())
+    d = moatlib.set_disposition(args.repo, "skip", args.reason, args.note or "",
+                                by=args.by)
+    print(f"skip {d['full_name']} ({d['reason']}, by {d['by']}) {d['note']}".rstrip())
     return 0
 
 
@@ -178,6 +190,9 @@ def main(argv=None):
     s = sub.add_parser("skip", help="mark a project not-to-port")
     s.add_argument("repo")
     s.add_argument("--reason", required=True, choices=moatlib.SKIP_REASONS)
+    s.add_argument("--by", required=True,
+                   help="who decided -- declining is a person's call, and the "
+                        "record must say whose")
     s.add_argument("--note")
     s.set_defaults(fn=cmd_skip)
     v = sub.add_parser("verify", help="flag a project to investigate (not a skip)")
