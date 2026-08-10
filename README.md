@@ -1,6 +1,17 @@
-# MOAT: Moat Obliteration via Automated Translation
+# MOAT: Migration Orchestration via Automated Translation
 
 MOAT ports popular CUDA GitHub projects to ROCm/HIP, one repo at a time. Coverage is expressed as gates -- wave64, wave32, windows -- so a port is proven once each gate has an architecture that validated it on real hardware. It is driven by Claude: intake screens a candidate, a planner analyses it, a porter applies the change on a fork in the AMD-Ecosystem org, a reviewer checks it, and a validator runs the real tests on AMD GPUs. Submitting the result upstream, and everything that follows with a maintainer, stays with a person. This repo is the control plane; it tracks progress and holds the porting knowledge in the `cuda-to-rocm` skill.
+
+Prefer pictures? [VISUAL.md](VISUAL.md) walks through all of this in twelve diagrams.
+
+- [If you maintain a project we might send a pull request to](#if-you-maintain-a-project-we-might-send-a-pull-request-to)
+- [How it works](#how-it-works)
+- [What a person decides, and what agents may never do](#what-a-person-decides-and-what-agents-may-never-do)
+- [Suggest a project to port](#suggest-a-project-to-port)
+- [Licence](#licence)
+- [Scope and honesty](#scope-and-honesty)
+- [Projects](#projects)
+- [Layout](#layout)
 
 ## If you maintain a project we might send a pull request to
 
@@ -78,6 +89,13 @@ because the local record is a file agents can write and the approval is not.
 
 Opening the upstream pull request is one command run by a person in their own session,
 never by an unattended job.
+
+## Suggest a project to port
+
+Anyone can ask for a CUDA project to be ported:
+[file a port request](https://github.com/AMD-Ecosystem/moat/issues/new?template=port-request.yml).
+It lands in the same queue our own discovery feeds, and a person decides
+whether to take it up before any work starts.
 
 ## Licence
 
@@ -210,7 +228,7 @@ The project name links upstream.
 | [llm.c](https://github.com/karpathy/llm.c) ([fork](https://github.com/AMD-Ecosystem/llm.c/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#854](https://github.com/karpathy/llm.c/pull/854) |
 | [llmq](https://github.com/IST-DASLab/llmq) | 🚫 | — | — | ⚪ not-portable |
 | [mahout](https://github.com/apache/mahout) ([fork](https://github.com/AMD-Ecosystem/mahout/tree/moat-port)) | ✅ | ✅ | 🔄 | 🟢 [#1399](https://github.com/apache/mahout/pull/1399) |
-| [marian-dev](https://github.com/marian-nmt/marian-dev) ([fork](https://github.com/AMD-Ecosystem/marian-dev/tree/moat-port)) | 🔄 | 🔄 | 🔄 | 🟢 [#1043](https://github.com/marian-nmt/marian-dev/pull/1043) |
+| [marian-dev](https://github.com/marian-nmt/marian-dev) ([fork](https://github.com/AMD-Ecosystem/marian-dev/tree/moat-port)) | 🔄 | ✅ | 🔄 | 🟢 [#1043](https://github.com/marian-nmt/marian-dev/pull/1043) |
 | [MASt3R-SLAM](https://github.com/rmurai0610/MASt3R-SLAM) ([fork](https://github.com/AMD-Ecosystem/MASt3R-SLAM/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [mcx](https://github.com/fangq/mcx) ([fork](https://github.com/AMD-Ecosystem/mcx/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#264](https://github.com/fangq/mcx/pull/264) |
 | [metaeuk](https://github.com/soedinglab/metaeuk) ([fork](https://github.com/AMD-Ecosystem/metaeuk/tree/moat-port)) | ✅ | ✅ | ✅ | — |
@@ -264,4 +282,4 @@ The project name links upstream.
 
 ## Layout
 
-See `projects/README.md` for the per-project files, the `cuda-to-rocm` skill for porting strategy and fault classes, and `CLAUDE.md` for how a Claude CLI drives the pipeline.
+See [VISUAL.md](VISUAL.md) for a diagram walkthrough of everything above, `projects/README.md` for the per-project files, the `cuda-to-rocm` skill for porting strategy and fault classes, and `CLAUDE.md` for how a Claude CLI drives the pipeline.
