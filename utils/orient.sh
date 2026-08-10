@@ -106,6 +106,12 @@ python3 utils/moatlib.py lessons 2>/dev/null \
 python3 utils/moatlib.py misplaced 2>/dev/null \
   | awk -F'\t' 'NF>1 {printf "misplaced:   %-26s %s\n", $1, $3}' || true
 
+# A dependent's porter builds each dep from the provider's "## Install as a
+# dependency" recipe (DEPENDENCIES.md makes the section a MUST). Nothing verified it
+# existed, so a missing one surfaced only at the moment a porter needed it.
+python3 utils/moatlib.py dep-doc-gaps 2>/dev/null \
+  | awk -F'\t' 'NF>1 {printf "dep-doc  :   MISSING    %-26s needed by %s\n", $1, $2}' || true
+
 # Work somebody set aside without anybody deciding it should be. A deferral is cheap to
 # record and easy to forget, and the failure is silent: "we will get to it" becomes
 # nobody ever looked. Only a person can rule on one, so the list has to reach a person.

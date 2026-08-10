@@ -329,27 +329,54 @@ ACTIONABLE_APPROVAL = {"stale-commits", "stale-content"}
 
 
 def approval_drift():
-    """Projects whose recorded approval no longer covers their review PR."""
+    """Projects whose approval no longer covers their review PR.
+
+    Looks for the approval on GitHub, not only for a snapshot in our files -- the
+    same principle publishable() settled. The drift window this report exists for is
+    an approval clicked and then a push landing before anyone submits, and
+    record_pr_approval normally runs at publish time, so that window has no snapshot
+    by construction. A project with a snapshot gets the full provenance check on top
+    (pr_approval_status); one without is judged from the PR alone
+    (approval_currency), and a port still awaiting its first approval is not drift
+    and is not reported."""
     sys.path.insert(0, str(REPO / "utils"))
     import moatlib
 
     rows = []
     for name, d, _where in all_records():
-        if not d.get("pr_approval") or d.get("pr_state"):
-            continue          # never approved, or already published
-        code, why = moatlib.pr_approval_status(name, live=True)
-        if code != "ok":
-            rows.append({"name": name, "code": code, "why": why,
-                         "url": (d["pr_approval"].get("review_pr") or d.get("review_pr"))})
+        if d.get("pr_state"):
+            continue          # already published
+        url = (d.get("pr_approval") or {}).get("review_pr") or d.get("review_pr")
+        if not url:
+            continue          # no review PR for an approval to drift from
+        if d.get("pr_approval"):
+            code, why = moatlib.pr_approval_status(name, live=True)
+            if code != "ok":
+                rows.append({"name": name, "code": code, "why": why, "url": url})
+            continue
+        pr = moatlib.fetch_review_pr(url)
+        if pr is None:
+            # An outage is not an answer; see publishable().
+            rows.append({"name": name, "code": "unreachable",
+                         "why": f"could not reach the review PR at {url}", "url": url})
+            continue
+        code, why = moatlib.approval_currency(pr)
+        if code != "ok" and code != "withdrawn":
+            rows.append({"name": name, "code": code, "why": why, "url": url})
     return rows
 
 
 def refresh_approval(r):
-    """Dismiss the overtaken approval and ask the same reviewer to look again.
+    """Surface the overtaken approval on its review PR and ask for a fresh one.
 
-    Dismissing rather than only commenting is the point: the PR must stop displaying
-    "Approved" for content nobody approved, and the submission gate refuses either
-    way, so leaving the green check up only misleads a human reading the page.
+    A plain APPROVED review is dismissed, so the PR stops displaying "Approved" for
+    content nobody approved. An approval given as a `/moat approve` comment -- the
+    form every self-authored review PR uses, since GitHub greys out the button for
+    the author -- has no green state to mislead anyone and GitHub's dismissal
+    endpoint takes only APPROVED review objects, so for those the stale notice is a
+    comment on the PR. The submission gate refuses either way; this is about what a
+    human reading the page is told. No review re-request: on a self-authored PR the
+    approver IS the author, and GitHub refuses a review request naming the author.
 
     This is our own fork, inside the autonomy boundary -- unlike anything upstream,
     which always needs its own explicit yes."""
@@ -360,23 +387,21 @@ def refresh_approval(r):
     if pr is None:
         return False
     review = moatlib._approving_review(pr)
-    if review is None or not review.get("id"):
+    if review is None:
         return False
     slug, num = pr["slug"], pr["number"]
-    msg = (f"Dismissing this approval automatically: {r['why']}.\n\n"
+    msg = (f"This approval is stale: {r['why']}.\n\n"
            "The approval covered the code, title and body as they stood when it was "
            "given, so it no longer describes what would be submitted upstream. "
            "Nothing is published while it is stale. Please re-approve if the change "
            "still looks right.")
-    ok = gh_json(["api", "-X", "PUT",
-                  f"repos/{slug}/pulls/{num}/reviews/{review['id']}/dismissals",
-                  "-f", f"message={msg}", "-f", "event=DISMISS"]) is not None
-    if not ok:
-        return False
-    # Re-request so it lands in their review queue rather than waiting to be noticed.
-    gh_json(["api", "-X", "POST", f"repos/{slug}/pulls/{num}/requested_reviewers",
-             "-f", f"reviewers[]={review['login']}"])
-    return True
+    if review.get("id") and review.get("state") == "APPROVED":
+        return gh_json(["api", "-X", "PUT",
+                        f"repos/{slug}/pulls/{num}/reviews/{review['id']}/dismissals",
+                        "-f", f"message={msg}", "-f", "event=DISMISS"]) is not None
+    res = subprocess.run(["gh", "pr", "comment", r["url"], "--body", msg],
+                         capture_output=True, text=True, timeout=90)
+    return res.returncode == 0
 
 
 def report_approvals(apply):
@@ -391,12 +416,13 @@ def report_approvals(apply):
         return 0
     if not apply:
         if actionable:
-            print(f"\n  --apply dismisses {len(actionable)} overtaken approval(s) "
-                  f"and re-requests review.")
+            print(f"\n  --apply marks {len(actionable)} overtaken approval(s) stale on "
+                  f"their review PR (dismissed, or a comment where nothing is "
+                  f"dismissible) and asks for a fresh one.")
         return 0
     for r in actionable:
         done = refresh_approval(r)
-        print(f"  {'dismissed + re-requested' if done else 'COULD NOT dismiss'} {r['name']}")
+        print(f"  {'marked stale, fresh approval requested' if done else 'COULD NOT mark stale'} {r['name']}")
     return 0
 
 
@@ -792,7 +818,7 @@ def main():
         return report_approvals(apply=a.apply)
     if a.review:
         rows = review_candidates()
-        if not a.apply:
+        if not a.apply and not a.name:
             for r in rows:
                 if r["problem"]:
                     print(f"  BLOCKED  {r['name']:22} {r['problem']}")
@@ -802,9 +828,11 @@ def main():
             print(f"-- {sum(1 for r in rows if not r['problem'])} port(s) need a review PR; "
                   f"{sum(1 for r in rows if r['problem'])} blocked")
             print("   open one: --review --apply --name <p> --title '<t>' --body-file <f>")
+            print("   (same command without --apply previews it and runs the gates)")
             return 0
         if not (a.name and a.title and a.body_file):
-            print("--review --apply needs --name, --title and --body-file", file=sys.stderr)
+            print("--review --name needs --title and --body-file "
+                  "(add --apply to open the PR rather than preview it)", file=sys.stderr)
             return 2
         row = next((r for r in rows if r["name"] == a.name), None)
         if row is None:
@@ -812,9 +840,9 @@ def main():
                   f"PR-ready)", file=sys.stderr)
             return 2
         body = pathlib.Path(a.body_file).read_text()
-        action, detail = open_review_pr(row, a.title, body, apply=True)
+        action, detail = open_review_pr(row, a.title, body, apply=a.apply)
         print(f"review-pr: {action} -- {detail}")
-        return 0 if action == "opened" else 1
+        return 0 if action in ("opened", "would-open") else 1
     if a.publish:
         return report_publish(apply=a.apply)
     if a.attention:

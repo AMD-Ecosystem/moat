@@ -344,6 +344,21 @@ def main(argv=None):
         print("\nCreate the forks -- that is what releases these projects:\n")
         print(fork_commands(args.accept))
     if not args.decline:
+        # A decision landed, so the issue closes and the remainder comes back as a
+        # fresh one -- the snapshot rule the module docstring states. The decline
+        # path gets this through its PR's `Closes #N`; an accept-only run has no PR,
+        # and leaving the issue open meant the next publish edited the body under
+        # the answered comment.
+        if args.accept and args.apply:
+            issue = find_issue()
+            if issue:
+                gh(["issue", "close", str(issue["number"]), "--repo", REPO,
+                    "--comment",
+                    "A decision landed, so this snapshot closes. Anything still "
+                    "undecided comes back as a fresh issue on the next "
+                    "`python3 utils/intake_queue.py publish --apply`."], check=True)
+                print(f"\nclosed {issue['url']} -- republish the remainder with "
+                      f"`python3 utils/intake_queue.py publish --apply`")
         return 0 if args.accept else 1
     action, detail = apply_decisions(args.decline, args.note, by, apply=args.apply,
                                      accepts=args.accept)

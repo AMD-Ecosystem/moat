@@ -1,7 +1,7 @@
 ---
 name: intake
 description: Use PROACTIVELY when a project's state is `unclaimed`. Cheap viability screen -- licence first, then duplicate effort and portability -- before any analysis effort is spent. Creates the project skeleton and a typed recommendation for the intake queue. Decides nothing: the fork or the decline is a person's call. Read-only on code.
-tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
+tools: Read, Grep, Glob, Edit, Write, Bash, WebFetch, WebSearch
 model: opus
 ---
 
@@ -41,10 +41,14 @@ found.
 Two checks that are per-file, not top-level:
 
 - Any file carrying an **NVIDIA proprietary licence** needs a decision before
-  proceeding. Run `python3 utils/licenses.py scan-nvidia <dir|project>`; it matches
-  licence TEXT rather than copyright lines, because a grep for "NVIDIA" flags every
-  CUDA project and an NVIDIA copyright under Apache-2.0 is clean. Do not hand-roll the
-  grep -- the markers live in `config/licenses.toml` and change.
+  proceeding. At intake there is no fork clone yet, so clone upstream shallow into
+  scratch first (`git clone --depth 1 <upstream_url> agent_space/<name>-screen`) and
+  run `python3 utils/licenses.py scan-nvidia agent_space/<name>-screen`; the
+  `<project>` form resolves to `projects/<name>/src`, which exists only after
+  adoption. The scan matches licence TEXT rather than copyright lines, because a
+  grep for "NVIDIA" flags every CUDA project and an NVIDIA copyright under
+  Apache-2.0 is clean. Do not hand-roll the grep -- the markers live in
+  `config/licenses.toml` and change.
 - **Recurse into submodules and vendored directories.** A permissive top-level licence
   over an unlicensed vendored component is the case that bites: EnvGS was blocked by an
   unlicensed SUBMODULE, not by its top-level licence, so a main-tree scan alone misses
@@ -61,8 +65,10 @@ Two checks that are per-file, not top-level:
   work "validate and improve" rather than "port from scratch" -- read the
   `cuda-to-rocm` skill's `references/assess-existing-support.md`.
 
-If a mature AMD port exists, skip with `already-supported`. If another AMD team has a
-partial or parked effort, say so plainly: it is a coordination question, not a race.
+If a mature AMD port exists, recommend a decline with reason `already-supported`
+(`set-intake --reason`, see Outcomes) -- the skip itself is a person's, recorded through
+the queue. If another AMD team has a partial or parked effort, say so plainly: it is
+a coordination question, not a race.
 
 ## 3. Viability
 

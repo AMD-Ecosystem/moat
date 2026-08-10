@@ -840,6 +840,13 @@ def fetch_review_pr(url):
          '... on RenamedTitleEvent{createdAt}}}}}}'
          % (owner, repo, num))
     g = _gh_json("api", "graphql", "-f", f"query={q}")
+    if g is None:
+        # The REST fetches above refuse on failure and this must too: an edit clock
+        # nobody could read is not "never edited". Returning the PR with both clocks
+        # None would let approval_currency skip the edit checks and pass an approval
+        # whose title or body may have been rewritten -- the one incident on record
+        # is the GraphQL endpoint timing out while REST kept working.
+        return None
     node = ((((g or {}).get("data") or {}).get("repository") or {})
             .get("pullRequest") or {})
     pr["lastEditedAt"] = node.get("lastEditedAt")
@@ -1205,7 +1212,7 @@ def approve_waiver(name, gate, by, reason=None):
     w["approved_by"] = by
     w["at"] = now_iso()
     obj.setdefault("waivers", {})[gate] = w
-    save_status(name, obj)
+    save_record(name, obj, f"{name}: {gate} waiver approved by {by}")
     return w
 
 
@@ -1235,7 +1242,7 @@ def refuse_waiver(name, gate, by, note):
                          f"withdrawing an approval is that person's call, not a refusal")
     w.update({"refused_by": by, "refused_at": now_iso(), "refused_note": note})
     obj.setdefault("waivers", {})[gate] = w
-    save_status(name, obj)
+    save_record(name, obj, f"{name}: {gate} waiver refused by {by}")
     return w
 
 
@@ -1257,7 +1264,7 @@ def record_license_clearance(name, approved_by, note=None):
     obj["license_clearance"] = {"approved_by": approved_by, "at": now_iso(),
                                 "tier": license_tier(name, obj),
                                 **({"note": note} if note else {})}
-    save_status(name, obj)
+    save_record(name, obj, f"{name}: licence clearance recorded, approved by {approved_by}")
     return obj["license_clearance"]
 
 
@@ -1287,7 +1294,8 @@ def set_review_pr(name, url):
                 f"opens the upstream PR. Finish the gates, then "
                 f"`upstream.py --review --apply --name {name}` opens and records it.")
     obj["review_pr"] = url or None
-    save_status(name, obj)
+    save_record(name, obj, f"{name}: review PR "
+                           + (f"recorded -- {url}" if url else "cleared"))
     return obj
 
 
@@ -1784,6 +1792,39 @@ def dep_report(obj):
     `unmet_deps` answers "may this be selected"; this answers "why not"."""
     return [(d, *dep_status(d)) for d in obj.get("depends_on", [])
             if dep_status(d)[0] != "ok"]
+
+
+INSTALL_DEP_HEADING = re.compile(r"^## Install as a dependency\s*$", re.M)
+
+
+def dep_doc_gaps():
+    """Dependency providers whose notes.md lacks '## Install as a dependency'.
+
+    DEPENDENCIES.md makes the section a MUST for any MOAT project another target's
+    depends_on names: it is the recipe the dependent's porter follows into _deps/.
+    Nothing verified it, so providers shipped without one and a porter following the
+    documented workflow found nothing there. A dependency satisfied by disposition
+    (already-supported upstream) has no MOAT record and needs no section, so only
+    providers with a record are judged. Returns (provider, [dependents]) rows."""
+    dependents = {}
+    for name, obj, _where in project_records():
+        for dep in obj.get("depends_on") or []:
+            dependents.setdefault(dep, []).append(name)
+    rows = []
+    for dep, users in sorted(dependents.items()):
+        obj, _where = project_record(dep)
+        if obj is None:
+            continue
+        p = PROJECTS / dep / "notes.md"
+        notes = p.read_text() if p.exists() else None
+        if notes is None:
+            for ref in (f"origin/port/{dep}", "origin/main"):
+                notes = _ref_read(ref, f"projects/{dep}/notes.md")
+                if notes:
+                    break
+        if not notes or not INSTALL_DEP_HEADING.search(notes):
+            rows.append((dep, sorted(users)))
+    return rows
 
 
 # States that describe the PROJECT and not an architecture. There is no such thing as
@@ -3007,8 +3048,8 @@ def record_tokens(name, tokens, source=None):
 
 def commit_project(name, message, extra_paths=()):
     """Commit a project's control-plane artifacts together: status.json,
-    notes.md, plan.md, stats.jsonl and surface.json (whichever exist), plus any
-    extra_paths. surface.json is here because it is judged by a gate: left
+    notes.md, plan.md, stats.jsonl, surface.json and deferred.json (whichever
+    exist), plus any extra_paths. surface.json is here because it is judged by a gate: left
     uncommitted it fails the check on the next push, from whichever host makes it.
     Agents call
     this for every state transition so the per-phase telemetry in stats.jsonl
@@ -3228,6 +3269,9 @@ def main(argv=None):
     s.add_argument("deps", nargs="*")
 
     sub.add_parser("deps", help="print inter-project dependencies and what is blocked on them")
+    sub.add_parser("dep-doc-gaps",
+                   help="dependency providers whose notes.md lacks the required "
+                        "'## Install as a dependency' section")
 
     args = ap.parse_args(argv)
 
@@ -3552,6 +3596,15 @@ def main(argv=None):
             print(f"{d_name}: depends_on={deps} -> {mark}")
         if not any_dep:
             print("(no inter-project dependencies recorded)")
+    elif args.cmd == "dep-doc-gaps":
+        rows = dep_doc_gaps()
+        for dep, users in rows:
+            print(f"{dep}\t{','.join(users)}")
+        if rows:
+            print(f"-- {len(rows)} provider(s) lack the '## Install as a dependency' "
+                  f"section DEPENDENCIES.md requires, so a dependent's porter has no "
+                  f"recipe to follow. Write it in the provider's notes.md on its own "
+                  f"branch", file=sys.stderr)
     return 0
 
 

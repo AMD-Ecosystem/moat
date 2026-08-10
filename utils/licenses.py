@@ -8,6 +8,7 @@ early still costs nothing and means the answer is known before the work is done.
 
     python3 utils/licenses.py tier MIT              # -> 1
     python3 utils/licenses.py check <owner/repo>    # classify a GitHub repo
+    python3 utils/licenses.py scan-nvidia <dir|project>  # find NVIDIA-proprietary files
     python3 utils/licenses.py audit                 # re-tier every adopted project
     python3 utils/licenses.py --check-config        # CI: validate licenses.toml
 """
@@ -154,10 +155,12 @@ def main():
         return 0
 
     if a.cmd == "scan-nvidia":
-        # intake.md tells the screener that a file carrying an NVIDIA proprietary
-        # licence needs a decision and that "the markers are in utils/licenses.py".
-        # They were, with no way to run them, so every screen that did this did it by
-        # hand -- cuda_voxelizer's vendored CUDA-Samples headers were found that way.
+        # intake.md sends the screener here for files carrying an NVIDIA proprietary
+        # licence (the markers live in config/licenses.toml). The markers used to sit
+        # in this file with no way to run them, so every screen that did this did it
+        # by hand -- cuda_voxelizer's vendored CUDA-Samples headers were found that
+        # way. At intake there is no fork clone yet, so the screener passes a scratch
+        # checkout of upstream as <dir>; the <project> form serves later stages.
         target = a.arg or "."
         if not pathlib.Path(target).exists():
             src = REPO_ROOT / "projects" / target / "src"

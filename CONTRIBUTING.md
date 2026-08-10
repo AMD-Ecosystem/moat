@@ -10,12 +10,15 @@ Install the hooks once per clone:
 
     python3 utils/install_hooks.py
 
-They run the same `check.py` gates as CI. CI runs one more check the hook cannot: the
-pull request's title (`utils/pr_intent.py`), which does not exist at push time -- so a
-locally-clean push can still fail CI on its title, and only on that. To see what will
-be checked:
+They run the same `check.py` gates as CI (both run `check.py --fast`, which skips the
+local-only `forks` scan). CI runs one more check the hook cannot: the pull request's
+title (`utils/pr_intent.py`), which does not exist at push time -- so a locally-clean
+push can still fail CI on its title, and only on that. To run what they run:
 
-    python3 utils/check.py
+    python3 utils/check.py --fast
+
+A bare `python3 utils/check.py` runs the `forks` scan too, which needs the local
+clones and is not part of either gate.
 
 ## Branch model
 
@@ -151,11 +154,13 @@ refuses a body that has lost it. Everything a maintainer is owed about where the
 came from is therefore on the same page as the change.
 
 An approval covers what was on screen when it was given. A commit pushed afterwards, or an
-edited title or body, voids it. `upstream.py --approvals` reports those, and
-`--approvals --apply` dismisses the stale approval and asks for a fresh look rather than
-publishing something nobody read. Nothing surfaces them on its own, so the report is a step
-of the `moat-checkup` skill. Editing the record does not revive an approval, and only a
-person can approve.
+edited title or body, voids it. `upstream.py --approvals` reports those -- whether or not a
+snapshot was recorded yet, since the usual drift happens before publish time -- and
+`--approvals --apply` marks the stale approval as such on the review PR (dismissing it
+where GitHub allows, a comment asking for a fresh one where the approval was itself a
+comment) rather than publishing something nobody read. Nothing surfaces them on its own, so
+the report is a step of the `moat-checkup` skill. Editing the record does not revive an
+approval, and only a person can approve.
 
 Everything after that first post -- replies to maintainers, follow-up comments, a re-request
 for review -- is its own act and needs its own yes.

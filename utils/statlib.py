@@ -89,8 +89,7 @@ def tokens(recs):
     return total, True, source  # always approximate
 
 
-def aggregate(project):
-    recs = read_records(project) or retired_records(project)
+def _summarize(recs):
     phase = wall_by_phase(recs)
     swall = session_wall(recs)
     thinking = max(0.0, swall - sum(phase.values()))
@@ -113,11 +112,27 @@ def aggregate(project):
     }
 
 
+def aggregate(project):
+    return _summarize(read_records(project) or retired_records(project))
+
+
+def aggregate_retired():
+    """The retired file as one summary -- the cost story it exists to preserve.
+
+    Per-project aggregation consults retired records only as a fallback, so without
+    this the file's whole-endeavor number was unreachable from the CLI."""
+    recs = retired_records()
+    out = _summarize(recs)
+    out["project_count"] = len({r.get("project") for r in recs if r.get("project")})
+    return out
+
+
 def main(argv):
     if not argv:
-        sys.stderr.write("usage: statlib.py <project>\n")
+        sys.stderr.write("usage: statlib.py <project> | statlib.py --retired\n")
         return 2
-    json.dump(aggregate(argv[0]), sys.stdout, indent=2)
+    result = aggregate_retired() if argv[0] == "--retired" else aggregate(argv[0])
+    json.dump(result, sys.stdout, indent=2)
     sys.stdout.write("\n")
     return 0
 

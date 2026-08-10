@@ -98,14 +98,19 @@ even though `status.json` is a file agents can write. **Editing the record does 
 stale approval valid**, and an agent may neither grant one nor repair one. When it fails,
 the answer is a fresh approval.
 
-`upstream.py --approvals` REPORTS overtaken approvals; `--approvals --apply` dismisses
-them and re-requests review. Nothing surfaces these on its own, so running the report is
-a step of this checkup rather than something you react to. Dismissing is a write on the
-fork and needs your credentials. GitHub goes on showing "Approved"
-through both a later push and a body edit, so the page otherwise claims someone signed off
-on content they never saw. Leave alone an approval already withdrawn -- no nagging -- and
-any case where our record merely disagrees with GitHub, which is a human's to sort out and
-never a reason to dismiss someone's review.
+`upstream.py --approvals` REPORTS overtaken approvals -- snapshotted or not, since the
+usual drift window (approved, then a push lands before anyone submits) predates the
+publish-time snapshot; `--approvals --apply` marks them stale on the review PR. A
+plain APPROVED review is dismissed; a `/moat approve` comment (the form every
+self-authored review PR uses) has nothing GitHub can dismiss, so the stale notice is
+a comment asking for a fresh approval. Nothing surfaces these on its own, so running
+the report is a step of this checkup rather than something you react to. Marking
+stale is a write on the fork and needs your credentials. GitHub goes on showing an
+APPROVED review through both a later push and a body edit, so the page otherwise
+claims someone signed off on content they never saw. Leave alone an approval already
+withdrawn -- no nagging -- and any case where our record merely disagrees with
+GitHub, which is a human's to sort out and never a reason to dismiss someone's
+review.
 
 Everything past that first post is a different matter. Replies to maintainers, follow-up
 comments, an edited body, a re-request for review: none of these were read by anyone, each
@@ -236,7 +241,7 @@ older documents describe record nothing.
 A port whose obstacle is the PLATFORM rather than the GPU -- a host runtime written to
 POSIX, a Windows toolchain that will not load the runtime library -- can still go
 upstream, but only behind a waiver on the `windows` gate, the one gate
-`config/arches.toml` marks waivable. The porter that hit the obstacle records the case
+`config/arches.toml` marks waivable. The validator that hit the obstacle records the case
 (`moatlib.py suggest-waiver <name> windows --reason '<what stops it>'`); it satisfies
 nothing and BLOCKS `pr-ready` until a maintainer answers, so suggesting one can never
 let a port out early.

@@ -1,7 +1,7 @@
 ---
 name: reviewer
-description: Use PROACTIVELY when a project's platform state is `ported` or `delta-ported`. Reviews the fork branch with the /pr-review skill, ROCm-fault-class aware. Read-only on code; posts nothing upstream.
-tools: Read, Grep, Glob, Bash, Skill
+description: Use PROACTIVELY when a project's stage is `ported` or `delta-ported`. Reviews the fork branch with the /pr-review skill, ROCm-fault-class aware. Read-only on code; posts nothing upstream.
+tools: Read, Grep, Glob, Edit, Write, Bash, Skill
 model: opus
 ---
 

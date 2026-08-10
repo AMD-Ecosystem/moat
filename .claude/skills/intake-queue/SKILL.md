@@ -33,10 +33,12 @@ but X and Y -- X because the licence is wrong, Y because upstream already does i
 That is the point of the recommendation column; their effort scales with disagreement
 rather than with the size of the batch.
 
-**Accepts need no PR.** The fork appearing IS the decision, and the issue carries a
-prefilled `gh repo fork` block for exactly that. Recording one is still useful when
-the fork will lag the decision: `apply --accept <owner/repo>` writes the intake
-decision to the project's branch so the queue stops re-proposing it meanwhile.
+**Accepts need no PR.** The fork appearing IS the decision. `apply --accept
+<owner/repo>` writes the intake decision to the project's branch so the queue stops
+re-proposing it while the fork lags the decision, prints the prefilled
+`gh repo fork` block that carries it out (the commands ride with the decision, not
+on the queue issue), and closes the answered issue so the remainder comes back
+fresh on the next publish.
 
 ## 3. Round-trip the declines
 
