@@ -99,7 +99,27 @@ consequences for scheduling on a multi-GPU host:
 
 A single-GPU host cannot exercise the collectives path at all; record that as the
 arch's limitation rather than letting a collectives-off run stand in for it
-silently. (marian-dev, the first MOAT port to exercise RCCL)
+silently. Read the device list before concluding that, though: a host remembered
+as single-GPU may not be one. What the run has to show is the library announcing
+itself and the communicators constructing, plus a training job spanning every
+device converging and its model decoding correctly -- a job that starts and does
+not crash proves only that the collectives were never called. (marian-dev, on
+four gfx1100)
+
+## A passing assertion COUNT is not a list of what was tested
+
+Catch2 stops iterating a test case's remaining SECTIONs once one of them throws,
+so a single unported path that aborts hides every section after it. marian-dev's
+operator suite reported "284 of 287 assertions; the 3 failures are the sparse
+path" across three platforms and two reviews. Fixing the sparse path turned the
+same suite into 603 assertions and immediately failed three of the newly reached
+ones, in an unrelated operation that had been broken on ROCm from the start.
+
+When a suite has a known-failing section, its pass count is a LOWER BOUND on what
+went untested, and "the failures are isolated to X" describes what ran, not the
+port. Compare the assertion count against the CUDA build's, or filter the failing
+section out and watch whether the total moves. A deferral that makes a test case
+abort quietly defers the rest of the file with it. (marian-dev)
 
 ## One architecture gets wrong numbers while the others pass
 
