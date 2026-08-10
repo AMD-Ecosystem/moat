@@ -1,0 +1,117 @@
+{
+  "schema_version": 3,
+  "name": "OCTproZ",
+  "upstream_url": "https://github.com/spectralcode/OCTproZ",
+  "fork_url": "https://github.com/AMD-Ecosystem/OCTproZ",
+  "fork_default_branch": "master",
+  "priority": 0.0,
+  "ext_type": "qmake",
+  "adopted_at": "2026-06-05T01:16:31Z",
+  "updated_at": "2026-08-07T07:04:42Z",
+  "head_sha": "af845bad4edc1f6e23e7bdd8a0d61d24544bfeed",
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:33:28Z",
+    "tier": 3,
+    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
+  },
+  "license_spdx": "GPL-3.0",
+  "upstream_repo_id": 241753182,
+  "stage": "review-passed",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "af845bad4edc1f6e23e7bdd8a0d61d24544bfeed",
+      "started_at": "2026-06-05T04:50:32Z",
+      "completed_at": "2026-06-05T05:10:18Z",
+      "updated_at": "2026-06-05T05:10:18Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "af845bad4edc1f6e23e7bdd8a0d61d24544bfeed",
+      "started_at": null,
+      "completed_at": "2026-06-05T06:00:02Z",
+      "updated_at": "2026-06-05T06:00:02Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "af845bad4edc1f6e23e7bdd8a0d61d24544bfeed",
+      "started_at": null,
+      "completed_at": "2026-06-20T04:09:21Z",
+      "updated_at": "2026-06-20T04:09:21Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "af845bad4edc1f6e23e7bdd8a0d61d24544bfeed",
+      "started_at": null,
+      "completed_at": "2026-06-08T01:41:26Z",
+      "updated_at": "2026-06-08T01:41:26Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    }
+  }
+}
