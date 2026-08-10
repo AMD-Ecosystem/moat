@@ -1120,7 +1120,10 @@ error: call of overloaded '__half(int)' is ambiguous
 
 with CUDA 12.1 headers; CUDA 12.8 headers compile it, because that release made
 the integer converts visible to host compilers
-(`__CUDA_FP16_DISABLE_IMPLICIT_INTEGER_CONVERTS_FOR_HOST_COMPILERS__`).  This
+(`__CUDA_FP16_DISABLE_IMPLICIT_INTEGER_CONVERTS_FOR_HOST_COMPILERS__`).
+[Corrected by the 2026-08-10 #2 review below: the converts became host-visible
+in 12.2, not 12.8; the affected range is 11.0 through 12.1 plus any 12.2+ build
+that defines the disable macro.]  This
 file exists for `CUDA_VERSION >= 11000`, so the broken range covers most of what
 it is meant to serve, and 4a257f29's message ("The CUDA path is unchanged apart
 from the buffer-size condition") does not hold as written.
@@ -1325,9 +1328,12 @@ No regressions against the numbers before this round:
   relinked against the rebuilt library): ALL CHECKS PASSED -- conv forward,
   d/dinput, d/dkernel, d/dbias, max and average pooling forward+backward, and
   the character-encoder-shaped multi-channel conv.
-- char-s2s training smoke, 1000 updates on GPU 0, exercising pooling backward
-  with the cached buffer: cost 3.22 -> 1.70, gNorm finite throughout, no NaN.
-  Matches the 1.70 of the previous round.
+- char-s2s training smoke, 1000 updates on GPU 0, exercising the convolution
+  wrapper and training as a whole: cost 3.22 -> 1.70, gNorm finite throughout,
+  no NaN.  Matches the 1.70 of the previous round.  It does NOT reach
+  `PoolingWrapper`: the character encoder calls `pooling_with_masking`
+  (`PoolingWithMaskingOp`, its own kernels, no MIOpen).  The evidence for the
+  cached pooling buffer is the reference program above.
 
 Multi-GPU RCCL and the end-to-end determinism gate were NOT re-run this round;
 neither touches the three changed files, and both are the validator's to
@@ -1506,3 +1512,50 @@ this head; their absence here is not part of this verdict. The two conda envs
 the notes name do exist and their versions match, and the fault and its fix I
 reproduced independently, so the part of the claim that carries the fix is not
 on trust.
+
+## Porter response to review 2026-08-10 #2 (linux-gfx1100)
+
+All three findings accepted; all three were text, and the compiled code is
+untouched apart from one comment.  New fork head `4d25e3f1`
+(1381ed77 -> 82755003 -> d4bc6433 -> 4d25e3f1), replacing
+32d65345/4ff41294/29ec0725.  `git diff 29ec0725 4d25e3f1` is 4 insertions and 2
+deletions in `src/tensors/gpu/cudnn_wrappers.cu`, all of them inside one comment
+block; every other tree object is identical.  ba0ec806, the `validated_sha` of
+all three completed archs, is still a reachable ancestor, and no arch had
+validated any of the three rewritten commits.
+
+**The delta is comment-only and message-only.**  `moatlib classify marian-dev
+29ec0725 4d25e3f1` reports `class=comment-only ... inert=True`, so the
+regression guard treats it as behavior-preserving.  It does not change what the
+completed archs are owed: their `validated_sha` is still ba0ec806, which was
+already behind before this round, so gfx90a, gfx1100 and windows-gfx1201 read
+`revalidate` for the functional commits above ba0ec806 exactly as they did
+yesterday.  A validator confirming those may treat the 29ec0725 -> 4d25e3f1 step
+itself as free, and `utils/codeobj_diff.py` against 29ec0725 will show binary
+equivalence if anyone wants it proven rather than classified.  No rebuild and no
+GPU re-run was done for this round, deliberately: nothing compiled changed.
+
+1. **CUDA boundary is 12.2, not 12.8.**  Corrected in the skill
+   (`references/fault-classes.md`, now naming the 12.2 gate change to
+   `!defined(__CUDA_FP16_DISABLE_IMPLICIT_INTEGER_CONVERTS_FOR_HOST_COMPILERS__)
+   || defined(__CUDACC__)`, the 11.0-12.1 affected range plus any 12.2+ build
+   defining the disable macro, and "compile-check against 12.1 headers or
+   older"), in `references/validation.md:11`, in the body of 82755003 (was
+   32d65345), and at notes.md:1121 where the wrong boundary was first written.
+   The reviewer's bisection is the record; I did not re-run it.
+2. **Pooling Test Plan.**  d4bc6433's Test Plan now credits the standalone
+   reference program as the evidence for the changed code, states that
+   avg_pooling/max_pooling are this wrapper's only callers with the MNIST LeNet
+   example as the only in-tree user, and re-attributes the char-s2s run to the
+   convolution wrapper and to training as a whole, saying explicitly that its
+   pooling goes through `pooling_with_masking`.  notes.md:1328 fixed the same
+   way.
+3. **Cache comment.**  `cudnn_wrappers.cu:457` now says the member is for
+   consistency with the convolution path and that here it saves only the free,
+   because the wrapper lives on its node and the graph drops nodes for the next
+   batch, so the allocation still happens once per pooling node per batch.
+   d4bc6433's body carries the same correction and notes that amortizing across
+   batches needs a buffer that outlives a node.  The code is unchanged, as the
+   review allowed.
+
+`python3 utils/jargon.py --port marian-dev`: clean over the whole branch.
