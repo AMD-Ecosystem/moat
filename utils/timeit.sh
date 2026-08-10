@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Time one phase of work and append a record to projects/<project>/stats.jsonl.
-# Usage: utils/timeit.sh <project> <phase> -- <command...>   (phase: compile|test|misc)
+# Usage: utils/timeit.sh <project> <phase> -- <command...>
+# Phase is conventionally compile|test|misc; any label is kept and reported
+# (validators use cuda-compile for the CUDA-baseline build, for example).
 # Exits with the wrapped command's exit code so it is transparent in scripts/CI.
 set -uo pipefail
 cd "$(dirname "$0")/.."

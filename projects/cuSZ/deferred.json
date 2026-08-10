@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "cusz-lc-framework-hip",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Port the bundled LC-framework (third_party/lc, burtscher/LC-framework) device kernels to HIP so PSZ_ACTIVATE_LC can be enabled on the ROCm backend. LC's comp/decomp .cu use 32-bit-mask __shfl_*_sync/__ballot_sync/__any_sync and __trap not covered by cuSZ's c_cu2hip macros; needs LC-side HIP support. Scoped OFF by default on HIP; core Lorenzo/spline+Huffman/HFR+FZG pipeline unaffected.",
+      "refs": [
+        "projects/cuSZ/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-25T06:13:38Z",
+      "decided": null
+    },
+    {
+      "id": "cusz-rtm-test-dataset",
+      "kind": "other",
+      "component": null,
+      "summary": "cuSZ ctest cusz__rtm_0480 (spl-y24/y25 predictor, RTM 235x449x449 0480.f32) skips: RTM seismic dataset is not on SDRBench public listing or the in-repo download script (paper-private, FZ-GPU/cuSZ-i). HURR+NYX acquired and passing 9/9. If RTM surfaces, drop at $CUSZ_TEST_DATA/RTM/0480.f32 (181 MiB f32) to unlock 3 tests.",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-25T06:52:13Z",
+      "decided": null
+    },
+    {
+      "id": "cusz-hip-profiler-support",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "On the HIP backend the CUDA::cupti '--timer cupti' profiling path in the bin_hf/bin_phf benchmark tools (example/src/bin_phf.cc, linked CUDA::cupti in example/cmake/cuda-example.cmake) is dropped; only '--timer event' (HIP-event wall timing) works on ROCm. Explore a CUPTI-equivalent kernel/activity profiling timer via rocprofiler-sdk / roctracer (ROCm profiling API) for the HIP build. Benchmark tooling only; core compress/decompress unaffected.",
+      "refs": [
+        "projects/cuSZ/notes.md",
+        "example/src/bin_phf.cc"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-06-25T21:02:13Z",
+      "decided": null
+    }
+  ]
+}

@@ -51,8 +51,9 @@ jobs:
 
       - name: Run gates
         # --fast skips the fork-cleanliness gate, which needs the fork clones that
-        # only exist on a porting host. That one is enforced by the pre-push hook
-        # and by pr_ready, where the clones are actually present.
+        # only exist on a porting host. The pre-push hook runs --fast too, so that
+        # gate is enforced only by pr_ready (and a manual full check.py) on the
+        # hosts where the clones actually exist.
         run: python3 utils/check.py --fast
 
 # NOTE: there is deliberately no jargon job here. The no-in-house-vocabulary rule
