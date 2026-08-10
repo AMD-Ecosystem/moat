@@ -13,7 +13,8 @@
       ],
       "status": "filed",
       "upstream_issue": "https://github.com/ROCm/rocPRIM/issues/775",
-      "created_at": "2026-06-07T16:00:58Z"
+      "created_at": "2026-06-07T16:00:58Z",
+      "decided": null
     },
     {
       "id": "popsift-texsurf-coherency",
@@ -27,7 +28,8 @@
       ],
       "status": "filed",
       "upstream_issue": "https://github.com/ROCm/clr/issues/275",
-      "created_at": "2026-06-07T16:00:58Z"
+      "created_at": "2026-06-07T16:00:58Z",
+      "decided": null
     },
     {
       "id": "hipsolver-sparse-fr",
@@ -38,9 +40,10 @@
       "refs": [
         "findings/hipsolver-sparse-fr/"
       ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T16:00:58Z"
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/hipSOLVER/issues/443",
+      "created_at": "2026-06-07T16:00:58Z",
+      "decided": null
     },
     {
       "id": "libhipcxx-cuda-std-gap",
@@ -53,7 +56,8 @@
       ],
       "status": "open",
       "upstream_issue": null,
-      "created_at": "2026-06-07T16:00:58Z"
+      "created_at": "2026-06-07T16:00:58Z",
+      "decided": null
     },
     {
       "id": "cudakdtree-atomic-minmax",
@@ -66,477 +70,8 @@
       ],
       "status": "done",
       "upstream_issue": null,
-      "created_at": "2026-06-07T16:00:58Z"
-    },
-    {
-      "id": "open3d-npp",
-      "kind": "feature-port",
-      "project": "Open3D",
-      "component": null,
-      "summary": "NPP-based GPU image filters have no ROCm equivalent; ops report unsupported and the CPU/IPP path is used. A rocfft/rocAL or hand-written HIP image-filter path could restore GPU acceleration",
-      "refs": [
-        "projects/Open3D/notes.md NPP scope-out"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T16:00:58Z"
-    },
-    {
-      "id": "open3d-slabhash",
-      "kind": "feature-port",
-      "project": "Open3D",
-      "component": null,
-      "summary": "Non-default SlabHash hashmap backend is wave64-incorrect (32-lane __ffs/__ballot election); compiles but tests excluded under USE_HIP. A wave64-correct rewrite would re-enable it (default StdGPU backend already works)",
-      "refs": [
-        "projects/Open3D/notes.md SlabHash scope-out"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T16:00:58Z"
-    },
-    {
-      "id": "envgs-optix-reflection",
-      "kind": "feature-port",
-      "project": "EnvGS",
-      "component": null,
-      "summary": "Environment-Gaussian reflection path not ported: diff-surfel-tracing uses OptiX (optixModuleCreate), which has no ROCm equivalent. Core 3DGS rasterization path works.",
-      "refs": [
-        "projects/EnvGS/notes.md OptiX scope-out"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T18:21:58Z"
-    },
-    {
-      "id": "curast-vulkan-hip-interop",
-      "kind": "feature-port",
-      "project": "CuRast",
-      "component": null,
-      "summary": "HIP-Vulkan texture interop stubbed (importToCuda mipmapped-array export): hipExternalMemoryGetMappedMipmappedArray is not exported by libamdhip64 in ROCm 7.2. Core rasterization works.",
-      "refs": [
-        "projects/CuRast/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T18:21:58Z"
-    },
-    {
-      "id": "zhilight-moe-amd",
-      "kind": "feature-port",
-      "project": "ZhiLight",
-      "component": null,
-      "summary": "MoE path unsupported on AMD; fp16/bf16 and cublasLt-int8 Linear are supported.",
-      "refs": [
-        "projects/ZhiLight/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T18:21:58Z"
-    },
-    {
-      "id": "cucim-gds-nvjpeg",
-      "kind": "feature-port",
-      "project": "cucim",
-      "component": null,
-      "summary": "GDS/cuFile (no ROCm equivalent) and nvjpeg GPU JPEG decode scoped out (CPU libjpeg fallback); nvimgcodec/cuslide2 not built.",
-      "refs": [
-        "projects/cucim/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T18:21:58Z"
-    },
-    {
-      "id": "cudf-scoped-sources",
-      "kind": "feature-port",
-      "project": "cudf",
-      "component": null,
-      "summary": "Partial cudf port: many .cu omitted from cudf_hip_sources.cmake (full lists/strings/dictionary/structs, quantiles, scan_inclusive for strings/structs); core plus reductions/merge in scope.",
-      "refs": [
-        "projects/cudf/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T18:21:59Z"
-    },
-    {
-      "id": "gpurir-mixed-precision",
-      "kind": "feature-port",
-      "project": "gpuRIR",
-      "component": null,
-      "summary": "Mixed-precision half2 device kernels not ported; mixed precision reports unsupported on HIP and is forced off.",
-      "refs": [
-        "projects/gpuRIR/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T18:21:59Z"
-    },
-    {
-      "id": "k2-moderngpu-warp32",
-      "kind": "feature-port",
-      "project": "k2",
-      "component": null,
-      "summary": "moderngpu path (warp_size=32, inline PTX) not ported; k2/csrc/moderngpu_shim.h.",
-      "refs": [
-        "projects/k2/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T18:21:59Z"
-    },
-    {
-      "id": "marian-topk-cub-segsort",
-      "kind": "feature-port",
-      "project": "marian-dev",
-      "component": null,
-      "summary": "topk.cu CUB segmented-sort path not ported; Sort() falls back to an alternative.",
-      "refs": [
-        "projects/marian-dev/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T18:21:59Z"
-    },
-    {
-      "id": "arrayfire-sparse-hipsparse",
-      "kind": "feature-port",
-      "project": "arrayfire",
-      "component": null,
-      "summary": "Sparse (hipSPARSE generic-API) port deferred/stubbed off.",
-      "refs": [
-        "projects/arrayfire/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T18:21:59Z"
-    },
-    {
-      "id": "rmm-hw-decompress",
-      "kind": "feature-port",
-      "project": "rmm",
-      "component": null,
-      "summary": "Hardware decompression path (no HIP equivalent) not ported.",
-      "refs": [
-        "projects/rmm/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T18:21:59Z"
-    },
-    {
-      "id": "oneflow-libcuxx-lru-cache",
-      "kind": "feature-port",
-      "project": "oneflow",
-      "component": null,
-      "summary": "lru_cache.cu (cuda::std::semaphore, no ROCm libcu++) not ported.",
-      "refs": [
-        "projects/oneflow/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T18:21:59Z"
-    },
-    {
-      "id": "cvcuda-osd-ops",
-      "kind": "feature-port",
-      "project": "CV-CUDA",
-      "component": null,
-      "summary": "OpOSD, OpBndBox, OpBoxBlur (cuOSD 3rdparty) scoped out.",
-      "refs": [
-        "projects/CV-CUDA/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T18:21:59Z"
-    },
-    {
-      "id": "cupoch-full-pipeline-modules",
-      "kind": "feature-port",
-      "project": "cupoch",
-      "component": null,
-      "summary": "Only the core point-cloud/geometry slice (utility/camera/knn/geometry, CUPOCH_CORE_ONLY=ON) is built/validated on ROCm. Deferred GPU modules: registration (ICP/GICP/Colored/FGR/FilterReg), odometry, integration (TSDF/KinectFusion), collision, planning, kinfu, imageproc (libSGM stereo), io-beyond-geometry, visualization, Python module. Causes: (a) visualization/imageproc/io/pybind need OpenGL/GLEW/GLFW + libSGM + urdfdom host stack; (b) four geometry-factory .cu have strict-clang blockers re-enablable without OpenGL.",
-      "refs": [
-        "projects/cupoch/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T19:04:23Z"
-    },
-    {
-      "id": "cuvs-ann-deferred",
-      "kind": "feature-port",
-      "project": "cuvs",
-      "component": null,
-      "summary": "All ANN/vector-search algorithms deferred behind CUVS_HIP_SLICE=distance; only pairwise-distance + fused-NN (43/264 .cu, ~16%) is built/validated. Deferred: brute-force, IVF-Flat, IVF-PQ, CAGRA, NN-Descent, Vamana/DiskANN, ball_cover, HNSW interop, multi-GPU, plus cluster/selection/preprocessing/stats/embed and spectral/lanczos. completed status is scoped to the distance subsystem only.",
-      "refs": [
-        "projects/cuvs/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T19:04:23Z"
-    },
-    {
-      "id": "raft-ann-cluster-deferred",
-      "kind": "feature-port",
-      "project": "raft",
-      "component": null,
-      "summary": "neighbors/ ANN (CAGRA, IVF-Flat, IVF-PQ, NN-Descent, HNSW) and cluster/ (kmeans, kmeans_balanced, single_linkage) are header-only and were never compiled or GPU-validated under HIP; warp intrinsics + ~28 wave64 0xffffffff masks in detail/cagra and detail/ivf_pq need the faiss_select treatment. Reasonable to scope out (upstream deprecated these to cuVS, de-compiled after 24.12). Validated surface: faiss_select top-k, ball_cover, KNN brute force, EpsNeighRbc, rmat, header primitives.",
-      "refs": [
-        "projects/raft/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T19:04:23Z"
-    },
-    {
-      "id": "cuml-metrics-and-deferrals",
-      "kind": "feature-port",
-      "project": "cuml",
-      "component": null,
-      "summary": "Entire metrics module deferred though 10 cuvs-FREE metrics are buildable today (accuracy_score, adjusted_rand_index, completeness_score, entropy, homogeneity_score, kl_divergence, mutual_info_score, r2_score, rand_index, v_measure); plan option-a (split metrics target) not taken. Also deferred: dbscan/knn/tsne/umap/kmeans/hdbscan/svm/FIL/tree_shap/spectral/multi-GPU/Python and standalone hierarchy/linkage.cu. The 10 metrics are shippable now (raft headers present, no CUML_LINK_CUVS); shipping triggers gfx90a/gfx1100 revalidation.",
-      "refs": [
-        "projects/cuml/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T19:04:23Z"
-    },
-    {
-      "id": "egg-advanced-trainers-deferred",
-      "kind": "feature-port",
-      "project": "egg.c",
-      "component": null,
-      "summary": "Only the basic CUDA trainer (full_cuda_train_egg.cu) ported; 1 of 5 trainers, 0 advanced/distributed. Deferred: full_cuda_train_egg_transformer.cu + _adam.cu (EGG_WARP_SIZE=32 on off=16 shfl_down reductions, RoPE shfl_xor width-32); full_cuda_train_transformer_adam_mgpu.cu (Int8NativeFormer) + muon_internal.cuh (cuBLAS->hipBLAS Newton-Schulz + multi-GPU); d-eggs/ distributed coordinator/worker (hipGraph capture, managed-memory atomic audit).",
-      "refs": [
-        "projects/egg.c/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T19:04:23Z"
-    },
-    {
-      "id": "espresso-walberla-lb-ek-gpu",
-      "kind": "feature-port",
-      "project": "espresso",
-      "component": null,
-      "summary": "waLBerla LB/EK GPU backend (60 generated CUDA.cu lattice-Boltzmann + electrokinetics + reaction kernels in src/walberla_bridge) scoped out via ESPRESSO_BUILD_WITH_WALBERLA=OFF. waLBerla is a separate upstream with its own CUDA gpu backend; porting it means HIP-ifying walberla::gpu itself.",
-      "refs": [
-        "projects/espresso/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T19:04:23Z"
-    },
-    {
-      "id": "foldseek-prostt5-gpu",
-      "kind": "feature-port",
-      "project": "foldseek",
-      "component": null,
-      "summary": "ProstT5 GPU inference (--gpu 1) not enabled on ROCm: top-level CMakeLists sets GGML_CUDA from ENABLE_CUDA but never GGML_HIP from USE_HIP, so createdb --prostt5-model --gpu 1 silently falls back to CPU. ggml ships a vendored GGML_HIP backend (lib/prostt5/ggml/src/ggml-hip); a follow-up could wire USE_HIP->GGML_HIP and validate (needs rocBLAS/hipBLAS + weights, egress-bound). Structure-search GPU path IS delivered.",
-      "refs": [
-        "projects/foldseek/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T19:04:23Z"
-    },
-    {
-      "id": "gdtk-eilmer-gpu-chem",
-      "kind": "feature-port",
-      "project": "gdtk",
-      "component": null,
-      "summary": "Eilmer GPU finite-rate chemistry (src/eilmer/cuda_gpu_chem.d driver + utils/alpha_qss_kernel_cuda_tmplt.cu, makefile target eilmer-cuda-gpu-chem under WITH_CUDA_GPU_CHEM) not ported; opt-in non-default separate binary, plain runtime API + one hand-written kernel (cublas imported but never called) so HIP-portable. chicken is the ported primary GPU path.",
-      "refs": [
-        "projects/gdtk/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T19:04:23Z"
-    },
-    {
-      "id": "mhc-torch-extension",
-      "kind": "feature-port",
-      "project": "mHC.cu",
-      "component": null,
-      "summary": "PyTorch extension mhc_cuda (primary advertised interface: setup.py CUDAExtension, consumed by mhc/ops.py + trainer) not ported to ROCm; hipify leaves cuBLASLt symbols un-renamed (cublasLtOrder_t, CUBLASLT_ORDER_ROW, CUBLASLT_MATRIX_LAYOUT_ORDER), needs const-void* hipFuncSetAttribute cast and the row-major to col-major hipBLASLt swap. Standalone CMake kernel harness validated on gfx90a/gfx1100 as the correctness gate.",
-      "refs": [
-        "projects/mHC.cu/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T19:04:23Z"
-    },
-    {
-      "id": "plumed2-openacc-gpu",
-      "kind": "feature-port",
-      "project": "plumed2",
-      "component": null,
-      "summary": "Port covers only the cudaCoord (CUDA/Thrust/CUB) plugin. Excluded GPU surfaces: openaccPTM plugin (NVIDIA OpenACC offload via nvc++, the USEGPU path) -- no production ROCm OpenACC analogue; SAXS ArrayFire-CUDA backend (ArrayFire OpenCL could target AMD); core OpenACC infra (src/tools/OpenACC.h) and the libtorch-CUDA pytorch module. All opt-in/default-off.",
-      "refs": [
-        "projects/plumed2/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T19:04:23Z"
-    },
-    {
-      "id": "visionaray-hip-device-rng",
-      "kind": "feature-port",
-      "project": "visionaray",
-      "component": null,
-      "summary": "GPU random number generator not enabled on HIP: include/visionaray/random_generator.h guards the thrust include and rand_engine device path under #if defined(__CUDACC__) only, so device RNG is unavailable under __HIPCC__. Small fix (extend both guards to accept __HIPCC__/__HIP_DEVICE_COMPILE__); needs GPU revalidation of any sampler path using it.",
-      "refs": [
-        "projects/visionaray/notes.md"
-      ],
-      "status": "done",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T19:04:23Z"
-    },
-    {
-      "id": "cugraph-sg-validation-coverage",
-      "kind": "other",
-      "project": "cugraph",
-      "component": null,
-      "summary": "linux-gfx90a/gfx1100 marked completed but GPU validation exercised only 3 of 46 built SG algorithms (BFS, SSSP, PageRank); 44 linked SG test binaries never run on GPU. Unvalidated algorithms share the prim machinery where real wave64 bugs were found+fixed. Resolve by running the full in-scope SG gtest set from cugraph_hip_tests, or scope the completed claim to BFS/SSSP/PageRank.",
-      "refs": [
-        "projects/cugraph/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T19:04:23Z"
-    },
-    {
-      "id": "octproz-app-kernel-validation",
-      "kind": "other",
-      "project": "OCTproZ",
-      "component": null,
-      "summary": "Validation used a proxy microbenchmark; never exercised OCTproZ app kernels, GL-interop, or the 3D-volume surface-write path (riskiest ported feature compiled but not run) on real GPU. Re-validate by launching the built app through its OCT processing pipeline.",
-      "refs": [
-        "projects/OCTproZ/notes.md"
-      ],
-      "status": "done",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T19:04:23Z"
-    },
-    {
-      "id": "scamp-sumthresh-validation",
-      "kind": "other",
-      "project": "SCAMP",
-      "component": null,
-      "summary": "Recorded GPU validation exercised only the default 1NN_INDEX profile; the wave64 SUM_THRESH reduction fix is unvalidated. Validate the SUM_THRESH path against the reference oracle on gfx90a (wave64).",
-      "refs": [
-        "projects/SCAMP/notes.md"
-      ],
-      "status": "done",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T19:04:23Z"
-    },
-    {
-      "id": "lichtfeld-test-gate-coverage",
-      "kind": "other",
-      "project": "LichtFeld-Studio",
-      "component": null,
-      "summary": "HIP validation gate omits built GPU kernels: tensor_nn_ops.cu (max_pool2d, adaptive_avg_pool2d, bias_relu, relu) has no test, and ~51 compute-only test files are excluded from LFS_HIP_TEST_FILES (beyond the 3 the validator caught). Add test_tensor_nn_ops.cpp and the compute-only tests to the gate.",
-      "refs": [
-        "projects/LichtFeld-Studio/notes.md"
-      ],
-      "status": "done",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T19:04:23Z"
-    },
-    {
-      "id": "cucollections-head-drift",
-      "kind": "other",
-      "project": "cuCollections",
-      "component": null,
-      "summary": "build-hip src HEAD drifted one functional commit beyond the validated/recorded sha, undocumented and unvalidated. Reconcile status.json with the live tree (re-validate the drift or reset to the validated sha).",
-      "refs": [
-        "projects/cuCollections/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
-      ],
-      "status": "done",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T19:04:23Z"
-    },
-    {
-      "id": "cucollections-contribute-to-hipcollections",
-      "kind": "other",
-      "project": "cuCollections",
-      "component": null,
-      "summary": "Comparison vs ROCm/hipCollections (canonical AMD port, ROCm-DS-owned): our net-new asset is sub-word int8/int16 atomic CAS emulation (include/cuco/detail/hip_subword_atomic.cuh) -- hipColl packed_cas handles only 4/8-byte and would corrupt int8/int16-keyed static_set/map (no small-key tests there). Secondary candidates: gfx1100/wave32 validation evidence to promote hipColl experimental wave32 + extend arch allowlist to RDNA4/Windows; newer-cuco features (roaring_bitmap, bloom merge/intersect, dynamic_map) via a cuco rebase. NOT contributions (hipColl already has them): pre-Volta __CUDA_ARCH__ guard byte-identical, bloom host-gate (theirs better). hipCollections is ROCm-DS-owned so DEFER PRs until ROCm-DS collaboration resumes (jeff 2026-06-07).",
-      "refs": [
-        "agent_space/hipCollections-cmp",
-        "projects/cuCollections/ was removed when the project was dispositioned ported-elsewhere on 2026-08-06; its notes.md is not in this repo's history, so the summary above is the surviving record."
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-07T20:43:48Z"
-    },
-    {
-      "id": "autodock-gpu-tensor-core-reduction",
-      "kind": "feature-port",
-      "project": "AutoDock-GPU",
-      "component": null,
-      "summary": "CDNA matrix cores DONE: TENSOR=ON ported to rocWMMA (native fp32 MFMA), gfx90a-validated (matches non-tensor docking; 1.57x faster at NUMWI=128), commit 3d466a4. REMAINING (follow-up): RDNA (gfx1100/1101/1201) has no native f32 WMMA input, so TENSOR=ON there needs a bf16 error-correction path (the AMD analog of the NVIDIA tf32+EC tcec). Currently CDNA-only; the Makefile should guard TENSOR=ON to CDNA archs.",
-      "refs": [
-        "projects/AutoDock-GPU/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-08T22:26:23Z",
-      "updated_at": "2026-06-09T00:00:00Z"
-    },
-    {
-      "id": "rocprim-devicescan-unaligned-temp-corruption",
-      "kind": "rocm-bug-report",
-      "project": "catboost",
-      "component": "rocPRIM",
-      "summary": "rocPRIM DeviceScan lookback tile-state corrupts the scan non-deterministically at tile boundaries when its temp storage is not 256-byte aligned (CUB has no such requirement). catboost split_points.cu works around it by 256-aligning the scan temp offset. Genuine correctness bug; needs a minimal reproducer + rocm-libraries issue.",
-      "refs": [
-        "projects/catboost/src/catboost/cuda/methods/greedy_subsets_searcher/kernel/split_points.cu"
-      ],
-      "status": "filed",
-      "upstream_issue": "https://github.com/ROCm/rocm-libraries/issues/8263",
-      "created_at": "2026-06-10T01:54:17Z"
-    },
-    {
-      "id": "rocprim-segmented-radix-sort-gap-elements",
-      "kind": "rocm-bug-report",
-      "project": "catboost",
-      "component": "rocPRIM",
-      "summary": "rocPRIM segmented radix sort leaves out-of-segment (gap) elements undefined in the alternate DoubleBuffer and flips Current() there (CUB leaves the result in-place); catboost segmented_sort.cu seeds both buffers to compensate. Clarify intended behavior vs CUB; possible deviation.",
-      "refs": [
-        "projects/catboost/src/catboost/cuda/cuda_util/kernel/segmented_sort.cu"
-      ],
-      "status": "done",
-      "upstream_issue": null,
-      "created_at": "2026-06-10T01:54:17Z"
-    },
-    {
-      "id": "rocprim-sortpairs-tempsize-strictness",
-      "kind": "rocm-bug-report",
-      "project": "catboost",
-      "component": "rocPRIM",
-      "summary": "rocPRIM SortPairs needs more temp storage than a SortKeys-sized query allocates -> hipErrorInvalidValue at Run (CUB tolerates the keys-vs-pairs sizing mismatch). catboost segmented_sort.cpp sizes for SortPairs under USE_HIP. Partly a catboost CUB-contract mis-use; worth confirming rocPRIM's documented contract.",
-      "refs": [
-        "projects/catboost/src/catboost/cuda/cuda_util/segmented_sort.cpp"
-      ],
-      "status": "done",
-      "upstream_issue": null,
-      "created_at": "2026-06-10T01:54:17Z"
-    },
-    {
-      "id": "3dgs-lm-garden-lm-offbyone",
-      "kind": "other",
-      "project": "3DGS-LM",
-      "component": null,
-      "summary": "Real-scene garden fit faults at the LM step on gfx90a (MI250X, wave64). Root-caused to an off-by-one between the sparse-Jacobian EMIT kernel (gsgn.cu ~269-298) and forward.cu renderCUDA is_gaussian_hit: a boundary Gaussian the forward pass excludes via the transmittance terminator gets map_visible_gaussians=-1, so apply_jt_kernel reads geomBuffer[-1] -> HSA memory access fault on ROCm (benign in-chunk over-read on NVIDIA, which also zero-fills torch::empty). The emit kernel counts contributors with a wavefront WarpScan, so it MIGHT be wave64-specific. DIAGNOSTIC NEEDED on gfx1100 (wave32) to disambiguate: run a real Mip-NeRF360 garden fit (recipe + MOAT_PY MAPVIS_OOB probe in notes.md). If gfx1100 ALSO faults / MAPVIS_OOB -> the off-by-one is UPSTREAM (report to lukasHoel; ROCm just makes the latent over-read fatal). If gfx1100 completes cleanly -> WAVE64-SPECIFIC emit/WarpScan fix in the port. Both Linux + gfx1201 are already validated on synthetic scenes; this only affects real-scene fits.",
-      "refs": [
-        "projects/3DGS-LM/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-10T14:46:48Z"
+      "created_at": "2026-06-07T16:00:58Z",
+      "decided": null
     },
     {
       "id": "hipblaslt-gfx1201-fp32-heuristic-segfault",
@@ -550,44 +85,8 @@
       ],
       "status": "open",
       "upstream_issue": null,
-      "created_at": "2026-06-09T17:30:40Z"
-    },
-    {
-      "id": "curast-launch-member-dispatch-fault",
-      "kind": "rocm-bug-report",
-      "project": "CuRast",
-      "component": null,
-      "summary": "gfx90a ROCm 7.2.1: hipModuleLaunchKernel dispatches from inside HipModularProgram::launch()/launch2D memory-fault (addr nil, xnack-) while byte-identical inline sequences at the same call sites pass. Exhaustively bisected (args/Timer/launch API/module/order/sync/kernarg-lifetime/fast-math eliminated; machine code verified). Repro: CURAST_LADDER=1 on AMD-Ecosystem/CuRast branch bench. Workaround shipped: inline dispatch (INLINE_LAUNCH_1D/2D). Needs ROCm runtime-level debug (kernarg pool / queue state).",
-      "refs": [],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-10T21:51:35Z"
-    },
-    {
-      "id": "opencv-dnn-miopen-backend",
-      "kind": "feature-port",
-      "project": "opencv_contrib",
-      "component": null,
-      "summary": "opencv dnn module CUDA backend (cuda4dnn/cuDNN) -> MIOpen backend: separate sizable project, out of cv::cuda port scope per jeff 2026-06-10 decision (plan.md open-decision-5)",
-      "refs": [
-        "projects/opencv_contrib/plan.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-10T23:39:47Z"
-    },
-    {
-      "id": "opencv-cudalegacy-graphcut",
-      "kind": "feature-port",
-      "project": "opencv_contrib",
-      "component": null,
-      "summary": "cudalegacy graphcut/graphcut8 (NPP maxflow) has no ROCm analog; HIP takes the same stub path a modern CUDART>=8000 CUDA build does (NPP removed graphcut at 8.0). A GPU push-relabel/maxflow kernel could restore it later.",
-      "refs": [
-        "projects/opencv_contrib/plan.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-11T00:58:29Z"
+      "created_at": "2026-06-09T17:30:40Z",
+      "decided": null
     },
     {
       "id": "opencv-cudaimgproc-npp-color-hist",
@@ -598,189 +97,8 @@
       "refs": [],
       "status": "done",
       "upstream_issue": null,
-      "created_at": "2026-06-11T02:26:05Z"
-    },
-    {
-      "id": "opencv-cudaoptflow-nvof",
-      "kind": "feature-port",
-      "project": "opencv_contrib",
-      "component": null,
-      "summary": "cudaoptflow NvidiaOpticalFlow_1_0/2_0 hardware optical-flow classes gated off on ROCm (StsNotImplemented): AMD GPUs have no dedicated HW optical-flow engine and AMF exposes no optical-flow API. Public symbols kept; the software flows (Brox/SparsePyrLK/DensePyrLK/Farneback/TVL1) are the substitute and are ported+validated. Genuine HW feature loss.",
-      "refs": [
-        "projects/opencv_contrib/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-11T03:01:37Z"
-    },
-    {
-      "id": "opencv-cudacodec-native-encode",
-      "kind": "feature-port",
-      "project": "opencv_contrib",
-      "component": null,
-      "summary": "cudacodec VideoWriter native hardware encode gated off on ROCm (StsNotImplemented): no ROCm-native encoder exists; AMF is a Vulkan/DX stack outside ROCm needing HIP<->Vulkan external-memory interop. Users are directed to the FFmpeg videoio backend (CAP_FFMPEG) with the AMF encoders h264_amf/hevc_amf/av1_amf. A native in-tree AMF encoder bridge is the deferred follow-up.",
-      "refs": [
-        "projects/opencv_contrib/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-11T03:01:49Z"
-    },
-    {
-      "id": "opencv-cudacodec-rocdecode-videoreader",
-      "kind": "feature-port",
-      "project": "opencv_contrib",
-      "component": null,
-      "summary": "cudacodec VideoReader rocDecode decode implementation deferred to the RDNA followers. The WITH_ROCDECODE/HAVE_ROCDECODE CMake gates, FFmpeg-only demuxer wiring, and graceful decode-off runtime errors are in place and the module build-validates on gfx90a with decode off. The full cuvid->rocDec API mirror (video_decoder/parser/reader, CUVID struct translation, ColorSpace NV12->RGB pipeline activation) is NOT written/validated because gfx90a (MI250X, CDNA2) has no VCN video-decode engine and the ROCm-repo mesa-amdgpu-va-drivers needed by the rocDecode runtime is uninstallable on this headless node, so neither compile-against-runtime nor GPU validation is possible here. Implement + validate on gfx1100/gfx1201 (which carry VCN). rocDecode lacks MPEG-1/2, VC-1, VP8, MJPEG vs NVDEC: those are genuine codec losses to skip/StsUnsupported cleanly.",
-      "refs": [
-        "projects/opencv_contrib/notes.md"
-      ],
-      "status": "done",
-      "upstream_issue": null,
-      "created_at": "2026-06-11T03:01:49Z"
-    },
-    {
-      "id": "llm-awq-mfma-w4a16-gemm",
-      "kind": "feature-port",
-      "project": "llm-awq",
-      "component": null,
-      "summary": "AMD-native MFMA/rocWMMA W4A16 GEMM to replace the correctness-first SIMT GEMM",
-      "refs": [
-        "projects/llm-awq/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-11T04:23:04Z"
-    },
-    {
-      "id": "llm-awq-w8a8-mfma-gemm",
-      "kind": "feature-port",
-      "project": "llm-awq",
-      "component": null,
-      "summary": "int8 MFMA W8A8 GEMM (w8a8_gemm_*), currently build-only on ROCm",
-      "refs": [
-        "projects/llm-awq/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-11T04:23:04Z"
-    },
-    {
-      "id": "llm-awq-ft-attention-hip",
-      "kind": "feature-port",
-      "project": "llm-awq",
-      "component": null,
-      "summary": "FasterTransformer single-query masked-MHA HIP rewrite (currently excluded from ROCm build)",
-      "refs": [
-        "projects/llm-awq/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-11T04:23:04Z"
-    },
-    {
-      "id": "lc0-ck-fused-mha",
-      "kind": "feature-port",
-      "project": "lc0",
-      "component": null,
-      "summary": "lc0's attention-body fused-MHA is CUTLASS example #41 (memory-efficient/flash attention, Sm80), gated USE_CUTLASS and opt-in even on NVIDIA (use_fused_mha defaults off unless sm80+ fp16 and FFN activation != RELU_2). The ROCm port takes the functionally-identical UNFUSED cuBLAS attention path (batched Q.K^T + softmax + .V), the same path NVIDIA uses without CUTLASS. AMD-native fused MHA via CK/ck_tile (per PORTING_GUIDE: CUTLASS->CK, prefer ck_tile) is a PERF follow-up, not a correctness gap. NOT a drop-in: lc0 passes a smolgen learned additive attention bias (cutlass_kernels.cu attn_bias_ptr = skip), so the ck_tile fmha instance must support a general additive bias; instantiate for lc0 head dims, gate behind the same dispatch, keep the unfused cuBLAS twin as fallback, validate through backendbench --backend=check vs blas. Expected gain is BOUNDED because lc0's attention sequence length is 64 (8x8 board squares), where flash/fused attention's HBM-traffic win is small vs an LLM's long S.",
-      "refs": [
-        "projects/lc0/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-11T07:12:13Z"
-    },
-    {
-      "id": "k2-torch-decoder-kaldifeat",
-      "kind": "feature-port",
-      "project": "k2",
-      "component": null,
-      "summary": "k2/torch (the standalone libtorch C++ decoder layer, ~28 files) is deferred on the ROCm build: k2/CMakeLists.txt skips the k2/torch subdir on HIP because it pulls in kaldifeat (csukuangfj/kaldifeat), a separate feature-extraction project. The core _k2 Python module + csrc gtest suite (what icefall/sherpa consume) are ported and validated. UN-DEFER once the kaldifeat MOAT project's lead is completed: then build/install AMD-Ecosystem/kaldifeat @ moat-port and re-enable the k2/torch subdir on HIP. Tracked as a depends_on(kaldifeat) relationship.",
-      "refs": [
-        "projects/k2/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-11T15:50:21Z"
-    },
-    {
-      "id": "k2-segmented-sort-global",
-      "kind": "feature-port",
-      "project": "k2",
-      "component": null,
-      "summary": "k2 moderngpu_shim segmented_sort: replace host-side SegmentsToHost sync + per-segment thrust::stable_sort_by_key loop with a single global stable_sort_by_key using a composite (row_id, key) comparator via ComputeRowIds (gemini bot #1353 review). Perf optimization; current impl is correct+validated. Do as a benchmarked follow-up, not in the enablement PR.",
-      "refs": [
-        "https://github.com/k2-fsa/k2/pull/1353"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-11T22:07:24Z"
-    },
-    {
-      "id": "plvs-blocked-on-opencv-rocm",
-      "kind": "feature-port",
-      "project": "plvs",
-      "component": null,
-      "summary": "plvs GPU port (ORB/FAST feature kernels + libelas-gpu + libsgm stereo) compiles for gfx90a against the MOAT OpenCV-with-HIP fork but is blocked on: (1) OpenCV core PR #29285 + opencv_contrib PR #4147 landing upstream so cv::cuda-on-ROCm is a consumable released dep; (2) building the full non-GPU SLAM stack (PCL/Pangolin/DBoW2/g2o/voxblox/chisel) + stereo datasets to validate on GPU, including verifying libsgm wave64 disparity correctness (WARP_SIZE=64 reductions, may need logical-32 rework per the OpenCV cudastereo conclusion). Resume when OpenCV PRs land. Fork moat-port HEAD f932ab5.",
-      "refs": [
-        "projects/plvs/notes.md",
-        "AMD-Ecosystem/plvs@f932ab5"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-11T23:24:39Z"
-    },
-    {
-      "id": "sppark-g2-fp2-msm",
-      "kind": "feature-port",
-      "project": "sppark",
-      "component": null,
-      "summary": "G2 (fp2 extension field) MSM on ROCm/HIP. fp2 reciprocal needs vt_inverse_mod_x (~400 lines of shuffle-based Montgomery-ladder modular inverse) which the NTT-trimmed ff/mont_t.hip does not implement. G1 MSM is complete and validated; the fp2 entry points (mult_pippenger_fp2_inf) are compiled only for CUDA. To finish G2: port vt_inverse_mod_x + the fp2 device reciprocal path into mont_t.hip, then drop the SPPARK_MSM_FP2/feature=rocm guards in poc/msm-cuda.",
-      "refs": [
-        "projects/sppark/notes.md MSM HIP Port BREAKTHROUGH"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-12T00:19:57Z"
-    },
-    {
-      "id": "sppark-bn254-g1-msm-rocm",
-      "kind": "feature-port",
-      "project": "sppark",
-      "component": "msm/pippenger (bn254/alt_bn128 G1)",
-      "summary": "bn254 (alt_bn128) G1 MSM hangs the GPU on ROCm/HIP at TEST_NPOW>=12 (gfx90a wave64, 100% busy, no completion); bls12_381/bls12_377 G1 finish in <1s. Gated off on ROCm (poc/msm-cuda/build.rs panics for rocm+bn254; cuda/pippenger_inf.cu #error). Likely a bn254-specific wave64 / sort-partitioning / cooperative-grid-sync edge case for the 254-bit field. Resume by root-causing the hang, then drop both gates.",
-      "refs": [
-        "projects/sppark/notes.md (bn254 G1 MSM hangs section)"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-12T05:23:55Z"
-    },
-    {
-      "id": "sppark-msm-noncoop-fallback",
-      "kind": "feature-port",
-      "project": "sppark",
-      "component": null,
-      "summary": "sppark MSM (Pippenger sort/accumulate) uses hipLaunchCooperativeKernel; gfx1201 on TheRock ROCm 7.14 Windows reports cooperativeLaunch=0 and the cooperative launch returns hipErrorLaunchFailure(719) even for a 1x1 grid, so MSM bls12_381/bls12_377 fail there (NTT 7/7 pass). To complete the Windows tier on gfx1201 either validate on gfx1101 (currently driver-wedged) or implement a non-cooperative kernel fallback for MSM when cooperativeLaunch==0.",
-      "refs": [
-        "projects/sppark/notes.md",
-        "fork AMD-Ecosystem/sppark @ 00cb1a7"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-12T09:06:38Z"
-    },
-    {
-      "id": "trt-shim-rocm-trtexec",
-      "kind": "feature-port",
-      "project": null,
-      "component": "trt-shim-rocm",
-      "summary": "trtexec build against trt-shim-rocm: needs full TensorRT sample inference framework (sampleDevice/sampleInference/sampleEngines) -> large CUDA-runtime surface (cudaDeviceProp CUDA layout, cudaMemGetInfo, managed/host alloc, cudaLaunchHostFunc, real cudaGraph capture, cudaProfiler) + broad nvinfer1 optimization-profile/inference API the shim stubs. Multi-day harness port, not a shim gap. Shim correctness proven via stock sampleOnnxMNIST + ResNet-50 fp16/serialize. Resume by expanding include/compat for device/graph surface and implementing real IOptimizationProfile + enqueueV3.",
-      "refs": [],
-      "status": "done",
-      "upstream_issue": null,
-      "created_at": "2026-06-12T07:13:26Z"
+      "created_at": "2026-06-11T02:26:05Z",
+      "decided": null
     },
     {
       "id": "migraphx-dynamic-concat-codegen",
@@ -791,32 +109,8 @@
       "refs": [],
       "status": "open",
       "upstream_issue": null,
-      "created_at": "2026-06-12T14:15:26Z"
-    },
-    {
-      "id": "trt-shim-rocm-int8-cache",
-      "kind": "feature-port",
-      "project": null,
-      "component": "trt-shim-rocm",
-      "summary": "trt-shim-rocm int8 calibration cache not implemented. TensorRT's IInt8Calibrator has readCalibrationCache/writeCalibrationCache so the computed per-tensor int8 dynamic ranges can be persisted and reused, skipping recalibration on later builds (and enabling calibration-data-free builds). The shim runs calibration every build and ignores the cache: it neither consumes a provided cache (readCalibrationCache) nor emits one (writeCalibrationCache). Gap: MIGraphX does not expose the int8 scales it computes (no setDynamicRange/get-scales equivalent), so producing or consuming a TensorRT-compatible calibration cache needs either a MIGraphX scale accessor or a Q/DQ-in-ONNX explicit-quantization path. Resume by mapping readCalibrationCache to a Q/DQ pre-quantized model path, or request a MIGraphX scale get/set API.",
-      "refs": [],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-12T15:00:08Z"
-    },
-    {
-      "id": "plvs-windows-slam-bundled-deps",
-      "kind": "other",
-      "project": "plvs",
-      "component": null,
-      "summary": "plvs gfx1201 HIP device code is PROVEN on Windows (libsgm stereo PASS: coverage 0.841, agreement 0.972, matches Linux), but the full mono-TUM SLAM cannot run on Windows: bundled ROS-adjacent CPU libs (DBoW2, g2o, line_descriptor, voxblox, open_chisel, chisel_server, voxblox_server) hardcode Unix .so/.a outputs in their CMakeLists; PCL unavailable (not in vcpkg, github TLS-blocked); Pangolin version mismatch (vcpkg 0.9.5 vs required fe57db5/v0.6+patch); main CMakeLists uses -fPIC/-pthread/pkg_check_modules(GLFW) without WIN32 guards. Upstream Windows-portability gap, not an AMD/HIP defect. gfx1201 is redundant/optional Windows tier and NOT PR-required (Linux completed). To complete: Windows-guard the bundled-lib CMakeLists + supply PCL/Pangolin, or validate the SLAM path on gfx1101 instead.",
-      "refs": [
-        "projects/plvs/notes.md",
-        "fork AMD-Ecosystem/plvs @ b9210a8"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-12T15:00:56Z"
+      "created_at": "2026-06-12T14:15:26Z",
+      "decided": null
     },
     {
       "id": "migraphx-dynamic-offloadcopy-false-crash",
@@ -827,20 +121,8 @@
       "refs": [],
       "status": "open",
       "upstream_issue": null,
-      "created_at": "2026-06-12T16:22:50Z"
-    },
-    {
-      "id": "migraphx-gfx1100-fp32-zerocopy-saveload",
-      "kind": "rocm-bug-report",
-      "project": "trt-shim-rocm",
-      "component": "migraphx",
-      "summary": "MIGraphX gfx1100: offload_copy=false fp32 eval returns zeros after double-compile + save/load round-trip. Blocks fp32 static engine correctness on gfx1100. fp16 and dynamic paths unaffected; gfx90a unaffected.",
-      "refs": [
-        "findings/migraphx-trt-shim-gaps/"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-15T23:41:18Z"
+      "created_at": "2026-06-12T16:22:50Z",
+      "decided": null
     },
     {
       "id": "barney-oidn-gpu-denoiser",
@@ -853,7 +135,8 @@
       ],
       "status": "open",
       "upstream_issue": null,
-      "created_at": "2026-06-16T00:39:17Z"
+      "created_at": "2026-06-16T00:39:17Z",
+      "decided": null
     },
     {
       "id": "barney-hiprt-native-sbt",
@@ -866,182 +149,8 @@
       ],
       "status": "open",
       "upstream_issue": null,
-      "created_at": "2026-06-16T05:01:15Z"
-    },
-    {
-      "id": "barney-cone-capsule-preexisting-gpu-fault",
-      "kind": "other",
-      "project": "barney",
-      "component": null,
-      "summary": "Pre-existing upstream barney GPU fault (NOT a ROCm/HIP port defect): the 'cone' geometry intersect faults identically on BOTH the software (cuBQL) backend and the HIPRT backend on gfx90a, even at 1 primitive; device intersect code is byte-identical to upstream NVIDIA barney (the port changes only runtime spellings, not the cone math). Capsules and N>=8 cylinders also fault on the cuBQL software backend only (a separate pre-existing cuBQL two-level traversal issue) while the HIPRT backend renders them correctly. Cannot confirm on stock CUDA barney here (host has no NVIDIA GPU). The Backend-2 HIPRT count-scaling intersect-thunk corruption was the porter's bug and is FIXED (cylinders/capsules render, pixel-identical to B1 where B1 works). Scope: file upstream against NVIDIA/barney once an NVIDIA GPU is available to confirm; not blocking the ROCm port.",
-      "refs": [
-        "projects/barney/notes.md ## Validation 2026-06-16 (validator, Backend 2)",
-        "agent_space/barney_val/val_geom.cpp"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-16T05:48:58Z"
-    },
-    {
-      "id": "barney-cubql-repin-after-pr35",
-      "kind": "other",
-      "project": "barney",
-      "component": null,
-      "summary": "Re-pin submodules/cuBQL to NVIDIA/cuBQL after NVIDIA/cuBQL#35 merges",
-      "refs": [
-        "NVIDIA/cuBQL#35"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-17T01:09:01Z"
-    },
-    {
-      "id": "ddn-slam-submodule-chain",
-      "kind": "other",
-      "project": "DDN-SLAM",
-      "component": null,
-      "summary": "Closed 2026-08-06. The chain never had to be resolved: the neural core at the bottom of it is under the NVIDIA Source Code License, so DDN-SLAM could never have been contributed. The forks are deleted and no PR was ever opened.",
-      "refs": [
-        "https://github.com/MarvinChung/instant-ngp-kf/compare/master...jeffdaily:instant-ngp-kf:moat-port"
-      ],
-      "status": "closed",
-      "upstream_issue": null,
-      "created_at": "2026-06-16T06:15:34Z"
-    },
-    {
-      "id": "envgs-diff-surfel-tracing-diverged-history",
-      "kind": "other",
-      "project": "EnvGS",
-      "component": null,
-      "summary": "EnvGS submodule AMD-Ecosystem/diff-surfel-tracing@moat-port is a clean GPU-validated OptiX->HIPRT port, but upstream xbillowy/diff-surfel-tracing re-licensed/rewrote history after EnvGS pinned gitlink 9b86cbf (now ahead 2, behind 3 = diverged). Decision needed: rebase port onto current upstream main vs PR against pinned base. Also LFS pointer-stub .dlls lack a .gitattributes.",
-      "refs": [
-        "https://github.com/xbillowy/diff-surfel-tracing/compare/main...jeffdaily:diff-surfel-tracing:moat-port"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-16T06:15:34Z"
-    },
-    {
-      "id": "kittengpulbvh-standalone-gfx90a-gfx1201",
-      "kind": "other",
-      "project": "YarnBall",
-      "component": null,
-      "summary": "Hold KittenGpuLBVH upstream PR until its own testLBVH() runs STANDALONE on gfx90a and gfx1201 (gfx1100 done: 338 GPU==CPU collision pairs, BVH self-check OK). Turnkey on each host: in the AMD-Ecosystem/KittenGpuLBVH moat-port clone, cmake -B build -DUSE_HIP=ON -DCMAKE_HIP_COMPILER=hipcc -DCMAKE_HIP_ARCHITECTURES=<gfx90a|gfx1201> && cmake --build build && ./build/lbvh_test ; expect 'CPU and GPU results match' + self-check pass. gfx1201 builds via the Windows TheRock PyTorch venv. Parent YarnBall already validated all 3 archs transitively.",
-      "refs": [
-        "https://github.com/jerry060599/KittenGpuLBVH/compare/main...jeffdaily:KittenGpuLBVH:moat-port"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-17T00:05:13Z"
-    },
-    {
-      "id": "diff-surfel-standalone-gfx90a-gfx1201",
-      "kind": "other",
-      "project": "EnvGS",
-      "component": null,
-      "summary": "Hold diff-surfel-rasterizations upstream PR until the standalone harness runs on gfx90a and gfx1201 (gfx1100 done: all 3 variants PASS -- finite img/grads, FD opacity slope 1.000, fit converges). Turnkey on each host: set PYTORCH_ROCM_ARCH=<gfx90a|gfx1201>, rebuild the 3 -wet variants (pip install -e), then python3 projects/EnvGS/validation/validate_diff_surfel_rocm.py ; expect PASS per variant (gfx90a ~95% loss drop / ~25-26dB). gfx1201 via Windows TheRock venv. Also still needs the pre-open squash to drop the 'Strategy-B' commit-message wording. Parent EnvGS already validated all 3 archs transitively.",
-      "refs": [
-        "projects/EnvGS/validation/validate_diff_surfel_rocm.py",
-        "https://github.com/xbillowy/diff-surfel-rasterizations/compare/main...jeffdaily:diff-surfel-rasterizations:moat-port"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-17T00:05:13Z"
-    },
-    {
-      "id": "hipcc-frontend-codegen-mcx",
-      "kind": "rocm-bug-report",
-      "project": "mcx",
-      "component": "rocm-compiler",
-      "summary": "hipcc (C++/HIP frontend) emits ~3.4x more dynamic instructions than the OpenCL-C frontend for the equivalent MCX photon kernel on the same gfx90a backend; root cause of mcx-vs-mcxcl 4.6x gap after the atomics fix. Reduced repro + ISA/counter evidence + porting playbook prepared.",
-      "refs": [
-        "findings/hipcc-frontend-codegen-mcx/README.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-17T15:23:27Z"
-    },
-    {
-      "id": "egg-deggs-warp-shim-collapse",
-      "kind": "other",
-      "project": "egg.c",
-      "component": null,
-      "summary": "Collapse the #if __HIP__ eggShflDownSync / #else __shfl_down_sync guards in d-eggs (adaptive_norm.cuh x2, layers.cuh x2). Blocked on extracting the portable warp shims out of the HIP-only d-eggs/include/utils/hip_compat.cuh (whole body is #if defined(__HIP__)) into a separate always-included header (d-eggs analogue of egg_warp_compat.cuh) so the shim exists on the nvcc path; then collapse + binary-equiv carry-forward like commits 1180017/f565358.",
-      "refs": [
-        "projects/egg.c/notes.md: PR-prep cleanup 2026-06-18 (cont.)"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-18T17:11:28Z"
-    },
-    {
-      "id": "zhilight-nvidia-fastpaths",
-      "kind": "feature-port",
-      "project": "ZhiLight",
-      "component": null,
-      "summary": "ZhiLight HIP port gated off the NVIDIA tensor-core / Hopper-only fast paths: Marlin/AWQ/FP8/GPTQ quant kernels (mma.sync, ldmatrix, cp.async, cvt.e4m3x2, prmt.b32, lop3, __vsub4), WMMA attention decode, int8-quantized-KV attention, deep_gemm FP8-block + flash_mla MLA H20 static libs (DeepSeek-V3 FP8-block + MLA), flash-attn prefill, and GPTQ/AWQ/Marlin/fp8 quantized MoE. These throw a clear error or fall back on HIP; reimplement-not-port for AMD (MFMA/WMMA, hipBLASLt FP8) to fully finish the port.",
-      "refs": [
-        "projects/ZhiLight/src commit f8974f5 body 'Deferred' section",
-        "PR https://github.com/zhihu/ZhiLight/pull/81"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-18T21:21:53Z"
-    },
-    {
-      "id": "zhilight-windows-bmengine-posix",
-      "kind": "feature-port",
-      "project": "ZhiLight",
-      "component": null,
-      "summary": "ZhiLight Windows ROCm build blocked: bundled bmengine host runtime uses Linux-only POSIX APIs (execinfo.h, sched.h, pthread.h, sys/syscall.h, sys/time.h) with no _WIN32 guards. GPU kernel TUs compile for gfx1101/gfx1201, but the host infra needs a Windows-compat layer. Resume to add Windows support to the port.",
-      "refs": [
-        "projects/ZhiLight/status.json windows-gfx1101 blocked_reason"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-18T21:21:53Z"
-    },
-    {
-      "id": "yarnball-pr-blocked-on-lbvh",
-      "kind": "other",
-      "project": "YarnBall",
-      "component": null,
-      "summary": "YarnBall draft PR is OPEN at jerry060599/YarnBall#5 but BLOCKED on jerry060599/KittenGpuLBVH#5 (LBVH HIP support, still open) -- it cannot merge until #5 lands. The moat-port .gitmodules points the KittenGpuLBVH submodule at AMD-Ecosystem/KittenGpuLBVH @ 33c0f78 (head of LBVH PR #5, fork-only) -- un-mergeable upstream; the PR body carries a blocked banner explaining this. Resolution (Jeff): after LBVH #5 merges, repoint YarnBall .gitmodules to the upstream jerry060599/KittenGpuLBVH URL (drop the branch line) at the merged SHA, set the gitlink to that SHA, re-validate YarnBall headless on gfx90a/gfx1100 + Windows (real re-run, submodule content changes), squash -> squash-carry-forward, then gh pr ready #5.",
-      "refs": [
-        "https://github.com/jerry060599/KittenGpuLBVH/pull/5",
-        "https://github.com/jerry060599/YarnBall/pull/5",
-        "projects/KittenGpuLBVH/notes.md",
-        "projects/YarnBall/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-19T04:25:35Z"
-    },
-    {
-      "id": "yarnball-gui-gl-interop-gfx1151",
-      "kind": "other",
-      "project": "YarnBall",
-      "component": null,
-      "summary": "Validate the interactive GUI GPU<->GL interop (806b534) on the physical (non-RDP) gfx1151 Windows host. gfx1201/RDP cannot test it (no AMD-GPU display context; interop swallows return codes). On the gfx1151 console: dispatch the validator manually on YarnBall (gfx1151 is OPTIONAL so orient won't auto-pick). PASS = GL_RENDERER is the AMD GPU + every hipGraphics* call returns hipSuccess + GPU-written verts confirmed in GL (readback/screenshot). Then mark windows-gfx1151 completed at 806b534 and lift the YarnBall on_hold.",
-      "refs": [
-        "projects/YarnBall/notes.md#GL-interop validation retracted"
-      ],
-      "status": "done",
-      "upstream_issue": null,
-      "created_at": "2026-06-19T06:11:54Z"
-    },
-    {
-      "id": "tigre-tex-probe-rdna",
-      "kind": "other",
-      "project": "TIGRE",
-      "component": "texture filtering",
-      "summary": "Run fp32 element-read linear-texture probe on gfx1100 (Linux) and gfx1201 (Windows): build+run projects/TIGRE/probe/tex_filter_probe.cpp, record verdict (REJECTED/LINEAR/POINT) in probe/README.md table. Baseline gfx90a=REJECTED. Lets us scope the TIGRE PR texture claim and PORTING_GUIDE arch-scope precisely.",
-      "refs": [
-        "projects/TIGRE/probe/README.md"
-      ],
-      "status": "done",
-      "upstream_issue": null,
-      "created_at": "2026-06-19T20:53:49Z"
+      "created_at": "2026-06-16T05:01:15Z",
+      "decided": null
     },
     {
       "id": "pytorch-hipify-cublas-math",
@@ -1055,48 +164,8 @@
       ],
       "status": "open",
       "upstream_issue": null,
-      "created_at": "2026-06-20T00:52:11Z"
-    },
-    {
-      "id": "marian-gfx1101-batched-gemm-spirv",
-      "kind": "feature-port",
-      "project": "marian-dev",
-      "component": null,
-      "summary": "marian-dev gfx1101 (Windows) e2e decoder fails: rocBLAS grouped-batched GEMM falls back to a generic SPIR-V (ISA000) kernel that Windows kpack_load_code_object can't load (hipErrorInvalidImage). Fix: add a _WIN32 && USE_HIP path in src/tensors/gpu/prod.cpp ProdBatchedTyped using hipblasGemmStridedBatchedEx (marian batched matrices are contiguous) or a sequential hipblasGemmEx loop -- ELF Tensile dispatch present for gfx1101. Optional platform; advancing head revalidates gfx90a/gfx1100/gfx1201.",
-      "refs": [
-        "projects/marian-dev/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-20T03:07:56Z"
-    },
-    {
-      "id": "rocthrust-transform-reduce-rdna4-hang",
-      "kind": "rocm-bug-report",
-      "project": "stdgpu",
-      "component": "rocThrust",
-      "summary": "rocThrust single-block thrust::transform_reduce hangs in its result-copy (hipMemcpyWithStream) path on RDNA4 (gfx1201) and the RDNA3.5 APU (gfx1151) when reducing over stdgpu's degenerate capacity-1 full collision-chain table in valid(); gfx90a/gfx1100 unaffected. Worked around in stdgpu PR #484 (transform_reduce_index_device in numeric_detail.h). NEEDS A STANDALONE REPRODUCER before filing upstream: prior attempts (t5 thrust::transform_reduce with bigfunc/lockseq variants, t6 raw-HIP reduction) all PASS; bug only triggers with the genuine unordered_base device object captured by value. RETRY ON THE gfx1201 WINDOWS HOST (RDNA4, RX 9070 XT) -- not reproducible on this gfx90a host. Next attempt: capture the real createDeviceObject(1) unordered_base in its exact post-2-fill state into a minimal reduce functor, stripping stdgpu/rocThrust scaffolding incrementally.",
-      "refs": [
-        "projects/stdgpu/notes.md (failure class B / valid()-reduce sections, 2026-06-08)",
-        "https://github.com/stotko/stdgpu/pull/484#issuecomment-4772283915"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-22T19:37:10Z"
-    },
-    {
-      "id": "anari-visionaray-nanovdb-hip",
-      "kind": "feature-port",
-      "project": "anari-visionaray",
-      "component": null,
-      "summary": "Port NanoVDB volume spatial field to HIP. Vendored external/nanovdb provides only a CUDA DeviceBuffer (util/cuda/CudaDeviceBuffer.h) and NanoVDBField.cpp is CUDA-only; upstream excludes VDB from HIP (message WARNING No VDB support with HIP). Resume: add a hip-backed nanovdb DeviceBuffer shim + a WITH_HIP arm in NanoVDBField.cpp, add NanoVDBField.hip to the _hip target, drop the warning. Non-VDB spatial fields (structured/unstructured/AMR) are ported in the main port.",
-      "refs": [
-        "projects/anari-visionaray/plan.md",
-        "https://github.com/szellmann/anari-visionaray"
-      ],
-      "status": "done",
-      "upstream_issue": null,
-      "created_at": "2026-06-23T14:24:42Z"
+      "created_at": "2026-06-20T00:52:11Z",
+      "decided": null
     },
     {
       "id": "gfx90a-pin-autodetect-audit",
@@ -1109,120 +178,8 @@
       ],
       "status": "open",
       "upstream_issue": null,
-      "created_at": "2026-06-23T19:18:11Z"
-    },
-    {
-      "id": "visionaray-hip-texture-linear-float-cdna",
-      "kind": "rocm-bug-report",
-      "project": "visionaray",
-      "component": "include/visionaray/texture/detail/hip_texture{1d,2d,3d}.inl",
-      "summary": "hipCreateTextureObject with filterMode=Linear + readMode=ElementType over float faults on gfx90a/CDNA2 at sample time (tex3D). CUDA hardware supports HW linear-float filtering; CDNA2 does not. Surfaces and nearest-filtered volumes render fine on gfx90a; only linear-filtered float textures (e.g. structuredRegular volume default filter=linear) fault. Fix in base visionaray: software-emulate linear filtering for float readMode=ElementType on devices lacking HW support (or document the limitation). Surfaced validating anari-visionaray structuredRegular volumes on MI250X.",
-      "refs": [
-        "https://github.com/AMD-Ecosystem/visionaray"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-24T00:56:08Z"
-    },
-    {
-      "id": "visionaray-device-vector-upstream-pr",
-      "kind": "other",
-      "project": "visionaray",
-      "component": null,
-      "summary": "visionaray hip::device_vector host-side container interface (reserve/push_back/emplace_back/clear, std::vector<T,A> ctor+conversion, capacity_) was added to the fork (moat-port 421da19b) to mirror cuda::device_vector, required by anari-visionaray's GPU BVH-builder path. visionaray gfx90a already landed upstream (1b0b5813) WITHOUT this, so it needs its own upstream follow-up PR to szellmann/visionaray. Until then, consumers (anari-visionaray reviewer/validator + any other host) must build against AMD-Ecosystem/visionaray @ moat-port, not upstream. advance-head flipped visionaray's non-gfx90a platforms to revalidate.",
-      "refs": [
-        "projects/visionaray/notes.md",
-        "https://github.com/AMD-Ecosystem/visionaray"
-      ],
-      "status": "done",
-      "upstream_issue": "https://github.com/szellmann/visionaray/pull/54",
-      "created_at": "2026-06-24T01:02:31Z"
-    },
-    {
-      "id": "cupoch-imageproc-libsgm",
-      "kind": "feature-port",
-      "project": "cupoch",
-      "component": null,
-      "summary": "cupoch imageproc (libSGM stereo) HIP port: imageproc wraps CUDA-only libSGM (warp-intrinsic kernels); skipped on HIP automatically; needs a libSGM->HIP port first",
-      "refs": [],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-24T08:08:12Z"
-    },
-    {
-      "id": "cupoch-scalable-tsdf",
-      "kind": "feature-port",
-      "project": "cupoch",
-      "component": null,
-      "summary": "cupoch ScalableTSDFVolume HIP redesign: device stdgpu::unordered_map stores 80KB VolumeUnit by value; emplace needs ~164KB stack frame past AMDGPU ~128KB scratch limit; needs upstream out-of-line voxel-block redesign; UniformTSDFVolume works",
-      "refs": [],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-24T08:08:12Z"
-    },
-    {
-      "id": "cusz-lc-framework-hip",
-      "kind": "feature-port",
-      "project": "cuSZ",
-      "component": null,
-      "summary": "Port the bundled LC-framework (third_party/lc, burtscher/LC-framework) device kernels to HIP so PSZ_ACTIVATE_LC can be enabled on the ROCm backend. LC's comp/decomp .cu use 32-bit-mask __shfl_*_sync/__ballot_sync/__any_sync and __trap not covered by cuSZ's c_cu2hip macros; needs LC-side HIP support. Scoped OFF by default on HIP; core Lorenzo/spline+Huffman/HFR+FZG pipeline unaffected.",
-      "refs": [
-        "projects/cuSZ/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-25T06:13:38Z"
-    },
-    {
-      "id": "cusz-rtm-test-dataset",
-      "kind": "other",
-      "project": "cuSZ",
-      "component": null,
-      "summary": "cuSZ ctest cusz__rtm_0480 (spl-y24/y25 predictor, RTM 235x449x449 0480.f32) skips: RTM seismic dataset is not on SDRBench public listing or the in-repo download script (paper-private, FZ-GPU/cuSZ-i). HURR+NYX acquired and passing 9/9. If RTM surfaces, drop at $CUSZ_TEST_DATA/RTM/0480.f32 (181 MiB f32) to unlock 3 tests.",
-      "refs": [],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-25T06:52:13Z"
-    },
-    {
-      "id": "cusz-hip-profiler-support",
-      "kind": "feature-port",
-      "project": "cuSZ",
-      "component": null,
-      "summary": "On the HIP backend the CUDA::cupti '--timer cupti' profiling path in the bin_hf/bin_phf benchmark tools (example/src/bin_phf.cc, linked CUDA::cupti in example/cmake/cuda-example.cmake) is dropped; only '--timer event' (HIP-event wall timing) works on ROCm. Explore a CUPTI-equivalent kernel/activity profiling timer via rocprofiler-sdk / roctracer (ROCm profiling API) for the HIP build. Benchmark tooling only; core compress/decompress unaffected.",
-      "refs": [
-        "projects/cuSZ/notes.md",
-        "example/src/bin_phf.cc"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-25T21:02:13Z"
-    },
-    {
-      "id": "rocthrust-host-mixed-compiler",
-      "kind": "other",
-      "project": "stdgpu",
-      "component": "rocThrust",
-      "summary": "rocThrust unconditionally includes device-compiler builtins (e.g. __builtin_amdgcn_wavefrontsize) in headers reachable from host-side thrust use, so host-only thrust algorithms (thrust::host) cannot compile with a plain CXX compiler as CCCL thrust allows; forces stdgpu HIP-backend consumers to compile affected TUs with the HIP compiler. stotko asked (stdgpu#484 thread) that this limitation be raised with the rocThrust team.",
-      "refs": [
-        "https://github.com/stotko/stdgpu/pull/484"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-07-02T18:40:55Z"
-    },
-    {
-      "id": "envgs-submodules-personal-account",
-      "kind": "other",
-      "project": "EnvGS",
-      "component": "fork hygiene",
-      "summary": "Resolved 2026-08-06. Both submodules are in AMD-Ecosystem and both are cleared to contribute -- diff-surfel-tracing is MIT, and diff-surfel-rasterizations is cleared on the same basis as the other unlicensed projects. What still holds EnvGS is its own Inria-derived core, which is a question about EnvGS rather than about its submodules.",
-      "refs": [
-        "https://github.com/AMD-Ecosystem/EnvGS/blob/moat-port/.gitmodules"
-      ],
-      "status": "resolved",
-      "upstream_issue": null,
-      "created_at": "2026-08-06T06:51:22Z"
+      "created_at": "2026-06-23T19:18:11Z",
+      "decided": null
     },
     {
       "id": "unrecorded-dependency-ports",
@@ -1233,22 +190,10 @@
       "refs": [
         "https://github.com/AMD-Ecosystem/diff-surfel-rasterizations/tree/moat-port"
       ],
-      "status": "resolved",
+      "status": "done",
       "upstream_issue": null,
-      "created_at": "2026-08-06T06:52:58Z"
-    },
-    {
-      "id": "therock-windows-lld-link-crt-xcu",
-      "kind": "rocm-bug-report",
-      "project": "LichtFeld-Studio",
-      "component": "TheRock",
-      "summary": "TheRock's PyTorch Windows build links torch_hip.dll with lld-link, which emits no .CRT$XCU section, so _DllMainCRTStartup's CRT init pointer is NULL and _initterm never runs. REGISTER_CUDA_HOOKS static initializers therefore never execute, CUDAHooksRegistry in torch_cpu.dll stays empty, getCUDAHooks() returns a no-op stub, and torch::cuda::is_available() returns false in any standalone C++ executable -- while the GPU is fully functional (the Python ctypes path reports devices correctly). Any C++ test harness gating on is_available() then fails wholesale against a working port: LichtFeld-Studio loses 564 of 914 tests this way while 320 pass on real gfx1101. Traced on Windows 11, torch 2.9.1+rocm7.14.0a20260604: CRT init ptr at RVA 0x399e8f0 = NULL; TLS callbacks at RVA 0x0288aa90 and 0x0288ab40 fire only on DLL_THREAD_ATTACH/DETACH, and DLL_PROCESS_ATTACH calls DisableThreadLibraryCalls. Untried workarounds: /WHOLEARCHIVE or a forced reference into the hooks TU, calling _initterm on the DLL CRT section directly, or spawning a thread after load to fire the TLS callbacks. Not reported upstream to TheRock yet.",
-      "refs": [
-        "projects/LichtFeld-Studio/notes.md"
-      ],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-08-07T23:07:19Z"
+      "created_at": "2026-08-06T06:52:58Z",
+      "decided": null
     }
   ]
 }
