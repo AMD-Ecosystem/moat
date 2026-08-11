@@ -31,3 +31,4 @@
 {"kind":"phase","ts":"2026-08-09T15:55:22Z","phase":"test","seconds":76.060,"exit":0,"cmd":"ctest --test-dir projects/3DUNDERWORLD-SLS-GPU_CPU/src/build_hip --output-on-failure"}
 {"kind": "tokens", "ts": "2026-08-09T21:40:34Z", "tokens": 110566, "source": "porter"}
 {"kind":"session","ts":"2026-08-11T19:55:19Z","epoch":1786478119.657244850,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-11T20:04:46Z","epoch":1786478686.740260582,"event":"end","platform":"linux-gfx942"}
