@@ -918,3 +918,112 @@ diff <(git -C thirdparty/GPU-NTT diff) thirdparty/patches/GPU-NTT.patch
 
 `git apply` resolves a relative patch path against the `-C` directory, so pass an
 absolute one.
+
+## Review 2026-08-11 (round 2)
+
+Second review of `moat-port`, focused on the delta `39d678d..4b0d53d` but re-checking
+what it touches. Verdict: **changes-requested**, on two findings, both about the same
+piece of the examples' OpenMP handling: the CMake is subtly wrong, and the lesson
+promoted from it states three mechanisms that do not survive a test. Everything else
+from the 2026-08-11 review is properly addressed. Problems only.
+
+Verified this round and NOT re-raised. The corrected Barrett-shift text is right across
+the whole reachable count range: 0 and 1..63 unchanged, exactly 64 already correct under
+the PTX clamp (`value.x >> 64` is 0 and `value.y << 0` is `value.y`, which is what the
+new `shift < 64`/`shift < 128` split computes), 65 and above previously zero under the
+clamp and now `value.y >> (shift - 64)`; `mult`/`reduce` shift by `modulus.bit + 3`
+(`modular_arith.cuh:384-386,414-416`) and the class documents 62 bits as the Data64 limit
+(`:178-179`), so 65 is reachable and the CUDA-side claim is correct. A count of 128 or
+more falls through to the default-constructed `uint128_t`, whose constructor zeroes both
+limbs (`:188-192`), which matches what the clamp used to return. The `fault-classes.md`
+entry now scopes the equivalence to 0..64 and no longer contradicts itself. The rmm stub
+constructor matches `DeviceVector`'s forwarding call
+(`devicevector.cuh:31-36` passes base-converted `other`, `cudaStream_t`,
+`rmm::mr::device_memory_resource*`), is unambiguous against the deleted copy constructor
+because the stream has no default, and initializes in declaration order. `kWarpSize`,
+`FULL_WARP_MASK`, `HIP_RUNTIME_LIB` and `HIP_INCLUDE_DIRS` have no remaining reference
+anywhere in the tree including the submodule checkouts, and `small_ntt.cu` was an empty
+translation unit whose device functions are unconditionally `__device__ inline` templates
+in `small_ntt.cuh:14,82` (only `bootstrapping.cuh:12` and `keygeneration.cuh:14` include
+it), so dropping it from `HEONGPU_KERNEL_SOURCES` is right on both back ends. The `& 31`
+correction is itself correct: `aes.cu:180-186` writes the same `t0G[threadIdx.x]` into
+all 32 columns of `t0S`, and every one of the 28 uses of `warpThreadIndex`
+(`aes.cu:236-330`) is the second (bank) subscript, never a lane. Benchmarks include
+`<omp.h>` but reference no OpenMP symbol, and only `9_multi_stream_usage_way1.cpp` uses
+one, so the benchmark branch omitting OpenMP is right. All three submodule patches still
+regenerate byte for byte from their checkouts against the pinned upstream SHAs
+(`8a4daf1`, `b743607`, `d9aaa6b`), so the reverse-apply idempotence holds. Both new
+deferrals state their defect accurately and neither closes something this port should
+have fixed. `jargon.py --port HEonGPU` is clean over the whole branch; commit titles,
+trailers, ASCII and the absence of added copyright lines are clean; the CUDA branches of
+all four CMakeLists are byte-identical to their pre-delta form.
+
+### 1. Every example binary links two OpenMP runtimes
+
+`example/basic/CMakeLists.txt:32`, `example/bootstrapping/CMakeLists.txt:22` and
+`example/mpc/CMakeLists.txt:21` keep `OpenMP::OpenMP_CXX` on the HIP branch while lines
+37-38 (and 27-28, 26-27) also put `${OpenMP_CXX_FLAGS}` on the HIP compile and link
+lines. On a GNU C++ toolchain that imported target contributes nothing else to a HIP
+target: `FindOpenMP.cmake:676-692` (checked in both CMake 3.28 and the 4.0 actually used
+here) guards `INTERFACE_COMPILE_OPTIONS` with `$<COMPILE_LANGUAGE:CXX>`, sets
+`INTERFACE_LINK_OPTIONS` only for Fujitsu and IntelLLVM, and sets
+`INTERFACE_LINK_LIBRARIES` to `OpenMP_CXX_LIBRARIES` unguarded -- that is, to GCC's
+`libgomp`. The generated link line ends with
+`/usr/lib/gcc/x86_64-linux-gnu/13/libgomp.so` while the objects, compiled by clang with
+`-fopenmp`, need LLVM's `__kmpc_*`, so `readelf -d` on
+`build/bin/examples/basic/9_multi_stream_usage_way1` shows both `libgomp.so.1` and
+`libomp.so` in DT_NEEDED.
+
+It works here only by accident of loader search order: DT_RUNPATH lists
+`/opt/rocm-7.2.1/lib/llvm/lib`, where `libgomp.so.1` is a symlink to `libomp.so`, so both
+names land on one runtime. Put GNU's `libgomp` earlier and both load -- `ldd` under
+`LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu` reports `libgomp.so.1 => /usr/lib/...` and
+`libomp.so => /opt/rocm-7.2.1/...` together. The consequence, reproduced with a minimal
+HIP+OpenMP binary linked exactly the same way, is that `libomp` forks the team while
+`omp_get_thread_num` resolves out of `libgomp`: "thread ids: 0 1 2 3" normally, "thread
+ids: 0 0 0 0" with `LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libgomp.so.1`. In
+`9_multi_stream_usage_way1` every worker would then take `s[0]` and the multi-stream
+example silently stops being multi-stream.
+
+Drop `OpenMP::OpenMP_CXX` from the three `if(USE_HIP)` branches; the explicit flags on
+`$<COMPILE_LANGUAGE:HIP>` and `$<LINK_LANGUAGE:HIP>` already give clang its own runtime,
+`libheongpu.a` references no OpenMP symbol at all (checked with `nm` over the archive),
+and the CUDA branch, where `libgomp` is the correct runtime for an nvcc/g++ build, is
+untouched. Write the flags the way `FindOpenMP` itself does,
+`$<$<COMPILE_LANGUAGE:HIP>:SHELL:${OpenMP_CXX_FLAGS}>`, so a compiler whose OpenMP flag
+is more than one token is not passed as a single argument.
+
+### 2. The promoted CMake lesson gets the mechanism wrong three times, and the truth is worse
+
+`.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md`, the "Two things bite when a
+target that was plain C++ becomes a HIP target" paragraph. Merging this branch publishes
+it to every port, and each of its three factual claims fails a direct test.
+
+"`OpenMP::OpenMP_CXX` ... [guards] its link options with `$<LINK_LANGUAGE:CXX>`" -- it
+sets no link options at all on a GNU or Clang toolchain (`FindOpenMP.cmake:679-683`
+restricts that to Fujitsu and IntelLLVM). What it actually contributes is the CXX
+compiler's OpenMP library, unguarded, which is finding 1 above and the thing the entry
+should be warning about.
+
+"compiles the `#pragma omp` away silently and then fails to link with undefined
+`__kmpc_*`" -- those two cannot both happen. Compiled without `-fopenmp` there are no
+`__kmpc_*` references to be undefined; verified by compiling a HIP source with
+`clang++ -x hip` and no OpenMP flag, linking it against `libgomp`, and getting a clean
+link that prints "thread ids: 0 0 0 0". The undefined `__kmpc_*` link error belongs to
+the intermediate state where the compile flag was added and the link flag was not. State
+it correctly, because the default symptom is worse than a link error: a port that forgets
+this ships examples whose parallel regions were silently compiled away, and a porter who
+was told to watch for a link failure will not find one.
+
+"drop any `LINKER_LANGUAGE CXX` ... or the HIP device objects never reach the link" --
+not the mechanism. A non-RDC HIP object carries its own device image, and a plain `g++`
+link of one produces a working binary: `clang++ -x hip --offload-arch=gfx90a -fPIE -c`
+then `g++ k.o -lamdhip64` runs the kernel and returns the right values. The real reason
+`LINKER_LANGUAGE CXX` had to go is narrower and worth naming: under a CXX link
+`$<LINK_LANGUAGE:HIP>` is false, so the OpenMP link flag never applies, and `g++` plus
+GNU `libgomp` cannot resolve the `__kmpc_*` the HIP-compiled object needs.
+
+Correct all three in the skill entry. The same "otherwise the OpenMP example fails to
+link" account is in the attempt-6 notes above and in `0da0c07`'s body; fix the notes in
+place, and when the finding-1 change lands, let its commit body carry the accurate
+version rather than amending the earlier commit.
