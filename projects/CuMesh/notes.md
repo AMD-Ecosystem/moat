@@ -1414,6 +1414,23 @@ validation also covers documentation, jargon, and integrity. `retry-validation` 
 the historical `failed_sha` while retiring the active failure state; the selector now
 derives `port-ready` and requires a fresh validator run at unchanged fork head `392b4dd`.
 
+## Upstream draft-readiness audit 2026-08-11
+
+Live GitHub state confirms upstream PR #36 is open and still marked draft at fork head
+`392b4dd`. There are no comments, reviews, review requests, or project opt-outs. cubvh PR
+#33 merged as `757b913`, and the CuMesh gitlink and `.gitmodules` already point to that
+exact commit in `ashawkey/cubvh` on `main`; the dependency callout in the PR body is stale.
+
+Fresh linux-gfx942 validation at the current head satisfies `wave64`. The required
+`wave32` and `windows` gates remain unsatisfied: the linux-gfx1100 and Windows passes are
+pinned to `d5c1355`, while `d5c1355..392b4dd` is a mixed delta containing the later
+`setup.py` visibility-flag split as well as documentation and comments. Those passes
+cannot be treated as current or carried as documentation-only evidence. The selectors
+dispatch a validator for CuMesh on `windows-gfx1101` or `windows-gfx1201`; one successful
+current Windows wave32 run would satisfy both remaining gates. The upstream PR title,
+body, and draft state were not changed pending that evidence and approval of the exact
+final wording.
+
 ## Validation 2026-08-11 (linux-gfx942, retry at 392b4dd)
 
 **Verdict**: completed. A fresh ROCm build and all 6/6 project examples pass on a real
