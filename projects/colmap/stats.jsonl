@@ -70,3 +70,5 @@
 {"kind":"phase","ts":"2026-08-11T19:04:21Z","phase":"compile","seconds":0.594,"exit":1,"cmd":"cmake --build . -j6"}
 {"kind":"session","ts":"2026-08-11T19:19:22Z","epoch":1786475962.358852800,"event":"start","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-08-11T19:46:23Z","epoch":1786477583.739885200,"event":"end","platform":"windows-gfx1151"}
+{"kind": "tokens", "ts": "2026-08-11T21:51:55Z", "tokens": 122305, "source": "validator"}
+{"kind": "tokens", "ts": "2026-08-11T21:51:57Z", "tokens": 77738, "source": "validator"}
