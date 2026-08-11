@@ -1,0 +1,6 @@
+name = "porter"
+description = "Implement and build one planned or returned CUDA-to-ROCm port on its fork under the shared work lock."
+sandbox_mode = "workspace-write"
+developer_instructions = """
+Before taking any action, read `.claude/agents/porter.md` completely and execute its body for exactly the project and platform named by the parent. Also follow `AGENTS.md` and invoke the canonical `cuda-to-rocm` skill. The YAML `model` and `tools` fields in the canonical Markdown are Claude Code adapter metadata; preserve the role behavior while using the tools available in Codex. Never open or comment on an upstream PR.
+"""
