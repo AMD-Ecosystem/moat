@@ -7,7 +7,7 @@
   "priority": 4.281,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T03:40:15Z",
-  "updated_at": "2026-08-07T07:05:29Z",
+  "updated_at": "2026-08-11T22:35:33Z",
   "head_sha": null,
   "porting": null,
   "waivers": {},
@@ -16,6 +16,38 @@
     "rmagine"
   ],
   "upstream_repo_id": 553482246,
-  "stage": "unclaimed",
-  "platforms": {}
+  "stage": "screened",
+  "platforms": {
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-11T22:35:33Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none -- no AMD/ROCm port in any of 27 upstream forks, ROCm org, or upstream docs; AMD-Ecosystem/rmcl is our own unmodified mirror (no moat-port branch)",
+    "viable": true,
+    "summary": "ROS 2 mesh-localization stack (BSD-3, 254 stars, active); dependency rmagine already ported+validated by us, but every rmcl GPU path is gated behind OptiX -- decides on appetite for an rmcl-layer HIPRT backend plus a from-scratch test harness, since upstream ships zero tests",
+    "at": "2026-08-11T22:35:29Z"
+  }
 }
