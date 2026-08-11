@@ -7,7 +7,7 @@
   "priority": 6.146,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T00:04:57Z",
-  "updated_at": "2026-08-09T21:39:21Z",
+  "updated_at": "2026-08-11T20:58:59Z",
   "head_sha": "a70f74f6d653955832909c434e77abfb6e207048",
   "pr_url": "https://github.com/arrayfire/arrayfire/pull/3708",
   "pr_number": 3708,
@@ -141,6 +141,30 @@
         "detail": "src/backend/hip/cublas.hpp: comment-only (comments/format only); src/backend/hip/cusparse.hpp: comment-only (comments/format only); src/backend/hip/cusparse_descriptor_helpers.hpp: comment-only (comme",
         "at": "2026-08-09T21:39:21Z"
       }
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": "a70f74f6d653955832909c434e77abfb6e207048",
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-11T20:58:59Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "validation-failed",
+      "last_agent": "validator"
     }
   }
 }

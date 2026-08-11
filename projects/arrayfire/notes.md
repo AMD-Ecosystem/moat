@@ -1794,3 +1794,104 @@ text, so a comment-only delta is exactly the fix. Expect linux-gfx90a to stay `v
 at the new head and to need a person to hand it back to a validator (or to accept it, since the
 GPU evidence at 6800d5586 stands and this delta provably cannot disturb it). Flagging rather than
 working around it; an agent should not rewrite its own failure record.
+
+## Validation 2026-08-11 (validator, linux-gfx942, first attempt) -- RESULT: validation-failed (build)
+
+GPU: 8x AMD Instinct MI300X (gfx942, CDNA3, wave64), `rocm-smi --showproductname` confirmed 8
+devices node-0..7, no `HIP_VISIBLE_DEVICES` pin needed for a compile-only failure. Host: no
+`/opt/rocm`; ROCm 7.14 SDK-wheel layout, `ROCM_PATH=/opt/conda/envs/py_3.12/lib/python3.12/
+site-packages/_rocm_sdk_devel`, `hipconfig --version` -> 7.14.60850-0000000. Fresh clone of
+`AMD-Ecosystem/arrayfire` @ `moat-port` into `projects/arrayfire/src`; `git log -1` confirmed
+`a70f74f6d653955832909c434e77abfb6e207048` (the recorded `head_sha`), tree clean before and
+after (`git status --porcelain` empty; no submodules).
+
+### Host package gaps closed first (environment, not port defects)
+This is the first arrayfire validation on an SDK-wheel host with no system BLAS/LAPACK
+preinstalled. `sudo apt-get install -y libfftw3-dev libboost-all-dev libopenblas-dev
+liblapacke-dev` (all via the working sudo on this host). NOTE for the next validator on a
+fresh SDK-wheel host: do NOT `apt-get install libatlas-base-dev` for CBLAS -- it conflicts
+with `liblapacke-dev` (`update-alternatives` fight over `libblas.so`/`liblapack.so`, apt
+silently REMOVES atlas the moment lapacke is installed after it) and left a stale
+`CMakeCache.txt` pointing at a `libatlas.so`/`libcblas.so` that no longer existed (`ninja:
+error: '/usr/lib/x86_64-linux-gnu/libcblas.so' ... missing and no known rule to make it`).
+`libopenblas-dev` + `liblapacke-dev` install cleanly together (openblas is both the BLAS/LAPACK
+alternative AND satisfies `FindCBLAS.cmake`'s generic `"blas"`+`cblas.h` combo) and CMake found
+CBLAS/LAPACK/LAPACKE all from the same `libopenblas.so` provider with no cache pollution.
+Delete `build-hip-gfx942/CMakeCache.txt` (or the whole build dir) after any BLAS-provider swap
+-- CMake's `find_library` results are cached and do not get re-verified for existence.
+
+### Configure + build
+```
+cmake -S projects/arrayfire/src -B projects/arrayfire/src/build-hip-gfx942 \
+  -GNinja -DCMAKE_BUILD_TYPE=Release \
+  -DAF_BUILD_HIP=ON -DAF_BUILD_CUDA=OFF \
+  -DAF_BUILD_CPU=ON -DAF_BUILD_OPENCL=OFF -DAF_BUILD_ONEAPI=OFF \
+  -DAF_BUILD_UNIFIED=ON -DAF_BUILD_EXAMPLES=OFF -DAF_BUILD_FORGE=OFF \
+  -DAF_WITH_CUDNN=OFF -DAF_WITH_IMAGEIO=OFF -DAF_BUILD_DOCS=OFF \
+  -DAF_BUILD_TESTS=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_PREFIX_PATH=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel \
+  -DCMAKE_HIP_COMPILER=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++
+cmake --build projects/arrayfire/src/build-hip-gfx942 -j 32
+```
+Both wrapped in `utils/timeit.sh arrayfire compile`. Configure: clean, exit 0.
+Build: **FAILS**, exit 1, `ninja: build stopped: subcommand failed.` Not a flake -- reproduced
+identically on a second isolated `ninja -k0` invocation targeting exactly the failing files.
+
+### Root cause: gfx94x+ (CDNA3) disables the HIP image/texture object API at COMPILE TIME
+`/opt/.../_rocm_sdk_devel/include/hip/amd_detail/amd_device_functions.h`:
+```
+#if !defined(__HIP_NO_IMAGE_SUPPORT) && defined(__gfx94plus_clr__)
+  #define __HIP_NO_IMAGE_SUPPORT   1
+#endif
+```
+With `__HIP_NO_IMAGE_SUPPORT` set, every `tex1Dfetch<T>` overload in
+`hip/amd_detail/texture_indirect_functions.h` is `__attribute__((unavailable(...)))`, so any
+call is a HARD COMPILE ERROR, not a runtime fallback. This is gfx942-specific: gfx90a and
+gfx1100 do not define `__gfx94plus_clr__`, so their builds of the identical source compiled
+clean (matches the prior gfx90a/gfx1100 validations, which never saw this). This is a genuine
+CDNA3 hardware/toolchain capability gap (compute-focused CDNA3 dropped the fixed-function
+texture-sampler path), not a flag arrayfire is missing -- `-DCMAKE_HIP_ARCHITECTURES=gfx942`
+was correctly pinned (not `native`-autodetect-to-ancient-arch; the offload-arch string in the
+failing command line reads `--offload-arch=gfx942` exactly).
+
+Exactly 3 of the HIP backend's `.cu` translation units call `tex1Dfetch`/build a
+`cudaTextureObject_t` (grepped `tex1Dfetch\|cudaTextureObject_t\|hipTextureObject_t` across
+`src/backend/hip`): `fast.cu` (via `kernel/fast.hpp` + `LookupTable1D.hpp`), `orb.cu` (via
+`kernel/orb.hpp` + `LookupTable1D.hpp`), `regions.cu` (via `kernel/regions.hpp`, its own
+texture, not through `LookupTable1D`). `harris.cu` and `nearest_neighbour.cu` (the two other CV
+files) do NOT touch texture objects and compiled clean. `LookupTable1D.hpp` is used by nothing
+else in the backend (not the interp/approx paths risk-listed in plan.md item 6 -- those never
+got that far). Confirmed with a full-error isolation build (`ninja -k0` on the 5 CV `.cu`
+targets):
+```
+kernel/fast.hpp:114:17: error: 'tex1Dfetch<unsigned char, nullptr>' is unavailable: The image/texture API not supported on the device
+kernel/orb.hpp:216:12: error: 'tex1Dfetch<int, nullptr>' is unavailable: The image/texture API not supported on the device
+kernel/regions.hpp:40:12: error: 'tex1Dfetch<T, nullptr>' is unavailable ... (T = float, int, unsigned int, short, unsigned short -- 5 instantiations)
+```
+All three are `LookupTable1D`/point-sample use only (small fixed-size 16-64-entry corner-test
+LUTs in fast/orb; a per-pixel scalar relabel table in regions) -- none needs hardware texture
+filtering/interpolation, so a plain indexed global-memory read is a semantically-identical,
+portable fix (works on every arch, not gfx942-conditional code). This is a real, describable
+fix for the porter, not a toolchain limitation to file upstream against ROCm and not a waiver
+candidate (ROCm is behaving correctly per CDNA3's hardware capability; the port code is what
+needs to stop assuming texture hardware exists).
+
+### Not reached
+No GPU test run (the build never produced `libafcuda.so`). CUDA no-regression gate: not
+attempted this round (no `cuda-12.8` conda env on this host; given the primary gate already
+failed on a real, unrelated-to-CUDA source defect and the ~60 min attempt budget, building the
+toolkit env was not a good use of remaining time -- pick it up on the next validation pass here
+once the porter's fix lands, since `src/backend/cuda` is untouched by this port and by any
+plausible fix to this defect).
+
+### Action
+`python3 utils/moatlib.py set-state arrayfire linux-gfx942 validation-failed --agent validator`.
+`failed_sha` = `a70f74f6d653955832909c434e77abfb6e207048`. For the porter: gate the `LookupTable1D`
+texture-object machinery and the 3 call sites above out of the HIP backend, replacing the
+`tex1Dfetch<T>(tex, n)` point-lookups with plain `const T*` indexed reads (drop the
+`hipTextureObject_t` create/destroy in `LookupTable1D.hpp` and the `luTable`/`tex` parameters
+correspondingly, or keep the class shape and just back it with a plain device pointer). Verify
+on gfx90a too after the change (must stay GPU-green there; the fix is unconditional, not
+`#ifdef __gfx94plus_clr__`-gated, so it also removes dead texture-cache-locality code on
+gfx90a/RDNA -- acceptable, LUTs here are tiny).
