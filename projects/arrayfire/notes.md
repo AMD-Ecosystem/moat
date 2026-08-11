@@ -2126,3 +2126,60 @@ ninja -C projects/arrayfire/src/build-hip-gfx942 \
 No relink and no ctest re-run: the object code is unchanged by construction, and the 6/6 feature
 test run recorded for `4ec30a7cd` still applies. `jargon.py --port arrayfire` still reports only
 the one known, maintainer-accepted `MOAT` in `6800d5586`'s body; `prose.py` clean on the body.
+
+## Review 2026-08-11 (reviewer, /pr-review, delta 4ec30a7cd..950dcdd02) -- VERDICT: APPROVE
+
+Re-review of the comment-and-text round answering the CHANGES REQUESTED entry above, plus the
+control-plane skill commit `8fff87a`. All four findings are resolved; nothing new blocks. Two
+non-blocking record defects are logged below so they are not rediscovered.
+
+### Findings 1-4: resolved (re-verified, not taken on the porter's word)
+
+- 1 (size claim). `git diff 4ec30a7cd..950dcdd02 --stat` is `LookupTable1D.hpp | 13 +++----`,
+  every line inside the comment block, nothing else rides along;
+  `src/backend/hip/LookupTable1D.hpp:17-23` now leads with the access pattern ("only ever point
+  sampled: no filtering, no normalized coordinates and no address modes") and says explicitly
+  that size is not the reason. No size claim remains. Counted independently again: `FAST_LUT`
+  (`kernel/fast_lut.hpp:12`) parses to exactly 65536 `unsigned char`, and
+  `kernel/orb_patch.hpp:18-25` gives `REF_PAT_SAMPLES(256) * REF_PAT_COORDS(4)` = 1024 `int`, so
+  the counts in the new body are right. The "only ever point sampled" premise still holds at head:
+  `grep -rl LookupTable1D src/backend/hip` is exactly `fast.cu`, `orb.cu`, `kernel/fast.hpp`,
+  `kernel/orb.hpp` -- the same two TUs the porter rebuilt, no third includer.
+- 2 (public correction without a rewrite). `4ec30a7cd` is intact on `origin/moat-port` as the
+  parent of `950dcdd02`, and `gh pr view 3708` reports `headRefOid` = `950dcdd02` / state OPEN, so
+  the branch corrected itself forward with no history rewrite. `950dcdd02`'s body quotes both
+  wrong phrases, gives the real counts with their files, and explains why size was never the
+  criterion.
+- 3 (skill entry). `8fff87a` rewords `fault-classes.md:202-212` so the qualifying criterion is the
+  access pattern and names arrayfire's 64 KiB FAST LUT as the counterexample to reading "LUT" as
+  "small"; the entry's own "removes dead code on the arches where textures do work" is replaced by
+  a throughput question with the advice to time the tests. That is the fix that was asked for.
+- 4 (unmeasured perf claim). Withdrawn in the source comment (the "would buy nothing on the
+  devices where it does" clause is gone) and withdrawn in words in `950dcdd02`'s body. The
+  measurement is correctly deferred rather than faked: gfx942 has no "before" binary because
+  `a70f74f6d` is the commit that fails to compile there, and the action is recorded above for the
+  gfx90a/gfx1100 revalidation. Accepted as deferred, not as done -- a regression there is still a
+  real defect on an already-validated platform.
+
+Delta hygiene: title `[ROCm] Correct the lookup table comment in the HIP backend` (58 chars), AI
+assistance disclosed, Test Plan with literal commands, ASCII only, no `Co-Authored-By`, no
+in-house vocabulary added (`jargon.py` still reports only the known `6800d5586` body hit),
+`prose.py` clean on the body. Comment-only delta, so no fault class is reachable: no warp-size
+assumption, no resource handle, no OOB read, no pitch, no library swap in the diff. Both trees
+clean (`git -C projects/arrayfire/src status --porcelain` empty, local `moat-port` == origin).
+
+### Record defects, non-blocking (do NOT spend another public commit on the first one)
+
+- Both commit bodies' Test Plan configure line passes `-DAF_BUILD_TESTS=ON`, which this project
+  does not define. The real knob is `BUILD_TESTING` (root `CMakeLists.txt:687-694`, defaulted ON
+  by `include(CTest)`); `build-hip-gfx942/CMakeCache.txt` records `AF_BUILD_TESTS:UNINITIALIZED=ON`
+  next to `BUILD_TESTING:BOOL=ON`, i.e. the flag did nothing and the tests were built by the
+  default. The command is therefore still reproducible as written, but an upstream reader running
+  it gets a "Manually-specified variables were not used by this project" warning. Both bodies are
+  already public on PR #3708 and a rewrite is a person's call, so leave them; use `BUILD_TESTING`
+  in any future Test Plan on this project.
+- `projects/arrayfire/deferred.json` still carries `arrayfire-sparse-hipsparse`
+  ("Sparse (hipSPARSE generic-API) port deferred/stubbed off") with `status: open`, but sparse has
+  been implemented on hipSPARSE since the 2026-05-31 porter session and validated 132/132; the
+  matching stale source comment was already fixed in PR-prep on 2026-06-08. The entry should be
+  resolved before checkup reads it as outstanding scope.
