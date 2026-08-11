@@ -132,14 +132,45 @@ header pulled in `cuda_runtime.h` and then rocThrust, and the benchmark targets 
 documents ON once and build it**, then run one binary from each group; that is minutes, and
 it is the only way the claim in your commit message is true.
 
-Two things bite when a target that was plain C++ becomes a HIP target. An imported target
-found for another language only decorates that language: `OpenMP::OpenMP_CXX` guards its
-flags with `$<COMPILE_LANGUAGE:CXX>` and its link options with `$<LINK_LANGUAGE:CXX>`, so a
-source switched to `LANGUAGE HIP` compiles the `#pragma omp` away silently and then fails to
-link with undefined `__kmpc_*` -- add `${OpenMP_CXX_FLAGS}` under
-`$<COMPILE_LANGUAGE:HIP>` AND `$<LINK_LANGUAGE:HIP>`. And drop any
-`LINKER_LANGUAGE CXX` you set on the target while it was C++, or the HIP device objects
-never reach the link.
+### OpenMP on a target you just switched to HIP: two runtimes, one binary
+
+An imported target found for another language only half applies to a HIP target, and both
+halves matter. `FindOpenMP.cmake` guards `OpenMP::OpenMP_CXX`'s `INTERFACE_COMPILE_OPTIONS`
+with `$<COMPILE_LANGUAGE:CXX>` (it sets `INTERFACE_LINK_OPTIONS` only for Fujitsu and
+IntelLLVM, so on GCC or Clang there are none), while `INTERFACE_LINK_LIBRARIES` -- the C++
+compiler's OpenMP runtime, `libgomp` under GCC -- is unguarded and reaches the link line of
+any target that links it. So on a source switched to `LANGUAGE HIP` the flag disappears and
+the GNU runtime does not.
+
+Compiled with no `-fopenmp`, the `#pragma omp` is ignored, the link against `libgomp` is
+clean, and the binary runs SERIALLY with `omp_get_thread_num` returning 0 -- no diagnostic
+at any stage. That is the default outcome and the one to watch for; the loud
+undefined-`__kmpc_*` link error belongs to the different, intermediate state where the
+compile got the flag and the link did not. Put `${OpenMP_CXX_FLAGS}` on both
+`$<COMPILE_LANGUAGE:HIP>` and `$<LINK_LANGUAGE:HIP>`, written the way `FindOpenMP` itself
+does it (`$<$<COMPILE_LANGUAGE:HIP>:SHELL:${OpenMP_CXX_FLAGS}>`), since the variable is a
+space-separated string and a compiler whose OpenMP flag is more than one token would
+otherwise arrive as a single argument.
+
+**Then remove `OpenMP::OpenMP_CXX` from that branch instead of keeping it as well.** With
+both, the binary carries two OpenMP runtimes: `readelf -d` shows `libgomp.so.1` and
+`libomp.so` together in DT_NEEDED. It can look fine, because ROCm ships
+`lib/llvm/lib/libgomp.so.1` as a symlink to its own `libomp.so`, so while DT_RUNPATH
+reaches ROCm first both names resolve to one runtime. Put GNU's `libgomp` ahead of it --
+any distro library path does -- and both load. The clang-compiled object's `__kmpc_*` calls
+can only come from LLVM's runtime, so it still forks a real team, but `omp_get_thread_num`,
+which both runtimes export, now answers from `libgomp`, which knows nothing about that
+team. Measured on HEonGPU with a minimal HIP+OpenMP binary linked the same way: four
+distinct OS thread ids, and `omp_get_thread_num` reporting `0 0 0 0`. Code that uses the
+thread id to pick a per-thread resource then has every thread pick element 0 (in HEonGPU's
+multi-stream example, one stream shared by the whole team) while still printing correct
+results.
+
+While you are there, drop any `LINKER_LANGUAGE CXX` left on the target from when it was
+C++. The reason is not that device code goes missing -- a non-RDC HIP object carries its
+own device image and `g++ obj.o -lamdhip64` links and runs it correctly -- but that
+`$<LINK_LANGUAGE:HIP>` is false under a CXX link, so the OpenMP link flag above silently
+never applies. (HEonGPU)
 
 ## Submodules pinned to commits that do not exist
 
