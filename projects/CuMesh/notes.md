@@ -995,3 +995,13 @@ build, wheel, cache and example-output files are ignored artifacts. Local fork H
 `python3 utils/jargon.py --port CuMesh` still reports only the two settled hits in frozen
 commit `d5c1355` (`moat-port` and `moat` on the same message line); the maintainer decision
 recorded in the review above explicitly leaves that published, validated history unchanged.
+
+## Review 2026-08-11 (linux-gfx942)
+
+**Reviewer**: MOAT reviewer agent (local-branch mode, `moat-port` vs `main`, base
+`12289e1062f0603f2f0d0771b02e1395d247f26f`)
+
+**Verdict**: Approve
+
+No actionable findings at fork HEAD `89e63244d859861fee80901f144fa8b004c6dabe`
+or in the accompanying Strategy B and validation guidance.
