@@ -1401,3 +1401,15 @@ runtime substitutions, and the CUDA/hipcc visibility-flag split remains backend-
 The invalid control-plane command in `392b4dd`'s Test Plan is excluded from this verdict
 by the recorded human decision above. The prepared replacement `49b1d3b` remains local
 only: no fetched `origin/*` ref contains it, and `origin/moat-port` remains at `392b4dd`.
+
+## Validation retry state correction 2026-08-11
+
+The linux-gfx942 failure originated at `89e6324` from the missing ROCm build
+documentation. The documentation-only fixes at `79f089f` and `392b4dd` corrected that
+gate, but the prior `advance_head` rule carried the failure forward because it considered
+only compiled behavior. That left the reviewed current head routed back to the porter.
+
+The control-plane rule now keeps every failure pinned to the commit it judged because
+validation also covers documentation, jargon, and integrity. `retry-validation` retained
+the historical `failed_sha` while retiring the active failure state; the selector now
+derives `port-ready` and requires a fresh validator run at unchanged fork head `392b4dd`.
