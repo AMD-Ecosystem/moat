@@ -109,7 +109,10 @@ All GPU operations (mesh simplification, hole filling, remeshing, BVH constructi
 
 ### IS_HIP detection on Windows
 
-`torch.utils.cpp_extension` sets `IS_HIP_EXTENSION` based on whether `ROCM_HOME` is set in the environment. On Windows, always set `ROCM_HOME` to the TheRock SDK devel directory:
+`torch.utils.cpp_extension` sets `IS_HIP_EXTENSION` only when it finds a ROCm home and
+`torch.version.hip` is non-null. `ROCM_HOME` is therefore necessary for this TheRock
+Windows environment, but it is not by itself the backend selector. Set it to the TheRock
+SDK devel directory when building with the ROCm torch:
 
 ```bat
 set ROCM_HOME=B:\develop\TheRock\external-builds\pytorch\.venv\Lib\site-packages\_rocm_sdk_devel
@@ -909,3 +912,86 @@ CUB-to-hipCUB swap goes through torch hipify, and the one place it cannot reach
 `__HIP_PLATFORM_AMD__` and leaves the CCCL spelling on the CUDA side. Fork tree is clean;
 no `Co-Authored-By` trailer, no non-ASCII, no AMD-internal account or host references in
 any message or added line.
+
+## Port follow-up 2026-08-11 (linux-gfx942)
+
+Resolved the actionable findings from the 2026-08-09 review at fork HEAD
+`89e63244d859861fee80901f144fa8b004c6dabe`, which is present on `origin/moat-port`.
+The fork commit removes the added company copyright notice from
+`src/cubvh_bindings_winhip.cu`; it is comment-only and the fork tree is clean. The
+control-plane change adds the preventive `CUDAExtension` compiler-key rule to
+`references/strategy-b-torch.md`, leaves the diagnostic pointer in `validation.md`, and
+corrects the false claim that unsetting or setting `ROCM_HOME` alone determines
+`IS_HIP_EXTENSION`. The matching Windows note above now states both required inputs:
+a discovered ROCm home and non-null `torch.version.hip`.
+
+**Platform and toolchain**: one process pinned to device 0 of eight AMD Instinct MI300X
+GPUs (`gfx942:sramecc+:xnack-`). PyTorch `2.14.0a0+git7d05abc`, HIP
+`7.14.60850`, AMD clang `23.0.0git` (`46fcb339`), Python 3.12.
+
+**Build command**:
+
+```bash
+utils/timeit.sh CuMesh compile -- bash -lc \
+  'cd projects/CuMesh/src && HIP_VISIBLE_DEVICES=0 GPU_ARCHS=gfx942 \
+  python3 -m pip install . --no-build-isolation -v'
+```
+
+Build PASS in 118.603 seconds. hipcc compiled the GPU translation units with
+`--offload-arch=gfx942`; all three extensions (`_C`, `_cubvh`, `_cumesh_xatlas`) built and
+installed. The compiler emitted only the previously documented warnings (ignored
+`nodiscard` HIP results, non-trivial `memcpy`, abstract non-virtual destructor, and
+visibility/VLA warnings).
+
+The first example invocation stopped before any GPU work because `trimesh` was not
+installed (`ModuleNotFoundError`). This was an example-environment dependency, not a
+source or runtime failure. Installed `trimesh==5.0.0` with:
+
+```bash
+python3 -m pip install trimesh
+```
+
+**Fixed-binary simplification experiment**: both runs loaded the same installed extension,
+`/opt/conda/envs/py_3.12/lib/python3.12/site-packages/cumesh/_C.cpython-312-x86_64-linux-gnu.so`,
+and ran consecutively on the same pinned GPU:
+
+```bash
+utils/timeit.sh CuMesh test -- bash -lc \
+  'cd projects/CuMesh/src/examples && for run in 1 2; do \
+  echo RUN=$run; HIP_VISIBLE_DEVICES=0 python3 simplify.py; done'
+```
+
+Both runs PASS. Run 1 produced 4,951 vertices / 9,833 faces; run 2 produced 4,926
+vertices / 9,778 faces. Therefore the previously recorded output spread is genuine
+run-to-run nondeterminism in the simplifier even for a fixed binary, device, input, and
+environment; the face count is not a stable regression oracle. The invariant is successful
+completion near the requested 10,000-face target with a valid mesh.
+
+**Complete GPU example suite**:
+
+```bash
+cd projects/CuMesh/src/examples
+HIP_VISIBLE_DEVICES=0 python3 simplify.py
+HIP_VISIBLE_DEVICES=0 python3 fill_holes.py
+HIP_VISIBLE_DEVICES=0 python3 remove_duplicate_faces.py
+HIP_VISIBLE_DEVICES=0 python3 unify_orientations.py
+HIP_VISIBLE_DEVICES=0 python3 remesh.py
+HIP_VISIBLE_DEVICES=0 python3 uv_unwrap.py
+```
+
+All six PASS (each exit 0) in one wrapped 27.004-second run:
+
+1. `simplify.py`: 34,834 vertices / 69,451 faces -> 4,970 vertices / 9,863 faces.
+2. `fill_holes.py`: 34,834 / 69,451 -> 34,838 / 69,594.
+3. `remove_duplicate_faces.py`: 34,834 / 69,451 -> 34,834 / 69,451.
+4. `unify_orientations.py`: 34,834 / 69,451 -> 34,834 / 69,451.
+5. `remesh.py`: BVH construction, dual contouring and projection -> 102,396 vertices /
+   204,916 faces.
+6. `uv_unwrap.py`: 90 clusters, xatlas charts/packing -> 45,110 vertices / 69,451 faces.
+
+Integrity gate: `git -C projects/CuMesh/src status --porcelain` is empty; generated hipify,
+build, wheel, cache and example-output files are ignored artifacts. Local fork HEAD and
+`origin/moat-port` both resolve to `89e63244d859861fee80901f144fa8b004c6dabe`.
+`python3 utils/jargon.py --port CuMesh` still reports only the two settled hits in frozen
+commit `d5c1355` (`moat-port` and `moat` on the same message line); the maintainer decision
+recorded in the review above explicitly leaves that published, validated history unchanged.

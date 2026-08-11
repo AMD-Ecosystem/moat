@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-08-09T21:39:22Z",
+  "updated_at": "2026-08-11T18:39:10Z",
   "head_sha": "89e63244d859861fee80901f144fa8b004c6dabe",
   "depends_on": [],
   "pr_url": "https://github.com/JeffreyXiang/CuMesh/pull/36",
@@ -18,7 +18,7 @@
   "pr_state": "open",
   "license_spdx": "MIT",
   "upstream_repo_id": 1097063193,
-  "stage": "changes-requested",
+  "stage": "ported",
   "platforms": {
     "linux-gfx90a": {
       "state": "validation-failed",
@@ -135,6 +135,29 @@
         "detail": "cubvh submodule repointed AMD-Ecosystem/cubvh@moat-port -> ashawkey/cubvh@main; gitlink e5a657a -> 757b913b has IDENTICAL tree (git diff empty), .gitmodules url/branch are metadata only -> compiled output",
         "at": "2026-06-23T14:01:49Z"
       }
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-08-11T17:50:04Z",
+      "completed_at": null,
+      "updated_at": "2026-08-11T18:39:10Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "porter"
     }
   }
 }

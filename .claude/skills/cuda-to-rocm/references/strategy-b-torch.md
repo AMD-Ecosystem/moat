@@ -7,6 +7,22 @@ Torch hipifies extension sources at build time. Do not add a compat header and d
 - Build against a ROCm torch. If the tree was hipified once and is stale after edits, re-run the project's hipify step before rebuilding (a known incremental-build gotcha: edits to `.cu` can recompile the stale hipified mirror unless you re-hipify first).
 - For projects shipping their own `.cu` plus a setup.py, the change is often just: build against a ROCm torch and fix the fault classes below.
 
+### Keep compiler flags in the right command-line namespace
+
+Torch's `CUDAExtension` uses the `"nvcc"` entry in `extra_compile_args` for both nvcc on
+CUDA builds and hipcc on ROCm builds. That does not make their flag syntaxes interchangeable:
+hipcc accepts GCC/clang host flags such as `-fvisibility=hidden` directly, while nvcc needs
+the same flag wrapped as `-Xcompiler=-fvisibility=hidden`. The `"cxx"` entry is a separate
+host-compiler command line and keeps the bare spelling.
+
+Map a shared host flag according to all three relevant cases: pass it bare to hipcc, wrap
+it for nvcc with a GCC/clang host, and drop it for nvcc with MSVC when there is no MSVC
+equivalent. Derive the wrapped list from the bare list so the two cannot drift. Do not use
+only an `IS_HIP` guard: that misses the Windows CUDA case and can hand cl.exe an unsupported
+`-f...` option. Validate the mapping on each backend by inspecting the generated command
+lines, and verify the intended artifact effect when a flag can be accepted but ignored.
+(CuMesh)
+
 ### hipify generation: v1 renames, v2 masquerades
 
 Which generation runs decides what the `c10`/`at` CUDA classes are called, so it is worth
