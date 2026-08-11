@@ -2298,3 +2298,114 @@ HIP-backend comment block is where this project documents backend build options;
 ### State transition
 `port-ready -> completed`, `validated_sha = 950dcdd02f348c74d29f4de8199bca38a7e7a245`.
 `python3 utils/moatlib.py set-state arrayfire linux-gfx942 completed --agent validator`.
+
+## Validation 2026-08-11 (validator, linux-gfx1100, revalidate) -- RESULT: COMPLETED (131/132)
+
+Trigger: linux-gfx1100 was `completed` at `validated_sha a70f74f6d653955832909c434e77abfb6e207048`
+while fork head had moved to `950dcdd02f348c74d29f4de8199bca38a7e7a245` (the texture-object
+removal delta plus its comment-correction follow-up, both reviewed above). `python3
+utils/moatlib.py classify arrayfire a70f74f6d 950dcdd02` -> `class=mixed arch_independent=False
+inert=False` (6 files under `src/backend/hip` including `LookupTable1D.hpp`, `fast.hpp`,
+`orb.hpp`, `regions.hpp`, `regions.cu`, `hip_compat.h` -- token counts differ, so the source
+classifier correctly refuses to clear it by inspection alone). This matches the reviewer's own
+call above ("this commit changes device code on ... linux-gfx1100 ... no carry-forward applies")
+-- did not attempt the `codeobj_diff` binary-equivalence shortcut since the delta is a genuine,
+already-confirmed device-code change (texture fetch replaced by pointer read in 3 kernels), not a
+candidate for it. Ran a full real-GPU revalidation.
+
+GPU: 4x AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), ROCm 7.2.53211 (`/opt/rocm`,
+`hipconfig --version` 7.2.53211-c2d9476115), `rocminfo`/`rocm-smi --showproductname` confirmed 4
+gfx1100 devices. Fresh clone of `AMD-Ecosystem/arrayfire` @ `moat-port` into
+`projects/arrayfire/src`; `git log -1` confirmed `950dcdd02f348c74d29f4de8199bca38a7e7a245` (the
+recorded `head_sha`), tree clean before and after (`git status --porcelain` empty).
+
+### Host package gaps closed first (environment, not port defects)
+This host had no `libfftw3-dev` and no `liblapacke-dev` preinstalled (a fresh package state, not
+reused from the earlier gfx1100 rounds). `sudo apt-get install -y libfftw3-dev liblapacke-dev`.
+Installing `liblapacke-dev` again pulled in the same atlas/lapacke `update-alternatives` conflict
+documented in the gfx942 round (apt silently removed `libatlas-base-dev`); deleted
+`build-hip-gfx1100/` and reconfigured from scratch afterward rather than trusting a stale
+`CMakeCache.txt`, per that note. `libopenblas-dev` was already present and supplied BLAS/LAPACK/
+CBLAS from one provider with no cache pollution the second time.
+
+### Configure + build (headless: `AF_WITH_IMAGEIO=OFF`, matching gfx90a/gfx942's primary config)
+```
+cmake -S projects/arrayfire/src -B projects/arrayfire/src/build-hip-gfx1100 \
+  -GNinja -DCMAKE_BUILD_TYPE=Release \
+  -DAF_BUILD_HIP=ON -DAF_BUILD_CUDA=OFF \
+  -DAF_BUILD_CPU=ON -DAF_BUILD_OPENCL=OFF -DAF_BUILD_ONEAPI=OFF \
+  -DAF_BUILD_UNIFIED=ON -DAF_BUILD_EXAMPLES=OFF -DAF_BUILD_FORGE=OFF \
+  -DAF_WITH_CUDNN=OFF -DAF_WITH_IMAGEIO=OFF -DAF_BUILD_DOCS=OFF \
+  -DAF_BUILD_TESTS=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++
+cmake --build projects/arrayfire/src/build-hip-gfx1100 -j 32
+```
+Both wrapped in `utils/timeit.sh arrayfire compile`. Configure: clean, exit 0 (same
+`AF_BUILD_TESTS` unused-variable warning as every prior round -- `BUILD_TESTING` is the real
+knob, tests build by default; harmless, already logged as a record defect above). Build:
+1644/1644 targets, exit 0.
+
+### GPU run -- full `CUDA.*` suite, one isolated device
+```
+HIP_VISIBLE_DEVICES=0 ctest --test-dir projects/arrayfire/src/build-hip-gfx1100 \
+  -R '_cuda$' -j1 --output-on-failure
+```
+Wrapped in `utils/timeit.sh arrayfire test`. Result: **131/132 PASS (99%), 1 failure**, wall time
+1105s. The sole failure is `test_confidence_connected_cuda` -- every subtest reports "Image IO Not
+Configured" (`test/confidence_connected.cpp:50: Skipped`), the identical, already-documented
+`AF_WITH_IMAGEIO=OFF` disposition seen on gfx90a, gfx942 and windows-gfx1201 (NOT a new failure;
+the one prior gfx1100 completion that showed 132/132 had built with `AF_WITH_IMAGEIO=ON` +
+libfreeimage-dev installed, a different build config, not a different result for the same config).
+All previously-flagged-then-fixed suites confirmed passing at this head: `test_fast_cuda`,
+`test_orb_cuda`, `test_regions_cuda` (the three files this delta touches), `test_sparse_cuda`,
+`test_sparse_arith_cuda`, `test_blas_cuda` (int8 gemm), `test_where_cuda`, `test_cholesky_dense_cuda`.
+
+Determinism re-check (`HIP_VISIBLE_DEVICES=0 ctest -R 'test_(topk|nearest_neighbour|where)_cuda'
+-j1`): 3/3 PASS, no recurrence of the historically GPU-fault-prone `topk`/`nearest_neighbour`
+issues.
+
+### Texture-vs-pointer performance measurement (closes the open review action item)
+The 2026-08-11 review round explicitly deferred this to "whoever revalidates a texture-capable
+arch (gfx90a or gfx1100)" -- gfx1100 is texture-capable and reached here first. Built the parent
+commit `a70f74f6d653955832909c434e77abfb6e207048` (the last texture-object commit, throwaway clone
+`projects/arrayfire/src-prev`, deleted afterward, same configure line, `--target test_fast_cuda
+test_orb_cuda`) alongside the head build, and timed `test/fast_cuda` / `test/orb_cuda` directly
+(bypassing ctest process overhead) on a GPU not running the main suite (`HIP_VISIBLE_DEVICES=1`),
+3 runs each, wall-clock via `date +%s.%N`:
+
+| binary | a70f74f6d (texture path) | 950dcdd02 (pointer path) |
+|---|---|---|
+| fast_cuda | 0.205, 0.206, 0.199 s | 0.206, 0.204, 0.217 s |
+| orb_cuda  | 0.206, 0.207, 0.206 s | 0.208, 0.206, 0.209 s |
+
+No measurable regression (within run-to-run noise, ~1-2%) -- the plain pointer read costs the same
+as the texture fetch for these point-sample LUT lookups on gfx1100. This closes the review's open
+question; the unmeasured "buys nothing on any device" claim withdrawn from the commit text is now
+also confirmed not to have introduced a throughput cost on a texture-capable arch. (fast_cuda /
+orb_cuda are both quick to start up and dominated by process/HIP-context overhead at this problem
+size, so these numbers bound the LUT-lookup cost from above; a finer per-kernel timer was not
+built for this since the bound is already well inside noise.)
+
+### CUDA no-regression gate -- SKIPPED (already recorded at this head_sha)
+Per validator.md, this gate runs once per `head_sha`. The gfx942 validator already ran it at
+`950dcdd02f348c74d29f4de8199bca38a7e7a245` (recorded above: `cuda-not-validated`, an environmental
+wall -- host system `fmt` v12 collides with arrayfire's `dim3` log formatter in pure-CUDA
+`any.cu`, `src/backend/cuda` untouched by this port at every commit). Not re-run here.
+
+### Pre-completion checks
+`python3 utils/jargon.py --port arrayfire` (after adding a local `master` branch tracking
+`origin/master` -- the tool needs both refs to resolve `master..moat-port` and this clone was
+single-branch) -> 1 known hit, `commit 6800d5586:19 'MOAT'`, the maintainer-accepted leftover
+documented in the 2026-08-08/09 rounds above (explicit decision not to rewrite a public commit
+already pointed at by validated arches); no new hits from anything in the `a70f74f6d..950dcdd02`
+delta. Documentation gate: unchanged since the 2026-08-08 check, `CMakeLists.txt`'s `AF_BUILD_HIP`
+block is still where this project documents the ROCm/HIP build (option, minimum-ROCm-version
+comment, mutual exclusivity with `AF_BUILD_CUDA`); still correct.
+`git -C projects/arrayfire/src status --porcelain` empty before and after (only gitignored
+`build-hip-gfx1100/` build output; the throwaway `src-prev/` timing clone was deleted, not
+committed, before finishing).
+
+### State transition
+`revalidate -> completed`, `validated_sha = 950dcdd02f348c74d29f4de8199bca38a7e7a245`.
+`python3 utils/moatlib.py set-state arrayfire linux-gfx1100 completed --agent validator`.

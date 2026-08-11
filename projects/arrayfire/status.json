@@ -7,7 +7,7 @@
   "priority": 6.146,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T00:04:57Z",
-  "updated_at": "2026-08-11T22:20:31Z",
+  "updated_at": "2026-08-11T23:29:32Z",
   "head_sha": "950dcdd02f348c74d29f4de8199bca38a7e7a245",
   "pr_url": "https://github.com/arrayfire/arrayfire/pull/3708",
   "pr_number": 3708,
@@ -53,10 +53,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": "validated at fork 3782728. CUDA.* ctest 132/132 (100%, 0 failed) on gfx1100 (W7800, RDNA3, wave32), matching gfx90a@3782728 exactly. All former gfx1100 failures now PASS: where 56/56 (ADL fix), cholesky_dense 32/32 (RDNA tolerance), sparse 86/86 + sparse_arith 123/123 + sparse_convert 41/41 + threading 9/9 (hipSPARSE), blas 127/127 (int8 gemm), confidence_connected 36/36 (FreeImage). jit 1781/1781 (--offload-arch=gfx1100). Wave32 fully correct. No NaN/HIP fault. Determinism confirmed.",
-      "validated_sha": "a70f74f6d653955832909c434e77abfb6e207048",
+      "validated_sha": "950dcdd02f348c74d29f4de8199bca38a7e7a245",
       "started_at": "2026-05-31T21:00:00Z",
-      "completed_at": "2026-06-24T14:13:03Z",
-      "updated_at": "2026-08-09T21:39:21Z",
+      "completed_at": "2026-08-11T23:29:32Z",
+      "updated_at": "2026-08-11T23:29:32Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -70,15 +70,7 @@
         "first_session_at": "2026-05-31T21:00:00Z",
         "last_session_at": "2026-05-31T23:45:00Z"
       },
-      "last_agent": "validator",
-      "carry_forward": {
-        "from": "6800d5586",
-        "to": "a70f74f6d653955832909c434e77abfb6e207048",
-        "method": "source-class",
-        "class": "comment-only",
-        "detail": "src/backend/hip/cublas.hpp: comment-only (comments/format only); src/backend/hip/cusparse.hpp: comment-only (comments/format only); src/backend/hip/cusparse_descriptor_helpers.hpp: comment-only (comme",
-        "at": "2026-08-09T21:39:21Z"
-      }
+      "last_agent": "validator"
     },
     "windows-gfx1101": {
       "state": "completed",
