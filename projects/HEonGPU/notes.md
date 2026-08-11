@@ -546,3 +546,102 @@ will need an arch-unified fix (correct on both widths) once the shared bug is fo
    (upstream's own CPU-vs-GPU checks) for a clean, independent verdict on the NTT rather
    than a hand-written probe. This needs the examples' CMakeLists taught about HIP, which
    the current patches do not cover.
+
+## Porter Attempt 5 (2026-08-11, linux-gfx90a) -- 20/20, all suites pass
+
+Fork head after this attempt: `39d678d24f2e899da7e9a78e170dac4c414cf5a4`.
+
+### ROOT CAUSE of the eight BFV failures: 128-bit shift by 64 in Barrett
+
+`modular_operation_gpu::BarrettOperations::mult` (GPU-NTT
+`common/modular_arith.cuh`) shifts its hand-rolled `uint128_t` right by
+`modulus.bit + 3`. The shift operator expands that to `lo >> shift`,
+`hi << (64 - shift)` and `hi >> shift` with no guard, so at `modulus.bit >= 61`
+the count reaches 64 and every limb shift is undefined. PTX yields 0 for any
+count >= 64; AMDGPU keeps only the low 6 bits, so a shift of 64 acts as a shift
+of 0 and the high limb is OR-ed into the low one instead of replacing it. NVIDIA
+gets the right answer by accident of the PTX semantics.
+
+Measured against a `__uint128_t` host reference, 20000 random pairs plus the
+boundary values, per modulus width:
+
+| modulus | mult | reduce_forced | add | sub |
+| --- | --- | --- | --- | --- |
+| 20, 36, 37, 60 bit | 0 bad | 0 | 0 | 0 |
+| 61 bit (BFV gamma) | 19999/20000 bad | 0 | 0 | 0 |
+| 62 bit | 19999/20000 bad | 0 | 0 | 0 |
+
+That is why CKKS passed and BFV did not: the CKKS test moduli are all 37 bits or
+fewer, while BFV decryption's gamma correction term is a generated 61-bit prime
+(2305843009213554689 for the 4096/{36,36},{37} parameter set). Fixed by handling
+`shift == 0`, `shift < 64` and `shift < 128` explicitly. Behaviour-preserving on
+NVIDIA, so no `#ifdef`. Carried in `thirdparty/patches/GPU-NTT.patch`.
+
+Note attempt 4's device-Barrett audit swept 20/36/37/59/60-bit moduli and found
+nothing; the fault begins at 61. Sweep the WIDTH, not only the values.
+
+### ROOT CAUSE of the TFHE failure: a 32x over-indexed state buffer
+
+`HEEncryptor<Scheme::TFHE>` allocated `context_->n_` (512) `curandState`
+entries, then initialized and used `total_state = 512 * 32` of them --
+`initialize_random_states_kernel` and `encrypt_lwe_kernel` both index by a
+global thread id over a 32-block, 512-thread launch. A 32x heap overrun that
+NVIDIA absorbs. LWE encrypt followed by decrypt with no bootstrapping went from
+35/64 bits wrong to 0/64 once the allocation matched the launch.
+
+The two suspects the attempt-4 handoff named for TFHE (the `warp_reduce` shared
+memory byte count, and a hipRAND state size differing from cuRAND's) were both
+innocent: `(THREADS/32 + 1) * sizeof(uint32_t)` over-allocates at wave64 rather
+than under-allocating, and the state size never mattered because the count was
+wrong by 32x either way.
+
+### BFV_..._Addition_Subtraction was flaky for a reason of its own
+
+Not a port fault. `test_bfv_addition.cpp` reduced its expected value with
+`(a + b > t) ? a + b - t : a + b`, so a coefficient pair summing to exactly `t`
+was expected to decode as `t` rather than 0. Over 40 encrypt-add-decrypt rounds
+of 4096 coefficients, mismatches against `(m1 + m2) mod t` were 0 and against the
+test's own reference 1 (957528 + 74665 = 1032193). Changed to `>=`. Roughly one
+run in eighty hit it, which reads exactly like a flaky GPU failure -- if a single
+suite fails intermittently here, check the test's reference before the kernel.
+
+### The installed package was unusable on AMD (found by verifying the docs)
+
+Writing the downstream-consumer CMake snippet for `docs/advanced_topics.rst` and
+then actually building against an installed tree exposed four separate breaks in
+the install/export path, all invisible to the in-tree tests. Fixed together in
+`39d678d`; the general form is in the `cuda-to-rocm` skill under Strategy A.
+`cmake --install --prefix` does not override this project's baked-in prefix --
+reconfigure with `-DCMAKE_INSTALL_PREFIX`.
+
+### Test result
+
+`ctest --test-dir build` on gfx90a / ROCm 7.2.1: **20/20 passed**, three
+consecutive runs, plus a fourth after the install/export commit.
+
+### Probes (gitignored scratch, `agent_space/HEonGPU-a5/`)
+
+`build.sh <name>` compiles one against the already-built static libraries in
+`build/` -- seconds, versus a CMake target. Flags were lifted from
+`build/test/CMakeFiles/bfv_encoding_testcases.dir/{flags.make,link.txt}`; `-x hip`
+applies to every following input, so the archives go in a separate link step.
+
+1. `bfv.cu` -- encode/encrypt/decrypt/decode over several message patterns,
+   comparing the raw plaintext buffers at each hop as well as the decoded values.
+2. `dec.cu` -- **the decisive one.** Overwrites a valid ciphertext with a trivial
+   `(Delta*m, 0)` built on the host with `__uint128_t`, then decrypts. It isolates
+   the decryption path from encryption entirely and needs only the public API.
+3. `consts.cu` -- dumps the BFV host constants (`Qi_t`, `Qi_gamma`, `Qi_inverse`,
+   `mulq_inv_t`, `mulq_inv_gamma`, `inv_gamma`, gamma itself) and checks each
+   against an independent computation, then replicates `decryption_kernel` on the
+   host. All constants were correct and the host replica gave 0 mismatches, which
+   is what pointed at the device operators. Reaches the private members with
+   `#define private public` around the `heongpu.hpp` include -- no library edit,
+   no rebuild.
+4. `mod61.cu` -- device Barrett `mult`/`reduce_forced`/`add`/`sub` against a
+   `__uint128_t` reference, swept across modulus widths. This is the probe that
+   found it.
+5. `tfhe.cu` -- LWE encrypt/decrypt with no bootstrapping, then NOT, then a
+   bootstrapped NAND, so a failure lands on one of the three.
+6. `add.cu` -- 40 rounds of encrypt-add-decrypt compared against both `(m1+m2) mod t`
+   and the test's own reference, which is how the flake was attributed.

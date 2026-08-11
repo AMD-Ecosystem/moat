@@ -34,3 +34,12 @@
 {"kind":"phase","ts":"2026-08-08T17:43:18Z","phase":"test","seconds":11.650,"exit":8,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure --timeout 900"}
 {"kind": "tokens", "ts": "2026-08-08T17:57:43Z", "tokens": 135345, "source": "porter"}
 {"kind": "tokens", "ts": "2026-08-11T15:33:51Z", "tokens": 294580, "source": "porter"}
+{"kind":"phase","ts":"2026-08-11T15:46:07Z","phase":"compile","seconds":61.444,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j128"}
+{"kind":"phase","ts":"2026-08-11T15:46:27Z","phase":"test","seconds":13.426,"exit":8,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"phase","ts":"2026-08-11T15:50:07Z","phase":"compile","seconds":62.221,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j128"}
+{"kind":"phase","ts":"2026-08-11T15:50:35Z","phase":"test","seconds":13.394,"exit":8,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"phase","ts":"2026-08-11T15:52:11Z","phase":"compile","seconds":11.191,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j128"}
+{"kind":"phase","ts":"2026-08-11T15:52:25Z","phase":"test","seconds":13.344,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build"}
+{"kind":"phase","ts":"2026-08-11T15:52:38Z","phase":"test","seconds":13.354,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build"}
+{"kind":"phase","ts":"2026-08-11T15:52:51Z","phase":"test","seconds":13.357,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build"}
+{"kind":"phase","ts":"2026-08-11T15:58:38Z","phase":"test","seconds":13.438,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build"}
