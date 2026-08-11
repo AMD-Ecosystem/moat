@@ -2070,3 +2070,59 @@ already-validated platform.
   off), so it is runnable as written by an upstream reader. `jargon.py --port arrayfire` reports
   only the one known, maintainer-accepted `MOAT` in the old `6800d5586` body -- this commit adds
   none.
+
+## Port fix 2026-08-11 (porter, linux-gfx942) -- review findings 1-4, fork head 950dcdd02
+
+Answers the CHANGES REQUESTED entry directly above. Comment-and-text round only; no device or
+host code changed (`git diff 4ec30a7cd..950dcdd02 --stat` is `LookupTable1D.hpp | 13 +++-----`,
+all inside the comment block).
+
+### Finding 1 -- table sizes (fixed in `950dcdd02`)
+Counted them before rewriting, and the reviewer is right: `kernel/fast_lut.hpp` `FAST_LUT[]` is
+**65536** `unsigned char` (64 KiB; counted by parsing the initializer, and it must be 2^16 because
+`kernel/fast.hpp:159-171` shifts the circle responses into 16-bit `bright`/`dark` masks and
+`:175-176` indexes with them), `kernel/orb_patch.hpp:19-25` `d_ref_pat` is
+`REF_PAT_SAMPLES(256) * REF_PAT_COORDS(4)` = **1024** `int` (4 KiB). The comment no longer
+mentions size at all; it states the criterion that actually licenses the change -- point sampling
+only, no filtering, no normalized coordinates, no address modes -- and says explicitly that size
+is not the reason. Second half of the comment keeps the gfx942/gfx950 compile-time necessity.
+
+### Finding 2 -- the same wrong size in the public body of `4ec30a7cd`
+NOT rewritten: `moat-port` is the head of OPEN upstream PR #3708 and a rewrite is a person's
+call. `950dcdd02`'s body carries the correction in public instead -- it quotes both wrong phrases
+("a few dozen entries", "fixed 16 to 64 entry corner-test table"), gives the real counts with the
+files they come from, and says why size was never the criterion. Push was a plain fast-forward
+(`4ec30a7cd..950dcdd02`); `--force-with-lease` was not used and no bare force is possible here.
+
+### Finding 3 -- the promoted skill entry (fault-classes.md, Textures)
+Reworded so the qualifying criterion is the ACCESS PATTERN in capitals, not size, with
+arrayfire's 64 KiB FAST LUT named as the counterexample to reading "LUT" as "small". While there,
+the entry's own unmeasured claim ("removes dead code on the arches where textures do work") is
+replaced: the fix is still unconditional (bit-identical results, one tested path), but throughput
+on texture-capable arches is now flagged as a question a compile does not answer, with the advice
+to time the affected tests rather than assert.
+
+### Finding 4 -- the unmeasured "buys nothing on any device" claim
+Withdrawn in both places it appeared. The new source comment claims only identical results plus
+the gfx94x+ compile-time necessity; `950dcdd02`'s body says the assertion "was an assertion, not
+a measurement, and it is withdrawn here".
+
+**Still open, for whoever revalidates a texture-capable arch (gfx90a or gfx1100):** time
+`test_fast_cuda` and `test_orb_cuda` at `a70f74f6d` (texture path) vs `950dcdd02` (pointer path)
+and record wall times here. That is the arch where the question is answerable and it is a real
+defect if the pointer path regresses. FAST does two 64 KiB-table lookups per surviving candidate
+and ORB 64 per feature (`kernel/orb.hpp:237-252`), so it is not obviously free.
+**This host cannot produce that number and did not fake one:** gfx942 has no parent build to
+compare against -- `a70f74f6d` is exactly the commit that fails to compile for gfx942 (that is
+the validation failure this whole delta fixes), so there is no "before" binary on MI300X, at any
+budget. Any gfx942 timing would be a single-sided number with nothing to compare it to.
+
+### Build check (gfx942, MI300X, ROCm 7.14, reused `build-hip-gfx942`)
+Comment-only, but the header is included by two TUs, so both were rebuilt rather than assumed:
+```
+ninja -C projects/arrayfire/src/build-hip-gfx942 \
+  src/backend/hip/CMakeFiles/afcuda.dir/{fast,orb}.cu.o     # 2/2, exit 0
+```
+No relink and no ctest re-run: the object code is unchanged by construction, and the 6/6 feature
+test run recorded for `4ec30a7cd` still applies. `jargon.py --port arrayfire` still reports only
+the one known, maintainer-accepted `MOAT` in `6800d5586`'s body; `prose.py` clean on the body.

@@ -91,3 +91,5 @@
 {"kind":"session","ts":"2026-08-11T21:14:51Z","epoch":1786482891.408586201,"event":"end","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-08-11T21:16:36Z","epoch":1786482996.496459081,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-08-11T21:26:43Z","epoch":1786483603.612754266,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-11T21:28:38Z","epoch":1786483718.477940272,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-08-11T21:29:13Z","phase":"compile","seconds":8.238,"exit":0,"cmd":"ninja -C projects/arrayfire/src/build-hip-gfx942 src/backend/hip/CMakeFiles/afcuda.dir/fast.cu.o src/backend/hip/CMakeFiles/afcuda.dir/orb.cu.o"}
