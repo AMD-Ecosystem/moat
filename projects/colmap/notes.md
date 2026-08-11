@@ -1234,3 +1234,86 @@ feature extraction and matching" line, all read correct and current at this sha.
 Fork tree clean, nothing to commit (the checkout-sync above only moved which commit the local
 branch pointer named; it introduced no local diff). `status.json` updated:
 `linux-gfx90a.state = completed`, `validated_sha = 4c531f5e51f18eeb145309f8650a8da58453c8af`.
+
+## Validation 2026-08-10 (validator, windows-gfx1151, AMD Radeon 8060S / RDNA3.5)
+
+First and only attempt at windows-gfx1151, fork `4c531f5e51f18eeb145309f8650a8da58453c8af`.
+
+### GPU confirmed present
+
+    hipInfo.exe -> AMD Radeon(TM) 8060S Graphics, warpSize=32, gfx1151 (RDNA3.5)
+
+Host has an active console session (real display, not remote-only). TheRock ROCm SDK is
+present at `D:\Develop\TheRock\.venv\Lib\site-packages\_rocm_sdk_core`, HIP 7.13.26176
+confirmed via `hipcc.exe --version`.
+
+### Fork clone
+
+    git clone --depth=1 --branch moat-port https://github.com/AMD-Ecosystem/colmap.git \
+      projects/colmap/src
+    git -C projects/colmap/src log --oneline -1  # -> 4c531f5 [ROCm] Enable GPU SIFT...
+    git -C projects/colmap/src status --porcelain  # -> (empty)
+
+### Build attempt (configure): BLOCKED on missing C++ dependencies
+
+Attempted CMake configure with HIP enabled, headless (GUI_ENABLED=OFF):
+
+    utils/timeit.sh colmap compile -- \
+      cmake -S projects/colmap/src -B projects/colmap/src/build-hip-win \
+        -G Ninja -DCUDA_ENABLED=OFF -DHIP_ENABLED=ON \
+        -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_BUILD_TYPE=Release \
+        -DTESTS_ENABLED=ON -DGUI_ENABLED=OFF -DCGAL_ENABLED=OFF \
+        -DDOWNLOAD_ENABLED=OFF -DONNX_ENABLED=OFF -DLSD_ENABLED=OFF \
+        -DCMAKE_PREFIX_PATH=<rocm_root>
+
+Result: configure fails immediately at `FindDependencies.cmake:18`:
+
+    CMake Error: By not providing "FindBoost.cmake" in CMAKE_MODULE_PATH...
+    Could not find a package configuration file provided by "Boost"
+
+COLMAP requires a large C++ dependency stack (Boost, Ceres-solver with lapack/schur/
+suitesparse, Eigen3, OpenImageIO, Metis, SQLite3, OpenGL, GLEW, CHOLMOD, and Qt6 for the
+GUI build that enables GPU SIFT tests). On Linux these come from apt. On Windows they require
+vcpkg, which is not installed on this host. Building the full vcpkg dependency stack --
+Qt6 alone takes 30-60 min, Ceres with suitesparse adds more -- would take several hours and
+exceeds the 60-min session budget.
+
+### What was NOT attempted
+
+- vcpkg installation and dep build (hours, exceeds budget)
+- Headless-only build (even that requires Boost, Ceres, GLEW, etc.)
+- GPU kernel execution (blocked upstream)
+
+### What IS known
+
+The GPU is functional (hipInfo, warpSize=32, gfx1151). The waiver approach is the right
+path here, not a code fix: COLMAP's Windows build prerequisites are a large, time-consuming
+setup that has not been done on this host.
+
+Additionally, even if all deps were installed, the GPU SIFT tests require the GUI build
+(`-DGUI_ENABLED=ON`), which needs Qt6. Without Qt6, the headless build would produce
+FALSE GREEN results for all GPU SIFT tests (plan.md risk 4: RunGpuTest is an empty inline
+without the windowing toolkit). On Windows, Qt6 applications CAN create windows against the
+real display (unlike Linux where Xvfb is needed), so the GUI path would work if Qt6 were
+available -- this is not a permanent OS obstacle, it is a missing prerequisite.
+
+### CUDA no-regression gate
+
+Already recorded at this exact head_sha by the linux-gfx1100 validator session (nvcc 13.3.73,
+`-DCMAKE_CUDA_ARCHITECTURES=80`, `colmap_sift_gpu` + `colmap_mvs_cuda` + `colmap_feature_sift_test`
++ `colmap_main` all compile and link). Skipped here per the once-per-head_sha rule.
+
+### Waiver suggestion
+
+    python3 utils/moatlib.py suggest-waiver colmap windows \
+      --reason "..."
+
+Waiver suggested for the windows gate (2026-08-10). The concrete blocker is missing C++
+build prerequisites (Boost, Ceres, Qt6, GLEW, etc.) on this Windows host. Setting
+`windows-gfx1151.blocked = true` so the waiver outcome is the decision, not a stalled
+actionable state.
+
+### State recorded
+
+    windows-gfx1151.state = validation-failed, failed_sha = 4c531f5e
+    windows-gfx1151.blocked = true

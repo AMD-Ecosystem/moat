@@ -36,3 +36,6 @@
 {"kind":"phase","ts":"2026-08-09T15:56:39Z","phase":"compile","seconds":117.825,"exit":0,"cmd":"cmake --build projects/colmap/src/build-hip-gui -j128"}
 {"kind":"phase","ts":"2026-08-09T15:58:20Z","phase":"test","seconds":12.546,"exit":0,"cmd":"xvfb-run -a ctest --test-dir projects/colmap/src/build-hip-gui -j4 --output-on-failure"}
 {"kind": "tokens", "ts": "2026-08-09T21:40:33Z", "tokens": 118405, "source": "validator"}
+{"kind":"session","ts":"2026-08-11T04:18:36Z","epoch":1786421916.871050000,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-11T04:19:34Z","phase":"compile","seconds":30.387,"exit":1,"cmd":"cmake -S /d/Develop/moat/projects/colmap/src -B /d/Develop/moat/projects/colmap/src/build-hip-win -G Ninja -DCUDA_ENABLED=OFF -DHIP_ENABLED=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_BUILD_TYPE=Release -DTESTS_ENABLED=ON -DGUI_ENABLED=OFF -DCGAL_ENABLED=OFF -DDOWNLOAD_ENABLED=OFF -DONNX_ENABLED=OFF -DLSD_ENABLED=OFF -DCMAKE_PREFIX_PATH=/d/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_core -DCMAKE_HIP_COMPILER=/d/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_core/lib/llvm/bin/clang++.exe"}
+{"kind":"session","ts":"2026-08-11T04:22:17Z","epoch":1786422137.856657600,"event":"end","platform":"windows-gfx1151"}
