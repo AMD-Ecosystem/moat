@@ -79,3 +79,4 @@
 {"kind":"phase","ts":"2026-08-11T20:50:26Z","phase":"compile","seconds":65.838,"exit":1,"cmd":"cmake --build projects/arrayfire/src/build-hip-gfx942 -j 32"}
 {"kind":"phase","ts":"2026-08-11T20:50:43Z","phase":"compile","seconds":0.208,"exit":1,"cmd":"cmake --build projects/arrayfire/src/build-hip-gfx942 -j 32"}
 {"kind":"phase","ts":"2026-08-11T20:54:59Z","phase":"compile","seconds":76.784,"exit":1,"cmd":"cmake --build projects/arrayfire/src/build-hip-gfx942 -j 32"}
+{"kind":"session","ts":"2026-08-11T20:59:36Z","epoch":1786481976.563351542,"event":"end","platform":"linux-gfx942"}

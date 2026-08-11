@@ -188,6 +188,26 @@ everything else passes. (qrack: `_PopQueue` under `UniformlyControlledSingleBit`
 
 ## Textures
 
+**gfx94x+ (CDNA3 and newer: MI300-class) disables the HIP image/texture object API at COMPILE
+TIME, not just at runtime.** ROCm's own headers define it out:
+`hip/amd_detail/amd_device_functions.h` has
+`#if !defined(__HIP_NO_IMAGE_SUPPORT) && defined(__gfx94plus_clr__) #define
+__HIP_NO_IMAGE_SUPPORT 1 #endif`, which marks every `tex1Dfetch<T>` overload in
+`texture_indirect_functions.h` `__attribute__((unavailable(...)))`. Any call is a hard
+compile error (`'tex1Dfetch<T, nullptr>' is unavailable: The image/texture API not supported
+on the device`), gated purely on `--offload-arch`, so the identical source compiles clean on
+gfx90a/gfx11xx/gfx12xx and fails ONLY on gfx942/gfx950 -- this surfaces as a validation
+failure on exactly one arch even though nothing about the build command differs (confirm the
+arch pin is correct before assuming a real regression; then check for `__gfx94plus_clr__` in
+the toolchain headers). A project doing a bare point-lookup through a texture object (a small
+fixed-size LUT, no hardware filtering needed) has a portable, unconditional fix: replace
+`tex1Dfetch<T>(tex, n)` with a plain indexed read through a `const T*` and drop the
+`hipTextureObject_t` create/destroy -- this also removes dead code on the arches where
+textures do work, so the fix does not need an `#ifdef` gate. A project that genuinely needs
+hardware linear filtering has no CDNA3 hardware path at all and needs the software-lerp
+fallback below unconditionally on gfx94x+. (arrayfire: `fast.cu`/`orb.cu`/`regions.cu` FAST/
+ORB/connected-components kernels, all plain LUT point-lookups with no filtering, on MI300X.)
+
 **Texture pitch alignment is 256 bytes on AMD against 32 on NVIDIA**, and it bites in two
 distinct ways.
 
