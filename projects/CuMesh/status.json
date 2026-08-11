@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-08-11T22:09:44Z",
+  "updated_at": "2026-08-11T23:48:28Z",
   "head_sha": "392b4dd41f8b10b795b00e44cb1b294b1388cefa",
   "depends_on": [],
   "pr_url": "https://github.com/JeffreyXiang/CuMesh/pull/36",
@@ -54,10 +54,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "d5c1355",
+      "validated_sha": "392b4dd41f8b10b795b00e44cb1b294b1388cefa",
       "started_at": null,
-      "completed_at": "2026-06-23T14:01:49Z",
-      "updated_at": "2026-06-23T14:01:49Z",
+      "completed_at": "2026-08-11T23:48:28Z",
+      "updated_at": "2026-08-11T23:48:28Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -73,10 +73,10 @@
       },
       "last_agent": "validator",
       "carry_forward": {
-        "to": "d5c1355",
-        "method": "source-class",
-        "detail": "cubvh submodule repointed AMD-Ecosystem/cubvh@moat-port -> ashawkey/cubvh@main; gitlink e5a657a -> 757b913b has IDENTICAL tree (git diff empty), .gitmodules url/branch are metadata only -> compiled output",
-        "at": "2026-06-23T14:01:49Z"
+        "to": "392b4dd41f8b10b795b00e44cb1b294b1388cefa",
+        "method": "binary-equiv",
+        "detail": "d5c1355..392b4dd (setup.py visibility-flag refactor is a no-op on IS_HIP, Windows-only cubvh_bindings_winhip.cu comment removal, README-only docs); rebuilt both SHAs at the identical checkout path on ",
+        "at": "2026-08-11T23:48:28Z"
       }
     },
     "windows-gfx1101": {

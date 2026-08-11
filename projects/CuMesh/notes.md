@@ -1522,3 +1522,86 @@ is claimed.
   cubvh is clean at `757b913bfbf19ed65e3a379d159391a8e29efa0f` and Eigen at
   `e63d9f6ccb7f6f29f31241b87c542f3f0ab3112b`. No remote-tracking ref contains the
   prepared `49b1d3b` replacement.
+
+## Validation 2026-08-11 (linux-gfx1100 revalidate, binary-equiv carry-forward)
+
+**Platform**: linux-gfx1100 (AMD Radeon Pro W7800, gfx1100, ROCm 7.2.53211, PyTorch
+`2.14.0a0+gitb81488e`).
+
+**Revalidate trigger**: previous `validated_sha` for this platform was `d5c1355`; head
+moved to `392b4dd41f8b10b795b00e44cb1b294b1388cefa`. `python3 utils/moatlib.py classify
+CuMesh d5c1355 392b4dd41f8b10b795b00e44cb1b294b1388cefa` returned `class=unknown
+arch_independent=False`, so the manual carry-forward procedure was used instead of
+trusting the classifier.
+
+**Delta d5c1355..392b4dd** (4 commits, `git diff --stat` = `README.md`, `setup.py`,
+`src/cubvh_bindings_winhip.cu`):
+- `4440182`: `setup.py` refactors the cubvh visibility flags into `visibility_flags`
+  / `visibility_nvcc_flags` variables. For `IS_HIP` the `nvcc`-key list is still exactly
+  `["-fvisibility=hidden", "-fvisibility-inlines-hidden"]` -- textually a no-op on the
+  ROCm path (only the CUDA and Windows-CUDA arms change).
+- `89e6324`: removes a 2-line AMD copyright comment from
+  `src/cubvh_bindings_winhip.cu`, a Windows-only file not compiled on Linux at all.
+- `79f089f`, `392b4dd`: README documentation only.
+
+**Method**: built the project twice on real hardware rather than trusting the textual
+argument, per the carry-forward procedure (build both SHAs, `codeobj_diff`). First
+attempt built `d5c1355` from a worktree at a *different* absolute path
+(`agent_space/CuMesh-old-d5c1355`) than the `392b4dd` build (`projects/CuMesh/src`) and
+`codeobj_diff` reported `_C.so` as `differ`, exported-symbol-only:
+
+```
+_ZN3c106detail17torchCheckMsgImplIJA22_cA17_cA53_c...   (old)
+_ZN3c106detail17torchCheckMsgImplIJA22_cA17_cA64_c...   (new)
+```
+
+Demangling showed the differing template parameter is a `char[N]` string-literal length
+(`char[53]` vs `char[64]`), not a real symbol. `src/utils_hip.h`'s `CUDA_CHECK` macro
+passes `__FILE__` straight into `TORCH_CHECK(...)`, so the instantiated
+`torchCheckMsgImpl<...>` template encodes the compiler's absolute source path length as
+a template parameter -- a pure build-path artifact of comparing two different checkout
+directories, not a code difference. This is the `__FILE__`-in-a-template-check-macro
+fault-class instance of "known harness-vs-real-fault confusion" called out in the
+validator brief; recording it here as a diagnostic method (rebuild both SHAs at an
+*identical* absolute path to eliminate it) rather than treating it as a regression.
+
+Re-ran with both builds from the identical path (checked out `d5c1355` in place inside
+`projects/CuMesh/src`, built to a separate `--build-base`, then checked `392b4dd` back
+out and diffed against the pre-existing `392b4dd` build):
+
+```bash
+cd /var/lib/jenkins/moat/projects/CuMesh/src
+git checkout d5c1355 && git submodule update --init --recursive
+utils/timeit.sh CuMesh compile -- bash -lc '... GPU_ARCHS=gfx1100 python3 setup.py build --build-base .../CuMesh-build-old-samepath-gfx1100 --force'
+git checkout 392b4dd41f8b10b795b00e44cb1b294b1388cefa && git submodule update --init --recursive
+python3 utils/codeobj_diff.py .../CuMesh-build-old-samepath-gfx1100/lib.../cumesh .../CuMesh-build-new-gfx1100/lib.../cumesh
+```
+
+**codeobj_diff result** (identical path both sides): `_C.so` identical (device ISA +
+1006 exported symbols), `_cubvh.so` identical (device ISA + 66 exported symbols),
+`_cumesh_xatlas.so` indeterminate (roc-obj-ls finds no device section -- CPU-only
+module, same pattern recorded for this file in every prior carry-forward on this
+project). Followed the established pattern for that module and compared md5 directly:
+byte-identical (`3416a1429be19228f9c64d3f64ccd5ad` both sides).
+
+**Verdict**: carry-forward. All GPU device code and exported symbols for `_C.so` and
+`_cubvh.so` are proven identical on gfx1100 once the build-path artifact is controlled
+for, and `_cumesh_xatlas.so` is proven byte-identical. No GPU re-run was required.
+
+**Action**: `python3 utils/moatlib.py carry-forward CuMesh linux-gfx1100
+392b4dd41f8b10b795b00e44cb1b294b1388cefa binary-equiv "..."` -- linux-gfx1100 advanced
+to `completed` at `392b4dd41f8b10b795b00e44cb1b294b1388cefa`.
+
+**CUDA gate**: not repeated (carried-forward revalidation, and already recorded at this
+head_sha by the linux-gfx942 validator run above).
+
+**Jargon**: `python3 utils/jargon.py --port CuMesh` still reports exactly the two
+settled hits in frozen commit `d5c1355` (`moat-port`, `moat`), covered by the 2026-08-09
+maintainer decision; no new hit.
+
+**Documentation**: `README.md:14-36` (verified independently in this checkout) presents
+NVIDIA/AMD as alternatives and documents `BUILD_TARGET=rocm GPU_ARCHS=<arch>`.
+
+**Integrity**: `git -C projects/CuMesh/src status --porcelain` is empty; local `HEAD`
+and `origin/moat-port` both resolve to `392b4dd41f8b10b795b00e44cb1b294b1388cefa`;
+`third_party/cubvh` submodule clean at `757b913bfbf19ed65e3a379d159391a8e29efa0f`.
