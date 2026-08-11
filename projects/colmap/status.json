@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-10T13:58:57Z",
-  "updated_at": "2026-08-11T20:52:07Z",
+  "updated_at": "2026-08-11T22:07:57Z",
   "head_sha": "4c531f5e51f18eeb145309f8650a8da58453c8af",
   "depends_on": [],
   "fork_branch": "moat-port",
@@ -109,5 +109,5 @@
       "last_agent": "validator"
     }
   },
-  "review_pr": "https://github.com/AMD-Ecosystem/colmap/pull/1"
+  "review_pr": "https://github.com/AMD-Ecosystem/colmap/pull/2"
 }
