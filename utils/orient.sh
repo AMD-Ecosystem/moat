@@ -221,5 +221,5 @@ read -r PROJECT STATE STAGE < <(echo "$NEXT" | python3 -c \
 
 echo "next     : projects/$PROJECT  state=$STATE  -> dispatch: $STAGE"
 echo "triple   : $GFX_TRIPLE"
-echo "action   : Use the $STAGE subagent on projects/$PROJECT"
-echo "           (read CLAUDE.md Pipeline + Autonomy boundary first)"
+echo "action   : Use the $STAGE role on projects/$PROJECT for $PLATFORM"
+echo "           (read AGENTS.md Pipeline + Human decisions first)"
