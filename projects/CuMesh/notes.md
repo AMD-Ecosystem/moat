@@ -1369,3 +1369,35 @@ The invalid Test Plan line is settled for this commit because the live upstream 
 clean and rewriting the visible PR head was explicitly declined. No source, build,
 documentation, or commit-message content changed, so no build or test was repeated. This
 round acquired the required linux-gfx942 porting lock and releases it through `ported`.
+
+## Review 2026-08-11 (linux-gfx942, settled-decision final round)
+
+**Reviewer**: MOAT reviewer agent (local-branch mode, `moat-port` vs `main`, base
+`12289e1062f0603f2f0d0771b02e1395d247f26f`, head
+`392b4dd41f8b10b795b00e44cb1b294b1388cefa`)
+
+**Verdict**: Approve (review-passed)
+
+No actionable findings. The prerequisite correction at `README.md:12-19` now presents
+the NVIDIA and AMD stacks as alternatives, and the documented ROCm command matches
+`setup.py`: `BUILD_TARGET=rocm` selects the HIP path and semicolon-separated `GPU_ARCHS`
+values become `--offload-arch` arguments. The complete branch diff passes
+`git diff --check`, and `utils/prose.py` reports the README clean.
+
+The cubvh submodule is clean at `757b913bfbf19ed65e3a379d159391a8e29efa0f`, the
+merge of the ROCm port into `ashawkey/cubvh` main. Its tree
+`f16858ee411cf768bdbfce2a443d3c09669d9ddf` is identical to its previously validated
+merge parent `e5a657a4e8f6e66d090859a3d722040d895110fe`; the nested Eigen submodule is clean
+at `e63d9f6ccb7f6f29f31241b87c542f3f0ab3112b`. The current `.gitmodules` URL and branch
+therefore match the checked-out upstream commit without changing compiled content.
+
+The full CuMesh and cubvh deltas were re-audited for the ROCm fault classes. There are no
+warp/lane collectives, textures, block barriers, SM-ID indexing, or resource-handle
+wrappers in scope; the numeric `32` occurrences are key packing, lookup flags, random
+number widths, or bounded stack capacity rather than wavefront assumptions. The guarded
+`rocprim::tuple` decomposer preserves CCCL on CUDA, torch hipify owns the ordinary CUB and
+runtime substitutions, and the CUDA/hipcc visibility-flag split remains backend-correct.
+
+The invalid control-plane command in `392b4dd`'s Test Plan is excluded from this verdict
+by the recorded human decision above. The prepared replacement `49b1d3b` remains local
+only: no fetched `origin/*` ref contains it, and `origin/moat-port` remains at `392b4dd`.
