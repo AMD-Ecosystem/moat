@@ -1182,3 +1182,74 @@ are byte-identical to the previously built and GPU-tested parent.
 The whole-branch jargon scan still reports only the two settled hits in frozen commit
 `d5c1355`; this README fix and its commit message add none. Local `HEAD` and
 `origin/moat-port` both resolve to `392b4dd41f8b10b795b00e44cb1b294b1388cefa`.
+
+## Review 2026-08-11 (linux-gfx942, prerequisite correction round)
+
+**Reviewer**: MOAT reviewer agent (local-branch mode, `moat-port` vs `main`, base
+`12289e1062f0603f2f0d0771b02e1395d247f26f`, head
+`392b4dd41f8b10b795b00e44cb1b294b1388cefa`)
+
+**Verdict**: Request Changes
+
+The README content of this round is correct and I could not fault it. `README.md:14-19`
+now presents the two backends as alternatives rather than a cumulative list, which is
+what the previous round asked for, and every claim in the added build block checks out
+against the build file: `BUILD_TARGET=rocm` selects the HIP path at `setup.py:81-82`, and
+a semicolon-separated `GPU_ARCHS` becomes one `--offload-arch` per target at
+`setup.py:126-127`. `utils/prose.py projects/CuMesh/src/README.md` reports clean and the
+tree delta from `79f089f` is `M README.md` alone. The single finding is in the commit
+message, not the file.
+
+### Commit hygiene
+
+**1. The Test Plan of the tip commit `392b4dd` tells the reader to run a script that does
+not exist in the project.** Its last command, at line 14 of the commit body, is
+
+```
+python3 ../../utils/prose.py README.md
+```
+
+`prose.py` is this control-plane repository's tool, not CuMesh's: `git ls-files | grep -i
+prose` on the fork returns nothing at every commit on the branch. The relative path does
+not reach it either -- from the fork root `../../utils/prose.py` resolves to
+`projects/utils/prose.py`, which does not exist; the real script is `utils/prose.py` at
+the control-plane root, and the porter's own record above shows it being invoked from
+there, so the path was rewritten by hand into a form that resolves nowhere. A Test Plan is
+upstream-visible and is meant to be a literal command the maintainer can run. This one
+exposes our tooling layout and cannot be executed by anyone who clones CuMesh.
+
+`utils/jargon.py` does not and should not catch this: `config/jargon.toml:20-22` documents
+that fenced code blocks are skipped deliberately, so that documenting a real command
+containing a term stays legal. The gap is not in that config; the command simply should
+not have been written into an upstream commit. Do not propose a jargon.toml rule for it.
+
+The fix is message-only -- drop that line, keeping the three `grep -F` checks and
+`git diff --check`, which are proportional for a documentation commit and are all runnable
+from a clean clone. The tree is unaffected, so no architecture loses evidence and no
+rebuild or GPU re-run is implied.
+
+One caution on how to apply it, which is why this is worth stating rather than just doing.
+`392b4dd` is already the head of open upstream PR #36 (`gh pr view 36 --repo
+JeffreyXiang/CuMesh` reports `headRefOid` = `392b4dd`, head branch `AMD-Ecosystem:moat-port`),
+so every push to `moat-port` has been landing in that PR, and correcting the message means
+force-pushing the branch the PR tracks. That is a different case from the settled decision
+above about `d5c1355`: no validated evidence exists at `392b4dd` to destroy, the source
+tree is byte-identical to its parent, and the commit was authored this round rather than
+being long-published history. It is still a rewrite of something a maintainer can already
+see, so if the porter judges that call to belong to a person, raise it instead of
+force-pushing; what is not acceptable is leaving the line in place unremarked.
+
+### Scope re-checked independently
+
+Recorded so the next round does not re-derive it. The fault classes still do not apply and
+I verified this against the tree rather than inheriting the earlier reviews: no
+`warpSize`, `__shfl*`, `__ballot`, `__activemask` or `WARP_SIZE` anywhere in `src/` or in
+the vendored cubvh sources and headers, and no `cudaArray`, texture object or `tex2D`
+usage, so wavefront width, texture pitch and resource-handle lifetime are all moot. The
+one guarded divergence, `src/clean_up.cu:242-256`, keeps the CCCL spelling on the CUDA arm
+and is gated on `__HIP_PLATFORM_AMD__`, which torch defines on the hipcc command line
+(`COMMON_HIP_FLAGS` = `-D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 ...`), so the "macro
+undefined before `hip_runtime.h`" trap does not bite here. Added lines are ASCII, no
+`Co-Authored-By` trailer appears on any commit in `12289e1..HEAD`, both new titles are
+under 72 characters and carry the `[ROCm]` prefix with an AI-assistance disclosure, and no
+internal account, host or path appears in the diff. The fork worktree is clean.
