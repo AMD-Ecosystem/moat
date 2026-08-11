@@ -5,8 +5,8 @@
 #
 # start/end pairs give session wall-clock, which statlib.py sums.
 #
-# Tokens are deliberately NOT recorded here. Only the orchestrator can see a
-# subagent's token count (it arrives in the completion notification), so
+# Tokens are deliberately NOT recorded here. Only the orchestrator may receive a
+# child agent's token count when its harness reports one, so
 # `moatlib.py record-tokens` owns that record kind. This script used to write
 # {kind:"tokens"} as well, which left two different shapes in the same file.
 set -uo pipefail
