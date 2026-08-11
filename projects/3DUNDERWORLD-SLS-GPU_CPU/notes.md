@@ -1137,3 +1137,53 @@ read the traceback as a broken ROCm install.
 The `llvm-objdump --offloading` half of the lesson is unchanged and re-confirmed
 here: `$(hipconfig --hipclangpath)/llvm-objdump --offloading
 build_bare/bin/SLS_GPU` prints three `hipv4-amdgcn-amd-amdhsa--gfx942` bundles.
+
+## Review 2026-08-11 round 3 (reviewer, linux-gfx942) -- review-passed
+
+Round 2's single finding (the promoted `roc-obj-ls` lesson misdiagnosed its own
+failure) is closed by control-plane commit 0352ebb. No PR opened.
+
+No findings this round. The fork was not touched: `src/` HEAD is still
+bc3e4e9, equal to `origin/moat-port`, and `git status --porcelain
+--untracked-files=no` is empty, so the round 1-2 verification of
+`c87fe37...bc3e4e9` (15 files, +512/-114) still stands at this head and is not
+re-litigated.
+
+Independently re-derived the reworded lesson rather than trusting the porter's
+transcript, on this same wheel-layout host (no `/opt/rocm`):
+
+```
+$ for t in roc-obj-ls roc-obj roc-obj-extract; do $t /bin/true; echo "$t rc=$?"; done
+ImportError: cannot import name 'roc_obj_ls' from 'rocm_sdk_core._cli' ... rc=1
+ImportError: cannot import name 'roc_obj' from 'rocm_sdk_core._cli' ... rc=1
+ImportError: cannot import name 'roc_obj_extract' from 'rocm_sdk_core._cli' ... rc=1
+```
+
+All three shims are installed by the `rocm_sdk_core-7.14.0` wheel (its `RECORD`
+lists `bin/roc-obj{,-ls,-extract}` and `entry_points.txt` declares
+`roc-obj-ls = rocm_sdk_core._cli:roc_obj_ls`), while the shipped `_cli` module
+defines `hipcc`, `hipconfig`, `rocm_smi`, `rocgdb` and friends but no `roc_obj*`
+name -- so the declared entry points genuinely do not exist and the failure is
+family-wide, exactly as `validation.md:31-42` now states. The reworded entry
+covers both symptoms ("tracebacks or is missing") and tells the reader not to
+read either as a broken install or an untargeted build, so a reader who finds
+the tool present-but-crashing now matches the lesson. `notes.md:1000-1007`
+carries the same corrected wording.
+
+The `llvm-objdump --offloading` half re-confirmed here as well:
+`$(hipconfig --hipclangpath)/llvm-objdump --offloading build_bare/bin/SLS_GPU`
+prints three `hipv4-amdgcn-amd-amdhsa--gfx942` bundles.
+
+Spot-checks at this head, all clean: no added line in the `.cu`/`.cuh`/`.h`/`.cc`
+diff touches `warpSize`, a literal warp width, a shuffle/ballot, or a texture
+object, so the wave-size and texture-handle fault classes have no surface here;
+`jargon.py --port 3DUNDERWORLD-SLS-GPU_CPU` is clean over the branch; the three
+branch commits carry `[ROCm]` titles and no agent `Co-Authored-By` trailer.
+
+Still outstanding for the maintainer round, unchanged and not a fork defect:
+PR #33's body does not describe `__builtin_trap()`, `OPENCV4_COMPAT_DIR`,
+`.github/workflows/hip.yml`, or the `.gitignore`/README changes. Whoever applies
+the drafted replacement body should cover all four.
+
+Not held against the port: no GPU run at this head from this reviewer (the
+validator stage runs it next).
