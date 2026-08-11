@@ -838,8 +838,8 @@ a third.
 
 ## Porter Attempt 6 (2026-08-11, linux-gfx90a) -- review findings addressed
 
-Fork head after this attempt: `d1b149b530515c71bd56021695bc20210693d0a5`
-(four commits on top of `39d678d`, none of them an amend). 20/20 suites still
+Fork head after this attempt: `4b0d53dc9811826a6666fafc03c458fccddaf68e`
+(five commits on top of `39d678d`, none of them an amend). 20/20 suites still
 pass, three runs, and the examples and benchmarks now build and run too.
 
 ### The examples and benchmarks were never built with the option on
