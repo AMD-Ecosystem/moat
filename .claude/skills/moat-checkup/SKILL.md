@@ -14,7 +14,7 @@ stage: none of it is selected by `next-task`, because it is event-driven (a main
 comments, a PR merges, a landed port goes stale) rather than state-driven.
 
 It is a skill rather than a dispatched agent because every step ends at a person. A
-subagent could read the threads and draft the replies, but it could not post them, so it
+child agent could read the threads and draft the replies, but it could not post them, so it
 would hand everything back anyway -- and the round trip costs more than doing it here.
 
 ## The checkup, in order
