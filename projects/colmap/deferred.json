@@ -13,7 +13,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-08-08T01:27:34Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-11T23:02:05Z"
+      }
     },
     {
       "id": "colmap-windows-gl-context-teardown-crash",
