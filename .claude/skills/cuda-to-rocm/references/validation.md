@@ -29,11 +29,15 @@ Ones seen so far, for orientation rather than as a roster:
 ## Proving a binary really contains code for the target architecture
 
 `roc-obj-ls <binary>` lists the embedded code objects and is the usual evidence that a
-build targeted the arch you asked for. It is a packaged-ROCm script and is MISSING from
-SDK-wheel layouts (a host with no `/opt/rocm` at all), where the portable equivalent is
+build targeted the arch you asked for. It is a packaged-ROCm script and is UNUSABLE on
+SDK-wheel layouts (a host with no `/opt/rocm` at all): the wheel installs the console
+script on PATH, but its entry point does not exist, so the whole `roc-obj*` family dies
+with `ImportError: cannot import name 'roc_obj_ls' from 'rocm_sdk_core._cli'` rather than
+command-not-found. The portable equivalent is
 `$(hipconfig --hipclangpath)/llvm-objdump --offloading <binary>`: it prints one
 `hipv4-amdgcn-amd-amdhsa--gfxNNNN` bundle per device translation unit. Do not conclude a
-build is untargeted because `roc-obj-ls` is absent. `hipconfig --hipclangpath` also gives
+build is untargeted, or that the ROCm install is broken, because `roc-obj-ls` tracebacks
+or is missing -- switch tools. `hipconfig --hipclangpath` also gives
 the `CMAKE_HIP_COMPILER` value to pass when CMake cannot find the HIP compiler on such a
 host, which keeps a documented configure command runnable outside `/opt/rocm`.
 (3DUNDERWORLD-SLS-GPU_CPU on gfx942.)

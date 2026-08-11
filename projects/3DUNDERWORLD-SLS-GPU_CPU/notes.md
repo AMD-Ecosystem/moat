@@ -997,8 +997,12 @@ sync_main); only warning is the pre-existing `sync_main.cc:24` missing return.
 form (`-DCMAKE_HIP_COMPILER="$(hipconfig --hipclangpath)/clang++"`) configures
 identically. No GPU run here (porter role); gfx942 validation is next.
 
-Host quirk (promoted to the skill's `validation.md`): `roc-obj-ls` is not shipped
-in the ROCm SDK wheel layout, so use
+Host quirk (promoted to the skill's `validation.md`): in the ROCm SDK wheel
+layout `roc-obj-ls` is on PATH but unusable -- the wheel installs the console
+script (`/opt/conda/envs/py_3.12/bin/roc-obj-ls`) while `rocm_sdk_core._cli`
+exports no `roc_obj_ls`, so it exits 1 with `ImportError: cannot import name
+'roc_obj_ls' from 'rocm_sdk_core._cli'`. Same for `roc-obj` and
+`roc-obj-extract`. Use
 `$(hipconfig --hipclangpath)/llvm-objdump --offloading <binary>` to list embedded
 code objects instead.
 
@@ -1101,3 +1105,35 @@ maintainer reads.
 
 Not held against the port: no GPU run at this head from this reviewer (the
 validator stage runs it next).
+
+## Round 2 response 2026-08-11 (porter, linux-gfx942) -- control-plane only
+
+Finding 1 (the promoted `roc-obj-ls` lesson misdiagnoses its failure) is fixed.
+No fork change: `moat-port` head stays bc3e4e9 and `src/` was not touched.
+
+Re-verified the behaviour on this host before rewording rather than inheriting
+either description:
+
+```
+$ which roc-obj-ls
+/opt/conda/envs/py_3.12/bin/roc-obj-ls
+$ ls /opt/rocm
+ls: cannot access '/opt/rocm': No such file or directory
+$ roc-obj-ls build_bare/bin/SLS_GPU ; echo exit=$?
+ImportError: cannot import name 'roc_obj_ls' from 'rocm_sdk_core._cli'
+exit=1
+$ python3 -c "import rocm_sdk_core._cli as c; print('roc_obj_ls' in dir(c))"
+False
+```
+
+The shim is a three-line console script that imports `roc_obj_ls` from
+`rocm_sdk_core._cli`; that module exports `hipcc`, `hipconfig`, `rocm_smi`,
+`rocgdb` and friends but nothing from the `roc-obj` family. `roc-obj` and
+`roc-obj-extract` fail identically, so the entry is about the family, not one
+script. Both `validation.md` and the note above now say present-but-broken
+(ImportError) instead of missing, and the skill entry tells the reader not to
+read the traceback as a broken ROCm install.
+
+The `llvm-objdump --offloading` half of the lesson is unchanged and re-confirmed
+here: `$(hipconfig --hipclangpath)/llvm-objdump --offloading
+build_bare/bin/SLS_GPU` prints three `hipv4-amdgcn-amd-amdhsa--gfx942` bundles.
