@@ -42,7 +42,7 @@ Use with SKILL.md. Spawn sub-agents to verify items against the actual code. Rep
 
 ## 8. Commit hygiene
 - [ ] Title prefixed [ROCm], <= 72 chars.
-- [ ] Body explains the change and mentions Claude by name; NO Co-Authored-By noreply trailer; has a Test Plan section.
+- [ ] Body explains the change and discloses assistance from an AI coding agent; NO Co-Authored-By noreply trailer; has a Test Plan section.
 - [ ] History pushed with --force-with-lease; no bare --force; no ghstack. Multi-commit history on the port branch is fine -- the single-curated-commit rule was retired.
 - [ ] The fork the PR is opened from matches `status.json.fork_url`.
 - [ ] The port branch is not behind the fork's default branch. Read that branch from
