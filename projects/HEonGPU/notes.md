@@ -1188,3 +1188,158 @@ account reference, the only non-ASCII in the branch diff is the upstream author'
 pre-existing headers), `jargon.py --port HEonGPU` reports clean, the fork tree is clean,
 the delta touches no submodule patch and no kernel, and the fault classes are untouched by
 a change that adds and removes only build flags.
+
+## Validation 2026-08-11 (linux-gfx90a, MI250X, ROCm 7.2.1) -- completed
+
+Real-GPU validation of `moat-port` at `5d99b8f447895f5b34b35f856e654d65e69b390a`
+(the `review-passed` head). GPU: `rocm-smi`/`rocminfo` report three MI250X dies
+(GFX Version gfx90a) on this host; `cat /opt/rocm/.info/version` reports 7.2.1.
+Clean build from scratch (`rm -rf build` first, tree was otherwise as checked
+out, `git -C src status --porcelain` empty before and after):
+
+```bash
+cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build \
+    -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release \
+    -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON
+cmake --build projects/HEonGPU/src/build -j128
+ctest --test-dir projects/HEonGPU/src/build --output-on-failure
+```
+
+Both wrapped in `utils/timeit.sh HEonGPU compile -- ...` / `utils/timeit.sh
+HEonGPU test -- ...`; configure 176s, build 65s (128 cores), no `error:` in
+either log. `ctest`: **20/20 passed**, run twice back to back (13.3s and
+13.3s), reproducing the porter's 20/20 claim independently on a from-scratch
+build rather than trusting the porter's build directory.
+
+### 1. Barrett 128-bit shift (`thirdparty/patches/GPU-NTT.patch`)
+
+Independent probe (`agent_space/HEonGPU-val/mod61.cu`, gitignored), compiled
+against the built `libntt-1.0.a`'s header directly (no library code changed),
+sweeping modulus widths 20/36/37/59/60/61/62 bits with a random 64-bit prime
+near each width, 20000 random pairs plus three boundary values per width,
+compared against a `__uint128_t` host reference:
+
+```
+bits=20 q=907367               mult: 0/20000 bad
+bits=36 q=50345224429          mult: 0/20000 bad
+bits=37 q=86597943119          mult: 0/20000 bad
+bits=59 q=460319146180475921   mult: 0/20000 bad
+bits=60 q=871991169372668971   mult: 0/20000 bad
+bits=61 q=1705080445570786637  mult: 0/20000 bad
+bits=62 q=3302937310097410133  mult: 0/20000 bad
+```
+
+0 bad at every width, including 61 and 62 bits where attempt 5 measured
+19999/20000 bad before the fix. The <= 60-bit paths remain 0 bad, confirming
+the fix did not disturb them.
+
+### 2. `truncate_signed<T>()` Gaussian sampler (`thirdparty/patches/RNGonGPU.patch`)
+
+Independent probe (`agent_space/HEonGPU-val/rngprobe.cu`), linked against the
+real `libheongpu.a`, calling the public
+`heongpu::RandomNumberGenerator::instance().modular_gaussian_random_number_generation`
+at a 4096-ring against the same 61-bit BFV-gamma-sized modulus attempt 4 used
+(`2305843009213554689`), `std_dev=3.2`:
+
+```
+n=4096 requested_std_dev=3.20
+mean(centered)=0.1101 std(centered)=2.8044 max|centered|=11 out_of_range(>=q)=517
+```
+
+`max|centered|=11` (attempt 4 measured 13 with a different seed; both are
+small integers consistent with a std_dev-3.2 Gaussian, not the pre-fix
+4294967295). `std(centered)=2.80` is in the right neighborhood of the
+requested 3.2 for n=4096 samples. `out_of_range=517` matches attempt 4's
+"~518" and is the documented harmless upstream artifact (a sample in (-1,0)
+truncating to 0 then storing exactly `q`, congruent to 0). This is a shape
+check, not just "decryption succeeded": a distribution collapsed to
+`{0, q-2}` as in the pre-fix bug would still often decrypt correctly for
+small plaintexts, which is exactly why this needed its own probe per the
+dispatch instructions.
+
+### 3. TFHE random-state buffer (`1b5952e`)
+
+Read `src/lib/host/tfhe/encryptor.cu`: allocation `total_state = 512 * 32 =
+16384` `curandState` entries; `initialize_random_states_kernel<<<(total_state
++ 511) >> 9, 512>>>` launches exactly `32 * 512 = 16384` threads, one state
+per thread, matching the allocation exactly (this is the fixed geometry --
+attempt 3/4's bug was allocating only `context_->n_ = 512` states while
+indexing up to 16384). `encrypt_lwe_kernel`'s `block_count` is capped at 32,
+so its indexing never exceeds the same 16384.
+
+Independent probe (`agent_space/HEonGPU-val/tfhe_lwe.cu`), LWE
+encrypt-then-decrypt with no bootstrapping, 40 rounds x 1024 bits (bigger than
+attempt 5's 64-bit check, to stress the 32x-launch-vs-1x-allocation geometry
+harder):
+
+```
+LWE encrypt-then-decrypt (no bootstrap): 0/40960 bits wrong (rounds=40, size=1024)
+```
+
+### Examples and benchmarks
+
+Built with `-DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON` in the
+same configure above (both compiled clean, no separate step needed). Ran a
+sample and checked output by inspection: `1_basic_bfv`, `2_basic_ckks`,
+`9_multi_stream_usage_way1`, `15_basic_tfhe`,
+`bootstrapping/3_ckks_bit_bootstrapping`, `mpc/1_multiparty_computation_bfv`
+all exit 0 with plausible decrypted output (matches the values recorded in
+attempt 6/7's own runs); `benchmark/tfhe_benchmark` runs all eight gates and
+reports sane per-op timings (NAND/AND/NOR/OR/XNOR/XOR ~16.5-16.6ms, NOT
+~0.012ms, MUX ~30ms).
+
+`readelf -d` on every executable under `build/bin` (42 binaries: 15 tests, 24
+examples, 3 benchmarks) was scanned for `libgomp`: **none found**. The
+9_multi_stream_usage_way1 binary (the one review round 3 focused on) links
+`libomp.so` and no `libgomp.so.*`, confirming the single-OpenMP-runtime fix
+holds on a from-scratch build, not just the reviewer's build directory.
+
+### CUDA no-regression gate: cuda-not-validated (environmental wall)
+
+Attempted with `/opt/conda/envs/cuda-12.8/bin/nvcc` (12.8.93), host `gcc-13`,
+`-DCMAKE_CUDA_ARCHITECTURES=80` pinned explicitly (no `native` autodetection
+risk), `-DUSE_HIP=OFF`, `-DTHRUST_INCLUDE_DIR=<conda toolkit's thrust>` (the
+project's `FindThrust.cmake` does not search a conda toolkit layout by
+default, so this alone is a configuration-path fix, not a source edit, and
+was not committed). Configure got past compiler detection and Thrust, then
+hit the CUDA path's real dependency: `find_package`/CPM for RMM
+(`rapidsai/rmm` branch-25.08, upstream and pre-existing -- this is the same
+RMM the plan.md called out as needing a HIP-side stub because the real thing
+is CUDA-only) transitively `FetchContent`-clones `rapids-cmake`, `spdlog`, and
+`NVIDIA/cccl` from GitHub with full history. The `cccl` clone alone reached
+73MB in the ~17 minutes I let it run and was not close to done (that repo's
+full-history clone is commonly several hundred MB to >1GB), so this is a
+network/time cost intrinsic to the upstream CUDA build's own dependency
+fetching, not anything the port touched -- the `USE_HIP` path exists
+precisely to avoid this by using the local `rmm_hip_stub/` instead of real
+RMM. Killed the build (`pkill`, `rm -rf` the throwaway build dir) rather than
+let it run past the ~15-minute budget for this secondary, compile-only gate.
+No project file was modified for this attempt; `git -C
+projects/HEonGPU/src status --porcelain` was empty before and stayed empty
+after (the `-D` flags left no trace). Recording `cuda-not-validated:
+upstream CUDA path's RMM dependency requires a full-history clone of
+NVIDIA/cccl over the network, which did not complete inside the compile-only
+budget; not attempted further`. Not a gate; does not block this arch.
+
+### Deferrals
+
+All three deferred items in `projects/HEonGPU/deferred.json`
+(`heongpu-negative-gaussian-cast`, `heongpu-tfhe-torus32-saturates`,
+`heongpu-barrett-shift-cuda-side`) were already recorded by the porter/review
+rounds before this validation; nothing new to add. `jargon.py --port HEonGPU`
+re-run clean. Documentation confirmed present in the project's own house
+style: `README.md` ("AMD GPUs (ROCm)" section, `-D USE_HIP=ON` build
+instructions), `docs/getting_started.rst` (ROCm prerequisite, HIP configure
+line, note that tests/examples/benchmarks all build and run on AMD), and
+`docs/advanced_topics.rst` (downstream-consumer CMake snippet for a HIP
+build).
+
+### Verdict
+
+`linux-gfx90a`: **completed** at `5d99b8f447895f5b34b35f856e654d65e69b390a`.
+Suite pass is reproduced from a clean build; the three fixes named invisible
+to the test set were each independently exercised and hold at runtime on
+real gfx90a hardware, not just re-read from the porter's notes. CUDA gate is
+`cuda-not-validated` (environmental wall, not a regression finding -- the
+port was never built as CUDA here, so no comparison against upstream
+breakage was possible or necessary).
