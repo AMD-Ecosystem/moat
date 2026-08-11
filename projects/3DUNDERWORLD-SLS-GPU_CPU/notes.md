@@ -1004,3 +1004,100 @@ code objects instead.
 
 `python3 utils/jargon.py --port 3DUNDERWORLD-SLS-GPU_CPU`: clean.
 `utils/prose.py` on both commit bodies and the new README paragraphs: clean.
+
+## Review 2026-08-11 round 2 (reviewer, linux-gfx942) -- changes-requested
+
+Re-reviewed the delta `7dc3a24..bc3e4e9` (2 files, +5/-5) and re-checked the full
+`c87fe37...bc3e4e9` diff on the fork `moat-port` branch, plus the two skill
+lessons this branch promotes. No PR opened.
+
+Findings 1, 3, 4 and 5 of the 2026-08-11 review are genuinely closed; finding 2
+is correctly deferred to the maintainer round and is not held against the fork.
+One new problem, in a promoted lesson.
+
+### 1. The promoted `roc-obj-ls` lesson misdiagnoses the failure it describes
+
+`.claude/skills/cuda-to-rocm/references/validation.md:32` states `roc-obj-ls`
+"is MISSING from SDK-wheel layouts (a host with no `/opt/rocm` at all)", and
+line 35 tells the reader not to conclude a build is untargeted "because
+`roc-obj-ls` is absent". `notes.md:1000` makes the same claim ("not shipped in
+the ROCm SDK wheel layout"). On this host, which is exactly that layout and is
+the host the lesson is attributed to, it is not absent:
+
+```
+$ which roc-obj-ls
+/opt/conda/envs/py_3.12/bin/roc-obj-ls        # on the default PATH
+$ roc-obj-ls build_bare/bin/SLS_GPU
+Traceback (most recent call last):
+  File "/opt/conda/envs/py_3.12/bin/roc-obj-ls", line 3, in <module>
+    from rocm_sdk_core._cli import roc_obj_ls
+ImportError: cannot import name 'roc_obj_ls' from 'rocm_sdk_core._cli'
+```
+
+The wheel ships the console-script shim but `rocm_sdk_core._cli` exports no
+`roc_obj_ls` (confirmed by listing the module's names). So the symptom a future
+agent meets is a Python traceback from a tool that is on PATH, not
+command-not-found. A lesson that says "missing" invites the opposite
+conclusion -- that the entry does not apply to their host, or that their ROCm
+install is broken -- which is the failure mode the entry exists to prevent.
+
+Required: reword both places to say the shim is present but its entry point is
+broken in this layout (ImportError), so the tool is unusable rather than
+absent. The `llvm-objdump --offloading` advice and the rest of the entry are
+correct and should stay; I verified `$(hipconfig --hipclangpath)/llvm-objdump
+--offloading` prints one `hipv4-amdgcn-amd-amdhsa--gfx942` bundle per device
+translation unit on `build_bare/bin/SLS_GPU`.
+
+### Carry-forward for the maintainer round (not a fork defect, no action here)
+
+Extending finding 2 of the previous review: PR #33's body (fetched read-only)
+is stale in three further ways beyond the `__builtin_trap()` bullet already
+drafted above. It describes neither `OPENCV4_COMPAT_DIR` (`CMakeLists.txt:43`,
+a Windows-only OpenCV include-path workaround that is a source change in the
+diff), nor `.github/workflows/hip.yml` (added at the maintainer's request),
+nor the `.gitignore` and README changes. Whoever applies the drafted
+replacement should cover those too, so the description matches the diff a
+maintainer reads.
+
+### Checked and clean this round
+
+- `.gitignore:13` is now a single `build*/`; `build` on line 3 is upstream's,
+  and `git status --porcelain` in `src/` is clean with `build_bare/` and
+  `build_expl/` present, so the integrity gate still holds.
+- README's bare configure line was genuinely exercised:
+  `build_bare/CMakeCache.txt:149` records `CMAKE_HIP_COMPILER:FILEPATH=` found
+  by CMake itself, against `build_expl`'s `:STRING=` from the command line.
+- The auto-detect path the README now documents was re-run here from scratch
+  (`cmake -S . -B <tmp> -DUSE_HIP=ON`, no arch): CMake sets
+  `CMAKE_HIP_ARCHITECTURES=gfx942;...` repeated once per visible GPU (8 on this
+  host), the driver deduplicates, and the resulting `SLS_GPU` has the same 3
+  gfx942 bundles and the same size (1833832 vs 1833808 bytes) as the pinned
+  build. The documented default is safe on a multi-GPU node.
+- `.github/workflows/hip.yml` is byte-identical to the version that ran green
+  on the fork (run 28765809368, `ROCm build (HIP)`, success) except for the
+  temporary `moat-port` trigger removal, so the container tag and every step
+  are exercised evidence rather than a paste.
+- The corrected `atomicInc` audit in `notes.md:60-71` and `plan.md:91-104`
+  re-derives correctly, and `deferred.json` carries
+  `sls-gpu-bucket-atomicinc-overrun` as open.
+- The `fault-classes.md` additions (atomicInc capacity idiom, "portable is a
+  claim", `gpuTrap()` repair shape, PTX-diff method, FindCUDA-vs-conda layout)
+  check out against the code and against `cuda_to_hip.h:60,66`; each sits in
+  the section a reader with that problem would open.
+- Compat-header coverage is complete: the 15 `cuda*` symbols used across
+  `src/lib/ReconstructorCUDA/*` and `src/app/App_CUDA.cu` are all aliased in
+  `cuda_to_hip.h`, with no unguarded HIP spelling anywhere else.
+- Upstream bit-rot repair re-verified as a repair, not a behaviour change:
+  `git show c87fe37:src/lib/core/Reconstructor.h` is already a pure interface
+  with only `reconstruct(const std::vector<Buckets>&)=0`, and `core/FileReader.h`
+  does not exist at that commit, so the GPU path could not compile on nvcc
+  either. `ReconstructorCUDA` owning `projector_` matches upstream's own
+  destructor, and `cameras_` are stack objects in `App_CUDA.cu` (not owned).
+- Commit hygiene on both new commits: `[ROCm]` titles at 51 and 54 chars, AI
+  assistance disclosed, Test Plan with literal commands, no `Co-Authored-By`,
+  ASCII. `jargon.py --port 3DUNDERWORLD-SLS-GPU_CPU` clean over the whole
+  branch. Fork remote matches `status.json.fork_url` and `moat-port` is pushed
+  at bc3e4e9.
+
+Not held against the port: no GPU run at this head from this reviewer (the
+validator stage runs it next).
