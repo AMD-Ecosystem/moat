@@ -199,11 +199,17 @@ on the device`), gated purely on `--offload-arch`, so the identical source compi
 gfx90a/gfx11xx/gfx12xx and fails ONLY on gfx942/gfx950 -- this surfaces as a validation
 failure on exactly one arch even though nothing about the build command differs (confirm the
 arch pin is correct before assuming a real regression; then check for `__gfx94plus_clr__` in
-the toolchain headers). A project doing a bare point-lookup through a texture object (a small
-fixed-size LUT, no hardware filtering needed) has a portable, unconditional fix: replace
-`tex1Dfetch<T>(tex, n)` with a plain indexed read through a `const T*` and drop the
-`hipTextureObject_t` create/destroy -- this also removes dead code on the arches where
-textures do work, so the fix does not need an `#ifdef` gate. A project that genuinely needs
+the toolchain headers). A project doing a bare point-lookup through a texture object has a
+portable, unconditional fix, and the qualifying criterion is the ACCESS PATTERN, not the table
+size: point sampling only, no hardware filtering, no normalized coordinates, no address/border
+modes (arrayfire's FAST LUT is 64 KiB and still qualifies, so do not read "LUT" as "small").
+Replace `tex1Dfetch<T>(tex, n)` with a plain indexed read through a `const T*` and drop the
+`hipTextureObject_t` create/destroy. Apply it unconditionally rather than under an `#ifdef`:
+the results are bit-identical everywhere and one path is what gets tested. What that costs on
+the arches where textures do work is a THROUGHPUT question the compile does not answer (the
+texture path reads through the read-only cache), so if the tables are hot, time the affected
+tests before and after on a texture-capable arch instead of asserting the texture bought
+nothing. A project that genuinely needs
 hardware linear filtering has no CDNA3 hardware path at all and needs the software-lerp
 fallback below unconditionally on gfx94x+. (arrayfire: `fast.cu`/`orb.cu`/`regions.cu` FAST/
 ORB/connected-components kernels, all plain LUT point-lookups with no filtering, on MI300X.)
