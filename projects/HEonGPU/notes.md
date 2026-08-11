@@ -1092,3 +1092,99 @@ claim are all gone; each statement in the replacement is one of the measurements
 above. The "turn every option ON" rule above it is unchanged. The attempt-6
 bullets in these notes are annotated in place rather than rewritten, so the
 correction is visible.
+
+## Review 2026-08-11 (round 3)
+
+Third review of `moat-port`, scoped to `4b0d53d..5d99b8f` (three example CMakeLists,
+24 insertions) plus the rewritten skill section. Verdict: **review-passed**. Nothing
+blocking; one inaccuracy in this file's own account of itself, corrected below rather
+than bounced, since it is internal to MOAT and changes no fork content.
+
+Every factual claim the delta and the skill section rest on was re-measured this round on
+gfx90a / ROCm 7.2.1 rather than taken from attempt 7, because the skill text publishes to
+every port when this branch merges.
+
+The two-runtime fix holds and the mechanism is as stated. `readelf -d` on
+`build/bin/examples/basic/9_multi_stream_usage_way1` now lists `libomp.so` alone, and a
+scan of all 42 executables under `build/bin` finds no `libgomp` in any DT_NEEDED. The
+generated `flags.make` carries exactly one `-fopenmp` (`HIP_FLAGS = ... -fPIE -fopenmp`)
+and `link.txt` exactly one, with no literal `SHELL:` token and no `libgomp.so` on the link
+line, so the build tree matches the committed source. The CUDA branch of all three files
+(`example/basic/CMakeLists.txt:46-54` and the same block in bootstrapping and mpc) is
+untouched by the delta, `find_package(OpenMP REQUIRED)` at `CMakeLists.txt:67` is upstream
+and unmodified so `${OpenMP_CXX_FLAGS}` cannot silently be empty, and `nm -u` over
+`build/src/libheongpu.a` shows no `__kmpc_*`, `GOMP_*` or `omp_*` undefined symbol, which
+is the commit body's claim.
+
+Independent reproduction of the four probes, with a fresh HIP TU (kernel plus a
+four-iteration `#pragma omp parallel for` recording `omp_get_thread_num` and
+`syscall(SYS_gettid)`), in gitignored `agent_space/rev3/`:
+
+- clang link with `-fopenmp`, no GNU library: DT_NEEDED `libomp.so` only, `omp ids: 0 1 2 3`,
+  four distinct tids.
+- clang link plus `/usr/lib/gcc/x86_64-linux-gnu/13/libgomp.so` (what the imported target
+  added): both names in DT_NEEDED, `0 1 2 3` unforced. Under
+  `LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libgomp.so.1`, and equally under a bare
+  `LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu` with no preload, it prints `omp ids: 0 0 0 0`
+  with **four distinct tids**. So attempt 7's sharpening is right and round 2's "the team is
+  serial" reading was not: the team forks and the ids are wrong. The reason is symbol-level:
+  `nm -D` finds 0 `__kmpc_*` in GNU `libgomp.so.1` against 492 in ROCm's `libomp.so`, while
+  `omp_get_thread_num` is defined in both, so the fork call can only bind to LLVM's runtime
+  and the id query binds to whichever loaded first.
+- object compiled WITHOUT `-fopenmp`, linked `g++ probe.o libgomp.so -lamdhip64`: clean
+  link, kernel result correct, `omp ids: 0 0 0 0` with **one** tid repeated four times --
+  genuinely serial, which is the skill's "runs SERIALLY" sentence and is a different state
+  from the one above.
+- object compiled WITH `-fopenmp`, linked by `g++` with no OpenMP library: undefined
+  `__kmpc_global_thread_num`, `__kmpc_fork_call`, `__kmpc_for_static_init_4`,
+  `__kmpc_for_static_fini`, `__kmpc_push_num_threads`, `omp_get_thread_num`.
+
+The rest of the skill section checks out. `FindOpenMP.cmake:676-692` in the CMake actually
+configured here (4.0, from `CMAKE_ROOT` in the cache; round 2 checked 3.28) guards
+`INTERFACE_COMPILE_OPTIONS` with `$<COMPILE_LANGUAGE:${LANG}>`, restricts
+`INTERFACE_LINK_OPTIONS` to Fujitsu and IntelLLVM, and sets `INTERFACE_LINK_LIBRARIES`
+unguarded, exactly as the entry says; the `SHELL:` spelling the entry recommends is
+verbatim what line 678 uses. `/opt/rocm-7.2.1/lib/llvm/lib/libgomp.so.1` is a symlink to
+`libomp.so`, and because that file's SONAME is `libomp.so` the loader satisfies both
+DT_NEEDED entries with one mapping -- `ldd` on the two-runtime probe shows a single
+`libgomp.so.1 => /opt/rocm-7.2.1/lib/llvm/lib/libgomp.so.1` and no second OpenMP object,
+which is the entry's "both names resolve to one runtime". The `LINKER_LANGUAGE` paragraph
+is right in both halves: a CMake probe project with `LINKER_LANGUAGE CXX` on a
+`LANGUAGE HIP` source drops a `$<$<LINK_LANGUAGE:HIP>:...>` link option entirely from
+`link.txt` while the same target without it keeps the option, and the plain `g++` link of
+the non-RDC HIP object above ran the kernel and returned the right values, so device code
+is not what goes missing.
+
+The `SHELL:` form is correct and in scope. It was asked for in round 2 (this file, finding
+1, "write the flags the way `FindOpenMP` itself does"), so it is not extra scope; and it is
+not merely defensible but load-bearing for the general case: a probe target given a
+two-token value with `SHELL:` emits `-Xarch_host -DTWOTOKEN=1` as two arguments, while the
+same value without it emits `"-Xarch_host -DTWOTOKEN=1"` quoted as one. For `-fopenmp` it
+is a no-op, it changes one word on lines the finding required changing anyway, and the
+generated build proves it emits nothing extra. Keep it.
+
+### The record of what attempt 7 did to the attempt-6 account is wrong
+
+`notes.md:1093-1094` states "the attempt-6 bullets in these notes are annotated in place
+rather than rewritten, so the correction is visible". The first bullet was rewritten: MOAT
+commit `7163b0d` replaced the original text ("`OpenMP::OpenMP_CXX` only decorates the CXX
+language, so a source switched to `LANGUAGE HIP` compiles the `#pragma omp` away and then
+fails to link with undefined `__kmpc_global_thread_num` / `__kmpc_fork_call`") with the
+corrected sentence now at `notes.md:856-859`, and only then appended the annotation. Round
+2 asked for exactly that ("fix the notes in place"), so the edit is right and the reader
+hazard the annotation guards against is gone -- a porter reading `notes.md:839-876` straight
+through now gets the correct account. What is left is that the annotation at `:860-862`
+says "the account of the symptom here was wrong in two ways" while "here" no longer holds
+any wrong account, so the two ways are unrecoverable from this file. They were: the claim
+that the imported target "only decorates the CXX language", which misses its unguarded
+`INTERFACE_LINK_LIBRARIES` and so misses the two-runtime defect entirely; and the claim
+that the compile-away and the undefined `__kmpc_*` link error happen together, which the
+probes above separate into two mutually exclusive states. That is recorded here, so no
+further edit is owed.
+
+Nothing else raised. Commit hygiene is clean over the whole branch (all 15 titles carry
+`[ROCm]` and none exceeds 61 characters, no `Co-Authored-By`/noreply trailer, no internal
+account reference, the only non-ASCII in the branch diff is the upstream author's name in
+pre-existing headers), `jargon.py --port HEonGPU` reports clean, the fork tree is clean,
+the delta touches no submodule patch and no kernel, and the fault classes are untouched by
+a change that adds and removes only build flags.
