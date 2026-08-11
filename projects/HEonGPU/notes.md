@@ -401,6 +401,13 @@ the seven BFV suites, BFV encryption/decryption, and TFHE_Gate_Boots.
 
 Fork head after this attempt: `14c2b5162938d527b754ac361aaa17f7078860d4`.
 
+This fix is expected to help the wave32 host too: the divergence is in the AMDGPU lowering
+of a 64-bit `fptoui`, not in the wavefront width, which is consistent with the gfx1100
+attempt-4 finding below that gfx1100 failed the same 18 suites as gfx90a. It was measured
+on gfx90a only, so a gfx1100 run should confirm the same 9 remaining failures rather than
+assume them. The gfx1100 session's conclusion -- "start at the RNG, not the NTT" -- was
+right, and this is what was there.
+
 ### Where attempt 5 should start
 
 **BFV (8 of the 9 failures).** Encode/decode round-trips exactly (0/4096
