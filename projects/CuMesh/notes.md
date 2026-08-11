@@ -1150,3 +1150,35 @@ CUDA Toolkit and the AMD arm requires ROCm-enabled PyTorch plus a matching ROCm
 toolchain. The new command itself matches `setup.py:71-84,125-127`: `BUILD_TARGET=rocm`
 selects the HIP path and a semicolon-separated `GPU_ARCHS` value emits one
 `--offload-arch` flag per target.
+
+## Prerequisite documentation correction 2026-08-11 (linux-gfx942 porter)
+
+Resolved the review finding in fork commit
+`392b4dd41f8b10b795b00e44cb1b294b1388cefa`, pushed to `origin/moat-port`. Python remains
+the shared prerequisite. The README now presents explicit alternative backend arms:
+NVIDIA requires CUDA-enabled PyTorch and a matching CUDA Toolkit, while AMD requires
+ROCm-enabled PyTorch and a matching ROCm installation with the HIP compiler. The
+already-verified `BUILD_TARGET=rocm GPU_ARCHS=gfx942` source-build command is unchanged.
+
+Proportional documentation checks:
+
+```bash
+utils/timeit.sh CuMesh test -- bash -lc 'set -e
+git -C projects/CuMesh/src diff --check
+grep -F "*   For NVIDIA GPUs:" projects/CuMesh/src/README.md
+grep -F "*   For AMD GPUs:" projects/CuMesh/src/README.md
+grep -F "BUILD_TARGET=rocm GPU_ARCHS=gfx942 python3 -m pip install . --no-build-isolation -v" projects/CuMesh/src/README.md'
+python3 utils/prose.py projects/CuMesh/src/README.md
+```
+
+All checks PASS: the wrapped test completed in 0.030 seconds and `prose.py` reported
+`prose: clean`. A second wrapped integrity check completed in 0.045 seconds: there is no
+diff in `setup.py`, `src/`, or `third_party/` between parent `79f089f` and this commit,
+the complete two-commit documentation diff passes `git diff --check`, and the fork
+worktree is clean. `git diff --name-status 79f089f..392b4dd` reports only `M README.md`.
+No compile or GPU test was repeated because executable sources and build configuration
+are byte-identical to the previously built and GPU-tested parent.
+
+The whole-branch jargon scan still reports only the two settled hits in frozen commit
+`d5c1355`; this README fix and its commit message add none. Local `HEAD` and
+`origin/moat-port` both resolve to `392b4dd41f8b10b795b00e44cb1b294b1388cefa`.

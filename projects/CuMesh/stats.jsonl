@@ -97,3 +97,6 @@
 {"kind":"session","ts":"2026-08-11T19:08:09Z","epoch":1786475289.534052475,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-08-11T19:32:22Z","epoch":1786476742.311046220,"event":"end","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-08-11T19:33:21Z","epoch":1786476801.003154601,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-08-11T19:33:50Z","phase":"test","seconds":0.030,"exit":0,"cmd":"bash -lc set -e\ngit -C projects/CuMesh/src diff --check\ngrep -F \"*   For NVIDIA GPUs:\" projects/CuMesh/src/README.md\ngrep -F \"*   For AMD GPUs:\" projects/CuMesh/src/README.md\ngrep -F \"BUILD_TARGET=rocm GPU_ARCHS=gfx942 python3 -m pip install . --no-build-isolation -v\" projects/CuMesh/src/README.md"}
+{"kind":"phase","ts":"2026-08-11T19:40:34Z","phase":"test","seconds":0.045,"exit":0,"cmd":"bash -lc set -e\ngit -C projects/CuMesh/src diff --exit-code 79f089fcb254a7c4a96eef968574c8bc1c8387f8 392b4dd41f8b10b795b00e44cb1b294b1388cefa -- setup.py src third_party\ngit -C projects/CuMesh/src diff --check 79f089fcb254a7c4a96eef968574c8bc1c8387f8 392b4dd41f8b10b795b00e44cb1b294b1388cefa\ngit -C projects/CuMesh/src status --porcelain"}
+{"kind":"session","ts":"2026-08-11T19:40:57Z","epoch":1786477257.690089253,"event":"end","platform":"linux-gfx942"}
