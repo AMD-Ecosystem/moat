@@ -730,6 +730,35 @@ def set_blocked(name, platform, blocked, reason=None):
     return obj
 
 
+def retry_validation(name, platform):
+    """Retire an active validation failure without claiming a pass.
+
+    This is the recovery path when a non-compiled validation gate (documentation,
+    jargon, integrity) was fixed by an arch-independent commit under an older
+    advance_head that carried failed_sha forward. The failed commit remains recorded,
+    but removing the stored failure state makes arch_task derive `port-ready` and send
+    the current HEAD to a validator for a full, honest retry.
+    """
+    obj = load_status(name)
+    blk = obj.get("platforms", {}).get(platform)
+    if not blk:
+        raise ValueError(f"{name}/{platform}: no platform record")
+    if blk.get("state") != "validation-failed":
+        raise ValueError(
+            f"{name}/{platform}: retry-validation needs validation-failed, "
+            f"not {blk.get('state')}")
+    if project_stage(obj) != "review-passed":
+        raise ValueError(
+            f"{name}: retry-validation is only valid after review-passed, "
+            f"not {project_stage(obj)}")
+    blk.pop("state", None)
+    blk["updated_at"] = now_iso()
+    obj["platforms"][platform] = blk
+    obj["updated_at"] = now_iso()
+    save_status(name, obj)
+    return obj
+
+
 def port_lock(name, take=None, release=False):
     """Show, take over, or release the fork-write lock. Returns the lock or None.
 
@@ -1517,11 +1546,11 @@ def advance_head(name, new_sha, repo=None):
 
     On any classification failure the platform revalidates -- the safe default.
 
-    A platform that FAILED is re-examined the same way and for the same reason. Its
-    failure is evidence about the commit it happened on, so a HEAD move normally
-    retires it and sends the arch back to a validator (see failure_stands) -- but a
-    delta that cannot change compiled output cannot be the fix, so the failure is
-    carried forward to the new head instead."""
+    A platform that FAILED is different: validation also judges documentation,
+    jargon, integrity and other non-compiled gates. Even an arch-independent delta
+    may therefore be the fix. A failure stays pinned to the commit that produced it;
+    every HEAD move retires it and sends the arch back to a validator (see
+    failure_stands)."""
     obj = load_status(name)
     repo = repo or _fork_repo(name)
     new_sha = full_sha(new_sha, repo)
@@ -1547,28 +1576,15 @@ def advance_head(name, new_sha, repo=None):
             # differing, so writing it down would only be a second copy that can go
             # stale.
         elif state == "validation-failed":
-            # The same guard facing the other way. A HEAD move retires a failure (see
-            # failure_stands), which is right when the commit was a fix and wrong when
-            # it was a README edit -- a delta that cannot change any target's compiled
-            # output cannot have fixed anything, so carry the FAILURE forward and let
-            # the arch keep asking the porter for a real one.
-            #
-            # A block written before failures carried a sha is stamped with the head
-            # being superseded, which is the head it failed against -- so a legacy
-            # record heals itself the first time a porter advances the branch, rather
-            # than needing five port branches migrated by hand.
-            old = blk.get("failed_sha") or prev_head
-            if not old or same_commit(old, new_sha):
-                continue
-            verdict = _classify_safe(repo, old, new_sha)
-            # Inert: not the fix, so the failure moves up to the new head and goes on
-            # standing. Anything else retires it -- and the sha is written down either
-            # way, because a block that says only `validation-failed` cannot be judged
-            # at all and would ask the porter for a fix it has already had.
-            failed = (new_sha if verdict is not None and verdict.arch_independent
-                      else old)
-            if failed != blk.get("failed_sha"):
-                blk["failed_sha"] = failed
+            # A failed validation can be a compiled-code failure, but it can also be a
+            # documentation, jargon or integrity failure. Source classification cannot
+            # tell which gate failed, so carrying a failure across an inert delta can
+            # create an endless porter loop for the very README edit that fixed it.
+            # Keep the failure pinned to the commit it judged and let the validator
+            # reassess every new HEAD. Legacy records without a failed_sha are stamped
+            # with the superseded head so they become stale instead of standing forever.
+            if not blk.get("failed_sha") and prev_head:
+                blk["failed_sha"] = prev_head
                 blk["updated_at"] = now_iso()
     save_status(name, obj)
     return obj
@@ -3194,6 +3210,12 @@ def main(argv=None):
     s.add_argument("--clear", action="store_true",
                    help="resume: this arch is not blocked after all")
 
+    s = sub.add_parser(
+        "retry-validation",
+        help="retire an active failure and require a fresh validator run")
+    s.add_argument("name")
+    s.add_argument("platform", help="<os>-<gfx>, e.g. linux-gfx90a")
+
     s = sub.add_parser("worktree",
                        help="create a worktree on a project's port branch, synced to the trunk")
     s.add_argument("name")
@@ -3393,6 +3415,9 @@ def main(argv=None):
         else:
             set_blocked(args.name, args.platform, True, args.reason)
             print(f"{args.name}/{args.platform} blocked: {args.reason}")
+    elif args.cmd == "retry-validation":
+        retry_validation(args.name, args.platform)
+        print(f"{args.name}/{args.platform}: validation retry required")
     elif args.cmd == "worktree":
         path, detail = make_worktree(args.name, args.path)
         print(path)

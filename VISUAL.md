@@ -253,16 +253,18 @@ A pass proves the exact commit it ran against, and a failure indicts that same
 commit -- neither says anything about code it never saw. So every new commit
 on the port raises the question: do the old results still count? A change that
 cannot affect the compiled program (documentation, comments, CI configuration)
-carries the earlier results forward, passes and failures alike -- a change
-like that cannot have been the fix for anything. A change that could affect
-the program, or any doubt at all, sends every GPU that had passed back to
-real hardware.
+can carry an earlier pass forward. A failure never moves: validation also judges
+documentation, jargon and repository integrity, so an inert source change may be
+exactly what fixed it. A change that could affect the program, or any doubt at
+all, sends every GPU that had passed back to real hardware.
 
 ```mermaid
 flowchart TD
     push["a new commit lands on the port"] --> q{"could it affect the compiled program?"}
-    q -- "docs, comments, CI config" --> carry["earlier passes AND failures still count"]
+    q -- "docs, comments, CI config" --> carry["earlier passes may carry forward"]
     q -- "code, or any doubt" --> reval["every GPU that passed must run again"]
+    push --> failed["every earlier failure stays pinned to its old commit"]
+    failed --> gpu
     carry -. "optional proof" .-> cod["compare the compiled binaries: identical?"]
     reval --> gpu["real GPU run on the new commit"]
 ```
