@@ -32,7 +32,7 @@ changed since. Section 7 shows that gate in detail.
 ## 2. The pipeline
 
 Five agents hand a project forward through a shared status file, never a
-conversation, so any Claude session on any machine can pick up where the last
+conversation, so either supported agent harness on any machine can pick up where the last
 one stopped. Intake
 screens licence, duplicates and portability; the planner analyses the build
 system and the CUDA surface; the porter writes the port on the fork; the
