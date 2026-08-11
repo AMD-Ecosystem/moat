@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-10T13:58:57Z",
-  "updated_at": "2026-08-11T19:45:43Z",
+  "updated_at": "2026-08-11T19:52:58Z",
   "head_sha": "4c531f5e51f18eeb145309f8650a8da58453c8af",
   "depends_on": [],
   "fork_branch": "moat-port",
@@ -16,8 +16,8 @@
   "porting": null,
   "waivers": {
     "windows": {
-      "reason": "COLMAP requires Qt6 and X11/OpenGL for the GUI build needed to run GPU SIFT tests; on Windows there is no Xvfb equivalent and the RunGpuTest fixture requires a windowing toolkit context (QApplication per test). Without Qt6 on Windows, the headless build silently skips every GPU SIFT test body (plan.md risk 4), producing false green results; the GUI build needs Qt6 which is not installed on this host. COLMAP itself also requires a large stack of C++ dependencies (Ceres, Boost, FLANN, FreeImage, GLEW, Qt6) that must all be built for Windows/clang-cl with the ROCm toolchain. This is a permanent host-runtime/windowing obstacle, not a code portability issue: the same ROCm kernel code runs on gfx1151 when a proper windowing environment is available, but Windows lacks an equivalent of Xvfb for headless GL testing.",
-      "suggested_at": "2026-08-11T04:14:54Z"
+      "reason": "ROCm/HIP port validated on windows-gfx1151 (physical AMD Radeon 8060S, hardware AMD OpenGL ICD confirmed via GL_RENDERER, not software GL). All HIP compute passes: gpu_mat_test 4/4, GPU SIFT matching 31/31, opengl_utils_test 3/3, 1530 assertions total. The sole GPU-test failure is ExtractSiftFeaturesGPU.Nominal, which heap-corrupts (STATUS_HEAP_CORRUPTION 0xc0000374) in SiftGPU PyramidCU destructor -> glDeleteBuffers during PBO teardown. Root cause is a pre-existing upstream COLMAP Windows bug in UNMODIFIED code: OpenGLContextManager::MakeCurrent (src/colmap/util/opengl_utils.cc:80-86) makes the GL context current on a temporary std::thread then joins it, leaving the context owned by a dead thread; the destructor later calls glDeleteBuffers with no current context. The port does not touch opengl_utils.cc or PyramidCU.cpp (git diff main..moat-port is empty for both). On Linux the AMD Mesa driver tolerates this cross-thread GL teardown; the strict Windows AMD ICD does not. Upstream GL-context-lifecycle defect exposed by (not caused by) enabling GPU SIFT on AMD; not a portability defect in the HIP port.",
+      "suggested_at": "2026-08-11T19:52:57Z"
     }
   },
   "license_spdx": "BSD-3-Clause",

@@ -14,6 +14,19 @@
       "upstream_issue": null,
       "created_at": "2026-08-08T01:27:34Z",
       "decided": null
+    },
+    {
+      "id": "colmap-windows-gl-context-teardown-crash",
+      "kind": "other",
+      "component": null,
+      "summary": "COLMAP GPU SIFT ExtractSiftFeaturesGPU.Nominal heap-corrupts on Windows in SiftGPU PyramidCU destructor glDeleteBuffers: OpenGLContextManager::MakeCurrent (opengl_utils.cc:80-86) makes the GL context current on a temporary joined std::thread, leaving it owned by a dead thread; destructor deletes buffers with no current context. Pre-existing upstream COLMAP Windows bug in code unmodified by the port; strict Windows AMD ICD does not tolerate it (Linux Mesa does). Fix upstream (make context current on the destructing thread, or guard glDeleteBuffers on a current context) as a separate non-ROCm change; do not bundle into moat-port. Blocks windows gate unless waived.",
+      "refs": [
+        "projects/colmap/notes.md#Validation-2026-08-11"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-11T19:53:26Z",
+      "decided": null
     }
   ]
 }
