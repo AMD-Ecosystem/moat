@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "heongpu-negative-gaussian-cast",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream RNGonGPU bug that affects CUDA as well as ROCm, found porting HEonGPU on 2026-08-11. The Box-Muller Gaussian sampler writes static_cast<T>(z0) + (flag0 & modulus.value) where z0 is a negative double and T is the unsigned residue type; the flag trick is only correct if the conversion wraps in two's complement, but converting an out-of-range double to an unsigned integer is undefined and no back end does what the code assumes. gfx90a keeps the low 32 bits (measured: (uint64_t)-2.28 == 4294967294), and per PTX cvt.rzi.u64.f64 semantics NVIDIA saturates a negative source to zero, which would make every negative error sample come out as q rather than q-2 -- i.e. congruent to zero, thinning the RLWE noise distribution by roughly half. Not measured on NVIDIA hardware (none on this fleet; nvcc here compiles only). Our port fixes it with truncate_signed<T>() casting through the signed type first, which is deliberately NOT behaviour-neutral on CUDA. Deferred decision: whether to raise the CUDA-side defect with the HEonGPU/RNGonGPU maintainer separately from the ROCm port PR, and how to describe the security impact.",
+      "refs": [
+        "projects/HEonGPU/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-11T15:34:44Z",
+      "decided": null
+    }
+  ]
+}
