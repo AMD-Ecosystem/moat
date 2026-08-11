@@ -853,13 +853,17 @@ the `USE_HIP` definition, `thirdparty/hip_compat` on the include path.
 
 Two extra steps the tests did not need:
 
-- `OpenMP::OpenMP_CXX` only decorates the CXX language, so a source switched to
-  `LANGUAGE HIP` compiles the `#pragma omp` away and then fails to link with
-  undefined `__kmpc_global_thread_num` / `__kmpc_fork_call`. `${OpenMP_CXX_FLAGS}`
-  has to go on both `$<COMPILE_LANGUAGE:HIP>` and `$<LINK_LANGUAGE:HIP>`.
-  ROCm's clang finds its own `libomp.so`; no explicit library is needed.
+- `OpenMP::OpenMP_CXX` guards its compile options with `$<COMPILE_LANGUAGE:CXX>`,
+  so a source switched to `LANGUAGE HIP` gets no `-fopenmp` and its `#pragma omp`
+  is ignored. `${OpenMP_CXX_FLAGS}` has to go on both `$<COMPILE_LANGUAGE:HIP>`
+  and `$<LINK_LANGUAGE:HIP>`. ROCm's clang finds its own `libomp.so`; no explicit
+  library is needed. (CORRECTED in attempt 7: this attempt left the imported
+  target on the HIP branch as well, which is a defect, and the account of the
+  symptom here was wrong in two ways -- see attempt 7 for what actually happens.)
 - The old `LINKER_LANGUAGE CXX` on the example targets had to go, since the link
-  is a HIP link now.
+  is a HIP link now. (CORRECTED in attempt 7: the reason is that
+  `$<LINK_LANGUAGE:HIP>` is false under a CXX link, not that device objects would
+  be stranded -- they are not.)
 
 The benchmark targets link no OpenMP: `benchmark_bfv.cpp` includes `<omp.h>` but
 uses nothing from it, so the AMD branch mirrors the CUDA one exactly.
@@ -1027,3 +1031,64 @@ Correct all three in the skill entry. The same "otherwise the OpenMP example fai
 link" account is in the attempt-6 notes above and in `0da0c07`'s body; fix the notes in
 place, and when the finding-1 change lands, let its commit body carry the accurate
 version rather than amending the earlier commit.
+
+## Porter Attempt 7 (2026-08-11, linux-gfx90a) -- round-2 findings addressed
+
+Fork head after this attempt: `5d99b8f447895f5b34b35f856e654d65e69b390a`
+(one commit on top of `4b0d53d`, not an amend). 20/20 suites pass, four runs.
+
+### Finding 1: every example binary linked two OpenMP runtimes
+
+Reproduced before touching anything: `readelf -d` on
+`bin/examples/basic/9_multi_stream_usage_way1` listed both `libgomp.so.1` and
+`libomp.so`, and the generated `link.txt` ended with
+`/usr/lib/gcc/x86_64-linux-gnu/13/libgomp.so` (the cache has
+`OpenMP_CXX_LIB_NAMES=gomp;pthread`). `OpenMP::OpenMP_CXX` is gone from the three
+`if(USE_HIP)` branches; the explicit `${OpenMP_CXX_FLAGS}` stays, now in the
+`SHELL:` form. After the rebuild no executable under `bin/` links `libgomp` at
+all (scanned all of them), and `bin/examples/basic/9_multi_stream_usage_way1`,
+`1_basic_bfv`, `15_basic_tfhe`, `bootstrapping/3_ckks_bit_bootstrapping` and
+`mpc/1_multiparty_computation_bfv` all run correctly.
+
+`SHELL:` inside the genex behaves: `flags.make` shows a single `-fopenmp` and
+`link.txt` one `-fopenmp`, with no literal `SHELL:` token.
+
+### What the probes actually showed (all four measured this attempt)
+
+Probe source in gitignored `agent_space/HEonGPU-a7/`, one HIP TU with a kernel
+and a four-iteration `#pragma omp parallel for`, compiled
+`hipcc -x hip --offload-arch=gfx90a -fPIE [-fopenmp] -c`.
+
+- clang link, `-fopenmp`, no GNU library: DT_NEEDED has `libomp.so` only,
+  `omp ids: 0 1 2 3`.
+- same plus `/usr/lib/gcc/.../libgomp.so` on the link line (what the imported
+  target added): both in DT_NEEDED, correct by luck; under
+  `LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libgomp.so.1` it prints
+  `omp ids: 0 0 0 0` with **four distinct `SYS_gettid` values**. The team really
+  is forked (only LLVM's runtime can serve the `__kmpc_*` the object calls);
+  `omp_get_thread_num` is exported by both and answers from `libgomp`, which
+  knows nothing about that team. So the failure is not "serial" -- it is four
+  threads all selecting resource 0, which for `9_multi_stream_usage_way1` means
+  one shared stream with correct-looking output.
+- object compiled WITHOUT `-fopenmp`, linked `g++ probe.o -lamdhip64 libgomp.so`:
+  links clean, kernel result correct, `thread ids: 0 0 0 0`. This is the silent
+  default symptom, and it disproves both halves of the attempt-6 account: no
+  undefined `__kmpc_*`, and a plain `g++` link of a non-RDC HIP object runs the
+  kernel fine, so `LINKER_LANGUAGE CXX` never stranded device code.
+- object compiled WITH `-fopenmp`, linked by `g++` with no OpenMP library:
+  undefined `__kmpc_global_thread_num` / `__kmpc_fork_call` /
+  `__kmpc_for_static_init_4`. That is the intermediate state attempt 6 hit and
+  then described as if it were the default.
+
+`/opt/rocm-7.2.1/lib/llvm/lib/libgomp.so.1` is a symlink to `libomp.so`, which is
+why the two-runtime binary resolves to one runtime under the ROCm RUNPATH.
+
+### Finding 2: the promoted lesson
+
+`references/strategy-a-cmake.md` rewritten as "OpenMP on a target you just
+switched to HIP: two runtimes, one binary". The `$<LINK_LANGUAGE:CXX>` claim, the
+"compiled away AND undefined `__kmpc_*`" claim and the stranded-device-objects
+claim are all gone; each statement in the replacement is one of the measurements
+above. The "turn every option ON" rule above it is unchanged. The attempt-6
+bullets in these notes are annotated in place rather than rewritten, so the
+correction is visible.
