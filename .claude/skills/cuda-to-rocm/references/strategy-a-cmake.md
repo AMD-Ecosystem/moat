@@ -94,6 +94,32 @@ compat header with `-include`.
   that hipify prepends `#include "hip/hip_runtime.h"`, which breaks a g++ CPU reference
   build, so build that from a separate non-hipified copy. (LC-framework)
 
+## Install and consume the port, not just build it
+
+A project that ships `install()` rules and a `<Name>Config.cmake` has a second interface the
+in-tree tests never touch, and it is routinely left CUDA-only by a port that otherwise works:
+the exported config `find_dependency(CUDAToolkit)` unconditionally, the exported link
+interface names a HIP imported target with no `find_package` that defines it, a replacement
+for a CUDA-only dependency installs its export set without a config file to find it by, and
+the shim headers that resolve `cuda_runtime.h` / `curand_kernel.h` in the INSTALLED headers
+are neither installed nor on the interface include path. Every one of these is invisible
+until someone consumes the installation, so **install to a scratch prefix and build a
+five-line consumer project against it as part of the port**. `configure_file(... @ONLY)`
+makes the config-template fix a one-liner with no CMakeLists change:
+
+    if("@USE_HIP@")
+        find_dependency(hip REQUIRED)
+    else()
+        find_dependency(CUDAToolkit REQUIRED)
+    endif()
+
+Quote the substitution: when the option is not defined (the subproject built standalone) it
+expands to nothing, and a bare `if()` is a CMake error while `if("")` is false. Note also
+that `cmake --install --prefix` does NOT override a prefix a project baked into its install
+rules at configure time; reconfigure with `-DCMAKE_INSTALL_PREFIX` instead of concluding the
+install is broken. Write the downstream snippet into the docs only after the consumer
+actually configures, builds and runs. (HEonGPU)
+
 ## Submodules pinned to commits that do not exist
 
 **A port that edits a git submodule in place is lost the moment the clone is deleted, and

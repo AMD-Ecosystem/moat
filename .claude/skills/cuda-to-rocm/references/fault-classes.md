@@ -134,6 +134,16 @@ slots. (dietgpu)
 faults. Kernels reading index +/-1 or +/-width at edges (stencils, neighbour gathers) must
 clamp. (colmap ComputeDOG.)
 
+**An allocation sized by a different expression than the launch indexes it by.** A
+`cudaMalloc` whose count comes from one member and a kernel whose global thread id ranges
+over another is an overflow of whatever the ratio is, and CUDA can absorb a large one
+silently -- HEonGPU's TFHE encryptor allocated 512 random states and initialized and used
+512 * 32 of them, a 32x overrun that only AMD turned into wrong answers. Grep every raw
+`cudaMalloc` for the expression it is sized by and check it against the grid the consuming
+kernel is launched with; when the two disagree, the launch geometry is the intent. This is a
+memory-safety bug on both platforms, so fix it for both rather than guarding it.
+(HEonGPU: `HEEncryptor<Scheme::TFHE>` cuda_rng.)
+
 **Rule-of-five on resource handles.** CUDA tolerates a default-constructed or
 double-destroyed texture/stream/event handle; AMD faults. Give RAII wrappers explicit
 default init (`handle = 0`), move-only semantics, and a guarded destructor. (colmap
@@ -461,6 +471,32 @@ are numbered before inputs, so in
 a struct whose members are named `x` and `y` can carry low in either one, and the surrounding
 C++ shift operators are the cross-check. Getting this backwards produces plausible-looking
 garbage. (HEonGPU)
+
+## Shift counts of 0 or >= 64 in hand-rolled 128-bit arithmetic
+
+The same hand-rolled `uint128_t` (a pair of 64-bit limbs) that carries the PTX above almost
+always implements `operator<<` / `operator>>` as three unguarded limb shifts:
+
+    result.lo = value.lo >> shift;
+    result.lo = (value.hi << (64 - shift)) | result.lo;   // shift == 0 -> hi << 64
+    result.hi = value.hi >> shift;                        // shift >= 64 -> UB
+
+Shifting a 64-bit value by 64 or more, or by `64 - 0`, is undefined in C++ and **the two back
+ends resolve it differently**: PTX `shr.u64` / `shl.u64` yield 0 for any count >= 64, while
+AMDGPU's `v_lshrrev_b64` uses only the LOW 6 BITS of the count, so a shift of 64 acts as a
+shift of 0 and of 65 as a shift of 1. NVIDIA therefore computes the mathematically right
+answer by accident and AMD returns the wrong limb OR-ed into the right one.
+
+This is data-dependent, not arch-dependent, so it hides until the shift count crosses 64.
+Barrett reduction shifts by `modulus.bit + 3`, which reaches 64 at a 61-bit modulus: on
+HEonGPU every modular multiplication was correct up to 60 bits and garbage at 61 and 62, so
+CKKS (37-bit moduli) passed while BFV, whose decryption uses a 61-bit correction modulus,
+decrypted to noise. **Sweep the modulus/exponent width, not just the input values, when
+validating modular arithmetic** -- a probe that only tests the widths a passing scheme uses
+proves nothing about the one that fails. Fix by branching on `shift == 0`, `shift < 64` and
+`shift < 128` explicitly; that reproduces the PTX result, so it is behaviour-preserving on
+NVIDIA and needs no `#ifdef`. Audit `ROTL64`-style rotate macros in the same file for the
+`n == 0` case. (HEonGPU: GPU-NTT `modular_arith.cuh`.)
 
 ## Do not trust a bisection that contradicts a passing test
 
