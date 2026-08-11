@@ -24,8 +24,8 @@ import tomllib
 REPO = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "utils"))
 
-# Anything that has no business in a control-plane repo. The usual source is
-# of these -- .a/.so/.o from validators building in the repo root, and DEM CSV output
+# Anything that has no business in a control-plane repo. The usual sources of
+# these are .a/.so/.o from validators building in the repo root, and DEM CSV output
 # -- which is why the migration had to squash rather than filter.
 BLOB_SUFFIXES = {".a", ".so", ".o", ".dylib", ".dll", ".lib", ".exe", ".whl",
                  ".tar", ".gz", ".zip", ".7z", ".bin", ".pt", ".pth", ".onnx"}
@@ -192,7 +192,6 @@ def gate_jargon():
     make those checks silently pass."""
     import re as _re
     try:
-        import tomllib
         cfg = tomllib.load(open(REPO / "config" / "jargon.toml", "rb"))
     except Exception as e:
         return [f"config/jargon.toml will not load: {e}"]
