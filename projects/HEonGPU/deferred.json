@@ -13,6 +13,35 @@
       "upstream_issue": null,
       "created_at": "2026-08-11T15:34:44Z",
       "decided": null
+    },
+    {
+      "id": "heongpu-tfhe-torus32-saturates",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream HEonGPU defect that affects CUDA and ROCm alike, found reviewing the AMD GPU port on 2026-08-11. The device sites that quantize TFHE noise to a 32-bit torus, tfhe_generate_switchkey_kernel (src/lib/kernel/keygeneration.cu:1142) and tfhe_generate_bootkey_random_numbers_kernel (:1202-1203), compute static_cast<uint32_t>(floor(x + 0.5)) where x = frac * 2^32 and frac lies in (-1, 1), so the argument reaches -2^32. Converting an out-of-range double to an unsigned integer is undefined; both back ends saturate a negative source to zero here (measured on gfx90a, and PTX cvt.rzi.u32.f64 saturates), so the port introduces no divergence and the code was deliberately left alone. The evidence that both platforms are nevertheless wrong is the host implementation of exactly the same quantity: HEEncryptor<Scheme::TFHE>::double_to_torus32 (src/lib/host/tfhe/encryptor.cu:102-108) routes through std::llround and therefore WRAPS. Same computation, two different answers for a negative noise sample -- host wraps to the correct two's complement representative, device flattens every negative sample to exactly zero, so the key-switching and bootstrapping-key noise distributions lose their entire negative half. No test in the repository can catch this: TFHE_Gate_Boots passes BECAUSE zeroed noise decodes more reliably. In an FHE library a noise distribution missing half its support is a security fault, not a numerical curiosity. The fix would mirror the truncate_signed<T>() approach used for the Gaussian sampler (cast through the signed type first), matching the host. Deferred decision: whether to raise this with the HEonGPU maintainer separately from the AMD GPU port, together with the negative-Gaussian-cast item, and how to describe the security impact.",
+      "refs": [
+        "projects/HEonGPU/notes.md",
+        "src/lib/kernel/keygeneration.cu:1142,1202-1203",
+        "src/lib/host/tfhe/encryptor.cu:102-108"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-11T16:34:45Z",
+      "decided": null
+    },
+    {
+      "id": "heongpu-barrett-shift-cuda-side",
+      "kind": "other",
+      "component": null,
+      "summary": "CUDA-side half of the 128-bit Barrett shift fix made for the AMD GPU port of HEonGPU (GPU-NTT modular_arith.cuh, carried in thirdparty/patches/GPU-NTT.patch), found reviewing the port on 2026-08-11. The hand-rolled uint128_t shift operators expanded to unguarded 64-bit limb shifts, and Barrett reduction shifts by modulus.bit + 3. AMDGPU keeps only the low 6 bits of the count, so a 61-bit modulus (count 64) already returned garbage there -- that is the port bug and it is fixed. What the fix ALSO changes is NVIDIA: PTX clamps a shift count to the register width, which happens to give the right 128-bit result at a count of exactly 64 but returns zero for the whole value at 65 and above, i.e. at a 62-bit modulus, which BarrettOperations documents as the widest supported for Data64. So a CUDA build miscomputes every modular multiplication at a 62-bit modulus today and the guarded shifts correct it. Measured on gfx90a only (no NVIDIA hardware on this fleet); the PTX side is from the ISA clamp semantics, not from a run. Deferred decision: whether to raise the CUDA-side defect with the HEonGPU/GPU-NTT maintainer separately from the AMD GPU port PR, alongside heongpu-negative-gaussian-cast, and whether to ask him to confirm the 62-bit result on an NVIDIA card.",
+      "refs": [
+        "projects/HEonGPU/notes.md",
+        "thirdparty/patches/GPU-NTT.patch"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-11T16:35:01Z",
+      "decided": null
     }
   ]
 }

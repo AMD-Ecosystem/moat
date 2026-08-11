@@ -120,6 +120,27 @@ rules at configure time; reconfigure with `-DCMAKE_INSTALL_PREFIX` instead of co
 install is broken. Write the downstream snippet into the docs only after the consumer
 actually configures, builds and runs. (HEonGPU)
 
+## Every optional target the project can build, not just the one you build
+
+`BUILD_TESTS` is on while you work, so the test targets get the full treatment -- source
+compiled as HIP, the `USE_HIP` definition, the shim include directory -- and `BUILD_EXAMPLES`
+and `BUILD_BENCHMARKS`, which default OFF, quietly do not. A half-converted branch of that
+kind is worse than no branch at all, because it reads as tested: on HEonGPU the example
+targets linked the HIP runtime but were still compiled as plain C++, so the first project
+header pulled in `cuda_runtime.h` and then rocThrust, and the benchmark targets still linked
+`CUDA::cudart` unconditionally and failed at configure time. **Turn every option the project
+documents ON once and build it**, then run one binary from each group; that is minutes, and
+it is the only way the claim in your commit message is true.
+
+Two things bite when a target that was plain C++ becomes a HIP target. An imported target
+found for another language only decorates that language: `OpenMP::OpenMP_CXX` guards its
+flags with `$<COMPILE_LANGUAGE:CXX>` and its link options with `$<LINK_LANGUAGE:CXX>`, so a
+source switched to `LANGUAGE HIP` compiles the `#pragma omp` away silently and then fails to
+link with undefined `__kmpc_*` -- add `${OpenMP_CXX_FLAGS}` under
+`$<COMPILE_LANGUAGE:HIP>` AND `$<LINK_LANGUAGE:HIP>`. And drop any
+`LINKER_LANGUAGE CXX` you set on the target while it was C++, or the HIP device objects
+never reach the link.
+
 ## Submodules pinned to commits that do not exist
 
 **A port that edits a git submodule in place is lost the moment the clone is deleted, and

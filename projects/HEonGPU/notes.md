@@ -392,7 +392,16 @@ surrounding arithmetic already assumes. Call that out to the maintainer.
 Note the mirror case does NOT diverge: `static_cast<uint32_t>(negative double)`
 clamps to 0 on gfx90a exactly as on NVIDIA (measured). So the TFHE sites at
 `keygeneration.cu:1142,1202,1203` are the same latent upstream issue but not a
-port divergence -- leave them alone.
+port divergence, and they are out of scope for this port.
+
+**Out of scope is not "nothing to see".** The 2026-08-11 review established that
+those sites are wrong on BOTH platforms, because the host implementation of the
+same quantity (`double_to_torus32`, `src/lib/host/tfhe/encryptor.cu:102-108`)
+routes through `std::llround` and WRAPS while the device sites saturate: every
+negative noise sample in the key-switching and bootstrapping keys becomes exactly
+zero. `TFHE_Gate_Boots` passes BECAUSE of that, so no test here can catch it.
+Registered as `heongpu-tfhe-torus32-saturates` in `projects/HEonGPU/deferred.json`
+-- read that before deciding this is settled.
 
 ### Result: 2/20 -> 11/20 suites passing
 
@@ -530,10 +539,12 @@ start, not the NTT.
 
 ### Known gfx90a-only risk, not the current bug
 
+**WRONG, corrected by the 2026-08-11 review; no fix is needed and none was made.**
 `RNGonGPU/src/lib/common/aes.cu` uses `int warpThreadIndex = threadIdx.x & 31;` at three
-sites (174, 381, 557). On wave32 this is exactly the lane id, so it is inert on gfx1100 and
-cannot explain today's failure -- but on wave64 it is a genuine warp-size assumption and
-will need an arch-unified fix (correct on both widths) once the shared bug is found.
+sites (174, 381, 557). This attempt read it as a warp-size assumption. It is not one:
+`aes.cu:180-186` fills all 32 columns of `__shared__ Data32 t0S[TABLE_SIZE][SHARED_MEM_BANK_SIZE]`
+with the same value, so `& 31` selects a bank replica of an identical table, never a lane.
+It is correct at any wavefront width and costs at most bank conflicts on wave64.
 
 ### Next steps (attempt 5)
 
@@ -824,3 +835,86 @@ correct at any wavefront width and costs at most bank conflicts on wave64. This
 branch has already lost two sessions to an unreconciled claim in this file
 (attempt 3's inverse-NTT verdict); correct this one in place rather than leaving
 a third.
+
+## Porter Attempt 6 (2026-08-11, linux-gfx90a) -- review findings addressed
+
+Fork head after this attempt: `d1b149b530515c71bd56021695bc20210693d0a5`
+(four commits on top of `39d678d`, none of them an amend). 20/20 suites still
+pass, three runs, and the examples and benchmarks now build and run too.
+
+### The examples and benchmarks were never built with the option on
+
+The review's finding 4 reproduced exactly. `HEonGPU_BUILD_EXAMPLES=ON` with
+`USE_HIP=ON` failed to compile (the targets linked `hip::host` but were still
+plain C++, so `cuda_runtime.h` then rocThrust went missing) and
+`HEonGPU_BUILD_BENCHMARKS=ON` failed at configure (`CUDA::cudart` linked
+unconditionally). Both now get what `test/CMakeLists.txt` gets: `LANGUAGE HIP`,
+the `USE_HIP` definition, `thirdparty/hip_compat` on the include path.
+
+Two extra steps the tests did not need:
+
+- `OpenMP::OpenMP_CXX` only decorates the CXX language, so a source switched to
+  `LANGUAGE HIP` compiles the `#pragma omp` away and then fails to link with
+  undefined `__kmpc_global_thread_num` / `__kmpc_fork_call`. `${OpenMP_CXX_FLAGS}`
+  has to go on both `$<COMPILE_LANGUAGE:HIP>` and `$<LINK_LANGUAGE:HIP>`.
+  ROCm's clang finds its own `libomp.so`; no explicit library is needed.
+- The old `LINKER_LANGUAGE CXX` on the example targets had to go, since the link
+  is a HIP link now.
+
+The benchmark targets link no OpenMP: `benchmark_bfv.cpp` includes `<omp.h>` but
+uses nothing from it, so the AMD branch mirrors the CUDA one exactly.
+
+Verified by running, not only building: `1_basic_bfv`, `9_multi_stream_usage_way1`
+(the OpenMP one), `15_basic_tfhe`, `1_multiparty_computation_bfv` and
+`tfhe_benchmark` all produce correct output on gfx90a. Promoted to the
+`cuda-to-rocm` skill (`references/strategy-a-cmake.md`) as a general rule --
+turn every documented option ON once and build it.
+
+### The Barrett shift claim was too broad, in both the branch and the skill
+
+The guard is a CUDA fix as well, not a no-op. PTX clamps a shift count to the
+register width, so the unguarded form is right at exactly 64 and returns zero for
+the whole 128-bit value at 65 and above, where the answer is
+`value.y >> (shift - 64)`. `mult`/`reduce` shift by `modulus.bit + 3`, so 65 is
+reached at a 62-bit modulus and `BarrettOperations` documents 62 bits as
+supported for Data64. The submodule patch's code comment now says this, a new
+commit corrects the record without amending `f30493c`, and the skill entry
+(`references/fault-classes.md`) has had the "behaviour-preserving on NVIDIA"
+claim scoped. Registered as `heongpu-barrett-shift-cuda-side` in
+`projects/HEonGPU/deferred.json` so the maintainer conversation is not lost.
+
+### The memory-manager stub narrowed an installed public API
+
+`DeviceVector(const DeviceVector&, stream, Source)` in the installed headers
+forwards to an RMM constructor the stub did not have. A consumer translation unit
+copy-constructing a `DeviceVector<Data64>` failed with "no matching constructor
+for initialization of `rmm::device_uvector<unsigned long>`" at
+`devicevector.cuh:35`, and now compiles, copies and reads back correctly. The
+stream is deliberately NOT defaulted in the added constructor: with a default it
+becomes ambiguous against the deleted copy constructor, which is also why real
+RMM leaves it required.
+
+### Also done
+
+Dead `kWarpSize`/`FULL_WARP_MASK` and two unread CMake cache variables removed;
+the `warp_reduce` shuffle comment and the `small_ntt.cu` comment now describe the
+code (the file was an empty translation unit and is gone, its device functions
+being inline in `small_ntt.cuh` for both back ends); the TFHE torus-conversion
+asymmetry registered as `heongpu-tfhe-torus32-saturates`; the attempt-4 claims
+about the TFHE sites and about `aes.cu`'s `& 31` corrected in place above.
+
+### How the submodule patch was regenerated
+
+Only the shift comment changed, but the procedure is worth having written down:
+
+```bash
+# edit thirdparty/GPU-NTT/... in the checkout, then
+git -C thirdparty/GPU-NTT diff > thirdparty/patches/GPU-NTT.patch
+git -C thirdparty/GPU-NTT checkout -- .          # back to pristine
+git -C thirdparty/GPU-NTT apply --check "$PWD/thirdparty/patches/GPU-NTT.patch"
+bash thirdparty/build.sh ON && bash thirdparty/build.sh ON   # idempotent
+diff <(git -C thirdparty/GPU-NTT diff) thirdparty/patches/GPU-NTT.patch
+```
+
+`git apply` resolves a relative patch path against the `-C` directory, so pass an
+absolute one.
