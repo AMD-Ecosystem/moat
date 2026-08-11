@@ -7,7 +7,7 @@
   "priority": 6.146,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T00:04:57Z",
-  "updated_at": "2026-08-11T21:14:26Z",
+  "updated_at": "2026-08-11T21:26:22Z",
   "head_sha": "4ec30a7cd03c5f585ead9f3cb989d9a4f770b976",
   "pr_url": "https://github.com/arrayfire/arrayfire/pull/3708",
   "pr_number": 3708,
@@ -17,7 +17,7 @@
   "pr_state": "open",
   "license_spdx": "BSD-3-Clause",
   "upstream_repo_id": 25889802,
-  "stage": "ported",
+  "stage": "changes-requested",
   "platforms": {
     "linux-gfx90a": {
       "state": "validation-failed",
@@ -149,7 +149,7 @@
       "failed_sha": "a70f74f6d653955832909c434e77abfb6e207048",
       "started_at": "2026-08-11T21:02:53Z",
       "completed_at": null,
-      "updated_at": "2026-08-11T21:14:26Z",
+      "updated_at": "2026-08-11T21:26:22Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -164,7 +164,7 @@
         "last_session_at": null
       },
       "state": "validation-failed",
-      "last_agent": "porter"
+      "last_agent": "reviewer"
     }
   }
 }

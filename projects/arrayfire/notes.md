@@ -1962,3 +1962,111 @@ extra commit -- no force-push, no history rewrite, nothing posted. The single `j
 commit 6800d5586's body is still the known maintainer-accepted leftover documented above; this
 commit adds none. linux-gfx90a's separate `validation-failed` (comment-text defect at 6800d5586)
 is untouched by this and still needs the person-decision noted above.
+
+## Review 2026-08-11 (reviewer, /pr-review, delta a70f74f6d..4ec30a7cd) -- VERDICT: CHANGES REQUESTED
+
+Scope: the one new commit `4ec30a7cd` ("[ROCm] Read the HIP backend lookup tables without
+textures"), 6 files all under `src/backend/hip`, plus the two `cuda-to-rocm` fault-class entries
+promoted on this branch (`8b8fdc6`, `4d6e8eb`), which ship with the port and get the same review.
+The code change is sound; every problem below is about a factual claim made ABOUT it.
+
+### 1. LookupTable1D.hpp:17 gets the table size wrong by three orders of magnitude
+
+`src/backend/hip/LookupTable1D.hpp:17-18` (new comment): "The lookup tables handed to this class
+are a few dozen entries and are only ever point sampled". The second half is the load-bearing
+part and is correct; the first half is not. The two tables handed to this class are:
+- `kernel/fast_lut.hpp:12` `FAST_LUT[]` -- **65536** `unsigned char` entries (64 KiB), counted;
+  it has to be, because `kernel/fast.hpp:159-171` builds `bright`/`dark` as 16-bit masks and
+  `kernel/fast.hpp:175-176` indexes the table with them directly.
+- `kernel/orb_patch.hpp:19-25` `d_ref_pat[REF_PAT_LENGTH]` -- `REF_PAT_SAMPLES(256) *
+  REF_PAT_COORDS(4)` = **1024** `int` entries (4 KiB).
+
+Neither is "a few dozen". This is upstream-visible text sitting next to a table the maintainers
+wrote, and it is also the stated premise for "would buy nothing on the devices where it does
+[compile]" -- a claim that is much less self-evident for a 64 KiB divergently-indexed table than
+for a 64-entry one. Fix: drop the size claim and keep the property that actually justifies the
+change ("only ever point sampled -- no filtering, normalized coordinates or address modes"), or
+state the real sizes.
+
+### 2. The same wrong size is in the commit body of 4ec30a7cd -- flag only, do not force-push
+
+The body says "fast.cu and orb.cu bind a fixed 16 to 64 entry corner-test table through
+LookupTable1D". Same error as #1 (the phrasing traces back to the validator entry above, which
+guessed "16-64-entry"; neither the porter nor the validator counted). `moat-port` is the head of
+OPEN upstream PR #3708, so this body is already public and correcting it needs a history rewrite,
+which is a person's decision. Do NOT rewrite it. Carry the correction in the follow-up commit
+that fixes #1 (one sentence naming the real sizes) so the branch self-corrects in public.
+
+### 3. The promoted skill entry makes SIZE the qualifying criterion (fault-classes.md:202-203)
+
+`.claude/skills/cuda-to-rocm/references/fault-classes.md:202-203` (from `8b8fdc6`): "A project
+doing a bare point-lookup through a texture object (a small fixed-size LUT, no hardware filtering
+needed) has a portable, unconditional fix". Size is not what makes the replacement sound -- the
+access pattern is -- and the example the entry cites in the next sentence includes a 64 KiB
+table, so as written it would tell the next porter with a large LUT that the recipe does not
+apply and send them hunting for a software-filtering fallback they do not need. Reword the
+parenthetical to the real criterion: point lookups only, no filtering, no normalized coordinates,
+no address/border modes. (The rest of both entries checks out against the code and the header
+evidence; `4d6e8eb`'s "no `double` texture in CUDA, so the pre-existing `double` specialization
+is the proof and the case to fold into" is accurate here -- see the verification list below.)
+
+### 4. "the texture object buys nothing on any device" is asserted without a measurement
+
+The commit body and `LookupTable1D.hpp:21-22` both assert this. Nothing in this round measured
+it: the porter's evidence is a compile plus a 6-binary ctest pass. FAST does two 64 KiB-table
+lookups per surviving candidate pixel and ORB 64 per feature (`kernel/orb.hpp:237-252`), and this
+commit changes device code on linux-gfx90a, linux-gfx1100, windows-gfx1101 and windows-gfx1201,
+all of which are already validated at `a70f74f6d` and now owe a revalidation because
+`validated_sha` lags `head_sha` (no carry-forward applies -- this is a real device-code change,
+and none was recorded, which is correct). PR #3708's reviewer has already asked performance
+questions once (see the OpenCL vs HIP benchmark entry above), so an unmeasured perf claim in a
+public commit body on that PR is worth closing out. Actionable: when a texture-capable AMD arch
+revalidates (gfx90a or gfx1100), time `test_fast_cuda`/`test_orb_cuda` at `a70f74f6d` vs
+`4ec30a7cd` and record the numbers here. A regression there would be a genuine defect on an
+already-validated platform.
+
+### Verified clean (so the next round does not redo it)
+
+- Coverage is exact: `git grep -l 'tex1Dfetch\|TextureObject' a70f74f6d -- src/backend/hip` lists
+  precisely the 6 files this commit touches, and the same grep at `4ec30a7cd` (widened to
+  `cudaTextureDesc|cudaResourceDesc|ChannelFormat|cudaFilterMode|cudaAddressMode|hipTexture|
+  cudaCreateChannelDesc|cudaResourceType|cudaReadMode`) is empty across the whole HIP backend,
+  including the hipRTC-embedded headers. So deleting the `hip_compat.h` alias block leaves no
+  dangling reference, and nothing can fail only at runtime-JIT time.
+- Scope: `git diff a70f74f6d..4ec30a7cd -- src/backend/cuda src/api include CMakeLists.txt` is
+  empty. The NVIDIA path keeps its texture implementation untouched.
+- Semantics, fast/orb: `lookup` was a bare `tex1Dfetch<unsigned char>`/`<int>` point fetch with
+  `cudaReadModeElementType` and no filter/address/normalized setting (deleted ctor of
+  `LookupTable1D.hpp`), so `lut[n]` is bit-identical. Index ranges are in bounds without relying
+  on the texture's out-of-range-returns-0 behaviour: FAST's mask is 16-bit against 65536 entries;
+  ORB's max index is `15*64 + 15*4 + 3 = 1023` against 1024 (`kernel/orb.hpp:237-250`). Element
+  types match the `LookupTable1D<T>` instantiations (`fast.cu:39` uchar, `orb.cu:65` int).
+- Semantics, regions: every neighbour index is clamped before the fetch
+  (`kernel/regions.hpp:166-169`, `min(y, height-2)+1` / `max(y,1)-1` etc.), and the equivalency
+  chase at `kernel/regions.hpp:214-217` cannot walk off the front: `initial_label`
+  (`kernel/regions.hpp:63`) assigns label `n+1` only to foreground pixels and `relabel`
+  (`kernel/regions.hpp:96-99`) never returns 0, so `fetch(new_label-1)` always has
+  `new_label >= 1`. Termination is guaranteed by the strict `new_label < last_label` decrease
+  regardless of concurrent writes. Dropping the texture makes the read MORE defined, not less:
+  the old code bound a texture over a buffer the same kernel writes, which is incoherent by
+  construction; the `double` instantiation has always read the pointer and validated 132/132.
+  Deleting that specialization as a duplicate of the new generic `fetch` is correct.
+- Lifetime: the `Array<T> mData` copy is what holds the reference count, and it still does --
+  `Array` holds a `shared_ptr` to the device buffer (`Array.hpp:265-268`), the copy is
+  independent of the caller's array, and `mPtr` is initialized after `mData` (declaration order
+  `mData` then `mPtr`, `LookupTable1D.hpp:40-41`, so the mem-init list is not reading an
+  uninitialized member). Pointer stability is exactly what the old texture bind had.
+- Include hygiene: `err_cuda.hpp`/`<type_traits>` removals are matched by the removal of their
+  only users (`CUDA_CHECK`, `std::is_signed`, `std::is_same`); `kernel/regions.hpp:12` includes
+  `err_cuda.hpp` itself for the `CUDA_CHECK` still in its launcher, so `regions.cu` dropping it
+  is safe rather than luck.
+- No fault class introduced: no warp-size assumption in the delta (`warp_count` at
+  `kernel/regions.hpp:103-109` hardcodes 32 but is dead in both backends and is upstream's, so
+  leave it), no resource handle left to own, no pitch question (the bind was linear, now gone).
+- Commit hygiene: title `[ROCm] Read the HIP backend lookup tables without textures` (58 chars),
+  AI assistance disclosed, Test Plan present with literal commands, ASCII only, no em-dash, no
+  `Co-Authored-By`, no ghstack, no AMD-internal account. The Test Plan's ctest regex matches the
+  default `add_test(NAME ${target})` naming (`test/CMakeLists.txt:71-86`, `AF_CTEST_SEPARATED`
+  off), so it is runnable as written by an upstream reader. `jargon.py --port arrayfire` reports
+  only the one known, maintainer-accepted `MOAT` in the old `6800d5586` body -- this commit adds
+  none.
