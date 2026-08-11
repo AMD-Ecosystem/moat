@@ -773,3 +773,137 @@ Lesson promoted to the skill (fault-classes.md, extending the entry the failing
 run had already opened): the repair SHAPE (per-backend macro in the compat header
 rather than an `#if` at the use site) and the PTX-diff-against-merge-base method
 for proving the CUDA path is byte-restored.
+
+## Review 2026-08-11 (reviewer, linux-gfx942) -- changes-requested
+
+Reviewed `git diff c87fe37...7dc3a24` on the fork `moat-port` branch (13 files,
++259/-69). No PR opened; findings below only. The strategy (compat header,
+`.cu` kept and marked `LANGUAGE HIP`, `USE_HIP` option default OFF, CUDA branch
+still on `cuda_add_*`) is the right one for a pure-CMake project and is applied
+consistently; the wave-size analysis holds (no `warpSize`, `__shfl*`,
+`__ballot`, `__popc`, or hardcoded 32 anywhere under
+`src/lib/ReconstructorCUDA/` or `src/app/App_CUDA.cu`; all five kernels are
+grid-stride and per-thread independent). Problems:
+
+### 1. The OOB fault-class audit is wrong; the atomicInc bucket write can go one past the row
+
+`notes.md` ("atomicInc wraps at bucket capacity so the row write stays
+in-bounds") and `plan.md` ("`atomicInc(count, MAX_CNT_PER_BKT_)` wraps at 110 ==
+bucket capacity, so the data write ... stays inside the bucket row") are both
+incorrect.
+
+`src/lib/ReconstructorCUDA/ReconstructorCUDA.cuh:45`
+
+```
+data_[atomicInc( &(count_[bktIdx]), MAX_CNT_PER_BKT_)+bktIdx*MAX_CNT_PER_BKT_] = val;
+```
+
+`atomicInc(address, val)` (identical in CUDA and HIP) stores
+`((old >= val) ? 0 : (old+1))` and returns `old`. Starting from 0, the 110th
+insert returns 109 and leaves `count_ == 110`; the 111th insert sees
+`old == 110 >= val`, resets the counter to 0, and **returns 110**. The write is
+then `data_[110 + bktIdx*110]`, i.e. slot 0 of bucket `bktIdx+1`, and for
+`bktIdx == NUM_BKTS_-1` it is exactly one uint past the end of the
+`MAX_CNT_PER_BKT_*NUM_BKTS_` allocation made at `ReconstructorCUDA.cuh:61`. The
+correct capacity argument for this idiom is `MAX_CNT_PER_BKT_-1`.
+
+The read side is fine (`getPointCloud2Cam` loops `i < count_[idx]` with
+`count_ <= 110`, so `idx*110+i` stays in the row), so this is a write-only
+overflow: a silent cross-bucket corruption in the general case and a
+one-past-end global write for the last bucket.
+
+This is unmodified upstream code, so fixing it is not required by "smallest
+complete port" -- but recording it as "audited, already safe" is. Required:
+
+- correct the claim in `notes.md` and `plan.md`;
+- drop the supporting argument "confirmed at runtime -- AMD would have faulted
+  on a stray read and the run completed clean". It does not hold for this case:
+  the overflow needs >110 camera pixels decoding to one projector cell (the
+  `alexander` dataset evidently never reaches it), and even when reached, a
+  one-uint overrun of a ~346 MB device allocation lands inside the same page and
+  would not fault;
+- register it as deferred/upstream work with
+  `python3 utils/deferred.py add --project 3DUNDERWORLD-SLS-GPU_CPU` rather than
+  leaving it only as prose, so the decision to raise it with the maintainer is
+  visible.
+
+### 2. Upstream PR #33's body still describes the reverted `__builtin_trap()` change
+
+The live PR body (fetched read-only) still contains:
+
+> `DynamicBits.cuh`: the NVPTX-only `asm("trap;")` (illegal on amdgcn) becomes
+> the portable `__builtin_trap()`. It is a never-taken overflow guard, so output
+> is unaffected on either backend.
+
+That is the exact claim 7dc3a24 disproved and reverted. The branch now uses
+`gpuTrap()` (`DynamicBits.cuh:88`), defined per backend in `cuda_to_hip.h:60`
+(HIP, `__builtin_trap()`) and `cuda_to_hip.h:66` (CUDA, `asm("trap;")`). A
+reviewer reading the PR description against the diff will not find the change it
+describes, and the description asserts portability that nvcc rejects.
+
+Editing the PR body is an upstream write and a person's call, so the action here
+is to draft the replacement bullet in `notes.md` so the checkup/maintainer round
+can apply it. Suggested text:
+
+> `DynamicBits.cuh`: the never-taken overflow guard used the NVPTX-only
+> `asm("trap;")`, which has no amdgcn spelling. `__builtin_trap()` is
+> device-callable under clang but host-only under nvcc, so neither spelling
+> compiles under both toolchains. The compat header gains a `gpuTrap()` macro
+> that expands to the original `asm("trap;")` on NVIDIA and `__builtin_trap()`
+> on AMD; PTX for `DynamicBits.cu` is byte-identical to the pre-change sources.
+
+The body's Test Plan also predates the current head (it lists the four GPU
+validations but not the CUDA no-regression evidence added at 7dc3a24); fold that
+in with the same edit.
+
+### 3. `.gitignore` carries a local-workflow directory name upstream
+
+`.gitignore:14-15` adds `build_ci_check/` and `build_hip/`. `build_hip/` matches
+the name the README uses; `build_ci_check/` exists only in our local
+verification of the CI commands (see the 2026-07-06 section above) and means
+nothing to this project. Drop that line, or replace both with `build*/`.
+
+### 4. `OPENCV4_COMPAT_DIR` is a public CMake option no document explains
+
+`CMakeLists.txt:43-45` adds a WIN32-only `OPENCV4_COMPAT_DIR` include path. What
+the directory must contain (an `opencv4` junction pointing at the prebuilt
+OpenCV include root, because the sources hardcode `<opencv4/opencv2/...>`) is
+recorded only in this file, not anywhere in the repository. A Windows user
+cannot discover the option or construct the directory. Document it in `README.md`
+beside the ROCm build instructions, or drop it from this change.
+
+### 5. The README's ROCm configure line is not the one that was verified
+
+`README.md:37-43` documents
+
+```
+cmake .. -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a
+```
+
+Every configure recorded in this file, and the CI job at
+`.github/workflows/hip.yml:53-59`, additionally passes
+`-DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++`. The bare form has never been
+run, so the README publishes an untested command. Either run it on a stock ROCm
+install and keep it, or document the compiler flag.
+
+Same paragraph asserts ROCm "(7.2 or newer)". Nothing in the port needs 7.2;
+only 7.2.1 (Linux) and 7.14 (Windows) were exercised, and the claim reads as a
+hard floor that would turn away ROCm 6.x users. State what was tested rather
+than a minimum that was not established.
+
+### Checked and clean
+
+Strategy A applied correctly (single compat header, no second HIP-aware file, no
+`.cu` renames); no per-arch `#if` anywhere, so no wave32/wave64 divergence in
+shared code; no textures, surfaces, pitched binds, or library swaps to get
+wrong; the CUDA path is additive and guarded (`USE_HIP` default OFF, `USE_CUDA`
+branch byte-equivalent, PTX diff on record); commit titles all `[ROCm]` and
+<= 61 chars with AI-assistance disclosure and no `Co-Authored-By` trailer;
+`jargon.py --port 3DUNDERWORLD-SLS-GPU_CPU` clean; no AMD-internal account
+references in the diff or messages (the fork-only `moat-port` CI trigger present
+in the workflow when it ran green on the fork was removed before this head).
+The `fault-classes.md` lesson promoted on this branch was checked against the
+code it describes and reproduces the fixed form, not the defect.
+
+Not held against the port: no GPU run at this head from this reviewer (the
+validator stage runs it next).
