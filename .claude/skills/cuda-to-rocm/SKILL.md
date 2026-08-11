@@ -93,6 +93,7 @@ Scan this list against what you are doing. If any line could apply, open
 - clang(HIP) defaults to `-ffp-contract=fast` and forms FMAs ACROSS expressions; nvcc contracts expression-only.
 - Exact float-equality branches fed by `__fdividef` produce out-of-range indices.
 - HIP device `cuda::min`/`max` NaN-selection can differ from host `std::min`/`max`.
+- Casting a NEGATIVE float to `uint64_t` diverges: AMD keeps the low 32 bits, NVIDIA saturates to 0. (The 32-bit cast agrees.)
 
 **Headers, includes and build**
 - A shared compat header must be host-includable: gate device-only includes behind `__CUDACC__`/`__HIPCC__`, or CUB leaks into host TUs. Hit independently by two projects.

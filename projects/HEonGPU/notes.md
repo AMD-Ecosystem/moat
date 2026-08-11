@@ -214,6 +214,9 @@ This narrows the bug to one of:
 
 ### IMPORTANT: prior submodule HIP-port work was LOST (never pushed)
 
+**WRONG -- see "Porter Debug Attempt 4". The submodules' AMD GPU support is carried
+as patch files on this branch and the pinned SHAs all resolve upstream.**
+
 The local clone `projects/HEonGPU/src` had been deleted between attempt 2 and
 attempt 3. Re-cloning the AMD-Ecosystem/HEonGPU fork's `moat-port` branch revealed
 that the branch pins three submodule commits that exist NOWHERE:
@@ -295,6 +298,9 @@ breaks under the amdclang code generation.
 
 ### Next Steps (for attempt 4) -- start from the inverse kernel
 
+**SUPERSEDED. Both premises below were disproved in attempt 4: the submodule work
+was never lost, and the inverse kernel is correct. See "Porter Debug Attempt 4".**
+
 1. FIRST: create jeffdaily forks of GPU-NTT, GPU-FFT, RNGonGPU, reapply the
    agent_space patches, commit+push there, and re-point .gitmodules + the
    moat-port gitlinks so the build is never lost again.
@@ -312,8 +318,135 @@ breaks under the amdclang code generation.
 
 ## Resuming (2026-08-07)
 
+**SUPERSEDED by "Porter Debug Attempt 4" below.**
+
 The port continues: this was judged a port worth finishing rather than an unportable
 codebase, so linux-gfx90a is no longer marked blocked. The blocker as last recorded, which
 is where to pick it up:
 
 Attempt 3: tree rebuilt for gfx90a (lib + all 15 tests compile); crypto still fails. ROOT CAUSE ISOLATED: GPU-NTT INVERSE merge kernel (GentlemanSande/InverseCore, thirdparty/GPU-NTT/src/lib/ntt_merge/ntt.cu) miscomputes on gfx90a -- INTT(NTT(x))!=x (4096/4096 corrupt). Verified CORRECT: ntt/intt tables (psi^N==q-1, intt psi==psi^-1), n_inverse==N^-1, forward NTT (matches CPU ref exactly, bit-reversed), Barrett mult. Forward fine, inverse broken. ALSO: submodule HIP forks (GPU-NTT/FFT/RNGonGPU) were never pushed and the moat-port branch pins lost SHAs -- recovery patches in agent_space/HEonGPU-attempt3/. Attempt 4: bisect inverse single- vs multi-kernel, check inverse-only #pragma unroll loop-not-unrolled / amdclang miscompile.
+
+## Porter Debug Attempt 4 (2026-08-11)
+
+### CORRECTION: two claims from attempt 3 are wrong. Do not act on them.
+
+**1. The submodule HIP work was NOT lost, and no submodule forks are needed.**
+`.gitmodules` points at the three UPSTREAM repos (`Alisah-Ozcan/{GPU-NTT,
+GPU-FFT,RNGonGPU}`) and the pinned gitlink SHAs (`8a4daf11c7`, `b743607c11`,
+`d9aaa6b5d7`) all resolve upstream. The submodules' AMD GPU support lives on our
+branch as `thirdparty/patches/{GPU-NTT,GPU-FFT,RNGonGPU}.patch`, applied
+idempotently by `thirdparty/build.sh ON` (the reverse-apply check makes repeated
+configures a no-op). Nothing is lost and `agent_space/HEonGPU-attempt3/` being
+gone costs nothing. A submodule fix goes into the patch file, never into a
+submodule checkout: edit the checkout, then regenerate with
+`git -C thirdparty/<name> diff > thirdparty/patches/<name>.patch`.
+
+**2. The GPU-NTT inverse merge kernel is NOT broken on gfx90a.** Attempt 3's
+"INTT(NTT(x)) != x, 4096/4096 corrupt" does not reproduce. A probe linking
+`libntt` directly and comparing against GPU-NTT's own `NTTCPU` reference gives
+0 mismatches for logn 4..14, both reduction polynomials, forward and inverse,
+round trip, in-place and out-of-place, single-modulus and RNS with mod_count
+1/2/3. The likely cause of the attempt-3 result is that the RNS *inverse* is
+reached through `GPU_INTT_Inplace`, not `GPU_NTT_Inplace`: the latter dispatches
+the FORWARD path regardless of `cfg.ntt_type`, so calling it with an inverse
+config silently runs a forward transform with the inverse tables and corrupts
+every coefficient. That exact mistake reproduces attempt 3's numbers exactly.
+GPU-NTT is exonerated; stop looking there.
+
+Also verified clean this attempt, so do not re-verify:
+- the device Barrett operators (`mult`, `add`, `sub`, `reduce_forced`) against a
+  128-bit host reference at 20-, 36-, 37-, 59- and 60-bit moduli: 0 mismatches;
+- the ternary and uniform samplers (values in range, RNS-consistent).
+
+### ROOT CAUSE FOUND AND FIXED: negative float to unsigned conversion
+
+`box_muller_kernel` in `RNGonGPU/src/lib/common/base_rng.cu` wrote the Gaussian
+error as `static_cast<T>(z0) + (flag0 & modulus.value)`, where `T` is the
+unsigned residue type and `z0` a signed double. The `flag` term only makes sense
+if the cast wraps a negative value in two's complement, but converting an
+out-of-range float to an unsigned integer is undefined, and the back ends
+disagree. Measured on gfx90a:
+
+```
+(uint64_t)  -1.00 = 4294967295  (0x00000000ffffffff)
+(uint64_t)  -2.28 = 4294967294  (0x00000000fffffffe)
+(uint64_t) -20.00 = 4294967276  (0x00000000ffffffec)
+(uint64_t)   2.28 =          2
+```
+
+AMD keeps only the low 32 bits; NVIDIA's `cvt.rzi.u64.f64` saturates a negative
+source to zero. So on gfx90a roughly half of every error polynomial was ~2^32
+instead of single digits. Before the fix, for a 4096 ring at std_dev 3.2:
+`max|centered| = 4294967295`, `mean|centered| = 1.6e9`, 2031/4096 values >= q.
+After: `max|centered| = 13`, `mean|centered| = 2.07`. (The residual "out of
+range" count of ~518 is a sample in (-1,0) truncating to 0 and then storing
+exactly `q`; that is upstream behaviour, is congruent to 0, and is harmless.)
+
+Fix: a `truncate_signed<T>(U)` helper in `RNGonGPU/src/include/rngongpu/common/
+aes.cuh` that casts through `std::make_signed_t<T>` first, used at the twelve
+Box-Muller sites in `base_rng.cu` and the six curand-backed sites in
+`cuda_rng_kernels.cu`. NOT behaviour-neutral on NVIDIA -- it replaces the
+saturated zero with the correct negative representative, which is what the
+surrounding arithmetic already assumes. Call that out to the maintainer.
+
+Note the mirror case does NOT diverge: `static_cast<uint32_t>(negative double)`
+clamps to 0 on gfx90a exactly as on NVIDIA (measured). So the TFHE sites at
+`keygeneration.cu:1142,1202,1203` are the same latent upstream issue but not a
+port divergence -- leave them alone.
+
+### Result: 2/20 -> 11/20 suites passing
+
+All seven CKKS suites now pass, plus both encoding suites. Still failing (9):
+the seven BFV suites, BFV encryption/decryption, and TFHE_Gate_Boots.
+
+Fork head after this attempt: `14c2b5162938d527b754ac361aaa17f7078860d4`.
+
+### Where attempt 5 should start
+
+**BFV (8 of the 9 failures).** Encode/decode round-trips exactly (0/4096
+mismatches) but encrypt-then-decrypt corrupts every plaintext coefficient
+(4096/4096 differ). CKKS passing rules out the RNG, both NTT directions,
+`enc_div_lastq_ckks_kernel`'s modulus-switching logic, and the Barrett
+operators, so the fault is in BFV-specific code:
+`enc_div_lastq_bfv_kernel` (`src/lib/kernel/encryption.cu:91`) and
+`decryption_kernel` (`src/lib/kernel/decryption.cu:44`), or the host constants
+they consume (`Q_mod_t_`, `upper_threshold_`, `coeeff_div_plainmod_`, `gamma_`,
+`Qi_t_`, `Qi_gamma_`, `Qi_inverse_`, `mulq_inv_t_`, `mulq_inv_gamma_`,
+`inv_gamma_`, all computed on the host in `src/lib/host/bfv/context.cu`). Two
+concrete suspects not yet ruled out: `fix = int(fix / plain_mod.value)` in
+`enc_div_lastq_bfv_kernel` narrows a `Data64` quotient through `int` (it should
+fit for the tested parameters, but check it for large plain moduli), and the
+host-side constant generation, which no probe has compared against an
+independent computation. The cheapest next bisect is a secret-key encryptor (if
+BFV exposes one) versus the public-key path, which splits keygen from encrypt.
+
+**TFHE (1 failure).** The three `warp_reduce` call sites are all TFHE:
+`decrypt_lwe_kernel` (`decryption.cu:441`), `encrypt_lwe_kernel`
+(`encryption.cu:280`) and `tfhe_generate_switchkey_kernel`
+(`keygeneration.cu:1079`). `warp_reduce` in `util.cuh:308` loops on runtime
+`warpSize` and uses maskless `__shfl_down`, which is right for wave64, and the
+`sdata[wid]` sizing over-allocates at wave64 rather than under-allocating, so
+the obvious reading is clean. The unexamined piece is the host-side shared
+memory byte count passed to those three launches -- check it, and check whether
+`encrypt_lwe_kernel`'s per-thread `curandState_t` count matches the launch
+geometry (hipRAND state is not the same size as cuRAND's).
+
+### Probes (regenerate them; they are in gitignored scratch)
+
+Four standalone probes were used and each runs in seconds. Build them against
+the already-built static libraries rather than through CMake; copy the flags out
+of `build/test/CMakeFiles/bfv_encoding_testcases.dir/{flags.make,link.txt}`,
+which is much quicker than adding a CMake target. Compile with
+`-x hip -DUSE_HIP --offload-arch=gfx90a` and pass the `.a` files in a SEPARATE
+link step (`-x hip` applies to every following input, so an archive listed after
+it is fed to the compiler as source).
+
+1. `probe.cu` -- GPU-NTT forward/inverse against `NTTCPU`, in-place and
+   out-of-place, plain and RNS. Links `libntt-1.0.a` only.
+2. `rngprobe.cu` -- the three modular samplers via
+   `RandomNumberGenerator::instance()`, reporting max/mean centred magnitude,
+   out-of-range count and RNS consistency. Needs a generated `HEContext` first
+   or the singleton segfaults.
+3. `bfv.cu` -- encode, encrypt, decrypt, decode with the plaintext coefficients
+   compared at each hop.
+4. `mod.cu` -- the device Barrett operators against a `__uint128_t` reference.

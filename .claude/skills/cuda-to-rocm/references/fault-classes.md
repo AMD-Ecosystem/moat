@@ -281,6 +281,25 @@ Host `std::min(a,b)` is `b<a?b:a` and `std::max(a,b)` is `a<b?b:a`; a device ver
 bytes and comparing host gold against device output differ bit-for-bit. Spell the device
 ternaries to match the host forms exactly. (CV-CUDA: OpMorphology CLOSE on RGBAf32.)
 
+**Converting a NEGATIVE float to an UNSIGNED integer diverges silently between the back
+ends** -- it is undefined behaviour, and the two hardware conversions pick different
+answers. Measured on gfx90a, `(uint64_t)(-2.28)` is `0x00000000fffffffe`: the AMD lowering
+of a 64-bit `fptoui` keeps only the low 32 bits of the two's-complement value. NVIDIA's
+`cvt.rzi.u64.f64` saturates a negative source to zero. So a wrapped-negative idiom that
+works on CUDA -- `(T)z + (flag & modulus)` to reduce a signed sample into `[0, q)`, or any
+`(unsigned)x` relying on modular wraparound -- produces values near 2^32 on AMD. Grep for
+`static_cast<unsigned...>(` / `(uint64_t)` applied to anything that can be negative, and
+route the truncation through the signed type first: `(T)(std::make_signed_t<T>)x`. Note the
+32-BIT case does NOT diverge: `(uint32_t)(-2.28)` clamps to 0 on both, so only the 64-bit
+conversion needs the fix and a blanket sweep of the 32-bit sites would gratuitously change
+CUDA behaviour. Symptom to recognise: an output whose magnitude clusters near 2^32 with
+roughly half the values affected, i.e. exactly the negative half of a signed distribution.
+The fix is NOT behaviour-neutral upstream (it replaces a saturated zero with the correct
+negative representative), so say so in the commit message rather than presenting it as a
+pure port change. (HEonGPU: RNGonGPU's Box-Muller Gaussian sampler; every ciphertext
+decrypted to noise while plaintext encoding, which samples no error, passed -- which is the
+tell that the fault is in a SAMPLER and not in the transform everything shares.)
+
 ## Headers, includes and build
 
 **A shared compat header must be host-includable.** Host `.cpp` TUs reach the shim through
