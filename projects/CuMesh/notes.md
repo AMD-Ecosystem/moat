@@ -1358,3 +1358,14 @@ prepared message-only replacement `49b1d3b`. The live upstream PR body does not 
 the invalid control-plane Test Plan command, and rewriting the visible PR head solely to
 remove it from the commit message is not approved. Treat this specific finding as settled.
 The prepared commit remains unpushed; do not rewrite `moat-port` for this correction.
+
+## Human-settled no-source-change resolution 2026-08-11 (linux-gfx942 porter)
+
+Reconciled the prerequisite-correction review round without a fork change, following the
+person's decision above. Published fork commit
+`392b4dd41f8b10b795b00e44cb1b294b1388cefa` remains the project `head_sha`; the prepared
+message-only replacement `49b1d3b81b05254885509b81edc85cac761cee78` remains unpushed.
+The invalid Test Plan line is settled for this commit because the live upstream PR body is
+clean and rewriting the visible PR head was explicitly declined. No source, build,
+documentation, or commit-message content changed, so no build or test was repeated. This
+round acquired the required linux-gfx942 porting lock and releases it through `ported`.

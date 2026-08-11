@@ -7,21 +7,18 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-08-11T20:30:47Z",
+  "updated_at": "2026-08-11T20:42:58Z",
   "head_sha": "392b4dd41f8b10b795b00e44cb1b294b1388cefa",
   "depends_on": [],
   "pr_url": "https://github.com/JeffreyXiang/CuMesh/pull/36",
   "pr_number": 36,
   "pr_opened_at": "2026-06-19T18:11:32Z",
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-08-11T20:30:47Z"
-  },
+  "porting": null,
   "waivers": {},
   "pr_state": "open",
   "license_spdx": "MIT",
   "upstream_repo_id": 1097063193,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "linux-gfx90a": {
       "state": "validation-failed",
@@ -146,7 +143,7 @@
       "failed_sha": "392b4dd41f8b10b795b00e44cb1b294b1388cefa",
       "started_at": "2026-08-11T17:50:04Z",
       "completed_at": null,
-      "updated_at": "2026-08-11T20:30:47Z",
+      "updated_at": "2026-08-11T20:42:58Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
