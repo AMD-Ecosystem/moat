@@ -3120,10 +3120,10 @@ def pr_ready(name):
 
 def record_tokens(name, tokens, source=None):
     """Append a token-usage record to projects/<name>/stats.jsonl. `tokens` is an
-    agent/subagent output-token count for a unit of work (e.g. from a task
-    completion notification); `source` labels what produced it. statlib sums these
-    as the project's token total. Approximate by nature (output tokens, not full
-    context) -- statlib always reports tokens as approx=True."""
+    agent output-token count for a unit of work when its harness reports one;
+    `source` labels the role and harness that produced it. statlib sums these as the
+    project's token total. Approximate by nature (output tokens, not full context) --
+    statlib always reports tokens as approx=True."""
     rec = {"kind": "tokens", "ts": now_iso(), "tokens": int(tokens)}
     if source:
         rec["source"] = source
