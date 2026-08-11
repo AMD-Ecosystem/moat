@@ -75,7 +75,8 @@ BRANCH = "record-sync"
 SUBMISSION_MARKER = "prepared with the help of an AI assistant"
 SUBMISSION_NOTE = (
     "---\n\n"
-    "This pull request was prepared with the help of an AI assistant (Claude) and was "
+    "This pull request was prepared with the help of an AI assistant acting as a "
+    "coding agent and was "
     "read and approved by a person before it was opened. It comes from an ongoing "
     "effort to add AMD GPU support to widely used CUDA projects, one repository at a "
     "time: https://github.com/AMD-Ecosystem/moat -- that repository describes how the "
@@ -691,8 +692,20 @@ def open_upstream(name, row):
     # field on 10 projects until GitHub was asked which was right.
     base = d.get("fork_default_branch") or "main"
 
+    # The one write to a repo we do not own, and the only one MOAT makes without a
+    # person at the keyboard. It goes to the gh binary directly, past the PATH guard
+    # that refuses foreign writes from a shell: every check that earns this call --
+    # the recorded approval re-read from GitHub, the licence gate, every required
+    # coverage gate, the jargon scan -- has already run above. Trusted code proves its
+    # own case; it does not ask the guard to recognise it. (The guard's first version
+    # tried to recognise it by process ancestry, which any enclosing shell's command
+    # line could satisfy, and two comments reached a live upstream issue as a result.)
+    import gh_guard
+    real = gh_guard.real_gh()
+    if real is None:
+        return (None, "gh is not installed")
     r = subprocess.run(
-        ["gh", "pr", "create", "--repo", slug, "--base", base,
+        [real, "pr", "create", "--repo", slug, "--base", base,
          "--head", f"{fork_owner}:{branch}", "--title", row["title"],
          "--body", row["body"]],
         capture_output=True, text=True, cwd=str(REPO))
