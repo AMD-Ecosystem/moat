@@ -1,0 +1,4 @@
+# Portable project configuration. Repository skills and agents are discovered from
+# the checked-in .agents/skills/ and .codex/agents/ adapters; keep absolute clone paths
+# out of this file.
+project_doc_max_bytes = 32768
