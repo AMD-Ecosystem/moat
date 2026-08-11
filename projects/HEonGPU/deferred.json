@@ -42,6 +42,19 @@
       "upstream_issue": null,
       "created_at": "2026-08-11T16:35:01Z",
       "decided": null
+    },
+    {
+      "id": "heongpu-cuda-no-regression-unrun",
+      "kind": "other",
+      "component": null,
+      "summary": "The CUDA no-regression compile check has never been run for this port, and this port deliberately changes CUDA behaviour in three places (truncate_signed in the Gaussian sampler, the 128-bit Barrett shift at counts >= 65, and the TFHE state-buffer size). Validation on 2026-08-11 attempted it with nvcc 12.8 but hit an environmental wall: the upstream CUDA path's real RMM dependency (rapidsai/rmm, pre-existing and unmodified by the port) transitively FetchContent-clones NVIDIA/cccl with full history over the network and did not finish inside the compile-only budget. Recorded as cuda-not-validated rather than a regression finding. Worth resolving before the upstream PR, since a maintainer will ask whether their CUDA build still compiles: try a shallow or pre-populated FetchContent cache, a pinned local cccl checkout via FETCHCONTENT_SOURCE_DIR_CCCL, or a longer budget.",
+      "refs": [
+        "projects/HEonGPU/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-11T17:53:41Z",
+      "decided": null
     }
   ]
 }
