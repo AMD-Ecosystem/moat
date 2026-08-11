@@ -208,6 +208,17 @@ hardware linear filtering has no CDNA3 hardware path at all and needs the softwa
 fallback below unconditionally on gfx94x+. (arrayfire: `fast.cu`/`orb.cu`/`regions.cu` FAST/
 ORB/connected-components kernels, all plain LUT point-lookups with no filtering, on MI300X.)
 
+Two things make that replacement cheap to get right. A pre-existing non-texture path for a
+type textures cannot carry (CUDA has no `double` texture, so such kernels usually already
+have a `double` specialization reading the pointer directly) is proof the algorithm is
+correct without the texture, and it is the specialization to fold the generic case into
+rather than to keep. And an RAII texture holder normally owns a copy of the source array
+purely to hold its refcount for the kernel's lifetime: keep that member, drop only the
+handle, so the holder's shape and its call sites are unchanged. Afterwards, grep the
+project's compat header -- removing the last texture user typically orphans a whole block of
+`cudaTextureObject_t`/`cudaResourceDesc`/channel-format aliases that should go in the same
+change. (arrayfire.)
+
 **Texture pitch alignment is 256 bytes on AMD against 32 on NVIDIA**, and it bites in two
 distinct ways.
 
