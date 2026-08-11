@@ -1454,3 +1454,78 @@ link to colmap#4633 as the known-issue reference.
 The windows gate was WAIVED by Jeff Daily (maintainer) on this basis: the ROCm/HIP port
 is functional on Windows gfx1151, confirmed by tests (hardware AMD GL; gpu_mat 4/4, GPU
 SIFT matching 31/31, opengl_utils 3/3, 1530 assertions pass). See status.json waivers.windows.
+
+## Caspar scope opened; third-party PR #4618 reviewed (2026-08-11)
+
+Jeff Daily ruled deferred case `colmap-symforce-caspar-hip` **now** (recorded in
+deferred.json): MOAT takes on Caspar-HIP as its own feature cycle, starting from the
+latest upstream colmap tip, sequenced so it does not disturb open upstream SIFT PR
+colmap/colmap#4635 (fork `moat-port` is that PR's head; no Caspar push may touch it
+while #4635 is open).
+
+### Prior art: third-party PR colmap/colmap#4618 (bjoernellens1, OPEN, reviewed locally)
+
+PR #4618 attempts this exact feature (stacked on merged #4420) by regenerating all 485
+`src/thirdparty/Symforce-Caspar/generated/f32/` files with HIP-enabled codegen templates
+from a PRIVATE `symforce-rocm` checkout, plus one hand-written
+`src/thirdparty/CMakeLists.txt` HIP branch. MOAT reviewed it 2026-08-11 (three-agent
+review + full local verification on linux-gfx942, head 5b4e55ad, merge-base c82b6d5d).
+Verdict: Request Changes. Findings a Caspar planner must inherit:
+
+1. **wave64 false convergence (reproduced, deterministic)**: `bundle_adjustment_caspar_test`
+   27/29 on MI300X; `PartiallyContainedTracks` + `ConstantPoints` fail via `score_init: nan`
+   -> all LM steps rejected -> `CONVERGED_DIAG_EXIT` with untouched parameters. Correlates
+   with FIXED_PP factor-variant family (tiny launches, 1022 dead lanes/block). Static read
+   says `SumStore` masks padding lanes (`memops.cuh:385` `valid ? data : 0`); empirically
+   NaN still reaches the score on gfx942. Mechanism unpinned (poison propagation vs
+   variant-specific guard gap). Generator-level fix required: unconditional accumulator
+   init before the guarded region.
+2. **gfx94x image-API build failure (pre-existing #4420 code, blocks the feature)**:
+   default `MVS_ENABLED=ON` + `HIP_ENABLED` fails on gfx942: `tex2D<float> ... unavailable`
+   (`gpu_mat_ref_image.cu:55`, `patch_match_cuda.cu`); no `__HIP_NO_IMAGE_SUPPORT__` guard
+   exists in the tree. Same fault class as arrayfire 2026-08-11 (see cuda-to-rocm
+   fault-classes). Our Caspar cycle must either guard MVS or document `-DMVS_ENABLED=OFF`.
+3. **Link gap a HIP-only Caspar build exposes**: `bundle_adjustment_caspar.cc:955` needs
+   `FindBestCudaDevice()`; `src/colmap/estimators/CMakeLists.txt:83` links
+   `colmap_util_cuda` only `if(CUDA_ENABLED)`. Fix: `OR HIP_ENABLED`.
+4. **Dead-but-wrong emulation**: `generated/f32/cuda_to_hip.h:101-130`
+   `caspar_hip::labeled_reduce_sum` is the XOR-butterfly-over-match_any approach that
+   `memops.cuh:262-264` correctly rejects for non-contiguous label groups; zero call
+   sites. Do not carry it into our port.
+5. **What IS wave64-sound in #4618's regeneration** (verified statically): HIP reductions
+   via `atomicAdd_block` fallbacks (`memops.cuh:260-283,329-350,430-451`) and explicit
+   `tiled_partition<32>` butterfly (`memops.cuh:380-408`) are wave-size independent;
+   Batcher-sort `__syncwarp()` spans <=32 are safe inside wave64; no hardcoded arch.
+   The regeneration is structurally equivalent to main's kernels (241 kernel symbols
+   identical; net -12k lines is formatting + include consolidation).
+6. **Positive empirical baseline (gfx942, MI300X)**: with items 2+3 patched locally, all
+   245 HIP objects compile clean; e2e mapper on 31 TUM freiburg1_desk frames with
+   `--Mapper.ba_local_backend CASPAR --Mapper.ba_global_backend CASPAR`: 31/31 registered,
+   2348 pts, 0.972px mean reproj, 5.4M caspar::* kernel launches, no NaN/crash, 2 runs.
+   (Author on gfx1151: 17/31, 1342 pts, 0.630px.)
+7. **Unreproducibility**: #4618's generator templates are not public; its
+   `docs/rocm-integration.md` reference does not exist; it ships agent-workspace litter
+   (`docs/superpowers/plans/track-a-task1-report.md`) documenting an earlier
+   non-convergence. Our cycle must keep the generator/template changes public and the
+   regeneration reproducible (fix `caspar_generate.py` + templates in-tree, regenerate
+   with upstream formatting).
+8. **CUDA-side risk to avoid**: #4618's regen changes CUDA behavior (unconditional
+   `__syncthreads()` in `SumStore` CUDA path, PTX dropped for sm_80/86/89, cg/cub headers
+   pulled into host TUs). Our port must keep the CUDA path byte-identical or prove it.
+
+Coordination: #4618 is open and its author is cooperative (closed #4614 in favor of our
+SIFT redo). Whether to comment findings on #4618, supersede it, or collaborate is Jeff's
+upstream call; nothing was posted.
+
+### Sequencing (so #4635 is not disturbed)
+
+1. SIFT cycle finishes first on this branch: #4635 maintainer rounds via moat-checkup;
+   after merge/close + reconciliation, `port/colmap` records go to MOAT `main` through
+   review (orient's misplaced-check will flag when nothing is outstanding).
+2. Caspar cycle then starts as a FRESH claim: new `port/colmap` branch from MOAT main,
+   fork mirror synced to latest upstream tip, new `moat-port` from that tip, planner
+   dispatched with this section + deferred case as inputs.
+3. Until #4635 resolves, no fork-branch work for Caspar; this record is the durable
+   handoff. If #4635 stalls long enough that parallel Caspar work is wanted, the
+   accommodation (second fork branch name) is control-plane tooling work and a person's
+   call, not a porter improvisation.
