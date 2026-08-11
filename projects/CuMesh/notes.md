@@ -1089,3 +1089,43 @@ validator shortcut.
   no `ROCm` or `HIP` occurrence and does not document `BUILD_TARGET=rocm`, `GPU_ARCHS`,
   or the ROCm source-build command. Add the ROCm path next to the CUDA build in the
   project's house style, in a new fork commit, then revalidate linux-gfx942 at that HEAD.
+
+## Documentation follow-up 2026-08-11 (linux-gfx942 porter)
+
+Resolved the validator's documentation finding in fork commit
+`79f089fcb254a7c4a96eef968574c8bc1c8387f8`, pushed to `origin/moat-port`. The README
+keeps the existing CUDA prerequisites and installation block, and adds the parallel AMD
+path: a ROCm-enabled PyTorch build, a matching ROCm installation with the HIP compiler,
+explicit `BUILD_TARGET=rocm` backend selection, `GPU_ARCHS=gfx942`, and a
+semicolon-separated multi-architecture example.
+
+Verified the documented source-build command on the same gfx942 host:
+
+```bash
+utils/timeit.sh CuMesh compile -- bash -lc \
+  'cd projects/CuMesh/src && HIP_VISIBLE_DEVICES=0 BUILD_TARGET=rocm \
+  GPU_ARCHS=gfx942 python3 -m pip install . --no-build-isolation -v'
+```
+
+The first sandboxed invocation built all three extensions and produced the wheel, then
+failed only when pip tried to create the read-only user installation directory
+`/var/lib/jenkins/.local/lib` (8.465 seconds). Repeating the identical command with normal
+host write access built the wheel and installed `cumesh-0.0.1` successfully (9.641
+seconds). Ninja reused the objects from the validator's clean forced build at parent
+`89e63244`; the only fork-tree change is `README.md`.
+
+One proportional real-GPU smoke test used the installed extension:
+
+```bash
+utils/timeit.sh CuMesh test -- bash -lc \
+  'cd projects/CuMesh/src/examples && HIP_VISIBLE_DEVICES=0 python3 simplify.py'
+```
+
+PASS in 3.222 seconds: 34,834 vertices / 69,451 faces simplified to 4,974 vertices /
+9,872 faces. The validator's clean build and complete 6/6 GPU suite at the parent remain
+the full functional evidence because this follow-up changes documentation only.
+
+Integrity and publication checks: local HEAD and `origin/moat-port` both resolve to
+`79f089fcb254a7c4a96eef968574c8bc1c8387f8`; the fork worktree is clean. The jargon scan
+reports only the two settled hits in frozen commit `d5c1355`, covered by the maintainer
+decision recorded above; the new README and commit message add no hits.
