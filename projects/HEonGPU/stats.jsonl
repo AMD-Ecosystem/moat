@@ -43,3 +43,6 @@
 {"kind":"phase","ts":"2026-08-11T15:52:38Z","phase":"test","seconds":13.354,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build"}
 {"kind":"phase","ts":"2026-08-11T15:52:51Z","phase":"test","seconds":13.357,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build"}
 {"kind":"phase","ts":"2026-08-11T15:58:38Z","phase":"test","seconds":13.438,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build"}
+{"kind": "tokens", "ts": "2026-08-11T16:03:18Z", "tokens": 178757, "source": "porter"}
+{"kind":"session","ts":"2026-08-11T16:03:56Z","epoch":1786464236.660468966,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-11T16:19:01Z","epoch":1786465141.231605984,"event":"end","platform":"linux-gfx90a"}

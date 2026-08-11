@@ -645,3 +645,182 @@ applies to every following input, so the archives go in a separate link step.
    bootstrapped NAND, so a failure lands on one of the three.
 6. `add.cu` -- 40 rounds of encrypt-add-decrypt compared against both `(m1+m2) mod t`
    and the test's own reference, which is how the flake was attributed.
+
+## Review 2026-08-11
+
+Port review of `moat-port` (`39d678d`) against the fork's `main` (`1928a14`), on
+linux-gfx90a. Verdict: **changes-requested**. The three crypto fixes (Gaussian
+cast, 128-bit Barrett shift, TFHE state buffer) are each correct and correctly
+scoped; the test-reference change is right; the install/export work is
+AMD-relevant and does not touch the CUDA path. What follows is what has to
+change. Problems only.
+
+Verified independently this round and NOT re-raised below: the twelve Box-Muller
+and six curand-backed `truncate_signed` sites are the complete set of
+float-to-unsigned conversions in RNGonGPU (the remaining `static_cast` hits are
+integer-to-integer or write float-typed outputs); `T` instantiates only as
+`uint32_t`/`uint64_t`, both of rank >= int, so the modular wraparound the fix
+relies on is well defined; the three patches reverse-apply cleanly against the
+pinned upstream SHAs and `git -C <sub> diff` regenerates each patch byte for
+byte; `>= plain_modulus` is the right reference, since the test draws messages
+from `[0, t-1]` so a pair can sum to exactly `t` and BFV decodes that as 0
+(`test/test_bfv_addition.cpp:39,55`); `total_state` matches the launch, because
+`encrypt_lwe_kernel` indexes `states[blockIdx.x * blockDim.x + threadIdx.x]`
+over a 32-block, 512-thread launch (`src/lib/kernel/encryption.cu:287`,
+`src/lib/host/tfhe/encryptor.cu:76-84`), so growing the allocation is the only
+possible direction; `(THREADS / 32 + 1)` shared entries cover 16 warps at wave32
+and 8 at wave64 at all three TFHE launch sites; `jargon.py --port HEonGPU` is
+clean over the whole branch; commit titles, trailers and ASCII are clean.
+
+### 1. "NVIDIA behaviour is unchanged" is false above a 61-bit modulus
+
+`thirdparty/patches/GPU-NTT.patch` (the `shift < 128` arms of `operator>>` and
+`operator<<`), the body of `f30493c`, and the new skill section all assert that
+the guarded shifts reproduce what PTX already computed. That holds for counts 0
+through 64 and I confirmed it arm by arm: PTX clamps a shift count to the
+register width, so at `shift == 64` the original `(value.x >> 64) | (value.y <<
+0)` already yields `value.y` in the low limb and 0 in the high, which is exactly
+the new branch, and 1..63 and 0 are unchanged. It does NOT hold at `shift >= 65`.
+There `64 - shift` underflows to `0xFFFFFFFF`, PTX clamps both shifts to the
+width and yields zero for the whole result, while the new branch yields
+`value.y >> (shift - 64)`. `mult`/`reduce` shift by `modulus.bit + 3`, so this is
+reached at a 62-bit modulus, and the class documents Data64 as working to 62 bits
+(`thirdparty/GPU-NTT/src/include/gpuntt/common/modular_arith.cuh:178-179`). The
+porter's own sweep records 62-bit as broken before the fix and clean after; that
+result is a CUDA fix as well, not a no-op.
+
+Reword the commit body to scope the equivalence ("unchanged for counts up to 64,
+i.e. moduli of 61 bits and below; at 62 bits PTX's clamp returned zero and this
+also corrects the CUDA result"). A maintainer of a homomorphic-encryption library
+will act differently on "your CUDA numbers do not move" than on "your CUDA
+numbers move at 62-bit moduli, in the right direction". Register it as a deferral
+next to `heongpu-negative-gaussian-cast` so it reaches him.
+
+### 2. The promoted shift lesson carries the same wrong claim, and that one ships to every port
+
+`.claude/skills/cuda-to-rocm/references/fault-classes.md`, "Shift counts of 0 or
+>= 64 in hand-rolled 128-bit arithmetic": "Fix by branching on `shift == 0`,
+`shift < 64` and `shift < 128` explicitly; that reproduces the PTX result, so it
+is behaviour-preserving on NVIDIA and needs no `#ifdef`." The same paragraph
+already says PTX yields 0 for any count >= 64, which contradicts it above 64.
+"NVIDIA therefore computes the mathematically right answer by accident" is true
+at exactly 64 and false at 65 and above. Merging the branch publishes this to
+every future port, and a porter who follows it will tell a maintainer his CUDA
+path is untouched when it is not. Fix the scope in the entry; the rest of that
+section (the AMDGPU low-6-bits masking, the sweep-the-width advice, the
+Barrett-at-61-bits worked example) checks out and should stay.
+
+The other four promoted entries were checked against their sources and are
+accurate: the allocation-versus-launch-geometry entry, the negative-float-to-
+unsigned entry (including the claim that the 32-bit conversion does not diverge
+-- the measured `(uint64_t)(-2.28) == 0xfffffffe` is exactly what the AMDGPU
+fptoui-f64-to-i64 expansion produces when its hi `v_cvt_u32_f64` clamps and the
+residue comes out as `2^32 - 2`, which is also why the single-instruction 32-bit
+conversion clamps), the PTX carry-chain predicates (both the `carry_in=1,
+b=2^64-1` and the `a == b && borrow` edges are right), the install-and-consume
+entry (including that quoted `if("@USE_HIP@")` is false when empty and a bare
+`if()` is an error), and the submodule-patch entry.
+
+### 3. The TFHE torus conversion is the same defect and the note closes it too early
+
+`src/lib/kernel/keygeneration.cu:1142` (`tfhe_generate_switchkey_kernel`) and
+`:1202-1203` (`tfhe_generate_bootkey_random_numbers_kernel`) compute
+`static_cast<uint32_t>(floor(x + 0.5))` where `x = frac * 2^32` and `frac` is in
+`(-1, 1)`, so the argument reaches `-2^32`. Notes lines 392-395 justify leaving
+them by "the same latent upstream issue but not a port divergence", which is
+correct as far as it goes -- both back ends saturate a negative source to zero
+here, so the port introduces nothing. What the note misses is the evidence that
+these sites are wrong on both platforms: the host implementation of exactly this
+quantity, `HEEncryptor<Scheme::TFHE>::double_to_torus32`
+(`src/lib/host/tfhe/encryptor.cu:102-108`), routes through `std::llround` and so
+WRAPS, while the device sites saturate. Same computation, two different answers
+for a negative noise sample; every negative sample in the key-switching and
+bootstrapping-key noise becomes exactly zero.
+
+Leaving the code alone is a defensible scope call for this port and I am not
+asking for a code change. Recording it is not optional: `TFHE_Gate_Boots` passes
+BECAUSE zeroing half the noise makes a gate more likely to decode, so no test in
+this repository can ever catch it, and in an FHE library a noise distribution
+missing its negative half is a security fault, not a numerical curiosity. Add it
+to `projects/HEonGPU/deferred.json` with the host-versus-device evidence, and
+amend the attempt-4 paragraph so the next reader does not inherit "leave them
+alone" as "nothing to see".
+
+### 4. The examples were half-converted and cannot build with USE_HIP=ON
+
+`example/basic/CMakeLists.txt:28-33`, `example/bootstrapping/CMakeLists.txt:18-23`
+and `example/mpc/CMakeLists.txt:17-22` each grew a `USE_HIP` branch that links
+`hip::host` but omits all three things `test/CMakeLists.txt:44-52` does and
+explains it must: `set_source_files_properties(... LANGUAGE HIP)`, the `USE_HIP`
+compile definition, and `thirdparty/hip_compat` on the include path. Reproduced
+by compiling `example/basic/1_basic_bfv.cpp` the way those targets would:
+
+```
+g++ -std=gnu++17 -c example/basic/1_basic_bfv.cpp -Isrc/include \
+    -Ithirdparty/{GPU-NTT,GPU-FFT,RNGonGPU}/src/include \
+    -Ithirdparty/rmm_hip_stub/include -D__HIP_PLATFORM_AMD__=1
+-> gpuntt/common/common.cuh:9: fatal error: cuda_runtime.h: No such file
+```
+
+and after adding `-isystem thirdparty/hip_compat`:
+
+```
+-> thrust/system/cuda/config.h:40: fatal error:
+   cub/detail/detect_cuda_runtime.cuh: No such file
+```
+
+which is precisely the rocThrust-needs-a-HIP-compile reason the test file cites.
+`benchmark/CMakeLists.txt:16` was not touched at all and links `CUDA::cudart`
+unconditionally, so `-DHEonGPU_BUILD_BENCHMARKS=ON -DUSE_HIP=ON` fails at
+configure time. Both default OFF, which is why this was never hit.
+
+Give examples and benchmarks the same treatment the tests got and build each
+once with the option on, or revert the example CMake edits entirely. A branch
+that fails the moment a documented option is enabled is worse than one with no
+branch, because it reads as tested.
+
+### 5. Dead code in the compat header and the root CMake
+
+`src/include/heongpu/cuda_to_hip.h:72-87` and `:95-100` define `kWarpSize` and
+`FULL_WARP_MASK` on both paths. Neither is referenced anywhere in the tree
+outside the header; every warp fix that landed uses runtime `warpSize`. The CUDA
+arm is also `#if defined(__CUDA_ARCH__)` / `#else` with the identical
+`kWarpSize = 32` in both branches. Delete both symbols and the dead conditional.
+
+`CMakeLists.txt:57-58` sets `HIP_RUNTIME_LIB` and `HIP_INCLUDE_DIRS` as cache
+variables that nothing reads. Remove them.
+
+### 6. Two comments describe something other than the code beneath them
+
+`src/include/heongpu/util/util.cuh:315` says "HIP requires a 64-bit mask for
+`__shfl_down_sync`" directly above line 316, which calls maskless `__shfl_down`
+and passes no mask at all. Say what the code does: HIP's `__shfl_down` defaults
+to the wavefront width, which is why no mask constant is needed on either width.
+
+`src/lib/kernel/small_ntt.cu:8` says the file "is kept for CUDA builds that may
+still use explicit instantiation". The explicit instantiations were deleted in
+the same commit; the file is now an empty translation unit on both platforms and
+is still listed at `src/CMakeLists.txt:104`. Drop the sentence, or drop the file
+from `HEONGPU_KERNEL_SOURCES`.
+
+### 7. The memory-manager stub narrows an installed public API
+
+`thirdparty/rmm_hip_stub/include/rmm/device_uvector.hpp:84-85` deletes the copy
+constructor and offers no `(const device_uvector&, stream, mr)` overload, but the
+installed public header `src/include/heongpu/util/devicevector.cuh:31-37`
+declares `DeviceVector(const DeviceVector&, stream, Source)` forwarding to
+exactly that. Nothing in the library instantiates it, which is why the build is
+green; a consumer that copy-constructs a `DeviceVector` compiles on CUDA and
+fails on the HIP build. Real RMM provides that constructor. Add it to the stub.
+
+### 8. An attempt-4 claim in these notes is wrong and will be inherited
+
+Notes line 533 records `RNGonGPU/src/lib/common/aes.cu`'s `int warpThreadIndex =
+threadIdx.x & 31` as "a genuine warp-size assumption" needing an arch-unified fix
+on wave64. It is not one. `aes.cu:180-186` fills all 32 columns of
+`__shared__ Data32 t0S[TABLE_SIZE][SHARED_MEM_BANK_SIZE]` with the same value,
+so `& 31` selects a bank replica of an identical table, never a lane; it is
+correct at any wavefront width and costs at most bank conflicts on wave64. This
+branch has already lost two sessions to an unreconciled claim in this file
+(attempt 3's inverse-NTT verdict); correct this one in place rather than leaving
+a third.
