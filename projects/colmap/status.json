@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-10T13:58:57Z",
-  "updated_at": "2026-08-11T19:52:58Z",
+  "updated_at": "2026-08-11T20:27:41Z",
   "head_sha": "4c531f5e51f18eeb145309f8650a8da58453c8af",
   "depends_on": [],
   "fork_branch": "moat-port",
@@ -16,8 +16,10 @@
   "porting": null,
   "waivers": {
     "windows": {
-      "reason": "ROCm/HIP port validated on windows-gfx1151 (physical AMD Radeon 8060S, hardware AMD OpenGL ICD confirmed via GL_RENDERER, not software GL). All HIP compute passes: gpu_mat_test 4/4, GPU SIFT matching 31/31, opengl_utils_test 3/3, 1530 assertions total. The sole GPU-test failure is ExtractSiftFeaturesGPU.Nominal, which heap-corrupts (STATUS_HEAP_CORRUPTION 0xc0000374) in SiftGPU PyramidCU destructor -> glDeleteBuffers during PBO teardown. Root cause is a pre-existing upstream COLMAP Windows bug in UNMODIFIED code: OpenGLContextManager::MakeCurrent (src/colmap/util/opengl_utils.cc:80-86) makes the GL context current on a temporary std::thread then joins it, leaving the context owned by a dead thread; the destructor later calls glDeleteBuffers with no current context. The port does not touch opengl_utils.cc or PyramidCU.cpp (git diff main..moat-port is empty for both). On Linux the AMD Mesa driver tolerates this cross-thread GL teardown; the strict Windows AMD ICD does not. Upstream GL-context-lifecycle defect exposed by (not caused by) enabling GPU SIFT on AMD; not a portability defect in the HIP port.",
-      "suggested_at": "2026-08-11T19:52:57Z"
+      "reason": "Windows gate approved with waiver: the ROCm/HIP port is functional on Windows gfx1151 -- the vast majority of Windows support is confirmed by tests (hardware AMD GL; gpu_mat 4/4, GPU SIFT matching 31/31, opengl_utils 3/3, 1530 assertions pass). The sole GPU-test failure, ExtractSiftFeaturesGPU.Nominal, is a pre-existing upstream COLMAP GL-context-teardown bug in code the port does not modify, filed upstream as https://github.com/colmap/colmap/issues/4633. Not a port defect.",
+      "suggested_at": "2026-08-11T19:52:57Z",
+      "approved_by": "Jeff Daily",
+      "at": "2026-08-11T20:27:41Z"
     }
   },
   "license_spdx": "BSD-3-Clause",

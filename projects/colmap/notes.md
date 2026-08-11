@@ -1442,3 +1442,15 @@ actionable state.
 
     windows-gfx1151.state = validation-failed, failed_sha = 4c531f5e
     windows-gfx1151.blocked = true
+
+### Upstream issue and windows waiver (2026-08-11)
+
+The sole GPU-test failure, ExtractSiftFeaturesGPU.Nominal, is a pre-existing upstream
+COLMAP GL-context-teardown bug in code the port does not modify (opengl_utils.cc /
+SiftGPU PyramidCU). Filed upstream as https://github.com/colmap/colmap/issues/4633.
+Per maintainer direction we do NOT fix it in moat-port; colmap's upstream PR body must
+link to colmap#4633 as the known-issue reference.
+
+The windows gate was WAIVED by Jeff Daily (maintainer) on this basis: the ROCm/HIP port
+is functional on Windows gfx1151, confirmed by tests (hardware AMD GL; gpu_mat 4/4, GPU
+SIFT matching 31/31, opengl_utils 3/3, 1530 assertions pass). See status.json waivers.windows.
