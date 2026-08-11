@@ -15,9 +15,11 @@ own name, so a CI log says which gate to look at.
 import argparse
 import importlib.util
 import json
+import os
 import pathlib
 import subprocess
 import sys
+import tomllib
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "utils"))
@@ -277,7 +279,189 @@ def gate_forks():
     return [l for l in r.stdout.splitlines() if l.strip()][:10]
 
 
+def gate_gh_guard():
+    """The gh guard classifies correctly, and on a working host it is actually wired in.
+
+    This gate is what makes the `gh api` allowance in .claude/settings.json safe. That
+    rule exists because read-only queries should not prompt, and no prefix or wildcard
+    rule can separate a query from a write: the deciding flag comes after arbitrary
+    text and can be spelled -f, -F, --input, or -X POST in any order. So the harness
+    permits `gh api` broadly and gh_guard is the thing that actually refuses the
+    writes. If the guard stops working, that allowance silently becomes the hole it was
+    written to close, which is a gate failure rather than a nuisance.
+
+    The classifier cases run everywhere, including CI, because they are pure logic. The
+    installation half is skipped under CI, where no agent runs and ~/.local/bin is not
+    expected on PATH.
+    """
+    import shutil
+    import gh_guard
+    import install_hooks
+
+    problems = [f"gh_guard misclassifies `gh {' '.join(argv)}`"
+                for argv, want in gh_guard.CASES
+                if gh_guard.classify(argv).allow != want]
+
+    if os.environ.get("CI") or gh_guard.real_gh() is None:
+        return problems
+
+    shim = install_hooks.gh_launcher_path()
+    if not shim.exists():
+        problems.append(f"gh guard is not installed at {shim} "
+                        f"(python3 utils/install_hooks.py)")
+    elif shim.read_text() != install_hooks.gh_launcher_text():
+        problems.append(f"gh guard at {shim} is stale "
+                        f"(python3 utils/install_hooks.py)")
+    else:
+        resolved = shutil.which("gh")
+        if not resolved or pathlib.Path(resolved).resolve() != shim.resolve():
+            problems.append(
+                f"gh guard is installed but inert: `gh` resolves to "
+                f"{resolved or 'nothing'}, not {shim}. Put {shim.parent} first in PATH.")
+    return problems
+
+
+def _skill_metadata(path):
+    """The two discovery fields in a skill's small YAML frontmatter."""
+    lines = path.read_text().splitlines()
+    if not lines or lines[0].strip() != "---":
+        raise ValueError("missing opening ---")
+    try:
+        end = lines.index("---", 1)
+    except ValueError as e:
+        raise ValueError("missing closing ---") from e
+    fields = {}
+    for line in lines[1:end]:
+        if ":" in line:
+            key, value = line.split(":", 1)
+            fields[key.strip()] = value.strip()
+    return fields.get("name"), fields.get("description")
+
+
+def gate_harness_adapters():
+    """Claude Code and Codex both discover the same rules, skills, and roles.
+
+    Shared behavior has one canonical copy. Claude Code imports AGENTS.md and reads the
+    canonical `.claude` skills and roles; Codex discovers checked-in `.agents` and
+    `.codex` adapters that point back to those canonical files. This gate makes adding
+    only one side impossible to miss and hands the Codex config to a real Codex binary
+    when one is installed.
+    """
+    import shutil
+
+    problems = []
+    agents_md = REPO / "AGENTS.md"
+    claude_md = REPO / "CLAUDE.md"
+    cfg_path = REPO / ".codex" / "config.toml"
+
+    if not agents_md.exists():
+        problems.append("AGENTS.md is missing")
+        agents_size = 0
+    else:
+        agents_size = agents_md.stat().st_size
+        # Codex's documented default combined project-instruction limit is 32 KiB.
+        if agents_size > 32768:
+            problems.append(f"AGENTS.md is {agents_size} bytes; Codex would truncate "
+                            "it at the 32768-byte project instruction limit")
+
+    if not claude_md.exists():
+        problems.append("CLAUDE.md is missing")
+    else:
+        first = next((line.strip() for line in claude_md.read_text().splitlines()
+                      if line.strip()), "")
+        if first != "@AGENTS.md":
+            problems.append("CLAUDE.md must import the canonical rules with @AGENTS.md "
+                            "as its first non-empty line")
+
+    config = None
+    if not cfg_path.exists():
+        problems.append(".codex/config.toml is missing")
+    else:
+        try:
+            config = tomllib.loads(cfg_path.read_text())
+        except (OSError, tomllib.TOMLDecodeError) as e:
+            problems.append(f".codex/config.toml will not load: {e}")
+        if config is not None:
+            unknown = set(config) - {"project_doc_max_bytes"}
+            if unknown:
+                problems.append(".codex/config.toml has unsupported project keys: "
+                                + ", ".join(sorted(unknown)))
+            configured_limit = config.get("project_doc_max_bytes", 32768)
+            if not isinstance(configured_limit, int) or configured_limit < agents_size:
+                problems.append(".codex/config.toml project_doc_max_bytes is smaller "
+                                "than AGENTS.md")
+
+    canonical_skills = {
+        p.parent.name: p for p in (REPO / ".claude" / "skills").glob("*/SKILL.md")
+    }
+    codex_skills = {
+        p.parent.name: p for p in (REPO / ".agents" / "skills").glob("*/SKILL.md")
+    }
+    for name in sorted(canonical_skills.keys() - codex_skills.keys()):
+        problems.append(f".agents/skills/{name}/SKILL.md adapter is missing")
+    for name in sorted(codex_skills.keys() - canonical_skills.keys()):
+        problems.append(f".agents/skills/{name}/SKILL.md has no canonical skill")
+    for name in sorted(canonical_skills.keys() & codex_skills.keys()):
+        canonical = canonical_skills[name]
+        adapter = codex_skills[name]
+        try:
+            canonical_meta = _skill_metadata(canonical)
+            adapter_meta = _skill_metadata(adapter)
+        except (OSError, ValueError) as e:
+            problems.append(f"skill {name}: invalid frontmatter: {e}")
+            continue
+        if canonical_meta != adapter_meta:
+            problems.append(f"skill {name}: adapter name/description differs from "
+                            "the canonical skill")
+        canonical_ref = f".claude/skills/{name}/SKILL.md"
+        if canonical_ref not in adapter.read_text():
+            problems.append(f"skill {name}: adapter does not load {canonical_ref}")
+
+    canonical_roles = {
+        p.stem: p for p in (REPO / ".claude" / "agents").glob("*.md")
+    }
+    codex_roles = {
+        p.stem: p for p in (REPO / ".codex" / "agents").glob("*.toml")
+    }
+    for name in sorted(canonical_roles.keys() - codex_roles.keys()):
+        problems.append(f".codex/agents/{name}.toml adapter is missing")
+    for name in sorted(codex_roles.keys() - canonical_roles.keys()):
+        problems.append(f".codex/agents/{name}.toml has no canonical role")
+    for name in sorted(canonical_roles.keys() & codex_roles.keys()):
+        try:
+            role = tomllib.loads(codex_roles[name].read_text())
+        except (OSError, tomllib.TOMLDecodeError) as e:
+            problems.append(f"role {name}: adapter will not load: {e}")
+            continue
+        if role.get("name") != name:
+            problems.append(f"role {name}: adapter name must be {name!r}")
+        if not role.get("description"):
+            problems.append(f"role {name}: adapter has no description")
+        if role.get("sandbox_mode") != "workspace-write":
+            problems.append(f"role {name}: adapter sandbox_mode must be workspace-write")
+        canonical_ref = f".claude/agents/{name}.md"
+        if canonical_ref not in role.get("developer_instructions", ""):
+            problems.append(f"role {name}: adapter does not load {canonical_ref}")
+
+    codex = shutil.which("codex")
+    if config is not None and codex:
+        # This parses the complete configuration stack without calling a model.
+        # `features list` loads project config without contacting a model. Codex 0.147
+        # exposes --strict-config globally but rejects it for this read-only command,
+        # so the gate validates our intentionally tiny key set above and uses the CLI
+        # to catch implementation-level parsing or config-stack failures.
+        r = subprocess.run([codex, "features", "list"],
+                           cwd=str(REPO), capture_output=True, text=True, timeout=120)
+        if r.returncode != 0:
+            detail = (r.stderr or r.stdout).strip().splitlines()
+            problems.append("Codex refuses this checkout's config: "
+                            + " / ".join(detail[:3])[:300])
+    return problems
+
+
 GATES = {
+    "gh-guard": (gate_gh_guard, False),
+    "harness-adapters": (gate_harness_adapters, False),
     "code": (gate_code, False),
     "schema": (gate_schema, False),
     "readme": (gate_readme, False),

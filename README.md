@@ -1,6 +1,6 @@
 # MOAT: Migration Orchestration via Automated Translation
 
-MOAT ports popular CUDA GitHub projects to ROCm/HIP, one repo at a time. Coverage is expressed as gates -- wave64, wave32, windows -- so a port is proven once each gate has an architecture that validated it on real hardware. It is driven by Claude: intake screens a candidate, a planner analyses it, a porter applies the change on a fork in the AMD-Ecosystem org, a reviewer checks it, and a validator runs the real tests on AMD GPUs. Submitting the result upstream, and everything that follows with a maintainer, stays with a person. This repo is the control plane; it tracks progress and holds the porting knowledge in the `cuda-to-rocm` skill.
+MOAT ports popular CUDA GitHub projects to ROCm/HIP, one repo at a time. Coverage is expressed as gates -- wave64, wave32, windows -- so a port is proven once each gate has an architecture that validated it on real hardware. It is driven by AI coding agents running through either Claude Code or Codex: intake screens a candidate, a planner analyses it, a porter applies the change on a fork in the AMD-Ecosystem org, a reviewer checks it, and a validator runs the real tests on AMD GPUs. Submitting the result upstream, and everything that follows with a maintainer, stays with a person. This repo is the control plane; it tracks progress and holds the porting knowledge in the `cuda-to-rocm` skill.
 
 Prefer pictures? [VISUAL.md](VISUAL.md) walks through all of this in twelve diagrams.
 
@@ -54,7 +54,7 @@ ask than stopping and we would rather do it.
 ## How it works
 
 Five agents run in sequence, and each hands over through a state file rather than a
-conversation, so any Claude CLI on any host can pick up where the last one stopped:
+conversation, so either supported agent harness on any host can pick up where the last one stopped:
 **intake** screens a candidate for licence and viability, **planner** analyses the
 build system and the CUDA surface, **porter** writes the port on the fork, **reviewer**
 reads the diff, and **validator** builds it and runs the project's own tests on a real
@@ -64,7 +64,7 @@ not a pipeline stage, because every step of it ends at a person. The submission
 itself runs only in an attended session; an agent may run that one command, since
 what it publishes was already approved wholesale on the review PR.
 
-Each project gets a folder under `projects/` holding its plan, notes, and a per-platform status file. A fresh Claude CLI run in this repo detects its AMD architecture, finds the next actionable project, and continues the pipeline. No platform leads: whichever host picks the project up first does the porting, and the rest validate the same fork branch independently and in parallel, since the AMD targets share one unified ROCm port.
+Each project gets a folder under `projects/` holding its plan, notes, and a per-platform status file. A fresh Claude Code or Codex run in this repo detects its AMD architecture, finds the next actionable project, and continues the pipeline. No platform leads: whichever host picks the project up first does the porting, and the rest validate the same fork branch independently and in parallel, since the AMD targets share one unified ROCm port.
 
 A platform is an architecture on an operating system, and it carries the gates implied by both -- its wavefront size, which is fixed by the architecture, and its OS. The same GPU on a different OS is a different platform covering different gates. A gate is satisfied once any one platform carrying that attribute has validated, so the gates can be covered by as few as two hosts.
 
@@ -157,7 +157,7 @@ The project name links upstream.
 | [bellhopcuda](https://github.com/A-New-BellHope/bellhopcuda) ([fork](https://github.com/AMD-Ecosystem/bellhopcuda/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#65](https://github.com/A-New-BellHope/bellhopcuda/pull/65) |
 | [brian2cuda](https://github.com/brian-team/brian2cuda) ([fork](https://github.com/AMD-Ecosystem/brian2cuda/tree/moat-port)) | ✅ | ✅ | 🔄 | 🟢 [#327](https://github.com/brian-team/brian2cuda/pull/327) |
 | [catboost](https://github.com/catboost/catboost) ([fork](https://github.com/AMD-Ecosystem/catboost-moat/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#3111](https://github.com/catboost/catboost/pull/3111) |
-| [colmap](https://github.com/colmap/colmap) ([fork](https://github.com/AMD-Ecosystem/colmap/tree/moat-port)) | ✅ | ✅ | ⬜ | — |
+| [colmap](https://github.com/colmap/colmap) ([fork](https://github.com/AMD-Ecosystem/colmap/tree/moat-port)) | ✅ | ✅ | 🚫 | — |
 | [CPM.cu](https://github.com/OpenBMB/CPM.cu) | 🚫 | — | — | ⚪ not-portable |
 | [CubbyFlow](https://github.com/utilForever/CubbyFlow) ([fork](https://github.com/AMD-Ecosystem/CubbyFlow/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#145](https://github.com/utilForever/CubbyFlow/pull/145) |
 | [cuBQL](https://github.com/NVIDIA/cuBQL) ([fork](https://github.com/AMD-Ecosystem/cuBQL/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#35](https://github.com/NVIDIA/cuBQL/pull/35) |
@@ -228,7 +228,7 @@ The project name links upstream.
 | [llm.c](https://github.com/karpathy/llm.c) ([fork](https://github.com/AMD-Ecosystem/llm.c/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#854](https://github.com/karpathy/llm.c/pull/854) |
 | [llmq](https://github.com/IST-DASLab/llmq) | 🚫 | — | — | ⚪ not-portable |
 | [mahout](https://github.com/apache/mahout) ([fork](https://github.com/AMD-Ecosystem/mahout/tree/moat-port)) | ✅ | ✅ | 🔄 | 🟢 [#1399](https://github.com/apache/mahout/pull/1399) |
-| [marian-dev](https://github.com/marian-nmt/marian-dev) ([fork](https://github.com/AMD-Ecosystem/marian-dev/tree/moat-port)) | 🔄 | ✅ | 🔄 | 🟢 [#1043](https://github.com/marian-nmt/marian-dev/pull/1043) |
+| [marian-dev](https://github.com/marian-nmt/marian-dev) ([fork](https://github.com/AMD-Ecosystem/marian-dev/tree/moat-port)) | ✅ | ✅ | 🔄 | 🟢 [#1043](https://github.com/marian-nmt/marian-dev/pull/1043) |
 | [MASt3R-SLAM](https://github.com/rmurai0610/MASt3R-SLAM) ([fork](https://github.com/AMD-Ecosystem/MASt3R-SLAM/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [mcx](https://github.com/fangq/mcx) ([fork](https://github.com/AMD-Ecosystem/mcx/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#264](https://github.com/fangq/mcx/pull/264) |
 | [metaeuk](https://github.com/soedinglab/metaeuk) ([fork](https://github.com/AMD-Ecosystem/metaeuk/tree/moat-port)) | ✅ | ✅ | ✅ | — |
@@ -282,4 +282,4 @@ The project name links upstream.
 
 ## Layout
 
-See [VISUAL.md](VISUAL.md) for a diagram walkthrough of everything above, `projects/README.md` for the per-project files, the `cuda-to-rocm` skill for porting strategy and fault classes, and `CLAUDE.md` for how a Claude CLI drives the pipeline.
+See [VISUAL.md](VISUAL.md) for a diagram walkthrough of everything above, `projects/README.md` for the per-project files, the `cuda-to-rocm` skill for porting strategy and fault classes, and `AGENTS.md` for how either supported agent harness drives the pipeline.

@@ -15,13 +15,18 @@
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
-      "Bash(gh repo fork:*)",
       "Bash(gh repo view:*)",
       "Bash(gh repo clone:*)",
       "Bash(gh pr view:*)",
       "Bash(gh pr diff:*)",
       "Bash(gh search:*)",
       "Bash(gh api:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh issue list:*)",
+      "Bash(gh run view:*)",
+      "Bash(gh run list:*)",
       "Bash(cmake:*)",
       "Bash(make:*)",
       "Bash(ninja:*)",
@@ -36,6 +41,8 @@
       "Write"
     ],
     "ask": [
+      "Bash(gh api -X:*)",
+      "Bash(gh api --method:*)",
       "Bash(gh pr create:*)",
       "Bash(gh pr edit:*)",
       "Bash(gh pr comment:*)",
@@ -49,6 +56,7 @@
     "deny": [
       "Bash(git push -f:*)",
       "Bash(git push --force:*)",
+      "Bash(gh repo fork:*)",
       "Bash(ghstack:*)"
     ]
   }
