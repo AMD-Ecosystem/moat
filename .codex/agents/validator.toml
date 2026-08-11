@@ -1,0 +1,6 @@
+name = "validator"
+description = "Build and run the real tests for one port on one AMD platform and record commit-pinned validation evidence."
+sandbox_mode = "workspace-write"
+developer_instructions = """
+Before taking any action, read `.claude/agents/validator.md` completely and execute its body for exactly the project and platform named by the parent. Also follow `AGENTS.md` and invoke the canonical `cuda-to-rocm` skill. The YAML `model` and `tools` fields in the canonical Markdown are Claude Code adapter metadata; preserve the role behavior while using the tools available in Codex. Validation is read-only on fork source; send code changes back to the porter.
+"""
