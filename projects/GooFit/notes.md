@@ -1754,3 +1754,104 @@ One run discriminates between the two hypotheses:
 
 `exponential2_Example` PASSES on gfx90a while `exponential` fails. They differ in
 fit setup, and diffing them is probably the shortest path to a minimal reproducer.
+
+## Validation 2026-08-11 (validator, linux-gfx942, fork 18fca9e4a vs 5fe1221a8)
+
+First validation of this platform. Fresh clone of `AMD-Ecosystem/GooFit`, checked
+out `moat-port` at `18fca9e4a` (matches `status.json.head_sha` exactly), submodules
+initialised (`extern/thrust` at CCCL `af8cce4ca`). `git status --porcelain` clean
+throughout and after.
+
+Host: MI300X x8 (gfx942, wave64), ROCm 7.14 SDK-wheel layout (no `/opt/rocm`;
+`hipcc`/`cmake`/`ninja` from `/opt/conda/envs/py_3.12`), CMake 3.31.6, Ninja
+1.13.0. Per the dispatch's host warning, GPU index 3 has ~206 GiB of orphaned VRAM
+at the KFD level (`rocm-smi --showmeminfo vram` showed ~205.9 GB used, no attached
+process) -- avoided. Verified GPU 5 idle (~300 MB used, matching the other six) and
+used `HIP_VISIBLE_DEVICES=5` throughout.
+
+### Build (gfx942, recorded recipe)
+
+```
+cmake -S . -B build-hip-validate -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DGOOFIT_DEVICE=HIP -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DGOOFIT_TESTS=ON -DGOOFIT_EXAMPLES=ON -DGOOFIT_CERNROOT=OFF \
+  -DGOOFIT_PYTHON=OFF -DGOOFIT_PHYSICS=OFF
+cmake --build build-hip-validate -j64
+```
+306/306 targets, clean, exit 0 (~19s per `.ninja_log`, 224-core host). `roc-obj-ls`
+is not present in this ROCm 7.14 SDK-wheel layout (`ImportError: cannot import name
+'roc_obj_ls'`), so verified the offload target via the binary's own device banner
+instead: `HIP: Architecture: gfx942:sramecc+:xnack-`, `HIP: 0 AMD Instinct MI300X
+HF`.
+
+### Tests: 25/25 PASS -- matches gfx1100's baseline exactly; does NOT reproduce the gfx90a divergence
+
+```
+HIP_VISIBLE_DEVICES=5 ctest --test-dir build-hip-validate --output-on-failure
+  -> 100% tests passed, 0 tests failed out of 25, 10.25 s
+```
+All 25 pass, including every unbinned/binned NLL fit that fails on gfx90a
+(GaussianTest, ConvolutionTest, exponential_Example, etc.).
+`examples/exponential/exponential`:
+```
+alpha = -1.001102381 +/- 0.003165763922
+```
+Digit-identical to every gfx1100 session on record (differs from gfx1100's recorded
+`0.003165763921` only in the last digit of the error, well within float noise).
+
+Confirmed real GPU execution, not a CPU fallback: `AMD_LOG_LEVEL=3` shows 140
+`hipLaunchKernel` dispatches for the `exponential` run.
+
+**gfx942 (wave64, MI300X) does not reproduce the gfx90a (wave64, MI250X) NLL
+divergence.** Both are wave64 parts, so the earlier "wave64-specific" framing
+(explicitly weakly-supported per attempt 3's analysis above, which favored a stale
+symbol-published device pointer over any wavefront-width mechanism) gains a second
+data point against it: if the fault were a wave64 reduction-width assumption, this
+gfx942 run should have shown it too, and it did not. This is consistent with, not
+proof of, the stale-pointer hypothesis -- attempt 3's own note that gfx1100's clean
+runs might be "latent, not correct" (freed-block reuse pattern differing by
+allocator) applies here as well, so a clean gfx942 run cannot rule out a pointer
+lifetime bug that different allocators simply fail to trigger. It does rule out a
+mechanism that keys on wavefront width alone, since gfx942 and the failing gfx90a
+share that width.
+
+### No non-GPU regression: CPP backend 26/26
+
+```
+cmake -S . -B build-cpp-validate -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DGOOFIT_DEVICE=CPP -DGOOFIT_TESTS=ON -DGOOFIT_EXAMPLES=ON \
+  -DGOOFIT_CERNROOT=OFF -DGOOFIT_PYTHON=OFF
+cmake --build build-cpp-validate -j64      # 375/375, clean
+ctest --test-dir build-cpp-validate        # 100% tests passed, 26/26, 5.44 s
+```
+Matches the recorded gfx1100/CPP baseline (26/26) exactly.
+
+### CUDA no-regression gate: not re-run
+
+`head_sha` is unchanged (`18fca9e4a`) since the gfx1100 validation session already
+recorded this gate at this exact commit: pre-existing upstream `driver_types.h: No
+such file or directory` breakage under CUDA 12.8 (nvcc), reproduced identically on
+pristine upstream `5fe1221a8`, not a port regression. Per the validator's
+once-per-head_sha rule, skipped here (this is the third platform to skip it for the
+same reason, after the gfx90a session).
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --port GooFit` -> clean. No code or docs changed since the
+gfx1100 session verified README.md/`docs/SYSTEM_INSTALL.md` accuracy against the
+build recipe actually used; nothing to re-check here.
+
+### Tree state and result
+
+`git -C projects/GooFit/src status --porcelain` empty before and after (local
+`build-*-validate` directories removed after use, gitignored). No source or build
+files edited this round.
+
+**Result: linux-gfx942 -> completed at 18fca9e4a.** HIP 25/25 (10.25s), CPP 26/26
+(5.44s), alpha digit-identical to gfx1100, real-GPU-execution confirmed, CUDA gate
+reused from this head_sha (pre-existing upstream breakage, not a regression),
+jargon clean, docs unchanged and already verified accurate. This satisfies the
+wave64 gate (gfx90a already attempted wave64 and failed; gfx942 now supplies a
+passing wave64 witness) and the gfx90a NLL-divergence question remains open and
+unaffected by this result -- see the analysis above for why a clean gfx942 run
+does not settle it.
