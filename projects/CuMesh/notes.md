@@ -1129,3 +1129,24 @@ Integrity and publication checks: local HEAD and `origin/moat-port` both resolve
 `79f089fcb254a7c4a96eef968574c8bc1c8387f8`; the fork worktree is clean. The jargon scan
 reports only the two settled hits in frozen commit `d5c1355`, covered by the maintainer
 decision recorded above; the new README and commit message add no hits.
+
+## Review 2026-08-11 (linux-gfx942, documentation follow-up)
+
+**Reviewer**: MOAT reviewer agent (local-branch mode, `moat-port` vs `main`, base
+`12289e1062f0603f2f0d0771b02e1395d247f26f`)
+
+**Verdict**: Request Changes
+
+### Build documentation
+
+**1. `README.md:14-16` still presents the NVIDIA and AMD prerequisites as one
+cumulative list.** An AMD user following this section is told to install a
+CUDA-enabled PyTorch build and CUDA Toolkit >= 12.4 *and* a ROCm-enabled PyTorch build
+and ROCm. PyTorch's CUDA and ROCm builds are alternative backend installations, and the
+verified command ran with `torch.version.hip == 7.14.60850` and no CUDA-enabled torch.
+Split these bullets into explicit NVIDIA and AMD alternatives (keeping Python as the
+shared prerequisite), so the NVIDIA arm requires CUDA-enabled PyTorch plus a matching
+CUDA Toolkit and the AMD arm requires ROCm-enabled PyTorch plus a matching ROCm
+toolchain. The new command itself matches `setup.py:71-84,125-127`: `BUILD_TARGET=rocm`
+selects the HIP path and a semicolon-separated `GPU_ARCHS` value emits one
+`--offload-arch` flag per target.
