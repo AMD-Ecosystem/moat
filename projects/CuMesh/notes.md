@@ -1413,3 +1413,95 @@ The control-plane rule now keeps every failure pinned to the commit it judged be
 validation also covers documentation, jargon, and integrity. `retry-validation` retained
 the historical `failed_sha` while retiring the active failure state; the selector now
 derives `port-ready` and requires a fresh validator run at unchanged fork head `392b4dd`.
+
+## Validation 2026-08-11 (linux-gfx942, retry at 392b4dd)
+
+**Verdict**: completed. A fresh ROCm build and all 6/6 project examples pass on a real
+gfx942 GPU at exact fork commit `392b4dd41f8b10b795b00e44cb1b294b1388cefa`.
+The documentation correction that retired the earlier active failure is present and
+passes its final gate. The validator did not edit or push fork source; prepared local
+commit `49b1d3b81b05254885509b81edc85cac761cee78` remains unpushed as required by the
+recorded human decision.
+
+**Platform and toolchain**: one process pinned with `HIP_VISIBLE_DEVICES=0` to an AMD
+Instinct MI300X HF reporting `gfx942:sramecc+:xnack-`. Python 3.12.13, PyTorch
+`2.14.0a0+git7d05abc`, HIP `7.14.60850`, and AMD clang `23.0.0git`
+(`46fcb339fb61119b337f973c7ca9e710a319fdd0`). A separate host `/dev/kfd` availability
+probe was only an environment prerequisite and is not counted as validation evidence;
+the test command below independently initialized the device and printed its model and
+architecture before running project code.
+
+**Independent fresh build**:
+
+```bash
+utils/timeit.sh CuMesh compile -- bash -lc \
+  'cd /var/lib/jenkins/moat/projects/CuMesh/src && \
+  HIP_VISIBLE_DEVICES=0 BUILD_TARGET=rocm GPU_ARCHS=gfx942 \
+  python3 setup.py build \
+  --build-base /var/lib/jenkins/moat/agent_space/CuMesh-validator-gfx942-392b4dd \
+  --force'
+```
+
+PASS in 112.945 seconds. The build base did not exist before this command. All three
+extensions (`_C`, `_cubvh`, and the CPU-only `_cumesh_xatlas`) compiled and linked in the
+isolated build directory. Every HIP translation unit was compiled with
+`--offload-arch=gfx942`. The compiler emitted the already-recorded ignored `nodiscard`
+HIP results, non-trivial `memcpy`, abstract non-virtual destructor, visibility, and VLA
+warnings; there were no errors.
+
+**Real GPU suite**:
+
+```bash
+utils/timeit.sh CuMesh test -- bash -lc 'set -euo pipefail
+build_root=/var/lib/jenkins/moat/agent_space/CuMesh-validator-gfx942-392b4dd
+mkdir -p "$build_root/examples-run"
+cp -a /var/lib/jenkins/moat/projects/CuMesh/src/examples/. "$build_root/examples-run/"
+export HIP_VISIBLE_DEVICES=0
+export PYTHONNOUSERSITE=1
+export PYTHONPATH="$build_root/lib.linux-x86_64-cpython-312"
+cd "$build_root/examples-run"
+python3 -c "import cumesh, torch; print(\"cumesh\", cumesh.__file__); print(\"torch\", torch.__version__); print(\"hip\", torch.version.hip); print(\"name\", torch.cuda.get_device_name(0)); print(\"arch\", torch.cuda.get_device_properties(0).gcnArchName)"
+for script in simplify.py fill_holes.py remove_duplicate_faces.py unify_orientations.py remesh.py uv_unwrap.py; do
+  echo "RUN $script"
+  python3 "$script"
+done'
+```
+
+All 6/6 PASS in 29.391 seconds against the fresh build artifact:
+
+1. `simplify.py`: 34,834 vertices / 69,451 faces -> 4,927 vertices / 9,780 faces.
+2. `fill_holes.py`: 34,834 / 69,451 -> 34,838 / 69,594.
+3. `remove_duplicate_faces.py`: unchanged at 34,834 / 69,451.
+4. `unify_orientations.py`: unchanged at 34,834 / 69,451.
+5. `remesh.py`: BVH construction, sparse grid, dual contouring, and projection ->
+   102,396 vertices / 204,916 faces.
+6. `uv_unwrap.py`: 90 clusters, xatlas charts and packing -> 45,110 vertices /
+   69,451 faces.
+
+The CPU-only xatlas extension compiled fresh, and `uv_unwrap.py` exercised its complete
+chart/pack path. CuMesh has no formal test runner beyond these examples. The Linux xatlas
+CPU sources are unchanged from upstream (the port adds Windows-HIP wrappers only), so this
+also supplies the non-GPU no-regression evidence.
+
+**CUDA no-regression gate**: not repeated. The CUDA compile/link gate passed with nvcc
+12.8 at `4440182` as recorded above, including positive symbol-visibility verification.
+`git diff --name-status 4440182..392b4dd` contains only `README.md` and removal of two
+comment lines from `src/cubvh_bindings_winhip.cu`; no CUDA source or build behavior changed.
+The code-wide CUDA gate therefore carries to this exact head. No NVIDIA runtime behavior
+is claimed.
+
+**Final gates**:
+
+- Documentation PASS: `README.md` presents NVIDIA and AMD prerequisites as alternatives,
+  documents the ROCm-enabled PyTorch/toolchain requirements, gives the verified
+  `BUILD_TARGET=rocm GPU_ARCHS=gfx942` source-build command, and documents multi-arch
+  syntax. The claims match `setup.py:71-84,125-127`; `utils/prose.py` reports clean.
+- Jargon: the whole-branch scan reports exactly the two previously recorded hits in frozen
+  commit `d5c1355` (`moat-port` and `moat` on one message line), and no new hit. The
+  recorded human decision explicitly leaves those published words unchanged, so this is
+  the settled exception rather than an actionable validator finding.
+- Integrity PASS: the fork and recursive submodules have no tracked or untracked status;
+  local `HEAD` and `origin/moat-port` both resolve to `392b4dd41f8b10b795b00e44cb1b294b1388cefa`.
+  cubvh is clean at `757b913bfbf19ed65e3a379d159391a8e29efa0f` and Eigen at
+  `e63d9f6ccb7f6f29f31241b87c542f3f0ab3112b`. No remote-tracking ref contains the
+  prepared `49b1d3b` replacement.

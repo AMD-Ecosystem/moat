@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-08-11T21:38:59Z",
+  "updated_at": "2026-08-11T22:09:44Z",
   "head_sha": "392b4dd41f8b10b795b00e44cb1b294b1388cefa",
   "depends_on": [],
   "pr_url": "https://github.com/JeffreyXiang/CuMesh/pull/36",
@@ -139,11 +139,11 @@
     "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": null,
+      "validated_sha": "392b4dd41f8b10b795b00e44cb1b294b1388cefa",
       "failed_sha": "392b4dd41f8b10b795b00e44cb1b294b1388cefa",
       "started_at": "2026-08-11T17:50:04Z",
-      "completed_at": null,
-      "updated_at": "2026-08-11T21:38:59Z",
+      "completed_at": "2026-08-11T22:09:44Z",
+      "updated_at": "2026-08-11T22:09:44Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -157,7 +157,8 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer"
+      "last_agent": "validator",
+      "state": "completed"
     }
   }
 }
