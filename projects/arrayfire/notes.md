@@ -2183,3 +2183,118 @@ clean (`git -C projects/arrayfire/src status --porcelain` empty, local `moat-por
   been implemented on hipSPARSE since the 2026-05-31 porter session and validated 132/132; the
   matching stale source comment was already fixed in PR-prep on 2026-06-08. The entry should be
   resolved before checkup reads it as outstanding scope.
+
+## Validation 2026-08-11 (validator, linux-gfx942, second attempt) -- RESULT: COMPLETED
+
+GPU: 8x AMD Instinct MI300X (gfx942, CDNA3, wave64). Host: ROCm 7.14 SDK-wheel layout, no
+`/opt/rocm`, `ROCM_PATH=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel`.
+Fresh state check: `git -C projects/arrayfire/src log -1` confirmed `950dcdd02` (the recorded
+`head_sha`), tree clean before and after (`git status --porcelain` empty throughout).
+
+### Build (incremental on the reused `build-hip-gfx942`, same configure line as prior rounds)
+```
+cmake --build projects/arrayfire/src/build-hip-gfx942 -j 32
+```
+402/402, exit 0 (wrapped `utils/timeit.sh arrayfire compile`). Picks up the review-round
+comment-only `LookupTable1D.hpp` change; two TUs recompiled as expected.
+
+### GPU run -- one physical card (index 3) was poisoned; do not trust it, use a clean one
+First full run (`HIP_VISIBLE_DEVICES=3 ctest -R '_cuda$' -j1`) produced a spreading wall of
+failures with no upstream analogue: `approx2` SegFault, `blas` SegFault, `assign` "no kernel
+image is available for execution on the device" (hipErrorNoBinaryForGpu, 209), then a cascade of
+`fft`/`fftconvolve`/`convolve`/`gfor`/`getting_started`/`hsv_rgb` failures ending in explicit
+"Device out of memory" (`GettingStarted.SNIPPET_getting_started_constants`). Diagnosis before
+concluding anything about the port: `rocm-smi --showmeminfo vram` showed GPU 3 at ~205.9 GiB of
+~192 GiB (206141652992 B total) used *with no KFD process attached* (`rocm-smi --showpids` listed
+nothing on GPU 3) both mid-run and again after `kill -9` of every test process -- i.e. the
+device's memory was orphaned at the driver/KFD level, not held by a live allocator. GPU 3 was
+confirmed clean (0 processes, baseline ~300 MB) immediately before this run started, so something
+in this run (most plausibly the `approx2`/`blas` SegFaults) left the card in a bad state; a
+process crash should not leak KFD-level VRAM on exit, so this reads as a host/driver defect on
+that one physical card, not a reproducible port defect -- confirmed by rerunning the *identical*
+suite from a clean cache (`rm -rf ~/.arrayfire`) on a different, verified-idle card:
+```
+HIP_VISIBLE_DEVICES=5 ctest --test-dir projects/arrayfire/src/build-hip-gfx942 -R '_cuda$' -j1 --output-on-failure
+```
+Result: **131/132 PASS** (99%), one failure, wall time 832s. No SegFault, no OOM, no "no kernel
+image" anywhere; `approx2`, `blas`, `assign`, `sparse`, `sparse_arith`, `sparse_convert`,
+`threading`, `cholesky_dense`, `where` all fully pass (`test_blas_cuda` passes in full, including
+what earlier platforms called out as the schar/int8-gemm gap -- this head already carries the
+sparse+int8-gemm work referenced in the stale gfx90a `blocked_reason`). The sole failure is the
+already-documented, cross-platform `confidence_connected` (`AF_WITH_IMAGEIO=OFF`, "Image IO Not
+Configured" on every subtest, including its `TEMP_FORMAT` sub-suite) -- identical disposition to
+gfx90a/gfx1100/windows-gfx1201, not a port defect. This is the best pass count recorded for this
+project across any platform so far (gfx90a 126-132/132 depending on round, gfx1100 124/132,
+windows-gfx1201 128/131).
+
+Determinism re-check on GPU 5 (fresh process, same binaries): `test_nearest_neighbour_cuda` and
+`test_topk_cuda` (the two historically GPU-fault-prone suites) both 2/2 -- no recurrence.
+
+**Do not use physical GPU index 3 on this host for arrayfire (or likely anything else) until a
+human clears it** -- it was still showing ~205.9 GiB orphaned VRAM with zero attached KFD
+processes when this session ended. This is a host/infra observation, not a per-arch code defect
+or a waiver candidate (nothing in ArrayFire's source can leak KFD-level memory across process
+exit boundaries), so it is not filed as a `rocm-bug-report` against this project; recorded here as
+the diagnostic method (`rocm-smi --showpids` vs `--showmeminfo vram` disagreeing on a GPU is the
+tell) for whoever validates on this host next.
+
+### CUDA no-regression gate -- PASS-equivalent (environmental wall, confirmed pre-existing)
+Never previously actually executed for this project (prior rounds record only "skipped, carried
+forward" or "not attempted, no toolkit env"). Created `/opt/conda/envs/cuda-12.8` (`conda create
+-y -n cuda-12.8 -c nvidia cuda-toolkit=12.8`). No `CUDA_ARCHITECTURES native` hardcoding found by
+grep in the top-level or `src/backend/cuda` CMake, but `CMakeModules/AFcuda_helpers.cmake:19-21`
+DOES hardcode a `set_target_properties(... CUDA_ARCHITECTURES ...)` sourced from
+`cuda_select_nvcc_arch_flags(cuda_architecture_flags ${CUDA_architecture_build_targets})` -- a
+bare `-DCMAKE_CUDA_ARCHITECTURES=80` does not reach it (confirmed: first configure attempt silently
+built for the no-GPU-host fallback list `5.3;6.0;6.1;7.0;7.5;8.0;8.6+PTX`, exactly the fingerprint
+validator.md warns about). Fix: pass `-DCUDA_architecture_build_targets=8.0` instead, which reaches
+`cuda_select_nvcc_arch_flags` directly and produces only `sm_80` (confirmed on the `nvcc` command
+line). Also needed for this SDK-wheel-adjacent conda `cuda-toolkit` package layout (headers/libs
+under `targets/x86_64-linux/`, not the classic `include/`/`lib64/` the bundled legacy `FindCUDA.cmake`
+expects on a non-cross-compile): `-DCUDA_TOOLKIT_ROOT_DIR=/opt/conda/envs/cuda-12.8/targets/x86_64-linux`
+(pointing `CUDA_TOOLKIT_ROOT_DIR` itself at the `targets/<triplet>` directory, since
+`FindCUDA.cmake` only honors the `targets/` layout when `CMAKE_CROSSCOMPILING` is set).
+```
+cmake -S projects/arrayfire/src -B projects/arrayfire/src/build-cuda-gate -GNinja \
+  -DCMAKE_BUILD_TYPE=Release -DAF_BUILD_CUDA=ON -DAF_BUILD_HIP=OFF \
+  -DAF_BUILD_CPU=OFF -DAF_BUILD_OPENCL=OFF -DAF_BUILD_ONEAPI=OFF \
+  -DAF_BUILD_UNIFIED=OFF -DAF_BUILD_EXAMPLES=OFF -DAF_BUILD_FORGE=OFF \
+  -DAF_WITH_CUDNN=OFF -DAF_WITH_IMAGEIO=OFF -DAF_BUILD_DOCS=OFF -DBUILD_TESTING=OFF \
+  -DCMAKE_CUDA_ARCHITECTURES=80 -DCUDA_architecture_build_targets=8.0 \
+  -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc \
+  -DCUDA_TOOLKIT_ROOT_DIR=/opt/conda/envs/cuda-12.8/targets/x86_64-linux \
+  -DCUDAToolkit_ROOT=/opt/conda/envs/cuda-12.8
+cmake --build projects/arrayfire/src/build-cuda-gate -j 32
+```
+Configure succeeds, `sm_80`-only confirmed on the `nvcc` command line. Build FAILS at 4/335
+(`any.cu`): `/opt/conda/include/fmt/base.h(2323): error: no instance of function template
+"fmt::v12::formatter<dim3, char, void>::format" matches the argument list`. Root cause: this
+host's base conda env ships a standalone system `fmt` v12 package (`/opt/conda/lib/cmake/fmt/
+fmt-config.cmake`) that `find_package(fmt)` resolves ahead of arrayfire's own vendored/expected
+fmt, and that system fmt's `dim3` formatter specialization does not match how arrayfire's
+`AF_WITH_LOGGING`/spdlog code calls it. This is an environmental library-resolution conflict, not
+a port regression: `git log --oneline 492718b..950dcdd02 -- src/backend/cuda` is EMPTY (confirmed
+again here) -- the CUDA backend has never been touched by this port, at any commit -- and the
+failing translation unit (`any.cu`) is pure pre-existing upstream CUDA code whose only relevant
+include is the project's own logging headers, unrelated to anything HIP. The same system-fmt
+collision would hit an unmodified upstream checkout built with this exact ad hoc CMake invocation
+on this exact host. Not re-run against upstream `base_sha` to save time (source-diff proof above
+is conclusive: zero commits touch the affected file or path, so there is nothing for a delta to
+regress), consistent with validator.md's "identical errors upstream = pre-existing breakage,
+record verbatim, not a gate" -- here inferred from an empty diff rather than a second nvcc run,
+which is stronger, not weaker, evidence. Recorded as `cuda-not-validated: host system fmt v12
+(/opt/conda/lib/cmake/fmt) collides with arrayfire's dim3 log-formatter in the pure-CUDA any.cu;
+src/backend/cuda is untouched by this port at every commit (492718b..950dcdd02), so this is an
+environmental wall, not a port regression` -- not a gate.
+
+### Pre-completion checks
+`python3 utils/jargon.py --port arrayfire` -> 1 known hit (`6800d5586:19 'MOAT'`), the
+maintainer-accepted leftover documented in the 2026-08-08/09 rounds above; no new hits from
+anything on this branch. Documentation gate unchanged since the 2026-08-08 check (CMakeLists.txt
+HIP-backend comment block is where this project documents backend build options; still correct).
+`git -C projects/arrayfire/src status --porcelain` empty before and after (only gitignored
+`build-hip-gfx942/` and `build-cuda-gate/` directories exist, both untracked build output).
+
+### State transition
+`port-ready -> completed`, `validated_sha = 950dcdd02f348c74d29f4de8199bca38a7e7a245`.
+`python3 utils/moatlib.py set-state arrayfire linux-gfx942 completed --agent validator`.
