@@ -135,4 +135,6 @@ build a pure passthrough. `references/validation.md`.
 
 Commit messages, PR bodies and code comments go to upstream maintainers who do not know
 our vocabulary. Check with `python3 utils/jargon.py --port <name>` before pushing -- the whole branch,
-not the commit you just wrote; terms and their replacements are in `config/jargon.toml`.
+not the commit you just wrote; terms and their replacements are in `config/jargon.toml`. A Test
+Plan runs from a clean clone of the upstream project, so it carries no control-plane paths --
+jargon.py skips fenced blocks by design and cannot see them. `references/naming.md`.

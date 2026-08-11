@@ -1253,3 +1253,100 @@ undefined before `hip_runtime.h`" trap does not bite here. Added lines are ASCII
 `Co-Authored-By` trailer appears on any commit in `12289e1..HEAD`, both new titles are
 under 72 characters and carry the `[ROCm]` prefix with an AI-assistance disclosure, and no
 internal account, host or path appears in the diff. The fork worktree is clean.
+
+## Test Plan correction 2026-08-11 (linux-gfx942 porter) -- PREPARED, NOT PUSHED
+
+The review finding above is correct and I re-checked it independently rather than
+inheriting it: `git ls-files | grep -i prose` returns nothing at every commit on the
+branch, `projects/utils/prose.py` (what `../../utils/prose.py` resolves to from the fork
+root) does not exist, and the real script is `utils/prose.py` at the control-plane root.
+The line is upstream-visible, unrunnable from a clone of CuMesh, and names our tooling.
+
+**The fix is prepared and verified, and it is deliberately not pushed.** The only way to
+change a commit message is to rewrite the commit, and `392b4dd` is the head of open
+upstream PR #36. Verified live, read-only, this round:
+
+```bash
+gh pr view 36 --repo JeffreyXiang/CuMesh --json number,state,headRefOid,headRefName,headRepositoryOwner
+# {"headRefName":"moat-port","headRefOid":"392b4dd41f8b10b795b00e44cb1b294b1388cefa",
+#  "headRepositoryOwner":{"login":"AMD-Ecosystem"},"number":36,"state":"OPEN"}
+```
+
+So `git push --force-with-lease` on `moat-port` would visibly rewrite the commit list of a
+PR the maintainer can already see. The reviewer flagged this as possibly a person's call;
+it is, and no recorded approval for it exists: `moatlib.py pr-approval CuMesh` reports
+`approval-valid=False (no recorded approval)`, `waivers` is empty, and the only related
+recorded decision -- "Settled: the published commit messages stand (maintainer decision,
+2026-08-09)" -- runs the other way, refusing a rewrite of published history and closing the
+allowlist and squash escapes with it. That decision was about a commit three architectures
+had validated, which this one is not, so it does not answer this case; it does establish
+that rewriting what the PR shows is decided here by a person, not by a porter.
+
+### The prepared commit
+
+Built with `git commit-tree` so nothing in the fork worktree or on `moat-port` moved. It
+lives on local branch `prepared-testplan-fix` in `projects/CuMesh/src`, is unpushed, and
+exists only in this checkout.
+
+```
+prepared commit : 49b1d3b81b05254885509b81edc85cac761cee78
+replaces        : 392b4dd41f8b10b795b00e44cb1b294b1388cefa
+parent          : 79f089fcb254a7c4a96eef968574c8bc1c8387f8   (unchanged)
+tree            : b0281250314d04f148d3c20d55e3aae48a90e9e6   (IDENTICAL to 392b4dd)
+author/date     : unchanged
+delta           : the final Test Plan line `python3 ../../utils/prose.py README.md`
+                  is dropped; `git diff --check` and the three `grep -F` checks stay
+```
+
+Verification, all of it message-only because `git diff 392b4dd 49b1d3b` is empty and both
+commits name the same tree object:
+
+```bash
+python3 utils/jargon.py -C projects/CuMesh/src --commits 12289e1..49b1d3b
+git -C projects/CuMesh/src log -1 --format=%B 49b1d3b | python3 utils/prose.py -
+```
+
+The jargon scan over the whole branch through the prepared commit reports exactly the two
+settled hits in frozen `d5c1355` and nothing else -- the correction adds none and removes
+none. `prose.py` reports `prose: clean` on the new body. Title is 40 characters with the
+`[ROCm]` prefix, the AI-assistance disclosure is intact, and there is no `Co-Authored-By`
+trailer. No compile or GPU run was repeated: the tree is byte-identical to the tree the
+validator built and tested, so no architecture's evidence is touched either way, and
+`validated_sha` for linux-gfx942 is null so nothing exists at `392b4dd` to orphan.
+
+### Question for the human
+
+> May the porter force-push `moat-port` on the fork to replace `392b4dd` with the prepared
+> `49b1d3b`, given that this rewrites the head commit of open upstream PR #36? The source
+> tree is byte-identical, the only change is dropping one control-plane command from the
+> Test Plan, no architecture's validation evidence is affected, and the commit was authored
+> this round rather than being long-published history -- but the PR is open and a
+> maintainer may be watching it.
+
+If the answer is yes, the whole application is:
+
+```bash
+git -C projects/CuMesh/src update-ref refs/heads/moat-port 49b1d3b81b05254885509b81edc85cac761cee78 392b4dd41f8b10b795b00e44cb1b294b1388cefa
+git -C projects/CuMesh/src reset --hard moat-port
+git -C projects/CuMesh/src push --force-with-lease origin moat-port
+python3 utils/moatlib.py advance-head CuMesh 49b1d3b81b05254885509b81edc85cac761cee78
+python3 utils/moatlib.py set-hold CuMesh off
+```
+
+then the stage moves `changes-requested -> porting -> ported` around that push, since the
+lock must be held while the fork branch is rewritten. If the answer is no, the alternative
+is to leave the line and record it as settled the way `d5c1355`'s message was, because a
+follow-up commit cannot correct an earlier commit's Test Plan -- there is no fix here that
+does not rewrite.
+
+Project put `on_hold` rather than left at `changes-requested`, so the selector does not
+dispatch another porter into the same wall. Stage stays `changes-requested` and the
+fork-write lock stays free, so clearing the hold resumes exactly here.
+
+### Promoted to the skill
+
+`references/naming.md` (with a pointer from SKILL.md's "Writing it up") now states that a
+Test Plan is run from a clean clone of the upstream project and carries no control-plane
+paths, citing this CuMesh commit as the source, and records why `jargon.py` cannot catch it
+-- `config/jargon.toml` skips fenced blocks deliberately. Per the review, no `jargon.toml`
+rule was proposed.
