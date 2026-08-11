@@ -1947,3 +1947,202 @@ never staged). `origin/moat-port` == local HEAD == `1d0822bd` throughout.
 `linux-gfx1100`: **completed** at `validated_sha` = `1d0822bd`. All 5
 requested checks pass; no regressions against the porter's numbers; RCCL and
 MIOpen both exercised for real on GPU, not compile-only.
+
+## Validation 2026-08-11 (linux-gfx90a, 4x AMD Instinct MI250X, real GPU)
+
+Verdict: PASS. `linux-gfx90a` revalidated at head `1d0822bd` (was `ba0ec806`,
+carried forward from a cosmetic pin-removal; this run is a full real-GPU
+re-run, not a carry-forward, per the eight functional commits since then).
+Host: 4x gfx90a (MI250X, CDNA2, wave64), ROCm 7.2.1. No fork clone existed for
+this project on this host; cloned `AMD-Ecosystem/marian-dev` fresh, checked
+out `moat-port`, confirmed HEAD == `1d0822bd` before and after the run.
+
+### Build
+
+Submodules: `git submodule update --init src/3rd_party/simd_utils
+src/3rd_party/simple-websocket-server`, then sentencepiece. The direct
+`git submodule update --init src/3rd_party/sentencepiece` hung for several
+minutes on this host (slow path to GitHub, not the documented unfetchable-pin
+error) -- worked around by cloning `marian-nmt/sentencepiece` to a scratch dir
+first (`/tmp/sp_test`) and re-running the submodule update with
+`--reference /tmp/sp_test`, which reuses those objects locally. It still hits
+the documented `fatal: remote error: upload-pack: not our ref
+f006008f97c8a724d2dee306fb5347b109dbb893` for the pinned commit, landing on
+`master` (1ca221c, v0.1.95) exactly as notes above describe. One new wrinkle:
+after `git submodule update --init --reference`, the submodule's `git log`
+was fine but `git status` showed every tracked file as staged-deleted (empty
+working tree) -- `git -C src/3rd_party/sentencepiece reset --hard HEAD`
+restored the files; a bare `checkout -- .` fails with "pathspec '.' did not
+match" in that half-initialized state, `reset --hard` is what actually works.
+
+```
+cmake -S projects/marian-dev/src -B agent_space/marian-build-gfx90a-full -G Ninja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ \
+  -DCOMPILE_CUDA=ON -DUSE_CUDNN=ON -DUSE_NCCL=ON \
+  -DUSE_FBGEMM=OFF -DCOMPILE_CPU=ON -DCMAKE_BUILD_TYPE=Release \
+  -DCOMPILE_TESTS=ON -DUSE_MKL=OFF -DUSE_TCMALLOC=OFF -DUSE_DOXYGEN=OFF \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DBUILD_ARCH=native
+cmake --build agent_space/marian-build-gfx90a-full -j64
+```
+
+294/294 targets, no errors (configure 5.2s, build 107.7s -- much of the
+object cache was warm from ccache-equivalent reuse across earlier attempts on
+this host). All three maintainer-requested features on: USE_CUDNN=ON
+(MIOpen), USE_NCCL=ON (RCCL). `git status --porcelain` in the fork clone:
+only the sentencepiece gitlink shown modified (never staged), clean
+otherwise, both before and after the full run.
+
+### Unit suites (HIP_VISIBLE_DEVICES=0)
+
+Matches the gfx1100 numbers exactly:
+
+- operator_tests: 603/603 assertions, 4 test cases -- PASS (csr-dot + fp16
+  affine sections included; these are the two surfaces the eight-commit delta
+  fixed, and both are exercised and green here for the first time on gfx90a).
+- graph 10/10, attention 6/6, transformer 3/3, binary 9/9, fastopt 23/23,
+  utils 8/8 -- PASS.
+- rnn_tests 21/24 -- the three documented hipRAND-vs-cuRAND reference
+  mismatches (rnn_tests.cpp:93, "Simple RNN"), byte-identical to every prior
+  platform's failure signature. Not a regression.
+- App tests: test_logger, test_dropout, test_prod, test_pooling all exit 0.
+
+### Conv/pool reference program (MIOpen correctness, not just graph construction)
+
+`src/tests/pooling.cpp` (the CUDNN app test) only builds a graph and never
+calls forward/backward -- it proves nothing about MIOpen numerics. Wrote a
+standalone check (`agent_space/conv_pool_check.cpp`, not committed to the
+fork; a validation aid) that builds tiny hand-computable `ConvolutionOp` /
+`PoolingOp` cases directly and checks forward AND backward against values
+worked out by hand, compiled and linked against this build's
+`libmarian.a`/`libmarian_cuda.a` with the same flags `test_prod` links with
+(`-no-pie` needed; `libmarian_cuda.a` has PIC-incompatible relocations
+otherwise).
+
+```
+conv forward             OK   (x*3+1 elementwise on a 2x2 map)
+conv grad wrt input      OK   (= kernel weight, broadcast)
+conv grad wrt kernel     OK   (= sum(x))
+conv grad wrt bias       OK   (= output element count)
+max pool forward         OK   (1x2 non-overlapping windows)
+max pool grad            OK   (routes to the argmax element only)
+avg pool forward         OK   (1x2 non-overlapping windows)
+avg pool grad            OK   (spreads 1/window_size evenly)
+ALL CHECKS PASSED
+```
+
+**Bug found and worked around, not a ROCm regression:** the first version of
+this check built `max_pooling(x,...)` and `avg_pooling(x,...)` on the SAME
+input `x` in the SAME graph, and `avg pool forward` came back identical to
+`max pool forward` (got `5 4 8 7`, wanted `3 3 5.5 6.5`). Root cause is in
+upstream marian, not the port: `ExpressionGraph::add()` runs short-term CSE
+(`findOrRemember` in `expression_graph.h`) unconditionally, keyed on
+`node->hash()`/`node->equal()`. `PoolingOp::type()`
+(`node_operators_unary.h`) returns the literal string `"layer_pooling"` for
+BOTH `"avg"` and `"max"` mode and does not override `equal()`/`hash()` to
+account for the `mode` field, unlike e.g. `ScalarAddNodeOp` which does
+override `equal()` for its own scalar member. So a second `PoolingOp` with an
+identical child and the same (empty, auto-assigned) name looks `equal()` to
+the first, and the CSE silently aliases the two nodes -- `avg_pooling`
+returns `max_pooling`'s result. This is `#ifdef CUDNN`-gated code, identical
+on CUDA, and triggers only when both pooling modes are applied to the same
+input in the same graph: confirmed dead in practice, `avg_pooling` has zero
+callers anywhere in the tree and `max_pooling` has exactly one
+(`examples/mnist/model_lenet.h`), so no shipped model path ever does this.
+Not filed as a bug report (out of scope for this port, pre-existing on CUDA
+too, no shipped path affected) -- worked around in the check by giving each
+pooling mode its own graph, which is what isolates the numbers above as a
+real MIOpen correctness result rather than an artifact of the CSE bug.
+
+### Single-GPU e2e determinism gate (GPU 0)
+
+Toy reverse-copy corpus regenerated fresh (agent_space is gitignored,
+per-host; `agent_space/marian-e2e-gfx90a/{train,test}.{src,tgt}`, 1000
+train sentences over a 30-word vocab, vocab.yml auto-built by marian).
+Trained a transformer to cost 0.00056 @3000u, decoded beam=6 twice on GPU and
+once on CPU:
+
+```
+marian --type transformer -t train.src train.tgt -m model.npz \
+  --vocabs vocab.src.yml vocab.tgt.yml --dim-emb 64 --transformer-dim-ffn 128 \
+  --transformer-heads 2 --enc-depth 2 --dec-depth 2 --after 3000u --devices 0 --seed 1234
+marian-decoder -m model.npz -v vocab.src.yml vocab.tgt.yml -i test.src -b 6 --devices 0 > gpu1.out
+marian-decoder -m model.npz -v vocab.src.yml vocab.tgt.yml -i test.src -b 6 --devices 0 > gpu2.out
+marian-decoder -m model.npz -v vocab.src.yml vocab.tgt.yml -i test.src -b 6 --cpu-threads 1 > cpu.out
+diff gpu1.out gpu2.out   # IDENTICAL
+diff gpu1.out cpu.out    # IDENTICAL
+```
+
+GPU run1 == GPU run2 (deterministic) and GPU == CPU. Every one of the 10 test
+lines decodes to the exact word-reversal of its input. The wave64
+topk/nth_element fix still holds at this head.
+
+### Multi-GPU RCCL (4x gfx90a, exclusive use of the host's four GPUs)
+
+`rocm-smi --showuse` confirmed all four GPUs idle (0% activity) immediately
+before start; no other GPU job ran during the window.
+
+```
+marian --type transformer -t train.src train.tgt -m rccl_sync_validate.npz \
+  --vocabs vocab_rccl.src.yml vocab_rccl.tgt.yml --dim-emb 64 --transformer-dim-ffn 128 \
+  --transformer-heads 2 --enc-depth 2 --dec-depth 2 --after 3000u \
+  --devices 0 1 2 3 --sync-sgd --seed 1234 --overwrite
+```
+
+Log confirms `[comm] Using NCCL 4.7.7 for GPU communication` and `[comm]
+NCCLCommunicators constructed successfully`; `[training] Batches are
+processed as 1 process(es) x 4 devices/process`. Synchronous SGD across all 4
+devices converges (cost 0.00039 @3000u). Decoding the trained model on GPU 0
+(beam=6): 9/10 test lines are the exact reversal of the input; one line
+(input starts with the repeated token `w8 w8`) is missing one trailing `w8`
+in the output. Confirmed this is a toy-model generalization artifact, not a
+GPU/RCCL correctness bug: decoding the SAME model on CPU (`--cpu-threads 1`)
+produces a byte-identical output file to the GPU decode, including the same
+near-miss on that one line -- GPU and CPU agree exactly on what the model
+(under-trained on repeated-token sequences, at only 3000 updates on a 1000-
+sentence toy corpus) actually computes. Not just start-and-not-crash: the
+communicators construct, training converges across every device, and
+GPU-vs-CPU decode of the resulting model is bit-identical.
+
+### char-s2s training smoke (GPU 0, exercises MIOpen convolution via CharConvPooling)
+
+`marian --type char-s2s --char-highway 0 --dim-emb 64 --dim-rnn 64
+--enc-type bidirectional --enc-depth 1 --dec-depth 1 --mini-batch 16
+--workspace 2048 --after 1000u --learn-rate 0.0001 --optimizer adam
+--clip-norm 1 --seed 2222 --devices 0` against the same toy reverse-copy
+corpus. Cost 2.07 @Up.1000, gNorm 2.80 (finite), no NaN/Inf anywhere in the
+log. Matches the documented convergence pattern from the gfx1100 run.
+
+### CUDA no-regression gate: not re-run, already recorded at this head
+
+The porter's nvcc 12.8 compile-and-link check (161/161 targets) was recorded
+at `82755003`; the gfx1100 validator proved by source diff
+(`git diff 82755003 1d0822bd --stat`) that the two files touched between
+`82755003` and this head (`cudnn_wrappers.cu`/`.h`) fall entirely inside
+`#if defined(USE_HIP)`/`#if defined(CUDNN) && defined(USE_HIP)` guards, so
+the CUDA-path object code at `1d0822bd` is identical to `82755003`. That
+proof is head-sha-scoped, not arch-scoped, so it stands unchanged here; no
+second nvcc run performed.
+
+### Jargon and docs (finished-port gate)
+
+`python3 utils/jargon.py --port marian-dev`: clean. Docs already verified in
+the gfx1100 validation at this same head (CHANGELOG.md / README.md); nothing
+about this arch changes that.
+
+### Fork clone hygiene
+
+`git status --porcelain` in `projects/marian-dev/src`: only the
+sentencepiece gitlink shown modified (documented, never staged), clean
+otherwise, before and after the full run. `origin/moat-port` == local HEAD ==
+`1d0822bd` throughout.
+
+### Verdict
+
+`linux-gfx90a`: **completed** at `validated_sha` = `1d0822bd`. All five
+newly-enabled surfaces (hipSPARSE csr-dot, fp16 affine scaling, MIOpen
+conv/pool, RCCL multi-GPU, and the pre-existing wave64 topk fix) verified for
+real on this host's 4x MI250X; no regressions against the gfx1100 numbers at
+the same head. One pre-existing, CUDA-shared, dead-in-practice bug found and
+worked around in the validation aid (PoolingOp CSE aliasing); not filed, not
+a port defect, documented above for anyone else who writes a similar check.
