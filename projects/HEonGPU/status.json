@@ -40,6 +40,28 @@
         "last_session_at": null
       },
       "last_agent": "reviewer"
+    },
+    "linux-gfx1100": {
+      "blocked": true,
+      "blocked_reason": "Builds clean on gfx1100 (library + all 15 test executables) but 18/20 ctest cases fail on wrong results; only the two encoding tests pass. Identical pass/fail set to the gfx90a run, and gfx1100 is wave32, so the long-standing warp-size hypothesis is ruled out: the fault is arch-independent shared port logic. Attempt 3's 'inverse NTT miscomputes' root cause is contradicted by the encoding tests passing, since they round-trip through that same INTT, and should not be inherited. The common factor across all 18 failures is random polynomial generation (rngongpu AES mode) and key generation; encoding is the only path using neither, so attempt 5 should start there. The build is now durable in git (submodule gitlinks reset to real upstream SHAs, HIP support carried as patches applied at configure time), so no further reconstruction is needed.",
+      "validated_sha": null,
+      "started_at": "2026-08-08T17:50:20Z",
+      "completed_at": null,
+      "updated_at": "2026-08-08T17:50:20Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "porter"
     }
   }
 }
