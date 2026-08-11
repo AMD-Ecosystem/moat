@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-10T13:58:57Z",
-  "updated_at": "2026-08-11T22:07:57Z",
+  "updated_at": "2026-08-11T22:24:11Z",
   "head_sha": "4c531f5e51f18eeb145309f8650a8da58453c8af",
   "depends_on": [],
   "fork_branch": "moat-port",
@@ -109,5 +109,12 @@
       "last_agent": "validator"
     }
   },
-  "review_pr": "https://github.com/AMD-Ecosystem/colmap/pull/2"
+  "review_pr": "https://github.com/AMD-Ecosystem/colmap/pull/2",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-11T22:22:44Z",
+    "head_sha": "4c531f5e51f18eeb145309f8650a8da58453c8af",
+    "content_sha256": "fa358cd17c40aef6431ea1849e2c62038e1a11fc8fc9165a755e2f9c522a594f",
+    "review_pr": "https://github.com/AMD-Ecosystem/colmap/pull/2"
+  }
 }
