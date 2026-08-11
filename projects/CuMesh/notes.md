@@ -1350,3 +1350,11 @@ Test Plan is run from a clean clone of the upstream project and carries no contr
 paths, citing this CuMesh commit as the source, and records why `jargon.py` cannot catch it
 -- `config/jargon.toml` skips fenced blocks deliberately. Per the review, no `jargon.toml`
 rule was proposed.
+
+## Tip commit message decision 2026-08-11
+
+A person decided to leave published commit `392b4dd` unchanged and not force-push the
+prepared message-only replacement `49b1d3b`. The live upstream PR body does not contain
+the invalid control-plane Test Plan command, and rewriting the visible PR head solely to
+remove it from the commit message is not approved. Treat this specific finding as settled.
+The prepared commit remains unpushed; do not rewrite `moat-port` for this correction.

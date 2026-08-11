@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-08-11T19:52:30Z",
+  "updated_at": "2026-08-11T20:19:41Z",
   "head_sha": "392b4dd41f8b10b795b00e44cb1b294b1388cefa",
   "depends_on": [],
   "pr_url": "https://github.com/JeffreyXiang/CuMesh/pull/36",
@@ -160,7 +160,5 @@
       "last_agent": "porter",
       "state": "validation-failed"
     }
-  },
-  "on_hold": true,
-  "on_hold_reason": "Fixing the Test Plan of tip commit 392b4dd requires rewriting the head of open upstream PR #36; prepared commit 49b1d3b awaits a person's decision to force-push (see notes.md)"
+  }
 }
