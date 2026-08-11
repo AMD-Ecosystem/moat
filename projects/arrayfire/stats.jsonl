@@ -80,3 +80,11 @@
 {"kind":"phase","ts":"2026-08-11T20:50:43Z","phase":"compile","seconds":0.208,"exit":1,"cmd":"cmake --build projects/arrayfire/src/build-hip-gfx942 -j 32"}
 {"kind":"phase","ts":"2026-08-11T20:54:59Z","phase":"compile","seconds":76.784,"exit":1,"cmd":"cmake --build projects/arrayfire/src/build-hip-gfx942 -j 32"}
 {"kind":"session","ts":"2026-08-11T20:59:36Z","epoch":1786481976.563351542,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-11T21:02:53Z","epoch":1786482173.635952837,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-08-11T21:05:32Z","phase":"compile","seconds":48.590,"exit":0,"cmd":"ninja -C projects/arrayfire/src/build-hip-gfx942 -k 0 src/backend/hip/CMakeFiles/afcuda.dir/regions.cu.o src/backend/hip/CMakeFiles/afcuda.dir/fast.cu.o src/backend/hip/CMakeFiles/afcuda.dir/orb.cu.o"}
+{"kind":"phase","ts":"2026-08-11T21:08:31Z","phase":"compile","seconds":174.077,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/arrayfire/src/build-hip-gfx942 -j 32"}
+{"kind":"phase","ts":"2026-08-11T21:08:43Z","phase":"test","seconds":0.161,"exit":0,"cmd":"ctest -R ^CUDA\\.(Fast|Orb|Regions) --output-on-failure"}
+{"kind":"phase","ts":"2026-08-11T21:08:49Z","phase":"test","seconds":0.192,"exit":0,"cmd":"ctest --test-dir projects/arrayfire/src/build-hip-gfx942 -R ^CUDA\\.(Fast|Orb|Regions) --output-on-failure"}
+{"kind":"phase","ts":"2026-08-11T21:09:00Z","phase":"test","seconds":2.995,"exit":0,"cmd":"ctest --test-dir projects/arrayfire/src/build-hip-gfx942 -R test_(fast|orb|regions)_cuda --output-on-failure"}
+{"kind":"phase","ts":"2026-08-11T21:12:07Z","phase":"compile","seconds":55.545,"exit":0,"cmd":"ninja -C /var/lib/jenkins/moat/projects/arrayfire/src/build-hip-gfx942"}
+{"kind":"phase","ts":"2026-08-11T21:12:17Z","phase":"test","seconds":2.617,"exit":0,"cmd":"ctest --test-dir projects/arrayfire/src/build-hip-gfx942 -R test_(fast|orb|regions|homography|harris|sift)_cuda --output-on-failure"}

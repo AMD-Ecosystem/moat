@@ -1895,3 +1895,70 @@ correspondingly, or keep the class shape and just back it with a plain device po
 on gfx90a too after the change (must stay GPU-green there; the fix is unconditional, not
 `#ifdef __gfx94plus_clr__`-gated, so it also removes dead texture-cache-locality code on
 gfx90a/RDNA -- acceptable, LUTs here are tiny).
+
+## Port 2026-08-11 (porter, linux-gfx942) -- texture-object removal, fork head 4ec30a7cd
+
+Fixes the `validation-failed` at `a70f74f6d` recorded above: `tex1Dfetch<T>` is
+`__attribute__((unavailable))` under `__HIP_NO_IMAGE_SUPPORT`, which ROCm's headers set
+unconditionally for `__gfx94plus_clr__` (gfx942/gfx950). Root cause and the exact 5 failing
+instantiations are in the validator entry above; nothing about that diagnosis changed.
+
+### The fix (unconditional, not arch-gated) -- commit 4ec30a7cd
+All three sites were point lookups with no filtering, so the texture object was pure overhead
+even where it compiles. Replaced with plain indexed reads through a `const T*`:
+- `LookupTable1D.hpp`: keeps the class shape and the `Array<T>` copy (that copy is load-bearing:
+  it holds the LUT's refcount for the kernel's lifetime), but the ctor now just caches
+  `mData.get()` and `get()` returns `const T*`. The `cudaCreateTextureObject` /
+  `cudaDestroyTextureObject` pair and the resource/texture descriptor setup are gone; so is the
+  `err_cuda.hpp` include it needed for `CUDA_CHECK` and `<type_traits>` for the channel-format
+  branch.
+- `kernel/fast.hpp` / `kernel/orb.hpp`: `lookup(n, tex)` -> `lookup(n, const unsigned char*)` /
+  `lookup(n, const int*)`; the three kernel signatures that carried `cudaTextureObject_t luTable`
+  now carry the pointer. `fast.cu`/`orb.cu` needed NO change -- they pass `luTable.get()` through
+  a `const LookupTable1D<T>&` parameter, so only the return type of `get()` moved.
+- `kernel/regions.hpp`: the `tex` parameter is removed from `fetch`, `update_equiv` and the
+  `regions` launcher rather than retyped, because with a plain pointer `fetch` is exactly
+  `equiv_map.ptr[n]` -- which is what the pre-existing `double` specialization already did, so
+  that specialization was deleted as a duplicate. `regions.cu` loses the whole
+  texture-create/destroy block (~30 lines) including its `!std::is_same<T,double>` guard.
+- `hip_compat.h`: the entire texture-object alias block (`cudaTextureObject_t`, `cudaTextureDesc`,
+  `cudaResourceDesc`, create/destroy, the channel-format and filter/address-mode enums) is now
+  unreferenced backend-wide and was deleted. `grep -rn 'tex1Dfetch\|TextureObject' src/backend/hip`
+  is empty afterwards -- the HIP backend now uses no texture API at all.
+
+Semantics: the texture path read through the read-only texture cache; a direct load reads through
+the normal cache hierarchy. For `regions` that is if anything MORE coherent (the kernel writes
+`equiv_map.ptr` at the end of each iteration and the outer `while (h_continue)` loop re-launches
+until convergence, so fresher neighbor labels only converge faster; the `double` instantiation has
+always run this way). For fast/orb the LUTs are read-only for the kernel's lifetime.
+
+### Build + tests (gfx942, MI300X, ROCm 7.14 SDK-wheel host)
+Reused the validator's configure line verbatim (see the entry above -- the host-package notes there
+still apply; the `build-hip-gfx942` dir was reusable, no CMake re-configure needed).
+```
+ninja -C projects/arrayfire/src/build-hip-gfx942 -k 0 \
+  src/backend/hip/CMakeFiles/afcuda.dir/{regions,fast,orb}.cu.o   # 3/3, exit 0
+cmake --build projects/arrayfire/src/build-hip-gfx942 -j 32       # 1254/1254, exit 0
+```
+The three previously failing TUs compile; the full `libafcuda.so` and all test binaries link.
+Smoke test on one GPU (`HIP_VISIBLE_DEVICES=0`, `ctest --test-dir ... -R
+'test_(fast|orb|regions|harris|sift|homography)_cuda'`): 6/6 passed, 0 failed
+(`regions_cuda` alone is 29/29 gtest cases). Full `_cuda$` suite deliberately NOT re-run -- that is
+the validator's gate.
+
+### Formatting gotcha
+No `clang-format` on this host and none in the ROCm SDK wheel; `pip install clang-format` (v22)
+works offline-free and is what was used. Format ONLY the lines you changed: v22 disagrees with the
+repo's `src/.clang-format` on pre-existing code (it reorders the `hipcub/` includes in
+`kernel/fast.hpp` and re-aligns an assignment block in `kernel/orb.hpp`), so `clang-format -i` on a
+whole file drags unrelated churn into the diff. Here only `kernel/regions.hpp` needed it (the
+shorter `fetch(...)` calls re-wrap) and its entire delta was inside the changed hunks, so the
+whole-file run was safe there and only there.
+
+### State
+`advance-head arrayfire 4ec30a7cd`. Push was a plain fast-forward on `moat-port`
+(a70f74f6d..4ec30a7cd); upstream PR 3708 is OPEN with that branch as its head, so it now shows the
+extra commit -- no force-push, no history rewrite, nothing posted. The single `jargon.py` hit in
+commit 6800d5586's body is still the known maintainer-accepted leftover documented above; this
+commit adds none. linux-gfx90a's separate `validation-failed` (comment-text defect at 6800d5586)
+is untouched by this and still needs the person-decision noted above.
