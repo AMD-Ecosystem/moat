@@ -51,7 +51,7 @@ Add `detailed` for line-by-line specific comments.
 A single line can have deep cross-cutting implications: a hardcoded `32` silently corrupts results on a wave64 GPU; a missing index clamp faults on AMD where CUDA tolerated it; a per-arch hack that fixes wave32 regresses wave64. Treat every line as potentially load-bearing.
 
 1. Only report problems. The output contains only issues, concerns, and actionable suggestions. Do not praise, do not explain why something is fine, do not write "looks good". Omit empty sections.
-2. Investigate, do not guess. When unsure whether a check applies, spawn a sub-agent to read the relevant code. A reviewer who guesses wrong provides negative value.
+2. Investigate, do not guess. When unsure whether a check applies, ask a child agent to read the relevant code when the harness supports it. A reviewer who guesses wrong provides negative value.
 3. Review the strategy, not just the diff. A correct implementation of the wrong porting strategy is still wrong (compat-header where torch-hipify belongs, or vice versa; renaming files when marking LANGUAGE HIP would do).
 4. Focus on what CI cannot check. Skip formatting and lint. Focus on port correctness, the fault classes, minimal footprint, build correctness, test adequacy, and upstream-behavior preservation.
 5. Everything is a must-fix. No nits. If it is worth mentioning, it is worth fixing.
@@ -60,12 +60,12 @@ A single line can have deep cross-cutting implications: a hardcoded `32` silentl
 8. Assume competence. The author knows the project's domain; explain only non-obvious ROCm context.
 9. No repetition. Each observation appears in exactly one section.
 
-### Using sub-agents
+### Using child agents
 
-The checklist is large and the fault classes need code reading. Spawn sub-agents to investigate whether checks apply (read the kernel, the CMake, the surrounding code, the tests that should exist). Spawn them in parallel for independent areas. A typical port should spawn 3-8 sub-agents.
+The checklist is large and the fault classes need code reading. Ask child agents to investigate whether checks apply (read the kernel, the CMake, the surrounding code, the tests that should exist). Run them in parallel for independent areas. A typical port should use 3-8 child agents when the harness supports them.
 
-Running WITHOUT the ability to spawn sub-agents (the dispatched reviewer agent is
-itself a subagent): every step below marked for sub-agents still happens, done
+Running WITHOUT the ability to dispatch child agents (for example, when the reviewer
+is itself a child): every step below marked for child agents still happens, done
 inline by you -- the investigation and the fact-check are the requirement, the
 parallelism is only how a top-level session affords them.
 
@@ -87,7 +87,7 @@ Evaluate per [bc-guidelines.md](bc-guidelines.md): the port must not change the 
 Organize findings by the categories below. Every finding is traceable to a file:line.
 
 ### Step 5: Fact-check
-Spawn a sub-agent per reported issue (in parallel) to independently verify by re-reading the code; without sub-agents, re-read the cited code yourself, one finding at a time. Each check returns valid / invalid / needs rewording. Drop invalid issues; reword the rest; keep low-confidence ones flagged as such.
+Ask a child agent per reported issue (in parallel) to independently verify by re-reading the code; without child agents, re-read the cited code yourself, one finding at a time. Each check returns valid / invalid / needs rewording. Drop invalid issues; reword the rest; keep low-confidence ones flagged as such.
 
 ## Output Format
 
@@ -132,7 +132,7 @@ Only when the user requests a "detailed" review. File-specific feedback with lin
 ## Files to Reference
 
 Read these for context rather than relying on memory:
-- `CLAUDE.md` -- standing rules, autonomy boundary, coding style
+- `AGENTS.md` -- standing rules, autonomy boundary, coding style
 - the `cuda-to-rocm` skill -- porting strategies and fault classes the port must follow
 - `projects/<name>/plan.md` -- the intended strategy, risks, and test plan for this project
 - `projects/<name>/notes.md` -- project-specific gotchas and prior review/validation records
