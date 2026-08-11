@@ -1106,6 +1106,116 @@ maintainer reads.
 Not held against the port: no GPU run at this head from this reviewer (the
 validator stage runs it next).
 
+## Validation 2026-08-11 (linux-gfx942, ROCm 7.14.60850) -- completed at bc3e4e9
+
+Platform: linux-gfx942. GPU: AMD Instinct MI300X HF (gfx942, CDNA3, wave64),
+8 GPUs on this host, all idle; used `HIP_VISIBLE_DEVICES=0`. ROCm SDK wheel
+layout (no `/opt/rocm`), `hipconfig --version` 7.14.60850-0000000, HIP compiler
+`$(hipconfig --hipclangpath)/clang++` (clang 23.0.0). SHA validated:
+bc3e4e978128e70c269ee9e972f24ff8a04f14bf.
+
+### Setup
+
+```bash
+cd projects/3DUNDERWORLD-SLS-GPU_CPU/src
+sudo apt-get install -y libglm-dev libopencv-dev libtiff-dev   # already present from porter round
+git clone --depth 1 https://github.com/theICTlab/3DUNDERWORLD-SLS-DATA.git data
+```
+
+### Build -- PASS
+
+```bash
+rm -rf build_hip
+HIPCC="$(hipconfig --hipclangpath)/clang++"
+cmake -S . -B build_hip -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_HIP_COMPILER="$HIPCC" -DGTEST=ON -DCMAKE_BUILD_TYPE=Release
+bash utils/timeit.sh 3DUNDERWORLD-SLS-GPU_CPU compile -- \
+  cmake --build /path/to/build_hip -j$(nproc)
+```
+
+Success (35.4s). Full `all` target built (SLS, SLS_GPU, calibrateCamera,
+generateGraycode, sync_main); only warning is the pre-existing
+`sync_main.cc:24` missing-return. `$(hipconfig --hipclangpath)/llvm-objdump
+--offloading build_hip/bin/SLS_GPU` shows 3 `hipv4-amdgcn-amd-amdhsa--gfx942`
+offload bundles (`roc-obj-ls` still broken by the ImportError documented
+earlier in this file / the skill; not retried here). `ldd` shows
+`libamdhip64.so.7` from the SDK wheel devel package.
+
+### GPU reconstruction -- PASS
+
+```bash
+DATA=projects/3DUNDERWORLD-SLS-GPU_CPU/src/data/alexander
+BIN=projects/3DUNDERWORLD-SLS-GPU_CPU/src/build_hip/bin
+HIP_VISIBLE_DEVICES=0 $BIN/SLS_GPU --leftcam=$DATA/leftCam/dataset1 \
+  --rightcam=$DATA/rightCam/dataset1 \
+  --leftconfig=$DATA/leftCam/calib/output/calib.xml \
+  --rightconfig=$DATA/rightCam/calib/output/calib.xml \
+  --output=/tmp/output_gpu_run1.ply --format=jpg --width=1024 --height=768
+# run 2 (determinism) and CPU reference SLS with the same args
+```
+
+Point counts: GPU run1 = GPU run2 = CPU = 146064 (matches every prior
+platform's record exactly, including the OOB-audit-corrected head).
+
+Comparator: a fresh `cKDTree`-based nearest-neighbor script (scipy 1.14.1 /
+numpy 1.26.4; agent_space, not committed) since no prior comparator survived
+in this checkout.
+
+- GPU run1 vs CPU (both directions, symmetric): mean=3.597e-5, p99.9=1.005e-3,
+  max=2.516e-3 world units; 100% coverage @tol=0.5 and @tol=10. Matches the
+  gfx90a/gfx1100/gfx1101/gfx1201 record to the ASCII-PLY 6-sig-fig print
+  precision.
+- Determinism, GPU run1 vs run2: mean=2.030e-5, max=1.010e-3; 100% coverage
+  @tol=0.5 and @tol=10 -- the print-precision ceiling, consistent with the
+  atomicInc bucket-fill-order float non-associativity noted on every prior
+  platform.
+
+### CPU gtest suite -- PASS, no regression
+
+```bash
+bash utils/timeit.sh 3DUNDERWORLD-SLS-GPU_CPU test -- \
+  ctest --test-dir build_hip --output-on-failure
+```
+
+3/3 passed: RunCPUTest.Arch (8.27s), RunCPUTest.Alexander (19.66s), CPU_TEST
+(25.22s); total 53.16s. No regression in non-GPU tests.
+
+### CUDA no-regression gate -- already recorded, re-confirmed as still applicable
+
+The gate ran and PASSED at 7dc3a24 (2026-08-09 section above), with the
+byte-identical-PTX proof that the CUDA path is restored, not merely
+compiling. `git diff --stat 7dc3a24 bc3e4e9` (this head) touches only
+`README.md` and `.gitignore` -- confirmed no code under
+`src/`/`CMakeLists.txt`/`*.cu`/`*.cuh` changed between the recorded-gate sha
+and this head, so the gate is not re-run per the "skip if notes.md already
+records the CUDA gate at this head_sha" rule (extended here: the delta to
+head is doc/gitignore-only, so the prior PASS still describes this head's
+compiled code exactly).
+
+### Jargon + documentation gate -- PASS
+
+`python3 utils/jargon.py --port 3DUNDERWORLD-SLS-GPU_CPU`: clean.
+README.md:37-45 documents the ROCm/HIP build (USE_HIP, CMAKE_HIP_ARCHITECTURES,
+CMAKE_HIP_COMPILER fallback, OPENCV4_COMPAT_DIR) beside the CUDA
+instructions, and was independently re-verified against the actual configure
+line used above.
+
+### Integrity gate
+
+`git status --porcelain` in `src/` clean throughout (build_hip/ and data/ are
+gitignored via `build*/` and the `data`/`!data/alexander` rules). No
+source/build file was modified by this validation run.
+
+### Verdict
+
+PASS. gfx942 (CDNA3, wave64) HIP build succeeds, reconstructs the alexander
+dataset with results numerically identical (to print precision) to the CPU
+reference and to every other validated platform, is deterministic across
+runs at output precision, and the CPU gtest suite shows no regression. The
+CUDA no-regression gate's prior PASS at 7dc3a24 still covers this head
+(doc-only delta). Jargon and documentation gates clean. State recorded:
+linux-gfx942 -> completed, validated_sha = bc3e4e9.
+
 ## Round 2 response 2026-08-11 (porter, linux-gfx942) -- control-plane only
 
 Finding 1 (the promoted `roc-obj-ls` lesson misdiagnoses its failure) is fixed.

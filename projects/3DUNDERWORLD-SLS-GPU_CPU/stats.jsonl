@@ -41,3 +41,10 @@
 {"kind":"session","ts":"2026-08-11T20:32:37Z","epoch":1786480357.536521549,"event":"end","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-08-11T20:34:06Z","epoch":1786480446.465207253,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-08-11T20:35:58Z","epoch":1786480558.614159325,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-11T20:37:15Z","epoch":1786480635.418979712,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-08-11T20:38:23Z","phase":"compile","seconds":0.159,"exit":1,"cmd":"cmake --build build_hip -j224"}
+{"kind":"phase","ts":"2026-08-11T20:39:05Z","phase":"compile","seconds":35.433,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/3DUNDERWORLD-SLS-GPU_CPU/src/build_hip -j224"}
+{"kind":"phase","ts":"2026-08-11T20:39:32Z","phase":"test","seconds":9.186,"exit":0,"cmd":"bash -c \nHIP_VISIBLE_DEVICES=0 /var/lib/jenkins/moat/projects/3DUNDERWORLD-SLS-GPU_CPU/src/build_hip/bin/SLS_GPU --leftcam=/var/lib/jenkins/moat/projects/3DUNDERWORLD-SLS-GPU_CPU/src/data/alexander/leftCam/dataset1   --rightcam=/var/lib/jenkins/moat/projects/3DUNDERWORLD-SLS-GPU_CPU/src/data/alexander/rightCam/dataset1   --leftconfig=/var/lib/jenkins/moat/projects/3DUNDERWORLD-SLS-GPU_CPU/src/data/alexander/leftCam/calib/output/calib.xml   --rightconfig=/var/lib/jenkins/moat/projects/3DUNDERWORLD-SLS-GPU_CPU/src/data/alexander/rightCam/calib/output/calib.xml   --output=/tmp/claude-1000/-var-lib-jenkins-moat/fced5bd9-fee8-4645-bcb8-9caa1a24a4b4/scratchpad/output_gpu_run1.ply --format=jpg --width=1024 --height=768\n"}
+{"kind":"phase","ts":"2026-08-11T20:40:40Z","phase":"test","seconds":0.161,"exit":0,"cmd":"ctest --output-on-failure"}
+{"kind":"phase","ts":"2026-08-11T20:41:39Z","phase":"test","seconds":53.321,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/moat/projects/3DUNDERWORLD-SLS-GPU_CPU/src/build_hip --output-on-failure"}
+{"kind":"session","ts":"2026-08-11T20:42:01Z","epoch":1786480921.943753028,"event":"end","platform":"linux-gfx942"}
