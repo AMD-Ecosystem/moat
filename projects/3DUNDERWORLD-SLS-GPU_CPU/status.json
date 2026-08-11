@@ -7,7 +7,7 @@
   "priority": 5.001,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-08-11T20:42:53Z",
+  "updated_at": "2026-08-11T23:36:38Z",
   "head_sha": "bc3e4e978128e70c269ee9e972f24ff8a04f14bf",
   "pr_url": "https://github.com/theICTlab/3DUNDERWORLD-SLS-GPU_CPU/pull/33",
   "pr_number": 33,
@@ -59,10 +59,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "3626150",
+      "validated_sha": "bc3e4e978128e70c269ee9e972f24ff8a04f14bf",
       "started_at": null,
-      "completed_at": "2026-07-02T19:42:54Z",
-      "updated_at": "2026-07-06T03:42:40Z",
+      "completed_at": "2026-08-11T23:36:37Z",
+      "updated_at": "2026-08-11T23:36:37Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -78,12 +78,10 @@
       },
       "last_agent": "validator",
       "carry_forward": {
-        "from": "20e55bdc45c1bb36c473a294b82d090a46629d7b",
-        "to": "3626150",
-        "method": "source-class",
-        "class": "doc-only",
-        "detail": "no changes",
-        "at": "2026-07-06T03:42:40Z"
+        "to": "bc3e4e978128e70c269ee9e972f24ff8a04f14bf",
+        "method": "binary-equiv",
+        "detail": "gpuTrap() macro is a no-op on the HIP expansion (same __builtin_trap() call site); .gitignore/README are non-code; codeobj_diff verdict=identical on bin/SLS_GPU (31 exports) and libsls_gpu.a, byte-ide",
+        "at": "2026-08-11T23:36:37Z"
       }
     },
     "windows-gfx1101": {

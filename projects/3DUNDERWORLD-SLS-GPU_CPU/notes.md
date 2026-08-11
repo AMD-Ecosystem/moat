@@ -1297,3 +1297,92 @@ the drafted replacement body should cover all four.
 
 Not held against the port: no GPU run at this head from this reviewer (the
 validator stage runs it next).
+
+## Validation 2026-08-11 (linux-gfx1100, revalidate at bc3e4e9) -- carried forward, binary-equiv
+
+Platform: linux-gfx1100. GPU: 2x AMD Radeon Pro W7800 48GB (gfx1100, RDNA3,
+wave32), plus more of the same on this host (`rocm-smi` shows 4+); `rocminfo`
+confirms `gfx1100`/`amdgcn-amd-amdhsa--gfx1100`. Revalidate trigger: recorded
+`validated_sha` (3626150) is older than `head_sha` (bc3e4e978128e70c269ee9e972f24ff8a04f14bf).
+
+### Classify the delta
+
+`python3 utils/moatlib.py classify 3DUNDERWORLD-SLS-GPU_CPU 3626150 bc3e4e9`
+returned `class=unknown arch_independent=False (classification failed ->
+revalidate)`, so no automatic shortcut; did the manual build+codeobj_diff
+check per the carry-forward procedure instead.
+
+`git diff --stat 3626150 bc3e4e9` (fork `moat-port`): `.gitignore` (4),
+`README.md` (6), `src/lib/ReconstructorCUDA/DynamicBits.cuh` (1 line),
+`src/lib/ReconstructorCUDA/cuda_to_hip.h` (7 lines added). Only the last two
+touch compiled source. Both are the 7dc3a24 `gpuTrap()` fix already reviewed
+and CUDA-gate-tested on gfx90a/gfx942 (2026-08-09 / 2026-08-11 sections
+above): `DynamicBits.cuh` replaces the prior unconditional
+`__builtin_trap()` call with `gpuTrap()`, and `cuda_to_hip.h` defines
+`gpuTrap()` as `__builtin_trap()` under `USE_HIP` (i.e. the identical
+expansion the HIP path already had) and `asm("trap;")` under CUDA. On the
+HIP/gfx1100 compile this is a no-op by construction: same macro expansion,
+same call site, never-taken guard. `.gitignore`/`README.md` are non-code.
+
+### Binary-equivalence check (build both shas, diff device code)
+
+```bash
+cd projects/3DUNDERWORLD-SLS-GPU_CPU/src
+git worktree add ../src_old 3626150
+git worktree add ../src_new bc3e4e9
+sudo apt-get install -y libglm-dev   # missing on this host; opencv/tiff already present
+for d in ../src_old ../src_new; do
+  cmake -S $d -B $d/build_hip -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+    -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ -DCMAKE_BUILD_TYPE=Release -DGTEST=ON
+done
+bash utils/timeit.sh 3DUNDERWORLD-SLS-GPU_CPU compile -- cmake --build ../src_old/build_hip -j$(nproc)
+bash utils/timeit.sh 3DUNDERWORLD-SLS-GPU_CPU compile -- cmake --build ../src_new/build_hip -j$(nproc)
+python3 utils/codeobj_diff.py ../src_old/build_hip ../src_new/build_hip
+```
+
+Both configure and build clean (only the pre-existing `sync_main.cc:24`
+missing-return warning). `codeobj_diff.py` on the two build trees reports
+`bin/SLS_GPU: identical (exported symbols + device ISA identical (31
+exports))` -- the only GPU-carrying binary in this project (`SLS`,
+`calibrateCamera`, `generateGraycode`, `sync_main`, `runCPUTest` link `core`
+only, no device code, hence their `indeterminate (device-code extraction
+failed)` entries in the same report -- expected noise, not uncertainty about
+the port). Running `codeobj_diff.py` directly on
+`src/lib/ReconstructorCUDA/libsls_gpu.a` (the static lib holding the actual
+`.cu` translation units) also reports `identical`. Cross-checked with
+`roc-obj-ls bin/SLS_GPU` on both trees: three `hipv4-amdgcn-amd-amdhsa--gfx1100`
+code objects, sizes 6640/12392/27128 bytes on both old and new builds --
+byte-identical to each other and to every prior gfx1100 record (2026-05-30,
+2026-07-02 sections above).
+
+`python3 utils/jargon.py --port 3DUNDERWORLD-SLS-GPU_CPU`: clean. README's
+ROCm build section (documents `USE_HIP`, `CMAKE_HIP_ARCHITECTURES`,
+`CMAKE_HIP_COMPILER` fallback, `OPENCV4_COMPAT_DIR`) re-read and matches the
+configure line used here.
+
+### CUDA no-regression gate
+
+Already recorded and PASSED at 7dc3a24 (2026-08-09 section) and reconfirmed
+still-applicable at this head by the gfx942 validator (2026-08-11 section):
+the delta 7dc3a24..bc3e4e9 touches only `README.md`/`.gitignore`. Not re-run
+here (per "skip if notes.md already records the CUDA gate at this
+head_sha").
+
+### Deferral check
+
+`sls-gpu-bucket-atomicinc-overrun` is unruled and this run performed no new
+GPU reconstruction (carry-forward, no code-path change on gfx1100), so it has
+nothing new to report: the prior gfx1100 GPU run (2026-07-02, 5eda3fd) never
+exceeded 110 camera pixels per projector cell on the `alexander` dataset and
+would not have faulted even if it had (one-uint overrun inside the same
+device-memory page). Unaffected by this carry-forward either way.
+
+### Verdict
+
+Carried forward, no GPU re-run: `python3 utils/moatlib.py carry-forward
+3DUNDERWORLD-SLS-GPU_CPU linux-gfx1100 bc3e4e978128e70c269ee9e972f24ff8a04f14bf
+binary-equiv "gpuTrap() macro is a no-op on the HIP expansion (same
+__builtin_trap() call site); .gitignore/README are non-code; codeobj_diff
+verdict=identical on bin/SLS_GPU (31 exports) and libsls_gpu.a, byte-identical
+to the 2026-07-02 gfx1100 record (6640/12392/27128)"`. State recorded:
+linux-gfx1100 -> completed, validated_sha = bc3e4e9.
