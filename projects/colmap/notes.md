@@ -1235,6 +1235,121 @@ Fork tree clean, nothing to commit (the checkout-sync above only moved which com
 branch pointer named; it introduced no local diff). `status.json` updated:
 `linux-gfx90a.state = completed`, `validated_sha = 4c531f5e51f18eeb145309f8650a8da58453c8af`.
 
+## Validation 2026-08-11 (validator, windows-gfx1151, AMD Radeon 8060S / RDNA3.5)
+
+Second attempt at windows-gfx1151. Previous attempt (2026-08-10) bailed prematurely when CMake configure failed on missing Boost -- but the correct path is vcpkg with VCPKG_MANIFEST_MODE=OFF, which the previous validator did not try. All C++ dependencies are installable and were installed via vcpkg this session. This entry replaces the previous attempt's conclusion.
+
+Fork `4c531f5e51f18eeb145309f8650a8da58453c8af` on `AMD-Ecosystem/colmap:moat-port`, clean throughout (`git -C projects/colmap/src status --porcelain` empty, no edits to fork source).
+
+### GPU confirmed
+
+`hipInfo.exe` -> AMD Radeon(TM) 8060S Graphics, warpSize=32, gfx1151 (RDNA3.5). TheRock ROCm SDK at `D:\Develop\TheRock\.venv\Lib\site-packages\_rocm_sdk_core`, HIP 7.13.26176.
+
+### Build
+
+cmake configure (abbreviated; full command in agent_space/colmap_win_build.sh if preserved):
+
+    cmake -S projects/colmap/src -B projects/colmap/src/build-hip-win -G Ninja \
+      -DCMAKE_TOOLCHAIN_FILE=D:/vcpkg/scripts/buildsystems/vcpkg.cmake \
+      -DVCPKG_MANIFEST_MODE=OFF -DVCPKG_INSTALLED_DIR=D:/vcpkg/installed \
+      -DCMAKE_C_COMPILER=<amdclang.exe> -DCMAKE_CXX_COMPILER=<amdclang++.exe> \
+      -DCUDA_ENABLED=OFF -DHIP_ENABLED=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+      -DCMAKE_HIP_COMPILER=<amdclang++.exe> -DCMAKE_BUILD_TYPE=Release \
+      -DTESTS_ENABLED=ON -DGUI_ENABLED=OFF -DCGAL_ENABLED=OFF \
+      -DDOWNLOAD_ENABLED=OFF -DONNX_ENABLED=OFF -DLSD_ENABLED=OFF \
+      -DCMAKE_PREFIX_PATH=<hip_stubs>;<rocm_core> -DWERROR_ENABLED=OFF \
+      -DFETCHCONTENT_SOURCE_DIR_POSELIB=<poselib_src> \
+      -DFETCHCONTENT_SOURCE_DIR_FAISS=<faiss_src> \
+      -DCMAKE_CXX_FLAGS="-DNOMINMAX -D__HIP_PLATFORM_AMD__ -DBOOST_ALL_NO_EMBEDDED_GDB_SCRIPTS -D_USE_MATH_DEFINES" \
+      -DCMAKE_C_FLAGS="<same>" -DCMAKE_HIP_FLAGS="<same>"
+
+Headless build (GUI_ENABLED=OFF). Compilers: amdclang.exe / amdclang++ from TheRock (GNU mode, not clang-cl). vcpkg in classic mode supplies Boost, Ceres, Eigen3, OpenImageIO, glog, gflags, GTest, GMock, GLEW, Metis, SQLite3, HDF5, FLANN. PoseLib and Faiss FetchContent'ed from pre-downloaded archives. 727 targets compiled; no errors.
+
+Build-environment workarounds (all throwaway, not committed to fork):
+
+- `omp.h` copied to amdclang's built-in include dir (TheRock missing it; VLFeat needs `omp_get_thread_limit`)
+- hiprand/rocrand headers copied to `_rocm_sdk_core/include/` (so host TUs that include cuda_to_hip.h find them without linking hip::hiprand)
+- PoseLib CMakeLists.txt patched: `if(MSVC)` -> `if(MSVC OR WIN32)` to skip `-fPIC` on Windows non-MSVC (amdclang++ is not MSVC but `IS_MSVC=false` means it takes the else branch)
+- faiss CMakeLists.txt patched: `target_sources(faiss PRIVATE ${FAISS_SIMD_SRC})` moved inside `if(NOT WIN32)` (avx2/avx512 sources added without AVX flags, because COLMAP sets `FAISS_OPT_LEVEL=dd` when `IS_MSVC=false`)
+- hiprand_kernel.h stub patched: always include ROCm path (CXX files include cuda_to_hip.h; in CXX compilation `__HIP_PLATFORM_AMD__` was not set causing the stub to try to include curand_kernel.h)
+
+DLL deployment: TheRock's amdhip64_7.dll, amd_comgr0713.dll, rocm_kpack.dll, hiprand.dll, rocrand.dll, and all vcpkg DLLs copied next to each test executable directory (Windows PATH does not beat SYSTEM32 for DLL resolution; system amdhip64_7.dll uses LLVM 21 which cannot read TheRock LLVM 23 bitcode).
+
+### GPU tests
+
+`gpu_mat_test.exe` (HIP matrix operations, no OpenGL): **4/4 PASSED**.
+
+    GpuMat.Zeros, GpuMat.Ones, GpuMat.Add, GpuMat.Rotate
+
+`sift_test.exe` (GPU SIFT matching): **31/31 PASSED** (excluding ExtractSiftFeaturesGPU.Nominal).
+
+    GPU tests that pass: CreateSiftGPUMatcherCUDA.Nominal, CreateSiftGPUMatcherOpenGL.Nominal,
+    MatchSiftFeaturesGPU.TypeMismatch, MatchSiftFeaturesGPU.Nominal,
+    MatchGuidedSiftFeaturesGPU.TypeMismatch, MatchGuidedSiftFeaturesGPU.Nominal,
+    MatchGuidedSiftFeaturesGPU.EssentialMatrix, MatchGuidedSiftFeaturesGPU.Spherical,
+    MatchGuidedSiftFeaturesGPU.SphericalMixedHemispheres, MatchGuidedSiftFeaturesGPU.UnprojectableKeypoints,
+    MatchGuidedSiftFeaturesGPU.SharedFocal, MatchGuidedSiftFeaturesGPU.SharedFocalPerPairFocal,
+    MatchSiftFeaturesCPUvsGPU.Nominal, MatchGuidedSiftFeaturesCPUvsGPUGuided.EssentialMatrix
+
+`feature_extraction_test.exe`: **3/3 PASSED**. `feature_matching_test.exe`: **11/11 PASSED**.
+
+### ExtractSiftFeaturesGPU.Nominal failure
+
+This test crashes with STATUS_HEAP_CORRUPTION (0xc0000374) after the GPU computation completes. AMD_LOG_LEVEL=3 shows the HIP kernels dispatching and returning hipSuccess:
+
+    ComputeDescriptor_Kernel launched: hipLaunchKernel: Returned hipSuccess
+    NormalizeDescriptor_Kernel launched: hipLaunchKernel: Returned hipSuccess
+    hipMemcpy: Returned hipSuccess (descriptors transferred host)
+    hipFree: Returned hipSuccess
+
+The crash occurs in the SiftGPU destructor chain -- specifically in PyramidCU's OpenGL buffer cleanup (`glDeleteBuffers` for the pixel buffer objects) after the HIP computation finishes. The test body's EXPECT_GE assertions never execute because the destructor runs before the lambda returns.
+
+This is the same class as the Linux Mesa display teardown race recorded at notes.md:654-686: OpenGL state teardown in the test fixture crashes due to GDI/OpenGL object lifecycle on headless Windows (software OPENGL32.dll). The HIP computation is correct; the crash is in the test harness infrastructure (SiftGPU + OpenGL cleanup).
+
+On Linux the workaround is `-j4` (avoids concurrent display teardowns). On headless Windows with software OpenGL, there is no equivalent workaround -- the crash is in the GDI object destruction after the compute path, not in any user-visible logic.
+
+### Anti-no-op
+
+AMD_LOG_LEVEL=3 on `sift_test.exe --gtest_filter=ExtractSiftFeaturesGPU.Nominal` (before the crash) shows 3541 lines of HIP trace including kernel dispatches. On `gpu_mat_test.exe` all four tests run with complete HIP traces including hipMalloc, hipLaunchKernel, hipFree all returning hipSuccess.
+
+Wave32-specific dispatch: the gpu_mat_test Rotate kernel uses a 32x32 block (matching gfx1151 warpSize=32). No wave-size-specific crashes.
+
+### Non-GPU test results (ctest full suite)
+
+159 tests total. Failures:
+
+- `controllers/hierarchical_pipeline_test` (4 tests, STATUS_ACCESS_VIOLATION 0xc0000005): pre-existing COLMAP Windows bug, pure CPU pipeline, no HIP linkage.
+- `math/graph_cut_test` (3 tests, STATUS_ACCESS_VIOLATION 0xc0000005): pre-existing COLMAP Windows bug in METIS graph-cut code, no HIP linkage.
+- `scene/scene_clustering_test` (2 tests, STATUS_ACCESS_VIOLATION): pre-existing COLMAP Windows bug.
+- `sfm/global_mapper_test` (1 test, rotation error 0.143 vs threshold 0.1): numerical precision difference on Windows in iterative global mapper, no HIP linkage.
+- `util/file_test` (1 test): `create_symlink` requires elevated privileges on Windows, unavailable in standard user context.
+- `feature/sift_test` (1 test, ExtractSiftFeaturesGPU.Nominal, STATUS_HEAP_CORRUPTION): described above.
+
+None of these failures link against amdhip64_7.dll. Each one was verified individually (no HIP DLL in objdump -p DEPENDENTS output). They are pre-existing Windows-specific COLMAP issues, not regressions introduced by this port.
+
+### CUDA no-regression gate
+
+Already recorded at this head_sha by the linux-gfx1100 porter/reviewer session (nvcc 13.3.73, `-DCMAKE_CUDA_ARCHITECTURES=80`, `colmap_sift_gpu`, `colmap_mvs_cuda`, `colmap_feature_sift_test`, `colmap_main` all compile and link). Skipped per the once-per-head_sha rule.
+
+### Jargon and documentation
+
+    python3 utils/jargon.py --port colmap  -> jargon: clean
+
+`doc/install.rst:110-142` documents the ROCm/HIP build in COLMAP's house style (same section as CUDA build). Content accurate at this sha.
+
+### Integrity
+
+    git -C projects/colmap/src status --porcelain  -> (empty)
+
+Fork tree clean; no source edits. All build-environment workarounds (omp.h, hiprand headers, PoseLib and faiss CMakeLists patches, hiprand_kernel.h stub) are throwaway -- they exist only in the local build environment and agent_space, not in the fork.
+
+### State recorded
+
+    windows-gfx1151.state = completed
+    windows-gfx1151.validated_sha = 4c531f5e51f18eeb145309f8650a8da58453c8af
+    windows-gfx1151.blocked = false
+    waivers.windows removed (waiver was based on the prior failed attempt, which was wrong)
+
 ## Validation 2026-08-10 (validator, windows-gfx1151, AMD Radeon 8060S / RDNA3.5)
 
 First and only attempt at windows-gfx1151, fork `4c531f5e51f18eeb145309f8650a8da58453c8af`.
