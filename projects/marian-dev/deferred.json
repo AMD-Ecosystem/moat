@@ -26,6 +26,19 @@
       "upstream_issue": null,
       "created_at": "2026-06-20T03:07:56Z",
       "decided": null
+    },
+    {
+      "id": "marian-poolingop-cse-alias",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream marian bug (pre-existing, identical on CUDA, not a port defect): PoolingOp::type() returns the literal \"layer_pooling\" for both avg and max mode and overrides neither equal() nor hash() for its mode field, so ExpressionGraph::add()'s short-term CSE aliases an avg_pooling node to a max_pooling node built on the same input in the same graph. Dead in practice -- avg_pooling has zero callers in the tree and max_pooling exactly one (examples/mnist/model_lenet.h) -- so no shipped model path hits it, and the code is CUDNN-gated. Found while writing the gfx90a MIOpen conv/pool correctness check on 2026-08-11; worked around there by giving each pooling mode its own graph. Deferred decision: whether to report it upstream separately from the ROCm port PR.",
+      "refs": [
+        "projects/marian-dev/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-11T01:20:38Z",
+      "decided": null
     }
   ]
 }
