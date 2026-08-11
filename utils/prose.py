@@ -6,7 +6,7 @@ renders with the author's line breaks frozen in, which looks broken on a wide sc
 and worse on a phone, and it makes every later edit reflow a whole paragraph so the
 diff is unreadable.
 
-CLAUDE.md has said "do not manually line-wrap GitHub or markdown prose" for a long
+AGENTS.md has said "do not manually line-wrap GitHub or markdown prose" for a long
 time and agents kept doing it anyway -- including the run that added this file. A
 rule that lives only in prose is one nobody checks, so this is the check.
 
