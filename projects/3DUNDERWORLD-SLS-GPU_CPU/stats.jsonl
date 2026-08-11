@@ -32,3 +32,5 @@
 {"kind": "tokens", "ts": "2026-08-09T21:40:34Z", "tokens": 110566, "source": "porter"}
 {"kind":"session","ts":"2026-08-11T19:55:19Z","epoch":1786478119.657244850,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-08-11T20:04:46Z","epoch":1786478686.740260582,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-11T20:07:45Z","epoch":1786478865.272208637,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-08-11T20:10:59Z","phase":"compile","seconds":28.380,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/3DUNDERWORLD-SLS-GPU_CPU/src/build_bare -j224"}

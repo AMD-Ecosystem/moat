@@ -26,6 +26,18 @@ Ones seen so far, for orientation rather than as a roster:
 - gfx1201: RDNA4 (RX 9070 XT), wavefront 32. On Windows it satisfies wave32 and windows together; the same GPU on Linux satisfies wave32 alone.
 - gfx1101, gfx1151: wavefront 32. Records already made against them still satisfy gates -- a validation does not stop being true because a machine changed.
 
+## Proving a binary really contains code for the target architecture
+
+`roc-obj-ls <binary>` lists the embedded code objects and is the usual evidence that a
+build targeted the arch you asked for. It is a packaged-ROCm script and is MISSING from
+SDK-wheel layouts (a host with no `/opt/rocm` at all), where the portable equivalent is
+`$(hipconfig --hipclangpath)/llvm-objdump --offloading <binary>`: it prints one
+`hipv4-amdgcn-amd-amdhsa--gfxNNNN` bundle per device translation unit. Do not conclude a
+build is untargeted because `roc-obj-ls` is absent. `hipconfig --hipclangpath` also gives
+the `CMAKE_HIP_COMPILER` value to pass when CMake cannot find the HIP compiler on such a
+host, which keeps a documented configure command runnable outside `/opt/rocm`.
+(3DUNDERWORLD-SLS-GPU_CPU on gfx942.)
+
 ## Windows: use TheRock ROCm, not the Windows HIP SDK
 
 **Build and run against a full ROCm distribution from TheRock (its PyTorch wheels and the

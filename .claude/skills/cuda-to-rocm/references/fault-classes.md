@@ -134,6 +134,20 @@ slots. (dietgpu)
 faults. Kernels reading index +/-1 or +/-width at edges (stencils, neighbour gathers) must
 clamp. (colmap ComputeDOG.)
 
+**`atomicInc(p, val)` is a WRAPPING increment, so the bounded-slot idiom
+`buf[atomicInc(&count[row], CAPACITY) + row*CAPACITY]` writes one slot past the row.** It
+stores `old >= val ? 0 : old+1` and returns `old` (identically on CUDA and HIP), so the
+counter does reach `CAPACITY`; the next insert returns `CAPACITY` before resetting, and
+that return is used as the slot index. The correct capacity argument is `CAPACITY-1`. Audit
+this everywhere a bucket, ring or per-row insert list uses `atomicInc` -- the idiom is
+common and the overflow is a cross-row write in general and a past-the-end write for the
+last row. Two traps when you assess it: it is usually PRE-EXISTING upstream code, so it is
+out of scope for a minimal port and belongs in the deferred registry rather than in the
+diff; and a clean AMD run is NOT evidence of safety, because a one-element overrun of a
+large allocation lands inside the same page and corrupts silently instead of faulting.
+State that in the audit rather than citing the green run. (3DUNDERWORLD-SLS-GPU_CPU:
+`GPUBucketsObj::add2Bucket`, 110-entry buckets.)
+
 **Rule-of-five on resource handles.** CUDA tolerates a default-constructed or
 double-destroyed texture/stream/event handle; AMD faults. Give RAII wrappers explicit
 default init (`handle = 0`), move-only semantics, and a guarded destructor. (colmap

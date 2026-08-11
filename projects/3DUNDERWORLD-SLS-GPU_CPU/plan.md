@@ -77,16 +77,31 @@ computeMask_kernel (FileReaderCUDA.cu); toUintArray_kernel, toNormalizedUintArra
   guard with `__trap()` (HIP+CUDA both provide it) -- guarded in the compat
   header or via `__trap()` directly. This is a never-taken guard (bitsPerElem <=
   uint width here), so it has no effect on output, but it must compile.
-- **OOB reads (AMD strict):** audit -- already safe.
-  - `add2Bucket` guards `bktIdx > NUM_BKTS_-1` (ReconstructorCUDA.cuh:31).
+- **OOB reads (AMD strict):** reads are safe; one upstream WRITE is not (see
+  below).
+  - `add2Bucket` guards `bktIdx > NUM_BKTS_-1` (ReconstructorCUDA.cuh:41).
   - `buildBuckets` writes only when decoded (x,y) < projector resolution AND
     mask set (ReconstructorCUDA.cu:212).
   - `getPointCloud2Cam` color index `minIdx0/1` are camera pixel indices pulled
     from bucket contents (in-bounds by construction); arrays sized resX*resY*3.
-  - `atomicInc(count, MAX_CNT_PER_BKT_)` wraps at 110 == bucket capacity, so the
-    data write `...+bktIdx*MAX_CNT_PER_BKT_` stays inside the bucket row.
-  No stencil/neighbor +/-1 gathers exist. No clamp fix expected; will confirm at
-  runtime (AMD would fault if any read strays).
+  - Read side of the buckets is in-bounds: the loops run `i < count_[idx]` with
+    `count_ <= MAX_CNT_PER_BKT_`, so `idx*MAX_CNT_PER_BKT_+i` stays in the row.
+  No stencil/neighbor +/-1 gathers exist, so no clamp fix is needed.
+- **Upstream bucket-insert overrun (write side, NOT introduced by this port and
+  NOT fixed by it):** `ReconstructorCUDA.cuh:45` passes `MAX_CNT_PER_BKT_` where
+  the idiom needs `MAX_CNT_PER_BKT_-1`. `atomicInc(p, val)` stores
+  `old >= val ? 0 : old+1` and returns `old`, so with `MAX_CNT_PER_BKT_ == 110`
+  the 111th insert into a bucket sees `old == 110`, resets the counter and
+  returns 110; the write `data_[110 + bktIdx*110]` lands in slot 0 of bucket
+  `bktIdx+1`, and for the last bucket one uint past the
+  `MAX_CNT_PER_BKT_*NUM_BKTS_` allocation. Present verbatim in the pre-port
+  merge-base (c87fe37), identical semantics on CUDA and HIP, so it is upstream
+  behaviour rather than a porting fault, and fixing it is outside "smallest
+  complete port". Registered as deferred work
+  (`sls-gpu-bucket-atomicinc-overrun`) to raise with the maintainers. Note that
+  a clean run is NOT evidence against it: it needs >110 camera pixels decoding
+  to one projector cell, and a one-uint overrun of a ~346 MB allocation stays
+  inside the same page, so it would corrupt silently rather than fault.
 - **atomicInc on managed memory:** N/A. Buckets use plain `cudaMalloc` device
   memory, and atomicInc is not in the dropped-RMW class (only int/uint
   atomicMin/atomicMax are, per PORTING_GUIDE) -- no emulation needed.

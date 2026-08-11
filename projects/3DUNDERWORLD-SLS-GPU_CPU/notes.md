@@ -53,11 +53,22 @@ CUDA->HIP port.
   gfx1100/gfx1151 RDNA wave32 should pass with no delta.)
 - NVPTX inline asm: `asm("trap;")` -> per-backend `gpuTrap()` (fix #3). Both
   spellings are backend-only -- neither compiles under the other toolchain.
-- OOB reads: audited, already safe (add2Bucket clamps bktIdx; buildBuckets
-  checks projector bounds + mask; color idx are in-bounds pixel indices;
-  atomicInc wraps at bucket capacity so the row write stays in-bounds). No clamp
-  fix needed; confirmed at runtime -- AMD would have faulted on a stray read and
-  the run completed clean.
+- OOB reads: audited, safe (add2Bucket clamps bktIdx; buildBuckets checks
+  projector bounds + mask; color idx are in-bounds pixel indices; bucket reads
+  loop `i < count_[idx]` with `count_ <= MAX_CNT_PER_BKT_`). No stencil/neighbor
+  gathers, so no clamp fix needed.
+- OOB write, upstream, NOT fixed by this port: `ReconstructorCUDA.cuh:45` passes
+  `MAX_CNT_PER_BKT_` to `atomicInc` where the idiom needs `MAX_CNT_PER_BKT_-1`,
+  so the 111th insert into a bucket returns 110 and writes slot 0 of bucket
+  `bktIdx+1` -- one uint past the allocation for the last bucket. Verbatim in
+  the pre-port merge-base c87fe37 and identical on both toolchains, so it is
+  upstream behaviour, out of scope here, and registered as deferred work
+  `sls-gpu-bucket-atomicinc-overrun` for the maintainer round. An earlier note
+  here claimed the wrap kept the write in the row and cited the clean gfx90a run
+  as confirmation; both were wrong. A clean run cannot confirm it: reaching the
+  case needs >110 camera pixels decoding into one projector cell (the alexander
+  dataset never does), and a one-uint overrun of a ~346 MB device allocation
+  stays inside the same page, so it corrupts silently instead of faulting.
 - atomicInc on managed memory dropped-RMW class: N/A (plain cudaMalloc device
   memory; only int/uint atomicMin/atomicMax are in that class, not atomicInc).
 
@@ -907,3 +918,89 @@ code it describes and reproduces the fixed form, not the defect.
 
 Not held against the port: no GPU run at this head from this reviewer (the
 validator stage runs it next).
+
+## Port fix 2026-08-11 (linux-gfx942, ROCm 7.14) -- review findings closed at bc3e4e9
+
+Answers the 2026-08-11 review above. Host: AMD Instinct MI300X (gfx942, CDNA3,
+wave64). ROCm 7.14.60850 came from an SDK wheel layout rather than `/opt/rocm`,
+with the HIP compiler at `$(hipconfig --hipclangpath)/clang++` (clang 23.0.0) --
+useful here because it is exactly the case the README's compiler fallback is
+about.
+Two new commits on top of 7dc3a24; plain fast-forward push, no history rewrite
+(PR #33 is open on this branch, so a force-push was not an option).
+
+### Finding 1 (OOB audit wrong) -- records corrected, code untouched
+
+Re-derived it independently before editing: `atomicInc(p, val)` stores
+`old >= val ? 0 : old+1` and returns `old`, so with `MAX_CNT_PER_BKT_ == 110`
+(`ReconstructorCUDA.cu:25`) the counter does reach 110 and the next insert
+returns 110, writing `data_[110 + bktIdx*110]` = slot 0 of bucket `bktIdx+1`,
+one uint past the `110*NUM_BKTS_` allocation for the last bucket.
+`git show c87fe37:src/lib/ReconstructorCUDA/ReconstructorCUDA.cuh` has the same
+line (line 35 there), so it is pre-existing upstream and out of scope for a
+minimal port. Read side re-checked and genuinely safe (`i < count_[idx]`,
+`count_ <= 110`).
+
+Corrected the audit in `notes.md` (Fault classes) and `plan.md` (Fault classes),
+including dropping the "AMD would have faulted" argument: 1024x768 projector
+cells and the alexander dataset never put >110 camera pixels in one cell, and a
+one-uint overrun of the ~346 MB allocation stays in the same page. Registered as
+deferred work `sls-gpu-bucket-atomicinc-overrun` (`projects/.../deferred.json`)
+for the maintainer round. Promoted the general form to the skill
+(`fault-classes.md`, Memory and lifetime): the `buf[atomicInc(&count[row],
+CAPACITY) + row*CAPACITY]` idiom needs `CAPACITY-1`, is usually pre-existing
+upstream, and cannot be cleared by a green run.
+
+### Finding 2 (PR #33 body describes the reverted trap change) -- left for a person
+
+No action taken here: editing the PR body is an upstream write. The replacement
+bullet and the note about folding the CUDA no-regression evidence into the Test
+Plan stay in the review section above for the checkup/maintainer round. The
+same round should also mention the two commits added today.
+
+### Finding 3 (`build_ci_check/` in .gitignore) -- fixed (90a8120)
+
+Replaced the two port-added lines (`build_ci_check/`, `build_hip/`) with a
+single `build*/`. Local `build_hip/`, `build_bare/`, `build_expl/` and `build/`
+all stay ignored, so the integrity-gate `git status --porcelain` is still clean,
+and no name from our own workflow ships upstream.
+
+### Findings 4 + 5 (undocumented option, unverified README command) -- fixed (bc3e4e9)
+
+`README.md` now documents `OPENCV4_COMPAT_DIR` beside the AMD build block: what
+Windows OpenCV lays out, what the directory must contain, and an `mklink /J`
+example. The CMake option itself is unchanged (the reviewer's alternative was to
+drop it, but the two Windows validations depend on it).
+
+The ROCm floor claim is gone, replaced by "tested with ROCm 7.2". The configure
+line stays in its bare form -- BUT it is now a command that has actually been
+run: on this host, with the ROCm SDK on PATH and no `/opt/rocm` at all,
+`cmake .. -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942` finds the HIP compiler
+by itself. The prose now explains the `CMAKE_HIP_COMPILER` fallback (which is
+what CI and the earlier host records used, and what a nonstandard install
+needs) and why a GPU-less build machine must set `CMAKE_HIP_ARCHITECTURES`.
+
+### Build on this host (gfx942) -- PASS
+
+```bash
+cd projects/3DUNDERWORLD-SLS-GPU_CPU/src
+sudo apt-get install -y libglm-dev libopencv-dev libtiff-dev   # neither was present
+rm -rf build_bare
+cmake -S . -B build_bare -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942
+bash utils/timeit.sh 3DUNDERWORLD-SLS-GPU_CPU compile -- cmake --build build_bare -j$(nproc)
+```
+
+Full `all` target builds clean (SLS, SLS_GPU, calibrateCamera, generateGraycode,
+sync_main); only warning is the pre-existing `sync_main.cc:24` missing return.
+`llvm-objdump --offloading build_bare/bin/SLS_GPU` -> 3 bundles, all
+`hipv4-amdgcn-amd-amdhsa--gfx942`; links `libamdhip64.so.7`. The explicit-compiler
+form (`-DCMAKE_HIP_COMPILER="$(hipconfig --hipclangpath)/clang++"`) configures
+identically. No GPU run here (porter role); gfx942 validation is next.
+
+Host quirk (promoted to the skill's `validation.md`): `roc-obj-ls` is not shipped
+in the ROCm SDK wheel layout, so use
+`$(hipconfig --hipclangpath)/llvm-objdump --offloading <binary>` to list embedded
+code objects instead.
+
+`python3 utils/jargon.py --port 3DUNDERWORLD-SLS-GPU_CPU`: clean.
+`utils/prose.py` on both commit bodies and the new README paragraphs: clean.

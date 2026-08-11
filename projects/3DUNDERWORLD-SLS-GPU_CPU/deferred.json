@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "sls-gpu-bucket-atomicinc-overrun",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream GPUBucketsObj::add2Bucket passes MAX_CNT_PER_BKT_ (not MAX_CNT_PER_BKT_-1) to atomicInc, so the 111th insert into a bucket returns 110 and writes slot 0 of the next bucket; for the last bucket that is one uint past the data_ allocation. Pre-existing in ReconstructorCUDA.cuh, out of scope for the HIP port; raise with the maintainers.",
+      "refs": [
+        "projects/3DUNDERWORLD-SLS-GPU_CPU/notes.md#review-2026-08-11"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-11T20:12:20Z",
+      "decided": null
+    }
+  ]
+}
