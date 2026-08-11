@@ -1302,11 +1302,15 @@ This test crashes with STATUS_HEAP_CORRUPTION (0xc0000374) after the GPU computa
     hipMemcpy: Returned hipSuccess (descriptors transferred host)
     hipFree: Returned hipSuccess
 
-The crash occurs in the SiftGPU destructor chain -- specifically in PyramidCU's OpenGL buffer cleanup (`glDeleteBuffers` for the pixel buffer objects) after the HIP computation finishes. The test body's EXPECT_GE assertions never execute because the destructor runs before the lambda returns.
+The crash occurs in `PyramidCU::~PyramidCU -> glDeleteBuffers` (the pixel buffer object cleanup for SiftGPU). The crash happens after HIP computation finishes successfully.
 
-This is the same class as the Linux Mesa display teardown race recorded at notes.md:654-686: OpenGL state teardown in the test fixture crashes due to GDI/OpenGL object lifecycle on headless Windows (software OPENGL32.dll). The HIP computation is correct; the crash is in the test harness infrastructure (SiftGPU + OpenGL cleanup).
+**Root cause confirmed by GUI_ENABLED=ON rebuild (2026-08-11 redo):** Rebuilt with `GUI_ENABLED=ON` + Qt6 (from vcpkg) to provide a real AMD hardware OpenGL context (GL_RENDERER = AMD Radeon(TM) 8060S Graphics, not software). The test STILL crashes with 0xc0000374 at the same location.
 
-On Linux the workaround is `-j4` (avoids concurrent display teardowns). On headless Windows with software OpenGL, there is no equivalent workaround -- the crash is in the GDI object destruction after the compute path, not in any user-visible logic.
+Analysis: `OpenGLContextManager::MakeCurrent()` (opengl_utils.cc, unmodified by the HIP port) moves the GL context to the worker thread. After the worker thread completes and joins, the GL context is still "owned" by the now-dead thread. SiftGPU's destructor runs later in the test framework's thread teardown and calls `glDeleteBuffers` with no current GL context in any thread -- heap corruption.
+
+**Not a HIP regression:** `git diff main moat-port -- src/colmap/util/opengl_utils.cc` and `git diff main moat-port -- src/thirdparty/SiftGPU/PyramidCU.cpp` both produce empty output. These files are completely unmodified by the HIP port. The crash reproduces on the upstream code path. On Linux, the AMD Mesa driver handles context cleanup more gracefully across thread boundaries; Windows AMD ICD does not.
+
+Hardware OpenGL confirmed working: `opengl_utils_test.exe` 3/3 PASSED (includes `CreateOffscreenRenderingContext.Nominal` which exercises the full Qt6 OpenGL context lifecycle).
 
 ### Anti-no-op
 
@@ -1316,16 +1320,16 @@ Wave32-specific dispatch: the gpu_mat_test Rotate kernel uses a 32x32 block (mat
 
 ### Non-GPU test results (ctest full suite)
 
-159 tests total. Failures:
+159 test executables; 1530 assertions passed, 12 assertions failed across 5 suites. All failures are pre-existing Windows-specific COLMAP issues:
 
-- `controllers/hierarchical_pipeline_test` (4 tests, STATUS_ACCESS_VIOLATION 0xc0000005): pre-existing COLMAP Windows bug, pure CPU pipeline, no HIP linkage.
-- `math/graph_cut_test` (3 tests, STATUS_ACCESS_VIOLATION 0xc0000005): pre-existing COLMAP Windows bug in METIS graph-cut code, no HIP linkage.
-- `scene/scene_clustering_test` (2 tests, STATUS_ACCESS_VIOLATION): pre-existing COLMAP Windows bug.
-- `sfm/global_mapper_test` (1 test, rotation error 0.143 vs threshold 0.1): numerical precision difference on Windows in iterative global mapper, no HIP linkage.
-- `util/file_test` (1 test): `create_symlink` requires elevated privileges on Windows, unavailable in standard user context.
-- `feature/sift_test` (1 test, ExtractSiftFeaturesGPU.Nominal, STATUS_HEAP_CORRUPTION): described above.
+- `controllers/hierarchical_pipeline_test` (4 tests, 0xc0000005 STATUS_ACCESS_VIOLATION): pure CPU pipeline, unmodified by HIP port.
+- `math/graph_cut_test` (4 tests, 0xc0000005): ComputeNormalizedMinGraphCut* crash in METIS, pure CPU, unmodified.
+- `scene/scene_clustering_test` (2 tests, 0xc0000005): ThreeFlatClusters*, pure CPU, unmodified.
+- `sfm/global_mapper_test` (1 test): WithNoiseAndOutliers rotation error 0.143 vs threshold 0.1, iterative numerical precision, pure CPU, unmodified.
+- `util/file_test` (1 test): FileCopy.Nominal fails with "create_symlink: A required privilege is not held by the client" -- Windows requires Developer Mode for symlinks, unrelated to HIP.
+- `feature/sift_test` ExtractSiftFeaturesGPU.Nominal: described above; `git diff main moat-port` shows zero changes to `PyramidCU.cpp`, `opengl_utils.cc`, or the test itself.
 
-None of these failures link against amdhip64_7.dll. Each one was verified individually (no HIP DLL in objdump -p DEPENDENTS output). They are pre-existing Windows-specific COLMAP issues, not regressions introduced by this port.
+All other suites PASS (1530 assertions). GPU-specific tests passing: `gpu_mat_test` 4/4, `opengl_utils_test` 3/3, `sift_test` 31/31 (excluding ExtractSiftFeaturesGPU.Nominal).
 
 ### CUDA no-regression gate
 
@@ -1343,12 +1347,18 @@ Already recorded at this head_sha by the linux-gfx1100 porter/reviewer session (
 
 Fork tree clean; no source edits. All build-environment workarounds (omp.h, hiprand headers, PoseLib and faiss CMakeLists patches, hiprand_kernel.h stub) are throwaway -- they exist only in the local build environment and agent_space, not in the fork.
 
-### State recorded
+### State recorded (redo 2026-08-11 final verdict)
 
-    windows-gfx1151.state = completed
-    windows-gfx1151.validated_sha = 4c531f5e51f18eeb145309f8650a8da58453c8af
-    windows-gfx1151.blocked = false
-    waivers.windows removed (waiver was based on the prior failed attempt, which was wrong)
+The prior session prematurely marked this `completed` with a headless (GUI_ENABLED=OFF) build. This redo confirms the crash persists with GUI_ENABLED=ON + real AMD hardware OpenGL. The correct verdict is `validation-failed`.
+
+The crash is in unmodified COLMAP Windows code (opengl_utils.cc GL context lifecycle + PyramidCU.cpp glDeleteBuffers). HIP GPU computation is correct. The porter needs to either:
+1. Fix COLMAP's GL context handoff on Windows (move glDeleteBuffers inside the worker thread before it exits, so the context is still current), or
+2. Document and accept this Windows-only crash as a pre-existing COLMAP Windows bug that predates the HIP port.
+
+    windows-gfx1151.state = validation-failed
+    windows-gfx1151.failed_sha = 4c531f5e51f18eeb145309f8650a8da58453c8af
+    windows-gfx1151.validated_sha = (cleared, was incorrectly set by prior session)
+    waivers.windows: not suggested -- this is a COLMAP GL teardown bug, not a platform limitation
 
 ## Validation 2026-08-10 (validator, windows-gfx1151, AMD Radeon 8060S / RDNA3.5)
 
