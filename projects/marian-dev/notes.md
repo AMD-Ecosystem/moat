@@ -2146,3 +2146,84 @@ real on this host's 4x MI250X; no regressions against the gfx1100 numbers at
 the same head. One pre-existing, CUDA-shared, dead-in-practice bug found and
 worked around in the validation aid (PoolingOp CSE aliasing); not filed, not
 a port defect, documented above for anyone else who writes a similar check.
+
+## Validation 2026-08-11 (windows-gfx1151, AMD Radeon 8060S, gfx1151, RDNA3.5) -- PASS
+
+Platform: AMD Radeon 8060S (gfx1151, RDNA3.5, integrated APU, wave32, warpSize=32), Windows 11 Enterprise 10.0.26100. HIP_VISIBLE_DEVICES=0. Compiler: TheRock all-clang ROCm 7.13.0a20260511 (pip-wheel, _rocm_sdk_core). Fork AMD-Ecosystem/marian-dev @ moat-port, head 1d0822bd (review-passed stage). This is additive evidence only -- windows gate already satisfied by windows-gfx1201 (completed at ba0ec806).
+
+### Host setup
+
+TheRock pip-wheel for gfx1151 (7.13.0a20260511) ships DLLs only -- no installed headers. Headers sourced from D:/Develop/TheRock/rocm-libraries/projects/ source tree. Stub cmake packages created in agent_space/marian-hip-cmake/ for HIP, hipblas, hipblaslt, hipsparse, hiprand, rocthrust, MIOpen, openblas; all throwaway (not committed to fork). Import .lib files generated from TheRock DLLs using llvm-readobj + MSVC lib.exe.
+
+Sentencepiece submodule pin f006008f unfetchable; checked out master branch (1ca221c). Throwaway edits applied for Windows clang build (sentencepiece fPIC flag guard, constexpr kAnyType; faiss SSE header). All reverted before completion; fork is clean (git status --porcelain empty).
+
+Additional linker fix: clang_rt.builtins-x86_64.lib added via CMAKE_EXE_LINKER_FLAGS (path: _rocm_sdk_core/lib/llvm/lib/clang/23/lib/windows/clang_rt.builtins-x86_64.lib) to supply __truncsfhf2/__extendhfsf2 fp16 soft-float builtins that HIP cmake strips by linking with -nostartfiles -nostdlib.
+
+### Build
+
+277/277 targets, EXIT:0. Multiple configure rounds needed to resolve header/library gaps in the TheRock pip-wheel-only setup (no installed headers). Build capped at -j6 to avoid APU thermal trips.
+
+```
+cmake -B agent_space/marian-build-gfx1151 -S projects/marian-dev/src \
+  -DCMAKE_HIP_COMPILER=.../clang++ \
+  -DCMAKE_PREFIX_PATH=agent_space/marian-hip-cmake \
+  -DUSE_HIP=ON -DUSE_SENTENCEPIECE=ON -DUSE_FAISS=ON \
+  -DUSE_FBGEMM=OFF -DUSE_TCMALLOC=OFF -DUSE_STATIC_LIBS=OFF \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DCMAKE_EXE_LINKER_FLAGS="<clang_rt.builtins-x86_64.lib>"
+cmake --build agent_space/marian-build-gfx1151 -j6
+```
+
+### Runtime env (all tests)
+
+```
+SP=D:/Develop/TheRock/.venv/Lib/site-packages
+ROCBLAS_USE_HIPBLASLT=0
+ROCBLAS_TENSILE_LIBPATH=$SP/_rocm_sdk_libraries_gfx1151/bin/rocblas/library
+HIPBLASLT_TENSILE_LIBPATH=$SP/_rocm_sdk_libraries_gfx1151/bin/hipblaslt/library
+HIP_VISIBLE_DEVICES=0
+# DLLs (24 total) copied next to each exe; must cd to exe dir before running
+```
+
+ROCBLAS_USE_HIPBLASLT=0 required: TheRock FP8 is_inf crash in libhipblaslt.dll (same as gfx1201/gfx1101).
+
+### Unit test results
+
+- run_binary_tests.exe: 9/9 PASS
+- run_fastopt_tests.exe: 23/23 PASS
+- run_utils_tests.exe: 8/8 PASS
+- run_graph_tests.exe: 10/10 PASS -- GPU dispatch confirmed on gfx1151
+- run_attention_tests.exe "*Attention (gpu)": 2/2 PASS
+- run_transformer_tests.exe "*(gpu) fp32": 1/1 PASS; fp16 ABORTS "Broken type float16" (pre-existing Windows limitation: types.h _MSC_VER guard stubs float16 -- identical to gfx1201 and gfx1101)
+- run_operator_tests.exe "Expression graph supports basic math operations (gpu)": 202/202 PASS (fp32); fp16 ABORTS pre-existing; "Compare aggregate operator": 1/1 PASS; CPU ops: 198/198 PASS
+- run_rnn_tests.exe: ABORT "Broken type float16" (pre-existing Windows limitation, same as all other Windows arches)
+- test_prod.exe: PASS (GPU GEMM correctness)
+
+### Training smoke (GPU)
+
+```
+marian.exe --type transformer -t train.src train.tgt -m model.npz \
+  --vocabs vocab.src.yml vocab.tgt.yml --dim-emb 64 --transformer-dim-ffn 128 \
+  --transformer-heads 2 --enc-depth 2 --dec-depth 2 --after 100u --devices 0 \
+  --shuffle-in-ram --tempdir tmp
+```
+
+Training completed successfully (100u, 1000-sentence corpus). RC:0. GPU used for all forward+backward passes.
+
+### e2e decode (rocBLAS grouped-batched GEMM -- key gate)
+
+gfx1101 (RDNA3 sibling) validation-failed here with hipErrorInvalidImage because gfx1101's rocBLAS Tensile library contained NO ELF .co kernel files for the FP32 batched (Alik_Bljk) layout, forcing a SPIR-V generic fallback that fails on Windows kpack_load_code_object.
+
+gfx1151 Tensile library (150 files) includes 16 FP32 (SS) kernel files AND 20 ELF .co code objects covering Alik_Bljk_Cijk_Dijk (the exact layout hipblasGemmBatchedEx selects for marian's ProdBatched). Confirmed by listing gfx1151 library:
+- TensileLibrary_Type_SS_Contraction_l_Alik_Bljk_Cijk_Dijk_gfx1151.co (present)
+- No SPIR-V fallback needed
+
+marian-decoder.exe decoded successfully with:
+- Small toy model (dim-emb=64, 20-word vocab, beam-size=6): RC:0
+- Production-size model (dim-emb=512, 6-layer, 22K vocab, beam-size=6, mini-batch=32): RC:0, total time 0.44s
+
+No hipErrorInvalidImage observed on gfx1151. The rocBLAS GB-GEMM path is fully operational on gfx1151.
+
+### Verdict: completed -- windows-gfx1151
+
+All GPU unit tests pass (fp32 path; fp16 abort is pre-existing Windows/types.h limitation, not a port bug). Training and e2e decode work correctly on real gfx1151 GPU. The rocBLAS grouped-batched GEMM blocker that failed gfx1101 does NOT affect gfx1151 -- the TheRock gfx1151 Tensile library ships proper ELF .co kernels for the SS (FP32) batched GEMM layout that marian's ProdBatched uses.

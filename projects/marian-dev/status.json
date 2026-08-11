@@ -7,7 +7,7 @@
   "priority": 3.968,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-08-11T01:19:09Z",
+  "updated_at": "2026-08-11T21:46:56Z",
   "head_sha": "1d0822bd3a0c03d4547930f4525172688d1ee92d",
   "porting": null,
   "waivers": {},
@@ -112,6 +112,30 @@
         "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
         "at": "2026-06-23T22:46:45Z"
       }
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "1d0822bd3a0c03d4547930f4525172688d1ee92d",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-08-11T21:46:55Z",
+      "updated_at": "2026-08-11T21:46:55Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/marian-dev/pull/1",
