@@ -306,11 +306,14 @@ def gate_published():
         judged += 1
         pub = obj.get("published_sha")
         if not pub:
-            # Records from before this field existed backfill on the first
-            # fix-branch call; until then there is nothing to compare.
+            # Records from before this field existed are stamped by the
+            # reconciliation sweep once it has verified the live PR head agrees
+            # with the record. fix-branch also backfills, but it opens a fix
+            # round; the sweep stamps without starting one.
             print(f"published: note -- {name} has an open PR but no published_sha "
-                  f"recorded (predates the fix flow; `moatlib.py fix-branch {name}` "
-                  f"backfills it)", file=sys.stderr)
+                  f"recorded (predates the fix flow; `utils/upstream.py --apply` "
+                  f"backfills it after verifying against the live PR)",
+                  file=sys.stderr)
             continue
         branch = obj.get("fork_branch") or moatlib.PORT_BRANCH
         clone = str(src.parent)
