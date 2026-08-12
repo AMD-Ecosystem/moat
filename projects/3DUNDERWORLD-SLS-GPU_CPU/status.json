@@ -7,7 +7,7 @@
   "priority": 5.001,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-08-11T23:36:38Z",
+  "updated_at": "2026-08-12T22:10:31Z",
   "head_sha": "bc3e4e978128e70c269ee9e972f24ff8a04f14bf",
   "pr_url": "https://github.com/theICTlab/3DUNDERWORLD-SLS-GPU_CPU/pull/33",
   "pr_number": 33,
@@ -164,5 +164,6 @@
       "last_agent": "validator",
       "state": "completed"
     }
-  }
+  },
+  "published_sha": "bc3e4e978128e70c269ee9e972f24ff8a04f14bf"
 }
