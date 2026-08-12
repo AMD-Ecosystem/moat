@@ -371,28 +371,45 @@ modes (ROCm 7.2.1, gfx90a): a `g++` link of the installed archive gives
 gcc-driven link that does receive the interface flag does not even get that far
 (`g++: error: unrecognized command-line option '-fgpu-rdc'`). The trap is that a CMake
 consumer can hit either one, and which remedy it needs depends on who drives its link, so
-separate the two conditions before writing anything down. The DRIVER must be the HIP
-compiler, which CMake arranges when the target has HIP sources of its own, when it links a
-target that has them, when it links an IMPORTED target whose
-`IMPORTED_LINK_INTERFACE_LANGUAGES` is HIP -- `install(EXPORT)` records that for a library
-built from HIP sources, and it propagates even through a plain C++ intermediate library --
-or when the target sets `LINKER_LANGUAGE HIP`. The LINE must also carry `--hip-link`, which
-CMake adds ONLY for a target that has HIP sources of ITS OWN. Measured against an installed
-export and against a hand-imported archive (ROCm 7.2.1, gfx90a, CMake 4.0.3):
+separate the two conditions before writing anything down, and note that both presuppose a
+third. HIP must be an ENABLED LANGUAGE in the consuming project, via
+`project(app LANGUAGES CXX HIP)` or `enable_language(HIP)`; `find_package(hip)` and linking
+`hip::host` do not enable it, and neither does anything the producing library can put on its
+export. The DRIVER must be the HIP compiler, which CMake arranges -- once the language is
+enabled -- when the target has HIP sources of its own, when it links a target that has them,
+when it links an IMPORTED target whose `IMPORTED_LINK_INTERFACE_LANGUAGES` is HIP --
+`install(EXPORT)` records that for a library built from HIP sources, and it propagates even
+through a plain C++ intermediate library -- or when the target sets `LINKER_LANGUAGE HIP`.
+The LINE must also carry `--hip-link`, which CMake adds ONLY for a target that has HIP
+sources of ITS OWN. Measured against an installed export and against a hand-imported archive
+(ROCm 7.2.1, gfx90a, CMake 4.0.3):
 
 | consumer target | link driver | needs |
 | --- | --- | --- |
 | one of its own sources compiled as HIP | HIP, `--hip-link` added | nothing |
-| plain C++, links the exported target directly or through a plain C++ library | HIP, no `--hip-link` | `target_link_options(app PRIVATE --hip-link)` |
-| plain C++, links a local HIP-source library that links the archive | HIP, no `--hip-link` | same |
+| plain C++ in a HIP-enabled project, links the exported target directly or through a plain C++ library | HIP, no `--hip-link` | `target_link_options(app PRIVATE --hip-link)` |
+| plain C++ in a HIP-enabled project, links a local HIP-source library that links the archive | HIP, no `--hip-link` | same |
+| the same target in a project that never enabled HIP | gcc | `enable_language(HIP)`; nothing set on the target alone works |
 | plain C++, links an IMPORTED archive with no link interface language | gcc | `LINKER_LANGUAGE HIP` AND `--hip-link`; `--hip-link` alone only adds a second unrecognized option |
 | the archive named by path, no imported target | gcc | `LINKER_LANGUAGE HIP`, `--hip-link` AND `-fgpu-rdc`, since nothing supplies the flag either |
 
 `LINKER_LANGUAGE HIP` never adds `--hip-link`, so it is useless alone and needed only where
-the driver is still gcc. Because a consumer reaching the archive through `find_package`
-always lands in the HIP-driver rows, prose that offers `--hip-link` as THE fix is right for
-an installed export and wrong for a hand-rolled import; say which one you mean rather than
-generalizing from the shape you happened to measure. Do NOT try to fix any of this by
+the driver is still gcc -- and it is available only where HIP is enabled, since otherwise
+CMake has no HIP link rule and fails at generate time with
+`Missing variable is: CMAKE_HIP_LINK_EXECUTABLE`. That is why the fourth row has no
+target-level remedy: the C++ driver rejects `-fgpu-rdc` and `--hip-link` alike, so a
+consumer that cannot enable the HIP language cannot link the archive at all, and the honest
+thing for the library's docs to say is that enabling it is a requirement rather than a
+suggestion. Be careful with the scope of any claim here: prose that offers `--hip-link` as
+THE fix is right for a HIP-enabled project consuming an installed export and wrong both for
+a hand-rolled import and for a C++-only project, and the reader who has no HIP source of
+their own is exactly the reader with no reason to have enabled the language. Say which shape
+you mean rather than generalizing from the one you happened to measure. Note also that an
+interface link option is unguarded unless you guard it, so `-fgpu-rdc` reaches even a
+consumer that pins `LINKER_LANGUAGE CXX` in a HIP-enabled project and breaks it, while the
+matching `target_compile_options(... INTERFACE $<$<COMPILE_LANGUAGE:HIP>:-fgpu-rdc>)` is
+conditioned; decide deliberately whether that asymmetry is what you want. Do NOT try to fix
+any of this by
 wrapping the interface flag in `$<LINK_LANGUAGE:HIP>`: that only trades the
 unrecognized-option message for the undefined-symbol one. Fix it in prose --
 wherever the project tells a CUDA consumer to set `CUDA_SEPARABLE_COMPILATION ON`, the HIP

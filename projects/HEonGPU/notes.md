@@ -2806,3 +2806,71 @@ above, so the ruling is made on the measured trade.
 unchanged and remains correct. Round 8 should be a single edit pass over
 `.rst:76`, `.rst:83`, `src/CMakeLists.txt:261`, `fault-classes.md:374-394`, and
 the deferral summary.
+
+## Round 8 fix 2026-08-12 (linux-gfx90a, 9f9fd0b)
+
+Addresses both round-8 findings. Prose only in the fork
+(`docs/advanced_topics.rst`, `src/CMakeLists.txt`), plus the skill's
+`fault-classes.md` and a reframed deferral in this repository.
+`moatlib classify HEonGPU f657723 9f9fd0b` reports
+`class=comment-only arch_independent=True inert=True`, so no rebuild of the
+library and no new GPU obligation. `classify 5d99b8f 9f9fd0b` is still
+`mixed`/not inert and both platforms are recorded validated at `5d99b8f`, so
+both archs still owe the 20 suites at head for the `-fgpu-rdc` switch itself;
+this commit adds nothing to that and nothing on the branch claims otherwise.
+
+Rebuilt the consumer matrix from scratch in `agent_space/round8/` (gitignored):
+twelve independent source trees, each configured and built on its own, all
+against the REAL installed export at `agent_space/heongpu-consumer/prefix`
+(ROCm 7.2.1, gfx90a, CMake 4.0.3, `CMAKE_CXX_COMPILER=/usr/bin/c++`,
+`main.cpp` = `int main(){return 0;}` with
+`-Wl,-u,_ZN7heongpu10modInverseEmm` to force the device-carrying object in).
+Driver read from `CMakeFiles/app.dir/link.txt`.
+
+| # | consumer project | shape | driver | result |
+| --- | --- | --- | --- | --- |
+| 1 | `LANGUAGES CXX HIP` | plain C++ exe, links `HEonGPU::heongpu` | rocm clang++ | undefined `__hip_fatbin_1f6ece6550d50f9a` / `__hip_gpubin_handle_` |
+| 2 | `LANGUAGES CXX HIP` | + `--hip-link` | rocm clang++ | links |
+| 3 | `LANGUAGES CXX` | same target | `/usr/bin/c++` | ``unrecognized command-line option `-fgpu-rdc'`` |
+| 4 | `LANGUAGES CXX` | + `--hip-link` | `/usr/bin/c++` | both options unrecognized |
+| 5 | `LANGUAGES CXX` | + `find_package(hip REQUIRED)` + `hip::host` | `/usr/bin/c++` | ``unrecognized command-line option `-fgpu-rdc'`` |
+| 6 | `LANGUAGES CXX` | + `LINKER_LANGUAGE HIP` + `--hip-link` | -- | GENERATE FAILS: `Missing variable is: CMAKE_HIP_LINK_EXECUTABLE` |
+| 7 | `LANGUAGES CXX` + `enable_language(HIP)` | + `--hip-link` | rocm clang++ | links |
+| 8 | `LANGUAGES CXX HIP` | target pins `LINKER_LANGUAGE CXX` | `/usr/bin/c++` | ``unrecognized command-line option `-fgpu-rdc'`` |
+| 9 | `LANGUAGES CXX HIP` | one own source `LANGUAGE HIP` (the documented snippet) | rocm clang++ | links |
+| 10 | `LANGUAGES CXX` | archive named by path | `/usr/bin/c++` | undefined `__hip_fatbin_*` / `__hip_gpubin_handle_*` |
+| 11 | `LANGUAGES CXX HIP` | by path + `LINKER_LANGUAGE HIP` + `--hip-link` + `-fgpu-rdc` | rocm clang++ | links |
+| 12 | `LANGUAGES CXX` | same as 11 | -- | GENERATE FAILS, as row 6 |
+
+The review's finding 1 reproduces exactly (rows 1, 3, 4, 5). Row 6 is the piece
+that was not measured before and it decides how the fix had to be written: in a
+project that never enabled HIP, `LINKER_LANGUAGE HIP` is not a remedy at all --
+CMake has no HIP link rule to name, so generation fails before any compiler
+runs. Rows 4 and 6 together mean a CXX-only consumer has NO target-level
+remedy, and rows 2 and 7 mean the only remedy is to enable the language. So the
+`.rst` now states the language requirement first, as a requirement rather than
+a suggestion, keeps `--hip-link` as the remedy for a target with no HIP source
+of its own, and says plainly that the library cannot rescue a consumer that
+will not enable HIP. Row 11 keeps the by-path sentence true, now explicitly "in
+a project where HIP is enabled" (row 12 is why). Every row of the round-7 matrix
+was measured in `project(round7 LANGUAGES CXX HIP)`, which is why the condition
+was invisible in that round.
+
+Row 8 is finding 2: `target_link_options(heongpu INTERFACE -fgpu-rdc)` carries
+no generator expression while the matching compile option is guarded by
+`$<COMPILE_LANGUAGE:HIP>`, so a target pinning `LINKER_LANGUAGE CXX` already
+fails today. The deferral `heongpu-hip-link-interface-option` was reframed
+around that: the question is whether the interface options should be
+conditioned on the link driver at all, and what a consumer that cannot enable
+HIP should do. `deferred.py` has no edit or supersede subcommand and `add`
+refuses a duplicate id, so the summary and refs of the (open, unruled) item were
+rewritten in place through `deferred._load_project` / `_save_project`, i.e. the
+same code path the CLI uses. Worth a small tooling follow-up if reframing an
+unruled deferral happens again.
+
+Promoted to the skill (`fault-classes.md`), since the next porter writing their
+own consumer docs is exactly who repeats this: the enabled-language
+precondition ahead of the driver/line split, a table row for the CXX-only
+project with no target-level remedy, and the note that an INTERFACE link option
+is unguarded unless you guard it, so `-fgpu-rdc` reaches a `LINKER_LANGUAGE
+CXX` consumer while the compile option beside it does not.
