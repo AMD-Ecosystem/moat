@@ -93,3 +93,10 @@ compat header with `-include`.
   before compiling. Un-hipified files surface as "undeclared identifier cudaMalloc". Note
   that hipify prepends `#include "hip/hip_runtime.h"`, which breaks a g++ CPU reference
   build, so build that from a separate non-hipified copy. (LC-framework)
+- **That prepended header is often load-bearing, not cosmetic.** It is what defines
+  `__HIP_PLATFORM_AMD__` before the project's own headers are parsed, so any macro gate that
+  keys on it -- wave-width selection above all -- evaluates as if the platform were CUDA when
+  the same source is handed straight to `hipcc` without hipifying. That failure is silent: it
+  compiles and runs, with wave32 code on wave64 hardware. When the build recipe is a hand-run
+  compiler line rather than a build system, write the hipify step into the documented order
+  and say there that it must precede compilation. (LC-framework)

@@ -194,6 +194,20 @@
       "upstream_issue": null,
       "created_at": "2026-08-06T06:52:58Z",
       "decided": null
+    },
+    {
+      "id": "moat-doc-gate-failure-carry-forward",
+      "kind": "other",
+      "component": null,
+      "summary": "advance_head carries a validation-failed record forward across an arch-independent (doc-only) delta, but a failure caused by the documentation gate is fixed precisely by a doc-only delta. The arch then reads validation-failed at head and arch_task routes it back to a porter forever; only a validator recording completed clears it. Seen on LC-framework windows-gfx1151 (ea0df9b -> f0ce8ce). Consider recording why a validation failed, or letting a doc-gate failure retire on a doc-only advance.",
+      "refs": [
+        "projects/LC-framework/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-12T21:55:17Z",
+      "decided": null,
+      "project": null
     }
   ]
 }
