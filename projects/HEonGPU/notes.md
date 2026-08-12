@@ -2874,3 +2874,127 @@ precondition ahead of the driver/line split, a table row for the CXX-only
 project with no target-level remedy, and the note that an INTERFACE link option
 is unguarded unless you guard it, so `-fgpu-rdc` reaches a `LINKER_LANGUAGE
 CXX` consumer while the compile option beside it does not.
+
+## Review 2026-08-12 (round 9, linux-gfx90a, 9f9fd0b)
+
+Scope: the delta `f657723..9f9fd0b` (one comment-and-docs commit) plus this
+branch's `fault-classes.md` edit and the reframed deferral. Everything earlier
+is cleared. Measured on this host against the REAL installed export at
+`agent_space/heongpu-consumer/prefix` (ROCm 7.2.1, gfx90a, CMake 4.0.3,
+`CMAKE_CXX_COMPILER=/usr/bin/c++`, `main.cpp` = `int main(){return 0;}`,
+`-Wl,-u,_ZN7heongpu10modInverseEmm`); reproduction in `agent_space/revcheck9/`
+(gitignored).
+
+Confirmed, do not redo. Row 6 reproduces exactly: `project(t6 LANGUAGES CXX)` +
+`LINKER_LANGUAGE HIP` + `--hip-link` fails at generate time with
+`Missing variable is: CMAKE_HIP_LINK_EXECUTABLE`, so `LINKER_LANGUAGE HIP` is
+indeed no fallback in a CXX-only project. Row 7 reproduces: `LANGUAGES CXX` +
+`enable_language(HIP)` + `--hip-link`, no HIP source of its own, links (driver
+`/opt/rocm/lib/llvm/bin/clang++`), which is the measurement behind "enabling the
+HIP language does not oblige you to compile any of your own sources as HIP". Row
+4 reproduces: `c++: error: unrecognized command-line option '--hip-link'` and
+the same for `-fgpu-rdc`. `jargon.py --port HEonGPU` clean over the whole
+branch, `prose.py` clean on the body, title 54 chars with `[ROCm]`,
+AI-assistance disclosure present, no agent trailer, ASCII only, no internal
+account references, fork tree clean, exactly one
+`heongpu-hip-link-interface-option` entry.
+
+### 1. "the library cannot rescue the link from its side" is false as stated; the producer-side remedy is `cmake/Config.cmake.in`
+
+`docs/advanced_topics.rst:83` says "If your project does not enable HIP, the
+library cannot rescue the link from its side"; `fault-classes.md:377` says
+"neither does anything the producing library can put on its export";
+`fault-classes.md:400-403` concludes "a consumer that cannot enable the HIP
+language cannot link the archive at all, and the honest thing for the library's
+docs to say is that enabling it is a requirement"; the body of `9f9fd0b` says
+"The library cannot rescue such a consumer from its own side, so the
+documentation now says so plainly".
+
+The producing package can enable the language in the consumer's scope, because
+`HEonGPUConfig.cmake` is included at the caller's file scope. Measured: a copy
+of the installed config with `enable_language(HIP)` as its first line, consumed
+by `project(tcfg LANGUAGES CXX)` with a plain C++ executable and only
+`target_link_options(app PRIVATE --hip-link)`:
+
+| consumer | config | driver | result |
+| --- | --- | --- | --- |
+| `LANGUAGES CXX`, `--hip-link` | as shipped | `/usr/bin/c++` | ``unrecognized command-line option `-fgpu-rdc'`` |
+| `LANGUAGES CXX`, `--hip-link` | + `enable_language(HIP)` | rocm clang++ | configure rc=0, build rc=0, links |
+| same, `find_package` called from `add_subdirectory` | + `enable_language(HIP)` | rocm clang++ | configure rc=0, build rc=0, links |
+
+Only the config file differed; both runs used the same real prefix on
+`CMAKE_PREFIX_PATH`. That line would live in `cmake/Config.cmake.in`, in this
+repository, one file away from the code the sentence is about. There are real
+reasons a maintainer might refuse it -- `enable_language` may not be called in a
+function call and must be called in the highest directory common to all targets
+using the language (CMake 4.0 `enable_language.rst:18,21`), so a consumer that
+wraps `find_package` in a function hard-errors, and every consumer then pays HIP
+compiler detection -- but those are reasons to decline an option, not grounds
+for saying it does not exist.
+
+`src/CMakeLists.txt:263-265` is the one place that scopes this correctly ("cannot
+be helped from here"), and that is accurate: the remedy is not a target property.
+
+Fix, smallest form. In the `.rst`, say what the shipped package does rather than
+what the library can do ("the installed package does not enable the language for
+you"), keeping the consumer-facing advice exactly as it is. In
+`fault-classes.md`, drop the "neither does anything the producing library can put
+on its export" clause and the "cannot link the archive at all" conclusion, and
+replace them with the measured pair: nothing on the CONSUMER's target rescues
+this, while the PRODUCER can enable the language from its package config, at the
+documented cost -- a future porter is on the producer side, so the option they
+are told does not exist is the one they own. Do not amend `9f9fd0b`; let the
+follow-up commit body carry the corrected statement.
+
+### 2. The deferral asks the person a question whose option set is missing the producer-side answer
+
+`deferred.json` `heongpu-hip-link-interface-option` asks "what should a consumer
+that cannot enable the HIP language do, given that nothing set on its own target
+rescues the link". The target-level half is accurate and measured. But the
+person ruling this also owns `cmake/Config.cmake.in`, and with the option above
+missing the natural ruling is "document the requirement", which is a decision
+taken without knowing an alternative exists. Add one sentence recording the
+measurement and its cost. Everything else about the reframing is right: the
+question really is whether the interface options should be conditioned on the
+link driver at all, `$<LINK_LANGUAGE:HIP>` really is not the answer alone, and
+the old cost estimate really was wrong.
+
+### 3. The `deferred.py` tool gap is recorded only in notes prose
+
+Rewriting the summary and refs of an open, unruled item in place through
+`deferred._load_project`/`_save_project` was the right call: two overlapping
+entries in front of the person ruling would be worse than one current one, the
+item was unruled, the CLI has no edit or supersede path, and the refs still
+point at both round-7 and round-8 notes, so the history is not lost. No change
+wanted there. But "worth a small tooling follow-up" in a 2800-line `notes.md` is
+not registered work, and this gap is control-plane, not HEonGPU's. Register it
+in the global registry (`utils/deferred.py add`, no `--project`) so it survives
+this port: `deferred.py` has no way to correct an open item, and `add` refuses a
+duplicate id.
+
+### What I would have changed but am not asking for
+
+`fault-classes.md:393-394` -- the imported-archive and by-path rows carry no
+"in a HIP-enabled project" qualifier while the three rows above them do, and
+their remedy (`LINKER_LANGUAGE HIP`) is exactly the one that is unavailable
+without the language. The sentence at `:396-399` states that immediately below
+the table, so a reader gets it; I would still have put the qualifier in both
+rows, since an unqualified row copied out of a table is how rounds 6 and 7 went
+wrong. `fault-classes.md:411-414` has a ragged rewrap ("Do NOT try to fix / any
+of this by / wrapping the interface flag") left over from the edit.
+`docs/advanced_topics.rst:76` still says "every CMake target that links it ... is
+driven by the HIP compiler", which row 8 (a target pinning `LINKER_LANGUAGE
+CXX`) contradicts; that is the subject of the open deferral and does not belong
+in consumer documentation before it is ruled.
+
+Otherwise the round-8 fix is correct: the `.rst` leads with the language
+requirement, keeps `--hip-link` scoped to a HIP-enabled project's target with no
+HIP source, quotes the real generate-time message, and scopes the by-path
+sentence; `src/CMakeLists.txt` matches it without overstating; and the skill's
+enabled-language precondition ahead of the driver/line split, its new CXX-only
+row, and its unguarded-INTERFACE-link-option lesson are all measured and in the
+place a reader with that problem would look.
+
+Verdict: changes-requested. Round 9 is a single edit pass over `.rst:83`,
+`fault-classes.md:377` and `:400-403`, one sentence in the deferral summary, and
+one `deferred.py add` in the global registry.

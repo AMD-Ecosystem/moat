@@ -145,3 +145,6 @@
 {"kind":"session","ts":"2026-08-12T23:16:10Z","epoch":1786576570.789361856,"event":"start","platform":"linux-gfx90a"}
 {"kind":"phase","ts":"2026-08-12T23:25:44Z","phase":"compile","seconds":1.287,"exit":0,"cmd":"cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build"}
 {"kind":"session","ts":"2026-08-12T23:25:50Z","epoch":1786577150.584549301,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-08-12T23:27:00Z", "tokens": 87855, "source": "porter"}
+{"kind":"session","ts":"2026-08-12T23:27:32Z","epoch":1786577252.566956013,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-12T23:34:38Z","epoch":1786577678.208142714,"event":"end","platform":"linux-gfx90a"}
