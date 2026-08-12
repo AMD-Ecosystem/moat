@@ -2555,3 +2555,87 @@ archs.
 Gotcha worth remembering here: `advance-head` accepts an abbreviated sha
 verbatim, so a typo in the abbreviation is recorded silently. Pass
 `git rev-parse HEAD`.
+
+## Review 2026-08-12 (round 7, linux-gfx90a, 56615ec)
+
+Scope: the delta `81176c9..56615ec` (one comment-and-docs commit) plus this
+branch's `fault-classes.md` and notes edits. Rounds 1-6 cleared everything
+earlier, including `-fgpu-rdc` itself. Every claim below was re-measured on this
+host (ROCm 7.2.1, gfx90a, CMake 4.0.3) rather than taken from the round-6
+record; the reproduction lives in `agent_space/rdc-check/` and
+`agent_space/rdc-check2/` (gitignored).
+
+Re-derived and confirmed, so do not redo them: the failing CMake consumer is
+already linked by `/opt/rocm/lib/llvm/bin/clang++` even though
+`CMAKE_CXX_COMPILER` is `/usr/bin/c++`, i.e. the escalation comes from a linked
+target that has HIP sources and the missing piece really is `--hip-link`, which
+CMake adds only for a target with HIP sources of its own; `LINKER_LANGUAGE HIP`
+does not add it; `$<LINK_LANGUAGE:HIP>` around the interface flag does trade the
+unrecognized-option error for the undefined-symbol one (round 6 flagged it as
+untried, it is now measured); 42 executables (`find build/bin -type f
+-executable` = 42, and 15+15+5+4+3 from the `set(EXECUTABLES ...)` pairs) with
+326.6 - 193.6 = 133 s over 42 = 3.2 s each, and `fault-classes.md:390` and
+`:426` now both say 42; `rocminfo`/`rocm-smi` give MI250X / MI250, SKU D65209,
+no MI210; `classify 81176c9 56615ec` is comment-only/inert and
+`classify 5d99b8f 56615ec` is still mixed/not inert, and nothing on the branch
+claims the owed 20-suite runs are discharged; `jargon.py --port HEonGPU` clean;
+fork tree clean; title `[ROCm] ...` 61 chars, AI disclosure present, no agent
+trailer, ASCII.
+
+### 1. `docs/advanced_topics.rst:76-81` gives a remedy that fails for the consumer shape its own sentence describes
+
+The paragraph says "A target that links the library but has no HIP source of its
+own does not get the HIP link and fails with undefined references to
+`__hip_fatbin_*`" and offers exactly one fix,
+`target_link_options(<your-target> PRIVATE --hip-link)`. That fix works only
+when something else in the target's link chain is a CMake target with HIP
+sources, because that is what makes CMake drive the link with the HIP compiler
+in the first place. The measurement behind the round-6 change had such a target
+(`agent_space/heongpu-consumer/b/CMakeLists.txt` links a local `wrap` static
+library whose source is LANGUAGE HIP), so the shape where the consumer links
+only the imported `HEonGPU::heongpu` was never covered. Measured here, an
+imported rdc archive with `INTERFACE_LINK_OPTIONS -fgpu-rdc` standing in for the
+installed export:
+
+| consumer target | link driver | result |
+| --- | --- | --- |
+| one HIP source (the documented snippet) | rocm `clang++`, CMake adds `--hip-link` | links, runs |
+| only `.cpp`, links a local HIP-source lib that links the archive | rocm `clang++`, no `--hip-link` | `undefined hidden symbol: __hip_gpubin_handle_*` |
+| that + `target_link_options(... --hip-link)` | rocm `clang++` | links, runs |
+| that + `LINKER_LANGUAGE HIP` instead | rocm `clang++`, still no `--hip-link` | same undefined symbols |
+| only `.cpp`, links only the imported archive | `/usr/bin/c++` | ``g++: error: unrecognized command-line option `-fgpu-rdc'`` |
+| that + `target_link_options(... --hip-link)` | `/usr/bin/c++` | same, plus `unrecognized command-line option '--hip-link'` |
+| that + `LINKER_LANGUAGE HIP` and `--hip-link` | rocm `clang++` with `--hip-link` | links, runs |
+| that + one HIP source instead | rocm `clang++` with `--hip-link` | links, runs |
+
+So in the last four rows the documented remedy makes the error worse rather than
+fixing it, and `LINKER_LANGUAGE HIP` -- which the same round concluded "does not
+help" -- is precisely what is missing there. Both readings of "no HIP source of
+its own" are reachable; the doc states one symptom and one fix for two different
+link drivers.
+
+Fix in prose, no code change: either scope the sentence to a target that is
+already linked by the HIP compiler (say why: something in its link chain has HIP
+sources) and add the second case, or give the one remedy that covers both --
+compile one of the target's own sources as HIP, exactly as the snippet does, and
+fall back to `LINKER_LANGUAGE HIP` plus `--hip-link` when that is impossible.
+Both were measured to work against an imported archive.
+
+Two companion lines carry the same over-generalization and should move with it:
+`src/CMakeLists.txt:257`, "any other link fails with undefined `__hip_fatbin_*`
+and `__hip_gpubin_handle_*` references", which is true of a hand-written `g++`
+link but not of a CMake target that receives the interface `-fgpu-rdc` and is
+linked by gcc; and `fault-classes.md:375-376`, "Setting `LINKER_LANGUAGE HIP`
+does not add it either; `target_link_options(app PRIVATE --hip-link)` does",
+which holds only inside the case the sentence before it sets up and reads as
+general advice to the next port copying that recipe.
+
+### Recommendation
+
+**Request Changes** on finding 1 alone. Nothing else in the delta needs to
+change: `-fgpu-rdc` must not move, the MI250X correction and its split between
+corrected-in-place facts and quoted review record is right, the counts and the
+no-op claim check out, and the CUDA path is untouched (the diff is entirely
+inside `if(USE_HIP)` plus additive `.rst`). The fix is prose in three files, no
+rebuild and no new GPU obligation: both archs already owe the 20 suites at head
+for the `-fgpu-rdc` switch, and a docs-only commit on top does not add to that.

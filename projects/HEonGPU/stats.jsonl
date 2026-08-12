@@ -127,3 +127,5 @@
 {"kind":"phase","ts":"2026-08-12T22:41:49Z","phase":"compile","seconds":1.604,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j64"}
 {"kind":"phase","ts":"2026-08-12T22:41:54Z","phase":"compile","seconds":0.361,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j64"}
 {"kind":"session","ts":"2026-08-12T22:47:59Z","epoch":1786574879.198295938,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-08-12T22:48:41Z", "tokens": 98681, "source": "porter"}
+{"kind":"session","ts":"2026-08-12T22:49:13Z","epoch":1786574953.615842401,"event":"start","platform":"linux-gfx90a"}
