@@ -278,6 +278,69 @@ def gate_forks():
     return [l for l in r.stdout.splitlines() if l.strip()][:10]
 
 
+def gate_published():
+    """No local clone carries commits on an open PR's branch that the PR does not.
+
+    A local branch is not evidence about a remote one -- it is only as fresh as the
+    last fetch -- so this asks the one question a clone CAN answer: is its copy of
+    the port branch AHEAD of the published tip? That is the precursor to an
+    unapproved push, and the fix flow's answer to it is `moat-fix-<pr#>`. Behind is
+    just a stale fetch and passes silently, which also keeps `--merge-fix` from
+    failing this gate on the very host that performed the approved merge: that push
+    goes to the fork by sha and leaves the local branch where it was.
+
+    Diverged (neither one an ancestor) is reported too -- the branch was rebased or
+    rewritten under an open PR. Where no clone exists the gate says it judged
+    nothing; the reconciler (`upstream.py --dry-run`) covers the remote side."""
+    sys.path.insert(0, str(REPO / "utils"))
+    import moatlib
+    problems, judged = [], 0
+    for src in sorted((REPO / "projects").glob("*/src/.git")):
+        name = src.parent.parent.name
+        try:
+            obj, _where = moatlib.project_record(name)
+        except Exception:
+            continue
+        if not obj or obj.get("pr_state") != "open":
+            continue
+        judged += 1
+        pub = obj.get("published_sha")
+        if not pub:
+            # Records from before this field existed backfill on the first
+            # fix-branch call; until then there is nothing to compare.
+            print(f"published: note -- {name} has an open PR but no published_sha "
+                  f"recorded (predates the fix flow; `moatlib.py fix-branch {name}` "
+                  f"backfills it)", file=sys.stderr)
+            continue
+        branch = obj.get("fork_branch") or moatlib.PORT_BRANCH
+        clone = str(src.parent)
+        tip = _run(["git", "-C", clone, "rev-parse", "--verify", "--quiet",
+                    f"refs/heads/{branch}"]).stdout.strip()
+        if not tip or moatlib.same_commit(tip, pub):
+            continue                      # no local copy of the branch, or in step
+        if _run(["git", "-C", clone, "cat-file", "-e", f"{pub}^{{commit}}"]).returncode:
+            continue                      # the published commit was never fetched here
+        if not _run(["git", "-C", clone, "merge-base", "--is-ancestor",
+                     tip, pub]).returncode:
+            continue                      # behind: a stale fetch is not a problem
+        ahead = not _run(["git", "-C", clone, "merge-base", "--is-ancestor",
+                          pub, tip]).returncode
+        count = _run(["git", "-C", clone, "rev-list", "--count",
+                      f"{pub}..{tip}"]).stdout.strip() or "?"
+        problems.append(
+            f"{name}: local {branch} carries {count} commit(s) the open upstream PR "
+            f"({pub[:12]}) does not"
+            + ("" if ahead else ", and is not descended from it -- the branch was "
+                                "rewritten under an open PR")
+            + f". A fix goes on moat-fix-<pr#> (`moatlib.py fix-branch {name}`); "
+              f"only `upstream.py --merge-fix --apply` moves {branch}")
+    if not problems and judged == 0:
+        print("published: VACUOUS -- no project in this checkout has both an open "
+              "PR and a fork clone, so this gate judged nothing here",
+              file=sys.stderr)
+    return problems
+
+
 def gate_gh_guard():
     """The gh guard classifies correctly, and on a working host it is actually wired in.
 
@@ -470,6 +533,7 @@ GATES = {
     "jargon": (gate_jargon, False),
     "optout": (gate_optout, False),
     "surface": (gate_surface, False),
+    "published": (gate_published, False),
     "forks": (gate_forks, True),      # slow: shells out per fork clone
 }
 
