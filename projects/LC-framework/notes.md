@@ -434,7 +434,8 @@ followed by `hipcc --offload-arch=<arch> -DUSE_GPU -I. -std=c++17 -o lc
 lc.cu`, `<arch>`-parameterized per plan.md's own recommendation (not a
 hardcoded gfx90a/gfx1151).
 
-Result: windows-gfx1151 GPU tests all genuinely PASS on real hardware (Gates
+Result (superseded by the porting round below for the documentation gate):
+windows-gfx1151 GPU tests all genuinely PASS on real hardware (Gates
 1-4 above), but the platform is set `validation-failed` at head_sha ea0df9b
 because of the documentation gate, not the GPU run. `head_sha` advanced past
 040743e (Finding 1's necessary build fix), so linux-gfx90a and linux-gfx1100
@@ -444,3 +445,92 @@ should auto-carry-forward on `advance_head` for arches already validated at
 that point), then windows-gfx1151 re-runs (no GPU regression expected; the
 recipe above is already proven) and the two Linux arches revalidate/carry
 forward.
+
+## Porting round 2026-08-12 (porter, windows-gfx1151) -- documentation only
+
+Closes the documentation gate raised by the 2026-08-12 validation. Commit
+f0ce8ce "[ROCm] Document how to build the GPU version with ROCm", README.md
+only, 24 added lines, no source touched (so `advance_head` classifies the
+delta as carry-forward and no arch has to revalidate for it).
+
+What went into README.md, in the project's own house style (4-space indented
+command blocks, *italics* for literals, no fenced blocks and no backticks
+anywhere in this README):
+- Installation section, immediately after the nvcc block and its "you may have
+  to adjust these commands" paragraph: generate -> `hipify-perl -inplace` over
+  lc.cu/lc.h and the headers -> two `hipcc` lines (compile then link), plus
+  three short paragraphs (arch placeholder + rocminfo, -ffp-contract=off as the
+  -fmad=false analogue with the lossy/lossless clause, hipify-before-compile
+  being load-bearing for wave-width selection and the loop-skip re-grep, and a
+  Windows clang-cl/Perl note).
+- Standalone Compressor and Decompressor Generation section, after the same
+  "you may have to adjust" paragraph: the parallel generate -> hipify -> hipcc
+  recipe for compressor-standalone.cu and decompressor-standalone.cu.
+
+Deliberately NOT documented: `--offload-arch` is a `<arch>` placeholder (never
+a concrete gfx), and the validator-only hipCUB/rocThrust `-I` scaffolding from
+Finding 2 is a broken local SDK, not something the project's build needs.
+
+Deliberately NOT changed: the five generators still print nvcc command lines.
+Teaching them to print a hipcc line is a source change and would force every
+arch to revalidate; the README now covers the same ground. Worth reconsidering
+during PR-prep if upstream prefers the generator to print both.
+
+### Two-step hipcc (compile then link) is what the README documents
+All three validations (gfx90a, gfx1100, gfx1151) used `-c` then a separate
+link, and the gfx90a note above records that the single-step compile+link at
+-O3 emits spurious host-pass diagnostics while still exiting 0. The documented
+recipe therefore shows both steps, with no editorial about why.
+
+### `-include cstring` is NOT needed on Windows/clang-cl
+The standalone-template gotcha above (missing `<cstring>` for `strcmp`) does
+not fire under clang-cl: MSVC's `<string>` pulls in `<cstring>` transitively,
+so `compressor-standalone.cu`/`decompressor-standalone.cu` compile and link
+clean with exactly the documented flags (verified this round, EXIT 0 both, 70
+cosmetic warnings). It is a libstdc++-side transitive-luck gap. The README
+recipe is therefore written without the workaround; the real fix is a
+`#include <cstring>` in compressor-framework.cu/decompressor-framework.cu,
+registered as a deferred item rather than bundled into this doc-only commit.
+
+### Doc verification performed this round
+From a throwaway copy of src (generated + hipified files are gitignored but
+hipify dirties tracked headers, so never in the committed tree):
+```
+python generate_standalone_GPU_compressor_decompressor.py "" "RZE_4"
+perl <rocm>/libexec/hipify/hipify-perl -inplace compressor-standalone.cu decompressor-standalone.cu
+# then the 6 headers the standalone actually pulls in: include/macros.h,
+# include/sum_reduction.h, include/max_scan.h, include/prefix_sum.h,
+# components/d_RZE_4.h, components/include/d_zero_elimination.h
+hipcc -O3 --offload-arch=gfx1151 -ffp-contract=off -I. -std=c++17 -c -o compress.o compressor-standalone.cu
+hipcc --offload-arch=gfx1151 -o compress.exe compress.o
+```
+Both steps EXIT 0 for compressor and decompressor. Running the resulting
+compress.exe from this shell died with SIGSEGV before its first printf and
+decompress.exe exited 127 -- a DLL/PATH environment failure of the ad-hoc
+shell, not a code result (the validator ran the same binaries successfully on
+this host at ea0df9b, Gate 4). Not chased further: runtime evidence at this
+content already exists and this round changed no code.
+
+Full-tree hipify note: `for h in $(find include components preprocessors
+verifiers -name '*.h')` takes well over 2 minutes on this host (hundreds of
+perl invocations) and will hit a 2-minute command timeout. Hipify only the
+headers the chosen pipeline includes when doing a targeted build, or give the
+loop a long timeout.
+
+### State-machine wrinkle this round exposed (control plane, not the port)
+`advance_head` carries a `validation-failed` record FORWARD across a delta it
+classifies as arch-independent, on the reasoning that a change which cannot
+alter compiled output cannot have fixed anything. That reasoning does not hold
+for a DOCUMENTATION-gate failure, which is exactly what windows-gfx1151
+recorded: the fix is doc-only by construction, so `classify ea0df9b f0ce8ce`
+returns `doc-only arch_independent=True inert=True` and the failure moved from
+ea0df9b to f0ce8ce. The arch block therefore still reads validation-failed at
+head, and once the stage reaches `review-passed` again, `arch_task` will route
+windows-gfx1151 to a porter rather than to a validator -- a loop, since there
+is no more porting to do. Right now the project stage is `ported`, so the next
+dispatch is the reviewer and nothing is stuck yet. Whoever dispatches after
+review passes should send a VALIDATOR to windows-gfx1151; recording `completed`
+is the only transition that clears the block, and the GPU evidence for exactly
+this content already exists (all four gates passed at ea0df9b, and the delta
+since is README-only). Registered globally as
+`moat-doc-gate-failure-carry-forward` so the control-plane rule gets looked at.

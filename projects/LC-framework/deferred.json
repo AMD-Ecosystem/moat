@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "lc-standalone-cstring-include",
+      "kind": "other",
+      "component": null,
+      "summary": "compressor-framework.cu and decompressor-framework.cu use strcmp with only <string> included, so the generated standalone compressor/decompressor need -include cstring under libstdc++ (clang-cl is unaffected because MSVC's <string> pulls it in). Fold a #include <cstring> into the standalone templates during PR-prep so the documented hipcc recipe works unmodified everywhere; deliberately kept out of the documentation-only commit f0ce8ce, which must stay carry-forward.",
+      "refs": [
+        "projects/LC-framework/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-12T21:52:21Z",
+      "decided": null
+    }
+  ]
+}
