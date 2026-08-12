@@ -45,8 +45,8 @@
       "refs": [
         "projects/marian-dev/notes.md"
       ],
-      "status": "open",
-      "upstream_issue": null,
+      "status": "filed",
+      "upstream_issue": "https://github.com/marian-nmt/marian-dev/issues/1044",
       "created_at": "2026-08-11T01:20:38Z",
       "decided": {
         "choice": "now",

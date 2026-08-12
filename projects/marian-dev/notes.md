@@ -2301,3 +2301,65 @@ produced it, and must not name our own gates. `jargon.py` catches neither --
 `ba0ec806`. That is not repairable and does not need to be: the recorded
 approval exists to let the unattended publisher prove what it is about to open,
 and this PR was already open, so nothing reads it for this project.
+
+## 2026-08-12: pooling/convolution CSE defect reported upstream as #1044
+
+marian-nmt/marian-dev#1044, filed by Jeff Daily (agents cannot write upstream;
+the guard shim refuses it and the trusted publisher only opens PRs). Body is
+`agent_space/marian-dev-issue-pooling-cse.md`, verified byte-identical to the
+issue after posting. Deliberately NOT mentioned in PR #1043: it is a
+pre-existing upstream defect that affects CUDA identically and has nothing to
+do with AMD support.
+
+### What the report actually says, which is broader than what we first recorded
+
+The framing that survived is not "pooling aliases avg to max" but "three node
+classes are missing the `equal()`/`hash()` overrides the rest of the graph
+consistently provides". `ExpressionGraph::add()` -> `findOrRemember` keys CSE on
+`Node::hash()`/`Node::equal()`, which consider only name, `type()` string, value
+type and child ids (`src/graph/node.h`), so a class carrying result-determining
+state in a member must override both. Sixteen classes in
+`node_operators_unary.h` alone do; `ConvolutionOp`, `PoolingOp` and
+`PoolingWithMaskingOp` do not. Ranked by real exposure:
+
+- `PoolingOp`: OBSERVED (gfx90a MIOpen check, 2026-08-11). `type()` is
+  `"layer_pooling"` for every mode and the window/mode live in
+  `PoolingWrapper`, so avg and max on one input in one graph alias. Got
+  `5 4 8 7`, wanted `3 3 5.5 6.5`.
+- `PoolingWithMaskingOp`: same missing overrides and it sits AFTER the
+  `#endif`, so it is compiled in every build, cuDNN or not. Shares the
+  `"layer_pooling"` string with `PoolingOp`, keeps `mask_` as a plain member
+  rather than a child, and derives `shape_` from `width_` -- so a caller can
+  get a node whose shape does not match its arguments. NOT run.
+- `ConvolutionOp`: paddings/strides in `conv_`, no overrides, but kernel and
+  bias ARE children, so only same-weights-different-padding would alias. Least
+  exposed. NOT run.
+
+Nothing in the tree reaches any of it: `avg_pooling` has no callers,
+`max_pooling` has one (`examples/mnist/model_lenet.h`) on distinct inputs, and
+`CharConvPooling` gives each convolution its own prefix and each pooling its own
+convolution output. Reported as a trap for the next model or test, not as a live
+wrong-output bug, and the report says which claims were run and which were read.
+
+The report also offers why this group is the exception: two of the three cannot
+be built, because `USE_CUDNN=ON` does not link without the
+`Get<std::pair<int, int>>` instantiation that PR #1043 adds. No patch offer was
+made (Jeff's call); the three candidate fix shapes are described and the choice
+left to the maintainers, including that folding `mask_` into `equal()`/`hash()`
+means `mask_->getId()` or promoting the mask to a real child, which reaches
+`src/onnx/expression_graph_onnx_serialization.cpp`.
+
+### Method note worth reusing
+
+The first draft was scoped to the one observed symptom. Checking the claim
+against upstream `master` before filing -- rather than trusting our own earlier
+note -- is what turned up the other two classes and the "deviates from its own
+convention" framing, which is the part that makes the report actionable. Verify
+a bug report against the pristine upstream tree, not against the port branch or
+against the note that recorded it.
+
+### Search before filing
+
+`gh search issues --repo marian-nmt/marian-dev` for pooling, layer_pooling,
+subexpression, avg_pooling: no existing coverage (only unrelated #101, #475).
+Note `gh search issues` takes `--state open|closed`, not `all`.
