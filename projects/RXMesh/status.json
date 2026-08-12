@@ -7,7 +7,7 @@
   "priority": 4.792,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T00:36:13Z",
-  "updated_at": "2026-08-09T00:11:58Z",
+  "updated_at": "2026-08-12T22:10:50Z",
   "head_sha": "df10bfe",
   "depends_on": [
     "STRUMPACK"
@@ -160,5 +160,6 @@
         "at": "2026-06-23T21:32:38Z"
       }
     }
-  }
+  },
+  "published_sha": "df10bfe27ccff8b7095b459a018417c22bdd093c"
 }
