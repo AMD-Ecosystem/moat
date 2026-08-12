@@ -1714,3 +1714,117 @@ sentence was updated by the port commit; neither fix changes a build instruction
 Promoted to the `cuda-to-rocm` skill (references/fault-classes.md, Textures): gfx942 has no
 HIP image/texture API, compile-time or runtime. That is a whole-arch fact any texture-using
 port needs before it picks a validation host.
+
+## Review 2026-08-12 (reviewer, linux-gfx942): maintainer-round delta on moat-fix-4635
+
+Scope: `git diff 4c531f5e...0af9a2d6` only (2 commits, 2 files, +12 lines). The port at
+4c531f5e was reviewed and approved earlier and is not re-reviewed here.
+
+Verdict: **review-passed**. Both fixes are correct, minimal, and independently reproduced on
+this host; no delta defect found. Three non-blocking items are recorded below, two of them in
+already-merged upstream code that this delta does not touch.
+
+### Verification done here (not taken from the porter's notes)
+
+  - `src/colmap/feature/sift_test.cc:116-141`: rebuilt `build-nogpu`
+    (CUDA=OFF, HIP=OFF, GUI=OFF; cache confirms `OPENGL_ENABLED` is forced off by
+    `cmake/FindDependencies.cmake:632-635`) and ran the binary:
+    `32 tests, 18 PASSED, 14 SKIPPED, exit 0` -- the 14 skipped are exactly the 14 tests that
+    call `RunGpuTest` (call sites at lines 194, 243, 399, 430, 1212, 1256, 1390, 1450, 1462,
+    1474, 1486, 1561, 1593, 1605). No other test in the file reaches a GPU path:
+    `CreateSiftGPUMatcherCUDA.Nominal` (`sift_test.cc:251-259`) is already `#if
+    defined(COLMAP_CUDA_ENABLED) || defined(COLMAP_HIP_ENABLED)`. `ctest --test-dir
+    build-nogpu -j16` -> 158/158 passed. `GTEST_SKIP` from a helper does mark the caller
+    skipped, including `MatchGuidedSiftFeaturesCPUvsGPUGuided.EssentialMatrix` where
+    `RunGpuTest` sits inside a 3-iteration loop and CPU assertions run before it.
+  - Guard choice is right, both directions. `COLMAP_GPU_ENABLED` is defined iff
+    `OPENGL_ENABLED OR CUDA_ENABLED OR HIP_ENABLED` (`FindDependencies.cmake:643-648`), and
+    each of those three is force-disabled when its backend is absent: OpenGL at 632-635 when
+    GUI is off, GUI at 617-622 when Qt is missing, CUDA at 395-397 when the toolkit is not
+    found, HIP by `find_package(hip REQUIRED)` at 152. So there is no configuration with a
+    backend present and the macro undefined (false skip), and none with the macro defined and
+    no backend (still crashes). CLI callers are unaffected: `exe/feature.cc:137-149` only
+    takes the OpenGL path when a `QApplication` exists, and
+    `FeatureExtractionOptions::Check()` (`feature/extractor.cc:138-142`) already rejects
+    `use_gpu` without a backend.
+  - CUDA-only builds are untouched: the added lines are `#if !defined(COLMAP_GPU_ENABLED)` /
+    `#else` / `#endif` around the unchanged body, so a CUDA or OpenGL build compiles the
+    identical function. `clang-format --dry-run --Werror src/colmap/feature/sift_test.cc` is
+    clean, and `GTEST_SKIP` matches house style (`bundle_adjustment_ceres_test.cc:128`,
+    `index_test.cc:78,137`, `file_test.cc:167`).
+  - `cmake/colmap-config.cmake.in:74-80`: installed a full HIP build to a scratch prefix and
+    configured a minimal consumer (`project(... LANGUAGES C CXX)`,
+    `find_package(colmap REQUIRED)`, link `colmap::colmap`). With the change: configure and
+    build succeed, `Linking HIP executable`, and the consumer TU sees `COLMAP_HIP_ENABLED`.
+    With the `HIP_ENABLED` block deleted from the installed config (pre-fix state): the exact
+    error the maintainer reported, at `colmap-targets.cmake:235/243/251`, "The link interface
+    of target colmap::colmap_util_cuda / colmap_mvs_cuda / colmap_sift_gpu contains hip::host
+    but the target was not found". The installed `FindDependencies.cmake` does recreate the
+    three named targets (`hip::host`, `hip::hiprand`, `roc::rocrand`) on that path, and it is
+    installed by the existing `Find*.cmake` pattern (`CMakeLists.txt:552-557`).
+  - Ordering and precedence are right: the config sets the `ROCM_PATH` cache entry at line 79
+    before including `FindDependencies.cmake` at line 108, whose own
+    `set(ROCM_PATH ... CACHE PATH)` (line 150) is then a no-op. A consumer's
+    `-DROCM_PATH=/nonexistent-rocm` wins (verified in the consumer cache). `CACHE` rather than
+    a normal variable is required here, since `FindDependencies.cmake:150` would otherwise
+    overwrite it.
+  - A consumer whose `cmake_minimum_required` is 3.10, which is what standalone pycolmap
+    declares (`python/CMakeLists.txt:1`), still configures: the `enable_language(HIP)` inside
+    the installed `FindDependencies.cmake` works under that policy version. pycolmap's own
+    CMake needs no matching change -- it compiles no HIP sources, only links
+    `colmap::colmap`, and `COLMAP_HIP_ENABLED` reaches it through the interface definitions.
+    The only CUDA-specific line there, `CMAKE_CUDA_COMPILER_LAUNCHER` at
+    `python/CMakeLists.txt:41-43`, is a ccache launcher for sources that do not exist in that
+    project; a HIP twin would be dead code.
+  - Commit hygiene: both titles carry `[ROCm]` and are 57 and 59 characters; bodies have
+    rationale, AI-assistance disclosure, and a Test Plan in fenced blocks; no agent
+    `Co-Authored-By`; author is the maintainer of record, no internal account references.
+    `jargon.py --port/--commits/--diff` clean. Fork tree clean at 0af9a2d6.
+
+### Item 1 (upstream, already-merged code, needs a person): the HIP arch fallback is dead
+
+`cmake/FindDependencies.cmake:161-185` calls `enable_language(HIP)` and only then asks
+`if(NOT DEFINED CMAKE_HIP_ARCHITECTURES OR CMAKE_HIP_ARCHITECTURES STREQUAL "")` before
+querying `rocm-sdk targets` and falling back to `gfx90a;gfx942;gfx1100`. That condition can
+never be true: CMake's `CMakeDetermineHIPCompiler.cmake` either sets the
+`CMAKE_HIP_ARCHITECTURES` cache entry (from `rocm_agent_enumerator`, else from the compiler's
+`-target-cpu`) or aborts with "Failed to find a default HIP architecture". Reproduced with a
+standalone project replicating the exact sequence: the fallback branch is skipped and the
+value becomes the local agents (`gfx942` repeated once per visible GPU here; duplicates are
+harmless, a HIP object built that way compiles and links). Consequence: on a builder with no
+AMD GPU the documented portable fallback never applies -- configure either fails outright or
+silently pins the compiler's single default arch. Fix would be to move the arch block above
+`enable_language(HIP)`.
+
+Not part of this delta and not part of PR #4635: the block is upstream code merged by #4420,
+byte-identical at the PR base `d6d2bc8e`. Folding it into a feedback round would widen the
+diff the maintainer is reviewing. It wants a separate upstream issue or PR; that is a
+person's call.
+
+### Item 2 (minor, this delta): exported ROCM_PATH outranks the consumer's own environment
+
+Because the config creates the cache entry before `FindDependencies.cmake` runs its probe
+chain, the recorded build-time path beats not just the probe order documented at
+`FindDependencies.cmake:135-150` but also a consumer whose `ROCM_PATH` *environment variable*
+or `rocm-sdk` on PATH points at a different, valid local ROCm. Only `-DROCM_PATH=` wins.
+Verified: with the installed config edited to a nonexistent `/opt/rocm-moved-away`, the
+consumer cache takes that value even though `$ROCM_PATH` names the real install. No failure
+could be demonstrated on this host -- `find_package(hip)` still succeeded through the
+environment's `CMAKE_PREFIX_PATH` -- so the harm is plausible, not shown, and this is not a
+regression (before the change the consumer failed outright). If the maintainer pushes back,
+`if(EXISTS "@ROCM_PATH@")` around the `set()` is a one-line answer.
+
+### Item 3 (caveat for the maintainer reply, not a defect)
+
+Standalone pycolmap itself was not built against the HIP install, here or by the porter: this
+host has pybind11 3.0.1 and `python/CMakeLists.txt:83` requires 3.0.2. The minimal consumer
+exercises the same mechanism pycolmap depends on (`find_package(colmap)`, link
+`colmap::colmap`, interface compile definitions), so the reply should say that precisely
+rather than claim a pycolmap build.
+
+Related, same defect class, upstream and pre-existing: `colmap-config.cmake.in` exports no
+`OPENGL_ENABLED`, so a consumer of an OpenGL-only install (CUDA and HIP off) recomputes
+`GPU_ENABLED` as OFF and gets `use_gpu = false` defaults from `feature/extractor.h:71-75` and
+`feature/matcher.h:69-73` that disagree with the library it links. The HIP case is fixed by
+this delta; the OpenGL case is upstream's and is worth mentioning only if the maintainer
+raises it.
