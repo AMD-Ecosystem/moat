@@ -148,3 +148,5 @@
 {"kind": "tokens", "ts": "2026-08-12T23:27:00Z", "tokens": 87855, "source": "porter"}
 {"kind":"session","ts":"2026-08-12T23:27:32Z","epoch":1786577252.566956013,"event":"start","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-08-12T23:34:38Z","epoch":1786577678.208142714,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-08-12T23:35:19Z", "tokens": 74378, "source": "reviewer"}
+{"kind":"session","ts":"2026-08-12T23:36:15Z","epoch":1786577775.671170460,"event":"start","platform":"linux-gfx90a"}

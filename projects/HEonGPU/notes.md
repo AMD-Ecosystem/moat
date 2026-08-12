@@ -2998,3 +2998,74 @@ place a reader with that problem would look.
 Verdict: changes-requested. Round 9 is a single edit pass over `.rst:83`,
 `fault-classes.md:377` and `:400-403`, one sentence in the deferral summary, and
 one `deferred.py add` in the global registry.
+
+## Round 9 fix 2026-08-12 (linux-gfx90a, beba427)
+
+Addresses all three round-9 findings. Docs, skill and deferrals only; no code.
+`moatlib classify HEonGPU 9f9fd0b beba427` reports
+`class=doc-only arch_independent=True inert=True`, so no rebuild and no new GPU
+obligation. `classify 5d99b8f beba427` is still `mixed`/not inert and both
+platforms are recorded validated at `5d99b8f`, so both archs still owe the 20
+suites at head for the `-fgpu-rdc` switch; this commit adds nothing to that.
+
+Verified the producer-side claim myself before writing it, in
+`agent_space/round9/` (gitignored), against the REAL installed export at
+`agent_space/heongpu-consumer/prefix` (ROCm 7.2.1, gfx90a, CMake 4.0.3,
+`CMAKE_CXX_COMPILER=/usr/bin/c++`, `main.cpp` = `int main(){return 0;}`,
+`-Wl,-u,_ZN7heongpu10modInverseEmm`). The alternate prefix is that same tree
+with every entry symlinked except `lib/cmake/HEonGPU-1.1`, which is a copy whose
+`HEonGPUConfig.cmake` differs from the shipped one by a single first line,
+`enable_language(HIP)` (`diff` of the remainder is empty). Consumer sources
+identical across cases; driver read from `CMakeFiles/app.dir/link.txt`.
+
+| case | consumer | config | configure | build | driver |
+| --- | --- | --- | --- | --- | --- |
+| A | `project(consumer LANGUAGES CXX)`, plain C++ exe, `--hip-link` | as shipped | rc=0 | rc=2, ``unrecognized command-line option `-fgpu-rdc'`` | `/usr/bin/c++` |
+| B | same source tree | + `enable_language(HIP)` | rc=0 | rc=0, 1067096-byte binary | `/opt/rocm/lib/llvm/bin/clang++` |
+| C | same, `find_package` from `add_subdirectory` | + `enable_language(HIP)` | rc=0 | rc=0, same binary size | `/opt/rocm/lib/llvm/bin/clang++` |
+| D | same, `find_package` wrapped in a `function()` | + `enable_language(HIP)` | rc=0 | rc=2, `--hip-link` AND `-fgpu-rdc` unrecognized | `/usr/bin/c++` |
+
+So the review's finding 1 reproduces exactly: the producing package CAN enable
+the language in the consumer's scope, and the sentence that said otherwise was
+false. Case D is the one place my measurement differs from the review's
+description of the cost: CMake 4.0's `enable_language.rst:18` says the call must
+be in file scope "not in a function call", and the review expected a hard error,
+but CMake 4.0.3 does not error here -- configure still returns 0 and the
+language simply does not take effect, so the consumer gets the same failing C++
+link as case A with no diagnostic pointing at the cause. A silent no-op is a
+worse cost than a hard error, and the deferral and the skill both say "silently
+gets no language" rather than "hard-errors" because of D. The other cost is
+measured too: configure of the same tree goes from 0.88-0.91s (shipped) to
+2.92-3.01s (with `enable_language(HIP)`), i.e. roughly two seconds of HIP
+compiler detection imposed on every consumer, twice each, cold build dir.
+
+Changes made:
+
+- `docs/advanced_topics.rst:83` now says "the installed package does not enable
+  the language for you, and nothing set on the target itself makes up for it",
+  which is what is true; the consumer-facing advice after it is untouched. The
+  producer-side option is not offered in consumer documentation because it is
+  unruled -- it lives in the deferral, where the person who owns
+  `cmake/Config.cmake.in` will see it.
+- `fault-classes.md:377` drops "neither does anything the producing library can
+  put on its export" and points at the producer paragraph; `:400-417` replaces
+  "cannot link the archive at all" with the measured producer remedy, its two
+  costs, and the note that if you decline it your docs owe the requirement. The
+  next porter is on the producer side, so this is the option they own.
+- `fault-classes.md:394-395`: added the "in a HIP-enabled project" qualifier to
+  the imported-archive and by-path rows (the reviewer's optional item; agreed --
+  their remedy is `LINKER_LANGUAGE HIP`, which is exactly what needs the
+  language) and rewrapped the ragged lines left from round 8.
+- `deferred.json` `heongpu-hip-link-interface-option`: one added passage giving
+  the producer-side option, its measurement and its costs, so the ruling is not
+  made blind to it. Rewritten in place again through
+  `deferred._load_project`/`_save_project`, still exactly one entry, still open
+  and unruled, refs extended to this section.
+- The `deferred.py` tool gap is now registered GLOBALLY as
+  `deferred-py-no-edit-or-supersede-path` (control-plane, not this port's): no
+  edit or supersede subcommand, `add` refuses a duplicate id, statuses are only
+  open/filed/done, so correcting an open unruled item has no supported path.
+
+The commit body of `9f9fd0b` repeats the false statement and cannot be amended
+(it is upstream-visible history and `5d99b8f` must stay an ancestor), so
+`beba427`'s body carries the corrected statement explicitly and says so.
