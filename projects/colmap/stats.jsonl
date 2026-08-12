@@ -93,3 +93,4 @@
 {"kind":"phase","ts":"2026-08-12T15:12:07Z","phase":"compile","seconds":0.160,"exit":1,"cmd":"cmake --build b-after -j8"}
 {"kind":"phase","ts":"2026-08-12T15:12:12Z","phase":"compile","seconds":0.465,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/agent_space/colmap-consumer/b-after -j8"}
 {"kind":"phase","ts":"2026-08-12T15:12:34Z","phase":"test","seconds":0.604,"exit":1,"cmd":"/var/lib/jenkins/moat/projects/colmap/src/build-hip/src/colmap/feature/sift_test --gtest_filter=ExtractSiftFeaturesGPU.Nominal"}
+{"kind":"session","ts":"2026-08-12T15:17:54Z","epoch":1786547874.744845420,"event":"end","platform":"linux-gfx942"}
