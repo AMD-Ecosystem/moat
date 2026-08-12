@@ -1490,3 +1490,86 @@ pathological-input artifact in the probe itself, see above); examples and
 benchmarks run correctly including a manual truth-table check of the TFHE
 gates; no `libgomp` in any of 42 built binaries. CUDA gate already recorded
 at this `head_sha`, not re-run.
+## CUDA no-regression check 2026-08-12 (linux-gfx90a): TWO REGRESSIONS FOUND
+
+The check deferred as `heongpu-cuda-no-regression-unrun` was run and the port
+FAILS to build for NVIDIA. Upstream builds clean with the identical toolchain,
+so both faults are ours.
+
+Toolchain: nvcc 12.8.93, gcc-13 host, `-DCMAKE_CUDA_ARCHITECTURES=80`,
+`-DUSE_HIP=OFF`, tests/examples/benchmarks ON. Configure succeeded (rc=0), so
+the CMake work including the example/benchmark edits is fine for CUDA. The
+build fails compiling `src/lib/heongpu.cpp` (a host CXX TU).
+
+Getting past the dependency wall that stopped the 2026-08-11 attempt: read the
+CCCL pin out of `rapids-cmake-src/rapids-cmake/cpm/versions.json` (3.0.3, sha
+8c04b6539859932f5602e86d38314e4d87f96420), fetched that one commit with
+`git fetch --depth 1`, and passed `-DCPM_CCCL_SOURCE=` and
+`-DFETCHCONTENT_SOURCE_DIR_CCCL=`. 60MB and a few minutes instead of a
+full-history clone at the 62 KB/s this host sustains. Same commit, no version
+drift. The other deps (rmm, spdlog, rapids-cmake, rapids_logger, nvtx3,
+googletest) clone in reasonable time and were left alone.
+
+### Baseline: upstream compiles, we do not
+
+Built upstream `1928a14` (parent of the first port commit) in
+`agent_space/heongpu-upstream`, submodules restored to pristine by
+reverse-applying `thirdparty/patches/*.patch`, same compilers, same cached
+deps, target `heongpu_host_core`: **rc=0, zero errors**, and it compiles
+`lib/heongpu.cpp` as a CXX object exactly as our build does. The only edit to
+the baseline tree was replacing `thirdparty/build.sh` (a bare
+`git submodule update --init --recursive`) with `exit 0`, because the
+submodule content was placed by hand in a detached worktree. That changes no
+compiled source.
+
+### Regression 1: the shim pulls curand into every host TU
+
+`src/include/heongpu/cuda_to_hip.h:75` includes `<curand_kernel.h>` on the
+CUDA path. `util.cuh:9` includes `cuda_to_hip.h`, and `util.cuh` is reached
+from `heongpu.hpp`, so every host `.cpp` gets it. Upstream includes
+`<curand_kernel.h>` only from `kernel/*.cuh`, which are reached from `.cu`
+TUs that nvcc compiles.
+
+`curand_mtgp32_kernel.h:123` declares `extern const dim3 blockDim;` with C++
+linkage; `device_launch_parameters.h:71,73` then declare `threadIdx`/`blockDim`
+with C linkage, and g++ rejects the conflict. Minimal repro, g++-13 -std=c++17
+against the 12.8 toolkit headers: `cuda_runtime.h` + `device_launch_parameters.h`
+gives 0 errors; adding `<curand_kernel.h>` before them gives exactly the two
+errors seen in the real build.
+
+Fix direction: the CUDA branch of `cuda_to_hip.h` should include only
+`<cuda_runtime.h>`. The include is redundant there, since the kernel headers
+that need curand already include it themselves, and on HIP
+`thirdparty/hip_compat/curand_kernel.h` satisfies those same includes.
+Verified: removing it clears both errors.
+
+### Regression 2: inlined device bodies must be parsed by the host compiler
+
+Removing the curand include leaves four errors, so this one is independent.
+Upstream's `small_ntt.cuh` only DECLARES `SmallForwardNTT`/`SmallInverseNTT`
+(`__device__ void f(...);`) and the 145-line bodies live in
+`src/lib/kernel/small_ntt.cu`, compiled by nvcc. A host CXX TU including the
+header therefore sees declarations only.
+
+The port inlined the bodies into the header ("to avoid cross-TU linking issues
+on HIP") and `d1b149b` dropped `small_ntt.cu` from `HEONGPU_KERNEL_SOURCES`.
+Now `heongpu.hpp:10 -> host/bfv/secretkey.cuh:11 -> kernel/keygeneration.cuh:14
+-> small_ntt.cuh` makes g++ parse device bodies, and it cannot see
+`__syncthreads` (`small_ntt.cuh:53,79,121,129`).
+
+This is the change round 2 of review cleared as safe. The reading that the
+device functions are "unconditionally `__device__ inline` templates" was
+correct; what it could not catch is what that does to a host TU on the CUDA
+path, because no CUDA build had ever been run. Two reviews and a validation
+passed over it.
+
+### Bearing on the port
+
+Both are CUDA-path only and neither can change HIP compiled output, so the
+gfx90a validation at `5d99b8f` still describes the AMD build. But the port as
+it stands breaks the build it claims not to touch, which is the first thing a
+maintainer would hit. Fix before any upstream submission.
+
+Artifacts (gitignored): `agent_space/heongpu-cuda-check.sh` and `.log`,
+`agent_space/HEonGPU-cuda-build/`, `agent_space/HEonGPU-upstream-build/`,
+`agent_space/heongpu-upstream/`, `agent_space/cccl-3.0.3/`.
