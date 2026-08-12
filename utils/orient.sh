@@ -9,6 +9,9 @@ cd "$(dirname "$0")/.."
 
 bash utils/setup_git.sh >/dev/null 2>&1 || true
 python3 utils/install_hooks.py >/dev/null 2>&1 || true
+# Fork clones get their own pre-push hook: while a project's upstream PR is open,
+# its port branch may not move except through `upstream.py --merge-fix`.
+python3 utils/moatlib.py protect-fork >/dev/null 2>&1 || true
 
 # Refuse to work on the trunk. Project state belongs on a shared port/<name> branch,
 # and that branch existing on the remote is what tells another host the project is

@@ -278,6 +278,55 @@ def gate_forks():
     return [l for l in r.stdout.splitlines() if l.strip()][:10]
 
 
+def gate_published():
+    """No open upstream PR's branch has moved outside the trusted merge path.
+
+    For every project with `pr_state == open` and a fork clone in THIS checkout,
+    the clone's port-branch tip must equal the recorded `published_sha` -- the fix
+    flow stages maintainer-requested changes on `moat-fix-<pr#>` and only
+    `upstream.py --merge-fix --apply` advances the PR branch. A mismatch means a
+    push reached the open PR that no approval covered (or the record was never
+    told); either way a person needs to look. Where no clone exists the gate says
+    it judged nothing -- the reconciler (`upstream.py --dry-run`) covers the
+    remote side."""
+    sys.path.insert(0, str(REPO / "utils"))
+    import moatlib
+    problems, judged = [], 0
+    for src in sorted((REPO / "projects").glob("*/src/.git")):
+        name = src.parent.parent.name
+        try:
+            obj, _where = moatlib.project_record(name)
+        except Exception:
+            continue
+        if not obj or obj.get("pr_state") != "open":
+            continue
+        judged += 1
+        pub = obj.get("published_sha")
+        if not pub:
+            # Records from before this field existed backfill on the first
+            # fix-branch call; until then there is nothing to compare.
+            print(f"published: note -- {name} has an open PR but no published_sha "
+                  f"recorded (predates the fix flow; `moatlib.py fix-branch {name}` "
+                  f"backfills it)", file=sys.stderr)
+            continue
+        branch = obj.get("fork_branch") or moatlib.PORT_BRANCH
+        r = _run(["git", "-C", str(src.parent), "rev-parse", "--verify", "--quiet",
+                  f"refs/heads/{branch}"])
+        tip = r.stdout.strip()
+        if not tip:
+            continue                      # clone has no local copy of the branch
+        if not moatlib.same_commit(tip, pub):
+            problems.append(
+                f"{name}: local {branch} is at {tip[:12]} but the open upstream PR "
+                f"was published at {pub[:12]} -- a push outside the fix flow, or a "
+                f"merge nobody recorded (see upstream.py --merge-fix)")
+    if not problems and judged == 0:
+        print("published: VACUOUS -- no project in this checkout has both an open "
+              "PR and a fork clone, so this gate judged nothing here",
+              file=sys.stderr)
+    return problems
+
+
 def gate_gh_guard():
     """The gh guard classifies correctly, and on a working host it is actually wired in.
 
@@ -470,6 +519,7 @@ GATES = {
     "jargon": (gate_jargon, False),
     "optout": (gate_optout, False),
     "surface": (gate_surface, False),
+    "published": (gate_published, False),
     "forks": (gate_forks, True),      # slow: shells out per fork clone
 }
 

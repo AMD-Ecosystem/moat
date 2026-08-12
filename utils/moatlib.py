@@ -1006,7 +1006,10 @@ def record_pr_approval(name, review_pr=None):
     what they approved so an unattended job can later prove that what it is about to
     publish upstream is that same thing."""
     obj = load_status(name)
-    url = review_pr or obj.get("review_pr")
+    # A fix round's approval lives on the fix review PR; the original review_pr
+    # already did its job when the upstream PR opened.
+    fix_url = (obj.get("fix") or {}).get("review_pr")
+    url = review_pr or fix_url or obj.get("review_pr")
     if not url:
         raise ValueError(f"{name}: no review_pr recorded; pass --review-pr <url>")
     pr = fetch_review_pr(url)
@@ -1024,7 +1027,11 @@ def record_pr_approval(name, review_pr=None):
     review = _approving_review(pr)
     if review is None:
         raise ValueError(f"{name}: no standing approval on {url}")
-    obj["review_pr"] = pr.get("url") or url
+    resolved = pr.get("url") or url
+    if fix_url and resolved.rstrip("/") == fix_url.rstrip("/"):
+        obj["fix"]["review_pr"] = resolved      # keep the original review_pr intact
+    else:
+        obj["review_pr"] = resolved
     obj["pr_approval"] = {
         "approved_by": review.get("login"),
         "at": review.get("at") or now_iso(),
@@ -1033,7 +1040,7 @@ def record_pr_approval(name, review_pr=None):
         # and the approved one is the truth.
         "head_sha": review.get("commit") or pr.get("headRefOid"),
         "content_sha256": _content_digest(pr),
-        "review_pr": obj["review_pr"],
+        "review_pr": resolved,
     }
     save_record(name, obj,
                 f"{name}: snapshot the approval standing on the review PR\n\n"
@@ -1399,6 +1406,10 @@ def set_pr_open(name, pr_url, pr_number):
     obj["pr_number"] = int(pr_number)
     obj["pr_opened_at"] = now_iso()
     obj["pr_state"] = "open"
+    # What the open PR shows. From here on, head_sha may run ahead of this on a
+    # staging branch (see fix_branch); the PR branch itself moves only through
+    # `upstream.py --merge-fix`, which is what advances this field.
+    obj["published_sha"] = obj.get("head_sha")
     save_record(name, obj, f"{name}: upstream PR opened -- {obj['pr_url']}")
     return obj
 
@@ -1430,6 +1441,157 @@ def set_pr_closed(name, note=None):
 
 def _fork_repo(name):
     return PROJECTS / name / "src"
+
+
+# ---- fix rounds on an open upstream PR -------------------------------------
+#
+# Once an upstream PR is open, its head branch is upstream-visible: any push to it
+# lands in front of the maintainer immediately, before review, revalidation, or a
+# person's approval. So a maintainer-requested fix is staged on `moat-fix-<pr#>`,
+# cut from the published tip, and the pipeline (porter -> reviewer -> validators)
+# runs against that staging tip. head_sha follows the staging tip -- it keeps
+# meaning "fork port tip under evaluation", so revalidate/pr-gate derivation is
+# unchanged -- while `published_sha` records what the open PR shows. The one thing
+# that may move the PR branch is `upstream.py --merge-fix --apply`, after a person
+# approves the delta on a fork review PR (see set_fix_merged).
+
+def fix_branch(name):
+    """Establish (or report) the staging branch for a fix round.
+
+    Record-only: the branch itself is the porter's git work; this names it so no
+    porter invents a name, and pins the base so descent from the published tip can
+    be checked at merge time. Idempotent for the recorded branch; refuses to open a
+    second round while one is in flight. A record from before published_sha existed
+    is backfilled from head_sha, which still equals the published tip on any record
+    where no fix round ever started."""
+    obj = load_status(name)
+    if obj.get("pr_state") != "open":
+        raise ValueError(f"{name}: no open upstream PR -- fixes stage only while "
+                         f"one is open; otherwise the port branch is still private "
+                         f"and the porter pushes it directly")
+    if not obj.get("pr_number"):
+        raise ValueError(f"{name}: pr_state is open but no pr_number is recorded")
+    if not obj.get("published_sha"):
+        obj["published_sha"] = obj.get("head_sha")
+    branch = f"moat-fix-{obj['pr_number']}"
+    fix = obj.get("fix")
+    if fix:
+        if fix.get("branch") != branch:
+            raise ValueError(f"{name}: a fix round is already in flight on "
+                             f"{fix.get('branch')!r} -- one staging branch at a "
+                             f"time; merge or abandon it first")
+        return fix
+    obj["fix"] = {"branch": branch, "base_sha": obj["published_sha"],
+                  "review_pr": None, "opened_at": now_iso()}
+    save_record(name, obj, f"{name}: fix round staged on {branch} "
+                           f"(base {obj['published_sha'][:12]})")
+    return obj["fix"]
+
+
+def set_fix_review_pr(name, url):
+    """Record the fork review PR where a person approves the staged delta.
+
+    Mirrors set_review_pr's refusal: recording one asserts the delta is finished,
+    so every required gate must hold at the staging tip first. Clearing is always
+    allowed -- undoing a mistake must not require the gates to pass."""
+    obj = load_status(name)
+    if not obj.get("fix"):
+        raise ValueError(f"{name}: no fix round in flight (moatlib.py fix-branch "
+                         f"establishes one)")
+    if url:
+        ready, blocking, _ = fix_ready(name)
+        if not ready:
+            listed = ", ".join(f"{p}={s}" for p, s in blocking)
+            raise ValueError(
+                f"{name}: cannot record a fix review PR while blocked: {listed}. "
+                f"The fix review PR is where a person approves the FINISHED delta; "
+                f"`upstream.py --fix-review --apply --name {name}` opens and "
+                f"records it once the gates pass.")
+    obj["fix"]["review_pr"] = url or None
+    save_record(name, obj, f"{name}: fix review PR "
+                           + (f"recorded -- {url}" if url else "cleared"))
+    return obj
+
+
+def set_fix_merged(name, new_published_sha):
+    """The approved staging tip is now what the open PR shows.
+
+    Called by the trusted merge path after the fast-forward push succeeds; the
+    approval checks live there, not here. Clears the fix block -- the round is
+    over, and the next one starts from the new published tip."""
+    obj = load_status(name)
+    fix = obj.get("fix")
+    if not fix:
+        raise ValueError(f"{name}: no fix round in flight")
+    new_published_sha = full_sha(new_published_sha, _fork_repo(name))
+    obj["published_sha"] = new_published_sha
+    obj["fix"] = None
+    obj["fix_merged_at"] = now_iso()
+    save_record(name, obj,
+                f"{name}: fix round merged -- {fix.get('branch')} fast-forwarded "
+                f"the PR branch to {new_published_sha[:12]}")
+    return obj
+
+
+# Installed into a fork clone's .git/hooks/pre-push by protect_fork. Reads the
+# project's CURRENT status.json at push time (the path is baked at install time),
+# so opening or closing the upstream PR needs no hook reinstall. MOAT_PUBLISH=1 is
+# set only by the trusted merge path after its approval checks pass.
+FORK_HOOK_MARKER = "# moat-fork-hook v1"
+_FORK_HOOK = """#!/usr/bin/env bash
+{marker}
+# Refuses pushes to the upstream PR's head branch while that PR is open.
+# Installed by `moatlib.py protect-fork {name}`; see AGENTS.md on fix rounds.
+set -u
+[ "${{MOAT_PUBLISH:-}}" = "1" ] && exit 0
+state=$(python3 - <<'EOF' 2>/dev/null
+import json
+try:
+    print(json.load(open({status!r})).get("pr_state") or "")
+except Exception:
+    pass
+EOF
+)
+[ "$state" = "open" ] || exit 0
+while read -r _local _lsha remote _rsha; do
+  if [ "$remote" = "refs/heads/{branch}" ]; then
+    echo >&2 "moat: {branch} is the head of an OPEN upstream PR -- a push to it is"
+    echo >&2 "moat: upstream-visible before anyone reviewed or approved it."
+    echo >&2 "moat: Stage the fix instead: python3 utils/moatlib.py fix-branch {name}"
+    echo >&2 "moat: (the approved merge runs through: utils/upstream.py --merge-fix)"
+    exit 1
+  fi
+done
+exit 0
+"""
+
+
+def protect_fork(name):
+    """Install the pre-push hook that keeps an open PR's branch from moving.
+
+    Idempotent; refuses to clobber a hook that is not ours (say so, loudly, rather
+    than silently replacing whatever someone installed). A missing clone installs
+    nothing and says so -- absence of a clone is absence of the risk."""
+    repo = _fork_repo(name)
+    git_dir = repo / ".git"
+    if not git_dir.exists():
+        return f"{name}: no fork clone at {repo} -- nothing to protect"
+    obj = load_status(name)
+    text = _FORK_HOOK.format(marker=FORK_HOOK_MARKER, name=name,
+                             status=str(status_path(name)),
+                             branch=obj.get("fork_branch") or PORT_BRANCH)
+    hook = git_dir / "hooks" / "pre-push"
+    if hook.exists():
+        current = hook.read_text()
+        if current == text:
+            return f"{name}: fork pre-push hook installed and current"
+        if FORK_HOOK_MARKER not in current:
+            return (f"{name}: a NON-moat pre-push hook is installed at {hook}; "
+                    f"not touching it")
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    hook.write_text(text)
+    hook.chmod(hook.stat().st_mode | 0o111)
+    return f"{name}: fork pre-push hook installed"
 
 
 # Tracked file kinds whose UNCOMMITTED modification in a fork is the integrity-gap
@@ -3053,6 +3215,14 @@ def pr_ready(name):
     if obj.get("pr_url"):
         return (False, [("pr-exists", "a PR is already recorded in status.json")], [])
 
+    blocking, nonviable = _gate_blockers(name, obj)
+    return (not blocking, blocking, nonviable)
+
+
+def _gate_blockers(name, obj):
+    """The gate core shared by pr_ready and fix_ready: coverage gates, licence,
+    and fork integrity, judged at the record's current head_sha. Returns
+    (blocking, nonviable) with blockers deduped."""
     vals = validations(obj)
     blocking, nonviable = [], []
     waivers = obj.get("waivers") or {}
@@ -3115,7 +3285,43 @@ def pr_ready(name):
     for item in blocking:
         if item not in seen:
             seen.add(item); deduped.append(item)
-    return (not deduped, deduped, sorted(set(nonviable)))
+    return (deduped, sorted(set(nonviable)))
+
+
+def fix_ready(name):
+    """Is a staged fix round ready for its fork review PR and merge?
+
+    The same bar as pr_ready -- every required gate satisfied at the current
+    head_sha (the staging tip, under a fix round), licence standing, fork clean --
+    with the PR-existence check inverted: an OPEN upstream PR is the precondition
+    here, not a blocker. The opt-out check binds exactly as it does for a first
+    submission: a fix push is a new arrival in someone's repository.
+
+    Returns (ready, blocking, nonviable) like pr_ready."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    opt = optout_for(upstream_full_name(name) or "")
+    if opt:
+        return (False, [("opted-out",
+                         f"{opt['who']} asked not to receive pull requests from this "
+                         f"effort ({opt['source']})")], [])
+    if obj.get("pr_state") != "open":
+        return (False, [("no-open-pr", "fix rounds exist only while an upstream PR "
+                                       "is open")], [])
+    fix = obj.get("fix")
+    if not fix:
+        return (False, [("no-fix-round", "no staging branch recorded "
+                                         "(moatlib.py fix-branch)")], [])
+    if not obj.get("published_sha"):
+        return (False, [("no-published-sha", "the record does not say what the open "
+                                             "PR shows")], [])
+    if same_commit(obj.get("head_sha"), obj.get("published_sha")):
+        return (False, [("no-delta", f"head_sha equals published_sha "
+                                     f"({(obj.get('head_sha') or '?')[:12]}) -- "
+                                     f"nothing is staged")], [])
+    blocking, nonviable = _gate_blockers(name, obj)
+    return (not blocking, blocking, nonviable)
 
 
 def record_tokens(name, tokens, source=None):
@@ -3326,6 +3532,27 @@ def main(argv=None):
     s.add_argument("name")
     s.add_argument("pr_url")
     s.add_argument("pr_number", type=int)
+
+    s = sub.add_parser("fix-branch",
+                       help="establish or report the staging branch for a fix round "
+                            "on an open upstream PR")
+    s.add_argument("name")
+
+    s = sub.add_parser("set-fix-review-pr",
+                       help="record the fork review PR where the staged fix delta is approved")
+    s.add_argument("name")
+    s.add_argument("url", nargs="?")
+    s.add_argument("--clear", action="store_true",
+                   help="retract a recorded fix review PR; always allowed")
+
+    s = sub.add_parser("fix-ready",
+                       help="check a staged fix round: every required gate satisfied at the staging tip")
+    s.add_argument("name")
+
+    s = sub.add_parser("protect-fork",
+                       help="install the fork pre-push hook that refuses pushes to an open PR's branch")
+    s.add_argument("name", nargs="?", default=None,
+                   help="one project, or omit to protect every local fork clone")
 
     s = sub.add_parser("set-pr-merged", help="record that the upstream PR merged")
     s.add_argument("name")
@@ -3562,6 +3789,7 @@ def main(argv=None):
     elif args.cmd == "pr-commands":
         obj, _where = project_record(args.name)
         url = ((obj or {}).get("pr_approval") or {}).get("review_pr") \
+            or ((obj or {}).get("fix") or {}).get("review_pr") \
             or (obj or {}).get("review_pr")
         if not url:
             print(f"{args.name}: no review PR recorded")
@@ -3652,6 +3880,44 @@ def main(argv=None):
     elif args.cmd == "set-pr-open":
         set_pr_open(args.name, args.pr_url, args.pr_number)
         print(f"{args.name}: PR opened -> {args.pr_url}")
+    elif args.cmd == "fix-branch":
+        fix = fix_branch(args.name)
+        print(f"{args.name}: fix round on {fix['branch']} "
+              f"(base {(fix.get('base_sha') or '?')[:12]}, review PR "
+              f"{fix.get('review_pr') or 'not yet open'})")
+    elif args.cmd == "set-fix-review-pr":
+        # Same refusal shape as set-review-pr: the bare form must not retract.
+        if not args.url and not args.clear:
+            try:
+                cur = ((load_status(args.name).get("fix") or {}).get("review_pr")
+                       or "none recorded")
+            except (FileNotFoundError, ValueError) as e:
+                cur = f"unreadable -- {e}"
+            print(f"set-fix-review-pr: no URL given. Pass one to record it, or "
+                  f"--clear to retract the recorded one. {args.name} currently: "
+                  f"{cur}", file=sys.stderr)
+            return 2
+        set_fix_review_pr(args.name, None if args.clear else args.url)
+        print(f"{args.name}: fix review PR -> "
+              f"{'(cleared)' if args.clear else args.url}")
+    elif args.cmd == "fix-ready":
+        ready, blocking, nonviable = fix_ready(args.name)
+        print(f"{args.name}: fix-ready={ready}")
+        if blocking:
+            print("  BLOCKING (every required gate needs ONE completed arch at the "
+                  "staging tip, or an approved waiver; fork must be clean): "
+                  + ", ".join(f"{p}={s}" for p, s in blocking))
+        if nonviable:
+            print("  non-viable (does not block; scope the claim): "
+                  + ", ".join(nonviable))
+        return 0 if ready else 1
+    elif args.cmd == "protect-fork":
+        names = [args.name] if args.name else sorted(
+            p.parent.name for p in PROJECTS.glob("*/src/.git"))
+        if not names:
+            print("protect-fork: no fork clones in this checkout")
+        for n in names:
+            print(protect_fork(n))
     elif args.cmd == "set-pr-merged":
         set_pr_merged(args.name)
         print(f"{args.name}: PR merged")

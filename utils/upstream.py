@@ -27,6 +27,9 @@ branch and opens a PR, and a human decides -- the same path everything else take
     python3 utils/upstream.py --review           # report ports needing a review PR
     python3 utils/upstream.py --publish          # report approved ports ready to submit
     python3 utils/upstream.py --publish --apply  # open the upstream PRs
+    python3 utils/upstream.py --fix-review       # staged fix rounds needing a review PR
+    python3 utils/upstream.py --merge-fix        # approved fix rounds ready to merge
+    python3 utils/upstream.py --merge-fix --apply # fast-forward the open PR to the approved tip
 
 Record maintenance and one publishing step. None of it does any porting -- that needs a
 GPU host and a session. These keep the record true, tell someone, and send an approved
@@ -39,6 +42,7 @@ second one carrying overlapping changes.
 
 import argparse
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -149,16 +153,23 @@ def recorded():
             continue
         ours = d.get("pr_state") or ("merged" if d.get("pr_merged_at") else None)
         out.append({"name": name, "repo": m.group(1), "num": m.group(2),
-                    "url": pr, "ours": ours})
+                    "url": pr, "ours": ours, "published": d.get("published_sha")})
     return out
 
 
 def poll(rows):
-    """Compare each record against GitHub. Returns (drift, unreviewed, errors)."""
-    drift, unreviewed, errors = [], [], []
+    """Compare each record against GitHub.
+
+    Returns (drift, unreviewed, headdrift, errors). headdrift is an OPEN PR whose
+    head no longer matches the recorded published_sha: a push that did not come
+    through the fix flow's merge. The usual cause is a maintainer editing our
+    branch (allowed on PRs with maintainer-edit enabled), which was done on
+    purpose by a person -- so it is never auto-absorbed: review the commit(s) and
+    recommend a course of action for a human to decide."""
+    drift, unreviewed, headdrift, errors = [], [], [], []
     for r in rows:
         d = gh_json(["pr", "view", r["num"], "--repo", r["repo"], "--json",
-                     "state,mergedAt,reviewDecision,updatedAt"])
+                     "state,mergedAt,reviewDecision,updatedAt,headRefOid"])
         if d is None:
             errors.append({**r, "why": "lookup failed"})
             continue
@@ -174,7 +185,10 @@ def poll(rows):
         # An open PR with changes requested is work waiting on us, not drift.
         if r["real"] == "OPEN" and r["review"] == "CHANGES_REQUESTED":
             unreviewed.append(r)
-    return drift, unreviewed, errors
+        if (r["real"] == "OPEN" and r.get("published") and d.get("headRefOid")
+                and d["headRefOid"] != r["published"]):
+            headdrift.append({**r, "head": d["headRefOid"]})
+    return drift, unreviewed, headdrift, errors
 
 
 OURS = {"jeffdaily"}                     # accounts that speak for this project
@@ -803,6 +817,334 @@ def moatlib_record(name):
     return moatlib.record_pr_approval(name)
 
 
+# ---- fix rounds: review and merge ------------------------------------------
+#
+# While an upstream PR is open its head branch is upstream-visible, so fixes stage
+# on `moat-fix-<pr#>` (moatlib.fix_branch) and reach the PR only here: a person
+# approves the delta on a fork review PR, and --merge-fix fast-forwards the PR
+# branch to exactly the approved tip. The same contract as --publish: the one
+# write is mechanical because a person approved exactly that content, and every
+# check re-runs live at merge time.
+
+# The fix review PR's body section that becomes the upstream reply, posted
+# verbatim as a comment on the upstream PR after the merge. Everything from this
+# heading to the end of the body is the reply; approving the PR approves it along
+# with the code. No section means no comment is posted.
+REPLY_HEADING = "## Upstream reply"
+
+
+def fix_reply_of(body):
+    """The reply text a fix review PR's body carries, or None."""
+    lines = (body or "").splitlines()
+    for i, line in enumerate(lines):
+        if line.strip() == REPLY_HEADING:
+            return "\n".join(lines[i + 1:]).strip() or None
+    return None
+
+
+def _fix_delta_hits(fork, base, head):
+    """Jargon hits in the staged delta's commit messages and added lines, read
+    from the fork over the API so the scan does not need a local clone. Raises
+    ValueError when the comparison cannot be read: a gate that cannot run is not
+    a gate that passed."""
+    sys.path.insert(0, str(REPO / "utils"))
+    import jargon
+    terms, allow = jargon.load()
+    cmp = gh_json(["api", f"repos/{fork}/compare/{base}...{head}",
+                   "--jq", "{commits: [.commits[].commit.message], "
+                           "patches: [.files[].patch // \"\"]}"])
+    if cmp is None:
+        raise ValueError(f"cannot read {fork} compare {base[:12]}...{head[:12]}")
+    hits = []
+    for msg in cmp.get("commits") or []:
+        hits += jargon.scan_text(msg, "delta commit", terms, allow)
+    added = "\n".join(l[1:] for p in (cmp.get("patches") or [])
+                      for l in p.splitlines()
+                      if l.startswith("+") and not l.startswith("+++"))
+    hits += jargon.scan_text(added, "delta added lines", terms, allow)
+    return hits
+
+
+def fix_review_rows():
+    """Staged fix rounds whose gates are met and which have no review PR yet."""
+    sys.path.insert(0, str(REPO / "utils"))
+    import moatlib
+    out = []
+    for name, d, _where in all_records():
+        fix = d.get("fix")
+        if not fix or fix.get("review_pr") or d.get("pr_state") != "open":
+            continue
+        fork = (d.get("fork_url") or "").replace("https://github.com/", "")
+        if not fork:
+            continue
+        ready, blocking, _ = moatlib.fix_ready(name)
+        if not ready:
+            out.append({"name": name, "fork": fork, "fix": fix,
+                        "problem": "not fix-ready: "
+                                   + ", ".join(f"{p}={s}" for p, s in blocking)})
+            continue
+        base = fix.get("base_sha")
+        tip = gh_json(["api", f"repos/{fork}/git/ref/heads/{fix['branch']}",
+                       "--jq", "{sha: .object.sha}"])
+        if not tip or not tip.get("sha"):
+            out.append({"name": name, "fork": fork, "fix": fix,
+                        "problem": f"{fix['branch']} does not exist on the fork"})
+            continue
+        out.append({"name": name, "fork": fork, "fix": fix, "base": base,
+                    "tip": tip["sha"], "problem": None,
+                    "branch": fix["branch"],
+                    "target": d.get("fork_branch") or moatlib.PORT_BRANCH})
+    return out
+
+
+def open_fix_review_pr(row, title, body, apply=False):
+    """Open the fork review PR for a staged fix delta.
+
+    Unlike open_review_pr, the title and body are NOT republished upstream -- the
+    upstream-visible content is the delta's commits, scanned here, plus the
+    optional reply section, scanned as the upstream prose it is about to become."""
+    sys.path.insert(0, str(REPO / "utils"))
+    import moatlib
+    import jargon
+    import prose
+
+    if row.get("problem"):
+        return ("blocked", row["problem"])
+    try:
+        hits = _fix_delta_hits(row["fork"], row["base"], row["tip"])
+    except ValueError as e:
+        return ("jargon", f"cannot check the delta for in-house vocabulary: {e}")
+    if hits:
+        return ("jargon", "in-house vocabulary in the staged delta: "
+                + ", ".join(sorted({h[2] for h in hits})))
+    reply = fix_reply_of(body)
+    if REPLY_HEADING in (body or "") and not reply:
+        return ("reply", f"the body carries {REPLY_HEADING!r} with nothing under "
+                         f"it -- drop the heading or write the reply")
+    if reply:
+        terms, allow = jargon.load()
+        rhits = jargon.scan_text(reply, "upstream reply", terms, allow)
+        if rhits:
+            return ("jargon", "in-house vocabulary in the upstream reply: "
+                    + ", ".join(sorted({h[2] for h in rhits})))
+        wrapped = prose.check(reply, "upstream reply")
+        if wrapped:
+            return ("wrapped", wrapped[0])
+    if not apply:
+        return ("would-open",
+                f"{row['fork']}: {row['branch']} -> {row['target']} "
+                f"(base {row['base'][:12]}, tip {row['tip'][:12]}"
+                + (", carries an upstream reply" if reply else "")
+                + f")\n\n{title}\n\n{body}")
+    r = subprocess.run(["gh", "pr", "create", "--repo", row["fork"],
+                        "--head", row["branch"], "--base", row["target"],
+                        "--title", title, "--body", body],
+                       capture_output=True, text=True, timeout=90)
+    if r.returncode:
+        return ("error", (r.stderr or r.stdout).strip())
+    url = r.stdout.strip().splitlines()[-1]
+    moatlib.set_fix_review_pr(row["name"], url)
+    subprocess.run(
+        ["gh", "pr", "comment", url, "--body",
+         f"To approve this fix round, leave a comment containing this line by "
+         f"itself:\n\n```\n{moatlib.APPROVE_COMMAND}\n```\n\n"
+         f"To send it back to the porter instead:\n\n"
+         f"```\n{moatlib.CHANGES_COMMAND}\n```\n\n"
+         f"Approving covers the commits on this branch"
+         + (f" and the section under {REPLY_HEADING!r} in the body, which is "
+            f"posted verbatim as a comment on the upstream pull request after "
+            f"the merge" if reply else "")
+         + ". `utils/upstream.py --merge-fix --apply` then fast-forwards the "
+           "open upstream PR's branch to exactly the approved tip. Anything "
+           "pushed afterwards, or any edit to the body, voids the approval and "
+           "needs a fresh one."],
+        capture_output=True, text=True, timeout=90)
+    return ("opened", url)
+
+
+def merge_fix_rows():
+    """Fix rounds with a recorded review PR, ready for the merge gate."""
+    for name, d, _where in all_records():
+        fix = d.get("fix")
+        if fix and fix.get("review_pr") and d.get("pr_state") == "open":
+            yield name, d, fix
+
+
+def merge_fix_blockers(name, d, fix, pr):
+    """Everything that must hold before the PR branch moves, re-checked live."""
+    sys.path.insert(0, str(REPO / "utils"))
+    import moatlib
+    import prose
+    import jargon
+
+    bad = []
+    code, why = moatlib.approval_currency(pr)
+    if code != "ok":
+        bad.append(f"approval {code}: {why}")
+    blockers, _notes = moatlib.moat_command_audit(pr)
+    bad += blockers
+    ready, blocking, _ = moatlib.fix_ready(name)
+    if not ready:
+        bad.append("not fix-ready: " + ", ".join(f"{p}={s}" for p, s in blocking))
+
+    fork = (d.get("fork_url") or "").replace("https://github.com/", "")
+    tip = pr.get("headRefOid")
+    pub = d.get("published_sha")
+    if not tip:
+        bad.append("cannot read the approved tip from the fix review PR")
+    if tip and not moatlib.same_commit(tip, d.get("head_sha")):
+        bad.append(f"the fix review PR's head {tip[:12]} is not the recorded "
+                   f"head_sha {(d.get('head_sha') or '?')[:12]} -- the record and "
+                   f"the approval describe different commits")
+    try:
+        hits = _fix_delta_hits(fork, fix["base_sha"], tip or fix["branch"])
+        if hits:
+            bad.append("in-house vocabulary in the staged delta: "
+                       + ", ".join(sorted({h[2] for h in hits})[:4]))
+    except ValueError as e:
+        bad.append(str(e))
+    reply = fix_reply_of(pr.get("body"))
+    if REPLY_HEADING in (pr.get("body") or "") and not reply:
+        bad.append(f"the body carries {REPLY_HEADING!r} with nothing under it")
+    if reply:
+        terms, allow = jargon.load()
+        rhits = jargon.scan_text(reply, "upstream reply", terms, allow)
+        if rhits:
+            bad.append("in-house vocabulary in the upstream reply: "
+                       + ", ".join(sorted({h[2] for h in rhits})[:4]))
+        bad += prose.check(reply, "upstream reply")
+
+    # The merge is a git push, so it needs the clone and needs it to agree with
+    # GitHub about what is being fast-forwarded from where.
+    clone = REPO / "projects" / name / "src"
+    if not (clone / ".git").exists():
+        bad.append(f"no fork clone at {clone} -- the merge push runs from a host "
+                   f"that has one")
+        return bad
+    fork_url = d.get("fork_url")
+    branch = d.get("fork_branch") or "moat-port"
+    ls = subprocess.run(["git", "-C", str(clone), "ls-remote", fork_url,
+                         f"refs/heads/{branch}"],
+                        capture_output=True, text=True, timeout=60)
+    remote_tip = (ls.stdout.split() or [""])[0]
+    if ls.returncode or not remote_tip:
+        bad.append(f"cannot read {branch} on the fork ({fork_url})")
+    elif not pub or not moatlib.same_commit(remote_tip, pub):
+        bad.append(f"the fork's {branch} is at {remote_tip[:12]}, not the "
+                   f"published {(pub or '?')[:12]} -- the PR branch moved outside "
+                   f"the fix flow; a person sorts that out first")
+    if tip:
+        f = subprocess.run(["git", "-C", str(clone), "fetch", fork_url,
+                            f"+refs/heads/{fix['branch']}:refs/moat/fix"],
+                           capture_output=True, text=True, timeout=120)
+        have = subprocess.run(["git", "-C", str(clone), "rev-parse", "--verify",
+                               "--quiet", "refs/moat/fix"],
+                              capture_output=True, text=True)
+        if f.returncode or not moatlib.same_commit(have.stdout.strip(), tip):
+            bad.append(f"the fork's {fix['branch']} tip does not match the "
+                       f"approved {tip[:12]} -- fetch failed or the branch moved")
+        elif pub:
+            anc = subprocess.run(["git", "-C", str(clone), "merge-base",
+                                  "--is-ancestor", pub, tip],
+                                 capture_output=True, text=True)
+            if anc.returncode:
+                bad.append(f"{fix['branch']} is not a descendant of the published "
+                           f"{pub[:12]} -- the staging branch was rebased; the "
+                           f"merge must be a fast-forward")
+    return bad
+
+
+def do_merge_fix(name, d, fix, pr):
+    """The pre-authorized write: fast-forward the open PR's branch to the approved
+    tip, post the approved reply (if the body carries one), delete the staging
+    branch, and record all of it. Every check has already run in
+    merge_fix_blockers; like open_upstream, trusted code proves its own case."""
+    sys.path.insert(0, str(REPO / "utils"))
+    import moatlib
+
+    clone = REPO / "projects" / name / "src"
+    fork_url = d.get("fork_url")
+    branch = d.get("fork_branch") or "moat-port"
+    tip = pr["headRefOid"]
+    env = {**os.environ, "MOAT_PUBLISH": "1"}
+    push = subprocess.run(["git", "-C", str(clone), "push", fork_url,
+                           f"{tip}:refs/heads/{branch}"],
+                          capture_output=True, text=True, timeout=120, env=env)
+    if push.returncode:
+        return (False, f"push failed: {(push.stderr or push.stdout).strip()[:200]}")
+
+    reply = fix_reply_of(pr.get("body"))
+    posted = None
+    if reply:
+        import gh_guard
+        real = gh_guard.real_gh()
+        if real is None:
+            posted = "gh is not installed; the approved reply was NOT posted"
+        else:
+            c = subprocess.run([real, "pr", "comment", d["pr_url"],
+                                "--body", reply],
+                               capture_output=True, text=True, timeout=90)
+            posted = ("posted the approved reply" if c.returncode == 0 else
+                      f"could NOT post the approved reply: "
+                      f"{(c.stderr or c.stdout).strip()[:160]}")
+
+    # The branch's job is done and its commits are on the PR branch; a person
+    # ruled that staging branches are deleted on merge so the next round can
+    # reuse the name.
+    subprocess.run(["git", "-C", str(clone), "push", fork_url,
+                    f":refs/heads/{fix['branch']}"],
+                   capture_output=True, text=True, timeout=60, env=env)
+    try:
+        moatlib.set_fix_merged(name, tip)
+    except Exception as e:                      # noqa: BLE001 - reported, not raised
+        return (True, f"merged to {tip[:12]} but could NOT record it: {e}"
+                      + (f"; {posted}" if posted else ""))
+    return (True, f"fast-forwarded {branch} to {tip[:12]}"
+                  + (f"; {posted}" if posted else ""))
+
+
+def report_merge_fix(apply, only=None):
+    rows = [(n, d, f) for n, d, f in merge_fix_rows() if only in (None, n)]
+    print(f"upstream: {len(rows)} fix round(s) with a review PR recorded\n")
+    ret = 0
+    for name, d, fix in rows:
+        sys.path.insert(0, str(REPO / "utils"))
+        import moatlib
+        pr = moatlib.fetch_review_pr(fix["review_pr"])
+        if pr is None:
+            print(f"  UNREACHABLE {name:25} could not read {fix['review_pr']} -- "
+                  f"an outage is not a withdrawn approval")
+            ret = 1
+            continue
+        bad = merge_fix_blockers(name, d, fix, pr)
+        if bad:
+            print(f"  HELD       {name:26} {bad[0][:78]}")
+            for b in bad[1:]:
+                print(f"             {'':26} {b[:78]}")
+            continue
+        reply = fix_reply_of(pr.get("body"))
+        print(f"  READY      {name:26} {fix['branch']} -> "
+              f"{d.get('fork_branch') or 'moat-port'} at "
+              f"{(pr.get('headRefOid') or '?')[:12]}"
+              + (" (+ upstream reply)" if reply else ""))
+        if not apply:
+            continue
+        try:
+            moatlib_record(name)     # who authorised this, before anything moves
+        except Exception as e:                  # noqa: BLE001 - reported, not raised
+            print(f"  FAILED to record the approval for {name}: {e}")
+            ret = 1
+            continue
+        ok, detail = do_merge_fix(name, d, fix, pr)
+        print(f"  {'MERGED' if ok else 'FAILED':10} {name:26} {detail}")
+        if not ok:
+            ret = 1
+    if rows and not apply:
+        print("\n  --merge-fix --apply performs the fast-forward push (and posts "
+              "the approved reply, where the body carries one).")
+    return ret
+
+
 RECONCILED = REPO / "data" / "reconciled.json"
 
 
@@ -846,6 +1188,10 @@ def main():
                     help="find port approvals overtaken by a later push or edit")
     ap.add_argument("--publish", action="store_true",
                     help="submit approved ports upstream with their approved title and body")
+    ap.add_argument("--fix-review", action="store_true",
+                    help="staged fix rounds whose gates are met with no review PR open yet")
+    ap.add_argument("--merge-fix", action="store_true",
+                    help="fast-forward an open upstream PR to an approved fix round's tip")
     ap.add_argument("--attention", action="store_true",
                     help="open upstream PRs where a maintainer is waiting on us")
     a = ap.parse_args()
@@ -884,11 +1230,42 @@ def main():
         return 0 if action in ("opened", "would-open") else 1
     if a.publish:
         return report_publish(apply=a.apply)
+    if a.fix_review:
+        rows = fix_review_rows()
+        if not a.apply and not a.name:
+            for r in rows:
+                if r["problem"]:
+                    print(f"  BLOCKED  {r['name']:22} {r['problem']}")
+                else:
+                    print(f"  READY    {r['name']:22} {r['branch']} -> {r['target']} "
+                          f"(base {r['base'][:12]}, tip {r['tip'][:12]})")
+            print(f"-- {sum(1 for r in rows if not r['problem'])} fix round(s) need "
+                  f"a review PR; {sum(1 for r in rows if r['problem'])} blocked")
+            print("   open one: --fix-review --apply --name <p> --title '<t>' "
+                  "--body-file <f>")
+            print(f"   (a body section headed {REPLY_HEADING!r} is posted verbatim "
+                  f"on the upstream PR after the merge)")
+            return 0
+        if not (a.name and a.title and a.body_file):
+            print("--fix-review --name needs --title and --body-file "
+                  "(add --apply to open the PR rather than preview it)",
+                  file=sys.stderr)
+            return 2
+        row = next((r for r in rows if r["name"] == a.name), None)
+        if row is None:
+            print(f"{a.name} has no fix round awaiting a review PR", file=sys.stderr)
+            return 2
+        body = pathlib.Path(a.body_file).read_text()
+        action, detail = open_fix_review_pr(row, a.title, body, apply=a.apply)
+        print(f"fix-review-pr: {action} -- {detail}")
+        return 0 if action in ("opened", "would-open") else 1
+    if a.merge_fix:
+        return report_merge_fix(apply=a.apply, only=a.name)
     if a.attention:
         return report_attention(recorded(), TODAY)
 
     rows = recorded()
-    drift, unreviewed, errors = poll(rows)
+    drift, unreviewed, headdrift, errors = poll(rows)
     skipped = [r for r in rows if r.get("skipped")]
     # The sweep just happened, so stamp it whether or not anything is applied.
     # Nothing runs on a schedule any more, so this timestamp is the only thing that
@@ -897,14 +1274,27 @@ def main():
         stamp_reconciled(len(rows), len(drift))
 
     print(f"upstream: {len(rows)} recorded PRs, {len(drift)} drifted, "
-          f"{len(unreviewed)} awaiting our response, {len(skipped)} skipped, "
-          f"{len(errors)} lookup errors\n")
+          f"{len(unreviewed)} awaiting our response, {len(headdrift)} head-moved, "
+          f"{len(skipped)} skipped, {len(errors)} lookup errors\n")
     for r in drift:
         print(f"  DRIFT      {r['name']:26} we say {str(r['ours']):16} "
               f"GitHub says {r['real']:8} {r['repo']}#{r['num']}")
     for r in unreviewed:
         print(f"  CHANGES    {r['name']:26} maintainer requested changes           "
               f"{r['repo']}#{r['num']}")
+    for r in headdrift:
+        print(f"  HEAD-MOVED {r['name']:26} PR head {r['head'][:12]} != published "
+              f"{r['published'][:12]} {r['repo']}#{r['num']}")
+    if headdrift:
+        # Deliberately never applied: the usual cause is a maintainer pushing to
+        # our branch, which a person did on purpose. The move is to READ what
+        # landed and put a recommendation in front of a human, not to absorb or
+        # revert it.
+        print("\n  a moved head on an open PR is a push outside the fix flow -- "
+              "usually a maintainer edit. Review the commit(s) between the two "
+              "shas and recommend a course of action; a person decides. If the "
+              "content is accepted, a fresh fix round from the new tip re-enters "
+              "the flow.")
     for r in skipped:
         print(f"  SKIPPED    {r['name']:26} {r['skipped']}")
     for r in errors:
