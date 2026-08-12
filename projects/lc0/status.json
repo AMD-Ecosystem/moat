@@ -7,7 +7,7 @@
   "priority": 6.245,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-08-08T23:29:09Z",
+  "updated_at": "2026-08-12T22:11:14Z",
   "head_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
   "pr_url": "https://github.com/LeelaChessZero/lc0/pull/2420",
   "pr_number": 2420,
@@ -119,5 +119,6 @@
         "last_session_at": null
       }
     }
-  }
+  },
+  "published_sha": "7727fa32c1992ef6702eacc1b8568715803b0701"
 }
