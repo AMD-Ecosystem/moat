@@ -42,6 +42,40 @@ a DLL-load error; rebuilding a correct binary against a broken runtime is the si
 biggest time sink on Windows. A port is not "broken on Windows" until it has been run
 against a full ROCm distribution.
 
+## Windows: TheRock's devel wheel can ship with hipCUB/rocThrust headers missing
+
+`_rocm_sdk_devel`'s `include/` can be present but genuinely empty (0 entries, no
+error) while `rocm-sdk init` reports success, and a sibling directory the extractor
+staged into can carry an ACL that even the file owner cannot read (`Access is
+denied` from a non-elevated PowerShell `Get-ChildItem`, even though `icacls` shows
+the parent directory itself is readable). `_devel.tar`, the archive `rocm-sdk init`
+would expand, is often already consumed (its `RECORD` entry exists but the file
+is gone) and there is no full re-download budget in a validation session. Confirm
+before assuming corruption: `tar -tf` the still-present tar (if any) and grep for
+the missing library by name -- an absent hit means the wheel build never packaged
+it, a present hit narrows it to this host's extraction. Either way it is a
+toolchain gap, not a code fault: it fires identically for any project whose HIP
+path needs hipCUB or rocThrust, regardless of what the port touched.
+
+Workaround that unblocked a real validation (LC-framework, gfx1151, hipCUB's
+`DeviceScan` and rocThrust's `minmax_element`/`device_ptr`): the three libraries
+now live together in the `ROCm/rocm-libraries` monorepo, so a version-matched set
+is one sparse checkout away rather than three independently-versioned clones that
+can skew against each other (an `ROCm/hipCUB` `main` against an unrelated
+`ROCm/rocPRIM` branch produced real compile errors from an API mismatch, not from
+the port). `git clone --filter=blob:none --sparse --depth 1
+https://github.com/ROCm/rocm-libraries.git && git sparse-checkout set
+projects/hipcub projects/rocprim projects/rocthrust` pulls a consistent set in
+under a minute. Each ships a `*_version.hpp.in` that only a CMake configure step
+normally expands (`hipcub_version.hpp`, `rocprim_version.hpp`,
+`rocthrust_version.hpp`) -- hand-write the trivial expansion (three `#define`s,
+any plausible version number; nothing in this class of build reads the value) and
+point `-I` at `projects/hipcub/hipcub/include`, `projects/rocprim/rocprim/include`,
+and `projects/rocthrust` (its `thrust/` subdirectory is the include root). This is
+validator-side scaffolding to prove the port compiles and runs correctly on real
+hardware -- it is not part of the fork commit, and it does not change what the
+project's own documented build needs once a host's ROCm installation is intact.
+
 ## Windows: static initializers in TheRock's DLLs may never run
 
 **A C++ test that gates on `torch::cuda::is_available()` can fail on Windows against a
