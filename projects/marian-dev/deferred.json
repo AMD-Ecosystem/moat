@@ -12,7 +12,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-06-07T18:21:59Z",
-      "decided": null
+      "decided": {
+        "choice": "defer",
+        "by": "jeff.daily",
+        "at": "2026-08-12T15:23:02Z",
+        "note": "Ship as disclosed: the PR body lists the unported CUB segmented-sort path under known limitations; Sort() uses the rocThrust sort-by-key path on HIP and only tests reach it."
+      }
     },
     {
       "id": "marian-gfx1101-batched-gemm-spirv",
@@ -25,7 +30,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-06-20T03:07:56Z",
-      "decided": null
+      "decided": {
+        "choice": "defer",
+        "by": "jeff.daily",
+        "at": "2026-08-12T15:23:25Z",
+        "note": "Ship as disclosed: the PR body lists the gfx1101 Windows batched-GEMM kernel-image gap under known limitations as an external library issue; gfx1201 and gfx1151 are unaffected."
+      }
     },
     {
       "id": "marian-poolingop-cse-alias",
@@ -38,7 +48,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-08-11T01:20:38Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeff.daily",
+        "at": "2026-08-12T15:25:24Z",
+        "note": "Report upstream as its own issue (not mentioned in the ROCm PR): no existing marian-nmt/marian-dev issue covers it. Draft at agent_space/marian-dev-issue-pooling-cse.md; awaiting a person to run gh issue create (upstream write)."
+      }
     }
   ]
 }
