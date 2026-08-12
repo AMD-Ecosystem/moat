@@ -116,3 +116,6 @@
 {"kind":"phase","ts":"2026-08-12T21:21:55Z","phase":"test","seconds":13.469,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/moat/projects/HEonGPU/src/build"}
 {"kind":"phase","ts":"2026-08-12T21:22:55Z","phase":"compile-cuda-check","seconds":50.664,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/heongpu-cuda-check.sh"}
 {"kind":"session","ts":"2026-08-12T21:27:38Z","epoch":1786570058.211321283,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-08-12T21:28:31Z", "tokens": 174387, "source": "porter"}
+{"kind":"session","ts":"2026-08-12T22:19:44Z","epoch":1786573184.601308962,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-12T22:31:20Z","epoch":1786573880.293521530,"event":"end","platform":"linux-gfx90a"}

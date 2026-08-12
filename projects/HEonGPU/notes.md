@@ -2241,3 +2241,215 @@ running `llvm-objdump --offloading` inside `bin/test`; delete them and re-run.
 
 `jargon.py --port HEonGPU`: clean over the whole branch.
 `git -C projects/HEonGPU/src status --porcelain`: empty.
+
+## Review 2026-08-12 (round 6)
+
+Scope: the delta `4925df1..81176c9` (`8ef207a`, `81176c9`), the skill edits it
+carries, and the standing bar over the whole branch. Verdict:
+**changes-requested**. The design change is right and I am not asking for it to
+move -- I reproduced the mechanism and measured the two benchmarks the porter
+did not. What is wrong is again upstream-visible text: one factual error that
+round 5 already raised and this round did not touch, one wrong count that the
+same round promoted into the skill, and one claim about what a consumer has to
+know that the branch's own docs contradict.
+
+### 1. Five commit bodies still say MI210; this host has no MI210
+
+Round 5's finding 5 (notes.md:2075) flagged this as an inconsistency it could
+not settle from windows-gfx1151. I am on the linux-gfx90a host that produced
+every AMD run, so I can settle it: it is wrong.
+
+```
+rocminfo   -> Name: gfx90a / Marketing Name: AMD Instinct MI250X / MI250   (x3)
+rocm-smi --showproductname -> Card Series: AMD Instinct MI250X / MI250
+                              Card SKU: D65209   GFX Version: gfx90a
+```
+
+That matches the validator's own reading at notes.md:1192. `git log main..HEAD
+--format="%h %b" | grep MI210` returns five hits, in `14c2b51`, `d7d609e`,
+`4ceabb2`, `4925df1` and -- new this round -- `8ef207a`:
+
+```
+20/20 suites pass on an MI210 (gfx90a) with ROCm 7.2.1.
+```
+
+`config/jargon.toml` uses "MI210 (gfx90a)" as its worked example of naming a
+GPU, which is the likely source. Fix all five. `rocminfo` reports the part only
+as "MI250X / MI250", so the honest string is that one verbatim, or just
+"gfx90a" -- do not substitute a second guess. notes.md:2135 carries the same
+"MI210" and should be corrected in the same pass.
+
+### 2. "34 executables" is wrong; the build has 42, and the skill now carries the wrong number
+
+`8ef207a` body: "Tests, examples and benchmarks all enabled (34 executables)".
+notes.md:2148: "each of the 34 executables". The configuration described builds
+42:
+
+```
+test/CMakeLists.txt                  15
+example/basic/CMakeLists.txt         15
+example/bootstrapping/CMakeLists.txt  5
+example/mpc/CMakeLists.txt            4
+benchmark/CMakeLists.txt              3
+                                     --
+                                     42
+find build/bin -type f -executable | wc -l          -> 42
+"Linking ... executable" in each of the last two
+  nvcc runs in agent_space/heongpu-cuda-check.log   -> 42
+```
+
+The 193.6 s -> 326.6 s figure is attributed to per-executable device links, so
+the executable count is load-bearing for the one cost number in the commit. It
+also went into the skill: `fault-classes.md:372` says "once 34
+test/example/benchmark executables are enabled", while `fault-classes.md:407`,
+in the same entry, says "all 42 gfx90a binaries". The entry contradicts itself,
+and 42 is the right one in both places.
+
+### 3. -fgpu-rdc changes what a consumer must do, and both the comment and the docs say it does not
+
+`src/CMakeLists.txt:255-259`:
+
+```
+# ... keeps that a detail of this library rather than something every
+# consumer has to know, exactly as CUDA_RESOLVE_DEVICE_SYMBOLS OFF below leaves
+# the CUDA device link to the consumer.
+```
+
+Both halves of that need fixing.
+
+*It is not a detail the consumer can be unaware of.* Relocatable device code
+leaves no complete device image in the archive, so the final link must go
+through the HIP driver. Measured here (ROCm 7.2.1, gfx90a), a `__device__`
+function in one TU called from a `__global__` in another:
+
+```
+hipcc -fgpu-rdc -c {lib,app}.hip ; hipcc -fgpu-rdc app.o librdc.a -o a_hip
+  ./a_hip -> val=42, and the linked device image holds only _Z1kPy,
+             s_swappc_b64 count 0   (the inlining claim reproduces)
+g++ -no-pie app.o librdc.a -lamdhip64
+  /usr/bin/ld: undefined reference to `__hip_gpubin_handle_4760757e0f294a70'
+  /usr/bin/ld: undefined reference to `__hip_fatbin_4760757e0f294a70'
+same source compiled WITHOUT -fgpu-rdc, single TU, g++ -no-pie solo.o -lamdhip64
+  ./s_gcc -> val=42                 (a non-RDC HIP object links fine under g++)
+```
+
+So a consumer that could previously link `libheongpu.a` with any host linker
+now cannot. For a CMake consumer the exported
+`INTERFACE_LINK_OPTIONS "-fgpu-rdc"` (confirmed present in the generated
+`HEonGPUTargets.cmake:66`) mostly hides this, but it is unconditional, so a
+consumer whose target resolves to a CXX link -- an app `.cpp` linking their own
+HIP library that links `HEonGPU::heongpu` -- gets
+`g++: error: unrecognized command-line option '-fgpu-rdc'` instead.
+
+To be explicit, because it is the obvious wrong fix: do NOT wrap the link
+option in `$<LINK_LANGUAGE:HIP>`. Guarding it does not make that case work, it
+only swaps a message that names the flag for the `__hip_fatbin_*` message that
+does not. The flag should stay unconditional; what is missing is prose.
+
+*The CUDA analogy is backwards.* On the CUDA side the consumer IS told:
+`docs/advanced_topics.rst:52` instructs them to put
+`CUDA_SEPARABLE_COMPILATION ON` on their own target. The HIP block this branch
+added at `docs/advanced_topics.rst:54-75` has no counterpart line, so a reader
+comparing the two snippets concludes the HIP side needs nothing. Following the
+snippet verbatim happens to work only because its single `main.cpp` is marked
+`LANGUAGE HIP` and the link language follows.
+
+Two edits: reword `src/CMakeLists.txt:255-259` to drop the "consumer has to
+know" claim and state what the flag actually requires, and add one sentence to
+the HIP block in `docs/advanced_topics.rst` mirroring line 52 -- the consuming
+target must be compiled and linked as HIP, because the installed archive holds
+relocatable device code.
+
+### 4. The skill's -fgpu-rdc recipe passes the same gap to every future port
+
+`fault-classes.md:352-362` gives the three-line CMake block that every future
+port will copy, with the comment "whoever links the archive performs the device
+link, including a consumer of the installed export, so put it on the interface
+rather than in everyone's build". It does not say the consequence, which is
+finding 3: after this the archive cannot be linked by anything but the HIP
+driver, and a plain `g++` link fails with `undefined reference to
+__hip_fatbin_*`. Add that, with the error string, and say the project's own
+downstream docs need a line about it. Also fix the 34 at `fault-classes.md:372`.
+
+### Checked and sound -- do not redo
+
+- **The CMake wiring.** The flag reaches the six object libraries through
+  `heongpu_set_gpu_properties` (`src/CMakeLists.txt:24`) and reaches
+  tests/examples/benchmarks through the interface, guarded by
+  `$<COMPILE_LANGUAGE:HIP>` so the `.cpp` sources compiled as CXX never see it.
+  The CUDA path is untouched: everything new is inside `if(USE_HIP)`, and
+  `CUDA_SEPARABLE_COMPILATION ON` at `src/CMakeLists.txt:30`/`266` still governs
+  there. `lib/kernel/small_ntt.cu` is back in `HEONGPU_KERNEL_SOURCES` at the
+  same position upstream has it (`git show main:src/CMakeLists.txt:88`).
+  Applying the flag to all six object libraries rather than only
+  `heongpu_kernel` is the right call -- a mixed RDC/non-RDC archive buys nothing
+  measurable here and is fragile; do not "optimize" it later.
+- **No `HIP_SEPARABLE_COMPILATION` property.** Verified, not accepted:
+  `cmake --version` is 4.0.3 and `cmake --help-property-list | grep -i separable`
+  returns only `CUDA_RESOLVE_DEVICE_SYMBOLS` and `CUDA_SEPARABLE_COMPILATION`.
+  The only HIP properties are `HIP_ARCHITECTURES`, `HIP_EXTENSIONS`,
+  `HIP_STANDARD`, `HIP_STANDARD_REQUIRED`. Hand-wiring is necessary.
+- **Cross-TU device inlining under -fgpu-rdc.** Reproduced a third time, above:
+  linked device image contains only the kernel, `s_swappc_b64` count 0.
+- **The export carries the flags.** `INTERFACE_COMPILE_OPTIONS
+  "$<$<COMPILE_LANGUAGE:HIP>:-fgpu-rdc>"` and `INTERFACE_LINK_OPTIONS
+  "-fgpu-rdc"` are both in the generated `HEonGPUTargets.cmake` (lines 63 and
+  66). `docs/advanced_topics.rst` needs no *correction*, only the addition in
+  finding 3. (Note for whoever retests the install: `cmake --install --prefix`
+  does not override this project's baked-in absolute destinations; reconfigure
+  with `-DCMAKE_INSTALL_PREFIX`, as the porter did.)
+- **The performance gap I was worried about is closed -- I measured it.** RDC
+  changes the ISA of every kernel, not just the small-NTT callers, so TFHE gates
+  alone were not enough. Both remaining benchmarks exist in both builds
+  (`agent_space/heongpu-amd-baseline/bin` is the pre-RDC 4925df1 build), so this
+  cost nothing to settle. gfx90a, ms:
+
+  | | guard (4925df1) | -fgpu-rdc (81176c9) |
+  | --- | --- | --- |
+  | BFV 32768 multiplication | 2.677 | 2.449 |
+  | BFV 32768 relinearization | 0.9559 | 0.9548 |
+  | BFV 32768 decryption | 0.2802 | 0.2679 |
+  | BFV 65536 multiplication | 10.006 | 10.012 |
+  | BFV 65536 relinearization | 6.677 | 6.666 |
+  | BFV 65536 rotate row | 6.662 | 6.657 |
+  | CKKS 32768 relinearization | 1.4171 | 1.4085 |
+  | CKKS 32768 rotate row | 1.6026 | 1.6028 |
+  | CKKS 32768 decode | 1.3169 | 1.2966 |
+  | CKKS 32768 encryption | 0.7303 | 0.7071 |
+
+  No regression anywhere; RDC is marginally ahead on several. I also re-ran
+  `tfhe_benchmark` on the RDC build: NAND 16.5245, MUX 30.0051, inside the
+  reported range. The decision to adopt `-fgpu-rdc` is supported. Worth adding
+  one line to `8ef207a`'s body saying BFV and CKKS were measured too, since the
+  body currently reads as if only TFHE was.
+- **The shim comment.** `src/include/heongpu/cuda_to_hip.h:74-84` is true and
+  complete. `lib/heongpu.cpp` includes only `<heongpu/heongpu.hpp>`, so "reaches
+  this header through heongpu.hpp" is right; six kernel headers include
+  `curand_kernel.h` themselves (`kernel/{addition,bootstrapping,decryption,`
+  `encoding,encryption,keygeneration}.cuh`) and the build compiles, so "reached
+  after the launch parameters" holds. The comment names one TU as an example and
+  claims nothing universal or exclusive, so omitting the example/benchmark `.cpp`
+  nuance is honest -- those TUs do not contradict anything it says.
+- **CUDA no-regression evidence.** Last `=== START` in
+  `agent_space/heongpu-cuda-check.log` is 21:22:04Z (line 1854): CONFIGURE rc=0,
+  BUILD rc=0, 81 objects, 42 executables linked, 0 lines matching `error`. The
+  previous run (START 21:15:30Z, CONFIGURE rc=0 21:15:34Z) rebuilt 64 objects
+  including `heongpu_kernel.dir/lib/kernel/small_ntt.cu.o` and linked 42
+  executables, which is the run that proves the restored file compiles and links
+  under nvcc.
+- **Revalidation accounting.** `moatlib classify HEonGPU 5d99b8f 81176c9` ->
+  `class=mixed arch_independent=False inert=False`. Both archs sit at
+  `validated_sha=5d99b8f` and genuinely owe a fresh 20-suite run at `81176c9`.
+  Nothing in the branch claims otherwise; notes.md:2233-2236 says so explicitly.
+- **Hygiene.** Longest title on the branch is 64 chars, all `[ROCm]`-prefixed;
+  both new bodies disclose Claude and carry a Test Plan; no `Co-Authored-By` and
+  no noreply trailer anywhere; the only non-ASCII in the delta is the upstream
+  author's name in the byte-identical restore of `small_ntt.cu`;
+  `jargon.py --port HEonGPU` clean over the whole branch; fork tree clean; no
+  AMD-internal account references.
+
+### Recommendation
+
+**Request Changes.** No code change is needed and the design must not move.
+Findings 1-3 ship to the maintainer; finding 4 publishes to every agent when
+this branch merges. Finding 1 is a repeat of round 5's finding 5.
