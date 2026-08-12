@@ -124,3 +124,15 @@ then `if(<pkg>_USE_HIP)`), not `if("@USE_HIP@")`. A quoted constant is subject t
 consumer's CMP0012 setting, and a consumer that has not set it takes the wrong branch
 silently. The variable doubles as the answer to "which backend is this?" for a dependent that
 compiles its own device code. (rmagine)
+
+Two more things belong in that same throwaway consumer, because each of them passes in tree
+and fails downstream:
+
+- **Put the ROCm root on the consumer's prefix path** and verify it there. Once the config
+  calls `find_dependency(hip)`, the consumer needs `-DCMAKE_PREFIX_PATH="<install>;$ROCM_PATH"`.
+  On a host with `/opt/rocm/bin` on `PATH` CMake derives that prefix for free, so a recipe
+  written and checked on such a host looks complete and fails for the next person. Strip ROCm
+  from `PATH` (and unset `ROCM_PATH`/`HIP_PATH`/`ROCM_HOME`) before writing the recipe down.
+- **Compile a translation unit that includes the installed public headers first**, with the
+  plain host compiler, nothing above them. See "A shared compat header must be host-includable"
+  in `fault-classes.md` for what that catches. (rmagine)

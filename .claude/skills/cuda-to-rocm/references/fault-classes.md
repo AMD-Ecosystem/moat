@@ -289,6 +289,22 @@ headers into g++ and fails there. Put the shim in the lowest common layer, keep 
 includes (`hip_runtime.h`, `hipfft.h`) unconditional, and gate device-only ones behind
 `__CUDACC__` or `__HIPCC__ || __HIP_DEVICE_COMPILE__`. (SCAMP, stdgpu)
 
+**The shim's include list becomes the include footprint of every header that uses it.** A
+single compat header replacing per-file CUDA includes silently gives all of them the union:
+rmagine's shim included `<hiprand/hiprand_kernel.h>` for the two headers that name
+`curandState`, and four public headers that only ever needed `cuda_runtime.h` inherited it.
+That matters because `rocrand_mtgp32.h` calls `printf` in a host function without including
+`<cstdio>` itself, so a downstream plain-C++ TU including e.g. `CudaContext.hpp` BEFORE
+`<cstdio>` fails with "'printf' was not declared in this scope" and compiles if the order is
+reversed -- the worst shape for a downstream to diagnose. Keep the shim to what every user
+needs and give the heavy device headers their own sibling shim, so each header keeps the
+footprint it has upstream; add `<cstdio>` ahead of the hipRAND include there if you want the
+RNG headers host-includable too. Nothing in tree catches this, because every in-tree TU
+reaches those headers through some other include first: add a test that includes every
+installed public header at the top of a plain C++ TU, with nothing above them, compiled by
+`CMAKE_CXX_COMPILER` and not the HIP compiler. Check the test bites by putting the include
+back. (rmagine)
+
 **`__HIP_PLATFORM_AMD__` is undefined until `hip/hip_runtime.h` has been included in that
 TU.** A wave-width gate in a header included BEFORE the runtime header silently takes the
 CUDA branch and picks width 32. hipify-perl prepends the runtime include at line 1, which
