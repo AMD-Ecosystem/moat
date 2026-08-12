@@ -318,16 +318,24 @@ headers into g++ and fails there. Put the shim in the lowest common layer, keep 
 includes (`hip_runtime.h`, `hipfft.h`) unconditional, and gate device-only ones behind
 `__CUDACC__` or `__HIPCC__ || __HIP_DEVICE_COMPILE__`. (SCAMP, stdgpu)
 
-**cuRAND's device header is not host-includable at all**, which makes it a bad thing to put
-in a shim. HEonGPU's compat header included `<curand_kernel.h>` on its CUDA branch, and the
-shim is reached from every host `.cpp` through the public umbrella header: CUDA 12.8's
-`curand_mtgp32_kernel.h` declares `threadIdx`/`blockDim` with C++ linkage, and
-`device_launch_parameters.h` declares the same names with C linkage, so g++ 13 rejects the
-conflicting declarations. Two-line reproducer -- `#include <curand_kernel.h>` before
-`<cuda_runtime.h>` and `<device_launch_parameters.h>`, `g++ -fsyntax-only`. Nothing on the
-AMD side can catch it, since the HIP branch of the shim includes hipRAND instead and hipRAND
-is host-safe. Give a shim the runtime header only, and leave the RNG include in the kernel
-headers that actually use it. (HEonGPU)
+**cuRAND's device header is host-includable only AFTER the CUDA runtime headers**, which
+makes a shim the one place it must never go. The fault is ORDER, not host versus device:
+CUDA 12.8's `curand_mtgp32_kernel.h` declares `threadIdx`/`blockDim` with C++ linkage and
+`device_launch_parameters.h` declares the same names with C linkage, and g++ 13 rejects the
+pair only when curand was seen first. Reproducer in both directions, `g++ -fsyntax-only`:
+`<curand_kernel.h>` before `<cuda_runtime.h>` + `<device_launch_parameters.h>` gives two
+conflicting-declaration errors; the reverse order is clean. A shim is by construction the
+FIRST header a TU pulls in, so a curand include there always lands in the failing order, and
+the shim's own `#include <cuda_runtime.h>` does not rescue it because cuda_runtime.h includes
+device_launch_parameters.h only under `#if defined(__CUDACC__)`. Give a shim the runtime
+header only and leave the RNG include in the kernel headers that use it: those are reached
+later, after some `.cuh` has already dragged in the launch parameters, which is why they are
+safe -- HEonGPU's FIXED build has six `kernel/*.cuh` including `<curand_kernel.h>` and all
+six reachable from the public umbrella header, so every host `.cpp` includes it and compiles.
+If a host TU ever reaches the RNG header first, put `<device_launch_parameters.h>` ahead of
+it there rather than moving the include back into the shim. Nothing on the AMD side can catch
+any of this, since the HIP branch of the shim includes hipRAND instead and hipRAND is
+host-safe. (HEonGPU)
 
 **Do not move device function BODIES into a header that host TUs include, even though HIP
 seems to demand it.** When a project keeps `__device__` function definitions in their own
