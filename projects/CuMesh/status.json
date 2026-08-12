@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-08-11T23:48:28Z",
+  "updated_at": "2026-08-12T22:10:40Z",
   "head_sha": "392b4dd41f8b10b795b00e44cb1b294b1388cefa",
   "depends_on": [],
   "pr_url": "https://github.com/JeffreyXiang/CuMesh/pull/36",
@@ -160,5 +160,6 @@
       "last_agent": "validator",
       "state": "completed"
     }
-  }
+  },
+  "published_sha": "392b4dd41f8b10b795b00e44cb1b294b1388cefa"
 }
