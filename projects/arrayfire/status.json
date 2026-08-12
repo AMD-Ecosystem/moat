@@ -7,7 +7,7 @@
   "priority": 6.146,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T00:04:57Z",
-  "updated_at": "2026-08-11T23:29:32Z",
+  "updated_at": "2026-08-12T22:11:05Z",
   "head_sha": "950dcdd02f348c74d29f4de8199bca38a7e7a245",
   "pr_url": "https://github.com/arrayfire/arrayfire/pull/3708",
   "pr_number": 3708,
@@ -158,5 +158,6 @@
       "state": "completed",
       "last_agent": "validator"
     }
-  }
+  },
+  "published_sha": "950dcdd02f348c74d29f4de8199bca38a7e7a245"
 }
