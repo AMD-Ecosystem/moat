@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "codegen",
   "adopted_at": "2026-06-05T04:44:12Z",
-  "updated_at": "2026-08-07T18:37:35Z",
+  "updated_at": "2026-08-12T22:11:08Z",
   "head_sha": "aca06c783be9d2519549d571bb5ea517b4226ba5",
   "depends_on": [],
   "pr_url": "https://github.com/brian-team/brian2cuda/pull/327",
@@ -124,5 +124,6 @@
         "at": "2026-06-09T16:31:20Z"
       }
     }
-  }
+  },
+  "published_sha": "aca06c783be9d2519549d571bb5ea517b4226ba5"
 }
