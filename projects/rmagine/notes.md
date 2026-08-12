@@ -1422,3 +1422,200 @@ that platform, since that is the path this round fixed.
   the install bug, and the README defers build detail to an external wiki
   (uos.github.io/rmagine_docs) that is a separate repository. It needs a
   decision on house style before the upstream PR.
+
+## Review 2026-08-12 (reviewer, linux-gfx1100, delta round) -- CHANGES REQUESTED
+
+Scope: `git diff 4223818...HEAD` on AMD-Ecosystem/rmagine `moat-port` (e9cbdbf), three
+files, plus the record and commit-message state of the whole branch. Working tree at
+`projects/rmagine/src` is clean. The CMake fix itself is correct and I verified it
+independently (see "Verified, no action" at the end); the findings below are the
+consume-path defect the round's own verification did not reach, two upstream-visible
+text problems, and record hygiene.
+
+### 1. The compat shim pulls a device-side rocRAND header into four public headers, and a plain-C++ consumer of the installed package fails to compile
+
+`src/rmagine_cuda/include/rmagine/util/cuda/cuda_to_hip.h:23` includes
+`<hiprand/hiprand_kernel.h>` unconditionally inside the HIP branch
+(`cuda_to_hip.h:19`). That shim replaced the CUDA includes in six installed public
+headers, but upstream only four of them pulled the runtime/driver headers and never
+touched cuRAND:
+
+- `util/cuda/CudaContext.hpp:38` -- upstream `<cuda_runtime.h>` + `<cuda.h>`
+- `util/cuda/CudaHelper.hpp:38` -- upstream `<cuda_runtime.h>`
+- `util/cuda/CudaDebug.hpp:41` -- upstream `<cuda_runtime.h>`
+- `util/cuda/CudaStream.hpp:4` -- upstream `<cuda_runtime.h>` + `<cuda.h>`
+
+(`random.cuh:5` and `noise/NoiseCuda.hpp:45` genuinely need the device header --
+they name `curandState`/`hiprandState` in host-visible declarations -- so they are
+not part of this finding.)
+
+Consequence, reproduced here against the install prefix built at e9cbdbf
+(`agent_space/install_final`), consumer compiled with the default `/usr/bin/c++`,
+linking `rmagine::core rmagine::cuda`:
+
+```
+#include <rmagine/util/cuda/CudaContext.hpp>
+#include <cstdio>
+int main(){ printf("headers ok\n"); return 0; }
+```
+
+```
+In file included from /opt/rocm/include/rocrand/rocrand_kernel.h:28,
+                 from /opt/rocm/include/hiprand/hiprand_kernel_rocm.h:37,
+                 from /opt/rocm/include/hiprand/hiprand_kernel.h:110,
+                 from .../rmagine/util/cuda/cuda_to_hip.h:23,
+                 from .../rmagine/util/cuda/CudaContext.hpp:38,
+/opt/rocm/include/rocrand/rocrand_mtgp32.h:443:9: error: 'printf' was not declared in this scope
+```
+
+Moving `#include <cstdio>` above the rmagine include makes the same TU compile, so
+the breakage is include-order dependent -- the worst shape for a downstream to
+diagnose. This is the documented "compat header must be host-includable" fault class
+in the `cuda-to-rocm` skill: a device-side header leaking into host TUs.
+
+Nothing in tree covers it. No test under `tests/` includes any of the four headers
+(checked), and `agent_space/consumer/main.cpp` includes only `Memory.hpp`,
+`MemoryCuda.hpp`, `memory_math.cuh` and `math/types.h`, whose include chain reaches
+`util/cuda/cuda_definitions.h` and never `cuda_to_hip.h` -- which is why the round's
+end-to-end consume check passed while this path was broken. It also makes
+notes.md:1311 ("plain g++/C++ consumers work") true only for the header subset that
+was actually tried.
+
+Fix: stop the shim from dragging hipRAND into headers that never needed it -- have
+the two headers that really use `hiprandState` pull the device header themselves and
+drop the unconditional include from `cuda_to_hip.h`, restoring upstream's per-header
+include footprint. A bare `#include <cstdio>` ahead of the hipRAND include papers
+over this one rocRAND bug and leaves the footprint regression in place. Extend the
+throwaway consumer to include the four headers so the fix has a gate.
+
+### 2. Two jargon hits on the branch will refuse the review PR; the "publish-time squash" plan does not exist
+
+`python3 utils/jargon.py --port rmagine` reports:
+
+```
+commit 3d098d58e:11: 'Strategy A'
+commit 3d098d58e:24: 'followers'
+```
+
+`utils/upstream.py:560-569` (`open_review_pr`) scans `jargon.port_range(...)` --
+every commit message on the branch -- and returns a `jargon` refusal before it will
+even print the `--review` preview, let alone open the PR; `utils/upstream.py:654-677`
+re-scans the PR's commit messages at publish time. There is no squash anywhere in
+that path: the PR is opened `--head <branch> --base <base>` with all commits, and
+the comment at `upstream.py:553-559` says in as many words that this is the last
+cheap point and that fixing it after the review PR costs every architecture its
+validation. So the reasoning that the publish path absorbs these is wrong; they are
+a hard gate.
+
+I do not accept "rewriting validated history is forbidden" either -- AGENTS.md
+prices a `head_sha` advance, it does not forbid one. This round has already moved
+`head_sha` 4223818 -> e9cbdbf and already put all four platform records behind, and
+rewording a commit message changes SHAs without changing a single tree, so the
+carry-forward argument for the other three platforms is exactly as strong after the
+reword as before it. Doing it in this round is strictly cheaper than any later
+moment. Reword both lines of 3d098d58e (name the technique, e.g. "a compatibility
+header"; name the GPUs instead of "followers") and re-run `jargon.py --port`.
+
+### 3. cfc475d's commit body describes a failure mode its own pasted evidence contradicts
+
+The body says the CUDA fall-through means "find_package reports the whole rmagine
+package as not found, rmagine::core included ... A downstream project then dies at
+its first target_link_libraries(... rmagine::core ...), before any of its own code is
+compiled." I reproduced the pre-fix config against the same install prefix (old
+`if()`/`find_dependency(CUDA)` block restored by hand, CMake 3.31.6, no CUDA on the
+host) and what happens is a hard `message(FATAL_ERROR)` inside `FindCUDA.cmake:883`
+during `find_package(rmagine)`: configure aborts there and never reaches any
+`target_link_libraries`. That is the same error text the commit pastes four
+paragraphs later, so the narrative and the evidence in one commit disagree.
+notes.md:1353 already records the correct version ("the module raises a hard error
+first"). Reword the body to the mechanism that was actually observed. This is
+upstream-visible text on a project whose review history already turned once on
+commit prose overstating what was seen.
+
+### 4. The "Install as a dependency" recipe omits ROCm from the consumer's prefix path, and reproduces the failure this round fixed
+
+notes.md:1293-1296 tells a dependent to configure with
+`-DCMAKE_PREFIX_PATH=/abs/path/to/_deps/rmagine/install` and nothing else. That
+worked on this host only because `/opt/rocm/bin` is on `PATH`, which CMake turns
+into a search prefix. With ROCm off `PATH` and the ROCM_* environment unset,
+following the recipe literally gives:
+
+```
+CMake Error at .../CMakeFindDependencyMacro.cmake:76 (find_package):
+  Could not find a package configuration file provided by "hip" ...
+Call Stack (most recent call first):
+  .../rmagine-cuda-config.cmake:46 (find_dependency)
+  .../rmagine-config.cmake:55 (include)
+  CMakeLists.txt:4 (find_package)
+```
+
+-- the same shape of hard failure out of `rmagine-config.cmake`, taking
+`rmagine::core` down with it, that the round exists to remove. Reproduced here.
+State in the recipe that the consumer's prefix path must also carry the ROCm root
+(`-DCMAKE_PREFIX_PATH="<install>;$ROCM_PATH"`, or `/opt/rocm`), since rmcl's porter
+will follow the recipe literally on a host that is not this one.
+
+Everything else in that section I checked against the real install tree at
+`agent_space/install_final` and it matches: layout, the `-2.4.2` suffixes,
+`share/rmagine-2.4.2/package.xml`, `rmagine::core`/`rmagine::cuda` as the only
+targets a ROCm build exports, `rmagine_COMPONENTS_FOUND=core;cuda`,
+`rmagine_cuda_USE_HIP=ON` in the generated config, and `rmagine_hiprt` having zero
+`install()` rules.
+
+### 5. Record hygiene: this project's records are still rmcl's
+
+- `projects/rmagine/notes.md:1` is titled `# rmcl notes` and opens by explaining
+  that rmcl is the named MOAT project. It is not; `projects/rmcl` no longer exists.
+- `projects/rmagine/plan.md:1` is rmcl's plan ("rmcl -- ROCm/HIP porting plan"),
+  not rmagine's. The project has no plan of its own.
+- notes.md contains 10 references to `projects/rmcl/rmagine_src` and
+  `projects/rmcl/src`, paths that no longer exist, inside build and validation
+  recipes a reader is meant to re-run.
+
+Retitle notes.md, replace or retarget plan.md, and rewrite the stale paths to
+`projects/rmagine/src`.
+
+### Open item ruled on: README does not mention USE_HIP
+
+Confirmed: `USE_HIP`, `rocm` and `hip` appear nowhere in `README.md` (255 lines).
+The README's "Backends" table is about ray-tracing backends (Embree/OptiX/Vulkan)
+and does not list the CUDA compute backend at all, and "Installation and Usage"
+defers advanced options to the external wiki. My view: this does not block review or
+validation, and I agree it was out of scope for a round scoped to the install bug.
+It does need to be settled before the review PR is opened, and the cheap resolution
+is not a README edit at all -- the upstream PR body must state the option, its
+default (`OFF`), and that the NVIDIA path is unchanged, and offer the maintainer a
+README or wiki sentence rather than pushing one unasked into a file whose house
+style sends build detail elsewhere. Record that decision in the PR body draft, do
+not leave it implicit.
+
+### Verified, no action
+
+Fact-checked independently rather than accepted from the round's account:
+
+- `set(rmagine_cuda_USE_HIP @USE_HIP@)` + `if(rmagine_cuda_USE_HIP)` is genuinely
+  policy-independent, and the rejected `if("@USE_HIP@")` genuinely is not. With
+  CMP0012 unset (`cmake -P`, CMake 3.31.6): `if("ON")` is FALSE with a CMP0012
+  warning, `if(<var>)` where the var is `ON` is TRUE, `OFF` is FALSE, and an
+  undefined var is FALSE. `USE_HIP` is `option(... OFF)` at CMakeLists.txt:15 so
+  the substitution is always `ON`/`OFF`, and an empty substitution would unset the
+  variable and correctly fall to the CUDA branch. The load-bearing line holds.
+- The CUDA branch is behaviour-identical to upstream: only the dropped `else(...)`
+  /`endif(...)` arguments, the trailing whitespace after `check_language(CUDA)`, and
+  indentation changed. The file was untouched by the port before this commit.
+- `find_dependency(hip)`/`find_dependency(hiprand)` are required, not defensive:
+  the installed `rmagine-cuda-targets.cmake:63` carries
+  `INTERFACE_LINK_LIBRARIES "rmagine::core;hip::host;hip::hiprand"`. Include order
+  in the config is safe -- the exported missing-target check
+  (`rmagine-cuda-targets.cmake:104-119`) only covers `rmagine::core`, and imported
+  link interfaces resolve at generate time. `hip::host` is also what carries
+  `__HIP_PLATFORM_AMD__=1` (`/opt/rocm/lib/cmake/hip/hip-config-amd.cmake:141`) into
+  a consumer, which is what makes `cuda_to_hip.h` take the HIP branch downstream.
+- No device code in the delta: the only non-CMake file is a comment inside the
+  shim's leading block comment, with no `*/` reintroduced and no preprocessor
+  effect. `src/rmagine_cuda/CMakeLists.txt` changed a comment only. Carrying the
+  other three platforms forward is defensible on the code, subject to finding 1
+  changing that.
+- Commit hygiene on the two new commits: `[ROCm]` titles at 55 and 47 characters,
+  AI-assistance disclosed, Test Plan in fenced blocks, no `Co-Authored-By`, no
+  non-ASCII in messages or added lines, no AMD-internal account references.

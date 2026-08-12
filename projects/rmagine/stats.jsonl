@@ -88,3 +88,5 @@
 {"kind":"phase","ts":"2026-08-12T20:32:29Z","phase":"test","seconds":2.010,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/moat-worktrees/rmagine/agent_space/build_final --output-on-failure -R ^cuda_"}
 {"kind":"phase","ts":"2026-08-12T20:32:31Z","phase":"test","seconds":2.700,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/moat-worktrees/rmagine/agent_space/build_final --output-on-failure -R ^core_"}
 {"kind":"session","ts":"2026-08-12T20:35:05Z","epoch":1786566905.638587018,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-12T20:47:39Z","epoch":1786567659.878287730,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-12T20:57:58Z","epoch":1786568278.971229394,"event":"end","platform":"linux-gfx1100"}
