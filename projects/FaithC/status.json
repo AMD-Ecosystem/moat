@@ -7,7 +7,7 @@
   "priority": 4.281,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-08-09T00:05:43Z",
+  "updated_at": "2026-08-12T22:10:43Z",
   "head_sha": "5e7e93aa38a53937a552b5758e060fa9b0d642ab",
   "pr_url": "https://github.com/Luo-Yihao/FaithC/pull/12",
   "pr_number": 12,
@@ -125,5 +125,6 @@
       },
       "last_agent": "validator"
     }
-  }
+  },
+  "published_sha": "5e7e93aa38a53937a552b5758e060fa9b0d642ab"
 }
