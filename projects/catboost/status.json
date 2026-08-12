@@ -7,7 +7,7 @@
   "priority": 7.008,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-08-08T04:57:19Z",
+  "updated_at": "2026-08-12T22:11:11Z",
   "head_sha": "7c047b9b91f3fa6d60b61444858193d44e404aff",
   "pr_url": "https://github.com/catboost/catboost/pull/3111",
   "pr_number": 3111,
@@ -157,5 +157,6 @@
         "at": "2026-06-23T21:31:19Z"
       }
     }
-  }
+  },
+  "published_sha": "7c047b9b91f3fa6d60b61444858193d44e404aff"
 }
