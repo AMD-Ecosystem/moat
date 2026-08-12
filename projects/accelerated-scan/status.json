@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-05T01:25:53Z",
-  "updated_at": "2026-08-09T00:17:11Z",
+  "updated_at": "2026-08-12T22:10:59Z",
   "head_sha": "84770b4d7d7c1ab7e8add748bd26213a59d4411c",
   "depends_on": [],
   "pr_url": "https://github.com/proger/accelerated-scan/pull/17",
@@ -130,5 +130,6 @@
         "at": "2026-08-09T00:17:11Z"
       }
     }
-  }
+  },
+  "published_sha": "84770b4d7d7c1ab7e8add748bd26213a59d4411c"
 }
