@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-10T13:58:57Z",
-  "updated_at": "2026-08-11T22:27:08Z",
+  "updated_at": "2026-08-12T15:15:47Z",
   "head_sha": "4c531f5e51f18eeb145309f8650a8da58453c8af",
   "depends_on": [],
   "fork_branch": "moat-port",
@@ -36,7 +36,7 @@
       "at": "2026-08-07T15:27:11Z"
     }
   },
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
       "blocked": false,
@@ -107,6 +107,29 @@
       },
       "state": "validation-failed",
       "last_agent": "validator"
+    },
+    "linux-gfx942": {
+      "blocked": true,
+      "blocked_reason": "gfx942/MI300X has no HIP image/texture API in ROCm 7.14: the compiler defines __HIP_NO_IMAGE_SUPPORT__ for gfx942, so every tex1Dfetch/tex2D in SiftGPU ProgramCU.cu and in the already-merged MVS kernels (gpu_mat_ref_image.cu, patch_match_cuda.cu, from colmap#4420) fails to compile with 'The image/texture API not supported on the device'; at runtime hipMallocArray and hipCreateTextureObject return hipErrorNotSupported on the device. Pre-existing at head 4c531f5e and independent of this session's fixes. Supporting gfx942 needs a texture-to-buffer rewrite of both the port and the merged MVS code, which is a scope decision for a person. wave64 coverage is already satisfied by gfx90a.",
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-08-12T14:52:49Z",
+      "completed_at": null,
+      "updated_at": "2026-08-12T15:15:47Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "orchestrator"
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/colmap/pull/2",

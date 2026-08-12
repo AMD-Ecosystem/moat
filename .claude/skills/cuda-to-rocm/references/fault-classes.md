@@ -188,6 +188,29 @@ everything else passes. (qrack: `_PopQueue` under `UniformlyControlledSingleBit`
 
 ## Textures
 
+**gfx942 (MI300/MI300X) has NO HIP image/texture API at all, at compile time and at
+runtime.** Check this BEFORE choosing a validation host for any port that uses texture
+objects, because it is not a bug to work around, it is a missing capability of that whole
+arch. The compiler defines `__HIP_NO_IMAGE_SUPPORT__` for gfx942, which marks every
+`tex1Dfetch` / `tex2D` / `tex3D` overload unavailable, so the failure is a compile error
+reading `error: 'tex1Dfetch<float, nullptr>' is unavailable: The image/texture API not
+supported on the device` -- not a link or runtime error, and no `#ifdef` in the project
+causes it. One command decides it:
+
+    clang++ -x hip --offload-arch=gfx942 -nogpulib -nogpuinc -dM -E - </dev/null \
+      | grep IMAGE_SUPPORT          # gfx942: __HIP_NO_IMAGE_SUPPORT__ 1
+                                    # gfx90a, gfx1100: nothing
+
+It is not only a compile-time macro. On the hardware, `hipMallocArray` and
+`hipCreateTextureObject` both return `hipErrorNotSupported` ("operation not supported"),
+while `hipDeviceAttributeTexturePitchAlignment` cheerfully reports 256 -- so an attribute
+query is NOT a capability probe and a port that trusts one will build a pitch and then fail
+at creation. Confirmed on MI300X, ROCm 7.14. Supporting the arch means replacing texture
+objects with plain buffer loads, which is a feature-sized change and a scope decision, not a
+port fix. gfx90a covers the same wave64 gate and does support textures, so prefer it as the
+CDNA validation host. (colmap: SiftGPU `ProgramCU.cu` and the merged `mvs/*.cu` both fail to
+compile for gfx942; same fault class seen in arrayfire.)
+
 **Texture pitch alignment is 256 bytes on AMD against 32 on NVIDIA**, and it bites in two
 distinct ways.
 

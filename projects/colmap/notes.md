@@ -1529,3 +1529,188 @@ upstream call; nothing was posted.
    handoff. If #4635 stalls long enough that parallel Caspar work is wanted, the
    accommodation (second fork branch name) is control-plane tooling work and a person's
    call, not a porter improvisation.
+
+## Maintainer round 1 on upstream PR #4635 (porter, linux-gfx942, 2026-08-12)
+
+ahojnnes (COLMAP lead) reviewed https://github.com/colmap/colmap/pull/4635 and raised two
+code issues. Both are fixed. Per operator instruction the fixes were NOT pushed to
+`moat-port`, because that branch is what the open upstream PR serves and a push there is
+upstream-visible immediately. They are staged on a separate fork branch:
+
+    branch: moat-fix-4635 (AMD-Ecosystem/colmap)
+    tip:    0af9a2d6c91e4723ed5c977fde5114c0d789ae10
+    base:   4c531f5e51f18eeb145309f8650a8da58453c8af (= moat-port, unchanged)
+    commits: b6b6a3fa [ROCm] Skip the GPU SIFT tests when no GPU backend is built
+             0af9a2d6 [ROCm] Export HIP_ENABLED from the installed CMake config
+
+`head_sha` deliberately NOT advanced: the record must keep describing what the open PR
+shows until a person decides to merge `moat-fix-4635` into `moat-port`. `advance-head` and
+the `ported` transition are the human decision this session stops at; the fork-write lock
+stays held by linux-gfx942 for the same reason.
+
+### Issue 1: segfault in feature/sift_test with GUI=OFF, CUDA=OFF, HIP=OFF
+
+Reported: "the non-Qt `RunThreadWithOpenGLContext()` executes all `RunGpuTest` bodies, but
+those tests do not skip when no GPU backend exists"; crash reproduced by the maintainer in
+`ExtractSiftFeaturesGPU.Nominal`, `util/opengl_utils_test` fine.
+
+Root cause, confirmed by reading and by reproduction. Our port replaced the empty
+`inline void RunThreadWithOpenGLContext(Thread*) {}` in `src/colmap/util/opengl_utils.h`
+(the non-Qt arm) with `thread->Start(); thread->Wait();` -- deliberately, plan.md Open
+question 2, because the empty inline was silently turning every GPU test body into a no-op
+that reported PASS. That is correct wherever a GPU backend exists, but it also made the
+bodies run in a build that has NONE. `cmake/FindDependencies.cmake:632-635` turns
+`OPENGL_ENABLED` off whenever `GUI_ENABLED` is off, so with CUDA and HIP off as well
+`GPU_ENABLED` is off and `COLMAP_GPU_ENABLED` is undefined. In that state
+`CreateSiftFeatureExtractor` (`sift.cc:758-763`) and `CreateSiftFeatureMatcher`
+(`sift.cc:1679-1684`) return `nullptr` for `use_gpu`, and the test body dereferences it:
+`extractor->Extract(...)` on a null unique_ptr. Segfault, not a HIP fault -- the same crash
+occurs with no ROCm in the picture at all.
+
+Fix (`src/colmap/feature/sift_test.cc`, 4 lines): `RunGpuTest` is the single choke point
+that all 14 GPU tests go through, so it now skips when the backend is absent:
+
+    void RunGpuTest(std::function<void()> test_body) {
+    #if !defined(COLMAP_GPU_ENABLED)
+      GTEST_SKIP() << "Requires OpenGL, CUDA or HIP support";
+    #else
+      ... unchanged ...
+    #endif
+    }
+
+`GTEST_SKIP` is COLMAP house style (`bundle_adjustment_ceres_test.cc:128`,
+`index_test.cc:78,137`, `file_test.cc:167`). `opengl_utils.h` is deliberately NOT reverted:
+reverting it restores the false-green no-op for headless CUDA and ROCm builds, which is the
+trap that produced this project's first bogus "145 tests passed". The skip is compiled out
+wherever OpenGL, CUDA or HIP exists, so gfx1100/gfx90a/windows GPU results are unaffected.
+
+Reproduction and verification, linux-gfx942 host, no GPU backend:
+
+    cmake -S projects/colmap/src -B projects/colmap/src/build-nogpu -GNinja \
+      -DCUDA_ENABLED=OFF -DHIP_ENABLED=OFF -DGUI_ENABLED=OFF \
+      -DCMAKE_BUILD_TYPE=Release -DTESTS_ENABLED=ON -DCGAL_ENABLED=OFF \
+      -DDOWNLOAD_ENABLED=OFF -DONNX_ENABLED=OFF
+    cmake --build projects/colmap/src/build-nogpu -j$(nproc)
+
+  before: sift_test `ExtractSiftFeaturesGPU.Nominal` -> Segmentation fault (core dumped),
+          exit 139; the full binary dies on the first GPU test, 0 of 32 completed.
+          `util/opengl_utils_test` 1 of 1 PASSED (only one case is compiled without Qt).
+  after:  sift_test 32 tests: 18 PASSED, 14 SKIPPED, 0 failed, exit 0.
+          Skipped: ExtractSiftFeaturesGPU.Nominal, CreateSiftGPUMatcherOpenGL.Nominal,
+          MatchSiftFeaturesGPU.{TypeMismatch,Nominal},
+          MatchGuidedSiftFeaturesGPU.{TypeMismatch,Nominal,EssentialMatrix,Spherical,
+          SphericalMixedHemispheres,UnprojectableKeypoints,SharedFocal,
+          SharedFocalPerPairFocal}, MatchSiftFeaturesCPUvsGPU.Nominal,
+          MatchGuidedSiftFeaturesCPUvsGPUGuided.EssentialMatrix.
+          `ctest --test-dir build-nogpu -j8` -> 100% tests passed, 0 failed out of 158.
+
+### Issue 2: installed ROCm build does not export HIP_ENABLED
+
+Reported: standalone pycolmap uses `find_package(colmap)` and cannot recreate the HIP
+dependency targets. Confirmed and reproduced.
+
+Root cause: `cmake/colmap-config.cmake.in` exports `CUDA_ENABLED` but not `HIP_ENABLED`,
+then includes the installed `FindDependencies.cmake` (installed because it matches the
+`Find*.cmake` install pattern at `CMakeLists.txt:554-557`). With `HIP_ENABLED` unset that
+file takes its no-HIP path, so `find_package(hip/hiprand/rocrand)` never runs and
+`hip::host` / `roc::rocrand` never exist -- while `colmap-targets.cmake` names them in the
+link interface of `colmap_util_cuda`, `colmap_mvs_cuda` and `colmap_sift_gpu`
+(exported since `CMakeLists.txt:467`, from #4420). Note this is a gap in the MERGED #4420
+work, not something this port introduced; it becomes load-bearing here because the pycolmap
+sources this PR touches are the ones that need a working `find_package(colmap)` on ROCm.
+
+Fix (`cmake/colmap-config.cmake.in`, 8 lines, next to the CUDA export):
+
+    set(HIP_ENABLED @HIP_ENABLED@)
+    if(HIP_ENABLED)
+        set(ROCM_PATH "@ROCM_PATH@" CACHE PATH "Path to ROCm installation")
+    endif()
+
+`ROCM_PATH` is carried too because `FindDependencies.cmake:135-150` otherwise re-derives the
+ROCm root from `$ROCM_PATH`, a `rocm-sdk` on PATH, or `/opt/rocm`, none of which need hold
+for the consumer -- this host is exactly that case, its ROCm is a pip SDK under
+`/opt/conda/envs/py_3.12/.../_rocm_sdk_devel` and there is no `/opt/rocm`. `CACHE PATH` makes
+it a default, so a consumer's `-DROCM_PATH=` still wins.
+
+Verified by install + a minimal consumer (agent_space/colmap-consumer, throwaway):
+
+    cmake --install projects/colmap/src/build-hip     # prefix projects/colmap/install-hip
+    grep HIP_ENABLED install-hip/share/colmap/colmap-config.cmake  -> set(HIP_ENABLED ON)
+
+    # consumer: project(... LANGUAGES C CXX); find_package(colmap REQUIRED);
+    #           target_link_libraries(consumer PRIVATE colmap::colmap)
+    cmake -S agent_space/colmap-consumer -B .../b-after -GNinja \
+      -DCMAKE_PREFIX_PATH=projects/colmap/install-hip
+
+  with the HIP lines removed from the installed config (the pre-fix state):
+      CMake Error at .../colmap-targets.cmake:251 (set_target_properties):
+        The link interface of target "colmap::colmap_sift_gpu" contains: hip::host
+        but the target was not found.
+      -- Generating done / CMake Generate step failed.
+  with the fix: configure OK ("Enabling GPU support (OpenGL: , CUDA: OFF, HIP: ON)"),
+      builds ("Linking HIP executable consumer"), and the consumer TU sees
+      COLMAP_HIP_ENABLED defined (printed by the test program).
+
+  `LANGUAGES C CXX` is required of any consumer, pre-existing: `FindDependencies.cmake:16`
+  asks for OpenMP with a C component. Standalone pycolmap gets this for free because its
+  `project()` call names no languages and so enables C and CXX. Not a defect to fix here.
+
+### ROCm rebuild on this host, and the gfx942 blocker (IMPORTANT, needs a person)
+
+**gfx942 / MI300X cannot build or run this port at all, and neither can the already-merged
+MVS HIP code. Pre-existing at 4c531f5e, nothing to do with the two fixes above.**
+
+    cmake ... -DHIP_ENABLED=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 ... && ninja
+    -> FAILED src/thirdparty/SiftGPU/.../ProgramCU.cu.o
+       ProgramCU.cu:149: error: 'tex1Dfetch<float, nullptr>' is unavailable:
+       The image/texture API not supported on the device        (~19 more, error limit)
+    -> FAILED src/colmap/mvs/.../gpu_mat_ref_image.cu.o   (tex2D, line 55, 66)
+    -> FAILED src/colmap/mvs/.../patch_match_cuda.cu.o    (tex2D, lines 254-380)
+
+Cause, isolated:
+
+    clang++ -x hip --offload-arch=gfx942 -dM -E - </dev/null | grep IMAGE_SUPPORT
+      -> #define __HIP_NO_IMAGE_SUPPORT 1
+         #define __HIP_NO_IMAGE_SUPPORT__ 1
+    the same probe on gfx90a and gfx1100 prints nothing.
+
+And it is a runtime property too, not just a compile-time macro. A standalone probe built
+for gfx942 and run on this MI300X (agent_space/texprobe.cpp):
+
+    device: AMD Instinct MI300X HF (gfx942:sramecc+:xnack-)
+    hipDeviceAttributeTexturePitchAlignment: 256 (err no error)   <- reports a pitch anyway
+    hipMallocArray:                    operation not supported
+    hipCreateTextureObject(linear):    operation not supported
+
+So a gfx942 build would fail at texture creation even if it compiled. Supporting MI300 means
+replacing texture objects with plain buffer loads in BOTH SiftGPU (this port, 44 texture
+objects / 61 tex1Dfetch) and the merged `mvs/*.cu` -- a real feature, a scope decision for a
+person, and not something to bolt onto a maintainer-feedback round while #4635 is open.
+`platforms.linux-gfx942.blocked = true` recorded with this reason. The wave64 gate is
+already satisfied by gfx90a, so no coverage is lost.
+
+Consequence for evidence on this host: the ROCm regression build was done with
+`-DCMAKE_HIP_ARCHITECTURES=gfx90a`, which compiles and links cleanly (736 targets, full
+build, ROCm 7.14.60850) but produces binaries this GPU cannot run -- confirmed:
+`sift_test --gtest_filter=ExtractSiftFeaturesGPU.Nominal` from that build reports
+`CuTexImage::InitTexture2D: operation not supported` and `FilterH: invalid kernel file` and
+fails. No GPU SIFT test was RUN on this host; the gfx1100 and gfx90a GPU results at
+4c531f5e stand and are untouched by either fix (the skip is compiled out when a backend
+exists; the config change is install-time only).
+
+### Commands, integrity, jargon
+
+    bash utils/session.sh colmap linux-gfx942 start
+    utils/timeit.sh colmap compile -- <cmake configure/build/install>
+    utils/timeit.sh colmap test -- <ctest / test binary>
+    python3 utils/jargon.py --port colmap                 -> jargon: clean
+    python3 utils/jargon.py --commits main..moat-fix-4635  -> jargon: clean
+    python3 utils/jargon.py --diff    main..moat-fix-4635  -> jargon: clean
+    git -C projects/colmap/src status --porcelain          -> (empty)
+
+Docs: no change. `doc/install.rst:110-142` already documents the ROCm build and its coverage
+sentence was updated by the port commit; neither fix changes a build instruction.
+
+Promoted to the `cuda-to-rocm` skill (references/fault-classes.md, Textures): gfx942 has no
+HIP image/texture API, compile-time or runtime. That is a whole-arch fact any texture-using
+port needs before it picks a validation host.
