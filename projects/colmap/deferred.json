@@ -44,7 +44,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-08-12T15:19:54Z",
-      "decided": null
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-08-12T16:21:40Z",
+        "note": "Deferred until after upstream PR colmap/colmap#4635 merges; then a candidate follow-on feature cycle (after/alongside Caspar). Unlocks MVS+SIFT on MI300/gfx942 and gfx950; MVS point-mode+border fetches and one FilterModeLinear binding (patch_match_cuda.cu:1630) are the whole emulation surface."
+      }
     }
   ]
 }
