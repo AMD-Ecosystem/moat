@@ -1573,3 +1573,61 @@ maintainer would hit. Fix before any upstream submission.
 Artifacts (gitignored): `agent_space/heongpu-cuda-check.sh` and `.log`,
 `agent_space/HEonGPU-cuda-build/`, `agent_space/HEonGPU-upstream-build/`,
 `agent_space/heongpu-upstream/`, `agent_space/cccl-3.0.3/`.
+
+## Both CUDA-path regressions fixed 2026-08-12 (linux-gfx90a)
+
+Fixed at `d7d609e` (cuRAND include) and `4ceabb2` (small-NTT guard), on top of
+`5d99b8f`. Every claim in the diagnosis above was re-verified before touching
+anything; nothing was taken on trust.
+
+### What was verified before the fix
+
+- The cuRAND linkage conflict, standalone: `g++-13 -std=c++17 -fsyntax-only`
+  on `cuda_runtime.h` + `device_launch_parameters.h` is clean (rc=0); adding
+  `<curand_kernel.h>` in front gives exactly the two conflicting-declaration
+  errors from the real build.
+- The include is redundant on the CUDA path: `kernel/{addition,bootstrapping,
+  decryption,encoding,encryption,keygeneration}.cuh` each include
+  `<curand_kernel.h>` themselves, and `util.cuh` is the only file in the tree
+  that includes `cuda_to_hip.h`. Removing it restores upstream's include set.
+- Why the small-NTT bodies were inlined, which the earlier note asserted
+  without evidence: two `.hip` TUs, one defining a `__device__` template with
+  an explicit instantiation and one calling it, `hipcc --offload-arch=gfx90a`
+  with no `-fgpu-rdc`, fails at link with `lld: error: undefined hidden
+  symbol: void addone<int>(int*)`. The reason is real. The HIP branch of
+  `heongpu_set_gpu_properties` sets no separable-compilation property, while
+  the CUDA branch sets `CUDA_SEPARABLE_COMPILATION ON`.
+- Every caller is a device TU: `SmallForwardNTT`/`SmallInverseNTT` are called
+  only from `lib/kernel/bootstrapping.cu` and `lib/kernel/keygeneration.cu`.
+  `__HIPCC__` and `__HIP__` are both defined by hipcc, with or without an
+  explicit `-x hip`; `__CUDACC__` is defined in both of nvcc's passes.
+
+### The fix
+
+`cuda_to_hip.h` CUDA branch keeps `<cuda_runtime.h>` and drops
+`<curand_kernel.h>`. `small_ntt.cuh` restores upstream's two declarations
+unconditionally and wraps the definitions in
+`#if defined(__CUDACC__) || defined(__HIPCC__)`. The rejected alternative was
+restoring `lib/kernel/small_ntt.cu` for CUDA: it would hold a second copy of
+145 lines of NTT butterfly code that must stay in step with the header's.
+
+### Evidence
+
+- CUDA: `agent_space/heongpu-cuda-check.sh` (unchanged from the run that found
+  the regressions), configure rc=0, build rc=0, 64 targets, zero errors in the
+  log -- tests, examples and benchmarks. Compile-only; no NVIDIA GPU here, so
+  this says nothing about NVIDIA runtime behaviour.
+- AMD: full rebuild for gfx90a, `ctest` 20/20 in 13.17s.
+- AMD codegen unchanged: the binaries built at `5d99b8f` were kept, and
+  `python3 utils/codeobj_diff.py <baseline>/bin src/build/bin` reports
+  `verdict=identical` over all 42 binaries (exported symbols and device ISA).
+  So gfx90a's validation at `5d99b8f` still describes `4ceabb2`. gfx1100 was
+  not measured here; the same argument should hold, but a wave32 host has to
+  confirm it rather than inherit this.
+
+### Gotcha for the next person running the CUDA check
+
+`agent_space/heongpu-cuda-check.log` is appended to (`tee -a`), so it holds
+every run. Find the last `=== START` before reading errors out of it -- the
+failing run's four `__syncthreads` errors are still in the file above the
+clean one.

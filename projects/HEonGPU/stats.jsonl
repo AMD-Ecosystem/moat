@@ -80,3 +80,9 @@
 {"kind":"phase","ts":"2026-08-11T23:54:50Z","phase":"test","seconds":11.817,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
 {"kind":"phase","ts":"2026-08-11T23:55:06Z","phase":"test","seconds":11.723,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
 {"kind":"session","ts":"2026-08-12T00:00:50Z","epoch":1786492850.596355838,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-12T19:55:11Z","epoch":1786564511.514712806,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-12T19:56:09Z","phase":"compile","seconds":47.884,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j128"}
+{"kind":"phase","ts":"2026-08-12T19:59:37Z","phase":"compile","seconds":52.620,"exit":0,"cmd":"bash agent_space/heongpu-cuda-check.sh"}
+{"kind":"phase","ts":"2026-08-12T20:00:46Z","phase":"compile","seconds":48.206,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j128"}
+{"kind":"phase","ts":"2026-08-12T20:01:04Z","phase":"test","seconds":13.310,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"session","ts":"2026-08-12T20:07:21Z","epoch":1786565241.972171786,"event":"end","platform":"linux-gfx90a"}

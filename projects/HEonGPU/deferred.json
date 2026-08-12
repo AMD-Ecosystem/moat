@@ -47,11 +47,11 @@
       "id": "heongpu-cuda-no-regression-unrun",
       "kind": "other",
       "component": null,
-      "summary": "The CUDA no-regression compile check has never been run for this port, and this port deliberately changes CUDA behaviour in three places (truncate_signed in the Gaussian sampler, the 128-bit Barrett shift at counts >= 65, and the TFHE state-buffer size). Validation on 2026-08-11 attempted it with nvcc 12.8 but hit an environmental wall: the upstream CUDA path's real RMM dependency (rapidsai/rmm, pre-existing and unmodified by the port) transitively FetchContent-clones NVIDIA/cccl with full history over the network and did not finish inside the compile-only budget. Recorded as cuda-not-validated rather than a regression finding. Worth resolving before the upstream PR, since a maintainer will ask whether their CUDA build still compiles: try a shallow or pre-populated FetchContent cache, a pinned local cccl checkout via FETCHCONTENT_SOURCE_DIR_CCCL, or a longer budget.",
+      "summary": "RESOLVED 2026-08-12: the CUDA no-regression compile check now runs on this host and the port builds clean for NVIDIA. The dependency wall that stopped the 2026-08-11 attempt was RMM's transitive FetchContent clone of NVIDIA/cccl with full history. Technique that made it cheap and repeatable: read the pinned CCCL commit out of the already-cloned rapids-cmake-src/rapids-cmake/cpm/versions.json (3.0.3, sha 8c04b6539859932f5602e86d38314e4d87f96420), fetch that one commit with `git fetch --depth 1`, and pass both -DCPM_CCCL_SOURCE=<dir> and -DFETCHCONTENT_SOURCE_DIR_CCCL=<dir> (rapids-cmake uses CPM, so the FETCHCONTENT_ variable alone is not enough). Same commit as the pin, no version drift, ~60MB instead of a full-history clone. Configure and build of tests+examples+benchmarks then take about a minute with the deps cached. The runnable script is agent_space/heongpu-cuda-check.sh. The check earned its keep immediately: it found two CUDA-path build regressions the AMD build, two review rounds and a full GPU validation had all missed (curand pulled into host translation units by the compatibility header; device function bodies inlined into a header that host translation units include). Both are fixed in d7d609e and 4ceabb2. The port's three deliberate CUDA behaviour changes remain covered by heongpu-negative-gaussian-cast and heongpu-barrett-shift-cuda-side; this item covered only whether the NVIDIA build still compiles, and it does.",
       "refs": [
         "projects/HEonGPU/notes.md"
       ],
-      "status": "open",
+      "status": "done",
       "upstream_issue": null,
       "created_at": "2026-08-11T17:53:41Z",
       "decided": null
