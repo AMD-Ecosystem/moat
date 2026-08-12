@@ -1234,3 +1234,191 @@ warning. Stage 1 (rmagine_cuda HIP compute backend) is the validated deliverable
 Stage 1 (rmagine_cuda HIP compute backend): VALIDATED on windows-gfx1101. 7/7
 cuda_ tests + 12/12 core_ tests PASS on gfx1101@4223818. No regression. Matches
 prior gfx90a, gfx1100, and gfx1201 validations at the same SHA.
+
+## Install as a dependency
+
+rmagine installs a normal CMake package, so a dependent consumes it with
+`find_package(rmagine ...)` against a staging prefix. Verified end to end on
+linux-gfx1100 at moat-port e9cbdbf (see "Delta round 2026-08-12" below -- at
+4223818 and earlier this did NOT work; the exported config resolved CUDA at
+consumer time and failed the whole package on a CUDA-free host).
+
+Host deps (Ubuntu 24.04): `sudo apt install -y libtbb-dev libboost-dev
+libeigen3-dev libassimp-dev cmake`.
+
+### Build and install the dependency
+
+```
+git clone -b moat-port https://github.com/AMD-Ecosystem/rmagine _deps/rmagine/src
+cmake -S _deps/rmagine/src -B _deps/rmagine/build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DUSE_HIP=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ \
+  -DRMAGINE_EMBREE_DISABLE=ON -DRMAGINE_OPTIX_DISABLE=ON \
+  -DRMAGINE_VULKAN_DISABLE=ON -DRMAGINE_VULKAN_CUDA_INTEROP_DISABLE=ON \
+  -DRMAGINE_OUSTER_DISABLE=ON \
+  -DRMAGINE_BUILD_TESTS=OFF -DRMAGINE_BUILD_TOOLS=OFF \
+  -DCMAKE_INSTALL_PREFIX=$PWD/_deps/rmagine/install
+cmake --build _deps/rmagine/build -j
+cmake --install _deps/rmagine/build
+```
+
+Set `-DCMAKE_HIP_ARCHITECTURES` to the consuming host's arch (gfx90a, gfx1100,
+gfx1101, gfx1201 are all validated). Leave `RMAGINE_BUILD_TESTS=ON` if you want
+the `cuda_`/`core_` ctest suites in the dependency's build tree as a smoke check.
+
+### Install layout
+
+```
+<prefix>/include/rmagine-2.4.2/rmagine/...        headers (core + cuda)
+<prefix>/lib/librmagine-core.so.2.4.2             CPU library
+<prefix>/lib/librmagine-cuda.so.2.4.2             GPU compute library (HIP)
+<prefix>/lib/cmake/rmagine-2.4.2/rmagine-config.cmake
+<prefix>/lib/cmake/rmagine-2.4.2/rmagine-core-config.cmake
+<prefix>/lib/cmake/rmagine-2.4.2/rmagine-cuda-config.cmake
+<prefix>/lib/cmake/rmagine-2.4.2/rmagine-{core,cuda}-targets.cmake
+<prefix>/share/rmagine-2.4.2/package.xml
+```
+
+### What a dependent does
+
+```cmake
+find_package(rmagine 2.4 REQUIRED
+  COMPONENTS core
+  OPTIONAL_COMPONENTS embree cuda optix vulkan vulkan-cuda-interop)
+target_link_libraries(<target> PRIVATE rmagine::core rmagine::cuda)
+```
+
+Configure the dependent with
+`-DCMAKE_PREFIX_PATH=/abs/path/to/_deps/rmagine/install` (append, do not
+replace, if the dependent already needs a prefix path). At runtime the
+dependent needs `<prefix>/lib` on `LD_LIBRARY_PATH` unless it sets an RPATH.
+
+Targets that exist in a ROCm build: `rmagine::core`, `rmagine::cuda`. Targets
+that do NOT exist: `rmagine::embree` (needs Embree), `rmagine::optix`,
+`rmagine::vulkan`, `rmagine::vulkan-cuda-interop`, `rmagine::ouster`. Ask for
+them only through `OPTIONAL_COMPONENTS`. `rmagine_COMPONENTS_FOUND` reports
+what was actually found (`core;cuda` for the configuration above), and
+`rmagine_cuda_USE_HIP` is `ON` in a ROCm build, so a dependent that has its own
+`.cu` can switch its own toolchain on it instead of guessing.
+
+The HIPRT ray-tracing backend (`rmagine_hiprt`) has no install rules and is not
+part of the package; it also requires the HIPRT SDK via `HIPRT_PATH`. A
+dependent that needs GPU ray casting on AMD cannot get it through
+`find_package` today.
+
+A consumer does NOT need the HIP language enabled to link `rmagine::cuda`:
+`hip::device` is PRIVATE on the library, so plain g++/C++ consumers work. Only
+`hip::host` and `hip::hiprand` are in the public interface, and the package
+config finds them for you.
+
+## Delta round 2026-08-12 (porter, linux-gfx1100) -- exported CMake config fix
+
+Scope: make an installed ROCm build of rmagine consumable. Install-side only;
+no device code touched. Fork moat-port 4223818 -> e9cbdbf (2 commits).
+
+### The bug (reproduced here before fixing)
+
+`src/rmagine_cuda/cmake/rmagine-cuda-config.cmake.in` resolved a CUDA toolkit at
+consumer time regardless of backend:
+
+```cmake
+if(@CUDAToolkit_FOUND@)
+    find_dependency(CUDAToolkit)
+else(@CUDAToolkit_FOUND@)
+    find_dependency(CUDA)
+endif(@CUDAToolkit_FOUND@)
+```
+
+Under `USE_HIP` the CUDA branch of `rmagine_cuda/CMakeLists.txt` never runs, so
+`CUDAToolkit_FOUND` is undefined and the INSTALLED file literally reads `if()`
+(valid CMake, evaluates false) and falls through to `find_dependency(CUDA)`.
+Observed on this CUDA-free gfx1100 host with CMake 3.31.6, from the throwaway
+consumer described above:
+
+```
+CMake Error at .../Modules/FindCUDA.cmake:883 (message):
+  Specify CUDA_TOOLKIT_ROOT_DIR
+Call Stack (most recent call first):
+  .../rmagine-2.4.2/rmagine-cuda-config.cmake:38 (find_dependency)
+  .../rmagine-2.4.2/rmagine-config.cmake:55 (include)
+  CMakeLists.txt:4 (find_package)
+```
+
+`find_dependency` failing returns out of `rmagine-config.cmake` entirely, so the
+whole package is unusable -- `rmagine::core` included -- and
+`OPTIONAL_COMPONENTS` does not rescue it (rmagine-config.cmake.in includes every
+component config that exists on disk, with no optional/required distinction).
+The rmcl planner predicted `rmagine_FOUND=0`; on this CMake the module raises a
+hard error first. Same outcome: the dependent never reaches its own code.
+
+Second half, also real: `rmagine-cuda-targets.cmake` records `hip::host` and
+`hip::hiprand` in `INTERFACE_LINK_LIBRARIES`, so the config must
+`find_dependency(hip)` and `find_dependency(hiprand)` or the consumer fails at
+GENERATE time (after a successful configure) on a link to a nonexistent target.
+
+### The fix (cfc475d)
+
+One file, `rmagine-cuda-config.cmake.in`: substitute the backend into
+`rmagine_cuda_USE_HIP` and branch on it; on HIP find `hip` + `hiprand` and look
+for no CUDA at all; otherwise run the original CUDAToolkit/CUDA/check_language
+block unchanged.
+
+Tested as a VARIABLE, not as `if("@USE_HIP@")`. `if("ON")` is a quoted constant
+and depends on the consumer's CMP0012: with the policy unset (e.g. a bare
+`cmake -P` script) `if("ON")` is FALSE and the consumer silently takes the CUDA
+branch. Confirmed here with a 4-case truth table before choosing the form.
+
+e9cbdbf is a comment-only follow-up removing in-house shorthand from two
+comments (`utils/jargon.py` flagged them; they were pre-existing at 4223818).
+
+### Evidence (linux-gfx1100, Radeon Pro W7800, ROCm 7.2.3, HIP_VISIBLE_DEVICES=0)
+
+Build + install of the fork at e9cbdbf into a staging prefix, then a throwaway
+consumer project (`agent_space/consumer/`, scratch) that makes the exact
+`find_package` call rmcl makes and links `rmagine::core` + `rmagine::cuda`:
+
+```
+-- rmagine_FOUND=1
+-- rmagine_COMPONENTS_FOUND=core;cuda
+-- Generating done
+[RMagine - CudaContext] Construct context on device 0 - AMD Radeon Pro W7800 48GB
+sum = 4096.000000 8192.000000 12288.000000 (expected 4096.000000 8192.000000 12288.000000)
+PASS: consumed rmagine::core + rmagine::cuda from the install prefix
+```
+
+The consumer runs `rm::sum` over a 4096-element device buffer, so the pass is a
+real GPU dispatch through the installed library, not just a link check.
+
+In-tree suites at e9cbdbf, same host: `ctest -R '^cuda_'` 7/7 PASS,
+`ctest -R '^core_'` 12/12 PASS. Unchanged from 4223818, as expected for an
+install-side change.
+
+### Consequence for the other platforms
+
+Advancing head_sha to e9cbdbf puts linux-gfx90a, windows-gfx1101 and
+windows-gfx1201 (and this platform's own record) behind. The delta is
+`classify` = mixed only because it does not recognise `.cmake.in`; in substance
+it is one generated-package-config file plus two comments, with no device code
+and no change to any compiled artifact. A carry-forward is the appropriate
+disposition if a maintainer agrees; the one thing a revalidation SHOULD add
+that the old evidence does not cover is an install + `find_package` consume on
+that platform, since that is the path this round fixed.
+
+### Gotchas
+
+- An installed CMake package config is invisible to every in-tree gate. rmagine
+  had four platform validations, a review pass, and 19 passing ctests while its
+  installed package was unusable by anyone, because every gate ran from the
+  build tree. If a project installs a package config, consume it from a
+  separate project as part of the port. Promoted to the `cuda-to-rocm` skill
+  (`references/strategy-a-cmake.md`, "The installed package config is part of
+  the port").
+- `libassimp-dev` was missing on this host and is a hard `find_package(assimp)`
+  in the top-level CMakeLists; `sudo apt install -y libassimp-dev` fixes it.
+- The ROCm build is still undocumented in rmagine's own README (no `USE_HIP`
+  anywhere in it). Deliberately NOT fixed in this round: the round was scoped to
+  the install bug, and the README defers build detail to an external wiki
+  (uos.github.io/rmagine_docs) that is a separate repository. It needs a
+  decision on house style before the upstream PR.
