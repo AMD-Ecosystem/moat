@@ -1790,3 +1790,76 @@ gcc and the rocRAND header's `printf` habit may behave differently.
 - `/opt/rocm/bin` on `PATH` silently supplies the ROCm CMake prefix. Any "consume the
   installed package" recipe verified on a host with ROCm on `PATH` is under-tested;
   strip it and re-run before writing the recipe down.
+
+## History rewrite 2026-08-12 (jargon gate, review finding 2)
+
+`utils/jargon.py --port rmagine` had two hits, both in the *message* of
+`3d098d58e` ("Strategy A", "followers"). The round-3 porter left them, reasoning
+that a publish-time squash would absorb them. That is wrong, and it is the kind of
+wrong that only shows up at the worst moment: `utils/upstream.py:634-645` pulls
+every commit message on the branch (`gh api repos/<slug>/pulls/<n>/commits`) and
+scans it with `jargon.scan_text`, and `:560-569` refuses even the `--review`
+preview. There is no squash anywhere in that path. Unfixed, this port could never
+be published.
+
+Fixing it meant rewording a commit that four platforms' `validated_sha` depended on
+(`4223818c9` is a descendant of `3d098d58e`), so a person ruled it: jeff, 2026-08-12,
+"reword now, re-record the evidence" -- rewriting is preferable to letting the gate
+sit until publication, and the evidence is repointed rather than orphaned.
+
+### What was done
+
+The message change is two phrases; no file in any tree changed:
+
+- `Strategy A:` -> `The existing .cu sources ...` (describes the approach instead of
+  naming the in-house strategy)
+- `so followers pass their own arch` -> `so a build targeting another GPU passes its
+  own arch`
+
+Rebase: amend `3d098d58e`, then `git rebase --onto <new> 3d098d58e moat-port`.
+Force-push with `--force-with-lease=moat-port:0aea7af33` so a concurrent push would
+have refused rather than been clobbered. `git diff <old-tip> <new-tip>` is empty.
+
+### Commit map (old -> new, every tree verified IDENTICAL)
+
+```
+3d098d58e -> 2b6824fd2  [ROCm] Port rmagine::cuda compute backend to HIP   (reworded)
+9088c8e15 -> c99f2fcc3  [ROCm] WIP: rmagine_hiprt Pinhole sensor skeleton
+4d2cd269c -> 2c1122c9e  [ROCm] Stage 2: Pinhole HIPRT ray-tracing proof-of-concept
+db7f06475 -> a5755c066  [ROCm] Fix Transform3f struct layout to match rmagine::Transform_
+4223818c9 -> 9e642a6a6  [ROCm] Stage 2: Complete HIPRT sensor simulators   <- the validated one
+73820862e -> ee33fc4aa  [ROCm] Resolve HIP in the installed rmagine::cuda config
+74ba64005 -> 27a88badb  [ROCm] Reword two comments in the HIP build path
+0aea7af33 -> e7a7b279f  [ROCm] Keep the compatibility header host-includable
+```
+
+Nothing at or below the upstream base `6b93e861` was touched.
+
+### Evidence, repointed not re-run
+
+All four platforms had `validated_sha = 4223818c9`, a commit that no longer exists.
+Each was repointed to `9e642a6a6` -- the same tree under a new name -- with
+`moatlib.py carry-forward ... source-class`. No GPU re-ran and none needed to: a
+commit-message reword cannot change compiled output. `carry-forward` is the only
+API that writes `validated_sha`, and its `source-class` method (doc/comment-only)
+is the closest honest fit for "zero files changed"; the `detail` field records what
+actually happened so a later reader is not misled into thinking evidence was
+extrapolated across a code change.
+
+This matters most for `windows-gfx1101` and `windows-gfx1201`: those runs happened
+on machines this host cannot re-run on demand, so orphaning their references would
+have destroyed evidence that is expensive to reproduce.
+
+All four still read `revalidate`, which is correct and unrelated: `head_sha` is
+`e7a7b279f` and the round-3 header fix genuinely recompiles.
+
+`python3 utils/jargon.py --port rmagine`: **clean**.
+
+### Left for a person
+
+`c99f2fcc3` is still titled `[ROCm] WIP: rmagine_hiprt Pinhole sensor skeleton`, and
+two commits are titled `Stage 2:`. If this branch is published as-is, upstream
+maintainers see a WIP commit in the series. Deciding whether the branch should be
+reshaped into a clean series is a scope call for a person, and a bigger rewrite
+touches more evidence than this one did -- this rewrite deliberately changed the
+minimum needed to clear the publication gate.
