@@ -7,7 +7,7 @@
   "priority": 4.879,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-08-07T07:05:33Z",
+  "updated_at": "2026-08-12T22:11:30Z",
   "head_sha": "8545865f0939361bbbebb742369e25f95fd19b36",
   "pr_url": "https://github.com/ModelEngine-Group/unified-cache-management/pull/1021",
   "pr_number": 1021,
@@ -129,5 +129,6 @@
         "at": "2026-06-23T21:15:41Z"
       }
     }
-  }
+  },
+  "published_sha": "8545865f0939361bbbebb742369e25f95fd19b36"
 }
