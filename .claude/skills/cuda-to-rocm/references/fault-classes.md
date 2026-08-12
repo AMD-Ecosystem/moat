@@ -361,6 +361,24 @@ target_compile_options(mylib INTERFACE $<$<COMPILE_LANGUAGE:HIP>:-fgpu-rdc>)
 target_link_options(mylib INTERFACE -fgpu-rdc)
 ```
 
+**`-fgpu-rdc` changes the consumer contract, so the project's downstream docs owe a line
+about it.** The interface options above make the common consumer work, they do not make the
+requirement go away, and a comment claiming the consumer need not know is wrong. An archive
+of relocatable device code carries no complete device image, so the device link happens at
+the consumer's final link and only the HIP driver in HIP link mode performs it. Two failure
+modes, both measured against an installed export (ROCm 7.2.1, gfx90a): a plain
+`g++` link gives `undefined reference to __hip_gpubin_handle_<hash>` and
+`__hip_fatbin_<hash>`, and where the CXX compiler is gcc it does not even get that far
+(`g++: error: unrecognized command-line option '-fgpu-rdc'`). The trap is that a CMake
+consumer can hit the first one too: CMake adds `--hip-link` only for a target that has HIP
+sources of ITS OWN, so an app `.cpp` linking a HIP library that links the archive is linked
+by the HIP compiler WITHOUT `--hip-link` and gets the undefined `__hip_fatbin_*`. Setting
+`LINKER_LANGUAGE HIP` does not add it either; `target_link_options(app PRIVATE --hip-link)`
+does. Do NOT try to fix this by wrapping the interface flag in `$<LINK_LANGUAGE:HIP>`: that
+only trades the unrecognized-option message for the undefined-symbol one. Fix it in prose --
+wherever the project tells a CUDA consumer to set `CUDA_SEPARABLE_COMPILATION ON`, the HIP
+consumer needs the parallel sentence. (HEonGPU)
+
 **Cross-TU `__device__` calls ARE inlined on AMD under `-fgpu-rdc`.** Do not repeat the nvcc
 intuition here: nvcc `-rdc=true` really does leave a call unless you add `-dlto`, but HIP's
 device link is a bitcode link followed by optimization of the whole image. Measured on gfx90a
@@ -369,9 +387,10 @@ TU called from a `__global__` in another: the linked device image contains only 
 `s_swappc_b64` count 0, and the callee's `s_barrier`s appear inline in it. What `-fgpu-rdc`
 does cost is link time and image size, and both are worth measuring before deciding
 (HEonGPU, gfx90a: default library build 53.7 s vs 52.1 s, i.e. unchanged, but 193.6 s vs
-326.6 s once 34 test/example/benchmark executables are enabled, since each one device-links
-the whole library; device code per test binary 1,575,096 -> 1,684,264 bytes; TFHE gate
-timings and 20/20 suites identical either way).
+326.6 s once 42 test/example/benchmark executables are enabled, i.e. about 3.2 s of device
+link each, since every one of them device-links the whole library; device code per test
+binary 1,575,096 -> 1,684,264 bytes; TFHE gate timings and 20/20 suites identical either
+way, and BFV/CKKS benchmarks unchanged to within run-to-run noise).
 
 **Moving the bodies into a host-reachable header instead silently breaks the CUDA build.**
 This is the tempting move when you do not know `-fgpu-rdc` is available: mark them

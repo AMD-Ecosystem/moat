@@ -1837,7 +1837,8 @@ never measured. The design is unchanged.
 
 ### Verification of this round
 
-AMD, gfx90a, ROCm 7.2.1, MI210:
+AMD, gfx90a, ROCm 7.2.1, AMD Instinct MI250X / MI250 (said "MI210" until round 6;
+this host has no MI210):
 
 ```
 cmake --build projects/HEonGPU/src/build -j64        # rc=0, 0 "error:" lines
@@ -2132,7 +2133,8 @@ cross-TU device call is inlined and the callee's standalone body is gone. The
 "cannot be inlined" rationale in `4925df1` was false and is retracted in
 `8ef207a`'s body.
 
-Then the cost, measured rather than asserted (gfx90a, ROCm 7.2.1, MI210, `-j64`,
+Then the cost, measured rather than asserted (gfx90a, ROCm 7.2.1, AMD Instinct
+MI250X / MI250 -- said "MI210" until round 6, see below -- `-j64`,
 each configuration built clean from an empty build dir):
 
 | | guard (4925df1) | -fgpu-rdc (8ef207a) |
@@ -2145,8 +2147,9 @@ each configuration built clean from an empty build dir):
 | device code in test/bfv_multiplication_testcases | 1,575,096 B | 1,684,264 B |
 | of which this library's | 864,312 B (8 objects) | 973,480 B (1 image) |
 
-The build-time cost is entirely the device link, which each of the 34
-executables performs over the whole library; the default build (no tests,
+The build-time cost is entirely the device link, which each of the 42
+executables performs over the whole library (said "34" until round 6; the
+configuration builds 15 + 15 + 5 + 4 + 3); the default build (no tests,
 examples or benchmarks -- all three default OFF) is unchanged. Runtime on the
 code path that actually calls the two functions is equal within run-to-run
 noise. tfhe_benchmark is the right measurement target because every
@@ -2156,7 +2159,10 @@ noise. tfhe_benchmark is the right measurement target because every
 Consumer check, which is what made this safe to adopt: the flag rides on
 `INTERFACE_COMPILE_OPTIONS`/`INTERFACE_LINK_OPTIONS` and is exported, so
 `HEonGPUTargets.cmake` carries it and the downstream snippet in
-`docs/advanced_topics.rst` needs no edit. Verified by installing to a prefix and
+`docs/advanced_topics.rst` still builds unchanged. (This round said the snippet
+"needs no edit"; round 6 showed that covers only consumers whose own sources are
+HIP, and the docs now say what the others need -- see the round-6 response.)
+Verified by installing to a prefix and
 building + running a BFV encrypt/decrypt program with that snippet verbatim:
 `roundtrip OK`. This is the analogue of the CUDA side, where the static library
 already sets `CUDA_RESOLVE_DEVICE_SYMBOLS OFF` and the documented consumer
@@ -2453,3 +2459,99 @@ downstream docs need a line about it. Also fix the 34 at `fault-classes.md:372`.
 **Request Changes.** No code change is needed and the design must not move.
 Findings 1-3 ship to the maintainer; finding 4 publishes to every agent when
 this branch merges. Finding 1 is a repeat of round 5's finding 5.
+
+## Round 6 response (linux-gfx90a, 56615ec)
+
+All four findings addressed in one fork commit, `56615ec` "[ROCm] Say what the
+relocatable device code asks of consumers", plus notes and skill edits here.
+`-fgpu-rdc` did not move.
+
+### 1. The GPU is an MI250X/MI250, not an MI210
+
+Confirmed on this host: `rocminfo` gives `Name: gfx90a` /
+`Marketing Name: AMD Instinct MI250X / MI250` for both agents, and
+`rocm-smi --showproductname` gives `Card Series: AMD Instinct MI250X / MI250`,
+`Card SKU: D65209`, `GFX Version: gfx90a`. No MI210 anywhere. The five earlier
+commit bodies (`14c2b51`, `d7d609e`, `4ceabb2`, `4925df1`, `8ef207a`) cannot be
+amended, so `56615ec`'s body states the right part and says to read those
+results as gfx90a on an MI250X/MI250. Corrected in place here at the two lines
+that asserted it as fact (the round-4 verification header and the round-5 cost
+table); the round-5/round-6 review sections still quote "MI210" because they are
+the record of the finding.
+
+### 2. 42 executables, not 34
+
+`set(EXECUTABLES ...)` pairs: test 15, example/basic 15, example/bootstrapping
+5, example/mpc 4, benchmark 3 = 42, matching `find build/bin -type f
+-executable | wc -l` = 42 and the 42 links in each nvcc run. The cost claim is
+re-derived from 42: 326.6 - 193.6 = 133 s of extra device link over 42
+executables, about 3.2 s each. Fixed in `56615ec`'s body, in the round-5 section
+above, and in the skill (`fault-classes.md`, which said 34 in one line and 42 in
+another of the same entry).
+
+### 3 and 4. What -fgpu-rdc asks of a consumer
+
+Measured against a real installed export (`cmake -DCMAKE_INSTALL_PREFIX=...`,
+`agent_space/heongpu-consumer/`, gitignored) rather than a toy:
+
+| consumer | result |
+| --- | --- |
+| documented snippet verbatim (`main.cpp` LANGUAGE HIP) | links, `roundtrip OK` |
+| same program split: HIP static lib + CXX `app.cpp` executable | `ld.lld: error: undefined hidden symbol: __hip_gpubin_handle_<hash>`, `undefined symbol: __hip_fatbin_<hash>` |
+| that one + `target_link_options(app PRIVATE --hip-link)` | links, `roundtrip OK` |
+| that one + `LINKER_LANGUAGE HIP` instead | still fails, identical errors |
+| `g++ -no-pie` over the installed archive | `undefined reference to __hip_gpubin_handle_<hash>` |
+| `hipcc` without `-fgpu-rdc` | same undefined symbols |
+| `hipcc -fgpu-rdc` | links, `roundtrip OK` |
+
+The mechanism is narrower than "the link language must be HIP". In the failing
+CMake case the link language ALREADY resolves to HIP -- CMake picks
+`/opt/rocm/lib/llvm/bin/clang++` because a linked static library has HIP sources
+-- but the link line lacks `--hip-link`, which CMake adds only for a target that
+has HIP sources of its own. Compare the two generated `link.txt`:
+
+```
+consumer_a: clang++ ... --offload-arch=gfx90a --hip-link --rtlib=compiler-rt ... -fgpu-rdc
+consumer_b: clang++ ... --offload-arch=gfx90a                                   -fgpu-rdc
+```
+
+`set_target_properties(... LINKER_LANGUAGE HIP)` does not change that line.
+`target_link_options(... --hip-link)` does, and that is what the docs now tell a
+consumer to add. As the reviewer said, `$<LINK_LANGUAGE:HIP>` around the
+interface flag was not tried as a fix: it addresses the wrong failure.
+
+Edits: `src/CMakeLists.txt` comment no longer claims consumers are unaffected
+and names the failure; `docs/advanced_topics.rst` gains a paragraph after the
+HIP snippet, mirroring the CUDA `CUDA_SEPARABLE_COMPILATION` line, plus the
+non-CMake case (`hipcc -fgpu-rdc`). The skill's `-fgpu-rdc` entry gains the same
+consequence, including the `--hip-link` trap, so the next port copies the recipe
+with the contract attached.
+
+### Nothing compiled changed
+
+Comment and `.rst` only. Verified rather than asserted: SHA-256 of all 42 AMD
+binaries before and after the rebuild are identical (`hashes-before.txt` vs
+`hashes-final.txt` in the scratch dir), and the CUDA reconfigure+build had
+nothing to do.
+
+```
+cmake --build projects/HEonGPU/src/build -j64   # rc=0, no error/warning lines
+ctest --test-dir projects/HEonGPU/src/build     # 100% passed, 20/20, 13.41s
+bash agent_space/heongpu-cuda-check.sh          # START 22:40:47Z: CONFIGURE rc=0,
+                                                # BUILD rc=0, 0 error lines
+```
+
+The 20-suite run and the CUDA check were re-run anyway. Both archs still owe a
+fresh GPU run at the new head for the `-fgpu-rdc` switch itself (unchanged from
+round 5). `moatlib classify HEonGPU 81176c9 56615ec` ->
+`class=comment-only arch_independent=True inert=True` (the `.rst` is not source
+at all); `classify HEonGPU 5d99b8f 56615ec` is still `class=mixed inert=False`,
+which is the `-fgpu-rdc` switch, so the 20 suites are owed at `56615ec` on both
+archs.
+
+`jargon.py --port HEonGPU`: clean over the whole branch.
+`git -C projects/HEonGPU/src status --porcelain`: empty.
+
+Gotcha worth remembering here: `advance-head` accepts an abbreviated sha
+verbatim, so a typo in the abbreviation is recorded silently. Pass
+`git rev-parse HEAD`.
