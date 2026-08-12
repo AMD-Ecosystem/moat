@@ -137,6 +137,12 @@ flowchart TB
     mp == "the one pull request" ==> updef
 ```
 
+Once that pull request is open, `moat-port` freezes: it is the PR's head, so a
+push to it is visible to the maintainer immediately. A requested fix is built and
+proven on a third branch, `moat-fix-<pr#>`, and only an approved fix round
+fast-forwards `moat-port` -- so the pull request only ever gains commits a person
+approved.
+
 ---
 
 ## 5. Coverage is gates, not GPUs
