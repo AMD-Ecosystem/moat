@@ -1881,3 +1881,193 @@ but the comment-only classification is arch-independent by construction.
 
 `jargon.py --port HEonGPU`: clean over the whole branch.
 `git -C projects/HEonGPU/src status --porcelain`: empty.
+
+## Review 2026-08-12 (round 5)
+
+Scope: the delta `4ceabb2..4925df1` (`0e027a4`, `4925df1`) plus the three MOAT
+documents the same round edited. Verdict: **changes-requested**. The code is
+untouched and stays correct; the classifier and CUDA evidence check out. What is
+wrong is again the prose, and in the same way as rounds 2, 3 and 4: two claims
+stated as established fact are false against this machine, and both of them ship
+-- one in an upstream source comment, one in an upstream commit message.
+
+### 1. The rewritten shim comment still overstates, and the project's own build disproves it
+
+`src/include/heongpu/cuda_to_hip.h:77-81`:
+
+```
+// only in one order: curand first. Host translation units reach this header
+// first of all (util.cuh includes it ahead of everything else), and the
+...
+// here therefore always arrived first and broke every host .cpp.
+```
+
+The ORDER rule itself is right and I reproduced it independently (`g++-13
+-fsyntax-only -I/opt/conda/envs/cuda-12.8/targets/x86_64-linux/include`: curand
+first gives `device_launch_parameters.h:71` conflicting `const uint3 threadIdx`
+with C linkage against `curand_mtgp32_kernel.h:124` plus the `blockDim` pair,
+the reverse order is rc=0). So is the `__CUDACC__` point: `cuda_runtime.h:113`
+and `:119` are both inside `#if defined(__CUDACC__)`.
+
+The two sentences built on top of it are not.
+
+*"Host translation units reach this header first of all"* -- not for
+`src/lib/kernel/contextpool.cpp`. `src/include/heongpu/kernel/contextpool.hpp:9`
+includes `gpuntt/common/nttparameters.cuh` BEFORE `util.cuh` on line 10, so that
+TU reaches `device_launch_parameters.h` at preprocessed line 58806 and
+`cuda_to_hip.h` only at 59557 -- the safe order. The parenthetical is true of
+util.cuh; the conclusion drawn from it is not true of host TUs generally,
+because a TU can reach the launch parameters through a path that does not go
+through util.cuh, and one in this project does.
+
+*"broke every host .cpp"* -- it broke one of four. Compiling all four host TUs
+against the PRE-FIX shim (`git show d7d609e^:src/include/heongpu/cuda_to_hip.h`
+dropped into an overlay include dir ahead of `src/include`, with each target's
+own `flags.make` defines/includes/flags from the CUDA build):
+
+```
+src/lib/kernel/contextpool.cpp     rc=0  conflicting-decl-errors=0
+src/lib/heongpu.cpp                rc=1  conflicting-decl-errors=2
+src/lib/util/defaultmodulus.cpp    rc=0  conflicting-decl-errors=0
+src/lib/util/serializer.cpp        rc=0  conflicting-decl-errors=0
+```
+
+The branch's own failing run agrees: in `agent_space/heongpu-cuda-check.log` the
+19:26:51 build reports `Error 1` for `heongpu_host_core.dir/lib/heongpu.cpp.o`
+and for nothing else, while contextpool/serializer/defaultmodulus all built.
+`serializer.cpp` and `defaultmodulus.cpp` do not reach the shim at all (their
+`.o.d` files list no `cuda_to_hip.h`).
+
+Say what is true: the shim is reached ahead of the launch parameters by the host
+TU that broke (`lib/heongpu.cpp`, via `heongpu.hpp`), and any TU that reaches
+the shim before them is exposed -- which is enough to condemn the shim as the
+home for the include without claiming a universal that a maintainer can refute
+with one `g++ -fsyntax-only`. `0e027a4`'s body carries the same inference ("so a
+curand include here reached the compiler before anything had declared the
+builtins"); fix it there too.
+
+### 2. The -fgpu-rdc rationale is false, and it is the stated basis for the design
+
+`src/include/heongpu/kernel/small_ntt.cuh:31-32` and `4925df1`'s body both
+assert that `-fgpu-rdc` "leaves each butterfly a cross-unit call that cannot be
+inlined into the kernel running it" / "keeps each butterfly a call across
+translation units that the compiler cannot inline".
+
+Measured on this host (ROCm 7.2.1, `/opt/rocm/bin/hipcc`, gfx90a), it is not
+true. HIP's `-fgpu-rdc` device link is a bitcode link followed by full
+optimization, so cross-TU `__device__` calls ARE inlined. Built the shape this
+port actually has -- a `__device__` function template defined with an explicit
+instantiation in one TU and called from a `__global__` in another:
+
+```
+hipcc -O3 --offload-arch=gfx90a -fgpu-rdc -c tdev.hip -o tdev.o     # explicit instantiation
+hipcc -O3 --offload-arch=gfx90a -fgpu-rdc -c tmain.hip -o tmain.o   # kernel calls it
+hipcc -O3 --offload-arch=gfx90a -fgpu-rdc tdev.o tmain.o -o app3
+llvm-objdump -d <extracted gfx90a bundle>
+  functions in the linked device image: 0000000000001600 <_Z2k3Pyy>   (only the kernel)
+  s_swappc_b64 (calls): 0
+  s_barrier: 21                     (the callee's barriers, inline in the kernel)
+```
+
+The callee's standalone body is gone entirely; a 4110-instruction non-template
+callee inlines the same way. The `cannot` is not a heuristic that happened to
+fire -- there is no structural barrier to inline. (The intuition is right for
+NVIDIA: nvcc `-rdc=true` needs `-dlto` for cross-TU device inlining. AMD's RDC
+path is different, and that difference is exactly the thing a ROCm port comment
+should not get backwards.)
+
+The other half of the same comment checks out and should stay:
+`small_ntt.cuh:24-26` is correct, and without the flag the link really does fail
+with the error the skill quotes -- `lld: error: undefined hidden symbol: void
+SmallFwd<unsigned long long>(...)`, referenced by the kernel.
+
+Two consequences for the text:
+
+- `4925df1` says "It was rejected on performance", which asserts both a decision
+  that did not happen in that order (round 4 found the option was never
+  considered) and a mechanism that is false. The adjacent "an -fgpu-rdc build
+  was never measured" is prominent enough as placement, but it does not rescue
+  an untrue mechanism stated as fact in the sentence before it.
+- Either measure an `-fgpu-rdc` build and say what it cost, or drop the
+  performance claim and give the reason that survives -- e.g. that RDC changes
+  the link model for every TU in the library and for consumers, and the
+  configuration the 20/20 result comes from is the header-definition one. Do not
+  change the design; only stop justifying it with something untrue.
+
+### 3. fault-classes.md repeats finding 1's overstatement into every future port
+
+`.claude/skills/cuda-to-rocm/references/fault-classes.md:327-328`: "A shim is by
+construction the FIRST header a TU pulls in, so a curand include there always
+lands in the failing order." Not by construction, and not always -- the
+counterexample is in the project the entry is drawn from
+(`kernel/contextpool.hpp:9` ahead of `:10`, above). This is a skill entry, so it
+is asserted about every project, where the claim is weaker still.
+
+`fault-classes.md:334`: "so every host `.cpp` includes it and compiles." Of the
+four host `.cpp` here, only `lib/heongpu.cpp` reaches `curand_kernel.h` --
+verified from the CUDA build's dependency files, where `heongpu.cpp.o.d` lists
+`curand_kernel.h` and all six kernel headers while `contextpool.cpp.o.d`,
+`serializer.cpp.o.d` and `defaultmodulus.cpp.o.d` list none. The six-header
+count and their reachability from `heongpu.hpp` ARE correct; the "every host
+.cpp" is not. The rule the entry wants -- put the RNG include where it is
+reached after the launch parameters, never in the shim -- survives without
+either overstatement.
+
+`references/validation.md:12` carries the same false universal ("a cuRAND
+include the compat header leaked into every host TU"). It is round 3's text
+rather than this round's, but it is on this branch and merges with it, so fix it
+in the same pass.
+
+### 4. The skill tells the next porter that -fgpu-rdc does not exist
+
+`SKILL.md:103`: "to work around HIP's missing `-fgpu-rdc` link", and
+`validation.md:12`: "the usual workaround for HIP having no
+relocatable-device-code link". HIP has `-fgpu-rdc`; this project's build simply
+does not enable it, which is what `fault-classes.md:343` correctly says
+("Without `-fgpu-rdc` a HIP build cannot resolve that call across TUs"). The
+always-loaded index line is the one a porter reads before making this exact
+move, and as worded it removes a working option from their choices.
+
+With finding 2, `fault-classes.md:340-367` should also stop presenting two
+options and calling the file-restore "the other option": enabling `-fgpu-rdc` is
+the third, it leaves the sources untouched, cross-TU inlining does happen on
+AMD, and the honest reason to prefer the guard is the link-model change and the
+fact that nobody has measured the alternative -- not an inlining barrier.
+
+### Checked and sound -- do not redo
+
+- **CPM correction (validation.md:13).** Verified independently, not from the
+  porter's note. `CPM_0.40.0.cmake:686` is
+  `if(NOT CPM_ARGS_FORCE AND NOT "${CPM_${CPM_ARGS_NAME}_SOURCE}" STREQUAL "")`,
+  and nothing in that file upper-cases `CPM_ARGS_NAME`; `FetchContent.cmake:1745`
+  does `string(TOUPPER ${contentName} contentNameUpper)`. The hazard is real:
+  `rapids-cmake/cpm/versions.json` holds `spdlog`, `fmt`, `rmm`, `cuco`,
+  `benchmark` in lower case alongside `CCCL`, so the corrected entry would have
+  saved the clone on any of those. The `CCCL` pin
+  `8c04b6539859932f5602e86d38314e4d87f96420` matches what the script passes.
+- **SKILL.md index line placement** -- it does lead to the right entry; only its
+  wording is finding 4.
+- **Carry-forward.** `changeclass.classify` reproduced here:
+  `5d99b8f..4925df1 -> mixed, arch_independent=False`;
+  `4ceabb2..4925df1 -> comment-only, arch_independent=True`. Both archs sit at
+  `validated_sha=5d99b8f` against head `4925df1`, so both genuinely owe a
+  re-run, and it is owed for the round-3 code fixes rather than for this round.
+  Not claiming gfx1100 from the gfx90a measurement is right.
+- **CUDA no-regression evidence.** Last `=== START` in
+  `agent_space/heongpu-cuda-check.log` is 20:32:17Z: configure rc=0, build rc=0
+  at 20:33:09Z, 82 `Building ... object` lines including
+  `heongpu_host_core.dir/lib/heongpu.cpp.o`, zero lines matching `error`. That
+  object's `.o.d` is timestamped 20:32 and lists both edited headers, so the run
+  covered the edits.
+- **Hygiene.** Titles 58 and 56 chars, both `[ROCm]`-prefixed; Claude named in
+  both bodies; no noreply trailer; delta is ASCII; `jargon.py --port HEonGPU`
+  clean over the branch; fork tree clean; no AMD-internal account references.
+- **Whether the small_ntt.cuh note belongs upstream at all.** It does -- it is
+  design rationale for a non-obvious structure and carries no MOAT vocabulary.
+  The objection is finding 2, that it is not true.
+
+### Recommendation
+
+**Request Changes.** Findings 1 and 2 ship to the upstream maintainer; findings
+3 and 4 publish to every agent when this branch merges. No code change is
+needed and the design should not move.
