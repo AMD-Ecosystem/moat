@@ -7,7 +7,7 @@
   "priority": 6.322,
   "ext_type": "rust-cc-cuda",
   "adopted_at": "2026-05-30T00:04:57Z",
-  "updated_at": "2026-08-07T07:05:17Z",
+  "updated_at": "2026-08-12T22:11:20Z",
   "head_sha": "fd8c7a38ac725b31f6b5ce1cc9e969cd357066f8",
   "pr_url": "https://github.com/apache/mahout/pull/1399",
   "pr_number": 1399,
@@ -129,5 +129,6 @@
         "at": "2026-07-02T19:30:05Z"
       }
     }
-  }
+  },
+  "published_sha": "fd8c7a38ac725b31f6b5ce1cc9e969cd357066f8"
 }
