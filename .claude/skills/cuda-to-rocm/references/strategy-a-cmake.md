@@ -93,3 +93,34 @@ compat header with `-include`.
   before compiling. Un-hipified files surface as "undeclared identifier cudaMalloc". Note
   that hipify prepends `#include "hip/hip_runtime.h"`, which breaks a g++ CPU reference
   build, so build that from a separate non-hipified copy. (LC-framework)
+
+## The installed package config is part of the port
+
+A library other projects `find_package()` ships a generated `<pkg>-config.cmake`, and nothing
+in the library's own build or test run touches that file. Every in-tree gate can pass while
+the installed package is unusable by anyone. If the project installs a package config, make
+an actual downstream consume part of the port: install to a staging prefix, then configure a
+throwaway project that calls `find_package` the way the real dependent does and links the GPU
+target. A successful build of the library demonstrates nothing about its install.
+
+Two failure modes, both real (rmagine, found by the first project that tried to depend on it):
+
+- **The config resolves the CUDA toolkit at consumer time.** `if(@CUDAToolkit_FOUND@)
+  find_dependency(CUDAToolkit) else() find_dependency(CUDA) endif()` is a common shape. In a
+  HIP build the CUDA branch of the CMakeLists never runs, so `CUDAToolkit_FOUND` is undefined,
+  the generated file reads `if()` -- valid CMake, evaluates false -- and falls through to
+  `find_dependency(CUDA)` on a machine with no CUDA. A failing `find_dependency` returns out
+  of the top-level config, so the WHOLE package is reported not found, CPU-only core targets
+  included, and `OPTIONAL_COMPONENTS` does not rescue it. Branch on the backend the package
+  was built with instead.
+- **A target named in the public link interface is not found.** The exported targets file
+  records `hip::host` / `hip::hiprand` in `INTERFACE_LINK_LIBRARIES`, so the config must
+  `find_dependency(hip)` and `find_dependency(hiprand)`. The symptom is a generate-time error
+  naming a nonexistent target, after configure already succeeded -- so a test that only
+  configures will miss it.
+
+Substitute the backend into a variable and test the variable (`set(<pkg>_USE_HIP @USE_HIP@)`
+then `if(<pkg>_USE_HIP)`), not `if("@USE_HIP@")`. A quoted constant is subject to the
+consumer's CMP0012 setting, and a consumer that has not set it takes the wrong branch
+silently. The variable doubles as the answer to "which backend is this?" for a dependent that
+compiles its own device code. (rmagine)
