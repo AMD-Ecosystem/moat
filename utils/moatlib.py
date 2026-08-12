@@ -1455,6 +1455,94 @@ def _fork_repo(name):
 # that may move the PR branch is `upstream.py --merge-fix --apply`, after a person
 # approves the delta on a fork review PR (see set_fix_merged).
 
+def record_writable_here(name):
+    """Can this checkout write this project's record at all? (ok, why).
+
+    save_record's own precedence, asked in advance. A trunk-resident record with no
+    `port/<name>` branch is writable only from a checkout of the protected trunk, so
+    every fix-round command would raise -- and the merge path would raise AFTER it
+    had already moved the upstream PR. Asking first turns that into a refusal with a
+    remedy."""
+    obj, where = project_record(name)
+    if obj is None:
+        return (False, f"{name}: no record on any ref")
+    if status_path(name).exists() and writable_here(name, where):
+        return (True, "in this working tree")
+    branch = port_branch_of(name)
+    if branch:
+        return (True, f"on {branch}")
+    return (False,
+            f"{name}: its record is on the trunk and this checkout is on "
+            f"{current_branch()}, which may not write it. Work in flight belongs on "
+            f"`port/{name}`: `python3 utils/moatlib.py fix-branch {name}` re-homes "
+            f"the folder there before its first write")
+
+
+def ensure_port_branch(name):
+    """Put a trunk-resident project's folder back on `port/<name>`. (moved, message).
+
+    A maintainer asking for a code change makes a finished project unfinished again,
+    and belongs_on_branch says its folder has to go back -- but that predicate only
+    flips once head_sha moves, which cannot happen until a fix round is recorded,
+    which cannot be written while the record sits on the protected trunk. Something
+    has to break the circle, and the fix round is the event that means "in flight
+    again", so it breaks it: cut the claim from the trunk, where the folder already
+    is, and every later write lands on the branch through save_record.
+
+    Not a human decision -- the project was adopted long ago and this creates no
+    fork, no PR and no upstream contact. Idempotent; a project that already has a
+    branch is left exactly alone."""
+    if port_branch_of(name):
+        return (False, f"{name}: already on port/{name}")
+    main_ref = _git("rev-parse", "--verify", "-q", "origin/main",
+                    check=False).stdout.strip()
+    if not main_ref:
+        raise ValueError(f"{name}: cannot read origin/main to cut port/{name} from")
+    if not _ref_read("origin/main", f"projects/{name}/status.json"):
+        raise ValueError(f"{name}: its record is not on origin/main either -- there "
+                         f"is nothing to re-home; find where it lives first")
+    r = _git("push", "-q", "origin", f"{main_ref}:refs/heads/port/{name}", check=False)
+    if r.returncode:
+        raise ValueError(f"{name}: could not create port/{name}: "
+                         f"{(r.stderr or r.stdout).strip()}")
+    # Do not wait for a fetch to make the new branch visible: port_branch_of reads
+    # remote-tracking refs, and save_record is about to ask.
+    _git("update-ref", f"refs/remotes/origin/port/{name}", main_ref, check=False)
+    _PORT_BRANCH_MAP.clear()
+    return (True, f"{name}: re-homed onto port/{name} (cut from origin/main at "
+                  f"{main_ref[:12]}) -- work in flight lives on its own branch")
+
+
+def _verified_published_sha(obj, name):
+    """What the open PR actually shows right now, for a record written before
+    published_sha existed.
+
+    The backfilled value becomes the ancestry baseline the merge fast-forward is
+    checked against AND the baseline --dry-run calls a maintainer push, so it is the
+    last field in this flow that should be assumed. head_sha is the right guess --
+    nothing was supposed to have moved the PR branch -- but the entire point of this
+    flow is that "supposed to" is not evidence, so ask GitHub and only accept the
+    guess when it agrees."""
+    repo, num = _pr_ref(obj.get("pr_url"))
+    if not repo:
+        raise ValueError(f"{name}: no usable pr_url to verify the published tip against")
+    live = _gh_json("pr", "view", num, "--repo", repo, "--json", "headRefOid")
+    if not live or not live.get("headRefOid"):
+        raise ValueError(
+            f"{name}: cannot read {repo}#{num} to confirm what the open PR shows, and "
+            f"the published tip is the baseline every later check rests on -- retry "
+            f"when GitHub is reachable rather than recording a guess")
+    head = live["headRefOid"]
+    if not same_commit(head, obj.get("head_sha")):
+        raise ValueError(
+            f"{name}: the open PR is at {head[:12]} but the record says head_sha "
+            f"{(obj.get('head_sha') or '?')[:12]}. The published tip cannot be "
+            f"inferred from a record that disagrees with the PR -- this is the "
+            f"HEAD-MOVED case (`upstream.py --dry-run`): read what landed and let a "
+            f"person rule on it before staging a fix round")
+    return head
+
+
 def fix_branch(name):
     """Establish (or report) the staging branch for a fix round.
 
@@ -1462,17 +1550,16 @@ def fix_branch(name):
     porter invents a name, and pins the base so descent from the published tip can
     be checked at merge time. Idempotent for the recorded branch; refuses to open a
     second round while one is in flight. A record from before published_sha existed
-    is backfilled from head_sha, which still equals the published tip on any record
-    where no fix round ever started."""
-    obj = load_status(name)
+    is backfilled from what the PR actually shows, confirmed against GitHub."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
     if obj.get("pr_state") != "open":
         raise ValueError(f"{name}: no open upstream PR -- fixes stage only while "
                          f"one is open; otherwise the port branch is still private "
                          f"and the porter pushes it directly")
     if not obj.get("pr_number"):
         raise ValueError(f"{name}: pr_state is open but no pr_number is recorded")
-    if not obj.get("published_sha"):
-        obj["published_sha"] = obj.get("head_sha")
     branch = f"moat-fix-{obj['pr_number']}"
     fix = obj.get("fix")
     if fix:
@@ -1481,6 +1568,19 @@ def fix_branch(name):
                              f"{fix.get('branch')!r} -- one staging branch at a "
                              f"time; merge or abandon it first")
         return fix
+    # Before the first write, not after it fails: most open-PR records are on the
+    # trunk, and every command in this flow writes the record.
+    moved, why = ensure_port_branch(name)
+    if moved:
+        print(why, file=sys.stderr)
+        # Write on top of exactly what the new branch holds, which is the trunk's
+        # copy -- this checkout's copy of somebody else's folder may be older.
+        obj, _where = project_record(name)
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    if not obj.get("published_sha"):
+        obj["published_sha"] = _verified_published_sha(obj, name)
     obj["fix"] = {"branch": branch, "base_sha": obj["published_sha"],
                   "review_pr": None, "opened_at": now_iso()}
     save_record(name, obj, f"{name}: fix round staged on {branch} "
@@ -1494,7 +1594,13 @@ def set_fix_review_pr(name, url):
     Mirrors set_review_pr's refusal: recording one asserts the delta is finished,
     so every required gate must hold at the staging tip first. Clearing is always
     allowed -- undoing a mistake must not require the gates to pass."""
-    obj = load_status(name)
+    # project_record, not load_status: the freshest record rather than the nearest.
+    # A port branch carries a copy of every folder the trunk had when it was cut, so
+    # reading the working tree here would edit a stale copy and save_record would
+    # then write it over the branch's real one.
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
     if not obj.get("fix"):
         raise ValueError(f"{name}: no fix round in flight (moatlib.py fix-branch "
                          f"establishes one)")
@@ -1519,7 +1625,9 @@ def set_fix_merged(name, new_published_sha):
     Called by the trusted merge path after the fast-forward push succeeds; the
     approval checks live there, not here. Clears the fix block -- the round is
     over, and the next one starts from the new published tip."""
-    obj = load_status(name)
+    obj, _where = project_record(name)          # freshest, not nearest; see above
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
     fix = obj.get("fix")
     if not fix:
         raise ValueError(f"{name}: no fix round in flight")
@@ -1533,35 +1641,69 @@ def set_fix_merged(name, new_published_sha):
     return obj
 
 
-# Installed into a fork clone's .git/hooks/pre-push by protect_fork. Reads the
-# project's CURRENT status.json at push time (the path is baked at install time),
-# so opening or closing the upstream PR needs no hook reinstall. MOAT_PUBLISH=1 is
-# set only by the trusted merge path after its approval checks pass.
-FORK_HOOK_MARKER = "# moat-fork-hook v1"
+def pr_state_of(name, refresh=False):
+    """(pr_state, where) resolved from wherever the record lives, or (None, why).
+
+    The distinction the fork pre-push hook is built on: None means the state could
+    not be READ, which is not the same answer as "no PR". `refresh` re-fetches the
+    project's refs first, because the question is about a write another host made --
+    a remote-tracking ref that predates the PR opening would answer "not open" about
+    a PR that is open."""
+    if refresh:
+        _git("fetch", "--quiet", "origin",
+             f"+refs/heads/port/{name}:refs/remotes/origin/port/{name}", check=False)
+        _git("fetch", "--quiet", "origin",
+             "+refs/heads/main:refs/remotes/origin/main", check=False)
+        _PORT_BRANCH_MAP.clear()
+    obj, where = project_record(name)
+    if obj is None:
+        return (None, f"no record for {name} on any ref")
+    return (obj.get("pr_state") or "none", where)
+
+
+# Installed into a fork clone's .git/hooks/pre-push by protect_fork. It asks moatlib
+# for the state rather than reading a path, because the record usually is NOT a file
+# in the MOAT working tree: an in-flight project's folder lives on its own branch,
+# and `projects/<name>/status.json` is absent from every checkout standing anywhere
+# else. Reading the path directly made the hook exit 0 on exactly the hosts and
+# exactly the projects it exists to protect. MOAT_PUBLISH=1 is set only by the
+# trusted merge path after its approval checks pass.
+FORK_HOOK_MARKER = "# moat-fork-hook"
 _FORK_HOOK = """#!/usr/bin/env bash
-{marker}
+{marker} v2
 # Refuses pushes to the upstream PR's head branch while that PR is open.
 # Installed by `moatlib.py protect-fork {name}`; see AGENTS.md on fix rounds.
 set -u
 [ "${{MOAT_PUBLISH:-}}" = "1" ] && exit 0
-state=$(python3 - <<'EOF' 2>/dev/null
-import json
-try:
-    print(json.load(open({status!r})).get("pr_state") or "")
-except Exception:
-    pass
-EOF
-)
-[ "$state" = "open" ] || exit 0
+
+# Only the PR's head branch is guarded, so the staging branch and any scratch
+# branch push normally -- and the lookup below is paid for only on the one push
+# that could reach a maintainer.
+targets=0
 while read -r _local _lsha remote _rsha; do
-  if [ "$remote" = "refs/heads/{branch}" ]; then
-    echo >&2 "moat: {branch} is the head of an OPEN upstream PR -- a push to it is"
-    echo >&2 "moat: upstream-visible before anyone reviewed or approved it."
-    echo >&2 "moat: Stage the fix instead: python3 utils/moatlib.py fix-branch {name}"
-    echo >&2 "moat: (the approved merge runs through: utils/upstream.py --merge-fix)"
-    exit 1
-  fi
+  [ "$remote" = "refs/heads/{branch}" ] && targets=1
 done
+[ "$targets" = 1 ] || exit 0
+
+# stdout only, so nothing a warning or a git message writes to stderr can be read
+# as the answer; the exit status is what says whether there IS an answer.
+state=$(python3 "{moatlib}" pr-state "{name}" --refresh 2>/dev/null)
+if [ $? -ne 0 ]; then
+  # A guard that cannot tell must not be the reason an unreviewed commit reached a
+  # maintainer. Refuse, and say what to run to find out why.
+  echo >&2 "moat: cannot tell whether {name} has an open upstream PR, so this push"
+  echo >&2 "moat: to {branch} is refused rather than guessed at. Check with:"
+  echo >&2 "moat:   python3 {moatlib} pr-state {name}"
+  python3 "{moatlib}" pr-state "{name}" 2>&1 >/dev/null | sed >&2 's/^/moat:   /'
+  exit 1
+fi
+if [ "$state" = "open" ]; then
+  echo >&2 "moat: {branch} is the head of an OPEN upstream PR -- a push to it is"
+  echo >&2 "moat: upstream-visible before anyone reviewed or approved it."
+  echo >&2 "moat: Stage the fix instead: python3 utils/moatlib.py fix-branch {name}"
+  echo >&2 "moat: (the approved merge runs through: utils/upstream.py --merge-fix)"
+  exit 1
+fi
 exit 0
 """
 
@@ -1569,29 +1711,39 @@ exit 0
 def protect_fork(name):
     """Install the pre-push hook that keeps an open PR's branch from moving.
 
-    Idempotent; refuses to clobber a hook that is not ours (say so, loudly, rather
-    than silently replacing whatever someone installed). A missing clone installs
-    nothing and says so -- absence of a clone is absence of the risk."""
+    Returns (level, message) where level is "ok", "skip" or "warn"; the CLI sends
+    "warn" to stderr so an unprotected clone is not indistinguishable from a
+    protected one in orient's output. Idempotent; refuses to clobber a hook that is
+    not ours (say so, loudly, rather than silently replacing whatever someone
+    installed) but does replace an older moat hook. A missing clone installs nothing
+    and says so -- absence of a clone is absence of the risk."""
     repo = _fork_repo(name)
     git_dir = repo / ".git"
     if not git_dir.exists():
-        return f"{name}: no fork clone at {repo} -- nothing to protect"
-    obj = load_status(name)
+        return ("skip", f"{name}: no fork clone at {repo} -- nothing to protect")
+    if not git_dir.is_dir():
+        return ("warn", f"{name}: {repo} keeps its git dir elsewhere (a .git file), so "
+                        f"the hook path cannot be derived here -- UNPROTECTED")
+    obj, _where = project_record(name)
+    if obj is None:
+        return ("warn", f"{name}: a fork clone exists but no record does; cannot tell "
+                        f"which branch to protect")
     text = _FORK_HOOK.format(marker=FORK_HOOK_MARKER, name=name,
-                             status=str(status_path(name)),
+                             moatlib=str(REPO_ROOT / "utils" / "moatlib.py"),
                              branch=obj.get("fork_branch") or PORT_BRANCH)
     hook = git_dir / "hooks" / "pre-push"
     if hook.exists():
         current = hook.read_text()
         if current == text:
-            return f"{name}: fork pre-push hook installed and current"
+            return ("ok", f"{name}: fork pre-push hook installed and current")
         if FORK_HOOK_MARKER not in current:
-            return (f"{name}: a NON-moat pre-push hook is installed at {hook}; "
-                    f"not touching it")
+            return ("warn", f"{name}: a NON-moat pre-push hook is installed at {hook}; "
+                            f"not touching it -- {obj.get('fork_branch') or PORT_BRANCH} "
+                            f"is UNPROTECTED in this clone")
     hook.parent.mkdir(parents=True, exist_ok=True)
     hook.write_text(text)
     hook.chmod(hook.stat().st_mode | 0o111)
-    return f"{name}: fork pre-push hook installed"
+    return ("ok", f"{name}: fork pre-push hook installed")
 
 
 # Tracked file kinds whose UNCOMMITTED modification in a fork is the integrity-gap
@@ -3554,6 +3706,18 @@ def main(argv=None):
     s.add_argument("name", nargs="?", default=None,
                    help="one project, or omit to protect every local fork clone")
 
+    s = sub.add_parser("set-fix-merged",
+                       help="record a fix round the trusted merge path already pushed "
+                            "(recovery only; it authorises nothing)")
+    s.add_argument("name")
+    s.add_argument("new_published_sha")
+
+    s = sub.add_parser("pr-state",
+                       help="a project's recorded upstream PR state, from whichever ref holds it")
+    s.add_argument("name")
+    s.add_argument("--refresh", action="store_true",
+                   help="fetch the project's refs first (the fork pre-push hook does)")
+
     s = sub.add_parser("set-pr-merged", help="record that the upstream PR merged")
     s.add_argument("name")
 
@@ -3916,8 +4080,25 @@ def main(argv=None):
             p.parent.name for p in PROJECTS.glob("*/src/.git"))
         if not names:
             print("protect-fork: no fork clones in this checkout")
+        warned = 0
         for n in names:
-            print(protect_fork(n))
+            level, message = protect_fork(n)
+            # orient.sh discards stdout; a clone it could NOT protect has to be the
+            # one thing that still reaches the operator.
+            print(message, file=sys.stderr if level == "warn" else sys.stdout)
+            warned += level == "warn"
+        if warned:
+            print(f"protect-fork: {warned} fork clone(s) are UNPROTECTED (above)",
+                  file=sys.stderr)
+    elif args.cmd == "set-fix-merged":
+        obj = set_fix_merged(args.name, args.new_published_sha)
+        print(f"{args.name}: published_sha -> {obj['published_sha'][:12]}")
+    elif args.cmd == "pr-state":
+        state, why = pr_state_of(args.name, refresh=args.refresh)
+        if state is None:
+            print(why, file=sys.stderr)
+            return 1
+        print(state)
     elif args.cmd == "set-pr-merged":
         set_pr_merged(args.name)
         print(f"{args.name}: PR merged")

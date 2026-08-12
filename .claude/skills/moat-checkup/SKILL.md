@@ -200,6 +200,13 @@ has reviewed, revalidated, or approved it:
    upstream PR sits at), and `moatlib.py fix-branch <name>` names the staging branch
    -- `moat-fix-<pr#>`, cut from the published tip. The porter pushes ONLY that
    branch and advances `head_sha` to its tip.
+
+   `fix-branch` also puts the project's folder back on `port/<name>` if a finished
+   port had left it on the trunk, because the round is about to write records and
+   the trunk is protected -- most open-PR records are trunk-resident, so expect that
+   line and let it happen. And it confirms against GitHub that what the record calls
+   the head is what the PR actually shows before it writes `published_sha`; if it
+   refuses because those disagree, that is the HEAD-MOVED case below, not a hiccup.
 2. The head move flips validated platforms to `revalidate` -- correct and expected;
    the evidence is gathered at the staging tip, BEFORE anything is visible upstream.
 3. Reviewer reviews the delta; validators revalidate; then
@@ -208,13 +215,19 @@ has reviewed, revalidated, or approved it:
    title and body are NOT republished upstream, so say plainly what the maintainer
    asked, what changed, and what revalidated. A body section headed exactly
    `## Upstream reply` is the one upstream-visible part: approve it and it is posted
-   verbatim on the upstream PR after the merge.
+   verbatim on the upstream PR after the merge. That section ends at the next `##`
+   heading, so anything written for our own eyes goes after one.
 4. `/moat approve` on that PR, then `upstream.py --merge-fix --apply` re-checks the
    live approval and every gate, fast-forwards `moat-port` to exactly the approved
-   tip, posts the approved reply, deletes the staging branch, and records
-   `published_sha`. Same contract as `--publish --apply`: mechanical because a
-   person approved exactly this content. Do not push `moat-port` by hand -- the
-   fork's pre-push hook (`moatlib.py protect-fork`) refuses it while the PR is open.
+   tip, posts the approved reply, records `published_sha`, and deletes the staging
+   branch. Same contract as `--publish --apply`: mechanical because a person
+   approved exactly this content. Do not push `moat-port` by hand -- the fork's
+   pre-push hook (`moatlib.py protect-fork`) refuses it while the PR is open.
+
+   Run it from a host that has the fork clone AND can write the record; it reports
+   HELD rather than moving the PR when either is missing, because the one thing this
+   must never leave behind is an upstream PR that moved and a record that cannot say
+   so.
 
 A question needing no code change is answered in a comment: draft it, show it, wait --
 or fold it into the next fix round's `## Upstream reply` so one approval covers it.

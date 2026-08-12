@@ -181,7 +181,8 @@ review PR (`upstream.py --fix-review`) whose diff is exactly the delta. Approvin
 to exactly the approved tip -- and to post, verbatim, the reply drafted under the body's
 `## Upstream reply` heading, so the code and the words arrive together and one approval
 covers both. The title and body of a fix review PR are not republished anywhere; only that
-reply section is.
+reply section is, and it ends at the next `##` heading so that what is written for our own
+eyes can sit in the same body without travelling with it.
 
 ## Who opens the upstream pull request
 

@@ -279,16 +279,19 @@ def gate_forks():
 
 
 def gate_published():
-    """No open upstream PR's branch has moved outside the trusted merge path.
+    """No local clone carries commits on an open PR's branch that the PR does not.
 
-    For every project with `pr_state == open` and a fork clone in THIS checkout,
-    the clone's port-branch tip must equal the recorded `published_sha` -- the fix
-    flow stages maintainer-requested changes on `moat-fix-<pr#>` and only
-    `upstream.py --merge-fix --apply` advances the PR branch. A mismatch means a
-    push reached the open PR that no approval covered (or the record was never
-    told); either way a person needs to look. Where no clone exists the gate says
-    it judged nothing -- the reconciler (`upstream.py --dry-run`) covers the
-    remote side."""
+    A local branch is not evidence about a remote one -- it is only as fresh as the
+    last fetch -- so this asks the one question a clone CAN answer: is its copy of
+    the port branch AHEAD of the published tip? That is the precursor to an
+    unapproved push, and the fix flow's answer to it is `moat-fix-<pr#>`. Behind is
+    just a stale fetch and passes silently, which also keeps `--merge-fix` from
+    failing this gate on the very host that performed the approved merge: that push
+    goes to the fork by sha and leaves the local branch where it was.
+
+    Diverged (neither one an ancestor) is reported too -- the branch was rebased or
+    rewritten under an open PR. Where no clone exists the gate says it judged
+    nothing; the reconciler (`upstream.py --dry-run`) covers the remote side."""
     sys.path.insert(0, str(REPO / "utils"))
     import moatlib
     problems, judged = [], 0
@@ -310,16 +313,27 @@ def gate_published():
                   f"backfills it)", file=sys.stderr)
             continue
         branch = obj.get("fork_branch") or moatlib.PORT_BRANCH
-        r = _run(["git", "-C", str(src.parent), "rev-parse", "--verify", "--quiet",
-                  f"refs/heads/{branch}"])
-        tip = r.stdout.strip()
-        if not tip:
-            continue                      # clone has no local copy of the branch
-        if not moatlib.same_commit(tip, pub):
-            problems.append(
-                f"{name}: local {branch} is at {tip[:12]} but the open upstream PR "
-                f"was published at {pub[:12]} -- a push outside the fix flow, or a "
-                f"merge nobody recorded (see upstream.py --merge-fix)")
+        clone = str(src.parent)
+        tip = _run(["git", "-C", clone, "rev-parse", "--verify", "--quiet",
+                    f"refs/heads/{branch}"]).stdout.strip()
+        if not tip or moatlib.same_commit(tip, pub):
+            continue                      # no local copy of the branch, or in step
+        if _run(["git", "-C", clone, "cat-file", "-e", f"{pub}^{{commit}}"]).returncode:
+            continue                      # the published commit was never fetched here
+        if not _run(["git", "-C", clone, "merge-base", "--is-ancestor",
+                     tip, pub]).returncode:
+            continue                      # behind: a stale fetch is not a problem
+        ahead = not _run(["git", "-C", clone, "merge-base", "--is-ancestor",
+                          pub, tip]).returncode
+        count = _run(["git", "-C", clone, "rev-list", "--count",
+                      f"{pub}..{tip}"]).stdout.strip() or "?"
+        problems.append(
+            f"{name}: local {branch} carries {count} commit(s) the open upstream PR "
+            f"({pub[:12]}) does not"
+            + ("" if ahead else ", and is not descended from it -- the branch was "
+                                "rewritten under an open PR")
+            + f". A fix goes on moat-fix-<pr#> (`moatlib.py fix-branch {name}`); "
+              f"only `upstream.py --merge-fix --apply` moves {branch}")
     if not problems and judged == 0:
         print("published: VACUOUS -- no project in this checkout has both an open "
               "PR and a fork clone, so this gate judged nothing here",
