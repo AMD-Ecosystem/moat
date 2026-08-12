@@ -100,7 +100,7 @@ Scan this list against what you are doing. If any line could apply, open
 - `__HIP_PLATFORM_AMD__` is undefined until `hip_runtime.h` is included; a gate placed before it silently picks the CUDA branch.
 - Missing includes in a HIP port are usually pre-existing upstream omissions unmasked by the narrower include graph.
 - A `-include`d compat header creates no dependency edge: wipe objects after editing it or you validate stale code.
-- Do NOT move `__device__` function BODIES into a host-reachable header to work around HIP's missing `-fgpu-rdc` link: g++ then parses device code and rejects `__syncthreads`. Guard the definitions on `__CUDACC__ || __HIPCC__`.
+- A `__device__` body in its own `.cu` needs `-fgpu-rdc` (HIP has it; CMake has no property for it, so set the compile AND link options yourself). Cross-TU device calls are inlined on AMD, unlike nvcc `-rdc` without `-dlto`. Moving the bodies into a host-reachable header instead makes g++ parse device code and reject `__syncthreads`.
 
 **Types, dispatch and platform limits**
 - Never name the pointee struct of an opaque handle (`CUstream_st`); use `std::remove_pointer_t<cudaStream_t>`.

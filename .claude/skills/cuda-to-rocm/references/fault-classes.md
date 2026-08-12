@@ -324,31 +324,63 @@ CUDA 12.8's `curand_mtgp32_kernel.h` declares `threadIdx`/`blockDim` with C++ li
 `device_launch_parameters.h` declares the same names with C linkage, and g++ 13 rejects the
 pair only when curand was seen first. Reproducer in both directions, `g++ -fsyntax-only`:
 `<curand_kernel.h>` before `<cuda_runtime.h>` + `<device_launch_parameters.h>` gives two
-conflicting-declaration errors; the reverse order is clean. A shim is by construction the
-FIRST header a TU pulls in, so a curand include there always lands in the failing order, and
-the shim's own `#include <cuda_runtime.h>` does not rescue it because cuda_runtime.h includes
-device_launch_parameters.h only under `#if defined(__CUDACC__)`. Give a shim the runtime
-header only and leave the RNG include in the kernel headers that use it: those are reached
-later, after some `.cuh` has already dragged in the launch parameters, which is why they are
-safe -- HEonGPU's FIXED build has six `kernel/*.cuh` including `<curand_kernel.h>` and all
-six reachable from the public umbrella header, so every host `.cpp` includes it and compiles.
-If a host TU ever reaches the RNG header first, put `<device_launch_parameters.h>` ahead of
-it there rather than moving the include back into the shim. Nothing on the AMD side can catch
-any of this, since the HIP branch of the shim includes hipRAND instead and hipRAND is
+conflicting-declaration errors; the reverse order is clean. A shim tends to be reached very
+early -- the lowest common layer is where you put it -- so a curand include there lands in
+the failing order for any TU that gets to the shim before some `.cuh` has dragged in the
+launch parameters, and the shim's own `#include <cuda_runtime.h>` does not rescue it because
+cuda_runtime.h includes device_launch_parameters.h only under `#if defined(__CUDACC__)`. It
+is not universal and you do not need it to be: one exposed TU is enough. Establish it by
+preprocessing rather than by reasoning about the include graph -- `g++ -E <the target's own
+flags> foo.cpp | grep -n 'device_launch_parameters.h"\|<shim>.h"'` gives the two line numbers
+and settles the order per TU. (In HEonGPU exactly one of the library's four host TUs was
+exposed: `lib/heongpu.cpp` reaches the shim at line 18 and the launch parameters at 58820,
+while `kernel/contextpool.cpp` gets them at 58806 and 59557 respectively because its own
+header includes GPU-NTT's `nttparameters.cuh` first, and two others reach the shim not at
+all.) Give a shim the runtime header only and leave the RNG include in the kernel headers
+that use it: those are reached later, after the launch parameters, which is why they are
+safe. If a host TU ever reaches the RNG header first, put `<device_launch_parameters.h>`
+ahead of it there rather than moving the include back into the shim. Nothing on the AMD
+side can catch any of this, since the HIP branch of the shim includes hipRAND instead and hipRAND is
 host-safe. (HEonGPU)
 
-**Do not move device function BODIES into a header that host TUs include, even though HIP
-seems to demand it.** When a project keeps `__device__` function definitions in their own
-`.cu` with explicit instantiations, it is relying on relocatable device code (nvcc `-rdc`,
-which CMake's `CUDA_SEPARABLE_COMPILATION` turns on). Without `-fgpu-rdc` a HIP build cannot
-resolve that call across TUs -- `lld: error: undefined hidden symbol` at link -- so the
-obvious fix is to move the bodies into the header and mark them `__device__ inline`. That
-works on AMD and silently breaks the CUDA build wherever a host TU reaches the header: g++
-must then parse device bodies and rejects `__syncthreads` ("there are no arguments to
-`__syncthreads` that depend on a template parameter"). It fails even though the templates are
-never instantiated in that TU, because `__syncthreads` is a non-dependent name and two-phase
-lookup resolves it at definition time. Keep the declarations unconditional and guard the
-DEFINITIONS:
+**A `__device__` body in its own `.cu` needs `-fgpu-rdc`, not a move into a header.** When a
+project keeps `__device__` function definitions in their own `.cu` with explicit
+instantiations, it is relying on relocatable device code (nvcc `-rdc`, which CMake's
+`CUDA_SEPARABLE_COMPILATION` turns on). A HIP compile resolves device symbols one TU at a
+time, so without the flag it stops with `lld: error: undefined hidden symbol`. HIP has the
+same facility -- `-fgpu-rdc` -- and enabling it is normally the right answer: it is the
+direct counterpart of the setting the CUDA side already has, and it leaves the project's
+sources untouched. CMake has no `HIP_SEPARABLE_COMPILATION` property (checked on CMake
+4.0.3), so wire it by hand, and remember the LINK side and the consumers:
+
+```cmake
+target_compile_options(mylib PRIVATE $<$<COMPILE_LANGUAGE:HIP>:-fgpu-rdc>)
+# whoever links the archive performs the device link, including a consumer of the
+# installed export, so put it on the interface rather than in everyone's build
+target_compile_options(mylib INTERFACE $<$<COMPILE_LANGUAGE:HIP>:-fgpu-rdc>)
+target_link_options(mylib INTERFACE -fgpu-rdc)
+```
+
+**Cross-TU `__device__` calls ARE inlined on AMD under `-fgpu-rdc`.** Do not repeat the nvcc
+intuition here: nvcc `-rdc=true` really does leave a call unless you add `-dlto`, but HIP's
+device link is a bitcode link followed by optimization of the whole image. Measured on gfx90a
+with ROCm 7.2.1, on a `__device__` function template with its explicit instantiation in one
+TU called from a `__global__` in another: the linked device image contains only the kernel,
+`s_swappc_b64` count 0, and the callee's `s_barrier`s appear inline in it. What `-fgpu-rdc`
+does cost is link time and image size, and both are worth measuring before deciding
+(HEonGPU, gfx90a: default library build 53.7 s vs 52.1 s, i.e. unchanged, but 193.6 s vs
+326.6 s once 34 test/example/benchmark executables are enabled, since each one device-links
+the whole library; device code per test binary 1,575,096 -> 1,684,264 bytes; TFHE gate
+timings and 20/20 suites identical either way).
+
+**Moving the bodies into a host-reachable header instead silently breaks the CUDA build.**
+This is the tempting move when you do not know `-fgpu-rdc` is available: mark them
+`__device__ inline` in the header. It works on AMD, and g++ compiling any host TU that
+reaches the header must then parse device bodies and rejects `__syncthreads` ("there are no
+arguments to `__syncthreads` that depend on a template parameter") -- even though the
+templates are never instantiated in that TU, because `__syncthreads` is a non-dependent name
+and two-phase lookup resolves it at definition time. If you have a reason to keep the bodies
+in the header anyway, keep the declarations unconditional and guard the DEFINITIONS:
 
 ```cpp
 template <typename T> __device__ void SmallForwardNTT(T*, ...);   // host TUs see this
@@ -362,16 +394,20 @@ Test the COMPILER (`__CUDACC__`/`__HIPCC__`), not the target: the requirement is
 device compiler parses a device body, and both back ends compile the calling `.cu` files with
 one. `__CUDA_ARCH__`/`__HIP_DEVICE_COMPILE__` would be wrong here -- they are false during
 nvcc's host pass, which still has to parse the same TU. Adding `inline` at the definition
-after a non-inline declaration is legal. Restoring the separate `.cu` for CUDA while keeping
-the header definitions for HIP is the other option and it is worse: it duplicates the bodies
-in two files that must not drift.
+after a non-inline declaration is legal. The third arrangement, keeping the separate `.cu`
+for CUDA and the header definitions for HIP, is the worst of them: it duplicates the bodies
+in two files that must not drift. HEonGPU carried the guard for two rounds and then dropped
+it for `-fgpu-rdc`, which restored both files to their upstream text and left the whole
+change three lines of CMake and the comment explaining them.
 
 **No AMD build, review round or GPU validation can detect this class.** In HEonGPU two review
 rounds and a full 20/20 GPU validation passed over the inlined header; only compiling the
-CUDA path with nvcc found it. Any port that makes this move owes an nvcc compile check
-(references/validation.md). The guard itself is codegen-neutral on AMD -- verified with
-`codeobj_diff.py`, identical exported symbols and device ISA on all 42 gfx90a binaries --
-because every calling TU is a device TU where the guard is true. (HEonGPU)
+CUDA path with nvcc found it. Any port that touches how device bodies are compiled owes an
+nvcc compile check (references/validation.md). Adding the guard is codegen-neutral on AMD --
+verified with `codeobj_diff.py`, identical exported symbols and device ISA on all 42 gfx90a
+binaries -- because every calling TU is a device TU where the guard is true. Switching to
+`-fgpu-rdc` is NOT: it changes the device ISA of every binary (the device link re-optimizes
+the whole image), so it is a real code delta and every arch owes a fresh GPU run. (HEonGPU)
 
 **`__HIP_PLATFORM_AMD__` is undefined until `hip/hip_runtime.h` has been included in that
 TU.** A wave-width gate in a header included BEFORE the runtime header silently takes the
