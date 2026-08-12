@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-06-09T22:04:50Z",
-  "updated_at": "2026-08-09T15:37:37Z",
+  "updated_at": "2026-08-12T22:11:27Z",
   "head_sha": "041d5528286a81465828a668d014035e149f6a97",
   "depends_on": [],
   "pr_url": "https://github.com/opencv/opencv_contrib/pull/4147",
@@ -131,5 +131,6 @@
         "at": "2026-08-09T15:37:37Z"
       }
     }
-  }
+  },
+  "published_sha": "041d5528286a81465828a668d014035e149f6a97"
 }
