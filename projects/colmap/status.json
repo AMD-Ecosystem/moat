@@ -7,8 +7,8 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-10T13:58:57Z",
-  "updated_at": "2026-08-12T15:31:45Z",
-  "head_sha": "4c531f5e51f18eeb145309f8650a8da58453c8af",
+  "updated_at": "2026-08-12T20:17:29Z",
+  "head_sha": "0af9a2d6c91e4723ed5c977fde5114c0d789ae10",
   "depends_on": [],
   "fork_branch": "moat-port",
   "on_hold": false,
@@ -143,5 +143,12 @@
   "pr_url": "https://github.com/colmap/colmap/pull/4635",
   "pr_number": 4635,
   "pr_opened_at": "2026-08-11T22:27:08Z",
-  "pr_state": "open"
+  "pr_state": "open",
+  "published_sha": "4c531f5e51f18eeb145309f8650a8da58453c8af",
+  "fix": {
+    "branch": "moat-fix-4635",
+    "base_sha": "4c531f5e51f18eeb145309f8650a8da58453c8af",
+    "review_pr": null,
+    "opened_at": "2026-08-12T20:17:29Z"
+  }
 }
