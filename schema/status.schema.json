@@ -273,6 +273,44 @@
     "pr_closed_note": {
       "type": "string"
     },
+    "published_sha": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "fix": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "branch",
+        "base_sha"
+      ],
+      "properties": {
+        "branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "base_sha": {
+          "type": "string",
+          "minLength": 1
+        },
+        "review_pr": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "opened_at": {
+          "type": "string"
+        }
+      }
+    },
+    "fix_merged_at": {
+      "type": "string"
+    },
     "review_pr": {
       "type": "string"
     },
