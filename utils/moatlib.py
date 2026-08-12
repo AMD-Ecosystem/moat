@@ -717,6 +717,16 @@ def set_not_portable(name, reason, by, clear=False):
 
 def set_blocked(name, platform, blocked, reason=None):
     obj = load_status(name)
+    if platform not in obj["platforms"]:
+        # An absent record means this arch has recorded nothing, which is exactly the
+        # arch most likely to discover it cannot run the project at all -- so blocking
+        # one has to be able to create the row, the way a stage transition does. Only
+        # blocking creates it: writing a row that says "not blocked" would record an
+        # intention to validate somewhere, which is fleet state and not a fact about
+        # the port.
+        if not blocked:
+            raise ValueError(f"{name}: {platform} has recorded nothing; nothing to clear")
+        obj["platforms"][platform] = _platform_block(None)
     blk = obj["platforms"][platform]
     blk["blocked"] = bool(blocked)
     blk["blocked_reason"] = reason if blocked else None
