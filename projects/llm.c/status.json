@@ -7,7 +7,7 @@
   "priority": 6.667,
   "ext_type": "makefile",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-08-08T03:30:38Z",
+  "updated_at": "2026-08-12T22:11:17Z",
   "head_sha": "de1dd620184356193b9864118dd4162b11938dd7",
   "depends_on": [],
   "pr_url": "https://github.com/karpathy/llm.c/pull/854",
@@ -165,5 +165,6 @@
         "at": "2026-06-24T00:02:17Z"
       }
     }
-  }
+  },
+  "published_sha": "de1dd620184356193b9864118dd4162b11938dd7"
 }
