@@ -55,6 +55,19 @@
       "upstream_issue": null,
       "created_at": "2026-08-11T17:53:41Z",
       "decided": null
+    },
+    {
+      "id": "heongpu-hip-link-interface-option",
+      "kind": "other",
+      "component": null,
+      "summary": "Consider --hip-link on the heongpu INTERFACE_LINK_OPTIONS: the installed export already records HIP as the link interface language, so every CMake consumer is driven by the ROCm clang++ and only --hip-link is missing; adding it would make every CMake consumer work unaided, at the cost of a consumer that pins LINKER_LANGUAGE CXX. Measured at round 7; a code change, deliberately not made in a prose round.",
+      "refs": [
+        "projects/HEonGPU/notes.md#round-7-fix-2026-08-12"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-12T23:07:40Z",
+      "decided": null
     }
   ]
 }

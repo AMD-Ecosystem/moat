@@ -366,16 +366,35 @@ about it.** The interface options above make the common consumer work, they do n
 requirement go away, and a comment claiming the consumer need not know is wrong. An archive
 of relocatable device code carries no complete device image, so the device link happens at
 the consumer's final link and only the HIP driver in HIP link mode performs it. Two failure
-modes, both measured against an installed export (ROCm 7.2.1, gfx90a): a plain
-`g++` link gives `undefined reference to __hip_gpubin_handle_<hash>` and
-`__hip_fatbin_<hash>`, and where the CXX compiler is gcc it does not even get that far
+modes (ROCm 7.2.1, gfx90a): a `g++` link of the installed archive gives
+`undefined reference to __hip_gpubin_handle_<hash>` and `__hip_fatbin_<hash>`, and a
+gcc-driven link that does receive the interface flag does not even get that far
 (`g++: error: unrecognized command-line option '-fgpu-rdc'`). The trap is that a CMake
-consumer can hit the first one too: CMake adds `--hip-link` only for a target that has HIP
-sources of ITS OWN, so an app `.cpp` linking a HIP library that links the archive is linked
-by the HIP compiler WITHOUT `--hip-link` and gets the undefined `__hip_fatbin_*`. Setting
-`LINKER_LANGUAGE HIP` does not add it either; `target_link_options(app PRIVATE --hip-link)`
-does. Do NOT try to fix this by wrapping the interface flag in `$<LINK_LANGUAGE:HIP>`: that
-only trades the unrecognized-option message for the undefined-symbol one. Fix it in prose --
+consumer can hit either one, and which remedy it needs depends on who drives its link, so
+separate the two conditions before writing anything down. The DRIVER must be the HIP
+compiler, which CMake arranges when the target has HIP sources of its own, when it links a
+target that has them, when it links an IMPORTED target whose
+`IMPORTED_LINK_INTERFACE_LANGUAGES` is HIP -- `install(EXPORT)` records that for a library
+built from HIP sources, and it propagates even through a plain C++ intermediate library --
+or when the target sets `LINKER_LANGUAGE HIP`. The LINE must also carry `--hip-link`, which
+CMake adds ONLY for a target that has HIP sources of ITS OWN. Measured against an installed
+export and against a hand-imported archive (ROCm 7.2.1, gfx90a, CMake 4.0.3):
+
+| consumer target | link driver | needs |
+| --- | --- | --- |
+| one of its own sources compiled as HIP | HIP, `--hip-link` added | nothing |
+| plain C++, links the exported target directly or through a plain C++ library | HIP, no `--hip-link` | `target_link_options(app PRIVATE --hip-link)` |
+| plain C++, links a local HIP-source library that links the archive | HIP, no `--hip-link` | same |
+| plain C++, links an IMPORTED archive with no link interface language | gcc | `LINKER_LANGUAGE HIP` AND `--hip-link`; `--hip-link` alone only adds a second unrecognized option |
+| the archive named by path, no imported target | gcc | `LINKER_LANGUAGE HIP`, `--hip-link` AND `-fgpu-rdc`, since nothing supplies the flag either |
+
+`LINKER_LANGUAGE HIP` never adds `--hip-link`, so it is useless alone and needed only where
+the driver is still gcc. Because a consumer reaching the archive through `find_package`
+always lands in the HIP-driver rows, prose that offers `--hip-link` as THE fix is right for
+an installed export and wrong for a hand-rolled import; say which one you mean rather than
+generalizing from the shape you happened to measure. Do NOT try to fix any of this by
+wrapping the interface flag in `$<LINK_LANGUAGE:HIP>`: that only trades the
+unrecognized-option message for the undefined-symbol one. Fix it in prose --
 wherever the project tells a CUDA consumer to set `CUDA_SEPARABLE_COMPILATION ON`, the HIP
 consumer needs the parallel sentence. (HEonGPU)
 

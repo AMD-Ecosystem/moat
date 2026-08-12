@@ -2639,3 +2639,66 @@ no-op claim check out, and the CUDA path is untouched (the diff is entirely
 inside `if(USE_HIP)` plus additive `.rst`). The fix is prose in three files, no
 rebuild and no new GPU obligation: both archs already owe the 20 suites at head
 for the `-fgpu-rdc` switch, and a docs-only commit on top does not add to that.
+
+## Round 7 fix 2026-08-12 (linux-gfx90a, f657723)
+
+Addresses the single round-7 finding. Prose only in three files
+(`docs/advanced_topics.rst`, `src/CMakeLists.txt`, and the skill's
+`fault-classes.md`); `moatlib classify 56615ec f657723` reports
+`class=comment-only arch_independent=True inert=True`, so no rebuild of the
+library and no new GPU obligation: both archs still owe the 20 suites at head
+for the `-fgpu-rdc` switch itself, and this commit adds nothing to that.
+
+Rebuilt the whole consumer matrix from scratch rather than reusing the round-6
+or the review reproduction (`agent_space/round7/`, gitignored: `mini/` is a
+two-TU `-fgpu-rdc` static library with a plain C++ entry point standing in for a
+hand-imported archive, `consumers/` holds one CMake target per row and also
+links the real installed export at
+`agent_space/heongpu-consumer/prefix`). ROCm 7.2.1, gfx90a, CMake 4.0.3,
+`CMAKE_CXX_COMPILER=/usr/bin/c++`.
+
+The measurement that changes the answer: the installed export sets
+`IMPORTED_LINK_INTERFACE_LANGUAGES_RELEASE "HIP"` in
+`lib/cmake/HEonGPU-1.1/HEonGPUTargets-release.cmake`, which CMake writes on its
+own for a static library built from HIP sources. So a consumer that reaches the
+library through `find_package` is ALWAYS driven by
+`/opt/rocm/lib/llvm/bin/clang++` and always receives the interface `-fgpu-rdc`,
+even when its own sources are plain C++ and even when it reaches the library
+through a plain C++ intermediate library. The review's plain-consumer row was
+measured on a stand-in imported target without that property, which is why it
+saw `/usr/bin/c++` and a rejected `--hip-link`; that shape is real but it is not
+what `find_package` produces.
+
+Rows, all rebuilt here (`rc`, link driver from `link.txt`):
+
+| consumer target | substrate | driver | result |
+| --- | --- | --- | --- |
+| one own source as HIP (the documented snippet) | real export | rocm clang++ | links, `context OK` |
+| plain C++, links only `HEonGPU::heongpu`, references a device-carrying member via `-Wl,-u,_ZN7heongpu10modInverseEmm` | real export | rocm clang++ | undefined `__hip_fatbin_1f6ece...` / `__hip_gpubin_handle_` |
+| that + `--hip-link` | real export | rocm clang++ | links, runs |
+| that + `LINKER_LANGUAGE HIP` only | real export | rocm clang++ | same undefined symbols (the property never adds `--hip-link`) |
+| that + `LINKER_LANGUAGE HIP` and `--hip-link` | real export | rocm clang++ | links, runs |
+| plain C++ exe over a plain C++ static lib that links the export | real export | rocm clang++ | undefined symbols; `--hip-link` fixes it |
+| plain C++ exe over a local HIP-source wrapper lib | real export | rocm clang++ | undefined symbols; `--hip-link` fixes it; `LINKER_LANGUAGE HIP` + `--hip-link` also works |
+| plain C++, links a hand-imported archive carrying only `INTERFACE_LINK_OPTIONS -fgpu-rdc` | `mini` | `/usr/bin/c++` | `unrecognized command-line option '-fgpu-rdc'` |
+| that + `--hip-link` | `mini` | `/usr/bin/c++` | plus `unrecognized command-line option '--hip-link'` |
+| that + `LINKER_LANGUAGE HIP` only | `mini` | rocm clang++ | undefined `__hip_fatbin_*` |
+| that + `LINKER_LANGUAGE HIP` and `--hip-link` | `mini` | rocm clang++ | links, prints `mini_run 42` |
+| archive named by path, no imported target | real export | `/usr/bin/c++` | undefined `__hip_gpubin_handle_*` (the flag never reaches the line) |
+| that + `LINKER_LANGUAGE HIP` + `--hip-link` | real export | rocm clang++ | still undefined; `-fgpu-rdc` is missing too |
+| that + `LINKER_LANGUAGE HIP` + `--hip-link` + `-fgpu-rdc` | real export | rocm clang++ | links, runs |
+
+So the shipped `.rst` keeps `--hip-link` as the remedy for a `find_package`
+consumer, which is now stated with the reason (the export supplies the driver
+and the flag; CMake supplies HIP link mode only for a target with its own HIP
+source), and gains one sentence for the by-path shape, which needs all three by
+hand. `src/CMakeLists.txt` names both failure modes instead of one. The
+generalizable half went to the skill's `fault-classes.md` as a driver/line split
+with the same table, since the next port copying that recipe is exactly who was
+misled.
+
+Not taken, for a person to rule on: `target_link_options(heongpu INTERFACE
+--hip-link)` would make every CMake consumer of the export work with no action
+at all, because the export already forces the HIP driver. It is a code change
+with its own risk (a consumer that pins `LINKER_LANGUAGE CXX` would then get an
+option gcc rejects), so it is out of scope for a prose round.
