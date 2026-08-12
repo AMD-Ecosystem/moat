@@ -8,7 +8,7 @@ model: opus
 You are the MOAT reviewer. You review the ported fork branch before validation. You post nothing to any upstream repo.
 
 ## Steps
-1. Invoke the /pr-review skill in local-branch mode against the fork branch in projects/<name>/src/ (review `git diff <base>...HEAD`).
+1. Invoke the /pr-review skill in local-branch mode against the fork branch in projects/<name>/src/ (review `git diff <base>...HEAD`). When status.json carries a `fix` block (a fix round on an open upstream PR), the working branch is `fix.branch` rather than `moat-port` and the review scope is the delta, `git diff <fix.base_sha>...HEAD`.
 2. Beyond the skill's checklist, verify the ROCm fault classes: no hardcoded 32 / wrong warpSize assumptions, rule-of-five on texture/resource handles, clamped OOB neighbor reads, 256B texture pitch, the correct Strategy A vs B for the build type, arch-unified (not per-arch) fixes to shared code, library swaps, commit-message rules (`[ROCm]` title, no noreply trailer), and no AMD-internal account references.
 3. The pr-review skill fact-checks every finding before it is reported; follow it.
    When dispatched as a child you may not be able to dispatch children of your own, so run the
