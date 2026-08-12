@@ -32,6 +32,19 @@
       "upstream_issue": "https://github.com/colmap/colmap/issues/4633",
       "created_at": "2026-08-11T19:53:26Z",
       "decided": null
+    },
+    {
+      "id": "colmap-gfx942-texture-buffer-rewrite",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "gfx942/MI300X cannot run COLMAP GPU code: ROCm 7.14 compiler defines __HIP_NO_IMAGE_SUPPORT__ for gfx942, so every tex1Dfetch/tex2D in SiftGPU ProgramCU.cu and the merged MVS HIP code (gpu_mat_ref_image.cu, patch_match_cuda.cu) fails; hipMallocArray/hipCreateTextureObject return hipErrorNotSupported on the device. Supporting MI300 requires a texture-to-buffer rewrite (feature-sized, affects already-merged upstream MVS code too, not just this PR). Recorded as platforms.linux-gfx942.blocked; wave64 gate covered by gfx90a.",
+      "refs": [
+        "projects/colmap/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-12T15:19:54Z",
+      "decided": null
     }
   ]
 }
