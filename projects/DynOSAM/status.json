@@ -7,13 +7,47 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-07T17:05:58Z",
-  "updated_at": "2026-08-07T17:07:00Z",
+  "updated_at": "2026-08-12T00:26:57Z",
   "head_sha": null,
   "depends_on": [
-    "opencv_contrib"
+    "opencv_contrib",
+    "opencv"
   ],
   "porting": null,
   "waivers": {},
-  "stage": "unclaimed",
-  "platforms": {}
+  "stage": "awaiting-fork",
+  "platforms": {
+    "linux-gfx1100": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-12T00:26:57Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "BSD-3-Clause",
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none -- no AMD-Ecosystem/ROCm repo, all 33 upstream forks vanilla, no AMD mention in upstream docs",
+    "viable": true,
+    "summary": "ROS2 dynamic-object SLAM (BSD-3, 327 stars, active): its GPU-critical half is cv::cuda PyrLK/GoodFeatures, already ported and validated by our own opencv_contrib on gfx1100, and its own CUDA is one 327-line .cu; what decides it is whether we accept reimplementing its raw-TensorRT YOLOv8 inference on MIGraphX (no ONNX Runtime layer exists) inside a ROS2 + GTSAM + from-source-OpenCV stack.",
+    "at": "2026-08-12T00:26:46Z"
+  }
 }
