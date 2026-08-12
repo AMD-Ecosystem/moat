@@ -75,3 +75,8 @@
 {"kind":"phase","ts":"2026-08-11T17:17:31Z","phase":"test","seconds":13.410,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
 {"kind":"session","ts":"2026-08-11T17:52:13Z","epoch":1786470733.800182723,"event":"end","platform":"linux-gfx90a"}
 {"kind": "tokens", "ts": "2026-08-11T17:53:03Z", "tokens": 167491, "source": "validator"}
+{"kind":"session","ts":"2026-08-11T23:52:45Z","epoch":1786492365.225483149,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-11T23:54:20Z","phase":"compile","seconds":53.142,"exit":0,"cmd":"bash -c \ncmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build \\\n    -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release \\\n    -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON \\\n  && cmake --build projects/HEonGPU/src/build -j64\n"}
+{"kind":"phase","ts":"2026-08-11T23:54:50Z","phase":"test","seconds":11.817,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"phase","ts":"2026-08-11T23:55:06Z","phase":"test","seconds":11.723,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"session","ts":"2026-08-12T00:00:50Z","epoch":1786492850.596355838,"event":"end","platform":"linux-gfx1100"}

@@ -1343,3 +1343,150 @@ real gfx90a hardware, not just re-read from the porter's notes. CUDA gate is
 `cuda-not-validated` (environmental wall, not a regression finding -- the
 port was never built as CUDA here, so no comparison against upstream
 breakage was possible or necessary).
+
+## Validation 2026-08-11 (linux-gfx1100, Radeon Pro W7800, ROCm 7.2.3) -- completed
+
+Real-GPU validation of `moat-port` at `5d99b8f447895f5b34b35f856e654d65e69b390a`
+(the `review-passed` head; this arch's first validation, `validated_sha` was
+null beforehand). GPU: `rocminfo` reports four "AMD Radeon Pro W7800 48GB"
+(gfx1100, RDNA3/wave32) on this host; `/opt/rocm/.info/version` (via
+`rocm-smi`) reports 7.2.3.
+
+The local fork clone at `projects/HEonGPU/src` was still on `043ff00` from an
+abandoned 2026-08-08 session; fast-forwarded it to `origin/moat-port` at
+`5d99b8f` (`git merge --ff-only`), then reset the three thirdparty submodules
+to pristine (`git checkout -- . && git clean -fdx` in each) so
+`thirdparty/build.sh ON`, invoked by CMake at configure time, applied the
+CURRENT patches from a clean base rather than layering onto an already-dirty
+tree left by the old commit's patches.
+
+Clean build from scratch (`rm -rf build` first):
+
+```bash
+cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build \
+    -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release \
+    -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON
+cmake --build projects/HEonGPU/src/build -j64
+ctest --test-dir projects/HEonGPU/src/build --output-on-failure
+```
+
+Both wrapped in `utils/timeit.sh HEonGPU compile -- ...` / `utils/timeit.sh
+HEonGPU test -- ...`. Build produced `libheongpu.a`, `libntt-1.0.a`,
+`libfft-1.0.a`, `librngongpu-1.0.a` and all 15 test executables, no `error:`
+in the log (warnings only: `-Wunused-value` on `[[nodiscard]]` HIP error
+codes and `-Wpass-failed` loop-unroll notices, same classes as gfx90a).
+`ctest`: **20/20 passed**, run twice back to back (11.70s and 11.59s).
+`git -C projects/HEonGPU/src status --porcelain` empty before and after (the
+three submodules show only the expected patch-applied diffs under
+`ignore = dirty`).
+
+### Wave-width coverage note
+
+This is the second arch to run these three crypto fixes on real hardware,
+and the first at wave32. Attempt 4 (2026-08-08) had already ruled out
+wavefront width as the cause of the pre-fix 18/20 failures by reproducing
+the identical failure set on this same gfx1100 card; this run confirms the
+converse -- the fixes that resolved gfx90a (wave64) also resolve gfx1100
+(wave32), which is expected since none of the three root causes (a
+128-bit shift count, a float-to-unsigned cast, an allocation-vs-launch
+geometry mismatch) has any wavefront-width dependence, and is worth having
+measured rather than assumed.
+
+### Independent re-check: Barrett 128-bit shift, and a probe-methodology pitfall
+
+Reused the gfx90a validation's approach: an independent probe compiled
+against the built `libntt-1.0.a`'s header directly (no library code
+changed), sweeping modulus widths with random pairs against a
+`__uint128_t` host reference. First attempt used moduli of the form
+`2^bits - small_offset` (offset up to 1000) and got 19998/20000 bad at 61
+and 62 bits -- which looked like a wave32 regression the gfx90a run had
+missed. It was not: `Modulus::bit_generator()` computes `bit =
+static_cast<T1>(log2(value) + 1)` on the HOST in plain double arithmetic,
+and a modulus within about 1024 of an exact power of two (at 61-62 bits,
+double's mantissa only resolves increments of 512-1024 at that magnitude)
+rounds `log2(value)` up to exactly the power-of-two boundary, so
+`bit_generator` returns one more than the true bit length. That
+mis-sized `bit` field, not the shift fix, is what produced the wrong
+`mu` and wrong Barrett reduction -- confirmed by checking the SAME q's
+`mod.bit` field directly (62 for a 61-bit modulus) and by rerunning with
+moduli drawn uniformly across each target bit width instead of clustered
+against the boundary, which restored `0/20000 bad` at every width:
+
+```
+bits=20  q=711789                 bit=20 mu=3089431              mult: 0/20000 bad
+bits=36  q=46751029023            bit=36 mu=202021926856          mult: 0/20000 bad
+bits=37  q=101323417063           bit=37 mu=372854893350          mult: 0/20000 bad
+bits=59  q=500003406430292181     bit=59 mu=1329218940001591548   mult: 0/20000 bad
+bits=60  q=817179969723198473     bit=60 mu=3253207481909186472   mult: 0/20000 bad
+bits=61  q=1775933377289357583    bit=61 mu=5987738111274164963   mult: 0/20000 bad
+bits=62  q=3202365455985161811    bit=62 mu=13282461495960627051  mult: 0/20000 bad
+```
+
+This is host-side, standard-library floating point, identical on any
+platform and any back end -- not a HIP or wave32 effect, and not present
+in the gfx90a validation because that probe (and this project's own
+NTT-friendly prime search) never lands a modulus quite that close to a
+power of two. Recorded here as a diagnostic method: when a probe for a
+fixed defect newly fails on a second arch, check whether the PROBE's own
+inputs are pathological before concluding the fix regressed.
+
+### TFHE random-state buffer and the negative-float cast
+
+Not re-probed standalone here (the gfx90a validation already isolated and
+measured both independently, and neither has any wavefront-width
+dependence by construction: the state-buffer geometry is a scalar
+allocation-vs-launch-size count, and the cast is a per-thread scalar
+conversion). Both are exercised end-to-end by `TFHE_Gate_Boots` (state
+buffer) and by all seven BFV and seven CKKS suites (the Gaussian sampler
+runs in every keygen), all of which passed on this arch. `15_basic_tfhe`
+(below) additionally cross-checks the TFHE gates against their Boolean
+truth tables, which the ctest suite does not do explicitly.
+
+### Examples and benchmarks
+
+Built with `-DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON` in
+the same configure. `readelf -d` scanned over all 42 executables under
+`build/bin` (15 tests, 24 examples, 3 benchmarks): **no `libgomp` in any
+binary**, confirming the round-3-review OpenMP fix holds on a from-scratch
+gfx1100 build.
+
+Ran and checked by inspection:
+- `1_basic_bfv`: exits 0, decrypted results match the expected squared/
+  scaled values shown in the example's own printed check.
+- `9_multi_stream_usage_way1` (the OpenMP example): exits 0.
+- `15_basic_tfhe`: exits 0; manually verified all eight gate outputs
+  against their Boolean truth tables from the printed inputs (NAND, AND,
+  NOR, OR, XNOR, XOR, NOT, MUX all correct bit-for-bit).
+- `benchmark/tfhe_benchmark`: exits 0, all eight gates report sane
+  per-op timings (NAND/AND/NOR/OR/XNOR/XOR ~12.9ms, NOT ~0.015ms, MUX
+  ~23.6ms -- same shape as the gfx90a run's ~16.5/0.012/30ms, faster here
+  as expected for a different card).
+
+### CUDA no-regression gate
+
+Already recorded at this exact `head_sha` (`5d99b8f`) by the gfx90a
+validation above as `cuda-not-validated` (upstream CUDA path's RMM
+dependency needs a full-history network clone of `NVIDIA/cccl`). Per the
+validator's per-head_sha rule, not re-attempted on this arch.
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --port HEonGPU`: clean (required creating a local
+`main` branch tracking `origin/main` in the fork clone alongside the
+existing local `moat-port`, since the tool resolves the range by local
+branch name; deleted again after the check, no fork content touched).
+Documentation confirmed present in `README.md` ("AMD GPUs (ROCm)" section)
+and `docs/getting_started.rst` (ROCm prerequisite, HIP configure line,
+`USE_HIP=ON`/`CMAKE_HIP_ARCHITECTURES` build instructions) in the checked-
+out tree at this head.
+
+### Verdict
+
+`linux-gfx1100`: **completed** at `5d99b8f447895f5b34b35f856e654d65e69b390a`.
+First validation on this arch (previously unvalidated); wave32 gate now
+satisfied for this head. 20/20 reproduced twice from a clean build; the
+Barrett-shift fix re-verified independently (after correcting a
+pathological-input artifact in the probe itself, see above); examples and
+benchmarks run correctly including a manual truth-table check of the TFHE
+gates; no `libgomp` in any of 42 built binaries. CUDA gate already recorded
+at this `head_sha`, not re-run.
