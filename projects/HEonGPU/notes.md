@@ -1772,3 +1772,112 @@ HEonGPU` clean over the branch. Both titles are `[ROCm]`-prefixed and under 72
 chars (64, 58); Claude named in both bodies, no noreply trailer. No submodule or
 patch file touched by the delta; fork tree clean. No AMD-internal account
 references.
+
+## Porter Attempt 9 (2026-08-12, linux-gfx90a) -- round-4 findings addressed
+
+All five findings addressed. Round 4 was a writing round: no design or code
+behaviour changed, and the reviewer's verdicts on the four round-3 claims stand
+as written. Fork head `4ceabb2` -> `4925df1`, two new commits, nothing amended,
+`5d99b8f` still an ancestor.
+
+### 1 + 5 (fork, upstream-visible)
+
+`0e027a4` rewrites the `cuda_to_hip.h` comment. The old text named a condition
+the fixed tree disproves ("when a host compiler sees both"); the new text names
+the ORDER, which is the actual condition, plus why this header specifically was
+the wrong home for the include: `util.cuh:9` pulls it in first of all, and its
+own `#include <cuda_runtime.h>` does not put `device_launch_parameters.h` in
+front because cuda_runtime.h includes that only under `__CUDACC__`. Re-verified
+the reproducer here in BOTH directions against the CUDA 12.8 headers rather than
+trusting the review, since the text ships:
+
+```
+g++-13 -fsyntax-only -I$CUDA/include probe.cpp
+  curand_kernel.h, then cuda_runtime.h + device_launch_parameters.h -> 2 errors
+    (device_launch_parameters.h:71 conflicting 'const uint3 threadIdx' with C
+     linkage; previous declaration with C++ linkage at
+     curand_mtgp32_kernel.h:124)
+  the reverse order -> rc=0, silent
+```
+
+`4925df1` records the `-fgpu-rdc` rationale that finding 5 says a maintainer
+will ask for first. It is a new commit, not an amend, and it carries a short
+version of the reason into `small_ntt.cuh` next to the guard as well, since that
+is where the question gets asked: enabling relocatable device code for HIP is
+the analogue of the `CUDA_SEPARABLE_COMPILATION ON` at `src/CMakeLists.txt:23`
+and would have left the header alone, but it leaves each butterfly a cross-TU
+call the compiler cannot inline into the kernel running it, and the measured
+20/20 result is from the header-definition build while an `-fgpu-rdc` build was
+never measured. The design is unchanged.
+
+### 2, 3, 4 (MOAT-side, this branch)
+
+- `fault-classes.md`: the headline "cuRAND's device header is not host-includable
+  at all" is replaced by the order-dependent rule, and the entry now says
+  explicitly that the FIXED build has six `kernel/*.cuh` including
+  `<curand_kernel.h>` reachable from the umbrella header, so every host `.cpp`
+  includes it and compiles. Kept the reason a shim in particular cannot hold it.
+- `SKILL.md`: one index line added under "Headers, includes and build" for the
+  device-bodies-in-a-header class, so a porter scanning the index before making
+  that exact move reaches the reference.
+- `validation.md`: the CPM/FetchContent override recipe was wrong and would have
+  cost the next porter the multi-hour clone it exists to prevent. Verified
+  against the CPM copy in `agent_space/HEonGPU-upstream-build/cmake/`:
+
+  ```
+  CPM_0.40.0.cmake:686
+    if(NOT CPM_ARGS_FORCE AND NOT "${CPM_${CPM_ARGS_NAME}_SOURCE}" STREQUAL "")
+  ```
+
+  so CPM takes the package name case-sensitively as `CPMAddPackage` received it
+  while CMake upper-cases it for `FETCHCONTENT_SOURCE_DIR_<NAME>`. The entry now
+  says which name each takes and where to read the real spelling
+  (`rapids-cmake/cpm/versions.json`, or the first argument of the project's own
+  `CPMAddPackage`). It was moot here only because the package is named `CCCL`.
+
+### Verification of this round
+
+AMD, gfx90a, ROCm 7.2.1, MI210:
+
+```
+cmake --build projects/HEonGPU/src/build -j64        # rc=0, 0 "error:" lines
+ctest --test-dir projects/HEonGPU/src/build          # 100% passed, 20/20, 13.27s
+```
+
+CUDA no-regression check re-run because finding 1 edits a header on the CUDA
+include path (`bash agent_space/heongpu-cuda-check.sh`; last `=== START` is
+20:32:17Z): configure rc=0, build rc=0, zero error lines. 82 objects rebuilt,
+including `lib/heongpu.cpp.o` -- the host TU that reaches both edited headers --
+so the check genuinely covered the edits rather than reusing stale objects.
+
+Binary equivalence, measured not asserted:
+
+```
+python3 utils/codeobj_diff.py agent_space/heongpu-amd-baseline/bin \
+                              projects/HEonGPU/src/build/bin
+  verdict=identical, 42/42 (exported symbols + device ISA)
+roc-obj-ls .../bin/test/bfv_addition_testcases
+  hipv4-amdgcn-amd-amdhsa--gfx90a ... size=8584   (non-empty slice, not a
+                                                   vacuous empty-vs-empty compare)
+```
+
+### What this means for the two archs (read the classifier, not the state word)
+
+Both archs read `revalidate` after `advance-head`, and that was ALREADY true
+before this round -- it is owed for the round-3 code fixes, not for anything
+here. `changeclass.classify` on the two spans makes the distinction:
+
+```
+5d99b8f (validated_sha) .. 4925df1 -> mixed, arch_independent=False
+4ceabb2 (previous head) .. 4925df1 -> comment-only, arch_independent=True
+```
+
+So this round's delta is comment-only and arch-independent by the classifier, on
+top of binary-identical on gfx90a by measurement; a validator revalidating either
+arch is proving the round-3 fixes (`d7d609e`, `4ceabb2`), and nothing in
+`0e027a4`/`4925df1` adds to what has to be re-run. gfx1100 is deliberately not
+claimed from the gfx90a measurement -- carry-forward is per-arch and measured --
+but the comment-only classification is arch-independent by construction.
+
+`jargon.py --port HEonGPU`: clean over the whole branch.
+`git -C projects/HEonGPU/src status --porcelain`: empty.
