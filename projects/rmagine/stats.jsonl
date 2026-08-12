@@ -90,3 +90,9 @@
 {"kind":"session","ts":"2026-08-12T20:35:05Z","epoch":1786566905.638587018,"event":"end","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-12T20:47:39Z","epoch":1786567659.878287730,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-12T20:57:58Z","epoch":1786568278.971229394,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-12T21:01:19Z","epoch":1786568479.553916267,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-12T21:03:49Z","phase":"compile","seconds":0.374,"exit":0,"cmd":"cmake -S projects/rmagine/src -B agent_space/build_final -DCMAKE_INSTALL_PREFIX=/var/lib/jenkins/moat-worktrees/rmagine/agent_space/install_round3"}
+{"kind":"phase","ts":"2026-08-12T21:03:56Z","phase":"compile","seconds":3.772,"exit":0,"cmd":"cmake --build agent_space/build_final -j"}
+{"kind":"phase","ts":"2026-08-12T21:04:03Z","phase":"test","seconds":2.221,"exit":0,"cmd":"ctest --test-dir agent_space/build_final -R ^cuda_ --output-on-failure"}
+{"kind":"phase","ts":"2026-08-12T21:05:48Z","phase":"test","seconds":2.739,"exit":0,"cmd":"ctest --test-dir agent_space/build_final -R ^core_"}
+{"kind":"session","ts":"2026-08-12T21:11:33Z","epoch":1786569093.147376648,"event":"end","platform":"linux-gfx1100"}

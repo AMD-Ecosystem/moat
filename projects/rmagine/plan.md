@@ -1,13 +1,17 @@
-# rmcl -- ROCm/HIP porting plan (lead platform: linux-gfx90a, MI250X, ROCm 7.2.1)
+# rmagine -- ROCm/HIP porting plan (first platform: linux-gfx90a, MI250X, ROCm 7.2.1)
 
 ## Project
-- Name: rmcl -- Mobile Robot Localization in 3D Triangle Meshes & Geometric Scene Graphs (MICP-L pose tracking + Ray-Casting Monte Carlo Localization).
-- Upstream: https://github.com/uos/rmcl  (default branch `main`, version 2.4.0, BSD-3-Clause)
-- Structure: a ROS 2 (ament_cmake) workspace of three packages -- `rmcl` (core C++/CUDA libs), `rmcl_msgs` (message defs), `rmcl_ros` (ROS 2 nodes + GPU kernels). It is a THIN layer over the rmagine ray-casting library (https://github.com/uos/rmagine, external git dependency, NOT vendored -- pulled via `source_dependencies.yaml`).
-- Clone (read-only, analysis): projects/rmcl/src/ ; rmagine analyzed in agent_space/rmagine_probe/ (read-only).
+- Name: rmagine -- a 3D range-sensor simulation library for robots (Embree CPU / OptiX NVIDIA / Vulkan ray-casting backends plus a CUDA compute backend).
+- Upstream: https://github.com/uos/rmagine  (default branch `main`, version 2.4.2, BSD-3-Clause)
+- Fork: https://github.com/AMD-Ecosystem/rmagine, branch `moat-port`, off upstream main 6b93e86.
+- Clone: projects/rmagine/src/
+- Port target: `rmagine_core` + `rmagine_cuda` (Stage 1, the CUDA compute backend), then a HIPRT ray-tracing backend `rmagine_hiprt` (Stage 2).
+
+### How this plan came to be written about rmcl
+This project was scaffolded as **rmcl** (https://github.com/uos/rmcl), a ROS 2 mobile-robot-localization stack that is a thin layer over rmagine. The analysis below started from rmcl and concluded that rmcl's portable GPU compute IS rmagine's CUDA backend, so the real porting target is rmagine; the record was renamed accordingly (open question 1, now answered). rmcl is retained here as the downstream consumer that motivated the port and as the source of the scope decisions: everything in a section marked "downstream (rmcl)" is OUT of scope for this project and would be a separate one. Where the analysis is about rmagine it has been left as written and verified against the fork.
 
 ## TL;DR decision
-rmcl's GPU ray-mesh intersection has TWO distinct GPU paths and they decide port-vs-defer differently:
+Read through rmcl, the GPU ray-mesh intersection has TWO distinct GPU paths and they decide port-vs-defer differently. Both of them live in rmagine:
 
 1. The RMCL / Monte-Carlo (global localization) GPU path is NVIDIA-OptiX-gated -> B7 cluster, DEFER. The `rmcl_localization` node only builds `if(RMCL_OPTIX AND RMCL_EMBREE)` (rmcl_ros/CMakeLists.txt:709) and hard-includes `PCDSensorUpdaterOptix.hpp`; its per-beam likelihood evaluation is an OptiX program (`__raygen__`/`__closesthit__`/`__miss__` + `optixTrace`, src/rmcl/optix/BeamEvaluateProgram.cu) compiled to PTX. No ROCm equivalent without a HIPRT or hand-written HIP-BVH reimplementation of rmagine's OptiX backend. HIPRT is NOT installed on this host and NOT in ROCm 7.2.1 (confirmed: `import hiprt` fails; only hiprtc = runtime compilation is present). Defer pending jeff's HIPRT decision.
 
@@ -55,7 +59,7 @@ if(tid < blockSize/2 && tid < 32) warpReduce<blockSize>(sdata, tid);            
 On gfx90a (wave64) the low 32 lanes of a 64-lane wavefront are NOT guaranteed lockstep across those unsynced `+32..+1` steps, so the reduction is WRONG and run-to-run non-deterministic (manifests as NaN / garbage covariance -- exactly what rmagine's `cuda_math_statistics` test guards). Fix per the guide: on HIP drop the warp-synchronous tail and let the `__syncthreads()`-synchronized tree run to size 1 (change loop bound `s > 32` -> `s > 0` and remove the `warpReduce` call, USE_HIP-guarded; CUDA path unchanged). Same add order, block-wide barrier, correct on any wave size. Verify with a fixed-input determinism check (two runs bit-identical) plus the no-NaN assertion.
 - Secondary: `sdata[tid] *= 0.0` / `sdata[tid].sum = 0.0` zero-init of a `CrossStatistics` struct -- confirm the struct's `operator*=`/field init is defined and produces a true zero (not NaN) on HIP; a NaN seed would poison the new full-tree reduction just as it does the warp tail.
 
-### rmcl/ -- own CUDA (src/rmcl_ros/src/rmcl/)
+### downstream (rmcl) -- own CUDA (src/rmcl_ros/src/rmcl/) -- OUT of scope for this project
 - particle_motion.cu: 1 trivial elementwise kernel (`particle_move_and_forget_kernel`), no warp ops, no shared mem. Pure hipify.
 - resampling.cu: 3 kernels -- `init_curand_kernel` (curand_init), `simple_stats_kernel<blockSize>` (a block reduction that runs the `__syncthreads()` tree ALL THE WAY to s>0 -- ALREADY wave-safe, no warp tail), `gladiator_resample_kernel` (curand/curand_normal per-particle MCL resample). cuRAND -> hipRAND swap; otherwise clean. wave64-safe as written.
 - rmcl-cuda (CorrespondencesCUDA.cpp): host C++ calling `rm::statistics_p2l` from rmagine; no kernels.
@@ -88,9 +92,9 @@ Worked on the rmagine fork (AMD-Ecosystem/rmagine @ moat-port), since rmcl's por
 - POSSIBLE EDIT src/rmagine_cuda/src/util/cuda/CudaContext.cpp -- guard/relax driver-API context creation under USE_HIP if hipCtx* mapping misbehaves.
 - POSSIBLE EDIT src/rmagine_cuda/src/util/cuda/random.cu + noise/*.cu -- only if hipRAND device spellings need explicit aliasing beyond the compat header.
 - EDIT top-level rmagine CMakeLists.txt -- thread the USE_HIP option down; build with embree/optix/vulkan/ouster DISABLEd for the headless ROCm validation (`-DRMAGINE_EMBREE_DISABLE=ON -DRMAGINE_OPTIX_DISABLE=ON -DRMAGINE_VULKAN_DISABLE=ON -DRMAGINE_VULKAN_CUDA_INTEROP_DISABLE=ON`), keeping core+cuda.
-- NEW projects/rmcl/notes.md "## Install as a dependency" is NOT required (rmcl is a leaf); but record the rmagine build recipe + the wave64 fix in notes.md.
+- NEW projects/rmagine/notes.md: the build recipe + the wave64 fix, and a "## Install as a dependency" section, which IS required here -- rmagine is a dependency provider (rmcl consumes it via find_package), and the exported CMake package config is part of the port. That section must be verified by actually consuming an install from a separate project, with ROCm off `PATH`, and by including the public headers from a plain C++ TU. Both of those were found broken after the first four platform validations passed; see notes.md.
 
-rmcl-layer milestone (secondary, needs ROS 2 + Embree): compat header is unnecessary for rmcl's two `.cu` if built through rmagine's HIP toolchain; mark particle_motion.cu/resampling.cu LANGUAGE HIP and alias curand* -> hiprand*. CorrespondencesCUDA.cpp + MICP*CUDA.cpp are host C++, no change beyond linking the HIP rmagine. The OptiX targets (rmcl-optix, rmcl_ros_optix, rmcl_localization) stay OFF on AMD (rmagine built without optix => those targets are not created; gates already exist).
+downstream (rmcl) milestone (secondary, a separate project; needs ROS 2 + Embree): compat header is unnecessary for rmcl's two `.cu` if built through rmagine's HIP toolchain; mark particle_motion.cu/resampling.cu LANGUAGE HIP and alias curand* -> hiprand*. CorrespondencesCUDA.cpp + MICP*CUDA.cpp are host C++, no change beyond linking the HIP rmagine. The OptiX targets (rmcl-optix, rmcl_ros_optix, rmcl_localization) stay OFF on AMD (rmagine built without optix => those targets are not created; gates already exist).
 
 ## Build commands (gfx90a)
 rmagine_cuda milestone (standalone, no ROS/Embree/Vulkan needed):
@@ -139,8 +143,14 @@ NON-GPU REGRESSION SET (must not regress): rmagine's core ctests -- `ctest -R '^
 - DEFER (environment): the Vulkan RT backend (cross-vendor AMD route) -- no Vulkan SDK on this host and it is a separate shader-based RT engine, out of scope for a CUDA->HIP compute port; revisit if a Vulkan-capable env + a Vulkan<->HIP interop (hipImportExternalMemory) is wanted.
 - Do NOT mark `triage.py skip` -- there IS a portable, valuable port (rmagine_cuda). The decisive question's answer is: the GPU RAY-CASTING is OptiX/Vulkan (defer the RT), but the GPU COMPUTE around it (statistics/reductions/noise/resample) is custom CUDA and IS portable.
 
+## Stage 2 -- HIPRT ray-tracing backend (scope added after the plan above)
+rmagine's OptiX backend (`rmagine_optix`: optixAccelBuild / optixTrace / module+SBT+pipeline, ~43 OptiX symbols across ~60 files) is the NVIDIA-only ray-casting path and has no mechanical port. Stage 2 reimplements it against AMD HIPRT as a new `rmagine_hiprt` component: HIPRT builds the BVH, one HIP trace kernel replaces the raygen/closesthit/miss programs, and the existing (Stage 1, HIP-validated) compute consumes the result. All four sensor types (Pinhole, Spherical, O1Dn, OnDn) are implemented. HIPRT is not part of ROCm 7.2 and needs the SDK via `HIPRT_PATH`; `rmagine_hiprt` is therefore USE_HIP-gated, opt-in, and has NO install rules, so it is not part of the installed package. The OptiX->HIPRT symbol mapping, the layout-sensitivity of the device structs, and the validation numbers are recorded in notes.md ("Stage 2"), which is the authority for what was actually built.
+
+## Status
+Delivered and validated: Stage 1 (rmagine_core + rmagine_cuda under `USE_HIP`, with the wave64 reduction fix) and Stage 2 (`rmagine_hiprt`, all four simulators). Validated on linux-gfx90a, linux-gfx1100, windows-gfx1101 and windows-gfx1201. Two later rounds fixed the install path that no in-tree gate covered: the exported package config resolving CUDA at consumer time, and the compatibility header making the public headers non-includable from a plain C++ TU. Not done: the README/wiki wording for `USE_HIP` (the README defers build detail to an external wiki repository; to be offered in the upstream PR body rather than imposed), multi-mesh HIPRT scenes, and the downstream rmcl layer.
+
 ## Open questions
-1. Forks: this port's deliverable lives in rmagine, not rmcl. Do we (a) fork AMD-Ecosystem/rmagine and make IT the moat-port subject (and keep rmcl as a thin dependent that builds once a ROS 2 env exists), or (b) keep rmcl as the named MOAT project but commit the substantive work to a AMD-Ecosystem/rmagine fork referenced by source_dependencies.yaml? Recommend (a): scaffold rmagine as a MOAT project (or treat rmcl's status as tracking the rmagine port) and record rmcl `depends_on` rmagine. Needs jeff/maintainer's call on project identity.
+1. ~~Forks: this port's deliverable lives in rmagine, not rmcl.~~ ANSWERED: rmagine is the ported project and AMD-Ecosystem/rmagine is the fork; the project record was renamed from rmcl to rmagine. rmcl, if it is ever taken on, is a separate project that `depends_on` rmagine and pins the validated commit.
 2. ROS 2 + Embree provisioning for the rmcl-layer milestone and the localization gate: install ros-jazzy + libembree-dev (apt) on this host, or run that gate in a ROS 2 docker? The rmagine_cuda gate does NOT need it; the end-to-end localization gate does.
 3. rmagine version pin: rmcl wants rmagine 2.4-2.5.0 (RMAGINE_MAX_VERSION 2.5.0); source_dependencies pins rmagine `main`. Pin the validated rmagine commit so rmcl + rmagine move together.
 4. CudaContext driver-API: confirm whether the explicit primary-context management is needed on HIP or can be relaxed to runtime-lazy (affects the compat-header cuCtx* mapping vs a USE_HIP stub).

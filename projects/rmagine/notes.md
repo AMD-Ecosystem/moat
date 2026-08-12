@@ -1,18 +1,25 @@
-# rmcl notes
+# rmagine notes
 
-rmcl's portable GPU compute IS rmagine's CUDA backend, so the substantive ROCm
-port lives on a **AMD-Ecosystem/rmagine** fork and rmcl stays the named MOAT project
-tracking it. rmcl wants rmagine 2.4-2.5.0; the fork is branched off upstream
-rmagine main (v2.4.2), which is in range.
+The ported project is **uos/rmagine** and the port lives on the
+**AMD-Ecosystem/rmagine** fork, branched off upstream main (v2.4.2).
+
+History note for anyone reading the older entries below: this record was
+scaffolded under the name `rmcl` and renamed to `rmagine` once it was clear the
+substantive port is rmagine's, not rmcl's. rmcl is a downstream ROS 2 consumer
+whose portable GPU compute IS rmagine's CUDA backend; it wants rmagine
+2.4-2.5.0, so this fork is in range for it. Entries written before the rename
+say "rmcl" where they mean this project; `projects/rmcl/` no longer exists and
+its paths have been rewritten to `projects/rmagine/src`.
 
 ## Fork / dependency
 
 - Fork: https://github.com/AMD-Ecosystem/rmagine  (branch `moat-port`, off upstream main 6b93e86)
-- Validated rmagine commit (Stage 1): pin rmcl's source_dependencies.yaml to the
-  moat-port HEAD recorded in status.json `head_sha`.
+- Validated rmagine commit (Stage 1): a downstream that pins rmagine (rmcl does,
+  through source_dependencies.yaml) should pin the moat-port HEAD recorded in
+  status.json `head_sha`.
 - Actions disabled on the fork.
-- rmcl itself was NOT modified this run (its rmcl_ros .cu + ROS 2 layer is a
-  separate milestone, see "Deferred").
+- rmcl itself was NOT modified (its rmcl_ros .cu + ROS 2 layer is a separate
+  milestone, see "Deferred").
 
 ## Stage 1 delivered: rmagine::cuda HIP compute backend (gfx90a, validated)
 
@@ -88,7 +95,7 @@ pre-CUDA-13 `cuCtxCreate` form taken when CUDA_VERSION is undefined under HIP.
 ## Build recipe (gfx90a; standalone, no ROS/Embree/Vulkan/OptiX)
 
 ```
-cd projects/rmcl/rmagine_src   # AMD-Ecosystem/rmagine @ moat-port
+cd projects/rmagine/src   # AMD-Ecosystem/rmagine @ moat-port
 export HIP_VISIBLE_DEVICES=1   # this host: GCD 1 only (others busy)
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON \
   -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ \
@@ -233,7 +240,7 @@ Original scope:
 ## Review 2026-06-01 (reviewer, linux-gfx90a) -- CHANGES REQUESTED
 
 Reviewed moat-port HEAD 100e713 vs upstream merge-base 6b93e86 in
-projects/rmcl/rmagine_src. Stage 1 (rmagine::cuda compute port) only; Stage 2
+projects/rmagine/src. Stage 1 (rmagine::cuda compute port) only; Stage 2
 (OptiX->HIPRT MCL backend) is a separate future stage and was not in scope.
 Built fresh in agent_space and ran the suites on real gfx90a (GCD 1,
 HIP_VISIBLE_DEVICES=1): ctest -R '^cuda_' = 6/6 PASS, ctest -R '^core_' = 12/12
@@ -445,7 +452,7 @@ MI250, gfx90a:sramecc+:xnack-.
 ### Configure
 
 ```
-cmake -S projects/rmcl/rmagine_src \
+cmake -S projects/rmagine/src \
       -B agent_space/rmcl_valclean_build \
       -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON \
       -DCMAKE_HIP_ARCHITECTURES=gfx90a \
@@ -510,7 +517,7 @@ Fork: AMD-Ecosystem/rmagine moat-port HEAD 3d098d5 (identical to gfx90a validate
 ### Configure
 
 ```
-cmake -S /var/lib/jenkins/moat/projects/rmcl/rmagine_src \
+cmake -S /var/lib/jenkins/moat/projects/rmagine/src \
       -B /var/lib/jenkins/moat/agent_space/rmcl_gfx1100_build \
       -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON \
       -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
@@ -600,7 +607,7 @@ HIPRT SDK not present on this gfx1100 host (/var/lib/jenkins/moat/third_party/HI
 ### Build
 
 ```
-cmake -S /var/lib/jenkins/moat/projects/rmcl/rmagine_src \
+cmake -S /var/lib/jenkins/moat/projects/rmagine/src \
       -B /var/lib/jenkins/moat/agent_space/rmcl_gfx1100_revalidate \
       -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON \
       -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
@@ -672,7 +679,7 @@ HIPRT SDK not present on this gfx1100 host (/var/lib/jenkins/moat/third_party/HI
 ### Build
 
 ```
-cmake -S /var/lib/jenkins/moat/projects/rmcl/rmagine_src \
+cmake -S /var/lib/jenkins/moat/projects/rmagine/src \
       -B /var/lib/jenkins/moat/agent_space/rmcl_gfx1100_revalidate_4223818 \
       -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON \
       -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
@@ -788,7 +795,7 @@ MI250, gfx90a:sramecc+:xnack-, ROCm 7.2.1.
 ```
 export HIP_VISIBLE_DEVICES=1
 export HIPRT_PATH=/var/lib/jenkins/moat/third_party/HIPRT
-cmake -S /var/lib/jenkins/moat/projects/rmcl/src \
+cmake -S /var/lib/jenkins/moat/projects/rmagine/src \
       -B /var/lib/jenkins/moat/agent_space/rmcl_hiprt_stage2_build \
       -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON \
       -DCMAKE_HIP_ARCHITECTURES=gfx90a \
@@ -908,7 +915,7 @@ Instinct MI250X / MI250, gfx90a:sramecc+:xnack-, ROCm 7.2.1, GCD 1
 export HIP_VISIBLE_DEVICES=1
 export HIPRT_PATH=/var/lib/jenkins/moat/third_party/HIPRT
 export LD_LIBRARY_PATH=$HIPRT_PATH/dist/bin/Release:$LD_LIBRARY_PATH
-cmake -S /var/lib/jenkins/moat/projects/rmcl/src \
+cmake -S /var/lib/jenkins/moat/projects/rmagine/src \
       -B /var/lib/jenkins/moat/agent_space/rmcl_stage2_validation \
       -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON \
       -DCMAKE_HIP_ARCHITECTURES=gfx90a \
@@ -1028,7 +1035,7 @@ Built from source since no package manager provided these; installed once:
 ```
 ROCM="B:/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_devel"
 
-cmake -S /b/develop/moat/projects/rmcl/rmagine_src \
+cmake -S /b/develop/moat/projects/rmagine/src \
       -B /b/develop/moat/agent_space/rmcl_gfx1201_build \
       -G Ninja \
       -DCMAKE_BUILD_TYPE=Release \
@@ -1135,7 +1142,7 @@ gfx1101 (RDNA3, wave32), ROCm 7.14.0a20260604 (TheRock nightly).
 ```
 ROCM="B:/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_devel"
 
-cmake -S /b/develop/moat/projects/rmcl/rmagine_src \
+cmake -S /b/develop/moat/projects/rmagine/src \
       -B /b/develop/moat/agent_space/rmcl_gfx1101_build \
       -G Ninja \
       -DCMAKE_BUILD_TYPE=Release \
@@ -1239,9 +1246,10 @@ prior gfx90a, gfx1100, and gfx1201 validations at the same SHA.
 
 rmagine installs a normal CMake package, so a dependent consumes it with
 `find_package(rmagine ...)` against a staging prefix. Verified end to end on
-linux-gfx1100 at moat-port e9cbdbf (see "Delta round 2026-08-12" below -- at
-4223818 and earlier this did NOT work; the exported config resolved CUDA at
-consumer time and failed the whole package on a CUDA-free host).
+linux-gfx1100 at moat-port 0aea7af (see the two "Delta round 2026-08-12"
+sections below -- at 4223818 and earlier this did NOT work; the exported config
+resolved CUDA at consumer time and failed the whole package on a CUDA-free
+host, and the public headers were not includable from a plain C++ consumer).
 
 Host deps (Ubuntu 24.04): `sudo apt install -y libtbb-dev libboost-dev
 libeigen3-dev libassimp-dev cmake`.
@@ -1291,9 +1299,36 @@ target_link_libraries(<target> PRIVATE rmagine::core rmagine::cuda)
 ```
 
 Configure the dependent with
-`-DCMAKE_PREFIX_PATH=/abs/path/to/_deps/rmagine/install` (append, do not
-replace, if the dependent already needs a prefix path). At runtime the
-dependent needs `<prefix>/lib` on `LD_LIBRARY_PATH` unless it sets an RPATH.
+
+```
+-DCMAKE_PREFIX_PATH="/abs/path/to/_deps/rmagine/install;/opt/rocm"
+```
+
+(append, do not replace, if the dependent already needs a prefix path; use
+`$ROCM_PATH` in place of `/opt/rocm` if ROCm is installed elsewhere). The ROCm
+root is REQUIRED, not optional: `rmagine-cuda-config.cmake` runs
+`find_dependency(hip)` and `find_dependency(hiprand)`, and if CMake cannot find
+them the whole `find_package(rmagine)` call fails hard and takes `rmagine::core`
+down with it:
+
+```
+CMake Error at .../CMakeFindDependencyMacro.cmake:76 (find_package):
+  Could not find a package configuration file provided by "hip" ...
+Call Stack (most recent call first):
+  .../rmagine-cuda-config.cmake:46 (find_dependency)
+  .../rmagine-config.cmake:55 (include)
+  CMakeLists.txt:4 (find_package)
+```
+
+It is easy to miss this because a host with `/opt/rocm/bin` on `PATH` gets the
+ROCm prefix for free (CMake derives search prefixes from `PATH`), so the recipe
+appears to work there and fails on a host that installs ROCm without touching
+`PATH`. Verified both ways on linux-gfx1100: with `/opt/rocm/bin` stripped from
+`PATH` and `ROCM_PATH`/`HIP_PATH`/`ROCM_HOME` unset, the prefix-path-only form
+fails with the error above and the two-entry form configures, builds and runs.
+
+At runtime the dependent needs `<prefix>/lib` on `LD_LIBRARY_PATH` unless it
+sets an RPATH.
 
 Targets that exist in a ROCm build: `rmagine::core`, `rmagine::cuda`. Targets
 that do NOT exist: `rmagine::embree` (needs Embree), `rmagine::optix`,
@@ -1311,7 +1346,13 @@ dependent that needs GPU ray casting on AMD cannot get it through
 A consumer does NOT need the HIP language enabled to link `rmagine::cuda`:
 `hip::device` is PRIVATE on the library, so plain g++/C++ consumers work. Only
 `hip::host` and `hip::hiprand` are in the public interface, and the package
-config finds them for you.
+config finds them for you (given the ROCm root on the prefix path, above).
+
+Every installed `rmagine_cuda` header is includable from a plain C++
+translation unit in any order, including as the very first include. That is a
+gate, not a hope: `tests/cuda/public_headers.cpp` (ctest `cuda_public_headers`)
+includes all of them ahead of any standard header and is compiled by the host
+C++ compiler. Until 0aea7af it was false -- see the delta round below.
 
 ## Delta round 2026-08-12 (porter, linux-gfx1100) -- exported CMake config fix
 
@@ -1619,3 +1660,133 @@ Fact-checked independently rather than accepted from the round's account:
 - Commit hygiene on the two new commits: `[ROCm]` titles at 55 and 47 characters,
   AI-assistance disclosed, Test Plan in fenced blocks, no `Co-Authored-By`, no
   non-ASCII in messages or added lines, no AMD-internal account references.
+
+## Delta round 2026-08-12b (porter, linux-gfx1100) -- review findings 1, 3, 4, 5
+
+Answers the review above. Findings 1/3/4/5 only; finding 2 (the two jargon hits in
+3d098d58e) was explicitly held back, because rewording that commit rewrites 4223818
+and all four platforms' `validated_sha` point at it -- destroying that evidence is a
+person's call and it is with jeff. `jargon.py --port rmagine` therefore still reports
+exactly those two hits and nothing else.
+
+Fork moat-port e9cbdbf -> 0aea7af. The two commits above 4223818 were rewritten
+(message-only) and one new commit added:
+
+- 7382086 = cfc475d with a corrected body (finding 3), same tree
+- 74ba640 = e9cbdbf replayed, same tree
+- 0aea7af = new, the header fix (finding 1)
+
+### Finding 1: the compat header dragged hipRAND into four public headers
+
+Reproduced first, exactly as the reviewer described, against the round-2 install
+prefix with the default host compiler:
+
+```
+/usr/bin/c++ -std=c++17 -c hdrs.cpp -o hdrs.o \
+  -I install_final/include/rmagine-2.4.2 -I/opt/rocm/include -D__HIP_PLATFORM_AMD__=1
+# hdrs.cpp: #include <rmagine/util/cuda/CudaContext.hpp> then #include <cstdio>
+/opt/rocm/include/rocrand/rocrand_mtgp32.h:443:9: error: 'printf' was not declared in this scope
+```
+
+Fix: `cuda_to_hip.h` keeps only the runtime/driver mapping; the cuRAND mapping and
+`<hiprand/hiprand_kernel.h>` move to a new sibling
+`include/rmagine/util/cuda/curand_to_hiprand.h`, included by exactly the two headers
+that name `curandState` in a declaration (`util/cuda/random.cuh`,
+`noise/NoiseCuda.hpp`) and that pulled cuRAND upstream too. Every other header is
+back to its upstream include footprint. All curand macro users reach one of those
+two headers (checked by grep over the whole tree), so nothing else needed an edit.
+
+The new header also does `#include <cstdio>` ahead of the hipRAND include. That is
+on top of the footprint fix, not instead of it: it makes even the two RNG headers
+host-includable, which they are not upstream either (curand_kernel.h needs nvcc).
+Confirmed a plain-c++ TU including `NoiseCuda.hpp` compiles with it.
+
+The gate (this is the part the round was really about): new
+`tests/cuda/public_headers.cpp` / ctest `cuda_public_headers` includes all 16
+installed rmagine_cuda headers at the very top of a plain C++ TU with nothing above
+them, then queries the device count through the mapped runtime. It is compiled by
+`CMAKE_CXX_COMPILER` (/usr/bin/c++ here), NOT by the HIP compiler, so it is a real
+downstream simulation. Verified it bites: putting `<hiprand/hiprand_kernel.h>` back
+into `cuda_to_hip.h` and rebuilding gives
+
+```
+FAILED: tests/cuda/CMakeFiles/rmagine_tests_cuda_public_headers.dir/public_headers.cpp.o
+/opt/rocm/include/rocrand/rocrand_mtgp32.h:443:9: error: 'printf' was not declared in this scope
+```
+
+Also covered from the install side: `agent_space/consumer3` gained a second
+executable whose TU includes CudaContext/CudaDebug/CudaHelper/CudaStream and
+NoiseCuda.hpp before `<cstdio>`.
+
+### Findings 3 and 4
+
+3: cfc475d's body claimed the consumer "dies at its first target_link_libraries";
+the real mechanism, which its own pasted evidence shows, is `message(FATAL_ERROR)`
+in FindCUDA.cmake aborting inside `find_package(rmagine)`. Reworded (7382086). While
+in there, its Test Plan's `-DCMAKE_PREFIX_PATH=/path/to/install` got the ROCm root
+too, since that commit is what introduced the `find_dependency(hip)` requirement.
+
+4: reproduced and fixed in "Install as a dependency" above. See that section for the
+error and the verification; short version, the consumer's prefix path needs the ROCm
+root as a second entry and the old recipe only worked because `/opt/rocm/bin` was on
+`PATH`.
+
+### Finding 5
+
+notes.md retitled `# rmagine notes` with a short rename history at the top; the 10
+`projects/rmcl/...` paths in build and validation recipes rewritten to
+`projects/rmagine/src` (the reviewer's own quotes of those paths are left as
+written); plan.md rewritten to be rmagine's plan, with rmcl demoted to the
+downstream consumer it is and the Stage 2 HIPRT work it never covered recorded.
+
+### Evidence (linux-gfx1100, AMD Radeon Pro W7800, ROCm 7.2.3, HIP_VISIBLE_DEVICES=0)
+
+Build tree `agent_space/build_final` reconfigured to install into
+`agent_space/install_round3`; everything else as in the recipe above.
+
+```
+ctest --test-dir agent_space/build_final -R '^cuda_'   # 8/8 PASS (7 old + cuda_public_headers)
+ctest --test-dir agent_space/build_final -R '^core_'   # 12/12 PASS
+```
+
+Installed-package consume, with ROCm deliberately off `PATH` and ROCM_PATH/HIP_PATH/
+ROCM_HOME unset:
+
+```
+env -u ROCM_PATH -u HIP_PATH -u ROCM_HOME PATH="$PATH_without_rocm" \
+  cmake -S consumer3 -B consumer3_build -G Ninja \
+  -DCMAKE_PREFIX_PATH="$PWD/install_round3;/opt/rocm"
+cmake --build consumer3_build
+LD_LIBRARY_PATH=$PWD/install_round3/lib ./consumer3_build/consumer_headers
+LD_LIBRARY_PATH=$PWD/install_round3/lib ./consumer3_build/consumer
+```
+
+```
+-- rmagine_FOUND=1
+-- rmagine_COMPONENTS_FOUND=core;cuda
+PASS: installed public headers include cleanly from plain C++
+[RMagine - CudaContext] Construct context on device 0 - AMD Radeon Pro W7800 48GB
+sum = 4096.000000 8192.000000 12288.000000 (expected 4096.000000 8192.000000 12288.000000)
+PASS: consumed rmagine::core + rmagine::cuda from the install prefix
+```
+
+### Consequence for the other platforms
+
+0aea7af touches headers and adds a test, so unlike the round-2 delta this is not a
+pure install-side change: a revalidation actually recompiles something. The four
+platform records were already behind at e9cbdbf and stay behind. The new ctest is
+plain C++ and should pass anywhere the rest of the suite builds; the one platform
+where it is worth watching is Windows, where the host compiler is MSVC rather than
+gcc and the rocRAND header's `printf` habit may behave differently.
+
+### Gotchas
+
+- A compat header is included by everything, so anything it includes is in the public
+  include footprint of every header that uses it. Adding the device RNG header there
+  was invisible in-tree because every in-tree TU reaches those headers through some
+  other include first. Promoted to the `cuda-to-rocm` skill
+  (`references/strategy-a-cmake.md`) as a header-hygiene rule with a test recipe,
+  since it generalises to any project using the single-compat-header approach.
+- `/opt/rocm/bin` on `PATH` silently supplies the ROCm CMake prefix. Any "consume the
+  installed package" recipe verified on a host with ROCm on `PATH` is under-tested;
+  strip it and re-run before writing the recipe down.
