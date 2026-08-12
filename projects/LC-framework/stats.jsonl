@@ -24,3 +24,14 @@
 {"kind":"phase","ts":"2026-07-02T20:24:11Z","phase":"test","seconds":0.279,"exit":0,"cmd":"bash -c cd /tmp/lc-build-gfx1100 && HIP_VISIBLE_DEVICES=0 ./lc test.f32 AL 'QUANT_ABS_0_f32(0.01)' 'BIT_4 RLE_4' 'MAXABS_f32(0.01)'"}
 {"kind":"phase","ts":"2026-07-02T20:24:17Z","phase":"test","seconds":0.218,"exit":0,"cmd":"bash -c cd /tmp/lc-build-gfx1100 && HIP_VISIBLE_DEVICES=0 ./lc test.f64 AL 'QUANT_INOA_0_f64(0.01)' 'BIT_8 RLE_8' 'MAXNOA_f64(0.01)'"}
 {"kind": "tokens", "ts": "2026-07-02T20:29:14Z", "tokens": 97806, "source": "validator"}
+{"kind":"session","ts":"2026-08-12T21:02:07Z","epoch":1786568527.702914200,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-12T21:06:29Z","phase":"compile","seconds":1.755,"exit":1,"cmd":"bash C:/Users/<user>/AppData/Local/Temp/claude/D--Develop-moat/9f5031af-7315-42eb-9fe5-216ec498b710/scratchpad/build.sh"}
+{"kind":"phase","ts":"2026-08-12T21:08:24Z","phase":"compile","seconds":1.652,"exit":1,"cmd":"bash C:/Users/<user>/AppData/Local/Temp/claude/D--Develop-moat/9f5031af-7315-42eb-9fe5-216ec498b710/scratchpad/build.sh"}
+{"kind":"phase","ts":"2026-08-12T21:14:39Z","phase":"compile","seconds":2.555,"exit":1,"cmd":"bash C:/Users/<user>/AppData/Local/Temp/claude/D--Develop-moat/9f5031af-7315-42eb-9fe5-216ec498b710/scratchpad/build.sh"}
+{"kind":"phase","ts":"2026-08-12T21:15:17Z","phase":"compile","seconds":2.443,"exit":1,"cmd":"bash C:/Users/<user>/AppData/Local/Temp/claude/D--Develop-moat/9f5031af-7315-42eb-9fe5-216ec498b710/scratchpad/build.sh"}
+{"kind":"phase","ts":"2026-08-12T21:17:29Z","phase":"compile","seconds":29.923,"exit":0,"cmd":"bash C:/Users/<user>/AppData/Local/Temp/claude/D--Develop-moat/9f5031af-7315-42eb-9fe5-216ec498b710/scratchpad/build.sh"}
+{"kind":"phase","ts":"2026-08-12T21:18:16Z","phase":"test","seconds":10.501,"exit":0,"cmd":"bash C:/Users/<user>/AppData/Local/Temp/claude/D--Develop-moat/9f5031af-7315-42eb-9fe5-216ec498b710/scratchpad/run_gate1.sh"}
+{"kind":"phase","ts":"2026-08-12T21:19:09Z","phase":"test","seconds":4.011,"exit":0,"cmd":"bash C:/Users/<user>/AppData/Local/Temp/claude/D--Develop-moat/9f5031af-7315-42eb-9fe5-216ec498b710/scratchpad/run_ts.sh"}
+{"kind":"phase","ts":"2026-08-12T21:19:42Z","phase":"test","seconds":3.557,"exit":0,"cmd":"bash C:/Users/<user>/AppData/Local/Temp/claude/D--Develop-moat/9f5031af-7315-42eb-9fe5-216ec498b710/scratchpad/run_lossy.sh"}
+{"kind":"phase","ts":"2026-08-12T21:21:34Z","phase":"compile","seconds":4.788,"exit":0,"cmd":"bash C:/Users/<user>/AppData/Local/Temp/claude/D--Develop-moat/9f5031af-7315-42eb-9fe5-216ec498b710/scratchpad/build_standalone_gpu.sh"}
+{"kind":"phase","ts":"2026-08-12T21:26:31Z","phase":"compile","seconds":26.389,"exit":0,"cmd":"bash C:/Users/<user>/AppData/Local/Temp/claude/D--Develop-moat/9f5031af-7315-42eb-9fe5-216ec498b710/scratchpad/build_verify.sh"}

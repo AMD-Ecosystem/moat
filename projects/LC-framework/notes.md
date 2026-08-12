@@ -257,3 +257,190 @@ Non-GPU regression: CPU/OpenMP build (generate_Host_LC-Framework.py + g++) compi
 clean and passes AL RZE_4 round-trip.
 
 Result: ALL gates PASS. Platform linux-gfx1100 -> completed (validated_sha=040743e, canonical port on the private mirror; validation performed on content-identical 5285e51).
+
+## Validation 2026-08-12 (validator, windows-gfx1151)
+
+Platform: AMD Radeon 8060S Graphics (Radeon AI Max, "Strix Halo"), gfx1151,
+RDNA3.5, 20 CUs, wave32, integrated APU, warpSize=32 (confirmed via hipInfo).
+Toolchain: TheRock pip-wheel ROCm 7.13.0a20260511 (HIP 7.13.26176-79e85e1468,
+AMD clang 23.0.0git), venv at `D:/Develop/TheRock/.venv`. hipcc.exe and the
+device bitcode live under `_rocm_sdk_core`, NOT `_rocm_sdk_devel` on this SDK
+layout (`_rocm_sdk_core/bin/hipcc.exe`,
+`_rocm_sdk_core/lib/llvm/amdgcn/bitcode`). Host compiler: clang-cl via hipcc,
+MSVC `link.exe`/`cl.exe` (VS2022 BuildTools 14.44.35207) put first on PATH,
+`HIP_DEVICE_LIB_PATH` set explicitly (the hipcc wrapper does not pass
+`--rocm-path` through), `DISTUTILS_USE_SDK=1`. hipify-perl: MSYS perl 5.38
+running `_rocm_sdk_core/libexec/hipify/hipify-perl`.
+
+Windows is genuinely new ground for this project: no prior Windows analysis
+existed in plan.md/notes.md, and the port needed one real source fix to build
+here at all (below). Two findings, in the order encountered:
+
+### Finding 1 (fixed, committed): 3 POSIX-only includes unconditional in framework.h
+`framework.h:52-64` (pre-existing upstream code, untouched by the wave-macro
+port) unconditionally includes `<strings.h>`, `<unistd.h>`, `<sys/time.h>`.
+None of the three has an MSVC/clang-cl equivalent, and clang-cl (the required
+HIP host compiler on Windows -- MinGW g++ cannot host a HIP translation unit
+here) has no fallback for them, so `hipcc -DUSE_GPU ... lc.cu` failed at
+`lc.h:53: fatal error: 'strings.h' file not found` before reaching any
+GPU-specific code. Checked usage: `strings.h` and `unistd.h` have ZERO
+callers anywhere in the tree (grep for strcasecmp/getpid/etc came up empty);
+`sys/time.h` is used only by `CPUTimer` (`gettimeofday`/`timeval`), itself
+only compiled under `#ifdef USE_CPU`, a path this fix does not touch. Fix:
+guard all three on `#ifndef _MSC_VER` (both cl.exe and clang-cl define
+`_MSC_VER`; MinGW g++ does not, confirmed via `clang -dM -E` vs `g++ -dM -E`),
+so the existing CPU/OpenMP build via MinGW g++ is unaffected and the CUDA
+build on Linux (where `_MSC_VER` is never defined) is unaffected. Verified
+end-to-end: full generate -> hipify -> hipcc build from the freshly-committed
+tracked source, clean compile+link, GPU round-trip pass.
+
+Committed and pushed to `moat-port`: `ea0df9b` "[ROCm] Skip POSIX-only
+headers for the MSVC/clang-cl HIP build" (1 file, framework.h, 6 lines).
+This is a necessary build fix per AGENTS.md Integrity gate, done from
+`projects/LC-framework/src` (a fresh clone of `moat-port`, since none existed
+locally). `head_sha` advanced 040743e -> ea0df9b: linux-gfx90a and
+linux-gfx1100 are now stale and need revalidation (expected; the fix is inert
+outside `_MSC_VER`, a real regression check on Linux should find
+`codeobj_diff` binary-equivalent and be carry-forward eligible without a
+full GPU re-run).
+
+### Finding 2 (toolchain gap on THIS host, not code, not committed): hipCUB/rocThrust headers missing
+After Finding 1's fix, the build reached
+`preprocessors/d_LOR1D_i32.h:44: fatal error: 'hipcub/hipcub.hpp' file not
+found`. `_rocm_sdk_devel/include` on this host is present but genuinely
+EMPTY (0 entries, `os.listdir` confirms, no permission error); a
+sibling-staged directory (`~rocm_sdk_devel`, tilde-prefixed) that looked like
+where the extractor may have staged real content is ACL-denied even to
+`icacls` itself, and the underlying `_devel.tar` the package would expand
+from is already consumed (`RECORD` lists it with a hash and an 11.9 GB size,
+but the file is gone from disk; `tar -tf` on the still-present 2 other tars
+found zero hipcub/thrust hits). Not elevated/admin on this host
+(`whoami /groups` shows no admin group), so repairing the SDK install
+in-session was not attempted; a full wheel re-download was also out of
+budget. Concluded this is a broken/incomplete local ROCm SDK extraction, not
+a code portability issue -- it would fire identically for any project on this
+host needing hipCUB or rocThrust, independent of what the port touches.
+Promoted the diagnostic (and the workaround actually used) to the
+`cuda-to-rocm` skill's `references/validation.md` (new section, "Windows:
+TheRock's devel wheel can ship with hipCUB/rocThrust headers missing") since
+it is squarely a "how do I tell a real fault from a harness/toolchain gap"
+lesson useful to any Windows validator, not project-specific.
+
+Workaround (validator-side only, not part of the fork commit): sparse-cloned
+`ROCm/rocm-libraries` (the current monorepo housing hipCUB/rocPRIM/rocThrust
+together, avoiding an independent-clone version-skew failure that WAS hit
+first: `ROCm/hipCUB` `main` against `ROCm/rocPRIM` `develop_deprecated`
+produced real `no member named 'radix_key_codec'` API-mismatch errors before
+switching to the monorepo). Hand-wrote the 3 trivial `*_version.hpp` files
+each library's CMake normally generates from a `.in` template. Full recipe in
+the skill reference. This is toolchain scaffolding to make validation
+possible on this specific host, not a fork change -- the project's own
+documented build is unaffected once a host's ROCm install is intact.
+
+### Build recipe (windows-gfx1151, from `projects/LC-framework/src`, i.e. `moat-port` @ ea0df9b)
+```
+python generate_Device_LC-Framework.py
+"$HIPIFY" -inplace lc.cu lc.h
+for h in framework.h $(find include components preprocessors verifiers -name '*.h') \
+  compressor-framework.cu decompressor-framework.cu framework.cu; do
+  "$HIPIFY" -inplace "$h"
+done
+# residual preprocessor files missed by the loop (same hipify-perl/loop-timeout gotcha
+# already recorded above): re-ran explicitly on d_LOR1D_i32.h, d_QUANT_INOA_0_f32/64.h,
+# d_QUANT_NOA_0_f32/64.h, d_QUANT_NOA_R_f32/64.h -- always re-grep
+# 'cudaMalloc|cudaSuccess|include <cub|include <cuda\.h' after the loop.
+export HIP_DEVICE_LIB_PATH="<core>/lib/llvm/amdgcn/bitcode"
+export DISTUTILS_USE_SDK=1
+export PATH="<VS2022 BuildTools>/VC/Tools/MSVC/<ver>/bin/Hostx64/x64:<core>/bin:$PATH"
+EXTRA_INC="-I<rocm-libraries>/projects/hipcub/hipcub/include -I<rocm-libraries>/projects/rocprim/rocprim/include -I<rocm-libraries>/projects/rocthrust"
+hipcc -O3 --offload-arch=gfx1151 -ffp-contract=off -DUSE_GPU -I. $EXTRA_INC -std=c++17 -c -o lc.o lc.cu
+hipcc --offload-arch=gfx1151 -o lc.exe lc.o
+```
+Build: EXIT 0 both steps (compile and link), warnings only (nodiscard hipError_t,
+deprecated CUDA-identifier shims, a `%ld` vs `size_type` printf format warning --
+all cosmetic, same classes seen on gfx90a/gfx1100). Banner: "AMD GPU version",
+confirming `__HIP_PLATFORM_AMD__` live. `EXTRA_INC` is validator-only scaffolding
+(Finding 2); not needed once a host's ROCm devel package actually has hipCUB/
+rocThrust headers.
+
+Gate 1 -- Lossless round-trip (warp-collective paths), all bit-for-bit verified
+(1 MB random `test.dat`):
+  RZE_4: LOSSLESS verification passed
+  RZE_1: LOSSLESS verification passed
+  RLE_4: LOSSLESS verification passed
+  BIT_4 RLE_4: LOSSLESS verification passed
+  RRE_4 RZE_4: LOSSLESS verification passed
+  RAZE_4: LOSSLESS verification passed
+
+Gate 2 -- TS self-test (all component pairs, 64 KB `small.dat`): 4491
+"verification passed", 0 failures -- matches the linux-gfx1100 count exactly
+(same wave32 width). Wall time ~4s: no starvation on this 20-CU APU for a
+workload this small (the stdgpu-class low-CU spinlock-contention risk noted
+elsewhere on this host did not manifest here).
+
+Gate 3 -- Lossy quantizers within bound (65536-element f32/f64 arrays):
+  QUANT_ABS_0_f32(0.01) + BIT_4 RLE_4 + MAXABS_f32(0.01): MAXABS_f32 verification passed
+  QUANT_INOA_0_f64(0.01) + BIT_8 RLE_8 + MAXNOA_f64(0.01): MAXNOA_f64 verification passed
+  (confirms the hipCUB DeviceScan (LOR1D) and rocThrust minmax_element/
+  device_ptr (QUANT_INOA) paths both compile and run correctly once the
+  Finding-2 headers are reachable)
+
+Gate 4 -- Cross-device format gate: GPU standalone compressor built and run on
+gfx1151 (wave32, RZE_4, `-include cstring` workaround per the standalone-
+template gotcha already on record) -> `LC.encoded`. CPU standalone
+decompressor (MinGW g++, non-hipified source, same RZE_4 pipeline, same
+Windows host) decodes it. `cmp test.dat LC.decoded`: IDENTICAL (1 MB random
+input). Confirms the wave-size re-gate does not leak wave width into the
+serialized bitstream, now proven on a THIRD (arch, OS) combination
+(gfx90a/Linux, gfx1100/Linux, gfx1151/Windows all agree). NOT done: an
+actual cross-HOST round-trip (compress here, decompress a Linux-produced
+artifact or vice versa) -- no live Linux host was reachable in this session,
+so only the same-host GPU-vs-CPU cross-device proof above was run.
+
+Non-GPU regression: CPU/OpenMP build (`generate_Host_LC-Framework.py` +
+MinGW g++ 13.2.0, `-O3 -fopenmp -mno-fma -ffp-contract=off -DUSE_CPU`) compiles
+completely clean (zero warnings) and passes `AL RZE_4` round-trip
+("LOSSLESS verification passed"). Confirms the Finding-1 `_MSC_VER` guard
+does not touch this path (MinGW never defines `_MSC_VER`).
+
+CUDA no-regression gate: SKIPPED on this host per the standing rule (Windows
+hosts have no CUDA toolkit in practice; lands on whichever Linux arch
+validates next). Neither linux-gfx90a's nor linux-gfx1100's prior CUDA-gate
+evidence is at the current head_sha (ea0df9b) since head_sha advanced past
+their validated_sha with Finding 1's commit; whichever Linux arch revalidates
+first should re-run it (expected to pass unchanged -- Finding 1's guard is
+`_MSC_VER`-only and inert for nvcc on Linux).
+
+Jargon: `python3 utils/jargon.py --port LC-framework` -> clean (had to
+`git fetch origin main:main` into the fresh `projects/LC-framework/src` clone
+first, since jargon.py's `--port` range is `fork_default_branch..moat-port`
+and only `moat-port` was fetched by the initial single-branch clone).
+
+Documentation gate: FAILED. `README.md` mentions "A HIP version is also
+included" (line 26) and documents the CUDA build in detail (`nvcc ...` at
+line ~61 for the framework binary, lines ~184-185 for the standalone
+compressor/decompressor), but contains ZERO mentions of `hipcc`, `hipify`,
+or `rocm` anywhere in its 516 lines (confirmed by grep across the whole
+file) -- there is no HIP build recipe documented at all, in the project's own
+house style or otherwise. This predates this validation round: neither the
+2026-06-25 gfx90a validation nor the 2026-07-02 gfx1100 validation caught it,
+and both are already `completed`. Per the validator checklist this is not
+mine to fix quietly -- sending back so the porter's commit carries it and
+every arch (including the two already-completed Linux arches, which will
+need to revalidate anyway once head_sha moves again) validates the same
+content. Suggested content for the porter (parallel to the existing nvcc
+block at README.md:53-65): a `hipify-perl -inplace lc.cu lc.h <headers>` step
+followed by `hipcc --offload-arch=<arch> -DUSE_GPU -I. -std=c++17 -o lc
+lc.cu`, `<arch>`-parameterized per plan.md's own recommendation (not a
+hardcoded gfx90a/gfx1151).
+
+Result: windows-gfx1151 GPU tests all genuinely PASS on real hardware (Gates
+1-4 above), but the platform is set `validation-failed` at head_sha ea0df9b
+because of the documentation gate, not the GPU run. `head_sha` advanced past
+040743e (Finding 1's necessary build fix), so linux-gfx90a and linux-gfx1100
+need revalidation before `pr-ready` -- expected per the dispatcher's own
+framing. Next round: porter adds the README HIP-build section (doc-only,
+should auto-carry-forward on `advance_head` for arches already validated at
+that point), then windows-gfx1151 re-runs (no GPU regression expected; the
+recipe above is already proven) and the two Linux arches revalidate/carry
+forward.
