@@ -2071,3 +2071,32 @@ fact that nobody has measured the alternative -- not an inlining barrier.
 **Request Changes.** Findings 1 and 2 ship to the upstream maintainer; findings
 3 and 4 publish to every agent when this branch merges. No code change is
 needed and the design should not move.
+
+### 5. (added from a second reviewer, windows-gfx1151) Four commit bodies name an MI210; the only gfx90a hardware this project has recorded is an MI250X
+
+`14c2b51`, `d7d609e`, `4ceabb2` and `4925df1` each state the AMD evidence as an
+"MI210 (gfx90a)" -- `4925df1`: "measured 20 of 20 test suites passing on an
+MI210". The only recorded identification of gfx90a hardware for this project is
+`notes.md:1192,1195`, where the validator read `rocm-smi`/`rocminfo` on the
+linux-gfx90a host and found three MI250X dies at the same ROCm 7.2.1.
+`config/jargon.toml` uses "MI210 (gfx90a)" as its worked example of naming a
+GPU, which is a plausible source for the string.
+
+I cannot substantiate which card the porter's runs used -- this reviewer ran on
+windows-gfx1151 with no access to that host, and the attempt-5/6/7 entries name a
+platform but not a card -- so this is an inconsistency to reconcile, not a proven
+error. Confirm the part on the machine that produced the runs and make the four
+bodies say what it is. It is a claim about evidence, in text a maintainer reads
+as evidence, and it is the only line in the branch that names a specific piece of
+hardware. Whoever fixes findings 1-4 is already editing three of those four
+bodies.
+
+Reviewed independently on windows-gfx1151 (read-only clone, no build or GPU run;
+this host has no HIP toolchain). That pass reached the same two conclusions as
+rounds 4 and 5 -- the "sees both" cuRAND mechanism is disproved by
+`heongpu.hpp:17 -> host/bfv/encryptor.cuh:10 -> kernel/encryption.cuh:12`, and
+the `-fgpu-rdc` "cannot be inlined" claim is wrong because the HIP RDC device
+link is a bitcode link that inlines across TUs -- and it is recorded here only as
+independent corroboration, reasoned rather than measured. Round 5's gfx90a
+measurement (`s_swappc_b64` count 0 in the RDC-linked image) settles it; the
+duplicate write-ups were discarded rather than appended.
