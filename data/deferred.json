@@ -194,6 +194,21 @@
       "upstream_issue": null,
       "created_at": "2026-08-06T06:52:58Z",
       "decided": null
+    },
+    {
+      "id": "deferred-py-no-edit-or-supersede-path",
+      "kind": "other",
+      "component": null,
+      "summary": "utils/deferred.py can register a deferral and rule on it, but it cannot correct one. There is no edit or supersede subcommand, add refuses a duplicate id, and status is limited to open/filed/done, so an open item whose framing turns out to be wrong has no supported path forward: reframing it means rewriting summary and refs in place through deferred._load_project/_save_project (done twice on the HEonGPU port, rounds 8 and 9, where measurement changed both the cost estimate and the option set in front of the person ruling), and the alternative of adding a second entry puts two overlapping questions in front of that person. Wanted, smallest form: an edit subcommand for summary and refs on an item that is still open and unruled, so correcting an open deferral is a recorded operation rather than a library call; a supersede path that links a replacement id to the item it retires would cover the case where a ruled item needs revisiting. Registered globally because it is control-plane tooling, found while porting HEonGPU.",
+      "refs": [
+        "projects/HEonGPU/notes.md#round-9-fix-2026-08-12",
+        "utils/deferred.py"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-12T23:40:21Z",
+      "decided": null,
+      "project": null
     }
   ]
 }

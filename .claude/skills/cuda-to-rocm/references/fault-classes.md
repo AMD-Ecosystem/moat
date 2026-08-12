@@ -374,9 +374,10 @@ consumer can hit either one, and which remedy it needs depends on who drives its
 separate the two conditions before writing anything down, and note that both presuppose a
 third. HIP must be an ENABLED LANGUAGE in the consuming project, via
 `project(app LANGUAGES CXX HIP)` or `enable_language(HIP)`; `find_package(hip)` and linking
-`hip::host` do not enable it, and neither does anything the producing library can put on its
-export. The DRIVER must be the HIP compiler, which CMake arranges -- once the language is
-enabled -- when the target has HIP sources of its own, when it links a target that has them,
+`hip::host` do not enable it, and nothing the consumer sets on its own target substitutes for
+it -- but the PRODUCER can enable it for the consumer, see below. The DRIVER must be the HIP
+compiler, which CMake arranges -- once the language is enabled -- when the target has HIP
+sources of its own, when it links a target that has them,
 when it links an IMPORTED target whose `IMPORTED_LINK_INTERFACE_LANGUAGES` is HIP --
 `install(EXPORT)` records that for a library built from HIP sources, and it propagates even
 through a plain C++ intermediate library -- or when the target sets `LINKER_LANGUAGE HIP`.
@@ -390,30 +391,43 @@ sources of ITS OWN. Measured against an installed export and against a hand-impo
 | plain C++ in a HIP-enabled project, links the exported target directly or through a plain C++ library | HIP, no `--hip-link` | `target_link_options(app PRIVATE --hip-link)` |
 | plain C++ in a HIP-enabled project, links a local HIP-source library that links the archive | HIP, no `--hip-link` | same |
 | the same target in a project that never enabled HIP | gcc | `enable_language(HIP)`; nothing set on the target alone works |
-| plain C++, links an IMPORTED archive with no link interface language | gcc | `LINKER_LANGUAGE HIP` AND `--hip-link`; `--hip-link` alone only adds a second unrecognized option |
-| the archive named by path, no imported target | gcc | `LINKER_LANGUAGE HIP`, `--hip-link` AND `-fgpu-rdc`, since nothing supplies the flag either |
+| plain C++ in a HIP-enabled project, links an IMPORTED archive with no link interface language | gcc | `LINKER_LANGUAGE HIP` AND `--hip-link`; `--hip-link` alone only adds a second unrecognized option |
+| the archive named by path in a HIP-enabled project, no imported target | gcc | `LINKER_LANGUAGE HIP`, `--hip-link` AND `-fgpu-rdc`, since nothing supplies the flag either |
 
 `LINKER_LANGUAGE HIP` never adds `--hip-link`, so it is useless alone and needed only where
 the driver is still gcc -- and it is available only where HIP is enabled, since otherwise
 CMake has no HIP link rule and fails at generate time with
 `Missing variable is: CMAKE_HIP_LINK_EXECUTABLE`. That is why the fourth row has no
-target-level remedy: the C++ driver rejects `-fgpu-rdc` and `--hip-link` alike, so a
-consumer that cannot enable the HIP language cannot link the archive at all, and the honest
-thing for the library's docs to say is that enabling it is a requirement rather than a
-suggestion. Be careful with the scope of any claim here: prose that offers `--hip-link` as
-THE fix is right for a HIP-enabled project consuming an installed export and wrong both for
-a hand-rolled import and for a C++-only project, and the reader who has no HIP source of
-their own is exactly the reader with no reason to have enabled the language. Say which shape
+target-level remedy: the C++ driver rejects `-fgpu-rdc` and `--hip-link` alike, so nothing the
+consumer sets on its own target rescues that link. The remedy that does exist is the
+PRODUCER's, and if you are porting a library you are the producer. A package config file is
+included at the caller's file scope, so `enable_language(HIP)` as the first line of your
+`cmake/Config.cmake.in` enables the language in the consumer's scope. Measured against one
+installed export with the config file as the only difference (ROCm 7.2.1, gfx90a, CMake
+4.0.3): a `project(app LANGUAGES CXX)` consumer with a plain C++ executable goes from
+`unrecognized command-line option '-fgpu-rdc'` to configuring and linking under
+`/opt/rocm/lib/llvm/bin/clang++` with only `--hip-link` on the target, and it works the same
+when `find_package` is called from an `add_subdirectory`. Decline it deliberately rather than
+believing it does not exist, because the costs are real: `enable_language` must be called in
+file scope and in the highest directory common to all targets using the language, so a
+consumer that wraps `find_package` in a function gets no language at all -- measured, that
+configure still succeeds and the link then fails exactly as before -- and every consumer pays
+HIP compiler detection at configure time (0.9s to 2.9s on that tree). If you do decline it,
+the honest thing for the library's docs to say is that enabling the HIP language is a
+requirement rather than a suggestion. Be careful with the scope of any claim here: prose that
+offers `--hip-link` as THE fix is right for a HIP-enabled project consuming an installed
+export and wrong both for a hand-rolled import and for a C++-only project, and the reader who
+has no HIP source of their own is exactly the reader with no reason to have enabled the
+language. Say which shape
 you mean rather than generalizing from the one you happened to measure. Note also that an
 interface link option is unguarded unless you guard it, so `-fgpu-rdc` reaches even a
 consumer that pins `LINKER_LANGUAGE CXX` in a HIP-enabled project and breaks it, while the
 matching `target_compile_options(... INTERFACE $<$<COMPILE_LANGUAGE:HIP>:-fgpu-rdc>)` is
 conditioned; decide deliberately whether that asymmetry is what you want. Do NOT try to fix
-any of this by
-wrapping the interface flag in `$<LINK_LANGUAGE:HIP>`: that only trades the
-unrecognized-option message for the undefined-symbol one. Fix it in prose --
-wherever the project tells a CUDA consumer to set `CUDA_SEPARABLE_COMPILATION ON`, the HIP
-consumer needs the parallel sentence. (HEonGPU)
+any of this by wrapping the interface flag in `$<LINK_LANGUAGE:HIP>`: that only trades the
+unrecognized-option message for the undefined-symbol one. Fix it in prose -- wherever the
+project tells a CUDA consumer to set `CUDA_SEPARABLE_COMPILATION ON`, the HIP consumer needs
+the parallel sentence. (HEonGPU)
 
 **Cross-TU `__device__` calls ARE inlined on AMD under `-fgpu-rdc`.** Do not repeat the nvcc
 intuition here: nvcc `-rdc=true` really does leave a call unless you add `-dlto`, but HIP's
