@@ -35,3 +35,4 @@
 {"kind":"phase","ts":"2026-08-12T21:19:42Z","phase":"test","seconds":3.557,"exit":0,"cmd":"bash C:/Users/<user>/AppData/Local/Temp/claude/D--Develop-moat/9f5031af-7315-42eb-9fe5-216ec498b710/scratchpad/run_lossy.sh"}
 {"kind":"phase","ts":"2026-08-12T21:21:34Z","phase":"compile","seconds":4.788,"exit":0,"cmd":"bash C:/Users/<user>/AppData/Local/Temp/claude/D--Develop-moat/9f5031af-7315-42eb-9fe5-216ec498b710/scratchpad/build_standalone_gpu.sh"}
 {"kind":"phase","ts":"2026-08-12T21:26:31Z","phase":"compile","seconds":26.389,"exit":0,"cmd":"bash C:/Users/<user>/AppData/Local/Temp/claude/D--Develop-moat/9f5031af-7315-42eb-9fe5-216ec498b710/scratchpad/build_verify.sh"}
+{"kind":"session","ts":"2026-08-12T21:33:24Z","epoch":1786570404.832955200,"event":"end","platform":"windows-gfx1151"}
