@@ -1651,6 +1651,37 @@ def set_fix_merged(name, new_published_sha):
     return obj
 
 
+def set_published_sha(name, sha):
+    """Stamp what the open upstream PR shows, on a record from before the fix flow.
+
+    The caller (the upstream.py reconciler) has already verified `sha` against the
+    live PR head; this only guards the record's own consistency: the PR must still
+    be open, the value must agree with head_sha -- a record whose head disagrees
+    with the PR is the HEAD-MOVED case and needs a person, not a stamp -- and an
+    existing different value is never silently replaced (only the trusted merge
+    path advances one). Idempotent on a matching stamp."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    if obj.get("pr_state") != "open":
+        raise ValueError(f"{name}: pr_state is {obj.get('pr_state')!r}, not open -- "
+                         f"published_sha only describes an open PR")
+    if not same_commit(sha, obj.get("head_sha")):
+        raise ValueError(f"{name}: {sha[:12]} does not match head_sha "
+                         f"{(obj.get('head_sha') or '?')[:12]} -- a record that "
+                         f"disagrees with the PR is a person's to sort out")
+    cur = obj.get("published_sha")
+    if cur and not same_commit(cur, sha):
+        raise ValueError(f"{name}: published_sha is already {cur[:12]}; only the "
+                         f"trusted merge path may advance it")
+    if cur:
+        return obj
+    obj["published_sha"] = sha
+    save_record(name, obj, f"{name}: published_sha backfilled -- the open PR shows "
+                           f"{sha[:12]} (verified against the live PR head)")
+    return obj
+
+
 def pr_state_of(name, refresh=False):
     """(pr_state, where) resolved from wherever the record lives, or (None, why).
 

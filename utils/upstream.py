@@ -19,7 +19,8 @@ contribution on the strength of a field that lies for that repo. So it writes a
 branch and opens a PR, and a human decides -- the same path everything else takes.
 
     python3 utils/upstream.py --dry-run          # report PR drift, change nothing
-    python3 utils/upstream.py --apply            # update the record-sync branch + PR
+    python3 utils/upstream.py --apply            # record merges + verified published_sha
+                                                 # backfills via the record-sync branch + PR
     python3 utils/upstream.py --forks            # report projects awaiting a fork
     python3 utils/upstream.py --forks --apply    # release the ones whose fork exists
     python3 utils/upstream.py --approvals        # report approvals overtaken by a push or edit
@@ -153,22 +154,30 @@ def recorded():
             continue
         ours = d.get("pr_state") or ("merged" if d.get("pr_merged_at") else None)
         out.append({"name": name, "repo": m.group(1), "num": m.group(2),
-                    "url": pr, "ours": ours, "published": d.get("published_sha")})
+                    "url": pr, "ours": ours, "published": d.get("published_sha"),
+                    "head": d.get("head_sha")})
     return out
 
 
 def poll(rows):
     """Compare each record against GitHub.
 
-    Returns (drift, unreviewed, headdrift, errors). headdrift is an OPEN PR whose
-    head no longer matches the recorded published_sha: a push that did not come
-    through the fix flow's merge. The usual cause is a maintainer editing our
+    Returns (drift, unreviewed, headdrift, backfill, errors). headdrift is an OPEN
+    PR whose head no longer matches the recorded published_sha: a push that did not
+    come through the fix flow's merge. The usual cause is a maintainer editing our
     branch (allowed on PRs with maintainer-edit enabled), which was done on
     purpose by a person -- so it is never auto-absorbed: review the commit(s) and
-    recommend a course of action for a human to decide."""
+    recommend a course of action for a human to decide.
+
+    backfill is an OPEN PR from before the fix flow -- no published_sha recorded --
+    whose live head agrees with the record's head_sha, so the stamp is verified and
+    mechanical; --apply writes it. A pre-flow record whose head DISAGREES with the
+    live PR goes to headdrift instead: there is no baseline to stamp, and inferring
+    one from a record the PR contradicts is how a maintainer's push would get
+    blessed as our own."""
     sys.path.insert(0, str(REPO / "utils"))
     import moatlib
-    drift, unreviewed, headdrift, errors = [], [], [], []
+    drift, unreviewed, headdrift, backfill, errors = [], [], [], [], []
     for r in rows:
         d = gh_json(["pr", "view", r["num"], "--repo", r["repo"], "--json",
                      "state,mergedAt,reviewDecision,updatedAt,headRefOid"])
@@ -191,10 +200,18 @@ def poll(rows):
         # wrote them used, and an abbreviated published_sha compared literally
         # against a 40-character headRefOid would report a maintainer push on every
         # sweep. Five validated_shas already read as stale forever that way.
-        if (r["real"] == "OPEN" and r.get("published") and d.get("headRefOid")
-                and not moatlib.same_commit(d["headRefOid"], r["published"])):
-            headdrift.append({**r, "head": d["headRefOid"]})
-    return drift, unreviewed, headdrift, errors
+        live = d.get("headRefOid")
+        if r["real"] == "OPEN" and live:
+            if r.get("published"):
+                if not moatlib.same_commit(live, r["published"]):
+                    headdrift.append({**r, "live": live})
+            elif r.get("head") and moatlib.same_commit(live, r["head"]):
+                backfill.append({**r, "live": live})
+            else:
+                # No published_sha, and the record's head is absent or disagrees
+                # with the PR: there is no verified baseline to stamp.
+                headdrift.append({**r, "live": live, "nobaseline": True})
+    return drift, unreviewed, headdrift, backfill, errors
 
 
 OURS = {"jeffdaily"}                     # accounts that speak for this project
@@ -283,6 +300,22 @@ def apply_one(r):
         moatlib.set_pr_merged(r["name"])
     except Exception as e:                      # noqa: BLE001 - reported, not raised
         print(f"  COULD NOT record {r['name']} as merged: {e}")
+        return False
+    return "local" if local else "branch"
+
+
+def apply_backfill(r):
+    """Stamp a verified published_sha. Mechanical for the same reason apply_one's
+    merges are: poll() only routes a row here when the live PR head agrees with the
+    record, and set_published_sha re-checks that agreement plus the record's own
+    consistency before writing. Returns "local"/"branch" like apply_one, or False."""
+    sys.path.insert(0, str(REPO / "utils"))
+    import moatlib
+    local = moatlib.status_path(r["name"]).exists()
+    try:
+        moatlib.set_published_sha(r["name"], r["live"])
+    except Exception as e:                      # noqa: BLE001 - reported, not raised
+        print(f"  COULD NOT stamp {r['name']}: {e}")
         return False
     return "local" if local else "branch"
 
@@ -1399,7 +1432,7 @@ def main():
         return report_attention(recorded(), TODAY)
 
     rows = recorded()
-    drift, unreviewed, headdrift, errors = poll(rows)
+    drift, unreviewed, headdrift, backfill, errors = poll(rows)
     skipped = [r for r in rows if r.get("skipped")]
     # The sweep just happened, so stamp it whether or not anything is applied.
     # Nothing runs on a schedule any more, so this timestamp is the only thing that
@@ -1409,7 +1442,8 @@ def main():
 
     print(f"upstream: {len(rows)} recorded PRs, {len(drift)} drifted, "
           f"{len(unreviewed)} awaiting our response, {len(headdrift)} head-moved, "
-          f"{len(skipped)} skipped, {len(errors)} lookup errors\n")
+          f"{len(backfill)} unstamped, {len(skipped)} skipped, "
+          f"{len(errors)} lookup errors\n")
     for r in drift:
         print(f"  DRIFT      {r['name']:26} we say {str(r['ours']):16} "
               f"GitHub says {r['real']:8} {r['repo']}#{r['num']}")
@@ -1417,8 +1451,17 @@ def main():
         print(f"  CHANGES    {r['name']:26} maintainer requested changes           "
               f"{r['repo']}#{r['num']}")
     for r in headdrift:
-        print(f"  HEAD-MOVED {r['name']:26} PR head {r['head'][:12]} != published "
-              f"{r['published'][:12]} {r['repo']}#{r['num']}")
+        if r.get("nobaseline"):
+            print(f"  HEAD-MOVED {r['name']:26} PR head {r['live'][:12]} != recorded "
+                  f"head {(r.get('head') or '?')[:12]} (no published_sha to stamp) "
+                  f"{r['repo']}#{r['num']}")
+        else:
+            print(f"  HEAD-MOVED {r['name']:26} PR head {r['live'][:12]} != published "
+                  f"{r['published'][:12]} {r['repo']}#{r['num']}")
+    for r in backfill:
+        print(f"  BACKFILL   {r['name']:26} open PR from before the fix flow; live "
+              f"head {r['live'][:12]} == recorded head -- --apply stamps "
+              f"published_sha")
     if headdrift:
         # Deliberately never applied: the usual cause is a maintainer pushing to
         # our branch, which a person did on purpose. The move is to READ what
@@ -1435,19 +1478,26 @@ def main():
         print(f"  ERROR      {r['name']:26} {r['why']}")
 
     if not a.apply:
+        todo = []
         if drift:
-            print(f"\n  --apply records the {sum(1 for r in drift if r['real'] == 'MERGED')} "
-                  f"merge(s) and opens a PR; closures need a human decision.")
+            todo.append(f"records the {sum(1 for r in drift if r['real'] == 'MERGED')} "
+                        f"merge(s)")
+        if backfill:
+            todo.append(f"stamps {len(backfill)} verified published_sha(s)")
+        if todo:
+            print(f"\n  --apply {' and '.join(todo)} and opens a PR; closures and "
+                  f"moved heads need a human decision.")
         return 0
 
-    landed = [(r, apply_one(r)) for r in drift]
+    landed = [(r, apply_one(r)) for r in drift] \
+        + [(r, apply_backfill(r)) for r in backfill]
     on_branch = [r for r, where in landed if where == "branch"]
     local = [r for r, where in landed if where == "local"]
     if not (on_branch or local):
         print("\nupstream: nothing to apply automatically")
         return 0
     for r in on_branch:
-        print(f"\nupstream: recorded {r['name']} as merged on its own port branch "
+        print(f"\nupstream: recorded {r['name']} on its own port branch "
               f"(already pushed; not part of the record-sync PR)")
     if not local:
         return 0
@@ -1496,15 +1546,25 @@ def publish(applied):
         return 0
 
     names = ", ".join(r["name"] for r in applied)
-    subject = f"records: upstream merges ({names})"
+    merges = [r for r in applied if not r.get("live")]
+    stamps = [r for r in applied if r.get("live")]
+    what = " and ".join(w for w, rows in (("upstream merges", merges),
+                                          ("published_sha backfills", stamps)) if rows)
+    subject = f"records: {what} ({names})"
     git("commit", "-q", "-m", subject)
     git("push", "-q", "--force-with-lease", "-u", "origin", BRANCH)
 
     existing = gh_json(["pr", "list", "--head", BRANCH, "--state", "open",
                         "--json", "number,url"]) or []
-    body = ("Recorded upstream merges that happened after each project's PR merged here.\n\n"
+    body = ("Record corrections from the reconciliation sweep, verified against "
+            "GitHub.\n\n"
             + "\n".join(f"- **{r['name']}** -- {r['repo']}#{r['num']} merged "
-                         f"{(r['merged_at'] or '')[:10]}" for r in applied)
+                         f"{(r['merged_at'] or '')[:10]}" for r in merges)
+            + ("\n" if merges and stamps else "")
+            + "\n".join(f"- **{r['name']}** -- published_sha backfilled to "
+                        f"`{r['live'][:12]}`, the live head of open PR "
+                        f"{r['repo']}#{r['num']} (record predates the fix flow)"
+                        for r in stamps)
             + "\n\nOpened by `utils/upstream.py`. A protected trunk cannot be written "
               "directly, so this arrives as a PR like everything else.\n\n"
               "This branch is regenerated from the trunk on every run and force-pushed, so "
@@ -1515,7 +1575,7 @@ def publish(applied):
         subprocess.run(["gh", "pr", "edit", str(existing[0]["number"]), "--body", body],
                        cwd=str(REPO), capture_output=True, text=True)
         print(f"\nupstream: updated existing PR {existing[0]['url']} "
-              f"({len(applied)} merge(s))")
+              f"({len(applied)} correction(s))")
     else:
         # Check our own title before opening: a tool that enforces a convention on
         # everyone else and exempts itself teaches people the convention is optional.
