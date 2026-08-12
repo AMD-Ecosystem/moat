@@ -1631,3 +1631,144 @@ restoring `lib/kernel/small_ntt.cu` for CUDA: it would hold a second copy of
 every run. Find the last `=== START` before reading errors out of it -- the
 failing run's four `__syncthreads` errors are still in the file above the
 clean one.
+
+## Review 2026-08-12 (round 4)
+
+Scope: the delta `5d99b8f..4ceabb2` (`d7d609e`, `4ceabb2`) plus the lessons
+promoted in MOAT `d4f3532`. Verdict: **changes-requested**. Both code fixes are
+correct and their evidence holds; what is wrong is the stated MECHANISM, in two
+places that ship -- an upstream-visible source comment and a skill entry every
+future port reads.
+
+### 1. The shim comment states a condition the fixed build itself disproves
+
+`src/include/heongpu/cuda_to_hip.h:74-78` says the conflict arises "when a host
+compiler sees both" curand_mtgp32_kernel.h's C++-linkage `threadIdx`/`blockDim`
+and device_launch_parameters.h's C-linkage ones. In the FIXED tree a host TU
+still sees both, and compiles clean. Preprocessing `src/lib/heongpu.cpp` with
+the CUDA build's own g++-13 flags puts the C-linkage `threadIdx` at output line
+58825 (device_launch_parameters.h, reached from GPU-NTT's
+`common/modular_arith.cuh:16`) and the C++-linkage one at 188408
+(curand_mtgp32_kernel.h, reached from `kernel/encryption.cuh:12` via
+`heongpu.hpp -> host/tfhe/encryptor.cuh:10`). `g++-13 -fsyntax-only` on that TU
+is rc=0.
+
+The real condition is ORDER, and only one direction fails. Isolated, against the
+same 12.8 headers:
+
+```
+curand_kernel.h, then cuda_runtime.h + device_launch_parameters.h  -> the 2 errors
+cuda_runtime.h + device_launch_parameters.h, then curand_kernel.h  -> clean
+```
+
+Why the shim was the wrong place is then specific and worth saying: the shim is
+the FIRST thing every host TU pulls in (`util.cuh:9`), ahead of whatever brings
+device_launch_parameters.h in, and its own `#include <cuda_runtime.h>` on the
+line below does not protect it because cuda_runtime.h includes
+device_launch_parameters.h only under `#if defined(__CUDACC__)`
+(cuda_runtime.h:107-119) -- so in a g++ TU the shim's curand landed first with
+nothing before it. Rewrite the comment to say that. As written a maintainer can
+disprove it with one command, and the next reader could conclude the kernel
+headers' own curand includes are equally unsafe (they are not; they are what the
+fixed build relies on).
+
+### 2. The promoted fault-class entry repeats the same overbroad claim
+
+`.claude/skills/cuda-to-rocm/references/fault-classes.md:321`: "**cuRAND's
+device header is not host-includable at all**". False, and contradicted by the
+port it is drawn from -- six `kernel/*.cuh` include `<curand_kernel.h>` and all
+six are reachable from `heongpu.hpp`, so every host `.cpp` in the FIXED build
+includes it. The entry's own prescription ("leave the RNG include in the kernel
+headers that actually use it") is only safe because of the ordering above, which
+the headline sentence hides. The reproducer sentence further down is correct
+about order; it is the claim it is attached to that is not. Reword the headline
+to the order-dependent rule and keep the reason the shim specifically is the
+wrong home for it.
+
+### 3. The device-bodies-in-a-header class is not in the SKILL.md index
+
+`SKILL.md:98-102` "Headers, includes and build" gains no line, so a porter
+scanning the always-loaded index before making exactly this move ("HIP will not
+link my `__device__` function across TUs, I will inline it into the header")
+does not see it and never opens fault-classes.md. This branch indexed its
+earlier negative-float-cast lesson (`SKILL.md:96`), so this is inconsistent with
+its own practice as well as with the point of promoting it. Add one line.
+
+### 4. The pinned-sha recipe's CPM variable is case-sensitive and the entry does not say so
+
+`references/validation.md:13` tells the reader to set both `-DCPM_<DEP>_SOURCE=`
+and `-DFETCHCONTENT_SOURCE_DIR_<DEP>=`. Those two are not spelled the same way:
+CPM reads `CPM_${CPM_ARGS_NAME}_SOURCE` (`CPM_0.40.0.cmake:686`), i.e. the
+package name exactly as passed to `CPMAddPackage` and case-sensitive, while
+CMake uppercases the name for `FETCHCONTENT_SOURCE_DIR_<NAME>`. It worked here
+only because rapids-cmake names the package `CCCL`. On a lowercase-named package
+(`spdlog`, `fmt`) `CPM_SPDLOG_SOURCE` is silently ignored and the full clone
+happens anyway -- the exact failure the recipe exists to prevent. Say which name
+each takes. The rest of the recipe checks out: the pin really is at
+`rapids-cmake-src/rapids-cmake/cpm/versions.json`, key `CCCL`, `git_tag`
+`8c04b6539859932f5602e86d38314e4d87f96420`, matching what the script passed.
+
+### 5. The design rationale never addresses the alternative a maintainer will raise first
+
+`4ceabb2`'s message weighs the guard against exactly one alternative (restoring
+`lib/kernel/small_ntt.cu` for NVIDIA and duplicating 145 lines). The obvious
+third option is missing: enable relocatable device code on the HIP side, which
+is the direct analogue of the `CUDA_SEPARABLE_COMPILATION ON` the CUDA branch of
+`heongpu_set_gpu_properties` already sets (`src/CMakeLists.txt:23`). That option
+is a build-flag change that would have left `small_ntt.cuh` untouched and kept
+`small_ntt.cu` in the tree -- a strictly smaller footprint on upstream sources
+than deleting a file and editing a header, which is how the reviewer on the
+other side will see it. There is a good answer (`-fgpu-rdc` blocks the inlining
+of an NTT butterfly across the call, so the guarded-header build is likely
+faster than upstream's own `-rdc` CUDA build, and the AMD result is measured
+while an `-fgpu-rdc` build is not), but it is nowhere in the branch or in
+notes.md. Put the reason in the commit message; do not change the design.
+
+### Explicit verdicts on the four claims put to this review
+
+1. **cuRAND include removal -- sound.** `util.cuh:9` is the only includer of
+   `cuda_to_hip.h` in the tree; the six `kernel/*.cuh` that use cuRAND each
+   include it themselves; no `curand_*` use in `src/` reaches the symbol only
+   through the shim. The HIP branch is untouched, still includes
+   `<hiprand/hiprand_kernel.h>`, and `thirdparty/hip_compat/curand_kernel.h`
+   still satisfies those six includes (`src/CMakeLists.txt:19` puts it SYSTEM
+   BEFORE). Only the explanation is wrong (finding 1).
+2. **`__CUDACC__ || __HIPCC__` -- correct, and verified rather than assumed.**
+   `nvcc -arch=sm_80` on a probe with `#if !defined(__CUDACC__) #error` compiles,
+   and `#warning` fires in both passes with `__CUDA_ARCH__` undefined in the host
+   one, so the entry's rejection of `__CUDA_ARCH__` is right. `hipcc -dM -E`
+   predefines `__HIPCC__` with and without `-x hip`, in both passes, with no
+   header needed -- so this does not repeat the `__HIP_PLATFORM_AMD__`
+   include-order trap. g++ defines neither. The only callers are
+   `lib/kernel/bootstrapping.cu` and `lib/kernel/keygeneration.cu`, both in
+   `HEONGPU_KERNEL_SOURCES`, so both are `LANGUAGE HIP` on AMD and nvcc TUs on
+   CUDA; nothing outside a device compilation needs the definitions. The
+   declarations at `small_ntt.cuh:13-22` are byte-identical to upstream
+   `1928a14`, trailing missing newline included.
+3. **Design -- guard beats restoring `small_ntt.cu`.** Agreed, for the stated
+   reason. See finding 5 for the missing third option.
+4. **Binary equivalence -- sound, and the comparison is real.** `codeobj_diff.py`
+   re-run independently here over `agent_space/heongpu-amd-baseline/bin` vs
+   `src/build/bin`: `verdict=identical`, 42/42. `roc-obj-ls` on the compared
+   binaries lists non-empty `hipv4-amdgcn-amd-amdhsa--gfx90a` slices (e.g.
+   size=86352 in `test/bfv_addition_testcases`), so the ISA compare is not the
+   vacuous empty-vs-empty case. Baseline binaries are timestamped 19:56 and the
+   post-fix ones 20:00 on the same day with the same build dir layout. The a
+   priori argument is independently sufficient anyway: every TU needing the
+   definitions is compiled with a device compiler on AMD, so the guard is
+   always true there. Withholding the claim for gfx1100 is correct, not
+   over-cautious -- the carry-forward rule is per-arch and measured, and gfx1100
+   was not measured.
+
+### Also checked
+
+CUDA build evidence is genuine and not stale: the last `=== START` in
+`agent_space/heongpu-cuda-check.log` (19:58:45) is configure rc=0, build rc=0,
+64 targets, zero "error" lines. 26 objects survive from the earlier failing run,
+but none of them lists `cuda_to_hip.h` or `small_ntt.cuh` in
+`compiler_depend.make` -- every object that depends on either changed header was
+rebuilt after both edits (file mtimes 19:58:20 and 19:58:36). `jargon.py --port
+HEonGPU` clean over the branch. Both titles are `[ROCm]`-prefixed and under 72
+chars (64, 58); Claude named in both bodies, no noreply trailer. No submodule or
+patch file touched by the delta; fork tree clean. No AMD-internal account
+references.
