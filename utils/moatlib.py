@@ -140,8 +140,29 @@ STAGE_TRANSITIONS = {
     # could both write it. No project has ever been in delta-ported, so routing it
     # this way costs nothing and closes the hole.
     "porting": {"ported", "delta-ported"},
-    "ported": {"review-passed", "changes-requested"},
-    "delta-ported": {"review-passed", "changes-requested"},
+    # `reviewing` exists to be ACQUIRED, for the same reason `planning` does. A review
+    # reads one shared branch and writes one shared verdict, and the verdict is the
+    # part that races: `ported` has two legal exits and whichever reviewer writes
+    # second wins, so a second reviewer finding nothing can overwrite a first one's
+    # changes-requested and send a port with recorded findings on to validation.
+    #
+    # The sharper failure needs no race at all. The porter's lock only excludes other
+    # LOCK HOLDERS, and a reviewer held nothing, so a porter could legally take the
+    # lock and rewrite the branch mid-review -- which is exactly what happened to
+    # HEonGPU: a review of 5d99b8f..4ceabb2 was overtaken by two porter commits and
+    # its analysis was stale before it could be recorded. Reviewing under the same
+    # lock the porter takes is what makes the branch hold still.
+    #
+    # Reviewing is the last project-scoped stage. Validation stays unlocked because it
+    # is partitioned by platform -- each host writes its own arch's record and no two
+    # want the same one -- while review has no such partition, which is why it is the
+    # stage that collides.
+    "ported": {"reviewing"},
+    "delta-ported": {"reviewing"},
+    # Both origins are exits, so releasing a review without a verdict puts the project
+    # back where it came from rather than inventing one, the way planning -> screened
+    # does. A review that reached a conclusion leaves by the conclusion.
+    "reviewing": {"review-passed", "changes-requested", "ported", "delta-ported"},
     "changes-requested": {"porting"},
     # review-passed has no exit to `completed`: completing is an ARCH's fact now, and
     # a project stays review-passed while its architectures validate independently --
@@ -206,6 +227,7 @@ STAGE_FOR_STATE = {
     "validation-failed": "porter",
     "ported": "reviewer",
     "delta-ported": "reviewer",
+    "reviewing": "reviewer",
     "review-passed": "validator",
     "port-ready": "validator",
     "revalidate": "validator",
@@ -221,6 +243,7 @@ SELECT_RANK = {
     "porting": 3,
     "delta-ported": 4,
     "planning": 4,
+    "reviewing": 4,
     "planned": 5,
     "ported": 6,
     "review-passed": 7,
@@ -242,11 +265,16 @@ SELECT_RANK = {
 # plan, notes and often weeks of porter work, and a negative outcome is a deliverable.
 # Stages whose work writes content the whole project shares, so exactly one
 # architecture may hold them: the fork's port branch for `porting`, plan.md for
-# `planning`. Entering one acquires the lock and leaving releases it, rather than an
-# agent being told to set a field by hand -- which is what the porter's lock was
-# before it had a mechanism, and no project ever carried one.
-EXCLUSIVE_STAGES = {"porting", "planning"}
-EXCLUSIVE_AGENTS = {"porter", "planner"}
+# `planning`, the review verdict for `reviewing`. Entering one acquires the lock and
+# leaving releases it, rather than an agent being told to set a field by hand -- which
+# is what the porter's lock was before it had a mechanism, and no project ever carried
+# one.
+#
+# One lock, not three. The stages do not merely conflict with themselves, they conflict
+# with each other: reviewing a branch a porter is rewriting is the collision that cost
+# the most, and two separate locks would have permitted it.
+EXCLUSIVE_STAGES = {"porting", "planning", "reviewing"}
+EXCLUSIVE_AGENTS = {"porter", "planner", "reviewer"}
 
 INERT_STAGES = {"awaiting-fork", "awaiting-upstream", "not-portable"}
 INERT = INERT_STAGES | {"completed"}
@@ -717,6 +745,16 @@ def set_not_portable(name, reason, by, clear=False):
 
 def set_blocked(name, platform, blocked, reason=None):
     obj = load_status(name)
+    if platform not in obj["platforms"]:
+        # An absent record means this arch has recorded nothing, which is exactly the
+        # arch most likely to discover it cannot run the project at all -- so blocking
+        # one has to be able to create the row, the way a stage transition does. Only
+        # blocking creates it: writing a row that says "not blocked" would record an
+        # intention to validate somewhere, which is fleet state and not a fact about
+        # the port.
+        if not blocked:
+            raise ValueError(f"{name}: {platform} has recorded nothing; nothing to clear")
+        obj["platforms"][platform] = _platform_block(None)
     blk = obj["platforms"][platform]
     blk["blocked"] = bool(blocked)
     blk["blocked_reason"] = reason if blocked else None
@@ -1641,6 +1679,37 @@ def set_fix_merged(name, new_published_sha):
     return obj
 
 
+def set_published_sha(name, sha):
+    """Stamp what the open upstream PR shows, on a record from before the fix flow.
+
+    The caller (the upstream.py reconciler) has already verified `sha` against the
+    live PR head; this only guards the record's own consistency: the PR must still
+    be open, the value must agree with head_sha -- a record whose head disagrees
+    with the PR is the HEAD-MOVED case and needs a person, not a stamp -- and an
+    existing different value is never silently replaced (only the trusted merge
+    path advances one). Idempotent on a matching stamp."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    if obj.get("pr_state") != "open":
+        raise ValueError(f"{name}: pr_state is {obj.get('pr_state')!r}, not open -- "
+                         f"published_sha only describes an open PR")
+    if not same_commit(sha, obj.get("head_sha")):
+        raise ValueError(f"{name}: {sha[:12]} does not match head_sha "
+                         f"{(obj.get('head_sha') or '?')[:12]} -- a record that "
+                         f"disagrees with the PR is a person's to sort out")
+    cur = obj.get("published_sha")
+    if cur and not same_commit(cur, sha):
+        raise ValueError(f"{name}: published_sha is already {cur[:12]}; only the "
+                         f"trusted merge path may advance it")
+    if cur:
+        return obj
+    obj["published_sha"] = sha
+    save_record(name, obj, f"{name}: published_sha backfilled -- the open PR shows "
+                           f"{sha[:12]} (verified against the live PR head)")
+    return obj
+
+
 def pr_state_of(name, refresh=False):
     """(pr_state, where) resolved from wherever the record lives, or (None, why).
 
@@ -2520,8 +2589,11 @@ def actionable(obj, platform):
     if task is None:
         return False
     # Only one arch at a time may do work that writes SHARED content -- the fork's port
-    # branch for a porter, plan.md for a planner. Validation is exempt because it is
-    # read-only on code and writes only its own arch's record, which merges.
+    # branch for a porter, plan.md for a planner, the verdict for a reviewer. Validation
+    # is exempt because it is read-only on code and writes only its own arch's record,
+    # which merges -- and because it is partitioned by platform, so two hosts picking it
+    # up want different records. Review has no such partition: every host reviewing a
+    # project reviews the same branch and writes the same verdict.
     lock = obj.get("porting")
     if lock and lock.get("arch") != platform and task[0] in EXCLUSIVE_AGENTS:
         return False
@@ -2572,8 +2644,8 @@ def fleet(platform):
         if task is None or unmet_deps(obj):
             continue
         agent, state = task
-        # The same exclusion `actionable` applies: porter/planner work whose lock
-        # another arch holds is not dispatchable anywhere, and naming its branch
+        # The same exclusion `actionable` applies: porter/planner/reviewer work whose
+        # lock another arch holds is not dispatchable anywhere, and naming its branch
         # here sends a checkout at a guaranteed `next: NONE`.
         lock = obj.get("porting")
         if lock and lock.get("arch") != platform and agent in EXCLUSIVE_AGENTS:
