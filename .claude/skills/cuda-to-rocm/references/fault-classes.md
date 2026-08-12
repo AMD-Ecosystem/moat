@@ -318,6 +318,53 @@ headers into g++ and fails there. Put the shim in the lowest common layer, keep 
 includes (`hip_runtime.h`, `hipfft.h`) unconditional, and gate device-only ones behind
 `__CUDACC__` or `__HIPCC__ || __HIP_DEVICE_COMPILE__`. (SCAMP, stdgpu)
 
+**cuRAND's device header is not host-includable at all**, which makes it a bad thing to put
+in a shim. HEonGPU's compat header included `<curand_kernel.h>` on its CUDA branch, and the
+shim is reached from every host `.cpp` through the public umbrella header: CUDA 12.8's
+`curand_mtgp32_kernel.h` declares `threadIdx`/`blockDim` with C++ linkage, and
+`device_launch_parameters.h` declares the same names with C linkage, so g++ 13 rejects the
+conflicting declarations. Two-line reproducer -- `#include <curand_kernel.h>` before
+`<cuda_runtime.h>` and `<device_launch_parameters.h>`, `g++ -fsyntax-only`. Nothing on the
+AMD side can catch it, since the HIP branch of the shim includes hipRAND instead and hipRAND
+is host-safe. Give a shim the runtime header only, and leave the RNG include in the kernel
+headers that actually use it. (HEonGPU)
+
+**Do not move device function BODIES into a header that host TUs include, even though HIP
+seems to demand it.** When a project keeps `__device__` function definitions in their own
+`.cu` with explicit instantiations, it is relying on relocatable device code (nvcc `-rdc`,
+which CMake's `CUDA_SEPARABLE_COMPILATION` turns on). Without `-fgpu-rdc` a HIP build cannot
+resolve that call across TUs -- `lld: error: undefined hidden symbol` at link -- so the
+obvious fix is to move the bodies into the header and mark them `__device__ inline`. That
+works on AMD and silently breaks the CUDA build wherever a host TU reaches the header: g++
+must then parse device bodies and rejects `__syncthreads` ("there are no arguments to
+`__syncthreads` that depend on a template parameter"). It fails even though the templates are
+never instantiated in that TU, because `__syncthreads` is a non-dependent name and two-phase
+lookup resolves it at definition time. Keep the declarations unconditional and guard the
+DEFINITIONS:
+
+```cpp
+template <typename T> __device__ void SmallForwardNTT(T*, ...);   // host TUs see this
+
+#if defined(__CUDACC__) || defined(__HIPCC__)
+template <typename T> __device__ inline void SmallForwardNTT(T*, ...) { ... __syncthreads(); }
+#endif
+```
+
+Test the COMPILER (`__CUDACC__`/`__HIPCC__`), not the target: the requirement is that only a
+device compiler parses a device body, and both back ends compile the calling `.cu` files with
+one. `__CUDA_ARCH__`/`__HIP_DEVICE_COMPILE__` would be wrong here -- they are false during
+nvcc's host pass, which still has to parse the same TU. Adding `inline` at the definition
+after a non-inline declaration is legal. Restoring the separate `.cu` for CUDA while keeping
+the header definitions for HIP is the other option and it is worse: it duplicates the bodies
+in two files that must not drift.
+
+**No AMD build, review round or GPU validation can detect this class.** In HEonGPU two review
+rounds and a full 20/20 GPU validation passed over the inlined header; only compiling the
+CUDA path with nvcc found it. Any port that makes this move owes an nvcc compile check
+(references/validation.md). The guard itself is codegen-neutral on AMD -- verified with
+`codeobj_diff.py`, identical exported symbols and device ISA on all 42 gfx90a binaries --
+because every calling TU is a device TU where the guard is true. (HEonGPU)
+
 **`__HIP_PLATFORM_AMD__` is undefined until `hip/hip_runtime.h` has been included in that
 TU.** A wave-width gate in a header included BEFORE the runtime header silently takes the
 CUDA branch and picks width 32. hipify-perl prepends the runtime include at line 1, which
