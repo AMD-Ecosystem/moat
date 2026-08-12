@@ -1,0 +1,311 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "8892cf4fb70a",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "rmcl_ros/include/rmcl_ros/rmcl/GladiatorResamplerGPU.hpp",
+      "rmcl_ros/include/rmcl_ros/rmcl/optix/cuda_math_helper.cuh",
+      "rmcl_ros/include/rmcl_ros/rmcl/optix/cuda_rmagine_conversions.cuh",
+      "rmcl_ros/include/rmcl_ros/rmcl/particle_motion.cuh",
+      "rmcl_ros/include/rmcl_ros/rmcl/resampling.cuh",
+      "rmcl_ros/src/rmcl/optix/BeamEvaluateProgram.cu",
+      "rmcl_ros/src/rmcl/particle_motion.cu",
+      "rmcl_ros/src/rmcl/resampling.cu"
+    ],
+    "markers": {
+      "device_code": 11,
+      "kernel": 7,
+      "launch": 4
+    },
+    "libraries": {
+      "curand": 26
+    }
+  },
+  "components": [
+    {
+      "id": "benchmark:lidar_corrector_embree_benchmark",
+      "kind": "benchmark",
+      "where": "rmcl_ros/src/benchmarks/lidar_corrector_embree_benchmark.cpp",
+      "note": "source present in the tree, wired into no CMake target"
+    },
+    {
+      "id": "benchmark:lidar_corrector_optix_benchmark",
+      "kind": "benchmark",
+      "where": "rmcl_ros/src/benchmarks/lidar_corrector_optix_benchmark.cpp",
+      "note": "source present in the tree, wired into no CMake target"
+    },
+    {
+      "id": "codegen:rmcl_ros_optix_ptx",
+      "kind": "codegen",
+      "where": "rmcl_ros/CMakeLists.txt:283-362, cmake/CompileOptixKernels{,CudaToolkit}.cmake",
+      "note": "CUDA_PTX_COMPILATION custom target for BeamEvaluateProgram.cu; a build path, not a library"
+    },
+    {
+      "id": "library:conv_pc2_to_o1dn",
+      "kind": "library",
+      "where": "rmcl_ros/CMakeLists.txt"
+    },
+    {
+      "id": "library:conv_pc2_to_scan",
+      "kind": "library",
+      "where": "rmcl_ros/CMakeLists.txt"
+    },
+    {
+      "id": "library:conv_scan_to_scan",
+      "kind": "library",
+      "where": "rmcl_ros/CMakeLists.txt"
+    },
+    {
+      "id": "library:map_segmentation",
+      "kind": "library",
+      "where": "rmcl_ros/CMakeLists.txt"
+    },
+    {
+      "id": "library:micp_localization",
+      "kind": "library",
+      "where": "rmcl_ros/CMakeLists.txt"
+    },
+    {
+      "id": "library:o1dn_map_segmentation_embree",
+      "kind": "library",
+      "where": "rmcl_ros/CMakeLists.txt"
+    },
+    {
+      "id": "library:rmcl",
+      "kind": "library",
+      "where": "rmcl/CMakeLists.txt"
+    },
+    {
+      "id": "library:rmcl-cuda",
+      "kind": "library",
+      "where": "rmcl/CMakeLists.txt"
+    },
+    {
+      "id": "library:rmcl-embree",
+      "kind": "library",
+      "where": "rmcl/CMakeLists.txt"
+    },
+    {
+      "id": "library:rmcl-optix",
+      "kind": "library",
+      "where": "rmcl/CMakeLists.txt"
+    },
+    {
+      "id": "library:rmcl-vulkan",
+      "kind": "library",
+      "where": "rmcl/CMakeLists.txt"
+    },
+    {
+      "id": "library:rmcl_embree_ros",
+      "kind": "library",
+      "where": "rmcl_ros/CMakeLists.txt"
+    },
+    {
+      "id": "library:rmcl_localization",
+      "kind": "library",
+      "where": "rmcl_ros/CMakeLists.txt"
+    },
+    {
+      "id": "library:rmcl_ros",
+      "kind": "library",
+      "where": "rmcl_ros/CMakeLists.txt"
+    },
+    {
+      "id": "library:rmcl_ros_cuda",
+      "kind": "library",
+      "where": "rmcl_ros/CMakeLists.txt"
+    },
+    {
+      "id": "library:rmcl_ros_optix",
+      "kind": "library",
+      "where": "rmcl_ros/CMakeLists.txt"
+    },
+    {
+      "id": "library:rmcl_ros_optix_cu_to_ptx",
+      "kind": "library",
+      "where": "rmcl_ros/CMakeLists.txt"
+    },
+    {
+      "id": "library:scan_map_segmentation_embree",
+      "kind": "library",
+      "where": "rmcl_ros/CMakeLists.txt"
+    },
+    {
+      "id": "option:BUILD_TESTS",
+      "kind": "option",
+      "where": "rmcl/CMakeLists.txt",
+      "default": "ON",
+      "doc": "Build tests"
+    },
+    {
+      "id": "option:DISABLE_CUDA",
+      "kind": "option",
+      "where": "rmcl/CMakeLists.txt",
+      "default": "unset",
+      "doc": "Disable CUDA related compilations"
+    },
+    {
+      "id": "option:DISABLE_EMBREE",
+      "kind": "option",
+      "where": "rmcl/CMakeLists.txt",
+      "default": "unset",
+      "doc": "Disable Rmagine Embree backend Compilation"
+    },
+    {
+      "id": "option:DISABLE_OPTIX",
+      "kind": "option",
+      "where": "rmcl/CMakeLists.txt",
+      "default": "unset",
+      "doc": "Disable Rmagine OptiX backend Compilation"
+    },
+    {
+      "id": "option:DISABLE_VULKAN",
+      "kind": "option",
+      "where": "rmcl/CMakeLists.txt",
+      "default": "unset",
+      "doc": "Disable Rmagine Vulkan backend Compilation"
+    },
+    {
+      "id": "option:USE_HIP",
+      "kind": "option",
+      "where": "added by this port (rmcl_ros/CMakeLists.txt)",
+      "default": "OFF",
+      "doc": "Build the GPU compute path against ROCm/HIP instead of CUDA"
+    },
+    {
+      "id": "package:rmcl_msgs",
+      "kind": "package",
+      "where": "rmcl_msgs/CMakeLists.txt",
+      "note": "rosidl_generate_interfaces message package; the target scan sees no add_library"
+    },
+    {
+      "id": "test:rmcl_gpu_tests",
+      "kind": "test",
+      "where": "added by this port (rmcl_ros/tests, rmcl/tests)",
+      "note": "upstream ships no tests at all; this port adds the GPU evidence"
+    }
+  ],
+  "covered": [],
+  "scoped_out": [
+    {
+      "id": "benchmark:lidar_corrector_embree_benchmark",
+      "reason": "CPU/Embree benchmark source, wired into no CMake target; no CUDA surface."
+    },
+    {
+      "id": "benchmark:lidar_corrector_optix_benchmark",
+      "reason": "OptiX has no HIP translation target. rmagine's HIPRT backend is a build-tree proof of concept with no install/export, no normals, no bundle-templated simulate() and no map import layer, so there is nothing for rmcl to link against; left on the CUDA path, unmodified. See plan.md 'OptiX and why it is not in this port'. Also built by no CMake target."
+    },
+    {
+      "id": "codegen:rmcl_ros_optix_ptx",
+      "reason": "OptiX has no HIP translation target. rmagine's HIPRT backend is a build-tree proof of concept with no install/export, no normals, no bundle-templated simulate() and no map import layer, so there is nothing for rmcl to link against; left on the CUDA path, unmodified. See plan.md 'OptiX and why it is not in this port'."
+    },
+    {
+      "id": "library:conv_pc2_to_o1dn",
+      "reason": "No CUDA surface; unchanged by the port. In the non-GPU regression set that must keep building in the ROCm configuration."
+    },
+    {
+      "id": "library:conv_pc2_to_scan",
+      "reason": "No CUDA surface; unchanged by the port. In the non-GPU regression set that must keep building in the ROCm configuration."
+    },
+    {
+      "id": "library:conv_scan_to_scan",
+      "reason": "No CUDA surface; unchanged by the port. In the non-GPU regression set that must keep building in the ROCm configuration."
+    },
+    {
+      "id": "library:map_segmentation",
+      "reason": "No CUDA surface; unchanged by the port. In the non-GPU regression set that must keep building in the ROCm configuration."
+    },
+    {
+      "id": "library:micp_localization",
+      "reason": "No CUDA surface of its own; links rmcl_ros_cuda when RMCL_CUDA is on. Its GPU backend strings stay unreachable on ROCm because they construct MICPSensorCUDA only under RMCL_OPTIX/RMCL_VULKAN. In the regression set."
+    },
+    {
+      "id": "library:o1dn_map_segmentation_embree",
+      "reason": "No CUDA surface; unchanged by the port. In the non-GPU regression set that must keep building in the ROCm configuration."
+    },
+    {
+      "id": "library:rmcl",
+      "reason": "No CUDA surface; unchanged by the port. In the non-GPU regression set that must keep building in the ROCm configuration."
+    },
+    {
+      "id": "library:rmcl-embree",
+      "reason": "No CUDA surface; unchanged by the port. In the non-GPU regression set that must keep building in the ROCm configuration."
+    },
+    {
+      "id": "library:rmcl-optix",
+      "reason": "OptiX has no HIP translation target. rmagine's HIPRT backend is a build-tree proof of concept with no install/export, no normals, no bundle-templated simulate() and no map import layer, so there is nothing for rmcl to link against; left on the CUDA path, unmodified. See plan.md 'OptiX and why it is not in this port'."
+    },
+    {
+      "id": "library:rmcl-vulkan",
+      "reason": "Requires rmagine::vulkan and rmagine::vulkan-cuda-interop, which rmagine's ROCm build does not provide (Vulkan is disabled in every validated rmagine configuration); left unmodified."
+    },
+    {
+      "id": "library:rmcl_embree_ros",
+      "reason": "No CUDA surface; unchanged by the port. In the non-GPU regression set that must keep building in the ROCm configuration."
+    },
+    {
+      "id": "library:rmcl_localization",
+      "reason": "Gated on if(RMCL_OPTIX AND RMCL_EMBREE) at rmcl_ros/CMakeLists.txt:701 with upstream's own comment that the path is NVIDIA-only. OptiX has no HIP translation target. rmagine's HIPRT backend is a build-tree proof of concept with no install/export, no normals, no bundle-templated simulate() and no map import layer, so there is nothing for rmcl to link against; left on the CUDA path, unmodified. See plan.md 'OptiX and why it is not in this port'."
+    },
+    {
+      "id": "library:rmcl_ros",
+      "reason": "No CUDA surface; unchanged by the port. In the non-GPU regression set that must keep building in the ROCm configuration."
+    },
+    {
+      "id": "library:rmcl_ros_optix",
+      "reason": "OptiX has no HIP translation target. rmagine's HIPRT backend is a build-tree proof of concept with no install/export, no normals, no bundle-templated simulate() and no map import layer, so there is nothing for rmcl to link against; left on the CUDA path, unmodified. See plan.md 'OptiX and why it is not in this port'."
+    },
+    {
+      "id": "library:rmcl_ros_optix_cu_to_ptx",
+      "reason": "OptiX has no HIP translation target. rmagine's HIPRT backend is a build-tree proof of concept with no install/export, no normals, no bundle-templated simulate() and no map import layer, so there is nothing for rmcl to link against; left on the CUDA path, unmodified. See plan.md 'OptiX and why it is not in this port'."
+    },
+    {
+      "id": "library:scan_map_segmentation_embree",
+      "reason": "No CUDA surface; unchanged by the port. In the non-GPU regression set that must keep building in the ROCm configuration."
+    },
+    {
+      "id": "option:BUILD_TESTS",
+      "reason": "Existing rmcl option, declared at rmcl/CMakeLists.txt:7 and used by nothing upstream. The port reuses it to gate its new rmcl-package GPU test."
+    },
+    {
+      "id": "option:DISABLE_CUDA",
+      "reason": "Existing upstream flag, semantics unchanged; it gates rmcl-cuda on both the CUDA and the ROCm path."
+    },
+    {
+      "id": "option:DISABLE_EMBREE",
+      "reason": "Existing upstream flag for the CPU backend; unchanged."
+    },
+    {
+      "id": "option:DISABLE_OPTIX",
+      "reason": "Existing upstream flag; OptiX has no HIP translation target. rmagine's HIPRT backend is a build-tree proof of concept with no install/export, no normals, no bundle-templated simulate() and no map import layer, so there is nothing for rmcl to link against; left on the CUDA path, unmodified. See plan.md 'OptiX and why it is not in this port'."
+    },
+    {
+      "id": "option:DISABLE_VULKAN",
+      "reason": "Existing upstream flag; Requires rmagine::vulkan and rmagine::vulkan-cuda-interop, which rmagine's ROCm build does not provide (Vulkan is disabled in every validated rmagine configuration); left unmodified."
+    },
+    {
+      "id": "package:rmcl_msgs",
+      "reason": "Message-generation package; no CUDA surface. In the regression set."
+    }
+  ],
+  "removed_from_floor": [
+    {
+      "id": "executable:conv_image_to_depth",
+      "reason": "declared only inside a comment block (rmcl_ros/CMakeLists.txt:592-604); built by no configuration"
+    },
+    {
+      "id": "executable:conv_pc2_to_depth",
+      "reason": "declared only inside a comment block (rmcl_ros/CMakeLists.txt:570-590); built by no configuration"
+    },
+    {
+      "id": "option:RMCL_ROS_BUILD_EXPERIMENTAL",
+      "reason": "commented out at rmcl_ros/CMakeLists.txt:5; not a live option"
+    },
+    {
+      "id": "option:RMCL_ROS_BUILD_MICP_EXPERIMENTS",
+      "reason": "commented out at rmcl_ros/CMakeLists.txt:6; not a live option"
+    }
+  ],
+  "planner_note": "Scoped-out entries are the planner's decisions with reasons. The porter must move these into covered with evidence: library:rmcl-cuda, library:rmcl_ros_cuda, test:rmcl_gpu_tests, option:USE_HIP."
+}
