@@ -1550,7 +1550,14 @@ def publish(applied):
     stamps = [r for r in applied if r.get("live")]
     what = " and ".join(w for w, rows in (("upstream merges", merges),
                                           ("published_sha backfills", stamps)) if rows)
+    # The subject doubles as the PR title (--fill-first), and pr_intent holds every
+    # title to its maximum. A handful of names reads better than a count, but a
+    # fleet-wide sweep names dozens of projects, and refusing to open the tool's own
+    # PR over its own title is not a gate anyone needed.
+    import pr_intent
     subject = f"records: {what} ({names})"
+    if len(subject) > pr_intent.TITLE_MAX:
+        subject = f"records: {what} ({len(applied)} projects)"
     git("commit", "-q", "-m", subject)
     git("push", "-q", "--force-with-lease", "-u", "origin", BRANCH)
 
