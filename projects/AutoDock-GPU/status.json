@@ -7,7 +7,7 @@
   "priority": 4.951,
   "ext_type": "makefile",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-08-08T23:50:38Z",
+  "updated_at": "2026-08-12T22:10:34Z",
   "head_sha": "2966dcd",
   "pr_url": "https://github.com/ccsb-scripps/AutoDock-GPU/pull/320",
   "pr_number": 320,
@@ -141,5 +141,6 @@
         "at": "2026-07-02T18:26:40Z"
       }
     }
-  }
+  },
+  "published_sha": "2966dcd741d2ff210c7c41170f4f73a11f45408a"
 }
