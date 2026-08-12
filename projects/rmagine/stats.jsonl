@@ -75,3 +75,4 @@
 {"kind":"phase","ts":"2026-06-16T10:07:14Z","phase":"test","seconds":1.920,"exit":0,"cmd":"ctest --test-dir /b/develop/moat/agent_space/rmcl_gfx1101_build --output-on-failure -R ^core_"}
 {"kind":"session","ts":"2026-06-16T10:08:45Z","epoch":1781604525.685775700,"event":"end","platform":"windows-gfx1101"}
 {"kind": "tokens", "ts": "2026-06-16T10:09:25Z", "tokens": 72015, "source": "validator"}
+{"kind":"session","ts":"2026-08-12T20:24:30Z","epoch":1786566270.977823937,"event":"start","platform":"linux-gfx1100"}
