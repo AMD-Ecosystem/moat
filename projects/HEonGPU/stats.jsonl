@@ -115,3 +115,4 @@
 {"kind":"phase","ts":"2026-08-12T21:21:42Z","phase":"compile-comment","seconds":52.235,"exit":0,"cmd":"bash -c cmake --build /var/lib/jenkins/moat/projects/HEonGPU/src/build -j64 > /tmp/claude-1000/-var-lib-jenkins-moat/0ad63c8f-3bb5-421c-bd17-90cc8209bc27/scratchpad/b2.log 2>&1"}
 {"kind":"phase","ts":"2026-08-12T21:21:55Z","phase":"test","seconds":13.469,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/moat/projects/HEonGPU/src/build"}
 {"kind":"phase","ts":"2026-08-12T21:22:55Z","phase":"compile-cuda-check","seconds":50.664,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/heongpu-cuda-check.sh"}
+{"kind":"session","ts":"2026-08-12T21:27:38Z","epoch":1786570058.211321283,"event":"end","platform":"linux-gfx90a"}
