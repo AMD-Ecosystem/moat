@@ -2100,3 +2100,144 @@ link is a bitcode link that inlines across TUs -- and it is recorded here only a
 independent corroboration, reasoned rather than measured. Round 5's gfx90a
 measurement (`s_swappc_b64` count 0 in the RDC-linked image) settles it; the
 duplicate write-ups were discarded rather than appended.
+## Porter Attempt 10 (2026-08-12, linux-gfx90a) -- round-5 findings addressed
+
+Fork head `4925df1` -> `81176c9`, two new commits, nothing amended, `5d99b8f`
+still an ancestor. **This round DOES change compiled output** (finding 2 was
+settled by measurement and the measurement changed the design), so unlike round
+4 nothing here carries forward: the device ISA of every binary differs.
+
+### Finding 2: -fgpu-rdc measured, and it wins. The guard is gone.
+
+`8ef207a` enables `-fgpu-rdc` for the HIP build and restores
+`src/lib/kernel/small_ntt.cu` and `src/include/heongpu/kernel/small_ntt.cuh` to
+byte-identical upstream text (`git diff main -- <either> | wc -l` = 0). The
+whole change is now fifteen lines of `src/CMakeLists.txt`, of which three are
+the flag.
+
+The reviewer's mechanism finding reproduced independently here (probe in
+`agent_space/heongpu-rdc/`, a `__device__` function template with its explicit
+instantiation in `tdev.hip`, called from a `__global__` in `tmain.hip`):
+
+```
+hipcc -O3 --offload-arch=gfx90a -fgpu-rdc {tdev,tmain}.hip -> links
+  functions in the linked device image: only _Z2k3Pyy (the kernel)
+  s_swappc_b64: 0        s_barrier: 5 (the callee's, inline in the kernel)
+without -fgpu-rdc -> lld: error: undefined hidden symbol:
+  void SmallFwd<unsigned long long>(...), referenced by k3(...)
+```
+
+So both halves hold: the link genuinely fails without the flag, and with it the
+cross-TU device call is inlined and the callee's standalone body is gone. The
+"cannot be inlined" rationale in `4925df1` was false and is retracted in
+`8ef207a`'s body.
+
+Then the cost, measured rather than asserted (gfx90a, ROCm 7.2.1, MI210, `-j64`,
+each configuration built clean from an empty build dir):
+
+| | guard (4925df1) | -fgpu-rdc (8ef207a) |
+| --- | --- | --- |
+| ctest | 20/20 | 20/20 |
+| tfhe_benchmark NAND | 16.52, 16.58 ms | 16.52, 16.68 ms |
+| tfhe_benchmark MUX | 29.67, 29.81 ms | 29.89, 29.99 ms |
+| clean build, default (lib only) | 53.7 s | 52.1 s |
+| clean build, tests+examples+benchmarks | 193.6 s | 326.6 s |
+| device code in test/bfv_multiplication_testcases | 1,575,096 B | 1,684,264 B |
+| of which this library's | 864,312 B (8 objects) | 973,480 B (1 image) |
+
+The build-time cost is entirely the device link, which each of the 34
+executables performs over the whole library; the default build (no tests,
+examples or benchmarks -- all three default OFF) is unchanged. Runtime on the
+code path that actually calls the two functions is equal within run-to-run
+noise. tfhe_benchmark is the right measurement target because every
+`SmallForwardNTT`/`SmallInverseNTT` call site is TFHE (`keygeneration.cu:1240+`,
+`bootstrapping.cu:807+`).
+
+Consumer check, which is what made this safe to adopt: the flag rides on
+`INTERFACE_COMPILE_OPTIONS`/`INTERFACE_LINK_OPTIONS` and is exported, so
+`HEonGPUTargets.cmake` carries it and the downstream snippet in
+`docs/advanced_topics.rst` needs no edit. Verified by installing to a prefix and
+building + running a BFV encrypt/decrypt program with that snippet verbatim:
+`roundtrip OK`. This is the analogue of the CUDA side, where the static library
+already sets `CUDA_RESOLVE_DEVICE_SYMBOLS OFF` and the documented consumer
+snippet turns `CUDA_SEPARABLE_COMPILATION` on.
+
+Where the design note went: with the header back to upstream text, a comment
+there would be a gratuitous edit to a file we no longer touch. The rationale now
+sits next to the flag in `src/CMakeLists.txt` (why RDC, and the interface/export
+half separately). That satisfies round 4's "a maintainer will ask why" without
+reopening a file.
+
+CMake has NO `HIP_SEPARABLE_COMPILATION` property (checked, CMake 4.0.3 property
+list), which is why this is hand-wired rather than a one-line property.
+
+### Finding 1: the shim comment now names the TU it broke
+
+`81176c9`. Measured the include order per host TU by preprocessing with each
+target's own `flags.make` defines/includes/flags and grepping the line numbers:
+
+```
+lib/heongpu.cpp            cuda_to_hip@18      device_launch_parameters@58820  <- failing order
+lib/kernel/contextpool.cpp cuda_to_hip@59557   device_launch_parameters@58806  <- safe
+lib/util/defaultmodulus.cpp (no shim)          device_launch_parameters@58807
+lib/util/serializer.cpp    (neither)
+```
+
+which is the reviewer's result exactly. The comment now says a host TU that
+reaches this header before the launch parameters fails, names `lib/heongpu.cpp`
+as the one that did, and claims nothing about "every host .cpp". Note for later:
+the example and benchmark `.cpp` files DO reach both (their `.o.d` files list
+`cuda_to_hip.h` and `curand_kernel.h`), so "one of four" is a statement about
+the library's own host TUs, not about the whole build -- the failing build
+simply never got as far as the examples.
+
+### Findings 3 and 4: the skill
+
+- `fault-classes.md`, cuRAND entry: "by construction the FIRST header a TU pulls
+  in ... always lands in the failing order" and "every host `.cpp` includes it
+  and compiles" are both gone. It now says a shim TENDS to be reached early,
+  that one exposed TU is enough, and gives the `g++ -E | grep -n` recipe for
+  settling the order per TU, with the four HEonGPU numbers as the worked example
+  including the counterexample TU.
+- `fault-classes.md`, device-bodies entry: rewritten around `-fgpu-rdc` as the
+  normal answer, with the CMake wiring (compile AND link, and the interface half
+  for consumers), the measured inlining result, the measured costs, and the
+  header-move demoted to what you reach for when you do not know the flag
+  exists. The closing paragraph now distinguishes the guard (codegen-neutral on
+  AMD) from the RDC switch (changes every binary's ISA, so every arch owes a
+  fresh run).
+- `SKILL.md:103` and `validation.md:12` no longer say HIP lacks
+  relocatable-device-code linking.
+
+### Verification of this round
+
+```
+cmake --build .../build -j64                # rc=0, 0 error lines (both commits)
+ctest --test-dir .../build                  # 100% passed, 20/20, 13.44s then 13.33s
+bash agent_space/heongpu-cuda-check.sh      # last START 21:22:04Z: configure rc=0,
+                                            # build rc=0, 81 objects, 0 error lines
+```
+
+The CUDA check was run TWICE, once per commit, because both commits touch files
+on the CUDA include path; the first run (21:15:34Z) is the one that proves
+`lib/kernel/small_ntt.cu` compiles and links under nvcc again (it appears at log
+line 230 as a CUDA object, and 42 executables link). The CUDA path is now
+upstream's own arrangement for these two files, so this is the least
+CUDA-divergent the branch has been.
+
+```
+python3 utils/codeobj_diff.py agent_space/heongpu-amd-baseline/bin .../build/bin
+  verdict=differ, all 42 binaries "device ISA differs", no symbol differences
+```
+
+That is EXPECTED and is the point: the device link re-optimizes the whole image.
+Do not attempt a carry-forward on this delta. Both archs must re-run the 20
+suites at `81176c9`; gfx1100 has never run an RDC build of this project and its
+result cannot be inferred from gfx90a's.
+
+If `codeobj_diff.py` reports "binary set differs" with names like
+`*.0.hipv4-amdgcn-amd-amdhsa--gfx90a`, those are leftover bundles from someone
+running `llvm-objdump --offloading` inside `bin/test`; delete them and re-run.
+
+`jargon.py --port HEonGPU`: clean over the whole branch.
+`git -C projects/HEonGPU/src status --porcelain`: empty.
