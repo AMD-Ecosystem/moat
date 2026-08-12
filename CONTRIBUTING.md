@@ -172,6 +172,18 @@ approval, and only a person can approve.
 Everything after that first post -- replies to maintainers, follow-up comments, a re-request
 for review -- is its own act and needs its own yes.
 
+A maintainer asking for a code change starts a **fix round**, which repeats this whole
+shape one level down. The open PR's branch is frozen (a push to it lands in front of the
+maintainer unreviewed; a pre-push hook in the fork clone refuses it), so the fix stages on
+`moat-fix-<pr#>`, is reviewed and revalidated at the staging tip, and gets its own fork
+review PR (`upstream.py --fix-review`) whose diff is exactly the delta. Approving it with
+`/moat approve` authorizes `upstream.py --merge-fix --apply` to fast-forward the PR branch
+to exactly the approved tip -- and to post, verbatim, the reply drafted under the body's
+`## Upstream reply` heading, so the code and the words arrive together and one approval
+covers both. The title and body of a fix review PR are not republished anywhere; only that
+reply section is, and it ends at the next `##` heading so that what is written for our own
+eyes can sit in the same body without travelling with it.
+
 ## Who opens the upstream pull request
 
 An attended session on the maintainer's own machine, running one command -- the
