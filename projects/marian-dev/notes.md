@@ -2227,3 +2227,77 @@ No hipErrorInvalidImage observed on gfx1151. The rocBLAS GB-GEMM path is fully o
 ### Verdict: completed -- windows-gfx1151
 
 All GPU unit tests pass (fp32 path; fp16 abort is pre-existing Windows/types.h limitation, not a port bug). Training and e2e decode work correctly on real gfx1151 GPU. The rocBLAS grouped-batched GEMM blocker that failed gfx1101 does NOT affect gfx1151 -- the TheRock gfx1151 Tensile library ships proper ELF .co kernels for the SS (FP32) batched GEMM layout that marian's ProdBatched uses.
+
+## 2026-08-12: upstream PR body replaced and marked ready for review
+
+marian-nmt/marian-dev#1043 is OPEN and no longer a draft, at head `1d0822bd`
+(unchanged; no code was pushed for this transition). Jeff Daily approved the
+replacement body in session and ran both upstream writes himself -- the guard
+shim refuses upstream `gh` writes from an agent, and the trusted publisher only
+opens new PRs, so neither `gh pr edit` nor `gh pr ready` was agent-executed.
+
+The draft comment of 2026-08-10 promised the three scope-outs before marking
+ready; all three are in the branch and validated, so that promise is kept.
+
+### Why the old body had to go
+
+It still carried a `## Deliberate scope limits` section stating that sparse
+matmul, collectives and cuDNN conv/pool were not ported -- the exact three
+things the maintainer sent the port back for, all now implemented -- plus
+"operator suite passes 284 of 287" and a question asking whether to guard the
+csr-dot failures off. Marking ready with that text would have argued against
+its own diff and re-opened the rejected scope.
+
+### The body now on the PR
+
+Source of truth is `agent_space/marian-dev-pr-body.md` (gitignored scratch;
+the posted body is the durable copy). 12072 chars, verified byte-identical to
+the file after posting. Ten sections: build integration, source changes, the
+topk warp-synchronous tail, one section each for sparse / collectives /
+conv-pooling, `## Three fixes the NVIDIA build needs too`, validation, known
+limitations, build recipe.
+
+Kept deliberately, per Jeff's ruling: the two shared upstream fixes stay
+bundled in this PR AND keep their own section, because `USE_CUDNN=ON` neither
+links nor produces correct shapes without them, so the requested MIOpen work
+does not function otherwise. They are `options.cpp`'s missing
+`Get<std::pair<int, int>>` instantiation and `PoolingOp` taking its input's
+shape instead of the pooled one; the third item in that section is the sparse
+zero-scratch guard, inert on cuSPARSE.
+
+Corrections made while drafting, both of which were claims about upstream code:
+- `fastopt.cpp` already had `As<std::pair<int, int>>` on master. Only
+  `options.cpp`'s `Get<>` was missing, and it is the only one this branch adds.
+  Verified with `git diff master..moat-port -- src/common/options.cpp
+  src/common/fastopt.cpp`.
+- `USE_CUDNN` defaults OFF and `USE_NCCL` defaults ON upstream
+  (`CMakeLists.txt:33,38`); this branch changes neither default. The body says
+  so rather than claiming both are on.
+
+Two rounds of Jeff's wording edits: dropped a "neither of them the guess that
+seemed likely at first" history sentence from the sparse section, and reworded
+two spots that leaked internal gate vocabulary ("the CUDA no-regression check"
+-> a statement about cuDNN 8 having removed the algorithm-selection API, and
+the validation bullet -> "The CUDA build is unaffected"). LESSON: an
+upstream-visible body must describe the change, not the investigation that
+produced it, and must not name our own gates. `jargon.py` catches neither --
+"no-regression" and narrative framing are both clean by that checker.
+
+### Deferral rulings carried into the body (Jeff, 2026-08-12)
+
+- `marian-topk-cub-segsort`: defer, ship as disclosed. Listed under known
+  limitations as the unported CUB segmented-sort path, tests-only.
+- `marian-gfx1101-batched-gemm-spirv`: defer, ship as disclosed. Listed as an
+  external library gap with gfx1201/gfx1151 unaffected.
+- `marian-poolingop-cse-alias`: now -- file upstream as its own issue, not
+  mentioned in this PR. No existing marian-nmt/marian-dev issue covers it
+  (searched pooling, layer_pooling, subexpression, avg_pooling; only unrelated
+  #101 and #475). Draft at `agent_space/marian-dev-issue-pooling-cse.md`,
+  awaiting a person to file it; still under discussion.
+
+### State note
+
+`pr_approval` stays empty and `review_pr` still points at CLOSED fork PR #1 at
+`ba0ec806`. That is not repairable and does not need to be: the recorded
+approval exists to let the unattended publisher prove what it is about to open,
+and this PR was already open, so nothing reads it for this project.
