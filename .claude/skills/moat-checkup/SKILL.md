@@ -23,20 +23,25 @@ would hand everything back anyway -- and the round trip costs more than doing it
     bash utils/orient.sh                         # approved ports, fork releases, next work
     python3 utils/upstream.py --review           # finished ports with no review PR open
     python3 utils/upstream.py --attention        # who is waiting on us
+    python3 utils/upstream.py --fix-review       # staged fix rounds with no review PR open
+    python3 utils/upstream.py --merge-fix        # approved fix rounds ready to fast-forward
     python3 utils/upstream.py --approvals        # approvals overtaken by a push or a body edit
-    python3 utils/upstream.py --dry-run          # where our record disagrees with GitHub
+    python3 utils/upstream.py --dry-run          # where our record disagrees with GitHub (incl. a moved PR head)
     python3 utils/moatlib.py waivers             # gate waivers waiting on a maintainer
     python3 utils/deferred.py pending            # deferrals nobody has ruled on
 
-The first is section 0 and comes before everything else: a maintainer who asked us to
-stop is the one item here where continuing to work is worse than doing nothing. The
-second names any port whose approval is standing and whose gates are met. The third
-is where work piles up: a port cannot be approved until its review PR exists, and
-nothing opens one automatically, so ports sit finished and unreviewable -- the report
-names them all; do not trust any remembered count.
-`--review --apply --name <p> --title '<t>' --body-file <f>` opens one. The fourth lists open PRs where a maintainer asked for something, had the last word,
-or has gone quiet. The fifth catches a review GitHub still shows as green over content
-nobody approved. The sixth is bookkeeping. The seventh is section 6: a waiver nobody has
+The opt-out listing is section 0 and comes before everything else: a maintainer who
+asked us to stop is the one item here where continuing to work is worse than doing
+nothing. `orient.sh` names any port whose approval is standing and whose gates are
+met. `--review` is where work piles up: a port cannot be approved until its review PR
+exists, and nothing opens one automatically, so ports sit finished and unreviewable --
+the report names them all; do not trust any remembered count.
+`--review --apply --name <p> --title '<t>' --body-file <f>` opens one. `--attention`
+lists open PRs where a maintainer asked for something, had the last word, or has gone
+quiet. `--fix-review` and `--merge-fix` are the two ends of a staged fix round
+(section 2). `--approvals` catches a review GitHub still shows as green over content
+nobody approved. `--dry-run` is bookkeeping, and a HEAD-MOVED line in it is section
+2's maintainer-push case. The waiver listing is section 6: a waiver nobody has
 answered is a finished port that cannot be submitted.
 
 Nothing runs on a schedule. This checkup IS the sweep, so the record only reconciles when
@@ -184,14 +189,56 @@ This is the bulk of the work and where the value is.
 
 - Read the whole thread before responding, including review comments on specific lines
   (`gh pr view <n> --repo <upstream> --json comments,reviews`).
-- Distinguish a request for a code change (route to the porter: set state `porting`,
-  which takes the fork-write lock -- `changes-requested` is not reachable from
-  `review-passed`, the stage an open upstream PR sits at) from a question you can
-  answer.
-- When a fix lands, the fork HEAD moves, which flips validated platforms to `revalidate`.
-  That is correct and expected -- do not suppress it.
-- Reply tone: plain and short. No "happy to...", no employer name-dropping, nothing
-  lawyerly. Answer the question asked.
+- Distinguish a request for a code change from a question you can answer.
+
+A code change goes through the STAGED FIX FLOW, because the open PR's branch is
+upstream-visible and a push to it lands in front of the maintainer before anyone here
+has reviewed, revalidated, or approved it:
+
+1. Route to the porter: set state `porting` (takes the fork-write lock;
+   `changes-requested` is not reachable from `review-passed`, the stage an open
+   upstream PR sits at), and `moatlib.py fix-branch <name>` names the staging branch
+   -- `moat-fix-<pr#>`, cut from the published tip. The porter pushes ONLY that
+   branch and advances `head_sha` to its tip.
+
+   `fix-branch` also puts the project's folder back on `port/<name>` if a finished
+   port had left it on the trunk, because the round is about to write records and
+   the trunk is protected -- most open-PR records are trunk-resident, so expect that
+   line and let it happen. And it confirms against GitHub that what the record calls
+   the head is what the PR actually shows before it writes `published_sha`; if it
+   refuses because those disagree, that is the HEAD-MOVED case below, not a hiccup.
+2. The head move flips validated platforms to `revalidate` -- correct and expected;
+   the evidence is gathered at the staging tip, BEFORE anything is visible upstream.
+3. Reviewer reviews the delta; validators revalidate; then
+   `upstream.py --fix-review --apply --name <p> --title '<t>' --body-file <f>` opens
+   the fork review PR (`moat-fix-<pr#>` -> `moat-port`). Its diff is the delta; its
+   title and body are NOT republished upstream, so say plainly what the maintainer
+   asked, what changed, and what revalidated. A body section headed exactly
+   `## Upstream reply` is the one upstream-visible part: approve it and it is posted
+   verbatim on the upstream PR after the merge. That section ends at the next `##`
+   heading, so anything written for our own eyes goes after one.
+4. `/moat approve` on that PR, then `upstream.py --merge-fix --apply` re-checks the
+   live approval and every gate, fast-forwards `moat-port` to exactly the approved
+   tip, posts the approved reply, records `published_sha`, and deletes the staging
+   branch. Same contract as `--publish --apply`: mechanical because a person
+   approved exactly this content. Do not push `moat-port` by hand -- the fork's
+   pre-push hook (`moatlib.py protect-fork`) refuses it while the PR is open.
+
+   Run it from a host that has the fork clone AND can write the record; it reports
+   HELD rather than moving the PR when either is missing, because the one thing this
+   must never leave behind is an upstream PR that moved and a record that cannot say
+   so.
+
+A question needing no code change is answered in a comment: draft it, show it, wait --
+or fold it into the next fix round's `## Upstream reply` so one approval covers it.
+Reply tone: plain and short. No "happy to...", no employer name-dropping, nothing
+lawyerly. Answer the question asked.
+
+`--dry-run` reporting HEAD-MOVED for an open PR means its branch moved outside this
+flow -- usually a maintainer editing our branch, which they did on purpose. Read what
+landed, review the commit(s), and put a recommendation in front of a person; never
+auto-absorb or revert it. If the content is accepted, a fresh fix round from the new
+tip re-enters the flow.
 
 If a maintainer signals they will not take the contribution, stop and record it rather
 than pushing. Record it with `moatlib.py set-pr-closed <name> --note "<why>"`, and if the
