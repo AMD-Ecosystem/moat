@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-08-09T00:25:45Z",
+  "updated_at": "2026-08-12T22:10:53Z",
   "head_sha": "08cb196",
   "depends_on": [],
   "pr_url": "https://github.com/zpzim/SCAMP/pull/145",
@@ -141,5 +141,6 @@
         "at": "2026-08-09T00:25:45Z"
       }
     }
-  }
+  },
+  "published_sha": "08cb19658f4020db39ea95f04403159e4ed05973"
 }
