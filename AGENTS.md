@@ -16,7 +16,7 @@ MOAT (Migration Orchestration via Automated Translation) is an AI-agent-driven e
 - **intake** establishes the licence, checks duplicate effort and viability, scaffolds the project, and writes a typed recommendation. It never decides whether to adopt or decline.
 - **planner** determines scope and strategy and writes `plan.md` plus `surface.json`. It never edits the fork.
 - **porter** implements and builds the port on the fork's `moat-port` branch.
-- **reviewer** reviews the fork diff with the `pr-review` skill and records problems in `notes.md`. It opens no PR.
+- **reviewer** reviews the fork diff with the `pr-review` skill and records problems in `notes.md`. It takes the work lock for the duration, so the branch cannot move under it. It opens no PR.
 - **validator** builds and runs real tests on one AMD platform and records evidence tied to the exact fork commit.
 - Work after validation belongs to the `moat-checkup` skill because each maintainer interaction ends at a person.
 
@@ -24,7 +24,7 @@ MOAT (Migration Orchestration via Automated Translation) is an AI-agent-driven e
 
 Coverage is expressed as the required gates in `config/arches.toml`, currently `wave64`, `wave32`, and `windows`. Any `<os>-<gfx>` platform with a known wavefront family may work. A gate is satisfied by any platform carrying that property that completed validation at the current `head_sha`. Extra platforms are additive evidence. Only a configured waivable gate may be waived, and only after a maintainer approves it; an agent may only suggest one.
 
-There is no lead platform. The shared `porting` record serializes the exclusive `planning` and `porting` stages. Entering the stage acquires the lock and leaving releases it. Validation is unlocked and may run in parallel. If another platform holds the lock, stop; takeover is a person's decision, never a timeout.
+There is no lead platform. The shared `porting` record serializes the exclusive `planning`, `porting`, and `reviewing` stages -- one lock across all three, because reviewing a branch a porter is rewriting is as broken as two porters. Entering the stage acquires the lock and leaving releases it. Validation is unlocked and may run in parallel, because it is partitioned by platform: each host writes its own architecture's record. Everything before it is project-scoped, shared by every host, and therefore serialized. If another platform holds the lock, stop; takeover is a person's decision, never a timeout.
 
 # Two repositories, two port branches
 
