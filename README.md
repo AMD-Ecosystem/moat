@@ -157,7 +157,7 @@ The project name links upstream.
 | [bellhopcuda](https://github.com/A-New-BellHope/bellhopcuda) ([fork](https://github.com/AMD-Ecosystem/bellhopcuda/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#65](https://github.com/A-New-BellHope/bellhopcuda/pull/65) |
 | [brian2cuda](https://github.com/brian-team/brian2cuda) ([fork](https://github.com/AMD-Ecosystem/brian2cuda/tree/moat-port)) | ✅ | ✅ | 🔄 | 🟢 [#327](https://github.com/brian-team/brian2cuda/pull/327) |
 | [catboost](https://github.com/catboost/catboost) ([fork](https://github.com/AMD-Ecosystem/catboost-moat/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#3111](https://github.com/catboost/catboost/pull/3111) |
-| [colmap](https://github.com/colmap/colmap) ([fork](https://github.com/AMD-Ecosystem/colmap/tree/moat-port)) | ✅ | ✅ | 🎫 | 🟢 [#4635](https://github.com/colmap/colmap/pull/4635) |
+| [colmap](https://github.com/colmap/colmap) ([fork](https://github.com/AMD-Ecosystem/colmap/tree/moat-port)) | 🔄 | 🔄 | 🎫 | 🟢 [#4635](https://github.com/colmap/colmap/pull/4635) |
 | [CPM.cu](https://github.com/OpenBMB/CPM.cu) | 🚫 | — | — | ⚪ not-portable |
 | [CubbyFlow](https://github.com/utilForever/CubbyFlow) ([fork](https://github.com/AMD-Ecosystem/CubbyFlow/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#145](https://github.com/utilForever/CubbyFlow/pull/145) |
 | [cuBQL](https://github.com/NVIDIA/cuBQL) ([fork](https://github.com/AMD-Ecosystem/cuBQL/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#35](https://github.com/NVIDIA/cuBQL/pull/35) |
@@ -212,7 +212,7 @@ The project name links upstream.
 | [gRASPA](https://github.com/snurr-group/gRASPA) ([fork](https://github.com/AMD-Ecosystem/gRASPA/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [gtsam_points](https://github.com/koide3/gtsam_points) ([fork](https://github.com/AMD-Ecosystem/gtsam_points/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#99](https://github.com/koide3/gtsam_points/pull/99) |
 | [h2o4gpu](https://github.com/h2oai/h2o4gpu) | ⬜ | ⬜ | ⬜ | — |
-| [HEonGPU](https://github.com/Alisah-Ozcan/HEonGPU) ([fork](https://github.com/AMD-Ecosystem/HEonGPU/tree/moat-port)) | ✅ | ✅ | ⬜ | — |
+| [HEonGPU](https://github.com/Alisah-Ozcan/HEonGPU) ([fork](https://github.com/AMD-Ecosystem/HEonGPU/tree/moat-port)) | 🔄 | 🔄 | ⬜ | — |
 | [icicle](https://github.com/ingonyama-zk/icicle) ([fork](https://github.com/AMD-Ecosystem/icicle/tree/moat-port)) | ✅ | ✅ | 🚫 | — |
 | [k2](https://github.com/k2-fsa/k2) ([fork](https://github.com/AMD-Ecosystem/k2/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#1353](https://github.com/k2-fsa/k2/pull/1353) |
 | [kaldi](https://github.com/kaldi-asr/kaldi) ([fork](https://github.com/AMD-Ecosystem/kaldi/tree/moat-port)) | ✅ | ✅ | 🚫 | 🟢 [#4986](https://github.com/kaldi-asr/kaldi/pull/4986) |
