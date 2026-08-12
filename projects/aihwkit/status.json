@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T01:19:43Z",
-  "updated_at": "2026-08-09T01:02:52Z",
+  "updated_at": "2026-08-12T22:11:02Z",
   "head_sha": "70577b578b7faa661611e905c0b9ec1a1d85bf33",
   "depends_on": [],
   "pr_url": "https://github.com/IBM/aihwkit/pull/770",
@@ -135,5 +135,6 @@
         "at": "2026-06-23T22:08:02Z"
       }
     }
-  }
+  },
+  "published_sha": "70577b578b7faa661611e905c0b9ec1a1d85bf33"
 }
