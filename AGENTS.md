@@ -16,7 +16,7 @@ MOAT (Migration Orchestration via Automated Translation) is an AI-agent-driven e
 - **intake** establishes the licence, checks duplicate effort and viability, scaffolds the project, and writes a typed recommendation. It never decides whether to adopt or decline.
 - **planner** determines scope and strategy and writes `plan.md` plus `surface.json`. It never edits the fork.
 - **porter** implements and builds the port on the fork's `moat-port` branch.
-- **reviewer** reviews the fork diff with the `pr-review` skill and records problems in `notes.md`. It opens no PR.
+- **reviewer** reviews the fork diff with the `pr-review` skill and records problems in `notes.md`. It takes the work lock for the duration, so the branch cannot move under it. It opens no PR.
 - **validator** builds and runs real tests on one AMD platform and records evidence tied to the exact fork commit.
 - Work after validation belongs to the `moat-checkup` skill because each maintainer interaction ends at a person.
 
@@ -24,18 +24,20 @@ MOAT (Migration Orchestration via Automated Translation) is an AI-agent-driven e
 
 Coverage is expressed as the required gates in `config/arches.toml`, currently `wave64`, `wave32`, and `windows`. Any `<os>-<gfx>` platform with a known wavefront family may work. A gate is satisfied by any platform carrying that property that completed validation at the current `head_sha`. Extra platforms are additive evidence. Only a configured waivable gate may be waived, and only after a maintainer approves it; an agent may only suggest one.
 
-There is no lead platform. The shared `porting` record serializes the exclusive `planning` and `porting` stages. Entering the stage acquires the lock and leaving releases it. Validation is unlocked and may run in parallel. If another platform holds the lock, stop; takeover is a person's decision, never a timeout.
+There is no lead platform. The shared `porting` record serializes the exclusive `planning`, `porting`, and `reviewing` stages -- one lock across all three, because reviewing a branch a porter is rewriting is as broken as two porters. Entering the stage acquires the lock and leaving releases it. Validation is unlocked and may run in parallel, because it is partitioned by platform: each host writes its own architecture's record. Everything before it is project-scoped, shared by every host, and therefore serialized. If another platform holds the lock, stop; takeover is a person's decision, never a timeout.
 
 # Two repositories, two port branches
 
 - `port/<name>` in this MOAT repository holds the project's control-plane records while work is outstanding. Completed records reach `main` through review.
 - `moat-port` in `AMD-Ecosystem/<project>` holds the actual source port. The fork default branch remains an unmodified upstream mirror.
 
+Once the upstream PR is open, `moat-port` is upstream-visible and frozen: any push to it changes the PR in front of the maintainer. Maintainer-requested fixes stage on `moat-fix-<pr#>` (`moatlib.py fix-branch`), cut from the published tip and never rebased; the normal porter/reviewer/validator cycle runs against the staging tip, `head_sha` follows it, and `published_sha` records what the PR shows. A fix round means the project is in flight again, so `fix-branch` also re-homes a trunk-resident folder onto `port/<name>` before its first write. Only `upstream.py --merge-fix --apply` moves `moat-port`, after a person approves the delta on a fork review PR (`upstream.py --fix-review`). A pre-push hook in each fork clone (`moatlib.py protect-fork`, installed by orient) enforces the freeze, and refuses the push when it cannot determine the PR state rather than assuming there is none.
+
 Use `moatlib.project_record`, `all_projects`, `fleet`, or the corresponding CLI commands when asking what MOAT knows. A project folder may live on another ref, so scanning the checked-out `projects/` directory alone can produce the opposite answer.
 
 # Human decisions and external writes
 
-Agents may edit MOAT records and fork source, build and test locally, push MOAT project branches and `moat-port` branches, and perform read-only GitHub queries.
+Agents may edit MOAT records and fork source, build and test locally, push MOAT project branches and fork port branches (while no upstream PR is open, `moat-port` itself; while one is open, only the `moat-fix-<pr#>` staging branch), and perform read-only GitHub queries.
 
 The following require a person's explicit decision:
 
@@ -47,7 +49,7 @@ The following require a person's explicit decision:
 
 An upstream maintainer asking MOAT to stop is the one decision an agent may record directly with `utils/optout.py record`, because it is their decision and can only reduce work. Never argue or ask for a reason.
 
-The one pre-authorized upstream write is `python3 utils/upstream.py --publish --apply`: it may open the upstream PR only after the review PR on our fork contains the exact code, title, and body a person approved and the tool rechecks the live approval and all gates. Do not reproduce that write with an ad-hoc `gh` command.
+Two upstream writes are pre-authorized, both on the same contract -- a person approved exactly this content on a fork review PR, and the tool rechecks the live approval and all gates before acting. `python3 utils/upstream.py --publish --apply` opens the upstream PR with the approved code, title, and body. `python3 utils/upstream.py --merge-fix --apply` fast-forwards an open PR's branch to an approved fix round's tip, and posts the approved reply when the fix review PR's body carries an `## Upstream reply` section. Do not reproduce either write with an ad-hoc `gh` command.
 
 `utils/gh_guard.py`, installed by `utils/install_hooks.py`, blocks obvious forbidden GitHub writes from either harness. It is defense in depth, not a substitute for scoped credentials. Do not bypass it, call the real `gh` binary, use `curl`, or otherwise route around a refusal. The trusted publisher resolves the real binary itself only after its approval checks pass.
 
