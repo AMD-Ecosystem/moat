@@ -42,6 +42,39 @@ a DLL-load error; rebuilding a correct binary against a broken runtime is the si
 biggest time sink on Windows. A port is not "broken on Windows" until it has been run
 against a full ROCm distribution.
 
+## Windows: a torch wheel needs the matching `[device-<gfx>]` extra
+
+TheRock publishes torch on several indexes and they do not carry the same thing. The
+PER-ARCH index (`.../v2/<gfx>/`) can lag a ROCm release behind, so matching a 7.14 SDK
+means `whl-staging-multi-arch` -- and the plain multi-arch wheel there carries device
+code for only some architectures. The failure is quiet in exactly the wrong way:
+`torch.cuda.is_available()` returns True, `get_device_name` and `gcnArchName` read back
+correctly, and then the first real kernel raises
+
+    torch.AcceleratorError: CUDA error: device kernel image is invalid   (hipErrorInvalidImage)
+
+Install `torch[device-<gfx>]==<same version>` (it pulls `amd-torch-device-<gfx>` and
+`rocm-sdk-device-<gfx>`) and it works. **`hipErrorInvalidImage` on the first kernel of a
+correctly-detected device is a missing architecture in the wheel, never a port fault.**
+Pin one date-stamp across torch, `rocm-sdk-core/libraries/devel` and the device packages,
+because they resolve against each other. (gfx1151, torch 2.12.0+rocm7.14.0a20260519.)
+
+## An integrated APU can crash the device linker under build parallelism
+
+    clang: error: amdgcn-link command failed due to signal (use -v to see invocation)
+    clang: note: diagnostic msg: Error generating preprocessed source(s).
+
+This is resource exhaustion, not a broken toolchain and not bad code. It showed up on a
+20-CU APU building 14 template-heavy rasterizer variants at `MAX_JOBS=8`, always in the
+device-link step; the same variant alone at `MAX_JOBS=2` built immediately, and the whole
+14-variant sweep at `MAX_JOBS=4` passed with no failures. An APU shares one memory pool
+between CPU and GPU, so concurrent device links compete with everything else on the box.
+
+Halve the job count before investigating anything else, and do not read a signal-killed
+`amdgcn-link` as evidence about the port. Related but distinct from the reboot class: the
+same host has hard-reset under heavy parallelism plus sustained GPU load, so a build that
+takes the machine down is the same lesson one notch further along.
+
 ## Windows: static initializers in TheRock's DLLs may never run
 
 **A C++ test that gates on `torch::cuda::is_available()` can fail on Windows against a
