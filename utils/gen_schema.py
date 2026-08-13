@@ -153,6 +153,24 @@ def build():
             "pr_merged_at": {"type": "string"},
             "pr_closed_at": {"type": "string"},
             "pr_closed_note": {"type": "string"},
+            # What the open upstream PR shows. While a fix round is staged,
+            # head_sha runs ahead of this on the staging branch; only the trusted
+            # merge path (upstream.py --merge-fix) advances it.
+            "published_sha": {"type": ["string", "null"]},
+            # A maintainer-requested fix round in flight: the staging branch cut
+            # from the published tip, and the fork review PR where a person
+            # approves the delta. Cleared when the round merges.
+            "fix": {
+                "type": ["object", "null"],
+                "required": ["branch", "base_sha"],
+                "properties": {
+                    "branch": {"type": "string", "minLength": 1},
+                    "base_sha": {"type": "string", "minLength": 1},
+                    "review_pr": {"type": ["string", "null"]},
+                    "opened_at": {"type": "string"},
+                },
+            },
+            "fix_merged_at": {"type": "string"},
             # The review PR on our own fork: where a maintainer sees the code, title
             # and body together, and approves once.
             "review_pr": {"type": "string"},

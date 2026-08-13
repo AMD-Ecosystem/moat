@@ -7,7 +7,7 @@
   "priority": 6.626,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-08-07T07:05:12Z",
+  "updated_at": "2026-08-12T20:26:58Z",
   "head_sha": "014a2179c29f2c0437898a8ded09f57501eb9fb7",
   "depends_on": [],
   "pr_url": "https://github.com/kaldi-asr/kaldi/pull/4986",
@@ -119,6 +119,29 @@
         "first_session_at": null,
         "last_session_at": null
       }
+    },
+    "windows-gfx1151": {
+      "blocked": true,
+      "blocked_reason": "kaldi's ROCm build is POSIX-only, and arch-independently so: src/configure configure_rocm() exits 1 unless uname is Linux and uname -m is x86_64 (src/configure:312-318), before any GPU arch is consulted. No Windows arch can build it; the same finding is already recorded for windows-gfx1101 and windows-gfx1201. Verified against AMD-Ecosystem/kaldi moat-port.",
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-12T20:26:58Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
     }
-  }
+  },
+  "published_sha": "014a2179c29f2c0437898a8ded09f57501eb9fb7"
 }
