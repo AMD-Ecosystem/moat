@@ -963,36 +963,74 @@ exactly the ones that run `BatchDecodeWithPagedKVCache` -- the flashinfer-derive
 kernel, and the only one reached through the `kernels/include/hip_compat/flashinfer`
 shims (`math.cuh`, `vec_dtypes.cuh`).
 
-### Hypotheses tested and eliminated
+### Root cause: cp_async is a no-op under HIP, so the 2-stage pipeline races
 
-Three, each a separate build, so this is not one failing command retried:
+**Found. This is a port defect, not an architecture fault, and it is latent on
+the Linux platforms that currently read `completed`.**
 
-1. **Strict aliasing.** The shim's `uint32_as_half2` / `half2_as_uint32` type-pun
-   through pointer casts (`*(half2*)&x`), which is UB that clang 23 may exploit
-   where the clang in ROCm 7.2 did not. Rebuilt the whole extension with
-   `-fno-strict-aliasing`: identical failures.
-2. **Optimization/codegen.** Rebuilt with device `-O0`: identical failures. So it
-   is not an optimizer bug at -O3.
-3. **The `std::max<size_t>` fix.** Value-identical by inspection -- for
-   `DTypeIn=half`, `max(16/2, 128/32) = max(8,4) = 8` either way -- and it only
-   changed which overload is selected, not the arithmetic.
+`flashinfer/cp_async.cuh` gates its whole implementation on
 
-### What this is, and what it is not
+```
+#if (__CUDACC_VER_MAJOR__ >= 11)
+#if (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 800))
+#define FLASHINFER_CP_ASYNC_ENABLED
+#endif
+#endif
+```
 
-Two variables moved at once versus the passing Linux runs, and the record should
-not pretend otherwise: architecture (gfx1151 RDNA3.5 vs gfx1100 RDNA3 -- both
-wave32, so this is not a wavefront-width fault) AND toolchain (ROCm 7.14 /
-clang 23 / torch 2.12 here vs ROCm 7.2.3 / torch 2.14a there). Either could own
-it. The cheap experiment that separates them is to run this same branch on
-gfx1100 under ROCm 7.14; if it fails there too, the arch is exonerated and this
-is a toolchain regression against the compat shims.
+`__CUDACC_VER_MAJOR__` is not defined by hipcc (verified with a probe on this
+host), so `FLASHINFER_CP_ASYNC_ENABLED` is off and `cp_async::commit_group()`
+and `cp_async::wait_group<N>()` compile to **empty**, while `pred_load` falls
+back to synchronous copies. The port shimmed `math.cuh` and `vec_dtypes.cuh` in
+`kernels/include/hip_compat/flashinfer/` but never `cp_async.cuh`, so the decode
+kernel's software-pipelined prefetch keeps its double-buffered structure while
+losing the ordering primitives that structure depends on. The result is a race
+between threads still computing on one smem stage and threads overwriting it.
 
-Not waiver material: the obstacle is in code that can change (the project's own
-compat shims, or a ROCm regression that can be reported), not in a permanent
-platform limitation. `windows-gfx1151` stays `validation-failed` at `ac7382c`.
+### The evidence chain, each link tested separately
 
-Two real results stand regardless: the port now BUILDS on Windows, which it did
-not before (`ac7382c`), and 73 of its tests pass on real gfx1151 hardware.
+| experiment | result |
+|---|---|
+| `torch.cuda.synchronize()` after decode | clean -- no swallowed launch failure |
+| same inputs run twice | bit-identical -- deterministic, not garbage memory |
+| KV cache read back after `append_kv` | **byte-exact**, 262144/262144 values, key vector at page 0 slot 0 maxdiff 0.00000 |
+| shim primitives on gfx1151 (bdx=16 butterfly reduce, half2 bitcast, half2 `shfl_xor`, `exp2`/`rcp`) | **all correct**, 0/32 and 0/64 wrong |
+| `-fno-strict-aliasing` rebuild | unchanged (rules out the shim's pointer-cast punning) |
+| device `-O0` rebuild | unchanged (rules out an optimiser bug) |
+| output vs contiguous KV subsets, strided per-`tz` subsets, head permutations, k/v swaps | no match; cosine similarity to reference 0.13 |
+| explicit `__syncthreads()` added in `sync_state` | unchanged (rules out a plain missing barrier there) |
+| dynamic LDS > 32 KB probe (8 K -> 64 K) | all correct -- LDS size is NOT the limit |
+| **`num_threads` forced so `bdz`=1 / 2 / 4** | **PASS, PASS, PASS** |
+| `bdz`=8 (the default, 128 threads = 4 wavefronts) | **FAIL** |
+| **`num_stages_smem = 1` with `bdz`=8** | **all 121 in-scope tests PASS** |
 
-Integrity: `git status --porcelain` in src clean at `ac7382c`; the only fork
-change this round is that commit.
+Single-stage passes and two-stage fails at the same block shape, with correct
+inputs and correct primitives. That isolates the fault to the pipeline itself.
+`bdz` <= 4 passing is the race window narrowing, not a different bug.
+
+### What this means for the other platforms
+
+linux-gfx90a and linux-gfx1100 are `completed` on a build that contains this
+race. They pass by scheduling luck, not because the code is correct there -- the
+no-op `commit_group`/`wait_group` are platform-wide, not gfx1151-specific. Their
+results should not be read as evidence that the pipeline is sound.
+
+### Suggested fix (porter work, not applied here)
+
+Two shapes, both small; the choice affects performance and belongs to a porter
+with review rather than to a validator:
+
+1. Shim `cp_async.cuh` into `kernels/include/hip_compat/flashinfer/` alongside
+   the other two, giving `commit_group()`/`wait_group<N>()` real meaning on HIP
+   -- the honest spelling is a `__syncthreads()` in `wait_group`, since the
+   loads are already synchronous.
+2. Or select `num_stages_smem = 1` on the HIP path, which removes the
+   double-buffering the no-ops were supposed to order. Proven here: 121/121.
+
+Option 1 keeps the upstream structure and the CUDA path untouched; option 2 is
+a one-line change that costs prefetch overlap on AMD.
+
+This was NOT applied on the branch: it changes kernel semantics for every
+platform, so it wants a porter's commit and a review, and it will require
+revalidating the Linux arches -- which is the right outcome, since their current
+pass rests on the race.
