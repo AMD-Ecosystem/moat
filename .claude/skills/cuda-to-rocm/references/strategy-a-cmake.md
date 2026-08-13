@@ -88,11 +88,19 @@ compat header with `-include`.
   most common reason a port builds on the machine it was written on and nowhere else.
   (TurboFNO, LC-framework)
 - **On a target that mixes HIP and plain C++ sources, do not link `hip::device` at all.**
-  `hip::device` puts `--offload-arch=` in the target's INTERFACE compile options, and a link
-  library applies to EVERY source of the target regardless of language -- PRIVATE only stops
-  it reaching consumers, not the target's own `.cpp` files, which fail with `c++: error:
-  unrecognized command-line option '--offload-arch=gfx942'`. `$<COMPILE_LANGUAGE:HIP>` cannot
-  rescue it either; that genex is rejected in `target_link_libraries`. With
+  `hip::device` carries `-x hip` and `--offload-arch=` as INTERFACE compile options wrapped in
+  a language genex: `hip_add_interface_compile_flags` appends
+  `INTERFACE_COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:CXX>:...>"` (`hip-config.cmake`), and
+  `hip-config-amd.cmake` is what feeds it those flags. So they land on exactly the target's
+  CXX sources and never on its HIP-language ones, which is why it is the plain `.cpp` files of
+  a mixed target that fail with `c++: error: unrecognized command-line option
+  '--offload-arch=gfx942'`. PRIVATE does not help -- that only stops the flags reaching
+  consumers, not the target's own C++ sources -- and `$<COMPILE_LANGUAGE:HIP>` cannot rescue
+  it either; that genex is rejected in `target_link_libraries`. The link half is a separate
+  helper, `hip_add_interface_link_flags`, which puts `--hip-link` and `--offload-arch` into
+  `INTERFACE_LINK_LIBRARIES`; whether it is language-gated depends on the version pair (ROCm
+  7.14 wraps them in `$<$<LINK_LANGUAGE:CXX>:...>` on CMake 3.20+ and leaves them ungated
+  below it), so assume `hip::device` also reaches a consumer's link line. With
   `enable_language(HIP)` plus `set_source_files_properties(... LANGUAGE HIP)` you do not need
   `hip::device` at all: CMake emits the offload flags for the HIP sources from
   `CMAKE_HIP_ARCHITECTURES` and links the HIP runtime itself. Link only `hip::host` (and
