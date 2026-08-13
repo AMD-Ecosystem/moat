@@ -17,3 +17,4 @@
 {"kind":"phase","ts":"2026-08-13T02:04:04Z","phase":"compile","seconds":286.795,"exit":0,"cmd":"bash agent_space/rmcl/build_rmcl.sh -DBUILD_TESTING=ON"}
 {"kind":"phase","ts":"2026-08-13T02:04:10Z","phase":"test","seconds":0.006,"exit":127,"cmd":"bash run_ctest.sh"}
 {"kind":"phase","ts":"2026-08-13T02:04:21Z","phase":"test","seconds":0.878,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/rmcl/run_ctest.sh"}
+{"kind":"session","ts":"2026-08-13T02:08:01Z","epoch":1786586881.086314462,"event":"end","platform":"linux-gfx942"}
