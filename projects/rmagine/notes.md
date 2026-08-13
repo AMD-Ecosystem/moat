@@ -2114,3 +2114,55 @@ per header is what catches a header standing on an earlier include, and the per-
 form should be expected to surface pre-existing upstream defects rather than port
 regressions. `references/strategy-a-cmake.md` now carries the same distinction where it
 points at that entry. rmagine's `linalg.cuh` is the named example that slipped through.
+
+## Review 2026-08-13b (reviewer, linux-gfx942, record-correction round) -- REVIEW PASSED
+
+Scope: the delta since the review above -- MOAT commit `25e477e` on `port/rmagine`
+(notes.md, `projects/rmagine/deferred.json`, and the two `cuda-to-rocm` lesson files) plus
+confirmation that the fork did not move. No problems found, so this section is evidence
+rather than findings.
+
+The fork is unchanged and the four platform records are untouched by this round:
+`projects/rmagine/src` is clean at `e7a7b279f`, `git ls-remote origin moat-port` on
+AMD-Ecosystem/rmagine returns the same SHA, and `status.json.head_sha` still reads it. The
+code at `e7a7b279f` was reviewed in full in the round above; nothing in this delta touches
+source, so the fault classes stand as cleared there.
+
+Every corrected claim was re-derived here rather than read from the porter's account, on
+this host's conda ROCm SDK, the CUDA 12.8 header tree, and g++ 13.3.0:
+
+- One TU per header over all 16 installed `rmagine_cuda` headers: 14 pass standalone, and
+  the same two fail on BOTH include paths -- `math/linalg.cuh:20` ("`__device__` does not
+  name a type") and `util/cuda/CudaHelper.hpp:51` ("'runtime_error' is not a member of
+  'std'"). Ran the ported tree twice, once with `-D__HIP_PLATFORM_AMD__=1` against the ROCm
+  includes and once against the CUDA 12.8 includes; identical result, which is what
+  notes.md:1373-1374 now claims.
+- Pre-existing, not port regressions: a `git worktree` at upstream `6b93e86` compiled
+  against the CUDA 12.8 headers gives the same two errors at the same two lines, and
+  `CudaStream.hpp` passes there. `git log 6b93e86..HEAD -- .../linalg.cuh` is empty and the
+  only `CudaHelper.hpp` hunk is `<cuda_runtime.h>` -> the compat header, as stated.
+- The dependent workarounds notes.md:1376-1379 offers actually work: `<stdexcept>` above
+  `CudaHelper.hpp` compiles, and the runtime header above `linalg.cuh` compiles on both
+  backends (`cuda_to_hip.h` on the HIP path, `<cuda_runtime.h>` on the CUDA path).
+- Finding 2's replacement rationale holds in both directions: `<curand.h>` +
+  `<curand_kernel.h>` under plain g++ with the CUDA 12.8 headers exits 0, while
+  `<hiprand/hiprand_kernel.h>` alone fails through `rocrand/rocrand_mtgp32.h` and compiles
+  once `<cstdio>` precedes it. `rocrand_mtgp32.h:443` is the `printf`, and that header's
+  only includes are `rocrand/rocrand.h`, `hip/hip_runtime.h`, `<stdlib.h>`, `<string.h>`.
+- The lesson edits match the evidence. `fault-classes.md:308-320` states the single-TU
+  limitation and names rmagine's two headers correctly, and `strategy-a-cmake.md:136-140`
+  points at both entry titles as they are actually spelled.
+- Prior finding 1 is closed: notes.md:1351-1355 now claims only what the gate proves (the
+  16 compile together, nothing above them), and the residual "in any order" wording in
+  `tests/cuda/public_headers.cpp:1-8` -- which cannot be fixed without a fork commit and a
+  fifth revalidation round -- is registered as `rmagine-per-header-include-gate` in
+  `projects/rmagine/deferred.json`, unruled, which is where that call belongs. Prior finding
+  2 is closed at notes.md:1724-1733.
+- Nothing else regressed: `python3 utils/jargon.py --port rmagine` clean,
+  `python3 utils/check.py` clean, and the only other commit in the delta (`6e98240`) is
+  session telemetry.
+
+Unchanged and still for a person, not a porter: the `WIP` and `Stage 2:` commit titles on
+the branch, and the README saying nothing about `USE_HIP`.
+
+Verdict: clean. Handing to the validator for the linux-gfx942 GPU run at `e7a7b279f`.
