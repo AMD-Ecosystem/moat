@@ -3227,3 +3227,83 @@ the full guard -> RDC -> guard path and its lesson, and the codegen entry gains
 the revert-check trick (`codeobj_diff.py` against a pre-switch `bin/` snapshot
 should say `identical`). `SKILL.md`'s one-liner presents both options with the
 deciding question.
+
+## Review 2026-08-13 (round 11, linux-gfx942, 6ac06d0)
+
+Scope: the unreviewed delta `9f9fd0b..6ac06d0` on the fork (`beba427`, the round-9
+docs correction, and `6ac06d0`, the ruled `-fgpu-rdc` revert), plus this branch's
+`cuda-to-rocm` edits (`c325161`, `2360d9f`, `c1747cc`) and both deferral writes.
+Reviewed from a fresh clone of `moat-port` on a gfx942 host, so no build and no
+GPU run here; both required gates owe a 20-suite run at head regardless (see the
+round-10 revalidation accounting). Verdict: **review-passed**, no change round.
+
+Confirmed independently, do not redo:
+
+- The revert is exactly what the round-10 section claims. `git diff 4925df1 HEAD`
+  is two files: `cuda_to_hip.h` (the kept cuRAND-include work from `d7d609e` /
+  `81176c9`) and the rewritten guard comment in `small_ntt.cuh:29-35`.
+  `src/CMakeLists.txt` and `docs/advanced_topics.rst` are byte-identical to the
+  last guard commit, so nothing of the RDC design survives at head.
+- The restored definitions match the deleted `small_ntt.cu` bodies line for line,
+  with `inline` added at the definitions and the declarations left unconditional
+  (`small_ntt.cuh:13-22` vs `:38-154`) -- the shape the skill documents, and legal
+  as a later inline definition after a non-inline declaration.
+- Nothing anywhere in the fork still references `-fgpu-rdc`, `--hip-link`,
+  `__hip_fatbin_*` or `lib/kernel/small_ntt.cu` outside that one comment; the two
+  includers of the header (`keygeneration.cuh:14`, `bootstrapping.cuh:12`) both
+  reach `util.cuh` -> `cuda_to_hip.h` first, so the round-10 CUDA no-regression run
+  (touch `cuda_to_hip.h`, 81 objects, 42 executables) genuinely recompiled every
+  host TU that parses this header. That is the one class an AMD build cannot catch.
+- Hygiene over the delta: titles 63 and 52 chars, both `[ROCm]`; AI-assistance
+  disclosure and Test Plan in both bodies; no agent trailer; no non-ASCII in the
+  added comment; `jargon.py --port HEonGPU` clean over the whole branch;
+  `prose.py` clean on both bodies; no AMD-internal account references.
+
+### Not blocking, but fix at the next write on this branch
+
+1. `projects/HEonGPU/deferred.json` `heongpu-hip-link-interface-option` carries
+   the ruling and the ruled work has landed, yet `status` is still `open`. It no
+   longer appears in `deferred.py pending` (that filters on `decided`), but it does
+   appear in `deferred.py list --open` alongside the three genuinely open
+   upstream-defect items, describing interface options that no longer exist in the
+   code. `python3 utils/deferred.py set-status heongpu-hip-link-interface-option
+   done --project HEonGPU`, the way `heongpu-cuda-no-regression-unrun` was closed.
+   This branch has twice paid for a stale record left in place; this is a one-line
+   version of the same hazard.
+
+2. `fault-classes.md:367-370` sends the reader to "two entries below" for the guard
+   shape and the two-phase-lookup reason; counting the bold entries after it, that
+   material is three below (consumer contract, cross-TU inlining, then the
+   header-move entry).
+
+3. The deciding question in `fault-classes.md:373-379` -- does the project ship an
+   installed library to strangers -- is right as far as it goes, but the evidence
+   behind it comes from a consumer that cannot call this library at all: the plain
+   C++ consumer measured in round 10 links and runs precisely because it declares
+   two host functions instead of including the headers, which pull rocThrust and
+   must be compiled as HIP (`docs/advanced_topics.rst:54`). Any consumer that
+   actually uses the API therefore enables the HIP language anyway and lands on the
+   table's first row, where `-fgpu-rdc` costs nothing. Worth one sentence in the
+   entry: ask also whether the library's public headers already force a HIP compile
+   on consumers, because where they do, option 1's contract is nearly free. This is
+   an addition to the lesson, not a correction of a false claim, and it is not a
+   reason to re-open the ruling on this port.
+
+4. `small_ntt.cuh:33-34` states the strong form of the consumer requirement ("every
+   consumer has to enable the HIP language"). It survives round 9's correction --
+   the language does have to be enabled in the consumer's scope either way, and the
+   producer-side `enable_language(HIP)` in `cmake/Config.cmake.in` only moves who
+   writes the line -- so no change is asked for. `6ac06d0`'s body already scopes it
+   correctly ("nothing set on the consuming target makes up for it"). Noted only so
+   the next reader does not re-derive it as a contradiction.
+
+### For whoever prepares the upstream PR, not for a porter round
+
+The branch is 26 commits and seven of them (`8ef207a`, `56615ec`, `f657723`,
+`9f9fd0b`, `beba427`, the `4925df1` comment they corrected, and `6ac06d0`) are an
+internal design excursion that nets out to one rewritten comment. Every body is
+honest and self-contained, and `moat-port` has never been published, so the history
+could still be curated. I am not asking for a rewrite: presentation of a design the
+maintainer never saw is a publication-time decision, and rewriting would move
+`head_sha` again for no change in the tree. Decide it deliberately when the PR body
+is written rather than by default.
