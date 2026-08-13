@@ -1188,3 +1188,165 @@ something this arch's evidence resolves). CUDA gate: `cuda-not-validated`,
 unchanged reasoning, no penalty. Wall clock: build ~1 min, in-scope tests
 ~10s, scoped-out and log-evidence re-runs a few minutes, CUDA toolchain setup
 the majority of the session; overall within the ~60 minute budget.
+
+## Validation 2026-08-13 (linux-gfx90a, revalidate after the split-path fix, 9be60fc)
+
+Re-validation of fork sha `9be60fc` on this arch after `head_sha` advanced
+from `ac7382c` (this platform's prior `validated_sha`, validated a few hours
+earlier the same day) via the porter's commit `9be60fc`, which makes the
+sparse decode kernel always take the split launch shape (the fix for the
+single-block-path wrong-answer fault the windows-gfx1151 session found and
+recorded above). MI250X (gfx90a, wave64), 4 GPUs visible and idle,
+`HIP_VISIBLE_DEVICES=1`. ROCm 7.14 (`hip 7.14.60850`, TheRock-style pip
+install under `/opt/conda/envs/py_3.12`, not `/opt/rocm`), PyTorch
+2.14.0a0+git7d05abc, python 3.12.13, `transformers==4.37.2`
+`tokenizers==0.15.2` already present in the environment from the prior
+session. `git fetch origin` on the existing `projects/Quest/src` checkout,
+fast-forwarded `moat-port` from `ac7382c` to `9be60fc` (`git diff` is exactly
+the one file the commit message states: `kernels/include/decode/decode_attn.cuh`,
+10 insertions/1 deletion -- a `constexpr bool kSingleBlockPathIsCorrect =
+false;` guard on the existing condition). Submodules
+`kernels/3rdparty/{flashinfer,pybind}` already initialized from the prior
+session; no re-init needed.
+
+### Classify: mixed, not arch-independent -- full GPU run, no carry-forward attempted
+
+`python3 utils/moatlib.py classify Quest ac7382c 9be60fc` -> `class=mixed
+arch_independent=False`, correctly: the change alters which launch shape a
+kernel takes based on `batch_size * num_kv_heads` vs `blocks_per_cu *
+cu_count`, a runtime/hardware-dependent decision, not a textual no-op. Went
+straight to a full real-GPU run rather than attempting `codeobj_diff`
+carry-forward -- MI250X has far more CUs than the 32-block threshold these
+test shapes need (see the CU table in the windows-gfx1151 section above:
+gfx1100 at 70 CUs and gfx942 at 304 CUs both already always took the split
+path), so the OLD condition was already false on this arch for the tested
+shapes and the compiled difference is a dead `constexpr false &&` term on
+the taken path -- but that is a *behavioral* argument, not something
+`codeobj_diff`'s device-code-object/symbol comparison would certify, and the
+prior session's own submodule-clone flakiness in the second worktree made
+the shortcut not worth chasing again for a run this cheap.
+
+### Build
+
+Wrapped `utils/timeit.sh Quest compile -- ninja -C quest/ops/build` (cleared
+the leftover `build-head/` directory from the prior session's worktree
+experiment first; built into a plain `build/` this time):
+
+```
+cd quest/ops && mkdir -p build && cd build
+cmake -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_PREFIX_PATH=$(python3 -c 'import torch;print(torch.utils.cmake_prefix_path)') ..
+ninja
+ln -sf $PWD/_kernels*.so ../../
+```
+
+Clean (6/6 objects, the same two pre-existing nodiscard-`hipError_t`
+warnings on `decode_handler.cuh:165` and `approx_attn.cu:65` as every prior
+session, no new warnings, no errors). `grep -o -- '--offload-arch=[a-z0-9]*'
+build.ninja` -> `gfx90a` only. `import quest._kernels` exposes the same six
+ops as every prior session.
+
+### GPU tests
+
+Wrapped `utils/timeit.sh Quest test -- python3 -m pytest ...`:
+
+| suite | result |
+|---|---|
+| test_rope.py | 64 passed |
+| test_estimate.py | 9 passed |
+| test_decode_attention.py | 6 passed |
+| test_approx_attention.py | 42 passed |
+| **in-scope total** | **121 passed in 8.44s** |
+| test_topk.py | 49 failed, 15 skipped |
+| test_prefill_attention.py | 29 failed, 13 skipped |
+| **scoped-out total** | **78 failed, 28 skipped** (matches every prior session exactly) |
+
+No behavior change from the pre-fix `ac7382c` run on this arch, as
+predicted: this GPU never took the single-block path in these test shapes,
+so the fix is a no-op here and the 121/9.43s-ish result is unchanged within
+run-to-run noise. Confirmed the scoped-out failures are still `AttributeError`
+(`topk_filtering` / `prefill_with_paged_kv_cache` not built), not a wrong
+answer, with `-x` on both files. Confirmed real device dispatch with
+`AMD_LOG_LEVEL=3 ... -s` (plain `-q` swallows the trace; `-s` is required to
+see it) on `test_decode_attention.py`: 432 `hipLaunchKernel` lines, including
+Quest's own compiled kernels by name (`flashinfer::AppendPagedKVCacheDecodeKernel`,
+`flashinfer::AppendPagedKVCachePrefillKernel`,
+`flashinfer::BatchDecodeWithPagedKVCacheKernel`,
+`flashinfer::VariableLengthMergeStatesKernel`) interleaved with PyTorch's own
+kernels. No non-GPU regression to check: this project has no CPU-only test
+path.
+
+### CUDA no-regression gate: re-attempted fresh at this head_sha, same environmental wall
+
+Not owed automatically -- the CUDA gate was last recorded at `ac7382c`
+(reasoned, not freshly reproduced there either, per that session's note),
+and this is a new head_sha, so it was attempted fresh here rather than
+carried forward on reasoning alone. `/opt/conda/envs/cuda-12.8` already
+existed (nvcc 12.8.93) from the prior session. `gcc-11`/`g++-11` (the
+project's pinned CUDA-leg host compiler) were missing, and unlike the prior
+session's apt failure, `sudo apt-get update` and `sudo apt-get install -y
+gcc-11 g++-11` both worked cleanly this time (~1 min).
+
+Configure, throwaway build dir, arch pinned per the standing instruction
+(`-DCMAKE_CUDA_ARCHITECTURES=80`, no NVIDIA GPU on this host to autodetect
+against), wrapped `utils/timeit.sh Quest cuda-compile -- cmake ...`:
+
+```
+cmake -GNinja -DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=80 \
+  -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc \
+  -DCMAKE_PREFIX_PATH=$(python3 -c 'import torch;print(torch.utils.cmake_prefix_path)') \
+  -S quest/ops -B quest/ops/build-cuda
+```
+
+`enable_language(CUDA)` succeeded with the conda nvcc and the pinned arch
+survived to the cache untouched, confirming the ordering fix (item 3, from
+the review rounds) still holds at this head. Configure then failed in the
+exact same place as every prior session, before any of Quest's own `.cu`
+files or the `pybind11_add_module(_kernels ...)` target were reached:
+
+```
+CMake Error at build-cuda/_deps/raft-src/cpp/CMakeLists.txt:262 (target_link_libraries):
+  The link interface of target "raft" contains:
+    CUDA::nvToolsExt
+  but the target was not found.
+```
+
+Same root cause as recorded at `c1d7fff` and `ac7382c`: RAFT pinned to
+`branch-24.02` links the legacy `CUDA::nvToolsExt` imported target, which
+modern `FindCUDAToolkit` (3.31) no longer creates against a CUDA 12.8
+toolkit layout. This confirms directly, rather than by dependency-order
+reasoning alone, that the `9be60fc` delta (confined to
+`kernels/include/decode/decode_attn.cuh`, never reached before this
+configure-time failure) does not change the CUDA gate's outcome.
+
+**`cuda-not-validated: unchanged from ac7382c/c1d7fff -- RAFT (pinned
+branch-24.02) requires the legacy CUDA::nvToolsExt CMake target, which
+FindCUDAToolkit no longer creates against a CUDA 12.8 toolkit; the configure
+fails inside RAFT's own CMakeLists before any Quest source, including the
+file 9be60fc touches, is ever reached. Reproduced fresh at this head_sha,
+not just reasoned.`** Not a gate; carries no penalty per the gate's own
+rules. Throwaway `quest/ops/build-cuda` directory removed before completion;
+`gcc-11`/`g++-11` left installed at the host level (apt package, not part of
+the fork tree).
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --port Quest`: `jargon: clean`.
+
+README.md's "Building on AMD GPUs (ROCm)" section is unchanged from the
+prior validation (the delta touched only a `.cuh` header, no build or doc
+files) and still accurately describes the build, the architecture
+precedence, and the scoped-out ops. No inaccuracy found; nothing sent back.
+
+`git -C projects/Quest/src status --porcelain`: clean. `HEAD` at `9be60fc`,
+matching `status.json.head_sha`.
+
+State: `revalidate` -> `completed` on linux-gfx90a, `validated_sha = 9be60fc`.
+wave64 gate remains satisfied by this arch at the new head. windows is now
+`completed` at this same head_sha (the porter's fix this arch just
+revalidated is the same commit windows validated its own fix against).
+CUDA gate: `cuda-not-validated`, reproduced fresh this round (not just
+carried by reasoning), no penalty. Wall clock: build ~1 min, in-scope tests
+~10s, scoped-out/log-evidence re-runs a few minutes, CUDA toolchain
+(apt install + configure) the majority of the session; overall within the
+~60 minute budget.
