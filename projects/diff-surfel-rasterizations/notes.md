@@ -194,3 +194,161 @@ Structural facts worth not rediscovering:
   `(P,4)` for the two `wet-abs` variants and `(P,3)` elsewhere, and any variant with
   `NUM_CHANNELS != 3` must be driven through `colors_precomp` -- upstream throws otherwise,
   because `geomState.rgb` is sized `P*3` regardless of channel count.
+
+## Porting 2026-08-13 (linux-gfx942)
+
+Executed `plan.md`: the remaining 11 variants got the seven-file treatment, and `tests/`
+was added. Fork `moat-port` `4c95346` -> `5d567f6` (2 commits, 80 files).
+
+    c579644 [ROCm] Extend the HIP build to all fourteen variants
+    5d567f6 [ROCm] Add GPU tests covering every rasterizer variant
+
+Environment: AMD Instinct MI300X (gfx942), ROCm 7.14.60850, torch 2.14.0a0+git7d05abc,
+hipify 2.0.0, python 3.12, `PYTORCH_ROCM_ARCH=gfx942`, `MAX_JOBS=32`.
+
+### How the 11 variants were edited, and how completeness was proved
+
+The treatment was applied by a text transform (`agent_space/dsr_port.py`, scratch, not
+committed) rather than by hand, and the transform was **validated by regenerating the three
+already-ported variants from their upstream files and diffing against `moat-port`: all three
+reproduce byte-for-byte**. Only then was it run on the other 11. That is the cheapest way to
+guarantee "byte-identical treatment" across 14 copies.
+
+The plan's completeness invariant holds. md5 equivalence classes, upstream vs post-port:
+
+| file | upstream | post-port |
+|---|---|---|
+| `cuda_rasterizer/auxiliary.h` | 1 | 1 |
+| `cuda_rasterizer/forward.cu` | 2 | 2 |
+| `cuda_rasterizer/backward.cu` | 2 | 2 |
+| `cuda_rasterizer/forward.h` / `backward.h` | 2 / 2 | 2 / 2 |
+| `cuda_rasterizer/rasterizer_impl.cu` | 3 | 3 |
+| `rasterizer.h` / `rasterize_points.cu` | 3 / 3 | 3 / 3 |
+| `rasterizer_impl.h`, `ext.cpp`, `CMakeLists.txt` | 1 each | 1 each |
+| `cuda_rasterizer/config.h` (per-variant, untouched) | 11 | 11 |
+
+And the `setup.py` check: all 14 port diffs, with the package name normalised away, hash
+identical (`sed -E 's/diff_surfel_rasterization[a-z0-9_]*/PKG/g' | md5sum` -> one class of 14).
+
+### Build: 14/14 for gfx942, 448 s, zero warnings
+
+    git submodule update --init --recursive
+    export PYTORCH_ROCM_ARCH=gfx942 MAX_JOBS=32
+    for v in diff-surfel-rasterization*/; do
+      ( cd "$v" && rm -rf build *.egg-info *.hip hip_rasterizer \
+        && pip install -e . --no-build-isolation --no-deps ) || break
+    done
+
+`grep -ci warning` over the whole build log: **0**. No spill diagnostic, no "local memory
+limit exceeded", at any channel count.
+
+### The one real blocker, and it was the environment: the GLM submodule was never checked out
+
+First build attempt failed in *every* GLM call from device code -- `no matching function for
+call to 'dot'`, `call to __host__ function from __device__ function`, `operator[]` const.
+The cause is not the port: the planner's `gh repo clone` did not recurse submodules, so
+`third_party/glm` was an empty directory. The `-I .../third_party/glm` still existed, so the
+compiler silently fell back to **`/usr/include/glm` (GLM 0.9.9.8)**, which predates
+`GLM_COMPILER_HIP` and therefore never marks its functions `__device__` under hipcc.
+
+The tell is in the diagnostic paths (`/usr/include/glm/...`, not `third_party/`). After
+`git submodule update --init --recursive` the same build passed with no source change.
+Promoted to the skill (`fault-classes.md`) because any project bundling a header-only
+library as a submodule has this failure mode, and it reads like a broken port.
+
+### hipify 2.x renames the directory; the plan's clean step was written for hipify 1.x
+
+The plan's `rm -rf build *.egg-info *.hip cuda_rasterizer/*.hip` is the stage-1 clean step
+and is **incomplete on this fleet**. hipify 2.0.0 does not write `.hip` files beside the
+sources; it renames the directory: `cuda_rasterizer/forward.cu` -> `hip_rasterizer/forward.hip`,
+with the headers copied alongside. The build commands here add `hip_rasterizer` to the clean
+step, and the new `.gitignore` covers `*.hip` and `hip_rasterizer/`. Also promoted to the
+skill (`strategy-b-torch.md`), together with the GLM hipify-ignore monkeypatch, which is
+confirmed still necessary and still effective on hipify 2.0.0 (`cpp_extension` looks
+`hipify_python.hipify` up as a module attribute at call time, so patching after importing
+`CUDAExtension` works).
+
+### GPU tests: 95 passed, 5 skipped
+
+    bash utils/timeit.sh diff-surfel-rasterizations test -- \
+      python -m pytest projects/diff-surfel-rasterizations/src/tests/test_variants.py -q
+    # 95 passed, 5 skipped in 7.38 s
+
+The 5 skips are by design: 4 per-variant checks that `tile1` is too slow to run at 200x150
+(it is covered at 32x24 by `test_tile1_matches_base`) plus the cross-variant comparison of
+the base variant against itself.
+
+Forward statistics for the three previously-untested code bodies (plus `ch26`, the pressure
+case), 4000 surfels, 200x150, `colors_precomp`, opacity finite difference at eps 3e-3:
+
+| variant | image | min / max / mean | nonzero | visible | fd slope |
+|---|---|---|---|---|---|
+| `diff-surfel-rasterization` (base) | 3x150x200 | 0.0000 / 0.8693 / 0.1123 | 0.411 | 4000/4000 | 0.9789 |
+| `-tile1` (32x24, 1500 pts) | 3x24x32 | 0.0000 / 0.8840 / 0.1588 | 0.492 | 1500/1500 | 0.9874 |
+| `-wet-abs` | 3x150x200 | 0.0000 / 0.8693 / 0.1123 | 0.411 | 4000/4000 | 0.9789 |
+| `-ch26` | 26x150x200 | 0.0000 / 0.9267 / 0.1122 | 0.411 | 4000/4000 | 0.9949 |
+
+Device dispatch confirmed with `AMD_LOG_LEVEL=3`: `void preprocessCUDA<3>(...)`,
+`duplicateWithKeys`, `identifyTileRanges`, `void renderCUDA<3u>(...)` all appear as
+`ShaderName` in `rocvirtual.cpp`, with `HIP_vector_type<float, 2u>` in the signatures.
+
+### Plan risks, resolved
+
+1. **ch18/ch26 register and LDS pressure -- did not materialise on gfx942.** Both build with
+   zero warnings and no spill diagnostic, and `ch26` has the *best* finite-difference slope
+   of the four measured. Still open for wave32, where the register file differs.
+2. **`tile1` and `__launch_bounds__(1)` -- accepted by the AMD backend.** Compiles clean,
+   renders, and its gradients pass. No diagnostic to record.
+3. **`wet-abs` `(P,4)` `means2D` -- confirmed, and it is not a port bug.** `dL_dmeans2D` is
+   `torch::zeros({P,4})` at `rasterize_points.cu:192` while every other variant uses `{P,3}`.
+   Note that `__init__.py` is **byte-identical** to `-wet`'s, so nothing in the Python layer
+   hints at it; a `(P,3)` input trips autograd's shape check and looks like a kernel bug.
+
+### Where the plan's test design needed correcting, with evidence
+
+Two assertions in the plan's test plan are too strong. Both were investigated before being
+loosened, and neither is a port defect -- both would behave identically under CUDA.
+
+- **Plan test 8, `tile1` vs base "must match within rtol=1e-4": it does not, and cannot.**
+  Measured at 32x24: 16.5% of elements differ, max |diff| 0.0092, mean |diff| 2.4e-4,
+  correlation 0.9999921. The mechanism is `getRect` (`auxiliary.h:73`): a surfel is binned by
+  the *tiles* its bounding box touches, so with 16x16 tiles a pixel composites surfels whose
+  radius stops short of it. Those tails are not negligible -- the radius is a 3-sigma cutoff
+  where `exp(-4.5)*opacity ~= 0.01`, well above the `alpha < 1/255` reject at
+  `forward.cu:382`. The 1x1 tiling bins to the exact box and drops them. Verified: every
+  pixel whose value differs is a pixel whose candidate set differs (0 counterexamples).
+  The test now asserts mean |diff| < 1e-3, max |diff| < 0.02, correlation > 0.9999.
+- **Plan test 6, opacity finite difference: the step size matters, and smaller is worse.**
+  Slope vs eps for the base variant: 1e-4 -> 0.62, 3e-4 -> 1.34, 1e-3 -> 1.15, 3e-3 -> 0.98,
+  1e-2 -> 0.98. It is *not* float32 cancellation -- accumulating the loss in float64 changes
+  nothing (0.70 / 1.35 / 1.15 / 0.98). It is the two hard thresholds in the forward
+  (`alpha < 1/255` and `test_T < 0.0001`) making the loss piecewise smooth: a fixed jump
+  divided by a shrinking step diverges, so the central difference converges only once the
+  step averages over many crossings. The harness uses eps 3e-3 and a +/-10% band; all 14
+  variants land in 0.978-0.995. Anyone reading "slope ~1.00" from the stage-1 EnvGS run
+  should know it depends on this choice.
+
+### Test harness design
+
+`tests/test_variants.py` (`tests/README.md` explains how to run it). No reference
+implementation exists and no NVIDIA GPU is in this fleet, so the 14 variants are each
+other's oracle: three code bodies at ten channel counts whose first three channels
+composite identically, so one scene through all of them compared on channels 0-2 turns
+coverage into correctness. Per-variant: symbol export, `markVisible` vs an exact CPU frustum
+reference (`p_view.z > 0.2`, exact boolean equality), forward finiteness/coverage,
+determinism (bit-identical repeat), gradient finiteness, opacity finite difference.
+Cross-variant: channels 0-2 agreement, `tile1` vs base, `wet-abs` gradient columns.
+
+A camera at the origin looking down +z with an identity `viewmatrix` is enough; note the
+kernel's `transformPoint4x3` reads the matrix in the transposed 3DGS convention
+(translation in the last *row* of the flattened tensor).
+
+### Not done, deliberately
+
+- The CMake path is still not built (scoped out by the plan, deferral already registered).
+- No CUDA no-regression compile: no NVIDIA GPU or toolkit in this fleet. The argument stays
+  structural (plan risk 9), and it is now stronger, since the 11 new variants' source diffs
+  are byte-identical to the 3 that EnvGS exercised.
+- Plan open question 3 (README install matrix): answered no. The README's ROCm section now
+  says "All fourteen" and adds the submodule prerequisite plus a pointer to `tests/`;
+  enumerating 14 identical `pip install -e .` invocations would add nothing.

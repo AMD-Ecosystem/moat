@@ -180,7 +180,68 @@
    "note": "New. Upstream ships no tests, no CI and no CPU path, so nothing could be validated against this repository alone. Parameterised over all 14 variants plus the cross-variant image-equality oracle."
   }
  ],
- "covered": [],
+ "covered": [
+  {
+   "id": "extension:diff_surfel_rasterization._C",
+   "evidence": "Built for gfx942 on an AMD Instinct MI300X (ROCm 7.14, torch 2.14) via torch build-time hipify, zero compiler warnings and no register-spill diagnostic. Imports and exports rasterize_gaussians, rasterize_gaussians_backward and mark_visible; renders a 4000-surfel scene whose first three channels agree with the base variant to rtol 1e-4, is bit-identical run to run, and whose opacity gradient matches a central finite difference (slope 0.979). Kernels confirmed dispatching on the AMD device under AMD_LOG_LEVEL=3."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_ch05._C",
+   "evidence": "Built for gfx942 on an AMD Instinct MI300X (ROCm 7.14, torch 2.14) via torch build-time hipify, zero compiler warnings and no register-spill diagnostic. Imports and exports rasterize_gaussians, rasterize_gaussians_backward and mark_visible; renders a 4000-surfel scene whose first three channels agree with the base variant to rtol 1e-4, is bit-identical run to run, and whose opacity gradient matches a central finite difference (slope 0.978-0.995 across the fourteen). Kernels confirmed dispatching on the AMD device under AMD_LOG_LEVEL=3."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_ch11._C",
+   "evidence": "Built for gfx942 on an AMD Instinct MI300X (ROCm 7.14, torch 2.14) via torch build-time hipify, zero compiler warnings and no register-spill diagnostic. Imports and exports rasterize_gaussians, rasterize_gaussians_backward and mark_visible; renders a 4000-surfel scene whose first three channels agree with the base variant to rtol 1e-4, is bit-identical run to run, and whose opacity gradient matches a central finite difference (slope 0.978-0.995 across the fourteen). Kernels confirmed dispatching on the AMD device under AMD_LOG_LEVEL=3."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_ch18._C",
+   "evidence": "Built for gfx942 on an AMD Instinct MI300X (ROCm 7.14, torch 2.14) via torch build-time hipify, zero compiler warnings and no register-spill diagnostic. Imports and exports rasterize_gaussians, rasterize_gaussians_backward and mark_visible; renders a 4000-surfel scene whose first three channels agree with the base variant to rtol 1e-4, is bit-identical run to run, and whose opacity gradient matches a central finite difference (slope 0.978-0.995 across the fourteen). Kernels confirmed dispatching on the AMD device under AMD_LOG_LEVEL=3."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_ch26._C",
+   "evidence": "Built for gfx942 on an AMD Instinct MI300X (ROCm 7.14, torch 2.14) via torch build-time hipify, zero compiler warnings and no register-spill diagnostic. Imports and exports rasterize_gaussians, rasterize_gaussians_backward and mark_visible; renders a 4000-surfel scene whose first three channels agree with the base variant to rtol 1e-4, is bit-identical run to run, and whose opacity gradient matches a central finite difference (slope 0.995). Kernels confirmed dispatching on the AMD device under AMD_LOG_LEVEL=3."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_tile1._C",
+   "evidence": "Built for gfx942 on an AMD Instinct MI300X (ROCm 7.14, torch 2.14); __launch_bounds__(1) is accepted by the AMD backend with no diagnostic. Renders at 32x24 in bulk agreement with the 16x16 tiling (correlation 0.9999921, mean |difference| 2.4e-4; the residual is tile-granularity binning, not the port) and its opacity gradient matches a central finite difference (slope 0.987)."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_wet._C",
+   "evidence": "Built for gfx942 on an AMD Instinct MI300X (ROCm 7.14, torch 2.14) via torch build-time hipify, zero compiler warnings and no register-spill diagnostic. Imports and exports rasterize_gaussians, rasterize_gaussians_backward and mark_visible; renders a 4000-surfel scene whose first three channels agree with the base variant to rtol 1e-4, is bit-identical run to run, and whose opacity gradient matches a central finite difference (slope 0.978-0.995 across the fourteen). Kernels confirmed dispatching on the AMD device under AMD_LOG_LEVEL=3."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_wet_abs._C",
+   "evidence": "Built for gfx942 on an AMD Instinct MI300X (ROCm 7.14, torch 2.14) via torch build-time hipify, zero compiler warnings and no register-spill diagnostic. Imports and exports rasterize_gaussians, rasterize_gaussians_backward and mark_visible; renders a 4000-surfel scene whose first three channels agree with the base variant to rtol 1e-4, is bit-identical run to run, and whose opacity gradient matches a central finite difference (slope 0.978-0.995 across the fourteen). Kernels confirmed dispatching on the AMD device under AMD_LOG_LEVEL=3. dL_dmeans2D is {P,4} for this variant: columns 2-3 are non-negative and non-zero, columns 0-1 match the corresponding non-abs variant to rtol 1e-4."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_wet_abs_ch05._C",
+   "evidence": "Built for gfx942 on an AMD Instinct MI300X (ROCm 7.14, torch 2.14) via torch build-time hipify, zero compiler warnings and no register-spill diagnostic. Imports and exports rasterize_gaussians, rasterize_gaussians_backward and mark_visible; renders a 4000-surfel scene whose first three channels agree with the base variant to rtol 1e-4, is bit-identical run to run, and whose opacity gradient matches a central finite difference (slope 0.978-0.995 across the fourteen). Kernels confirmed dispatching on the AMD device under AMD_LOG_LEVEL=3. dL_dmeans2D is {P,4} for this variant: columns 2-3 are non-negative and non-zero, columns 0-1 match the corresponding non-abs variant to rtol 1e-4."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_wet_ch05._C",
+   "evidence": "Built for gfx942 on an AMD Instinct MI300X (ROCm 7.14, torch 2.14) via torch build-time hipify, zero compiler warnings and no register-spill diagnostic. Imports and exports rasterize_gaussians, rasterize_gaussians_backward and mark_visible; renders a 4000-surfel scene whose first three channels agree with the base variant to rtol 1e-4, is bit-identical run to run, and whose opacity gradient matches a central finite difference (slope 0.978-0.995 across the fourteen). Kernels confirmed dispatching on the AMD device under AMD_LOG_LEVEL=3."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_wet_ch07._C",
+   "evidence": "Built for gfx942 on an AMD Instinct MI300X (ROCm 7.14, torch 2.14) via torch build-time hipify, zero compiler warnings and no register-spill diagnostic. Imports and exports rasterize_gaussians, rasterize_gaussians_backward and mark_visible; renders a 4000-surfel scene whose first three channels agree with the base variant to rtol 1e-4, is bit-identical run to run, and whose opacity gradient matches a central finite difference (slope 0.978-0.995 across the fourteen). Kernels confirmed dispatching on the AMD device under AMD_LOG_LEVEL=3."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_wet_ch11._C",
+   "evidence": "Built for gfx942 on an AMD Instinct MI300X (ROCm 7.14, torch 2.14) via torch build-time hipify, zero compiler warnings and no register-spill diagnostic. Imports and exports rasterize_gaussians, rasterize_gaussians_backward and mark_visible; renders a 4000-surfel scene whose first three channels agree with the base variant to rtol 1e-4, is bit-identical run to run, and whose opacity gradient matches a central finite difference (slope 0.978-0.995 across the fourteen). Kernels confirmed dispatching on the AMD device under AMD_LOG_LEVEL=3."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_wet_ch18._C",
+   "evidence": "Built for gfx942 on an AMD Instinct MI300X (ROCm 7.14, torch 2.14) via torch build-time hipify, zero compiler warnings and no register-spill diagnostic. Imports and exports rasterize_gaussians, rasterize_gaussians_backward and mark_visible; renders a 4000-surfel scene whose first three channels agree with the base variant to rtol 1e-4, is bit-identical run to run, and whose opacity gradient matches a central finite difference (slope 0.978-0.995 across the fourteen). Kernels confirmed dispatching on the AMD device under AMD_LOG_LEVEL=3."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_wet_ch26._C",
+   "evidence": "Built for gfx942 on an AMD Instinct MI300X (ROCm 7.14, torch 2.14) via torch build-time hipify, zero compiler warnings and no register-spill diagnostic. Imports and exports rasterize_gaussians, rasterize_gaussians_backward and mark_visible; renders a 4000-surfel scene whose first three channels agree with the base variant to rtol 1e-4, is bit-identical run to run, and whose opacity gradient matches a central finite difference (slope 0.978-0.995 across the fourteen). Kernels confirmed dispatching on the AMD device under AMD_LOG_LEVEL=3."
+  },
+  {
+   "id": "test:variant-matrix",
+   "evidence": "Added as tests/test_variants.py with tests/README.md. 95 passed, 5 skipped on linux-gfx942 (python -m pytest tests/test_variants.py -q, 7.38 s); the skips are the four per-variant checks the 1x1-tile variant is too slow to run at 200x150 plus the base variant compared against itself."
+  }
+ ],
  "scoped_out": [
   {
    "id": "library:CudaRasterizer",
