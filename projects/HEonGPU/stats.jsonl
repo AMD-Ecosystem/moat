@@ -190,3 +190,4 @@
 {"kind":"phase","ts":"2026-08-13T02:52:58Z","phase":"compile","seconds":8.104,"exit":1,"cmd":"bash agent_space/heongpu-win/build.sh"}
 {"kind":"phase","ts":"2026-08-13T02:54:56Z","phase":"compile","seconds":18.286,"exit":0,"cmd":"bash agent_space/heongpu-win/build.sh"}
 {"kind":"phase","ts":"2026-08-13T02:55:24Z","phase":"test","seconds":8.638,"exit":0,"cmd":"bash agent_space/heongpu-win/smoke.sh"}
+{"kind":"session","ts":"2026-08-13T03:04:01Z","epoch":1786590241.627957200,"event":"end","platform":"windows-gfx1151"}
