@@ -726,3 +726,25 @@ genuine gift to upstream and it is cheap (the porter has it written and passing:
 correspondences, mean error 4.8e-08), so if the person preparing the PR wants the `rmcl` package
 to carry evidence of its own, add it as its own commit -- but that is a PR-scope decision, not a
 port defect, and nothing here waits on it.
+
+### Addendum, same review run: this verdict was reached while gfx942 was working the same branch
+
+While this review ran, linux-gfx942 was running its own round on rmcl and pushed a hold
+(`on_hold`, 02:45) citing a work-lock serialization failure, registered as
+`moatlib-port-lock-merge-race` in `data/deferred.json`. This reviewer held the lock from 02:34,
+so the lock did not do its job. Two consequences for whoever picks this up:
+
+- The first `commit-project` of this review merged that hold away, because the review's status
+  write was based on the pre-hold record. It has been re-applied with `moatlib.py set-hold rmcl
+  on` and the original reason preserved. Nothing else in the other host's record was touched.
+- **The skip-path ruling above is contested and is now a person's call, not mine.** gfx942
+  reports having measured a working launcher pattern (about 60 lines) that does translate the
+  device-less abort into a CTest skip, preserved unpushed on a branch `gfx942-skip-launcher` in
+  that host's `projects/rmcl/src` (commits `9eaf4f4`, `3544424`). Those commits are not in this
+  clone and were not reviewed here, so the ruling above -- keep the 77 path, no launcher upstream
+  -- is an argument about what belongs in an upstream tree, made without having read the
+  alternative. It is not evidence that the launcher does not work. Whoever rules should read that
+  branch first.
+
+The review verdict itself stands on `4f746de`, which is still `head_sha`: the two problems above
+are what the next porter round should fix, and neither touches the fork.
