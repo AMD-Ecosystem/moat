@@ -62,6 +62,37 @@ including the two core-side fault classes found during the port (`cudev`
 `simd_functions.hpp` PTX with non-saturating emulation, and `CUDART_VERSION` undefined
 on HIP gating out modern paths).
 
+## Validation 2026-08-13 (linux-gfx942)
+
+Dispatched as validator for a new platform, linux-gfx942 (gfx942, wave64, MI300X),
+which did not yet appear in `platforms`. Same situation as the four existing rows:
+this fork carries no standalone test suite of its own, so a real-GPU run against
+`AMD-Ecosystem/opencv @ moat-port` alone would prove nothing -- there is no
+`opencv_test_*` binary this repo can produce without `OPENCV_EXTRA_MODULES_PATH`
+pointed at contrib, and the fork checkout was skipped for exactly that reason (no
+build/compile/test commands were run; `wall_seconds` stays zero here by design).
+
+Marked `linux-gfx942` `blocked` with the identical reasoning already recorded for
+linux-gfx90a / linux-gfx1100 / windows-gfx1101 / windows-gfx1201: revalidate
+**opencv_contrib**, not this project, since its two-repo build tree is what
+actually exercises this fork's HIP/cudev code.
+
+Checked opencv_contrib's own record while here: `linux-gfx942` is not present in
+its `platforms` map either, so the wave64 gate for gfx942 specifically has no
+opencv_contrib evidence yet. Not this validator's concern to fix -- wave64 is
+already satisfied for opencv_contrib by linux-gfx90a (`completed`,
+`validated_sha=041d5528...`) at the current head, so `pr-ready` is unaffected.
+Noting it only so a future opencv_contrib dispatch on this card knows what is and
+isn't covered.
+
+`git -C projects/opencv/src status --porcelain`: no local checkout exists (nothing
+built), so the integrity gate is trivially satisfied -- no tracked source/build
+edits.
+
+Commands run: `python3 utils/moatlib.py set-blocked opencv linux-gfx942 "..."`.
+No PR interaction (PR #29285 is open; `moat-port` frozen, and this round pushed
+nothing to the fork).
+
 ## Install as a dependency
 
 Consumed through opencv_contrib's two-repo build, not on its own -- see the
