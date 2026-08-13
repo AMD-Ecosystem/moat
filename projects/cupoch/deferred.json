@@ -35,6 +35,19 @@
       "upstream_issue": null,
       "created_at": "2026-06-24T08:08:12Z",
       "decided": null
+    },
+    {
+      "id": "cupoch-nvidia-proprietary-rescan",
+      "kind": "other",
+      "component": null,
+      "summary": "Rescan with the fixed scan_nvidia: third_party/flann/util/cutil_math.h carries the pre-2017 CUDA samples EULA-pointer notice. The port replaced it with a HIP shim on the AMD path but the vendored copy remains; no licence ruling recorded; needs a person's confirmation.",
+      "refs": [
+        "moat main b336246 (case/wording-proof scan_nvidia)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T17:09:41Z",
+      "decided": null
     }
   ]
 }
