@@ -25,7 +25,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-06-11T00:58:29Z",
-      "decided": null
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-08-13T18:20:54Z"
+      }
     },
     {
       "id": "opencv-cudaoptflow-nvof",
