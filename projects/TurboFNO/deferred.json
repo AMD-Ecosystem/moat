@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "turbofno-nvidia-proprietary-rescan",
+      "kind": "other",
+      "component": null,
+      "summary": "Rescan with the fixed scan_nvidia: upstream's own utils/utils.cuh embeds CUDA-sample-derived code under 'a form of NVIDIA software license agreement' (lowercase form only the fixed scanner matches). The port stubs the helper headers but this file remains in the contributed tree; needs a person's licence ruling.",
+      "refs": [
+        "moat main b336246 (case/wording-proof scan_nvidia)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T17:09:05Z",
+      "decided": null
+    }
+  ]
+}
