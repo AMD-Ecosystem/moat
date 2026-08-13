@@ -4186,3 +4186,214 @@ construction (`unsigned long` is 64 bits under LP64, and `mpz_import` of one 64-
 is the same value `mpz_mul_ui` would have used), but it has not been compiled on Linux
 yet. `NTL::ZZFromBytes`/`BytesFromZZ` are core NTL API present in every version, so no
 version gate is expected.
+
+## Review 2026-08-13 (round 14, windows-gfx1151, bb3d101)
+
+Scope: rounds 12+13 judged together as `git diff 6ac06d0...bb3d101` (+113/-25, 12
+files), the delta from the last review-passed, thrice-validated commit. Verdict:
+**changes-requested**, on the commit message of `bb3d101` only. The code, the root-cause
+analysis and the strategy all pass, and are stronger than the porter claimed: the LP64
+equivalence is now measured rather than argued. No code change is requested. `-fgpu-rdc`
+and the `small_ntt` guard, settled by ruling at `6ac06d0`, were not reopened; the two
+registered upstream defects await a person and were not touched.
+
+### 1. `bb3d101` commit body misnames half of what it changed, and sits above a pass claim that does not cover it
+
+Two sentences, one amend, no code.
+
+The body says "The same width assumption appears in the CKKS constant-addition helpers".
+The change touches two different functions, not two overloads of one:
+`src/lib/host/ckks/operator.cu:596` `add_constant_plain_ckks_v2()` and
+`src/lib/host/ckks/operator.cu:660` `multiply_const_plain_ckks_v2()`. The second is a
+constant-multiplication helper. Name both, or use a phrase that covers both (they drive
+`cipher_add_by_gaussian_integer_kernel` and `cipher_mult_by_gaussian_integer_kernel`
+respectively, so "the CKKS gaussian-integer constant helpers" would do). Same bar this
+project already applied at `beba427` and at `d14abb1` in the previous round.
+
+In the same paragraph, say that these two helpers are not reached by the test suite.
+Three lines below, the Test Plan reports "All 15 test executables pass, 20 of 20 cases",
+and a maintainer reading top to bottom will take that as covering the NTL hunk. It does
+not. Verified independently:
+
+- `grep -rn "add_plain_v2\|multiply_plain_v2" test/ example/ benchmark/` returns nothing.
+  `test_ckks_addition.cpp:474,543,613,685,758` and
+  `test_ckks_multiplication.cpp:484,554,625,698,772` call the `Plaintext` overloads
+  `add_plain_inplace` / `multiply_plain_inplace`, never the `Complex64` `_v2` entry
+  points.
+- The only other caller is `src/lib/host/ckks/operator.cu:762`
+  (`scale_up_ckks` -> `multiply_const_plain_ckks_v2`), reached from `scale_up` at
+  `src/include/heongpu/host/ckks/operator.cuh:940`, whose only callers are the CKKS
+  bootstrapping path at `src/lib/host/ckks/operator.cu:7201,7208,7224`. There is no
+  bootstrapping test executable among the 15.
+
+Fixing it on inspection was nevertheless the right call, not a reach: it is the same
+defect from the same root cause, its correctness follows from NTL's documented contract
+rather than from a run, and it is provably bit-identical under LP64 (see below). The
+alternative -- knowingly shipping a 32-bit truncation in a public API path because no
+test looks at it -- is worse in a cryptographic library. The requested edit is
+disclosure, not a revert.
+
+### 2. For the validator, not the porter: the CUDA no-regression gate is stale at this head
+
+`notes.md:3405-3413` and `notes.md:3440-3445` both record the gate as "already recorded
+at this exact `head_sha` (`6ac06d0`)". `head_sha` is now `bb3d101`, so that reasoning no
+longer applies and the gate must be re-run by whichever Linux arch revalidates first.
+This is not a formality here: `bb3d101` edits `src/include/heongpu/util/util.cuh`,
+`src/lib/util/util.cu`, `src/lib/host/bfv/context.cu` and
+`src/lib/host/ckks/operator.cu` unconditionally, i.e. on the CUDA path as well, and both
+regressions the gate caught on 2026-08-12 (`notes.md:1493-1531`) were host translation
+units failing to compile under nvcc. Flagged so a validator does not carry the
+"already recorded" sentence forward against the wrong sha.
+
+### 3. Correction to the round-13 record
+
+`notes.md:4066-4067` describes the CKKS sites as "`add_constant_plain_ckks_v2()` (two
+overloads)". They are two distinct functions, `add_constant_plain_ckks_v2()` at
+`operator.cu:596` and `multiply_const_plain_ckks_v2()` at `operator.cu:660`. Recorded so
+the next agent does not go looking for a second overload that does not exist.
+
+### Measured this review, so it is not redone
+
+**20/20 reproduced independently on windows-gfx1151.** `ninja -n` in
+`projects/HEonGPU/src/build` reported `ninja: no work to do`, so the binaries correspond
+to the clean `bb3d101` working tree; then all 15 executables were run directly
+(`agent_space/heongpu-win/review14_run.sh`, DLLs already co-located per the round-12
+procedure):
+
+```
+bfv_addition rc=0 ok=1   bfv_encoding rc=0 ok=1   bfv_encryption rc=0 ok=1
+bfv_multiplication rc=0 ok=2   bfv_relinearization rc=0 ok=2
+bfv_rotation_method_1 rc=0 ok=1   bfv_rotation_method_2 rc=0 ok=1
+ckks_addition rc=0 ok=2   ckks_encoding rc=0 ok=1   ckks_encryption rc=0 ok=1
+ckks_multiplication rc=0 ok=2   ckks_relinearization rc=0 ok=2
+ckks_rotation_method_1 rc=0 ok=1   ckks_rotation_method_2 rc=0 ok=1
+tfhe_gate_boot rc=0 ok=1
+TOTAL ok=20 failed=0
+```
+
+Certification is still the validator's; this only establishes that the round-13 claim is
+real and that review is not passing an unreproduced pass. The root cause reproduces too:
+`agent_space/heongpu-win/gmp_probe.exe` prints `sizeof(unsigned long)=4`,
+`mpz_mul_ui by 1099510054913 -> 4293394433`, `mpz_import+mpz_mul -> 1099510054913`.
+
+**The LP64 path is bit-identical, measured rather than argued.** This is the question the
+three Linux revalidations turn on, and it is answerable on an LLP64 host: `mpz_*_ui` is
+exact for every operand below 2^32 here, and NTL's `long` conversions below 2^31, so
+feeding both the old and the new formulation operands in that range isolates the
+*semantics* of the replacement from the width question.
+`agent_space/heongpu-win/lp64_equiv_probe.cpp` (built with the `env.sh` toolchain against
+the same GMP and NTL the port links) copies `set_mpz_u64`, `zz_from_u64` and
+`u64_from_zz` verbatim and runs:
+
+- `set_mpz_u64` against `mpz_set_str` of the decimal spelling, over the full 64-bit
+  range including 0, 2^32, 2^63 and `~0ULL`;
+- `mpz_mul_ui` vs `set_mpz_u64`+`mpz_mul`, `mpz_div_ui` vs `mpz_fdiv_q`, `mpz_mod_ui` vs
+  `mpz_mod`, 200k random multi-limb accumulators built the way `calculate_M()` builds
+  them, plus edge operands;
+- `NTL::conv(zz, static_cast<long>(v))` vs `zz_from_u64`, and `NTL::to_long` vs
+  `u64_from_zz`, 200k random pairs below 2^31;
+- `zz_from_u64` / `u64_from_zz` round trip cross-checked against the decimal spelling of
+  the ZZ, over the full 64-bit range.
+
+```
+sizeof(unsigned long)=4 sizeof(long)=4 GMP_LIMB_BITS=64
+cases=1000026 mismatches=0
+VERDICT: *** EQUIVALENT ***
+```
+
+The rounding trap the substitution invites does not fire, for a reason stronger than the
+measurement: this host's `gmp.h:2318` defines `mpz_div_ui` as `mpz_fdiv_q_ui` and
+`gmp.h:932` defines `mpz_mod_ui` as `mpz_fdiv_r_ui`, so `mpz_fdiv_q` and `mpz_mod` are
+the faithful general-form replacements; and every operand at these four call sites is a
+product of `Modulus64` values or a `Modulus64` value, i.e. non-negative, so floor,
+truncate and Euclidean division coincide regardless of which alias is in force.
+`mpz_import(out, 1, -1, sizeof(Data64), 0, 0, &value)` with `endian=0` and `nails=0`
+reads the one 64-bit word in host-native byte order, which is exactly the value
+`mpz_*_ui` received under LP64. `NTL::ZZFromBytes` is documented (`ntl/doc/ZZ.txt:656-660`)
+as `sum(p[i]*256^i)` and `BytesFromZZ` (`:662-663`) as `abs(a) mod 256^n`, both
+little-endian, which is the byte order `zz_from_u64` / `u64_from_zz` build and consume;
+the residues passed to `u64_from_zz` lie in `[0, qi)` because NTL's `%` follows the
+divisor's sign (`ntl/doc/ZZ.txt:215-216`) and `operator.cu:632,640,724,732` guard anyway,
+so the `abs()` in `BytesFromZZ` is never load-bearing.
+
+**Conclusion on the Linux revalidations: no measurable correctness risk.** They remain
+required because `bb3d101` changes shared host code that Linux compiles and nothing has
+compiled it there yet, but the residual risk is compile-time -- including the stale CUDA
+gate above -- not numerical. The one hunk with prior Linux reach, the `random.cuh`
+include deletion flagged as round-12 finding 3, is unchanged and still unbuilt on Linux.
+
+**The LLP64 sweep is complete tree-wide, not just at the five known sites.** The bug
+class is "a 64-bit value narrowed through `long`", so the whole tree including the three
+submodules was swept, not only the edited files:
+
+- GMP `_ui` / `_si` entry points anywhere under the repo: exactly five survive, all
+  passing the literal `1` -- `src/lib/util/util.cu:780,841,877,890` and
+  `src/lib/host/bfv/context.cu:960`. Confirmed by reading each, not by grep alone.
+- The `_2exp` family takes `mp_bitcnt_t`, also `unsigned long`: the single use,
+  `src/lib/util/util.cu:891` `mpz_div_2exp(result, result, 1)`, passes the literal `1`.
+  Every `mpz_export` call passes `sizeof(uint64_t)` as a `size_t`, not a `long`.
+- `to_long`, `conv<long>`, `conv<unsigned long>`, `to_ulong`, `static_cast<long>`,
+  `static_cast<unsigned long>`, `(long)`, `strtoul`, `strtol`, `atol`, `std::stol`,
+  `%lu`, `%ld`: no matches anywhere in `src/`, `test/`, `example/`, `benchmark/`. Every
+  remaining wide integer in `src/` is spelled `long long` (`switchkey.cu:1496`,
+  `ckks/operator.cu:2460-2523`), which is 64 bits under both data models.
+- `thirdparty/GPU-NTT`, `GPU-FFT` and `RNGonGPU` reference no GMP and no NTL at all, and
+  every `long` in them is `unsigned long long`. The one `std::stoul` in the tree,
+  `thirdparty/RNGonGPU/test/test_util.h:428`, parses a two-character hex substring into
+  an `unsigned char`; it cannot exceed 255, and it is not built by HEonGPU.
+
+**Scope: the LLP64 fix stays on `moat-port`, a fortiori.** Round 12 ruled the Windows
+host-portability delta in, and the reasoning is stronger here rather than merely
+inherited. `windows` is a required gate in `config/arches.toml`; without `d14abb1` there
+is no Windows build, and without `bb3d101` there is a Windows build that silently
+computes wrong FHE values, which in a cryptographic library is worse than no build at
+all. It repairs no defect an existing user experiences, because upstream targets Linux
+only and the LP64 result is unchanged. Split out, the ROCm work would depend on a
+Windows-portability PR landing first against a project with no Windows build to exercise
+it. One thing does differ from round 12's reasoning and is worth stating plainly:
+`d14abb1`'s blast radius was nil because the POSIX branch was fenced rather than edited,
+whereas `bb3d101` genuinely edits code Linux compiles -- so "nil" there rests on the
+million-case equivalence measurement above, not on the shape of the diff.
+
+**Rewriting `b12dc98` as `d14abb1` orphaned no evidence, verified rather than assumed.**
+`git diff b12dc98 d14abb1` is empty, so the trees are identical and only the message
+changed; the reworded paragraph now says `ullAvailPhys` "is not the same quantity as
+freeram * mem_unit", which answers round-12 finding 2. No `validated_sha` in
+`status.json` pointed at `b12dc98`: the three Linux arches carry `6ac06d0` (gfx942,
+gfx1100) and `5d99b8f` (gfx90a), and `windows-gfx1151` carries `failed_sha: 6ac06d0`
+with `validated_sha: null`.
+
+### Checked clean, not re-raised
+
+Hygiene passes: titles `[ROCm] Keep 64-bit moduli intact on an LLP64 host` (49 chars) and
+`[ROCm] Let the host code build with a Windows toolchain` (55), both bodies carry
+rationale, the AI-assistance disclosure and a fenced Test Plan, neither has a
+`Co-Authored-By` or `noreply` trailer, no AMD-internal account reference appears in the
+delta, `python3 utils/jargon.py --port HEonGPU` reports `jargon: clean`, every added line
+and both messages are ASCII, and `git -C projects/HEonGPU/src status --porcelain` is
+empty. Nothing unrelated crept in: the 12 files are exactly the two commits' content.
+
+Fault classes: nothing in the delta is device code, so no wavefront width, lane mask,
+shared-memory sizing, texture pitch or resource-handle question arises, and no per-arch
+branch was introduced. `bb3d101` deliberately uses no `#ifdef`, which is the correct
+choice for shared code and is what the equivalence measurement above underwrites.
+`set_mpz_u64` is `inline` in `util.cuh`, an installed public header
+(`src/CMakeLists.txt:323-329` installs `*.cuh`), so it becomes a public symbol -- which
+is consistent with the free functions already declared there (`calculate_Mi`,
+`calculate_M`, `calculate_upper_half_threshold`) and is required because both `util.cu`
+and `context.cu` need it. `<gmp.h>` is already included at `util.cuh:22`, ahead of the
+new definition, so nothing new is pulled into consumers. The function carries no
+`__host__`/`__device__` annotation and is therefore host-only under both nvcc and hipcc,
+and no device code calls it. `mpz_t` lifetimes are balanced in all four edited functions
+(`util.cu:783/794`, `841/852`, `879/888`, `context.cu:963/990`) -- no leak, no double
+clear. The two NTL helpers sit in an anonymous namespace inside `namespace heongpu` in a
+`.cu`, so they export nothing.
+
+### Handoff
+
+Round-15 porter work is a `git commit --amend` of `bb3d101`'s message and nothing else --
+finding 1's two sentences. No code change and no rebuild, and no evidence is at risk
+because no platform is validated at `bb3d101`; this is the last moment the amend is free.
+After that, review can pass immediately and the port goes to `windows-gfx1151` validation
+plus the three Linux revalidations, with the stale CUDA no-regression gate (finding 2)
+picked up by whichever Linux arch runs first.
