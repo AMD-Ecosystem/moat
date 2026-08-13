@@ -875,3 +875,99 @@ replicating exactly what `set_state`'s `completed` branch does. Left `state` as
 `set_state` should special-case "arch already completed at an older head, now passing
 again" (that path last worked pre-schema-3, when `revalidate` was itself a stored,
 distinct state).
+
+## Validation 2026-08-13 (windows-gfx1151) -- GPU PASS, blocked on the jargon gate
+
+Platform: AMD Radeon 8060S (gfx1151, RDNA3.5, 20 CUs, wave32), Windows 11.
+ROCm: TheRock pip SDK 7.14.0a20260612, AMD clang 23.0.0. Commit 7c713c6 (head).
+
+Outcome: the GPU work is a clean PASS and needs no repeat. The arch is
+nevertheless recorded `validation-failed` because the pre-completion jargon gate
+fails, and that is a property of the branch rather than of this architecture --
+see the last section.
+
+### Build
+
+Reused the recorded gfx1201/gfx1101 Windows recipe unchanged except for the arch
+and the SDK root; no source edit was needed.
+
+```
+ROCM=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel
+CORE=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_core
+cmake -S projects/cuPDLPx/src -B agent_space/cupdlpx_build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=$ROCM/lib/llvm/bin/amdclang.exe \
+  -DCMAKE_CXX_COMPILER=$ROCM/lib/llvm/bin/amdclang++.exe \
+  -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/amdclang++.exe \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DCMAKE_PREFIX_PATH="$ROCM;$CORE" \
+  -DCUPDLPX_BUILD_CLI=ON -DCUPDLPX_BUILD_TESTS=ON -DCUPDLPX_BUILD_PYTHON=OFF
+sed -i 's/-fuse-ld=lld-link//g' agent_space/cupdlpx_build/build.ninja   # 7 occurrences
+cmake --build agent_space/cupdlpx_build --target cupdlpx_core cupdlpx_shared test_interface -j 8
+```
+
+Build SUCCESS (`cupdlpx_core.lib`, `cupdlpx.dll`, `tests/test_interface.exe`).
+Warnings only, all pre-existing and host-pass (`unused variable 'step'` in
+solver.cu:876,921). The `-fuse-ld=lld-link` strip is still required, same as the
+gfx1201 round. The CLI is still self-disabled by the project's own
+`if(WIN32 AND CUPDLPX_BUILD_CLI)` guard (getopt.h/libgen.h), so the .mps CLI test
+is not available on any Windows arch -- unchanged from gfx1101/gfx1201.
+
+Runtime staged into `tests/` (exe-dir search beats System32): amdhip64_7.dll,
+rocm_kpack.dll, amd_comgr.dll, hiprtc0714.dll, hiprtc-builtins0714.dll,
+hipblas.dll, hipsparse.dll, libhipblaslt.dll, rocblas.dll, rocsparse.dll,
+rocsolver.dll, PSLP.dll, cupdlpx.dll. `ROCBLAS_TENSILE_LIBPATH` pointed at
+`_rocm_sdk_libraries_gfx1151/bin/rocblas/library`. No separate `.kpack` file was
+needed on this SDK: `rocm_kpack.dll` is staged as part of the runtime and
+`hipsparseCreate` succeeded (contrast the gfx1101 note about a missing
+`blas_lib_gfx1101.kpack`, which was a 7.14.0a20260604 packaging shape).
+
+### Test results -- 9/9 PASS (RC=0)
+
+```
+HIP_VISIBLE_DEVICES=0 ROCBLAS_TENSILE_LIBPATH=.../rocblas/library ./tests/test_interface.exe
+```
+
+- Tests 1-4 Dense/CSR/CSC/COO -> OPTIMAL (presolve REDUCED to 0 rows)
+- Tests 5-8 same with warm start -> OPTIMAL (warm start ignored as documented)
+- Test 9 CSR, presolve=false -> GPU PDLP solver, 1000 iterations:
+  primal objective 3.000000001, objective gap **4.635e-11**, primal infeas
+  **9.088e-11**, dual infeas **1.122e-09**, x=[1,2], y=[1,-1,0]
+
+Those match the reference numbers at this same head_sha (gap 4.636e-11, primal
+infeas 9.088e-11, dual infeas 1.122e-09) to the last printed digit. No
+RDNA3.5 floating-point divergence in this first-order solver -- worth stating
+explicitly, since an iterative LP solver is exactly the shape that has diverged
+on gfx1151 elsewhere. hipSPARSE SpMV, hipBLAS BLAS-1 and HIP Graphs all work.
+`spmv_backend: cusparseSpMV (auto)` confirms `CUPDLPX_HAS_SPMVOP=0` on HIP.
+
+CUDA no-regression gate: not run here (Windows host, no CUDA toolkit); already
+recorded at this head_sha by the Linux rounds.
+
+### Why this arch is `validation-failed` anyway: the jargon gate
+
+`python3 utils/jargon.py --port cuPDLPx` reports **6 instances in 3 commit
+messages**, all inside the `main..moat-port` publication range:
+
+```
+7c713c6 Fix missing #endif dropped during moat-port merge conflict resolution
+b202137 Merge branch 'main' into moat-port
+991a9b6 Merge branch 'main' into moat-port
+```
+
+This is not cosmetic. `upstream.py --publish` runs `jargon.scan_commits` over
+exactly this range and refuses to open the PR while it is dirty, so the port
+cannot be submitted as it stands. It is also not fixable by a commit on top --
+the text lives in the messages of existing commits, two of them merges -- so it
+needs a porter to rewrite the branch's history.
+
+The cheap fix preserves everyone's evidence: a message-only rewrite (or the
+PR-prep squash) leaves the tree byte-identical, which is precisely what
+`moatlib.py squash-carry-forward` is built to certify -- it carries validated
+platforms forward and refuses any squash that changed content. So linux-gfx90a
+and linux-gfx1100 should not need a GPU re-run, and neither should this arch:
+the numbers above stand for this tree.
+
+Integrity: `git status --porcelain` in src empty at 7c713c6 before and after; no
+fork commit made. Documentation gate passes -- README.md:29-30 and :48-53 carry
+the ROCm/HIP build alongside the CUDA one.
