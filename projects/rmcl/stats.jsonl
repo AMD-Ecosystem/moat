@@ -71,3 +71,9 @@
 {"kind":"phase","ts":"2026-08-13T15:21:06Z","phase":"test","seconds":30.638,"exit":0,"cmd":"bash agent_space/rmcl/run_launcher_check.sh -R e_probe_crash"}
 {"kind":"phase","ts":"2026-08-13T15:21:42Z","phase":"test","seconds":31.114,"exit":0,"cmd":"bash agent_space/rmcl/run_launcher_check.sh"}
 {"kind":"session","ts":"2026-08-13T15:24:21Z","epoch":1786634661.020295796,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-13T15:25:37Z","epoch":1786634737.322201605,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-13T15:25:44Z","epoch":1786634744.528157883,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-08-13T15:26:51Z","phase":"compile","seconds":6.537,"exit":0,"cmd":"bash agent_space/rmcl/build_rmcl.sh -DBUILD_TESTING=ON"}
+{"kind":"phase","ts":"2026-08-13T15:26:56Z","phase":"test","seconds":1.105,"exit":0,"cmd":"bash agent_space/rmcl/run_ctest.sh"}
+{"kind":"phase","ts":"2026-08-13T15:27:01Z","phase":"test","seconds":0.697,"exit":0,"cmd":"bash agent_space/rmcl/run_ctest_nodev.sh"}
+{"kind":"session","ts":"2026-08-13T15:32:18Z","epoch":1786635138.806162863,"event":"end","platform":"linux-gfx942"}

@@ -1060,3 +1060,77 @@ the rest of the file; `prose.py` flags the whole file for that and always has.
 `check.py` all gates ok, `jargon.py --port rmcl` clean, `prose.py` clean on the rewritten commit
 body, title still 45 chars, working tree clean, pushed with `--force-with-lease`
 (`+ 2cf0e8a...2b7f439 moat-port -> moat-port (forced update)`).
+
+## Review 2026-08-13 (linux-gfx942, fourth round) -- passed
+
+Scope: the amended tip `2cf0e8a` -> `2b7f439` on `AMD-Ecosystem/rmcl` `moat-port` (remote tip
+confirmed at `2b7f439`) and the `validation.md` lesson restructure. Both items of the third
+review are resolved.
+
+### Problems
+
+None.
+
+### Verified here
+
+- The amendment touches one file. `git diff 2cf0e8a 2b7f439` is `rmcl_ros/tests/run_gpu_test.cmake`
+  only, +7/-2, plus the commit message. `f3d62d0` and `493d0f6` are the same git objects as in the
+  two previous reviews (identical SHAs and trees, and both tips share the parent `f3d62d0`), so
+  they were not re-read.
+- `run_gpu_test.cmake:10-14` skips on 77 alone and fails with the probe's own status otherwise.
+  Acceptance matrix re-measured by this reviewer, through CTest with the shipped script and the
+  shipped `SKIP_REGULAR_EXPRESSION`, in a scratch harness written for this review (not the
+  porter's), after an incremental colcon build at `2b7f439`
+  (`Summary: 3 packages finished [6.07s]`):
+
+  ```
+  ctest --test-dir build/rmcl_ros --output-on-failure
+  1/1 Test #1: rmcl_gpu_kernels .................   Passed    0.64 sec
+
+  HIP_VISIBLE_DEVICES=-1 ctest --test-dir build/rmcl_ros
+  1/1 Test #1: rmcl_gpu_kernels .................***Skipped   0.23 sec
+
+  1/6 Test #1: a_real ...........................   Passed    0.50 sec
+  2/6 Test #2: b_probe_false ....................***Failed    0.02 sec  device probe exited with 1
+  3/6 Test #3: c_probe_missing ..................***Failed    0.01 sec  device probe exited with No such file or directory
+  4/6 Test #4: d_test_false .....................***Failed    0.22 sec  /bin/false exited with 1
+  5/6 Test #5: e_probe_crash ....................***Failed   30.15 sec  device probe exited with Segmentation fault
+  6/6 Test #6: f_probe_77 .......................***Skipped   0.02 sec
+  ```
+
+  The same six under `HIP_VISIBLE_DEVICES=-1` give `a_real` and `d_test_false` `***Skipped` (the
+  real probe returns 77 before either test runs) and leave `b`, `c` and `e` `***Failed`. Skip
+  fires on 77 and on nothing else, in both directions; the third review's finding 1 is closed.
+  Non-numeric `RESULT_VARIABLE` lands in the failure branch as the porter recorded (case `c`).
+- The skip regex is matched against the whole captured output, so a probe that printed
+  `no GPU device available` and then exited nonzero-other would still be reported `***Skipped`
+  (checked with a stub). Not a defect on this branch: `gpu_device_probe.cpp:18-19` prints that
+  line only immediately before `return 77`, and grep shows the phrase in exactly three places --
+  the probe, the launcher message, and the skip regex. Recorded so the next reader does not
+  re-derive it.
+- The probe answering 77 for a `cudaGetDeviceCount` error as well as for a zero count
+  (`gpu_device_probe.cpp:16`) was considered and left alone: a runtime that cannot enumerate
+  devices is the same "no usable device" answer for a test host, and the loader-level failures
+  the third review worried about (relocated binary, missing `libamdhip64.so`) never reach `main`
+  and so land in the launcher's failure branch, which case `c` demonstrates.
+- The promoted lesson at `validation.md:92-127` splits by cause, not by preference: the opening
+  says the mechanism follows from whether the process reaches `main` (:96-97), `**Nothing aborts
+  before main**` keeps in-`main` 77 plus `SKIP_RETURN_CODE` (:99-102), and `**A dependency
+  constructs a GPU context at load time**` states the in-`main` check "is dead code, not defence
+  in depth" (:107-108), keeps both measured CTest dead ends (:109-111), requires skipping on "77,
+  and on 77 alone" with every other nonzero result failing with its status (:115-120), and names
+  rmcl as the project that ships it (:123-124). The "weigh against just documenting the gap"
+  framing is gone from the file. The lazy-context deferral closes the section for both cases
+  (:126-127). Finding 2 is closed.
+- The lesson's load-bearing measured claim was re-measured rather than taken on trust: a test that
+  prints the skip phrase and then dies by `SIGABRT` is `***Failed (Subprocess aborted)`, not
+  `***Skipped`, while a sibling returning 77 with `SKIP_RETURN_CODE 77` is `(Skipped)`
+  (CMake 3.28.3 here).
+- Hygiene: working tree clean in `projects/rmcl/src`, `check.py` all gates ok, `jargon.py --port
+  rmcl` clean, `prose.py` clean on the amended body, title `[ROCm] Report a skip when no GPU
+  device is present` at 50 chars, no `Co-Authored-By` or noreply trailer, no non-ASCII in the
+  message or the added lines, no internal account references. The rewritten Test Plan's four
+  quoted failure texts all reproduce here.
+
+Verdict: review-passed. GPU validation at `2b7f439` is the validator's next step on both
+platforms (`validated_sha` is null on each).
