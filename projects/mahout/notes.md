@@ -1679,12 +1679,29 @@ cargo test  -p qdp-core -p qdp-kernels --no-default-features --features hip -- -
 - build: exit 0 (16.2s cold). Only pre-existing warnings (iqp.cu unused param,
   phase.cu unused variable, and qdp-core's upstream "CUDA toolkit not found"
   notice from configure_cuda_linkage, which is cosmetic on a hip build).
-- test: exit 0, **368 passed, 0 failed, 4 ignored** (ignored = doctests requiring a
-  GPU/IO fixture). Was 358 at fd8c7a38 on gfx90a; the +10 are upstream's new tests,
-  all of which run and pass on AMD:
-  estimate 9, parquet_f32_fidelity 4 (incl. gpu:: 8/12/16-qubit fidelity cases),
-  gpu_ptr_encoding 69 (was 68: the new excessive-qubit case), reader 3, parquet_f32 7.
-  Full breakdown: lib 100, arrow_ipc_io 5, estimate 9, gpu_angle 12, gpu_api_workflow 8,
+- test: exit 0, **368 passed, 0 failed, 4 ignored** (ignored = the four pre-existing
+  doctests requiring a GPU/IO fixture: gpu::pipeline::run_dual_stream_pipeline,
+  io::read_numpy_batch, reader, readers::numpy::NumpyReader -- same four ignored
+  before the merge, so the merge changed nothing there).
+  Baseline: **353 passed on this same gfx1100 host at fd8c7a38** (measured
+  2026-08-13 from a detached worktree at fd8c7a38, identical command). 353 -> 368 is
+  +15, accounted for exactly: estimate.rs 9 (new file), parquet_f32_fidelity.rs 4
+  (new file, incl. the gpu:: 8/12/16-qubit fidelity cases), gpu_ptr_encoding 68 -> 69
+  (the new excessive-qubit case) = the 14 `#[test]` functions upstream adds
+  (`git grep -c '#\[test\]' <rev> -- qdp/qdp-core/tests qdp/qdp-core/src
+  qdp/qdp-kernels` sums to 367 at fd8c7a38 and 381 at the staging tip), plus 1
+  newly-executing doctest, `qdp-core/src/estimate.rs - estimate::estimate_memory`
+  (line 111), which upstream's new file brings with it. Every one of the 15 runs and
+  passes on AMD; none of upstream's new tests is skipped or ignored on this config.
+  The earlier "was 358 / +10" wording was wrong twice: 358 is a gfx90a figure from a
+  different host (gfx1100 had no GPU pass count at fd8c7a38 -- its 2026-07-02 record
+  is a binary-equivalence carry-forward, hence this baseline re-run), and the upstream
+  delta is 14 tests, not 10. reader (3) and parquet_f32 (7) were miscounted as new;
+  both already ran at fd8c7a38 with the same counts. The gfx90a 358 vs gfx1100 353 gap
+  at the same commit is host environment, not the port: suites gated on optional
+  dependencies (torch_io runs 3 of its 5 `#[test]`s here without the pytorch feature)
+  differ between the two machines.
+  Full breakdown at the tip: lib 100, arrow_ipc_io 5, estimate 9, gpu_angle 12, gpu_api_workflow 8,
   gpu_basis 7, gpu_dlpack 9, gpu_fidelity 17, gpu_iqp 22, gpu_memory_safety 4,
   gpu_norm_f32 2, gpu_ptr_encoding 69, gpu_validation 8, null_handling 6, numpy 4,
   parquet_f32 7, parquet_f32_fidelity 4, parquet_io 8, preprocessing 14, reader 3,
@@ -1805,3 +1822,75 @@ and record the result.
   missing hip_rt entry point does break compilation, and a `target_os = "linux"`
   test gate does silently drop coverage on Windows ROCm -- and is written
   cross-project (CMake equivalents included), so it belongs in the skill.
+
+## Review fixes 2026-08-13 (porter, linux-gfx1100) -- fix round 1399, all three findings
+
+New staging tip: 9a3a08e0f3061b00ddf8f2cfb3f5cd5c49b38d66 (was 1744956de).
+`moat-fix-1399` force-pushed with `--force-with-lease`; it carries no review PR
+yet, so rewriting it is allowed. `moat-port` untouched (frozen, PR open).
+
+### 1. `[ROCm]` prefix on the merge commit (fixed)
+Amended the merge's message only and replayed the follow-up:
+```
+git checkout --detach 53c5f72fb
+git commit --amend -F <msg>          # -> 5a15c3f25, both parents preserved
+git cherry-pick 1744956de            # -> 9a3a08e0f
+git branch -f moat-fix-1399 9a3a08e0f
+```
+Merge title is now `[ROCm] Merge upstream main into the AMD/HIP branch` (49
+chars). Evidence that nothing but commit metadata moved:
+- `git rev-parse 9a3a08e0f^{tree}` == `git rev-parse 1744956de^{tree}` ==
+  `5584f6f96cd105dd30684030676e036d51c5d858`; `git diff 1744956de 9a3a08e0f` empty.
+- merge tree unchanged too: `53c5f72fb^{tree}` == `5a15c3f25^{tree}` ==
+  `77f49f999bddb05bbc48ed08d0ed8d532f2620c0`.
+- `git log -1 --format=%P 5a15c3f25` -> `fd8c7a38ac72... 206ff2fe863f...`, i.e. the
+  published tip is still parent 1 and upstream main parent 2.
+- `git merge-base --is-ancestor` yes for fd8c7a38, upstream/main and 206ff2fe8
+  against 9a3a08e0f.
+- the follow-up commit's message is byte-identical after the replay.
+While rewriting the message, corrected one factual error in its last paragraph:
+it listed `parquet_f32 (7)` among "upstream's newly merged suites", but that suite
+already existed and ran at fd8c7a38 (see finding 2). The paragraph now names
+estimate, parquet_f32_fidelity, the new gpu_ptr_encoding case and the
+estimate_memory doc example, and gives 368 vs the measured 353 baseline. No other
+body text changed.
+Since only commit metadata differs, no GPU re-run was required for the rewrite;
+the gfx1100 evidence recorded for 1744956de applies unchanged to 9a3a08e0f by
+tree identity. (The suite was re-run anyway for finding 2 and passes at the new
+tip: 368 passed, 0 failed, 4 ignored.)
+
+### 2. Test-count reconciliation (fixed)
+The "Build + test" paragraph above now states the measured gfx1100 baseline (353
+at fd8c7a38, re-run today in a detached worktree because gfx1100's fd8c7a38
+record was a binary-equivalence carry-forward with no GPU run) and the exact
++15 = 14 upstream `#[test]` functions + 1 newly-executing doctest. Commands:
+```
+git worktree add --detach agent_space/mahout-base fd8c7a38
+cd agent_space/mahout-base/qdp
+export QDP_USE_HIP=1 QDP_HIP_ARCH_LIST=gfx1100 ROCM_PATH=/opt/rocm HIP_VISIBLE_DEVICES=0
+cargo test -p qdp-core -p qdp-kernels --no-default-features --features hip -j 16 \
+  -- --test-threads=1                       # 353 passed, 0 failed, 4 ignored
+```
+Per-suite diff base -> tip: estimate 0->9, parquet_f32_fidelity 0->4,
+gpu_ptr_encoding 68->69, qdp_core doctests 0->1 passed (the same 4 stay ignored).
+Every other suite is unchanged. The 358 gfx90a figure is not a gfx1100 baseline
+and is no longer used as one.
+
+### 3. `qdp_no_cuda` stub backend compiled (fixed)
+The third backend selected by the merged cuda_ffi.rs is
+`all(feature = "cuda", not(feature = "hip"), qdp_no_cuda)`. qdp-core/build.rs
+sets `qdp_no_cuda` when `QDP_NO_CUDA` is 1/true/yes or nvcc is absent, so the
+default (cuda) feature set plus that env var selects the stub arm:
+```
+cd qdp
+env -u QDP_USE_HIP -u QDP_HIP_ARCH_LIST -u ROCM_PATH -u CUDA_PATH QDP_NO_CUDA=1 \
+  CARGO_TARGET_DIR=<scratch> cargo check -p qdp-core -j 16
+```
+exit 0 in 9.4s. The build script's `cargo:warning=qdp-core: CUDA toolkit not
+found (nvcc not in PATH). Building with stub CUDA Runtime symbols` confirms
+`qdp_no_cuda` was emitted, and `qdp-core/Cargo.toml` has `default = ["cuda"]`
+with `hip` off, so the cfg on cuda_ffi.rs:138 holds and `no_cuda_stubs` (with
+upstream's new `cudaGetDeviceCount` stub) is the arm that was type-checked.
+All three backends of the file the merge rewrote are now covered this round:
+hip_rt (build + 368-test GPU run), cuda_rt (nvcc 12.8 build + 23 test binaries),
+no_cuda_stubs (this check).
