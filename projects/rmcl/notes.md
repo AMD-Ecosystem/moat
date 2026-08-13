@@ -748,3 +748,11 @@ so the lock did not do its job. Two consequences for whoever picks this up:
 
 The review verdict itself stands on `4f746de`, which is still `head_sha`: the two problems above
 are what the next porter round should fix, and neither touches the fork.
+
+## Ruling 2026-08-13 (person): adopt the launcher skip path
+
+Jeff Daily ruled the contested skip-path question: adopt the gfx942 launcher
+pattern (probe linking hip::host only + run_gpu_test.cmake + SKIP_REGULAR_EXPRESSION),
+preserved on branch gfx942-skip-launcher in projects/rmcl/src (9eaf4f4, 3544424).
+It replaces the in-main exit-77 mechanism as the device-less skip. The
+rmagine-lazy-default-gpu-context deferral stands as the better fix either way.
