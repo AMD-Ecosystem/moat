@@ -42,3 +42,5 @@
 {"kind":"session","ts":"2026-08-12T22:05:51Z","epoch":1786572352.188636500,"event":"end","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-08-13T02:48:11Z","epoch":1786589291.042005996,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-08-13T03:00:40Z","epoch":1786590040.931318628,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-13T02:49:19Z","epoch":1786589359.934550690,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-13T03:09:59Z","epoch":1786590599.557437261,"event":"end","platform":"linux-gfx1100"}

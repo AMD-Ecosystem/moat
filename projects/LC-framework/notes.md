@@ -703,3 +703,128 @@ the `.prehip` backups belongs with the recipe.
   the diff and the messages, `jargon.py --port LC-framework` clean.
 - Fork tree at f0ce8ce is clean (`git status --porcelain` empty).
 
+## Review 2026-08-13 (reviewer, linux-gfx1100)
+
+Verdict: changes-requested. Scope: the delta 040743e..f0ce8ce (ea0df9b
+framework.h POSIX-include guards, f0ce8ce README ROCm build recipes), read
+against the full port for context. The 040743e content was reviewed and passed
+on 2026-06-25 and is not re-litigated here. Every finding below was reproduced
+on this host (gfx1100, ROCm 7.2.3) before being written down.
+
+### 1. The documented standalone ROCm recipe does not compile on Linux
+
+`README.md:203-211` tells the reader to build `compressor-standalone.cu` and
+`decompressor-standalone.cu` with exactly
+
+    hipcc -O3 --offload-arch=<arch> -ffp-contract=off -I. -std=c++17 -c -o compress.o compressor-standalone.cu
+
+Following the section verbatim on this host fails:
+
+```
+./generate_standalone_GPU_compressor_decompressor.py "" "TUPL4_1 RRE_1 CLOG_1"
+hipify-perl -inplace compressor-standalone.cu decompressor-standalone.cu
+for h in framework.h $(find include components preprocessors verifiers -name '*.h'); do hipify-perl -inplace "$h"; done
+hipcc -O3 --offload-arch=gfx1100 -ffp-contract=off -I. -std=c++17 -c -o compress.o compressor-standalone.cu
+-> compressor-standalone.cu:339:30: error: use of undeclared identifier 'strcmp'   (EXIT 1)
+-> decompressor-standalone.cu:265:30, :267:37: same, 2 errors                      (EXIT 1)
+```
+
+Cause is the known gap already on record (notes.md "gotchas", and the deferred
+item `lc-standalone-cstring-include`): `compressor-framework.cu:54` and
+`decompressor-framework.cu:55` include `<string>` and then call `strcmp` at
+`compressor-framework.cu:330,332` and `decompressor-framework.cu:258,260`.
+libstdc++ does not declare `::strcmp` from `<string>`; MSVC's does, which is
+why the gfx1151 round did not see it, and nvcc gets it transitively from the
+CUDA headers, which is why the existing nvcc recipe works. It is the same
+transitive-luck class as the thrust includes this port already fixed in
+`preprocessors/d_QUANT_INOA_0_f64.h`, and it fires only on the HIP path.
+
+Fix: add `#include <cstring>` next to the existing `<string>` in
+`compressor-framework.cu:54` and `decompressor-framework.cu:55`. Verified: with
+that one line added to each, both standalone translation units compile clean
+(EXIT 0, warnings only) with the documented command on gfx1100. Do not document
+`-include cstring` instead; a one-line include is the upstream-correct fix and
+helps the CUDA path too.
+
+On the deferral: the deferred item plans to "fold a `#include <cstring>` into
+the standalone templates during PR-prep so the documented hipcc recipe works
+unmodified everywhere". That cannot ride a PR-prep squash -- a squash may only
+carry validation forward when the tree is identical, and it is refused if the
+content changed. So this is a source change that needs its own validation round
+whenever it lands; deferring it does not avoid that cost, it only risks the
+branch being approved and published with a README recipe that fails on the
+project's primary platform. Land it now, and close the deferred item with it.
+
+### 2. The documented verification command reports failure on a correct conversion
+
+`README.md:75` advises "verifying that no CUDA spellings are left, for example
+with grep -rn cudaMalloc ., before compiling". After a conversion that followed
+the section exactly and was fully successful (the resulting `lc` built and
+passed `AL "" "RZE_4"` on gfx1100, see below), that command prints 52 hits:
+
+- 23 in the `*.prehip` backups that `hipify-perl -inplace` itself writes (235
+  of them in this tree),
+- the rest in `framework.cu`, `compressor-framework.cu` and
+  `decompressor-framework.cu`, which the documented loop deliberately does not
+  convert and which the build does not compile,
+- plus `README.md` itself, which now contains the string `cudaMalloc`.
+
+So the check the README offers as the way to tell a good conversion from a bad
+one always fires. A reader who follows it concludes the conversion failed.
+Either drop the pre-check -- a header that was missed surfaces immediately as a
+compile error, "use of undeclared identifier 'cudaMalloc'", which is a cleaner
+thing to tell the reader to look for -- or give a command that is quiet on
+success.
+
+### 3. Unsubstantiated claim about hipify-perl in the same sentence
+
+`README.md:75`: "Note that hipify-perl occasionally skips files when it is
+invoked in a long loop". This did not reproduce: the exact documented loop, run
+synchronously here over the whole tree, converted every file (loop exit 0, no
+CUDA spellings left in any file it covered). This project's own record already
+gives the real cause -- notes.md "gotchas" attributes the skipping to the loop
+being run in the background or `&&`-chained after a find pipeline, and the
+2026-08-12 porting round to the loop exceeding a two-minute command timeout.
+Both are truncation of the loop by the caller, not a defect in hipify-perl.
+An upstream README should not carry an unverified defect claim about a ROCm
+tool. Reword to the fact that the loop is long and can be cut short before it
+finishes, or drop the sentence with the pre-check in finding 2.
+
+### Non-blocking, for PR-prep
+
+- `ea0df9b`'s Test Plan uses 4-space indented command blocks where the standing
+  rule asks for fenced blocks (`f0ce8ce` does it correctly). Not worth a history
+  rewrite on its own; fold it in if the branch is ever restructured for the PR.
+
+### Verified this round (context, not problems)
+
+- `framework.h:52-69` `#ifndef _MSC_VER` guards: correct and strictly additive.
+  `strings.h` and `unistd.h` have no callers anywhere in the tree (the `__ffs`
+  hits are the device intrinsic from `include/macros.h`, not POSIX `ffs`);
+  `sys/time.h` has exactly one user, `CPUTimer` at `framework.h:790-799`, under
+  `#ifdef USE_CPU`, a path MSVC could never have compiled anyway
+  (`gettimeofday` does not exist there). `_MSC_VER` is not defined by nvcc on
+  Linux, by g++, or by MinGW, so the CUDA and CPU/OpenMP builds are byte-
+  identical. The three POSIX includes appear nowhere else in a file the HIP
+  build compiles (`compressor-framework.cpp:61` and
+  `decompressor-framework.cpp:61` are the CPU templates).
+- The README's central technical claim is true on current ROCm: hipcc does NOT
+  predefine `__HIP_PLATFORM_AMD__` before the first include (probed directly on
+  ROCm 7.2.3 -- a `#if defined(__HIP_PLATFORM_AMD__)` at line 1 of a `.hip` TU
+  takes the else branch), so the header hipify prepends really is what arms the
+  `WS` gate, and compiling unconverted source really would select wave32
+  silently. The lesson promoted to `strategy-a-cmake.md` says the same thing and
+  is accurate.
+- The installation recipe at `README.md:65-77` works end to end here:
+  generate -> hipify (whole documented loop) -> two hipcc steps -> EXIT 0, 116
+  cosmetic warnings -> `./lc test.dat AL "" "RZE_4"` -> "verification passed" on
+  gfx1100 at f0ce8ce. No `WS must be` mismatch, so `WS == warpSize == 32`.
+- Dropping `-fopenmp` and `-march=native` (which the nvcc line passes through
+  `-Xcompiler`) is harmless: every OpenMP region in `framework.h` is inside
+  `#ifdef USE_CPU`, and the documented GPU build passes only `-DUSE_GPU`.
+- Commit hygiene: both titles `[ROCm]`, 61 and 53 chars; bodies disclose AI
+  assistance and carry Test Plans; no `Co-Authored-By`, no noreply trailer, no
+  AMD-internal account reference; ASCII only. `jargon.py --port LC-framework`
+  clean. `git status --porcelain` in src clean (integrity gate).
+- The two `cuda-to-rocm` lessons on this branch were read against the code they
+  describe and are correct as written.
