@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "mast3r-slam-nvidia-proprietary-rescan",
+      "kind": "other",
+      "component": null,
+      "summary": "Rescan with the fixed scan_nvidia: thirdparty/mast3r/CHECKPOINTS_NOTICE references the NVIDIA Source Code License for SegFormer (model checkpoints, informational notice). Likely benign for the code port but relevant to weights; needs a person's confirmation.",
+      "refs": [
+        "moat main b336246 (case/wording-proof scan_nvidia)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T17:10:16Z",
+      "decided": null
+    }
+  ]
+}
