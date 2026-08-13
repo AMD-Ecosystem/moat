@@ -518,6 +518,16 @@ def save_record(name, obj, message):
     record is safe to write to a branch, handing an agent a project whose files are
     absent is not. Returns the branch sha when it wrote to a branch, else None."""
     _cur, where = project_record(name)
+    # Recording a fact must not smuggle in a stage move the transition table refuses.
+    # set_state guards the table on the worked-checkout path; this is the only other
+    # path a stage change can travel, so it holds the same line. `not-portable` is
+    # deliberately reachable from anywhere (see STAGE_TRANSITIONS' trailing comment).
+    if _cur is not None:
+        old_stage, new_stage = _cur.get("stage"), obj.get("stage")
+        if (new_stage != old_stage and new_stage != "not-portable"
+                and new_stage not in STAGE_TRANSITIONS.get(old_stage or "unclaimed", set())):
+            raise ValueError(f"{name}: illegal stage move "
+                             f"{old_stage or 'unclaimed'} -> {new_stage}")
     if status_path(name).exists() and writable_here(name, where):
         save_status(name, obj)
         return None
@@ -3818,6 +3828,9 @@ def main(argv=None):
     s.add_argument("name")
     s = sub.add_parser("show")
     s.add_argument("name")
+    sub.add_parser("projects",
+                   help="every project MOAT knows and where its record lives "
+                        "(a project's own branch outranks this checkout)")
 
     s = sub.add_parser("set-deps", help="record the MOAT projects a project depends on")
     s.add_argument("name")
@@ -4213,7 +4226,16 @@ def main(argv=None):
         load_status(args.name)
         print(f"{args.name} status.json valid")
     elif args.cmd == "show":
-        _print_json(load_status(args.name))
+        obj, where = project_record(args.name)
+        if obj is None:
+            print(f"{args.name}: no record on any ref", file=sys.stderr)
+            return 1
+        if where != "local":
+            print(f"show: {args.name} read from its {where} record", file=sys.stderr)
+        _print_json(obj)
+    elif args.cmd == "projects":
+        for n, where in sorted(all_projects().items()):
+            print(f"{n}\t{where}")
     elif args.cmd == "set-deps":
         obj = load_status(args.name)
         obj["depends_on"] = list(args.deps)
