@@ -187,6 +187,37 @@ subproject that compiles with warnings as errors -- googletest does; guard them 
 `if(NOT MSVC)`). Grep for the whole set at once before the first Windows build rather than
 discovering them one failed compile at a time. (HEonGPU)
 
+**Windows is LLP64, so `unsigned long` is 32 bits -- and the dangerous instances are
+inside third-party C APIs, not in the port's own declarations.** Grepping the project for
+`long` finds nothing when the truncation lives in GMP's `mpz_*_ui` family, NTL's
+`conv(ZZ, long)`/`to_long`, or any other library whose "unsigned integer" entry points are
+typed `unsigned long`. On Linux those carry 64 bits and the code is correct; on Windows
+every value above 2^32 is silently cut to its low half, with no warning, because the
+implicit conversion is legal. Crypto, big-integer and modular-arithmetic libraries are
+saturated with this shape.
+
+What makes it expensive is that the symptom looks like a GPU or codegen fault. In HEonGPU
+the moduli reaching `mpz_mul_ui` were 30-55 bits, so every CRT constant was built for the
+wrong modulus chain: fifteen test binaries returned wrong numbers on `windows-gfx1151`
+while the identical source passed on three Linux architectures, one of them the same
+wavefront width. Nothing threw, nothing crashed, and the results were bit-for-bit
+reproducible run to run.
+
+Two things make it cheap to find instead. First, when Windows alone computes wrong values,
+grep for the `_ui`/`_si`/`long` entry points of every C library on the host path *before*
+suspecting the device: `mpz_.*_ui`, `to_long`, `static_cast<long>`, `%lu`. Second,
+bisect host versus device with a ten-line probe rather than by reading kernels -- replicate
+the library's host arithmetic in a standalone `clang-cl` program and check it against
+Python or `__uint128_t` truth, and run the same operations in a trivial kernel. Both coming
+back clean is what proves the fault is in the surrounding host plumbing.
+
+The fix is data-model-independent, not `#ifdef`-ed, so the LP64 result stays bit identical:
+`mpz_import(rop, 1, -1, sizeof(uint64_t), 0, 0, &value)` then `mpz_mul`/`mpz_mod`/
+`mpz_fdiv_q` instead of the `_ui` call, and `NTL::ZZFromBytes`/`NTL::BytesFromZZ` over the
+8-byte little-endian representation instead of `conv(ZZ, long)`/`to_long`. Note that
+`mpz_set_ui(x, 1)` and other small literals are fine -- only values that can exceed 2^32
+matter. (HEonGPU)
+
 **Acquiring a Windows dev package neither TheRock nor vcpkg ships, when the usual
 mirrors are unreachable.** GMP/OpenSSL/ZLIB had no reachable source on this network
 (`ftpmirror.gnu.org`/`ftp.gnu.org`/`gmplib.org` all timed out; `github.com`, `pypi.org`,
