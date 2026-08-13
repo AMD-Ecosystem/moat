@@ -7,15 +7,38 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-08-13T01:15:20Z",
+  "updated_at": "2026-08-13T01:21:43Z",
   "head_sha": "6ac06d0575ec210f8dbfa1123aa890d2a04a9938",
   "depends_on": [],
-  "porting": null,
   "waivers": {},
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 866783897,
   "stage": "review-passed",
   "platforms": {
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "6ac06d0575ec210f8dbfa1123aa890d2a04a9938",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-08-13T01:15:20Z",
+      "updated_at": "2026-08-13T01:15:20Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "state": "completed"
+    },
     "linux-gfx90a": {
       "blocked": false,
       "blocked_reason": null,
@@ -42,34 +65,10 @@
     "linux-gfx1100": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "5d99b8f447895f5b34b35f856e654d65e69b390a",
-      "started_at": "2026-08-08T17:50:20Z",
-      "completed_at": "2026-08-12T00:00:43Z",
-      "updated_at": "2026-08-12T00:00:43Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator",
-      "state": "completed"
-    },
-    "linux-gfx942": {
-      "blocked": false,
-      "blocked_reason": null,
       "validated_sha": "6ac06d0575ec210f8dbfa1123aa890d2a04a9938",
-      "failed_sha": null,
-      "started_at": null,
-      "completed_at": "2026-08-13T01:15:20Z",
-      "updated_at": "2026-08-13T01:15:20Z",
+      "started_at": "2026-08-08T17:50:20Z",
+      "completed_at": "2026-08-13T01:21:43Z",
+      "updated_at": "2026-08-13T01:21:43Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,

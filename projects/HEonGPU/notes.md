@@ -3331,6 +3331,31 @@ cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build -DUSE_HIP=ON \
     -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON \
     -DHEonGPU_BUILD_BENCHMARKS=ON \
     -DCMAKE_INSTALL_PREFIX=agent_space/heongpu-gfx942/prefix
+## Validation 2026-08-13 (linux-gfx1100, Radeon Pro W7800, ROCm 7.2.3) -- completed
+
+Revalidation of `moat-port` at `6ac06d0575ec210f8dbfa1123aa890d2a04a9938` (this
+arch's `validated_sha` was `5d99b8f447895f5b34b35f856e654d65e69b390a`, the round-10
+`-fgpu-rdc` revert moved head). GPU: `rocminfo` reports four "AMD Radeon Pro
+W7800 48GB" (gfx1100, RDNA3/wave32); `rocm-smi`/`/opt/rocm/.info/version` reports
+7.2.3.
+
+`moatlib classify HEonGPU 5d99b8f 6ac06d0` -> `class=mixed arch_independent=False
+inert=False`; `git diff --stat 5d99b8f 6ac06d0` touches exactly two files
+(`cuda_to_hip.h`, `small_ntt.cuh`, the net of the whole guard->RDC->guard
+excursion). This is a real structural change to `small_ntt.cuh` (device
+definitions now behind `#if defined(__CUDACC__) || defined(__HIPCC__)`, with
+always-visible forward declarations added), not a rename or comment reflow, so
+per the carry-forward rule and this branch's own round-10 note ("owe a fresh
+20-suite run... that is evidence, not a substitute for the run") this was a full
+rebuild and real-GPU run, not a carry-forward.
+
+```bash
+cd projects/HEonGPU/src && git checkout moat-port && git merge --ff-only origin/moat-port  # -> 6ac06d0
+for d in thirdparty/GPU-FFT thirdparty/GPU-NTT thirdparty/RNGonGPU; do (cd $d && git checkout -- . && git clean -fdx); done
+rm -rf build
+cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build \
+    -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release \
+    -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON
 cmake --build projects/HEonGPU/src/build -j$(nproc)
 ctest --test-dir projects/HEonGPU/src/build --output-on-failure
 ```
@@ -3406,3 +3431,32 @@ distinct from the earlier gfx90a wave64 evidence which was measured at the
 pre-revert `5d99b8f`. 20/20 reproduced twice from a clean build; no `libgomp`
 in any of 42 built binaries; TFHE gates independently truth-table-checked.
 CUDA gate already recorded at this `head_sha` by gfx90a, not re-run.
+HEonGPU test -- ...`. Build: 0 lines matching `error:`, `libheongpu.a` plus all
+15 test executables plus examples/benchmarks produced. `ctest`: **20/20 passed**,
+run twice back to back (11.65s and 11.47s). `git -C projects/HEonGPU/src
+status --porcelain` empty before and after (submodules show only the
+patch-applied diffs under `ignore = dirty`, as expected).
+
+### CUDA no-regression gate
+
+Already recorded at this exact `head_sha` (`6ac06d0`) by the round-10 session on
+linux-gfx90a (notes.md, "Verification of this round": CONFIGURE rc=0, BUILD rc=0,
+37 CUDA + 44 CXX objects rebuilt, 42 executables linked, 0 lines matching
+`error`). Per the validator's per-head_sha rule, not re-run here.
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --port HEonGPU`: clean, after creating (then deleting) a
+local `main` tracking `origin/main` in the fork clone, same as the prior
+gfx1100 validation required (the tool resolves the range by local branch name).
+Documentation confirmed present and unchanged at this head: `README.md` "AMD
+GPUs (ROCm)" section (`USE_HIP=ON`, `CMAKE_HIP_ARCHITECTURES=gfx90a` example) and
+`docs/getting_started.rst` (ROCm prerequisite, HIP configure line, GPU
+architecture mapping table).
+
+### Verdict
+
+`linux-gfx1100`: **completed** at `6ac06d0575ec210f8dbfa1123aa890d2a04a9938`.
+20/20 reproduced twice from a clean build of the `-fgpu-rdc` revert; CUDA gate
+already recorded at this `head_sha` by another arch, not re-run; jargon and docs
+clean. No regression versus the prior `5d99b8f` completion on this arch.
