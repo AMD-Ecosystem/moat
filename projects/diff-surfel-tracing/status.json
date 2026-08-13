@@ -5,19 +5,16 @@
   "fork_url": "https://github.com/AMD-Ecosystem/diff-surfel-tracing",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
+  "ext_type": "torch-extension",
   "adopted_at": "2026-08-06T06:58:03Z",
-  "updated_at": "2026-08-13T03:50:45Z",
+  "updated_at": "2026-08-13T04:03:34Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-08-13T03:50:45Z"
-  },
+  "porting": null,
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 911002454,
-  "stage": "planning",
+  "stage": "planned",
   "platforms": {
     "linux-gfx1100": {
       "blocked": false,
@@ -49,7 +46,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-08-13T03:50:45Z",
+      "updated_at": "2026-08-13T04:03:34Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,

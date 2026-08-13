@@ -1,0 +1,132 @@
+{
+ "generated_by": "utils/surface.py",
+ "source_sha": "ef6f24be9174",
+ "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+ "cuda": {
+  "files": [
+   "optix_tracer/auxiliary.h",
+   "optix_tracer/backward.cu",
+   "optix_tracer/forward.cu",
+   "optix_tracer/optix_wrapper.cpp",
+   "optix_tracer/optix_wrapper.h"
+  ],
+  "markers": {
+   "device_code": 150,
+   "kernel": 4,
+   "runtime_ptx": 2
+  },
+  "libraries": {},
+  "planner_added": {
+   "why": "The census sees the OptiX device sources but not what makes this project a rewrite rather than a hipify: the OptiX host pipeline, the runtime-PTX build path, and the absence of any translatable CUDA library surface.",
+   "optix_api": {
+    "context": [
+     "optixInit",
+     "optixDeviceContextCreate",
+     "optixDeviceContextDestroy"
+    ],
+    "accel": [
+     "optixAccelComputeMemoryUsage",
+     "optixAccelBuild (OPTIX_BUILD_INPUT_TYPE_TRIANGLES)",
+     "optixAccelCompact (commented out upstream)"
+    ],
+    "module_pipeline_sbt": [
+     "optixModuleCreate (from PTX)",
+     "optixProgramGroupCreate x3",
+     "optixSbtRecordPackHeader x3",
+     "optixPipelineCreate",
+     "optixPipelineSetStackSize",
+     "optixUtilAccumulateStackSizes",
+     "optixUtilComputeStackSizes"
+    ],
+    "device_programs": [
+     "__raygen__ot (forward)",
+     "__raygen__ot (backward)",
+     "__anyhit__ot (forward)",
+     "__anyhit__ot (backward)"
+    ],
+    "trace": [
+     "optixTrace x7",
+     "optixGetPayload x4",
+     "optixIgnoreIntersection x2",
+     "optixGetRayTmax x2",
+     "optixGetPrimitiveIndex x2",
+     "optixGetLaunchIndex x4",
+     "optixGetLaunchDimensions x4"
+    ],
+    "launch": [
+     "optixLaunch x2"
+    ],
+    "note": "OptiX has no HIP analogue; the AMD-native target is HIPRT and the port is a reimplementation against it, not a translation. The SBT/pipeline/program-group surface dissolves entirely (HIPRT has neither); raygen/closesthit/miss collapse into one HIP kernel and __anyhit__ becomes a device filter functor in a hiprtFuncTable."
+   },
+   "runtime_ptx": {
+    "what": "setup.py's CustomBuildExtension.build_extensions shells out to cmake+make after the extension links, compiling optix_tracer/{forward,backward}.cu to PTX via CMake/PTXUtilities.cmake, then copies build/ptx/*.ptx into the installed package. The OptiX device programs never link into _C; optixModuleCreate loads them at runtime.",
+    "rocm_equivalent": "hiprtBuildTraceKernels -- an Orochi/hiprtc JIT of hiprt_tracer/kernels.h staged into the installed package, disk-cached under diff_surfel_tracing/hiprt_cache/. Requires HIPRT_PATH to point at the HIPRT root so HIPRT can also JIT its own BVH-builder kernels."
+   },
+   "cuda_runtime": {
+    "cudaMalloc": 9,
+    "cudaFree": 13,
+    "cudaMemcpy*": 7,
+    "cudaStream/at::cuda::getCurrentCUDAStream": 4,
+    "atomicAdd": 20,
+    "cudaGetDeviceProperties/Count": 2
+   },
+   "absent": "no cuBLAS/cuFFT/cuRAND/cuSPARSE/cuSOLVER/cuDNN, no Thrust/CUB/CUTLASS, no NCCL, no textures or surfaces, no managed or pinned memory, and -- decisively -- no warp intrinsics, no warpSize and no hardcoded 32 anywhere in the device code. The port is wavefront-neutral by inspection; HIPRT selects its own wave size internally (64 on the CDNA arm incl. gfx90a/gfx942, 32 on RDNA)."
+  }
+ },
+ "components": [
+  {
+   "id": "library:optix_tracer_backward",
+   "kind": "library",
+   "where": "optix_tracer/CMakeLists.txt",
+   "note": "PTX target for the OptiX backward device programs (__raygen__ot/__anyhit__ot). Covered on ROCm by the corresponding half of hiprt_tracer/kernels.h, JIT-compiled instead of PTX-compiled; the CUDA target itself stays untouched."
+  },
+  {
+   "id": "library:optix_tracer_forward",
+   "kind": "library",
+   "where": "optix_tracer/CMakeLists.txt",
+   "note": "PTX target for the OptiX forward device programs. Covered on ROCm by the forward half of hiprt_tracer/kernels.h, JIT-compiled instead of PTX-compiled; the CUDA target itself stays untouched."
+  },
+  {
+   "id": "extension:diff_surfel_tracing._C",
+   "kind": "python_extension",
+   "where": "setup.py",
+   "note": "The torch CUDAExtension and the actual deliverable: host glue (trace_surfels.cpp, ext.cpp) plus, on NVIDIA, the OptiX wrapper. surface.py's setup.py regex did not match it because CUDAExtension( is followed by a newline before name=."
+  },
+  {
+   "id": "package:diff_surfel_tracing",
+   "kind": "python_package",
+   "where": "diff_surfel_tracing/__init__.py",
+   "note": "The autograd Function (_TraceSurfels), SurfelTracingSettings and the SurfelTracer nn.Module. Public API consumed by EnvGS and LiDAR-RT; must stay signature-stable. Upstream e0016a2 changed the backward return arity from 10 to 12 tensors, so the port's copy is stale."
+  },
+  {
+   "id": "build:cmake-ptx",
+   "kind": "build_path",
+   "where": "CMakeLists.txt, CMake/PTXUtilities.cmake, CMake/FindOptiX7.cmake, optix_tracer/CMakeLists.txt",
+   "note": "Second build path, invoked from setup.py, producing the OptiX PTX modules. Must keep working on NVIDIA and must not be invoked on ROCm."
+  },
+  {
+   "id": "example:render",
+   "kind": "example",
+   "where": "example/render.py (+ example/utils/*.py, example/requirements.txt)",
+   "note": "The only executable end-to-end use of the tracer in the repository: loads a pretrained 2DGS PLY and a camera path, renders a video. Needs the author's Google Drive archive (file id 1drKlXptpkht0ZVp6Ywh8ZSSXsi8RddKx), so it is optional evidence rather than the gate."
+  },
+  {
+   "id": "harness:validate_tracer_rocm",
+   "kind": "test",
+   "where": "projects/diff-surfel-tracing/validation/validate_tracer_rocm.py (to be written)",
+   "note": "The project ships NO test suite -- no tests/, no CI, no assertions anywhere. The GPU gate therefore has to be authored, and it lives in MOAT rather than the fork because inventing a test framework inside someone else's research repository is not a mergeable change. The EnvGS Stage 2 harnesses that proved this code were written under the gitignored agent_space/ and are effectively lost; that is the mistake this entry exists to stop repeating."
+  }
+ ],
+ "covered": [],
+ "scoped_out": [
+  {
+   "id": "submodule:third_party/optix",
+   "reason": "NVIDIA/optix-dev gitlink, 14 headers of which 9 carry NVIDIA proprietary licence text (intake flagged it; the ruling is a person's). The port neither modifies, redistributes nor derives from them -- it replaces the OptiX path rather than translating it -- and the submodule pointer stays exactly as upstream has it. Nothing here is portable and nothing here is touched."
+  },
+  {
+   "id": "vendored:third_party/hiprt",
+   "reason": "98 files of the HIPRT/Orochi SDK vendored into moat-port during EnvGS Stage 2, including a committed 784 KB hiprt0300164.dll, its import lib, and three unresolvable git-LFS pointer stubs. Not a port surface: it is a third-party dependency that this plan removes from the tree in favour of a pinned submodule plus HIPRT_HOME, mirroring upstream's own third_party/optix pattern. Our four local patches to it are extracted to a patch file and registered as a GPUOpen contribution deferral."
+  }
+ ],
+ "removed_from_floor": []
+}
