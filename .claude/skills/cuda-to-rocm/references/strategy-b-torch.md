@@ -42,6 +42,53 @@ older torch -- so a guard keyed on the wrong axis silently breaks the other plat
 build. That fault class, with the two regressions that produced it, is in
 `fault-classes.md` under "Types, dispatch and platform limits". (aihwkit)
 
+### hipify rewrites a bundled header-only library it can see
+
+torch's hipify walks every `.hpp` under the extension's include dirs into its file set and
+content-rewrites the ones a source pulls in. Point `extra_compile_args` at a bundled GLM (or
+any header-only library vendored in the repo) and hipify mangles it: it copies only `.hpp`
+and `.h`, so the library's `.inl` implementation files are dropped, and it rewrites the
+library's own `__CUDACC__`/`__HIP__` compiler detection, so the library stops marking its
+functions `__device__`. The build then fails inside the third-party headers, which sends you
+looking in the wrong place.
+
+The fix is to leave the library alone rather than to fix up what hipify did. A modern GLM
+already detects `__HIP__` (`glm/simd/platform.h` -> `GLM_COMPILER_HIP`) and compiles verbatim
+under `-x hip`. In `setup.py`, before `setup()`, monkeypatch hipify to skip the directory:
+
+    def _patch_hipify_ignore_glm():
+        import torch
+        if not torch.version.hip:
+            return
+        from torch.utils.hipify import hipify_python
+        orig = hipify_python.hipify
+
+        def hipify_no_glm(*args, **kwargs):
+            kwargs["ignores"] = list(kwargs.get("ignores", ())) + [os.path.join(GLM_DIR, "*"), GLM_DIR + "*"]
+            kwargs["header_include_dirs"] = [
+                d for d in kwargs.get("header_include_dirs", [])
+                if os.path.abspath(d) != os.path.abspath(GLM_DIR)
+            ]
+            return orig(*args, **kwargs)
+
+        hipify_python.hipify = hipify_no_glm
+
+The source keeps including `<glm/...>` through `-I`, resolved against the pristine tree.
+Gate on `torch.version.hip` so the CUDA path returns immediately. `cpp_extension` looks
+`hipify_python.hipify` up as a module attribute at call time, so patching the attribute works
+even though `CUDAExtension` was imported first. (diff-surfel-rasterizations)
+
+### Where the hipified mirrors land depends on the hipify generation
+
+Stale mirrors are a known trap (above), but the clean step has to match the generation, and
+the two do not put the output in the same place. Older hipify wrote `.hip` files beside the
+sources (`cuda_rasterizer/forward.hip`); hipify 2.x renames the DIRECTORY as well
+(`cuda_rasterizer/forward.cu` -> `hip_rasterizer/forward.hip`, headers copied along with it).
+A clean step inherited from an earlier port -- `rm -rf build *.egg-info cuda_rasterizer/*.hip`
+-- therefore leaves a whole stale hipified tree behind and you rebuild code you did not edit.
+Remove the renamed directory too, and add it to `.gitignore` thinking rather than committing
+it. (diff-surfel-rasterizations)
+
 ### Dependency environment for PyTorch projects (the install path is part of the port)
 
 For a PyTorch-ecosystem project the in-repo `.cu` (above) is only half the bring-up: the project also `pip install`s a dependency graph that defaults to CUDA wheels, and getting a ROCm environment that actually EXERCISES your ported code is its own recurring task. The failure modes repeat across the whole 3D-vision / point-cloud / VLA / world-model space, so they generalize. (AMD's rocm3d -- Andy Luo and David Li, 2026, andyluo7.github.io -- catalogs these as reusable recipes for that domain; the dependency-family patterns below are the transferable core. Note the model: these are environment substitutions to get a project RUNNING on ROCm, not upstreamed source ports -- MOAT's deliverable is still the in-repo HIP port + multi-arch PR, so confirm your ported code is the code under test, not a swapped-in prebuilt wheel.)

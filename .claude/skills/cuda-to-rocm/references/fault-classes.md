@@ -303,6 +303,35 @@ Fix additively -- it helps the CUDA build too. (LC-framework)
 injected with `-include`, object files are NOT rebuilt: wipe them manually or you validate
 stale code and get a silent false pass. (lc0)
 
+**nvcc's EDG front end accepts a split launch chevron; clang does not.** `kernel << <grid,
+block >> >(args)` -- spaces inside the triple angle brackets -- compiles under nvcc and is a
+hard parse error under hipcc/clang, which lexes `<<<` as a single token. It is common in
+Inria-derived 3DGS/2DGS rasterizers, where every launch site is written that way. Respace to
+`<<<grid, block >>>`; the CUDA path is unaffected because this is whitespace inside a token
+sequence nvcc already accepts. Expect one edit per launch site, not per file.
+(diff-surfel-rasterizations)
+
+**Three CUDA spellings that simply do not exist in HIP, all cheap to guard.** They travel
+together in the same family of projects, so check for all three at once:
+`#include "device_launch_parameters.h"` (no such header; `threadIdx` and friends are
+intrinsic under hipcc), `#include <cooperative_groups/reduce.h>` (HIP's cooperative groups
+has no `reduce.h`; safe to drop when the code uses only `this_grid()`,
+`this_thread_block()` and `thread_rank()`, so grep for `cg::reduce`, `tiled_partition` and
+`coalesced_threads` before guarding), and `__trap()` (not declared by HIP's device runtime;
+`#define __trap __builtin_trap` under `USE_ROCM`, which is what HIP's own `abort()` is).
+Guard each with `#if !defined(USE_ROCM)` / `#if defined(USE_ROCM)` so the CUDA path is
+untouched. (diff-surfel-rasterizations)
+
+**An uninitialised header-only submodule fails as a HIP error, not as a missing file.**
+When a project bundles GLM (or Eigen, or any header-only library) as a submodule and the
+clone did not recurse, the `-I` path still exists and is simply empty, so the compiler falls
+back to the system copy. A system GLM predating HIP support does not recognise `__HIP__` as
+a device compiler, so every `glm::dot`/`glm::length` call from device code is reported as
+"call to __host__ function from __device__ function" and `operator[]` becomes const -- dozens
+of errors that read like a broken port and are a missing checkout. Note the include paths in
+the diagnostic: if they point at `/usr/include`, run `git submodule update --init
+--recursive` before changing a single line of source. (diff-surfel-rasterizations)
+
 **MSVC-only upstreams accept code that clang and gcc reject**, so the HIP build (and the
 CUDA build under nvcc) is a stricter compiler than the project has ever seen. Velvet carried
 a member template whose parameter pack shadowed the class pack -- accepted by MSVC, rejected
