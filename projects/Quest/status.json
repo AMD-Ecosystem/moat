@@ -10,19 +10,18 @@
   "updated_at": "2026-08-13T23:35:10Z",
   "head_sha": "9be60fc3997fa1ee4c81ae0332866b0be961346a",
   "depends_on": [],
-  "porting": null,
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 815507746,
   "stage": "review-passed",
   "platforms": {
-    "linux-gfx90a": {
+    "linux-gfx1100": {
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "c1d7fff4e85cd391af1249fdaf8efa95a1737d9a",
-      "started_at": "2026-06-04T21:24:50Z",
-      "completed_at": "2026-08-09T15:34:51Z",
-      "updated_at": "2026-08-09T15:34:51Z",
+      "started_at": "2026-08-08T17:49:02Z",
+      "completed_at": "2026-08-08T19:23:28Z",
+      "updated_at": "2026-08-08T19:23:28Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -39,13 +38,13 @@
       "last_agent": "validator",
       "state": "completed"
     },
-    "linux-gfx1100": {
+    "linux-gfx90a": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "c1d7fff4e85cd391af1249fdaf8efa95a1737d9a",
-      "started_at": "2026-08-08T17:49:02Z",
-      "completed_at": "2026-08-08T19:23:28Z",
-      "updated_at": "2026-08-08T19:23:28Z",
+      "validated_sha": "ac7382c78aa21fe51db761d691e320bfb7a87217",
+      "started_at": "2026-06-04T21:24:50Z",
+      "completed_at": "2026-08-13T22:44:12Z",
+      "updated_at": "2026-08-13T22:44:12Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
