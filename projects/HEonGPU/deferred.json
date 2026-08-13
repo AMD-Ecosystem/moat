@@ -12,7 +12,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-08-11T15:34:44Z",
-      "decided": null
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-08-13T19:29:57Z"
+      }
     },
     {
       "id": "heongpu-tfhe-torus32-saturates",
