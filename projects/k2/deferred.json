@@ -12,7 +12,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-06-07T18:21:59Z",
-      "decided": null
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-08-13T18:06:10Z"
+      }
     },
     {
       "id": "k2-torch-decoder-kaldifeat",
