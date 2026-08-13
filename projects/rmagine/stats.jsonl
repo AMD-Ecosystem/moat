@@ -114,3 +114,6 @@
 {"kind":"session","ts":"2026-08-13T01:45:12Z","epoch":1786585512.161019097,"event":"start","platform":"linux-gfx1100"}
 {"kind":"phase","ts":"2026-08-13T01:46:02Z","phase":"compile","seconds":9.652,"exit":0,"cmd":"bash -c cd projects/rmagine/src && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ -DRMAGINE_EMBREE_DISABLE=ON -DRMAGINE_OPTIX_DISABLE=ON -DRMAGINE_VULKAN_DISABLE=ON -DRMAGINE_VULKAN_CUDA_INTEROP_DISABLE=ON -DRMAGINE_OUSTER_DISABLE=ON -DRMAGINE_BUILD_TESTS=ON -DRMAGINE_BUILD_TOOLS=OFF > /tmp/claude-1000/-var-lib-jenkins-moat/1248d4af-2f04-4ba2-bc97-6169bd6f152b/scratchpad/cfg.log 2>&1 && cmake --build build -j"}
 {"kind":"phase","ts":"2026-08-13T01:46:09Z","phase":"test","seconds":2.169,"exit":0,"cmd":"bash -c cd projects/rmagine/src/build && HIP_VISIBLE_DEVICES=0 ctest --output-on-failure -R \"^cuda_\""}
+{"kind":"session","ts":"2026-08-13T01:49:22Z","epoch":1786585762.360788508,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-13T01:50:36Z","epoch":1786585836.697613984,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-13T01:54:37Z","epoch":1786586077.881211708,"event":"end","platform":"linux-gfx1100"}

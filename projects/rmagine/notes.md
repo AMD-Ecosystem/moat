@@ -2492,3 +2492,79 @@ comment, not only in the record, because that comment is the copy that ships.
 
 Still open for a person, unchanged: `c99f2fc` titled "[ROCm] WIP: ...", two
 "Stage 2:" commit titles, and the README saying nothing about `USE_HIP`.
+
+## Review 2026-08-13c (reviewer, linux-gfx1100, comment-reword round) -- REVIEW PASSED
+
+Scope: `git diff e7a7b27...1213551` on AMD-Ecosystem/rmagine `moat-port` -- one file,
+`tests/cuda/public_headers.cpp`, 11 insertions / 7 deletions -- plus the MOAT-side round
+(`cd739dd`: the deferral rescope and the `cuda-to-rocm` fault-classes edit). The base
+e7a7b27 was reviewed in "## Review 2026-08-13 (reviewer, linux-gfx1100, delta round)" and
+is not re-litigated here. No upstream PR (`pr-state` = none), so the working branch is
+`moat-port`; the clone at `projects/rmagine/src` is clean at 1213551. Every claim below was
+re-derived on this host (g++ 13.3.0, ROCm 7.2 at `/opt/rocm`, CUDA 12.8 headers at
+`/opt/conda/envs/cuda-12.8/targets/x86_64-linux/include`), not taken from the round's account.
+
+No findings. The single blocking finding of the previous review is closed: the false
+"includable ... before any standard header and in any order" invariant is gone, and what
+replaced it is true.
+
+### Verified, no action (checked here, not taken from the round's account)
+
+- The delta is comment-only, mechanically, not by inspection. Every changed line in
+  `git diff e7a7b27 HEAD` begins with `//` (0 non-comment changed lines), and the
+  preprocessed TU is byte-identical across the two revisions (`g++ -std=c++17 -E -P` with
+  `-I/opt/rocm/include -D__HIP_PLATFORM_AMD__=1`, `cmp` clean). So moatlib's `comment-only`
+  classification and the automatic carry-forward of linux-gfx942's e7a7b27 evidence to
+  1213551 are both correct; no compiled output can differ.
+- The new comment is accurate on both backends. One TU per header, `g++ -std=c++17
+  -fsyntax-only`, over all 16 installed headers: exactly two fail, identically on the ROCm
+  path and the CUDA-12.8 path -- `math/linalg.cuh:20,23,35...` (`'__device__' does not name
+  a type`; it includes only `rmagine/math/types.h`, no runtime header) and
+  `util/cuda/CudaHelper.hpp:51,64` (`'runtime_error' is not a member of 'std'`). The other
+  14 are clean on both paths. "Two of these headers" is the right count, and the two named
+  are the right two.
+- "both predating this change" holds for each. `git log 6b93e86..HEAD --
+  .../math/linalg.cuh` is empty. `CudaHelper.hpp` IS touched by the port (one line,
+  `<cuda_runtime.h>` -> `<rmagine/util/cuda/cuda_to_hip.h>`), so I compiled the UPSTREAM
+  6b93e86 copy standalone against the CUDA 12.8 headers: it fails at the same 51 and 64
+  with the same diagnostic. The include swap is not what breaks it.
+- The test really is a host-C++ gate, so "compiles with a host C++ compiler" is not an
+  overclaim in this build. `public_headers.cpp` is added as a plain `add_executable`
+  (tests/cuda/CMakeLists.txt:63-66) with no `LANGUAGE HIP` and no
+  `set_source_files_properties`; only `${RMAGINE_CUDA_SRCS}` get `LANGUAGE HIP`
+  (src/rmagine_cuda/CMakeLists.txt:113), and nothing overrides `CMAKE_CXX_COMPILER`
+  anywhere in the tree, so this TU is compiled by the ordinary CXX compiler.
+- Coverage claim intact: `install(DIRECTORY include/rmagine ...)` at
+  src/rmagine_cuda/CMakeLists.txt:226-230 installs exactly 16 headers, and
+  public_headers.cpp:14-29 lists all 16.
+- One benign imprecision, deliberately NOT sent back: public_headers.cpp:4-5 says "the rest
+  of the suite always reaches these headers through some other include". That is true for
+  15 of the 16, but `tests/cuda/math_reduction_correctness.cpp:8` has
+  `<rmagine/math/memory_math.cuh>` as its first include with only comments above it, so
+  that one header is already gated standalone elsewhere. The clause is rationale prose, its
+  substance (no other test gates the installed SET from a bare TU) is true, it predates
+  this delta in the same form, and correcting it would cost another head move. Fold it in
+  only if the file is touched again for another reason.
+- Deferral bookkeeping is now honest. `projects/rmagine/deferred.json` diff touches
+  `summary` and `refs` only; `kind`, `status` ("open") and `decided` are untouched, so the
+  defer-vs-now ruling on the per-header gate plus the two upstream header fixes is still
+  unmade and still a person's. The rescoped summary no longer prices the comment reword
+  into the deferred item.
+- The `cuda-to-rocm` fault-classes edit (references/fault-classes.md:312-318) is accurate
+  against the code it describes and is transferable: the overclaim to avoid lives in the
+  test file's own comment, not only in the record.
+- Commit hygiene on 1213551: title `[ROCm] Describe what the public header test actually
+  checks`, 59 characters; AI assistance disclosed; Test Plan with literal fenced commands;
+  no `Co-Authored-By` and no noreply trailer; ASCII only; single author matching the rest of
+  the branch; no AMD-internal account references. `utils/jargon.py --port rmagine`: clean.
+  `utils/prose.py` on the commit body: clean. Fork working tree clean at 1213551, which
+  matches `head_sha`.
+- Fault classes unchanged by this delta: it touches no device code and no build file, so
+  the wave-size fix in `src/rmagine_cuda/src/math/statistics.cu:43-72` (arch-unified full
+  `__syncthreads` tree under HIP, CUDA warp tail intact), the OOB, RAII and library-swap
+  findings all stand exactly as validated at 9e642a6/e7a7b27.
+
+Still open for a person, unchanged by this round: `c99f2fc` is titled "[ROCm] WIP: ...",
+two commits are titled "Stage 2:", and the README says nothing about `USE_HIP`. The four
+platforms still on `validated_sha` 9e642a6 (windows-gfx1201, windows-gfx1101,
+linux-gfx90a, linux-gfx1100) still owe their revalidation at the current head.

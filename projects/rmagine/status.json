@@ -7,13 +7,13 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-06T06:58:03Z",
-  "updated_at": "2026-08-13T01:48:29Z",
+  "updated_at": "2026-08-13T01:54:37Z",
   "head_sha": "1213551f14f64c92c08048f377034b1ee362659d",
   "depends_on": [],
   "waivers": {},
   "license_spdx": "BSD-3-Clause",
   "upstream_repo_id": 467155160,
-  "stage": "ported",
+  "stage": "review-passed",
   "platforms": {
     "windows-gfx1201": {
       "state": "completed",
@@ -140,7 +140,7 @@
       "validated_sha": "9e642a6a623a4871544193f5c5d078789bd630f4",
       "started_at": "2026-08-12T20:25:20Z",
       "completed_at": "2026-08-12T21:15:15Z",
-      "updated_at": "2026-08-13T01:48:29Z",
+      "updated_at": "2026-08-13T01:54:37Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
