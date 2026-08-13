@@ -18,9 +18,20 @@
       "component": "kernels/include/hip_compat/flashinfer (cp_async.cuh not shimmed)",
       "summary": "PORT DEFECT (supersedes quest-gfx1151-decode-attn-wrong, which wrongly blamed ROCm). Under HIP __CUDACC_VER_MAJOR__ is undefined, so FLASHINFER_CP_ASYNC_ENABLED is off and cp_async commit_group/wait_group compile to empty, leaving the decode kernel 2-stage smem pipeline with no ordering. Races at >=4 wavefronts per block: wrong on gfx1151, LATENT on gfx90a/gfx1100 which currently pass by scheduling luck. Proven: num_stages_smem=1 gives 121/121; bdz 1/2/4 pass, bdz=8 fails. Fix = shim cp_async.cuh, or force single-stage on the HIP path",
       "refs": [],
-      "status": "open",
+      "status": "done",
       "upstream_issue": null,
       "created_at": "2026-08-13T22:29:34Z",
+      "decided": null
+    },
+    {
+      "id": "quest-decode-single-block-path-broken",
+      "kind": "other",
+      "component": "kernels/include/decode/decode_attn.cuh (non-partitioned decode path)",
+      "summary": "FIXED in 9be60fc. The sparse decode kernel's single-block launch shape is broken: it runs with gridDim.x==1 where the slice-length expression (batch_idx == gridDim.x-1 ? last_page_len : page_size) always picks last_page_len, collapsing the block's KV slice. Only reachable when num_kv_heads saturates the occupancy grid, i.e. on low-CU parts -- gfx1151 (20 CUs) hit it, gfx1100 (70) and gfx942 (304) never did. Correcting that one expression is NOT sufficient; the path has at least one further defect, so it is disabled rather than repaired. Left open for a porter who wants to repair and re-enable it",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T23:34:36Z",
       "decided": null
     }
   ]

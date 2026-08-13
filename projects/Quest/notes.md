@@ -963,102 +963,97 @@ exactly the ones that run `BatchDecodeWithPagedKVCache` -- the flashinfer-derive
 kernel, and the only one reached through the `kernels/include/hip_compat/flashinfer`
 shims (`math.cuh`, `vec_dtypes.cuh`).
 
-### Root cause: cp_async is a no-op under HIP, so the 2-stage pipeline races
+### Root cause: the single-block decode path is broken (FIXED, 9be60fc)
 
-**Found. This is a port defect, not an architecture fault, and it is latent on
-the Linux platforms that currently read `completed`.**
+**An earlier section of this file blamed no-op `cp_async` primitives and a
+multi-wavefront race. That was wrong.** It is true that hipcc does not define
+`__CUDACC_VER_MAJOR__`, so `commit_group`/`wait_group` compile to nothing -- but
+that is not what breaks this kernel, and every "fix" derived from it failed:
+adding a real `__syncthreads()` to `wait_group` changed nothing (48 failed,
+byte-identical). The bdz and num_stages_smem experiments that pointed there were
+reading a shadow: both knobs change `smem_size`, `smem_size` changes occupancy,
+and occupancy is what selects the launch shape.
 
-`flashinfer/cp_async.cuh` gates its whole implementation on
+The sparse decode has two launch shapes. The **split** shape gives each block a
+slice of the pages and merges partial states afterwards. The **single-block**
+shape hands one block the whole range, and is chosen when
 
 ```
-#if (__CUDACC_VER_MAJOR__ >= 11)
-#if (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 800))
-#define FLASHINFER_CP_ASYNC_ENABLED
-#endif
-#endif
+batch_size * num_kv_heads >= max_grid_size     // = blocks_per_cu * cu_count
 ```
 
-`__CUDACC_VER_MAJOR__` is not defined by hipcc (verified with a probe on this
-host), so `FLASHINFER_CP_ASYNC_ENABLED` is off and `cp_async::commit_group()`
-and `cp_async::wait_group<N>()` compile to **empty**, while `pred_load` falls
-back to synchronous copies. The port shimmed `math.cuh` and `vec_dtypes.cuh` in
-`kernels/include/hip_compat/flashinfer/` but never `cp_async.cuh`, so the decode
-kernel's software-pipelined prefetch keeps its double-buffered structure while
-losing the ordering primitives that structure depends on. The result is a race
-between threads still computing on one smem stage and threads overwriting it.
+The single-block shape is broken. It launches `dim3 nblks(batch_size,
+num_kv_heads)` so `gridDim.x == 1`, and the kernel derives its slice length from
 
-### The evidence chain, each link tested separately
+```
+(batch_idx == gridDim.x - 1) ? paged_kv.last_page_len : paged_kv.page_size
+```
 
-| experiment | result |
-|---|---|
-| `torch.cuda.synchronize()` after decode | clean -- no swallowed launch failure |
-| same inputs run twice | bit-identical -- deterministic, not garbage memory |
-| KV cache read back after `append_kv` | **byte-exact**, 262144/262144 values, key vector at page 0 slot 0 maxdiff 0.00000 |
-| shim primitives on gfx1151 (bdx=16 butterfly reduce, half2 bitcast, half2 `shfl_xor`, `exp2`/`rcp`) | **all correct**, 0/32 and 0/64 wrong |
-| `-fno-strict-aliasing` rebuild | unchanged (rules out the shim's pointer-cast punning) |
-| device `-O0` rebuild | unchanged (rules out an optimiser bug) |
-| output vs contiguous KV subsets, strided per-`tz` subsets, head permutations, k/v swaps | no match; cosine similarity to reference 0.13 |
-| explicit `__syncthreads()` added in `sync_state` | unchanged (rules out a plain missing barrier there) |
-| dynamic LDS > 32 KB probe (8 K -> 64 K) | all correct -- LDS size is NOT the limit |
-| **`num_threads` forced so `bdz`=1 / 2 / 4** | **PASS, PASS, PASS** |
-| `bdz`=8 (the default, 128 threads = 4 wavefronts) | **FAIL** |
-| **`num_stages_smem = 1` with `bdz`=8** | **all 121 in-scope tests PASS** |
+which is written for the split shape, where only the final slice ends on a
+partial page. With one block that test is always true, so the slice length
+collapses to the trailing page length of the whole cache. The caller passes
+`kv_indices_without_last` -- the trailing partial page already removed -- so the
+value is unrelated to what the block should read.
 
-Single-stage passes and two-stage fails at the same block shape, with correct
-inputs and correct primitives. That isolates the fault to the pipeline itself.
-`bdz` <= 4 passing is the race window narrowing, not a different bug.
+Measured directly with in-kernel `printf`, `kv_len=17`:
 
-### What this means for the other platforms
+| config | gridDim.x | `batch_idx==gridDim.x-1` | `cur_last_page_len` | `kv_chunk_len` |
+|---|---|---|---|---|
+| split (ns=1) | 2 | false | page_size 16 | **16** correct |
+| single (ns=2) | 1 | **true** | last_page_len 1 | **1** wrong |
 
-linux-gfx90a and linux-gfx1100 are `completed` on a build that contains this
-race. They pass by scheduling luck, not because the code is correct there -- the
-no-op `commit_group`/`wait_group` are platform-wide, not gfx1151-specific. Their
-results should not be read as evidence that the pipeline is sound.
+A 577-token sequence attends over 1 position instead of 576.
 
-### Which fix -- option 1 was tested and REFUTED
+### Why only this GPU
 
-The two candidate fixes are not equivalent. Option 1 (shim `cp_async.cuh` so
-`wait_group<N>()` becomes a real `__syncthreads()`) **does not work**, by
-inspection and by experiment:
+`max_grid_size = blocks_per_cu * cu_count`, and these shapes need
+`1 * 32 = 32` blocks:
 
-- Every `wait_group` call site is already immediately followed by `block.sync()`
-  -- lines 356/357, 574/575, 608/609, 628/629. Two adjacent barriers are one
-  barrier, so a `__syncthreads()` inside `wait_group` is redundant by
-  construction.
-- Applied it anyway (`#else __syncthreads();` in the fallback branch of
-  `wait_group`) and rebuilt: **48 failed, unchanged**, identical to the
-  untouched build.
+| GPU | CUs | blocks/CU @36864 B smem | max_grid | path taken |
+|---|---|---|---|---|
+| gfx1151 (APU) | 20 | 1 | 20 | **single-block -- broken** |
+| gfx1100 (W7800) | 70 | 1 | 70 | split -- fine |
+| gfx942 (MI300X) | 304 | 1 | 304 | split -- fine |
 
-So the missing ordering is NOT at the `wait_group` call sites, and giving those
-no-ops meaning fixes nothing. Within a single iteration the loop already
-separates each buffer's read from its write with `block.sync()`; the defect is
-in the multi-stage state machine itself, and I did not localise the exact racing
-access beyond that.
+So this is a **CU-count-dependent latent defect**, not an RDNA3.5 fault, not a
+compiler bug, and not a race. The larger parts never execute the broken path,
+which is why they validated clean. Their results are sound -- the earlier claim
+in this file that they "pass by scheduling luck" was part of the wrong diagnosis
+and is withdrawn.
 
-**Recommended fix: `num_stages_smem = 1` on the HIP path** (proven: 121/121
-in-scope tests pass at the default `bdz`=8). The argument is not merely that it
-works:
+### Fix (9be60fc)
 
-- **A software pipeline has nothing to overlap here.** Its entire purpose is to
-  hide async DMA latency behind compute. With `FLASHINFER_CP_ASYNC_ENABLED` off,
-  `pred_load` is a plain synchronous copy, so stage N+1's load blocks exactly
-  like stage N's would. The second stage buys zero latency hiding on HIP.
-- **It costs occupancy.** 36864 bytes of LDS per block versus 20480 for a single
-  stage -- a 44% reduction, on a part with 65536 bytes total. The double
-  buffering is paying LDS for a benefit that does not exist on this path.
-- It keeps the change to one guarded constant, leaves the CUDA path on two
-  stages, and touches no kernel logic.
+Take the split path unconditionally. Correcting the `cur_last_page_len`
+expression alone was tried and is **not** sufficient -- with it applied,
+`kv_chunk_len` reads the correct 576 and the tests still fail, so the path has at
+least one further defect. Disabling it is the honest change; repairing and
+re-enabling it is registered as `quest-decode-single-block-path-broken`.
 
-Gate it on the HIP path (`#ifdef __HIP_PLATFORM_AMD__` / `USE_HIP`) so the
-NVIDIA build keeps its real `cp.async` pipeline and stays byte-identical.
+On a GPU where the old condition was false this changes nothing at all, so
+gfx1100 and gfx942 behaviour is untouched.
 
-The honest caveat: single-stage removes the multi-buffer state machine rather
-than repairing it, so it eliminates the defect by construction rather than by
-identifying the exact racing access. Anyone wanting the two-stage path on AMD
-would first have to implement genuine async copies (`llvm.amdgcn.load.to.lds`
-and friends), which is a real engineering project, not a shim, and is well
-outside a minimal port.
+### Result: 121/121, all in-scope suites
 
-Not applied here: it changes kernel configuration for every platform, so it
-wants a porter's commit and review, and it will require revalidating the Linux
-arches -- the right outcome, since their current pass rests on the race.
+```
+python -m pytest quest/tests/test_rope.py quest/tests/test_estimate.py   quest/tests/test_decode_attention.py quest/tests/test_approx_attention.py -q
+# 121 passed
+```
+
+| suite | expected | windows-gfx1151 |
+|---|---|---|
+| test_rope.py | 64 | **64 passed** |
+| test_estimate.py | 9 | **9 passed** |
+| test_decode_attention.py | 6 | **6 passed** |
+| test_approx_attention.py | 42 | **42 passed** |
+
+Matches the linux-gfx1100 / linux-gfx90a reference exactly. Swept `kv_len` over
+17..1541: peak absolute error **1.2e-4** (fp16 rounding) and output/reference
+standard-deviation ratio **1.000** at every length, against 1.0-4.0 absolute
+error and ratios 0.78-6.57 before the fix.
+
+`test_topk.py` and `test_prefill_attention.py` remain scoped out and fail with
+`AttributeError` on absent symbols -- the recorded expected shape, unchanged.
+
+CUDA no-regression gate: not run (Windows host, no CUDA toolkit). Owed at this
+head_sha by whichever Linux arch revalidates first; the change is a host-side
+launch decision, compiled on both paths.
