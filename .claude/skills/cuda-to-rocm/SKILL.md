@@ -131,6 +131,13 @@ wave64, wave32, windows -- satisfied by any arch carrying that attribute. Also c
 CUDA path with nvcc as a no-regression gate: an additive ROCm port must leave the CUDA
 build a pure passthrough. `references/validation.md`.
 
+## Keeping an open PR mergeable
+
+Upstream moves while a PR is in review. Sync with a MERGE of upstream's default branch,
+never a rebase on a published branch, and treat the clean auto-merge as the risk: upstream
+writes new code against the surfaces the port multiplexed (per-vendor backends, platform
+predicates), so it lands the NVIDIA half only. `references/upstream-sync.md`.
+
 ## Writing it up
 
 Commit messages, PR bodies and code comments go to upstream maintainers who do not know
