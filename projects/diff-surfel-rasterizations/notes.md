@@ -627,8 +627,10 @@ carries `scale=3.0` and the uniform "no gradient is identically zero" assertion 
   the cross-variant test at no extra render. `out_weight` likewise depends only on opacity and
   geometry, so it agrees across the whole `wet` family to 1.9e-6 (not bit-identical: it is an
   `atomicAdd` over pixels, so the summation order follows the grid shape). New
-  `test_out_weight_matches_wet_reference` plus a per-variant plausibility test that also
-  asserts a culled surfel (`radii == 0`) accumulates exactly zero weight.
+  `test_out_weight_matches_wet_reference` plus a per-variant plausibility test. (Correction,
+  see the fix round of `7d6efdc` -> `f088679`: as written in this round the culled-surfel
+  clause of that plausibility test could not execute -- `~visible` was empty in the committed
+  scene, so nothing was asserted. It executes from `f088679` on.)
 
 ### 6-9. Smaller items
 
@@ -780,3 +782,73 @@ Correct the fix-round sentence above when you do.
 `ported` rather than `delta-ported` is the right state for this round: `status.json` carries no
 `fix` block and there is no upstream PR, so `moat-port` itself was amended and the review scope
 is the whole `main...HEAD` diff, not a delta on a published tip.
+
+## Fix round 2026-08-13 (linux-gfx942), `7d6efdc` -> `f088679`
+
+The single review item applied: the culled-surfel weight assertion is now non-vacuous. Same
+environment (MI300X gfx942, ROCm 7.14.60850, torch 2.14.0a0+git7d05abc, hipify 2.0.0,
+`PYTORCH_ROCM_ARCH=gfx942`). **No rebuild**: the change touches `tests/test_variants.py` only,
+no kernel, build or packaging file, so the installed modules are the ones the `7d6efdc` clean
+rebuild produced (449.6 s, exit 0, 0 warnings). Suite after the change: **136 passed,
+1 skipped in 7.25 s** -- unchanged count, since the fix strengthens an existing test rather
+than adding one.
+
+### The fix
+
+`test_out_weight_is_plausible` now renders its own copy of the scene with the first
+`CULLED_SURFELS = 8` surfels moved to `means3D[:8, 2] = -1.0`, i.e. behind the camera, so
+`in_frustum` fails at `forward.cu:188` and `radii[idx]` keeps the 0 written at `forward.cu:183`.
+`make_scene` is untouched, exactly as the review required -- the cross-variant comparisons, the
+finite-difference slopes and the `others` bit-identity are all calibrated against it, and the
+mutation is a `.clone()` on a shallow `dict()` copy of the scene, so nothing leaks into any
+other test. Two guards precede the zero-weight assertion: `culled_count > 0` (fails loudly if a
+future scene change makes the check vacuous again) and `culled_count >= CULLED_SURFELS` (fails
+if only some of the moved surfels are actually rejected).
+
+### The assertion demonstrably executes
+
+Measured on gfx942 at `f088679`, outside the suite, for `-wet`, `-wet-abs` and `-wet-ch26`:
+
+| quantity | before (`7d6efdc`) | after (`f088679`) |
+| --- | --- | --- |
+| `P` | 4000 | 4000 |
+| `culled = (radii == 0).sum()` | **0** | **8** |
+| culled indices | -- | `[0..7]`, exactly the moved ones |
+| `weight[culled]` unique values | -- | `[0.0]` (exactly zero, not merely small) |
+
+Liveness checked two ways rather than assumed:
+
+- injecting `1e-7` into one culled row makes `(weight[:, 0][culled] == 0).all()` false, so the
+  assertion has real discriminating power at the smallest perturbation;
+- forcing `CULLED_SURFELS = 0` (simulating a scene change that stops culling anything) makes
+  the test fail with `nothing was culled, so the weight check below is vacuous` instead of
+  passing silently -- which is the failure mode this round is fixing, now itself under test.
+
+Commands:
+
+```
+python -m pytest tests/test_variants.py -k out_weight -v   # 15 passed, 122 deselected in 3.40 s
+python -m pytest tests/test_variants.py -q                 # 136 passed, 1 skipped in 7.25 s
+```
+
+### Amended again, deliberately
+
+`validated_sha` is still null on both platform rows, `status.json` carries no `fix` block and
+there is no upstream PR, so `moat-port` is not frozen and nothing is orphaned. The change is a
+test-file edit that belongs to the tests commit, so `7d6efdc` was amended rather than appended
+to; its body gains one paragraph describing the culling check. New tests-commit sha `f088679`;
+the build commit `d4bb1cb` is untouched, so the branch stays at the same two commits. The
+pre-amend tip is kept locally as `backup-review-7d6efdc` and was not pushed, matching the
+`backup-review-5d567f6` convention of the previous round. `--force-with-lease` only, pinned to
+the expected `7d6efdc`.
+
+### Gates
+
+- `python3 utils/jargon.py --port diff-surfel-rasterizations`: clean. `utils/prose.py` clean on
+  the amended body; title unchanged at 52 chars, `[ROCm]`-prefixed, AI assistance disclosed, no
+  `Co-Authored-By`.
+- `git -C projects/diff-surfel-rasterizations/src status --porcelain` empty;
+  `origin/moat-port` at `f088679`.
+- AMD copyright and author lines untouched -- still a person's call.
+- No lesson here is portable to another project: the vacuous-assertion trap is generic test
+  hygiene rather than anything CUDA-to-HIP, so nothing was promoted to the skill this round.
