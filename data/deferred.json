@@ -86,7 +86,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-06-09T17:30:40Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-13T18:38:31Z"
+      }
     },
     {
       "id": "opencv-cudaimgproc-npp-color-hist",
@@ -98,30 +102,6 @@
       "status": "done",
       "upstream_issue": null,
       "created_at": "2026-06-11T02:26:05Z",
-      "decided": null
-    },
-    {
-      "id": "migraphx-dynamic-concat-codegen",
-      "kind": "rocm-bug-report",
-      "project": null,
-      "component": "migraphx",
-      "summary": "MIGraphX dynamic-shape compile fails on ResNet-50: fused concat+pointwise JIT kernel generated with wrong arity (needs >=7 args, 4 provided) on gfx90a/ROCm 7.2.1/MIGraphX 2.15. Fixed-batch compiles fine; trivial dynamic CNN works. Reproducer+writeup: findings/migraphx-trt-shim-gaps/. Blocks dynamic batch on concat-heavy real models in trt-shim-rocm.",
-      "refs": [],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-12T14:15:26Z",
-      "decided": null
-    },
-    {
-      "id": "migraphx-dynamic-offloadcopy-false-crash",
-      "kind": "rocm-bug-report",
-      "project": null,
-      "component": "migraphx",
-      "summary": "MIGraphX segfaults evaluating a dynamic-dim program compiled with offload_copy=false: crash in op::select_module::compute -> shape::operator== (dynamic dispatch). offload_copy=true dynamic works; offload_copy=false static works; only dynamic+offload_copy=false crashes. Forces trt-shim-rocm to keep dynamic engines on the non-graph-capturable offload_copy=true host-staging path (static engines use offload_copy=false zero-copy + HIP graph capture). gfx90a/ROCm 7.2.1/MIGraphX 2.15. Repro: compile any dynamic-batch ONNX with offload_copy=false, eval.",
-      "refs": [],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-12T16:22:50Z",
       "decided": null
     },
     {
