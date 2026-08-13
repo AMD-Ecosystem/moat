@@ -76,6 +76,31 @@ files changed), leaving the `.cu`/`.cuh` tree byte-identical to upstream. That w
 behaviour-preserving: bit-identical GPU results, and all 10 device code objects byte-identical
 across two architectures.
 
+### The shim header is mandatory, not just tidier, when the file is vendored NVIDIA code
+
+A project that vendors `helper_cuda.h`/`helper_string.h` from the CUDA samples is carrying a
+file whose header says "Please refer to the NVIDIA end user license agreement (EULA) ... Any
+use, reproduction, disclosure, or distribution of this software ... outside the terms of the
+EULA is strictly prohibited." Adding a `#if defined(USE_HIP)` branch INSIDE that file makes
+the port's own diff a derivative modification of NVIDIA-proprietary-marked code, which is a
+licence problem no amount of correct HIP is worth. plvs shipped exactly that for two months --
+41 lines of `check()`/`checkCudaErrors` inside the vendored `include/cuda/helper_cuda.h`, and
+the deleted block had mirrored NVIDIA's own signature and message strings -- and it took a
+scoped fix round to undo. Put the substitute in `hip_compat/cuda/helper_cuda.h` and leave the
+vendored file byte-identical; check with `git diff <base> -- <file>` printing nothing, not by
+eye. Run `python3 utils/licenses.py scan-nvidia <project>` early: it names every
+NVIDIA-proprietary-marked file in the tree, and those files are exactly the ones your diff must
+not touch. Reproducing the API NAMES the project's own sources call (`checkCudaErrors`) is
+unavoidable and fine; copying the vendored implementation's signature, control flow, or format
+strings is not -- write your own. (plvs)
+
+Do not justify the shim with "the vendored header does not parse under hipcc" without checking:
+plvs's does parse clean once the compat header is force-included, because its cuBLAS/cuFFT enum
+tables sit behind `#ifdef CUBLAS_API_H_` and compile out. The real reason there was narrower and
+worth stating accurately in the commit -- `checkCudaErrors` is defined inside
+`#ifdef __DRIVER_TYPES_H__`, a macro only the CUDA toolkit's `driver_types.h` sets, so on ROCm
+the header supplies nothing. A one-line probe TU that calls the macro settles it. (plvs)
+
 Prefer this when the project includes CUDA headers by name. It does not apply where sources
 use CUDA symbols without including a CUDA header, or where the build already injects a
 compat header with `-include`.
