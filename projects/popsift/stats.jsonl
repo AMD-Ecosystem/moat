@@ -83,3 +83,8 @@
 {"kind":"session","ts":"2026-08-13T23:26:08Z","epoch":1786663568.730581128,"event":"end","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-13T23:19:17Z","epoch":1786663157.320144742,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-08-13T23:27:59Z","epoch":1786663679.336357033,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-13T23:27:12Z","epoch":1786663632.162485743,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-13T23:28:53Z","phase":"compile","seconds":4.145,"exit":0,"cmd":"cmake -S projects/popsift/src -B projects/popsift/src/build-hip -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ -DCMAKE_BUILD_TYPE=Release -DPopSift_BUILD_EXAMPLES=ON -DBUILD_SHARED_LIBS=ON -DPopSift_USE_TEST_CMD=ON -DPopSift_TESTFILE_PATH=/tmp/claude-1000/-var-lib-jenkins-moat/c9d068ef-303e-4595-a9d8-af17c37604a5/scratchpad/oxford"}
+{"kind":"phase","ts":"2026-08-13T23:29:22Z","phase":"compile","seconds":25.644,"exit":0,"cmd":"cmake --build projects/popsift/src/build-hip -j"}
+{"kind":"phase","ts":"2026-08-13T23:29:47Z","phase":"test","seconds":19.855,"exit":0,"cmd":"cmake --build projects/popsift/src/build-hip --target run-test-boat"}
+{"kind":"session","ts":"2026-08-13T23:32:59Z","epoch":1786663979.594085003,"event":"end","platform":"linux-gfx1100"}

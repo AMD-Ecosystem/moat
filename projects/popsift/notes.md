@@ -2221,3 +2221,103 @@ other host's `set-state reviewing` at 23:16 saw a `porting: null` record on orig
 granted. The work lock serializes across hosts only once it is pushed. Push the state
 transition that takes the lock (AGENTS.md, "push each state transition promptly"), not just
 the one that releases it.
+
+## Validation 2026-08-13 -- gfx1100 revalidate at fix-round tip 4d51a78 (independent GPU run)
+
+Independent validator pass at the exact staging tip `moat-fix-186 @ 4d51a780ae4bc127bdb81dc86859e657f6f5b163`
+(matches `head_sha`; `f2712723d903` confirmed an ancestor). Platform: AMD Radeon Pro W7800
+48GB, gfx1100 (RDNA3, wave32), ROCm 7.2.3, AMD clang 22.0.0git (roc-7.2.3), HIP 7.2.53211.
+Fork clone at `projects/popsift/src`, `git status --porcelain` empty throughout.
+
+### Delta since this platform's prior validated_sha (f2712723)
+
+`python3 utils/moatlib.py classify popsift f2712723d903 4d51a780` -> `class=mixed
+arch_independent=False inert=False` (27 files, real code delta -- the six-commit review
+round: shuffle-width unification, norm-guard simplification, texture-type header, thrust
+header, layered-collapse description fix). Not carry-forward eligible; full real-GPU
+revalidation performed.
+
+### Build
+
+```
+rm -rf projects/popsift/src/build-hip
+bash utils/timeit.sh popsift compile -- cmake -S projects/popsift/src -B projects/popsift/src/build-hip \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ -DCMAKE_BUILD_TYPE=Release \
+  -DPopSift_BUILD_EXAMPLES=ON -DBUILD_SHARED_LIBS=ON -DPopSift_USE_TEST_CMD=ON \
+  -DPopSift_TESTFILE_PATH=<oxford dir>
+bash utils/timeit.sh popsift compile -- cmake --build projects/popsift/src/build-hip -j
+```
+Clean from scratch: configure 4.0s. 100% built: libpopsift.so + popsift-demo +
+popsift-match. Only the pre-existing benign -Wunused-value (debug_macros.h nodiscard) and
+rocThrust -Wdeprecated-declarations (thrust::identity) warnings. 0 errors.
+
+### GPU validation (HIP_VISIBLE_DEVICES=0, real gfx1100 GPU)
+
+```
+rm -rf projects/popsift/src/build-hip/oxford
+HIP_VISIBLE_DEVICES=0 bash utils/timeit.sh popsift test -- \
+  cmake --build projects/popsift/src/build-hip --target run-test-boat
+```
+
+Oxford boat (6 images, 850x680, vlfeat/loop/RootSift, downsampling -1) vs the recorded
+gfx1100 reference:
+
+| Image | Features | Descriptors | Reference | Match |
+|-------|----------|-------------|-----------|-------|
+| img1  | 8351     | 9874        | 8351/9874 | EXACT |
+| img2  | 7946     | 9452        | 7946/9452 | EXACT |
+| img3  | 6158     | 7280        | 6158/7280 | EXACT |
+| img4  | 4802     | 5799        | 4802/5799 | EXACT |
+| img5  | 4618     | 5476        | 4618/5476 | EXACT |
+| img6  | 3855     | 4618        | 3855/4618 | EXACT |
+
+`md5sum output-img1/features.txt` = **852740c0eed2c0f28401bc66c78b37ae**, byte-identical to
+the value recorded for f2712723, fe86937, and 199e465. (The `run-test-boat` "Features
+OK / Keypoints OK / Descriptors OK" lines are the known harness quirk from missing
+`reference.tgz` -- `cmp -s` returns exit 2 on a missing file, which the script's
+`[ $? == 1 ]` test does not catch, so it prints OK regardless; the real gate is the
+independent counts/md5 table above, not that script's own verdict.)
+
+Independent determinism run (`popsift-demo --log --gauss-mode vlfeat --desc-mode loop
+--popsift-mode --root-sift --downsampling -1 -i img1.pgm`, outside the test harness, 5
+runs): 8351 features / 9874 descriptors every run, `sort -n output-features.txt | md5sum`
+= 852740c0eed2c0f28401bc66c78b37ae, all 5/5 identical.
+
+Descriptor value sanity (img1, 9874 x 128 = 1263872 values, parsed from features.txt):
+0 NaN, 0 Inf, 0 all-zero descriptors. Per-descriptor L2 norm (RootSift): min 0.9990731932,
+max 1.0008500096, mean 1.0000002904, all 9874 within [0.999, 1.001].
+
+All 6 descriptor modes on img1 (loop/iloop/grid/igrid/notile/vlfeat): 8351 features / 9874
+descriptors each, 0 NaN / 0 Inf in every mode.
+
+### CUDA no-regression gate
+
+Not re-run. `git diff 199e46564b34...4d51a780ae4b -- .` is exactly one hunk in
+`src/popsift/sift_octave.cu`, every changed line a `//` comment (verified independently,
+matches the porter's and reviewer's characterization). The CUDA gate for this code was
+already recorded at 199e465 (`## 2026-08-13 -- fix-up ...`, nvcc 12.8 /
+`/opt/conda/envs/cuda-12.8`, `-DCMAKE_CUDA_ARCHITECTURES=86`: 0 errors, 0 warnings,
+libpopsift.so linked with sm_86 device code). Since the only delta to 4d51a780 is a
+comment, that result stands unchanged; not re-run per the validator's comment-only
+exemption.
+
+### Jargon / documentation gate
+
+`python3 utils/jargon.py --port popsift`: one hit, "fault classes" in commit `05e698ec8`
+(`git merge-base --is-ancestor f2712723 05e698ec8` and `--is-ancestor 05e698ec8 f2712723`
+both checked: 05e698ec8 is an ancestor of the frozen published tip f2712723, already live
+in the open PR #186 before this fix round existed). Confirmed identical to the finding in
+the three review passes earlier today (2026-08-13); not part of this round's added
+content and not fixable without rewriting already-published, PR-visible history, which
+AGENTS.md forbids once a PR is open. Not treated as a new blocker.
+Documentation: `README.md` "Building for AMD GPUs (ROCm/HIP)" section documents the
+`USE_HIP` build (gfx90a/gfx1100/gfx1151, `CMAKE_HIP_ARCHITECTURES`, `CMAKE_PREFIX_PATH`);
+untouched by and unaffected by this round.
+
+### Result
+
+PASS. `linux-gfx1100`: revalidate -> completed; validated_sha =
+4d51a780ae4bc127bdb81dc86859e657f6f5b163 (== head_sha). No fork push (validator does not
+write to the fork); `moat-fix-186` and `moat-port` left exactly as found
+(`moat-port` still f2712723d903).
