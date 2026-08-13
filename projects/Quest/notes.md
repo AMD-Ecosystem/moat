@@ -1015,22 +1015,50 @@ race. They pass by scheduling luck, not because the code is correct there -- the
 no-op `commit_group`/`wait_group` are platform-wide, not gfx1151-specific. Their
 results should not be read as evidence that the pipeline is sound.
 
-### Suggested fix (porter work, not applied here)
+### Which fix -- option 1 was tested and REFUTED
 
-Two shapes, both small; the choice affects performance and belongs to a porter
-with review rather than to a validator:
+The two candidate fixes are not equivalent. Option 1 (shim `cp_async.cuh` so
+`wait_group<N>()` becomes a real `__syncthreads()`) **does not work**, by
+inspection and by experiment:
 
-1. Shim `cp_async.cuh` into `kernels/include/hip_compat/flashinfer/` alongside
-   the other two, giving `commit_group()`/`wait_group<N>()` real meaning on HIP
-   -- the honest spelling is a `__syncthreads()` in `wait_group`, since the
-   loads are already synchronous.
-2. Or select `num_stages_smem = 1` on the HIP path, which removes the
-   double-buffering the no-ops were supposed to order. Proven here: 121/121.
+- Every `wait_group` call site is already immediately followed by `block.sync()`
+  -- lines 356/357, 574/575, 608/609, 628/629. Two adjacent barriers are one
+  barrier, so a `__syncthreads()` inside `wait_group` is redundant by
+  construction.
+- Applied it anyway (`#else __syncthreads();` in the fallback branch of
+  `wait_group`) and rebuilt: **48 failed, unchanged**, identical to the
+  untouched build.
 
-Option 1 keeps the upstream structure and the CUDA path untouched; option 2 is
-a one-line change that costs prefetch overlap on AMD.
+So the missing ordering is NOT at the `wait_group` call sites, and giving those
+no-ops meaning fixes nothing. Within a single iteration the loop already
+separates each buffer's read from its write with `block.sync()`; the defect is
+in the multi-stage state machine itself, and I did not localise the exact racing
+access beyond that.
 
-This was NOT applied on the branch: it changes kernel semantics for every
-platform, so it wants a porter's commit and a review, and it will require
-revalidating the Linux arches -- which is the right outcome, since their current
-pass rests on the race.
+**Recommended fix: `num_stages_smem = 1` on the HIP path** (proven: 121/121
+in-scope tests pass at the default `bdz`=8). The argument is not merely that it
+works:
+
+- **A software pipeline has nothing to overlap here.** Its entire purpose is to
+  hide async DMA latency behind compute. With `FLASHINFER_CP_ASYNC_ENABLED` off,
+  `pred_load` is a plain synchronous copy, so stage N+1's load blocks exactly
+  like stage N's would. The second stage buys zero latency hiding on HIP.
+- **It costs occupancy.** 36864 bytes of LDS per block versus 20480 for a single
+  stage -- a 44% reduction, on a part with 65536 bytes total. The double
+  buffering is paying LDS for a benefit that does not exist on this path.
+- It keeps the change to one guarded constant, leaves the CUDA path on two
+  stages, and touches no kernel logic.
+
+Gate it on the HIP path (`#ifdef __HIP_PLATFORM_AMD__` / `USE_HIP`) so the
+NVIDIA build keeps its real `cp.async` pipeline and stays byte-identical.
+
+The honest caveat: single-stage removes the multi-buffer state machine rather
+than repairing it, so it eliminates the defect by construction rather than by
+identifying the exact racing access. Anyone wanting the two-stage path on AMD
+would first have to implement genuine async copies (`llvm.amdgcn.load.to.lds`
+and friends), which is a real engineering project, not a shim, and is well
+outside a minimal port.
+
+Not applied here: it changes kernel configuration for every platform, so it
+wants a porter's commit and review, and it will require revalidating the Linux
+arches -- the right outcome, since their current pass rests on the race.
