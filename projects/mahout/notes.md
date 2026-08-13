@@ -1894,3 +1894,44 @@ upstream's new `cudaGetDeviceCount` stub) is the arm that was type-checked.
 All three backends of the file the merge rewrote are now covered this round:
 hip_rt (build + 368-test GPU run), cuda_rt (nvcc 12.8 build + 23 test binaries),
 no_cuda_stubs (this check).
+
+## Re-review 2026-08-13 (reviewer, linux-gfx1100) -- fix round 1399, PASS
+
+Narrow re-review of the rewritten staging tip 9a3a08e0f (was 1744956de). No
+problems found; all three findings of the 2026-08-13 review are closed and
+nothing regressed. Evidence checked independently:
+
+- Tree identity: `9a3a08e0^{tree}` == `1744956de^{tree}` ==
+  5584f6f96cd105dd30684030676e036d51c5d858, `git diff` between them empty. The
+  amended merge 5a15c3f25 has parents fd8c7a38 (published tip, parent 1) and
+  206ff2fe8 (upstream/main, parent 2), same as 53c5f72fb; both are ancestors of
+  the tip. `origin/moat-fix-1399` == 9a3a08e0f after a fresh fetch,
+  `origin/moat-port` still fd8c7a38 (freeze intact).
+- Merge message: title `[ROCm] Merge upstream main into the AMD/HIP branch` (50
+  chars). `diff` of old vs new body shows exactly two changes -- the title prefix
+  and the last paragraph. The follow-up commit's message is byte-identical
+  (title 57 chars). Neither authored commit carries a Co-authored-by, noreply or
+  Signed-off-by trailer (the dependabot noreply trailers in the range are
+  upstream's own commits). AI disclosure and Test Plan intact.
+- New last-paragraph clause fact-checked: `tests/parquet_f32.rs` exists at
+  fd8c7a38 with 7 `#[test]`s, so removing it from "newly merged suites" is
+  correct; `tests/estimate.rs` (9) and `tests/parquet_f32_fidelity.rs` (4, three
+  inside the `#[cfg(qdp_gpu_platform)]` gpu module) are new files;
+  gpu_ptr_encoding 68 -> 69. Per-file `#[test]` delta between the two commits is
+  confined to exactly those three files (repo-wide 367 -> 381 = +14).
+  `src/estimate.rs:111` is a bare ``` fence with asserts and is the only doc
+  example the merge adds, so +1 executing doctest; 353 + 14 + 1 = 368.
+- Notes reconciliation (notes.md 1682-1709): per-suite breakdown sums to exactly
+  368; the four ignored doctests are the only `rust,ignore` fences in
+  qdp-core/src (gpu/pipeline.rs:245, io.rs:258, reader.rs:34,
+  readers/numpy.rs:38), none touched by the merge, so "same four before and
+  after" holds; the 358-gfx90a-vs-353-gfx1100 gap is recorded as host
+  environment (optional-dependency suites) and no longer used as a baseline.
+- Stub backend: qdp-core/build.rs:88-101 emits `qdp_no_cuda` when `QDP_NO_CUDA`
+  is 1/true/yes, qdp-core/Cargo.toml has `default = ["cuda"]` with `hip` off, so
+  the recorded `QDP_NO_CUDA=1 cargo check -p qdp-core` selects
+  `all(feature = "cuda", not(feature = "hip"), qdp_no_cuda)` at cuda_ffi.rs:138,
+  the arm holding upstream's new stub at :172. Exit 0 recorded with the
+  build-script warning that confirms the cfg fired.
+- `python3 utils/jargon.py --port mahout` clean; fork worktree clean
+  (`git status --porcelain` empty), integrity gate satisfied.

@@ -7,7 +7,7 @@
   "priority": 6.322,
   "ext_type": "rust-cc-cuda",
   "adopted_at": "2026-05-30T00:04:57Z",
-  "updated_at": "2026-08-13T22:41:47Z",
+  "updated_at": "2026-08-13T22:48:32Z",
   "head_sha": "9a3a08e0f3061b00ddf8f2cfb3f5cd5c49b38d66",
   "pr_url": "https://github.com/apache/mahout/pull/1399",
   "pr_number": 1399,
@@ -17,7 +17,7 @@
   "pr_state": "open",
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 20089859,
-  "stage": "ported",
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -107,7 +107,7 @@
       "validated_sha": "fd8c7a38ac725b31f6b5ce1cc9e969cd357066f8",
       "started_at": "2026-08-13T22:12:01Z",
       "completed_at": "2026-07-02T19:30:05Z",
-      "updated_at": "2026-08-13T22:41:47Z",
+      "updated_at": "2026-08-13T22:48:32Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -121,7 +121,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "porter",
+      "last_agent": "reviewer",
       "carry_forward": {
         "to": "fd8c7a38ac725b31f6b5ce1cc9e969cd357066f8",
         "method": "binary-equiv",
