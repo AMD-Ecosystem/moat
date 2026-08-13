@@ -14,3 +14,4 @@
 {"kind":"phase","ts":"2026-08-13T06:04:03Z","phase":"test","seconds":4.469,"exit":1,"cmd":"timeout 1500 python3 -u projects/diff-surfel-tracing/validation/validate_tracer_rocm.py"}
 {"kind":"phase","ts":"2026-08-13T06:31:43Z","phase":"test","seconds":1500.103,"exit":124,"cmd":"timeout 1500 python3 -u projects/diff-surfel-tracing/validation/validate_tracer_rocm.py"}
 {"kind":"phase","ts":"2026-08-13T06:37:45Z","phase":"compile","seconds":27.868,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/diff-surfel-tracing/src && HIPRT_HOME=/var/lib/jenkins/HIPRT PYTORCH_ROCM_ARCH=gfx942 pip install -e . --no-build-isolation --no-deps -q"}
+{"kind":"session","ts":"2026-08-13T06:41:39Z","epoch":1786603299.821779845,"event":"end","platform":"linux-gfx942"}
