@@ -61,3 +61,8 @@
 {"kind":"phase","ts":"2026-07-02T19:49:15Z","phase":"test","seconds":40.195,"exit":8,"cmd":"bash -c \ncd /var/lib/jenkins/moat/projects/unified-cache-management/build_rocm_gfx1100\nHIP_VISIBLE_DEVICES=0 ctest -j1 --output-on-failure 2>&1\n"}
 {"kind":"phase","ts":"2026-07-02T19:50:43Z","phase":"test","seconds":26.718,"exit":0,"cmd":"bash -c \ncd /var/lib/jenkins/moat/projects/unified-cache-management/src\nHAMMING_DIR=/var/lib/jenkins/moat/projects/unified-cache-management/build_sparse_gfx1100/ucm/sparse/gsa_on_device/csrc/rocm/ham_dist   HIP_VISIBLE_DEVICES=0   /opt/conda/envs/py_3.12/bin/python3 ucm/sparse/test/gsa/test_hamming_rocm_ref.py 2>&1\n"}
 {"kind": "tokens", "ts": "2026-07-02T19:52:28Z", "tokens": 65345, "source": "validator"}
+{"kind":"session","ts":"2026-08-13T20:37:19Z","epoch":1786653440.308820500,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-13T20:43:43Z","phase":"compile","seconds":27.741,"exit":1,"cmd":"D:/Develop/TheRock/.venv/Scripts/cmake.exe --build /d/Develop/moat/agent_space/ucm_build -j 4"}
+{"kind":"phase","ts":"2026-08-13T20:44:22Z","phase":"compile","seconds":3.590,"exit":0,"cmd":"D:/Develop/TheRock/.venv/Scripts/cmake.exe --build /d/Develop/moat/agent_space/ucm_build -j 4"}
+{"kind":"phase","ts":"2026-08-13T20:45:05Z","phase":"test","seconds":33.030,"exit":0,"cmd":"bash -c cd /d/Develop/moat/agent_space/ucm_build && /d/Develop/TheRock/.venv/Scripts/ctest.exe -j1 --output-on-failure > ctest.log 2>&1; echo RC=$?"}
+{"kind":"session","ts":"2026-08-13T20:47:11Z","epoch":1786654032.239271600,"event":"end","platform":"windows-gfx1151"}

@@ -694,3 +694,92 @@ HAMMING_DIR=build_sparse_gfx1100/ucm/sparse/gsa_on_device/csrc/rocm/ham_dist \
 ALL HAMMING TESTS PASSED
 
 Result: linux-gfx1100 COMPLETED at 8545865f0939361bbbebb742369e25f95fd19b36.
+
+## Validation 2026-08-13 (windows-gfx1151) -- PASS at 8545865
+
+Re-establishes this arch at the current head. The 2026-06-04 gfx1151 entry above
+was made at `3ff186f`; no `windows-gfx1151` block survived in `status.json`, so
+this is a fresh full validation rather than a revalidation, and it required no
+source change -- the Windows delta committed back in June still carries the port
+on this host.
+
+Platform: AMD Radeon 8060S (gfx1151, RDNA3.5, 20 CUs, wave32), Windows 11.
+ROCm: TheRock pip SDK 7.14.0a20260612 (was 7.13 in June), AMD clang 23.0.0.
+CMake 4.3.2 from TheRock's venv. Upstream PR is OPEN, so `moat-port` is frozen;
+nothing was pushed to the fork this round and nothing needed to be.
+
+### Build
+
+The recorded recipe worked verbatim except for the SDK root. Note `clang-cl` is
+the HIP compiler here and CMake 4.3.2 accepts it -- the "MSVC compiler version
+not detected properly" refusal is specific to CMake 3.31, which is what the
+system `cmake` on this host still is. Use the venv's.
+
+```
+cmake -S src -B agent_space/ucm_build -G Ninja \
+  -DRUNTIME_ENVIRONMENT=rocm -DBUILD_UCM_STORE=OFF -DBUILD_UNIT_TESTS=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DCMAKE_C_COMPILER=<rocm>/lib/llvm/bin/clang-cl.exe \
+  -DCMAKE_CXX_COMPILER=<rocm>/lib/llvm/bin/clang-cl.exe \
+  -DCMAKE_HIP_COMPILER=<rocm>/lib/llvm/bin/clang-cl.exe \
+  -DCMAKE_HIP_STANDARD=17 -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=<rocm>
+cmake --build agent_space/ucm_build -j 4
+```
+
+Configure reports `UCM trans: building HIP for arch(s): gfx1151`.
+
+**The build itself fails at 83/83 unless the runtime is staged first.** The last
+step is `gtest_discover_tests`, which RUNS the freshly linked test binary to
+enumerate cases; with no DLLs beside it that run dies with
+`Exit code 0xc0000135` (STATUS_DLL_NOT_FOUND) and CMake reports it as a build
+failure, not a test failure. Copy `amdhip64_7.dll`, `rocm_kpack.dll`,
+`amd_comgr*.dll`, `hiprtc*.dll` plus the build's own `metrics.dll` and
+`zlib.dll` into `ucm/shared/test/`, then re-run the build; it links the last
+target and discovery succeeds. Worth knowing generally: a post-build test
+discovery step turns a missing-DLL problem into something that looks like a
+compile break.
+
+### Test results -- 31/35 PASS, GPU gate 3/3
+
+```
+ctest -j1 --output-on-failure     # 29.44 s
+```
+
+GPU copy-kernel correctness gates, all PASS:
+- `UCTransUnitTest.CopyDataWithCE` 1.11 s
+- `UCTransUnitTest.CopyDataWithSM` 1.13 s
+- `UCTransUnitTest.CopyDataBatchWithSM` 1.11 s
+
+All 4 failures are host-side and all are in the already-documented pre-existing
+set -- none touches GPU code or the port:
+
+- `UCLoggerTest.LogEventuallyReachesUcmFile` and
+  `UCLoggerTest.FileOnlyLogEventuallyReachesVllmFile`: the gtest bodies both
+  report `[ OK ]`; the failure is TearDown, `Failed to remove file: log_test /
+  The process cannot access the file because it is being used by another
+  process`. That is the spdlog async-thread file lock on Windows already
+  recorded in the June run.
+- `UCLoggerPerfTest.MultiThreadPerfUCInfoVsRateLimitRandomContent`: a host timing
+  assertion, `ratio <= 1.1`, measured 1.13231 (247.3 vs 280.1 ns/call over 8
+  threads). A wall-clock ratio threshold on a 20-CU APU, not a correctness
+  result.
+- `UCMetricsUT.ConcurrentUpdateAndCollect`: `totalCounter 15999` vs
+  `expectedUpdates 16000` -- one lost increment, which is exactly the host-side
+  atomic race documented as the pre-existing Linux failure. It passed on Windows
+  in June; the record already calls it non-deterministic, and this run is the
+  other side of that coin rather than a new fault.
+
+`thread_pool_test.cc` stays excluded on WIN32 (POSIX `SYS_gettid`), unchanged.
+
+CUDA no-regression gate: not run (Windows host, no CUDA toolkit).
+
+Pre-completion checks: jargon clean; ROCm build documented in
+`docs/source/getting-started/quickstart_{vllm,sglang}.md` and the support matrix,
+which already lists Radeon 8060S (gfx1151); `git status --porcelain` in src empty
+at 8545865 before and after.
+
+Tooling note: `utils/jargon.py` CRASHED on this host before it could answer --
+`UnicodeDecodeError: 'charmap' codec can't decode byte 0x81`, surfacing as a
+confusing `AttributeError: 'NoneType' object has no attribute 'split'`. It
+decodes `git log` output with the Windows cp1252 default. `PYTHONUTF8=1` works
+around it; the real fix belongs in the tool.
