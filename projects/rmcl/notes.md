@@ -381,3 +381,162 @@ rmagine's own `Transform::operator*`, which is the same shared host/device sourc
 uses, so it is a reference for indexing, coverage and dispatch but not an independent
 implementation of the quaternion math. The reduction and forget-rate references are independent.
 Nothing to change; just do not oversell it as "checked against an independent CPU implementation".
+
+## Fix round 2026-08-13 (linux-gfx1100, Radeon Pro W7800, gfx1100) -- review items applied, rebuilt, tested
+
+Applied the four items from the review above. Head `a8e6f88` -> `4f746de`. Nothing was
+validated at `a8e6f88` on any platform, so the amend the review asked for was free.
+
+- `493d0f6` is `dde091b` with one sentence reworded: nvcc accepts the `__shared__` declaration
+  and ignores the initializers (CUDA 12.8.93, no diagnostic) rather than "dropped them with a
+  warning". Message only, tree identical.
+- `f3d62d0` is `a8e6f88` replayed unchanged.
+- `4f746de` is new: the device-count skip (review item 2) and the corrected `PUBLIC USE_HIP`
+  comment (review item 3).
+- Review item 4, the hedged fault-class lesson, is fixed on this branch in
+  `.claude/skills/cuda-to-rocm/references/fault-classes.md`.
+
+### Review item 2 is only partly fixable inside rmcl -- measured, not assumed
+
+The test now returns 77 and the test carries `SKIP_RETURN_CODE 77`, which is the right shape
+and is what the review asked for. It does not actually rescue a device-less machine, and the
+reason is worth recording rather than leaving for the next person to rediscover:
+
+`src/rmagine_cuda/src/util/cuda/CudaContext.cpp:198` defines
+`CudaContextPtr cuda_def_ctx(new CudaContext(0));` at namespace scope. That global is
+constructed when `librmagine-cuda.so` is loaded, i.e. before `main`, and on a machine with no
+device it throws out of `cudaGetDeviceProperties` and the process aborts:
+
+```
+HIP_VISIBLE_DEVICES=-1 build/rmcl_ros/tests/rmcl_ros_tests_gpu_kernels
+[RMagine - CudaContext] CUDA Driver Version / Runtime Version: 70253.21.1 / 70253.21.1
+terminate called after throwing an instance of 'std::runtime_error'
+  what():  Error calling cudaGetDeviceProperties
+Aborted (core dumped)
+```
+
+So the skip path cannot be reached: any executable that links `rmagine::cuda` dies at load
+time. A standalone probe confirms the runtime itself behaves as the test expects
+(`hipGetDeviceCount` -> `err=100 count=0`), so the check is correct, it just runs too late.
+
+Two CTest mechanisms were measured and neither closes the gap, so do not reach for them:
+
+- `SKIP_REGULAR_EXPRESSION` is not consulted for a process that dies by signal. Minimal repro:
+  a test that prints the pattern and calls `abort()` is still reported `***Failed (Subprocess
+  aborted)`. It was written and then removed rather than shipped with a comment claiming it
+  works.
+- A `FIXTURES_SETUP` probe does not help either. If the probe skips, the dependent test still
+  runs (and aborts); if the probe fails, the dependent test is reported `***Not Run` and both
+  count as failures.
+
+The only remaining in-rmcl option is a launcher script that runs the binary and translates the
+abort into exit 77, which is a workaround for a dependency's fatal global constructor and does
+not belong in an upstream tree. The real fix is making rmagine's default context lazy, which is
+rmagine's change, not rmcl's. Registered as deferred work against rmagine; flagged here for the
+reviewer to rule on whether the residual exposure (a host with rmagine's GPU backend installed
+and no visible device) needs more than this.
+
+Upstream CI is unaffected either way: the ROS docker images carry no GPU backend, `RMCL_CUDA`
+is false, and `rmcl_ros/tests/` is never added.
+
+### Environment (linux-gfx1100)
+
+- Ubuntu 24.04 noble, ROCm 7.2.3 at `/opt/rocm` (unlike the gfx942 host, which has no
+  `/opt/rocm`), CMake 3.31.6, 64 cores.
+- GPU: AMD Radeon Pro W7800 48GB, `amdgcn-amd-amdhsa--gfx1100`.
+- ROS 2 jazzy installed for this round from `packages.ros.org` over http (the https endpoint
+  presents an `*.osuosl.org` certificate that does not match `packages.ros.org`; the packages
+  are GPG-signed, so the http repository line is the working form on this host).
+- The conda python is first on `PATH` here too, so `export PATH=/usr/bin:$PATH` before sourcing
+  ROS is needed, exactly as the gfx942 round recorded. Alternatively
+  `pip install "empy==3.3.4" lark catkin_pkg` into the active environment, which is what was
+  done here before that gotcha was read.
+
+### Exact commands
+
+Dependency, rmagine fork `moat-port` at `1213551`, built and installed to a staging prefix
+(Embree left enabled on purpose, so rmcl's CPU backend is in the regression set):
+
+```
+cmake -S agent_space/deps/rmagine_src -B agent_space/deps/rmagine_build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ \
+  -DRMAGINE_OPTIX_DISABLE=ON -DRMAGINE_VULKAN_DISABLE=ON \
+  -DRMAGINE_VULKAN_CUDA_INTEROP_DISABLE=ON -DRMAGINE_OUSTER_DISABLE=ON \
+  -DRMAGINE_BUILD_TESTS=OFF -DRMAGINE_BUILD_TOOLS=OFF \
+  -DCMAKE_INSTALL_PREFIX=agent_space/deps/rmagine_install
+cmake --build agent_space/deps/rmagine_build -j 32
+cmake --install agent_space/deps/rmagine_build
+```
+
+Workspace (clean build base):
+
+```
+export PATH=/usr/bin:$PATH
+. /opt/ros/jazzy/setup.bash
+colcon build --packages-select rmcl_msgs rmcl rmcl_ros \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
+               -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+               -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ \
+               -DCMAKE_PREFIX_PATH="<ws>/rmagine_install;/opt/rocm"
+```
+
+`Summary: 3 packages finished [50.3s]`, no errors. Only pre-existing upstream warnings
+(unused parameters in the CPU resamplers and converters, and the deprecated
+`point_cloud_conversion.hpp` warning from sensor_msgs).
+
+Tests:
+
+```
+export LD_LIBRARY_PATH=<ws>/rmagine_install/lib:$LD_LIBRARY_PATH
+colcon test --packages-select rmcl_ros --event-handlers console_direct+
+```
+
+```
+1: particle_move_and_forget: OK (4099 particles)
+1: compute_stats: OK (sum=2051.63 max=1)
+1: gladiator_resample: OK (2043 of 4099 particles replaced, noise mean=-0.00274891 sd=1.01771)
+1/1 Test #1: rmcl_gpu_kernels .................   Passed    0.25 sec
+100% tests passed, 0 tests failed out of 1
+Summary: 1 test, 0 errors, 0 failures, 0 skipped
+```
+
+`LD_LIBRARY_PATH` is not optional under `colcon test`, and this is the one place the staging
+prefix leaks: plain `ctest` in the build tree passes without it (build-tree RPATH), but
+`colcon test` re-enters with its own environment and the binary fails with
+`error while loading shared libraries: librmagine-core.so.2`. rmagine's own
+`## Install as a dependency` section says as much; it is easy to read as advice and it is a
+requirement.
+
+Device evidence on this platform:
+
+```
+llvm-objdump --offloading install/rmcl_ros/lib/librmcl_ros_cuda.so
+  -> hipv4-amdgcn-amd-amdhsa--gfx1100
+AMD_LOG_LEVEL=3 -> ShaderName : rmcl::particle_move_and_forget_kernel(...)
+                   ShaderName : void rmcl::simple_stats_kernel<512u>(...)
+                   ShaderName : rmcl::init_curand_kernel(hiprandState*, unsigned int)
+                   ShaderName : rmcl::gladiator_resample_kernel(..., hiprandState*, ...)
+```
+
+The kernel results are identical to the gfx942 round for the resampler
+(`2043 of 4099`, `mean=-0.00274891`, `sd=1.01771`) because the input and the hipRAND stream are
+the same; `compute_stats` reports the same `sum=2051.63 max=1`. Wave32 and wave64 agree, which
+is what the plan predicted for a reduction that runs the full `__syncthreads` tree.
+
+### Process note, for whoever reads the branch history
+
+This round started from a stale checkout: the local `port/rmcl` had not been pulled, so the
+record read `stage: planned, head_sha: null` and the gfx942 port and its review were invisible.
+A complete second port was written and built before the first push revealed the existing
+`moat-port`. It was discarded, not merged -- the branch here is the gfx942 port with the review
+items applied. Pull `port/rmcl` before reading the state, not just at the end.
+
+The discarded work did produce one thing worth weighing: a working, passing test for the `rmcl`
+package (`CorrespondencesCUDA::computeCrossStatistics` against rmagine's host
+`statistics_p2l`, 1740 of 3001 correspondences inside `max_dist`, mean error 4.8e-08, covariance
+error 3.3e-05, needs no ROS). That is the plan's "optional second test" that the gfx942 round
+deliberately left out and the review did not ask for. It is not on the branch. If the reviewer
+wants `library:rmcl-cuda` to carry evidence of its own, say so and it can be re-added in a
+commit of its own rather than being smuggled into a fix round.
