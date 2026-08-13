@@ -7,3 +7,4 @@
 {"kind":"phase","ts":"2026-08-13T04:16:00Z","phase":"compile","seconds":25.768,"exit":1,"cmd":"pip install -e /var/lib/jenkins/moat/projects/diff-surfel-tracing/src --no-build-isolation --no-deps -v"}
 {"kind":"phase","ts":"2026-08-13T04:16:44Z","phase":"compile","seconds":25.560,"exit":0,"cmd":"pip install -e /var/lib/jenkins/moat/projects/diff-surfel-tracing/src --no-build-isolation --no-deps -v"}
 {"kind":"phase","ts":"2026-08-13T04:30:09Z","phase":"compile","seconds":27.111,"exit":0,"cmd":"pip install -e /var/lib/jenkins/moat/projects/diff-surfel-tracing/src --no-build-isolation --no-deps -v"}
+{"kind":"session","ts":"2026-08-13T05:02:06Z","epoch":1786597326.262066695,"event":"end","platform":"linux-gfx942"}
