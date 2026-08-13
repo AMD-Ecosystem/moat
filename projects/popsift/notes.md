@@ -2101,7 +2101,7 @@ closed correctly -- both #6683 comment blocks now match the measured experiment
 carries the explicit width, and the notes disposition for the RootSift md5 evidence is
 rescoped. No defect found in the device code, the build, or the wave64 reasoning.
 
-### 1. `CMakeLists.txt:107-108` tells the maintainer the opposite of what the port does
+### 1. `CMakeLists.txt:108-109` tells the maintainer the opposite of what the port does
 
 ```
   # rocThrust supplies the thrust::cuda::par compatibility namespace, so the
@@ -2115,7 +2115,7 @@ header this round adds says why -- `common/thrust_setup.h:18-21`: "It lives in t
 on NVIDIA and in thrust::hip in the AMD build of Thrust." This project's own record is
 explicit that the CMake claim is false (notes.md:46-47, "rocThrust does NOT alias
 thrust::cuda"). It is published text from 05e698e, but this round is the one that touches
-this file (the `PopSift_HAVE_SHFL_DOWN_SYNC` hunk is ten lines below) and the one that
+this file (the `PopSift_HAVE_SHFL_DOWN_SYNC` hunk is twelve lines below) and the one that
 answers his Thrust comment (id 3735890699), so shipping a build-file comment that
 contradicts the new header is the same failure the round just corrected for #6683.
 
@@ -2198,3 +2198,19 @@ telling griwodz he asked for this when he did not is how a round costs another r
   the explicit-width / drop-the-`__shfl_*_sync`-macros entry in `references/fault-classes.md`
   and the `std::clamp` build entry) check out against the sources they describe and against
   this branch's code. Both are cross-project and sit where a reader with that problem looks.
+
+### Concurrency note -- this review raced another host's round
+
+This review was performed on linux-gfx942 against tip 199e46564b34, which is what
+`status.json.head_sha` said when the reviewing lock was taken. While it ran, another host
+completed a full re-review / porter-fix / review-passed cycle (records at 23:16, 23:23 and
+23:26 above), moving the staging tip to 4d51a78 and passing it. The `set-state
+changes-requested` written from this host therefore merged on top of that pass and reverted
+`head_sha` to the stale 199e4656; repaired with `moatlib.py advance-head popsift 4d51a78`
+immediately afterwards. No fork branch was touched from this host.
+
+Both findings above survive the move. `git diff 199e46564b34 4d51a780ae4b --stat` is one
+file, `src/popsift/sift_octave.cu`, comment lines only, and at 4d51a78 the cited text is
+unchanged: `CMakeLists.txt:108-109` still carries the rocThrust claim and
+`src/popsift/s_desc_norm_rs.h:68` still reads `( sum > 0.0f )`. The line numbers in finding 1
+and finding 2 are the 4d51a78 ones.
