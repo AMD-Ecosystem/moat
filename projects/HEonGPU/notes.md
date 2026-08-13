@@ -4719,3 +4719,78 @@ the prior completion; CUDA no-regression gate re-run at this head (was stale, ro
 finding 2) and passes clean, closing that outstanding item. `wave64` gate now covered at the
 current head by this arch (gfx90a still owes its own revalidation at `26d636f`, independent
 evidence, gates nothing further).
+## Correction 2026-08-13: the Windows "missing CMake packages" finding was wrong
+
+Not a review round. The windows-gfx1151 validation entry above, the round-13/14
+sections, and the deferral `heongpu-windows-rocm-sdk-cmake-packages-missing`
+(`rocm-bug-report`, component `rocm-sdk-core`) all rest on a claim that is false:
+that TheRock's Windows ROCm SDK ships no `hip`/`hiprand`/`rocthrust` CMake config
+packages and no rocThrust headers, so a HIP CMake project must be built against
+hand-written local shims.
+
+TheRock ships all of them. The local install was broken.
+
+### What was actually wrong
+
+`rocm-sdk-devel` is distributed as a `_devel.tar` expanded on first use, and most of
+its entries are relative SYMLINKS into the sibling runtime packages. Creating those
+needs `SeCreateSymbolicLinkPrivilege`, i.e. Developer Mode (off on this host) or an
+elevated shell. Without it the expansion leaves only the hardlinkable files under
+`bin/` and produces EMPTY `cmake/`, `include/`, `lib/`, `libexec/`, `share/`. That is
+what the "empty `lib/cmake/hip/`" was.
+
+It does not self-heal. The expander unlinks the tarball as its last step and then
+short-circuits on "`__init__.py` exists and no tarball", so re-running `rocm-sdk init`
+does nothing.
+
+Measured before repair: `python -m rocm_sdk test` -> 1 failure, 12 errors;
+`_rocm_sdk_devel` held ~90 files, all under `bin/`.
+
+### The repair
+
+All four packages uninstalled, the leftover `_rocm_sdk_*` trees removed by hand (pip
+removes only files listed in each RECORD, and an expanded devel tree is in no RECORD),
+then reinstalled from an elevated shell pinned to a single version from the per-arch
+index `https://rocm.nightlies.amd.com/v2/gfx1151/`, followed by `rocm-sdk init`.
+
+Version moved 7.13.0a20260511 -> **7.14.0a20260612**, chosen to match ROCm 7.14 on
+linux-gfx942 so the Windows evidence stays comparable with the fleet's newest Linux.
+All four packages must move together: the devel tree symlinks into its siblings.
+
+Measured after repair: `python -m rocm_sdk test` -> **OK**, 26 tests (the venv's
+`Scripts/` must be on PATH or `testCLIUsesDevelRootPath` errors spuriously on a bare
+`hipconfig`). `_rocm_sdk_devel` holds 9638 files. Present natively, all previously
+faked: `lib/cmake/{hip,hip-lang,hiprand,rocprim,rocthrust}/*-config.cmake`, 731
+rocThrust headers under `include/thrust/`, `bin/hipcc.exe`.
+
+### The part that reflects badly on our own records
+
+`_rocm_sdk_core/lib/cmake/hip-lang/hip-lang-config.cmake` was recorded in the
+validation entry above as "a hand-authored stub, dated 2026-06-18, clearly left by an
+earlier (catboost) validation session on this same host; it is real and reusable, not
+mine." It was indeed hand-authored -- by an agent, INTO the installed package tree.
+`rocm_sdk_core`'s RECORD contains zero `lib/cmake` entries, which settles it. Because
+fabricated files are in no RECORD, `pip uninstall` leaves them behind and they survive
+a reinstall, so a later session cannot tell them from shipped files. Removed during the
+repair. Never write shims into `site-packages`; use scratch space and `-D<name>_DIR=`.
+
+### Consequences for this port
+
+None for the source. The LLP64 defect fixed in `26d636f` is real and independent of the
+SDK install -- `unsigned long` is 32-bit under LLP64 whatever the toolchain -- and the
+GMP probe reproduces it directly.
+
+The 20/20 windows-gfx1151 result reported by rounds 13 and 14 was obtained through the
+shims and at ROCm 7.13, so it is not the certification this platform needs. The
+platform is still `ported`/unvalidated at `26d636f`; validation must re-run against the
+repaired 7.14 SDK, without shims, and should now use `find_package` against
+`python -m rocm_sdk path --root` rather than `cmake-shims/`.
+
+The deferral is closed `done` rather than filed upstream: there is no ROCm bug here.
+The genuine Windows issue that remains is the System32/TheRock `amdhip64_7.dll`
+collision, which is already known upstream (ROCm/TheRock 2019 and 4755) and is a
+loader/naming property, not something this project should report.
+
+The `cuda-to-rocm` validation reference has been corrected in the same commit: the
+"missing packages" entry now documents the half-expanded devel tree and its repair, and
+carries the warning about fabricating configs into a package tree.

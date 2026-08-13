@@ -212,3 +212,5 @@
 {"kind":"phase","ts":"2026-08-13T08:34:50Z","phase":"test","seconds":14.568,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
 {"kind":"phase","ts":"2026-08-13T08:37:52Z","phase":"cuda-compile","seconds":51.748,"exit":0,"cmd":"bash -c cmake --build /var/lib/jenkins/moat/agent_space/heongpu-cuda-gate/build -j$(nproc) 2>&1"}
 {"kind":"session","ts":"2026-08-13T08:39:04Z","epoch":1786610344.387952162,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-13T06:07:54Z","epoch":1786601274.608955500,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-13T06:12:21Z","phase":"compile","seconds":175.215,"exit":0,"cmd":"bash agent_space/heongpu-win/configure_clean.sh"}
