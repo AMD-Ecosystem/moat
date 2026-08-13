@@ -134,3 +134,5 @@
 {"kind":"phase","ts":"2026-08-13T23:38:00Z","phase":"test","seconds":9.675,"exit":101,"cmd":"cargo test --manifest-path projects/mahout/src/qdp/Cargo.toml -p qdp-core -p qdp-kernels --no-default-features --features hip -- --test-threads=1"}
 {"kind":"phase","ts":"2026-08-13T23:38:48Z","phase":"compile","seconds":4.623,"exit":0,"cmd":"cargo build --manifest-path projects/mahout/src/qdp/Cargo.toml -p qdp-core -p qdp-kernels --no-default-features --features hip -j 16"}
 {"kind":"phase","ts":"2026-08-13T23:39:23Z","phase":"test","seconds":26.626,"exit":0,"cmd":"cargo test --manifest-path projects/mahout/src/qdp/Cargo.toml -p qdp-core -p qdp-kernels --no-default-features --features hip -- --test-threads=1"}
+{"kind":"session","ts":"2026-08-13T23:41:56Z","epoch":1786664516.432727021,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-13T23:42:04Z","epoch":1786664524.661354529,"event":"end","platform":"linux-gfx90a"}
