@@ -852,3 +852,115 @@ Two direction checks the earlier rounds did not record:
 2. `surface.json` `test:rmcl_gpu_tests` `where` no longer names `rmcl/tests`, which does not
    exist on the branch. Its `covered` evidence now also names the probe, the launcher and the
    skip measurement, since the registration shape changed with this round.
+
+## Review 2026-08-13 (linux-gfx942, third round) -- changes requested
+
+Reviewed `git diff 8892cf4...2cf0e8a` on `AMD-Ecosystem/rmcl` `moat-port` (11 files, +465/-12),
+with the weight on the rewritten third commit `2cf0e8a` (+73/-4 over `f3d62d0`). `493d0f6` and
+`f3d62d0` are the same git objects the second review read -- same SHAs, and `2cf0e8a` and the
+replaced `4f746de` share the parent `f3d62d0` -- so those two commits are byte-identical by
+content addressing and were not re-reviewed line by line. Working tree clean, `jargon.py --port
+rmcl` clean, `check.py` all gates ok, `prose.py` clean on all three commit bodies, three `[ROCm]`
+titles at 45/46/50 chars, AI-assistance disclosure and Test Plan in each body, no
+`Co-Authored-By`, no non-ASCII in messages or in the added lines, no internal account references.
+
+### Problems
+
+1. **The launcher reports a broken probe as "no GPU device available", so a GPU test that never
+   ran looks like a machine without a GPU.** `rmcl_ros/tests/run_gpu_test.cmake:7` is
+   `if(NOT probe_result EQUAL 0)`, which sends every nonzero probe result down the skip path,
+   while `rmcl_ros/tests/gpu_device_probe.cpp:6-7` documents the contract as "0 means at least
+   one device, 77 means none". The two disagree, and the code loses the distinction the launcher
+   exists to make. Measured on this host against the built probe and script:
+
+   ```
+   cmake -DPROBE=/bin/false      -DTEST=/bin/true -P run_gpu_test.cmake  -> "no GPU device available, skipping"
+   cmake -DPROBE=/nonexistent    -DTEST=/bin/true -P run_gpu_test.cmake  -> "no GPU device available, skipping"
+   ```
+
+   Both would be `***Skipped` under the test's `SKIP_REGULAR_EXPRESSION`. A probe that segfaults
+   in `hipGetDeviceCount`, or that cannot load `libamdhip64.so` after the binary is relocated out
+   of the build tree (the build-tree RUNPATH is what hides this today), is exactly the case where
+   the GPU test silently stops running on a machine that has a GPU. Fix in
+   `run_gpu_test.cmake:7-9`: skip on 77 and fail on anything else, e.g.
+
+   ```cmake
+   if(probe_result EQUAL 77)
+       message(FATAL_ERROR "no GPU device available, skipping")
+   elseif(NOT probe_result EQUAL 0)
+       message(FATAL_ERROR "${PROBE} failed with ${probe_result}")
+   endif()
+   ```
+
+   The alternative resolution -- keep any-nonzero and delete the "77 means none" sentence from the
+   probe -- is worse: it throws away information the probe already produces. The test-side half of
+   the launcher is right and does not need touching: with a device present, `/bin/false` in place
+   of the test gives `/bin/false exited with 1` and an aborting test gives `exited with Subprocess
+   aborted`, neither of which matches the skip regex (both measured here).
+
+2. **The promoted skip lesson recommends a mechanism this port measured to be dead and then
+   deleted, and cites this port while doing it.**
+   `.claude/skills/cuda-to-rocm/references/validation.md:101-111` establishes that a dependency
+   with a namespace-scope GPU context aborts before `main` on a device-less host, and then
+   concludes at :108 "So keep the 77 path". In that situation the in-`main` device count check can
+   never execute -- which is precisely the argument `2cf0e8a` makes for removing it ("a machine
+   without one never reaches main, so the check could no longer fire"), reproduced here: running
+   `rmcl_ros_tests_gpu_kernels` directly under `HIP_VISIBLE_DEVICES=-1` dies with
+   `terminate called ... Error calling cudaGetDeviceProperties` / `Aborted (core dumped)`, never
+   reaching `main`. So the paragraph recommends dead code, and a reader who follows it to the
+   named source project (rmcl) finds no 77 path and no `SKIP_RETURN_CODE` on the branch. The
+   launcher paragraph at :113-123 still frames itself as an optional extra to "weigh against just
+   documenting the gap", which is the position a person overruled in the ruling above. Rewrite
+   :96-123 so the split is by cause and not by preference: the in-`main` 77 check plus
+   `SKIP_RETURN_CODE 77` is the mechanism where nothing aborts before `main`; where a dependency
+   constructs a GPU context at load, that check cannot fire and the probe launcher is the
+   mechanism, which is what rmcl ships. Keep the two measured CTest dead ends and the lazy-context
+   deferral, both still correct.
+
+### Verified here, so it does not have to be re-argued
+
+- The probe does not pull rmagine in. `readelf -d` on `rmcl_ros_tests_gpu_probe` gives exactly
+  two NEEDED entries, `libamdhip64.so.7` and `libc.so.6`; `librmagine-cuda.so.2` and
+  `librocrand.so.1` appear only in `rmcl_ros_tests_gpu_kernels`. That is the load-bearing claim
+  of the whole design and it holds.
+- The acceptance measurements reproduce on this host (MI300X, gfx942, ROCm 7.14, incremental
+  colcon build of the three packages at `2cf0e8a`, `Summary: 3 packages finished [5.85s]`):
+  `ctest` -> `1/1 Test #1: rmcl_gpu_kernels ... Passed 0.64 sec`;
+  `HIP_VISIBLE_DEVICES=-1 ctest` -> `***Skipped 0.23 sec`, `1 - rmcl_gpu_kernels (Skipped)`;
+  probe alone -> rc 0 with a device, `no GPU device available` and rc 77 without.
+- The CUDA branch of the probe is sound and was compiled, not reasoned about.
+  `g++ -std=c++17 -Wall -Wextra -Wpedantic -I rmcl_ros/include -I <cuda-12.8>/targets/x86_64-linux/include
+  -c rmcl_ros/tests/gpu_device_probe.cpp` succeeds with no diagnostics through the shim's `#else`
+  branch (`cuda_runtime.h`, `curand.h`, `curand_kernel.h` under a plain host compiler), links
+  against `-lcudart`, and on this NVIDIA-free host prints `no GPU device available` and exits 77.
+  Its CMake branch is also safe when `CUDAToolkit` was the finder: `CUDA_INCLUDE_DIRS` is `""`
+  there (`rmcl_ros/CMakeLists.txt:198`) and `target_include_directories(<t> PRIVATE)` with an
+  empty expansion is legal CMake (checked), while `CUDA_LIBRARIES` is `CUDA::cudart`, whose
+  imported target is visible in the `tests/` subdirectory and carries the include dirs.
+- The shim trim is clean: `cudaError_t` has no user anywhere in `rmcl_ros/` or `rmcl/`, and the
+  only surviving `cudaMalloc`/`cudaMemcpyAsync`/`cudaMallocHost` uses are in
+  `rmcl_ros/src/rmcl/optix/eval_program_groups.cpp`, which no ROCm configuration builds.
+  `cudaSuccess` and `cudaGetDeviceCount` have exactly one user each, the probe.
+- The ruling was implemented faithfully. `git diff 3544424 HEAD` is one hunk: the `PUBLIC USE_HIP`
+  comment at `rmcl_ros/CMakeLists.txt:233-235`, where gfx1100's already-reviewed wording was kept.
+  Everything else in the adopted tree is identical to the preserved `gfx942-skip-launcher` tip.
+- gfx1100 review item 1 is resolved and its mechanism re-derived here rather than taken from the
+  porter: on this host's ROCm 7.14 (`hip-config-version.cmake` `PACKAGE_VERSION "7.14.60850"`),
+  `hip_add_interface_compile_flags` (`hip-config.cmake:75-79`) appends
+  `INTERFACE_COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:CXX>:...>"` and is fed `-x hip` and
+  `--offload-arch=` at `hip-config-amd.cmake:143,150`; `hip_add_interface_link_flags`
+  (`hip-config.cmake:81-90`) is the version branch the porter describes -- bare below CMake 3.20,
+  `$<$<LINK_LANGUAGE:CXX>:...>` at or above -- fed `--hip-link` and `--offload-arch=` at
+  `hip-config-amd.cmake:146,152`. The lesson's remaining claim that
+  `$<COMPILE_LANGUAGE:HIP>` cannot be used in `target_link_libraries` is also true: CMake refuses
+  with "may only be used to specify include directories, compile definitions, compile options"
+  (checked with a four-line project).
+- gfx1100 review item 2 is resolved: `surface.json` `test:rmcl_gpu_tests` `where` is
+  "added by this port (rmcl_ros/tests)" and the `covered` evidence names the probe, the launcher
+  and the skip measurement.
+- Fault classes re-checked on the unchanged kernels: no `warpSize`, `__shfl`, `__ballot`,
+  `__activemask`, literal 32, `/32` or `%32` anywhere under `rmcl_ros/src/rmcl/`,
+  `rmcl_ros/include/rmcl_ros/rmcl/` or `rmcl_ros/tests/`; `simple_stats_kernel`
+  (`resampling.cu:40-79`) writes all `blockSize` LDS slots before the loop and runs the full
+  `__syncthreads` tree with the barrier outside `if(tid < s)`, so it is correct on wave32 and
+  wave64 alike.
