@@ -343,26 +343,47 @@ ahead of it there rather than moving the include back into the shim. Nothing on 
 side can catch any of this, since the HIP branch of the shim includes hipRAND instead and hipRAND is
 host-safe. (HEonGPU)
 
-**A `__device__` body in its own `.cu` needs `-fgpu-rdc`, not a move into a header.** When a
-project keeps `__device__` function definitions in their own `.cu` with explicit
-instantiations, it is relying on relocatable device code (nvcc `-rdc`, which CMake's
-`CUDA_SEPARABLE_COMPILATION` turns on). A HIP compile resolves device symbols one TU at a
-time, so without the flag it stops with `lld: error: undefined hidden symbol`. HIP has the
-same facility -- `-fgpu-rdc` -- and enabling it is normally the right answer: it is the
-direct counterpart of the setting the CUDA side already has, and it leaves the project's
-sources untouched. CMake has no `HIP_SEPARABLE_COMPILATION` property (checked on CMake
-4.0.3), so wire it by hand, and remember the LINK side and the consumers:
+**A `__device__` body in its own `.cu` has two answers on AMD, and the choice is about
+consumers, not about speed.** When a project keeps `__device__` function definitions in their
+own `.cu` with explicit instantiations, it is relying on relocatable device code (nvcc
+`-rdc`, which CMake's `CUDA_SEPARABLE_COMPILATION` turns on). A HIP compile resolves device
+symbols one TU at a time, so without a flag it stops with
+`lld: error: undefined hidden symbol`. Either of these makes it link:
 
-```cmake
-target_compile_options(mylib PRIVATE $<$<COMPILE_LANGUAGE:HIP>:-fgpu-rdc>)
-# whoever links the archive performs the device link, including a consumer of the
-# installed export, so put it on the interface rather than in everyone's build
-target_compile_options(mylib INTERFACE $<$<COMPILE_LANGUAGE:HIP>:-fgpu-rdc>)
-target_link_options(mylib INTERFACE -fgpu-rdc)
-```
+1. **`-fgpu-rdc`**, HIP's own relocatable device code, the direct counterpart of the setting
+   the CUDA side already has. It leaves the project's sources untouched -- often zero diff in
+   the files a maintainer cares about -- and it still inlines the cross-TU calls (see below).
+   CMake has no `HIP_SEPARABLE_COMPILATION` property (checked on CMake 4.0.3), so wire it by
+   hand, and remember the LINK side and the consumers:
+
+   ```cmake
+   target_compile_options(mylib PRIVATE $<$<COMPILE_LANGUAGE:HIP>:-fgpu-rdc>)
+   # whoever links the archive performs the device link, including a consumer of the
+   # installed export, so put it on the interface rather than in everyone's build
+   target_compile_options(mylib INTERFACE $<$<COMPILE_LANGUAGE:HIP>:-fgpu-rdc>)
+   target_link_options(mylib INTERFACE -fgpu-rdc)
+   ```
+
+2. **A `__CUDACC__`/`__HIPCC__` guard** around the definitions moved into the header, with the
+   declarations left unconditional (the shape and the two-phase-lookup reason are two entries
+   below). It costs two edited files and it drops the `.cu` from the source list, but it puts
+   NOTHING on the link interface, so consumers are unaffected.
+
+Both were measured on the same project (HEonGPU, gfx90a, ROCm 7.2.1): 20/20 suites pass
+either way, benchmarks equal within run-to-run noise, so performance does not decide it. What
+decides it is whether the project ships an installed library to third parties. `-fgpu-rdc`
+imposes a contract on every consumer that the CUDA path does not impose (next entry), and
+`git log -S` on that project showed nothing had ever been on its link interface before. A
+library whose consumers are strangers should prefer the guard for that reason; an application,
+or a library built in-tree by its only consumer, can take `-fgpu-rdc` and keep the smaller
+diff. HEonGPU tried RDC, measured the consumer cost, and was ruled back to the guard. Whichever
+you choose, say in the code which one it is and why -- the reviewer's first question is why the
+other one was not used, and an answer invented after the fact is usually wrong (that project's
+first guard comment claimed RDC could not inline, which is false).
 
 **`-fgpu-rdc` changes the consumer contract, so the project's downstream docs owe a line
-about it.** The interface options above make the common consumer work, they do not make the
+about it.** This is the cost of option 1 above, and it is the reason to think twice about it.
+The interface options make the common consumer work, they do not make the
 requirement go away, and a comment claiming the consumer need not know is wrong. An archive
 of relocatable device code carries no complete device image, so the device link happens at
 the consumer's final link and only the HIP driver in HIP link mode performs it. Two failure
@@ -427,7 +448,11 @@ conditioned; decide deliberately whether that asymmetry is what you want. Do NOT
 any of this by wrapping the interface flag in `$<LINK_LANGUAGE:HIP>`: that only trades the
 unrecognized-option message for the undefined-symbol one. Fix it in prose -- wherever the
 project tells a CUDA consumer to set `CUDA_SEPARABLE_COMPILATION ON`, the HIP consumer needs
-the parallel sentence. (HEonGPU)
+the parallel sentence. None of this is fatal -- the contract is documentable and a consumer
+that enables the HIP language pays nothing -- but it is a requirement the CUDA path does not
+have, and on HEonGPU that asymmetry alone was enough to rule `-fgpu-rdc` out in favour of the
+guard. Weigh it before you adopt the flag, not after you have written the docs for it.
+(HEonGPU)
 
 **Cross-TU `__device__` calls ARE inlined on AMD under `-fgpu-rdc`.** Do not repeat the nvcc
 intuition here: nvcc `-rdc=true` really does leave a call unless you add `-dlto`, but HIP's
@@ -442,8 +467,8 @@ link each, since every one of them device-links the whole library; device code p
 binary 1,575,096 -> 1,684,264 bytes; TFHE gate timings and 20/20 suites identical either
 way, and BFV/CKKS benchmarks unchanged to within run-to-run noise).
 
-**Moving the bodies into a host-reachable header instead silently breaks the CUDA build.**
-This is the tempting move when you do not know `-fgpu-rdc` is available: mark them
+**Moving the bodies into a host-reachable header UNGUARDED silently breaks the CUDA build.**
+This is the tempting move: mark them
 `__device__ inline` in the header. It works on AMD, and g++ compiling any host TU that
 reaches the header must then parse device bodies and rejects `__syncthreads` ("there are no
 arguments to `__syncthreads` that depend on a template parameter") -- even though the
@@ -465,9 +490,10 @@ one. `__CUDA_ARCH__`/`__HIP_DEVICE_COMPILE__` would be wrong here -- they are fa
 nvcc's host pass, which still has to parse the same TU. Adding `inline` at the definition
 after a non-inline declaration is legal. The third arrangement, keeping the separate `.cu`
 for CUDA and the header definitions for HIP, is the worst of them: it duplicates the bodies
-in two files that must not drift. HEonGPU carried the guard for two rounds and then dropped
-it for `-fgpu-rdc`, which restored both files to their upstream text and left the whole
-change three lines of CMake and the comment explaining them.
+in two files that must not drift. HEonGPU went guard -> `-fgpu-rdc` -> guard: the flag gave a
+zero-diff pair of source files and three lines of CMake, and it was given up because those
+three lines were on the library's link interface. Two edited source files that consumers
+never see beat a clean diff that changes how everyone links.
 
 **No AMD build, review round or GPU validation can detect this class.** In HEonGPU two review
 rounds and a full 20/20 GPU validation passed over the inlined header; only compiling the
@@ -476,7 +502,11 @@ nvcc compile check (references/validation.md). Adding the guard is codegen-neutr
 verified with `codeobj_diff.py`, identical exported symbols and device ISA on all 42 gfx90a
 binaries -- because every calling TU is a device TU where the guard is true. Switching to
 `-fgpu-rdc` is NOT: it changes the device ISA of every binary (the device link re-optimizes
-the whole image), so it is a real code delta and every arch owes a fresh GPU run. (HEonGPU)
+the whole image), so it is a real code delta and every arch owes a fresh GPU run. That cuts
+both ways, and it is a free correctness check if you ever switch back: reverting HEonGPU's
+`-fgpu-rdc` to the guard reproduced the pre-RDC build byte for byte in device ISA and
+exported symbols on all 42 binaries, which is what a clean revert should look like. Keep a
+snapshot of the earlier `bin/` around for exactly that comparison. (HEonGPU)
 
 **`__HIP_PLATFORM_AMD__` is undefined until `hip/hip_runtime.h` has been included in that
 TU.** A wave-width gate in a header included BEFORE the runtime header silently takes the

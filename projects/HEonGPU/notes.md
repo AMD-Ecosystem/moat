@@ -3069,3 +3069,161 @@ Changes made:
 The commit body of `9f9fd0b` repeats the false statement and cannot be amended
 (it is upstream-visible history and `5d99b8f` must stay an ancestor), so
 `beba427`'s body carries the corrected statement explicitly and says so.
+
+## Round 10: the -fgpu-rdc design is reverted, by ruling (2026-08-13, linux-gfx90a, 6ac06d0)
+
+Not a review finding. Jeff Daily ruled the deferral
+`heongpu-hip-link-interface-option` `now` (`--choice now --by jeffdaily`,
+recorded in `deferred.json`): drop `-fgpu-rdc` entirely and go back to the
+compiler guard, rather than condition the interface options. The reasoning as
+given, and it is the reasoning to quote to anyone who asks why the smaller diff
+was not kept:
+
+- `-fgpu-rdc` bought a smaller footprint -- `small_ntt.cuh` and `small_ntt.cu`
+  byte-identical to the unmodified project -- and paid with a requirement on
+  downstream consumers that the project does not otherwise impose. `git log -S`
+  on `target_link_options(heongpu INTERFACE` finds its first appearance in
+  `8ef207a`, i.e. ours; nothing had ever been on this library's link interface,
+  and the CUDA path puts nothing there either.
+- Rounds 6-9 measured the consequence exactly: a consumer whose own project does
+  not enable the HIP language cannot link the archive at all and has no
+  target-level remedy (round-8 matrix rows 3-6, notes.md:2830).
+- The guard has zero CMake surface and therefore zero consumer impact. Two
+  modified files is the cheaper of the two prices.
+
+The measured knowledge from rounds 5-9 stays true and stays recorded; only the
+choice changed. Do not re-open the deferral and do not re-argue `-fgpu-rdc` on
+this project.
+
+### What was reverted, and what was kept
+
+Worked out by diffing `4925df1` (the last guard commit) against `beba427`, not
+from a list. Reverted in `6ac06d0`:
+
+- `src/CMakeLists.txt`: the `PRIVATE -fgpu-rdc` compile option in
+  `heongpu_set_gpu_properties`, the `INTERFACE` compile/link options and their
+  comment block, and `lib/kernel/small_ntt.cu` back out of
+  `HEONGPU_KERNEL_SOURCES`. The file is now byte-identical to `4925df1`.
+- `src/include/heongpu/kernel/small_ntt.cuh`: restored from `4925df1` (the guard
+  form), so `small_ntt.cu` is deleted again.
+- `docs/advanced_topics.rst`: the three consumer-facing HIP paragraphs about
+  enabling the HIP language, `--hip-link` and the by-path shape. The file is now
+  byte-identical to `4925df1`. The CUDA `CUDA_SEPARABLE_COMPILATION` guidance is
+  the project's own and was never touched.
+
+Kept, because it has nothing to do with the design: the cuRAND-include removal
+and its rewritten comment in `cuda_to_hip.h` (`d7d609e`, `81176c9`), everything
+from rounds 1-4, and the MI250X/MI250 hardware naming (no fork file ever named a
+GPU; that correction lives in commit bodies and in these notes).
+
+One deliberate departure from a verbatim restore: the guard comment in
+`small_ntt.cuh` at `4925df1` justified the guard by claiming `-fgpu-rdc` leaves
+each butterfly an uninlinable cross-unit call. That is FALSE -- measured in
+round 5, retracted in `8ef207a`, reproduced twice by reviewers -- so restoring
+it verbatim would have re-shipped a known-false statement. The comment now
+carries the real reason: RDC works and the device link still inlines, but it
+leaves no complete device image in the archive, so every consumer has to enable
+the HIP language and link through the HIP driver, and keeping the definitions
+here asks nothing of consumers.
+
+### The plain consumer, measured (this is what the ruling was about)
+
+Fresh install of `6ac06d0` at `agent_space/heongpu-r10/prefix` (configured with
+`-DCMAKE_INSTALL_PREFIX`; `cmake --install --prefix` does not override this
+project's baked-in destinations). No `-fgpu-rdc` and no `INTERFACE_LINK_OPTIONS`
+appear anywhere under `prefix/lib/cmake` now;
+`IMPORTED_LINK_INTERFACE_LANGUAGES_RELEASE "HIP"` is still there, as CMake
+writes it for any static library built from HIP sources, and it is harmless
+without the flag.
+
+| consumer | shape | driver | result |
+| --- | --- | --- | --- |
+| `project(doc_consumer LANGUAGES CXX HIP)`, `main.cpp` `LANGUAGE HIP`, BFV encrypt/decrypt (the documented snippet verbatim) | real export | `/opt/rocm/lib/llvm/bin/clang++` | configure rc=0, build rc=0, `roundtrip OK` |
+| `project(plain_consumer LANGUAGES CXX)`, plain C++ exe, `target_link_libraries(app PRIVATE HEonGPU::heongpu)` and nothing else -- no `enable_language(HIP)`, no `--hip-link`, no `LINKER_LANGUAGE` | real export | `/usr/bin/c++` | configure rc=0, build rc=0, runs, exit 0 |
+
+The plain row is rows 3/4/5 of the round-8 matrix, which failed with
+``unrecognized command-line option `-fgpu-rdc'`` under the RDC design and had no
+target-level remedy. It now works with nothing added.
+
+The plain consumer cannot include the HEonGPU headers (they pull in rocThrust,
+which the project's own `.rst` already states), so its `main.cpp` declares two
+host functions and calls them: `heongpu::is_prime(97)=1`, `is_prime(100)=0`,
+`calculate_bit_size(1024)=11`. That still exercises the thing that matters,
+because those symbols live in `util.cu.o`, which carries a device bundle -- and
+`llvm-objdump --offloading` on the resulting executable shows
+`app.0.hipv4-amdgcn-amd-amdhsa--gfx90a`, i.e. a complete gfx90a code object
+reached the binary through a link driven by `/usr/bin/c++`. That is the property
+`-fgpu-rdc` destroys.
+
+Reproduction: `agent_space/r10-consumers/{doc,plain}` (gitignored).
+
+### Verification of this round
+
+```
+cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build -DUSE_HIP=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release \
+  -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON \
+  -DHEonGPU_BUILD_BENCHMARKS=ON \
+  -DCMAKE_INSTALL_PREFIX=agent_space/heongpu-r10/prefix   # rc=0, empty build dir
+cmake --build projects/HEonGPU/src/build -j64             # rc=0, 0 error lines, 64.7s
+ctest --test-dir projects/HEonGPU/src/build               # 100% passed, 20/20, 13.25s
+bash agent_space/heongpu-cuda-check.sh                    # see below
+python3 utils/codeobj_diff.py agent_space/heongpu-amd-baseline/bin \
+                              projects/HEonGPU/src/build/bin
+```
+
+`codeobj_diff.py` reports **verdict=identical**, all 42 binaries, exported
+symbols and device ISA both. The baseline snapshot is the `4925df1` guard build
+(round-5 measurement, still on disk), so this is direct evidence that the revert
+reproduces the pre-RDC codegen exactly rather than approximately. It also
+retires the round-5 concern in the other direction: whatever the RDC switch did
+to every binary's ISA is now undone.
+
+CUDA no-regression: run twice. The first run was incremental and rebuilt only
+what the source change touched, so it was re-run after `touch`ing
+`src/include/heongpu/cuda_to_hip.h` to force every TU on that include path.
+That run (`=== START 2026-08-12T23:57:58Z ===` in
+`agent_space/heongpu-cuda-check.log`): CONFIGURE rc=0, BUILD rc=0, **37 CUDA +
+44 CXX objects rebuilt, 42 executables linked, 0 lines matching `error`**. Both
+regressions this branch fixed stay fixed and both were actually recompiled in
+that run: `lib/heongpu.cpp.o` (regression 1, the cuRAND include order) is in the
+rebuild list, and every host TU reaching `small_ntt.cuh` (regression 2, device
+bodies parsed by the host compiler) was rebuilt with the guard back in place.
+Stale `heongpu_kernel.dir/lib/kernel/small_ntt.cu.o*` from the RDC-era build was
+deleted first; CMake would not have linked it, but it confused the file listing.
+
+### Revalidation accounting
+
+`advance-head` -> `6ac06d0575ec210f8dbfa1123aa890d2a04a9938`.
+
+```
+moatlib classify HEonGPU 5d99b8f 6ac06d0 -> class=mixed arch_independent=False inert=False
+moatlib classify HEonGPU beba427 6ac06d0 -> class=mixed arch_independent=False inert=False
+```
+
+Both archs sit at `validated_sha=5d99b8f` and owe a fresh 20-suite run at
+`6ac06d0`. Do NOT carry forward the round-5..9 obligation as if nothing moved:
+the code at head is not the code either arch last validated, and it is also not
+the RDC code the last four rounds discussed. The one shortcut that IS available
+to a validator: the AMD binaries at `6ac06d0` are bit-identical in device ISA to
+the `4925df1` build, which linux-gfx90a ran at 20/20 on 2026-08-12 -- that is
+evidence, not a substitute for the run.
+
+`jargon.py --port HEonGPU`: clean over the whole branch.
+`prose.py` on the commit body: clean. Title 63 chars.
+`git -C projects/HEonGPU/src status --porcelain`: empty.
+
+### Skill
+
+`cuda-to-rocm` kept every measured fact from rounds 5-9 and was restructured so
+it no longer reads as "`-fgpu-rdc` is the answer". `fault-classes.md` now opens
+the class with two numbered options, says performance does not decide between
+them (both measured, 20/20 and equal benchmarks), and says what does: whether
+the project ships an installed library to strangers. The consumer-contract entry
+is unchanged in substance -- it is the most expensive knowledge on this branch
+and the next porter WILL reach for RDC -- but it is now framed as the cost of
+option 1 and ends with what that cost bought here. The header-move entry records
+the full guard -> RDC -> guard path and its lesson, and the codegen entry gains
+the revert-check trick (`codeobj_diff.py` against a pre-switch `bin/` snapshot
+should say `identical`). `SKILL.md`'s one-liner presents both options with the
+deciding question.

@@ -151,3 +151,14 @@
 {"kind": "tokens", "ts": "2026-08-12T23:35:19Z", "tokens": 74378, "source": "reviewer"}
 {"kind":"session","ts":"2026-08-12T23:36:15Z","epoch":1786577775.671170460,"event":"start","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-08-12T23:42:22Z","epoch":1786578142.088735988,"event":"end","platform":"linux-gfx90a"}
+{"kind": "tokens", "ts": "2026-08-12T23:43:06Z", "tokens": 74211, "source": "porter"}
+{"kind":"session","ts":"2026-08-12T23:43:38Z","epoch":1786578218.187305798,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-12T23:43:46Z","epoch":1786578226.655742206,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-12T23:47:56Z","epoch":1786578476.685669516,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-12T23:50:58Z","phase":"compile","seconds":7.014,"exit":0,"cmd":"cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON -DCMAKE_INSTALL_PREFIX=/var/lib/jenkins/moat/agent_space/heongpu-r10/prefix"}
+{"kind":"phase","ts":"2026-08-12T23:52:07Z","phase":"compile","seconds":64.704,"exit":0,"cmd":"cmake --build projects/HEonGPU/src/build -j64"}
+{"kind":"phase","ts":"2026-08-12T23:52:33Z","phase":"test","seconds":13.398,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"phase","ts":"2026-08-12T23:54:36Z","phase":"compile","seconds":0.182,"exit":0,"cmd":"cmake --install projects/HEonGPU/src/build"}
+{"kind":"phase","ts":"2026-08-12T23:57:15Z","phase":"compile","seconds":37.686,"exit":0,"cmd":"bash agent_space/heongpu-cuda-check.sh"}
+{"kind":"phase","ts":"2026-08-12T23:58:48Z","phase":"compile","seconds":50.527,"exit":0,"cmd":"bash agent_space/heongpu-cuda-check.sh"}
+{"kind":"session","ts":"2026-08-13T00:02:40Z","epoch":1786579360.331517186,"event":"end","platform":"linux-gfx90a"}

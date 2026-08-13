@@ -69,7 +69,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-08-12T23:07:40Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-12T23:46:52Z",
+        "note": "Ruled by Jeff Daily 2026-08-12: resolved by reverting the -fgpu-rdc design entirely rather than by conditioning the interface options. The guard approach that preceded it puts nothing on the link interface, so downstream consumers are unaffected and neither remedy in this item is needed. Cost accepted: two upstream files carry a compiler guard instead of being byte-identical."
+      }
     }
   ]
 }
