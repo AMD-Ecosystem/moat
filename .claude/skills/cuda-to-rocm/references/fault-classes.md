@@ -298,6 +298,38 @@ ternaries to match the host forms exactly. (CV-CUDA: OpMorphology CLOSE on RGBAf
 
 ## Headers, includes and build
 
+**A CUDA-version `#if` can silently switch a whole synchronisation layer off under HIP.**
+The dangerous shape is a header that gates its implementation on a toolkit macro and
+degrades to empty bodies rather than failing:
+
+    #if (__CUDACC_VER_MAJOR__ >= 11)
+    #if (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 800))
+    #define FLASHINFER_CP_ASYNC_ENABLED
+    #endif
+    #endif
+
+hipcc does not define `__CUDACC_VER_MAJOR__`, so this compiles cleanly with
+`cp_async::commit_group()` and `wait_group<N>()` as **no-ops** while the loads fall back to
+synchronous copies. Nothing warns. A kernel whose software pipeline double-buffers shared
+memory then keeps the structure and loses the ordering it depends on, and races between
+threads still reading one stage and threads overwriting it.
+
+It presents as wrong numbers with everything else checking out: launch succeeds,
+`hipDeviceSynchronize` is clean, results are deterministic run to run, inputs verify
+byte-exact, and the primitives all test correct in isolation. Grep any vendored
+CUDA-async header for the macro that enables it and check whether hipcc defines it, rather
+than assuming an untouched third-party header is inert.
+
+Two tests localise it fast, and both are cheap: shrink the block until only one wavefront
+participates, and set the pipeline to a single stage. If either makes the answers correct,
+the fault is pipeline ordering, not arithmetic. Fix by shimming the async header so
+`wait_group` is a real `__syncthreads()`, or by selecting a single stage on the HIP path.
+
+**Assume it is latent everywhere, not arch-specific.** The no-ops are platform-wide, so
+other architectures that pass are passing on scheduling luck. Quest failed on gfx1151 at 4
+wavefronts per block while gfx90a and gfx1100 were already recorded `completed` on the same
+race; do not treat a green result elsewhere as evidence the pipeline is sound.
+
 **A shared compat header must be host-includable.** Host `.cpp` TUs reach the shim through
 ordinary headers, so an unconditional `#include <cub/...>` or `<hipcub/...>` leaks device
 headers into g++ and fails there. Put the shim in the lowest common layer, keep host-safe
