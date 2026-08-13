@@ -13,6 +13,19 @@
       "upstream_issue": null,
       "created_at": "2026-06-07T18:21:59Z",
       "decided": null
+    },
+    {
+      "id": "cv-cuda-nvidia-proprietary-rescan",
+      "kind": "other",
+      "component": null,
+      "summary": "Rescan with the fixed scan_nvidia: 21 files in upstream's Apache-2.0 tree carry the reworded NVIDIA proprietary notice ('NVIDIA CORPORATION, its affiliates and licensors retain all intellectual property'), including the shipped header src/cvcuda/include/cvcuda/Version.h, cmake/, and docs/design/ files. Upstream self-inconsistency (NVIDIA dual-stamping its own repo); a person should rule the tier standing for our fork redistribution.",
+      "refs": [
+        "moat main b336246 (case/wording-proof scan_nvidia)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T17:08:39Z",
+      "decided": null
     }
   ]
 }
