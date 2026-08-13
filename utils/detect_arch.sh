@@ -44,8 +44,10 @@ if [ "$os" = "windows" ]; then
   fi
 else
   if command -v rocm_agent_enumerator >/dev/null 2>&1; then
+    # -o keeps only the arch token: an enumerator that appends target features
+    # (gfx90a:sramecc+:xnack-) would otherwise yield a PLATFORM moatlib refuses.
     arch=$(rocm_agent_enumerator 2>/dev/null \
-           | grep -E '^gfx[0-9a-f]+' | grep -v '^gfx000$' | sort -u | head -1)
+           | grep -oE '^gfx[0-9a-f]+' | grep -v '^gfx000$' | sort -u | head -1)
   fi
   if [ -z "$arch" ] && command -v rocminfo >/dev/null 2>&1; then
     arch=$(rocminfo 2>/dev/null | grep -oE 'gfx[0-9a-f]+' | grep -v '^gfx000$' | sort -u | head -1)
@@ -54,7 +56,7 @@ else
     echo "detect_arch: no AMD GPU found (rocm_agent_enumerator/rocminfo)" >&2
     exit 1
   fi
-  distinct=$(rocm_agent_enumerator 2>/dev/null | grep -E '^gfx[0-9a-f]+' | grep -v '^gfx000$' | sort -u | wc -l)
+  distinct=$(rocm_agent_enumerator 2>/dev/null | grep -oE '^gfx[0-9a-f]+' | grep -v '^gfx000$' | sort -u | wc -l)
   if [ "${distinct:-1}" -gt 1 ]; then
     echo "detect_arch: multiple GPU archs present; using $arch (set MOAT_PLATFORM=linux-<gfx> to pin -- HIP_VISIBLE_DEVICES does not mask the HSA tools this reads)" >&2
   fi
