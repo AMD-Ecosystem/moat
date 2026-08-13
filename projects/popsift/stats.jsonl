@@ -70,3 +70,4 @@
 {"kind":"phase","ts":"2026-08-13T22:36:11Z","phase":"test","seconds":19.915,"exit":0,"cmd":"cmake --build projects/popsift/src/build-hip --target run-test-boat"}
 {"kind":"phase","ts":"2026-08-13T22:37:40Z","phase":"compile","seconds":19.266,"exit":0,"cmd":"cmake --build projects/popsift/src/build-cuda -j"}
 {"kind":"session","ts":"2026-08-13T22:42:52Z","epoch":1786660972.047697523,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-13T22:55:38Z","epoch":1786661738.206721129,"event":"end","platform":"linux-gfx1100"}
