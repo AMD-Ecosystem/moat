@@ -86,8 +86,8 @@ sources (`cuda_rasterizer/forward.hip`); hipify 2.x renames the DIRECTORY as wel
 (`cuda_rasterizer/forward.cu` -> `hip_rasterizer/forward.hip`, headers copied along with it).
 A clean step inherited from an earlier port -- `rm -rf build *.egg-info cuda_rasterizer/*.hip`
 -- therefore leaves a whole stale hipified tree behind and you rebuild code you did not edit.
-Remove the renamed directory too, and add it to `.gitignore` thinking rather than committing
-it. (diff-surfel-rasterizations)
+Remove the renamed directory too, and add it to `.gitignore` so a later run does not commit
+a tree of generated sources by accident. (diff-surfel-rasterizations)
 
 ### Dependency environment for PyTorch projects (the install path is part of the port)
 

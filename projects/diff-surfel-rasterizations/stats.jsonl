@@ -12,3 +12,7 @@
 {"kind":"session","ts":"2026-08-13T07:04:57Z","epoch":1786604697.139590061,"event":"end","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-08-13T07:07:52Z","epoch":1786604872.414331794,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-08-13T07:26:14Z","epoch":1786605974.642269677,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-13T07:29:26Z","epoch":1786606166.486169749,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-08-13T07:44:48Z","phase":"compile","seconds":449.637,"exit":0,"cmd":"bash -c \ncd /var/lib/jenkins/moat/projects/diff-surfel-rasterizations/src\nexport PYTORCH_ROCM_ARCH=gfx942 MAX_JOBS=32\nfor v in diff-surfel-rasterization*/; do\n  ( cd \"$v\" && rm -rf build *.egg-info *.hip hip_rasterizer \\\n    && pip install -e . --no-build-isolation --no-deps ) || exit 1\ndone"}
+{"kind":"phase","ts":"2026-08-13T07:45:10Z","phase":"test","seconds":8.795,"exit":0,"cmd":"python3 -m pytest projects/diff-surfel-rasterizations/src/tests/test_variants.py -q"}
+{"kind":"session","ts":"2026-08-13T07:48:36Z","epoch":1786607316.871848358,"event":"end","platform":"linux-gfx942"}

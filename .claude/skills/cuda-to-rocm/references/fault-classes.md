@@ -311,16 +311,23 @@ Inria-derived 3DGS/2DGS rasterizers, where every launch site is written that way
 sequence nvcc already accepts. Expect one edit per launch site, not per file.
 (diff-surfel-rasterizations)
 
-**Three CUDA spellings that simply do not exist in HIP, all cheap to guard.** They travel
+**Three CUDA spellings that do not resolve under HIP, all cheap to guard.** They travel
 together in the same family of projects, so check for all three at once:
 `#include "device_launch_parameters.h"` (no such header; `threadIdx` and friends are
-intrinsic under hipcc), `#include <cooperative_groups/reduce.h>` (HIP's cooperative groups
-has no `reduce.h`; safe to drop when the code uses only `this_grid()`,
-`this_thread_block()` and `thread_rank()`, so grep for `cg::reduce`, `tiled_partition` and
-`coalesced_threads` before guarding), and `__trap()` (not declared by HIP's device runtime;
+intrinsic under hipcc), `#include <cooperative_groups/reduce.h>` (hipify's
+`CUDA_INCLUDE_MAP` maps only `cooperative_groups.h`, so this spelling is left verbatim and
+then does not resolve), and `__trap()` (not declared by HIP's device runtime;
 `#define __trap __builtin_trap` under `USE_ROCM`, which is what HIP's own `abort()` is).
 Guard each with `#if !defined(USE_ROCM)` / `#if defined(USE_ROCM)` so the CUDA path is
 untouched. (diff-surfel-rasterizations)
+
+The include is the only thing missing in the cooperative-groups case: `cg::reduce` itself
+exists on ROCm. ROCm 7.14 ships `<hip/cooperative_groups/hip_reduce.h>` (implemented in
+`hip/amd_detail/amd_hip_cooperative_groups_reduce.h`), and `hip_cooperative_groups.h` does
+NOT pull it in, so the `USE_ROCM` arm of the guard is an include of that header rather than
+a rewritten reduction. Dropping the include outright is right only when the code uses just
+`this_grid()`, `this_thread_block()` and `thread_rank()` -- grep for `cg::reduce`,
+`reduce_update_async` and `plus<>` first. (diff-surfel-rasterizations)
 
 **An uninitialised header-only submodule fails as a HIP error, not as a missing file.**
 When a project bundles GLM (or Eigen, or any header-only library) as a submodule and the

@@ -311,22 +311,19 @@ loosened, and neither is a port defect -- both would behave identically under CU
 
 - **Plan test 8, `tile1` vs base "must match within rtol=1e-4": it does not, and cannot.**
   Measured at 32x24: 16.5% of elements differ, max |diff| 0.0092, mean |diff| 2.4e-4,
-  correlation 0.9999921. The mechanism is `getRect` (`auxiliary.h:73`): a surfel is binned by
-  the *tiles* its bounding box touches, so with 16x16 tiles a pixel composites surfels whose
-  radius stops short of it. Those tails are not negligible -- the radius is a 3-sigma cutoff
-  where `exp(-4.5)*opacity ~= 0.01`, well above the `alpha < 1/255` reject at
-  `forward.cu:382`. The 1x1 tiling bins to the exact box and drops them. Verified: every
-  pixel whose value differs is a pixel whose candidate set differs (0 counterexamples).
-  The test now asserts mean |diff| < 1e-3, max |diff| < 0.02, correlation > 0.9999.
-- **Plan test 6, opacity finite difference: the step size matters, and smaller is worse.**
-  Slope vs eps for the base variant: 1e-4 -> 0.62, 3e-4 -> 1.34, 1e-3 -> 1.15, 3e-3 -> 0.98,
-  1e-2 -> 0.98. It is *not* float32 cancellation -- accumulating the loss in float64 changes
-  nothing (0.70 / 1.35 / 1.15 / 0.98). It is the two hard thresholds in the forward
-  (`alpha < 1/255` and `test_T < 0.0001`) making the loss piecewise smooth: a fixed jump
-  divided by a shrinking step diverges, so the central difference converges only once the
-  step averages over many crossings. The harness uses eps 3e-3 and a +/-10% band; all 14
-  variants land in 0.978-0.995. Anyone reading "slope ~1.00" from the stage-1 EnvGS run
-  should know it depends on this choice.
+  correlation 0.9999921. The test now asserts mean |diff| < 1e-3, max |diff| < 0.02,
+  correlation > 0.9999.
+  **The mechanism recorded here originally -- a coarse tiling compositing 3-sigma tails a
+  1x1 tiling drops -- was wrong, and the review caught it. See the fix round below for what
+  actually happens (integer truncation of the tile bounds).**
+- **Plan test 6, opacity finite difference: the loss is piecewise smooth.** The two hard
+  thresholds in the forward (`alpha < 1/255` and `test_T < 0.0001`) do make it so, and the
+  eps sweep with the direction this round used (1e-4 -> 0.62, 3e-4 -> 1.34, 1e-3 -> 1.15,
+  3e-3 -> 0.98, 1e-2 -> 0.98) is real; float64 loss accumulation changes nothing
+  (0.70 / 1.35 / 1.15 / 0.98), so it is not float32 cancellation in the sum.
+  **But the threshold noise was not what forced eps 3e-3, and recording it as the cause was
+  wrong. The review found the operative cause -- a sign-balanced perturbation direction --
+  and the fix round below has the measurement.**
 
 ### Test harness design
 
@@ -534,3 +531,149 @@ appear in the diff (compiled here).
   `Co-Authored-By` trailer, ASCII throughout, no AMD-internal account reference.
 - Suite reproduced on this host: 95 passed, 5 skipped in 7.11 s.
 - `git -C projects/diff-surfel-rasterizations/src status --porcelain` is empty.
+
+## Fix round 2026-08-13 (linux-gfx942), `5d567f6` -> `7d6efdc`
+
+Every numbered review item applied. Same environment as the porting round (MI300X gfx942,
+ROCm 7.14.60850, torch 2.14.0a0+git7d05abc, hipify 2.0.0, `PYTORCH_ROCM_ARCH=gfx942`,
+`MAX_JOBS=32`). All 14 variants rebuilt from clean: **449.6 s, exit 0, `grep -ci warning` = 0**.
+Suite after the rebuild: **136 passed, 1 skipped in 7.55 s** (was 95 passed, 5 skipped).
+
+### History was rewritten, deliberately
+
+Nothing had validated `5d567f6` (`validated_sha` null on both rows) and there is no upstream
+PR, so the two commits were amended rather than appended to: the wrong `tile1` mechanism and
+the wrong finite-difference rationale were *in the commit bodies*, and on a fork whose branch
+is itself the deliverable those bodies are what a reader gets. New shas `d4bb1cb` (build) and
+`7d6efdc` (tests); the pre-rewrite tip is kept locally as `backup-review-5d567f6` and was not
+pushed. `--force-with-lease` only.
+
+### 1. The `tile1` mechanism, corrected and now under test
+
+The review is right and the reproduction is confirmed here. Committed 32x24 scene: every
+surfel `radii == 3`, the filter floor. The divergence is integer truncation, not 3-sigma
+tails.
+
+A single surfel (opacity 0.99, scale 0.01, radius 3) placed at pixel `(16+f, 12+f)` by
+inverting `ndc2Pix`, swept over `f`:
+
+| f | differing pixels | max abs diff |
+|---|---|---|
+| 0.00 / 0.10 / 0.25 / 0.50 / 0.60 | 0 | 0 |
+| 0.70 | 2 | 4.6e-3 |
+| 0.80 | 4 | 7.5e-3 |
+| 0.90 | 4 | 1.2e-2 |
+| 0.95 / 0.99 | 6 | 1.5e-2 / 1.7e-2 |
+
+Every differing pixel lies in the dropped column `floor(p.x + r)` or the dropped row
+`floor(p.y + r)` (checked, 0 counterexamples), and `tile1 <= base` at all of them: the 1x1
+tiling can only *lose* contributions. `BLOCK_Y` is 1 as well, so the row truncates like the
+column -- the review's column-only account is right but half the story.
+
+`tests/test_variants.py` now carries `test_tile1_drops_the_truncated_boundary_pixel`, a
+five-point sweep asserting bit-identity below the threshold and, above it, that differences
+are one-sided, above 1e-3, and confined to the truncated column and row. The bulk test stays
+(it is a different question) with the docstring corrected, as are `tests/README.md` and the
+commit body.
+
+### 2. The finite difference: non-negative direction, eps 3e-3 -> 1e-3, band +/-10% -> +/-3%
+
+Reproduced: the committed `rand*2-1` direction predicts `86.1` where a non-negative one
+predicts `3983.7` on the same scene. Slope at eps 1e-3 with `torch.rand`, all 14 variants:
+
+    base 1.0091   ch05 1.0095   ch11 1.0088   ch18 1.0093   ch26 1.0089   tile1 1.0060
+    wet  1.0091   wet-ch05 1.0095   wet-ch07 1.0080   wet-ch11 1.0088   wet-ch18 1.0093
+    wet-ch26 1.0089   wet-abs 1.0091   wet-abs-ch05 1.0095
+
+Range 1.0060-1.0095, so the 0.97-1.03 band has ~2% headroom on both sides. Seed sensitivity
+at eps 1e-3 (seeds 11-14): 1.0091 / 1.0081 / 1.0095 / 1.0080. The residual +0.9% is the
+second-order term plus the threshold noise the old bullet described -- real, but it was never
+what forced the wide step.
+
+### 3. `tile1`'s backward now runs, and so do its other per-variant checks
+
+The four `BLOCK_X == 1` skips are gone. `tile1` runs the whole per-variant set on
+`SMALL_SCENE` (32x24, 1500 points) instead of being skipped, so `BACKWARD::renderCUDA` under
+`__launch_bounds__(1)` is exercised on every platform that runs the suite. Confirmed on the
+device with `AMD_LOG_LEVEL=3`: two distinct `void renderCUDA<3u>(...)` and two distinct
+`void preprocessCUDA<3>(...)` signatures dispatch (the forward pair and the backward pair),
+with `HIP_vector_type<float, 2u>` in the argument lists.
+
+**The means2D-gradient trap the review flagged is real and has a cause worth recording.**
+`dL_dmean2D` is zero in the small scene *because every surfel sits on the filter-size floor*:
+it is written only in the `rho2d < rho3d` branch, and while the projected radius is the
+`cutoff * FilterSize` floor the 3D term is never the smaller one. Scaling the surfels up
+fixes it rather than needing an exemption -- measured on the base variant at 32x24, sum of
+`|means2D.grad|`: scale x1 -> 0.0, x3 -> 1240.7, x6 -> 1962.8, x10 -> 1213.4. So `SMALL_SCENE`
+carries `scale=3.0` and the uniform "no gradient is identically zero" assertion holds for
+`tile1` exactly as for the other thirteen. No per-variant exemption was needed.
+
+### 4-5. SH path, `out_others`, `out_weight`
+
+- `test_spherical_harmonics_colours` covers `computeColorFromSH` and its backward on the
+  three 3-channel non-`tile1` variants (base, wet, wet-abs -- all three code bodies). Band 0
+  is seeded to reproduce the scene's precomputed colours, so asserting the image *differs*
+  from the precomputed render proves the higher bands were evaluated (max abs diff 0.221,
+  `|dL_dshs|` sum 6.0e4).
+- `render()` now returns every tensor. `test_auxiliary_outputs_are_plausible` asserts on the
+  7-channel buffer: shape, finiteness, `alpha` in [0,1] with a max above 0.5, `depth >= 0`
+  and `depth/alpha` inside the scene's depth range where `alpha > 0.9` (measured
+  2.009-4.278 against a scene z of [2,6] -- depth is accumulated against alpha, not
+  normalised, which is the thing to know before writing an assertion on it), median depth
+  in range, normal length <= 1.01 and non-zero, distortion non-negative.
+- **The auxiliary buffer is a stronger oracle than the colour image and is now used as one.**
+  `out_others` depends only on geometry, so it is *bit-identical* across all 13 non-`tile1`
+  variants (max abs diff exactly 0.0, measured) -- it is compared against the base variant in
+  the cross-variant test at no extra render. `out_weight` likewise depends only on opacity and
+  geometry, so it agrees across the whole `wet` family to 1.9e-6 (not bit-identical: it is an
+  `atomicAdd` over pixels, so the summation order follows the grid shape). New
+  `test_out_weight_matches_wet_reference` plus a per-variant plausibility test that also
+  asserts a culled surfel (`radii == 0`) accumulates exactly zero weight.
+
+### 6-9. Smaller items
+
+- `.gitignore`: `ext_winhip.cu` added (the Windows+ROCm copy of `ext.cpp`).
+- All 14 `setup.py`: duplicate `import torch` inside `_patch_hipify_ignore_glm` removed. The
+  normalised-package-name md5 stays one class of 14.
+- `test_first_three_channels_match_base` decides the self-comparison skip before rendering.
+- Skill lessons corrected on this branch (both from `051e500`): `fault-classes.md` no longer
+  claims HIP lacks cooperative-groups `reduce`, and `strategy-b-torch.md`'s garbled sentence
+  is fixed. Details below.
+- **Untouched on purpose:** the AMD copyright/author lines in the 14 `setup.py` files and in
+  `tests/test_variants.py`. That is a person's call per the review, not the porter's.
+
+### The cooperative-groups lesson was wrong; what is actually true
+
+Checked against the installed ROCm 7.14 tree before rewriting:
+
+- `hip/cooperative_groups/hip_reduce.h` exists and includes
+  `hip/amd_detail/amd_hip_cooperative_groups_reduce.h`, which defines
+  `cooperative_groups::reduce`. So `cg::reduce` is available on ROCm.
+- `hip/hip_cooperative_groups.h` does **not** pull that header in, so the include is needed
+  explicitly -- worth stating, since "cooperative groups works" would otherwise imply it.
+- hipify's `CUDA_INCLUDE_MAP` maps only `cooperative_groups.h`
+  (`torch/utils/hipify/cuda_to_hip_mappings.py:305`), so `<cooperative_groups/reduce.h>` is
+  left verbatim and then fails to resolve. That is the real fault, and it is an *include*
+  fault, not a missing feature.
+
+The fault-classes entry now says exactly that and names the ROCm header, so the next porter
+guards the include instead of rewriting a reduction that ports as-is.
+
+### Invariants re-checked after the edits
+
+- md5 equivalence classes over all 14 variants for 13 source files plus normalised `setup.py`:
+  the class *partitions* (not just the counts) are identical at `main`, at the old `5d567f6`,
+  and in the new tree. The test files live in `tests/` and are outside the per-variant
+  equivalence classes, as expected; the `setup.py` edit was applied by script to all 14.
+- `git -C projects/diff-surfel-rasterizations/src status --porcelain` empty after committing.
+- `python3 utils/jargon.py --port diff-surfel-rasterizations`: clean. Both titles are
+  `[ROCm]`-prefixed, 52 and 54 chars; `utils/prose.py` clean on both bodies.
+
+### Still open for a validator on another platform
+
+The tolerances tightened this round were all measured on gfx942 only. The finite-difference
+band is now +/-3% (was +/-10%) and the `tile1` sweep asserts bit-identity below the threshold.
+Both should hold anywhere -- the sweep compares two builds of the same source on the same
+device, and the slope is a property of the scene -- but they are the two places where a
+wave32 or Windows run would first show a difference, so treat a failure there as evidence
+about the platform rather than as flakiness to widen away.
