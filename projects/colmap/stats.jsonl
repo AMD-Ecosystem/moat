@@ -96,3 +96,9 @@
 {"kind":"session","ts":"2026-08-12T15:17:54Z","epoch":1786547874.744845420,"event":"end","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-08-12T15:20:35Z","epoch":1786548035.605656337,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-08-12T15:31:50Z","epoch":1786548710.341121559,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-13T01:25:01Z","epoch":1786584301.536131052,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-13T01:25:30Z","phase":"compile","seconds":13.626,"exit":0,"cmd":"cmake --build projects/colmap/src/build-hip-gui -j64"}
+{"kind":"phase","ts":"2026-08-13T01:25:51Z","phase":"test","seconds":11.793,"exit":0,"cmd":"xvfb-run -a ctest --test-dir projects/colmap/src/build-hip-gui -j4 --output-on-failure"}
+{"kind":"phase","ts":"2026-08-13T01:26:50Z","phase":"cuda-compile","seconds":7.710,"exit":0,"cmd":"cmake -S projects/colmap/src -B projects/colmap/src/build-cuda-validate -GNinja -DCUDA_ENABLED=ON -DHIP_ENABLED=OFF -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release -DTESTS_ENABLED=ON -DGUI_ENABLED=OFF -DCGAL_ENABLED=OFF -DDOWNLOAD_ENABLED=OFF -DONNX_ENABLED=OFF"}
+{"kind":"phase","ts":"2026-08-13T01:31:35Z","phase":"cuda-compile","seconds":150.609,"exit":0,"cmd":"cmake --build projects/colmap/src/build-cuda-validate -j64 --target colmap_sift_gpu colmap_mvs_cuda colmap_feature_sift_test colmap_main"}
+{"kind":"session","ts":"2026-08-13T01:33:15Z","epoch":1786584795.252381043,"event":"end","platform":"linux-gfx1100"}

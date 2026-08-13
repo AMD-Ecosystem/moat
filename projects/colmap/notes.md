@@ -1828,3 +1828,121 @@ Related, same defect class, upstream and pre-existing: `colmap-config.cmake.in` 
 `feature/matcher.h:69-73` that disagree with the library it links. The HIP case is fixed by
 this delta; the OpenGL case is upstream's and is worth mentioning only if the maintainer
 raises it.
+
+## Validation 2026-08-13 (validator, linux-gfx1100, Radeon Pro W7800, GPU index 2, revalidate)
+
+Revalidation triggered by the maintainer-round fix on the open upstream PR: this platform's
+`validated_sha` was `4c531f5e` and `head_sha` had moved to `0af9a2d6` on `moat-fix-4635` (the
+`fix` block in status.json, base `4c531f5e`). Per the dispatch rule for a `fix` round the
+working branch is `fix.branch`, not `moat-port` -- checked out `origin/moat-fix-4635` at its
+tip `0af9a2d6c91e4723ed5c977fde5114c0d789ae10` in `projects/colmap/src`
+(`git fetch origin moat-fix-4635 moat-port && git checkout -B moat-fix-4635
+origin/moat-fix-4635`).
+
+`python3 utils/moatlib.py classify colmap 4c531f5e51f18eeb145309f8650a8da58453c8af
+0af9a2d6c91e4723ed5c977fde5114c0d789ae10` -> `class=mixed arch_independent=False
+inert=False`. Delta confirmed `git diff --stat` = `cmake/colmap-config.cmake.in | 8 ++`,
+`src/colmap/feature/sift_test.cc | 4 ++`, matching the 2-commit maintainer-fix round already
+recorded and reviewed (linux-gfx942, review-passed) above. Given the classifier could not
+call it inert, a full real-GPU run was done rather than reaching for the codeobj_diff
+carry-forward path -- the build here is fast (incremental, existing configured
+`build-hip-gui`) so a real run cost less than standing up the two-build comparison. Nothing
+in the fork was edited; both dispatch-instruction commands are `utils/timeit.sh`-wrapped.
+
+### Build
+
+Existing `build-hip-gui` (`CUDA_ENABLED=OFF HIP_ENABLED=ON CMAKE_HIP_ARCHITECTURES=gfx1100
+GUI_ENABLED=ON TESTS_ENABLED=ON CMAKE_BUILD_TYPE=Release`) reused, current for the new tree:
+
+    HIP_VISIBLE_DEVICES=2 utils/timeit.sh colmap compile -- \
+      cmake --build projects/colmap/src/build-hip-gui -j"$(nproc)"
+
+164/164 targets, incremental from the 2-file/+12-line delta (`sift_test.cc` recompiled and
+`sift_test` relinked). No warnings, no errors.
+
+### Test
+
+    HIP_VISIBLE_DEVICES=2 utils/timeit.sh colmap test -- \
+      xvfb-run -a ctest --test-dir projects/colmap/src/build-hip-gui -j4 --output-on-failure
+
+**159 of 159 pass, 11.56 s wall.** Matches every prior recorded run on this arch and this
+project exactly (no regression, no new failure, no skip -- `sift_test.cc`'s new skip branch
+is `#if !defined(COLMAP_GPU_ENABLED)`, compiled out here since `HIP_ENABLED=ON` defines it).
+No hang at `-j4`, consistent with every prior session on this host.
+
+### Anti-no-op: kernel dispatches, not wall time
+
+    HIP_VISIBLE_DEVICES=2 AMD_LOG_LEVEL=3 xvfb-run -a \
+      projects/colmap/src/build-hip-gui/src/colmap/feature/sift_test
+
+32 of 32 `sift_test` cases pass in 2.9 s. Dispatch counts, grepped from `ShaderName :`
+(plain and templated forms collapsed to the base kernel name):
+
+    FilterH x31, FilterV x31, ReduceHist x45, ComputeDOG x30, RowMatch x25, ColMatch x24,
+    ComputeKEY x18, InitHist x18, ListGen x14, MultiplyDescriptorGRay x12,
+    MultiplyDescriptor x9, NormalizeDescriptor x5, ComputeOrientation x5,
+    ComputeDescriptor x5, DownsampleKernel x5, MultiplyDescriptorG x4, UpsampleKernel x1.
+
+**Exact match, kernel-for-kernel and count-for-count, to the baseline recorded on this same
+host at `4c531f5e`** (`notes.md:1111-1117`). Expected: `sift_test` runs the same fixed input
+and the delta's only behavior-visible change (the no-GPU-backend skip path) is compiled out
+of this build, so the GPU compute path is unchanged. GPU bodies genuinely execute; this is
+not a green suite that skipped the compute path.
+
+### CUDA no-regression gate
+
+Not yet recorded at this head_sha (the porter's and gfx942 reviewer's sessions for this fix
+round did not run nvcc; the recorded CUDA gate in this file is all at `4c531f5e`). Run here,
+since this is the first Linux/CUDA-toolkit-capable arch to validate `0af9a2d6`:
+
+    utils/timeit.sh colmap cuda-compile -- \
+      cmake -S projects/colmap/src -B projects/colmap/src/build-cuda-validate -GNinja \
+        -DCUDA_ENABLED=ON -DHIP_ENABLED=OFF \
+        -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc \
+        -DCMAKE_CUDA_ARCHITECTURES=80 \
+        -DCMAKE_BUILD_TYPE=Release -DTESTS_ENABLED=ON -DGUI_ENABLED=OFF \
+        -DCGAL_ENABLED=OFF -DDOWNLOAD_ENABLED=OFF -DONNX_ENABLED=OFF
+    utils/timeit.sh colmap cuda-compile -- \
+      cmake --build projects/colmap/src/build-cuda-validate -j"$(nproc)" \
+        --target colmap_sift_gpu colmap_mvs_cuda colmap_feature_sift_test colmap_main
+
+nvcc 12.8.93 (dedicated `cuda-12.8` conda env), arch pinned to 80. Configure logs "Enabling
+CUDA support (version: 12.8.93, archs: 80)" -- no `native` autodetection trap. All four
+targets compile and link: `colmap_sift_gpu`, `colmap_mvs_cuda`, `colmap_feature_sift_test`
+(`sift_test` binary), `colmap_main` (the `colmap` executable). Compile-checked only, no
+NVIDIA GPU on this host, no numerical comparison -- same caveat as every prior CUDA-gate
+entry in this file. `build-cuda-validate` was throwaway and removed after the check
+(`rm -rf`), never committed.
+
+Why the CUDA build needed no reasoning about the delta beforehand (confirmed after the
+fact, not assumed): `sift_test.cc`'s new branch is guarded on `!defined(COLMAP_GPU_ENABLED)`,
+which CUDA also defines, so the CUDA build takes the same unchanged `#else` body; and
+`cmake/colmap-config.cmake.in` is an install-time template with no effect on any compiled
+object, HIP or CUDA.
+
+### Jargon and documentation
+
+    python3 utils/jargon.py --port colmap                                     -> clean
+    python3 utils/jargon.py --commits 4c531f5e..0af9a2d6                      -> clean
+    python3 utils/jargon.py --diff    4c531f5e..0af9a2d6                      -> clean
+
+`doc/install.rst:110-142` unchanged by this delta and still documents the ROCm/HIP build in
+COLMAP's house style next to the CUDA build; content current and accurate at this sha.
+
+### Integrity
+
+    git -C projects/colmap/src status --porcelain  -> (empty)
+
+Fork tree clean, HEAD `0af9a2d6c91e4723ed5c977fde5114c0d789ae10` on `moat-fix-4635`, nothing
+to commit; the throwaway CUDA build directory was removed before finishing.
+
+### State recorded
+
+    linux-gfx1100.state = completed
+    linux-gfx1100.validated_sha = 0af9a2d6c91e4723ed5c977fde5114c0d789ae10
+
+Real-GPU pass at the fix round's tip. This is evidence the `moat-fix-4635` delta can be fast-
+forwarded into the open PR without a regression on this arch; the actual merge into
+`moat-port` remains a person's call per `upstream.py --merge-fix --apply` and is not this
+session's to make. No skill promotion this round -- nothing here generalizes beyond what the
+tracing and hang-rate entries already record for this project.
