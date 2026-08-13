@@ -186,7 +186,24 @@
       "note": "upstream ships no tests at all; this port adds the GPU evidence"
     }
   ],
-  "covered": [],
+  "covered": [
+    {
+      "id": "library:rmcl-cuda",
+      "evidence": "Builds unchanged against a ROCm rmagine on linux-gfx942: no CUDA compiler is found, CUDA_LIBRARIES stays empty and CorrespondencesCUDA.cpp compiles as plain C++ against rmagine::cuda. librmcl-cuda.so links and is loaded by the GPU kernel test."
+    },
+    {
+      "id": "library:rmcl_ros_cuda",
+      "evidence": "Built for gfx942 with USE_HIP=ON; llvm-objdump --offloading shows hipv4-amdgcn-amd-amdhsa--gfx942 bundles. All four kernels dispatch on an MI300X under AMD_LOG_LEVEL=3 and produce results matching a CPU reference (ctest rmcl_gpu_kernels)."
+    },
+    {
+      "id": "option:USE_HIP",
+      "evidence": "Added in rmcl_ros/CMakeLists.txt, defaulting from rmagine_cuda_USE_HIP. Exercised both explicitly (-DUSE_HIP=ON) and by auto-default (configure with no flag gives USE_HIP:BOOL=ON against a ROCm rmagine)."
+    },
+    {
+      "id": "test:rmcl_gpu_tests",
+      "evidence": "rmcl_ros/tests/rmcl_gpu_kernels.cpp, registered as ctest rmcl_gpu_kernels under BUILD_TESTING AND RMCL_CUDA. Passes on gfx942: 1/1 tests passed. Checks the motion update and reduction against CPU references and the resampler through RNG-independent invariants. The optional rmcl-package cross-statistics test in the plan was not added; the three required kernel checks are covered here."
+    }
+  ],
   "scoped_out": [
     {
       "id": "benchmark:lidar_corrector_embree_benchmark",
