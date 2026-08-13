@@ -912,35 +912,87 @@ the expected symbols (`BatchDecodeWithPagedKVCachePyTorchWrapper`,
 `append_kv_cache_decode/prefill`, `apply_rope_in_place`, `estimate_attn_score`,
 `rms_norm_forward`).
 
-### What blocks the tests: transformers, not the GPU
+### Test harness: resolved, needed Python 3.12
 
-All four in-scope suites import `transformers`, and their reference paths use
-the pre-4.38 rotary API (`LlamaRotaryEmbedding(head_dim)`,
-`rotary_emb(q, seq_len=...)`). The recorded working version is
-`transformers==4.37.2` (notes above; `pyproject.toml`'s `transformers==4.45.2`
-pin is stale and does NOT work -- 4.45.2 gives
-`AttributeError: 'int' object has no attribute 'max_position_embeddings'`, then
-`TypeError: forward() got an unexpected keyword argument 'seq_len'`).
+All four in-scope suites import `transformers`, and their reference paths use the
+pre-4.38 rotary API (`LlamaRotaryEmbedding(head_dim)`,
+`rotary_emb(q, seq_len=...)`). The working version is `transformers==4.37.2` as
+the earlier notes record -- `pyproject.toml`'s `transformers==4.45.2` pin is
+stale and fails with `AttributeError: 'int' object has no attribute
+'max_position_embeddings'` then `TypeError: forward() got an unexpected keyword
+argument 'seq_len'`.
 
-`transformers==4.37.2` cannot be installed on this host's Python 3.13: it
-requires `tokenizers>=0.14,<0.19`, which has no cp313 wheel and needs a Rust
-toolchain to build, and 4.37.2 enforces that range at import time, so
-`--no-deps` does not get around it.
+4.37.2 needs `tokenizers>=0.14,<0.19`, which has no cp313 wheel and is enforced
+at import (so `--no-deps` does not dodge it). Resolved by installing Python 3.12
+and building a second environment on it; TheRock publishes cp312 wheels of the
+same torch build. Env script: `agent_space/win_torch312_env.sh`. The kernels were
+rebuilt against that interpreter (`_kernels.cp312-win_amd64.pyd`).
 
-This is a host-environment gap, NOT a platform waiver: TheRock publishes cp312
-wheels of the same torch build (verified by download), so a Python 3.12 venv
-finishes this. The remaining work is exactly:
+### Test results -- 73 passed, 48 failed. The decode attention path is WRONG on this arch
 
-1. `winget install --id Python.Python.3.12 --scope user`
-2. a venv on it with `torch[device-gfx1151]==2.12.0+rocm7.14.0a20260519` and
-   `rocm-sdk-devel==7.14.0a20260519` from `whl-staging-multi-arch`
-3. `transformers==4.37.2` `tokenizers==0.15.2` (both have cp312 wheels)
-4. rebuild `quest/ops` against that interpreter and re-run the four suites
+```
+python -m pytest quest/tests/test_rope.py quest/tests/test_estimate.py                  quest/tests/test_decode_attention.py                  quest/tests/test_approx_attention.py -q
+# 48 failed, 73 passed in 5.52s
+```
 
-Expected reference (linux-gfx1100/gfx90a): test_rope 64, test_estimate 9,
-test_decode_attention 6, test_approx_attention 42 = 121 passed; test_topk and
-test_prefill_attention remain scoped out and fail with `AttributeError` on
-missing symbols, 78 failures, which is the recorded expected shape.
+| suite | linux-gfx1100 / gfx90a | windows-gfx1151 |
+|---|---|---|
+| test_rope.py | 64 passed | **64 passed** |
+| test_estimate.py | 9 passed | **9 passed** |
+| test_decode_attention.py | 6 passed | **6 FAILED** |
+| test_approx_attention.py | 42 passed | **42 FAILED** |
 
-Integrity: `git status --porcelain` in src clean at ac7382c; the only change is
-the committed fix.
+The failures are not tolerance drift. They are structural:
+
+```
+AssertionError: Tensor-likes are not close!
+Mismatched elements: 4036 / 4096 (98.5%)
+Greatest absolute difference: 1.36328125 (up to 0.005 allowed)
+Greatest relative difference: 6472.0
+```
+
+98.5-98.6% of elements wrong, absolute differences of 1.4-2.5 against a
+reference whose values are order 0.1-0.5. The output is unrelated to the answer,
+not a slightly-off version of it -- so this is NOT the RDNA3.5 floating-point
+accumulation class recorded elsewhere in the skill, which produces small
+divergences.
+
+The split is informative: `apply_rope_in_place`, `estimate_attn_score` and the
+KV-cache append path all produce correct results, and the two failing suites are
+exactly the ones that run `BatchDecodeWithPagedKVCache` -- the flashinfer-derived
+kernel, and the only one reached through the `kernels/include/hip_compat/flashinfer`
+shims (`math.cuh`, `vec_dtypes.cuh`).
+
+### Hypotheses tested and eliminated
+
+Three, each a separate build, so this is not one failing command retried:
+
+1. **Strict aliasing.** The shim's `uint32_as_half2` / `half2_as_uint32` type-pun
+   through pointer casts (`*(half2*)&x`), which is UB that clang 23 may exploit
+   where the clang in ROCm 7.2 did not. Rebuilt the whole extension with
+   `-fno-strict-aliasing`: identical failures.
+2. **Optimization/codegen.** Rebuilt with device `-O0`: identical failures. So it
+   is not an optimizer bug at -O3.
+3. **The `std::max<size_t>` fix.** Value-identical by inspection -- for
+   `DTypeIn=half`, `max(16/2, 128/32) = max(8,4) = 8` either way -- and it only
+   changed which overload is selected, not the arithmetic.
+
+### What this is, and what it is not
+
+Two variables moved at once versus the passing Linux runs, and the record should
+not pretend otherwise: architecture (gfx1151 RDNA3.5 vs gfx1100 RDNA3 -- both
+wave32, so this is not a wavefront-width fault) AND toolchain (ROCm 7.14 /
+clang 23 / torch 2.12 here vs ROCm 7.2.3 / torch 2.14a there). Either could own
+it. The cheap experiment that separates them is to run this same branch on
+gfx1100 under ROCm 7.14; if it fails there too, the arch is exonerated and this
+is a toolchain regression against the compat shims.
+
+Not waiver material: the obstacle is in code that can change (the project's own
+compat shims, or a ROCm regression that can be reported), not in a permanent
+platform limitation. `windows-gfx1151` stays `validation-failed` at `ac7382c`.
+
+Two real results stand regardless: the port now BUILDS on Windows, which it did
+not before (`ac7382c`), and 73 of its tests pass on real gfx1151 hardware.
+
+Integrity: `git status --porcelain` in src clean at `ac7382c`; the only fork
+change this round is that commit.
