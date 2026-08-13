@@ -14,6 +14,19 @@
       "upstream_issue": null,
       "created_at": "2026-08-13T01:30:41Z",
       "decided": null
+    },
+    {
+      "id": "rmagine-lazy-default-gpu-context",
+      "kind": "other",
+      "component": null,
+      "summary": "rmagine builds its default GPU context in a namespace-scope global (src/rmagine_cuda/src/util/cuda/CudaContext.cpp:198), so any executable linking rmagine::cuda aborts while loading the library on a machine with no device, before main. That makes a runtime device-count skip in a dependent's test unreachable (measured for rmcl's GPU test); a lazy context would let dependents report a skip instead of a hard test failure.",
+      "refs": [
+        "projects/rmcl/notes.md fix round 2026-08-13"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T02:33:31Z",
+      "decided": null
     }
   ]
 }
