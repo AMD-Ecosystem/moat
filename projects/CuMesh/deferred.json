@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "cumesh-nvidia-proprietary-rescan",
+      "kind": "other",
+      "component": null,
+      "summary": "Rescan with the fixed scan_nvidia: third_party/cubvh/LICENSE_NVIDIA is the NVIDIA Source Code License for instant neural graphics primitives (non-commercial), vendored via cubvh. Needs the same ruling as the cubvh project's deferred item cubvh-nvidia-proprietary-rescan.",
+      "refs": [
+        "moat main b336246 (case/wording-proof scan_nvidia)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T17:10:09Z",
+      "decided": null
+    }
+  ]
+}
