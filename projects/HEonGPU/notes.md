@@ -3708,3 +3708,129 @@ Windows build. No GPU test ran; do not read "20/20" anywhere above as applying h
 `wave64`/`wave32` gates remain satisfied by `linux-gfx942`/`linux-gfx1100`;
 `pr_ready` is unaffected by this arch failing since `windows` is the only gate this
 arch could have contributed and it did not close.
+
+## Porter round 12 (2026-08-13, windows-gfx1151) -- Windows host portability, b12dc98
+
+Narrow round answering the 2026-08-13 windows-gfx1151 validation failure. Fork commit
+`b12dc985654c35a9ebf16ffefd6c7eb29da0e6c4` on top of the validated `6ac06d0` (no amend,
+so `linux-gfx942`/`linux-gfx1100` flip to revalidate with their evidence already recorded).
+
+### The diff (4 concerns, 8 files, +31/-11)
+
+1. `src/lib/util/memorypool.cu` `get_host_avaliable_memory()`: added a `#ifdef _WIN32`
+   branch using `MEMORYSTATUSEX` + `GlobalMemoryStatusEx()` (`ullAvailPhys`), with the
+   POSIX `sysinfo()` branch left byte-for-byte identical under `#else`. `<windows.h>` is
+   included at the very top of the .cu, before the project header, behind
+   `WIN32_LEAN_AND_MEAN`/`NOMINMAX` guards -- it has to precede everything because
+   memorypool.cuh drags in Thrust/rmm and the `min`/`max` macros would break them.
+   `MEMORYSTATUSEX` is zero-initialized so a failed call yields 0 rather than garbage
+   (upstream ignores `sysinfo()`'s return; the Windows branch matches that shape).
+2. `src/include/heongpu/util/memorypool.cuh`: `#include <sys/sysinfo.h>` wrapped in
+   `#ifndef _WIN32`. Kept in the header (not moved into the .cu) so no Linux translation
+   unit loses a transitive include.
+3. `src/include/heongpu/util/random.cuh`: the `<sys/sysinfo.h>` include was **deleted**,
+   not guarded. Verified first: a grep for `sysinfo|freeram|mem_unit|totalram|get_nprocs|
+   get_phys_pages|get_avphys_pages|SI_LOAD_SHIFT` over src/ test/ example/ benchmark/
+   matches only memorypool.{cuh,cu} -- nothing in random.cuh, random.cu, or the three
+   context.cuh files that include random.cuh uses anything from that header. Deleting a
+   dead include is smaller than guarding it and cannot drift.
+4. `CMakeLists.txt` (USE_HIP branch only, the CUDA `else()` untouched): the four
+   `-g`/`-O3` appends now sit inside `if(NOT MSVC)`.
+
+Plus, found while building and fixed in the same commit because the build cannot proceed
+without it:
+
+5. `u_int32_t` -> `uint32_t` (6 sites, 4 files: bfv/ckks `evaluationkey.{cuh,cu}`).
+   `u_int32_t` is a BSD/glibc `<sys/types.h>` typedef with no Microsoft equivalent; it is
+   the identical type on Linux, so the CUDA path is unaffected.
+
+### Build result: the Windows build now completes
+
+`cmake --build build -j6` exits 0. The library, the three thirdparty HIP static libs
+(ntt-1.0, fft-1.0, rngongpu-1.0) and **all 15 gtest executables** in `build/bin/test/`
+compile and link for gfx1151. This is the first time HEonGPU has built on Windows at all.
+Examples and benchmarks were OFF for this round.
+
+The failures were hit and cleared in this order (each a distinct class; recorded so
+nobody re-derives them):
+
+| # | Failure | Class | Fix |
+|---|---------|-------|-----|
+| 1 | `'sys/sysinfo.h' file not found` | port source | items 1-3 above |
+| 2 | `clang-cl: error: argument unused during compilation: '-O3' [-Werror,...]` building `gtest-all.cc` | port build file | item 4 above |
+| 3 | `unknown type name 'u_int32_t'` | port source | item 5 above |
+| 4 | `lld-link: error: undefined symbol: __udivti3` linking the test exes | toolchain | link `clang_rt.builtins-x86_64.lib` from `lib/llvm/lib/clang/23/lib/windows/`; clang-cl does not link compiler-rt builtins by default and the host modular arithmetic uses 128-bit division |
+| 5 | `/failifmismatch: mismatch detected for 'RuntimeLibrary'` (twice: HIP objs MT vs NTL MD, then HIP MD vs gtest MT) | toolchain | see below |
+
+Failure 5 is the interesting one and is a direct consequence of the previous session's
+`-DCMAKE_MSVC_RUNTIME_LIBRARY=""` workaround for the CMake 3.31 `MSVC_RUNTIME_LIBRARY`
+HIP gap: emptying it disables CRT selection for **every** language, and clang-cl's
+default with no flag is the *static* CRT, so nothing in the build agreed with the
+dynamic-CRT conda-forge GMP/OpenSSL/ZLIB or the `/MD`-built NTL. The previous session's
+claim that `Windows-Clang.cmake` still bakes `-D_DLL -D_MT` into the `_INIT` flags is
+**wrong** for this CMake/compiler pair -- verified from the cache
+(`CMAKE_CXX_FLAGS_RELEASE:STRING=/O2 /Ob2 /DNDEBUG`, no CRT flag anywhere) and from the
+object directives lld-link reported. Correct workaround: pass the CRT flag explicitly to
+all three languages -- `-DCMAKE_HIP_FLAGS="-x hip /MD ..."`,
+`-DCMAKE_CXX_FLAGS="-DWIN32 -D_WINDOWS -EHsc -MD"`,
+`-DCMAKE_C_FLAGS="-DWIN32 -D_WINDOWS -MD"`. `-Dgtest_force_shared_crt=ON` alone does NOT
+help: googletest's logic only rewrites an existing `/MD` into `/MT`, so with no CRT flag
+present there is nothing for it to rewrite. Use the dash spellings (`-MD`, `-EHsc`,
+`-DWIN32`) from Git Bash: a leading-slash flag is mangled into a path by MSYS argument
+conversion (`/DWIN32` became `C:/Program Files/Git/DWIN32`), and
+`MSYS_NO_PATHCONV=1`/`MSYS2_ARG_CONV_EXCL='*'` is not a usable global escape here because
+it also breaks `thirdparty/build.sh`'s `git -C` invocations.
+
+Items 4 and 5 are toolchain/environment, not port defects: both are handled on the
+configure command line and nothing in the fork changed for them. Promoted to the
+`cuda-to-rocm` skill's Windows reference since they hit any CMake + HIP + clang-cl project.
+
+### Runtime: hipMemGetInfo is unsupported on this gfx1151 APU (platform gap, NOT fixed here)
+
+Smoke run of one built executable:
+```
+./bin/test/bfv_addition_testcases.exe
+unknown file: error: C++ exception with description "CUDA Error in
+  .../src/lib/util/memorypool.cu at line 90: invalid argument" thrown in the test body.
+[  FAILED  ] HEonGPU.BFV_Ciphertext_Ciphertext_Addition_Subtraction (438 ms)
+```
+Lines 89-90 are `MemoryPool::get_decive_avaliable_memory()`'s `cudaMemGetInfo` ->
+`hipMemGetInfo` followed by `HEONGPU_CUDA_CHECK(cudaGetLastError())`. Confirmed to be the
+runtime and not this port with a 10-line standalone HIP program that links nothing of
+HEonGPU (`agent_space/heongpu-win/meminfo.hip`):
+```
+hipMemGetInfo rc=1 (invalid argument) free=0 total=0
+hipGetLastError rc=1 (invalid argument)
+```
+So `hipMemGetInfo` fails unconditionally on this integrated RDNA3.5 part with TheRock
+ROCm 7.13.0a20260511 -- the same APU gap seen on this host in other projects.
+Deliberately NOT worked around in this round: any fallback (for example sizing the device
+pool from `hipDeviceProp_t::totalGlobalMem` when `hipMemGetInfo` fails) is a design
+decision touching the shared CUDA path and belongs to a triaged round, not to a Windows
+portability fix. It is the next thing standing between this port and a Windows GPU test
+pass.
+
+### Environment reuse
+
+`agent_space/heongpu-win/env.sh` from the previous session worked unchanged except for one
+addition (the compiler-rt builtins directory appended to `LIB`). The scratchpad `deps`
+tree (GMP/OpenSSL/ZLIB/NTL) and `cmake-shims/` both survived. Effective configure line:
+```
+cmake -S . -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DHEonGPU_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release -G Ninja \
+  -DCMAKE_C_COMPILER=<rocm>/lib/llvm/bin/clang-cl.exe \
+  -DCMAKE_CXX_COMPILER=<rocm>/lib/llvm/bin/clang-cl.exe \
+  -DCMAKE_HIP_COMPILER=<rocm>/lib/llvm/bin/clang-cl.exe -DCMAKE_HIP_COMPILER_FORCED=1 \
+  -DCMAKE_MSVC_RUNTIME_LIBRARY="" \
+  -DCMAKE_HIP_FLAGS="-x hip /MD -D_USE_MATH_DEFINES -DWIN32_LEAN_AND_MEAN -DNOMINMAX -D_WIN32_WINNT=0x0601 -I<rocthrust> -I<rocprim>/rocprim/include" \
+  -DCMAKE_CXX_FLAGS="-DWIN32 -D_WINDOWS -EHsc -MD" \
+  -DCMAKE_C_FLAGS="-DWIN32 -D_WINDOWS -MD" \
+  -DCMAKE_EXE_LINKER_FLAGS="/machine:x64 clang_rt.builtins-x86_64.lib" \
+  -DCMAKE_SHARED_LINKER_FLAGS="/machine:x64 clang_rt.builtins-x86_64.lib" \
+  -DCMAKE_PREFIX_PATH="<rocm>;<shims>/hip;<shims>/hiprand;<shims>/rocthrust" \
+  -Dhip_DIR=<shims>/hip -Dhiprand_DIR=<shims>/hiprand -Drocthrust_DIR=<shims>/rocthrust
+```
+Line endings: this clone's working tree is CRLF while the index is LF (a stale stat cache
+from the earlier `core.autocrlf` flip makes git report those files clean). Every file
+edited this round was rewritten to LF before staging so the commit carries only the
+intended hunks -- check `git diff --stat` after any edit in this clone before committing.
