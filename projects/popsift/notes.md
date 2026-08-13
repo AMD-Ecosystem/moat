@@ -2087,3 +2087,114 @@ round, tip 199e465)" is closed.
   `jargon.py -C projects/popsift/src --diff f2712723..moat-fix-186` clean.
 - No GPU re-run at this tip is held against the round; comment-only versus 199e465, and
   revalidation is the validator's call.
+## Review 2026-08-13 (gfx942) -- fix round for PR #186, second pass (delta f2712723..199e4656)
+
+Reviewed `git diff f2712723d903...199e46564b34` on `moat-fix-186` (6 commits, 28 files,
+258+/427-) against griwodz's inline comments (re-fetched from the PR: 40 comments, 38 by
+griwodz/bot on the reviewed revision) and the port's own invariants. Fork clone was not
+present on this host; cloned fresh from AMD-Ecosystem/popsift and reviewed at
+199e46564b34dffb34c73956bf9e4fccd28daf7d.
+
+Verdict: **changes-requested** (2 items). The four findings of "## Review 2026-08-13" are
+closed correctly -- both #6683 comment blocks now match the measured experiment
+(notes.md:1282-1301), the sift_octave.cu edits are split into 199e465, `s_orientation.cu:230`
+carries the explicit width, and the notes disposition for the RootSift md5 evidence is
+rescoped. No defect found in the device code, the build, or the wave64 reasoning.
+
+### 1. `CMakeLists.txt:107-108` tells the maintainer the opposite of what the port does
+
+```
+  # rocThrust supplies the thrust::cuda::par compatibility namespace, so the
+  # Thrust code in s_filtergrid.cu compiles unchanged on ROCm.
+  find_package(rocthrust REQUIRED CONFIG)
+```
+
+It does not compile unchanged: `git diff origin/develop...HEAD -- src/popsift/s_filtergrid.cu`
+rewrites every `thrust::cuda::par.on(stream)` to `POPSIFT_THRUST_PAR.on(stream)`, and the
+header this round adds says why -- `common/thrust_setup.h:18-21`: "It lives in thrust::cuda
+on NVIDIA and in thrust::hip in the AMD build of Thrust." This project's own record is
+explicit that the CMake claim is false (notes.md:46-47, "rocThrust does NOT alias
+thrust::cuda"). It is published text from 05e698e, but this round is the one that touches
+this file (the `PopSift_HAVE_SHFL_DOWN_SYNC` hunk is ten lines below) and the one that
+answers his Thrust comment (id 3735890699), so shipping a build-file comment that
+contradicts the new header is the same failure the round just corrected for #6683.
+
+Rewrite or drop the two comment lines, in abe4125 (the Thrust commit). Something like: the
+stream-bound execution policy is in a different namespace in rocThrust, which is why
+`common/thrust_setup.h` exists; `find_package(rocthrust)` supplies it.
+
+### 2. The `sum > 1e-20f` gate is dropped, and notes.md credits the maintainer for asking
+
+`src/popsift/s_desc_norm_rs.h:68` is now `const float inv = ( sum > 0.0f ) ? __fdividef(
+1.0f, sum ) : 0.0f;`. The published tip had `( sum > 1e-20f )` at line 81 of that file, with
+a comment (published lines 76-79) recording exactly why.
+
+notes.md:1566 says "The old `sum > 1e-20f` subnormal gate is GONE per his request". The
+comment record does not support that. griwodz's three comments on this file are
+3735790765 (line 55: explicit shuffle width), 3735834466 (anchored at line 82, `float val;`
+-- "if it's necessary and inv==0.0f, then there is no reason for the scalbnf lines", i.e.
+the `if(inv<=0)` structure) and 3735842829 (line 83, the per-bin ternary). None of them is
+on line 81 and none asks for the threshold to change. What the threshold answers is
+gemini-code-assist comment 3352320552 ("high": subnormal `sum` makes `__fdividef(1.0f,sum)`
+overflow to +inf), which the PR record shows as resolved by our own comment 3352439945
+pointing at 5ee4973.
+
+The bot's exact NaN path is closed by griwodz's per-bin test -- a zero bin short-circuits to
+0.0f, so no 0*inf -- but a *positive* bin with a subnormal `sum` now yields +inf where the
+published build yielded 0. So the round reopens, on the HIP path, a finding this PR already
+recorded as resolved, while the notes present it as the maintainer's request.
+
+Close it either way, but not silently:
+- keep `( sum > 1e-20f )` -- it is fully compatible with everything griwodz wrote, since his
+  test is on `inv <= 0.0f` and the gate still yields `inv == 0.0f` for a degenerate sum; or
+- keep `> 0.0f` (matching upstream CUDA, which has no gate) and say so in the upstream reply
+  as a deliberate change with the "unreachable for real images" rationale, naming the earlier
+  bot comment it reverts, so he can object cheaply.
+
+Either way correct notes.md:1566: the disposition list is what the reply is drafted from, and
+telling griwodz he asked for this when he did not is how a round costs another round.
+
+### Verified this pass, no action
+
+- Read-handle refactor is address-identical. `getIntermReadTex{Point,Linear}` bind `_w,_h`,
+  and both call sites that previously passed locals compute them from the same source:
+  `s_pyramid_build.cu:271-272` and `:349-350` are `const int width = oct_obj.getWidth();`
+  / `getHeight()`, which return `_w`/`_h` (`sift_octave.h:69-74`). Level/z arguments
+  unchanged at all 22 sites. No reference to the five removed accessors, to
+  `POPSIFT_LAYERED_SRC`, `LayeredTex` or `surfFetchClamped` survives anywhere in the tree.
+- `sift_textures.h` is installed: `src/CMakeLists.txt:183-185` installs `popsift/` with
+  `FILES_MATCHING PATTERN "*.h"` recursively, so the new public header is not an install gap.
+- Shuffle-compat restructure is a textual no-op on HIP, re-derived from the sources:
+  `cmake/sift_config.h.in:11` makes `POPSIFT_IS_DEFINED(F)` -> `F() == 1`, so
+  `PopSift_HAVE_SHFL_DOWN_SYNC 0` (`CMakeLists.txt:121`) selects `assist.h:51-62`, which is
+  literally what the deleted `cuda_to_hip.h` macros used to rewrite `assist.h:34-45` into.
+  `popsift::ballot` returns `unsigned int` in *both* arms, so the wave64 low-32 truncation is
+  unchanged (`assist.h:38` vs `:55`) and the arch-aware paths still go through
+  `ballot_group`/`any_group` (`assist.h:77-90`, used at `s_orientation.cu:121,196,247`).
+- Every raw warp intrinsic left in the tree is in the extremum counter's HIP arm
+  (`s_extrema.cu:33-43`, `warpSize`-generic) -- confirmed by grepping all `__shfl*/__ballot/
+  __any/__all/warpSize` outside assist.h. `fe7135c`'s body names that as the exception, so
+  its "every warp shuffle" claim is now accurate.
+- `s_orientation.cu:230` `popsift::shuffle( best_val, 0, 32 )`: `ori_par` launches (32,1)
+  (`s_orientation.cu:406-408`), so width 32 and width 64 resolve to lane 0 identically.
+  `Warp32` has one instantiation (`s_orientation.cu:223`), so dropping `threadIdx.x & 31`
+  in `warp_bitonic_sort.h:66-67` is a no-op.
+- `std::clamp` (`assist.h:150-151`) is inside the `#if defined(USE_HIP)` arm; HIP is C++17
+  (`CMakeLists.txt:112-116`). nvcc never parses it.
+- griwodz's `x - static_cast<int>(x)` suggestion (3734755444) is correctly skipped: his
+  premise fails at `s_pyramid_build_aa.cu:28`, `readTex( src, off_x - span, ... )` with
+  `off_x == 0` and `span >= 1`.
+- RootSift/L2 bodies match what he wrote: 3735834466's `if(inv<=0){...}else{...}` and
+  3735842829's `descr.x <= 0.0f ? 0.0f : scalbnf(__fsqrt_rn(descr.x*inv), ...)`.
+- `<thrust/version.h>` moved into `common/thrust_setup.h:16` is still live --
+  `s_filtergrid.cu:289` uses `THRUST_VERSION`.
+- Commit hygiene: titles 58/51/58/60/49/63 chars, all `[ROCm]`, no Co-Authored-By /
+  Signed-off-by / noreply, every body has the agent disclosure and a fenced Test Plan,
+  `prose.py` clean on all six, no non-ASCII in added lines, `git status --porcelain` empty.
+  `jargon.py --port popsift` reports the one pre-existing hit, "fault classes" in the
+  published commit 05e698e (confirmed an ancestor of the frozen tip f2712723, not fixable
+  without rewriting the PR's published history); `--diff f2712723..moat-fix-186` clean.
+- The two lessons this port promotes to `.claude/skills/cuda-to-rocm/` (commit 17bd9d4 --
+  the explicit-width / drop-the-`__shfl_*_sync`-macros entry in `references/fault-classes.md`
+  and the `std::clamp` build entry) check out against the sources they describe and against
+  this branch's code. Both are cross-project and sit where a reader with that problem looks.

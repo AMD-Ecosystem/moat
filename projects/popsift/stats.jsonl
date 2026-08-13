@@ -81,3 +81,5 @@
 {"kind":"phase","ts":"2026-08-13T23:22:42Z","phase":"compile","seconds":22.918,"exit":0,"cmd":"cmake --build projects/popsift/src/build-hip -j"}
 {"kind":"session","ts":"2026-08-13T23:24:42Z","epoch":1786663482.695854744,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-13T23:26:08Z","epoch":1786663568.730581128,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-13T23:19:17Z","epoch":1786663157.320144742,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-13T23:27:59Z","epoch":1786663679.336357033,"event":"end","platform":"linux-gfx942"}
