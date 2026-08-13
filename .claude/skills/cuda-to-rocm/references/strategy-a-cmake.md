@@ -87,6 +87,19 @@ compat header with `-include`.
   `--offload-arch=<arch>`; `enable_language(HIP)` auto-detects. A pinned arch is the single
   most common reason a port builds on the machine it was written on and nowhere else.
   (TurboFNO, LC-framework)
+- **On a target that mixes HIP and plain C++ sources, do not link `hip::device` at all.**
+  `hip::device` puts `--offload-arch=` in the target's INTERFACE compile options, and a link
+  library applies to EVERY source of the target regardless of language -- PRIVATE only stops
+  it reaching consumers, not the target's own `.cpp` files, which fail with `c++: error:
+  unrecognized command-line option '--offload-arch=gfx942'`. `$<COMPILE_LANGUAGE:HIP>` cannot
+  rescue it either; that genex is rejected in `target_link_libraries`. With
+  `enable_language(HIP)` plus `set_source_files_properties(... LANGUAGE HIP)` you do not need
+  `hip::device` at all: CMake emits the offload flags for the HIP sources from
+  `CMAKE_HIP_ARCHITECTURES` and links the HIP runtime itself. Link only `hip::host` (and
+  `hip::hiprand` and friends) for the headers and the host runtime the C++ sources need. A
+  target that is 100% HIP sources never shows this, which is why it surfaces the first time a
+  port compiles kernels into an existing mixed library. (rmcl: `rmcl_ros_cuda`, five C++
+  sensor sources next to two `.cu`.)
 - **hipify-perl, when that is the mechanism rather than CMake HIP language:** run it
   synchronously -- `-inplace` in a backgrounded or `&&`-chained loop silently skips files --
   and always re-grep the whole tree for `cudaMalloc|cudaSuccess|include <cub|include <cuda.h`

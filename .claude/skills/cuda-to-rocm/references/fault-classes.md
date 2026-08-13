@@ -186,6 +186,17 @@ everything else passes. (qrack: `_PopQueue` under `UniformlyControlledSingleBit`
 **`hipFree` is synchronizing** (`hipFreeAsync` is not), so an explicit
 `hipDeviceSynchronize()` before it is redundant. (anari-visionaray)
 
+**A `__shared__` array of a struct that has default member initializers is a hard error on
+HIP and only a warning on nvcc.** Shared variables cannot be initialized; nvcc drops the
+NSDMIs silently (or with a warning) while clang reports `initialization is not supported for
+__shared__ variables` and stops. The fingerprint is a struct that looks innocent -- `struct S
+{ float sum = 0.0; float max = -1.0; };` -- declared as `__shared__ S sdata[blockSize]`. Check
+whether the kernel writes both members before reading them (it usually does, because the
+initializers were never reachable in device code anyway): if so, deleting the initializers is
+arch-unified and changes nothing on CUDA. Only if a host caller genuinely relies on the
+defaults do you need the aligned-byte-buffer plus `reinterpret_cast` dance. (rmcl:
+`SimpleLikelihoodStats` in `resampling.cu`'s reduction.)
+
 ## Textures
 
 **Texture pitch alignment is 256 bytes on AMD against 32 on NVIDIA**, and it bites in two
