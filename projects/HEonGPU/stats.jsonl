@@ -164,3 +164,9 @@
 {"kind":"session","ts":"2026-08-13T00:02:40Z","epoch":1786579360.331517186,"event":"end","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-08-13T01:00:32Z","epoch":1786582832.588596237,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-08-13T01:09:31Z","epoch":1786583371.938514418,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-13T01:12:00Z","epoch":1786583520.969863677,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-08-13T01:12:14Z","phase":"compile","seconds":8.305,"exit":0,"cmd":"bash -c \ncmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build -DUSE_HIP=ON \\\n  -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_BUILD_TYPE=Release \\\n  -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON \\\n  -DCMAKE_INSTALL_PREFIX=/var/lib/jenkins/moat/agent_space/heongpu-gfx942/prefix \\\n  2>&1 | tee /var/lib/jenkins/moat/agent_space/heongpu-gfx942-configure.log\n"}
+{"kind":"phase","ts":"2026-08-13T01:12:55Z","phase":"compile","seconds":36.564,"exit":0,"cmd":"bash -c \ncmake --build projects/HEonGPU/src/build -j$(nproc) 2>&1 | tee agent_space/heongpu-gfx942-build.log | tail -100\n"}
+{"kind":"phase","ts":"2026-08-13T01:13:14Z","phase":"test","seconds":13.308,"exit":0,"cmd":"bash -c \nctest --test-dir projects/HEonGPU/src/build --output-on-failure 2>&1 | tee agent_space/heongpu-gfx942-ctest1.log | tail -40\n"}
+{"kind":"phase","ts":"2026-08-13T01:13:33Z","phase":"test","seconds":15.617,"exit":0,"cmd":"bash -c \nctest --test-dir projects/HEonGPU/src/build --output-on-failure 2>&1 | tee agent_space/heongpu-gfx942-ctest2.log | tail -8\n"}
+{"kind":"session","ts":"2026-08-13T01:14:26Z","epoch":1786583666.050636746,"event":"end","platform":"linux-gfx942"}

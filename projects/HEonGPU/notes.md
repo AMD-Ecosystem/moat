@@ -3307,3 +3307,102 @@ could still be curated. I am not asking for a rewrite: presentation of a design 
 maintainer never saw is a publication-time decision, and rewriting would move
 `head_sha` again for no change in the tree. Decide it deliberately when the PR body
 is written rather than by default.
+
+## Validation 2026-08-13 (linux-gfx942, MI300X HF, ROCm 7.14) -- completed
+
+Real-GPU validation of `moat-port` at `6ac06d0575ec210f8dbfa1123aa890d2a04a9938`
+(the `review-passed` head after round 11; this arch's first validation,
+`validated_sha` was null beforehand). GPU: `rocminfo`/`rocm-smi
+--showproductname` report eight "AMD Instinct MI300X HF" dies (GFX Version
+gfx942) on this host. ROCm toolchain is the conda `_rocm_sdk_devel` SDK
+(`hipcc --version` -> `HIP version: 7.14.60850-0000000`, amdclang 23.0.0git),
+already on `PATH`/`CMAKE_PREFIX_PATH` via the container environment; no manual
+activation needed. Installed `libntl-dev` (missing on this host; `libgmp-dev`
+and `libssl-dev` were already present) with `sudo apt-get install -y
+libntl-dev`.
+
+Local fork clone at `projects/HEonGPU/src` was already fast-forwarded to
+`origin/moat-port` at `6ac06d0` before this session started. Clean build from
+scratch (`rm -rf build` first):
+
+```bash
+cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build -DUSE_HIP=ON \
+    -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_BUILD_TYPE=Release \
+    -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON \
+    -DHEonGPU_BUILD_BENCHMARKS=ON \
+    -DCMAKE_INSTALL_PREFIX=agent_space/heongpu-gfx942/prefix
+cmake --build projects/HEonGPU/src/build -j$(nproc)
+ctest --test-dir projects/HEonGPU/src/build --output-on-failure
+```
+
+Both wrapped in `utils/timeit.sh HEonGPU compile -- ...` / `utils/timeit.sh
+HEonGPU test -- ...`. Configure rc=0; build rc=0, zero `error:` lines (warnings
+only, same classes as the other two archs: `-Wunused-value` on `[[nodiscard]]`
+HIP error codes and `-Wpass-failed` loop-unroll notices on the small-NTT
+kernel, expected now that the guard restores the header-inlined definitions).
+All 42 executables built (`find build/bin -type f -executable | wc -l` = 42:
+15 tests, 24 examples, 3 benchmarks). `git -C projects/HEonGPU/src
+status --porcelain` empty before and after (integrity gate).
+
+`ctest`: **20/20 passed**, run twice back to back (13.21s and 15.45s).
+
+### Examples, benchmarks, and the OpenMP/RDC regressions this branch fixed
+
+`readelf -d` scanned over all 42 binaries under `build/bin`: **no `libgomp` in
+any DT_NEEDED**, confirming the round-6/7 two-OpenMP-runtime fix still holds
+on a from-scratch gfx942 build (this project has no wave-width or arch
+dependence in that fix, but it had never been checked on this arch's build
+tree before).
+
+Ran and checked by inspection:
+- `1_basic_bfv`, `2_basic_ckks`: exit 0, plausible decrypted/decoded values.
+- `9_multi_stream_usage_way1` (the OpenMP example): exit 0.
+- `15_basic_tfhe`: exit 0; manually verified all eight gate outputs bit-for-bit
+  against their Boolean truth tables from the printed inputs (`Input1: 1,1,0,1,
+  0,1,0,0`, `Input2: 1,0,1,0,1,1,1,0`, `Input3(control): 0,0,0,0,1,1,1,1`) --
+  NAND, AND, NOR, OR, XNOR, XOR, NOT and MUX (control=0 selects Input2,
+  control=1 selects Input1) all correct.
+- `bootstrapping/3_ckks_bit_bootstrapping`: exit 0, decrypted values match
+  expected within float noise (e.g. `EXPECTED:1 - ACTUAL:1.00002`).
+- `mpc/1_multiparty_computation_bfv`: exit 0, plausible output.
+- `benchmark/tfhe_benchmark`: exit 0, all eight gates report sane per-op
+  timings (NAND/AND/NOR/OR/XNOR/XOR ~10.9-11.2ms, NOT ~0.006ms, MUX ~19.3ms --
+  same shape as the gfx90a/gfx1100 runs, fastest of the three cards as
+  expected for MI300X).
+
+This is the third arch (third distinct wavefront-family/vendor-card
+combination) to run the full suite at the `-fgpu-rdc` guard design (reverted
+back from RDC in round 10), and the first at wave64 since the revert. Nothing
+in the revert has any wavefront-width dependence by construction (it is a
+link-model choice, not a kernel change), and this run confirms that rather
+than assuming it.
+
+### CUDA no-regression gate
+
+Already recorded at this exact `head_sha` (`6ac06d0`) by the linux-gfx90a
+round-10 session above ("CUDA no-regression: run twice ... 37 CUDA + 44 CXX
+objects rebuilt, 42 executables linked, 0 lines matching `error`"). Per the
+validator's per-`head_sha` rule, not re-run here. This host also has no CUDA
+toolchain set up (only the conda `_rocm_sdk_devel` HIP toolchain is present),
+consistent with the rule's expectation that the gate lands on whichever Linux
+arch validates first.
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --port HEonGPU`: clean.
+
+Documentation confirmed present in the checked-out tree at this head, in the
+project's own house style: `README.md` ("AMD GPUs (ROCm)" section, `-D
+USE_HIP=ON` build instructions) and `docs/getting_started.rst` (ROCm
+prerequisite, `-D USE_HIP=ON -D CMAKE_HIP_ARCHITECTURES=<target>` configure
+line, note that tests/examples/benchmarks all build and run on AMD).
+
+### Verdict
+
+`linux-gfx942`: **completed** at `6ac06d0575ec210f8dbfa1123aa890d2a04a9938`.
+First validation on this arch (previously unvalidated); wave64 gate now has a
+second independent measurement at the current, reverted (guard) design head,
+distinct from the earlier gfx90a wave64 evidence which was measured at the
+pre-revert `5d99b8f`. 20/20 reproduced twice from a clean build; no `libgomp`
+in any of 42 built binaries; TFHE gates independently truth-table-checked.
+CUDA gate already recorded at this `head_sha` by gfx90a, not re-run.
