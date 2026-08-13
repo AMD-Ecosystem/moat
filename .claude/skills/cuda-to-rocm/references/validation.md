@@ -101,11 +101,51 @@ clang-cl**, CMake 3.31:
    (`CMAKE_HIP_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_*`, set by
    `Windows-Clang.cmake`'s `__windows_compiler_clang(HIP)`) exists but the property's
    internal consumer does not route HIP through it. Fix: `-DCMAKE_MSVC_RUNTIME_LIBRARY=""`
-   (empty, not merely unset) disables the property mechanism for every language, so the
-   runtime library instead comes from the plain `-D_DLL -D_MT ...` flags already baked
-   into `CMAKE_<LANG>_FLAGS_RELEASE_INIT`; confirm the resulting binaries actually link
-   the DLL CRT (they do on this configuration) rather than assuming the workaround is
-   silently wrong.
+   (empty, not merely unset) disables the property mechanism -- but understand that it
+   disables it for **every** language, and nothing then supplies a CRT flag at all: no
+   `/MD`, no `-D_DLL`, in `CMAKE_C_FLAGS`, `CMAKE_CXX_FLAGS` or `CMAKE_HIP_FLAGS` (read
+   `CMAKE_CXX_FLAGS_RELEASE` out of `CMakeCache.txt` and confirm; an earlier session on
+   this same host recorded that `Windows-Clang.cmake` still bakes `-D_DLL -D_MT` into the
+   `_INIT` values, and that is simply not true for CMake 3.31 + clang-cl). clang-cl's
+   no-flag default is the STATIC CRT, so every object you build gets `MT_StaticRelease`
+   while conda-forge/vcpkg dependencies are `MD_DynamicRelease`, and lld-link then refuses
+   the link with `/failifmismatch: mismatch detected for 'RuntimeLibrary'` naming one of
+   your objects and one of theirs. Pass the CRT flag yourself to all three languages:
+   `-DCMAKE_HIP_FLAGS="-x hip /MD ..."`, `-DCMAKE_CXX_FLAGS="... -EHsc -MD"`,
+   `-DCMAKE_C_FLAGS="... -MD"`. Fixing only one language just moves the mismatch to the
+   next pair, so read the two object names in each error and keep going until they agree.
+   Note that `-Dgtest_force_shared_crt=ON` does NOT solve this for a FetchContent
+   googletest: googletest only rewrites an existing `/MD` into `/MT`, so where no CRT flag
+   exists there is nothing for the option to rewrite. (HEonGPU)
+3. **clang-cl does not link the compiler-rt builtins.** Host code using 128-bit integer
+   arithmetic -- ordinary in crypto and modular-arithmetic libraries -- links fine on
+   Linux (libgcc/compiler-rt is implicit) and fails on Windows with
+   `lld-link: error: undefined symbol: __udivti3` (or `__umodti3`, `__divti3`). The
+   library ships with the toolchain: add `<rocm>/lib/llvm/lib/clang/<ver>/lib/windows` to
+   `LIB` and `clang_rt.builtins-x86_64.lib` to `CMAKE_EXE_LINKER_FLAGS` and
+   `CMAKE_SHARED_LINKER_FLAGS`. This is toolchain plumbing, not a port defect -- do not
+   put it in the fork. (HEonGPU)
+
+**A leading-slash MSVC flag passed from Git Bash is mangled into a path.** `-DCMAKE_CXX_FLAGS="/DWIN32 ..."`
+reaches the compiler as `C:/Program Files/Git/DWIN32` (MSYS argument conversion), and the
+build fails with `clang-cl: error: no such file or directory: 'C:/Program'`. Use the dash
+spellings, which clang-cl accepts identically: `-MD`, `-EHsc`, `-DWIN32`. Do not reach for
+`MSYS_NO_PATHCONV=1`/`MSYS2_ARG_CONV_EXCL='*'` as a blanket escape -- it is inherited by
+every child process, so a project script that runs `git -C /d/path/...` inside the
+configure step stops resolving its own paths and fails with a much more confusing error.
+(HEonGPU)
+
+**A Linux-only host API can be the entire Windows blocker in an otherwise portable port**,
+and it will not surface until the first Windows build, however many Linux architectures
+have already validated. The recurring set is `<sys/sysinfo.h>` + `sysinfo()` (replace with
+`GlobalMemoryStatusEx()`/`MEMORYSTATUSEX::ullAvailPhys` under `#ifdef _WIN32`, leaving the
+POSIX branch untouched), the BSD typedefs `u_int32_t`/`u_int64_t` (the Microsoft headers
+have only the standard `uint32_t` spellings, which are the same types on Linux, so just
+change them), and GNU-style `-g`/`-O3` appended to `CMAKE_<LANG>_FLAGS_*` (unused
+arguments for clang-cl, which already receives `/Zi` and `/O2 /Ob2`, and *fatal* in any
+subproject that compiles with warnings as errors -- googletest does; guard them with
+`if(NOT MSVC)`). Grep for the whole set at once before the first Windows build rather than
+discovering them one failed compile at a time. (HEonGPU)
 
 **Acquiring a Windows dev package neither TheRock nor vcpkg ships, when the usual
 mirrors are unreachable.** GMP/OpenSSL/ZLIB had no reachable source on this network
