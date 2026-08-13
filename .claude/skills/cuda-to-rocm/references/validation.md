@@ -44,6 +44,99 @@ a DLL-load error; rebuilding a correct binary against a broken runtime is the si
 biggest time sink on Windows. A port is not "broken on Windows" until it has been run
 against a full ROCm distribution.
 
+## Windows: TheRock's HIP CMake packages may be missing; CMake's own HIP-language support has Windows gaps too
+
+A CMake-HIP project (`find_package(hip/hiprand/rocthrust)`, `enable_language(HIP)`
+with `CMAKE_HIP_COMPILER` = TheRock's `clang-cl.exe`) can hit failures with nothing to
+do with the port's own code. Found porting HEonGPU (a pure-CMake math library, not a
+torch extension) to windows-gfx1151; not yet seen on a torch-extension port because
+those consume HIP through torch's own build glue, not CMake's native HIP language.
+
+**Missing packages, not a broken build.** A given TheRock Windows wheel may ship the
+HIP *runtime* (`amdhip64.dll`/`.lib`, headers) and `hip-lang` (needed internally by
+CMake's HIP language) while shipping an **empty** `lib/cmake/hip/` (no
+`hip-config.cmake` at all -- `find_package(hip)` fails outright) and no
+`hiprand`/`rocthrust` CMake packages whatsoever, even when `hiprand_kernel.h` is
+present on disk. Check before assuming the port or the build is wrong:
+`Get-ChildItem <rocm_root>/lib/cmake/hip` (or the wheel's `_rocm_sdk_core` equivalent)
+-- if it is empty, this is the wheel, not you. Filed generally as
+`heongpu-windows-rocm-sdk-cmake-packages-missing` (`rocm-bug-report`, component
+`rocm-sdk-core`); `deferred.py list` finds it across ports if it recurs.
+
+Workaround: hand-write minimal local CMake package shims (`<name>Config.cmake`, passed
+via `-D<name>_DIR=<dir containing it>`), scoped to only what the port actually links --
+grep the whole tree for `hip::`/`roc::` usage first rather than reproducing the real
+package's full surface. `hip::host`/`hip::amdhip64` need to be real (an imported SHARED
+library pointing at the actual `amdhip64.lib`) since executables link and run against
+them; `hip::hiprand` can be an include-only INTERFACE target with no library if the
+port only uses the header-only device RNG API (`hiprandState_t`/`hiprand_init`, not the
+host generator API); `roc::rocthrust` likewise include-only, pointed at a local
+TheRock super-repo checkout's `rocm-libraries/projects/{rocthrust,rocprim}` if
+available (rocThrust is a header-only Thrust fork; no compiled library is needed for
+basic container usage like `thrust/host_vector.h`). See HEonGPU's notes.md 2026-08-13
+Validation entry for the working shim files.
+
+**Two independent bugs in CMake's own (not ROCm's) HIP-language support for Windows +
+clang-cl**, CMake 3.31:
+1. `Platform/Windows-MSVC.cmake`'s MSVC-version-detection fallback chain checks
+   `CMAKE_{C,CXX,Fortran,CUDA}_SIMULATE_VERSION` but has **no `HIP` branch**. This is
+   invisible in a real project (`LANGUAGES C CXX HIP ...`) because `CXX` is processed
+   first and its `SIMULATE_VERSION` covers HIP's evaluation too -- but CMake's OWN
+   internal ABI-detection scratch project enables *only* HIP, hits every branch unset,
+   and fails with `MSVC compiler version not detected properly` inside a `try_compile`
+   you did not write. `-DCMAKE_HIP_COMPILER_FORCED=1` "fixes" this by skipping ABI
+   detection, but that ALSO skips whatever normally seeds `-x hip` into the HIP compile
+   rule -- `.cu`/`.hip` sources then silently compile as plain C++ (`-TP`, no `-x hip`)
+   and every device intrinsic (`threadIdx`, `__syncthreads`, ...) is "undeclared
+   identifier", which reads exactly like a much worse problem than it is. Real fix: keep
+   `CMAKE_HIP_COMPILER_FORCED=1` (still needed to dodge the detection bug) AND add
+   `-x hip` explicitly to `CMAKE_HIP_FLAGS` (it lands after the rule's fixed `-TP` on
+   the command line, and the last language-selecting flag wins).
+2. The `MSVC_RUNTIME_LIBRARY` target property has no entry for the `HIP` language in
+   this CMake version at all (`Help/prop_tgt/MSVC_RUNTIME_LIBRARY.rst` documents C,
+   CXX, CUDA, OBJC, OBJCXX, Fortran only) -- `CMake Error ... MSVC_RUNTIME_LIBRARY
+   value 'MultiThreadedDLL' not known for this HIP compiler` at generate time, on the
+   first HIP target CMake evaluates. Not a CMP0091 policy issue (tried OLD and NEW,
+   both fail identically) -- the module-level compatibility table
+   (`CMAKE_HIP_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_*`, set by
+   `Windows-Clang.cmake`'s `__windows_compiler_clang(HIP)`) exists but the property's
+   internal consumer does not route HIP through it. Fix: `-DCMAKE_MSVC_RUNTIME_LIBRARY=""`
+   (empty, not merely unset) disables the property mechanism for every language, so the
+   runtime library instead comes from the plain `-D_DLL -D_MT ...` flags already baked
+   into `CMAKE_<LANG>_FLAGS_RELEASE_INIT`; confirm the resulting binaries actually link
+   the DLL CRT (they do on this configuration) rather than assuming the workaround is
+   silently wrong.
+
+**Acquiring a Windows dev package neither TheRock nor vcpkg ships, when the usual
+mirrors are unreachable.** GMP/OpenSSL/ZLIB had no reachable source on this network
+(`ftpmirror.gnu.org`/`ftp.gnu.org`/`gmplib.org` all timed out; `github.com`, `pypi.org`,
+`conda.anaconda.org` did not -- check which specific domains are blocked before
+concluding the network is down). conda-forge ships MSVC-toolchain win-64 builds of
+common C/C++ libraries (compatible with clang-cl, since both are MS-ABI); fetch one
+directly with `curl` against `api.anaconda.org`'s redirect, no `conda`/`vcpkg`
+installation required: `.conda` files are zip archives containing `pkg-*.tar.zst`,
+and Windows's built-in `tar.exe` extracts `.zst` natively. A library conda-forge does
+not ship for `win-64` either (NTL had none, checked explicitly via
+`api.anaconda.org/package/conda-forge/<name>`'s platform list) may still have its own
+historical Windows/MSVC fallback worth finding before assuming a from-scratch port is
+needed: NTL's `dosify`/`ResetFeatures`/`mach_desc.win`/`NTL_WINPACK` (see HEonGPU
+notes.md) turned what looked like "write a Windows build system for a 76-file C++
+library" into copying four pre-existing pieces and compiling directly with clang-cl.
+
+**A `core.autocrlf` line-ending mismatch can make an in-tree `git apply` of a
+committed patch fail with a real (non-whitespace) hunk mismatch**, on Windows only,
+if the patch file and the tree it applies to were checked out under different
+`core.autocrlf` values at different times in the same working copy (e.g. because
+something upstream of the patch step -- like `git submodule update --init`, invoked
+from inside a build script -- ran before a config change and something else ran
+after). Both sides being CRLF (or both LF) is what matters, not which value. Symptom:
+`patch does not apply` at a real hunk, not just a "trailing whitespace" warning.
+Fix locally without touching the tracked patch: `git config core.autocrlf false`
+(both in the repo and in the affected submodules) then force every affected file to
+be re-materialized from the index (`rm <file>; git checkout -- <file>` -- a plain
+`git checkout -- .` does not always rewrite a file whose working-tree bytes already
+happen to match under the stale convention).
+
 ## Windows: static initializers in TheRock's DLLs may never run
 
 **A C++ test that gates on `torch::cuda::is_available()` can fail on Windows against a
