@@ -1106,3 +1106,64 @@ grep honors `.gitignore`, which excludes them via `.gitignore:20`). The
 
 The lesson is generic to hipify-perl ports, which is why it stays in the skill
 rather than here.
+
+## Review 2026-08-13 (reviewer, linux-gfx942, delta round 9778530)
+
+Verdict: changes-requested, on one finding, again entirely on the MOAT side.
+Scope: the delta `53be238..HEAD` (9778530 plus the a65b863 telemetry commit),
+which touches `.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md`,
+`notes.md`, `stats.jsonl` and the `status.json` stage field, and nothing else.
+The fork is confirmed untouched: `src` is at
+`d7d98677060e36cfa329db4229c8b3d14cf53b32` on `moat-port`, equal to
+`origin/moat-port` and to `status.json.head_sha`, `git status --porcelain`
+empty, and `linux-gfx90a` / `linux-gfx1100` still carry `validated_sha`
+`040743e`. `jargon.py --port LC-framework` clean. The fork findings resolved in
+the `d7d9867` re-review are not re-litigated here.
+
+The substance of the rewrite is right: the "silently skips files" mechanism and
+the whole-tree re-grep pre-check are gone, the compile-time "undeclared
+identifier cudaMalloc" signal is kept, the replacement mechanism matches
+`README.md:75` on the fork, and the `hip/hip_runtime.h`-prepend sentence and
+both adjacent bullets (`:85-89` offload-arch, `:99-104` `.prehip` re-hipify) are
+untouched.
+
+### 1. The "10 of 14" figure belongs to a different grep than the one the sentence names
+
+`.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md:94-96`:
+
+    Grepping the tree for `cudaMalloc` instead reports the `.prehip` backups
+    hipify itself writes -- 10 of 14 hits on a fully converted tree
+
+10-of-14 is the result of the *four-pattern* pre-check
+`cudaMalloc|cudaSuccess|include <cub|include <cuda.h`, which this same edit
+deleted from the bullet, so the number now cites a query the reader can no
+longer see. A grep for the literal `cudaMalloc` the sentence names gives
+different numbers.
+
+Re-measured today, fresh `git archive HEAD` of `d7d9867` into a scratch tree,
+`./generate_Device_LC-Framework.py` then the `README.md:63-64` hipify loop run
+to completion (231 files converted, exit 0):
+
+    /usr/bin/grep -rlE 'cudaMalloc|cudaSuccess|include <cub|include <cuda\.h' .
+      -> 14 files, 10 *.prehip          (reproduces the prior round exactly)
+    /usr/bin/grep -rl cudaMalloc .
+      -> 12 files,  8 *.prehip
+    /usr/bin/grep -rn cudaMalloc .
+      -> 52 lines, 24 in *.prehip       (reproduces the prior round exactly)
+
+The conclusion the bullet draws survives all three, so this is a citation fix,
+not a retraction. Fix, either: say "8 of 12 files, or 24 of 52 lines" for the
+`cudaMalloc` grep, or keep 10-of-14 and name the query it came from. A number
+that does not reproduce from the command the sentence describes is the failure
+mode this round exists to remove.
+
+The `.gitignore` half of the claim is verified and is the larger effect:
+`.gitignore:20` is `*.prehip`, and on the same converted tree ripgrep 14.1.1
+reports 4 files with 0 `.prehip` where `/usr/bin/grep` reports 12 with 8.
+
+Observation, no action: the documented whole-tree loop took 24 s wall clock on
+this host, so "takes a while" is doing light work in the mechanism sentence.
+The mechanism itself (a loop cut short leaves the remaining headers in CUDA
+form; re-running finishes the job) is correct and matches `README.md:75`, which
+already passed review, so this is context for the next writer rather than a
+change request.
