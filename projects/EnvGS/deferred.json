@@ -43,7 +43,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-06-17T00:05:13Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-13T19:33:11Z"
+      }
     },
     {
       "id": "envgs-submodules-personal-account",
