@@ -54,3 +54,4 @@
 {"kind":"phase","ts":"2026-08-13T14:54:46Z","phase":"test","seconds":1.171,"exit":0,"cmd":"bash agent_space/rmcl/run_ctest.sh"}
 {"kind":"phase","ts":"2026-08-13T14:54:55Z","phase":"test","seconds":1.109,"exit":0,"cmd":"bash agent_space/rmcl/run_ctest_v.sh"}
 {"kind":"phase","ts":"2026-08-13T14:55:01Z","phase":"test","seconds":0.696,"exit":0,"cmd":"bash agent_space/rmcl/run_ctest_nodev.sh"}
+{"kind":"session","ts":"2026-08-13T14:59:15Z","epoch":1786633155.774174240,"event":"end","platform":"linux-gfx942"}
