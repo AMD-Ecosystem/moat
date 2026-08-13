@@ -18,3 +18,4 @@
 {"kind":"phase","ts":"2026-08-13T02:04:10Z","phase":"test","seconds":0.006,"exit":127,"cmd":"bash run_ctest.sh"}
 {"kind":"phase","ts":"2026-08-13T02:04:21Z","phase":"test","seconds":0.878,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/rmcl/run_ctest.sh"}
 {"kind":"session","ts":"2026-08-13T02:08:01Z","epoch":1786586881.086314462,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-13T02:09:06Z","epoch":1786586946.985538678,"event":"start","platform":"linux-gfx942"}

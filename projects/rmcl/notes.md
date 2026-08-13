@@ -286,3 +286,98 @@ states agree bitwise.
 - No NVIDIA host exists in the fleet, so the CUDA no-regression claim rests on construction:
   every change is inside `USE_HIP` except `<climits>`, the `SimpleLikelihoodStats`
   initializers and the README. That is exactly the set a reviewer should check.
+
+## Review 2026-08-13 (linux-gfx942) -- changes requested
+
+Reviewed `git diff 8892cf4...a8e6f88` on `AMD-Ecosystem/rmcl` `moat-port` (9 files, +396/-12),
+both commit messages, `surface.json`, and the two skill lessons this branch promotes. Working
+tree clean, `jargon.py --port rmcl` clean, no OptiX/Vulkan source touched, no `cuda[A-Z]` API
+call left unshimmed, no warp intrinsic / `warpSize` / hardcoded 32 anywhere in the ported code,
+and `simple_stats_kernel` (`rmcl_ros/src/rmcl/resampling.cu:67-74`) runs the full `__syncthreads`
+tree with the barrier outside `if(tid < s)`, so it is wave32/wave64 safe as the plan claimed.
+
+### Problems
+
+1. **The rationale in commit `dde091b` states something nvcc does not do.** The body says
+   "nvcc dropped the initializers with a warning and clang rejects the declaration outright".
+   The clang half is right (reproduced: `initialization is not supported for __shared__
+   variables`, gfx942). The nvcc half is not: CUDA 12.8.93 compiles the pre-port
+   `resampling.cu` -- NSDMIs present, `__shared__ SimpleLikelihoodStats sdata[blockSize]` at
+   `rmcl_ros/src/rmcl/resampling.cu:47` -- with no diagnostic at all, and a four-line repro with
+   `-Xcudafe --display_error_number` is equally silent. Reword to say nvcc accepts the
+   declaration and ignores the initializers. This is upstream-visible text that a maintainer can
+   check in a minute, and it is the paragraph that justifies an unconditional edit to a public
+   header. Fix it now rather than later: amending a commit body after validation moves
+   `head_sha` and throws away every platform's evidence, whereas today it costs nothing.
+
+2. **The added GPU test has no skip path, so `colcon test` acquires a hard failure on any
+   machine that has the toolkit but no usable device.** `rmcl_ros/CMakeLists.txt:815` gates the
+   test on `BUILD_TESTING AND RMCL_CUDA`, and `RMCL_CUDA` is a statement about `rmagine::cuda`
+   being installed, not about a GPU being present; `rmcl_ros/tests/CMakeLists.txt:9` then
+   registers it unconditionally. Upstream CI is safe (the ROS docker images carry no CUDA, so
+   `RMCL_CUDA` is false and the subdirectory is never added), but a headless build host or a
+   container without device access goes from "colcon test runs nothing" to "colcon test fails",
+   in a repository whose README advertises per-distro test badges. Return 77 from `main()` when
+   the device count is zero and add
+   `set_tests_properties(rmcl_gpu_kernels PROPERTIES SKIP_RETURN_CODE 77)`; the device-count
+   call needs two more mappings in `rmcl_ros/include/rmcl_ros/util/cuda_to_hip.h`, which is
+   exactly what that header is for.
+
+3. **`rmcl_ros/CMakeLists.txt:233-234` explains `PUBLIC USE_HIP` with a fact that is not true of
+   this package.** The comment says "the installed headers switch to the hip spellings of
+   curandState and friends with it", but `rmcl_ros` installs no headers: the file contains only
+   `install(TARGETS ...)`, there is no `install(DIRECTORY include ...)`, and the installed tree
+   from the port's own build contains just `lib/` and `share/`. `PUBLIC` is still the right
+   choice, for a different reason -- in-workspace consumers that include these headers, namely
+   the new test target and `rmcl_localization` under `RMCL_OPTIX`. Say that instead.
+
+4. **The promoted fault-class lesson hedges where the evidence is now definite.**
+   `.claude/skills/cuda-to-rocm/references/fault-classes.md` says nvcc "drops the NSDMIs
+   silently (or with a warning)". Measured on CUDA 12.8.93: silent, no diagnostic. Drop the
+   parenthesis and name the toolkit version tested, so the next reader does not go looking for a
+   warning that is not there. The `strategy-a-cmake.md` lesson about `hip::device` needs no
+   change -- it is exactly right, and the mechanism is visible in ROCm's own
+   `lib/cmake/hip/hip-config.cmake:77`, which wraps the interface flags in
+   `$<$<COMPILE_LANGUAGE:CXX>:...>`, i.e. the `--offload-arch` lands on the target's C++ sources
+   and not on its HIP ones.
+
+### Verified here, so it does not have to be re-argued
+
+The plan left "no NVIDIA host in the fleet, so the CUDA path is proven by construction and
+checked in review" as an open item. It is now proven by compilation instead. This host carries a
+CUDA 12.8 toolkit at `/opt/conda/envs/cuda-12.8`, and all four touched translation units build
+against the real CUDA headers at `a8e6f88`, with the `USE_HIP` branch of the shim inactive:
+
+```
+CUDAINC=/opt/conda/envs/cuda-12.8/targets/x86_64-linux/include
+INC="-Irmcl_ros/include -Irmcl/include -I<ws>/install/rmcl_msgs/include/rmcl_msgs \
+     -I<rmagine>/src/rmagine_core/include -I<rmagine>/src/rmagine_cuda/include \
+     -I$CUDAINC $(for d in /opt/ros/jazzy/include/*; do echo -I$d; done)"
+nvcc -std=c++17 -arch=sm_75 -c rmcl_ros/src/rmcl/resampling.cu      $INC   # ok
+nvcc -std=c++17 -arch=sm_75 -c rmcl_ros/src/rmcl/particle_motion.cu $INC   # ok
+g++  -std=c++17 -c rmcl_ros/src/rmcl/GladiatorResamplerGPU.cpp      $INC   # ok
+g++  -std=c++17 -c rmcl_ros/tests/rmcl_gpu_kernels.cpp              $INC   # ok
+```
+
+Only the three pre-existing unused-variable warnings (`resampling.cu:120,121,136`) appear. The
+last two lines matter most: the two host translation units that include the new shim still
+compile with a plain host compiler against `curand_kernel.h`, so the port does not break the
+NVIDIA build of the file it adds. Worth quoting in the PR body -- it is the evidence upstream
+will want and it is cheap to reproduce.
+
+Also confirmed rather than taken on trust: rmagine's installed `rmagine-cuda-config.cmake`
+really does export `set(rmagine_cuda_USE_HIP ON)` and `find_dependency(hip)` /
+`find_dependency(hiprand)`, so the `option(USE_HIP ... ${rmagine_cuda_USE_HIP})` auto-default
+works and plan risks 1 and 2 are genuinely retired; `e7a7b27` is an ancestor of the current
+rmagine fork tip `1213551`, which adds only a test comment, so the dependency the port was built
+against is current. The OptiX and correspondence scoping is honest: nothing under `optix/` or
+`vulkan` is in the diff, and both the README paragraph and `dde091b` say plainly that ray casting
+still needs OptiX.
+
+### Not blocking, for whoever writes the PR body
+
+The motion test's CPU reference (`rmcl_ros/tests/rmcl_gpu_kernels.cpp:100`) composes poses with
+rmagine's own `Transform::operator*`, which is the same shared host/device source the kernel
+uses, so it is a reference for indexing, coverage and dispatch but not an independent
+implementation of the quaternion math. The reduction and forget-rate references are independent.
+Nothing to change; just do not oversell it as "checked against an independent CPU implementation".
