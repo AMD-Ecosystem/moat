@@ -1722,3 +1722,86 @@ qdp_no_cuda stub path); libkernels.a is 4.7 MB of nvcc fatbinaries.
   it (cuda_rt extern, no_cuda_stubs stub, hip_rt wrapper); a helper written at
   module scope over those names fails to compile on hip if only the first two are
   updated. The auto-merge silently supplied the stub and cuda_rt sides only.
+
+## Review 2026-08-13 (reviewer, linux-gfx1100) -- fix round 1399 delta
+
+Scope: `git diff fd8c7a38..1744956de` on `moat-fix-1399` (merge 53c5f72fb of
+upstream 206ff2fe8 + follow-up 1744956de). Problems only; the merge resolutions,
+the hipGetDeviceCount wrapper, the parquet_f32_fidelity cfg change and the
+promoted skill lesson are otherwise correct and are not restated here.
+
+### 1. Commit title of the merge lacks the `[ROCm]` prefix (must fix)
+53c5f72fb is titled `Merge upstream main into the AMD/HIP branch`. AGENTS.md
+("Commit messages and upstream-visible text") requires every commit title to
+start with `[ROCm]` and states no merge-commit exception; the round's other
+commit (1744956de) complies. This commit becomes permanently visible on
+apache/mahout#1399 once `upstream.py --merge-fix` fast-forwards the PR branch, so
+it can only be corrected now, while the staging branch is unpublished and no
+person has reviewed it. Reword with `git commit --amend` on the merge plus a
+replay of 1744956de; the published tip fd8c7a38 stays parent 1, so the
+"published tip is still an ancestor" invariant survives and `moat-port` is not
+touched. Update `head_sha` afterwards. If the porter judges the history rewrite
+worse than the deviation, record that rationale here instead -- but the default
+per AGENTS.md is the prefix. Body, length (43 chars), AI disclosure, Test Plan
+and trailers on both commits are correct.
+
+### 2. Test-count reconciliation in the round's evidence is wrong (must fix)
+notes.md lines 1682-1686 read "Was 358 at fd8c7a38 on gfx90a; the +10 are
+upstream's new tests". Upstream's delta adds 14 test functions, not 10:
+`git grep -c '#\[test\]' <rev> -- qdp/qdp-core/tests qdp/qdp-core/src
+qdp/qdp-kernels` gives 367 at fd8c7a38 and 381 at 1744956de, and the three
+affected files match the note's own per-suite numbers (estimate.rs 9 new,
+parquet_f32_fidelity.rs 4 new, gpu_ptr_encoding.rs 68 -> 69). The 358 figure is
+also a gfx90a number and is not a comparable baseline: gfx1100 has no pass count
+at fd8c7a38 (its 2026-07-02 record is a binary-equivalence carry-forward with no
+GPU re-run). So four tests that passed in the gfx90a 358 run are unaccounted for
+in this gfx1100 368 run -- plausibly the 4 doctests this run reports as ignored,
+but that is a guess and the note asserts a reconciliation that does not hold.
+The 368 total itself is fine: the full per-suite breakdown in that paragraph sums
+to exactly 368. Fix the sentence to state the +14 upstream delta and drop or
+qualify the cross-platform 358 comparison; if the 4 doctests are the difference,
+say so with the ignored-doctest names.
+
+### 3. The `qdp_no_cuda` stub configuration was not compiled this round (must fix)
+The merge restructured qdp-core/src/gpu/cuda_ffi.rs and upstream's new
+`cudaGetDeviceCount` stub landed in `no_cuda_stubs` (cuda_ffi.rs:172, gated at
+:138 on `all(feature = "cuda", not(feature = "hip"), qdp_no_cuda)`). This round
+compiled only the hip_rt backend and the real-nvcc cuda_rt backend -- notes.md
+line 1704 confirms the CUDA check took the cudart path, so the stub arm was
+excluded. That leaves one of the three backends selected by the file the merge
+rewrote unbuilt. Add the check the previous round ran:
+`QDP_NO_CUDA=1 cargo check -p qdp-core` (default cuda feature, nvcc off PATH),
+and record the result.
+
+### Verified clean (no action)
+- `git diff fd8c7a38..1744956de -- qdp/` is 26 files; the tree-level three-way
+  comparison against the merge base dccc97db shows zero files where an upstream
+  change was dropped in favour of our side and zero where a port change was
+  dropped in favour of upstream's. `git show --cc 53c5f72fb` introduces exactly
+  11 lines beyond the two parents: the cudaGetDeviceCount extern in cuda_rt, the
+  hipGetDeviceCount extern plus its wrapper, and the cuda_runtime_available doc
+  edits. The porter's "upstream delta + 6-line wrapper" claim holds.
+- All three cuda_ffi.rs backends define `cudaGetDeviceCount` and their cfgs are
+  mutually exclusive in every feature combination, including cuda+hip together
+  (hip wins), so upstream's `cuda_runtime_available` (cuda_ffi.rs:444) resolves
+  in each. hipGetDeviceCount matches cudaGetDeviceCount 1:1 (`int*` out,
+  hipSuccess == 0), and the `rc == 0 && count > 0` test is correct for the
+  no-device case in either runtime.
+- The follow-up's `#[cfg(qdp_gpu_platform)]` on parquet_f32_fidelity.rs:116 is
+  the only such gate left in qdp/**/*.rs (`grep -rn 'target_os = "linux"'` now
+  matches only a build.rs doc comment), so it matches how every other GPU test is
+  gated and it belongs in this round.
+- No .cu source changed: the only qdp-kernels file in the delta is
+  kernel_config.h, where upstream deleted `MAX_QUBITS`, which no kernel source
+  references. No warp-size, resource-handle, OOB or library-swap surface is
+  touched by this delta.
+- `utils/jargon.py --port mahout` clean; independent scan of the delta's added
+  lines and both commit messages finds no MOAT vocabulary, no AMD-internal
+  account reference and no Co-Authored-By/noreply trailer.
+- Ancestry: upstream/main (206ff2fe8) and the published tip fd8c7a38 are both
+  ancestors of 1744956de. Fork worktree is clean (integrity gate satisfied).
+- The promoted lesson (.claude/skills/cuda-to-rocm/references/upstream-sync.md
+  plus the SKILL.md pointer) is accurate on both of its claims for this port -- a
+  missing hip_rt entry point does break compilation, and a `target_os = "linux"`
+  test gate does silently drop coverage on Windows ROCm -- and is written
+  cross-project (CMake equivalents included), so it belongs in the skill.

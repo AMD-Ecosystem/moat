@@ -113,3 +113,5 @@
 {"kind":"phase","ts":"2026-08-13T22:19:24Z","phase":"cuda-compile","seconds":11.156,"exit":0,"cmd":"cargo test --manifest-path /var/lib/jenkins/moat/projects/mahout/src/qdp/Cargo.toml -p qdp-core -p qdp-kernels --no-run -j 16"}
 {"kind":"phase","ts":"2026-08-13T22:21:18Z","phase":"test","seconds":1.567,"exit":0,"cmd":"cargo test --manifest-path /var/lib/jenkins/moat/projects/mahout/src/qdp/Cargo.toml -p qdp-core --no-default-features --features hip --test parquet_f32_fidelity -- --test-threads=1"}
 {"kind":"phase","ts":"2026-08-13T22:22:38Z","phase":"misc","seconds":0.003,"exit":0,"cmd":"true"}
+{"kind":"session","ts":"2026-08-13T22:26:52Z","epoch":1786660012.100447784,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-13T22:35:23Z","epoch":1786660523.609964090,"event":"end","platform":"linux-gfx1100"}
