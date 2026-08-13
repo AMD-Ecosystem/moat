@@ -53,8 +53,10 @@ def make_scene(P=64, seed=0):
     opacities = torch.empty(P, 1).uniform_(0.35, 0.9, generator=g)
     colors = torch.empty(P, 3).uniform_(0.1, 0.9, generator=g)
 
-    # Channel 0 of others_precomp is the specular weight that drives reflection.
-    others = torch.empty(P, 3).uniform_(0.0, 0.05, generator=g)
+    # others_precomp carries AUX_CHANNELS (config.h) values per surfel, and the
+    # kernel indexes it with that stride, so it has to be exactly that wide.
+    # Channel SPECULAR_OFFSET (0) is the specular weight that drives reflection.
+    others = torch.empty(P, 2).uniform_(0.0, 0.05, generator=g)
     # A big, strongly specular mirror surfel at the back of the slab.
     means3D[0] = torch.tensor([0.0, 0.0, 4.2])
     scales[0] = torch.tensor([1.6, 1.6])
