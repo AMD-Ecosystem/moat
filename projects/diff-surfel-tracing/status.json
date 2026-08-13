@@ -7,13 +7,45 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-08-06T06:58:03Z",
-  "updated_at": "2026-08-07T07:05:02Z",
+  "updated_at": "2026-08-13T03:18:45Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 911002454,
-  "stage": "unclaimed",
-  "platforms": {}
+  "stage": "screened",
+  "platforms": {
+    "linux-gfx1100": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-13T03:18:45Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "none outside MOAT: no AMD-Ecosystem/ROCm repo, no amd/rocm/hip mention upstream, no AMD forks; the only AMD work is our own EnvGS Stage 2",
+    "viable": true,
+    "summary": "Differentiable 2D-Gaussian OptiX ray tracer (MIT, verified by reading LICENSE; GitHub misreports NOASSERTION). Already rewritten onto HIPRT and GPU-validated under EnvGS Stage 2 -- taking it up buys a separate PR route to xbillowy, not new porting. Decided by two things: 9 NVIDIA-proprietary headers in the upstream OptiX submodule need a ruling, and moat-port vendors HIPRT/Orochi incl. a 1.9MB prebuilt DLL with no HIPRT/Orochi licence files.",
+    "at": "2026-08-13T03:18:42Z"
+  }
 }
