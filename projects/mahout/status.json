@@ -7,7 +7,7 @@
   "priority": 6.322,
   "ext_type": "rust-cc-cuda",
   "adopted_at": "2026-05-30T00:04:57Z",
-  "updated_at": "2026-08-13T22:48:32Z",
+  "updated_at": "2026-08-13T22:51:45Z",
   "head_sha": "9a3a08e0f3061b00ddf8f2cfb3f5cd5c49b38d66",
   "pr_url": "https://github.com/apache/mahout/pull/1399",
   "pr_number": 1399,
@@ -104,10 +104,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "fd8c7a38ac725b31f6b5ce1cc9e969cd357066f8",
+      "validated_sha": "9a3a08e0f3061b00ddf8f2cfb3f5cd5c49b38d66",
       "started_at": "2026-08-13T22:12:01Z",
-      "completed_at": "2026-07-02T19:30:05Z",
-      "updated_at": "2026-08-13T22:48:32Z",
+      "completed_at": "2026-08-13T22:51:45Z",
+      "updated_at": "2026-08-13T22:51:45Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -121,13 +121,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer",
-      "carry_forward": {
-        "to": "fd8c7a38ac725b31f6b5ce1cc9e969cd357066f8",
-        "method": "binary-equiv",
-        "detail": "gfx1100 libkernels.a (6 .cu kernel TUs) identical at f84b39ae vs fd8c7a38; delta is upstream conflict resolution + reviewer fixes (validator stream sync, pointer-attr build-time check, cuComplex.h #if",
-        "at": "2026-07-02T19:30:05Z"
-      }
+      "last_agent": "validator"
     }
   },
   "published_sha": "fd8c7a38ac725b31f6b5ce1cc9e969cd357066f8",

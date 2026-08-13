@@ -1935,3 +1935,64 @@ nothing regressed. Evidence checked independently:
   build-script warning that confirms the cfg fired.
 - `python3 utils/jargon.py --port mahout` clean; fork worktree clean
   (`git status --porcelain` empty), integrity gate satisfied.
+
+## Validation 2026-08-13 (validator, linux-gfx1100) -- fix round 1399 revalidation, PASS
+
+Independent revalidation at the fix round's rewritten staging tip, since gfx1100's
+previously recorded `validated_sha` (fd8c7a38) lagged the new `head_sha`
+(9a3a08e0f3061b00ddf8f2cfb3f5cd5c49b38d66) after the reviewer's must-fix round.
+Confirmed checkout: `git -C projects/mahout/src rev-parse HEAD` ==
+9a3a08e0f3061b00ddf8f2cfb3f5cd5c49b38d66 on `moat-fix-1399`, `git status
+--porcelain` empty (integrity gate satisfied) before and after the run.
+
+Env: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3 wave32), ROCm 7.2.1 / HIP 7.2.53211
+(AMD clang 22.0.0git roc-7.2.3), rustc 1.97.1, cargo 1.97.1. Same host as the
+porter/reviewer rounds above.
+
+### Build + test (exact commands)
+```
+utils/timeit.sh mahout compile -- bash -c 'cd projects/mahout/src/qdp && \
+  QDP_USE_HIP=1 QDP_HIP_ARCH_LIST=gfx1100 ROCM_PATH=/opt/rocm \
+  cargo build -p qdp-core -p qdp-kernels --no-default-features --features hip -j 16'
+utils/timeit.sh mahout test -- bash -c 'cd projects/mahout/src/qdp && \
+  QDP_USE_HIP=1 QDP_HIP_ARCH_LIST=gfx1100 ROCM_PATH=/opt/rocm \
+  cargo test -p qdp-core -p qdp-kernels --no-default-features --features hip -- \
+  --test-threads=1'
+```
+- build: exit 0. Same pre-existing warnings as recorded above (iqp.cu unused
+  param, phase.cu unused variable, qdp-core's cosmetic "CUDA toolkit not found"
+  build-script notice on a hip build).
+- test: exit 0, **368 passed, 0 failed, 4 ignored**, summed independently from the
+  per-suite `test result:` lines (100+5+9+12+8+7+9+17+22+4+2+69+8+6+4+7+4+8+14+3+9+
+  3+6+0+21+10+1+0 = 368) -- matches the porter's recorded count for this tip
+  exactly. Ignored are the same 4 pre-existing doctest fixtures
+  (gpu::pipeline::run_dual_stream_pipeline, io::read_numpy_batch, reader,
+  readers::numpy::NumpyReader). The dual-stream async-pipeline tests
+  (test_amplitude_encoding_async_pipeline, test_angle_encoding_async_pipeline in
+  gpu_api_workflow; test_angle_batch_f32_async_pipeline_path in
+  gpu_angle_encoding) pass in this standard run without needing
+  `QDP_ENABLE_OVERLAP_TRACKING=1`; that env var is not part of this round's
+  recorded bar (its one prior use in this file is an unrelated, older gfx90a
+  round), so it was not re-run separately.
+
+### CUDA no-regression gate
+Not re-run: already recorded in this notes.md under "Fix round 2026-08-13
+(porter, linux-gfx1100)" (real nvcc 12.8, build-only, exit 0, no NVIDIA GPU on
+this host) against tree 5584f6f96cd105dd30684030676e036d51c5d858, which the
+porter's amend and the reviewer's re-review both independently confirmed is the
+identical tree at 9a3a08e0f (`git rev-parse 9a3a08e0f^{tree}` ==
+`git rev-parse 1744956de^{tree}`). No .cu kernel source is in the delta at all
+(reviewer's "Verified clean" note above), so the CUDA build result carries
+forward by tree identity; not re-run here.
+
+### Gates
+- `python3 utils/jargon.py --port mahout`: clean.
+- Documentation: unchanged by this round (no build/doc files in the 26-file
+  upstream-merge delta or the follow-up); the ROCm build documentation recorded
+  in earlier rounds still matches the build commands used here.
+- Fork worktree clean (`git status --porcelain` empty) before and after.
+
+### Result
+`python3 utils/moatlib.py set-state mahout linux-gfx1100 completed --agent
+validator` -> recorded `validated_sha` = `head_sha` =
+9a3a08e0f3061b00ddf8f2cfb3f5cd5c49b38d66. No anomalies.

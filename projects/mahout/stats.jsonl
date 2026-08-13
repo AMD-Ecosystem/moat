@@ -121,3 +121,8 @@
 {"kind":"phase","ts":"2026-08-13T22:39:12Z","phase":"test","seconds":22.078,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/agent_space/mahout-base/qdp && export QDP_USE_HIP=1 QDP_HIP_ARCH_LIST=gfx1100 ROCM_PATH=/opt/rocm HIP_VISIBLE_DEVICES=0 && cargo test -p qdp-core -p qdp-kernels --no-default-features --features hip -j 16 -- --test-threads=1"}
 {"kind":"session","ts":"2026-08-13T22:44:46Z","epoch":1786661086.526569693,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-13T22:48:41Z","epoch":1786661321.670211833,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-13T22:50:04Z","epoch":1786661404.597165822,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-13T22:50:40Z","phase":"compile","seconds":0.139,"exit":0,"cmd":"bash -c cd projects/mahout/src/qdp && QDP_USE_HIP=1 QDP_HIP_ARCH_LIST=gfx1100 ROCM_PATH=/opt/rocm cargo build -p qdp-core -p qdp-kernels --no-default-features --features hip -j 16"}
+{"kind":"phase","ts":"2026-08-13T22:50:52Z","phase":"test","seconds":7.803,"exit":0,"cmd":"bash -c cd projects/mahout/src/qdp && QDP_USE_HIP=1 QDP_HIP_ARCH_LIST=gfx1100 ROCM_PATH=/opt/rocm cargo test -p qdp-core -p qdp-kernels --no-default-features --features hip -- --test-threads=1"}
+{"kind":"phase","ts":"2026-08-13T22:51:08Z","phase":"test","seconds":6.964,"exit":0,"cmd":"bash -c cd projects/mahout/src/qdp && QDP_USE_HIP=1 QDP_HIP_ARCH_LIST=gfx1100 ROCM_PATH=/opt/rocm cargo test -p qdp-core -p qdp-kernels --no-default-features --features hip -- --test-threads=1"}
+{"kind":"session","ts":"2026-08-13T22:52:14Z","epoch":1786661534.442810564,"event":"end","platform":"linux-gfx1100"}
