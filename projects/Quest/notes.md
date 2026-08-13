@@ -1062,3 +1062,131 @@ outside a minimal port.
 Not applied here: it changes kernel configuration for every platform, so it
 wants a porter's commit and review, and it will require revalidating the Linux
 arches -- the right outcome, since their current pass rests on the race.
+Integrity: `git status --porcelain` in src clean at `ac7382c`; the only fork
+change this round is that commit.
+
+## Validation 2026-08-13 (linux-gfx90a, revalidate after the LLP64 fix)
+
+Re-validation of fork sha `ac7382c` on this arch after `head_sha` advanced from
+`c1d7fff` (this platform's prior `validated_sha`) via the windows-gfx1151
+session's `std::max<size_t>` fix. MI250X (gfx90a, wave64), 4 GPUs visible and
+idle, `HIP_VISIBLE_DEVICES=1`. ROCm 7.14 (`hip 7.14.60850`), PyTorch
+2.14.0a0+git7d05abc, python 3.12.13. Cloned the fork fresh into
+`projects/Quest/src`, checked out `moat-port` (`HEAD == ac7382c ==
+status.json.head_sha`), submodules `kernels/3rdparty/{flashinfer,pybind}`
+initialized (same subset as prior sessions).
+
+### Carry-forward shortcut attempted, then abandoned for a full run
+
+`python3 utils/moatlib.py classify Quest c1d7fff ac7382c` returned
+`class=mixed arch_independent=False` (`decode_attn.cuh`/`decode_page.cuh`
+token counts differ), which is the case the carry-forward binary-equivalence
+check exists for. Built `ac7382c` cleanly into `build-head` first. Building
+`c1d7fff` into a second tree for `codeobj_diff` required a second worktree and
+a second submodule checkout of `flashinfer`/`pybind`; the network-bound
+submodule clone stalled/partially failed twice in this environment (empty
+working tree after an interrupted fetch, then a wrong-commit checkout on
+retry). Rather than keep fighting the network for a shortcut whose only
+benefit is skipping a GPU run that costs under 10 seconds once the extension
+is built, abandoned the codeobj_diff path and ran the normal full real-GPU
+revalidation instead, per the validator's own fallback ("if you cannot build
+both shas, do the normal full real-GPU revalidation"). Worktree and its build
+directory removed.
+
+### Build
+
+Wrapped `utils/timeit.sh Quest compile -- ninja -C quest/ops/build-head`:
+
+```
+mkdir -p quest/ops/build-head && cd quest/ops/build-head
+cmake -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_PREFIX_PATH=$(python3 -c 'import torch;print(torch.utils.cmake_prefix_path)') ..
+ninja
+ln -sf $PWD/_kernels*.so ../../
+```
+
+Clean (6/6 objects, no errors). `grep -o -- '--offload-arch=[a-z0-9]*'
+build.ninja` shows `gfx90a` only, confirming the architecture-selection fix
+still holds on this delta. `import quest._kernels` exposes the same six ops
+as every prior session.
+
+### GPU tests
+
+Wrapped `utils/timeit.sh Quest test -- python3 -m pytest ...` (absolute test
+paths, since `timeit.sh` cds to the MOAT repo root before running the wrapped
+command):
+
+| suite | result |
+|---|---|
+| test_rope.py | 64 passed |
+| test_estimate.py | 9 passed |
+| test_decode_attention.py | 6 passed |
+| test_approx_attention.py | 42 passed |
+| **in-scope total** | **121 passed in 9.43s** |
+| test_topk.py | 49 failed, 15 skipped |
+| test_prefill_attention.py | 29 failed, 13 skipped |
+| **scoped-out total** | **78 failed, 28 skipped** (matches every prior session exactly) |
+
+Scoped-out failures confirmed still `AttributeError` (`topk_filtering` /
+`prefill_with_paged_kv_cache` not built), not a wrong answer, with `-x` on
+both files. Real device dispatch confirmed with `AMD_LOG_LEVEL=3` on
+`test_decode_attention.py`: 216 `hipLaunchKernel ... Returned hipSuccess`
+entries, including Quest's own compiled kernels by name
+(`flashinfer::AppendPagedKVCacheDecodeKernel`,
+`flashinfer::AppendPagedKVCachePrefillKernel`,
+`flashinfer::BatchDecodeWithPagedKVCacheKernel`,
+`flashinfer::VariableLengthMergeStatesKernel`) interleaved with PyTorch's own
+kernels -- real execution, not a mock. No non-GPU regression to check: this
+project has no CPU-only test path.
+
+### CUDA no-regression gate
+
+The delta `c1d7fff..ac7382c` touches only `kernels/include/decode/{decode_attn,decode_page}.cuh`
+(the `std::max<size_t>` fix). The CUDA gate recorded at `c1d7fff` was
+`cuda-not-validated`: RAFT (pinned branch-24.02) requires the legacy
+`CUDA::nvToolsExt` CMake target, which `FindCUDAToolkit` no longer creates
+against a CUDA 12.8 toolkit, so `cmake` fails inside RAFT's own CMakeLists at
+configure time, before Quest's own `.cu`/`.cuh` sources -- including the two
+files this commit touches -- are ever processed by the compiler.
+
+Attempted to reproduce the wall fresh at this head_sha for the record: no
+`cuda-12.8` conda env existed on this host, so created one per the standing
+instruction (`conda create -y -n cuda-12.8 -c nvidia cuda-toolkit=12.8`,
+~470MB+ of packages, several minutes). `gcc-11`/`g++-11` (the project's
+pinned CUDA-leg host compiler) were not available from this host's apt
+sources (`apt-get update` itself did not complete within the tool timeout),
+which is a separate environmental gap from the RAFT wall and not worth
+grinding on for a compile-only, secondary, once-per-head_sha gate whose
+outcome this specific delta cannot change: the RAFT CMakeLists failure is
+strictly upstream, in dependency-resolution order, of the two files this
+commit edits, so nothing in `ac7382c` can alter whether or where that
+configure-time failure occurs. Stopped pursuing a second full reproduction
+after the toolchain-setup steps alone exceeded the gate's ~15 minute budget.
+
+**`cuda-not-validated: unchanged from c1d7fff -- RAFT (pinned branch-24.02)
+requires the legacy CUDA::nvToolsExt CMake target, which FindCUDAToolkit no
+longer creates against a CUDA 12.8 toolkit; the configure fails inside RAFT's
+own CMakeLists before any Quest source, including the two files
+ac7382c touches, is ever reached. This delta cannot change that outcome.`**
+Not a gate; carries no penalty per the gate's own rules.
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --port Quest`: `jargon: clean`.
+
+README.md's "Building on AMD GPUs (ROCm)" section is unchanged from the prior
+validation and still accurately describes the build, the architecture
+precedence, and the scoped-out ops. No inaccuracy found; nothing sent back.
+
+`git -C projects/Quest/src status --porcelain`: clean except the untracked
+`quest/ops/build-head/` build directory. `HEAD` at `ac7382c`, matching
+`status.json.head_sha`.
+
+State: `revalidate` -> `completed` on linux-gfx90a, `validated_sha = ac7382c`.
+wave64 gate remains satisfied by this arch at the new head. windows remains
+open (still `validation-failed` at `ac7382c`, the decode-attention
+wrong-answer fault on gfx1151 recorded above -- an unruled deferral, not
+something this arch's evidence resolves). CUDA gate: `cuda-not-validated`,
+unchanged reasoning, no penalty. Wall clock: build ~1 min, in-scope tests
+~10s, scoped-out and log-evidence re-runs a few minutes, CUDA toolchain setup
+the majority of the session; overall within the ~60 minute budget.
