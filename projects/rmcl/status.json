@@ -7,7 +7,7 @@
   "priority": 4.281,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T03:40:15Z",
-  "updated_at": "2026-08-13T02:21:20Z",
+  "updated_at": "2026-08-13T02:23:06Z",
   "head_sha": "a8e6f8830c64e8576c7933c2abb6fafa554af2b2",
   "waivers": {},
   "license_spdx": "BSD-3-Clause",
@@ -15,7 +15,7 @@
     "rmagine"
   ],
   "upstream_repo_id": 553482246,
-  "stage": "changes-requested",
+  "stage": "porting",
   "platforms": {
     "linux-gfx942": {
       "blocked": false,
@@ -24,7 +24,7 @@
       "failed_sha": null,
       "started_at": "2026-08-13T01:44:17Z",
       "completed_at": null,
-      "updated_at": "2026-08-13T02:21:20Z",
+      "updated_at": "2026-08-13T02:23:06Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -71,5 +71,9 @@
     "viable": true,
     "summary": "ROS 2 mesh-localization stack (BSD-3, 254 stars, active); dependency rmagine already ported+validated by us, but every rmcl GPU path is gated behind OptiX -- decides on appetite for an rmcl-layer HIPRT backend plus a from-scratch test harness, since upstream ships zero tests",
     "at": "2026-08-11T22:35:29Z"
+  },
+  "porting": {
+    "arch": "linux-gfx942",
+    "since": "2026-08-13T02:23:06Z"
   }
 }
