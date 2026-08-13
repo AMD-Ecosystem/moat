@@ -1665,3 +1665,150 @@ descriptor values, not merely on counts.
   "fault classes" in the already-published commit 05e698e (at/below the frozen tip
   f2712723). Not fixable without rewriting published history. The new commits and the
   whole added diff are clean.
+
+## Review 2026-08-13 -- fix round for PR #186 (delta f2712723..fe86937)
+
+Reviewed `git diff f2712723d903...fe8693761c62` on `moat-fix-186` (4 commits, 28 files,
+245+/420-) against griwodz's 36 inline comments and the port's own invariants.
+Verdict: **changes-requested** (3 fix items + 1 evidence-wording item). No defect found
+in the device code or the build.
+
+### 1. Upstream-visible comment states the opposite of what this project measured
+
+`src/popsift/sift_textures.h:33-34` (new file, new prose):
+
+```
+ * and through hipMemcpy3D alike. Filed as ROCm/clr#275; the partial fix
+ * ROCm/rocm-systems#6683 covers surf2DLayeredread only.
+```
+
+This project's own controlled experiment says otherwise. notes.md:1282-1301: #6683
+changes surf2DLayered**write** from `__ockl_image_store_lod_2D` (which routes `layer`
+into the mipmap-LOD slot, so every write lands in the same slot) to
+`__ockl_image_store_2Da`; with the writes corrected, **all three** read paths
+(surf2DLayeredread, tex2DLayered, hipMemcpy3D) return correct per-layer data --
+"The fix is complete and correct for the layered-array collapse (ROCm/clr#275)". That
+finding was published on clr#275 itself (notes.md:1305).
+
+So the new comment tells the maintainer that AMD's fix is partial and read-path-scoped
+when we know it is complete and write-path-scoped. It lands in the same round that
+answers his comment id 3735988701, which asks precisely how the mechanism works
+("Does the problem appear because ... reading from a texture and writing to a surface
+backed by the same Array is undefined in ROCm?"). Rewrite it to the measured story: the
+collapse is caused by the write intrinsic putting `layer` in the LOD slot; #6683 fixes it
+completely but is not in ROCm 7.2.x, which is why the non-layered 3D arrays stay.
+
+Same stale claim survives at `src/popsift/cuda_to_hip.h:136-137` ("the partial fix
+ROCm/rocm-systems#6683 covers only surf2DLayered"). It is published text, but the round
+is already rewriting these comments and shipping two comments that disagree with each
+other -- and with our own public re-test -- is worse than correcting both here.
+
+### 2. fe86937 bundles an unrelated fix under a Thrust title
+
+`git show --stat fe86937` -> `src/CMakeLists.txt`, `common/thrust_setup.h`,
+`s_filtergrid.cu`, **and `sift_octave.cu`**. The sift_octave.cu hunks answer two
+different review comments (id 3735991814, the copy-pasted "point texture" error string
+at `sift_octave.cu:291` and `:374`; and the gfx90a/gfx1100 linear-filter comment rewrite
+at `sift_octave.cu:280-287`) and have nothing to do with moving the Thrust setup. The body's
+second paragraph mentions the error string but not the comment rewrite.
+
+The whole value of this round is that the maintainer can read it comment by comment.
+Split the sift_octave.cu change into its own commit (title along the lines of
+"[ROCm] Fix the linear texture error strings and filter comments").
+
+### 3. `s_orientation.cu:230` contradicts d18bc62's own claim
+
+d18bc62's title is "Pass the shuffle width explicitly on every platform" and its body
+says "Every warp shuffle in PopSift operates on a group of 32 threads ... Passing that
+width explicitly states the intent". `s_orientation.cu:230` is still
+`popsift::shuffle( best_val, 0 )` with no width -- in `ori_par`, the same 32-thread block
+whose `threadIdx.x & 31` lane mask the same commit removed, and a function griwodz will
+read because his bitonic-sort comments (ids 3735309284, 3735311600) point at it.
+
+It is safe as it stands (block is (32,1) at `s_orientation.cu:405-407`, so on wave64 the
+default width=warpSize=64 still resolves srcLane 0 to an active lane), but after fourteen
+comments asking for explicit widths, an implicit one left in the same function invites
+another round. Pass 32, or soften the commit body's "every".
+
+`s_extrema.cu:59` also has a 2-arg `popsift::shuffle(write_index, 0)`; that one is inside
+the `#else` CUDA arm of the split extrema counter and is upstream's untouched code (the
+HIP arm at `s_extrema.cu:43` uses `warpSize` explicitly and correctly). Leave it, but be
+ready to say so if asked.
+
+### 4. notes.md:1560 overstates the evidence for the RootSift CUDA arm
+
+"Unified for CUDA (which previously did `__fdividef(descr.x, sum)`); numerically
+identical on the test set (md5 unchanged)." The md5 evidence (notes.md:1641) is from the
+gfx1100 HIP build, which never used `__fdividef(descr.x, sum)` -- it already used
+`descr.x * inv`. notes.md:1619-1620 gets this right ("compile check only ... except for
+the normalization guards and RootSift's reciprocal-multiply"), so the two statements
+disagree. The disposition list is what the upstream reply will be drafted from; scope
+that clause to the HIP path so the reply does not tell griwodz his CUDA output is
+measured-identical when no NVIDIA GPU ran.
+
+### Wave64 semantics of the width unification -- verified safe from the code
+
+This host is wave32 and cannot test gfx90a, so this was established by reading, and it
+matters that the next gfx90a validation is a confirmation and not the first evidence.
+
+**No site changed from a warpSize-width shuffle to a width-32 shuffle on HIP.** At every
+converted site the HIP arm of the `#ifdef` pair *already* passed literal 32 and the CUDA
+arm passed none; the commit deletes the CUDA arm and keeps the HIP text. Verified
+per site against the current file, plus the launch geometry that makes 32 the
+cooperating unit:
+
+| Site | Group | Launch evidence | blockDim.x |
+|------|-------|-----------------|------------|
+| excl_blk_prefix_sum.h:99,116 | one threadIdx.y row | ori_prefix_sum, s_orientation.cu:429-430 | 32 (32,32) |
+| warp_bitonic_sort.h:65,73 | 32-lane network | ori_par, s_orientation.cu:406-408 | 32 (32,1) |
+| features.cu:181-185 | compute_distance block | features.cu:282-284 | 32 |
+| s_desc_iloop.cu:120-125 | descriptor tile | s_desc_iloop.h:31-33 | 32 (32,1,16) |
+| s_desc_loop.cu:132-137 | (y,z) tile | s_desc_loop.h:34,38 | 32 (32,4,4) or (32,1,16) |
+| s_desc_norm_l2.h:65-79,95-106 | one descriptor row | sift_desc.cu:87-92 | 32 (32,32) |
+| s_desc_norm_rs.h:55-61 | one descriptor row | sift_desc.cu:87-92 | 32 (32,32) |
+| s_desc_notile.cu / s_desc_vlfeat.cu | via the norm headers | (launch-site edits only this round) | 32 |
+| s_pyramid_build_aa.cu:44-48 | one image row | s_pyramid_build.cu:238 | 32 (32,8) |
+| s_pyramid_fixed.cu:40,44 | one image row | s_pyramid_fixed.cu:222,248 (`x_size = 32`) | 32 |
+
+The compat restructure is also a textual no-op on HIP: before, `PopSift_HAVE_SHFL_DOWN_SYNC=1`
+selected `assist.h:42-45`, whose `__shfl_up_sync(0xffffffff, v, d, ws)` was rewritten by
+the cuda_to_hip.h macro to `__shfl_up(v, d, ws)`; now `=0` selects `assist.h:59-62`, which
+*is* `__shfl_up(v, d, ws)`. Identical for shuffle/up/down/xor and for ballot/any/all. The
+generated build confirms the flag: `build-hip/src/generated/popsift/sift_config.h:14` ->
+`#define POPSIFT_HAVE_SHFL_DOWN_SYNC() 0`. The CUDA branch of CMakeLists.txt:173-177
+(`>= 9.0` -> 1, else 0) is
+untouched, and on CUDA width 32 == warpSize, so the explicit width is a no-op there too.
+
+The one genuine HIP-path semantic edit in the shuffle work is
+`warp_bitonic_sort.h:66-67`, `threadIdx.x & 31` -> `threadIdx.x`. `BitonicSort::Warp32`
+has exactly one instantiation in the tree (`s_orientation.cu:223-224`) and `ori_par`
+launches block (32,1), so the mask was a no-op. Safe.
+
+The wave64-sensitive extrema machinery is untouched: `s_extrema.cu` changes are the three
+launch-site rewrites only (`:608`, `:623`, `:638`), and `s_extrema.cu:33-45` still uses the 64-bit
+`__ballot` / `__popcll` / `__shfl(..., warpSize)` form.
+
+### Other things checked, no action
+
+- The five removed Octave accessors: no reference remains anywhere in the tree (grep over
+  `src/`, including `src/application`), and each new getter binds the same objects and
+  dimensions the old call sites assembled -- notably `getIntermReadTex*` uses `_w,_h`,
+  which is what `s_pyramid_build.cu:271-272` and `:348-349` set `width`/`height` to.
+  Level/z arguments are unchanged at all 22 sites. Removal is the right reading of his
+  "Instead of Octave::getDataTexPoint()" -- keep it, but say so explicitly in the reply so
+  he can object cheaply.
+- `std::clamp` (`assist.h:150-151`) is inside the `#if defined(USE_HIP)` arm, so nvcc
+  never parses it; HIP is C++17 (CMakeLists.txt:111-116).
+- `floorf` SKIP rationale holds: `s_pyramid_fixed.cu:60` reads `idx-SHIFT` (SHIFT=4) and
+  `s_gradiant.h:64,66` read `x-1.0f`, both negative at the border, where truncation would
+  extrapolate instead of clamping.
+- gfx1100 accepting hardware linear filtering is backed by notes.md:877-882; the layered
+  collapse on gfx1100 by notes.md:884-889; both at ROCm 7.2.1, matching the comment.
+- Commit hygiene otherwise clean: titles 49/51/58/58 chars, all `[ROCm]`, no
+  Co-Authored-By / noreply / Signed-off-by, `jargon.py -C src --commits` and `--diff` both
+  clean on the delta, `prose.py` clean on all four bodies, no non-ASCII in added lines,
+  `git -C src status --porcelain` empty. The one jargon hit the porter reported (05e698e)
+  is confirmed an ancestor of the frozen tip f2712723 and out of scope.
+- The two promoted lessons in `.claude/skills/cuda-to-rocm/references/fault-classes.md`
+  are accurate and cross-project, and sit in the sections a reader with that problem
+  would open (wavefront-width, and the build/compiler-strictness list).
