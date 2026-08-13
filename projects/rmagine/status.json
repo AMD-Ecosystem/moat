@@ -7,14 +7,13 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-06T06:58:03Z",
-  "updated_at": "2026-08-13T01:41:53Z",
+  "updated_at": "2026-08-13T01:42:50Z",
   "head_sha": "e7a7b279f8f21cd5fb339282d7fb1b15beda64ae",
   "depends_on": [],
-  "porting": null,
   "waivers": {},
   "license_spdx": "BSD-3-Clause",
   "upstream_repo_id": 467155160,
-  "stage": "review-passed",
+  "stage": "changes-requested",
   "platforms": {
     "windows-gfx1201": {
       "state": "completed",
@@ -22,64 +21,6 @@
       "blocked_reason": null,
       "validated_sha": "9e642a6a623a4871544193f5c5d078789bd630f4",
       "started_at": null,
-      "completed_at": "2026-08-12T21:15:15Z",
-      "updated_at": "2026-08-12T21:15:15Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator",
-      "carry_forward": {
-        "to": "9e642a6a623a4871544193f5c5d078789bd630f4",
-        "method": "source-class",
-        "detail": "commit-message reword only: 3d098d58e -> 2b6824fd2 removed in-house vocabulary that upstream.py refuses at publish. Tree byte-identical; old 4223818c9 == new 9e642a6a6 (verified per-commit). Same GPU ",
-        "at": "2026-08-12T21:15:15Z"
-      }
-    },
-    "linux-gfx1100": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "9e642a6a623a4871544193f5c5d078789bd630f4",
-      "started_at": "2026-08-12T20:25:20Z",
-      "completed_at": "2026-08-12T21:15:15Z",
-      "updated_at": "2026-08-12T21:15:15Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "porter",
-      "carry_forward": {
-        "to": "9e642a6a623a4871544193f5c5d078789bd630f4",
-        "method": "source-class",
-        "detail": "commit-message reword only: 3d098d58e -> 2b6824fd2 removed in-house vocabulary that upstream.py refuses at publish. Tree byte-identical; old 4223818c9 == new 9e642a6a6 (verified per-commit). Same GPU ",
-        "at": "2026-08-12T21:15:15Z"
-      }
-    },
-    "linux-gfx90a": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "9e642a6a623a4871544193f5c5d078789bd630f4",
-      "started_at": "2026-06-01T21:24:57Z",
       "completed_at": "2026-08-12T21:15:15Z",
       "updated_at": "2026-08-12T21:15:15Z",
       "stats": {
@@ -154,6 +95,64 @@
       },
       "last_agent": "validator",
       "state": "completed"
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "9e642a6a623a4871544193f5c5d078789bd630f4",
+      "started_at": "2026-06-01T21:24:57Z",
+      "completed_at": "2026-08-12T21:15:15Z",
+      "updated_at": "2026-08-12T21:15:15Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "9e642a6a623a4871544193f5c5d078789bd630f4",
+        "method": "source-class",
+        "detail": "commit-message reword only: 3d098d58e -> 2b6824fd2 removed in-house vocabulary that upstream.py refuses at publish. Tree byte-identical; old 4223818c9 == new 9e642a6a6 (verified per-commit). Same GPU ",
+        "at": "2026-08-12T21:15:15Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "9e642a6a623a4871544193f5c5d078789bd630f4",
+      "started_at": "2026-08-12T20:25:20Z",
+      "completed_at": "2026-08-12T21:15:15Z",
+      "updated_at": "2026-08-13T01:42:50Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer",
+      "carry_forward": {
+        "to": "9e642a6a623a4871544193f5c5d078789bd630f4",
+        "method": "source-class",
+        "detail": "commit-message reword only: 3d098d58e -> 2b6824fd2 removed in-house vocabulary that upstream.py refuses at publish. Tree byte-identical; old 4223818c9 == new 9e642a6a6 (verified per-commit). Same GPU ",
+        "at": "2026-08-12T21:15:15Z"
+      }
     }
   }
 }
