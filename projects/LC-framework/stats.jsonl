@@ -40,3 +40,5 @@
 {"kind":"phase","ts":"2026-08-12T21:45:48Z","phase":"compile","seconds":2.663,"exit":0,"cmd":"bash -c cd 'C:/Users/<user>/AppData/Local/Temp/claude/D--Develop-moat/9f5031af-7315-42eb-9fe5-216ec498b710/scratchpad/lcdoc' && 'D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_core/bin/hipcc.exe' -O3 --offload-arch=gfx1151 -ffp-contract=off -I. -std=c++17 -c -o compress.o compressor-standalone.cu 2>&1 | grep -c warning"}
 {"kind":"session","ts":"2026-08-12T22:01:42Z","epoch":1786572103.270105000,"event":"start","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-08-12T22:05:51Z","epoch":1786572352.188636500,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-13T02:48:11Z","epoch":1786589291.042005996,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-13T03:00:40Z","epoch":1786590040.931318628,"event":"end","platform":"linux-gfx942"}

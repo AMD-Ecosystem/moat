@@ -534,3 +534,172 @@ is the only transition that clears the block, and the GPU evidence for exactly
 this content already exists (all four gates passed at ea0df9b, and the delta
 since is README-only). Registered globally as
 `moat-doc-gate-failure-carry-forward` so the control-plane rule gets looked at.
+
+## Review 2026-08-13 (reviewer, linux-gfx942)
+
+Verdict: changes-requested. Scope reviewed: the whole fork diff
+`f72e323...f0ce8ce` on moat-port (11 files, 3 commits) plus the two
+`cuda-to-rocm` lessons riding this MOAT branch (b494d30, 1b2d0fe). The
+040743e content passed review on 2026-06-25; findings 1, 4 and 5 below are in
+the two commits added since, findings 2 and 3 are in 040743e and are raised
+now because the port is heading for an upstream PR.
+
+All findings were reproduced on this host: ROCm 7.14.60850 (AMD clang 23.0),
+gfx942 (wave64), nvcc 12.8 for the CUDA cross-check.
+
+### 1. The standalone ROCm recipe the README documents does not compile (Linux)
+
+`README.md:205-211` documents generate -> hipify -> hipcc for the standalone
+compressor/decompressor. Run as written on Linux it fails:
+
+```
+compressor-standalone.cu:339:30: error: use of undeclared identifier 'strcmp'
+decompressor-standalone.cu:...: error: use of undeclared identifier 'strcmp'
+```
+
+Reproduced with the README's own example pipeline ("TUPL4_1 RRE_1 CLOG_1")
+and with RZE_4, for both binaries. Cause: `compressor-framework.cu:330` and
+`decompressor-framework.cu:258` call `strcmp` while the templates include only
+`<string>` (`compressor-framework.cu:54`); on the CUDA path `<cuda/std/limits>`
+and `<cuda/atomic>` (`:59-62`, `#if !defined(__HIPCC__)`) drag `string.h` in,
+and on HIP they are guarded off. Confirmed nvcc 12.8 compiles the same
+generated file cleanly, so this is a HIP-path-only gap of exactly the class
+already fixed once in this port (the thrust includes in
+`preprocessors/d_QUANT_INOA_0_f64.h:40-43`).
+
+This also makes an upstream-visible claim false: f0ce8ce's Test Plan says
+"Both builds complete with cosmetic warnings only", which holds on clang-cl
+(MSVC `<string>` pulls in `<cstring>`) but not under libstdc++, i.e. not on
+the platform most readers of that README use.
+
+Fix: add `#include <cstring>` beside `#include <string>` in
+`compressor-framework.cu:54` and `decompressor-framework.cu:54`. Verified: the
+standalone builds clean with it (checked via `-include cstring`, exit 0), and
+the include is inert on nvcc and on the g++ CPU path. That closes
+`deferred.json` item `lc-standalone-cstring-include`; deferring it was a
+control-plane optimization (keeping f0ce8ce carry-forward), but the branch now
+ships a recipe that fails on the first try, and windows-gfx1151 has to
+revalidate at head anyway.
+
+### 2. The WS gate does not need to depend on hipify's prepended header
+
+`compressor-framework.cu:48`, `decompressor-framework.cu:48`,
+`compressor-framework.cpp:48`, `decompressor-framework.cpp:48`,
+`generate_Device_LC-Framework.py:101`, `generate_Hybrid_LC-Framework.py:138`:
+
+```
+#if defined(__HIP_PLATFORM_AMD__) && (defined(__GFX8__) || defined(__GFX9__))
+```
+
+`__HIP_PLATFORM_AMD__` is NOT a compiler predefine (verified:
+`hipcc -x hip --offload-arch=gfx942 -dM -E` yields `__GFX9__`, `__HIPCC__`,
+`__gfx942__`, and no `__HIP_PLATFORM_*`); it comes from `hip/hip_runtime.h`.
+The gate sits above every include in the standalone templates
+(`compressor-framework.cu:48` vs first include at `:54`) and above
+`<cuda.h>` in the framework path (`framework.h:76` includes `consts.h`,
+`framework.h:79` is the runtime header), so the whole selector is load-bearing
+on hipify-perl happening to prepend the header at line 1. That is the trap
+`README.md:74` then has to warn about ("compiling the unconverted code
+silently selects the wrong width"), and it is avoidable: `__GFX8__`/`__GFX9__`
+are themselves AMD-clang device-pass predefines and are never defined by nvcc
+or g++.
+
+Verified equivalence of the shorter gate, all four passes, no header included:
+
+    gate                                   gfx942 dev  gfx1100 dev  host  nvcc
+    __HIP_PLATFORM_AMD__ && __GFX8/9__     64          32           32    32
+    __GFX8__ || __GFX9__                   64          32           32    32
+
+Also verified `__GFX9__` is set for gfx908/gfx90a/gfx950 and for
+`gfx9-4-generic`, and `__GFX11__`/`__GFX12__` (not `__GFX9__`) for
+gfx1100/gfx1201/`gfx11-generic`, so the arch coverage of the selector is
+right.
+
+Second half of the same line: the port dropped the
+`__AMDGCN_WAVEFRONT_SIZE == 64` term entirely, where plan.md's open question
+had settled on "keep both (additive, no cost)". Dropping it costs the two
+cases where the old macro was the more accurate answer -- a ROCm old enough
+to predefine it but predating the `__GFX*__` predefines, and an explicit
+`-mwavefrontsize64` on RDNA (verified this ROCm predefines nothing for
+`-mwavefrontsize64` on gfx1100, so the current gate answers 32 for a wave64
+compile). In `lc` that surfaces as the `framework.h:227` trap; in the
+standalone binaries there is no such check, so it is silent.
+
+Suggested single form for all six sites:
+
+```
+#if defined(__GFX8__) || defined(__GFX9__) || \
+    (defined(__AMDGCN_WAVEFRONT_SIZE) && (__AMDGCN_WAVEFRONT_SIZE == 64))
+```
+
+If this lands, update the `README.md:74` paragraph: the hipify-before-compile
+ordering is still required for the API calls, but the wavefront-width
+justification stops being true and should not stay in the README or in the
+commit body.
+
+### 3. ROCm older than 6.2 loses `__syncwarp` (include/macros.h:83-85)
+
+The shim is now emitted only under `#if defined(HIP_DISABLE_WARP_SYNC_BUILTINS)`.
+That mirrors ROCm's own guard exactly (`amd_warp_sync_functions.h:14` and
+`amd_warp_functions.h:115` are `#if !defined(HIP_DISABLE_WARP_SYNC_BUILTINS)`),
+so it is right for any ROCm that ships that header -- but before it existed,
+an AMD build got the shim unconditionally from this same block, and now gets
+neither. `__syncwarp()` is called at `framework.h:274` and
+`compressor-framework.cu:168`, both marked "not optional", so such a build
+fails to compile. This was recorded as optional in the 2026-06-25 review;
+with the branch now aimed at an upstream PR, a user on ROCm 6.0/6.1 is a
+plausible reader. Version-arithmetic-free fix:
+
+```
+#if defined(HIP_DISABLE_WARP_SYNC_BUILTINS) || \
+    !__has_include(<hip/amd_detail/amd_warp_sync_functions.h>)
+```
+
+Not testable here (no pre-6.2 ROCm on this host); the claim rests on the
+header's own guard structure, which is quoted above.
+
+### 4. The promoted lesson carries a command that prunes the wrong repository
+
+`.claude/skills/cuda-to-rocm/references/validation.md:66-68` gives:
+
+    git clone --filter=blob:none --sparse --depth 1 <url> && git sparse-checkout set projects/hipcub projects/rocprim projects/rocthrust
+
+`git clone` does not change directory, so the second command runs in the
+parent. If the parent is not a repository it errors; if it IS one -- and a
+validator is normally standing in a checkout -- `git sparse-checkout set`
+silently applies to that repository and empties its working tree of everything
+outside the named paths. Demonstrated in a scratch repo: three tracked files
+before, one after. This is a lesson landing on `main` for every future agent
+to follow, so it has to be the working form: insert `cd rocm-libraries &&`
+between the two commands.
+
+### 5. The README does not say the conversion rewrites the checked-out sources
+
+`README.md:65-78` and `:203-211`: `hipify-perl -inplace` is run over
+`framework.h` and every header under `include/`, `components/`,
+`preprocessors/` and `verifiers/`, i.e. over tracked project sources, after
+which the tree no longer builds with nvcc. hipify leaves `*.prehip` backups
+(already in `.gitignore:20`), so it is recoverable, but a reader following the
+recipe is not told either fact. One sentence naming the in-place rewrite and
+the `.prehip` backups belongs with the recipe.
+
+### Checked this round, no change needed
+
+- Every `WS` use in the tree is inside device code (`framework.h:227,270-295,
+  421,508`, the component and reduction headers); no host-side use and no
+  dynamic shared-memory size computed on the host (all launches are
+  `<<<blocks, TPB>>>`), so the host pass resolving `WS` to 32 stays inert.
+- `framework.h:227` is the only `warpSize` reference in the tree, so the
+  `(int)` cast has no sibling site left unfixed.
+- `ea0df9b`'s `_MSC_VER` guards are safe: `strings.h` and `unistd.h` have no
+  callers anywhere, and `sys/time.h`'s only user, `CPUTimer`
+  (`framework.h:790-799`), is inside `#ifdef USE_CPU`; `framework.cu`'s
+  `CPUTimer` uses at `:219,289,604` are all inside `#ifdef USE_CPU` blocks.
+- The thrust includes in `d_QUANT_INOA_0_f64.h:40-43` match the f32 sibling
+  exactly, and the other four thrust users already carry theirs.
+- Commit hygiene: three titles at 53/61/60 chars, all `[ROCm]`, all with an
+  AI-assistance disclosure and a Test Plan, no `Co-Authored-By`, no noreply
+  trailer, author is the maintainer's own public address, ASCII-clean in both
+  the diff and the messages, `jargon.py --port LC-framework` clean.
+- Fork tree at f0ce8ce is clean (`git status --porcelain` empty).
+
