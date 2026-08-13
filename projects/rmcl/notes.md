@@ -756,3 +756,99 @@ pattern (probe linking hip::host only + run_gpu_test.cmake + SKIP_REGULAR_EXPRES
 preserved on branch gfx942-skip-launcher in projects/rmcl/src (9eaf4f4, 3544424).
 It replaces the in-main exit-77 mechanism as the device-less skip. The
 rmagine-lazy-default-gpu-context deferral stands as the better fix either way.
+
+## Fix round 2026-08-13 (linux-gfx942, MI300X) -- launcher skip path adopted, head `2cf0e8a`
+
+Executed the person's ruling above plus the two items from the gfx1100 second review. Fork head
+`4f746de` -> `2cf0e8a`, still three commits.
+
+### Fork: how the delta was taken
+
+The launcher pieces were taken as a delta onto the reviewed branch, not by resetting to
+`gfx942-skip-launcher`: `4f746de` carries gfx1100's reworded commit messages (the corrected nvcc
+claim in `493d0f6` above all), which had to survive. Method: with the tree at `4f746de`,
+`git checkout gfx942-skip-launcher -- rmcl_ros/tests/ rmcl_ros/include/rmcl_ros/util/cuda_to_hip.h`,
+one hand edit to `rmcl_ros/CMakeLists.txt` for the `BUILD_TESTING` comment, then
+`git reset --soft f3d62d0` and one fresh commit. The resulting tree is identical to
+`gfx942-skip-launcher` except for the `PUBLIC USE_HIP` comment, where gfx1100's wording was kept
+because the reviewer had already checked it as accurate (review item 3, resolved).
+
+`4f746de` was replaced rather than reverted-and-re-added. Checked first that this was allowed:
+`pr-state rmcl` is `none` and both platform records carry `validated_sha: null`, so nothing was
+orphaned. Appending a fourth commit would have left an upstream reader watching the skip mechanism
+be built and then replaced within one branch, for no gain.
+
+Files at `2cf0e8a` relative to `f3d62d0` (73 insertions, 4 deletions):
+
+- `rmcl_ros/tests/gpu_device_probe.cpp` (new, 22 lines) -- links the GPU runtime only
+  (`hip::host` under `USE_HIP`, `${CUDA_LIBRARIES}` otherwise), never `rmcl_ros_cuda`, so
+  rmagine's load-time context construction cannot abort it. Prints `no GPU device available` and
+  exits 77 on zero devices.
+- `rmcl_ros/tests/run_gpu_test.cmake` (new, 15 lines) -- the registered ctest command: run the
+  probe, on nonzero `message(FATAL_ERROR "no GPU device available, skipping")`, else run the test
+  and forward its status.
+- `rmcl_ros/tests/CMakeLists.txt` -- probe target with the `USE_HIP`/CUDA branches, `add_test` via
+  `${CMAKE_COMMAND} -DPROBE=... -DTEST=... -P run_gpu_test.cmake`, and
+  `SKIP_REGULAR_EXPRESSION "no GPU device available"` in place of `SKIP_RETURN_CODE 77`. The
+  launcher exits normally, so the regex is what fires; the return code never reaches ctest.
+- `rmcl_ros/tests/rmcl_gpu_kernels.cpp` -- the in-`main` exit-77 check and the shim include are
+  **dropped**, matching the preserved branch. Reason recorded in the commit: a process that
+  reaches `main` got there only because the probe found a device, and a device-less machine never
+  reaches `main`, so the check could no longer fire. Dead code, not defence in depth.
+- `rmcl_ros/include/rmcl_ros/util/cuda_to_hip.h` -- keeps `cudaSuccess` and `cudaGetDeviceCount`
+  (the probe uses them) and drops `cudaError_t`, which no longer has a user.
+
+### Measured on this host (the load-bearing evidence for the ruling)
+
+Clean full workspace build, `-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DBUILD_TESTING=ON`,
+`Summary: 3 packages finished [4min 54s]`, no errors. `librmcl_ros_cuda.so` carries
+`hipv4-amdgcn-amd-amdhsa--gfx942`.
+
+```
+ctest --test-dir build/rmcl_ros --output-on-failure
+1: particle_move_and_forget: OK (4099 particles)
+1: compute_stats: OK (sum=2051.63 max=1)
+1: gladiator_resample: OK (2043 of 4099 particles replaced, noise mean=-0.00274891 sd=1.01771)
+1/1 Test #1: rmcl_gpu_kernels .................   Passed    0.65 sec
+
+HIP_VISIBLE_DEVICES=-1 ctest --test-dir build/rmcl_ros
+1/1 Test #1: rmcl_gpu_kernels .................***Skipped   0.23 sec
+The following tests did not run:
+	  1 - rmcl_gpu_kernels (Skipped)
+```
+
+Kernel results are bit-for-bit what the two earlier rounds recorded on gfx942 and gfx1100. All
+four kernels dispatch (`AMD_LOG_LEVEL=3`): `rmcl::init_curand_kernel`,
+`void rmcl::simple_stats_kernel<512u>`, `rmcl::particle_move_and_forget_kernel`,
+`rmcl::gladiator_resample_kernel`.
+
+Two direction checks the earlier rounds did not record:
+
+- the probe alone: exit 0 with a device, `no GPU device available` and exit 77 under
+  `HIP_VISIBLE_DEVICES=-1`;
+- the launcher does not swallow failures -- with a device present and `/bin/false` in place of the
+  test, it stops with `/bin/false exited with 1` and ctest reports a failure, not a skip, because
+  that text does not match the skip regex.
+
+`gfx942-skip-launcher` was deleted from `projects/rmcl/src` once its content was adopted; the
+`pre-fixup-backup` branch at `a8e6f88` was left alone.
+
+### The two MOAT-side items from the gfx1100 second review
+
+1. **Blocking, doc-only.** `references/strategy-a-cmake.md` no longer claims a link library's
+   compile options apply to every source regardless of language. Re-read the mechanism here on
+   ROCm 7.14 rather than taking the review's citation: `hip_add_interface_compile_flags`
+   (`hip-config.cmake:75-79`) appends
+   `INTERFACE_COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:CXX>:...>"`, and `hip-config-amd.cmake:143,150`
+   feeds it `-x hip` and `--offload-arch=<gfx>`, so the flags hit exactly the target's CXX sources
+   and never its HIP-language ones. The advice is unchanged.
+   **One correction to the review's own wording:** the link half is not unconditionally ungated.
+   `hip_add_interface_link_flags` (`hip-config.cmake:81-90`) wraps `--hip-link` and
+   `--offload-arch` in `$<$<LINK_LANGUAGE:CXX>:...>` on CMake 3.20+ and only appends them bare
+   below that, on this ROCm. The review read the call sites (`hip-config-amd.cmake:162,168` in
+   ROCm 7.2.3) and not the helper's version branch. The lesson says the gating is version-pair
+   dependent and to assume `hip::device` reaches a consumer's link line either way, which is the
+   safe reading under both.
+2. `surface.json` `test:rmcl_gpu_tests` `where` no longer names `rmcl/tests`, which does not
+   exist on the branch. Its `covered` evidence now also names the probe, the launcher and the
+   skip measurement, since the registration shape changed with this round.
