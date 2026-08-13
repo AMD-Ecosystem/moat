@@ -87,12 +87,15 @@ compat header with `-include`.
   `--offload-arch=<arch>`; `enable_language(HIP)` auto-detects. A pinned arch is the single
   most common reason a port builds on the machine it was written on and nowhere else.
   (TurboFNO, LC-framework)
-- **hipify-perl, when that is the mechanism rather than CMake HIP language:** run it
-  synchronously -- `-inplace` in a backgrounded or `&&`-chained loop silently skips files --
-  and always re-grep the whole tree for `cudaMalloc|cudaSuccess|include <cub|include <cuda.h`
-  before compiling. Un-hipified files surface as "undeclared identifier cudaMalloc". Note
-  that hipify prepends `#include "hip/hip_runtime.h"`, which breaks a g++ CPU reference
-  build, so build that from a separate non-hipified copy. (LC-framework)
+- **hipify-perl, when that is the mechanism rather than CMake HIP language:** let the
+  conversion loop run to completion -- a whole-tree loop takes a while, and one cut short
+  leaves the remaining headers in CUDA form, so re-running it finishes the job. The signal
+  for that is the compiler, not a grep: un-hipified files surface as "undeclared identifier
+  cudaMalloc". Grepping the tree for `cudaMalloc` instead reports the `.prehip` backups
+  hipify itself writes -- 10 of 14 hits on a fully converted tree -- and answers differently
+  depending on whether the grep honors `.gitignore`, which usually excludes them. Note that
+  hipify prepends `#include "hip/hip_runtime.h"`, which breaks a g++ CPU reference build, so
+  build that from a separate non-hipified copy. (LC-framework)
 - **`-inplace` re-hipifies from the `.prehip` backup, not from the file on disk.** The first
   run saves `foo.cu` as `foo.cu.prehip`; every later run reads the backup and overwrites
   `foo.cu` from it. So regenerating a file and hipifying it again silently resurrects the

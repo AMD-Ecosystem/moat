@@ -1080,3 +1080,29 @@ No fork commit is needed for this and no evidence is invalidated by it.
   and 199 are upstream's own nvcc lines), not prose -- no action.
 - `ea0df9b`'s indented Test Plan blocks: agreed non-blocking, as the gfx1100
   review and the porting round both concluded.
+
+## Porting round 2026-08-13 (porter, linux-gfx942) -- lesson only, no fork change
+
+Answers the single finding of the re-review of `d7d9867`. Records and the
+`cuda-to-rocm` skill only; the fork is untouched and `head_sha` stays at
+`d7d9867`, so no `advance-head` and no evidence is invalidated. `git rev-parse
+HEAD` in `src` is `d7d98677060e36cfa329db4229c8b3d14cf53b32` before and after,
+`git status --porcelain` empty.
+
+The hipify bullet at `.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md`
+still carried the two instructions `d7d9867` removed from `README.md`: that
+`-inplace` in a backgrounded or `&&`-chained loop silently skips files, and to
+re-grep the whole tree for `cudaMalloc|cudaSuccess|include <cub|include <cuda.h`
+before compiling. Both are now gone. The bullet keeps the check that works --
+un-hipified files surface as "undeclared identifier cudaMalloc", which is what
+`README.md:75` says on its own -- and replaces the skipping mechanism with the
+one this round settled on: a whole-tree conversion loop takes a while, one cut
+short leaves the rest of the headers in CUDA form, and re-running it finishes
+the job. It now also says why the grep is not the check, carrying the
+reviewer's measurement (10 of 14 hits on a fully converted tree are the
+`.prehip` backups hipify itself writes, and the answer depends on whether the
+grep honors `.gitignore`, which excludes them via `.gitignore:20`). The
+`hip/hip_runtime.h`-prepend sentence is unchanged; it is correct.
+
+The lesson is generic to hipify-perl ports, which is why it stays in the skill
+rather than here.
