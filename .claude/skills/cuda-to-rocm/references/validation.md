@@ -42,21 +42,28 @@ a DLL-load error; rebuilding a correct binary against a broken runtime is the si
 biggest time sink on Windows. A port is not "broken on Windows" until it has been run
 against a full ROCm distribution.
 
-## Windows: put the whole CMake build on the GNU-style clang driver
+## Windows: keep one clang driver across every CMake language, and check the CMake version
 
-**A project using CMake's `HIP` language does not configure on Windows with a `clang-cl`
-host compiler.** Both mixes fail before one TU compiles, and neither error names the real
-cause:
+With CMake's `HIP` language on Windows, all three of `CMAKE_C_COMPILER`,
+`CMAKE_CXX_COMPILER` and `CMAKE_HIP_COMPILER` must use the SAME clang driver. Mixing
+drivers fails before one TU compiles, with an error that does not name the cause:
+`CXX=clang-cl` with `HIP=clang++` makes CMake apply MSVC link rules to a GNU-driver link
+line, giving `clang++: error: no such file or directory: '/machine:x64'`.
 
-- `CXX=clang-cl` + `HIP=clang++` -- CMake applies MSVC link rules to a GNU-driver link
-  line, giving `clang++: error: no such file or directory: '/machine:x64'`.
-- `CXX=clang-cl` + `HIP=clang-cl` -- `Windows-Clang-HIP.cmake` never populates
-  `CMAKE_HIP_SIMULATE_VERSION`, so configure dies inside `Windows-MSVC.cmake` with
-  "MSVC compiler version not detected properly".
+Which driver to pick depends on the CMake version, so check it first:
 
-Point `CMAKE_C_COMPILER`, `CMAKE_CXX_COMPILER` and `CMAKE_HIP_COMPILER` all at the SDK's
-GNU-driver `clang`/`clang++`. It still targets the MSVC ABI, so MSVC-built dependencies
-and vendored submodules link normally. (Proven on dietgpu, CMake 3.31 + clang 23.)
+- **CMake 4.x: either works.** All-`clang-cl` is fine, and is what a project whose other
+  dependencies are MSVC-built will want. (UCM's recorded gfx1151 recipe; re-confirmed on
+  dietgpu with CMake 4.3.2.)
+- **CMake 3.31: `clang-cl` cannot be the HIP compiler.** `Windows-Clang-HIP.cmake` never
+  populates `CMAKE_HIP_SIMULATE_VERSION`, so configure dies inside `Windows-MSVC.cmake`
+  with "MSVC compiler version not detected properly". Use the GNU-driver
+  `clang`/`clang++` for all three instead -- it still targets the MSVC ABI, so MSVC-built
+  dependencies and vendored submodules link normally. (Proven on dietgpu.)
+
+Read that failure as "this CMake is too old", not "clang-cl cannot host HIP". A newer
+CMake is one `pip install cmake` away and TheRock's own venv already carries 4.3.2, so
+reach for it before restructuring a build around the older constraint.
 
 Note the split with PyTorch extension ports, where `clang-cl` IS the required host
 compiler (see strategy-b-torch.md): torch drives the compile itself and never goes
