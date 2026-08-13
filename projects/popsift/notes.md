@@ -2051,3 +2051,39 @@ warnings (debug_macros.h nodiscard `-Wunused-value`, rocThrust
 `python3 utils/jargon.py --port popsift` reports only the pre-existing "fault classes" hit
 in 05e698ec8, an ancestor of the frozen published tip f2712723 and outside this round;
 `--diff f2712723..moat-fix-186` is clean.
+
+## Review 2026-08-13 (narrow pass on the residual comment fix, tip 4d51a78)
+
+Scope: the delta only, `git diff 199e465 4d51a78`, plus the state checks below. Verdict:
+no findings; the one finding of "## Review 2026-08-13 (re-review of the rewritten fix
+round, tip 199e465)" is closed.
+
+### Verified clean (no action)
+
+- Delta is exactly one hunk in `src/popsift/sift_octave.cu` (7 comment lines out, 8 in);
+  every changed line begins with `//`, so no code line moved anywhere in the tree.
+- The new block at `sift_octave.cu:224-231` tells the write-side story
+  (surf2DLayeredwrite passed the layer index in the mipmap level slot),
+  ROCm/rocm-systems#6683 corrects it, it is not in ROCm 7.2.x, and the observation names
+  gfx90a and gfx1100 -- matching `cuda_to_hip.h:135-143` and `sift_textures.h:29-41` and
+  the recorded experiment at notes.md:1282-1301. Its cross-references resolve:
+  `sift_textures.h` (LayeredReadTex) and `common/assist.h:145-175` (surf3Dread on the z
+  coordinate) both carry the material it points at.
+- Every `6683` / `clr#275` occurrence in the tree was read: `sift_textures.h:33,35`,
+  `sift_octave.cu:227`, `cuda_to_hip.h:136,142`. The disproven "the partial fix
+  ROCm/rocm-systems#6683 covers only surf2DLayered" clause is gone from the tree.
+- Added lines ASCII (`grep -P '[^\x00-\x7F]'` no match); no MOAT vocabulary.
+- The edit landed in 67bbce7 "Correct the description of the layered array collapse",
+  which is where the correction belongs; that commit touches only `cuda_to_hip.h` and
+  `sift_octave.cu`.
+- Six commits, order unchanged (fe7135c, df795a3, dbb157c, 67bbce7, a0b95cc, 4d51a78);
+  `git log --format='%H%n%B'` with sha lines stripped is byte-identical to the same output
+  for the reviewed round f2712723..199e465.
+- Ancestry: `git merge-base --is-ancestor f2712723 origin/moat-fix-186` -> yes;
+  `git ls-remote origin` shows `moat-port` still f2712723d903 and `moat-fix-186` at
+  4d51a780; local branch == HEAD == 4d51a780; `git status --porcelain` empty.
+- `jargon.py --port popsift` reports only the pre-existing "fault classes" hit in
+  05e698ec8, confirmed an ancestor of the frozen tip f2712723 and outside this round;
+  `jargon.py -C projects/popsift/src --diff f2712723..moat-fix-186` clean.
+- No GPU re-run at this tip is held against the round; comment-only versus 199e465, and
+  revalidation is the validator's call.
