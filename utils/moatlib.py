@@ -584,6 +584,26 @@ def validate_status(obj):
 
 # ---- state machine ---------------------------------------------------------
 
+def _release_lock(obj):
+    """Clear the fork-write lock, leaving an explicit release marker.
+
+    The marker names the exact acquisition it ends (arch + since), which is what
+    lets the merge driver tell a RELEASE apart from a record that never carried
+    the lock. It used to infer that from timestamps -- a lock-less record newer
+    than the lock's `since` read as a release -- and a record written
+    concurrently with an acquisition satisfied that test without meaning it: the
+    inference erased two live locks on 2026-08-13 (rmcl, LC-framework) and two
+    hosts ran the same round. Every release goes through here so no release is
+    ever just a missing field. The marker outlives the release harmlessly: a
+    later acquisition carries a new `since` no old marker matches."""
+    held = obj.get("porting")
+    if held:
+        obj["porting_released"] = {"arch": held.get("arch"),
+                                   "since": held.get("since"),
+                                   "at": now_iso()}
+    obj["porting"] = None
+
+
 def set_state(name, platform, new_state, agent=None, save=True):
     """Validate and apply a transition with its side effects.
 
@@ -676,7 +696,7 @@ def set_state(name, platform, new_state, agent=None, save=True):
         # legally recording the exit releases it. Requiring the holder to be the
         # one leaving left the lock held forever when a different arch drove
         # porting -> ported, with only `port-lock --release` to clean it up.
-        obj["porting"] = None
+        _release_lock(obj)
     ts = now_iso()
     if is_stage:
         obj["stage"] = new_state
@@ -773,7 +793,7 @@ def set_blocked(name, platform, blocked, reason=None):
     # the only state machine path that releases it, and the next arch needs a human
     # takeover to work a project nobody is working.
     if blocked and (obj.get("porting") or {}).get("arch") == platform:
-        obj["porting"] = None
+        _release_lock(obj)
     save_status(name, obj)
     return obj
 
@@ -787,7 +807,9 @@ def port_lock(name, take=None, release=False):
     obj = load_status(name)
     if release or take:
         held = obj.get("porting")
-        obj["porting"] = {"arch": take, "since": now_iso()} if take else None
+        _release_lock(obj)                    # marker for the outgoing holder, if any
+        if take:
+            obj["porting"] = {"arch": take, "since": now_iso()}
         save_status(name, obj)
         what = f"taken by {take}" if take else "released"
         prev = f" (was {held['arch']} since {held.get('since')})" if held else ""
