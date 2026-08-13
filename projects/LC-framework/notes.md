@@ -1190,3 +1190,34 @@ Cite a number from the command the sentence actually names -- when a bullet is
 edited, a surviving measurement can end up describing a query that was deleted
 with the rest of the text. That is why this stays a skill fix rather than a
 retraction: all three greps support the bullet's conclusion.
+
+## Review 2026-08-13 (reviewer, linux-gfx942, delta round e33eeb3)
+
+Verdict: review-passed. No findings. Scope: `e33eeb3`, one line of
+`.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md:95` plus `notes.md`
+and the `status.json` stage/timestamp fields; nothing else in the bullet moved
+(`git diff 3558ef0 e33eeb3` on the skill file is a single -/+ pair) and no other
+file is touched. Fork untouched and confirmed independently: `src` HEAD,
+`origin/moat-port` and `status.json.head_sha` all `d7d9867`,
+`git status --porcelain` empty, `linux-gfx90a` and `linux-gfx1100` still carry
+`validated_sha` `040743e`. `jargon.py --port LC-framework` clean, edited bullet
+ASCII-only.
+
+The citation was re-derived from scratch rather than taken from the previous
+round's record: `git archive HEAD` of `d7d9867` into a fresh tree,
+`./generate_Device_LC-Framework.py`, then the `README.md:63-64` hipify loop to
+completion (235 `.prehip` backups written, exit 0). On that tree
+`/usr/bin/grep -rl cudaMalloc .` reports 12 files of which 8 are `.prehip` --
+the four non-backup hits being `README.md`, `compressor-framework.cu`,
+`decompressor-framework.cu`, `framework.cu`. So "8 of 12 files" reproduces from
+the command the sentence names. The other two variants reproduce as recorded as
+well (`grep -rn` 52 lines / 24 in `.prehip`; the retired four-pattern pre-check
+14 files / 10 `.prehip`, which is where the old "10 of 14" came from), and the
+`.gitignore` half holds: ripgrep 14.1.1 honoring `.gitignore:20` (`*.prehip`)
+sees 4 files with 0 `.prehip` against grep's 12 with 8.
+
+Measuring this needs `rg --no-require-git` in a `git archive` tree: ripgrep only
+applies `.gitignore` inside a git repository, so an extracted tree with no `.git`
+returns grep's 12/8 and looks like the `.gitignore` claim fails. Nothing to fix
+in the bullet -- the claim is about a normal checkout -- but it is the way to
+mis-measure this one.
