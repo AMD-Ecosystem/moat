@@ -7,7 +7,7 @@
   "priority": 4.281,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T03:40:15Z",
-  "updated_at": "2026-08-13T02:47:01Z",
+  "updated_at": "2026-08-13T14:28:52Z",
   "head_sha": "4f746def1289ba82012f9c23be936c1ade7959ba",
   "waivers": {},
   "license_spdx": "BSD-3-Clause",
@@ -73,5 +73,5 @@
     "at": "2026-08-11T22:35:29Z"
   },
   "on_hold": true,
-  "on_hold_reason": "Double-porting incident 2026-08-13: work lock failed to serialize gfx1100/gfx942 fix rounds (see data/deferred.json moatlib-port-lock-merge-race). Two person rulings needed before the next round: (1) the lock merge-driver fix; (2) which skip-path approach goes upstream -- gfx1100's landed round concludes a device-less skip cannot be closed inside rmcl, while gfx942 measured a working ~60-line launcher pattern, preserved unpushed on branch gfx942-skip-launcher in projects/rmcl/src (commits 9eaf4f4, 3544424). Hold re-applied by the gfx1100 reviewer at 02:50 after its own status write merged it away; the reviewer's verdict on 4f746de is changes-requested."
+  "on_hold_reason": "Awaiting one person ruling: which test-skip approach goes upstream. gfx1100's landed round concludes a device-less skip cannot be closed inside rmcl (rmagine aborts at library load); gfx942 measured a working ~60-line launcher pattern, preserved unpushed on branch gfx942-skip-launcher in projects/rmcl/src (commits 9eaf4f4, 3544424). The other original blocker, the lock merge-driver race, is fixed on main (43131e8, explicit porting_released markers) and its deferred item is done."
 }
