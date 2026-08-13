@@ -14,6 +14,19 @@
       "upstream_issue": null,
       "created_at": "2026-08-13T04:04:03Z",
       "decided": null
+    },
+    {
+      "id": "hiprt-collapse-reference-count-hang",
+      "kind": "rocm-bug-report",
+      "component": "hiprt",
+      "summary": "HIP RT's BVH Collapse kernel (hiprt/impl/BvhBuilderKernels.h) hangs the GPU on some geometry at tag 3.1.0.cb09c56. It is a persistent task-queue kernel, and a lane that never receives a task can only leave through 'atomicAdd(&header->m_referenceCount, 0) == referenceCount'. The counter is monotonic, so the exact comparison is missed permanently once the emitted count passes referenceCount -- and that is what happens: relaxing it to >= makes every hanging scene build and trace correctly, which proves the collapse emits more references than the primitive count it was given. referenceIndices is allocated with exactly primitives.getCount() entries, so the same overshoot also writes past the end of that temporary buffer, and >= alone would convert a hang into silent corruption rather than fix it. Reproduces from about 96 triangles (42 surfel disks) upward, is data dependent rather than size dependent (44 disks builds, 42 and 46 do not), and affects the LBVH, LBVH-without-triangle-pairing and PLOC builders alike because all three call the same Collapse kernel. It affects any HIP RT user whose geometry trips the miscount. Needs the miscount root-caused, then reported to GPUOpen.",
+      "refs": [
+        "projects/diff-surfel-tracing/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T06:41:03Z",
+      "decided": null
     }
   ]
 }

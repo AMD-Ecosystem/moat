@@ -266,3 +266,149 @@ current tip either way.
 Backward, finite differences, the reflected bounce and the cold-cache rerun are
 all UNVERIFIED, because the harness cannot get past the forward stage on its
 default 64-surfel scene.
+
+## Port round 2 (2026-08-13, linux-gfx942, MI300X, ROCm 7.14) -- PARTIAL
+
+The open defect from round 1 is diagnosed and the round-1 diagnosis is **wrong**:
+the hang is not in the tracer at all. It is in HIP RT's BVH **build**, and the
+port additionally did not compile from its committed sources. Both findings are
+below, with the evidence that establishes each.
+
+New fork commit:
+
+- `9722c7b` `[ROCm] Guard the CUDA-only vector operators in auxiliary.h` (`head_sha`)
+
+### Finding 1: round 1's evidence came from a stale staged header
+
+`setup.py::_stage_runtime_files_into_pkg` copies `hiprt_tracer/kernels.h` and
+`optix_tracer/{params,config,auxiliary}.h` into the importable package
+directory at install time, and the runtime compiler reads *those copies*
+(`SurfelTracer.pkg_dir`). Round 1 installed at 04:29 and then did the header
+collapse (plan item 4) at ~04:59 without reinstalling, so every "forward works"
+result in round 1 was produced by the pre-collapse `hiprt_tracer/auxiliary.h`
+that the commit deletes. Reinstalling at the committed tree fails immediately:
+
+```
+Runtime compilation failed:
+  auxiliary.h:366:4: error: use of undeclared identifier '__trap'
+  kernels.h:187:20: error: use of overloaded operator '+=' is ambiguous
+      (with operand types 'float3' (aka 'HIP_vector_type<float, 3>') and 'float3')
+```
+
+`optix_tracer/auxiliary.h` was never touched by `195d62f` (`git show --stat`
+lists `optix_tracer/params.h` only), so the shared header still carried the
+CUDA-only free operators for float2/float3/float4 and a `__trap()` call. HIP
+declares those operators as members of the vector types, so every use is
+ambiguous, and `__trap` is not available to the runtime compiler. `9722c7b`
+guards both on `USE_ROCM`; the CUDA preprocessed output is unchanged.
+
+**Rule this establishes for this project:** after ANY edit to a staged header,
+reinstall before believing a run. A passing trace proves nothing about the
+working tree until the package copies have been refreshed. Promoted to the
+`cuda-to-rocm` skill (`references/no-hip-equivalent.md`), because any port that
+compiles kernels at runtime from files it copies into its package has this trap.
+
+### Finding 2: the hang is in HIP RT's BVH build, not in the traversal
+
+Round 1 concluded the hang was inside a single
+`hiprtGeomTraversalAnyHit::getNextHit()`. That is disproved:
+
+1. Replacing `surfelFilter` with `return true;` as its first statement -- a
+   filter that touches no payload, so the retrace loop cannot iterate -- still
+   hangs the 48-surfel scene.
+2. Iteration guards were added to all three loops of
+   `GeomTraversal::getNextHit` in the staged
+   `hiprt_root/hiprt/impl/hiprt_device_impl.h` (cap 4096, reporting the loop
+   that tripped through `hit.primID` into the image). The guards are live -- at
+   cap 3 they fire on 61 of 256 pixels at 40 surfels -- and at cap 4096 the
+   48-surfel scene still hangs with no guard ever firing.
+3. Splitting `build_acceleration_structure` from the trace shows the hang
+   happens **before any trace kernel runs**: `BUILD OK` never prints.
+4. `AMD_LOG_LEVEL=3` names the last kernel the HIP runtime is asked for:
+   `Collapse_TrianglePairNode_ScratchNode`.
+
+So the hang is HIP RT's own `Collapse` kernel (`hiprt/impl/BvhBuilderKernels.h`,
+`__device__ void Collapse`). It is a persistent task-queue kernel whose lanes
+spin in `while (hiprt::any(!done))` and whose only exit for a lane that never
+receives a task is
+
+```
+if ( atomicAdd( &header->m_referenceCount, 0 ) == referenceCount ) done = true;
+```
+
+The reference counter is monotonic, so an **exact** comparison is missed
+permanently if the emitted count ever passes `referenceCount`. Changing that
+one comparison to `>=` in the staged copy makes every previously hanging scene
+build and trace (verified on the rotations-perturbed 64-surfel scene: `BUILD OK
+5.41s`, `TRACE OK`, acc 0.3154). So the count **overshoots**: the collapse emits
+more references than the primitive count it was given.
+
+`>=` is deliberately NOT shipped. `referenceIndices` is allocated with exactly
+`primitives.getCount()` entries, so an overshooting count also means
+`referenceIndices[rangeAddr]` writes past the end of that temporary buffer, and
+relaxing the comparison would trade a hang for silent memory corruption. The
+miscount itself has to be found first. That is the next round's task, and the
+`>=` result is the lead: instrument which lane emits the extra references.
+
+Scene dependence, measured with `hiprtBuildFlagBitPreferFastBuild` (the
+zero-valued default this port uses):
+
+| surfels | 8-41 | 42 | 44 | 46 | 47 | 48 | 50 | 56 | 64 | 96 | 128 |
+|---------|------|----|----|----|----|----|----|----|----|----|-----|
+| builds  | yes  | NO | yes| NO | NO | NO | NO | NO | NO | NO | NO  |
+
+Two build-flag workarounds were measured and both only move the threshold, so
+neither is a fix and neither was committed:
+
+- `hiprtBuildFlagBitDisableTrianglePairing`: 48 surfels builds, 46 and 64 hang.
+- `hiprtBuildFlagBitPreferBalancedBuild` (PLOC): every unperturbed scene from 8
+  to 200 surfels builds, and its image matches LBVH where LBVH completes
+  (acc 0.3000/0.3013/0.3069 vs 0.3000/0.3012/0.3059 at 8/32/40 surfels), but
+  the rotations finite-difference scene at 64 surfels still hangs. PLOC and
+  LBVH call the *same* `Collapse` kernel, which is what makes the shared
+  collapse -- not the hierarchy builder in front of it -- the defect.
+
+### Harness results at `9722c7b` (96x96, 64 surfels, default flags)
+
+The harness gets much further than round 1: the forward completes on the
+64-surfel scene that used to hang, and the backward, which had never run at
+all, runs end to end. Measured with the Balanced builder in place (the only way
+to reach these stages today; the committed tree still hangs in the forward):
+
+- import/API: 5/5 PASS.
+- forward: finite rgb/depth/normal PASS, bit-identical rerun PASS, hit-fraction
+  and hit-depth checks FAIL (see harness corrections below).
+- backward: all eleven gradients finite PASS, all six nonzero checks PASS,
+  `grad_grads3D` nonzero wherever `grad_means3D` is PASS (23 surfels), cosine
+  vs `grad_means3D` 0.8721 against a 0.9 threshold FAIL.
+- finite differences: colors ratio 0.9982 PASS, opacities 0.8156 PASS, means3D
+  0.6784 PASS, scales ratio -0.0009 FAIL (fd 1.41e6 vs analytic -1.31e3, three
+  orders of magnitude out, so the difference quotient is dominated by a
+  discontinuity rather than disagreeing with the gradient), rotations NOT
+  REACHED -- its scene hangs the build.
+- reflected bounce, cold cache: NOT REACHED.
+
+### Harness corrections made this round (MOAT side, not the fork)
+
+- `others_precomp` was built `(P, 3)`. `AUX_CHANNELS` is 2 (`config.h`) and the
+  kernel indexes the buffer with that stride, so the extra column made every
+  read misaligned and made autograd reject the `(P, 2)` gradient with
+  "invalid gradient at index 7". Now `(P, 2)`. This was masking the whole
+  backward stage.
+- Still to correct, both mis-calibrated against a scene the harness had never
+  actually run: "genuine hits and misses" thresholds on `acc > 1e-3`, but the
+  big mirror surfel legitimately contributes above that everywhere, so 1.000 is
+  the right answer for this scene and the check needs `acc > 0.5`; and "hit
+  depths plausible" reads `dpt` as a distance when it is an unnormalized
+  weighted sum, so it should test `dpt / acc` on pixels with real coverage.
+  The `grad_grads3D` cosine threshold of 0.9 is likewise invented; the
+  densification gradient is depth-scaled, so it is not required to be that
+  parallel.
+
+### Also found, not yet fixed
+
+`hiprtSetCacheDirPath(ctx, pkg_dir + "/hiprt_cache")` does not take: the
+compiled binaries land in `<cwd>/cache`, HIP RT's default relative path, so the
+package writes a `cache/` directory into whatever directory the process was
+started in. The harness's cold-cache stage deletes `pkg_dir/hiprt_cache` and
+will not observe the real cache.

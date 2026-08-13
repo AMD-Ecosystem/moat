@@ -8,3 +8,9 @@
 {"kind":"phase","ts":"2026-08-13T04:16:44Z","phase":"compile","seconds":25.560,"exit":0,"cmd":"pip install -e /var/lib/jenkins/moat/projects/diff-surfel-tracing/src --no-build-isolation --no-deps -v"}
 {"kind":"phase","ts":"2026-08-13T04:30:09Z","phase":"compile","seconds":27.111,"exit":0,"cmd":"pip install -e /var/lib/jenkins/moat/projects/diff-surfel-tracing/src --no-build-isolation --no-deps -v"}
 {"kind":"session","ts":"2026-08-13T05:02:06Z","epoch":1786597326.262066695,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-13T05:03:38Z","epoch":1786597418.503573670,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-08-13T06:03:48Z","phase":"compile","seconds":26.448,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/diff-surfel-tracing/src && HIPRT_HOME=/var/lib/jenkins/HIPRT PYTORCH_ROCM_ARCH=gfx942 pip install -e . --no-build-isolation --no-deps -q"}
+{"kind":"phase","ts":"2026-08-13T06:03:53Z","phase":"test","seconds":0.040,"exit":2,"cmd":"timeout 1200 python3 -u validation/validate_tracer_rocm.py"}
+{"kind":"phase","ts":"2026-08-13T06:04:03Z","phase":"test","seconds":4.469,"exit":1,"cmd":"timeout 1500 python3 -u projects/diff-surfel-tracing/validation/validate_tracer_rocm.py"}
+{"kind":"phase","ts":"2026-08-13T06:31:43Z","phase":"test","seconds":1500.103,"exit":124,"cmd":"timeout 1500 python3 -u projects/diff-surfel-tracing/validation/validate_tracer_rocm.py"}
+{"kind":"phase","ts":"2026-08-13T06:37:45Z","phase":"compile","seconds":27.868,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/diff-surfel-tracing/src && HIPRT_HOME=/var/lib/jenkins/HIPRT PYTORCH_ROCM_ARCH=gfx942 pip install -e . --no-build-isolation --no-deps -q"}

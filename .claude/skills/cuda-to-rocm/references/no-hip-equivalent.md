@@ -79,4 +79,23 @@ usually printed to stderr and then swallowed, and the visible symptom is a
 launch failure (`hipErrorInvalidHandle`) or an outright hang from launching a
 module that was never built. Read the whole stderr, not the exception.
 
+**The staged copy, not your working tree, is what runs.** A project that
+compiles at runtime has to put the kernel sources somewhere the installed
+package can find them, so its installer copies them next to `__init__.py` and
+the JIT reads *that* copy. Edit a shared header, run the tests, watch them
+pass, and you have tested the copy from the last install. This is not
+hypothetical: a whole round of evidence for `diff-surfel-tracing` -- "the
+forward works" -- was produced by a header the same commit deleted, and the
+port turned out not to compile from its own sources at all. Two habits close
+it: reinstall (not just rebuild) after touching anything the installer stages,
+and, when a result surprises you, diff the package copy against the source
+before believing either. Clearing the JIT cache does not help, because the
+cache key hashes the staged source it just read.
+
+Related: the JIT's on-disk cache may not be where you set it. HIP RT's
+`hiprtSetCacheDirPath` is applied to a compiler that has already latched its
+default, so the binaries land in a `cache/` directory relative to the process
+working directory. Before concluding that a cache-clearing test cleared
+anything, find the `.bin` files.
+
 Source: `diff-surfel-tracing` (OptiX to HIP RT), gfx942.
