@@ -214,3 +214,6 @@
 {"kind":"session","ts":"2026-08-13T08:39:04Z","epoch":1786610344.387952162,"event":"end","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-08-13T06:07:54Z","epoch":1786601274.608955500,"event":"start","platform":"windows-gfx1151"}
 {"kind":"phase","ts":"2026-08-13T06:12:21Z","phase":"compile","seconds":175.215,"exit":0,"cmd":"bash agent_space/heongpu-win/configure_clean.sh"}
+{"kind":"session","ts":"2026-08-13T16:15:30Z","epoch":1786637730.864586400,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-13T16:26:16Z","phase":"compile","seconds":149.225,"exit":0,"cmd":"bash agent_space/heongpu-win/configure_v2.sh"}
+{"kind":"session","ts":"2026-08-13T17:14:24Z","epoch":1786641264.663330700,"event":"end","platform":"windows-gfx1151"}
