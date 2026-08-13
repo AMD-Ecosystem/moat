@@ -2568,3 +2568,138 @@ Still open for a person, unchanged by this round: `c99f2fc` is titled "[ROCm] WI
 two commits are titled "Stage 2:", and the README says nothing about `USE_HIP`. The four
 platforms still on `validated_sha` 9e642a6 (windows-gfx1201, windows-gfx1101,
 linux-gfx90a, linux-gfx1100) still owe their revalidation at the current head.
+
+## Validation 2026-08-13 (linux-gfx1100, Radeon Pro W7800) -- PASS
+
+Fork: AMD-Ecosystem/rmagine `moat-port` HEAD `1213551f14f64c92c08048f377034b1ee362659d`
+(this platform's prior `validated_sha` was `9e642a6a6`, an ancestor of `ee33fc4` /
+`27a88ba` / `e7a7b27` / `1213551`; `classify 9e642a6 1213551` reports `class=mixed`, so
+this is a full real-GPU revalidation, not a carried-forward one). GPU: 4x AMD Radeon Pro
+W7800 48GB, gfx1100 (RDNA3, wave32), ROCm 7.2.3 at `/opt/rocm`, HIP/clang 22.0.0,
+`HIP_VISIBLE_DEVICES=0`. Working tree at `projects/rmagine/src` clean at `1213551`
+throughout, matching `status.json.head_sha`.
+
+### Configure + build
+
+```
+utils/timeit.sh rmagine compile -- cmake -S projects/rmagine/src -B agent_space/rmagine_gfx1100_build \
+  -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ \
+  -DRMAGINE_EMBREE_DISABLE=ON -DRMAGINE_OPTIX_DISABLE=ON \
+  -DRMAGINE_VULKAN_DISABLE=ON -DRMAGINE_VULKAN_CUDA_INTEROP_DISABLE=ON \
+  -DRMAGINE_OUSTER_DISABLE=ON -DRMAGINE_BUILD_TESTS=ON -DRMAGINE_BUILD_TOOLS=OFF
+utils/timeit.sh rmagine compile -- cmake --build agent_space/rmagine_gfx1100_build -j
+```
+
+76/76 targets built cleanly. HIPRT SDK absent on this host, so `rmagine_hiprt` is
+skipped by CMake as designed (consistent with every non-gfx90a platform). Only
+pre-existing `nodiscard` warnings on `hipMemset`/`hipCtxSetCurrent`/
+`hipStreamDestroy` (unchanged from prior rounds; not port-introduced).
+
+### Test results
+
+```
+export HIP_VISIBLE_DEVICES=0
+utils/timeit.sh rmagine test -- ctest --test-dir agent_space/rmagine_gfx1100_build --output-on-failure -R '^cuda_'
+# Run 1: 8/8 PASS (2.04 s); Run 2 (determinism): 8/8 PASS (1.98 s)
+utils/timeit.sh rmagine test -- ctest --test-dir agent_space/rmagine_gfx1100_build --output-on-failure -R '^core_'
+# 12/12 PASS (2.59 s) -- non-GPU regression set, unaffected by the HIP change
+```
+
+8 cuda_ tests: cuda_math, cuda_memory, cuda_memory_slicing, cuda_math_svd,
+cuda_math_statistics, cuda_math_reduction, cuda_math_reduction_correctness,
+cuda_public_headers (the round-3 gate, ran and passed on real gfx1100 hardware here for
+the first time -- previously only built/link-checked on this host by the porter and
+GPU-exercised on gfx942). 12 core_ tests: core_math, core_memory, core_memory_slicing,
+core_quaternion, core_math_svd, core_math_statistics, core_math_cov_transform,
+core_math_gaussians, core_math_matrix_slicing, core_math_reduction, core_math_cholesky,
+core_math_lie.
+
+### GPU dispatch confirmed (AMD_LOG_LEVEL=3)
+
+```
+HIP_VISIBLE_DEVICES=0 AMD_LOG_LEVEL=3 ./bin/rmagine_tests_cuda_math_reduction_correctness
+```
+
+`ShaderName` lines confirm real dispatch of `sum_kernel<1024u, Vector3_<float>>`,
+`cov_kernel<1024u>` and `divNx1Inplace_kernel` on this device; `rocminfo` names it
+`AMD Radeon Pro W7800 48GB` / `gfx1100`. `strings lib/librmagine-cuda.so.2.4.2 | grep -o
+gfx[0-9]*` shows `gfx1100` code object present.
+
+### Installed find_package(rmagine) consumer path -- exercised (this round's reason to)
+
+This round changed the exported package config (`rmagine-cuda-config.cmake.in` now
+branches on `rmagine_cuda_USE_HIP` for `find_dependency(hip)`/`find_dependency(hiprand)`)
+and moved the hiprand device include out of the force-included compat header into a new
+`curand_to_hiprand.h`. Both are install-time/consumer-visible, exactly the class of
+change the notes' "Install as a dependency" precedent (0aea7af, first done on this same
+host) exists to cover, so it was re-exercised at this head rather than assumed unchanged:
+
+```
+utils/timeit.sh rmagine test -- cmake --install agent_space/rmagine_gfx1100_build \
+  --prefix agent_space/rmagine_gfx1100_install
+```
+
+Then a standalone consumer (`agent_space/rmagine_consumer/`, `find_package(rmagine 2.4
+REQUIRED COMPONENTS core OPTIONAL_COMPONENTS embree cuda optix vulkan
+vulkan-cuda-interop)`, links `rmagine::core rmagine::cuda`, round-trips a small buffer
+`RAM -> VRAM_CUDA -> RAM` via `rmagine::Memory`):
+
+- Prefix-path-only, `/opt/rocm` stripped from `PATH` and `ROCM_PATH`/`HIP_PATH`/
+  `ROCM_HOME` unset: configure FAILS as documented --
+  `CMakeFindDependencyMacro.cmake:76 (find_package)` cannot find `hip`, reached through
+  `rmagine-cuda-config.cmake:46 (find_dependency)`. Confirms `find_dependency(hip)` is
+  unconditionally required in a `USE_HIP=ON` install, i.e. the branch this round added
+  is live and reached.
+- Two-entry `CMAKE_PREFIX_PATH="<install>;/opt/rocm"`, same stripped-`PATH` environment:
+  configure succeeds, build succeeds, and running the binary (`LD_LIBRARY_PATH=<install>/lib`,
+  `HIP_VISIBLE_DEVICES=0`) on REAL gfx1100 hardware prints
+  `[RMagine - CudaContext] Construct context on device 0 - AMD Radeon Pro W7800 48GB` and
+  `rmagine_consumer OK: 4 floats round-tripped through HIP device memory`, exit 0.
+
+This proves the round's package-config fix and header-footprint move both work end to
+end for an external consumer on real GPU, not just inside rmagine's own build tree.
+
+### CUDA no-regression gate
+
+Ran fresh at this exact head (`1213551`; the prior recording at `e7a7b279f` in the
+gfx942 validation above is one commit behind, and the intervening commit is a comment
+reword, but the gate is cheap so it was re-run rather than argued about):
+
+```
+CUDA=/opt/conda/envs/cuda-12.8
+utils/timeit.sh rmagine cuda-compile -- cmake -S projects/rmagine/src -B agent_space/rmagine_cuda_gate_build \
+  -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=OFF \
+  -DCMAKE_CUDA_COMPILER=$CUDA/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES=80 \
+  -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-13 \
+  -DCMAKE_CXX_COMPILER=/usr/bin/g++-13 -DCMAKE_C_COMPILER=/usr/bin/gcc-13 \
+  -DRMAGINE_EMBREE_DISABLE=ON -DRMAGINE_OPTIX_DISABLE=ON \
+  -DRMAGINE_VULKAN_DISABLE=ON -DRMAGINE_VULKAN_CUDA_INTEROP_DISABLE=ON \
+  -DRMAGINE_OUSTER_DISABLE=ON -DRMAGINE_BUILD_TESTS=ON -DRMAGINE_BUILD_TOOLS=OFF
+utils/timeit.sh rmagine cuda-compile -- cmake --build agent_space/rmagine_cuda_gate_build -j
+```
+
+77/77 targets built cleanly with NVIDIA nvcc 12.8.93 / g++-13.3.0, arch pinned `sm_80`
+via `-DCMAKE_CUDA_ARCHITECTURES=80`. Pure passthrough: `USE_HIP=OFF` reaches the
+untouched CUDA branch of `rmagine-cuda-config.cmake.in` and the untouched
+`<curand.h>`/`<curand_kernel.h>` includes in `curand_to_hiprand.h`'s `#else` arm. No
+NVIDIA-only regression.
+
+### Integrity + jargon gates
+
+`git -C projects/rmagine/src status --porcelain` empty; HEAD `1213551` matches
+`status.json.head_sha`. `python3 utils/jargon.py --port rmagine` -> clean.
+Documentation: unchanged from the prior rounds' ruling (README's `USE_HIP` silence and
+the two commit-title items are a person's PR-shaping call, not blocking, per "Review
+2026-08-13" and not re-litigated here).
+
+### Verdict
+
+Stage 1 (rmagine_cuda HIP compute backend) VALIDATED on gfx1100/Radeon Pro W7800 at
+`1213551`: 8/8 cuda_ (2 runs, bit-identical) + 12/12 core_ PASS, no regression. Installed
+`find_package(rmagine)` consumer path exercised end to end on real GPU (this round's
+package-config + header-footprint changes both confirmed live and working, not merely
+unbroken). CUDA no-regression gate PASS (pure passthrough, re-run fresh at this head).
+Integrity clean, jargon clean. Recorded `validated_sha = 1213551f14f64c92c08048f377034b1ee362659d`,
+state `completed`.

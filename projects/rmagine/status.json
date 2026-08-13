@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-06T06:58:03Z",
-  "updated_at": "2026-08-13T01:54:37Z",
+  "updated_at": "2026-08-13T02:00:21Z",
   "head_sha": "1213551f14f64c92c08048f377034b1ee362659d",
   "depends_on": [],
   "waivers": {},
@@ -137,10 +137,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "9e642a6a623a4871544193f5c5d078789bd630f4",
+      "validated_sha": "1213551f14f64c92c08048f377034b1ee362659d",
       "started_at": "2026-08-12T20:25:20Z",
-      "completed_at": "2026-08-12T21:15:15Z",
-      "updated_at": "2026-08-13T01:54:37Z",
+      "completed_at": "2026-08-13T02:00:21Z",
+      "updated_at": "2026-08-13T02:00:21Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -154,13 +154,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer",
-      "carry_forward": {
-        "to": "9e642a6a623a4871544193f5c5d078789bd630f4",
-        "method": "source-class",
-        "detail": "commit-message reword only: 3d098d58e -> 2b6824fd2 removed in-house vocabulary that upstream.py refuses at publish. Tree byte-identical; old 4223818c9 == new 9e642a6a6 (verified per-commit). Same GPU ",
-        "at": "2026-08-12T21:15:15Z"
-      }
+      "last_agent": "validator"
     }
   },
   "porting": null
