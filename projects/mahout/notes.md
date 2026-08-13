@@ -1996,3 +1996,105 @@ forward by tree identity; not re-run here.
 `python3 utils/moatlib.py set-state mahout linux-gfx1100 completed --agent
 validator` -> recorded `validated_sha` = `head_sha` =
 9a3a08e0f3061b00ddf8f2cfb3f5cd5c49b38d66. No anomalies.
+
+## Validation 2026-08-13 (validator, linux-gfx90a) -- fix round 1399 revalidation, PASS
+
+Independent revalidation at the fix round's staging tip on `moat-fix-1399`, since
+gfx90a's previously recorded `validated_sha` (fd8c7a38, the old published/frozen
+tip) lagged the new `head_sha` (9a3a08e0f3061b00ddf8f2cfb3f5cd5c49b38d66).
+Confirmed checkout: `git -C projects/mahout/src rev-parse HEAD` ==
+9a3a08e0f3061b00ddf8f2cfb3f5cd5c49b38d66 on `moat-fix-1399`, `git status
+--porcelain` empty (integrity gate satisfied) before and after the run. Fork
+freeze confirmed intact: `origin/moat-port` is still fd8c7a38 (fetched fresh).
+
+Env: 4x AMD Instinct MI250X GCDs (gfx90a, wave64), GCD 2 idle (HIP_VISIBLE_DEVICES=2),
+ROCm/HIP 7.14.60850 (AMD clang 23.0.0git), rustc/cargo 1.97.1.
+
+### Host environment note (this host differs from earlier gfx90a rounds)
+This host's ROCm install is a TheRock-style `_rocm_sdk_devel` pip package, not
+`/opt/rocm` (which does not exist here) -- `ROCM_PATH` is already correctly set
+in the default shell environment
+(`/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel`).
+Exporting `ROCM_PATH=/opt/rocm` (the value earlier notes.md rounds used, from a
+different host generation) makes hipcc's internal `clang++` invocation fail
+(`sh: /opt/rocm/lib/llvm/bin/clang++: not found`, surfacing as `hipcc` exit 127)
+and, because `qdp-kernels/build.rs` does not declare
+`cargo:rerun-if-env-changed=ROCM_PATH`, a build script run with the wrong value
+gets cached and silently reused (wrong `-L` search path) even after fixing the
+env var, until the stale `target/debug/build/qdp-kernels-*` dir is cleaned
+(`cargo clean -p qdp-kernels -p qdp-core`). Symptom once the compile step
+"passes" on the stale cache: the *test* binaries fail to link with
+`rust-lld: error: unable to find library -lamdhip64`, because only the final
+linked binary (not the rlib) needs the search path. Lesson: don't hardcode
+`ROCM_PATH` from old notes -- check `env | grep -i rocm_path` first, and if a
+build script doesn't declare a var in `rerun-if-env-changed`, an env correction
+requires `cargo clean -p <crate>`, not just re-running with the right value.
+Separately, `/opt/rust` (the shared system `CARGO_HOME`) has a registry cache
+owned by root (0755) that the `jenkins` user can read but not write new crates
+into; a private `CARGO_HOME` (agent_space/cargo-home) was required for `cargo
+build`/`test` to fetch anything not already cached there.
+
+### Build + test (exact commands)
+```
+export CARGO_HOME=/var/lib/jenkins/moat/agent_space/cargo-home
+export PATH=/opt/rust/bin:$PATH
+export QDP_USE_HIP=1 QDP_HIP_ARCH_LIST=gfx90a   # ROCM_PATH left at its correct default
+utils/timeit.sh mahout compile -- cargo build \
+  --manifest-path projects/mahout/src/qdp/Cargo.toml \
+  -p qdp-core -p qdp-kernels --no-default-features --features hip -j 16
+HIP_VISIBLE_DEVICES=2 utils/timeit.sh mahout test -- cargo test \
+  --manifest-path projects/mahout/src/qdp/Cargo.toml \
+  -p qdp-core -p qdp-kernels --no-default-features --features hip -- \
+  --test-threads=1
+```
+- build: exit 0, 4.6s (post-clean rebuild). Same pre-existing warnings as every
+  other round (iqp.cu unused param, phase.cu unused variable, qdp-core's
+  cosmetic "CUDA toolkit not found" build-script notice on a hip build).
+- test: exit 0, **368 passed, 0 failed, 4 ignored** -- summed independently from
+  the 28 `test result:` lines (100 lib + 5 arrow_ipc_io + 9 estimate + 12
+  gpu_angle_encoding + 8 gpu_api_workflow + 7 gpu_basis_encoding + 9 gpu_dlpack +
+  17 gpu_fidelity + 22 gpu_iqp_encoding + 4 gpu_memory_safety + 2 gpu_norm_f32 +
+  69 gpu_ptr_encoding + 8 gpu_validation + 6 null_handling + 4 numpy + 7
+  parquet_f32 + 4 parquet_f32_fidelity + 8 parquet_io + 14 preprocessing + 3
+  reader + 9 tensorflow_io + 3 torch_io + 6 types + 0 qdp-kernels lib + 21
+  amplitude_encode + 10 angle_encode + 1 doctest + 0 qdp-kernels doctests =
+  368) -- matches the gfx1100 fix-round revalidation count exactly (same
+  head_sha, same 4 ignored doctest fixtures: gpu::pipeline::run_dual_stream_pipeline,
+  io::read_numpy_batch, reader, readers::numpy::NumpyReader).
+- Async-pipeline and stream-ordering tests confirmed passing on wave64:
+  test_amplitude_encoding_async_pipeline, test_angle_encoding_async_pipeline
+  (gpu_api_workflow), test_angle_batch_f32_async_pipeline_path
+  (gpu_angle_encoding), test_l2_norm_batch_kernel_stream (amplitude_encode),
+  test_encode_from_gpu_ptr_f32_with_stream_non_default_success,
+  test_encode_batch_from_gpu_ptr_f32_with_stream_success (gpu_ptr_encoding).
+
+### CUDA no-regression gate
+Not re-run: already recorded once for this head_sha under "Fix round 2026-08-13
+(porter, linux-gfx1100)" (real nvcc 12.8, build-only, exit 0, no NVIDIA GPU on
+that host) and independently confirmed by the reviewer/validator as applying to
+tree 5584f6f96cd105dd30684030676e036d51c5d858, which is 9a3a08e0f's tree. No .cu
+kernel source is in the fix round's delta at all. Per the validator role
+(compile-only CUDA gate runs once per head_sha), not repeated here.
+
+### Gates
+- Jargon: `python3 utils/jargon.py --port mahout` alone reports the range
+  `main..moat-port`, which is the FROZEN published branch (fd8c7a38) and misses
+  the in-flight fix round entirely -- `moatlib`'s `fork_branch` field is never
+  set, so `port_range()` always defaults to `moat-port`, not `fix.branch`.
+  Confirmed the real content instead: `python3 utils/jargon.py -C
+  projects/mahout/src --commits main..moat-fix-1399 --diff main..moat-fix-1399`
+  (after `git fetch --depth 50 origin main:main` in the shallow clone, since
+  `main` did not exist locally yet -- an unresolvable git range in
+  `scan_commits`/`scan_diff` silently reports 0 hits/"clean" outside of
+  `port_range()`'s explicit check, so resolving `main` first matters). Result:
+  clean (66 commits, 0 hits). Matches the porter's and reviewer's independent
+  scans of the same range earlier in this file.
+- Documentation: unchanged by this round; `qdp/DEVELOPMENT.md` ("### AMD GPU
+  build (ROCm / HIP)") and `qdp/qdp-python/README.md` ("AMD ROCm Usage") still
+  present and accurate in the fix-round tree (grep-confirmed).
+- Fork worktree clean (`git status --porcelain` empty) before and after.
+
+### Result
+`python3 utils/moatlib.py set-state mahout linux-gfx90a completed --agent
+validator` -> recorded `validated_sha` = `head_sha` =
+9a3a08e0f3061b00ddf8f2cfb3f5cd5c49b38d66. No anomalies.

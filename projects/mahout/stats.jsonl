@@ -127,3 +127,10 @@
 {"kind":"phase","ts":"2026-08-13T22:51:08Z","phase":"test","seconds":6.964,"exit":0,"cmd":"bash -c cd projects/mahout/src/qdp && QDP_USE_HIP=1 QDP_HIP_ARCH_LIST=gfx1100 ROCM_PATH=/opt/rocm cargo test -p qdp-core -p qdp-kernels --no-default-features --features hip -- --test-threads=1"}
 {"kind":"session","ts":"2026-08-13T22:52:14Z","epoch":1786661534.442810564,"event":"end","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-13T23:33:54Z","epoch":1786664034.852306292,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-13T23:24:07Z","epoch":1786663447.022752707,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-13T23:25:16Z","phase":"compile","seconds":57.580,"exit":101,"cmd":"bash -c cd projects/mahout/src/qdp && \\\n  QDP_USE_HIP=1 QDP_HIP_ARCH_LIST=gfx90a ROCM_PATH=/opt/rocm \\\n  cargo build -p qdp-core -p qdp-kernels --no-default-features --features hip -j 16"}
+{"kind":"phase","ts":"2026-08-13T23:34:41Z","phase":"compile","seconds":408.587,"exit":101,"cmd":"cargo build --manifest-path projects/mahout/src/qdp/Cargo.toml -p qdp-core -p qdp-kernels --no-default-features --features hip -j 16"}
+{"kind":"phase","ts":"2026-08-13T23:35:39Z","phase":"compile","seconds":13.027,"exit":0,"cmd":"cargo build --manifest-path projects/mahout/src/qdp/Cargo.toml -p qdp-core -p qdp-kernels --no-default-features --features hip -j 16"}
+{"kind":"phase","ts":"2026-08-13T23:38:00Z","phase":"test","seconds":9.675,"exit":101,"cmd":"cargo test --manifest-path projects/mahout/src/qdp/Cargo.toml -p qdp-core -p qdp-kernels --no-default-features --features hip -- --test-threads=1"}
+{"kind":"phase","ts":"2026-08-13T23:38:48Z","phase":"compile","seconds":4.623,"exit":0,"cmd":"cargo build --manifest-path projects/mahout/src/qdp/Cargo.toml -p qdp-core -p qdp-kernels --no-default-features --features hip -j 16"}
+{"kind":"phase","ts":"2026-08-13T23:39:23Z","phase":"test","seconds":26.626,"exit":0,"cmd":"cargo test --manifest-path projects/mahout/src/qdp/Cargo.toml -p qdp-core -p qdp-kernels --no-default-features --features hip -- --test-threads=1"}

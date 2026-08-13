@@ -7,7 +7,7 @@
   "priority": 6.322,
   "ext_type": "rust-cc-cuda",
   "adopted_at": "2026-05-30T00:04:57Z",
-  "updated_at": "2026-08-13T22:51:45Z",
+  "updated_at": "2026-08-13T23:41:29Z",
   "head_sha": "9a3a08e0f3061b00ddf8f2cfb3f5cd5c49b38d66",
   "pr_url": "https://github.com/apache/mahout/pull/1399",
   "pr_number": 1399,
@@ -23,10 +23,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "fd8c7a38ac725b31f6b5ce1cc9e969cd357066f8",
+      "validated_sha": "9a3a08e0f3061b00ddf8f2cfb3f5cd5c49b38d66",
       "started_at": "2026-05-31T01:00:42Z",
-      "completed_at": "2026-06-24T00:17:35Z",
-      "updated_at": "2026-07-02T18:52:44Z",
+      "completed_at": "2026-08-13T23:41:29Z",
+      "updated_at": "2026-08-13T23:41:29Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -40,13 +40,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "porter",
-      "carry_forward": {
-        "to": "fd8c7a38ac725b31f6b5ce1cc9e969cd357066f8",
-        "method": "gpu-rerun",
-        "detail": "PR review round: rebased onto upstream main (conflict resolve) + functional fixes (validator stream sync, pointer-attr build check). Full gfx90a GPU re-run: cargo build+test 358 passed 0 failed; Pytho",
-        "at": "2026-07-02T18:52:44Z"
-      }
+      "last_agent": "validator"
     },
     "windows-gfx1101": {
       "state": "completed",
