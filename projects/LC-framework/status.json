@@ -7,37 +7,14 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-25T21:02:13Z",
-  "updated_at": "2026-08-13T03:09:48Z",
-  "head_sha": "f0ce8cec27f130de90af3646e2c8776b54603db8",
+  "updated_at": "2026-08-13T03:29:13Z",
+  "head_sha": "d7d98677060e36cfa329db4229c8b3d14cf53b32",
   "depends_on": [],
   "waivers": {},
   "license_spdx": "BSD-3-Clause",
   "upstream_repo_id": 401500215,
-  "stage": "changes-requested",
+  "stage": "ported",
   "platforms": {
-    "linux-gfx942": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "failed_sha": null,
-      "started_at": "2026-08-13T03:03:02Z",
-      "completed_at": null,
-      "updated_at": "2026-08-13T03:03:02Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "reviewer"
-    },
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
@@ -70,6 +47,29 @@
       "started_at": null,
       "completed_at": "2026-07-02T20:27:49Z",
       "updated_at": "2026-08-13T03:09:48Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-08-13T03:03:02Z",
+      "completed_at": null,
+      "updated_at": "2026-08-13T03:29:13Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,

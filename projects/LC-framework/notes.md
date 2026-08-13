@@ -828,3 +828,157 @@ finishes, or drop the sentence with the pre-check in finding 2.
   clean. `git status --porcelain` in src clean (integrity gate).
 - The two `cuda-to-rocm` lessons on this branch were read against the code they
   describe and are correct as written.
+
+## Porting round 2026-08-13 (porter, linux-gfx942)
+
+Closes both change-request reviews of f0ce8ce: the linux-gfx942 review
+(findings 1-5) and the linux-gfx1100 review of the 040743e..f0ce8ce delta
+(findings 1-3, which arrived on the branch while this round was building).
+Head f0ce8ce -> d7d9867. ROCm 7.14.60850 (AMD clang 23.0), gfx942 (MI300X,
+wave64), nvcc 12.8 for the CUDA gate.
+
+### Commits (fork moat-port)
+
+- `b8c3df0` -- amend of `f0ce8ce`, MESSAGE ONLY (`git diff f0ce8ce b8c3df0`
+  empty). Two upstream-visible statements in the body stopped being true:
+  the paragraph explaining that hipify's prepended header is what arms the
+  wavefront-width gate (no longer so after `af80cc9`), and the closing
+  "the same commands ... were used on gfx90a and gfx1100", which was true of
+  the framework build but not of the standalone build, which needed
+  `-include cstring` on those two rounds. Rewrote both. Allowed here because
+  no upstream PR is open and no arch's `validated_sha` is `f0ce8ce` or
+  `ea0df9b`; `040743e`, which two arches did validate, was not touched.
+- `b51dbd1` `[ROCm] Include <cstring> in the standalone code templates` --
+  gfx942 finding 1 / gfx1100 finding 1. `compressor-framework.cu:54` and
+  `decompressor-framework.cu:55`. The standalone generators `shutil.copyfile`
+  these templates verbatim and every generated artifact is gitignored
+  (`compressor-standalone.cu`, `decompressor-standalone.cu`, `lc.cu`, `lc.h`,
+  `include/consts.h`), so there is nothing generated to regenerate in the
+  tree -- fixing the templates is the whole fix. The `.cpp` CPU twins already
+  had `<cstring>` at `:57`. Closes deferred `lc-standalone-cstring-include`
+  (set to `done`).
+- `af80cc9` `[ROCm] Select the wave width from compiler predefines alone` --
+  gfx942 finding 2. All six sites (`compressor-framework.{cu,cpp}:48`,
+  `decompressor-framework.{cu,cpp}:48`, and the `consts.h` emitters in
+  `generate_Device_LC-Framework.py:101` and
+  `generate_Hybrid_LC-Framework.py:138`) now read
+
+      #if defined(__GFX8__) || defined(__GFX9__) || \
+          (defined(__AMDGCN_WAVEFRONT_SIZE) && (__AMDGCN_WAVEFRONT_SIZE == 64))
+
+  Dropping `__HIP_PLATFORM_AMD__` removes the dependency on hipify prepending
+  `hip/hip_runtime.h`, because `__GFX*__` are compiler predefines and the gate
+  sits above every include. Restoring the `__AMDGCN_WAVEFRONT_SIZE` term is
+  what plan.md's open question had settled on ("keep both, additive, no
+  cost"). Also rewrote the README paragraph that justified the conversion
+  ordering by wavefront-width detection, since that justification is now
+  false (gfx942 finding 2's closing note), replacing it with gfx942 finding
+  5: hipify rewrites tracked sources in place and leaves `.prehip` backups.
+- `1d7d9f2` `[ROCm] Keep the __syncwarp fallback for older ROCm` -- gfx942
+  finding 3. `include/macros.h:83` gains
+  `|| !__has_include(<hip/amd_detail/amd_warp_sync_functions.h>)`.
+- `d7d9867` `[ROCm] Describe the conversion check by its symptom` -- gfx1100
+  findings 2 and 3, which landed on the branch mid-round. Dropped the
+  `grep -rn cudaMalloc .` pre-check (it fires on the `.prehip` backups, on the
+  three framework templates the documented loop does not convert, and on the
+  README line proposing it) and the "hipify-perl occasionally skips files"
+  defect claim (the real cause is a loop cut short by the caller), replacing
+  both with the compile-time symptom.
+
+Not done, deliberately: `ea0df9b`'s Test Plan uses 4-space indented command
+blocks rather than fenced ones. The gfx1100 reviewer called it non-blocking
+and explicitly not worth a history rewrite on its own; rebasing it would
+change four commit shas for a cosmetic difference that GitHub renders
+identically, and 4-space blocks are this README's own house style. Left for
+PR-prep if the branch is ever restructured.
+
+### Measurements this round
+
+`__AMDGCN_WAVEFRONT_SIZE` is gone from ROCm 7.14 in BOTH spellings
+(`hipcc -x hip --offload-arch=gfx942 -dM -E` on an empty file: `__GFX9__`,
+`__HIPCC__`, `__gfx942__`, `__HIP_MEMORY_SCOPE_WAVEFRONT`, and no
+`__AMDGCN_WAVEFRONT_SIZE`, no `__AMDGCN_WAVEFRONT_SIZE__`, no
+`__HIP_PLATFORM_*`). `-mwavefrontsize64` on gfx1100 changes NOTHING in the
+2650-macro dump (`diff` of the two `-dM -E` outputs is empty), so the
+restored term buys back only the older toolchains that did predefine it --
+recorded because it means an explicit wave64-on-RDNA build is still
+undetectable at preprocessing time on current ROCm, and `lc` catches it at
+runtime via the `framework.h:228` trap while the standalone binaries do not.
+
+Per-arch device-pass width of the new gate, no header included ahead of it
+(`static_assert(WS == EXPECT)` inside `#ifdef __HIP_DEVICE_COMPILE__`):
+gfx803/gfx908/gfx90a/gfx942/gfx950/gfx9-4-generic -> 64;
+gfx1100/gfx1151/gfx1201/gfx11-generic -> 32. All compile.
+
+### Gates run on gfx942 from the committed tree (`git archive HEAD`)
+
+Build: `hipcc -O3 --offload-arch=gfx942 -ffp-contract=off -DUSE_GPU -I.
+-std=c++17 -c -o lc.o lc.cu` then link. EXIT 0, 0 errors, 232 warnings
+(nodiscard + shift-negative-value + deprecated-identifier across both passes).
+
+- Lossless AL round-trips, all "LOSSLESS verification passed": RZE_4, RZE_1,
+  RLE_4, `BIT_4 RLE_4`, `RRE_4 RZE_4`, RAZE_4 (1 MB random) and
+  `RZE_4 RRE_4` on a structured zero/repeat/random file.
+- TS self-test: 4491 "verification passed", 0 failures.
+- Lossy: `QUANT_ABS_0_f32(0.01)`+MAXABS, `QUANT_INOA_0_f64(0.01)`+MAXNOA
+  (rocThrust), `QUANT_NOA_0_f32(0.01)`+MAXNOA (`cuda::std::numeric_limits`
+  alias), and `LOR1D_i32()` (hipCUB `DeviceScan`) -- all verifications passed.
+- README standalone recipe, the one that was broken: run verbatim from a
+  pristine `git archive HEAD` tree, both binaries build EXIT 0 (0 errors, 118
+  warnings) and round-trip byte-identically. Before `b51dbd1` this failed with
+  `use of undeclared identifier 'strcmp'`.
+- Cross-device format gate: gfx942 wave64 encode -> CPU decode IDENTICAL, CPU
+  encode -> gfx942 wave64 decode IDENTICAL, and the two encodings are
+  BYTE-IDENTICAL, on both the random and the structured input.
+- CUDA no-regression (nvcc 12.8, `-arch=sm_80`, no hipify): `lc.cu`,
+  `compressor-standalone.cu` and `decompressor-standalone.cu` all compile,
+  0 errors.
+- Non-GPU regression: `generate_Host_LC-Framework.py` + g++ `-DUSE_CPU`
+  builds clean and passes `AL "" "RZE_4"`.
+- `__syncwarp` both branches: default build (ROCm provides the header) and
+  `-DHIP_DISABLE_WARP_SYNC_BUILTINS` (shim emitted) both compile, 0 errors.
+
+### TS count differs from the 2026-06-25 gfx90a record
+
+gfx942 reports 4491 verifications, matching gfx1100 and gfx1151, not the 4515
+recorded for gfx90a. The count is NOT data- or size-dependent here (4491 for
+64 KB random, 64 KB structured, 8 KB and 300 KB random alike), and it is not
+wave-width-dependent, since this is a wave64 platform agreeing with the two
+wave32 ones. Most likely a counting artifact of that session's grep. 0
+failures either way, which is the gate.
+
+### gotchas
+
+- `hipify-perl -inplace` re-hipifies from the `.prehip` BACKUP, not from the
+  file on disk. Regenerating `compressor-standalone.cu` for a new pipeline and
+  hipifying it again silently restored the PREVIOUS pipeline's code: the
+  binary announced `TUPL4_1 RRE_1 CLOG_1` while the generator had just written
+  RZE_4. It cost a bogus cross-device "failure" (`csize does not match osize`)
+  that looked like a format bug and was purely a pipeline mismatch. Delete the
+  stale `*.prehip`, or generate into a fresh copy of the tree, whenever a
+  generator rewrites a file that was already converted. Promoted to the
+  `cuda-to-rocm` skill (`references/strategy-a-cmake.md`, Build hygiene).
+- An unguarded `static_assert` in a `__global__` body is checked in the HOST
+  pass too, where `WS` legitimately resolves to 32; wrap per-arch width
+  assertions in `#ifdef __HIP_DEVICE_COMPILE__` or they all "fail" on wave64
+  arches. Promoted with the same bullet.
+- `LOR1D_i32` takes no parameters but the parser still requires the parens:
+  `'LOR1D_i32()'`, not `'LOR1D_i32'` (which errors with "expected '('").
+- Nested quoting eats the empty preprocessor argument: running
+  `./generate_standalone_GPU_compressor_decompressor.py '' 'RZE_4'` inside a
+  `bash -c "..."` silently generated the wrong pipeline. Invoke the generators
+  directly, and check the emitted `printf("GPU LC 1.3 Algorithm: ...")` line
+  before trusting a build.
+
+### skill lessons promoted with this change
+
+- `references/strategy-a-cmake.md`: the `.prehip` re-hipify trap; and "do not
+  key a macro gate on `__HIP_PLATFORM_AMD__` when a compiler predefine says
+  the same thing", replacing the older bullet that treated the prepended
+  header as load-bearing (it was, and this port stopped it being so).
+- `references/fault-classes.md`: same correction in the
+  `__HIP_PLATFORM_AMD__` entry.
+- `references/validation.md`: fixed the destructive `git clone && git
+  sparse-checkout` recipe (gfx942 finding 4) -- the missing `cd` meant the
+  second command applied to the reader's own repository and emptied its
+  working tree.
