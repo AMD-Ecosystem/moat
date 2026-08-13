@@ -17,9 +17,12 @@ Established as fact, not taken from GitHub's field:
     python3 utils/licenses.py check traveller59/spconv    # Apache-2.0, tier 1
     head -5 LICENSE                                       # 201-line standard Apache 2.0 text
 
-- `.gitmodules` absent -- no submodules. `LICENSE` is the only licence/COPYING/NOTICE
-  file in the whole tree, so no vendored component carries its own terms. (The EnvGS
-  case -- permissive top level over an unlicensed submodule -- does not apply here.)
+- No submodules. `LICENSE` is the only licence/COPYING/NOTICE file in the whole tree,
+  so no vendored component carries its own terms. (The EnvGS case -- permissive top
+  level over an unlicensed submodule -- does not apply here.) Correction from screen 3:
+  this bullet originally read "`.gitmodules` absent". `.gitmodules` is in fact
+  *present but zero bytes*, with `git submodule status` empty and no `third_party/`.
+  The conclusion is unchanged; only the stated evidence was wrong.
 - `python3 utils/licenses.py scan-nvidia agent_space/spconv-screen` -> clean, no
   NVIDIA proprietary licence text.
 - `cumm` (FindDefinition/cumm), where a port would actually land, is also Apache-2.0
@@ -157,3 +160,49 @@ in `27f7646`:
 
     git show 27f7646^:projects/spconv/plan.md
     git show 27f7646^:projects/spconv/notes.md
+
+## Screen 3 -- 2026-08-13, intake, linux-gfx942 (verification of screen 2)
+
+This host was dispatched spconv 13 minutes after screen 2 committed on `linux-gfx1100`
+(screen 2 session ended 03:20:39Z; this one started 03:32:26Z). The screen was not
+redone. Every load-bearing claim in screen 2 was re-checked independently from a
+different host and a fresh shallow clone (`agent_space/spconv-screen-942`, upstream
+HEAD `263d6b47425e`). **All of them hold.** The recommendation is unchanged:
+**DECLINE, reason `already-supported`** -- still a recommendation, not a decision.
+
+Confirmed independently:
+
+| screen 2 claim | screen 3 result |
+|---|---|
+| Apache-2.0, tier 1 | `licenses.py check` -> `license=Apache-2.0 tier=1, cleared to contribute`; `LICENSE` is the standard 200-line text |
+| no NVIDIA proprietary text | `scan-nvidia` -> clean |
+| no vendored/submodule licences | `LICENSE` is the only licence file in the tree; see correction above |
+| one `.cu` in the repo | exactly one: `example/libspconv/main.cu` |
+| 18 pccm meta-programs | `find spconv/csrc -name '*.py'` -> 18 |
+| `PCCMExtension`, not `CUDAExtension` | `setup.py:16` imports `PCCMExtension`; no `CUDAExtension` anywhere; `deps = ["cumm>=0.7.11, <0.8.0"]` at `setup.py:44` |
+| zero AMD mentions in upstream docs | `grep -rniE 'amd\|rocm\|hip\|gfx[0-9]' README* docs/` -> no hits |
+| upstream dormant since 2024-12-15 | HEAD commit dated `2024-12-15`, subject "change all build back to windows-2019" |
+| spconv-triton is a real, AMD-validated drop-in | PyPI `spconv-triton` 1.0.0, released 2026-07-20, Apache-2.0, summary reads "drop-in replacement for spconv on NVIDIA and AMD"; README lists MI300X among verified hardware |
+| FlexGEMM MIT / Triton | confirmed MIT, Triton-only (requires Triton >= 3.2.0), 143 stars |
+| no AMD-Ecosystem or ROCm effort | `AMD-Ecosystem/spconv`, `ROCm/spconv`, `ROCm/spconv-rocm`, `AMD-Ecosystem/spconv-triton` all 404 |
+
+One nuance worth carrying: FlexGEMM's own README makes no explicit AMD claim -- it
+claims cross-platform via Triton, and the AMD specifics live in its downstream forks.
+**spconv-triton, not FlexGEMM, is the load-bearing evidence for `already-supported`**,
+and it carries the claim on its own (PyPI-released, MI300X-benchmarked, same API).
+The decline does not depend on FlexGEMM at all.
+
+### The re-dispatch loop -- for a person, not an agent to fix
+
+A decline **recommendation** correctly leaves `stage: unclaimed`, because only a person
+may write the disposition. But the selector treats `unclaimed` as actionable, so every
+host that orients onto this project screens it again: three screens now, two of them
+inside one hour, each reaching the same answer. The queue row has been correct and
+waiting since 03:19Z.
+
+Nothing in the pipeline should change to paper over this -- suppressing re-dispatch
+without a recorded disposition would hide genuinely unscreened work. What clears it is
+the thing that was always required: **a person answering the intake queue**
+(`intake_queue.py publish --apply`, then `apply` to record the answers). spconv is
+row 2 of 4 there. Until then, an agent handed spconv should read this file, verify
+rather than re-derive, and stop -- as this screen did.
