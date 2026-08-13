@@ -44,6 +44,46 @@ a DLL-load error; rebuilding a correct binary against a broken runtime is the si
 biggest time sink on Windows. A port is not "broken on Windows" until it has been run
 against a full ROCm distribution.
 
+## Windows: PATH does not beat System32 -- copy the runtime DLLs next to the executable
+
+Building against TheRock is not enough, because on Windows the *loader*, not the linker,
+picks the runtime. `amdhip64_7.dll` and `amd_comgr*.dll` also ship in the system
+Adrenalin driver under `C:\WINDOWS\System32`, and the loader searches the executable's
+own directory, then System32, and only then `PATH`. Putting TheRock's `bin` on `PATH` --
+which is what a build environment script naturally does -- therefore does **not** win: a
+binary linked entirely against TheRock still runs on the driver's copy.
+
+When the driver's copy is a different vintage than the device bitcode the build used, the
+runtime's internal blit/transfer kernels fail to JIT-link (`undefined hidden symbol:
+__ockl_dm_init_v1`, `__amd_streamOpsWrite`) and the device transfer manager is never
+created. The visible symptom is narrow and easy to misread as a hardware limitation:
+`hipMemGetInfo` returns `hipErrorInvalidValue` with `free=0 total=0` while
+`hipDeviceTotalMem` still works, and kernels may hang or the process may crash at exit.
+
+Fix, and make it part of the run procedure rather than the build: copy TheRock's
+`amdhip64_7.dll` and `amd_comgr*.dll` from `<venv>/Lib/site-packages/_rocm_sdk_core/bin/`
+into the directory holding every test executable before running the suite.
+
+Two traps when triaging this:
+
+- A minimal reproducer that contains **no device code** does not reproduce it. The failure
+  needs the runtime to load a code object, so a ten-line program that only calls
+  `hipMemGetInfo` succeeds against the very driver that fails the real binary. Such a
+  program looks like clean isolation and proves nothing. Reproduce against a binary that
+  actually launches a kernel.
+- The API that reports the error is often not the API that caused it. Code in the shape
+  `someCall(...); CHECK(hipGetLastError());` reports the *sticky* error, so the blamed
+  line may be innocent. Check the call's own return value before naming a culprit.
+
+Do not work around this in the port. Sizing a memory pool from
+`hipDeviceProp_t::totalGlobalMem` when `hipMemGetInfo` fails is a source change to shared
+code that buys nothing once the right DLLs are in place.
+
+Related, on an integrated APU: `hipMemGetInfo` reports the whole HUMA pool (tens of GB),
+so a constructor that eagerly allocates a fraction of *reported* device memory can ask for
+far more than is usable and hang or fail. Suspect that shape when an APU validation stalls
+at first allocation.
+
 ## Windows: TheRock's HIP CMake packages may be missing; CMake's own HIP-language support has Windows gaps too
 
 A CMake-HIP project (`find_package(hip/hiprand/rocthrust)`, `enable_language(HIP)`

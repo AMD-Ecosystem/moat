@@ -3834,3 +3834,203 @@ Line endings: this clone's working tree is CRLF while the index is LF (a stale s
 from the earlier `core.autocrlf` flip makes git report those files clean). Every file
 edited this round was rewritten to LF before staging so the commit carries only the
 intended hunks -- check `git diff --stat` after any edit in this clone before committing.
+
+## Review 2026-08-13 (round 12, windows-gfx1151, b12dc98)
+
+Scope: `git diff 6ac06d0 b12dc98` (+37/-11, 8 files), in the context of the whole
+`moat-port` branch. Rounds 1-11 are review-passed and the `-fgpu-rdc` / `small_ntt`
+question is settled by ruling at `6ac06d0`; neither was reopened. Verdict:
+**changes-requested**. The code in the delta is sound and should stay as committed --
+what fails review is the recorded analysis attached to it, plus a correctness failure
+this review measured for the first time.
+
+### Ruling 1: the Windows host-portability delta belongs in `moat-port`. Do not split it.
+
+Explicitly asked and explicitly answered. Every hunk is host portability rather than
+CUDA-to-HIP translation, and would equally serve a hypothetical CUDA-on-Windows build.
+It stays anyway, for three reasons.
+
+`windows` is a required gate in `config/arches.toml`, and without these lines there is no
+ROCm build on Windows at all -- not a degraded one, none: compilation stops in the
+preprocessor at `src/include/heongpu/util/memorypool.cuh:14`. A change without which the
+port cannot exist on a required platform is part of the port.
+
+The standing "scope-separate non-ROCm fixes" lesson (libSGM/OpenCV) is about a different
+shape and does not reach this. There, the workaround papered over a defect that existed
+for, and was visible to, the project's current users independently of the port; carrying
+it in `moat-port` hid an upstream bug inside an unrelated change. Here nothing in the
+delta fixes anything an existing user experiences. Upstream targets Linux only -- there
+is no CUDA-on-Windows build to repair -- so these lines repair no pre-existing defect;
+they extend the platform set the port itself must reach. Split out, they would be a
+Windows-portability PR standing alone against a Linux-only project, with no build that
+exercises it and no reason for the maintainer to take it, and the ROCm PR would depend on
+it landing first.
+
+The blast radius is nil, which is what makes bundling safe rather than merely convenient.
+`git diff 6ac06d0 b12dc98 -- src/lib/util/memorypool.cu src/include/heongpu/util/memorypool.cuh`
+contains zero deletion lines: the POSIX branch is not edited, it is fenced. The CUDA
+`else()` arm of `CMakeLists.txt:59-71` still appends `-g`/`-O3` unconditionally at lines
+64-67 and was correctly left alone. `u_int32_t` -> `uint32_t` is the same type on glibc. So on every
+configuration that works today, this commit is a no-op.
+
+For completeness on "what would split if it had to": nothing. The one hunk with any
+Linux reach is the `random.cuh` include deletion, and the answer there is to keep it and
+prove it (see finding 3), not to move it elsewhere.
+
+### Ruling 2: `hipMemGetInfo` is NOT an APU platform gap. The porter's isolation is invalid.
+
+notes.md:3788-3811 records that `hipMemGetInfo` "fails unconditionally on this integrated
+RDNA3.5 part", isolated with `agent_space/heongpu-win/meminfo.hip`, and concludes it is a
+platform gap to be worked around or waived. Measured this review, on the same host, with
+the porter's own untouched `meminfo.exe`:
+
+```
+$ ./meminfo.exe                                          # bare shell
+hipMemGetInfo rc=0 (no error) free=72761692160 total=72924151808
+$ source agent_space/heongpu-win/env.sh; ./meminfo.exe   # porter's exact env
+hipMemGetInfo rc=0 (no error) free=72761692160 total=72924151808
+```
+
+The cited binary, in the cited environment, returns success and 67.8 GiB free. The
+"unconditional failure" claim is false as written.
+
+The isolation is invalid for a structural reason worth keeping: `meminfo.hip` contains no
+kernel, so it never makes the runtime load a code object. The failure lives in code-object
+loading -- the system Adrenalin `C:\WINDOWS\System32\amdhip64_7.dll` cannot JIT-link the
+runtime's internal blit/transfer kernels against TheRock's device bitcode, the transfer
+manager is never created, and the free-memory query alone fails while `hipDeviceTotalMem`
+keeps working. A device-code-free reproducer cannot see any of that, which is exactly why
+it looked like clean isolation. On Windows the loader prefers the executable's own
+directory and then System32 over `PATH`, so `env.sh` prepending TheRock's `bin` never
+displaced the driver copy; the real binary and the probe were both running on System32's
+DLL and only the real binary cared.
+
+Demonstrated by changing nothing but the DLLs beside the executable:
+
+```
+# before: only System32's runtime reachable
+$ ./bfv_addition_testcases.exe
+... "CUDA Error in .../src/lib/util/memorypool.cu at line 90: invalid argument"
+[  FAILED  ] HEonGPU.BFV_Ciphertext_Ciphertext_Addition_Subtraction (91 ms)
+
+$ cp <venv>/Lib/site-packages/_rocm_sdk_core/bin/{amdhip64_7.dll,amd_comgr0713.dll} \
+     build/bin/test/
+$ ./bfv_addition_testcases.exe
+[  FAILED  ] HEonGPU.BFV_Ciphertext_Ciphertext_Addition_Subtraction (3779 ms)
+```
+
+The exception at `memorypool.cu:90` is gone and the test runs 40x longer, reaching real
+FHE work. So:
+
+- **No source fallback.** Do not add a `hipDeviceProp_t::totalGlobalMem` path, or any
+  other graceful degradation, to `MemoryPool::get_decive_avaliable_memory()`. It would be
+  a change to shared code buying nothing once the right DLLs are co-located, and it would
+  bake a local driver-deployment defect into an upstream-visible port.
+- **No block and no waiver.** `windows-gfx1151` is not platform-gapped here and the
+  `windows` gate does not need a maintainer decision on this account.
+- **The remedy is the validator's run procedure**: copy TheRock's `amdhip64_7.dll` and
+  `amd_comgr*.dll` into the directory containing the test executables before `ctest`.
+  Promoted to the `cuda-to-rocm` validation reference this round, since it will hit every
+  future Windows validation on this host and is invisible from the build side.
+
+One collateral note for whoever reads `memorypool.cu:90` next: the line is
+`HEONGPU_CUDA_CHECK(cudaGetLastError())`, which reports the *sticky* error, not
+`cudaMemGetInfo`'s return value at line 89. Naming an API from that line is a guess. It
+happened to be right here only because `MemoryPool::instance()` clears the error state at
+line 51 and nothing between the two makes another runtime call.
+
+Checked and not a problem, recorded so it is not re-raised: the HUMA over-allocation
+hazard does not apply to this port. `hipMemGetInfo` reports the full 72.9 GB pool and
+`initial_device_memorypool_size` is 0.9, but
+`thirdparty/rmm_hip_stub/include/rmm/mr/device/pool_memory_resource.hpp:14-17` is a
+pass-through constructor that stores the size and pre-allocates nothing, so no 65 GB
+allocation is ever attempted.
+
+### 1. Newly measured: BFV encryption and addition give wrong results on windows-gfx1151
+
+This is the finding that actually blocks the platform, and it was invisible behind the
+`hipMemGetInfo` throw. With the runtime DLLs co-located, under
+`agent_space/heongpu-win/env.sh`:
+
+| executable | result |
+|---|---|
+| `bfv_encoding_testcases.exe` | `[ OK ] HEonGPU.BFV_Encoding_Decoding (1108 ms)`, exit 0 |
+| `bfv_addition_testcases.exe` | exit 1, all 5 sub-cases fail, 10 assertions |
+| `bfv_encryption_testcases.exe` | exit 1, `BFV_Encryption_Decryption` fails |
+
+Every failure is a value mismatch, not an exception:
+`test/test_bfv_addition.cpp:100,105,199,204,299,304,399,404,501,506` all report
+`std::equal(...) Which is: false`. Encoding/decoding round-trips correctly, so the memory
+pool, the device code objects and the NTT path used by encoding are all working; the break
+is in the encryption/key-generation path. Note this is not a wavefront question on its
+face -- `linux-gfx1100` is also wave32 and passes 20/20 -- so the likely suspects are the
+Windows build configuration itself (the empty `CMAKE_MSVC_RUNTIME_LIBRARY`, the forced
+`-x hip`, the hand-built NTL, the `clang_rt.builtins` 128-bit division used by the host
+modular arithmetic) or something in RNGonGPU's AES path under clang-cl.
+
+Porter to triage. Suggested cheapest first cut, in order: run
+`bfv_relinearization`/`ckks_*` to see whether the failure tracks key generation
+specifically; then check whether the host-side 128-bit modular precomputation
+(`__udivti3` from `clang_rt.builtins-x86_64.lib`) agrees with the Linux result for one
+known modulus, since that is the only piece of arithmetic in the chain that is
+newly-linked on this platform and silently wrong if mis-linked rather than absent.
+
+This is not held against the delta -- `b12dc98` is what made the failure reachable at all.
+
+### 2. The commit body of `b12dc98` overstates the Windows/Linux equivalence
+
+The body asserts that `MEMORYSTATUSEX::ullAvailPhys` "is what `freeram * mem_unit`
+reports". Not the same quantity: glibc's `freeram` is free RAM excluding page cache and
+buffers, while `ullAvailPhys` counts memory available to the process including the
+reclaimable standby list, so Windows reports the more optimistic number for the same
+machine state. They are the right analogues to pair, and the code is fine -- the pool
+sizes derived from it are compared, not preallocated -- but this is upstream-visible prose
+asserting an equality a maintainer may know is false. Reword to "the closest Windows
+analogue" and drop the "which is what ... reports" clause. Same bar this project already
+applied at `beba427`.
+
+The `MEMORYSTATUSEX` handling itself checks out (`src/lib/util/memorypool.cu:71-76`):
+`memInfo{}` at line 72 zero-initializes before `dwLength = sizeof(memInfo)` at line 73,
+which is the classic trap and is not fallen into, and an ignored `GlobalMemoryStatusEx`
+failure leaves `ullAvailPhys` at 0, which reaches the existing `"resolved to 0 bytes"`
+`std::invalid_argument` at `memorypool.cu:165-169` rather than propagating garbage -- the same
+shape as upstream ignoring `sysinfo()`'s return, so it is consistent by design.
+
+### 3. `src/include/heongpu/util/random.cuh` (deleted `<sys/sysinfo.h>`, old line 12) -- the one hunk with Linux reach, unbuilt on Linux
+
+Re-grepped independently rather than taking the porter's word:
+`sysinfo|freeram|mem_unit|totalram|get_nprocs|get_phys_pages|get_avphys_pages|SI_LOAD_SHIFT`
+across `src/ test/ example/ benchmark/` matches only `memorypool.cuh:14` and
+`memorypool.cu:78-80`. A sweep for other BSD `<sys/types.h>` spellings
+(`u_char|u_short|u_int|u_long|ushort|ulong`) and for any surviving `u_int32_t` both come
+back empty, so item 5 of the round-12 diff is complete. The deletion is correct on the
+evidence available.
+
+It is still the only line in this delta that changes what a Linux translation unit sees,
+and `b12dc98` has never been compiled on Linux -- if `<sys/sysinfo.h>` was transitively
+supplying a declaration to `random.cu` or to the three `context.cuh` consumers, only a
+Linux build finds out. Risk is low and the fix if it fires is one include. Flagged so the
+`linux-gfx942`/`linux-gfx1100`/`linux-gfx90a` revalidations treat a compile error in
+`random.cu` as this hunk rather than as a mystery, not as a reason to change the code now.
+
+### Checked clean, not re-raised
+
+`if(NOT MSVC)` is the correct predicate: `project()` at `CMakeLists.txt:11` enables
+`C CXX` before the `USE_HIP` block, so CMake has set `MSVC` for the MSVC-like clang-cl by
+then, and it is false for hipcc/gcc on Linux, leaving the `-g`/`-O3` appends exactly as
+they were. The `<windows.h>` inclusion cannot leak: it is in a `.cu` translation unit, not
+a header, so only `memorypool.cu` sees it, and `WIN32_LEAN_AND_MEAN`/`NOMINMAX` are set
+with `#ifndef` guards that agree with the `-D` spellings the configure line already passes.
+Commit hygiene passes: title 55 chars with the `[ROCm]` prefix, body carries rationale, the
+AI-assistance disclosure and a Test Plan in fenced blocks, no `Co-Authored-By` and no
+`noreply` trailer, `python3 utils/jargon.py --port HEonGPU` reports `jargon: clean` over
+the branch, all added lines are ASCII, and `git -C projects/HEonGPU/src status --porcelain`
+is empty.
+
+### Handoff
+
+`b12dc98` needs no code revert. Round-13 porter work is: correct the `hipMemGetInfo`
+analysis in the round-12 notes section so no later agent requests a waiver on it, reword
+the commit body per finding 2, and triage finding 1. The two runtime DLLs are currently
+copied into `projects/HEonGPU/src/build/bin/test/` (untracked build output); a clean
+reconfigure drops them, so re-copy before any test run.
