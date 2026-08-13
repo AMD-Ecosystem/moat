@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-08-06T06:58:03Z",
-  "updated_at": "2026-08-13T07:48:31Z",
+  "updated_at": "2026-08-13T08:01:38Z",
   "head_sha": "7d6efdcf082b037dec34418595d1da2d8eac566a",
   "depends_on": [],
   "porting": null,
@@ -20,7 +20,7 @@
   },
   "license_spdx": "non-commercial (Inria Gaussian-Splatting License)",
   "upstream_repo_id": 826182513,
-  "stage": "ported",
+  "stage": "changes-requested",
   "platforms": {
     "linux-gfx1100": {
       "blocked": false,
@@ -52,7 +52,7 @@
       "failed_sha": null,
       "started_at": "2026-08-13T06:44:08Z",
       "completed_at": null,
-      "updated_at": "2026-08-13T07:48:31Z",
+      "updated_at": "2026-08-13T08:01:38Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,

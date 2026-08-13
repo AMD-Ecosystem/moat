@@ -677,3 +677,106 @@ Both should hold anywhere -- the sweep compares two builds of the same source on
 device, and the slope is a property of the scene -- but they are the two places where a
 wave32 or Windows run would first show a difference, so treat a failure there as evidence
 about the platform rather than as flakiness to widen away.
+
+## Review 2026-08-13 (linux-gfx942), fix round `5d567f6` -> `7d6efdc`
+
+Verdict: **changes-requested**, for one item only. All nine items from the previous review
+are genuinely resolved and were re-measured here rather than taken on the record; the
+rewritten history contains only the intended changes. The one thing that has to change is a
+new assertion that cannot execute in the scene it is written against.
+
+### 1. The culled-surfel weight assertion is dead code, and the record claims it as coverage
+
+`tests/test_variants.py:338` asserts `(out.weight[:, 0][~visible] == 0).all()` -- "a culled
+surfel accumulated weight" -- and the fix-round note above ("a per-variant plausibility test
+that also asserts a culled surfel (`radii == 0`) accumulates exactly zero weight") presents
+that as covering the culling path. `~visible` is empty in that scene, on every platform, by
+construction:
+
+`make_scene` (`tests/test_variants.py:138-142`) draws x in [-1, 1], y in [-0.75, 0.75],
+z in [2, 6]; `settings_for` uses a 60-degree vertical field of view, so `tanfovx` is 0.770 and
+`tanfovy` 0.577 at both 200x150 and 32x24, giving a frustum half-width of 1.54 and half-height
+1.15 at the nearest z the scene uses. Every point is inside the frustum, every z clears the
+`p_view.z > 0.2` near test, and no projected rect degenerates, so nothing takes either
+early-out at `forward.cu:188` or `:238`. Measured: `culled=0` for
+`-wet`, `-wet-ch26`, `-wet-abs` and the base variant, 4000/4000 visible -- the same
+4000/4000 the porting round already recorded in its forward-statistics table.
+
+So the one assertion that would catch a stale or uninitialised `out_weight` entry for a
+surfel the preprocess rejected never runs, in a family whose entire reason to exist is
+`out_weight`. It is also the exact failure mode a new platform would show: `out_weight` is
+`torch::full({P,1}, 0.0)` and then `atomicAdd`-ed only for binned surfels, so a culled entry
+is only ever the initialising write.
+
+Fix in `test_out_weight_is_plausible` (`tests/test_variants.py:324-338`): put a few surfels
+where preprocess rejects them (moving 8 of them to `means3D[:8, 2] = -1.0` on a clone puts
+them behind the camera, so `in_frustum` fails at `forward.cu:188` and `radii[idx]` keeps the
+0 written at `forward.cu:183`), then assert `(~visible).any()` before
+asserting the zero-weight property, so the check fails loudly if a later scene change makes it
+vacuous again. Do not change `make_scene` itself -- the cross-variant comparisons, the
+finite-difference slopes and the `others` bit-identity are all measured against that scene.
+Correct the fix-round sentence above when you do.
+
+### Verified resolved (re-measured on gfx942 at `7d6efdc`, not taken on the record)
+
+- **1, `tile1` mechanism.** `getRect` (`auxiliary.h:73-83`) does compute
+  `(int)((p.x + r + BLOCK_X - 1) / BLOCK_X)`, which is `floor(p.x + r)` at `BLOCK_X = 1`, and
+  the emit loop (`rasterizer_impl.cu:102-105`) is half-open; `radius` is
+  `ceil(max(extent, cutoff * FilterSize))` (`forward.cu:230-236`), so 3 is the filter floor.
+  The new `test_tile1_drops_the_truncated_boundary_pixel` exercises exactly that: 5 sub-pixel
+  offsets, bit-identity below the threshold, and above it one-sidedness plus confinement to
+  `floor(p + r)` in both the column and the row. All 5 cases pass here and the docstring,
+  `tests/README.md` and the `7d6efdc` body now describe the truncation, not the 3-sigma tail.
+- **2, finite difference.** Direction is `torch.rand` (`:383`), eps 1e-3 (`:384`), band
+  0.97-1.03 (`:396`). Reproduced independently outside the suite: base 1.0091 / 1.0075 /
+  1.0094, `-ch26` 1.0089 / 1.0080 / 1.0099, `-tile1` 1.0060 / 1.0054 / 1.0048, `-wet-abs`
+  1.0091 / 1.0075 / 1.0094 over seeds 11/23/101 -- the porter's 1.006-1.010 to four digits, and
+  `predicted` rises from 86 to 3984 on the base scene, as claimed.
+- **3, `tile1` backward.** No `BLOCK_X == 1` skip remains; `pytest -k tile1` runs 13 tests,
+  all passing, including `test_backward_gradients_are_finite` and
+  `test_opacity_finite_difference`. The `scale=3.0` justification checks out against the code:
+  the returned `dL_dmean2Ds` is derived from `dL_dtransMats[idx*9+2]/[+5]`
+  (`backward.cu:630-631`), written only in the `rho3d <= rho2d` arm (`backward.cu:398`), i.e.
+  only where the 2D filter is not binding -- which is why the floor-sized default scene gives
+  identically zero and 3x does not.
+- **4, SH path.** `test_spherical_harmonics_colours` covers base, wet and wet-abs -- all three
+  code bodies -- and its "higher bands did nothing" assertion is non-vacuous. Restricting it to
+  3-channel variants is right: `geom.rgb` is `obtain(chunk, geom.rgb, P * 3, 128)`
+  (`rasterizer_impl.cu:168`) regardless of `NUM_CHANNELS`.
+- **5, other outputs.** `render()` returns all four tensors; `out_others` is asserted channel
+  by channel against the `auxiliary.h:29-33` layout (7 channels confirmed at
+  `rasterize_points.cu:86`), and is now also compared against the base variant in the
+  cross-variant test. `out_weight` has a plausibility test and a cross-variant test.
+- **6.** `.gitignore:12` ignores `ext_winhip.cu`; verified with `git check-ignore` after
+  creating one in a variant directory.
+- **7, cooperative-groups lesson.** Re-verified against the installed ROCm 7.14 tree:
+  `hip/cooperative_groups/hip_reduce.h` exists and includes
+  `hip/amd_detail/amd_hip_cooperative_groups_reduce.h`, which defines `reduce` at line 116;
+  `hip/hip_cooperative_groups.h:17-25` does not pull it in; `CUDA_INCLUDE_MAP` maps only
+  `cooperative_groups.h`. The rewritten `fault-classes.md` entry says exactly that.
+- **8.** `strategy-b-torch.md` sentence reads correctly; the duplicate `import torch` is gone
+  from all 14 `setup.py` (module-level import at `:19` still present, patch called at `:55`);
+  `test_first_three_channels_match_base` skips before rendering.
+- **9.** AMD copyright and author lines unchanged -- the `backup-review-5d567f6..7d6efdc` diff
+  contains no `Copyright`/author hunk. Still a person's call.
+
+### Rewrite spot-check and gates
+
+- `c579644..d4bb1cb` touches only `.gitignore` and the 14 `setup.py`; the 14 `setup.py` deltas
+  are one md5 class. `backup-review-5d567f6..7d6efdc` adds only `tests/README.md` and
+  `tests/test_variants.py`. No kernel source entered the rewrite.
+- md5 equivalence classes recomputed independently over all 20 per-variant files at `main` and
+  `HEAD`, comparing the class *partitions* rather than the counts: identical for every file,
+  including `setup.py` after normalising the package name (1 class of 14 at both ends).
+- Suite reproduced: 136 passed, 1 skipped in 8.26 s. `jargon.py --port` clean, `prose.py` clean
+  on both bodies, titles `[ROCm]`-prefixed at 52 and 54 chars, no `Co-Authored-By`, no noreply
+  address, no AMD-internal account reference.
+- `git -C projects/diff-surfel-rasterizations/src status --porcelain` empty; `origin/moat-port`
+  is at `7d6efdc` and `backup-review-5d567f6` is local only.
+- Fault classes unchanged from the previous round and re-confirmed: no wavefront assumption, no
+  resource handles, no OOB neighbour reads, CUB -> hipCUB only, every source edit inside a
+  `USE_ROCM` guard except the chevron respacing.
+
+`ported` rather than `delta-ported` is the right state for this round: `status.json` carries no
+`fix` block and there is no upstream PR, so `moat-port` itself was amended and the review scope
+is the whole `main...HEAD` diff, not a delta on a published tip.
