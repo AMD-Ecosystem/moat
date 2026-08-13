@@ -856,3 +856,91 @@ satisfied (this arch carries wave64). windows remains open. CUDA gate unaffected
 already at this head_sha, per the standing rule); no penalty. Wall clock: build ~50s, in-scope
 tests ~9s, scoped-out re-runs and AMD_LOG_LEVEL evidence runs a few minutes more; well under the
 ~60 minute budget.
+
+## Validation attempt 2026-08-13 (windows-gfx1151) -- builds and loads, tests blocked on the harness
+
+Platform: AMD Radeon 8060S (gfx1151, RDNA3.5, wave32), Windows 11. torch
+2.12.0+rocm7.14.0a20260519 with the `[device-gfx1151]` extra, ROCm 7.14 devel,
+Python 3.13.14.
+
+Outcome: the extension now BUILDS and LOADS on Windows -- which it did not
+before this round -- but the test suite could not be run, for a reason that has
+nothing to do with the GPU. Recorded `validation-failed` because no real-GPU
+pass was obtained; the blocker and the remaining work are both concrete.
+
+### Windows is not the CMake-clang-cl case; this project needs the GNU driver
+
+Configuring with `clang-cl` for C/CXX/HIP succeeds under CMake 4.3, and then
+`csrc/page.cu` fails deep inside the ORIGINAL flashinfer headers
+(`invalid output constraint '=f' in asm`, `function template partial
+specialization is not allowed`) -- as if the port's compat shims were not there.
+They were not. `quest/ops/CMakeLists.txt:111-113` force-includes them with
+GNU-style `-include<path>`, which `clang-cl` does not honour (its spelling is
+`/FI`), so the shims silently do nothing and the upstream CUDA headers compile
+raw. Nothing in the error names the cause.
+
+Configure with `amdclang++` for both CXX and HIP instead and the shims apply.
+The general rule: a project that passes GNU-style flags from its own CMakeLists
+forces the GNU driver regardless of what the CMake version would otherwise
+allow. `-fuse-ld=lld-link` still has to be stripped from `build.ninja` (1
+occurrence) as in the other Windows CMake ports.
+
+### Real source defect found and fixed: LLP64 vs LP64 in the decode kernels
+
+With the shims working, the build failed in the project's OWN headers:
+
+```
+kernels/include/decode/decode_attn.cuh:920:32: error: no matching function for call to 'max'
+  constexpr uint32_t vec_size = std::max(16UL / sizeof(DTypeIn), HEAD_DIM / 32UL);
+```
+
+`unsigned long` is 64-bit on Linux (LP64) and 32-bit on Windows (LLP64), while
+`sizeof` is always `size_t`. On Linux the two arguments happen to share a type
+and deduction succeeds; on Windows they do not and every instantiation fails.
+Eight sites across `decode_attn.cuh` and `decode_page.cuh`.
+
+This is upstream code, untouched by the port -- `git log` on the file shows only
+"[Major] Initial commit", and the port's diff against its base does not touch
+these lines -- so a CUDA build on Windows fails identically today. Fixed by
+naming the template argument, `std::max<size_t>(...)`, which leaves every
+already-compiling instantiation unchanged. Committed as `ac7382c`; head_sha
+c1d7fff -> ac7382c. Expect linux-gfx90a and linux-gfx1100 to carry forward:
+the change is a no-op on LP64, so `codeobj_diff` should report identical.
+
+After it, all 6 objects compile and link, and `import quest._kernels` exposes
+the expected symbols (`BatchDecodeWithPagedKVCachePyTorchWrapper`,
+`append_kv_cache_decode/prefill`, `apply_rope_in_place`, `estimate_attn_score`,
+`rms_norm_forward`).
+
+### What blocks the tests: transformers, not the GPU
+
+All four in-scope suites import `transformers`, and their reference paths use
+the pre-4.38 rotary API (`LlamaRotaryEmbedding(head_dim)`,
+`rotary_emb(q, seq_len=...)`). The recorded working version is
+`transformers==4.37.2` (notes above; `pyproject.toml`'s `transformers==4.45.2`
+pin is stale and does NOT work -- 4.45.2 gives
+`AttributeError: 'int' object has no attribute 'max_position_embeddings'`, then
+`TypeError: forward() got an unexpected keyword argument 'seq_len'`).
+
+`transformers==4.37.2` cannot be installed on this host's Python 3.13: it
+requires `tokenizers>=0.14,<0.19`, which has no cp313 wheel and needs a Rust
+toolchain to build, and 4.37.2 enforces that range at import time, so
+`--no-deps` does not get around it.
+
+This is a host-environment gap, NOT a platform waiver: TheRock publishes cp312
+wheels of the same torch build (verified by download), so a Python 3.12 venv
+finishes this. The remaining work is exactly:
+
+1. `winget install --id Python.Python.3.12 --scope user`
+2. a venv on it with `torch[device-gfx1151]==2.12.0+rocm7.14.0a20260519` and
+   `rocm-sdk-devel==7.14.0a20260519` from `whl-staging-multi-arch`
+3. `transformers==4.37.2` `tokenizers==0.15.2` (both have cp312 wheels)
+4. rebuild `quest/ops` against that interpreter and re-run the four suites
+
+Expected reference (linux-gfx1100/gfx90a): test_rope 64, test_estimate 9,
+test_decode_attention 6, test_approx_attention 42 = 121 passed; test_topk and
+test_prefill_attention remain scoped out and fail with `AttributeError` on
+missing symbols, 78 failures, which is the recorded expected shape.
+
+Integrity: `git status --porcelain` in src clean at ac7382c; the only change is
+the committed fix.
