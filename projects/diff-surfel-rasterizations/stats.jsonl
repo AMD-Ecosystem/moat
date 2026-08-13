@@ -30,3 +30,5 @@
 {"kind":"phase","ts":"2026-08-13T08:25:56Z","phase":"test","seconds":9.924,"exit":0,"cmd":"python -m pytest projects/diff-surfel-rasterizations/src/tests/test_variants.py -q"}
 {"kind":"phase","ts":"2026-08-13T08:29:38Z","phase":"cuda-compile","seconds":10.215,"exit":1,"cmd":"/tmp/claude-1000/-var-lib-jenkins-moat/48c85e10-ba84-4c4b-b57e-365e2e072f50/scratchpad/cuda_gate.sh"}
 {"kind":"session","ts":"2026-08-13T08:30:28Z","epoch":1786609828.772247506,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-13T20:14:07Z","epoch":1786652047.723510800,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-13T20:28:53Z","phase":"compile","seconds":612.082,"exit":0,"cmd":"bash -c cd /d/Develop/moat/projects/diff-surfel-rasterizations/src && export MAX_JOBS=8 && for v in diff-surfel-rasterization*/; do echo \"##### $v\"; ( cd \"$v\" && rm -rf build *.egg-info && D:/Develop/moat/agent_space/torch_venv/Scripts/pip.exe install -e . --no-build-isolation --no-deps ) || { echo \"BUILD_FAILED $v\"; break; }; done"}
