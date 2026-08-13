@@ -1018,3 +1018,98 @@ The house-style parallel would be a `USE_HIP` toggle in `config.sh` plus a line 
 `new_features.md`. Deliberately not added here: the dispatch was one narrowly-scoped fix round
 on an already-reviewed, already-validated port, and widening the delta would enlarge what has
 to be re-reviewed. Should be picked up before the upstream PR.
+
+## Review 2026-08-13 (reviewer, linux-gfx1100): review-passed (fix round be91acd..22ea834)
+
+Scope: the licence-scoped delta only (3 files, +49/-41). The base through be91acd was reviewed
+2026-06-12 and is not re-litigated. Read-only; no build of the full library and no GPU run.
+
+### No blocking findings.
+
+### Independently verified (the round's two load-bearing claims)
+
+Byte-identity of the vendored NVIDIA-marked headers, HELD:
+```
+git rev-parse 2ecb8b1:include/cuda/helper_cuda.h == 22ea834:include/cuda/helper_cuda.h
+    -> 0ba7a3a8afa27a8b42384db10eac98cc19fbe85a  (be91acd was 8dccf716, i.e. modified)
+git rev-parse 2ecb8b1:include/cuda/helper_string.h == 22ea834:...  -> c4cc273f (never touched)
+git diff --stat 2ecb8b1..22ea834 -- include/cuda/   -> only Fast.hpp, Orb.hpp (+4 each)
+```
+`utils/licenses.py scan-nvidia plvs` flags exactly those two files and no others. Cross-checked
+independently of the scanner: grepped all 107 files in `git diff --name-only 2ecb8b1..22ea834`
+for NVIDIA copyright / EULA text -- zero hits. The port's diff now touches no
+NVIDIA-proprietary-marked file.
+
+Independence of `hip_compat/cuda/helper_cuda.h`, HELD. Compared against both the deleted block
+(be91acd:include/cuda/helper_cuda.h) and the vendored original (lines 1001-1047): different
+function name and namespace (`PLVS2::cuda::abortOnHipError` vs a free `check<T>`), non-template
+with an exact `hipError_t` parameter vs `if (result)` truthiness on any T, no `DEVICE_RESET`
+dance, and a different message format (`file:line: call returned str (code)` vs NVIDIA's
+`CUDA error at %s:%d code=%d(%s) "%s"`). The only shared shape is the macro body
+`f((v), #v, __FILE__, __LINE__)`, which is the universal C idiom for this and is dictated by the
+call sites; nothing else is a paraphrase.
+
+### Mechanism checks (this host: gfx1100, ROCm 7.2.1, hipcc; nvcc 12.8 for the CUDA path)
+
+- Include shadowing works and helper_string.h is never reached on ROCm:
+  `hipcc -x hip --offload-arch=gfx1100 -std=c++17 -DUSE_HIP -fsyntax-only -H -Ihip_compat -Iinclude`
+  on a probe including `<cuda/helper_cuda.h>` -> resolves `hip_compat/cuda/helper_cuda.h`, RC=0.
+- The stated rationale is exact, not "does not parse". Preprocessor-only evidence:
+  `hipcc ... -E -dM -Iinclude` on `#include <cuda/helper_cuda.h>` defines `DEVICE_RESET` and
+  `HELPER_CUDA_H` but NOT `checkCudaErrors` (it sits inside `#ifdef __DRIVER_TYPES_H__` at
+  include/cuda/helper_cuda.h:1024); with `-Ihip_compat` first the macro appears. Nothing in the
+  tree defines `__DRIVER_TYPES_H__`.
+- All 36 call sites type-check against the new strict `hipError_t` signature. The 36 sites
+  (Cuda.cu 1, Allocator_gpu.cu 3, Orb_gpu.cu 8, Fast_gpu.cu 24) use 12 distinct APIs
+  (DeviceSynchronize, MemcpyToSymbol, StreamCreate/Destroy/Synchronize/AttachMemAsync, Malloc,
+  MallocManaged, Free, MemsetAsync, MemcpyAsync, GetLastError); a probe calling every one of
+  those forms through `checkCudaErrors` compiles RC=0, including from inside
+  `namespace PLVS2 { namespace cuda { ... } }` where the macro's `::PLVS2::cuda::` qualification
+  is used. Both the old `check<T>` and the new function are host-only (no `__device__`), so no
+  call site loses device availability.
+- CUDA path unchanged: `nvcc -std=c++17 -Xcompiler -H -c` on a probe with only `-Iinclude`
+  resolves `include/cuda/helper_cuda.h` -> `include/cuda/helper_string.h` and compiles
+  `checkCudaErrors(cudaDeviceSynchronize())`, RC=0. `include_directories(BEFORE .../hip_compat)`
+  is inside the existing `if(USE_HIP)` block (CMakeLists.txt:248), so the CUDA and CPU builds
+  never see the directory.
+- CMake ordering is sound: hip_compat is prepended at line 248 and the bulk
+  `include_directories(...)` that adds `${PROJECT_SOURCE_DIR}/include` runs later (line ~556) as
+  an append, in the same directory scope as the `plvs` target (line 842); there is no
+  `add_subdirectory` that could snapshot the property earlier. hip_compat contains only
+  `cuda/helper_cuda.h`, so no other `<cuda/...>` or `<opencv2/...>` include is shadowed.
+- Dropped defines have zero users, tree-wide (checked src/, include/, Examples/): no
+  `getLastCudaError`, `DEVICE_RESET`, `EXIT_WAIVED`, bare `check(`, `_cudaGetErrorEnum`, and no
+  `cudaDeviceProp` / `cudaGetDeviceProperties` / `cudaGetDevice` / `cudaSetDevice` /
+  `cudaGetDeviceCount` outside the vendored header itself. (`Thirdparty/libsgm/sample/benchmark`
+  uses `cudaDeviceProp`, but that sample never included plvs's helper_cuda.h and is a separate
+  build with its own shim.) In Fast_gpu.cu / Orb_gpu.cu the include of `<cuda/helper_cuda.h>`
+  comes AFTER the OpenCV cv::cuda headers, so the removed aliases could not have been serving
+  those headers either.
+- Delta hygiene: title `[ROCm] Leave the vendored CUDA samples header unmodified` (56 chars),
+  body has the AI-assistance disclosure and a Test Plan with literal fenced commands, no
+  `Co-Authored-By` trailer, ASCII only, no in-house vocabulary, no AMD-internal account
+  references. Working tree at 22ea834 is clean.
+
+### Carried items -- not blockers for this round, must be settled before the upstream PR
+
+1. `python3 utils/jargon.py --port plvs` still exits 1 on the branch root commit e59fd77
+   ("The port uses Strategy A (compat header approach)"). Pre-existing, ruled to be fixed at the
+   PR-prep squash rather than by rewriting history. Needs a person to confirm that route.
+2. The ROCm build is documented nowhere in the project's own docs: confirmed
+   `grep -rniE 'USE_HIP|ROCm|hip' --include=*.md --include=*.sh` outside Thirdparty returns
+   nothing, while config.sh:62 documents `USE_CUDA=0`. A `USE_HIP` toggle in config.sh plus a
+   line in new_features.md is the house-style parallel. Base-scope, already noted by the porter.
+3. Deferred item plvs-nvidia-proprietary-rescan stays open: the two vendored NVIDIA
+   EULA-pointer headers are still redistributed by the fork, unmodified. Only a person can rule
+   on that.
+
+### Note for the validator
+
+head_sha advanced be91acd -> 22ea834 with both Linux platforms validated at be91acd. The delta
+changes only which header answers `<cuda/helper_cuda.h>` on the ROCm path and the host-side
+error-abort helper; `checkCudaErrors` appears in no `__device__`/`__global__` code, so gfx
+device ISA should compare identical and the carry-forward binary-equivalence route applies.
+Orb_gpu.cu and Fast_gpu.cu were not compiled on either path this session (no OpenCV-with-HIP on
+this host; nvcc 12.8 hits the pre-existing OpenCV 4.6 `textureReference` / `reduce<32>` failures
+recorded on the upstream base), so a validator with an OpenCV-with-HIP build should compile all
+four device sources.
