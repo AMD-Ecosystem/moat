@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-08-06T06:58:03Z",
-  "updated_at": "2026-08-13T08:30:24Z",
+  "updated_at": "2026-08-13T20:59:05Z",
   "head_sha": "f08867994378172a519cf065290963cd908ac88b",
   "depends_on": [],
   "porting": null,
@@ -67,6 +67,29 @@
         "last_session_at": null
       },
       "last_agent": "reviewer",
+      "state": "completed"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "f08867994378172a519cf065290963cd908ac88b",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-08-13T20:59:04Z",
+      "updated_at": "2026-08-13T20:59:04Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
       "state": "completed"
     }
   },

@@ -1020,3 +1020,89 @@ f08867994378172a519cf065290963cd908ac88b`. This project has no test suite
 outside `tests/test_variants.py`, so nothing further to compare against a
 non-GPU baseline. linux-gfx1100 remains outstanding for the wave32 gate;
 this row alone already satisfies wave64.
+
+## Validation 2026-08-13 (windows-gfx1151) -- PASS at f088679
+
+Platform: AMD Radeon 8060S (gfx1151, RDNA3.5, 20 CUs, wave32), Windows 11.
+torch 2.12.0+rocm7.14.0a20260519 with the `[device-gfx1151]` extra, ROCm 7.14
+devel from the same date-stamp, AMD clang 23.0.0, Python 3.13. No source change
+needed; the port builds and runs on Windows as written.
+
+### Toolchain note: which torch wheel actually works here
+
+TheRock's PER-ARCH gfx1151 index tops out at ROCm 7.13, so a 7.14 torch comes
+from `whl-staging-multi-arch`. But the plain multi-arch wheel carries no gfx1151
+device code: `torch.cuda.is_available()` answers True, the device name and
+`gcnArchName` read back correctly, and then the first kernel dies with
+
+```
+torch.AcceleratorError: CUDA error: device kernel image is invalid   (hipErrorInvalidImage)
+```
+
+Installing `torch[device-gfx1151]==<same version>` pulls
+`amd-torch-device-gfx1151` + `rocm-sdk-device-gfx1151` and fixes it. Read a
+first-kernel `hipErrorInvalidImage` on a correctly-detected device as a missing
+arch in the wheel, not as a broken port.
+
+`third_party/glm` is a submodule; without `git submodule update --init` every
+variant fails at `fatal error: 'glm/glm.hpp' file not found`.
+
+### Build -- 14/14, clean, but parallelism is load-bearing
+
+```
+export MAX_JOBS=4 PYTORCH_ROCM_ARCH=gfx1151
+for v in diff-surfel-rasterization*/; do
+  ( cd "$v" && rm -rf build *.egg-info && pip install -e . --no-build-isolation --no-deps )
+done
+# BUILT=14 FAILED=
+```
+
+At `MAX_JOBS=8` this host **crashes the device linker** partway through:
+
+```
+clang: error: amdgcn-link command failed due to signal (use -v to see invocation)
+clang: note: diagnostic msg: Error generating preprocessed source(s).
+```
+
+It hit `diff-surfel-rasterization-wet-ch11` on three separate TUs. Rebuilding
+that same variant alone at `MAX_JOBS=2` succeeded immediately, and the full
+14-variant sweep at `MAX_JOBS=4` then built every variant with no failures --
+so it is contention, not the variant and not the code. This is an integrated
+APU whose GPU and CPU share one memory pool, and these are template-heavy
+kernels instantiated per channel count. Treat `amdgcn-link ... failed due to
+signal` as "too many concurrent device links for this machine" and lower
+`MAX_JOBS` before reading it as a toolchain or port fault.
+
+### Test results -- 136 passed, 1 skipped in 3.15 s
+
+```
+python -m pytest tests/test_variants.py -q
+# 136 passed, 1 skipped
+```
+
+Exactly matches the linux-gfx942 count. No project-native non-GPU suite exists
+to regress against.
+
+### Device dispatch confirmed, six channel counts
+
+```
+AMD_LOG_LEVEL=3 python -m pytest tests/test_variants.py \
+  -k "test_forward_is_finite_and_non_trivial and not tile1" -q -s
+# 13 passed, 124 deselected
+```
+
+Real device kernels for every non-`tile1` channel count in that test:
+`preprocessCUDA<3|5|7|11|18|26>`, `renderCUDA<11u|18u|...>`,
+`duplicateWithKeys`, `identifyTileRanges`, all carrying
+`HIP_vector_type<float,2>` / `glm::vec<...>` arguments. Same method and same
+coverage as the gfx942 round.
+
+CUDA no-regression gate: not re-run. Already recorded at this head_sha by the
+gfx942 round (two of three kernel files clean, the third's failure root-caused
+to a pre-existing upstream missing `#include <cstdint>`), and Windows hosts
+carry no CUDA toolkit.
+
+Pre-completion checks: jargon clean; the ROCm build is documented at README.md:6-9;
+`git status --porcelain` in src shows only untracked build output (`build/`,
+`*.egg-info`, the built `_C.*.pyd` per variant) and no modified tracked file, at
+`f088679` before and after. No fork commit made or needed.
