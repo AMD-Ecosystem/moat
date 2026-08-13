@@ -75,6 +75,17 @@
         "at": "2026-08-12T23:46:52Z",
         "note": "Ruled by Jeff Daily 2026-08-12: resolved by reverting the -fgpu-rdc design entirely rather than by conditioning the interface options. The guard approach that preceded it puts nothing on the link interface, so downstream consumers are unaffected and neither remedy in this item is needed. Cost accepted: two upstream files carry a compiler guard instead of being byte-identical."
       }
+    },
+    {
+      "id": "heongpu-windows-rocm-sdk-cmake-packages-missing",
+      "kind": "rocm-bug-report",
+      "component": "rocm-sdk-core",
+      "summary": "TheRock's Windows rocm-sdk-core/rocm-sdk-devel wheels for gfx1151 (7.13.0a20260511) ship no lib/cmake/hip/hip-config.cmake at all (directory exists but is empty, so find_package(hip) fails out of the box even though amdhip64.dll/.lib and headers ARE present), and ship hiprand_kernel.h etc under include/hiprand but no hiprand-config.cmake, and ship no rocThrust package (headers or config) whatsoever, even though hip-lang works (a stub hip-lang-config.cmake was already hand-authored on this host by an earlier session). A HIP CMake project that calls find_package(hip REQUIRED)/find_package(hiprand REQUIRED)/find_package(rocthrust REQUIRED) -- the normal, portable way to consume ROCm from CMake, and what HEonGPU (and any other math-library-style HIP CMake port) does -- cannot configure on Windows without hand-written local package shims. Workaround used for HEonGPU: local CMake package shims (INTERFACE imported targets for hip::host/hip::amdhip64/hip::device pointing at the real amdhip64.lib, hip::hiprand as an include-only INTERFACE target since HEonGPU only uses the header-only device RNG API, and roc::rocthrust pointing at the TheRock source checkout's rocm-libraries/projects/{rocthrust,rocprim} headers since rocThrust is itself header-only). See projects/HEonGPU/notes.md Validation entry for the shim files and the full recipe.",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T02:31:32Z",
+      "decided": null
     }
   ]
 }

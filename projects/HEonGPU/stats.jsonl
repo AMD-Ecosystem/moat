@@ -174,3 +174,8 @@
 {"kind":"phase","ts":"2026-08-13T01:19:21Z","phase":"compile","seconds":52.659,"exit":0,"cmd":"bash -c \ncmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build \\\n    -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release \\\n    -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON \\\n    && cmake --build projects/HEonGPU/src/build -j$(nproc)\n"}
 {"kind":"phase","ts":"2026-08-13T01:19:46Z","phase":"test","seconds":11.769,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
 {"kind":"session","ts":"2026-08-13T01:21:56Z","epoch":1786584116.107384420,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-13T02:24:21Z","epoch":1786587862.157530600,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-13T02:24:39Z","phase":"compile","seconds":1.735,"exit":1,"cmd":"C:/Program Files/CMake/bin/cmake.exe --build projects/HEonGPU/src/build -j6"}
+{"kind":"phase","ts":"2026-08-13T02:28:00Z","phase":"compile","seconds":5.436,"exit":1,"cmd":"C:/Program Files/CMake/bin/cmake.exe --build projects/HEonGPU/src/build -j6"}
+{"kind":"phase","ts":"2026-08-13T02:29:02Z","phase":"compile","seconds":8.156,"exit":1,"cmd":"C:/Program Files/CMake/bin/cmake.exe --build projects/HEonGPU/src/build -j6"}
+{"kind":"session","ts":"2026-08-13T02:34:39Z","epoch":1786588479.360282200,"event":"end","platform":"windows-gfx1151"}

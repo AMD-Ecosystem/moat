@@ -3460,3 +3460,251 @@ architecture mapping table).
 20/20 reproduced twice from a clean build of the `-fgpu-rdc` revert; CUDA gate
 already recorded at this `head_sha` by another arch, not re-run; jargon and docs
 clean. No regression versus the prior `5d99b8f` completion on this arch.
+
+## Validation 2026-08-13 (windows-gfx1151, Radeon 8060S, TheRock ROCm 7.13 dev) -- validation-failed
+
+First build attempt on Windows for this project (previous windows-gfx1151 activity was
+a read-only review, notes.md round-6/round-10 corroboration; no build had been tried).
+`moat-port` at `6ac06d0575ec210f8dbfa1123aa890d2a04a9938`, cloned fresh to
+`projects/HEonGPU/src`, `moat-port` checked out, verified at the expected head.
+
+### Summary
+
+The Windows toolchain gap the dispatch flagged ("rocThrust and OpenMP... the interesting
+part") is now fully solved and repeatable -- see below. Configuration and HIP device
+compilation for real GPU code (GPU-NTT, GPU-FFT, RNGonGPU) succeed. The build then hits
+a genuine, first-time-discovered **source** portability bug in HEonGPU's own code: two
+headers pull in the Linux-only `<sys/sysinfo.h>` and `src/lib/util/memorypool.cu` calls
+`struct sysinfo` / `sysinfo(&memInfo)` unconditionally, which does not exist on Windows.
+This is porter work, not something a validator edits. Setting `validation-failed`;
+`failed_sha` = `6ac06d0575ec210f8dbfa1123aa890d2a04a9938`.
+
+### The toolchain gap, solved (record this so nobody repeats the archaeology)
+
+TheRock's installed Windows ROCm SDK on this host (`D:/Develop/TheRock/.venv`,
+`rocm-sdk-core`/`rocm-sdk-devel`/`rocm-sdk-libraries-gfx1151` 7.13.0a20260511) is missing,
+for Windows specifically:
+
+- `lib/cmake/hip/` exists but is **empty** -- no `hip-config.cmake` at all, even though
+  `amdhip64.dll`/`amdhip64.lib` and the HIP headers are present and working. So
+  `find_package(hip REQUIRED)` fails out of the box.
+- `hiprand_kernel.h` etc. are present under `include/hiprand`, but there is no
+  `hiprand-config.cmake`/`hiprandConfig.cmake`.
+- rocThrust (headers or CMake package) is **absent entirely**. `lib/cmake/hip-lang/`
+  *does* have a working `hip-lang-config.cmake` -- a hand-authored stub, dated
+  2026-06-18, clearly left by an earlier (catboost) validation session on this same
+  host; it is real and reusable, not mine.
+- Filed as `heongpu-windows-rocm-sdk-cmake-packages-missing` in `deferred.json`
+  (`rocm-bug-report`, component `rocm-sdk-core`) -- this blocks ANY HIP CMake project
+  that uses `find_package(hip/hiprand/rocthrust)` on Windows with this SDK, not just
+  HEonGPU.
+
+Workaround (throwaway local CMake package shims, `agent_space/heongpu-win/cmake-shims/`,
+gitignored, not part of the port):
+- `hip/hipConfig.cmake`: defines `hip::amdhip64` (SHARED IMPORTED, `IMPORTED_IMPLIB` =
+  the real `_rocm_sdk_core/lib/amdhip64.lib`), `hip::host` (INTERFACE, links
+  `hip::amdhip64`, `__HIP_PLATFORM_AMD__=1`), `hip::device` (INTERFACE, links
+  `hip::host`) -- the minimal subset of the real
+  `rocm-systems/projects/clr/hipamd/hip-config-amd.cmake.in` (found in the local
+  TheRock source checkout) that this port actually uses (only `hip::host`, confirmed by
+  grep across the whole tree).
+- `hiprand/hiprandConfig.cmake`: `hip::hiprand` as an INTERFACE target with **no**
+  library, because HEonGPU/RNGonGPU only use the header-only device RNG API
+  (`hiprandState_t`, `hiprand_init`, `hiprand`), never the host generator API that would
+  need a real `hiprand`/`rocrand` runtime lib.
+- `rocthrust/rocthrustConfig.cmake`: `roc::rocthrust` as an INTERFACE include-only
+  target pointing at the local TheRock super-repo checkout's
+  `rocm-libraries/projects/{rocthrust,rocprim}` (rocThrust is a header-only Thrust
+  fork; HEonGPU only pulls `thrust/host_vector.h`). No target in the tree links
+  `roc::rocthrust` (only `find_package` gates on it), so the include path also has to
+  be injected globally via `CMAKE_HIP_FLAGS` (see below) -- the shim target exists in
+  case something ever does link it.
+Passed via `-DCMAKE_PREFIX_PATH=...;<shims>/hip;<shims>/hiprand;<shims>/rocthrust`
+plus explicit `-Dhip_DIR=`, `-Dhiprand_DIR=`, `-Drocthrust_DIR=` (belt and suspenders;
+`find_package` in CONFIG mode needs the `_DIR` var or the package literally sitting at
+`<prefix>/<name>Config.cmake`, and shim folders are named to match).
+
+GMP, NTL, OpenSSL, ZLIB (`find_package`/`find_library` targets `gmp`, `ntl`,
+`OpenSSL::Crypto`/`SSL`, `ZLIB::ZLIB`) have no TheRock/vcpkg-reachable MSVC-ABI build on
+this host either (vcpkg has `gmp`/`openssl`/`zlib` ports but `ftpmirror.gnu.org` /
+`ftp.gnu.org` / `gmplib.org` are unreachable from this network -- `curl` times out;
+`github.com`, `pypi.org`, `conda.anaconda.org`, `api.anaconda.org` all work fine, so this
+is a specific-domain block, not a general network outage). Fix: fetch the prebuilt
+conda-forge win-64 packages directly (MSVC-toolchain-built, so MSVC-ABI compatible with
+clang-cl) via the `api.anaconda.org` redirect (`.conda` files are zip archives containing
+`pkg-*.tar.zst`; Windows's built-in `tar.exe` extracts `.zst` natively, no extra tool
+needed):
+```
+curl -sSL -o gmp.conda "https://api.anaconda.org/download/conda-forge/gmp/6.3.0/win-64/gmp-6.3.0-hfeafd45_2.conda"
+unzip -o gmp.conda -d gmp_extract && cd gmp_extract && tar -xf pkg-*.tar.zst
+# -> Library/{include,lib,bin}: gmp.h, gmp.lib, libgmp-10.dll
+```
+Same recipe for `openssl` (4.0.1, `Library/lib/{libcrypto,libssl}.lib`) and `zlib`
+(1.3.2, `Library/lib/{z,zdll,zlib,zlibstatic}.lib`; vcpkg's own build of zlib also
+works and was already present on this host, no conflict). `GMP_ROOT`, `OPENSSL_ROOT_DIR`,
+`ZLIB_ROOT` env vars point HEonGPU's root `CMakeLists.txt`'s GMP `find_library` and
+CMake's own `FindOpenSSL`/`FindZLIB` at these trees (CMake 3.12+'s `CMP0074` makes
+`find_path`/`find_library` honor `ENV{<Package>_ROOT}` automatically). `REQUESTS_CA_BUNDLE`/
+`CURL_CA_BUNDLE=D:/cla-bundle.pem` was needed for `conan`/vcpkg's own https clients
+(the corporate proxy cert) but not for `curl` itself once pointed at reachable hosts.
+
+NTL has **no** Windows package anywhere (checked vcpkg's port list, conda-forge -- its
+`win-64` platform list is conspicuously absent even though `linux-64`/`osx-*` are
+current at 11.6.0). Built from source, entirely with clang-cl, in about a minute:
+```
+git clone --depth 1 https://github.com/libntl/ntl   # the project's own upstream mirror,
+                                                       # NOT gnu.org/shoup.net (both unreachable)
+```
+NTL's own `configure`/`DoConfig` (a Perl script driving many small feature-probe
+compiles with Unix-style flags) will not run under clang-cl, but NTL ships its own
+**Windows/MSVC fallback path** that nobody has to invent: `src/dosify` (the script NTL's
+own maintainer used to build the historical "WinNTL" distribution) reveals the whole
+recipe --
+- `src/mach_desc.win`: a precomputed machine-description header for 32-bit `long` (the
+  Windows LLP64 model, which clang-cl also uses) -> copy to `include/NTL/mach_desc.h`,
+  skipping the `MakeDesc` runtime probe entirely.
+- `src/ResetFeatures <dir> "<FEATURES list from src/mfile>"`: generates all-off
+  `HAVE_*.h` feature headers (`ALL_FEATURES.h` `#include`s each unconditionally, so they
+  must exist even if none apply) -- run directly against `include/NTL`, no `dos/` copy
+  needed.
+- `include/NTL/PackageInfo.h` = `#define NTL_WINPACK (1)` (mirroring `dosify`'s own
+  `echo`) -- this is the flag that activates NTL's already-written MSVC/no-`long long`
+  fallback code paths in `ctools.h`/`tools.h` (`#if (!defined(NTL_HAVE_LL_TYPE) &&
+  defined(NTL_WINPACK) && defined(_MSC_VER))`), so nothing else needs guessing.
+- `GetTime.cpp`/`GetPID.cpp` = copies of `GetTime4.cpp` (portable `<ctime>` wall clock)
+  and `GetPID2.cpp` (`return 0`) -- the same substitution `dosify` performs.
+- `config.h`: hand-substitute `src/cfile`'s `@{...}` template (it is literally
+  `s/@\{NAME\}/$ConfigSub{NAME}/` in `DoConfig`, no compiler probing involved for this
+  part) with everything `0` except `NTL_STD_CXX14=1`.
+- Compile the ~76 files in `src/mfile`'s `$(SRC)` list (plus `GetTime.cpp`/`GetPID.cpp`)
+  with `clang-cl /std:c++14 /EHsc /O2 /MD -DNDEBUG` (the `/MD` matters -- one file built
+  without it first, `lld-link` then refused to link the mismatched CRT with
+  `/failifmismatch: mismatch detected for 'RuntimeLibrary'`), archive with `llvm-lib.exe`.
+- Smoke-tested (`NTL::ZZ`, `NTL::RR`, `conv`, `%`, `to_long`) linking the resulting
+  `ntl.lib` from a standalone `.exe`: correct output, exit 0.
+
+Reusable pieces for a future session on this host: `agent_space/heongpu-win/env.sh`
+(the full env: vcvars64 INCLUDE/LIB, the shim `CMAKE_PREFIX_PATH` entries, `GMP_ROOT`
+etc.) and `agent_space/heongpu-win/cmake-shims/`. Both gitignored by design (scratch),
+so they do not survive to a different host/clone -- this writeup is the durable copy of
+the recipe. The GMP/OpenSSL/ZLIB/NTL trees themselves and the two `.conda` downloads
+live under the session scratchpad
+(`C:\Users\jdaily\AppData\Local\Temp\claude\...\scratchpad\deps`), not under
+`agent_space/`, since scratchpad is the tool's designated temp area; a future session
+should just re-run the recipe above rather than expect that path to exist.
+
+### Two more Windows/clang-cl/HIP-language CMake quirks worth recording (workarounds, not blockers)
+
+1. **`CMAKE_HIP_COMPILER_FORCED` breaks the HIP compile rule; the ABI-detection failure
+   it works around has a narrower, correct fix.** `enable_language(HIP)` with
+   `CMAKE_HIP_COMPILER=clang-cl.exe` hits `CMake Error ... MSVC compiler version not
+   detected properly` inside CMake's OWN internal ABI-detection scratch project
+   (`CMakeDetermineCompilerABI.cmake`'s `try_compile`, at
+   `Modules/Platform/Windows-MSVC.cmake:69`). Root cause, confirmed by reading the
+   module: `Windows-MSVC.cmake`'s `_compiler_version` fallback chain checks
+   `CMAKE_C_SIMULATE_VERSION`, `CMAKE_CXX_SIMULATE_VERSION`, `CMAKE_Fortran_...`,
+   `CMAKE_CUDA_...` -- **there is no `CMAKE_HIP_SIMULATE_VERSION` branch at all**. In a
+   real project (`LANGUAGES C CXX HIP ASM`, like HEonGPU's), `CMAKE_CXX_SIMULATE_VERSION`
+   is already set by the time HIP is processed, so this never fires. But CMake's own
+   internal ABI-detection scratch project enables *only* HIP, so every branch in the
+   chain is unset and it hits the `FATAL_ERROR`. Setting `-DCMAKE_HIP_COMPILER_FORCED=1`
+   "fixes" this by skipping ABI detection entirely -- but that also skips whatever
+   normally seeds `-x hip` into the HIP compile rule, so HIP sources silently compile as
+   plain C++ (`-TP`, no `-x hip`) and every device intrinsic (`threadIdx`, `blockIdx`,
+   `__syncthreads`) is "undeclared identifier". The actual fix: don't use `FORCED`; add
+   `-x hip` directly to `CMAKE_HIP_FLAGS` (it appears after the rule's fixed `-TP` on the
+   command line and clang resolves the language from the last `-x`/`-TP`-equivalent
+   flag, so it wins) -- keep `FORCED` too since it's still needed to dodge the
+   `Windows-MSVC.cmake` bug, just don't rely on it for anything else.
+2. **`MSVC_RUNTIME_LIBRARY` target property has no entry for HIP in CMake 3.31 on
+   Windows.** `CMake Error ... MSVC_RUNTIME_LIBRARY value 'MultiThreadedDLL' not known
+   for this HIP compiler` at generate time, on the first HIP static-library target
+   evaluated (`thirdparty/GPU-FFT/src/CMakeLists.txt`'s `fft` target). Confirmed this is
+   not a policy (CMP0091 OLD/NEW) or generator-expression issue -- both were tried and
+   both fail identically. `Help/prop_tgt/MSVC_RUNTIME_LIBRARY.rst` documents C, CXX,
+   CUDA, OBJC, OBJCXX, Fortran; **HIP is absent from the property's documented language
+   list entirely** in this CMake version, even though `Platform/Windows-Clang.cmake`'s
+   `__windows_compiler_clang(HIP)` call does populate the
+   `CMAKE_HIP_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_*` module-level table -- the
+   property's internal (C++-implemented) consumer apparently does not route HIP through
+   it regardless. Fix: `-DCMAKE_MSVC_RUNTIME_LIBRARY=""` (empty, not just unset) --
+   this disables the property mechanism for every language rather than leaving CMake to
+   pick per-language defaults, so the runtime library is instead selected by the plain
+   `-D_DLL -D_MT ...` flags `Windows-Clang.cmake` already bakes into
+   `CMAKE_<LANG>_FLAGS_RELEASE_INIT` etc. when `CMAKE_MSVC_RUNTIME_LIBRARY_DEFAULT` is
+   unset (confirmed those flags are present in the surviving build; the NTL smoke test
+   and the real HIP objects that DID compile all link the DLL CRT correctly).
+
+Both are CMake-Windows-HIP-language quirks, not HEonGPU-specific and not ROCm-specific
+(the second is arguably a CMake upstream gap, filed nowhere since `utils/deferred.py`'s
+`rocm-bug-report` kind is for ROCm components, not CMake itself) -- promoted to the
+`cuda-to-rocm` skill (see below) so the next Windows CMake-HIP port does not rediscover
+either.
+
+### The line-ending trap in `thirdparty/build.sh`'s patch application
+
+Independent of everything else: `git config core.autocrlf` was `true` on this host (the
+common Git-for-Windows default), which CRLF-converts every file on checkout including
+`thirdparty/patches/*.patch` AND the three submodule checkouts the patches apply to.
+This should be a no-op (both sides converted the same way) but is not, because the
+*first* `cmake` configure attempt cloned the three submodules automatically
+(`thirdparty/build.sh`'s `git submodule update --init --recursive`) while my own
+`git checkout -- .` commands (run to fix an unrelated, since-superseded hypothesis)
+re-checked-out files at different times under a config that had already been changed
+mid-session, desynchronizing the two sides. `git -C thirdparty/RNGonGPU apply
+thirdparty/patches/RNGonGPU.patch` failed with `patch does not apply` starting at a
+real hunk (not a whitespace-only diff). Fixed by setting `core.autocrlf false` locally
+in the fork clone and all three submodules (plus the nested
+`RNGonGPU/thirdparty/GPU-NTT`), then forcing every patch file and every submodule
+checkout to be re-materialized from the index (`rm <file>; git checkout -- <file>` --
+plain `git checkout -- .` does not always rewrite a file whose working-tree content
+already byte-matches under the OLD line-ending convention). This is a description of
+what went wrong in THIS session's investigation, not a defect in `thirdparty/build.sh`
+itself -- a fresh clone with a consistent `core.autocrlf` (any single value, applied
+before the first configure) does not hit this; recorded so a future Windows session
+does not have to re-derive it if the same symptom appears from a differently-timed
+config change.
+
+### The blocking finding: `<sys/sysinfo.h>` is Linux-only, used unconditionally
+
+```
+D:/.../src/include/heongpu/util/random.cuh(12,10): fatal error: 'sys/sysinfo.h' file not found
+D:/.../src/include/heongpu/util/memorypool.cuh(13,10): fatal error: 'sys/sysinfo.h' file not found
+```
+`src/lib/util/memorypool.cu:59-60` is the actual use: `struct sysinfo memInfo;
+sysinfo(&memInfo);` (glibc-only; queries total/free system RAM for a memory-pool sizing
+heuristic). `random.cuh`'s `#include <sys/sysinfo.h>` at line 12 has no corresponding
+call in that header itself -- worth the porter checking whether it is a leftover
+unneeded include or feeds something in `random.cu` before assuming it is dead.
+Nothing upstream (CUDA path) is Windows-relevant here (upstream never targeted Windows
+either), so this is not a CUDA-vs-HIP regression, just a Linux-only host API that no
+previous validator round could see (every prior validation was Linux). Needs an actual
+`#ifdef`/platform-abstraction fix in the port (e.g. `GlobalMemoryStatusEx` from
+`<windows.h>` on `_WIN32`, matching the existing `sysinfo()` call's fields) -- out of
+scope for a validator to patch. Everything up to this point (submodule build,
+configure, real HIP device compilation of GPU-NTT/GPU-FFT/RNGonGPU) is solid evidence
+the toolchain side is no longer the blocker; this one small, precisely located gap is.
+
+Secondary, not yet investigated past first sight: once past the above, `_deps/googletest-build`
+(FetchContent) fails to build with `clang-cl: error: argument unused during
+compilation: '-O3' [-Werror,-Wunused-command-line-argument]`. Plausible cause (not
+confirmed): `CMakeLists.txt:44` appends `-O3` to `CMAKE_CXX_FLAGS_RELEASE` even though
+`Platform/Windows-Clang.cmake` already appended `-O3` to the `_INIT` value for Release,
+so the flag appears twice on every Release-config CXX command line; harmless everywhere
+else (a redundant-flag warning) but GoogleTest's own bundled CMakeLists apparently turns
+on `-Werror` for its own build, making the redundancy fatal there. Would need
+confirming (and, if real, is a one-line CMakeLists.txt de-duplication) before treating
+as a second blocking finding -- recorded so the porter checks it in the same round
+rather than being surprised by a second error immediately after fixing the first.
+
+### Verdict
+
+`windows-gfx1151`: **validation-failed** at `6ac06d0575ec210f8dbfa1123aa890d2a04a9938`.
+Not a GPU fault, not a Windows-permanent-impossibility (both `heongpu-windows-rocm-sdk-cmake-packages-missing`
+and the two CMake-HIP-language quirks have describable fixes elsewhere, and the
+`sys/sysinfo.h` fix is an ordinary small portability patch) -- this is a real port-source
+gap discovered for the first time because no arch before this one ever attempted a
+Windows build. No GPU test ran; do not read "20/20" anywhere above as applying here.
+`wave64`/`wave32` gates remain satisfied by `linux-gfx942`/`linux-gfx1100`;
+`pr_ready` is unaffected by this arch failing since `windows` is the only gate this
+arch could have contributed and it did not close.
