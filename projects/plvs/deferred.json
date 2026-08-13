@@ -28,6 +28,19 @@
       "upstream_issue": null,
       "created_at": "2026-06-12T15:00:56Z",
       "decided": null
+    },
+    {
+      "id": "plvs-nvidia-proprietary-rescan",
+      "kind": "other",
+      "component": null,
+      "summary": "Rescan with the fixed scan_nvidia: include/cuda/ vendors pre-2017 CUDA samples EULA-pointer headers (helper_cuda.h, helper_string.h). No licence ruling on the vendored copies is recorded; needs a person's confirmation.",
+      "refs": [
+        "moat main b336246 (case/wording-proof scan_nvidia)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T17:09:33Z",
+      "decided": null
     }
   ]
 }
