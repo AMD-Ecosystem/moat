@@ -4226,6 +4226,12 @@ not. Verified independently:
   `src/include/heongpu/host/ckks/operator.cuh:940`, whose only callers are the CKKS
   bootstrapping path at `src/lib/host/ckks/operator.cu:7201,7208,7224`. There is no
   bootstrapping test executable among the 15.
+  **Correction (round 17): this bullet is true of `multiply_const_plain_ckks_v2` only.**
+  `add_constant_plain_ckks_v2` is never called by `scale_up_ckks`; its sole caller is
+  `add_plain_v2` (`operator.cuh:599`). And the grep above rules out DIRECT calls only --
+  `example/bootstrapping/5_ckks_regular_bootstrapping_v2.cpp:141` reaches both helpers
+  transitively. The claim that survives is the narrower one: no TEST executable reaches
+  them.
 
 Fixing it on inspection was nevertheless the right call, not a reach: it is the same
 defect from the same root cause, its correctness follows from NTL's documented contract
@@ -4409,9 +4415,12 @@ and gfx1100 at `6ac06d0`, gfx90a at `5d99b8f`, windows null). No build and no te
 The reworded paragraph now names both changed functions --
 `add_constant_plain_ckks_v2()` (`operator.cu:596`) and `multiply_const_plain_ckks_v2()`
 (`operator.cu:660`), the two helpers applying a gaussian-integer constant -- and states
-plainly that neither is reached by any test, example or benchmark, their only other
-caller being `scale_up_ckks()` on the untested CKKS bootstrapping path, so the Test
-Plan's 20-of-20 line below it does not cover that hunk. Note the exact spelling is
+that neither is reached by any test, example or benchmark, their only other caller being
+`scale_up_ckks()` on the untested CKKS bootstrapping path, so the Test Plan's 20-of-20
+line below it does not cover that hunk. **Both halves of that support sentence were
+false and round 17 replaced them; see the round-16 review below and the round-17 entry.**
+The conclusion (fix by inspection, not covered by the results) was and remains correct.
+Note the exact spelling is
 `multiply_const_plain_ckks_v2`, not `multiply_constant_...`. Round-13 notes above were
 corrected for the same misnaming (review finding 3).
 
@@ -4497,3 +4506,55 @@ sentence be dropped entirely. The reword is the cheap path and is still free: no
 is validated at `2473e85`, so the amend orphans nothing.
 
 Everything else in the message and the branch is unchanged from what round 14 passed.
+
+## Porter round 17 (2026-08-13, windows-gfx1151) -- message-only amend, 26d636f
+
+Round-16 review requested one change and no code change. `2473e85` was amended in place
+to `26d636f`; `git diff 2473e85 26d636f` is empty, both carry tree `83718d0` and parent
+`d14abb1`, so only the message moved. The amend was free: no `validated_sha` pointed at
+`2473e85` (gfx942 and gfx1100 at `6ac06d0`, gfx90a at `5d99b8f`, windows null). No build,
+no test run, no source or build file touched.
+
+The false coverage claim round 15 introduced is gone. Both reviewer findings were
+re-verified against the tree here rather than taken on trust, since the last two rounds
+each shipped an unverified claim about these same two functions:
+
+- The examples DO reach both helpers transitively.
+  `example/bootstrapping/5_ckks_regular_bootstrapping_v2.cpp:141` ->
+  `regular_bootstrapping_v2()` (`operator.cu:7175`) -> `scale_up()` (`operator.cuh:940`,
+  called at `:7201,7208,7224`) -> `scale_up_ckks()` -> `multiply_const_plain_ckks_v2()`
+  (`:762`); and `:7237,7239` -> `eval_mod()` (`:4276`) -> the double-angle loop at `:4310`
+  -> `add_plain_v2()` -> `add_constant_plain_ckks_v2()` (`operator.cuh:599`).
+- "their only other caller is `scale_up_ckks()`" held only for the multiply helper.
+  Exhaustive grep over `src/ test/ example/ benchmark/`: `add_constant_plain_ckks_v2` has
+  three hits total -- definition `operator.cu:596`, declaration `operator.cuh:1641`, one
+  call at `operator.cuh:599` inside `add_plain_v2`. `multiply_const_plain_ckks_v2` has
+  four -- definition `:660`, declaration `operator.cuh:1645`, and calls at
+  `operator.cuh:897` (inside `multiply_plain_v2`) and `operator.cu:762` (`scale_up_ckks`).
+  `add_plain_v2`'s only in-tree callers are `eval_mod` (`:4310`), `gen_power` (`:4387`)
+  and `evaluate_poly_from_polynomial_basis` (`:4456`); `multiply_plain_v2` has no in-tree
+  caller at all.
+
+**The replacement support is the claim that actually survives a grep: no TEST executable
+reaches either helper, and the Test Plan builds tests only.** Verified two ways rather
+than one: no hit in `test/` for any of `add_plain_v2|multiply_plain_v2|scale_up|eval_mod|
+gen_power|evaluate_poly|regular_bootstrapping|slim_bootstrapping`, and the complete set of
+operator entry points the suite uses is `operators.{add, add_inplace, add_plain_inplace,
+mod_drop_inplace, multiply_inplace, multiply_plain_inplace, relinearize_inplace,
+rescale_inplace, rotate_rows, sub}` (`grep -rhoE "operators\.[a-zA-Z_]+" test/ | sort -u`)
+-- the two `_plain_inplace` entries take a `Plaintext`, not the `Complex64` `_v2` path.
+`HEonGPU_BUILD_EXAMPLES` defaults OFF at `CMakeLists.txt:163`, so the Test Plan's
+`-DHEonGPU_BUILD_TESTS=ON` configures neither example. The paragraph's conclusion is
+unchanged and still correct: fix by inspection, not exercised by the results below.
+
+Wording gotcha worth keeping: the sentence is phrased against "the runs below", not
+against the tree, so it stays true whatever a later validator chooses to run, and it
+asserts nothing about what the examples do or do not reach -- the direction round 15 got
+wrong. Building with `-DHEonGPU_BUILD_EXAMPLES=ON` and running
+`5_ckks_regular_bootstrapping_v2` remains the alternative that would delete the sentence
+outright by turning it into a measured result; it was not done this round.
+
+Untouched by ruling or assignment: `-fgpu-rdc` and the `small_ntt` guard (settled at
+`6ac06d0`), the two registered upstream defects, and the stale CUDA no-regression gate
+(round-14 finding 2, restated as outstanding in round 16), which stays a validator
+obligation for whichever Linux arch revalidates first.
