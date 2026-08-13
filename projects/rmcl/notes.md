@@ -611,3 +611,118 @@ gfx1100 registered against rmagine stands.
   Only the three pre-existing unused-variable warnings appear.
 - gfx942 kernel results match gfx1100 and the earlier gfx942 round exactly: `compute_stats`
   `sum=2051.63 max=1`, resampler `2043 of 4099` replaced, `mean=-0.00274891 sd=1.01771`.
+## Review 2026-08-13 (linux-gfx1100, second round) -- changes requested
+
+Re-reviewed the whole port, `git diff 8892cf4...4f746de` on `AMD-Ecosystem/rmcl` `moat-port`
+(9 files, +419/-12), all three commit messages, `surface.json`, and the three skill lessons the
+branch promotes. Working tree clean, `jargon.py --port rmcl` clean, `check.py` all gates ok.
+
+### Problems
+
+1. **The promoted `hip::device` lesson states a mechanism that ROCm's own CMake config
+   contradicts, and contradicts itself two sentences later.**
+   `.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md:90-92` says "`hip::device` puts
+   `--offload-arch=` in the target's INTERFACE compile options, and a link library applies to
+   EVERY source of the target regardless of language". It does not. ROCm wraps every one of
+   those flags in a language genex: `hip_add_interface_compile_flags` at
+   `/opt/rocm/lib/cmake/hip/hip-config.cmake:91-94` appends
+   `INTERFACE_COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:CXX>:...>"`, and
+   `hip-config-amd.cmake:159,166` is what feeds it `-x hip` and `--offload-arch=<gfx>` (ROCm
+   7.2.3, read on this host). So the flags land on exactly the target's CXX sources -- which is
+   why the five `MICP*SensorCUDA.cpp` compiles fail -- and never on its HIP-language sources.
+   The lesson's own closing line, "a target that is 100% HIP sources never shows this", is only
+   true under the real mechanism and is false under the one it states. Replace the clause with
+   the CXX-genex fact and keep the rest; the advice (do not link `hip::device` on a mixed target;
+   `enable_language(HIP)` plus `LANGUAGE HIP` already emits the offload flags) is correct.
+   Worth adding while there: the link half is NOT gated -- `hip-config-amd.cmake:162,168` put
+   `--hip-link` and `--offload-arch` into `INTERFACE_LINK_LIBRARIES` unconditionally, so
+   `hip::device` also reaches the link line of any consumer.
+   This is the one blocking item, and it is a doc-only edit: it does not touch the fork, so
+   `head_sha` does not move and no evidence is invalidated.
+
+2. **`surface.json` points `test:rmcl_gpu_tests` at a directory that does not exist.**
+   The component's `where` reads "added by this port (rmcl_ros/tests, rmcl/tests)", but the
+   branch has no `rmcl/tests` -- that was the optional rmcl-package test, deliberately not added
+   (the `covered` entry says so correctly). Drop `rmcl/tests` from the `where` so the accounting
+   the publisher reads matches the branch.
+
+### Prior round's four items: all genuinely resolved
+
+Checked independently rather than taken from the porter's summary.
+
+1. The nvcc claim in `493d0f6` now reads "nvcc accepts the declaration and ignores the
+   initializers (CUDA 12.8.93, no diagnostic) while clang rejects it outright". Reproduced both
+   halves here on gfx1100: a 20-line repro of `__shared__ S sdata[blockSize]` over a struct with
+   NSDMIs compiles silently under `/opt/conda/envs/cuda-12.8/bin/nvcc -arch=sm_75
+   -Xcudafe --display_error_number` (rc 0, no output) and fails under
+   `/opt/rocm/llvm/bin/clang++ -x hip --offload-arch=gfx1100` with `error: initialization is not
+   supported for __shared__ variables`. The same measurement retires review item 4 for
+   `fault-classes.md:189-198`, which now names the toolkit version and drops the "or with a
+   warning" hedge.
+2. The device skip is as good as it can be made inside rmcl, and the analysis is right, not
+   assumed. `rmcl_gpu_kernels.cpp:283-288` returns 77 and `rmcl_ros/tests/CMakeLists.txt:16`
+   carries `SKIP_RETURN_CODE 77`. The residual exposure is real and is in the dependency:
+   `cuda_def_ctx` is a namespace-scope global at
+   `rmagine_src/src/rmagine_cuda/src/util/cuda/CudaContext.cpp:199` (the notes say 198; it is
+   199 at rmagine's tip), constructed at library load, so a device-less host aborts before
+   `main`. Registered as `rmagine-lazy-default-gpu-context` on `port/rmagine`, confirmed present
+   in `deferred.py pending`. Not a blocker: see the ruling below.
+3. The `PUBLIC USE_HIP` comment (`rmcl_ros/CMakeLists.txt:233-235`) no longer claims this package
+   installs headers. Its replacement is accurate: `rmcl_localization.cpp:11` includes
+   `GladiatorResamplerGPU.hpp` and `rmcl_ros/tests/rmcl_gpu_kernels.cpp:12` includes
+   `resampling.cuh`.
+4. See item 1 above.
+
+### Verified here, so it does not have to be re-argued
+
+- The NVIDIA path still compiles at `4f746de`, including the new `cudaGetDeviceCount` call the
+  delta added. Repeated the gfx942 reviewer's method on this host with CUDA 12.8.93:
+  `nvcc -std=c++17 -arch=sm_75 -c` on `resampling.cu` and `particle_motion.cu`, and
+  `g++ -std=c++17 -fsyntax-only` on `GladiatorResamplerGPU.cpp` and `tests/rmcl_gpu_kernels.cpp`,
+  all with the real CUDA headers and the shim's `#else` branch active. All four succeed; only the
+  three pre-existing unused-variable warnings appear. `cudaGetDeviceCount`/`cudaSuccess` resolve
+  from `<cuda_runtime.h>` via the shim, and cudart reaches the test's link line transitively
+  (`rmcl_ros_cuda` -> `rmagine::cuda` -> `${CUDA_LIBRARIES}` = `CUDA::cudart`, rmagine's CUDA
+  branch, `src/rmagine_cuda/CMakeLists.txt:143-149`).
+- `option(USE_HIP ... ${rmagine_cuda_USE_HIP})` is safe when the variable is undefined: CMake's
+  `option()` takes the value argument as optional and defaults to OFF, so a CUDA-only rmagine
+  gives `USE_HIP=OFF` and the upstream default is unchanged.
+- The shim's `<cstdio>` comment is accurate: `/opt/rocm/include/rocrand/rocrand_mtgp32.h:443`
+  calls `printf` and the header includes neither `<cstdio>` nor `<stdio.h>`.
+- The macros the shim defines (`cudaError_t`, `cudaSuccess`, `cudaGetDeviceCount`) are
+  token-identical to rmagine's own installed shim (`rmagine/util/cuda/cuda_to_hip.h:27,28,32`),
+  so a TU that sees both gets a permitted identical redefinition, not a conflict.
+- `add_test` really is registered: `ament_cmake_test-extras.cmake:17` calls `enable_testing()`
+  when `ament_cmake` is found, so the test's visibility to ctest is not an artefact of this host.
+- Fault classes clean, re-checked on the unchanged kernel bodies: no `warpSize`, no `__shfl`, no
+  `__ballot`, no literal 32; `simple_stats_kernel` (`resampling.cu:47-79`) initialises all
+  `blockSize` LDS slots unconditionally before the loop and runs the full `__syncthreads` tree
+  with the barrier outside `if(tid < s)`, so there is no wave-synchronous tail and no
+  uninitialised-LDS read on either wave size; `sdata[tid + s]` stays inside the array. Removing
+  the NSDMIs is inert on both paths -- the kernel writes both members at `:53-54` before any read,
+  and the only other constructions of the type are device-memory (`GladiatorResamplerGPU.cpp:69`)
+  or host copies assigned from the device.
+- The test's CPU references match the kernels' arithmetic exactly where it asserts equality:
+  `particle_move_and_forget_kernel:28` computes `n_meas -= forget_rate * n_meas` in double and
+  truncates, and `rmcl_gpu_kernels.cpp:110-113` does the same, so the exact comparison is not
+  luck.
+
+### Rulings on the two questions the porter left open
+
+**The residual device-less failure needs nothing further in rmcl.** The 77 path is the right
+shape, the abort is entirely inside a dependency's global constructor, the two CTest mechanisms
+that look like they would rescue it were measured and do not, and a launcher script that
+translates an abort into exit 77 would be rmcl carrying a workaround for rmagine's design. The
+real fix is the registered rmagine deferral. Upstream CI cannot hit it (the ROS images carry no
+GPU backend, so `RMCL_CUDA` is false and `tests/` is never added). Keep the code and keep the
+comment at `rmcl_ros/tests/CMakeLists.txt:11-15` that says plainly why it is not sufficient.
+
+**Leave the optional rmcl-package cross-statistics test out of this port.** `rmcl-cuda` contains
+no HIP-compiled code -- `CorrespondencesCUDA.cpp` is plain C++ over rmagine's device functions --
+so a test there would mostly re-assert rmagine's kernels, which are already validated on four
+architectures, while enlarging the diff into a package this port does not otherwise touch.
+`surface.json` already covers `library:rmcl-cuda` with build-and-load evidence. It would be a
+genuine gift to upstream and it is cheap (the porter has it written and passing: 1740 of 3001
+correspondences, mean error 4.8e-08), so if the person preparing the PR wants the `rmcl` package
+to carry evidence of its own, add it as its own commit -- but that is a PR-scope decision, not a
+port defect, and nothing here waits on it.
