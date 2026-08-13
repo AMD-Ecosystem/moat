@@ -60,9 +60,22 @@ created. The visible symptom is narrow and easy to misread as a hardware limitat
 `hipMemGetInfo` returns `hipErrorInvalidValue` with `free=0 total=0` while
 `hipDeviceTotalMem` still works, and kernels may hang or the process may crash at exit.
 
+The collision is structural, not a broken driver, and updating either side will not clear
+it. Measured on the gfx1151 host 2026-08-13: System32's `amdhip64_7.dll` is "amdhip64 **7.2**
+Runtime" (10.0.3679.0) paired with `amd_comgr_3.dll` (Build Type: Driver), while TheRock's
+is "amdhip64 **7.14** Runtime" paired with `amd_comgr0713.dll` (Build Type: TheRock). The
+`_7` suffix is a *major*-version SONAME, so every ROCm 7.x maps onto the same filename, and
+the Adrenalin driver ships `amdhip64.dll`, `amdhip64_6.dll` and `amdhip64_7.dll` together.
+Note TheRock renames its comgr (`amd_comgr0713`) so that one does not collide, but does not
+rename `amdhip64_7`. Known upstream: ROCm/TheRock issues 2019 and 4755, and llama.cpp 17429
+is the same fault.
+
 Fix, and make it part of the run procedure rather than the build: copy TheRock's
 `amdhip64_7.dll` and `amd_comgr*.dll` from `<venv>/Lib/site-packages/_rocm_sdk_core/bin/`
-into the directory holding every test executable before running the suite.
+into the directory holding every test executable before running the suite. Python/PyTorch
+processes escape this without help because `rocm_sdk.preload_libraries()` does
+`ctypes.CDLL(<absolute path>)` before anything else resolves -- which is why a torch
+extension can work on a host where a native CMake project fails.
 
 Two traps when triaging this:
 
@@ -84,7 +97,7 @@ so a constructor that eagerly allocates a fraction of *reported* device memory c
 far more than is usable and hang or fail. Suspect that shape when an APU validation stalls
 at first allocation.
 
-## Windows: TheRock's HIP CMake packages may be missing; CMake's own HIP-language support has Windows gaps too
+## Windows: "missing" HIP CMake packages are almost always a half-expanded rocm-sdk-devel
 
 A CMake-HIP project (`find_package(hip/hiprand/rocthrust)`, `enable_language(HIP)`
 with `CMAKE_HIP_COMPILER` = TheRock's `clang-cl.exe`) can hit failures with nothing to
@@ -92,29 +105,61 @@ do with the port's own code. Found porting HEonGPU (a pure-CMake math library, n
 torch extension) to windows-gfx1151; not yet seen on a torch-extension port because
 those consume HIP through torch's own build glue, not CMake's native HIP language.
 
-**Missing packages, not a broken build.** A given TheRock Windows wheel may ship the
-HIP *runtime* (`amdhip64.dll`/`.lib`, headers) and `hip-lang` (needed internally by
-CMake's HIP language) while shipping an **empty** `lib/cmake/hip/` (no
-`hip-config.cmake` at all -- `find_package(hip)` fails outright) and no
-`hiprand`/`rocthrust` CMake packages whatsoever, even when `hiprand_kernel.h` is
-present on disk. Check before assuming the port or the build is wrong:
-`Get-ChildItem <rocm_root>/lib/cmake/hip` (or the wheel's `_rocm_sdk_core` equivalent)
--- if it is empty, this is the wheel, not you. Filed generally as
-`heongpu-windows-rocm-sdk-cmake-packages-missing` (`rocm-bug-report`, component
-`rocm-sdk-core`); `deferred.py list` finds it across ports if it recurs.
+**A broken install, NOT a missing wheel. Diagnose before you work around.** An earlier
+version of this entry claimed TheRock's Windows wheels ship no `hip`/`hiprand`/
+`rocthrust` CMake packages and told you to hand-write shims. That was wrong, and it cost
+a full validation round. TheRock ships all of them; the local install had failed to
+expand. Corrected 2026-08-13 on the same host that produced the false claim.
 
-Workaround: hand-write minimal local CMake package shims (`<name>Config.cmake`, passed
-via `-D<name>_DIR=<dir containing it>`), scoped to only what the port actually links --
-grep the whole tree for `hip::`/`roc::` usage first rather than reproducing the real
-package's full surface. `hip::host`/`hip::amdhip64` need to be real (an imported SHARED
-library pointing at the actual `amdhip64.lib`) since executables link and run against
-them; `hip::hiprand` can be an include-only INTERFACE target with no library if the
-port only uses the header-only device RNG API (`hiprandState_t`/`hiprand_init`, not the
-host generator API); `roc::rocthrust` likewise include-only, pointed at a local
-TheRock super-repo checkout's `rocm-libraries/projects/{rocthrust,rocprim}` if
-available (rocThrust is a header-only Thrust fork; no compiled library is needed for
-basic container usage like `thrust/host_vector.h`). See HEonGPU's notes.md 2026-08-13
-Validation entry for the working shim files.
+`rocm-sdk-devel` is distributed as a `_devel.tar` that expands on first use, and most of
+its entries are relative **symlinks** into the sibling runtime packages. Creating those
+needs `SeCreateSymbolicLinkPrivilege` -- Developer Mode on, or an elevated shell. Without
+it the expansion still "succeeds": the verbatim/hardlinkable files land under `bin/`, and
+`cmake/`, `include/`, `lib/`, `libexec/`, `share/` are left **empty**. That is what an
+empty `lib/cmake/hip/` actually means. TheRock's own `docs/development/windows_support.md`
+states the requirement ("Symlink support is recommended. If symlink support is not
+enabled, enable developer mode and/or grant your account the 'Create symbolic links'
+permission").
+
+Worse, it does not self-heal: the expander deletes the tarball as its **last** step, and
+`get_devel_root()` then short-circuits on "`__init__.py` exists and no tarball". So
+**re-running `rocm-sdk init` does nothing** -- it believes it finished.
+
+Diagnose with the SDK's own check, not by eyeballing directories:
+
+```
+python -m rocm_sdk test          # healthy: "OK"; broken here was 1 failure + 12 errors
+```
+
+Put the venv's `Scripts/` on PATH first, or `testCLIUsesDevelRootPath` errors spuriously
+(it shells out to a bare `hipconfig`).
+
+Repair, from an **elevated** shell -- all four packages pinned to one version, because the
+devel tree symlinks into its siblings and cannot be mixed:
+
+```
+python -m pip uninstall -y rocm rocm-sdk-core rocm-sdk-devel rocm-sdk-libraries-<gfx>
+# then DELETE the leftover _rocm_sdk_* trees by hand: pip removes only files listed in
+# each RECORD, and an expanded devel tree is not in any RECORD
+python -m pip install --index-url https://rocm.nightlies.amd.com/v2/<gfx>/ \
+    "rocm==$V" "rocm-sdk-core==$V" "rocm-sdk-devel==$V" "rocm-sdk-libraries-<gfx>==$V"
+python -m rocm_sdk init && python -m rocm_sdk test
+```
+
+A healthy tree then has `lib/cmake/{hip,hip-lang,hiprand,rocprim,rocthrust}/*-config.cmake`,
+rocThrust's ~731 headers under `include/thrust/`, and `bin/hipcc.exe`. Point the build at
+`python -m rocm_sdk path --root`. Note the per-arch index (`/v2/<gfx>/`) carries release
+families the general `whl-multi-arch` index has already moved past, which is how you pin a
+version matching the rest of the fleet.
+
+**Never hand-author CMake configs into the SDK tree.** A session on this host wrote a
+`hip-lang-config.cmake` stub directly into `site-packages/_rocm_sdk_core/lib/cmake/`; two
+months later another session found it, saw a plausible dated file, and recorded it as
+"real and reusable, not mine". Fabricated files in a package directory are indistinguishable
+from shipped ones -- `pip uninstall` leaves them behind, since they are in no RECORD, so
+they even survive a reinstall. If a shim is genuinely unavoidable, put it in scratch space
+and pass `-D<name>_DIR=`; check any suspect file against the owning package's RECORD
+(`cut -d, -f1 <dist-info>/RECORD | grep lib/cmake`) before believing it.
 
 **Two independent bugs in CMake's own (not ROCm's) HIP-language support for Windows +
 clang-cl**, CMake 3.31:
