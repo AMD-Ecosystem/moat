@@ -106,3 +106,37 @@ On a host whose only installed PyTorch is a ROCm dev build (e.g. built from `/va
 - `torch/headeronly/util/complex.h` guards `#include <thrust/complex.h>` with `#if defined(__HIPCC__) || defined(__HIPCC__)` -- a duplicated-token typo, evidently meant `__CUDACC__ || __HIPCC__` -- so under nvcc the include is skipped while `c10/util/complex.h`/`complex_math.h` still reference `thrust::complex` unconditionally under `__CUDACC__`, cascading into ~100 "identifier thrust is undefined" errors on ANY project that includes `torch/extension.h`, regardless of that project's own code (observed on dev build `2.14.0a0+gitb6b444c`).
 
 Neither is a defect in the port: they are defects in the ambient PyTorch install, present identically whether you build the pristine upstream or the ROCm branch. Diagnose it as environmental by checking that the errors bottom out in `torch/headeronly`/`c10` (not the port's own files) and that `grep -n '__builtin_trap\|__trap\|__HIP\|hip[A-Z]\|amdgcn\|USE_ROCM'` over the port's own changed sources is empty. Do not chase this by patching the installed torch headers (that is fixing the environment, not the port). Record `cuda-not-validated: <the missing-header or duplicated-guard error>` and, if there is time budget left, substitute a source-level check: diff the port's CUDA-facing code (e.g. the non-ROCm branch of a dual-path file) against upstream and confirm it is byte-for-byte the same logic, only guarded differently -- that is as much passthrough evidence as a real nvcc pass would give without one. (FaithC, accelerated-scan)
+
+## `jargon.py --port` alone misses an in-flight fix round
+
+`utils/jargon.py --port <name>` resolves its range from `obj.get("fork_branch") or
+PORT_BRANCH`, and nothing in `moatlib.py` ever writes `fork_branch` -- so it always
+defaults to `moat-port`. Once a fix round is staged on `moat-fix-<pr#>` (the published
+`moat-port` is frozen while a PR is open), `--port` silently scans the FROZEN branch and
+never sees the round's new commits; it can report "clean" while genuinely-added jargon
+sits unscanned on the staging branch. Scan the real range explicitly instead: `python3
+utils/jargon.py -C projects/<name>/src --commits <base>..<fix-branch> --diff
+<base>..<fix-branch>`. Two things make this fail open rather than loud: a shallow single-branch
+clone of the fork usually has no local `main`, and `scan_commits`/`scan_diff` (unlike
+`port_range`'s explicit range-count check) report zero hits on an unresolvable git range
+instead of erroring -- so an unfetched `main` produces a false "clean", not a crash. Fetch
+it first (`git fetch --depth 50 origin main:main`) and confirm the range resolves to a
+nonzero commit count before trusting a "clean" result. (mahout)
+
+## A cached build-script decision from a wrong env var survives fixing the env var
+
+If a `build.rs` reads an env var (e.g. `ROCM_PATH`) to emit `cargo:rustc-link-search`, but
+does not also declare `cargo:rerun-if-env-changed=<that var>`, cargo has no reason to
+re-run the script when only the env var changes -- so a build attempted once with a wrong
+value (e.g. an old `ROCM_PATH` copied from another host's notes, pointing at a path that
+doesn't exist on this one) caches the wrong `-L` search path in `target/debug/build/<crate>-<hash>/output`
+and keeps reusing it even after the env var is corrected. The compile step can appear to
+pass (a `.rlib`/static-archive target does not need the search path), while the FIRST
+step that actually links a final binary -- a `cargo test` binary, not `cargo build` of a
+lib -- fails with `unable to find library -l<name>`, which looks like a missing runtime
+library rather than a stale cache. Fix: `cargo clean -p <crate>` (not just re-running with
+the right env) before rebuilding. Generalizes beyond ROCm: always check `env | grep -i
+<toolkit>_path` against what the build script actually expects before trusting old notes
+from a different host generation -- ROCm/CUDA install layouts (`/opt/rocm` vs a
+TheRock/pip `_rocm_sdk_devel` tree vs a conda env) are not portable between hosts even
+within the same fleet. (mahout)
