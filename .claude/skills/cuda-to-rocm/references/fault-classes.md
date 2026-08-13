@@ -298,37 +298,39 @@ ternaries to match the host forms exactly. (CV-CUDA: OpMorphology CLOSE on RGBAf
 
 ## Headers, includes and build
 
-**A CUDA-version `#if` can silently switch a whole synchronisation layer off under HIP.**
-The dangerous shape is a header that gates its implementation on a toolkit macro and
-degrades to empty bodies rather than failing:
+**A GPU with few CUs can take a launch path the big parts never reach.** A kernel that
+picks its launch shape from an occupancy calculation --
 
-    #if (__CUDACC_VER_MAJOR__ >= 11)
-    #if (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 800))
-    #define FLASHINFER_CP_ASYNC_ENABLED
-    #endif
-    #endif
+    cudaOccupancyMaxActiveBlocksPerMultiprocessor(&blocks_per_cu, kernel, threads, smem);
+    max_grid = blocks_per_cu * cu_count;
+    if (work_items >= max_grid) { /* single-block path */ } else { /* split + merge */ }
 
-hipcc does not define `__CUDACC_VER_MAJOR__`, so this compiles cleanly with
-`cp_async::commit_group()` and `wait_group<N>()` as **no-ops** while the loads fall back to
-synchronous copies. Nothing warns. A kernel whose software pipeline double-buffers shared
-memory then keeps the structure and loses the ordering it depends on, and races between
-threads still reading one stage and threads overwriting it.
+-- selects a *different code path* on a small GPU. A 20-CU APU with a shared-memory-hungry
+kernel gets `blocks_per_cu = 1`, so `max_grid` can fall below the work count while a 70- or
+304-CU part stays well above it. The rarely-taken branch is then the one nobody has
+exercised, and it can be plainly broken while every other platform is green. Quest's decode
+kernel derived its slice length from `batch_idx == gridDim.x - 1 ? last_page_len :
+page_size`, which is only meaningful for the split shape; the single-block shape runs with
+`gridDim.x == 1`, so the test is always true and a 577-token sequence attended over 1
+position.
 
-It presents as wrong numbers with everything else checking out: launch succeeds,
-`hipDeviceSynchronize` is clean, results are deterministic run to run, inputs verify
-byte-exact, and the primitives all test correct in isolation. Grep any vendored
-CUDA-async header for the macro that enables it and check whether hipcc defines it, rather
-than assuming an untouched third-party header is inert.
+Read a wrong-numbers-on-one-GPU report with this in mind before reaching for miscompiles or
+races. **Occupancy inputs are the tell**: anything that changes shared-memory footprint
+(pipeline stages, tile sizes, block dims) also changes `blocks_per_cu`, so knobs that look
+like they are testing the *algorithm* may only be flipping the *launch path*. That is a
+trap -- shrinking a block or halving the pipeline depth "fixing" the bug is weak evidence
+about the algorithm and strong evidence about which branch ran. Print `gridDim`, the
+occupancy result and the derived work-slice from inside the kernel and compare the two
+paths directly, rather than inferring from a knob.
 
-Two tests localise it fast, and both are cheap: shrink the block until only one wavefront
-participates, and set the pipeline to a single stage. If either makes the answers correct,
-the fault is pipeline ordering, not arithmetic. Fix by shimming the async header so
-`wait_group` is a real `__syncthreads()`, or by selecting a single stage on the HIP path.
-
-**Assume it is latent everywhere, not arch-specific.** The no-ops are platform-wide, so
-other architectures that pass are passing on scheduling luck. Quest failed on gfx1151 at 4
-wavefronts per block while gfx90a and gfx1100 were already recorded `completed` on the same
-race; do not treat a green result elsewhere as evidence the pipeline is sound.
+Watch also for the related shape where a CUDA-version `#if` degrades to empty bodies under
+HIP -- `#if (__CUDACC_VER_MAJOR__ >= 11)` guarding `cp_async::commit_group()` /
+`wait_group<N>()`, which hipcc never defines, leaving no-ops and synchronous fallback
+loads. It is real and worth knowing, but it is a **plausible-looking decoy**: it was blamed
+for the Quest failure for a while, and giving `wait_group` a genuine `__syncthreads()`
+changed nothing, because every call site already had a `block.sync()` beside it. Confirm a
+suspected barrier fault by adding the barrier and re-running before building a theory on
+it.
 
 **A shared compat header must be host-includable.** Host `.cpp` TUs reach the shim through
 ordinary headers, so an unconditional `#include <cub/...>` or `<hipcub/...>` leaks device
