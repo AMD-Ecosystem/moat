@@ -870,6 +870,14 @@ Python 3.13.14 in a dedicated venv, `mingw32-make` from Strawberry Perl's toolch
 Required one fork commit, `90d6d7c` -- see below. Everything else in the port
 worked unchanged.
 
+The fix is staged on `moat-fix-327`, not on `moat-port`: upstream PR #327 is
+open, so `moat-port` is frozen at the published `aca06c7`. It was pushed to
+`moat-port` first by mistake, which put `90d6d7c` on the live PR; the branch was
+force-restored to `aca06c7` and the PR verified back to its single approved
+commit before anything else proceeded. `head_sha` now follows the staging tip,
+which is what this arch validated. The delta still needs a person's approval on
+a fork review PR before `upstream.py --merge-fix` may move it into #327.
+
 ### The failure this arch found: arch-suffixed ROCm library package
 
 The Windows runtime staging added by the earlier Windows rounds looked for the
