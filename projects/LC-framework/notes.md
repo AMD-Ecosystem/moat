@@ -1298,3 +1298,89 @@ forward (this is its first validation). `linux-gfx90a` and `linux-gfx1100`
 keep their existing `validated_sha` `040743e` (an ancestor of `d7d9867`,
 unaffected by this round). `windows-gfx1151` remains `validation-failed` at
 `f0ce8ce`, unrelated to this arch.
+
+## Validation 2026-08-13 (validator, windows-gfx1151) -- PASS at d7d9867
+
+Clears the `validation-failed` this arch carried since `f0ce8ce`. That failure
+was never about the code: it was Finding 2 above, an incomplete TheRock SDK
+extraction whose `_rocm_sdk_devel/include` was empty, so hipCUB and rocThrust
+were unreachable. The SDK was repaired out-of-band to 7.14.0a20260612, and this
+round rebuilds from the tracked tree with NO `EXTRA_INC` scaffolding, no
+sparse-cloned rocm-libraries, and no hand-written `*_version.hpp`. The
+`include/` directory now carries 30 entries including `hipcub/`, `rocprim/`
+and `thrust/`.
+
+Platform: AMD Radeon 8060S (gfx1151, RDNA3.5, 20 CUs, wave32), Windows 11.
+ROCm: TheRock pip SDK 7.14.0a20260612, AMD clang 23.0.0. Note the layout moved
+since the 7.13 round: `hipcc.exe`, the device bitcode and `libexec/hipify` all
+live under `_rocm_sdk_devel` now, not `_rocm_sdk_core`.
+
+### Build (verbatim, from a throwaway copy of src)
+
+```
+python generate_Device_LC-Framework.py
+perl <rocm>/libexec/hipify/hipify-perl -inplace lc.cu lc.h
+for h in framework.h $(find include components preprocessors verifiers -name '*.h') \
+  compressor-framework.cu decompressor-framework.cu framework.cu; do
+  perl <rocm>/libexec/hipify/hipify-perl -inplace "$h"
+done
+hipcc -O3 --offload-arch=gfx1151 -ffp-contract=off -DUSE_GPU -I. -std=c++17 -c -o lc.o lc.cu
+hipcc --offload-arch=gfx1151 -o lc.exe lc.o
+```
+
+Both steps EXIT 0. The post-hipify re-grep for
+`cudaMalloc|cudaSuccess|include <cub|include <cuda\.h` came back EMPTY on the
+first pass this time -- the loop did not silently skip files. Warnings are the
+same cosmetic set as before (`%ld` vs `size_t` in the quantizer error strings,
+nodiscard `hipError_t`, deprecated CUDA-identifier shims). Banner reads
+"AMD GPU version".
+
+Before running anything, the ROCm runtime must be copied next to the .exe
+(`amdhip64_7.dll`, `rocm_kpack.dll`, `amd_comgr*.dll`, `hiprtc*.dll`) -- see
+the skill reference. This is what the previous round's unexplained standalone
+SIGSEGV / exit-127 actually was; with the runtime staged, those same binaries
+run clean (Gate 4 below).
+
+### Gates -- all PASS
+
+Gate 1, lossless round-trip on 1 MB random `test.dat`, 6/6:
+`RZE_4`, `RZE_1`, `RLE_4`, `BIT_4 RLE_4`, `RRE_4 RZE_4`, `RAZE_4` each
+"LOSSLESS verification passed". (Command form is
+`./lc.exe test.dat AL "" "<components>"`; passing a 5th `"LOSSLESS"` argument
+is what the verifier grammar rejects with `ERROR: expected '(' in
+specification` -- the verifier is optional and the round-trip check runs
+anyway.)
+
+Gate 2, TS self-test over all component pairs on 64 KB `small.dat`:
+**4491 "verification passed", 0 failures** -- exactly matching linux-gfx1100
+and linux-gfx942. Wall time ~9 s; no low-CU starvation on this 20-CU APU.
+
+Gate 3, lossy quantizers within bound (65536-element arrays). These are the
+two paths the missing headers blocked, so they are the direct proof the SDK
+repair landed:
+  `QUANT_ABS_0_f32(0.01)` + `BIT_4 RLE_4` + `MAXABS_f32(0.01)` -> passed
+  `QUANT_INOA_0_f64(0.01)` + `BIT_8 RLE_8` + `MAXNOA_f64(0.01)` -> passed
+  (hipCUB DeviceScan and rocThrust minmax_element/device_ptr respectively)
+
+Gate 4, cross-device bitstream. Standalone GPU compressor+decompressor built
+for gfx1151 (RZE_4) with the documented flags and NO `-include cstring`,
+0 errors both. GPU compress -> GPU decompress: `cmp` IDENTICAL. GPU-produced
+`LC.encoded` decoded by the CPU standalone decompressor (MinGW g++ 13.2.0,
+non-hipified source): `cmp` IDENTICAL. The wave-size re-gate still does not
+leak wave width into the serialized format.
+
+Non-GPU regression: `generate_Host_LC-Framework.py` + MinGW g++ 13.2.0
+(`-O3 -fopenmp -mno-fma -ffp-contract=off -DUSE_CPU`) builds clean, and
+`AL "" "RZE_4"` gives "LOSSLESS verification passed". The `_MSC_VER` guard from
+Finding 1 stays invisible to MinGW, as designed.
+
+CUDA no-regression gate: not re-run. notes.md already records it at this exact
+head_sha (the porting round's gfx942 section and the `d7d9867` re-review both
+report nvcc 12.8 / `-arch=sm_80`, 3 files, 0 errors), and Windows hosts carry
+no CUDA toolkit.
+
+Pre-completion checks: `jargon.py --port LC-framework` clean; README.md:63-77
+and :203-217 document the hipcc build alongside nvcc, including the Windows
+clang-cl/Perl note, and both blocks were run verbatim above; `git status
+--porcelain` in src empty at `d7d9867` before and after. No fork commit made
+or needed -- this arch required no code change.
