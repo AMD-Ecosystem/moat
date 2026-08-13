@@ -134,5 +134,7 @@ and fails downstream:
   written and checked on such a host looks complete and fails for the next person. Strip ROCm
   from `PATH` (and unset `ROCM_PATH`/`HIP_PATH`/`ROCM_HOME`) before writing the recipe down.
 - **Compile a translation unit that includes the installed public headers first**, with the
-  plain host compiler, nothing above them. See "A shared compat header must be host-includable"
-  in `fault-classes.md` for what that catches. (rmagine)
+  plain host compiler, nothing above them. That catches a shim that breaks the whole set; one
+  TU per header is what catches a single header that only compiles after something else. See
+  "A shared compat header must be host-includable" and "Know what the single-TU header test
+  proves" in `fault-classes.md`. (rmagine)

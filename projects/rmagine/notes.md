@@ -1348,11 +1348,37 @@ A consumer does NOT need the HIP language enabled to link `rmagine::cuda`:
 `hip::host` and `hip::hiprand` are in the public interface, and the package
 config finds them for you (given the ROCm root on the prefix path, above).
 
-Every installed `rmagine_cuda` header is includable from a plain C++
-translation unit in any order, including as the very first include. That is a
-gate, not a hope: `tests/cuda/public_headers.cpp` (ctest `cuda_public_headers`)
-includes all of them ahead of any standard header and is compiled by the host
-C++ compiler. Until 0aea7af it was false -- see the delta round below.
+All 16 installed `rmagine_cuda` headers compile TOGETHER at the top of a plain
+C++ translation unit with nothing above them. That much is a gate, not a hope:
+`tests/cuda/public_headers.cpp` (ctest `cuda_public_headers`) includes all of
+them ahead of any standard header and is compiled by the host C++ compiler.
+Until 0aea7af it was false -- see the delta round below.
+
+What that gate does NOT cover is per-header independence. Everything below the
+first include in that TU is standing on the includes of the headers above it,
+so a single TU cannot show that any one header is includable on its own. Two
+of the 16 are not, as the very first include of a TU:
+
+- `rmagine/math/linalg.cuh` -- includes only `rmagine/math/types.h`, then
+  declares `__device__` functions at lines 20 and 23 with nothing in scope that
+  defines `__device__`. Fails with "`__device__` does not name a type".
+- `rmagine/util/cuda/CudaHelper.hpp` -- throws `std::runtime_error` at lines 51
+  and 64 without `<stdexcept>`. Fails with "'runtime_error' is not a member of
+  'std'".
+
+Both are PRE-EXISTING upstream defects, not port regressions, and both fail the
+same way on the NVIDIA side: checked standalone at upstream 6b93e86 against the
+CUDA 12.8 headers with g++ 13.3.0, same two errors at the same lines. The port
+left `linalg.cuh` untouched and changed only `CudaHelper.hpp`'s include of
+`cuda_runtime.h` to the compat header. The other 14 do pass standalone on both
+backends (checked one TU per header, both include paths).
+
+So a dependent that reaches for either of those two as its first include needs
+`<stdexcept>` (or any header pulling it) above `CudaHelper.hpp`, and a device
+compiler or the runtime header above `linalg.cuh` -- exactly as it would
+against upstream CUDA. The honest gate for per-header independence is one TU
+per header; that is not built here, and building it would want the two
+two-line upstream fixes with it.
 
 ## Delta round 2026-08-12 (porter, linux-gfx1100) -- exported CMake config fix
 
@@ -1697,9 +1723,15 @@ back to its upstream include footprint. All curand macro users reach one of thos
 two headers (checked by grep over the whole tree), so nothing else needed an edit.
 
 The new header also does `#include <cstdio>` ahead of the hipRAND include. That is
-on top of the footprint fix, not instead of it: it makes even the two RNG headers
-host-includable, which they are not upstream either (curand_kernel.h needs nvcc).
-Confirmed a plain-c++ TU including `NoiseCuda.hpp` compiles with it.
+on top of the footprint fix, not instead of it: it makes the two RNG headers
+host-includable on the ROCm path, which they are not without it. This repairs a
+ROCm-only gap rather than restoring parity with a broken NVIDIA path -- cuRAND's
+device header IS host-includable (`#include <curand.h>` then `<curand_kernel.h>`
+in a plain g++ `-fsyntax-only` TU against the CUDA 12.8 headers exits 0), while
+hipRAND's is not, because `rocrand_mtgp32.h:443` calls `printf` with only
+`<stdlib.h>` and `<string.h>` above it. Without the `<cstdio>` the port's HIP path
+would have been BEHIND upstream here, not level with it. Confirmed a plain-c++ TU
+including `NoiseCuda.hpp` compiles with it.
 
 The gate (this is the part the round was really about): new
 `tests/cuda/public_headers.cpp` / ctest `cuda_public_headers` includes all 16
@@ -2015,3 +2047,70 @@ Still open for a person, unchanged by this round: `c99f2fc` is titled
 "[ROCm] WIP: rmagine_hiprt Pinhole sensor skeleton" and two commits are titled
 "Stage 2:", and the README says nothing about `USE_HIP`. Both belong in the decision
 about how the branch and PR body are shaped, not in a porter round.
+
+## Delta round 2026-08-13 (porter, linux-gfx942) -- record corrections only
+
+Answers the review above. Both findings were claims in the record that outran their
+evidence; the reviewer stated no fork commit is needed, and none was made. Fork
+`moat-port` stays at e7a7b27 and `head_sha` did not move, so the four completed
+platforms keep their `validated_sha` and no revalidation is triggered. The clone at
+`projects/rmagine/src` is clean at e7a7b27.
+
+### Finding 1: reworded the header-includability claim (notes.md, "Install as a dependency")
+
+Reproduced both halves on this host before rewriting anything. ROCm is the conda SDK at
+`/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel`, CUDA 12.8 headers
+at `/opt/conda/envs/cuda-12.8/targets/x86_64-linux/include`, g++ 13.3.0. One TU per
+header, all 16 from `tests/cuda/public_headers.cpp`:
+
+```
+printf '#include <%s>\nint main(){return 0;}\n' "$h" > t.cpp
+g++ -std=c++17 -fsyntax-only t.cpp -Isrc/rmagine_core/include -Isrc/rmagine_cuda/include \
+  -I$ROCM/include -D__HIP_PLATFORM_AMD__=1 -I/usr/include/eigen3
+```
+
+14 of 16 pass standalone. The two that fail, on the ROCm path and on the CUDA path
+(same command with `-I$CUDA_INC` and no `__HIP_PLATFORM_AMD__`):
+
+```
+src/rmagine_cuda/include/rmagine/math/linalg.cuh:20:1: error: '__device__' does not name a type
+src/rmagine_cuda/include/rmagine/util/cuda/CudaHelper.hpp:51:20: error: 'runtime_error' is not a member of 'std'
+```
+
+Both are pre-existing upstream defects: the same two errors at the same lines against a
+`git worktree` of upstream 6b93e86 with the CUDA 12.8 headers. `linalg.cuh` is untouched
+by the port (`git log 6b93e86..HEAD --` on it is empty) and the port's only change to
+`CudaHelper.hpp` is `<cuda_runtime.h>` -> the compat header, which is not what breaks it.
+
+The notes claim now says what the test actually proves -- the 16 compile together at the
+top of a plain C++ TU with nothing above them -- and names the two that fail standalone
+plus what a dependent needs above them. Source is unchanged, so
+`tests/cuda/public_headers.cpp:1-8` still says "in any order"; tightening that comment
+(and, if wanted, a per-header TU gate with the two two-line upstream fixes) is registered
+in `projects/rmagine/deferred.json` as `rmagine-per-header-include-gate`, because it costs
+a fork commit and a fifth revalidation round across four completed platforms.
+
+### Finding 2: corrected the `<cstdio>` rationale (notes.md, delta round 2026-08-12b)
+
+"curand_kernel.h needs nvcc" was false. Confirmed here:
+
+```
+printf '#include <curand.h>\n#include <curand_kernel.h>\nint main(){return 0;}\n' > c.cpp
+g++ -std=c++17 -fsyntax-only c.cpp -I/opt/conda/envs/cuda-12.8/targets/x86_64-linux/include
+# exit 0
+```
+
+The parenthetical now states the true reason: cuRAND's device header is host-includable,
+hipRAND's is not (`rocrand_mtgp32.h:443` calls `printf` with only `<stdlib.h>` and
+`<string.h>` above it), so the `<cstdio>` in `curand_to_hiprand.h:35` repairs a ROCm-only
+gap rather than restoring parity with a broken NVIDIA path. The workaround itself stands.
+
+### Lesson corrections (they outlive this project)
+
+`.claude/skills/cuda-to-rocm/references/fault-classes.md` gained "Know what the single-TU
+header test proves, and what it does not" directly under the shim-footprint entry that
+prescribed the single-TU gate: one TU catches a shim that poisons the whole set, one TU
+per header is what catches a header standing on an earlier include, and the per-header
+form should be expected to surface pre-existing upstream defects rather than port
+regressions. `references/strategy-a-cmake.md` now carries the same distinction where it
+points at that entry. rmagine's `linalg.cuh` is the named example that slipped through.

@@ -305,6 +305,20 @@ installed public header at the top of a plain C++ TU, with nothing above them, c
 `CMAKE_CXX_COMPILER` and not the HIP compiler. Check the test bites by putting the include
 back. (rmagine)
 
+**Know what the single-TU header test proves, and what it does not.** One TU listing every
+public header catches a shim that POISONS THE WHOLE SET -- the class above, where a header
+the shim drags in breaks any downstream that includes headers before `<cstdio>`. It cannot
+show that any individual header stands alone, because every include after the first is
+already standing on the ones above it. Catching a header that only compiles because an
+earlier include supplied its dependencies takes ONE TU PER HEADER (a loop over the installed
+headers, or one small object each). Do not write the record as if the single-TU form proved
+per-header independence. Expect the per-header form to surface PRE-EXISTING upstream defects
+that fail identically under nvcc's headers -- fix them additively or state them, but do not
+mistake them for port regressions. (rmagine's own `linalg.cuh` declares `__device__`
+functions while including only a math types header, and its `CudaHelper.hpp` throws
+`std::runtime_error` without `<stdexcept>`; both sailed through the 16-header single TU and
+both fail standalone on CUDA and ROCm alike.)
+
 **`__HIP_PLATFORM_AMD__` is undefined until `hip/hip_runtime.h` has been included in that
 TU.** A wave-width gate in a header included BEFORE the runtime header silently takes the
 CUDA branch and picks width 32. hipify-perl prepends the runtime include at line 1, which

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "rmagine-per-header-include-gate",
+      "kind": "other",
+      "component": null,
+      "summary": "rmagine: tests/cuda/public_headers.cpp:1-8 claims the installed headers are includable 'in any order'; the single-TU test cannot prove that and two of the 16 (math/linalg.cuh, util/cuda/CudaHelper.hpp) fail standalone as pre-existing upstream defects. Tighten the comment, and optionally add a per-header TU gate plus the two two-line upstream fixes (<stdexcept>, runtime include). Deferred because it needs a fork commit and a fifth revalidation round across four completed platforms.",
+      "refs": [
+        "projects/rmagine/notes.md ## Review 2026-08-13"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T01:30:41Z",
+      "decided": null
+    }
+  ]
+}
