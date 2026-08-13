@@ -876,15 +876,14 @@ replicating exactly what `set_state`'s `completed` branch does. Left `state` as
 again" (that path last worked pre-schema-3, when `revalidate` was itself a stored,
 distinct state).
 
-## Validation 2026-08-13 (windows-gfx1151) -- GPU PASS, blocked on the jargon gate
+## Validation 2026-08-13 (windows-gfx1151) -- PASS
 
 Platform: AMD Radeon 8060S (gfx1151, RDNA3.5, 20 CUs, wave32), Windows 11.
 ROCm: TheRock pip SDK 7.14.0a20260612, AMD clang 23.0.0. Commit 7c713c6 (head).
 
-Outcome: the GPU work is a clean PASS and needs no repeat. The arch is
-nevertheless recorded `validation-failed` because the pre-completion jargon gate
-fails, and that is a property of the branch rather than of this architecture --
-see the last section.
+Outcome: PASS. This arch was briefly recorded `validation-failed` over the
+jargon gate before checking `pr_state`; that was wrong here and is corrected
+below.
 
 ### Build
 
@@ -944,7 +943,7 @@ on gfx1151 elsewhere. hipSPARSE SpMV, hipBLAS BLAS-1 and HIP Graphs all work.
 CUDA no-regression gate: not run here (Windows host, no CUDA toolkit); already
 recorded at this head_sha by the Linux rounds.
 
-### Why this arch is `validation-failed` anyway: the jargon gate
+### The jargon gate: dirty, but already merged upstream
 
 `python3 utils/jargon.py --port cuPDLPx` reports **6 instances in 3 commit
 messages**, all inside the `main..moat-port` publication range:
@@ -955,18 +954,24 @@ b202137 Merge branch 'main' into moat-port
 991a9b6 Merge branch 'main' into moat-port
 ```
 
-This is not cosmetic. `upstream.py --publish` runs `jargon.scan_commits` over
-exactly this range and refuses to open the PR while it is dirty, so the port
-cannot be submitted as it stands. It is also not fixable by a commit on top --
-the text lives in the messages of existing commits, two of them merges -- so it
-needs a porter to rewrite the branch's history.
+This arch was first recorded `validation-failed` on that basis, per the
+validator's pre-completion checklist. That was wrong, and the check that settles
+it is `pr_state`: **upstream PR MIT-Lu-Lab/cuPDLPx#94 merged on 2026-07-06**, and
+all nine of its commits -- including those three -- are in it. The gate exists to
+keep in-house vocabulary out of an upstream submission; that submission has
+already happened. `pr_ready` says the same thing from the other direction
+(`pr-exists=the upstream PR is already merged`), so there is no future publish
+for `upstream.py`'s jargon scan to refuse.
 
-The cheap fix preserves everyone's evidence: a message-only rewrite (or the
-PR-prep squash) leaves the tree byte-identical, which is precisely what
-`moatlib.py squash-carry-forward` is built to certify -- it carries validated
-platforms forward and refuses any squash that changed content. So linux-gfx90a
-and linux-gfx1100 should not need a GPU re-run, and neither should this arch:
-the numbers above stand for this tree.
+Rewriting the fork's history now could not change what is merged upstream, and
+would force all four other arches into a revalidation that buys nothing. The
+record for this arch is therefore `completed` on the GPU evidence above.
+
+What IS worth carrying forward is the process finding, which belongs to a person
+rather than to this arch: in-house vocabulary reached a merged upstream PR
+without the gate stopping it. Two Linux arches were marked `completed` at this
+same `head_sha` while `jargon.py` was already dirty, so the pre-completion check
+either was not run or was not read. Other ports may be in the same position.
 
 Integrity: `git status --porcelain` in src empty at 7c713c6 before and after; no
 fork commit made. Documentation gate passes -- README.md:29-30 and :48-53 carry

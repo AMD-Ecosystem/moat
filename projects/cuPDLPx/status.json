@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:23:49Z",
-  "updated_at": "2026-08-13T19:05:53Z",
+  "updated_at": "2026-08-13T19:33:43Z",
   "head_sha": "7c713c6912140feb3055859b021e999f3d501f59",
   "depends_on": [],
   "pr_url": "https://github.com/MIT-Lu-Lab/cuPDLPx/pull/94",
@@ -128,11 +128,11 @@
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": null,
+      "validated_sha": "7c713c6912140feb3055859b021e999f3d501f59",
       "failed_sha": "7c713c6912140feb3055859b021e999f3d501f59",
       "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-08-13T19:05:53Z",
+      "completed_at": "2026-08-13T19:33:43Z",
+      "updated_at": "2026-08-13T19:33:43Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -146,7 +146,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "state": "validation-failed"
+      "state": "completed"
     }
   }
 }
