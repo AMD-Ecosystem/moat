@@ -162,3 +162,35 @@ could not be run with this token; the finding above rests on the fork list, the
 upstream doc grep, the empty PR/issue history, and web search. Given upstream has two
 forks total and one of them is ours, the residual risk is low, but the check is a hole
 on this host and will be on every screen run here.
+
+## Planning 2026-08-13 (linux-gfx942)
+
+`plan.md` written; `ext_type` set to `torch-extension`; `surface.json` generated and
+extended by hand with the 14 extension components and the new test component.
+
+Working clone is the **fork**, not upstream: `gh repo clone AMD-Ecosystem/diff-surfel-rasterizations
+projects/diff-surfel-rasterizations/src`. Cloning the fork rather than upstream is what lets
+the plan read the existing `moat-port` work; `main` there is byte-identical to upstream
+`1aa433c`, and `upstream/main` is configured as a second remote by `gh repo clone`.
+
+Structural facts worth not rediscovering:
+
+- 14 variant directories, 20 files each, but only **three distinct code bodies**. md5
+  equivalence classes: `auxiliary.h` identical in all 14; `forward.cu` 2 classes;
+  `backward.cu` 2; `rasterizer_impl.cu` 3; `rasterize_points.cu` 3. Per-variant files are
+  only `config.h` (NUM_CHANNELS, BLOCK_X/Y) and `setup.py` (package name).
+- Families: `base` (`-`, `-ch05`, `-ch11`, `-ch18`, `-ch26`, `-tile1`), `wet` (`-wet`,
+  `-wet-ch05/07/11/18/26`), `wet-abs` (`-wet-abs`, `-wet-abs-ch05`). `moat-port` covers
+  three of the `wet` family, so both other code bodies are untried on AMD.
+- `NUM_WARPS (BLOCK_SIZE/32)` in `auxiliary.h` is the only hardcoded 32 and is **dead** --
+  defined in all 14, referenced nowhere. No `__shfl*`, `__ballot`, `warpSize`, `cg::reduce`
+  or `tiled_partition` anywhere. The port is wavefront-neutral by inspection.
+- No `c10::`, `at::cuda`, `getCurrentCUDAStream`, `CUDAGuard` or `AT_CUDA*` in the tree, so
+  the hipify v1-vs-v2 masquerading-API split cannot bite. No `TORCH_HIPIFY_V2` branch needed.
+- `rasterize_points.cu` uses the deprecated `x.type().is_cuda()` and `.data<float>()`. Both
+  still exist in this fleet's torch 2.14 (`ATen/core/TensorBody.h:230` and `:247`). Checked
+  so nobody spends time on it.
+- API contracts a harness must respect: `scales` is `(P,2)` (2DGS surfels), `means2D` is
+  `(P,4)` for the two `wet-abs` variants and `(P,3)` elsewhere, and any variant with
+  `NUM_CHANNELS != 3` must be driven through `colors_precomp` -- upstream throws otherwise,
+  because `geomState.rgb` is sized `P*3` regardless of channel count.

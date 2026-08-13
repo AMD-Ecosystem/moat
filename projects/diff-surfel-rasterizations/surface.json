@@ -1,0 +1,192 @@
+{
+ "generated_by": "utils/surface.py",
+ "source_sha": "1aa433c1c603",
+ "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+ "cuda": {
+  "files": [
+   "diff-surfel-rasterization-ch05/cuda_rasterizer/auxiliary.h",
+   "diff-surfel-rasterization-ch05/cuda_rasterizer/backward.cu",
+   "diff-surfel-rasterization-ch05/cuda_rasterizer/forward.cu",
+   "diff-surfel-rasterization-ch05/cuda_rasterizer/rasterizer_impl.cu",
+   "diff-surfel-rasterization-ch05/rasterize_points.cu",
+   "diff-surfel-rasterization-ch11/cuda_rasterizer/auxiliary.h",
+   "diff-surfel-rasterization-ch11/cuda_rasterizer/backward.cu",
+   "diff-surfel-rasterization-ch11/cuda_rasterizer/forward.cu",
+   "diff-surfel-rasterization-ch11/cuda_rasterizer/rasterizer_impl.cu",
+   "diff-surfel-rasterization-ch11/rasterize_points.cu",
+   "diff-surfel-rasterization-ch18/cuda_rasterizer/auxiliary.h",
+   "diff-surfel-rasterization-ch18/cuda_rasterizer/backward.cu",
+   "diff-surfel-rasterization-ch18/cuda_rasterizer/forward.cu",
+   "diff-surfel-rasterization-ch18/cuda_rasterizer/rasterizer_impl.cu",
+   "diff-surfel-rasterization-ch18/rasterize_points.cu",
+   "diff-surfel-rasterization-ch26/cuda_rasterizer/auxiliary.h",
+   "diff-surfel-rasterization-ch26/cuda_rasterizer/backward.cu",
+   "diff-surfel-rasterization-ch26/cuda_rasterizer/forward.cu",
+   "diff-surfel-rasterization-ch26/cuda_rasterizer/rasterizer_impl.cu",
+   "diff-surfel-rasterization-ch26/rasterize_points.cu",
+   "diff-surfel-rasterization-tile1/cuda_rasterizer/auxiliary.h",
+   "diff-surfel-rasterization-tile1/cuda_rasterizer/backward.cu",
+   "diff-surfel-rasterization-tile1/cuda_rasterizer/forward.cu",
+   "diff-surfel-rasterization-tile1/cuda_rasterizer/rasterizer_impl.cu",
+   "diff-surfel-rasterization-tile1/rasterize_points.cu",
+   "diff-surfel-rasterization-wet-abs-ch05/cuda_rasterizer/auxiliary.h",
+   "diff-surfel-rasterization-wet-abs-ch05/cuda_rasterizer/backward.cu",
+   "diff-surfel-rasterization-wet-abs-ch05/cuda_rasterizer/forward.cu",
+   "diff-surfel-rasterization-wet-abs-ch05/cuda_rasterizer/rasterizer_impl.cu",
+   "diff-surfel-rasterization-wet-abs-ch05/rasterize_points.cu",
+   "diff-surfel-rasterization-wet-abs/cuda_rasterizer/auxiliary.h",
+   "diff-surfel-rasterization-wet-abs/cuda_rasterizer/backward.cu",
+   "diff-surfel-rasterization-wet-abs/cuda_rasterizer/forward.cu",
+   "diff-surfel-rasterization-wet-abs/cuda_rasterizer/rasterizer_impl.cu",
+   "diff-surfel-rasterization-wet-abs/rasterize_points.cu",
+   "diff-surfel-rasterization-wet-ch05/cuda_rasterizer/auxiliary.h",
+   "diff-surfel-rasterization-wet-ch05/cuda_rasterizer/backward.cu",
+   "diff-surfel-rasterization-wet-ch05/cuda_rasterizer/forward.cu",
+   "diff-surfel-rasterization-wet-ch05/cuda_rasterizer/rasterizer_impl.cu",
+   "diff-surfel-rasterization-wet-ch05/rasterize_points.cu",
+   "diff-surfel-rasterization-wet-ch07/cuda_rasterizer/auxiliary.h",
+   "diff-surfel-rasterization-wet-ch07/cuda_rasterizer/backward.cu",
+   "diff-surfel-rasterization-wet-ch07/cuda_rasterizer/forward.cu",
+   "diff-surfel-rasterization-wet-ch07/cuda_rasterizer/rasterizer_impl.cu",
+   "diff-surfel-rasterization-wet-ch07/rasterize_points.cu",
+   "diff-surfel-rasterization-wet-ch11/cuda_rasterizer/auxiliary.h",
+   "diff-surfel-rasterization-wet-ch11/cuda_rasterizer/backward.cu",
+   "diff-surfel-rasterization-wet-ch11/cuda_rasterizer/forward.cu",
+   "diff-surfel-rasterization-wet-ch11/cuda_rasterizer/rasterizer_impl.cu",
+   "diff-surfel-rasterization-wet-ch11/rasterize_points.cu",
+   "diff-surfel-rasterization-wet-ch18/cuda_rasterizer/auxiliary.h",
+   "diff-surfel-rasterization-wet-ch18/cuda_rasterizer/backward.cu",
+   "diff-surfel-rasterization-wet-ch18/cuda_rasterizer/forward.cu",
+   "diff-surfel-rasterization-wet-ch18/cuda_rasterizer/rasterizer_impl.cu",
+   "diff-surfel-rasterization-wet-ch18/rasterize_points.cu",
+   "diff-surfel-rasterization-wet-ch26/cuda_rasterizer/auxiliary.h",
+   "diff-surfel-rasterization-wet-ch26/cuda_rasterizer/backward.cu",
+   "diff-surfel-rasterization-wet-ch26/cuda_rasterizer/forward.cu",
+   "diff-surfel-rasterization-wet-ch26/cuda_rasterizer/rasterizer_impl.cu",
+   "diff-surfel-rasterization-wet-ch26/rasterize_points.cu",
+   "diff-surfel-rasterization-wet/cuda_rasterizer/auxiliary.h",
+   "diff-surfel-rasterization-wet/cuda_rasterizer/backward.cu",
+   "diff-surfel-rasterization-wet/cuda_rasterizer/forward.cu",
+   "diff-surfel-rasterization-wet/cuda_rasterizer/rasterizer_impl.cu",
+   "diff-surfel-rasterization-wet/rasterize_points.cu",
+   "diff-surfel-rasterization/cuda_rasterizer/auxiliary.h",
+   "diff-surfel-rasterization/cuda_rasterizer/backward.cu",
+   "diff-surfel-rasterization/cuda_rasterizer/forward.cu",
+   "diff-surfel-rasterization/cuda_rasterizer/rasterizer_impl.cu",
+   "diff-surfel-rasterization/rasterize_points.cu"
+  ],
+  "markers": {
+   "kernel": 98,
+   "device_code": 770
+  },
+  "libraries": {
+   "cub": 56
+  }
+ },
+ "components": [
+  {
+   "id": "extension:diff_surfel_rasterization._C",
+   "kind": "python_extension",
+   "where": "diff-surfel-rasterization/setup.py",
+   "note": "torch CUDAExtension, NUM_CHANNELS=3, code body 'base'. Added by the planner: surface.py's setup.py regex requires the extension name as the first argument on the same line as CUDAExtension(, so it found none of the 14."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_ch05._C",
+   "kind": "python_extension",
+   "where": "diff-surfel-rasterization-ch05/setup.py",
+   "note": "torch CUDAExtension, NUM_CHANNELS=5, code body 'base'. Added by the planner: surface.py's setup.py regex requires the extension name as the first argument on the same line as CUDAExtension(, so it found none of the 14."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_ch11._C",
+   "kind": "python_extension",
+   "where": "diff-surfel-rasterization-ch11/setup.py",
+   "note": "torch CUDAExtension, NUM_CHANNELS=11, code body 'base'. Added by the planner: surface.py's setup.py regex requires the extension name as the first argument on the same line as CUDAExtension(, so it found none of the 14."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_ch18._C",
+   "kind": "python_extension",
+   "where": "diff-surfel-rasterization-ch18/setup.py",
+   "note": "torch CUDAExtension, NUM_CHANNELS=18, code body 'base'. Added by the planner: surface.py's setup.py regex requires the extension name as the first argument on the same line as CUDAExtension(, so it found none of the 14."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_ch26._C",
+   "kind": "python_extension",
+   "where": "diff-surfel-rasterization-ch26/setup.py",
+   "note": "torch CUDAExtension, NUM_CHANNELS=26, code body 'base'. Added by the planner: surface.py's setup.py regex requires the extension name as the first argument on the same line as CUDAExtension(, so it found none of the 14."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_tile1._C",
+   "kind": "python_extension",
+   "where": "diff-surfel-rasterization-tile1/setup.py",
+   "note": "torch CUDAExtension, NUM_CHANNELS=3, code body 'base (BLOCK 1x1)'. Added by the planner: surface.py's setup.py regex requires the extension name as the first argument on the same line as CUDAExtension(, so it found none of the 14."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_wet._C",
+   "kind": "python_extension",
+   "where": "diff-surfel-rasterization-wet/setup.py",
+   "note": "torch CUDAExtension, NUM_CHANNELS=3, code body 'wet'. Added by the planner: surface.py's setup.py regex requires the extension name as the first argument on the same line as CUDAExtension(, so it found none of the 14."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_wet_abs._C",
+   "kind": "python_extension",
+   "where": "diff-surfel-rasterization-wet-abs/setup.py",
+   "note": "torch CUDAExtension, NUM_CHANNELS=3, code body 'wet-abs'. Added by the planner: surface.py's setup.py regex requires the extension name as the first argument on the same line as CUDAExtension(, so it found none of the 14."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_wet_abs_ch05._C",
+   "kind": "python_extension",
+   "where": "diff-surfel-rasterization-wet-abs-ch05/setup.py",
+   "note": "torch CUDAExtension, NUM_CHANNELS=5, code body 'wet-abs'. Added by the planner: surface.py's setup.py regex requires the extension name as the first argument on the same line as CUDAExtension(, so it found none of the 14."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_wet_ch05._C",
+   "kind": "python_extension",
+   "where": "diff-surfel-rasterization-wet-ch05/setup.py",
+   "note": "torch CUDAExtension, NUM_CHANNELS=5, code body 'wet'. Added by the planner: surface.py's setup.py regex requires the extension name as the first argument on the same line as CUDAExtension(, so it found none of the 14."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_wet_ch07._C",
+   "kind": "python_extension",
+   "where": "diff-surfel-rasterization-wet-ch07/setup.py",
+   "note": "torch CUDAExtension, NUM_CHANNELS=7, code body 'wet'. Added by the planner: surface.py's setup.py regex requires the extension name as the first argument on the same line as CUDAExtension(, so it found none of the 14."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_wet_ch11._C",
+   "kind": "python_extension",
+   "where": "diff-surfel-rasterization-wet-ch11/setup.py",
+   "note": "torch CUDAExtension, NUM_CHANNELS=11, code body 'wet'. Added by the planner: surface.py's setup.py regex requires the extension name as the first argument on the same line as CUDAExtension(, so it found none of the 14."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_wet_ch18._C",
+   "kind": "python_extension",
+   "where": "diff-surfel-rasterization-wet-ch18/setup.py",
+   "note": "torch CUDAExtension, NUM_CHANNELS=18, code body 'wet'. Added by the planner: surface.py's setup.py regex requires the extension name as the first argument on the same line as CUDAExtension(, so it found none of the 14."
+  },
+  {
+   "id": "extension:diff_surfel_rasterization_wet_ch26._C",
+   "kind": "python_extension",
+   "where": "diff-surfel-rasterization-wet-ch26/setup.py",
+   "note": "torch CUDAExtension, NUM_CHANNELS=26, code body 'wet'. Added by the planner: surface.py's setup.py regex requires the extension name as the first argument on the same line as CUDAExtension(, so it found none of the 14."
+  },
+  {
+   "id": "library:CudaRasterizer",
+   "kind": "library",
+   "where": "diff-surfel-rasterization-wet-ch26/CMakeLists.txt"
+  },
+  {
+   "id": "test:variant-matrix",
+   "kind": "test",
+   "where": "tests/test_variants.py",
+   "note": "New. Upstream ships no tests, no CI and no CPU path, so nothing could be validated against this repository alone. Parameterised over all 14 variants plus the cross-variant image-equality oracle."
+  }
+ ],
+ "covered": [],
+ "scoped_out": [
+  {
+   "id": "library:CudaRasterizer",
+   "reason": "The per-variant CMakeLists.txt static-library dev path is dead as shipped, on CUDA as well as ROCm: target_include_directories points PRIVATE at <variant>/third_party/glm, which contains only stbi_image_write.h, and the per-variant .gitmodules declaring that submodule registers no gitlink (git submodule status lists only the repository-root third_party/glm). Nothing consumes it -- every consumer, including EnvGS, builds the torch extension via setup.py. Porting it would mean first fixing an upstream build break. Registered as a deferral so it is reviewed with this port."
+  }
+ ],
+ "removed_from_floor": [],
+ "planner_note": "Floor extended by the planner on 2026-08-13 (linux-gfx942): 14 python_extension components and the new test component added; nothing removed from the floor. The 70-file CUDA census is complete and correct -- it is 14 copies of 5 files."
+}

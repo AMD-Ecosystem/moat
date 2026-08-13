@@ -5,15 +5,12 @@
   "fork_url": "https://github.com/AMD-Ecosystem/diff-surfel-rasterizations",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
+  "ext_type": "torch-extension",
   "adopted_at": "2026-08-06T06:58:03Z",
-  "updated_at": "2026-08-13T03:37:55Z",
+  "updated_at": "2026-08-13T03:49:12Z",
   "head_sha": null,
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-08-13T03:37:55Z"
-  },
+  "porting": null,
   "waivers": {},
   "license_clearance": {
     "approved_by": "jeffdaily",
@@ -23,7 +20,7 @@
   },
   "license_spdx": "non-commercial (Inria Gaussian-Splatting License)",
   "upstream_repo_id": 826182513,
-  "stage": "planning",
+  "stage": "planned",
   "platforms": {
     "linux-gfx1100": {
       "blocked": false,
@@ -55,7 +52,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-08-13T03:37:55Z",
+      "updated_at": "2026-08-13T03:49:12Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,

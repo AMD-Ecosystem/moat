@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "cmake-cudarasterizer-dev-target",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Each of the 14 variants ships a CMakeLists.txt building a static CudaRasterizer library that is not ported. It is dead as shipped on CUDA too: target_include_directories points PRIVATE at <variant>/third_party/glm, which holds only stbi_image_write.h, and the per-variant .gitmodules declaring that submodule registers no gitlink. Porting it (enable_language(HIP) plus a Strategy A treatment) would require first fixing the upstream include path. Nothing consumes it; every consumer builds the torch extension via setup.py.",
+      "refs": [
+        "projects/diff-surfel-rasterizations/plan.md#build-classification"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T03:48:27Z",
+      "decided": null
+    }
+  ]
+}
