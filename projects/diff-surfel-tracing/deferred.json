@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "hiprt-jit-and-cache-fixes",
+      "kind": "rocm-bug-report",
+      "component": "hiprt",
+      "summary": "Four HIPRT SDK fixes this port needs are absent from HIPRT HEAD (checked 2026-08-13 against GPUOpen-LibrariesAndSDKs/HIPRT, last push 2026-04-15) and are carried as local patches: (1) Compiler::getCacheFilename builds the JIT cache path from the raw device name, so any device whose name contains a slash -- e.g. 'AMD Instinct MI250X / MI250' -- writes into a non-existent directory and throws; sanitize '/' and '\\\\' to '_'. (2) Compiler::addCommonOpts passes no --offload-arch, so hiprtc targets a default arch set that excludes RDNA4 and BVH kernel loading fails with hipErrorInvalidImage (200) on gfx1201. (3) Compiler::buildProgram passes the full absolute path as the hiprtcCreateProgram source name; on Windows comgr fails silently (ret=6, empty log) when it starts with a drive letter, so pass the basename. (4) hiprt.cpp / hiprt_libpath.h / Orochi hipew.cpp use plain LoadLibraryA, which follows the legacy search order and picks the System32 display-driver amdhip64/hiprtc over the ROCm SDK copy; build full paths from ROCM_PATH/HIP_PATH. All four are genuine HIPRT bugs affecting any HIPRT user, not port-specific workarounds. Contributing them to GPUOpen is the durable fix and removes the 'apply this patch first' step from the port's ROCm build instructions.",
+      "refs": [
+        "projects/diff-surfel-tracing/plan.md",
+        "projects/EnvGS/hiprt-feasibility.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T04:04:03Z",
+      "decided": null
+    }
+  ]
+}
