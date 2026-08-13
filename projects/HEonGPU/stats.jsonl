@@ -173,3 +173,4 @@
 {"kind":"session","ts":"2026-08-13T01:16:46Z","epoch":1786583806.672118444,"event":"start","platform":"linux-gfx1100"}
 {"kind":"phase","ts":"2026-08-13T01:19:21Z","phase":"compile","seconds":52.659,"exit":0,"cmd":"bash -c \ncmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build \\\n    -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release \\\n    -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON \\\n    && cmake --build projects/HEonGPU/src/build -j$(nproc)\n"}
 {"kind":"phase","ts":"2026-08-13T01:19:46Z","phase":"test","seconds":11.769,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"session","ts":"2026-08-13T01:21:56Z","epoch":1786584116.107384420,"event":"end","platform":"linux-gfx1100"}
