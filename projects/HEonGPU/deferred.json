@@ -31,7 +31,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-08-11T16:34:45Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-13T20:03:51Z"
+      }
     },
     {
       "id": "heongpu-barrett-shift-cuda-side",
