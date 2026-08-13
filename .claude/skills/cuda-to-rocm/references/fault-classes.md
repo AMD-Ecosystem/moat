@@ -335,6 +335,25 @@ the CUDA build too and are not HIP-specific hacks. (Velvet)
 
 ## Types, dispatch and platform limits
 
+**`unsigned long` is 32-bit on Windows and 64-bit on Linux, and it breaks template
+deduction.** Windows is LLP64: `long` stays 32 bits while pointers and `size_t` go to 64.
+Linux is LP64, where `unsigned long` and `size_t` are the same type -- so a size expression
+mixing them deduces fine there and fails on Windows with
+
+    error: no matching function for call to 'max'
+    constexpr uint32_t vec_size = std::max(16UL / sizeof(DTypeIn), HEAD_DIM / 32UL);
+
+`sizeof` yields `size_t` (64-bit), `HEAD_DIM / 32UL` yields `unsigned long` (32-bit), the
+two arguments no longer share a type, and `std::max`/`std::min` cannot deduce one. Fix by
+naming the template argument -- `std::max<size_t>(...)` -- which leaves every instantiation
+that already compiled completely unchanged, so it is a no-op on Linux and on the NVIDIA
+path. Casting one operand works too but changes what the arithmetic promotes to.
+
+This is a portability bug that predates the port far more often than it is caused by one:
+check `git log` on the file before treating it as a regression, since a Windows CUDA build
+hits it identically. It costs nothing to fix and is not waiver material. (Quest, 8 sites in
+the decode kernels.)
+
 **Library swaps.** cuBLAS -> hipBLAS, cuFFT -> hipFFT, cuRAND -> hipRAND, cuSPARSE ->
 hipSPARSE, cuDNN -> MIOpen, Thrust/CUB -> rocThrust/hipCUB. Mostly 1:1; watch handle types
 and a few signature differences such as the hipBLAS v2 enums.
