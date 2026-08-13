@@ -31,7 +31,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-06-12T15:00:56Z",
-      "decided": null
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-08-13T20:41:20Z"
+      }
     },
     {
       "id": "plvs-nvidia-proprietary-rescan",
