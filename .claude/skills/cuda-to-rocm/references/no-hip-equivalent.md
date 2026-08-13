@@ -45,3 +45,38 @@ Related, and easy to miss for the same reason: `cv::cuda::*` is not a dead end e
 Existing dispositions that rest on this and predate FlyDSL being available: FlashKDA, NATTEN, mirage and spconv are all recorded `cant-port` on CUTLASS/CuTe grounds. They may deserve revisiting on that basis -- which is a person's call, not an agent's.
 
 Raw PTX tensor-core intrinsics are a separate case and stay blocked: `mma.sync`, `ldmatrix.sync`, Hopper `wgmma`/TMA and `tcgen05` have no HIP-level equivalent, and the AMD analogue is MFMA/WMMA reached through rocWMMA, CK or FlyDSL rather than a direct instruction swap.
+
+## Runtime-compiled kernels inherit nothing from the host build
+
+Projects that compile device code at runtime -- an OptiX PTX pipeline ported to
+HIP RT/hiprtc, or any hiprtc/comgr JIT -- have two compilers, and only one of
+them is configured by the build system. Every macro the host build supplies
+(`USE_ROCM`, `__HIP_PLATFORM_AMD__`, anything from `extra_compile_args`) is
+absent from the runtime compile unless it is passed explicitly in the option
+list handed to the JIT.
+
+This bites the moment a header is shared between the ahead-of-time and runtime
+paths. Collapsing a duplicated `params.h` back into the CUDA path's copy behind
+`#ifdef USE_ROCM` is the right call for maintainability, and it will then take
+the CUDA branch under the JIT and fail on `#include <optix.h>` (or on any other
+CUDA-only include) with an error that looks nothing like a missing define. Pass
+`-DUSE_ROCM=1` alongside the include paths in the JIT option vector.
+
+Two related traps in the same place:
+
+- **Guarding by compiler identity is not enough.** `__HIPCC_RTC__` and
+  `__HIP_DEVICE_COMPILE__` are defined by the runtime compiler, but a shared
+  header also gets included by the *host* translation unit, where neither is
+  set. Guard on the platform macro, and set that macro in both compiles.
+- **Scalar typedefs collide.** A CUDA header that writes its own
+  `typedef unsigned long int uint64_t;` clashes under hiprtc with HIP's
+  `using uint64_t = __hip_internal::uint64_t` (`unsigned long long`), because
+  the HIP device headers are already in scope. Guard the typedefs out on the
+  ROCm side rather than trying to match the type.
+
+Diagnosing this is easy once you know to look: the runtime compiler's log is
+usually printed to stderr and then swallowed, and the visible symptom is a
+launch failure (`hipErrorInvalidHandle`) or an outright hang from launching a
+module that was never built. Read the whole stderr, not the exception.
+
+Source: `diff-surfel-tracing` (OptiX to HIP RT), gfx942.
