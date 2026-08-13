@@ -4034,3 +4034,155 @@ analysis in the round-12 notes section so no later agent requests a waiver on it
 the commit body per finding 2, and triage finding 1. The two runtime DLLs are currently
 copied into `projects/HEonGPU/src/build/bin/test/` (untracked build output); a clean
 reconfigure drops them, so re-copy before any test run.
+
+## Porter round 13 (2026-08-13, windows-gfx1151) -- root cause of the wrong results, bb3d101
+
+Round-12 review left one blocking finding: BFV encryption and addition produced wrong
+values on `windows-gfx1151` while the same source passed 20/20 on `linux-gfx942`,
+`linux-gfx90a` and `linux-gfx1100`. Root cause found and fixed. **All 15 test
+executables now pass on Windows, 20 of 20 cases**, matching Linux exactly.
+
+### Root cause: GMP's and NTL's `unsigned long` entry points are 32 bits on Windows
+
+Windows is LLP64: `unsigned long` is 32 bits (verified on this host,
+`sizeof(unsigned long)=4` under clang-cl). HEonGPU builds its CRT constants by feeding
+the coefficient moduli straight into GMP's `mpz_*_ui` family, which is typed
+`unsigned long`. The moduli in these tests are 30-55 bits, so **every prime was silently
+truncated to its low 32 bits before GMP ever saw it**. Measured directly
+(`agent_space/heongpu-win/gmp_probe.cpp`, conda-forge win-64 GMP 6.3.0):
+
+```
+sizeof(unsigned long)=4  GMP_LIMB_BITS=64  mp_bits_per_limb=64
+mpz_mul_ui by 1099510054913 -> 4293394433          <- 1099510054913 mod 2^32
+mpz_import+mpz_mul     -> 1099510054913
+VERDICT: *** mpz_mul_ui TRUNCATES ***
+```
+
+Affected sites (all host, none device):
+- `src/lib/util/util.cu` `calculate_Mi()`, `calculate_M()` (the `decryption_modulus`
+  table) and `calculate_upper_half_threshold()` -- `mpz_mul_ui`.
+- `src/lib/host/bfv/context.cu` `generate_coeff_div_plain_modulus()` -- `mpz_mul_ui`,
+  `mpz_div_ui`, `mpz_mod_ui`.
+- `src/lib/host/ckks/operator.cu` `add_constant_plain_ckks_v2()` (two overloads) --
+  `NTL::conv(qi_zz, static_cast<long>(qi))` and `NTL::to_long()`. Same defect through
+  NTL rather than GMP; this host's NTL is built from `mach_desc.win`, i.e. 32-bit `long`
+  by construction. Not covered by any test in the suite, fixed on inspection.
+
+`mpz_set_ui(result, 1)` and `mpz_add_ui(result, result, 1)` pass literals and are safe;
+they were left alone.
+
+Why the symptom looked like a GPU fault: `Mi`, `decryption_modulus` and
+`upper_half_threshold` are only consumed by the kernels that **compose** an RNS value
+back into an integer. Encoding writes residues and needs none of them. `bfv_encoding`
+additionally works modulo the *plain* modulus alone (1032193, 20 bits), which survives a
+32-bit truncation intact -- so the one suite that passed was the one suite that could
+not see the bug.
+
+### The bisection, and what it eliminated
+
+The dispatch's ranked hypotheses were tested cheapest-discriminating-first. All five were
+eliminated by measurement before any code was edited.
+
+1. **Hand-built NTL wrong: eliminated.** NTL is referenced only in
+   `src/lib/host/ckks/operator.cu` (`grep -rn "NTL::" src/`), which is not on the
+   encode/decode path. `ckks_encoding` -- which touches no NTL at all -- fails, so NTL
+   cannot be the cause. (NTL's `long` width did turn out to be a *second* instance of the
+   real defect, but not the one the tests were failing on.)
+2. **CRT/ABI mismatch: eliminated.** A mixed-CRT heap corruption is not deterministic.
+   The wrong values are bit-identical across separate process runs and across repeated
+   encode/decode calls inside one process (3 trials x 2 runs, identical to the last digit).
+3. **128-bit host arithmetic under clang-cl: eliminated by direct test.**
+   `agent_space/heongpu-win/barrett_probe.cpp` replicates GPU-NTT's host
+   `Modulus<Data64>` and `BarrettOperations<Data64>` verbatim and checks them against
+   `__uint128_t` truth for 20/30/36/40/54/55/60-bit primes: `bit`, `mu` (which is where
+   `__udivti3` from `clang_rt.builtins` is actually used), 1.4M random `mult` cases,
+   `exp` and `modinv` -- **zero mismatches**. The compiler-rt builtins link is correct.
+4. **RNGonGPU AES/random path: eliminated structurally.** `ckks_encoding` uses no RNG and
+   no keys at all and still fails, so the failure is upstream of anything random.
+5. **The ad-hoc Windows build config: eliminated.** Reviewed and left as is; the fault is
+   in source arithmetic, not in `-x hip` or the CRT selection.
+
+Additionally ruled out, and worth recording because they are the usual suspects:
+- **Device modular arithmetic is correct.** A kernel probe
+  (`agent_space/heongpu-win/probe_dev_barrett.cpp`) ran `OPERATOR_GPU_64::mult` and
+  `::reduce` for the same six primes, 65536 random pairs each plus the boundary cases,
+  against host truth: zero mismatches, and the `Modulus64` kernel argument arrives with
+  `value`/`bit`/`mu` intact. So the ported `uint128_t` shift/subtract/`__umul64hi` code
+  from round 1 is sound on gfx1151.
+- **Not a race, not a synchronization bug.** `HIP_LAUNCH_BLOCKING=1` changes nothing.
+- **Not RDNA3.5 floating-point divergence.** There is precedent on this host, but the
+  wrongness here is integer and total, not a drift.
+
+### The measurement that localized it
+
+A probe linked against the built library (`agent_space/heongpu-win/probe.cpp`, built by
+reusing the ninja compile/link lines for one test executable, see `mkprobe.py`) called the
+scalar `encode(plain, 12.75, 2^30)` overload, which writes RNS residues directly with no
+FFT and no NTT, then read the plaintext back with `cudaMemcpy` before decoding:
+
+```
+(A) scalar encode/decode: want=12.750000 got[0]=1.03691332e+21 ...
+    raw residues c0: q0=13690208256 q1=806191092 q2=805896180  (round(v*scale)=13690208256)
+```
+
+`q0` is exactly `round(12.75 * 2^30)`. **Encode is correct; decode is wrong.** Decode is
+INTT + `encode_kernel_compose` + FFT, and all slots came back with the same wrong value,
+so the INTT and FFT structure was intact and only the magnitude was wrong -- which points
+straight at the CRT constants `encode_kernel_compose` consumes. Those are exactly
+`Mi`, `Mi_inv`, `upper_half_threshold` and `decryption_modulus`; `Mi_inv` is computed with
+`OPERATOR64` (no GMP) and was fine, the other three go through `mpz_mul_ui`.
+
+Generalizable lesson: when only Windows computes wrong numbers, grep the host path for the
+`_ui`/`long` entry points of every C library before suspecting the device, and bisect
+host-vs-device with standalone probes rather than by reading kernels. Promoted to the
+`cuda-to-rocm` skill's validation reference.
+
+### The fix (`bb3d101`, +76/-14, 4 files)
+
+Data-model-independent, no `#ifdef`, LP64 results bit identical:
+- New `inline void set_mpz_u64(mpz_t, Data64)` in `src/include/heongpu/util/util.cuh`
+  wrapping `mpz_import(out, 1, -1, sizeof(Data64), 0, 0, &value)`.
+- `mpz_mul_ui` -> `set_mpz_u64` + `mpz_mul`; `mpz_div_ui` -> `mpz_fdiv_q` (`mpz_div_ui`
+  is GMP's deprecated alias for `mpz_fdiv_q_ui`, so `fdiv` is the faithful replacement);
+  `mpz_mod_ui` -> `mpz_mod` (both yield the non-negative remainder).
+- File-local `zz_from_u64`/`u64_from_zz` in `ckks/operator.cu` over
+  `NTL::ZZFromBytes`/`NTL::BytesFromZZ` with the 8-byte little-endian representation.
+
+Also in this round, per round-12 review finding 2: the `ullAvailPhys` sentence in the
+Windows-portability commit body was reworded to the closest-analogue framing (it no longer
+claims equality with `freeram * mem_unit`). That commit had no `validated_sha` pointing at
+it -- the three Linux arches are validated at `6ac06d0`, which is untouched -- so amending
+its message orphaned no evidence. It is now `d14abb1`. Review finding 3 (the `random.cuh`
+include deletion) needed no change and was left as committed.
+
+### Result on windows-gfx1151
+
+```
+bfv_addition            rc=0 ok=1   bfv_encoding           rc=0 ok=1
+bfv_encryption          rc=0 ok=1   bfv_multiplication     rc=0 ok=2
+bfv_relinearization     rc=0 ok=2   bfv_rotation_method_1  rc=0 ok=1
+bfv_rotation_method_2   rc=0 ok=1   ckks_addition          rc=0 ok=2
+ckks_encoding           rc=0 ok=1   ckks_encryption        rc=0 ok=1
+ckks_multiplication     rc=0 ok=2   ckks_relinearization   rc=0 ok=2
+ckks_rotation_method_1  rc=0 ok=1   ckks_rotation_method_2 rc=0 ok=1
+tfhe_gate_boot          rc=0 ok=1
+TOTAL ok=20 failed=0
+```
+
+Run procedure unchanged from the round-12 review: `amdhip64_7.dll` and `amd_comgr*.dll`
+copied from `<venv>/Lib/site-packages/_rocm_sdk_core/bin/` into `build/bin/test/` (they
+are untracked build output; a clean reconfigure drops them). Build:
+`cmake --build build -j6` under `agent_space/heongpu-win/env.sh`, configure line unchanged
+from round 12.
+
+Line endings: this clone's working tree is CRLF against an LF index, so every edited file
+was rewritten to LF before staging (`git diff --stat` first showed whole-file rewrites of
+2600 lines; after conversion, 41 lines). Check `git diff --stat` after any edit here.
+
+### Note for the Linux revalidations
+
+`bb3d101` touches shared host code that Linux compiles. The change is a no-op there by
+construction (`unsigned long` is 64 bits under LP64, and `mpz_import` of one 64-bit word
+is the same value `mpz_mul_ui` would have used), but it has not been compiled on Linux
+yet. `NTL::ZZFromBytes`/`BytesFromZZ` are core NTL API present in every version, so no
+version gate is expected.

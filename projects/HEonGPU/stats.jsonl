@@ -193,3 +193,10 @@
 {"kind":"session","ts":"2026-08-13T03:04:01Z","epoch":1786590241.627957200,"event":"end","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-08-13T03:07:15Z","epoch":1786590435.524499100,"event":"start","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-08-13T03:20:07Z","epoch":1786591207.739256600,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-13T03:23:39Z","epoch":1786591419.695293700,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-13T03:42:31Z","phase":"compile","seconds":0.712,"exit":1,"cmd":"cmake --build build -j6"}
+{"kind":"phase","ts":"2026-08-13T03:43:36Z","phase":"compile","seconds":49.376,"exit":0,"cmd":"cmake --build /d/Develop/moat/projects/HEonGPU/src/build -j6"}
+{"kind":"phase","ts":"2026-08-13T03:56:10Z","phase":"compile","seconds":10.934,"exit":0,"cmd":"cmake --build /d/Develop/moat/projects/HEonGPU/src/build -j6"}
+{"kind":"phase","ts":"2026-08-13T03:57:14Z","phase":"test","seconds":2.976,"exit":0,"cmd":"bash -c tot=0; fail=0; for f in *_testcases.exe; do out=$(timeout 900 ./$f 2>&1); rc=$?; ok=$(echo \"$out\" | grep -cE \"^\\[       OK \\]\"); bad=$(echo \"$out\" | grep -cE \"^\\[  FAILED  \\] HEonGPU\"); tot=$((tot+ok)); fail=$((fail+bad)); printf \"%-42s rc=%d ok=%d failed=%d\\n\" \"$f\" \"$rc\" \"$ok\" \"$bad\"; done; echo \"TOTAL ok=$tot failed=$fail\""}
+{"kind":"phase","ts":"2026-08-13T04:03:51Z","phase":"test","seconds":380.808,"exit":0,"cmd":"bash -c cd /d/Develop/moat/projects/HEonGPU/src/build/bin/test; tot=0; fail=0; for f in *_testcases.exe; do out=$(timeout 900 ./$f 2>&1); rc=$?; ok=$(echo \"$out\" | grep -cE \"^\\[       OK \\]\"); bad=$(echo \"$out\" | grep -cE \"^\\[  FAILED  \\] HEonGPU\"); tot=$((tot+ok)); fail=$((fail+bad)); printf \"%-42s rc=%d ok=%d failed=%d\\n\" \"$f\" \"$rc\" \"$ok\" \"$bad\"; done; echo \"TOTAL ok=$tot failed=$fail\""}
+{"kind":"session","ts":"2026-08-13T04:19:56Z","epoch":1786594797.177654700,"event":"end","platform":"windows-gfx1151"}
