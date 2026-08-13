@@ -1501,3 +1501,167 @@ Prior "CUDA path byte-identical" was a by-construction claim (all changes USE_HI
 - nvcc 13.3 (env popsift-cuda): build stops in s_filtergrid.cu with 43 errors (thrust::get/make_tuple/tuple "no member"). PROVEN pre-existing, not ours: compiled upstream base b1c8199's unmodified s_filtergrid.cu with the identical nvcc command -> identical 43-error multiset (only a +9 line shift from our POPSIFT_THRUST_PAR macro block). Root cause: CUDA 13 / new CCCL no longer transitively includes <thrust/tuple.h>; upstream popsift relies on the transitive include. Our only CUDA-path change in that file is `POPSIFT_THRUST_PAR` -> `::thrust::cuda::par`, literally upstream's text.
 - nvcc 12.6 (env popsift-cuda126, the memory-note recipe; host c++ = conda gcc 12.4 since CUDA 12.6 wants gcc<=13): **full clean build of the ported tree** -- 29 CUDA .cu objects, device link, libpopsift.so.0.10.1 linked, ZERO errors and ZERO warnings in our ported files. Lib carries .nv_fatbin/__nv_relfatbin/.nvFatBinSegment ELF sections (real sm_86 device code). CMAKE_CUDA_ARCHITECTURES=86 (popsift default 53;62;72;87 includes archs CUDA 13 dropped). Build dirs build-cuda/ build-cuda126/ are gitignored.
 - Takeaway for the PR: the CUDA/NVIDIA build of the port compiles clean on a supported toolkit (12.6); a separate, pre-existing CUDA-13 + thrust transitive-include break affects upstream identically and is worth a heads-up to the maintainer but is not introduced by this port.
+
+## 2026-08-13 -- fix round for PR #186 review (griwodz, CHANGES_REQUESTED 2026-08-07)
+
+Staging branch `moat-fix-186` cut from the published tip f2712723d903 (never rebased;
+f2712723 remains an ancestor). Four commits, staging tip **fe8693761c62**:
+
+| sha | title |
+|-----|-------|
+| d18bc62 | [ROCm] Pass the shuffle width explicitly on every platform |
+| 498b9b2 | [ROCm] Simplify the descriptor normalization guards |
+| e8b822e | [ROCm] Declare the texture and surface types in one header |
+| fe86937 | [ROCm] Move the Thrust setup into a shared header |
+
+Platform: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), ROCm 7.2.3,
+AMD clang 22.0.0git (roc-7.2.3). CUDA cross-check: nvcc 12.8 (/opt/conda/envs/cuda-12.8),
+host gcc 13.3.
+
+### Per-comment disposition (36 inline comments)
+
+Implemented:
+- **Explicit shuffle width on both paths** (14 comments: excl_blk_prefix_sum.h x2,
+  warp_bitonic_sort.h x2, features.cu, s_desc_iloop.cu, s_desc_loop.cu,
+  s_desc_norm_l2.h x3, s_desc_norm_rs.h, s_desc_notile/vlfeat via norm headers,
+  s_pyramid_build_aa.cu, s_pyramid_fixed.cu). Every `#ifdef USE_HIP` shuffle pair
+  collapsed to ONE call with a literal width 32 on both platforms. 32 here is the
+  *algorithmic* group width (block.x, one descriptor row, the bitonic network), not
+  warpSize -- so a literal is correct, and it is what the maintainer asked for.
+  warp_bitonic_sort.h also dropped the `threadIdx.x & 31` lane_id: ori_par launches
+  block (32,1), so the mask was a no-op; back to plain `threadIdx.x` as upstream.
+- **Shuffle compat restructure (his assist.h suggestion).** `PopSift_HAVE_SHFL_DOWN_SYNC`
+  is now 0 on the HIP path, so assist.h takes its existing pre-CUDA-9 `#else` branch,
+  which is exactly HIP's mask-free `__shfl*/__ballot/__any/__all` spelling (width up
+  to 64). cuda_to_hip.h no longer defines the seven `__*_sync` macros. That also let
+  the `<hip/hip_bf16.h>` include-ordering workaround go: it only existed because those
+  macros rewrote that header's own `__shfl_*_sync` declarations. Verified s_filtergrid.cu
+  (the rocThrust/rocprim TU) still compiles.
+- **surfFetchClamped -> texFetchClamped**, now clamping with `std::clamp` (C++17, HIP
+  branch only, compiled by HIP clang; nvcc never sees it, so no --expt-relaxed-constexpr
+  question). Both `#include <algorithm>`.
+- **LayeredReadTex moved out of common/assist.h** into new `src/popsift/sift_textures.h`,
+  together with `LinearTexture` (moved from sift_octave.h) -- "a place for declaring the
+  CUDA texture and surface types". The `POPSIFT_LAYERED_SRC` macro is gone, replaced by
+  `makeLayeredReadTex()` in that header.
+- **Octave returns the filled read handle** (his s_desc_grid.h suggestion):
+  `getDataReadTexPoint/Linear`, `getIntermReadTexPoint/Linear`, `getDogReadTexPoint`,
+  each built from Octave's own texture/surface/_w/_h. All 22 launch sites rewritten.
+  The now-superseded raw accessors (`getDataTexPoint`, `getDataTexLinear`,
+  `getIntermDataTexPoint`, `getIntermDataTexLinear`, `getDogTexturePoint`) were removed
+  -- his wording was "Instead of Octave::getDataTexPoint()". The prose reference to
+  getDataTexPoint() in sift_desc.cu was renamed with it. **Reviewer: confirm removing
+  those five upstream accessors is wanted; keeping them is the alternative.**
+- **s_desc_norm_rs.h simplified exactly as he wrote it**: `inv = (sum>0) ? 1/sum : 0`,
+  `if(inv<=0) descr=0 else` per-component
+  `descr.x <= 0 ? 0 : scalbnf(__fsqrt_rn(descr.x*inv), norm_multi)`. The per-component
+  test subsumes the old `fmaxf(...,0)` clamp (a marginally negative bin from
+  round-to-nearest weight accumulation). Unified for CUDA (which previously did
+  `__fdividef(descr.x, sum)`); numerically identical on the test set (md5 unchanged).
+  The old `sum > 1e-20f` subnormal gate is GONE per his request; a subnormal-but-nonzero
+  sum could in principle make 1/sum overflow. Judged unreachable for real images and
+  the reply will carry that rationale.
+- **s_desc_norm_l2.h zero-norm guard** reduced to one line on both paths:
+  `norm = (norm > 0.0f) ? __frsqrt_rn(norm) : 0.0f`. No isfinite, no #ifdef. Behaviour
+  on the "impossible" path is still safe (all-zero descriptor, no 0*inf NaN).
+- **sift_octave.h line 24**: the stale comment about his original `cudaSurfaceObject_t tex`
+  slip is gone (LinearTexture moved to sift_textures.h with no such comment).
+- **sift_octave.cu "oops" (line 280)**: the wrong `// no interpolation` on the
+  cudaFilterModeLinear line was already corrected in the published commit; the remaining
+  genuine slip nearby was the copy-pasted error string -- both linear texture creations
+  reported "point texture". Fixed. Also updated the gfx90a linear-filter comments to
+  record that gfx1100 ACCEPTS hardware linear filtering (so the software bilinear is a
+  per-device workaround kept for one shared build), replacing the stale "re-verify on RDNA".
+- **Thrust setup moved to `common/thrust_setup.h`** (execution policy + core includes),
+  so a future Thrust user does not repeat the thrust::cuda vs thrust::hip distinction.
+- **fmaf() in the manual bilinear lerp** (his perf suggestion): adopted in both HIP
+  readTex overloads. Result byte-identical (the compiler already contracted to v_fma_f32),
+  so it is a readability/intent change here.
+
+Skipped, with reason:
+- **`x - static_cast<int>(x)` instead of `x - floorf(x)`** (his line-120 suggestion).
+  SKIPPED: his premise "x is always positive" does not hold at these call sites.
+  s_pyramid_fixed.cu reads `readTex(src, idx-SHIFT, idy, level)` with SHIFT=4, and
+  s_gradiant.h reads `x-1.0f`, so x reaches -4 at the image border, where truncation
+  and floor differ (trunc would extrapolate instead of clamping). Kept floorf.
+- **CMake CUDA-10 / C++17 default** (his PR #190), **Tegra comment** (his own code),
+  **rdc / CUDA_SEPARABLE_COMPILATION** (he says it stays), **+0.5 texel-center
+  explanation** (informational), **drop textures for flat 3D memory / alternative
+  Octave class** (lines 155, 224, PS -- genuine future-work discussion): no code,
+  answered in the reply.
+
+### Build (gfx1100)
+
+```
+bash utils/timeit.sh popsift compile -- cmake -S projects/popsift/src -B projects/popsift/src/build-hip \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ -DCMAKE_BUILD_TYPE=Release \
+  -DPopSift_BUILD_EXAMPLES=ON -DBUILD_SHARED_LIBS=ON -DPopSift_USE_TEST_CMD=ON \
+  -DPopSift_TESTFILE_PATH=<oxford dir>
+bash utils/timeit.sh popsift compile -- cmake --build projects/popsift/src/build-hip -j
+```
+Clean from scratch: configure 4.0s, build ~26s. libpopsift.so + popsift-demo +
+popsift-match. Only the pre-existing benign -Wunused-value (debug_macros.h nodiscard)
+and rocThrust -Wdeprecated-declarations warnings.
+
+### CUDA path compile check (this ROCm host, no NVIDIA GPU)
+
+```
+PATH=/opt/conda/envs/cuda-12.8/bin:$PATH cmake -S projects/popsift/src -B projects/popsift/src/build-cuda \
+  -DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=86 -DCMAKE_BUILD_TYPE=Release \
+  -DPopSift_BUILD_EXAMPLES=OFF -DBUILD_SHARED_LIBS=ON \
+  -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc
+cmake --build projects/popsift/src/build-cuda -j
+```
+**Clean: 0 errors, 0 warnings, libpopsift.so linked (sm_86 device code).** This matters
+this round because the changes deliberately touch the CUDA path (explicit widths, the
+shared read handle, the normalization guards). No NVIDIA GPU here, so this is a compile
+check only; CUDA runtime behaviour is unchanged by construction except for the
+normalization guards and RootSift's reciprocal-multiply, both documented above.
+
+### GPU validation (gfx1100, HIP_VISIBLE_DEVICES=0)
+
+```
+rm -rf projects/popsift/src/build-hip/oxford
+HIP_VISIBLE_DEVICES=0 bash utils/timeit.sh popsift test -- \
+  cmake --build projects/popsift/src/build-hip --target run-test-boat
+```
+Oxford boat (6 images, 850x680, vlfeat/loop/RootSift, downsampling=-1) vs the recorded
+gfx1100 reference:
+
+| Image | Features | Descriptors | gfx1100 ref | Match |
+|-------|----------|-------------|-------------|-------|
+| img1  | 8351     | 9874        | 8351/9874   | EXACT |
+| img2  | 7946     | 9452        | 7946/9452   | EXACT |
+| img3  | 6158     | 7280        | 6158/7280   | EXACT |
+| img4  | 4802     | 5799        | 4802/5799   | EXACT |
+| img5  | 4618     | 5476        | 4618/5476   | EXACT |
+| img6  | 3855     | 4618        | 3855/4618   | EXACT |
+
+img1 sorted features.txt md5 = **852740c0eed2c0f28401bc66c78b37ae**, byte-identical to the
+value recorded for the validated head f2712723. So the whole round is a no-op on wave32
+descriptor values, not merely on counts.
+
+- Determinism: 5/5 runs, 8351/9874 each, `sort output-features.txt | md5sum` identical
+  (f67f81307396a3d8847610a0f5d87cf9). NOTE: raw output-features.txt md5 varies run to run
+  because the demo writes in extraction order; the test script sorts before comparing.
+  Pre-existing behaviour, not new.
+- 9874 descriptors x 128: 0 NaN, 0 Inf. Per-descriptor L2 in [0.999073, 1.000850], all
+  within [0.999, 1.001].
+- All 6 descriptor modes (loop/iloop/grid/igrid/notile/vlfeat): 8351/9874, 0 NaN/Inf.
+
+### Gotchas
+
+- `std::clamp` works in HIP device code (clang treats constexpr functions as implicitly
+  __host__ __device__). nvcc would need `--expt-relaxed-constexpr`, so a std::clamp in
+  *shared* device code would break the CUDA build -- ours is inside the HIP-only branch.
+  Promoted to the cuda-to-rocm skill.
+- Dropping the `__shfl_*_sync` macros from the compat header also removed the need for
+  the `<hip/hip_bf16.h>` pre-include workaround: newer ROCm's hip_bf16.h declares real
+  `__shfl_*_sync` templates that the macros were rewriting. Preferring HIP's mask-free
+  spelling (i.e. taking the project's pre-CUDA-9 branch) avoids the collision entirely.
+  Promoted to the cuda-to-rocm skill.
+- `python3 utils/jargon.py --commits origin/develop..moat-fix-186` reports ONE hit,
+  "fault classes" in the already-published commit 05e698e (at/below the frozen tip
+  f2712723). Not fixable without rewriting published history. The new commits and the
+  whole added diff are clean.
