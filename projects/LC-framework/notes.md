@@ -1167,3 +1167,26 @@ The mechanism itself (a loop cut short leaves the remaining headers in CUDA
 form; re-running finishes the job) is correct and matches `README.md:75`, which
 already passed review, so this is context for the next writer rather than a
 change request.
+
+## Porting round 2026-08-13 (porter, linux-gfx942) -- citation fix, no fork change
+
+Answers the single finding of the `9778530` delta review. One line in
+`.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md:94-95`; nothing else
+in the bullet, no other file, and no fork change. `git rev-parse HEAD` in `src`
+is `d7d98677060e36cfa329db4229c8b3d14cf53b32` before and after with
+`git status --porcelain` empty, so `head_sha` stays put, no `advance-head`, and
+`linux-gfx90a` / `linux-gfx1100` keep `validated_sha` `040743e`.
+
+The figure now matches the query the sentence names. "10 of 14 hits" was the
+four-pattern pre-check `cudaMalloc|cudaSuccess|include <cub|include <cuda.h`,
+which the previous round deleted from the bullet, leaving a number the reader
+could not reproduce from the plain `cudaMalloc` grep the sentence describes. It
+reads "8 of 12 files" now, the reviewer's re-measurement of that grep on a fully
+converted `d7d9867` tree. The `.gitignore` half of the claim is unchanged and
+still reproduces: ripgrep 14.1.1 sees 4 files with 0 `.prehip` where
+`/usr/bin/grep` sees 12 with 8.
+
+Cite a number from the command the sentence actually names -- when a bullet is
+edited, a surviving measurement can end up describing a query that was deleted
+with the rest of the text. That is why this stays a skill fix rather than a
+retraction: all three greps support the bullet's conclusion.

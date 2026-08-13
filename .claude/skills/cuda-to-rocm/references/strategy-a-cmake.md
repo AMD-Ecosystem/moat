@@ -92,7 +92,7 @@ compat header with `-include`.
   leaves the remaining headers in CUDA form, so re-running it finishes the job. The signal
   for that is the compiler, not a grep: un-hipified files surface as "undeclared identifier
   cudaMalloc". Grepping the tree for `cudaMalloc` instead reports the `.prehip` backups
-  hipify itself writes -- 10 of 14 hits on a fully converted tree -- and answers differently
+  hipify itself writes -- 8 of 12 files on a fully converted tree -- and answers differently
   depending on whether the grep honors `.gitignore`, which usually excludes them. Note that
   hipify prepends `#include "hip/hip_runtime.h"`, which breaks a g++ CPU reference build, so
   build that from a separate non-hipified copy. (LC-framework)
