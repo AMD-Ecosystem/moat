@@ -2214,3 +2214,10 @@ file, `src/popsift/sift_octave.cu`, comment lines only, and at 4d51a78 the cited
 unchanged: `CMakeLists.txt:108-109` still carries the rocThrust claim and
 `src/popsift/s_desc_norm_rs.h:68` still reads `( sum > 0.0f )`. The line numbers in finding 1
 and finding 2 are the 4d51a78 ones.
+
+Cause, for the next agent: this host took the `reviewing` lock with `set-state` but did not
+`commit-project` until the verdict, so the lock existed only in the local checkout and the
+other host's `set-state reviewing` at 23:16 saw a `porting: null` record on origin and was
+granted. The work lock serializes across hosts only once it is pushed. Push the state
+transition that takes the lock (AGENTS.md, "push each state transition promptly"), not just
+the one that releases it.
