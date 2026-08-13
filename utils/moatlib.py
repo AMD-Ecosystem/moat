@@ -2428,6 +2428,41 @@ def outstanding(obj):
     return out
 
 
+def now_deferrals(name):
+    """Open deferral ids a person has ruled `now`: ported work the project owes.
+
+    status.json cannot see these. A deferral lives in the project's deferred.json,
+    and a `now` ruling turns it back into work in flight -- the gates all hold, the
+    upstream PR may even be merged, and the project is still not finished. Only a
+    `now` ruling counts: `defer` says exactly "not now", and an unruled item is a
+    question waiting on a person, not work an agent owes.
+
+    Resolved the way project_record resolves, because the deferral rides the same
+    folder: the working tree when standing on the project's own branch, else the
+    branch ref, else the trunk."""
+    path = f"projects/{name}/deferred.json"
+    raw = None
+    if current_branch() != f"port/{name}":
+        branch = port_branch_of(name)
+        if branch:
+            raw = _ref_read(f"origin/{branch}", path)
+    if raw is None:
+        p = PROJECTS / name / "deferred.json"
+        if p.exists():
+            raw = p.read_text(encoding="utf-8")
+    if raw is None:
+        raw = _ref_read("origin/main", path)
+    if not raw:
+        return []
+    try:
+        items = json.loads(raw).get("items") or []
+    except (json.JSONDecodeError, AttributeError):
+        return []
+    return [it.get("id", "?") for it in items
+            if it.get("status") == "open"
+            and (it.get("decided") or {}).get("choice") == "now"]
+
+
 def belongs_on_branch(obj):
     """Should this project's folder live on `port/<name>` rather than on the trunk?
 
@@ -2441,12 +2476,19 @@ def belongs_on_branch(obj):
     done -- nobody has offered it to anyone, and thirty of those were sitting in the
     review backlog when this was written. A port with a PR but a stale architecture is
     not done either. Only a verdict ends it outright, because there is nothing left to
-    prove or to offer."""
+    prove or to offer.
+
+    A `now`-ruled deferral is the third way finished becomes unfinished, and the one
+    status.json cannot see. Six branches read "nothing outstanding; merge to main" in
+    the 2026-08-13 sweep while each carried a deferral a person had just ruled `now`
+    -- work the project owes, recorded outside the state machine."""
     if settled(obj):
         return False
     if not obj.get("pr_state"):
         return True
-    return bool(outstanding(obj))
+    if outstanding(obj):
+        return True
+    return bool(now_deferrals(obj.get("name") or ""))
 
 
 def misplaced_folders():
