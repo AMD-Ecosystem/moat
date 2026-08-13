@@ -352,3 +352,185 @@ kernel's `transformPoint4x3` reads the matrix in the transposed 3DGS convention
 - Plan open question 3 (README install matrix): answered no. The README's ROCm section now
   says "All fourteen" and adds the submodule prerequisite plus a pointer to `tests/`;
   enumerating 14 identical `pip install -e .` invocations would add nothing.
+
+## Review 2026-08-13 (linux-gfx942), `4c95346...5d567f6`
+
+Verdict: **changes-requested**. Problems only, per the review skill. The port itself is
+sound -- the invariant was recomputed independently and holds, the 14 variants carry
+identical treatment, the CUDA path is preserved, and no ROCm fault class is triggered
+(details of what was re-verified are at the end). What follows is what has to change:
+two of the recorded justifications are wrong about their own mechanism, one promoted skill
+lesson is wrong, and the suite leaves the port's most unusual kernel corner uncovered.
+
+### 1. The `tile1` difference is not the tail effect the code and the record claim
+
+`tests/test_variants.py:308-317`, `notes.md` "Plan test 8" bullet, and the body of commit
+`5d567f6` all say the difference is that a coarse tiling composites *tails beyond the
+3-sigma radius* that the 1x1 tiling drops, "the radius is a 3-sigma cutoff where
+`exp(-4.5)*opacity ~= 0.01`, well above the `alpha < 1/255` reject". That is not what
+happens in the scene the test actually renders.
+
+Measured on gfx942 with the committed 32x24 / 1500-point scene: **every** surfel comes back
+with `radii == 3` (min = max = 3). Radius is `ceil(max(extent.x, extent.y, cutoff *
+FilterSize))` at `forward.cu:230-236` with `FilterSize = 0.707106` (`auxiliary.h:45`), so 3
+is the *filter floor*, not a 3-sigma extent: at the edge of that box `alpha` is
+`opacity * exp(-9) ~= 1e-4`, an order of magnitude *below* the 1/255 reject, not above it.
+The tail argument cannot be the cause here. Confirmed directly: a single surfel with
+`radii == 3` renders **bit-identical** images through `tile1` and the base variant
+(0 differing pixels at scales 0.005/0.02/0.05); a difference only appears once the surfel is
+large enough that `radius > 3` (scale 0.2 -> radius 5, 6 differing pixels).
+
+The real mechanism is integer truncation in the binning, at `auxiliary.h:73-83` combined
+with the half-open emit loop at `rasterizer_impl.cu:102-105`. With `BLOCK_X = 1`,
+`rect_max.x = (int)((p.x + r + BLOCK_X - 1) / BLOCK_X) = floor(p.x + r)` and the loop is
+`x < rect_max.x`, so the pixel column at `floor(p.x + r)` is dropped -- a pixel that is only
+`r - frac(p.x)` away from the centre and still above the alpha cutoff when `frac(p.x)` is
+large. With 16x16 tiles the same expression rounds *up* to a whole tile, so that column is
+kept. Reproduced exactly: one surfel, opacity 0.99, radius 3, sweeping the sub-pixel centre
+-- 0 differing pixels for `frac(p.x)` below ~0.75, and 6 differing pixels (`tile1 < base`,
+max |diff| 1.0e-2, matching the whole-scene 9.2e-3) for `frac(p.x)` in [0.75, 1.0).
+
+The conclusion is unaffected -- `getRect` is untouched upstream code and a CUDA build does
+the same thing, so this is not a port defect and the loosened assertion is the right call.
+But the explanation shipped in the repository and in this record is wrong, and it is wrong
+in a way that misleads: it implies the tolerance tracks surfel size, when it actually tracks
+sub-pixel placement. Fix the docstring at `tests/test_variants.py:308-317` and the notes
+bullet; amending the `5d567f6` body is preferable while the branch is unpublished.
+
+### 2. The finite-difference step is not the reason the small-eps slopes were bad
+
+`tests/test_variants.py:254-263` and the notes' "Plan test 6" bullet attribute the eps
+sweep (1e-4 -> 0.62, 3e-4 -> 1.34, ... 3e-3 -> 0.98) to the two hard thresholds making the
+loss piecewise smooth, and conclude the step must be wide enough to average over crossings.
+The threshold noise is real, but it is not what forces eps 3e-3: the committed direction is.
+
+`tests/test_variants.py:273` draws `rand*2-1`, a sign-balanced direction over 4000
+opacities, so the directional derivative it probes nearly cancels. Measured on the same
+scene and variant: predicted `86.1` for the committed direction versus `~3900` for a
+non-negative direction -- a 45x difference in signal against the same crossing noise. With a
+non-negative direction (`torch.rand`, no `*2-1`) the slope is:
+
+    eps 1e-5: 0.9969 0.9997 1.0001 1.0002   (4 seeds)
+    eps 1e-4: 1.0038 1.0038 1.0000 1.0111
+    eps 1e-3: 1.0095 1.0102 1.0089 1.0091
+    eps 3e-3: 1.0085 1.0083 1.0076 1.0079
+
+i.e. the analytic opacity gradient is right to ~1% at any step from 1e-5 up, on the very
+scene the record says cannot be measured below 1e-3. A sparse 12-surfel scene with no
+transmittance saturation gives 1.0007 / 1.0002 / 1.0000 / 1.0000 / 1.0000 over eps 1e-5 to
+1e-2, which pins the gradient itself as correct.
+
+Consequence: as committed the check verifies the gradient to only ~10% along a low-signal
+direction, when the same two renders buy a ~1% check. Change `tests/test_variants.py:273` to
+a non-negative direction, drop `eps` at :274 to 1e-3, and tighten the band at :287; then
+correct the docstring and the notes bullet, which currently record a cause that is not the
+operative one.
+
+For the record, one claim I could *not* substantiate and am explicitly not making: this is
+not a cross-platform flakiness risk. Jittering the scene by a relative 1e-5 (far more than
+an FMA-contraction difference between architectures) moves the committed slope only over
+0.977-0.994, well inside the 0.9-1.1 band.
+
+### 3. `tile1`'s backward kernels are never launched by the suite
+
+`test_backward_gradients_are_finite` (`tests/test_variants.py:237-238`),
+`test_opacity_finite_difference` (`:264-265`), `test_forward_is_deterministic` (`:227-228`)
+and `test_forward_is_finite_and_non_trivial` (`:212-213`) all skip on `BLOCK_X == 1`, and
+`test_tile1_matches_base` (`:307`) runs forward only. So `BACKWARD::renderCUDA` under
+`__launch_bounds__(1)` -- plan risk 2, the single most unusual thing the AMD backend is
+asked to do in this port -- has **zero** coverage in the committed gate, on gfx942 and on
+every platform still to validate. The record overstates this: "its gradients pass" and the
+0.9874 slope in the evidence table are out-of-band measurements a validator cannot
+reproduce from the suite.
+
+I ran it here (32x24, 1500 points): gradients are finite, and the opacity slope is 0.9996 at
+eps 1e-3 with a non-cancelling direction, so this is a coverage gap and not a defect. Add a
+`tile1` backward test at 32x24. One trap to avoid when you do: `means2D.grad` is legitimately
+**0.0** in that scene, for the base variant too, because `dL_dmean2D` is written only in the
+`rho2d < rho3d` branch at `backward.cu:429-435` and preprocess derives the returned value
+from `dL_dtransMats[idx*9+2]`/`[+5]` at `backward.cu:630-631`; assert on the other five
+tensors, or use larger surfels.
+
+### 4. The spherical-harmonics path is never executed
+
+`render()` at `tests/test_variants.py:155-162` always passes `colors_precomp`, so
+`computeColorFromSH` (`forward.cu:22-72`), its backward (`backward.cu:22-141`), and the
+`clamped` buffer never run in the gate. That is a substantial slice of device code, and it
+is the one entry point a downstream user reaches without precomputing colours. Four variants
+can take it (the 3-channel `base`, `tile1`, `wet`, `wet-abs`); one test on the base variant
+covers it. Verified working here (finite image, `dL_dshs` sum 5.7e3), so again coverage, not
+a defect.
+
+### 5. Only `color` is asserted; the other rendered outputs are dropped
+
+`render()` returns `out[0], out[1]` (`tests/test_variants.py:164-165`) and every test throws
+away `out[2]`, the 7-channel `RENDER_AXUTILITY` buffer (depth, normals, distortion, median
+depth), and `out[3]`, the wet family's `out_weight` -- which is the entire reason the wet
+variants exist and is accumulated with `atomicAdd` at `forward.cu:422` of that family.
+A NaN or garbage in either passes the suite today. Add finiteness and non-triviality
+assertions on every returned tensor.
+
+### 6. `ext_winhip.cu` is not ignored
+
+`setup.py:72-74` copies `ext.cpp` to `ext_winhip.cu` inside each variant directory on
+Windows+ROCm, and the new `.gitignore` does not list it. A Windows validator gets 14
+untracked sources in the tree and can commit them by accident. Add `ext_winhip.cu` to
+`.gitignore`.
+
+### 7. Promoted skill lesson: HIP does have cooperative-groups `reduce`
+
+`.claude/skills/cuda-to-rocm/references/fault-classes.md` (commit `051e500`) says
+"`#include <cooperative_groups/reduce.h>` (HIP's cooperative groups has no `reduce.h` ...)".
+ROCm 7.14 ships `hip/cooperative_groups/hip_reduce.h` and
+`hip/amd_detail/amd_hip_cooperative_groups_reduce.h`, which define
+`cooperative_groups::reduce`. What is actually true, and checked here, is that the *CUDA
+spelling* has no hipify include mapping (`CUDA_INCLUDE_MAP` maps only `cooperative_groups.h`)
+and so does not resolve. As written the lesson tells the next porter that `cg::reduce` is
+unavailable on ROCm, which is false and would push them into rewriting a reduction that
+ports as-is. Reword to: the CUDA spelling has no mapping and must be guarded; ROCm's
+equivalent is `<hip/cooperative_groups/hip_reduce.h>`.
+
+The other four lessons check out against their sources: no `__trap` anywhere in the ROCm
+include tree; hipify's default `extensions` tuple is `(".cu",".cuh",".c",".cc",".cpp",".h",
+".in",".hpp")` with no `.inl`, so the dropped-`.inl` claim is right; the system GLM at
+`/usr/include/glm` is 0.9.9.8 with no `GLM_COMPILER_HIP`; hipify 2.0.0 does produce
+`hip_rasterizer/*.hip`; and nvcc 12.8 accepts all four respaced chevron spellings that
+appear in the diff (compiled here).
+
+### 8. Smaller items
+
+- `.claude/skills/cuda-to-rocm/references/strategy-b-torch.md` (commit `051e500`): "add it to
+  `.gitignore` thinking rather than committing it" is a garbled sentence in a document about
+  to reach `main`.
+- `setup.py:37` re-imports `torch` inside `_patch_hipify_ignore_glm` when it is already
+  imported at `setup.py:19`; replicated 14 times.
+- `tests/test_variants.py:298-300` renders the reference before deciding to skip the
+  reference-against-itself case; wasted render.
+- Not a defect, flagged so it does not propagate silently: the 14 `setup.py` headers and
+  `tests/test_variants.py:6` add an AMD copyright line, and the `setup.py` copies add an
+  author line, against the standing "default to no new copyright or author lines". The base
+  commit `4c95346` established this before this project had a record, and undoing it in the
+  11 would break the equivalence invariant, so it is a person's call, not the porter's.
+
+### What was re-verified independently (no action needed)
+
+- Completeness invariant: recomputed md5 classes over all 14 variants for 13 files at `main`
+  and at `HEAD`. Not just the class *counts* -- the class *partitions* are identical, and
+  `rasterizer_impl.h`, `rasterizer.h`, `config.h`, `rasterize_points.cu/.h`, `ext.cpp`,
+  `CMakeLists.txt` are byte-identical to upstream. The 14 `setup.py` port diffs collapse to a
+  single class once the package name is normalised.
+- Treatment uniformity: the per-file diff against upstream is one class per code body across
+  all 14 -- so the 11 new variants received exactly what the 3 EnvGS-proven ones carry.
+- Fault classes: no `__shfl*`/`__ballot`/`warpSize`/`tiled_partition`/`cg::reduce` anywhere;
+  `NUM_WARPS (BLOCK_SIZE/32)` is defined in all 14 and referenced nowhere; every other
+  literal 32 is a uint64 key shift or a radix-sort bit range. No textures, no resource
+  handles, no OOB neighbour reads, no library swap beyond CUB -> hipCUB (confirmed in the
+  generated `hip_rasterizer/rasterizer_impl.hip`).
+- CUDA path: every source edit is inside `#if !defined(USE_ROCM)` / `#if defined(USE_ROCM)`
+  except the chevron respacing, which nvcc 12.8 accepts (compiled); both `setup.py` helpers
+  return early unless `torch.version.hip`.
+- `python3 utils/jargon.py --port diff-surfel-rasterizations`: clean. Commit titles are
+  `[ROCm]`-prefixed and 51/53 chars, bodies disclose AI assistance and carry Test Plans, no
+  `Co-Authored-By` trailer, ASCII throughout, no AMD-internal account reference.
+- Suite reproduced on this host: 95 passed, 5 skipped in 7.11 s.
+- `git -C projects/diff-surfel-rasterizations/src status --porcelain` is empty.
