@@ -540,3 +540,74 @@ error 3.3e-05, needs no ROS). That is the plan's "optional second test" that the
 deliberately left out and the review did not ask for. It is not on the branch. If the reviewer
 wants `library:rmcl-cuda` to carry evidence of its own, say so and it can be re-added in a
 commit of its own rather than being smuggled into a fix round.
+
+## Fix round 2026-08-13 (linux-gfx942, MI300X) -- lost the push race, one measured disagreement
+
+This host was dispatched on the same four review items and did them independently. It took the
+fork-write lock at `02:23:06`, built and tested on MI300X, and then found `origin/moat-port`
+already at `4f746de`: the gfx1100 round above pushed at `02:31:22`. `git push --force-with-lease`
+refused with `stale info`, which is the guard working. Nothing was force-pushed over the gfx1100
+tip; the fork clone here is back on `4f746de` and this round's two commits are preserved,
+unpushed, on the local branch `gfx942-skip-launcher` in `projects/rmcl/src`.
+
+**For a person: the lock did not keep the two hosts apart.** The record shows this arch entering
+`porting` at `02:23:06` (`moatlib.py port-lock rmcl` confirmed the holder at the time) and the
+gfx1100 round landing eight minutes later with `porting: null` and `stage: ported`. Both hosts
+wrote the same project in the same window. Whether the lock was lost in the status merge or never
+seen by the other host is worth checking before the next parallel round; nothing here can decide
+it.
+
+Review item 4 landed separately in `be6d289`, a few seconds after the round above; this host had
+written the same correction independently and dropped it in favour of the pushed one. Worth
+knowing for the next parallel round: `commit-project` stages only `projects/<name>/`, so a skill
+edit needs its own commit and does not ride a project transition.
+
+### Measured: a device-less machine can be skipped from inside rmcl after all
+
+The gfx1100 notes conclude the skip cannot be closed without a launcher that translates the abort
+into 77, and reject that as a workaround for a dependency's global constructor. The diagnosis is
+right and was reproduced here independently (`hipGetDeviceCount` -> `err=100 n=0` under
+`HIP_VISIBLE_DEVICES=-1`; the test binary dies at load in rmagine's `cuda_def_ctx`, exit 134, and
+ctest reports `Subprocess aborted`, which is exactly the shape the in-`main` check produces).
+
+The conclusion does not follow, and the difference is measurable. A launcher does not have to run
+the aborting binary at all:
+
+- `gpu_device_probe.cpp` (22 lines) links `hip::host` only -- not `rmcl_ros_cuda`, so rmagine is
+  never loaded -- and exits 77 when the runtime reports no device.
+- `run_gpu_test.cmake` (15 lines) is the registered ctest command: it runs the probe, and on 77 it
+  stops with `message(FATAL_ERROR "no GPU device available, skipping")` without ever launching the
+  test. Otherwise it runs the test and forwards its status.
+- `SKIP_REGULAR_EXPRESSION "no GPU device available"` on the test.
+
+The gfx1100 note that `SKIP_REGULAR_EXPRESSION` is not consulted for a process that dies by a
+signal is correct, and is why the pattern has to be printed by the launcher rather than by the
+test. Measured on this host against a full `-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942` build
+of the workspace:
+
+```
+ctest --test-dir build/rmcl_ros
+1/1 Test #1: rmcl_gpu_kernels .................   Passed    0.65 sec
+
+HIP_VISIBLE_DEVICES=-1 ctest --test-dir build/rmcl_ros
+1/1 Test #1: rmcl_gpu_kernels .................***Skipped   0.23 sec
+```
+
+So the residual exposure the gfx1100 round flagged for a reviewer to rule on is closable in rmcl
+for about 60 lines, without touching rmagine. Whether that machinery is welcome upstream is a
+judgement, not a measurement: gfx1100 judged it is not, this host measured that it works. A person
+picks. Making rmagine's default context lazy remains the better fix either way, and the deferral
+gfx1100 registered against rmagine stands.
+
+### Independently reproduced here
+
+- nvcc 12.8.93 compiles the pre-port `resampling.cu`, NSDMIs on `SimpleLikelihoodStats` and all,
+  with no diagnostic, including under `-Xcudafe --display_error_number`; the four-line reduction of
+  the same pattern is equally silent, and ROCm clang errors on it. Review item 1's wording is
+  right.
+- The whole touched CUDA surface still compiles against real CUDA headers with the `USE_HIP` branch
+  of the shim inactive: `resampling.cu` and `particle_motion.cu` under nvcc 12.8.93 `-arch=sm_75`,
+  and `GladiatorResamplerGPU.cpp`, `rmcl_gpu_kernels.cpp` and the probe under plain `g++ -std=c++17`.
+  Only the three pre-existing unused-variable warnings appear.
+- gfx942 kernel results match gfx1100 and the earlier gfx942 round exactly: `compute_stats`
+  `sum=2051.63 max=1`, resampler `2043 of 4099` replaced, `mean=-0.00274891 sd=1.01771`.

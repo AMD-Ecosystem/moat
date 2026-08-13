@@ -42,3 +42,7 @@
 {"kind":"phase","ts":"2026-08-13T02:30:15Z","phase":"test","seconds":0.570,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat-worktrees/rmcl/agent_space/ws && export PATH=/usr/bin:$PATH && source /opt/ros/jazzy/setup.bash && colcon test --packages-select rmcl_ros --event-handlers console_direct+"}
 {"kind":"phase","ts":"2026-08-13T02:30:54Z","phase":"test","seconds":0.993,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat-worktrees/rmcl/agent_space/ws && export PATH=/usr/bin:$PATH && export LD_LIBRARY_PATH=/var/lib/jenkins/moat-worktrees/rmcl/agent_space/deps/rmagine_install/lib:$LD_LIBRARY_PATH && source /opt/ros/jazzy/setup.bash && colcon test --packages-select rmcl_ros --event-handlers console_direct+ && colcon test-result --all"}
 {"kind":"session","ts":"2026-08-13T02:34:10Z","epoch":1786588450.201565039,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-13T02:26:32Z","phase":"compile","seconds":15.880,"exit":0,"cmd":"bash agent_space/rmcl/build_rmcl.sh -DBUILD_TESTING=ON"}
+{"kind":"phase","ts":"2026-08-13T02:26:36Z","phase":"test","seconds":0.933,"exit":0,"cmd":"bash agent_space/rmcl/run_ctest.sh"}
+{"kind":"phase","ts":"2026-08-13T02:31:47Z","phase":"compile","seconds":7.865,"exit":0,"cmd":"bash agent_space/rmcl/build_rmcl.sh -DBUILD_TESTING=ON"}
+{"kind":"phase","ts":"2026-08-13T02:31:53Z","phase":"test","seconds":1.127,"exit":0,"cmd":"bash agent_space/rmcl/run_ctest.sh"}

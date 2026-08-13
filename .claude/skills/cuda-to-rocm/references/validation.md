@@ -110,6 +110,18 @@ device-less machine ends inside the dependency's constructor, and put the real f
 context -- where it belongs, in the dependency. (rmcl, whose `rmagine` dependency defines
 `CudaContextPtr cuda_def_ctx(new CudaContext(0));` at namespace scope.)
 
+If the residual exposure has to be closed in your own tree, the way out is to never launch the
+aborting binary. Register a launcher as the test command instead of the test itself: a probe
+executable that links only the GPU runtime -- not the library that pulls the dependency in, so
+no eager context is ever constructed -- reports the device count, and a `cmake -P` script runs
+the probe first and stops with `message(FATAL_ERROR "no GPU device available")` before starting
+the test when it comes back empty. The script exits normally from CTest's point of view, so
+`SKIP_REGULAR_EXPRESSION` on the matching text does fire; the earlier failure was the test
+binary itself dying by signal, not the mechanism. Measured both ways on one build: `Passed` with
+devices visible, `***Skipped` under `HIP_VISIBLE_DEVICES=-1`. It costs a small source file and a
+short script, so weigh it against just documenting the gap -- but it is a real option, not a
+dead end. (rmcl, same dependency.)
+
 ## Diagnosing a suspected AMD fault before escalating
 
 Two patterns that each cost a deep investigation before the real cause was found.
