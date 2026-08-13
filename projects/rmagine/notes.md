@@ -2165,4 +2165,124 @@ this host's conda ROCm SDK, the CUDA 12.8 header tree, and g++ 13.3.0:
 Unchanged and still for a person, not a porter: the `WIP` and `Stage 2:` commit titles on
 the branch, and the README saying nothing about `USE_HIP`.
 
+## Validation 2026-08-13 (linux-gfx942, MI300X) -- PASS
+
+Fork: AMD-Ecosystem/rmagine `moat-port` HEAD `e7a7b279f` (first arch validated at this
+exact SHA; the four already-`completed` platforms carry-forward from `9e642a6a6`, an
+ancestor tree-identical only up to the round-2/round-3 delta -- this run covers the
+round-2 install-config fix and the round-3 header-footprint fix for real on GPU for the
+first time). GPU: 8x AMD Instinct MI300X HF, gfx942 (CDNA3, wave64), ROCm: conda SDK at
+`/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel` (HIP runtime/
+clang 23.0.0git). No `/opt/rocm` on this host. `libassimp-dev` was missing and installed
+via `sudo apt-get install -y libassimp-dev` (5.3.1+ds-2build1, matches the version other
+platforms built against). No HIPRT SDK present on this host
+(`/var/lib/jenkins/moat/third_party/HIPRT` does not exist) -- Stage 2 rmagine_hiprt
+correctly skipped by CMake, consistent with every non-gfx90a platform to date.
+
+### Configure
+
+```
+ROCM=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel
+utils/timeit.sh rmagine compile -- cmake -S /var/lib/jenkins/moat/projects/rmagine/src \
+  -B /var/lib/jenkins/moat/agent_space/rmagine_gfx942_build \
+  -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH=$ROCM \
+  -DRMAGINE_EMBREE_DISABLE=ON -DRMAGINE_OPTIX_DISABLE=ON \
+  -DRMAGINE_VULKAN_DISABLE=ON -DRMAGINE_VULKAN_CUDA_INTEROP_DISABLE=ON \
+  -DRMAGINE_OUSTER_DISABLE=ON -DRMAGINE_BUILD_TESTS=ON -DRMAGINE_BUILD_TOOLS=OFF
+```
+
+### Build
+
+```
+utils/timeit.sh rmagine compile -- cmake --build /var/lib/jenkins/moat/agent_space/rmagine_gfx942_build -j
+```
+
+76/76 targets built cleanly (HIP compiler clang++ 23.0.0git). Only pre-existing
+nodiscard warnings on hipMemset/hipCtxSetCurrent/hipStreamDestroy/hipDeviceSynchronize
+(unchanged from other platforms). `rmagine_tests_cuda_public_headers` (the round-3 gate)
+built and linked as target 73/76.
+
+### Test results
+
+```
+export HIP_VISIBLE_DEVICES=0
+utils/timeit.sh rmagine test -- ctest --test-dir /var/lib/jenkins/moat/agent_space/rmagine_gfx942_build --output-on-failure -R '^cuda_'
+# Run 1: 8/8 PASS (2.99 s)
+# Run 2 (determinism): 8/8 PASS (3.25 s)
+utils/timeit.sh rmagine test -- ctest --test-dir /var/lib/jenkins/moat/agent_space/rmagine_gfx942_build --output-on-failure -R '^core_'
+# 12/12 PASS (3.74 s)
+```
+
+Tests passing (8, one more than the gfx90a-era 7 -- `cuda_public_headers` is new since
+0aea7af): cuda_math, cuda_memory, cuda_memory_slicing, cuda_math_svd,
+cuda_math_statistics, cuda_math_reduction, cuda_math_reduction_correctness,
+cuda_public_headers.
+core_ (12): core_math, core_memory, core_memory_slicing, core_quaternion, core_math_svd,
+core_math_statistics, core_math_cov_transform, core_math_gaussians,
+core_math_matrix_slicing, core_math_reduction, core_math_cholesky, core_math_lie.
+
+### GPU dispatch confirmed (AMD_LOG_LEVEL=3)
+
+```
+AMD_LOG_LEVEL=3 ./bin/rmagine_tests_cuda_math_reduction_correctness
+```
+
+ShaderName lines confirm dispatch of `sum_kernel<1024u, Vector3_<float>>` and
+`cov_kernel<1024u>` on this device; `rocminfo` names it `amdgcn-amd-amdhsa--gfx942:
+sramecc+:xnack-`. Exit: `PASS: rm::sum/mean/cov match CPU reference and are
+deterministic`. `strings librmagine-cuda.so.2.4.2 | grep -o gfx[0-9]*` shows `gfx942`
+code object present.
+
+### CUDA no-regression gate (runs once per head_sha; first Linux arch at e7a7b279f)
+
+```
+CUDA=/opt/conda/envs/cuda-12.8
+utils/timeit.sh rmagine cuda-compile -- cmake -S /var/lib/jenkins/moat/projects/rmagine/src \
+  -B /var/lib/jenkins/moat/agent_space/rmagine_cuda_gate_build \
+  -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=OFF \
+  -DCMAKE_CUDA_COMPILER=$CUDA/bin/nvcc -DCMAKE_CUDA_ARCHITECTURES=80 \
+  -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-13 \
+  -DCMAKE_CXX_COMPILER=/usr/bin/g++-13 -DCMAKE_C_COMPILER=/usr/bin/gcc-13 \
+  -DRMAGINE_EMBREE_DISABLE=ON -DRMAGINE_OPTIX_DISABLE=ON \
+  -DRMAGINE_VULKAN_DISABLE=ON -DRMAGINE_VULKAN_CUDA_INTEROP_DISABLE=ON \
+  -DRMAGINE_OUSTER_DISABLE=ON -DRMAGINE_BUILD_TESTS=ON -DRMAGINE_BUILD_TOOLS=OFF
+utils/timeit.sh rmagine cuda-compile -- cmake --build /var/lib/jenkins/moat/agent_space/rmagine_cuda_gate_build -j
+```
+
+77/77 targets built cleanly with NVIDIA nvcc 12.8.93 / g++-13.3.0, arch pinned
+`sm_80` via `-DCMAKE_CUDA_ARCHITECTURES=80` (the `set_target_properties(rmagine-cuda
+PROPERTIES CUDA_ARCHITECTURES all)` fallback in `rmagine_cuda/CMakeLists.txt:181` is
+guarded by `NOT DEFINED CMAKE_CUDA_ARCHITECTURES`, so the pin took and was not
+silently overridden). Only pre-existing `cuCtxSetSharedMemConfig`/
+`cuCtxGetSharedMemConfig` deprecation warnings (CUDA_VERSION >= 13 style deprecation,
+unrelated to the port; the USE_HIP=OFF path is untouched by any port commit). No
+NVIDIA-only regression: this is a pure passthrough compile, no code differs on the
+CUDA side. `cuda_public_headers` (the round-3 gate) also compiles cleanly against the
+CUDA 12.8 headers with `-DUSE_HIP=OFF`, confirming the new test is backend-neutral.
+
+### Integrity gate
+
+`git -C projects/rmagine/src status --porcelain` empty; HEAD = `e7a7b279f8f21cd5fb339282d7fb1b15beda64ae`, matching `status.json.head_sha` exactly.
+
+### Jargon / documentation gate
+
+`python3 utils/jargon.py --port rmagine` -> clean. Documentation: the two open review
+items (WIP/Stage-2 commit titles, README silent on USE_HIP) are a person's branch-
+shaping/PR-body call, explicitly ruled non-blocking for review and validation by the
+reviewer in "Review 2026-08-13" ("Open item ruled on: README does not mention
+USE_HIP" / not repeated as a blocking finding in the delta re-review that passed).
+Not re-litigated here; consistent with the four already-`completed` platforms.
+
+### Verdict
+
+Stage 1 (rmagine_cuda HIP compute backend) VALIDATED on gfx942/MI300X at `e7a7b279f`:
+8/8 cuda_ (2 runs, bit-identical) + 12/12 core_ PASS, no regression. CUDA
+no-regression gate PASS (pure passthrough, once per head_sha). Integrity clean.
+`wave64` gate satisfied (already satisfied by gfx90a/gfx1100; this is additional
+evidence on a different wave64 card, MI300X vs MI250X). Recorded `validated_sha =
+e7a7b279f8f21cd5fb339282d7fb1b15beda64ae`, state `completed`.
+
 Verdict: clean. Handing to the validator for the linux-gfx942 GPU run at `e7a7b279f`.
