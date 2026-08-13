@@ -982,3 +982,101 @@ failures either way, which is the gate.
   sparse-checkout` recipe (gfx942 finding 4) -- the missing `cd` meant the
   second command applied to the reader's own repository and emptied its
   working tree.
+
+## Review 2026-08-13 (reviewer, linux-gfx942, re-review of d7d9867)
+
+Verdict: changes-requested, on one finding, all of it on the MOAT side. The
+fork branch itself is clean: every finding of both 2026-08-13 reviews (gfx942
+1-5, gfx1100 1-3) is resolved at d7d9867, and each was re-verified here rather
+than taken from the porting record. Scope: the delta `f0ce8ce..d7d9867` read
+against the whole port diff `f72e323...d7d9867`, plus the `cuda-to-rocm`
+lessons riding this MOAT branch. Host: ROCm 7.14.60850 (AMD clang 23.0),
+gfx942 (wave64), nvcc 12.8, g++ for the CPU reference.
+
+### 1. The hipify bullet in the skill still gives the two instructions this round removed from the README
+
+`.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md:90-95` tells every
+future agent to run hipify synchronously because "`-inplace` in a backgrounded
+or `&&`-chained loop silently skips files", and to "always re-grep the whole
+tree for `cudaMalloc|cudaSuccess|include <cub|include <cuda.h` before
+compiling". `d7d9867` deleted both statements from `README.md` because the
+gfx1100 review showed the grep fires on a conversion that succeeded and the
+skipping claim was unsubstantiated -- and then left the canonical lesson
+asserting both, so the next agent porting a hipify-based project reads the
+version this round rejected.
+
+Measured here at `d7d9867`, after the documented loop ran to completion and
+produced a binary that passes `AL "" "RZE_4"` (note: a `grep` that honors
+`.gitignore` hides this, since `.gitignore:20` excludes `*.prehip` -- use
+`/usr/bin/grep`):
+
+    /usr/bin/grep -rlE 'cudaMalloc|cudaSuccess|include <cub|include <cuda\.h' .
+      -> 14 files, 10 of them the *.prehip backups hipify itself writes,
+         the rest the framework templates the loop deliberately leaves alone
+    /usr/bin/grep -rn cudaMalloc .
+      -> 52 lines, 24 in *.prehip   (reproduces the gfx1100 count exactly)
+
+The bullet already carries the check that does work -- "un-hipified files
+surface as 'undeclared identifier cudaMalloc'" -- which is what `README.md:75`
+now says on its own. Fix: drop the re-grep instruction, and replace the
+skipping mechanism with the one the round settled on, that a whole-tree
+conversion loop takes a while and one cut short by the caller leaves the rest
+of the headers in CUDA form, so re-running it finishes the job. Keep the
+`hip/hip_runtime.h`-prepend sentence; it is correct and I relied on it (the
+g++ CPU reference build here was made from a separate non-hipified tree).
+
+No fork commit is needed for this and no evidence is invalidated by it.
+
+### Prior findings verified resolved (context, not problems)
+
+- gfx942 1 / gfx1100 1, `<cstring>`: `compressor-framework.cu:59` and
+  `decompressor-framework.cu:60`. The `README.md:203-211` standalone recipe was
+  run verbatim from a pristine `git archive HEAD` tree -- generate
+  `"TUPL4_1 RRE_1 CLOG_1"`, hipify, both `hipcc` steps -- EXIT 0, 0 errors, and
+  `./compress` / `./decompress` round-trip 1 MB byte-identically.
+- gfx942 2, the wave gate: all six sites carry the identical expression
+  (`compressor-framework.{cu,cpp}:51`, `decompressor-framework.{cu,cpp}:51`,
+  `generate_Device_LC-Framework.py:101`, `generate_Hybrid_LC-Framework.py:138`);
+  `generate_Host_LC-Framework.py:105` emits no `WS`, so no site is missed.
+  Device-pass probe with `consts.h` included ahead of every header:
+  gfx803/900/906/908/90a/942/950/gfx9-4-generic -> 64,
+  gfx1030/1100/1151/1201/gfx11-generic/gfx12-generic -> 32; hipcc host pass,
+  g++ and nvcc -> 32. A gfx90a+gfx1100+gfx942 fat binary of the real `lc.cu`
+  links and carries three code objects, and running it on gfx942 prints "AMD
+  GPU version" and passes without the `framework.h:227` trap. Every `WS` use is
+  inside a `__global__` body (`compressor-framework.cu:169-222`,
+  `decompressor-framework.cu:148`, `framework.h:227,270-293,421,508`), so the
+  host pass resolving 32 stays inert.
+- gfx942 3, `__syncwarp`: `include/macros.h:83-86`. `__syncwarp` is defined in
+  exactly one ROCm header on this install, `amd_warp_sync_functions.h`, under
+  `#if !defined(HIP_DISABLE_WARP_SYNC_BUILTINS)`, so `__has_include` on that
+  header is the exact proxy for "this ROCm has no `__syncwarp`". Probed
+  `__has_include` -> 1 here; both branches build `lc.cu` with 0 errors (default,
+  and `-DHIP_DISABLE_WARP_SYNC_BUILTINS`).
+- gfx942 4, `validation.md`: the recipe now reads `git clone ... && cd
+  rocm-libraries && git sparse-checkout set ...` and says why the `cd` matters.
+- gfx942 5 / gfx1100 2 and 3, README: `README.md:75` names the in-place rewrite
+  and the `.prehip` backups; the `grep -rn cudaMalloc .` pre-check and the
+  "hipify-perl occasionally skips files" claim are gone.
+- `b8c3df0` is message-only (`git diff f0ce8ce b8c3df0` empty), and `040743e`,
+  the sha both completed arches validated, is still an ancestor of HEAD with
+  tree `91e1a3b`.
+- Both promoted lessons reproduce verbatim. `-inplace` re-hipified a
+  regenerated file from its `.prehip` backup, silently restoring the previous
+  generation's function. An unguarded `static_assert(WS == 64)` in a
+  `__global__` body on gfx942 fails with "1 error generated when compiling for
+  host".
+- Format gate, independently: gfx942 wave64 encode -> CPU decode identical, CPU
+  encode -> gfx942 decode identical, and the two encodings byte-identical.
+  `RZE_4`, `RRE_4 RZE_4`, `QUANT_NOA_0_f32(0.01)`+`MAXNOA_f32` and `LOR1D_i32()`
+  all pass on gfx942; `lc.cu` also compiles clean for gfx1100.
+- CUDA no-regression, nvcc 12.8 `-arch=sm_80` on a pristine tree: `lc.cu`,
+  `compressor-standalone.cu`, `decompressor-standalone.cu` all 0 errors.
+- Hygiene: seven titles, all `[ROCm]`, 50-62 chars; one author and committer,
+  the maintainer's public address; no `Co-Authored-By`, no noreply, no ghstack,
+  no AMD-internal reference; ASCII in messages and in every added line;
+  `jargon.py --port LC-framework` clean; `git status --porcelain` in src empty.
+  `prose.py` flags `README.md:70,71,194,199`, all indented command lines (194
+  and 199 are upstream's own nvcc lines), not prose -- no action.
+- `ea0df9b`'s indented Test Plan blocks: agreed non-blocking, as the gfx1100
+  review and the porting round both concluded.
