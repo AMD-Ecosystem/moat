@@ -57,7 +57,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-06-07T16:00:58Z",
-      "decided": null
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-08-13T20:29:00Z"
+      }
     },
     {
       "id": "cudakdtree-atomic-minmax",
@@ -153,7 +157,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-06-20T00:52:11Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-13T20:29:00Z"
+      }
     },
     {
       "id": "gfx90a-pin-autodetect-audit",
@@ -167,7 +175,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-06-23T19:18:11Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-13T20:29:00Z"
+      }
     },
     {
       "id": "unrecorded-dependency-ports",
