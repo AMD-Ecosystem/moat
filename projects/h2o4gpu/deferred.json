@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "h2o4gpu-nvidia-proprietary-rescan",
+      "kind": "other",
+      "component": null,
+      "summary": "Rescan with the fixed scan_nvidia: 12 files carry the pre-2017 CUDA samples EULA-pointer notice -- the vendored src/include/helper_*.h set AND h2o4gpu's own src/gpu/bwcheck.cu and src/include/exception.h, which copied the header. Project is awaiting-fork; the licence ruling should precede adoption. Submodule scan coverage was partial (cub pin).",
+      "refs": [
+        "moat main b336246 (case/wording-proof scan_nvidia)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T17:09:48Z",
+      "decided": null
+    }
+  ]
+}
