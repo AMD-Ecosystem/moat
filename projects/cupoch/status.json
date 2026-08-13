@@ -7,15 +7,15 @@
   "priority": 5.284,
   "ext_type": "unknown",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-08-07T07:05:00Z",
+  "updated_at": "2026-08-13T20:49:28Z",
   "head_sha": "867834485e70d6f2bf131a3419f296fcb9373304",
   "pr_url": "https://github.com/neka-nat/cupoch/pull/143",
   "pr_number": 143,
-  "pr_opened_at": "2026-06-24T21:53:11Z",
+  "pr_opened_at": "2026-08-13T20:49:28Z",
   "pr_merged_at": "2026-07-02T17:17:26Z",
   "porting": null,
   "waivers": {},
-  "pr_state": "merged",
+  "pr_state": "open",
   "license_spdx": "MIT",
   "upstream_repo_id": 216847240,
   "stage": "review-passed",
@@ -131,5 +131,6 @@
         "at": "2026-06-24T00:39:01Z"
       }
     }
-  }
+  },
+  "published_sha": "867834485e70d6f2bf131a3419f296fcb9373304"
 }
