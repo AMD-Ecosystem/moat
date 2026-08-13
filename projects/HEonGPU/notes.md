@@ -4063,8 +4063,9 @@ Affected sites (all host, none device):
   table) and `calculate_upper_half_threshold()` -- `mpz_mul_ui`.
 - `src/lib/host/bfv/context.cu` `generate_coeff_div_plain_modulus()` -- `mpz_mul_ui`,
   `mpz_div_ui`, `mpz_mod_ui`.
-- `src/lib/host/ckks/operator.cu` `add_constant_plain_ckks_v2()` (two overloads) --
-  `NTL::conv(qi_zz, static_cast<long>(qi))` and `NTL::to_long()`. Same defect through
+- `src/lib/host/ckks/operator.cu` `add_constant_plain_ckks_v2()` (`:596`) and
+  `multiply_const_plain_ckks_v2()` (`:660`) -- two distinct functions, not two overloads
+  of one -- `NTL::conv(qi_zz, static_cast<long>(qi))` and `NTL::to_long()`. Same defect through
   NTL rather than GMP; this host's NTL is built from `mach_desc.win`, i.e. 32-bit `long`
   by construction. Not covered by any test in the suite, fixed on inspection.
 
@@ -4397,3 +4398,24 @@ because no platform is validated at `bb3d101`; this is the last moment the amend
 After that, review can pass immediately and the port goes to `windows-gfx1151` validation
 plus the three Linux revalidations, with the stale CUDA no-regression gate (finding 2)
 picked up by whichever Linux arch runs first.
+
+## Porter round 15 (2026-08-13, windows-gfx1151) -- message-only amend, 2473e85
+
+Round-14 review requested one change and no code change. `bb3d101` was amended in place
+to `2473e85`; `git diff bb3d101 2473e85` is empty, so the tree is byte-identical and only
+the message moved. The amend was free: no `validated_sha` pointed at `bb3d101` (gfx942
+and gfx1100 at `6ac06d0`, gfx90a at `5d99b8f`, windows null). No build and no test run.
+
+The reworded paragraph now names both changed functions --
+`add_constant_plain_ckks_v2()` (`operator.cu:596`) and `multiply_const_plain_ckks_v2()`
+(`operator.cu:660`), the two helpers applying a gaussian-integer constant -- and states
+plainly that neither is reached by any test, example or benchmark, their only other
+caller being `scale_up_ckks()` on the untested CKKS bootstrapping path, so the Test
+Plan's 20-of-20 line below it does not cover that hunk. Note the exact spelling is
+`multiply_const_plain_ckks_v2`, not `multiply_constant_...`. Round-13 notes above were
+corrected for the same misnaming (review finding 3).
+
+Untouched by ruling or assignment: `-fgpu-rdc` and the `small_ntt` guard (settled at
+`6ac06d0`), the two registered upstream defects, and review finding 2 (the stale CUDA
+no-regression gate at the new head), which the reviewer assigned to whichever Linux arch
+revalidates first.
