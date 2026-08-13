@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-08-13T17:14:00Z",
+  "updated_at": "2026-08-13T17:48:40Z",
   "head_sha": "26d636f6311da6a72a62e173fcfb8f8d4afdb874",
   "depends_on": [],
   "waivers": {},
@@ -110,5 +110,6 @@
       "last_agent": "validator"
     }
   },
-  "porting": null
+  "porting": null,
+  "review_pr": "https://github.com/AMD-Ecosystem/HEonGPU/pull/1"
 }
