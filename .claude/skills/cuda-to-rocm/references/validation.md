@@ -79,6 +79,20 @@ validator-side scaffolding to prove the port compiles and runs correctly on real
 hardware -- it is not part of the fork commit, and it does not change what the
 project's own documented build needs once a host's ROCm installation is intact.
 
+**Prefer repairing the SDK to carrying the scaffolding.** Reinstalling the four
+packages together (`rocm`, `rocm-sdk-core`, `rocm-sdk-devel`,
+`rocm-sdk-libraries-<gfx>`, all pinned to one date-stamp from the per-arch
+nightly index) restored a populated `include/` -- 30 entries, `hipcub/`,
+`rocprim/` and `thrust/` among them -- and LC-framework then rebuilt and passed
+every gate on gfx1151 with no `-I` scaffolding at all. Two things follow. The
+half-expanded tree is a local extraction failure, not a wheel that omits the
+libraries, so `tar -tf` finding nothing does not settle it. And a
+`validation-failed` recorded against this class says nothing about the port:
+re-run it after the host is repaired before treating it as evidence about the
+code. Cross-check the layout after any repair, since it moves between SDK
+versions -- `hipcc`, the device bitcode and `libexec/hipify` sat under
+`_rocm_sdk_core` on 7.13 and under `_rocm_sdk_devel` on 7.14.
+
 ## Windows: static initializers in TheRock's DLLs may never run
 
 **A C++ test that gates on `torch::cuda::is_available()` can fail on Windows against a
