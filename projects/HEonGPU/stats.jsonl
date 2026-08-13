@@ -206,3 +206,9 @@
 {"kind":"session","ts":"2026-08-13T05:37:44Z","epoch":1786599464.400400900,"event":"end","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-08-13T05:51:43Z","epoch":1786600304.093292200,"event":"start","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-08-13T05:58:49Z","epoch":1786600729.319758400,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-13T08:32:53Z","epoch":1786609973.325714315,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-08-13T08:34:05Z","phase":"compile","seconds":49.600,"exit":0,"cmd":"bash -c cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON -DCMAKE_INSTALL_PREFIX=agent_space/heongpu-gfx942/prefix && cmake --build projects/HEonGPU/src/build -j$(nproc)"}
+{"kind":"phase","ts":"2026-08-13T08:34:32Z","phase":"test","seconds":13.623,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"phase","ts":"2026-08-13T08:34:50Z","phase":"test","seconds":14.568,"exit":0,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"phase","ts":"2026-08-13T08:37:52Z","phase":"cuda-compile","seconds":51.748,"exit":0,"cmd":"bash -c cmake --build /var/lib/jenkins/moat/agent_space/heongpu-cuda-gate/build -j$(nproc) 2>&1"}
+{"kind":"session","ts":"2026-08-13T08:39:04Z","epoch":1786610344.387952162,"event":"end","platform":"linux-gfx942"}

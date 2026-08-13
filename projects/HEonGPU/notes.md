@@ -4619,3 +4619,103 @@ Still OUTSTANDING and not closed by this round: the stale CUDA no-regression gat
 
 Verdict: review-passed. `windows-gfx1151` goes to validation here; the three Linux arches
 stay on revalidate for other hosts.
+
+## Validation 2026-08-13 (linux-gfx942, MI300X HF, ROCm 7.14) -- completed
+
+Revalidation of `moat-port` at `26d636f6311da6a72a62e173fcfb8f8d4afdb874` (this arch's
+`validated_sha` was `6ac06d0575ec210f8dbfa1123aa890d2a04a9938`; head moved with round 12/13's
+Windows host-portability fix, `b12dc98`/`bb3d101`, plus the message-only rounds 14-18 that
+followed). GPU: `rocminfo`/`rocm-smi --showproductname` report eight "AMD Instinct MI300X HF"
+dies (gfx942) on this host, same as the prior session today. ROCm toolchain unchanged: conda
+`_rocm_sdk_devel` SDK (`hipcc --version` -> `HIP version: 7.14.60850-0000000`, amdclang
+23.0.0git), already on `PATH`/`CMAKE_PREFIX_PATH`. `libntl-dev`/`libgmp-dev`/`libssl-dev`
+already installed from the earlier session today.
+
+`git fetch origin` on the local clone (`6ac06d0..26d636f`, 12 files) then
+`git merge --ff-only origin/moat-port` -> `26d636f`, exactly the reviewed head. Clean build
+from scratch (`rm -rf build` first):
+
+```bash
+cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build -DUSE_HIP=ON \
+    -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_BUILD_TYPE=Release \
+    -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON \
+    -DHEonGPU_BUILD_BENCHMARKS=ON \
+    -DCMAKE_INSTALL_PREFIX=agent_space/heongpu-gfx942/prefix
+cmake --build projects/HEonGPU/src/build -j$(nproc)
+ctest --test-dir projects/HEonGPU/src/build --output-on-failure
+```
+
+Both wrapped in `utils/timeit.sh HEonGPU compile -- ...` / `utils/timeit.sh HEonGPU test --
+...`. Configure+build rc=0 (49.6s), 0 `error:` lines. All 42 executables built (`find
+build/bin -type f -executable | wc -l` = 42: 15 tests, 24 examples, 3 benchmarks). `git -C
+projects/HEonGPU/src status --porcelain` empty before and after (integrity gate).
+
+`ctest`: **20/20 passed**, run twice back to back (13.52s and 14.40s).
+
+### No-regression check versus this morning's `6ac06d0` completion
+
+`readelf -d` over all 42 binaries: no `libgomp` in any `DT_NEEDED`, same as the earlier
+session -- the round-6/7 two-OpenMP-runtime fix still holds. Spot-ran and checked by
+inspection: `1_basic_bfv`, `2_basic_ckks`, `9_multi_stream_usage_way1` all exit 0 with
+plausible output; `15_basic_tfhe` exit 0, all eight TFHE gate outputs identical to the
+`6ac06d0` run's truth-table check (`Input1: 1,1,0,1,0,1,0,0`, `Input2: 1,0,1,0,1,1,1,0`,
+`Input3(control): 0,0,0,0,1,1,1,1` -> NAND/AND/NOR/OR/XNOR/XOR/NOT/MUX all correct, byte
+for byte the same decrypted bits as this morning's run). The round-12/13 Windows portability
+delta touches only `#ifdef _WIN32`-guarded code paths and shared host arithmetic
+(`mpz_mul_ui`->`set_mpz_u64`+`mpz_mul` etc., data-model-independent per round-14's LP64
+equivalence measurement) -- nothing here suggested a behavior change on Linux, and none was
+observed.
+
+### CUDA no-regression gate: re-run (stale at this head per round-14 finding 2)
+
+`26d636f`'s `head_sha` postdates the last CUDA gate recorded (`6ac06d0`, by gfx90a on
+2026-08-12), and round 13's `bb3d101` edits `src/include/heongpu/util/util.cuh`,
+`src/lib/util/util.cu`, `src/lib/util/memorypool.cu`, `src/lib/host/bfv/context.cu` and
+`src/lib/host/ckks/{context,operator,evaluationkey}.cu` unconditionally -- i.e. also on the
+CUDA `else()` branch, and both regressions the gate caught on 2026-08-12 were host TUs
+failing under nvcc. Re-run required, not carried forward.
+
+Fresh CUDA build in `agent_space/heongpu-cuda-gate/build` (separate tree, not the HIP build
+dir): `/opt/conda/envs/cuda-12.8/bin/nvcc` 12.8.93, host `gcc-13`/`g++-13`,
+`-DCMAKE_CUDA_ARCHITECTURES=80` pinned explicitly (this project's own
+`CMakeLists.txt:91-108` only auto-detects when `CMAKE_CUDA_ARCHITECTURES` is unset/empty/
+`native`/`52`, so the pin takes cleanly), `-DUSE_HIP=OFF`,
+`-DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON`:
+
+```bash
+cmake -S projects/HEonGPU/src -B agent_space/heongpu-cuda-gate/build \
+  -DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release \
+  -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON \
+  -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc \
+  -DCMAKE_C_COMPILER=gcc-13 -DCMAKE_CXX_COMPILER=g++-13
+cmake --build agent_space/heongpu-cuda-gate/build -j$(nproc)
+```
+
+This host's network reached `github.com` at full speed (unlike the earlier gfx90a host that
+needed the `rapids-cmake/cpm/versions.json` pinned-sha shortcut for the CCCL clone), so the
+plain configure completed in 28s with no manual `CPM_CCCL_SOURCE`/`FETCHCONTENT_SOURCE_DIR_
+CCCL` override needed; CPM still resolved the identical pin (`CCCL@3.0.3`,
+`8c04b6539859932f5602e86d38314e4d87f96420`) on its own. Configure rc=0. Build (`utils/
+timeit.sh HEonGPU cuda-compile -- ...`, 51.7s): **rc=0, zero lines matching `error:`**, 42
+executables linked. Confirmed the four files round 13 touches on the CUDA path actually
+recompiled: `Building CUDA object .../lib/util/memorypool.cu.o`, `.../lib/util/util.cu.o`,
+`.../lib/host/bfv/context.cu.o`, `.../lib/host/ckks/{context,operator,evaluationkey}.cu.o`
+all appear in the build log. No regression: this closes round-14 finding 2.
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --port HEonGPU`: clean.
+
+Documentation unchanged since the `6ac06d0` completion and still accurate: `README.md`
+("AMD GPUs (ROCm)" section, `-D USE_HIP=ON` instructions) and `docs/getting_started.rst`
+(ROCm prerequisite, `-D USE_HIP=ON -D CMAKE_HIP_ARCHITECTURES=<target>` configure line).
+Neither the Windows portability fix nor the LLP64 fix touched build docs.
+
+### Verdict
+
+`linux-gfx942`: **completed** at `26d636f6311da6a72a62e173fcfb8f8d4afdb874`. 20/20
+reproduced twice from a clean build; no `libgomp` regression; TFHE gate outputs identical to
+the prior completion; CUDA no-regression gate re-run at this head (was stale, round-14
+finding 2) and passes clean, closing that outstanding item. `wave64` gate now covered at the
+current head by this arch (gfx90a still owes its own revalidation at `26d636f`, independent
+evidence, gates nothing further).
