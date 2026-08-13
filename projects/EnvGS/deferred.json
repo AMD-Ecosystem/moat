@@ -53,6 +53,19 @@
       "upstream_issue": null,
       "created_at": "2026-08-06T06:51:22Z",
       "decided": null
+    },
+    {
+      "id": "envgs-nvidia-proprietary-rescan",
+      "kind": "other",
+      "component": null,
+      "summary": "Rescan with the fixed scan_nvidia: EnvGS's own tree ships scripts/instant-ngp/colmap_to_nerf.py with the NVIDIA 'retain all intellectual property' proprietary notice (instant-ngp, NVIDIA Source Code License, non-commercial). Old-marker-matchable casing, so the original screen missed the path entirely. Needs a person's licence ruling; the vendored OptiX submodule headers are tracked with diff-surfel-tracing.",
+      "refs": [
+        "moat main b336246 (case/wording-proof scan_nvidia)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T17:08:47Z",
+      "decided": null
     }
   ]
 }
