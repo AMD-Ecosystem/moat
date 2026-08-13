@@ -7,13 +7,13 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-06T06:58:03Z",
-  "updated_at": "2026-08-13T01:42:50Z",
-  "head_sha": "e7a7b279f8f21cd5fb339282d7fb1b15beda64ae",
+  "updated_at": "2026-08-13T01:48:29Z",
+  "head_sha": "1213551f14f64c92c08048f377034b1ee362659d",
   "depends_on": [],
   "waivers": {},
   "license_spdx": "BSD-3-Clause",
   "upstream_repo_id": 467155160,
-  "stage": "changes-requested",
+  "stage": "ported",
   "platforms": {
     "windows-gfx1201": {
       "state": "completed",
@@ -75,11 +75,11 @@
     "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "e7a7b279f8f21cd5fb339282d7fb1b15beda64ae",
+      "validated_sha": "1213551f14f64c92c08048f377034b1ee362659d",
       "failed_sha": null,
       "started_at": "2026-08-13T01:31:39Z",
       "completed_at": "2026-08-13T01:41:53Z",
-      "updated_at": "2026-08-13T01:41:53Z",
+      "updated_at": "2026-08-13T01:47:16Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -94,7 +94,15 @@
         "last_session_at": null
       },
       "last_agent": "validator",
-      "state": "completed"
+      "state": "completed",
+      "carry_forward": {
+        "from": "e7a7b279f8f21cd5fb339282d7fb1b15beda64ae",
+        "to": "1213551f14f64c92c08048f377034b1ee362659d",
+        "method": "source-class",
+        "class": "comment-only",
+        "detail": "tests/cuda/public_headers.cpp: comment-only (comments/format only)",
+        "at": "2026-08-13T01:47:16Z"
+      }
     },
     "linux-gfx90a": {
       "state": "completed",
@@ -132,7 +140,7 @@
       "validated_sha": "9e642a6a623a4871544193f5c5d078789bd630f4",
       "started_at": "2026-08-12T20:25:20Z",
       "completed_at": "2026-08-12T21:15:15Z",
-      "updated_at": "2026-08-13T01:42:50Z",
+      "updated_at": "2026-08-13T01:48:29Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -154,5 +162,6 @@
         "at": "2026-08-12T21:15:15Z"
       }
     }
-  }
+  },
+  "porting": null
 }

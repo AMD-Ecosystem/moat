@@ -312,7 +312,10 @@ show that any individual header stands alone, because every include after the fi
 already standing on the ones above it. Catching a header that only compiles because an
 earlier include supplied its dependencies takes ONE TU PER HEADER (a loop over the installed
 headers, or one small object each). Do not write the record as if the single-TU form proved
-per-header independence. Expect the per-header form to surface PRE-EXISTING upstream defects
+per-header independence -- and that includes the test file's OWN comment, which is the copy
+a maintainer reads and the only one that ships: correcting the note while leaving the
+overclaim in the source fixes the half nobody upstream sees. State the property the test
+gates and name what it does not cover. Expect the per-header form to surface PRE-EXISTING upstream defects
 that fail identically under nvcc's headers -- fix them additively or state them, but do not
 mistake them for port regressions. (rmagine's own `linalg.cuh` declares `__device__`
 functions while including only a math types header, and its `CudaHelper.hpp` throws

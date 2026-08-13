@@ -2421,3 +2421,74 @@ output -- `moatlib.py carry-forward ... source-class` is exactly the disposition
 project already used for the commit-message reword (see "History rewrite 2026-08-12"). The
 deferral entry's "fifth revalidation round across four completed platforms" remains the
 wrong price for the comment reword specifically.
+
+## Delta round 2026-08-13b (porter, linux-gfx1100) -- public-header comment reword
+
+Round scope: the single blocking finding of "## Review 2026-08-13 (reviewer,
+linux-gfx1100, delta round)" -- the false invariant left standing in
+`tests/cuda/public_headers.cpp:1-8`. Comment only; no compiled code touched.
+Fork commit `1213551` on `moat-port`, a NEW commit on top of e7a7b27 (NOT the
+amend the review costed out: linux-gfx942 recorded `validated_sha` e7a7b27
+while that review was being written, and amending would orphan it).
+
+The comment now states the property the test actually gates -- all 16 installed
+headers compile TOGETHER at the top of a host C++ TU with nothing above them,
+which is what catches a public header that has come to need a GPU compiler or an
+earlier include -- and says outright that per-header independence is not covered,
+naming the two headers that fail it.
+
+Re-verified here before writing the comment (not taken from the review), g++
+13.3.0, one TU per header:
+
+```
+cd projects/rmagine/src
+echo '#include <rmagine/math/linalg.cuh>' > t.cpp
+# ROCm path
+g++ -std=c++17 -fsyntax-only -Isrc/rmagine_cuda/include -Isrc/rmagine_core/include \
+  -I/opt/rocm/include -D__HIP_PLATFORM_AMD__=1 t.cpp
+# CUDA path
+g++ -std=c++17 -fsyntax-only -Isrc/rmagine_cuda/include -Isrc/rmagine_core/include \
+  -I/opt/conda/envs/cuda-12.8/targets/x86_64-linux/include t.cpp
+```
+
+- `math/linalg.cuh:20` -- "`__device__` does not name a type", both paths.
+- `util/cuda/CudaHelper.hpp:51` -- "'runtime_error' is not a member of 'std'",
+  both paths.
+- `util/cuda/CudaStream.hpp` (control) -- passes standalone, warning only.
+- Pre-existing, re-confirmed: `git log 6b93e86..HEAD -- .../linalg.cuh` is empty,
+  and `git show 6b93e86:.../CudaHelper.hpp` already throws `std::runtime_error`
+  at 51/64 with no `<stdexcept>`.
+
+Build + tests, gfx1100 (Radeon RX 7900 XTX), ROCm 7.2, HIP_VISIBLE_DEVICES=0,
+the standard recipe above with `-DCMAKE_HIP_ARCHITECTURES=gfx1100`:
+
+```
+cmake --build build -j                                  # 76/76, clean
+cd build && ctest --output-on-failure -R '^cuda_'        # 8/8 PASS, 2.06s
+```
+`cuda_public_headers` among them. This is a porter build check, not the
+validation record; the platforms owe their revalidation at the new head.
+
+`python3 utils/jargon.py --port rmagine`: clean (whole branch).
+`python3 utils/prose.py` on the commit body: clean. Title 59 chars.
+
+Deferral bookkeeping: `projects/rmagine/deferred.json`
+(`rmagine-per-header-include-gate`) priced the comment reword into the deferred
+item ("a fifth revalidation round across four completed platforms"), which the
+review showed is not its cost. Its `summary` and `refs` were corrected to scope
+the item to what is actually deferred -- the per-header TU gate plus the two
+two-line upstream header fixes -- and to record that the comment reword is done.
+`status`, `decided` and `kind` were NOT touched: defer-vs-now on the remaining
+work is still a person's ruling and is still unmade.
+
+`advance-head` to 1213551 classified the delta `comment-only` and carried
+linux-gfx942's e7a7b27 evidence forward by itself (`carry_forward.method`
+`source-class`); no hand disposition was needed and none was made. The other four
+platforms keep `validated_sha` 9e642a6 and the revalidation they already owed.
+
+The `cuda-to-rocm` fault-classes entry on the single-TU header test gained the
+transferable half of this round: the overclaim to avoid is in the test file's own
+comment, not only in the record, because that comment is the copy that ships.
+
+Still open for a person, unchanged: `c99f2fc` titled "[ROCm] WIP: ...", two
+"Stage 2:" commit titles, and the README saying nothing about `USE_HIP`.

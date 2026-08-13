@@ -5,9 +5,10 @@
       "id": "rmagine-per-header-include-gate",
       "kind": "other",
       "component": null,
-      "summary": "rmagine: tests/cuda/public_headers.cpp:1-8 claims the installed headers are includable 'in any order'; the single-TU test cannot prove that and two of the 16 (math/linalg.cuh, util/cuda/CudaHelper.hpp) fail standalone as pre-existing upstream defects. Tighten the comment, and optionally add a per-header TU gate plus the two two-line upstream fixes (<stdexcept>, runtime include). Deferred because it needs a fork commit and a fifth revalidation round across four completed platforms.",
+      "summary": "rmagine: build a per-header include gate for the 16 installed rmagine_cuda headers. tests/cuda/public_headers.cpp gates only the together-in-one-TU property; per-header independence is not covered, and two headers (math/linalg.cuh, util/cuda/CudaHelper.hpp) fail as the first include of a TU on both the CUDA and the ROCm include paths -- pre-existing upstream defects. The deferred work is that per-header TU gate plus the two two-line upstream fixes (<stdexcept> in CudaHelper.hpp, a runtime include in linalg.cuh), i.e. edits to upstream headers this port otherwise leaves untouched. NOT part of this item, and already done in fork commit 1213551: rewording the test's opening comment so its claim matches what the test proves.",
       "refs": [
-        "projects/rmagine/notes.md ## Review 2026-08-13"
+        "projects/rmagine/notes.md ## Review 2026-08-13 (reviewer, linux-gfx1100, delta round)",
+        "projects/rmagine/notes.md ## Delta round 2026-08-13b (porter, linux-gfx1100)"
       ],
       "status": "open",
       "upstream_issue": null,
