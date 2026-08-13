@@ -13,6 +13,3 @@ lookahead_planners = 1     # plan the next project while the current one ports
 # {arch, since}. Takeover is a human decision -- if the lock is held by another arch,
 # ask the person running the agent rather than expiring it on a timer -- so there is
 # no TTL or heartbeat to configure.
-
-[porter]
-max_attempts = 3           # failed validation cycles before blocking and asking
