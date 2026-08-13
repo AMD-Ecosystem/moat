@@ -2,3 +2,18 @@
 {"kind":"session","ts":"2026-08-11T22:36:13Z","epoch":1786487773.515610284,"event":"end","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-08-12T00:03:03Z","epoch":1786492983.470444273,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-12T00:16:09Z","epoch":1786493769.290833560,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-13T01:44:02Z","epoch":1786585442.637121456,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-13T01:44:12Z","epoch":1786585452.659739026,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-08-13T01:46:34Z","phase":"compile","seconds":9.963,"exit":0,"cmd":"bash agent_space/rmcl/build_rmagine.sh"}
+{"kind":"phase","ts":"2026-08-13T01:48:13Z","phase":"compile","seconds":6.414,"exit":1,"cmd":"bash agent_space/rmcl/build_rmcl.sh"}
+{"kind":"phase","ts":"2026-08-13T01:51:32Z","phase":"compile","seconds":180.570,"exit":2,"cmd":"bash agent_space/rmcl/build_rmcl.sh"}
+{"kind":"phase","ts":"2026-08-13T01:52:33Z","phase":"compile","seconds":13.146,"exit":2,"cmd":"bash agent_space/rmcl/build_rmcl.sh"}
+{"kind":"phase","ts":"2026-08-13T01:55:24Z","phase":"compile","seconds":112.268,"exit":0,"cmd":"bash agent_space/rmcl/build_rmcl.sh"}
+{"kind":"phase","ts":"2026-08-13T01:57:52Z","phase":"compile","seconds":8.539,"exit":0,"cmd":"bash agent_space/rmcl/build_rmcl.sh -DBUILD_TESTING=ON"}
+{"kind":"phase","ts":"2026-08-13T01:58:01Z","phase":"test","seconds":0.006,"exit":127,"cmd":"env LD_LIBRARY_PATH=/var/lib/jenkins/moat/agent_space/rmcl/rmagine_install/lib:/var/lib/jenkins/moat/agent_space/rmcl/install/rmcl/lib:/var/lib/jenkins/moat/agent_space/rmcl/install/rmcl_ros/lib:/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel/lib:/opt/ros/jazzy/lib /var/lib/jenkins/moat/agent_space/rmcl/build/rmcl_ros/tests/rmcl_ros_tests_gpu_kernels"}
+{"kind":"phase","ts":"2026-08-13T01:58:08Z","phase":"test","seconds":0.840,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/rmcl/run_test.sh /var/lib/jenkins/moat/agent_space/rmcl/build/rmcl_ros/tests/rmcl_ros_tests_gpu_kernels"}
+{"kind":"phase","ts":"2026-08-13T01:58:17Z","phase":"test","seconds":0.623,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/rmcl/run_ctest.sh"}
+{"kind":"phase","ts":"2026-08-13T01:59:02Z","phase":"compile","seconds":4.622,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/rmcl/build_autodetect.sh"}
+{"kind":"phase","ts":"2026-08-13T02:04:04Z","phase":"compile","seconds":286.795,"exit":0,"cmd":"bash agent_space/rmcl/build_rmcl.sh -DBUILD_TESTING=ON"}
+{"kind":"phase","ts":"2026-08-13T02:04:10Z","phase":"test","seconds":0.006,"exit":127,"cmd":"bash run_ctest.sh"}
+{"kind":"phase","ts":"2026-08-13T02:04:21Z","phase":"test","seconds":0.878,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/rmcl/run_ctest.sh"}

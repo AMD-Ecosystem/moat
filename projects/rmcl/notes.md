@@ -114,3 +114,175 @@ Recommend **fork** (adopt), `--viable yes`. The licence is clean at tier 1, no o
 The honest counterweight, which belongs in front of whoever decides: this is not the 508-line job the `.cu` count suggests. Scope it as a HIPRT correspondence backend at the rmcl layer plus a from-scratch validation harness, needing ROS 2 jazzy, Embree, and a provisioned HIPRT SDK. A planner who scopes it as "curand to hiprand" will produce code no node can execute.
 
 Nothing here decides anything: adoption stays with the person reading the queue.
+
+## Port round 2026-08-13 (linux-gfx942, MI300X, gfx942) -- built, tested, pushed
+
+Executed `plan.md`. Fork `AMD-Ecosystem/rmcl`, branch `moat-port` cut from upstream `main`
+`8892cf4` (the fork's own `main` was one commit behind upstream and was left alone). Head
+`a8e6f88`.
+
+Two commits:
+
+- `dde091b [ROCm] Compile the rmcl_ros GPU code with HIP`
+- `a8e6f88 [ROCm] Add a GPU test for the rmcl_ros kernels`
+
+### What was changed
+
+New `rmcl_ros/include/rmcl_ros/util/cuda_to_hip.h` -- rmcl's own shim (NOT rmagine's, per the
+plan: rmagine's exists only on our fork). Maps `curandState`, `curand_init`, `curand`,
+`curand_normal` under `USE_HIP || __HIP_PLATFORM_AMD__`, includes the real CUDA headers
+otherwise. Host-includable, verified directly: `g++ -std=c++17 -D__HIP_PLATFORM_AMD__ -c` over
+`<cstdio>` + `<hiprand/hiprand_kernel.h>` compiles, so `GladiatorResamplerGPU.cpp` stayed a
+plain C++ TU and the LANGUAGE HIP set is just the two `.cu` files. Plan risk 3 did not
+materialise.
+
+`rmcl_ros/CMakeLists.txt`: `option(USE_HIP ... ${rmagine_cuda_USE_HIP})` -- it defaults from
+the variable rmagine's ROCm build exports, so a workspace that found a ROCm rmagine does not
+have to pass the flag (verified: a configure with no `-DUSE_HIP` gets `USE_HIP:BOOL=ON`). In
+the `RMCL_CUDA` block: `find_package(hip)`, `find_package(hiprand)`, `enable_language(HIP)`
+under `USE_HIP`, and the existing CUDA detection gated `if(CMAKE_CUDA_COMPILER AND NOT
+USE_HIP)`. After `add_library(rmcl_ros_cuda ...)`: `LANGUAGE HIP` on the two `.cu`,
+`USE_HIP` as a PUBLIC compile definition (the installed headers switch spelling with it), and
+`hip::host` + `hip::hiprand` PUBLIC.
+
+Include redirects (4 files) to the shim. Two unconditional fixes, correct on CUDA too:
+`<climits>` in `resampling.cu` for `UINT_MAX` (plan risk 5, as predicted), and the default
+member initializers removed from `SimpleLikelihoodStats` (see gotchas).
+
+README: an AMD paragraph plus a `colcon build --cmake-args -DUSE_HIP=ON
+-DCMAKE_HIP_ARCHITECTURES=gfx942` block in the Installation section, matching that section's
+terse house style, and stating plainly that ray casting still needs OptiX so correspondence
+search on AMD runs on the CPU.
+
+New `rmcl_ros/tests/` (upstream has no tests at all): one executable
+`rmcl_ros_tests_gpu_kernels`, `add_test(NAME rmcl_gpu_kernels)`, built under `if(BUILD_TESTING
+AND RMCL_CUDA)`. Content per the plan's test plan.
+
+`rmcl/CMakeLists.txt` was NOT touched -- confirmed empirically, as the plan asked: on a
+CUDA-free host `CMAKE_CUDA_COMPILER` is unset, `CUDA_LIBRARIES` stays empty and `rmcl`,
+`rmcl-cuda`, `rmcl-embree` build with zero changes. The OptiX and Vulkan sources are
+untouched (`git diff --stat` is 6 files + 2 new).
+
+### Gotchas (both promoted to the cuda-to-rocm skill, naming rmcl)
+
+1. `__shared__ SimpleLikelihoodStats sdata[blockSize]` where the struct carries default member
+   initializers (`float sum = 0.0; float max = -1.0;`): clang errors `initialization is not
+   supported for __shared__ variables`; nvcc accepts it and drops the initialization. The
+   kernel writes both members before reading them and no host code default-constructs the
+   type (`rm::Memory<..., VRAM_CUDA>` never runs constructors), so the initializers were
+   already dead. Removed them -> `references/fault-classes.md`, "Memory and lifetime".
+2. `hip::device` on `rmcl_ros_cuda` breaks the build: `--offload-arch=gfx942` lands on the five
+   `MICP*SensorCUDA.cpp` host compiles (`c++: error: unrecognized command-line option`).
+   PRIVATE does not help -- that controls propagation to consumers, not the target's own
+   sources -- and `$<COMPILE_LANGUAGE:HIP>` is not allowed in `target_link_libraries`. With
+   `enable_language(HIP)` the flag comes from `CMAKE_HIP_ARCHITECTURES` for the HIP sources
+   anyway, so `hip::device` is simply not needed. This is a refinement of plan risk 13, which
+   expected PRIVATE to be the answer -> `references/strategy-a-cmake.md`, "Build hygiene".
+3. The rmagine install path predicted as broken in the plan is FIXED: rmagine at `e7a7b27`
+   installs and is consumed cleanly (`find_dependency(hip)` / `find_dependency(hiprand)` in
+   its cuda config). Plan risks 1 and 2 no longer apply; the plan's open question 1 is
+   answered by rmagine's own delta round.
+4. ROS 2 tooling picks up whatever `python3` is first on `PATH`. With the conda python first,
+   `rosidl` fails with `ModuleNotFoundError: No module named 'em'`; the apt ROS stack wants
+   `/usr/bin/python3`. Fix: `export PATH=/usr/bin:$PATH` before sourcing
+   `/opt/ros/jazzy/setup.bash`. Host-specific, so it stays here.
+
+### Environment (linux-gfx942)
+
+- Ubuntu 24.04.4 noble, ROCm 7.14 from the pip `_rocm_sdk_devel` package under
+  `/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel` (there is no
+  `/opt/rocm` on this host; pass that prefix on `CMAKE_PREFIX_PATH` and as
+  `CMAKE_HIP_COMPILER=<prefix>/llvm/bin/clang++`).
+- ROS 2 jazzy installed for this port from `packages.ros.org` (`ros-jazzy-ros-base`, tf2,
+  tf2-ros, image-transport, visualization-msgs, std-srvs, rclcpp-components,
+  rosidl-default-generators, python3-colcon-common-extensions), plus `libembree-dev`,
+  `libassimp-dev`, `libeigen3-dev`, `libtbb-dev`.
+- GPU: AMD Instinct MI300X, `amdgcn-amd-amdhsa--gfx942:sramecc+:xnack-`.
+
+### Exact commands
+
+Dependency (rmagine fork `moat-port` at `e7a7b27`), built and installed to a staging prefix:
+
+```
+cmake -S projects/rmagine/src -B agent_space/rmcl/rmagine_build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_HIP_COMPILER=$ROCM/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH="$ROCM" \
+  -DRMAGINE_OPTIX_DISABLE=ON -DRMAGINE_VULKAN_DISABLE=ON \
+  -DRMAGINE_VULKAN_CUDA_INTEROP_DISABLE=ON -DRMAGINE_OUSTER_DISABLE=ON \
+  -DRMAGINE_BUILD_TESTS=OFF -DRMAGINE_BUILD_TOOLS=OFF \
+  -DCMAKE_INSTALL_PREFIX=agent_space/rmcl/rmagine_install
+cmake --build agent_space/rmcl/rmagine_build -j && cmake --install agent_space/rmcl/rmagine_build
+```
+
+Note the deviation from rmagine's own recipe: `RMAGINE_EMBREE_DISABLE` is left unset on
+purpose, so `rmagine::embree` exists and rmcl's CPU backend (`rmcl-embree`,
+`rmcl_embree_ros`, the Embree segmentation nodes) is part of the regression set.
+
+Workspace:
+
+```
+export PATH=/usr/bin:$PATH
+. /opt/ros/jazzy/setup.bash
+export CMAKE_PREFIX_PATH="<ws>/rmagine_install:$ROCM:$CMAKE_PREFIX_PATH"
+colcon build --base-paths projects/rmcl/src \
+  --packages-select rmcl_msgs rmcl rmcl_ros \
+  --build-base <ws>/build --install-base <ws>/install \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
+               -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+               -DCMAKE_HIP_COMPILER=$ROCM/llvm/bin/clang++
+```
+
+Result: `Summary: 3 packages finished [4min 46s]`, no errors, no CMake dev warnings. Device
+code is present and correctly targeted:
+
+```
+llvm-objdump --offloading <ws>/install/rmcl_ros/lib/librmcl_ros_cuda.so
+Extracting offload bundle: ... .0.hipv4-amdgcn-amd-amdhsa--gfx942
+```
+
+### Test results
+
+```
+ctest --test-dir <ws>/build/rmcl_ros --output-on-failure
+1/1 Test #1: rmcl_gpu_kernels .................   Passed    0.42 sec
+100% tests passed, 0 tests failed out of 1
+```
+
+```
+particle_move_and_forget: OK (4099 particles)
+compute_stats: OK (sum=2051.63 max=1)
+gladiator_resample: OK (2043 of 4099 particles replaced, noise mean=-0.00274891 sd=1.01771)
+```
+
+`AMD_LOG_LEVEL=3` confirms all four kernels reach the device (not just the copies):
+
+```
+ShaderName : rmcl::init_curand_kernel(hiprandState*, unsigned int)
+ShaderName : void rmcl::simple_stats_kernel<512u>(rmagine::Transform_<float> const*, ...)
+ShaderName : rmcl::particle_move_and_forget_kernel(rmagine::Transform_<float>*, ...)
+ShaderName : rmcl::gladiator_resample_kernel(rmagine::Transform_<float> const*, ..., hiprandState*, ...)
+```
+
+How the resampler is asserted without a comparable RNG stream (hipRAND's sequence differs
+from cuRAND's, plan risk 6): likelihoods are made unique (`mean = i + 1`), so the winner of a
+duel is recoverable from the resampled attributes, and with unit translation noise and zero
+rotation noise the recovered offset IS the drawn normal triple. That gives a real
+distribution check (mean `-0.0027`, sd `1.018` over ~6100 samples) on top of the
+stream-independent invariants: a lost duel copies the particle through bitwise, a won duel
+must carry a strictly greater likelihood, nothing is NaN, and two runs from freshly seeded
+states agree bitwise.
+
+### Not done, deliberately
+
+- The optional `rmcl` package test over `CorrespondencesCUDA::computeCrossStatistics` (plan's
+  "optional second test"). The three required kernel tests are in and pass; this one is worth
+  adding if a reviewer wants the `rmcl` package to carry evidence of its own.
+- Everything about OptiX/HIPRT and the reachable-GPU-backend question. Unchanged from the
+  plan: the GPU correspondence path is still unreachable on a ROCm-only configuration, and
+  the README and the commit message both say so rather than implying MICP-L now runs on AMD
+  GPUs.
+- No NVIDIA host exists in the fleet, so the CUDA no-regression claim rests on construction:
+  every change is inside `USE_HIP` except `<climits>`, the `SimpleLikelihoodStats`
+  initializers and the README. That is exactly the set a reviewer should check.
