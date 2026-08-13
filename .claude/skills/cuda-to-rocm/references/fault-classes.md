@@ -60,6 +60,19 @@ Width-32 LOGICAL warp ops (`__shfl*(...,32)`, `cub::WarpReduce<,32>`,
 `cg::tiled_partition<32>`) are arch-agnostic and fine -- they work within a 32-lane
 subgroup whatever the physical width.
 
+**Pass that logical width on BOTH paths, and prefer the project's own pre-CUDA-9 branch
+over remapping `__shfl_*_sync` in the compat header.** An `#ifdef USE_HIP` pair that
+spells the same reduction twice -- width 32 on HIP, bare on CUDA -- reads as an
+AMD-specific hack and draws review churn; the 32 is algorithmic (block.x, one descriptor
+row, a bitonic network), so writing it unconditionally is both correct and clearer, and
+NVIDIA generates the same code. Better still, many projects already select between
+`__shfl_*_sync` and the mask-free `__shfl*` on a configure-time flag for CUDA before 9.0.
+HIP's spelling IS the mask-free one, with a width up to 64, so setting that existing flag
+to 0 on the HIP path removes the compat-header macros entirely -- and with them the
+`<hip/hip_bf16.h>` include-ordering workaround, since newer ROCm declares real
+`__shfl_*_sync` templates that function-like macros of the same name would rewrite.
+(popsift, on the maintainer's review of PR #186.)
+
 **A compat `__ballot_sync` that casts `__ballot()` to `uint32_t` takes the LOW 32 lanes**,
 which are the wrong lanes for any logical warp not at the wavefront base -- with
 `blockDim (32,32)`, odd `threadIdx.y` rows sit in the high lanes. Arch-unified form:
@@ -302,6 +315,12 @@ Fix additively -- it helps the CUDA build too. (LC-framework)
 **A force-included compat header creates no build dependency edge.** After editing a header
 injected with `-include`, object files are NOT rebuilt: wipe them manually or you validate
 stale code and get a silent false pass. (lc0)
+
+**C++17 `std::clamp` and friends work in HIP device code but not under nvcc.** Clang
+treats a `constexpr` function as implicitly `__host__ __device__`, so `std::clamp` compiles
+in a HIP kernel; nvcc rejects it without `--expt-relaxed-constexpr`. Fine inside an
+AMD-only branch, a build break if you put it in SHARED device code that nvcc also
+compiles. Check which side of the guard it lands on. (popsift)
 
 **MSVC-only upstreams accept code that clang and gcc reject**, so the HIP build (and the
 CUDA build under nvcc) is a stricter compiler than the project has ever seen. Velvet carried
