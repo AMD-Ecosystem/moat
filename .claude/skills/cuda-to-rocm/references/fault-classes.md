@@ -293,7 +293,9 @@ includes (`hip_runtime.h`, `hipfft.h`) unconditional, and gate device-only ones 
 TU.** A wave-width gate in a header included BEFORE the runtime header silently takes the
 CUDA branch and picks width 32. hipify-perl prepends the runtime include at line 1, which
 masks the bug -- so the gate is correct only by accident and breaks for anyone building
-without hipify. Verify include order rather than trusting the prepend. (LC-framework)
+without hipify. Verify include order rather than trusting the prepend, and prefer the
+compiler's own `__GFX8__`/`__GFX9__`/`__GFX11__`/`__GFX12__` device-pass predefines, which
+need no header at all and are never defined by nvcc or by a host compiler. (LC-framework)
 
 **Missing-include errors are usually pre-existing upstream omissions**, not port breakage:
 CUDA's headers supplied them transitively and the narrower HIP include graph unmasks them.

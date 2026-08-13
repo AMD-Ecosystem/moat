@@ -93,10 +93,21 @@ compat header with `-include`.
   before compiling. Un-hipified files surface as "undeclared identifier cudaMalloc". Note
   that hipify prepends `#include "hip/hip_runtime.h"`, which breaks a g++ CPU reference
   build, so build that from a separate non-hipified copy. (LC-framework)
-- **That prepended header is often load-bearing, not cosmetic.** It is what defines
-  `__HIP_PLATFORM_AMD__` before the project's own headers are parsed, so any macro gate that
-  keys on it -- wave-width selection above all -- evaluates as if the platform were CUDA when
-  the same source is handed straight to `hipcc` without hipifying. That failure is silent: it
-  compiles and runs, with wave32 code on wave64 hardware. When the build recipe is a hand-run
-  compiler line rather than a build system, write the hipify step into the documented order
-  and say there that it must precede compilation. (LC-framework)
+- **`-inplace` re-hipifies from the `.prehip` backup, not from the file on disk.** The first
+  run saves `foo.cu` as `foo.cu.prehip`; every later run reads the backup and overwrites
+  `foo.cu` from it. So regenerating a file and hipifying it again silently resurrects the
+  previous generation's content, with no diagnostic and a plausible-looking build. Delete
+  the stale `*.prehip` (or work in a fresh copy of the tree) whenever a generator has
+  rewritten a file that was already hipified. (LC-framework)
+- **Do not key a macro gate on `__HIP_PLATFORM_AMD__` when a compiler predefine says the same
+  thing.** `__HIP_PLATFORM_AMD__` comes from `hip/hip_runtime.h`, not from the compiler, so a
+  gate above the includes -- wave-width selection above all -- depends on hipify happening to
+  prepend that header at line 1, and evaluates as if the platform were CUDA whenever it does
+  not. That failure is silent: it compiles and runs, with wave32 code on wave64 hardware.
+  `__GFX8__`/`__GFX9__`/`__GFX11__`/`__GFX12__` are AMD-clang device-pass predefines that need
+  no header and are never defined by nvcc or by a host compiler, so
+  `#if defined(__GFX8__) || defined(__GFX9__)` is both shorter and self-contained. Verify a
+  candidate gate with `hipcc -x hip --offload-arch=<arch> -dM -E` on an empty file before
+  trusting it, and assert the result per arch with a `static_assert` under
+  `#ifdef __HIP_DEVICE_COMPILE__` -- an unguarded one in a `__global__` body is also evaluated
+  in the host pass, where the answer is legitimately different. (LC-framework)

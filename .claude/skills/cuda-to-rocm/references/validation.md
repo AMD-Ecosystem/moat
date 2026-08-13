@@ -64,9 +64,12 @@ is one sparse checkout away rather than three independently-versioned clones tha
 can skew against each other (an `ROCm/hipCUB` `main` against an unrelated
 `ROCm/rocPRIM` branch produced real compile errors from an API mismatch, not from
 the port). `git clone --filter=blob:none --sparse --depth 1
-https://github.com/ROCm/rocm-libraries.git && git sparse-checkout set
-projects/hipcub projects/rocprim projects/rocthrust` pulls a consistent set in
-under a minute. Each ships a `*_version.hpp.in` that only a CMake configure step
+https://github.com/ROCm/rocm-libraries.git && cd rocm-libraries && git
+sparse-checkout set projects/hipcub projects/rocprim projects/rocthrust` pulls a
+consistent set in under a minute. The `cd` is load-bearing: `git clone` does not
+change directory, so without it `git sparse-checkout set` applies to whatever
+repository you are standing in and empties its working tree of everything outside
+the named paths. Each ships a `*_version.hpp.in` that only a CMake configure step
 normally expands (`hipcub_version.hpp`, `rocprim_version.hpp`,
 `rocthrust_version.hpp`) -- hand-write the trivial expansion (three `#define`s,
 any plausible version number; nothing in this class of build reads the value) and
