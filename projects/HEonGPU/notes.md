@@ -4419,3 +4419,81 @@ Untouched by ruling or assignment: `-fgpu-rdc` and the `small_ntt` guard (settle
 `6ac06d0`), the two registered upstream defects, and review finding 2 (the stale CUDA
 no-regression gate at the new head), which the reviewer assigned to whichever Linux arch
 revalidates first.
+
+## Review 2026-08-13 (round 16, windows-gfx1151) -- message-only re-review of 2473e85
+
+Narrow round. Round 15 amended `bb3d101`'s message and changed nothing else; confirmed
+here (`git diff bb3d101 2473e85` empty, both trees `83718d0`, both parents `d14abb1`,
+`git status --porcelain` clean, `origin/moat-port` at `2473e85`). Nothing older moved and
+no evidence was orphaned: `linux-gfx942` and `linux-gfx1100` sit at `6ac06d0`,
+`linux-gfx90a` at `5d99b8f`, both still ancestors of HEAD, and `windows-gfx1151` had
+`failed_sha: 6ac06d0` with `validated_sha: null`. Code, root cause, strategy and LP64
+equivalence were passed in round 14 and were not reopened, nor were `-fgpu-rdc` and the
+`small_ntt` guard (ruled at `6ac06d0`). Round-14 finding 2 (the stale CUDA no-regression
+gate at the new head) remains OUTSTANDING and is still a validator obligation; it is not
+closed by this round.
+
+Round-14 findings 1 (naming) and 3 (the round-13 notes correction) are resolved. The
+function names in the new paragraph are exact -- `add_constant_plain_ckks_v2()` at
+`src/lib/host/ckks/operator.cu:596` and `multiply_const_plain_ckks_v2()` at
+`src/lib/host/ckks/operator.cu:660`, which are precisely the two functions the hunk edits
+(the edited lines are 625-641 and 717-733). `notes.md:4066-4067` no longer says "two
+overloads" and names both. Title is `[ROCm] Keep 64-bit moduli intact on an LLP64 host`
+verbatim, 49 chars; body is pure ASCII, carries the AI-assistance disclosure, both fenced
+Test Plan blocks, no `Co-Authored-By` and no noreply trailer; `python3 utils/jargon.py
+--port HEonGPU` reports clean.
+
+One finding, and it is in the sentence the amend added.
+
+### 1. The new coverage disclaimer states something the maintainer can disprove with one grep
+
+The paragraph now reads "Neither helper is reached by any test, example or benchmark in
+the tree: their only other caller is scale_up_ckks(), on the CKKS bootstrapping path,
+which has no test executable." Both halves are wrong, and the second is wrong in the
+direction that matters least but the first in the direction that costs credibility.
+
+`example/bootstrapping/5_ckks_regular_bootstrapping_v2.cpp:141` calls
+`operators.regular_bootstrapping_v2(...)`, and `regular_bootstrapping_v2()` at
+`src/lib/host/ckks/operator.cu:7175` reaches BOTH helpers:
+
+- `operator.cu:7201` (unconditional, again at `:7208` and `:7224`) calls `scale_up()`
+  (`src/include/heongpu/host/ckks/operator.cuh:940`) -> `scale_up_ckks()`
+  (`operator.cu:753`) -> `multiply_const_plain_ckks_v2()` (`operator.cu:762`);
+- `operator.cu:7237,7239` call `eval_mod()` (`operator.cu:4276`), whose double-angle loop
+  at `operator.cu:4304-4313` calls `add_plain_v2()` (`operator.cu:4310`) ->
+  `add_constant_plain_ckks_v2()` (`operator.cuh:599`).
+
+So an example in the tree does exercise both helpers. What is true is the narrower claim
+round 14 actually verified: no TEST executable reaches them, and the Test Plan below
+configures only `-DHEonGPU_BUILD_TESTS=ON`, while `HEonGPU_BUILD_EXAMPLES` defaults OFF
+(`CMakeLists.txt:163`), so the examples were neither built nor run. Round 14's grep
+(`add_plain_v2|multiply_plain_v2` over `test/ example/ benchmark/`) only ruled out DIRECT
+calls; the examples reach the helpers transitively through the bootstrapping entry point.
+
+"their only other caller is scale_up_ckks()" is also true only of
+`multiply_const_plain_ckks_v2`. `add_constant_plain_ckks_v2` is never called by
+`scale_up_ckks`; its sole caller is `add_plain_v2` (`operator.cuh:599`), which is called
+from `eval_mod` (`operator.cu:4310`), `gen_power` (`operator.cu:4387`) and
+`evaluate_poly_from_polynomial_basis` (`operator.cu:4456`).
+
+The conclusion the paragraph draws -- fix by inspection, the results below do not cover
+that hunk -- is correct and worth keeping; it is the supporting sentence that has to
+change. Naming the real reach is also more useful to a maintainer than naming one caller,
+because it points at the code they would re-run. A wording that survives the grep:
+
+```
+No test executable reaches either helper: they are called only from the CKKS
+bootstrapping path -- eval_mod(), gen_power() and evaluate_poly_from_polynomial_basis()
+reach add_constant_plain_ckks_v2() through add_plain_v2(), and scale_up_ckks() reaches
+multiply_const_plain_ckks_v2() -- which the bootstrapping examples exercise but the test
+suite does not, and the runs below build tests only. That hunk is therefore a fix by
+inspection, and the results below do not exercise it.
+```
+
+Either reword, or resolve it the other way by building with
+`-DHEonGPU_BUILD_EXAMPLES=ON` and running `5_ckks_regular_bootstrapping_v2` on
+windows-gfx1151, which would turn "fix by inspection" into a measured result and let the
+sentence be dropped entirely. The reword is the cheap path and is still free: no platform
+is validated at `2473e85`, so the amend orphans nothing.
+
+Everything else in the message and the branch is unchanged from what round 14 passed.
