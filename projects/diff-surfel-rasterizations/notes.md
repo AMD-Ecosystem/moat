@@ -906,3 +906,117 @@ write is `atomicAdd(&out_weight[collected_id[j]], w)` from the compositing loop
   except the chevron respacing.
 
 The real-GPU validation run is next; nothing here waits on it.
+
+## Validation 2026-08-13 (linux-gfx942), `f088679`
+
+Environment: AMD Instinct MI300X HF (gfx942), ROCm 7.14.60850, torch
+2.14.0a0+git7d05abc, hipify 2.0.0, python 3.12, `PYTORCH_ROCM_ARCH=gfx942`,
+`MAX_JOBS=32` -- identical to the porting/review rounds. `HEAD` confirmed at
+`f088867994378172a519cf065290963cd908ac88b` on `moat-port`, tree clean
+before starting.
+
+### Fresh build from clean tree, 14/14, 453.0 s, 0 warnings
+
+Per the role's safe default, rebuilt from clean rather than trusting the
+`7d6efdc` install still present from the fix round (the `f088679` diff only
+touched `tests/test_variants.py`, so behavior is unchanged, but evidence for
+this record ties to a build done at this exact head):
+
+    export PYTORCH_ROCM_ARCH=gfx942 MAX_JOBS=32
+    for v in diff-surfel-rasterization*/; do
+      ( cd "$v" && rm -rf build *.egg-info *.hip hip_rasterizer \
+        && pip install -e . --no-build-isolation --no-deps ) || break
+    done
+
+Wrapped: `bash utils/timeit.sh diff-surfel-rasterizations compile -- <script>`.
+14/14 exit 0, `grep -ci warning` over the full log: 0, wall time 453.0 s
+(matches the porting round's 448-449 s to within noise).
+
+### Suite: 136 passed, 1 skipped in 8.74 s
+
+    bash utils/timeit.sh diff-surfel-rasterizations test -- \
+      python -m pytest projects/diff-surfel-rasterizations/src/tests/test_variants.py -q
+    # 136 passed, 1 skipped in 8.74s
+
+Matches the fix-round count exactly. No project-native non-GPU test suite
+exists to regress against (this repo has none outside `tests/`, per the
+plan).
+
+### Device dispatch confirmed, six channel counts
+
+    AMD_LOG_LEVEL=3 python -m pytest tests/test_variants.py \
+      -k "test_forward_is_finite_and_non_trivial and not tile1" -q -s
+
+`grep -i ShaderName` over the captured log (stderr; needs `-s` to defeat
+pytest's fd capture, `2>&1 > file` silently drops it to the terminal instead
+-- use `> file 2>&1`) shows real device kernels dispatching for every
+non-`tile1` channel count exercised by that test: `void preprocessCUDA<3|5|
+7|11|18|26>(...)`, `void renderCUDA<3u|5u|7u|11u|18u|26u>(...)`,
+`duplicateWithKeys(...)`, `identifyTileRanges(...)`, all with
+`HIP_vector_type<float, 2u>` / `glm::vec<...>` in the argument lists. Broader
+coverage than the porting round's single-variant spot check, same method.
+
+### CUDA no-regression gate: partial pass, one pre-existing upstream failure, not a port defect
+
+This host now carries the `cuda-12.8` conda env (the porting round's "no
+NVIDIA GPU or toolkit in this fleet" note is stale for this host). No
+CUDA-enabled PyTorch is installed anywhere in the fleet (checked both conda
+envs; `cuda-12.8` is toolkit-only, `py_3.12` is the ROCm build), so the two
+torch-glue files (`ext.cpp`, `rasterize_points.cu`, the only files that
+`#include <torch/extension.h>`) cannot be linked -- installing a CUDA
+PyTorch to do so is outside the ~15 min secondary-gate budget. Compiled the
+three device-kernel `.cu` files directly with pinned-arch nvcc instead,
+which covers the actual HIP-ported code (the kernel math) even though it
+skips the torch glue:
+
+    /opt/conda/envs/cuda-12.8/bin/nvcc -std=c++17 \
+      -gencode arch=compute_80,code=sm_80 -ccbin g++ \
+      -I. -Icuda_rasterizer -I<glm_dir> -c <file>
+
+Wrapped: `bash utils/timeit.sh diff-surfel-rasterizations cuda-compile -- <script>`.
+
+- `cuda_rasterizer/forward.cu`: exit 0, only unused-variable warnings.
+- `cuda_rasterizer/backward.cu`: exit 0, only unused-variable warnings.
+- `cuda_rasterizer/rasterizer_impl.cu`: **exit 2**, 8 errors, all
+  `identifier "uint32_t"/"uint64_t" is undefined` / `namespace "std" has no
+  member "uintptr_t"` in `rasterizer_impl.h` -- a missing `#include
+  <cstdint>` that this nvcc/libstdc++ combination does not pull in
+  transitively.
+
+Confirmed pre-existing, not a port regression: `git diff upstream/main --
+diff-surfel-rasterization/cuda_rasterizer/rasterizer_impl.h` is empty (the
+file is byte-identical to upstream `1aa433c`, as the review round already
+established for the completeness invariant), so the same nvcc build would
+fail identically on unmodified upstream. Verified the diagnosis rather than
+asserting it: added `#include <cstdint>` as a local throwaway (reverted
+immediately, `git status --porcelain` empty afterward), and the file then
+compiles clean with only the same class of warnings. Not fixed on the port
+branch -- it is not this project's regression to carry, and CUDA-Windows
+users hit the same thing today on unmodified upstream.
+
+Net: two of three kernel files pass outright; the third's failure is
+upstream's, reproduced and root-caused rather than assumed. No CUDA
+regression attributable to the HIP port. Recorded once, at this `head_sha`,
+per the "once per head_sha" rule -- do not re-run on another arch unless
+`head_sha` moves.
+
+### Jargon and documentation gates
+
+- `python3 utils/jargon.py --port diff-surfel-rasterizations`: clean.
+- README's ROCm section (`README.md:6-18`) documents the build for all
+  fourteen variants in the project's own house style, already verified by
+  the review rounds and reconfirmed here.
+
+### Integrity
+
+`git -C projects/diff-surfel-rasterizations/src status --porcelain`: empty
+before and after (the nvcc throwaway edit was reverted mid-run and checked
+clean immediately after).
+
+### Result
+
+`review-passed` -> `completed` on linux-gfx942, `validated_sha =
+f08867994378172a519cf065290963cd908ac88b`. This project has no test suite
+outside `tests/test_variants.py`, so nothing further to compare against a
+non-GPU baseline. linux-gfx1100 remains outstanding for the wave32 gate;
+this row alone already satisfies wave64.
