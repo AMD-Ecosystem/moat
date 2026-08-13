@@ -93,34 +93,38 @@ comparison that matters is against the other architectures, not against a fix.
 
 A test you add is usually gated on the GPU backend being *installed*, which says nothing
 about a device being present, so a build host without one turns "runs nothing" into a red
-test. The portable fix is to ask the runtime for a device count in `main` and return 77,
-with `set_tests_properties(<test> PROPERTIES SKIP_RETURN_CODE 77)`. Add the device-count
-spellings to the compatibility header rather than reaching for the HIP names directly, so
-the CUDA build keeps compiling.
+test. Which mechanism you need is decided by whether the test process reaches `main` on a
+device-less host, not by preference.
 
-That only works if the process reaches `main`. A dependency that builds a GPU context in a
-namespace-scope global constructs it while its shared library is loaded, and on a machine
-with no device it throws out of `cudaGetDeviceProperties`/`hipGetDeviceProperties` and the
-process aborts first. Two CTest mechanisms look like they rescue this and do not, both
-measured: `SKIP_REGULAR_EXPRESSION` is not consulted for a process that dies by a signal,
-and a `FIXTURES_SETUP` probe either lets the dependent test run anyway (probe skipped) or
-reports it `***Not Run` and counts both as failures (probe failed). Only a normal exit can
-produce a skip. So keep the 77 path, say plainly in the test's CMake comment that a
-device-less machine ends inside the dependency's constructor, and put the real fix -- a lazy
-context -- where it belongs, in the dependency. (rmcl, whose `rmagine` dependency defines
+**Nothing aborts before `main`.** Ask the runtime for a device count in `main` and return 77,
+with `set_tests_properties(<test> PROPERTIES SKIP_RETURN_CODE 77)`. Add the device-count
+spellings to the compatibility header rather than reaching for the HIP names directly, so the
+CUDA build keeps compiling.
+
+**A dependency constructs a GPU context at load time.** A namespace-scope global that builds
+one is constructed while its shared library is loaded, so on a machine with no device the
+process throws out of `cudaGetDeviceProperties`/`hipGetDeviceProperties` and aborts before
+`main`. The in-`main` 77 check can then never execute -- it is dead code, not defence in
+depth -- and two CTest mechanisms that look like they rescue it do not, both measured:
+`SKIP_REGULAR_EXPRESSION` is not consulted for a process that dies by a signal, and a
+`FIXTURES_SETUP` probe either lets the dependent test run anyway (probe skipped) or reports it
+`***Not Run` and counts both as failures (probe failed). Only a normal exit can produce a skip,
+so the decision has to be made by a process that never loads that library. Register a launcher
+as the test command: a probe executable links the GPU runtime *only* -- not the library that
+pulls the dependency in -- and exits 77 when it counts no device, and a `cmake -P` script runs
+the probe first. On 77, and on 77 alone, the script stops with
+`message(FATAL_ERROR "no GPU device available, skipping")`, which the matching
+`SKIP_REGULAR_EXPRESSION` turns into a skip because the script itself exits normally. Any other
+nonzero probe result must fail with the status it returned; routing every nonzero result to the
+skip path reports a probe that segfaulted or could not load the runtime as a machine without a
+GPU, hiding a test that never ran. With a device, the script runs the real test and forwards
+its status, so a failing test stays a failure. Measured on one build: `Passed` with a device,
+`***Skipped` under `HIP_VISIBLE_DEVICES=-1`, and `***Failed` with `device probe exited with 1`
+for a broken probe. (rmcl ships this, its `rmagine` dependency defining
 `CudaContextPtr cuda_def_ctx(new CudaContext(0));` at namespace scope.)
 
-If the residual exposure has to be closed in your own tree, the way out is to never launch the
-aborting binary. Register a launcher as the test command instead of the test itself: a probe
-executable that links only the GPU runtime -- not the library that pulls the dependency in, so
-no eager context is ever constructed -- reports the device count, and a `cmake -P` script runs
-the probe first and stops with `message(FATAL_ERROR "no GPU device available")` before starting
-the test when it comes back empty. The script exits normally from CTest's point of view, so
-`SKIP_REGULAR_EXPRESSION` on the matching text does fire; the earlier failure was the test
-binary itself dying by signal, not the mechanism. Measured both ways on one build: `Passed` with
-devices visible, `***Skipped` under `HIP_VISIBLE_DEVICES=-1`. It costs a small source file and a
-short script, so weigh it against just documenting the gap -- but it is a real option, not a
-dead end. (rmcl, same dependency.)
+Either way the real fix belongs in the dependency -- a lazy context -- so raise it there as
+well rather than leaving the launcher as the whole answer.
 
 ## Diagnosing a suspected AMD fault before escalating
 

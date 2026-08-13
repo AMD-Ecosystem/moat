@@ -201,7 +201,7 @@
     },
     {
       "id": "test:rmcl_gpu_tests",
-      "evidence": "rmcl_ros/tests/rmcl_gpu_kernels.cpp, registered as ctest rmcl_gpu_kernels under BUILD_TESTING AND RMCL_CUDA, run through tests/run_gpu_test.cmake with tests/gpu_device_probe.cpp deciding the skip. Passes on gfx942: 1/1 tests passed, and reports ***Skipped under HIP_VISIBLE_DEVICES=-1 instead of aborting. Checks the motion update and reduction against CPU references and the resampler through RNG-independent invariants. The optional rmcl-package cross-statistics test in the plan was not added; the three required kernel checks are covered here."
+      "evidence": "rmcl_ros/tests/rmcl_gpu_kernels.cpp, registered as ctest rmcl_gpu_kernels under BUILD_TESTING AND RMCL_CUDA, run through tests/run_gpu_test.cmake with tests/gpu_device_probe.cpp deciding the skip. Passes on gfx942: 1/1 tests passed, and reports ***Skipped under HIP_VISIBLE_DEVICES=-1 instead of aborting. The launcher skips on probe exit 77 alone and reports any other probe failure as a failure, measured through ctest for a probe that returns 1, one that does not exist and one that dies on a signal. Checks the motion update and reduction against CPU references and the resampler through RNG-independent invariants. The optional rmcl-package cross-statistics test in the plan was not added; the three required kernel checks are covered here."
     }
   ],
   "scoped_out": [

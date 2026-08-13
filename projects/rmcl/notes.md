@@ -964,3 +964,99 @@ titles at 45/46/50 chars, AI-assistance disclosure and Test Plan in each body, n
   (`resampling.cu:40-79`) writes all `blockSize` LDS slots before the loop and runs the full
   `__syncthreads` tree with the barrier outside `if(tid < s)`, so it is correct on wave32 and
   wave64 alike.
+
+## Fix round 2026-08-13 (linux-gfx942, MI300X) -- launcher distinguishes 77 from failure, head `2b7f439`
+
+Both items of the third review applied. Fork head `2cf0e8a` -> `2b7f439`, still three commits:
+the launcher commit is the branch tip, `pr-state rmcl` is `none` and both platforms carry
+`validated_sha: null`, so it was amended rather than followed by a fixup, on the same reasoning
+as the previous round. `f3d62d0` and `493d0f6` are untouched.
+
+### Fork: `run_gpu_test.cmake` now splits the probe's exit codes
+
+`if(NOT probe_result EQUAL 0)` became
+
+```cmake
+if(probe_result EQUAL 77)
+    message(FATAL_ERROR "no GPU device available, skipping")
+elseif(NOT probe_result EQUAL 0)
+    message(FATAL_ERROR "device probe exited with ${probe_result}")
+endif()
+```
+
+plus two sentences in the file's header comment saying that only 77 means no device. The script's
+contract now matches `gpu_device_probe.cpp:6-7`, which is what the review found disagreeing.
+
+Note on the non-numeric case: when the probe cannot be executed at all, `execute_process` puts a
+string in `RESULT_VARIABLE`, not a number. `EQUAL 77` is false for it and `NOT ... EQUAL 0` is
+true, so it lands in the failure branch and the message carries the string. Measured, not
+reasoned about (`device probe exited with No such file or directory`).
+
+### The four required behaviours, measured on this host
+
+Clean full workspace build first (`rm -rf build install`, then `agent_space/rmcl/build_rmcl.sh`,
+i.e. `-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DBUILD_TESTING=ON`):
+`Summary: 3 packages finished [4min 42s]`, no errors.
+
+The registered test, device present and then hidden:
+
+```
+ctest --test-dir build/rmcl_ros --output-on-failure
+1: particle_move_and_forget: OK (4099 particles)
+1: compute_stats: OK (sum=2051.63 max=1)
+1: gladiator_resample: OK (2043 of 4099 particles replaced, noise mean=-0.00274891 sd=1.01771)
+1/1 Test #1: rmcl_gpu_kernels .................   Passed    0.65 sec
+
+HIP_VISIBLE_DEVICES=-1 ctest --test-dir build/rmcl_ros
+1/1 Test #1: rmcl_gpu_kernels .................***Skipped   0.22 sec
+1 - rmcl_gpu_kernels (Skipped)
+```
+
+Kernel numbers are bit-for-bit those of all earlier rounds on both platforms.
+
+The probe/test substitutions were run through CTest rather than by invoking `cmake -P` by hand,
+so that the `SKIP_REGULAR_EXPRESSION` half is exercised too and skip-vs-failure is CTest's own
+verdict. `agent_space/rmcl/launcher_check/` registers the shipped `run_gpu_test.cmake` with the
+same skip regex and substituted `PROBE`/`TEST` (scratch, not on the fork). With a device present:
+
+```
+1/5 Test #1: a_real_device ....................   Passed    0.57 sec
+2/5 Test #2: b_probe_false ....................***Failed    0.02 sec
+     device probe exited with 1
+3/5 Test #3: c_probe_missing ..................***Failed    0.01 sec
+     device probe exited with No such file or directory
+4/5 Test #4: d_test_false .....................***Failed    0.22 sec
+     /bin/false exited with 1
+5/5 Test #5: e_probe_crash ....................***Failed   30.16 sec
+     device probe exited with Segmentation fault
+```
+
+`e_probe_crash` is a probe that raises SIGSEGV on itself, the review's "segfaults in
+`hipGetDeviceCount`" case; it is the slow one because CTest waits out the core dump. None of the
+four failure texts matches the skip regex, and the same suite under `HIP_VISIBLE_DEVICES=-1`
+gives `a_real_device` and `d_test_false` `***Skipped` (the real probe returns 77 before either
+test runs) while `b`, `c` and `e` stay `***Failed` -- a broken probe is not excused by the host
+also having no device.
+
+Before this change `b_probe_false` and `c_probe_missing` were `***Skipped`, which is exactly the
+review's finding.
+
+### MOAT: the skip lesson is now split by cause
+
+`.claude/skills/cuda-to-rocm/references/validation.md` section "A GPU test that skips on a
+device-less machine, and when it cannot" no longer reads as a preference between two options.
+It now opens by saying the mechanism follows from whether the process reaches `main`, then gives
+two labelled cases: in-`main` device count plus `SKIP_RETURN_CODE 77` where nothing aborts
+first, and the probe-launcher pattern where a dependency constructs a GPU context at load. The
+second case states plainly that the in-`main` check is dead code there, keeps both measured CTest
+dead ends (`SKIP_REGULAR_EXPRESSION` not consulted on a signal death, `FIXTURES_SETUP` giving
+either a run-anyway or `***Not Run` plus two failures), requires skipping on 77 alone with every
+other nonzero result failing with its status, and names rmcl as the project that ships it. The
+lazy-context deferral against rmagine closes the section for both cases. Hard-wrapped to match
+the rest of the file; `prose.py` flags the whole file for that and always has.
+
+### Checks
+
+`check.py` all gates ok, `jargon.py --port rmcl` clean, `prose.py` clean on the rewritten commit
+body, title still 45 chars, working tree clean, pushed with `--force-with-lease`
+(`+ 2cf0e8a...2b7f439 moat-port -> moat-port (forced update)`).

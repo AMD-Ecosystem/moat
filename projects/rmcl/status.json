@@ -7,15 +7,15 @@
   "priority": 4.281,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T03:40:15Z",
-  "updated_at": "2026-08-13T15:12:08Z",
-  "head_sha": "2cf0e8a92ca6ed39eb86682901b845c265fa669a",
+  "updated_at": "2026-08-13T15:24:21Z",
+  "head_sha": "2b7f439c1c7da079b36aae82f95f43f84fbcd932",
   "waivers": {},
   "license_spdx": "BSD-3-Clause",
   "depends_on": [
     "rmagine"
   ],
   "upstream_repo_id": 553482246,
-  "stage": "changes-requested",
+  "stage": "ported",
   "platforms": {
     "linux-gfx1100": {
       "blocked": false,
@@ -47,7 +47,7 @@
       "failed_sha": null,
       "started_at": "2026-08-13T01:44:17Z",
       "completed_at": null,
-      "updated_at": "2026-08-13T15:12:08Z",
+      "updated_at": "2026-08-13T15:24:21Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -75,7 +75,7 @@
   "porting": null,
   "porting_released": {
     "arch": "linux-gfx942",
-    "since": "2026-08-13T15:00:39Z",
-    "at": "2026-08-13T15:12:08Z"
+    "since": "2026-08-13T15:13:46Z",
+    "at": "2026-08-13T15:24:21Z"
   }
 }
