@@ -5,7 +5,7 @@
       "id": "plumed2-openacc-gpu",
       "kind": "feature-port",
       "component": null,
-      "summary": "Port covers only the cudaCoord (CUDA/Thrust/CUB) plugin. Excluded GPU surfaces: openaccPTM plugin (NVIDIA OpenACC offload via nvc++, the USEGPU path) -- no production ROCm OpenACC analogue; SAXS ArrayFire-CUDA backend (ArrayFire OpenCL could target AMD); core OpenACC infra (src/tools/OpenACC.h) and the libtorch-CUDA pytorch module. All opt-in/default-off.",
+      "summary": "Port covers only the cudaCoord (CUDA/Thrust/CUB) plugin. Excluded GPU surfaces: openaccPTM plugin (NVIDIA OpenACC offload via nvc++, the USEGPU path) -- no production ROCm OpenACC analogue; SAXS ArrayFire-CUDA backend (ArrayFire OpenCL could target AMD); core OpenACC infra (src/tools/OpenACC.h) and the libtorch-CUDA pytorch module. All opt-in/default-off. RULING SCOPE (jeffdaily 2026-08-13): pursue the feasible opt-in surfaces (SAXS via ArrayFire-OpenCL, libtorch module); OpenACC surfaces wait for a production ROCm OpenACC analogue.",
       "refs": [
         "projects/plumed2/notes.md"
       ],
