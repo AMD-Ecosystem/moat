@@ -149,7 +149,7 @@
       "kind": "other",
       "project": null,
       "component": null,
-      "summary": "Prep PyTorch hipify mappings for CUBLAS_COMPUTE_16F + cublasMath_t enum (missing; needed by dgSPARSE and others). Verified patch + PR draft ready; needs a fork, a push and an upstream PR.",
+      "summary": "Prep PyTorch hipify mappings for CUBLAS_COMPUTE_16F + cublasMath_t enum (missing; needed by dgSPARSE and others). Verified patch + PR draft ready; needs a fork, a push and an upstream PR. RULING SCOPE (jeffdaily 2026-08-13): prepare the PR branch; a colleague will open the upstream PR on Jeff's behalf.",
       "refs": [
         "findings/pytorch-hipify-cublas-math/mappings.patch",
         "findings/pytorch-hipify-cublas-math/PR-DRAFT.md"
