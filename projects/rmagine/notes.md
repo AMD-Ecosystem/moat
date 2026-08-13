@@ -2407,3 +2407,17 @@ is not part of that cost).
 
 Still open for a person, unchanged by this round: `c99f2fc` is titled "[ROCm] WIP: ..." and two
 commits are titled "Stage 2:", and the README says nothing about `USE_HIP`.
+
+### Addendum to the finding above (same day, after a parallel validation landed)
+
+While this review was in progress, linux-gfx942 recorded a validation at e7a7b279f
+(commit 5464534 on `port/rmagine`), so the finding's "nothing has been validated at
+e7a7b27 yet" is now one platform out of date. It does not change the conclusion:
+windows-gfx1201, windows-gfx1101, linux-gfx90a and linux-gfx1100 still carry
+`validated_sha` 9e642a6 and still owe a revalidation at today's head, so moving the head
+for a comment reword adds no round for them; and gfx942's fresh evidence is not destroyed
+by it either, because a comment is stripped by the preprocessor and cannot change compiled
+output -- `moatlib.py carry-forward ... source-class` is exactly the disposition this
+project already used for the commit-message reword (see "History rewrite 2026-08-12"). The
+deferral entry's "fifth revalidation round across four completed platforms" remains the
+wrong price for the comment reword specifically.
