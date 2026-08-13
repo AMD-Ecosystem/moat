@@ -76,3 +76,5 @@
 {"kind":"phase","ts":"2026-08-13T23:03:55Z","phase":"test","seconds":19.806,"exit":0,"cmd":"cmake --build projects/popsift/src/build-hip --target run-test-boat"}
 {"kind":"phase","ts":"2026-08-13T23:04:28Z","phase":"compile","seconds":2.359,"exit":0,"cmd":"cmake -S projects/popsift/src -B projects/popsift/src/build-cuda -DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=86 -DCMAKE_BUILD_TYPE=Release -DPopSift_BUILD_EXAMPLES=OFF -DBUILD_SHARED_LIBS=ON -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc"}
 {"kind":"phase","ts":"2026-08-13T23:04:53Z","phase":"compile","seconds":19.246,"exit":0,"cmd":"cmake --build projects/popsift/src/build-cuda -j"}
+{"kind":"session","ts":"2026-08-13T23:16:12Z","epoch":1786662972.287490945,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-13T23:19:38Z","epoch":1786663178.957356160,"event":"end","platform":"linux-gfx1100"}

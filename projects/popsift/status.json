@@ -7,7 +7,7 @@
   "priority": 5.187,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T00:36:13Z",
-  "updated_at": "2026-08-13T23:06:40Z",
+  "updated_at": "2026-08-13T23:19:38Z",
   "head_sha": "199e46564b34dffb34c73956bf9e4fccd28daf7d",
   "pr_url": "https://github.com/alicevision/popsift/pull/186",
   "pr_number": 186,
@@ -17,7 +17,7 @@
   "pr_state": "open",
   "license_spdx": "MPL-2.0",
   "upstream_repo_id": 36376397,
-  "stage": "ported",
+  "stage": "changes-requested",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -55,7 +55,7 @@
       "validated_sha": "f2712723d90371b706db3a37fb82537af151ab04",
       "started_at": "2026-08-13T22:13:49Z",
       "completed_at": "2026-06-23T22:30:19Z",
-      "updated_at": "2026-08-13T23:06:40Z",
+      "updated_at": "2026-08-13T23:19:38Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -69,7 +69,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "porter",
+      "last_agent": "reviewer",
       "carry_forward": {
         "to": "f2712723d90371b706db3a37fb82537af151ab04",
         "method": "source-class",
@@ -173,7 +173,7 @@
   },
   "porting_released": {
     "arch": "linux-gfx1100",
-    "since": "2026-08-13T22:57:22Z",
-    "at": "2026-08-13T23:06:40Z"
+    "since": "2026-08-13T23:16:12Z",
+    "at": "2026-08-13T23:19:38Z"
   }
 }

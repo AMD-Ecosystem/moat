@@ -1932,3 +1932,70 @@ Clean from scratch: 0 errors, 0 warnings, libpopsift.so linked (sm_86 device cod
   `git show <sha> -- <path> | git apply`, which keeps the message of every commit that a
   finding did not touch byte-identical (verified with `diff` against the old messages).
   Project-specific; not promoted.
+
+## Review 2026-08-13 (re-review of the rewritten fix round, tip 199e465)
+
+Scope: `git diff f2712723...199e465` on `moat-fix-186`, plus `git diff fe86937 199e465`
+to confirm what the rewrite changed relative to the round reviewed earlier today.
+
+Verdict: changes-requested, one finding. The four findings of "## Review 2026-08-13" are
+closed as described in "## 2026-08-13 -- fix-up for the review of the fix round"; the new
+finding is the same misdescription as finding 1, surviving in a third file that the
+earlier review did not name.
+
+1. **(medium) The corrected description of ROCm/rocm-systems#6683 is not applied
+   everywhere -- `src/popsift/sift_octave.cu:226` still contradicts it.** The line reads
+   `// ROCm/clr#275 (the partial fix ROCm/rocm-systems#6683 covers only surf2DLayered).`
+   That is the exact claim commit 27f5c02 ("Correct the description of the layered array
+   collapse") removes from `cuda_to_hip.h:135-144` and dbb157c removes from
+   `sift_textures.h:29-41`, and it is the claim the project's own experiment disproved
+   (notes.md:1282-1301: the defect is the write intrinsic routing the layer index into
+   the LOD slot, and with #6683 all three read paths -- surf2DLayeredread, tex2DLayered,
+   hipMemcpy3D -- return correct per-layer data). The text is pre-existing (identical at
+   the published tip f2712723) and no commit in this round touches it, so the PR would
+   now carry two incompatible accounts of the same defect in three files a maintainer
+   reads together, one of them explicitly presented as a correction. The same comment
+   also still says "Observed on gfx90a" only, while `cuda_to_hip.h:135` now names
+   gfx90a/CDNA2 and gfx1100/RDNA3.
+
+   Fix: rewrite that comment block to the write-side story (one hunk), and put it in
+   27f5c02, which is where the correction belongs and whose body already describes it as
+   a correction of the published text. `sift_octave.cu` is already touched by 199e465, so
+   there is no new file in the round either way. Comment-only, so the rebuild and the
+   Oxford counts are unaffected.
+
+### Verified clean (no action)
+
+- Ancestry: `git merge-base --is-ancestor f2712723 origin/moat-fix-186` -> yes;
+  `origin/moat-port` still f2712723d903; local `moat-fix-186` == `origin/moat-fix-186` ==
+  199e465. Fork tree clean (`git status --porcelain` empty).
+- Tree delta fe86937 -> 199e465 is exactly three files (`cuda_to_hip.h` 15 lines,
+  `sift_textures.h` 15 lines, `s_orientation.cu` 1 line); the only non-comment change is
+  `s_orientation.cu:230` `popsift::shuffle( best_val, 0, 32 )`.
+- Finding 1 (in the two named files): both blocks now state the write-side root cause,
+  #6683 completing all three read paths, and its absence from ROCm 7.2.x; mutually
+  consistent; ASCII; jargon clean. The gfx1100 collapse claim is backed by the recorded
+  2026-06-03 gfx1100 run (layered_collapse COLLAPSED on RDNA3).
+- Finding 2: abe4125 touches only `src/CMakeLists.txt`, `common/thrust_setup.h`,
+  `s_filtergrid.cu`; the sift_octave.cu error strings and the filter comment are in
+  199e465 with a body that matches what it does.
+- Finding 3: fe7135c's body names the (32,1) `ori_par` block (confirmed at
+  `s_orientation.cu:405-407`) and the extremum counter as the deliberate exception.
+  `s_extrema.cu:59` untouched by the round, and it is the only width-less
+  `popsift::shuffle` left in the tree (grep over `src/popsift`); the HIP arm at
+  `s_extrema.cu:43` passes `warpSize` explicitly.
+- Finding 4: notes.md:1562 now scopes the md5-unchanged evidence to the gfx1100 HIP
+  build and calls the CUDA arm compile-checked only, agreeing with the CUDA-compile-check
+  paragraph.
+- Hygiene: six `[ROCm]` titles at 58/51/58/60/49/63 chars; every body has rationale, the
+  AI-assistance disclosure and a fenced Test Plan; no Co-Authored-By, Signed-off-by or
+  noreply trailer; no non-ASCII in messages or added lines. Messages byte-identical to
+  the reviewed round for df795a3 and dbb157c; fe7135c and abe4125 differ only by the one
+  paragraph each that the porter declared. `jargon.py --port popsift` and
+  `--commits origin/develop..moat-fix-186` report only the pre-existing "fault classes"
+  hit in 05e698ec8, an ancestor of the frozen published tip; `--diff f2712723..moat-fix-186`
+  clean.
+- Evidence sanity: the validation section records 8351/9874, 7946/9452, 6158/7280,
+  4802/5799, 4618/5476, 3855/4618, img1 md5 852740c0eed2c0f28401bc66c78b37ae unchanged,
+  0 NaN/Inf over 9874x128, and the nvcc 12.8 sm_86 compile check. GPU revalidation at the
+  new head is the validator's job and is not held against this round.
