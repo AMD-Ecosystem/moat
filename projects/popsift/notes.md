@@ -1504,8 +1504,10 @@ Prior "CUDA path byte-identical" was a by-construction claim (all changes USE_HI
 
 ## 2026-08-13 -- fix round for PR #186 review (griwodz, CHANGES_REQUESTED 2026-08-07)
 
-Staging branch `moat-fix-186` cut from the published tip f2712723d903 (never rebased;
-f2712723 remains an ancestor). Four commits, staging tip **fe8693761c62**:
+Staging branch `moat-fix-186` cut from the published tip f2712723d903 (f2712723 remains
+an ancestor). Four commits, staging tip **fe8693761c62** -- superseded by the review
+fix-up at the end of this file, which restructured the round into six commits with tip
+**199e46564b34**:
 
 | sha | title |
 |-----|-------|
@@ -1557,7 +1559,10 @@ Implemented:
   `descr.x <= 0 ? 0 : scalbnf(__fsqrt_rn(descr.x*inv), norm_multi)`. The per-component
   test subsumes the old `fmaxf(...,0)` clamp (a marginally negative bin from
   round-to-nearest weight accumulation). Unified for CUDA (which previously did
-  `__fdividef(descr.x, sum)`); numerically identical on the test set (md5 unchanged).
+  `__fdividef(descr.x, sum)`). The md5-unchanged evidence is the gfx1100 HIP build only,
+  which already multiplied by the reciprocal, so it does not measure the CUDA arm; the
+  CUDA side of this change is compile-checked only (no NVIDIA GPU here). See the
+  "CUDA path compile check" note below.
   The old `sum > 1e-20f` subnormal gate is GONE per his request; a subnormal-but-nonzero
   sum could in principle make 1/sum overflow. Judged unreachable for real images and
   the reply will carry that rationale.
@@ -1812,3 +1817,118 @@ launch-site rewrites only (`:608`, `:623`, `:638`), and `s_extrema.cu:33-45` sti
 - The two promoted lessons in `.claude/skills/cuda-to-rocm/references/fault-classes.md`
   are accurate and cross-project, and sit in the sections a reader with that problem
   would open (wavefront-width, and the build/compiler-strictness list).
+
+## 2026-08-13 -- fix-up for the review of the fix round (tip fe86937 -> 199e4656)
+
+Porter pass closing the four findings of "## Review 2026-08-13". No fork review PR
+existed yet, so the staging branch was rewritten rather than appended to; f2712723d903
+(the published tip, `moat-port`) is still an ancestor and `moat-port` itself was not
+touched. Push: `git push --force-with-lease=moat-fix-186:fe869376... origin moat-fix-186`.
+
+New staging branch, six commits, tip **199e46564b34dffb34c73956bf9e4fccd28daf7d**:
+
+| sha | title |
+|-----|-------|
+| fe7135c | [ROCm] Pass the shuffle width explicitly on every platform |
+| df795a3 | [ROCm] Simplify the descriptor normalization guards |
+| dbb157c | [ROCm] Declare the texture and surface types in one header |
+| 27f5c02 | [ROCm] Correct the description of the layered array collapse |
+| abe4125 | [ROCm] Move the Thrust setup into a shared header |
+| 199e465 | [ROCm] Fix the linear texture error strings and filter comments |
+
+Tree delta vs the reviewed fe86937: exactly three files -- `sift_textures.h` and
+`cuda_to_hip.h` comment text, and one width literal in `s_orientation.cu`.
+
+### Per-finding closure
+
+1. **(high) #6683 scope claim.** Both comment blocks rewritten to the measured story:
+   the collapse is a WRITE defect (surf2DLayeredwrite passed the layer index in the
+   mipmap level slot, so every layer landed in the same slot); ROCm/rocm-systems#6683
+   corrects that and with it all three read paths return correct per-layer data; it is
+   not in ROCm 7.2.x, which is why the non-layered 3D arrays stay. Wording follows the
+   experiment at notes.md "## Experiment 2026-06-03 -- ROCm/clr#275". `sift_textures.h`
+   is fixed inside the commit that introduces it (dbb157c); the older `cuda_to_hip.h`
+   text, which is published, is corrected in its own commit 27f5c02 so the maintainer
+   can read the correction as a correction. `cuda_to_hip.h` also now names gfx1100
+   alongside gfx90a (backed by notes.md "## Validation 2026-06-03 (gfx1100)"), so the
+   two comments no longer disagree about the observed devices either.
+2. **(medium) bundled sift_octave.cu edits.** Split out of the Thrust commit into
+   199e465 "[ROCm] Fix the linear texture error strings and filter comments", whose body
+   covers both the copy-pasted "point texture" error string and the RDNA re-verification
+   the old comment asked for. The Thrust commit abe4125 is now Thrust only, and its body
+   lost the paragraph about the error strings. Every other commit message is
+   byte-identical to the reviewed round except fe7135c (finding 3).
+3. **(low) implicit shuffle at s_orientation.cu:230.** Now
+   `popsift::shuffle( best_val, 0, 32 )`, folded into the shuffle commit (fe7135c) so its
+   claim is true. `ori_par` launches (32,1), and `__shfl(v,0,32)` and `__shfl(v,0,64)`
+   resolve to the same lane for lanes 0-31, so this is a no-op on wave64 as well as on
+   wave32; the descriptor output confirms it (md5 unchanged, below). fe7135c's body gained
+   one paragraph stating that and naming the extremum counter as the deliberate exception
+   (it counts over a whole wavefront, so its shuffles keep the hardware width). Left
+   `s_extrema.cu:59` alone -- it is upstream's own CUDA arm.
+4. **(low) overstated md5 claim.** notes.md disposition entry for `s_desc_norm_rs.h`
+   rescoped: the md5-unchanged evidence is the gfx1100 HIP build, which already used
+   `descr.x * inv`; the CUDA arm of that change is compile-checked only. Now agrees with
+   the "CUDA path compile check" paragraph.
+
+### Hygiene
+
+- `git merge-base --is-ancestor f2712723 origin/moat-fix-186` -> yes. `origin/moat-port`
+  still f2712723d903.
+- Titles 58/51/58/60/49/63 chars, all `[ROCm]`, no Co-Authored-By / Signed-off-by /
+  noreply, `prose.py` clean on every new or amended body, no non-ASCII in added lines.
+- `python3 utils/jargon.py --port popsift` and `--commits origin/develop..moat-fix-186`:
+  the same single pre-existing hit, "fault classes" in the published commit 05e698e,
+  which is an ancestor of the frozen tip. `--diff origin/develop..moat-fix-186` clean.
+
+### Rebuild and revalidation (gfx1100, AMD Radeon Pro W7800 48GB, ROCm 7.2.3)
+
+```
+bash utils/timeit.sh popsift compile -- cmake --build projects/popsift/src/build-hip -j
+rm -rf projects/popsift/src/build-hip/oxford
+HIP_VISIBLE_DEVICES=0 bash utils/timeit.sh popsift test -- \
+  cmake --build projects/popsift/src/build-hip --target run-test-boat
+```
+
+Oxford boat, same configure as the round above (vlfeat/loop/RootSift, downsampling -1):
+
+| Image | Features | Descriptors | gfx1100 ref | Match |
+|-------|----------|-------------|-------------|-------|
+| img1  | 8351     | 9874        | 8351/9874   | EXACT |
+| img2  | 7946     | 9452        | 7946/9452   | EXACT |
+| img3  | 6158     | 7280        | 6158/7280   | EXACT |
+| img4  | 4802     | 5799        | 4802/5799   | EXACT |
+| img5  | 4618     | 5476        | 4618/5476   | EXACT |
+| img6  | 3855     | 4618        | 3855/4618   | EXACT |
+
+- img1 `features.txt` md5 = **852740c0eed2c0f28401bc66c78b37ae**, byte-identical to the
+  value recorded for f2712723 and for fe86937; `sort features.txt | md5sum` =
+  f67f81307396a3d8847610a0f5d87cf9, also unchanged. Two full run-test-boat runs gave the
+  same md5, so the added width literal is a codegen no-op as predicted.
+- 9874 descriptors x 128 from features.txt: 0 NaN, 0 Inf, per-descriptor L2 in
+  [0.999073, 1.000850].
+- All 6 descriptor modes on img1 (loop/iloop/grid/igrid/notile/vlfeat): 8351/9874,
+  0 NaN/Inf.
+
+### CUDA path compile check (nvcc 12.8, no NVIDIA GPU)
+
+Repeated because the shuffle commit changed:
+
+```
+rm -rf projects/popsift/src/build-cuda
+PATH=/opt/conda/envs/cuda-12.8/bin:$PATH cmake -S projects/popsift/src -B projects/popsift/src/build-cuda \
+  -DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=86 -DCMAKE_BUILD_TYPE=Release \
+  -DPopSift_BUILD_EXAMPLES=OFF -DBUILD_SHARED_LIBS=ON \
+  -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc
+cmake --build projects/popsift/src/build-cuda -j
+```
+Clean from scratch: 0 errors, 0 warnings, libpopsift.so linked (sm_86 device code).
+
+### Gotcha
+
+- Rewriting a fix-round staging branch is only free while no fork review PR exists. The
+  restructure here was done by replaying the round onto the published tip with
+  `git cherry-pick`, then applying one file's hunks separately with
+  `git show <sha> -- <path> | git apply`, which keeps the message of every commit that a
+  finding did not touch byte-identical (verified with `diff` against the old messages).
+  Project-specific; not promoted.

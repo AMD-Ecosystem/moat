@@ -71,3 +71,8 @@
 {"kind":"phase","ts":"2026-08-13T22:37:40Z","phase":"compile","seconds":19.266,"exit":0,"cmd":"cmake --build projects/popsift/src/build-cuda -j"}
 {"kind":"session","ts":"2026-08-13T22:42:52Z","epoch":1786660972.047697523,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-13T22:55:38Z","epoch":1786661738.206721129,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-13T23:02:33Z","phase":"compile","seconds":25.754,"exit":0,"cmd":"cmake --build projects/popsift/src/build-hip -j"}
+{"kind":"phase","ts":"2026-08-13T23:02:57Z","phase":"test","seconds":20.030,"exit":0,"cmd":"cmake --build projects/popsift/src/build-hip --target run-test-boat"}
+{"kind":"phase","ts":"2026-08-13T23:03:55Z","phase":"test","seconds":19.806,"exit":0,"cmd":"cmake --build projects/popsift/src/build-hip --target run-test-boat"}
+{"kind":"phase","ts":"2026-08-13T23:04:28Z","phase":"compile","seconds":2.359,"exit":0,"cmd":"cmake -S projects/popsift/src -B projects/popsift/src/build-cuda -DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=86 -DCMAKE_BUILD_TYPE=Release -DPopSift_BUILD_EXAMPLES=OFF -DBUILD_SHARED_LIBS=ON -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc"}
+{"kind":"phase","ts":"2026-08-13T23:04:53Z","phase":"compile","seconds":19.246,"exit":0,"cmd":"cmake --build projects/popsift/src/build-cuda -j"}
