@@ -187,8 +187,9 @@ everything else passes. (qrack: `_PopQueue` under `UniformlyControlledSingleBit`
 `hipDeviceSynchronize()` before it is redundant. (anari-visionaray)
 
 **A `__shared__` array of a struct that has default member initializers is a hard error on
-HIP and only a warning on nvcc.** Shared variables cannot be initialized; nvcc drops the
-NSDMIs silently (or with a warning) while clang reports `initialization is not supported for
+HIP and silently accepted by nvcc.** Shared variables cannot be initialized; nvcc drops the
+NSDMIs with no diagnostic at all (measured on CUDA 12.8.93, and equally silent under
+`-Xcudafe --display_error_number`) while clang reports `initialization is not supported for
 __shared__ variables` and stops. The fingerprint is a struct that looks innocent -- `struct S
 { float sum = 0.0; float max = -1.0; };` -- declared as `__shared__ S sdata[blockSize]`. Check
 whether the kernel writes both members before reading them (it usually does, because the

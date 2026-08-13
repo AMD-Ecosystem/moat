@@ -89,6 +89,27 @@ accumulation divergence rather than a port bug, and RDNA3.5 (gfx1151) is where i
 shown up. Record the error magnitude and stop rather than chasing it deep: the
 comparison that matters is against the other architectures, not against a fix.
 
+## A GPU test that skips on a device-less machine, and when it cannot
+
+A test you add is usually gated on the GPU backend being *installed*, which says nothing
+about a device being present, so a build host without one turns "runs nothing" into a red
+test. The portable fix is to ask the runtime for a device count in `main` and return 77,
+with `set_tests_properties(<test> PROPERTIES SKIP_RETURN_CODE 77)`. Add the device-count
+spellings to the compatibility header rather than reaching for the HIP names directly, so
+the CUDA build keeps compiling.
+
+That only works if the process reaches `main`. A dependency that builds a GPU context in a
+namespace-scope global constructs it while its shared library is loaded, and on a machine
+with no device it throws out of `cudaGetDeviceProperties`/`hipGetDeviceProperties` and the
+process aborts first. Two CTest mechanisms look like they rescue this and do not, both
+measured: `SKIP_REGULAR_EXPRESSION` is not consulted for a process that dies by a signal,
+and a `FIXTURES_SETUP` probe either lets the dependent test run anyway (probe skipped) or
+reports it `***Not Run` and counts both as failures (probe failed). Only a normal exit can
+produce a skip. So keep the 77 path, say plainly in the test's CMake comment that a
+device-less machine ends inside the dependency's constructor, and put the real fix -- a lazy
+context -- where it belongs, in the dependency. (rmcl, whose `rmagine` dependency defines
+`CudaContextPtr cuda_def_ctx(new CudaContext(0));` at namespace scope.)
+
 ## Diagnosing a suspected AMD fault before escalating
 
 Two patterns that each cost a deep investigation before the real cause was found.
