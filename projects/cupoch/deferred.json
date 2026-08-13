@@ -5,7 +5,7 @@
       "id": "cupoch-full-pipeline-modules",
       "kind": "feature-port",
       "component": null,
-      "summary": "Only the core point-cloud/geometry slice (utility/camera/knn/geometry, CUPOCH_CORE_ONLY=ON) is built/validated on ROCm. Deferred GPU modules: registration (ICP/GICP/Colored/FGR/FilterReg), odometry, integration (TSDF/KinectFusion), collision, planning, kinfu, imageproc (libSGM stereo), io-beyond-geometry, visualization, Python module. Causes: (a) visualization/imageproc/io/pybind need OpenGL/GLEW/GLFW + libSGM + urdfdom host stack; (b) four geometry-factory .cu have strict-clang blockers re-enablable without OpenGL.",
+      "summary": "Only the core point-cloud/geometry slice (utility/camera/knn/geometry, CUPOCH_CORE_ONLY=ON) is built/validated on ROCm. Deferred GPU modules: registration (ICP/GICP/Colored/FGR/FilterReg), odometry, integration (TSDF/KinectFusion), collision, planning, kinfu, imageproc (libSGM stereo), io-beyond-geometry, visualization, Python module. Causes: (a) visualization/imageproc/io/pybind need OpenGL/GLEW/GLFW + libSGM + urdfdom host stack; (b) four geometry-factory .cu have strict-clang blockers re-enablable without OpenGL. RULING SCOPE (jeffdaily 2026-08-13): 'now' covers re-enabling the four clang-blocked geometry-factory .cu files (no OpenGL needed); the vis/io/python module stack stays deferred.",
       "refs": [
         "projects/cupoch/notes.md"
       ],
