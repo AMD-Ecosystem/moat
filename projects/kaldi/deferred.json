@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "kaldi-windows-rocm-cmake-build",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Windows ROCm support for kaldi. kaldi has three build paths and the ROCm/HIP support exists only in the POSIX one: src/configure emits src/makefiles/hip_64bit.mk and configure_rocm() exits 1 unless uname is Linux and uname -m is x86_64 (src/configure:311-318), before any GPU arch is consulted. Patching that gate is a one-liner and is the wrong door: hip_64bit.mk is written in a GNU/ELF toolchain vocabulary with no MSVC meaning (-fPIC, -pthread, -Wl,-rpath, -Wl,--allow-shlib-undefined, -l naming, and -I$(ROCMDIR)/{hipsparse,hipfft,hipblas,hiprand,rocrand}/include, the old per-component layout that TheRock's flat Windows include/ does not have -- all five confirmed absent). Windows ROCm libraries are MSVC-ABI, so host TUs must be clang-cl and MinGW g++ cannot link them, which makes the make route a rewrite of src/configure and the makefiles/*.mk family. The coherent route is the OTHER build system: CMakeLists.txt is Windows-aware (if(MSVC) blocks, CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS, LAPACK-for-Windows macros, MSVC install rules), fetches the Windows OpenFST fork kkm000/openfst at tag win/1.7.2.1, and already supports CUDA on Windows with deliberate MSVC nvcc flags plus cmake/FindNvToolExt.cmake; cmake/gen_cmake_skeleton.py already routes .cu sources under if(CUDA_FOUND) and autogenerates every src/**/CMakeLists.txt at configure time. So the work is: teach the skeleton generator and the top-level CMake to emit HIP rules and ROCm detection where they emit CUDA today. Caveats: that CMake path is upstream's secondary one, carries an INSTALL warning that it may not be well tested and is missing features, has had 13 commits since it was added in 2019 as an alternative to the Makefile build, and there is no Windows CI at all (both workflows are ubuntu-latest). Evidence Windows GPU builds do work there anyway: issue 4910 (2024-04-28, Windows + CUDA 12.1) and 4506 (2021-04-24, compile cudadecoder binaries on Windows). Required libraries all ship in TheRock's Windows SDK (hipblas, hipsparse, hipsolver, hiprand, hipfft, amdhip64 as .lib); only roctx64 is missing and ROCTX is already optional. This is a host-build-system contribution to upstream, not a CUDA-to-HIP port, which is why the windows gate was waived rather than held open.",
+      "refs": [
+        "projects/kaldi/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T17:50:43Z",
+      "decided": null
+    }
+  ]
+}
