@@ -45,3 +45,6 @@
 {"kind":"phase","ts":"2026-07-02T20:01:17Z","phase":"compile","seconds":6.267,"exit":0,"cmd":"pip install -e projects/brian2cuda/src"}
 {"kind":"phase","ts":"2026-07-02T20:02:01Z","phase":"test","seconds":22.462,"exit":0,"cmd":"python3 agent_space/brian2cuda-gfx1100-gpu0/test_gfx1100.py"}
 {"kind": "tokens", "ts": "2026-07-02T20:03:20Z", "tokens": 54597, "source": "validator"}
+{"kind":"session","ts":"2026-08-13T19:08:27Z","epoch":1786648107.969587900,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-13T19:14:44Z","phase":"test","seconds":56.555,"exit":0,"cmd":"bash -c cd /d/Develop/moat/agent_space/brian2cuda_test && /d/Develop/moat/agent_space/b2c_venv/Scripts/python.exe test_basic.py > full.log 2>&1; echo RC=$?"}
+{"kind":"session","ts":"2026-08-13T19:17:39Z","epoch":1786648660.420454300,"event":"end","platform":"windows-gfx1151"}

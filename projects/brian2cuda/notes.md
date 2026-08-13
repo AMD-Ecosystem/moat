@@ -860,3 +860,105 @@ HIP_VISIBLE_DEVICES=0 USE_HIP=1 utils/timeit.sh brian2cuda test -- \
 **REVALIDATED** at aca06c7. HIP port (rebased onto upstream/master 825c0c5)
 functional on gfx1100 wave32. Synaptic propagation and wave-serialized spinlock
 confirmed working after conflict-resolution rebase. No regression.
+
+## Validation 2026-08-13 (windows-gfx1151) -- PASS at 90d6d7c
+
+Platform: AMD Radeon 8060S (gfx1151, RDNA3.5, 20 CUs, wave32), Windows 11.
+ROCm: TheRock pip SDK 7.14.0a20260612 in `D:/Develop/TheRock/.venv`. brian2 2.10.1,
+Python 3.13.14 in a dedicated venv, `mingw32-make` from Strawberry Perl's toolchain.
+
+Required one fork commit, `90d6d7c` -- see below. Everything else in the port
+worked unchanged.
+
+### The failure this arch found: arch-suffixed ROCm library package
+
+The Windows runtime staging added by the earlier Windows rounds looked for the
+ROCm libraries package under the exact directory name `_rocm_sdk_libraries`.
+This host's SDK is a per-architecture wheel, which installs it as
+`_rocm_sdk_libraries_gfx1151`, so the lookup found nothing, `rocm_libs` stayed
+None, and `rocrand.dll` was consequently never appended to `dlls_to_copy`.
+`hiprand.dll` imports `rocrand.dll`, so the generated binary died before its
+first line of output and brian2cuda reported only
+
+```
+RuntimeError: Project run failed (project directory: ...\out_t1)
+```
+
+Running the binary by hand gave the real signature -- the bare
+`error while loading shared libraries: ?` with exit 127 that Windows produces for
+a missing transitive import. `llvm-objdump -p hiprand.dll | grep "DLL Name"`
+named `rocrand.dll` immediately.
+
+Note this is a genuine port defect and not a property of this host: the same code
+would fail for any user whose ROCm wheel is built for one architecture. It also
+hid a second latent issue -- `rocrand.dll` ships in the devel package too, so its
+copy never actually needed the libraries package to be found at all.
+
+Fix (`90d6d7c`, `brian2cuda/device.py`, 13 insertions / 9 deletions): glob
+`_rocm_sdk_libraries*` instead of matching an exact name, and copy `rocrand.dll`
+unconditionally (the copy loop already skips names it cannot find). Both edits
+sit inside the existing `if is_hip_backend() and os.name == 'nt'` guard, so Linux
+behaviour is untouched; the only unguarded line is a new `import glob`.
+
+No `.kpack` files exist anywhere in this 7.14 SDK, so `ROCM_KPACK_PATH` is simply
+never set here and rocRAND resolves its kernels without it. The gfx1101 note
+about a required `rand_lib_gfx1101.kpack` reflects the 7.14.0a20260604 packaging
+shape, not a standing requirement.
+
+### Build / install
+
+```
+python -m venv agent_space/b2c_venv
+agent_space/b2c_venv/Scripts/pip install -e projects/brian2cuda/src
+export HIP_VISIBLE_DEVICES=0 USE_HIP=1
+export ROCM_PATH=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel
+export PATH="/c/Strawberry/c/bin:$PATH"     # mingw32-make
+```
+
+Preferences: `prefs.devices.hip_standalone.hip_backend.gpu_arch = 'gfx1151'`
+(rocminfo is absent on Windows) and
+`prefs.devices.cpp_standalone.make_cmd_unix = 'mingw32-make'`.
+
+### Test results -- 3/3 PASS (RC=0)
+
+The original `agent_space/brian2cuda_test/test_basic.py` lived on the gfx1201
+host and was not in this repository, so it was reconstructed here from the test
+description recorded for that round. It covers the same three cases, and the
+absolute counts differ from the gfx1201 numbers because the reconstruction picks
+its own rates and durations -- compare the pass/fail structure, not the totals.
+The script now lives at `agent_space/brian2cuda_test/test_basic.py`; note that
+`agent_space/` is gitignored, so it is not durable.
+
+```
+=== Test 1: Neuron Group Simulation ===
+  100 neurons, 10 timesteps, exact integrator
+  Max |GPU - analytic| : 6.661e-16      <- machine precision
+=== Test 2: Synapse Connectivity with Delay (Spinlock Test) ===
+  Synaptic connections: 1047, total spikes: 510
+  Target neurons with v > 0: 50/50
+=== Test 3: Large Synapse Network (Stress Test) ===
+  11907 synaptic connections, 2054 spikes, no deadlock
+ALL TESTS PASSED (3/3)
+```
+
+Test 1 is the numerical gate: the state updater's result is compared against the
+closed-form exponential decay rather than against itself, and agrees to 6.7e-16.
+Test 2 exercises the wave-serialized spinlock in `spikequeue.h` -- it works on
+wave32 RDNA3.5, as it did on RDNA3/RDNA4. Test 3 is the deadlock stress case;
+the 20-CU APU showed no starvation at ~12k synapses.
+
+All three ran through the normal `device.run()` path with no manual DLL staging,
+which is what proves the `90d6d7c` fix rather than merely working around it.
+
+CUDA no-regression gate: not run (Windows host, no CUDA toolkit). It has not yet
+been run at this head_sha and lands on whichever Linux arch revalidates first.
+
+Pre-completion checks: `jargon.py --port brian2cuda` clean at 90d6d7c;
+`git status --porcelain` in src empty; the ROCm build stays documented where the
+port already documents it.
+
+Cost of the fix: head_sha aca06c7 -> 90d6d7c puts linux-gfx90a, linux-gfx1100,
+windows-gfx1101 and windows-gfx1201 into `revalidate`. The delta is Python-only
+and Windows-gated, so the Linux arches should classify as behaviour-preserving;
+`codeobj_diff` does not apply here (nothing compiled changed), so the judgement
+is by inspection of the guard rather than by binary equivalence.
