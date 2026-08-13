@@ -23,3 +23,5 @@
 {"kind":"phase","ts":"2026-08-13T08:04:32Z","phase":"test","seconds":4.298,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/diff-surfel-rasterizations/src && python -m pytest tests/test_variants.py -k out_weight -v"}
 {"kind":"phase","ts":"2026-08-13T08:05:37Z","phase":"test","seconds":8.604,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/diff-surfel-rasterizations/src && python -m pytest tests/test_variants.py -q"}
 {"kind":"session","ts":"2026-08-13T08:07:26Z","epoch":1786608446.921915352,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-13T08:08:37Z","epoch":1786608517.408950134,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-13T08:11:58Z","epoch":1786608718.212140197,"event":"end","platform":"linux-gfx942"}

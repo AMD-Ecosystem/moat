@@ -852,3 +852,57 @@ the expected `7d6efdc`.
 - AMD copyright and author lines untouched -- still a person's call.
 - No lesson here is portable to another project: the vacuous-assertion trap is generic test
   hygiene rather than anything CUDA-to-HIP, so nothing was promoted to the skill this round.
+
+## Review 2026-08-13 (linux-gfx942), fix round `7d6efdc` -> `f088679`
+
+Verdict: **review-passed**. No problems found. The single item from the previous review is
+resolved, and the resolution was re-measured here rather than taken on the record. The nine
+items of the round before are not re-litigated: no kernel, build or packaging file changed
+since they were verified at `7d6efdc`.
+
+### The one finding, re-measured
+
+`test_out_weight_is_plausible` (`tests/test_variants.py:328-358`) now mutates a copy
+(`dict(default_scene(...))` plus a `.clone()` of `means3D`, `:338-341`), leaves `make_scene`
+untouched, and guards the zero-weight assertion with `culled_count > 0` (`:356`) and
+`culled_count >= CULLED_SURFELS` (`:357`) -- the prescription, with the count guard as a
+stronger form of the `(~visible).any()` the review asked for.
+
+Measured independently on gfx942 at `f088679`, outside pytest, on `-wet`:
+
+- `culled = (radii == 0).sum()` is **8** on the mutated scene and **0** on the unmutated one,
+  so the pre-fix assertion was indeed vacuous and this one is not;
+- culled indices are exactly `[0..7]`, the moved rows;
+- `unique(weight[culled])` is `[0.0]`, max abs 0.0 -- exactly zero, not merely small;
+- forcing `CULLED_SURFELS = 0` and calling the real test body raises
+  `nothing was culled, so the weight check below is vacuous`, so the guard is live;
+- injecting `1e-7` into one culled row makes `(weight[culled] == 0).all()` false.
+
+The mechanism the docstring and the amended commit paragraph describe checks out against the
+code: `out_weight` is `torch::full({P, 1}, 0.0, float_opts)`
+(`diff-surfel-rasterization-wet/rasterize_points.cu:87`), `radii[idx] = 0` precedes the
+`in_frustum` early return in preprocess (`cuda_rasterizer/forward.cu:183-189`), and the only
+write is `atomicAdd(&out_weight[collected_id[j]], w)` from the compositing loop
+(`cuda_rasterizer/forward.cu:422`), reached only for binned surfels.
+
+### Scope and gates
+
+- `backup-review-7d6efdc..f088679` touches `tests/test_variants.py` only, 23 insertions and
+  3 deletions, plus one added paragraph in the amended commit body. No kernel, build or
+  packaging file, so the `7d6efdc` build evidence still applies and no rebuild was needed.
+- md5 equivalence classes recomputed over all 33 shared per-variant paths at `main` and `HEAD`,
+  comparing partitions rather than counts (variant name normalised): identical at both ends,
+  including `setup.py` at 1 class of 14.
+- Suite reproduced here: `pytest tests/test_variants.py -k out_weight -q` 15 passed,
+  122 deselected in 3.32 s; full suite **136 passed, 1 skipped in 7.43 s**.
+- `jargon.py --port` clean, `prose.py` clean on the amended body, title `[ROCm]`-prefixed at
+  54 chars, AI assistance disclosed, Test Plan present, no `Co-Authored-By`, no noreply
+  address, no AMD-internal account reference.
+- `git -C projects/diff-surfel-rasterizations/src status --porcelain` empty; `origin/moat-port`
+  at `f088679`; `backup-review-7d6efdc` on no remote.
+- AMD copyright and author lines untouched in the delta -- still a person's call, not a finding.
+- Fault classes unchanged and still clean: no wavefront-size assumption, no resource handles,
+  no OOB neighbour reads, CUB -> hipCUB only, every source edit inside a `USE_ROCM` guard
+  except the chevron respacing.
+
+The real-GPU validation run is next; nothing here waits on it.
