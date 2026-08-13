@@ -13,7 +13,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-08-13T04:04:03Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-13T18:42:21Z"
+      }
     },
     {
       "id": "hiprt-collapse-reference-count-hang",
