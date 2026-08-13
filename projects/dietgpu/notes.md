@@ -1245,3 +1245,73 @@ python3 utils/moatlib.py carry-forward dietgpu linux-gfx1100 df33d83b6d1de3994f2
 ```
 
 Transitioning linux-gfx1100 to completed (validated_sha=df33d83).
+
+## Validation 2026-08-13 (windows-gfx1151)
+
+Platform: windows-gfx1151, AMD Radeon 8060S (gfx1151, RDNA3.5, wave32), Windows 11.
+ROCm: TheRock pip SDK 7.14.0a20260612 (`_rocm_sdk_devel`), clang 23.0.0.
+head_sha df33d83. Result: 13/13 GPU tests PASS, port unchanged (no source edit needed).
+
+### Build
+
+The CMake `HIP` language on Windows needs ALL languages on the GNU-style clang
+driver. Two other combinations fail before a single TU compiles:
+
+- `CXX=clang-cl` + `HIP=clang++`: CMake applies MSVC link rules to a GNU-driver
+  link line, so `clang++: error: no such file or directory: '/machine:x64'`.
+- `CXX=clang-cl` + `HIP=clang-cl`: `Windows-Clang-HIP.cmake` never populates
+  `CMAKE_HIP_SIMULATE_VERSION`, so configure dies in `Windows-MSVC.cmake` with
+  "MSVC compiler version not detected properly".
+
+`clang++.exe` still targets the MSVC ABI on Windows, so glog/googletest and the
+codec link together normally.
+
+```
+export ROCM_ROOT=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel
+export HIP_DEVICE_LIB_PATH=$ROCM_ROOT/lib/llvm/amdgcn/bitcode
+cd projects/dietgpu/src
+git submodule update --init --recursive
+cmake -S . -B build-hip -G Ninja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DCMAKE_HIP_COMPILER=$ROCM_ROOT/lib/llvm/bin/clang++.exe \
+  -DCMAKE_C_COMPILER=$ROCM_ROOT/lib/llvm/bin/clang.exe \
+  -DCMAKE_CXX_COMPILER=$ROCM_ROOT/lib/llvm/bin/clang++.exe \
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_PREFIX_PATH=$ROCM_ROOT
+cmake --build build-hip --target ans_test ans_statistics_test \
+  batch_prefix_sum_test float_test gpu_ans gpu_float_compress dietgpu_utils -j 8
+```
+
+Builds clean. Warnings only: glog's `__declspec(dllimport)` on a
+`CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS` build, and one pre-existing upstream
+`-Wbraced-scalar-init` in FloatTest.cu:306.
+
+### Runtime staging (required before running anything)
+
+The System32 `amdhip64_7.dll` on this host is broken, and PATH loses to System32,
+so the SDK runtime must sit NEXT TO each .exe. `amdhip64_7.dll` additionally
+imports `rocm_kpack.dll`; omitting it gives the bare
+`error while loading shared libraries: ?` with exit 127 and no name of the
+missing module.
+
+```
+cp $ROCM_ROOT/bin/{amdhip64_7.dll,rocm_kpack.dll,amd_comgr*.dll,hiprtc*.dll} \
+   build-hip/bin/
+```
+
+### Test
+
+```
+export HIP_VISIBLE_DEVICES=0
+cd build-hip/bin
+./ans_test.exe               # ANSTest 4/4 PASS
+./ans_statistics_test.exe    # ANSStatisticsTest 4/4 PASS
+./batch_prefix_sum_test.exe  # BatchPrefixSum 2/2 PASS
+./float_test.exe             # FloatTest 3/3 PASS (fp16/bf16/fp32)
+```
+
+13/13 PASS. The wave32 archive geometry holds on RDNA3.5: the fixed 64-slot
+`ANSWarpState` header with a device-side stride of 32 round-trips correctly,
+same as gfx1100.
+
+CUDA no-regression gate: already recorded for this head_sha (see the PR-prep
+nvcc section above); Windows hosts carry no CUDA toolkit, so it is not re-run.

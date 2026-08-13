@@ -53,3 +53,10 @@
 {"kind":"phase","ts":"2026-07-02T19:57:41Z","phase":"compile","seconds":10.378,"exit":0,"cmd":"cmake -S /var/lib/jenkins/moat/projects/dietgpu/src -B /tmp/build-dietgpu-a7c4674-gfx1100 -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_BUILD_TYPE=RelWithDebInfo"}
 {"kind":"phase","ts":"2026-07-02T19:57:53Z","phase":"compile","seconds":8.086,"exit":0,"cmd":"cmake --build /tmp/build-dietgpu-a7c4674-gfx1100 --target gpu_ans gpu_float_compress dietgpu_utils -j 16"}
 {"kind": "tokens", "ts": "2026-07-02T19:59:27Z", "tokens": 77443, "source": "validator"}
+{"kind":"session","ts":"2026-08-13T18:30:52Z","epoch":1786645852.610289100,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-13T18:37:38Z","phase":"compile","seconds":0.655,"exit":1,"cmd":"cmake --build build-hip --target ans_test ans_statistics_test batch_prefix_sum_test float_test gpu_ans gpu_float_compress dietgpu_utils -j 8"}
+{"kind":"phase","ts":"2026-08-13T18:37:49Z","phase":"compile","seconds":0.800,"exit":1,"cmd":"cmake --build build-hip --target ans_test ans_statistics_test batch_prefix_sum_test float_test gpu_ans gpu_float_compress dietgpu_utils -j 8"}
+{"kind":"phase","ts":"2026-08-13T18:38:15Z","phase":"compile","seconds":15.765,"exit":0,"cmd":"cmake --build /d/Develop/moat/projects/dietgpu/src/build-hip --target ans_test ans_statistics_test batch_prefix_sum_test float_test gpu_ans gpu_float_compress dietgpu_utils -j 8"}
+{"kind":"phase","ts":"2026-08-13T18:39:33Z","phase":"test","seconds":1.371,"exit":0,"cmd":"bash -c for t in ans_statistics_test batch_prefix_sum_test float_test; do echo \"########## $t\"; ./$t.exe; echo \"EXIT=$?\"; done"}
+{"kind":"phase","ts":"2026-08-13T18:39:58Z","phase":"test","seconds":11.503,"exit":0,"cmd":"bash -c cd /d/Develop/moat/projects/dietgpu/src/build-hip/bin && for t in ans_statistics_test batch_prefix_sum_test float_test; do echo \"########## $t\"; ./$t.exe; echo \"EXIT=$?\"; done"}
+{"kind":"session","ts":"2026-08-13T18:40:53Z","epoch":1786646453.622163800,"event":"end","platform":"windows-gfx1151"}
