@@ -78,3 +78,4 @@
 {"kind":"phase","ts":"2026-08-13T23:04:53Z","phase":"compile","seconds":19.246,"exit":0,"cmd":"cmake --build projects/popsift/src/build-cuda -j"}
 {"kind":"session","ts":"2026-08-13T23:16:12Z","epoch":1786662972.287490945,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-13T23:19:38Z","epoch":1786663178.957356160,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-13T23:22:42Z","phase":"compile","seconds":22.918,"exit":0,"cmd":"cmake --build projects/popsift/src/build-hip -j"}

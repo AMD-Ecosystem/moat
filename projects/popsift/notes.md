@@ -1999,3 +1999,55 @@ earlier review did not name.
   4802/5799, 4618/5476, 3855/4618, img1 md5 852740c0eed2c0f28401bc66c78b37ae unchanged,
   0 NaN/Inf over 9874x128, and the nvcc 12.8 sm_86 compile check. GPU revalidation at the
   new head is the validator's job and is not held against this round.
+
+## 2026-08-13 -- residual finding of the re-review closed (tip 4d51a78)
+
+The one finding of "## Review 2026-08-13 (re-review of the rewritten fix round, tip
+199e465)" is closed. `src/popsift/sift_octave.cu:224-231` now tells the same write-side
+story as `cuda_to_hip.h` and `sift_textures.h`, in the short pointer style that suits the
+third site:
+
+```
+    // Observed on gfx90a and on gfx1100 (ROCm 7.2.1): a layered array written
+    // layer by layer through surf2DLayeredwrite reads back as a single layer for
+    // every layer index, because the write passed the layer index in the mipmap
+    // level slot. Filed as ROCm/clr#275; ROCm/rocm-systems#6683 corrects it, but
+    // that is not in ROCm 7.2.x. A non-layered 3D array with surf3D/tex3D access
+    // is coherent, so drop cudaArrayLayered on HIP. The blur levels are addressed
+    // by the z coordinate instead of the layer index. See cuda_to_hip.h,
+    // sift_textures.h and common/assist.h. CUDA keeps a real layered array.
+```
+
+The disproven "the partial fix ROCm/rocm-systems#6683 covers only surf2DLayered" clause is
+gone, and gfx1100 joins gfx90a in the observation, matching the other two blocks. The
+`common/assist.h` pointer of the published text is kept and `sift_textures.h` added.
+
+Round rewritten, not appended to: the finding belongs in 27f5c02 ("Correct the description
+of the layered array collapse"), so the branch was replayed with the edit amended into that
+commit and abe4125/199e465 cherry-picked on top. New tip 4d51a78; the six commits keep
+their order and every commit message is byte-identical to the reviewed round (verified by
+`diff` of `git log --format='%H%n%B'` output with the sha lines stripped).
+
+```
+git merge-base --is-ancestor f2712723 moat-fix-186   # yes, base still an ancestor
+git diff 199e465 4d51a78                             # one hunk, sift_octave.cu, comment only
+git push --force-with-lease=refs/heads/moat-fix-186:199e465... origin moat-fix-186
+```
+`origin/moat-port` is still f2712723d903 after the push.
+
+No GPU re-run. The tree delta versus 199e465 is comment lines only -- zero code change, so
+the device and host binaries are unchanged and the Oxford counts recorded for this round
+(8351/9874, 7946/9452, 6158/7280, 4802/5799, 4618/5476, 3855/4618; img1 md5
+852740c0eed2c0f28401bc66c78b37ae) stand. The HIP library was rebuilt to prove the edited
+file still compiles:
+
+```
+bash utils/timeit.sh popsift compile -- cmake --build projects/popsift/src/build-hip -j
+```
+Incremental rebuild of `sift_octave.cu` plus relink: 0 errors; only the pre-existing benign
+warnings (debug_macros.h nodiscard `-Wunused-value`, rocThrust
+`-Wdeprecated-declarations`). libpopsift.so, popsift-demo and popsift-match relinked.
+
+`python3 utils/jargon.py --port popsift` reports only the pre-existing "fault classes" hit
+in 05e698ec8, an ancestor of the frozen published tip f2712723 and outside this round;
+`--diff f2712723..moat-fix-186` is clean.
