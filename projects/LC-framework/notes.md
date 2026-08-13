@@ -1221,3 +1221,80 @@ applies `.gitignore` inside a git repository, so an extracted tree with no `.git
 returns grep's 12/8 and looks like the `.gitignore` claim fails. Nothing to fix
 in the bullet -- the claim is about a normal checkout -- but it is the way to
 mis-measure this one.
+
+## Validation 2026-08-13 (validator, linux-gfx942)
+
+State: `port-ready` -> `completed`. Host: MI300X (gfx942, wave64), ROCm
+7.14.60850 (AMD clang 23.0), nvcc 12.8 for the CUDA gate. `head_sha` =
+`validated_sha` = `d7d98677060e36cfa329db4229c8b3d14cf53b32`. Independently
+reproduced from a clean `git archive d7d9867` tree (three separate extractions:
+main `lc`, standalone GPU, standalone CPU), not taken from the porter's or
+reviewer's numbers.
+
+Main build (`lc`), README recipe verbatim:
+
+    ./generate_Device_LC-Framework.py
+    hipify-perl -inplace lc.cu lc.h
+    for h in framework.h $(find include components preprocessors verifiers -name '*.h'); do hipify-perl -inplace "$h"; done
+    hipcc -O3 --offload-arch=gfx942 -ffp-contract=off -DUSE_GPU -I. -std=c++17 -c -o lc.o lc.cu
+    hipcc --offload-arch=gfx942 -o lc lc.o
+
+Exit 0 both steps, only `[-Wunused-value]` nodiscard and deprecated-shfl
+hipify-info warnings (116 host-pass warnings, matches the porter's/reviewer's
+count). Wrapped in `utils/timeit.sh LC-framework compile`.
+
+Tests (`utils/timeit.sh LC-framework test`), fresh 1 MB random and a ~110 KB
+structured (runs of zeros/repeats/random) input generated locally:
+
+- TS self-test on the structured input: `grep -c "verification passed"` ==
+  4491, `grep -c "verification failed|FAILED|ERROR"` == 0. Matches the count
+  this porting round already established as the correct one for this build
+  (gfx90a's earlier 4515 is the outlier, per the porter's note).
+- Lossless AL round-trips, both inputs, all "LOSSLESS verification passed" +
+  "verification passed" (12/12): RZE_4, RZE_1, RLE_4, `BIT_4 RLE_4`,
+  `RRE_4 RZE_4`, RAZE_4.
+- Lossy, all "verification passed" (4/4): `QUANT_ABS_0_f32(0.01)` + `RLE_4` +
+  `MAXABS_f32(0.01)`; `QUANT_INOA_0_f64(0.01)` + `RLE_8` + `MAXNOA_f64(0.01)`
+  (rocThrust path); `QUANT_NOA_0_f32(0.01)` + `RLE_4` + `MAXNOA_f32(0.01)`
+  (`cuda::std::numeric_limits` alias path); `LOR1D_i32()` + `RLE_4`
+  (hipCUB `DeviceScan` path).
+- README standalone recipe, verbatim, from a separate pristine `git archive
+  HEAD` tree (`generate_standalone_GPU_compressor_decompressor.py ""
+  "TUPL4_1 RRE_1 CLOG_1"`, hipify loop, two `hipcc` steps): both `compress`
+  and `decompress` build exit 0, and a 1 MB random file round-trips
+  byte-identically (`cmp` clean).
+- Cross-device format gate (Risk 2 in plan.md, the decisive one): built a
+  matching CPU standalone pair (`generate_standalone_CPU_...` + g++, same
+  `TUPL4_1 RRE_1 CLOG_1` pipeline) in a third tree. For both the random and
+  the structured input: GPU-encoded and CPU-encoded files are byte-identical
+  (`cmp` clean), GPU-encode decoded by the CPU binary matches the original
+  byte-for-byte, and CPU-encode decoded by the GPU binary matches the
+  original byte-for-byte. 4/4 `cmp` checks pass. This is the proof the
+  wave64 ballot/popc bitmap layout (`d_zero_elimination.h`,
+  `d_repetition_elimination.h`) serializes to a wave-width-independent
+  on-wire format, not just that gfx942 can decode its own output.
+- Non-GPU regression: CPU/OpenMP build (`generate_Host_LC-Framework.py` + g++
+  13.3.0, `-DUSE_CPU`) builds clean; used above as the CPU side of the
+  cross-device gate, so it is exercised, not just built.
+
+CUDA no-regression gate: not re-run. `notes.md` already records it at this
+exact `head_sha` twice -- the porting round's own "Gates run on gfx942"
+section (nvcc 12.8, `-arch=sm_80`, `lc.cu` /
+`compressor-standalone.cu` / `decompressor-standalone.cu`, 0 errors) and the
+`d7d9867` re-review, which independently reproduced the same three-file,
+0-error result on a pristine tree. Per the once-per-head_sha rule this is not
+rerun here; `/opt/conda/envs/cuda-12.8/bin/nvcc` (12.8.93) confirmed present
+on this host for any future re-check.
+
+Pre-completion checks: `python3 utils/jargon.py --port LC-framework` ->
+clean. Documentation: `README.md:63-77` (main build) and `:203-217`
+(standalone build) carry the HIP/hipcc recipe alongside the nvcc one, in the
+project's own house style; both were run verbatim above and both worked.
+Integrity: `git status --porcelain` in `src` empty, `git rev-parse HEAD` ==
+`d7d98677060e36cfa329db4229c8b3d14cf53b32` before and after.
+
+No fork commit made or needed; `linux-gfx942` had no prior evidence to carry
+forward (this is its first validation). `linux-gfx90a` and `linux-gfx1100`
+keep their existing `validated_sha` `040743e` (an ancestor of `d7d9867`,
+unaffected by this round). `windows-gfx1151` remains `validation-failed` at
+`f0ce8ce`, unrelated to this arch.
