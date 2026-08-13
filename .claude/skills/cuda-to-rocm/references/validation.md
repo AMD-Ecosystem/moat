@@ -42,6 +42,39 @@ a DLL-load error; rebuilding a correct binary against a broken runtime is the si
 biggest time sink on Windows. A port is not "broken on Windows" until it has been run
 against a full ROCm distribution.
 
+## Windows: put the whole CMake build on the GNU-style clang driver
+
+**A project using CMake's `HIP` language does not configure on Windows with a `clang-cl`
+host compiler.** Both mixes fail before one TU compiles, and neither error names the real
+cause:
+
+- `CXX=clang-cl` + `HIP=clang++` -- CMake applies MSVC link rules to a GNU-driver link
+  line, giving `clang++: error: no such file or directory: '/machine:x64'`.
+- `CXX=clang-cl` + `HIP=clang-cl` -- `Windows-Clang-HIP.cmake` never populates
+  `CMAKE_HIP_SIMULATE_VERSION`, so configure dies inside `Windows-MSVC.cmake` with
+  "MSVC compiler version not detected properly".
+
+Point `CMAKE_C_COMPILER`, `CMAKE_CXX_COMPILER` and `CMAKE_HIP_COMPILER` all at the SDK's
+GNU-driver `clang`/`clang++`. It still targets the MSVC ABI, so MSVC-built dependencies
+and vendored submodules link normally. (Proven on dietgpu, CMake 3.31 + clang 23.)
+
+Note the split with PyTorch extension ports, where `clang-cl` IS the required host
+compiler (see strategy-b-torch.md): torch drives the compile itself and never goes
+through CMake's `HIP` language.
+
+## Windows: stage the ROCm runtime next to the .exe, kpack included
+
+On a host whose System32 `amdhip64_7.dll` is broken, `PATH` does not save you -- Windows
+resolves System32 first -- so copy the SDK runtime into the directory holding each test
+executable. Copy `rocm_kpack.dll` along with it: `amdhip64_7.dll` imports it, and when it
+is absent the process dies with a bare `error while loading shared libraries: ?` and exit
+127, naming no module at all. That empty `?` is the fingerprint of a missing transitive
+import, not of a bad port.
+
+`llvm-objdump -p <binary> | grep "DLL Name"` walks the import table and finds the gap in
+seconds; run it on the DLLs too, not just the .exe, since the missing module is usually
+one level down.
+
 ## Windows: static initializers in TheRock's DLLs may never run
 
 **A C++ test that gates on `torch::cuda::is_available()` can fail on Windows against a
