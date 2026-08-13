@@ -4558,3 +4558,64 @@ Untouched by ruling or assignment: `-fgpu-rdc` and the `small_ntt` guard (settle
 `6ac06d0`), the two registered upstream defects, and the stale CUDA no-regression gate
 (round-14 finding 2, restated as outstanding in round 16), which stays a validator
 obligation for whichever Linux arch revalidates first.
+
+## Review 2026-08-13 (round 18, windows-gfx1151) -- message-only re-review of 26d636f
+
+Narrow round, no problems found. Round 17 amended `2473e85`'s message and changed nothing
+else: `git diff 2473e85 26d636f` is empty, both commits carry tree `83718d0483a4`, both
+parent `d14abb1`, `git status --porcelain` clean, `origin/moat-port` at `26d636f`. No
+evidence orphaned -- `linux-gfx942` and `linux-gfx1100` at `6ac06d0`, `linux-gfx90a` at
+`5d99b8f`, both still ancestors of HEAD, `windows-gfx1151` `validated_sha` null with
+`failed_sha: 6ac06d0`. Code, root cause, strategy and LP64 equivalence stay as passed in
+round 14; `-fgpu-rdc`, the `small_ntt` guard and the two registered upstream defects were
+not reopened.
+
+The rewritten third paragraph was re-derived from the tree by this round's own greps
+rather than checked against the porter's, because the two prior rounds each shipped an
+unverified claim about the same two functions. Every bullet holds:
+
+- The helper call graph is closed by name. `add_constant_plain_ckks_v2` and
+  `multiply_const_plain_ckks_v2` have exactly three call sites in the whole tree
+  (`src/include/heongpu/host/ckks/operator.cuh:599`, `:897`,
+  `src/lib/host/ckks/operator.cu:762`), so no other path into them can exist. `:599` sits
+  inside `add_plain_v2` (`operator.cuh:587`), `:897` inside `multiply_plain_v2`
+  (`operator.cuh:885`) -- so yes, `multiply_plain_v2` is genuinely a caller, it simply has
+  no in-tree caller of its own -- and `:762` inside `scale_up_ckks` (`operator.cu:753`).
+- `add_plain_v2`'s in-tree callers are exactly `operator.cu:4310`, `:4387`, `:4456`, whose
+  enclosing definitions are `eval_mod` (`:4276`), `gen_power` (`:4319`) and
+  `evaluate_poly_from_polynomial_basis` (`:4428`). The message's three names are right.
+- No test executable reaches any of it. The suite's entire operator surface is ten methods
+  (`add`, `add_inplace`, `add_plain_inplace`, `mod_drop_inplace`, `multiply_inplace`,
+  `multiply_plain_inplace`, `relinearize_inplace`, `rescale_inplace`, `rotate_rows`,
+  `sub`); `scale_up`, `eval_mod`, `gen_power`, `evaluate_poly*`, `*_bootstrapping` and
+  `*_v2` appear nowhere under `test/`. The `Plaintext`-vs-`Complex64` distinction holds:
+  the tests' `add_plain_inplace(C1, P2)` / `multiply_plain_inplace(C1, P2)` bind the
+  `Plaintext` overloads at `operator.cuh:265` and `:796`, not the `Complex64` `_v2` entry
+  points at `:587` and `:885`.
+- The outer reach is bootstrapping only -- `scale_up` (`operator.cuh:928`) and `eval_mod`
+  are called from `regular_bootstrapping_v2` (`operator.cu:7175`) at `:7201,7208,7224` and
+  `:7237,7239` -- which the suite never enters.
+- `CMakeLists.txt:163` is `option(HEonGPU_BUILD_EXAMPLES "Build HEonGPU Examples" OFF)`,
+  and the Test Plan configures `-DHEonGPU_BUILD_TESTS=ON` only.
+
+The phrasing is validator-proof in the way round 16 asked for: it asserts things about
+"the runs below" and about test executables, and nothing about what the tree's examples
+reach. A validator building `-DHEonGPU_BUILD_EXAMPLES=ON` cannot falsify it (the examples
+do reach both helpers, via `example/bootstrapping/5_ckks_regular_bootstrapping_v2.cpp`);
+it would merely make the disclaimer removable.
+
+Hygiene re-checked at the tip: title `[ROCm] Keep 64-bit moduli intact on an LLP64 host`
+verbatim, 49 chars; the message diff against `2473e85` touches only the four lines of that
+paragraph, so the other paragraphs, the AI-assistance disclosure and both fenced Test Plan
+blocks are byte-identical; pure ASCII; no `Co-Authored-By` and no noreply trailer;
+`python3 utils/jargon.py --port HEonGPU` clean.
+
+`notes.md` and the commit message agree. The round-15 entry carries the correction at
+`notes.md:4420-4422` and the round-14 grep bullet is annotated at `notes.md:4229-4234`;
+no unannotated statement of the false claim remains in the file.
+
+Still OUTSTANDING and not closed by this round: the stale CUDA no-regression gate
+(round-14 finding 2), a validator obligation for whichever Linux arch revalidates first.
+
+Verdict: review-passed. `windows-gfx1151` goes to validation here; the three Linux arches
+stay on revalidate for other hosts.
