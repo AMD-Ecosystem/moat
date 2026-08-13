@@ -340,6 +340,36 @@ accumulation divergence rather than a port bug, and RDNA3.5 (gfx1151) is where i
 shown up. Record the error magnitude and stop rather than chasing it deep: the
 comparison that matters is against the other architectures, not against a fix.
 
+## A low-CU integrated GPU can outrun a fixed upstream test timeout without any fault
+
+A 20-CU integrated APU (gfx1151) can be genuinely, correctly ~40x slower than the
+datacenter/desktop cards the rest of the fleet validates on for the single heaviest
+kernel sequence in a suite, and a project's own `TIMEOUT` on `add_test`/
+`gtest_discover_tests` is usually sized against those faster cards. Found porting
+HEonGPU: `ctest` reported `TFHE_Gate_Boots` as `***Timeout` at the project's hardcoded
+30-second per-test limit (`test/CMakeLists.txt`, identical on the CUDA path), while
+`linux-gfx942` finishes the entire 20-test suite in 13-15s. Running the same
+executable directly, outside ctest's harness, showed it was not hung or wrong -- it
+passed in 112.9s, `[ PASSED ]` from gtest's own assertions.
+
+Diagnose by running the flagged executable directly before concluding anything: `rc=0`
+plus a `[ PASSED ]`/correct-value line after the harness's cutoff means "too slow for
+this budget," not "broken." A hang or wrong answer looks different -- no completion
+line ever appears, or it appears with wrong values.
+
+Getting a clean harness-level pass count (worth doing when the dispatch's bar is an
+exact N/N matching Linux) may need a throwaway local bump of the test's own `TIMEOUT`
+property: ctest's own `--timeout <seconds>` CLI flag does **not** override an
+explicit per-test `TIMEOUT` set via `set_tests_properties`/`gtest_discover_tests` --
+confirmed, `ctest --timeout 180` against a `TIMEOUT 30` property still printed
+`***Timeout 30.07 sec`. Edit the property, reconfigure (cheap -- CMake only
+regenerates the test files, no recompilation, if no source changed), rebuild only the
+one affected test target so `gtest_discover_tests`'s post-build discovery step
+re-runs and picks up the new property, run ctest, then `git checkout --` the file
+before completion and verify `git status --porcelain` is empty. This is not a port
+fix and must not ship -- it exists only to prove the harness-level count, the same way
+the CUDA-arch pin is a throwaway for the CUDA no-regression gate.
+
 ## Diagnosing a suspected AMD fault before escalating
 
 Two patterns that each cost a deep investigation before the real cause was found.
