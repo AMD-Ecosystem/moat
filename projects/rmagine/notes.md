@@ -1863,3 +1863,155 @@ maintainers see a WIP commit in the series. Deciding whether the branch should b
 reshaped into a clean series is a scope call for a person, and a bigger rewrite
 touches more evidence than this one did -- this rewrite deliberately changed the
 minimum needed to clear the publication gate.
+
+## Review 2026-08-13 (reviewer, linux-gfx942, delta round) -- CHANGES REQUESTED
+
+Scope: `git diff 9e642a6...e7a7b27` on AMD-Ecosystem/rmagine `moat-port` -- 8 files,
+three commits (the round-2 install-config fix and its comment follow-up under their
+post-rewrite SHAs, plus the round-3 header-footprint fix) -- together with the history
+rewrite that produced those SHAs and the two `cuda-to-rocm` lesson edits riding on
+`port/rmagine`. No upstream PR is open (`moatlib.py pr-state` = none), so the working
+branch is `moat-port`. No clone existed on this host; the fork was cloned fresh and the
+worktree is clean. ROCm here is the conda SDK at
+`/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel`; a CUDA 12.8
+header tree exists at `/opt/conda/envs/cuda-12.8`, which let me check the NVIDIA side of
+this delta for the first time in this project.
+
+The code in the delta is correct. Both findings are claims that outrun their evidence,
+in the same class this project has twice been sent back for. Neither requires a fork
+commit to fix.
+
+### 1. "Includable from a plain C++ TU in any order" is false for two of the sixteen installed headers, and the new gate cannot see it
+
+notes.md:1351-1355 states it as established fact -- "Every installed `rmagine_cuda`
+header is includable from a plain C++ translation unit in any order, including as the
+very first include. That is a gate, not a hope" -- and names `cuda_public_headers` as
+the gate. `tests/cuda/public_headers.cpp:1-8` states the same "in any order"
+requirement.
+
+The test includes all 16 headers in ONE translation unit in ONE fixed order, with
+`cuda_to_hip.h` first (public_headers.cpp:10). It therefore proves the headers coexist
+headers-first; it cannot prove any one of them stands alone, because every header after
+line 10 is already standing on the includes of the ones above it. Two of the sixteen
+fail as the first include, on both backends:
+
+```
+# HIP path (-D__HIP_PLATFORM_AMD__=1, ROCm 7.x conda SDK, g++ 13.3.0)
+printf '#include <rmagine/math/linalg.cuh>\nint main(){return 0;}\n' > x.cpp
+g++ -std=c++17 -fsyntax-only x.cpp -Isrc/rmagine_core/include -Isrc/rmagine_cuda/include \
+  -I$ROCM/include -D__HIP_PLATFORM_AMD__=1 -I/usr/include/eigen3
+src/rmagine_cuda/include/rmagine/math/linalg.cuh:20:1: error: '__device__' does not name a type
+
+printf '#include <rmagine/util/cuda/CudaHelper.hpp>\nint main(){return 0;}\n' > y.cpp
+# same flags
+src/rmagine_cuda/include/rmagine/util/cuda/CudaHelper.hpp:51:20: error: 'runtime_error' is not a member of 'std'
+```
+
+`linalg.cuh:4` includes only `rmagine/math/types.h` and then declares `__device__`
+functions at linalg.cuh:20,23 with nothing that defines `__device__`;
+`CudaHelper.hpp:38` includes the runtime shim but throws `std::runtime_error` at
+CudaHelper.hpp:51,64 without `<stdexcept>`.
+
+Both are PRE-EXISTING upstream defects, not port regressions -- I ran the identical
+check against the upstream base 6b93e86 with the CUDA 12.8 headers and got the same two
+errors at the same lines, and `CudaStream.hpp` passes standalone on both. So this is not
+a request to re-port anything. It is that the record now tells the next consumer (rmcl's
+porter is the named audience) something the gate does not establish and that is false
+for two installed headers they may reach for.
+
+Fix, cheapest first: correct notes.md:1351-1355 to what the test proves -- all sixteen
+installed headers compile together at the top of a plain C++ TU with nothing above them,
+which is the regression that was actually fixed -- and say that per-header independence
+is not covered, naming `linalg.cuh` and `CudaHelper.hpp` as the two that fail it
+upstream. That needs no fork commit and does not touch `head_sha`. If you would rather
+make the claim true, the gate has to be one TU per header (a loop over the installed
+headers, or one small object per header) and the two upstream defects need the obvious
+two-line fixes (`<stdexcept>` in CudaHelper.hpp, the runtime shim include in
+linalg.cuh); weigh that against a fifth revalidation round for four platforms, and note
+that `tests/cuda/public_headers.cpp:1-3` should get the same tightening if a fork commit
+happens for any other reason.
+
+Same correction is needed in the promoted lesson, which is the part that outlives this
+project: `.claude/skills/cuda-to-rocm/references/fault-classes.md:303-306` prescribes
+"a test that includes every installed public header at the top of a plain C++ TU, with
+nothing above them", and `references/strategy-a-cmake.md:136-138` points at it. As
+written, every future porter builds the same single-TU gate and inherits the same blind
+spot. Say that one TU per header is what catches a header that only compiles because an
+earlier include supplied its dependencies, and that the single-TU form only catches a
+shim that poisons the whole set -- with rmagine's own `linalg.cuh` as the example that
+slipped through.
+
+### 2. notes.md:1701 justifies the `<cstdio>` workaround with a claim about cuRAND that is not true
+
+notes.md:1699-1702: "it makes even the two RNG headers host-includable, which they are
+not upstream either (curand_kernel.h needs nvcc)". Checked directly against CUDA 12.8
+headers with the plain host compiler:
+
+```
+printf '#include <curand.h>\n#include <curand_kernel.h>\nint main(){return 0;}\n' > c.cpp
+g++ -std=c++17 -fsyntax-only c.cpp -I/opt/conda/envs/cuda-12.8/targets/x86_64-linux/include
+# exit 0
+```
+
+cuRAND's device header is host-includable; hipRAND's is not, for the specific reason the
+commit body gives (`rocrand_mtgp32.h:443` calls `printf` with only `<stdlib.h>` and
+`<string.h>` above it -- confirmed here). So the `<cstdio>` include in
+`curand_to_hiprand.h:35` is not restoring parity with a broken NVIDIA path, it is
+repairing a ROCm-only gap, and the port's HIP path is the one that would have been
+BEHIND upstream without it. Reword that parenthetical; the fix itself is right and
+stays. This matters because a future reader could take "curand_kernel.h needs nvcc" as
+licence to skip host-includability on the CUDA side of some other project.
+
+### Verified, no action (fact-checked here, not taken from the round's account)
+
+- The footprint fix is correct and complete. `cuda_to_hip.h` no longer includes
+  `<hiprand/hiprand_kernel.h>` and its CUDA branch no longer includes `<curand*.h>`;
+  `curand_to_hiprand.h` carries both, and the only two headers that name `curandState`
+  in a declaration include it (`random.cuh:5`, `NoiseCuda.hpp:45`) -- exactly the two
+  that pulled cuRAND upstream (checked against 6b93e86). All five `.cu` that use
+  `curandState`/`curand_*` reach it through `random.cuh` (NoiseCuda.cu:2,
+  GaussianNoiseCuda.cu:3, RelGaussianNoiseCuda.cu:3, UniformDustNoiseCuda.cu:3,
+  random.cu:1), so removing the include from the force-included shim leaves no
+  translation unit short. Every other header is back to its upstream include footprint.
+- The reported bug and the fix both reproduce on this host's ROCm: `CudaContext.hpp`
+  before `<cstdio>` compiles now under plain g++ with `-D__HIP_PLATFORM_AMD__=1`, as does
+  `NoiseCuda.hpp`, and `rocrand_mtgp32.h:443` is the `printf` in question.
+- The test does cover all 16 installed headers: `install(DIRECTORY include/rmagine ...)`
+  at `src/rmagine_cuda/CMakeLists.txt:225-229` installs the whole tree, which is 16
+  files, and public_headers.cpp lists all 16.
+- The new target does NOT break the NVIDIA build. `tests/cuda` is added whenever the
+  `rmagine-cuda` target exists (tests/CMakeLists.txt), so `public_headers.cpp` is
+  compiled by the host C++ compiler on a `USE_HIP=OFF` build too, where it pulls
+  `<curand_kernel.h>` through `random.cuh`. I compiled the file as-is against the CUDA
+  12.8 headers with g++ 13.3.0 and it succeeds, so the unconditional target is safe and
+  correctly placed where both backends run it.
+- `rmagine-cuda-config.cmake.in`: the CUDA branch is behaviour-identical to upstream and
+  the HIP branch is reached through a variable, not a quoted constant. Re-ran the policy
+  check on this host (CMake 3.31.6, `cmake -P`, CMP0012 unset): `if("ON")` is FALSE with
+  a CMP0012 warning, `if(<var>)` with the var set to `ON` is TRUE. The load-bearing line
+  holds.
+- The history rewrite is exactly what it claims. Every old SHA's tree, fetched from the
+  fork through the GitHub API, is byte-identical to its replacement:
+  3d098d58e/2b6824f, 9088c8e15/c99f2fc, 4d2cd269c/2c1122c, db7f06475/a5755c0,
+  4223818c9/9e642a6 (tree 94af630a90625e35afa915e7bce34d116a8a0d0a -- the one four
+  platforms' `validated_sha` depends on), 73820862e/ee33fc4, 74ba64005/27a88ba,
+  0aea7af33/e7a7b27. The message diff for 2b6824f is the two phrases described and
+  nothing else. The carry-forward of the four platform records is sound.
+- `python3 utils/jargon.py --port rmagine`: clean. Prior finding 2 closed.
+- Prior findings 3, 4 and 5 closed: ee33fc4's body now describes the FindCUDA
+  `message(FATAL_ERROR)` aborting inside `find_package(rmagine)`; the "Install as a
+  dependency" recipe carries the ROCm root as a second prefix-path entry
+  (notes.md:1301-1328); notes.md and plan.md are rmagine's, and the only surviving
+  `projects/rmcl/...` strings are the reviewer quotes and the rename history.
+- Commit hygiene on the whole branch: `[ROCm]` titles at 47-64 characters, AI assistance
+  disclosed, Test Plan in fenced blocks, no `Co-Authored-By`/noreply trailer, no
+  non-ASCII in any message or added line, single author, no AMD-internal account
+  references. Fork `origin/main` is exactly upstream `uos/rmagine` 6b93e861 (verified via
+  API), so the base is a clean mirror.
+- No device code in this delta, so the wave-size, OOB, RAII and library-swap classes are
+  as validated at 9e642a6; nothing here changes kernel numerics on either backend.
+
+Still open for a person, unchanged by this round: `c99f2fc` is titled
+"[ROCm] WIP: rmagine_hiprt Pinhole sensor skeleton" and two commits are titled
+"Stage 2:", and the README says nothing about `USE_HIP`. Both belong in the decision
+about how the branch and PR body are shaped, not in a porter round.
