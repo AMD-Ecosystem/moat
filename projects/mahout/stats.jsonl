@@ -106,3 +106,10 @@
 {"kind": "tokens", "ts": "2026-07-02T19:07:42Z", "tokens": 90997, "source": "validator (CUDA compile-check with nvcc 12.6)"}
 {"kind":"phase","ts":"2026-07-02T19:28:46Z","phase":"compile","seconds":3.284,"exit":0,"cmd":"cargo build --manifest-path /var/lib/jenkins/moat/projects/mahout/src/qdp/Cargo.toml -p qdp-core -p qdp-kernels --no-default-features --features hip -j 16"}
 {"kind": "tokens", "ts": "2026-07-02T19:31:15Z", "tokens": 97613, "source": "validator"}
+{"kind":"session","ts":"2026-08-13T22:12:30Z","epoch":1786659150.305124964,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-13T22:16:31Z","phase":"compile","seconds":16.315,"exit":0,"cmd":"cargo build --manifest-path /var/lib/jenkins/moat/projects/mahout/src/qdp/Cargo.toml -p qdp-core -p qdp-kernels --no-default-features --features hip -j 16"}
+{"kind":"phase","ts":"2026-08-13T22:18:03Z","phase":"test","seconds":18.318,"exit":0,"cmd":"cargo test --manifest-path /var/lib/jenkins/moat/projects/mahout/src/qdp/Cargo.toml -p qdp-core -p qdp-kernels --no-default-features --features hip -- --test-threads=1"}
+{"kind":"phase","ts":"2026-08-13T22:19:06Z","phase":"cuda-compile","seconds":14.161,"exit":0,"cmd":"cargo build --manifest-path /var/lib/jenkins/moat/projects/mahout/src/qdp/Cargo.toml -p qdp-core -p qdp-kernels -j 16"}
+{"kind":"phase","ts":"2026-08-13T22:19:24Z","phase":"cuda-compile","seconds":11.156,"exit":0,"cmd":"cargo test --manifest-path /var/lib/jenkins/moat/projects/mahout/src/qdp/Cargo.toml -p qdp-core -p qdp-kernels --no-run -j 16"}
+{"kind":"phase","ts":"2026-08-13T22:21:18Z","phase":"test","seconds":1.567,"exit":0,"cmd":"cargo test --manifest-path /var/lib/jenkins/moat/projects/mahout/src/qdp/Cargo.toml -p qdp-core --no-default-features --features hip --test parquet_f32_fidelity -- --test-threads=1"}
+{"kind":"phase","ts":"2026-08-13T22:22:38Z","phase":"misc","seconds":0.003,"exit":0,"cmd":"true"}

@@ -1610,3 +1610,115 @@ Verdict: CUDA path OK. The cuda_rt path builds through real nvcc 12.6 with no er
 No port regression. Driver-stub (libcuda.so) not needed at build time (cudarc uses
 libloading; stubs dir provided via RUSTFLAGS as a precaution). No NVIDIA GPU present
 on this host: compile-only, no runtime test.
+
+## Fix round 2026-08-13 (porter, linux-gfx1100) -- merge upstream main into moat-fix-1399
+
+PR apache/mahout#1399 was CHANGES_REQUESTED by ryankert01 ("Need to resolve
+conflicts"); GitHub reported CONFLICTING against upstream main. The published tip
+fd8c7a38 is frozen (open PR), so the round is staged on `moat-fix-1399`, cut from
+fd8c7a38 and MERGED (never rebased) with upstream/main. Staging tip:
+1744956ded31cd8917e25aafd1795286fc36dbdd (merge 53c5f72fb + one follow-up).
+
+Env: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3 wave32), ROCm 7.2.1 / HIP 7.2.53211
+(AMD clang 22.0.0git roc-7.2.3), cargo 1.97.1, HIP_VISIBLE_DEVICES=0.
+
+### What upstream changed (fd8c7a38..upstream/main, 16 commits, 26 files in qdp/)
+Relevant to the port:
+- #1416 "Expose native cuda_available() and gate GPU tests on it": new
+  `cudaGetDeviceCount` binding + `cuda_runtime_available()` in gpu/cuda_ffi.rs
+  (also stubbed in the qdp_no_cuda mod), re-exported from lib.rs, and a new
+  `cuda_available()` pyfunction in qdp-python/src/lib.rs.
+- #1442 "apply shared max qubit validation": `validate_qubit_count()` in
+  gpu/encodings/mod.rs called from six AmplitudeEncoder entry points; MAX_QUBITS
+  removed from qdp-kernels/src/kernel_config.h (now Rust-side only); new
+  gpu_ptr_encoding test `test_amplitude_gpu_pointer_paths_reject_excessive_qubits`.
+- #1422 new tests/parquet_f32_fidelity.rs (CPU smoke + 3 GPU fidelity cases) and a
+  benchmark; tests/common/mod.rs gained the f32/f64 Parquet writers.
+- #1454 new src/estimate.rs + tests/estimate.rs (CPU-only memory estimator).
+- #1412/#1415/#1439/#1456/#1457 + dependabot bumps: Python API, docs, Cargo.lock,
+  uv.lock. No .cu kernel source touched by either side.
+
+### Conflicts (4) and resolutions
+1. `qdp-core/src/gpu/cuda_ffi.rs` -- upstream inserted cudaGetDeviceCount where our
+   side has cudaMemGetInfo in the cuda_rt extern block. Kept both, and added the
+   HIP-side `cudaGetDeviceCount -> hipGetDeviceCount` wrapper + extern decl, so
+   upstream's new `cuda_runtime_available()` (moved to module scope, outside the
+   three backend mods) resolves and reports AMD devices on the hip build. Without
+   the wrapper the hip build fails to compile the helper.
+2. `qdp-core/src/gpu/encodings/amplitude.rs` -- upstream added
+   `use super::{QuantumEncoder, validate_qubit_count}` on the line where our port
+   has `#[cfg(qdp_gpu_platform)]` in place of `#[cfg(target_os = "linux")]`. Took
+   upstream's import + our cfg.
+3. `qdp-core/tests/gpu_ptr_encoding.rs` -- upstream added MAX_QUBITS/encoder
+   imports next to `use cudarc::driver::{DevicePtr, DeviceSlice}`, which our port
+   had rewritten to `qdp_core::gpu_rt::{...}`. Took upstream's new imports, kept
+   gpu_rt for the device-pointer traits.
+4. `qdp-python/src/lib.rs` -- upstream registered `cuda_available` immediately
+   before the `#[cfg(target_os = "linux")]` line our port carries as
+   `#[cfg(qdp_gpu_platform)]`. Took both.
+
+Verified afterwards that `git diff fd8c7a38..staging -- qdp/` is exactly upstream's
+26-file delta plus the 6-line hipGetDeviceCount wrapper: no port intent was lost in
+the merge.
+
+### Follow-up commit (1744956de)
+Upstream's new tests/parquet_f32_fidelity.rs gates its GPU module on
+`#[cfg(target_os = "linux")]`. Every other GPU test in the crate uses
+`qdp_gpu_platform` (emitted by qdp-core/build.rs: Linux always, Windows when the
+hip feature is on), so on a Windows ROCm build that one file would silently drop
+its three GPU cases. Switched it to `qdp_gpu_platform` and dropped the
+"Linux + CUDA" wording. Test-only change.
+
+### Build + test (exact commands)
+```
+export QDP_USE_HIP=1 QDP_HIP_ARCH_LIST=gfx1100 ROCM_PATH=/opt/rocm HIP_VISIBLE_DEVICES=0
+cd projects/mahout/src/qdp
+cargo build -p qdp-core -p qdp-kernels --no-default-features --features hip -j 16
+cargo test  -p qdp-core -p qdp-kernels --no-default-features --features hip -- --test-threads=1
+```
+- build: exit 0 (16.2s cold). Only pre-existing warnings (iqp.cu unused param,
+  phase.cu unused variable, and qdp-core's upstream "CUDA toolkit not found"
+  notice from configure_cuda_linkage, which is cosmetic on a hip build).
+- test: exit 0, **368 passed, 0 failed, 4 ignored** (ignored = doctests requiring a
+  GPU/IO fixture). Was 358 at fd8c7a38 on gfx90a; the +10 are upstream's new tests,
+  all of which run and pass on AMD:
+  estimate 9, parquet_f32_fidelity 4 (incl. gpu:: 8/12/16-qubit fidelity cases),
+  gpu_ptr_encoding 69 (was 68: the new excessive-qubit case), reader 3, parquet_f32 7.
+  Full breakdown: lib 100, arrow_ipc_io 5, estimate 9, gpu_angle 12, gpu_api_workflow 8,
+  gpu_basis 7, gpu_dlpack 9, gpu_fidelity 17, gpu_iqp 22, gpu_memory_safety 4,
+  gpu_norm_f32 2, gpu_ptr_encoding 69, gpu_validation 8, null_handling 6, numpy 4,
+  parquet_f32 7, parquet_f32_fidelity 4, parquet_io 8, preprocessing 14, reader 3,
+  tensorflow_io 9, torch_io 3, types 6, qdp-kernels amplitude_encode 21,
+  angle_encode 10, doctests 1.
+
+### CUDA (default feature) compile check -- real nvcc 12.8, this host
+No NVIDIA GPU here, so build-only; the PR's NVIDIA CI covers the run.
+```
+export CUDA_PATH=/opt/conda/envs/cuda-12.8 PATH=$CUDA_PATH/bin:$PATH
+export RUSTFLAGS="-L $CUDA_PATH/lib/stubs -L $CUDA_PATH/lib"
+export CARGO_TARGET_DIR=agent_space/mahout-cuda-target
+unset QDP_USE_HIP QDP_HIP_ARCH_LIST ROCM_PATH
+cargo build -p qdp-core -p qdp-kernels -j 16          # exit 0, 14.1s
+cargo test  -p qdp-core -p qdp-kernels --no-run -j 16 # exit 0, 23 test binaries
+```
+qdp-core's build script emitted `rustc-link-lib=cudart` (real cuda_rt path, not the
+qdp_no_cuda stub path); libkernels.a is 4.7 MB of nvcc fatbinaries.
+
+### Conflict-free confirmation
+- `git merge-base --is-ancestor upstream/main moat-fix-1399` -> yes (staging tip
+  contains current upstream main, so merging it into main is a fast-forward).
+- `git merge-base --is-ancestor fd8c7a38 moat-fix-1399` -> yes (published tip is
+  still an ancestor; the later fast-forward of the PR branch remains possible).
+- `git merge-tree --write-tree upstream/main moat-fix-1399` -> clean.
+- Pushed ONLY `moat-fix-1399` to the fork; `moat-port` untouched (frozen).
+- `python3 utils/jargon.py --port mahout` and the same scan over
+  `main..moat-fix-1399` (commits and added lines): clean.
+
+### Gotchas from this round
+- Upstream is actively adding tests that gate on `target_os = "linux"`. Any future
+  sync must re-check new `#[cfg(target_os = "linux")]` sites against the port's
+  `qdp_gpu_platform` cfg, or the Windows-ROCm build quietly loses coverage.
+- When upstream adds a runtime entry point to cuda_ffi.rs, all THREE backends need
+  it (cuda_rt extern, no_cuda_stubs stub, hip_rt wrapper); a helper written at
+  module scope over those names fails to compile on hip if only the first two are
+  updated. The auto-merge silently supplied the stub and cuda_rt sides only.
