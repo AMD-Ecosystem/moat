@@ -3007,3 +3007,146 @@ None.
 - No fault class is in scope: the delta adds two unguarded Thrust includes and touches no
   kernel, wavefront assumption, texture handle or pitch, neighbor read, resource-handle
   lifetime, build file, or library selection.
+
+## Validation 2026-08-14 (linux-gfx90a) -- revalidate at fix-round tip 758d5e7 (merge-of-develop round): PASS
+
+Platform: 4x AMD Instinct MI250X (gfx90a, CDNA2, wave64), ROCm via the TheRock pip SDK at
+`/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel` (sourced from
+`/etc/rocm_env.sh`), AMD clang 23.0.0git, HIP 7.14.60850-0000000, same toolchain as this
+morning's `d10126b` pass on this host. `HIP_VISIBLE_DEVICES=0`.
+
+Existing local clone, `git fetch origin --prune`; `moat-fix-186` already checked out at
+`758d5e77faf0cc64b86b785d9b0981f324b2c1ad` == `head_sha`. `git status --porcelain` empty
+throughout and at completion.
+
+`python3 utils/moatlib.py classify popsift d10126b5dab3 758d5e77faf` -> `class=mixed
+arch_independent=False inert=False` (`src/popsift/s_filtergrid.cu: mixed (token count
+differs)`, from the two added `#include` lines -- an insertion changes the token count, so
+the tokenizer cannot prove behavior-preservation even though the change is textually
+trivial). Not one of the classes `advance_head` auto-carries (`doc-only`/`comment-only`),
+so this is a full revalidation rather than a tooling-derived carry-forward. Did not attempt
+the build-both-and-`codeobj_diff` shortcut either, since a full real-GPU run was cheap here
+and directly exercises the changed translation unit (see below) rather than only proving the
+compiled bytes match.
+
+### Build (library + examples + Oxford test harness, clean build dir)
+
+```
+source /etc/rocm_env.sh
+bash utils/timeit.sh popsift compile -- cmake -S projects/popsift/src -B projects/popsift/src/build-hip \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=$ROCM_PATH/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROCM_PATH \
+  -DCMAKE_BUILD_TYPE=Release -DPopSift_BUILD_EXAMPLES=ON -DBUILD_SHARED_LIBS=ON \
+  -DPopSift_USE_TEST_CMD=ON -DPopSift_TESTFILE_PATH=/var/lib/jenkins/moat/agent_space/oxford
+bash utils/timeit.sh popsift compile -- cmake --build projects/popsift/src/build-hip -j
+```
+
+100% built: `libpopsift.so`, `popsift-demo`, `popsift-match`. Only the two pre-existing
+benign warnings (`-Wunused-value` on nodiscard `hipError_t` in `debug_macros.h` and
+`s_filtergrid.cu:146`, `-Wdeprecated-declarations` on rocThrust `thrust::identity<int>` at
+`s_filtergrid.cu:294`); no new warnings from the two added includes. DevIL not found ->
+pgmread fallback (expected). `strings build-hip/Linux-x86_64/libpopsift.so.0.10.1 | grep -o
+'amdgcn-amd-amdhsa--gfx[0-9a-z:+-]*' | sort -u` -> single `amdgcn-amd-amdhsa--gfx90a` code
+object.
+
+### GPU validation -- Oxford boat cross-arch gate (real gfx90a, downsampling=-1, VLFeat/loop/RootSift)
+
+```
+bash utils/timeit.sh popsift test -- HIP_VISIBLE_DEVICES=0 build-hip/Linux-x86_64/popsift-demo \
+  -i <boat>/imgN.pgm --gauss-mode vlfeat --desc-mode loop --popsift-mode --root-sift --downsampling -1 --log
+```
+
+| Image | gfx90a feat/desc | Reference (same head_sha, all archs) | Match |
+|-------|-------------------|----------------------------------------|-------|
+| img1  | 8351 / 9874       | 8351 / 9874                              | EXACT |
+| img2  | 7945 / 9451       | 7945 / 9451 (documented gfx90a wave64 boundary divergence, `## Validation 2026-08-14 (linux-gfx90a)` above) | EXACT (same known figure) |
+| img3  | 6158 / 7280       | 6158 / 7280                              | EXACT |
+| img4  | 4802 / 5799       | 4802 / 5799                              | EXACT |
+| img5  | 4618 / 5476       | 4618 / 5476                              | EXACT |
+| img6  | 3855 / 4618       | 3855 / 4618                              | EXACT |
+
+All 6 counts byte-identical to the figures this same platform validated at `d10126b` earlier
+today, including the previously-documented img2 off-by-one (a deterministic, wave64-only,
+single-feature boundary divergence -- the hard class the skill says to record and stop on,
+not chase; same figure here means no new regression from this round's delta).
+
+Determinism: img1 5/5 repeat runs -> 8351/9874 every time, `sort -n output-features.txt |
+md5sum` identical across all 5 (`a5f1060edd55931830508ab1964cfb5d`; a different value than
+the older cross-session `3ad1a0e6d0e7abdb4520aeb2f8b4a4ff` reference recorded at an earlier
+toolchain -- expected, per notes.md:1125-1126 and :912-913 descriptor-value md5 is not stable
+across toolchain/arch even when counts match, so only within-session determinism is the
+signal). img2 5/5 repeat runs -> 7945/9451 every time.
+
+Descriptor sanity (img1, 9874 descriptors x 128 values parsed from `output-features.txt`,
+1,263,872 values): 0 NaN, 0 Inf; per-descriptor L2 norm (RootSift) in [0.99907, 1.00089]; 0
+all-zero descriptors; keypoint x in [0.77, 848.48], y in [2.01, 679.36] (within the 850x680
+image) -- matches the figures recorded for this same platform at `d10126b` exactly.
+
+popsift-match sanity (img1 vs img2, real gfx90a, `--left`/`--right`): real finite distances
+(e.g. "dist 0.008 vs 0.176", "dist 0.146 vs 0.239"), sane accept/reject pattern, no NaN, no
+crash.
+
+### Changed-TU coverage: the boat gate alone does NOT exercise `s_filtergrid.cu` at runtime
+
+Checked this rather than assuming it: `Pyramid::extrema_filter_grid` (defined in
+`s_filtergrid.cu`, the only file this round touched) is called from `s_orientation.cu:379`
+only when `conf.getFilterMaxExtrema() > 0 && filter_max_extrema*1.1 < ext_total`
+(`s_orientation.cu:375-380`). `Config::_filter_max_extrema` defaults to `-1`
+(`sift_conf.cu:33`) and `--popsift-mode` only sets `_sift_mode`
+(`sift_conf.cu:52-55`), not the filter threshold -- confirmed by reading both the CLI wiring
+(`main.cpp:77`) and the packaged test driver (`testScripts/testOxfordDataset.sh.in:46`,
+the same command as the boat gate above). Neither passes `--filter-max-extrema`, so the
+grid-filter kernel path is compiled and linked but not entered by the standard boat gate.
+
+Ran it directly instead, to exercise the new `thrust::make_zip_iterator`/`thrust::tuple`
+code at runtime rather than only proving it links:
+```
+HIP_VISIBLE_DEVICES=0 build-hip/Linux-x86_64/popsift-demo -i <boat>/img1.pgm --gauss-mode vlfeat \
+  --desc-mode loop --popsift-mode --root-sift --downsampling -1 --filter-max-extrema 2000 --filter-grid 4
+```
+3/3 runs: feature count stable at 2008 every run (the grid-filter target); descriptor count
+varies slightly run to run (2330/2331/2329, and 2330/2362/2363 across `--filter-sort
+random|up|down`) because the default/`random` sort mode genuinely randomizes tie-breaking at
+the grid boundary -- expected on both CUDA and HIP, not a wave64 artifact (the selected
+feature COUNT, which is deterministic, was stable across every run and mode). No NaN, no
+crash, exit 0 every time. This is real evidence the changed TU's device path (not just its
+compiled bytes) is correct on gfx90a, closing the gap the boat gate alone leaves.
+
+### CUDA no-regression gate -- re-run at this head_sha (not skipped)
+
+The prior "already recorded" CUDA gate entries in this file are all at `d10126b`, the tip
+*before* this round's merge. This round's only content change is exactly the include fix for
+a real upstream CUDA-13.3 build break (`## 2026-08-14 -- fix round: merge upstream develop`
+above), so re-running the gate at the new head_sha is the point, not a skippable formality.
+
+```
+PATH=/opt/conda/envs/cuda-12.8/bin:$PATH cmake -S projects/popsift/src -B projects/popsift/src/build-cuda \
+  -DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=86 -DCMAKE_BUILD_TYPE=Release \
+  -DPopSift_BUILD_EXAMPLES=OFF -DBUILD_SHARED_LIBS=ON -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc
+cmake --build projects/popsift/src/build-cuda -j
+```
+(wrapped in `utils/timeit.sh popsift cuda-compile --`). nvcc 12.8.93, sm_86, clean from
+scratch: 29 CUDA objects including `s_filtergrid.cu.o`, device link, `libpopsift.so` linked.
+0 errors, 0 warnings. Confirms the two added includes (byte-identical to upstream's own fix)
+compile cleanly on the CUDA arm too, and that our resolution of the merge conflict lost
+neither side. (This exercises nvcc 12.8, not the CUDA-13.3 floor that originally broke
+upstream -- that specific toolchain isn't available on this host; the fix is upstream's own
+text, unmodified, so the CUDA-13.3 fix itself is upstream's problem to validate, not ours to
+re-prove here.) Build dir removed before completion (gitignored `build-cuda/`, and a
+throwaway `build-cuda-full/` used only to double-check the warning count was also removed).
+
+### Jargon / documentation gate
+
+`python3 utils/jargon.py --port popsift`: one hit, "fault classes" in commit `05e698ec8`.
+`git merge-base --is-ancestor 05e698ec8 f2712723d903` -> yes, ancestor of the frozen
+published tip, live in PR #186 since it opened, unchanged by this round -- same finding as
+every prior pass at this head. `README.md:18,53-66` documents the ROCm/HIP build including a
+dedicated gfx90a example; untouched by and unaffected by this round.
+
+### Result
+
+PASS. `linux-gfx90a`: revalidate -> completed; validated_sha =
+`758d5e77faf0cc64b86b785d9b0981f324b2c1ad` (== head_sha). No fork push (validator does not
+write to the fork); `moat-fix-186` and `moat-port` left exactly as found (`moat-port` still
+`d10126b5dab3`, the published tip). `git -C projects/popsift/src status --porcelain` empty at
+completion.
