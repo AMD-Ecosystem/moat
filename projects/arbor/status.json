@@ -1,0 +1,129 @@
+{
+  "schema_version": 3,
+  "name": "arbor",
+  "upstream_url": "https://github.com/arbor-sim/arbor",
+  "fork_url": "https://github.com/AMD-Ecosystem/arbor",
+  "fork_default_branch": "master",
+  "priority": 0.0,
+  "ext_type": "cmake",
+  "adopted_at": "2026-06-05T00:05:54Z",
+  "updated_at": "2026-08-09T00:28:51Z",
+  "head_sha": "3e750fac",
+  "depends_on": [],
+  "pr_url": "https://github.com/arbor-sim/arbor/pull/2512",
+  "pr_number": 2512,
+  "pr_opened_at": "2026-06-08T19:44:18Z",
+  "pr_merged_at": "2026-07-02T17:17:26Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "merged",
+  "license_spdx": "BSD-3-Clause",
+  "upstream_repo_id": 69863074,
+  "stage": "review-passed",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "3e750fac69d5dc87585d3748c4375c442507eca5",
+      "started_at": "2026-06-05T00:11:13Z",
+      "completed_at": "2026-08-09T00:28:51Z",
+      "updated_at": "2026-08-09T00:28:51Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "moat-checkup",
+      "carry_forward": {
+        "to": "3e750fac69d5dc87585d3748c4375c442507eca5",
+        "method": "binary-equiv",
+        "detail": "Delta c5f27d01..3e750fac is test_intrin.cu only: extends exprelr 2-ULP tolerance runtime arch-string check from gfx12-only to gfx110x||gfx12x (host-side test tolerance, no kernel/device-code change). ",
+        "at": "2026-08-09T00:28:51Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "3e750fac",
+      "started_at": "2026-06-05T01:46:00Z",
+      "completed_at": "2026-06-19T21:47:38Z",
+      "updated_at": "2026-06-19T21:47:38Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "3e750fac",
+      "started_at": null,
+      "completed_at": "2026-06-19T20:50:13Z",
+      "updated_at": "2026-06-19T20:50:13Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "3e750fac",
+      "started_at": null,
+      "completed_at": "2026-06-19T20:51:16Z",
+      "updated_at": "2026-06-19T20:51:16Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "porter",
+      "carry_forward": {
+        "to": "3e750fac",
+        "method": "binary-equiv",
+        "detail": "test_intrin.cu: extend gfx110 to relaxed expm1 bound; gfx1201 device ISA unchanged (kernel not modified); 12/12 critical GPU tests verified on gfx1201 at 3e750fac",
+        "at": "2026-06-19T20:51:16Z"
+      }
+    }
+  }
+}
