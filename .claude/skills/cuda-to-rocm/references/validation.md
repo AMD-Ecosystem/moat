@@ -92,14 +92,16 @@ comparison that matters is against the other architectures, not against a fix.
 
 ### Ruling out "stale tree" and "toolchain version" before accepting "genuinely arch-specific"
 
-GooFit's HIP backend diverges an unbinned maximum-likelihood fit to a fitted
-parameter's upper bound on gfx90a (`alpha` lands at the +10 bound instead of the
-true -1, `FunctionMinimum is invalid: Edm is above max`, 21/25 ctest failures) while
-the identical committed tree passes cleanly on gfx1100 (wave32) and on the CPP/OMP
-backend, both giving the correct `alpha = -1.001102381`. Before accepting "genuinely
-wave64-specific" as the conclusion, rule out the two cheaper explanations first,
-because both have produced a false "arch-specific" report on this same project
-before a validator settled it:
+A validation session on GooFit reported that its HIP backend drove an unbinned
+maximum-likelihood fit to a fitted parameter's upper bound on gfx90a (`alpha` landing
+at the +10 bound instead of the true -1, `FunctionMinimum is invalid: Edm is above
+max`, 21/25 ctest failures) while the identical committed tree passed cleanly on
+gfx1100 (wave32) and on the CPP/OMP backend, both giving the correct
+`alpha = -1.001102381`. That was recorded as wave64-specific, and it was wrong: the
+same commit on the same card under a later ROCm gives the correct answer, so what
+follows uses that report as its worked example of a wrong verdict. Before accepting
+"genuinely wave64-specific" as the conclusion, rule out the two cheaper explanations
+first, because both have produced a false "arch-specific" report on this same project:
 
 1. **Stale/uncommitted tree.** Reproduce from a *fresh clone* of the exact
    `head_sha`, not a working tree that may have accumulated local edits from earlier
@@ -116,22 +118,28 @@ before a validator settled it:
    host per architecture the arch and its ROCm install are confounded: whatever the
    fleet has installed on the only gfx90a box is a property of that box, not of gfx90a.
    Do that run before writing any code. GooFit's divergence above was accepted as
-   "genuinely gfx90a-specific" on exactly this reasoning, then a later session on the
-   same hardware with ROCm 7.14 built the same commit from a fresh clone and got 25/25
-   with the fitted parameter digit-identical to every passing arch, plus 6/6 on the
-   Python bindings' 100k-event fits -- so a porter went hunting for a lifetime bug in
-   code that had none. Perturbing the allocator and serialising the runtime
+   "genuinely gfx90a-specific" on exactly the wrong-direction reasoning, then a later
+   session on the same hardware with ROCm 7.14 built the same commit from a fresh
+   clone and got 25/25 with the fitted parameter digit-identical to every passing arch
+   -- so a porter went hunting for a lifetime bug in code that had none. Perturbing
+   the allocator and serialising the runtime
    (`HSA_DISABLE_FRAGMENT_ALLOCATOR=1`, `AMD_SERIALIZE_KERNEL=3 AMD_SERIALIZE_COPY=3`)
    are the cheap follow-ups that argue against latent undefined behaviour a newer
    runtime merely hides; they are evidence, not proof, so say so in the record.
 
-Only once both are pinned identical to a passing run does "wrong on this arch only"
-stand as a finding. For GooFit specifically: same ROCm 7.2.1 series hipcc that an
-earlier passing gfx90a attempt used, freshly cloned at the validated `head_sha`, and
-kernels do dispatch (`AMD_LOG_LEVEL=3` shows 112 `hipLaunchKernel` calls, `roc-obj-ls`
-shows one gfx90a code object) -- so the divergence is real GPU execution producing a
-wrong answer, not a build or environment artifact. That is when this becomes the "one
-architecture gets wrong numbers" case below rather than something to keep debugging.
+Only once both are ruled out does "wrong on this arch only" stand as a finding, and
+ruling out the toolchain means varying it, not pinning it. GooFit never cleared that
+bar. What its failing session established -- freshly cloned at the validated
+`head_sha`, and kernels demonstrably dispatching (`AMD_LOG_LEVEL=3` shows 112
+`hipLaunchKernel` calls, `roc-obj-ls` shows one gfx90a code object) -- is only that
+real GPU execution produced the wrong answer, i.e. that it was not a stale tree or an
+"it never ran on the GPU" artifact. Reproducing it on the same ROCm 7.2.1 series
+hipcc an earlier attempt had used added nothing about the architecture, because the
+toolchain never varied; the answer came from running the same card on 7.14. So use
+those checks to eliminate the build and environment, then change the ROCm. A
+divergence that survives a current, different ROCm on the same card is the one that
+becomes the floating-point case at the top of this section rather than something to
+keep debugging.
 
 ## Diagnosing a suspected AMD fault before escalating
 

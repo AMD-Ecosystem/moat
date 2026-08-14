@@ -169,16 +169,32 @@ row above reachable. Pin any claim here to a CMake version; this one is 3.31.6. 
 where the reverse claim -- that the exclusion was load-bearing -- was wrong twice before
 being measured this way.)
 
-### The ROCm imported targets put device compile options on EVERY consumer, C++ ones included
+### The ROCm imported targets put device compile options on their consumers' C++ sources
 
 `hip::device` -- pulled in transitively by `roc::rocthrust` and friends, not just by naming
-it -- carries `-x hip` and `--offload-arch=` in its `INTERFACE_COMPILE_OPTIONS`. Those are
-language options, and CMake applies them to every target that links the interface library,
-whatever language that target's sources are compiled in. On the targets whose sources you
-marked `LANGUAGE HIP` this is invisible, because they were going to hipcc anyway. On a
-target left in C++ it is fatal, and the error names the flag rather than the cause:
+it -- carries `-x hip` and `--offload-arch=` in its `INTERFACE_COMPILE_OPTIONS`, wrapped in a
+generator expression that selects exactly the sources CMake compiles as CXX:
+
+    # hip-config.cmake
+    function(hip_add_interface_compile_flags TARGET)
+      set_property(TARGET ${TARGET} APPEND PROPERTY
+        INTERFACE_COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:CXX>:${_HIP_SHELL}${ARGN}>")
+    endfunction()
+
+So they reach the CXX-compiled sources of every consumer, and only those. That is *why*
+marking sources `LANGUAGE HIP` fixes it: the sources stop matching `COMPILE_LANGUAGE:CXX`,
+so the flags are no longer emitted for them at all -- the fix removes the flags from that
+compile line rather than making them harmless. On a target left in C++ they land on the host
+compiler, which is fatal, and the error names the flag rather than the cause:
 
     c++: error: unrecognized command-line option '--offload-arch=gfx90a'
+
+The link half is separate and outlives the compile fix. `hip_add_interface_link_flags` puts
+`--hip-link` and `--offload-arch=` into `hip::device`'s `INTERFACE_LINK_LIBRARIES` under
+`$<$<LINK_LANGUAGE:CXX>:...>` (CMake 3.20+; below that, unconditionally), so a consumer whose
+sources are all adopted but whose *link* language is still CXX gets the identical
+unrecognized-option error from the link line. Give that target a HIP link language too;
+the residual case is a target with no HIP sources of its own that merely links a HIP library.
 
 Look for the targets a port's own helper function does not cover. A project that routes its
 libraries through an `add_library` wrapper usually has a few built with a plain
@@ -189,11 +205,16 @@ for a `CXX_COMPILER_<target>` rule whose `FLAGS` contain `-x hip` (Makefiles gen
 `CMakeFiles/<target>.dir/flags.make`).
 
 The fix is to give those targets the same treatment the wrapper gives everything else --
-`LANGUAGE HIP` plus whatever `-include` compat header the port injects -- rather than to
-strip flags. Two scope traps when doing it: source-file properties are DIRECTORY-scoped, so
-set them in the directory that owns the target, and for sources appended from a
-subdirectory with `target_sources()` use `set_source_files_properties(... TARGET_DIRECTORY
-<tgt> ...)` (CMake 3.18+), which is the only way to reach the owning scope from there.
+`LANGUAGE HIP` plus whatever `-include` compat header the port injects. Never strip the flags
+off `hip::device`: they are how a project that compiles device code through the CXX language
+with hipcc gets compiled at all, the imported target is regenerated from the ROCm package on
+every configure, and the language marking already excludes the sources that must not see
+them, so there is nothing left to strip. Two scope traps when doing it:
+source-file properties are DIRECTORY-scoped, so set them in the directory that owns the
+target, and for sources appended from a subdirectory with `target_sources()` reach the owning
+scope explicitly. `set_source_files_properties(... TARGET_DIRECTORY <tgt> ...)` (CMake 3.18+)
+is the better form -- `DIRECTORY <owning-dir>` on the same command works too, but it
+hardcodes a path to that directory, while `TARGET_DIRECTORY` follows the target.
 
 Worth checking even when the port's own recipe passes, because the recipe usually turns
 these targets OFF. GooFit's documented HIP build worked only because every recorded session

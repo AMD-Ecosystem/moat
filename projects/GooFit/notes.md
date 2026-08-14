@@ -2080,3 +2080,54 @@ The 6/6 is not from the same commit -- at `18fca9e4a` the bindings do not build 
 all with their default `ON`, which is what this round fixed; the pytest run is from
 `e8dca9151` (see attempt 4, "Results at e8dca9151"). Attribute it to the fixed
 commit or drop it from that sentence; the 25/25 alone carries the argument.
+
+## Attempt 5 (2026-08-14, porter, linux-gfx90a) -- skill-text round; no fork change
+
+Both review findings are in the skill text promoted last round, so nothing on
+`moat-port` moved: fork clone clean at `e8dca9151`, `head_sha` unchanged, and the
+gfx90a validator still owns this head (`failed_sha` `18fca9e4a` remains behind it).
+
+### Finding 1 -- `references/strategy-a-cmake.md`, the flag-leak mechanism
+
+Checked the installed hip-config rather than the note. `hip-config.cmake:75-79`
+wraps the interface compile options in `$<$<COMPILE_LANGUAGE:CXX>:...>`, and
+`hip-config-amd.cmake:140-152` is what feeds `-x hip` and each
+`--offload-arch=${GPU_TARGET}` through it, so the flags reach a consumer's
+CXX-compiled sources and ONLY those. The entry had it backwards ("every target
+... whatever language that target's sources are compiled in", `LANGUAGE HIP`
+merely making them "invisible"). Rewritten so the mechanism explains the fix:
+marking a source `LANGUAGE HIP` stops it matching the generator expression, so the
+flags are not emitted on that compile line at all. Added an explicit "never strip
+the flags off `hip::device`" -- the wrong fix the inverted text invited -- with the
+reason (they are how a hipcc-as-CXX project compiles device code, and the imported
+target is regenerated from the package on every configure).
+
+Added the link half: `hip_add_interface_link_flags` (`hip-config.cmake:81-91`)
+appends `--hip-link` and `--offload-arch=` to `INTERFACE_LINK_LIBRARIES` under
+`$<$<LINK_LANGUAGE:CXX>:...>` on CMake 3.20+, unconditionally below that, so a
+target whose sources are all adopted but whose link language is still CXX gets the
+same unrecognized-option error at link time.
+
+Corrected "the only way to reach the owning scope": `set_source_files_properties`
+takes both `DIRECTORY <dirs>` and `TARGET_DIRECTORY <targets>`, both since 3.18
+(`Help/command/set_source_files_properties.rst` in cmake 3.31.6). `DIRECTORY` works
+if the directory was already added; `TARGET_DIRECTORY` is preferred only because it
+does not hardcode a path.
+
+### Finding 2 -- `references/validation.md`, the section still certified what it retracted
+
+Reworked the whole "Ruling out stale tree and toolchain version" subsection instead
+of leaving the retraction as an inserted paragraph inside contradicting framing.
+The opening now states in the past tense that the gfx90a divergence was *reported*
+and that the verdict was wrong, and frames the report as the subsection's worked
+example of a wrong verdict. The closing paragraph no longer certifies the arch
+fault: the fresh-clone and `AMD_LOG_LEVEL`/`roc-obj-ls` evidence is now described
+as ruling out a stale tree and an "it never ran on the GPU" artifact and nothing
+more, with the point that re-running on the same ROCm 7.2.1 series added nothing
+because the toolchain never varied. Dropped the "plus 6/6 on the Python bindings"
+clause from the insert -- that run is from `e8dca9151`, not `18fca9e4a`, where the
+bindings do not build with their default `ON`; the 25/25 carries the argument alone.
+
+No build or test run this round: the change is MOAT-repo skill prose only, and the
+build evidence at this head stands from attempt 4 (395/395, 25/25 ctest, 6/6 pytest
+on gfx90a with the bindings defaulted ON).
