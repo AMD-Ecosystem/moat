@@ -589,3 +589,204 @@ pip SDK instead of `/opt/rocm`; `setup.py` already reads `ROCM_PATH` with
 device name here is "AMD Instinct MI250X / MI250", so the patch's
 `getCacheFilename` sanitize is load-bearing on this platform (unlike gfx942,
 where round 2 verified it is unnecessary).
+
+## Review 2026-08-14 (linux-gfx90a, `moat-port` b7ff795 vs upstream ef6f24b) -- CHANGES REQUESTED
+
+Problems only. Round 3's wave64 diagnosis is correct as far as it goes -- the
+`subwarpMask` reasoning was re-derived independently and holds (shift result
+type is the promoted LEFT operand, so `( ( 1 << BranchingFactor ) - 1 ) <<
+static_cast<uint64_t>( ... )` is a 32-bit `int` expression and the
+`static_cast` on the right operand changes nothing; `BranchingFactor` 4 with
+`WarpSize` 64 at `hiprt_common.h:202-214` gives shift counts to 60; `1ull`
+is bit-identical on wave32, where `subwarpIndex <= 7`). The patch also applies
+cleanly to the pinned tag and reproduces the tested tree byte for byte
+(verified: fresh clone at `8602b8c` + `git apply` diffs equal to the build
+clone). The fix is right. It is also incomplete, and the gap is not cosmetic.
+
+### 1. The same 32-bit lane-mask defect is live one screen away, and it is silently dropping half the scene
+
+`third_party/hiprt-rocm-fixes.patch` fixes the three `subwarpMask` sites and
+stops. `hiprt/impl/BvhBuilderKernels.h:405`, inside `PairTriangles`, has the
+same class:
+
+```c++
+uint64_t activeMask = hiprt::ballot( valid );
+...
+activeMask &= ~( 1u << firstPairedLane );   // firstPairedLane can be 0..63
+```
+
+`~( 1u << k )` is an `unsigned int`, so it ZERO-EXTENDS into the 64-bit AND and
+clears the entire upper half of `activeMask` -- for every `k`, not just
+`k >= 32`. The loop that hands each lane its turn as `broadcastLane` therefore
+ends as soon as the low 32 bits drain; lanes 32..63 never get a turn, keep
+`pairedIndex == InvalidValue`, and their triangles are never written to
+`pairIndices`. `LbvhBuilder.h:261` then calls `primitives.setPairs( pairCount,
+pairIndices )`, so those triangles do not exist for the BVH at all. This is
+live on this port: `hiprt_tracer/hiprt_wrapper.cpp:235` builds with
+`hiprtBuildFlagBitPreferFastBuild` and does not set
+`hiprtBuildFlagBitDisableTrianglePairing`, and round 2 already observed
+`Collapse_TrianglePairNode_ScratchNode`, so pairing runs.
+
+Measured on this host at `b7ff795`, harness scene (64 surfels -> 128 triangles
+-> two 64-lane waves), staged `hiprt_root` copy, cache cleared between runs:
+
+| staged `BvhBuilderKernels.h:405` | surfels with a position gradient | acc mean | acc max |
+|---|---|---|---|
+| as shipped (`1u`) | **31 / 64** -- indices 0-15 and 32-47 only | 0.3185 | 0.9957 |
+| `1ull` | **62 / 64** -- all but two | 0.3285 | 0.9989 |
+
+The surviving indices are exactly the low 32 lanes of each wave. Half the
+geometry is missing from the BVH on wave64, and the round-3 "42/42 PASS" was
+measured against that half-empty scene: nothing in the harness looks at
+geometry completeness, so every check still passed. `surface.json`'s
+`covered` entries for `library:optix_tracer_forward` and
+`library:optix_tracer_backward` inherit the same overstatement.
+
+Add `1ull` at that site to the patch, rebuild HIP RT from a fresh clone, rerun
+the harness, and re-record the forward numbers (`covered fraction`, depth
+range) and the finite-difference results -- they will all move.
+
+### 2. Same class again, on the architecture the windows gate will run
+
+`hiprt/impl/BvhBuilderKernels.h:1989` and `:1993` in `PackLeavesWarp`:
+
+```c++
+uint64_t packetMask = hiprt::ballot( ... );
+...
+packetMask ^= 1 << broadcastLane0;
+```
+
+`1 << 31` is a signed-int expression; converted to `uint64_t` it sign-extends
+to `0xFFFFFFFF80000000` and SETS bits 32..63, so `while ( packetMask )` cannot
+terminate once lane 31 is broadcast. `PackLeavesWarp` builds
+`TrianglePacketNode`, which `Context.cpp:1073` selects for `getRtip() >= 31`,
+i.e. RDNA4 -- gfx1201, one of the windows-gate candidates. Reasoned, not
+measured here (no RDNA4 on this host). Fix it in the same pass rather than
+rediscovering it as a Windows hang. While in the file, grep the rest of the
+dependency for the class: `PlocBuilderKernels.h:283` and
+`BvhBuilderUtil.h:169,294` already use `1ull << laneIndex` correctly, which is
+what makes the four remaining sites oversights rather than convention.
+
+### 3. The promoted lesson prescribes the check that was not run
+
+`.claude/skills/cuda-to-rocm/references/fault-classes.md` (round 3 hunk) is
+accurate and correctly placed, and it says "Grep every `1 <<` and `1u <<`
+whose shift count is derived from a lane index" -- the grep that finds items 1
+and 2 in the very dependency the port patches. Extend the entry with the
+second shape while fixing them, because its failure mode is different and
+worse: `mask &= ~( 1u << lane )` on a 64-bit mask wipes the whole upper half
+regardless of the shift count (silent wrong answer), and `mask ^= 1 << lane`
+at lane 31 sets the upper half (hang). The current text only describes the
+wrapped shift count.
+
+### 4. The harness cannot see missing geometry
+
+`projects/diff-surfel-tracing/validation/validate_tracer_rocm.py:236-249`
+computes `touched` and reports it, but only asserts consistency between
+`grad_grads3D` and `grad_means3D` over the surfels that were hit; 31 of 64
+passed. Add a completeness check: every surfel in this scene is in front of
+the camera and inside the frustum, so the gate should require essentially all
+of them to receive a position gradient (allow a small margin for a genuinely
+occluded surfel and print the missing indices when it fails). Without it, any
+future geometry loss in the BVH path is invisible again.
+
+The other four recalibrations were fact-checked against the code and stand:
+`D += w * dpt` (`hiprt_tracer/kernels.h:522`, upstream
+`optix_tracer/forward.cu:284`) confirms `out_dpt` is a coverage-weighted sum,
+so `dpt / acc` on `acc > 0.5` is the right depth test; `dL_dgrads3D +=
+dL_dmean3D * 0.5f * dpt` (`kernels.h:883`, upstream
+`optix_tracer/backward.cu:624-626`) confirms `grads3D` is a per-hit
+depth-reweighted copy of the position gradient, so a median per-surfel cosine
+is the honest statistic and a global cosine is not; and the `eps` 1e-4 -> 1e-3
+change with 6 directions scored by cosine plus least-squares slope is strictly
+stronger than the single-direction ratio it replaced, with the acceptance
+bands still the plan's. None of them is a loosening. They do all have to be
+re-measured after item 1.
+
+### 5. The third-party patch carries four undocumented API additions
+
+`third_party/hiprt-rocm-fixes.patch:370-470` adds
+`hiprtGetObjectToWorldFrameSRT`, `hiprtGetWorldToObjectFrameSRT`,
+`hiprtGetObjectToWorldFrameMatrix` and `hiprtGetWorldToObjectFrameMatrix` to
+`hiprt/impl/hiprt_device_impl.h`. None of them exists at the pinned tag, none
+is referenced anywhere in HIP RT, and none is referenced by this port
+(`kernels.h` has no `Frame` call). The patch header documents every other
+hunk; these are unexplained. Drop them, or say in the header why a user must
+apply them.
+
+### 6. `pip install` copies 186 MB of HIP RT into the package
+
+`setup.py::_stage_runtime_files_into_pkg` does
+`shutil.copytree( HIPRT_HOME, dst_hiprt )`. Measured here: 186 MB, of which
+`.git` is 33 MB, `contrib` 141 MB, `build` 2.9 MB and `dist` 1.2 MB -- and the
+runtime JIT only needs `hiprt/` (960 KB) plus the headers it includes.
+`package_data` carries the same tree into a wheel. Stage a filtered subset
+(`ignore=shutil.ignore_patterns( '.git', 'build', 'dist', ... )` at minimum).
+
+Related, for the PR text rather than the code: the per-launch chunk scratch is
+`H * W * CHUNK_SIZE * 8` bytes (`trace_surfels.cpp:274`, `:449`) -- 1.2 MB at
+96x96 but 265 MB at 1080p, allocated for both the forward and the backward
+launch. It is inherent to the design and correctly explained in
+`optix_tracer/params.h`, but a maintainer will want it stated up front.
+
+### 7. Attribution and dangling document references in upstream-visible source
+
+- "Authored with Claude (Anthropic)." at `hiprt_tracer/hiprt_wrapper.h:14`,
+  `hiprt_tracer/hiprt_wrapper.cpp:11` and `hiprt_tracer/kernels.h:31`. New
+  author lines are against the house rule and the AI-assistance disclosure is
+  already where it belongs, in the commit bodies. Remove all three.
+- "see PORTING_GUIDE ..." at `hiprt_tracer/kernels.h:12` and `:1057`, and
+  "See PORTING_GUIDE OptiX->HIPRT and UPSTREAM_FINDINGS" at
+  `hiprt_tracer/hiprt_wrapper.cpp:168`. Neither document exists in this
+  repository. Inline the one sentence that matters or drop the pointer.
+
+### 8. Two unguarded shared edits contradict the commit body
+
+`195d62f`'s body says "everything added here is either a new file or guarded
+by USE_ROCM". Two changes are neither: `trace_surfels.cpp:276` and `:451`
+change `Params params;` to `Params params{};`, and
+`diff_surfel_tracing/__init__.py:252` replaces
+`site.getsitepackages()[0] + '/diff_surfel_tracing'` with a `__file__`-based
+`pkg_dir`. Both are good changes on both back ends (value-init removes reads
+of uninitialized `Params` fields; the `__file__` form is what makes an
+editable install work), but the body has to say so -- a maintainer checking
+that sentence against the diff finds two counterexamples in the first file
+they open.
+
+### 9. `b7ff795`'s Test Plan command cannot work as written
+
+```
+git -C /tmp/hiprt apply third_party/hiprt-rocm-fixes.patch
+```
+
+`git -C` changes directory first, so the patch path resolves to
+`/tmp/hiprt/third_party/hiprt-rocm-fixes.patch`. Use an absolute path, or the
+form `195d62f` uses.
+
+### The EnvGS loose end: not orthogonal after all
+
+Round 3 recorded, honestly, that EnvGS Stage 2 validated this tracer on gfx90a
+against the same HIP RT without tripping the `Collapse` hang. Item 1 supplies a
+mechanism rather than leaving it unexplained: `PairTriangles` was dropping the
+upper half of every wave there too, so Stage 2's BVHs were built from roughly
+half the triangles it thought it had. That changes the primitive count and the
+tree shape feeding `openNodes`/`Collapse`, which is exactly what decides
+whether the duplicate open ever pushes the reference count past the equality
+exit -- so a scene that hangs at full geometry can build at half. It also
+implies Stage 2's gfx90a images were rendered with geometry missing and nobody
+would have seen it, since the criterion was "plausible reflections". Worth
+re-checking EnvGS once item 1 lands; recorded here rather than acted on.
+
+### Checked and clean
+
+Not repeated above: the `kernels.h` shading and gradient math tracks upstream
+`forward.cu` + `backward.cu` line for line (normalized-line comparison leaves
+only traversal, launch and signature differences); the CUDA path diff is the
+single unconditional `quat_to_rotmat_transpose` fix plus `USE_ROCM`-guarded
+blocks; both kernels bound-check `h >= H || w >= W`; `IntersectionInfo` is 8
+bytes and the `(H, W, CHUNK_SIZE * 2)` int32 scratch matches; no warp
+intrinsic, `warpSize` or hardcoded 32 in this port's own device code; commit
+titles are `[ROCm]`-prefixed and under 72 characters with no agent
+`Co-Authored-By`; `jargon.py --port diff-surfel-tracing` is clean; the working
+tree is clean at `b7ff795`; `third_party/optix` is an untouched gitlink and
+the `third_party/hiprt` gitlink is the pinned `8602b8c`.

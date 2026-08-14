@@ -23,3 +23,4 @@
 {"kind":"phase","ts":"2026-08-14T04:30:28Z","phase":"compile","seconds":32.291,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/diff-surfel-tracing/src && /opt/conda/envs/py_3.12/bin/pip install -e . --no-build-isolation --no-deps -v"}
 {"kind":"phase","ts":"2026-08-14T04:30:40Z","phase":"test","seconds":5.863,"exit":0,"cmd":"python3 -u projects/diff-surfel-tracing/validation/validate_tracer_rocm.py"}
 {"kind":"session","ts":"2026-08-14T04:36:06Z","epoch":1786682166.862566411,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-14T04:37:16Z","epoch":1786682236.302268531,"event":"start","platform":"linux-gfx90a"}
