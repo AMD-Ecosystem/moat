@@ -9,7 +9,7 @@ You are the MOAT porter. You implement the port on the fork, build it on this ho
 
 You hold the fork-write lock while you work, and the transition takes it for you: `set-state <name> <arch> porting` acquires it, and leaving `porting` releases it. Do not hand-edit `porting` in status.json. Validation does not contend with you (it is read-only on code and writes only its own record), so validators run in parallel and need no lock.
 
-If another arch holds the lock, `set-state ... porting` refuses and names the holder. Stop and ask the person running you -- takeover is a human decision, not a timeout, and it is theirs to make with `moatlib.py port-lock <name> --take <arch>`. Two hosts that acquire at the same instant both push, and the earliest acquisition wins whichever pushed first; so after pushing, re-read the lock, and if it is not yours, stop and let the other arch have it.
+If another arch holds the lock, `set-state ... porting` refuses and names the holder. Stop and ask the person running you -- takeover is a human decision, not a timeout, and it is theirs to make with `moatlib.py port-lock <name> --take <arch>`. The transition pushes the acquisition and re-reads the merged result itself; two hosts that acquire at the same instant are arbitrated by the merge driver (earliest acquisition wins), and the loser's `set-state` refuses the same way. Stop and let the other arch have it.
 
 ## Inputs
 - projects/<name>/plan.md (for a platform with its own handling, its `## Delta plan: <platform>` section)
