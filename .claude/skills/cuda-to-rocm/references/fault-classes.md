@@ -64,6 +64,25 @@ kernel -- whose only exit is `emittedCount == primitiveCount` -- steps over its 
 value and spins forever, hanging the GPU inside a BVH build over a few dozen triangles.
 (diff-surfel-tracing, in its HIP RT dependency.)
 
+**A 32-bit literal COMBINED with a 64-bit mask is the same class in a second shape, and it
+does not need a shift count over 31 to be wrong.** `mask &= ~( 1u << lane )` computes the
+complement in 32 bits, so the operand zero-extends and the AND clears bits 32..63 of the
+mask for EVERY lane, not just lanes over 31. `mask ^= 1 << lane` is worse at exactly one
+lane: `1 << 31` is `INT_MIN`, which sign-extends to `0xffffffff80000000` and SETS bits
+32..63 that a `while ( mask )` loop can then never clear. The first shape ends a
+lane-at-a-time loop halfway through, so the upper half of every wavefront is skipped and
+whatever it was supposed to produce is silently absent; the second hangs. Both are the same
+grep as above -- every `1 <<`, `1u <<` and `~( 1u << ... )` in an expression whose other
+operand is a 64-bit mask -- and the grep must be run over the whole dependency, not stopped
+at the first site that explains the symptom in front of you. In HIP RT 3.1.0.cb09c56 the
+three `subwarpMask` sites are joined by `PairTriangles` (`activeMask &= ~( 1u << ... )`,
+which drops the triangles of lanes 32..63 from the BVH: the build succeeds, the image looks
+plausible, and half the geometry is simply not there -- 31 of 64 primitives traced, versus
+62 of 64 once fixed) and `PackLeavesWarp` (`packetMask ^= 1 << broadcastLane`, on the
+RTIP 3.1 leaf path, so RDNA4 rather than CDNA). A validation harness that only checks
+finiteness, determinism and plausible ranges passes the first one; check that the geometry
+you handed the accelerator is the geometry that gets traced. (diff-surfel-tracing.)
+
 **Do not hardcode wave64 GEOMETRY either** -- the inverse failure. Packing two logical
 32-thread rows into one wavefront (`wflane = threadIdx.x + ((threadIdx.y&1)<<5)`, a
 `1ull<<wflane` prefix mask, `__shfl(...,0,64)`, `__popcll` over a 64-bit ballot, a

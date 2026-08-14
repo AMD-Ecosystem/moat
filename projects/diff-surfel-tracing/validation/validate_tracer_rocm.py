@@ -213,6 +213,35 @@ def check_forward(tracer, scene, H, W):
     return rgb
 
 
+# A surfel can legitimately receive no position gradient without any geometry
+# being lost: a disk seen edge-on covers no pixel. Measured on this scene, 62 of
+# 64 are traced and the two that are not (5 and 25) are the two most edge-on,
+# with |cos(normal, view)| of 0.003 and 0.015 against a median of 0.41. The
+# margin covers those and is still far tighter than any missing-geometry defect:
+# a BVH that drops the upper half of every 64-wide wavefront leaves 31 of 64.
+GEOMETRY_OCCLUSION_MARGIN = 4
+
+
+def check_geometry_complete(scene, touched):
+    """A BVH built from only part of the scene still renders a plausible image
+    with finite gradients -- nothing else in this harness would notice. This is
+    the check that does: every surfel centre projects inside the frame, so a
+    complete acceleration structure has to trace all but the edge-on few."""
+    means3D = scene["means3D"]
+    P = means3D.shape[0]
+    x, y, z = means3D[:, 0], means3D[:, 1], means3D[:, 2]
+    # make_rays() spans x and y over [-fov, fov] at z = 1.
+    in_frame = (z > 0) & (x.abs() <= 0.8 * z) & (y.abs() <= 0.8 * z)
+    check("every surfel centre is inside the frame", bool(in_frame.all()),
+          f"{int(in_frame.sum())}/{P}")
+
+    missing = (~touched & in_frame).nonzero().flatten().tolist()
+    check("the traced geometry is complete",
+          len(missing) <= GEOMETRY_OCCLUSION_MARGIN,
+          f"{int(touched.sum())}/{P} surfels traced"
+          + (f", missing {missing}" if missing else ""))
+
+
 def check_backward(tracer, scene, H, W):
     settings = make_settings(H, W)
     out, inputs = trace(tracer, scene, settings, H, W, requires_grad=True)
@@ -234,6 +263,7 @@ def check_backward(tracer, scene, H, W):
     check("backward grad_grads3D nonzero", bool(gg.abs().max() > 0),
           f"max |g| {gg.abs().max():.3e}")
     touched = gm.abs().sum(-1) > 0
+    check_geometry_complete(scene, touched)
     check("grad_grads3D is nonzero wherever grad_means3D is",
           bool((gg[touched].abs().sum(-1) > 0).all()),
           f"{int(touched.sum())} surfels received a position gradient")
