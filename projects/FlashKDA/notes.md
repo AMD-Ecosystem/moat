@@ -66,7 +66,11 @@ standalone library — it is an optional backend for `flash-linear-attention`'s
 which point FLA falls back to its own Triton kernels. Those Triton kernels
 (`fla/ops/kda/`) run on ROCm, and fla-org tests them on AMD in CI —
 `.github/workflows/amd-mi300.yml`. So an AMD user wanting Kimi Delta Attention has a
-supported, upstream-CI-tested path today. This is not `already-supported` for
+supported, upstream-CI-tested path today.
+[**CORRECTED 2026-08-14 by the gfx942 screen: the CI half of this is wrong.** That
+workflow is disabled (`if: false`) and has never run — 0 runs. The Triton path is
+installable on ROCm but upstream-unvalidated on AMD hardware. See the gfx942 section.]
+This is not `already-supported` for
 FlashKDA, which has no AMD port at all, but it changes what a FlashKDA port would
 buy: speed on hardware-specific code, not access to a missing capability.
 
@@ -150,7 +154,9 @@ Re-verified, each independently rather than taken on trust:
   exactly one hit, still the substring in "on-chip".
 - The AMD route to the capability is real and still live: `fla-org/flash-linear-attention`
   has `fla/ops/kda/` (Triton, with a `backends/` subpackage) and
-  `.github/workflows/amd-mi300.yml`.
+  `.github/workflows/amd-mi300.yml`. [**CORRECTED by the gfx942 screen:** confirming
+  the workflow file exists is not confirming CI coverage. It is disabled and has
+  never run.]
 - `SUPPORTED_CUDA_ARCHS = ["90a", "100a", "103a", "120a"]`; README requirements
   "SM90 and above", CUDA 12.9+, PyTorch 2.4+. Source is 2,346 lines across six files.
 - CuTe/TMA density confirmed: 24 `SM90_TMA` references, 24 `make_tma` sites, 8
@@ -187,7 +193,7 @@ dependencies only.
 **Upstream health:** not archived, not disabled, 1211 stars, 115 forks, last push
 2026-07-30. A PR would have a live destination if the recommendation were overridden.
 
-**Unrelated data defect noticed while screening, for whoever maintains discovery.**
+**Unrelated data defect noticed while screening (first noted 2026-08-14, gfx90a).**
 `data/candidates.json` carries two entries named `FlashKDA`:
 `MoonshotAI/FlashKDA` (the one screened here) and `0xwilliamortiz/FlashKDA`
 (195 stars, MIT, "memory-efficient KDA kernels for training and decode"). The second
@@ -195,3 +201,105 @@ is a **404 on the GitHub API** — deleted or never public. Beyond being stale, 
 name collision: adopting it would scaffold to the same `projects/FlashKDA` and the
 same `port/FlashKDA` claim as this project. Not fixed here, since candidate curation
 is not the intake role's to edit and the decline makes it non-urgent.
+
+## Intake re-screen (2026-08-14, linux-gfx942)
+
+Third-host screen, on CDNA3/MI300 — the architecture the previous two screens
+pointed at as the best-case target and the one the claimed AMD fallback route names.
+**The decline recommendation stands: `cant-port`.** But this screen corrects a
+supporting fact that both earlier screens recorded as true, and that correction is
+the reason this run was worth doing.
+
+Verified against a fresh shallow clone at upstream head `1ce47ea` — the same commit
+the gfx90a screen saw, so the code has not moved.
+
+### Correction: the "CI-tested on MI300" claim is false
+
+Both prior screens, and the recorded `intake.duplicate_effort` and `summary` fields,
+stated that `fla-org/flash-linear-attention` tests its Triton KDA kernels on AMD in
+CI, citing `.github/workflows/amd-mi300.yml`. The file exists. It has never run.
+
+- The job is guarded `if: false`, and the file's own header comment says: "Disabled
+  by default: fla does not yet operate an amd-mi300 runner. Flip the `if:` guard
+  below (or replace with a real condition) once a runner is wired in. Workflow lives
+  here so the install / sanity-check pattern is documented."
+- Its trigger is `workflow_dispatch` only — no push or PR trigger.
+- Run count via the Actions API: **0**. For contrast, `nvidia-h100.yml` has 3028.
+
+The existence of a workflow file is not evidence of CI coverage. Checking the run
+count is the cheap disambiguation, and it should be the habit whenever an
+existing-support claim rests on a CI file.
+
+**What is actually true about the AMD route**, stated at the strength the evidence
+supports: fla ships KDA as Triton kernels (`fla/ops/kda/`, the default path) and
+offers a documented ROCm install extra (`pip install -e ".[rocm]"`, which
+deliberately does not pin a Triton flavor so the ROCm wheel index supplies
+`pytorch-triton-rocm`). So the AMD path is intended and plausible — Triton targets
+ROCm — but it is **unvalidated by upstream on AMD hardware**. Nobody should record
+that AMD users have a tested KDA path today.
+
+This weakens the "capability already reaches AMD" argument rather than the decline.
+It also points at the tractable work, which is worth saying plainly in the queue: if
+someone wants Kimi Delta Attention working on MI300, the cheap, high-value task is
+validating fla's existing Triton `fla/ops/kda` on gfx942 — a different project, and
+one whose upstream has already built the scaffolding and is visibly waiting for a
+runner. Rewriting FlashKDA's CuTe kernels is the expensive way to the same capability.
+
+### Re-verified independently on this host
+
+- Licence MIT, tier 1 (`licenses.py check` → `license=MIT tier=1`); `LICENSE` read
+  directly, verbatim MIT, "Copyright (c) 2026 MoonshotAI". `scan-nvidia` over the
+  main tree: clean.
+- `cutlass` submodule still pinned at `5c149f52a436782210263fb2f19b354443a61c6a`
+  (`git ls-tree HEAD` gitlink), url `https://github.com/NVIDIA/cutlass.git`. The
+  per-part CuTeDSL EULA finding from the first screen is unchanged and **still not
+  cleared here — it remains a person's ruling if this is ever adopted.** FlashKDA
+  uses none of it: a case-insensitive search for `cutedsl`, `cutlass.cute`,
+  `import cutlass`, `from cutlass` across the whole tree returns nothing, and
+  `setup.py` adds only the BSD-3-Clause C++ include paths (`cutlass/include`,
+  `cutlass/examples/common`, `cutlass/tools/util/include`).
+- No `FlashKDA` repo in AMD-Ecosystem or ROCm (both 404), nor `AMD-Ecosystem/flash-kda`
+  or `ROCm/flash-linear-attention`. Repo search returns upstream, `vllm-project/FlashKDA`
+  (12 stars), two empty personal repos, and `popfido/FlashKDA-mlx`. Nothing toward AMD.
+- No MOAT disposition for FlashKDA in `data/dispositions.json` (282 entries), no
+  opt-out (`optout.py list` → nobody), no other `port/` branch.
+- `SUPPORTED_CUDA_ARCHS = ["90a", "100a", "103a", "120a"]`; 2346 lines across six
+  source files; three inline PTX uses.
+- CuTe/TMA density: 24 `SM90_TMA` uses, 24 `make_tma` sites, 22 `CUTE_GRID_CONSTANT`
+  parameters, 5 `ClusterTransactionBarrier`, plus `cutlass/pipeline/sm90_pipeline.hpp`
+  and `cutlass/cluster_launch.hpp`.
+
+**The 24-vs-25 TMA discrepancy between the first two screens is settled**, since it
+cost a correction once already: case-sensitive `SM90_TMA` in `csrc/` is 24;
+case-insensitive is 25, the extra match being the include filename
+`cute/arch/copy_sm90_tma.hpp` on line 14 of `utils.cuh`. Both counts were right about
+different questions. 24 is the number of code uses.
+
+### Why CDNA3 does not rescue it
+
+gfx942 is the strongest case AMD can make here — CDNA3, wave64, MFMA, and the
+`wave64` gate architecture. The decline is unchanged from this host for the reason
+the gfx90a screen already gave, which this host confirms rather than repeats: the
+blocker is not wavefront width or matrix-core availability. It is that every layout,
+tensor, and GEMM is a CuTe type and NVIDIA CUTLASS has no ROCm backend, and that TMA
+is the design rather than an optimization — descriptors threaded through every kernel
+entry point as `CUTE_GRID_CONSTANT` parameters, with the pipeline and barrier
+structure built around them. CDNA3 has no TMA equivalent. Three hosts spanning RDNA3,
+CDNA2 and CDNA3 now agree, which is as much as screening can establish: there is no
+platform in the fleet on which this becomes a translation rather than a from-scratch
+kernel reimplementation. That is what `cant-port` means.
+
+**Dependencies:** `depends_on` stays empty; no MOAT project provides CUTLASS or
+flash-linear-attention. PyTorch, CUDA 12.9+, and the vendored CUTLASS submodule are
+external build dependencies only.
+
+**Upstream health:** not archived, not disabled, 1211 stars, 115 forks, last push
+2026-07-30, default branch `master`. A PR would have a live destination if the
+recommendation were overridden.
+
+**Minor data observation, not load-bearing.** `data/retired_stats.jsonl` line 83
+carries a single token record for project `FlashKDA` dated 2026-06-04 with source
+`porter` — two months before this project's `adopted_at` (2026-08-07) and before
+upstream's own recorded activity. There is no matching disposition and no other
+trace of a prior lifecycle. Flagged for whoever maintains telemetry; it does not
+affect the recommendation and I did not edit it.
