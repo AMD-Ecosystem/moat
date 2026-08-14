@@ -1855,3 +1855,137 @@ wave64 gate (gfx90a already attempted wave64 and failed; gfx942 now supplies a
 passing wave64 witness) and the gfx90a NLL-divergence question remains open and
 unaffected by this result -- see the analysis above for why a clean gfx942 run
 does not settle it.
+
+## Attempt 4 (2026-08-14, porter, linux-gfx90a) -- the recorded gfx90a divergence does NOT reproduce; fixed a real defect found while looking for it
+
+Fresh clone of `AMD-Ecosystem/GooFit` at `moat-port` `18fca9e4a` (the failed sha),
+submodules initialised (`extern/thrust` at CCCL `af8cce4ca`), `git status
+--porcelain` clean. MI250X (gfx90a), ROCm **7.14** (`hipcc --version`: HIP version
+7.14.60850-0000000, AMD clang 23.0.0git), CMake 3.31.6, Ninja, GPU 3.
+
+### The 21/25 NLL divergence does not reproduce at 18fca9e4a on this host
+
+```
+cmake -S . -B build-hip -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DGOOFIT_DEVICE=HIP -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DGOOFIT_TESTS=ON -DGOOFIT_EXAMPLES=ON -DGOOFIT_CERNROOT=OFF \
+  -DGOOFIT_PYTHON=OFF -DGOOFIT_PHYSICS=OFF
+cmake --build build-hip -j64                                   # 306/306, clean
+HIP_VISIBLE_DEVICES=3 ctest --test-dir build-hip               # 25/25, 8.22 s
+```
+`examples/exponential/exponential` -> `alpha = -1.001102381 +/- 0.003165763922`,
+digit-identical to gfx1100 and gfx942, run 6 times bit-identical. Real GPU
+execution confirmed: `AMD_LOG_LEVEL=3` shows 383 dispatch/arch lines and
+`HIP: Architecture: gfx90a:sramecc+:xnack-`.
+
+Two perturbations that a stale-pointer or allocator-luck hypothesis should
+survive, both still 25/25:
+```
+HIP_VISIBLE_DEVICES=3 HSA_DISABLE_FRAGMENT_ALLOCATOR=1 ctest --test-dir build-hip
+HIP_VISIBLE_DEVICES=3 AMD_SERIALIZE_KERNEL=3 AMD_SERIALIZE_COPY=3 ctest --test-dir build-hip
+```
+
+### Which variable actually differs, and which does not
+
+The 2026-08-09 failing session ran CMake **4.0.3** and HIP **7.2.53211-e1a6bc5663**;
+the passing gfx1100 session ran CMake 3.31.6 and HIP **7.2.53211**-c2d9476115 -- the
+same HIP version, a different build. So CMake version correlated perfectly with the
+outcome across all recorded runs, which made it the leading suspect. It is ruled out
+here: installed cmake 4.0.3 (pip wheel) and rebuilt the same tree with it,
+`build-hip-cm4`, 306/306 and **25/25**. So the only variable left between the failing
+run and this one is the ROCm build/version (7.2.5-series vs 7.14).
+
+Could not reproduce the old toolchain to close it properly: this host's ROCm is a
+TheRock-style pip layout and `pip index versions rocm-sdk-devel` offers only the
+installed 7.14 series, so a 7.2.x SDK is not obtainable here without a multi-GB
+download from another index -- at the ~10 MB/min this host gets to GitHub, out of
+budget. Recorded rather than attempted.
+
+Conclusion: the failure is real (it was reproduced twice on that host) but it is not
+a property of gfx90a as such. Nothing in the diff is arch-conditional, gfx942 is the
+same wavefront width and passes, and the same arch on a current ROCm passes with the
+allocator perturbed. Treat it as a toolchain-generation fault that is gone on 7.14
+rather than as an outstanding port defect. The corrected diagnostic ladder (matching
+the version of an earlier FAILING run proves nothing; the discriminating run is the
+same arch on a DIFFERENT ROCm) is promoted to the skill's `references/validation.md`.
+
+### The real defect this session found: the documented build fails with its own defaults
+
+Looking for a fault that was not there, the port's default configuration turned out
+to be broken. `GOOFIT_PYTHON` defaults ON whenever Python development files are found
+(`option(GOOFIT_PYTHON ... ${CUR_PROJ})`), and every recorded session -- attempts 3-6,
+three validations -- passed `-DGOOFIT_PYTHON=OFF`, so nobody ran the command the
+README and `docs/SYSTEM_INSTALL.md` actually print. That command fails:
+
+```
+c++: error: unrecognized command-line option '--offload-arch=gfx90a'
+   (python/goofit/CMakeFiles/_Core.dir/{HelpPrinter,Variable,...}.cpp.o)
+```
+
+Cause is NOT the bare-filename `set_source_files_properties` leak guessed in the
+gfx1100 validation note: `HelpPrinter.cpp` has no same-named sibling in `src/goofit`
+and fails identically. The pybind11 modules `_Core`/`_Basic`/`_Combine` are declared
+with a plain `add_library()`, so their sources stay CXX, while `roc::rocthrust` pulls
+in `hip::device`, whose `INTERFACE_COMPILE_OPTIONS` carry `-x hip --offload-arch=` to
+every consumer regardless of language. The host compiler gets flags it does not have.
+
+Fix (commit `e8dca9151`): two macros, `goofit_adopt_hip_target` (whole target) and
+`goofit_adopt_hip_sources` (sources appended with `target_sources()` from a
+subdirectory, which need `TARGET_DIRECTORY` because source properties are
+directory-scoped), giving those targets the LANGUAGE HIP + `-include cuda_to_hip.h`
+treatment `goofit_add_library` already gives everything else. Both are inert unless
+`GOOFIT_DEVICE STREQUAL HIP`. Source lists moved into variables so one list feeds
+`add_library()` and the macro. Ran `cmake-format` (0.6.13, the version pinned in
+`.pre-commit-config.yaml`); it also reflowed two `target_compile_options` calls the
+earlier port commits left unformatted.
+
+### Results at e8dca9151
+
+The documented recipe, no `GOOFIT_PYTHON` flag at all, so the bindings default ON:
+```
+cmake -S . -B build-hip-final -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DGOOFIT_DEVICE=HIP -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DGOOFIT_TESTS=ON -DGOOFIT_EXAMPLES=ON -DGOOFIT_CERNROOT=OFF
+cmake --build build-hip-final -j64                              # 395/395, clean
+HIP_VISIBLE_DEVICES=3 ctest --test-dir build-hip-final          # 25/25, 8.21 s
+HIP_VISIBLE_DEVICES=3 PYTHONPATH=$PWD/build-hip-final python3 -m pytest python/tests -q
+                                                                # 6/6, 0.39 s
+```
+The Python tests are real unbinned NLL fits over 100k events (`test_exp.py` fits
+`alpha` and asserts `|alpha+1| < 0.01`) -- i.e. the exact class of test that failed
+in the 2026-08-09 gfx90a session, now passing through the bindings as well.
+`python3 -m goofit` reports `HIP 7.14`, `AMD Instinct MI250X / MI250`,
+`gfx90a:sramecc+:xnack-`.
+
+Non-GPU regression, same host, bindings ON (upstream default):
+```
+cmake -S . -B build-cpp -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DGOOFIT_DEVICE=CPP -DGOOFIT_TESTS=ON -DGOOFIT_EXAMPLES=ON \
+  -DGOOFIT_CERNROOT=OFF -DGOOFIT_PYTHON=ON
+cmake --build build-cpp -j64
+ctest --test-dir build-cpp                    # 26/26, 9.00 s
+PYTHONPATH=$PWD/build-cpp python3 -m pytest python/tests -q   # 6/6
+```
+This is the first CPP run with the bindings ON; it matches the recorded 26/26.
+
+CUDA gate not re-run: no nvcc build has ever succeeded on this project (pre-existing
+upstream `driver_types.h` breakage under CUDA 12.8, reproduced on pristine upstream),
+and the delta is inside `GOOFIT_DEVICE STREQUAL HIP` guards plus a behaviour-neutral
+source-list refactor. A validator with nvcc should still re-run it at this head.
+
+README updated: the ROCm requirement bullet no longer says the backend is tested only
+on `gfx1100`; it now names `gfx90a`, `gfx942` and `gfx1100`.
+
+`jargon.py --port GooFit` clean over the whole branch (needed a local `master`
+branch first -- a `--branch moat-port` clone has no local base branch and the tool
+resolves `master..moat-port`, so `git branch master origin/master` after cloning).
+Fork tree clean before and after; `build-*` directories are gitignored.
+
+### State
+
+`head_sha` -> `e8dca9151`, project stage `ported` (a source change wants a review).
+gfx90a's `failed_sha` stays at `18fca9e4a`, which is now behind head, so the failure
+is superseded and this arch is owed a validator rather than another porter.
+gfx1100 and gfx942 read `revalidate`: the delta is a build-system change, so it is
+not carry-forward material -- the pybind11 targets are new HIP compilations on every
+architecture that has Python development files installed.

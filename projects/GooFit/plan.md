@@ -186,6 +186,10 @@ meaningless.
 7. **src/PDFs/basic/StepPdf.cu**
    - Drops an unused host-side global taking the address of a `__device__` function; invalid on HIP, dead code on CUDA
 
+8. **python/goofit/CMakeLists.txt, python/PDFs/{,basic/,combine/,utilities/}CMakeLists.txt** (added at `e8dca9151`)
+   - The pybind11 modules are declared with a plain `add_library()`/`target_sources()`, so their sources kept the CXX language while `roc::rocthrust` handed every consumer `hip::device`'s `-x hip --offload-arch=`; the host compiler then rejects the flags and the default configuration does not build
+   - Two new macros in the top-level `CMakeLists.txt` (`goofit_adopt_hip_target`, `goofit_adopt_hip_sources`) give those targets the same `LANGUAGE HIP` + `-include cuda_to_hip.h` treatment as everything else, and are inert off the HIP backend
+
 ### Files unchanged
 - Every other `.cu` keeps its CUDA spelling (symbol mapping via the force-included compat header)
 - All Thrust usage unchanged (rocThrust is API-compatible)
@@ -198,14 +202,16 @@ cd projects/GooFit/src
 git submodule update --init --recursive
 cmake -S . -B build-hip -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
   -DGOOFIT_DEVICE=HIP -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
-  -DGOOFIT_TESTS=ON -DGOOFIT_EXAMPLES=ON -DGOOFIT_CERNROOT=OFF \
-  -DGOOFIT_PYTHON=OFF
+  -DGOOFIT_TESTS=ON -DGOOFIT_EXAMPLES=ON -DGOOFIT_CERNROOT=OFF
 cmake --build build-hip -j32
 ```
 
 `GOOFIT_DEVICE=HIP` selects the backend on its own; there is no `USE_HIP` option and
 no `GOOFIT_DEVICE=CUDA` override. `GOOFIT_PHYSICS` defaults OFF here, so passing it
 is unnecessary. HIP is never chosen by `GOOFIT_DEVICE=Auto` and must be named.
+`-DGOOFIT_PYTHON=OFF` is no longer needed either, and leaving it off is now the
+better check: the option defaults ON where Python development files exist, and the
+default is what a user runs. Add `-DGOOFIT_PYTHON=OFF` only to shorten a build.
 
 Other architectures differ only in `CMAKE_HIP_ARCHITECTURES`; nothing in the
 backend is architecture-specific.
@@ -245,8 +251,15 @@ These examples run fits on synthetic data; successful completion indicates GPU e
    device-side Eigen complex matrix inverse, this is what put the physics PDFs
    behind `GOOFIT_PHYSICS`. Registered as scoped-out work, not a defect.
 
-2. **Python bindings**: build and pass on CPP. Not exercised on HIP, since the
-   bindings export physics classes that `GOOFIT_PHYSICS=OFF` excludes.
+2. **Python bindings**: build and pass on CPP, and since `e8dca9151` on HIP too
+   (gfx90a: 6/6 `python/tests`, which are real 100k-event unbinned NLL fits). The
+   earlier reading -- that the bindings export physics classes `GOOFIT_PHYSICS=OFF`
+   excludes -- was wrong; `python/CMakeLists.txt` and `python/PDFs/CMakeLists.txt`
+   already gate the physics bindings on that option. What actually broke them was
+   the pybind11 targets being declared with a plain `add_library()`, which left
+   their sources in the CXX language while `roc::rocthrust` handed every consumer
+   `hip::device`'s `-x hip --offload-arch=`. They were never exercised because every
+   recorded session passed `-DGOOFIT_PYTHON=OFF`, while the option defaults ON.
 
 3. **ROOT integration**: unchanged, as expected. Built with `GOOFIT_CERNROOT=OFF`;
    the Minuit2 fallback is pure C++ and needed no attention.
