@@ -37,9 +37,13 @@ met. `--review` is where work piles up: a port cannot be approved until its revi
 exists, and nothing opens one automatically, so ports sit finished and unreviewable --
 the report names them all; do not trust any remembered count.
 `--review --apply --name <p> --title '<t>' --body-file <f>` opens one. `--attention`
-lists open PRs where a maintainer asked for something, had the last word, or has gone
-quiet. `--fix-review` and `--merge-fix` are the two ends of a staged fix round
-(section 2). `--approvals` catches a review GitHub still shows as green over content
+lists open PRs where something needs a person: the PR no longer merges into its base
+(top of the list -- a conflict blocks the merge outright and no sha-comparing sweep
+can see it), a maintainer asked for something, had the last word, or has gone quiet.
+`--fix-review` and `--merge-fix` are the two ends of a staged fix round (section 2);
+both test-merge the staged tip against the live upstream base, so a round that would
+flip the PR to CONFLICTING is caught before anyone approves it and again before the
+push -- a conflict there means the round must merge the base and resolve it. `--approvals` catches a review GitHub still shows as green over content
 nobody approved. `--dry-run` is bookkeeping, and a HEAD-MOVED line in it is section
 2's maintainer-push case. The waiver listing is section 6: a waiver nobody has
 answered is a finished port that cannot be submitted.

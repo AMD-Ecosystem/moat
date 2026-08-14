@@ -233,23 +233,32 @@ def attention(rows, quiet_weeks=6):
     GitHub is fine, and somebody is waiting on us. It reads and reports only; the
     reply is drafted and a person posts it.
 
-    Three ways a PR ends up here, in descending order of how much it is owed:
-    a maintainer asked for changes; a maintainer's comment is the last word in the
-    thread; or nobody has said anything for weeks and it may need a nudge from a
-    person who can find the right reviewer.
+    Four ways a PR ends up here, in descending order of how much it is owed: it
+    no longer merges into its base; a maintainer asked for changes; a
+    maintainer's comment is the last word in the thread; or nobody has said
+    anything for weeks and it may need a nudge from a person who can find the
+    right reviewer. The conflict case outranks the rest because it blocks the
+    merge outright and is invisible from every sha-comparing sweep: the base
+    moved, both records still describe their own branches truthfully, and only
+    GitHub's mergeability field knows the two no longer combine. UNKNOWN is
+    treated as quiet rather than reported -- GitHub computes the field lazily,
+    so the first poll after a push often has no answer yet and the next sweep
+    will.
     """
     import datetime
     out = []
     for r in rows:
         d = gh_json(["pr", "view", r["num"], "--repo", r["repo"], "--json",
-                     "state,reviewDecision,comments,updatedAt,title"])
+                     "state,reviewDecision,comments,updatedAt,title,mergeable"])
         if d is None or d.get("state") != "OPEN":
             continue
         comments = d.get("comments") or []
         last = comments[-1] if comments else None
         last_by = ((last or {}).get("author") or {}).get("login")
         why = None
-        if d.get("reviewDecision") == "CHANGES_REQUESTED":
+        if (d.get("mergeable") or "").upper() == "CONFLICTING":
+            why = "merge conflict with base"
+        elif d.get("reviewDecision") == "CHANGES_REQUESTED":
             why = "changes requested"
         elif last_by and last_by not in OURS and not _is_bot(last_by):
             why = f"last word is {last_by}'s"
@@ -267,11 +276,11 @@ def attention(rows, quiet_weeks=6):
 def report_attention(rows, today):
     found = attention(rows)
     print(f"upstream: {len(found)} of {len(rows)} recorded PR(s) need a person\n")
-    # Most owed first: an explicit request outranks an unanswered comment, which
-    # outranks silence.
-    rank = {"changes requested": 0}
+    # Most owed first: an unmergeable PR outranks an explicit request, which
+    # outranks an unanswered comment, which outranks silence.
+    rank = {"merge conflict with base": 0, "changes requested": 1}
     def key(r):
-        return (rank.get(r["why"], 1 if r["why"].startswith("last word") else 2), r["name"])
+        return (rank.get(r["why"], 2 if r["why"].startswith("last word") else 3), r["name"])
     for r in sorted(found, key=key):
         print(f"  {r['why']:24} {r['name']:26} {r['repo']}#{r['num']}")
         print(f"  {'':24} {r['url']}")
@@ -996,6 +1005,18 @@ def fix_review_rows():
             out.append({"name": name, "fork": fork, "fix": fix,
                         "problem": f"{fix['branch']} does not exist on the fork"})
             continue
+        # Catch a round that would conflict with the live base BEFORE anyone is
+        # asked to approve it. Only "conflict" blocks: a host with no clone
+        # reports unknown and stays quiet, the usual backstop pattern, because
+        # the merge gate re-runs this probe where the clone lives and refuses
+        # there on unknown as well as on conflict.
+        state, detail = base_conflict(name, d, tip["sha"])
+        if state == "conflict":
+            out.append({"name": name, "fork": fork, "fix": fix,
+                        "problem": f"the staged tip conflicts with the upstream "
+                                   f"base ({detail}) -- merge the base into "
+                                   f"{fix['branch']} and resolve it first"})
+            continue
         out.append({"name": name, "fork": fork, "fix": fix, "base": base,
                     "tip": tip["sha"], "problem": None,
                     "branch": fix["branch"],
@@ -1075,6 +1096,71 @@ def open_fix_review_pr(row, title, body, apply=False):
            "needs a fresh one."],
         capture_output=True, text=True, timeout=90)
     return ("opened", url)
+
+
+def base_conflict(name, d, tip):
+    """Test-merge a staged tip against the upstream PR's live base branch.
+
+    The gap this closes: a fix round is cut from the published tip and judged
+    against it, so nothing in the round's own gates looks at the base branch it
+    must eventually merge into. popsift #186 is the instance -- the round was
+    clean, approved, and fast-forwarded, and the PR flipped to CONFLICTING the
+    moment it moved, because an upstream commit from a week earlier edited the
+    same include block. GitHub's own `mergeable` field cannot answer this ahead
+    of time either: it describes the PR's current head, not the tip about to be
+    pushed. Only a local test-merge of the staged tip can.
+
+    Returns (state, detail): ("conflict", files) when the merge would leave the
+    PR unmergeable, ("clean", None) when it would not, ("unknown", why) when the
+    probe cannot run here -- no clone, unreachable base, or a git without
+    `merge-tree --write-tree` (2.38). Callers decide what unknown means: the
+    review-PR gate skips (the documented only-where-a-clone-lives backstop
+    pattern), the merge gate refuses, because the one place that must never
+    guess is the one about to move the open PR."""
+    clone = REPO / "projects" / name / "src"
+    if not (clone / ".git").exists():
+        return ("unknown", "no fork clone here to test-merge with")
+    m = re.search(r"github\.com/([^/]+/[^/]+)/pull/(\d+)", d.get("pr_url") or "")
+    if not m:
+        return ("unknown", "no upstream PR recorded")
+    up, num = m.group(1), m.group(2)
+    pr = gh_json(["pr", "view", num, "--repo", up, "--json", "baseRefName"])
+    base_ref = (pr or {}).get("baseRefName")
+    if not base_ref:
+        return ("unknown", f"cannot read the base branch of {up}#{num}")
+    f = subprocess.run(["git", "-C", str(clone), "fetch",
+                        f"https://github.com/{up}",
+                        f"+refs/heads/{base_ref}:refs/moat/base"],
+                       capture_output=True, text=True, timeout=120)
+    if f.returncode:
+        return ("unknown", f"cannot fetch {base_ref} from {up}")
+    have = subprocess.run(["git", "-C", str(clone), "cat-file", "-e",
+                           f"{tip}^{{commit}}"], capture_output=True, text=True)
+    if have.returncode:
+        # GitHub serves any reachable commit by full sha, so the staged tip can
+        # be fetched directly even when no local ref names it yet.
+        got = subprocess.run(["git", "-C", str(clone), "fetch",
+                              d.get("fork_url") or "", tip],
+                             capture_output=True, text=True, timeout=120)
+        if got.returncode:
+            return ("unknown", f"the staged tip {tip[:12]} is not in the clone "
+                               f"and could not be fetched")
+    mt = subprocess.run(["git", "-C", str(clone), "merge-tree", "--write-tree",
+                         "--name-only", "refs/moat/base", tip],
+                        capture_output=True, text=True, timeout=120)
+    if mt.returncode == 0:
+        return ("clean", None)
+    if mt.returncode == 1:
+        # --name-only output: the tree oid, then one conflicted path per line,
+        # then informational messages after a blank line.
+        files = []
+        for line in mt.stdout.splitlines()[1:]:
+            if not line.strip():
+                break
+            files.append(line.strip())
+        return ("conflict", ", ".join(files[:4]) or "unknown files")
+    return ("unknown", "git merge-tree --write-tree failed "
+                       f"({(mt.stderr or mt.stdout).strip()[:60] or 'git too old?'})")
 
 
 def merge_fix_rows():
@@ -1166,6 +1252,21 @@ def merge_fix_blockers(name, d, fix, pr):
                 bad.append(f"{fix['branch']} is not a descendant of the published "
                            f"{pub[:12]} -- the staging branch was rebased; the "
                            f"merge must be a fast-forward")
+
+    # An approved round can still leave the PR unmergeable: its gates all judge
+    # the delta against the published tip, not against the base branch, which may
+    # have moved since the round was staged. Refuse rather than publish a
+    # conflict, and refuse on unknown too -- this is the one caller about to move
+    # the open PR, so it does not get to guess.
+    if tip:
+        state, detail = base_conflict(name, d, tip)
+        if state == "conflict":
+            bad.append(f"the approved tip conflicts with the upstream base "
+                       f"({detail}) -- stage a round that merges the base and "
+                       f"resolves it")
+        elif state == "unknown":
+            bad.append(f"cannot test-merge the approved tip against the "
+                       f"upstream base: {detail}")
 
     # Last, so the fetch above has put the delta in the clone and the scan reads all
     # of it rather than whatever the compare API is willing to return.
