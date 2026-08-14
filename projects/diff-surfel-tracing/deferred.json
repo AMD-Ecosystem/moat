@@ -62,6 +62,20 @@
       "upstream_issue": null,
       "created_at": "2026-08-14T05:36:31Z",
       "decided": null
+    },
+    {
+      "id": "hiprt-warpsize-arch-allowlist",
+      "kind": "rocm-bug-report",
+      "component": "hiprt",
+      "summary": "HIP RT derives the wavefront width from an enumerated architecture list instead of from the compiler. hiprt/hiprt_common.h:202-206 sets 'constexpr uint32_t WarpSize = 64' for __gfx900/902/904/906/908/909/90a/90c/940/941/942__ and 32 for everything else, and the list is identical at HIP RT HEAD e3c01fc (checked 2026-08-14), so it is live upstream and not staleness in the pinned tag 3.1.0.cb09c56. gfx950 (MI350) is a 64-lane architecture that is not on the list, so HIP RT's runtime-compiled kernels would be built there with WarpSize = 32 against 64-lane hardware: 'laneIndex = threadIdx.x % WarpSize' stops being the lane index, and every subgroup carve, lane mask and ballot reduction downstream of it -- openNodes, FitBounds, Collapse, PairTriangles, PackLeavesWarp -- is then computed against the wrong half of the wavefront. This is the same hardcoded-wavefront fault class as the lane-mask defects already registered, and it is the root of them: the durable fix is __AMDGCN_WAVEFRONT_SIZE__ (or warpSize) rather than an allowlist that has to be extended for every new architecture. Not patched locally and deliberately so -- no host here has a gfx950, so a hunk adding __gfx950__ to the list could not be validated, and extending the list would perpetuate the enumeration rather than fix it. It is invisible to this port's own coverage for the same reason it matters: gfx90a and gfx942 are both on the allowlist, so the wave64 gate passes while the exposure is structural, and the README tells the user to set PYTORCH_ROCM_ARCH to whatever their GPU is. Belongs in the same GPUOpen report as the other HIP RT lane-mask defects.",
+      "refs": [
+        "projects/diff-surfel-tracing/notes.md",
+        "projects/diff-surfel-tracing/src/third_party/hiprt-rocm-fixes.patch"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-14T06:34:03Z",
+      "decided": null
     }
   ]
 }

@@ -124,7 +124,7 @@
   },
   {
    "id": "library:optix_tracer_backward",
-   "reason": "The backward device programs are covered by the backward half of hiprt_tracer/kernels.h. Exercised on gfx90a at b7ff795: all eleven gradients finite, the six that must be nonzero are, and finite differences over six random directions agree with the analytic gradients (colors cosine 1.0000, opacities 1.0000, means3D 0.9992, scales 0.9983). The CUDA PTX target is untouched."
+   "reason": "The backward device programs are covered by the backward half of hiprt_tracer/kernels.h. Exercised on gfx90a at b7ff795: the seven gradients the scene differentiates all finite, the six that must be nonzero are, and finite differences over six random directions agree with the analytic gradients (colors cosine 1.0000, opacities 1.0000, means3D 0.9992, scales 0.9983). The CUDA PTX target is untouched."
   },
   {
    "id": "extension:diff_surfel_tracing._C",
@@ -136,7 +136,7 @@
   },
   {
    "id": "harness:validate_tracer_rocm",
-   "reason": "Written and passing: example/validate_rocm.py in the fork, 50/50 checks on linux-gfx90a at 1f59cef, covering import and API, forward image, geometry completeness, all eleven backward gradients, multi-direction finite differences, a reflected bounce, 4096- and 16384-surfel scenes that reach the multi-block sort, and a cold runtime-compilation cache. It ships with the port as the single copy (round 6, per the round-5 review ruling) and is referenced from the README's AMD section."
+   "reason": "Written and passing: example/validate_rocm.py in the fork, 50/50 checks on linux-gfx90a at 173f32a, covering import and API, forward image, geometry completeness, the seven backward gradients this scene exercises (of the tracer's eleven: ray_o and ray_d are not differentiated here, and shs and cov3D_precomp are the alternative parameterization of the colors and the scale/rotation pair it uses), multi-direction finite differences, a reflected bounce, 4096- and 16384-surfel scenes that reach the multi-block sort, and a cold runtime-compilation cache. It ships with the port as the single copy (round 6, per the round-5 review ruling) and is referenced from the README's AMD section."
   }
  ],
  "scoped_out": [

@@ -170,7 +170,9 @@ onto a clean upstream base is both smaller and easier to review. New history:
 5. **Validation harness authored** at
    `projects/diff-surfel-tracing/validation/validate_tracer_rocm.py` (MOAT, not
    the fork). Covers import/API, the README's own `get_triangles` tessellation,
-   forward finiteness and hit fraction, all eleven backward gradients including
+   forward finiteness and hit fraction, the seven backward gradients the scene
+   differentiates (corrected in round 7; it was written as "all eleven", which is
+   the tracer's return arity, not what is checked) including
    the nonzero `grad_grads3D` trap, finite differences, a reflected bounce and a
    cold compilation cache. It runs to the forward stage today; see below.
 
@@ -386,7 +388,8 @@ to reach these stages today; the committed tree still hangs in the forward):
 - import/API: 5/5 PASS.
 - forward: finite rgb/depth/normal PASS, bit-identical rerun PASS, hit-fraction
   and hit-depth checks FAIL (see harness corrections below).
-- backward: all eleven gradients finite PASS, all six nonzero checks PASS,
+- backward: the seven differentiated gradients finite PASS (written as "all
+  eleven" at the time; corrected in round 7), all six nonzero checks PASS,
   `grad_grads3D` nonzero wherever `grad_means3D` is PASS (23 surfels), cosine
   vs `grad_means3D` 0.8721 against a 0.9 threshold FAIL.
 - finite differences: colors ratio 0.9982 PASS, opacities 0.8156 PASS, means3D
@@ -503,7 +506,8 @@ HIP_VISIBLE_DEVICES=0 python3 projects/diff-surfel-tracing/validation/validate_t
 
 - import/API 5/5; forward finite, covered fraction 0.232, depth range
   [2.159, 4.574], bit-identical rerun.
-- backward: all eleven gradients finite, all six nonzero checks pass,
+- backward: the seven differentiated gradients finite (written as "all eleven"
+  at the time; corrected in round 7), all six nonzero checks pass,
   `grad_grads3D` nonzero wherever `grad_means3D` is (31 surfels), median
   per-surfel cosine against `grad_means3D` 0.9897.
 - finite differences over 6 random directions at eps 1e-3: colors cosine
@@ -1852,3 +1856,175 @@ tip and reordering would move every sha again for no reader benefit. And
 `f908248`'s "the two surfels it tolerates as untraced" describes the two that are
 untraced, not the margin of four (`validate_rocm.py:223`); the code comment
 explains the margin correctly.
+
+## Port round 7 (2026-08-14, linux-gfx90a, MI250X, ROCm 7.14) -- REVIEW FINDINGS FIXED
+
+All three round-6 findings are addressed. Text only: no device code, build code
+or harness logic changed, so the port's behaviour at `1f59cef` is its behaviour
+at `173f32a`. The harness was run once anyway, because its docstring is inside
+the file it runs from: 50/50, every number identical to rounds 5 and 6.
+
+New fork history. One new commit carries the content changes; four existing
+commit bodies are a message-only rewrite, so every sha from `f038d98` on moved:
+
+| was | now | title |
+|---|---|---|
+| `72c6f82` | `72c6f82` | `[ROCm] Fix undefined behavior in quat_to_rotmat_transpose` |
+| `02ac712` | `02ac712` | `[ROCm] Add a HIP RT trace back end for AMD GPUs` |
+| `33f63f3` | `33f63f3` | `[ROCm] Guard the CUDA-only vector operators in auxiliary.h` |
+| `f038d98` | `3b4aaf1` | `[ROCm] Fix a 64-lane wavefront hang in the HIP RT build` |
+| `e796a26` | `714c118` | `[ROCm] Fix two more 32-bit lane masks in the HIP RT patch` |
+| `e63c5ee` | `2f85465` | `[ROCm] Stage only the HIP RT files the runtime compiler reads` |
+| `062f13f` | `cfd6f05` | `[ROCm] Drop stale pointers and author lines from the back end` |
+| `b1d9838` | `435c1d1` | `[ROCm] Fix a truncated wavefront ballot in the radix sort` |
+| `f908248` | `07c8742` | `[ROCm] Add a validation script for the AMD back end` |
+| `1f59cef` | `b13a8e7` | `[ROCm] Correct the README note on the HIP RT patch` |
+| -- | `173f32a` | `[ROCm] Correct the entry and gradient counts in the AMD docs` (`head_sha`) |
+
+Proven message-only the same way round 6 was: all eleven commit trees pairwise
+identical to their pre-rewrite counterparts and `git diff` between the two tips
+empty. The message diff is exactly five substitutions in four commits and
+nothing else. No platform held a `validated_sha` (all three `null`), so nothing
+was orphaned. The pre-rewrite tip is preserved on this host as
+`refs/moat/pre-round7-rewrite` = `919c6df`, which is the content commit sitting
+on the old `1f59cef`; `refs/original/refs/heads/moat-port` now points there too,
+so round 6's `refs/moat/pre-round6-rewrite` (`ff2c14b`) is the only surviving
+handle on the older tip and was deliberately left in place.
+
+### Finding 1: the patch note stops counting, and the patch header stops overclaiming
+
+`README.md`'s AMD install block no longer counts entries at all. It says they
+are bugs in HIP RT and in the copy of Orochi it vendors rather than tracer bugs,
+that most are not fixed on HIP RT's main branch either and are tracked for
+reporting there, and it sends the reader to the patch header for the rest. That
+is true of all eleven entries and stays true if the patch gains or loses one.
+
+Checking the review's HEAD caveat turned up a defect in the patch header itself.
+The header said "none of them is fixed at HIP RT HEAD as of 2026-08-14". Fetched
+all twelve patched paths at HIP RT `main` (`e3c01fce5860f5d74b959ae71abbbab6a5462aed`,
+2026-04-15) through the GitHub contents API and compared each entry:
+
+| entry | at HIP RT main | evidence |
+|---|---|---|
+| `subwarpMask` x3, `PairTriangles`, `PackLeavesWarp` | unfixed | round 6, re-confirmed |
+| Orochi `OnesweepReorder broThreads` | unfixed | round 5 blob compare |
+| `Compiler.cpp getCacheFilename` sanitize | unfixed | `deviceName.substr(...)` then straight to `moduleHash`, no sanitize loop |
+| `Compiler.cpp addCommonOpts --offload-arch` | unfixed | `addCommonOpts` ends at the RTIP define |
+| `Compiler.cpp buildProgram` basename | unfixed | `moduleName.string().c_str()` at `:209` |
+| `hiprt.cpp` / `hiprt_libpath.h` / hipew library paths | unfixed | bare `oroInitialize( ..., g_hip_paths, ... )`, `hiprtc0707` still the newest name |
+| `Compiler.{h,cpp}` / `Context.cpp` init split | **fixed** | `void Compiler::init()` at `Compiler.cpp:73`, `checkOro( oroCtxSetCurrent( m_ctxt ) ); m_compiler.init();` at `Context.cpp:42-43` |
+| `Orochi.cpp oroSetRawDevice` | **fixed** | `ioroDevice d{}; d.setApi( api ); d.setDevice( dev );` at `:941-943` |
+| `MemoryArena.h`, `BvhNode.h`, `hiprt_device_impl.h` warnings | **fixed** | all four sites in the fixed order, and both `uint32_t depth = 0` loops restructured |
+
+So three of the eleven are backports: HIP RT fixed them after tag
+`3.1.0.cb09c56` and the pinned tag is simply too old to have them. Keeping the
+hunks is right -- the patch targets the tag -- but the blanket claim was not.
+The header now names the three and scopes the "not fixed upstream" clause to the
+other eight, and `714c118`'s "as with the rest of this patch" became "as with
+the patch's other entries that are unfixed there" in the same rewrite.
+
+`b13a8e7` (was `1f59cef`) no longer counts either: its body now says some
+entries are in the vendored Orochi rather than in HIP RT's own sources, and
+leaves the per-entry distinction to the header, which is what its own diff does.
+
+Method note for the next round: `git apply --check --cached` against the
+existing HIPRT checkout at `/var/lib/jenkins/HIPRT` verifies the patch against a
+pristine tree without touching a working tree that has the patch applied and a
+build in it, and without a five-minute clone. The index there is clean at
+`8602b8c` even though twelve files are modified in the working tree. Output
+after the header edit: 12 files, 133 insertions, 49 deletions -- unchanged,
+which is the point, since a patch header sits above the first `---` line and
+`git apply` ignores it.
+
+### Finding 2: seven gradients, said as seven everywhere
+
+`_C.trace_surfels_backward` returns eleven tensors; `check_backward` iterates the
+seven-entry `inputs` dict `trace()` builds, and the run prints seven
+`backward grad_* finite` lines. Reworded to the count that is checked, with the
+reason the other four are absent, in all five places:
+
+- `example/validate_rocm.py` docstring (`173f32a`), which also gains a second
+  paragraph naming the four: `ray_o`/`ray_d` carry no `requires_grad`, and
+  `shs`/`cov3D_precomp` are the alternative parameterization of the colors and
+  the scale/rotation pair the scene uses.
+- `README.md`'s harness paragraph (`173f32a`), same two facts in the section's
+  own descriptive style.
+- `07c8742` (was `f908248`), the commit that introduces the harness, with the
+  parenthetical inline.
+- `714c118` (was `e796a26`) and `3b4aaf1` (was `f038d98`), whose Test Plans
+  described the harness the same way.
+
+The review's second option -- setting `requires_grad` on `ray_o`/`ray_d` to make
+it nine -- was not taken. It changes what the harness measures, and this round
+was scoped to text with no rebuild; it is worth doing when the harness is next
+touched for a real reason. `shs` and `cov3D_precomp` would need a second scene
+and remain uncovered, as the review said.
+
+`surface.json` and the round-2/3 run records carried the same wording and were
+corrected in place, each marked as a round-7 correction: `surface.json`'s
+backward-coverage and harness entries, and `notes.md`'s "Validation harness
+authored" item and the two backward result lines. `surface.json`'s
+"eleven-tensor backward arity" is about the API and is correct as it stands.
+
+### Finding 3: the `WarpSize` allowlist is registered, not patched
+
+Deferral `hiprt-warpsize-arch-allowlist` (`rocm-bug-report`, component `hiprt`,
+project `diff-surfel-tracing`), joining the three HIP RT and one Orochi entries
+already queued for the same GPUOpen report. No patch hunk was added, by the
+review's own instruction and for the reason it gives: no host here has a gfx950,
+so the hunk could not be validated, and adding `__gfx950__` to the list would
+perpetuate the enumeration instead of fixing it.
+
+**The port's wave64 correctness is conditional on that allowlist.** HIP RT
+derives the wavefront width from an enumerated architecture list rather than
+from the compiler: `hiprt/hiprt_common.h:202-206` sets `WarpSize = 64` for
+`__gfx900/902/904/906/908/909/90a/90c/940/941/942__` and 32 for everything else.
+The list is identical at HIP RT `main` (`e3c01fc`, checked 2026-08-14), so this
+is live upstream and not staleness in the pinned tag. gfx950 (MI350) is 64-lane
+hardware that is not on the list, so the runtime compiler -- targeted at the
+live device by this port's own `--offload-arch` patch -- would build HIP RT's
+BVH kernels there with `WarpSize = 32`. `laneIndex = threadIdx.x % WarpSize`
+then stops being the lane index, and every carve, lane mask and ballot
+reduction downstream of it (`openNodes`, `FitBounds`, `Collapse`,
+`PairTriangles`, `PackLeavesWarp`, and the `logicalWarpBallot` this port added)
+is computed against the wrong half of the wavefront. It is the root of the same
+fault class as the lane-mask defects already registered; the durable fix is
+`__AMDGCN_WAVEFRONT_SIZE__`.
+
+This project's gates structurally cannot see it: gfx90a and gfx942 are both on
+the allowlist, so wave64 coverage passes while the exposure is invisible, and
+the README tells the user to set `PYTORCH_ROCM_ARCH` to whatever their GPU is.
+No README caveat was added -- the review left that to this round's judgement,
+and a caveat naming an architecture nobody here has tested would be a claim of
+the same kind the last three reviews have been about. The deferral and this
+paragraph are the record.
+
+### Full suite after the text edits: 50/50
+
+```
+PYTORCH_ROCM_ARCH=gfx90a, ROCm 7.14.60850, torch 2.14.0a0+git7d05abc
+cd projects/diff-surfel-tracing/src
+HIP_VISIBLE_DEVICES=0 python3 example/validate_rocm.py
+50/50 checks passed
+```
+
+Covered fraction 0.241, depth range [1.820, 4.574], 62/64 traced missing
+[5, 25], median `grads3D` cosine 0.9825, fd colors 1.0000/1.0021, opacities
+0.9999/0.7428, means3D 0.9993/0.9387, scales 0.9923/0.8856, bounce 3.627e-01,
+P=4096 0.19876/0.386/1343, P=16384 0.25417/0.457/3309. No reinstall: nothing
+the extension compiles changed, and the harness's own cold-cache check
+recompiles every kernel at the end regardless.
+
+`jargon.py --port`, `--commits ef6f24b..moat-port` and `--diff ef6f24b..moat-port`
+clean; `prose.py` clean on the new body and the four rewritten ones; the fork
+tree is clean and matches `origin/moat-port`; added README lines are ASCII (the
+file's pre-existing emoji headings are upstream's).
+
+### Gotchas
+
+- **A vendored third-party patch needs its "unfixed upstream" claim checked per
+  entry, not per patch.** Three of eleven entries here were fixes that had
+  landed upstream after the pinned tag, which makes the patch a mix of
+  backports and genuine reports -- and only the per-entry check tells them
+  apart. Promoted to the skill, since any port pinning a dependency and carrying
+  patches against it has the same exposure.
