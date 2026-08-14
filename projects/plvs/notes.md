@@ -1364,3 +1364,123 @@ toggle in the project's own build scripts when those drive CMake, and never prob
 - Deferred item `plvs-nvidia-proprietary-rescan`: upstream plvs vendors two NVIDIA EULA-pointer
   headers unmodified; only a person can rule on redistributing a fork containing them.
 - Windows platforms remain blocked on the clang-cl + boost.serialization toolchain wall.
+
+## Review 2026-08-14 (reviewer, linux-gfx90a): changes-requested (head 3c714fc)
+
+Scope: the fork branch `moat-port` at `3c714fc` vs upstream base `2ecb8b1`, with attention on
+this round's delta (the message-only history rewrite plus the config.sh/build-script/docs
+commit). The 2ecb8b1..22ea834 code was already review-passed on 2026-06-12 and 2026-08-13 and
+is byte-identical here (verified below), so it was spot-checked, not re-reviewed.
+
+### Verified, no findings
+
+- History rewrite is content-neutral and reversible. All 10 rewritten commits have identical
+  trees to their pre-rewrite counterparts (`git rev-parse <old>^{tree}` == `<new>^{tree}` for
+  every pair in the porter's table), author/email/date metadata is preserved on all 10, and
+  only `e59fd77 -> 4dbd541`'s message differs -- one sentence, "Strategy A (compat header
+  approach)" -> "a compatibility header". No commit was lost (10 before, 10 + the new doc
+  commit after). `git diff pre-reword-22ea834 e549605` is empty and both tips have tree
+  `dc963b0f`. The archive branch is pushed and `origin/pre-reword-22ea834 == 22ea834`, so every
+  sha cited in this file stays fetchable. `pr-state plvs` is `none`, so nothing
+  upstream-visible moved. `python3 utils/jargon.py --port plvs` -> clean.
+  Assessment: the evidence supports the porter's judgment call. Both Linux platforms were
+  already off the head (`revalidate` / `validation-failed`) before the rewrite, so no live
+  evidence was invalidated by it that this round's new commit would not have invalidated anyway.
+- The source-transfer claim holds: `git diff --stat pre-reword-22ea834 moat-port` is exactly
+  `build_plvs.sh`, `build_thirdparty.sh`, `config.sh`, `new_features.md` (43 insertions, 0
+  deletions). Every `.cu`/`.h`/`.hpp`/`CMakeLists.txt` in the tree is byte-identical to
+  `22ea834`, so the 2026-08-14 device-ISA evidence transfers to this head.
+- Commit hygiene on the new commit: `[ROCm]` title, 57 chars, AI-assistance disclosure, Test
+  Plan, no `Co-Authored-By`, ASCII-clean body. All 11 commits disclose AI assistance and carry
+  a Test Plan; none carries a noreply trailer.
+
+### 1. `config.sh:83` -- the ROCM_PATH default breaks HIP discovery on non-/opt/rocm hosts (blocker)
+
+`export ROCM_PATH="${ROCM_PATH:-/opt/rocm}"` runs unconditionally and is exported into the
+environment `build_plvs.sh:89` / `build_thirdparty.sh` run `cmake` in. Neither script passes
+`-DCMAKE_HIP_COMPILER` (checked: no occurrence in either file), so `enable_language(HIP)`
+(`CMakeLists.txt:225`) has to discover the toolchain -- and CMake does that by running
+`hipconfig`, which itself honors `ROCM_PATH`. On a host whose ROCm is not at `/opt/rocm` -- the
+TheRock/pip SDK case that is the stated reason for the `PATH`-based `hipcc` probe at
+`config.sh:149`, and the case on this validation host -- the exported default turns a working
+configure into a hard failure. Measured here with a two-line `enable_language(HIP)` project,
+CMake 3.31.6:
+
+```
+env -u ROCM_PATH cmake -S . -B b1
+  -- HIPCOMP: .../_rocm_sdk_devel/lib/llvm/bin/clang++      # configures clean
+ROCM_PATH=/opt/rocm cmake -S . -B b2
+  CMake Error at .../Modules/CMakeDetermineHIPCompiler.cmake:174 (message):
+    Failed to find ROCm root directory.
+```
+
+and directly: `ROCM_PATH=/opt/rocm hipconfig --rocmpath` prints nothing plus
+`sh: 1: /opt/rocm/lib/llvm/bin/clang++: not found`, where the unset case prints the real SDK
+prefix. So `config.sh` disables the build that the same file's probe just declared available.
+The porter's configure test masked this by passing `-DCMAKE_HIP_COMPILER=<sdk>/bin/amdclang++`
+by hand, which bypasses discovery entirely.
+
+Fix: only default `ROCM_PATH` when it actually resolves (e.g. keep an inherited value, else
+derive it from the `hipcc` on `PATH` -- `ROCM_PATH=$(hipconfig --rocmpath)` or
+`dirname $(dirname $(command -v hipcc))` -- and only fall back to `/opt/rocm` when that file
+exists). Re-test without `-DCMAKE_HIP_COMPILER` on this host; that is the case the option is
+for. Related: `config.sh:156` prints `HIP found: $ROCM_PATH` even when the probe succeeded via
+the `PATH` `hipcc`, so it reports a directory that does not exist; print the path actually used.
+
+### 2. `build_thirdparty.sh:255` -- libsgm is never built on an AMD-only host, so `./build.sh` fails to link
+
+The libsgm block is gated on `if [ $CUDA_FOUND -eq 1 ]`, and `CUDA_FOUND` (`config.sh:133-137`)
+means "nvcc exists at `/usr/local/$CUDA_VERSION/bin` or `/usr/bin`". On a host with ROCm and no
+CUDA toolkit -- including this one -- that is 0, so the `-DUSE_HIP=ON` added at
+`build_thirdparty.sh:61-64` never reaches libsgm and `Thirdparty/libsgm/lib/libsgm.a` is never
+produced. Meanwhile `CMakeLists.txt:481-491` sets `LIBSGM_LIBRARIES` whenever `USE_HIP` is on
+(`WITH_LIBSGM` defaults ON at `CMakeLists.txt:15`) and `CMakeLists.txt:659`/`:673` link it into
+`EXTERNAL_LIBS`, so `./build.sh` with `USE_HIP=1` configures fine and then fails at link on the
+missing archive. Reproduced by running lines 240-273 of the script with stub `cmake`/`make`,
+`CUDA_FOUND=0 USE_HIP=1`: libelas-gpu is configured with `-DUSE_HIP=ON`, libsgm is skipped
+silently. This is the one path the round exists to deliver, and `new_features.md:22` explicitly
+advertises libsgm as covered by `USE_HIP`.
+
+Fix: `if [ $CUDA_FOUND -eq 1 ] || [ $USE_HIP -eq 1 ]; then` at `build_thirdparty.sh:255`
+(libelas-gpu at line 242 is already fine -- it is gated on `HAVE_SSE3`). Then exercise the real
+`./build.sh` path far enough to see libsgm configure and the main link succeed, rather than
+stub-cmake only.
+
+### 3. `new_features.md:22` -- the documented path still cannot work with the default OpenCV setting
+
+The bullet says the HIP build "requires ... an OpenCV build with HIP support", but `config.sh`
+ships `USE_LOCAL_OPENCV=1` (line 45), and `install_local_opencv.sh` has no HIP handling at all
+(only `CUDA_ON`, lines 162-188). A user who follows the new bullet gets a long local OpenCV
+build without HIP and then a compile failure in `src/cuda/Fast_gpu.cu`. Name the requirement
+concretely: set `USE_LOCAL_OPENCV=0` and point `OpenCV_DIR` at an OpenCV configured with
+`-DWITH_HIP=ON`.
+
+### 4. `config.sh:77-79` -- the documented USE_CUDA/USE_HIP exclusivity is not enforced
+
+The comment says "enable either USE_CUDA or USE_HIP, not both", but nothing checks it, and the
+auto-managed block below already auto-resets `USE_CUDA`, `USE_HIP` and `USE_ZED_CAMERA`. With
+both set, `build_plvs.sh:57-66` forwards `-DWITH_CUDA=ON -DUSE_HIP=ON`; `CMakeLists.txt:799`
+then runs `cuda_compile()` over the same four `.cu` files that `CMakeLists.txt:237` has marked
+`LANGUAGE HIP`, in a directory where `add_compile_definitions(USE_HIP)` (`CMakeLists.txt:240`)
+is active, and the resulting `CUDA_OBJS` are discarded by the `if(USE_HIP)/elseif(WITH_CUDA)`
+at `CMakeLists.txt:841-847`. Add the three-line guard in the auto-managed block, in the same
+shape as the existing resets.
+
+### 5. Two commit titles exceed the 72-character limit
+
+`87ba727` "[ROCm] Guard Linux-incompatible conda-absl/protobuf CMake blocks with WIN32" (75) and
+`fab79af` "[ROCm] Build the full SLAM stack on Windows with the clang ROCm toolchain" (73).
+Both predate this round and were never in a reviewed delta (the 2026-06-12 review's
+"all titles <=72 chars" was written before these commits existed). They are cheap to fix right
+now with the same message-only rewrite this round already validated, and impossible to fix once
+the upstream PR is open.
+
+### 6. Skill lesson needs the ROCM_PATH trap it just walked into
+
+`.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md` (Build hygiene, "When the project
+drives CMake from its own shell scripts") says to "honor an existing `ROCM_PATH`", which is
+right, but says nothing about exporting a fallback value -- and doing that is finding 1. Add
+the specific trap once the fix lands: exporting `ROCM_PATH=/opt/rocm` as a default into the
+build environment makes `hipconfig` (and therefore CMake's HIP compiler discovery) resolve
+against a path that does not exist, so a probe that accepted a `PATH` `hipcc` must export the
+prefix that `hipcc` actually came from, or export nothing.
