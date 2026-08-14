@@ -113,8 +113,8 @@
   {
    "id": "harness:validate_tracer_rocm",
    "kind": "test",
-   "where": "projects/diff-surfel-tracing/validation/validate_tracer_rocm.py (to be written)",
-   "note": "The project ships NO test suite -- no tests/, no CI, no assertions anywhere. The GPU gate therefore has to be authored, and it lives in MOAT rather than the fork because inventing a test framework inside someone else's research repository is not a mergeable change. The EnvGS Stage 2 harnesses that proved this code were written under the gitignored agent_space/ and are effectively lost; that is the mistake this entry exists to stop repeating."
+   "where": "example/validate_rocm.py in the fork (written; moved out of MOAT in round 6)",
+   "note": "The project ships NO test suite -- no tests/, no CI, no assertions anywhere. The GPU gate therefore has to be authored. Rounds 1-5 kept it in MOAT; the round-5 review ruled that one standalone script beside the existing standalone example/render.py is not a test framework and belongs in the port, so it ships as the single copy. The EnvGS Stage 2 harnesses that proved this code were written under the gitignored agent_space/ and are effectively lost; that is the mistake this entry exists to stop repeating."
   }
  ],
  "covered": [
@@ -136,7 +136,7 @@
   },
   {
    "id": "harness:validate_tracer_rocm",
-   "reason": "Written and passing: projects/diff-surfel-tracing/validation/validate_tracer_rocm.py, 42/42 checks on linux-gfx90a at b7ff795, covering import and API, forward image, all eleven backward gradients, multi-direction finite differences, a reflected bounce and a cold runtime-compilation cache. It lives in MOAT rather than the fork because the project has no test suite of its own and inventing one for someone else's repository is not this port's business."
+   "reason": "Written and passing: example/validate_rocm.py in the fork, 50/50 checks on linux-gfx90a at 1f59cef, covering import and API, forward image, geometry completeness, all eleven backward gradients, multi-direction finite differences, a reflected bounce, 4096- and 16384-surfel scenes that reach the multi-block sort, and a cold runtime-compilation cache. It ships with the port as the single copy (round 6, per the round-5 review ruling) and is referenced from the README's AMD section."
   }
  ],
  "scoped_out": [

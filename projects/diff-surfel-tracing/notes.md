@@ -1201,10 +1201,32 @@ runtime compiler opens -- for all three shapes:
    32 bits, so they are correct.
 3. **Fixed 32-lane logical warps inside a wavefront**
    (`threadIdx.x / 32`, `% 32`, `/ WARP_SIZE`): `RadixSortKernels.h:448` is the
-   only occurrence in either subtree. HIP RT's own kernels use `WarpSize` (the
-   real wavefront width, `hiprt_common.h:202`) throughout and never carve a
-   wave into logical halves. The `% 32` hits in `BvhNode.h:713-789` are 32-bit
-   word/bitfield packing, not lanes.
+   only occurrence in either subtree that is relative to a hardcoded 32. The
+   `% 32` hits in `BvhNode.h:713-789` are 32-bit word/bitfield packing, not
+   lanes.
+
+   **Corrected in round 6 (the round-5 wording claimed an absence, and the
+   absence is not what was checked).** HIP RT's own kernels DO carve a wavefront
+   into fixed logical sublane groups, in four places -- `BvhBuilderKernels.h`
+   `:141-145`, `:706-710`, `:1100-1106` (`sublaneIndex = laneIndex %
+   BranchingFactor`, `subwarpIndex = laneIndex / BranchingFactor`, and a
+   `subwarpMask` over the subgroup) and `:1789-1790` (`subwarpIndex = laneIndex
+   / LanesPerLeafPacketTask`, `sublaneIndex = laneIndex %
+   LanesPerLeafPacketTask`, where `LanesPerLeafPacketTask` is 4,
+   `BvhConfig.h:37`). What makes all four correct is a positive property, and it
+   is the property to look for elsewhere rather than an absence: the carve is
+   relative to the real `WarpSize` (`laneIndex = threadIdx.x % WarpSize`;
+   `hiprt_common.h:204` gives 64 on CDNA and `:206` gives 32 elsewhere -- I
+   re-checked every line cited here against the pinned tag), the subgroup mask
+   is built in 64 bits (`( 1ull <<
+   BranchingFactor ) - 1ull` shifted by the subgroup base, after the patch), a
+   wave-absolute ballot result is reduced back to a subgroup index before it is
+   compared against one (`:168-169`, `maxIndex = maxLaneIndex %
+   BranchingFactor`), and `PackLeavesWarp` already does exactly what
+   `logicalWarpBallot` now does -- `hiprt::ballot( ... ) >> (
+   LanesPerLeafPacketTask * subwarpIndex )` at `:1844`, over a `uint64_t`. So
+   the sweep's conclusion stands, and it stands for a reason a reader can
+   re-check.
 
 Also checked and clean in Orochi: `scanExclusive` and `ldsScanExclusive` are
 LDS plus `__syncthreads`, with no warp collective at all, and the `warp`/`lane`
@@ -1498,3 +1520,125 @@ round-5 write-up.
    assistance disclosed. The CUDA path over the whole branch is still only
    `optix_tracer/auxiliary.h` (+19/-1) and `optix_tracer/params.h` (+21), with
    `CMake/`, `CMakeLists.txt` and `optix_tracer/*.cu` untouched.
+
+## Port round 6 (2026-08-14, linux-gfx90a, MI250X, ROCm 7.14) -- REVIEW FINDINGS FIXED
+
+All three round-5 findings are addressed. No device or build code changed this
+round: the port's behaviour at `f35600e` is the port's behaviour at
+`1f59cef`, re-measured rather than carried (50/50 below).
+
+New fork history. The eight existing commits are message-only rewrites, so
+every sha moved; two new commits carry the content changes:
+
+| was | now | title |
+|---|---|---|
+| `1afb40b` | `72c6f82` | `[ROCm] Fix undefined behavior in quat_to_rotmat_transpose` |
+| `6847672` | `02ac712` | `[ROCm] Add a HIP RT trace back end for AMD GPUs` |
+| `db2f6ba` | `33f63f3` | `[ROCm] Guard the CUDA-only vector operators in auxiliary.h` |
+| `fa7df21` | `f038d98` | `[ROCm] Fix a 64-lane wavefront hang in the HIP RT build` |
+| `0eab27b` | `e796a26` | `[ROCm] Fix two more 32-bit lane masks in the HIP RT patch` |
+| `c086cde` | `e63c5ee` | `[ROCm] Stage only the HIP RT files the runtime compiler reads` |
+| `5254aa6` | `062f13f` | `[ROCm] Drop stale pointers and author lines from the back end` |
+| `f35600e` | `b1d9838` | `[ROCm] Fix a truncated wavefront ballot in the radix sort` |
+| -- | `f908248` | `[ROCm] Add a validation script for the AMD back end` |
+| -- | `1f59cef` | `[ROCm] Correct the README note on the HIP RT patch` (`head_sha`) |
+
+The rewrite is message-only and confirmed by tree hash, not by inspection:
+all ten commit trees are pairwise identical to their pre-rewrite counterparts
+and `git diff` between the two tips is empty. No platform held a
+`validated_sha` (all three are `null` in `status.json`), so nothing was
+orphaned. The pre-rewrite tip is preserved locally on this host as
+`refs/moat/pre-round6-rewrite` = `ff2c14b`, which is also where
+`git filter-branch` left `refs/original/refs/heads/moat-port`.
+
+### Finding 1: the harness ships in the fork, and the Test Plans name it
+
+`projects/diff-surfel-tracing/validation/validate_tracer_rocm.py` is now
+`example/validate_rocm.py` in the fork. **Moved, not copied** -- the MOAT copy
+and the `validation/` directory are deleted, so there is one file and it is the
+one the gate runs. `plan.md`, `surface.json` and the run command in the test
+plan point at the fork path.
+
+Placement and name follow the ruling and the repository's own shape: there is
+no `tests/` directory and no test of any kind, and the only standalone runnable
+script upstream ships is `example/render.py`, so the second standalone script
+goes beside it. `validate_rocm.py` rather than `validate_tracer_rocm.py`
+because it asserts `torch.version.hip` -- it checks the AMD back end, not the
+tracer in general. Only the docstring's `Run:` line changed inside the file.
+The README's AMD section now ends with a paragraph pointing at it and the
+command to run it, in the section's own descriptive style.
+
+Seven commit bodies promised `python3 validate_tracer_rocm.py`; all seven now
+say `python3 example/validate_rocm.py`, which is a real path in the branch a
+maintainer clones. `f038d98` never carried the command and is unchanged.
+
+Two upstream-visible claims of a report that has not been filed went with the
+same rewrite, since finding 2's reasoning is not specific to the README:
+`02ac712` said the HIP RT fixes "are being contributed to HIP RT separately"
+(now "are tracked for reporting to the projects that own them"), and `b1d9838`
+said the Orochi defect "is reported to a different project" (now "belongs to a
+different project").
+
+### Finding 2: the README says what is true about the four patch entries
+
+`README.md:57-58`, in the AMD install block, was "they are HIP RT bugs and are
+being contributed upstream". Both halves were wrong after round 5's
+reclassification. It now reads that three are bugs in HIP RT itself and one is
+in the copy of Orochi it vendors, that none is fixed at either project's HEAD,
+and that they are tracked for upstream reporting -- the same distinction the
+patch header already draws. That is `1f59cef`, docs only.
+
+### Finding 3: the pattern-3 sweep records the positive property
+
+Corrected in place at round 5's "The sweep, this time in three patterns", item
+3, as an inserted correction rather than a rewrite, the way round 5 corrected
+round 4. The absence claim ("never carve a wave into logical halves") is
+replaced by the four places HIP RT does carve one --
+`BvhBuilderKernels.h:141-145`, `:706-710`, `:1100-1106`, `:1789-1790` -- and by
+what makes them correct: a `WarpSize`-relative carve, 64-bit subgroup masks,
+a wave-absolute ballot index reduced with `% BranchingFactor` at `:169` before
+it is compared against a subgroup index, and `PackLeavesWarp:1844` already
+shifting a `uint64_t` ballot by `LanesPerLeafPacketTask * subwarpIndex`, which
+is the same shape `logicalWarpBallot` now uses. Every line cited was re-checked
+against the pinned tag on this host rather than transcribed from the review
+(`WarpSize` is at `hiprt_common.h:204`/`:206`, not `:202`).
+
+### Full suite at the new location: 50/50
+
+Run as shipped, from the fork checkout, with the path a maintainer would use.
+No reinstall: no source the extension compiles changed this round, and the
+harness's own cold-cache check recompiles every kernel at the end regardless.
+
+```
+PYTORCH_ROCM_ARCH=gfx90a, ROCm 7.14.60850, torch 2.14.0a0+git7d05abc
+cd projects/diff-surfel-tracing/src
+HIP_VISIBLE_DEVICES=0 python3 example/validate_rocm.py
+50/50 checks passed
+```
+
+Every number identical to the round-5 record: covered fraction 0.241, depth
+range [1.820, 4.574], 62/64 traced missing [5, 25], median `grads3D` cosine
+0.9825, fd colors 1.0000/1.0021, opacities 0.9999/0.7428, means3D
+0.9993/0.9387, scales 0.9923/0.8856, bounce 3.627e-01, P=4096 0.19876/0.386/1343,
+P=16384 0.25417/0.457/3309.
+
+`1f59cef`'s own Test Plan was run too: a fresh clone of `3.1.0.cb09c56`
+(`8602b8c`) takes `git apply --check --stat` of the committed patch cleanly,
+12 files, 133 insertions, 49 deletions.
+
+### Gotchas
+
+- **`git mv` into `projects/<name>/src/` stages the destination even though
+  `.gitignore` has `projects/*/src/`.** `git mv` adds the target path
+  explicitly, which overrides the ignore rule, so a move from MOAT into the
+  fork checkout silently starts tracking the fork file in MOAT as well --
+  exactly the two-copy outcome the ruling was avoiding. `git rm --cached` the
+  destination, then commit the deletion on the MOAT side and the addition
+  inside the fork clone as two separate repositories' commits.
+- **A message-only rewrite is provable, so prove it.** `git filter-branch -f
+  --msg-filter <script> <base>..moat-port` plus a pairwise comparison of
+  `<commit>^{tree}` before and after is a two-line check that turns "I only
+  edited messages" into evidence a reviewer can re-run. Take a named ref at the
+  old tip first (`git update-ref refs/moat/pre-<round>`), because
+  `refs/original/` is expendable and `--force-with-lease` wants the old sha
+  anyway.

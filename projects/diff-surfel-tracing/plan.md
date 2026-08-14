@@ -283,7 +283,7 @@ rather than writing.
 |---|---|
 | `README.md` | an installation section for ROCm alongside the OptiX one: HIPRT submodule/`HIPRT_HOME`, the HIPRT build command, `pip install -v .`. Same structure as the existing OptiX paragraph. |
 | `.gitignore` | exists; keep the staged-artifact entries, drop the ones that only made sense with a vendored SDK. |
-| `projects/diff-surfel-tracing/validation/validate_tracer_rocm.py` | **new, and it lives in MOAT, not the fork.** The Stage 2 harnesses (`validate_stage2.py`, `validate_geom_fd.py`) were written under `agent_space/`, which is gitignored -- they are gone from every host that did not run that session. This project has no test suite of its own and cannot get one upstream without inventing a test framework for someone else's repository, so the harness is a MOAT artifact, the way `projects/EnvGS/validation/validate_diff_surfel_rocm.py` already is. |
+| `example/validate_rocm.py` | **new, and it ships in the fork.** The Stage 2 harnesses (`validate_stage2.py`, `validate_geom_fd.py`) were written under `agent_space/`, which is gitignored -- they are gone from every host that did not run that session, which is why the harness has to be a committed artifact somewhere. Rounds 1-5 kept it in MOAT on the reasoning that the project "cannot get one upstream without inventing a test framework for someone else's repository". The round-5 review ruled that reasoning does not hold: one standalone script beside the existing standalone `example/render.py` is not a framework, it imports only the standard library, torch and the package, and it is the answer to the maintainer's "how do I know this back end works on my machine" for a PR that adds ~2,400 lines of new back end to a repository with no tests. Moved in round 6, single copy, and referenced from the README's AMD section. |
 
 Expected diff versus upstream after all of the above: roughly 6 new/changed source files and a
 submodule entry, on the order of 2,000 added lines (of which ~1,300 is `kernels.h`), against
@@ -322,8 +322,8 @@ The CUDA path is unchanged and builds as upstream documents it (`pip install -v 
 
 ### The GPU gate
 
-`projects/diff-surfel-tracing/validation/validate_tracer_rocm.py`, self-contained, no external
-data, arch-agnostic. It must cover, at minimum:
+`example/validate_rocm.py` in the fork (moved there in round 6; MOAT keeps no copy),
+self-contained, no external data, arch-agnostic. It must cover, at minimum:
 
 1. **Import and API.** `import diff_surfel_tracing`; `_C` exports `OptiXStateWrapper`,
    `build_acceleration_structure`, `trace_surfels`, `trace_surfels_backward`.
@@ -349,8 +349,8 @@ data, arch-agnostic. It must cover, at minimum:
 Run:
 
 ```bash
-HIP_VISIBLE_DEVICES=0 bash utils/timeit.sh diff-surfel-tracing test -- \
-    python3 projects/diff-surfel-tracing/validation/validate_tracer_rocm.py
+HIP_VISIBLE_DEVICES=0 bash utils/timeit.sh diff-surfel-tracing test -- bash -c \
+    'cd projects/diff-surfel-tracing/src && python3 example/validate_rocm.py'
 ```
 
 ### Optional stronger evidence
