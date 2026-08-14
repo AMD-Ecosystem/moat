@@ -64,3 +64,4 @@
 {"kind":"phase","ts":"2026-08-14T16:16:37Z","phase":"compile","seconds":1.894,"exit":1,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe -m pip install -e . --no-build-isolation"}
 {"kind":"phase","ts":"2026-08-14T16:18:08Z","phase":"compile","seconds":80.546,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe -m pip install -e D:/Develop/moat/projects/faster-gaussian-splatting/src/FasterGSCudaBackend --no-build-isolation"}
 {"kind":"phase","ts":"2026-08-14T16:19:04Z","phase":"test","seconds":3.944,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe agent_space/fgs_test.py"}
+{"kind":"session","ts":"2026-08-14T16:24:21Z","epoch":1786724662.180399400,"event":"end","platform":"windows-gfx1151"}
