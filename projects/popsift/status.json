@@ -7,7 +7,7 @@
   "priority": 5.187,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T00:36:13Z",
-  "updated_at": "2026-08-14T18:01:43Z",
+  "updated_at": "2026-08-14T20:28:42Z",
   "head_sha": "d10126b5dab3f8e166e096ed9428a5ee01061052",
   "pr_url": "https://github.com/alicevision/popsift/pull/186",
   "pr_number": 186,
@@ -168,17 +168,20 @@
       }
     }
   },
-  "published_sha": "f2712723d90371b706db3a37fb82537af151ab04",
-  "fix": {
-    "branch": "moat-fix-186",
-    "base_sha": "f2712723d90371b706db3a37fb82537af151ab04",
-    "review_pr": "https://github.com/AMD-Ecosystem/popsift/pull/1",
-    "opened_at": "2026-08-13T22:13:55Z"
-  },
+  "published_sha": "d10126b5dab3f8e166e096ed9428a5ee01061052",
+  "fix": null,
   "porting_released": {
     "arch": "windows-gfx1151",
     "since": "2026-08-14T15:22:47Z",
     "at": "2026-08-14T15:35:16Z"
   },
-  "porting": null
+  "porting": null,
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-14T20:27:54Z",
+    "head_sha": "d10126b5dab3f8e166e096ed9428a5ee01061052",
+    "content_sha256": "ed4b09d684fd3758bd1aed338be81999049ea9f01ad9eea066caca4b19e88c8a",
+    "review_pr": "https://github.com/AMD-Ecosystem/popsift/pull/1"
+  },
+  "fix_merged_at": "2026-08-14T20:28:42Z"
 }
