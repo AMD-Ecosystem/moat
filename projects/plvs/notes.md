@@ -1644,3 +1644,65 @@ plumbing above, which is what this round proved on this host.
 - Deferred item `plvs-nvidia-proprietary-rescan` (a person's ruling).
 - Windows platforms remain blocked on the clang-cl + boost.serialization toolchain wall.
 - The full SLAM configure/link on this host still needs Pangolin, which is not installed.
+
+## Review 2026-08-14b (reviewer, linux-gfx90a): review-passed (head bab4052)
+
+Scope: the delta since the 2026-08-14 `changes-requested` verdict -- content `c3895b2..bab4052`
+(the pre-rewrite pair was `3c714fc..3592f49`), plus the second message-only history rewrite and
+the skill-reference edit in MOAT commit `1a67372`. The 2ecb8b1..22ea834 port body was already
+review-passed and is byte-identical here, so it was not re-reviewed. No findings; verdict
+review-passed. Evidence for each closed item, re-derived here rather than taken from the fix
+round's notes:
+
+1. `config.sh:159-191`. Exercised all four discovery branches by sourcing lines 135-191
+   verbatim in a driver (`USE_HIP=1`, `OpenCV_DIR` preset so the local-OpenCV path is not
+   entered): no `ROCM_PATH` -> prefix from the `PATH` `hipcc`; inherited `ROCM_PATH=/opt/rocm`
+   (absent here) -> superseded by the real prefix; inherited real prefix -> kept; `PATH` without
+   `hipcc` and no `/opt/rocm` -> `HIP env var reset`, `HIP_FOUND=0`, `USE_HIP=0`, nothing
+   exported. `HIP found:` printed the real prefix in every found case, and `ROCM_PATH` was in
+   the exported environment (`env | grep ROCM_PATH`) in exactly those cases. With `USE_HIP=0`
+   the block stays silent. The commented `# export ROCM_PATH="/opt/rocm"` hint at `config.sh:88`
+   cannot resurrect finding 1: an uncommented value that does not resolve fails the
+   `$ROCM_PATH/bin/hipcc` test at line 165 and is superseded by the `PATH` probe.
+2. `build_thirdparty.sh:255` is `if [ $CUDA_FOUND -eq 1 ] || [ $USE_HIP -eq 1 ]; then`. Both
+   variables are `export`ed unconditionally by `config.sh` (lines 138, 84), which the script
+   sources at line 3, so neither test can be empty. The gate matches `CMakeLists.txt:481`
+   (`if(CUDA_FOUND OR USE_HIP)`), which is what sets `LIBSGM_LIBRARIES`. `CUDA_FOUND=1,
+   USE_HIP=0` behaviour is unchanged, so the CUDA path is untouched.
+3. `new_features.md:22` -- `grep -in hip install_local_opencv.sh` returns nothing, so "the local
+   OpenCV installed by install_local_opencv.sh is built without HIP support" is accurate; the
+   same text is at `config.sh:77-81` and a runtime WARNING at `config.sh:184-186` fires before
+   `install_local_opencv.sh` is sourced at line 205.
+4. `config.sh:154-157` enforces the exclusivity. Placement confirmed by running lines 150-191
+   with `CUDA_FOUND` forced 1: `USE_CUDA=1 USE_HIP=1` -> `USE_HIP=0` with the reset message;
+   `USE_CUDA=0 USE_HIP=1` -> HIP kept. On this CUDA-free host the same input leaves
+   `USE_HIP=1`, because the `CUDA_FOUND=0` reset at line 145 has already cleared `USE_CUDA` --
+   which is the intended ordering, so an AMD-only host still gets the HIP build.
+5. Rewrite `pre-reword-3592f49` -> `moat-port`, all 12 commits pairwise: tree id identical,
+   author and committer name/email/date identical, exactly two messages differ, and both differ
+   only in their first line. `git diff --stat pre-reword-3592f49 moat-port` empty; both tips
+   have tree `6f77fa86`. `origin/pre-reword-3592f49 == 3592f49` and `origin/pre-reword-22ea834
+   == 22ea834`, so both archives are pushed and every sha cited earlier in this file stays
+   fetchable. Longest title on the branch is now 63 chars.
+6. `.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md` (MOAT `1a67372`, +18 lines): the
+   `ROCM_PATH` bullet states the mechanism, the exact resolution order the fix implements, the
+   "print the prefix actually used" half, and the `-DCMAKE_HIP_COMPILER` masking caveat; the
+   companion bullet generalizes the `CUDA_FOUND`-gate lesson to any bundled GPU component. Both
+   read as portable lessons, not plvs facts, and match the code that landed.
+
+Also checked: `python3 utils/jargon.py --port plvs` -> clean; `git -C projects/plvs/src status
+--porcelain` empty; `git diff --stat 22ea834 moat-port` is only `build_plvs.sh`,
+`build_thirdparty.sh`, `config.sh`, `new_features.md`, so no `.cu`/`.hpp`/CMake source moved
+since the GPU-validated tree and the fault-class surface is unchanged; new commit `bab4052` has
+a 62-char `[ROCm]` title, AI-assistance disclosure, a Test Plan with fenced literal commands, no
+`Co-Authored-By` and no noreply trailer, ASCII-clean; all 12 commits carry the disclosure and a
+Test Plan; every script that sources `config.sh` is `#!/usr/bin/env bash`, so the `[[ ]]` tests
+added at lines 165/169/184 are safe.
+
+Non-blocking, for whoever prepares the PR (not a finding, no round needed): the body of
+`7719623` cites `3944323` and `57212e2`, shas from the pre-rewrite history that resolve on
+neither the branch nor upstream. They were fork-internal before either rewrite, so nothing
+upstream-visible regressed; if the branch is squashed or reworded for PR prep, drop or reword
+those two references then.
+
+Next: validation at `bab4052` on linux-gfx90a and linux-gfx1100.

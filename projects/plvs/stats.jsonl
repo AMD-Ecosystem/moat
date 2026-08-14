@@ -115,3 +115,5 @@
 {"kind":"session","ts":"2026-08-14T03:21:57Z","epoch":1786677717.215578673,"event":"end","platform":"linux-gfx90a"}
 {"kind":"phase","ts":"2026-08-14T03:28:11Z","phase":"compile","seconds":3.306,"exit":1,"cmd":"bash -c cd projects/plvs/src && env -u ROCM_PATH OpenCV_DIR=/usr ./build_plvs.sh"}
 {"kind":"phase","ts":"2026-08-14T03:28:49Z","phase":"compile","seconds":6.935,"exit":0,"cmd":"bash -c cd projects/plvs/src && env -u ROCM_PATH OpenCV_DIR=/usr bash .moat_libsgm_only.sh"}
+{"kind":"session","ts":"2026-08-14T03:34:42Z","epoch":1786678482.664458094,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-14T03:39:55Z","epoch":1786678795.104170786,"event":"end","platform":"linux-gfx90a"}
