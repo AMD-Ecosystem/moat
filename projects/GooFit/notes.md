@@ -2163,3 +2163,110 @@ evidence supports; the 6/6 pytest attribution to `18fca9e4a` is gone, and the su
 `jargon.py --port GooFit` clean.
 
 Next: gfx90a validation at `e8dca9151` (`failed_sha` `18fca9e4a` is behind this head).
+
+## Validation 2026-08-14 (validator, linux-gfx90a, fork e8dca9151 vs 5fe1221a8)
+
+First real run at this head (prior gfx90a record was `validation-failed` at
+`18fca9e4a`, now superseded). Local clone at `projects/GooFit/src` already at
+`e8dca915125a1c9fe193bc056fd9892095230eb4`, submodules initialised
+(`extern/thrust` at CCCL `af8cce4ca`), `git status --porcelain` clean before and
+after. Host: MI250X x4 (gfx90a), ROCm 7.14 (`hipcc --version`: HIP version
+7.14.60850-0000000, AMD clang 23.0.0git), CMake 3.31.6, Ninja, TheRock-style pip
+layout (`hipcc`/`cmake` from `/opt/conda/envs/py_3.12/.../_rocm_sdk_devel`, no
+`/opt/rocm`). All 4 GPUs idle (`rocm-smi --showuse`/`--showmeminfo vram`); used
+GPU 0.
+
+### Build: documented recipe, no `GOOFIT_PYTHON` override (bindings default ON)
+
+```
+cmake -S . -B build-hip-validate -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DGOOFIT_DEVICE=HIP -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DGOOFIT_TESTS=ON -DGOOFIT_EXAMPLES=ON -DGOOFIT_CERNROOT=OFF
+cmake --build build-hip-validate -j64
+```
+395/395 targets, clean, exit 0 -- matches attempt 4's count exactly, confirming
+the pybind11 fix (`e8dca9151`) still builds clean with the project defaults on a
+second host.
+
+### Tests: HIP 25/25 (8.22 s), pytest 6/6 (0.38 s) -- the recorded gfx90a divergence still does NOT reproduce
+
+```
+HIP_VISIBLE_DEVICES=0 ctest --test-dir build-hip-validate --output-on-failure
+  -> 100% tests passed, 0 tests failed out of 25, 8.22 s
+HIP_VISIBLE_DEVICES=0 PYTHONPATH=$PWD/build-hip-validate python3 -m pytest python/tests -q
+  -> 6 passed in 0.38 s
+```
+Real GPU execution confirmed: `AMD_LOG_LEVEL=3 ./build-hip-validate/examples/exponential/exponential`
+shows 140 `hipLaunchKernel` dispatches. The fit itself:
+```
+alpha = -1.001102381 +/- 0.003165763922
+```
+digit-identical to every prior session on every arch (gfx1100, gfx942, and
+attempt 4's own gfx90a/ROCm-7.14 run). The 2026-08-09 `18fca9e4a`/ROCm-7.2.1
+divergence (21/25 failing, `d_normalizations` reading an uninitialized-double bit
+pattern) remains unreproduced on ROCm 7.14 -- second independent host, same
+conclusion as attempt 4: a toolchain-generation fault that is gone on 7.14, not
+an outstanding port defect. Nothing further to add to the standing analysis in
+`references/validation.md`.
+
+### No non-GPU regression: CPP backend 26/26, pytest 6/6, bindings ON (upstream default)
+
+```
+cmake -S . -B build-cpp-validate -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DGOOFIT_DEVICE=CPP -DGOOFIT_TESTS=ON -DGOOFIT_EXAMPLES=ON -DGOOFIT_CERNROOT=OFF
+cmake --build build-cpp-validate -j64        # 496/496, clean
+ctest --test-dir build-cpp-validate          # 100% tests passed, 26/26, 9.01 s
+PYTHONPATH=$PWD/build-cpp-validate python3 -m pytest python/tests -q   # 6 passed
+```
+Matches the recorded baseline (26/26, 6/6) exactly.
+
+### CUDA no-regression gate: re-run at this head_sha (source changed since 18fca9e4a) -- same pre-existing upstream breakage, not a regression
+
+The prior CUDA-gate record is at `18fca9e4a`; `head_sha` moved to `e8dca9151` with
+a real source delta (`git diff --stat 18fca9e4a e8dca9151`: `CMakeLists.txt`,
+`README.md`, and five `python/**/CMakeLists.txt` files -- the pybind11
+LANGUAGE-HIP-adoption fix). `include/goofit/GlobalCudaDefines.h` is untouched by
+that diff, so re-ran the gate rather than assuming it still applies:
+
+```
+cmake -S . -B build-cuda-validate -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DGOOFIT_DEVICE=CUDA -DCMAKE_CUDA_ARCHITECTURES=80 \
+  -DGOOFIT_TESTS=ON -DGOOFIT_EXAMPLES=ON -DGOOFIT_CERNROOT=OFF -DGOOFIT_PYTHON=OFF \
+  -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc \
+  -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-13
+cmake --build build-cuda-validate -j32
+```
+Configure succeeds; build fails at the identical site recorded for `18fca9e4a`:
+```
+include/goofit/GlobalCudaDefines.h:133:10: fatal error: driver_types.h: No such
+  file or directory
+```
+Same file, same pre-existing upstream gap (`CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES`
+is only added to the host include path inside the CUDA-13-relocated-CCCL branch,
+which does not fire on CUDA 12.8). Not re-proven against a fresh upstream build
+this round -- unnecessary, since the file the error is in is byte-identical to
+what was already proven pre-existing-and-upstream-identical at `18fca9e4a`, and
+the diff between the two heads does not touch it. **CUDA gate: pre-existing
+breakage, not a port fault, carried forward from the prior head's proof.**
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --port GooFit` -> clean. README's ROCm requirements
+bullet already names `gfx90a`, `gfx942` and `gfx1100` (updated in attempt 4) and
+matches the recipe actually run; `docs/SYSTEM_INSTALL.md` unchanged and
+previously verified. Nothing to update.
+
+### Tree state and result
+
+`git -C projects/GooFit/src status --porcelain` empty before and after; no
+source or build file edited this round (`build-*-validate` dirs are gitignored,
+removed after use).
+
+**Result: linux-gfx90a -> completed at `e8dca9151`.** HIP 25/25 (8.22 s), pytest
+6/6, CPP 26/26 + pytest 6/6 (no non-GPU regression), real-GPU-execution
+confirmed (140 `hipLaunchKernel` dispatches, digit-identical fit result across
+every arch on record), CUDA gate re-run at this head and reconfirmed
+pre-existing (not a regression), jargon clean, docs accurate. This satisfies the
+wave64 gate independently of gfx942 (both wave64 parts now pass at this head)
+and formally supersedes the `18fca9e4a` failure record with a pass at the
+current head.
