@@ -137,3 +137,4 @@
 {"kind":"phase","ts":"2026-08-14T01:26:35Z","phase":"test","seconds":2.352,"exit":0,"cmd":"ctest --test-dir agent_space/rmagine_gfx90a_build --output-on-failure -R ^cuda_"}
 {"kind":"phase","ts":"2026-08-14T01:26:41Z","phase":"test","seconds":2.357,"exit":0,"cmd":"ctest --test-dir agent_space/rmagine_gfx90a_build --output-on-failure -R ^cuda_"}
 {"kind":"phase","ts":"2026-08-14T01:26:45Z","phase":"test","seconds":3.258,"exit":0,"cmd":"ctest --test-dir agent_space/rmagine_gfx90a_build --output-on-failure -R ^core_"}
+{"kind":"session","ts":"2026-08-14T01:27:58Z","epoch":1786670878.032791169,"event":"end","platform":"linux-gfx90a"}
