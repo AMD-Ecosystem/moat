@@ -82,3 +82,4 @@
 {"kind":"phase","ts":"2026-08-14T02:27:28Z","phase":"test","seconds":0.704,"exit":0,"cmd":"python3 -m pytest /var/lib/jenkins/moat/projects/GooFit/src/python/tests -q"}
 {"kind":"session","ts":"2026-08-14T02:33:30Z","epoch":1786674810.140440434,"event":"end","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-08-14T02:35:21Z","epoch":1786674921.258825512,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-14T02:43:15Z","epoch":1786675395.090716962,"event":"end","platform":"linux-gfx90a"}
