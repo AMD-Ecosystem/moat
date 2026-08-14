@@ -110,6 +110,21 @@ before a validator settled it:
    divergence that appears only on a newer or older ROCm than the passing run's is a
    toolchain regression to report, not an arch fault.
 
+   Matching the version of an earlier FAILING run does not rule this out -- it only
+   shows the failure reproduces on that version, which is the wrong direction. The
+   discriminating run is the same arch on a DIFFERENT, current ROCm, because with one
+   host per architecture the arch and its ROCm install are confounded: whatever the
+   fleet has installed on the only gfx90a box is a property of that box, not of gfx90a.
+   Do that run before writing any code. GooFit's divergence above was accepted as
+   "genuinely gfx90a-specific" on exactly this reasoning, then a later session on the
+   same hardware with ROCm 7.14 built the same commit from a fresh clone and got 25/25
+   with the fitted parameter digit-identical to every passing arch, plus 6/6 on the
+   Python bindings' 100k-event fits -- so a porter went hunting for a lifetime bug in
+   code that had none. Perturbing the allocator and serialising the runtime
+   (`HSA_DISABLE_FRAGMENT_ALLOCATOR=1`, `AMD_SERIALIZE_KERNEL=3 AMD_SERIALIZE_COPY=3`)
+   are the cheap follow-ups that argue against latent undefined behaviour a newer
+   runtime merely hides; they are evidence, not proof, so say so in the record.
+
 Only once both are pinned identical to a passing run does "wrong on this arch only"
 stand as a finding. For GooFit specifically: same ROCm 7.2.1 series hipcc that an
 earlier passing gfx90a attempt used, freshly cloned at the validated `head_sha`, and

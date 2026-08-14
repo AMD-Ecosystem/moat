@@ -169,6 +169,39 @@ row above reachable. Pin any claim here to a CMake version; this one is 3.31.6. 
 where the reverse claim -- that the exclusion was load-bearing -- was wrong twice before
 being measured this way.)
 
+### The ROCm imported targets put device compile options on EVERY consumer, C++ ones included
+
+`hip::device` -- pulled in transitively by `roc::rocthrust` and friends, not just by naming
+it -- carries `-x hip` and `--offload-arch=` in its `INTERFACE_COMPILE_OPTIONS`. Those are
+language options, and CMake applies them to every target that links the interface library,
+whatever language that target's sources are compiled in. On the targets whose sources you
+marked `LANGUAGE HIP` this is invisible, because they were going to hipcc anyway. On a
+target left in C++ it is fatal, and the error names the flag rather than the cause:
+
+    c++: error: unrecognized command-line option '--offload-arch=gfx90a'
+
+Look for the targets a port's own helper function does not cover. A project that routes its
+libraries through an `add_library` wrapper usually has a few built with a plain
+`add_library()` somewhere else -- Python bindings, tools, examples -- and those are exactly
+the ones that inherit the flags without the language. Two cheap checks: grep for
+`add_library(`/`add_executable(` outside the wrapper, and read the generated `build.ninja`
+for a `CXX_COMPILER_<target>` rule whose `FLAGS` contain `-x hip` (Makefiles generator:
+`CMakeFiles/<target>.dir/flags.make`).
+
+The fix is to give those targets the same treatment the wrapper gives everything else --
+`LANGUAGE HIP` plus whatever `-include` compat header the port injects -- rather than to
+strip flags. Two scope traps when doing it: source-file properties are DIRECTORY-scoped, so
+set them in the directory that owns the target, and for sources appended from a
+subdirectory with `target_sources()` use `set_source_files_properties(... TARGET_DIRECTORY
+<tgt> ...)` (CMake 3.18+), which is the only way to reach the owning scope from there.
+
+Worth checking even when the port's own recipe passes, because the recipe usually turns
+these targets OFF. GooFit's documented HIP build worked only because every recorded session
+passed `-DGOOFIT_PYTHON=OFF`; the option defaults ON whenever Python development files are
+found, so the build command in the project's own README failed for anyone who ran it
+verbatim on an ordinary machine. Configure once with the project's DEFAULTS before calling a
+backend done. (GooFit: `_Core`/`_Basic`/`_Combine` pybind11 modules.)
+
 ## The shim-header method: a port with zero source edits
 
 The plain Strategy A shape adds `#include "cuda_to_hip.h"` to every `.cu`/`.cuh` that needs
