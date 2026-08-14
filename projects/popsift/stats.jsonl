@@ -99,3 +99,5 @@
 {"kind":"phase","ts":"2026-08-13T23:41:30Z","phase":"compile","seconds":21.637,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/popsift/src/build-cuda -j"}
 {"kind":"phase","ts":"2026-08-14T14:07:12Z","phase":"compile","seconds":8.790,"exit":0,"cmd":"cmake --build projects/popsift/src/build-hip-gfx90a -j"}
 {"kind":"session","ts":"2026-08-14T14:10:50Z","epoch":1786716650.763963888,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-14T15:22:46Z","epoch":1786720966.472256000,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-14T15:35:24Z","epoch":1786721725.367133600,"event":"end","platform":"windows-gfx1151"}

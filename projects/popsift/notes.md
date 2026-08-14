@@ -2468,3 +2468,79 @@ A GPU that reports a perfectly good gfx target can still be missing an entire AP
 gfx94x/gfx95x have no image hardware, so every HIP texture and surface function is declared
 `unavailable` and a texture-based port simply does not compile there. Check for it before
 budgeting a validation attempt.
+
+## Review 2026-08-14 (windows-gfx1151) -- fix round for PR #186, third pass (delta f2712723..d10126b)
+
+Reviewed `git diff f2712723d903...d10126b5dab3` on `moat-fix-186` (8 commits, 28 files,
+272+/436-). No fork clone on this host; cloned fresh from AMD-Ecosystem/popsift and
+reviewed at `d10126b5dab3f8e166e096ed9428a5ee01061052` (== `head_sha`; `git ls-remote`
+confirms `origin/moat-fix-186` is that sha and `origin/moat-port` is still frozen at
+`f2712723d903`, which is an ancestor). `git status --porcelain` empty.
+
+Verdict: **review-passed**. No problem found.
+
+### Both findings of the second-pass review are closed
+
+- `CMakeLists.txt:108-110` no longer claims the Thrust code compiles unchanged on ROCm; it
+  now names the namespace difference and points at `src/popsift/common/thrust_setup.h`,
+  which is what `common/thrust_setup.h:18-21` says. The build file and the header agree.
+- `src/popsift/s_desc_norm_rs.h:68` is `( sum > 1e-20f )` again, with the comment
+  (`:63-67`) giving the overflow reason. griwodz's requested shape is untouched: the
+  `if( inv <= 0.0f )` block and the per-bin ternary at `:71-77` are still exactly comments
+  3735834466 and 3735842829. Re-fetched both comment bodies from the PR; neither mentions
+  the threshold, and the corrected attribution now stands at notes.md:1566-1576.
+- The disclosure that matters upstream is present where the maintainer will read it:
+  `6d7766d`'s body states that the threshold now applies on both platforms and that the
+  NVIDIA path previously divided by the sum per bin. That is the only behavioural change
+  this round makes to the CUDA arm besides the `norm > 0.0f` guard in
+  `s_desc_norm_l2.h:76,99`, which `df795a3`'s body also states.
+
+### Re-derived independently this pass (nothing to change)
+
+- Every literal `32` left in a shuffle is an algorithmic group width, not `warpSize`, and
+  each one matches its launch: `s_desc_loop.h:36-38` (32,4,4) for `s_desc_loop.cu:132-137`,
+  `s_orientation.cu:405-407` (32,1) for `:230` and for `warp_bitonic_sort.h:65,73`,
+  the (32,32) normalize block for `s_desc_norm_l2.h:65-69,95-99` and
+  `s_desc_norm_rs.h:55-61`, `s_pyramid_build_aa.cu:24` (blockDim.x==32) for `:44-48`.
+  A grep for every `shuffle*` call in the tree finds exactly one without an explicit
+  width, `s_extrema.cu:59`, and it is inside the CUDA `#else` arm.
+- The only genuinely warpSize-dependent code is `s_extrema.cu:33-45`, which is
+  `warpSize`-generic (lane = linear thread index % warpSize, 64-bit ballot, `__popcll`,
+  `__shfl(...,0,warpSize)`) rather than per-arch.
+- `PopSift_HAVE_SHFL_DOWN_SYNC 0` (`CMakeLists.txt:122`) with
+  `cmake/sift_config.h.in:11,14` selects `assist.h:51-62`, the mask-free spelling; no
+  `__*_sync` warp intrinsic survives anywhere in `src/` (grep), so deleting the seven
+  macros from `cuda_to_hip.h` leaves nothing unmapped.
+- Read-handle refactor is address-identical: the six `getXxxReadTexYyy()` accessors
+  (`sift_octave.h:110-127`) bind `_w`/`_h`, and the two call sites that previously passed
+  locals compute them from `getWidth()`/`getHeight()` (`s_pyramid_build.cu:271-272`,
+  `:349-350`). Level arguments unchanged at all 22 sites. No reference to
+  `POPSIFT_LAYERED_SRC`, `LayeredTex`, `surfFetchClamped` or the five removed raw
+  accessors survives.
+- Out-of-range reads still clamp: `assist.h:145-154` `texFetchClamped` clamps x,y into
+  `[0,w-1]x[0,h-1]` before `surf3Dread`, which is what `cudaAddressModeClamp` gave the
+  textures it replaces; the callers that go out of range (`s_pyramid_build_aa.cu:28-29`
+  `off_x -+ span`, `s_gradiant.h` `x-1.0f`) are the same ones that make griwodz's
+  `x - static_cast<int>(x)` suggestion wrong, so keeping `floorf` is right.
+- Texture pitch (256B) still N/A: the pyramid arrays are `cudaMalloc3DArray`-backed
+  (`sift_octave.cu:232-236`), never `cudaResourceTypePitch2D`.
+- The two upstream-visible ROCm claims check out against the measurements in this file:
+  the layered-collapse root cause in `cuda_to_hip.h:135-142`, `sift_textures.h:36-45` and
+  `sift_octave.cu:224-231` matches notes.md:1271-1301, and "gfx1100 accepts hardware
+  linear filtering, gfx90a rejects it" (`sift_octave.cu:283-288`, `assist.h:111-116`)
+  matches notes.md:877-884.
+- The `cuda-to-rocm` lesson this round promotes (`references/validation.md:31-51`,
+  gfx94x/gfx95x have no image API) is accurate against the headers it cites and is
+  cross-project.
+- Hygiene: eight titles, 49-63 chars, all `[ROCm]`; no `Co-Authored-By`, `Signed-off-by`,
+  noreply or AMD-internal reference in any body; every body carries the agent disclosure
+  and a fenced Test Plan; `prose.py` clean on all eight; `jargon.py --diff
+  f2712723..moat-fix-186` clean. `jargon.py --port popsift` still reports only the one
+  pre-existing hit, "fault classes" in the published `05e698ec8`, below the frozen tip.
+
+### Next
+
+`moatlib.py fix-ready popsift` is False only because every platform's `validated_sha`
+predates `d10126b`: gfx1100 is validated at `4d51a78` and the rest at `f2712723`. The
+delta `4d51a78..d10126b` is one comment hunk plus the one-line `1e-20f` threshold, so the
+staged round needs a validator pass at the current tip before the gates close.
