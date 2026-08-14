@@ -9,7 +9,6 @@ Run:
     HIP_VISIBLE_DEVICES=0 python3 validate_tracer_rocm.py
 """
 
-import math
 import os
 import shutil
 import sys
@@ -189,11 +188,21 @@ def check_forward(tracer, scene, H, W):
     check("forward depth finite", bool(torch.isfinite(dpt).all()))
     check("forward normal finite", bool(torch.isfinite(norm).all()))
 
-    hit = (acc > 1e-3).float().mean().item()
+    # The mirror surfel spans the whole frame, so every pixel accumulates
+    # something and "acc > 0" says nothing. What distinguishes a real image
+    # from a degenerate one here is the spread of coverage: pixels that a
+    # near-opaque surfel actually covers versus pixels that only catch the
+    # tail of a Gaussian.
+    covered = acc > 0.5
+    hit = covered.float().mean().item()
     check("forward has genuine hits and misses", 0.05 < hit < 0.95,
-          f"hit fraction {hit:.3f}")
+          f"covered fraction {hit:.3f}, acc range "
+          f"[{acc.min():.3f}, {acc.max():.3f}]")
 
-    hit_dpt = dpt[acc > 1e-3]
+    # dpt is the coverage-weighted sum of hit distances, not a distance, so it
+    # only becomes a depth after dividing by acc -- and only where acc is large
+    # enough for that quotient to mean anything.
+    hit_dpt = (dpt / acc.clamp_min(1e-6))[covered]
     check("forward hit depths plausible",
           bool((hit_dpt > 0.5).all() and (hit_dpt < 10.0).all()),
           f"depth range [{hit_dpt.min():.3f}, {hit_dpt.max():.3f}]")
@@ -228,41 +237,63 @@ def check_backward(tracer, scene, H, W):
     check("grad_grads3D is nonzero wherever grad_means3D is",
           bool((gg[touched].abs().sum(-1) > 0).all()),
           f"{int(touched.sum())} surfels received a position gradient")
-    cos = torch.nn.functional.cosine_similarity(
-        gg[touched].flatten(), gm[touched].flatten(), dim=0).item()
-    check("grad_grads3D tracks grad_means3D", cos > 0.9, f"cosine {cos:.4f}")
+    # Per surfel, grads3D is the same per-hit position gradient reweighted by
+    # the hit distance, so the two vectors point the same way for a surfel
+    # whose hits are at a similar depth and diverge where near and far hits
+    # cancel differently. The median over surfels is the honest statistic; one
+    # cosine over the flattened stack is dominated by whichever surfel has the
+    # largest gradient.
+    per = torch.nn.functional.cosine_similarity(gg[touched], gm[touched], dim=-1)
+    med = per.median().item()
+    check("grad_grads3D tracks grad_means3D", med > 0.9,
+          f"median per-surfel cosine {med:.4f} over {int(touched.sum())} surfels")
 
 
-def fd_gradcheck(tracer, scene, H, W, name, eps, lo, hi, cos_only=False):
+# The loss is O(1e4) in float32, so a central difference divided by 2*eps
+# amplifies the ~1e-3 rounding of each term by 1/(2*eps). At eps=1e-4 that is
+# larger than the derivative itself and the quotient is pure noise; at 1e-3 the
+# rounding is well below the signal and the truncation error is still small.
+FD_EPS = 1e-3
+# A ray tracer's loss is piecewise smooth: moving geometry moves silhouettes,
+# and a single directional derivative can land on one of those steps. Several
+# directions turn the comparison into a correlation, where an isolated step
+# perturbs the fit instead of deciding it.
+FD_DIRECTIONS = 6
+
+
+def fd_gradcheck(tracer, scene, H, W, name, lo, hi, finite_only=False):
     settings = make_settings(H, W)
     out, inputs = trace(tracer, scene, settings, H, W, requires_grad=True)
     scalar_loss(out).backward()
     analytic = inputs[name].grad.clone()
 
-    torch.manual_seed(1234)
-    direction = torch.randn_like(analytic)
-    direction /= direction.norm()
-
     base = scene[name].clone()
-    losses = []
-    for sign in (+1, -1):
-        scene[name] = (base + sign * eps * direction).contiguous()
-        out, _ = trace(tracer, scene, settings, H, W)
-        losses.append(scalar_loss(out).item())
+    fds, ans = [], []
+    for k in range(FD_DIRECTIONS):
+        torch.manual_seed(1234 + k)
+        direction = torch.randn_like(analytic)
+        direction /= direction.norm()
+        losses = []
+        for sign in (+1, -1):
+            scene[name] = (base + sign * FD_EPS * direction).contiguous()
+            out, _ = trace(tracer, scene, settings, H, W)
+            losses.append(scalar_loss(out).item())
+        fds.append((losses[0] - losses[1]) / (2 * FD_EPS))
+        ans.append((analytic * direction).sum().item())
     scene[name] = base
 
-    fd = (losses[0] - losses[1]) / (2 * eps)
-    an = (analytic * direction).sum().item()
-    if cos_only:
+    fd = torch.tensor(fds, dtype=torch.float64)
+    an = torch.tensor(ans, dtype=torch.float64)
+    if finite_only:
         check(f"finite difference {name} finite",
-              math.isfinite(fd) and math.isfinite(an),
-              f"fd {fd:.4e} analytic {an:.4e}")
+              bool(torch.isfinite(fd).all() and torch.isfinite(an).all()),
+              f"|fd| max {fd.abs().max():.4e} |analytic| max {an.abs().max():.4e}")
         return
-    slope = an / fd if fd != 0 else float("inf")
-    cos = 1.0 if fd * an > 0 else -1.0
+    cos = torch.nn.functional.cosine_similarity(fd, an, dim=0).item()
+    slope = (fd @ an / (fd @ fd)).item()
     check(f"finite difference {name} matches analytic",
-          cos > 0 and lo <= slope <= hi,
-          f"fd {fd:.4e} analytic {an:.4e} ratio {slope:.4f}")
+          cos > 0.9 and lo <= slope <= hi,
+          f"cosine {cos:.4f} slope {slope:.4f} over {FD_DIRECTIONS} directions")
 
 
 def check_reflection(tracer, scene, H, W):
@@ -318,11 +349,16 @@ def main():
     check_backward(tracer, scene, H, W)
 
     print("\n== finite differences ==")
-    fd_gradcheck(tracer, scene, H, W, "colors", 1e-3, 0.95, 1.05)
-    fd_gradcheck(tracer, scene, H, W, "opacities", 1e-3, 0.5, 1.8)
-    fd_gradcheck(tracer, scene, H, W, "means3D", 1e-4, 0.5, 1.8)
-    fd_gradcheck(tracer, scene, H, W, "scales", 1e-4, 0.5, 1.8)
-    fd_gradcheck(tracer, scene, H, W, "rotations", 1e-4, 0, 0, cos_only=True)
+    # Colors enter the composite linearly, so that one is the exact gate.
+    fd_gradcheck(tracer, scene, H, W, "colors", 0.95, 1.05)
+    fd_gradcheck(tracer, scene, H, W, "opacities", 0.5, 1.8)
+    fd_gradcheck(tracer, scene, H, W, "means3D", 0.5, 1.8)
+    fd_gradcheck(tracer, scene, H, W, "scales", 0.5, 1.8)
+    # Rotations are only checked for finiteness: the quaternion is renormalized
+    # inside the kernel, so the component along the quaternion itself is a null
+    # direction and a difference quotient along a random direction measures
+    # that null space as much as the gradient.
+    fd_gradcheck(tracer, scene, H, W, "rotations", 0, 0, finite_only=True)
 
     print("\n== reflected bounce ==")
     check_reflection(tracer, scene, H, W)

@@ -46,6 +46,24 @@ every wave32 device.)
 **Lane masks must be 64-bit where the API takes one** -- `__shfl*`, `__ballot`,
 `__activemask`. A `uint32` mask is wrong on a 64-wide wavefront.
 
+**And the mask VALUE must be built in 64 bits, which the destination type does not do for
+you.** In `const uint64_t mask = ((1 << K) - 1) << (K * subgroup);` the shift result type is
+the promoted LEFT operand, i.e. `int`, so the whole expression is evaluated in 32 bits and
+the widening to `uint64_t` happens afterwards, too late. Shifting an `int` by 32 or more is
+undefined, and AMD does not trap or saturate: the 32-bit shift instruction uses only the low
+5 bits of the count, so the count wraps and lanes 32..63 silently get the mask belonging to
+lanes 0..31. Any mask literal that can be shifted past bit 31 needs `1ull`. The class is
+nasty because it compiles clean, is invisible on wave32 (a 32-lane wavefront never reaches a
+shift of 32, which is why upstream RDNA testing does not catch it), and yields a wrong-lane
+collective rather than a fault. Grep every `1 <<` and `1u <<` whose shift count is derived
+from a lane index. HIP RT 3.1.0.cb09c56 has exactly this in three places
+(`hiprt/impl/BvhBuilderKernels.h`, `subwarpMask`): the upper half of the wavefront selects
+its widest child from the wrong subgroup, one subtree gets opened twice, the collapse
+therefore emits more leaf references than there are primitives, and the persistent builder
+kernel -- whose only exit is `emittedCount == primitiveCount` -- steps over its own exit
+value and spins forever, hanging the GPU inside a BVH build over a few dozen triangles.
+(diff-surfel-tracing, in its HIP RT dependency.)
+
 **Do not hardcode wave64 GEOMETRY either** -- the inverse failure. Packing two logical
 32-thread rows into one wavefront (`wflane = threadIdx.x + ((threadIdx.y&1)<<5)`, a
 `1ull<<wflane` prefix mask, `__shfl(...,0,64)`, `__popcll` over a 64-bit ballot, a

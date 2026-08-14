@@ -15,3 +15,10 @@
 {"kind":"phase","ts":"2026-08-13T06:31:43Z","phase":"test","seconds":1500.103,"exit":124,"cmd":"timeout 1500 python3 -u projects/diff-surfel-tracing/validation/validate_tracer_rocm.py"}
 {"kind":"phase","ts":"2026-08-13T06:37:45Z","phase":"compile","seconds":27.868,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/diff-surfel-tracing/src && HIPRT_HOME=/var/lib/jenkins/HIPRT PYTORCH_ROCM_ARCH=gfx942 pip install -e . --no-build-isolation --no-deps -q"}
 {"kind":"session","ts":"2026-08-13T06:41:39Z","epoch":1786603299.821779845,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-08-14T03:52:18Z","epoch":1786679538.889855048,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-14T03:58:42Z","phase":"compile","seconds":5.183,"exit":0,"cmd":"cmake --build /var/lib/jenkins/HIPRT/build --target hiprt03001 -j32"}
+{"kind":"phase","ts":"2026-08-14T03:58:56Z","phase":"compile","seconds":0.382,"exit":1,"cmd":"/opt/conda/envs/py_3.12/bin/pip install -e . --no-build-isolation --no-deps -v"}
+{"kind":"phase","ts":"2026-08-14T03:59:33Z","phase":"compile","seconds":31.863,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/diff-surfel-tracing/src && /opt/conda/envs/py_3.12/bin/pip install -e . --no-build-isolation --no-deps -v"}
+{"kind":"phase","ts":"2026-08-14T04:29:48Z","phase":"compile","seconds":5.077,"exit":0,"cmd":"cmake --build /var/lib/jenkins/HIPRT-verify/build --target hiprt03001 -j32"}
+{"kind":"phase","ts":"2026-08-14T04:30:28Z","phase":"compile","seconds":32.291,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/diff-surfel-tracing/src && /opt/conda/envs/py_3.12/bin/pip install -e . --no-build-isolation --no-deps -v"}
+{"kind":"phase","ts":"2026-08-14T04:30:40Z","phase":"test","seconds":5.863,"exit":0,"cmd":"python3 -u projects/diff-surfel-tracing/validation/validate_tracer_rocm.py"}

@@ -412,3 +412,180 @@ compiled binaries land in `<cwd>/cache`, HIP RT's default relative path, so the
 package writes a `cache/` directory into whatever directory the process was
 started in. The harness's cold-cache stage deletes `pkg_dir/hiprt_cache` and
 will not observe the real cache.
+
+## Port round 3 (2026-08-14, linux-gfx90a, MI250X, ROCm 7.14) -- GPU GATE MET
+
+Round 2's open defect is root-caused and fixed, and the harness now passes
+end to end on this platform. The fix is one token in HIP RT and it is not
+scene-specific, not builder-specific and not a workaround.
+
+New fork commit:
+
+- `b7ff795` `[ROCm] Fix a 64-lane wavefront hang in the HIP RT build` (`head_sha`)
+
+### The Collapse miscount: a 32-bit shift in a 64-lane mask
+
+Round 2 established that HIP RT's `Collapse` kernel emits more references than
+the primitive count and therefore steps over its own equality exit test, and
+left "find the miscount" as this round's task. The miscount is upstream of
+`Collapse`, in `openNodes`, and both share the cause.
+
+`hiprt/impl/BvhBuilderKernels.h` builds a per-subgroup lane mask three times
+(lines 144, 709, 1104 at tag `3.1.0.cb09c56`):
+
+```c++
+const uint64_t subwarpMask = ( ( 1 << BranchingFactor ) - 1 )
+                             << static_cast<uint64_t>( ( BranchingFactor * subwarpIndex ) );
+```
+
+`( 1 << BranchingFactor ) - 1` has type `int`, and the shift's result type is
+the promoted LEFT operand, so the whole expression is evaluated in 32 bits and
+only then widened to `uint64_t`. With `BranchingFactor` 4 and `WarpSize` 64
+(`hiprt_common.h:202-214`, the CDNA/`HIPRT_RTIP 0` arm covering `__gfx90a__`
+and `__gfx942__`), `subwarpIndex` runs 0..15 and the shift count reaches 60.
+Shifting an `int` by >= 32 is undefined, and AMD neither traps nor saturates:
+the shift instruction uses the low 5 bits of the count, so the count wraps and
+lanes 32..63 receive the mask of lanes 0..31.
+
+The consequence is in `openNodes`, which selects the widest child of a
+subgroup with
+`__ffsll( ballot( maxArea == area ) & subwarpMask ) - 1` and then `shfl`s that
+lane's `childIndex`. The upper half of the wavefront reads the LOWER half's
+ballot bits, so it opens a subtree belonging to a different task. The same
+subtree can be opened into two slots, `Collapse` then emits more leaf
+references than there are primitives, `header->m_referenceCount` passes
+`referenceCount` without ever equalling it, and every lane spins in
+`while ( hiprt::any( !done ) )` forever.
+
+This explains everything round 2 measured and could not explain:
+
+- why it looked size dependent but was not (44 disks built, 42 and 46 did not):
+  whether a wave has 8 or more subgroups holding live tasks whose duplicate
+  actually changes the reference total is a property of the tree shape.
+- why LBVH, LBVH-without-pairing and PLOC all hang: they share `Collapse` AND
+  `openNodes`.
+- why `>=` "fixed" it while still writing past `referenceIndices`: `>=` treats
+  the symptom; the extra references were real writes.
+- why only wave64 platforms are affected: a 32-lane wavefront has
+  `subwarpIndex <= 7`, so the shift count never reaches 32 and the mask is
+  correct. HIP RT is presumably validated on RDNA, where this is invisible.
+
+The fix is `1ull << BranchingFactor` at all three sites, added to
+`third_party/hiprt-rocm-fixes.patch`. It is arch-unified by construction: the
+wave32 mask is bit-for-bit what it was.
+
+Promoted to the `cuda-to-rocm` skill (`references/fault-classes.md`, wavefront
+section) as its own fault class -- "a lane mask built with a 32-bit literal
+wraps instead of overflowing" -- because it is not specific to HIP RT and the
+existing "masks must be 64-bit" note only covers the mask's TYPE, not the
+arithmetic that produces its value.
+
+Not explained, and left as an honest loose end: EnvGS Stage 2 validated this
+tracer on gfx90a against the same HIP RT version, which should have tripped
+the same bug on its (much larger) scenes. That evidence is at the old tracer
+commit and was not reproducible here, so it is recorded rather than
+rationalised.
+
+### Harness results at `b7ff795`: 42/42 PASS
+
+```
+PYTORCH_ROCM_ARCH=gfx90a, ROCm 7.14.60850, torch 2.14.0a0+git7d05abc
+HIP_VISIBLE_DEVICES=0 python3 projects/diff-surfel-tracing/validation/validate_tracer_rocm.py
+```
+
+- import/API 5/5; forward finite, covered fraction 0.232, depth range
+  [2.159, 4.574], bit-identical rerun.
+- backward: all eleven gradients finite, all six nonzero checks pass,
+  `grad_grads3D` nonzero wherever `grad_means3D` is (31 surfels), median
+  per-surfel cosine against `grad_means3D` 0.9897.
+- finite differences over 6 random directions at eps 1e-3: colors cosine
+  1.0000 slope 0.9983; opacities 1.0000 / 0.8055; means3D 0.9992 / 0.9322;
+  scales 0.9983 / 0.9066; rotations finite.
+- reflected bounce (`max_trace_depth=1`, `specular_threshold=0.1`): image
+  changes by up to 0.499, all gradients finite.
+- cold compilation cache: cleared, rerun bit-identical, cache repopulated.
+
+Both the GPU and the tree are honest: the run above is from a clean
+`rm -rf build *.egg-info diff_surfel_tracing/hiprt_root` reinstall against a
+HIP RT built from a FRESH clone of the pinned tag with only the committed
+`third_party/hiprt-rocm-fixes.patch` applied, and that patch reproduces the
+tested tree byte for byte (`git diff` of the verification clone equals the
+working clone's).
+
+### Harness corrections made this round (MOAT side, not the fork)
+
+Round 2 listed three mis-calibrations "still to correct" and they are now
+corrected, each against a measurement rather than a guess:
+
+- **hits and misses.** Measured `acc` range on this scene is
+  [0.012, 0.996] and NO pixel is empty -- the mirror surfel spans the frame,
+  so `acc > 1e-3` is 1.000 by construction and proves nothing. The threshold
+  is now `acc > 0.5`, which separates pixels a near-opaque surfel covers from
+  pixels catching a Gaussian tail: 0.232, inside the (0.05, 0.95) band.
+- **hit depths.** `dpt` is the coverage-weighted SUM of hit distances, so it
+  is only a depth after dividing by `acc`, and only where `acc` is large. Raw
+  `dpt` over `acc > 1e-3` ranged down to 0.073 (a tail pixel), which is what
+  failed; `dpt / acc` over `acc > 0.5` is [2.159, 4.574], matching the scene's
+  1.5-4.2 z extent.
+- **`grad_grads3D` correlation.** `grads3D` is the same per-hit position
+  gradient reweighted by hit distance, so per-surfel cosines are high (median
+  0.9897, 48 per cent above 0.99) while a few surfels whose near and far hits
+  cancel differently go negative (min -0.405). One cosine over the flattened
+  stack is dominated by the largest-gradient surfel and read 0.8878. The check
+  is now the MEDIAN per-surfel cosine.
+
+And one correction round 2 did not anticipate:
+
+- **The finite-difference step was below the float32 noise floor.** The loss
+  is O(1e4) in float32, so a central difference divided by `2*eps` amplifies
+  each term's ~1e-3 rounding by `1/(2*eps)`. At the old `eps=1e-4` the
+  `means3D` quotient was pure noise: measured ratios 0.43 (eps 1e-4), 1.66
+  (3e-5), 0.53 (3e-4) against a stable 0.93 at 1e-3, and the 8-direction
+  cosine collapses from 0.9939 at 1e-3 to 0.5116 at 1e-4. All parameters now
+  use `eps=1e-3` and SIX random directions, scored by the cosine of the
+  6-vector plus a least-squares slope. That is strictly stronger than the old
+  single-direction sign-and-ratio test: a ray tracer's loss is piecewise
+  smooth, and one direction can land on a silhouette step and decide the gate
+  by itself.
+
+`opacities` sits at slope 0.806 with cosine 1.0000, stable across eps 1e-3 and
+1e-4 and across all six directions. It is a consistent ~19 per cent bias, not
+noise, and is almost certainly the hard alpha cutoff the compositing loop
+applies (the difference quotient sees surfels crossing the include threshold;
+the analytic gradient correctly does not). It is inside the plan's [0.5, 1.8]
+band and identical in character to gfx942's 0.8156, so it is recorded, not
+chased.
+
+### Corrections to round 2's remaining note
+
+- **`hiprtSetCacheDirPath` DOES take.** Round 2 recorded that compiled
+  binaries land in `<cwd>/cache` and that the cold-cache stage therefore
+  observes nothing. Measured here: every binary (tracer kernels AND HIP RT's
+  own BVH builder kernels) is written to
+  `diff_surfel_tracing/hiprt_cache/`, and the cold-cache stage genuinely
+  clears and repopulates it. What remains is cosmetic: an EMPTY `cache/`
+  directory is created in the process's working directory, from HIP RT's
+  default `Compiler::m_cacheDirectory = "cache"` before the context's path
+  override is applied. Worth a follow-up in HIP RT, not a defect in the port.
+
+### Build recipe (this host: no /opt/rocm, ROCm is a pip SDK)
+
+```
+export ROCM_PATH=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel
+export HIP_PATH=$ROCM_PATH PATH=$ROCM_PATH/bin:$PATH
+git clone --recursive --depth 1 -b 3.1.0.cb09c56 \
+    https://github.com/GPUOpen-LibrariesAndSDKs/HIPRT.git /var/lib/jenkins/HIPRT
+git -C /var/lib/jenkins/HIPRT apply <fork>/third_party/hiprt-rocm-fixes.patch
+cmake -DCMAKE_BUILD_TYPE=Release -DBITCODE=OFF -DNO_UNITTEST=ON \
+    -DHIP_PATH=$ROCM_PATH -S /var/lib/jenkins/HIPRT -B /var/lib/jenkins/HIPRT/build
+cmake --build /var/lib/jenkins/HIPRT/build --target hiprt03001 -j32   # ~40 s
+HIPRT_HOME=/var/lib/jenkins/HIPRT PYTORCH_ROCM_ARCH=gfx90a \
+    pip install -e <fork> --no-build-isolation --no-deps -v           # ~2 min
+```
+
+The only deviation from the README is that `HIP_PATH`/`ROCM_PATH` point at the
+pip SDK instead of `/opt/rocm`; `setup.py` already reads `ROCM_PATH` with
+`/opt/rocm` as the default, so nothing in the fork needed changing for it. The
+device name here is "AMD Instinct MI250X / MI250", so the patch's
+`getCacheFilename` sanitize is load-bearing on this platform (unlike gfx942,
+where round 2 verified it is unnecessary).

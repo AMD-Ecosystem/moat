@@ -7,14 +7,14 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-08-06T06:58:03Z",
-  "updated_at": "2026-08-13T06:40:38Z",
-  "head_sha": "9722c7b4f60ef7d74d3e462969cdbe8e13a94290",
+  "updated_at": "2026-08-14T04:34:24Z",
+  "head_sha": "b7ff795bfafddb29bc57cdb3c459e0c4293936e2",
   "depends_on": [],
   "porting": null,
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 911002454,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "linux-gfx1100": {
       "blocked": false,
@@ -40,13 +40,13 @@
       "last_agent": "intake"
     },
     "linux-gfx942": {
-      "blocked": true,
-      "blocked_reason": "HIP RT 3.1.0.cb09c56 hangs the GPU in its own BVH Collapse kernel: the persistent-task loop exits only on m_referenceCount == referenceCount and the emitted count overshoots, so lanes spin forever. Reproduces from about 42 surfel disks up, data dependent, with LBVH, LBVH-without-pairing and PLOC alike (they share the kernel). Relaxing the test to >= terminates and traces correctly, which proves the overshoot, but referenceIndices is sized to the primitive count so it would also be writing past that buffer -- the miscount has to be found before anything ships. Extension builds and small scenes trace at head; the GPU gate cannot be met until this is fixed.",
+      "blocked": false,
+      "blocked_reason": null,
       "validated_sha": null,
       "failed_sha": null,
       "started_at": "2026-08-13T04:05:55Z",
       "completed_at": null,
-      "updated_at": "2026-08-13T06:40:38Z",
+      "updated_at": "2026-08-14T04:33:18Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -61,6 +61,28 @@
         "last_session_at": null
       },
       "last_agent": "planner"
+    },
+    "linux-gfx90a": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-08-14T03:52:18Z",
+      "completed_at": null,
+      "updated_at": "2026-08-14T04:34:24Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
     }
   },
   "intake": {
@@ -70,5 +92,10 @@
     "viable": true,
     "summary": "Differentiable 2D-Gaussian OptiX ray tracer (MIT, verified by reading LICENSE; GitHub misreports NOASSERTION). Already rewritten onto HIPRT and GPU-validated under EnvGS Stage 2 -- taking it up buys a separate PR route to xbillowy, not new porting. Decided by two things: 9 NVIDIA-proprietary headers in the upstream OptiX submodule need a ruling, and moat-port vendors HIPRT/Orochi incl. a 1.9MB prebuilt DLL with no HIPRT/Orochi licence files.",
     "at": "2026-08-13T03:18:42Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx90a",
+    "since": "2026-08-14T03:52:18Z",
+    "at": "2026-08-14T04:34:24Z"
   }
 }
