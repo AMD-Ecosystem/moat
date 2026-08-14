@@ -142,6 +142,24 @@ compat header with `-include`.
   prefix, so a `/opt/rocm`-only test silently disables the GPU path on exactly the hosts that
   validate the port. Keep the "not found" message inside the enabled branch so CUDA and
   CPU-only builds print nothing new. (plvs)
+- **Never export a fallback `ROCM_PATH` such as `export ROCM_PATH="${ROCM_PATH:-/opt/rocm}"`.**
+  `hipconfig` honors `ROCM_PATH`, and CMake runs `hipconfig` to find the toolchain for
+  `enable_language(HIP)`, so a `ROCM_PATH` naming a directory that does not exist turns a
+  working configure into `CMakeDetermineHIPCompiler: Failed to find ROCm root directory` -- the
+  config script disables the very build its own `PATH`-based probe just declared available.
+  Export only a prefix that resolves: keep an inherited value when `$ROCM_PATH/bin/hipcc`
+  exists, else derive it from the accepted `hipcc` (`hipconfig --rocmpath` run with `ROCM_PATH`
+  cleared, falling back to `dirname $(dirname $(readlink -f $(command -v hipcc)))`), else use
+  `/opt/rocm` only if it exists, else export nothing. Print that same prefix in the "HIP found"
+  message, not the fallback. Test it the way the documented build runs: a configure that passes
+  `-DCMAKE_HIP_COMPILER=...` by hand bypasses discovery entirely and hides this. (plvs)
+- **Grep the build scripts for every `CUDA_FOUND`-style gate, not just the flag forwarding.**
+  Adding `-DUSE_HIP=ON` where the script forwards `-DWITH_CUDA=ON` is only half the wiring: a
+  bundled GPU component built under `if [ $CUDA_FOUND -eq 1 ]` is still skipped on a machine
+  with no CUDA toolkit, while the main `CMakeLists.txt` links its archive unconditionally, so
+  the build configures cleanly and dies at link. Widen each such gate to
+  `[ $CUDA_FOUND -eq 1 ] || [ $USE_HIP -eq 1 ]` and run the script on a CUDA-free machine.
+  (plvs, its `Thirdparty/libsgm`)
 - **hipify-perl, when that is the mechanism rather than CMake HIP language:** run it
   synchronously -- `-inplace` in a backgrounded or `&&`-chained loop silently skips files --
   and always re-grep the whole tree for `cudaMalloc|cudaSuccess|include <cub|include <cuda.h`

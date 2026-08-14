@@ -1484,3 +1484,163 @@ the specific trap once the fix lands: exporting `ROCM_PATH=/opt/rocm` as a defau
 build environment makes `hipconfig` (and therefore CMake's HIP compiler discovery) resolve
 against a path that does not exist, so a probe that accepted a `PATH` `hipcc` must export the
 prefix that `hipcc` actually came from, or export nothing.
+
+## Fix round 2026-08-14b (linux-gfx90a, porter): review findings 1-6 closed, head bab4052
+
+Dispatch: the 2026-08-14 review recorded `changes-requested` at `3c714fc` with two blockers in
+the shell plumbing added by the previous round, plus four smaller items. All six are addressed.
+New head `bab4052` (one new commit `[ROCm] Fix the ROCm toolchain lookup and the libsgm build
+gate`, then a second message-only history rewrite for finding 5).
+
+### Finding 1 (blocker): `ROCM_PATH` default broke HIP toolchain discovery -- fixed
+
+`export ROCM_PATH="${ROCM_PATH:-/opt/rocm}"` is gone from the settings block (replaced by a
+commented hint, matching how the file documents optional overrides). Discovery now happens in
+the auto-managed block and exports `ROCM_PATH` only when it resolves:
+
+1. an inherited `ROCM_PATH` with `$ROCM_PATH/bin/hipcc` present is kept,
+2. else the prefix is derived from the `hipcc` on `PATH` -- `(unset ROCM_PATH; hipconfig
+   --rocmpath)`, falling back to `dirname $(dirname $(readlink -f $(command -v hipcc)))`,
+3. else `/opt/rocm` when `/opt/rocm/bin/hipcc` exists,
+4. else nothing is exported and `HIP_FOUND=0`.
+
+`HIP found: $ROCM_PATH` therefore always names the prefix actually in use (finding 1's second
+half). An inherited-but-broken `ROCM_PATH` is superseded rather than propagated, and the
+message shows the substitution.
+
+### Finding 2 (blocker): libsgm never built on an AMD-only host -- fixed
+
+`build_thirdparty.sh:255` is now `if [ $CUDA_FOUND -eq 1 ] || [ $USE_HIP -eq 1 ]; then`. Both
+variables are always exported by `config.sh`, so the test is safe when either is unset by the
+user. libelas-gpu (line 242, gated on `HAVE_SSE3`) needed no change, as the review noted.
+
+### Findings 3 and 4: doc claim made concrete, exclusivity enforced
+
+- `new_features.md:22` now says explicitly that the local OpenCV from
+  `install_local_opencv.sh` is built without HIP, so `USE_LOCAL_OPENCV=0` plus an `OpenCV_DIR`
+  pointing at an OpenCV configured with `-DWITH_HIP=ON` is required. The same sentence was
+  added to the `config.sh` HIP settings comment, and `config.sh` now prints a WARNING at probe
+  time when `USE_HIP=1` with `USE_LOCAL_OPENCV=1` and no `OpenCV_DIR` -- before the long local
+  OpenCV build starts, which is the wasted-work case the review described.
+- `config.sh` enforces the documented exclusivity in the auto-managed block, in the shape of
+  the existing resets. It runs AFTER the `CUDA_FOUND` reset deliberately: on an AMD-only host
+  `USE_CUDA` has already been reset to 0, so a user who left `USE_CUDA=1` in the file still
+  gets the HIP build. Only when both are genuinely available does CUDA win and `USE_HIP` reset.
+
+### Verified on this host (linux-gfx90a, MI250X, TheRock ROCm 7.14 SDK under site-packages, cmake 3.31.6, clang 23.0.0)
+
+`bash -n` clean on `config.sh`, `build_thirdparty.sh`, `build_plvs.sh`.
+
+Discovery matrix, sourcing a scratch copy of `config.sh` (`OpenCV_DIR` preset so the local
+OpenCV path is not taken), `USE_HIP=1` unless stated:
+
+| case | result |
+|------|--------|
+| stock `USE_HIP=0`, no `ROCM_PATH` | silent; `ROCM_PATH` = real SDK prefix, `HIP_FOUND=1` |
+| no `ROCM_PATH` inherited | `HIP found: <sdk prefix>` |
+| `ROCM_PATH=/opt/rocm` inherited (absent here) | `HIP found: <sdk prefix>` (stale value dropped) |
+| `ROCM_PATH` = real SDK | kept verbatim |
+| `PATH=/usr/bin:/bin`, no `/opt/rocm` | `HIP env var reset, check your ROCm installation` |
+| `USE_CUDA=1` + `USE_HIP=1`, CUDA probe forced true | `USE_CUDA and USE_HIP cannot be both enabled: HIP env var reset` |
+| `USE_LOCAL_OPENCV=1`, no `OpenCV_DIR` | WARNING printed before `install_local_opencv.sh` runs |
+
+CMake proof of the blocker and its fix, minimal `enable_language(HIP)` project:
+```
+ROCM_PATH=/opt/rocm cmake -S . -B b_old   -> CMakeDetermineHIPCompiler: Failed to find ROCm root
+ROCM_PATH=<sdk prefix> cmake -S . -B b_new
+    -- HIPCOMP: <sdk>/lib/llvm/bin/clang++
+    -- HIPARCH: gfx90a;gfx90a;gfx90a;gfx90a
+```
+
+Real project configure through the project's own script, with NO `-DCMAKE_HIP_COMPILER` (the
+case the previous round's test masked), `USE_HIP=1` in `config.sh`:
+```
+env -u ROCM_PATH OpenCV_DIR=/usr ./build_plvs.sh
+    -- USE_HIP: ON
+    -- The HIP compiler identification is Clang 23.0.0
+    -- Check for working HIP compiler: <sdk>/lib/llvm/bin/clang++ - skipped
+    -- CMAKE_HIP_ARCHITECTURES: gfx90a;gfx90a;gfx90a;gfx90a
+    CMake Error at CMakeLists.txt:332 (find_package): Could not find "Pangolin"
+```
+Pangolin is still not installed in this container, so the full SLAM configure and link cannot
+be reached here (pre-existing host gap, unchanged by this delta).
+
+libsgm gate, running the REAL lines of `build_thirdparty.sh` (setup lines 1-75 plus the libsgm
+block 253-274, extracted verbatim into a driver executed from the repo root) with real cmake
+and make, `CUDA_FOUND=0` on this CUDA-free host:
+```
+USE_HIP=1 -> "Configuring and building Thirdparty/stereo_libsgm... "
+             [100%] Linking HIP static library Thirdparty/libsgm/lib/libsgm.a
+             371112 bytes; `strings` shows gfx90a device code
+USE_HIP=0 -> block skipped, no lib/ produced (control, matches pre-change behaviour)
+```
+So the blocker-2 path now produces the archive the main `CMakeLists.txt` links. The main link
+itself remains unproven on this host for the Pangolin reason above; the libsgm.a it wants is
+now built.
+
+### Finding 5: the two over-long titles reworded (second message-only rewrite)
+
+```
+87ba727 (75) "[ROCm] Guard Linux-incompatible conda-absl/protobuf CMake blocks with WIN32"
+        -> 7719623 (63) "[ROCm] Restrict the conda absl/protobuf CMake blocks to Windows"
+fab79af (73) "[ROCm] Build the full SLAM stack on Windows with the clang ROCm toolchain"
+        -> 3b5d2e5 (59) "[ROCm] Build the full SLAM stack on Windows with ROCm clang"
+```
+`git filter-branch -f --msg-filter <exact first-line map> 2ecb8b1..moat-port`. Verified all 12
+commits pairwise: tree IDENTICAL, author/committer name+email+date unchanged, exactly 2
+messages differ, `git diff --stat pre-reword-3592f49 moat-port` empty. Every title is now
+<= 72 chars (max 63).
+
+**Pre-rewrite bookkeeping.** The archive branch for THIS rewrite is `pre-reword-3592f49`
+(pushed to the fork), tip = old `3592f49` = pre-rewrite content-identical to `bab4052`. The
+earlier archive `pre-reword-22ea834` is still pushed and still resolves the shas cited in the
+sections above. Sha translation across the two rewrites, for anyone reading older sections of
+this file:
+
+| original | after rewrite 1 | after rewrite 2 (current) |
+|----------|-----------------|---------------------------|
+| e59fd77  | 4dbd541 | 4dbd541 (unchanged) |
+| f932ab5  | cead4c0 | cead4c0 (unchanged) |
+| 05eed6c  | 56aeafe | 56aeafe (unchanged) |
+| b9210a8  | 3cbfef4 | 3cbfef4 (unchanged) |
+| 7f5ce9f  | fab79af | 3b5d2e5 (reworded) |
+| 3944323  | 1d66374 | 1654d89 |
+| 57212e2  | c32629a | 39539e9 |
+| 3aa7489  | 87ba727 | 7719623 (reworded) |
+| be91acd  | 8f9e809 | a75da87 |
+| 22ea834  | e549605 | 4246e3e |
+| --       | 3c714fc | c3895b2 |
+| --       | 3592f49 | bab4052 (head) |
+
+Commits below the first reworded one keep their shas, so `4dbd541`, `cead4c0`, `56aeafe` and
+`3cbfef4` are stable across both rewrites. Both rewrites were safe for the same reason: at
+dispatch neither Linux platform was validated at the head (`validated_sha` = `8f9e809`, head
+`3c714fc`), `pr-state plvs` = `none`, so nothing upstream-visible moved. The archive branches
+are disposable once every platform has revalidated at `bab4052`.
+
+`python3 utils/jargon.py --port plvs` -> clean (exit 0) on the whole branch after the rewrite.
+
+### Finding 6 and one extra lesson promoted to the skill
+
+`.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md`, Build hygiene, two new bullets:
+the `ROCM_PATH` export trap (never export a fallback prefix; `hipconfig` honors it and CMake
+runs `hipconfig`, so a non-existent prefix breaks `enable_language(HIP)`; and a configure test
+that passes `-DCMAKE_HIP_COMPILER` by hand hides the defect), and the companion gate lesson
+from finding 2 (grep the build scripts for every `CUDA_FOUND`-style gate around a bundled GPU
+component, not just the flag forwarding, or the build configures and dies at link).
+
+### State
+
+Fork `moat-port` force-pushed with `--force-with-lease` (`3c714fc` -> `bab4052`; lease held).
+`head_sha` advanced to `bab4052`. Working tree clean (`git status --porcelain` empty; build
+trees are gitignored). Both Linux platforms now read `revalidate`/actionable at the new head.
+Source under `src/`, `include/`, `Thirdparty/*/src` is byte-identical to `22ea834`/`4246e3e`
+except for the two `.sh` files and `new_features.md` touched by the last two rounds, so the
+2026-08-14 device-ISA evidence still transfers; what genuinely needs re-checking is the shell
+plumbing above, which is what this round proved on this host.
+
+### Still open, unchanged by this round
+
+- Deferred item `plvs-nvidia-proprietary-rescan` (a person's ruling).
+- Windows platforms remain blocked on the clang-cl + boost.serialization toolchain wall.
+- The full SLAM configure/link on this host still needs Pangolin, which is not installed.
