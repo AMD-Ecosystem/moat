@@ -2796,3 +2796,181 @@ install-footprint `cuda_public_headers` gate on real GPU hardware for the first 
 this platform. CUDA no-regression gate already covered at this head_sha by
 linux-gfx1100. Integrity clean, jargon clean. Recorded `validated_sha =
 1213551f14f64c92c08048f377034b1ee362659d`, state `completed`.
+
+## Validation 2026-08-14 (windows-gfx1151, first validation) -- PASS
+
+Fork: AMD-Ecosystem/rmagine `moat-port` HEAD `1213551f14f64c92c08048f377034b1ee362659d`
+(no local clone existed for this project on this host; cloned fresh from
+`https://github.com/AMD-Ecosystem/rmagine`, checked out `moat-port`, HEAD matched
+`status.json.head_sha` exactly, no pr-state freeze -- `pr-state rmagine` returns `none`).
+Host: XSJJDAILYL02, AMD Radeon 8060S (gfx1151, RDNA3.5, wave32, ~20 CU APU), Windows 11,
+MSVC 14.44 BuildTools, ROCm from TheRock pip wheels at
+`D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel` (HIP/clang 23.0.0, ROCm
+7.14.0a20260612), `HIP_VISIBLE_DEVICES=0`. This is windows-gfx1151's first validation
+of this project (prior windows evidence was windows-gfx1201/windows-gfx1101, both
+`completed` but stale at `9e642a6`); this run closes the `windows` gate at the current
+head.
+
+### Dependencies (first build on this host -- no reusable agent_space installs existed)
+
+No prior assimp/eigen/tbb/boost installs existed on this host (unlike the B:/develop
+host that produced the windows-gfx1201/gfx1101 recipes). This host has `D:/vcpkg`
+pre-provisioned, so dependencies were installed there instead of building from source:
+
+```
+D:/vcpkg/vcpkg.exe install assimp:x64-windows          # pulls in poly2tri, minizip,
+                                                          # zlib, kubazip, pugixml
+```
+
+`tbb:x64-windows` defaults to the `hwloc` feature, which pulls a large msys2
+autoconf/make toolchain (many small package downloads) and made the install look
+stalled for 30+ minutes with no compiler process running (a real slow-download period,
+not a hang, but indistinguishable from one without checking child processes). Killed it
+and reinstalled with the `hwloc` feature suppressed via the classic-mode bracket syntax:
+
+```
+D:/vcpkg/vcpkg.exe install "tbb[core]:x64-windows"     # 47s, no hwloc
+```
+
+`eigen3:x64-windows` and boost (via `boost-cmake` + component ports) were already
+present from prior port work on this host. All four resolve via ordinary
+`find_package()` CMake-config mode; no manual `BoostConfig.cmake` shim was needed here
+(vcpkg installs real `boost-cmake` config files), unlike the B:/develop host's recipe.
+
+### Configure
+
+All languages (C, CXX, HIP) on the GNU-driver `amdclang{,++}`, not `clang-cl` (this is a
+plain CMake project, not a torch extension -- the opposite clang-cl rule does not apply
+here; confirmed by reproducing the documented recipe unchanged from the gfx1201/gfx1101
+rounds).
+
+```
+source agent_space/win_rocm_env.sh
+ROCM="$ROCM_ROOT"
+ROCM_LLVM="$ROCM_ROOT/lib/llvm/bin"
+VCPKG="D:/vcpkg/installed/x64-windows"
+utils/timeit.sh rmagine compile -- cmake -S projects/rmagine/src -B agent_space/rmagine_gfx1151_build \
+  -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON \
+  -DCMAKE_C_COMPILER="$ROCM_LLVM/amdclang.exe" \
+  -DCMAKE_CXX_COMPILER="$ROCM_LLVM/amdclang++.exe" \
+  -DCMAKE_HIP_COMPILER="$ROCM_LLVM/amdclang++.exe" \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DCMAKE_PREFIX_PATH="$ROCM;$VCPKG" \
+  -DRMAGINE_EMBREE_DISABLE=ON -DRMAGINE_OPTIX_DISABLE=ON \
+  -DRMAGINE_VULKAN_DISABLE=ON -DRMAGINE_VULKAN_CUDA_INTEROP_DISABLE=ON \
+  -DRMAGINE_OUSTER_DISABLE=ON -DRMAGINE_BUILD_TESTS=ON \
+  -DRMAGINE_BUILD_TOOLS=OFF \
+  -DCMAKE_CXX_FLAGS="-D_USE_MATH_DEFINES -DNOMINMAX" \
+  -DCMAKE_C_FLAGS="-D_USE_MATH_DEFINES" \
+  -DCMAKE_WINDOWS_EXPORT_ALL_SYMBOLS=TRUE
+
+# CMake 3.31.0 on this host still injects -fuse-ld=lld-link into HIP LINK_FLAGS
+# (documented on the gfx1201/gfx1101 hosts against CMake 4.3, reproduced here on 3.31.0
+# too); post-process once after configure, before building:
+sed -i 's/-fuse-ld=lld-link//g' agent_space/rmagine_gfx1151_build/build.ninja
+```
+
+`rmagine_hiprt` skipped by CMake with the expected warning (HIPRT SDK absent), matching
+every other validated platform.
+
+### Build
+
+```
+utils/timeit.sh rmagine compile -- cmake --build agent_space/rmagine_gfx1151_build -j6
+```
+
+(Capped at `-j6`; this host has hard-rebooted under `-j16` plus GPU load.) 74/74 targets
+built cleanly. Only pre-existing `nodiscard`/deprecated-API warnings on
+`hipCtxGetCurrent`/`hipCtxSetCurrent`/`hipStreamDestroy`/`cudaDeviceSynchronize`/
+`cudaDriverGetVersion`/`cudaRuntimeGetVersion` (unchanged from every prior round, not
+port-introduced).
+
+### Runtime DLL staging
+
+The System32 `amdhip64_7.dll` is broken on this host and wins over `PATH`, so every DLL
+a test executable needs (transitively) must sit next to the `.exe`:
+
+```
+source agent_space/win_rocm_env.sh
+rocm_stage_runtime agent_space/rmagine_gfx1151_build/bin   # amdhip64_7, amd_comgr*, hiprtc*, rocm_kpack
+cp "$ROCM_ROOT/bin/hiprand.dll" "$ROCM_ROOT/bin/rocrand.dll" agent_space/rmagine_gfx1151_build/bin/
+cp D:/vcpkg/installed/x64-windows/bin/{assimp-vc145-mt,tbb12,poly2tri,minizip,z,kubazip,pugixml}.dll \
+  agent_space/rmagine_gfx1151_build/bin/
+```
+
+First run failed all 8 `cuda_` tests with ctest exit `0xc0000135` (`STATUS_DLL_NOT_FOUND`);
+running an exe directly gave the classic unhelpful MSYS message `error while loading
+shared libraries: ?: cannot open shared object file`. `dumpbin /dependents` (via
+`MSYS2_ARG_CONV_EXCL="*"` to stop bash mangling the `/dependents` flag into a path) on
+`rmagine-core.dll` showed `tbb12.dll` + `assimp-vc145-mt.dll` as direct imports, already
+staged; the missing link was one level deeper -- `assimp-vc145-mt.dll` itself imports
+`poly2tri.dll`, `minizip.dll`, `z.dll`, `kubazip.dll`, `pugixml.dll` (vcpkg's assimp
+splits its bundled third-party format libs into separate DLLs), none of which were
+staged. Copying those five from `D:/vcpkg/installed/x64-windows/bin/` resolved it.
+Classified as an ENVIRONMENT/staging fault (transitive DLL closure incomplete), not a
+port defect -- confirmed by `dumpbin /dependents` walking the exact missing edge before
+guessing.
+
+### Test results
+
+```
+export HIP_VISIBLE_DEVICES=0
+utils/timeit.sh rmagine test -- ctest --test-dir agent_space/rmagine_gfx1151_build --output-on-failure -R "^cuda_"
+# Run 1: 8/8 PASS (7.99 s); Run 2 (determinism): 8/8 PASS (7.97 s)
+utils/timeit.sh rmagine test -- ctest --test-dir agent_space/rmagine_gfx1151_build --output-on-failure -R "^core_"
+# 12/12 PASS (2.69 s) -- non-GPU regression set, unaffected by the HIP change
+```
+
+8 cuda_ tests: cuda_math, cuda_memory, cuda_memory_slicing, cuda_math_svd,
+cuda_math_statistics, cuda_math_reduction, cuda_math_reduction_correctness,
+cuda_public_headers. 12 core_ tests: core_math, core_memory, core_memory_slicing,
+core_quaternion, core_math_svd, core_math_statistics, core_math_cov_transform,
+core_math_gaussians, core_math_matrix_slicing, core_math_reduction, core_math_cholesky,
+core_math_lie.
+
+### GPU dispatch confirmed
+
+```
+./bin/rmagine_tests_cuda_math.exe
+```
+
+Output on device 0: `[RMagine - CudaContext] CUDA Driver Version / Runtime Version:
+71460.85.0 / 71460.85.0` / `Construct context on device 0 - AMD Radeon(TM) 8060S
+Graphics`, followed by real batched CUDA-math and reduction results (non-zero, finite).
+`cuda_math_reduction_correctness` (the `rm::sum`/`mean`/`cov` vs CPU reference gate) is
+part of the 8/8 pass above; both runs' pass/fail outcome and test durations were
+bit-identical, consistent with the full-`__syncthreads`-tree wave-size fix producing a
+deterministic reduction on this wave32 RDNA3.5 APU (matches gfx1201/gfx1101/gfx1100
+RDNA wave32 evidence and gfx90a wave64 evidence at the same head).
+
+### Stage 2 HIPRT verdict
+
+HIPRT SDK not present on this host (out of scope for this run per dispatch notes).
+CMake correctly skipped `rmagine_hiprt` with a warning, consistent with every other
+non-gfx90a-Stage-2 platform. Stage 1 (`rmagine_cuda`) is the validated deliverable here.
+
+### CUDA no-regression gate
+
+Already recorded at this exact head_sha (`1213551`) by the linux-gfx1100 validation
+above (77/77 targets, nvcc 12.8.93, `sm_80` pinned). Runs once per head_sha per the
+validator role; this host also has no CUDA toolchain (Windows, no nvcc), so it would
+have been skipped here regardless.
+
+### Integrity + jargon gates
+
+`git -C projects/rmagine/src status --porcelain` empty; HEAD `1213551` matches
+`status.json.head_sha`. `python3 utils/jargon.py --port rmagine` -> `jargon: clean`.
+Documentation: unchanged from the prior rounds' ruling (README's `USE_HIP` silence and
+the two commit-title items are a person's PR-shaping call, not blocking, per "Review
+2026-08-13"); not re-litigated here.
+
+### Verdict
+
+Stage 1 (rmagine_cuda HIP compute backend) VALIDATED on gfx1151/Radeon 8060S at
+`1213551`: 8/8 cuda_ (2 runs, bit-identical) + 12/12 core_ PASS, no regression. CUDA
+no-regression gate already covered at this head_sha by linux-gfx1100. Integrity clean,
+jargon clean. Recorded `validated_sha = 1213551f14f64c92c08048f377034b1ee362659d`,
+state `completed`. This closes the `windows` coverage gate at the current head (three
+Linux wave64/wave32 arches plus this Windows wave32 arch are now all `completed` at
+`1213551`; windows-gfx1101/windows-gfx1201 remain `completed` but stale at `9e642a6` as
+additive evidence, gating nothing further).
