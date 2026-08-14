@@ -1563,9 +1563,17 @@ Implemented:
   which already multiplied by the reciprocal, so it does not measure the CUDA arm; the
   CUDA side of this change is compile-checked only (no NVIDIA GPU here). See the
   "CUDA path compile check" note below.
-  The old `sum > 1e-20f` subnormal gate is GONE per his request; a subnormal-but-nonzero
-  sum could in principle make 1/sum overflow. Judged unreachable for real images and
-  the reply will carry that rationale.
+  **CORRECTION (2026-08-14, gfx942 porter):** an earlier version of this entry said the
+  `sum > 1e-20f` gate was dropped "per his request". That attribution is WRONG and must
+  not reach the reply. griwodz's three comments on this file (3735790765 line 55,
+  3735834466 line 82, 3735842829 line 83) are about the explicit shuffle width, the
+  `if(inv<=0)` structure and the per-bin ternary; none of them mentions the threshold.
+  The threshold was OUR answer to gemini-code-assist comment 3352320552 (subnormal `sum`
+  makes `__fdividef(1.0f,sum)` overflow to +inf), resolved by our comment 3352439945
+  pointing at 5ee4973. The gate is RESTORED at staging tip d10126b (`sum > 1e-20f`,
+  now on both platforms), which is fully compatible with the shape he asked for, since
+  his test is on `inv <= 0.0f` and the gate still yields `inv == 0.0f` for a degenerate
+  sum. The reply should say the threshold is kept, not that he asked for its removal.
 - **s_desc_norm_l2.h zero-norm guard** reduced to one line on both paths:
   `norm = (norm > 0.0f) ? __frsqrt_rn(norm) : 0.0f`. No isfinite, no #ifdef. Behaviour
   on the "impossible" path is still safe (all-zero descriptor, no 0*inf NaN).
@@ -2321,3 +2329,142 @@ PASS. `linux-gfx1100`: revalidate -> completed; validated_sha =
 4d51a780ae4bc127bdb81dc86859e657f6f5b163 (== head_sha). No fork push (validator does not
 write to the fork); `moat-fix-186` and `moat-port` left exactly as found
 (`moat-port` still f2712723d903).
+## 2026-08-14 -- gfx942 porter: both findings of the second-pass review closed (tip d10126b)
+
+Closes the two findings of "## Review 2026-08-13 (gfx942) -- fix round for PR #186, second
+pass". Staging tip **4d51a78 -> d10126b5dab3f8e166e096ed9428a5ee01061052**, two APPENDED
+commits (see "Branch shape" below -- the round was NOT rewritten this time):
+
+| sha | title |
+|-----|-------|
+| 6d7766d | [ROCm] Keep the small threshold in the RootSift normalization |
+| d10126b | [ROCm] Correct the comment on the rocThrust dependency |
+
+`git merge-base --is-ancestor f2712723 moat-fix-186` -> yes; `origin/moat-port` still
+f2712723d903 after the push (verified with `git ls-remote`).
+
+### Finding 2: the `sum > 1e-20f` gate is restored, on both platforms
+
+`src/popsift/s_desc_norm_rs.h:68` is `const float inv = ( sum > 1e-20f ) ? __fdividef(
+1.0f, sum ) : 0.0f;` again, with the comment rewritten to say why the test is against a
+threshold and not against zero. The `if(inv<=0){...}else{ per-bin ternary }` shape griwodz
+asked for is untouched, so this restores the overflow guard without touching anything he
+requested.
+
+Measured on this host's MI300X (gfx942), with a standalone HIP program that reproduces the
+two expressions (no textures, so it compiles for gfx942 -- see the block note below):
+
+| sum | bin | gate `> 0.0f` | gate `> 1e-20f` |
+|-----|-----|---------------|-----------------|
+| 1.0 | 0.5 | 0.707107 | 0.707107 |
+| 1e-6 | 1e-7 | 0.316228 | 0.316228 |
+| 1e-30 | 1e-31 | 0.316228 | 0 |
+| 1e-40 | 1e-41 | **inf** | 0 |
+| 1.4e-45 | 1.4e-45 | **inf** | 0 |
+| 0 | 0 | 0 | 0 |
+
+So the reviewer's claim is exact: without the gate a positive bin with a subnormal sum
+normalizes to +inf. The cost of the threshold is the 1e-30 row -- a sum in (0, 1e-20] that
+is representable normally is also treated as degenerate. Unreachable for a real descriptor
+(bins are accumulated gradient magnitudes, sums are O(1)-O(1e3)), and it is the published
+behaviour, so restoring it is not a new judgement call.
+
+The attribution error at the disposition list is corrected in place above (search for
+"CORRECTION (2026-08-14"). The upstream reply must NOT tell griwodz he asked for the gate
+to be removed.
+
+### Finding 1: the rocThrust comment in CMakeLists.txt
+
+`CMakeLists.txt:108-110` now reads that rocThrust is the AMD build of Thrust, that its
+stream-bound execution policy is in a different namespace than the NVIDIA one, and that
+`src/popsift/common/thrust_setup.h` is what hides that from the callers. The false "compiles
+unchanged on ROCm" claim is gone and the file no longer contradicts the new header.
+
+### Branch shape: appended, not folded into abe4125/a0b95cc as the review asked
+
+The review asked for the CMake fix inside the Thrust commit. That fold was prepared and
+verified locally (replayed chain, tree identical to what was pushed, every untouched commit
+message byte-identical), but publishing it needs `git push --force-with-lease`, and the
+force-push was refused by this host's permission system. Appending is the sanctioned
+fallback (porter role: "Put follow-ups in a NEW commit"), and it reads correctly upstream:
+the rocThrust comment is PUBLISHED text (from 05e698e, below the frozen tip), so a separate
+"Correct the comment ..." commit is a correction the maintainer can read as one, exactly
+like 27f5c02/67bbce7 did for cuda_to_hip.h. The RootSift commit is the one that reads a
+little oddly next to "Simplify the descriptor normalization guards"; its body states plainly
+that it restores what that commit dropped and why. If a human prefers the folded history,
+re-run this step with force-push permission -- the recipe is the cherry-pick replay recorded
+at "## 2026-08-13 -- fix-up for the review of the fix round".
+
+### This host CANNOT build PopSift: gfx942 has no texture/image API
+
+Hard capability gap, not a port defect and not new to this round. HIP's headers define
+`__HIP_NO_IMAGE_SUPPORT` for `__gfx94plus_clr__`
+(`hip/amd_detail/amd_device_functions.h:780-782`), which marks `tex2D`, `tex2DLayered`,
+`surf3Dread` and friends `__attribute__((unavailable("The image/texture API not supported
+on the device")))` (`hip/amd_detail/host_defines.h:338-343`). PopSift reads the whole
+Gaussian pyramid through textures on BOTH platforms (upstream CUDA included), so the
+gfx942 build stops with ~6 unavailable-function errors per texture-using TU.
+
+Verified it is pre-existing: the same configure/build at the PUBLISHED tip f2712723 (a
+detached worktree, no local edits) fails with the identical
+`'tex2D<float, nullptr>' is unavailable` errors. Recorded as a platform block for
+linux-gfx942; the wave64 gate is carried by gfx90a, which has the image hardware.
+
+```
+# fails on gfx942 at every tip, including the published one:
+cmake -S <src> -B <build> -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_HIP_COMPILER=<rocm>/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=<rocm> \
+  -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
+cmake --build <build> -j
+```
+
+### What was built here instead (ROCm 7.14.60850, AMD Instinct MI300X host)
+
+ROCm on this host is the Python SDK layout, `/opt/conda/envs/py_3.12/lib/python3.12/
+site-packages/_rocm_sdk_devel` (clang++ under `lib/llvm/bin`, rocThrust/rocPRIM under
+`lib/cmake`), so `-DCMAKE_PREFIX_PATH=<that dir>` replaces the usual `/opt/rocm`.
+
+```
+bash utils/timeit.sh popsift compile -- cmake -S projects/popsift/src \
+  -B projects/popsift/src/build-hip-gfx90a -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=<rocm>/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=<rocm> \
+  -DCMAKE_BUILD_TYPE=Release -DPopSift_BUILD_EXAMPLES=ON -DBUILD_SHARED_LIBS=ON
+bash utils/timeit.sh popsift compile -- cmake --build projects/popsift/src/build-hip-gfx90a -j
+```
+Cross-compiled for gfx90a (this host has no gfx90a device, so this is a COMPILE check):
+28 HIP objects, rc=0, libpopsift.so + popsift-demo + popsift-match. Only the pre-existing
+benign warnings (`debug_macros.h` nodiscard `-Wunused-value`, rocThrust
+`-Wdeprecated-declarations` on `thrust::identity<int>`).
+
+CUDA path, nvcc 12.8 (`/opt/conda/envs/cuda-12.8`), clean from scratch, 0 errors 0 warnings,
+libpopsift.so linked for sm_86. This matters because the restored threshold now applies to
+the CUDA arm too.
+
+```
+PATH=/opt/conda/envs/cuda-12.8/bin:$PATH cmake -S projects/popsift/src \
+  -B projects/popsift/src/build-cuda -DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=86 \
+  -DCMAKE_BUILD_TYPE=Release -DPopSift_BUILD_EXAMPLES=OFF -DBUILD_SHARED_LIBS=ON \
+  -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc
+cmake --build projects/popsift/src/build-cuda -j
+```
+
+No Oxford run at this tip from this host (no runnable PopSift binary here). The GPU
+evidence for d10126b has to come from gfx1100/gfx90a/windows revalidation; `advance-head`
+has already flipped those platforms to revalidate.
+
+### Hygiene
+
+- Titles 60 and 53 chars, both `[ROCm]`, agent disclosure and fenced Test Plan in both
+  bodies, no Co-Authored-By / Signed-off-by, `prose.py` clean, added lines ASCII.
+- `jargon.py --commits 4d51a78..moat-fix-186` and `--diff f2712723..moat-fix-186` clean;
+  `jargon.py --port popsift` still reports only the pre-existing "fault classes" hit in the
+  published 05e698e.
+- `git status --porcelain` empty in the fork clone; the temporary worktree used for the
+  published-tip check was removed.
+
+### Gotcha (promoted to the cuda-to-rocm skill)
+
+A GPU that reports a perfectly good gfx target can still be missing an entire API family:
+gfx94x/gfx95x have no image hardware, so every HIP texture and surface function is declared
+`unavailable` and a texture-based port simply does not compile there. Check for it before
+budgeting a validation attempt.

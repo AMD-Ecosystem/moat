@@ -23,10 +23,32 @@ one-line fix (`[wave]` in `config/arches.toml`).
 Ones seen so far, for orientation rather than as a roster:
 
 - gfx90a: MI200-class CDNA2, wavefront 64. Satisfies wave64.
-- gfx942: MI300-class CDNA3, wavefront 64. Additive evidence alongside gfx90a; exercises fp8 paths gfx90a cannot.
+- gfx942: MI300-class CDNA3, wavefront 64. Additive evidence alongside gfx90a; exercises fp8 paths gfx90a cannot. No texture/image hardware -- see below.
 - gfx1100: RDNA3 (Radeon), wavefront 32. Watch warp-size assumptions and RDNA occupancy.
 - gfx1201: RDNA4 (RX 9070 XT), wavefront 32. On Windows it satisfies wave32 and windows together; the same GPU on Linux satisfies wave32 alone.
 - gfx1101, gfx1151: wavefront 32. Records already made against them still satisfy gates -- a validation does not stop being true because a machine changed.
+
+## gfx94x/gfx95x have no texture or surface API at all
+
+**A texture-based port does not compile for gfx942 and later CDNA, on any ROCm.** HIP
+defines `__HIP_NO_IMAGE_SUPPORT` for `__gfx94plus_clr__`
+(`hip/amd_detail/amd_device_functions.h`), which marks every `tex1D/tex2D/tex2DLayered/
+tex3D/surf*` overload `__attribute__((unavailable("The image/texture API not supported on
+the device")))` (`hip/amd_detail/host_defines.h`). MI300-class parts have no image
+hardware; there is nothing to enable and no flag to pass. The build stops with several
+`'tex2D<float, nullptr>' is unavailable` errors per translation unit, which reads like a
+header or toolchain problem and is not one.
+
+Check the target family BEFORE budgeting a build or validation attempt on such a host: if
+the project reads its data through `cudaTextureObject_t` (image pyramids, volume
+resampling, hardware bilinear filtering), the only route on gfx94x+ is replacing texture
+access with plain global-memory loads and software filtering -- a redesign, not a port
+fix. Record it as a per-platform block, not as a port defect, and confirm it is
+pre-existing by building an untouched upstream/published tip on the same host. The gate the
+host would have carried (wave64) is satisfiable on gfx90a, which does have the hardware.
+
+Source: popsift (alicevision/popsift), whose whole Gaussian pyramid is texture-read on
+both platforms; the failure is identical at the published tip.
 
 ## Windows: use TheRock ROCm, not the Windows HIP SDK
 
