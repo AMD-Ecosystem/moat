@@ -10,6 +10,14 @@ The empty row is accurate, not a gap in the record.
 
 The validation lives with **EnvGS**, `completed` on linux-gfx1100, linux-gfx90a, windows-gfx1101, windows-gfx1201.
 
+Superseded from round 1 on: a GPU gate for this repository alone was authored and
+it does prove something. **The harness is `example/validate_rocm.py` in the fork**
+(`projects/diff-surfel-tracing/src/example/validate_rocm.py` in a checkout) -- it
+ships with the port and MOAT keeps no copy, since round 6. Run it from the fork
+checkout root: `HIP_VISIBLE_DEVICES=0 python3 example/validate_rocm.py`. Rounds 1-5
+kept it at `projects/diff-surfel-tracing/validation/validate_tracer_rocm.py`, which
+is the path every entry before round 6 names.
+
 ## Port state
 
 The `moat-port` branch predates this project being tracked here, so the port exists
