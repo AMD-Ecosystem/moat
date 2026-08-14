@@ -7,7 +7,7 @@
   "priority": 5.187,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T00:36:13Z",
-  "updated_at": "2026-08-14T20:28:42Z",
+  "updated_at": "2026-08-14T20:33:09Z",
   "head_sha": "d10126b5dab3f8e166e096ed9428a5ee01061052",
   "pr_url": "https://github.com/alicevision/popsift/pull/186",
   "pr_number": 186,
@@ -16,7 +16,7 @@
   "pr_state": "open",
   "license_spdx": "MPL-2.0",
   "upstream_repo_id": 36376397,
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "linux-gfx942": {
       "blocked": true,
@@ -71,7 +71,7 @@
       "validated_sha": "d10126b5dab3f8e166e096ed9428a5ee01061052",
       "started_at": "2026-05-30T01:38:56Z",
       "completed_at": "2026-08-14T17:54:06Z",
-      "updated_at": "2026-08-14T17:54:06Z",
+      "updated_at": "2026-08-14T20:33:09Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -85,7 +85,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator"
+      "last_agent": "porter:claude"
     },
     "windows-gfx1201": {
       "state": "completed",
@@ -169,13 +169,21 @@
     }
   },
   "published_sha": "d10126b5dab3f8e166e096ed9428a5ee01061052",
-  "fix": null,
+  "fix": {
+    "branch": "moat-fix-186",
+    "base_sha": "d10126b5dab3f8e166e096ed9428a5ee01061052",
+    "review_pr": null,
+    "opened_at": "2026-08-14T20:32:45Z"
+  },
   "porting_released": {
     "arch": "windows-gfx1151",
     "since": "2026-08-14T15:22:47Z",
     "at": "2026-08-14T15:35:16Z"
   },
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx90a",
+    "since": "2026-08-14T20:33:09Z"
+  },
   "pr_approval": {
     "approved_by": "jeffdaily",
     "at": "2026-08-14T20:27:54Z",
