@@ -970,3 +970,115 @@ windows-gfx1101 and windows-gfx1201 into `revalidate`. The delta is Python-only
 and Windows-gated, so the Linux arches should classify as behaviour-preserving;
 `codeobj_diff` does not apply here (nothing compiled changed), so the judgement
 is by inspection of the guard rather than by binary equivalence.
+
+## Validation 2026-08-14 (linux-gfx90a) -- revalidate at 90d6d7c
+
+### Platform
+
+- GPU: AMD Instinct MI250X (gfx90a), device index 3, ROCm (TheRock pip SDK) via
+  `/opt/conda/envs/py_3.12` (`hipcc` under `.../site-packages/_rocm_sdk_devel/bin`)
+- Working branch: `moat-fix-327` (a fix round on open PR #327), checked out at
+  `head_sha` 90d6d7c. `validated_sha` going in was aca06c7 (the published tip).
+- `python3 utils/moatlib.py classify brian2cuda aca06c7 90d6d7c` returned
+  `class=unknown` (classification failed on this host) -> full real-GPU
+  revalidation, no carry-forward attempted.
+
+### Delta re-confirmed by inspection
+
+`git diff aca06c7 90d6d7c -- brian2cuda/device.py`: the entire diff except one
+top-level `import glob` sits inside the existing
+`if is_hip_backend() and os.name == 'nt':` block (glob-matching
+`_rocm_sdk_libraries*` instead of an exact name, and copying `rocrand.dll`
+unconditionally). No Linux-reachable code path changed.
+
+### Build
+
+```bash
+pip install brian2==2.10.1
+pip install -e projects/brian2cuda/src
+# utils/timeit.sh brian2cuda compile -- ... : exit 0
+```
+
+### GPU test results -- 3/3 PASS
+
+Reconstructed the standard 3-case script (agent_space is gitignored, not
+durable) as `agent_space/brian2cuda_revalidate_20260814/test_gfx90a.py`, one
+`brian2` process per case via subprocess (avoids magic-network state bleeding
+across `set_device` calls in one process -- a harness detail, not a port
+issue).
+
+```bash
+HIP_VISIBLE_DEVICES=3 USE_HIP=1 utils/timeit.sh brian2cuda test -- \
+    python3 agent_space/brian2cuda_revalidate_20260814/test_gfx90a.py
+# Phase: test, wall: ~25s, exit: 0
+```
+
+1. LIF NeuronGroup (100 neurons, exact integrator, 10ms): final v range
+   [0.0, 0.3642] -- PASS.
+2. Poisson-driven synapses with 1ms delay (1055 synapses, spike-queue /
+   wave64 spinlock path in spikequeue.h exercised): 104 source spikes, 318
+   target spikes -- PASS.
+3. Recurrent stress network (200 neurons, 12054 synapses, 3419 spikes, no
+   deadlock) -- PASS.
+
+3/3 PASSED. Wave-serialized spinlock still functions correctly on gfx90a
+wave64 after the Windows-only device.py change. No regression.
+
+### CUDA no-regression gate -- environmental wall, not run
+
+Not previously recorded at this head_sha, so attempted here (first Linux arch
+to revalidate 90d6d7c). `/opt/conda/envs/cuda-12.8/bin/nvcc` (12.8.93) is
+present.
+
+Forcing the pure-CUDA path (`PATH` includes both `hipcc` and `nvcc`,
+`CUDA_PATH=/opt/conda/envs/cuda-12.8` so `is_hip_backend()` resolves to
+`False`) and calling `device.build(compile=True, run=False)` on a trivial
+`NeuronGroup` fails before it ever reaches `main.cu` generation:
+
+```
+RuntimeError: Running `nvidia-smi -L` failed. This typically means that you
+have no NVIDIA driver installed. Are you sure there is an NVIDIA GPU on this
+machine?
+```
+
+This traces to `select_gpu()` -> `_select_gpu()` -> `get_best_gpu()` ->
+`get_available_gpus()` in `brian2cuda/utils/gputools.py`, called
+unconditionally from `device.py::generate_main_source()` for the CUDA
+(non-HIP) path, with no preference to bypass GPU auto-detection.
+`git diff 825c0c5 90d6d7c -- brian2cuda/utils/gputools.py` is empty: this
+file is completely untouched by the port, so the requirement predates it.
+Unlike a typical CMake/CUDA-arch build, this project's own Python code
+generator needs live `nvidia-smi` output to pick a GPU id and compute
+capability before it will even write the CUDA source tree -- the CUDA
+toolkit alone (no NVIDIA driver, no GPU) cannot satisfy that on this host.
+Recording `cuda-not-validated: brian2cuda's CUDA-backend GPU selection
+(utils/gputools.py::select_gpu, pre-existing/unmodified by the port) shells
+out to nvidia-smi with no preference to skip it, so codegen itself needs a
+real NVIDIA GPU/driver, not just the toolkit; not satisfiable on an
+AMD-only host`. Not a gate; this is an environmental wall, not a port defect
+(the code that hits it is byte-identical to upstream).
+
+(A first attempt without forcing `CUDA_PATH`/`PATH` auto-selected the HIP
+backend instead of CUDA, because `is_hip_backend()`'s toolchain-fallback
+logic finds `hipcc` on `PATH` with no `nvcc` reachable via its narrower
+`CUDA_PATH`/`/usr/local/cuda` check -- that run is not a CUDA compile and is
+disregarded.)
+
+### Pre-completion checks
+
+- `git -C projects/brian2cuda/src status --porcelain`: clean.
+- Jargon: `--port` cannot resolve the range for a fix round (`fork_branch` is
+  not set for `fix` rounds in `status.json`; `jargon.py`'s `port_range()`
+  only reads `fork_branch`/`PORT_BRANCH`, not `fix.branch`). Ran the
+  equivalent scan explicitly against the branch that will actually ship:
+  `python3 utils/jargon.py -C projects/brian2cuda/src --commits master..moat-fix-327 --diff master...moat-fix-327`
+  -> `jargon: clean`.
+- Documentation: README.md already documents the ROCm/HIP build (added in an
+  earlier round); this fix is a transparent Windows staging correction with
+  no new user-facing build step, so no doc update was needed.
+
+### Verdict
+
+**REVALIDATED** at 90d6d7c. GPU pass 3/3 on gfx90a; CUDA gate recorded as an
+environmental wall (see above), not a regression. `head_sha` == `validated_sha`
+after this round.

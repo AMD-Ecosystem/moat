@@ -48,3 +48,11 @@
 {"kind":"session","ts":"2026-08-13T19:08:27Z","epoch":1786648107.969587900,"event":"start","platform":"windows-gfx1151"}
 {"kind":"phase","ts":"2026-08-13T19:14:44Z","phase":"test","seconds":56.555,"exit":0,"cmd":"bash -c cd /d/Develop/moat/agent_space/brian2cuda_test && /d/Develop/moat/agent_space/b2c_venv/Scripts/python.exe test_basic.py > full.log 2>&1; echo RC=$?"}
 {"kind":"session","ts":"2026-08-13T19:17:39Z","epoch":1786648660.420454300,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-14T00:14:10Z","epoch":1786666450.352072266,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-14T00:14:23Z","phase":"compile","seconds":9.713,"exit":0,"cmd":"bash -c pip install brian2==2.10.1 && pip install -e projects/brian2cuda/src"}
+{"kind":"phase","ts":"2026-08-14T00:14:52Z","phase":"test","seconds":8.745,"exit":1,"cmd":"python3 agent_space/brian2cuda_revalidate_20260814/test_gfx90a.py"}
+{"kind":"phase","ts":"2026-08-14T00:15:27Z","phase":"test","seconds":3.393,"exit":1,"cmd":"python3 agent_space/brian2cuda_revalidate_20260814/test_gfx90a.py"}
+{"kind":"phase","ts":"2026-08-14T00:16:08Z","phase":"test","seconds":25.001,"exit":0,"cmd":"python3 agent_space/brian2cuda_revalidate_20260814/test_gfx90a.py"}
+{"kind":"phase","ts":"2026-08-14T00:17:10Z","phase":"cuda-compile","seconds":8.550,"exit":0,"cmd":"python3 agent_space/brian2cuda_revalidate_20260814/cuda_gate_probe.py"}
+{"kind":"phase","ts":"2026-08-14T00:17:45Z","phase":"cuda-compile","seconds":1.230,"exit":1,"cmd":"python3 agent_space/brian2cuda_revalidate_20260814/cuda_gate_probe.py"}
+{"kind":"session","ts":"2026-08-14T00:20:27Z","epoch":1786666827.920228651,"event":"end","platform":"linux-gfx90a"}
