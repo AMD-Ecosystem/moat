@@ -1946,3 +1946,125 @@ forwarded into the open PR without a regression on this arch; the actual merge i
 `moat-port` remains a person's call per `upstream.py --merge-fix --apply` and is not this
 session's to make. No skill promotion this round -- nothing here generalizes beyond what the
 tracing and hang-rate entries already record for this project.
+
+## Validation 2026-08-14 (validator, linux-gfx90a, MI250X, GPU index 0, revalidate)
+
+Revalidation triggered by the maintainer-round fix on the open upstream PR: this platform's
+`validated_sha` was `4c531f5e` and `head_sha` had moved to `0af9a2d6` on `moat-fix-4635` (the
+`fix` block in status.json, base `4c531f5e`), same trigger the gfx1100 validator recorded on
+2026-08-13. Per the dispatch rule for a `fix` round the working branch is `fix.branch`, not
+`moat-port`. No local clone existed on this host session; cloned fresh
+(`git clone https://github.com/AMD-Ecosystem/colmap.git projects/colmap/src`), then
+`git fetch origin moat-fix-4635 moat-port && git checkout -B moat-fix-4635
+origin/moat-fix-4635`, landing exactly on `0af9a2d6c91e4723ed5c977fde5114c0d789ae10`.
+
+Same delta the gfx1100 validator classified (`class=mixed arch_independent=False
+inert=False`, `cmake/colmap-config.cmake.in` + `src/colmap/feature/sift_test.cc`, +12 lines
+total) -- not re-classified here since the gfx1100 entry already did the work and nothing
+about the delta is arch-specific. Given `mixed` rules out the codeobj_diff carry-forward
+path per the dispatch instructions, a full real-GPU run was done. `HIP_VISIBLE_DEVICES=0` for
+every command; `rocm-smi --showproductname` confirmed GPU 0 is `gfx90a` (MI250X/MI250)
+before relying on it.
+
+### Host setup (fresh container, no prior colmap build on this host)
+
+Full package list from the porter's original gfx90a section plus the `libopencv-dev` trap
+recorded by the gfx1100 reviewer (needed for `find_package(OpenImageIO)`'s exported
+`opencv4` include path, confirmed hit here too before installing it): `libboost-{program-
+options,graph,system,filesystem,test}-dev libeigen3-dev libflann-dev libfreeimage-dev
+libmetis-dev libgoogle-glog-dev libgflags-dev libgtest-dev libgmock-dev libsqlite3-dev
+libglew-dev libsuitesparse-dev libceres-dev libopenimageio-dev openimageio-tools
+libcurl4-openssl-dev libssl-dev libcrypto++-dev qt6-base-dev qt6-svg-dev libqt6opengl6-dev
+libgl1-mesa-dev libglu1-mesa-dev mesa-utils xvfb libxkbcommon-dev libopencv-dev`, all via
+`apt-get install`.
+
+This host's ROCm is a TheRock-style pip package under
+`/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel`, not `/opt/rocm`; its
+`bin/` (with `hipcc`, `rocm-sdk`) is already on `PATH`. No `-DROCM_PATH`/`-DCMAKE_PREFIX_PATH`
+override was needed: `cmake/FindDependencies.cmake`'s `rocm-sdk path --root` precedence step
+(the auto-detect this project itself contributed upstream) resolved it, confirmed by the
+configure log naming the `_rocm_sdk_devel` `hipcc` and `clang++` paths directly.
+
+    cmake -S projects/colmap/src -B projects/colmap/src/build-hip-gui -GNinja \
+      -DCUDA_ENABLED=OFF -DHIP_ENABLED=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+      -DCMAKE_BUILD_TYPE=Release -DTESTS_ENABLED=ON -DGUI_ENABLED=ON \
+      -DCGAL_ENABLED=OFF -DDOWNLOAD_ENABLED=OFF -DONNX_ENABLED=OFF
+
+Configure logs "Enabling GPU support (OpenGL: ON, CUDA: OFF, HIP: ON)".
+
+### Build
+
+    HIP_VISIBLE_DEVICES=0 utils/timeit.sh colmap compile -- \
+      cmake --build projects/colmap/src/build-hip-gui -j"$(nproc)"
+
+Fresh build (no prior configure to reuse on this host): 766/766 targets, no warnings, no
+errors.
+
+### Test, -j4 per the recorded Mesa-teardown workaround
+
+    HIP_VISIBLE_DEVICES=0 utils/timeit.sh colmap test -- \
+      xvfb-run -a ctest --test-dir projects/colmap/src/build-hip-gui -j4 --output-on-failure
+
+**159 of 159 pass, 10.72 s wall.** Matches every prior recorded run on this project exactly
+(no regression, no new failure). No hang at `-j4`, consistent with every prior session.
+
+### Anti-no-op: kernel dispatches, not wall time or ctest green
+
+    HIP_VISIBLE_DEVICES=0 AMD_LOG_LEVEL=3 xvfb-run -a \
+      projects/colmap/src/build-hip-gui/src/colmap/feature/sift_test
+
+32 of 32 `sift_test` cases pass, 2929 ms total. Grepped `ShaderName :` for dispatch counts
+(plain and templated `void Foo<N>(...)` forms collapsed to the base kernel name, same method
+as every prior round):
+
+    FilterH x31, FilterV x31, ReduceHist x45, ComputeDOG x30, RowMatch x25, ColMatch x24,
+    ComputeKEY x18, InitHist x18, ListGen x14, MultiplyDescriptorGRay x12,
+    MultiplyDescriptor x9, NormalizeDescriptor x5, ComputeOrientation x5,
+    ComputeDescriptor x5, DownsampleKernel x5, MultiplyDescriptorG x4, UpsampleKernel x1.
+
+**Exact match, kernel-for-kernel and count-for-count, to every prior baseline recorded on
+either arch** (`notes.md:1194-1203` gfx90a at `4c531f5e`, `notes.md:1878-1884` gfx1100 at
+`0af9a2d6`). Expected: the fix round's only behavior-visible change (the no-GPU-backend skip
+in `sift_test.cc`) is compiled out here since `HIP_ENABLED=ON` defines
+`COLMAP_GPU_ENABLED`, so the compute path is byte-identical to the prior gfx90a run. GPU
+bodies genuinely execute; not a green suite that skipped the compute path.
+
+### CUDA no-regression gate
+
+Skipped: already recorded at this exact head_sha (`0af9a2d6`) by the linux-gfx1100 validator
+on 2026-08-13 (nvcc 12.8.93, `-DCMAKE_CUDA_ARCHITECTURES=80`, `colmap_sift_gpu`,
+`colmap_mvs_cuda`, `colmap_feature_sift_test`, `colmap_main` all compile and link). Per the
+once-per-head_sha rule, not re-run here.
+
+### Jargon and documentation
+
+    python3 utils/jargon.py --port colmap
+    -> jargon: colmap: cannot resolve main..moat-port in .../src -- is the fork clone fetched?
+
+Expected on a fix-round branch (`--port` diffs against `moat-port`, and this checkout is on
+`moat-fix-4635`); scanned the explicit commit range instead, per the dispatch note:
+
+    python3 utils/jargon.py --commits 4c531f5e51f18eeb145309f8650a8da58453c8af..0af9a2d6c91e4723ed5c977fde5114c0d789ae10  -> clean
+    python3 utils/jargon.py --diff    4c531f5e51f18eeb145309f8650a8da58453c8af..0af9a2d6c91e4723ed5c977fde5114c0d789ae10  -> clean
+
+`doc/install.rst:110-152` documents the ROCm/HIP build in COLMAP's house style next to the
+CUDA build, including the `rocm-sdk` auto-detect paragraph this project contributed
+upstream; unchanged by the fix delta and confirmed current at this sha (this session's own
+configure exercised exactly that auto-detect path against a real TheRock pip install).
+
+### Integrity
+
+    git -C projects/colmap/src status --porcelain  -> (empty)
+
+Fork tree clean, HEAD `0af9a2d6c91e4723ed5c977fde5114c0d789ae10` on `moat-fix-4635`, nothing
+to commit; no local edits made this session.
+
+### State recorded
+
+    linux-gfx90a.state = completed
+    linux-gfx90a.validated_sha = 0af9a2d6c91e4723ed5c977fde5114c0d789ae10
+
+Second real-GPU pass at the fix round's tip (gfx1100 was first, 2026-08-13), and wave64
+coverage's own instance of the gate. No skill promotion this round -- nothing here
+generalizes beyond what is already recorded for this project; the `libopencv-dev` trap and
+the TheRock `rocm-sdk` auto-detect path were already documented from the gfx1100 sessions.
