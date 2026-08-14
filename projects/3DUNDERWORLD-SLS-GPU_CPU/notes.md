@@ -1386,3 +1386,202 @@ __builtin_trap() call site); .gitignore/README are non-code; codeobj_diff
 verdict=identical on bin/SLS_GPU (31 exports) and libsls_gpu.a, byte-identical
 to the 2026-07-02 gfx1100 record (6640/12392/27128)"`. State recorded:
 linux-gfx1100 -> completed, validated_sha = bc3e4e9.
+
+## Validation 2026-08-14 (windows-gfx1151, ROCm/TheRock) -- completed at bc3e4e9
+
+Platform: windows-gfx1151. GPU: AMD Radeon 8060S (gfx1151, RDNA3.5, wave32,
+APU), Windows 11. HIP toolchain from a TheRock pip wheel devel SDK (no system
+ROCm install): `D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel`,
+clang 23.0.0 (`AMD clang version 23.0.0git`). HIP_VISIBLE_DEVICES=0. This is
+the first validation of this platform for this project (no prior
+windows-gfx1151 record existed in status.json). SHA validated:
+bc3e4e978128e70c269ee9e972f24ff8a04f14bf (fresh clone of `moat-port`, matches
+head_sha exactly).
+
+This host has no prebuilt OpenCV/GLM cached from a prior session (unlike the
+windows-gfx1101/gfx1201 host), so both were built from source here rather than
+reusing a prebuilt package. GNU-driver `clang++`/`clang.exe` (not `clang-cl`)
+was used for ALL languages (C, CXX, HIP) -- this is a plain CMake project, not
+a torch extension, so the clang-cl rule does not apply.
+
+### Dependency setup
+
+GLM: cloned upstream tag 0.9.9.8 directly (matches the version the
+`__CUDACC__`-steering GLM workaround in `cuda_to_hip.h` was validated against
+on other hosts) rather than vcpkg's 1.0.3:
+
+```bash
+git clone --depth 1 --branch 0.9.9.8 https://github.com/g-truc/glm.git \
+  agent_space/glm_src/glm
+# GLM_INCLUDE_DIR = agent_space/glm_src/glm (contains glm/glm.hpp)
+```
+
+OpenCV: `vcpkg install opencv:x64-windows` (default features) was tried first
+and rejected as a rabbit hole -- default features pull in `dnn` (protobuf,
+flatbuffers), `gapi` (ade), `directml`, `msmf`, killing the time budget on
+dependencies the project's CUDA/HIP path never uses (only `cv::Mat`,
+`imread`/`imshow`/window/trackbar UI, `cvtColor`/`cornerSubPix`/drawing,
+`calibrateCamera`/`findChessboardCorners`/`solvePnP`/`Rodrigues`/`undistort`
+-- i.e. core+imgproc+imgcodecs+highgui+calib3d only). vcpkg's negative-feature
+syntax (`opencv[-dnn,-gapi,...]`) does not work for this port's
+platform-conditional default features, and a positive feature list still
+pulled the same defaults in transitively (unresolved -- not worth further
+time). Switched to a direct OpenCV 4.9.0 source build with a trimmed
+`BUILD_LIST`, using MSVC `cl.exe` (ABI-compatible with the clang++-built
+project code on Windows; this is exactly what the reused prebuilt OpenCV on
+the gfx1101/gfx1201 host already was):
+
+```bash
+git clone --depth 1 --branch 4.9.0 https://github.com/opencv/opencv.git agent_space/opencv_src
+cmake -S agent_space/opencv_src -B agent_space/opencv_src/build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl.exe -DCMAKE_CXX_COMPILER=cl.exe \
+  -DBUILD_LIST=core,imgproc,imgcodecs,highgui,calib3d,features2d,flann,video \
+  -DWITH_MSMF=OFF -DWITH_DSHOW=OFF -DWITH_FFMPEG=OFF -DWITH_OPENEXR=OFF \
+  -DBUILD_SHARED_LIBS=ON -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF \
+  -DBUILD_opencv_python2=OFF -DBUILD_opencv_python3=OFF -DBUILD_opencv_apps=OFF \
+  -DBUILD_JAVA=OFF -DWITH_QT=OFF -DWITH_OPENGL=OFF -DWITH_VTK=OFF -DWITH_IPP=OFF \
+  -DBUILD_ZLIB=ON -DBUILD_JPEG=ON -DBUILD_PNG=ON -DBUILD_TIFF=ON -DBUILD_WEBP=ON \
+  -DCMAKE_INSTALL_PREFIX=agent_space/opencv_install
+cmake --build agent_space/opencv_src/build --target install -j 8
+```
+
+Result: `calib3d core features2d flann highgui imgcodecs imgproc video`
+built; `dnn gapi ml objdetect photo stitching videoio` disabled (by
+dependency, since `msmf`/`dshow`/`dnn`/`gapi` were off). Headers install
+directly to `agent_space/opencv_install/include/opencv2/...` (no `opencv4/`
+prefix) -- the same Windows layout the port's `OPENCV4_COMPAT_DIR` workaround
+targets. `OpenCV_DIR` must point at
+`agent_space/opencv_install/lib` (the directory holding `OpenCVConfig.cmake`
+built for a single-config install), not the install root -- pointing at the
+root makes `OpenCVConfig.cmake` treat it as a "Windows Pack" multi-arch
+distribution and fail with "Found OpenCV Windows Pack but it has no binaries
+compatible with your configuration" even though the files are right there.
+
+`OPENCV4_COMPAT_DIR`: `mklink /J agent_space/opencv4_compat/opencv4
+agent_space/opencv_install/include`, plus a `cxxabi.h` stub for
+`abi::__cxa_demangle` (MSVC ABI has none). Unlike a hypothetical
+nullptr-returning stub, `cmdline.h:109` does `std::string ret(p)` with no null
+check, so the stub must return a non-null malloc'd copy of the mangled name
+(a nullptr return would crash `--help`/bad-arg paths); wrote it that way from
+the start rather than reusing an earlier host's unverified stub text.
+
+### Build -- PASS
+
+```bash
+SRC=projects/3DUNDERWORLD-SLS-GPU_CPU/src
+ROCM=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel
+GLM_DIR=agent_space/glm_src/glm
+OPENCV_DIR=agent_space/opencv_install/lib
+OPENCV4_COMPAT=agent_space/opencv4_compat
+# MSVC 14.44.35207 LIB/INCLUDE on PATH for link.exe/WinSDK only (host compiler
+# is clang++, not clang-cl -- ALL languages on the GNU driver for this
+# plain-CMake project, unlike a torch extension)
+cmake -S "$SRC" -B "$SRC/build_gfx1151" -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DCMAKE_C_COMPILER="$ROCM/lib/llvm/bin/clang.exe" \
+  -DCMAKE_CXX_COMPILER="$ROCM/lib/llvm/bin/clang++.exe" \
+  -DCMAKE_HIP_COMPILER="$ROCM/lib/llvm/bin/clang++.exe" \
+  -DCMAKE_PREFIX_PATH="$ROCM" \
+  -DGLM_INCLUDE_DIR="$GLM_DIR" -DOpenCV_DIR="$OPENCV_DIR" \
+  -DOPENCV4_COMPAT_DIR="$OPENCV4_COMPAT" -DGTEST=OFF
+bash utils/timeit.sh 3DUNDERWORLD-SLS-GPU_CPU compile -- \
+  cmake --build "$SRC/build_gfx1151" -j 6 --target SLS SLS_GPU calibrateCamera generateGraycode
+```
+
+Built `SLS`, `SLS_GPU`, `calibrateCamera`, `generateGraycode` clean (warnings
+only: nodiscard on cudaEvent aliases, deprecated `vsprintf`/`getenv` in
+third-party GLM/abseil code -- all pre-existing, none in port code).
+`sync_main` (the abseil-based camera-sync utility added by the upstream
+`dev` merge, unrelated to the GPU port) was NOT built: it needs
+`cv::VideoCapture`, which lives in OpenCV's `videoio` module, disabled above
+along with `msmf`/`dshow` to keep the from-source OpenCV build inside the
+time budget. This is an environment/build-scope choice (which OpenCV modules
+this host compiled), not a port defect -- `sync_main` has no GPU/HIP surface,
+and every prior platform's `sync_main` build only ever exercised its own
+host C++/abseil path, never the port's HIP code. `SLS`/`SLS_GPU` link and run
+fine against the trimmed OpenCV.
+
+`strings build_gfx1151/bin/SLS_GPU.exe | grep amdgcn-amd-amdhsa--gfx` ->
+`hipv4-amdgcn-amd-amdhsa--gfx1151` (device code genuinely targets gfx1151,
+not a silently-downgraded default).
+
+Runtime DLL staging (per this host's standing note: System32's
+`amdhip64_7.dll` is broken and wins over PATH):
+
+```bash
+rocm_stage_runtime "$SRC/build_gfx1151/bin"   # amdhip64_7/amd_comgr/hiprtc*/rocm_kpack
+cp agent_space/opencv_install/bin/opencv_*490.dll "$SRC/build_gfx1151/bin/"
+```
+
+### GPU reconstruction -- PASS
+
+```bash
+DATA="$SRC/data/alexander"
+BIN="$SRC/build_gfx1151/bin"
+export HIP_VISIBLE_DEVICES=0
+"$BIN/SLS_GPU.exe" --leftcam="$DATA/leftCam/dataset1" --rightcam="$DATA/rightCam/dataset1" \
+  --leftconfig="$DATA/leftCam/calib/output/calib.xml" \
+  --rightconfig="$DATA/rightCam/calib/output/calib.xml" \
+  --output=<run1.ply> --format=jpg --width=1024 --height=768
+# run 2 (determinism), and SLS.exe (CPU reference) with the same args
+```
+
+Point counts: GPU run1 = GPU run2 = CPU = 146064 (matches every prior
+platform's record exactly -- gfx90a, gfx1100, gfx1101, gfx1201, gfx942).
+
+Comparator: a fresh cKDTree-based nearest-neighbor script (scipy 1.17.1,
+numpy 2.4.2; `agent_space/sls_out/compare.py`, not committed), same method as
+every prior platform's record.
+
+- GPU run1 vs CPU (both directions, symmetric): mean=3.705e-5,
+  p99.9=1.005e-3, max=2.516e-3 world units; 100% coverage @tol=0.5 and
+  @tol=10. Matches the gfx90a/gfx1100/gfx1101/gfx1201/gfx942 record to the
+  ASCII-PLY 6-sig-fig print-precision ceiling.
+- Determinism, GPU run1 vs run2: mean=1.343e-5, max=1.010e-3; 100% coverage
+  @tol=0.5 and @tol=10 -- the print-precision ceiling, same atomicInc
+  bucket-fill-order float-non-associativity pattern as every prior platform.
+
+### CPU gtest suite -- not built (documented Windows limitation, not a regression)
+
+`-DGTEST=OFF`, same as the gfx1101/gfx1201 records: the test CMakeLists
+expects Unix `libgtest.a` naming, Windows produces `gtest.lib`. CPU
+correctness is already validated on Linux (gfx90a/gfx1100/gfx942, 3/3 pass
+each); skipping it here does not affect the GPU correctness gate this
+platform exists to prove.
+
+### CUDA no-regression gate -- already recorded, not re-run
+
+PASSED at 7dc3a24 with a byte-identical-PTX proof the CUDA path is restored
+(2026-08-09 section), and reconfirmed still-applicable at this exact head by
+the gfx942 validator (2026-08-11 section: the 7dc3a24..bc3e4e9 delta touches
+only README.md/.gitignore). Not re-run here per "skip if notes.md already
+records the CUDA gate at this head_sha" -- also this host has no CUDA
+toolkit, which would independently exempt it.
+
+### Jargon + documentation gate -- PASS
+
+`python3 utils/jargon.py --port 3DUNDERWORLD-SLS-GPU_CPU`: clean (required a
+`git fetch origin dev:dev` first in this fresh clone so the tool could
+resolve the `dev..moat-port` range). README.md already documents the ROCm/HIP
+build (`USE_HIP`, `CMAKE_HIP_ARCHITECTURES`, `CMAKE_HIP_COMPILER` fallback,
+`OPENCV4_COMPAT_DIR` including the exact Windows junction recipe) beside the
+CUDA instructions; re-verified against the configure line used above.
+
+### Integrity gate
+
+`git status --porcelain` in `src/` clean; `git rev-parse HEAD` ==
+bc3e4e978128e70c269ee9e972f24ff8a04f14bf == head_sha. No source or build file
+was modified by this validation run; all workaround files (GLM clone, OpenCV
+build, `opencv4_compat/`) live in `agent_space/`, outside the fork.
+
+### Verdict
+
+PASS. gfx1151 (RDNA3.5, wave32, APU) produces numerically identical
+reconstruction results (to ASCII-PLY print precision) to the CPU reference and
+to every other validated platform (gfx90a, gfx1100, gfx1101, gfx1201, gfx942),
+and is deterministic across runs at output precision. This closes the
+`windows` coverage gate at head_sha bc3e4e9 (windows-gfx1101/gfx1201 remain
+`completed` but stale at 633065b8; this is the platform that closes the gate
+at the current head). State recorded: windows-gfx1151 -> completed,
+validated_sha = bc3e4e978128e70c269ee9e972f24ff8a04f14bf.
