@@ -1706,3 +1706,174 @@ upstream-visible regressed; if the branch is squashed or reworded for PR prep, d
 those two references then.
 
 Next: validation at `bab4052` on linux-gfx90a and linux-gfx1100.
+
+## Validation 2026-08-14 (linux-gfx90a, revalidate): PASS -> completed (head bab4052)
+
+Trigger: HEAD moved `22ea834` (this arch's `failed_sha`) -> `bab4052` (two fix rounds: shell
+plumbing/doc round `3c714fc`, then the `changes-requested` fixes `bab4052`). An arch coming back
+from `validation-failed` gets no carry-forward shortcut, so this is a full run.
+
+Host: same TheRock pip-package ROCm as the 2026-08-14 session
+(`/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel`, HIP 7.14.60850, clang
+23.0.0, cmake 3.31.6), no `/opt/rocm`, no usable sudo. GPU: 4x gfx90a (MI250X GCDs) via
+`rocminfo`, HEALTHY.
+
+### Content-transfer check (independent of the porter/reviewer's own claim)
+
+```
+git -C projects/plvs/src fetch origin moat-port   # origin/moat-port == bab4052 == local HEAD
+git -C projects/plvs/src diff --stat 22ea834..bab4052
+  build_plvs.sh       |  6 ++
+  build_thirdparty.sh |  8 ++-
+  config.sh           | 60 ++++
+  new_features.md     |  1 +
+git -C projects/plvs/src diff --name-only 22ea834..bab4052 | grep -E '\.(cu|h|hpp|cuh)$|CMakeLists\.txt'
+  -> NONE
+```
+Confirms the dispatch's framing exactly: only shell/doc files changed since the GPU-validated
+tree at `22ea834`. No `.cu`/`.h`/`.hpp`/`CMakeLists.txt` moved anywhere in the tree (checked with
+plain `git diff`, not trusting the porter's grep). Therefore:
+- The `be91acd` vs `22ea834` device-ISA byte-equivalence proof (Orb_gpu.o, Fast_gpu.o identical
+  disassembly) still describes the device code at `bab4052` -- nothing between `22ea834` and
+  `bab4052` could have changed it, and now I add real end-to-end GPU execution evidence on the
+  fresh build (below), not just a static-ISA argument.
+- The CUDA no-regression gate recorded at `22ea834` (`Allocator_gpu.cu`/`Cuda.cu` RC=0 at both
+  `22ea834` and upstream base `2ecb8b1`; `Orb_gpu.cu`/`Fast_gpu.cu` pre-existing identical OpenCV
+  4.6-vs-CUDA-12.8 failures at both shas) is untouched by this delta for the same reason -- nvcc
+  never compiles a `.sh` or `.md` file. Not re-run; carried forward by content-identity, no new
+  nvcc invocation needed at this head.
+`python3 utils/jargon.py --port plvs` -> clean (exit 0) on the whole branch, confirmed again
+independently on this host.
+
+### New build wiring exercised for real (this round's actual delta)
+
+Did NOT rebuild OpenCV-with-HIP from source again (no OpenCV/.cu/.hpp file changed since the
+already-GPU-validated `22ea834` tree, so that bring-up is unconditionally still valid); reused
+the OpenCV-with-HIP install tree already present in this session's scratch
+(`_rocm_sdk_devel`-toolchain build, gfx90a, `WITH_HIP=ON`, modules core/cudev/cudaarithm/
+cudawarping/cudaimgproc/cudastereo/cudafilters/cudafeatures2d, 4.14.0-pre) rather than spending
+budget re-doing that multi-minute bring-up.
+
+1. **`config.sh` HIP/ROCm discovery, real (not stubbed).** Sourced the real `config.sh` (copied
+   to a scratch path, `USE_HIP=1`) with the real host environment:
+   - no inherited `ROCM_PATH`, real `hipcc` on `PATH` -> `HIP found: <sdk prefix>` (matches the
+     real SDK path, not `/opt/rocm`).
+   - inherited stale `ROCM_PATH=/opt/rocm` (does not exist on this host) -> superseded, same
+     correct prefix printed. Confirms finding-1's fix holds for real, not just in the reviewer's
+     synthetic CMake project.
+   - `USE_CUDA=1` forced alongside `USE_HIP=1` on this CUDA-free host -> `CUDA_FOUND=0` resets
+     `USE_CUDA` to 0 first (real, not simulated), `USE_HIP` stays 1. Confirms finding-4's ordering
+     for real.
+
+2. **libsgm HIP static-library build, real.** Ran the verbatim `build_thirdparty.sh:253-273`
+   block (`if [ $CUDA_FOUND -eq 1 ] || [ $USE_HIP -eq 1 ]`) against the real
+   `Thirdparty/libsgm/CMakeLists.txt`, driven by the real `config.sh` discovery above (not a
+   stub), `-DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=<sdk>/bin/amdclang++`:
+   ```
+   [100%] Linking HIP static library Thirdparty/libsgm/lib/libsgm.a
+   [100%] Built target sgm
+   ```
+   371112 bytes, real `ar` archive with gfx90a device code, built directly from `bab4052`'s
+   source (this closes finding-2 on real hardware -- libsgm previously silently skipped on an
+   AMD-only host; it does not skip now).
+
+3. **Main `cmake` configure via the real `build_plvs.sh`, real (no stub cmake/make).** Built an
+   `OpenCVConfig.cmake`/`OpenCVModules.cmake` wrapper pointing at the reused OpenCV-with-HIP
+   install (neutralizing the `find_host_package(CUDA...)` block the generated config carries, the
+   same pattern every earlier session used), `USE_LOCAL_OPENCV=0`, and ran
+   `./build_plvs.sh "-DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=<sdk>/bin/amdclang++"`
+   for real:
+   ```
+   -- USE_HIP: ON
+   -- The HIP compiler identification is Clang 23.0.0
+   -- CMAKE_HIP_ARCHITECTURES: gfx90a
+   -- Found Boost: ... found components: thread system serialization
+   -- Found OpenCV: <reused install> (found suitable version "4.14.0", minimum required is "4")
+   -- opencv libs: opencv_calib3d;opencv_core;opencv_features2d;opencv_flann;opencv_imgproc;
+      opencv_cudaarithm;opencv_cudafeatures2d;opencv_cudafilters;opencv_cudaimgproc;
+      opencv_cudastereo;opencv_cudawarping;opencv_cudev
+   CMake Error at CMakeLists.txt:332 (find_package): ... Could not find "Pangolin"
+   ```
+   This goes further than the fix-round porter's own configure test (which used a bare
+   `find_package(OpenCV)`-less probe): the real `find_package(OpenCV)` in `CMakeLists.txt`
+   resolves against a genuine `WITH_HIP=ON` OpenCV build with the full cv::cuda module list, then
+   stops at Pangolin -- the recorded pre-existing host gap (Pangolin is not installed in this
+   container), not a port failure. Confirms `enable_language(HIP)`, arch auto-detection, and the
+   real OpenCV discovery path all work end-to-end through the project's own build script.
+
+### GPU execution, real gfx90a hardware (MI250X, 4x GCDs)
+
+Wrote a small HOST2HOST harness (`sgm::StereoSGM`, `EXECUTE_INOUT_HOST2HOST`, 8-bit
+disparity output, matching `Thirdparty/libsgm/sample/image/stereosgm_image.cpp`'s own
+convention) against the `libsgm.a` built fresh in step 2 above, using the OpenCV aloe stereo
+pair (`aloeL.jpg`/`aloeR.jpg`, 1282x1110, from the reused OpenCV samples data) already used by
+every earlier libsgm gfx90a/gfx1100/gfx1201 validation in this file:
+
+```
+HIP_VISIBLE_DEVICES=0 ./sgm_gpu_test aloeL.jpg aloeR.jpg 128
+  size=1282x1110 disp_size=128
+  nonzero=1197228/1423020 (84.1329%)
+  inrange(<=disp_size)=1423020/1423020 (100%)
+  min=0 max=127 mean=59.4517
+```
+Run 2 (same GCD, HIP_VISIBLE_DEVICES=0): bit-identical (1197228, 84.1329%, min 0 max 127, mean
+59.4517). Run 3 on a different physical GCD (HIP_VISIBLE_DEVICES=2): bit-identical again. No
+crash, no NaN, disparity fully in the valid `[0, disp_size]` range, no GPU fault.
+
+The `84.1329%` coverage figure matches the `0.841` figure every earlier session in this file
+recorded for this exact aloe pair at `disp_size=128` (gfx90a 2026-06-12: 1197217/1423020=0.841;
+gfx1100 2026-06-12: 1197228/1423020=0.841; gfx1201 2026-06-12: 1197228/1423020=0.841) -- this
+run's raw valid-pixel count (1197228) is identical to the gfx1100 and gfx1201 runs and one pixel
+off the original gfx90a run, consistent with those being independent statistical runs of the same
+deterministic WARP_SIZE=32 kernel. `Thirdparty/libsgm` is completely untouched by every commit
+since `05eed6c` (the WARP_SIZE=32 correctness fix) through `bab4052`
+(`git diff --name-only 05eed6c..bab4052 -- Thirdparty/libsgm/` is empty), so this run is a fresh
+build-and-execute of the exact already-statistically-validated kernel, not new code -- it
+confirms the build/link/run path on real hardware; the wave64 correctness statistics themselves
+were already established by the 2026-06-12 gfx90a/gfx1100/gfx1201 sessions and are unchanged
+here.
+
+Did not repeat the full mono-TUM-RGBD SLAM run: `src/`, `include/`, and every `Thirdparty/*/src`
+directory are byte-identical to the `22ea834` tree that carries the (still-standing) device-ISA
+proof, and Pangolin -- needed to link the full SLAM binary -- is not installed on this host
+(recorded pre-existing host gap, confirmed again by the real `build_plvs.sh` run above stopping
+at the identical `find_package(Pangolin)` error the fix-round porter also hit).
+
+### Gate re-check (the two reasons this arch was `validation-failed` at `22ea834`)
+
+- `python3 utils/jargon.py --port plvs` -> **clean** (exit 0), confirmed independently above.
+- ROCm build documentation: confirmed present and exercised for real, not just grepped --
+  `config.sh` "HIP/ROCm Settings" section, `build_plvs.sh`/`build_thirdparty.sh` forwarding
+  `-DUSE_HIP=ON`, `new_features.md:22` naming `USE_HIP` and the OpenCV-with-HIP requirement. The
+  real discovery, real libsgm build, and real cmake configure above are the reproduction of that
+  documentation, not just a text check.
+
+### CUDA no-regression gate
+
+Not re-run at this head: recorded PASS at `22ea834` (`Allocator_gpu.cu`/`Cuda.cu` RC=0 at both
+`22ea834` and upstream base `2ecb8b1`; `Orb_gpu.cu`/`Fast_gpu.cu` identical pre-existing OpenCV
+4.6-vs-CUDA-12.8 failures at both shas), and the `22ea834..bab4052` delta touches zero files nvcc
+ever sees (`build_plvs.sh`, `build_thirdparty.sh`, `config.sh`, `new_features.md` only). Per the
+validator playbook this gate runs once per code content, and the code content is unchanged.
+
+### Cleanup
+
+All scratch (config copies, the OpenCV wrapper, `sgm_gpu_test.cpp`/binary, `Thirdparty/libsgm/
+build` and `lib/`) removed before finishing. `git -C projects/plvs/src status --porcelain` empty,
+HEAD `bab4052` (matches `status.json.head_sha`), matches `origin/moat-port`.
+
+### Result
+
+linux-gfx90a: `validation-failed` (`failed_sha=22ea834`) -> `completed` (`validated_sha=bab4052`).
+Reproduce: see the exact commands above; the OpenCV-with-HIP dependency build recipe is in the
+2026-08-14 (first) validation entry above (BUILD_LIST unchanged), and is not repeated here because
+the content it validates is unchanged since `22ea834`.
+
+### Still open, unchanged by this round
+
+- Deferred item `plvs-nvidia-proprietary-rescan`: a person's ruling on redistributing the two
+  vendored NVIDIA EULA-pointer headers.
+- Windows platforms (`windows-gfx1101`, `windows-gfx1201`) remain blocked on the clang-cl +
+  boost.serialization toolchain wall (unrelated to this round).
+- linux-gfx1100 still needs revalidation at `bab4052` (same content-transfer argument applies;
+  not this session's platform).

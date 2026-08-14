@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-08-14T03:39:55Z",
+  "updated_at": "2026-08-14T03:49:31Z",
   "head_sha": "bab4052335d06b97adf91316892ece249c763037",
   "depends_on": [
     "opencv_contrib"
@@ -75,13 +75,13 @@
       }
     },
     "linux-gfx90a": {
-      "state": "validation-failed",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "be91acd9d8f97d55547e32b817ae181bba33d23f",
+      "validated_sha": "bab4052335d06b97adf91316892ece249c763037",
       "started_at": "2026-06-05T00:11:54Z",
-      "completed_at": "2026-06-23T22:48:03Z",
-      "updated_at": "2026-08-14T03:39:55Z",
+      "completed_at": "2026-08-14T03:49:31Z",
+      "updated_at": "2026-08-14T03:49:31Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -95,13 +95,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer",
-      "carry_forward": {
-        "to": "be91acd9d8f97d55547e32b817ae181bba33d23f",
-        "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:48:03Z"
-      },
+      "last_agent": "validator",
       "failed_sha": "22ea83454241447b418832da2ee2c1a3b25a08a8"
     },
     "windows-gfx1201": {
