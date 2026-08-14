@@ -2098,3 +2098,133 @@ kernel source is in the fix round's delta at all. Per the validator role
 `python3 utils/moatlib.py set-state mahout linux-gfx90a completed --agent
 validator` -> recorded `validated_sha` = `head_sha` =
 9a3a08e0f3061b00ddf8f2cfb3f5cd5c49b38d66. No anomalies.
+
+## Validation 2026-08-14 (validator, windows-gfx1151) -- fix round 1399 revalidation, PASS
+
+Independent revalidation on `windows-gfx1151`, closing the `windows` gate at the
+fix round's staging tip. windows-gfx1101/windows-gfx1201 were `completed` but
+stale at `f84b39ae`; this is the first Windows run at `head_sha`
+9a3a08e0f3061b00ddf8f2cfb3f5cd5c49b38d66. Fresh clone of
+`https://github.com/AMD-Ecosystem/mahout.git` into `projects/mahout/src`
+(the earlier local checkout pointed at a personal remote and predated the fix
+round), `git fetch origin moat-fix-1399 && git checkout moat-fix-1399`.
+Confirmed: `git rev-parse HEAD` == `head_sha`, `git status --porcelain` empty
+before and after, `origin/moat-port` still `fd8c7a38` (freeze intact). The
+Windows delta from the 2026-06-03 round (`qdp_gpu_platform` cfg, hip_compat
+`M_SQRT1_2`, the windows platform/mod.rs stub gating) is present unchanged in
+this tree -- grep-confirmed.
+
+Platform: AMD Radeon(TM) 8060S Graphics (gfx1151, RDNA3.5 wave32), Windows 11,
+TheRock ROCm 7.14 (`D:/Develop/TheRock/.venv` pip wheels, `_rocm_sdk_devel`),
+torch 2.12.0+rocm7.14.0a20260519 (`agent_space/torch_venv`, Python 3.13.13),
+Rust/cargo 1.96.0 (msvc target), maturin 1.14.1 (freshly pip-installed into the
+torch venv; not previously present).
+
+### Build + test (Rust, exact commands)
+```
+source agent_space/win_rocm_env.sh
+export CARGO_HOME=/d/Develop/.cargo RUSTUP_HOME=/d/Develop/.rustup
+export PATH="$CARGO_HOME/bin:$PATH"
+export QDP_USE_HIP=1 QDP_HIP_ARCH_LIST=gfx1151
+export QDP_HIPCC="$(cygpath -w "$ROCM_ROOT/bin/hipcc.exe")"
+utils/timeit.sh mahout compile -- cargo build \
+  --manifest-path projects/mahout/src/qdp/Cargo.toml \
+  -p qdp-core -p qdp-kernels --no-default-features --features hip -j6
+cargo build --manifest-path projects/mahout/src/qdp/Cargo.toml \
+  -p qdp-core -p qdp-kernels --no-default-features --features hip --tests -j6
+rocm_stage_runtime projects/mahout/src/qdp/target/debug/deps   # amdhip64_7,
+  # amd_comgr, hiprtc*, rocm_kpack next to the test exes (System32's
+  # amdhip64_7.dll is broken on this host and wins over PATH)
+mkdir -p D:/tmp   # some tests hardcode /tmp, which Windows resolves to D:\tmp
+utils/timeit.sh mahout test -- cargo test \
+  --manifest-path projects/mahout/src/qdp/Cargo.toml \
+  -p qdp-core -p qdp-kernels --no-default-features --features hip -- \
+  --test-threads=1
+```
+- build: exit 0, -j6 (host has hard-rebooted under -j16 + GPU load; capped).
+  Same pre-existing warnings as every other round (iqp.cu unused param,
+  phase.cu unused variable, qdp-core cosmetic "CUDA toolkit not found" notice).
+- test: exit 0, **368 passed, 0 failed, 4 ignored**, summed independently from
+  the 28 `test result:` lines -- byte-identical to the linux-gfx1100 and
+  linux-gfx90a fix-round revalidations at this same head_sha (100 lib + 5
+  arrow_ipc_io + 9 estimate + 12 gpu_angle + 8 gpu_api_workflow + 7 gpu_basis +
+  9 gpu_dlpack + 17 gpu_fidelity + 22 gpu_iqp + 4 gpu_memory_safety + 2
+  gpu_norm_f32 + 69 gpu_ptr_encoding + 8 gpu_validation + 6 null_handling + 4
+  numpy + 7 parquet_f32 + 4 parquet_f32_fidelity + 8 parquet_io + 14
+  preprocessing + 3 reader + 9 tensorflow_io + 3 torch_io + 6 types + 0
+  qdp-kernels lib + 21 amplitude_encode + 10 angle_encode + 1 doctest + 0
+  qdp-kernels doctests = 368). Ignored are the 4 pre-existing doctest fixtures
+  (gpu::pipeline::run_dual_stream_pipeline, io::read_numpy_batch, reader,
+  readers::numpy::NumpyReader). Includes the new upstream tests from this fix
+  round (estimate.rs 9, parquet_f32_fidelity.rs 4, gpu_ptr_encoding's excessive-
+  qubit case) and the async-pipeline / stream-ordering wave32 regressions
+  called out in the 2026-06 rounds (test_l2_norm_batch_kernel_stream,
+  gpu_api_workflow async cases) all still pass.
+
+### Python parity (wheel rebuild + pytest -- exercises the new upstream
+`cuda_available()` pyfunction this fix round adds to qdp-python/src/lib.rs)
+The linux fix-round revalidations only ran the Rust suite; ran the established
+Python parity recipe here since the delta touches Python bindings directly.
+```
+D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe -m pip install maturin
+utils/timeit.sh mahout compile -- \
+  agent_space/torch_venv/Scripts/python.exe -m maturin build \
+  --manifest-path projects/mahout/src/qdp/qdp-python/Cargo.toml \
+  --features hip --profile dev --out agent_space/mahout_wheels_win \
+  --interpreter agent_space/torch_venv/Scripts/python.exe
+agent_space/torch_venv/Scripts/python.exe -m pip install --no-deps \
+  --force-reinstall --ignore-requires-python \
+  agent_space/mahout_wheels_win/qumat_qdp-0.3.0.dev0-cp313-cp313-win_amd64.whl
+rocm_stage_runtime agent_space/torch_venv/Lib/site-packages/_qdp
+utils/timeit.sh mahout test -- agent_space/torch_venv/Scripts/python.exe \
+  -m pytest projects/mahout/src/testing/qdp \
+  projects/mahout/src/testing/qdp_python \
+  projects/mahout/src/qdp/qdp-python/tests -q
+```
+- `_qdp.cuda_available()` (the new pyfunction) returns `True` on this HIP build
+  -- confirmed by direct import before running pytest.
+- pytest: exit 0, **286 passed, 31 skipped, 0 failed** (317 collected). Skips:
+  2 multi-GPU, 1 tensorflow-absent, 1 loader-path-timing
+  (`test_file_loader_unsupported_extension_raises` -- the 2026-06-03 round's
+  "known-acceptable failure" is now a skip, not a failure: re-confirmed by
+  running it in isolation, "Loader may validate path before Rust"; this is an
+  improvement over the prior baseline, not a widened accepted-failure set), 5
+  torch_ref sm_-arch checks (CUDA-only reference path; this host's torch build
+  does not list gfx1151 in its supported-arch table, so the AMD GPU falls back
+  to CPU for those specific reference comparisons -- a torch-wheel arch-table
+  gap, not a port defect), 2 AmdQdpEngine-not-built, 20 Triton AMD backend
+  (triton not installed in this venv). 0 failures total; 286 vs the 2026-06-03
+  baseline's 282 is +4, consistent with the fix round's upstream test additions
+  reaching the Python-visible surface indirectly (estimate/fidelity coverage is
+  Rust-only; the delta itself is small on the Python side -- not independently
+  reconciled line-by-line, but 0 failures and 0 unexplained skips is the bar).
+
+### CUDA no-regression gate
+Not re-run: this Windows host has no CUDA toolkit (the gate is compile-only via
+nvcc and lands on whichever Linux arch validates first). Already recorded once
+for this exact head_sha under "Fix round 2026-08-13 (porter, linux-gfx1100)"
+(real nvcc 12.8, build-only, exit 0) and confirmed against tree
+5584f6f96cd105dd30684030676e036d51c5d858 == 9a3a08e0f's tree by both the
+porter's amend and the reviewer's re-review. No .cu kernel source is in the
+fix round's delta.
+
+### Gates
+- Jargon: `python3 utils/jargon.py -C projects/mahout/src --commits
+  main..moat-fix-1399 --diff main..moat-fix-1399` (`--port mahout` alone
+  resolves `main..moat-port`, the frozen published branch, and misses the
+  in-flight fix round -- same caveat the gfx90a round hit; fetched `main`
+  first). Result: clean.
+- Documentation: unchanged by this round; `qdp/DEVELOPMENT.md` ("### AMD GPU
+  build (ROCm / HIP)") and `qdp/qdp-python/README.md` ("AMD ROCm Usage")
+  present and accurate, grep-confirmed in this checkout.
+- Fork worktree clean (`git status --porcelain` empty) before and after.
+
+### Result
+`python3 utils/moatlib.py set-state mahout windows-gfx1151 completed --agent
+validator` -> recorded `validated_sha` = `head_sha` =
+9a3a08e0f3061b00ddf8f2cfb3f5cd5c49b38d66. `windows` gate closed at this
+head_sha (linux-gfx90a and linux-gfx1100 already `completed` here; the
+`wave64`/`wave32` gates were already satisfied by them). windows-gfx1101 and
+windows-gfx1201 remain `completed` but stale at `f84b39ae` -- no gate is open
+on them since gfx1151 already satisfies `windows`, but they will show
+`revalidate` if anyone dispatches them. No anomalies, no code changes needed.

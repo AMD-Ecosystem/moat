@@ -136,3 +136,12 @@
 {"kind":"phase","ts":"2026-08-13T23:39:23Z","phase":"test","seconds":26.626,"exit":0,"cmd":"cargo test --manifest-path projects/mahout/src/qdp/Cargo.toml -p qdp-core -p qdp-kernels --no-default-features --features hip -- --test-threads=1"}
 {"kind":"session","ts":"2026-08-13T23:41:56Z","epoch":1786664516.432727021,"event":"end","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-08-13T23:42:04Z","epoch":1786664524.661354529,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-14T16:37:07Z","phase":"compile","seconds":2.273,"exit":101,"cmd":"cargo build -p qdp-core -p qdp-kernels --no-default-features --features hip -j6"}
+{"kind":"phase","ts":"2026-08-14T16:37:21Z","phase":"compile","seconds":2.602,"exit":0,"cmd":"cargo build --manifest-path projects/mahout/src/qdp/Cargo.toml -p qdp-core -p qdp-kernels --no-default-features --features hip -j6"}
+{"kind":"session","ts":"2026-08-14T16:37:28Z","epoch":1786725448.635955700,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-14T16:39:47Z","phase":"test","seconds":72.239,"exit":0,"cmd":"cargo test --manifest-path projects/mahout/src/qdp/Cargo.toml -p qdp-core -p qdp-kernels --no-default-features --features hip -- --test-threads=1"}
+{"kind":"phase","ts":"2026-08-14T16:42:00Z","phase":"compile","seconds":45.191,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe -m maturin build --manifest-path projects/mahout/src/qdp/qdp-python/Cargo.toml --features hip --profile dev --out agent_space/mahout_wheels_win --interpreter D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe"}
+{"kind":"phase","ts":"2026-08-14T16:42:44Z","phase":"test","seconds":1.973,"exit":4,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe -m pytest testing qdp/qdp-python/tests -q"}
+{"kind":"phase","ts":"2026-08-14T16:43:02Z","phase":"test","seconds":1.738,"exit":4,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe -m pytest testing/qdp testing/qdp_python qdp/qdp-python/tests -q"}
+{"kind":"phase","ts":"2026-08-14T16:43:36Z","phase":"test","seconds":9.422,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe -m pytest projects/mahout/src/testing/qdp projects/mahout/src/testing/qdp_python projects/mahout/src/qdp/qdp-python/tests -q"}
+{"kind":"session","ts":"2026-08-14T16:45:30Z","epoch":1786725931.170604800,"event":"end","platform":"windows-gfx1151"}
