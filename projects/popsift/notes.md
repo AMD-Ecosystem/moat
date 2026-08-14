@@ -2856,3 +2856,69 @@ platforms (linux-gfx90a, linux-gfx1100, windows-gfx1151, windows-gfx1201, window
 read `revalidate`, which is expected: the delta is a 2-line include addition in a file every one
 of them compiles, but the evidence must exist at the new tip before it reaches the open PR.
 `git -C projects/popsift/src status --porcelain` empty.
+
+## Review 2026-08-14 (linux-gfx90a) -- fix round for PR #186, merge of upstream develop (delta d10126b..badbfc3)
+
+Reviewed `git diff d10126b5dab3..badbfc354db4` on `moat-fix-186` in the local clone after
+`git fetch origin`. `origin/moat-fix-186` == `badbfc354db4f4b39363606924d80dabd7f76356` ==
+`head_sha`; `origin/moat-port` still frozen at `d10126b5dab3` == `published_sha`.
+`git status --porcelain` empty.
+
+Verdict: **changes-requested**, on commit hygiene only. The code delta is correct.
+
+### Commit Hygiene
+
+- The merge commit's title is `Merge branch 'develop' into the ROCm support branch`
+  (`badbfc35`, `git log -1 --format=%s`). It does not start with `[ROCm]`, which AGENTS.md
+  requires of every upstream-visible commit title, and it is the only commit on this branch
+  that does not: `a0b95cc`, `4d51a78`, `6d7766d`, `d10126b` and every commit before them are
+  `[ROCm] ...`. MOAT has already merged upstream into a port branch elsewhere with the
+  prefix in place (`mahout` `5a15c3f`, `[ROCm] Merge upstream main into the AMD/HIP branch`),
+  so the convention holds for merges too. Fix: `git commit --amend` on the merge (both
+  parents are preserved) with e.g. `[ROCm] Merge upstream develop into the ROCm branch`
+  (48 chars), keep the body verbatim, `git push --force-with-lease origin moat-fix-186`,
+  then `moatlib.py advance-head popsift <new sha>`.
+
+  Raised now rather than after validation on purpose: the amend changes `head_sha`, and all
+  five completed platforms already owe a revalidation at the fix-round tip. Amending first
+  costs one push; amending after the validators run costs five GPU re-runs.
+
+### Verified this pass, nothing to change
+
+- Delta vs `d10126b` is exactly `src/popsift/s_filtergrid.cu`, 2 insertions / 1 deletion:
+  `+#include <thrust/iterator/zip_iterator.h>` (`:22`), `+#include <thrust/tuple.h>` (`:29`),
+  and upstream's removal of the trailing blank line at EOF. No other file differs from the
+  previous tip, which is consistent with upstream `b1c8199..36d704d` touching only that file.
+- Merge, not rebase. Parents are `d10126b5dab3` (ours) and `36d704d39b4c` (upstream develop);
+  `f2712723d903`, `d10126b5dab3` and `36d704d39b4c` are all ancestors of `badbfc35`.
+- The resolution loses neither side. `git diff 36d704d39b4c badbfc35 -- src/popsift/s_filtergrid.cu`
+  is exactly our known change and nothing else: `common/thrust_setup.h` included, upstream's
+  `<thrust/execution_policy.h>`/`<thrust/version.h>` dropped in its favour, the two
+  `POPSIFT_THRUST_PAR.on(oct_str)` call sites (`:134,139`) intact. Both new upstream headers
+  are present in sorted position and neither duplicates `common/thrust_setup.h`, which
+  includes only `execution_policy.h` and `version.h` (`common/thrust_setup.h:16-17`). Both
+  are genuinely used in this TU (`thrust::tuple` at `:35,45,55,84`, `make_zip_iterator` at
+  `:151-165`), so they belong here and not in the shared header.
+- The PR will read MERGEABLE after this: `git merge-tree --write-tree` of `badbfc35` against
+  a freshly fetched `alicevision/popsift develop` (still `36d704d`) exits 0 and yields
+  `c904b2b2b2e0`, which is `badbfc35^{tree}` -- i.e. a fast-forward, no conflict.
+- CUDA arm unaffected. The two added includes are unguarded and byte-identical to upstream's
+  own addition; nothing inside a `USE_HIP`/`__HIP_PLATFORM_AMD__` guard changed anywhere in
+  the delta. On the AMD side both headers ship with rocThrust
+  (`$ROCM_PATH/include/thrust/tuple.h`, `include/thrust/iterator/zip_iterator.h`).
+- Message body: ASCII clean, one line per paragraph (`utils/prose.py` clean), assistance
+  disclosed, fenced Test Plan. `jargon.py --diff d10126b..badbfc35` clean;
+  `jargon.py --port popsift` still reports only the pre-existing `05e698ec8` hit, which is
+  an ancestor of `published_sha` and live in PR #186 since it opened. No `Co-Authored-By`
+  trailer, no internal account reference.
+- Build evidence matches what is on disk: `stats.jsonl` records configure 5.720s and build
+  33.322s at 2026-08-14T20:36-20:37Z, after the merge (committed 20:35:39Z), with the
+  invocation quoted in the notes. `build-hip/Linux-x86_64/` holds `libpopsift.so.0.10.1`,
+  `popsift-demo`, `popsift-match` from that build, and `output-features.txt` from the smoke
+  run has 9874 lines, matching the img1 boat descriptor count validated at `d10126b` and the
+  cross-arch reference (notes.md:736, 905, 1116). The stats line for the smoke run itself is
+  exit 127 (the `timeit.sh` wrapper was given a relative `./popsift-demo` from the repo root);
+  the run that produced `output-features.txt` was the unwrapped one. Harmless, but the
+  telemetry does not carry that run's wall time.
+- No kernel, header, or build-system change in this delta, so no fault class is in scope:
+  no warpSize/32 assumption, texture handle, OOB read, pitch, or library swap is touched.
