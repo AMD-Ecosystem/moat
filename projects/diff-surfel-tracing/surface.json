@@ -117,7 +117,28 @@
    "note": "The project ships NO test suite -- no tests/, no CI, no assertions anywhere. The GPU gate therefore has to be authored, and it lives in MOAT rather than the fork because inventing a test framework inside someone else's research repository is not a mergeable change. The EnvGS Stage 2 harnesses that proved this code were written under the gitignored agent_space/ and are effectively lost; that is the mistake this entry exists to stop repeating."
   }
  ],
- "covered": [],
+ "covered": [
+  {
+   "id": "library:optix_tracer_forward",
+   "reason": "The forward device programs are covered on ROCm by the forward half of hiprt_tracer/kernels.h, compiled at runtime by hiprtc instead of ahead of time to PTX. Exercised on gfx90a at b7ff795: forward image finite, covered fraction 0.232, depth range [2.159, 4.574] over a 64-surfel scene, bit-identical on rerun and after a cold compilation cache. The CUDA PTX target is untouched."
+  },
+  {
+   "id": "library:optix_tracer_backward",
+   "reason": "The backward device programs are covered by the backward half of hiprt_tracer/kernels.h. Exercised on gfx90a at b7ff795: all eleven gradients finite, the six that must be nonzero are, and finite differences over six random directions agree with the analytic gradients (colors cosine 1.0000, opacities 1.0000, means3D 0.9992, scales 0.9983). The CUDA PTX target is untouched."
+  },
+  {
+   "id": "extension:diff_surfel_tracing._C",
+   "reason": "Builds and links on ROCm through setup.py's torch.version.hip branch (host glue plus the standalone HIP RT/Orochi static library), and imports with all four expected symbols. Built for gfx90a with PYTORCH_ROCM_ARCH=gfx90a against ROCm 7.14 and torch 2.14.0a0."
+  },
+  {
+   "id": "package:diff_surfel_tracing",
+   "reason": "The autograd Function, SurfelTracingSettings and SurfelTracer nn.Module are unchanged in signature and are what the validation harness drives end to end, including the eleven-tensor backward arity that upstream e0016a2 introduced. The ROCm additions to __init__.py are the __file__-based package directory, HIPRT_PATH, and an os.name-guarded Windows DLL directory block."
+  },
+  {
+   "id": "harness:validate_tracer_rocm",
+   "reason": "Written and passing: projects/diff-surfel-tracing/validation/validate_tracer_rocm.py, 42/42 checks on linux-gfx90a at b7ff795, covering import and API, forward image, all eleven backward gradients, multi-direction finite differences, a reflected bounce and a cold runtime-compilation cache. It lives in MOAT rather than the fork because the project has no test suite of its own and inventing one for someone else's repository is not this port's business."
+  }
+ ],
  "scoped_out": [
   {
    "id": "submodule:third_party/optix",
@@ -126,6 +147,14 @@
   {
    "id": "vendored:third_party/hiprt",
    "reason": "98 files of the HIPRT/Orochi SDK vendored into moat-port during EnvGS Stage 2, including a committed 784 KB hiprt0300164.dll, its import lib, and three unresolvable git-LFS pointer stubs. Not a port surface: it is a third-party dependency that this plan removes from the tree in favour of a pinned submodule plus HIPRT_HOME, mirroring upstream's own third_party/optix pattern. Our four local patches to it are extracted to a patch file and registered as a GPUOpen contribution deferral."
+  },
+  {
+   "id": "build:cmake-ptx",
+   "reason": "The NVIDIA-only runtime-PTX build path (CMakeLists.txt, CMake/FindOptiX7.cmake, CMake/PTXUtilities.cmake, optix_tracer/CMakeLists.txt). Deliberately NOT ported: on ROCm the equivalent artifact is compiled at runtime from hiprt_tracer/kernels.h, so setup.py simply does not invoke this path when torch.version.hip is set. It must keep working for CUDA users, and git diff against upstream shows it byte-identical. No NVIDIA GPU or OptiX SDK on the fleet, so it is verified structurally rather than by building it."
+  },
+  {
+   "id": "example:render",
+   "reason": "example/render.py is a real end-to-end render but needs the author's Google Drive archive (a PLY 2DGS model plus a camera path) that is not fetchable here, so it cannot be a gate. It is backend-agnostic Python that calls only the public SurfelTracer API, which the harness exercises directly; nothing in it is CUDA-specific and the port changes none of it."
   }
  ],
  "removed_from_floor": []
