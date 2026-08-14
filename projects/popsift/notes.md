@@ -2664,3 +2664,116 @@ PASS. `windows-gfx1151`: revalidate -> completed; validated_sha =
 not write to the fork); `moat-fix-186` and `moat-port` left exactly as found (`moat-port`
 still `f2712723d903`). `git -C projects/popsift/src status --porcelain` empty at
 completion.
+
+## Validation 2026-08-14 (linux-gfx90a) -- revalidate at fix-round tip d10126b: PASS
+
+Platform: 4x AMD Instinct MI250X (gfx90a, CDNA2, wave64), ROCm via the TheRock pip SDK
+at `/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel` (sourced from
+`/etc/rocm_env.sh`), AMD clang 23.0.0git, HIP 7.14.60850-0000000 -- a newer host toolchain
+than this platform's earlier sessions (`/opt/rocm`, ROCm 7.2.1, clang 22.0.0), and the same
+HIP/clang build windows-gfx1151 validated on. `HIP_VISIBLE_DEVICES=0`.
+
+Cloned the fork fresh (no local clone on this host) and checked out the `fix` block's
+staging branch: `git checkout moat-fix-186` @ `d10126b5dab3f8e166e096ed9428a5ee01061052`
+== `head_sha`. `git status --porcelain` empty throughout.
+
+This platform's prior `validated_sha` was `f2712723d903` (the frozen published tip, carried
+forward from the 2026-06-23 gfx90a dead-pin CMake change; the last real GPU run on this
+platform was at `3a789a1`). `python3 utils/moatlib.py classify popsift f2712723d903
+d10126b5dab3` -> `class=mixed arch_independent=False inert=False` (real device-code delta:
+CMakeLists.txt, assist.h, the descriptor/pyramid/extrema kernels, sift_textures.h,
+thrust_setup.h). Not carry-forward eligible; full real-GPU revalidation performed, matching
+gfx1100's and windows-gfx1151's independent conclusion at the same delta.
+
+### Build (library + examples + Oxford test harness)
+
+Boost 1.83 already installed system-wide (`libboost-all-dev`); no Boost build needed.
+Downloaded the Oxford boat dataset fresh (not present on this host):
+```
+mkdir -p agent_space/oxford/boat
+curl -sL -o agent_space/oxford/boat.tar.gz https://thor.robots.ox.ac.uk/affine/boat.tar.gz
+tar xzf agent_space/oxford/boat.tar.gz -C agent_space/oxford/boat   # img1..img6.pgm, H1toNp
+```
+
+```
+source /etc/rocm_env.sh
+bash utils/timeit.sh popsift compile -- cmake -S projects/popsift/src -B projects/popsift/src/build-hip \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=$ROCM_PATH/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROCM_PATH \
+  -DCMAKE_BUILD_TYPE=Release -DPopSift_BUILD_EXAMPLES=ON -DBUILD_SHARED_LIBS=ON \
+  -DPopSift_USE_TEST_CMD=ON -DPopSift_TESTFILE_PATH=/var/lib/jenkins/moat/agent_space/oxford
+bash utils/timeit.sh popsift compile -- cmake --build projects/popsift/src/build-hip -j
+```
+
+100% built: `libpopsift.so`, `popsift-demo`, `popsift-match`. Only the pre-existing benign
+`-Wunused-value` (debug_macros nodiscard `hipError_t`) and `-Wdeprecated-declarations`
+(rocThrust `thrust::identity<int>`) warnings; DevIL not found -> falls back to pgmread
+(expected, matches every prior session). `strings libpopsift.so.0.10.1 | grep -o
+'amdgcn-amd-amdhsa--gfx[0-9a-z]*' | sort -u` -> single `amdgcn-amd-amdhsa--gfx90a` code
+object (this SDK ships no `roc-obj-ls`, so used `strings` on the offload-bundle section
+instead).
+
+### GPU validation -- Oxford boat cross-arch gate (real gfx90a, downsampling=-1, VLFeat/loop/RootSift)
+
+```
+bash utils/timeit.sh popsift test -- ... HIP_VISIBLE_DEVICES=0 popsift-demo -i <boat>/imgN.pgm \
+  --gauss-mode vlfeat --desc-mode loop --popsift-mode --root-sift --downsampling -1
+```
+
+| Image | gfx90a feat/desc | Cross-arch reference (gfx1100/gfx1201/gfx1101/gfx1151) | Match |
+|-------|-------------------|----------------------------------------------------------|-------|
+| img1  | 8351 / 9874       | 8351 / 9874                                               | EXACT |
+| img2  | 7945 / 9451       | 7946 / 9452                                               | OFF BY 1 |
+| img3  | 6158 / 7280       | 6158 / 7280                                               | EXACT |
+| img4  | 4802 / 5799       | 4802 / 5799                                               | EXACT |
+| img5  | 4618 / 5476       | 4618 / 5476                                               | EXACT |
+| img6  | 3855 / 4618       | 3855 / 4618                                               | EXACT |
+
+5/6 images exact-match the cross-arch reference (which windows-gfx1151 also matched exactly
+at this same head_sha, on the same HIP 7.14.60850/clang 23.0.0git toolchain). img2 is one
+feature point and one descriptor short (7945/9451 vs 7946/9452 -- a 0.013% delta), confirmed
+**deterministic on this platform**: 5/5 repeat runs of img2 all produced exactly 7945/9451,
+byte-stable. gfx90a is the only wave64 architecture in the reference set; every other
+platform that validated this exact `head_sha` (gfx1100, gfx1101, gfx1201, gfx1151 -- all
+wave32) reported 7946/9452. This is the documented hard class ("One architecture gets wrong
+numbers while the others pass", `cuda-to-rocm` skill references/validation.md): a
+single-feature threshold-boundary divergence isolated to one architecture, most likely an
+FP-accumulation/reassociation difference at a borderline extremum in the wave64 warp-packed
+reduction path, not a crash/NaN/non-determinism fault. Per the skill and the validator role's
+stop discipline, recorded here and not chased further; the comparison that matters (against
+the other architectures) shows 5/6 exact and 1/6 off by a single feature at the 0.01% level.
+This does not gate PASS -- no NaN, no crash, fully deterministic, and this exact 1-feature
+class is the one the skill explicitly says to record and stop on, not root-cause deeper.
+
+### Descriptor sanity (img1, 9874 descriptors x 128 values, parsed from output-features.txt)
+
+0 NaN, 0 Inf; per-descriptor L2 norm (RootSift) in [0.99907, 1.00089]; 0 all-zero
+descriptors; keypoint x in [0.77, 848.48], y in [2.01, 679.36] (within the 850x680 image).
+
+### popsift-match sanity (img1 vs img2, real gfx90a)
+
+Real finite distances (e.g. "dist 0.008 vs 0.175", "dist 0.146 vs 0.239"), sane accept/reject
+pattern (dist1 < dist2 accepted, dist1 ~= dist2 rejected), no NaN, no crash.
+
+### CUDA no-regression gate
+
+Not re-run here. Already recorded once at this exact `head_sha` (`d10126b`) by the gfx942
+porter pass (`## 2026-08-14 -- gfx942 porter ...`): nvcc 12.8,
+`-DCMAKE_CUDA_ARCHITECTURES=86`, 0 errors 0 warnings, `libpopsift.so` linked for sm_86.
+
+### Jargon / documentation gate
+
+`python3 utils/jargon.py --port popsift` (after adding a local `moat-port` branch tracking
+`origin/moat-port` so the tool could resolve the range): one hit, "fault classes" in commit
+`05e698ec8`. `git merge-base --is-ancestor 05e698ec8 f2712723d903` -> yes: an ancestor of the
+frozen published tip, already live in open PR #186 before this fix round existed, same
+finding as every prior pass at this head. Not a new blocker.
+`README.md:18,53-66` documents the ROCm/HIP build including a dedicated gfx90a example
+(`-DCMAKE_HIP_ARCHITECTURES=gfx90a`); untouched by and unaffected by this round.
+
+### Result
+
+PASS. `linux-gfx90a`: revalidate -> completed; validated_sha =
+`d10126b5dab3f8e166e096ed9428a5ee01061052` (== head_sha). No fork push (validator does not
+write to the fork); `moat-fix-186` and `moat-port` left exactly as found (`moat-port` still
+`f2712723d903`). `git -C projects/popsift/src status --porcelain` empty at completion.

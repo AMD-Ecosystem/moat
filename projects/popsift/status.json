@@ -7,7 +7,7 @@
   "priority": 5.187,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T00:36:13Z",
-  "updated_at": "2026-08-14T15:54:25Z",
+  "updated_at": "2026-08-14T17:54:06Z",
   "head_sha": "d10126b5dab3f8e166e096ed9428a5ee01061052",
   "pr_url": "https://github.com/alicevision/popsift/pull/186",
   "pr_number": 186,
@@ -68,10 +68,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "f2712723d90371b706db3a37fb82537af151ab04",
+      "validated_sha": "d10126b5dab3f8e166e096ed9428a5ee01061052",
       "started_at": "2026-05-30T01:38:56Z",
-      "completed_at": "2026-06-03T23:05:07Z",
-      "updated_at": "2026-06-23T22:30:19Z",
+      "completed_at": "2026-08-14T17:54:06Z",
+      "updated_at": "2026-08-14T17:54:06Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -85,13 +85,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
-      "carry_forward": {
-        "to": "f2712723d90371b706db3a37fb82537af151ab04",
-        "method": "source-class",
-        "detail": "gfx90a dead-pin removal; unreachable code, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:30:19Z"
-      }
+      "last_agent": "validator"
     },
     "windows-gfx1201": {
       "state": "completed",
