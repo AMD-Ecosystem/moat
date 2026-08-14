@@ -1234,3 +1234,133 @@ whether to add the `config.sh`/`new_features.md` ROCm-build documentation lines 
 that same squash. Once either lands as a new commit on `moat-port`, this arch (and gfx1100, also
 sitting on the same `22ea834` head) can carry forward via this same binary-equivalence evidence
 without another GPU-adjacent rebuild, provided the fix touches no `.cu`/`.cuh`/`hip_compat` file.
+
+## Fix round 2026-08-14 (linux-gfx90a, porter): both held gates closed -- ROCm build documented, branch jargon cleared
+
+Dispatch: the 2026-08-14 gfx90a validation found the GPU evidence at `22ea834` sound (device ISA
+byte-identical across the delta, CUDA gate clean) but recorded `validation-failed` on the two
+non-GPU gates it is required to check. Both are now closed. New head `3c714fc`.
+
+### Gate 2 (ROCm build documentation): closed, in the project's house style
+
+plvs documents its CUDA build in `config.sh` (`USE_CUDA=0` plus a `CUDA_FOUND` probe that resets
+the toggle when no toolkit is found) and advertises the feature in `new_features.md`; the README
+carries no build block at all (only a rosdocker mention), and `Dependencies.md` never mentions
+CUDA. So the house-style parallel is exactly those two files and no README edit.
+
+- `config.sh`: new "HIP/ROCm Settings" section beside the CUDA one with `export USE_HIP=0` and
+  `export ROCM_PATH="${ROCM_PATH:-/opt/rocm}"`, plus a `HIP_FOUND` probe in the auto-managed
+  block mirroring `CUDA_FOUND`. Two deliberate differences from the CUDA probe: it also accepts
+  a `hipcc` found on `PATH` (this host's ROCm is the TheRock pip SDK under
+  `site-packages/_rocm_sdk_devel`, NOT `/opt/rocm`, so a `/opt/rocm`-only test would silently
+  disable HIP on the very host that validates the port), and its messages sit inside the
+  `USE_HIP -eq 1` branch so a CUDA or CPU-only build prints nothing new.
+- `build_plvs.sh`, `build_thirdparty.sh`: forward `-DUSE_HIP=ON` exactly where they already
+  forward `-DWITH_CUDA=ON`. These two are what `build.sh` drives, so `./build.sh` now reaches the
+  ROCm path. The `build_ros_{catkin,colcon}.sh` scripts were deliberately NOT touched: the ROS
+  wrapper build has never been built or tested on ROCm here, and forwarding the flag there would
+  advertise support no one has exercised.
+- `new_features.md`: one sub-bullet under the existing CUDA ORB bullet, naming `USE_HIP`, the
+  ROCm requirement, and the OpenCV-with-HIP requirement, and noting it also covers the
+  GPU-accelerated libelas/libsgm stereo depth methods.
+
+Before this round `USE_HIP` existed only as a CMake option, so the ROCm build was reachable only
+by knowing to type `-DUSE_HIP=ON` by hand; that is why "documented nowhere" and "not wired up"
+were the same defect.
+
+### Verified on this host (linux-gfx90a, MI250X, TheRock ROCm 7.14.60850 / clang 23.0.0)
+
+`bash -n` clean on all three scripts. Plumbing exercised end-to-end with a stub `cmake` on `PATH`
+(scratch copy of the scripts, `OpenCV_DIR` preset so `config.sh` does not source
+`install_local_opencv.sh`):
+```
+./build_plvs.sh                       # default: cmake args carry NO -DUSE_HIP, output unchanged
+sed -i 's/^export USE_HIP=0/export USE_HIP=1/' config.sh
+./build_plvs.sh                       # "USE_HIP: 1"; args carry -DUSE_HIP=ON
+ROCM_PATH=/nonexistent PATH=/usr/bin:/bin ./build_plvs.sh
+                                      # "HIP env var reset, check your ROCm installation"
+```
+Real CMake configure with the option, same host:
+```
+cmake -S . -B <scratch> -DUSE_HIP=ON -DWITH_CUDA=OFF \
+  -DCMAKE_HIP_COMPILER=<sdk>/bin/amdclang++
+-- USE_HIP: ON
+-- The HIP compiler identification is Clang 23.0.0
+-- CMAKE_HIP_ARCHITECTURES: gfx90a;gfx90a;gfx90a;gfx90a     <- auto-detect, 4 MI250X GCDs
+CMake Error at CMakeLists.txt:332 (find_package): Could not find ... "Pangolin"
+```
+i.e. `enable_language(HIP)` and the arch auto-detect (the be91acd change) both work; the
+configure then stops on Pangolin, a SLAM dependency not installed in this container. Pre-existing
+host gap, unrelated to this delta.
+
+No full library build and no GPU run this session, deliberately: the delta touches only shell and
+markdown. Proof that nothing else moved:
+```
+git diff --name-only 22ea834 -- . ':!config.sh' ':!build_plvs.sh' ':!build_thirdparty.sh' ':!new_features.md'
+    -> empty
+git diff --stat 22ea834 -- .  ->  4 files changed, 43 insertions(+)
+```
+Every `.cu`, `.hpp`, `.h` and `CMakeLists.txt` in the tree is byte-identical to the tree the
+2026-08-14 validator proved, so that session's device-ISA evidence transfers to this head
+unchanged.
+
+### Gate 1 (jargon on the branch root commit): closed by a message-only history rewrite
+
+`utils/jargon.py --port plvs` was failing on `e59fd77:5` ("The port uses Strategy A (compat
+header approach)"). Reworded to "The port uses a compatibility header to minimize source
+changes." -- the only edit, in that one commit message.
+
+Why it was safe to do now, when the 2026-08-13 porter and reviewer both left it for a person: the
+sole stated cost was that rewriting would orphan the `validated_sha` of two completed Linux
+platforms. That cost was already spent. At dispatch time `head_sha` was `22ea834` while both
+Linux platforms' `validated_sha` was `be91acd`, so gfx1100 already read `revalidate` and gfx90a
+`validation-failed` -- NEITHER was validated at the head -- and this round's documentation commit
+moves the head again regardless. No live evidence was lost that was not already owed a
+revalidation. `pr-state plvs` = `none`, so `moat-port` is not frozen and nothing upstream-visible
+moved. `moatlib.squash_carry_forward`'s own contract ("the force-push history rewrite is
+irrelevant to them") is the same operation at PR-prep, so the mechanism is one MOAT already uses.
+
+Rewrite verification -- all 10 commits tree-identical, one message differs:
+```
+git filter-branch -f --msg-filter '...' 2ecb8b1..moat-port
+git diff --stat pre-reword-22ea834 moat-port    -> empty (identical content at the tip)
+```
+| old sha | new sha | tree | message |
+|---------|---------|------|---------|
+| e59fd77 | 4dbd541 | IDENTICAL | reworded (this fix) |
+| f932ab5 | cead4c0 | IDENTICAL | same |
+| 05eed6c | 56aeafe | IDENTICAL | same |
+| b9210a8 | 3cbfef4 | IDENTICAL | same |
+| 7f5ce9f | fab79af | IDENTICAL | same |
+| 3944323 | 1d66374 | IDENTICAL | same |
+| 57212e2 | c32629a | IDENTICAL | same |
+| 3aa7489 | 87ba727 | IDENTICAL | same |
+| be91acd | 8f9e809 | IDENTICAL | same |
+| 22ea834 | e549605 | IDENTICAL | same |
+
+**Old shas are still resolvable**: the pre-rewrite tip is pushed to the fork as branch
+`pre-reword-22ea834` (= old `22ea834`), so `be91acd` and every earlier sha this file cites stay
+fetchable and diffable. A validator whose `validated_sha` is `be91acd` should read it as
+`8f9e809` (identical tree) and can still `git diff be91acd <new head>` after fetching that
+branch. The archive branch is disposable once every platform has revalidated -- a person can
+delete it; it is not the PR head and `jargon.py --port` does not scan it.
+
+`python3 utils/jargon.py --port plvs` -> **clean** (exit 0) on the whole branch.
+
+### State
+
+Fork `moat-port` force-pushed with `--force-with-lease` (22ea834 -> 3c714fc; lease held, no
+concurrent writer). `head_sha` advanced to `3c714fc`. Working tree clean. Both Linux platforms
+now read `revalidate`/actionable at the new head; per the tree-identity evidence above their
+revalidation is a documentation-and-scripts review plus the existing binary-equivalence
+carry-forward, not a fresh GPU bring-up.
+
+Lesson promoted to the skill (`references/strategy-a-cmake.md`, Build hygiene): put the ROCm
+toggle in the project's own build scripts when those drive CMake, and never probe only
+`/opt/rocm/bin/hipcc` -- the TheRock/pip SDK lives elsewhere on `PATH`.
+
+### Still open, unchanged by this round
+
+- Deferred item `plvs-nvidia-proprietary-rescan`: upstream plvs vendors two NVIDIA EULA-pointer
+  headers unmodified; only a person can rule on redistributing a fork containing them.
+- Windows platforms remain blocked on the clang-cl + boost.serialization toolchain wall.

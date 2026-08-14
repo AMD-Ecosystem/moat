@@ -130,6 +130,18 @@ compat header with `-include`.
   `--offload-arch=<arch>`; `enable_language(HIP)` auto-detects. A pinned arch is the single
   most common reason a port builds on the machine it was written on and nowhere else.
   (TurboFNO, LC-framework)
+- **When the project drives CMake from its own shell scripts, the toggle belongs there too --
+  and the toolchain probe must not hardcode `/opt/rocm`.** A bare `option(USE_HIP ...)` in
+  `CMakeLists.txt` is unreachable from the documented build if users are told to run
+  `./build.sh`: they get a CPU build and nothing says why. Put the toggle beside the existing
+  CUDA one in the config script and forward it from wherever that script forwards
+  `-DWITH_CUDA=ON`, which also makes the config script -- the file that already documents the
+  CUDA build -- document the ROCm build. In the probe, mirror the CUDA probe's shape but accept
+  a `hipcc` on `PATH` and honor an existing `ROCM_PATH`, instead of testing only
+  `/opt/rocm/bin/hipcc`: the TheRock/pip ROCm SDK installs under a Python `site-packages`
+  prefix, so a `/opt/rocm`-only test silently disables the GPU path on exactly the hosts that
+  validate the port. Keep the "not found" message inside the enabled branch so CUDA and
+  CPU-only builds print nothing new. (plvs)
 - **hipify-perl, when that is the mechanism rather than CMake HIP language:** run it
   synchronously -- `-inplace` in a backgrounded or `&&`-chained loop silently skips files --
   and always re-grep the whole tree for `cudaMalloc|cudaSuccess|include <cub|include <cuda.h`
