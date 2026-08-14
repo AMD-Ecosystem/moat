@@ -313,3 +313,64 @@ spconv remains **row 2 of 4** on the single intake queue issue,
 `AMD-Ecosystem/moat` issue **#8** (`intake_queue.py publish` reports `would-update`).
 The row has been correct and waiting since 2026-08-13 03:19Z. No per-project PR was
 opened. Nothing further should happen to this project until a person answers that issue.
+
+## Screen 5 -- 2026-08-14, intake, linux-gfx942 (verification of screens 2-4)
+
+Fifth dispatch, same cause as screens 3 and 4: `stage: unclaimed` is actionable to the
+selector and no person has answered the queue yet. Verified rather than re-derived, from
+a fresh shallow clone `agent_space/spconv-screen5`, upstream HEAD **`263d6b4`
+(2024-12-15)** -- identical to screens 3 and 4.
+
+**Recommendation unchanged: DECLINE, reason `already-supported`.** Still a
+recommendation, not a decision. Nothing was written to `dispositions.json`.
+
+Re-verified independently on this host:
+
+| claim | screen 5 result |
+|---|---|
+| Apache-2.0, tier 1 | `licenses.py check traveller59/spconv` -> `license=Apache-2.0 tier=1, cleared to contribute`; GitHub API `license.spdx_id` agrees |
+| cumm Apache-2.0, tier 1 | `licenses.py check FindDefinition/cumm` -> same |
+| no NVIDIA proprietary text | `scan-nvidia agent_space/spconv-screen5` -> `no NVIDIA proprietary licence text` |
+| no vendored/submodule licences | `LICENSE` is the only licence/COPYING/NOTICE file in the tree; `.gitmodules` present but **0 bytes**, `git submodule status` empty, no `third_party/` |
+| one `.cu` in the repo | exactly one: `example/libspconv/main.cu` |
+| 18 pccm meta-programs | `find spconv/csrc -name '*.py'` -> 18 |
+| `PCCMExtension`, not `CUDAExtension` | `setup.py:16` imports it, `setup.py:212` uses it; `grep -rn CUDAExtension` -> **none anywhere**; `setup.py:42/44` pin `cumm-cu*>=0.7.11,<0.8.0` / `cumm>=0.7.11,<0.8.0` |
+| zero AMD mentions in upstream docs | `grep -rniE 'amd\|rocm\|hip\|gfx[0-9]' README* docs/` -> no hits |
+| upstream dormant | `pushed_at` **2024-12-15T15:41:19Z**, 195 open issues, 2290 stars, `archived: false` |
+| no AMD-Ecosystem / ROCm effort | `AMD-Ecosystem/spconv`, `ROCm/spconv`, `ROCm/spconv-rocm`, `AMD-Ecosystem/cumm`, `ROCm/cumm`, `AMD-Ecosystem/spconv-triton`, `ROCm/FlexGEMM` -> all 404 |
+| no upstream AMD PRs | GitHub search `repo:traveller59/spconv is:pr ROCm OR HIP OR AMD` -> `total_count: 0` |
+| spconv-triton real, Apache-2.0 | pushed 2026-07-20, 1 star, Apache-2.0 |
+| FlexGEMM MIT | pushed 2026-06-25, 143 stars, MIT |
+| cumm alive | pushed 2026-03-21, 86 stars, not archived |
+| `jiaqiwang969/spconv-rocm` is not a port | `license: NONE`, 0 stars, untouched since 2026-02-05 |
+| no disposition, no opt-out | `spconv` and `cumm` both absent from all 282 `dispositions.json` entries; no opt-out record |
+
+Screen 4's **correction to screen 2 stands, re-read in full**: issue #780 is `closed`,
+closed accidentally by the reporter (`ryanmcandrew`, 2026-06-11), and answered on
+2026-07-09 by `L-Reichardt` pointing him at spconv-triton. **No spconv maintainer ever
+replied to either comment.** That is the `already-supported` finding demonstrated on the
+one recorded demand signal, and the dormancy finding, in the same thread.
+
+### Duplicate-effort search re-run broadly, not just by name
+
+Because duplicate effort is the load-bearing claim, the search was widened rather than
+repeating screen 4's direct probes. GitHub repository search for `spconv rocm` and
+`spconv triton`, sorted by recency, returns **exactly two repos in the whole of GitHub**:
+`L-Reichardt/spconv-triton` (the real one) and `jiaqiwang969/spconv-rocm` (the empty
+stub). No new AMD sparse-conv effort has appeared since screen 4, and nothing was missed
+by the earlier name-probe method.
+
+### Nothing new, and that is the finding
+
+Five screens on four platforms (gfx1100, gfx942, gfx90a, gfx942) now agree on every
+load-bearing fact, and upstream has not moved in 20 months. Screen 4's honest soft spot
+-- spconv-triton is single-author, single-release, 1 star -- is unchanged and still the
+fair counterargument; `cant-port` still holds independently and structurally, so either
+`SKIP_REASON` is defensible and the decline does not turn on that choice. This screen
+adds no new argument because there is none to add.
+
+The remaining person's edits are both still outstanding and both still outside this
+screen's scope: answer intake queue issue **#8** (spconv is row 2 of 4), and clear the
+stale `Pointcept.depends_on = ['spconv']` so a merged project
+(Pointcept/Pointcept#604, merged 2026-07-06, validated `linux-gfx90a`) stops showing as
+`WAITING on spconv`.
