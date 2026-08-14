@@ -1989,3 +1989,94 @@ is superseded and this arch is owed a validator rather than another porter.
 gfx1100 and gfx942 read `revalidate`: the delta is a build-system change, so it is
 not carry-forward material -- the pybind11 targets are new HIP compilations on every
 architecture that has Python development files installed.
+
+## Review 2026-08-14 (reviewer, linux-gfx90a, fork e8dca9151 vs 5fe1221a8)
+
+Verdict: **changes-requested**, and cheaply: nothing on the fork branch needs to
+change. `e8dca9151` is correct, minimal and complete, and `head_sha` should not
+move. Both findings are in the skill text this round promoted (MOAT commit
+`1980d05`), which this review is the only gate on before it reaches every future
+porter. Fix those two files, re-request, and the port goes straight to the
+gfx90a validator with the same head.
+
+Checks that were run and passed are not repeated here, per review philosophy; for
+the record, the delta's central claim was verified independently rather than taken
+from the note. `hip-config-amd.cmake:140-152` does put `-x hip` and
+`--offload-arch=` on `hip::device`, `rocprim-targets.cmake:70` puts `hip::device`
+in `roc::rocprim_hip`'s `INTERFACE_LINK_LIBRARIES`, and `rocthrust-targets.cmake:63`
+chains `roc::rocthrust` to that, so the leak into `_Core`/`_Basic`/`_Combine` is
+real. The generated `build-hip-final/build.ninja:6712` now compiles
+`python/goofit/HelpPrinter.cpp` with `HIP_COMPILER___Core_...` carrying
+`-include cuda_to_hip.h -fgpu-rdc --offload-arch=gfx90a`, and the two
+`target_sources()` files reach the same rule via `_goofit` (lines 6266, 6286).
+Coverage of the fix is complete: `_Core`, `_Basic`, `_Combine`, `_Physics` and
+`_goofit` are the only targets that link `_goofit_python`/`GooFit::GooFit`, and
+`landau`, `minuit2` and `catch_main` link neither ROCm nor GooFit, so they cannot
+inherit the flags.
+
+### 1. The promoted CMake lesson states the mechanism backwards
+
+`.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md:172-178`. The heading
+says the options land on "EVERY consumer, C++ ones included" and the body says
+CMake applies them "to every target that links the interface library, whatever
+language that target's sources are compiled in". The opposite is true, and the
+inverted claim is exactly the part a reader needs:
+
+```
+# hip-config.cmake:75-79
+function(hip_add_interface_compile_flags TARGET)
+  set_property(TARGET ${TARGET} APPEND PROPERTY
+    INTERFACE_COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:CXX>:${_HIP_SHELL}${ARGN}>")
+endfunction()
+```
+
+The flags are wrapped in `$<$<COMPILE_LANGUAGE:CXX>:...>`, so they reach the
+CXX-compiled sources of a consumer and only those. That is *why* marking the
+sources `LANGUAGE HIP` fixes it -- they stop matching the generator expression --
+not, as line 177-178 says, because "they were going to hipcc anyway and this is
+invisible". As written the entry tells the next porter that `LANGUAGE HIP` leaves
+the flags in place and merely makes them harmless, which invites the wrong fix
+(stripping the flags off the interface target) on the next project that hits this.
+
+Also in the same paragraph: `hip_add_interface_link_flags` (`hip-config.cmake:81-91`)
+adds `--hip-link` and `--offload-arch=` to `INTERFACE_LINK_LIBRARIES` under
+`$<$<LINK_LANGUAGE:CXX>:...>`, so a consumer that still *links* as CXX hits the
+same error at link time. Worth one sentence, since a target whose sources are all
+adopted but whose link language is not is the residual case.
+
+And line 196, "the only way to reach the owning scope from there": `DIRECTORY
+<owning-dir>` on the same command also reaches it. `TARGET_DIRECTORY` is the
+better form because it does not hardcode a relative path; say that instead of
+"only way".
+
+The in-tree comment at `src/CMakeLists.txt:612-617` is accurate as it stands --
+only the skill text needs the correction.
+
+### 2. The validation lesson leaves GooFit standing as the settled arch-fault example
+
+`.claude/skills/cuda-to-rocm/references/validation.md`. The inserted paragraph
+(113-126) is the right lesson, but it is dropped into a section whose framing and
+conclusion still assert what it retracts, so a reader gets both:
+
+- 95-99 still describes the divergence in the present tense ("GooFit's HIP backend
+  diverges an unbinned maximum-likelihood fit ... on gfx90a while the identical
+  committed tree passes cleanly on gfx1100"), with no mention that this holds only
+  for the ROCm 7.2-series build and not for 7.14.
+- 128-134 is worse: "Only once both are pinned identical to a passing run does
+  'wrong on this arch only' stand as a finding. For GooFit specifically: same ROCm
+  7.2.1 series hipcc ... so the divergence is real GPU execution producing a wrong
+  answer ... That is when this becomes the 'one architecture gets wrong numbers'
+  case below." That paragraph certifies the exact reasoning the new insert calls
+  the wrong direction, and it is the section's closing takeaway. An agent who reads
+  to the end of the section leaves with the superseded conclusion.
+
+Rewrite 95-99 and 128-134 so GooFit is the worked example of the retraction rather
+than of the arch fault, or move the standing example to a project where the
+conclusion held.
+
+One factual slip inside the insert itself, at 120-122: "built the same commit from
+a fresh clone and got 25/25 ... plus 6/6 on the Python bindings' 100k-event fits".
+The 6/6 is not from the same commit -- at `18fca9e4a` the bindings do not build at
+all with their default `ON`, which is what this round fixed; the pytest run is from
+`e8dca9151` (see attempt 4, "Results at e8dca9151"). Attribute it to the fixed
+commit or drop it from that sentence; the 25/25 alone carries the argument.
