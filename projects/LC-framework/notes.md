@@ -1384,3 +1384,111 @@ and :203-217 document the hipcc build alongside nvcc, including the Windows
 clang-cl/Perl note, and both blocks were run verbatim above; `git status
 --porcelain` in src empty at `d7d9867` before and after. No fork commit made
 or needed -- this arch required no code change.
+
+## Validation 2026-08-14 (validator, linux-gfx90a) -- revalidation, PASS at d7d9867
+
+State: `revalidate` -> `completed`. `linux-gfx90a` was stale at `040743e`
+(head_sha had moved through `ea0df9b`/`f0ce8ce`/`b8c3df0`/`b51dbd1`/`af80cc9`/
+`1d7d9f2`/`d7d9867` since its 2026-06-25 pass). `classify 040743e d7d9867`
+returned `class=unknown arch_independent=False` (classification failed), so
+this was a full real-GPU run, not a carry-forward.
+
+Platform: AMD Instinct MI250X / MI250, gfx90a, 4 GCDs visible, wave64,
+104 SMs, 1700 MHz, HIP_VISIBLE_DEVICES=0. Toolchain: TheRock pip-package
+ROCm (HIP 7.14.60850, AMD clang 23.0.0git), hipcc under
+`/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel/bin`
+(not `/opt/rocm` on this host). Fresh clone of `moat-port` at
+`https://github.com/AMD-Ecosystem/LC-framework`, `git rev-parse HEAD` =
+`d7d98677060e36cfa329db4229c8b3d14cf53b32`, matching `status.json.head_sha`.
+
+### Main build (`lc`), README recipe verbatim, throwaway copy of src
+
+```
+python3 ./generate_Device_LC-Framework.py
+hipify-perl -inplace lc.cu lc.h
+for h in framework.h $(find include components preprocessors verifiers -name '*.h'); do hipify-perl -inplace "$h"; done
+hipcc -O3 --offload-arch=gfx90a -ffp-contract=off -DUSE_GPU -I. -std=c++17 -c -o lc.o lc.cu
+hipcc --offload-arch=gfx90a -o lc lc.o
+```
+
+Wrapped in `utils/timeit.sh LC-framework compile`. Exit 0 both steps, 116
+warnings (nodiscard hipError_t + deprecated-shfl hipify-info, matches the
+gfx942/gfx1100/gfx1151 counts exactly). Post-hipify re-grep for
+`cudaMalloc|cudaSuccess|include <cub|include <cuda\.h` reported only the
+three framework templates the documented loop deliberately skips and
+README.md itself -- no missed header. Banner: "AMD GPU version".
+
+### Gates -- all PASS (`utils/timeit.sh LC-framework test`), fresh 1 MB random
+`test.dat` and a 6.5 KB structured (runs of zeros/repeats/random) `small.dat`
+generated locally
+
+Gate 1 -- lossless round-trip, 6/6 "LOSSLESS verification passed" +
+"verification passed": RZE_4, RZE_1, RLE_4, `BIT_4 RLE_4`, `RRE_4 RZE_4`,
+RAZE_4.
+
+Gate 2 -- TS self-test on `small.dat`: 4491 "verification passed", 0
+failures -- matches gfx942/gfx1100/gfx1151 exactly (the 2026-06-25 gfx90a
+count of 4515 remains the recorded outlier/counting artifact, unchanged by
+this round).
+
+Gate 3 -- lossy quantizers + thrust/hipCUB paths, all "verification passed":
+`QUANT_ABS_0_f32(0.01)` + `BIT_4 RLE_4` + `MAXABS_f32(0.01)`;
+`QUANT_INOA_0_f64(0.01)` + `BIT_8 RLE_8` + `MAXNOA_f64(0.01)` (rocThrust
+minmax_element/device_ptr); `QUANT_NOA_0_f32(0.01)` + `BIT_4 RLE_4` +
+`MAXNOA_f32(0.01)` (`cuda::std::numeric_limits` alias); `LOR1D_i32()` +
+`BIT_4 RLE_4` (hipCUB `DeviceScan`, "LOSSLESS verification passed").
+
+Gate 4 -- cross-device format gate (decisive proof for the wave-gate
+rewrite in `af80cc9`), README standalone recipe verbatim from separate
+throwaway trees for the GPU pair (gfx90a) and the CPU pair
+(`generate_standalone_CPU_compressor_decompressor.py` + g++ 13.3.0, RZE_4):
+  - GPU-encode(gfx90a, wave64) -> CPU-decode: `cmp` IDENTICAL (1 MB random).
+  - CPU-encode -> GPU-decode(gfx90a): `cmp` IDENTICAL (1 MB random).
+  - GPU encoding and CPU encoding of the same input: `cmp` BYTE-IDENTICAL.
+  - GPU-encode -> CPU-decode on the structured 6.5 KB input: `cmp` IDENTICAL.
+  4/4 checks pass -- the wave-width re-gate (`af80cc9`) still does not leak
+  wave width into the serialized bitstream.
+
+Non-GPU regression: CPU/OpenMP build, `generate_Host_LC-Framework.py` + g++
+13.3.0 emits `lc.cpp` (not `lc.cu` -- corrected after one failed attempt
+that assumed the `.cu` filename by analogy with the GPU generator), `-O3
+-march=native -fopenmp -mno-fma -ffp-contract=off -DUSE_CPU -std=c++17`:
+builds clean, `AL "" "RZE_4"` gives "LOSSLESS verification passed".
+
+CUDA no-regression gate: SKIPPED, already recorded at this exact head_sha
+`d7d9867` twice in notes.md (the porting round's "Gates run on gfx942"
+section and the `d7d9867` re-review), both nvcc 12.8 `-arch=sm_80`, 0
+errors on `lc.cu` / `compressor-standalone.cu` / `decompressor-standalone.cu`.
+Per the once-per-head_sha rule this is not rerun.
+
+Pre-completion checks: `python3 utils/jargon.py --port LC-framework` ->
+clean (ran from a fresh clone at `projects/LC-framework/src`, fetching
+`origin main:main` first since jargon's `--port` range needs both refs).
+Documentation: `README.md:65-77` (main build) and `:203-211` (standalone
+build) document the hipcc/hipify recipe alongside nvcc in the project's
+house style; both blocks were run verbatim above and both worked, including
+the standalone recipe that used to fail before `b51dbd1`. Integrity:
+`git status --porcelain` in `src` empty, `git rev-parse HEAD` ==
+`d7d98677060e36cfa329db4229c8b3d14cf53b32` before and after.
+
+No fork commit made or needed -- this arch required no code change; the
+delta since `040743e` (`ea0df9b` POSIX-include guards, `b51dbd1` cstring
+include, `af80cc9` wave-gate rewrite, `1d7d9f2` syncwarp fallback, plus
+doc-only/message-only commits) is confirmed behavior-preserving on gfx90a by
+the full real-GPU run above, matching the gfx942/gfx1151 evidence already on
+record at the same head_sha. `linux-gfx1100` is the only platform still
+carrying stale `validated_sha` `040743e`; nothing here changes that.
+
+### gotcha (validator harness, not the port)
+
+The two generator scripts emit different extensions for the same "GPU"
+label: `generate_Device_LC-Framework.py` writes `lc.cu`, but
+`generate_Host_LC-Framework.py` writes `lc.cpp` (CPU/OpenMP build), and
+`generate_standalone_CPU_compressor_decompressor.py` writes
+`compressor-standalone.cpp`/`decompressor-standalone.cpp` where the GPU
+standalone generator writes the `.cu` pair. Assuming `.cu` for the CPU
+build by analogy costs one failed g++ invocation ("cannot find lc.cu"); not
+worth a skill promotion, project-specific naming quirk.
+
+Result: ALL gates PASS. Platform linux-gfx90a -> completed
+(validated_sha=d7d98677060e36cfa329db4229c8b3d14cf53b32).
