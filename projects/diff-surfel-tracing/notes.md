@@ -1297,3 +1297,204 @@ which also exercises the cross-block lookback in `OnesweepReorder`.
   fork, so a maintainer reading the commit cannot run that command. It has been
   that way since round 1 and no round has flagged it. Either the harness ships
   with the port or the Test Plans should say where it comes from.
+
+## Review 2026-08-14 (round 5, linux-gfx90a, `moat-port` f35600e vs 5254aa6) -- CHANGES REQUESTED
+
+Problems only. The round-5 device fix is correct and, this time, the sweep behind
+it is complete -- both re-verified against the code and re-measured on this host,
+including my own negative control rather than the recorded one (list at the end).
+Nothing below is in the port's device code or in its analysis. All three findings
+are in text a maintainer or a future reader will take at face value.
+
+### 1. Every Test Plan names a command that cannot be run from this repository
+
+Ruled, since round 5 asked. This is a defect the port must fix, not a person's
+PR-shaping call, because it is a factual error in upstream-visible text: seven of
+the eight commit bodies on this branch end their Test Plan with a fenced
+
+```
+HIP_VISIBLE_DEVICES=0 python3 validate_tracer_rocm.py
+```
+
+and `git ls-files` on `moat-port` has no such file -- no test file at all.
+`1afb40b`, `6847672`, `db2f6ba`, `0eab27b`, `c086cde`, `5254aa6` and `f35600e`
+all carry it; only `fa7df21` does not. A literal command in a Test Plan is a
+promise that a reader with the hardware can re-run it. Naming a script that is
+not in the tree, from a repository that has no tests at all, reads as "there is a
+validation script you have not found" rather than "this lives elsewhere".
+
+The requirement is narrow: every fenced command in every commit body must be
+runnable from a clone of the fork. What satisfies it is a choice, and the person
+approving the PR will see either outcome, so pick one now rather than deferring:
+
+- **Recommended: ship the harness in the fork, as the single copy.**
+  `projects/diff-surfel-tracing/validation/validate_tracer_rocm.py` is 455 lines
+  and imports only `os`, `shutil`, `sys`, `torch` and `diff_surfel_tracing`
+  (:13-20). It needs no data, no framework and no fixture, its own docstring
+  already says `Run: python3 validate_tracer_rocm.py` from the repository root,
+  and it is free of MOAT vocabulary. Upstream has no test suite, so this PR asks
+  a maintainer to take ~2,400 lines of new back end on trust with no way to check
+  it beyond `example/render.py`, which needs the author's Google Drive archive.
+  A self-contained ROCm validation script is the answer to "how do I know this
+  works on my machine", and it makes the Test Plans true with no rewording.
+  plan.md:286 put the harness in MOAT on the reasoning that this repository
+  "cannot get one upstream without inventing a test framework for someone else's
+  repository" -- one standalone script next to the existing standalone
+  `example/render.py` is not a framework, so that reasoning does not hold against
+  shipping it. If it ships, keep ONE copy: move it, and point the validation
+  command in plan.md and in notes at `projects/diff-surfel-tracing/src/<path>`.
+  Two copies will drift, and the drifting one is the one the gate runs.
+  Name it for what it is (it asserts `torch.version.hip`, so it is the ROCm
+  validation, not a general test) and mention it in the README's AMD section.
+- **Otherwise: reword all seven Test Plans** so the fenced block runs. A path
+  that does not exist in the repository is not a fix; the block has to name
+  something a reader can execute.
+
+Either way this is a message-only rewrite of seven commits. No platform holds a
+`validated_sha`, so nothing is invalidated; confirm by tree hash as round 4 did.
+
+### 2. The README still attributes all four patch entries to HIP RT
+
+`README.md:57-58`, upstream-visible, and made wrong by round 5's own
+reclassification:
+
+```
+# Build HIP RT, applying the fixes it still needs (see the patch header for what
+# each one is for; they are HIP RT bugs and are being contributed upstream)
+```
+
+The patch header was correctly updated to "bugs in HIP RT and in the copy of
+Orochi it vendors" and the whole point of the round-5 attribution work is that
+the fourth entry is reported to a different repository. The README, which is the
+text a maintainer actually reads, still says all of them are HIP RT bugs.
+
+Second clause in the same sentence: "are being contributed upstream" is not true
+of any of them. `hiprt-32bit-lane-masks-pair-and-pack` and
+`orochi-32bit-ballot-onesweep-reorder` are both `"status": "open"`,
+`"upstream_issue": null`, `"decided": null` -- pending a person's ruling, with
+nothing filed. Upstream prose should not claim a report that does not exist. Say
+what is true: these are defects in HIP RT and in the Orochi copy it vendors, not
+fixed at either project's HEAD, carried here as a patch until they are fixed
+there.
+
+### 3. The pattern-3 sweep result is recorded as an absence claim, and the absence is not what you checked
+
+Round 5, "The sweep, this time in three patterns", item 3: "HIP RT's own kernels
+use `WarpSize` (the real wavefront width, `hiprt_common.h:202`) throughout and
+never carve a wave into logical halves."
+
+The conclusion is right -- I re-derived it -- but the sentence as written will
+mislead the next reader, because HIP RT does carve wavefronts into fixed logical
+sublane groups, in four places, and a reader who trusts "never carves" will skip
+exactly the sites that have to be checked:
+
+- `hiprt/impl/BvhBuilderKernels.h:141-145`, `:706-710`, `:1100-1106`:
+  `sublaneIndex = laneIndex % BranchingFactor`,
+  `subwarpIndex = laneIndex / BranchingFactor`, `subwarpMask` over the subgroup.
+- `hiprt/impl/BvhBuilderKernels.h:1789-1790`:
+  `subwarpIndex = laneIndex / LanesPerLeafPacketTask`,
+  `sublaneIndex = laneIndex % LanesPerLeafPacketTask` (`LanesPerLeafPacketTask`
+  is 4, `BvhConfig.h:37`).
+
+What makes them correct is a positive property, and it is worth recording because
+it is the pattern to look for elsewhere: the carve is relative to the real
+`WarpSize` (`laneIndex = threadIdx.x % WarpSize`), the subgroup mask is built in
+64 bits (`( 1ull << BranchingFactor ) - 1ull` shifted by the subgroup base, after
+the patch), a wave-absolute ballot result is reduced back to a subgroup index
+before it is compared against a subgroup index (`:168-169`,
+`maxIndex = maxLaneIndex % BranchingFactor`), and `PackLeavesWarp` already does
+exactly what `logicalWarpBallot` now does -- `hiprt::ballot( ... ) >>
+( LanesPerLeafPacketTask * subwarpIndex )` at `:1844`, over a `uint64_t`.
+
+Replace the absence claim with that. This is the third round in which a sweep's
+stated rationale has been weaker than its conclusion; "I found no occurrences" and
+"the occurrences I found handle it correctly, here is how" are different records,
+and only the second one survives the next reader.
+
+### Verified independently
+
+Each round-5 claim re-checked against the code and the hardware, not against the
+round-5 write-up.
+
+1. **`logicalWarpBallot` is correct on both wavefront widths.**
+   `RadixSortKernels.h:410-418` in the patched tree. `( threadIdx.x % warpSize )
+   / WARP_SIZE` is the logical warp's index within the physical wave: the block
+   is 1-D and 256 threads (`REORDER_NUMBER_OF_THREADS_PER_BLOCK`,
+   `RadixSortConfigs.h:54`; the fault dump below confirms `workgroup=[256,1,1]`),
+   so `threadIdx.x % warpSize` is the physical lane and the quotient is 0 or 1 on
+   wave64. Shift 0 or 32 of the `unsigned long long` `__ballot` result, narrowed
+   after the shift, so logical warp 1 gets bits 32..63 as its bits 0..31. On
+   wave32 the quotient is always 0, the shift is 0, and the emitted code is
+   unchanged. The `ITS` branch is `__ballot_sync( 0xFFFFFFFF, predicate )`, byte
+   for byte what both original call sites expanded to; `ITS` is defined only for
+   `CUDART_VERSION >= 9000` (`RadixSortKernels.h:26-28`), so the CUDA path is
+   untouched. Both sites converted (`:480`, `:485`); no third ballot in either
+   staged subtree. The collapsed blocks are semantically unchanged, including the
+   second site's `( 0xFFFFFFFF * bit ) ^ ...`, which previously XORed in 64 bits
+   and truncated on assignment to a `u32` and now XORs in 32.
+   Consistency with the rest of the loop holds: `lowerMask` (`:489`), `__popc`,
+   `__ffs` and `if( lane == leaderIdx )` are all logical-lane relative, and there
+   is no `__shfl` broadcast that would need a physical lane. Phases 2 and 3
+   (`:634-680`) use `warp`/`lane` only to address shared memory, and
+   `scanExclusive` (`:309-345`) and `ldsScanExclusive` are LDS plus
+   `__syncthreads` with no warp collective at all.
+2. **The three-pattern sweep holds, including under spellings it did not name.**
+   Pattern 2 run verbatim over `hiprt/` and `contrib/Orochi/ParallelPrimitives`
+   returns exactly nine hits, all `__popcll` counts or `__ffsll` indices
+   (`PlocBuilderKernels.h:195,200`; `hiprt_device_impl.h:147,186`;
+   `BvhBuilderKernels.h:402,726,837,869,1141`) -- a count or an index over 64
+   lanes fits in 32 bits, so all nine are correct. Every mask-shaped destination
+   in `hiprt/` is `uint64_t` (`BvhBuilderUtil.h:167,292`,
+   `PlocBuilderKernels.h:282`, `BvhBuilderKernels.h:144,380,709,1104,1192,1239,1982`).
+   Pattern 1 leaves `RadixSortKernels.h:485` benign as described, and the
+   `1 << j` sites in `BvhBuilderKernels.h:612-625,1549-1571,1638-1695` are vertex
+   masks with `j < 4`, not lanes. Pattern 3: `:448` is the only carve in either
+   subtree, and `BvhNode.h:713-789` is word/bit-offset packing into `m_data`
+   (`m_data[loWord]`), not lanes. I also swept the spellings the three patterns
+   do not cover -- `>> 5`, `& 31`, `& 0x1f`, `% 32u`, `/ 32u` -- and the only
+   hits are `BvhNode.h:1087`, `Triangle.h:93` and `Obb.h:79`, none lane-derived.
+   `hiprt/` and `contrib/Orochi/ParallelPrimitives` are indeed the whole staged
+   set (`setup.py:92`, `:150-161`; the installed `hiprt_root` contains nothing
+   else).
+3. **50/50 reproduced, and the negative control re-run rather than trusted.**
+   Full harness at `f35600e` on this host, cache cleared first: 50/50, and every
+   number identical to the record (0.241, [1.820, 4.574], 62/64 missing [5, 25],
+   cosine 0.9825, fd 1.0000/1.0021, 0.9999/0.7428, 0.9993/0.9387, 0.9923/0.8856,
+   bounce 3.627e-01; P=4096 0.19876/0.386/1343, P=16384 0.25417/0.457/3309).
+   My own negative control: staged `RadixSortKernels.h` replaced with the blob
+   from the pinned tag, cache cleared, scale cases only ->
+   `Memory Fault Error [... kernel: OnesweepReorderKeyPair64]`, exit by core
+   dump; patched file restored, cache cleared, scale cases pass again. So the
+   check is demonstrably sensitive to this hunk, which is the property that makes
+   "the harness survived" a real assertion at this size rather than a tautology.
+   `check_scale` deliberately not using completeness is right and the reasoning
+   is sound -- at P=2048 a correct sort traces 1047/2048 into the same slab.
+4. **The patch reproduces the build tree.** Fresh clone of
+   `3.1.0.cb09c56` (`8602b8c475255fb922c2792654aae0a6bcdeb0af`), `git apply` of
+   the committed patch: applies clean, 12 files, 133 insertions, 49 deletions.
+   `diff -r` against the build clone at `/var/lib/jenkins/HIPRT` is empty except
+   HIP RT's own gitignored generated `hiprt/hiprt.h` and `hiprt/hiprtew.h`, and
+   the installed `diff_surfel_tracing/hiprt_root` matches it too, so the runtime
+   source that produced the 50/50 is the source the patch describes.
+5. **The Orochi attribution is exact.** The blob at the pinned tag is
+   `3fe37293fb4255b190ec21099bd63b0351c71f8b`, and the GitHub contents API
+   returns the same SHA for `Orochi:ParallelPrimitives/RadixSortKernels.h` and
+   for `HIPRT:contrib/Orochi/ParallelPrimitives/RadixSortKernels.h` at their
+   current HEADs (Orochi `78fb3df`, 2026-08-13; HIP RT `e3c01fc`). Byte-identical
+   at all three points, so the defect is live upstream in Orochi and the report
+   belongs there, exactly as the deferral states.
+6. **The lesson is accurate and portable.** `fault-classes.md:86-114`. The three
+   patterns are as described, the "vendored `contrib/` subtrees are staged and
+   runtime-compiled like the dependency's own headers" point generalizes, and the
+   reachability trap ("if a dependency picks kernels by problem size, one test
+   case has to cross every threshold") is the reusable half. The cross-reference
+   to the cuSZ entry at `:130-133` is correct and the two fix forms agree.
+   The round-4 false all-clear is corrected in place at `notes.md:834-843`, as an
+   inserted correction rather than a rewrite, which preserves the record.
+7. **Hygiene.** `jargon.py --port` clean; `prose.py` clean on the `f35600e` body;
+   the fork tree is clean at `f35600e` and matches `origin/moat-port`; all eight
+   titles are `[ROCm]`-prefixed and 47-61 characters; no `Co-Authored-By`, no
+   agent or vendor account references, no host names, ASCII throughout, AI
+   assistance disclosed. The CUDA path over the whole branch is still only
+   `optix_tracer/auxiliary.h` (+19/-1) and `optix_tracer/params.h` (+21), with
+   `CMake/`, `CMakeLists.txt` and `optix_tracer/*.cu` untouched.

@@ -42,3 +42,6 @@
 {"kind":"phase","ts":"2026-08-14T05:34:32Z","phase":"test","seconds":16.479,"exit":0,"cmd":"python3 /var/lib/jenkins/moat/projects/diff-surfel-tracing/validation/validate_tracer_rocm.py"}
 {"kind":"phase","ts":"2026-08-14T05:35:32Z","phase":"test","seconds":8.452,"exit":0,"cmd":"python3 /var/lib/jenkins/moat/projects/diff-surfel-tracing/validation/validate_tracer_rocm.py"}
 {"kind":"session","ts":"2026-08-14T05:40:58Z","epoch":1786686058.493600023,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-14T05:43:04Z","epoch":1786686184.447840333,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-14T05:48:57Z","phase":"test","seconds":8.431,"exit":0,"cmd":"python3 projects/diff-surfel-tracing/validation/validate_tracer_rocm.py"}
+{"kind":"session","ts":"2026-08-14T05:57:55Z","epoch":1786687075.379160173,"event":"end","platform":"linux-gfx90a"}
