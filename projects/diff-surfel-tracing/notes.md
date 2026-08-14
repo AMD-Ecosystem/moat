@@ -953,3 +953,169 @@ clone plus patch reproduces the tested tree byte for byte (`git diff` of the
 verification clone equals the build clone's, 381 lines each; the only files
 present in one and not the other are HIP RT's own gitignored generated headers
 `hiprt/hiprt.h` and `hiprt/hiprtew.h`).
+
+## Review 2026-08-14 (round 4, linux-gfx90a, `moat-port` 5254aa6 vs b7ff795) -- CHANGES REQUESTED
+
+Problems only. All nine round-3 findings are genuinely closed and independently
+re-verified (list at the end). The round-4 work is correct as far as it goes.
+It is also, for the second round running, an incomplete sweep of the same fault
+class -- and this time the site it missed is not a silent wrong answer but a
+reproducible GPU memory fault, in the second subtree `setup.py` newly stages.
+
+### 1. The port hard-faults the GPU on any scene above ~3072 surfels, same fault class
+
+`contrib/Orochi/ParallelPrimitives/RadixSortKernels.h:465-471` and `:476-480`
+(pinned tag `8602b8c`), inside `OnesweepReorder`:
+
+```c++
+int warp = threadIdx.x / WARP_SIZE;   // WARP_SIZE is 32 (RadixSortConfigs.h:45)
+int lane = threadIdx.x % WARP_SIZE;
+...
+u32 broThreads = __ballot( itemIndex < numberOfInputs );   // 64-bit result, u32 destination
+...
+u32 difference = ( 0xFFFFFFFF * bit ) ^ __ballot( bit != 0 );
+```
+
+The kernel treats a 256-thread block as eight 32-lane logical warps. On a
+64-wide wavefront each physical wave holds two of them, `__ballot` returns all
+64 lanes, and storing it in a `u32` keeps bits 0..31 -- so every ODD logical
+warp gets the EVEN warp's ballot. Measured directly on this host
+(`agent_space/ballot_trunc.hip`, gfx90a, one 256-thread block, predicate
+`lane < 8` on even logical warps and `lane < 20` on odd):
+
+```
+thread   0 (logical warp 0): u32 ballot=0x000000ff  u64 ballot=0x000fffff000000ff
+thread  32 (logical warp 1): u32 ballot=0x000000ff  u64 ballot=0x000fffff000000ff
+```
+
+Logical warp 1's own bits are the `0x000fffff` in the upper half; it reads
+warp 0's instead. `warpOffsets[k] = digitCount + __popc( broThreads & lowerMask )`
+(`:487`) then ranks each key against the wrong peer set, `leaderIdx =
+__ffs( broThreads ) - 1` (`:494`) elects a leader from it, and the corrupted
+`lpSum` propagates into `pSum[bucketIndex]`, which is the base of the GLOBAL
+write `outputKeys[dstIndex]` / `outputValues[dstIndex]`.
+
+This is live on this port. `hiprt/impl/RadixSort.cpp` delegates to
+`Oro::RadixSort`, `LbvhBuilder.h:292` calls it for every build, and
+`contrib/Orochi/ParallelPrimitives/RadixSort.cpp:243` selects the single-pass
+kernel only while `n < SINGLE_SORT_WG_SIZE * SINGLE_SORT_N_ITEMS_PER_WI`
+(128 * 24 = 3072). Above that it launches `OnesweepReorderKeyPair64`, which is
+the kernel above. Measured on gfx90a at `5254aa6`, harness scene scaled up
+(`agent_space/scale_probe.py`, P surfels -> 2P triangles -> ~P triangle pairs
+after `PairTriangles`):
+
+| P (surfels) | result |
+|---|---|
+| 64, 1000, 1500, 1536, 1600, 2048 | completes, finite output |
+| 3072 | `Memory access fault ... kernel: OnesweepReorderKeyPair64`, exit 134 |
+| 4096 | same fault, reproducible |
+
+Cause pinned by a controlled edit of the staged `hiprt_root` copy with the
+kernel cache cleared each time -- shifting the ballot into the logical warp's
+half at both sites,
+
+```c++
+u32 broThreads = (u32)( __ballot( itemIndex < numberOfInputs )
+                        >> ( 32u * ( ( threadIdx.x % warpSize ) / 32u ) ) );
+```
+
+makes P=4096 complete with finite output; restoring the file verbatim and
+clearing the cache again brings the fault straight back. (That expression is a
+probe that isolates the cause, not a reviewed patch -- pick the form HIP RT and
+Orochi would take, and check the rest of `OnesweepReorder` for anything else
+that assumes the logical lane is the physical lane.)
+
+The consequence is not a corner case. A 3DGS scene is 10^5-10^6 surfels; every
+real scene is above the threshold and none of them can build a BVH on gfx90a.
+The 64-surfel harness is two orders of magnitude below it, which is why round 3
+and round 4 both passed 44/44 over a back end that cannot render a real scene.
+
+Asks:
+- Add the fourth entry to `third_party/hiprt-rocm-fixes.patch`, with the same
+  header explanation the other entries get. It is a defect in vendored Orochi
+  rather than in `hiprt/`, which is worth saying explicitly in the header.
+- Add a scale case to `validate_tracer_rocm.py` that crosses 3072 sorted
+  elements, because nothing at 64 surfels can reach this code path. Do NOT
+  reuse the geometry-completeness criterion there: measured at P=2048 the scene
+  traces 1047/2048 with the sort working correctly, because a dense slab
+  occludes itself. "Completes without a fault and returns finite output and
+  gradients" is the assertion that has meaning at that size.
+- Extend the deferral so the Orochi site joins the GPUOpen report. Confirmed
+  unchanged at HIP RT HEAD (`e3c01fc`, fetched 2026-08-14).
+
+### 2. The promoted lesson prescribes a grep that cannot find item 1
+
+`.claude/skills/cuda-to-rocm/references/fault-classes.md` (round-4 hunk) is
+accurate on both shapes it describes, but its sweep instruction is "every
+`1 <<`, `1u <<` and `~( 1u << ... )` in an expression whose other operand is a
+64-bit mask". `u32 broThreads = __ballot( ... )` matches none of those patterns,
+and it is the shape that faults. The entry above it does say "a `uint32` mask is
+wrong on a 64-wide wavefront", but as a statement about mask parameters, not as
+something the grep looks for.
+
+Extend the sweep instruction with the destination-type shape -- any 32-bit
+variable, struct field or cast that RECEIVES a `__ballot` / `__activemask`
+result -- and with the idiom that makes it wrong rather than merely truncated:
+code that carves a block into fixed 32-lane logical warps
+(`warp = threadIdx.x / 32`) and then uses a wave-wide collective, so the second
+logical warp in each physical wave silently reads the first one's answer. Say
+that the sweep covers the vendored subtrees the port ships, not just the
+dependency's own headers: this one is in `contrib/`, staged by `setup.py`, and
+compiled at runtime.
+
+### 3. The round-4 sweep claim in this file is wrong and should be corrected
+
+The round-4 entry says the grep "was run over the whole dependency this time,
+and it is now clean: the only other lane-derived shifts are
+`BvhBuilderKernels.h:1854` and `:1948`". Two corrections. The enumeration also
+misses `RadixSortKernels.h:485`, `u32 lowerMask = ( 1u << lane ) - 1` -- benign,
+since `lane` is `threadIdx.x % 32` and the mask is a `u32`, so the conclusion
+about it stands, but it is a lane-derived shift and it is in the file that
+carries item 1. And "clean" is not the finding; item 1 is. Rewrite it once item
+1 is fixed so the next reader does not inherit a false all-clear. The
+re-verified part is fine: `BvhBuilderKernels.h:1854` and `:1948` are
+`( 1 << sublaneIndex ) - 1` with `sublaneIndex < LanesPerLeafPacketTask` and a
+`uint32_t` mask, correct as written, and `PlocBuilderKernels.h:283`,
+`BvhBuilderUtil.h:169,294` already use `1ull`.
+
+### Verified closed, independently
+
+Each round-3 finding re-checked against the code rather than the response.
+
+1. `PairTriangles` -- `activeMask &= ~( 1ull << firstPairedLane )` present in the
+   patch and in the patched source at `BvhBuilderKernels.h:405`; the recorded
+   negative control (31/64, missing `[5, 16..31, 48..63]`) is exactly the surfel
+   set that the upper 32 lanes of each of the two waves own, since surfel `i` is
+   triangles `2i, 2i+1`. Internally consistent with the round-3 measurement.
+2. `PackLeavesWarp` -- `1ull` at both `:1989` and `:1993`. Both sites confirmed
+   still defective at HIP RT HEAD, as the deferral states.
+3. `check_geometry_complete` -- `validate_tracer_rocm.py:225-242` asserts
+   in-frame first, then a margin of 4. The margin holds: `make_scene` puts every
+   centre at `|x|,|y| <= 0.6`, `z >= 1.5`, so `in_frame` is a real premise; the
+   two untraced disks are scene-specific (a seed-1 scene traces 64/64), which is
+   what "edge-on" predicts and a systematic loss does not; and any half-wave loss
+   lands at 33 missing, eight times the margin. Full suite re-run here at
+   `5254aa6`: 44/44, reflected-bounce delta 3.627e-01, matching the recorded
+   0.363. The four recalibrations re-justified on the complete scene are sound.
+4. The four `hiprtGet*Frame*` getters are gone from the patch.
+5. Staging is 1016 KB (`hiprt/` 956 KB, `contrib/` 56 KB) and demonstrably
+   sufficient: the cache was cleared twice during this review and every builder
+   kernel recompiled from the staged copy, including `OnesweepReorderKeyPair64`,
+   which comes from the `contrib` subtree.
+6. `grep -riE "claude|anthropic|PORTING_GUIDE|UPSTREAM_FINDINGS"` over the
+   tracked source is empty; the register-pressure comment now states the
+   workaround.
+7. Message-only rewrites confirmed by tree hash, not by inspection:
+   `195d62f`/`6847672` both `c3ec7db`, `9722c7b`/`db2f6ba` both `c00df87`,
+   `b7ff795`/`fa7df21` both `63b6ff9`. No platform held a `validated_sha`.
+   Both new bodies are accurate, including the honest "the numbers that run
+   reports are superseded" paragraph in `fa7df21`.
+8. Covered in item 2 above.
+9. Deferral `hiprt-32bit-lane-masks-pair-and-pack` registered and accurate;
+   EnvGS mechanism recorded.
+
+Also re-checked and clean: `jargon.py --port diff-surfel-tracing`; commit titles
+`[ROCm]`-prefixed, 47-61 chars, no agent trailer, ASCII bodies with Test Plans;
+the fork tree is clean at `5254aa6`; the CUDA path is unchanged from round 3;
+and the committed patch applied to a fresh clone of `8602b8c` reproduces the
+build clone's tree byte for byte (381-line diff, identical).
