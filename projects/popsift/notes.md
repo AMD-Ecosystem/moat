@@ -2777,3 +2777,82 @@ PASS. `linux-gfx90a`: revalidate -> completed; validated_sha =
 `d10126b5dab3f8e166e096ed9428a5ee01061052` (== head_sha). No fork push (validator does not
 write to the fork); `moat-fix-186` and `moat-port` left exactly as found (`moat-port` still
 `f2712723d903`). `git -C projects/popsift/src status --porcelain` empty at completion.
+
+## 2026-08-14 -- fix round: merge upstream develop to clear the PR #186 conflict (tip badbfc3)
+
+GitHub reported PR #186 CONFLICTING against base `develop`. Cause: upstream `3d05ad0`
+"Include Thrust tuple and zip iterator headers" (merged to develop 2026-08-07 as `36d704d`)
+added `#include <thrust/iterator/zip_iterator.h>` and `#include <thrust/tuple.h>` to
+`src/popsift/s_filtergrid.cu` -- CUDA 13.3 stopped pulling those in transitively. Our commit
+`a0b95cc` ("Move the Thrust setup into a shared header") had reworked the same include block,
+dropping `<thrust/execution_policy.h>` and `<thrust/version.h>` in favour of
+`common/thrust_setup.h`. Both sides edited adjacent/overlapping lines of one include block.
+
+### What conflicted
+
+`git merge-tree` and the real merge agree: `src/popsift/s_filtergrid.cu` is the ONLY conflict;
+everything else in `b1c8199..36d704d` merges clean (that range touches no other file).
+Merge base: `b1c8199`. Git auto-merged `zip_iterator.h` on its own; the textual conflict was
+just the trailing pair `tuple.h` + `version.h`.
+
+### Resolution (union of both intents)
+
+Kept our include-block shape (`common/thrust_setup.h`, no `execution_policy.h`, no
+`version.h` -- both are already pulled in by `common/thrust_setup.h`), and added upstream's
+two new headers in their sorted positions. Checked `thrust_setup.h` first: it includes only
+`<thrust/execution_policy.h>` and `<thrust/version.h>`, so neither new header would be a
+duplicate. They are specific to this translation unit (zip iterator + tuple are used by the
+grid-filter sort comparators), so they belong in `s_filtergrid.cu`, not in the shared header.
+rocThrust ships both, so the AMD build is unaffected. Upstream's end-of-file blank-line
+removal came in cleanly with the merge.
+
+Net delta of the merge against our previous tip `d10126b`, whole branch:
+```
+ src/popsift/s_filtergrid.cu | 3 ++-
+ +#include <thrust/iterator/zip_iterator.h>
+ +#include <thrust/tuple.h>
+ -                                      (trailing blank line at EOF)
+```
+
+### Merge, not rebase
+
+`badbfc354db4f4b39363606924d80dabd7f76356`, parents `d10126b5dab3` (ours) and `36d704d39b4c`
+(upstream develop). Verified `f2712723d903` (published tip before this round), `d10126b5dab3`
+and `36d704d39b4c` are all ancestors of the new tip. Nothing at or below the published tip was
+rewritten. Merge title/body carry no in-house vocabulary:
+`python3 utils/jargon.py --diff d10126b..HEAD` -> clean. `--port popsift` still reports the one
+known pre-existing hit ("fault classes" in `05e698ec8`), an ancestor of the published tip that
+has been live in PR #186 since it opened; unchanged by this round.
+
+### Build (linux-gfx90a, MI250X, TheRock ROCm SDK, clang 23.0.0git / HIP 7.14.60850)
+
+Clean build directory (`rm -rf build-hip`), same invocation as the 2026-08-14 validation:
+```
+source /etc/rocm_env.sh
+bash utils/timeit.sh popsift compile -- cmake -S projects/popsift/src -B projects/popsift/src/build-hip \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=$ROCM_PATH/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROCM_PATH \
+  -DCMAKE_BUILD_TYPE=Release -DPopSift_BUILD_EXAMPLES=ON -DBUILD_SHARED_LIBS=ON \
+  -DPopSift_USE_TEST_CMD=ON -DPopSift_TESTFILE_PATH=/var/lib/jenkins/moat/agent_space/oxford
+bash utils/timeit.sh popsift compile -- cmake --build projects/popsift/src/build-hip -j
+```
+configure 5.7s, build 33.3s, 100%: `libpopsift.so`, `popsift-demo`, `popsift-match`. Only the
+two pre-existing benign warnings (`-Wunused-value` on nodiscard `hipError_t` in debug_macros /
+s_filtergrid, `-Wdeprecated-declarations` on rocThrust `thrust::identity<int>`). No new
+warnings from the merged includes. Single `amdgcn-amd-amdhsa--gfx90a` code object.
+
+Porter-level smoke run (full GPU validation is the validator's, at the new head):
+`HIP_VISIBLE_DEVICES=0 ./popsift-demo -i <boat>/img1.pgm --gauss-mode vlfeat --desc-mode loop
+--popsift-mode --root-sift --downsampling -1` -> 8351 features / 9874 descriptors, byte-identical
+to the img1 figure validated at `d10126b` on this platform and to the cross-arch reference.
+
+### Record
+
+Pushed `moat-fix-186` only (fast-forward; the remote branch had been deleted after the previous
+round merged, so this push recreated it -- which is also why the first `--force-with-lease`
+attempt failed with "stale info" against a stale remote-tracking ref). `moat-port` untouched at
+`d10126b5dab3` == `published_sha`. `advance-head popsift badbfc35` -- the five completed
+platforms (linux-gfx90a, linux-gfx1100, windows-gfx1151, windows-gfx1201, windows-gfx1101) now
+read `revalidate`, which is expected: the delta is a 2-line include addition in a file every one
+of them compiles, but the evidence must exist at the new tip before it reaches the open PR.
+`git -C projects/popsift/src status --porcelain` empty.
