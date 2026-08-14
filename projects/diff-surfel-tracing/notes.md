@@ -2028,3 +2028,117 @@ file's pre-existing emoji headings are upstream's).
   backports and genuine reports -- and only the per-entry check tells them
   apart. Promoted to the skill, since any port pinning a dependency and carrying
   patches against it has the same exposure.
+
+## Review 2026-08-14 (round 7, linux-gfx90a, `moat-port` 173f32a vs 1f59cef) -- PASSED
+
+No problems. All three round-6 findings are closed, the new per-entry upstream
+check the round volunteered is correct in every entry I could verify, and the
+rewrite is provably message-only. Verification below is against the code, HIP RT
+`main`, and this host, not against the round-7 write-up.
+
+1. **The README stops counting, and the patch header's per-entry annotations are
+   accurate.** `README.md:57-61` no longer states a number and no longer splits
+   the entries between projects; it says they are bugs in HIP RT and in the
+   vendored Orochi, that most are unfixed on HIP RT's main branch, and sends the
+   reader to the header. All three claims hold at the fork tree. The header's
+   table has exactly eleven entries (rows at `hiprt-rocm-fixes.patch:25, 44, 60,
+   68, 86, 90, 95, 99, 104, 107, 110`) over twelve `^--- a/` files, so "eleven
+   entries below" and "three of those files under contrib/Orochi/" in
+   `173f32a`'s body are both right. `b13a8e7`'s body no longer counts and no
+   longer asserts anything about either project's HEAD.
+2. **The three-fixed / eight-unfixed partition checked independently at HIP RT
+   `main`.** `e3c01fce5860f5d74b959ae71abbbab6a5462aed` is the current head of
+   `main` (committed 2026-04-15), fetched by API. Fixed there, as the header
+   says: `Compiler.h:38-40` has no `Compiler()` and does have `void init()`,
+   `Compiler.cpp:73` is `void Compiler::init()`, `Context.cpp:42-43` is
+   `checkOro( oroCtxSetCurrent( m_ctxt ) ); m_compiler.init();`;
+   `Orochi.cpp:941-943` is `ioroDevice d{}; d.setApi( api ); d.setDevice( dev );`;
+   `MemoryArena.h:33`, `BvhNode.h:1308` and `hiprt_device_impl.h:255` and `:942`
+   are all in the patched initializer order and `hiprt_device_impl.h:1826` and
+   `:1881` are the restructured `uint32_t depth = 0` loops, byte-identical to
+   what the patch produces. Unfixed there, as the header says:
+   `Compiler.cpp:636-641` goes from `deviceName.substr` straight to `moduleHash`
+   with no path sanitize, `addCommonOpts` ends at `-D__USE_HIP__` / `-std=c++17`
+   with no `--offload-arch`, `Compiler.cpp:209` still passes
+   `moduleName.string().c_str()`, and `hiprt.cpp:36` still calls
+   `oroInitialize( ..., g_hip_paths, g_hiprtc_paths )` with `hiprtc0707` the
+   newest name in `hiprt_libpath.h:40`.
+3. **The lane-mask claim, which the wave64 story rests on, holds at HIP RT
+   `main`.** All four are present unfixed: `( 1 << BranchingFactor ) - 1` at
+   `BvhBuilderKernels.h:144`, `:709`, `:1104`; `~( 1u << firstPairedLane )` at
+   `:405`; `1 << broadcastLane0/1` at `:1989`/`:1993`; and `u32 broThreads =`
+   over `__ballot` at `RadixSortKernels.h:465`. So "the other eight, including
+   all four lane mask fixes, are not fixed upstream" is true, and the four hunks
+   this port depends on are genuine reports rather than backports.
+4. **Seven, not eleven, everywhere.** The only surviving "eleven" in the fork are
+   `hiprt-rocm-fixes.patch:9` (patch entries) and `validate_rocm.py:10` (the
+   tracer's return arity, stated as the contrast), both correct. `README.md:80`,
+   the `validate_rocm.py` docstring, and the bodies of `3b4aaf1`, `714c118` and
+   `07c8742` all say seven. The reason given for the absent four is right:
+   `make_rays` (`validate_rocm.py:118-127`) returns `o`/`d` with no
+   `requires_grad`, and `SurfelTracer.forward` (`__init__.py:292-296`) raises
+   unless exactly one of shs/colors_precomp and one of scales+rotations /
+   cov3D_precomp is passed. `surface.json:139` and `:127` and the three
+   historical notes lines (`:173`, `:392`, `:509`) are corrected and each marked
+   as a round-7 correction; `surface.json:135`'s "eleven-tensor backward arity"
+   is about the API and is correctly left.
+5. **The 50/50 rerun reproduces from the shipped file.** `cd
+   projects/diff-surfel-tracing/src && HIP_VISIBLE_DEVICES=0 python3
+   example/validate_rocm.py` -> `50/50 checks passed`, exit 0, on MI250X / ROCm
+   7.14.60850. Every number identical to rounds 5-7 (0.9825, 1.0000/1.0021,
+   0.9999/0.7428, 0.9993/0.9387, 0.9923/0.8856, 3.627e-01, 0.19876/0.386/1343,
+   0.25417/0.457/3309), and `grep -c 'backward grad_.* finite'` is 7.
+6. **The `git apply --check --cached` method is sound and reproduces.** At
+   `/var/lib/jenkins/HIPRT`, `HEAD` is the pinned `8602b8c`, the index is clean
+   while twelve files are modified in the working tree, and `git apply --check
+   --cached --stat <patch>` exits 0 with `12 files changed, 133 insertions(+), 49
+   deletions(-)` -- the same numbers `173f32a`'s Test Plan prints from a fresh
+   clone. Nothing above the first `---` at `hiprt-rocm-fixes.patch:114` starts
+   with `---`, `+++`, `@@` or `diff `, so the header edit cannot perturb the
+   parse.
+7. **The rewrite is message-only, provably.** All eleven commits pairwise
+   tree-identical between `refs/moat/pre-round7-rewrite` (`919c6df`) and
+   `173f32a` (`<sha>^{tree}` compared in `git rev-list --reverse` order), and
+   `git diff 919c6df 173f32a` is empty. The message diff is exactly five
+   substitutions in four commits -- one in `3b4aaf1`, two in `714c118`, one in
+   `07c8742`, one in `b13a8e7` -- and nothing else; `2f85465`, `cfd6f05` and
+   `435c1d1` are untouched. The sha table at `notes.md:1870-1882` matches the
+   branch. All three platforms hold `validated_sha: null` and `failed_sha:
+   null`, so nothing was orphaned; `origin/moat-port == moat-port == 173f32a`;
+   `refs/original/refs/heads/moat-port` and `refs/moat/pre-round7-rewrite` both
+   pin `919c6df` and `refs/moat/pre-round6-rewrite` still pins `ff2c14b`. No
+   `review_pr`, `upstream_pr` or `published_sha` is recorded, so no upstream PR
+   could be disturbed. The push flag itself is not recoverable from the
+   repository, as in round 6, but the outcome is right.
+8. **The deferral is registered as asked.** `hiprt-warpsize-arch-allowlist`,
+   kind `rocm-bug-report`, component `hiprt`, project `diff-surfel-tracing`,
+   `status: open`, `upstream_issue: null`, alongside the three other HIP RT and
+   Orochi entries. No patch hunk was added, correctly. The notes paragraph at
+   `:1978-2000` states the conditional wave64 correctness, and its premise
+   re-verified: `hiprt/hiprt_common.h:202-207` at `main` `e3c01fc` is the
+   identical eleven-architecture allowlist with `gfx950` absent.
+9. **The README-caveat judgment call is defensible and I am not reopening it.**
+   Round 6 delegated it explicitly. The section makes no per-architecture
+   support claim to qualify, and it already hands the reader the harness that
+   answers the question on their own GPU, so the deferral plus the notes
+   paragraph carry the record without a caveat naming hardware nobody here has.
+10. **The promoted lesson is accurate and portable.**
+    `validation.md:116-120`. The generalization ("check each entry against the
+    dependency's default branch, not the patch as a whole, and record the commit
+    you checked against with the date") is the durable half and applies to any
+    port pinning a dependency and carrying patches; the two count-drift traps it
+    names are both real here (`^--- a/` gives 12, the header table gives 11).
+11. **Hygiene.** `jargon.py --port`, `--commits ef6f24b..moat-port` and `--diff
+    ef6f24b..moat-port` clean; `prose.py` clean on `173f32a` and on all four
+    rewritten bodies; `check.py` clean. The fork tree is clean and matches
+    `origin/moat-port`. All eleven titles are `[ROCm]`-prefixed and 47-61
+    characters, all eleven bodies disclose AI assistance and carry a `Test
+    Plan:`, none carries `Co-Authored-By`, `Signed-off-by`, a ghstack marker or
+    an agent or vendor account reference. The lines `173f32a` adds are ASCII.
+
+Round 6's two deliberately-not-raised items (the Test Plans in the early commits
+naming a file that only exists from `07c8742` on, and `07c8742`'s "the two
+surfels it tolerates as untraced") stand as recorded and were not reopened.
+
+Verdict: review-passed. The GPU gate is the validator's, unrun by design at this
+point; the round-7 delta is text and cannot move it.
