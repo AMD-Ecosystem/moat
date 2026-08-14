@@ -48,3 +48,5 @@
 {"kind":"session","ts":"2026-08-14T06:00:35Z","epoch":1786687235.549701748,"event":"start","platform":"linux-gfx90a"}
 {"kind":"phase","ts":"2026-08-14T06:02:00Z","phase":"test","seconds":8.123,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/diff-surfel-tracing/src && python3 example/validate_rocm.py"}
 {"kind":"session","ts":"2026-08-14T06:09:36Z","epoch":1786687776.378836058,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-14T06:11:55Z","epoch":1786687915.566453505,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-14T06:22:03Z","epoch":1786688523.394948225,"event":"end","platform":"linux-gfx90a"}

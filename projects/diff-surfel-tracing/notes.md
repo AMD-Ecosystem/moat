@@ -1650,3 +1650,205 @@ P=16384 0.25417/0.457/3309.
   old tip first (`git update-ref refs/moat/pre-<round>`), because
   `refs/original/` is expendable and `--force-with-lease` wants the old sha
   anyway.
+
+## Review 2026-08-14 (round 6, linux-gfx90a, `moat-port` 1f59cef vs f35600e) -- CHANGES REQUESTED
+
+Problems only. All three round-5 findings are genuinely closed: the harness is a
+single file in the fork, the rewrite is provably message-only, and the pattern-3
+correction is accurate (list at the end). No device or build code moved this
+round and none of the round-5 verification is disturbed.
+
+The findings below are all in text that round 6 itself wrote, and all three are
+the same failure the round-5 review was about: an upstream-visible sentence that
+states more than what is true. Two of them replaced one inaccuracy with another,
+which is why they come back rather than being let go. The third is a wave64
+caveat that no round has recorded and that this project's own gate structurally
+cannot see.
+
+### 1. The README now says the patch has four entries. It has eleven.
+
+`README.md:57-60` in the fork, upstream-visible, introduced by `1f59cef`:
+
+```
+# Build HIP RT, applying the fixes it still needs (see the patch header for what
+# each one is for; three are bugs in HIP RT itself and one is in the copy of
+# Orochi it vendors, none of them is fixed at either project's HEAD, and they
+# are tracked for upstream reporting)
+```
+
+"see the patch header for what each one is for" scopes the sentence to every
+entry in the patch, and "three ... and one ..." then counts four of them.
+`third_party/hiprt-rocm-fixes.patch` has eleven entries in its header table over
+twelve files (`grep -n '^--- a/'`), and its own text says so two paragraphs
+above: "The first four entries are one defect in four shapes". The seven the
+README's count leaves out are `Compiler.cpp getCacheFilename`, `addCommonOpts`
+and `buildProgram`, the `Compiler.{h,cpp}`/`Context.cpp` init split, the
+`hiprt.cpp`/`hiprt_libpath.h`/`Orochi hipew.cpp` library-path fix, `Orochi.cpp
+oroSetRawDevice`, and the `MemoryArena.h`/`BvhNode.h`/`hiprt_device_impl.h`
+warning fixes. `notes.md:185` records the same thing from the other side: "There
+are ten patched HIP RT files, not four."
+
+The Orochi half is wrong by the same count. Three of the twelve patched files
+are under `contrib/Orochi/` -- `ParallelPrimitives/RadixSortKernels.h`,
+`Orochi/Orochi.cpp` and `contrib/hipew/src/hipew.cpp` -- not one.
+
+`1f59cef`'s own body carries the error into the commit log: "Three of the four
+are in HIP RT's own sources and the fourth is in the copy of Orochi that HIP RT
+vendors", introduced by the sentence before it, which scopes itself to "the
+entries in third_party/hiprt-rocm-fixes.patch".
+
+This is round 5's finding 2 in a new shape, and the round-5 write-up seeded it by
+saying "all four patch entries" -- that phrasing was wrong too and should not
+have been taken as the specification. The fix is to drop the count and say what
+the patch header already says, which is true of all eleven: they are bugs in HIP
+RT and in the copy of Orochi it vendors, none is fixed at either project's HEAD,
+and they are tracked for upstream reporting. Verified unfixed at HEAD for the
+four lane-mask ones (below); if the reworded sentence is to cover all eleven at
+HEAD, either check the other seven or scope the HEAD clause to the ones that
+were checked.
+
+### 2. "all eleven backward gradients" -- the harness checks seven of them
+
+Three upstream-visible copies of the same overclaim, all shipped this round:
+
+- `example/validate_rocm.py:5` (the module docstring, now in the fork)
+- `README.md:80` (the new AMD paragraph, `f908248`)
+- `f908248`'s commit body, second paragraph
+
+`_C.trace_surfels_backward` returns eleven tensors -- `grad_ray_o`, `grad_ray_d`,
+`grad_means3D`, `grad_grads3D`, `grad_shs`, `grad_colors_precomp`,
+`grad_others_precomp`, `grad_opacities`, `grad_scales`, `grad_rotations`,
+`grad_cov3Ds_precomp` (`diff_surfel_tracing/__init__.py:197`). `check_backward`
+iterates the `inputs` dict built in `trace()` (`validate_rocm.py:158-160`), which
+holds seven: `means3D`, `grads3D`, `scales`, `rotations`, `opacities`, `colors`,
+`others`. The other four are not examined and cannot be, in this configuration:
+`ray_o`/`ray_d` are built without `requires_grad` (`make_rays`, `:113-121`), and
+`shs`/`cov3D_precomp` are the mutually exclusive alternatives to
+`colors_precomp` and the scale/rotation pair, so `SurfelTracer.forward`
+(`:291-305`) substitutes empty dummy tensors and raises if you pass both. The
+run's own output is the plainest refutation: seven `backward grad_* finite`
+lines, not eleven.
+
+Two acceptable fixes. Reword to what is checked -- "every gradient this scene
+exercises (seven of the tracer's eleven; `shs` and `cov3D_precomp` are the
+alternative parameterization and `ray_o`/`ray_d` are not differentiated here)"
+-- or raise the count honestly by setting `requires_grad` on `ray_o`/`ray_d`,
+which makes it nine and costs three lines. `shs` and `cov3D_precomp` would need
+a second scene; that is a real gap but not one this finding asks you to close.
+`surface.json:139` and `notes.md:173` carry the same "all eleven" wording and
+should move with it, so the record and the shipped text agree.
+
+### 3. HIP RT's `WarpSize` is an architecture allowlist, and nothing records that
+
+`hiprt/hiprt_common.h:202-206` at the pinned tag:
+
+```
+#if __gfx900__ || __gfx902__ || __gfx904__ || __gfx906__ || __gfx908__ || __gfx909__ || __gfx90a__ || __gfx90c__ || \
+	__gfx940__ || __gfx941__ || __gfx942__
+constexpr uint32_t WarpSize = 64;
+#else
+constexpr uint32_t WarpSize		   = 32;
+#endif
+```
+
+Every wave64 argument this port makes rests on `WarpSize` being the real
+wavefront width -- the three `subwarpMask` fixes, the `PairTriangles` and
+`PackLeavesWarp` fixes, `logicalWarpBallot`, and round 5's item 3 ("the carve is
+relative to the real `WarpSize`"). It is the real width only for the eleven
+architectures named on those two lines. `gfx950` is not among them, so on an
+MI350 the runtime compiler (`--offload-arch=<gcnArch>`, from this port's own
+patch) builds HIP RT's kernels with `WarpSize = 32` against 64-lane hardware:
+`laneIndex = threadIdx.x % WarpSize` stops being the lane, and every subgroup
+carve and ballot reduction downstream is wrong. I checked HIP RT HEAD by API --
+`hiprt/hiprt_common.h` at HEAD has the identical list -- so this is live
+upstream, not staleness in the pinned tag. It is textbook hardcoded-wavefront:
+the durable fix is `__AMDGCN_WAVEFRONT_SIZE__` rather than an enumerated list.
+
+The gate cannot see this: gfx90a and gfx942 are both on the allowlist, so wave64
+coverage passes while the exposure is invisible, and the README tells a user to
+set `PYTORCH_ROCM_ARCH` to whatever their GPU is.
+
+What is required is the record, not a patch hunk: do NOT add `__gfx950__` to a
+twelve-file patch you cannot validate on any host here. Register it as a
+`rocm-bug-report` deferral (`utils/deferred.py add`) so it joins the GPUOpen
+report the other HIP RT defects are already queued for, and put one paragraph in
+notes stating that the port's wave64 correctness is conditional on that
+allowlist. Whether the README's AMD section should carry an architecture caveat
+is your call; the deferral and the note are not.
+
+### Verified independently
+
+Re-checked against the code and this host, not against the round-6 write-up.
+
+1. **One harness, and it is the one that ran.** `git show 7ffc729^:.../validation/validate_tracer_rocm.py` diffed against
+   `example/validate_rocm.py` on the fork branch differs in exactly the docstring
+   `Run:` lines (2 lines). MOAT tracks no copy: `git ls-files
+   projects/diff-surfel-tracing` returns the six record files only, the
+   `validation/` directory is gone from the working tree, and no
+   `validate_tracer_rocm` string survives anywhere in the fork. `plan.md:286`,
+   `:325`, `:353`, `surface.json:116`, `:139` and `notes.md:14-19` all point at
+   the fork path; the pre-round-6 mentions further down the notes are the record
+   of what those rounds did and are correctly left alone.
+2. **50/50 reproduced from a fork checkout, as shipped.** `cd
+   projects/diff-surfel-tracing/src && HIP_VISIBLE_DEVICES=0 python3
+   example/validate_rocm.py`, no reinstall, no cache priming: `50/50 checks
+   passed`, exit 0, on MI250X / ROCm 7.14.60850 / torch 2.14.0a0+git7d05abc.
+   Every number identical to the round-6 record (0.241, [1.820, 4.574], 62/64
+   missing [5, 25], cosine 0.9825, 1.0000/1.0021, 0.9999/0.7428, 0.9993/0.9387,
+   0.9923/0.8856, 3.627e-01, P=4096 0.19876/0.386/1343, P=16384
+   0.25417/0.457/3309). Running it as `example/validate_rocm.py` puts `example/`
+   on `sys.path[0]`, not the repository root, so `import diff_surfel_tracing`
+   still resolves to the installed package and not to the source directory next
+   to it -- the relocation did not change what gets imported.
+3. **The rewrite is message-only, provably.** All ten commits pairwise
+   tree-identical between `refs/moat/pre-round6-rewrite` (`ff2c14b`) and
+   `1f59cef` (`ef6f24b..` in reverse order, `<sha>^{tree}` compared), `git diff
+   ff2c14b 1f59cef` empty. Message diffs are exactly the seven
+   `validate_tracer_rocm.py` -> `example/validate_rocm.py` substitutions plus the
+   two claim fixes in `02ac712` and `b1d9838`, and nothing else; `f038d98` and
+   the two new commits are untouched. All three platforms hold
+   `validated_sha: null`, so nothing was orphaned. The push flag itself is not
+   recoverable from the repository (a reflog records "update by push", not the
+   options), but the outcome is right: `origin/moat-port == moat-port ==
+   1f59cef`, the old tip is preserved at two refs, and no upstream PR exists for
+   the fork's pre-push hook to defend.
+4. **The two commit-body claim fixes are correct.** `02ac712` now says the HIP RT
+   fixes "are tracked for reporting to the projects that own them" and `b1d9838`
+   that the Orochi defect "belongs to a different project" -- neither asserts a
+   report that has not been filed. `deferred.json` backs "tracked": four entries,
+   `hiprt-jit-and-cache-fixes` and `hiprt-collapse-reference-count-hang` ruled
+   `now`, the two lane-mask ones open, all four `upstream_issue: null`.
+5. **The four lane-mask defects really are unfixed at HEAD.** Fetched
+   `hiprt/impl/BvhBuilderKernels.h` at HIP RT HEAD (blob
+   `64cc5d6c690323cb215716e35f84540b2b461165`): `( 1 << BranchingFactor )` at
+   `:144`, `:709`, `:1104`, `~( 1u << firstPairedLane )` at `:405`, `1 <<
+   broadcastLane` at `:1989`/`:1993` -- all present. With round 5's byte-identical
+   check on the Orochi blob at both HEADs, the README's HEAD clause holds for the
+   four it means, whatever happens to its count.
+6. **The pattern-3 correction is accurate.** `WarpSize` is at
+   `hiprt/hiprt_common.h:204` (64) and `:206` (32), so round 6's correction of
+   round 5's `:202` is right, and it is `hiprt/hiprt_common.h`, not
+   `hiprt/impl/`. The four carve sites and the positive property they turn on are
+   as recorded.
+7. **The promoted lesson is accurate and portable.**
+   `validation.md:110-114`. "Ship the harness with the port when it is one
+   standalone file importing only the standard library, the framework the project
+   already depends on, and the project itself" generalizes cleanly, the
+   one-copy-not-two rule and the `agent_space/` warning are the durable half, and
+   the `git mv` gotcha it leans on is recorded at `notes.md:1639-1645`.
+8. **Hygiene.** `jargon.py --port`, `--commits ef6f24b..moat-port` and `--diff
+   ef6f24b..moat-port` all clean; `prose.py` clean on both new bodies; `check.py`
+   clean. The fork tree is clean and matches `origin/moat-port`. All ten titles
+   are `[ROCm]`-prefixed and 47-61 characters, all ten bodies disclose AI
+   assistance and carry a `Test Plan:`, none carries `Co-Authored-By`,
+   `Signed-off-by` or a ghstack marker, and there are no agent or vendor account
+   references. `example/validate_rocm.py` is pure ASCII and free of MOAT
+   vocabulary, which it has to be now that it ships.
+
+Not findings, recorded so the next round does not relitigate them: the Test Plans
+in commits 1-8 name `example/validate_rocm.py`, which only exists from `f908248`
+onward, so an intermediate checkout cannot run them. A PR series is tested at its
+tip and reordering would move every sha again for no reader benefit. And
+`f908248`'s "the two surfels it tolerates as untraced" describes the two that are
+untraced, not the margin of four (`validate_rocm.py:223`); the code comment
+explains the margin correctly.
