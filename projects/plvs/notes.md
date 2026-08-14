@@ -1113,3 +1113,124 @@ Orb_gpu.cu and Fast_gpu.cu were not compiled on either path this session (no Ope
 this host; nvcc 12.8 hits the pre-existing OpenCV 4.6 `textureReference` / `reduce<32>` failures
 recorded on the upstream base), so a validator with an OpenCV-with-HIP build should compile all
 four device sources.
+
+## Validation 2026-08-14 (linux-gfx90a, revalidate): binary-equiv confirmed, but held on jargon + doc gates -- validation-failed
+
+Trigger: HEAD moved from `be91acd` (this arch's `validated_sha`) to `22ea834` (the
+NVIDIA-header-hygiene fix round). `classify` verdict: mixed (CMakeLists.txt +
+hip_compat/cuda/helper_cuda.h + include/cuda/helper_cuda.h all "mixed (token count differs)"),
+so the auto-carry path does not apply; did the build-both-shas binary-equivalence check per the
+validator playbook.
+
+Host: TheRock pip-package ROCm (hipcc/amdclang++ under
+`/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel`, HIP 7.14.60850, clang
+23.0.0), not `/opt/rocm`. GPU: 4x gfx90a (MI250X GCDs) visible via `rocminfo`, HEALTHY.
+`utils/codeobj_diff.py` hardcodes `/opt/rocm/...` tool paths; rather than writing there (no sudo
+in this harness) I ran the equivalent comparison directly (see below) -- same normalization
+(address-strip via llvm-objdump, drop file-format header) the tool itself implements.
+
+### Fork setup
+`git clone https://github.com/AMD-Ecosystem/plvs.git projects/plvs/src`, `git checkout
+moat-port` -> HEAD `22ea834` (matches `status.json.head_sha`). `git status --porcelain`: clean,
+both before and after this session (read-only validation, no source edits).
+
+### Built a real OpenCV-with-HIP from source (no prior build tree on this host)
+Cloned `AMD-Ecosystem/opencv`@moat-port (`50f05b1`) and `AMD-Ecosystem/opencv_contrib`@moat-port
+into scratch, configured and built for gfx90a:
+```
+cmake -S core -B build -GNinja -DCMAKE_BUILD_TYPE=Release \
+  -DOPENCV_EXTRA_MODULES_PATH=<contrib>/modules \
+  -DWITH_HIP=ON -DCMAKE_HIP_COMPILER=<sdk>/bin/amdclang++ -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_PREFIX_PATH=<sdk> -DWITH_CUDA=OFF -DWITH_OPENCL=OFF -DWITH_PYTHON=OFF \
+  -DBUILD_LIST=core,cudev,cudaarithm,cudawarping,cudaimgproc,cudastereo,cudafilters,cudafeatures2d \
+  -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF
+cmake --build build -j64   # 533/533, RC=0
+cmake --install build --prefix <scratch>/install
+```
+(`<sdk>` = the TheRock `_rocm_sdk_devel` path above.) This is the same BUILD_LIST the original
+2026-06 porter/validator sessions used; it now lives only in scratch (gitignored/ephemeral), not
+committed anywhere.
+
+### Binary-equivalence check on the 4 plvs GPU translation units (be91acd vs 22ea834)
+Compiled all 4 `.cu` files directly with the real toolchain, both shas, against the built
+OpenCV-with-HIP headers:
+```
+hipcc -x hip --offload-arch=gfx90a -std=c++17 -DUSE_HIP -c src/cuda/<f>.cu \
+  [-Ihip_compat only at 22ea834] -Iinclude -Isrc/cuda -I<ocv-install>/include/opencv4 -o <f>.o
+```
+All 8 compiles (4 files x 2 shas) RC=0. `-Ihip_compat` is required at `22ea834` only (that is the
+round's whole point -- `checkCudaErrors` now resolves via `hip_compat/cuda/helper_cuda.h`
+instead of the modified vendored header); at `be91acd` the vendored header still carries the
+symbol directly.
+
+Device-code comparison (`llvm-objdump --offloading <f>.o` extracts the
+`hipv4-amdgcn-amd-amdhsa--gfx90a` bundle; `llvm-objdump -d` disassembles it; addresses/opcodes
+stripped before diff -- the same normalization `codeobj_diff.py` applies):
+- `Allocator_gpu.o`, `Cuda.o`: no gfx90a offload bundle in either sha (pure host wrappers, as the
+  2026-06-16 validator also found for the full-library case). Nothing to compare on-device.
+- `Orb_gpu.o`: 1005 normalized disassembly lines, **byte-identical** be91acd vs 22ea834.
+- `Fast_gpu.o`: 1818 normalized disassembly lines, **byte-identical** be91acd vs 22ea834.
+
+This confirms the reviewer's prediction: `checkCudaErrors` calls are 100% host-side (grepped all
+4 `.cu` files -- every call site is a runtime-API-wrapper call outside any `__global__`/`__device__`
+body), so the header swap cannot and does not change kernel ISA. `Thirdparty/libsgm` and
+`Thirdparty/libelas-gpu` (the wave64-correctness-critical code from the original port) do not
+include `helper_cuda.h` at all (`grep -rl helper_cuda Thirdparty/` -> empty) and are completely
+untouched by this delta -- their already-recorded gfx90a evidence (05eed6c) still applies
+unconditionally.
+
+**Verdict: device code on gfx90a is unchanged by be91acd -> 22ea834.** A real GPU run would
+re-prove exactly what the 2026-06-12/06-16 sessions already proved on identical device code; per
+the carry-forward playbook this qualifies for binary-equiv carry-forward and no GPU re-run is
+needed for the GPU-correctness question.
+
+### CUDA no-regression gate (this head_sha)
+`/opt/conda/envs/cuda-12.8/bin/nvcc` (12.8.93), `-arch=sm_80`, system OpenCV 4.6
+(`/usr/include/opencv4`), both `22ea834` and upstream base `2ecb8b1`:
+- `Allocator_gpu.cu`, `Cuda.cu`: RC=0 at both shas (identical to the prior gate's finding for
+  these 2 files).
+- `Orb_gpu.cu`: `textureReference` undefined (OpenCV 4.6 vs CUDA 12.8) -- IDENTICAL error at both
+  shas.
+- `Fast_gpu.cu`: `reduce<32>` overload-deduction failure (OpenCV 4.6 `reduce.hpp` vs CUDA 12.8
+  Thrust) -- IDENTICAL error at both shas (only the reported line number shifts by 1, from the
+  vendored-header line-count delta; the error text and cause are unchanged).
+CUDA gate: PASS (all 4 files checked this time, completing what the 2026-08-13 porter/reviewer
+sessions left partial; no new CUDA-path regression from this delta -- the `hip_compat` directory
+is only added inside `if(USE_HIP)`, never reached by the CUDA/CPU build).
+
+### Gate check before completing (validator step 4) -- BOTH FAIL, pre-existing, not this round's fault
+- `python3 utils/jargon.py --port plvs`: **exit 1**. `commit e59fd77ed:5: 'Strategy A' -- describe
+  the approach, e.g. 'a compatibility header'` (the branch's first port commit, 2026-06). Already
+  flagged by the 2026-08-13 porter and reviewer as a known, deliberately-untouched issue (fixing
+  it means rewriting branch history, which would orphan both Linux platforms' `validated_sha`;
+  they proposed clearing it at the PR-prep squash instead, pending a person's decision on that
+  route).
+- ROCm build documentation: confirmed still absent. `git diff 2ecb8b1..22ea834 -- '*.md' '*.sh'`
+  empty; `grep -rniE 'USE_HIP|ROCm|hip' --include=*.md --include=*.sh .` (excluding Thirdparty/)
+  returns nothing, while the project documents its CUDA build in `config.sh` (`USE_CUDA=0`) and
+  `new_features.md`. Also already flagged by the porter/reviewer as out-of-scope-for-this-round,
+  needed before the PR.
+
+Per the validator's mandate ("neither is yours to fix quietly... send it back with
+validation-failed"), this arch does NOT move to `completed` at `22ea834` even though the GPU
+device-code question is settled. Recording `validation-failed` at `failed_sha = 22ea834` so the
+porter's next commit (closing one or both gates) carries the fix and every arch validates the
+same content, per the state-machine's letter. Both gates are pre-existing (not introduced by this
+fix round, not gfx90a-specific) -- any arch that revalidates this head_sha will hit the identical
+result; a fix here clears it everywhere at once.
+
+### Reproduce
+OpenCV-with-HIP build: see cmake invocation above (BUILD_LIST as listed).
+Per-sha `.cu` compile + device-ISA diff: see the hipcc command above; extract with `llvm-objdump
+--offloading <f>.o`, disassemble the `*.hipv4-amdgcn-amd-amdhsa--gfx90a` bundle with
+`llvm-objdump -d`, normalize (strip leading `addr:` and opcode-byte columns, drop `// ...`
+comments and section-header lines), diff.
+CUDA gate: `nvcc -std=c++17 -arch=sm_80 -c src/cuda/<f>.cu -Iinclude -Isrc/cuda
+-I/usr/include/opencv4` at both shas.
+
+### Next step to unblock
+A person decides the jargon-gate route (rewrite `e59fd77` now vs. clear at PR-prep squash) and
+whether to add the `config.sh`/`new_features.md` ROCm-build documentation lines now or as part of
+that same squash. Once either lands as a new commit on `moat-port`, this arch (and gfx1100, also
+sitting on the same `22ea834` head) can carry forward via this same binary-equivalence evidence
+without another GPU-adjacent rebuild, provided the fix touches no `.cu`/`.cuh`/`hip_compat` file.
