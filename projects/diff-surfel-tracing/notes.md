@@ -2142,3 +2142,132 @@ surfels it tolerates as untraced") stand as recorded and were not reopened.
 
 Verdict: review-passed. The GPU gate is the validator's, unrun by design at this
 point; the round-7 delta is text and cannot move it.
+
+## Validation 2026-08-14 (linux-gfx90a, MI250X, ROCm 7.14.60850)
+
+Independent GPU-gate validation at `moat-port` `173f32a` (`review-passed` ->
+this run marks `completed`). All numbers reported by the last five rounds'
+own runs, reproduced independently rather than trusted.
+
+### Build, from scratch
+
+`projects/diff-surfel-tracing/src` verified at `173f32a`, `git status`
+clean, matching `origin/moat-port`, before starting.
+
+```
+git clone --recursive --depth 1 -b 3.1.0.cb09c56 \
+    https://github.com/GPUOpen-LibrariesAndSDKs/HIPRT.git <scratch>/HIPRT
+git -C <scratch>/HIPRT apply .../third_party/hiprt-rocm-fixes.patch
+export ROCM_PATH=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel
+export HIP_PATH=$ROCM_PATH PATH=$ROCM_PATH/bin:$PATH
+cmake -DCMAKE_BUILD_TYPE=Release -DBITCODE=OFF -DNO_UNITTEST=ON \
+    -DHIP_PATH=$ROCM_PATH -S <scratch>/HIPRT -B <scratch>/HIPRT/build
+cmake --build <scratch>/HIPRT/build --target hiprt03001 -j32   # clean, no edits to HIPRT needed beyond the patch
+export HIPRT_HOME=<scratch>/HIPRT PYTORCH_ROCM_ARCH=gfx90a
+cd projects/diff-surfel-tracing/src
+rm -rf build *.egg-info diff_surfel_tracing/hiprt_root diff_surfel_tracing/hiprt_cache
+pip install -e . --no-build-isolation --no-deps -v
+```
+
+Both stages built clean (only pre-existing upstream deprecation/visibility
+warnings). Staged HIP RT footprint: 1016 KB (matches round 4's measurement).
+Fork tree unmodified afterward (`git status --porcelain` empty).
+
+### GPU gate: 50/50, exact match to the recorded numbers
+
+```
+PYTORCH_ROCM_ARCH=gfx90a, ROCm 7.14.60850, torch 2.14.0a0+git7d05abc
+cd projects/diff-surfel-tracing/src
+rm -rf diff_surfel_tracing/hiprt_cache   # cold JIT cache
+HIP_VISIBLE_DEVICES=0 python3 example/validate_rocm.py
+50/50 checks passed
+```
+
+Every number reproduced exactly: covered fraction 0.241, depth range
+[1.820, 4.574], geometry 62/64 traced (missing [5, 25]), median `grads3D`
+cosine 0.9825, fd colors 1.0000/1.0021, opacities 0.9999/0.7428, means3D
+0.9993/0.9387, scales 0.9923/0.8856, reflected-bounce max delta 3.627e-01,
+P=4096 rgb mean 0.19876 / covered 0.386 / 1343 traced, P=16384 rgb mean
+0.25417 / covered 0.457 / 3309 traced. Cold-cache rerun bit-identical, cache
+repopulated.
+
+**Real device dispatch confirmed independently of the harness's own checks.**
+`AMD_LOG_LEVEL=3` over the full harness run logs 15,769 `hipLaunchKernel`
+calls, each followed by `Returned hipSuccess`, on `device: AMD Instinct
+MI250X / MI250` -- not a CPU fallback and not a stub.
+
+### CUDA no-regression gate: PASSED (first Linux arch to run it; not
+previously recorded at this or any `head_sha`)
+
+No prior entry in this file records the CUDA gate, and all three platform
+records hold `validated_sha: null`, so this is the one arch that owes it.
+No NVIDIA GPU or driver on this host, only the CUDA 12.8 toolkit
+(`/opt/conda/envs/cuda-12.8`, pre-existing).
+
+Went further than the structural diff-only check every round through 7 relied
+on: actually compiled the CUDA/OptiX device kernels with the arch pinned,
+rather than only diffing them against upstream.
+
+```
+git -C projects/diff-surfel-tracing/src submodule update --init third_party/optix
+export PATH=/opt/conda/envs/cuda-12.8/bin:$PATH
+TORCH_CMAKE=$(python3 -c "import torch; print(torch.utils.cmake_prefix_path)")
+cmake -S projects/diff-surfel-tracing/src -B <scratch>/cuda-build \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=80 \
+    -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc \
+    -DCMAKE_PREFIX_PATH=$TORCH_CMAKE
+cmake --build <scratch>/cuda-build -j16
+```
+
+Configured and built clean: `optix_tracer_forward` and `optix_tracer_backward`
+(the `CUDA_PTX_COMPILATION` targets `forward.cu`/`backward.cu` compile to,
+`optix_tracer/CMakeLists.txt`) both compiled to PTX at `sm_80` with only two
+pre-existing upstream `-Wunused-variable` warnings (`tidx`, present in both
+kernels' unmodified bodies). This exercises both files the port actually
+touches on the CUDA side -- `optix_tracer/auxiliary.h` (the
+`quat_to_rotmat_transpose` UB fix, unconditional, plus the `USE_ROCM`-guarded
+operator/`__trap` blocks) and `optix_tracer/params.h` (`USE_ROCM`-guarded
+`Params` fields) -- since both headers are `#include`d by the two `.cu` files
+under compilation. `find_package(Torch)` resolved against the installed
+ROCm-build torch without incident (only used for `TORCH_INCLUDE_DIRS`, no
+linking at this target); `find_package(CUDAToolkit)` and `find_package(OptiX7)`
+resolved against the pinned toolkit and a freshly-checked-out
+`third_party/optix` (upstream's own gitlink, `NVIDIA/optix-dev` at `7b5c4e8`,
+not modified or redistributed -- checked out locally to build, then git
+status confirmed clean afterward since the working tree already matched the
+pinned submodule commit).
+
+**Not exercised, and recorded rather than claimed: the full `setup.py`
+`CUDAExtension` host build** (`ext.cpp`, `trace_surfels.cpp`, and
+`optix_tracer/optix_wrapper.{h,cpp}`, which are the other CUDA-bearing files
+per `surface.json`). `setup.py` selects the OptiX branch only when
+`torch.version.hip` is falsy, and the only torch build on this host is the
+ROCm one (`torch.version.hip=7.14.60850`), so that branch cannot run here --
+an environmental wall, not a build failure: `cuda-not-validated: host has no
+CUDA-enabled torch build, only ROCm torch, so setup.py's CUDAExtension
+OptiX branch (torch.version.hip falsy) cannot be reached; the CUDA/OptiX
+device-kernel PTX build was validated directly instead.` Mitigated the same
+way plan.md's risk 7 does: `git diff ef6f24b -- optix_tracer/ CMake/
+CMakeLists.txt` shows only `auxiliary.h` (+19/-1) and `params.h` (+21)
+touched, matching every prior round's diff claim exactly, and `trace_surfels.
+{cpp,h}`/`ext.cpp` diffs are new-file/`USE_ROCM`-guarded additions plus the
+two `Params params{}` value-init sites already reviewed and accepted as
+back-end-neutral (round 3 finding 8).
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --port diff-surfel-tracing` (and `--commits
+ef6f24b..moat-port`, `--diff ef6f24b..moat-port`) all clean. `README.md`'s
+`### AMD GPUs` section documents the ROCm build alongside the OptiX section
+in the project's own style and points at `example/validate_rocm.py`; ran
+that exact command above.
+
+### Integrity
+
+`git status --porcelain` empty in `projects/diff-surfel-tracing/src` at
+`173f32a` throughout (the `third_party/optix` submodule checkout used for
+the CUDA gate matches the pinned gitlink exactly and left no diff). No
+source or build file was edited on this arch; nothing to commit to the fork.
+
+Recorded via `moatlib.py set-platform-status diff-surfel-tracing
+linux-gfx90a completed --validated-sha 173f32a9d0182452a6dcc02433e093b34311f665`.
