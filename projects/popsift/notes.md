@@ -2922,3 +2922,35 @@ Verdict: **changes-requested**, on commit hygiene only. The code delta is correc
   telemetry does not carry that run's wall time.
 - No kernel, header, or build-system change in this delta, so no fault class is in scope:
   no warpSize/32 assumption, texture handle, OOB read, pitch, or library swap is touched.
+
+## 2026-08-14 (linux-gfx90a) porter -- merge commit retitled with the `[ROCm]` prefix (tip badbfc3 -> 758d5e7)
+
+Message-only amend closing the single finding of the merge-of-develop review. No code change.
+
+- Old tip `badbfc354db4f4b39363606924d80dabd7f76356`, new tip `758d5e77faf0cc64b86b785d9b0981f324b2c1ad`.
+- Title `Merge branch 'develop' into the ROCm support branch` ->
+  `[ROCm] Merge upstream develop into the HIP support branch` (57 chars). Body kept verbatim:
+  `diff <(git log -1 --format=%B badbfc35 | tail -n +2) <(git log -1 --format=%B HEAD | tail -n +2)`
+  is empty. Wording follows the mahout precedent for a merge title
+  (`[ROCm] Merge upstream main into the AMD/HIP branch`).
+- **No rebuild required, and the tree hash is the evidence**: `git rev-parse badbfc35^{tree}` and
+  `git rev-parse HEAD^{tree}` are both `c904b2b2b2e03872a5b9681abbf0a85d46eb47e2`, and
+  `git diff badbfc35 HEAD` is empty. The compiled sources are byte-identical to the tip whose
+  gfx90a build and 9874-descriptor smoke run are recorded above; a commit message is not an input
+  to the build.
+- Merge shape preserved. `git commit --amend` on a checked-out merge keeps both parents:
+  `%P` is still `d10126b5dab3f8e166e096ed9428a5ee01061052 36d704d39b4cc065839d84f3706b3fa88eff2518`.
+  `f2712723d903` (published-before-this-round), `d10126b5dab3` (published tip) and `36d704d39b4c`
+  (upstream develop) are all still ancestors of the new tip, so the branch remains a strict
+  descendant of `moat-port` and nothing at or below the published tip was rewritten.
+- Checks: `jargon.py --diff d10126b..HEAD` clean, `jargon.py --commits d10126b..HEAD` clean,
+  `prose.py` clean on the new message, ASCII-only. `jargon.py --port popsift` still reports only
+  the pre-existing `05e698ec8` hit, which is an ancestor of `published_sha` and has been live in
+  PR #186 since it opened; it is below the frozen tip and out of scope for this round.
+- Pushed with `git push --force-with-lease origin moat-fix-186` (`+ badbfc3...758d5e7 (forced update)`).
+  `moat-port` untouched, still `d10126b5dab3`. `advance-head popsift 758d5e7` recorded, so the five
+  completed platforms owe their revalidation at the retitled tip rather than at `badbfc3`.
+
+Gotcha worth remembering: amending a merge commit's message is safe for the merge shape but it
+still moves the tip, so on a fix branch it costs every completed platform a revalidation. Raise
+title/prefix hygiene on a merge before validators run, not after.
