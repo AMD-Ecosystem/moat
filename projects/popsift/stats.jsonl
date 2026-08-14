@@ -116,3 +116,4 @@
 {"kind":"phase","ts":"2026-08-14T20:37:19Z","phase":"test","seconds":0.003,"exit":127,"cmd":"./popsift-demo -i /var/lib/jenkins/moat/agent_space/oxford/boat/img1.pgm --gauss-mode vlfeat --desc-mode loop --popsift-mode --root-sift --downsampling -1"}
 {"kind":"session","ts":"2026-08-14T20:40:28Z","epoch":1786740028.351195609,"event":"start","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-08-14T20:44:37Z","epoch":1786740277.168485879,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-14T20:49:39Z","epoch":1786740579.247445806,"event":"start","platform":"linux-gfx90a"}

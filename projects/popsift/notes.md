@@ -2954,3 +2954,56 @@ Message-only amend closing the single finding of the merge-of-develop review. No
 Gotcha worth remembering: amending a merge commit's message is safe for the merge shape but it
 still moves the tip, so on a fix branch it costs every completed platform a revalidation. Raise
 title/prefix hygiene on a merge before validators run, not after.
+
+## Review 2026-08-14 (linux-gfx90a) -- fix round for PR #186, re-review after the message-only amend (tip 758d5e7)
+
+Re-review of the single finding of the previous pass (merge title missing the `[ROCm]` prefix).
+Scope: `git diff d10126b5dab3..758d5e7` on `moat-fix-186` after `git fetch origin --prune`.
+
+Verdict: **review-passed**. No problems found; nothing to change.
+
+### Findings
+
+None.
+
+### Verified this pass
+
+- Refs. `origin/moat-fix-186` == `758d5e77faf0cc64b86b785d9b0981f324b2c1ad` == `head_sha`.
+  `origin/moat-port` still frozen at `d10126b5dab3` == `published_sha`, so the open PR is
+  untouched by this round. `git -C projects/popsift/src status --porcelain` empty (integrity gate).
+- The amend is message-only, and the tree is the proof, not the porter's word:
+  `badbfc35^{tree}` and `758d5e7^{tree}` are both `c904b2b2b2e03872a5b9681abbf0a85d46eb47e2`,
+  and `git diff badbfc354db4 758d5e7` is empty. The content reviewed and built at `badbfc35`
+  is byte-identical here, so the prior pass's build/smoke evidence still describes this tip
+  and no rebuild is owed at review time (the validators still re-run the GPU tests at the new sha).
+- Merge shape preserved. `%P` of `758d5e7` is `d10126b5dab3f8e166e096ed9428a5ee01061052
+  36d704d39b4cc065839d84f3706b3fa88eff2518` -- both parents intact, still a merge and not a
+  rebase. `f2712723d903`, `d10126b5dab3` and `36d704d39b4c` are all ancestors of the new tip;
+  `badbfc35` correctly is not (it was replaced). Nothing at or below the published tip was rewritten.
+- Title: `[ROCm] Merge upstream develop into the HIP support branch`, 57 chars (<= 72), correct
+  prefix. Body byte-identical to `badbfc35`:
+  `diff <(git log -1 --format=%B badbfc35 | tail -n +2) <(git log -1 --format=%B 758d5e7 | tail -n +2)`
+  exits 0 with no output. Assistance disclosed, fenced Test Plan present, no `Co-Authored-By`
+  or noreply trailer, no internal account or host reference, ASCII only.
+- Vocabulary and prose. `jargon.py -C projects/popsift/src --diff d10126b..758d5e7` clean and
+  `--commits d10126b..758d5e7` clean. `--port popsift` still reports only the pre-existing
+  `05e698ec8` hit ("fault classes"), which I confirmed is an ancestor of both `f2712723d903`
+  and `d10126b5dab3`, i.e. live in PR #186 since it opened and below the frozen tip -- out of
+  scope for this round. `prose.py` clean on the new message.
+- Mergeability against live upstream. `alicevision/popsift develop` is still `36d704d39b4c`
+  (`git ls-remote`); it is an ancestor of `758d5e7`, and `git merge-tree --write-tree 36d704d
+  758d5e7` exits 0 yielding `c904b2b2b2e0` == `758d5e7^{tree}`. Fast-forward, so the PR reads
+  MERGEABLE.
+- Code delta re-checked independently rather than inherited from the prior pass. Against
+  `d10126b`: one file, `src/popsift/s_filtergrid.cu`, +2/-1 -- `<thrust/iterator/zip_iterator.h>`
+  (`:22`), `<thrust/tuple.h>` (`:29`), upstream's EOF blank-line removal. Against upstream
+  `36d704d` the file differs only by our known change: `common/thrust_setup.h` included,
+  `<thrust/execution_policy.h>`/`<thrust/version.h>` dropped in its favour (both are pulled in
+  by `common/thrust_setup.h:15-16`, so nothing is lost), and the two `POPSIFT_THRUST_PAR.on(oct_str)`
+  call sites (`:134,139`) intact. Both new headers are genuinely used in this TU
+  (`thrust::tuple` at `:35,45,55,84`, `make_zip_iterator` from `:151`) and neither duplicates
+  the shared header. `common/thrust_setup.h:23-27` keeps the NVIDIA arm on `::thrust::cuda::par`
+  behind `USE_HIP`/`__HIP_PLATFORM_AMD__`, so the CUDA build is unchanged.
+- No fault class is in scope: the delta adds two unguarded Thrust includes and touches no
+  kernel, wavefront assumption, texture handle or pitch, neighbor read, resource-handle
+  lifetime, build file, or library selection.
