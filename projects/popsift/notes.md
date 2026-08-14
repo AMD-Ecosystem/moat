@@ -2544,3 +2544,123 @@ Verdict: **review-passed**. No problem found.
 predates `d10126b`: gfx1100 is validated at `4d51a78` and the rest at `f2712723`. The
 delta `4d51a78..d10126b` is one comment hunk plus the one-line `1e-20f` threshold, so the
 staged round needs a validator pass at the current tip before the gates close.
+
+## Validation 2026-08-14 (windows-gfx1151) -- revalidate at fix-round tip d10126b: PASS
+
+Platform: AMD Radeon 8060S (gfx1151 APU, RDNA3.5, wave32, ~20 CU), Windows 11, TheRock
+ROCm pip SDK at `D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel`, AMD clang
+23.0.0git, HIP 7.14.60850. Fork clone at `projects/popsift/src`, HEAD ==
+`d10126b5dab3f8e166e096ed9428a5ee01061052` == `head_sha`, `git status --porcelain` empty
+throughout. This platform's prior `validated_sha` was `f2712723d903` (carried forward
+from an unrelated gfx90a dead-pin CMake change on 2026-06-23); the last real GPU run on
+this host was at `3a789a13`. So the delta actually re-validated here is the full fix
+round `f2712723..d10126b` (28 files, 272+/436-), not just the small `4d51a78..d10126b`
+tail -- confirmed with `python3 utils/moatlib.py classify popsift f2712723d903 d10126b5dab3`
+-> `class=mixed arch_independent=False inert=False` (real code delta across CMakeLists.txt,
+assist.h, the descriptor/pyramid/extrema kernels, sift_textures.h, thrust_setup.h). Not
+carry-forward eligible; full real-GPU revalidation performed, matching gfx1100's
+independent conclusion at the same class of delta.
+
+### Build (all-clang HIP, Ninja, examples + test targets)
+
+Reused this host's prior recipe (`## Validation 2026-06-03 (windows-gfx1151)`) verbatim,
+plus the prebuilt Boost 1.87 and Oxford boat dataset already staged from an earlier
+session (`D:/Develop/moat-old/agent_space/{boost_install,oxford}`):
+
+```
+source agent_space/win_rocm_env.sh
+DEVEL="D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel"
+BOOST="D:/Develop/moat-old/agent_space/boost_install"
+OXFORD="D:/Develop/moat-old/agent_space/oxford"
+CLANG="$DEVEL/lib/llvm/bin/clang.exe"
+bash utils/timeit.sh popsift compile -- cmake -S projects/popsift/src -B projects/popsift/src/build-win-gfx1151 -G Ninja \
+  -DUSE_HIP=ON -DPopSift_BUILD_EXAMPLES=ON -DBUILD_SHARED_LIBS=ON \
+  -DCMAKE_CXX_COMPILER="$CLANG" -DCMAKE_HIP_COMPILER="$CLANG" \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH="$DEVEL;$BOOST" -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+  -DPopSift_USE_TEST_CMD=ON -DPopSift_TESTFILE_PATH="$OXFORD" \
+  -DCMAKE_LINKER_TYPE=LLDFIX -DCMAKE_HIP_USING_LINKER_LLDFIX=-fuse-ld=lld \
+  -DCMAKE_CXX_USING_LINKER_LLDFIX=-fuse-ld=lld -DCMAKE_C_USING_LINKER_LLDFIX=-fuse-ld=lld \
+  -DBoost_COMPILER="-vc143" -DBoost_USE_STATIC_LIBS=ON -DBoost_NO_SYSTEM_PATHS=ON
+bash utils/timeit.sh popsift compile -- cmake --build projects/popsift/src/build-win-gfx1151 -j4
+```
+
+All languages on the GNU-driver `clang.exe` (not `clang-cl.exe`), per the CMake-HIP-on-Windows
+rule -- this is a plain CMake HIP-language project, not a torch extension. 100% built
+(36/36): `popsift.dll`, `popsift-demo.exe`, `popsift-match.exe`. Only the pre-existing
+benign warnings: `-Wunused-value` (debug_macros.h nodiscard `hipError_t`), `-Wdeprecated-declarations`
+(rocThrust `thrust::identity<int>`, MSVC `sscanf`). 0 errors. `strings popsift.dll | grep gfx1151`
+confirms the target arch is embedded (the full gfx list `strings` reports is ROCm's static
+device-lib table, not per-build code objects -- did not use as evidence, used the actual
+run instead).
+
+Runtime staging (this host's known amdhip64_7.dll System32 defect):
+```
+rocm_stage_runtime projects/popsift/src/build-win-gfx1151/Windows-AMD64
+```
+Copies `amdhip64_7.dll`, `amd_comgr.dll`, `hiprtc*.dll`, `rocm_kpack.dll` next to the exes.
+
+### GPU validation -- Oxford boat cross-arch gate (real gfx1151 GPU, downsampling=-1, VLFeat/loop/RootSift)
+
+```
+cd projects/popsift/src/build-win-gfx1151/Windows-AMD64
+./popsift-demo.exe -i <oxford>/img<N>.pgm --gauss-mode vlfeat --desc-mode loop \
+  --popsift-mode --root-sift --downsampling -1 --log
+```
+
+| Image | gfx1151 feat/desc | Reference (gfx90a/gfx1100/gfx1201/gfx1101) | Match |
+|-------|--------------------|---------------------------------------------|-------|
+| img1  | 8351 / 9874        | 8351/9874                                    | EXACT |
+| img2  | 7946 / 9452        | 7946/9452                                     | EXACT |
+| img3  | 6158 / 7280        | 6158/7280                                     | EXACT |
+| img4  | 4802 / 5799        | 4802/5799                                     | EXACT |
+| img5  | 4618 / 5476        | 4618/5476                                     | EXACT |
+| img6  | 3855 / 4618        | 3855/4618                                     | EXACT |
+
+All 6 counts match the cross-arch reference exactly -- the fix round (shuffle-width
+unification, texture/surface header split, RootSift threshold restore, thrust_setup.h)
+made no observable change to gfx1151 output, same conclusion gfx1100 independently
+reached for the same delta.
+
+Determinism (img1, 5 runs of the same command): 8351/9874 every run.
+`sort -n output-features.txt | md5sum` on 3 of the 5 runs (the other 2 timed out mid-batch
+on this host's slow `--log` disk write, not a GPU fault -- re-ran individually and they
+also produced 8351/9874): **3712245bb59826937b55312f22fd803e**, byte-identical to the
+value this same host recorded for the *pre-fix-round* tip `3a789a13`
+(`## Validation 2026-06-03 (windows-gfx1151)`). So the round is a no-op on gfx1151
+descriptor bytes, not just on counts.
+
+Descriptor value sanity (img1, 9874 descriptors x 128 = 1,263,872 values, parsed from the
+sorted features.txt, 133 columns/row = x,y,sigma,orientation,unused + 128-bin descriptor):
+0 NaN, 0 Inf in all 1,313,242 values; per-descriptor L2 norm (RootSift) in
+[0.999073, 1.000850], 0 all-zero descriptors; keypoint x in [0.77, 848.48], y in
+[2.01, 679.36] (within the 850x680 image).
+
+### CUDA no-regression gate
+
+Not re-run here. Recorded once per `head_sha` per the validator role's rule; already
+recorded at this exact `head_sha` (`d10126b`) by the gfx942 porter pass
+(`## 2026-08-14 -- gfx942 porter ...`): nvcc 12.8, `-DCMAKE_CUDA_ARCHITECTURES=86`, 0
+errors 0 warnings, `libpopsift.so` linked for sm_86, which matters this round because the
+restored `1e-20f` threshold now applies to the CUDA arm too. This host has no CUDA
+toolkit (Windows), consistent with the rule that the CUDA gate lands on whichever Linux
+arch validates first.
+
+### Jargon / documentation gate
+
+`python3 utils/jargon.py --port popsift`: one hit, "fault classes" in commit `05e698ec8`.
+`git merge-base --is-ancestor 05e698ec8 f2712723d903` -> yes, confirmed an ancestor of the
+frozen published tip, already live in open PR #186 before this fix round existed and not
+part of this round's added content. Same finding as every prior pass today; not a new
+blocker and not fixable without rewriting published history (forbidden while the PR is
+open).
+`README.md` documents the ROCm/HIP build including a dedicated "Windows (gfx1151 /
+TheRock ROCm)" subsection (`README.md:68-`); untouched by and unaffected by this round.
+
+### Result
+
+PASS. `windows-gfx1151`: revalidate -> completed; validated_sha =
+`d10126b5dab3f8e166e096ed9428a5ee01061052` (== head_sha). No fork push (validator does
+not write to the fork); `moat-fix-186` and `moat-port` left exactly as found (`moat-port`
+still `f2712723d903`). `git -C projects/popsift/src status --porcelain` empty at
+completion.
