@@ -1064,3 +1064,81 @@ was needed for this arch. linux-gfx90a -> `completed`, `validated_sha` =
 3798cb295f5eca470b46ee817aab546227c15b5b. Both Linux arches (wave32 via
 gfx1100, wave64 via gfx90a) are now validated; `windows` remains the only
 open gate.
+
+## Validation attempt 2026-08-14: windows-gfx1151 (BLOCKED -- host defect)
+
+Not a port result. The port behaves correctly on Windows as far as it was
+possible to observe; the host bugchecks under GPU work. Recorded so the next
+Windows host can pick this up without redoing the discovery.
+
+### Build (clean)
+
+```
+cmake -S projects/GPU_IPC/src -B projects/GPU_IPC/src/build -G Ninja -DUSE_HIP=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DCMAKE_HIP_COMPILER=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++.exe \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_TOOLCHAIN_FILE=/d/vcpkg/scripts/buildsystems/vcpkg.cmake \
+  -DVCPKG_TARGET_TRIPLET=x64-windows \
+  -DCMAKE_PREFIX_PATH=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel
+ninja -C projects/GPU_IPC/src/build -j6
+```
+
+Configure 12.1 s, build 29.6 s, exit 0. Eigen/GLEW/GLUT/OpenGL via vcpkg
+x64-windows. Runtime DLLs staged next to `gipc.exe` per the usual TheRock
+recipe (`amdhip64_7.dll`, `amd_comgr.dll`, `hiprtc*.dll`, `rocm_kpack.dll`,
+`freeglut.dll`, `glew32.dll`).
+
+### Headless harness (Windows equivalent of the Xvfb one)
+
+The Linux harness is `Xvfb` + `LIBGL_ALWAYS_SOFTWARE=1` + `xdotool key space`.
+Windows equivalents, all three needed:
+
+- **Xvfb / LIBGL_ALWAYS_SOFTWARE** -> Mesa llvmpipe: drop `opengl32.dll` and
+  `libgallium_wgl.dll` (mesa-dist-win release-msvc) next to `gipc.exe`; app-dir
+  DLL search beats System32. Verify with `(Get-Process gipc).Modules` --
+  `libgallium_wgl.dll` present and no AMD ICD.
+- **xdotool key space** -> `PostMessage(hwnd, WM_CHAR, 32, 0)` to the "FEM"
+  window, to clear `stop = true` (`gl_main.cpp:65`).
+- **stdbuf -o0** -> no equivalent. `printf` to a redirected file is block
+  buffered, so `Kill()` discards the whole run log. Close the window instead
+  (`WM_CLOSE`); freeglut's default `GLUT_ACTION_ON_WINDOW_CLOSE` exits the
+  program and the CRT flushes.
+
+Two traps worth recording, both cost a run here:
+
+- Do NOT minimize the window to get it out of the way. `IPC_Solver()` is called
+  from `display()`, and freeglut skips the display callback for an iconified
+  window -- minimizing silently stops the simulation. Move it off-screen with
+  `SetWindowPos(-4000, -4000)` instead, which keeps it "shown".
+- PowerShell variable names are case-insensitive, so a loop variable `$frames`
+  overwrites a `$Frames` parameter.
+
+Harness kept at `agent_space/gipc_headless.ps1` (gitignored).
+
+### Result: host bugcheck, no frames
+
+`windows-gfx1151` set `blocked` -- see `status.json` for the full reason. The
+host bugchecks `HYPERVISOR_ERROR 0x00020001`, attributed by `!analyze -v` to
+`csagent.sys` (CrowdStrike Falcon), `FAILURE_BUCKET_ID
+0x20001_28_2_csagent!unknown_function`. Six occurrences on this host, four of
+them 2026-06-03, before any of this work.
+
+What was established about the port before the host died:
+
+- Configures, builds and links clean under clang-cl/ninja for gfx1151.
+- Scene loads correctly: `vertNum: 38386  tetraNum: 159870  faceNum: 41664`,
+  `surfVertNum: 20836  surfEdgesNum: 62496`, 4 BVH levels, matching the Linux
+  runs' scene.
+- GLEW 2.3.1 initializes; the app renders and responds to mouse rotation under
+  software GL.
+- Zero frames of solver were observed, so nothing is claimed about numerical
+  behaviour, the wavefront-32 path, or the documented `lineSearch` wedge on
+  this arch.
+
+Crash correlation, for whoever revisits this: hardware GL (unthrottled render
+loop, solver paused) killed the host in ~30 s; software GL with the solver
+actually running killed it within seconds; software GL with the solver stopped
+ran 46 s clean. Both GPU paths trip it, so no harness arrangement avoids the
+fault -- GPU compute is the thing being validated. This needs a working
+Windows host, not a different harness.

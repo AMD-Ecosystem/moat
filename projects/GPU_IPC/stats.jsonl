@@ -29,3 +29,12 @@
 {"kind": "tokens", "ts": "2026-08-08T19:27:50Z", "tokens": 135268, "source": "validator"}
 {"kind":"phase","ts":"2026-08-09T15:42:01Z","phase":"compile","seconds":25.925,"exit":0,"cmd":"bash -c cd projects/GPU_IPC/src && cmake -S . -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(nproc)"}
 {"kind": "tokens", "ts": "2026-08-09T15:49:35Z", "tokens": 114472, "source": "validator"}
+{"kind":"session","ts":"2026-08-14T18:10:12Z","epoch":1786731012.266452500,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-14T18:13:10Z","phase":"compile","seconds":8.434,"exit":1,"cmd":"cmake -S projects/GPU_IPC/src -B projects/GPU_IPC/src/build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_HIP_COMPILER=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++.exe -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=/d/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows"}
+{"kind":"phase","ts":"2026-08-14T18:13:38Z","phase":"compile","seconds":12.062,"exit":0,"cmd":"cmake -S projects/GPU_IPC/src -B projects/GPU_IPC/src/build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_HIP_COMPILER=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++.exe -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=/d/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_PREFIX_PATH=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel"}
+{"kind":"phase","ts":"2026-08-14T18:14:08Z","phase":"compile","seconds":11.663,"exit":1,"cmd":"cmake --build projects/GPU_IPC/src/build -j6"}
+{"kind":"phase","ts":"2026-08-14T18:17:42Z","phase":"compile","seconds":24.557,"exit":1,"cmd":"cmake --build projects/GPU_IPC/src/build -j6"}
+{"kind":"phase","ts":"2026-08-14T18:19:59Z","phase":"compile","seconds":28.844,"exit":1,"cmd":"cmake --build projects/GPU_IPC/src/build -j6"}
+{"kind":"phase","ts":"2026-08-14T18:22:28Z","phase":"compile","seconds":21.235,"exit":1,"cmd":"cmake --build projects/GPU_IPC/src/build -j6"}
+{"kind":"phase","ts":"2026-08-14T18:26:08Z","phase":"compile","seconds":23.882,"exit":1,"cmd":"cmake --build projects/GPU_IPC/src/build -j6"}
+{"kind":"phase","ts":"2026-08-14T18:28:39Z","phase":"compile","seconds":29.580,"exit":0,"cmd":"ninja -C projects/GPU_IPC/src/build -j6"}

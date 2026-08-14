@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:23:54Z",
-  "updated_at": "2026-08-09T15:48:34Z",
+  "updated_at": "2026-08-14T20:42:54Z",
   "head_sha": "3798cb295f5eca470b46ee817aab546227c15b5b",
   "depends_on": [],
   "porting": null,
@@ -61,6 +61,28 @@
       },
       "last_agent": "validator",
       "state": "completed"
+    },
+    "windows-gfx1151": {
+      "blocked": true,
+      "blocked_reason": "Host defect, not a port defect: this host bugchecks HYPERVISOR_ERROR 0x00020001 under any GPU work, traced by dump analysis to csagent.sys (CrowdStrike Falcon), FAILURE_BUCKET_ID 0x20001_28_2_csagent!unknown_function. Six occurrences (4 on 2026-06-03, 2 on 2026-08-14). The port itself is fine on Windows: cmake+ninja build clean at head_sha 3798cb2, scene loads (38386 verts/159870 tets), GLEW inits, renders interactively under Mesa llvmpipe. Both GPU paths crash the host -- hardware GL at ~30s, HIP solver within seconds -- while software GL with the solver stopped survives 46s clean. Needs a working Windows host, or maintainer-approved waiver; do not read this as GPU_IPC being unportable to Windows.",
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-14T20:42:53Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
     }
   }
 }
