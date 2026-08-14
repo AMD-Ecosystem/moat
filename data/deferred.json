@@ -57,7 +57,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-06-07T16:00:58Z",
-      "decided": null
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-08-13T20:29:00Z"
+      }
     },
     {
       "id": "cudakdtree-atomic-minmax",
@@ -86,7 +90,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-06-09T17:30:40Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-13T18:38:31Z"
+      }
     },
     {
       "id": "opencv-cudaimgproc-npp-color-hist",
@@ -101,30 +109,6 @@
       "decided": null
     },
     {
-      "id": "migraphx-dynamic-concat-codegen",
-      "kind": "rocm-bug-report",
-      "project": null,
-      "component": "migraphx",
-      "summary": "MIGraphX dynamic-shape compile fails on ResNet-50: fused concat+pointwise JIT kernel generated with wrong arity (needs >=7 args, 4 provided) on gfx90a/ROCm 7.2.1/MIGraphX 2.15. Fixed-batch compiles fine; trivial dynamic CNN works. Reproducer+writeup: findings/migraphx-trt-shim-gaps/. Blocks dynamic batch on concat-heavy real models in trt-shim-rocm.",
-      "refs": [],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-12T14:15:26Z",
-      "decided": null
-    },
-    {
-      "id": "migraphx-dynamic-offloadcopy-false-crash",
-      "kind": "rocm-bug-report",
-      "project": null,
-      "component": "migraphx",
-      "summary": "MIGraphX segfaults evaluating a dynamic-dim program compiled with offload_copy=false: crash in op::select_module::compute -> shape::operator== (dynamic dispatch). offload_copy=true dynamic works; offload_copy=false static works; only dynamic+offload_copy=false crashes. Forces trt-shim-rocm to keep dynamic engines on the non-graph-capturable offload_copy=true host-staging path (static engines use offload_copy=false zero-copy + HIP graph capture). gfx90a/ROCm 7.2.1/MIGraphX 2.15. Repro: compile any dynamic-batch ONNX with offload_copy=false, eval.",
-      "refs": [],
-      "status": "open",
-      "upstream_issue": null,
-      "created_at": "2026-06-12T16:22:50Z",
-      "decided": null
-    },
-    {
       "id": "barney-oidn-gpu-denoiser",
       "kind": "feature-port",
       "project": null,
@@ -136,7 +120,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-06-16T00:39:17Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-13T20:08:32Z"
+      }
     },
     {
       "id": "barney-hiprt-native-sbt",
@@ -150,14 +138,18 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-06-16T05:01:15Z",
-      "decided": null
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-08-13T20:16:56Z"
+      }
     },
     {
       "id": "pytorch-hipify-cublas-math",
       "kind": "other",
       "project": null,
       "component": null,
-      "summary": "Prep PyTorch hipify mappings for CUBLAS_COMPUTE_16F + cublasMath_t enum (missing; needed by dgSPARSE and others). Verified patch + PR draft ready; needs a fork, a push and an upstream PR.",
+      "summary": "Prep PyTorch hipify mappings for CUBLAS_COMPUTE_16F + cublasMath_t enum (missing; needed by dgSPARSE and others). Verified patch + PR draft ready; needs a fork, a push and an upstream PR. RULING SCOPE (jeffdaily 2026-08-13): prepare the PR branch; a colleague will open the upstream PR on Jeff's behalf.",
       "refs": [
         "findings/pytorch-hipify-cublas-math/mappings.patch",
         "findings/pytorch-hipify-cublas-math/PR-DRAFT.md"
@@ -165,7 +157,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-06-20T00:52:11Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-13T20:29:00Z"
+      }
     },
     {
       "id": "gfx90a-pin-autodetect-audit",
@@ -179,7 +175,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-06-23T19:18:11Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-13T20:29:00Z"
+      }
     },
     {
       "id": "unrecorded-dependency-ports",
