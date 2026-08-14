@@ -113,6 +113,17 @@ accumulation divergence rather than a port bug, and RDNA3.5 (gfx1151) is where i
 shown up. Record the error magnitude and stop rather than chasing it deep: the
 comparison that matters is against the other architectures, not against a fix.
 
+The same class also shows up as a threshold-boundary detection count, not just a
+regression-fit residual. PopSift's Oxford-boat cross-arch gate is exact feature/descriptor
+counts on 6 reference images; on gfx90a (CDNA2, the only wave64 architecture in the
+comparison set) one image came back one feature and one descriptor short (7945/9451 vs the
+7946/9452 every wave32 architecture -- gfx1100, gfx1101, gfx1151, gfx1201 -- reported at the
+identical commit), fully deterministic across 5 repeat runs and with the other 5/6 images
+exact. A single detection sitting right at a threshold flips from one wavefront-width
+warp-reduction to another without being a correctness bug in either; treat a single-digit
+count divergence on one image out of many, with everything else exact and deterministic, the
+same as an FP-regression divergence -- record it and stop.
+
 ## Diagnosing a suspected AMD fault before escalating
 
 Two patterns that each cost a deep investigation before the real cause was found.
