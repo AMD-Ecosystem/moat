@@ -5046,3 +5046,94 @@ example exercises the two previously test-unreached LLP64 helpers and produces c
 decrypted values; TFHE truth table byte-identical to the Linux completion; CUDA
 no-regression gate already closed at this head by `linux-gfx942`. `windows` gate now
 satisfied.
+
+## Validation 2026-08-14 (linux-gfx90a, MI250X, TheRock ROCm 7.14.0, pip SDK) -- completed
+
+Revalidation of `moat-port` at `26d636f6311da6a72a62e173fcfb8f8d4afdb874` (this arch's
+`validated_sha` was `5d99b8f447895f5b34b35f856e654d65e69b390a`, from before rounds 5-18:
+the `-fgpu-rdc` design excursion and revert, the TFHE random-state/Barrett/Gaussian
+fixes, the Windows host-portability round and the LLP64 fix). No prior local clone on
+this host; `git clone --branch moat-port https://github.com/AMD-Ecosystem/HEonGPU.git
+projects/HEonGPU/src` landed exactly on `26d636f` (verified against `head_sha`).
+
+GPU: `rocminfo`/`rocm-smi --showproductname` report three "AMD Instinct MI250X / MI250"
+dies (gfx90a) on this host. ROCm here is a TheRock-style pip SDK, not `/opt/rocm`:
+`hipcc` resolves from `/opt/conda/envs/py_3.12/lib/python3.12/site-packages/
+_rocm_sdk_devel/bin/hipcc`, `HIP version: 7.14.60850-0000000`, amdclang 23.0.0git --
+matches the ROCm 7.14 line the gfx942/windows-gfx1151 completions used, so this
+evidence is comparable with the rest of the fleet's newest runs. `moatlib classify
+HEonGPU 5d99b8f 26d636f` reports `class=mixed arch_independent=False`, and the delta
+spans real functional rounds (RDC revert, three security-relevant device-math fixes,
+Windows portability), not a cosmetic rename -- a full real-GPU run, not the
+binary-equivalence carry-forward, is the right path here.
+
+`libgmp-dev`/`libntl-dev` were missing on this host (only `libssl-dev` present from an
+earlier session) and had to be installed (`sudo apt-get install -y libgmp-dev
+libntl-dev`) before CMake would configure (`GMP not found` at `src/CMakeLists.txt:54`).
+Clean build from scratch (`rm -rf build` first):
+
+```bash
+cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build \
+    -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release \
+    -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON \
+    -DCMAKE_INSTALL_PREFIX=agent_space/heongpu-gfx90a-r19/prefix
+cmake --build projects/HEonGPU/src/build -j$(nproc)
+ctest --test-dir projects/HEonGPU/src/build --output-on-failure
+```
+
+Both wrapped in `utils/timeit.sh HEonGPU compile -- ...` / `utils/timeit.sh HEonGPU
+test -- ...`. Configure+build rc=0, 0 `error:` lines in the build log. All 42
+executables built (15 tests, 24 examples, 3 benchmarks, matching the gfx942
+completion's count). `git -C projects/HEonGPU/src status --porcelain` empty before and
+after (integrity gate).
+
+`ctest`: **20/20 passed**, run twice back to back (12.97s and 12.93s).
+
+### Regression spot checks
+
+`readelf -d` over the built binaries: no `libgomp` in any `DT_NEEDED` (the round-6/7
+single-OpenMP-runtime fix still holds). `1_basic_bfv`, `2_basic_ckks`,
+`9_multi_stream_usage_way1` all exit 0 with plausible decrypted output.
+`15_basic_tfhe` exit 0; all eight TFHE gate outputs are byte-identical to the
+`linux-gfx942` completion's recorded truth table at this same head (`Input1: 1,1,0,1,
+0,1,0,0`, `Input2: 1,0,1,0,1,1,1,0`, `Input3(control): 0,0,0,0,1,1,1,1` ->
+NAND/AND/NOR/OR/XNOR/XOR/NOT/MUX all match decrypted bit for bit).
+
+### CUDA no-regression gate: not re-run
+
+Already closed at this exact `head_sha` by `linux-gfx942` on 2026-08-13 (notes.md,
+"Validation 2026-08-13 (linux-gfx942, ...)" -- rc=0, 0 `error:` lines, the four files
+round 13 touches on the CUDA `else()` branch confirmed rebuilt). Per the validator's
+once-per-`head_sha` rule, not repeated here.
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --port HEonGPU`: clean (required `git fetch origin
+main:main` in the fork clone first, since jargon diffs `main..moat-port`).
+
+Documentation confirmed present and current in the project's own house style:
+`README.md` ("AMD GPUs (ROCm)" section, `-D USE_HIP=ON` instructions,
+`CMAKE_HIP_ARCHITECTURES` table) and `docs/getting_started.rst` (ROCm >=6.0
+prerequisite, `-D USE_HIP=ON -D CMAKE_HIP_ARCHITECTURES=<target>` configure line,
+tests/examples/benchmarks note). Neither the LLP64 fix nor the earlier Windows round
+touched build docs; unchanged since the last confirmation.
+
+### Note on the deferred ruling made just before this run
+
+`heongpu-tfhe-torus32-saturates` was ruled `now` by Jeff Daily at 2026-08-13T20:03:51Z,
+after this arch's dispatch was already at `head_sha=26d636f`. That ruling calls for a
+source fix (mirror `truncate_signed<T>()` for the TFHE torus32 quantization, matching
+the Gaussian-sampler fix already in the port) and is porter work, not validator work;
+it has not yet landed (`head_sha` unchanged, item still `status: open` in
+`deferred.json`). Recording it here so it is visible to whoever picks up the next
+porter round: the fix belongs in `src/lib/kernel/keygeneration.cu:1142,1202-1203`,
+matching `heongpu-negative-gaussian-cast`'s pattern.
+
+### Verdict
+
+`linux-gfx90a`: **completed** at `26d636f6311da6a72a62e173fcfb8f8d4afdb874`. 20/20
+reproduced twice from a clean build on TheRock's pip-packaged ROCm 7.14 SDK; no
+`libgomp` regression; TFHE gate outputs byte-identical to the `linux-gfx942`
+completion at the same head; CUDA no-regression gate already closed at this head by
+`linux-gfx942`, not re-run. `wave64` gate reconfirmed at the current head by this arch
+(independent evidence; `linux-gfx942` already satisfies it).
