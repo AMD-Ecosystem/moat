@@ -584,6 +584,26 @@ def validate_status(obj):
 
 # ---- state machine ---------------------------------------------------------
 
+def _release_lock(obj):
+    """Clear the fork-write lock, leaving an explicit release marker.
+
+    The marker names the exact acquisition it ends (arch + since), which is what
+    lets the merge driver tell a RELEASE apart from a record that never carried
+    the lock. It used to infer that from timestamps -- a lock-less record newer
+    than the lock's `since` read as a release -- and a record written
+    concurrently with an acquisition satisfied that test without meaning it: the
+    inference erased two live locks on 2026-08-13 (rmcl, LC-framework) and two
+    hosts ran the same round. Every release goes through here so no release is
+    ever just a missing field. The marker outlives the release harmlessly: a
+    later acquisition carries a new `since` no old marker matches."""
+    held = obj.get("porting")
+    if held:
+        obj["porting_released"] = {"arch": held.get("arch"),
+                                   "since": held.get("since"),
+                                   "at": now_iso()}
+    obj["porting"] = None
+
+
 def set_state(name, platform, new_state, agent=None, save=True):
     """Validate and apply a transition with its side effects.
 
@@ -676,7 +696,7 @@ def set_state(name, platform, new_state, agent=None, save=True):
         # legally recording the exit releases it. Requiring the holder to be the
         # one leaving left the lock held forever when a different arch drove
         # porting -> ported, with only `port-lock --release` to clean it up.
-        obj["porting"] = None
+        _release_lock(obj)
     ts = now_iso()
     if is_stage:
         obj["stage"] = new_state
@@ -773,7 +793,7 @@ def set_blocked(name, platform, blocked, reason=None):
     # the only state machine path that releases it, and the next arch needs a human
     # takeover to work a project nobody is working.
     if blocked and (obj.get("porting") or {}).get("arch") == platform:
-        obj["porting"] = None
+        _release_lock(obj)
     save_status(name, obj)
     return obj
 
@@ -787,7 +807,9 @@ def port_lock(name, take=None, release=False):
     obj = load_status(name)
     if release or take:
         held = obj.get("porting")
-        obj["porting"] = {"arch": take, "since": now_iso()} if take else None
+        _release_lock(obj)                    # marker for the outgoing holder, if any
+        if take:
+            obj["porting"] = {"arch": take, "since": now_iso()}
         save_status(name, obj)
         what = f"taken by {take}" if take else "released"
         prev = f" (was {held['arch']} since {held.get('since')})" if held else ""
@@ -2406,6 +2428,41 @@ def outstanding(obj):
     return out
 
 
+def now_deferrals(name):
+    """Open deferral ids a person has ruled `now`: ported work the project owes.
+
+    status.json cannot see these. A deferral lives in the project's deferred.json,
+    and a `now` ruling turns it back into work in flight -- the gates all hold, the
+    upstream PR may even be merged, and the project is still not finished. Only a
+    `now` ruling counts: `defer` says exactly "not now", and an unruled item is a
+    question waiting on a person, not work an agent owes.
+
+    Resolved the way project_record resolves, because the deferral rides the same
+    folder: the working tree when standing on the project's own branch, else the
+    branch ref, else the trunk."""
+    path = f"projects/{name}/deferred.json"
+    raw = None
+    if current_branch() != f"port/{name}":
+        branch = port_branch_of(name)
+        if branch:
+            raw = _ref_read(f"origin/{branch}", path)
+    if raw is None:
+        p = PROJECTS / name / "deferred.json"
+        if p.exists():
+            raw = p.read_text(encoding="utf-8")
+    if raw is None:
+        raw = _ref_read("origin/main", path)
+    if not raw:
+        return []
+    try:
+        items = json.loads(raw).get("items") or []
+    except (json.JSONDecodeError, AttributeError):
+        return []
+    return [it.get("id", "?") for it in items
+            if it.get("status") == "open"
+            and (it.get("decided") or {}).get("choice") == "now"]
+
+
 def belongs_on_branch(obj):
     """Should this project's folder live on `port/<name>` rather than on the trunk?
 
@@ -2419,12 +2476,19 @@ def belongs_on_branch(obj):
     done -- nobody has offered it to anyone, and thirty of those were sitting in the
     review backlog when this was written. A port with a PR but a stale architecture is
     not done either. Only a verdict ends it outright, because there is nothing left to
-    prove or to offer."""
+    prove or to offer.
+
+    A `now`-ruled deferral is the third way finished becomes unfinished, and the one
+    status.json cannot see. Six branches read "nothing outstanding; merge to main" in
+    the 2026-08-13 sweep while each carried a deferral a person had just ruled `now`
+    -- work the project owes, recorded outside the state machine."""
     if settled(obj):
         return False
     if not obj.get("pr_state"):
         return True
-    return bool(outstanding(obj))
+    if outstanding(obj):
+        return True
+    return bool(now_deferrals(obj.get("name") or ""))
 
 
 def misplaced_folders():
