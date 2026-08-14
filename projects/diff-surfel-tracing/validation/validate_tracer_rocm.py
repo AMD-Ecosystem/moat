@@ -3,7 +3,8 @@
 Self-contained: builds a small synthetic 2D-Gaussian scene, tessellates it into
 surfel disks exactly the way the README's get_triangles() does, traces it, and
 checks the forward image, all eleven backward gradients, finite-difference
-agreement, a reflected bounce, and a cold runtime-compilation cache.
+agreement, a reflected bounce, scenes large enough to reach the multi-block sort
+in the acceleration-structure build, and a cold runtime-compilation cache.
 
 Run:
     HIP_VISIBLE_DEVICES=0 python3 validate_tracer_rocm.py
@@ -345,6 +346,49 @@ def check_reflection(tracer, scene, H, W):
     return rgb
 
 
+# The acceleration-structure build sorts one key per triangle pair, and the
+# tessellation gives one pair per surfel, so the surfel count is the sorted
+# element count. Below 3072 keys the radix sort runs a single-pass kernel in one
+# work group; above it a multi-block kernel with a different reordering scheme
+# takes over, and that one has no other route into this harness -- every check
+# above runs at 64 surfels, two orders of magnitude below the threshold. 4096
+# crosses it with one block, 16384 adds the cross-block lookback.
+SCALE_SURFEL_COUNTS = (4096, 16384)
+
+
+def check_scale(H, W):
+    """Trace scenes large enough to reach the multi-block sort in the build.
+
+    Deliberately NOT the geometry-completeness criterion: a slab of this many
+    disks occludes itself, so most surfels are legitimately never hit, and
+    counting them says nothing. What has meaning at this size is that the build
+    and both passes finish -- a wrong sort here corrupts the indices of a global
+    write and takes the process down with a memory access fault, which no
+    assertion can catch -- and that the result is finite and non-degenerate.
+    """
+    for P in SCALE_SURFEL_COUNTS:
+        tracer = SurfelTracer().to(DEV)
+        tracer.train()
+        scene = make_scene(P=P, seed=1)
+        settings = make_settings(H, W)
+        out, inputs = trace(tracer, scene, settings, H, W, requires_grad=True)
+        scalar_loss(out).backward()
+
+        rgb, acc = out[0], out[2]
+        finite = bool(torch.isfinite(rgb).all()) and all(
+            bool(torch.isfinite(t.grad).all()) for t in inputs.values())
+        check(f"{P} surfels: forward and backward are finite", finite,
+              f"rgb mean {rgb.mean().item():.5f}")
+
+        covered = (acc > 0.5).float().mean().item()
+        check(f"{P} surfels: the image has genuine hits and misses",
+              0.05 < covered < 0.999, f"covered fraction {covered:.3f}")
+
+        touched = int((inputs["means3D"].grad.abs().sum(-1) > 0).sum())
+        check(f"{P} surfels: the scene is genuinely traced", touched > 0,
+              f"{touched}/{P} surfels received a position gradient")
+
+
 def check_cold_cache(tracer_factory, scene, H, W, warm_rgb):
     cache = os.path.join(os.path.dirname(diff_surfel_tracing.__file__),
                          "hiprt_cache")
@@ -392,6 +436,9 @@ def main():
 
     print("\n== reflected bounce ==")
     check_reflection(tracer, scene, H, W)
+
+    print("\n== scale ==")
+    check_scale(H, W)
 
     print("\n== cold compilation cache ==")
     check_cold_cache(lambda: SurfelTracer().to(DEV), scene, H, W, warm_rgb)

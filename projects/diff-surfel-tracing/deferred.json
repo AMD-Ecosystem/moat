@@ -48,6 +48,20 @@
       "upstream_issue": null,
       "created_at": "2026-08-14T05:10:36Z",
       "decided": null
+    },
+    {
+      "id": "orochi-32bit-ballot-onesweep-reorder",
+      "kind": "rocm-bug-report",
+      "component": "orochi",
+      "summary": "Orochi's radix sort corrupts its output on a 64-wide wavefront, faulting the GPU. ParallelPrimitives/RadixSortKernels.h OnesweepReorder splits a 256-thread block into eight logical warps of WARP_SIZE (32) lanes (RadixSortConfigs.h:45), then uses wave-wide __ballot(): 'u32 broThreads = __ballot( itemIndex < numberOfInputs )' (:465-471) and '( 0xFFFFFFFF * bit ) ^ __ballot( bit != 0 )' (:476-480) each store a 64-lane result in a u32, which keeps lanes 0..31, so every odd logical warp ranks its keys against the even warp's attendee set. warpOffsets and lpSum are then wrong for half the block and those prefix sums index the global outputKeys/outputValues writes. Measured on gfx90a (MI250X) through HIP RT's LBVH builder: a sort of more than SINGLE_SORT_WG_SIZE * SINGLE_SORT_N_ITEMS_PER_WI = 3072 keys, i.e. any scene above ~3072 primitives, dies with 'Memory access fault ... kernel: OnesweepReorderKeyPair64'; below that RadixSort.cpp:243 picks the single-pass kernel and the defect is unreachable. Fixed locally in third_party/hiprt-rocm-fixes.patch by reading the calling lane's own half of the wavefront ballot; bit-identical on a 32-wide wavefront and on the CUDA __ballot_sync path. This one is NOT HIP RT's own code: it is upstream GPUOpen-LibrariesAndSDKs/Orochi (blob 3fe3729 at Orochi HEAD 78fb3df, 2026-08-13), vendored byte-identically into HIP RT at tag 3.1.0.cb09c56 and still identical at HIP RT HEAD e3c01fc, so the report belongs to the Orochi repository while HIP RT picks it up by re-vendoring. Same wavefront-width fault class as hiprt-32bit-lane-masks-pair-and-pack and worth carrying in the same GPUOpen report, but a separate defect in a separate repository. Affects any Orochi user sorting more than 3072 elements on CDNA.",
+      "refs": [
+        "projects/diff-surfel-tracing/notes.md",
+        "projects/diff-surfel-tracing/src/third_party/hiprt-rocm-fixes.patch"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-14T05:36:31Z",
+      "decided": null
     }
   ]
 }

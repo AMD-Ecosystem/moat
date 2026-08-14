@@ -83,6 +83,36 @@ RTIP 3.1 leaf path, so RDNA4 rather than CDNA). A validation harness that only c
 finiteness, determinism and plausible ranges passes the first one; check that the geometry
 you handed the accelerator is the geometry that gets traced. (diff-surfel-tracing.)
 
+**Sweep for THREE patterns, not one, and sweep the vendored subtrees the port ships.** A
+`1 <<` grep finds the shapes above and misses the one that faults. The full sweep is: (a)
+every `1 <<`, `1u <<`, `~( 1u << ... )` whose other operand is a 64-bit mask; (b) every
+32-bit DESTINATION that receives a wave-wide collective -- `u32 x = __ballot( ... )`, a
+`uint32_t` struct field, an explicit `(uint32_t)` cast -- since `__ballot` returns all 64
+lanes and the narrowing keeps lanes 0..31 whether or not a literal is involved anywhere;
+(c) the IDIOM that makes (b) wrong rather than merely truncated: code that carves a block
+into fixed 32-lane logical warps (`warp = threadIdx.x / 32`, `lane = threadIdx.x % 32`,
+often a `constexpr WARP_SIZE = 32`) and then calls a wave-wide collective, so on wave64 the
+second logical warp in each wavefront silently reads the FIRST one's answer -- its own bits
+are sitting in the half that was discarded. Run all three over every subtree the port
+compiles, including a dependency's vendored `contrib/` copies of other projects: they are
+staged and runtime-compiled exactly like its own headers, and a defect there is reported to
+a different repository than the one you are patching.
+
+Orochi's radix sort (`ParallelPrimitives/RadixSortKernels.h`, `OnesweepReorder`, vendored
+byte-identically into HIP RT 3.1.0.cb09c56) is (b)+(c): a 256-thread block as eight 32-lane
+logical warps, `u32 broThreads = __ballot( itemIndex < numberOfInputs )`, so every odd
+logical warp ranks its keys against the even warp's attendee set and the corrupted prefix
+sums index a GLOBAL write. Measured on gfx90a it is a hard `Memory access fault ... kernel:
+OnesweepReorderKeyPair64`, not a wrong answer. Fix it with the same arch-unified shift as
+the cuSZ entry below, `(u32)( __ballot( PRED ) >> ( ( threadIdx.x % warpSize ) / 32 * 32 ) )`,
+which is a no-op on wave32 and on the CUDA `__ballot_sync` path. Note the reachability
+trap: the sort dispatches a single-pass kernel below 3072 elements and only reaches this one
+above it, so a small harness scene never executes the defect -- two review rounds passed
+44/44 over a back end that could not build an acceleration structure for any real scene. If
+a dependency picks kernels by problem size, one test case has to be big enough to cross
+every such threshold. (diff-surfel-tracing, in the Orochi copy vendored by its HIP RT
+dependency.)
+
 **Do not hardcode wave64 GEOMETRY either** -- the inverse failure. Packing two logical
 32-thread rows into one wavefront (`wflane = threadIdx.x + ((threadIdx.y&1)<<5)`, a
 `1ull<<wflane` prefix mask, `__shfl(...,0,64)`, `__popcll` over a 64-bit ballot, a

@@ -831,6 +831,17 @@ time, and it is now clean: the only other lane-derived shifts are
 is combined with is a `uint32_t`. Correct as written.
 `PlocBuilderKernels.h:283` and `BvhBuilderUtil.h:169,294` already use `1ull`.
 
+**Corrected in round 5: that paragraph is a false all-clear, do not inherit
+it.** The grep it describes cannot find the site that actually faults the GPU,
+`RadixSortKernels.h:465-480`, because that one narrows a 64-lane `__ballot`
+into a `u32` and contains no shift literal at all. The enumeration also misses
+`RadixSortKernels.h:485`, `u32 lowerMask = ( 1u << lane ) - 1` -- benign, since
+`lane` is `threadIdx.x % 32` and the mask is a `u32`, but it is a lane-derived
+shift in the very file that carried the defect. What survives re-verification
+is only the narrow claim about `BvhBuilderKernels.h:1854`/`:1948`,
+`PlocBuilderKernels.h:283` and `BvhBuilderUtil.h:169,294`. The sweep that does
+find everything is in round 5 below.
+
 Both sites are still present at HIP RT HEAD as of 2026-08-14 (fetched and
 checked), so they join the GPUOpen report; registered as the deferral
 `hiprt-32bit-lane-masks-pair-and-pack`, pending a person's ruling.
@@ -1119,3 +1130,170 @@ Also re-checked and clean: `jargon.py --port diff-surfel-tracing`; commit titles
 the fork tree is clean at `5254aa6`; the CUDA path is unchanged from round 3;
 and the committed patch applied to a fresh clone of `8602b8c` reproduces the
 build clone's tree byte for byte (381-line diff, identical).
+
+## Port round 5 (2026-08-14, linux-gfx90a, MI250X, ROCm 7.14) -- REVIEW FINDINGS FIXED
+
+All three round-4 findings are addressed. Fork history gains one commit:
+
+- `f35600e` `[ROCm] Fix a truncated wavefront ballot in the radix sort` (`head_sha`)
+
+Nothing earlier was amended or rewritten, so `5254aa6` is still an ancestor.
+
+### Finding 1: the ballot truncation is fixed, and the fault is gone
+
+`third_party/hiprt-rocm-fixes.patch` gains a fourth lane-width entry, in
+`contrib/Orochi/ParallelPrimitives/RadixSortKernels.h`. Both ballots in
+`OnesweepReorder` now go through one helper placed immediately above it:
+
+```c++
+__device__ inline u32 logicalWarpBallot( bool predicate )
+{
+#if defined( ITS )
+	return __ballot_sync( 0xFFFFFFFF, predicate );
+#else
+	const u32 logicalWarpInWave = ( threadIdx.x % warpSize ) / WARP_SIZE;
+	return static_cast<u32>( __ballot( predicate ) >> ( logicalWarpInWave * WARP_SIZE ) );
+#endif
+}
+```
+
+Why this form rather than the reviewer's inline probe. It is arch-unified by
+construction, not by an arch guard: on a 32-wide wavefront `threadIdx.x %
+warpSize` is under 32, the shift is 0, and the emitted code is what it is
+today; the CUDA `ITS` branch keeps `__ballot_sync` over a real 32-lane warp and
+is untouched. One helper also replaces the two `#if defined( ITS )` blocks that
+were split across the call arguments, so the two call sites are now single
+lines and a future third ballot in this kernel picks up the same treatment for
+free. `WARP_SIZE` (32, `RadixSortConfigs.h:45`) is the file's own logical warp
+width and is used as such rather than as a literal.
+
+Measured on this host at `f35600e`, staged `hiprt_root` copy, cache cleared
+before each run:
+
+| staged `RadixSortKernels.h` | P = 4096 |
+|---|---|
+| verbatim from the pinned tag | `Memory access fault ... kernel: OnesweepReorderKeyPair64` |
+| with the patch | completes, 50/50 checks, rgb mean 0.19876 |
+
+The negative control was run in that order, after the passing suite, so the
+patched result is not a stale cache: the reverted run rebuilt every kernel from
+the reverted source and faulted, and restoring the file plus clearing the cache
+gave the same 50/50 as before, byte for byte on the reported numbers.
+
+### The sweep, this time in three patterns
+
+The round-4 sweep looked for shift literals only, which is why it could not see
+this. Rerun over both staged subtrees -- `hiprt/` and
+`contrib/Orochi/ParallelPrimitives`, i.e. everything `setup.py` ships and the
+runtime compiler opens -- for all three shapes:
+
+1. **Shift literal against a 64-bit mask** (`1 <<`, `1u <<`, `~( 1u << ... )`):
+   clean. The four fixed sites plus the benign ones already enumerated;
+   `RadixSortKernels.h:485` `( 1u << lane ) - 1` is the one the round-4 list
+   missed, and it is correct as written (`lane` is `threadIdx.x % 32`, the mask
+   is a `u32`, and after this fix `broThreads` is genuinely the logical warp's
+   own 32 bits).
+2. **32-bit destination receiving a wave-wide collective**
+   (`grep -E "(uint32_t|u32|unsigned int|int)[ \t]+[A-Za-z_]+[ \t]*=[^;]*(ballot|activemask)"`):
+   `RadixSortKernels.h:465` and `:476` were the only true positives, both fixed.
+   The nine hits in `hiprt/` are all `uint32_t` receiving a `__popcll` COUNT or
+   an `__ffsll` INDEX, never a mask -- counts and indices over 64 lanes fit in
+   32 bits, so they are correct.
+3. **Fixed 32-lane logical warps inside a wavefront**
+   (`threadIdx.x / 32`, `% 32`, `/ WARP_SIZE`): `RadixSortKernels.h:448` is the
+   only occurrence in either subtree. HIP RT's own kernels use `WarpSize` (the
+   real wavefront width, `hiprt_common.h:202`) throughout and never carve a
+   wave into logical halves. The `% 32` hits in `BvhNode.h:713-789` are 32-bit
+   word/bitfield packing, not lanes.
+
+Also checked and clean in Orochi: `scanExclusive` and `ldsScanExclusive` are
+LDS plus `__syncthreads`, with no warp collective at all, and the `warp`/`lane`
+indexing in the reorder's phase 2 and 3 only addresses shared memory.
+
+### Which project this one is reported to
+
+Not HIP RT's own code, unlike the first three lane-width entries.
+`contrib/Orochi` is vendored into the HIP RT tree (no submodule at this tag),
+and the blob is identical to upstream Orochi's:
+
+```
+gh api repos/GPUOpen-LibrariesAndSDKs/Orochi/contents/ParallelPrimitives/RadixSortKernels.h --jq .sha
+gh api repos/GPUOpen-LibrariesAndSDKs/HIPRT/contents/contrib/Orochi/ParallelPrimitives/RadixSortKernels.h --jq .sha
+3fe37293fb4255b190ec21099bd63b0351c71f8b   (both, and the pre-image of our own diff)
+```
+
+So the defect is live at Orochi HEAD (`78fb3df`, 2026-08-13) and at HIP RT HEAD
+(`e3c01fc`), and the report belongs to the Orochi repository, with HIP RT
+picking it up by re-vendoring. Registered separately as the deferral
+`orochi-32bit-ballot-onesweep-reorder` (component `orochi`) rather than folded
+into `hiprt-32bit-lane-masks-pair-and-pack`: different repository, different
+severity, and the tooling has no "append context" verb -- both are pending a
+person's ruling and should travel in the same GPUOpen conversation.
+
+### Finding 2: the lesson now prescribes a sweep that finds this
+
+`.claude/skills/cuda-to-rocm/references/fault-classes.md` gains a paragraph
+that replaces the single `1 <<` grep with the three patterns above, says the
+sweep covers a dependency's vendored `contrib/` copies of other projects
+because they are staged and runtime-compiled like its own headers, and adds the
+Orochi case with the arch-unified fix form and the reachability trap (a
+dependency that dispatches by problem size hides a defect from every small
+test scene).
+
+### Full suite at `f35600e`: 50/50
+
+44 previous checks plus 6 new scale checks. Fresh HIP RT clone of the pinned
+tag with only the committed patch, `rm -rf build *.egg-info
+diff_surfel_tracing/hiprt_root diff_surfel_tracing/hiprt_cache`, reinstall,
+then a cold-cache run.
+
+```
+PYTORCH_ROCM_ARCH=gfx90a, ROCm 7.14.60850, torch 2.14.0a0+git7d05abc
+HIP_VISIBLE_DEVICES=0 python3 projects/diff-surfel-tracing/validation/validate_tracer_rocm.py
+50/50 checks passed
+```
+
+Every round-4 number reproduced unchanged (covered fraction 0.241, depth range
+[1.820, 4.574], geometry 62/64 missing [5, 25], median `grads3D` cosine 0.9825,
+fd colors 1.0000/1.0021, opacities 0.9999/0.7428, means3D 0.9993/0.9387, scales
+0.9923/0.8856, reflected-bounce delta 3.627e-01), which is the expected result:
+at 64 surfels the sort takes the single-pass kernel and this fix cannot reach
+it. The new numbers:
+
+| P | covered fraction | surfels with a position gradient | rgb mean |
+|---|---|---|---|
+| 4096 | 0.386 | 1343 / 4096 | 0.19876 |
+| 16384 | 0.457 | 3309 / 16384 | 0.25417 |
+
+`check_scale` deliberately does NOT reuse `check_geometry_complete`. A slab of
+this density occludes itself -- 1343 of 4096 is what a correct sort produces
+here, and the reviewer measured 1047/2048 at the same scene -- so completeness
+carries no information at this size. What it asserts is that the build and both
+passes finish (a wrong sort takes the process down with a memory fault, which
+no assertion can catch, so the harness surviving IS the check), that every
+output and every gradient is finite, and that the image is non-degenerate.
+4096 crosses the 3072 threshold with a single sort block; 16384 is four blocks,
+which also exercises the cross-block lookback in `OnesweepReorder`.
+
+### Gotchas
+
+- **Rebuilding the HIP RT host library does nothing for a kernel-source edit.**
+  `cmake --build ... --target hiprt03001` after editing `RadixSortKernels.h`
+  took 0.246 s here -- the file is device source, read from
+  `HIPRT_PATH`/`hiprt_root` and compiled at runtime, and it is not in the host
+  library at all with `BITCODE=OFF`. What has to happen is the reinstall that
+  re-stages the file into `diff_surfel_tracing/hiprt_root` plus
+  `rm -rf diff_surfel_tracing/hiprt_cache`. Editing the staged copy directly is
+  the fast way to run a controlled experiment, and the cache must be cleared
+  each time or nothing you changed is compiled.
+- **The patch still reproduces the build tree byte for byte.** Fresh clone of
+  `8602b8c` from GitHub, `git apply` of the committed patch, `diff -r` against
+  the build clone: identical apart from HIP RT's own gitignored generated
+  headers `hiprt/hiprt.h` and `hiprt/hiprtew.h`. 12 files, 133 insertions,
+  49 deletions.
+- **Open, for the reviewer to rule on:** every Test Plan in this branch's
+  commits ends with `python3 validate_tracer_rocm.py`, but the harness lives in
+  this repository under `projects/diff-surfel-tracing/validation/`, not in the
+  fork, so a maintainer reading the commit cannot run that command. It has been
+  that way since round 1 and no round has flagged it. Either the harness ships
+  with the port or the Test Plans should say where it comes from.
