@@ -2131,3 +2131,35 @@ bindings do not build with their default `ON`; the 25/25 carries the argument al
 No build or test run this round: the change is MOAT-repo skill prose only, and the
 build evidence at this head stands from attempt 4 (395/395, 25/25 ctest, 6/6 pytest
 on gfx90a with the bindings defaulted ON).
+
+## Review 2026-08-14b (reviewer, linux-gfx90a, skill-text round; fork unchanged at e8dca9151)
+
+Verdict: **review-passed**. No problems, so nothing is listed below per review
+philosophy; this entry only pins what the verdict covers.
+
+Scope: the delta since the 2026-08-14 review, MOAT commits `3da8b1d` and `5f0888c`,
+which touch only `.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md`,
+`references/validation.md` and this project's records. `projects/GooFit/src` is at
+`e8dca9151` with `git status --porcelain` clean and `head_sha` unchanged, so the fork
+review recorded at "Review 2026-08-14" stands unaltered and is not repeated. Both
+findings from that review are resolved.
+
+Re-verified independently rather than from the porter's note:
+`hip-config.cmake:75-79` wraps `INTERFACE_COMPILE_OPTIONS` in
+`$<$<COMPILE_LANGUAGE:CXX>:...>` and `:81-91` wraps `INTERFACE_LINK_LIBRARIES` in
+`$<$<LINK_LANGUAGE:CXX>:...>` on CMake 3.20+ and unconditionally below, exactly as the
+rewritten entry now states; `hip-config-amd.cmake:143,146,150,152` are what feed
+`-x hip`, `--hip-link` and each `--offload-arch=${GPU_TARGET}` through those two
+functions, so the compile/link split the entry describes is the installed behaviour and
+not an inference. `Help/command/set_source_files_properties.rst:17-32` (cmake 3.31.6)
+confirms `DIRECTORY` and `TARGET_DIRECTORY` both arrived in 3.18, `DIRECTORY` requiring
+the directory to be already added and `TARGET_DIRECTORY` resolving through the target --
+so "the better of two forms" replaces the previous "the only way" correctly.
+`validation.md:93-142` now frames the gfx90a report in the past tense as a wrong verdict,
+and its closing paragraph credits the fresh-clone/`AMD_LOG_LEVEL`/`roc-obj-ls` evidence
+with ruling out only a stale tree and a never-ran-on-GPU artifact, which is what that
+evidence supports; the 6/6 pytest attribution to `18fca9e4a` is gone, and the surviving
+25/25 claim matches the ROCm 7.14 gfx90a run recorded at attempt 4 for that commit.
+`jargon.py --port GooFit` clean.
+
+Next: gfx90a validation at `e8dca9151` (`failed_sha` `18fca9e4a` is behind this head).
