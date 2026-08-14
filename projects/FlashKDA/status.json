@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-08-07T17:05:59Z",
-  "updated_at": "2026-08-13T03:18:25Z",
+  "updated_at": "2026-08-14T07:01:39Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
@@ -20,7 +20,7 @@
     "reason": "cant-port",
     "duplicate_effort": "none for FlashKDA itself (no AMD-Ecosystem or ROCm fork, no AMD mention in upstream docs); the KDA capability reaches AMD via fla-org/flash-linear-attention's Triton fla/ops/kda, CI-tested on MI300",
     "viable": false,
-    "summary": "MIT (tier 1) Hopper/Blackwell-only KDA attention kernels written entirely in CUTLASS/CuTe -- 25 SM90_TMA sites, sm90 cluster pipelines, archs 90a/100a/103a/120a; CuTe has no ROCm backend and TMA no AMD equivalent, so this is a from-scratch CK/HIP kernel rewrite rather than a port, and AMD users already get KDA through flash-linear-attention's Triton path (CI-tested on MI300)",
-    "at": "2026-08-13T03:18:25Z"
+    "summary": "MIT (tier 1) Hopper/Blackwell-only KDA attention kernels written entirely in CUTLASS/CuTe -- 24 SM90_TMA sites, sm90 cluster pipelines, archs 90a/100a/103a/120a; CuTe has no ROCm backend and TMA no AMD equivalent, so this is a from-scratch CK/HIP kernel rewrite rather than a port on CDNA as much as RDNA, and AMD users already get KDA through flash-linear-attention's Triton path (CI-tested on MI300)",
+    "at": "2026-08-14T07:01:39Z"
   }
 }

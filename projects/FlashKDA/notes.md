@@ -122,3 +122,76 @@ Two things must happen before any porting work, in this order: rule on the CuTeD
 EULA finding above, and accept that the first real task is a kernel reimplementation
 rather than a translation — so the planner should scope it as such, and on a CDNA
 host, not on gfx1100.
+
+## Intake re-screen (2026-08-14, linux-gfx90a)
+
+Independent second-host confirmation of the 2026-08-13 screen. **The decline
+recommendation stands, unchanged: `cant-port`.** Verified against a fresh shallow
+clone at upstream head `1ce47ea` ("optimize kda prepare cu_seqlens scan with
+prefix-sum and binary search (#13)"), one commit ahead of the first screen. Nothing
+material changed.
+
+Re-verified, each independently rather than taken on trust:
+
+- Licence MIT, tier 1 (`licenses.py check` → `license=MIT tier=1`). `scan-nvidia`
+  over the main tree: clean.
+- The `cutlass` submodule is still pinned at `5c149f52`, and that pin's `LICENSE.txt`
+  still carries the per-part clause ("The files located in the `python/CuTeDSL`
+  directory are licensed under the NVIDIA End User License Agreement"), with
+  `EULA.txt` alongside it. FlashKDA still uses none of it: no `cutedsl`,
+  `cutlass.cute`, or `import cutlass` anywhere in `csrc/`, `flash_kda/`, `setup.py`,
+  `tests/`, or `benchmarks/`, and `setup.py` adds only the BSD-3-Clause C++ include
+  paths. **Still a person's ruling, still not cleared here.**
+- No AMD-Ecosystem or ROCm FlashKDA repo (both 404). Repo search adds nothing new
+  toward AMD. Note for whoever re-runs this: a fork-list regex for `amd` matches
+  `Shamdon/FlashKDA` on the substring in the owner's name — a false positive, not an
+  AMD fork.
+- `grep -rniE 'amd|rocm|hip|gfx[0-9]' README* docs/ BENCHMARK*.md` still yields
+  exactly one hit, still the substring in "on-chip".
+- The AMD route to the capability is real and still live: `fla-org/flash-linear-attention`
+  has `fla/ops/kda/` (Triton, with a `backends/` subpackage) and
+  `.github/workflows/amd-mi300.yml`.
+- `SUPPORTED_CUDA_ARCHS = ["90a", "100a", "103a", "120a"]`; README requirements
+  "SM90 and above", CUDA 12.9+, PyTorch 2.4+. Source is 2,346 lines across six files.
+- CuTe/TMA density confirmed: 24 `SM90_TMA` references, 24 `make_tma` sites, 8
+  cluster/sm90-pipeline references. The first screen said 25 TMA sites; the correct
+  count is 24, so the queue summary is corrected. The difference changes nothing.
+
+**One refinement this host adds, and it is the reason the re-screen was worth
+running.** The first screen was performed on gfx1100 and noted that RDNA3 is "the
+worst fit of the family" — wave32, no MFMA. That invites the objection that the
+decline is an artifact of screening on unsuitable hardware. It is not. This host is
+gfx90a: CDNA2, wave64, MFMA present — the `wave64` gate architecture, and a far
+better-suited target. The decline is unchanged from here, because it never rested on
+the host's wavefront or matrix-core support. It rests on two things neither CDNA2 nor
+CDNA3 changes:
+
+1. NVIDIA CUTLASS/CuTe has no ROCm backend, and every layout, tensor, and GEMM in
+   this codebase is a CuTe type. AMD's Composable Kernel is a different library with
+   a different API, not a drop-in.
+2. TMA has no AMD equivalent on any current architecture, and TMA is the design here,
+   not an optimization layered on top — descriptors are threaded through every kernel
+   entry point as `CUTE_GRID_CONSTANT` parameters and the pipeline and barrier
+   structure is built around them.
+
+So a CDNA host would face the same from-scratch kernel reimplementation that gfx1100
+would. There is no platform in the fleet on which this becomes a translation rather
+than a rewrite, which is precisely what `cant-port` means.
+
+**Dependencies re-checked:** `depends_on` stays empty. No MOAT project provides
+CUTLASS or flash-linear-attention (checked against `moatlib.py projects` and
+`DEPENDENCIES.md`), so there is no unknown hard dependency needing an intake request.
+PyTorch, CUDA 12.9+, and the vendored CUTLASS submodule are external build
+dependencies only.
+
+**Upstream health:** not archived, not disabled, 1211 stars, 115 forks, last push
+2026-07-30. A PR would have a live destination if the recommendation were overridden.
+
+**Unrelated data defect noticed while screening, for whoever maintains discovery.**
+`data/candidates.json` carries two entries named `FlashKDA`:
+`MoonshotAI/FlashKDA` (the one screened here) and `0xwilliamortiz/FlashKDA`
+(195 stars, MIT, "memory-efficient KDA kernels for training and decode"). The second
+is a **404 on the GitHub API** — deleted or never public. Beyond being stale, it is a
+name collision: adopting it would scaffold to the same `projects/FlashKDA` and the
+same `port/FlashKDA` claim as this project. Not fixed here, since candidate curation
+is not the intake role's to edit and the decline makes it non-urgent.
