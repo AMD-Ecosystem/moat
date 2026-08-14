@@ -1603,3 +1603,113 @@ cubins). Per the once-per-head_sha rule, not re-run here.
 archs owing revalidation at this head (gfx90a's own gates, wave64 and linux, were already
 satisfied by this project's very first validation and remain satisfied here at the new
 head).
+
+## Validation 2026-08-14 (windows-gfx1151, port-ready -> completed)
+
+Platform: AMD Radeon 8060S (gfx1151, RDNA3.5, wave32, ~20 CU APU), Windows 11 Enterprise,
+host XSJJDAILYL02. ROCm 7.14.0a20260519 (TheRock nightly wheels, `agent_space/torch_venv`,
+Python 3.13). torch 2.12.0+rocm7.14.0a20260519, `torch.version.hip=7.13.26190`.
+`HIP_VISIBLE_DEVICES=0`. GPU confirmed via `torch.cuda.get_device_name(0)` ->
+`AMD Radeon(TM) 8060S Graphics`.
+
+Trigger: `port-ready` (windows was the only outstanding required gate; `linux-gfx90a` and
+`linux-gfx1100` already `completed` at this head; `windows-gfx1101`/`windows-gfx1201` were
+`completed` but stale at `be2217e`, not this project's problem to fix). This is this
+platform's first validation of the project, so no carry-forward/classify step applied --
+full build + real-GPU run per the standard `port-ready` path.
+
+Fork clone was absent locally; cloned fresh:
+```bash
+git clone --branch moat-port https://github.com/AMD-Ecosystem/faster-gaussian-splatting projects/faster-gaussian-splatting/src
+python3 utils/moatlib.py protect-fork faster-gaussian-splatting   # pre-push hook installed
+python3 utils/moatlib.py pr-state faster-gaussian-splatting        # -> none, moat-port is live
+```
+Cloned at `b0d21d5a1c20e60efc92d7047552f19683cd1b1a` (matches `head_sha`), the same commit
+already validated on both Linux archs. No source edit was needed on this platform: the two
+Windows-specific fixes (`/ALTERNATENAME` link arg, `lerp_scalar`) were already ported and
+proven on gfx1201/gfx1101 earlier; this run reuses that code unchanged.
+
+### Environment
+
+Followed the proven torch-extension recipe from `agent_space/win_torch_env.sh`
+(`agent_space/torch_venv`, clang-cl host compiler, `HIP_DEVICE_LIB_PATH` set explicitly
+since the hipcc wrapper does not pass `--rocm-path`, MSVC `link.exe` prepended ahead of MSYS
+`link`). `PYTORCH_ROCM_ARCH=gfx1151` from the sourced env.
+
+### Build (from clean)
+
+```bash
+source agent_space/win_torch_env.sh
+git -C projects/faster-gaussian-splatting/src clean -fdx   # removed the 19 hipify mirrors, nothing else
+"$TORCH_PIP" uninstall -y FasterGSCudaBackend
+rm -rf projects/faster-gaussian-splatting/src/FasterGSCudaBackend/build \
+       projects/faster-gaussian-splatting/src/FasterGSCudaBackend/FasterGSCudaBackend/_C*.pyd \
+       projects/faster-gaussian-splatting/src/FasterGSCudaBackend/*.egg-info
+utils/timeit.sh faster-gaussian-splatting compile -- \
+  "$TORCH_PY" -m pip install -e projects/faster-gaussian-splatting/src/FasterGSCudaBackend --no-build-isolation
+```
+Result: **PASS**, 80.5 s from clean (recorded in `stats.jsonl`). Built
+`FasterGSCudaBackend/FasterGSCudaBackend/_C.cp313-win_amd64.pyd`. `strings` on the `.pyd`
+shows exactly one offload target, `amdgcn-amd-amdhsa--gfx1151` -- no stray gfx target
+(`llvm-objdump --offloading` does not support COFF, so `strings | grep amdgcn` was used
+instead here, unlike the Linux ELF `.so` builds).
+
+### Test (GPU, real hardware)
+
+Wrote `agent_space/fgs_test.py` on this host (none existed here yet), reproducing the same
+18-case suite shape used on `linux-gfx1100`/`linux-gfx90a` at this head: Gaussian-count
+sweep 10/100/500/1000/5000/10000 at 256x256; resolutions 128x128/256x256/512x512/800x600 at
+n=500; a repeat at n=500/256x256; SH bases 4/8/16 at n=500/256x256; the n=20000, 800x600,
+sh=16 spread scene that drives the tile-overlap path where `lerp_scalar` is called; and a
+dedicated bit-exact determinism pair (two independent runs, same seed).
+
+```bash
+source agent_space/win_torch_env.sh
+utils/timeit.sh faster-gaussian-splatting test -- "$TORCH_PY" agent_space/fgs_test.py
+```
+Result: **18/18 PASS**. All outputs finite, correctly shaped, clamped to [0,1]. The 256x256
+sh=1 series reproduces the linux-gfx1100/gfx90a/gfx1201/gfx1101 numbers closely (e.g. n=10
+range here `[0.1714, 0.5558]` vs `[0.1714, 0.5558]`/`[0.1714, 0.5559]` recorded on the other
+archs -- same 4-decimal agreement pattern already noted across wave32/wave64). Determinism
+pair bit-exact (`torch.equal`).
+
+**GPU dispatch confirmed directly**, not inferred from a green summary. Re-ran a single
+n=500/256x256/sh=1 case with `AMD_LOG_LEVEL=3` and grepped the captured log for `kernel :`
+lines (Windows' ROCr log uses `kernel :` with the mangled symbol, not the `ShaderName :`
+form the Linux log used). Found the real rasterizer kernels dispatching, demangled:
+`faster_gs::rasterization::kernels::inference::preprocess_cu`, `create_instances_cu`,
+`apply_depth_ordering_cu`, `extract_instance_ranges_cu`, `blend_cu` -- matching
+`git grep '__global__ void'` over the tracked (non-hipify-mirror) `.cuh` sources, same as
+the gfx90a validation's check. Deleted the debug log afterward (untracked, outside the
+branch).
+
+### CUDA no-regression gate
+
+Already recorded at this exact `head_sha` (`b0d21d5`) by the `linux-gfx1100` revalidation
+entry above (PASS, nvcc 12.8, `TORCH_CUDA_ARCH_LIST=8.0` pinned, 9 `sm_80` cubins). Per the
+once-per-head_sha rule, not re-run here. This host also has no CUDA toolkit (Windows,
+per the standing exemption).
+
+### Completion checks
+
+- `python3 utils/jargon.py --port faster-gaussian-splatting` -> `jargon: clean`. Needed a
+  local `main` branch in the fresh clone first (`git branch main origin/main`), same gotcha
+  the gfx90a validation hit -- `port_range()` reads local ref names, not `origin/<default>`.
+- README (`projects/faster-gaussian-splatting/src/README.md`): ROCm build section present
+  beside the CUDA one, documenting `PYTORCH_ROCM_ARCH` and a ROCm pip-install command;
+  matches the literal build command this validation ran.
+- `git -C projects/faster-gaussian-splatting/src status --porcelain`: only the untracked
+  built `_C.cp313-win_amd64.pyd` (Windows build artifact; the project's `.gitignore` covers
+  `*.so` for the Linux/Mac extension suffix but has no `*.pyd` entry -- not a defect per the
+  integrity gate, untracked build output is acceptable, and no tracked file was modified).
+  No source or build edit was needed on this platform, so `head_sha` did not move.
+
+### Verdict
+
+**completed**, `windows-gfx1151`, `validated_sha=b0d21d5a1c20e60efc92d7047552f19683cd1b1a`.
+`python3 utils/moatlib.py set-state faster-gaussian-splatting windows-gfx1151 completed
+--agent validator`. This closes the `windows` gate at head (the last outstanding required
+gate), making the project PR-ready; `windows-gfx1101` and `windows-gfx1201` remain stale at
+`be2217e` and still owe a revalidation of their own, but that revalidation gates nothing
+further since `windows-gfx1151` already satisfies the gate at head -- extra evidence, not
+required.

@@ -60,3 +60,7 @@
 {"kind":"phase","ts":"2026-08-09T15:28:36Z","phase":"compile","seconds":61.233,"exit":0,"cmd":"pip install -e projects/faster-gaussian-splatting/src/FasterGSCudaBackend --no-build-isolation"}
 {"kind":"phase","ts":"2026-08-09T15:29:06Z","phase":"test","seconds":2.850,"exit":0,"cmd":"python /tmp/claude-1000/-var-lib-jenkins-moat/cac2074a-dc3d-4ccc-a639-f6184732c4ca/scratchpad/fgs_test.py"}
 {"kind": "tokens", "ts": "2026-08-09T15:32:39Z", "tokens": 113448, "source": "validator"}
+{"kind":"session","ts":"2026-08-14T16:14:30Z","epoch":1786724071.161137000,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-14T16:16:37Z","phase":"compile","seconds":1.894,"exit":1,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe -m pip install -e . --no-build-isolation"}
+{"kind":"phase","ts":"2026-08-14T16:18:08Z","phase":"compile","seconds":80.546,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe -m pip install -e D:/Develop/moat/projects/faster-gaussian-splatting/src/FasterGSCudaBackend --no-build-isolation"}
+{"kind":"phase","ts":"2026-08-14T16:19:04Z","phase":"test","seconds":3.944,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe agent_space/fgs_test.py"}
