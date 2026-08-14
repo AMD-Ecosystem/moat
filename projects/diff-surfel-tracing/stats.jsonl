@@ -24,3 +24,12 @@
 {"kind":"phase","ts":"2026-08-14T04:30:40Z","phase":"test","seconds":5.863,"exit":0,"cmd":"python3 -u projects/diff-surfel-tracing/validation/validate_tracer_rocm.py"}
 {"kind":"session","ts":"2026-08-14T04:36:06Z","epoch":1786682166.862566411,"event":"end","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-08-14T04:37:16Z","epoch":1786682236.302268531,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-14T04:53:08Z","epoch":1786683188.024592424,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-14T04:54:20Z","epoch":1786683260.572332315,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-14T05:00:58Z","phase":"compile","seconds":5.113,"exit":0,"cmd":"cmake --build /var/lib/jenkins/HIPRT/build --target hiprt03001 -j32"}
+{"kind":"phase","ts":"2026-08-14T05:02:25Z","phase":"compile","seconds":0.368,"exit":1,"cmd":"pip install -e . --no-build-isolation --no-deps -v"}
+{"kind":"phase","ts":"2026-08-14T05:03:04Z","phase":"compile","seconds":31.972,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/diff-surfel-tracing/src && pip install -e . --no-build-isolation --no-deps -v"}
+{"kind":"phase","ts":"2026-08-14T05:03:25Z","phase":"test","seconds":15.445,"exit":0,"cmd":"python3 projects/diff-surfel-tracing/validation/validate_tracer_rocm.py"}
+{"kind":"phase","ts":"2026-08-14T05:05:15Z","phase":"compile","seconds":32.091,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/diff-surfel-tracing/src && pip install -e . --no-build-isolation --no-deps -v"}
+{"kind":"phase","ts":"2026-08-14T05:05:35Z","phase":"test","seconds":5.647,"exit":0,"cmd":"python3 projects/diff-surfel-tracing/validation/validate_tracer_rocm.py"}
+{"kind":"session","ts":"2026-08-14T05:11:37Z","epoch":1786684297.689176813,"event":"end","platform":"linux-gfx90a"}

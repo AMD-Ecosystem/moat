@@ -790,3 +790,166 @@ titles are `[ROCm]`-prefixed and under 72 characters with no agent
 `Co-Authored-By`; `jargon.py --port diff-surfel-tracing` is clean; the working
 tree is clean at `b7ff795`; `third_party/optix` is an untouched gitlink and
 the `third_party/hiprt` gitlink is the pinned `8602b8c`.
+
+## Port round 4 (2026-08-14, linux-gfx90a, MI250X, ROCm 7.14) -- REVIEW FINDINGS FIXED
+
+All nine review findings are addressed. The substantive one is real and the
+reviewer's measurement reproduces exactly: the wave64 lane-mask class had two
+more live sites, and one of them was silently building the BVH from half the
+scene, which is what round 3's "42/42 PASS" was measured against.
+
+New fork history (the two message-only rewrites are noted below):
+
+- `6847672` `[ROCm] Add a HIP RT trace back end for AMD GPUs`  (was `195d62f`)
+- `db2f6ba` `[ROCm] Guard the CUDA-only vector operators in auxiliary.h`  (was `9722c7b`)
+- `fa7df21` `[ROCm] Fix a 64-lane wavefront hang in the HIP RT build`  (was `b7ff795`)
+- `0eab27b` `[ROCm] Fix two more 32-bit lane masks in the HIP RT patch`
+- `c086cde` `[ROCm] Stage only the HIP RT files the runtime compiler reads`
+- `5254aa6` `[ROCm] Drop stale pointers and author lines from the back end`  (`head_sha`)
+
+### Finding 1+2: the lane-mask class had two more sites, and both are fixed
+
+`PairTriangles` (`BvhBuilderKernels.h:405`) and `PackLeavesWarp` (`:1989`,
+`:1993`) now use `1ull`, in `third_party/hiprt-rocm-fixes.patch`. The reviewer's
+mechanism is confirmed on hardware, not just re-derived: reverting ONLY line 405
+in the staged `hiprt_root` copy, with the cache cleared, gives
+
+```
+[FAIL] the traced geometry is complete -- 31/64 surfels traced,
+       missing [5, 16..31, 48..63]
+```
+
+i.e. exactly the upper 32 lanes of each of the two wavefronts, and restoring it
+gives 62/64. Note the shape of the two failures differs and both matter:
+`~( 1u << k )` zero-extends and wipes the upper half for EVERY k (wrong answer,
+no diagnostic), while `1 << 31` sign-extends and SETS the upper half (hang).
+
+The grep the promoted lesson prescribes was run over the whole dependency this
+time, and it is now clean: the only other lane-derived shifts are
+`BvhBuilderKernels.h:1854` and `:1948`, `( 1 << sublaneIndex ) - 1` where
+`sublaneIndex = laneIndex % LanesPerLeafPacketTask` is under 4 and the mask it
+is combined with is a `uint32_t`. Correct as written.
+`PlocBuilderKernels.h:283` and `BvhBuilderUtil.h:169,294` already use `1ull`.
+
+Both sites are still present at HIP RT HEAD as of 2026-08-14 (fetched and
+checked), so they join the GPUOpen report; registered as the deferral
+`hiprt-32bit-lane-masks-pair-and-pack`, pending a person's ruling.
+
+### Finding 3: the fault-class lesson now carries the second shape
+
+`.claude/skills/cuda-to-rocm/references/fault-classes.md` gains a paragraph for
+the 32-bit-literal-against-a-64-bit-mask shape, with both failure modes, the
+"run the grep over the whole dependency, not just as far as the symptom you are
+chasing" instruction, and the harness lesson (finiteness, determinism and
+plausible ranges do not see missing geometry).
+
+### Finding 4: the harness can now see missing geometry
+
+`validate_tracer_rocm.py` gains `check_geometry_complete`. It asserts every
+surfel centre projects inside the frame, then requires all but
+`GEOMETRY_OCCLUSION_MARGIN` (4) of them to receive a position gradient, printing
+the missing indices when it fails.
+
+The margin is measured, not invented. The two surfels that legitimately go
+untraced (5 and 25) are the two most edge-on disks in the scene:
+`|cos(normal, view)|` 0.003 and 0.015 against a median of 0.41 -- a disk seen
+edge-on covers no pixel. Any half-wave geometry loss lands at 31/64, far outside
+the margin.
+
+### Full 42-case suite RE-MEASURED at the complete scene: 44/44
+
+Not carried forward. The whole suite was re-run at `5254aa6` against a HIP RT
+built from a fresh clone of the pinned tag with only the committed patch applied,
+after `rm -rf build *.egg-info diff_surfel_tracing/hiprt_root
+diff_surfel_tracing/hiprt_cache` and a reinstall. 42 old checks plus the 2 new
+geometry checks.
+
+```
+PYTORCH_ROCM_ARCH=gfx90a, ROCm 7.14.60850, torch 2.14.0a0+git7d05abc
+HIP_VISIBLE_DEVICES=0 python3 projects/diff-surfel-tracing/validation/validate_tracer_rocm.py
+44/44 checks passed
+```
+
+Round 3's numbers versus this round's, i.e. half-empty scene versus complete
+scene. Every recalibration is re-justified against the complete scene here; none
+was carried:
+
+| measurement | round 3 (31/64 traced) | round 4 (62/64 traced) |
+|---|---|---|
+| covered fraction (`acc > 0.5`) | 0.232 | 0.241 |
+| `dpt / acc` range | [2.159, 4.574] | [1.820, 4.574] |
+| median per-surfel cosine `grads3D` vs `means3D` | 0.9897 | 0.9825 |
+| fd colors cosine / slope | 1.0000 / 0.9983 | 1.0000 / 1.0021 |
+| fd opacities | 1.0000 / 0.8055 | 0.9999 / 0.7428 |
+| fd means3D | 0.9992 / 0.9322 | 0.9993 / 0.9387 |
+| fd scales | 0.9983 / 0.9066 | 0.9923 / 0.8856 |
+| reflected-bounce max delta rgb | 0.499 | 0.363 |
+
+The bands are unchanged and all four recalibrations still hold on the complete
+scene: `acc > 0.5` still separates covered from tail pixels (0.241, inside the
+0.05-0.95 band); `dpt / acc` still lands inside the scene's 1.5-4.2 z extent
+(the lower end moves to 1.82 because the restored geometry includes nearer
+disks); the median per-surfel cosine is still the honest statistic and is now
+taken over 62 surfels rather than 31; `eps = 1e-3` over 6 directions still gives
+cosines at or above 0.99 on every parameter. The opacities slope moves 0.806 ->
+0.743, still a consistent bias rather than noise and still inside the plan's
+[0.5, 1.8] band -- the same hard alpha cutoff explanation, now over twice as
+much geometry.
+
+### Findings 5-9: hygiene
+
+- **Four undocumented API additions removed** from the patch
+  (`hiprtGet{ObjectToWorld,WorldToObject}Frame{SRT,Matrix}`). Confirmed first
+  that they exist nowhere at the pinned tag and that nothing in the fork calls
+  them.
+- **Staging is filtered.** `setup.py` copies only `hiprt/` and
+  `contrib/Orochi/ParallelPrimitives`, which are the only two subtrees HIP RT's
+  runtime compiler opens (`hiprt/impl/RadixSort.cpp` names the second; the
+  device headers include nothing outside those two). 186 MB -> 1016 KB, verified
+  by a cold-cache run that compiles every builder and trace kernel from the
+  staged copy.
+- **Three author lines and three dangling doc pointers removed** from
+  `hiprt_tracer/`. The register-pressure comments now state the workaround
+  instead of pointing at a document that does not exist here.
+- **`195d62f`'s body corrected** (now `6847672`): it claimed everything added
+  was new or `USE_ROCM`-guarded. It names the two shared changes instead
+  (`Params params{}` at both launch sites, the `__file__`-based `pkg_dir`), says
+  they are back-end-neutral fixes, and offers them as separately droppable. The
+  chunk-scratch magnitude (1.2 MB at 96x96, 265 MB at 1080p, per launch) is now
+  stated in that body too, so a maintainer meets it up front.
+- **`b7ff795`'s Test Plan fixed** (now `fa7df21`): `git -C /tmp/hiprt apply
+  "$PWD/third_party/hiprt-rocm-fixes.patch"`. Its "42/42" block is replaced by
+  what that commit alone establishes -- the build terminates -- because those
+  numbers were taken against the half-empty scene.
+
+Both message rewrites are message-only: `git diff` between the pre-rewrite and
+post-rewrite branch tips is empty. No platform had a `validated_sha` at the old
+shas, so nothing was orphaned.
+
+### The EnvGS loose end: mechanism supplied, and it needs re-checking
+
+Round 3 left it unexplained that EnvGS Stage 2 validated this tracer on gfx90a
+against the same HIP RT without tripping the `Collapse` hang. The review supplies
+the mechanism and it is now confirmed on hardware here: `PairTriangles` was
+dropping the upper half of every wavefront under Stage 2 as well, so those BVHs
+were built from roughly half the triangles the tracer thought it had. Half the
+primitives is a different primitive count and a different tree shape feeding
+`openNodes`/`Collapse`, which is exactly what decides whether the duplicate open
+pushes the reference count past the equality exit -- so a scene that hangs at
+full geometry can build at half. That resolves the "should have hung and did
+not" question.
+
+The consequence for EnvGS is the part that matters: **its gfx90a images were
+rendered with geometry missing**, and its acceptance criterion ("plausible
+reflections") could not have seen it. EnvGS should be re-checked against the
+current patch level. Recorded here, not acted on.
+
+### Build recipe: unchanged from round 3
+
+Same commands, with `HIPRT_HOME=/var/lib/jenkins/HIPRT` and
+`ROCM_PATH=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel`.
+The patch still applies cleanly to a fresh clone of the pinned tag, and the fresh
+clone plus patch reproduces the tested tree byte for byte (`git diff` of the
+verification clone equals the build clone's, 381 lines each; the only files
+present in one and not the other are HIP RT's own gitignored generated headers
+`hiprt/hiprt.h` and `hiprt/hiprtew.h`).

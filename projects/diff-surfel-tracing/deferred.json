@@ -35,6 +35,19 @@
         "by": "jeffdaily",
         "at": "2026-08-13T18:42:16Z"
       }
+    },
+    {
+      "id": "hiprt-32bit-lane-masks-pair-and-pack",
+      "kind": "rocm-bug-report",
+      "component": "hiprt",
+      "summary": "Two more 32-bit-literal lane-mask defects in HIP RT's hiprt/impl/BvhBuilderKernels.h at tag 3.1.0.cb09c56, still present at HEAD on 2026-08-14, both fixed locally in third_party/hiprt-rocm-fixes.patch and both worth including in whatever report carries the three subwarpMask sites to GPUOpen. (1) PairTriangles line 405: 'activeMask &= ~( 1u << firstPairedLane )' computes the complement in 32 bits, so it zero-extends into the 64-bit AND and clears bits 32..63 of activeMask for every lane, whatever the shift count. The lane-at-a-time loop ends when the low 32 bits drain, lanes 32..63 keep pairedIndex == InvalidValue, and their triangles are never written to pairIndices -- so on a 64-wide wavefront half the triangles are silently absent from the BVH. Measured on gfx90a: 31 of 64 surfels traced before the fix, 62 of 64 after. No error, no hang, a plausible image. (2) PackLeavesWarp lines 1989 and 1993: 'packetMask ^= 1 << broadcastLane' is a signed int, so at lane 31 it sign-extends to 0xffffffff80000000 and sets bits 32..63 that the enclosing 'while ( packetMask )' cannot clear, hanging the leaf packing. That path builds TrianglePacketNode, selected for RTIP 3.1 and later (gfx1201), so it is reasoned from the source rather than measured. Both affect any HIP RT user on the respective architecture.",
+      "refs": [
+        "projects/diff-surfel-tracing/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-14T05:10:36Z",
+      "decided": null
     }
   ]
 }
