@@ -604,6 +604,47 @@ def _release_lock(obj):
     obj["porting"] = None
 
 
+def _publish_lock(name, arch):
+    """Push a just-taken work lock and verify it survived the merge.
+
+    An acquisition that stays local serializes nothing. The merge driver's
+    first-acquire-wins rule (merge_status._merge_lock) can only arbitrate
+    acquisitions that reach origin, and the loser only backs off if it re-reads
+    after pushing. Both halves of that protocol lived in role prose -- porter.md
+    told porters to push and re-read -- and on 2026-08-13 a reviewer took the
+    lock with set-state and did not commit until its verdict, so a second host
+    saw `porting: null` on origin, was granted the same stage, and two rounds
+    ran the same project at once. The transition now performs its own protocol.
+
+    commit_and_push pulls --rebase before pushing, so a concurrent acquisition
+    already on origin is merged here and the driver picks the deterministic
+    winner; re-reading afterwards therefore answers WHO WON, not what this host
+    wrote. Losing raises, exactly like finding the lock held up front. There is
+    nothing to roll back on loss: both hosts wrote the same stage, and the
+    merged record already carries the winner's lock.
+
+    A push that fails (offline, retries exhausted) leaves the acquisition
+    committed but unpublished. Warn rather than refuse: a host that cannot push
+    cannot see anyone else's acquisition either, so refusing would not close
+    the window, and the pre-fix behavior -- never pushing at all -- was strictly
+    worse than a loud local commit."""
+    pushed = commit_and_push(f"projects/{name}/status.json",
+                             f"{name}: {arch} takes the work lock")
+    obj = load_status(name)
+    held = obj.get("porting") or {}
+    if held.get("arch") != arch:
+        raise ValueError(
+            f"{name}: a concurrent acquisition won the work lock -- it is held "
+            f"by {held.get('arch') or 'nobody'} since {held.get('since')}. Back "
+            f"off and let that arch run; takeover is a person's decision "
+            f"(`moatlib.py port-lock {name} --take {arch}`)")
+    if not pushed:
+        sys.stderr.write(
+            f"{name}: work lock for {arch} committed but NOT pushed -- no other "
+            f"host can see it, so nothing is serialized until a push lands\n")
+    return obj
+
+
 def set_state(name, platform, new_state, agent=None, save=True):
     """Validate and apply a transition with its side effects.
 
@@ -730,6 +771,13 @@ def set_state(name, platform, new_state, agent=None, save=True):
     obj["platforms"][platform] = blk
     if save:
         save_status(name, obj)
+        # Entering an exclusive stage must publish the acquisition, or the lock
+        # exists only in this checkout; see _publish_lock. Leaving one is not
+        # symmetric: an unpushed RELEASE fails closed (other hosts wait on a
+        # lock that is already over), and the verdict that ends the stage is
+        # committed with its artifacts by commit-project moments later.
+        if new_state in EXCLUSIVE_STAGES:
+            obj = _publish_lock(name, platform)
     return obj
 
 
@@ -814,6 +862,10 @@ def port_lock(name, take=None, release=False):
         what = f"taken by {take}" if take else "released"
         prev = f" (was {held['arch']} since {held.get('since')})" if held else ""
         sys.stderr.write(f"{name}: fork-write lock {what}{prev}\n")
+        # A takeover or release the fleet cannot see decides nothing, and the
+        # person who ran this command has no later commit-project to carry it.
+        commit_and_push(f"projects/{name}/status.json",
+                        f"{name}: fork-write lock {what}")
     return obj.get("porting")
 
 
