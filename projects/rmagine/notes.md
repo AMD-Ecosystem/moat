@@ -2703,3 +2703,96 @@ package-config + header-footprint changes both confirmed live and working, not m
 unbroken). CUDA no-regression gate PASS (pure passthrough, re-run fresh at this head).
 Integrity clean, jargon clean. Recorded `validated_sha = 1213551f14f64c92c08048f377034b1ee362659d`,
 state `completed`.
+
+## Validation 2026-08-14 (linux-gfx90a REVALIDATE, MI250X GCD 1, HIP_VISIBLE_DEVICES=1) -- PASS
+
+Fork: AMD-Ecosystem/rmagine `moat-port` HEAD `1213551f14f64c92c08048f377034b1ee362659d`.
+This platform's prior `validated_sha` was `9e642a6a623a4871544193f5c5d078789bd630f4`
+(carried forward by a commit-message reword, see "History rewrite 2026-08-12"), an
+ancestor of `ee33fc4`/`27a88ba`/`e7a7b27`/`1213551`. `classify 9e642a6 1213551` reports
+`class=mixed` (install-config + header-footprint changes, not comment/rename-only), so
+this is a full real-GPU revalidation, not carried forward. GPU: AMD Instinct MI250X /
+MI250, gfx90a:sramecc+:xnack-, `HIP_VISIBLE_DEVICES=1` (GCD 1; other GCDs busy on this
+host). No `/opt/rocm` on this host -- ROCm is the conda pip-package (TheRock-style) SDK
+at `/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel` (HIP/clang
+23.0.0git). No local clone existed for this project on this host; cloned fresh from
+`https://github.com/AMD-Ecosystem/rmagine` and checked out `moat-port` (HEAD matched
+`1213551` immediately, no fix round in `status.json`). `libboost-all-dev` and
+`libassimp-dev` were missing and installed via `sudo apt-get install -y
+libboost-all-dev libassimp-dev` (matches the assimp version other platforms built
+against, 5.3.1+ds-2build1); Eigen3 3.4.0 and TBB were already present.
+
+### Configure + build
+
+```
+ROCM=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel
+utils/timeit.sh rmagine compile -- cmake -S projects/rmagine/src -B agent_space/rmagine_gfx90a_build \
+  -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=$ROCM/lib/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH=$ROCM \
+  -DRMAGINE_EMBREE_DISABLE=ON -DRMAGINE_OPTIX_DISABLE=ON \
+  -DRMAGINE_VULKAN_DISABLE=ON -DRMAGINE_VULKAN_CUDA_INTEROP_DISABLE=ON \
+  -DRMAGINE_OUSTER_DISABLE=ON -DRMAGINE_BUILD_TESTS=ON -DRMAGINE_BUILD_TOOLS=OFF
+utils/timeit.sh rmagine compile -- cmake --build agent_space/rmagine_gfx90a_build -j
+```
+
+76/76 targets built cleanly (HIP compiler clang++ 23.0.0git). HIPRT SDK absent on this
+host (`third_party/HIPRT` does not exist) so `rmagine_hiprt` is correctly skipped by
+CMake, consistent with every non-HIPRT-provisioned platform. Only pre-existing
+`nodiscard` warnings on `hipMemset`/`hipCtxSetCurrent` (unchanged, not port-introduced).
+
+### Test results
+
+```
+export HIP_VISIBLE_DEVICES=1
+utils/timeit.sh rmagine test -- ctest --test-dir agent_space/rmagine_gfx90a_build --output-on-failure -R '^cuda_'
+# Run 1: 8/8 PASS (2.21 s); Run 2 (determinism): 8/8 PASS (2.22 s)
+utils/timeit.sh rmagine test -- ctest --test-dir agent_space/rmagine_gfx90a_build --output-on-failure -R '^core_'
+# 12/12 PASS (3.12 s) -- non-GPU regression set, unaffected by the HIP change
+```
+
+8 cuda_ tests: cuda_math, cuda_memory, cuda_memory_slicing, cuda_math_svd,
+cuda_math_statistics, cuda_math_reduction, cuda_math_reduction_correctness,
+cuda_public_headers (the round-3 install-footprint gate, exercised and passed on real
+gfx90a hardware for the first time -- previously only validated on gfx942/gfx1100). 12
+core_ tests: core_math, core_memory, core_memory_slicing, core_quaternion,
+core_math_svd, core_math_statistics, core_math_cov_transform, core_math_gaussians,
+core_math_matrix_slicing, core_math_reduction, core_math_cholesky, core_math_lie.
+
+### GPU dispatch confirmed (AMD_LOG_LEVEL=3)
+
+```
+HIP_VISIBLE_DEVICES=1 AMD_LOG_LEVEL=3 ./bin/rmagine_tests_cuda_math_reduction_correctness
+```
+
+`ShaderName` lines confirm real dispatch of `sum_kernel<1024u, Vector3_<float>>`,
+`cov_kernel<1024u>` and `divNx1Inplace_kernel` on `Gfx Major/Minor/Stepping: 9/0/10,
+Device ID: 0x740c` (MI250X); `rocminfo` names it `amdgcn-amd-amdhsa--gfx90a:sramecc+:
+xnack-`. Exit: `PASS: rm::sum/mean/cov match CPU reference and are deterministic`.
+`strings lib/librmagine-cuda.so.2.4.2 | grep -o gfx[0-9]*` shows the `gfx90` code
+object present (name truncated by `strings`' matching, consistent with the
+`gfx90a:sramecc+:xnack-` target id).
+
+### CUDA no-regression gate
+
+Already recorded at this exact head_sha (`1213551`) by the linux-gfx1100 validation
+above ("CUDA no-regression gate" section, 77/77 targets, nvcc 12.8.93, `sm_80` pinned).
+Runs once per head_sha per the validator role; not re-run here.
+
+### Integrity + jargon gates
+
+`git -C projects/rmagine/src status --porcelain` empty; HEAD `1213551` matches
+`status.json.head_sha`. `python3 utils/jargon.py --port rmagine` -> clean.
+Documentation: unchanged from the prior rounds' ruling (README's `USE_HIP` silence and
+the two commit-title items are a person's PR-shaping call, not blocking, per "Review
+2026-08-13"); not re-litigated here.
+
+### Verdict
+
+Stage 1 (rmagine_cuda HIP compute backend) VALIDATED on gfx90a/MI250X at `1213551`:
+8/8 cuda_ (2 runs, bit-identical) + 12/12 core_ PASS, no regression, including the
+install-footprint `cuda_public_headers` gate on real GPU hardware for the first time on
+this platform. CUDA no-regression gate already covered at this head_sha by
+linux-gfx1100. Integrity clean, jargon clean. Recorded `validated_sha =
+1213551f14f64c92c08048f377034b1ee362659d`, state `completed`.
