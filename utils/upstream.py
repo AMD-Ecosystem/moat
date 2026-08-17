@@ -100,6 +100,22 @@ def with_submission_note(body):
     return body.rstrip() + "\n\n" + SUBMISSION_NOTE + "\n"
 
 
+REPLY_NOTE = "*Note: this reply was drafted by an AI assistant.*"
+
+
+def with_reply_note(reply):
+    """The reply as it will be posted upstream: the fix-round counterpart of
+    with_submission_note. A comment lands under a person's account, so it carries
+    the same disclosure a PR body does -- prepended at post time rather than
+    written into each draft, for the same reason SUBMISSION_NOTE is appended by
+    the tool: a standing obligation should not depend on every drafter
+    remembering it. Idempotent, so a draft that already leads with the note is
+    left alone."""
+    if reply.lstrip().startswith(REPLY_NOTE):
+        return reply
+    return REPLY_NOTE + "\n\n" + reply
+
+
 # GitHub PR state -> the project-level pr_state it implies. A closed PR says
 # nothing about whether the port itself is good, so it is reported for a human
 # rather than applied.
@@ -884,9 +900,9 @@ def fix_reply_of(body):
     """The reply text a fix review PR's body carries, or None.
 
     The section ENDS at the next heading of the same level or higher, not at the end
-    of the body. Everything it contains is posted verbatim in a stranger's
-    repository, so a `## Notes` written for our own eyes after the reply must not
-    travel with it. Fenced blocks are skipped when looking for that heading, the
+    of the body. Everything it contains is posted in a stranger's repository
+    (verbatim, behind the standing REPLY_NOTE disclosure line), so a `## Notes`
+    written for our own eyes after the reply must not travel with it. Fenced blocks are skipped when looking for that heading, the
     same way jargon.scan_text skips them: a reply that quotes a shell comment is
     quoting, not starting a new section."""
     out, collecting, in_fence = [], False, False
@@ -1089,7 +1105,8 @@ def open_fix_review_pr(row, title, body, apply=False):
          f"Approving covers the commits on this branch"
          + (f" and the section under {REPLY_HEADING!r} in the body, which is "
             f"posted verbatim as a comment on the upstream pull request after "
-            f"the merge" if reply else "")
+            f"the merge, behind a standing line disclosing that it was drafted "
+            f"by an AI assistant" if reply else "")
          + ". `utils/upstream.py --merge-fix --apply` then fast-forwards the "
            "open upstream PR's branch to exactly the approved tip. Anything "
            "pushed afterwards, or any edit to the body, voids the approval and "
@@ -1341,7 +1358,7 @@ def do_merge_fix(name, d, fix, pr):
             notes.append("gh is not installed; the approved reply was NOT posted")
         else:
             c = subprocess.run([real, "pr", "comment", d["pr_url"],
-                                "--body", reply],
+                                "--body", with_reply_note(reply)],
                                capture_output=True, text=True, timeout=90)
             notes.append("posted the approved reply" if c.returncode == 0 else
                          f"could NOT post the approved reply: "
@@ -1512,7 +1529,8 @@ def main():
             print("   open one: --fix-review --apply --name <p> --title '<t>' "
                   "--body-file <f>")
             print(f"   (a body section headed {REPLY_HEADING!r} is posted verbatim "
-                  f"on the upstream PR after the merge)")
+                  f"on the upstream PR after the merge, behind a standing "
+                  f"AI-disclosure line the tool prepends)")
             return 0
         if not (a.name and a.title and a.body_file):
             print("--fix-review --name needs --title and --body-file "
