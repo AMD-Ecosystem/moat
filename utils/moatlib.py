@@ -996,7 +996,12 @@ APPROVE_COMMAND = "/moat approve"
 # so an objection needs a command form exactly as consent does. It supersedes the
 # same author's earlier approval and blocks anyone else's until they approve again.
 CHANGES_COMMAND = "/moat changes-requested"
-MOAT_COMMANDS = (APPROVE_COMMAND, CHANGES_COMMAND)
+# GitHub's own button is labelled "Request changes", so people type the command
+# both ways; treating the imperative spelling as a typo would turn a clear
+# objection into an "unrecognized command" blocker a person then has to clean up.
+CHANGES_ALIAS = "/moat request-changes"
+CHANGES_COMMANDS = (CHANGES_COMMAND, CHANGES_ALIAS)
+MOAT_COMMANDS = (APPROVE_COMMAND, CHANGES_COMMAND, CHANGES_ALIAS)
 # Who may give it. Anyone can comment; these are the associations GitHub reports for
 # someone with write access to the repository.
 APPROVE_ASSOC = ("OWNER", "MEMBER", "COLLABORATOR")
@@ -1030,7 +1035,7 @@ def _command_of(review):
         return None
     if cmds - set(MOAT_COMMANDS):
         return "unknown"
-    if CHANGES_COMMAND in cmds:
+    if cmds & set(CHANGES_COMMANDS):
         return "changes-requested"
     return "approve"
 

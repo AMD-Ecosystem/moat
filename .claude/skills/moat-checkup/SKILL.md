@@ -70,7 +70,8 @@ counts too, judged by its time against the branch tip. Do not ask them to also r
 copy of the body somewhere in this repo.
 
 Rejection is a command too, because the author's Request Changes button is greyed out
-exactly as Approve is: `/moat changes-requested` on a line by itself sends the port
+exactly as Approve is: `/moat changes-requested` on a line by itself (or
+`/moat request-changes`; both spellings are accepted) sends the port
 back to the porter and blocks publish until that person posts `/moat approve`. Only
 each author's latest command stands, a command quoted inside a code fence is ignored
 (the instructions comment quotes both), and an unrecognized `/moat` line from someone

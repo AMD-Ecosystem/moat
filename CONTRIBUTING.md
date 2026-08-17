@@ -140,7 +140,8 @@ the review form: it records the commit it was written against, which is what the
 staleness checks rest on, while a conversation comment is judged only by its time
 against the branch tip.
 
-Send it back the same way: `/moat changes-requested` on a line by itself -- the
+Send it back the same way: `/moat changes-requested` on a line by itself (or
+`/moat request-changes`; both spellings are accepted) -- the
 Request Changes button is greyed out for an author exactly as Approve is. It stands,
 and blocks submission, until the same person posts `/moat approve`. Your latest
 command is the one that counts; a command quoted inside a code fence is ignored, and
