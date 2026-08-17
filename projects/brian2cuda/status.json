@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "codegen",
   "adopted_at": "2026-06-05T04:44:12Z",
-  "updated_at": "2026-08-17T21:03:17Z",
+  "updated_at": "2026-08-17T21:03:25Z",
   "head_sha": "90d6d7cf13b1dd9cfb814b157c1b357395115f56",
   "depends_on": [],
   "pr_url": "https://github.com/brian-team/brian2cuda/pull/327",
@@ -148,18 +148,7 @@
       "state": "completed"
     }
   },
-  "published_sha": "aca06c783be9d2519549d571bb5ea517b4226ba5",
-  "fix": {
-    "branch": "moat-fix-327",
-    "base_sha": "aca06c783be9d2519549d571bb5ea517b4226ba5",
-    "review_pr": "https://github.com/AMD-Ecosystem/brian2cuda/pull/1",
-    "opened_at": "2026-08-13T19:30:30Z"
-  },
-  "pr_approval": {
-    "approved_by": "jeffdaily",
-    "at": "2026-08-17T21:02:25Z",
-    "head_sha": "90d6d7cf13b1dd9cfb814b157c1b357395115f56",
-    "content_sha256": "71146ad4ec76a7385be08bc95b7aae41854e9a6514e323caf9ba2c3d52b85df4",
-    "review_pr": "https://github.com/AMD-Ecosystem/brian2cuda/pull/1"
-  }
+  "published_sha": "90d6d7cf13b1dd9cfb814b157c1b357395115f56",
+  "fix": null,
+  "fix_merged_at": "2026-08-17T21:03:25Z"
 }
