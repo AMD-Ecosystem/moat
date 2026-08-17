@@ -23,7 +23,7 @@ GPU-FFT, GPU-NTT, and RNGonGPU (all by the same author, Alisah Ozcan) were updat
 
 3. **RNGonGPU** (50558fe): CUDA->HIP compatibility header added. `hipPointerAttribute_t.type` member used (differs from CUDA's `.memoryType`). Links hiprand instead of curand.
 
-The submodules link `hip::host` (not `hip::device`) to avoid propagating HIP compile flags to downstream consumers. This allows pure C++ test executables to link against the HIP library without requiring HIP compilation themselves -- though they still need HIP compilation to use rocThrust headers.
+The submodules link `hip::host` (not `hip::device`) to avoid propagating HIP compile flags to downstream consumers. This allows pure C++ test executables to link against the HIP library without requiring HIP compilation themselves -- though they still need HIP compilation to include the public headers. [CORRECTED 2026-08-17: earlier text blamed rocThrust for that; the real constraint is device code in the header chain -- see "Porter round 2026-08-17".]
 
 ## Port Details
 
@@ -49,7 +49,7 @@ The submodules link `hip::host` (not `hip::device`) to avoid propagating HIP com
 
 10. **CMake HIP flag propagation fix**: Changed `hip::device` to `hip::host` in GPU-NTT, GPU-FFT, and rmm_hip_stub CMakeLists.txt. The `hip::device` target propagates HIP compile flags (`-x hip --offload-arch=gfx90a`) via INTERFACE properties to all downstream targets, causing g++ to fail on pure C++ files. The `hip::host` target provides the HIP runtime library without compile-time flags.
 
-11. **Test compilation**: Test .cpp files are compiled as HIP sources (`set_source_files_properties(... LANGUAGE HIP)`) because they transitively include rocThrust headers via heongpu.hpp. rocThrust requires HIP compilation context.
+11. **Test compilation**: Test .cpp files are compiled as HIP sources (`set_source_files_properties(... LANGUAGE HIP)`) because they transitively include device code via heongpu.hpp. [CORRECTED 2026-08-17: this entry originally said "rocThrust requires HIP compilation context". False -- rocThrust's `thrust/host_vector.h` compiles under plain g++; the constraint is `__umul64hi` (GPU-NTT `modular_arith.cuh:352`) and `warpSize` (`util.cuh:322`) in the public header chain, same as nvcc on the CUDA side. See "Porter round 2026-08-17".]
 
 12. **RMM HIP stub error checking**: Added `hipError_t` return value checking to all allocation functions in the RMM stub. Throws `std::runtime_error` on allocation failure. Deallocation ignores errors (cannot throw in destructors).
 
@@ -5137,3 +5137,69 @@ reproduced twice from a clean build on TheRock's pip-packaged ROCm 7.14 SDK; no
 completion at the same head; CUDA no-regression gate already closed at this head by
 `linux-gfx942`, not re-run. `wave64` gate reconfirmed at the current head by this arch
 (independent evidence; `linux-gfx942` already satisfies it).
+
+## Porter round 2026-08-17 (linux-gfx90a) -- review-PR feedback, comments and CMake dedup
+
+Jeff Daily posted `/moat changes-requested` on the fork review PR
+(AMD-Ecosystem/HEonGPU#1) for two findings raised there. Head advanced
+26d636f -> 31daef3 (two commits); all platforms flip to revalidate as usual.
+Delta is comment/doc wording plus a CMake dedup -- no functional change on
+either platform, so revalidation should be cheap everywhere.
+
+### 1. The rocThrust rationale was misattributed (8e50c0b)
+
+Every `LANGUAGE HIP` comment (test/, benchmark/, example/*/CMakeLists.txt) and
+`docs/advanced_topics.rst:54` claimed consumer TUs need HIP compilation because
+the headers pull in rocThrust. Measured on this host (ROCm 7.2.1 pip SDK):
+
+- A TU holding only `#include <thrust/host_vector.h>` -- the single Thrust
+  include in the public headers (`memorypool.cuh:22`) -- compiles clean under
+  plain `g++ -std=c++17` against rocThrust, with and without
+  `__HIP_PLATFORM_AMD__`. Matches NVIDIA Thrust: host containers never needed
+  the GPU compiler.
+- The attempt-6 repro that "proved" the claim (`thrust/system/cuda/config.h ->
+  cub/detail/detect_cuda_runtime.cuh: No such file`) had NO rocThrust include
+  path on its command line, so `<thrust/host_vector.h>` resolved to an NVIDIA
+  Thrust install and died for lack of CUB. That error cannot come from a
+  correctly configured rocThrust build.
+- Compiling `memorypool.cuh` under plain `g++` with all include paths correct
+  fails on `__umul64hi` (`GPU-NTT .../modular_arith.cuh:352`) and `warpSize`
+  (`util.cuh:322`, `warp_reduce`) -- device intrinsics no host compiler
+  defines, identical on CUDA and HIP. This is the real reason, and it is why
+  upstream consumers need nvcc for the same headers.
+
+Comments and the rst sentence reworded; build arrangement untouched. The two
+false claims earlier in these notes (Submodule Updates paragraph, Port
+Details 11) are corrected in place with pointers here.
+
+### 2. src/CMakeLists.txt duplication (31daef3)
+
+The `USE_HIP` branch of `target_link_libraries(heongpu ...)` repeated
+upstream's whole list to change one entry; now one block with
+`$<IF:$<BOOL:${USE_HIP}>,hip::hiprand,CUDA::curand>` in the same list
+position, so the link line is unchanged on both platforms. The duplicated
+`target_compile_options` block is gone: its only delta was omitting the two
+`--generate-line-info` entries, which are `$<COMPILE_LANGUAGE:CUDA>`-guarded
+and therefore inert in a HIP build; upstream's block restored verbatim. The
+per-target `set_target_properties` if/else genuinely differs and stays. The
+test/example/benchmark if/else blocks also stay: their branches differ in
+substance (LANGUAGE HIP marking, hip_compat include, OpenMP handling), not
+just one entry.
+
+### Verification (this host, gfx90a, ROCm 7.2.1)
+
+```
+cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build -DUSE_HIP=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release \
+  -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON
+cmake --build projects/HEonGPU/src/build -j64     # clean, 0 error lines
+ctest --test-dir projects/HEonGPU/src/build       # 100% passed, 20/20, 12.9s
+./bin/examples/basic/1_basic_bfv                  # runs, exit 0
+```
+
+`jargon.py --port HEonGPU` clean; fork tree clean; pushed `moat-port`
+26d636f..31daef3 (no upstream PR open, so no staging branch involved).
+The CUDA-side effect of the dedup is compile-time only (same targets, same
+options); the standing CUDA no-regression evidence at the prior head covers
+the unchanged sources, but the next arch with a CUDA toolchain should re-run
+the compile check at this head since src/CMakeLists.txt changed.
