@@ -7,7 +7,7 @@
   "priority": 6.322,
   "ext_type": "rust-cc-cuda",
   "adopted_at": "2026-05-30T00:04:57Z",
-  "updated_at": "2026-08-17T20:40:33Z",
+  "updated_at": "2026-08-17T20:40:41Z",
   "head_sha": "9a3a08e0f3061b00ddf8f2cfb3f5cd5c49b38d66",
   "pr_url": "https://github.com/apache/mahout/pull/1399",
   "pr_number": 1399,
@@ -142,18 +142,7 @@
       "last_agent": "validator"
     }
   },
-  "published_sha": "fd8c7a38ac725b31f6b5ce1cc9e969cd357066f8",
-  "fix": {
-    "branch": "moat-fix-1399",
-    "base_sha": "fd8c7a38ac725b31f6b5ce1cc9e969cd357066f8",
-    "review_pr": "https://github.com/AMD-Ecosystem/mahout/pull/1",
-    "opened_at": "2026-08-13T22:12:05Z"
-  },
-  "pr_approval": {
-    "approved_by": "jeffdaily",
-    "at": "2026-08-17T20:39:48Z",
-    "head_sha": "9a3a08e0f3061b00ddf8f2cfb3f5cd5c49b38d66",
-    "content_sha256": "654224756614822280e79f3337c4489bd3f220313c750eadcdb4e373b1eb344e",
-    "review_pr": "https://github.com/AMD-Ecosystem/mahout/pull/1"
-  }
+  "published_sha": "9a3a08e0f3061b00ddf8f2cfb3f5cd5c49b38d66",
+  "fix": null,
+  "fix_merged_at": "2026-08-17T20:40:41Z"
 }
