@@ -1388,6 +1388,74 @@ def do_merge_fix(name, d, fix, pr):
                   + ("; " + "; ".join(notes) if notes else ""))
 
 
+def resolve_threads(name, apply):
+    """Resolve review-PR conversation threads whose last word is ours.
+
+    The porter's changes-requested loop replies on each thread naming the fix
+    commit; this closes the threads so the reviewer sees what is left. Trusted
+    the same way merge-fix is: the tool proves the PR lives on the project's
+    own fork before touching it, then calls the real gh -- gh_guard refuses raw
+    GraphQL because a mutation's target repo is invisible in the endpoint, and
+    that refusal is correct for everything that has not done this check.
+
+    Only threads whose LAST comment is the PR author's are touched: on a
+    self-authored review PR the author's reply is the porter's answer, so a
+    thread where the reviewer answered back stays open for a person."""
+    sys.path.insert(0, str(REPO / "utils"))
+    import gh_guard
+    obj, _where = next(((d, w) for n, d, w in all_records() if n == name), (None, None))
+    if obj is None:
+        print(f"resolve-threads: no record for {name}")
+        return 1
+    url = (obj.get("fix") or {}).get("review_pr") or obj.get("review_pr")
+    fork = obj.get("fork_url") or ""
+    if not url:
+        print(f"resolve-threads: {name} has no review PR recorded")
+        return 1
+    m = re.search(r"github\.com/([^/]+)/([^/]+)/pull/(\d+)", url)
+    fm = re.search(r"github\.com/([^/]+)/([^/]+?)(?:\.git)?/?$", fork)
+    if not m or not fm or (m.group(1), m.group(2)) != (fm.group(1), fm.group(2)):
+        print(f"resolve-threads: {url} is not on the project's fork {fork}; refusing")
+        return 1
+    real = gh_guard.real_gh()
+    if real is None:
+        print("resolve-threads: gh is not installed")
+        return 1
+    q = ('query($o: String!, $r: String!, $n: Int!) { repository(owner: $o, name: $r) {'
+         ' pullRequest(number: $n) { author { login } reviewThreads(first: 100) { nodes {'
+         ' id isResolved path comments(last: 1) { nodes { author { login } } } } } } } }')
+    r = subprocess.run([real, "api", "graphql", "-f", f"query={q}", "-f", f"o={m.group(1)}",
+                        "-f", f"r={m.group(2)}", "-F", f"n={m.group(3)}"],
+                       capture_output=True, text=True, timeout=90)
+    if r.returncode:
+        print(f"resolve-threads: could not read {url}: {(r.stderr or r.stdout).strip()[:160]}")
+        return 1
+    pr = json.loads(r.stdout)["data"]["repository"]["pullRequest"]
+    author = (pr.get("author") or {}).get("login")
+    ret = 0
+    for t in pr["reviewThreads"]["nodes"]:
+        if t["isResolved"]:
+            continue
+        last = (t["comments"]["nodes"] or [{}])[-1].get("author") or {}
+        if last.get("login") != author:
+            print(f"  OPEN       {t['path'] or '(review)'}: last word is "
+                  f"{last.get('login') or 'unknown'}'s, leaving for a person")
+            continue
+        if not apply:
+            print(f"  WOULD-RESOLVE {t['path'] or '(review)'} ({t['id']})")
+            continue
+        mq = ('mutation($t: ID!) { resolveReviewThread(input: {threadId: $t}) '
+              '{ thread { isResolved } } }')
+        rr = subprocess.run([real, "api", "graphql", "-f", f"query={mq}", "-f", f"t={t['id']}"],
+                            capture_output=True, text=True, timeout=90)
+        if rr.returncode:
+            print(f"  FAILED     {t['path']}: {(rr.stderr or rr.stdout).strip()[:120]}")
+            ret = 1
+        else:
+            print(f"  RESOLVED   {t['path']}")
+    return ret
+
+
 def report_merge_fix(apply, only=None):
     rows = [(n, d, f) for n, d, f in merge_fix_rows() if only in (None, n)]
     print(f"upstream: {len(rows)} fix round(s) with a review PR recorded\n")
@@ -1479,6 +1547,9 @@ def main():
                     help="fast-forward an open upstream PR to an approved fix round's tip")
     ap.add_argument("--attention", action="store_true",
                     help="open upstream PRs where a maintainer is waiting on us")
+    ap.add_argument("--resolve-threads", action="store_true",
+                    help="with --name: resolve fork review PR threads whose last "
+                         "word is ours (--apply to write)")
     a = ap.parse_args()
 
     if a.forks:
@@ -1547,6 +1618,11 @@ def main():
         return 0 if action in ("opened", "would-open") else 1
     if a.merge_fix:
         return report_merge_fix(apply=a.apply, only=a.name)
+    if a.resolve_threads:
+        if not a.name:
+            print("resolve-threads: pass --name <project>")
+            return 1
+        return resolve_threads(a.name, apply=a.apply)
     if a.attention:
         return report_attention(recorded(), TODAY)
 
