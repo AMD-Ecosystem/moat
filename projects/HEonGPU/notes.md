@@ -5903,14 +5903,14 @@ the `LINKER:` generalization were verified correct and are unchanged.
 
 ### Item 3 -- the constraint an editor must not break, now in the file
 
-`thirdparty/CMakeLists.txt` gains four comment lines above
-`set(BUILD_SHARED_LIBS OFF)`: it must stay a normal variable and never become a
-cache entry, because the memory manager declares `BUILD_SHARED_LIBS` with
-`option()`, which writes the cache, and a cache entry here would switch
-everything fetched later -- GoogleTest included -- to shared. The reasoning was
-previously only in the commit message, which nobody edits from, while
-`set(BUILD_TESTS OFF CACHE BOOL "" FORCE)` sits 24 lines below and models the
-idiom that reintroduces the bug.
+`thirdparty/CMakeLists.txt` gains comment lines above
+`set(BUILD_SHARED_LIBS OFF)` recording that it must stay a normal variable. The
+reasoning was previously only in the commit message, which nobody edits from,
+while `set(BUILD_TESTS OFF CACHE BOOL "" FORCE)` sits 24 lines below and models
+a cache-writing idiom that invites the same edit here. (The mechanism this round
+gave for the constraint -- that a cache entry here would switch everything
+fetched later to shared -- was backwards; see the 2026-08-18 re-review and the
+porter round below for the measured one.)
 
 ### Item 4 -- the hipMM slowdown is registered
 
@@ -6062,3 +6062,65 @@ clean, `prose.py` on the body clean, fork `git status --porcelain` empty.
 changes-requested. Items 1, 2 and 4 are closed; item 1's refutation is accepted in full.
 The only outstanding defect is the one inverted sentence, in the source comment and in the
 commit body, which is a single amend with no functional change and no rebuild.
+
+## Porter 2026-08-18 (windows-gfx1151) -- fix the inverted BUILD_SHARED_LIBS rationale
+
+Re-review item 1 accepted. Comment and commit-body wording only; no functional change, so
+3629b4e was amended in place to 0cbaa0b (no platform carried 3629b4e in `validated_sha` or
+`failed_sha`, `pr-state` was `none`).
+
+What was wrong: both the source comment at `thirdparty/CMakeLists.txt` and the matching
+commit-body paragraph said a *cache entry* here would flip everything fetched later,
+GoogleTest included, to shared. Backwards. The entry would be `OFF`, and an `OFF` cache
+entry makes later fetches static. What produced `gtest.dll` and the 15 `0xc0000135`
+`gtest_discover_tests` failures at 89cb862 was the *absence* of the line: the memory
+manager's own `option(BUILD_SHARED_LIBS "Build RMM shared libraries" ON)` then wrote `ON`
+into the cache and the sibling `test/` scope inherited it.
+
+The normal variable is still correct, for the reasons the measurements support: under
+CMP0077 it makes that `option()` a no-op so nothing reaches the cache, it stays scoped to
+this directory, it cannot override a `-DBUILD_SHARED_LIBS` the user set for their own
+build, and it does not persist across a later reconfigure of the same tree with
+`USE_HIP=OFF`, where a forced `OFF` entry would silently apply to a CUDA build.
+
+Comment as committed:
+
+```
+# Keep this a normal variable: under CMP0077 it makes the memory manager's
+# option(BUILD_SHARED_LIBS ... ON) do nothing, so nothing reaches the cache
+# and the setting stays scoped to this directory. Without it that option()
+# writes BUILD_SHARED_LIBS=ON to the cache and the sibling test/ scope
+# inherits it, which is what turns GoogleTest into a DLL. A cache entry
+# here would instead override a user's own -DBUILD_SHARED_LIBS and outlive
+# a later reconfigure with USE_HIP=OFF.
+```
+
+The commit body's third paragraph now reads: "The setting is a directory-scoped normal
+variable so that it covers the fetch and leaves the rest of the project alone. Under
+CMP0077 that also keeps RMM's own option(BUILD_SHARED_LIBS ... ON) from writing the cache,
+which is what otherwise flips later fetches, GoogleTest included, to shared. A cache entry
+would work here as well, but it would override a -DBUILD_SHARED_LIBS the user set for
+their own build and would outlive a later reconfigure of the same tree with USE_HIP=OFF."
+
+The same inverted claim was corrected in this file's round-13 item 3 write-up above, and
+`.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md` gained the missing half of
+its "normal variable, not a cache entry" advice: an `OFF` cache entry is not what
+reintroduces the bug, it is bad because it overrides the user's own setting and persists
+across reconfigures.
+
+### Verification (windows-gfx1151, TheRock ROCm 7.14.0a20260612)
+
+Comment-only, so no rebuild; a reconfigure proves the file still parses and the property
+the comment claims still holds:
+
+```
+bash utils/timeit.sh HEonGPU compile -- bash agent_space/heongpu-win-r26/configure.sh
+# -- Configuring done (30.0s) / Generating done (0.3s)
+grep -ci '^BUILD_SHARED_LIBS' agent_space/heongpu-win-r26/build/CMakeCache.txt
+# 0
+ls agent_space/heongpu-win-r26/build/lib
+# gmock.lib gmock_main.lib gtest.lib gtest_main.lib   -- still static
+```
+
+`jargon.py --port HEonGPU` clean, `prose.py` on the amended body clean, title 57 chars, no
+`Co-Authored-By`, fork `git status --porcelain` empty.
