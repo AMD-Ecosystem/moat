@@ -5203,3 +5203,35 @@ The CUDA-side effect of the dedup is compile-time only (same targets, same
 options); the standing CUDA no-regression evidence at the prior head covers
 the unchanged sources, but the next arch with a CUDA toolchain should re-run
 the compile check at this head since src/CMakeLists.txt changed.
+
+## Review 2026-08-18 (reviewer, linux-gfx90a) -- delta 26d636f..31daef3
+
+Scope: the two review-feedback commits (comment/doc rationale correction,
+src/CMakeLists.txt dedup), per the pr-review skill. No problems found; the
+checks that were run and their evidence, since two of them are non-obvious:
+
+- The dedup moves a generator expression into a PUBLIC link list, which lands
+  in the installed export. Verified `HEonGPUTargets.cmake` carries
+  `$<IF:$<BOOL:ON>,hip::hiprand,CUDA::curand>` (the `${USE_HIP}` variable is
+  expanded at configure time, so consumers see a constant), and verified
+  behavior with a real plain-C++ consumer (`LANGUAGES CXX`, two host
+  functions, `find_package` against a fresh install): configures, links
+  `libhiprand.so` with no `CUDA::curand` anywhere on a CUDA-less host, runs
+  exit 0. The unselected genex arm is never evaluated, so `CUDA::curand`
+  need not exist for HIP consumers -- confirmed empirically, not assumed.
+- The restored upstream `target_compile_options` block only fires its
+  CUDA-guarded `--generate-line-info` entries in Debug/RelWithDebInfo, and
+  the porter's build was Release, so that arm was untested. Built the
+  `heongpu` target RelWithDebInfo with USE_HIP=ON: clean link, zero
+  occurrences of `--generate-line-info` in the build log. (The "31 warnings"
+  clang summary there is hipcc host-pass noise on a config the project does
+  not normally build; the delta compiles no source differently, so it cannot
+  introduce warnings.)
+- Comment/doc accuracy is backed by this session's measurements (rocThrust
+  `host_vector.h` under plain g++ compiles; the header chain fails on
+  `__umul64hi`/`warpSize`), recorded under "Porter round 2026-08-17".
+- Titles `[ROCm]` at 56/61 chars, no trailers, `jargon.py --port` clean.
+
+Verdict: review-passed. Platforms proceed to revalidation at 31daef3;
+consumer reproduction in scratch only, nothing committed outside the two
+reviewed commits.
