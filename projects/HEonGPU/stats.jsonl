@@ -276,3 +276,4 @@
 {"kind":"phase","ts":"2026-08-18T20:24:44Z","phase":"test","seconds":531.122,"exit":8,"cmd":"bash -c ctest --test-dir /d/Develop/moat/agent_space/heongpu-win-r26/build --output-on-failure -E TFHE_Gate_Boots"}
 {"kind":"phase","ts":"2026-08-18T20:27:06Z","phase":"test","seconds":107.838,"exit":0,"cmd":"bash -c cd /d/Develop/moat/agent_space/heongpu-win-r26/build/bin/test && ./bfv_relinearization_testcases.exe"}
 {"kind":"session","ts":"2026-08-18T20:33:25Z","epoch":1787085205.984015200,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-18T20:42:54Z","epoch":1787085774.592600800,"event":"end","platform":"windows-gfx1151"}
