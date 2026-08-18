@@ -6124,3 +6124,73 @@ ls agent_space/heongpu-win-r26/build/lib
 
 `jargon.py --port HEonGPU` clean, `prose.py` on the amended body clean, title 57 chars, no
 `Co-Authored-By`, fork `git status --porcelain` empty.
+
+## Review 2026-08-18 (reviewer, windows-gfx1151) -- wording re-review of 0cbaa0b
+
+Narrow re-review of the single outstanding item from the 3629b4e re-review: the inverted
+`BUILD_SHARED_LIBS` rationale. Scope is the wording only; the static-vs-shared ruling, the
+repo-identity refutation, the `llvm-readobj` skill fix and the registered deferral are
+closed and were not reopened. `git diff 3629b4e 0cbaa0b` is one hunk in
+`thirdparty/CMakeLists.txt` (-4/+7 comment lines), so no rebuild.
+
+### No problems found
+
+The corrected mechanism is the one the evidence supports, checked in all three places and
+re-measured independently rather than taken from the porter's write-up:
+
+- `thirdparty/CMakeLists.txt:39-45`. The comment now attributes `gtest.dll` to the
+  *absence* of the line (rmm's `option(BUILD_SHARED_LIBS ... ON)` writing `ON` to the
+  cache, inherited by the sibling `test/` scope) and no longer claims a cache entry would
+  flip later fetches to shared.
+- `0cbaa0b` body, third paragraph. Same statement, same direction: CMP0077 keeps the
+  `option()` from writing the cache, "which is what otherwise flips later fetches,
+  GoogleTest included, to shared", and a cache entry is rejected for overriding the user's
+  own `-DBUILD_SHARED_LIBS` and outliving a `USE_HIP=OFF` reconfigure -- not for
+  reintroducing the DLL.
+- `.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md:258-262` (`b90dfdd`). Canon
+  states it most precisely of the three: it names the `CACHE BOOL "" FORCE` form
+  explicitly and says outright that an `OFF` cache entry builds static too, "so it is not
+  what reintroduces the bug".
+
+Re-measured this round with a minimal project mirroring the real structure (a subdirectory
+that sets the variable, a nested dependency declaring `cmake_minimum_required(VERSION
+3.30)` plus `option(BUILD_SHARED_LIBS ... ON)`, and a sibling `test` subdirectory added
+afterwards):
+
+```
+normal set(), no user flag   -> dep OFF, test scope '',  no cache entry
+normal set(), -DBUILD_SHARED_LIBS=ON -> dep OFF, test scope ON, cache stays the user's ON
+non-FORCE CACHE entry, -DBUILD_SHARED_LIBS=ON -> dep ON  (the user's -D wins)
+```
+
+Plus the r26 build tree at this head: `grep -ci '^BUILD_SHARED_LIBS' CMakeCache.txt` is 0,
+`build/lib` holds `gtest.lib`/`gtest_main.lib`/`gmock*.lib` and no `.dll`.
+
+Two shorthands in the comment and commit body were checked and are accepted as written;
+they are not defects and must not be "fixed" in a later round. (a) "A cache entry here
+would override a user's own `-DBUILD_SHARED_LIBS`" holds for the `FORCE` form; a
+non-`FORCE` entry loses to the user's `-D` (measured above) and therefore would not do the
+job here at all, so `FORCE` is the only cache form worth contrasting. (b) The normal
+variable does shadow a user's `-DBUILD_SHARED_LIBS=ON` inside `thirdparty/` -- which is
+the point -- and leaves the rest of the project on the user's setting, which is the sense
+"leaves the rest of the project alone" carries.
+
+`notes.md` no longer teaches the inverted mechanism anywhere: the round-13 item-3 write-up
+carries an explicit correction pointing at the re-review, and the round-2026-08-18 porter
+entry at `:5669` already stated the correct direction.
+
+### Amend hygiene -- clean
+
+`0cbaa0b`'s parent is `89cb862`, so `3629b4e` was amended, not stacked; nothing is
+orphaned (gfx942 and gfx1151 `validated_sha` 26d636f, gfx90a 89cb862, gfx1100 6ac06d0,
+gfx1151 `failed_sha` 89cb862 -- no platform carries `3629b4e` or `1c688ee`), and
+`moatlib.py pr-state HEonGPU` is `none`. Title 57 chars with `[ROCm]`; AI disclosure and a
+Test Plan with literal fenced commands present; `git log -1 --format='%(trailers)'` empty.
+`jargon.py --port HEonGPU` clean, `prose.py` on the body clean, no non-ASCII added by the
+diff, fork `git status --porcelain` empty.
+
+### Verdict
+
+review-passed. The port is unchanged in function since `1c688ee`; every review item raised
+against `1c688ee` and `3629b4e` is now closed. Next stage is validation on
+windows-gfx1151 at `0cbaa0b`.
