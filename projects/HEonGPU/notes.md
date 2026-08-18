@@ -5945,3 +5945,120 @@ ls agent_space/heongpu-win-r26/build/lib
 
 `jargon.py --port HEonGPU` clean, `prose.py` on the amended body clean, fork
 `git status --porcelain` empty.
+
+## Review 2026-08-18 (reviewer, windows-gfx1151) -- re-review of 3629b4e
+
+Narrow re-review of the porter's response to the four items raised against 1c688ee.
+Delta is comment-only (`git diff 1c688ee 3629b4e` is four added comment lines in
+`thirdparty/CMakeLists.txt`), so no rebuild. The static-vs-shared ruling stands and is
+not reopened. Every claim below re-measured this round.
+
+### Item 1 -- refutation ACCEPTED, item closed
+
+The porter is right and the prior review was wrong. Measured independently:
+
+```
+gh api repos/ROCm-DS/ROCmDS-Logger       --jq '[.id,.full_name,.fork,(.parent//"null")]'
+   -> [995610885,"AMD-Ecosystem/rocmds-logger",false,"null"]
+gh api repos/AMD-Ecosystem/rocmds-logger --jq '[.id,.full_name,.fork,(.parent//"null")]'
+   -> [995610885,"AMD-Ecosystem/rocmds-logger",false,"null"]
+git ls-remote <either URL> release/rocmds-26.03
+   -> 22b252ceb6d8f2a83f44b0e5e6d8ee7d9ae0f708 (both)
+```
+
+The `ROCm-DS` request resolves to the `AMD-Ecosystem` full name -- one repository behind
+a transfer redirect, same numeric id, same branch tip. `gh pr view 2 --repo
+AMD-Ecosystem/rocmds-logger` is OPEN against `release/rocmds-26.03`, which is exactly the
+branch `_deps/rapids_logger-subbuild/CMakeLists.txt:30` fetches, so merging it does reach
+HEonGPU builds. The URL at `thirdparty/CMakeLists.txt:37` and in the commit body is
+correct as committed. The prior review's inference from `fork: false` / `parent: null`
+was invalid: a transferred repository reports exactly those values. Lesson worth keeping:
+never infer repository identity from `fork`/`parent`; compare `.id`, which survives a
+rename or transfer.
+
+The underlying observation stands and is preserved: rapids_logger is pinned by a moving
+branch, so a fix merged there arrives without a pin bump here.
+
+### Item 2 -- fixed correctly, item closed
+
+`d4aee3b` replaces the inverted clause in
+`.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md:222-232` with the positive
+`llvm-readobj --coff-exports rmm.dll` / `dumpbin /exports` check and the measured 409-entry
+contrast. The diff is one hunk, +5/-2; the undefined-symbol text, the
+`WINDOWS_EXPORT_ALL_SYMBOLS` remedy, and the `LINKER:` generalization are unchanged.
+
+### Item 4 -- registered correctly, item closed
+
+`heongpu-hipmm-pool-slowdown-gfx1151` is in `projects/HEonGPU/deferred.json`, kind
+`rocm-bug-report`, component `hipMM`, `decided: null`. It carries both magnitudes (240 s
+over 19 non-TFHE tests at 26d636f; 11 of 19 over the hardcoded `TIMEOUT 30` with the 8
+survivors near 21 s at this head; roughly 2x light and 3-4x heavy, results unchanged), the
+two established facts (hipMM's pool is a straight port of rapidsai/rmm@branch-25.08; the
+deleted stub pooled nothing, so the 0.9f pre-reservation was silently never performed),
+the consequence for the round-12 HUMA clearance, and an explicit statement that it awaits
+a benchmarking study rather than a ruling.
+
+### Amend hygiene -- clean
+
+Nothing orphaned by 1c688ee -> 3629b4e: no platform carries 1c688ee in `validated_sha` or
+`failed_sha` (gfx942 and gfx1151 at 26d636f, gfx90a at 89cb862, gfx1100 at 6ac06d0,
+gfx1151 `failed_sha` 89cb862), and `moatlib.py pr-state HEonGPU` is `none`. Title
+`[ROCm] Build the fetched memory manager static on Windows`, 57 chars; rationale, AI
+disclosure and a Test Plan with literal fenced commands present; `git log --format=
+'%(trailers)'` empty, so no `Co-Authored-By` and no noreply. `jargon.py --port HEonGPU`
+clean, `prose.py` on the body clean, fork `git status --porcelain` empty.
+
+### Problem
+
+1. `thirdparty/CMakeLists.txt:39-42` and the matching paragraph of the 3629b4e commit
+   body ("The setting is a directory-scoped variable ... to shared as well"): the new
+   comment states the failure mode backwards. It claims "a cache entry here would switch
+   everything fetched later -- GoogleTest included -- to shared as well". A cache entry
+   here would be `OFF`, and an `OFF` cache entry makes everything fetched later *static*.
+   Measured this round with a minimal project that reproduces the real structure -- a
+   `thirdparty` subdirectory that sets the variable, a nested dependency whose own
+   `CMakeLists.txt` declares `cmake_minimum_required(VERSION 3.30)` and
+   `option(BUILD_SHARED_LIBS "Build RMM shared libraries" ON)`, and a sibling `test`
+   subdirectory added afterwards, matching `CMakeLists.txt:153` and `:174`:
+
+   ```
+   no set() at all                        -> dep sees ON,  test scope sees ON,  cache BUILD_SHARED_LIBS:BOOL=ON
+   set(BUILD_SHARED_LIBS OFF)             -> dep sees OFF, test scope sees '',  no cache entry
+   set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+                                          -> dep sees OFF, test scope sees OFF, cache BUILD_SHARED_LIBS:BOOL=OFF
+   ```
+
+   So what actually turns GoogleTest shared, and produced the 15 `gtest_discover_tests`
+   `0xc0000135` failures in `agent_space/heongpu-win-r25/build2.log`, is the *absence* of
+   this line: `option()` then writes `BUILD_SHARED_LIBS=ON` into the cache and the sibling
+   `test/` scope inherits it. Promoting the line to a cache entry does not reintroduce the
+   bug. The normal variable is still the right choice, but for the reasons the measurement
+   supports: it writes nothing to the cache, stays scoped to this directory, does not
+   override a `-DBUILD_SHARED_LIBS` the user set for their own build, and does not persist
+   into a later reconfigure of the same tree with `USE_HIP=OFF`, where the guard no longer
+   runs but a cache entry would remain.
+
+   This is a permanent line in the maintainer's tree and a paragraph in the PR body, in
+   front of a reader who knows CMake, so fix both. The prior review missed the same
+   sentence in 1c688ee's body -- item 3 imported it into the source file, taking it from
+   one place to two. Suggested replacement for the comment, accurate against the table
+   above:
+
+   ```
+   # Keep this a normal variable rather than a cache entry: under CMP0077 a
+   # normal variable makes the memory manager's option(BUILD_SHARED_LIBS ... ON)
+   # do nothing, so nothing is written to the cache and the setting stays scoped
+   # to this directory. Remove it and that option() writes BUILD_SHARED_LIBS=ON
+   # into the cache, which everything fetched later inherits -- GoogleTest in
+   # test/ included -- and the test executables come to need DLLs at discovery
+   # time.
+   ```
+
+   3629b4e is validated on no platform and `pr-state` is `none`, so amending it again is
+   safe.
+
+### Verdict
+
+changes-requested. Items 1, 2 and 4 are closed; item 1's refutation is accepted in full.
+The only outstanding defect is the one inverted sentence, in the source comment and in the
+commit body, which is a single amend with no functional change and no rebuild.
