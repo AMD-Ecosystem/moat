@@ -255,6 +255,10 @@ project to shared as well -- that is how a project's googletest turns into `gtes
 halfway through a port. Under CMP0077 NEW (any dependency requiring CMake 3.13+) an
 `option()` defers to an existing normal variable and creates no cache entry at all, so the
 scope-local `set(BUILD_SHARED_LIBS OFF)` keeps both the dependency and everything fetched
-after it on the default static path. Guard the whole thing on `MSVC` (true for clang-cl,
+after it on the default static path. Do not "harden" it into
+`set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)`: an `OFF` cache entry builds static too,
+so it is not what reintroduces the bug, but it overrides a `-DBUILD_SHARED_LIBS` the user
+set for their own build and persists in the build tree across reconfigures, including a
+later one that no longer takes this branch. Guard the whole thing on `MSVC` (true for clang-cl,
 and the correct predicate for "MSVC-style link driver") so Linux and the CUDA path are
 untouched. (HEonGPU)
