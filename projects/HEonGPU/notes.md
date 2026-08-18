@@ -5606,3 +5606,142 @@ default configuration, tracked as deferral
 between an upstream fix to rapids_logger/hipMM and documenting a Windows
 build limitation for HEonGPU; either way this blocks the `windows` gate at
 this head until resolved.
+
+## Porter round 2026-08-18 (windows-gfx1151) -- the hipMM Windows defects, fixed in CMake
+
+windows-gfx1151 failed validation at 89cb862 on two Windows-only defects inside
+hipMM's own dependency chain (see the validation entry above). Both are now fixed
+in `thirdparty/CMakeLists.txt`, so the fix ships with the port instead of living
+in a build recipe. Head 89cb862 -> 1c688ee (one commit, +14 lines).
+
+### The two defects
+
+1. **`--exclude-libs` reaches an MSVC-style linker.** rapids_logger (fetched
+   transitively by hipMM) applies
+   `target_link_options(rapids_logger PRIVATE "LINKER:--exclude-libs,libspdlog")`
+   whenever `RAPIDS_LOGGER_HIDE_ALL_SPDLOG_SYMBOLS` is ON, its default under
+   `BUILD_SHARED_LIBS`. CMake's `LINKER:` prefix translates the flag-passing
+   convention, not the flag, so lld-link sees `--exclude-libs libspdlog`, warns
+   about the option it does not know, and then tries to open `libspdlog` as an
+   input file. Filed upstream as AMD-Ecosystem/rocmds-logger#2.
+2. **Neither `rmm` nor `rapids_logger` exports anything on an MSVC-style
+   toolchain.** `rmm/detail/export.hpp` defines `RMM_EXPORT` as
+   `__attribute__((visibility("default")))` only under `__GNUC__` and empty
+   otherwise; rapids_logger's macro is unconditionally the ELF attribute with no
+   `#else`. Both libraries build and link fine; the failure appears much later at
+   the FIRST executable link as `undefined symbol: rmm::cuda_stream_view::...` /
+   `rapids_logger::logger::log(...)`.
+
+### The fix that shipped: static, not export-all
+
+The round was dispatched with two verified workarounds --
+`RAPIDS_LOGGER_HIDE_ALL_SPDLOG_SYMBOLS=OFF` plus `WINDOWS_EXPORT_ALL_SYMBOLS` on
+`rmm`/`rapids_logger`. Both were implemented and measured first (build tree
+`agent_space/heongpu-win-r25`): configure clean, every library links, all 15 test
+executables, 3 benchmarks and 22 of 23 examples link. **But `cmake --build` still fails
+15 targets**, because `gtest_discover_tests` runs each freshly linked test
+executable at build time and Windows has no RPATH: the exe cannot find
+`rmm.dll`, `rapids_logger.dll`, `spdlog.dll`, `fmt.dll`, `gtest.dll`,
+`gtest_main.dll`, and dies with `0xc0000135` before printing anything. Confirmed
+by hand -- copying exactly those six DLLs next to the exe makes
+`--gtest_list_tests` succeed (no GPU involved). The same 15 discovery failures
+are visible in the earlier investigation's `build-q1-full4.log`, and that
+session's `build-q1/bin/test/` still holds the DLLs it had to stage by hand.
+
+Since the bar for the round is a clean `cmake --build` with no extra `-D` flags,
+the committed fix instead builds that dependency stack static for a Windows HIP
+build:
+
+```cmake
+if(USE_HIP AND MSVC)
+    set(BUILD_SHARED_LIBS OFF)      # directory-scoped, before the hipMM fetch
+endif()
+```
+
+One setting disposes of both defects and the DLL problem: export macros stop
+mattering, rapids_logger's `cmake_dependent_option` forces
+`RAPIDS_LOGGER_HIDE_ALL_SPDLOG_SYMBOLS` OFF for a static build (so the
+`--exclude-libs` block is never reached), and nothing needs staging.
+
+Two details worth keeping:
+
+- It must be a **normal** variable in the `thirdparty/` scope, not a cache entry.
+  RMM declares `option(BUILD_SHARED_LIBS "Build RMM shared libraries" ON)`, and
+  an `option()` writes the cache -- which is why, at 89cb862, GoogleTest (fetched
+  later, from `test/CMakeLists.txt`) turned into `gtest.dll` and stopped being
+  findable. Under CMP0077 NEW (rmm requires CMake 3.30.4, rapids_logger 3.26.4)
+  an `option()` defers to an existing normal variable and writes no cache entry,
+  so the sibling `test/` scope goes back to the static default it had before the
+  hipMM swap.
+- `MSVC` is the right predicate (true for clang-cl) and `project()` has already
+  set it by the time `thirdparty/` is added. GPU-FFT, GPU-NTT and RNGonGPU are
+  declared `add_library(... STATIC ...)` explicitly, so they are unaffected either
+  way; heongpu itself is STATIC.
+
+### Verification (windows-gfx1151, TheRock ROCm 7.14.0a20260612, fresh tree)
+
+```
+source agent_space/heongpu-win/env2.sh
+bash agent_space/heongpu-win-r26/configure.sh     # rc=0, 148 s
+bash agent_space/heongpu-win-r26/build.sh         # -j16, 70 s
+```
+
+`configure.sh`/`build.sh` are `agent_space/heongpu-win/configure_v2.sh` with a
+fresh build dir and **no** extra `-D` flags -- no
+`-DRAPIDS_LOGGER_HIDE_ALL_SPDLOG_SYMBOLS`, no
+`-DCMAKE_WINDOWS_EXPORT_ALL_SYMBOLS`, no `FETCHCONTENT_SOURCE_DIR_*` override.
+
+- Configure clean; hipMM resolves at the pinned `22732e49aa00`.
+- Build: the only failing target is the pre-existing OpenMP gap
+  `example/basic/9_multi_stream_usage_way1` (already recorded as a narrow
+  follow-up; untouched here). `-k 0` shows nothing else fails.
+- 15/15 test executables, 3/3 benchmarks, 22/23 examples link. `find build -name
+  '*.dll'` returns nothing: the whole tree is static apart from the ROCm runtime.
+- `gtest_discover_tests` succeeds for all 15 tests during the build, which is the
+  concrete difference from the export-all variant.
+
+### GPU evidence
+
+DLL staging for the run (unchanged host property, plus one new name):
+
+```
+cp <_rocm_sdk_core>/bin/{amdhip64_7.dll,amd_comgr.dll,rocm_kpack.dll} build/bin/test/
+```
+
+`rocm_kpack.dll` is new to this round's record: it is a transitive dependency of
+TheRock's `amdhip64_7.dll` (found with `dumpbin /dependents`), and without it the
+loader fails on a name that appears in no build or link line. Promoted to the
+skill's validation reference along with the ROCm-DS lesson.
+
+- `bfv_addition_testcases.exe`: 1 test, PASSED (11.4 s).
+- `ctest -E TFHE_Gate_Boots` (530 s): 8 passed, 11 `***Timeout` at the project's
+  hardcoded `TIMEOUT 30` (`test/CMakeLists.txt:64-68`). Every failure is that
+  timeout; nothing failed on a result. Spot-check outside ctest:
+  `bfv_relinearization_testcases.exe` runs both its cases to `[  PASSED  ] 2
+  tests` in 100.6 s (56.1 s + 44.5 s).
+
+**Finding for the validator, not a build defect: the heavy tests got much slower
+on this APU with hipMM in place of the old stub.** At 26d636f (rmm_hip_stub) this
+host timed out on TFHE_Gate_Boots ALONE and the other 19 finished in ~240 s total
+(~12.6 s each). At this head the 8 light tests still run 12-20 s, but the 11
+heavy ones (multiplication-with-relinearization, both keyswitching methods, both
+rotations, CKKS addition) all exceed 30 s -- measured 44-56 s where they used to
+fit inside 30. The results are still correct, so this reads as allocator cost,
+not a correctness change, and it is invisible on the datacenter parts (whole
+suite in 13-15 s there). Whoever validates should (a) re-run with the local
+`TIMEOUT 30 -> 200` bump the 2026-08-13 entry documents and expect 20/20, and
+(b) decide whether an FHE workload paying that much for the memory pool on a
+small GPU is worth reporting to hipMM. Not chased in this round: the round's bar
+was the build, and the slowdown predates this commit (it arrived with 2874454).
+
+### For the reviewer
+
+- The change is 14 lines in one file, Windows-and-HIP-only; Linux and the CUDA
+  path see no difference in the generated build.
+- The alternative shape (per-target `WINDOWS_EXPORT_ALL_SYMBOLS` +
+  `RAPIDS_LOGGER_HIDE_ALL_SPDLOG_SYMBOLS=OFF`) is implemented and measured in
+  `agent_space/heongpu-win-r25` if it is worth comparing; it builds the same
+  binaries but leaves `cmake --build` failing on test discovery.
+- Skill promotion in the same change:
+  `references/strategy-a-cmake.md` gains "Windows: a fetched ROCm-DS dependency
+  has to be built static" and `references/validation.md` gains `rocm_kpack.dll`.

@@ -261,3 +261,17 @@
 {"kind":"phase","ts":"2026-08-18T18:48:03Z","phase":"compile","seconds":11.133,"exit":1,"cmd":"cmake --build agent_space/heongpu-win-r24/build -j16"}
 {"kind":"phase","ts":"2026-08-18T18:48:24Z","phase":"compile","seconds":9.390,"exit":127,"cmd":"bash -c source agent_space/heongpu-win/env2.sh && cmake --build agent_space/heongpu-win-r24/build -j16"}
 {"kind":"session","ts":"2026-08-18T18:51:51Z","epoch":1787079112.068005700,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-18T19:05:06Z","phase":"compile","seconds":98.596,"exit":0,"cmd":"bash agent_space/heongpu-win/configure_q1.sh"}
+{"kind":"phase","ts":"2026-08-18T19:05:16Z","phase":"compile","seconds":3.826,"exit":0,"cmd":"cmake --build agent_space/heongpu-win/build-q1 --target rapids_logger -j 8"}
+{"kind":"phase","ts":"2026-08-18T19:05:32Z","phase":"compile","seconds":10.685,"exit":1,"cmd":"cmake --build agent_space/heongpu-win/build-q1 -j 8"}
+{"kind":"phase","ts":"2026-08-18T19:07:23Z","phase":"compile","seconds":82.923,"exit":127,"cmd":"cmake --build agent_space/heongpu-win/build-q1 -j 8"}
+{"kind":"phase","ts":"2026-08-18T19:14:07Z","phase":"test","seconds":0.931,"exit":0,"cmd":"bash -c cd agent_space/heongpu-win/build-q1 && ctest --output-on-failure -E 'TFHE_Gate_Boots' 2>&1 | tail -150"}
+{"kind":"phase","ts":"2026-08-18T19:23:39Z","phase":"test","seconds":525.452,"exit":0,"cmd":"bash -c cd agent_space/heongpu-win/build-q1 && ctest --output-on-failure -E 'TFHE_Gate_Boots' 2>&1 | tail -200"}
+{"kind":"phase","ts":"2026-08-18T19:31:30Z","phase":"compile","seconds":136.318,"exit":0,"cmd":"bash agent_space/heongpu-win/configure_q3.sh"}
+{"kind":"phase","ts":"2026-08-18T20:05:30Z","phase":"compile","seconds":64.822,"exit":1,"cmd":"bash agent_space/heongpu-win-r25/build.sh"}
+{"kind":"phase","ts":"2026-08-18T20:12:53Z","phase":"compile","seconds":148.458,"exit":0,"cmd":"bash agent_space/heongpu-win-r26/configure.sh"}
+{"kind":"phase","ts":"2026-08-18T20:14:11Z","phase":"compile","seconds":70.348,"exit":127,"cmd":"bash agent_space/heongpu-win-r26/build.sh"}
+{"kind":"phase","ts":"2026-08-18T20:15:10Z","phase":"test","seconds":0.143,"exit":127,"cmd":"./bfv_addition_testcases.exe"}
+{"kind":"phase","ts":"2026-08-18T20:15:39Z","phase":"test","seconds":19.129,"exit":0,"cmd":"bash -c cd /d/Develop/moat/agent_space/heongpu-win-r26/build/bin/test && ./bfv_addition_testcases.exe"}
+{"kind":"phase","ts":"2026-08-18T20:24:44Z","phase":"test","seconds":531.122,"exit":8,"cmd":"bash -c ctest --test-dir /d/Develop/moat/agent_space/heongpu-win-r26/build --output-on-failure -E TFHE_Gate_Boots"}
+{"kind":"phase","ts":"2026-08-18T20:27:06Z","phase":"test","seconds":107.838,"exit":0,"cmd":"bash -c cd /d/Develop/moat/agent_space/heongpu-win-r26/build/bin/test && ./bfv_relinearization_testcases.exe"}
