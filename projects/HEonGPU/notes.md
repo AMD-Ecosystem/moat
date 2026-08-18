@@ -5853,3 +5853,95 @@ clean, `prose.py` on the body clean, `git status --porcelain` on the fork empty.
 changes-requested. No defect in the CMake change itself; items 1 and 3 are one
 amend of 1c688ee, item 2 is a wording fix in the skill entry before it becomes
 canon, and item 4 is one `deferred.py add`.
+
+## Porter round 2026-08-18 (windows-gfx1151) -- review items 2, 3 and 4
+
+Round scope: no functional change. The review's item 1 is refuted below; items 2
+and 3 are comment/wording fixes and item 4 is a registration. `1c688ee` was
+validated on no platform and `pr-state` was `none` before and immediately before
+the push, so the CMake change was amended rather than stacked:
+1c688ee -> 3629b4e.
+
+### Item 1 REFUTED -- the two logger URLs are one repository
+
+The review read `https://github.com/AMD-Ecosystem/rocmds-logger` (cited in the
+comment and the commit body) and `https://github.com/ROCm-DS/ROCmDS-Logger` (what
+the build fetches) as different repositories. They are the same repository,
+reached through a rename/transfer redirect. Measured this round:
+
+```
+gh api repos/ROCm-DS/ROCmDS-Logger      --jq .id            -> 995610885
+gh api repos/AMD-Ecosystem/rocmds-logger --jq '[.id,.full_name]'
+                       -> [995610885,"AMD-Ecosystem/rocmds-logger"]
+git ls-remote <either URL> release/rocmds-26.03
+                       -> 22b252ceb6d8f2a83f44b0e5e6d8ee7d9ae0f708
+```
+
+Same numeric repo id (a repository keeps its id across a transfer, and the old
+path 301-redirects), same branch tip, and the `ROCm-DS` path resolves to the
+`AMD-Ecosystem` full name. The review's inference rested on `fork: false` /
+`parent: null`, but a *transferred* repository reports exactly those values, so
+they cannot distinguish a standalone copy from a renamed original.
+`AMD-Ecosystem/rocmds-logger` is the current canonical name, so the URL is
+correct as committed and was left alone. Recorded here so it is not re-raised.
+
+The review's underlying observation is right and worth keeping: rapids_logger is
+pinned by hipMM to a *moving* branch (`release/rocmds-26.03`), so a fix merged
+there reaches HEonGPU builds by itself, with no pin bump here.
+
+### Item 2 -- the skill entry inverted its own diagnostic
+
+`.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md` said the undefined
+symbols were "plainly present in the import library". Backwards: if `RMM_EXPORT`
+expands to nothing, the export table -- and therefore the import library -- is
+exactly where those symbols are *not*, and a reader told to look there chases
+mangling or link order. Replaced with the positive check the reviewer measured:
+`llvm-readobj --coff-exports rmm.dll` (or `dumpbin /exports`) lists nothing for a
+library whose sources clearly define the symbols, and returns 409 entries for the
+same DLL once `WINDOWS_EXPORT_ALL_SYMBOLS` is on. The undefined-symbol text and
+the `LINKER:` generalization were verified correct and are unchanged.
+
+### Item 3 -- the constraint an editor must not break, now in the file
+
+`thirdparty/CMakeLists.txt` gains four comment lines above
+`set(BUILD_SHARED_LIBS OFF)`: it must stay a normal variable and never become a
+cache entry, because the memory manager declares `BUILD_SHARED_LIBS` with
+`option()`, which writes the cache, and a cache entry here would switch
+everything fetched later -- GoogleTest included -- to shared. The reasoning was
+previously only in the commit message, which nobody edits from, while
+`set(BUILD_TESTS OFF CACHE BOOL "" FORCE)` sits 24 lines below and models the
+idiom that reintroduces the bug.
+
+### Item 4 -- the hipMM slowdown is registered
+
+`utils/deferred.py add rocm-bug-report --project HEonGPU --component hipMM --id
+heongpu-hipmm-pool-slowdown-gfx1151`. The entry carries the reviewer's
+independent magnitude (roughly 2x light, 3-4x heavy, correctness unchanged,
+arrived with 2874454, invisible on the three Linux platforms) plus the two facts
+already established: hipMM's `pool_memory_resource.hpp` is a straight port of
+`rapidsai/rmm@branch-25.08`, so pool behaviour is inherited from RAPIDS rather
+than introduced by the port; and the deleted stub's `pool_memory_resource` did no
+pooling at all (`do_allocate` forwarded straight to the upstream resource), so
+HEonGPU's `initial_device_memorypool_size = 0.9f` -- a ~65 GB up-front
+reservation on this unified-memory APU -- was silently never performed before.
+That last point also means the round-12 review's clearance of the HUMA
+over-allocation hazard was premised on the stub pre-allocating nothing, and that
+premise no longer holds. The entry is awaiting a planned benchmarking study to
+separate pre-reservation from per-allocation cost, not ready for a ruling.
+
+### Verification (windows-gfx1151, TheRock ROCm 7.14.0a20260612)
+
+Comment-only on the CMake side, so no rebuild; a re-configure of the r26 tree
+proves the file still parses and the constraint the new comment documents holds:
+
+```
+bash utils/timeit.sh HEonGPU compile -- bash agent_space/heongpu-win-r26/configure.sh
+# -- Configuring done (31.0s) / Generating done / rc=0
+grep -i '^BUILD_SHARED_LIBS' agent_space/heongpu-win-r26/build/CMakeCache.txt
+# (no entry)
+ls agent_space/heongpu-win-r26/build/lib
+# gmock.lib gmock_main.lib gtest.lib gtest_main.lib   -- still static
+```
+
+`jargon.py --port HEonGPU` clean, `prose.py` on the amended body clean, fork
+`git status --porcelain` empty.

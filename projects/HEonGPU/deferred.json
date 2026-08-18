@@ -124,6 +124,20 @@
       "upstream_issue": null,
       "created_at": "2026-08-18T18:51:02Z",
       "decided": null
+    },
+    {
+      "id": "heongpu-hipmm-pool-slowdown-gfx1151",
+      "kind": "rocm-bug-report",
+      "component": "hipMM",
+      "summary": "HEonGPU's GPU tests got substantially slower on the gfx1151 APU (Radeon 8060S, 20 CU, unified memory) when the bundled RMM stub was replaced by hipMM at 2874454, with results unchanged. Independently measured by the reviewer on 2026-08-18: roughly 2x on the light tests and 3-4x on the heavy ones. At 26d636f the 19 non-TFHE tests totalled about 240 s (~12.6 s each); at 1c688ee 11 of 19 exceed the project's hardcoded TIMEOUT 30 (44-56 s measured by hand) and the 8 survivors average about 21 s. Invisible on the three Linux platforms, whose whole suite runs in 13-15 s, so it is specific to a small unified-memory part. Two facts already established and worth not re-deriving. First, hipMM's pool_memory_resource.hpp is a straight port of rapidsai/rmm@branch-25.08 -- only the AMD licence header, a <rmm/cuda_runtime_api.h> include shim, and one dropped SFINAE constraint differ -- so any pool behaviour is inherited from RAPIDS rather than introduced by the port. Second, the deleted stub's pool_memory_resource did no pooling at all: its do_allocate forwarded straight to the upstream resource, while HEonGPU asks for initial_device_memorypool_size = 0.9f of total device memory, which on this host is a roughly 65 GB up-front reservation the stub silently never performed. That also means the round-12 review's clearance of the HUMA over-allocation hazard was premised on the stub pre-allocating nothing, and that premise no longer holds. A benchmarking study to separate pool pre-reservation from per-allocation cost is planned; this entry is awaiting that measurement rather than ready for a ruling. It bears directly on the still-open heongpu-rmm-stub-vs-hipmm deferral, and does not block the current commit.",
+      "refs": [
+        "projects/HEonGPU/notes.md",
+        "agent_space/heongpu-win-r26/ctest.log"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-18T20:49:19Z",
+      "decided": null
     }
   ]
 }
