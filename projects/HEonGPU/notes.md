@@ -5379,3 +5379,99 @@ commits were cut from that working tree with no further edits).
 
 linux-gfx90a: **completed** at 16b6ae5edd639493d2569817861377be9ed58f30. CUDA
 gate closed at this head by this arch.
+
+## Porter round 2026-08-18 (linux-gfx90a) -- hipMM replaces the RMM stub
+
+Jeff Daily ruled `now` on `heongpu-rmm-stub-vs-hipmm` with the general
+principle: use the officially supported ROCm/AMD library instead of vendoring
+a rewrite. Head 16b6ae5 -> 89cb862 (two commits, net -602 lines).
+
+### 2874454 -- the swap
+
+`thirdparty/rmm_hip_stub/` deleted; the HIP arm of the rmm FetchContent block
+now mirrors the CUDA arm and fetches hipMM (AMD-Ecosystem/hipMM, the ROCm-DS
+port of RMM 25.10-line). hipMM keeps RMM's target name, `rmm::` namespace,
+and header layout, so no HEonGPU source changed. The hand-written
+`rmmConfig.cmake` install went too: hipMM installs its own rmm package, so
+the installed config's `find_dependency(rmm)` resolves exactly as on CUDA.
+
+Two integration facts worth keeping:
+- hipMM's six .cpp expect a HIP-capable compiler (its hip dependency injects
+  `-x hip --offload-arch` into their compile flags; plain g++ rejects both).
+  Fixed with the port's own idiom -- `set_source_files_properties(...
+  TARGET_DIRECTORY rmm PROPERTIES LANGUAGE HIP)` after the fetch. NOTE:
+  `get_target_property(... SOURCES)` returns paths relative to the TARGET's
+  source dir; without `list(TRANSFORM ... PREPEND ${_rmm_source_dir}/)` the
+  property binds to nonexistent paths and silently does nothing.
+- Nothing propagates to plain C++ consumers: heongpu's g++ host TUs and the
+  plain-C++ installed consumer both build unchanged (hipMM links hip::host,
+  not hip::device, on its interface).
+
+First attempt pinned `release/rocmds-25.10`, which has the OLD repo layout
+(no `cpp/`): FetchContent with `SOURCE_SUBDIR cpp` then SILENTLY skips
+add_subdirectory -- configure passes and the bare `rmm` link name would only
+fail at link time. The default branch `release/rocmds-26.03` carries the
+`cpp/` layout and builds.
+
+### 89cb862 -- pin by commit
+
+hipMM has no release tags and 26.03 is its moving development branch; pinned
+the exact validated commit `22732e49aa00` (comment names the branch line).
+
+### Environment gotcha (not a port defect)
+
+Re-configuring a build tree AFTER `cmake --install` into a prefix that is on
+the search path (CMAKE_INSTALL_PREFIX is in CMAKE_SYSTEM_PREFIX_PATH) makes
+rapids-cmake find the just-installed hipccl config, which fails promoting
+`roc::rocthrust` to global scope (defined by the SDK, not that directory).
+Fresh build tree avoids it; possibly worth an upstream hipccl report if it
+bites again.
+
+### Verification (gfx90a, ROCm 7.2.1, fresh tree at the pinned sha)
+
+```
+HIP_VISIBLE_DEVICES=0 cmake -S projects/HEonGPU/src -B agent_space/heongpu-gfx90a-r23/build \
+  -DUSE_HIP=ON -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON \
+  -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON
+cmake --build ... -j64        # clean; _deps/rmm-src at 22732e49aa00
+ctest                         # 100% passed, 20/20
+1_basic_bfv                   # exit 0
+# CUDA gate at 2874454's tree (thirdparty CMake reshared): rc=0, 0 errors,
+# real RMM branch-25.08 fetched unchanged
+# installed consumer (r22 prefix, hipMM-backed): heongpu.hpp compiles, links,
+# context generation on GPU, exit 0
+```
+
+### Windows risk, called out ahead of the windows revalidation
+
+hipMM's README says it is supported only on Linux. windows-gfx1151's
+revalidation is the test; if hipMM cannot build there, that is a finding to
+bring back to a person (options: hipMM Windows support upstream, or a
+documented Windows limitation), NOT a reason to quietly restore the stub.
+
+## Review 2026-08-18 (reviewer, linux-gfx90a) -- delta 16b6ae5..89cb862
+
+Scope: the hipMM swap and its pin, per the pr-review skill. One finding,
+raised and fixed within the round: the original pin was hipMM's moving
+development branch (`release/rocmds-26.03`); now an immutable commit sha
+(89cb862), verified by a fresh-tree rebuild resolving exactly that sha.
+Remaining checks: no HEonGPU source file changed (the swap is build-system
+plus doc text plus a 626-line deletion); the CUDA arm of the FetchContent
+block is behavior-identical (real RMM branch-25.08, CUDA gate rc=0); the
+LANGUAGE HIP marking on hipMM's sources is target-scoped and propagates
+nothing (g++ host TUs and the plain-C++ consumer build unchanged); the
+installed export resolves find_dependency(rmm) from hipMM's own package.
+Commit hygiene clean (46/26-char [ROCm] titles, no trailers, jargon clean).
+
+Verdict: review-passed at 89cb862. The windows-gfx1151 revalidation is the
+open question (hipMM claims Linux-only) and is the validator's to answer.
+
+## Validation 2026-08-18 (linux-gfx90a) -- PASS at 89cb862
+
+MI250X (gfx90a, wave64), ROCm 7.2.1. Fresh tree at the pinned hipMM sha
+(commands in the porter round above): clean build, ctest 100% passed 20/20,
+1_basic_bfv exit 0, hipMM resolved at 22732e49aa00. CUDA no-regression gate
+re-run at the swap tree (nvcc 12.8, arch 80): rc=0, zero error lines, real
+RMM fetched unchanged. Installed-package consumer: builds and runs context
+generation on GPU against the hipMM-backed prefix. Jargon clean; fork tree
+clean. linux-gfx90a: **completed** at 89cb86258fc0d5b3b9b5a3144909e7af92bd377c.
