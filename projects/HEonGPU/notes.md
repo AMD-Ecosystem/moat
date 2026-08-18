@@ -5745,3 +5745,111 @@ was the build, and the slowdown predates this commit (it arrived with 2874454).
 - Skill promotion in the same change:
   `references/strategy-a-cmake.md` gains "Windows: a fetched ROCm-DS dependency
   has to be built static" and `references/validation.md` gains `rocm_kpack.dll`.
+
+## Review 2026-08-18 (reviewer, windows-gfx1151) -- delta 89cb862..1c688ee
+
+Scope: the one fork commit (`thirdparty/CMakeLists.txt`, +14) and the skill lesson
+that rides with it (`c0423c6`), per the pr-review skill. Every load-bearing claim
+below was re-checked against the fetched sources and the build trees, not against
+the porter's summary.
+
+### Ruling on the deviation: keep static, do not re-implement the export-all shape
+
+The round was dispatched with `RAPIDS_LOGGER_HIDE_ALL_SPDLOG_SYMBOLS=OFF` plus
+per-target `WINDOWS_EXPORT_ALL_SYMBOLS`; the porter shipped a directory-scoped
+`set(BUILD_SHARED_LIBS OFF)` instead. The deviation is right and stands:
+
+- The prescribed shape does not produce a building tree. `agent_space/heongpu-win-r25/build2.log`
+  has 15 `FAILED:` test targets and 15 `0xc0000135`, all in `gtest_discover_tests`
+  post-build steps. `heongpu-win-r26/build.log` has exactly one `FAILED:`, the
+  pre-existing OpenMP example, and zero occurrences of `0xc0000135`.
+- Static is also the smaller and less coupled change: it sets one variable the
+  dependency already reads, rather than reaching into two fetched targets by name
+  and overriding one of their options, both of which break silently if hipMM or
+  rapids_logger renames anything.
+- `WINDOWS_EXPORT_ALL_SYMBOLS` is documented as incomplete for data symbols, so it
+  is not merely inconvenient here, and it would push permanent DLL staging onto
+  every consumer of the port on a platform with no RPATH.
+- Nothing is lost. All four statically linked deps are permissive (rmm and
+  rapids_logger Apache-2.0, spdlog and fmt MIT, libhipcxx Apache-2.0 with LLVM
+  exception), so no new obligation attaches to HEonGPU's Apache-2.0. `heongpu` is
+  declared `add_library(heongpu STATIC ...)` (`src/CMakeLists.txt:229`) and
+  GPU-FFT/GPU-NTT/RNGonGPU are each explicit `STATIC`, so there is no DLL/EXE
+  boundary in-process across which a duplicated rmm default-resource static could
+  diverge -- which is the only thing rmm's ELF visibility attribute is protecting.
+
+Independently confirmed, so not re-litigated: rmm's `option(BUILD_SHARED_LIBS
+... ON)` at `_deps/rmm-src/cpp/CMakeLists.txt:103` under
+`cmake_minimum_required(VERSION 3.30.4)` (CMP0077 NEW, so the normal variable
+suppresses the cache write); googletest is fetched from the sibling `test/` scope
+(`test/CMakeLists.txt:8-15`) and came out `build/lib/gtest.lib`, static, with no
+`gtest.dll` anywhere in the r26 tree; `project()` runs at `CMakeLists.txt:11-13`
+long before `add_subdirectory(thirdparty)` at `:153`, and the file already relies
+on `MSVC` being true for clang-cl at `CMakeLists.txt:44`; the guard `USE_HIP AND
+MSVC` leaves Linux and both CUDA paths generating identically. Commit title 57
+chars with `[ROCm]`, no `Co-Authored-By`, ASCII clean, `jargon.py --port HEonGPU`
+clean, `prose.py` on the body clean, `git status --porcelain` on the fork empty.
+
+### Problems
+
+1. `thirdparty/CMakeLists.txt:37-38` (and the same URL in the commit body): the
+   comment tells the maintainer a fix is "proposed upstream" at
+   `https://github.com/AMD-Ecosystem/rocmds-logger/pull/2`, but that is not the
+   repository this build fetches and merging it would change nothing for anyone
+   building HEonGPU. The logger comes from `https://github.com/ROCm-DS/ROCmDS-Logger`,
+   branch `release/rocmds-26.03` (`_deps/rapids_logger-subbuild/CMakeLists.txt:30`
+   in the r26 tree; the fetched checkout's `origin` is the same URL), pinned by
+   hipMM via rapids-cmake. PR 2's base repository is `AMD-Ecosystem/rocmds-logger`,
+   which is a standalone copy in this fork organization (`fork: false`, `parent:
+   null`), not a fork of ROCm-DS and not in the dependency chain. Because the
+   logger is pinned by a moving branch, a fix merged into ROCm-DS would in fact
+   reach HEonGPU builds by itself, which makes the distinction load-bearing rather
+   than pedantic. This is a permanent line in the maintainer's source tree, so fix
+   both places: either point at a PR on `ROCm-DS/ROCmDS-Logger` once one exists, or
+   drop the URL and the word "upstream" and keep only the technical rationale,
+   which stands on its own. 1c688ee is validated on no platform and no upstream PR
+   is open, so amending it is safe.
+
+2. `.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md`, first bullet of
+   the new section: "as `undefined symbol: rmm::cuda_stream_view::...` /
+   `rapids_logger::logger::log(...)` for symbols that are plainly present in the
+   import library" inverts the diagnostic that the entry exists to teach. If
+   `RMM_EXPORT` expands to nothing, the DLL's export table and therefore its import
+   library are precisely where those symbols are *not*; they are present in the
+   library's own object files. A reader told to expect them in the import library
+   will chase mangling or link order instead of missing exports. Replace the clause
+   with the check that identifies the fault class in one command: an export table
+   that is empty for a library whose sources clearly define them --
+   `llvm-readobj --coff-exports rmm.dll` (or `dumpbin /exports`), which returns 409
+   entries once `WINDOWS_EXPORT_ALL_SYMBOLS` is on, measured on this branch's r25
+   tree. The undefined-symbol text itself is accurate
+   (`agent_space/heongpu-win/build-q1-full2.log:82135+`); only the import-library
+   clause is wrong.
+
+3. `thirdparty/CMakeLists.txt:39`: the comment explains why static, but not the one
+   thing an editor must not get wrong -- that this has to stay a normal variable and
+   must never become a cache entry. `set(BUILD_TESTS OFF CACHE BOOL "" FORCE)` sits
+   24 lines below at `:63`, so the file itself models the idiom that reintroduces the
+   bug: a `CACHE ... FORCE` here re-flips every later fetch, googletest included, and
+   brings back the 15 discovery failures. One sentence in the comment, please; the
+   reasoning is currently only in the commit message, which nobody edits from.
+
+4. The hipMM performance regression is recorded only as prose. `notes.md` (this
+   round's porter entry) ends with "decide whether an FHE workload paying that much
+   for the memory pool on a small GPU is worth reporting to hipMM", which hands a
+   person's decision to a future agent in a file nothing enumerates. The magnitude
+   supports registering it: at 26d636f the non-TFHE tests totalled 240 s over 19
+   tests (353.18 s total minus 113.17 s for TFHE_Gate_Boots, 2026-08-13 entry), and
+   at this head `heongpu-win-r26/ctest.log` shows 11 of 19 hitting the project's
+   `TIMEOUT 30` with the 8 survivors averaging about 21 s -- roughly 2x on the light
+   tests and 3-4x on the heavy ones, correctness unchanged. Register it with
+   `utils/deferred.py add rocm-bug-report --project HEonGPU` (it is evidence bearing
+   directly on the still-open `heongpu-rmm-stub-vs-hipmm` ruling). It does not block
+   this commit: it arrived with 2874454, which is already validated on three Linux
+   platforms.
+
+### Verdict
+
+changes-requested. No defect in the CMake change itself; items 1 and 3 are one
+amend of 1c688ee, item 2 is a wording fix in the skill entry before it becomes
+canon, and item 4 is one `deferred.py add`.
