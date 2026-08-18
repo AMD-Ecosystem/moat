@@ -5235,3 +5235,42 @@ checks that were run and their evidence, since two of them are non-obvious:
 Verdict: review-passed. Platforms proceed to revalidation at 31daef3;
 consumer reproduction in scratch only, nothing committed outside the two
 reviewed commits.
+
+## Validation 2026-08-18 (linux-gfx90a) -- PASS at 31daef3
+
+Platform: MI250X (gfx90a, wave64), ROCm 7.2.1. Full run, no carry-forward: the
+delta touches src/CMakeLists.txt, so binary-equivalence was not assumed.
+
+```
+cmake -S projects/HEonGPU/src -B agent_space/heongpu-gfx90a-r20/build -DUSE_HIP=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release \
+  -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON
+cmake --build agent_space/heongpu-gfx90a-r20/build -j64   # clean tree, rc=0, 0 error lines
+HIP_VISIBLE_DEVICES=0 ctest --test-dir agent_space/heongpu-gfx90a-r20/build
+# 100% tests passed, 0 tests failed out of 20 (12.9s)
+```
+
+### CUDA no-regression gate: re-run at this head (rc=0)
+
+Required despite being compile-only-affected: the dedup commit changed the CUDA
+path's target_link_libraries/target_compile_options text in src/CMakeLists.txt.
+Recorded recipe (nvcc 12.8.93, gcc-13, `-DCMAKE_CUDA_ARCHITECTURES=80`,
+`agent_space/heongpu-cuda-gate/build`): configure rc=0, build rc=0, zero
+`error:` lines, 98 link steps, 42 executables. `libcurand.so` confirmed on the
+CUDA link lines -- the `$<IF:$<BOOL:${USE_HIP}>,hip::hiprand,CUDA::curand>`
+false arm resolves exactly as upstream's literal did.
+
+### Gates
+
+- Jargon `--port HEonGPU`: clean. Fork tree clean before and after.
+- Documentation: README "AMD GPUs (ROCm)" and docs/getting_started.rst
+  unchanged and accurate; docs/advanced_topics.rst reworded sentence reads
+  correctly in the rendered flow.
+- The reviewer's export-consumer and RelWithDebInfo checks at this head are
+  recorded in "Review 2026-08-18" above; not repeated here.
+
+### Verdict
+
+linux-gfx90a: **completed** at 31daef39a1f3ce002bbb9360bcd84fbed5de9a1b.
+20/20 on real GPU from a clean build; CUDA gate closed at this head by this
+arch (whichever arch validates next may skip it, once-per-head rule).
