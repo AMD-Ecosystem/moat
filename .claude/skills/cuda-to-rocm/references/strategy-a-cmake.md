@@ -222,8 +222,11 @@ the port:
   comment says only glibc is supported); rapids_logger's macro is unconditionally the ELF
   attribute with no `#else`. The DLLs themselves build and link, so the failure surfaces
   far downstream at the **first executable link**, as `undefined symbol:
-  rmm::cuda_stream_view::...` / `rapids_logger::logger::log(...)` for symbols that are
-  plainly present in the import library. If a shared build is genuinely required, the fix
+  rmm::cuda_stream_view::...` / `rapids_logger::logger::log(...)`. Identify the fault class
+  with one command instead of chasing mangling or link order: `llvm-readobj --coff-exports
+  rmm.dll` (or `dumpbin /exports`) lists nothing at all for a library whose sources clearly
+  define those symbols, and returns 409 entries for the same DLL once
+  `WINDOWS_EXPORT_ALL_SYMBOLS` is on. If a shared build is genuinely required, the fix
   is `set_target_properties(<tgt> PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)` on each of
   them (measured to link cleanly), but see below for why static is better.
 - **A GNU-only linker option reaches an MSVC-style driver.** rapids_logger applies
