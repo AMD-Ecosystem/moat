@@ -179,9 +179,12 @@ maintainer unreviewed; a pre-push hook in the fork clone refuses it), so the fix
 `moat-fix-<pr#>`, is reviewed and revalidated at the staging tip, and gets its own fork
 review PR (`upstream.py --fix-review`) whose diff is exactly the delta. Approving it with
 `/moat approve` authorizes `upstream.py --merge-fix --apply` to fast-forward the PR branch
-to exactly the approved tip -- and to post, verbatim, the reply drafted under the body's
-`## Upstream reply` heading, so the code and the words arrive together and one approval
-covers both. The title and body of a fix review PR are not republished anywhere; only that
+to exactly the approved tip -- and to post the reply drafted under the body's
+`## Upstream reply` heading, verbatim behind a standing line disclosing that it was
+drafted by an AI assistant (`REPLY_NOTE` in `utils/upstream.py`, prepended by the tool
+at post time for the same reason `SUBMISSION_NOTE` is appended: a standing obligation
+should not depend on every drafter remembering it), so the code and the words arrive
+together and one approval covers both. The title and body of a fix review PR are not republished anywhere; only that
 reply section is, and it ends at the next `##` heading so that what is written for our own
 eyes can sit in the same body without travelling with it.
 

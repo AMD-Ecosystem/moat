@@ -220,7 +220,9 @@ has reviewed, revalidated, or approved it:
    title and body are NOT republished upstream, so say plainly what the maintainer
    asked, what changed, and what revalidated. A body section headed exactly
    `## Upstream reply` is the one upstream-visible part: approve it and it is posted
-   verbatim on the upstream PR after the merge. That section ends at the next `##`
+   verbatim on the upstream PR after the merge, behind a standing AI-disclosure line
+   the tool prepends (`REPLY_NOTE` in `utils/upstream.py`) -- do not write the
+   disclosure into the draft by hand. That section ends at the next `##`
    heading, so anything written for our own eyes goes after one.
 4. `/moat approve` on that PR, then `upstream.py --merge-fix --apply` re-checks the
    live approval and every gate, fast-forwards `moat-port` to exactly the approved
