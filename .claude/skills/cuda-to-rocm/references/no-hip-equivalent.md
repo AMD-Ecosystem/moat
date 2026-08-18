@@ -45,3 +45,35 @@ Related, and easy to miss for the same reason: `cv::cuda::*` is not a dead end e
 Existing dispositions that rest on this and predate FlyDSL being available: FlashKDA, NATTEN, mirage and spconv are all recorded `cant-port` on CUTLASS/CuTe grounds. They may deserve revisiting on that basis -- which is a person's call, not an agent's.
 
 Raw PTX tensor-core intrinsics are a separate case and stay blocked: `mma.sync`, `ldmatrix.sync`, Hopper `wgmma`/TMA and `tcgen05` have no HIP-level equivalent, and the AMD analogue is MFMA/WMMA reached through rocWMMA, CK or FlyDSL rather than a direct instruction swap.
+
+## RMM -> hipMM (and check ROCm-DS before stubbing any RAPIDS library)
+
+RMM (RAPIDS Memory Manager) does not build on HIP, and HEonGPU first shipped a
+bundled ~600-line stub of the five types it used. The stub was wrong twice over:
+hipMM (https://github.com/AMD-Ecosystem/hipMM, the ROCm-DS port of the RMM
+25.10 line) already existed, keeps RMM's target name, `rmm::` namespace and
+header layout, and replaced the stub without touching one source file. The
+standing rule (Jeff Daily, 2026-08-18): use the officially supported ROCm/AMD
+port instead of vendoring a rewrite -- check the ROCm-DS / AMD-Ecosystem orgs
+for a port of any RAPIDS library before writing a stub.
+
+Integration facts from the HEonGPU swap:
+
+- The HIP arm of the same FetchContent block that fetches rmm on CUDA fetches
+  hipMM; its own install exports an `rmm` CMake package, so an installed
+  consumer's `find_dependency(rmm)` resolves exactly as on CUDA.
+- hipMM's own `.cpp` sources need a HIP-capable compiler (its hip dependency
+  injects `-x hip --offload-arch` into their compile flags; g++ rejects both).
+  Mark them `LANGUAGE HIP` after the fetch: `get_target_property(... SOURCES)`
+  returns paths relative to the TARGET's source dir, so `list(TRANSFORM ...
+  PREPEND <source_dir>/)` first or the property binds to nonexistent paths and
+  silently does nothing. Nothing propagates to plain C++ consumers (hipMM's
+  interface links hip::host).
+- Pin by commit sha: hipMM publishes no release tags, its `release/rocmds-*`
+  branches move, and layouts differ between them (25.10 is pre-`cpp/` -- a
+  `SOURCE_SUBDIR cpp` declare against it SILENTLY skips add_subdirectory and
+  only fails at link time as `-lrmm`).
+- Do not re-configure a build tree after `cmake --install` into a prefix on
+  the search path: rapids-cmake then finds the just-installed hipccl config,
+  which fails promoting `roc::rocthrust` to global scope. Fresh tree.
+- hipMM's README says Linux-only; a Windows gate needs its own evidence.
