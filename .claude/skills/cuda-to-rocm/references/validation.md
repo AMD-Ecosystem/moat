@@ -71,8 +71,12 @@ rename `amdhip64_7`. Known upstream: ROCm/TheRock issues 2019 and 4755, and llam
 is the same fault.
 
 Fix, and make it part of the run procedure rather than the build: copy TheRock's
-`amdhip64_7.dll` and `amd_comgr*.dll` from `<venv>/Lib/site-packages/_rocm_sdk_core/bin/`
-into the directory holding every test executable before running the suite. Python/PyTorch
+`amdhip64_7.dll`, `amd_comgr*.dll` and `rocm_kpack.dll` from
+`<venv>/Lib/site-packages/_rocm_sdk_core/bin/` into the directory holding every test
+executable before running the suite. `rocm_kpack.dll` is a transitive dependency of
+`amdhip64_7.dll` (confirmed with `dumpbin /dependents`, run under
+`MSYS2_ARG_CONV_EXCL="*"`); copying only the first two leaves the loader failing on a DLL
+name that appears nowhere in the build or link lines. Python/PyTorch
 processes escape this without help because `rocm_sdk.preload_libraries()` does
 `ctypes.CDLL(<absolute path>)` before anything else resolves -- which is why a torch
 extension can work on a host where a native CMake project fails.

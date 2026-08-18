@@ -209,3 +209,49 @@ this every later `git status` reads as an unclean tree and trips the integrity g
 a genuine gitlink bump still shows. This also states the honest upstream position -- these
 changes belong in the submodules' own repositories, and the patch files are exactly the
 diffs to send there. (HEonGPU)
+
+## Windows: a fetched ROCm-DS dependency has to be built static
+
+ROCm-DS libraries -- hipMM (the RMM port) and the rapids_logger it fetches transitively --
+are built shared by default and neither one works that way under an MSVC-style toolchain.
+Two independent defects, both found porting HEonGPU, both in the dependency rather than in
+the port:
+
+- **They export nothing.** `rmm/detail/export.hpp` defines `RMM_EXPORT` as
+  `__attribute__((visibility("default")))` under `__GNUC__` and as nothing otherwise (its
+  comment says only glibc is supported); rapids_logger's macro is unconditionally the ELF
+  attribute with no `#else`. The DLLs themselves build and link, so the failure surfaces
+  far downstream at the **first executable link**, as `undefined symbol:
+  rmm::cuda_stream_view::...` / `rapids_logger::logger::log(...)` for symbols that are
+  plainly present in the import library. If a shared build is genuinely required, the fix
+  is `set_target_properties(<tgt> PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)` on each of
+  them (measured to link cleanly), but see below for why static is better.
+- **A GNU-only linker option reaches an MSVC-style driver.** rapids_logger applies
+  `target_link_options(rapids_logger PRIVATE "LINKER:--exclude-libs,libspdlog")` whenever
+  `RAPIDS_LOGGER_HIDE_ALL_SPDLOG_SYMBOLS` is ON, which is its default under
+  `BUILD_SHARED_LIBS`. CMake's `LINKER:` prefix translates only the *spelling* of the
+  driver's flag-passing convention, never the flag itself, so `--exclude-libs libspdlog`
+  arrives verbatim; lld-link warns that it does not know `--exclude-libs` and then treats
+  the bare word `libspdlog` as an input file name and fails. Generalize this: any GNU/ELF
+  linker idiom behind `LINKER:` (`--exclude-libs`, `--version-script`, `-Bsymbolic`,
+  `--as-needed`) passes through untranslated and is a Windows build break waiting to
+  happen.
+
+Setting `BUILD_SHARED_LIBS` OFF for the directory scope that fetches them disposes of
+both at once -- the export macros stop mattering, and rapids_logger's
+`cmake_dependent_option` forces its symbol hiding off for a static build -- and it also
+avoids a third problem, that Windows has no RPATH: with shared dependencies every
+executable needs `rmm.dll`, `rapids_logger.dll`, `spdlog.dll` and `fmt.dll` copied next to
+it before it will even start, which breaks `gtest_discover_tests` during the build itself
+(exit `0xc0000135` right after a successful link).
+
+Set it as a **normal variable in that directory scope**, not a cache entry. RMM declares
+`option(BUILD_SHARED_LIBS "Build RMM shared libraries" ON)` in its own CMakeLists, and an
+`option()` writes the cache, so fetching RMM silently flips every *later* fetch in the
+project to shared as well -- that is how a project's googletest turns into `gtest.dll`
+halfway through a port. Under CMP0077 NEW (any dependency requiring CMake 3.13+) an
+`option()` defers to an existing normal variable and creates no cache entry at all, so the
+scope-local `set(BUILD_SHARED_LIBS OFF)` keeps both the dependency and everything fetched
+after it on the default static path. Guard the whole thing on `MSVC` (true for clang-cl,
+and the correct predicate for "MSVC-style link driver") so Linux and the CUDA path are
+untouched. (HEonGPU)
