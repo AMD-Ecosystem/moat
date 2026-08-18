@@ -98,6 +98,17 @@
       "upstream_issue": null,
       "created_at": "2026-08-13T02:31:32Z",
       "decided": null
+    },
+    {
+      "id": "heongpu-rmm-stub-vs-hipmm",
+      "kind": "other",
+      "component": null,
+      "summary": "Reviewer question on the fork review PR: should the bundled rmm_hip_stub be replaced by ROCm-DS hipMM (AMD-Ecosystem/hipMM, an RMM 25.10 port that mirrors RMM structure and API)? Doing so shrinks the port and uses a maintained implementation, but adds an external dependency to the upstream proposal (fetch/pin story needed), and costs a full build+revalidation round on every platform. Stub ships meanwhile; a person rules defer versus now.",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-18T15:39:14Z",
+      "decided": null
     }
   ]
 }

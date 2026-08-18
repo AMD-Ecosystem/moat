@@ -5274,3 +5274,108 @@ false arm resolves exactly as upstream's literal did.
 linux-gfx90a: **completed** at 31daef39a1f3ce002bbb9360bcd84fbed5de9a1b.
 20/20 on real GPU from a clean build; CUDA gate closed at this head by this
 arch (whichever arch validates next may skip it, once-per-head rule).
+
+## Porter round 2026-08-18 (linux-gfx90a) -- the review threads the first round missed
+
+The 2026-08-17 round worked from two findings relayed in session and never read
+the review PR's own threads -- the `/moat changes-requested` review carried a
+body with two questions and five line threads, of which the first round
+addressed only the two src/CMakeLists.txt dedup threads (by coincidence of
+scope). Process gap recorded here so it is not repeated; the porter role now
+requires reading the whole review PR thread and closing the loop there.
+Head advanced 31daef3 -> 16b6ae5 (three commits).
+
+### f3ab449 -- compat consolidation (review body Q1 + the cuda_to_hip.h:5 thread)
+
+cuda_to_hip.h and hip_compat/cuda_runtime.h duplicated ~60 aliases; the six
+aliases only cuda_to_hip.h had (cudaMemGetInfo, cudaFuncSetAttribute,
+cudaFuncAttributeMaxDynamicSharedMemorySize, cudaOccupancyMaxPotentialBlockSize,
+cudaDeviceSetLimit, cudaLimitStackSize) moved into the shim, util.cuh (the alias
+header's ONLY consumer) now includes cuda_runtime.h like every sibling header,
+and cuda_to_hip.h is deleted -- which also removes the AI-assistant callout the
+review flagged at its line 5. The curand_mtgp32_kernel "alias" the consolidation
+audit first listed was comment text, not a mapping; nothing referenced it.
+CRITICAL preserved detail: util.cuh must NOT include curand_kernel.h -- host TUs
+reach it through heongpu.hpp before device_launch_parameters.h and nvcc rejects
+that order (this broke lib/heongpu.cpp once; the reason is now documented at the
+include site). The CUDA gate build exercises exactly that TU and passes.
+
+### 9a9e6f2 -- drop the forced gfx90a default (getting_started.rst:60 thread)
+
+Root CMakeLists forced CMAKE_HIP_ARCHITECTURES=gfx90a when unset, silently
+building for the wrong card everywhere else and masking CMake's auto-detection.
+Removed; verified empirically that bare `project(... LANGUAGES CXX HIP)` on this
+host detects gfx90a (CMake 3.31 reports one entry per visible GPU,
+"gfx90a;gfx90a;gfx90a;gfx90a" -- duplicate entries are deduped by clang and
+harmless). Full build + 20/20 ctest run with NO -DCMAKE_HIP_ARCHITECTURES.
+Windows fleet recipes pass the flag explicitly, so no fleet impact.
+
+### 16b6ae5 -- docs: ROCm floor 6.0 -> 7.2, arch auto-detect wording
+
+"ROCm >= 6.0" was never tested; every validated configuration ran 7.2+ (Linux
+7.2.x, Windows TheRock 7.14 nightlies). README and getting_started.rst now say
+7.2 and describe auto-detect/cross-compile (getting_started.rst:19 thread).
+
+### Verification (gfx90a, ROCm 7.2.1; tree identical to the committed tip)
+
+```
+HIP_VISIBLE_DEVICES=0 cmake -S projects/HEonGPU/src -B agent_space/heongpu-gfx90a-r21/build \
+  -DUSE_HIP=ON -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON \
+  -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON   # NOTE: no arch flag
+cmake --build agent_space/heongpu-gfx90a-r21/build -j64        # clean
+ctest --test-dir agent_space/heongpu-gfx90a-r21/build          # 20/20
+# CUDA no-regression at this tree (nvcc 12.8, arch 80): rc=0, zero error lines
+```
+
+### Review body Q2 (rmm_hip_stub vs ROCm-DS hipMM): answered, not changed
+
+AMD-Ecosystem/hipMM is a real RMM port (derived from RMM 25.10, MIT, follows
+RMM's structure and API naming). Replacing the bundled rmm_hip_stub with it is
+plausible and would shrink the port, but it swaps a ~5-type internal stub for an
+external dependency, changes what upstream is asked to depend on, and needs its
+own build/validation round on every platform. Registered as a deferral for a
+person to rule on; the stub ships meanwhile.
+
+## Review 2026-08-18 (reviewer, linux-gfx90a) -- delta 31daef3..16b6ae5
+
+Scope: the three round-2 commits (compat consolidation, arch auto-detect,
+doc floor), per the pr-review skill. No blocking problems. Non-obvious checks:
+
+- The consolidation's real risk was the installed-package chain: util.cuh now
+  includes `<cuda_runtime.h>`, which an installed HIP consumer must resolve via
+  `include/hip_compat` (installed by thirdparty/CMakeLists.txt:67, exposed via
+  the INSTALL_INTERFACE). Verified end-to-end with a doc-style consumer
+  (`LANGUAGES CXX HIP`, `#include <heongpu/heongpu.hpp>`, find_package against
+  a fresh install): compiles, links, runs `context->generate()` on gfx90a,
+  exit 0. Note the umbrella include is `<heongpu/heongpu.hpp>`, not
+  `<heongpu.hpp>` -- first attempt used the wrong spelling and failed in the
+  consumer, not the library.
+- The CUDA-side inclusion-order landmine (no curand_kernel.h in util.cuh) is
+  preserved and now documented at the include site; the CUDA gate compiles
+  lib/heongpu.cpp, the TU that would break, and passed at this tree.
+- Removing the forced gfx90a default changes one niche behavior: a GPU-less
+  HIP compile-check host that previously "worked" by silently targeting
+  gfx90a now needs an explicit -DCMAKE_HIP_ARCHITECTURES. Correct trade; the
+  docs say so, and every fleet recipe passes the flag explicitly.
+- Auto-detect duplication ("gfx90a" once per visible GPU) is CMake's own
+  default-value behavior, deduped by clang; cosmetic only.
+
+Verdict: review-passed at 16b6ae5.
+
+## Validation 2026-08-18 (linux-gfx90a) -- PASS at 16b6ae5
+
+Platform: MI250X (gfx90a, wave64), ROCm 7.2.1. The r21 tree that produced all
+evidence below is byte-identical to the committed tip (verified: the three
+commits were cut from that working tree with no further edits).
+
+- HIP build with NO -DCMAKE_HIP_ARCHITECTURES (exercises the new auto-detect
+  default): configure reports detected gfx90a, clean build, rc=0.
+- `ctest`: 100% passed, 20/20.
+- CUDA no-regression gate re-run at this head (util.cuh and root CMakeLists
+  changed): nvcc 12.8, arch 80, rc=0, zero `error:` lines.
+- Installed-consumer run (review section above): context generation on GPU,
+  exit 0.
+- Jargon `--port HEonGPU` clean; fork tree clean.
+
+linux-gfx90a: **completed** at 16b6ae5edd639493d2569817861377be9ed58f30. CUDA
+gate closed at this head by this arch.
