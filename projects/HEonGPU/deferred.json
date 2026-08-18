@@ -113,6 +113,17 @@
         "by": "Jeff Daily",
         "at": "2026-08-18T15:53:10Z"
       }
+    },
+    {
+      "id": "hipmm-rapids-logger-windows-exclude-libs",
+      "kind": "rocm-bug-report",
+      "component": "rapids-logger",
+      "summary": "rapids_logger (fetched transitively by hipMM/rapids-cmake for RMM logging) unconditionally applies target_link_options(rapids_logger PRIVATE LINKER:--exclude-libs,libspdlog) whenever RAPIDS_LOGGER_HIDE_ALL_SPDLOG_SYMBOLS is ON (the default with BUILD_SHARED_LIBS ON, i.e. the default hipMM build). This is a GNU/ELF-linker-only idiom with no MSVC-driver guard; CMake's LINKER: genex has no translation for the MSVC-style link driver (lld-link in clang-cl mode), so the tokens pass through literally as '--exclude-libs libspdlog', lld-link warns 'ignoring unknown argument --exclude-libs' and then tries to open the literal file 'libspdlog' as a link input, failing with 'could not open libspdlog: no such file or directory'. Blocks rapids_logger.dll from linking on Windows/clang-cl before HEonGPU's own sources are even reached. ROCm-DS/ROCmDS-Logger repo, observed at commit 22b252ceb6d8f2a83f44b0e5e6d8ee7d9ae0f708 (CMakeLists.txt:103), fetched at hipMM commit 22732e49aa00 (release/rocmds-26.03 line) via rapids-cmake. A fix would guard the target_link_options call with a non-MSVC/WIN32 condition, or use CMake's portable LINKER: mapping for the MSVC-style driver.",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-18T18:51:02Z",
+      "decided": null
     }
   ]
 }

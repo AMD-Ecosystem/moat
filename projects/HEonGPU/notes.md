@@ -5475,3 +5475,134 @@ re-run at the swap tree (nvcc 12.8, arch 80): rc=0, zero error lines, real
 RMM fetched unchanged. Installed-package consumer: builds and runs context
 generation on GPU against the hipMM-backed prefix. Jargon clean; fork tree
 clean. linux-gfx90a: **completed** at 89cb86258fc0d5b3b9b5a3144909e7af92bd377c.
+
+## Validation 2026-08-18 (windows-gfx1151, Radeon 8060S APU, TheRock ROCm 7.14.0a20260612) -- validation-failed
+
+Revalidation at head 89cb862 (26d636f -> 89cb862, six commits; see the four
+porter/review/validation rounds above for the linux-gfx90a evidence this run
+does not repeat). Fresh build tree (the stale tree from a killed prior
+session was deleted first); source tree confirmed clean before starting
+(`git status --porcelain` empty at 89cb862) and kept clean throughout --
+no restoration of the deleted rmm_hip_stub, no vendored replacement, no
+patch to hipMM or its dependencies.
+
+### The open question: does hipMM build on Windows? No.
+
+Configure succeeds and FetchContent correctly resolves hipMM at the pinned
+commit `22732e49aa00` (verified `git rev-parse HEAD` in `_deps/rmm-src`).
+The build fails before reaching any HEonGPU source, inside hipMM's own
+dependency chain:
+
+```
+[1/128] Linking CXX shared library _deps\rapids_logger-build\rapids_logger.dll
+FAILED: ... lld-link.exe /nologo ... /dll ... --exclude-libs libspdlog
+  _deps\spdlog-build\spdlog.lib kernel32.lib ...
+lld-link: warning: ignoring unknown argument '--exclude-libs'
+lld-link: error: could not open 'libspdlog': no such file or directory
+```
+
+Root cause, traced into the fetched source
+(`_deps/rapids_logger-src/CMakeLists.txt:103`, repo
+`ROCm-DS/ROCmDS-Logger` at `22b252ceb6d8f2a83f44b0e5e6d8ee7d9ae0f708`,
+pulled in transitively by hipMM via rapids-cmake for its logging
+component):
+
+```cmake
+cmake_dependent_option(
+  RAPIDS_LOGGER_HIDE_ALL_SPDLOG_SYMBOLS
+  "..." ON "BUILD_SHARED_LIBS" OFF)
+...
+if(RAPIDS_LOGGER_HIDE_ALL_SPDLOG_SYMBOLS)
+  ...
+  target_link_options(rapids_logger PRIVATE "LINKER:--exclude-libs,libspdlog")
+```
+
+`RAPIDS_LOGGER_HIDE_ALL_SPDLOG_SYMBOLS` defaults ON whenever
+`BUILD_SHARED_LIBS` is ON, which is rapids_logger's own default -- so this
+fires on the default hipMM build, not an unusual configuration.
+`--exclude-libs` is a GNU-ld/ELF-linker-only idiom; the call has no
+MSVC-driver guard, and CMake's `LINKER:` genex has no translation for the
+MSVC-style link driver (lld-link running in clang-cl/MSVC emulation mode
+here). The tokens pass through literally as `--exclude-libs libspdlog` on
+the link line; lld-link doesn't recognize `--exclude-libs` (warns and
+ignores just that token) but then treats the bare word `libspdlog` as a
+positional link input, tries to open a file literally named `libspdlog`
+(the real file is `spdlog.lib`, already present three tokens later on the
+same command line), and fails. This is deterministic, not host-specific:
+any Windows/clang-cl (or plain MSVC) build of hipMM's default shared-lib
+configuration hits it, matching hipMM's README statement that only Linux
+is supported.
+
+No attempt was made to patch rapids_logger, force
+`RAPIDS_LOGGER_HIDE_ALL_SPDLOG_SYMBOLS=OFF` through the FetchContent chain,
+or otherwise route around it -- per instruction, this is a finding for a
+person, not something to engineer around. Registered as a deferral:
+`hipmm-rapids-logger-windows-exclude-libs` (rocm-bug-report, component
+rapids-logger, `projects/HEonGPU/deferred.json`). This is a defect in a
+fetched dependency's CMake, describable and fixable upstream (guard the
+`target_link_options` call on the MSVC-style driver, or on `NOT WIN32`) --
+per AGENTS.md's own test ("an X fix would let this reach completed"), this
+reads as a toolchain/library defect, not a permanent Windows limitation of
+HEonGPU's own source, so no waiver is suggested here; a person may still
+weigh "fix rapids_logger/hipMM upstream for Windows" against "carve out a
+documented Windows limitation for HEonGPU's ROCm build."
+
+### What DID work at this head, for contrast
+
+- CMake configure: clean, hipMM/rapids-cmake/rapids_logger/spdlog/libhipcxx
+  all fetch correctly, hipMM resolves at the pinned commit, no CMake errors.
+- 149/180 build targets succeed before the failure (all HEonGPU HIP kernel
+  objects that got scheduled ahead of the rapids_logger link, plus every
+  other thirdparty piece: GPU-FFT, GPU-NTT, RNGonGPU, googletest).
+- The clang-cl/TheRock/link.exe toolchain setup itself (env2.sh,
+  configure adapted from configure_v2.sh into a fresh
+  `agent_space/heongpu-win-r24/build` tree) is unaffected by this delta;
+  identical harness to the 26d636f Windows completion.
+
+### Not reached
+
+ctest was not run: the build never produces `heongpu.dll`/the test
+binaries, since hipMM (a required RMM replacement for
+`heongpu_util`/`memorypool.cu`) fails to link first. No GPU test evidence
+at this head on this platform.
+
+### Commands
+
+```
+rm -rf projects/HEonGPU/src/build   # stale tree from a killed prior session
+source agent_space/heongpu-win/env2.sh
+cmake -S projects/HEonGPU/src -B agent_space/heongpu-win-r24/build \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON \
+  -DCMAKE_BUILD_TYPE=Release -G Ninja \
+  -DCMAKE_C_COMPILER=.../clang-cl.exe -DCMAKE_CXX_COMPILER=.../clang-cl.exe \
+  -DCMAKE_HIP_COMPILER=.../clang-cl.exe -DCMAKE_HIP_COMPILER_FORCED=1 \
+  -DCMAKE_MSVC_RUNTIME_LIBRARY="" \
+  -DCMAKE_HIP_FLAGS="-x hip /MD ..." -DCMAKE_CXX_FLAGS="... -EHsc -MD" \
+  -DCMAKE_C_FLAGS="... -MD" \
+  -DCMAKE_EXE_LINKER_FLAGS="/machine:x64 clang_rt.builtins-x86_64.lib" \
+  -DCMAKE_SHARED_LINKER_FLAGS="/machine:x64 clang_rt.builtins-x86_64.lib" \
+  -DCMAKE_PREFIX_PATH=<rocm_sdk_devel>          # configure rc=0
+cmake --build agent_space/heongpu-win-r24/build -j16
+  # FAILED at _deps/rapids_logger-build/rapids_logger.dll (lld-link,
+  # "could not open 'libspdlog'"); 149/180 targets built first
+```
+
+CMake auto-detect (9a9e6f2) was not separately exercised here since the
+explicit `-DCMAKE_HIP_ARCHITECTURES=gfx1151` flag from the recorded fleet
+recipe was kept per instruction; not a gate, no new evidence to report.
+CUDA no-regression gate not attempted (no CUDA toolchain on this host;
+already closed at this head by linux-gfx90a). `git status --porcelain`
+on `projects/HEonGPU/src` confirmed empty before and after this run.
+
+### Verdict
+
+windows-gfx1151: **validation-failed** at
+`89cb86258fc0d5b3b9b5a3144909e7af92bd377c`. Not a port defect in
+HEonGPU's own ROCm changes -- a Windows/clang-cl build failure inside
+hipMM's own transitive dependency (rapids_logger), present at hipMM's
+default configuration, tracked as deferral
+`hipmm-rapids-logger-windows-exclude-libs`. A person needs to choose
+between an upstream fix to rapids_logger/hipMM and documenting a Windows
+build limitation for HEonGPU; either way this blocks the `windows` gate at
+this head until resolved.

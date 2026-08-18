@@ -249,3 +249,15 @@
 {"kind":"phase","ts":"2026-08-18T16:12:33Z","phase":"compile","seconds":113.673,"exit":0,"cmd":"bash -c \nHIP_VISIBLE_DEVICES=0 cmake -S projects/HEonGPU/src -B agent_space/heongpu-gfx90a-r23/build -DUSE_HIP=ON \\\n  -DCMAKE_BUILD_TYPE=Release \\\n  -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON \\\n  -DCMAKE_INSTALL_PREFIX=agent_space/heongpu-gfx90a-r23/prefix \\\n  > agent_space/heongpu-gfx90a-r23/configure.log 2>&1 \\\n&& cmake --build agent_space/heongpu-gfx90a-r23/build -j64 \\\n  > agent_space/heongpu-gfx90a-r23/build.log 2>&1"}
 {"kind":"phase","ts":"2026-08-18T16:13:23Z","phase":"test","seconds":50.038,"exit":0,"cmd":"ctest --test-dir agent_space/heongpu-gfx90a-r23/build"}
 {"kind":"session","ts":"2026-08-18T16:16:14Z","epoch":1787069774.710764684,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-18T15:38:56Z","epoch":1787067536.407808700,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-18T15:40:13Z","phase":"compile","seconds":69.195,"exit":0,"cmd":"bash agent_space/heongpu-win/configure_v2.sh"}
+{"kind":"phase","ts":"2026-08-18T15:41:58Z","phase":"compile","seconds":97.689,"exit":127,"cmd":"cmake --build projects/HEonGPU/src/build -j6"}
+{"kind":"phase","ts":"2026-08-18T15:42:07Z","phase":"compile","seconds":1.187,"exit":127,"cmd":"cmake --build projects/HEonGPU/src/build -j6 -- -k 0"}
+{"kind":"phase","ts":"2026-08-18T15:46:55Z","phase":"test","seconds":272.010,"exit":8,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure"}
+{"kind":"phase","ts":"2026-08-18T15:52:19Z","phase":"test","seconds":224.244,"exit":8,"cmd":"ctest --test-dir projects/HEonGPU/src/build --output-on-failure --timeout 400"}
+{"kind":"session","ts":"2026-08-18T18:45:14Z","epoch":1787078715.042663300,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-18T18:45:24Z","epoch":1787078724.954943400,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-18T18:47:36Z","phase":"compile","seconds":110.933,"exit":0,"cmd":"bash agent_space/heongpu-win-r24/configure.sh"}
+{"kind":"phase","ts":"2026-08-18T18:48:03Z","phase":"compile","seconds":11.133,"exit":1,"cmd":"cmake --build agent_space/heongpu-win-r24/build -j16"}
+{"kind":"phase","ts":"2026-08-18T18:48:24Z","phase":"compile","seconds":9.390,"exit":127,"cmd":"bash -c source agent_space/heongpu-win/env2.sh && cmake --build agent_space/heongpu-win-r24/build -j16"}
+{"kind":"session","ts":"2026-08-18T18:51:51Z","epoch":1787079112.068005700,"event":"end","platform":"windows-gfx1151"}
