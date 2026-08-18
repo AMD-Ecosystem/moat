@@ -283,3 +283,12 @@
 {"kind":"phase","ts":"2026-08-18T21:05:41Z","phase":"compile","seconds":32.796,"exit":0,"cmd":"bash agent_space/heongpu-win-r26/configure.sh"}
 {"kind":"session","ts":"2026-08-18T22:53:44Z","epoch":1787093624.651120800,"event":"start","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-08-18T22:56:48Z","epoch":1787093808.783493700,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-18T22:59:19Z","epoch":1787093959.580886900,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-18T23:01:51Z","phase":"compile","seconds":136.063,"exit":0,"cmd":"bash agent_space/heongpu-win-validate/configure.sh"}
+{"kind":"phase","ts":"2026-08-18T23:03:04Z","phase":"compile","seconds":67.053,"exit":127,"cmd":"bash agent_space/heongpu-win-validate/build.sh"}
+{"kind":"phase","ts":"2026-08-18T23:03:15Z","phase":"compile","seconds":3.043,"exit":127,"cmd":"bash agent_space/heongpu-win-validate/build.sh"}
+{"kind":"phase","ts":"2026-08-18T23:05:28Z","phase":"compile","seconds":97.791,"exit":127,"cmd":"bash agent_space/heongpu-win-validate/build.sh"}
+{"kind":"phase","ts":"2026-08-18T23:05:42Z","phase":"test","seconds":0.787,"exit":0,"cmd":"ctest --output-on-failure --timeout 400"}
+{"kind":"phase","ts":"2026-08-18T23:08:37Z","phase":"test","seconds":162.844,"exit":8,"cmd":"ctest --test-dir /d/Develop/moat/agent_space/heongpu-win-validate/build --output-on-failure --timeout 400"}
+{"kind":"phase","ts":"2026-08-18T23:23:04Z","phase":"test","seconds":833.089,"exit":0,"cmd":"ctest --test-dir /d/Develop/moat/agent_space/heongpu-win-validate/build --output-on-failure --timeout 400"}
+{"kind":"phase","ts":"2026-08-18T23:37:12Z","phase":"test","seconds":838.083,"exit":0,"cmd":"ctest --test-dir /d/Develop/moat/agent_space/heongpu-win-validate/build --output-on-failure --timeout 400"}

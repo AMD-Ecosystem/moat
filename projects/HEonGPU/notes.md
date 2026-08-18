@@ -6194,3 +6194,109 @@ diff, fork `git status --porcelain` empty.
 review-passed. The port is unchanged in function since `1c688ee`; every review item raised
 against `1c688ee` and `3629b4e` is now closed. Next stage is validation on
 windows-gfx1151 at `0cbaa0b`.
+
+## Validation 2026-08-18 (validator, windows-gfx1151) -- closes the windows gate at `0cbaa0b`
+
+Full revalidation from a fresh build tree (`agent_space/heongpu-win-validate/`, not the
+carried-forward `heongpu-win-r26/` tree), confirming the corrected `BUILD_SHARED_LIBS`
+wording round changes nothing observable. Toolchain unchanged from the recorded recipe:
+clang-cl host (`env2.sh`, TheRock ROCm 7.14.0a20260612 devel SDK, MSVC BuildTools 14.44,
+gmp/openssl/zlib from conda-forge win-64 packages, NTL built from source), Ninja,
+`-DCMAKE_HIP_ARCHITECTURES=gfx1151`.
+
+### Build -- no extra flags
+
+```
+bash utils/timeit.sh HEonGPU compile -- bash agent_space/heongpu-win-validate/configure.sh
+bash utils/timeit.sh HEonGPU compile -- bash agent_space/heongpu-win-validate/build.sh
+```
+
+Configure and build use exactly the flag set recorded in `heongpu-win-r26/configure.sh`
+(reused verbatim, only the build directory changed) -- no `-DRAPIDS_LOGGER_*`, no
+`-DCMAKE_WINDOWS_EXPORT_ALL_SYMBOLS`, no `FETCHCONTENT_SOURCE_DIR_*` override. Confirmed
+`grep -ci '^BUILD_SHARED_LIBS' build/CMakeCache.txt` is 0 -- the directory-scoped normal
+variable never reaches the cache, as the corrected comment claims.
+
+Result: 15/15 test executables, 3/3 benchmarks, 22/23 examples linked. The one failure is
+the known, out-of-scope OpenMP link gap:
+
+```
+FAILED: bin/examples/basic/9_multi_stream_usage_way1.exe
+lld-link: error: undefined symbol: __kmpc_global_thread_num / __kmpc_push_num_threads /
+  __kmpc_fork_call / __kmpc_for_static_init_4 / omp_get_thread_num / __kmpc_for_static_fini
+```
+
+Not touched -- matches the pre-existing gap called out for this round.
+
+### Test run -- 20/20 twice, real values
+
+Runtime DLLs staged next to each executable directory (`bin/test`, `bin/benchmark`,
+`bin/examples/{basic,bootstrapping,mpc}`): `amdhip64_7.dll`, `amd_comgr.dll` and
+`rocm_kpack.dll` from `_rocm_sdk_core/bin`, per the settled fact that System32's Adrenalin
+copy loses the PATH race but wins the loader search unless the exe's own directory has a
+copy.
+
+First pass at those DLLs alone hit `0xc0000135` on 19/20 tests (only `TFHE_Gate_Boots`,
+statically self-contained apart from ROCm, passed). `dumpbin /dependents` on a failing
+test exe (`MSYS2_ARG_CONV_EXCL="*" dumpbin.exe /dependents bfv_addition_testcases.exe`)
+showed the real cause: these test binaries also depend on `libgmp-10.dll` and
+`libcrypto-4-x64.dll`, which live in the conda-forge extract dirs on `PATH`, not next to
+the exe. `ctest` itself was launched from a shell that had not sourced `env2.sh`, so those
+two entries were missing from `PATH` -- a harness-environment gap, not a port defect, but
+worth recording: staging DLLs next to the exe is necessary for the ROCm runtime (System32
+shadowing) and *insufficient* for the project's own third-party deps, which still resolve
+through `PATH` and need the build environment sourced for the test-running shell too, not
+only for compilation.
+
+With `env2.sh` sourced before `ctest`:
+
+```
+bash utils/timeit.sh HEonGPU test -- ctest --test-dir agent_space/heongpu-win-validate/build --output-on-failure --timeout 400
+# run 1: 100% tests passed, 0 tests failed out of 20  (Total Test time 832.24 sec)
+# run 2: 100% tests passed, 0 tests failed out of 20  (Total Test time 837.36 sec)
+```
+
+Per-test magnitudes match the round's prediction: light cases 11-42 s, heavy cases
+(`bfv_multiplication` 61 s, `bfv_relinearization` 60/56 s, `ckks_relinearization` 50/37 s,
+`ckks_rotation_*` 49-55 s) in the 44-60 s band both runs, `TFHE_Gate_Boots` 161-182 s.
+Consistent with the ~65 GB unified-memory pool reservation at the default
+`initial_device_memorypool_size = 0.9f` -- measured hardware/config behavior, not a fault.
+
+Throwaway edit used to get discovery past the hardcoded `TIMEOUT 30` (`test/CMakeLists.txt`
+bumped to `TIMEOUT 300`, reconfigure, rebuild test targets so `gtest_discover_tests`
+re-ran), then `git checkout -- test/CMakeLists.txt` immediately after both ctest passes
+completed. Confirmed reverted before recording anything: `git status --porcelain` in
+`projects/HEonGPU/src` is empty at `0cbaa0b`.
+
+### Example spot-check -- real output values
+
+```
+bin/examples/basic/1_basic_bfv.exe    # 12^2=144, 23^2=529, 31^2=961, 8^2=64; result2: 144*3*2=864, correct
+bin/examples/basic/2_basic_ckks.exe   # 100*0.25*2=50, 400*0.25*2=200, 900*0.25*2=450; correct
+```
+
+### jargon
+
+```
+python3 utils/jargon.py --port HEonGPU
+# jargon: clean
+```
+
+### CUDA no-regression gate -- not attempted this round
+
+No CUDA toolchain on this host. The delta since the last CUDA-validated Linux commit
+(`89cb862`, linux-gfx90a) is the Windows-only `if(USE_HIP AND MSVC)` block plus comment
+wording in `thirdparty/CMakeLists.txt` -- guarded on `MSVC`, which is never true on the
+CUDA/Linux path, so the CUDA build is unaffected by construction. Left for whichever Linux
+arch revalidates next; not claimed here.
+
+### Integrity
+
+`git -C projects/HEonGPU/src status --porcelain` empty before recording. No GitHub write.
+No GHA workflow added.
+
+### Verdict
+
+completed, `windows-gfx1151` validated at `0cbaa0b`. This closes the `windows` gate --
+linux-gfx942, linux-gfx90a and linux-gfx1100 are already `completed`, so all three gates
+(`wave64`, `wave32`, `windows`) are now satisfied and `pr-ready` should read True.
