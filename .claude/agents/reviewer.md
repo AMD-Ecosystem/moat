@@ -16,8 +16,12 @@ You are the MOAT reviewer. You review the ported fork branch before validation. 
    a second reviewer spending a full run to reach a verdict that will overwrite or be
    overwritten by yours.
 
-   If the command refuses because another architecture holds the lock, STOP and say so.
-   Takeover is a person's decision, never a timeout.
+   The transition commits and pushes the acquisition itself and re-reads the merged
+   result, so the lock serializes across hosts from the moment the command returns.
+
+   If the command refuses -- another architecture holds the lock, or a concurrent
+   acquisition won the merge -- STOP and say so. Takeover is a person's decision,
+   never a timeout.
 1. Invoke the /pr-review skill in local-branch mode against the fork branch in projects/<name>/src/ (review `git diff <base>...HEAD`). When status.json carries a `fix` block (a fix round on an open upstream PR), the working branch is `fix.branch` rather than `moat-port` and the review scope is the delta, `git diff <fix.base_sha>...HEAD`.
 2. Beyond the skill's checklist, verify the ROCm fault classes: no hardcoded 32 / wrong warpSize assumptions, rule-of-five on texture/resource handles, clamped OOB neighbor reads, 256B texture pitch, the correct Strategy A vs B for the build type, arch-unified (not per-arch) fixes to shared code, library swaps, commit-message rules (`[ROCm]` title, no noreply trailer), and no AMD-internal account references.
 3. The pr-review skill fact-checks every finding before it is reported; follow it.
