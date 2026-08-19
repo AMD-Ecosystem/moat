@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-11T15:50:21Z",
-  "updated_at": "2026-08-07T07:05:13Z",
+  "updated_at": "2026-08-19T23:41:01Z",
   "head_sha": "aa90013",
   "depends_on": [],
   "porting": null,
@@ -125,5 +125,6 @@
         "at": "2026-06-12T13:17:07Z"
       }
     }
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/kaldifeat/pull/1"
 }
