@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T05:14:47Z",
-  "updated_at": "2026-08-07T07:05:28Z",
+  "updated_at": "2026-08-19T23:50:51Z",
   "head_sha": "7086bdbd2608ad6e69cb2fd6c9e2aa7dcd5cf63c",
   "depends_on": [],
   "porting": null,
@@ -138,5 +138,6 @@
         "at": "2026-06-23T22:49:59Z"
       }
     }
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/qrack/pull/1"
 }
