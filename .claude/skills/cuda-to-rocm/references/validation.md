@@ -101,6 +101,22 @@ so a constructor that eagerly allocates a fraction of *reported* device memory c
 far more than is usable and hang or fail. Suspect that shape when an APU validation stalls
 at first allocation.
 
+The quieter version of the same shape is a *slowdown*, not a stall, and it is easy to
+misread as a port defect. Measured porting HEonGPU on windows-gfx1151 (Radeon 8060S,
+72 GB unified): its default memory pool asks for 90% of reported device memory, which on
+an APU is 90% of the whole machine (~65 GB). The reservation succeeds, but context
+creation goes 1.0 s -> 10.5 s and a heavy test 21 s -> 53 s. An initial pool at or below
+10% of memory, or a fixed 1-2 GB, matches no pool at all; 50% is already ~2x slower than
+10%, so there is no safe middle fraction. Before blaming the kernels when an APU run is
+uniformly ~2x slow, check whether the library reserves a *fraction of device memory* at
+startup.
+
+The fix belongs to the application, not the port: pass the library's own pool
+configuration (HEonGPU: `MemoryPoolConfig::initial_device_fraction` /
+`initial_device_bytes` into `context->generate()`). Do not change a shared default that is
+correct for discrete cards, and do not special-case APUs in shared code -- document the
+sizing where the project documents its defaults.
+
 ## Windows: "missing" HIP CMake packages are almost always a half-expanded rocm-sdk-devel
 
 A CMake-HIP project (`find_package(hip/hiprand/rocthrust)`, `enable_language(HIP)`

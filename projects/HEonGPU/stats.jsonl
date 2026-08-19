@@ -293,3 +293,4 @@
 {"kind":"phase","ts":"2026-08-18T23:23:04Z","phase":"test","seconds":833.089,"exit":0,"cmd":"ctest --test-dir /d/Develop/moat/agent_space/heongpu-win-validate/build --output-on-failure --timeout 400"}
 {"kind":"phase","ts":"2026-08-18T23:37:12Z","phase":"test","seconds":838.083,"exit":0,"cmd":"ctest --test-dir /d/Develop/moat/agent_space/heongpu-win-validate/build --output-on-failure --timeout 400"}
 {"kind":"session","ts":"2026-08-18T23:39:24Z","epoch":1787096364.321901800,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-19T04:19:28Z","phase":"compile","seconds":1.629,"exit":2,"cmd":"python3 -m sphinx -b html projects/HEonGPU/src/docs C:\\Users/<user>\\AppData\\Local\\Temp/heongpu_docs"}

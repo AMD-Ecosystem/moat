@@ -7,13 +7,13 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-08-18T23:38:25Z",
-  "head_sha": "0cbaa0b0594f325385ee17c0a5dbda41412236b6",
+  "updated_at": "2026-08-19T04:23:20Z",
+  "head_sha": "3c88f16bc09d23f87cb94bf8245ae3f556f2c1b6",
   "depends_on": [],
   "waivers": {},
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 866783897,
-  "stage": "review-passed",
+  "stage": "ported",
   "platforms": {
     "linux-gfx942": {
       "blocked": false,
@@ -88,11 +88,11 @@
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "0cbaa0b0594f325385ee17c0a5dbda41412236b6",
+      "validated_sha": "3c88f16bc09d23f87cb94bf8245ae3f556f2c1b6",
       "failed_sha": "89cb86258fc0d5b3b9b5a3144909e7af92bd377c",
       "started_at": "2026-08-13T02:40:37Z",
-      "completed_at": "2026-08-18T23:38:25Z",
-      "updated_at": "2026-08-18T23:38:25Z",
+      "completed_at": "2026-08-19T04:22:31Z",
+      "updated_at": "2026-08-19T04:23:20Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -107,7 +107,13 @@
         "last_session_at": null
       },
       "state": "completed",
-      "last_agent": "validator"
+      "last_agent": "porter",
+      "carry_forward": {
+        "to": "3c88f16bc09d23f87cb94bf8245ae3f556f2c1b6",
+        "method": "source-class",
+        "detail": "classify 0cbaa0b..3c88f16 reports comment-only, arch_independent, inert: two documentation commits touching README.md, docs/advanced_topics.rst, and comment text in src/include/heongpu/kernel/defines.",
+        "at": "2026-08-19T04:22:31Z"
+      }
     }
   },
   "porting": null,

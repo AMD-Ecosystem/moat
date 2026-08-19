@@ -6300,3 +6300,72 @@ No GHA workflow added.
 completed, `windows-gfx1151` validated at `0cbaa0b`. This closes the `windows` gate --
 linux-gfx942, linux-gfx90a and linux-gfx1100 are already `completed`, so all three gates
 (`wave64`, `wave32`, `windows`) are now satisfied and `pr-ready` should read True.
+
+## Round 15 -- porter, windows-gfx1151, documentation only (2026-08-18)
+
+Jeff Daily's ruling: document only, recommend <=0.1 on an APU, keep the `0.9f` default
+exactly as it is. No code, no build file, no default value changed. Two commits on
+`moat-port`, head `0cbaa0b` -> `3c88f16`.
+
+### `dab3a09` [ROCm] Fix stale memory pool percentages in docs and comments
+
+Pre-existing upstream inaccuracy, verified untouched by this port (`git diff
+origin/main..moat-port` was empty for both files before this commit). All four inline
+comments in `src/include/heongpu/kernel/defines.h:32-37` contradicted their own values
+(`0.9f // %50`, `0.95f // %80`, `0.3f // %10`, `0.4f // %20`), and
+`docs/advanced_topics.rst:18` inherited the same stale 50/80/10/20 figures. Comment and
+prose text corrected to 90/95/30/40; not one value touched. Kept as its own commit so a
+maintainer can take it independently of anything ROCm.
+
+### `3c88f16` [ROCm] Document memory pool sizing on unified-memory GPUs
+
+Guidance paragraphs after the Memory Pool Sizes bullet in `docs/advanced_topics.rst`, and
+a one-paragraph pointer at the end of the README's `#### AMD GPUs (ROCm)` section. Written
+as library documentation: no test names, no mention of this porting effort. Substance,
+measured on this host (Radeon 8060S, gfx1151, 20 CU, unified memory, ROCm 7.14):
+
+- `hipMemGetInfo` reports the machine's memory on a unified-memory part, so a pool sized
+  as a fraction of device memory reserves that fraction of the whole machine. The `0.9`
+  default resolves to roughly 65 GB of the 72 GB pool.
+- Cost of that reservation: context creation 1.0 s -> 10.5 s; heavy work roughly 2x
+  (relinearization 21 s -> 53 s).
+- Initial pool <=10% of memory, or a fixed 1-2 GB, performs the same as no pool at all.
+  50% is already ~2x slower than 10% on heavy work, so it is not a safe middle ground.
+- Remedy is per application and needs no rebuild: `MemoryPoolConfig` with
+  `initial_device_fraction` or `initial_device_bytes` passed to `context->generate()`,
+  which `example/basic/3_basic_memorypool_config.cpp` already demonstrates.
+- The default is unchanged and stays right for discrete cards, where 90% of dedicated
+  VRAM is a cheap, isolated reservation.
+
+### Lesson promoted
+
+The APU paragraph in the `cuda-to-rocm` skill's `references/validation.md` previously only
+warned that a fraction-of-reported-device-memory pool can hang or fail on an APU. Extended
+it with the quieter failure mode this round measured -- it succeeds and costs ~10x context
+creation plus ~2x on heavy work -- and with the rule that the remedy is application
+configuration, never a shared-default change or an APU special case in shared code.
+HEonGPU named as the source.
+
+### Checks
+
+```
+python3 utils/jargon.py --port HEonGPU      # jargon: clean
+python3 utils/prose.py <both commit bodies> # prose: clean
+python3 utils/moatlib.py classify HEonGPU 0cbaa0b 3c88f16
+# class=comment-only arch_independent=True inert=True
+```
+
+Sphinx does not build on this host (docs pin Sphinx 5.2, whose `sphinx.builders.epub3`
+imports `imghdr`, removed in Python 3.13). Not a port problem and not worth pinning down
+for a prose change; the Test Plan states documentation-only instead.
+
+### Carry-forward
+
+`classify` returned comment-only / arch-independent / inert, so `windows-gfx1151` carried
+forward from `0cbaa0b` to `3c88f16` by `source-class` rather than revalidating a comment
+change. The three Linux platforms were left alone; they were already behind head.
+
+### Integrity
+
+`git -C projects/HEonGPU/src status --porcelain` empty after both commits and the push.
+No GitHub write, no PR opened.
