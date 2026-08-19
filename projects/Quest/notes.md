@@ -1350,3 +1350,174 @@ carried by reasoning), no penalty. Wall clock: build ~1 min, in-scope tests
 ~10s, scoped-out/log-evidence re-runs a few minutes, CUDA toolchain
 (apt install + configure) the majority of the session; overall within the
 ~60 minute budget.
+
+## Validation 2026-08-19 (linux-gfx1100, revalidate after the split-path fix, 9be60fc)
+
+Re-validation of fork sha `9be60fc` on this arch after `head_sha` advanced from
+`c1d7fff` (this platform's prior `validated_sha`, from the original 2026-08-08
+session). 4x Radeon Pro W7800 (gfx1100, wave32) visible and idle, no other KFD
+processes running (`rocm-smi --showpids`), `HIP_VISIBLE_DEVICES=1`. ROCm
+`hip 7.2.53211`, PyTorch 2.14.0a0+gitb81488e, python 3.12.13,
+`transformers==4.37.2` `tokenizers==0.15.2` already present from a prior
+session on this host. `git fetch origin` + `git merge --ff-only origin/moat-port`
+on the existing `projects/Quest/src` checkout, `c1d7fff` -> `9be60fc`
+(`git log --oneline c1d7fff..9be60fc` shows exactly the two commits recorded
+above, `ac7382c` then `9be60fc`; `git diff --stat` touches only
+`kernels/include/decode/{decode_attn,decode_page}.cuh`). Submodules
+`kernels/3rdparty/{flashinfer,pybind}` already initialized from the prior
+session.
+
+Went straight to a full real-GPU run rather than `classify`+`codeobj_diff`:
+this platform's `validated_sha` predates BOTH commits in the delta (unlike
+the gfx90a sessions, which revalidated one commit at a time), and the
+gfx90a session already established that a full run at this delta is cheap
+(build ~1 min, tests ~10s) and that the split-path fix is behaviorally a
+no-op on high-CU parts (gfx1100 at 70 CUs already always took the split
+path pre-fix, per the CU table in the windows-gfx1151 section above) --
+predicting the same outcome here, worth confirming on GPU rather than
+asserting.
+
+### Host environment hazard, unrelated to the port: broken `find_package(Torch)` cmake export on this shared host
+
+`$(python3 -c 'import torch;print(torch.utils.cmake_prefix_path)')` (the
+README's own recipe, used cleanly by every prior session on this host)
+resolved to `/var/lib/jenkins/pytorch/torch/share/cmake`, which does not
+exist: the installed `torch` on this host is an editable
+(scikit-build-core) checkout at `/var/lib/jenkins/pytorch`, and `torch.__file__`
+now resolves into that source tree rather than a proper site-packages
+install (`_editable_skbc_torch.pth`/`.py` reroute `import torch` there). The
+source tree's own `build/` directory is a raw ninja build output, not a
+`cmake --install` tree: its `TorchConfig.cmake`/`Caffe2Targets.cmake`
+compute `_IMPORT_PREFIX`/`TORCH_INSTALL_PREFIX` by walking a fixed number of
+parent directories up from the `.cmake` file's own location, which is only
+correct for the specific nested path CMake originally exported it to
+(`build/CMakeFiles/Export/<hash>/Caffe2Targets.cmake`, `_IMPORT_PREFIX`
+walks 4 levels to reach `build/`); pointing `CMAKE_PREFIX_PATH` straight at
+`build/` breaks that assumption and manifests as `TorchConfig.cmake` handing
+`find_package(Torch)` a nonexistent `INTERFACE_INCLUDE_DIRECTORIES` path
+(observed: `/var/lib/include`, then `/var/lib/jenkins/pytorch/build/include/torch/csrc/api/include`,
+neither of which exists -- `build/include` on this host holds only `sleef.h`,
+nothing was ever installed there). This is unrelated to Quest, to `USE_HIP`,
+and to anything this port's CMakeLists touches -- it is purely this host's
+PyTorch dev tree missing its install step, so `torch.utils.cmake_prefix_path`
+lies about where a real Torch cmake package lives.
+
+Diagnostic method that generalizes: when `find_package(Torch)` fails or
+resolves to nonexistent include/lib paths, check whether `torch.__file__`
+is inside an editable/source checkout (`_editable_*` marker files in
+`site-packages`) rather than a normal wheel install, and whether that same
+`site-packages` directory ALSO contains a complete separate `torch/` payload
+(headers, libs, `share/cmake`) alongside the editable shim -- a from-wheel
+install and an editable dev pointer can coexist in one environment, and the
+complete one is usually the one to build against for a downstream C++
+extension. Here it did:
+`/opt/conda/envs/py_3.12/lib/python3.12/site-packages/torch/share/cmake`
+carries a real `TorchConfig.cmake` with real `include/`, `lib/*.so` (15
+libraries) beside it, untouched by the editable-import shadowing (which
+only affects the *Python* `import torch` path, not the directory's
+contents). Used
+`-DCMAKE_PREFIX_PATH=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/torch/share/cmake`
+instead of the README's literal recipe; configure then succeeded cleanly
+(`-- Found Torch: .../site-packages/torch/lib/libtorch.so`, only the
+pre-existing unrelated `libhipcxx not found` optional-package warning and a
+`kineto not found` warning, both present in every prior session's log too).
+Tried two dead ends first that are worth recording so a future session does
+not repeat them: (1) copying `Caffe2Targets.cmake` up one directory level
+into `build/` does not work -- the `_IMPORT_PREFIX` walk-count is baked in
+per export location, so it silently computes a *different* wrong prefix
+(`/var/lib` instead of `/var/lib/jenkins/pytorch/build`) rather than the
+right one; (2) setting `TORCH_INSTALL_PREFIX` in the environment (which
+`TorchConfig.cmake` does honor, `if(DEFINED ENV{TORCH_INSTALL_PREFIX})`)
+fixes `TorchConfig.cmake`'s own prefix walk but not `Caffe2Targets.cmake`'s
+independent one, so `Found Torch` succeeds while the include-path error
+persists one step later at generate time -- both cmake files need the same
+prefix but derive it independently, so patch/point at the right layout
+directly rather than chasing each symptom. No fork file and no MOAT-tracked
+file needed to change; the one Quest source edit made along the way
+(temporarily repointing `Caffe2Config.cmake`'s include of
+`Caffe2Targets.cmake` at the nested export path, to test hypothesis (1))
+was reverted before building Quest, and is not part of the fork tree in any
+case (`/var/lib/jenkins/pytorch/build/Caffe2Config.cmake` is host-local
+build output, not git-tracked by this port). `git -C
+/var/lib/jenkins/pytorch status --porcelain` shows only pre-existing
+modifications unrelated to this session (RNN.cpp, submodule pointers,
+`.ci/pytorch/build.sh`), confirming nothing here touched pytorch's tracked
+source.
+
+### Build
+
+Wrapped `utils/timeit.sh Quest compile -- ninja -C
+/var/lib/jenkins/moat-worktrees/Quest/projects/Quest/src/quest/ops/build`
+(absolute path -- `timeit.sh` cds to the MOAT repo root first):
+
+```
+cd quest/ops && rm -rf build && mkdir -p build && cd build
+cmake -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_PREFIX_PATH=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/torch/share/cmake ..
+ninja
+ln -sf $PWD/_kernels*.so ../../
+```
+
+Clean (6/6 objects, the same two pre-existing nodiscard-`hipError_t`
+warnings on `decode_handler.cuh:165` and `approx_attn.cu:65` as every prior
+session, no new warnings, no errors). `grep -o -- '--offload-arch=[a-z0-9]*'
+build/build.ninja` -> `gfx1100` only, reconfirming the architecture-selection
+fix still holds. `import quest._kernels` exposes the same six ops as every
+prior session.
+
+### GPU tests
+
+Wrapped `utils/timeit.sh Quest test -- python3 -m pytest ...`:
+
+| suite | result |
+|---|---|
+| test_rope.py | 64 passed |
+| test_estimate.py | 9 passed |
+| test_decode_attention.py | 6 passed |
+| test_approx_attention.py | 42 passed |
+| **in-scope total** | **121 passed in 4.54s** |
+| test_topk.py | `AttributeError: module 'quest._kernels' has no attribute 'topk_filtering'` (`-x`) |
+| test_prefill_attention.py | `AttributeError: module 'quest._kernels' has no attribute 'prefill_with_paged_kv_cache'` (`-x`) |
+
+Matches every prior gfx1100/gfx90a session exactly; the split-path fix is
+behaviorally a no-op here as predicted (this GPU's 70 CUs already always
+took the split path pre-fix). Confirmed real device dispatch with
+`AMD_LOG_LEVEL=3 ... -s` on `test_decode_attention.py`: 432
+`hipLaunchKernel` lines, 3921 `hipSuccess` occurrences, and Quest's own
+compiled kernels present by name (`flashinfer::AppendPagedKVCacheDecodeKernel`,
+`flashinfer::AppendPagedKVCachePrefillKernel`,
+`flashinfer::BatchDecodeWithPagedKVCacheKernel`,
+`flashinfer::VariableLengthMergeStatesKernel`) -- real execution, not a
+mock. No non-GPU regression to check: this project has no CPU-only test
+path.
+
+### CUDA no-regression gate
+
+Not repeated: already recorded at this exact head_sha (`9be60fc`) by the
+linux-gfx90a validation above (`cuda-not-validated`, reproduced fresh there
+this same head_sha -- RAFT branch-24.02's `CUDA::nvToolsExt` wall). Runs
+once per head_sha per the standing rule.
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --port Quest`: needed a local `main` branch in the
+fork checkout first (`git branch main origin/main`; the checkout only had
+`origin/main`, and the tool resolves `main..moat-port` locally) -- then
+`jargon: clean`.
+
+README.md's "Building on AMD GPUs (ROCm)" section is unchanged from the
+prior validation (the delta touches only two `.cuh` files, no build or doc
+files) and still accurately describes the build, the architecture
+precedence (`CMAKE_HIP_ARCHITECTURES` / `PYTORCH_ROCM_ARCH` / build-machine
+default), and the scoped-out ops. No inaccuracy found; nothing sent back.
+
+`git -C projects/Quest/src status --porcelain`: clean. `HEAD` at `9be60fc`,
+matching `status.json.head_sha`.
+
+State: `revalidate` -> `completed` on linux-gfx1100, `validated_sha = 9be60fc`.
+wave32 gate remains satisfied by this arch at the new head. CUDA gate:
+`cuda-not-validated`, already recorded at this head_sha by linux-gfx90a, no
+penalty, not re-run. Wall clock: build ~1 min, in-scope tests ~5s,
+scoped-out/log-evidence re-runs a few minutes, the host cmake-environment
+diagnosis the majority of the session; overall within the ~60 minute
+budget.
