@@ -284,30 +284,31 @@ compiled output counts as different and goes back to real hardware.
 
 Several machines work MOAT at once, and any of them may pick up a project --
 there is no designated leader. So that two machines never write the same
-files at once, the two stages that produce a shared artifact -- the plan, and
-the port itself -- are held by one machine at a time. The lock is taken and
+files at once, the three stages that produce a shared artifact -- the plan,
+the port itself, and the review verdict -- are held by one machine at a time,
+under one shared lock: reviewing a branch a porter is rewriting is as broken
+as two porters writing it. The lock is taken and
 released as part of moving between stages, never edited by hand. A machine
 can stop mid-stage (a session ends, a host goes away) and leave the lock
 held, and there is deliberately no timeout to recover it: from the outside, a
 machine grinding through an hours-long GPU build looks exactly like one that
 is gone, and a timeout would steal work from the slow one. Only a person
 decides the holder is not coming back. Everything else needs no lock: every
-GPU validates in parallel, and reporting a failed run or review feedback
-never waits.
+GPU validates in parallel, and reporting a failed run never waits.
 
 ```mermaid
 flowchart TB
-    acquire["starting to plan or port takes the lock"] --> excl
+    acquire["starting to plan, port, or review takes the lock"] --> excl
     subgraph excl["Exclusive: one machine at a time"]
         planning["writing the plan"]
         porting["writing the port"]
+        reviewing["writing the review verdict"]
     end
     excl --> release["finishing the stage releases it"]
     excl -. "holder stopped mid-stage and never came back?" .-> take["a person reassigns it: never a timeout"]
     subgraph par["No lock needed, runs in parallel"]
         v1["validating on every GPU"]
         v3["recording a failed run"]
-        v4["recording review feedback"]
     end
 ```
 
