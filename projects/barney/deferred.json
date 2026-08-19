@@ -13,7 +13,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-06-16T05:48:58Z",
-      "decided": null
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-08-13T20:03:55Z"
+      }
     },
     {
       "id": "barney-cubql-repin-after-pr35",
@@ -23,10 +27,27 @@
       "refs": [
         "NVIDIA/cuBQL#35"
       ],
-      "status": "open",
+      "status": "done",
       "upstream_issue": null,
       "created_at": "2026-06-17T01:09:01Z",
       "decided": null
+    },
+    {
+      "id": "barney-nvidia-proprietary-rescan",
+      "kind": "other",
+      "component": null,
+      "summary": "Rescan with the fixed scan_nvidia: vendored OptiX headers in submodules/optix/include (8 files) and submodules/owl/3rdParty/optix (7 files) carry the NVIDIA proprietary 'licensors retain' notice, contradicting the intake note 'NO NVIDIA Source Code License ... anywhere' -- the screen likely ran without submodules initialized. Licence verdict needs re-ruling with the submodules in view.",
+      "refs": [
+        "moat main b336246 (case/wording-proof scan_nvidia)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T17:08:54Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-13T19:26:15Z"
+      }
     }
   ]
 }
