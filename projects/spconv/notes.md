@@ -374,3 +374,98 @@ screen's scope: answer intake queue issue **#8** (spconv is row 2 of 4), and cle
 stale `Pointcept.depends_on = ['spconv']` so a merged project
 (Pointcept/Pointcept#604, merged 2026-07-06, validated `linux-gfx90a`) stops showing as
 `WAITING on spconv`.
+
+## Screen 6 -- 2026-08-19, intake, linux-gfx1100
+
+Sixth dispatch. **Recommendation unchanged: DECLINE, reason `already-supported`**, still
+a recommendation and not a decision -- nothing was written to `dispositions.json`.
+
+The cause of this dispatch is new and worth recording: this host was handed spconv
+**with the Pointcept dependency as the stated motivation** ("spconv is recorded as a hard
+dependency of Pointcept, which is waiting on it"). Screens 2, 4 and 5 each flagged that
+edge as stale bookkeeping for a person to clear. It is now demonstrably more than
+cosmetic -- it is *generating* the re-screens it was reported in. That raises the
+priority of the edit without changing the recommendation.
+
+Re-verified on this host (all identical to screen 5, five days on):
+
+| claim | screen 6 result |
+|---|---|
+| Apache-2.0, tier 1 | `licenses.py check traveller59/spconv` -> `license=Apache-2.0 tier=1, cleared to contribute` |
+| upstream dormant | `pushed_at` **2024-12-15T15:41:19Z**, 195 open issues, 2290 stars, `archived: false` -- unmoved |
+| cumm alive, Apache-2.0 | `pushed_at` 2026-03-21, 87 stars, not archived |
+| spconv-triton real, Apache-2.0 | `pushed_at` 2026-07-20, 1 star -- unmoved |
+| no AMD-Ecosystem / ROCm effort | `AMD-Ecosystem/spconv`, `ROCm/spconv`, `AMD-Ecosystem/cumm`, `ROCm/cumm` -> all 404 |
+| GitHub-wide `spconv rocm` | `total_count: 2` -- `L-Reichardt/spconv-triton` and the empty `jiaqiwang969/spconv-rocm` stub. Unchanged |
+| no disposition | `spconv` and `cumm` absent from all 282 `dispositions.json` entries |
+| queue unanswered | issue **#8** open, **0 comments**, last updated 2026-08-14T17:41Z; `intake_queue.py publish` reports `would-update` |
+
+The licence and NVIDIA-text findings were established from fresh shallow clones on three
+prior hosts (screens 3, 4, 5) against the same upstream HEAD `263d6b4`, which has not
+moved since 2024-12-15. No re-clone was made here; re-scanning an unchanged tree a fourth
+time is not verification.
+
+### Correction to screens 2/4/5: the Pointcept edge is stale, but not empty
+
+Earlier screens described `Pointcept.depends_on = ['spconv']` as purely stale because
+Pointcept shipped without spconv. The first half holds and is now stronger than recorded
+-- Pointcept is `stage: review-passed` with PR #604 merged 2026-07-06 and **four**
+platforms completed (`linux-gfx90a`, `linux-gfx1100`, `windows-gfx1101`,
+`windows-gfx1201`), not the single platform screens 2-5 cited. But "stale" flattened
+something real. Pointcept's own `notes.md` says:
+
+> pointseg is a CppExtension (CPU only, no `.cu`) and needs no port. spconv is an
+> external dependency (separate MOAT project, unported) and does NOT block these libs --
+> the four libs build, install, and pass their op tests without it. Sparse-conv MODEL
+> configs (SpUNet/OACNN/PointGroup end-to-end) wait on the spconv ROCm port; that is out
+> of scope for this port's validation.
+
+So the edge encodes a **genuine remaining capability gap** -- end-to-end sparse-conv model
+configs on AMD -- not a bookkeeping error alone. Two further facts sharpen it:
+
+- `pointcept/models/utils/structure.py:2` does an **unguarded** `import spconv.pytorch as
+  spconv` at module top level (contrast `ocnn` on line 4, which is in a `try/except`), and
+  that module is used by PointTransformerV3. spconv is not an optional import in the
+  Python sense; what made Pointcept's validation possible is that the ops under `libs/`
+  are separable from it, not that the import is guarded.
+- The gap is recorded **only as prose in Pointcept's notes**. There is no
+  `projects/Pointcept/deferred.json` -- the folder holds `notes.md`, `plan.md`,
+  `stats.jsonl`, `status.json` and nothing else. An unregistered gap is one nobody
+  reviews.
+
+**None of this argues for porting spconv.** It argues that the gap's owner is Pointcept
+and its resolution is spconv-triton. Verified from the spconv-triton README today: it
+covers submanifold, regular, transposed and inverse sparse convolution plus pooling in
+1D-4D, which is the whole operator set SpUNet/OACNN/PointGroup use, and the migration is
+the one-line `import spconv_triton.pytorch as spconv` swap. Its own note that it
+deliberately does not declare Triton as a dependency, because `pytorch-triton-rocm` is
+what a ROCm install already carries, is the detail that makes the swap work on AMD rather
+than pulling a CUDA wheel.
+
+The honest gap in that answer, and the concrete opt-in surface: spconv-triton lists
+**MI300X** as its verified AMD hardware. **gfx1100/RDNA3 and wave32 are unverified**, and
+this dispatch was to a gfx1100 host. Validating the swap for Pointcept's SpUNet configs on
+gfx1100 is bounded, testable work with a real recipient, and it is the tractable move that
+screen 2 already predicted ("contributing gfx1100/wave32 coverage to spconv-triton, not
+porting cumm").
+
+### For a person -- three edits, all outside this screen's scope
+
+1. Answer intake queue issue **#8**. spconv is row 2 of 4 and the row has been correct and
+   waiting since 2026-08-13 03:19Z. This is what stops screen 7.
+2. Clear `Pointcept.depends_on` (`moatlib.py set-deps Pointcept` with an empty list) so a
+   merged, four-platform-validated project stops showing as `WAITING on` a project
+   recommended for decline -- and stops sourcing dispatches like this one.
+3. Register the sparse-conv gap where it belongs, as a Pointcept deferral rather than as
+   a dependency on a declined project: validate the `spconv_triton` import swap for the
+   SpUNet/OACNN/PointGroup configs on AMD, gfx1100 included. Not done here because
+   `deferred.py add --project Pointcept` writes another project's record from this branch,
+   and defer-versus-now is a person's ruling either way.
+
+### Nothing else new
+
+Six screens on four platforms now agree on every load-bearing fact. Screen 4's honest soft
+spot -- spconv-triton is single-author, single-release, 1 star -- is unchanged and remains
+the fair counterargument; `cant-port` still holds independently and structurally, so the
+decline does not turn on which `SKIP_REASON` is chosen. An agent handed spconv again
+should read this file, confirm the queue is still unanswered, and stop.
