@@ -7,15 +7,15 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-15T12:19:20Z",
-  "updated_at": "2026-08-07T07:04:53Z",
+  "updated_at": "2026-08-13T20:49:28Z",
   "head_sha": "acbe97aba6b89d452f46dc6ce03b4b5ef65846f4",
   "depends_on": [
     "cuBQL"
   ],
   "pr_url": "https://github.com/NVIDIA/barney/pull/46",
   "pr_number": 46,
-  "pr_opened_at": "2026-06-19T04:15:57Z",
-  "pr_merged_at": "2026-07-02T17:17:26Z",
+  "pr_opened_at": "2026-08-13T20:49:28Z",
+  "pr_merged_at": "2026-08-13T20:49:28Z",
   "porting": null,
   "waivers": {},
   "pr_state": "merged",
@@ -136,5 +136,6 @@
         "at": "2026-06-23T22:18:20Z"
       }
     }
-  }
+  },
+  "published_sha": "acbe97aba6b89d452f46dc6ce03b4b5ef65846f4"
 }

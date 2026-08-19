@@ -7,7 +7,7 @@
   "priority": 4.468,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-08-07T22:51:58Z",
+  "updated_at": "2026-08-13T16:40:37Z",
   "head_sha": "b7d9a4a3699786cf60482c55ff32da80c3b31e32",
   "porting": null,
   "waivers": {},
@@ -38,11 +38,11 @@
     },
     "windows-gfx1151": {
       "blocked": true,
-      "blocked_reason": "windows-gfx1151 host retired (superseded by the gfx1101/gfx1201 machine); validation moved to windows-gfx1101 and windows-gfx1201",
+      "blocked_reason": "BaM is a Linux-kernel-module project: it needs the custom libnvm kernel module loaded, the NVMe SSD unbound from the kernel nvme driver, IOMMU disabled, and PCIe peer-to-peer between GPU and NVMe. None of that exists on Windows, so no Windows arch can run it regardless of GPU. Supersedes the earlier reason, which cited the gfx1151 host being retired -- that host returned to service 2026-08-11, and the real obstacle is the platform, not the host.",
       "validated_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-06-04T19:41:52Z",
+      "updated_at": "2026-08-13T16:40:37Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
