@@ -7,7 +7,7 @@
   "priority": 3.923,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-08-07T07:04:45Z",
+  "updated_at": "2026-08-19T23:21:23Z",
   "head_sha": "3efd11d28f61ac354469fa33d948098f9f390689",
   "porting": null,
   "waivers": {},
@@ -141,5 +141,6 @@
       },
       "last_agent": "validator"
     }
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/RWKV-CUDA/pull/1"
 }
