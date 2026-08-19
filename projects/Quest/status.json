@@ -7,13 +7,13 @@
   "priority": 3.866,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-08-19T22:48:16Z",
+  "updated_at": "2026-08-19T22:58:37Z",
   "head_sha": "cbc389022736f4b7581da6219c1935d8b3947033",
   "depends_on": [],
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 815507746,
-  "stage": "reviewing",
+  "stage": "changes-requested",
   "platforms": {
     "linux-gfx1100": {
       "blocked": false,
@@ -68,7 +68,7 @@
       "failed_sha": "ac7382c78aa21fe51db761d691e320bfb7a87217",
       "started_at": "2026-08-19T21:38:01Z",
       "completed_at": "2026-08-13T23:35:09Z",
-      "updated_at": "2026-08-19T22:48:16Z",
+      "updated_at": "2026-08-19T22:58:37Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -86,13 +86,10 @@
       "last_agent": "reviewer:claude-code"
     }
   },
-  "porting": {
-    "arch": "windows-gfx1151",
-    "since": "2026-08-19T22:48:16Z"
-  },
+  "porting": null,
   "porting_released": {
     "arch": "windows-gfx1151",
-    "since": "2026-08-19T21:38:01Z",
-    "at": "2026-08-19T22:28:57Z"
+    "since": "2026-08-19T22:48:16Z",
+    "at": "2026-08-19T22:58:37Z"
   }
 }
