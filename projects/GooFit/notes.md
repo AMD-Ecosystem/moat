@@ -2358,3 +2358,95 @@ this exact head_sha (pre-existing upstream breakage, not a regression), jargon
 clean, docs accurate. All three validated platforms (gfx90a, gfx942, gfx1100
 pending its own revalidation) now stand at or ahead of `e8dca9151`; this
 supersedes gfx942's prior `18fca9e4a` pass with a pass at the current head.
+
+## Validation 2026-08-19 (validator, linux-gfx1100, fork e8dca9151 vs 5fe1221a8)
+
+Revalidation: this arch's prior pass was at `18fca9e4a`; `head_sha` advanced to
+`e8dca9151` (the pybind11 LANGUAGE-HIP-adoption fix). Did not attempt a
+carry-forward shortcut -- the gfx942 session already classified this exact
+delta as `class=mixed`, not arch-independent (new HIP compilations on any
+arch with Python dev files installed) -- so this ran as a full real-GPU
+revalidation.
+
+`projects/GooFit/src` fetched and fast-forwarded from `18fca9e4a` to
+`e8dca915125a1c9fe193bc056fd9892095230eb4` (`git fetch origin moat-port`,
+`git checkout moat-port`, `git reset --hard e8dca9151...`); submodules already
+initialised (`extern/thrust` at CCCL `af8cce4ca`, matches the recorded
+pointer). `git status --porcelain` clean before and after. Host: 4x AMD
+Radeon Pro W7800 (gfx1100, wave32), ROCm 7.2.3 (`hipcc --version`: HIP
+version 7.2.53211-c2d9476115, AMD clang 22.0.0git roc-7.2.3), CMake 3.31.6,
+Ninja. All 4 GPUs idle (`rocm-smi --showuse`), used GPU 1.
+
+### Build: documented recipe, no `GOOFIT_PYTHON` override (bindings default ON)
+
+```
+cmake -S . -B build-hip-validate -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DGOOFIT_DEVICE=HIP -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DGOOFIT_TESTS=ON -DGOOFIT_EXAMPLES=ON -DGOOFIT_CERNROOT=OFF
+cmake --build build-hip-validate -j64
+```
+395/395 targets, clean, exit 0 -- matches the count recorded on gfx90a/gfx942
+at this head, confirming the pybind11 fix builds clean with the project
+defaults on a fourth architecture/host combination. Configure log confirms
+Python bindings are ON by default (`Found Python 3.12.13 ... building
+bindings`), i.e. this is the exact configuration the fix in `e8dca9151`
+targets, not the `-DGOOFIT_PYTHON=OFF` recipe used at `18fca9e4a`.
+
+### Tests: HIP 25/25 (9.18 s), pytest 6/6 (0.38 s)
+
+```
+HIP_VISIBLE_DEVICES=1 ctest --test-dir build-hip-validate --output-on-failure
+  -> 100% tests passed, 0 tests failed out of 25, 9.18 s
+HIP_VISIBLE_DEVICES=1 PYTHONPATH=$PWD/build-hip-validate python3 -m pytest python/tests -q
+  -> 6 passed in 0.38 s
+```
+Real GPU execution confirmed: `AMD_LOG_LEVEL=3
+./build-hip-validate/examples/exponential/exponential` shows 140
+`hipLaunchKernel` dispatches. The fit itself:
+```
+alpha = -1.001102381 +/- 0.003165763921
+```
+digit-identical to every prior session on every arch (gfx90a, gfx942,
+gfx1100's own prior `18fca9e4a` run).
+
+### No non-GPU regression: CPP backend 26/26, pytest 6/6
+
+```
+cmake -S . -B build-cpp-validate -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DGOOFIT_DEVICE=CPP -DGOOFIT_TESTS=ON -DGOOFIT_EXAMPLES=ON -DGOOFIT_CERNROOT=OFF
+cmake --build build-cpp-validate -j64        # clean, warnings only (pre-existing
+                                              # -Wmaybe-uninitialized in LASS.cu and
+                                              # extern/MCBooster, not port-introduced)
+ctest --test-dir build-cpp-validate          # 100% tests passed, 26/26, 6.40 s
+PYTHONPATH=$PWD/build-cpp-validate python3 -m pytest python/tests -q   # 6 passed, 0.33 s
+```
+Matches the recorded baseline (26/26, 6/6) exactly.
+
+### CUDA no-regression gate: not re-run, already recorded at this head_sha
+
+The gfx90a validation session (2026-08-14) re-ran the CUDA gate at
+`e8dca9151` and reconfirmed the pre-existing upstream `driver_types.h: No
+such file or directory` breakage under CUDA 12.8 (identical on pristine
+upstream `5fe1221a8`), not a port regression. The gate is per-head_sha, not
+per-arch, so skipped here per the validator's once-per-head_sha rule.
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --port GooFit` -> clean. README's ROCm requirements
+bullet already names `gfx90a`, `gfx942` and `gfx1100` and matches the recipe
+actually run; `docs/SYSTEM_INSTALL.md` unchanged and previously verified.
+Nothing to update.
+
+### Tree state and result
+
+`git -C projects/GooFit/src status --porcelain` empty before and after; no
+source or build files edited this round (`build-*-validate` dirs are
+gitignored, removed after use).
+
+**Result: linux-gfx1100 -> completed at `e8dca9151`.** HIP 25/25 (9.18 s),
+pytest 6/6, CPP 26/26 + pytest 6/6 (no non-GPU regression), real-GPU-execution
+confirmed (140 `hipLaunchKernel` dispatches, digit-identical fit result across
+every arch on record), CUDA gate reused from the gfx90a re-run at this exact
+head_sha (pre-existing upstream breakage, not a regression), jargon clean,
+docs accurate. All three required-gate platforms (gfx90a for wave64, gfx942
+for wave64, gfx1100 for wave32) now stand completed at `e8dca9151`.
