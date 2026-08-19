@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-25T21:02:13Z",
-  "updated_at": "2026-08-19T05:31:36Z",
+  "updated_at": "2026-08-19T22:39:22Z",
   "head_sha": "d7d98677060e36cfa329db4229c8b3d14cf53b32",
   "depends_on": [],
   "waivers": {},
@@ -110,5 +110,6 @@
       "last_agent": "validator"
     }
   },
-  "porting": null
+  "porting": null,
+  "review_pr": "https://github.com/AMD-Ecosystem/LC-framework/pull/1"
 }
