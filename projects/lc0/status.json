@@ -1,0 +1,124 @@
+{
+  "schema_version": 3,
+  "name": "lc0",
+  "upstream_url": "https://github.com/LeelaChessZero/lc0",
+  "fork_url": "https://github.com/AMD-Ecosystem/lc0",
+  "fork_default_branch": "master",
+  "priority": 6.245,
+  "ext_type": "cmake",
+  "adopted_at": "2026-05-29T23:30:02Z",
+  "updated_at": "2026-08-12T22:11:14Z",
+  "head_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
+  "pr_url": "https://github.com/LeelaChessZero/lc0/pull/2420",
+  "pr_number": 2420,
+  "pr_opened_at": "2026-06-11T07:21:22Z",
+  "porting": null,
+  "waivers": {},
+  "pr_state": "open",
+  "license_clearance": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-06T02:33:28Z",
+    "tier": 3,
+    "note": "carries the org review that cleared this specific list on 2026-08-06; covers this project only and sets no precedent for its tier"
+  },
+  "license_spdx": "GPL-3.0",
+  "upstream_repo_id": 135489692,
+  "stage": "review-passed",
+  "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
+      "started_at": "2026-05-31T01:38:05Z",
+      "completed_at": "2026-08-08T23:24:36Z",
+      "updated_at": "2026-08-08T23:29:09Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
+      "started_at": "2026-05-31T05:46:00Z",
+      "completed_at": "2026-08-08T02:03:02Z",
+      "updated_at": "2026-08-08T02:03:02Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-05-31T05:46:00Z",
+        "last_session_at": "2026-05-31T06:05:00Z"
+      },
+      "last_agent": "reviewer",
+      "carry_forward": {
+        "to": "7727fa32c1992ef6702eacc1b8568715803b0701",
+        "method": "full-revalidation",
+        "detail": "Fresh full real-GPU revalidation at 7727fa3 (not a binary-equiv/source-class shortcut): 331-target build (no rebuild needed, README-only delta), 8/8 CPU gtest, 222/222+222/222 maia-1100 conv-SE fp32/f",
+        "at": "2026-08-08T02:03:02Z"
+      }
+    },
+    "windows-gfx1101": {
+      "blocked": true,
+      "blocked_reason": "Value-head numerical defect identical to gfx1151: builds+runs (344 targets, benchmark clean, 8/8 CPU gtest), policy bit-identical (~4.6e-07) but value wrong 4.4e-02 absolute (sign flips) at atol=1e-3 bar. Defect appears identically on gfx1201 under same TheRock ROCm 7.14 Windows SDK. Exhaustive investigation: graph capture off, use_gemm_ex=false, Conv1Layer loop replacement, standalone BLAS tests all PASS -- BLAS is correct for all relevant dimensions. Root cause unresolved; suspected TheRock ROCm 7.14 Windows HIP runtime issue in custom kernel path. Linux gfx90a+gfx1100 pass the same check on ROCm 7.2.1.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T12:02:47Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1201": {
+      "blocked": true,
+      "blocked_reason": "Value-head numerical defect identical to gfx1151 and gfx1101: builds+runs (344 targets, benchmark clean, 8/8 CPU gtest), policy bit-identical (~4.6e-07) but value wrong 4.4e-02 absolute (sign flips) at atol=1e-3 bar. Defect appears identically on gfx1101 under same TheRock ROCm 7.14 Windows SDK. Exhaustive investigation: graph capture off, use_gemm_ex=false, Conv1Layer loop replacement, standalone BLAS tests all PASS -- BLAS is correct for all relevant dimensions. Root cause unresolved; suspected TheRock ROCm 7.14 Windows HIP runtime issue in custom kernel path. Linux gfx90a+gfx1100 pass the same check on ROCm 7.2.1.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T12:02:56Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "published_sha": "7727fa32c1992ef6702eacc1b8568715803b0701"
+}
