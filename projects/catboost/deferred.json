@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "rocprim-devicescan-unaligned-temp-corruption",
+      "kind": "rocm-bug-report",
+      "component": "rocPRIM",
+      "summary": "rocPRIM DeviceScan lookback tile-state corrupts the scan non-deterministically at tile boundaries when its temp storage is not 256-byte aligned (CUB has no such requirement). catboost split_points.cu works around it by 256-aligning the scan temp offset. Genuine correctness bug; needs a minimal reproducer + rocm-libraries issue.",
+      "refs": [
+        "projects/catboost/src/catboost/cuda/methods/greedy_subsets_searcher/kernel/split_points.cu"
+      ],
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/rocm-libraries/issues/8263",
+      "created_at": "2026-06-10T01:54:17Z",
+      "decided": null
+    },
+    {
+      "id": "rocprim-segmented-radix-sort-gap-elements",
+      "kind": "rocm-bug-report",
+      "component": "rocPRIM",
+      "summary": "rocPRIM segmented radix sort leaves out-of-segment (gap) elements undefined in the alternate DoubleBuffer and flips Current() there (CUB leaves the result in-place); catboost segmented_sort.cu seeds both buffers to compensate. Clarify intended behavior vs CUB; possible deviation.",
+      "refs": [
+        "projects/catboost/src/catboost/cuda/cuda_util/kernel/segmented_sort.cu"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-06-10T01:54:17Z",
+      "decided": null
+    },
+    {
+      "id": "rocprim-sortpairs-tempsize-strictness",
+      "kind": "rocm-bug-report",
+      "component": "rocPRIM",
+      "summary": "rocPRIM SortPairs needs more temp storage than a SortKeys-sized query allocates -> hipErrorInvalidValue at Run (CUB tolerates the keys-vs-pairs sizing mismatch). catboost segmented_sort.cpp sizes for SortPairs under USE_HIP. Partly a catboost CUB-contract mis-use; worth confirming rocPRIM's documented contract.",
+      "refs": [
+        "projects/catboost/src/catboost/cuda/cuda_util/segmented_sort.cpp"
+      ],
+      "status": "done",
+      "upstream_issue": null,
+      "created_at": "2026-06-10T01:54:17Z",
+      "decided": null
+    }
+  ]
+}
