@@ -207,7 +207,7 @@ The project name links upstream.
 | [GOMC](https://github.com/GOMC-WSU/GOMC) ([fork](https://github.com/AMD-Ecosystem/GOMC/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [GooFit](https://github.com/GooFit/GooFit) ([fork](https://github.com/AMD-Ecosystem/GooFit/tree/moat-port)) | ✅ | ✅ | ⬜ | — |
 | [gpu4pyscf](https://github.com/pyscf/gpu4pyscf) ([fork](https://github.com/AMD-Ecosystem/gpu4pyscf/tree/moat-port)) | ✅ | ✅ | 🚫 | — |
-| [GPU_IPC](https://github.com/KemengHuang/GPU_IPC) ([fork](https://github.com/AMD-Ecosystem/GPU_IPC/tree/moat-port)) | ✅ | ✅ | 🚫 | — |
+| [GPU_IPC](https://github.com/KemengHuang/GPU_IPC) ([fork](https://github.com/AMD-Ecosystem/GPU_IPC/tree/moat-port)) | 🔄 | 🔄 | 🚫 | — |
 | [Gpufit](https://github.com/gpufit/Gpufit) ([fork](https://github.com/AMD-Ecosystem/Gpufit/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#149](https://github.com/gpufit/Gpufit/pull/149) |
 | [GPUMD](https://github.com/brucefan1983/GPUMD) ([fork](https://github.com/AMD-Ecosystem/GPUMD/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#1538](https://github.com/brucefan1983/GPUMD/pull/1538) |
 | [gpuRIR](https://github.com/DavidDiazGuerra/gpuRIR) ([fork](https://github.com/AMD-Ecosystem/gpuRIR/tree/moat-port)) | ✅ | ✅ | ✅ | — |
