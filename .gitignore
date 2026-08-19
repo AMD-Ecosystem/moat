@@ -88,3 +88,9 @@ findings/
 
 # Scratch: commit messages are written to the session scratchpad, never here.
 msg.txt
+
+# Host-local settings sourced by detect_arch.sh (and so by orient.sh): where this
+# machine's ROCm SDK lives, and nothing else. Deliberately untracked -- it is
+# per-machine inventory, which the shared repo does not carry, and every host
+# that needs one has a different answer.
+.moat.local
