@@ -1492,3 +1492,117 @@ worth a skill promotion, project-specific naming quirk.
 
 Result: ALL gates PASS. Platform linux-gfx90a -> completed
 (validated_sha=d7d98677060e36cfa329db4229c8b3d14cf53b32).
+
+## Validation 2026-08-19 (validator, linux-gfx1100) -- revalidation, PASS at d7d9867
+
+State: `revalidate` -> `completed`. `linux-gfx1100` was stale at `040743e`
+(head_sha had moved through `ea0df9b`/`f0ce8ce`/`b8c3df0`/`b51dbd1`/`af80cc9`/
+`1d7d9f2`/`d7d9867` since its 2026-07-02 pass). `classify 040743e d7d9867`
+returned `class=mixed arch_independent=False` (also unable to `git diff`
+across the shallow `moatlib` clone's object set), so this was a full
+real-GPU run, not a carry-forward.
+
+Platform: 4x AMD Radeon Pro W7800 48GB, gfx1100 (RDNA3, wave32),
+HIP_VISIBLE_DEVICES defaulted to GPU 0. Toolchain: ROCm 7.2.3 / hipcc (HIP
+7.2.53211, AMD clang 22.0.0git), nvcc 12.8.93 in
+`/opt/conda/envs/cuda-12.8`. Fresh checkout of `moat-port` at
+`projects/LC-framework/src` (`git fetch origin moat-port` + `reset --hard
+origin/moat-port`), `git rev-parse HEAD` =
+`d7d98677060e36cfa329db4229c8b3d14cf53b32`, matching `status.json.head_sha`.
+
+### Main build (`lc`), README recipe verbatim, throwaway copy of src
+
+```
+python3 ./generate_Device_LC-Framework.py
+hipify-perl -inplace lc.cu lc.h
+for h in framework.h $(find include components preprocessors verifiers -name '*.h'); do hipify-perl -inplace "$h"; done
+hipcc -O3 --offload-arch=gfx1100 -ffp-contract=off -DUSE_GPU -I. -std=c++17 -c -o lc.o lc.cu
+hipcc --offload-arch=gfx1100 -o lc lc.o
+```
+
+Wrapped in `utils/timeit.sh LC-framework compile`. Exit 0 both steps, 116
+warnings (nodiscard hipError_t + deprecated-shfl hipify-info), matching the
+count already on record for this exact head_sha on gfx942/gfx90a/gfx1151.
+Banner: "AMD GPU version".
+
+### gotcha (validator harness, reconfirms a known one, not the port)
+
+The whole-tree hipify loop hit this host's 2-minute command timeout
+mid-invocation (SIGTERM, exit 143) on both the main build and the standalone
+build. `hipify-perl -inplace` writes its output in place, and killing it
+mid-write left the FILE IT WAS CURRENTLY CONVERTING truncated to 0 bytes
+rather than reverted -- distinct from the previously-recorded "skipped
+entirely, stays in CUDA form" failure mode. Symptom: a downstream compile
+error with no obvious cause (`lc.h:556: error: use of undeclared identifier
+'d_TCNB_4'`) because the 0-byte header defines nothing but is still
+`#include`d. Caught by `find ... -name '*.h' -size 0` after every hipify
+pass (three hits across this round: `components/d_TCNB_4.h` on the main
+build, `components/h_HCLOG_2.h` and `preprocessors/h_QUANT_REL_0_f64.h` on
+the standalone build); fixed by restoring the file from its own
+`.prehip` backup (already-correct pristine CUDA source) and re-running
+`hipify-perl -inplace` on just that one file. Not a code defect and not
+reported as one. Did not re-promote to the skill: the existing
+`strategy-a-cmake.md` bullet on running hipify synchronously and giving the
+loop a long timeout already covers the root cause (a truncated loop); this
+adds only that a 0-byte casualty, not just a skip, is possible, worth a
+one-line addition next time the bullet is touched but not urgent enough to
+land solo.
+
+### Gates -- all PASS (`utils/timeit.sh LC-framework test`), fresh 1 MB random
+`test.dat`, a 64 KB structured (runs of zeros/sevens/random) `small.dat`,
+and 65536-element `test.f32`/`test.f64`/`test.i32` arrays generated locally
+
+Gate 1 -- lossless round-trip, 6/6 "LOSSLESS verification passed": RZE_4,
+RZE_1, RLE_4, `BIT_4 RLE_4`, `RRE_4 RZE_4`, RAZE_4.
+
+Gate 2 -- TS self-test on `small.dat`: 4491 "verification passed", 0
+failures -- matches gfx942/gfx1100(prior round)/gfx1151/gfx90a exactly at
+this head_sha.
+
+Gate 3 -- lossy quantizers + thrust/hipCUB paths, all "verification passed":
+`QUANT_ABS_0_f32(0.01)` + `BIT_4 RLE_4` + `MAXABS_f32(0.01)`;
+`QUANT_INOA_0_f64(0.01)` + `BIT_8 RLE_8` + `MAXNOA_f64(0.01)` (rocThrust
+minmax_element/device_ptr); `QUANT_NOA_0_f32(0.01)` + `BIT_4 RLE_4` +
+`MAXNOA_f32(0.01)` (`cuda::std::numeric_limits` alias path); `LOR1D_i32()` +
+`BIT_4 RLE_4` (hipCUB `DeviceScan`, "verification passed").
+
+Gate 4 -- cross-device format gate, README standalone recipe verbatim from
+separate throwaway trees for the GPU pair (gfx1100) and the CPU pair
+(`generate_standalone_CPU_compressor_decompressor.py` + g++ 13.3.0, both
+RZE_4 on the same 1 MB random `test.dat`):
+  - GPU-encode(gfx1100, wave32) -> CPU-decode: `cmp` IDENTICAL.
+  - CPU-encode -> GPU-decode(gfx1100): `cmp` IDENTICAL.
+  - GPU encoding and CPU encoding of the same input: `cmp` BYTE-IDENTICAL.
+  3/3 checks pass -- the wave-width re-gate (`af80cc9`) still does not leak
+  wave width into the serialized bitstream on the current gfx1100 build.
+  README standalone GPU build (`compress`/`decompress`), the recipe that
+  used to fail with "undeclared identifier 'strcmp'" before `b51dbd1`:
+  both steps EXIT 0, no `-include cstring` workaround needed (the fix is
+  the tracked `<cstring>` include now in the templates).
+
+Non-GPU regression: CPU/OpenMP build, `generate_Host_LC-Framework.py` + g++
+13.3.0 emits `lc.cpp`, `-O3 -march=native -fopenmp -mno-fma -ffp-contract=off
+-DUSE_CPU -std=c++17`: EXIT 0, `AL "" "RZE_4"` gives "LOSSLESS verification
+passed".
+
+CUDA no-regression gate: SKIPPED, already recorded at this exact head_sha
+`d7d9867` twice in notes.md (the porting round's "Gates run on gfx942"
+section and the `d7d9867` re-review), both nvcc 12.8 `-arch=sm_80`, 0
+errors on `lc.cu` / `compressor-standalone.cu` / `decompressor-standalone.cu`.
+Per the once-per-head_sha rule this is not rerun; `/opt/conda/envs/cuda-12.8/
+bin/nvcc` (12.8.93) confirmed present on this host.
+
+Pre-completion checks: `python3 utils/jargon.py --port LC-framework` ->
+clean. Documentation: `README.md:65-77` (main build) and `:203-211`
+(standalone build) document the hipcc/hipify recipe alongside nvcc in the
+project's house style; both blocks were run verbatim above and both worked.
+Integrity: `git status --porcelain` in `src` empty, `git rev-parse HEAD` ==
+`d7d98677060e36cfa329db4229c8b3d14cf53b32` before and after.
+
+No fork commit made or needed -- this arch required no code change. Every
+platform now carries `validated_sha` = `d7d98677060e36cfa329db4229c8b3d14cf53b32`
+(linux-gfx90a, linux-gfx942, linux-gfx1100, windows-gfx1151), so all
+gate-relevant evidence on the fleet is current at head.
+
+Result: ALL gates PASS. Platform linux-gfx1100 -> completed
+(validated_sha=d7d98677060e36cfa329db4229c8b3d14cf53b32).
