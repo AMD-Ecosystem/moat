@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-05T01:19:27Z",
-  "updated_at": "2026-08-14T16:21:05Z",
+  "updated_at": "2026-08-19T23:32:08Z",
   "head_sha": "b0d21d5a1c20e60efc92d7047552f19683cd1b1a",
   "depends_on": [],
   "porting": null,
@@ -132,5 +132,6 @@
       "state": "completed",
       "last_agent": "validator"
     }
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/faster-gaussian-splatting/pull/2"
 }
