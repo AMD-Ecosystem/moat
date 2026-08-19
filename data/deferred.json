@@ -209,6 +209,21 @@
       "created_at": "2026-08-12T23:40:21Z",
       "decided": null,
       "project": null
+    },
+    {
+      "id": "moat-gh-guard-gate-path-sensitive",
+      "kind": "other",
+      "component": "moat-control-plane",
+      "summary": "The pre-push gh-guard gate compares the installed shim at ~/.local/bin/gh.cmd against text generated from the CURRENT checkout, and that text hardcodes an absolute path (python \"D:\\Develop\\moat\\utils\\gh_guard.py\" --shim). From any worktree the generated text differs, so the gate reports the guard stale and rejects the push. Consequences: (1) branch-sync --all cannot push at all, because the sweep runs in a worktree by construction -- on 2026-08-18 all 76 of its merges were rejected and discarded, leaving 77 of 89 port branches still running tooling from before the work-lock publish fix f627a7f, so two hosts can still take the same round; (2) pushing from any worktree requires reinstalling the guard, which repoints it and breaks the main checkout until reinstalled again. Preferred fix: compare the resolved gh_guard.py content rather than the literal shim text, so the gate judges whether the guard functions rather than which directory it names. Alternative considered and NOT taken without a person's decision: --no-verify on the trunk-merge sync push, which AGENTS.md's do-not-bypass rule covers. Blocks the fleet sync.",
+      "refs": [
+        "agent_space/MORNING-PLAN.md",
+        "utils/check.py:377"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-19T06:32:33Z",
+      "decided": null,
+      "project": null
     }
   ]
 }
