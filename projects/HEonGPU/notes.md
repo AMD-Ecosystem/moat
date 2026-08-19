@@ -6309,8 +6309,10 @@ exactly as it is. No code, no build file, no default value changed. Two commits 
 
 ### `dab3a09` [ROCm] Fix stale memory pool percentages in docs and comments
 
-Pre-existing upstream inaccuracy, verified untouched by this port (`git diff
-origin/main..moat-port` was empty for both files before this commit). All four inline
+Pre-existing upstream inaccuracy, verified untouched by this port (corrected 2026-08-19:
+the diff against upstream was empty for `src/include/heongpu/kernel/defines.h`, and for
+`docs/advanced_topics.rst` the port had already added 22 lines elsewhere in the file but
+had not touched the bullet at `:18`, which is what the claim needs). All four inline
 comments in `src/include/heongpu/kernel/defines.h:32-37` contradicted their own values
 (`0.9f // %50`, `0.95f // %80`, `0.3f // %10`, `0.4f // %20`), and
 `docs/advanced_topics.rst:18` inherited the same stale 50/80/10/20 figures. Comment and
@@ -6614,3 +6616,110 @@ the measured host. The porter should work the union of the two lists: item 1 (ho
 100 MB), the free-vs-total wording, my item 2 (measurement provenance) and the other
 review's items 3 and 4 (deferral ruling, provenance claim), plus my item 3 (the example
 does not set `initial_device_bytes`).
+
+## Porter round 2026-08-19 (linux-gfx90a) -- the two documentation reviews, `542ea1a`
+
+Dispatched at `changes-requested`. First established what the objection actually was: the
+GitHub `/moat changes-requested` of 2026-08-17 is answered (all five review threads on
+fork PR 1 carry a reply naming a fix commit and are resolved; both review-body questions
+have top-level answers, the compat-header consolidation and the hipMM swap), so the
+recorded stage came from the two concurrent MOAT reviews of the documentation round
+`0cbaa0b..3c88f16` (notes above, `linux-gfx1100` and `windows-gfx1151`), whose reconciled
+union list is what this round worked. Nothing was posted to GitHub.
+
+Head `3c88f16` -> `542ea1a`, one commit, documentation and comment text only.
+
+### Findings worked, and what was verified independently before writing
+
+1. **Host pool default (both reviews, must fix).** Confirmed in this tree:
+   `MemoryPoolConfig::Defaults()` (`src/lib/util/memorypool.cu:37-44`) sets
+   `initial_device_fraction`, `max_device_fraction`, `max_host_fraction` and neither host
+   initial field; with neither set, `initialize()` takes the fixed
+   `roundup_256(104857600)` branch (`:180-188`). `initial_host_memorypool_size` (0.3f) is
+   dead: the `else` branch passes it as `default_fraction`, is entered only when bytes or
+   fraction already has a value, and `resolve_pool_size` consults `default_fraction` only
+   when neither has one. `docs/advanced_topics.rst:18` now states the fixed 100 MB initial
+   host pool and a 40% cap on *available* RAM, matching `README.md:314-317`;
+   `defines.h:37` carries `// Unused: with no runtime configuration the initial host pool
+   is a fixed 100 MB` instead of `// %30 of CPU memory`. No value touched.
+
+2. **Free versus total (gfx1100 review; gfx1151 review withdrew its "not a finding").**
+   `get_decive_avaliable_memory()` returns `free_mem` (`memorypool.cu:85-91`) and that is
+   what the fractions multiply (`:111`, `:215-222`). `advanced_topics.rst:20` and
+   `README.md:196` now say available/free, and the 65 GB arithmetic is attached to an
+   "otherwise idle machine" rather than to the machine's total.
+
+3. **Unverifiable performance figures (gfx1151 review item 2).** No APU on this host, so
+   the sweep cannot be reproduced here, and the record does not contain it; the three
+   unverifiable figures were therefore dropped rather than backfilled -- context creation
+   "one second to about ten", "10% or less performs as well as no pool at all", and "50%
+   is about twice as slow as 10%" are gone from `docs/advanced_topics.rst`, `README.md`
+   and the skill. What the record does support is kept and stated as what it is: the pool
+   asks for ~65 GB of a 72 GB shared machine (`notes.md:3889`, `hipMemGetInfo free=
+   72761692160 total=72924151808`), and the measured comparison in
+   `deferred.json/heongpu-hipmm-pool-slowdown-gfx1151` is a non-pooling allocator against
+   the 90% default (~2x light, 3-4x heavy), which shows the default is expensive on such a
+   part but does not apportion the cost between reservation and allocator. The published
+   prose is now qualitative on that point.
+   The commit bodies of `dab3a09` and `3c88f16` still carry the dropped figures and were
+   deliberately not amended: `3c88f16` is a validated head (`windows-gfx1151`), and
+   amending it would orphan that evidence for a prose change. The new commit body states
+   the correction instead, which is the upstream-visible record a maintainer reads.
+
+4. **Example citation (gfx1151 review item 3).** Confirmed
+   `example/basic/3_basic_memorypool_config.cpp:34-38` sets `initial_device_fraction =
+   80.0f`, `max_device_fraction`, `initial_host_bytes` and `max_host_fraction`, never
+   `initial_device_bytes`. `advanced_topics.rst:22` now cites it for the mechanism and
+   says the sizes it passes are discrete-card sizes.
+
+5. **Deferral ruling (gfx1100 review item 3).** Already ruled since that review:
+   `heongpu-hipmm-pool-slowdown-gfx1151` is `defer`, by Jeff Daily, 2026-08-19T16:08:19Z
+   (MOAT commit `2d62a1f`). The round-15 line "Jeff Daily's ruling: document only,
+   recommend <=0.1 on an APU, keep the `0.9f` default" was a session direction, and the
+   recorded ruling on the deferral itself is `defer`; both now stand in the record and
+   agree in effect (document only, no default changed). The deferral *summary* still reads
+   "awaiting that measurement", which is now stale, but `deferred.py` has no edit path
+   (that gap is itself the unruled `deferred-py-no-edit-or-supersede-path` item) so it was
+   left rather than hand-edited.
+
+6. **Provenance claim (gfx1100 review item 4).** Corrected in place at the round-15 entry
+   above: the upstream diff was empty for `defines.h`; `docs/advanced_topics.rst` had 22
+   port-added lines elsewhere, and only the untouched bullet at `:18` matters to the
+   argument.
+
+### Build and checks
+
+No full rebuild: the delta is comment and prose only.
+`python3 utils/moatlib.py classify HEonGPU 3c88f16 542ea1a` -> `class=comment-only
+arch_independent=True inert=True`, so `windows-gfx1151` carried forward by `source-class`
+and nothing can differ in a build artifact. The one compiled file in the delta is a header
+comment, checked directly rather than by rebuilding the library:
+
+```
+hipcc -std=c++17 -I projects/HEonGPU/src/src/include \
+  -o agent_space/heongpu-r24-check/defines_tu agent_space/heongpu-r24-check/defines_tu.cpp
+agent_space/heongpu-r24-check/defines_tu
+# 0.90 0.95 0.30 0.40   -- all four constants unchanged, header still compiles as HIP
+```
+
+```
+python3 utils/jargon.py --port HEonGPU     # jargon: clean
+python3 utils/prose.py <commit body>       # prose: clean
+git -C projects/HEonGPU/src status --porcelain   # empty after the commit and the push
+```
+
+### Lesson corrected in the skill
+
+`cuda-to-rocm/references/validation.md` had inherited the same unverifiable figures when
+the APU-slowdown paragraph was promoted. Rewritten to the measurement that exists (pooling
+at the 90% default versus an allocator that pooled nothing, ~2x light and 3-4x heavy on
+gfx1151), to say the comparison does not separate reservation cost from allocator cost,
+and to add the rule the round-15 slip demonstrates: do not publish per-configuration
+timings to users that no recorded run produced.
+
+### State
+
+`porting` -> `ported` at `542ea1a`. `windows-gfx1151` carried forward; `linux-gfx90a`,
+`linux-gfx942` and `linux-gfx1100` were already behind head and read `revalidate`. The
+standing GitHub objection on fork PR 1 is unchanged and still needs a fresh `/moat
+approve` from a person over the updated diff; this round posted nothing there.
