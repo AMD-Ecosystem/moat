@@ -56,3 +56,8 @@
 {"kind":"phase","ts":"2026-08-14T00:17:10Z","phase":"cuda-compile","seconds":8.550,"exit":0,"cmd":"python3 agent_space/brian2cuda_revalidate_20260814/cuda_gate_probe.py"}
 {"kind":"phase","ts":"2026-08-14T00:17:45Z","phase":"cuda-compile","seconds":1.230,"exit":1,"cmd":"python3 agent_space/brian2cuda_revalidate_20260814/cuda_gate_probe.py"}
 {"kind":"session","ts":"2026-08-14T00:20:27Z","epoch":1786666827.920228651,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-19T05:34:10Z","epoch":1787117650.855770876,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-19T05:34:47Z","phase":"compile","seconds":8.255,"exit":0,"cmd":"bash -c pip install brian2==2.10.1 && pip install -e projects/brian2cuda/src"}
+{"kind":"phase","ts":"2026-08-19T05:35:29Z","phase":"test","seconds":16.571,"exit":1,"cmd":"python3 agent_space/brian2cuda-gfx1100-revalidate-20260819/test_gfx1100.py"}
+{"kind":"phase","ts":"2026-08-19T05:36:02Z","phase":"test","seconds":18.067,"exit":0,"cmd":"python3 agent_space/brian2cuda-gfx1100-revalidate-20260819/test_gfx1100.py"}
+{"kind":"session","ts":"2026-08-19T05:37:14Z","epoch":1787117834.799087289,"event":"end","platform":"linux-gfx1100"}

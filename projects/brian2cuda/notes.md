@@ -1082,3 +1082,90 @@ disregarded.)
 **REVALIDATED** at 90d6d7c. GPU pass 3/3 on gfx90a; CUDA gate recorded as an
 environmental wall (see above), not a regression. `head_sha` == `validated_sha`
 after this round.
+
+## Validation 2026-08-19 (linux-gfx1100) -- revalidate aca06c7 -> 90d6d7c
+
+### Platform
+
+- GPU: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), HIP_VISIBLE_DEVICES=0
+  (two W7800s on this host).
+- ROCm 7.2.3 (`hipcc` HIP version 7.2.53211), via system `/opt/rocm`.
+- Python 3.12.13 in `/opt/conda/envs/py_3.12`.
+- Working branch: `moat-port` (the fix round `moat-fix-327` already merged; PR
+  #327 was fast-forwarded and `status.json.fix` is now `null`). Fresh clone of
+  `https://github.com/AMD-Ecosystem/brian2cuda`, checked out at `origin/moat-port`;
+  `git rev-parse HEAD` = `90d6d7cf13b1dd9cfb814b157c1b357395115f56`, matching
+  `head_sha` exactly.
+- Prior `validated_sha` for this arch was the pre-rebase short sha `aca06c7`
+  (from the 2026-07-02 rebase round), so this was a full revalidation, not a
+  carry-forward-eligible delta from a nearby ancestor.
+
+### Build
+
+```bash
+pip install brian2==2.10.1
+pip install -e projects/brian2cuda/src
+# utils/timeit.sh brian2cuda compile -- ... : exit 0, 8.3s
+```
+
+(`numpy` was bumped 1.26.4 -> 2.5.2 by the brian2 install, which pip flagged
+as conflicting with the shared env's `scipy`/`numba` pins. That is a
+shared-conda-env dependency note, not a port defect; brian2cuda's own build
+and tests ran fine against numpy 2.5.2.)
+
+### GPU test results -- 3/3 PASS
+
+Reconstructed the standard 3-case script (agent_space is gitignored, not
+durable) as `agent_space/brian2cuda-gfx1100-revalidate-20260819/test_gfx1100.py`,
+one `brian2` subprocess per case (avoids magic-network state bleeding across
+`set_device` calls in one process, per the gfx90a 2026-08-14 note). First
+attempt had a harness bug (Test 2's `SpikeMonitor` on a target group with no
+`threshold` -- `ValueError: ... does not define an event 'spike'`), fixed by
+giving the target group a `threshold='v>1e9'` so it registers the event but
+never fires; not a port issue, purely a test-script mistake.
+
+```bash
+HIP_VISIBLE_DEVICES=0 USE_HIP=1 utils/timeit.sh brian2cuda test -- \
+    python3 agent_space/brian2cuda-gfx1100-revalidate-20260819/test_gfx1100.py
+# Phase: test, wall: 18.07s, exit: 0
+```
+
+1. Neuron group simulation (100 neurons, 10 timesteps, exact integrator):
+   final v range [0.0000, 0.8958] -- PASS.
+2. Synapse connectivity with delay / spinlock test (927 synapses, 1ms delay,
+   spike-queue path in spikequeue.h exercised): 49/50 target neurons with
+   v > 0 -- PASS.
+3. Large recurrent stress network (200 neurons, 11845 synapses, 5765 spikes,
+   no deadlock) -- PASS.
+
+3/3 PASSED. Wave-serialized spinlock (`spikequeue.h`) still functions
+correctly on gfx1100 wave32 after the Windows-only `90d6d7c` device.py change
+(glob-matching `_rocm_sdk_libraries*`, unconditional `rocrand.dll` copy --
+both gated on `os.name == 'nt'`, confirmed a no-op on Linux by inspection in
+the 2026-08-14 gfx90a round and reconfirmed here by the real GPU pass). No
+regression.
+
+### CUDA no-regression gate
+
+Already recorded at this exact `head_sha` (90d6d7c) by the 2026-08-14
+linux-gfx90a round: `cuda-not-validated` (environmental wall -- brian2cuda's
+CUDA-backend GPU selection shells out to `nvidia-smi`, unsatisfiable on an
+AMD-only host, pre-existing/unmodified by the port). Per the "once per
+head_sha" rule, not re-run here.
+
+### Pre-completion checks
+
+- `git -C projects/brian2cuda/src status --porcelain`: clean, HEAD ==
+  `head_sha`.
+- Jargon: `python3 utils/jargon.py --port brian2cuda` -> `jargon: clean`
+  (works directly now that `fix` is `null` and `fork_branch` resolves the
+  range normally, unlike the mid-fix-round case noted 2026-08-14).
+- Documentation: `README.md` already documents the ROCm/HIP build (ROCm
+  installation instead of CUDA toolkit; HIP backend auto-detected or
+  `USE_HIP=1`); no new user-facing build step in this delta.
+
+### Verdict
+
+**REVALIDATED** at 90d6d7c. GPU pass 3/3 on gfx1100 (RDNA3, wave32).
+`validated_sha` now equals `head_sha` for this arch. State recorded via
+`moatlib.py set-state brian2cuda linux-gfx1100 completed`.
