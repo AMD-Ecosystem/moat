@@ -1293,3 +1293,110 @@ kernel results, device-less skip matrix correct, all four kernels confirmed disp
 no-regression gate passes at this head, no non-GPU regression, jargon and documentation clean.
 `validated_sha` -> `2b7f439c1c7da079b36aae82f95f43f84fbcd932`. This platform carries the `wave64`
 gate.
+
+## Validation 2026-08-19 (linux-gfx1100, Radeon Pro W7800) -- completed
+
+First validation on this platform (`validated_sha` was `null`; the platform record still carried
+`last_agent: reviewer` and `started_at` from the 2026-08-13 fix round, which was porter/reviewer
+work on this arch, not a prior validation attempt). Fresh checkout of `AMD-Ecosystem/rmcl`
+`moat-port` reset to exactly `head_sha`, confirmed with `git rev-parse HEAD`:
+`2b7f439c1c7da079b36aae82f95f43f84fbcd932`, `git status --porcelain` empty throughout.
+
+### Environment
+
+- Ubuntu 24.04 noble, ROCm 7.2.3 at `/opt/rocm`, CMake 3.31.6, ROS 2 jazzy at `/opt/ros/jazzy`.
+- GPU: AMD Radeon Pro W7800 48GB, `amdgcn-amd-amdhsa--gfx1100` (4 devices visible, `rocminfo`).
+- `export PATH=/usr/bin:$PATH` before sourcing ROS (conda python is first on `PATH` on this host
+  too; matches every prior round's note).
+
+### Dependency
+
+rmagine fork `moat-port` at `1213551f14f64c92c08048f377034b1ee362659d`, matching
+`projects/rmagine/status.json`'s `validated_sha` for this platform (`completed`,
+2026-08-13). The checkout in `/var/lib/jenkins/moat-worktrees/rmagine/projects/rmagine/src` was
+already at this commit with a clean tree, and its install in
+`agent_space/rmcl_val`-adjacent `agent_space/deps/rmagine_install` (built by the prior fix round
+on this host, same commit, Embree enabled) was reused as-is rather than rebuilt, since the
+source tree it was built from is byte-identical to the tip this round checked out (same sha,
+clean working tree, nothing to rebuild).
+
+### Build
+
+```
+export PATH=/usr/bin:$PATH
+. /opt/ros/jazzy/setup.bash
+export CMAKE_PREFIX_PATH="agent_space/deps/rmagine_install:/opt/rocm:$CMAKE_PREFIX_PATH"
+colcon build --base-paths projects/rmcl/src --packages-select rmcl_msgs rmcl rmcl_ros \
+  --build-base agent_space/rmcl_val/build --install-base agent_space/rmcl_val/install \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
+               -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+               -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++
+```
+
+`Summary: 3 packages finished [50.8s]`, no errors, only the same pre-existing warnings every
+prior round recorded (unused parameters/variables in the CPU resamplers, `resampling.cu`'s three,
+the deprecated `point_cloud_conversion.hpp` `#warning`). `librmcl_ros_cuda.so` carries
+`hipv4-amdgcn-amd-amdhsa--gfx1100` device code. All expected CPU targets built:
+`rmcl_ros/lib/{librmcl_ros.so,librmcl_embree_ros.so,libmicp_localization.so,libmap_segmentation.so,
+libconv_pc2_to_scan.so,libconv_pc2_to_o1dn.so,libconv_scan_to_scan.so,
+libo1dn_map_segmentation_embree.so,libscan_map_segmentation_embree.so}`.
+
+### Test results (two runs, bit-identical, and identical to every prior gfx942/gfx1100 round)
+
+```
+ctest --test-dir agent_space/rmcl_val/build/rmcl_ros -V
+1: particle_move_and_forget: OK (4099 particles)
+1: compute_stats: OK (sum=2051.63 max=1)
+1: gladiator_resample: OK (2043 of 4099 particles replaced, noise mean=-0.00274891 sd=1.01771)
+1/1 Test #1: rmcl_gpu_kernels .................   Passed    0.37 sec
+100% tests passed, 0 tests failed out of 1
+```
+
+Second run: `Passed 0.37 sec`, same kernel output. 1/1 test passes, 0 non-GPU regressions.
+
+### Skip matrix (launcher probe)
+
+```
+HIP_VISIBLE_DEVICES=-1 ctest --test-dir agent_space/rmcl_val/build/rmcl_ros --output-on-failure
+1/1 Test #1: rmcl_gpu_kernels .................***Skipped   0.11 sec
+The following tests did not run:
+	  1 - rmcl_gpu_kernels (Skipped)
+```
+
+Device present -> Passed; device hidden -> Skipped. Matches the recorded launcher contract.
+
+### Kernel dispatch confirmation
+
+```
+AMD_LOG_LEVEL=3 agent_space/rmcl_val/build/rmcl_ros/tests/rmcl_ros_tests_gpu_kernels 2>&1 | grep ShaderName
+```
+
+All four kernels reach the device: `rmcl::particle_move_and_forget_kernel`,
+`void rmcl::simple_stats_kernel<512u>`, `rmcl::init_curand_kernel`,
+`rmcl::gladiator_resample_kernel`.
+
+### CUDA no-regression gate -- already recorded at this head, not re-run
+
+The gfx942 validation above recorded the CUDA gate passing at this exact `head_sha`
+(`2b7f439`, "CUDA no-regression gate -- passed at `2b7f439`"). Per the validator's dispatch
+instructions this gate tests the code, not the arch, and runs once per `head_sha`; skipped here.
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --port rmcl` -> `jargon: clean`. README `Installation` section documents
+the ROCm build in place (`colcon build --cmake-args -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942`,
+with `CMAKE_HIP_ARCHITECTURES` noted as settable per target GPU), next to the CUDA instructions.
+
+### Integrity
+
+`git -C projects/rmcl/src status --porcelain` empty at `2b7f439` throughout; no source or build
+file was modified to make this validation pass. `projects/rmagine/src` (in this host's separate
+`rmagine` worktree) stayed on `moat-port` at `1213551` throughout, clean, untouched.
+
+### Verdict
+
+Real-GPU pass on linux-gfx1100 (Radeon Pro W7800): build clean, 1/1 test passes twice with
+bit-identical kernel results (matching every prior gfx942/gfx1100 round exactly), device-less
+skip matrix correct, all four kernels confirmed dispatched, CUDA no-regression gate already
+recorded at this head, no non-GPU regression, jargon and documentation clean. `validated_sha` ->
+`2b7f439c1c7da079b36aae82f95f43f84fbcd932`. This platform carries the `wave32` gate.
