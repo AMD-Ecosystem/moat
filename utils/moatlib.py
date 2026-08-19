@@ -8,6 +8,7 @@ so any HEAD advance re-validates the platforms that already passed (see
 advance_head). State transitions are validated; illegal jumps raise."""
 
 import argparse
+import collections
 import hashlib
 import json
 import re
@@ -3309,8 +3310,17 @@ def branch_sync(apply=False, base_ref="origin/main", cwd=None):
     branch = _git("rev-parse", "--abbrev-ref", "HEAD", check=False, cwd=cwd).stdout.strip()
     if not branch.startswith("port/"):
         return ("skip", "not a port branch")
-    if _git("status", "--porcelain", check=False, cwd=cwd).stdout.strip():
-        return ("dirty", "uncommitted changes -- not merging; commit or stash first")
+    # Only TRACKED modifications block the merge. An untracked file cannot be lost to
+    # one: git refuses outright if a merge would overwrite it, and that refusal lands
+    # in the conflict path below, which aborts cleanly. Treating ANY untracked file as
+    # dirty instead deadlocks the case that matters most -- a file the trunk's
+    # .gitignore covers but this branch's does not yet, because the merge that would
+    # deliver that .gitignore entry is the merge being refused. `.moat.local` on
+    # port/HEonGPU hit exactly that on 2026-08-18 and left the branch running tooling
+    # from before the work-lock publish fix, so two hosts reviewed the same round.
+    if _git("status", "--porcelain", "--untracked-files=no",
+            check=False, cwd=cwd).stdout.strip():
+        return ("dirty", "uncommitted tracked changes -- not merging; commit or stash first")
     _git("fetch", "-q", "origin", base_ref.split("/", 1)[-1], check=False, cwd=cwd)
     substantive, inert = branch_drift(branch, base_ref, cwd=cwd)
     if not substantive:
@@ -3367,8 +3377,80 @@ def branch_sync(apply=False, base_ref="origin/main", cwd=None):
                  f"{project}: keep this branch's project state across the trunk merge", cwd=cwd)
     # Push so a sibling host reuses this merge instead of making its own; the branch
     # is shared, and two independent merges of the same trunk diverge for no reason.
-    _git("push", "-q", "origin", branch, check=False, cwd=cwd)
+    #
+    # Report the push rather than assuming it. A failure used to be swallowed by
+    # check=False while this still returned "merged", so on 2026-08-18 a fleet sweep
+    # merged 76 branches inside a throwaway worktree, had every push rejected by the
+    # pre-push gates, deleted the worktree, and reported 76 successes. A merge nobody
+    # else can see is not a sync, and saying otherwise is worse than failing.
+    r = _git("push", "-q", "origin", branch, check=False, cwd=cwd)
+    if r.returncode:
+        why = (r.stderr or r.stdout or "").strip().splitlines()
+        return ("unpushed", f"merged locally, push REJECTED: "
+                            f"{why[-1][:120] if why else 'no output'}")
     return ("merged", ", ".join(substantive[:4]))
+
+
+def branch_sync_all(apply=False, base_ref="origin/main", worktree=None):
+    """Sync EVERY port branch to the trunk, not only the one checked out here.
+
+    branch_sync is lazy and single-branch: it runs from orient, on whatever branch a
+    host happens to be working. That is fine for a branch someone visits and useless
+    for the eighty that nobody does, so a trunk fix reaches the fleet only as fast as
+    the fleet happens to touch each branch. On 2026-08-18 that gap was measured: the
+    work-lock publish fix had been on the trunk for days and 81 of 89 port branches
+    still ran the tooling from before it, which is why two hosts could take the same
+    review. A fleet-wide fix needs a fleet-wide sweep, run deliberately.
+
+    One reused worktree rather than one per branch -- 89 worktree creations to change
+    a few files each is a lot of disk for no isolation gain, and branch_sync already
+    takes `cwd` precisely so THIS copy of the code does the merging while the checkout
+    supplies the branch. A branch already checked out somewhere (this repo, another
+    worktree) is reported and skipped: git will not check it out twice, and the host
+    holding it syncs it through orient anyway.
+
+    Returns a list of (branch, action, detail). Dry by default: `apply` is what
+    merges and pushes."""
+    _git("fetch", "-q", "origin", check=False)
+    branches = []
+    for line in _git("branch", "-r", "--list", "origin/port/*",
+                     check=False).stdout.splitlines():
+        b = line.strip()
+        if not b or "->" in b:
+            continue
+        branches.append(b[len("origin/"):] if b.startswith("origin/") else b)
+
+    held = set()
+    for line in _git("worktree", "list", "--porcelain", check=False).stdout.splitlines():
+        if line.startswith("branch "):
+            held.add(line.split(None, 1)[1].strip().replace("refs/heads/", "", 1))
+
+    wt = Path(worktree) if worktree else (REPO_ROOT / "agent_space" / "wt-branch-sync")
+    made = False
+    results = []
+    try:
+        for branch in sorted(branches):
+            if branch in held:
+                results.append((branch, "held", "checked out elsewhere; its host syncs it"))
+                continue
+            if not made:
+                _git("worktree", "add", "--detach", "-f", str(wt), base_ref, check=False)
+                made = True
+            # -f because the reused worktree still has the previous branch's tree.
+            r = _git("checkout", "-f", "-B", branch, f"origin/{branch}",
+                     check=False, cwd=str(wt))
+            if r.returncode:
+                results.append((branch, "error", "could not check out"))
+                continue
+            try:
+                results.append((branch, *branch_sync(apply=apply, base_ref=base_ref,
+                                                     cwd=str(wt))))
+            except Exception as e:                      # one bad branch must not end the sweep
+                results.append((branch, "error", str(e).splitlines()[0][:120]))
+    finally:
+        if made:
+            _git("worktree", "remove", "--force", str(wt), check=False)
+    return results
 
 
 def commit_to_branch(branch, files, message):
@@ -3945,6 +4027,8 @@ def main(argv=None):
                         help="merge the trunk into this port branch, but only if "
                              "something a port can feel has changed there")
     bs.add_argument("--apply", action="store_true")
+    bs.add_argument("--all", action="store_true",
+                    help="sweep every port branch, not just the one checked out here")
     s = sub.add_parser("validate")
     s.add_argument("name")
     s = sub.add_parser("show")
@@ -4340,6 +4424,16 @@ def main(argv=None):
         if not rows:
             print("", end="")
     elif args.cmd == "branch-sync":
+        if args.all:
+            rows = branch_sync_all(apply=args.apply)
+            for branch, action, detail in rows:
+                print(f"{action:11} {branch:44} {detail}")
+            counts = collections.Counter(a for _, a, _ in rows)
+            print(f"branch-sync --all: {len(rows)} branch(es); "
+                  + ", ".join(f"{n} {a}" for a, n in sorted(counts.items())))
+            if not args.apply:
+                print("branch-sync --all: dry run; add --apply to merge and push")
+            return 1 if counts.get("conflict") or counts.get("error") else 0
         action, detail = branch_sync(apply=args.apply)
         print(f"branch-sync: {action} -- {detail}")
         return 1 if action == "conflict" else 0
