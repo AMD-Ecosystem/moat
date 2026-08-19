@@ -12,7 +12,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-06-25T06:13:38Z",
-      "decided": null
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-08-13T17:54:56Z"
+      }
     },
     {
       "id": "cusz-rtm-test-dataset",
@@ -23,7 +27,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-06-25T06:52:13Z",
-      "decided": null
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-08-13T17:54:56Z"
+      }
     },
     {
       "id": "cusz-hip-profiler-support",
@@ -37,7 +45,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-06-25T21:02:13Z",
-      "decided": null
+      "decided": {
+        "choice": "defer",
+        "by": "jeffdaily",
+        "at": "2026-08-13T17:54:55Z"
+      }
     }
   ]
 }
