@@ -27,6 +27,7 @@ routed around.
 import argparse
 import os
 import pathlib
+import re
 import shutil
 import stat
 import subprocess
@@ -83,6 +84,76 @@ def gh_launcher_text():
                        guard=str(REPO / "utils" / "gh_guard.py"))
 
 
+# The one absolute path in the launcher is the guard it dispatches to, and every
+# worktree of this repository generates a different one. Matching it out again is what
+# lets the gate ask whether the guard works rather than whether it was last installed
+# from this exact directory.
+GUARD_IN_LAUNCHER = re.compile(r'"(.+?gh_guard\.py)"\s+--shim\s')
+
+
+def gh_launcher_guard(text):
+    """The gh_guard.py an installed launcher runs, or None if it runs no guard."""
+    if gh_guard.SHIM_MARKER not in text:
+        return None
+    m = GUARD_IN_LAUNCHER.search(text)
+    return pathlib.Path(m.group(1)) if m else None
+
+
+def launcher_case_problems():
+    """Self-check for the launcher parse, in the style of gh_guard.CASES.
+
+    That regex is the whole of the path-insensitivity, so breaking it would quietly
+    restore the ping-pong rather than fail loudly. Building the cases from the same
+    templates the installer writes keeps the two from drifting.
+    """
+    problems = []
+    want = "/x/utils/gh_guard.py"
+    for name, body in GH_LAUNCHERS.values():
+        got = gh_launcher_guard(body.format(marker=gh_guard.SHIM_MARKER, guard=want))
+        if got != pathlib.Path(want):
+            problems.append(f"gh_launcher_guard misreads the {name} launcher: {got}")
+
+    _, posix = GH_LAUNCHERS["posix"]
+    if gh_launcher_guard(posix.format(marker="", guard=want)) is not None:
+        problems.append("gh_launcher_guard accepts a launcher that is not ours")
+
+    nl = chr(10)
+    inert = "# " + gh_guard.SHIM_MARKER + nl + "exec gh $@" + nl
+    if gh_launcher_guard(inert) is not None:
+        problems.append("gh_launcher_guard accepts a launcher that skips the guard")
+    return problems
+
+
+def gh_launcher_problem(shim=None):
+    """Why the installed gh launcher is not a working guard, or None if it is.
+
+    The property worth gating on is that `gh` runs this checkout's guard logic. It is
+    not that the launcher names this particular directory: a worktree and the clone it
+    was cut from share utils/gh_guard.py but embed different absolute paths, so
+    comparing the launcher text verbatim reports "stale" from wherever it was not last
+    installed. That made the gate a reinstall ping-pong -- installing from a worktree
+    broke the main checkout and back -- and left a sweep that runs in a worktree by
+    construction unable to push at all. So compare the guard the launcher reaches
+    instead, which a worktree and its parent agree on.
+    """
+    shim = shim or gh_launcher_path()
+    hint = "(python3 utils/install_hooks.py)"
+    if not shim.exists():
+        return f"gh guard is not installed at {shim} {hint}"
+    text = shim.read_text()
+    if gh_guard.SHIM_MARKER not in text:
+        return f"{shim} exists and is not the moat gh guard"
+    guard = gh_launcher_guard(text)
+    if guard is None:
+        return f"gh guard at {shim} does not dispatch to a gh_guard.py --shim {hint}"
+    if not guard.exists():
+        return f"gh guard at {shim} runs {guard}, which does not exist {hint}"
+    if guard.read_text() != (REPO / "utils" / "gh_guard.py").read_text():
+        return (f"gh guard at {shim} runs {guard}, which differs from this checkout's "
+                f"utils/gh_guard.py {hint}")
+    return None
+
+
 def install_gh_guard(check=False, uninstall=False):
     shim = gh_launcher_path()
     if uninstall:
@@ -104,17 +175,16 @@ def install_gh_guard(check=False, uninstall=False):
         print("install_hooks: gh not found; skipping the gh guard")
         return 0
 
-    want = gh_launcher_text()
     if check:
-        if shim.exists() and shim.read_text() == want:
+        problem = gh_launcher_problem(shim)
+        if problem is None:
             print("install_hooks: gh guard installed and current")
             return 0
-        print("install_hooks: gh guard missing or stale (run utils/install_hooks.py)",
-              file=sys.stderr)
+        print(f"install_hooks: {problem}", file=sys.stderr)
         return 1
 
     shim.parent.mkdir(parents=True, exist_ok=True)
-    shim.write_text(want)
+    shim.write_text(gh_launcher_text())
     if os.name != "nt":
         shim.chmod(shim.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     print(f"install_hooks: gh guard installed at {shim}")
