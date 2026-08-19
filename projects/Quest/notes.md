@@ -1521,3 +1521,67 @@ penalty, not re-run. Wall clock: build ~1 min, in-scope tests ~5s,
 scoped-out/log-evidence re-runs a few minutes, the host cmake-environment
 diagnosis the majority of the session; overall within the ~60 minute
 budget.
+
+## The single-block decode path: the second defect, root-caused 2026-08-19
+
+`quest-decode-single-block-path-broken` recorded that correcting `cur_last_page_len`
+was not sufficient and that "the path has at least one further defect", without
+naming it. It is named now, and it is structural rather than a second typo.
+
+### The design the kernel actually encodes
+
+Quest's `paged_kv_t` carries `last_page_len` as a SCALAR (`decode_page.cuh:91`), not
+the per-request array upstream FlashInfer uses
+(`3rdparty/flashinfer/include/flashinfer/decode.cuh:515`). The caller strips the
+trailing partial page -- `kv_indices_without_last = kv_cache.indicies[:-1]`
+(`quest/utils/controller.py:106`) -- and that page is re-attached as an EXTRA CHUNK by
+the partition step:
+
+```c++
+// Manually append information of last page
+chunk_indptr_h.back() += 1;
+new_page_indptr_h.push_back( new_page_indptr_h.back() + 1 );
+batch_idx_map_h.push_back( 0 );
+```
+
+So in the split shape the final block IS the appended trailing page, and every
+`blockIdx.x == gridDim.x - 1` test in the kernel means "this block is that appended
+page". Both such tests are correct there.
+
+### Why the single-block shape cannot work as written
+
+`tmp == nullptr` launches with the CALLER's `paged_kv`, whose indptr is
+`kv_indptr_for_approx_decode = [0, inference_page_budget - 1]`. The partition step
+never runs, so the appended page is simply not in the block's range, and:
+
+1. `decode_attn.cuh:469` -- `cur_last_page_len` picks `last_page_len`, which describes
+   a page that is not in the list. This is the defect already recorded.
+2. `decode_page.cuh:331` -- `protective_get_k_ptr_heads` redirects the read to
+   `last_page_idx` whenever `blockIdx.x == gridDim.x - 1`. With `gridDim.x == 1` that
+   is block 0, so EVERY page access in the whole range resolves to the trailing page
+   and `indices` is never consulted.
+
+(2) is the missing piece. It is why fixing (1) alone changed nothing: the chunk length
+became correct while every data pointer still came from one wrong page.
+
+### What a repair costs
+
+Both tests can be made shape-independent, and both reduce to current behaviour in the
+split shape:
+
+- `cur_last_page_len`: test `cur_page_indptr_end == last_indptr` rather than the block
+  index -- true only for the chunk that ends at the global end.
+- the accessor: test `page_iter == last_indptr - 1` rather than the block index -- in
+  the split shape only the appended chunk contains that page, so it is equivalent.
+
+But that is not enough on its own. The single block must also COVER the appended page,
+which means `BeginForward` has to allocate an index buffer and publish an extended
+indptr even when `tmp_size == 0`, and the dispatch has to install it when
+`tmp == nullptr`. That is four coordinated host and device changes.
+
+### Scope
+
+Nothing here is HIP-specific. `paged_kv_t`, the scalar `last_page_len`, the append and
+both `gridDim.x - 1` tests are upstream Quest code, identical on the CUDA path, and the
+selecting condition `batch_size * num_kv_heads >= blocks_per_cu * cu_count` is reachable
+on a low-SM NVIDIA card too. A repair is an upstream fix, not a ROCm one.
