@@ -32,7 +32,28 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-08-13T23:34:36Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "Jeff Daily",
+        "at": "2026-08-19T18:46:18Z"
+      }
+    },
+    {
+      "id": "quest-single-block-disable-changes-cuda",
+      "kind": "other",
+      "component": null,
+      "summary": "RULED now by Jeff Daily 2026-08-19, to be done in the same porting round as quest-decode-single-block-path-broken. 9be60fc disables the single-block decode path with a plain 'constexpr bool kSingleBlockPathIsCorrect = false' in the shared kernels/include/decode/decode_attn.cuh, with no HIP guard, so CUDA builds take it too. The selecting condition (batch_size * num_kv_heads >= blocks_per_cu * cu_count) is reachable on a low-SM NVIDIA card, so the change alters NVIDIA launch behaviour under a [ROCm] commit prefix, and nothing about the defect is HIP-specific. Compounding it, the CUDA no-regression gate is recorded cuda-not-validated at this head (RAFT branch-24.02 CUDA::nvToolsExt wall), so the CUDA path is not even compile-checked. Decision: keep the CUDA path at upstream behaviour. If the single-block path is successfully repaired and re-enabled, this resolves itself; if any disable survives the repair, it must be HIP-guarded.",
+      "refs": [
+        "projects/Quest/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-19T18:46:43Z",
+      "decided": {
+        "choice": "now",
+        "by": "Jeff Daily",
+        "at": "2026-08-19T18:46:48Z"
+      }
     }
   ]
 }
