@@ -105,6 +105,29 @@
         }
       }
     },
+    "porting_released": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "arch",
+        "since",
+        "at"
+      ],
+      "properties": {
+        "arch": {
+          "type": "string",
+          "pattern": "^(linux|windows)-(gfx[0-9a-f]+)$"
+        },
+        "since": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        }
+      }
+    },
     "waivers": {
       "type": "object",
       "propertyNames": {
