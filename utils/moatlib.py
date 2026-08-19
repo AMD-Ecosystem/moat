@@ -3377,7 +3377,17 @@ def branch_sync(apply=False, base_ref="origin/main", cwd=None):
                  f"{project}: keep this branch's project state across the trunk merge", cwd=cwd)
     # Push so a sibling host reuses this merge instead of making its own; the branch
     # is shared, and two independent merges of the same trunk diverge for no reason.
-    _git("push", "-q", "origin", branch, check=False, cwd=cwd)
+    #
+    # Report the push rather than assuming it. A failure used to be swallowed by
+    # check=False while this still returned "merged", so on 2026-08-18 a fleet sweep
+    # merged 76 branches inside a throwaway worktree, had every push rejected by the
+    # pre-push gates, deleted the worktree, and reported 76 successes. A merge nobody
+    # else can see is not a sync, and saying otherwise is worse than failing.
+    r = _git("push", "-q", "origin", branch, check=False, cwd=cwd)
+    if r.returncode:
+        why = (r.stderr or r.stdout or "").strip().splitlines()
+        return ("unpushed", f"merged locally, push REJECTED: "
+                            f"{why[-1][:120] if why else 'no output'}")
     return ("merged", ", ".join(substantive[:4]))
 
 
