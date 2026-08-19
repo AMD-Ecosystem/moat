@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:24:38Z",
-  "updated_at": "2026-08-07T07:05:26Z",
+  "updated_at": "2026-08-19T23:51:16Z",
   "head_sha": "840f6f30012196488eba9130e1f4c4c1398dc2f6",
   "depends_on": [],
   "porting": null,
@@ -135,5 +135,6 @@
         "at": "2026-06-23T22:49:00Z"
       }
     }
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/prismatic/pull/1"
 }
