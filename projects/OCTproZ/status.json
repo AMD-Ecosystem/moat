@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "qmake",
   "adopted_at": "2026-06-05T01:16:31Z",
-  "updated_at": "2026-08-07T07:04:42Z",
+  "updated_at": "2026-08-19T23:23:19Z",
   "head_sha": "af845bad4edc1f6e23e7bdd8a0d61d24544bfeed",
   "depends_on": [],
   "porting": null,
@@ -113,5 +113,6 @@
       },
       "last_agent": "validator"
     }
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/OCTproZ/pull/1"
 }
