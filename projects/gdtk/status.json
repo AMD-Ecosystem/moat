@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "makefile",
   "adopted_at": "2026-06-05T04:44:12Z",
-  "updated_at": "2026-08-07T18:37:35Z",
+  "updated_at": "2026-08-19T23:37:42Z",
   "head_sha": "8aadf2185510930b523c786e21fde116c22b2809",
   "depends_on": [],
   "porting": null,
@@ -125,5 +125,6 @@
         "last_session_at": null
       }
     }
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/gdtk/pull/1"
 }
