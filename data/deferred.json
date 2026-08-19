@@ -194,6 +194,22 @@
       "upstream_issue": null,
       "created_at": "2026-08-06T06:52:58Z",
       "decided": null
+    },
+    {
+      "id": "moat-gate-misses-conflict-markers",
+      "kind": "other",
+      "component": null,
+      "summary": "Neither utils/check.py nor the pre-push hook notices unresolved conflict markers in a committed file. During the 2026-08-19 fleet sync a merge resolution was committed and pushed to port/colmap with '<<<<<<< HEAD' still in .claude/skills/cuda-to-rocm/references/validation.md, and every gate reported ok; it was caught by hand afterwards and fixed forward in 7deba5c. 'git add' on a conflicted file marks it resolved, so this is easy to do under time pressure and the sweep makes it a bulk operation. A cheap gate would scan tracked text files for '^<<<<<<< ', '^>>>>>>> ' and a '^=======$' between them.",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-19T16:11:16Z",
+      "decided": {
+        "choice": "now",
+        "by": "Jeff Daily",
+        "at": "2026-08-19T19:20:00Z"
+      },
+      "project": null
     }
   ]
 }
