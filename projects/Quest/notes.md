@@ -1585,3 +1585,69 @@ Nothing here is HIP-specific. `paged_kv_t`, the scalar `last_page_len`, the appe
 both `gridDim.x - 1` tests are upstream Quest code, identical on the CUDA path, and the
 selecting condition `batch_size * num_kv_heads >= blocks_per_cu * cu_count` is reachable
 on a low-SM NVIDIA card too. A repair is an upstream fix, not a ROCm one.
+
+## Repair 2026-08-19 (windows-gfx1151): single-block decode path fixed and re-enabled
+
+Ruled `now` by Jeff Daily, and ruled to land on this branch rather than as a separate
+upstream contribution, with the scope caveat below recorded rather than acted on.
+`cbc3890`, on top of `9be60fc`, which it supersedes: the path is repaired instead of
+disabled, so `kSingleBlockPathIsCorrect` is gone.
+
+### The fix
+
+Three changes, following the root-cause section above:
+
+1. `decode_attn.cuh` -- the chunk length asks `cur_page_indptr_end == last_indptr`
+   instead of `batch_idx == gridDim.x - 1`.
+2. `decode_page.cuh` -- `protective_get_k_ptr_heads` asks `page_iter == last_indptr - 1`
+   instead of the block index. This was the unnamed second defect.
+3. `decode_handler.cuh` -- `BeginForward` publishes an indptr one page longer when it
+   does not partition, and the dispatch installs it, so the single block actually spans
+   the appended trailing page. Without this the first two changes are inert, because the
+   page is simply not in the block's range.
+
+(1) and (2) pick out the same block and page as before whenever the range is
+partitioned, so the split shape is untouched by construction.
+
+### Evidence
+
+The launch-shape decision was instrumented to prove the repaired path is the one
+running here rather than inferring it from a green suite:
+
+```
+QUESTPATH bs=1 kvh=32 max_grid=20 -> SINGLE
+```
+
+32 >= 20, so gfx1151's 20 CUs select the single-block shape, as the CU table above
+predicts. The instrumentation was removed before committing.
+
+| run | result |
+|---|---|
+| four in-scope suites, single-block shape (what this host takes) | **121 passed** |
+| same suites with the split shape forced, to check (1) and (2) are no-ops there | **121 passed** |
+| `kv_len` sweep 17..1541 | peak abs diff **2.4e-4**, std ratio **1.000** at every length, tolerance 5e-3 |
+
+The forced-split run matters because gfx1100 and gfx90a take that shape: it is direct
+evidence here that the two retargeted tests do not disturb them, rather than a claim
+for them to discover.
+
+### Scope caveat, recorded and not acted on
+
+Nothing in this change is HIP-specific. `paged_kv_t`, the scalar `last_page_len`, the
+manual append and both `gridDim.x - 1` tests are upstream code that the CUDA path
+compiles identically, and the selecting condition is reachable on a low-SM NVIDIA card.
+Landing it here means the branch carries an upstream fix that changes NVIDIA behaviour.
+That was put to Jeff Daily with the alternative of a separate branch cut from upstream
+master, and landing it here was the decision. It follows that
+`quest-single-block-disable-changes-cuda` is answered by repair rather than by a HIP
+guard: there is no disable left to guard, and the path is now correct on both backends.
+
+The CUDA no-regression gate is still owed at this head and is not available on this
+host (no CUDA toolkit); it is recorded `cuda-not-validated` at the previous head for a
+RAFT branch-24.02 `CUDA::nvToolsExt` wall, which is a host limitation rather than a
+property of this change.
+
+### Integrity
+
+`git -C projects/Quest/src status --porcelain` clean at `cbc3890`; the only fork change
+this round is that commit.
