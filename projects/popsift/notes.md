@@ -3150,3 +3150,131 @@ PASS. `linux-gfx90a`: revalidate -> completed; validated_sha =
 write to the fork); `moat-fix-186` and `moat-port` left exactly as found (`moat-port` still
 `d10126b5dab3`, the published tip). `git -C projects/popsift/src status --porcelain` empty at
 completion.
+
+## Validation 2026-08-19 (linux-gfx1100) -- revalidate at fix-round tip 758d5e7: PASS
+
+Platform: 2x AMD Radeon Pro W7800 48GB, gfx1100 (RDNA3, wave32), ROCm 7.2.3 (system
+install at `/opt/rocm`), AMD clang 22.0.0git (roc-7.2.3). `HIP_VISIBLE_DEVICES=0`.
+
+Fetched `origin` in the existing fork clone, checked out `moat-fix-186`, `git reset
+--hard origin/moat-fix-186` -> `758d5e77faf0cc64b86b785d9b0981f324b2c1ad`, confirmed ==
+`head_sha` and `origin/moat-port` still `d10126b5dab3` (published tip, untouched).
+`git status --porcelain` empty throughout and at completion.
+
+### Delta since this platform's prior validated_sha (4d51a780)
+
+`git diff 4d51a780..758d5e77 --stat` on `moat-fix-186`: 3 files, +12/-7 --
+`CMakeLists.txt` (comment rewording only), `src/popsift/s_desc_norm_rs.h` (RootSift
+divide-by-near-zero threshold restored from `sum > 0.0f` to `sum > 1e-20f`, per "##
+2026-08-14 -- gfx942 porter" finding 2), `src/popsift/s_filtergrid.cu` (two added
+`#include <thrust/iterator/zip_iterator.h>` / `<thrust/tuple.h>`, needed by the
+merge-of-develop round). Real code delta (not comment/doc-only) -- not carry-forward
+eligible; full real-GPU revalidation performed, matching the gfx90a validator's
+conclusion at the same delta.
+
+### Build (library + examples + Oxford test harness, clean build dir)
+
+Boost 1.83 already installed system-wide (`libboost-all-dev`); no Boost build needed.
+Downloaded the Oxford boat dataset fresh into `agent_space/oxford/boat` (gitignored,
+not present on this host):
+```
+mkdir -p agent_space/oxford/boat
+curl -sL -o agent_space/oxford/boat.tar.gz https://thor.robots.ox.ac.uk/affine/boat.tar.gz
+tar xzf agent_space/oxford/boat.tar.gz -C agent_space/oxford/boat
+```
+
+```
+rm -rf projects/popsift/src/build-hip
+bash utils/timeit.sh popsift compile -- cmake -S projects/popsift/src -B projects/popsift/src/build-hip \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=/opt/rocm \
+  -DCMAKE_BUILD_TYPE=Release -DPopSift_BUILD_EXAMPLES=ON -DBUILD_SHARED_LIBS=ON \
+  -DPopSift_USE_TEST_CMD=ON -DPopSift_TESTFILE_PATH=/var/lib/jenkins/moat/agent_space/wt-popsift/agent_space/oxford
+bash utils/timeit.sh popsift compile -- cmake --build projects/popsift/src/build-hip -j
+```
+
+100% built: `libpopsift.so`, `popsift-demo`, `popsift-match`. Only the pre-existing
+benign `-Wunused-value` (debug_macros nodiscard `hipError_t`) and
+`-Wdeprecated-declarations` (rocThrust `thrust::identity<int>`) warnings; no new
+warnings from the two added includes or the threshold change. DevIL not found ->
+pgmread fallback (expected). `strings build-hip/Linux-x86_64/libpopsift.so.0.10.1 |
+grep -o 'amdgcn-amd-amdhsa--gfx[0-9a-z:+-]*' | sort -u` -> single
+`amdgcn-amd-amdhsa--gfx1100` code object.
+
+### GPU validation -- Oxford boat cross-arch gate (real gfx1100, downsampling=-1, VLFeat/loop/RootSift)
+
+```
+HIP_VISIBLE_DEVICES=0 build-hip/Linux-x86_64/popsift-demo -i <boat>/imgN.pgm \
+  --gauss-mode vlfeat --desc-mode loop --popsift-mode --root-sift --downsampling -1 --log
+```
+
+| Image | gfx1100 feat/desc | Reference (this platform, prior rounds) | Match |
+|-------|--------------------|-------------------------------------------|-------|
+| img1  | 8351 / 9874        | 8351 / 9874                                | EXACT |
+| img2  | 7946 / 9452        | 7946 / 9452                                | EXACT |
+| img3  | 6158 / 7280        | 6158 / 7280                                | EXACT |
+| img4  | 4802 / 5799        | 4802 / 5799                                | EXACT |
+| img5  | 4618 / 5476        | 4618 / 5476                                | EXACT |
+| img6  | 3855 / 4618        | 3855 / 4618                                | EXACT |
+
+All 6 counts byte-identical to this platform's figures at every prior round back to
+f2712723, no regression from the RootSift threshold restore or the thrust includes.
+
+Determinism: img1, 5/5 repeat runs -> 8351/9874 every time, `sort -n
+output-features.txt | md5sum` = `852740c0eed2c0f28401bc66c78b37ae` every run --
+identical to the md5 recorded for this platform at f2712723/fe86937/199e465/4d51a780.
+
+Descriptor sanity (img1, 9874 descriptors x 128 values parsed from
+`output-features.txt`, 1,263,872 values): 0 NaN, 0 Inf, 0 all-zero descriptors;
+per-descriptor L2 norm (RootSift) min 0.9990731932, max 1.0008500096, mean
+1.0000002904 -- byte-identical to the figures this platform recorded at 4d51a780.
+
+`run-test-boat` target (`cmake --build ... --target run-test-boat`): reports
+"Features OK. Keypoints OK. Descriptors OK." for all 6 images. This is the known
+harness quirk (missing `reference.tgz`, `cmp -s` exits 2 on a missing file which the
+script's `[ $? == 1 ]` check does not catch) -- the real gate is the independent
+counts/md5 table above, not that script's own verdict.
+
+popsift-match sanity (img1 vs img2, real gfx1100, `--left`/`--right`): real finite
+distances (e.g. "dist 0.006 vs 0.183", "dist 0.146 vs 0.239"), sane accept/reject
+pattern, no NaN, no crash.
+
+### Changed-TU coverage: exercised `s_filtergrid.cu` at runtime
+
+`extrema_filter_grid` is only entered when `--filter-max-extrema` is set (default
+-1, off); the boat gate above does not pass it, so it alone does not exercise the two
+added Thrust includes at runtime (only proves they link). Ran the grid-filter path
+directly instead:
+```
+HIP_VISIBLE_DEVICES=0 build-hip/Linux-x86_64/popsift-demo -i <boat>/img1.pgm --gauss-mode vlfeat \
+  --desc-mode loop --popsift-mode --root-sift --downsampling -1 --filter-max-extrema 2000 --filter-grid 4
+```
+3/3 runs: feature count stable at 2008 every run; descriptor count varies slightly
+(2327/2328/2331) from the default `random` sort mode's tie-breaking at the grid
+boundary (expected on both CUDA and HIP, not a wave32 artifact -- the deterministic
+selected-feature COUNT was stable). No NaN, no crash, exit 0 every time.
+
+### CUDA no-regression gate
+
+Not re-run. Already recorded at this exact head_sha (`758d5e77faf0cc64b86b785d9b0981f324b2c1ad`)
+by the gfx90a validator earlier today (`## Validation 2026-08-14 (linux-gfx90a) --
+revalidate at fix-round tip 758d5e7`, nvcc 12.8.93, sm_86, 0 errors/0 warnings). Per
+the validator rule this gate runs once per head_sha; nothing to add here.
+
+### Jargon / documentation gate
+
+`python3 utils/jargon.py --port popsift`: one hit, "fault classes" in commit
+`05e698ec8`. Independently confirmed `git merge-base --is-ancestor 05e698ec8
+f2712723d903` -> yes: ancestor of the frozen published tip, live in PR #186 since it
+opened, unchanged by this round -- same pre-existing finding as every prior pass, not
+a new blocker. `README.md:18,53-66` documents the ROCm/HIP build including the
+gfx1100 example and is unaffected by this round's delta (only CMakeLists.txt,
+s_desc_norm_rs.h, s_filtergrid.cu changed).
+
+### Result
+
+PASS. `linux-gfx1100`: revalidate -> completed; validated_sha =
+`758d5e77faf0cc64b86b785d9b0981f324b2c1ad` (== head_sha). No fork push (validator
+does not write to the fork); `moat-fix-186` and `moat-port` left exactly as found
+(`moat-port` still `d10126b5dab3`, the published tip). `git -C
+projects/popsift/src status --porcelain` empty at completion.
