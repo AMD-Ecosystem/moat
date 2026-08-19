@@ -6369,3 +6369,108 @@ change. The three Linux platforms were left alone; they were already behind head
 
 `git -C projects/HEonGPU/src status --porcelain` empty after both commits and the push.
 No GitHub write, no PR opened.
+
+## Review 2026-08-19 (reviewer, linux-gfx1100) -- documentation round, delta 0cbaa0b..3c88f16
+
+Scope: `git diff 0cbaa0b..3c88f16` -- `README.md`, `docs/advanced_topics.rst`,
+`src/include/heongpu/kernel/defines.h`, comments and prose only, no code, no build file.
+The port's function is unchanged since `0cbaa0b`, which is reviewed and validated on all
+four platforms, so the code and build system were not re-reviewed; every finding below is
+about a statement the round makes to an upstream reader.
+
+### 1. `docs/advanced_topics.rst:18` states a host pool default that no code path produces
+
+`dab3a09` rewrites the bullet to say "the pinned host memory pool is initialized to 30% of
+RAM". The default initial host pool is a hardcoded 100 MB, not 30% of anything:
+
+- `src/lib/util/memorypool.cu:181-187`. When neither `initial_host_bytes` nor
+  `initial_host_fraction` is set, the size is `roundup_256(104857600)`.
+- `MemoryPoolConfig::Defaults()` (`src/lib/util/memorypool.cu:37-44`) sets
+  `initial_device_fraction`, `max_device_fraction` and `max_host_fraction`, and
+  deliberately does not set either host initial field, so the default path is always the
+  100 MB branch.
+- `initial_host_memorypool_size` is dead. Its only reference is
+  `src/lib/util/memorypool.cu:193`, as the `default_fraction` argument of
+  `resolve_pool_size`, in the `else` branch that is entered only when bytes or fraction
+  already has a value -- and `resolve_pool_size` consults `default_fraction` only when
+  neither has one. No input reaches it.
+- Upstream's own `README.md:315` already documents this correctly: "Initial size
+  (default): 100 MB when no runtime config is provided", with no percentage.
+
+So the commit whose title is "Fix stale memory pool percentages" replaces one false figure
+(10%) with another (30%), and puts `docs/advanced_topics.rst` in direct contradiction with
+`README.md:315` in the same tree. Fix the bullet to state the 100 MB default for the
+initial host pool (max host stays 40%, which `Defaults()` really does set), and reword
+`src/include/heongpu/kernel/defines.h:37` so the comment does not assert a runtime effect
+the constant no longer has -- `// unused; the default initial host pool is 100 MB` is
+honest and still touches no value. The device figures (90/95) and the max host figure (40)
+are correct as changed and need no further work.
+
+### 2. The pool is sized from free device memory, not from total, and the new prose says total
+
+`get_decive_avaliable_memory()` returns `free_mem`
+(`src/lib/util/memorypool.cu:85-92`, `return free_mem; // total_mem`), and that value is
+what `initialize()` multiplies the fractions by (`:111`, `:215-222`). Two new statements
+describe it as the whole of memory instead:
+
+- `docs/advanced_topics.rst:20`: "a pool expressed as a fraction of device memory reserves
+  that fraction of everything the machine has", and the 72 GB -> "roughly 65 GB"
+  arithmetic that follows from it.
+- `README.md:196`: "takes 90% of the memory the runtime reports, and that is 90% of the
+  whole machine".
+
+The `hipMemGetInfo` clause itself is accurate; the consequence drawn from it is not. On a
+shared-memory part with work already resident the pool is 90% of what is *free*, which is
+also what upstream's `README.md:312` says ("90% of available GPU memory") -- the new text
+contradicts the project's existing wording as well as its code, in the one paragraph a
+maintainer will check against `memorypool.cu`. Say "free" in both places and attach the
+65 GB figure to a machine with ~72 GB free. The guidance itself (<=10% or a fixed 1-2 GB,
+50% is not a middle ground) is unaffected and does not need restating.
+
+### 3. The deferral this round implements is still unruled in the record
+
+`projects/HEonGPU/deferred.json` has `heongpu-hipmm-pool-slowdown-gfx1151` with
+`decided: null`, so it is still listed by `deferred.py pending`, while the round-15 entry
+at `notes.md:6306` opens "Jeff Daily's ruling: document only, recommend <=0.1 on an APU,
+keep the `0.9f` default exactly as it is" and ships that ruling. Either record the ruling
+as given, verbatim and with the person as `by` (the way
+`heongpu-rmm-stub-vs-hipmm` and `hipmm-rapids-logger-windows-exclude-libs` are recorded),
+or correct the notes claim. Do not decide the item -- that is not the porter's call and it
+is not mine; this is only about the record matching what happened.
+
+### 4. Minor: the round-15 provenance claim is inaccurate for one of the two files
+
+`notes.md:6312-6314` says `git diff origin/main..moat-port` "was empty for both files
+before this commit". True for `src/include/heongpu/kernel/defines.h`; not true for
+`docs/advanced_topics.rst`, which the port had already extended by 22 lines at `0cbaa0b`
+(the downstream-CMake HIP block after `:51`). The bullet at `:18` was untouched, which is
+what the argument actually needs, so the conclusion holds -- but the record should say
+that rather than something a `git diff --stat` refutes.
+
+### Checked and not reported
+
+- Commit hygiene is clean: titles 57 and 61 chars with `[ROCm]`, no trailers
+  (`git log -2 --format='%(trailers)'` empty), AI-assistance disclosure and a fenced Test
+  Plan in both bodies, no non-ASCII added by the diff, `jargon.py --port HEonGPU` clean,
+  one line per paragraph in both the prose and the commit bodies.
+- The cross-references resolve: "Memory Pool Configuration (Runtime)" is `README.md:320`,
+  below the inserted paragraph at `:196`; `MemoryPoolConfig::initial_device_fraction` and
+  `initial_device_bytes` exist (`src/include/heongpu/util/memorypool.cuh:43-46`);
+  `context->generate(pool_config)` is the documented entry point (`README.md:337-341`) and
+  `example/basic/3_basic_memorypool_config.cpp` does demonstrate it.
+- The four constants are byte-identical before and after in
+  `src/include/heongpu/kernel/defines.h:32-38`; the stale comments really are upstream's
+  (`git show origin/main:src/include/heongpu/kernel/defines.h`), so bundling the correction
+  is scope the round earns rather than drive-by refactoring, and keeping it as its own
+  commit is right.
+- Carry-forward of windows-gfx1151 from `0cbaa0b` to `3c88f16` is sound: the delta is
+  comment and prose only and cannot change a build artifact.
+- No fault-class re-review was needed or done; the delta contains no device code, no host
+  code and no build file, and `0cbaa0b` is validated on all four platforms.
+
+### Verdict
+
+changes-requested. Items 1 and 2 are wrong statements about the maintainer's own code in
+text the maintainer will read on the PR; both are prose-only fixes in the same two files.
+Items 3 and 4 are record accuracy. Nothing here needs a rebuild or a revalidation -- the
+follow-up round should classify comment-only and inert again.
