@@ -6800,3 +6800,80 @@ the porter's notes:
 confirms is warranted. `linux-gfx90a` (`89cb862`), `linux-gfx942` and `linux-gfx1100`
 (`26d636f`) are behind head across the non-inert hipMM commits and genuinely need
 revalidation; that is not a finding against this round.
+
+## Validation 2026-08-19 (linux-gfx90a, MI250X, ROCm 7.2.1 pip SDK) -- completed
+
+Revalidation, `89cb862` -> `542ea1a` (four commits: `0cbaa0b` Windows-only static-link
+guard, `dab3a09`/`3c88f16`/`542ea1a` docs and a header comment). `python3 utils/moatlib.py
+classify HEonGPU 89cb862 542ea1a` -> `class=mixed arch_independent=False inert=False`
+(`defines.h` comment-only, `thirdparty/CMakeLists.txt` mixed by token count), so this did
+not auto-carry and reached the validator as `revalidate`.
+
+### Carry-forward attempt: binary-equivalence tool not usable on this host
+
+Built the project unmodified at both shas into separate trees with the recorded recipe
+(`git worktree add` at each sha, then the r23 CMake invocation) to try
+`utils/codeobj_diff.py` per the carry-forward shortcut:
+
+```
+git -C projects/HEonGPU/src worktree add agent_space/heongpu-gfx90a-old-src 89cb862
+git -C projects/HEonGPU/src worktree add agent_space/heongpu-gfx90a-new-src 542ea1a
+# both: cmake -S <tree> -B <build> -DUSE_HIP=ON -DCMAKE_BUILD_TYPE=Release
+#   -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON
+#   (wrapped: utils/timeit.sh HEonGPU compile -- ...); both rc=0, all targets built
+python3 utils/codeobj_diff.py agent_space/heongpu-gfx90a-r25-old/build agent_space/heongpu-gfx90a-r25-new/build
+```
+
+Failed before comparing anything: the tool hardcodes `ROCM = "/opt/rocm"` and this host's
+ROCm is the pip SDK (`_rocm_sdk_devel` under the conda env, same layout the compile
+recipe already uses for `clang++`), which has no `/opt/rocm` tree, so `llvm-nm` at the
+hardcoded path raised `FileNotFoundError`. Substituting the pip SDK's `llvm-nm`/
+`llvm-objdump` (both present under `_rocm_sdk_devel/lib/llvm/bin/`) would cover half the
+tool, but `roc-obj-ls` has no equivalent binary in this SDK layout -- its python entry
+point (`rocm_sdk_core._cli.roc_obj_ls`) does not exist in this build
+(`ImportError: cannot import name 'roc_obj_ls'`), and there is no standalone
+`roc-obj-ls` script shipped, only `clang-offload-bundler`, which is a different
+interface than what `_device_isa()` expects (offset/size lines it regexes out of
+`roc-obj-ls` output). Not chased further: reimplementing `roc-obj-ls` is out of scope
+for a revalidation, and the tool's own contract is "any other verdict, or if you cannot
+build both shas, do the normal full real-GPU revalidation" -- this is that case (built
+both shas fine; the comparison tool itself is not usable on a pip-SDK ROCm host). No
+edit was made to `utils/codeobj_diff.py` or any project file; both worktrees were later
+removed (`git worktree remove --force`), leaving `projects/HEonGPU/src` at `542ea1a`
+with a clean `git status --porcelain`.
+
+This is recorded as a gap for `codeobj_diff.py` itself (control-plane tooling, not a
+HEonGPU finding): it assumes a standard `/opt/rocm` install and has no pip-SDK/env
+override, so the binary-equivalence carry-forward shortcut is unavailable on any host
+using the pip SDK layout (the same layout this project's own recorded build recipe
+uses). Worth a future control-plane fix (env var or PATH-based tool discovery); not
+this validator's call to make.
+
+### Full real-GPU revalidation (fallback)
+
+Fresh build already in hand at `542ea1a` (`agent_space/heongpu-gfx90a-r25-new/build`,
+same recipe as above, `utils/timeit.sh HEonGPU compile`). MI250X (gfx90a, wave64), ROCm
+7.2.1 pip SDK.
+
+```
+HIP_VISIBLE_DEVICES=0 ctest --output-on-failure   # (utils/timeit.sh HEonGPU test -- ...)
+# 100% tests passed, 0 tests failed out of 20; ~50s total
+HIP_VISIBLE_DEVICES=0 ./bin/examples/basic/1_basic_bfv   # exit=0, correct BFV output
+```
+
+CUDA no-regression gate re-run at this exact head (not skipped: the last recorded CUDA
+gate was at `89cb862`, and this run is a full revalidation, not a carried-forward one).
+Recipe unchanged from the round-14 recipe (`nvcc` 12.8, host `gcc-13`/`g++-13`,
+`-DCMAKE_CUDA_ARCHITECTURES=80` pinned, `-DUSE_HIP=OFF`), built at `542ea1a` into a
+fresh tree (`agent_space/heongpu-cuda-gate-542ea1a/build`, `utils/timeit.sh HEonGPU
+cuda-compile -- ...`): configure and build rc=0, zero `error:` lines, 57 executables
+linked. Confirms `0cbaa0b`'s `if(USE_HIP AND MSVC)` guard is inert here as expected
+(neither condition true on this Linux/CUDA build) and the doc/comment commits touch no
+compiled CUDA file.
+
+`python3 utils/jargon.py --port HEonGPU` -> clean. Documentation: this delta's own
+subject is documenting the ROCm build's memory-pool behavior (`README.md`,
+`docs/advanced_topics.rst`), already reviewed in the round above. Fork tree
+(`projects/HEonGPU/src`) clean at `542ea1a` throughout and after.
+
+linux-gfx90a: **completed** at `542ea1a127e7b963f92ca7a6c88d96cbbfbef439`.
