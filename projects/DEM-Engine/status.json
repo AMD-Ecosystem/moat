@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T04:44:12Z",
-  "updated_at": "2026-08-07T07:04:30Z",
+  "updated_at": "2026-08-17T18:40:45Z",
   "head_sha": "02fb43f2",
   "depends_on": [],
   "pr_url": "https://github.com/projectchrono/DEM-Engine/pull/69",
@@ -15,7 +15,7 @@
   "pr_opened_at": "2026-06-19T23:44:19Z",
   "porting": null,
   "waivers": {},
-  "pr_state": "open",
+  "pr_state": "merged",
   "license_spdx": "BSD-3-Clause",
   "upstream_repo_id": 360655520,
   "stage": "review-passed",
@@ -135,5 +135,6 @@
       }
     }
   },
-  "published_sha": "02fb43f23084b4da48ab2ccefb173dc33b51c3f1"
+  "published_sha": "02fb43f23084b4da48ab2ccefb173dc33b51c3f1",
+  "pr_merged_at": "2026-08-17T18:40:45Z"
 }
