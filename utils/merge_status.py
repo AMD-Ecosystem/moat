@@ -29,9 +29,10 @@ would lose real information:
   RANKED   pr_state, which advances through a lifecycle. See _pr_rank.
 
   RESET    a field cleared by REMOVING it, where absence is the new value rather
-           than a writer who never had it. `set-hold off` pops on_hold, and the
-           fork-write lock releases the same way, so these are taken from the
-           newer record whether or not it still has them.
+           than a writer who never had it. `set-hold off` pops on_hold, so it is
+           taken from the newer record whether or not it still has it. The
+           fork-write lock used to release this way too; it now releases through
+           an explicit `porting_released` marker instead -- see _merge_lock.
 
 Everything else is recency: for those the current value is the point, and a key
 missing from one side means that writer never had it rather than deleted it.
@@ -109,18 +110,30 @@ def _merge_lock(a, b):
     mutual exclusion. Without it the guard in `actionable` only ever sees a lock
     that agrees with whoever asked last.
 
-    One side holding no lock is ambiguous: a release, or a writer that never had
-    one. A record written AFTER the lock was taken and not carrying it is a
-    release; one written before simply never saw it."""
-    la, lb = a.get("porting"), b.get("porting")
+    One side holding no lock used to be read through timestamp inference -- a
+    lock-less record newer than the lock's `since` counted as a release -- and a
+    record written CONCURRENTLY with the acquisition satisfies that test without
+    meaning it. On 2026-08-13 the inference erased two live locks (rmcl,
+    LC-framework) and two hosts ran the same round. Releases now leave an
+    explicit marker: `porting_released`, written by moatlib naming the ended
+    acquisition's arch and `since`. A lock dies here only when a marker on
+    EITHER side matches it exactly; an unmatched lock survives no matter how new
+    the lock-less record is. A release written by tooling that predates the
+    marker leaves the lock held until the holder's next transition or a person's
+    `port-lock --release` -- failing closed, where the inference failed open."""
+    rel = [r for r in (a.get("porting_released"), b.get("porting_released")) if r]
+
+    def _live(lock):
+        return lock and not any(r.get("arch") == lock.get("arch") and
+                                r.get("since") == lock.get("since") for r in rel)
+
+    la = a.get("porting") if _live(a.get("porting")) else None
+    lb = b.get("porting") if _live(b.get("porting")) else None
     if la and lb:
         if la.get("arch") == lb.get("arch"):
             return lb if _b_is_later(la.get("since"), lb.get("since")) else la
         return min((la, lb), key=lambda l: (l.get("since") or "", l.get("arch") or ""))
-    lock, other = (la, b) if la else (lb, a)
-    if not lock:
-        return None
-    return None if (other.get("updated_at") or "") > (lock.get("since") or "") else lock
+    return la or lb
 
 
 def _merge_intake(a, b, newer):
@@ -165,6 +178,14 @@ def merge(a, b):
             out.pop("porting", None)
         else:
             out["porting"] = lock
+    # The newest release marker wins regardless of which record is newer overall:
+    # a marker is an event, and the older record can carry the later release. The
+    # loser only ever named an acquisition that is already gone from both sides.
+    ra, rb = a.get("porting_released"), b.get("porting_released")
+    if ra or rb:
+        out["porting_released"] = \
+            rb if not ra else ra if not rb else \
+            rb if _b_is_later(ra.get("at"), rb.get("at")) else ra
 
     for k in UNION:
         if k in a or k in b:
