@@ -5,7 +5,7 @@ MOAT (Migration Orchestration via Automated Translation) is an AI-agent-driven e
 # Start here
 
 1. Work on `port/<name>` in this repository, never `main`. The branch holds `projects/<name>/` while work is in flight and its existence is the project claim. `MOAT_ALLOW_TRUNK=1` is only for control-plane work such as tooling or documentation.
-2. Run `bash utils/orient.sh` or invoke the `port-next` skill. It synchronizes state, detects the host platform, performs standing upkeep, and prints the next project and role. If no project is local, `python3 utils/moatlib.py fleet <platform>` names actionable branches.
+2. Run `bash utils/orient.sh` or invoke the `port-next` skill. It synchronizes state, performs standing upkeep (deliberately before platform detection, so a host with no working GPU still does it), detects the host platform, and prints the next project and role. If no project is local, `python3 utils/moatlib.py fleet <platform>` names actionable branches.
 3. Dispatch exactly the role reported by the selector: intake, planner, porter, reviewer, or validator. The role must read its canonical definition in `.claude/agents/<role>.md`, this file, the project records, and the `cuda-to-rocm` skill. State transitions gate every handoff; never skip one.
 4. Work autonomously inside the boundary below. Stop at a human decision or a genuine blocker.
 
@@ -20,7 +20,7 @@ MOAT (Migration Orchestration via Automated Translation) is an AI-agent-driven e
 - **validator** builds and runs real tests on one AMD platform and records evidence tied to the exact fork commit.
 - Work after validation belongs to the `moat-checkup` skill because each maintainer interaction ends at a person.
 
-`projects/<name>/status.json` is the source of truth. Use `utils/moatlib.py`; do not hand-edit state, locks, waivers, approvals, or dispositions. A failure and a pass each describe one commit. When `head_sha` advances, `moatlib` derives whether prior evidence still applies and dispatches revalidation when needed.
+`projects/<name>/status.json` is the source of truth. Use `utils/moatlib.py`; do not hand-edit state, locks, waivers, approvals, or dispositions. A failure and a pass each describe one commit. When `head_sha` advances, `moatlib` derives whether prior evidence still applies and dispatches revalidation when needed. The one shortcut is `squash-carry-forward`, for a PR-prep squash whose tree is identical to the validated head: it carries validated platforms forward and refuses any squash that changed content. A person may park a whole project with `set-hold`; a held project is skipped by the selector on every platform, with no state touched, until `set-hold off` resumes it.
 
 Coverage is expressed as the required gates in `config/arches.toml`, currently `wave64`, `wave32`, and `windows`. Any `<os>-<gfx>` platform with a known wavefront family may work. A gate is satisfied by any platform carrying that property that completed validation at the current `head_sha`. Extra platforms are additive evidence. Only a configured waivable gate may be waived, and only after a maintainer approves it; an agent may only suggest one.
 
@@ -31,9 +31,9 @@ There is no lead platform. The shared `porting` record serializes the exclusive 
 - `port/<name>` in this MOAT repository holds the project's control-plane records while work is outstanding. Completed records reach `main` through review.
 - `moat-port` in `AMD-Ecosystem/<project>` holds the actual source port. The fork default branch remains an unmodified upstream mirror.
 
-Once the upstream PR is open, `moat-port` is upstream-visible and frozen: any push to it changes the PR in front of the maintainer. Maintainer-requested fixes stage on `moat-fix-<pr#>` (`moatlib.py fix-branch`), cut from the published tip and never rebased; the normal porter/reviewer/validator cycle runs against the staging tip, `head_sha` follows it, and `published_sha` records what the PR shows. A fix round means the project is in flight again, so `fix-branch` also re-homes a trunk-resident folder onto `port/<name>` before its first write. Only `upstream.py --merge-fix --apply` moves `moat-port`, after a person approves the delta on a fork review PR (`upstream.py --fix-review`). A pre-push hook in each fork clone (`moatlib.py protect-fork`, installed by orient) enforces the freeze, and refuses the push when it cannot determine the PR state rather than assuming there is none.
+Once the upstream PR is open, `moat-port` is upstream-visible and frozen: any push to it changes the PR in front of the maintainer. Maintainer-requested fixes stage on `moat-fix-<pr#>` (`moatlib.py fix-branch`), cut from the published tip and never rebased; the normal porter/reviewer/validator cycle runs against the staging tip, `head_sha` follows it, and `published_sha` records what the PR shows. A fix round means the project is in flight again, so `fix-branch` also re-homes a trunk-resident folder onto `port/<name>` before its first write. Only `upstream.py --merge-fix --apply` moves `moat-port`, after a person approves the delta on a fork review PR (`upstream.py --fix-review`). A pre-push hook in each fork clone (`moatlib.py protect-fork`, installed by orient) enforces the freeze, and refuses the push when it cannot determine the PR state rather than assuming there is none. The round's bookkeeping has its own subcommands: `fix-ready` checks the staged round's gates, `set-fix-review-pr` records where the delta is approved, `pr-state` reports the recorded PR state (the pre-push hook consults it), and `set-fix-merged` records an already-pushed merge, for recovery only.
 
-Use `moatlib.project_record`, `all_projects`, `fleet`, or the corresponding CLI commands when asking what MOAT knows. A project folder may live on another ref, so scanning the checked-out `projects/` directory alone can produce the opposite answer.
+Use `moatlib.project_record`, `all_projects`, or `fleet` from Python, or the CLI equivalents `show <name>`, `projects`, and `fleet <platform>`, when asking what MOAT knows; `pr-candidates` lists the ports whose upstream PR is ready to open, instead of scanning raw state. A project folder may live on another ref, so scanning the checked-out `projects/` directory alone can produce the opposite answer.
 
 # Human decisions and external writes
 
@@ -66,7 +66,7 @@ For the full public-contribution and approval model, read `CONTRIBUTING.md` and 
 
 This repository is shared by every host and harness. Pull before deciding and push each state transition promptly. `orient.sh` pulls the current project branch and merges relevant control-plane changes from the trunk. Route state and artifact writes through `moatlib`; prefer `python3 utils/moatlib.py commit-project <name> "<message>"`, which stages the project's status, plan, notes, surface, deferrals, and telemetry together and uses the synchronized commit/pull/push path. Do not implement a second synchronization path in a harness adapter.
 
-`status.json` has the `moat-status` semantic merge driver; notes and telemetry use union merging. Run `bash utils/setup_git.sh` in a fresh clone to register them. If a push races, let `moatlib` retry its bounded synchronization. Do not resolve shared state by discarding another host's evidence.
+`status.json` has the `moat-status` semantic merge driver; notes and telemetry use union merging, a git built-in wired in `.gitattributes`. Run `bash utils/setup_git.sh` in a fresh clone to register the driver; `orient.sh` does so on every run. If a push races, let `moatlib` retry its bounded synchronization. Do not resolve shared state by discarding another host's evidence.
 
 # Telemetry and committing
 
@@ -84,11 +84,11 @@ Use `agent_space/` for temporary scripts and experiments. It is gitignored; do n
 
 Budget roughly 60 minutes or 300k tokens per attempt. Never run an identical failing command more than twice; a third attempt must test a different hypothesis or stop. Classify the error before rebuilding. On Windows, DLL-load failures, exit 127, and a first-launch `hipErrorLaunchFailure (719)` are usually environment failures, not evidence that the port is wrong.
 
-Always leave partial value: record what built, what passed, the exact failure, and relevant magnitudes. After the configured maximum attempts, set a concrete per-platform block and move on rather than thrashing. A source-wide `not-portable` verdict still belongs to a person.
+Always leave partial value: record what built, what passed, the exact failure, and relevant magnitudes. These budgets are advisory judgment aids -- nothing in the tooling counts attempts for you. After about three failed cycles, set a concrete per-platform block and move on rather than thrashing. A source-wide `not-portable` verdict still belongs to a person.
 
 # Integrity gate
 
-Every source or build edit needed for validation must be committed to the fork before marking a platform completed. Check `git -C projects/<name>/src status --porcelain`; untracked build output is acceptable, modified tracked source/build files are not. `pr_ready` and `audit-clean` backstop this only on hosts carrying a local clone.
+Every source or build edit needed for validation must be committed to the fork before marking a platform completed. Check `git -C projects/<name>/src status --porcelain`; untracked build output is acceptable, modified tracked files are not. The tooling backstops (`pr_ready`, `audit-clean`, and a warning when recording `completed`) match a source/build name-and-suffix list, so they can stay quiet on an unusual filename; treat any modified tracked file as a gap, and remember the backstops run only on hosts carrying a local clone.
 
 # PR review
 
@@ -124,15 +124,15 @@ The workflow has one canonical copy and thin discovery adapters:
 - `.codex/config.toml` contains only portable checked-in Codex settings. No generated absolute paths or restart-after-bootstrap step is allowed.
 - Claude-specific tool and model metadata stays in `.claude`; Codex-specific sandbox and model metadata stays in `.codex`. Shared role behavior belongs in the canonical Markdown body.
 
-`python3 utils/check.py` verifies adapter coverage, configuration syntax, the Claude import, and this file's size. Never fix drift by copying the canonical body into an adapter.
+`python3 utils/check.py` verifies adapter coverage in both directions -- including exact frontmatter agreement and each Codex role's sandbox mode -- plus configuration syntax, the Claude import, and this file's size. Never fix drift by copying the canonical body into an adapter.
 
 # Project intake and dependencies
 
 Review discovery candidates with `utils/triage.py review`. An agent may recommend a disposition but only a person's recorded decision may write one. Adopt with `utils/moatlib.py scaffold <owner/repo>` after the branch claim is established; `scaffold` refuses existing claims, dispositions, and opt-outs.
 
-Hard build dependencies live in `status.json.depends_on`; optional module dependencies belong in `notes.md`. The selector waits until every hard dependency is completed or dispositioned as already supported/ported elsewhere. An unknown dependency needs an intake request; a doomed one requires rescoping or a human disposition rather than a doomed build attempt. Use `moatlib.py deps`, `dep-blocked`, and `DEPENDENCIES.md`. A dependency provider must document `## Install as a dependency` in its notes.
+Hard build dependencies live in `status.json.depends_on`; optional module dependencies belong in `notes.md`. The selector waits until every hard dependency is completed or dispositioned as already supported/ported elsewhere. An unknown dependency needs an intake request; a doomed one requires rescoping or a human disposition rather than a doomed build attempt. Use `moatlib.py deps`, `dep-blocked`, and `DEPENDENCIES.md`. A dependency provider must document `## Install as a dependency` in its notes; `moatlib.py dep-doc-gaps` lists the providers still missing that section.
 
-Deferred work belongs with the project that deferred it: use `utils/deferred.py add --project <name>` so it lands in `projects/<name>/deferred.json` and is reviewed with that port. The global `data/deferred.json` is only for genuinely unscoped work or a removed project. A person, never an agent, rules `defer` versus `now`; `utils/deferred.py pending` lists cases awaiting that decision. A local report in `findings/` is not durable publication—register it and bring it to the responsible person rather than leaving it invisible in a checkout.
+Deferred work belongs with the project that deferred it: use `utils/deferred.py add <kind> --project <name>` so it lands in `projects/<name>/deferred.json` and is reviewed with that port. The global `data/deferred.json` is only for genuinely unscoped work or a removed project. A person, never an agent, rules `defer` versus `now`; `utils/deferred.py pending` lists cases awaiting that decision. A local report in `findings/` is not durable publication—register it and bring it to the responsible person rather than leaving it invisible in a checkout.
 
 # Where to look
 
