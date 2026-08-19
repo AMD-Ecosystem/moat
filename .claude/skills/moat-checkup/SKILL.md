@@ -70,7 +70,8 @@ counts too, judged by its time against the branch tip. Do not ask them to also r
 copy of the body somewhere in this repo.
 
 Rejection is a command too, because the author's Request Changes button is greyed out
-exactly as Approve is: `/moat changes-requested` on a line by itself sends the port
+exactly as Approve is: `/moat changes-requested` on a line by itself (or
+`/moat request-changes`; both spellings are accepted) sends the port
 back to the porter and blocks publish until that person posts `/moat approve`. Only
 each author's latest command stands, a command quoted inside a code fence is ignored
 (the instructions comment quotes both), and an unrecognized `/moat` line from someone
@@ -219,7 +220,9 @@ has reviewed, revalidated, or approved it:
    title and body are NOT republished upstream, so say plainly what the maintainer
    asked, what changed, and what revalidated. A body section headed exactly
    `## Upstream reply` is the one upstream-visible part: approve it and it is posted
-   verbatim on the upstream PR after the merge. That section ends at the next `##`
+   verbatim on the upstream PR after the merge, behind a standing AI-disclosure line
+   the tool prepends (`REPLY_NOTE` in `utils/upstream.py`) -- do not write the
+   disclosure into the draft by hand. That section ends at the next `##`
    heading, so anything written for our own eyes goes after one.
 4. `/moat approve` on that PR, then `upstream.py --merge-fix --apply` re-checks the
    live approval and every gate, fast-forwards `moat-port` to exactly the approved
