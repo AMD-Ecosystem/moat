@@ -100,6 +100,22 @@ def with_submission_note(body):
     return body.rstrip() + "\n\n" + SUBMISSION_NOTE + "\n"
 
 
+REPLY_NOTE = "*Note: this reply was drafted by an AI assistant.*"
+
+
+def with_reply_note(reply):
+    """The reply as it will be posted upstream: the fix-round counterpart of
+    with_submission_note. A comment lands under a person's account, so it carries
+    the same disclosure a PR body does -- prepended at post time rather than
+    written into each draft, for the same reason SUBMISSION_NOTE is appended by
+    the tool: a standing obligation should not depend on every drafter
+    remembering it. Idempotent, so a draft that already leads with the note is
+    left alone."""
+    if reply.lstrip().startswith(REPLY_NOTE):
+        return reply
+    return REPLY_NOTE + "\n\n" + reply
+
+
 # GitHub PR state -> the project-level pr_state it implies. A closed PR says
 # nothing about whether the port itself is good, so it is reported for a human
 # rather than applied.
@@ -233,23 +249,32 @@ def attention(rows, quiet_weeks=6):
     GitHub is fine, and somebody is waiting on us. It reads and reports only; the
     reply is drafted and a person posts it.
 
-    Three ways a PR ends up here, in descending order of how much it is owed:
-    a maintainer asked for changes; a maintainer's comment is the last word in the
-    thread; or nobody has said anything for weeks and it may need a nudge from a
-    person who can find the right reviewer.
+    Four ways a PR ends up here, in descending order of how much it is owed: it
+    no longer merges into its base; a maintainer asked for changes; a
+    maintainer's comment is the last word in the thread; or nobody has said
+    anything for weeks and it may need a nudge from a person who can find the
+    right reviewer. The conflict case outranks the rest because it blocks the
+    merge outright and is invisible from every sha-comparing sweep: the base
+    moved, both records still describe their own branches truthfully, and only
+    GitHub's mergeability field knows the two no longer combine. UNKNOWN is
+    treated as quiet rather than reported -- GitHub computes the field lazily,
+    so the first poll after a push often has no answer yet and the next sweep
+    will.
     """
     import datetime
     out = []
     for r in rows:
         d = gh_json(["pr", "view", r["num"], "--repo", r["repo"], "--json",
-                     "state,reviewDecision,comments,updatedAt,title"])
+                     "state,reviewDecision,comments,updatedAt,title,mergeable"])
         if d is None or d.get("state") != "OPEN":
             continue
         comments = d.get("comments") or []
         last = comments[-1] if comments else None
         last_by = ((last or {}).get("author") or {}).get("login")
         why = None
-        if d.get("reviewDecision") == "CHANGES_REQUESTED":
+        if (d.get("mergeable") or "").upper() == "CONFLICTING":
+            why = "merge conflict with base"
+        elif d.get("reviewDecision") == "CHANGES_REQUESTED":
             why = "changes requested"
         elif last_by and last_by not in OURS and not _is_bot(last_by):
             why = f"last word is {last_by}'s"
@@ -267,11 +292,11 @@ def attention(rows, quiet_weeks=6):
 def report_attention(rows, today):
     found = attention(rows)
     print(f"upstream: {len(found)} of {len(rows)} recorded PR(s) need a person\n")
-    # Most owed first: an explicit request outranks an unanswered comment, which
-    # outranks silence.
-    rank = {"changes requested": 0}
+    # Most owed first: an unmergeable PR outranks an explicit request, which
+    # outranks an unanswered comment, which outranks silence.
+    rank = {"merge conflict with base": 0, "changes requested": 1}
     def key(r):
-        return (rank.get(r["why"], 1 if r["why"].startswith("last word") else 2), r["name"])
+        return (rank.get(r["why"], 2 if r["why"].startswith("last word") else 3), r["name"])
     for r in sorted(found, key=key):
         print(f"  {r['why']:24} {r['name']:26} {r['repo']}#{r['num']}")
         print(f"  {'':24} {r['url']}")
@@ -875,9 +900,9 @@ def fix_reply_of(body):
     """The reply text a fix review PR's body carries, or None.
 
     The section ENDS at the next heading of the same level or higher, not at the end
-    of the body. Everything it contains is posted verbatim in a stranger's
-    repository, so a `## Notes` written for our own eyes after the reply must not
-    travel with it. Fenced blocks are skipped when looking for that heading, the
+    of the body. Everything it contains is posted in a stranger's repository
+    (verbatim, behind the standing REPLY_NOTE disclosure line), so a `## Notes`
+    written for our own eyes after the reply must not travel with it. Fenced blocks are skipped when looking for that heading, the
     same way jargon.scan_text skips them: a reply that quotes a shell comment is
     quoting, not starting a new section."""
     out, collecting, in_fence = [], False, False
@@ -996,6 +1021,18 @@ def fix_review_rows():
             out.append({"name": name, "fork": fork, "fix": fix,
                         "problem": f"{fix['branch']} does not exist on the fork"})
             continue
+        # Catch a round that would conflict with the live base BEFORE anyone is
+        # asked to approve it. Only "conflict" blocks: a host with no clone
+        # reports unknown and stays quiet, the usual backstop pattern, because
+        # the merge gate re-runs this probe where the clone lives and refuses
+        # there on unknown as well as on conflict.
+        state, detail = base_conflict(name, d, tip["sha"])
+        if state == "conflict":
+            out.append({"name": name, "fork": fork, "fix": fix,
+                        "problem": f"the staged tip conflicts with the upstream "
+                                   f"base ({detail}) -- merge the base into "
+                                   f"{fix['branch']} and resolve it first"})
+            continue
         out.append({"name": name, "fork": fork, "fix": fix, "base": base,
                     "tip": tip["sha"], "problem": None,
                     "branch": fix["branch"],
@@ -1068,13 +1105,79 @@ def open_fix_review_pr(row, title, body, apply=False):
          f"Approving covers the commits on this branch"
          + (f" and the section under {REPLY_HEADING!r} in the body, which is "
             f"posted verbatim as a comment on the upstream pull request after "
-            f"the merge" if reply else "")
+            f"the merge, behind a standing line disclosing that it was drafted "
+            f"by an AI assistant" if reply else "")
          + ". `utils/upstream.py --merge-fix --apply` then fast-forwards the "
            "open upstream PR's branch to exactly the approved tip. Anything "
            "pushed afterwards, or any edit to the body, voids the approval and "
            "needs a fresh one."],
         capture_output=True, text=True, timeout=90)
     return ("opened", url)
+
+
+def base_conflict(name, d, tip):
+    """Test-merge a staged tip against the upstream PR's live base branch.
+
+    The gap this closes: a fix round is cut from the published tip and judged
+    against it, so nothing in the round's own gates looks at the base branch it
+    must eventually merge into. popsift #186 is the instance -- the round was
+    clean, approved, and fast-forwarded, and the PR flipped to CONFLICTING the
+    moment it moved, because an upstream commit from a week earlier edited the
+    same include block. GitHub's own `mergeable` field cannot answer this ahead
+    of time either: it describes the PR's current head, not the tip about to be
+    pushed. Only a local test-merge of the staged tip can.
+
+    Returns (state, detail): ("conflict", files) when the merge would leave the
+    PR unmergeable, ("clean", None) when it would not, ("unknown", why) when the
+    probe cannot run here -- no clone, unreachable base, or a git without
+    `merge-tree --write-tree` (2.38). Callers decide what unknown means: the
+    review-PR gate skips (the documented only-where-a-clone-lives backstop
+    pattern), the merge gate refuses, because the one place that must never
+    guess is the one about to move the open PR."""
+    clone = REPO / "projects" / name / "src"
+    if not (clone / ".git").exists():
+        return ("unknown", "no fork clone here to test-merge with")
+    m = re.search(r"github\.com/([^/]+/[^/]+)/pull/(\d+)", d.get("pr_url") or "")
+    if not m:
+        return ("unknown", "no upstream PR recorded")
+    up, num = m.group(1), m.group(2)
+    pr = gh_json(["pr", "view", num, "--repo", up, "--json", "baseRefName"])
+    base_ref = (pr or {}).get("baseRefName")
+    if not base_ref:
+        return ("unknown", f"cannot read the base branch of {up}#{num}")
+    f = subprocess.run(["git", "-C", str(clone), "fetch",
+                        f"https://github.com/{up}",
+                        f"+refs/heads/{base_ref}:refs/moat/base"],
+                       capture_output=True, text=True, timeout=120)
+    if f.returncode:
+        return ("unknown", f"cannot fetch {base_ref} from {up}")
+    have = subprocess.run(["git", "-C", str(clone), "cat-file", "-e",
+                           f"{tip}^{{commit}}"], capture_output=True, text=True)
+    if have.returncode:
+        # GitHub serves any reachable commit by full sha, so the staged tip can
+        # be fetched directly even when no local ref names it yet.
+        got = subprocess.run(["git", "-C", str(clone), "fetch",
+                              d.get("fork_url") or "", tip],
+                             capture_output=True, text=True, timeout=120)
+        if got.returncode:
+            return ("unknown", f"the staged tip {tip[:12]} is not in the clone "
+                               f"and could not be fetched")
+    mt = subprocess.run(["git", "-C", str(clone), "merge-tree", "--write-tree",
+                         "--name-only", "refs/moat/base", tip],
+                        capture_output=True, text=True, timeout=120)
+    if mt.returncode == 0:
+        return ("clean", None)
+    if mt.returncode == 1:
+        # --name-only output: the tree oid, then one conflicted path per line,
+        # then informational messages after a blank line.
+        files = []
+        for line in mt.stdout.splitlines()[1:]:
+            if not line.strip():
+                break
+            files.append(line.strip())
+        return ("conflict", ", ".join(files[:4]) or "unknown files")
+    return ("unknown", "git merge-tree --write-tree failed "
+                       f"({(mt.stderr or mt.stdout).strip()[:60] or 'git too old?'})")
 
 
 def merge_fix_rows():
@@ -1167,6 +1270,21 @@ def merge_fix_blockers(name, d, fix, pr):
                            f"{pub[:12]} -- the staging branch was rebased; the "
                            f"merge must be a fast-forward")
 
+    # An approved round can still leave the PR unmergeable: its gates all judge
+    # the delta against the published tip, not against the base branch, which may
+    # have moved since the round was staged. Refuse rather than publish a
+    # conflict, and refuse on unknown too -- this is the one caller about to move
+    # the open PR, so it does not get to guess.
+    if tip:
+        state, detail = base_conflict(name, d, tip)
+        if state == "conflict":
+            bad.append(f"the approved tip conflicts with the upstream base "
+                       f"({detail}) -- stage a round that merges the base and "
+                       f"resolves it")
+        elif state == "unknown":
+            bad.append(f"cannot test-merge the approved tip against the "
+                       f"upstream base: {detail}")
+
     # Last, so the fetch above has put the delta in the clone and the scan reads all
     # of it rather than whatever the compare API is willing to return.
     try:
@@ -1240,7 +1358,7 @@ def do_merge_fix(name, d, fix, pr):
             notes.append("gh is not installed; the approved reply was NOT posted")
         else:
             c = subprocess.run([real, "pr", "comment", d["pr_url"],
-                                "--body", reply],
+                                "--body", with_reply_note(reply)],
                                capture_output=True, text=True, timeout=90)
             notes.append("posted the approved reply" if c.returncode == 0 else
                          f"could NOT post the approved reply: "
@@ -1268,6 +1386,74 @@ def do_merge_fix(name, d, fix, pr):
                      f"and can be deleted by hand")
     return (True, f"fast-forwarded {branch} to {tip[:12]}"
                   + ("; " + "; ".join(notes) if notes else ""))
+
+
+def resolve_threads(name, apply):
+    """Resolve review-PR conversation threads whose last word is ours.
+
+    The porter's changes-requested loop replies on each thread naming the fix
+    commit; this closes the threads so the reviewer sees what is left. Trusted
+    the same way merge-fix is: the tool proves the PR lives on the project's
+    own fork before touching it, then calls the real gh -- gh_guard refuses raw
+    GraphQL because a mutation's target repo is invisible in the endpoint, and
+    that refusal is correct for everything that has not done this check.
+
+    Only threads whose LAST comment is the PR author's are touched: on a
+    self-authored review PR the author's reply is the porter's answer, so a
+    thread where the reviewer answered back stays open for a person."""
+    sys.path.insert(0, str(REPO / "utils"))
+    import gh_guard
+    obj, _where = next(((d, w) for n, d, w in all_records() if n == name), (None, None))
+    if obj is None:
+        print(f"resolve-threads: no record for {name}")
+        return 1
+    url = (obj.get("fix") or {}).get("review_pr") or obj.get("review_pr")
+    fork = obj.get("fork_url") or ""
+    if not url:
+        print(f"resolve-threads: {name} has no review PR recorded")
+        return 1
+    m = re.search(r"github\.com/([^/]+)/([^/]+)/pull/(\d+)", url)
+    fm = re.search(r"github\.com/([^/]+)/([^/]+?)(?:\.git)?/?$", fork)
+    if not m or not fm or (m.group(1), m.group(2)) != (fm.group(1), fm.group(2)):
+        print(f"resolve-threads: {url} is not on the project's fork {fork}; refusing")
+        return 1
+    real = gh_guard.real_gh()
+    if real is None:
+        print("resolve-threads: gh is not installed")
+        return 1
+    q = ('query($o: String!, $r: String!, $n: Int!) { repository(owner: $o, name: $r) {'
+         ' pullRequest(number: $n) { author { login } reviewThreads(first: 100) { nodes {'
+         ' id isResolved path comments(last: 1) { nodes { author { login } } } } } } } }')
+    r = subprocess.run([real, "api", "graphql", "-f", f"query={q}", "-f", f"o={m.group(1)}",
+                        "-f", f"r={m.group(2)}", "-F", f"n={m.group(3)}"],
+                       capture_output=True, text=True, timeout=90)
+    if r.returncode:
+        print(f"resolve-threads: could not read {url}: {(r.stderr or r.stdout).strip()[:160]}")
+        return 1
+    pr = json.loads(r.stdout)["data"]["repository"]["pullRequest"]
+    author = (pr.get("author") or {}).get("login")
+    ret = 0
+    for t in pr["reviewThreads"]["nodes"]:
+        if t["isResolved"]:
+            continue
+        last = (t["comments"]["nodes"] or [{}])[-1].get("author") or {}
+        if last.get("login") != author:
+            print(f"  OPEN       {t['path'] or '(review)'}: last word is "
+                  f"{last.get('login') or 'unknown'}'s, leaving for a person")
+            continue
+        if not apply:
+            print(f"  WOULD-RESOLVE {t['path'] or '(review)'} ({t['id']})")
+            continue
+        mq = ('mutation($t: ID!) { resolveReviewThread(input: {threadId: $t}) '
+              '{ thread { isResolved } } }')
+        rr = subprocess.run([real, "api", "graphql", "-f", f"query={mq}", "-f", f"t={t['id']}"],
+                            capture_output=True, text=True, timeout=90)
+        if rr.returncode:
+            print(f"  FAILED     {t['path']}: {(rr.stderr or rr.stdout).strip()[:120]}")
+            ret = 1
+        else:
+            print(f"  RESOLVED   {t['path']}")
+    return ret
 
 
 def report_merge_fix(apply, only=None):
@@ -1361,6 +1547,9 @@ def main():
                     help="fast-forward an open upstream PR to an approved fix round's tip")
     ap.add_argument("--attention", action="store_true",
                     help="open upstream PRs where a maintainer is waiting on us")
+    ap.add_argument("--resolve-threads", action="store_true",
+                    help="with --name: resolve fork review PR threads whose last "
+                         "word is ours (--apply to write)")
     a = ap.parse_args()
 
     if a.forks:
@@ -1411,7 +1600,8 @@ def main():
             print("   open one: --fix-review --apply --name <p> --title '<t>' "
                   "--body-file <f>")
             print(f"   (a body section headed {REPLY_HEADING!r} is posted verbatim "
-                  f"on the upstream PR after the merge)")
+                  f"on the upstream PR after the merge, behind a standing "
+                  f"AI-disclosure line the tool prepends)")
             return 0
         if not (a.name and a.title and a.body_file):
             print("--fix-review --name needs --title and --body-file "
@@ -1428,6 +1618,11 @@ def main():
         return 0 if action in ("opened", "would-open") else 1
     if a.merge_fix:
         return report_merge_fix(apply=a.apply, only=a.name)
+    if a.resolve_threads:
+        if not a.name:
+            print("resolve-threads: pass --name <project>")
+            return 1
+        return resolve_threads(a.name, apply=a.apply)
     if a.attention:
         return report_attention(recorded(), TODAY)
 
