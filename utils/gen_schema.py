@@ -70,6 +70,19 @@ def build():
                     "since": {"type": "string"},
                 },
             },
+            # Explicit release marker naming the acquisition it ended (arch +
+            # since). The merge driver drops a lock only when a marker matches
+            # it; without this, "released" and "never saw the lock" were told
+            # apart by timestamp inference, which erased concurrent acquisitions.
+            "porting_released": {
+                "type": ["object", "null"],
+                "required": ["arch", "since", "at"],
+                "properties": {
+                    "arch": {"type": "string", "pattern": m.PLATFORM_RE.pattern},
+                    "since": {"type": "string"},
+                    "at": {"type": "string"},
+                },
+            },
             # Gate waivers. Only gates listed waivable in config/arches.toml may be
             # waived, and only with maintainer approval: a record lacking approved_by
             # satisfies nothing, so an agent cannot self-certify past a gate.
