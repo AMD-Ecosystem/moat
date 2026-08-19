@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "gpu-ipc-windows-warp-intrinsics-uncommitted",
+      "kind": "other",
+      "component": null,
+      "summary": "Two tracked source files in this host's GPU_IPC clone (GPU_IPC/cuda_to_hip.h, GPU_IPC/details/device_utils.inl) have been modified and uncommitted since 2026-08-14, so the recorded Windows build evidence describes no commit. The change replaces the function-like warp-intrinsic macros with equivalent WARP_* functions, because ROCm's own headers declare real overloads of those names and the macros mis-parse them. Semantics are unchanged (still pinned to 32 lanes) and no call site uses the CUDA spellings, so it is neutral for the two validated Linux platforms -- but committing it advances head_sha off 3798cb2 and drops linux-gfx90a and linux-gfx1100 from completed to revalidate, while the only platform that needs it (windows-gfx1151) is blocked on the CrowdStrike host defect. Commit and accept the revalidation, or revert the clone: a person's call.",
+      "refs": [
+        "projects/GPU_IPC/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-19T16:10:20Z",
+      "decided": null
+    }
+  ]
+}

@@ -1142,3 +1142,132 @@ actually running killed it within seconds; software GL with the solver stopped
 ran 46 s clean. Both GPU paths trip it, so no harness arrangement avoids the
 fault -- GPU compute is the thing being validated. This needs a working
 Windows host, not a different harness.
+
+## Uncommitted Windows warp-intrinsic rework in this host's clone (2026-08-19)
+
+The Windows session of 2026-08-14 left two tracked source files modified and never
+committed, so the "cmake+ninja build clean at head_sha 3798cb2" claim recorded above
+actually describes a tree no commit holds. Recording the change here so it survives
+this disk; it has NOT been committed to the fork, and whether it should be is a
+person's call (see the deferral `gpu-ipc-windows-warp-intrinsics-uncommitted`).
+
+What it does: `cuda_to_hip.h` at 3798cb2 translates CUDA's warp intrinsics with
+function-like macros (`#define __shfl_sync(mask, var, srcLane) __shfl(var, srcLane, 32)`
+and friends, plus a `hip_ballot_warp32` helper). ROCm's own headers declare genuine
+overloaded functions of those same names -- confirmed on TheRock's SDK in
+`hip/amd_detail/amd_warp_sync_functions.h` and `hip/amd_detail/amd_hip_bf16.h` -- so a
+function-like macro of the same name mis-parses those declarations in any translation
+unit that includes them transitively (Thrust pulls in `hip_bf16.h`). The rework deletes
+the macros and implements the identical translation as real functions
+(`WARP_BALLOT`, `WARP_SHFL`, `WARP_SHFL_DOWN`) in `details/device_utils.inl`, under
+`#if defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)`.
+
+Why it is semantically neutral for the two validated Linux platforms: the pinning is
+unchanged. Both forms shuffle at width 32 and shift a wavefront-wide ballot down to the
+calling lane's own 32-lane half. Every call site already goes through the `WARP_*`
+wrappers -- `grep` for `__ballot_sync|__shfl_sync|__shfl_down_sync|__shfl_up_sync|
+__shfl_xor_sync` across the fork finds no use outside a comment -- so dropping the
+macros for `__shfl_up_sync`/`__shfl_xor_sync`, which gained no wrapper, breaks nothing.
+
+Do NOT substitute ROCm's native `__ballot_sync`/`__shfl_*_sync` for this translation.
+Theirs return a 64-bit wavefront-wide ballot and default `width` to `warpSize`, which is
+64 on CDNA; CUDA's are always 32 lanes with a 32-bit ballot. On gfx90a the native forms
+would silently change behaviour.
+
+The cost of committing it: `head_sha` advances off 3798cb2, which drops both
+linux-gfx90a and linux-gfx1100 from `completed` to revalidate, and the only platform
+that needs the change (windows-gfx1151) is blocked on the CrowdStrike host defect and
+cannot demonstrate the benefit. That trade is why this is not being committed unilaterally.
+
+The verbatim diff, so it is reconstructable without this host:
+
+```diff
+diff --git a/GPU_IPC/cuda_to_hip.h b/GPU_IPC/cuda_to_hip.h
+index 4c2eaf3..df76c45 100644
+--- a/GPU_IPC/cuda_to_hip.h
++++ b/GPU_IPC/cuda_to_hip.h
+@@ -49,28 +49,12 @@
+ #define cudaStreamSynchronize     hipStreamSynchronize
+ #define cudaStreamNonBlocking     hipStreamNonBlocking
+ 
+-// Warp intrinsics. A CUDA warp is always 32 lanes, so a *_sync form with a full member
+-// mask acts on exactly 32 lanes and its ballot is a 32-bit mask. An AMD wavefront is 32
+-// lanes on RDNA and 64 on CDNA, and the unqualified HIP intrinsics take the wavefront
+-// width. The faithful translation therefore pins the shuffle width to 32 and shifts a
+-// wavefront-wide ballot down to the calling lane's own 32-lane half: that is the identity
+-// on a 32-lane wavefront and selects the correct half on a 64-lane one. Truncating the
+-// ballot instead would hand the upper half of a 64-lane wavefront the lower half's bits.
+-// Guarded because the host compiler also sees this header for the plain C++ sources, and
+-// the wavefront intrinsics only exist in the HIP compiler's translation units.
+-#if defined(__HIPCC__)
+-__device__ inline unsigned int hip_ballot_warp32(int predicate)
+-{
+-    unsigned long long mask = __ballot(predicate);
+-    return (unsigned int)(mask >> (__lane_id() & ~31u));
+-}
+-#endif
+-
+-#define __ballot_sync(mask, predicate)     hip_ballot_warp32(predicate)
+-#define __shfl_sync(mask, var, srcLane)    __shfl(var, srcLane, 32)
+-#define __shfl_down_sync(mask, var, delta) __shfl_down(var, delta, 32)
+-#define __shfl_up_sync(mask, var, delta)   __shfl_up(var, delta, 32)
+-#define __shfl_xor_sync(mask, var, mask2)  __shfl_xor(var, mask2, 32)
++// Warp intrinsics: see GPU_IPC/details/device_utils.inl for the pinned-width-32
++// translation of CUDA's *_sync forms. That translation is implemented directly there
++// rather than as macros here, because HIP's own headers (hip_bf16.h in particular)
++// declare genuine overloaded functions named __shfl_sync and friends, and a
++// function-like macro of the same name mis-parses those declarations wherever they are
++// transitively included (e.g. via <thrust/...>).
+ 
+ #else
+ 
+diff --git a/GPU_IPC/details/device_utils.inl b/GPU_IPC/details/device_utils.inl
+index 6ad8385..1958aa0 100644
+--- a/GPU_IPC/details/device_utils.inl
++++ b/GPU_IPC/details/device_utils.inl
+@@ -8,6 +8,36 @@ __device__ __forceinline__ void THREAD_FENCE()
+     __threadfence();
+ }
+ 
++#if defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)
++// A CUDA warp is always 32 lanes, so a *_sync form with a full member mask acts on
++// exactly 32 lanes and its ballot is a 32-bit mask. An AMD wavefront is 32 lanes on
++// RDNA and 64 on CDNA, and the unqualified HIP intrinsics take the wavefront width.
++// The faithful translation therefore pins the shuffle width to 32 and shifts a
++// wavefront-wide ballot down to the calling lane's own 32-lane half: that is the
++// identity on a 32-lane wavefront and selects the correct half on a 64-lane one.
++// Truncating the ballot instead would hand the upper half of a 64-lane wavefront the
++// lower half's bits.
++__device__ __forceinline__ unsigned int WARP_BALLOT(int predicate, unsigned int member_mask = 0xffffffff)
++{
++    (void)member_mask;
++    unsigned long long mask = __ballot(predicate);
++    return (unsigned int)(mask >> (__lane_id() & ~31u));
++}
++
++template <class Type>
++__device__ __forceinline__ Type WARP_SHFL(Type var, int srcLane, unsigned int member_mask = 0xffffffff)
++{
++    (void)member_mask;
++    return __shfl(var, srcLane, 32);
++}
++
++template <class Type>
++__device__ __forceinline__ Type WARP_SHFL_DOWN(Type var, unsigned int delta, unsigned int member_mask = 0xffffffff)
++{
++    (void)member_mask;
++    return __shfl_down(var, delta, 32);
++}
++#else
+ __device__ __forceinline__ unsigned int WARP_BALLOT(int predicate, unsigned int member_mask = 0xffffffff)
+ {
+     return __ballot_sync(member_mask, predicate);
+@@ -24,6 +54,7 @@ __device__ __forceinline__ Type WARP_SHFL_DOWN(Type var, unsigned int delta, uns
+ {
+     return __shfl_down_sync(member_mask, var, delta);
+ }
++#endif
+ 
+ 
+ template <class TypeA, class TypeB>
+```
