@@ -7,12 +7,12 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-08-07T07:04:48Z",
+  "updated_at": "2026-08-13T20:49:28Z",
   "head_sha": "bb06b44",
   "depends_on": [],
   "pr_url": "https://github.com/vitalight/Velvet/pull/9",
   "pr_number": 9,
-  "pr_opened_at": "2026-06-19T23:45:16Z",
+  "pr_opened_at": "2026-08-13T20:49:28Z",
   "porting": null,
   "waivers": {},
   "pr_state": "open",
@@ -137,5 +137,5 @@
       }
     }
   },
-  "published_sha": "bb06b44cc7eb61146572acb9d15971d5935cc794"
+  "published_sha": "bb06b44"
 }

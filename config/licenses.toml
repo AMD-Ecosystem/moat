@@ -485,11 +485,17 @@ spdx = [
 # Match on licence TEXT, not copyright lines. A naive grep for "NVIDIA" flags every
 # CUDA project; projects/cuBQL/notes.md records the counterexample -- 66 SPDX tags
 # with NVIDIA copyrights all under Apache-2.0, which is clean.
+# Matching is case-insensitive: NVIDIA's own notices write the company name as both
+# "NVIDIA CORPORATION" and "NVIDIA Corporation" across SDK vintages. Markers must
+# also survive NVIDIA's rewording ("... CORPORATION, its affiliates and licensors
+# ...") and comment re-wrapping, which is why the retain-clause marker stops before
+# "property": in the OptiX 9.x headers the line breaks right after "intellectual".
 [tier3.nvidia_proprietary]
 text_markers = [
   "NVIDIA Source Code License",
   "NVIDIA Software License Agreement",
-  "NVIDIA CORPORATION and its licensors retain all intellectual property",
+  "licensors retain all intellectual",
+  "LicenseRef-NvidiaProprietary",
   "NVIDIA End User License Agreement",
   # The older CUDA Samples headers (helper_cuda.h, helper_string.h) point at the EULA
   # rather than naming it, so none of the markers above fire on them. cuda_voxelizer

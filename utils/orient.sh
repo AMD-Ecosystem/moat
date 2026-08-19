@@ -151,14 +151,22 @@ elif d >= 14:
 
 # Selection below is per-arch and needs a platform. Everything above already ran,
 # so a host with no detectable GPU still did the upkeep and showed the nags.
-if ! arch_out=$(bash utils/detect_arch.sh 2>/dev/null); then
-  echo "platform : UNKNOWN (no AMD GPU detected)"
+# detect_arch's stderr is reprinted rather than discarded. Swallowing it made
+# every failure read as "this machine has no AMD GPU", including the ones where
+# the GPU was fine and only the tool that reports it could not be found -- a
+# healthy host looked dead, and the message named no way to tell them apart.
+detect_err=$(mktemp)
+if ! arch_out=$(bash utils/detect_arch.sh 2>"$detect_err"); then
+  echo "platform : UNKNOWN (arch detection failed)"
+  sed 's/^/           /' "$detect_err"
+  rm -f "$detect_err"
   echo "next     : NONE -- per-arch dispatch needs a platform"
   echo "hint     : GPU-independent stages (intake, planning, review) can still be"
   echo "           worked by setting MOAT_PLATFORM=<os>-<gfx> to bypass detection;"
   echo "           building and validating still need real hardware"
   exit 0
 fi
+rm -f "$detect_err"
 eval "$arch_out"   # sets GFX_ARCH GFX_TRIPLE PLATFORM
 
 echo "platform : $PLATFORM (gfx=$GFX_ARCH)"
