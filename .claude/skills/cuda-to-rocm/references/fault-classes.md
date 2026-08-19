@@ -76,6 +76,24 @@ looks handled: GPU_IPC's header had a plausible-looking ballot and unqualified s
 the shuffles were the half that would have broken CDNA, since its PCG and BVH reductions
 loop `delta = 1,2,4,8,16` over logical 32-element groups. (GPU_IPC.)
 
+**Write that compat layer as FUNCTIONS, not function-like macros.** ROCm declares real
+overloaded functions named `__shfl_sync`, `__ballot_sync`, `__shfl_down_sync` and the rest
+-- see `hip/amd_detail/amd_warp_sync_functions.h`, and `hip/amd_detail/amd_hip_bf16.h`
+which declares its own bf16 overloads. A `#define __shfl_sync(mask, var, srcLane) ...` of
+the same name mis-parses those declarations in every translation unit that includes them,
+and Thrust pulls in `hip_bf16.h`, so the breakage lands far from the header you wrote and
+reads as a mysterious parse error inside a ROCm header. Put the pinned-width translation in
+real (template) functions the call sites go through instead; the macros then have no reason
+to exist. Compilers reached this only as ROCm's headers grew those overloads, so a project
+whose macro layer built fine on an older ROCm can start failing on a newer one with no
+change of its own. (GPU_IPC.)
+
+**Do not "simplify" a pinned compat layer into ROCm's native `*_sync` intrinsics.** They
+are not the CUDA semantics: ROCm's `__ballot_sync` returns a 64-bit WAVEFRONT-wide mask,
+and its `__shfl_*_sync` default `width` to `warpSize`, which is 64 on CDNA. CUDA's are
+always 32 lanes with a 32-bit ballot. The substitution looks like a cleanup, compiles
+everywhere, passes on RDNA, and silently changes behaviour on gfx90a/gfx94x. (GPU_IPC.)
+
 **A fixed-cluster warp reduction is wavefront-safe exactly when the cluster size equals the
 pinned shuffle width AND the clusters are aligned to it -- check that, do not restructure
 the branch.** Code that partitions work into fixed 32-element clusters (GPU_IPC's
