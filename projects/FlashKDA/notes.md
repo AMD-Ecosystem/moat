@@ -297,9 +297,75 @@ external build dependencies only.
 2026-07-30, default branch `master`. A PR would have a live destination if the
 recommendation were overridden.
 
-**Minor data observation, not load-bearing.** `data/retired_stats.jsonl` line 83
+**Minor data observation, not load-bearing (gfx942 screen).** `data/retired_stats.jsonl` line 83
 carries a single token record for project `FlashKDA` dated 2026-06-04 with source
 `porter` — two months before this project's `adopted_at` (2026-08-07) and before
 upstream's own recorded activity. There is no matching disposition and no other
 trace of a prior lifecycle. Flagged for whoever maintains telemetry; it does not
 affect the recommendation and I did not edit it.
+
+## Intake delta-check (2026-08-19, linux-gfx1100) — fourth dispatch, NOT a fourth screen
+
+This host was dispatched FlashKDA at `stage: unclaimed` for the fourth time. Three
+screens (2026-08-13 gfx1100, 2026-08-14 gfx90a, 2026-08-14 gfx942) already agree on
+`decline` / `cant-port`, and that recommendation is already recorded in
+`status.json.intake`. So this run deliberately did **not** re-derive the screen. It
+checked only what could have changed since 2026-08-14, and stopped.
+
+**Nothing changed. The recommendation stands, unchanged: `decline`, `cant-port`.**
+
+Delta checks, all read-only, no clone:
+
+- **Upstream head is still `1ce47ea`** ("optimize kda prepare cu_seqlens scan with
+  prefix-sum and binary search (#13)", authored 2026-07-29), the same commit the
+  gfx90a and gfx942 screens verified. `master` is the only branch. The tree is
+  therefore byte-identical to what was screened three times, so every code-level
+  finding — 24 `SM90_TMA` uses, 24 `make_tma` sites, 22 `CUTE_GRID_CONSTANT`
+  descriptors, `SUPPORTED_CUDA_ARCHS = ["90a","100a","103a","120a"]`, 2346 lines
+  across six files, the `cutlass` submodule pinned at `5c149f52` — holds by
+  construction. Re-cloning to recount them would produce the same numbers from the
+  same bytes, which is why it was skipped rather than repeated.
+- **Licence unchanged: MIT, tier 1.** GitHub API `license.spdx_id = MIT`; the
+  `LICENSE` file was read directly by all three prior screens at this same SHA.
+  `license_spdx` was already recorded and stays `MIT`.
+- **The CuTeDSL EULA finding is unchanged and still uncleared.** Same submodule pin,
+  so same per-part licensing. It remains a person's ruling if this is ever adopted,
+  and this host does not clear it either.
+- **No AMD effort appeared.** `AMD-Ecosystem/FlashKDA`, `ROCm/FlashKDA`, and
+  `AMD-Ecosystem/flash-kda` are all still 404. A fresh repo search surfaces one name
+  the earlier screens did not see, `Unitflexmed1821/FlashKDA` (0 stars, not a fork,
+  pushed 2026-08-19, head "Update README.md", description advertising CUTLASS
+  kernels). Its README has zero matches for `amd|rocm|hip|gfx[0-9]` — an unrelated
+  re-upload, not an AMD port. Also new: `atomicmilkshake/godzilla-llama.cpp`, an
+  MSVC+CUDA Windows llama.cpp fork carrying KDA, likewise nothing toward AMD.
+- **Upstream still healthy**, still a live PR destination if the recommendation is
+  overridden: not archived, not disabled, 1218 stars (was 1211), 117 forks (was 115),
+  last push 2026-07-30, default branch `master`.
+- `depends_on` stays empty.
+
+### Why this project keeps coming back, which is the finding worth acting on
+
+The screen is not stuck — the *decision* is. FlashKDA is row 1 of the open intake
+queue, issue AMD-Ecosystem/moat#8, opened 2026-08-07 and carrying **zero comments
+after 12 days**. Its recommendation has been correct and complete since 2026-08-13.
+
+An agent may not record a decline, so `stage` correctly stays `unclaimed` — and the
+selector offers `unclaimed` projects to whatever host asks next. A decline
+recommendation awaiting a person is therefore indistinguishable, to the selector,
+from a project nobody has looked at. That is the whole mechanism, and it is the same
+one that had spconv screened six times on four platforms; spconv is row 2 of the same
+unanswered issue. Four sessions have now been spent on FlashKDA to reach the answer
+the first one reached.
+
+Two things would stop it, and both belong to a person, not to this role:
+
+1. **Answer issue #8.** One reply decides this batch, and `intake_queue.py apply`
+   records it. This is the real fix; everything else is a workaround.
+2. **`moatlib.py set-hold FlashKDA`** if the answer will be a while. AGENTS.md
+   reserves `set-hold` to a person, so this host did not set it — but a held project
+   is skipped by the selector on every platform with no state touched, which is
+   exactly the behaviour wanted for a screened project queued behind a pending
+   decision.
+
+Neither was done here. The only write this run made was refreshing the queue summary
+so the row itself reports that four hosts agree and the screen is not the bottleneck.

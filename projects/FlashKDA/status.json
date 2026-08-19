@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-08-07T17:05:59Z",
-  "updated_at": "2026-08-14T14:25:14Z",
+  "updated_at": "2026-08-19T05:03:51Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
@@ -18,9 +18,9 @@
   "intake": {
     "verdict": "decline",
     "reason": "cant-port",
-    "duplicate_effort": "none: no AMD-Ecosystem or ROCm fork, no AMD mention in upstream docs. KDA reaches AMD only via flash-linear-attention's Triton fla/ops/kda, which installs on ROCm but is upstream-unvalidated on AMD hardware -- its amd-mi300 workflow is disabled (if: false) with 0 runs ever vs 3028 for nvidia-h100, correcting the earlier screens' 'CI-tested on MI300'",
+    "duplicate_effort": "none: no AMD-Ecosystem or ROCm fork (all 404 again on 2026-08-19), no AMD mention in upstream docs, and no AMD-directed fork among the copies that have appeared since. KDA reaches AMD only via flash-linear-attention's Triton fla/ops/kda, which installs on ROCm but is upstream-unvalidated on AMD hardware -- its amd-mi300 workflow is disabled (if: false) with 0 runs ever vs 3028 for nvidia-h100, correcting the earliest screens' 'CI-tested on MI300'",
     "viable": false,
-    "summary": "MIT (tier 1) Hopper/Blackwell-only KDA attention kernels written entirely in CUTLASS/CuTe -- 24 SM90_TMA uses, 22 CUTE_GRID_CONSTANT TMA descriptors, archs 90a/100a/103a/120a; CuTe has no ROCm backend and TMA no AMD equivalent, so this is a from-scratch CK/HIP kernel rewrite on CDNA3 exactly as on RDNA3 (three hosts agree), and the cheap route to KDA on MI300 is validating flash-linear-attention's existing Triton fla/ops/kda rather than porting this",
-    "at": "2026-08-14T14:25:14Z"
+    "summary": "MIT (tier 1) Hopper/Blackwell-only KDA attention kernels written entirely in CUTLASS/CuTe -- 24 SM90_TMA uses, 22 CUTE_GRID_CONSTANT TMA descriptors, archs 90a/100a/103a/120a; CuTe has no ROCm backend and TMA no AMD equivalent, so this is a from-scratch CK/HIP kernel rewrite on CDNA3 exactly as on RDNA3, and the cheap route to KDA on MI300 is validating flash-linear-attention's existing Triton fla/ops/kda rather than porting this -- screened four times on three platforms (RDNA3, CDNA2, CDNA3), all agreeing, the latest a delta-check confirming upstream has not moved off 1ce47ea since 2026-07-29, so the screen is settled and only this queue answer is outstanding",
+    "at": "2026-08-19T05:03:51Z"
   }
 }
