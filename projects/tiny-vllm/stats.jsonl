@@ -1,0 +1,35 @@
+{"kind": "tokens", "ts": "2026-06-04T23:29:30Z", "tokens": 72983, "source": "planner"}
+{"kind":"phase","ts":"2026-06-05T00:06:46Z","phase":"compile","seconds":0.139,"exit":1,"cmd":"cmake --build build"}
+{"kind": "tokens", "ts": "2026-06-05T00:11:31Z", "tokens": 104477, "source": "porter"}
+{"kind": "tokens", "ts": "2026-06-05T00:12:42Z", "tokens": 71454, "source": "reviewer"}
+{"kind": "tokens", "ts": "2026-06-05T05:17:39Z", "tokens": 71757, "source": "reviewer"}
+{"kind":"phase","ts":"2026-06-05T05:18:21Z","phase":"compile","seconds":0.139,"exit":1,"cmd":"cmake -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -G Ninja"}
+{"kind":"phase","ts":"2026-06-05T05:18:33Z","phase":"compile","seconds":9.284,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/tiny-vllm/src && cmake -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -G Ninja && cmake --build build"}
+{"kind": "tokens", "ts": "2026-06-05T05:22:44Z", "tokens": 56926, "source": "reviewer"}
+{"kind":"session","ts":"2026-06-05T05:23:09Z","epoch":1780636989.609074674,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-06-05T05:23:27Z","phase":"compile","seconds":0.139,"exit":1,"cmd":"cmake -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -G Ninja"}
+{"kind":"phase","ts":"2026-06-05T05:23:36Z","phase":"compile","seconds":0.139,"exit":0,"cmd":"bash -c cmake --build build -j128 2>&1 | tee /tmp/tiny-vllm-build.log"}
+{"kind":"phase","ts":"2026-06-05T05:23:46Z","phase":"compile","seconds":6.631,"exit":0,"cmd":"bash -c cd projects/tiny-vllm/src && cmake --build build -j128 2>&1 | tee /tmp/tiny-vllm-build.log"}
+{"kind":"phase","ts":"2026-06-05T05:26:44Z","phase":"test","seconds":0.890,"exit":0,"cmd":"bash -c \nset -e\necho '=== tiny-vllm ROCm Port Validation ==='\necho\necho '1. GPU Detection:'\ncd /var/lib/jenkins/moat/projects/tiny-vllm/src\nHIP_VISIBLE_DEVICES=1 timeout 10 ./build/tiny-vllm 2>&1 | head -7\necho\necho '2. Embedding Kernel Test:'\nHIP_VISIBLE_DEVICES=1 /tmp/test_kernel\necho\necho '3. Warp Shuffle (64-bit mask) Test:'\nHIP_VISIBLE_DEVICES=1 /tmp/test_shuffle2\necho\necho '4. hipBLAS bfloat16 GEMM Test:'\nHIP_VISIBLE_DEVICES=1 /tmp/test_gemm\necho\necho '=== All Tests PASSED ==='\n"}
+{"kind":"session","ts":"2026-06-05T05:27:38Z","epoch":1780637258.542374176,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-06-05T15:45:15Z","phase":"gfx1100-build","seconds":7.000,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/tiny-vllm/src && cmake -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -G Ninja && cmake --build build"}
+{"kind":"phase","ts":"2026-06-05T15:45:22Z","phase":"gfx1100-test","seconds":0.125,"exit":1,"cmd":"/var/lib/jenkins/moat/projects/tiny-vllm/src/build/tiny-vllm"}
+{"kind":"phase","ts":"2026-06-08T19:30:06Z","phase":"compile","seconds":4.601,"exit":0,"cmd":"cmake --build B:/develop/moat/projects/tiny-vllm/src/build -j24"}
+{"kind":"phase","ts":"2026-06-08T19:33:32Z","phase":"test","seconds":0.522,"exit":0,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Scripts/python.exe B:/develop/moat/agent_space/run_tinyvllm_gfx1201.py"}
+{"kind": "tokens", "ts": "2026-06-08T20:00:16Z", "tokens": 67402, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-15T12:15:44Z", "tokens": 45603, "source": "pr-prep"}
+{"kind": "tokens", "ts": "2026-06-17T01:41:12Z", "tokens": 61459, "source": "pr-prep"}
+{"kind":"phase","ts":"2026-06-17T05:59:24Z","phase":"compile","seconds":0.123,"exit":1,"cmd":"bash -c cmake -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -G Ninja 2>&1 && cmake --build build 2>&1"}
+{"kind":"phase","ts":"2026-06-17T05:59:56Z","phase":"compile","seconds":4.786,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/tiny-vllm/src && HIP_VISIBLE_DEVICES=2 cmake --build build 2>&1"}
+{"kind":"phase","ts":"2026-06-17T06:00:23Z","phase":"test","seconds":2.399,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/agent_space/tiny-vllm-e2e && HIP_VISIBLE_DEVICES=2 /var/lib/jenkins/moat/projects/tiny-vllm/src/build/tiny-vllm 2>&1"}
+{"kind": "tokens", "ts": "2026-06-17T06:04:48Z", "tokens": 71303, "source": "validator"}
+{"kind": "tokens", "ts": "2026-06-19T19:42:05Z", "tokens": 27326, "source": "porter (doc prefix fix; stopped on sync)"}
+{"kind":"session","ts":"2026-06-20T06:53:23Z","epoch":1781938403.305437000,"event":"start","platform":"windows-gfx1101"}
+{"kind":"phase","ts":"2026-06-20T06:54:26Z","phase":"compile","seconds":1.824,"exit":0,"cmd":"B:/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++.exe --offload-arch=gfx1101 -x hip -I/b/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_devel/include -L/b/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_devel/lib -lhipblas -lamdhip64 /b/develop/moat/agent_space/tiny_vllm_validate_gfx1101.cpp -o /b/develop/moat/agent_space/tiny_vllm_validate_gfx1101.exe"}
+{"kind":"phase","ts":"2026-06-20T06:54:59Z","phase":"test","seconds":0.102,"exit":127,"cmd":"sh -c HIP_VISIBLE_DEVICES=1 ROCBLAS_TENSILE_LIBPATH=\"/b/develop/TheRock/external-builds/pytorch/.venv/Lib/site-packages/_rocm_sdk_libraries/bin/rocblas/library\"   /b/develop/moat/agent_space/tiny_vllm_validate_gfx1101.exe"}
+{"kind":"phase","ts":"2026-06-20T06:55:22Z","phase":"test","seconds":0.453,"exit":0,"cmd":"B:/develop/moat/agent_space/tiny_vllm_validate_gfx1101.exe"}
+{"kind":"session","ts":"2026-06-20T06:56:30Z","epoch":1781938590.269281600,"event":"end","platform":"windows-gfx1101"}
+{"kind": "tokens", "ts": "2026-06-20T06:57:11Z", "tokens": 61121, "source": "validator (gfx1101)"}
+{"kind": "tokens", "ts": "2026-06-23T22:25:32Z", "tokens": 20289, "source": "gfx90a dead-code cleanup (batch D subagent, shared)"}
+{"kind": "tokens", "ts": "2026-07-02T18:26:12Z", "tokens": 35773, "source": "porter (PR fix round: copyright line removal + reply)"}
+{"kind": "tokens", "ts": "2026-08-09T15:27:49Z", "tokens": 48073, "source": "validator"}
