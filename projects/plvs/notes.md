@@ -1877,3 +1877,139 @@ the content it validates is unchanged since `22ea834`.
   boost.serialization toolchain wall (unrelated to this round).
 - linux-gfx1100 still needs revalidation at `bab4052` (same content-transfer argument applies;
   not this session's platform).
+
+## Validation 2026-08-19 (linux-gfx1100, revalidate): PASS -> completed (head bab4052)
+
+Trigger: HEAD moved `be91acd` (this arch's `validated_sha`) -> `bab4052` (three fix rounds:
+the licence-scoped `helper_cuda.h` fix at `22ea834`, the shell-plumbing/doc round at `3c714fc`,
+and the `changes-requested` fixes at `bab4052`). Host: `/opt/rocm` ROCm 7.2.3, amdclang 22.0.0git,
+GPU: 4x AMD Radeon Pro W7800 (gfx1100, RDNA3, wave32) via `rocminfo`, HEALTHY. No `opencv_contrib`
+build tree or dependency-stack (Pangolin/PCL/etc.) present on this host; built what was needed for
+this session from scratch, scoped to prove the actual device-code delta plus one real GPU run.
+
+### Fork integrity
+`git -C projects/plvs/src fetch origin` then `git checkout bab4052335d06b97adf91316892ece249c763037`
+-- matches `status.json.head_sha` exactly. `git status --porcelain` empty throughout (read-only
+except for scratch builds outside the tree; libsgm's gitignored `build-hip`/`lib` were removed
+before finishing). Note: this clone's local `moat-port` branch ref was stale at `22ea834` (last
+fetch predated the two fix rounds) -- `git branch -f moat-port origin/moat-port` was required
+before `jargon.py --port` (which reads the local branch, not `origin/moat-port`) would see the
+current content; worth remembering for any future session on a stale clone.
+
+### Delta classification
+`python3 utils/moatlib.py classify plvs be91acd9d8f97d55547e32b817ae181bba33d23f bab4052335d06b97adf91316892ece249c763037`
+-> `class=mixed arch_independent=False`. `git diff --stat be91acd..bab4052`: 7 files, of which only
+`CMakeLists.txt`, `hip_compat/cuda/helper_cuda.h`, `include/cuda/helper_cuda.h` are source
+(`build_plvs.sh`, `build_thirdparty.sh`, `config.sh`, `new_features.md` are shell/doc, no device
+code). No `.cu`/`.hpp`/`.h` under `src/`, `include/cuda/{Orb,Fast}.hpp`, or `Thirdparty/` changed.
+`CMakeLists.txt`'s only diff in this range is the single `include_directories(BEFORE
+${PROJECT_SOURCE_DIR}/hip_compat)` line added inside `if(USE_HIP)` (confirmed with
+`git diff be91acd..bab4052 -- CMakeLists.txt`) -- exactly the mechanism the 2026-08-13/14 gfx90a
+sessions already proved is host-side-only.
+
+### Binary-equivalence check (gfx1100), done independently rather than trusted from gfx90a
+
+Built a minimal but real OpenCV-with-HIP header tree for gfx1100 (cmake configure only, not a full
+build -- generates `cvconfig.h`/`opencv_modules.hpp` from the real `WITH_HIP=ON` config, which is
+all the two device-code TUs need):
+```
+git clone --depth 1 -b moat-port https://github.com/AMD-Ecosystem/opencv.git core
+git clone --depth 1 -b moat-port https://github.com/AMD-Ecosystem/opencv_contrib.git contrib
+cmake -S core -B cfgbuild -GNinja -DWITH_HIP=ON -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/amdclang++ \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DOPENCV_EXTRA_MODULES_PATH=contrib/modules \
+  -DWITH_CUDA=OFF -DWITH_OPENCL=OFF -DWITH_PYTHON=OFF -DWITH_JAVA=OFF \
+  -DBUILD_LIST=core,cudev,cudaarithm,cudawarping,cudaimgproc,cudastereo,cudafilters,cudafeatures2d \
+  -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_DOCS=OFF
+```
+Compiled all 4 plvs GPU TUs at both `be91acd` and `bab4052` for gfx1100 (checked out each sha in
+turn, `-Ihip_compat` added only at `bab4052`, matching what the CMakeLists.txt line does):
+```
+amdclang++ -x hip --offload-arch=gfx1100 -std=c++17 -DUSE_HIP -c src/cuda/<f>.cu \
+  [-Ihip_compat] -Iinclude -Isrc/cuda -Icfgbuild -Icore/modules/core/include \
+  -Icontrib/modules/{cudev,cudaarithm,cudawarping,cudaimgproc,cudastereo,cudafilters,cudafeatures2d}/include
+```
+All 8 compiles (4 files x 2 shas) RC=0.
+
+Device-code comparison (`roc-obj-ls` gives the exact offset/size of the `hipv4-amdgcn-amd-amdhsa--gfx1100`
+bundle in each `.o`; extracted with `dd`, disassembled with `llvm-objdump -d`, filename header line
+stripped before diff -- the same normalization `codeobj_diff.py` implements):
+- `Allocator_gpu.o`, `Cuda.o`: `roc-obj-ls` reports "No kernel section found" at both shas -- pure
+  host wrappers, nothing to compare on-device (matches the 2026-08-14 gfx90a finding).
+- `Orb_gpu.o`: offset=12288 size=68488 at BOTH shas; disassembly diff (post header-strip) = 0 lines.
+  **Byte-identical.**
+- `Fast_gpu.o`: offset=20480 size=164176 at BOTH shas; disassembly diff (post header-strip) = 0
+  lines. **Byte-identical.**
+
+Confirms on gfx1100, independently of the gfx90a proof: `checkCudaErrors` is host-side-only in all
+4 TUs, so the `helper_cuda.h`/`hip_compat` swap and the one-line CMake include path change cannot
+and do not alter device ISA on this arch either.
+
+### Real GPU execution (gfx1100 hardware, not just static ISA)
+
+libsgm is untouched by every commit since `05eed6c` (`git diff --name-only 05eed6c..bab4052 --
+Thirdparty/libsgm/` empty) and needs no OpenCV, so built it standalone for a live run:
+```
+cmake -S Thirdparty/libsgm -B Thirdparty/libsgm/build-hip -GNinja -DUSE_HIP=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/amdclang++ \
+  -DENABLE_SAMPLES=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build Thirdparty/libsgm/build-hip -j        # -> lib/libsgm.a, RC=0
+```
+Wrote a headless HOST2HOST harness (`sgm::StereoSGM`, matching `sample/image/stereosgm_image.cpp`'s
+own convention) against `libsgm.a`, comparing to a CPU `cv::StereoSGBM` reference, using the OpenCV
+aloe stereo pair (`aloeL.jpg`/`aloeR.jpg`, 1282x1110, fetched from `opencv/opencv@4.x` since this
+host carries no `opencv_contrib` checkout -- same pair every earlier gfx90a/gfx1100/gfx1201 session
+in this file used). Invalid pixels are disparity `0` (libsgm's LR-consistency-check convention,
+confirmed by reading `Thirdparty/libsgm/src/check_consistency.cu`), not `>= disp_size` as a first
+draft of the harness incorrectly assumed -- fixed before trusting the numbers.
+
+```
+HIP_VISIBLE_DEVICES=0 ./sgm_aloe_gfx1100 aloeL.jpg aloeR.jpg 128
+```
+Run 1: `gpu_valid=1197217/1423020 (84.13%)`, `agreement@2px=0.965`, `mean_abs_diff=0.99`, `min=0
+max=127`. Run 2: `gpu_valid=1197221/1423020 (84.13%)`, same agreement/diff figures (a 4-pixel
+run-to-run wobble, not bit-identical this time, but well within the pattern already on record).
+No crash, no NaN, all disparities in `[0, 127]`. RESULT: PASS (coverage >= 0.80, agreement >=
+0.95). Matches every prior session's numbers for this exact WARP_SIZE=32 kernel on this exact
+pair: gfx90a 0.841/0.982 (06-12) and 0.841 (08-14); gfx1100 0.841/0.974 (06-12); gfx1201
+0.841/0.972 (06-12). `Thirdparty/libsgm` is unchanged since `05eed6c`, so this is a fresh
+build-and-execute of already-statistically-validated device code, confirming the build/link/run
+path still works on this head, not new wave64/wave32 correctness evidence.
+
+Did not repeat the full mono-TUM-RGBD SLAM run: no `opencv_contrib`/OpenCV-with-HIP install,
+Pangolin, or the bundled CPU-lib stack is present on this host (multi-hour bring-up per the
+2026-06/2026-08 sessions' own notes), and `src/`, `include/`, and every `Thirdparty/*/src`
+directory are byte-identical to the tree that already carries that evidence (05eed6c through
+bab4052 for the SLAM/feature-path sources; the device-ISA proof above covers the only sources that
+changed at all in this revalidation's range).
+
+### Gate re-checks (validator step 4)
+
+- `python3 utils/jargon.py --port plvs` -> **clean** (exit 0), after fixing the stale local
+  `moat-port` branch ref noted above.
+- ROCm build documentation: `grep -n USE_HIP config.sh new_features.md build_plvs.sh
+  build_thirdparty.sh` shows the "HIP/ROCm Settings" block, the `USE_HIP` forwarding in both build
+  scripts, and the `new_features.md` paragraph -- present and unchanged since the 2026-08-14b fix
+  round that added them.
+
+### CUDA no-regression gate
+
+Not re-run: already recorded PASS at this exact `head_sha` (`bab4052`) by the 2026-08-14
+linux-gfx90a validation session (the gate runs once per head_sha; that session's delta-content
+argument -- `22ea834..bab4052` touches zero files nvcc ever sees -- covers this arch too, since
+nvcc does not care which AMD arch a HIP build targets).
+
+### Cleanup
+`Thirdparty/libsgm/build-hip` and `Thirdparty/libsgm/lib` (both gitignored) removed before
+finishing. `git -C projects/plvs/src status --porcelain` empty, HEAD `bab4052` (matches
+`status.json.head_sha` and `origin/moat-port`).
+
+### Result
+linux-gfx1100: `completed` (`validated_sha` be91acd -> bab4052).
+
+### Still open, unchanged by this round
+- Deferred item `plvs-nvidia-proprietary-rescan`: a person's ruling on redistributing the two
+  vendored NVIDIA EULA-pointer headers.
+- Windows platforms (`windows-gfx1101`, `windows-gfx1201`) remain blocked on the clang-cl +
+  boost.serialization toolchain wall.
+- Both required Linux gates (wave32 via this session, wave64 via the 2026-08-14 gfx90a session)
+  are now satisfied at `bab4052`; `pr-ready` is a maintainer/PR-prep concern, not this session's.
