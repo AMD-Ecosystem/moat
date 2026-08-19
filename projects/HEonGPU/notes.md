@@ -6723,3 +6723,80 @@ timings to users that no recorded run produced.
 `linux-gfx942` and `linux-gfx1100` were already behind head and read `revalidate`. The
 standing GitHub objection on fork PR 1 is unchanged and still needs a fresh `/moat
 approve` from a person over the updated diff; this round posted nothing there.
+
+## Review 2026-08-19 (linux-gfx90a) -- documentation round `3c88f16..542ea1a` and the skill edit
+
+Scope: `git diff 3c88f16..542ea1a` on `moat-port` (README.md +1/-1,
+docs/advanced_topics.rst +3/-3, src/include/heongpu/kernel/defines.h comment only), plus
+MOAT commit `412d92c` to `cuda-to-rocm/references/validation.md`. Settled questions from
+earlier rounds were not reopened. Verdict: **review-passed** -- no finding survived
+fact-checking.
+
+### No findings
+
+Every factual claim the round asserts was re-derived from this tree rather than taken from
+the porter's notes:
+
+- Fixed 100 MB host initial pool. `MemoryPoolConfig::Defaults()`
+  (`src/lib/util/memorypool.cu:37-44`) sets `initial_device_fraction`,
+  `max_device_fraction`, `max_host_fraction` only, so `initialize()` takes the
+  `roundup_256(104857600)` branch (`:182-188`). `initial_host_memorypool_size` is dead on
+  every path: its one reference (`:193`) is the `default_fraction` argument in the `else`
+  branch, entered only when bytes or fraction already has a value, and `resolve_pool_size`
+  (`:134-178`) reads `default_fraction` only when neither does. `defines.h:37`'s
+  `// Unused: ...` and `advanced_topics.rst:18`'s "starts at a fixed 100 MB" are both
+  correct, and agree with `README.md:315-317`.
+- Free, not total. `get_decive_avaliable_memory()` returns `free_mem`
+  (`memorypool.cu:85-92`), and that is what both device fractions multiply (`:111`,
+  `:215-222`); `get_host_avaliable_memory()` likewise returns `freeram`/`ullAvailPhys`
+  (`:69-83`), so "40% of the available RAM" is right too. `cudaMemGetInfo` really is
+  `hipMemGetInfo` in a ROCm build (`thirdparty/hip_compat/cuda_runtime.h:72`), so the
+  parenthetical in `advanced_topics.rst:20` holds.
+- Example citation. `example/basic/3_basic_memorypool_config.cpp:34-38` sets
+  `initial_device_fraction = 80.0f`, `max_device_fraction`, `initial_host_bytes` and
+  `max_host_fraction`, never `initial_device_bytes`; "shows the mechanism, though the sizes
+  it passes are themselves discrete-card sizes" is accurate. The `context->generate()`
+  arrow form in the rst matches that example (`:45`), which holds a pointer -- checked
+  against `README.md:339`'s value form before dismissing it as a finding.
+- Inertness. `git diff 3c88f16..542ea1a` changes no value, macro or build file; the one
+  compiled file is a header comment. `moatlib.py classify HEonGPU 3c88f16 542ea1a`
+  reproduced `class=comment-only arch_independent=True inert=True`. `git diff
+  origin/main..HEAD -- src/include/heongpu/kernel/defines.h` is comment-only against
+  upstream as well, and upstream's own 50/80/10/20 comments were the stale ones.
+- Commit hygiene. Title 63 chars with `[ROCm]`; body carries rationale, the AI-assistance
+  disclosure and a fenced Test Plan; no `Co-Authored-By`, no noreply address, no
+  AMD-internal account reference. `jargon.py --port HEonGPU` clean, `prose.py` on the body
+  clean, delta is ASCII, fork `git status --porcelain` empty at `542ea1a` and
+  `origin/moat-port` is at the same commit.
+- Skill edit `412d92c`. The rewritten paragraph states only what
+  `deferred.json/heongpu-hipmm-pool-slowdown-gfx1151` records (~12.6 s per test with an
+  allocator that pooled nothing, 44-56 s heavy with the 90% default, ~2x light and 3-4x
+  heavy), says explicitly that the comparison does not apportion cost between reservation
+  and allocator, and adds the rule that produced this round. No figure in it is
+  unsupported.
+
+### Considered and dismissed (so the next reviewer does not re-derive them)
+
+- The `advanced_topics.rst:18` bullet lead-in still says the pool sizes "are defined as
+  percentages of available system memory" while the same bullet now reports a fixed 100 MB
+  host initial default. Not a defect: the bullet sits under "Configuration
+  (``defines.h``)" and the lead-in describes how the four constants are written in that
+  header, which is still true of all four; the following sentence gives the effective
+  default and is now correct.
+- "both context creation and memory-heavy work have been observed to slow down markedly"
+  (`advanced_topics.rst:20`, `README.md:196`) keeps a qualitative claim whose only precise
+  form ("1.0 s -> 10.5 s") was dropped as unrecorded. It survives: the recorded gfx1151
+  suite timings are an observation of both setup-dominated light tests and heavy ones on
+  such a part, the sentence quotes no figure, and it is exactly the "state the shape, not
+  the timings" form the corrected skill now prescribes. The caveat that the measurement
+  does not isolate the reservation lives in the commit body and the skill, which is the
+  right place for it; the user-facing recommendation rests on the reservation size
+  (~65 GB of 72 GB), which is self-evident and independently corroborated
+  (`notes.md:3889`).
+
+### Validation status carried into this verdict
+
+`windows-gfx1151` is at head `542ea1a` by `source-class` carry-forward, which this review
+confirms is warranted. `linux-gfx90a` (`89cb862`), `linux-gfx942` and `linux-gfx1100`
+(`26d636f`) are behind head across the non-inert hipMM commits and genuinely need
+revalidation; that is not a finding against this round.
