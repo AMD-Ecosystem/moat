@@ -1651,3 +1651,66 @@ property of this change.
 
 `git -C projects/Quest/src status --porcelain` clean at `cbc3890`; the only fork change
 this round is that commit.
+
+## Review 2026-08-19 (windows-gfx1151, `moat-port` cbc3890 vs upstream main) -- CHANGES REQUESTED
+
+Problems only. Reviewed the whole branch, not the newest commit. Conflict of interest
+declared: this session also wrote `cbc3890`, so findings 1 and 5 are self-reported and a
+second reviewer on another host is worth having before publication.
+
+1. **`decode_handler.cuh` -- `int_buffer_ != nullptr` no longer means "partitioned".**
+   `GetChunkIndPtr` and `GetBatchIdxMap` use exactly that as their nullptr sentinel and
+   index past the end of the `batch_size + 1` buffer `cbc3890` allocates on the
+   non-partition path. Not a live bug: every caller is already inside a `tmp`/`tmp_size`
+   guard, so neither runs when there is no partition. But the sentinel is now untrue, and
+   the next caller to trust it gets a valid-looking pointer into a two-element
+   allocation. Fix: allocate the chunk/map regions too, or gate those accessors on
+   something that still means partitioned.
+
+2. **`hip_compat/cuda_fp16.h` -- `#undef __HIP_NO_HALF_CONVERSIONS__` is an ODR hazard.**
+   In this SDK the macro guards MEMBER functions of `__half` (`amd_hip_fp16.h:87,101,137`
+   -- converting constructors and `operator=`), so a translation unit reaching this shim
+   sees a different `__half` from one that only pulls torch's headers. It is also
+   include-order dependent: a TU that reached `hip/hip_fp16.h` through torch first would
+   make the `#undef` a no-op behind the include guard. Verified load-bearing -- removing
+   both `#undef`s gives 36 errors at `decode_page.cuh:436,527` ("invalid argument type
+   '__half' to unary expression") and `decode_attn.cuh:164` ("no matching conversion for
+   static_cast from 'float' to '__half'"). The alternative is explicit
+   `__half2float`/`__float2half` at those sites, as `rms_norm.cu` already does, trading
+   footprint in vendored files for the hazard. At minimum the shim must state that it has
+   to precede any torch header.
+
+3. **No test can select the single-block launch shape.** It is chosen by
+   `batch_size * num_kv_heads >= blocks_per_cu * cu_count`: 32 >= 20 on gfx1151, but
+   32 >= 70 (gfx1100) and 32 >= 304 (gfx942) are false. So the path repaired in `cbc3890`
+   is exercised on exactly one platform in the fleet and a regression is invisible to the
+   other two and to any NVIDIA CI. The split shape was checked here only by editing the
+   condition and rebuilding, which no test run reproduces. Wanted: a test-visible override
+   of the launch shape.
+
+4. **The CUDA path's CMake was restructured and never compiled.** `project()` moved from
+   `LANGUAGES CUDA CXX` to `LANGUAGES CXX` plus a conditional `enable_language(CUDA)`, and
+   `fetch_rapids.cmake`, the `rapids-*` includes, `rapids_cpm_init()` and `get_raft.cmake`
+   moved from before `project()` to after it -- all on the NVIDIA build. The usual
+   breakage vector is absent (`rapids_cuda_init_architectures()` is never called, and it is
+   the one entry point that must precede `project()`), so this is expected to be fine, but
+   the CUDA gate is `cuda-not-validated` against a pre-existing RAFT branch-24.02
+   `CUDA::nvToolsExt` wall, so nobody has configured it since the rewrite.
+
+5. **`cbc3890` changes NVIDIA behaviour**, per the scope caveat recorded above. Raised here
+   because an upstream reviewer will ask, and because it turns finding 4 from "owed" into
+   load-bearing.
+
+6. **`c1d7fff` carries no AI-assistance disclosure.** The other three commits do, and it is
+   the commit the branch is built on.
+
+Checked and clear, recorded so a later round does not redo them: the width-32 shuffle
+grouping in `rms_norm.cu` against `tid>>5`/`tid&0x1f`/`shared[NUM][33]`; the decode
+reductions (`offset = bdx/2 .. 1` with `static_assert(bdx <= 32)` and `tx` fastest-varying,
+so the butterfly stays in an aligned sub-group on wave64); the `hip_compat/flashinfer/math.cuh`
+symbol set against upstream (identical); `cp_async`'s non-PTX fallback being a synchronous
+`uint4` store with `block.sync()` present in the main loop, which is why the no-op
+`commit_group`/`wait_group` and the empty `cuda/pipeline` shim are safe; `protective_get_k_ptr_heads`
+having no user outside the sparse decode kernel, so `prefill.cuh` and the CUDA prefill path
+are untouched by the accessor change; and V pointers being derived as
+`k_ptrs[j] + kv_offset_delta()`, so the K fix covers V.
