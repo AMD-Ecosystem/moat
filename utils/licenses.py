@@ -75,7 +75,7 @@ def scan_nvidia(repo_dir, cfg=None):
     markers = cfg["tier3"]["nvidia_proprietary"]["text_markers"]
     hits = []
     for m in markers:
-        r = subprocess.run(["grep", "-rlF", "--", m, str(repo_dir)],
+        r = subprocess.run(["grep", "-rliF", "--", m, str(repo_dir)],
                            capture_output=True, text=True)
         hits.extend(line for line in r.stdout.splitlines() if line)
     return sorted(set(hits))
