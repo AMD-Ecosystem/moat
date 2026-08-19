@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "phoenixos-nvidia-proprietary-rescan",
+      "kind": "other",
+      "component": null,
+      "summary": "Rescan with the fixed scan_nvidia: the repo vendors the CUDA 11.3 API header set (utils/cudam/api_interceptor_gen/headers/11_3/: cuda.h, cublas_v2.h, cudnn.h, cufft*, curand.h, cusolver*, 14 files) carrying the NVIDIA 'software license agreement' proprietary notice (lowercase form only the fixed scanner matches). Stage is planned: the planner and a licence ruling must account for these before port work starts. Submodule scan coverage was partial (broken .gitmodules entry upstream).",
+      "refs": [
+        "moat main b336246 (case/wording-proof scan_nvidia)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-13T17:08:59Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-13T19:28:32Z"
+      }
+    }
+  ]
+}

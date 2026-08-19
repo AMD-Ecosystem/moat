@@ -224,10 +224,16 @@ def record_accepts(accepts, by, apply=False):
         obj["stage"] = "awaiting-fork"
         if not apply:
             out.append((full, f"would record fork on port/{name}")); continue
-        sha = moatlib.commit_to_branch(
-            f"port/{name}", {f"projects/{name}/status.json": json.dumps(obj, indent=2) + "\n"},
-            f"{name}: {by} chose to fork, answering intake's recommendation")
-        out.append((full, f"recorded on port/{name} at {sha[:9]}"))
+        # save_record, not a raw commit_to_branch: it validates the record, checks it
+        # against the trunk's schema, and refuses a stage move the transition table
+        # does not allow -- the same line every other record write holds.
+        try:
+            sha = moatlib.save_record(
+                name, obj, f"{name}: {by} chose to fork, answering intake's recommendation")
+        except (RuntimeError, ValueError) as e:
+            out.append((full, f"refused: {e}")); continue
+        out.append((full, f"recorded on port/{name} at {sha[:9]}" if sha
+                    else "recorded in this checkout"))
     return out
 
 
