@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-04T03:56:07Z",
-  "updated_at": "2026-08-07T07:04:40Z",
+  "updated_at": "2026-08-19T22:45:34Z",
   "head_sha": "07385a228e2ff7701ffd8f136d257051fa6c0fda",
   "depends_on": [],
   "porting": null,
@@ -125,5 +125,6 @@
         "last_session_at": null
       }
     }
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/MASt3R-SLAM/pull/1"
 }
