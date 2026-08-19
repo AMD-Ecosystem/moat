@@ -366,17 +366,15 @@ def gate_gh_guard():
     problems = [f"gh_guard misclassifies `gh {' '.join(argv)}`"
                 for argv, want in gh_guard.CASES
                 if gh_guard.classify(argv).allow != want]
+    problems += install_hooks.launcher_case_problems()
 
     if os.environ.get("CI") or gh_guard.real_gh() is None:
         return problems
 
     shim = install_hooks.gh_launcher_path()
-    if not shim.exists():
-        problems.append(f"gh guard is not installed at {shim} "
-                        f"(python3 utils/install_hooks.py)")
-    elif shim.read_text() != install_hooks.gh_launcher_text():
-        problems.append(f"gh guard at {shim} is stale "
-                        f"(python3 utils/install_hooks.py)")
+    problem = install_hooks.gh_launcher_problem(shim)
+    if problem:
+        problems.append(problem)
     else:
         resolved = shutil.which("gh")
         if not resolved or pathlib.Path(resolved).resolve() != shim.resolve():
