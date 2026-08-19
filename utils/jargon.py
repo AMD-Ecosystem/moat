@@ -46,6 +46,15 @@ def load():
     return cfg["terms"], allow
 
 
+# git writes UTF-8 regardless of the platform's locale. `text=True` alone decodes
+# with the locale codec, so on Windows (cp1252) a single non-Latin-1 byte anywhere
+# in the history raises UnicodeDecodeError -- and because that happens inside
+# subprocess, `r.stdout` comes back None and the scan dies with a misleading
+# `AttributeError: 'NoneType' object has no attribute 'split'`. A jargon check that
+# crashes instead of answering is the dangerous shape here: it gates publication.
+_GIT_TEXT = {"encoding": "utf-8", "errors": "replace"}
+
+
 def scan_text(text, label, terms, allow):
     """Scan prose. Fenced code blocks and shell commands are skipped: a Test Plan
     that documents `grep -niE '\bmoat\b'` as its own jargon check is not itself
@@ -92,7 +101,7 @@ def port_range(name):
     branch = obj.get("fork_branch") or moatlib.PORT_BRANCH
     rng = f"{base}..{branch}"
     n = subprocess.run(["git", "-C", str(repo), "rev-list", "--count", rng],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, **_GIT_TEXT)
     if n.returncode or not n.stdout.strip().isdigit():
         raise ValueError(f"{name}: cannot resolve {rng} in {repo} -- "
                          f"is the fork clone fetched?")
@@ -105,7 +114,7 @@ def port_range(name):
 def scan_commits(repo, rng, terms, allow):
     """Commit messages in a range. Extracted from main so a gate can call it."""
     r = subprocess.run(["git", "-C", repo, "log", "--format=%H%n%B%n--END--", rng],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, **_GIT_TEXT)
     hits = []
     for block in r.stdout.split("--END--"):
         if block.strip():
@@ -117,7 +126,7 @@ def scan_commits(repo, rng, terms, allow):
 def scan_diff(repo, rng, terms, allow):
     """Lines ADDED in a range -- code comments and docs the port introduces."""
     r = subprocess.run(["git", "-C", repo, "diff", "--unified=0", rng],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, **_GIT_TEXT)
     added = "\n".join(l[1:] for l in r.stdout.splitlines()
                       if l.startswith("+") and not l.startswith("+++"))
     return scan_text(added, "added lines", terms, allow)
