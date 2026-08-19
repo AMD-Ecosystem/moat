@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:23:49Z",
-  "updated_at": "2026-08-07T07:05:05Z",
+  "updated_at": "2026-08-19T23:31:41Z",
   "head_sha": "65dd8979417a14745e736cb1675558e5bc6b467d",
   "depends_on": [],
   "porting": null,
@@ -130,5 +130,6 @@
         "at": "2026-06-23T22:48:19Z"
       }
     }
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/fdtd3d/pull/1"
 }
