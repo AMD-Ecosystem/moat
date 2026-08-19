@@ -37,9 +37,13 @@ met. `--review` is where work piles up: a port cannot be approved until its revi
 exists, and nothing opens one automatically, so ports sit finished and unreviewable --
 the report names them all; do not trust any remembered count.
 `--review --apply --name <p> --title '<t>' --body-file <f>` opens one. `--attention`
-lists open PRs where a maintainer asked for something, had the last word, or has gone
-quiet. `--fix-review` and `--merge-fix` are the two ends of a staged fix round
-(section 2). `--approvals` catches a review GitHub still shows as green over content
+lists open PRs where something needs a person: the PR no longer merges into its base
+(top of the list -- a conflict blocks the merge outright and no sha-comparing sweep
+can see it), a maintainer asked for something, had the last word, or has gone quiet.
+`--fix-review` and `--merge-fix` are the two ends of a staged fix round (section 2);
+both test-merge the staged tip against the live upstream base, so a round that would
+flip the PR to CONFLICTING is caught before anyone approves it and again before the
+push -- a conflict there means the round must merge the base and resolve it. `--approvals` catches a review GitHub still shows as green over content
 nobody approved. `--dry-run` is bookkeeping, and a HEAD-MOVED line in it is section
 2's maintainer-push case. The waiver listing is section 6: a waiver nobody has
 answered is a finished port that cannot be submitted.
@@ -66,7 +70,8 @@ counts too, judged by its time against the branch tip. Do not ask them to also r
 copy of the body somewhere in this repo.
 
 Rejection is a command too, because the author's Request Changes button is greyed out
-exactly as Approve is: `/moat changes-requested` on a line by itself sends the port
+exactly as Approve is: `/moat changes-requested` on a line by itself (or
+`/moat request-changes`; both spellings are accepted) sends the port
 back to the porter and blocks publish until that person posts `/moat approve`. Only
 each author's latest command stands, a command quoted inside a code fence is ignored
 (the instructions comment quotes both), and an unrecognized `/moat` line from someone
@@ -215,7 +220,9 @@ has reviewed, revalidated, or approved it:
    title and body are NOT republished upstream, so say plainly what the maintainer
    asked, what changed, and what revalidated. A body section headed exactly
    `## Upstream reply` is the one upstream-visible part: approve it and it is posted
-   verbatim on the upstream PR after the merge. That section ends at the next `##`
+   verbatim on the upstream PR after the merge, behind a standing AI-disclosure line
+   the tool prepends (`REPLY_NOTE` in `utils/upstream.py`) -- do not write the
+   disclosure into the draft by hand. That section ends at the next `##`
    heading, so anything written for our own eyes goes after one.
 4. `/moat approve` on that PR, then `upstream.py --merge-fix --apply` re-checks the
    live approval and every gate, fast-forwards `moat-port` to exactly the approved
