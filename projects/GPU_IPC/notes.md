@@ -1197,3 +1197,120 @@ ninja -C projects/GPU_IPC/src/build -j6
 Exit 0, 12 targets rebuilt after touching both headers, 0 error lines, `gipc.exe`
 relinked. This is a compile check only -- `windows-gfx1151` stays `blocked` and
 nothing is claimed about runtime behaviour on this host.
+
+## Validation 2026-08-19: linux-gfx90a revalidation at f9604bb
+
+linux-gfx90a (GPU index 0, MI250X, ROCm/TheRock SDK at
+`/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel`,
+`HIP_VISIBLE_DEVICES=0` pinned throughout). Revalidation triggered by `head_sha`
+moving from the previously validated `3798cb295f5eca470b46ee817aab546227c15b5b`
+to `f9604bbd1e965106ee0752b46e48f8e7828c6401` (the Windows warp-intrinsic
+function rework, see the section above).
+
+### Carry-forward attempted, not possible
+
+`python3 utils/moatlib.py classify GPU_IPC 3798cb2... f9604bb...` returns
+`class=mixed`, so a `codeobj_diff` carry-forward was attempted per the shortcut
+rather than assumed clean. Built the OLD sha (3798cb2) at gfx90a in a throwaway
+worktree with the same recipe as every prior round
+(`cmake -S . -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a
+-DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(nproc)`): it **fails to
+compile** on this host's current ROCm SDK. `mlbvh.cu`/`MASPreconditioner.cu`/
+`GIPC.cu` all error in `hip/amd_detail/amd_hip_bf16.h` around line 735-751,
+"too many arguments provided to function-like macro invocation" against
+`__shfl_up_sync`/`__shfl_down_sync` -- this is exactly the macro/real-function
+collision that commit f9604bb's message describes and fixes (the same defect
+independently discovered on the Windows host on 2026-08-14). Since the old sha
+cannot be built here, `codeobj_diff` has nothing to compare against and the
+shortcut does not apply; this is a full real-GPU revalidation. Worktree removed
+before proceeding, no trace left in the fork tree.
+
+This is itself useful confirmation that the fix is necessary, not just
+Windows-specific busywork: this Linux host's current TheRock-based SDK hits the
+identical failure mode the Windows session found, so f9604bb is a real
+portability fix, not a Windows-only cosmetic change.
+
+### Build (head_sha f9604bb)
+
+```bash
+sudo apt-get install -y freeglut3-dev xdotool   # not preinstalled on this host
+cmake -S . -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
+```
+
+Configures and links clean, exit 0. Only warnings are the pre-existing
+`[[nodiscard]]` ignored-return-value pattern on `cudaEvent*`/`cudaMemset), same
+as every prior round. `timeit.sh GPU_IPC compile` wraps configure+build.
+
+### Run
+
+Same Xvfb/xdotool headless harness as every prior round on this arch:
+
+```bash
+Xvfb :77 -screen 0 1024x1024x24 &
+HIP_VISIBLE_DEVICES=0 DISPLAY=:77 LIBGL_ALWAYS_SOFTWARE=1 AMD_LOG_LEVEL=3 stdbuf -o0 ./build/gipc > run.log 2>&1 &
+DISPLAY=:77 xdotool search --name FEM   # window id
+DISPLAY=:77 xdotool key --window <id> space
+```
+
+Same default scene as every prior round on any arch:
+`vertNum: 38386  tetraNum: 159870  faceNum: 41664  surfVertNum: 20836
+surfEdgesNum: 62496`, `Kappa: 2824.037412` (matches exactly). Newton converges
+normally each frame (observed iteration k 2-8). Real device execution
+confirmed directly from the `AMD_LOG_LEVEL=3` trace (`hipLaunchKernel` entries
+resolving to project kernels: `_prepareHessian`, `__inverse2_P96x96`,
+`__PCG_constraintFilter`, `_aggregationKernel`, and others across the run).
+
+Every single HIP call in the run log returned `hipSuccess`
+(`grep -oP "Returned \K\S+" run.log | sort | uniq -c` -> 291195 hipSuccess,
+zero of anything else). Zero NaN (`grep -ic nan`). 31 frames completed, then
+the same documented line-search wedge as every prior round on every arch:
+`GIPC::lineSearch` (`GIPC.cu:10024`) reports "type 0 intersection happened"
+with a monotonically increasing counter, matching the byte-identical-to-upstream
+unbounded `while(checkInterset && isIntersected(TetMesh))` loop already
+investigated and ruled non-blocking in the 2026-08-08/2026-08-09 validation
+rounds above (upstream code, not port code; hypothesis 2 -- uninitialized
+device memory -- tested decisively and ruled out with the fill-pattern method;
+hypothesis 1 -- NVIDIA baseline -- remains unresolvable on any host in this
+fleet). Wedge frame (31) falls inside the previously observed range
+(25/26/32/32/36/37/31), consistent with the documented float `atomicAdd`
+accumulation-order nondeterminism. Nothing new to investigate: this run adds
+another data point to an already-closed question, not a new one.
+
+### CUDA no-regression gate
+
+Not previously recorded at f9604bb (it was recorded at the prior head_sha,
+3798cb2, and this gate is per-head_sha). Re-run rather than skipped:
+
+```bash
+cmake -S . -B build_cuda -DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=80 \
+      -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc
+cmake --build build_cuda -j$(nproc)
+```
+
+Fails at compile: 16 errors, byte-identical file:line and messages to the
+16 errors already recorded and diffed against the upstream base at 3798cb2
+(`GPU_IPC/load_mesh.h`/`load_mesh.cpp`, `uint32_t` not declared, cascading
+template/member-access errors -- pre-existing upstream breakage against nvcc
+12.8/gcc 13.3, a missing `<cstdint>` upstream never needed against older
+toolchains). The f9604bb..3798cb2 delta (`git diff --stat`) touches only
+`cuda_to_hip.h` and `device_utils.inl`, neither of which `load_mesh.h`/
+`load_mesh.cpp` include, so this head move cannot have changed that outcome;
+confirmed by identical error count and signature rather than assumed. Not
+counted as a gate failure. Throwaway `build_cuda` directory removed
+afterward; nothing from this gate reached the fork tree.
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --port GPU_IPC`: clean. `README.md` still documents
+the ROCm build alongside CUDA (unchanged by this head move -- the delta
+touches only `cuda_to_hip.h` and `device_utils.inl`).
+
+### State
+
+Fork tree clean throughout (`git -C projects/GPU_IPC/src status --porcelain`
+empty before and after; `run.log` was an untracked build artifact, removed,
+never committed; the throwaway old-sha worktree was removed before this
+validation, never committed). No source or build edit was needed for this
+arch at f9604bb. linux-gfx90a -> `completed`, `validated_sha` =
+f9604bbd1e965106ee0752b46e48f8e7828c6401.

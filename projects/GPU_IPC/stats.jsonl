@@ -40,3 +40,7 @@
 {"kind":"phase","ts":"2026-08-14T18:28:39Z","phase":"compile","seconds":29.580,"exit":0,"cmd":"ninja -C projects/GPU_IPC/src/build -j6"}
 {"kind":"phase","ts":"2026-08-19T16:21:31Z","phase":"build-windows-warp-rework","seconds":1.165,"exit":0,"cmd":"ninja -C projects/GPU_IPC/src/build -j6"}
 {"kind":"phase","ts":"2026-08-19T16:22:04Z","phase":"build-windows-warp-rework","seconds":23.270,"exit":0,"cmd":"ninja -C projects/GPU_IPC/src/build -j6"}
+{"kind":"session","ts":"2026-08-19T22:20:57Z","epoch":1787178057.207004860,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-19T22:22:35Z","phase":"compile","seconds":26.109,"exit":0,"cmd":"bash -c cd projects/GPU_IPC/src && cmake -S . -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(nproc)"}
+{"kind":"phase","ts":"2026-08-19T22:26:47Z","phase":"cuda-compile","seconds":30.858,"exit":2,"cmd":"bash -c cd projects/GPU_IPC/src && cmake -S . -B build_cuda -DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc && cmake --build build_cuda -j$(nproc)"}
+{"kind":"session","ts":"2026-08-19T22:28:38Z","epoch":1787178518.414108604,"event":"end","platform":"linux-gfx90a"}
