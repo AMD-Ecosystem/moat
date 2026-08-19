@@ -177,7 +177,7 @@ The project name links upstream.
 | [CuRast](https://github.com/m-schuetz/CuRast) ([fork](https://github.com/AMD-Ecosystem/CuRast/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#2](https://github.com/m-schuetz/CuRast/pull/2) |
 | [cuSZ](https://github.com/szcompressor/cuSZ) ([fork](https://github.com/AMD-Ecosystem/cuSZ/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#91](https://github.com/szcompressor/cuSZ/pull/91) |
 | [CV-CUDA](https://github.com/CVCUDA/CV-CUDA) ([fork](https://github.com/AMD-Ecosystem/CV-CUDA/tree/moat-port)) | ✅ | ✅ | 🚫 | 🟢 [#293](https://github.com/CVCUDA/CV-CUDA/pull/293) |
-| [DEM-Engine](https://github.com/projectchrono/DEM-Engine) ([fork](https://github.com/AMD-Ecosystem/DEM-Engine/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#69](https://github.com/projectchrono/DEM-Engine/pull/69) |
+| [DEM-Engine](https://github.com/projectchrono/DEM-Engine) ([fork](https://github.com/AMD-Ecosystem/DEM-Engine/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#69](https://github.com/projectchrono/DEM-Engine/pull/69) |
 | [dgSPARSE-Lib](https://github.com/dgSPARSE/dgSPARSE-Lib) ([fork](https://github.com/AMD-Ecosystem/dgSPARSE-Lib/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#39](https://github.com/dgSPARSE/dgSPARSE-Lib/pull/39) |
 | [dietgpu](https://github.com/facebookresearch/dietgpu) ([fork](https://github.com/AMD-Ecosystem/dietgpu/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [diff-surfel-rasterizations](https://github.com/xbillowy/diff-surfel-rasterizations) ([fork](https://github.com/AMD-Ecosystem/diff-surfel-rasterizations/tree/moat-port)) | ✅ | ✅ | ✅ | — |
@@ -217,7 +217,7 @@ The project name links upstream.
 | [HEonGPU](https://github.com/Alisah-Ozcan/HEonGPU) ([fork](https://github.com/AMD-Ecosystem/HEonGPU/tree/moat-port)) | 🔄 | ✅ | ✅ | — |
 | [icicle](https://github.com/ingonyama-zk/icicle) ([fork](https://github.com/AMD-Ecosystem/icicle/tree/moat-port)) | ✅ | ✅ | 🚫 | — |
 | [k2](https://github.com/k2-fsa/k2) ([fork](https://github.com/AMD-Ecosystem/k2/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#1353](https://github.com/k2-fsa/k2/pull/1353) |
-| [kaldi](https://github.com/kaldi-asr/kaldi) ([fork](https://github.com/AMD-Ecosystem/kaldi/tree/moat-port)) | ✅ | ✅ | 🚫 | 🟢 [#4986](https://github.com/kaldi-asr/kaldi/pull/4986) |
+| [kaldi](https://github.com/kaldi-asr/kaldi) ([fork](https://github.com/AMD-Ecosystem/kaldi/tree/moat-port)) | ✅ | ✅ | 🎫 | 🟢 [#4986](https://github.com/kaldi-asr/kaldi/pull/4986) |
 | [kaldifeat](https://github.com/csukuangfj/kaldifeat) ([fork](https://github.com/AMD-Ecosystem/kaldifeat/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [KittenGpuLBVH](https://github.com/jerry060599/KittenGpuLBVH) ([fork](https://github.com/AMD-Ecosystem/KittenGpuLBVH/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#5](https://github.com/jerry060599/KittenGpuLBVH/pull/5) |
 | [LC-framework](https://github.com/burtscher/LC-framework) ([fork](https://github.com/AMD-Ecosystem/LC-framework/tree/moat-port)) | ✅ | ✅ | ✅ | — |
