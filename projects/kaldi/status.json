@@ -7,14 +7,21 @@
   "priority": 6.626,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-08-12T20:26:58Z",
+  "updated_at": "2026-08-13T17:52:08Z",
   "head_sha": "014a2179c29f2c0437898a8ded09f57501eb9fb7",
   "depends_on": [],
   "pr_url": "https://github.com/kaldi-asr/kaldi/pull/4986",
   "pr_number": 4986,
   "pr_opened_at": "2026-06-12T18:33:50Z",
   "porting": null,
-  "waivers": {},
+  "waivers": {
+    "windows": {
+      "reason": "kaldi's ROCm support exists only in its POSIX build path: src/configure configure_rocm() exits 1 unless uname is Linux and uname -m is x86_64 (src/configure:311-318), before any GPU arch is consulted, so no Windows arch can build it regardless of GPU. The obstacle is the platform, not the GPU: the HIP device code itself is essentially POSIX-free (cudafeat 0/28 files, cudadecoder 0/31, hip 0/1, cudamatrix 2/54 with POSIX includes) and is validated on linux-gfx90a and linux-gfx1100. Adding Windows ROCm support means a host-build-system contribution to upstream rather than a CUDA-to-HIP change; it is registered as deferral kaldi-windows-rocm-cmake-build.",
+      "suggested_at": "2026-08-13T17:50:58Z",
+      "approved_by": "jeffdaily",
+      "at": "2026-08-13T17:52:08Z"
+    }
+  },
   "pr_state": "open",
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 34275045,
