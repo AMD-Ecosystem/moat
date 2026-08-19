@@ -6598,3 +6598,19 @@ actually sets.
   revalidation is warranted, and nothing in items 1-3 changes that: a documentation fix
   lands in the same inert class.
 - Fork `git status --porcelain` empty at `3c88f16`.
+
+### Reconciliation with the parallel linux-gfx1100 review above
+
+Two reviewers reviewed this round concurrently (a work-lock race; both verdicts are
+changes-requested, so the outcome is unambiguous). Item 1 was found independently by both,
+with the same code citations -- treat it as confirmed. On the free-vs-total wording, the
+linux-gfx1100 review is the stricter and better reading and I withdraw my "not a finding":
+`README.md:312` already says "90% of available GPU memory", so `README.md:196`'s "90% of
+the whole machine" and `advanced_topics.rst:20`'s "that fraction of everything the machine
+has" contradict the project's own wording as well as `memorypool.cu:85-92`. Saying "free"
+or "available" in both places costs nothing and removes the contradiction; my point stands
+only that the 65 GB arithmetic itself survives, since free and total were within 0.2% on
+the measured host. The porter should work the union of the two lists: item 1 (host default
+100 MB), the free-vs-total wording, my item 2 (measurement provenance) and the other
+review's items 3 and 4 (deferral ruling, provenance claim), plus my item 3 (the example
+does not set `initial_device_bytes`).
