@@ -113,3 +113,4 @@
 {"kind":"phase","ts":"2026-08-19T05:17:25Z","phase":"compile","seconds":49.434,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat-worktrees/GooFit/projects/GooFit/src/build-cpp-validate -j64"}
 {"kind":"phase","ts":"2026-08-19T05:17:36Z","phase":"test","seconds":6.512,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/moat-worktrees/GooFit/projects/GooFit/src/build-cpp-validate --output-on-failure"}
 {"kind":"phase","ts":"2026-08-19T05:17:37Z","phase":"test","seconds":0.558,"exit":0,"cmd":"env PYTHONPATH=/var/lib/jenkins/moat-worktrees/GooFit/projects/GooFit/src/build-cpp-validate python3 -m pytest /var/lib/jenkins/moat-worktrees/GooFit/projects/GooFit/src/python/tests -q"}
+{"kind":"session","ts":"2026-08-19T05:19:03Z","epoch":1787116743.702892786,"event":"end","platform":"linux-gfx1100"}
