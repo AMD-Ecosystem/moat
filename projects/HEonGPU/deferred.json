@@ -141,7 +141,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-08-18T20:49:19Z",
-      "decided": null
+      "decided": {
+        "choice": "defer",
+        "by": "Jeff Daily",
+        "at": "2026-08-19T16:08:19Z"
+      }
     }
   ]
 }
