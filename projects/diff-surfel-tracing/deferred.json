@@ -47,7 +47,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-08-14T05:10:36Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "Jeff Daily",
+        "at": "2026-08-19T19:12:14Z"
+      }
     },
     {
       "id": "orochi-32bit-ballot-onesweep-reorder",
@@ -61,7 +65,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-08-14T05:36:31Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "Jeff Daily",
+        "at": "2026-08-19T18:53:15Z"
+      }
     },
     {
       "id": "hiprt-warpsize-arch-allowlist",
@@ -75,7 +83,28 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-08-14T06:34:03Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "Jeff Daily",
+        "at": "2026-08-19T19:13:41Z"
+      }
+    },
+    {
+      "id": "hiprt-32bit-subwarpmask-shift",
+      "kind": "rocm-bug-report",
+      "component": "hiprt",
+      "summary": "The measured ROOT CAUSE of the 64-lane BVH build failures, and the only one of the HIP RT lane-mask defects that had no deferral of its own -- it was fixed locally and promoted to the skill, but never registered for upstream reporting, even though the pair-and-pack record refers to 'whatever report carries the three subwarpMask sites'. hiprt/impl/BvhBuilderKernels.h builds a per-subgroup lane mask at lines 144, 709 and 1104 (tag 3.1.0.cb09c56) as '( ( 1 << BranchingFactor ) - 1 ) << static_cast<uint64_t>( BranchingFactor * subwarpIndex )'. The left operand is int, and a shift's result type is the promoted LEFT operand, so the whole expression evaluates in 32 bits and only then widens to uint64_t; the cast on the right operand changes nothing. With BranchingFactor 4 and WarpSize 64, subwarpIndex runs 0..15 and the shift count reaches 60. AMD neither traps nor saturates: the instruction uses the low 5 bits of the count, so it wraps and lanes 32..63 receive the mask of lanes 0..31. openNodes then selects a child with '__ffsll( ballot( maxArea == area ) & subwarpMask ) - 1', so the upper half of the wavefront reads the LOWER half's ballot bits and opens a subtree belonging to another task. The same subtree lands in two slots, Collapse emits more leaf references than there are primitives, and every lane spins in 'while ( hiprt::any( !done ) )' forever -- which is exactly the hiprt-collapse-reference-count-hang symptom, whose '>=' relaxation treats the symptom while the extra references remain real out-of-bounds writes to referenceIndices. Invisible on RDNA because subwarpIndex <= 7 there, so the shift count never reaches 32. Fixed locally with '1ull << BranchingFactor' at all three sites, bit-identical on wave32. Ruled now by Jeff Daily 2026-08-19: goes upstream to GPUOpen-LibrariesAndSDKs/HIPRT as the root cause in the lane-mask issue, with the Collapse hang presented as its symptom rather than as a separate defect.",
+      "refs": [
+        "projects/diff-surfel-tracing/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-19T19:12:29Z",
+      "decided": {
+        "choice": "now",
+        "by": "Jeff Daily",
+        "at": "2026-08-19T19:12:38Z"
+      }
     }
   ]
 }
