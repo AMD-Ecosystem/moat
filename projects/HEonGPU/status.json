@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-08-19T04:58:52Z",
+  "updated_at": "2026-08-19T05:03:20Z",
   "head_sha": "3c88f16bc09d23f87cb94bf8245ae3f556f2c1b6",
   "depends_on": [],
   "waivers": {},
@@ -68,7 +68,7 @@
       "validated_sha": "6ac06d0575ec210f8dbfa1123aa890d2a04a9938",
       "started_at": "2026-08-08T17:50:20Z",
       "completed_at": "2026-08-13T01:21:43Z",
-      "updated_at": "2026-08-19T04:58:52Z",
+      "updated_at": "2026-08-13T01:21:43Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -82,7 +82,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer",
+      "last_agent": "validator",
       "state": "completed"
     },
     "windows-gfx1151": {
@@ -92,7 +92,7 @@
       "failed_sha": "89cb86258fc0d5b3b9b5a3144909e7af92bd377c",
       "started_at": "2026-08-13T02:40:37Z",
       "completed_at": "2026-08-19T04:22:31Z",
-      "updated_at": "2026-08-19T04:23:20Z",
+      "updated_at": "2026-08-19T05:03:20Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -107,7 +107,7 @@
         "last_session_at": null
       },
       "state": "completed",
-      "last_agent": "porter",
+      "last_agent": "reviewer",
       "carry_forward": {
         "to": "3c88f16bc09d23f87cb94bf8245ae3f556f2c1b6",
         "method": "source-class",

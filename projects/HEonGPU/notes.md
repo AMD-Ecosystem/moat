@@ -6474,3 +6474,127 @@ changes-requested. Items 1 and 2 are wrong statements about the maintainer's own
 text the maintainer will read on the PR; both are prose-only fixes in the same two files.
 Items 3 and 4 are record accuracy. Nothing here needs a rebuild or a revalidation -- the
 follow-up round should classify comment-only and inert again.
+## Review 2026-08-18 (reviewer, windows-gfx1151) -- documentation round, `0cbaa0b..3c88f16`
+
+Scope reviewed: `git diff 0cbaa0b..3c88f16` only (README.md +2, docs/advanced_topics.rst
++5/-1, src/include/heongpu/kernel/defines.h 4 comment lines). Settled questions were not
+reopened. Verdict: **changes-requested**, on one false statement that this very commit set
+out to correct, plus a missing measurement record behind numbers that now ship to users.
+
+### 1. `docs/advanced_topics.rst:18` still misstates the host pool default (must fix)
+
+`dab3a09` changed "the pinned host memory pool is initialized to 10% of RAM" to "30% of
+RAM". Both are wrong. The compiled default initial host pool is a hardcoded 100 MB:
+
+- `src/lib/util/memorypool.cu:37-44` -- `MemoryPoolConfig::Defaults()` sets
+  `initial_device_fraction`, `max_device_fraction` and `max_host_fraction`, and never sets
+  `initial_host_fraction` or `initial_host_bytes`.
+- `src/lib/util/memorypool.cu:182-188` -- with neither host field set, the initial host
+  pool is `roundup_256(104857600)`, i.e. 100 MB. That block is upstream's
+  (`origin/main:src/lib/util/memorypool.cu:167`), not the port's.
+- Consequently `initial_host_memorypool_size` (0.3f) is dead on every path: the `else`
+  branch at `memorypool.cu:189-193` passes it as `default_fraction`, but is reached only
+  when the caller already supplied bytes or a fraction, which take precedence inside
+  `resolve_pool_size` (`memorypool.cu:135-176`). No configuration ever yields "30% of RAM".
+- The project's own README already documents this correctly: `README.md:314-317`,
+  "Initial size (default): 100 MB when no runtime config is provided".
+
+So the round leaves the two documents contradicting each other on the point the commit
+claims to fix, and the commit body's claim to "bring the prose in line with the values that
+are actually compiled in" is not true for that clause. Fix: state 100 MB for the initial
+host pool (max 40% of available RAM is right). The device half of the sentence (90% / 95%)
+and all four `defines.h` comments are correct as changed; `git diff origin/main..moat-port
+-- src/include/heongpu/kernel/defines.h` is comment-only, no value moved, and the
+50/80/10/20 staleness is confirmed pre-existing upstream
+(`origin/main:src/include/heongpu/kernel/defines.h:33-38` and
+`origin/main:docs/advanced_topics.rst:18`).
+
+### 2. The sizing measurements are not in the record (must fix)
+
+`3c88f16` ships prescriptive performance numbers to library users, and its commit body
+states they were "measured on an AMD Radeon 8060S (gfx1151, unified memory) under ROCm
+7.14, comparing the default pool against `initial_device_fraction` values of 0.5 and 0.1
+and against `use_memory_pool = false`". I could not find that run anywhere in the record:
+
+- `notes.md` carries the numbers only as the round-15 bullet list (`notes.md:6329-6333`) --
+  no build tree, no commands, no per-configuration timings, no output.
+- `stats.jsonl` has no build or test phase for the documentation round; its only entry in
+  that window is the failed sphinx attempt (`2026-08-19T04:19:28Z`, exit 2). The last
+  recorded build is the `0cbaa0b` validation tree, and no build tree under `agent_space/`
+  has been written since; a sweep over `initial_device_fraction` needs a rebuild, since
+  `example/basic/3_basic_memorypool_config.cpp` hardcodes 80/90 and exposes no knob.
+- `deferred.json` (`heongpu-hipmm-pool-slowdown-gfx1151`) still says the benchmarking study
+  separating pre-reservation from per-allocation cost "is planned; this entry is awaiting
+  that measurement" -- i.e. the record still asserts this measurement has not been made.
+
+Which claims stand on the record as it is:
+
+- "72 GB shared, roughly 65 GB at 0.9" -- **corroborated**: `notes.md:3889` records
+  `hipMemGetInfo rc=0 free=72761692160 total=72924151808`, and 0.9 x 72.76 GB = 65.5 GB.
+- "memory-heavy workloads can take roughly twice as long" -- **corroborated** by the
+  reviewer's independent measurement in `deferred.json` (roughly 2x light, 3-4x heavy) and
+  by the validation timings (heavy cases 44-60 s here vs a 13-15 s whole suite on Linux).
+  Note the recorded independent figure for heavy work is 3-4x, not 2x; reconcile, or keep
+  the conservative wording deliberately and say so.
+- "context creation grows from about one second to about ten" -- **unverifiable** from the
+  record.
+- "10% or less, or a fixed one or two gigabytes ... performs as well as running with no
+  pool at all" -- **unverifiable**.
+- "50% ... already about twice as slow as 10% on heavy work" -- **unverifiable**.
+
+Either paste the sweep into `notes.md` (tree, how each fraction was set, per-configuration
+timings) and update the deferral, which would no longer be awaiting that measurement, or
+drop the three unverifiable figures from `docs/advanced_topics.rst:20-22`, `README.md:196`,
+the two commit bodies, and `cuda-to-rocm/references/validation.md:104-110`, where they have
+already been promoted for other projects to rely on.
+
+### 3. The cited example does not show `initial_device_bytes` (minor, fix while in there)
+
+`advanced_topics.rst:22` says to "fill in ``initial_device_fraction`` or
+``initial_device_bytes`` ... as ``example/basic/3_basic_memorypool_config.cpp``
+demonstrates". That example sets `initial_device_fraction = 80.0f`,
+`max_device_fraction = 90.0f`, `initial_host_bytes` and `max_host_fraction`
+(`example/basic/3_basic_memorypool_config.cpp:31-38`); it never sets
+`initial_device_bytes`, and the device fraction it demonstrates is 80%, the shape the new
+paragraph tells APU users to avoid. Cite it for the mechanism only, or name the fields it
+actually sets.
+
+### Checked and clear (recorded so it is not re-derived)
+
+- **Mechanism vs code.** `get_decive_avaliable_memory()` returns `free_mem`, not
+  `total_mem`, behind a misleading `// total_mem` comment
+  (`src/lib/util/memorypool.cu:85-91`), and the fraction resolves against that
+  (`memorypool.cu:216-222`). The new prose never asserts "total": it says the runtime
+  reports the machine's entire memory as device memory and that a fraction of device
+  memory is a fraction of the machine, which holds, and the measured free and total on
+  this host differ by 0.2% (72.76 vs 72.92 GB), so the "roughly 65 GB" arithmetic is right
+  either way. The unchanged bullet lead-in already says "available system memory". Not a
+  finding.
+- **`MemoryPoolConfig` and `context->generate()`.** Both exist as described
+  (`src/include/heongpu/util/memorypool.cuh:40-56`, `src/include/heongpu/host/bfv/context.cuh:62`,
+  `src/include/heongpu/host/ckks/context.cuh:59`), and `initial_device_fraction` /
+  `initial_device_bytes` are `std::optional` fields accepting 0.0-1.0 or 0-100
+  (`memorypool.cu:114-133`). "Needs no rebuild" is correct.
+- **House style.** The two new rst paragraphs are unindented body text after the bullet
+  list, valid reStructuredText, and use the file's existing ``literal`` inline markup with
+  no new directive or heading. The README paragraph is plain Markdown inside the existing
+  `#### AMD GPUs (ROCm)` section. `grep '](#'` over README.md returns nothing -- the file
+  really has no internal anchors, so a by-name pointer is the house convention, and
+  `### Memory Pool Configuration (Runtime)` exists at `README.md:320`, below the reference
+  at `README.md:196`, so "below" is accurate.
+- **Tone and text.** No test names, no reference to this effort, no war story; ASCII only;
+  `python3 utils/jargon.py --port HEonGPU` clean, `utils/prose.py` on both bodies clean.
+- **Commit hygiene.** Titles 61 and 57 characters, both `[ROCm]`; rationale, AI-assistance
+  disclosure and a fenced Test Plan in each body; no `Co-Authored-By`, no `Signed-off-by`,
+  no noreply address, no AMD-internal account reference. `3c88f16`'s Test Plan honestly
+  states documentation-only and claims no Sphinx build; the sphinx failure is real and
+  recorded (`stats.jsonl`, exit 2), so no false build claim was made.
+- **Carry-forward is valid.** The only compiled-path file in the delta is
+  `src/include/heongpu/kernel/defines.h`, four comment lines replaced in place -- same line
+  count, no value, no macro, no preprocessor effect -- so no compiled artifact can differ.
+  README.md and docs/advanced_topics.rst are not compiled. `moatlib.py classify HEonGPU
+  0cbaa0b 3c88f16` reproduced: `class=comment-only arch_independent=True inert=True`. The
+  `windows-gfx1151` carry-forward from `0cbaa0b` to `3c88f16` by `source-class` holds, no
+  revalidation is warranted, and nothing in items 1-3 changes that: a documentation fix
+  lands in the same inert class.
+- Fork `git status --porcelain` empty at `3c88f16`.

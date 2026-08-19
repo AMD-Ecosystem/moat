@@ -296,3 +296,5 @@
 {"kind":"phase","ts":"2026-08-19T04:19:28Z","phase":"compile","seconds":1.629,"exit":2,"cmd":"python3 -m sphinx -b html projects/HEonGPU/src/docs C:\\Users/<user>\\AppData\\Local\\Temp/heongpu_docs"}
 {"kind":"session","ts":"2026-08-19T04:54:07Z","epoch":1787115247.941241315,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-19T04:58:56Z","epoch":1787115536.516759245,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-19T04:52:22Z","epoch":1787115143.024627800,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-19T05:03:26Z","epoch":1787115806.963721900,"event":"end","platform":"windows-gfx1151"}
