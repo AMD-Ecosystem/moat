@@ -105,13 +105,18 @@ at first allocation.
 
 The quieter version of the same shape is a *slowdown*, not a stall, and it is easy to
 misread as a port defect. Measured porting HEonGPU on windows-gfx1151 (Radeon 8060S,
-72 GB unified): its default memory pool asks for 90% of reported device memory, which on
-an APU is 90% of the whole machine (~65 GB). The reservation succeeds, but context
-creation goes 1.0 s -> 10.5 s and a heavy test 21 s -> 53 s. An initial pool at or below
-10% of memory, or a fixed 1-2 GB, matches no pool at all; 50% is already ~2x slower than
-10%, so there is no safe middle fraction. Before blaming the kernels when an APU run is
-uniformly ~2x slow, check whether the library reserves a *fraction of device memory* at
-startup.
+72 GB unified): its default memory pool asks for 90% of *free* reported device memory,
+which on an APU is most of the whole machine (~65 GB). The reservation succeeds, and the
+suite then runs roughly 2x slower on the light tests and 3-4x on the heavy ones than the
+same code with an allocator that pooled nothing (~12.6 s per test before, 44-56 s for the
+heavy ones after). Before blaming the kernels when an APU run is uniformly slow, check
+whether the library reserves a *fraction of device memory* at startup, and try a small
+initial pool or a fixed size instead. Note what that comparison does and does not show:
+it is pooling-with-a-90%-default against no pooling at all, so it does not by itself
+apportion the cost between the up-front reservation and the allocator, and a per-fraction
+sweep on such a part has not been recorded. Do not quote per-fraction timings that no run
+in the record produced -- state the shape and the remedy, and measure before publishing
+numbers to users.
 
 The fix belongs to the application, not the port: pass the library's own pool
 configuration (HEonGPU: `MemoryPoolConfig::initial_device_fraction` /
