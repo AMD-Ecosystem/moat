@@ -2271,3 +2271,157 @@ source or build file was edited on this arch; nothing to commit to the fork.
 
 Recorded via `moatlib.py set-platform-status diff-surfel-tracing
 linux-gfx90a completed --validated-sha 173f32a9d0182452a6dcc02433e093b34311f665`.
+
+## Validation 2026-08-19 (linux-gfx1100, Radeon Pro W7800, ROCm 7.2.53211)
+
+First gfx1100 (wave32, RDNA3) validation, at `moat-port` `173f32a` (`port-ready`
+-> this run marks `completed`). Fork verified at exactly `head_sha` before
+starting (`git rev-parse HEAD` = `173f32a9d0182452a6dcc02433e093b34311f665`,
+`git status --porcelain` empty, matching `origin/moat-port`).
+
+### The host's default torch is an editable dev checkout; built against the
+sibling wheel instead
+
+`import torch` on this host resolves `torch.__file__` to
+`/var/lib/jenkins/pytorch/torch/__init__.py` (an editable scikit-build-core
+checkout whose own `torch/include` has only one entry, `aotriton`, and no
+`torch/share/cmake` at all) rather than to the ROCm wheel this project's
+`setup.py` needs to build a `CUDAExtension` against. A COMPLETE sibling ROCm
+build of the same torch version sits in
+`/opt/conda/envs/py_3.12/lib/python3.12/site-packages/torch/` (real
+`include/` with 44 entries, `lib/` with `libtorch_hip.so`/`libc10_hip.so`,
+`share/cmake/Torch/TorchConfig.cmake`) -- it lacks only a top-level
+`__init__.py`, so plain `import torch` falls through to the editable
+checkout for Python source, but `torch._C` itself already resolves to that
+sibling's compiled `_C.cpython-312-x86_64-linux-gnu.so` (verified:
+`torch._C.__file__` prints the site-packages path). This is the same class
+the skill's `strategy-b-torch.md` records for a raw CMake `find_package(Torch)`
+build (Quest, linux-gfx1100 revalidation, `6ef54f4`), here on the
+`torch.utils.cpp_extension.CUDAExtension` path instead of raw CMake.
+
+Since `setup.py` builds via `CUDAExtension`, not `find_package(Torch)`, the
+fix is one level down: `torch.utils.cpp_extension.include_paths()` /
+`library_paths()` read the module-level globals `_TORCH_PATH` /
+`TORCH_LIB_PATH`, computed once at import time from `torch.__file__`.
+`CUDAExtension(...)` reads those globals when `setup.py`'s module body
+constructs it, so monkeypatching them to the sibling's `torch/` directory
+before executing `setup.py` (via `runpy.run_path`, so `from torch.utils.cpp_extension
+import CUDAExtension` in `setup.py` binds to the same already-patched module
+object) makes `CUDAExtension` pick up the sibling's include/lib paths with no
+edit to the fork. Wrapper (MOAT-side, `agent_space/build_wrapper.py`, not
+committed to the fork):
+
+```python
+import os, runpy, sys
+import torch.utils.cpp_extension as cpp_ext
+sibling = "/opt/conda/envs/py_3.12/lib/python3.12/site-packages/torch"
+cpp_ext._TORCH_PATH = sibling
+cpp_ext.TORCH_LIB_PATH = os.path.join(sibling, "lib")
+sys.argv = ["setup.py"] + sys.argv[1:]
+runpy.run_path("setup.py", run_name="__main__")
+```
+
+Run as `python3 build_wrapper.py develop --no-deps` in place of `pip install
+-e . --no-build-isolation --no-deps` (`pip install -e .` forks a fresh
+`setup.py` subprocess our patch cannot reach; `python setup.py develop` is
+what a no-build-isolation, no-pyproject.toml `pip install -e .` reduces to
+here, and is directly wrappable). Confirmed load-bearing: without the patch,
+the extension's `include_dirs`/`library_dirs` resolve under
+`/var/lib/jenkins/pytorch/torch/{include,lib}` and the ATen/torch headers are
+not there.
+
+Promoted to `strategy-b-torch.md`: the same "coexisting wheel" fix applies to
+`torch.utils.cpp_extension`-based `CUDAExtension`/`BuildExtension` builds, not
+just raw CMake, because both derive their paths from the same importable
+`torch` package the host happens to expose.
+
+### setup.py resolves the HIPRT submodule before `HIPRT_HOME`
+
+`HIPRT_HOME` env var is a fallback only: `setup.py` prefers
+`third_party/hiprt` whenever `third_party/hiprt/hiprt` exists, which it does
+as soon as the submodule is checked out, regardless of whether the vendored
+copy is built or patched. Building HIPRT in a separate scratch clone (as the
+gfx90a round did) and pointing `HIPRT_HOME` at it is therefore not picked up
+here unless the submodule is left uninitialized. Followed the README's own
+recipe instead -- apply the patch and build directly inside
+`third_party/hiprt` -- and cleaned the submodule back to pristine
+(`git -C third_party/hiprt checkout -- . && git -C third_party/hiprt clean
+-fdx`) after every build so the fork checkout has no tracked-file diff at
+completion. `git status --porcelain --ignore-submodules=none` empty at the
+end, matching the integrity gate.
+
+### Build, from a clean fork checkout
+
+```
+git -C third_party/hiprt apply "$(pwd)/third_party/hiprt-rocm-fixes.patch"
+export HIP_PATH=/opt/rocm
+cmake -DCMAKE_BUILD_TYPE=Release -DBITCODE=OFF -DNO_UNITTEST=ON -DHIP_PATH=/opt/rocm \
+    -S third_party/hiprt -B third_party/hiprt/build
+cmake --build third_party/hiprt/build --target hiprt03001 -j32   # clean, no edits to HIPRT beyond the patch
+rm -rf build *.egg-info diff_surfel_tracing/hiprt_root diff_surfel_tracing/hiprt_cache diff_surfel_tracing/_C*.so
+PYTORCH_ROCM_ARCH=gfx1100 ROCM_PATH=/opt/rocm python3 <path>/build_wrapper.py develop --no-deps
+```
+
+Built clean twice from scratch (dirty-tree run, then a fully reset-and-rerun
+verification run); only the same pre-existing upstream deprecation warnings
+(`Tensor.type()`, pybind11 visibility) seen on gfx90a. `torch.cuda.is_available()`
+True, `torch.cuda.get_device_name(0)` "AMD Radeon Pro W7800 48GB".
+
+### GPU gate: 50/50, matching gfx90a's numbers within floating-point noise
+
+```
+PYTORCH_ROCM_ARCH=gfx1100, ROCm 7.2.53211, torch 2.14.0a0+gitb81488e
+cd projects/diff-surfel-tracing/src
+rm -rf diff_surfel_tracing/hiprt_cache   # cold JIT cache
+HIP_VISIBLE_DEVICES=0 python3 example/validate_rocm.py
+50/50 checks passed
+```
+
+Reproduced across two independent runs (dirty-tree and clean-rebuild). Every
+number lands at or within noise of gfx90a's round-8 evidence, on this wave32
+RDNA3 card: covered fraction 0.241, depth range [1.820, 4.574] (identical),
+geometry 62/64 traced, missing **[5, 25]** -- the exact same two surfels as
+gfx90a's independent validation, not just the same count -- median
+`grads3D` cosine 0.9825 (identical), fd colors 1.0000/1.0021 (identical),
+opacities 0.9999/0.7429 (gfx90a 0.9999/0.7428), means3D 0.9993/0.9391 (gfx90a
+0.9993/0.9387), scales 0.9923/0.8854 (gfx90a 0.9923/0.8856), reflected-bounce
+max delta 3.627e-01 (identical), P=4096 rgb mean 0.19876 / covered 0.386 /
+1343 traced (identical), P=16384 rgb mean 0.25417 / covered 0.457 / 3309
+traced (identical). The last-digit slope differences are float32 accumulation
+order, not a wave-size fault -- the geometry-completeness numbers (missing
+surfel indices, traced counts) are bit-for-bit the same on wave32 as on
+wave64, which is exactly what round 3/4's wave64-only lane-mask fix predicts:
+that defect class does not touch wave32 at all (`subwarpIndex <= 7` there),
+so there is nothing left for gfx1100 to trip over. Cold-cache rerun
+bit-identical, cache repopulated.
+
+**Real device dispatch confirmed independently of the harness's own checks.**
+`AMD_LOG_LEVEL=3` over the full harness run logs 15,768 `hipLaunchKernel` and
+1,494 `hipModuleLaunchKernel` calls, 93,079 `hipSuccess` returns, on `device:
+AMD Radeon Pro W7800 48GB` (`rocdevice.cpp`: `Gfx Major/Minor/Stepping:
+11/0/0`) -- not a CPU fallback and not a stub.
+
+### CUDA no-regression gate: not re-run, already recorded at this head_sha
+
+`notes.md`'s gfx90a entry above already runs and records this gate (PASSED)
+at `173f32a`, the head_sha unchanged since. Per the validator role, the CUDA
+gate tests the code, not the arch, and runs once per head_sha.
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --port diff-surfel-tracing` clean. `README.md`'s
+`### AMD GPUs` section (unchanged since gfx90a's round) documents the ROCm
+build and points at `example/validate_rocm.py`; ran that exact command above.
+
+### Integrity
+
+`git status --porcelain --ignore-submodules=none` empty in
+`projects/diff-surfel-tracing/src` at `173f32a` at completion -- the
+`third_party/hiprt` submodule's local patch-and-build state was reset with
+`git -C third_party/hiprt checkout -- . && git -C third_party/hiprt clean
+-fdx` after every build. No source or build file was edited on this arch (the
+torch-path workaround lives in `agent_space/build_wrapper.py`, MOAT-side and
+gitignored, not the fork); nothing to commit to the fork.
+
+Recorded via `moatlib.py set-platform-status diff-surfel-tracing
+linux-gfx1100 completed --validated-sha 173f32a9d0182452a6dcc02433e093b34311f665`.
