@@ -2425,3 +2425,33 @@ gitignored, not the fork); nothing to commit to the fork.
 
 Recorded via `moatlib.py set-platform-status diff-surfel-tracing
 linux-gfx1100 completed --validated-sha 173f32a9d0182452a6dcc02433e093b34311f665`.
+
+## Upstream reports filed 2026-08-19
+
+All six registered defects in the vendored dependencies are now reported. The drafts
+are in `projects/diff-surfel-tracing/upstream/`; Jeff Daily posted them, since an
+upstream write is a person's action.
+
+| issue | covers |
+|---|---|
+| [HIPRT#68](https://github.com/GPUOpen-LibrariesAndSDKs/HIPRT/issues/68) | the 64-lane lane-mask class: `subwarpMask` x3 (root cause), `PairTriangles`, `PackLeavesWarp`, the Collapse hang as its symptom, and the `WarpSize` allowlist as the structural fix |
+| [HIPRT#67](https://github.com/GPUOpen-LibrariesAndSDKs/HIPRT/issues/67) | the four runtime-compiler and library-loading defects |
+| [Orochi#146](https://github.com/GPUOpen-LibrariesAndSDKs/Orochi/issues/146) | `OnesweepReorder` truncating a 64-lane ballot to `u32` |
+
+Two of these had been ruled `now` on 2026-08-13 and sat unfiled for six days with
+nothing tracking that they had not gone out, which is why `upstream_issue` is now
+recorded on every one of the six records rather than only in prose here.
+
+The Collapse hang is reported as a symptom, not as its own defect. Its record asked
+for the miscount to be root-caused before reporting, and the `subwarpMask` shift is
+that root cause: relaxing the exit test to `>=` hides the hang while leaving the
+out-of-bounds writes to `referenceIndices` intact.
+
+Three fixes carried locally were deliberately NOT reported -- the `Compiler` `init()`
+split, `oroSetRawDevice`, and the member-initializer-order and uninitialized-loop
+warnings -- because they are already fixed on HIP RT main at `e3c01fc` and are
+backported here only because the pinned tag predates them.
+
+If HIPRT#68 and Orochi#146 land, `third_party/hiprt-rocm-fixes.patch` loses its
+lane-mask entries and the "apply this patch first" step in the ROCm build
+instructions shrinks accordingly.

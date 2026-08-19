@@ -10,8 +10,8 @@
         "projects/diff-surfel-tracing/plan.md",
         "projects/EnvGS/hiprt-feasibility.md"
       ],
-      "status": "open",
-      "upstream_issue": null,
+      "status": "filed",
+      "upstream_issue": "https://github.com/GPUOpen-LibrariesAndSDKs/HIPRT/issues/67",
       "created_at": "2026-08-13T04:04:03Z",
       "decided": {
         "choice": "now",
@@ -27,8 +27,8 @@
       "refs": [
         "projects/diff-surfel-tracing/notes.md"
       ],
-      "status": "open",
-      "upstream_issue": null,
+      "status": "filed",
+      "upstream_issue": "https://github.com/GPUOpen-LibrariesAndSDKs/HIPRT/issues/68",
       "created_at": "2026-08-13T06:41:03Z",
       "decided": {
         "choice": "now",
@@ -44,8 +44,8 @@
       "refs": [
         "projects/diff-surfel-tracing/notes.md"
       ],
-      "status": "open",
-      "upstream_issue": null,
+      "status": "filed",
+      "upstream_issue": "https://github.com/GPUOpen-LibrariesAndSDKs/HIPRT/issues/68",
       "created_at": "2026-08-14T05:10:36Z",
       "decided": {
         "choice": "now",
@@ -62,8 +62,8 @@
         "projects/diff-surfel-tracing/notes.md",
         "projects/diff-surfel-tracing/src/third_party/hiprt-rocm-fixes.patch"
       ],
-      "status": "open",
-      "upstream_issue": null,
+      "status": "filed",
+      "upstream_issue": "https://github.com/GPUOpen-LibrariesAndSDKs/Orochi/issues/146",
       "created_at": "2026-08-14T05:36:31Z",
       "decided": {
         "choice": "now",
@@ -80,8 +80,8 @@
         "projects/diff-surfel-tracing/notes.md",
         "projects/diff-surfel-tracing/src/third_party/hiprt-rocm-fixes.patch"
       ],
-      "status": "open",
-      "upstream_issue": null,
+      "status": "filed",
+      "upstream_issue": "https://github.com/GPUOpen-LibrariesAndSDKs/HIPRT/issues/68",
       "created_at": "2026-08-14T06:34:03Z",
       "decided": {
         "choice": "now",
@@ -97,8 +97,8 @@
       "refs": [
         "projects/diff-surfel-tracing/notes.md"
       ],
-      "status": "open",
-      "upstream_issue": null,
+      "status": "filed",
+      "upstream_issue": "https://github.com/GPUOpen-LibrariesAndSDKs/HIPRT/issues/68",
       "created_at": "2026-08-19T19:12:29Z",
       "decided": {
         "choice": "now",
