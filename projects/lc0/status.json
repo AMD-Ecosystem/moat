@@ -7,7 +7,7 @@
   "priority": 6.245,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-08-20T16:50:51Z",
+  "updated_at": "2026-08-20T20:39:19Z",
   "head_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
   "pr_url": "https://github.com/LeelaChessZero/lc0/pull/2420",
   "pr_number": 2420,
@@ -15,8 +15,8 @@
   "porting": null,
   "waivers": {
     "windows": {
-      "reason": "The obstacle is the Windows ROCm toolchain, not the GPU and not the port. lc0's value head is wrong by ~4.4e-02 absolute (relative 4.9e-01, with sign flips) against a 1e-3/1e-2 bar, while the policy head is bit-identical (~3e-07). The defect reproduces IDENTICALLY on all three Windows architectures tested -- gfx1151, gfx1101 and gfx1201 -- while linux-gfx90a (wave64) AND linux-gfx1100 (wave32) both PASS the same check at the same head. gfx1100 has the same wavefront width as gfx1151, so this is not a wave-size effect; the only variable that tracks the failure is the operating system and its ROCm/rocBLAS build. A prior exhaustive investigation cleared the obvious candidates: graph capture disabled, use_gemm_ex=false, Conv1Layer loop replacement, and standalone BLAS tests at the relevant dimensions all PASS. Leading suspicion is a gfx-specific rocBLAS/Tensile fallback kernel for the value head's small GEMM shapes in TheRock's Windows SDK. RE-CONFIRMED 2026-08-20 at head 7727fa3 on a NEWER SDK (TheRock ROCm 7.14.0a20260612, clang 23.0.0git) than the original 2026-06-04 ruling (7.14.0a20260604): 261/261 targets built, CPU gtest 8/8, benchmark fault-free, and the check backend still reports 0/222 passing with the identical 4.4e-02 magnitude and pattern. NOTE for the approver: the alternative to a waiver is a toolchain bug report against TheRock's rocBLAS rather than any change to this port. Jeff Daily already ruled BLOCK-and-move-on on 2026-06-04; this suggestion only offers the waiver route to close the record.",
-      "suggested_at": "2026-08-20T16:50:51Z"
+      "reason": "WITHDRAWN by the 2026-08-20 root-cause investigation -- DO NOT APPROVE. The earlier case for this waiver ('the obstacle is the Windows ROCm toolchain, a gfx-specific rocBLAS/Tensile fallback kernel for the value head's small GEMM shapes') has been FALSIFIED. The defect is a latent host-side stream-ordering bug in lc0's own weight-upload path, not a toolchain defect, and it is fixable in the port. allocAndUpload (src/neural/backends/cuda/layers.cc) launches copyTypeConverted on the legacy null stream, reading the shared scratch buffer, and returns without waiting; every compute stream is created cudaStreamNonBlocking so nothing orders that copy against the first evaluation, which overwrites the same scratch. The last upload of the last-constructed layer -- the value head's ip2_val_b_ -- loses the race, so exactly one 3-float bias is corrupted while every computed tensor around it is exact. Windows HIP loses this race deterministically where Linux HIP wins it. Measured on windows-gfx1151 at head 7727fa3: the dense-2 GEMM output equals a host double-precision reference exactly, the device bias reads -1.40802431 0.55243015 0.00000000 against the net's 0.43719077 -0.98977518 0.55311656, and adding cudaStreamSynchronize(0) at the end of allocAndUpload takes the gate check from 0/222 to 222/222 passing (value abs 6.0e-08, was 4.4e-02). rocBLAS/hipBLASLt was independently exonerated (ROCBLAS_USE_HIPBLASLT=0 changes nothing). Full evidence in projects/lc0/notes.md, section 'Investigation 2026-08-20 (windows-gfx1151) -- why Windows'. The correct route is a moat-fix-<pr#> round carrying the one-line fix, not a gate waiver; this suggestion is retained only to overwrite the falsified reasoning that stood here.",
+      "suggested_at": "2026-08-20T20:39:19Z"
     }
   },
   "pr_state": "open",
