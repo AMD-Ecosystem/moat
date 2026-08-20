@@ -98,6 +98,51 @@ Two patterns that each cost a deep investigation before the real cause was found
 - **A "data-dependent, later-data-corrupts-earlier, per-tile" corruption signature is the fingerprint of a REPRODUCER bug, not a codegen fault.** cuSZ chased a suspected miscompile to a BLOCKED state and an IR bisect; the actual cause was the test input -- `np.arange(..., dtype=float32) * (python float)` promotes to float64, so `.tofile()` wrote 8 bytes per element and the tool read the stream as f32. Validate the byte width and dtype of any binary test input before escalating to an ISA bisect or a ROCm bug report. (cuSZ)
 - **Triangulate single- against double-precision before blaming the wavefront.** When a warp-collective rewrite shows SP divergence, run a second GPU variant and compare both to the DP oracle. If both GPU variants diverge from DP identically at the same positions, and the DP path is bit-identical to the CPU oracle, it is floating-point reassociation at a comparison boundary -- not a wave-size fault. SCAMP used this to clear a ~0.5 divergence at 10/8093 positions as a threshold-boundary artifact. (SCAMP)
 
+## A fault inside a vendored JIT entry point: rebuild-with-a-forced-throw beats a debugger
+
+When a crash's stack bottoms out inside a vendored dependency's own runtime-JIT
+call (e.g. `hiprtBuildTraceKernels`, which drives HIP RT's own `hipRTC`/`comgr`
+compile of its BVH-builder and trace kernels) rather than in the port's own
+device code, do not reach for a debugger or a minidump first -- that is
+porter/investigation scope, not a validator's, and it is slow. A cheaper test
+that still yields real evidence: read the JIT call's own error-handling source
+for a place where a compile failure could be silently swallowed (a `result !=
+SUCCESS` check that only acts when an accompanying log string is non-empty is
+the classic shape -- an empty log on a genuine failure is common on Windows,
+where comgr can fail silently for reasons that have nothing to do with the
+actual compile), patch that ONE spot locally to unconditionally `throw` with
+the raw result code, rebuild just that translated unit (seconds, not the whole
+dependency), and rerun. Two outcomes, both informative and neither requiring a
+debugger:
+
+- Your forced exception fires with a real code and message -- you have found
+  the actual failure, cheaply.
+- The crash is byte-for-byte identical (same fault address relative to the
+  containing function, e.g. `hiprtBuildTraceKernels() + 0x894` unchanged
+  across rebuilds even though ASLR moves the DLL's base) and your `throw`
+  never fires -- you have FALSIFIED that code path as the cause, which is
+  just as real a finding: the crash is earlier, or in a different function
+  entirely, and no further time should go into that call.
+
+Revert the diagnostic edit before finishing (it is a throwaway, never
+committed) and record the falsification, not just "still crashes" -- a bare
+re-run tells the next person nothing they did not already know; a rebuild
+that proves a specific mechanism is NOT the cause narrows the search space
+for whoever picks it up next. Two independent hypotheses can be dispatched
+this way inside a single 30-minute retry budget: an environment-variable
+hypothesis (does the crash change when a plausible cause is toggled?) and a
+source-level hypothesis (does the crash change when the suspected swallowed
+error is forced to surface?) are both answerable without a debugger, and a
+"both falsified, same relative offset both times" result is a complete,
+honest retry outcome -- it is not a reason to escalate to a debugger inside
+the validator role. Also check host-global scratch (e.g. a prior session's
+`upstream-issues` drafts) for an existing diagnosis of the same dependency's
+JIT/loader class before re-deriving one from scratch -- but verify it against
+the CURRENT patched source rather than assuming it still applies: a
+previously-reported defect in the same call chain may already be fixed in the
+project's own vendored-dependency patch, which rules it out rather than
+explaining the new crash. (diff-surfel-tracing)
+
 ## CUDA gate for torch-extension ports: the host's installed PyTorch itself can be the wall
 
 On a host whose only installed PyTorch is a ROCm dev build (e.g. built from `/var/lib/jenkins/pytorch` with `USE_ROCM=1`), nvcc-compiling a torch C++/CUDA extension fails for reasons that have nothing to do with the port. No full `CUDAExtension` link is reachable without downloading a genuine CUDA-flavored torch wheel, so the closest available check is a raw `nvcc -c` of the `.cu` against `torch.utils.cpp_extension.include_paths()` -- and that dies in the ambient install's headers. Two fingerprints of the same root cause:
