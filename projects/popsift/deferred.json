@@ -12,7 +12,11 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-08-20T21:29:30Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-20T21:58:28Z"
+      }
     }
   ]
 }
