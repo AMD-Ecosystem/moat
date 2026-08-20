@@ -139,3 +139,15 @@ validation until the spconv ROCm port lands (risk #4).
   `-ffp-contract=on` for tighter numeric agreement? Decide from the pointrope numeric-diff result.
 - spconv ROCm port is a separate MOAT project; this plan deliberately scopes Pointcept's PR to the
   in-tree `libs/` ops so it is not blocked on spconv.
+
+## Round 2 scope (2026-08-20): sparse-conv configs on ROCm
+Risk #4 is resolved, not by porting spconv but by the disposition that declined it
+`already-supported`: spconv-triton (Apache-2.0, PyPI) reimplements the spconv 2.x operator set
+in Triton and runs on AMD. Deferral `pointcept-spconv-triton-e2e` was ruled `now`.
+- Change: one backend-selection module, `pointcept/models/utils/spconv.py`, that imports
+  `spconv.pytorch` on CUDA and `spconv_triton.pytorch` on a ROCm torch; the ten model files
+  import the name from it. README Installation lists `pip install spconv-triton` next to
+  `spconv-cu124`. No kernel or build-script change; the CUDA path is byte-equivalent.
+- Validation bar: SpUNet, OACNNs and PointGroup configs built through the model registry and
+  trained for a short synthetic run with the loss falling, plus no regression in the libs/ ops.
+  Done on gfx90a; wave32 platforms (gfx1100/gfx1101/gfx1201) still to confirm.
