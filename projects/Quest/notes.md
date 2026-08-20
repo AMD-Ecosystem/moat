@@ -1750,23 +1750,20 @@ toolchain on this host, and the gate is blocked by a pre-existing RAFT branch-24
 
 **Finding 5 (`cbc3890` changes NVIDIA behaviour) -- no action, recorded decision.**
 
-**Finding 6 (`c1d7fff` has no AI-assistance disclosure) -- STILL OPEN. An earlier version
-of this entry claimed the PR-prep squash resolved it. That was wrong and is withdrawn.**
+**Finding 6 (`c1d7fff` has no AI-assistance disclosure) -- WITHDRAWN. The commit does
+disclose; the finding was a false positive, and so was the deferral raised from it.**
 
-What is true: the one-curated-commit-per-fork rule was retired in favour of commits-on-top,
-and a squash to one tidy commit is still the intended END state before the upstream PR.
-What is not true is that anything makes it happen. `upstream.py --publish` runs
-`gh pr create --head <fork>:<branch>`, publishing the branch exactly as it stands, and
-`publish_blockers` has no squash requirement; `CONTRIBUTING.md` and the `moat-checkup`
-skill do not mention squashing at all. `squash-carry-forward` is supported tooling for
-that step, not an enforced part of it.
+`c1d7fff` line 50 reads "This work was authored with the assistance of Claude, an AI
+assistant." The review checked with `grep -ci "AI coding agent"` -- one phrasing out of at
+least ten in use across the fleet -- and read its absence as a missing disclosure.
+Everything built on that is void with it: the claim that the PR-prep squash resolved the
+finding, and the correction that nothing enforces the squash. That second observation is
+true on its own and is recorded in `moat-no-gate-on-commit-message-rules`; it simply never
+applied to this commit.
 
-So if this port is published as the branch stands, all of its commits are upstream-visible
-and `c1d7fff` goes out without the disclosure. Rewriting history to fix it now would
-force-push `moat-port` and orphan the validated shas, which is the failure this repository
-already learned once, so the fix belongs at PR prep: squash first, and make the squash
-message carry the disclosure. Registered as `quest-c1d7fff-missing-ai-disclosure` so it is
-ruled rather than remembered.
+Found by building the gate that would have caught a real instance:
+`python3 utils/moatlib.py audit-commits` matches the naming rather than one sentence shape
+and reports this branch clean.
 
 ### Evidence
 
