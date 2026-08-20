@@ -1930,3 +1930,19 @@ PR and not touchable without rewriting published history.
 Note for anyone reproducing: `utils/jargon.py --port` resolves `master..moat-port` with
 LOCAL branch names, so a clone that only has `origin/master` fails with "cannot resolve";
 `git branch master origin/master` in the fork clone is the fix, not a fetch problem.
+
+## Stale Windows blocks cleared 2026-08-20 (gfx1101, gfx1201)
+
+`windows-gfx1101` and `windows-gfx1201` were still carrying the 2026-06-05 block text
+("value-head numerical defect ... root cause unresolved; suspected TheRock ROCm/rocBLAS
+Tensile"). That reasoning is FALSIFIED: the defect was the null-stream weight-upload race in
+lc0's own `allocAndUpload`, fixed at `df2c56a` and measured 0/222 -> 222/222 on
+windows-gfx1151. The blocks' own wording said to reopen if a fix was identified, so both were
+cleared with `moatlib.py set-blocked lc0 <arch> --clear`.
+
+Cleared rather than validated: no record was written claiming evidence on those two arches,
+because neither was tested here. They simply become eligible for a validator again. Both are
+the same physical machine, which is not this host.
+
+Jeff refused the `windows` gate waiver on the same evidence, so the gate is to be taken
+honestly by validating the fix.

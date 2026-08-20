@@ -7,7 +7,7 @@
   "priority": 6.245,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-08-20T21:03:06Z",
+  "updated_at": "2026-08-20T21:05:06Z",
   "head_sha": "df2c56a7158a04bf92a20f2ad3506954dd8b601c",
   "pr_url": "https://github.com/LeelaChessZero/lc0/pull/2420",
   "pr_number": 2420,
@@ -86,12 +86,12 @@
       }
     },
     "windows-gfx1101": {
-      "blocked": true,
-      "blocked_reason": "Value-head numerical defect identical to gfx1151: builds+runs (344 targets, benchmark clean, 8/8 CPU gtest), policy bit-identical (~4.6e-07) but value wrong 4.4e-02 absolute (sign flips) at atol=1e-3 bar. Defect appears identically on gfx1201 under same TheRock ROCm 7.14 Windows SDK. Exhaustive investigation: graph capture off, use_gemm_ex=false, Conv1Layer loop replacement, standalone BLAS tests all PASS -- BLAS is correct for all relevant dimensions. Root cause unresolved; suspected TheRock ROCm 7.14 Windows HIP runtime issue in custom kernel path. Linux gfx90a+gfx1100 pass the same check on ROCm 7.2.1.",
+      "blocked": false,
+      "blocked_reason": null,
       "validated_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-06-05T12:02:47Z",
+      "updated_at": "2026-08-20T21:05:04Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -107,12 +107,12 @@
       }
     },
     "windows-gfx1201": {
-      "blocked": true,
-      "blocked_reason": "Value-head numerical defect identical to gfx1151 and gfx1101: builds+runs (344 targets, benchmark clean, 8/8 CPU gtest), policy bit-identical (~4.6e-07) but value wrong 4.4e-02 absolute (sign flips) at atol=1e-3 bar. Defect appears identically on gfx1101 under same TheRock ROCm 7.14 Windows SDK. Exhaustive investigation: graph capture off, use_gemm_ex=false, Conv1Layer loop replacement, standalone BLAS tests all PASS -- BLAS is correct for all relevant dimensions. Root cause unresolved; suspected TheRock ROCm 7.14 Windows HIP runtime issue in custom kernel path. Linux gfx90a+gfx1100 pass the same check on ROCm 7.2.1.",
+      "blocked": false,
+      "blocked_reason": null,
       "validated_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-06-05T12:02:56Z",
+      "updated_at": "2026-08-20T21:05:06Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
