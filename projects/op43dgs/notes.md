@@ -1616,3 +1616,123 @@ codeobj_diff carry-forward.
 Verdict: PASS. All variants except the one documented, investigated,
 pre-existing, non-port fisheye means3D gate miss. `validated_sha` advances to
 5401278 for linux-gfx1100.
+
+## Validation 2026-08-20 (linux-gfx90a revalidate, d6ca8920 -> 5401278)
+
+Platform: AMD Instinct MI250X / MI250 (GCD 2, `HIP_VISIBLE_DEVICES=2`), ROCm
+7.2.1, torch 2.14.0a0+git7d05abc / HIP 7.14.60850, python 3.12. (Host torch
+tip advanced from the 2.13.0a0/HIP 7.2.5 recorded in the June rounds; not a
+port concern.)
+
+Same classification already established by linux-gfx1100 for this exact
+delta: `moatlib.py classify op43dgs d6ca8920 5401278` -> `class=mixed
+arch_independent=False inert=False` (the GLM-monkeypatch removal +
+whitespace revert in the three rasterizer `setup.py` files is build-affecting;
+the two intervening README-only commits are inert on top of it). No
+carry-forward shortcut: did the full real-GPU rebuild + test rather than a
+codeobj_diff, for the same reason linux-gfx1100 gave (notes.md:1461-1465) --
+this project has no CMake, per-extension `pip install` builds, and a real GPU
+is on this host.
+
+Checked out the actual head first: `git -C projects/op43dgs/src fetch origin
+&& git checkout moat-port && git reset --hard origin/moat-port` (the local
+checkout was still pinned at d6ca892 from the earlier carried-forward round);
+`git rev-parse HEAD` = `5401278cefa9b0115c665dfdffb367531e64a9aa`, working
+tree clean throughout.
+
+The `agent_space/op43dgs/` harnesses were gone from this host (gitignored
+scratch, same loss the gfx1100 porter round hit at notes.md:935-941) and were
+rewritten from these notes: `raster_common.py`, `tier1_forward.py`,
+`tier2_backward.py`, `tier3_train.py`, `val_simpleknn.py`. `tier2_backward.py`
+was written directly with the sign-vs-slope gate split documented at
+notes.md:123-137 and notes.md:1517-1530 (scales sign-gated on the curved
+variants, means3D always sign-gated), so no harness-bug detour was needed
+this round.
+
+All four extensions rebuilt from scratch (uninstall/reinstall between
+rasterizer variants, shared package name):
+
+```
+export HIP_VISIBLE_DEVICES=2 PYTORCH_ROCM_ARCH=gfx90a MAX_JOBS=16
+P=/opt/conda/envs/py_3.12/bin/python
+SRC=projects/op43dgs/src
+
+utils/timeit.sh op43dgs compile -- $P -m pip install $SRC/submodules/simple-knn --no-build-isolation --no-deps
+utils/timeit.sh op43dgs compile -- $P -m pip install $SRC/submodules/diff-gaussian-rasterization-pinhole --no-build-isolation --no-deps
+# uninstall diff_gaussian_rasterization, then -fisheye; uninstall, then -panorama
+```
+
+All four build clean, exit 0. Code-object check (`strings _C*.so | grep -o
+'amdgcn-amd-amdhsa[a-z0-9:.=;+-]*'`, since `llvm-objdump --offloading` gave no
+output against this build's fat-binary layout on this host): `pinhole`'s
+`_C.so` shows exactly `amdgcn-amd-amdhsa--gfx90a`, no stray target.
+
+```
+utils/timeit.sh op43dgs test -- env PYTHONPATH=agent_space/op43dgs $P agent_space/op43dgs/val_simpleknn.py
+utils/timeit.sh op43dgs test -- env PYTHONPATH=agent_space/op43dgs $P agent_space/op43dgs/tier1_forward.py <variant>
+utils/timeit.sh op43dgs test -- env PYTHONPATH=agent_space/op43dgs $P agent_space/op43dgs/tier2_backward.py <variant>
+utils/timeit.sh op43dgs test -- env PYTHONPATH=agent_space/op43dgs $P agent_space/op43dgs/tier3_train.py <variant> 250 <lr>
+utils/timeit.sh op43dgs test -- env PYTHONPATH=$SRC $P -c "import gaussian_renderer, scene; from simple_knn._C import distCUDA2; from diff_gaussian_rasterization import GaussianRasterizer; print('import OK')"
+```
+
+Results (11 harness checks, 11 PASS):
+
+- simple-knn distCUDA2 (N=50000): finite=True nonneg=True bitwise_det=True. PASS.
+- pinhole Tier1: shape (3,128,128), finite=True, coverage=1.0000,
+  bitwise_det=True. PASS. `CUDA Kernel: Optimal GS (pinhole)` printed on load;
+  kernel dispatch on GCD 2 confirmed.
+- pinhole Tier2: grad-sum rel diff 0.00e+00 on all four tensors; opac
+  slope=0.994 sign=1.00 [slope gate] PASS; sh slope=1.012 sign=0.68 [slope
+  gate -- sign not the gate for sh] PASS; scales slope=0.963 sign=1.00 [slope
+  gate] PASS; means3D slope=0.251 sign=0.85 [sign>=0.70 gate, scaled by
+  design per notes.md:123-137] PASS.
+- pinhole Tier3 (lr 3e-3, 250 it, synthetic single-cam fit): loss
+  0.11483->0.01590, PSNR 13.88->25.29 dB, no NaN. PASS.
+- fisheye Tier1: coverage=1.0000, bitwise_det=True. PASS.
+- fisheye Tier2: opac slope=0.907 sign=1.00 [slope gate] PASS; sh slope=0.992
+  sign=0.75 [slope gate] PASS; scales slope=0.657 sign=1.00 [sign gate,
+  curved variant] PASS; means3D slope=0.054 sign=0.77 [sign>=0.70 gate] PASS.
+- fisheye Tier3 (lr 1e-4, 250 it): loss 0.07642->0.05221, PSNR 15.50->18.14
+  dB, no NaN. CONVERGES. PASS. (Small step required on the curved variants,
+  same documented gradient-scale property as every prior round.)
+- panorama Tier1: coverage=1.0000, bitwise_det=True. PASS.
+- panorama Tier2: opac slope=1.000 sign=0.98 [slope gate] PASS; sh slope=1.001
+  sign=0.60 [slope gate] PASS; scales slope=0.982 sign=1.00 [sign gate,
+  curved variant] PASS; means3D slope=1.617 sign=0.93 [sign>=0.70 gate] PASS.
+- panorama Tier3 (lr 1e-4, 250 it): loss 0.00683->0.00253, PSNR 26.16->31.52
+  dB, no NaN. CONVERGES. PASS.
+- Trainer path (`gaussian_renderer.render`, `scene.GaussianModel`, both
+  compiled modules) imports and runs, after installing the two non-torch
+  python deps the trainer needs (`plyfile` was missing on this host;
+  `pip install --no-deps plyfile tqdm`, matching notes.md's recorded recipe).
+  PASS.
+
+No gate miss this round (unlike gfx1100's fisheye means3D sign=0.53 at its
+own random scene, notes.md:1532-1564): this harness's own synthetic scene
+gives fisheye means3D sign=0.77 (>= the 0.70 gate), consistent with the
+documented scene-dependent character of op43dgs's approximate analytic
+backward -- not evidence against that gfx1100 finding, just a different
+random draw. No wave64-specific anomaly observed; determinism (grad-sum rel
+diff 0.00e+00 everywhere, bitwise-identical forward across two runs) matches
+every prior gfx90a and gfx1100 record.
+
+### CUDA no-regression gate
+
+Already recorded at this exact head_sha by linux-gfx1100 above
+(notes.md:1566-1604): `cuda-not-validated: ambient torch install is a ROCm
+dev build with no CUDA counterpart; nvcc dies in torch/headeronly's
+thrust::complex guard (duplicated __HIPCC__ token), not in this port's own
+files`. Per the validator role ("runs ONCE per head_sha"), not repeated here.
+
+### Jargon / documentation / integrity
+
+`python3 utils/jargon.py --port op43dgs` -> clean. `README.md` ROCm section
+(reviewed clean through review round 4, notes.md:1373-1450) unchanged at this
+head. `git -C projects/op43dgs/src status --porcelain` empty throughout (only
+the gitignored `agent_space/op43dgs/` harnesses and MOAT-repo
+`stats.jsonl`/`notes.md`/`status.json` touched). Fork `main` untouched at
+728de13; local `moat-port` reset to `origin/moat-port` (5401278), no fork
+push from this platform. `moatlib.py carry-forward` NOT used -- this is real
+GPU evidence at 5401278.
+
+Verdict: PASS. State: linux-gfx90a completed, validated_sha=5401278cefa9b0115c665dfdffb367531e64a9aa.
