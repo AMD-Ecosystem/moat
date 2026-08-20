@@ -61,6 +61,16 @@ Two checks that are per-file, not top-level:
 - Grep the upstream's own docs: `grep -rniE 'amd|rocm|hip|gfx[0-9]' README* docs/`.
   Reference repos routinely link platform ports in a "notable forks" section, and that
   link IS the existing AMD port. Cheapest check available, highest signal.
+- List the upstream's OPEN pull requests and branches for the same work:
+  `gh pr list --repo <owner/repo> --state open --search "hip OR rocm OR amd" --json number,title,author,createdAt,isDraft`
+  and `gh api repos/<owner/repo>/branches --paginate --jq '.[].name' | grep -iE 'hip|rocm|amd'`.
+  An open draft PR is invisible to a docs grep and to a fork search, and it is the
+  strongest duplicate-effort signal there is: the maintainer or a contributor is
+  already doing the port. FLAMEGPU2 was adopted with the maintainer's own
+  "AMD GPU Support via HIP/ROCm" draft PR two months old and open on the upstream
+  repo; the screen missed it and a full parallel port was built before anyone
+  noticed. When such a PR exists, the recommendation is to contribute to it, not
+  to compete with it.
 - For the finer judgement -- is an existing port authoritative, and does that make the
   work "validate and improve" rather than "port from scratch" -- read the
   `cuda-to-rocm` skill's `references/assess-existing-support.md`.
