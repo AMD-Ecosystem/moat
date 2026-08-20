@@ -1,0 +1,136 @@
+{
+  "schema_version": 3,
+  "name": "opencv",
+  "upstream_url": "https://github.com/opencv/opencv",
+  "fork_url": "https://github.com/AMD-Ecosystem/opencv",
+  "fork_default_branch": "4.x",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "adopted_at": "2026-08-06T06:58:03Z",
+  "updated_at": "2026-08-13T02:46:29Z",
+  "head_sha": "50f05b150687734a0d0d7084f6215de6cd3a5b95",
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "license_spdx": "Apache-2.0",
+  "upstream_repo_id": 5108051,
+  "stage": "review-passed",
+  "platforms": {
+    "linux-gfx90a": {
+      "blocked": true,
+      "blocked_reason": "no standalone test suite: this fork is exercised only through opencv_contrib, whose build configures cmake against this repo with OPENCV_EXTRA_MODULES_PATH. Validation evidence lives with opencv_contrib (4 platforms completed at contrib 041d5528). Do not dispatch a standalone validator here; revalidate opencv_contrib instead.",
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-08-12T20:49:24Z",
+      "completed_at": null,
+      "updated_at": "2026-08-12T20:49:32Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "orchestrator"
+    },
+    "linux-gfx1100": {
+      "blocked": true,
+      "blocked_reason": "no standalone test suite: this fork is exercised only through opencv_contrib, whose build configures cmake against this repo with OPENCV_EXTRA_MODULES_PATH. Validation evidence lives with opencv_contrib (4 platforms completed at contrib 041d5528). Do not dispatch a standalone validator here; revalidate opencv_contrib instead.",
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-12T20:49:32Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1101": {
+      "blocked": true,
+      "blocked_reason": "no standalone test suite: this fork is exercised only through opencv_contrib, whose build configures cmake against this repo with OPENCV_EXTRA_MODULES_PATH. Validation evidence lives with opencv_contrib (4 platforms completed at contrib 041d5528). Do not dispatch a standalone validator here; revalidate opencv_contrib instead.",
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-12T20:49:32Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1201": {
+      "blocked": true,
+      "blocked_reason": "no standalone test suite: this fork is exercised only through opencv_contrib, whose build configures cmake against this repo with OPENCV_EXTRA_MODULES_PATH. Validation evidence lives with opencv_contrib (4 platforms completed at contrib 041d5528). Do not dispatch a standalone validator here; revalidate opencv_contrib instead.",
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-12T20:49:32Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "linux-gfx942": {
+      "blocked": true,
+      "blocked_reason": "no standalone test suite: this fork is exercised only through opencv_contrib, whose build configures cmake against this repo with OPENCV_EXTRA_MODULES_PATH. Validation evidence lives with opencv_contrib (4 platforms completed at contrib 041d5528; linux-gfx942 not yet dispatched there either). Do not dispatch a standalone validator here; revalidate opencv_contrib instead.",
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-13T02:46:29Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    }
+  },
+  "pr_url": "https://github.com/opencv/opencv/pull/29285",
+  "pr_number": 29285,
+  "pr_opened_at": "2026-08-12T20:49:25Z",
+  "pr_state": "open",
+  "published_sha": "50f05b150687734a0d0d7084f6215de6cd3a5b95"
+}
