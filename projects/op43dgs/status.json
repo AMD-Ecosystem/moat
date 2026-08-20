@@ -7,7 +7,7 @@
   "priority": 3.393,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-08-20T07:02:29Z",
+  "updated_at": "2026-08-20T07:15:41Z",
   "head_sha": "5401278cefa9b0115c665dfdffb367531e64a9aa",
   "waivers": {},
   "license_clearance": {
@@ -86,10 +86,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "d6ca89206f8e8881598c1694a6ca996332952599",
+      "validated_sha": "5401278cefa9b0115c665dfdffb367531e64a9aa",
       "started_at": "2026-06-01T20:35:00Z",
-      "completed_at": "2026-06-08T00:54:41Z",
-      "updated_at": "2026-08-20T07:02:29Z",
+      "completed_at": "2026-08-20T07:15:41Z",
+      "updated_at": "2026-08-20T07:15:41Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -103,15 +103,7 @@
         "first_session_at": "2026-06-01T20:35:00Z",
         "last_session_at": "2026-06-01T20:47:00Z"
       },
-      "last_agent": "reviewer",
-      "carry_forward": {
-        "from": "87173958ed14a2924349187e9e9f2744cee2c93a",
-        "to": "d6ca89206f8e8881598c1694a6ca996332952599",
-        "method": "source-class",
-        "class": "doc-only",
-        "detail": "no changes",
-        "at": "2026-08-20T04:40:00Z"
-      }
+      "last_agent": "validator"
     },
     "windows-gfx1101": {
       "state": "completed",

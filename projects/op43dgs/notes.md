@@ -1447,3 +1447,172 @@ and nothing more. Title 66 chars, `[ROCm]` prefix, AI assistance disclosed, no
   added line is ASCII (README's only non-ASCII is upstream's news section at
   :25-44), working tree clean (integrity gate), local `moat-port` equals
   `origin/moat-port`, fork `main` still 728de13.
+
+## Validation 2026-08-20 (linux-gfx1100 revalidate, d6ca8920 -> 5401278)
+
+Platform: AMD Radeon Pro W7800 48GB, gfx1100 (RDNA3, wave32), ROCm 7.2.1, torch
+2.14.0a0+gitb81488e / HIP 7.2.53211 (editable install at
+`/var/lib/jenkins/pytorch`), python 3.12, `HIP_VISIBLE_DEVICES=0`.
+
+`moatlib.py classify op43dgs d6ca8920 5401278` -> `class=mixed
+arch_independent=False inert=False` (the three rasterizer `setup.py` files show
+`mixed`, simple-knn's shows `comment-only`), so this platform's `validated_sha`
+(d6ca8920) is behind `head_sha` (5401278) by a build-affecting delta and the
+carry-forward shortcut needs either old-vs-new codeobj_diff evidence or a full
+real-GPU rerun. Chose the real rerun: the GPU is on this host and the porter's
+own d745b771 build/test record already gives a byte-for-byte numeric cross-check
+to compare against (see below), which is a stronger binary-equivalence signal
+than a codeobj_diff on this project's non-CMake, per-extension `pip` build.
+
+Confirmed the tree actually under test first: `git -C projects/op43dgs/src
+rev-parse HEAD` = `5401278cefa9b0115c665dfdffb367531e64a9aa`, working tree clean.
+All four extensions rebuilt from scratch (uninstall/reinstall between rasterizer
+variants, since all three share the package name):
+
+```
+export HIP_VISIBLE_DEVICES=0 PYTORCH_ROCM_ARCH=gfx1100 MAX_JOBS=16
+P=/opt/conda/envs/py_3.12/bin/python
+SRC=projects/op43dgs/src
+
+utils/timeit.sh op43dgs compile -- $P -m pip install $SRC/submodules/simple-knn --no-build-isolation --no-deps
+utils/timeit.sh op43dgs compile -- $P -m pip install $SRC/submodules/diff-gaussian-rasterization-pinhole --no-build-isolation --no-deps
+# uninstall, then fisheye; uninstall, then panorama
+```
+
+All four build clean; `llvm-objdump --offloading` on each installed `_C*.so`
+shows only `hipv4-amdgcn-amd-amdhsa--gfx1100` bundles (3 per rasterizer variant,
+1 for simple-knn) -- no stray gfx target.
+
+```
+utils/timeit.sh op43dgs test -- env PYTHONPATH=agent_space/op43dgs $P agent_space/op43dgs/val_simpleknn.py
+utils/timeit.sh op43dgs test -- env PYTHONPATH=agent_space/op43dgs $P agent_space/op43dgs/tier1_forward.py <variant>
+utils/timeit.sh op43dgs test -- env PYTHONPATH=agent_space/op43dgs $P agent_space/op43dgs/tier2_backward.py <variant>
+utils/timeit.sh op43dgs test -- env PYTHONPATH=agent_space/op43dgs $P agent_space/op43dgs/tier3_train.py <variant> 250 <lr>
+utils/timeit.sh op43dgs test -- env PYTHONPATH=$SRC $P -c "import gaussian_renderer, scene; ..."
+```
+
+Results (10 harness checks, 9 PASS / 1 FAIL, all numbers bitwise-identical to
+the porter's d745b771 record at notes.md:950-967, confirming the compiled
+program's behavior did not move across the `mixed` setup.py delta):
+
+- simple-knn distCUDA2 (N=50000): finite=True nonneg=True bitwise_det=True. PASS.
+- pinhole Tier1: coverage=0.9999 bitwise_det=True. PASS.
+- pinhole Tier2: grad-sum rel diff 0.00e+00 all four tensors; opac slope=0.998,
+  sh slope=1.014, scales slope=0.960 (all sign=1.00), means slope=0.245
+  sign=0.97 (sign-gated). PASS.
+- pinhole Tier3 (lr 3e-3, 250 it): loss 0.00363->0.00000, PSNR 24.40->55.37 dB. PASS.
+- fisheye Tier1: coverage=0.7589 bitwise_det=True. PASS.
+- fisheye Tier2: opac slope=0.954 sign=1.00 PASS, sh slope=0.868 sign=1.00 PASS,
+  scales slope=0.604 sign=1.00 PASS (correctly sign-gated on curved variants,
+  see harness fix below), means3D slope=-0.011 **sign=0.53 FAIL** (gate >=0.70)
+  -- see analysis below. Numbers match the porter's record exactly.
+- fisheye Tier3 (lr 1e-4, 250 it): loss 0.00240->0.00110, PSNR 26.20->29.61 dB. PASS.
+- panorama Tier1: coverage=0.0801 bitwise_det=True. PASS.
+- panorama Tier2: opac slope=1.003, sh slope=1.004, scales slope=0.993, means3D
+  slope=1.236 sign=0.91 (all sign=1.00 or >=0.70 as gated). PASS.
+- panorama Tier3 (lr 1e-4, 250 it): loss 0.00027->0.00001, PSNR 35.70->50.92 dB. PASS.
+- Trainer path (`gaussian_renderer.render`, `scene.GaussianModel`, both compiled
+  modules): imports and runs. PASS.
+
+### Harness bug found and fixed (agent_space scratch file, not fork source)
+
+`agent_space/op43dgs/tier2_backward.py` (rewritten this round by the porter
+after the June script was lost from this host) hardcoded the `scales` FD-check
+to the "slope~1.0" gate for every variant. notes.md's own "Tier-2 gating
+rationale" (lines 123-137, established at review) documents that `scales`
+should be **sign**-gated on the curved variants (fisheye/panorama), exactly
+like `means3D` -- the optimal-projection analytic backward is a scaled-but-
+sign-correct descent direction there by design, identically on CUDA. Fixed
+locally: `scales_gate = "sign" if variant in ("fisheye", "panorama") else
+"slope"`. Confirmed the fix is right: with it, fisheye scales (slope=0.604,
+sign=1.00) now correctly reads PASS; panorama was unaffected (its scales slope
+0.993 already satisfied the strict gate by coincidence). This file is
+gitignored scratch, not part of the port; no fork commit needed.
+
+### fisheye means3D sign=0.53 -- investigated, not a port regression
+
+This is the one real gate miss. Compared to the June baseline (different random
+scene, notes.md:249: fisheye means sign=0.92, gate >0.90, PASS), today's harness
+scene gives sign=0.53 for the same FD-check. Ruled out sampling noise: reran
+the same check at n=400 samples (vs the harness's n=40) -- sign=0.569, i.e. the
+same answer at 10x the sample count, so it is a stable property of this scene,
+not a fluke.
+
+This is the pre-existing, CUDA-identical, scene-dependent character of
+op43dgs's approximate analytic backward (notes.md:123-137, and the review's
+explicit ruling at notes.md:186-196: "the complete changed-line set ... is
+exactly the reduce.h include guard and the launch-spacing normalization --
+ZERO lines touch computeCov2D / computeCov2DCUDA / the analytic backward / any
+projection math"). Nothing in this port's diff touches the fisheye projection
+math, so a weak-sign-agreement scene is a property of the algorithm the
+upstream paper ships, reproducible on CUDA with the identical scene, not
+something ROCm introduced. Supporting evidence gathered here, not just cited:
+- grad-sum run-to-run rel diff for means3D is 0.00e+00 -- perfectly
+  deterministic, ruling out a nondeterminism/race explanation.
+- The exact same slope/sign numbers (down to 3 decimals) reproduce between the
+  porter's build at d745b771 and this independent rebuild at 5401278, which is
+  itself the binary-equivalence proof the `mixed` classification asked for.
+- Tier3 (the review's designated actual correctness gate for these approximate
+  directions, notes.md:135: "Tier-3 / single-cam fits are the end-to-end proof
+  the gradients optimize correctly") converges cleanly on fisheye at the
+  documented small step: loss 0.00240->0.00110, PSNR 26.20->29.61 dB.
+
+Per validator stop discipline ("a clean build producing wrong numbers ... is a
+known hard class, not a port bug to chase deep"): recorded and not chased
+further. Not escalated to the porter -- the fault, if it is one, predates the
+port and lives in an upstream algorithmic property, not in a ROCm-specific
+code path; nothing in the changed-line set (verified above) can be its cause.
+
+### CUDA no-regression gate -- environmental wall, not previously recorded at any head
+
+No prior round recorded this gate at any head_sha, so it was owed. This host
+has the CUDA 12.8 toolkit (`/opt/conda/envs/cuda-12.8/bin/nvcc`) but no
+CUDA-flavored PyTorch install (only the ROCm dev build at
+`/var/lib/jenkins/pytorch`), so this hits exactly the documented "CUDA gate for
+torch-extension ports" case (cuda-to-rocm skill, references/validation.md:101-108).
+
+```
+P=/opt/conda/envs/py_3.12/bin/python
+INC=$($P -c "import torch.utils.cpp_extension as ce; print(' '.join('-I'+p for p in ce.include_paths()))")
+SRC=projects/op43dgs/src/submodules/diff-gaussian-rasterization-pinhole
+utils/timeit.sh op43dgs cuda-compile -- /opt/conda/envs/cuda-12.8/bin/nvcc -c -arch=sm_80 $INC \
+  -I$SRC/third_party/glm -std=c++20 -o /tmp/rasterize_points.o $SRC/rasterize_points.cu
+```
+
+Reached the real link-target TU (`rasterize_points.cu`, the file that actually
+`#include <torch/extension.h>`, not an isolated device-only `.cu`) and hit
+fingerprint #2 from the skill exactly: `torch/headeronly/util/complex.h:9` guards
+`#include <thrust/complex.h>` with `#if defined(__HIPCC__) || defined(__HIPCC__)`
+(duplicated-token typo, evidently meant `__CUDACC__ || __HIPCC__`), so under nvcc
+the include is skipped while `c10/util/complex.h:29` and `complex_math.h` still
+reference `thrust::complex` unconditionally -> ~100 "identifier thrust is
+undefined" errors, entirely inside `torch/include/c10` and
+`torch/include/torch/headeronly`, none in the port's own files. Confirmed this
+bottoms out in the ambient install, not the port: `git -C projects/op43dgs/src
+diff 728de13 HEAD -- '*.cu' '*.cuh' '*.h' '*.cpp' | grep -n
+'__builtin_trap|__trap|__HIP|hip[A-Z]|amdgcn|USE_ROCM'` -- every hit is a `+`
+line inside a `#if defined(USE_ROCM)` / `#if !defined(USE_ROCM)` guard (the
+`__trap` -> `__builtin_trap` redefinition and the CUDA-only blocks), i.e. the
+CUDA path is provably untouched by this port; the failure is present identically
+for a pristine-upstream build against this same ambient torch.
+
+Recorded per the skill's convention: `cuda-not-validated: ambient torch install
+is a ROCm dev build with no CUDA counterpart; nvcc dies in torch/headeronly's
+thrust::complex guard (duplicated __HIPCC__ token, not __CUDACC__ || __HIPCC__),
+not in this port's own files (grep for __trap/__HIP/hip[A-Z]/amdgcn/USE_ROCM
+over the port's changed .cu/.h/.cpp is all USE_ROCM-guarded additions). Not a
+gate; environmental.`
+
+### Integrity / hygiene
+
+`git -C projects/op43dgs/src status --porcelain` empty (no fork source touched
+this round; only the gitignored `agent_space/op43dgs/tier2_backward.py`
+harness fix, and MOAT-repo `stats.jsonl`/`notes.md`/`status.json`).
+`jargon.py --port op43dgs` clean. Fork `main` untouched at 728de13, local
+`moat-port` unchanged (validator pushes no fork commits). `moatlib.py
+carry-forward` was NOT used -- this is real GPU evidence at 5401278, not a
+codeobj_diff carry-forward.
+
+Verdict: PASS. All variants except the one documented, investigated,
+pre-existing, non-port fisheye means3D gate miss. `validated_sha` advances to
+5401278 for linux-gfx1100.
