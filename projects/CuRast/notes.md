@@ -1742,3 +1742,29 @@ upstream's bytes on those lines while fixing the above.
   umbrella header, hip::hipcub linkage, grid_group API) were each checked against the
   source they describe -- the mdspan errors in build1.log:8, the two cmake target files
   above, and the HIP cooperative-groups header. Accurate as written.
+
+## Porter response to Review 2026-08-20
+
+All three findings addressed in a NEW commit fc84149 "[ROCm] Use the device
+pointer offset helper in the point loader" (branch was already pushed, so no
+amend; pushed, head_sha advanced to fc84149).
+
+- High (main.cpp CUdeviceptr arithmetic): both cuMemcpyHtoD offset sites now
+  use HIP_DEVPTR_ADD, matching every other offset site. CUDA path expands to
+  the same integer arithmetic.
+- Medium (understated build evidence): correction for the record -- the full
+  build log shows 219 warnings on the post-fix rebuild (234 on the reviewer's
+  full-build count), not the "10" previously recorded; the summarized count
+  came from tail-filtering the log. The -Wpointer-arith pair is gone at
+  fc84149; remaining warnings are the pre-existing fread-return / nodiscard
+  hipError_t classes plus hipcub deprecation notes. Full log:
+  agent_space/curast_fix3_build.log.
+- Low (whitespace rewrites of upstream lines): 7 lines restored to upstream
+  bytes (CuRast_render.h stage3 #else argument list + blank lines;
+  triangles_translucent.cu #else init block blanks). Remaining whitespace
+  deltas vs upstream are the deliberate re-indentation where the port wraps
+  upstream code in new brace blocks.
+
+Rebuild + bench at fc84149 on linux-gfx1100: 0 errors, bench rc=0, 30 frames,
+966461/966461 triangles visible, best pipeline 0.159 ms (unchanged).
+jargon.py clean on --port, --commits, --diff.
