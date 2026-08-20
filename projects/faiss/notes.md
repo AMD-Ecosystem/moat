@@ -1437,3 +1437,28 @@ git status --porcelain | grep -v '^??' | wc -l   # 0
 `wave32` and `windows` gates; combined with `linux-gfx90a` already satisfying `wave64` at
 this same head_sha, all three required gates (`wave64`, `wave32`, `windows`) are now
 satisfied at head -- `python3 utils/moatlib.py pr-ready faiss` should read `True`.
+
+## Review PR opened 2026-08-20 (wave32 + windows gates closed)
+
+`pr-ready` went True once windows-gfx1151 completed at `01a09e82` -- that one arch carries
+both the `wave32` and `windows` gates, and `wave64` was already held by linux-gfx90a at the
+same head. Opened https://github.com/AMD-Ecosystem/faiss/pull/1 (`moat-port` -> `main`,
+3 commits, 4 files), title `[ROCm] Fix the ROCm GPU build and make the GPU tests portable`.
+`prose.py` and `jargon.py` clean. Awaiting `/moat approve`.
+
+Two things the approver should look at deliberately:
+
+1. **Scope.** Commits `a8a9d1e` (uniform_int_distribution<uint8_t>) and `01a09e8`
+   (clock_gettime -> std::chrono) are NOT ROCm changes; they are C++ conformance and
+   Windows portability fixes in `faiss/gpu/test/`. They are bundled here because the GPU
+   test suite does not compile on Windows without them, so the ROCm path could not be
+   tested there. The reviewer passed this scope, and the PR body states it plainly rather
+   than burying it. If the maintainers would rather have them separately, they split off
+   cleanly -- they touch only test files and share no lines with the hipify fix.
+
+2. **Older platform evidence is not addressable.** `ab1dcf71`, the sha that
+   linux-gfx1100 / windows-gfx1101 / windows-gfx1201 recorded against, no longer exists in
+   the fork (history was rewritten since). Their 119/119 figures could not be tied to
+   current content, so the PR table claims ONLY linux-gfx90a (108/108) and
+   windows-gfx1151 (119/119), both at `01a09e82`, and refers to the other three as earlier
+   revisions of the same change. Do not re-add the unverifiable rows.

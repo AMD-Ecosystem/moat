@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-05-31T16:36:35Z",
-  "updated_at": "2026-08-20T07:15:16Z",
+  "updated_at": "2026-08-20T07:20:06Z",
   "head_sha": "01a09e824b4792d1ef4f14ef5cdb99c37737c353",
   "depends_on": [],
   "porting": null,
@@ -141,5 +141,6 @@
     "arch": "linux-gfx90a",
     "since": "2026-08-20T05:52:53Z",
     "at": "2026-08-20T05:57:55Z"
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/faiss/pull/1"
 }
