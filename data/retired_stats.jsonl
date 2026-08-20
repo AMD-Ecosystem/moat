@@ -86,3 +86,13 @@
 {"kind": "tokens", "ts": "2026-06-16T06:29:17Z", "tokens": 41627, "source": "planner", "project": "mirage"}
 {"kind": "tokens", "ts": "2026-06-04T22:08:22Z", "tokens": 106800, "source": "planner", "project": "sparser-faster-llms"}
 {"kind": "tokens", "ts": "2026-06-11T04:17:11Z", "tokens": 83059, "source": "planner", "project": "spconv"}
+{"kind": "session", "ts": "2026-08-13T03:12:45Z", "epoch": 1786590765.1385188, "event": "start", "platform": "linux-gfx1100", "project": "FlashKDA"}
+{"kind": "session", "ts": "2026-08-13T03:19:12Z", "epoch": 1786591152.066405, "event": "end", "platform": "linux-gfx1100", "project": "FlashKDA"}
+{"kind": "session", "ts": "2026-08-14T06:59:31Z", "epoch": 1786690771.859204, "event": "start", "platform": "linux-gfx90a", "project": "FlashKDA"}
+{"kind": "session", "ts": "2026-08-14T07:01:55Z", "epoch": 1786690915.6831388, "event": "end", "platform": "linux-gfx90a", "project": "FlashKDA"}
+{"kind": "session", "ts": "2026-08-14T14:22:06Z", "epoch": 1786717326.587488, "event": "start", "platform": "linux-gfx942", "project": "FlashKDA"}
+{"kind": "session", "ts": "2026-08-14T14:25:21Z", "epoch": 1786717521.4275084, "event": "end", "platform": "linux-gfx942", "project": "FlashKDA"}
+{"kind": "session", "ts": "2026-08-19T05:01:27Z", "epoch": 1787115687.7499385, "event": "start", "platform": "linux-gfx1100", "project": "FlashKDA"}
+{"kind": "session", "ts": "2026-08-19T05:04:05Z", "epoch": 1787115845.0577497, "event": "end", "platform": "linux-gfx1100", "project": "FlashKDA"}
+{"kind": "session", "ts": "2026-08-20T06:29:26Z", "epoch": 1787207366.5784564, "event": "start", "platform": "linux-gfx90a", "project": "FlashKDA"}
+{"kind": "session", "ts": "2026-08-20T06:33:56Z", "epoch": 1787207636.7788186, "event": "end", "platform": "linux-gfx90a", "project": "FlashKDA"}
