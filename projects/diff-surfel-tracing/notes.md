@@ -2581,3 +2581,130 @@ committed there. All workaround/build scripts (`agent_space/win_torch_env.sh`,
 
 **Next validator: do not re-run the DLL-staging fix, it is confirmed not the
 cause. Start from the debugger/minidump step instead.**
+
+## Validation retry 2026-08-20 (windows-gfx1151) -- both new hypotheses FALSIFIED, still FAIL
+
+Retry of the same GPU gate at the same `head_sha` (`173f32a`), given the
+specific instruction to test whether the arrayfire-derived "hipRTC/comgr's
+JIT include path is derived from `ROCM_PATH`/`HIP_PATH` at RUN time" lesson
+also explains this crash. It does not. Recorded via
+`python3 utils/moatlib.py set-state diff-surfel-tracing windows-gfx1151
+validation-failed` (`failed_sha` unchanged at `173f32a9d0182452a6dcc02433e093b34311f665`).
+
+### Rebuild (build artifacts from the prior attempt were gone -- untracked
+build output, correctly not committed)
+
+```
+git -C third_party/hiprt apply "$(pwd)/third_party/hiprt-rocm-fixes.patch"
+source agent_space/win_torch_env.sh
+cmake -DCMAKE_BUILD_TYPE=Release -DBITCODE=OFF -DNO_UNITTEST=ON -DHIP_PATH=$ROCM_ROOT \
+    -S third_party/hiprt -B agent_space/dst_build/hiprt_build
+cmake --build agent_space/dst_build/hiprt_build --config Release --target hiprt03001 -- -m
+rm -rf build *.egg-info diff_surfel_tracing/hiprt_root diff_surfel_tracing/hiprt_cache \
+    diff_surfel_tracing/*.dll diff_surfel_tracing/{kernels,params,config,auxiliary}.h
+python -m pip install -e . --no-build-isolation --no-deps -v
+```
+
+Both stages built clean, identical in character to the prior attempt's build
+(same warnings, same artifacts). `import diff_surfel_tracing` succeeds.
+
+### Hypothesis 1 (ROCM_PATH/HIP_PATH at run time): FALSIFIED, cheaply
+
+`agent_space/win_torch_env.sh` -- the env this project's build AND run both
+use, unlike `af_win_env.sh` which unsets at build time -- already exports
+`ROCM_PATH`/`HIP_PATH` unconditionally (`setup.py` and `hipcc.exe` need them
+at build time too, so this project's build was never able to run with them
+unset the way arrayfire's CMake auto-detect could). Verified directly:
+printed `ROCM_PATH`/`HIP_PATH` immediately before the run, both set to the
+venv's `_rocm_sdk_devel` root. Re-ran `example/validate_rocm.py` with a
+cleared `hiprt_cache`: **identical crash**, same relative offset inside the
+DLL both times (`hiprtBuildTraceKernels() + 0x894` -- the absolute address
+moves with ASLR/DLL rebasing between runs, the function-relative offset does
+not). This project's crash was never a build/run ROCM_PATH mismatch; that
+class does not apply here.
+
+### A pre-existing, independent finding surfaced while investigating: an
+upstream-issue draft for this exact fault class already exists
+
+`C:\Users\jdaily\AppData\Local\Temp\upstream-issues\hiprt-jit-and-loader.*`
+(dated 2026-08-19, the day before this validator's first attempt -- written
+by an earlier session, host-global scratch, not committed anywhere) already
+diagnoses four HIP RT Windows JIT/loader defects, two of which are exactly
+the class this crash lives in: (3) `hiprtcCreateProgram` given an absolute
+path as the source name fails SILENTLY on Windows when the name starts with
+a drive letter (comgr returns 6, empty log), and (4) `LoadLibraryA` finds
+the System32 display-driver `amdhip64`/`hiprtc` copy before the ROCm SDK's
+own. **Both are already fixed in this project's own
+`third_party/hiprt-rocm-fixes.patch`** (see the patch header's `Compiler.cpp
+buildProgram` and `hiprt.cpp, hiprt_libpath.h, Orochi hipew.cpp` entries) --
+confirmed by reading the patched `Compiler::buildProgram`, which already
+passes `moduleName.filename()` rather than the full path. So the two most
+plausible pre-diagnosed Windows JIT defects are ruled OUT as the cause of
+THIS crash: they're already fixed and the crash still reproduces byte-for-byte
+against the same relative offset.
+
+### Hypothesis 2 (unpropagated JIT failure -> use of an invalid program):
+tested directly, FALSIFIED
+
+`hiprt/impl/Compiler.cpp::buildProgram` (pristine upstream code at the pinned
+tag, untouched by our patch) has a real bug independent of the drive-letter
+fix: when `orortcCompileProgram` fails AND the log is empty, the function
+returns without throwing, silently treating a failed compile as if it
+succeeded, and the caller (`buildKernels`) proceeds to call
+`orortcGetCodeSize`/`orortcGetCode`/`oroModuleLoadData` on the never-actually-
+compiled program. This is exactly the "may not null-check the failed compile
+result" shape the task's hypothesis 2 describes, and it is a genuine HIP RT
+bug (reported nowhere yet), but IT IS NOT WHAT'S FIRING HERE: a throwaway
+local edit (never committed, reverted with `git -C third_party/hiprt checkout
+-- .` before finishing) that unconditionally throws with the raw
+`orortcResult` code and log size on any compile failure, rebuilt
+(`cmake --build ... --target hiprt03001`, ~15s) and copied over the installed
+DLL, produced **the identical crash at the identical relative offset**
+(`hiprtBuildTraceKernels() + 0x894`) with my `throw` never firing. So
+`orortcCompileProgram` is not the failing call, or is never reached before
+the fault -- the crash is earlier or elsewhere in `hiprtBuildTraceKernels`'s
+call graph than `Compiler::buildProgram`'s post-compile handling.
+
+Confirmed genuine HIP RT bug, not yet the cause of this crash but worth its
+own report: `Compiler::buildProgram` should `throw` on any
+`e != ORORTC_SUCCESS`, not only when the log happens to be non-empty. Left
+unfiled (no clean minimal repro on this crash to attach), noted here for
+whoever picks HIP RT's Windows JIT path up next.
+
+### Stopped here, per the retry's stop discipline
+
+Two hypotheses tested and falsified within the 30-minute/150k-token retry
+budget, both with concrete rebuild-and-rerun evidence rather than
+re-running the same failing command. Neither is a fix. The crash's true
+cause is still unknown and would need a debugger/minidump on the release
+DLL (no PDBs shipped for HIP RT's release config) to pin to a source line --
+explicitly out of scope for a validator per the stop-discipline instruction
+("do not go down a debugger/minidump path -- that is porter/investigation
+work, not validation"). **`windows-gfx1151` stays `validation-failed` at
+`173f32a`.**
+
+### Integrity
+
+`git -C projects/diff-surfel-tracing/src status --porcelain
+--ignore-submodules=none` clean at completion; the diagnostic edit to
+`third_party/hiprt/hiprt/impl/Compiler.cpp` was reverted
+(`git -C third_party/hiprt checkout -- .`), the submodule working tree is
+back to the pristine pinned tag (patch not applied, matching the state a
+fresh clone leaves it in), and two stray `*_winhip.hip` hipify artifacts
+(same untracked-build-output class round 1 already gitignored the `.cu`
+form of) were removed manually. No source or build file in the fork was
+changed or committed.
+
+### For the next validator/porter
+
+Do not re-test hypothesis 1 (ROCM_PATH/HIP_PATH at run time) or hypothesis 2
+(the unpropagated-compile-failure code path) -- both are confirmed not the
+cause, with rebuild evidence, not just re-reading the previous notes. The
+crash is still `hiprtBuildTraceKernels() + 0x894` inside `hiprt0300164.dll`,
+before `build_acceleration_structure` and before any tracer-owned code runs.
+A real fix needs either symbols (build HIP RT with `/Zi` / a debug config and
+attach a debugger -- porter-scope, not validator-scope) or a bisection of
+`hiprtBuildTraceKernels`'s internals (RTIP capability probe? cache directory
+creation? a second, un-diagnosed silent-failure path elsewhere in the same
+function?) against HIP RT's own source with print-based instrumentation
+rather than a live debugger.

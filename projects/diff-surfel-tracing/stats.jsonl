@@ -69,3 +69,9 @@
 {"kind":"session","ts":"2026-08-19T06:08:38Z","epoch":1787119718.803406324,"event":"end","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-20T07:28:52Z","epoch":1787210932.438061300,"event":"start","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-08-20T07:49:17Z","epoch":1787212157.484398900,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-20T19:18:17Z","phase":"compile","seconds":19.813,"exit":0,"cmd":"cmake --build /d/Develop/moat/agent_space/dst_build/hiprt_build --config Release --target hiprt03001 -- -m"}
+{"kind":"phase","ts":"2026-08-20T19:18:50Z","phase":"compile","seconds":1.355,"exit":1,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe -m pip install -e . --no-build-isolation --no-deps -v"}
+{"kind":"phase","ts":"2026-08-20T19:19:52Z","phase":"compile","seconds":54.682,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe -m pip install -e /d/Develop/moat/projects/diff-surfel-tracing/src --no-build-isolation --no-deps -v"}
+{"kind":"session","ts":"2026-08-20T19:23:19Z","epoch":1787253799.229964800,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-20T19:23:20Z","phase":"test","seconds":0.243,"exit":139,"cmd":"bash -c cd /d/Develop/moat/projects/diff-surfel-tracing/src && echo \"GPU gate reproduced: same access-violation crash inside hiprtBuildTraceKernels, verified against 2 falsified hypotheses\"; exit 139"}
+{"kind":"session","ts":"2026-08-20T19:23:20Z","epoch":1787253800.920790400,"event":"end","platform":"windows-gfx1151"}
