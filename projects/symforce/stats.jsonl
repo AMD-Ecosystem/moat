@@ -71,3 +71,10 @@
 {"kind":"session","ts":"2026-08-20T18:29:13Z","epoch":1787250553.066765005,"event":"end","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-20T18:30:24Z","epoch":1787250624.773699323,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-20T18:31:39Z","epoch":1787250699.494325807,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T19:01:37Z","epoch":1787252497.369557739,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-20T19:02:20Z","phase":"compile","seconds":9.936,"exit":0,"cmd":"bash -c \ncd /var/lib/jenkins/moat/projects/symforce/src\ncmake symforce/caspar/source/runtime -B build_fix465_gfx1100 -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 2>&1 | tail -40\necho \"=== BUILD ===\"\ncmake --build build_fix465_gfx1100 -j16 2>&1 | tail -80\n"}
+{"kind":"phase","ts":"2026-08-20T19:02:29Z","phase":"compile","seconds":3.993,"exit":0,"cmd":"bash -c \ncd /var/lib/jenkins/moat\nhipcc -x hip agent_space/symforce_sumstore_test.hip.cpp -I projects/symforce/src/symforce/caspar/source/runtime --offload-arch=gfx1100 -o agent_space/symforce_sumstore_test_1a9e9770 2>&1\necho \"EXIT: $?\"\n"}
+{"kind":"phase","ts":"2026-08-20T19:03:00Z","phase":"test","seconds":0.003,"exit":127,"cmd":"./agent_space/symforce_sumstore_test_1a9e9770"}
+{"kind":"phase","ts":"2026-08-20T19:03:06Z","phase":"test","seconds":0.174,"exit":0,"cmd":"/var/lib/jenkins/moat/agent_space/symforce_sumstore_test_1a9e9770"}
+{"kind":"phase","ts":"2026-08-20T19:03:45Z","phase":"cuda-compile","seconds":0.027,"exit":1,"cmd":"/opt/conda/envs/cuda-12.8/bin/nvcc -arch=sm_80 -c nvcc_memops.cu -I /var/lib/jenkins/moat/projects/symforce/src/symforce/caspar/source/runtime -o nvcc_memops.o"}
+{"kind":"phase","ts":"2026-08-20T19:03:55Z","phase":"cuda-compile","seconds":4.511,"exit":0,"cmd":"/opt/conda/envs/cuda-12.8/bin/nvcc -arch=sm_80 -c /var/lib/jenkins/moat/agent_space/symforce-checks/nvcc_memops.cu -I /var/lib/jenkins/moat/projects/symforce/src/symforce/caspar/source/runtime -o /var/lib/jenkins/moat/agent_space/symforce-checks/nvcc_memops.o"}

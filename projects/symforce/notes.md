@@ -830,3 +830,66 @@ Next: the branch is still local-only (push blocked on the gh token's `workflow`
 scope, see the fix-round section above). Once it is pushed and head advances to
 1a9e9770, every platform revalidates -- the barrier changes device code, so the
 merge-only binary-equivalence carry-forward does not cover this tip.
+
+## Revalidation linux-gfx1100 2026-08-20 (fix round, tip 1a9e9770)
+
+`moat-fix-465` pushed; `origin/moat-fix-465` == local HEAD == 1a9e9770.
+Fork clone at `/var/lib/jenkins/moat/projects/symforce/src`, branch
+`moat-fix-465`, `git status --porcelain` clean of tracked-file changes
+(only untracked build dirs and the jinja-rendered runtime CMakeLists.txt).
+Real GPU run required: the barrier hunk changes device code, so the
+merge-only binary-equivalence carry-forward from the earlier fix-round
+section does not cover this tip.
+
+Runtime library build (gfx1100, AMD Radeon Pro W7800, ROCm 7.2.1):
+```
+cmake symforce/caspar/source/runtime -B build_fix465_gfx1100 -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100
+cmake --build build_fix465_gfx1100 -j16
+```
+Builds clean (only pre-existing `-Wunused-value` nodiscard warnings on
+`cudaMemcpy`/`cudaMemset`/CUB calls, unrelated to this round).
+
+SumStore harness rebuilt from the tip's `memops.cuh`:
+```
+hipcc -x hip agent_space/symforce_sumstore_test.hip.cpp -I projects/symforce/src/symforce/caspar/source/runtime --offload-arch=gfx1100 -o agent_space/symforce_sumstore_test_1a9e9770
+```
+`roc-obj-ls` / `llvm-objdump --offloading` on the binary shows one
+`hipv4-amdgcn-amd-amdhsa--gfx1100` bundle (offset 8192, size 6344).
+Extracted the code object (`roc-obj-extract`) and disassembled
+(`llvm-objdump -d`): 13 `s_barrier` occurrences, matching the review's
+recorded post-fix count exactly (9 pre-fix), confirming the harness binary
+under test is genuinely built from the tip's barriered `memops.cuh` and not
+a stale artifact.
+
+Ran the harness 20 times:
+```
+./agent_space/symforce_sumstore_test_1a9e9770
+```
+Output: all 4 sums exact (rel err 0.00e+00 vs analytic expectation), 20
+reruns bit-identical, `=== PASSED ===`.
+
+CUDA no-regression gate (runs once per head_sha; not yet formally recorded
+under this label at 1a9e9770, so ran it): nvcc TU compile of `memops.cuh`
+pinned to a real arch, matching the reviewer's earlier ad hoc checks at
+6f860d97/a279cdfc (content byte-identical to 1a9e9770 since those were
+message-only amendments):
+```
+/opt/conda/envs/cuda-12.8/bin/nvcc -arch=sm_80 -c nvcc_memops.cu -I symforce/caspar/source/runtime -o nvcc_memops.o
+```
+(`nvcc_memops.cu` includes memops.cuh and instantiates SumStore,
+SumFlushFinal, FlushSumBlock -- same TU as the reviewer used, pinned to
+sm_80 per the arch-pin rule.) Exit 0. CUDA gate: PASS.
+
+Gates checked before completion: `python3 utils/jargon.py --port symforce`
+(run from the checkout at `/var/lib/jenkins/moat`, since the fork clone
+lives outside this worktree) -> `jargon: clean`. Documentation: the ROCm
+build is documented in `symforce/caspar/README.md` under "AMD GPUs
+(ROCm/HIP)", unchanged and unaffected by this round's two-file delta (CMake
+template CUDA-arch-list merge, SumStore barrier), so no doc gap opened.
+
+Fork worktree re-checked clean (`git status --porcelain`) after all builds:
+only untracked build dirs and the generated runtime CMakeLists.txt, no
+modified tracked files.
+
+VALIDATION PASSED on gfx1100 (AMD Radeon Pro W7800, ROCm 7.2.1) at tip
+1a9e9770. State set to completed, validated_sha = 1a9e9770.
