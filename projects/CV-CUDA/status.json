@@ -7,7 +7,7 @@
   "priority": 6.119,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-08-20T19:56:59Z",
+  "updated_at": "2026-08-20T20:15:18Z",
   "head_sha": "358edc33955c58ecc1c219d21f3b3db59b10a50c",
   "pr_url": "https://github.com/CVCUDA/CV-CUDA/pull/293",
   "pr_number": 293,
@@ -16,7 +16,10 @@
   "waivers": {
     "windows": {
       "reason": "The CV-CUDA port was deliberately scoped Linux-only, so the obstacle is the platform rather than the GPU. No Windows build work was implemented in the port at all; the Windows platforms are untried followers reusing the Linux branch, and the record notes this was a maintainer call rather than an unexplored gap. Confirmed on windows-gfx1101 and windows-gfx1201. The HIP work is validated at head on linux-gfx90a (wave64) and linux-gfx1100 (wave32); windows is the only gate not satisfied at head. NOTE for the approver: unlike icicle or gpu4pyscf, this is a scoping decision rather than a demonstrated upstream impossibility -- if you would rather see Windows attempted than waived, refuse this and it becomes porter work. Nobody has established that CV-CUDA cannot build on Windows.",
-      "suggested_at": "2026-08-20T07:51:32Z"
+      "suggested_at": "2026-08-20T07:51:32Z",
+      "refused_by": "jeffdaily",
+      "refused_at": "2026-08-20T20:15:17Z",
+      "refused_note": "The porter decides whether Windows can reasonably be supported; do not waive on a scoping decision. Nobody has established that CV-CUDA CANNOT build on Windows -- the port was simply scoped Linux-only, and the Windows platforms are untried followers reusing the Linux branch. That is porter work, not an excused gate. Assess feasibility first (build system, host dependencies, any POSIX-only host code), then either implement Windows support or come back with a demonstrated impossibility, which would be a different and much stronger waiver case. SEPARATE AND PRIOR: this project is NOT currently PR-ready for an unrelated reason -- head_sha has advanced to 358edc33 (a staged fix round) while every platform record still sits at the published sha 642b3526, and linux-gfx1100 is validation-failed there. wave64 and wave32 both need revalidation at the new head regardless of what happens with Windows."
     }
   },
   "pr_state": "open",
