@@ -96,3 +96,16 @@
 {"kind": "session", "ts": "2026-08-19T05:04:05Z", "epoch": 1787115845.0577497, "event": "end", "platform": "linux-gfx1100", "project": "FlashKDA"}
 {"kind": "session", "ts": "2026-08-20T06:29:26Z", "epoch": 1787207366.5784564, "event": "start", "platform": "linux-gfx90a", "project": "FlashKDA"}
 {"kind": "session", "ts": "2026-08-20T06:33:56Z", "epoch": 1787207636.7788186, "event": "end", "platform": "linux-gfx90a", "project": "FlashKDA"}
+{"kind": "session", "ts": "2026-08-13T03:13:05Z", "epoch": 1786590785.4397407, "event": "start", "platform": "linux-gfx1100", "project": "spconv"}
+{"kind": "session", "ts": "2026-08-13T03:13:12Z", "epoch": 1786590792.842694, "event": "start", "platform": "linux-gfx1100", "project": "spconv"}
+{"kind": "session", "ts": "2026-08-13T03:20:39Z", "epoch": 1786591239.9502785, "event": "end", "platform": "linux-gfx1100", "project": "spconv"}
+{"kind": "session", "ts": "2026-08-13T03:32:26Z", "epoch": 1786591946.4158304, "event": "start", "platform": "linux-gfx942", "project": "spconv"}
+{"kind": "session", "ts": "2026-08-13T03:35:00Z", "epoch": 1786592100.2593818, "event": "end", "platform": "linux-gfx942", "project": "spconv"}
+{"kind": "session", "ts": "2026-08-14T07:04:03Z", "epoch": 1786691043.3372517, "event": "start", "platform": "linux-gfx90a", "project": "spconv"}
+{"kind": "session", "ts": "2026-08-14T07:08:59Z", "epoch": 1786691339.0700579, "event": "end", "platform": "linux-gfx90a", "project": "spconv"}
+{"kind": "session", "ts": "2026-08-14T14:27:17Z", "epoch": 1786717637.3804953, "event": "start", "platform": "linux-gfx942", "project": "spconv"}
+{"kind": "session", "ts": "2026-08-14T15:10:49Z", "epoch": 1786720249.1819952, "event": "end", "platform": "linux-gfx942", "project": "spconv"}
+{"kind": "session", "ts": "2026-08-19T04:54:31Z", "epoch": 1787115271.3787138, "event": "start", "platform": "linux-gfx1100", "project": "spconv"}
+{"kind": "session", "ts": "2026-08-19T04:57:34Z", "epoch": 1787115454.8098452, "event": "end", "platform": "linux-gfx1100", "project": "spconv"}
+{"kind": "session", "ts": "2026-08-20T06:35:28Z", "epoch": 1787207728.0314212, "event": "start", "platform": "linux-gfx90a", "project": "spconv"}
+{"kind": "session", "ts": "2026-08-20T06:39:47Z", "epoch": 1787207987.0354314, "event": "end", "platform": "linux-gfx90a", "project": "spconv"}

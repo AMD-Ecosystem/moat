@@ -2005,6 +2005,15 @@
     "reason": "already-supported",
     "repo_id": 815155760
   },
+  "traveller59/spconv": {
+    "by": "Jeff Daily",
+    "decided": "2026-08-20T19:23:39Z",
+    "disposition": "skip",
+    "full_name": "traveller59/spconv",
+    "note": "Decided in-session 2026-08-20: decline as already supported. spconv-triton (Apache-2.0, PyPI, MI300X-verified) is a drop-in replacement for spconv 2.x on ROCm, and upstream is not a viable PR destination (no merged PR since 2022-12-27; the one AMD request, #780, was answered by pointing at spconv-triton). A port would mean an unbounded AMD backend for the cumm codegen rather than work on spconv itself. Screened seven times on four platforms, all agreeing. Analysis retained in history: `git show 2cc3927f97db:projects/spconv/notes.md` (notes.md).",
+    "reason": "already-supported",
+    "repo_id": 166499614
+  },
   "uccl-project/mkernel": {
     "decided": "2026-06-05T01:18:36Z",
     "disposition": "skip",
