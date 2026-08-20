@@ -868,3 +868,100 @@ Commit bodies also checked with `utils/prose.py` (one line per paragraph) before
 Fork tree clean (`git status --porcelain` empty). `head_sha` = `be328991`, `published_sha` still
 `642b3526` (`moat-port` untouched, PR #293 unchanged). Next: reviewer pass on the delta, then
 gfx1100 + gfx90a revalidation -- gfx90a is the one that can actually exercise R2.
+
+## Review 2026-08-20 (b) (reviewer; re-review of `9174db47` -> `be328991`)
+VERDICT: **changes-requested**, on two RECORD-ACCURACY items only. Both code fixes (R1, R2) are
+ACCEPTED as written -- do not touch `DefaultAllocator.cpp` or the `OpFindHomography.cu` /
+`CvCudaHipCompat.h` wavefront work. The two items below need a new commit anyway (nothing can be
+amended now that the branch is pushed), and it is strictly cheaper to land them BEFORE the gfx90a
+run than after: any later source edit advances `head_sha` and voids the validation that R2 exists
+to be tested by.
+
+### B1 (must fix) `be328991`'s Test Plan does not pass on one of the four files it names
+`clang-format 14.0.6 --style=file --dry-run -Werror src/cvcuda/priv/legacy/resize_var_shape.cu`
+still reports **7 violations** at that commit: `:640:26`, `:678:22`, `:865:12`, `:866:12`,
+`:867:12`, `:868:12`, `:869:15`. The commit message says "Spell them the way the hook wants, so
+running it over these files is a no-op", and its Test Plan runs exactly that command over exactly
+that file. A maintainer reading PR #293 can run it, and it fails. That is upstream-visible text
+asserting something untrue, which matters more than the whitespace does.
+All 7 are port-introduced, and 5 of them belong to THIS round:
+- `upstream/main`'s copy of the file is clang-format-14 CLEAN (0 violations), measured with the
+  hook's own binary and the repo `.clang-format`.
+- At `moat-port` the file had **2** violations (then at `:283`, `:322`) -- the `work_type out = {0}`
+  `#else` arms from the first port round.
+- At `be328991` it has **7**. The five new ones (`:865-869`) are the `acc`/`out[i]` assignment
+  alignment group that commit `92cbcd1e` split when it inserted the `#if` block at `:857-862`;
+  clang-format does not align across a preprocessor branch, so it wants them de-aligned.
+FIX: format those 7 lines. The file then reaches 0, matching upstream, and drops out of the
+`cvcuda-clang-format-sweep` deferral entirely. State the result honestly in the new commit message.
+The rest of the deferral stands and is correctly left to a person: verified independently that
+`upstream/main` itself is not clean under the same binary (`src/cvcuda/priv/PlanarTensorView.hpp` 3,
+`src/cvcuda/priv/legacy/inpaint_utils.cuh` 3, `src/cvcuda/priv/legacy/normalize_var_shape.cu` 49),
+and v0.17.0 ships NO `.github/workflows/` at all, so no CI can fail on this -- the hook is a local
+contributor hook, not a gate. Note for whoever rules on the sweep: every one of the 19 port-touched
+files that carries violations is clean at `upstream/main` (0 across all of them) and unclean on the
+branch, so the 619-line sweep is entirely the port's own code, not inherited mess.
+
+### B2 (must fix, record only) the R2 reachability audit is backwards for `reducef`
+The porter response states: "The first three [`reducef` :410, `reducef2` :451, `reduceLtL` :496] run
+only under `compute_src_dst_mean`/`compute_LtL` ... only the last two are reachable from
+`computeModel`". `reducef` has exactly ONE call site -- `OpFindHomography.cu:508`, inside
+`calculate_residual_norm` -- and `calculate_residual_norm` is called ONLY from `computeModel`, at
+`:1022` and `:1138`. So `reducef` is reachable ONLY from the data-sized launch, the exact opposite of
+what the record says. THREE of the five helpers were broken on wave64 before `65834c23`, not two,
+and the third is the one that produces the residual L2 norm `S` -- the Levenberg-Marquardt
+convergence value -- so a pre-fix wave64 run would have been driving the refinement loop off a
+zero. `reducef2` and `reduceLtL` are correctly attributed (256-thread launches only).
+This does NOT weaken the fix: it is applied at the launch site, so it covers every reduction in the
+kernel regardless of reachability. Correct the audit so the gfx90a validator, and anyone who later
+considers relaxing the floor, reads the right list.
+
+### R1 ACCEPTED -- `DefaultAllocator.cpp:76-83` (a87da8c5)
+The verified one-liner, inside the existing HIP guard; the CUDA path is byte-unchanged. Re-ran the
+suite at `be328991` on gfx1100 (HIP_VISIBLE_DEVICES=2, build rebuilt at this sha):
+`cvcuda_test_system` **3831 passed / 42 failed**, with **zero** FindHomography failures and all 19
+FindHomography tests reported OK -- reproduces the porter's number exactly.
+
+### R2 ACCEPTED -- the runtime-wavefront floor is a better fix than the one I suggested
+Judged on the merits as asked, including the "does flooring at 64 preserve upstream's numPoints<=16
+semantics on wave64" question:
+- LANES BEYOND THE WORK ARE ALREADY UPSTREAM'S NORMAL CASE. Every helper the kernel calls is
+  grid-stride: `calculate_residual_and_jacobian_device:261` (`for (tid = idx; tid < numPoints; tid
+  += blockDim.x)`), `reducef:396`, `calculate_Jtx_matvec:535`, `max:790` (all `while (idx <
+  numPoints)`). Extra lanes contribute the reduction identity -- 0 for the sums, and 0 for
+  `max<myfabs>` because `myfabs` is non-negative and `val` starts at 0.0f. More decisively, before
+  v0.17 this kernel launched with a FIXED `block.x = 256` for every point count, so 64 threads over
+  32 work items is a strict subset of the configuration upstream shipped for years; the dynamic
+  ladder is the new thing, not the idle lanes.
+- SHUFFLE VALIDITY. After the floor, the reachable block sizes are 32/64/128/256 on wave32 and
+  64/64/128/256 on wave64 -- every one an exact multiple of the wavefront. So `blockDim.x /
+  warpSize >= 1` always, stage 1 never shuffles outside the block, and `warpSums` (`matrix8x32` /
+  `vector32`) is indexed by at most 7 (256/32). The masks are untouched and were already the 64-bit
+  `NVCV_WARP_FULL_MASK` on HIP.
+- NO WAVE32 PERTURBATION, VERIFIED INDEPENDENTLY, not taken on the porter's word: a standalone hipcc
+  probe on this host reports `hipDeviceAttributeWarpSize = 32`, `props.warpSize = 32`, `gfx1100`, and
+  the ladder's minimum is already 32, so `block.x` is never raised here. Preferring the runtime query
+  over my "start the ladder at 64 under USE_HIP" is the right call -- mine would have changed the
+  wave32 reduction order for no reason.
+- `cvcuda_hipWavefrontSize()` (`cmake/hip/CvCudaHipCompat.h:209-231`) is sound: per-device
+  `thread_local` cache in the same shape as upstream's `GetCurrentDeviceSM`, and both failure paths
+  return 64 WITHOUT poisoning the cache. `__host__` only, so the device passes ignore it.
+- Evidence framing is honest and correct: gfx1100 cannot exhibit the defect or demonstrate the fix,
+  and the record says so and names the gfx90a cases to watch.
+
+### R3/R4/R5/R7 ACCEPTED -- re-measurement and text reproduced independently
+- `cvcuda_test_system` 42 failures, composition confirmed from my own run: 40 planar-vs-interleaved
+  parity + 2 `OpNormalize` `*_f32_single_channel_stddev_vectorized`, no other cluster.
+- `cvcuda_test_unit`: 27 passed, 1 skipped (`StreamIdTest.HandleReuse`), 0 failed.
+- `nvcv_test_cudatools_system`, four runs here: 6, 9, 10, 13 failures; every failure in every run is
+  `InterpolationVarShapeWrapTest.correct_shift` or `TypeTraitsMakeTypeVectorTest/3` -- the two
+  documented non-port residual clusters, no new class, and better than the 16 measured before R1.
+- Both new skill entries check out against the code they describe, and the contraction lesson's
+  numbers are now the post-fix 42/40 with the contamination stated. The null-stream-memset entry sits
+  directly after "Fresh device allocations are NOT zero on ROCm", so its opening "The fix for that"
+  has the right antecedent. The roctx entry now says the INJECTION gap is untested rather than
+  handled, which matches `tests/cvcuda/CMakeLists.txt:26-29`.
+- Commit hygiene on the three new commits: `[ROCm]` titles at 57/55/60 chars, disclosure and fenced
+  Test Plans present, no forbidden trailers, ASCII in messages and in every added line.
+  `utils/jargon.py` clean on `--commits upstream/main..moat-fix-293`,
+  `--diff upstream/main...moat-fix-293`, and `--port CV-CUDA`. Fork tree clean.
