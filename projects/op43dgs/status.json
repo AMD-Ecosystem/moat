@@ -7,7 +7,7 @@
   "priority": 3.393,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-08-20T06:30:18Z",
+  "updated_at": "2026-08-20T06:35:07Z",
   "head_sha": "d745b771ec80d0662fd0bcdd4bf7bda609e4cbfd",
   "waivers": {},
   "license_clearance": {
@@ -18,7 +18,7 @@
   },
   "license_spdx": "non-commercial",
   "upstream_repo_id": 824214391,
-  "stage": "changes-requested",
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -89,7 +89,7 @@
       "validated_sha": "d6ca89206f8e8881598c1694a6ca996332952599",
       "started_at": "2026-06-01T20:35:00Z",
       "completed_at": "2026-06-08T00:54:41Z",
-      "updated_at": "2026-08-20T06:30:18Z",
+      "updated_at": "2026-08-20T06:35:07Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -149,5 +149,9 @@
     "arch": "linux-gfx1100",
     "since": "2026-08-20T06:20:22Z",
     "at": "2026-08-20T06:30:18Z"
+  },
+  "porting": {
+    "arch": "linux-gfx1100",
+    "since": "2026-08-20T06:35:07Z"
   }
 }
