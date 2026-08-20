@@ -726,3 +726,50 @@ never been pushed; trees otherwise identical):
   compilation.
 After gh auth refresh: push moat-fix-145, advance-head CubbyFlow
 29bac0b9b1a..., then revalidation and the fix-review PR.
+
+## Review 2026-08-20 (linux-gfx1100, reviewer): re-review of the fix round
+
+review-passed at `29bac0b9b1e8981d9921446829f9c0df1b97f2fe`. Both findings from
+the review above are fixed and nothing else moved. No new problems.
+
+Scope check first: `git rev-parse 40927ee55b^{tree}` equals
+`git rev-parse e5062449^{tree}` (7514c67ec5) and the recreated merge carries the
+same two parents (62f4604c, 8f774f6a4f), so the merge commit changed by message
+only. `git diff 2c51f93e..29bac0b9b1` is one file, four comment lines in
+`CMakeLists.txt:88-91`. `git ls-remote origin moat-fix-145` is empty, so nothing
+published was rewritten. The earlier verification of merge fidelity, the
+`CUBBYFLOW_REQUIRES` judgment, the fault-class sweep, and the reproduced test
+evidence (CUDATests 35/35 3170 assertions, UnitTests 814/814, nvcc gate with
+real `*_generated_*.cu.o` objects) therefore carry unchanged.
+
+Finding 1: the merge body bullet now reads "main's member-initializer cleanups
+landed alongside this branch's include swap to the compatibility header", which
+is what the code shows -- the branch's whole delta in those files is
+`CUDAPointHashGridSearcher2.hpp:19-23` / `CUDAPointHashGridSearcher3.hpp:19-23`,
+and the copy/move declarations at `CUDAPointHashGridSearcher2.hpp:115-129` are
+upstream's. The seam list in this file is corrected to match.
+
+Finding 2: the installed comment at `CMakeLists.txt:88-91` now reads "rocThrust
+picks its backend from compiler detection (`__CUDACC__` under nvcc, the host
+compiler otherwise), never from this project's macros. Every Thrust-reaching
+source here compiles as HIP, so this pin is defensive: it keeps the backend
+explicit rather than inferred." Both claims check out against
+`thrust/detail/config/compiler.h:111` (NVCC when `__CUDACC__`/`_NVHPC_CUDA`,
+else the host-compiler chain, with clang splitting on `__CUDA__`/`__HIP__`) and
+`device_system.h:29-36` (HIP device compiler -> HIP, clang -> CPP, else CUDA),
+and against this tree, where every thrust includer (`Sources/Core/CUDA/*.cu`,
+`CUDAPointHashGridSearcher{2,3}-Impl.hpp` reached from `Sources/Core/CUDA/*.cpp`)
+is marked LANGUAGE HIP and the three non-HIP TUs in the CUDA directories include
+no thrust. The tip commit body describes the comment it installs.
+
+Hygiene rechecked at the new tip: titles `[ROCm]`-prefixed at 57 and 50 chars,
+both bodies disclose AI assistance and carry a Test Plan, no `Co-Authored-By`;
+`jargon.py --commits moat-port..moat-fix-145` clean and `--diff` still reports
+only the two `Medias/Logos/Logo.svg` base64 strings adjudicated above; the fork
+clone has no modified tracked files (untracked `build-cuda/` and two test logs
+only).
+
+Bookkeeping unchanged: `head_sha` still names 62f4604c while the push waits on
+the token scope, so `fix-ready` answers `no-delta` and no fix review PR can open
+early. After the push, `advance-head 29bac0b9b1e8981d9921446829f9c0df1b97f2fe`
+is required before revalidation on wave64/wave32/windows.
