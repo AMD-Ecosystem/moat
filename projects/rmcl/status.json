@@ -7,9 +7,14 @@
   "priority": 4.281,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T03:40:15Z",
-  "updated_at": "2026-08-19T05:55:27Z",
+  "updated_at": "2026-08-20T19:13:20Z",
   "head_sha": "2b7f439c1c7da079b36aae82f95f43f84fbcd932",
-  "waivers": {},
+  "waivers": {
+    "windows": {
+      "reason": "The obstacle is the platform's ROS 2 ecosystem, not the GPU and not the port. rmcl's device code exists ONLY inside the ROS 2 package rmcl_ros (librmcl_ros_cuda, from resampling.cu and particle_motion.cu); rmcl's core carries no .cu and delegates its GPU work to rmagine. Every validated build is a colcon/ament build against ROS 2 jazzy, so with no ROS 2 there is no GPU target to build and no GPU path to test -- not a case where a subset could stand in. Verified 2026-08-20 on windows-gfx1151: no ros2 on PATH, no ROS 2 installation. wave64 (linux-gfx942) and wave32 (linux-gfx1100) are both completed at head 2b7f439c. NOTE for the approver, and the reason this is weaker than the icicle or GooFit waivers: nobody has shown rmcl CANNOT work on Windows. ROS 2 ships a Windows binary distribution. The blocker is that provisioning it -- plus colcon/ament, plus a Windows rmagine install built WITH Embree (this host validated rmagine with Embree disabled) -- is multi-step host setup and a person's decision. If you would rather have real Windows evidence than an excused gate, refuse this and provision the host instead. Honest scope note: no build was attempted, because the ROS 2 prerequisite was checked first and is absent.",
+      "suggested_at": "2026-08-20T19:13:20Z"
+    }
+  },
   "license_spdx": "BSD-3-Clause",
   "depends_on": [
     "rmagine"
@@ -64,6 +69,28 @@
       },
       "last_agent": "reviewer",
       "state": "completed"
+    },
+    "windows-gfx1151": {
+      "blocked": true,
+      "blocked_reason": "No ROS 2 on this host, and rmcl's GPU code only exists inside a ROS 2 package. Every validated build of this port is a colcon/ament build of rmcl_msgs + rmcl + rmcl_ros against ROS 2 jazzy; the only object carrying device code is librmcl_ros_cuda (from rmcl_ros), built from resampling.cu and particle_motion.cu. rmcl's own core has no .cu at all -- its GPU work is delegated to rmagine. So without ROS 2 there is no GPU build target to produce and no GPU test path to exercise; this is not a case where a subset could be validated. Verified on this host 2026-08-20: no 'ros2' command on PATH and no ROS 2 installation present. Scope note, stated plainly: NO build was attempted -- the ROS 2 prerequisite was checked first and is absent, so no GPU artifact could have been produced. Validating rmcl on Windows would require provisioning the ROS 2 Windows binary distribution plus colcon/ament AND a Windows rmagine install built with Embree enabled (this host's rmagine validation deliberately ran with RMAGINE_EMBREE_DISABLE=ON). That is host provisioning work and a person's decision, not a validator action. wave64 (linux-gfx942) and wave32 (linux-gfx1100) are both completed at head 2b7f439c; windows is the only gate open.",
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-20T19:13:06Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
     }
   },
   "intake": {
