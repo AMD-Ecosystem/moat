@@ -7,22 +7,22 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-06T06:58:03Z",
-  "updated_at": "2026-08-14T17:35:42Z",
-  "head_sha": "1213551f14f64c92c08048f377034b1ee362659d",
+  "updated_at": "2026-08-20T05:29:50Z",
+  "head_sha": "cc6f8d293fb742c241ccab1d8b9c5d6a71b42a93",
   "depends_on": [],
   "waivers": {},
   "license_spdx": "BSD-3-Clause",
   "upstream_repo_id": 467155160,
   "stage": "review-passed",
   "platforms": {
-    "windows-gfx1201": {
-      "state": "completed",
+    "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "9e642a6a623a4871544193f5c5d078789bd630f4",
-      "started_at": null,
-      "completed_at": "2026-08-12T21:15:15Z",
-      "updated_at": "2026-08-12T21:15:15Z",
+      "validated_sha": "cc6f8d293fb742c241ccab1d8b9c5d6a71b42a93",
+      "failed_sha": null,
+      "started_at": "2026-08-13T01:31:39Z",
+      "completed_at": "2026-08-13T01:41:53Z",
+      "updated_at": "2026-08-20T05:29:50Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -37,11 +37,14 @@
         "last_session_at": null
       },
       "last_agent": "validator",
+      "state": "completed",
       "carry_forward": {
-        "to": "9e642a6a623a4871544193f5c5d078789bd630f4",
+        "from": "e7a7b279f8f21cd5fb339282d7fb1b15beda64ae",
+        "to": "1213551f14f64c92c08048f377034b1ee362659d",
         "method": "source-class",
-        "detail": "commit-message reword only: 3d098d58e -> 2b6824fd2 removed in-house vocabulary that upstream.py refuses at publish. Tree byte-identical; old 4223818c9 == new 9e642a6a6 (verified per-commit). Same GPU ",
-        "at": "2026-08-12T21:15:15Z"
+        "class": "comment-only",
+        "detail": "tests/cuda/public_headers.cpp: comment-only (comments/format only)",
+        "at": "2026-08-13T01:47:16Z"
       }
     },
     "windows-gfx1101": {
@@ -72,69 +75,14 @@
         "at": "2026-08-12T21:15:15Z"
       }
     },
-    "linux-gfx942": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "1213551f14f64c92c08048f377034b1ee362659d",
-      "failed_sha": null,
-      "started_at": "2026-08-13T01:31:39Z",
-      "completed_at": "2026-08-13T01:41:53Z",
-      "updated_at": "2026-08-13T01:47:16Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator",
-      "state": "completed",
-      "carry_forward": {
-        "from": "e7a7b279f8f21cd5fb339282d7fb1b15beda64ae",
-        "to": "1213551f14f64c92c08048f377034b1ee362659d",
-        "method": "source-class",
-        "class": "comment-only",
-        "detail": "tests/cuda/public_headers.cpp: comment-only (comments/format only)",
-        "at": "2026-08-13T01:47:16Z"
-      }
-    },
     "linux-gfx90a": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "1213551f14f64c92c08048f377034b1ee362659d",
+      "validated_sha": "cc6f8d293fb742c241ccab1d8b9c5d6a71b42a93",
       "started_at": "2026-06-01T21:24:57Z",
       "completed_at": "2026-08-14T01:27:43Z",
-      "updated_at": "2026-08-14T01:27:43Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator"
-    },
-    "linux-gfx1100": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "1213551f14f64c92c08048f377034b1ee362659d",
-      "started_at": "2026-08-12T20:25:20Z",
-      "completed_at": "2026-08-13T02:00:21Z",
-      "updated_at": "2026-08-13T02:00:21Z",
+      "updated_at": "2026-08-20T05:29:50Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -173,7 +121,58 @@
       },
       "state": "completed",
       "last_agent": "validator"
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "9e642a6a623a4871544193f5c5d078789bd630f4",
+      "started_at": null,
+      "completed_at": "2026-08-12T21:15:15Z",
+      "updated_at": "2026-08-12T21:15:15Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "9e642a6a623a4871544193f5c5d078789bd630f4",
+        "method": "source-class",
+        "detail": "commit-message reword only: 3d098d58e -> 2b6824fd2 removed in-house vocabulary that upstream.py refuses at publish. Tree byte-identical; old 4223818c9 == new 9e642a6a6 (verified per-commit). Same GPU ",
+        "at": "2026-08-12T21:15:15Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "cc6f8d293fb742c241ccab1d8b9c5d6a71b42a93",
+      "started_at": "2026-08-12T20:25:20Z",
+      "completed_at": "2026-08-13T02:00:21Z",
+      "updated_at": "2026-08-20T05:29:50Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
     }
-  },
-  "porting": null
+  }
 }
