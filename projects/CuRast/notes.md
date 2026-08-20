@@ -1620,3 +1620,125 @@ renderer from this round.
 - head_sha advanced to 100d2e7; the four completed platforms read `revalidate`.
 - jargon.py clean: `--port CuRast`, `--commits moat-port..moat-fix-2`,
   `--diff moat-port..moat-fix-2`.
+
+## Review 2026-08-20 (fix round, delta moat-port..moat-fix-2 = f870bc0 + 100d2e7)
+
+Verdict: **changes-requested**. One defect breaks the Windows build at this head;
+two smaller items. Scope reviewed: `git diff 302cb5fe..100d2e7` plus the merge
+fidelity of f870bc0 against `upstream/main` (55c9a26).
+
+### High -- src/main.cpp:220-221: pointer arithmetic on a `CUdeviceptr` that is `void*` under HIP
+
+```
+cuMemcpyHtoD(points->cptr_positions + startIndex * sizeof(vec3), positions.data(), ...);
+cuMemcpyHtoD(points->cptr_colors    + startIndex * sizeof(u32),  colors.data(),    ...);
+```
+
+`SNCPoints::cptr_positions` is `CUdeviceptr` (src/scene/SNCPoints.h:15-16), which
+under `USE_HIP` is `hipDeviceptr_t` = `void*` (/opt/rocm/include/hip/driver_types.h:46),
+so both lines do arithmetic on `void*`. Only GCC accepts that, as an extension:
+the fix round's own build log (agent_space/build5.log:1680 and :1691) carries
+`warning: pointer of type 'void *' used in arithmetic [-Wpointer-arith]` at exactly
+these two lines. amdclang++ rejects it outright -- `error: arithmetic on a pointer
+to void` (reproduced with `/opt/rocm/llvm/bin/clang++ -std=c++23`), and the Windows
+recipe in this file builds C++ with `-DCMAKE_CXX_COMPILER=$ROCM/lib/llvm/bin/amdclang++.exe`.
+So windows-gfx1101 and windows-gfx1201 cannot revalidate at 100d2e7 as it stands;
+src/cuda_to_hip.h:87 already records this ("Windows Clang rejects it even in gnu++ mode").
+
+This is upstream's new point-cloud loader landing on a surface the port had
+multiplexed: every other offset site in the tree uses the port's `HIP_DEVPTR_ADD`
+(src/CudaVirtualMemory.h:138, src/CudaVulkanSharedMemory.h:346, src/LargeGlbLoader.h:535,
+src/CuRast_render.h:239, ...). Fix both lines the same way, unguarded --
+`HIP_DEVPTR_ADD` is defined on both backends (src/cuda_to_hip.h:87 for HIP, :239 for
+CUDA, where it is the identical integer arithmetic upstream wrote):
+
+```
+cuMemcpyHtoD(HIP_DEVPTR_ADD(points->cptr_positions, startIndex * sizeof(vec3)), ...);
+```
+
+### Medium -- the build evidence recorded above understates the build
+
+"Build: exit 0, 0 errors, 10 warnings (pre-existing fread-return / nodiscard
+hipError_t class)" does not match the build that produced 100d2e7. The full build
+(agent_space/build4.log and build5.log) is 234 warnings: 173 `-Wunused-result`,
+30 `-Wdeprecated-declarations`, 19 `-Wformat-security`, 8 `-Woverflow`, 2
+`-Wpointer-arith`. The count in the notes appears to come from an incremental
+rebuild (build2.log, 8 warnings). This matters beyond bookkeeping: the two
+`-Wpointer-arith` lines are the High finding above, and the summarised count is
+what hid them. Re-record the real counts and classes with the next build.
+
+### Low -- whitespace-only rewrites of upstream-owned lines inside the CUDA `#else` branches
+
+100d2e7 rewrites 8 lines that differ from upstream only in trailing whitespace, all
+of them in code the port otherwise leaves alone: src/CuRast_render.h:319 and
+369-371 (the `&args,` / `&cptr_queueTriangles,` / `&cptr_queueKeyValueSorted,`
+lines of the `#else` `launchCooperative` call) and src/kernels/triangles_translucent.cu:342
+and 352 (blank lines in the `#else` init block). They add changed lines to the
+upstream PR diff on the maintainer's own code for no behavioural reason. Restore
+upstream's bytes on those lines while fixing the above.
+
+### Not blocking -- record for whoever validates the translucent path
+
+- src/kernels/triangles_translucent.cu:607-714 (`kernel_stage4_blend`): the prefetch
+  loop fills `__shared__ sh_triangles[256]` and `block.sync()`s at :625, but there is
+  no barrier between the consume loop (:649-710) and the next iteration's refill, so
+  iteration n+1 can overwrite entries iteration n is still reading. This is upstream's
+  code, unmodified by the port, and it is wrong on both backends; if translucency is
+  ever enabled and the blend output is nondeterministic, this is the first suspect,
+  not the HIP port.
+- src/CuRast_render.h:378 dispatches `kernel_stage4_blend` through
+  `HipModularProgram::launch()`, the API the `INLINE_LAUNCH_*` macros exist to bypass
+  for the resolve module on gfx90a (src/HipModularProgram.h:475-480). The translucent
+  module never runs with the bundled model, so this is untested rather than known-bad.
+
+### Verified this round (no action needed)
+
+- Merge fidelity of f870bc0: `git diff <merge-base> 55c9a26` and `git diff 302cb5fe f870bc0`
+  are identical on every added line; the only differences are context lines carrying the
+  port's own prior edits. The reverse check (every line the port added between 037df01
+  and 302cb5fe still present after the merge) leaves exactly the two lines upstream itself
+  rewrote in its opaque/translucent rename, plus the two that 100d2e7 deliberately
+  replaced. Nothing lost, no conflict markers in tracked sources.
+- Host-side zeroing in the HIP `kernel_stage1_binning` branch covers every field the
+  removed grid-rank-0 init wrote: the five counters (src/CuRast_render.h:327-331),
+  `dbg_fragcount` (`:332`, uint64_t and the last member of `DeviceState`, so the 8-byte
+  memset is exact), and `*queueSize`, which the pre-existing `cuMemsetD8` at :318 already
+  zeroes every frame on both paths. The memsets and the launch are all on the null stream.
+  Note the counters are this function's own statics, distinct from the visbuffer ones.
+- `launchOccupancyBased` and `launchCooperative` compute identical grid dimensions --
+  `clamp(blocksPerSM * numSMs, 10, 100000)` with the same block size
+  (src/HipModularProgram.h:581-598 vs :619-637). The substitution is grid-identical, as
+  the porter claimed.
+- `grid.block_rank()` -> `blockIdx.x`: HIP's `grid_group` really has only `thread_rank`,
+  `num_threads`/`size` and `sync` (amd_hip_cooperative_groups.h:193-223), and
+  `kernel_stage4_blend` launches with `{.gridsize = numTiles, .blocksize = 256}`
+  (src/CuRast_render.h:385), a 1-D grid, so the values match.
+- Attribute region in triangles_translucent.cu: push at :44, pop at :306, after `binning`
+  and before the first `extern "C" __global__`; the file has no other free functions, and
+  the pop is guarded by `__HIPCC_RTC__` like the rest.
+- `USE_HIP` is defined for the runtime-compiled TU (HipModularProgram.h:203 prepends
+  `#define USE_HIP 1`), so the `#if defined(USE_HIP)` kernel-body guards select the HIP
+  branch under hiprtc.
+- CUDA path preservation: every change in the two new kernel modules is inside a guard or
+  an `#else` carrying upstream verbatim. The one unguarded edit, `#ifndef CUDA_VERSION`
+  around upstream's `#define CUDA_VERSION 12000`, is a no-op on the CUDA path -- GLM's own
+  setup.hpp documents that nvcc does not predefine `CUDA_VERSION` -- and it matches the
+  already-published pattern in triangles_visbuffer.cu:16-18. `src/types.h`'s `<cstdint>` is
+  safe for nvrtc, which already reads `<cstdint>` via utils.cuh:9.
+- No wave-size exposure in the new code: neither points.cu nor triangles_translucent.cu
+  uses `warpSize`, `tiled_partition`, ballot, shfl or `__activemask`; the only atomics are
+  global (`atomicAdd` on the queue counters, `atomicMin` on the colorbuffer). Every
+  `block.sync()` in the new HIP branch is block-uniform.
+- `hipcub_INCLUDE_DIRS` is a real variable of the hipCUB config package
+  (/opt/rocm/lib/cmake/hipcub/hipcub-config.cmake:78), and the `hip::hipcub ->
+  roc::rocprim_hip -> "roc::rocprim;hip::device"` chain the comment cites is exactly what
+  rocprim-targets.cmake:70 declares, so the include-directory approach is correct.
+- Commit messages: both titles `[ROCm]` and 50 chars, AI-disclosure line present, Test Plan
+  with fenced literal commands, no `Co-Authored-By`/noreply trailer, no non-ASCII outside
+  upstream's own merged bibtex. `jargon.py` clean for `--port`, `--commits` and `--diff`.
+- Bench evidence matches the record: agent_space/bench_final.log shows 30 frames, 966461 of
+  966461 triangles visible, best 0.159 ms, and bench_render.png is 264481 bytes as claimed.
+- The cuda-to-rocm lessons added in this round (fault-classes.md: hiprtc-vs-nvrtc, hipCUB
+  umbrella header, hip::hipcub linkage, grid_group API) were each checked against the
+  source they describe -- the mdspan errors in build1.log:8, the two cmake target files
+  above, and the HIP cooperative-groups header. Accurate as written.

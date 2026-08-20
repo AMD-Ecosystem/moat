@@ -129,3 +129,5 @@
 {"kind":"phase","ts":"2026-08-20T18:03:44Z","phase":"test","seconds":0.207,"exit":139,"cmd":"bash -c exec stdbuf -oL -eL /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build/CuRast --bench ./example_donaukanal_urania.glb 1920 1080 30"}
 {"kind":"phase","ts":"2026-08-20T18:03:52Z","phase":"test","seconds":0.219,"exit":139,"cmd":"bash -c exec stdbuf -oL -eL /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build/CuRast --bench ./example_donaukanal_urania.glb 1920 1080 30"}
 {"kind":"phase","ts":"2026-08-20T18:04:04Z","phase":"test","seconds":1.904,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/run_bench.sh"}
+{"kind":"session","ts":"2026-08-20T18:09:26Z","epoch":1787249366.738615155,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T18:24:29Z","epoch":1787250269.130188498,"event":"end","platform":"linux-gfx1100"}
