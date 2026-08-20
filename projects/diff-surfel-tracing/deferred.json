@@ -105,6 +105,19 @@
         "by": "Jeff Daily",
         "at": "2026-08-19T19:12:38Z"
       }
+    },
+    {
+      "id": "hiprt-buildprogram-silent-compile-failure",
+      "kind": "rocm-bug-report",
+      "component": "hiprt",
+      "summary": "HIPRT Compiler.cpp::buildProgram does not throw when orortcCompileProgram fails and the compile log is empty: it falls through silently and the caller then uses a program that was never compiled. Pristine upstream HIPRT code (tag 3.1.0.cb09c56), untouched by this project's hiprt-rocm-fixes.patch. Found while investigating the windows-gfx1151 access violation in hiprtBuildTraceKernels; proven present by a throwaway local edit forcing an unconditional throw, which rebuilt and ran cleanly but never fired -- so this defect is real and worth reporting, but is NOT the cause of that crash. Report upstream against HIPRT independently of the diff-surfel-tracing port.",
+      "refs": [
+        "projects/diff-surfel-tracing/notes.md ## Validation retry 2026-08-20"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-20T19:26:42Z",
+      "decided": null
     }
   ]
 }
