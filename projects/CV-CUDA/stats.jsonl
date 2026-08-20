@@ -90,3 +90,7 @@
 {"kind":"session","ts":"2026-08-20T19:57:21Z","epoch":1787255841.658259570,"event":"end","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-20T19:58:46Z","epoch":1787255926.883743582,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-20T20:05:01Z","epoch":1787256301.054511474,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T21:26:49Z","epoch":1787261209.883402875,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-20T21:30:43Z","phase":"compile","seconds":181.122,"exit":0,"cmd":"bash -c \nsource /etc/rocm_env.sh\ncmake -S projects/CV-CUDA/src -B projects/CV-CUDA/src/build-hip -G Ninja \\\n  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \\\n  -DCMAKE_HIP_COMPILER=$ROCM_PATH/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROCM_PATH \\\n  -DBUILD_PYTHON=OFF -DBUILD_TESTS=ON -DBUILD_TESTS_CPP=ON -DBUILD_TESTS_PYTHON=OFF \\\n  -DBUILD_TESTS_WHEELS=OFF -DBUILD_BENCH=OFF -DBUILD_DOCS=OFF -DCMAKE_BUILD_TYPE=Release \\\n  -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \\\n  -DPUBLIC_API_COMPILERS=\ncmake --build projects/CV-CUDA/src/build-hip -j16\n"}
+{"kind":"phase","ts":"2026-08-20T21:34:01Z","phase":"test","seconds":168.194,"exit":0,"cmd":"bash -c \nsource /etc/rocm_env.sh\ncd projects/CV-CUDA/src/build-hip\necho \"=== cvcuda_test_system run1 ===\"\nHIP_VISIBLE_DEVICES=0 bin/cvcuda_test_system 2>&1 | tail -40\n"}
+{"kind":"session","ts":"2026-08-20T22:07:16Z","epoch":1787263636.369525575,"event":"end","platform":"linux-gfx90a"}

@@ -1242,3 +1242,123 @@ after both attempts). Did not attempt to hand-edit `status.json` or otherwise ro
 denial. The evidence above is complete and, on the corrected criterion, passing; the state
 transition itself needs to be applied by whoever can clear that permission (a person, or a
 follow-up session with the transition allowed).
+
+## Validation 2026-08-20 (linux-gfx90a, revalidate, fix round, tip `358edc33`)
+4x MI250X (gfx90a), all 4 GCDs free at start (`rocm-smi --showpidgpus`: no KFD PIDs), used
+`HIP_VISIBLE_DEVICES=0`. No src clone existed on this host; cloned the fork fresh
+(`git clone --recurse-submodules https://github.com/AMD-Ecosystem/CV-CUDA.git`), fetched and
+checked out `moat-fix-293`, confirmed `git rev-parse HEAD` = `358edc33955c58ecc1c219d21f3b3db59b10a50c`
+(the `fix` block's branch, per validator.md step 1 -- `moat-port` itself is frozen at
+`published_sha=642b3526`). ROCm on this host lives under a conda SDK, not `/opt/rocm`
+(`/etc/rocm_env.sh` sets `ROCM_PATH=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel`,
+ROCm 7.14, clang 23); substituted `$ROCM_PATH/llvm/bin/clang++` for `/opt/rocm/llvm/bin/clang++` in
+the recorded recipe, otherwise unchanged (host-path difference only, not a project change).
+
+Classify first (per validator.md carry-forward step): `python3 utils/moatlib.py classify CV-CUDA
+642b3526 358edc33` returned `class=unknown` (no local src clone yet to classify against) -- moot
+anyway, since 642b3526..358edc33 is the whole fix round (R1 allocator-sync fix, R2 wavefront-floor
+fix, both functional) and this is explicitly the first platform that can exercise R2 (wave64); did
+the full rebuild + real-GPU run, no carry-forward considered.
+
+### Build (CLEAN, 424/424)
+```
+cmake -S projects/CV-CUDA/src -B projects/CV-CUDA/src/build-hip -G Ninja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=$ROCM_PATH/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROCM_PATH \
+  -DBUILD_PYTHON=OFF -DBUILD_TESTS=ON -DBUILD_TESTS_CPP=ON -DBUILD_TESTS_PYTHON=OFF \
+  -DBUILD_TESTS_WHEELS=OFF -DBUILD_BENCH=OFF -DBUILD_DOCS=OFF -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DPUBLIC_API_COMPILERS=
+cmake --build projects/CV-CUDA/src/build-hip -j16
+```
+Only warnings: `nodiscard hipError_t` ignored-return-value (pre-existing, cosmetic) and the GCC
+32-byte-ABI notes already on record. `strings lib/libcvcuda.so.0.17.0 bin/cvcuda_test_system |
+grep amdgcn` shows exclusively `amdgcn-amd-amdhsa--gfx90a` (no `roc-obj-ls` on this host's SDK; used
+`strings` on the embedded offload-bundle triples instead -- equivalent evidence, zero gfx1100
+entries).
+
+### cvcuda_test_system (operator-correctness gate; the R2 wavefront-floor exercise)
+```
+HIP_VISIBLE_DEVICES=0 build-hip/bin/cvcuda_test_system
+```
+Run 1: 3830 passed / 43 failed (3886 run). Run 2: 3829 passed / 44 failed. **Zero FindHomography
+failures in both runs** (`grep -c "OK ].*FindHomography"` = 19/19 both times) -- this is the actual
+target of R2 (the runtime-wavefront block floor), and gfx90a is the first platform able to exercise
+it (`blockDim.x/warpSize` only goes to zero on wave64). Clean.
+
+Failure composition, checked against Reviewer ruling 2026-08-20 (d)'s corrected three-set criterion
+("every failure in the 39-entry single-ULP planar-parity list, the 2 OpNormalize entries, or
+`OpColorTwistPlanarVarShape/{0,1}`; nothing outside those three sets; zero FindHomography"):
+- 38-39 single-ULP planar-vs-interleaved parity (Resize/Rotate/Pillow/RandomResizedCrop/PadAndStack/
+  Conv2D) -- run 2 has one more (`OpPadAndStackPlanar.varshape_matches_interleaved/8ba5f8fc`,
+  completing the documented 39-entry set; run 1 is missing that one index). Matches the documented
+  mechanism (float vs float4 template instantiations contract differently).
+- 2 OpNormalize `*_f32_single_channel_stddev_vectorized`, both runs. Documented.
+- **3** `OpColorTwistPlanarVarShape/{0,1,2}` in BOTH runs (not just `{0,1}` as the gfx1100 record
+  states -- gfx90a fails all three indices deterministically). Did not assume this is the same
+  freed-pageable-host-buffer race the reviewer diagnosed on gfx1100; verified independently with the
+  reviewer's own diagnostic:
+  ```
+  HIP_VISIBLE_DEVICES=0 build-hip/bin/cvcuda_test_system --gtest_filter='OpColorTwistPlanarVarShape/*'                  # 3 failed
+  HIP_VISIBLE_DEVICES=0 AMD_SERIALIZE_COPY=3 build-hip/bin/cvcuda_test_system --gtest_filter='OpColorTwistPlanarVarShape/*'  # 3 passed
+  HIP_VISIBLE_DEVICES=0 AMD_SERIALIZE_COPY=3 build-hip/bin/cvcuda_test_system --gtest_filter='_/OpResizePlanar.*'           # 16 failed, unchanged
+  ```
+  `AMD_SERIALIZE_COPY=3` alone fixes all 3 ColorTwist indices and leaves the real parity residual
+  untouched -- exactly the signature the reviewer used to root-cause this as the
+  `TestOpColorTwist.cpp:321` per-iteration-freed `planes` buffer racing its own pending
+  `cudaMemcpy2DAsync`, the same upstream test-fixture UB class as `InterpolationVarShapeWrapTest`
+  (Residual A) and not a port defect. gfx90a hitting all 3 indices where gfx1100 hit 0-2 is
+  consistent with the mechanism (arch/host-dependent consistency of a genuinely-async pageable copy,
+  same shape as the InterpolationVarShapeWrap cluster showing 6-8 on gfx90a vs 15 on gfx1100).
+No failure outside these three classes in either run; the 43/44 counts are within the class-based
+criterion the reviewer ruling established (which explicitly anticipates `/2` could also race:
+"not promised to [pass]").
+
+### nvcv_test_cudatools_system (residual characterization)
+```
+HIP_VISIBLE_DEVICES=0 build-hip/bin/nvcv_test_cudatools_system   # x3
+```
+Runs: 1116/1123 (7 failed), 1117/1123 (6 failed), 1117/1123 (6 failed). Every failure in every run is
+`InterpolationVarShapeWrapTest.correct_shift` (indices vary, 5-6 per run) or
+`TypeTraitsMakeTypeVectorTest/3.correct_type_traits` (1, every run) -- the two long-documented
+non-port residual clusters, matching the historical gfx90a 6-7 baseline exactly. No new cluster.
+
+### cvcuda_test_unit (new in v0.17)
+```
+HIP_VISIBLE_DEVICES=0 build-hip/bin/cvcuda_test_unit
+```
+27 passed / 1 skipped (`StreamIdTest.HandleReuse`) / 0 failed -- exact match to the documented
+baseline, including `TestCudaDeviceUtils` (compute-capability sm=90 mapping agrees with
+`hipGetDeviceProperties` on this arch, the R5 watch item).
+
+### CUDA no-regression gate
+SKIPPED: already recorded at this exact head_sha (`358edc33`) in "CUDA no-regression gate (run at
+this head_sha; not previously recorded here)" above (linux-gfx1100 validator, 2026-08-20) --
+439/461 build steps succeeded including every file this round touched, with only the pre-existing
+environmental class (unfetched git-LFS stub `.so`, nested-subproject GTest discovery) failing.
+Pure passthrough; no regression. Per validator.md step 3, the gate runs once per head_sha.
+
+### Jargon and documentation
+```
+python3 utils/jargon.py --port CV-CUDA                                              # clean
+python3 utils/jargon.py -C projects/CV-CUDA/src --commits moat-port..moat-fix-293   # clean
+python3 utils/jargon.py -C projects/CV-CUDA/src --diff moat-port..moat-fix-293      # clean
+```
+(Needed local `main` and `moat-port` branches for `--port`'s default-branch range; created
+tracking branches from `origin/main`/`origin/moat-port`, no fork push.) Documentation:
+`docs/sphinx/installation.rst` "Building for AMD GPUs (ROCm)" section present and current (the
+`CMAKE_HIP_ARCHITECTURES` unset-detects-host-GPU wording matches `9174db47`'s fix), linked from
+`README.md`.
+
+### Integrity
+`git -C projects/CV-CUDA/src status --porcelain`: only `?? 3rdparty/` (leftover submodule
+checkouts from the initial `--recurse-submodules` clone against the OLD `.gitmodules`; v0.17.0's
+tree at `358edc33` ships no `.gitmodules` at all -- "3rdparty/ is GONE", already documented in the
+Fix round section above -- so these are untracked, orphaned by the clone step, not a modified
+tracked file). No tracked file modified.
+
+### State
+`linux-gfx90a` -> `completed` at `validated_sha=358edc33955c58ecc1c219d21f3b3db59b10a50c`. This is
+the platform that actually exercises R2 (the wavefront-floor fix); FindHomography clean confirms
+it. The extra `OpColorTwistPlanarVarShape/2` failure (beyond gfx1100's `{0,1}`) is recorded here as
+a data point for whoever eventually tightens the residual-set documentation -- same root cause,
+independently verified, not blocking.
