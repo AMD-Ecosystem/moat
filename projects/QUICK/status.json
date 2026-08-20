@@ -7,11 +7,16 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-06-05T00:05:54Z",
-  "updated_at": "2026-08-09T00:13:53Z",
+  "updated_at": "2026-08-20T07:52:03Z",
   "head_sha": "d369e07",
   "depends_on": [],
   "porting": null,
-  "waivers": {},
+  "waivers": {
+    "windows": {
+      "reason": "The obstacle is the operating system toolchain, not the GPU. QUICK is a mixed Fortran/HIP build: .f90 modules compiled by gfortran, linked against rocBLAS/rocSOLVER Fortran bindings. There is no MSVC-ABI Fortran compiler available, so the Fortran half of the build cannot be produced in the ABI the rest of the Windows toolchain uses; this is a language-toolchain gap on the platform, not something the port can fix. Confirmed on windows-gfx1101 and windows-gfx1201. NOTE for the approver: approving this alone does NOT make QUICK PR-ready -- wave64 is also unsatisfied at head \n and still needs a gfx90a or gfx942 run. This suggestion only removes the windows gate from that list.",
+      "suggested_at": "2026-08-20T07:52:03Z"
+    }
+  },
   "license_spdx": "MPL-2.0",
   "upstream_repo_id": 172423631,
   "stage": "review-passed",
