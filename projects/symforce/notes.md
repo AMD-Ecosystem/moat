@@ -733,3 +733,53 @@ guarantee is scalar-type uniformity (accessors.py rejects mixed dtypes; one
 storage_t per library), not "float" specifically. nvcc_memops.{cu,o} moved out
 of the fork clone to agent_space/symforce-checks/. jargon.py clean on
 --commits and --diff at the new tip.
+
+## Re-review 2026-08-20 #2 (tip a279cdfc)
+
+Verdict: changes-requested, one item, and the item is partly my fault: finding 3
+asked for a specific family to be added to a list when it should have asked for
+the list to go away. The enumeration is still short by eight functions.
+
+### 4. The store enumeration is still not closed; replace it with the invariant
+
+`a279cdfc` body: "the stores that do not -- the WriteSum family, and the leading
+stores in ShuffleAndWrite -- can only reach the 32-element window...".
+
+`ReadAndShuffle1..4` (memops.cuh:568, :591, :618, :648) and
+`ReadAndShuffleWithDefault1..4` (:672, :703, :735, :772) also store into
+`inout_shared` before their first `__syncthreads()`, so the dash-clause is still
+false as a closed list. They are emitted block-uniformly by `ReadPair`
+(accessors.py:584-594) and `ReadPairStridedWithDefault` (:597-631), which can
+share a kernel with `AddSum` the same way `AddPair` can.
+
+Full set of functions in memops.cuh that store to `inout_shared` with no
+preceding barrier, by scanning every `__device__` function for its first store
+and first `__syncthreads()`: `WriteSum1..4` (:218, :224, :231, :239),
+`ReadAndShuffle1..4`, `ReadAndShuffleWithDefault1..4`, `ShuffleAndWrite1..4`
+(:798, :856, :922, :992). Sixteen functions, four families.
+
+Every one of them indexes the store by `threadIdx.x` scaled by the accessor's
+element stride, with at most one element of skew (`+1` in the ShuffleAndWrite
+family, whose other terms are `+1025` or more and land far outside the window);
+the vector-store forms write `caspar_size(dim)` elements at index
+`caspar_size(dim) * threadIdx.x` (accessors.py:45-49, layouts.py:52-58). So a
+store below element 32 requires `threadIdx.x <= 31`, i.e. a lane of the reading
+tile, in all sixteen cases. State that invariant instead of naming families:
+
+  "...and every other store into the buffer is indexed by threadIdx.x scaled by
+  the storing accessor's element stride, so nothing below element 32 is written
+  by a thread outside the reading tile, whose own reads the shuffle collectives
+  order ahead of any lane leaving the function."
+
+That is checkable in one pass over the header and cannot go stale the way a
+list of family names does.
+
+### Everything else at this tip
+
+- Content still byte-identical to 73847999 (`git diff --stat` empty), parent
+  still the untouched merge 398ba468.
+- Fork clone root is clean of the nvcc scratch files.
+- The float-vs-uniformity correction is recorded correctly.
+- Title, disclosure, Test Plan, co-author trailer, ASCII, and jargon were
+  re-checked at the previous tip and the body is unchanged apart from the one
+  sentence, so they still hold; re-run jargon after the amendment.
