@@ -210,6 +210,18 @@
         "at": "2026-08-19T19:20:00Z"
       },
       "project": null
+    },
+    {
+      "id": "moat-no-gate-on-commit-message-rules",
+      "kind": "other",
+      "component": null,
+      "summary": "Nothing checks the commit-message rules AGENTS.md states, so a non-compliant body reaches upstream unnoticed. AGENTS.md requires every fork commit to start with [ROCm], keep the title to 72 characters, explain rationale, disclose AI assistance and carry a Test Plan. What exists: jargon.py --port scans the whole branch, but only for in-house vocabulary; pr_intent.py enforces TITLE_MAX=72 on the PULL REQUEST title in CI, not on commit titles; check.py has no commit-message gate; pr_ready checks platform gates and fork cleanliness only. Found on Quest, where c1d7fff shipped with no AI-assistance disclosure and three rounds of gates, review and pr-readiness reporting never mentioned it -- a human reviewer caught it. The same shape as the gh-guard and conflict-marker gates already added: a rule written down but never executed. A cheap gate would walk <fork default>..moat-port for each project with a local clone and check title prefix, title length, and the presence of a disclosure line and a Test Plan in the body.",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-20T00:15:29Z",
+      "decided": null,
+      "project": null
     }
   ]
 }
