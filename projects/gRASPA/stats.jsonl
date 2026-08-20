@@ -44,3 +44,9 @@
 {"kind": "tokens", "ts": "2026-06-23T22:51:23Z", "tokens": 16420, "source": "gfx90a in-pipeline cleanup (batch 3 subagent, shared)"}
 {"kind":"session","ts":"2026-06-05T15:30:57Z","epoch":1780673457.095550093,"event":"start","platform":"linux-gfx1100"}
 {"kind":"phase","ts":"2026-06-05T15:31:11Z","phase":"compile","seconds":0.110,"exit":1,"cmd":"cmake .. -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100"}
+{"kind":"session","ts":"2026-08-20T00:35:53Z","epoch":1787186153.855730209,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-20T00:38:36Z","phase":"compile","seconds":0.005,"exit":127,"cmd":"bash -c GRASPA_ARCH=gfx90a ../HIP_COMPILE"}
+{"kind":"phase","ts":"2026-08-20T00:38:52Z","phase":"compile","seconds":9.131,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/gRASPA/src/src_clean && GRASPA_ARCH=gfx90a bash /var/lib/jenkins/moat/projects/gRASPA/src/HIP_COMPILE"}
+{"kind":"phase","ts":"2026-08-20T01:25:20Z","phase":"test","seconds":2103.262,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/gRASPA/src/Examples && HSA_XNACK=1 HIP_VISIBLE_DEVICES=1 GRASPA_BIN=/var/lib/jenkins/moat/projects/gRASPA/src/src_clean/hip_main.x python3 run_designated_folders.py"}
+{"kind":"phase","ts":"2026-08-20T01:32:41Z","phase":"test","seconds":0.467,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/gRASPA/src/Examples && python3 -m pytest -q -s"}
+{"kind":"session","ts":"2026-08-20T01:34:26Z","epoch":1787189666.462935618,"event":"end","platform":"linux-gfx90a"}

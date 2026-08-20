@@ -367,3 +367,154 @@ Post-test GPU health check: returned immediately with exit 0, no TDR triggered.
 GPU kernels produce correct results (zero GPU drift). Molecule counts match expected
 ranges (Monte Carlo stochastic variance: 26 CO2, 59 CH4, 1333 Ar).
 No gfx1101-specific issues encountered.
+
+## Rescope 2026-08-20 (linux-gfx90a, MI250X gfx90a) -- rebuilt on upstream's own HIP backend
+
+**Why**: upstream merged its own HIP backend on 2026-06-20 (PR #82, `sigbjobo`,
+merge `fd33b0e`; commits `2ed9fb9` "Add AMD/ROCm (HIP) backend to the single
+src_clean tree", `b36c6b4` CPU-only shim regression test, `62b25fc` output
+stream unification). That supersedes most of our June port, so the branch was
+rebuilt from scratch on current upstream `main` (`e4edfc2`) carrying only the
+residual delta. Old branch (`4710600`, 3 commits on `3fc256d`) is gone; the
+force-push was deliberate and no upstream PR was open.
+
+### What upstream's merged HIP support already covers
+
+- `src_clean/gpu_compat.h`: CUDA->HIP shim, keyed on `__HIP__`. Maps
+  `cudaMalloc/MallocHost/MallocManaged/Free/Memcpy/MemcpyAsync/Memset/`
+  `DeviceSynchronize/GetLastError/GetErrorString`, `cudaError_t`,
+  `cudaSuccess`, and the two memcpy-direction enums. Under nvcc it expands to
+  `<cuda_runtime.h> + <cuda_fp16.h>` and defines zero macros.
+- Include rewiring in `data_struct.h`, `read_data.h`, `VDW_Coulomb.cu/.cuh`,
+  `mc_widom.h`.
+- `#if !defined(__HIP__)` around the componentwise `double3` operators in
+  `maths.cuh` and `VDW_Coulomb.cuh` (HIP's `HIP_vector_type` provides them);
+  `dot()` and the `MoveEnergy` operators stay unguarded.
+- `#if !defined(__HIP__)` around the dead thrust includes in `mc_widom.h`.
+- Both shared-memory faults we had fixed are upstream too, identically:
+  `__shared__ bool Blockflag;` + thread-0 init + `__syncthreads()`
+  (`VDW_Coulomb.cu:1055`) and `extern __shared__ double sdata[]`
+  (`Ewald_Energy_Functions.h:1046`).
+- Build scripts `HIP_COMPILE` (classical core -> `hip_main.x`) and
+  `libtorch_HIP_COMPILE` (Allegro on ROCm LibTorch), both honoring
+  `GRASPA_ARCH` (default `gfx90a`).
+- `Examples/run_designated_folders.py` takes `GRASPA_BIN`; README has an
+  AMD/ROCm section (build, `GRASPA_ARCH`, `HSA_XNACK=1`, C++11 ABI, harness).
+
+### What the rescoped branch keeps
+
+`a0b6dce` `[ROCm] Check atom bounds before reading MolID in total energy`
+  `src_clean/VDW_Coulomb.cu`: move the `AtomA/AtomB >= System[...].size` test
+  above the two `MolID[]` loads in `TotalVDWRealCoulomb`. Still present on
+  current upstream main (the reordering is 3 lines around 1544-1546).
+
+`9cfa096` `[ROCm] Let the classical core compile on Windows`
+  `main.cpp` `#ifndef _WIN32` around `<unistd.h>`, the `/proc/self/statm` body
+  of `printMemoryUsage()`, and `readlink("/proc/self/exe")`; `<numeric>` in
+  `lambda.h` and `mc_widom.h` for `std::accumulate`; README bullet recording
+  the two extra Windows flags (`-D_USE_MATH_DEFINES` and an `-isystem` for
+  clang's own intrinsic headers).
+
+Whole branch is 24 insertions / 1 deletion across 5 files.
+
+### What was dropped, and why
+
+- The entire `cuda_to_hip.h` compat header, the include rewiring, the `double3`
+  operator guards, and the two shared-memory fixes: upstream's `gpu_compat.h`
+  and `2ed9fb9` do the same job. Keeping ours would be a competing shim.
+- The root and `src_clean` `CMakeLists.txt` (and with it the
+  `[ROCm] Rely on HIP arch auto-detect` commit): upstream deliberately builds
+  with per-toolchain shell scripts at the repo root (`NVC_COMPILE`,
+  `HIP_COMPILE`, `libtorch_*`) and merged `HIP_COMPILE` as part of PR #82.
+  A parallel CMake build is now redundant infrastructure that would compete
+  with what the maintainers chose.
+- The CMake-resident MSVC `emmintrin.h` workaround: with CMake gone it has no
+  home in the build system, so it is documented in the README as the `-isystem`
+  flag a Windows compile needs, which is what the CMake block was doing.
+
+### Evidence that the out-of-bounds read is real on current upstream
+
+The June crash (memory access fault in Methane-TMMC and Tail-Correction) does
+NOT reproduce on current upstream main on this host: unmodified `e4edfc2`
+completes both, with and without `HSA_XNACK=1`. The defect is still there and
+is worse than "one past the end". Instrumenting unmodified upstream with a
+printf before the `MolID` loads, printing only for the last thread of the last
+block, and running Tail-Correction (1327 adsorbate atoms):
+
+```
+OOBPROBE block 134 thread 127 compA 1 AtomA 2147484974 sizeA 1327 compB 1 AtomB 2305843010287440402 sizeB 1327
+```
+
+The trailing threads decode interaction indices past the real pair count, the
+closed-form triangular-index inverse takes a square root of a negative number,
+and the resulting `size_t` indices are ~2^31 and ~2.3e18. `MolID` is a
+`size_t*`, so the second load is an ~18-exabyte offset from the base pointer.
+Whether that faults is up to what the driver happens to have mapped, which is
+why it faulted in June and does not today.
+
+### Build recipe (this host, 2026-08-20)
+
+No `/opt/rocm` on this host; ROCm 7.14.60850 comes from a TheRock wheel:
+
+```bash
+export ROCM=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel
+export PATH=$ROCM/bin:$PATH
+cd projects/gRASPA/src/src_clean && GRASPA_ARCH=gfx90a ../HIP_COMPILE
+```
+
+Produces `src_clean/hip_main.x` (~983 KB). Warnings only (mostly `nodiscard`
+on the HIP runtime calls the shim maps, plus one VLA extension) -- no errors.
+
+### Test results (gfx90a, HIP_VISIBLE_DEVICES=1, HSA_XNACK=1)
+
+```bash
+cd Examples
+HSA_XNACK=1 HIP_VISIBLE_DEVICES=1 \
+  GRASPA_BIN=../src_clean/hip_main.x python3 run_designated_folders.py
+python3 -m pytest -q -s
+```
+
+All nine designated simulations completed (exit 0) and `pytest` is 5 passed:
+
+| example | wall | CPU-vs-running drift | GPU-vs-CPU drift |
+|---|---|---|---|
+| CO2-MFI | 104.5 s | -0.0 | Ewald [Host-Host] -4e-05 |
+| Methane-TMMC | 108.8 s | -0.0 | 0.0 |
+| Bae-Mixture | 1692.2 s | -0.0 | Ewald [Host-Host] -22.48 |
+| NU2000-pX-LinkerRotations | 157.7 s | -0.00501 | 0.00027 |
+| Tail-Correction | 35.7 s | -0.0 | 0.0 |
+
+Reference_NIST_SPCE Box-1..4 all completed with all drift components 0.00000.
+`Examples/test_gpu_compat_shim.py` (CPU-only, upstream's) passes: 3 passed.
+
+Two numbers worth explaining, both pre-existing and unrelated to our delta:
+
+- NU2000 CPU drift -0.00501 against upstream's committed CUDA reference output
+  of -0.00456 for the same field: same magnitude, framework-flexibility
+  accumulation, and the harness criterion (`value < 1e-3`) passes.
+- Bae-Mixture GPU drift is entirely in `Ewald [Host-Host]`, -22.48 on a
+  term of 390954.70 (relative 5.7e-5), and that term is the framework self
+  energy which the output labels "Initial Ewald [Host-Host] (excluded)" --
+  it is excluded from the running total, which is why the CPU-vs-running drift
+  is 0. It is a k-space reduction-order difference between the AMD and NVIDIA
+  builds, the same signature as the -4e-05 seen on CO2-MFI here, on Windows
+  gfx1201 and on gfx1101 in June. Nothing our delta touches contributes to it:
+  the VDW and real-space Coulomb components, which are the only ones
+  `TotalVDWRealCoulomb` computes, are exactly 0.00000.
+
+### CUDA path
+
+Not compile-checked: this host has no NVIDIA toolchain (`nvcc`/`nvc++` absent,
+no `/opt/nvidia`). Both commits are argued to be CUDA-neutral by construction:
+the bounds-check move is a statement reorder with no platform-dependent
+spelling, the `_WIN32` guards are false on Linux and on any CUDA host, and
+`<numeric>` is additive. A Windows or CUDA host should still confirm.
+
+### For the next round
+
+- Windows validation must confirm the README flag recipe actually builds; it
+  is the reworked form of what used to be a CMake block and has not been run
+  since the rescope. If the flags differ, fix them in a NEW commit.
+- Bae-Mixture takes ~28 minutes on one MI250X GCD, which dominates the
+  harness. Run the other eight in a second checkout on another GCD in parallel
+  if you are time-boxed.
