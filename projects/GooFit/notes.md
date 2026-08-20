@@ -2450,3 +2450,186 @@ every arch on record), CUDA gate reused from the gfx90a re-run at this exact
 head_sha (pre-existing upstream breakage, not a regression), jargon clean,
 docs accurate. All three required-gate platforms (gfx90a for wave64, gfx942
 for wave64, gfx1100 for wave32) now stand completed at `e8dca9151`.
+
+## Validation 2026-08-19 (validator, windows-gfx1151, fork e8dca9151 vs 5fe1221a8) -- BLOCKED: upstream GooFit host code has never been ported to Windows
+
+First Windows attempt for this project, no prior Windows record. Fresh clone of
+`AMD-Ecosystem/GooFit` into `projects/GooFit/src`, checked out `moat-port` at
+`e8dca915125a1c9fe193bc056fd9892095230eb4` (matches `head_sha` exactly),
+`git submodule update --init --recursive` succeeded cleanly (`extern/thrust` at
+CCCL `af8cce4ca`, matching the recorded Linux pointer). `protect-fork` installed.
+Host: AMD Radeon 8060S (gfx1151, RDNA3.5 APU, wave32), Windows 11, TheRock ROCm
+pip SDK (`D:/Develop/TheRock/.venv/.../_rocm_sdk_devel`), AMD clang 23.0.0git,
+CMake 3.31.0, Ninja, clang-cl host compiler (`agent_space/win_rocm_env.sh`).
+
+### Does upstream support Windows at all? No -- checked before building
+
+- `CMakeLists.txt` has exactly one Windows/MSVC-conditioned line in the whole
+  project, `GOOFIT_ADD_LINK` (line 725 at this head):
+  `if(MSVC) # Not officially supported, but needed to even configure on Windows`
+  -- upstream's own comment states plainly that Windows is not an officially
+  supported target; the accommodation exists only so CMake's configure step
+  does not immediately explode (`copy` instead of a symlink for one helper).
+- No other `WIN32`/`_WIN32`/`MSVC`/`windows` reference anywhere in
+  `CMakeLists.txt`, `src/`, `include/`, `python/`, `docs/`, or `README.md`.
+- No Windows CI, no Windows docs. Plan.md's original intake already recorded no
+  ROCm/HIP/AMD support and no relevant forks or PRs upstream.
+- No POSIX-only header (`execinfo.h`, `sched.h`, `sys/syscall.h`, `dlfcn.h`,
+  `unistd.h`, `sys/wait.h`) turned up in a first grep of `src/`, `include/`,
+  `python/`, or `extern/Minuit2` -- that first pass looked clean, which is why
+  the build was attempted rather than blocking on the grep alone. The real
+  blocker only surfaced once host TUs actually compiled under clang-cl (below).
+
+### CMake-level workarounds needed just to CONFIGURE (Linux-safe, MSVC-conditioned, local-only, not committed -- same status as the equivalent catboost workarounds)
+
+1. `enable_language(HIP)` ABI detection: `CMakeTestHIPCompiler.cmake`'s
+   `CMAKE_DETERMINE_COMPILER_ABI(HIP ...)` spins up an isolated HIP-only scratch
+   `project()`, which pulls in `Windows-Clang-HIP.cmake` -> `Windows-Clang.cmake`
+   -> `Windows-MSVC.cmake`, and that file's `MSVC_VERSION` heuristic
+   (`Windows-MSVC.cmake:48-70`) only reads `CMAKE_C_COMPILER_ID`,
+   `CMAKE_CXX_COMPILER_ID`, `CMAKE_{C,CXX,Fortran,CUDA}_SIMULATE_VERSION`, none
+   of which exist in a HIP-only scratch project, so it hits
+   `message(FATAL_ERROR "MSVC compiler version not detected properly: ")`. Fix:
+   `-DCMAKE_HIP_COMPILER_FORCED=TRUE` -- `CMakeTestHIPCompiler.cmake:5-10` returns
+   immediately when set, skipping the whole ABI-detection scratch project
+   (`CMAKE_HIP_COMPILER_WORKS` is simply assumed TRUE). This is a CMake bug in
+   `Windows-MSVC.cmake`, not a GooFit or ROCm defect -- the file was never taught
+   about the HIP language's own simulate-version variable.
+2. Generate step: `MSVC_RUNTIME_LIBRARY value 'MultiThreadedDLL' not known for
+   this HIP compiler` in `src/goofit/CMakeLists.txt` (CMake's abstract MSVC
+   runtime-library property has no HIP-language mapping either). Fix:
+   `-DCMAKE_MSVC_RUNTIME_LIBRARY=""`, disabling the abstraction entirely --
+   the same fix already in use for the fleet's HEonGPU Windows attempts
+   (`agent_space/heongpu-win-r26/configure.sh`).
+3. `-DCMAKE_PREFIX_PATH=<ROCM_ROOT>` is required (upstream's `find_package(hip
+   ...)`/`find_package(rocthrust ...)` do not otherwise see the TheRock SDK
+   layout).
+4. GooFit's own `-include <header>` force-includes (the port's
+   `GOOFIT_HIP_COMPAT_HEADER` force-include at three call sites in
+   `GOOFIT_ADOPT_HIP_TARGET`/`GOOFIT_ADD_LIBRARY`/`GOOFIT_ADD_EXECUTABLE`, plus
+   upstream's own unconditional `ThrustForwardCompat.h` force-include on
+   `GooFit_Common` from `249baaa71`) all use the GNU `-include` spelling.
+   clang-cl silently drops it with `warning: unknown argument ignored:
+   '-include'` and the header becomes a second, unnamed source file, producing
+   `cannot specify '/Fo...' when compiling multiple source files`. This is the
+   exact catboost lesson (notes.md attempt, "force-include uses `/FI<hdr>` not
+   `-include`"). Patched locally (`if(MSVC) ... /FI<header> ... else() -include
+   ... endif()` at all four sites) to get past configure/generate and reach real
+   compilation. **Reverted before finishing** (`git checkout -- CMakeLists.txt`),
+   matching the catboost precedent of keeping Windows-only CMake-generator
+   workarounds as local, uncommitted, "candidate to commit" evidence rather than
+   pushing them from a validator session.
+
+### Real compilation: fails for reasons that are GooFit host code never having targeted Windows, not this session's CMake plumbing
+
+With all four workarounds applied locally, `cmake --build build-hip -j16`
+(wrapped in `utils/timeit.sh GooFit compile`) reaches 306 targets and fails on
+the very first host translation units. Full log:
+`projects/GooFit/logs/build3.log` (local, not committed; `build-hip` itself
+removed afterward, `*build*/*`-gitignored anyway). The decisive finding:
+
+**`include/goofit/Application.h:57`: `struct sigaction sigIntHandler;` -- field
+has incomplete type.** `Application.h:3` includes `<csignal>` and declares this
+field unconditionally, with no `#ifdef`/platform guard anywhere in the file.
+`sigaction` is a POSIX-only API (`<signal.h>`/`<csignal>` on Windows provides
+only the C89 `signal()` subset; there is no `struct sigaction`, no
+`sigaction()` call, and no drop-in equivalent -- the nearest analogue,
+`SetConsoleCtrlHandler`, is a different API shape entirely). `Application` is
+not a peripheral file: it is the base class every GooFit executable target
+constructs (`GOOFIT_ADD_EXECUTABLE` links `GooFit::GooFit`, and every example
+and test builds a `GooFit::Application`/subclass), so this is not something a
+HIP-only code path can route around -- fixing it means introducing a real
+Win32-specific console-control-handler implementation into GooFit's own host
+runtime. Per the task brief, this is exactly the out-of-scope case: POSIX
+host-runtime code with no portable equivalent, not a ROCm/HIP porting question.
+
+Other, independent host-portability gaps hit in the same build, none committed
+or further chased once the sigaction finding made the outcome clear:
+
+- **Exceptions disabled under clang-cl's MSVC-ABI driver**: dozens of
+  `cannot use 'throw' with exceptions disabled` across
+  `src/goofit/{DataSet,BinnedDataSet,UnbinnedDataSet,Faddeeva,Application,Abort,
+  Params,PdfBase}.cpp` and vendored `extern/Minuit2/inc/Minuit2/StackAllocator.h`.
+  GooFit's host code throws throughout and this works today on every Linux HIP
+  build (25/25 ctest); clang-cl's MSVC-ABI frontend treats exceptions as opt-in
+  (`/EHsc`) where the GNU-style hipcc/clang++ driver used on Linux does not, and
+  nothing in the port's CMake requests `/EHsc`. Possibly a one-flag fix on its
+  own, but downstream of it: CLI11 (vendored, throws internally)
+  `add_option`/`add_flag`/`parse` calls in `src/goofit/Application.cpp` fail to
+  resolve against `GooFit::Application` in the same build, consistent with
+  CLI11's own exception-using code failing to compile first.
+- **`include/goofit/Variable.h:248`**: `static constexpr fptype maxint{1L <<
+  std::numeric_limits<fptype>::digits};` -- `1L` is `long`, 32-bit on Windows'
+  LLP64 model (64-bit on Linux/macOS LP64), so the shift by 53
+  (`numeric_limits<double>::digits`) is undefined/narrows to a
+  non-constant-expression on Windows only. A real, if small, LP64-assumption
+  bug, independent of the exceptions issue.
+- **`src/goofit/PdfBase.cpp:184`**: `std::partial_sum` used with no `#include
+  <numeric>`; libstdc++ pulls it in transitively via `<random>`, MSVC's STL does
+  not.
+- **rocPRIM header errors** (`__builtin_amdgcn_wavefrontsize` undeclared in
+  `rocprim/intrinsics/arch.hpp`; parse errors in `rocprim/detail/various.hpp`)
+  appear in the same build on `src/goofit/{Params,FCN}.cpp` (the `FitManager2`
+  CLI-helper target). These two files are NOT explicitly marked `LANGUAGE HIP`
+  by `goofit_mark_hip_sources` (no rocThrust `#include` triggers the heuristic),
+  yet still receive `roc::rocthrust`'s HIP-only interface flags -- the same
+  flag-leak fault class this project's own e8dca9151 fix already solved for the
+  pybind11 targets (`hip::device`'s `INTERFACE_COMPILE_OPTIONS`/
+  `INTERFACE_LINK_LIBRARIES` reaching CXX-language consumers via
+  `$<$<COMPILE_LANGUAGE:CXX>:...>`). On Linux this silently no-ops or errors
+  clearly; on Windows clang-cl partially processes `-x hip
+  --offload-arch=gfx1151` and reaches real rocPRIM device headers with the
+  wrong compilation mode, producing these parse errors. This looks like a real,
+  fixable instance of the known fault class (FitManager2 needs the same
+  `goofit_adopt_hip_target` treatment `e8dca9151` gave the pybind11 modules) --
+  recorded for whoever picks this project up next, but moot as a blocker: it
+  does not change the `sigaction` finding above.
+
+### Verdict and why this stops here rather than continuing to patch
+
+The CMake-generator layer (items 1-4 above) is exactly the class of thing a
+validator/porter can and should patch -- Linux-safe, MSVC-conditioned, no
+behavior change on any existing platform -- and the fleet already has
+precedent for carrying such fixes as local-only evidence pending a porter round
+(catboost). It was worth getting past to see what was on the other side. What
+is on the other side is not a ROCm/HIP problem: `struct sigaction` in the
+`Application` base class every target depends on is host runtime code written
+for POSIX only, with no Windows analogue to substitute, which is precisely the
+"do not port host code to Windows" case this task was briefed to recognize and
+stop at rather than chase. The exceptions/LP64/`<numeric>` items compound the
+finding but are not, individually, why this blocks.
+
+### State: windows-gfx1151 -> blocked (not validation-failed: this is an OS-level obstacle in upstream's own host code, not a build/test regression on this commit)
+
+Ran:
+```
+python3 utils/moatlib.py set-blocked GooFit windows-gfx1151 "upstream host code (include/goofit/Application.h: struct sigaction, used unconditionally in the Application base class every executable links) is POSIX-only with no Windows equivalent; upstream's own CMakeLists.txt marks Windows Not officially supported; no Windows CI, no Windows docs. See notes.md Validation 2026-08-19 (windows-gfx1151) for the full build log and the CMake-level workarounds that were needed just to reach this point."
+python3 utils/moatlib.py suggest-waiver GooFit windows --reason "GooFit host Application class uses POSIX struct sigaction unconditionally (include/goofit/Application.h:57), with no Windows equivalent substitutable without introducing new Win32-specific console-handler code; upstream itself marks Windows unofficial/unsupported (CMakeLists.txt:725) and ships no Windows docs or CI. This is a durable, in-source obstacle in upstream's own code, not a toolchain or driver gap -- matches the own-source-permanently waiver criterion, not a bug report."
+```
+
+Tree state: `git -C projects/GooFit/src status --porcelain` empty before and
+after (the local CMake workaround edits were reverted with `git checkout --
+CMakeLists.txt`; `build-hip` removed). No commit made to the fork. This
+platform record is a legitimate blocked-by-OS finding, not a pass -- per the
+honesty gate, no GPU code ever ran (the build never reached link/executable
+stage), so nothing here claims runtime behavior.
+
+### Effect on PR-readiness
+
+gfx90a, gfx942 (wave64) and gfx1100 (wave32) are all `completed` at
+`e8dca9151`, so `wave64`/`wave32` are already satisfied. `windows` is the one
+gate this leaves unsatisfied. Checked rather than assumed:
+
+```
+$ python3 utils/moatlib.py pr-ready GooFit
+GooFit: PR-ready=False
+  BLOCKING (every required gate needs ONE completed arch at head_sha, or an
+    approved waiver; fork must be clean): windows=waiver suggested but not
+    approved by a maintainer
+  non-viable (does not block; scope the PR body): windows-gfx1151
+```
+
+A suggested waiver blocks `pr-ready` the same as an unsatisfied gate until a
+maintainer approves it (by design -- an agent cannot let a port out early by
+suggesting one). So `PR-ready=False` until either a maintainer approves the
+windows waiver or a different Windows host validates this project.

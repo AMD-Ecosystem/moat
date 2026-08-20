@@ -114,3 +114,9 @@
 {"kind":"phase","ts":"2026-08-19T05:17:36Z","phase":"test","seconds":6.512,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/moat-worktrees/GooFit/projects/GooFit/src/build-cpp-validate --output-on-failure"}
 {"kind":"phase","ts":"2026-08-19T05:17:37Z","phase":"test","seconds":0.558,"exit":0,"cmd":"env PYTHONPATH=/var/lib/jenkins/moat-worktrees/GooFit/projects/GooFit/src/build-cpp-validate python3 -m pytest /var/lib/jenkins/moat-worktrees/GooFit/projects/GooFit/src/python/tests -q"}
 {"kind":"session","ts":"2026-08-19T05:19:03Z","epoch":1787116743.702892786,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T18:35:16Z","epoch":1787250916.916963800,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-20T18:35:21Z","epoch":1787250921.986386100,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-20T18:44:05Z","phase":"compile","seconds":15.565,"exit":1,"cmd":"cmake --build projects/GooFit/src/build-hip -j16"}
+{"kind":"phase","ts":"2026-08-20T18:46:43Z","phase":"compile","seconds":0.401,"exit":1,"cmd":"cmake --build projects/GooFit/src/build-hip -j16"}
+{"kind":"phase","ts":"2026-08-20T18:49:02Z","phase":"compile","seconds":8.416,"exit":1,"cmd":"cmake --build projects/GooFit/src/build-hip -j16"}
+{"kind":"session","ts":"2026-08-20T18:55:25Z","epoch":1787252125.682644200,"event":"end","platform":"windows-gfx1151"}

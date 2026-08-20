@@ -7,11 +7,16 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T00:04:16Z",
-  "updated_at": "2026-08-19T05:18:25Z",
+  "updated_at": "2026-08-20T18:54:52Z",
   "head_sha": "e8dca915125a1c9fe193bc056fd9892095230eb4",
   "depends_on": [],
   "porting": null,
-  "waivers": {},
+  "waivers": {
+    "windows": {
+      "reason": "GooFit host Application class uses POSIX struct sigaction unconditionally (include/goofit/Application.h:57), with no Windows equivalent substitutable without introducing new Win32-specific console-handler code; upstream itself marks Windows unofficial/unsupported (CMakeLists.txt:725) and ships no Windows docs or CI. This is a durable, in-source obstacle in upstream's own code, not a toolchain or driver gap -- matches the own-source-permanently waiver criterion, not a bug report.",
+      "suggested_at": "2026-08-20T18:54:52Z"
+    }
+  },
   "license_clearance": {
     "approved_by": "jeffdaily",
     "at": "2026-08-06T02:33:28Z",
@@ -92,6 +97,28 @@
       },
       "state": "completed",
       "last_agent": "validator"
+    },
+    "windows-gfx1151": {
+      "blocked": true,
+      "blocked_reason": "upstream host code (include/goofit/Application.h: struct sigaction, used unconditionally in the Application base class every executable links) is POSIX-only with no Windows equivalent; upstream's own CMakeLists.txt marks Windows Not officially supported; no Windows CI, no Windows docs. See notes.md Validation 2026-08-19 (windows-gfx1151) for the full build log and the CMake-level workarounds that were needed just to reach this point.",
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-20T18:54:46Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
     }
   }
 }
