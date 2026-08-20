@@ -403,3 +403,17 @@ When such a delta flips a passed arch to revalidate, REBUILD it rather than carr
 on "it is Windows-gated" reasoning. A binary-equivalence carry-forward inherently builds,
 which is how both regressions above were caught; a reasoning-only skip would have shipped a
 broken build. (aihwkit, MMseqs2)
+
+## A guard that disables a language feature under nvcc ENABLES it under hipcc
+
+Upstream projects increasingly carry a macro of this shape, so that C++20 constraints apply to the host build but nvcc never sees them:
+
+    #if !defined(__CUDACC__) && defined(__cpp_concepts) && __cpp_concepts >= 201907L
+    #define PROJECT_REQUIRES(...) requires(__VA_ARGS__)
+    #else
+    #define PROJECT_REQUIRES(...)
+    #endif
+
+hipcc defines `__HIPCC__`, not `__CUDACC__`, so on the AMD path the guard is TRUE and the `requires` clauses DO reach device compilation -- the opposite of what the CUDA build does. Any `!defined(__CUDACC__)` guard in a project you are porting is a place where the AMD build silently takes the other branch; grep for the pattern rather than assuming the guard is symmetric.
+
+The correct response is to TEST it, not to reflexively add `&& !defined(__HIPCC__)`. The guard exists because of an nvcc front-end limitation; hipcc is clang, and clang compiles constrained templates in device code without complaint (verified on ROCm 7.2 / clang 22 with `-std=c++23 -Werror`). Extending the guard to HIP would silently drop overload constraints on the AMD path only -- a real behavioural divergence from the CUDA build, introduced to fix a problem that does not exist. Only extend it if the AMD compile actually fails, and then say so in the commit message. Note also that a `-include` compatibility shim which deliberately does NOT define `__CUDACC__` (a common choice, because rocThrust keys its backend selection on it) is what leaves the guard live in the first place. (CubbyFlow)

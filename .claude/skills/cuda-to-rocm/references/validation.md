@@ -106,3 +106,21 @@ On a host whose only installed PyTorch is a ROCm dev build (e.g. built from `/va
 - `torch/headeronly/util/complex.h` guards `#include <thrust/complex.h>` with `#if defined(__HIPCC__) || defined(__HIPCC__)` -- a duplicated-token typo, evidently meant `__CUDACC__ || __HIPCC__` -- so under nvcc the include is skipped while `c10/util/complex.h`/`complex_math.h` still reference `thrust::complex` unconditionally under `__CUDACC__`, cascading into ~100 "identifier thrust is undefined" errors on ANY project that includes `torch/extension.h`, regardless of that project's own code (observed on dev build `2.14.0a0+gitb6b444c`).
 
 Neither is a defect in the port: they are defects in the ambient PyTorch install, present identically whether you build the pristine upstream or the ROCm branch. Diagnose it as environmental by checking that the errors bottom out in `torch/headeronly`/`c10` (not the port's own files) and that `grep -n '__builtin_trap\|__trap\|__HIP\|hip[A-Z]\|amdgcn\|USE_ROCM'` over the port's own changed sources is empty. Do not chase this by patching the installed torch headers (that is fixing the environment, not the port). Record `cuda-not-validated: <the missing-header or duplicated-guard error>` and, if there is time budget left, substitute a source-level check: diff the port's CUDA-facing code (e.g. the non-ROCm branch of a dual-path file) against upstream and confirm it is byte-for-byte the same logic, only guarded differently -- that is as much passthrough evidence as a real nvcc pass would give without one. (FaithC, accelerated-scan)
+
+## CUDA gate on a conda CUDA toolkit: `find_package(CUDA)` fails OPEN, not closed
+
+A conda-installed CUDA toolkit (`/opt/conda/envs/cuda-12.8`) does not have the layout the legacy `FindCUDA` module expects: `cuda_runtime.h` lives under `targets/x86_64-linux/include`, not `<root>/include`. Point `CUDA_TOOLKIT_ROOT_DIR` at the env root and the module reports `Could NOT find CUDA (missing: CUDA_INCLUDE_DIRS) (found version "12.8")`.
+
+The trap is what happens next. Projects commonly write `find_package(CUDA)` / `if (CUDA_FOUND) ... else() set(USE_CUDA OFF) endif()`, so the configure SUCCEEDS, the build succeeds, and NOT ONE CUDA file was compiled. A `cmake --build` that returns 0 is worthless evidence here. Always confirm the `Using CUDA: <version>` (or equivalent) line in the configure output, or grep the generated `compile_commands.json` for `nvcc`, before recording a CUDA no-regression pass.
+
+The working incantation is to point the legacy variables at the `targets` subtree:
+
+    -DCUDA_TOOLKIT_ROOT_DIR=/opt/conda/envs/cuda-12.8/targets/x86_64-linux
+    -DCUDA_TOOLKIT_INCLUDE=/opt/conda/envs/cuda-12.8/targets/x86_64-linux/include
+    -DCUDA_CUDART_LIBRARY=/opt/conda/envs/cuda-12.8/lib/libcudart.so
+
+with `/opt/conda/envs/cuda-12.8/nvvm/bin` on `PATH` so nvcc finds `cicc`. Note `-DCMAKE_CUDA_COMPILER=` is ignored by legacy `FindCUDA` (CMake warns "Manually-specified variables were not used"); it only matters once the project calls `enable_language(CUDA)`. (CubbyFlow)
+
+## A vcpkg-manifest project needs `autoconf-archive` on the build host
+
+Projects that have migrated their dependencies to a vcpkg manifest configure with `VCPKG_ROOT` set and let CMake build the whole dependency set during configure. If the manifest pulls `pybind11`, vcpkg builds its own `python3`, whose `libb2` dependency fails `autoreconf` with a bare `error: building libb2:x64-linux failed with: BUILD_FAILED` unless `autoconf-archive` is installed. It is routinely missing from the project's own documented apt list. Install `autoconf autoconf-archive automake libtool pkg-config python3-dev zip unzip curl` before the first configure. (CubbyFlow)
