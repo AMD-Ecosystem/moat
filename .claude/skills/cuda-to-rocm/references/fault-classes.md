@@ -43,6 +43,18 @@ past the shared-memory region. Ask which way the divide goes before picking the 
 (SCAMP: `cov_handoff`, `2 * warps_per_block` scalars sized with 64, under-allocated on
 every wave32 device.)
 
+**A block NARROWER than one wavefront makes `blockDim.x / warpSize` zero and the block
+reduction silently returns zero.** The idiom `val = (tid < blockDim.x / warpSize) ? warpSums[lane]
+: 0` is exact on NVIDIA for any block that is a multiple of 32, so a launch that sizes its block
+from the work (`block.x = work <= 32 ? 32 : ...`) is safe there and broken on wave64: the count is
+0, every lane takes the empty branch, and the first stage shuffles lanes 32..63 that are not in the
+block. Nothing errors -- the reduction just yields 0. Ceil-dividing the count is not enough,
+because it leaves the out-of-block shuffles; floor the BLOCK at the wavefront width instead, from a
+host-side runtime query (`hipDeviceAttributeWarpSize`), so a wave32 device keeps the launch it had
+and a wave64 device gets a whole wavefront. Any launch whose block size is computed from a data
+size, rather than being a fixed 128/256, is a candidate. (CV-CUDA: OpFindHomography refinement,
+reachable at 16 or fewer point pairs.)
+
 **Lane masks must be 64-bit where the API takes one** -- `__shfl*`, `__ballot`,
 `__activemask`. A `uint32` mask is wrong on a 64-wide wavefront.
 
@@ -146,6 +158,20 @@ isolation and FAILS in-suite, after earlier tests have dirtied and freed similar
 The reliance is a latent upstream bug, not a ROCm defect: zero explicitly
 (`hipMemsetAsync`) before the partial-write kernel, and audit any kernel whose write set is
 smaller than its output allocation. (opencv_contrib: cudastereo census_transform border.)
+
+**The fix for that -- a blocking memset on the NULL stream -- is NOT ordered against a
+non-blocking stream.** `hipMemset`/`cudaMemset` on device memory is still enqueued on the null
+stream, and a stream created with `hipStreamNonBlocking` does not synchronize with the null
+stream. An allocator that zero-fills this way therefore races every caller that allocates and
+then uploads with `hipMemcpyAsync` on such a stream: the fill can land AFTER the upload and wipe
+it. Fingerprint: inputs that arrive all-zero at the kernel while their device pointers are
+perfectly valid, only for callers using a non-blocking stream, and the failure disappears under
+`AMD_SERIALIZE_COPY=3 AMD_SERIALIZE_KERNEL=3` -- which is the confirmation, not a workaround.
+An operator that checks for degenerate input will then report its own sentinel (NaNs, an identity
+model), so the symptom points at the math and not at the allocator. If a helper promises memory
+is zero by the time it returns, make that true: synchronize the null stream after the fill
+(the allocation call itself already synchronizes, so nothing structural is added). (CV-CUDA:
+DefaultAllocator zero-fill vs. FindHomography varshape.)
 
 **`cudaMemcpy*Async` from a soon-freed pageable host buffer.** CUDA stages pageable async
 copies synchronously, so a test that copies from a local `std::vector` and lets it go out of
@@ -269,10 +295,15 @@ tests that compare a kernel against a CPU gold (which wants the contraction nvcc
 tests that compare two GPU code paths against each other byte-for-byte (which want the same
 contraction in both instantiations). clang contracts a `float` instantiation and a `float4`
 instantiation of the same template differently, so a per-plane path and a per-pixel path that are
-bit-identical on NVIDIA differ by 1 ULP on ROCm. Measure before choosing: on CV-CUDA v0.17
-`-ffp-contract=on` gave 48 failures (43 of them planar-vs-interleaved parity) and
-`-ffp-contract=off` gave 10 (but regressed the cubic-vs-gold case the `on` pin was added for).
-Treat the choice as a reviewed decision with numbers attached, not a default. (CV-CUDA)
+bit-identical on NVIDIA differ by 1 ULP on ROCm. Measure before choosing, and clear unrelated
+defects out of the sample first: on CV-CUDA v0.17 `-ffp-contract=on` gave 42 failures (40 of them
+planar-vs-interleaved parity, 2 a vectorized-vs-scalar comparison) once an allocator ordering race
+was fixed, against 48 before -- 6 of the original failures were the race, not contraction, and a
+decision taken on the contaminated number would have been taken on the wrong evidence.
+`-ffp-contract=off` removed most of the parity failures but regressed the cubic-vs-gold case the
+`on` pin was added for, so `on` was kept. Treat the choice as a reviewed decision with numbers
+attached, not a default, and re-measure after every functional fix that lands in the same suite.
+(CV-CUDA)
 
 **An exact float-equality branch fed by approximate division can HANG, not just drift.**
 HIP's `__fdividef` differs ~1 ULP from CUDA, so a downstream exact-equality test on the
@@ -331,9 +362,13 @@ which rocprof reports the same way, so a project whose build FATALS without NVTX
 need its ranges stubbed out. The header moved between ROCm versions: prefer
 `<rocprofiler-sdk-roctx/roctx.h>` and fall back to `<roctracer/roctx.h>` behind `__has_include`;
 both declare `roctxRangePushA`/`roctxRangePop`. Link `rocprofiler-sdk-roctx` or `roctx64`. A
-forwarding `nvtx3/nvToolsExt.h` on the HIP include path keeps every call site untouched. NVTX's
-INJECTION api (used by interposer/probe test helpers) has no roctx analogue -- leave those helpers
-out of the ROCm build. (CV-CUDA)
+forwarding `nvtx3/nvToolsExt.h` on the HIP include path keeps every call site untouched. Only the
+range macros map: NVTX's INJECTION api (`NvtxGetExportTableFunc_t`, `NVTX_ETID_CALLBACKS`,
+`NVTX_CBID_CORE_*`), which interposer and probe test helpers use, has no roctx analogue, so a
+forwarding header that covers the ranges will still fail to compile such a helper. Check whether
+the project builds one before assuming the shim is complete; CV-CUDA's probe helper sits behind
+Python-only build options that its ROCm configuration leaves off, so it was never configured and
+the gap is untested rather than handled. (CV-CUDA)
 
 **Code that reads curand's generator state internals needs a rocRAND translation, not an alias.**
 curand caches one spare Box-Muller normal and flags it with `state.boxmuller_flag ==
