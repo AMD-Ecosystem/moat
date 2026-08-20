@@ -982,3 +982,83 @@ windows-gfx1201. The gfx90a 108/108 recorded at 514cb457 describes this tree too
 delta is the hipify.sh comment, and hipify.sh is not compiled on either path), and a
 message-only fix for the finding above keeps that true, so the porter should land it before
 any validator starts.
+
+## Porter round 2026-08-20 (round 3, linux-gfx90a) -- answers the round-2 review
+
+Message-only round. **The tree did not change and nothing was rebuilt.** The branch was
+reset to `111ccaa8`, that commit's message amended, and `378d793e` cherry-picked on top;
+the resulting tip `01a09e82` is tree-identical to `378d793e`:
+
+```
+$ git diff 378d793e6 HEAD --stat      # empty
+$ git rev-parse 378d793e6^{tree} HEAD^{tree}
+91a2ac0b2ffc0a7160473cecf8d64f29697bed6e
+91a2ac0b2ffc0a7160473cecf8d64f29697bed6e
+```
+
+New head `01a09e82` (was `378d793e`); the three commits are now `b4cf8268` (unchanged),
+`a8a9d1e5` (was `111ccaa8`, message amended), `01a09e82` (was `378d793e`, message
+byte-identical, sha moved only because its parent did). Old tip kept locally as
+`backup-378d793e` in the fork clone.
+
+**The finding: the gfx1151 Test Plan block could not run as written.** Fixed with the
+reviewer's first option -- `-DFAISS_ENABLE_C_API=ON` is dropped -- because the recorded
+2026-06-04 windows-gfx1151 session gives no evidence the C API was ever built or
+exercised there: its build lines are `faiss`, `faiss_gpu_objs` and the ten GPU/CPU test
+targets, its results are those ten suites, and the section never mentions `c_api` or a
+manual `c_api/gpu` hipify step (that step is recorded only for the 2026-06-07 gfx1201
+session, item 4). Importing gfx1201's manual lines into a gfx1151 block would have made
+the block assert work that platform's record does not support. `FAISS_ENABLE_C_API`
+defaults to `OFF` (CMakeLists.txt:72), so dropping the flag is exactly the configuration
+the recorded targets were built in.
+
+The hipify invocation is now absolute (`bash "$(pwd)/faiss/gpu/hipify.sh"`) rather than
+relative. Dropping the C_API flag alone would still have published a command that exits
+1: the script's second `hipify_dir` call runs regardless of any CMake option, and after
+the first call's bare `cd` the relative `${BASH_SOURCE[0]}` no longer resolves. Verified
+this session with a path-only stub of the script (the real one is not idempotent -- do
+not re-run it on a hipified tree):
+
+```
+$ bash faiss/gpu/hipify.sh
+Hipifying <root>/faiss
+faiss/gpu/hipify.sh: line 4: cd: faiss/gpu/../../c_api: No such file or directory
+exit=1
+$ bash "$(pwd)/faiss/gpu/hipify.sh"
+Hipifying <root>/faiss
+Hipifying <root>/c_api
+exit=0
+```
+
+`hipify.sh` itself is untouched, as the review required; the absolute form is what
+CMakeLists.txt:87 already uses (`${PROJECT_SOURCE_DIR}/faiss/gpu/hipify.sh`).
+
+**Unbacked figures removed from the same block.** "ROCm 7.14 clang" is replaced by
+"CMake 4.3.2, clang-cl for host and device code", the two figures the gfx1151 record
+actually states; no ROCm version is recorded for that session, so none is claimed.
+`-j24` (a gfx1201 figure) becomes `-j6`, which the gfx1151 record does state. The
+Linux re-check block's `-j 16` is dropped -- no parallelism figure is recorded for the
+gfx90a run -- while its "ROCm 7.14" stays, backed by the 514cb457 gfx90a session above.
+Every remaining figure in the gfx1151 block traces to the 2026-06-04 record.
+
+**Gates.**
+
+```
+$ python3 utils/moatlib.py audit-commits faiss
+OK: fork commit messages conform (1 local clone(s) judged)
+$ python3 utils/jargon.py --port faiss
+jargon: clean
+$ python3 utils/moatlib.py audit-clean faiss
+OK: no fork with a completed/pr platform has uncommitted source edits
+```
+
+Titles 67 / 58 / 61 chars. Fork clone has zero modified tracked files (untracked hipify
+output only). No `timeit.sh compile` entry: nothing was compiled this round, and the
+gfx90a 108/108 recorded at 514cb457 still describes this tree exactly (the only tree
+delta since then is the one hipify.sh comment, and hipify.sh is not compiled on either
+path).
+
+**Platform state.** `advance-head` moved head to `01a09e82`. All five platforms still
+carry `validated_sha = ab1dcf71` and read as needing revalidation, unchanged in
+substance by this round -- the delta they face is still the hipify.sh comment plus the
+two host-only test TUs, so binary-equivalence carry-forward remains the expected route.
