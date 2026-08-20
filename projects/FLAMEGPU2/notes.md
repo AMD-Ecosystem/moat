@@ -605,3 +605,27 @@ yet we have a Windows HIP build passing 1058/1049 functional tests on two RDNA G
 and the `windows.h` fix above is exactly what that build needs to compile. Offering the
 Windows evidence may be the more valuable half of this contribution, but changing that
 matrix row is his call, not a change we should push into his branch unasked.
+
+### Record state left behind by this round -- needs a person
+
+Two things are parked for a human decision, both stated here so neither is invisible.
+
+1. `git push origin amdgpu-fixes` is refused for want of `workflow` token scope (see
+   above). The branch is complete and tested locally; only the push is missing.
+
+2. The project stage is left at `porting`, not `review-passed` where this round found
+   it. The intent was to restore it, but the state machine has no `porting ->
+   review-passed` edge: `porting` exits only to `ported` or `delta-ported`, and the
+   route back to `review-passed` runs through a reviewer's verdict. Writing `ported`
+   would be false -- `moat-port` was not touched and there is nothing new for a
+   reviewer to read -- and writing a reviewer's verdict is not the porter's to write.
+   So the fork-write lock was released with `moatlib.py port-lock FLAMEGPU2 --release`,
+   which is the documented exit for an agent that stopped mid-round, and the stage is
+   left honest rather than plausible.
+
+   Nothing about the port itself regressed: `head_sha` is still `a290861`, all four
+   platform records still read `completed` at `a290861`, and `moat-port` is untouched.
+   Only the project stage needs restoring, and how to do that is bound up with the
+   larger question this round raises -- whether a contribution offered against an
+   upstream maintainer's own branch belongs in this project's record at all, or wants
+   a shape the pipeline does not currently have.
