@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-08-20T18:32:06Z",
+  "updated_at": "2026-08-20T18:33:14Z",
   "head_sha": "62f4604c834e0c25ec8f5a829fc1670db23d3cb0",
   "depends_on": [],
   "pr_url": "https://github.com/utilForever/CubbyFlow/pull/145",
@@ -15,13 +15,13 @@
   "pr_opened_at": "2026-06-19T05:05:08Z",
   "porting": {
     "arch": "linux-gfx1100",
-    "since": "2026-08-20T18:32:06Z"
+    "since": "2026-08-20T18:33:14Z"
   },
   "waivers": {},
   "pr_state": "open",
   "license_spdx": "MIT",
   "upstream_repo_id": 132249264,
-  "stage": "porting",
+  "stage": "reviewing",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -59,7 +59,7 @@
       "validated_sha": "62f4604c834e0c25ec8f5a829fc1670db23d3cb0",
       "started_at": "2026-08-20T17:53:46Z",
       "completed_at": "2026-06-23T22:20:43Z",
-      "updated_at": "2026-08-20T18:32:06Z",
+      "updated_at": "2026-08-20T18:33:14Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -73,7 +73,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "porter:claude",
+      "last_agent": "reviewer",
       "carry_forward": {
         "to": "62f4604c834e0c25ec8f5a829fc1670db23d3cb0",
         "method": "source-class",
@@ -149,7 +149,7 @@
   },
   "porting_released": {
     "arch": "linux-gfx1100",
-    "since": "2026-08-20T18:14:36Z",
-    "at": "2026-08-20T18:25:28Z"
+    "since": "2026-08-20T18:32:06Z",
+    "at": "2026-08-20T18:32:10Z"
   }
 }
