@@ -427,7 +427,9 @@ point clouds (2 samples x 20000 unique voxels):
 
 ```
 cd projects/Pointcept/src
-HIP_VISIBLE_DEVICES=0 PYTHONPATH=. python3 agent_space/pointcept_sparse_conv_e2e.py --steps 20
+# the script lives in the MOAT repo root's agent_space/ (gitignored, host-local);
+# configs are resolved relative to the src cwd, so run it by relative path from there
+HIP_VISIBLE_DEVICES=0 PYTHONPATH=. python3 ../../../agent_space/pointcept_sparse_conv_e2e.py --steps 20
 ```
 
 - sparse conv backend reported: `spconv_triton.pytorch` (confirms the ROCm branch is live)
@@ -458,3 +460,62 @@ as every earlier platform. No regression from this round's change (it touches no
 Reminder from round 1 still applies: the build leaves untracked `*_hip.cpp` /
 `*_hip_kernel.*` / `kernels.hip` hipify artifacts next to the CUDA sources. They are
 generated; never git-add them.
+
+## Review 2026-08-20 (reviewer, linux-gfx90a, read-only on code)
+
+Scope: fork `moat-port` delta 95f4a51..87bc3e2 -- merge commit 2abd848 (upstream main) plus
+87bc3e2 (spconv backend indirection, 12 files, +30/-10). Verdict: review-passed, no code
+problems found. Recorded here is only what needed correcting plus the independent checks,
+since the next stage is revalidation at the new head.
+
+Corrected in this file (above): the e2e reproduction command pointed at
+`agent_space/pointcept_sparse_conv_e2e.py` relative to `projects/Pointcept/src`, where that
+path does not exist -- the script lives in the MOAT repo root `agent_space/`. Run it as
+`../../../agent_space/pointcept_sparse_conv_e2e.py` from `src` (the script resolves
+`configs/...` against the cwd, so the cwd must stay `src`). Verified by re-running it.
+
+Independently verified (linux-gfx90a, torch 2.14.0a0+git7d05abc / hip 7.14.60850,
+spconv-triton 1.0.0):
+- Merge is content-clean: `2abd848^{tree}` == `9f37497^{tree}` (upstream/main), and
+  `git diff 95f4a51 2abd848 -- libs/ README.md` is empty, so the merge neither added
+  anything beyond upstream main nor dropped round 1's port content (upstream squash 2b97e6e
+  carries it). `upstream/main` is now an ancestor of `moat-port`, and
+  `git diff upstream/main...HEAD` is exactly the 12-file, +30/-10 delta -- the shape a new
+  upstream PR would show.
+- All ten call sites converted; `grep -rn "import spconv"` finds no residual
+  `import spconv.pytorch` outside `pointcept/models/utils/spconv.py:13`. Each file kept its
+  own first-party import form (absolute in nine, `from ..utils.spconv import spconv` in
+  `oacnns_v1m1_base.py:7`), and `spconv_unet_v1m2_bn_momentum.py:14-19` keeps its
+  try/except ImportError + warning shape (a missing backend still raises ImportError from
+  inside the indirection module, so the except still fires).
+- No self-shadowing: with a stub top-level `spconv` package on `sys.path` and
+  `torch.version.hip` forced to None, `pointcept/models/utils/spconv.py` resolved to the
+  stub `spconv.pytorch`, not to itself (absolute import). CUDA path therefore binds the same
+  module object as the original `import spconv.pytorch as spconv`.
+- All ten modules import cleanly on the ROCm torch and each `.spconv` attribute is
+  `spconv_triton.pytorch`; no import cycle from `pointcept.models.utils.__init__`
+  (it pulls only misc/checkpoint/serialization, all torch-only).
+- API surface actually used (`SparseModule, SparseSequential, SparseConvTensor, SubMConv3d,
+  SparseConv3d, SparseInverseConv3d, Identity, modules.is_spconv_module`) all present in
+  `spconv_triton.pytorch`. Weight layout is `[out_channels, *kernel_size, in_channels]`
+  (spconv 2.x KRSC) with a `_load_weight_different_layout` load hook, so the commit's
+  "same state_dict layout" claim holds.
+- PTv3's spconv surface, which the porter's three configs do not cover, was smoke-tested
+  directly: `SubMConv3d(k=5, padding=1, bias=False, indice_key="stem")` + `SubMConv3d(k=3)`
+  with a reused indice_key, forward and backward finite and nonzero on gfx90a. (A full PTv3
+  config cannot run in this env for an unrelated reason: `flash_attn` is not installed and
+  the configs default `enable_flash=True`.)
+- The commit's Test Plan heredoc runs verbatim from the repo root: loss 3.0156 -> 0.5124 over
+  20 steps (commit says 3.03 -> 0.55; no seed is set, so run-to-run drift is expected).
+  The three-config script reproduces at `--steps 5`: SpUNet 3.0259 -> 2.7900,
+  OACNNs 3.0889 -> 2.9267, PointGroup 5.2491 -> 4.4132, backend reported
+  `spconv_triton.pytorch`.
+- Hygiene: `jargon.py --port Pointcept` clean; `prose.py` on the commit body clean; title
+  52 chars with the `[ROCm]` prefix; AI disclosure and fenced Test Plan present; no
+  Co-Authored-By / noreply / Signed-off-by trailer; no AMD-internal account or host
+  references. `black --check` clean on all touched files. Working tree has no modified
+  tracked files; the only untracked files are the known hipify artifacts under `libs/`.
+- Fault classes: this delta contains no kernel, no build-script and no `libs/` change. The
+  one class that applies is the library swap, and it is guarded on `torch.version.hip`,
+  matching round 1's `setup.py` guard style; wave32 behavior of the Triton kernels is the
+  validators' gate.
