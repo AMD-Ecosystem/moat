@@ -7,18 +7,21 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-08-07T07:04:28Z",
+  "updated_at": "2026-08-20T17:53:53Z",
   "head_sha": "62f4604c834e0c25ec8f5a829fc1670db23d3cb0",
   "depends_on": [],
   "pr_url": "https://github.com/utilForever/CubbyFlow/pull/145",
   "pr_number": 145,
   "pr_opened_at": "2026-06-19T05:05:08Z",
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx1100",
+    "since": "2026-08-20T17:53:46Z"
+  },
   "waivers": {},
   "pr_state": "open",
   "license_spdx": "MIT",
   "upstream_repo_id": 132249264,
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -54,9 +57,9 @@
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "62f4604c834e0c25ec8f5a829fc1670db23d3cb0",
-      "started_at": null,
+      "started_at": "2026-08-20T17:53:46Z",
       "completed_at": "2026-06-23T22:20:43Z",
-      "updated_at": "2026-06-23T22:20:43Z",
+      "updated_at": "2026-08-20T17:53:46Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -70,7 +73,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
+      "last_agent": "porter:claude",
       "carry_forward": {
         "to": "62f4604c834e0c25ec8f5a829fc1670db23d3cb0",
         "method": "source-class",
@@ -137,5 +140,11 @@
       }
     }
   },
-  "published_sha": "62f4604c834e0c25ec8f5a829fc1670db23d3cb0"
+  "published_sha": "62f4604c834e0c25ec8f5a829fc1670db23d3cb0",
+  "fix": {
+    "branch": "moat-fix-145",
+    "base_sha": "62f4604c834e0c25ec8f5a829fc1670db23d3cb0",
+    "review_pr": null,
+    "opened_at": "2026-08-20T17:53:53Z"
+  }
 }
