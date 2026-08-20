@@ -36,6 +36,29 @@
   "upstream_repo_id": 135489692,
   "stage": "porting",
   "platforms": {
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "b87423d8e5cb4075386359cb4521eb8a14ffea2a",
+      "started_at": "2026-05-31T01:38:05Z",
+      "completed_at": "2026-08-20T23:38:58Z",
+      "updated_at": "2026-08-20T23:38:58Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator:claude"
+    },
     "linux-gfx1100": {
       "state": "completed",
       "blocked": false,
@@ -65,36 +88,13 @@
         "at": "2026-08-08T02:03:02Z"
       }
     },
-    "linux-gfx90a": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
-      "started_at": "2026-05-31T01:38:05Z",
-      "completed_at": "2026-08-08T23:24:36Z",
-      "updated_at": "2026-08-08T23:29:09Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator"
-    },
-    "windows-gfx1101": {
+    "windows-gfx1201": {
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-08-20T21:05:04Z",
+      "updated_at": "2026-08-20T21:05:06Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -132,13 +132,13 @@
       },
       "last_agent": "reviewer"
     },
-    "windows-gfx1201": {
+    "windows-gfx1101": {
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-08-20T21:05:06Z",
+      "updated_at": "2026-08-20T21:05:04Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,

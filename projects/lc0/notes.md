@@ -2384,3 +2384,155 @@ library swap, no per-arch branch. The change is unconditional and arch-unified, 
 CUDA behaviour (one wait per network at construction, unreachable from an evaluation, so it
 cannot land inside a graph capture), and preserves upstream structure. Validation on real
 hardware is the next gate.
+
+## Revalidation 2026-08-20 (linux-gfx90a) -- `b87423d8` -- COMPLETED
+
+Full real-GPU revalidation (not a carry-forward): `python3 utils/moatlib.py classify lc0
+7727fa32 b87423d8` returned `class=unknown arch_independent=False (classification failed
+-> revalidate)`, and the diff itself (`network_cuda.cc` +5, unconditional
+`ReportCUDAErrors(cudaStreamSynchronize(0));` at the constructor boundary) is a real
+functional change, not doc/comment-only, so no shortcut applies. No local fork clone
+existed on this host; cloned `AMD-Ecosystem/lc0` into `projects/lc0/src`, fetched and
+checked out `moat-fix-2420` (PR #2420 is open, so this round lives on the fix-staging
+branch, `moat-port` stays at `7727fa32`), confirmed `HEAD` == `b87423d8e5cb4075386359cb4521eb8a14ffea2a`
+== recorded `head_sha`, and installed the protect-fork pre-push hook
+(`python3 utils/moatlib.py protect-fork lc0`).
+
+Host toolchain differs from the ROCm-7.2.1 system install used in earlier gfx90a rounds:
+this host now only has the TheRock ROCm SDK inside the `py_3.12` conda env (HIP 7.14.60850,
+AMD clang 23.0.0git; `_rocm_sdk_devel`/`_rocm_sdk_core`/`_rocm_sdk_libraries` under
+`/opt/conda/envs/py_3.12/lib/python3.12/site-packages/`). No system `/opt/rocm`, no system
+`meson` (`pip install meson` into `py_3.12`, meson 1.12.0), no system `libopenblas-dev`
+(installed via apt, same as the prior 2026-07-02 round). 4x gfx90a MI250X, all four idle
+(`rocm-smi --showuse` 0% on GPU 0-3, no KFD PIDs); used GPU 3 (`HIP_VISIBLE_DEVICES=3`),
+consistent with every prior gfx90a session.
+
+### Build
+
+```
+SDK=/opt/conda/envs/py_3.12/lib/python3.12/site-packages
+export PATH="$SDK/_rocm_sdk_devel/lib/llvm/bin:$SDK/_rocm_sdk_devel/bin:$SDK/_rocm_sdk_core/bin:$SDK/_rocm_sdk_libraries/bin:$PATH"
+cd projects/lc0/src
+meson setup build-hip \
+  -Dhip=true -Damd_gfx=gfx90a \
+  -Dplain_cuda=false -Dcudnn=false -Dcutlass=false -Dnvcc=false \
+  -Dgtest=true -Dblas=true -Dopencl=false -Donnx=false \
+  -Db_lto=false -Dnative_arch=false \
+  -Dhip_libdirs="$SDK/_rocm_sdk_devel/lib,$SDK/_rocm_sdk_core/lib,$SDK/_rocm_sdk_libraries/lib" \
+  -Dhip_include="$SDK/_rocm_sdk_devel/include"
+bash utils/timeit.sh lc0 compile -- ninja -C projects/lc0/src/build-hip -j16
+```
+
+321/321 targets, clean link, warnings only (nodiscard, same class as every prior gfx90a
+build). `fp16_kernels.hip.o` = 2.0MB (non-empty SE bodies, not the empty-no-op signature).
+
+### CPU gtest (non-GPU regression)
+
+```
+bash utils/timeit.sh lc0 test -- meson test -C projects/lc0/src/build-hip
+```
+
+8/8 OK (`FP16`, `HashCat`, `PositionTest`, `OptionsParserTest`, `SyzygyTest`,
+`EncodePositionForNN`, `EngineTest`, `ChessBoard`), 0 failures. No regression.
+
+### GPU cross-check (maia-1100 conv-SE net, `CSSLab/maia-chess` master, no moves-left head)
+
+Fetched `https://raw.githubusercontent.com/CSSLab/maia-chess/master/maia_weights/maia-1100.pb.gz`
+into `agent_space/maia1100.pb.gz` (not present on this host from a prior session; the
+`n744706`/`t1-256x10` moves-left nets used on windows-gfx1151 to isolate the reviewer's
+finding 1 were not refetched here -- no recorded source URL, and finding 1 was already
+closed at the code level for every upload path, verified by the reviewer via call-site
+enumeration, not by re-deriving the moves-left evidence per arch. gfx90a's own contribution
+is: does the added sync regress or fault the existing wave64 kernel paths, and it does not).
+
+```
+HIP_VISIBLE_DEVICES=3 projects/lc0/src/build-hip/lc0 backendbench --backend=check \
+  "--backend-opts=hip(),blas(),mode=check,atol=1e-3,rtol=1e-2,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz --start-batch-size=1 --max-batch-size=55 --batches=4
+```
+fp32: **222/222 Check passed, 0 errors** (batch 1-55 incl. odd 53/55).
+
+```
+HIP_VISIBLE_DEVICES=3 projects/lc0/src/build-hip/lc0 backendbench --backend=check \
+  "--backend-opts=hip-fp16(),blas(),mode=check,atol=1.1e-1,rtol=2e-1,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz --start-batch-size=1 --max-batch-size=55 --batches=4
+```
+fp16: **222/222 Check passed, 0 errors**.
+
+### Determinism
+
+```
+HIP_VISIBLE_DEVICES=3 projects/lc0/src/build-hip/lc0 backendbench --backend=check \
+  "--backend-opts=hip(),blas(),mode=display,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz --start-batch-size=8 --max-batch-size=8 --batches=2
+```
+Two separate runs: value abs 3.0e-08 / policy abs 3.6e-07, identical both times. No
+reduction race introduced by the sync. (Note: the same command with `--batches=1` hits a
+pre-existing harness bug -- `backendbench`'s per-batch-size timing-stats vector indexes
+`i-1` and asserts out of bounds when there is only one sample; `--batches=2` avoids it and
+is what every prior gfx90a round used. Not a port defect; not investigated further, per stop
+discipline -- a harness stats-array assertion after the correctness comparison already
+printed, unrelated to any GPU kernel.)
+
+### Fault-free sweep + device dispatch
+
+`--backend=hip` and `--backend=hip-fp16` `backendbench` (no `--backend=check`), batch
+1-256, maia-1100: both exit 0, no crash/hang/NaN. `AMD_LOG_LEVEL=3` confirms real device
+kernel dispatch (`copyTypeConverted_kernel`, `filterTransform_kernel`, etc. named in the
+ROCr trace) interleaved with rocBLAS/Tensile.
+
+### CUDA no-regression gate (compile-only, first time at this head_sha)
+
+Not previously recorded at `b87423d8` (the last CUDA check in this file is at `a80a7be`,
+2026-07-02, before this fix round). The fix round's diff is one 5-line, unconditional,
+`USE_HIP`-unguarded change to `network_cuda.cc` (a real host TU shared by both backends,
+not a `.cu` kernel file), so a standalone-file nvcc check (the style used at `a80a7be`) does
+not exercise it; built the PROJECT'S OWN full CUDA backend via meson instead, pinned to
+sm_80 (`-Dcc_cuda=80`; meson logged "Detected maximum CUDA architecture: 800", confirming
+the pin took), nvcc 12.8 from `/opt/conda/envs/cuda-12.8/bin/nvcc`, no NVIDIA GPU
+(compile-only):
+
+```
+CUDA=/opt/conda/envs/cuda-12.8
+export PATH="$CUDA/bin:$PATH"
+cd projects/lc0/src
+meson setup build-cuda \
+  -Dplain_cuda=true -Dhip=false -Dnvcc=true \
+  -Dcudnn=false -Dcutlass=false \
+  -Dgtest=false -Dblas=false -Dopencl=false -Donnx=false \
+  -Db_lto=false -Dnative_arch=false -Dcc_cuda=80 \
+  -Dcudnn_libdirs="$CUDA/lib,$CUDA/targets/x86_64-linux/lib" \
+  -Dcudnn_include="$CUDA/include,$CUDA/targets/x86_64-linux/include"
+bash utils/timeit.sh lc0 cuda-compile -- ninja -C projects/lc0/src/build-cuda -j16
+```
+
+**258/258 targets, clean link, no errors** (including
+`libcuda_backend.a.p/src_neural_backends_cuda_network_cuda.cc.o`, the touched file). Pure
+passthrough confirmed -- the added `cudaStreamSynchronize(0)` and `ReportCUDAErrors` are
+plain CUDA runtime API already used elsewhere in the same file, nothing HIP-specific. CUDA
+gate: PASS, not a regression.
+
+### Integrity
+
+`git -C projects/lc0/src status --porcelain` clean before and after (build dirs are
+untracked/gitignored). `python3 utils/jargon.py --port lc0` -> `jargon: clean`.
+Documentation gate unaffected: this round touched no docs and the HIP build section in
+README.md (added in PR-prep 2026-06-11) already covers the build this round validates.
+
+### Summary
+
+| Test | Result |
+|------|--------|
+| HIP build (321/321) | PASS |
+| CPU gtest 8/8 | PASS |
+| maia-1100 fp32 conv-SE check (222 batches) | PASS |
+| maia-1100 fp16 conv-SE check (222 batches) | PASS |
+| Determinism (2 runs) | PASS |
+| Fault-free sweep fp32+fp16 batch 1-256 | PASS |
+| Device dispatch confirmed | PASS |
+| CUDA compile gate (258/258, sm_80) | PASS |
+| Fork tree clean | PASS |
+| jargon | clean |
+
+`validated_sha` = `b87423d8e5cb4075386359cb4521eb8a14ffea2a`. Transition: revalidate ->
+completed.

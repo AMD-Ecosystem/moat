@@ -119,3 +119,8 @@
 {"kind":"session","ts":"2026-08-20T22:40:31Z","epoch":1787265631.354404488,"event":"end","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-20T22:46:37Z","epoch":1787265997.499648300,"event":"start","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-08-20T22:55:05Z","epoch":1787266505.567578100,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-20T23:26:42Z","epoch":1787268402.502638329,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-20T23:29:04Z","phase":"compile","seconds":73.085,"exit":0,"cmd":"ninja -C /var/lib/jenkins/moat/projects/lc0/src/build-hip -j16"}
+{"kind":"phase","ts":"2026-08-20T23:30:38Z","phase":"test","seconds":85.440,"exit":0,"cmd":"meson test -C /var/lib/jenkins/moat/projects/lc0/src/build-hip"}
+{"kind":"phase","ts":"2026-08-20T23:37:54Z","phase":"cuda-compile","seconds":94.734,"exit":0,"cmd":"ninja -C /var/lib/jenkins/moat/projects/lc0/src/build-cuda -j16"}
+{"kind":"session","ts":"2026-08-20T23:39:09Z","epoch":1787269149.809159163,"event":"end","platform":"linux-gfx90a"}
