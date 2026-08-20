@@ -638,3 +638,89 @@ toolchain, both RDNA3/RDNA4 wave32). No source change required.
 No TDR or wedge events. GPU returned healthy hipInfo after all tests.
 
 All gates satisfied. State: windows-gfx1101 completed, validated_sha=87173958ed14a2924349187e9e9f2744cee2c93a.
+
+## Porter 2026-08-20 (linux-gfx90a) -- pre-PR hygiene round, 87173958ed -> d6ca8920
+
+Text-only round: purge in-house vocabulary and a stale figure from the
+upstream-visible surface before a PR is drafted. NO REBUILD WAS RUN AND NONE IS
+NEEDED: the only tree change is one comment line in the root `.gitignore`.
+Nothing a compiler, hipify, `setup.py`, or `pip` reads was touched -- verified
+by `git diff 8717395 HEAD`, which is exactly `.gitignore | 2 +-`. The four
+extensions' sources, setup.py files, and build flags are byte-identical to the
+commit every platform validated at.
+
+### Tree scan for in-house vocabulary (committed content)
+
+`git grep -niE 'strategy [ab]|moat|colmap model|lead platform|follower|head_sha'`
+over the whole tracked tree (excluding vendored `third_party/glm`) found exactly
+ONE hit:
+
+- `.gitignore:1` `# Build artifacts from torch CUDAExtension + ROCm hipify (Strategy B).`
+  -> `# Build artifacts from the torch CUDAExtension build and ROCm hipify.`
+
+Nothing else. The 18 source files and 4 setup.py files carry only `USE_ROCM` /
+`torch.version.hip` guards and plain technical comments.
+
+### Commit-message rewrite (2 commits kept; branch force-pushed with --force-with-lease)
+
+`9430d42` -> `bba10c8` (port commit; the `.gitignore` reword folded in here,
+since this commit introduced the file):
+- "Strategy B: the torch CUDAExtension build auto-hipifies ..." -> a plain
+  description ("The torch CUDAExtension build hipifies the .cu/.cuh sources at
+  build time and links the HIP runtime, so no compatibility header and no
+  hand-renamed CUDA symbols are needed").
+- Disclosure "authored with the assistance of Claude (Anthropic), the MOAT
+  automated CUDA-to-HIP porter" -> "Authored with the assistance of Claude, an
+  AI coding agent." The validation platform sentence (MI250X gfx90a / ROCm
+  7.2.1) was kept as a separate clause.
+- Stale figure: Test Plan said fisheye single-camera fit "PSNR 22.3 -> 29.8 dB",
+  which appears in no validation record. Corrected to 22.3 -> 29.2 dB. Both
+  recorded gfx90a runs are in that range: 22.28 -> 29.14 dB (2026-06-01, at
+  9430d42) and 22.28 -> 29.22 dB (2026-06-08 re-run, at the branch head). 29.2
+  is cited because it is the run at the head this branch carries, which also
+  makes every other figure in that paragraph (pinhole 25.7 -> 49.9, panorama
+  32.7 -> 45.3) come from one consistent validation record.
+- Host-specific interpreter path purged: `P=/opt/conda/envs/py_3.12/bin/python`
+  + `$P -m pip install ...` -> plain `python -m pip install ...`.
+- Added one bullet documenting the `.gitignore` the commit introduces (it added
+  the file but never mentioned it).
+
+`8717395` -> `d6ca892` (Windows `/ALTERNATENAME` commit):
+- Title was 74 chars, over the 72-char limit: "... LNK2001 in all four
+  setup.py" -> "... LNK2001 in setup.py" (65). The body still says "each
+  setup.py" and lists all four extensions.
+- Disclosure "Authored with Claude AI assistance." normalized to the same
+  sentence as the other commit.
+- No technical content changed; the gfx1201 numbers all match the 2026-06-07
+  validation record.
+
+Verification: `python3 utils/jargon.py -` on each drafted message (clean), then
+`python3 utils/jargon.py --port op43dgs` on the whole branch after the push --
+clean (it had reported 3 instances before: 2 in the port commit message, 1 in
+the added `.gitignore` line).
+
+### Platform classification
+
+`moatlib.py classify op43dgs 87173958ed d6ca8920` -> `class=doc-only
+arch_independent=True inert=True`. `advance-head` therefore carried all four
+validated platforms forward on its own judgment (nothing forced): linux-gfx90a,
+linux-gfx1100, windows-gfx1101 and windows-gfx1201 all stay `completed` with
+`validated_sha` moved to d6ca89206f8e8881598c1694a6ca996332952599.
+
+Fork `main` is still 728de13 (clean upstream mirror); the port is only on the
+port branch. Working tree clean at push time (integrity gate).
+
+### OUTSTANDING pre-PR gap (NOT addressed this round -- out of the round's scope)
+
+The ROCm build is documented NOWHERE in the fork's user-facing docs. `git grep
+-il 'rocm'` over the tracked tree returns only source files (the `USE_ROCM`
+guards) and `.gitignore`; there is no AMD/ROCm word in `README.md` or anywhere
+else a user would look. `README.md` DOES carry the CUDA build in
+`## Installation` (lines 67-99: `conda env create --file environment.yml`, then
+`pip install submodules/diff-gaussian-rasterization-{pinhole,panorama,fisheye}`),
+so per the porter role a parallel ROCm block belongs in that same section --
+roughly: install a ROCm torch first, then `PYTORCH_ROCM_ARCH=<gfx>` +
+`pip install ... --no-build-isolation --no-deps` for each extension, noting that
+`environment.yml` pins a CUDA torch and must not be used on ROCm. This needs one
+short porter round against `README.md` before the PR is drafted. It is
+documentation only, so it will classify inert and needs no rebuild either.
