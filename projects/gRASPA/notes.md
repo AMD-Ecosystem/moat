@@ -518,3 +518,145 @@ spelling, the `_WIN32` guards are false on Linux and on any CUDA host, and
 - Bae-Mixture takes ~28 minutes on one MI250X GCD, which dominates the
   harness. Run the other eight in a second checkout on another GCD in parallel
   if you are time-boxed.
+
+## Review 2026-08-20 (rescoped branch, `e4edfc2..9cfa096`, 2 commits / 24 insertions)
+
+**Verdict: CHANGES REQUESTED.** The code is right -- both commits do what they
+claim and neither can change a result on any path. What must be fixed is the
+*explanation* shipped with the bounds-check commit, which states a mechanism the
+code cannot produce and which does not account for the very number the commit
+quotes as its evidence, plus two imprecisions in the Windows README recipe and a
+missing skill promotion.
+
+### 1. `a0b6dce` commit body states a mechanism the code cannot produce
+
+The body says the wild indices come out of the triangular-index inverse
+"whose square root argument goes negative once the index runs past the real
+pair count". The square root argument cannot go negative. At
+`src_clean/VDW_Coulomb.cu:1538`:
+
+```cpp
+AtomA = NAdsorbateAtoms - 2 - std::floor(std::sqrt(-8*(int) InteractionIdx + 4*NAdsorbateAtoms*(NAdsorbateAtoms-1)-7)/2.0 - 0.5);
+```
+
+`NAdsorbateAtoms` is `size_t` (kernel parameter, `VDW_Coulomb.cu:1461`), so
+`4*NAdsorbateAtoms*(NAdsorbateAtoms-1)-7` is `size_t`; the `int` subexpression
+`-8*(int) InteractionIdx` is converted to `size_t` by the usual arithmetic
+conversions. The whole argument is **unsigned 64-bit** and wraps instead of
+going negative. That distinction is not pedantic -- it is the only thing that
+explains the evidence. Reproduced with the kernel's own constants for
+Tail-Correction (`NAdsorbateAtoms = 1327`, trailing thread, `InteractionIdx`
+past the 879801 real pairs):
+
+```
+arg type is_signed=0 value=18446744073709524425   (2^64 - 27191, not -27191)
+sqrt=4294967296.0 (2^32)   floor(sqrt/2 - 0.5)=2147483647
+AtomA as double = -2147482322.0   -> wrapped to 32-bit = 2147484974
+```
+
+`2147484974` is exactly the `AtomA` the commit quotes. A genuinely negative
+argument would give `NaN`, and a `NaN`-to-integer conversion would not produce
+a 2^31-scale index. Rewrite the paragraph around the real chain: the argument
+is computed in unsigned arithmetic, so once the index passes the real pair
+count it wraps to nearly 2^64, its square root is ~2^32, and the resulting
+`AtomA` underflows to a 2^31-scale value from which the `AtomB` formula then
+produces ~2.3e18. Fix the same sentence in the Rescope section of this file
+("takes a square root of a negative number"), which carries the same error.
+
+The rest of the commit's argument stands and does not need changing.
+
+### 2. `README.md:94` -- the `-isystem` path does not match the ROCm layout this project validates on
+
+The bullet gives `-isystem <hip-sdk>/lib/clang/<version>/include`. That is the
+official HIP SDK for Windows layout, but every Windows validation recorded above
+(gfx1201 2026-06-08, gfx1101 2026-06-19) used a TheRock SDK, whose clang lives at
+`<sdk>/lib/llvm/bin/clang++.exe` and whose resource headers are therefore at
+`<sdk>/lib/llvm/lib/clang/<version>/include`. Checked on this host:
+`clang++ -print-resource-dir` returns `.../_rocm_sdk_devel/lib/llvm/lib/clang/23`,
+and `<sdk>/lib/clang/*/include` does not exist. A reader on the SDK we actually
+test with follows the README and gets nothing. Since the recipe has not been run
+in this form, do not swap one hardcoded shape for the other -- use the
+self-describing form, which is correct on both layouts:
+
+```
+-isystem "$(clang++ -print-resource-dir)/include"
+```
+
+### 3. `README.md:93` -- "the same flags as `HIP_COMPILE`" over-promises against the commit's own tested command
+
+`HIP_COMPILE` sets `-O3 -std=c++20 --offload-arch=${ARCH} -x hip -fgpu-rdc
+-munsafe-fp-atomics -fopenmp -Wno-unused-result -Wno-format`. The Windows Test
+Plan in the same commit drops `-munsafe-fp-atomics`, `-Wno-unused-result` and
+`-Wno-format`. Two upstream-visible artifacts in one commit describe two
+different commands, and `-munsafe-fp-atomics` is the gfx90a-oriented one a
+reader should not carry to an RDNA target on our say-so. State the flag list the
+Windows build was actually tested with rather than deriving it from a script the
+same bullet says is not used on Windows.
+
+### 4. No lesson promoted to the `cuda-to-rocm` skill
+
+`git diff main...HEAD -- .claude/skills/` is empty, and this round produced two
+things that would help a different project:
+
+- **Upstream can merge someone else's HIP backend while the port is in flight.**
+  `references/assess-existing-support.md` covers assessment *before* porting,
+  the "the existing AMD support IS OURS" case (line 18) and the resume-after-our-
+  own-squash-merge case (line 20). It has no entry for a third-party backend
+  landing upstream after adoption, which is what happened here and what turned a
+  four-platform-validated port into 24 lines. The rule worth writing down is
+  re-check at every round, not only at intake; when it happens, rebuild on
+  current upstream and keep only the residual delta rather than shipping a
+  competing shim; and diff your fixes against the merged shim first -- both of
+  gRASPA's shared-memory fixes were already in upstream's merge verbatim
+  (`VDW_Coulomb.cu:1055`, `Ewald_Energy_Functions.h:1046`).
+- **A latent OOB that stopped reproducing is still there.** The
+  `references/fault-classes.md` out-of-bounds entry (line 133) covers only reads
+  one element past an allocation and stencil edges. This case is a different
+  shape: an index-decode overflow in padded trailing threads producing indices
+  ~2^31 and ~2.3e18, where faulting depends on what the driver happens to have
+  mapped -- it aborted in June and does not abort on the current tree on the same
+  host. Absence of a fault is not absence of the bug; instrument the trailing
+  threads of the last block and print the decoded indices.
+
+Put the edit on this branch so it is reviewed with the code.
+
+### Checked and clean (no action)
+
+- The bounds test at `VDW_Coulomb.cu:1546` precedes *every* `MolID` load in the
+  kernel; `MolA`/`MolB` (declared 1483) are read only at 1549, immediately after
+  assignment, so the reorder cannot change the accepted-pair set or the energy
+  for any in-bounds thread.
+- The moved test dereferences `System[compA]`, which is safe:
+  `determine_comp_and_Atomindex_from_thread` sets `comp = startComponent`
+  (1424) and otherwise only assigns an in-range `ijk`, and it already reads
+  `System[ijk].size` at 1428, so no new access class is introduced.
+- Leaving the fix unguarded is right. The defect is platform-independent UB, the
+  change is a strict generalization with identical NVIDIA behaviour, and a
+  `#if defined(__HIP__)` around it would be wrong on its face to a maintainer.
+- The fix is complete. The sibling kernels already test
+  `posi < System[comp].size` before the `MolID` load (743-744, 1269-1270);
+  `TotalVDWRealCoulomb` was the only site with the inverted order.
+- Windows guards are inert on Linux: `<unistd.h>` still included (main.cpp:19-21),
+  the whole `/proc/self/statm` body including `file.close()` sits inside
+  `#ifndef _WIN32` (33-61), and `exepath` is used only at line 78 (the consumer
+  at 79 is commented out), so the empty-string Windows path matches what Linux
+  already produces on `readlink` failure. `grep` confirms main.cpp holds every
+  POSIX use in `src_clean/`. `<numeric>` matches existing practice
+  (`axpy.cu:15`, `read_data.cpp:6`) and both files really do call
+  `std::accumulate` (`lambda.h:40`, `mc_widom.h:338`).
+- Dropped scope is justified: `src_clean/gpu_compat.h` covers the same runtime
+  surface the retired `cuda_to_hip.h` did, and the `__HIP__` guards in
+  `maths.cuh:144`, `VDW_Coulomb.cuh:16` and `mc_widom.h:8` cover the operator and
+  thrust divergences. Nothing load-bearing is missing.
+- Commit hygiene: titles 61 and 48 chars, both `[ROCm]`, AI disclosure and fenced
+  Test Plan in both bodies, no `Co-Authored-By`, ASCII only,
+  `jargon.py --port gRASPA` clean. Working tree clean at 9cfa096.
+- No fault-class exposure in the delta: no warp intrinsics, no hardcoded 32, no
+  textures, no library swaps. The block reduction at 1562-1572 is
+  `__syncthreads()`-based and wave-size agnostic.
+- Missing GPU validation at 9cfa096 is expected at review time and is not part of
+  this verdict. Not a finding, but context for whoever next reads this kernel:
+  the `if(THREADIdx > NFrameworkZero_ExtraFramework)` at 1472 has no body and
+  swallows the `sdata[threadIdx.x] = 0.0;` at 1474. It is harmless -- `sdata` is
+  overwritten unconditionally at 1557-1558 before the first read at 1567 -- and
+  it is upstream's, untouched by this port.

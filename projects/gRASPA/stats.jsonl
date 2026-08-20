@@ -50,3 +50,5 @@
 {"kind":"phase","ts":"2026-08-20T01:25:20Z","phase":"test","seconds":2103.262,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/gRASPA/src/Examples && HSA_XNACK=1 HIP_VISIBLE_DEVICES=1 GRASPA_BIN=/var/lib/jenkins/moat/projects/gRASPA/src/src_clean/hip_main.x python3 run_designated_folders.py"}
 {"kind":"phase","ts":"2026-08-20T01:32:41Z","phase":"test","seconds":0.467,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/gRASPA/src/Examples && python3 -m pytest -q -s"}
 {"kind":"session","ts":"2026-08-20T01:34:26Z","epoch":1787189666.462935618,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-20T01:36:49Z","epoch":1787189809.539754378,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-20T01:45:37Z","epoch":1787190337.891003678,"event":"end","platform":"linux-gfx90a"}
