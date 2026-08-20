@@ -100,6 +100,23 @@ def validations(obj):
 
 PORT_BRANCH = "moat-port"  # the topic branch that holds the port on each fork
 
+
+def upstream_visible_branch(obj):
+    """The fork branch whose commit messages the maintainer will actually read.
+
+    Normally `moat-port`. But while a fix round is staged, it is the round's staging
+    branch: `upstream.py --merge-fix` fast-forwards the open pull request's branch to
+    exactly that tip, so the round's commits become the published ones. Judging
+    `moat-port` during a round inspects only the tip that is already published and
+    silently passes the very commits the round is adding -- a gate that reports clean
+    while looking at the wrong branch is worse than no gate.
+
+    `fix` is cleared when a round merges (see set_fix_merged), so this falls back to
+    the port branch on its own once the round is over.
+    """
+    fix = obj.get("fix") or {}
+    return fix.get("branch") or obj.get("fork_branch") or PORT_BRANCH
+
 # Where the PORT is. One fork, one answer, so this is a property of the project and
 # never of an architecture -- there is no such thing as "screened on gfx90a".
 #
@@ -1603,9 +1620,10 @@ def commit_message_problems(name, obj=None):
     if not repo.is_dir():
         return None
     base = obj.get("fork_default_branch") or "main"
+    branch = upstream_visible_branch(obj)
     fmt = "%H" + _UNIT_SEP + "%s" + _UNIT_SEP + "%b" + _REC_SEP
     out = None
-    for cand in (f"origin/{base}..{PORT_BRANCH}", f"{base}..{PORT_BRANCH}"):
+    for cand in (f"origin/{base}..{branch}", f"{base}..{branch}"):
         r = subprocess.run(["git", "log", "--no-merges", "--format=" + fmt, cand],
                            cwd=str(repo), capture_output=True, text=True,
                            encoding="utf-8", errors="replace")
@@ -1613,7 +1631,7 @@ def commit_message_problems(name, obj=None):
             out = r.stdout
             break
     if out is None:
-        return [f"{name}: cannot resolve {base}..{PORT_BRANCH} in the local clone"]
+        return [f"{name}: cannot resolve {base}..{branch} in the local clone"]
 
     records = [r for r in (x.strip(chr(10)) for x in out.split(_REC_SEP)) if r]
     titles = [r.split(_UNIT_SEP)[1] for r in records if len(r.split(_UNIT_SEP)) > 1]
@@ -1625,7 +1643,7 @@ def commit_message_problems(name, obj=None):
     # a diff against it.
     if titles and len(ours) * 2 < len(titles):
         return [f"{name}: {len(titles) - len(ours)} of {len(titles)} commits in "
-                f"{base}..{PORT_BRANCH} are not ours -- the fork default branch is behind "
+                f"{base}..{branch} are not ours -- the fork default branch is behind "
                 f"upstream; fast-forward it before judging commit messages or diffs"]
 
     problems = []
