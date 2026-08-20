@@ -1369,3 +1369,81 @@ gate), fork `main` untouched at 728de13. Pushed with
 No skill lesson this round: the finding is specific to this README's choice of
 wheel index, and the general form (do not document a platform whose toolchain
 you have not installed from the source you cite) is already covered.
+
+## Review 2026-08-20 (round 4, reviewer, linux-gfx1100, /pr-review local-branch mode)
+
+Branch `moat-port` @ 5401278cefa9b0115c665dfdffb367531e64a9aa vs base 728de13.
+Two commits: `7058b4a` (port, was 8d5b2f4) + `5401278` (Windows
+`/ALTERNATENAME`, was d648004). Verdict: PASS -- no findings. The round-3
+finding is closed.
+
+History was rewritten again, so the series was re-checked rather than trusted:
+
+- `git diff d648004 5401278 --stat` -> `README.md | 2 +-`; the same diff
+  restricted to `':(exclude)README.md'` is zero bytes, so every non-README path
+  is byte-identical to the round-3-reviewed tree.
+- `git diff 8d5b2f4 7058b4a --stat` -> `README.md | 2 +-` alone: the port
+  commit's non-README content did not move under the amend.
+- Windows commit unchanged in patch and message: `git patch-id --stable` is
+  `fa535bcdb1581c76ec7a6c0f42742391d843d388` for both d648004 and 5401278, and
+  `diff` of the two `%B` bodies is empty.
+
+The device tree therefore did not move; the fault-class verification from rounds
+1-3 (wave-size agnostic 16x16 blocks, no warp intrinsics/PTX/half2/cg::reduce,
+no textures or managed memory, USE_ROCM-guarded build-time edits only, CUDA path
+byte-identical) carries over verbatim and is not repeated.
+
+### Round-3 finding -- CLOSED
+
+`README.md:105` now ends the prose paragraph with "That selector and the wheel
+index used below cover Linux only; on Windows, install a Windows ROCm build of
+PyTorch from a source that ships one and then follow the same steps." It sits
+before the fence, so a Windows reader meets it ahead of the
+`--index-url .../rocm6.4` line at `:110` rather than after the `# Windows only`
+lines at `:113-114`, which was the exact dead end reported.
+
+Both halves of the sentence were re-verified from the sources rather than
+inherited from the porter's note or the round-3 record:
+
+- `download.pytorch.org/whl/rocm6.4/torch/` -> 118 wheels, zero `win_amd64`;
+  `.../torchvision/` -> 176 wheels, zero `win_amd64`. Also zero `-none-any`
+  wheels in either listing, so there is no platform-agnostic fallback for pip to
+  land on; the current entries are `manylinux_2_28_x86_64` (e.g.
+  `torch-2.9.1+rocm6.4-cp312-cp312-manylinux_2_28_x86_64.whl`) and the only
+  non-Linux tags are torch 0.1.x `macosx` stubs from 2017. With `--index-url`
+  (not `--extra-index-url`) that is the whole search space, so "the wheel index
+  used below cover[s] Linux only" is accurate as written.
+- The selector at `https://pytorch.org/get-started/locally/` carries the literal
+  matrix entries `"stable,pip,windows,rocm5.x,python"` and
+  `"preview,pip,windows,rocm5.x,python"` -> "ROCm is not available on Windows"
+  (same for the two libtorch rows), so its ROCm coverage is Linux-only too and
+  extending the claim to the selector is correct.
+- "from a source that ships one" is not vacuous: the two Windows validations
+  built against TheRock `rocm-sdk` wheels with torch 2.9.1+rocm7.14
+  (notes.md:543-551), so a Windows ROCm PyTorch demonstrably exists. Naming no
+  index keeps the sentence inside what this port has actually installed.
+
+Commit message stays accurate: `7058b4a`'s README bullet now reads "notes that
+the wheel index shown ships Linux wheels only so a Windows reader has to obtain
+a Windows ROCm build of PyTorch elsewhere", which describes the added sentence
+and nothing more. Title 66 chars, `[ROCm]` prefix, AI assistance disclosed, no
+`Co-Authored-By`, no AMD-internal references; Windows title 65 chars, unchanged.
+
+### Not blocking
+
+- On Windows the sentence hands the reader torch but is silent on torchvision,
+  which `:110` bundles on the Linux path. Not a defect in this section: the
+  block's subject is building the submodules, and their `setup.py:13,15` import
+  only `torch`; torchvision is reached solely by `render.py:18`,
+  `metrics.py:16` and `lpipsPyTorch/modules/networks.py:7`, i.e. the eval
+  scripts, and a Windows reader who has just been told the index is Linux-only
+  will source it the same way they sourced torch. Worth a clause if the section
+  is ever revised, not worth a fifth round.
+- `moatlib.py classify op43dgs d648004 5401278` -> `class=doc-only
+  arch_independent=True inert=True`, "no changes". GPU evidence at this head is
+  still owed from the round-1 `setup.py` delta (classified `mixed`); this round
+  adds nothing to it and its absence is not a review finding.
+- `jargon.py --port op43dgs` clean, `moatlib.py audit-commits op43dgs` clean,
+  added line is ASCII (README's only non-ASCII is upstream's news section at
+  :25-44), working tree clean (integrity gate), local `moat-port` equals
+  `origin/moat-port`, fork `main` still 728de13.
