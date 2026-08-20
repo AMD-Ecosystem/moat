@@ -7,16 +7,13 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:23:49Z",
-  "updated_at": "2026-08-20T18:31:45Z",
-  "head_sha": "100d2e7152ec3755c37b3af8d2242932f6c0ffeb",
+  "updated_at": "2026-08-20T18:34:49Z",
+  "head_sha": "fc841498fe82b1743e9c00f57a7651b003fff1d7",
   "depends_on": [],
   "pr_url": "https://github.com/m-schuetz/CuRast/pull/2",
   "pr_number": 2,
   "pr_opened_at": "2026-06-11T22:03:10Z",
-  "porting": {
-    "arch": "linux-gfx1100",
-    "since": "2026-08-20T18:31:45Z"
-  },
+  "porting": null,
   "waivers": {},
   "pr_state": "open",
   "license_clearance": {
@@ -27,7 +24,7 @@
   },
   "license_spdx": "AGPL-3.0",
   "upstream_repo_id": 1218117255,
-  "stage": "reviewing",
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -65,7 +62,7 @@
       "validated_sha": "302cb5fe2791ea138648c93c7258ba666f29257b",
       "started_at": "2026-06-05T14:00:17Z",
       "completed_at": "2026-06-23T22:20:12Z",
-      "updated_at": "2026-08-20T18:31:45Z",
+      "updated_at": "2026-08-20T18:34:49Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -155,7 +152,7 @@
   },
   "porting_released": {
     "arch": "linux-gfx1100",
-    "since": "2026-08-20T18:25:24Z",
-    "at": "2026-08-20T18:30:36Z"
+    "since": "2026-08-20T18:31:45Z",
+    "at": "2026-08-20T18:34:49Z"
   }
 }

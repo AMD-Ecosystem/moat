@@ -1768,3 +1768,69 @@ amend; pushed, head_sha advanced to fc84149).
 Rebuild + bench at fc84149 on linux-gfx1100: 0 errors, bench rc=0, 30 frames,
 966461/966461 triangles visible, best pipeline 0.159 ms (unchanged).
 jargon.py clean on --port, --commits, --diff.
+
+## Re-review 2026-08-20 (fc84149, response to Review 2026-08-20)
+
+Verdict: **review-passed**. All three findings are fixed; the fix commit
+introduces nothing else. Reviewed `git diff 100d2e7..fc84149` (3 files, +11/-11)
+plus the whole delta `moat-port..moat-fix-2` re-checked for regressions.
+
+### Findings closed
+
+- High (src/main.cpp:220-221): both sites now read
+  `cuMemcpyHtoD(HIP_DEVPTR_ADD(points->cptr_positions, startIndex * sizeof(vec3)), ...)`.
+  `cuda_to_hip.h` is included at src/main.cpp:14, well before the use, so the macro
+  resolves on both backends: `(hipDeviceptr_t)((uint8_t*)p + off)` on HIP and
+  `(CUdeviceptr)p + off` on CUDA -- the same byte offset, and on NVIDIA literally the
+  integer arithmetic upstream wrote. Independently confirmed gone from the build:
+  agent_space/curast_fix3_build.log has 0 occurrences of `-Wpointer-arith` (219 warnings,
+  0 errors), where the pre-fix log had the pair at exactly those lines.
+- Medium: the porter response records the real counts and links the full log. The 219 vs
+  my 234 is just scope -- the post-fix run rebuilt main.cpp and CuRast.cpp only, so the
+  TUs it did not touch keep their (unused-result/deprecated/overflow) warnings out of the
+  count. No discrepancy.
+- Low: whitespace-only noise against upstream is now ZERO in
+  src/kernels/triangles_translucent.cu (`git diff` and `git diff -w` against 55c9a26 agree
+  exactly: 51/5) and down from 7 to 2 line-pairs in src/CuRast_render.h. I checked what the
+  2 are and agree they are intentional: the re-indent of
+  `vector<shared_ptr<VKTexture>> attachments = ...` inside the port's `if(view.framebuffer)`
+  headless guard, and the brace block wrapping upstream's `kernel_clearFramebuffer` call so
+  `cargs_` can be declared. Both are unavoidable when wrapping upstream code in a new block,
+  and both are already in the published tip (302cb5fe carried 5 such line-pairs against its
+  own upstream base), so this round adds none.
+
+### Bookkeeping corrected during this review
+
+`head_sha` still read 100d2e7 although moat-fix-2 had been pushed to fc84149 (the porter
+response says it advanced, but the record did not). Corrected with
+`moatlib.py advance-head CuRast fc841498`. Without it the review verdict and the validators'
+revalidation would both have attached to the superseded, defective commit. Run `advance-head`
+in the same breath as the push next time.
+
+### Verified at fc84149
+
+- Re-ran the benchmark myself off the 18:28 binary (the fc84149 link) with the source tree
+  clean at fc84149: rc=0, 30 frames, 966461 of 966461 triangles visible every frame, best
+  visbuffer pipeline 0.160 ms at 1920x1080 (the porter's 0.159 is the same run-to-run band).
+  hiprtc code objects match the record: resolve.cu 103056 B, triangles_visbuffer.cu 154112 B,
+  points.cu 6168 B.
+- The fix commit touches only the three files above and only the two `HIP_DEVPTR_ADD` lines
+  plus 9 whitespace lines; no other behavior changed. Everything verified in the first review
+  (merge fidelity, host-side counter zeroing, occupancy-vs-cooperative grid identity,
+  blockIdx.x substitution, attribute regions, CUDA-path preservation, absence of wave-size
+  exposure) is untouched by it.
+- Commit hygiene on fc84149: title 63 chars with the `[ROCm]` prefix, AI-disclosure line,
+  Test Plan with literal fenced commands, no `Co-Authored-By`/noreply trailer. jargon.py
+  clean on `--port`, `--commits moat-port..moat-fix-2` and `--diff moat-port..moat-fix-2`.
+- Fork state: moat-fix-2 = fc84149 = origin/moat-fix-2, working tree clean (integrity gate
+  satisfied), moat-port still 302cb5fe and PR #2 untouched.
+
+### Out of scope, recorded for a later round
+
+My bench run reproduces the known jpeg hiprtc failure: `src/jpeg/BitReaderGPU.cuh:4` and
+`src/jpeg/HashMap.cuh:10` fail with "unknown type name 'uint8_t'/'uint64_t'". That is
+pre-existing (recorded against earlier shas here since the first gfx90a run) and no file in
+this delta touches it, so it is not a finding against this round. Worth noting though that it
+is the SAME class this round fixed in src/types.h -- hiprtc does not predeclare the
+fixed-width types -- so the same one-line `#include <cstdint>` in those two headers is the
+likely fix whenever the jpeg-texture path is taken up.

@@ -133,3 +133,5 @@
 {"kind":"session","ts":"2026-08-20T18:24:29Z","epoch":1787250269.130188498,"event":"end","platform":"linux-gfx1100"}
 {"kind":"phase","ts":"2026-08-20T18:28:45Z","phase":"compile","seconds":13.020,"exit":0,"cmd":"bash -c HIP_VISIBLE_DEVICES=0 cmake --build /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build --target CuRast -j16 2>&1 | tee /var/lib/jenkins/moat/agent_space/curast_fix3_build.log | tail -2"}
 {"kind":"phase","ts":"2026-08-20T18:28:59Z","phase":"test","seconds":1.979,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/CuRast/src && HIP_VISIBLE_DEVICES=0 ROCM_PATH=/opt/rocm /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build/CuRast --bench ./example_donaukanal_urania.glb 1920 1080 30 2>&1 | tail -6"}
+{"kind":"session","ts":"2026-08-20T18:31:45Z","epoch":1787250705.410426389,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T18:34:55Z","epoch":1787250895.670152778,"event":"end","platform":"linux-gfx1100"}
