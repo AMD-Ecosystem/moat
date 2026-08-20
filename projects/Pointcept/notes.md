@@ -348,3 +348,113 @@ No warp intrinsics (confirmed per plan.md); explicit __syncthreads() at every FP
 - pointrope GPU/CPU: 2.47e-05 (fast-math; gfx90a: 9.06e-06). Both well within tolerance.
 
 Summary: windows-gfx1101 -> completed. Validated sha: b228f7c.
+
+## Round 2 (porter, linux-gfx90a, 2026-08-20): sparse-conv configs via spconv-triton
+
+Scope from deferral `pointcept-spconv-triton-e2e` (ruled `now`): enable the end-to-end
+sparse-conv model configs on ROCm. spconv is dispositioned already-supported with
+spconv-triton as the route.
+
+Base: the upstream PR (Pointcept#604) was squash-merged as upstream 2b97e6e, so the port
+branch's 95f4a51 is content-equivalent but not an ancestor of upstream main. Merged
+upstream main into the branch (merge commit 2abd848, tree identical to upstream main, no
+conflicts -- the merged ROCm content matched on both sides) so the new work sits on
+current upstream. Nothing was rebased or rewritten; 95f4a51 stays reachable.
+
+### The change (fork commit 87bc3e2)
+New `pointcept/models/utils/spconv.py`:
+
+```python
+import torch
+
+if torch.version.hip is None:
+    import spconv.pytorch as spconv
+else:
+    import spconv_triton.pytorch as spconv
+```
+
+The ten files that did `import spconv.pytorch as spconv` now do
+`from pointcept.models.utils.spconv import spconv` (oacnns uses the relative
+`from ..utils.spconv import spconv`; spconv_unet_v1m2 keeps its existing try/except +
+warning shape). CUDA path byte-equivalent: on a CUDA torch the branch takes the original
+import. README Installation gains `pip install spconv-triton` next to `spconv-cu124`.
+`environment.yml` deliberately untouched -- it is the cu124 environment file.
+
+API check: Pointcept uses only `spconv.{SparseModule,SparseSequential,SparseConvTensor,
+SubMConv3d,SparseConv3d,SparseInverseConv3d,Identity}` and
+`spconv.modules.is_spconv_module`. All present in spconv_triton.pytorch 1.0.0
+(`modules` is bound as a submodule attribute by its `__init__`).
+
+### Environment (gfx90a, ROCm 7.14 -- a different env from round 1's ROCm 7.2.1)
+torch 2.14.0a0+git7d05abc (source build), torch.version.hip 7.14.60850, triton 3.8.0,
+spconv-triton 1.0.0, HIP_VISIBLE_DEVICES=0 (MI250X).
+
+Deps installed for the test env only (never `--no-deps`-free, see the trap below):
+spconv-triton, timm 0.9.7 + torchvision (built from pytorch/vision main, CPU-only:
+`FORCE_CUDA=0 TORCHVISION_USE_NVJPEG=0 pip install . --no-deps --no-build-isolation`;
+timm imports `torchvision.ops.misc.FrozenBatchNorm2d` in every version that has
+`timm.layers`, so torchvision is not optional), torch_geometric **2.6.1** (2.8 raises
+"`voxel_grid` requires `pyg-lib>=0.6.0`", which breaks the OACNN config -- unrelated to
+ROCm), torch_scatter 2.1.2 and torch_cluster 1.6.3 built from sdist
+(`PYTORCH_ROCM_ARCH=gfx90a FORCE_ONLY_CUDA=1 pip install . --no-build-isolation --no-deps`),
+peft/transformers 4.50.3/tokenizers 0.21.1/wandb/yapf (imported by
+`pointcept/models/default.py` and `pointcept/engines/hooks`),
+`apt-get install -y libsparsehash-dev` for pointgroup_ops.
+
+torch_scatter 2.1.2 needed the SAME ROCm patch as round 1 (uint64 mask on the `at::Half`
+`__shfl_*_sync` wrappers, `SHFL_*_SYNC` macros routed through `__shfl_*_sync`,
+`FULL_MASK` widened) -- still required on ROCm 7.14. torch_cluster 1.6.3 needed no patch
+(no shuffle intrinsics).
+
+### GOTCHA: pip replaced the source-built ROCm torch (cost ~15 min)
+`pip install -q timm addict einops termcolor torch_geometric` (no `--no-deps`) silently
+uninstalled torch 2.14.0a0+git7d05abc and installed PyPI `torch 2.13.0+cu130`, the whole
+`nvidia-*` stack, `torchvision` (cu) and `triton` 3.7.1 over `triton` 3.8.0. The dev
+build is on no index, so pip cannot restore it. Recovered with
+`pip install --no-deps --force-reinstall /var/lib/jenkins/pytorch/dist/torch-2.14.0a0+git7d05abc-cp312-cp312-linux_x86_64.whl /opt/triton/triton-3.8.0+git675c5987-cp312-cp312-linux_x86_64.whl`.
+Use `--no-deps` for every install on this host and check
+`python -c "import torch; print(torch.version.hip)"` afterwards. Promoted to the
+`cuda-to-rocm` skill (`references/strategy-b-torch.md`).
+
+Pre-existing env quirk, not caused by this round: torch was built against numpy 1.x while
+the env has numpy 2.5.2, so `torch.from_numpy` raises "Numpy is not available". The
+drivers below build tensors directly with torch and are unaffected.
+
+### End-to-end sparse-conv evidence (real GPU, gfx90a)
+`agent_space/pointcept_sparse_conv_e2e.py` builds each config through
+`Config.fromfile` + `pointcept.models.build_model` and runs 20 AdamW steps on synthetic
+point clouds (2 samples x 20000 unique voxels):
+
+```
+cd projects/Pointcept/src
+HIP_VISIBLE_DEVICES=0 PYTHONPATH=. python3 agent_space/pointcept_sparse_conv_e2e.py --steps 20
+```
+
+- sparse conv backend reported: `spconv_triton.pytorch` (confirms the ROCm branch is live)
+- semseg-spunet-v1m1-0-base:            loss 3.0215 -> 0.7382. PASS
+- semseg-oacnns-v1m1-0-base:            loss 3.0642 -> 0.7587. PASS
+- insseg-pointgroup-v1m1-0-spunet-base: loss 5.3189 -> 2.0398. PASS
+
+So spconv-triton IS a drop-in on gfx90a (wave64): no kernel faults, no missing ops,
+forward+backward finite through submanifold, strided and inverse sparse convolution and
+through PointGroup's clustering (which also exercises libs/pointgroup_ops on GPU).
+gfx1100/gfx1101/gfx1201 (wave32) remain unverified -- that is the validators' job now.
+
+Layer-level smoke, independent of Pointcept (`agent_space/spconv_triton_smoke.py`):
+SubMConv3d + SparseConv3d(stride 2) + SubMConv3d + SparseInverseConv3d over 20000 voxels,
+output finite, input grad finite and nonzero, 20-step SGD loop runs. PASS.
+
+### Regression: the libs/ ops still build and pass (ROCm 7.14 / torch 2.14)
+```
+export HIP_VISIBLE_DEVICES=0 PYTORCH_ROCM_ARCH=gfx90a
+cd libs/<lib> && python setup.py install     # pointops, pointops2, pointgroup_ops, pointrope
+```
+All four build (pointgroup_ops after `libsparsehash-dev`). pointops2 in-tree op tests
+(`yes "" | python test_<...>.py` from `libs/pointops2/functions/`): 7/8 EXIT 0,
+max sq err 2.33e-10 (rpe v2/v3), attn_grad 2.59e-21, v_grad 3.39e-21, table_grad 9.56e-17.
+`test_attention_op_step2.py` EXIT 1 on the same pre-existing upstream `NameError: name 'x'`
+as every earlier platform. No regression from this round's change (it touches no libs/ code).
+
+Reminder from round 1 still applies: the build leaves untracked `*_hip.cpp` /
+`*_hip_kernel.*` / `kernels.hip` hipify artifacts next to the CUDA sources. They are
+generated; never git-add them.
