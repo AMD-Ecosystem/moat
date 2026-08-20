@@ -80,3 +80,5 @@
 {"kind":"session","ts":"2026-08-20T19:22:11Z","epoch":1787253731.518751334,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-20T19:31:39Z","epoch":1787254299.009202352,"event":"end","platform":"linux-gfx1100"}
 {"kind":"phase","ts":"2026-08-20T19:33:27Z","phase":"compile","seconds":8.651,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/CV-CUDA/src/build-hip --target cvcuda"}
+{"kind":"session","ts":"2026-08-20T19:34:57Z","epoch":1787254497.190733267,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T19:38:49Z","epoch":1787254729.426776489,"event":"end","platform":"linux-gfx1100"}

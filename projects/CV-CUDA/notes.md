@@ -987,3 +987,43 @@ launch-site wavefront floor covers all of them; gfx90a remains the first
 platform that actually exercises the changed branch.
 
 Round tip: 358edc33 (pushed). jargon clean three ways at the tip.
+
+## Review 2026-08-20 (c) (reviewer; final verification of `358edc33`)
+VERDICT: **review-passed**. B1 and B2 verified closed. Round goes to revalidation: gfx1100 at
+`358edc33`, and gfx90a, which is the first platform that actually exercises the R2 wavefront floor
+(watch `_/OpFindHomography.varshape_correct_output` at (8,16), (16,20), (25,40), and the sm=90 policy
+sites listed in Review 2026-08-20 R5).
+
+### B1 closed
+- `git diff be328991..358edc33` is ONE file, 7 lines, and `git diff -w` between the two shas is
+  EMPTY -- whitespace only, no token changed. The 7 lines are exactly the ones cited
+  (`resize_var_shape.cu` :640, :678, :865-869).
+- `clang-format 14.0.6 --style=file --dry-run -Werror src/cvcuda/priv/legacy/resize_var_shape.cu`
+  now exits clean, and so does the four-file command from `be328991`'s Test Plan. The file matches
+  `upstream/main`'s own clean state and is out of the sweep's scope.
+- The commit message no longer overclaims: it says the previous commit's claim was wrong, names the
+  file, the count, the cause (the AMD guard splitting an assignment-alignment group), the pinned
+  tool version, and "whitespace only; no code change" -- all four verified above. Its Test Plan
+  commands both pass.
+
+### B2 closed
+"Porter response 2026-08-20 (b)" records the corrected reachability: `reducef`'s one call site is
+`calculate_residual_norm` (`OpFindHomography.cu:508`), reached only from `computeModel` (:1022,
+:1138), so three of the five helpers were exposed to sub-wavefront blocks and the third is the
+residual-L2-norm reduction feeding Levenberg-Marquardt convergence. Matches what I measured.
+
+### No regression at the new tip
+Rebuilt at `358edc33` (fork tree clean) and re-ran on gfx1100, HIP_VISIBLE_DEVICES=2:
+`cvcuda_test_system` **3831 passed / 42 failed**, zero FindHomography failures; `cvcuda_test_unit`
+27 passed / 1 skipped / 0 failed -- identical to `be328991`, as a whitespace-only change should be.
+Branch state re-checked at the tip: 67-file port surface against `upstream/main`, zero deletions, no
+conflict markers, all 12 `[ROCm]` titles <= 65 chars, no forbidden trailers, ASCII throughout,
+`utils/jargon.py` clean on `--commits`, `--diff` and `--port`.
+
+### One thing for the publication step (NOT a defect, deliberately not sent back)
+`358edc33`'s body is hard-wrapped at ~72 columns, so `utils/prose.py` flags it; the other eleven
+commits on the branch use one line per paragraph. Not requested as a change: a message-only fix is
+impossible without rewriting a pushed staging branch, which would invalidate every sha now recorded
+here, and GitHub's commit view preserves hard wraps rather than reflowing them, so it renders
+correctly as-is. The rule bites on the PR title/body and any maintainer reply, which are drafted
+separately -- run `utils/prose.py` on those before publishing.
