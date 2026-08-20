@@ -845,3 +845,88 @@ Commands: `bash utils/timeit.sh CubbyFlow compile -- bash agent_space/build_hip.
 `bash utils/timeit.sh CubbyFlow test -- bash agent_space/run_sphsim.sh`,
 `bash utils/timeit.sh CubbyFlow cuda-compile -- bash agent_space/build_cuda.sh`.
 All exit 0. Result: PASS, `completed` at `29bac0b9b1e8981d9921446829f9c0df1b97f2fe`.
+
+## Revalidation linux-gfx90a 2026-08-20 (fix round, tip 29bac0b9b1)
+
+Platform: linux-gfx90a (AMD Instinct MI250X, gfx90a, ROCm 7.14 TheRock SDK via
+conda env `py_3.12`, clang 23.0.0 -- `/opt/conda/envs/py_3.12/lib/python3.12/
+site-packages/_rocm_sdk_devel`; this host has no `/opt/rocm`). HIP_VISIBLE_DEVICES=0
+(4 GCDs present, all idle). `classify` returned `class=unknown
+arch_independent=False (classification failed -> revalidate)`, so a full
+rebuild + real-GPU run was required (not a carry-forward candidate).
+
+No local fork clone existed on this host; cloned fresh
+(`git clone --branch moat-fix-145 --single-branch
+https://github.com/AMD-Ecosystem/CubbyFlow.git projects/CubbyFlow/src`,
+plus `git fetch origin main:main` afterward for jargon.py's diff range).
+`git rev-parse HEAD` = `29bac0b9b1e8981d9921446829f9c0df1b97f2fe`, matching
+`head_sha` exactly. Installed the protect-fork pre-push hook
+(`python3 utils/moatlib.py protect-fork CubbyFlow`). Tree clean throughout
+(`git status --porcelain` empty; only untracked `build/`).
+
+Bootstrapped a fresh vcpkg (this host had none): a `--depth 1` shallow clone
+of vcpkg FAILS `cmake --build` at configure time (`vcpkg install failed`,
+"vcpkg was cloned as a shallow repository... failed to git show
+versions/baseline.json" for every manifest port) because vcpkg's versioned
+baseline resolution needs full history, not just the tip tree. Full clone
+(`git clone https://github.com/microsoft/vcpkg.git`, no `--depth`) plus
+`./bootstrap-vcpkg.sh -disableMetrics` fixed it. Also needed `apt-get install
+autoconf-archive` (matches the gfx1100 note; libtool/zip/unzip/curl were
+already present on this host).
+
+### Build
+
+```
+export ROCM=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel
+export VCPKG_ROOT=/var/lib/jenkins/vcpkg
+cd projects/CubbyFlow/src
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=${ROCM}/lib/llvm/bin/clang++ \
+  -DBUILD_TESTS=ON -DBUILD_EXAMPLES=ON
+cmake --build build -j$(nproc)
+```
+
+PASS, 100%, all targets built cleanly (`bash utils/timeit.sh CubbyFlow
+compile -- bash agent_space/cubbyflow_gfx90a_build.sh`).
+
+### GPU tests
+
+```
+HIP_VISIBLE_DEVICES=0 ./build/bin/CUDATests
+```
+
+35/35 test cases, 3170/3170 assertions PASS -- exact match to the gfx1100
+fix-round evidence.
+
+```
+HIP_VISIBLE_DEVICES=0 ./build/bin/CUDASPHSim -f 5
+```
+
+5 frames written, 13824 particles, exit 0 -- exact match.
+
+### CPU regression tests
+
+```
+HIP_VISIBLE_DEVICES=0 ./build/bin/UnitTests
+```
+
+814/814 PASS in 168 suites -- exact match, no non-GPU regression.
+
+### CUDA no-regression gate
+
+Not re-run: already recorded PASS at this exact head_sha
+(`29bac0b9b1e8981d9921446829f9c0df1b97f2fe`) in the linux-gfx1100
+revalidation above (nvcc 12.8, `CMAKE_CUDA_ARCHITECTURES=80`, CubbyFlow/
+CUDATests/CUDASPHSim all build cleanly). The gate is per-head_sha, not
+per-platform.
+
+### jargon / documentation
+
+`python3 utils/jargon.py --port CubbyFlow` (from `/var/lib/jenkins/moat`,
+after `git fetch origin main:main` in the fork clone so the diff range
+resolves): clean. `Documents/Install.md:104-113` documents the ROCm/HIP
+build (`USE_HIP=ON`, `CMAKE_HIP_ARCHITECTURES`) in the same section as the
+CUDA build; unchanged by this revalidation.
+
+### Verdict: PASS -> completed at `29bac0b9b1e8981d9921446829f9c0df1b97f2fe`
