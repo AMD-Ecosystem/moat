@@ -923,3 +923,49 @@ that is injective in the index instead. Not promoted to the skill: it is a
 reviewing habit about this kernel's evidence, and the generalizable half
 (unsigned wrap in padded-thread index math, latent OOB that stops
 reproducing) is already in `references/fault-classes.md` from the last round.
+
+## Review 2026-08-20 (third round, message-only fix `fd06b97` -> `7e3c08b`)
+
+**Verdict: APPROVED.** No problems found. The single open finding of the
+re-review is closed and nothing else changed.
+
+Recomputed from scratch from `src_clean/VDW_Coulomb.cu:1538-1539`, not from the
+porter's derivation: with `NAdsorbateAtoms = 1327`, `-8*(int) InteractionIdx`
+is an `int` converted to `size_t` by the usual arithmetic conversions, so for
+`InteractionIdx = 883100` the argument is `(2^64 - 7064800) + 7038408 - 7 =
+18446744073709525217 = 2^64 - 26399`. Forward from there: `floor(sqrt/2 - 0.5)`
+is 2147483647, `AtomA` is the double `1325 - 2147483647.0 = -2147482322.0`
+whose 32-bit wrap is the probed 2147484974, and the `AtomB` expression with
+`N - AtomA` wrapping to 18446744071562067969 gives exactly 2305843010287440402,
+the probed value. 883100 > 879801 real pairs. Every number in `55d7c59`'s body
+reproduces.
+
+The "square root is 2^32 to within a rounding step" hedge is fair and is not a
+finding: `2^64 - 26399` rounds to the double `2^64 - 26624`, whose square root
+is 4294967295.9999967, about 7 ulps (3.3e-6) below 2^32 rather than one. The
+claim it supports is unaffected -- `floor(sqrt/2.0 - 0.5)` is 2147483647 for
+the computed value and for an exact 2^32 alike, and the body states that
+result explicitly rather than resting on the approximation.
+
+Also confirmed, no action: `git diff fd06b97 7e3c08b` is empty and both carry
+tree `ff186406cc62dbab135ec2dbf66c7bde30028efc`, so the gfx90a binary and
+nine-example run recorded in the Rescope section describe this tree; the second
+commit's message is byte-identical (`diff` of `%B`). The Rescope section and
+`.claude/skills/cuda-to-rocm/references/assess-existing-support.md:20` both say
+`2^64 - 26399` / 29 insertions, and `git diff --stat e4edfc2 7e3c08b` is
+`5 files changed, 29 insertions(+), 1 deletion(-)`. Remaining `2^64 - 27191`
+occurrences are confined to the dated Review/Re-Review/first-fix blocks, which
+correct themselves in place. Code re-verified unchanged: `MolA`/`MolB` are
+declared at `VDW_Coulomb.cu:1482-1483`, assigned only at 1547-1548 and read
+only at 1549, so hoisting the bounds test to 1546 cannot change the
+accepted-pair set or any energy. Hygiene: `jargon.py --port gRASPA` clean;
+titles 61 and 48 chars, both `[ROCm]`; AI-assistance disclosure and fenced Test
+Plan in both bodies; no `Co-Authored-By`/`Signed-off-by`/noreply trailer; ASCII
+throughout messages and diff; no AMD-internal account references; fork
+`origin/moat-port` is at `7e3c08b` and the worktree has only the untracked
+`src_clean/hip_main.x`.
+
+No GPU run exists at `7e3c08b`; expected at review time. Since the tree is the
+one already exercised on gfx90a, revalidation is a re-run for the sha rather
+than for new code, and Windows still owes the first check of the README flag
+recipe (see "For the next round" in the Rescope section).
