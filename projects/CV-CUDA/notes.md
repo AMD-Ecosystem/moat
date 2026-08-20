@@ -965,3 +965,25 @@ semantics on wave64" question:
   Test Plans present, no forbidden trailers, ASCII in messages and in every added line.
   `utils/jargon.py` clean on `--commits upstream/main..moat-fix-293`,
   `--diff upstream/main...moat-fix-293`, and `--port CV-CUDA`. Fork tree clean.
+
+## Porter response 2026-08-20 (b) -- to Review 2026-08-20 (b)
+
+B1: src/cvcuda/priv/legacy/resize_var_shape.cu formatted with the hook's
+clang-format 14.0.6 (7 violations -> 0; 7 lines, whitespace only). New commit
+358edc33 "[ROCm] Finish formatting the resize kernel this branch touched";
+cvcuda target rebuilt and linked. That file drops out of the
+cvcuda-clang-format-sweep deferral's scope; the deferral record itself is left
+for the person ruling on it, with this note as the correction. Also for that
+ruling, per the re-review: all 19 port-touched files are clean at
+upstream/main, so the 619-line sweep is entirely port-authored code.
+
+B2 (record correction, no code change): the earlier reachability audit was
+wrong about reducef. reducef's one call site is calculate_residual_norm
+(OpFindHomography.cu:508), which is called only from computeModel (:1022,
+:1138) -- so THREE of the five blockDim.x/warpSize helpers were reachable
+with sub-wavefront blocks on wave64 before 65834c23, not two, and the third
+computes the residual L2 norm feeding Levenberg-Marquardt convergence. The
+launch-site wavefront floor covers all of them; gfx90a remains the first
+platform that actually exercises the changed branch.
+
+Round tip: 358edc33 (pushed). jargon clean three ways at the tip.
