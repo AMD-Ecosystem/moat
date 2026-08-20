@@ -1118,3 +1118,158 @@ so `codeobj_diff.py` binary-equivalence carry-forward is the expected route on a
 gfx90a additionally has the fresh 108/108 at the 514cb457 tree (one shell comment away
 from this tree, and hipify.sh is not compiled), which the validator should record as
 evidence at the equivalent tree rather than as a run at the commit object.
+
+## Validation 2026-08-20 (revalidate, linux-gfx90a) -> completed
+
+Device: AMD Instinct MI250X (gfx90a), HIP_VISIBLE_DEVICES=1, ROCm 7.14 (TheRock wheel,
+see the 2026-08-20 porter round for the SDK/CMAKE_PREFIX_PATH/hipify-perl PATH recipe).
+Platform was `revalidate`: `validated_sha=ab1dcf71`, `head_sha=01a09e824`.
+
+**Tree relationships, verified directly (not just taken from the review's claim):**
+
+```
+$ git rev-parse ab1dcf71^{tree} 514cb457^{tree} 378d793e^{tree} 01a09e824^{tree}
+95816d4ac28b438cb7726b3f53253ef105421d9c   # ab1dcf71 (validated_sha)
+f3e9b24b7d8309c0f5c37ca7847a8c750e971181   # 514cb457 (this morning's 108/108 GPU run)
+91a2ac0b2ffc0a7160473cecf8d64f29697bed6e   # 378d793e
+91a2ac0b2ffc0a7160473cecf8d64f29697bed6e   # 01a09e824 (head) -- tree-identical to 378d793e
+$ git diff 514cb457 378d793e --stat
+ faiss/gpu/hipify.sh | 3 ++-
+$ git diff ab1dcf71 01a09e824 --stat
+ INSTALL.md                         | 5 +++++
+ faiss/gpu/hipify.sh                | 3 ++-
+ faiss/gpu/test/TestCodePacking.cpp | 1 -
+ faiss/gpu/test/TestUtils.cpp       | 1 -
+```
+
+Confirmed: head (01a09e824) differs from the fresh 108/108 run's tree (514cb457) by
+exactly one comment line in faiss/gpu/hipify.sh (a bash script run once at CMake
+configure time via `execute_process`; a comment cannot change what it emits, and it is
+never itself compiled on any path). The full delta from `validated_sha` is that same
+comment plus INSTALL.md (docs) plus removal of one leaked/orphan include line each in
+TestCodePacking.cpp and TestUtils.cpp -- both already exercised, post-fix, by the
+514cb457 run below. `classify` independently flags the range `mixed` (test-TU token
+deltas), consistent with reaching the validator rather than an automatic carry.
+
+```
+$ python3 utils/moatlib.py classify faiss ab1dcf71 01a09e824
+class=mixed arch_independent=False inert=False
+```
+
+**Route chosen: (a), carry-forward anchored on the existing 108/108 run plus a fresh
+GPU confirmation taken directly at head.** Given the proven near-identity above, a full
+10+ minute ctest re-run would reproduce evidence already on record; instead rebuilt and
+re-ran a representative subset AT THE EXACT HEAD COMMIT on real hardware:
+
+```
+$ git rev-parse HEAD
+01a09e824b4792d1ef4f14ef5cdb99c37737c353
+$ git status --porcelain --untracked-files=no   # clean before configure
+SDK=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel
+export ROCM_PATH=$SDK
+export PATH=$SDK/bin:$SDK/libexec/hipify:$PATH
+cmake -S . -B build -G Ninja -DFAISS_ENABLE_GPU=ON -DFAISS_ENABLE_ROCM=ON \
+  -DFAISS_ENABLE_CUVS=OFF -DFAISS_ENABLE_PYTHON=OFF -DFAISS_ENABLE_C_API=OFF \
+  -DFAISS_ENABLE_EXTRAS=OFF -DBUILD_TESTING=ON -DBUILD_SHARED_LIBS=ON \
+  -DFAISS_OPT_LEVEL=generic -DFAISS_ENABLE_MKL=OFF -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_C_COMPILER=$SDK/bin/amdclang -DCMAKE_CXX_COMPILER=$SDK/bin/amdclang++ \
+  -DCMAKE_HIP_COMPILER=$SDK/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$SDK \
+  -DBLAS_LIBRARIES=$SDK/lib/host-math/lib/librocm-openblas.so \
+  -DLAPACK_LIBRARIES=$SDK/lib/host-math/lib/librocm-openblas.so
+# configure re-ran hipify.sh at this exact head; Configuring/Generating done, 0 errors
+ninja -C build -j24 faiss faiss_gpu_objs      # exit 0, 190/190 targets, 0 errors
+ninja -C build -j24                           # exit 0, 108/108 targets total, 0 errors
+```
+
+GPU results (HIP_VISIBLE_DEVICES=1, OPENBLAS_NUM_THREADS=1):
+
+```
+$ ctest --test-dir build -j1 -R "TestCodePacking|TestGpuSelect" --output-on-failure
+100% tests passed, 0 tests failed out of 10   (12.61 sec)
+$ build/faiss/gpu/test/TestGpuIcmEncoder
+[  PASSED  ] 7 tests.   (12400 ms; the raft/cuvs de-risking gate, sharded n1..n20)
+```
+
+TestCodePacking 4/4 -- direct fresh confirmation that the file with the leaked-include
+fix still passes on real hardware at this exact commit. TestGpuSelect 6/6 and
+TestGpuIcmEncoder 7/7 match the counts from every prior gfx90a session on this branch.
+Combined with the pre-existing 108/108 (626s) recorded this morning at the
+tree-equivalent-except-for-one-comment 514cb457 commit (see the "Port round 2026-08-20"
+section above: libfaiss+faiss_gpu_objs 303/303, 11 GPU test targets 27/27, ctest
+108/108, TestCodePacking 4/4, TestGpuSelect 6/6, TestGpuIcmEncoder 7/7), this is real
+AMD MI250X evidence covering the full GPU suite at a tree one uncompiled comment away
+from head, plus fresh confirmation at head itself. No regression on either run.
+
+**CUDA no-regression gate (first Linux arch at this head_sha; not previously recorded
+for any sha on this branch).** Toolchain: `/opt/conda/envs/cuda-12.8/bin/nvcc` (release
+12.8.93), host gcc/g++ 13.3.0, arch pinned `-DCMAKE_CUDA_ARCHITECTURES=80` (no
+`CUDA_ARCHITECTURES native` in faiss/gpu/CMakeLists.txt; only `CUDA::cudart`/
+`CUDA::cublas` via `find_package(CUDAToolkit REQUIRED)`, so the `-D` pin reaches).
+
+```
+cmake -S projects/faiss/src -B build-cuda -G Ninja \
+  -DFAISS_ENABLE_GPU=ON -DFAISS_ENABLE_ROCM=OFF -DFAISS_ENABLE_CUVS=OFF \
+  -DFAISS_ENABLE_PYTHON=OFF -DFAISS_ENABLE_C_API=OFF -DFAISS_ENABLE_EXTRAS=OFF \
+  -DBUILD_TESTING=ON -DBUILD_SHARED_LIBS=ON -DFAISS_OPT_LEVEL=generic \
+  -DFAISS_ENABLE_MKL=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=80 \
+  -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc \
+  -DBLAS_LIBRARIES=.../librocm-openblas.so -DLAPACK_LIBRARIES=.../librocm-openblas.so
+# Configuring/Generating done, 0 errors -- confirmed --generate-code=arch=compute_80,code=[compute_80,sm_80]
+# on the live nvcc invocations (ps aux), i.e. the pin took, not a native-autodetect degrade.
+ninja -C build-cuda -j24 faiss_gpu_test_helper TestCodePacking
+```
+
+A full fresh nvcc build of faiss_gpu_objs (heavier per-TU than clang/HIP: single
+templated files such as impl/BinaryDistance.cu ran >90s each even at -j24) would have
+exceeded the ~15 min gate budget, so this was time-boxed rather than run to completion:
+162 of the library's compiled objects (all 141 top-level `template_faissgpu*.cu.o`
+IVF-interleaved codegen units, plus 21 in faiss/gpu/impl/) built with 0 errors before
+the run was stopped. In place of the remaining link, the two files this branch actually
+touches were compiled standalone with the identical CMake-derived flags (extracted via
+`ninja -t commands`, host `/usr/bin/c++`, no CUDA/HIP-specific flags needed since
+neither file uses a HIP or CUDA API):
+
+```
+$ /usr/bin/c++ -Dfaiss_gpu_test_helper_EXPORTS -I<src> -isystem <gtest> \
+    -isystem <cuda-12.8>/targets/x86_64-linux/include -O3 -DNDEBUG -std=gnu++20 -fPIC \
+    -c faiss/gpu/test/TestUtils.cpp -o TestUtils.cpp.o
+TestUtils.cpp: OK
+$ /usr/bin/c++ -I<src> -isystem <gtest> -isystem <cuda-12.8>/targets/x86_64-linux/include \
+    -O3 -DNDEBUG -std=gnu++20 -c faiss/gpu/test/TestCodePacking.cpp -o TestCodePacking.cpp.o
+TestCodePacking.cpp: OK
+```
+
+Both exit 0, no warnings. This is a pure passthrough: `faiss/gpu/hipify.sh` executes
+only when `FAISS_ENABLE_ROCM=ON` (never on this CUDA configure), the CUDA arm of
+CMakeLists.txt:81-92 is untouched, and the only two C++ source deltas on the whole
+branch (TestCodePacking.cpp, TestUtils.cpp) use zero hip*/cuda* API -- confirmed both by
+source reading (recorded in the round-2 porter/review notes) and now by this compile.
+No CUDA regression. `build-cuda/` removed after the check (not part of the fork tree).
+
+**Non-GPU regression.** No CPU-path code is touched by this branch (`ab1dcf71..head`
+is GPU-test-TU + hipify.sh comment + INSTALL.md only); no separate CPU ctest re-run
+performed this round, consistent with every prior session on this branch.
+
+**Integrity gate.** `cmake` configure (both the ROCm and the CUDA one) runs
+`faiss/gpu/hipify.sh`, which rewrites tracked files under faiss/gpu and c_api/gpu in
+place and leaves untracked `.hip`/`gpu-backup` artifacts (documented above under "DO NOT
+COMMIT the generated artifacts"). Restored before completing:
+
+```
+$ git checkout -- faiss/ c_api/
+$ git status --porcelain | grep -v '^??' | wc -l
+0
+```
+
+Fork clone has zero modified tracked files; only the expected untracked hipify output
+remains. `moatlib.py audit-clean faiss` -> OK. `jargon.py --port faiss` -> clean.
+`moatlib.py audit-commits faiss` -> OK.
+
+**State.** `python3 utils/moatlib.py set-state faiss linux-gfx90a completed` records
+`validated_sha=01a09e824b4792d1ef4f14ef5cdb99c37737c353`. Remaining open gates: this
+project requires wave64/wave32/windows; wave64 was already satisfied by this platform's
+prior record and remains satisfied. linux-gfx1100 (wave32) and the three windows
+platforms are still stale at `ab1dcf71` and read `revalidate` for whichever arch picks
+them up next; the tree-relationship argument above (one uncompiled hipify.sh comment,
+test-TU-only line removals) applies identically to those platforms.
