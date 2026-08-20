@@ -7,18 +7,21 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-08-20T18:18:16Z",
+  "updated_at": "2026-08-20T18:19:45Z",
   "head_sha": "e994ef0b441d5502b07cd58e21a0fc2489eccec3",
   "depends_on": [],
   "pr_url": "https://github.com/symforce-org/symforce/pull/465",
   "pr_number": 465,
   "pr_opened_at": "2026-06-16T18:19:20Z",
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx1100",
+    "since": "2026-08-20T18:19:45Z"
+  },
   "waivers": {},
   "pr_state": "open",
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 444900243,
-  "stage": "changes-requested",
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -56,7 +59,7 @@
       "validated_sha": "e994ef0b441d5502b07cd58e21a0fc2489eccec3",
       "started_at": "2026-08-20T17:36:40Z",
       "completed_at": "2026-06-23T22:23:18Z",
-      "updated_at": "2026-08-20T18:18:16Z",
+      "updated_at": "2026-08-20T18:19:45Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -70,7 +73,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer",
+      "last_agent": "porter:claude",
       "carry_forward": {
         "to": "e994ef0b441d5502b07cd58e21a0fc2489eccec3",
         "method": "source-class",
