@@ -7,7 +7,7 @@
   "priority": 6.361,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-08-08T03:42:59Z",
+  "updated_at": "2026-08-20T16:22:05Z",
   "head_sha": "444d12bbbbb625c50828cf509296c587fcdac674",
   "pr_url": "https://github.com/chrxh/alien/pull/710",
   "pr_number": 710,
@@ -132,6 +132,30 @@
         "detail": "Full GPU re-run on RX 9070 XT (gfx1201/RDNA4, wave64): ~3044 tests in scope, ~3039 PASSED, 3 SKIPPED, 2 FAILED (same documented non-bugs). BalanceTests+heavy ConstructorTests passed.",
         "at": "2026-06-25T00:48:56Z"
       },
+      "last_agent": "validator"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "444d12bbbbb625c50828cf509296c587fcdac674",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-08-20T16:22:05Z",
+      "updated_at": "2026-08-20T16:22:05Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
       "last_agent": "validator"
     }
   }

@@ -38,3 +38,6 @@
 {"kind":"phase","ts":"2026-08-08T03:38:18Z","phase":"compile","seconds":79.956,"exit":0,"cmd":"cmake --build /tmp/claude-1000/-var-lib-jenkins-moat/cac2074a-dc3d-4ccc-a639-f6184732c4ca/scratchpad/alien-old/build-old -j 16"}
 {"kind":"phase","ts":"2026-08-08T03:42:19Z","phase":"compile","seconds":97.246,"exit":0,"cmd":"cmake --build /tmp/claude-1000/-var-lib-jenkins-moat/cac2074a-dc3d-4ccc-a639-f6184732c4ca/scratchpad/wt-alien/projects/alien/src/build-old-samepath -j 16"}
 {"kind": "tokens", "ts": "2026-08-08T03:45:51Z", "tokens": 122520, "source": "validator"}
+{"kind":"session","ts":"2026-08-20T15:59:53Z","epoch":1787241593.991184800,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-20T16:09:10Z","phase":"compile","seconds":84.040,"exit":1,"cmd":"C:\\Users/<user>\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\LocalCache\\local-packages\\Python313\\Scripts\\cmake.exe --build D;C:\\Program Files\\Git\\Develop\\moat\\projects\\alien\\src\\build -j 16"}
+{"kind":"phase","ts":"2026-08-20T16:10:18Z","phase":"compile","seconds":24.792,"exit":1,"cmd":"C:\\Users/<user>\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\LocalCache\\local-packages\\Python313\\Scripts\\cmake.exe --build D;C:\\Program Files\\Git\\Develop\\moat\\projects\\alien\\src\\build -j 16"}

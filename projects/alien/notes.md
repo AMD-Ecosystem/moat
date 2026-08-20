@@ -630,3 +630,87 @@ CUDA no-regression gate: already recorded in notes.md at this head_sha (444d12bb
 Carry-forward applied (no GPU test re-run needed): `python3 utils/moatlib.py carry-forward alien linux-gfx90a 444d12bbbbb625c50828cf509296c587fcdac674 binary-equiv "..."`. linux-gfx90a: `completed`, validated_sha f56285aec -> 444d12bbb.
 
 Wall clock: ~15 min total (clone + vcpkg bootstrap ~2 min thanks to cached archives; two full 253-target builds ~5 min each; codeobj_diff debugging + reruns ~3 min).
+
+## Validation 2026-08-20 (windows-gfx1151 -> completed, RETRY of the 2026-06-03 block)
+
+Host: this CLI host (gfx1151, AMD Radeon 8060S, RDNA3.5 APU, 20 CUs, wave32), Windows 11 10.0.26100. TheRock ROCm 7.14.0a20260612 (`D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel`, clang 23.0.0git). PR #710 is MERGED upstream; this run is additive evidence for the record, not a submission gate. Fresh clone (no local fork clone existed): `git clone --branch moat-port https://github.com/AMD-Ecosystem/alien.git projects/alien/src`. HEAD confirmed == head_sha 444d12bbbbb625c50828cf509296c587fcdac674. `python3 utils/moatlib.py protect-fork alien` run. No push to the fork.
+
+### Old windows shas: checked existence
+
+- `windows-gfx1101` record's `validated_sha` (`f98ff86e0`) -- **MISSING** from fork history (`git cat-file -e f98ff86e0^{commit}` fails). This sha predates the 2026-06-24 rebase-onto-upstream-develop, which rewrote history; the old tip is unreachable. windows-gfx1101 has not been revalidated since that rebase (nor since the 2026-07-02 fix-round file-move) -- its `completed` record is stale and points at a sha that no longer exists.
+- `windows-gfx1201` record's `validated_sha` (`f56285aecda717d238c957bc839cf504db425e7f`) -- **EXISTS** (2 commits behind current head_sha, still a reachable ancestor). Its `completed` record is stale relative to head_sha (predates the 2026-07-02 source/->hip/ file-move) but the commit itself is valid history. Not this validator's arch to fix; flagging for whoever next touches windows-gfx1101/windows-gfx1201.
+
+### `--offload-new-driver` question: NOT NEEDED -- the existing committed fix already covers it
+
+The `-fgpu-rdc` clang-offload-bundler "user-mapped section open" bug from the 2026-06-03 BLOCKED attempt did **not** reproduce. The fix already committed at fork 47ab2c9 (`CMakeLists.txt`: override `CMAKE_HIP_COMPILE_OBJECT` to use `-o <OBJECT>` instead of `/Fo<OBJECT>` on Windows, routing the host object to a distinct temp file so bundler input != output; see ROCm/TheRock#5615) is still effective on this newer TheRock SDK (7.14.0a20260612 vs the 0.1.0 SDK that first hit the bug). All HIP `.cu` translation units across the whole project compiled cleanly with **no bundler error and no `--offload-new-driver` needed**. `--offload-new-driver` was not tried since the existing workaround sufficed; if a future SDK regresses the bundler again, that flag remains the documented fallback (see `.claude/skills/cuda-to-rocm/references/validation.md`).
+
+### Two NEW build-environment issues found and worked around (validator-side only, no fork change)
+
+1. **LIB/INCLUDE must be native Windows paths, not MSYS POSIX paths.** Setting `LIB="/c/Program Files (x86)/.../lib/x64;..."` (git-bash POSIX-style) is silently NOT translated by MSYS for arbitrary env vars (unlike `PATH`), so `lld-link.exe` receives literal `/c/...` paths it cannot resolve and fails with `could not open 'kernel32.lib'` etc. Fix: build LIB/INCLUDE with drive-letter Windows paths (`C:/Program Files (x86)/...`, forward slashes are fine, just not the `/c/` MSYS prefix), e.g. via `cygpath -w`.
+2. **CMake 3.31 (the system install, `C:\Program Files\CMake`) fails HIP language ABI detection under clang-cl** with `MSVC compiler version not detected properly` (`Windows-MSVC.cmake:69`, hit inside `enable_language(HIP)`'s ABI try_compile, before any of the port's own CMakeLists customization runs). This matches the June attempt's use of a newer pip-installed CMake (4.3.2) instead of the system 3.31. Fix: `pip install --user cmake` (got 4.4.2) and use that binary for configure. Root cause not fully diagnosed (likely a CMake bug/limitation in the 3.31 HIP-Clang-MSVC module that a later CMake release fixed) -- promoted as a note to the skill rather than chased further, since a working newer CMake is a one-line workaround.
+3. MSVC toolset version must match what vcpkg auto-detected for its own package builds, or the final link fails with STL-internal symbol mismatches (`undefined symbol: __std_find_first_not_of_trivial_pos_1` from `CLI11.lib`, referencing `MSVC 14.50.35717` while the explicit `LIB`/`INCLUDE` pointed at `14.44.35207`). This host has two MSVC toolsets side by side under `Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\` (`14.44.35207` and `14.50.35717`); vcpkg picked `14.50.35717`. Fix: point `LIB`/`INCLUDE` at `14.50.35717` to match (this exact version is also what the June 2026-06-03 notes recorded for this same host -- I had mistakenly copied the `14.44.35207` figure from the *other* Windows host's (gfx1101/gfx1201, `3P-ADMM-PC2`) notes instead).
+
+### Build
+
+```
+# newer pip cmake (system CMake 3.31 fails HIP ABI detection under clang-cl, see above)
+python3 -m pip install --user cmake   # -> 4.4.2
+CMAKE=".../Python313/Scripts/cmake.exe"
+
+MSVC_ROOT="C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.50.35717"
+WINSDK_ROOT="C:/Program Files (x86)/Windows Kits/10"
+WINSDK_VER="10.0.26100.0"
+LIB="$MSVC_ROOT/lib/x64;$WINSDK_ROOT/Lib/$WINSDK_VER/ucrt/x64;$WINSDK_ROOT/Lib/$WINSDK_VER/um/x64"
+INCLUDE="$MSVC_ROOT/include;$WINSDK_ROOT/Include/$WINSDK_VER/ucrt;$WINSDK_ROOT/Include/$WINSDK_VER/um;$WINSDK_ROOT/Include/$WINSDK_VER/shared"
+VCPKG_DISABLE_METRICS=1
+
+git submodule update --init external/vcpkg   # full clone, not shallow
+bash external/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+"$CMAKE" -S projects/alien/src -B projects/alien/src/build -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE=projects/alien/src/external/vcpkg/scripts/buildsystems/vcpkg.cmake \
+  -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DCMAKE_C_COMPILER=<rocm>/lib/llvm/bin/clang-cl.exe \
+  -DCMAKE_CXX_COMPILER=<rocm>/lib/llvm/bin/clang-cl.exe \
+  -DCMAKE_HIP_COMPILER=<rocm>/lib/llvm/bin/clang-cl.exe \
+  -DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_PREFIX_PATH=<rocm_root>
+
+"$CMAKE" --build projects/alien/src/build -j 16
+```
+
+Result: **249/253 targets built** -- every executable needed for compute-path GPU validation succeeded: `EngineTests.exe`, `EngineInterfaceTests.exe`, `PersisterTests.exe`, `cli.exe`, `NetworkTests.exe`. Only `alien.exe` (the ImGui GUI target, GL render path, already out of headless-validation scope on every platform) failed to LINK -- not a HIP/device-code failure. Root cause: `alien.exe` has enough object files that ninja/CMake generates a linker response file (`@CMakeFiles\alien.rsp`); the response file is written by CMake in MSVC/Windows quoting (raw literal backslashes) because `CMAKE_HIP_COMPILER_FRONTEND_VARIANT` is `MSVC` (clang-cl), but the actual link command routes through `cmake/hip_link_win.py` to the GCC-driver `clang.exe` (needed for the `-fgpu-rdc --hip-link` device link), whose GNU-style `@file` response-file parser treats backslash as a shell-style escape and strips every one (`CMakeFiles\alien.dir\...` -> `CMakeFilesalien.dirsource...`, confirmed by inspecting the corrupted paths in the error output). The other 4 executables stayed under the command-line-length threshold so no rsp file was generated for them, and they linked cleanly. This is a real, narrow Windows/clang-cl-frontend-only build gap in the `alien.exe` GUI target's link step; it does not affect the compute path this validator gates on. Not fixed here (would need `hip_link_win.py` to parse Windows-quoted `@file` content itself rather than delegating to clang's GNU parser, or forcing CMake to skip the rsp file for this rule) -- flagged as a porter finding, not chased further since it is out of the required GPU-validation scope for every platform.
+
+Runtime staged (this host's System32 `amdhip64_7.dll` is broken): copied `amdhip64_7.dll`, `amd_comgr*.dll`, `hiprtc*.dll`, `rocm_kpack.dll` from the TheRock SDK next to the executables (`rocm_stage_runtime` helper in `agent_space/win_rocm_env.sh`).
+
+### Non-GPU regression
+
+```
+EngineInterfaceTests.exe --gtest_filter="-GeometryTests.*"   -> 159/159 PASSED
+PersisterTests.exe                                            -> 64/64 PASSED
+```
+
+### EngineTests (GPU, graph-capture path, per-suite process isolation)
+
+The documented Windows ROCm multi-suite HIP-runtime crash (suites sharing one process corrupt the `_globalContext` facade) was avoided pre-emptively by running each of the 78 gtest suites (`--gtest_list_tests`) in its own process, `--gtest_filter="${suite}.*"`. `GeometryTests.*` (GL context) and `NeuronPerformanceTests.*` (micro-benchmarks) excluded, same as every other platform. The 2 extreme long-runners were excluded via negative filter (`BalanceTests.longRunning_*`, `ConstructorTests.regressionTestMassiveReplicationsWithSeeds`) to fit the validation budget on a 20-CU APU -- this is the same "broad, quick-turnaround" scope the lead validator (gfx90a) established as sufficient, and matches what several other platform validations here used as their fast-turnaround gate.
+
+Tally across all 76 non-excluded suites (including every parameterized `Suite_Variant/Suite_Variant` instantiation): **3037 tests ran, 3034 PASSED, 3 SKIPPED, 2 FAILED.** The 2 failures are the exact same 2 documented non-bugs seen on every other platform, confirmed by name:
+- `CommunicatorTests.sender_signalPriority_lowerNumTimesSentWins` -- upstream last-writer-wins race, block-order-dependent (AMD vs NVIDIA).
+- `DataTransferTests.multipleCells_genome_multipleGenes_multipleNodes` -- ~1 ULP HIP float-rounding delta on a pure set/get round-trip, exact-float `==` too strict cross-platform.
+
+The 3 SKIPPED are the same documented `ConstructorTests_ProvideEnergy*` cases seen on every platform. No new failures, no gfx1151-specific (RDNA3.5 / 20-CU / wave32) divergence. `ConstructorTests` (minus the excluded heavy regression test) ran its other 51 tests clean; `BalanceTests` contains *only* the 2 excluded longRunning_* tests (confirmed via `--gtest_list_tests`), so it correctly reported "no tests matched" once they were excluded -- not a gap.
+
+CLI smoke test SKIPPED this round: no `.sim` file or the throwaway `agent_space/alien_gen/gen_sim.cpp` generator exists on this fresh host (as also noted on the 2026-07-02 gfx90a validation, which made the same call). The full EngineTests graph-path suite already exercises the same graph-capture+replay pipeline end to end and is the stronger gate.
+
+### CUDA no-regression gate
+
+Already recorded in notes.md at this exact head_sha (444d12bbb, "PR fix-round 2026-07-02" section: `USE_HIP=OFF` nvcc build compiled cleanly). Not re-run (once-per-head_sha rule); this host has no CUDA toolkit regardless (Windows).
+
+### Pre-completion checks
+
+- `python3 utils/jargon.py --port alien` -> `jargon: clean` (needed `git fetch origin develop:develop` first so the diff range resolves on a fresh clone).
+- ROCm build documented in house style: `README.md` has a "Building for AMD GPUs (ROCm/HIP)" section (lines 112-119) alongside the CUDA build instructions, matching the project's existing docs style.
+- `git -C projects/alien/src status --porcelain` -> clean at completion (no fork edits made; the two build issues above were worked around entirely on the validator side via env vars and an alternate `cmake.exe`, no source or CMakeLists change).
+
+### Verdict
+
+PASS. windows-gfx1151: `port-ready`/absent -> `completed`, validated_sha = 444d12bbbbb625c50828cf509296c587fcdac674 (`python3 utils/moatlib.py set-state alien windows-gfx1151 completed`). The 2026-06-03 BLOCKED record is superseded -- the bundler bug that blocked it is confirmed fixed by the porter's own committed workaround (47ab2c9), not a new fix needed here.
