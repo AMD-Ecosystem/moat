@@ -79,3 +79,8 @@
 {"kind":"phase","ts":"2026-08-20T19:03:45Z","phase":"cuda-compile","seconds":0.027,"exit":1,"cmd":"/opt/conda/envs/cuda-12.8/bin/nvcc -arch=sm_80 -c nvcc_memops.cu -I /var/lib/jenkins/moat/projects/symforce/src/symforce/caspar/source/runtime -o nvcc_memops.o"}
 {"kind":"phase","ts":"2026-08-20T19:03:55Z","phase":"cuda-compile","seconds":4.511,"exit":0,"cmd":"/opt/conda/envs/cuda-12.8/bin/nvcc -arch=sm_80 -c /var/lib/jenkins/moat/agent_space/symforce-checks/nvcc_memops.cu -I /var/lib/jenkins/moat/projects/symforce/src/symforce/caspar/source/runtime -o /var/lib/jenkins/moat/agent_space/symforce-checks/nvcc_memops.o"}
 {"kind":"session","ts":"2026-08-20T19:05:11Z","epoch":1787252711.607451226,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T22:18:46Z","epoch":1787264326.371234826,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-20T22:20:00Z","phase":"compile","seconds":0.138,"exit":1,"cmd":"cmake -S symforce/caspar/source/runtime -B /var/lib/jenkins/moat/agent_space/symforce_build_gfx90a_1a9e9770 -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a"}
+{"kind":"phase","ts":"2026-08-20T22:20:10Z","phase":"compile","seconds":2.903,"exit":0,"cmd":"cmake -S /var/lib/jenkins/moat/projects/symforce/src/symforce/caspar/source/runtime -B /var/lib/jenkins/moat/agent_space/symforce_build_gfx90a_1a9e9770 -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a"}
+{"kind":"phase","ts":"2026-08-20T22:20:23Z","phase":"compile","seconds":10.220,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/agent_space/symforce_build_gfx90a_1a9e9770 -j16"}
+{"kind":"session","ts":"2026-08-20T22:22:37Z","epoch":1787264557.671536276,"event":"end","platform":"linux-gfx90a"}
