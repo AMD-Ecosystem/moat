@@ -1308,3 +1308,64 @@ exit.
   delta from the round-1 fixes classified `mixed`, so all four platforms
   revalidate next regardless of what this round changes. A README-only fix for
   the item above classifies inert and adds nothing to that.
+
+## Porter 2026-08-20 (linux-gfx1100) -- review round 3, d648004 -> 5401278
+
+Answers the round-3 review's single finding (the ROCm block implied a Windows
+path whose first command, the `download.pytorch.org/whl/rocm6.4` install, has no
+Windows wheel). One sentence appended to the prose paragraph at `README.md:105`,
+i.e. before the fence rather than inside it, so a Windows reader hits it ahead of
+line 110 instead of after the `# Windows only` lines:
+
+> That selector and the wheel index used below cover Linux only; on Windows,
+> install a Windows ROCm build of PyTorch from a source that ships one and then
+> follow the same steps.
+
+Deliberately still names no Windows wheel index. The reviewer endorsed the
+previous round's reasoning (notes.md:1151-1154, notes.md:1278-1280) and the two
+Windows validations used TheRock `rocm-sdk` wheels, not a PyTorch index, so
+"from a source that ships one" is the strongest claim the evidence supports.
+The sentence also covers the selector at the same time: pytorch.org answers
+Windows+ROCm with "ROCm is not available on Windows", so pointing a Windows
+reader at it alone was the other half of the same dead end.
+
+Re-verified the index claim independently rather than inheriting it:
+
+```
+curl -s https://download.pytorch.org/whl/rocm6.4/torch/       | grep -c win_amd64   # 0 of 118 wheels
+curl -s https://download.pytorch.org/whl/rocm6.4/torchvision/ | grep -c win_amd64   # 0 of 176 wheels
+```
+
+Same series shape as the last two rounds: the README section is owned by the
+port commit, so the edit was amended into it (`8d5b2f4` -> `7058b4a`) and the
+Windows commit cherry-picked on top (`d648004` -> `5401278`). `pr_state=none`,
+so the series is still ours to shape and no published tip was rewritten.
+Verification that nothing but the README moved:
+
+- `git diff d648004 5401278 --stat` -> `README.md | 2 +-`, and the same diff
+  filtered to non-README paths is empty.
+- `git diff 8d5b2f4 7058b4a --name-only` -> `README.md` alone.
+- Windows commit `git patch-id --stable` is `fa535bcd...` before and after, and
+  `diff` of the two `%B` bodies is empty.
+
+`moatlib.py classify op43dgs d648004 5401278` -> `class=doc-only
+arch_independent=True inert=True`, "no changes", so no rebuild was run and this
+round adds nothing to the revalidation already owed from the round-1 `setup.py`
+delta. The tree the four platforms revalidate is byte-identical to the one built
+and tested at d745b771.
+
+The port commit message's README bullet grew a clause for the new sentence (the
+wheel index ships Linux wheels only, so a Windows reader obtains a Windows ROCm
+PyTorch elsewhere), keeping the message an accurate description of what the
+commit does. No other message change; title still 66 chars.
+
+Checks before push: `utils/prose.py` clean on the section, `jargon.py --port
+op43dgs` clean, `audit-commits` clean, added line is ASCII (the file's only
+non-ASCII is upstream's news section at :25-44), working tree clean (integrity
+gate), fork `main` untouched at 728de13. Pushed with
+`--force-with-lease=moat-port:d648004...`. `d648004` kept locally as tag
+`prev-head-3` in the clone for classification.
+
+No skill lesson this round: the finding is specific to this README's choice of
+wheel index, and the general form (do not document a platform whose toolchain
+you have not installed from the source you cite) is already covered.
