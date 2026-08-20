@@ -7,15 +7,12 @@
   "priority": 6.245,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-08-20T21:37:48Z",
+  "updated_at": "2026-08-20T22:19:42Z",
   "head_sha": "318c524fddce51be5a53351d926bbadac1d68034",
   "pr_url": "https://github.com/LeelaChessZero/lc0/pull/2420",
   "pr_number": 2420,
   "pr_opened_at": "2026-06-11T07:21:22Z",
-  "porting": {
-    "arch": "windows-gfx1151",
-    "since": "2026-08-20T21:16:09Z"
-  },
+  "porting": null,
   "waivers": {
     "windows": {
       "reason": "WITHDRAWN by the 2026-08-20 root-cause investigation -- DO NOT APPROVE. The earlier case for this waiver ('the obstacle is the Windows ROCm toolchain, a gfx-specific rocBLAS/Tensile fallback kernel for the value head's small GEMM shapes') has been FALSIFIED. The defect is a latent host-side stream-ordering bug in lc0's own weight-upload path, not a toolchain defect, and it is fixable in the port. allocAndUpload (src/neural/backends/cuda/layers.cc) launches copyTypeConverted on the legacy null stream, reading the shared scratch buffer, and returns without waiting; every compute stream is created cudaStreamNonBlocking so nothing orders that copy against the first evaluation, which overwrites the same scratch. The last upload of the last-constructed layer -- the value head's ip2_val_b_ -- loses the race, so exactly one 3-float bias is corrupted while every computed tensor around it is exact. Windows HIP loses this race deterministically where Linux HIP wins it. Measured on windows-gfx1151 at head 7727fa3: the dense-2 GEMM output equals a host double-precision reference exactly, the device bias reads -1.40802431 0.55243015 0.00000000 against the net's 0.43719077 -0.98977518 0.55311656, and adding cudaStreamSynchronize(0) at the end of allocAndUpload takes the gate check from 0/222 to 222/222 passing (value abs 6.0e-08, was 4.4e-02). rocBLAS/hipBLASLt was independently exonerated (ROCBLAS_USE_HIPBLASLT=0 changes nothing). Full evidence in projects/lc0/notes.md, section 'Investigation 2026-08-20 (windows-gfx1151) -- why Windows'. The correct route is a moat-fix-<pr#> round carrying the one-line fix, not a gate waiver; this suggestion is retained only to overwrite the falsified reasoning that stood here.",
@@ -34,7 +31,7 @@
   },
   "license_spdx": "GPL-3.0",
   "upstream_repo_id": 135489692,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -137,7 +134,7 @@
       "failed_sha": null,
       "started_at": "2026-08-20T20:49:17Z",
       "completed_at": null,
-      "updated_at": "2026-08-20T21:16:09Z",
+      "updated_at": "2026-08-20T22:19:42Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -163,7 +160,7 @@
   },
   "porting_released": {
     "arch": "windows-gfx1151",
-    "since": "2026-08-20T21:06:34Z",
-    "at": "2026-08-20T21:13:24Z"
+    "since": "2026-08-20T21:16:09Z",
+    "at": "2026-08-20T22:19:42Z"
   }
 }

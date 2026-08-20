@@ -197,12 +197,21 @@ plausible-magnitude foreign floats, and the bug VANISHING the moment you add a d
 readback (whose `hipDeviceSynchronize` supplies the missing ordering). Windows loses this
 race deterministically -- its KMD batches/defers submission -- where Linux HIP and CUDA
 land the tiny copy immediately and win it, so it presents as an OS-specific defect and
-invites a toolchain hunt. It is latent UB on CUDA too: fix it unconditionally, either by
-synchronizing stream 0 before the helper returns or by threading the real upload stream
-through, never behind a platform guard. (lc0: `allocAndUpload` in
+invites a toolchain hunt. It is latent UB on CUDA too, so fix it unconditionally, never behind a
+platform guard -- but fix it at the BOUNDARY, not in the helper you caught it in. Such a
+codebase usually has several upload paths sharing the shape (lc0 has six: `allocAndUpload`
+plus five `LoadWeights`/positional-encoding variants), and whichever one happens to run
+last depends on the network shape and the precision, so synchronizing the single helper
+your reproducer exercised leaves the same bug live for another input. Construction is
+single-threaded and every upload is null-stream ordered against every other, so ONE
+`hipStreamSynchronize(0)` at the end of construction, before the buffers the evaluation
+writes are allocated, covers all of them in the same one line. (lc0: `allocAndUpload` in
 `neural/backends/cuda/layers.cc` corrupting the value head's `ip2_val_b_`; the same 4.4e-02
 value error on gfx1101, gfx1151 and gfx1201 under Windows and absent on linux-gfx90a and
-linux-gfx1100, which had been misread as a rocBLAS/Tensile problem for two months.)
+linux-gfx1100, which had been misread as a rocBLAS/Tensile problem for two months. The
+first fix synchronized `allocAndUpload` alone; on a net WITH a moves-left head the last
+fp16 upload is `FCLayer<half>::LoadWeights` instead, which still corrupted the moves-left
+head while the value/policy gate passed 34/34.)
 
 **`hipFree` is synchronizing** (`hipFreeAsync` is not), so an explicit
 `hipDeviceSynchronize()` before it is redundant. (anari-visionaray)

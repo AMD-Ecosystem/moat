@@ -2079,3 +2079,128 @@ hang finding to the GPU itself.
 
 Re-measure `318c524`'s gate with the compute engine idle. Confirm no foreign PID holds
 `\GPU Engine(*engtype_Compute)\Utilization Percentage` before starting.
+
+## Round RESUMED 2026-08-20 -- `318c524` re-measured on an idle GPU (windows-gfx1151)
+
+Re-measurement of the paused round, per the section above. No code was changed: the tree
+was already at `318c524` and `git status --porcelain` was clean before and after. `moat-port`
+untouched at `7727fa3`. `lc0.exe` was fully rebuilt (134/134) so the binary provably matches
+the commit rather than the untrusted 14:34 binary.
+
+Build unchanged from the fix-round recipe (`build-hip-win-gfx1151`, TheRock ROCm Windows SDK,
+`--native-file=agent_space/lc0-win-native.ini`, `-Damd_gfx=gfx1151`).
+
+### The recorded gate reproduces exactly
+
+`hip()` vs `blas()`, graph capture at its DEFAULT (on), maia-1100, 15:03:18-15:04:25:
+
+```
+./lc0.exe backendbench --backend=check \
+  "--backend-opts=hip(),blas(),mode=check,atol=1e-3,rtol=1e-2,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz --start-batch-size=1 --max-batch-size=55 --batches=4
+```
+
+**222/222 `Check passed`, 0 failures**, exit 0. `mode=display` at batch 32: value abs
+**6.0e-08** rel 1.3e-06, policy abs 3.0e-07 rel 5.2e-06 -- digit-for-digit the pre-timeout
+`df2c56a` numbers. `meson test`: **8/8 OK** (`ChessBoard` 25.8s, rest sub-second).
+
+### The moves-left path IS now measured, and the review's finding 1 is confirmed by experiment
+
+Nets on this host were audited by decoding `format.network_format` out of each `.pb.gz`
+directly (varint walk, no generated bindings), rather than trusting file names:
+
+| net | `network` | `policy` | `moves_left` |
+|---|---|---|---|
+| maia1100 | 4 SE_WITH_HEADFORMAT | 2 CONVOLUTION | **absent (NONE)** |
+| n744706 | 4 SE_WITH_HEADFORMAT | 2 CONVOLUTION | **1 V1** |
+| t1-256x10 | 4 SE_WITH_HEADFORMAT | 3 ATTENTION | **1 V1** |
+| sv-t60-3010 | 4 SE_WITH_HEADFORMAT | 2 CONVOLUTION | absent (NONE) |
+| t78-net | **6 ATTENTIONBODY_WITH_HEADFORMAT** | 3 ATTENTION | 1 V1 |
+
+So maia-1100 structurally cannot reach `convMov`/`FCMov1`/`FCMov2`, exactly as the reviewer
+said, and `n744706` is the classic/SE-body-with-moves-left shape the finding named.
+
+`hip()` vs `blas()` check, `318c524`: **34/34** on `n744706` (batch 1-16, 2 batches) and
+**18/18** on `t1-256x10` (batch 1-8), 0 failures. Both re-run in a separate process at
+15:14:29-15:16:00 with identical results (`t1-256x10` at batch 1-16 gives 34/34).
+
+**But `backendbench --backend=check` never compares the moves-left head.**
+`src/neural/backends/network_check.cc` compares `GetQVal` (value) and softmaxed `GetPVal`
+(policy) only; `GetMVal` is on the same interface and appears in no comparison. A 34/34 pass
+on a moves-left net therefore says nothing about moves-left correctness. The second
+observable is `--show-movesleft`, which prints the head's output in the UCI info line.
+
+`{ uci; position startpos; go nodes 200 } | lc0 --show-movesleft --threads=1 --minibatch-size=1`,
+`n744706`:
+
+| build | `hip` (fp32) | `hip-fp16` (half) | `blas` reference |
+|---|---|---|---|
+| base `7727fa3` (control, rebuilt here) | 82 | **72 WRONG** | 82 |
+| **`318c524`** | **82** | **82** | 82 |
+
+The base control is the point. With the pre-fix source restored (that one file, everything
+else identical), `n744706` passes the value/policy gate **34/34** and simultaneously reports
+**moves left 72 against the reference's 82** in fp16. The defect the review predicted is real,
+it is invisible to the gate this round had been using, and `318c524` fixes it. fp32 was
+already correct on base, as predicted -- `FCLayer<float>::LoadWeights` bypasses scratch.
+
+This also matters because `hip-auto` is the highest-priority registration and selects `half`
+for any device reporting major >= 7, i.e. every gfx11 part, so fp16 is what users get while
+the recorded gate command pins `hip()` = fp32 (`network_cuda.cc:1381-1383`).
+
+fp16 tolerance note, so a later reader does not misread it: `hip-fp16()` vs `blas()` at
+`atol=1e-3,rtol=1e-2` reports 34/34 **`policy incorrect (but value ok)`** on `318c524`.
+That is ordinary fp16 rounding, not corruption -- `mode=display` gives value abs 3.6e-04
+rel 4.9e-03 (inside atol) and policy abs 6.9e-03 rel **3.4e-02** (outside rtol=1e-2). Read
+the magnitude, not the bit: it is two orders below the 4.4e-02 corrupted-constant signature.
+
+Not measured: `t78-net`, the only true attention-BODY net here, was not run.
+
+### Kernel_141 / VIDEO_ENGINE_TIMEOUT_DETECTED: 14 before, 18 after -- they recurred
+
+Baseline 14, newest 2026-08-20 14:36:55. After this session: **18**. Four new events, at
+**15:06:13, 15:07:32, 15:08:32 and 15:17:00**, all inside this run's window
+(15:03:18-15:17:05).
+
+What they were NOT: not during the heavy windows. Nothing fired during the 222/222 gate
+(15:03:18-15:04:25), the fp16 block (15:09:56-15:10:32) or the base control
+(15:11:48-15:12:52). Each of the four landed 2-13 s AFTER an `lc0.exe` process exited, i.e.
+around teardown, not during a long kernel. This is consistent with the gfx1151 teardown
+SIGSEGV pattern already on record for this host and inconsistent with "lc0 kernels exceed the
+60 s TDR window".
+
+Why the numbers are still trustworthy this time, which is a different judgement from the
+paused round's: every measurement was reproduced in a SEPARATE process in a timeout-free
+window and came out identical (222/222; 34/34 twice; M 82 twice on each of fp32 and fp16),
+every `lc0.exe` returned exit 0, no run reported a HIP error, and the base control produced
+the specific WRONG value predicted in advance (72) rather than noise. A GPU engine reset that
+was perturbing arithmetic would not reproduce four independent runs digit-for-digit, and
+would not corrupt only the one tensor the mechanism predicts.
+
+Still a live host issue for a person: the timeouts recur on an otherwise idle Radeon, so the
+paused round's "wait for a quiet GPU" precondition cannot actually be met on this machine.
+`WorkloadsSessionHost.exe` (PID 24164) still pegs a WDDM compute engine at ~94%, but that is
+the **NPU**, not the Radeon -- Task Manager shows GPU 0 idle, NPU 0 pegged, and the
+`\GPU Engine(*)` counters do not distinguish the two, so that counter must not be used to
+decide whether the Radeon is free.
+
+### Discrepancy in `318c524`'s own Test Plan, for the reviewer
+
+The commit body's Test Plan says "34 of 34 ... on a 128x10 classic-body network with a
+moves-left head, and 18 of 18 on a **256x10 attention-body** network with one", naming
+`744706.pb.gz` and `t1-256x10-distilled.pb.gz`. The pass counts reproduce exactly, but
+`t1-256x10` decodes as `NETWORK_SE_WITH_HEADFORMAT` with an ATTENTION POLICY head, not an
+attention BODY (`t78-net` is the attention-body net here), and the local files are
+`n744706.pb.gz` / `t1-256x10.pb.gz`. Upstream-visible text, so flagged rather than edited:
+`318c524` is above the published tip and is no arch's `validated_sha`, so it can still be
+amended if the reviewer wants the descriptor corrected.
+
+### Lessons promoted to the `cuda-to-rocm` skill in this change
+
+- `references/validation.md`, new section: read what a project's own cross-backend checker
+  actually compares, confirm the test input can reach the changed path, use a base control,
+  and watch the precision variant. Sourced from this round.
+- `references/fault-classes.md`: the existing null-stream entry recommended synchronizing
+  "before the helper returns", which this round measured to be INSUFFICIENT -- corrected to
+  fix at the construction boundary, since a codebase typically has several upload paths
+  sharing the shape and which one runs last depends on network shape and precision.

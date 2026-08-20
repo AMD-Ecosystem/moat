@@ -91,6 +91,21 @@ accumulation divergence rather than a port bug, and RDNA3.5 (gfx1151) is where i
 shown up. Record the error magnitude and stop rather than chasing it deep: the
 comparison that matters is against the other architectures, not against a fix.
 
+## Read what the project's own cross-backend checker actually compares
+
+A project that ships a "compare backend A against backend B" harness makes an attractive gate, but check which outputs it compares before trusting a pass, and check whether the test INPUT can reach the code you changed at all.
+
+Two independent ways such a gate silently proves less than it looks:
+
+- **It may compare a subset of the network's outputs.** lc0's `--backend=check` compares only the value and policy heads; `GetMVal` (moves left) is on the same interface and is never compared. A corrupted moves-left weight therefore passes the gate at 34/34 while the head itself is wrong. Grep the checker for every output accessor the interface exposes and confirm each one appears in a comparison.
+- **The chosen test input may not instantiate the code path.** The default lc0 test net (maia-1100) has no moves-left head at all, so no batch count on it can exercise moves-left uploads. Decode the input's own metadata to confirm the feature is present rather than inferring it from the file name -- for lc0, `format.network_format.moves_left` in the gzipped protobuf, which a ~30-line varint walk reads without the generated bindings.
+
+When the gate cannot see the path, find a second observable rather than reporting the gate's pass as coverage. lc0 exposes the missing one behind `--show-movesleft`, which prints the moves-left output in the UCI info line, so the same two backends can be compared on it directly.
+
+The decisive form of this evidence is a BASE CONTROL: rebuild the pre-fix source and show the gate passing while the second observable is wrong. On lc0 the pre-fix build passed 34/34 on a moves-left net and simultaneously reported moves left 72 against the CPU reference's 82 in fp16. That single pair is what turns a reviewer's argued finding into a measured one, and it costs one file's recompile when the fix is one file.
+
+Watch the precision variant too: a gate pinned to the fp32 backend can miss a defect that only exists in the fp16 one, and fp16 is often what the auto-selecting backend actually gives users. lc0 registers `hip` as fp32 and `hip-fp16` as half, and `hip-auto` picks half on every gfx11 part, so the recorded fp32 gate command was not testing the configuration users run. Expect an fp16-vs-CPU comparison to fail tight tolerances on ordinary rounding (policy relative 3.4e-02 here) and read the error MAGNITUDE rather than the pass/fail bit: rounding sits orders of magnitude below a corrupted-constant signature.
+
 ## Diagnosing a suspected AMD fault before escalating
 
 Two patterns that each cost a deep investigation before the real cause was found.
