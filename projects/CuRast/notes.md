@@ -1922,3 +1922,103 @@ still accurate.
 
 PASS. `moatlib.py set-state CuRast linux-gfx1100 completed --agent "validator:claude"`,
 recording `validated_sha = fc84149`.
+
+## Validation 2026-08-20 (linux-gfx90a revalidate -> completed at fc84149)
+
+GPU: AMD Instinct MI250X / MI250, gfx90a, 104 CUs (wave64), HIP_VISIBLE_DEVICES=3, ROCm 7.14
+(TheRock SDK, ROCM_PATH=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel).
+Starting state: revalidate (validated_sha=302cb5fe, head_sha=fc841498fe82b1743e9c00f57a7651b003fff1d7,
+fix round on branch `moat-fix-2`).
+
+### Delta analysis
+
+`python3 utils/moatlib.py classify CuRast 302cb5fe fc841498` -> `class=unknown
+arch_independent=False (classification failed -> revalidate)`. No standing local clone yet
+existed on this host, so no carry-forward shortcut was attempted anyway: the 302cb5fe..fc84149
+delta (documented above under "Fix round 2026-08-20" and the two review rounds) adds three new
+kernel modules (points.cu, triangles_translucent.cu, CubSort.cu/hipCUB), changes device-code
+guards on the visbuffer/translucent launch paths, and touches host pointer arithmetic
+(HIP_DEVPTR_ADD in main.cpp) -- clearly build-affecting on every arch, including gfx90a. Full
+GPU revalidation performed (no carry-forward).
+
+### Build
+
+No local fork clone existed on this host prior to this validation; cloned
+`https://github.com/AMD-Ecosystem/CuRast.git` into `projects/CuRast/src`, fetched and checked
+out `moat-fix-2` at `fc841498fe82b1743e9c00f57a7651b003fff1d7` (confirmed via `git rev-parse
+HEAD`). Installed the same apt dependencies recorded for earlier gfx90a runs, plus
+`libxcursor-dev` (bundled glfw dependency, per the fix-round notes above).
+
+```bash
+sudo apt-get install -y libturbojpeg0-dev libvulkan-dev libglfw3-dev \
+    libxkbcommon-dev libxinerama-dev libxi-dev libxrandr-dev libxcursor-dev
+
+HIP_VISIBLE_DEVICES=3 cmake /var/lib/jenkins/moat/projects/CuRast/src \
+    -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+    -B /var/lib/jenkins/moat/agent_space/CuRast-gfx90a-fix2-build
+HIP_VISIBLE_DEVICES=3 cmake --build \
+    /var/lib/jenkins/moat/agent_space/CuRast-gfx90a-fix2-build --target CuRast -j$(nproc)
+```
+
+Build: exit 0, 0 errors, 265 warnings (grep-counted). `grep -c Wpointer-arith` on the build log
+= 0, confirming the review's `HIP_DEVPTR_ADD` fix for the point-loader `cuMemcpyHtoD` offsets
+(the High finding from the 2026-08-20 review) resolves cleanly on gfx90a too, not just
+gfx1100. Remaining warnings are the pre-existing fread-return / nodiscard-hipError_t classes
+plus hipcub nodiscard notes on `CubSort.cu` (matches the class recorded for gfx1100). Binary:
+`CuRast` (4.66 MB).
+
+### GPU test
+
+```bash
+cd /var/lib/jenkins/moat/projects/CuRast/src
+HIP_VISIBLE_DEVICES=3 ROCM_PATH=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel \
+    /var/lib/jenkins/moat/agent_space/CuRast-gfx90a-fix2-build/CuRast \
+    --bench ./example_donaukanal_urania.glb 1920 1080 30
+```
+
+(Ran through `utils/timeit.sh CuRast test -- bash -c '...'` with an explicit `cd` into the fork
+checkout inside the wrapped command -- `timeit.sh` itself `cd`s to the MOAT repo root, so a
+relative asset path fails otherwise; same gotcha the linux-gfx1100 revalidation above recorded.)
+
+Results:
+- rc=0, 30 frames, 966,461 of 966,461 triangles visible every frame (all frames correct).
+- Best visbuffer-pipeline time: 0.262 ms @ 1920x1080 (prior gfx90a reference band: 0.269-0.297
+  ms across the c4e543e/08da182/ae95035 runs above -- no regression, run-to-run variance).
+- hiprtc code objects: resolve.cu 85,600 B, triangles_visbuffer.cu 148,528 B, points.cu 6,592 B
+  (points.cu is the new kernel from this fix round; compiles with zero errors on gfx90a, same
+  as recorded for gfx1100 at 6,168 B -- size differs by arch ISA, as expected).
+- bench_render.png: 265,691 bytes, 1920x1080 RGBA, 21,544 unique colors (via PIL), shows the
+  Donaukanal building scene, non-blank. PASS.
+- No GPU faults, no cooperative-launch failures, no early crash. A second short run
+  (640x480, 5 frames) also returned rc=0 cleanly.
+- jpeg/BitReaderGPU.cuh + HashMap.cuh hiprtc "unknown type name 'uint32_t'/'uint64_t'" errors
+  reproduced as expected: pre-existing (recorded since the first gfx90a run), unrelated to this
+  round's changes, same fault class as the src/types.h gotcha this round already fixed
+  elsewhere.
+- Translucent path (points.cu, triangles_translucent.cu, hipCUB radix sort) not exercised here
+  either -- same honest limitation the porter recorded: the bundled Donaukanal model has no
+  translucent (alpha) textures and `enableTranslucency` defaults to false, so
+  `drawTrianglesTranslucent` never constructs its runtime program. points.cu itself IS compiled
+  and run as part of the normal bench path evidenced above (drawPoints kernel).
+
+### CUDA no-regression gate
+
+Already recorded at this head_sha by linux-gfx1100 ("CUDA no-regression gate (not previously
+recorded at this head_sha)" above, in the "Revalidation linux-gfx1100 2026-08-20" section):
+GATE PASS, pure passthrough, pre-existing CUDA-13.1/`<print>` wall unchanged by this round.
+Runs once per head_sha; not repeated here.
+
+### Integrity gate
+
+`git -C projects/CuRast/src status --porcelain` clean (no modified tracked files) after the
+build and bench run -- nothing was patched on this host for this validation.
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --port CuRast` -> clean (checked `main`/`moat-port`/`moat-fix-2` all
+fetched locally first). README.md `### AMD GPUs (ROCm/HIP)` section already documents hipCUB
+alongside hiprtc (added in the fix round); unchanged by this validation, still accurate.
+
+### State transition
+
+linux-gfx90a: revalidate -> completed, `validated_sha = fc841498fe82b1743e9c00f57a7651b003fff1d7`.

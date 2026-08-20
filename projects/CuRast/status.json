@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:23:49Z",
-  "updated_at": "2026-08-20T18:41:17Z",
+  "updated_at": "2026-08-20T19:33:53Z",
   "head_sha": "fc841498fe82b1743e9c00f57a7651b003fff1d7",
   "depends_on": [],
   "pr_url": "https://github.com/m-schuetz/CuRast/pull/2",
@@ -30,10 +30,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "302cb5fe2791ea138648c93c7258ba666f29257b",
+      "validated_sha": "fc841498fe82b1743e9c00f57a7651b003fff1d7",
       "started_at": "2026-06-05T10:02:41Z",
-      "completed_at": "2026-06-11T21:38:21Z",
-      "updated_at": "2026-07-06T02:49:05Z",
+      "completed_at": "2026-08-20T19:33:53Z",
+      "updated_at": "2026-08-20T19:33:53Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -47,13 +47,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "porter",
-      "carry_forward": {
-        "to": "302cb5fe2791ea138648c93c7258ba666f29257b",
-        "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:20:12Z"
-      }
+      "last_agent": "validator:claude"
     },
     "linux-gfx1100": {
       "state": "completed",
