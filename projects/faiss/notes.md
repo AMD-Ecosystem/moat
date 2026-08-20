@@ -692,3 +692,125 @@ that arch's re-test is already satisfied in substance. The delta for the other f
 tiny and test-only: one removed include line (which their own hipify step re-inserts
 at configure), one removed `<time.h>`, and an INSTALL.md bullet. libfaiss device code
 is untouched by all of it -- a binary-equivalence carry-forward should apply cleanly.
+
+## Review 2026-08-20 (reviewer, linux-gfx90a) -> changes-requested
+
+Scope: full review of all three commits on moat-port, `git diff 0c72755ec...HEAD`
+(the 2026-06-01 review predates the two Windows commits, so nothing here is a delta
+review). Fork clone clean: `git status --porcelain` shows zero modified tracked files;
+every `.hip` / `gpu-backup` entry is untracked configure output. Integrity gate OK
+(`moatlib.py audit-clean faiss`).
+
+Two problems, both in upstream-visible text, both fixable in one porter round.
+
+### 1. faiss/gpu/hipify.sh:79 -- the comment still carries the claim this round proved false
+
+    # undo the doubled hip/ prefix hipify-perl (ROCm 7.x) emits for device_functions.h
+
+"ROCm 7.x" is exactly the over-broad claim the porter caught and corrected in commit
+a509e6a8b's message ("Some hipify-perl releases map ... Observed on ROCm 7.2.1; ROCm
+7.14 emits the correct path already, so the fix is a no-op there"). The in-source
+comment was not updated with it, so the branch now asserts two different things about
+the same sed. Re-confirmed empirically this session on this host's ROCm 7.14
+(`_rocm_sdk_devel/libexec/hipify/hipify-perl` on the pristine
+`faiss/gpu/utils/PtxUtils.cuh`): the output is `#include <hip/device_functions.h>`,
+correct, no doubled prefix. Drop the version parenthetical or scope it the way the
+commit message does -- e.g. "undo the doubled hip/ prefix some hipify-perl releases
+emit for device_functions.h (observed on ROCm 7.2.1)". A Meta reviewer reading only
+the script would otherwise be told the wrong affected range.
+
+### 2. Commit bd1809f32 -- Test Plan has no commands and no fenced block
+
+AGENTS.md requires a Test Plan "with literal commands in fenced blocks". bd1809f32's
+Test Plan is a prose lead-in plus an indented results table; there is no ``` fence and
+no command anywhere in the body. The other two commits (a509e6a8b, 514cb4577) both do
+this correctly. The repository's own gate agrees:
+
+```
+$ python3 utils/moatlib.py audit-commits faiss
+faiss bd1809f: Test Plan has no fenced command block
+```
+
+Note that `pr_ready` does NOT call `commit_message_problems`, so nothing downstream
+catches this before publication -- only `check.py`'s slow `commits` gate and this
+review. Add the fenced build/run commands the message already describes in prose (the
+Windows gfx1151 recipe, or at minimum the Linux gfx90a `TestCodePacking` re-check it
+cites).
+
+### Control-plane defect riding on this branch (not the fork)
+
+utils/check.py:605, from c3e02db (`check: gate the commit-message rules on fork
+branches`), duplicates its own trailing comment and strips the one it moved:
+
+    "forks": (gate_forks, True),
+    "commits": (gate_commits, True),   # slow: shells out per fork clone      # slow: shells out per fork clone
+
+The `forks` entry lost its explanatory comment and the `commits` entry carries two
+copies of it. Cosmetic, but it merges to `main` with this port branch.
+
+### Checked and clean (no action -- recorded so the next round does not re-derive it)
+
+- **No unguarded HIP in CUDA-compiled files.** Of the whole branch diff, only three
+  added lines mention hip/rocm/amd/gfx: the two in `faiss/gpu/hipify.sh` (a script that
+  runs only from the `FAISS_ENABLE_ROCM` arm of CMakeLists.txt:87) and the INSTALL.md
+  bullet. The leaked `#include "hip/hip_runtime.h"` is gone from
+  `faiss/gpu/test/TestCodePacking.cpp:1`; the file now opens on the Meta copyright
+  header. The only HIP includes left in tracked `faiss/`/`c_api/` source are
+  `faiss/gpu/utils/Float16.cuh:28-29`, inside the pre-existing
+  `#if !defined(USE_AMD_ROCM) ... #else` arm, untouched by this branch.
+- **Both test-file changes are nvcc-portable standard C++.** TestCodePacking.cpp uses
+  only `<random>`; TestUtils.cpp swaps `<time.h>` for `<chrono>`.
+- **The hipify sed is correct, scoped and idempotent.** Anchored on the full literal
+  `#include <hip/hip/device_functions.h>`, so it cannot over-match `hip/hip_runtime.h`;
+  a no-op once applied, and a no-op on ROCm 7.14 (verified above). It sits in the
+  `hipify_dir()` post-hipify loop beside the existing hipblas/hiprand corrections, and
+  because that loop is relative to the cd'd directory it covers both `faiss/gpu` and
+  `c_api/gpu` (hipify.sh:118-124). The `cuh` extension is in the loop's list, so
+  PtxUtils.cuh is reached.
+- **uint8_t -> int distribution is behavior-preserving.** `uniform_int_distribution<uint8_t>`
+  default-constructs to [0, 255]; the replacement is explicitly `{0, 255}`. libstdc++
+  computes its range in `common_type<mt19937::result_type, make_unsigned<T>::type>` =
+  `uint32_t` for both `uint8_t` and `int`, so `__urange` is 255 either way and the
+  generated sequence is unchanged. All eight `dist(gen)` sites assign into `uint8_t` or
+  mask with `& mask`, so the widened type truncates identically. The tests seed from
+  `std::random_device` anyway, so no sequence identity is relied upon.
+- **INSTALL.md bullet is accurate and in house style.** Two-space indent, backticked
+  option, parenthetical doc link, trailing comma -- parallel to the
+  `-DCMAKE_CUDA_ARCHITECTURES` entry three bullets above, placed immediately after the
+  `-DFAISS_ENABLE_ROCM` entry. Multi-arch example `"gfx90a;gfx942"` pins nothing.
+- **ROCm fault classes have nothing to say about this delta.** No device code is
+  touched: the four files are one shell script, one Markdown doc, and two host-only
+  test TUs. No warpSize/32 literal, no texture or resource handle, no neighbor read, no
+  pitch, no library swap, no per-arch branch anywhere in the diff. Strategy is
+  unchanged and correct (faiss's own configure-time hipify driver, ROCm gated behind
+  `FAISS_ENABLE_ROCM` default OFF; the CUDA arm of CMakeLists.txt:88-92 is untouched).
+- **Message hygiene otherwise clean.** `jargon.py --port faiss`: clean. Titles 67 / 58 /
+  61 chars, all `[ROCm]`-prefixed. All three bodies disclose AI assistance. No
+  `Co-Authored-By`, no noreply trailer, ASCII throughout, no AMD-internal account
+  reference. a509e6a8b's Test Plan uses `$ROCM_PATH`, not a literal `/opt/rocm`.
+- **The promoted lesson is correct.** `.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md:114-130`
+  (on this branch, from d18d46c) claims hipify-perl prepends
+  `#include "hip/hip_runtime.h"` and is non-idempotent for that insertion. Both
+  reproduced here on ROCm 7.14: one pass over the pristine TestCodePacking.cpp inserts
+  exactly that line at line 1 and changes nothing else; a second pass adds a SECOND
+  copy. The entry's advice (delete, do not guard) follows from that.
+
+### gfx90a evidence at 514cb457 -- substantively sound, with one caveat for the validator
+
+The porter's 108/108 run is real: `build/Testing/Temporary/LastTest.log` ends
+"Aug 20 05:15 UTC" with 108 `Passed` and zero failures. But the three commits were
+re-created at 05:17 (committer date), i.e. AFTER that run, so the run was not against
+the 514cb457 commit object. The reflog is
+`ab1dcf710 -> 8c98cf861 ("rebuild") -> 514cb4577 ("rebuild2")`, and
+`git diff 8c98cf861 514cb4577` is INSTALL.md alone (+5 lines). So the compiled source
+tree at test time is identical to 514cb457's except for a Markdown file. The evidence
+carries; the validator should record it as such rather than as a run at the commit.
+
+### Platforms needing validation
+
+Nothing is validated at 514cb457. All five platforms still record
+`validated_sha = ab1dcf71`: linux-gfx90a, linux-gfx1100, windows-gfx1101,
+windows-gfx1151, windows-gfx1201. Fixing the two findings above advances head again,
+so the porter should land both before any validator starts. The resulting delta stays
+test/doc/build-glue only, so a binary-equivalence carry-forward remains the expected
+route for the four non-gfx90a arches.

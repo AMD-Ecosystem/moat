@@ -72,3 +72,4 @@
 {"kind":"phase","ts":"2026-08-20T05:04:32Z","phase":"compile","seconds":9.893,"exit":0,"cmd":"cmake --build projects/faiss/src/build --target TestGpuSelect TestGpuDistance TestGpuIndexFlat TestGpuIndexIVFFlat TestGpuIndexIVFPQ TestGpuIndexIVFScalarQuantizer TestGpuIndexBinaryFlat TestGpuResidualQuantizer TestGpuIcmEncoder TestGpuMemoryException TestCodePacking -j 32"}
 {"kind":"phase","ts":"2026-08-20T05:15:36Z","phase":"test","seconds":626.532,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/moat/projects/faiss/src/build -j1 -R TestGpu|TestCodePacking --output-on-failure"}
 {"kind":"session","ts":"2026-08-20T05:19:06Z","epoch":1787203146.119792380,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-20T05:22:03Z","epoch":1787203323.337344624,"event":"start","platform":"linux-gfx90a"}
