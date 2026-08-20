@@ -123,3 +123,4 @@
 {"kind":"phase","ts":"2026-08-20T23:29:04Z","phase":"compile","seconds":73.085,"exit":0,"cmd":"ninja -C /var/lib/jenkins/moat/projects/lc0/src/build-hip -j16"}
 {"kind":"phase","ts":"2026-08-20T23:30:38Z","phase":"test","seconds":85.440,"exit":0,"cmd":"meson test -C /var/lib/jenkins/moat/projects/lc0/src/build-hip"}
 {"kind":"phase","ts":"2026-08-20T23:37:54Z","phase":"cuda-compile","seconds":94.734,"exit":0,"cmd":"ninja -C /var/lib/jenkins/moat/projects/lc0/src/build-cuda -j16"}
+{"kind":"session","ts":"2026-08-20T23:39:09Z","epoch":1787269149.809159163,"event":"end","platform":"linux-gfx90a"}
