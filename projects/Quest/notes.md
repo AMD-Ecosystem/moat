@@ -1783,3 +1783,92 @@ done
 | `kv_len` sweep 17..1541, split forced | peak abs diff **2.4e-4**, std ratio **1.000** |
 
 Integrity: `git -C projects/Quest/src status --porcelain` clean at `f50e33a`.
+
+## Review 2026-08-20 (linux-gfx1100, delta `cbc3890..f50e33a`) -- CHANGES REQUESTED
+
+Problems only. Scope: the round's delta plus its interaction with the whole branch.
+Reviewed on a different host from the one that wrote `cbc3890`/`f50e33a`, so the conflict
+of interest declared in the 2026-08-19 review does not apply here. `pr-state Quest` is
+`none` and `status.json` has no `fix` block: this is the pre-PR branch, not a fix round.
+
+Re-verified and holding, so a later round does not redo them: `float_buffer_` really is a
+sound "partitioned" sentinel (`decode_handler.cuh:110` is the only assignment, ctor
+`:192` and `EndForward:161` null it), so finding 1 of the previous round is closed;
+`protective_get_v_ptr` has no caller (V comes from `k_ptrs[j] + kv_offset_delta()` at
+`decode_attn.cuh:545,622`), so the accessor retarget covers V; `protective_get_k_ptr_heads`
+still bounds the `indices` read at `page_iter < last_indptr - 1` (`decode_page.cuh:344`)
+against a `[num_kv_heads, page_budget]` array, so the extended indptr adds no out-of-bounds
+neighbour read; the estimate kernel uses the untouched `protective_get_k_ptr`
+(`decode_attn.cuh:301,344`) so `MaxPossibleSample` is unaffected; only the appended chunk
+can satisfy `cur_page_indptr_end == last_indptr` with a non-zero length, so the split shape
+is unchanged by construction; the `cp_async` fallback really is a synchronous `uint4` store
+(`kernels/3rdparty/flashinfer/include/flashinfer/cp_async.cuh:80,128`) with a `block.sync()`
+between every smem read and the write that reuses the stage, so the no-op
+`commit_group`/`wait_group` remain safe; `jargon.py --port Quest` is clean; all five titles
+are `[ROCm]`-prefixed and under 72 characters with no agent `Co-Authored-By` trailer.
+
+### 1. BLOCKING -- the launch-shape override has three silent no-op modes, so its own evidence cannot distinguish "both shapes ran" from "the override was ignored"
+
+`kernels/include/decode/decode_attn.cuh:871-880`. This is the whole point of the round, and
+nothing in the built artifact confirms it took effect.
+
+- `:876` -- an unrecognised value returns `0` and falls through to the occupancy decision.
+  `QUEST_DECODE_LAUNCH_SHAPE=Single`, `=SPLIT` or a typo is silently no override, and the
+  suite is green either way.
+- `:871` -- `static const int forced_shape` latches the first `getenv` per template
+  instantiation. Setting the variable in-process (the natural `monkeypatch.setenv` fixture
+  that "test-visible override" invites) reads the latched value and silently exercises the
+  wrong shape. This is a host setup path called once per `begin_forward`, so a plain
+  `std::getenv` per call costs nothing.
+- `:885-911` -- with `split` forced, the existing `if(new_batch_size == batch_size)
+  { tmp_size = 0; }` fallback at `:905` reverts to the single-block shape. It cannot fire
+  at the current `batch_size == 1` (`approx_attn.cu:33,78`, so `new_batch_size >= 2`), but
+  it is an unchecked path out of the requested shape.
+
+Nothing observable reports which shape ran. The pybind surface is `begin_forward`,
+`end_forward`, `forward` only (`bsk_ops.cu:18-23`, `bsk_ops.h:98-125`) -- no accessor for
+`tmp_size`, `float_buffer_` or the resolved shape -- and the `QUESTPATH` instrumentation
+that proved it for `cbc3890` was removed before committing. So the "121 passed in each of
+the three configurations" table (notes above, and f50e33a's Test Plan) is consistent with
+the override having done nothing in two of the three runs, and the same will be true of
+the gfx1100 and gfx90a runs that are the reason the override exists.
+
+Minimal fix, no new public API: in `BatchDecodeWithPagedKVCacheWorkEstimation`, hard-error
+on an unrecognised `QUEST_DECODE_LAUNCH_SHAPE` value, and hard-error when `split` was
+requested but `tmp_size` ends at `0`. Then a green three-configuration run is itself the
+proof. Drop the `static` while there. If you would rather assert positively from Python, a
+`partitioned()` getter on `BatchDecodeWithPagedKVCachePyTorchWrapper` returning
+`handler_.GetTempFloatBuffer<void>() != nullptr` works too, but it grows the upstream
+surface.
+
+### 2. The override is exercised by nothing in the tree and documented nowhere
+
+`grep -rn QUEST_DECODE_LAUNCH_SHAPE` over the fork returns exactly two lines, both inside
+`decode_attn.cuh` (`:868` comment, `:872` the read). No test uses it, `README.md`'s new
+ROCm section (`README.md:57-71`) does not mention it, and `plan.md`'s test plan
+(`plan.md:96-102`) does not either. So the coverage it buys depends on a validator reading
+`f50e33a`'s commit body, and an upstream maintainer sees an undocumented `getenv` added to
+a vendored FlashInfer header by a `[ROCm]` commit, with no consumer. Either drive it from
+the test suite (a pytest that re-execs the decode/approx tests once per shape as
+subprocesses, which also sidesteps the latching in finding 1) or document it in the README
+ROCm section as a test/debug knob. Note it is not HIP-guarded, so it is a new runtime knob
+on the NVIDIA build as well; that is inert when unset, but it belongs in the same
+"changes NVIDIA behaviour" conversation as the recorded scope caveat.
+
+### 3. Recorded, not this round's to fix
+
+- `c1d7fff` still carries no AI-assistance disclosure (confirmed: the other four commits
+  match `AI coding agent`, `c1d7fff` does not). Registered as the unruled deferral
+  `quest-c1d7fff-missing-ai-disclosure`; a person rules it, not this review. Compounding
+  the case for the squash remedy: `9be60fc "[ROCm] Always split the decode KV range across
+  blocks"` is contradicted by `cbc3890`, which re-enables the single-block path, so an
+  unsquashed publication puts a self-reverting series in front of the maintainer.
+- The CUDA no-regression gate is still owed at this head. Independently checked here and
+  the previous round's risk assessment stands: `rapids_cuda_init_architectures` appears
+  nowhere under `quest/ops/cmake` and `fetch_rapids.cmake` only downloads `RAPIDS.cmake`,
+  so moving the `rapids-*` includes after `project()` has no known breakage vector. No
+  `nvcc` on this host either, so it stays owed rather than answered.
+- All three platforms carry `validated_sha` `9be60fc`, and `cbc3890` changed unguarded
+  shared decode code (`decode_attn.cuh:476`, `decode_page.cuh:337`,
+  `decode_handler.cuh:123-150`). The gfx1100 and gfx90a evidence does not carry to
+  `f50e33a`; both need a fresh run, and per finding 1 that run should cover both shapes.
