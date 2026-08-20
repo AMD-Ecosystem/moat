@@ -7,7 +7,7 @@
   "priority": 7.305,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-08-12T22:10:46Z",
+  "updated_at": "2026-08-20T18:32:17Z",
   "head_sha": "50bb2505b",
   "pr_url": "https://github.com/isl-org/Open3D/pull/7509",
   "pr_state": "open",
@@ -128,6 +128,30 @@
         "detail": "3rdparty/find_dependencies.cmake: comment-only (comments/format only); cpp/open3d/core/hashmap/CUDA/SlabMacros.h: comment-only (comments/format only); cpp/open3d/t/geometry/kernel/NPPImage.cpp: commen",
         "at": "2026-07-02T18:36:15Z"
       }
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": "50bb2505b",
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-20T18:32:16Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "validation-failed",
+      "last_agent": "validator"
     }
   },
   "published_sha": "50bb2505be991392f7cdfd040802db7bbf6ef2a8"

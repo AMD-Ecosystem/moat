@@ -861,3 +861,146 @@ doc-scrub together produce zero device ISA change on gfx90a. Carried forward to
 50bb2505b without GPU re-run.
 
 State: linux-gfx90a -> `pr-open` at validated_sha 50bb2505b (re-anchored).
+
+## Validation 2026-08-20 (windows-gfx1151) -- validation-failed (new, narrower blocker found)
+
+GPU: AMD Radeon 8060S (gfx1151, RDNA3.5 APU, 20 CUs, wave32), Windows 11,
+TheRock ROCm 7.14 pip SDK. First windows-gfx1151 attempt for this project;
+head_sha = 50bb2505b (moat-port, PR #7509 open -> fork frozen, no push made).
+`python3 utils/moatlib.py protect-fork Open3D` installed the pre-push hook.
+
+### 97390511 (old windows-gfx1201 validated_sha): confirmed gone from the fork
+`git fetch origin '+refs/*:refs/remotes/origin-all/*'` then
+`git cat-file -e 973905116^{commit}` -> "Not a valid object name". Also tried
+`git fetch origin 973905116` -> "couldn't find remote ref". The commit is an
+orphan: it was superseded by the 2026-07-02 rebase-onto-upstream/main
+force-push (moat-port head 973905116 -> 50bb2505b, see notes.md above), so no
+branch/tag reaches it anymore. GitHub REST API
+(`/repos/AMD-Ecosystem/Open3D/commits/973905116`) still returns the commit
+object (not yet garbage-collected server-side), but `git fetch` by sha is
+refused because it is unreachable/unadvertised. Practical takeaway: an
+orphaned pre-rebase sha is not a usable reference point once force-pushed
+over; only the API can still describe it, and that window is not guaranteed
+to last.
+
+### PRIMARY HYPOTHESIS CONFIRMED: USE_SYSTEM_* clears the bundled-3rdparty wall
+Installed the previously-missing vcpkg (D:/vcpkg, x64-windows triplet)
+packages on this host (network/TLS is fine here, unlike the gfx1101/gfx1201
+box TLS-revocation wall -- no X_VCPKG_ASSET_SOURCES workaround needed):
+
+    D:/vcpkg/vcpkg.exe install curl openssl pkgconf embree zeromq cppzmq --triplet x64-windows
+
+(tbb and jpeg/libjpeg-turbo were already present from the rmagine port.) All
+6 built cleanly in about 6 minutes total (curl 45s, embree the long pole).
+
+Configure script: agent_space/open3d_cfg_gfx1151_vcpkg.sh (gitignored,
+recipe here). Same shape as the gfx1201 vcpkg recipe (USE_SYSTEM_TBB/JPEG/
+OPENSSL/CURL/EMBREE/ZEROMQ=ON, PKG_CONFIG/PKG_CONFIG_PATH pointed at vcpkg
+pkgconf, CMAKE_TLS_VERIFY=OFF, STATIC_WINDOWS_RUNTIME=OFF, the NOMINMAX/
+WIN32_LEAN_AND_MEAN/_USE_MATH_DEFINES/WIN32 defines). This host uses
+D:/vcpkg (not B:/vcpkg) and TheRock ROCM_ROOT from
+agent_space/win_rocm_env.sh. Confirmed in the log: "Using installed
+third-party library 3rdparty_tbb", "3rdparty_jpeg", "3rdparty_openssl",
+"3rdparty_zeromq", "3rdparty_embree 4.4.1" all resolved from vcpkg; curl
+resolved via the libcurl pkg-config module. Embree came in at vcpkg 4.4.1 vs
+Open3D pinned 4.4.0, one patch version newer, no issue observed.
+
+### New blocker found and diagnosed: CMake never learned MSVC_RUNTIME_LIBRARY for the HIP language
+Two distinct CMake (not Open3D, not this port) issues, both stem from the
+same root cause and needed two separate workarounds:
+
+1. enable_language(HIP) ABI-detection try_compile fails: "MSVC compiler
+   version not detected properly". Root cause (confirmed via
+   CMakeConfigureLog.yaml): the top-level CMakeHIPCompilerId step succeeds
+   (clang-cl identifies as Clang 23.0.0, links CMakeHIPCompilerId.exe fine),
+   but the separate nested "Detecting HIP compiler ABI info" try_compile
+   fails its own inner cmake configure with an empty stdout and exit 1 before
+   ever reaching the message body -- a CMake 3.31 HIP+clang-cl(MSVC frontend)
+   support gap, not an environment problem (vcvars/INCLUDE/LIB were never the
+   issue; C and CXX ABI detection succeed with the identical compiler and
+   flags). WORKAROUND (validator-side, no fork change): skip ABI detection
+   entirely by pre-caching the two guard variables
+   CMakeDetermineCompilerABI.cmake checks with if(NOT DEFINED ...):
+
+       -DCMAKE_HIP_COMPILER_WORKS=1 -DCMAKE_HIP_ABI_COMPILED=1
+
+   This is safe: implicit link dirs/libs come from the already-successful
+   CompilerId step, not from ABI detection.
+
+2. Generate step fails: "MSVC_RUNTIME_LIBRARY value 'MultiThreadedDLL' not
+   known for this HIP compiler". Root cause (read directly from CMake own
+   Platform/Windows-MSVC.cmake, __windows_compiler_msvc(lang) macro): the
+   block that populates
+   CMAKE_<lang>_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_MultiThreaded{,DLL,Debug,DebugDLL}
+   is gated if("x${lang}" STREQUAL "xC" OR "x${lang}" STREQUAL "xCXX") -- HIP
+   is never populated, even though __windows_compiler_msvc(HIP) is called for
+   the clang-cl/MSVC-frontend path (Windows-Clang-HIP.cmake ->
+   Windows-Clang.cmake -> Windows-MSVC.cmake). Any project (Open3D included)
+   that sets CMAKE_MSVC_RUNTIME_LIBRARY (directly, or indirectly via
+   STATIC_WINDOWS_RUNTIME=OFF here) hits this the moment a HIP target uses
+   the generator-expression-driven runtime-library property under CMP0091
+   NEW. WORKAROUND (validator-side): supply the 4 missing flag-table
+   variables on the command line:
+
+       -DCMAKE_HIP_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_MultiThreaded=-MT
+       -DCMAKE_HIP_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_MultiThreadedDLL=-MD
+       -DCMAKE_HIP_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_MultiThreadedDebug=-MTd
+       -DCMAKE_HIP_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_MultiThreadedDebugDLL=-MDd
+
+   With both workarounds, cmake -S ... -B build_gfx1151 ... succeeds end to
+   end ("Build files have been written to ...").
+
+With both fixes the top-level configure and build proceed for real: ninja
+built fmt, googletest, glew, qhull, and 209/731 externalproject+object steps
+before hitting the same "MultiThreadedDLL not known for this HIP compiler"
+error again, this time inside stdgpu own nested cmake configure
+(ext_stdgpu-configure, "FAILED: ... stdgpu/src/ext_stdgpu-stamp/ext_stdgpu-configure").
+
+### Why the command-line workaround does not reach stdgpu
+stdgpu is the one bundled 3rdparty library Open3D itself builds with
+enable_language(HIP) (3rdparty/stdgpu/stdgpu.cmake, USE_HIP branch -- it is
+the hashmap/TSDF GPU backend, genuinely GPU-relevant, not host infra). It is
+built via ExternalProject_Add, a completely separate nested cmake invocation.
+3rdparty/find_dependencies.cmake:185 (ExternalProject_CMAKE_ARGS_hidden,
+forwarded to every ExternalProject_Add including stdgpu) unconditionally
+passes -DCMAKE_POLICY_DEFAULT_CMP0091:STRING=NEW and
+-DCMAKE_MSVC_RUNTIME_LIBRARY:STRING=${CMAKE_MSVC_RUNTIME_LIBRARY} through, so
+stdgpu nested build hits the identical CMake gap -- but ExternalProject_Add
+never auto-forwards arbitrary parent -D cache variables to the child cmake
+process (confirmed: no such forwarding exists in ExternalProject.cmake;
+CMAKE_ARGS/CMAKE_CACHE_ARGS must name every variable explicitly, and stdgpu
+list does not include the 4 flag-table vars). So the validator-side
+top-level -D workaround has no way to reach this nested configure without a
+fork source change: forwarding the same 4
+CMAKE_HIP_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_* variables into
+ExternalProject_CMAKE_ARGS_hidden (WIN32/Clang-gated, matching the house
+style of the 5 already-committed Windows fixes) in
+3rdparty/find_dependencies.cmake. That is a porter-scope fix, and moat-port
+is frozen behind open PR #7509 (would need a fix-branch round), so it is out
+of validator scope this session.
+
+### Scope covered vs not covered (be precise)
+Covered: configure end-to-end (all vcpkg USE_SYSTEM_* wiring verified against
+the actual build log); real compilation of fmt, googletest, glew, qhull,
+tinyfiledialogs and about 205 further steps under the all-clang-cl toolchain
+with the two CMake-HIP-on-Windows workarounds above. Not covered: no unit
+test binary was produced, no GPU kernel from this port own compat layer
+(CUDAToHIP.h, FAISS warp-select, stdgpu hashmap, etc.) was compiled or run.
+Zero of the 499 gate tests ran. This is a build-recipe finding, not a
+GPU-correctness pass -- do not read it as partial test coverage.
+
+### CUDA no-regression gate
+Skipped: this Windows host has no CUDA toolkit (nvcc absent, no /opt/conda
+cuda-toolkit env) and the gate is not yet recorded at this head_sha by any
+Linux validator. Left for whichever Linux arch validates next.
+
+### State
+windows-gfx1151: validation-failed at failed_sha 50bb2505b. Not the same
+block as windows-gfx1101/gfx1201 original bundled-3rdparty-under-clang wall
+(that one is now cleared here by USE_SYSTEM_*); this is a narrower, newly
+found CMake HIP-on-Windows generate-stage gap that recurs specifically in
+stdgpu nested ExternalProject build. Recommended fix for the next porter
+round: forward the 4 CMAKE_HIP_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_*
+variables (WIN32/Clang-frontend-gated) into ExternalProject_CMAKE_ARGS_hidden
+in 3rdparty/find_dependencies.cmake, matching the existing WIN32/Clang guard
+style of the 5 committed Windows fixes; re-run this same recipe afterward.
