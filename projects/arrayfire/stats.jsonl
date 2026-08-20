@@ -112,3 +112,5 @@
 {"kind":"session","ts":"2026-08-11T23:30:02Z","epoch":1786491002.342064406,"event":"end","platform":"linux-gfx1100"}
 {"kind":"phase","ts":"2026-08-20T17:10:02Z","phase":"compile","seconds":503.130,"exit":0,"cmd":"cmake --build projects/arrayfire/src/build-gfx1151 -j 16"}
 {"kind":"phase","ts":"2026-08-20T17:48:59Z","phase":"test","seconds":1889.673,"exit":8,"cmd":"ctest --test-dir projects/arrayfire/src/build-gfx1151 -R _cuda$ -j1 --output-on-failure"}
+{"kind": "session", "ts": "2026-08-20T16:57:18Z", "epoch": 1787245038.0, "event": "start", "platform": "windows-gfx1151"}
+{"kind":"session","ts":"2026-08-20T17:52:12Z","epoch":1787248332.746286400,"event":"end","platform":"windows-gfx1151"}
