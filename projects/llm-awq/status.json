@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-08T13:34:13Z",
-  "updated_at": "2026-08-20T04:12:26Z",
+  "updated_at": "2026-08-20T04:12:48Z",
   "head_sha": "a2a710a023f21d2b1ecbc157218f97d1f4001e58",
   "depends_on": [],
   "porting": null,
@@ -108,5 +108,6 @@
       },
       "last_agent": "validator"
     }
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/llm-awq/pull/1"
 }
