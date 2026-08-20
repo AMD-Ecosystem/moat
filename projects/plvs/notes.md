@@ -2013,3 +2013,163 @@ linux-gfx1100: `completed` (`validated_sha` be91acd -> bab4052).
   boost.serialization toolchain wall.
 - Both required Linux gates (wave32 via this session, wave64 via the 2026-08-14 gfx90a session)
   are now satisfied at `bab4052`; `pr-ready` is a maintainer/PR-prep concern, not this session's.
+
+## Validation attempt 2026-08-20 (windows-gfx1151, validator): validation-failed -- real GPU PASS on libsgm, but full-SLAM binary not built (dependency/budget wall, not the boost.serialization wall)
+
+Host: XSJJDAILYL02, AMD Radeon 8060S (gfx1151, RDNA3.5 APU, 20 CUs, wave32). ROCm: TheRock pip
+SDK at `D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel`, `clang-cl.exe`/`clang++.exe`
+version `AMD clang version 23.0.0git (...52226beb...+PATCHED:1efe4605...)` -- the same clang build
+line named in the dispatch as newer than the SDK the gfx1101/gfx1201 boost.serialization block was
+recorded against. `hipInfo.exe` confirms the GPU: `AMD Radeon(TM) 8060S Graphics`,
+multiProcessorCount=20, warpSize=32, totalGlobalMem=67.92 GB. HEALTHY.
+
+### Fork setup
+`git clone https://github.com/AMD-Ecosystem/plvs.git projects/plvs/src`, `git checkout moat-port`
+-> HEAD `bab4052335d06b97adf91316892ece249c763037`, matches `status.json.head_sha` exactly.
+`python3 utils/moatlib.py protect-fork plvs` run. `git status --porcelain` clean throughout except
+gitignored build output, removed before finishing.
+
+### Hypothesis test: does the blamed clang-cl + boost.serialization mechanism still recurse?
+
+The recorded gfx1101/gfx1201 block blames "clang-on-Windows (MSVC ABI) miscompiles
+boost.serialization's polymorphic oserializer / extended_type_info + void_cast type-registry
+singleton machinery" (notes.md 2026-06-16, `oserializer<text_oarchive, PLVS2::KeyFrame>
+::save_object_data` recursing into itself, confirmed genuine infinite recursion via a 32MB stack
+reserve that still crashed -- not merely deep-but-finite). Rather than reproduce the entire
+multi-hour dependency stack (PCL/Pangolin/octomap/protobuf/8 bundled CPU libs -- none of which are
+installed on this host, unlike the gfx1201 host which had them built up over several porter
+sessions), tested the blamed MECHANISM directly and cheaply: an isolated program exercising the
+same boost.serialization machinery the plvs KeyFrame/camera-model code drives, compiled with the
+same clang-cl/vcpkg-dynamic-boost combination.
+
+Toolchain: `clang-cl.exe` from the SDK above, vcpkg `D:/vcpkg` (`x64-windows`, dynamic),
+`boost-serialization` 1.91.0 (`boost_serialization-vc145-mt-x64-1_91.{lib,dll}`). Reused the
+fork's own `src/WinBoostArchiveCompat.cpp` shim (supplies the `??_Darchive_exception@archive@boost
+@@QEAAXXZ` vbase-destructor symbol clang's MSVC-ABI codegen references but the MSVC-built vcpkg
+boost DLL does not export -- without it the link fails with an undefined `__imp_??_D...` symbol,
+confirming this specific ABI gap is real and unchanged on the current SDK too).
+
+1. **Repro 1 (baseline, single TU, non-polymorphic)**: a `Base`/`Derived` pair, `Derived`
+   registered with `BOOST_CLASS_EXPORT`, explicit `template void Derived::serialize(...)`
+   instantiations for `text_oarchive`/`text_iarchive`, `main()` constructs and saves a `Derived`
+   through `text_oarchive`. Built (`clang-cl -std:c++17 -EHsc -MD -DBOOST_ALL_DYN_LINK`, linked
+   against the dynamic boost DLL + the compat shim), ran: `before any archive use` / `after save,
+   size=43`, **exit 0**. No crash.
+
+2. **Repro 2 (closer to KeyFrame's actual pattern)**: an abstract `Camera` base
+   (`BOOST_SERIALIZATION_ASSUME_ABSTRACT`, pure-virtual `project()`), two concrete derived classes
+   `Pinhole`/`KannalaBrandt8` each `BOOST_CLASS_EXPORT`'d (mirroring
+   `src/CameraModels/{Pinhole,KannalaBrandt8}.cpp`'s real names and export calls), and a
+   `KeyFrame`-like class holding TWO raw polymorphic pointer members
+   (`Camera* mpCamera, *mpCamera2`, matching `include/KeyFrame.h:487` exactly) serialized via
+   `ar & mpCamera; ar & mpCamera2;` -- this is the actual mechanism named in the diagnosis
+   (polymorphic raw-pointer serialization resolved at runtime through the
+   extended_type_info/void_cast registry built by the `BOOST_CLASS_EXPORT` calls). Explicit
+   `template void KeyFrame::serialize(...)` instantiations for all 4 archive types
+   (`binary_iarchive`/`binary_oarchive`/`text_iarchive`/`text_oarchive`), matching
+   `src/KeyFrame.cc:2339-2342` line for line. Built and ran twice: `before any archive use` /
+   `after save, size=103`, **exit 0** both times. No crash, no hang, no stack overflow.
+
+Neither synthetic reproduction of the blamed mechanism crashes on this host's current SDK. This is
+real evidence against the mechanism as a blanket, permanent toolchain wall -- but it is NOT
+conclusive proof the full plvs binary would run clean: the actual `KeyFrame`/`Atlas`/`Map` object
+graph is far more complex (weak_ptr/shared_ptr cycles between `KeyFrame` and `Map`, sets/maps of
+`KeyFramePtr`/`MapPointPtr`, `Atlas.cc` carrying its OWN separate explicit-instantiation TU for a
+DIFFERENT class), any of which could still trigger a real-binary-only fault this isolated repro
+does not exercise. The dispatch's own framing anticipated this: "if it does NOT reproduce, proceed
+to a real GPU validation" of the actual full-SLAM binary -- which this session could not do (see
+below).
+
+Repro sources + build logs: scratchpad (not part of the fork; ephemeral, not committed anywhere).
+
+### Real GPU test: libsgm HIP stereo on gfx1151 -- PASS
+
+`Thirdparty/libsgm` needs no OpenCV, PCL, Pangolin, or any of the missing dependency stack, so this
+proves the actual GPU kernels run correctly on gfx1151 hardware independent of the boost-blocked
+SLAM binary question:
+
+```
+cmake -S Thirdparty/libsgm -B Thirdparty/libsgm/build-win-gfx1151 -GNinja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DCMAKE_HIP_COMPILER=<sdk>/lib/llvm/bin/clang++.exe \
+  -DCMAKE_CXX_COMPILER=<sdk>/lib/llvm/bin/clang++.exe \
+  -DCMAKE_C_COMPILER=<sdk>/lib/llvm/bin/clang.exe \
+  -DENABLE_SAMPLES=OFF -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_MARCH_NATIVE=OFF
+cmake --build Thirdparty/libsgm/build-win-gfx1151 -j16   # -> lib/sgm.lib, RC=0
+```
+(all-clang++ GNU-driver toolchain for both host and HIP compiler, per the project's small-library
+pattern -- not all-clang-cl, which this small self-contained CMake project does not need.)
+
+Wrote a headless HOST2HOST harness against `sgm.lib` (`sgm::StereoSGM`, matching
+`sample/image/stereosgm_image.cpp`'s convention), using `stb_image.h` to decode the OpenCV "aloe"
+stereo pair (`aloeL.jpg`/`aloeR.jpg`, fetched from `opencv/opencv@4.x/samples/data/` -- same pair
+every gfx90a/gfx1100/gfx1201 session in this file used, since no OpenCV build was available on this
+host to source it from `opencv_contrib`). Built with `clang++.exe -fms-runtime-lib=dll` (the
+GNU-driver flag for MD-runtime linkage against `sgm.lib`, built `/MD` by CMake's default Release
+config -- plain `-MD` means "emit dependency file" in GNU-driver mode, not runtime-library
+selection, and mismatches at link with `/failifmismatch: mismatch detected for 'RuntimeLibrary'`
+until corrected).
+
+Runtime: staged `amdhip64_7.dll`, `amd_comgr.dll`, `hiprtc*.dll`, `rocm_kpack.dll` from the SDK next
+to the exe (System32's `amdhip64_7.dll` is broken on this host per prior sessions' findings).
+
+```
+./sgm_aloe_gfx1151.exe aloeL.jpg aloeR.jpg 128
+  size=1282x1110 disp_size=128
+  nonzero=1197290/1423020 (84.1373%)
+  inrange(<=disp_size)=1423020/1423020 (100.0000%)
+  min=0 max=127 mean=59.4553
+```
+Run 2: bit-identical (1197290, 84.1373%, min 0 max 127, mean 59.4553). No crash, no NaN, all
+disparities in `[0, 127]`, exit 0 both runs.
+
+The `84.14%` coverage figure matches every earlier session's `~0.841` figure for this exact pair at
+`disp_size=128` on gfx90a (06-12, 08-14), gfx1100 (06-12, 08-19), and gfx1201 (06-12) -- confirms
+the committed `WARP_SIZE=32` correctness fix (05eed6c) runs correctly on gfx1151 too (native
+wave32, trivially correct like gfx1100/gfx1201). This is the same real-hardware-execution evidence
+class every other arch's validation in this file has recorded, just for gfx1151.
+
+### What was NOT done: the full mono_tum SLAM binary
+
+Per plan.md's test criteria and every prior windows session's own bar, a real pass needs the full
+SLAM binary (`mono_tum.exe`) actually running a dataset, exercising the GPU ORB/FAST feature path
+AND the boost.serialization static-registration code the block is about. This needs PCL, Pangolin
+(the specific `fe57db532` + patch commit, not vcpkg's 0.9.5), octomap, protobuf, glfw3, and the 8
+bundled CPU libs (DBoW2, g2o, line_descriptor, voxblox(+proto), open_chisel, chisel_server,
+voxblox_server, volumetric_mapping) built for this host -- NONE of which are present here (unlike
+the gfx1201 host, where this bring-up took multiple porter sessions and, for the static-md variant,
+~38 minutes just for the vcpkg install step). This is multi-hour work, incompatible with the
+45-minute validator budget, and was not attempted beyond confirming `boost-serialization` and a
+handful of other packages (`eigen3`, `glog`, `suitesparse-*`) are already in `D:/vcpkg`'s
+`x64-windows` (dynamic) triplet -- PCL, Pangolin, octomap, protobuf, and glfw3 are NOT.
+
+### CUDA no-regression gate
+Not run: no CUDA toolkit on this Windows host (per the validator playbook, this lands on whichever
+Linux arch validates first). Already recorded PASS at this exact code content by the
+2026-08-14 linux-gfx90a session (content-identical through `bab4052`, confirmed again by the
+2026-08-19 linux-gfx1100 session).
+
+### Jargon / doc gates
+Not re-checked this session (read-only on those files; both were closed by the 2026-08-14 fix
+rounds and confirmed clean by both completed Linux validations at this exact head).
+
+### Result
+
+`windows-gfx1151`: `validation-failed` (`failed_sha = bab4052335d06b97adf91316892ece249c763037`).
+Real GPU evidence (libsgm stereo, PASS, matches every other arch) is recorded, and the specific
+mechanism the recorded gfx1101/gfx1201 block blames does NOT reproduce in an isolated test targeting
+it directly on this host's current SDK/clang -- meaningfully different from "confirmed, tried
+static/dynamic boost, -O0, viewer on/off, all still crash" recorded there. This is NOT strong enough
+to call `completed` (no full-SLAM real-GPU pass) and NOT copied forward as `blocked` either (a
+`blocked` verdict is a claim this card cannot run it; the isolated-mechanism evidence points away
+from that, not toward it, and the actual blocker on THIS host this session was dependency
+availability + the 45-minute budget, not a reproduced fault).
+
+### Next step for a future windows-gfx1151 session
+Given a larger budget (or a pre-staged dependency set), build the full plvs SLAM stack for gfx1151
+following the gfx1201 recipe in the 2026-06-15/06-16 entries above (vcpkg PCL/Pangolin/octomap/
+protobuf/glfw3, the 8 bundled CPU libs, `WinBoostArchiveCompat.cpp` already committed), then run
+`mono_tum.exe` on TUM freiburg1_xyz (same dataset every other arch used) and directly observe
+whether `oserializer<text_oarchive, PLVS2::KeyFrame>::save_object_data` still recurses. Given this
+session's isolated-mechanism evidence, there is real reason to expect it may not -- but only the
+real binary settles it.

@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-08-19T05:49:48Z",
+  "updated_at": "2026-08-20T19:10:58Z",
   "head_sha": "bab4052335d06b97adf91316892ece249c763037",
   "depends_on": [
     "opencv_contrib"
@@ -112,6 +112,30 @@
         "first_session_at": null,
         "last_session_at": null
       },
+      "last_agent": "validator"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": "bab4052335d06b97adf91316892ece249c763037",
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-20T19:10:58Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "validation-failed",
       "last_agent": "validator"
     }
   },
