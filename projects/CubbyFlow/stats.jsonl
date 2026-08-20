@@ -60,3 +60,6 @@
 {"kind":"phase","ts":"2026-08-20T18:08:11Z","phase":"compile","seconds":20.006,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/CubbyFlow/src/build-cuda -j32 --target CubbyFlow"}
 {"kind":"phase","ts":"2026-08-20T18:08:38Z","phase":"compile","seconds":19.437,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/CubbyFlow/src/build-cuda -j32 --target CUDATests CUDASPHSim"}
 {"kind":"phase","ts":"2026-08-20T18:09:24Z","phase":"compile","seconds":1.484,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/CubbyFlow/src/build -j32"}
+{"kind":"session","ts":"2026-08-20T18:13:01Z","epoch":1787249581.157750214,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T18:14:35Z","epoch":1787249675.956893695,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T18:25:32Z","epoch":1787250332.112353453,"event":"end","platform":"linux-gfx1100"}

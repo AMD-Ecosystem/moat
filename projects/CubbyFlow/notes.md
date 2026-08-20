@@ -569,3 +569,140 @@ Remaining steps, in order, after `gh auth refresh -s workflow`:
 4. revalidation on the required gates (wave64, wave32, windows)
 5. fix review PR (`upstream.py --fix-review`), person approves, then
    `upstream.py --merge-fix --apply`
+
+## Review 2026-08-20 (linux-gfx1100, reviewer): fix round delta
+
+changes-requested. Scope: `moat-port..moat-fix-145` (e506244969 merge of
+upstream/main 8f774f6a4f, 2c51f93ecd text corrections), reviewed locally with
+the /pr-review skill. Both problems are in upstream-visible TEXT, both are
+cheap to fix now because the branch is still unpushed, and both become frozen
+once `moat-port` is fast-forwarded into PR #145.
+
+### 1. Merge commit body claims a change this branch never made
+
+`e506244969` body, last "seams worth calling out" bullet:
+
+> Includes/Core/CUDA/CUDAPointHashGridSearcher{2,3}.hpp: main's
+> member-initializer cleanups landed alongside the explicit copy/move members
+> this branch added.
+
+This branch added no copy/move members to those files. Its entire delta there,
+then and now, is the `cuda_runtime.h` -> `cuda_to_hip.h` include swap
+(`Includes/Core/CUDA/CUDAPointHashGridSearcher2.hpp:19-23`,
+`CUDAPointHashGridSearcher3.hpp:19-23`). The copy/move declarations at
+`CUDAPointHashGridSearcher2.hpp:115-129` are upstream's and predate the port
+(present at 5b786fee61). Checks: `git diff 5b786fee61...moat-port` and
+`git diff upstream/main...moat-fix-145` on both files show only the include
+hunk, and `git diff upstream/main...moat-fix-145 | grep '^+.*= \(default\|delete\)'`
+is empty for the whole branch. Upstream's delta on those files is default
+member initializers only (`m_gridSpacing = 1.0f`, `make_uint2(1, 1)`,
+`uint1 m_dummy{}`).
+
+Fix: drop or correct that bullet (the honest version is "main's member-
+initializer cleanups landed next to this branch's include swap"), and fix the
+matching sentence in this file's "Auto-merged seams, verified by hand" list
+(notes.md, `## Fix round 2026-08-20`).
+
+### 2. The replacement Thrust-pin comment names the wrong trigger
+
+`CMakeLists.txt:88-90` (the comment 2c51f93ecd rewrote):
+
+```
+# rocThrust auto-detects its backend, and a build that defines
+# CUBBYFLOW_USE_CUDA can end up on its CUDA backend, which then includes a
+# CUDA-only CUB header. Pin Thrust to its HIP backend explicitly.
+```
+
+rocThrust never inspects `CUBBYFLOW_USE_CUDA`. It picks its backend in
+`thrust/detail/config/compiler.h:111` (`#if defined(__CUDACC__) ... NVCC`) and
+`thrust/detail/config/device_system.h:29-36` (HIP when the device compiler is
+HIP, CUDA otherwise, i.e. also for a plain g++ TU). The old comment was wrong
+about the shim defining `__CUDACC__`; the replacement swaps that for a
+different non-mechanism, in a commit whose whole point was comment accuracy.
+
+For the record, in this tree the pin is purely defensive: every TU that reaches
+a thrust header (`Sources/Core/CUDA/*.cu`, `CUDAPointHashGridSearcher{2,3}-Impl.hpp`
+via `Sources/Core/CUDA/*.cpp`) is compiled clang + `__HIP__`, and the three
+non-HIP TUs under the CUDA directories (`Tests/CUDATests/main.cpp`,
+`Examples/CUDASPHSim/{main,SPHSimExample}.cpp`) include no thrust.
+
+Fix: state the real trigger, e.g. "rocThrust selects its backend from the
+compiler it sees (`__CUDACC__`, else the host compiler); pin it to HIP so any
+translation unit that reaches a thrust header cannot land on the CUDA backend
+and its CUDA-only CUB header."
+
+### Verified clean (no action)
+
+Merge fidelity: `git merge-base upstream/main moat-fix-145` == `upstream/main`
+(8f774f6a4f) and `git diff upstream/main...moat-fix-145 --name-status` is 28 M
+plus `A Includes/Core/CUDA/cuda_to_hip.h` -- no upstream file lost, nothing
+extra added, no conflict markers anywhere in tracked files. Diffing that delta
+against the pre-merge `git diff 5b786fee61...moat-port` leaves exactly four
+content differences: the reworded Thrust comment, the Install.md gfx90a
+sentence, the new README line, and upstream's removal of
+`add_subdirectory(Libraries/pybind11)` from the block the port conditions. The
+root CMakeLists resolution is upstream's structure with only the port's
+`USE_HIP` / `USE_CUDA OR USE_HIP` / `NOT (USE_CUDA OR USE_HIP)` deltas.
+
+`CUBBYFLOW_REQUIRES` left untouched is the right call, and the reasoning holds:
+`cuda_to_hip.h` defines `__CUDA_ARCH__` in the device pass but never
+`__CUDACC__` (cuda_to_hip.h:18-33), so `Macros.hpp:85` is live under hipcc;
+HIP TUs really do get `-std=c++23` (`build/compile_commands.json`, all 35 HIP
+entries carry `-std=c++23 --offload-arch=gfx1100 -Werror`); and the only
+`CUBBYFLOW_REQUIRES` users are the CPU searchers
+(`Includes/Core/Searcher/Point*.hpp`), where the clauses disambiguate
+`Serialize`/`Deserialize` overloads that already differ in parameter type -- no
+header depends on the macro being empty for device correctness. Same shape at
+`Includes/Core/Utils/Parallel.hpp:226,249` and `Parallel-Impl.hpp:522,536`,
+which upstream added in this merge: `#ifdef __CUDACC__` selects an
+unconstrained template, so the HIP build takes the `std::random_access_iterator`
+branch, consistently in every TU of a HIP build (only the nvcc build is
+internally split, which is upstream's own property).
+
+Install.md correction is accurate: with `CMAKE_HIP_ARCHITECTURES` unset, CMake
+runs `rocm_agent_enumerator` and fatal-errors if it finds nothing
+(`CMakeDetermineHIPCompiler.cmake:296-334`); confirmed with a throwaway
+`enable_language(HIP)` project, which reported `HIP arch: gfx1100;...` and
+picked `/opt/rocm/lib/llvm/bin/clang++` unaided.
+
+Evidence reproduced on this host at the staging tip: `./build/bin/CUDATests`
+35/35 cases, 3170/3170 assertions; `./build/bin/UnitTests` 814/814 in 168
+suites. The nvcc gate did not fail open -- `build-cuda/CMakeCache.txt` has
+`USE_CUDA:BOOL=ON`, `CUDA_VERSION:STRING=12.8`,
+`CUDA_NVCC_EXECUTABLE=/opt/conda/envs/cuda-12.8/targets/x86_64-linux/bin/nvcc`,
+and `*_generated_*.cu.o` objects exist for CubbyFlow, CUDATests and CUDASPHSim.
+
+Fault classes: no warp intrinsics, `warpSize`, hardcoded 32, `__shared__`,
+atomics or `__syncthreads` anywhere under `Sources/Core/CUDA`,
+`Includes/Core/CUDA`, `Tests/CUDATests`, `Examples/CUDASPHSim`; kernels remain
+1D `blockIdx.x * blockDim.x + threadIdx.x`, so wave32/wave64 are equivalent.
+Upstream's delta to the CUDA-adjacent sources is `std::make_shared` cleanups
+and doctest include/link changes, and it added no new `.cu` files, so the
+unchanged 35-case count is expected rather than a silently excluded test file.
+Both source globs still enumerate the same set on the HIP and CUDA paths
+(`Sources/Core/CMakeLists.txt:16-33`, `Tests/CUDATests/CMakeLists.txt:5-18`).
+
+jargon: `--commits moat-port..moat-fix-145` clean; `--diff` reports `MOaT` and
+`OsrB`, both confirmed inside the base64 payload of `Medias/Logos/Logo.svg`
+(`git grep -l` on the branch finds them in that file only, and the file is
+byte-identical to upstream). `--port CubbyFlow` cannot run from a worktree
+without the clone; run it from /var/lib/jenkins/moat.
+
+Commit hygiene: both titles `[ROCm]`-prefixed and under 72 chars (52 and 49),
+both bodies disclose AI assistance and carry a Test Plan in fenced blocks, no
+`Co-Authored-By`, no AMD-internal account references.
+
+Skill lessons on this branch are accurate and generalizable: the
+`!defined(__CUDACC__)` inversion entry in `fault-classes.md` matches
+rocThrust's real backend keying and this build's `-std=c++23` HIP lines, and
+both `validation.md` entries (legacy FindCUDA failing open on a conda toolkit,
+`autoconf-archive` for a vcpkg manifest) match what the cache and build here
+show.
+
+### Bookkeeping, not a defect
+
+`head_sha` still reads 62f4604c because the push is blocked, so `fix-ready`
+correctly answers `no-delta ... nothing is staged` and no fix review PR can be
+opened prematurely. After the push, `advance-head 2c51f93ecdda50b320c2190f723ef26dd02d008e`
+is still required before revalidation; this review is recorded against the
+staging tip, not against what status.json currently names.
