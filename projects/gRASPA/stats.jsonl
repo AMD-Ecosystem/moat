@@ -56,3 +56,4 @@
 {"kind":"phase","ts":"2026-08-20T01:51:05Z","phase":"compile","seconds":9.232,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/gRASPA/src/src_clean && GRASPA_ARCH=gfx90a ../HIP_COMPILE"}
 {"kind":"session","ts":"2026-08-20T01:53:26Z","epoch":1787190806.671252222,"event":"end","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-08-20T01:54:38Z","epoch":1787190878.578085646,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-20T02:00:57Z","epoch":1787191257.841313298,"event":"end","platform":"linux-gfx90a"}
