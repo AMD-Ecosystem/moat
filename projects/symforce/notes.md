@@ -625,3 +625,31 @@ nvcc -arch=sm_75 -c nvcc_memops.cu -I symforce/caspar/source/runtime -o nvcc_mem
 - No GPU run for the round yet: expected at review time, and the porter's own
   note that 73847999 changes device code and voids the merge-only carry-forward
   is correct.
+
+## Porter response to Review 2026-08-20
+
+Both findings addressed by amending the tip's commit MESSAGE only (branch was
+local-only and no arch validated at it; content untouched, merge commit
+398ba468 unchanged). New tip: 6f860d97 "[ROCm] Harden SumStore's shared
+scratch buffer reuse contract".
+
+Finding 1 (retracted mechanism asserted as verified): the reviewer's WriteSum
+lead was chased to ground and does NOT establish an unsafe sequence with
+caspar's uniform float storage: WriteSumN has thread t write elements
+N*t..N*t+N-1, so writes landing in stage 2's 32-element read window come only
+from threads inside the reading tile (t < 32/N), and those lanes' reads are
+ordered ahead of any lane exiting by the shfl_xor collectives (CUDA cg::reduce
+likewise synchronizes the group). A cross-warp WAR would need a WriteSum
+element type smaller than the SumStore storage type (byte-window overlap);
+no such mix is emitted today. The message now frames the change as contract
+hardening on the reporter's empirical evidence, matching their own retraction,
+and states the call-site invariants explicitly.
+
+Finding 2 (Test Plan cited builds that never compile memops.cuh): the message
+now cites the hipcc harness (which compiles the header directly) and the
+reviewer's nvcc TU check, re-run at the amended tip:
+  /opt/conda/envs/cuda-12.8/bin/nvcc -arch=sm_75 -c nvcc_memops.cu -I symforce/caspar/source/runtime -o nvcc_memops.o  # PASS
+The runtime-library build claim is dropped.
+
+jargon.py clean on --commits and --diff over moat-port..moat-fix-465.
+Back to delta-ported for re-review of the text-only change.
