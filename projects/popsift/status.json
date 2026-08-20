@@ -7,7 +7,7 @@
   "priority": 5.187,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T00:36:13Z",
-  "updated_at": "2026-08-20T06:04:51Z",
+  "updated_at": "2026-08-20T21:26:21Z",
   "head_sha": "758d5e77faf0cc64b86b785d9b0981f324b2c1ad",
   "pr_url": "https://github.com/alicevision/popsift/pull/186",
   "pr_number": 186,
@@ -183,10 +183,10 @@
   "porting": null,
   "pr_approval": {
     "approved_by": "jeffdaily",
-    "at": "2026-08-14T20:27:54Z",
-    "head_sha": "d10126b5dab3f8e166e096ed9428a5ee01061052",
-    "content_sha256": "ed4b09d684fd3758bd1aed338be81999049ea9f01ad9eea066caca4b19e88c8a",
-    "review_pr": "https://github.com/AMD-Ecosystem/popsift/pull/1"
+    "at": "2026-08-20T21:25:00Z",
+    "head_sha": "758d5e77faf0cc64b86b785d9b0981f324b2c1ad",
+    "content_sha256": "20e64f0cf683b1965a14baa8bb8eea395c34c390629c988d3aa6461f3198be9d",
+    "review_pr": "https://github.com/AMD-Ecosystem/popsift/pull/2"
   },
   "fix_merged_at": "2026-08-14T20:28:42Z"
 }
