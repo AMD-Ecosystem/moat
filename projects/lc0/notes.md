@@ -2204,3 +2204,45 @@ amended if the reviewer wants the descriptor corrected.
   "before the helper returns", which this round measured to be INSUFFICIENT -- corrected to
   fix at the construction boundary, since a codebase typically has several upload paths
   sharing the shape and which one runs last depends on network shape and precision.
+
+## Test Plan amended 2026-08-20 -- 318c524 -> b87423d8 (message only)
+
+Message-only amend on the staging branch; `git diff --stat 318c524 b87423d8` is empty, so no
+platform evidence is affected. Safe because `b87423d8` sits above the published tip
+`7727fa32`, no fork review PR is open, and no arch carried `318c524` as `validated_sha`.
+
+Two corrections, and one non-correction worth recording so it is not "fixed" again:
+
+1. **Weight filenames.** The Test Plan named `maia-1100.pb.gz`, `744706.pb.gz` and
+   `t1-256x10-distilled.pb.gz`; the files actually used are `maia1100.pb.gz`,
+   `n744706.pb.gz` and `t1-256x10.pb.gz`. AGENTS.md wants literal commands, so they now
+   match what was run.
+
+2. **The moves-left evidence did not support its claim.** The plan cited 34/34 and 18/18
+   from `--backend=check` as evidence for the moves-left path. It cannot be: as recorded in
+   the RESUMED section, `network_check.cc` compares `GetQVal` and `GetPVal` only, and
+   `GetMVal` -- on the same interface -- is never compared. Those counts pass whether or not
+   moves left is correct. The plan now says so plainly and gives the real evidence: the
+   `--show-movesleft` control against the pre-change source, 72 vs the reference's 82 in
+   fp16 before, all three agreeing at 82 after.
+
+3. **NOT a correction.** The resumed round flagged the plan's "256x10 attention-body
+   network" as wrong, claiming `t1-256x10` decodes as `NETWORK_SE_WITH_HEADFORMAT`. That is
+   itself wrong. `lc0 describenet` reports:
+   - `t1-256x10`: `NETWORK_ATTENTIONBODY_WITH_HEADFORMAT`, `POLICY_ATTENTION`, `MLH: MOVES_LEFT_V1`
+   - `n744706`: `NETWORK_SE_WITH_HEADFORMAT`, `POLICY_CONVOLUTION`, 10 blocks, `MLH: MOVES_LEFT_V1`
+   - `maia1100`: `NETWORK_SE_WITH_HEADFORMAT`, no MLH -- confirming it cannot reach the
+     moves-left path
+   So the original wording was accurate. The body-size figures ("128x10", "256x10") were
+   dropped anyway rather than re-verified, since the architecture is what the claim rests on.
+
+### Gate note: this is the first round where the commit gates actually looked at the fix branch
+
+`jargon.py --port lc0` and `moatlib.py audit-commits lc0` both used to resolve
+`master..moat-port` regardless of a staged round, so during a fix round they inspected only
+the published tip and reported clean over commits they had never read. Fixed on the trunk
+(`check: judge the fix round's branch, not the published tip`) via a new
+`moatlib.upstream_visible_branch()`, and `origin/main` is merged into this branch, so the
+runs below are real: they resolve `moat-fix-2420`. `jargon: clean`; `audit-commits` returns
+15 findings, **none against `b87423d8`** -- all sit at or below the published tip, including
+four inherited non-`[ROCm]` upstream commits already live in PR #2420.
