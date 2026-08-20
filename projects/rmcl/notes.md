@@ -1400,3 +1400,40 @@ bit-identical kernel results (matching every prior gfx942/gfx1100 round exactly)
 skip matrix correct, all four kernels confirmed dispatched, CUDA no-regression gate already
 recorded at this head, no non-GPU regression, jargon and documentation clean. `validated_sha` ->
 `2b7f439c1c7da079b36aae82f95f43f84fbcd932`. This platform carries the `wave32` gate.
+
+## ROS 2 availability and AMD support on Windows (2026-08-20, maintainer question)
+
+Jeff asked whether there is a ROS 2 package that supports AMD hardware, in the context of the
+windows-gfx1151 block. Two separate questions are tangled in that, and separating them changes
+the answer.
+
+**1. ROS 2 does not "support" GPU vendors -- it has no GPU layer to support them with.** ROS 2
+is middleware: discovery, transport, executors, build tooling. It has no GPU abstraction that
+could be AMD-enabled or NVIDIA-enabled. rmcl's AMD support IS the rmagine HIP port, already
+completed and validated. There is no missing "ROS 2 AMD package" standing between us and a
+Windows validation. For completeness: REP 2008 (ROS 2 Hardware Acceleration Architecture)
+sketches an `ament_rocm` extension providing a `rocm_acceleration_kernel` macro, and the ROS 2
+Hardware Acceleration Working Group lists collaboration with AMD -- but that is a build-system
+abstraction over vendor toolchains, illustrative rather than shipped, and rmcl does not depend
+on it. Adopting it would be new scope, not a fix for this gate.
+
+**2. ROS 2 on Windows exists and is Tier 1, but the details matter.** Per REP 2000, Jazzy,
+Kilted and Rolling all list Windows at `Tier 1`, for `Windows 10 (VS2019)` on amd64. So Windows
+is a supported ROS 2 platform in principle. Two frictions against this specific host:
+- The supported target is Windows 10 + VS2019 (MSVC). This host is Windows 11 and the HIP
+  toolchain is TheRock clang-cl. clang-cl targets the MSVC ABI, so ROS 2's VS2019-built
+  binaries should link against clang-cl-built objects -- but that combination is untested here
+  and is an assumption, not a verified fact.
+- ros2/ros2#1675 reports the Jazzy Windows binary broken since Patch 4 over a Python version
+  and path problem (Patch 3 and earlier work). Whichever distro is chosen needs checking against
+  that issue rather than assuming the newest patch is good.
+
+**Conclusion.** Nothing about AMD hardware blocks rmcl on Windows. The block is provisioning,
+and it is a real project rather than a quick install: ROS 2 Windows binaries at a patch level
+that works, plus colcon/ament, plus a Windows rmagine install built WITH Embree (this host's
+rmagine validation deliberately ran `RMAGINE_EMBREE_DISABLE=ON`, so the existing artifacts do
+not satisfy rmcl). The suggested `windows` waiver stands as the alternative to doing that work;
+it remains the weaker kind of waiver, because nobody has shown rmcl CANNOT work on Windows.
+
+Sources: REP 2000 (reps.openrobotics.org/rep-2000/), ROS 2 Kilted Windows binary install docs,
+ros2/ros2 issue 1675, REP 2008 (ros.org/reps/rep-2008.html).
