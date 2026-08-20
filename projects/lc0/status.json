@@ -7,14 +7,14 @@
   "priority": 6.245,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-08-20T22:33:24Z",
+  "updated_at": "2026-08-20T22:42:00Z",
   "head_sha": "318c524fddce51be5a53351d926bbadac1d68034",
   "pr_url": "https://github.com/LeelaChessZero/lc0/pull/2420",
   "pr_number": 2420,
   "pr_opened_at": "2026-06-11T07:21:22Z",
   "porting": {
-    "arch": "linux-gfx1100",
-    "since": "2026-08-20T22:33:24Z"
+    "arch": "windows-gfx1151",
+    "since": "2026-08-20T22:42:00Z"
   },
   "waivers": {
     "windows": {
@@ -162,8 +162,8 @@
     "opened_at": "2026-08-20T20:47:49Z"
   },
   "porting_released": {
-    "arch": "windows-gfx1151",
-    "since": "2026-08-20T21:16:09Z",
-    "at": "2026-08-20T22:19:42Z"
+    "arch": "linux-gfx1100",
+    "since": "2026-08-20T22:33:24Z",
+    "at": "2026-08-20T22:42:00Z"
   }
 }
