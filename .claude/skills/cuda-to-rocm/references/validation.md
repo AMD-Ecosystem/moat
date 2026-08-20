@@ -44,6 +44,74 @@ a DLL-load error; rebuilding a correct binary against a broken runtime is the si
 biggest time sink on Windows. A port is not "broken on Windows" until it has been run
 against a full ROCm distribution.
 
+## Windows: a bundled-3rdparty-under-clang wall is usually reversible with vcpkg USE_SYSTEM_*
+
+`enable_language(HIP)` forces the all-clang toolchain on Windows (clang-cl for
+C/CXX/HIP): a project's bundled 3rdparty libraries that gate their Windows
+build path on `if(MSVC)` (the CMake variable, which is FALSE under clang-cl
+even though it targets the MSVC ABI) silently take the wrong branch, and
+libraries that inject literal `/MD`-style MSVC flags into a GNU-driver clang
+invocation fail outright ("no such file or directory: '/MD'"). Before
+recording this as an arch-independent block, check whether the project
+exposes `USE_SYSTEM_<LIB>` CMake options: supplying the failing libraries
+(TBB, libjpeg-turbo, curl, openssl, embree, zeromq, ...) from vcpkg instead of
+building the bundled copies routes around the gate entirely, with zero fork
+source change. Recipe: a full (non-stub) vcpkg checkout with the `x64-windows`
+triplet, `-DUSE_SYSTEM_<LIB>=ON` for each affected library,
+`-DSTATIC_WINDOWS_RUNTIME=OFF` (pair the vcpkg libs' dynamic CRT with the HIP
+runtime's), and if a library resolves via `pkg_search_module` rather than
+`find_package` (curl, zeromq commonly do), point CMake's FindPkgConfig at
+vcpkg's own `pkgconf.exe` (`PKG_CONFIG`, `PKG_CONFIG_PATH`) since the host has
+no system pkg-config. A handful of genuine `if(MSVC)`-vs-`if(WIN32)` /
+clang-only-warning-suppression fixes are typically still needed in the
+project's own CMake (small, WIN32/Clang-gated, safe to commit) -- see Open3D
+`notes.md` "Windows build SOLVED via vcpkg" for a full worked example with the
+5 upstream-committed fixes. (Open3D)
+
+## Windows: CMake's Windows-MSVC.cmake never learned MSVC_RUNTIME_LIBRARY for the HIP language
+
+Two related CMake (not project) bugs recur on any Windows+clang-cl HIP port
+that sets `CMAKE_MSVC_RUNTIME_LIBRARY` (directly, or via a
+`STATIC_WINDOWS_RUNTIME`-style option) and uses `enable_language(HIP)`:
+
+1. **`enable_language(HIP)` itself fails: "MSVC compiler version not detected
+   properly."** The top-level `CMakeHIPCompilerId` step can succeed (clang-cl
+   identifies as Clang, links a real .exe) while the separate nested
+   "Detecting HIP compiler ABI info" `try_compile` fails its own inner cmake
+   configure with an empty stdout and exit 1 -- confirm via
+   `<build>/CMakeFiles/CMakeConfigureLog.yaml`, NOT an environment problem
+   (vcvars/INCLUDE/LIB are irrelevant: C and CXX ABI detection succeed with
+   the identical compiler). Workaround, no fork change: pre-cache the two
+   guard variables `CMakeDetermineCompilerABI.cmake` checks with
+   `if(NOT DEFINED ...)`: `-DCMAKE_HIP_COMPILER_WORKS=1 -DCMAKE_HIP_ABI_COMPILED=1`.
+2. **The generate step fails: "MSVC_RUNTIME_LIBRARY value 'MultiThreadedDLL'
+   not known for this HIP compiler."** In CMake's own
+   `Platform/Windows-MSVC.cmake`, the block that populates
+   `CMAKE_<lang>_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_MultiThreaded{,DLL,Debug,DebugDLL}`
+   is hardcoded `if("x${lang}" STREQUAL "xC" OR "x${lang}" STREQUAL "xCXX")` --
+   HIP is never populated even though the same macro runs for HIP under the
+   clang-cl/MSVC-frontend path. Workaround, no fork change: supply the 4
+   missing flag-table variables on the configure command line
+   (`-DCMAKE_HIP_COMPILE_OPTIONS_MSVC_RUNTIME_LIBRARY_MultiThreaded=-MT`,
+   `..._MultiThreadedDLL=-MD`, `..._MultiThreadedDebug=-MTd`,
+   `..._MultiThreadedDebugDLL=-MDd`).
+
+**The command-line workaround for (2) only reaches the top-level project.**
+Any bundled 3rdparty dependency the project itself builds under
+`enable_language(HIP)` via `ExternalProject_Add` runs as a fully separate
+nested `cmake` invocation, and `ExternalProject_Add` never auto-forwards
+arbitrary parent `-D` cache variables (`CMAKE_ARGS`/`CMAKE_CACHE_ARGS` must
+name every variable explicitly) -- so a project that forwards
+`CMAKE_MSVC_RUNTIME_LIBRARY` into its `ExternalProject_Add` calls (a common
+pattern for keeping 3rdparty consistent with the top build) reproduces bug
+(2) inside that nested build, with no way to fix it from the outer command
+line. That needs a project-side fix: forward the same 4 flag-table variables
+into the project's shared ExternalProject-args variable, WIN32/Clang-gated.
+Small and safe to commit, but it is a fork source change, so a validator
+without write access to a frozen branch (PR already open) records this as the
+precise blocker rather than a repeat of the generic bundled-3rdparty wall.
+(Open3D, stdgpu's HIP backend built via ExternalProject_Add)
+
 ## Windows: static initializers in TheRock's DLLs may never run
 
 **A C++ test that gates on `torch::cuda::is_available()` can fail on Windows against a
