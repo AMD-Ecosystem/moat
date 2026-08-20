@@ -2409,3 +2409,187 @@ committed, before finishing).
 ### State transition
 `revalidate -> completed`, `validated_sha = 950dcdd02f348c74d29f4de8199bca38a7e7a245`.
 `python3 utils/moatlib.py set-state arrayfire linux-gfx1100 completed --agent validator`.
+
+## Validation 2026-08-20 (validator, windows-gfx1151) -- RESULT: COMPLETED (129/131)
+
+First validation of this platform at any head (no prior `windows-gfx1151` platform record
+existed; earlier notes calling it "retired/non-viable" predate this host's return to service).
+`a70f74f6d653955832909c434e77abfb6e207048` (the sha `windows-gfx1101`/`windows-gfx1201` last
+validated at) does **not** exist in this fresh clone's object store (`git cat-file -e
+a70f74f6d^{commit}` fails) -- expected, that sha predates the texture-object-removal round and
+was never the tip of any branch retained after `moat-port` fast-forwarded past it; not evidence
+of history loss. `moat-port` is the head of OPEN upstream PR #3708 (`pr_state=open`,
+`published_sha == head_sha`), so `protect-fork` was installed before anything else and no push
+was made to the fork at any point in this session.
+
+GPU: AMD Radeon 8060S (gfx1151, RDNA3.5 APU, 20 CUs, wave32), Windows 11.
+Fresh clone of `AMD-Ecosystem/arrayfire` into `projects/arrayfire/src`, checked out `moat-port`,
+`git log -1` confirmed HEAD = `950dcdd02f348c74d29f4de8199bca38a7e7a245` (the recorded
+`head_sha`) before touching anything.
+
+### Scoped out of the build
+`AF_BUILD_CPU=OFF -DAF_BUILD_OPENCL=OFF -DAF_BUILD_ONEAPI=OFF -DAF_BUILD_CUDA=OFF
+-DAF_BUILD_FORGE=OFF -DAF_BUILD_EXAMPLES=OFF -DAF_WITH_CUDNN=OFF -DAF_WITH_IMAGEIO=OFF` -- only
+the HIP backend, unified API and test suite were built (the gfx1201 recipe's proven headless
+config). No CPU/OpenCL/CUDA/oneAPI backend, no Forge, no examples, no FreeImage.
+
+### New finding: Boost is not installed on this host, but is required unconditionally
+`find_package(Boost 1.70)` was previously satisfied on Windows via a copied vcpkg_installed dir
+(gfx1101/gfx1201 notes above); this is a fresh host with no vcpkg and no VCPKG_ROOT set (so the
+vcpkg toolchain never activates regardless of `-DVCPKG_MANIFEST_INSTALL`). Without a real
+`Boost_INCLUDE_DIR`, `CMakeModules/boost_package.cmake` sets `Boost::boost`'s
+`INTERFACE_INCLUDE_DIRECTORIES` to a semicolon list containing the literal string
+`Boost_INCLUDE_DIR-NOTFOUND` (CMake's NOTFOUND sentinel is not guarded before use), and CMake's
+Generate step hard-fails on every target that transitively links it (`c_api_interface`, `af`,
+`arrayfire_test`) with "contains relative path in its INTERFACE_INCLUDE_DIRECTORIES" -- ~200
+repeated errors, one per target/config pair. This is an environment gap (this host has no Boost
+anywhere), not a port defect: `af_dep_check_and_populate` auto-fetches spdlog/span-lite/GTest/
+Boost-Compute from GitHub at configure time with no vcpkg needed at all, but Boost itself (the
+non-Compute headers: `boost/math`, `boost/stacktrace`, their transitive deps) has no such
+fallback and must already be findable. Fix: `D:/Develop/TheRock/build/third-party/boost/source`
+already has a full unpacked Boost 1.87 source tree (TheRock vendors it for its own build), so
+`-DBoost_INCLUDE_DIR=<that path> -DBoost_NO_SYSTEM_PATHS=ON` satisfies `find_package(Boost 1.70)`
+with zero extra download. Configure log confirms `-- Found Boost: .../boost/source (found
+suitable version "1.87.0", minimum required is "1.70")`. No arrayfire source or CMake edit was
+needed or made -- purely a configure-line addition, so nothing was committed for this.
+
+### Configure + build
+```
+cmake -S projects/arrayfire/src -B projects/arrayfire/src/build-gfx1151 -G Ninja \
+  -DCMAKE_MAKE_PROGRAM=<winget ninja.exe> \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=<_rocm_sdk_devel>/lib/llvm/bin/clang.exe \
+  -DCMAKE_CXX_COMPILER=<_rocm_sdk_devel>/lib/llvm/bin/clang++.exe \
+  -DCMAKE_HIP_COMPILER=<_rocm_sdk_devel>/lib/llvm/bin/clang++.exe \
+  -DCMAKE_PREFIX_PATH=<_rocm_sdk_devel> \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DAF_BUILD_HIP=ON -DAF_BUILD_CUDA=OFF \
+  -DAF_BUILD_CPU=OFF -DAF_BUILD_OPENCL=OFF -DAF_BUILD_ONEAPI=OFF \
+  -DAF_BUILD_UNIFIED=ON -DAF_BUILD_EXAMPLES=OFF -DAF_BUILD_FORGE=OFF \
+  -DAF_WITH_CUDNN=OFF -DAF_WITH_IMAGEIO=OFF -DAF_BUILD_DOCS=OFF \
+  -DAF_BUILD_TESTS=ON -DAF_STACKTRACE_TYPE=None -DAF_TEST_WITH_MTX_FILES=OFF \
+  -DVCPKG_MANIFEST_INSTALL=OFF \
+  -DBoost_INCLUDE_DIR=D:/Develop/TheRock/build/third-party/boost/source \
+  -DBoost_NO_SYSTEM_PATHS=ON
+bash utils/timeit.sh arrayfire compile -- cmake --build projects/arrayfire/src/build-gfx1151 -j 16
+```
+Compilers are clang.exe/clang++.exe (GNU driver), not clang-cl, on all three CMake languages --
+matches the gfx1201/gfx1101-proven recipe and the host env note (clang-cl HIP + clang-cl host
+gives "MSVC compiler version not detected properly"; mixed clang-cl-host/clang++-HIP gives "no
+such file or directory: '/machine:x64'"). Build toolchain env leaves `ROCM_PATH`/`HIP_PATH`
+UNSET (clang auto-detects device bitcode + HIP math headers from its own `lib/llvm` location;
+setting them at build time breaks that auto-resolution, per the 2026-06-09 gfx1201 finding
+above). `af_dep_check_and_populate` auto-cloned spdlog 1.9.2, span-lite 0.10.2, Boost-Compute
+1.87, GoogleTest v1.16.0 and the arrayfire-data test-data repo at configure time -- no manual
+pre-cloning needed on this fresh host (contrast the older gfx1101/gfx1201 notes, which pre-cloned
+GTest as a speed optimization, not a requirement).
+
+Result: **1082/1082 targets, exit 0**, 503.1s (`stats.jsonl`). No source or CMake edit was made;
+`git -C projects/arrayfire/src status --porcelain` stayed empty throughout (only the gitignored
+`build-gfx1151/` directory exists locally).
+
+### Runtime DLL staging
+Per the host env: this host's System32 `amdhip64_7.dll` is broken and wins over PATH, so TheRock's
+runtime DLLs were copied into `build-gfx1151/bin/` next to the test executables: `amdhip64_7.dll`,
+`amd_comgr.dll`, `rocm_kpack.dll`, `hiprtc0714.dll`, `hiprtc-builtins0714.dll`, `hipsparse.dll`,
+`hipsolver.dll`, `hipblas.dll`, `hipfft.dll`, `libhipblaslt.dll`, `rocblas.dll`, `rocsolver.dll`,
+`rocsparse.dll`, `rocfft.dll`, `rocrand.dll`, `hiprand.dll`, plus the `hipblaslt/` dir and the
+`rocblas/library/` dir (150 gfx1151 Tensile files, no `.kpack` file exists for gfx1151 so
+`ROCM_KPACK_PATH` is not set, only `ROCBLAS_TENSILE_LIBPATH` -- consistent with earlier hosts'
+"kpack absent for this arch" disposition). `print_info.exe` confirmed device detection cleanly:
+`[0] AMD Radeon(TM) 8060S Graphics, 69546 MB, CUDA Compute 11.5` (the HIP backend still reports
+itself under the `CUDA` identity per the port's design, `platform.cpp:220`).
+
+### New run-time gotcha confirmed (matches a note already on file, just not previously hit here)
+First smoke run (`jit_cuda`, `blas_cuda`, `reduce_cuda`) with `ROCM_PATH`/`HIP_PATH` UNSET (the
+build-time setting) FAILED: `jit_cuda` threw on every JIT kernel --
+`hipRTC Error(6): HIPRTC_ERROR_COMPILATION ... fatal error: 'hip/hip_fp16.h' file not found` from
+inside `compile_module.cpp:389`, and `blas_cuda` SEGFAULTed, `reduce_cuda` failed 674 subtests
+(`RaggedReduceTests`) -- all traceable to the same root cause. This is the exact "Run gotcha"
+already logged above (2026-06-24, gfx1101 OpenCL-vs-HIP benchmark entry): the hipRTC/comgr JIT
+path in `compile_module.cpp` derives its device-header include dir from `ROCM_PATH`/`HIP_PATH` at
+RUN time, which is the OPPOSITE of what build time wants. Setting `ROCM_PATH=<_rocm_sdk_devel>`
+and `HIP_PATH=<_rocm_sdk_devel>` for the test run (only) fixed all three immediately (rerun:
+`jit_cuda`/`blas_cuda`/`reduce_cuda` all PASS). This had never actually blocked a completed
+Windows validation before (the note says gfx1101's ctest run "passed because its kernels are
+mostly AOT-static" -- true only for the earlier configs; on this host it blocks the ENTIRE suite
+including non-JIT-heavy tests, likely because more of arrayfire's element-wise/JIT surface is
+exercised by the current head than by whatever subset the 2026-06-24 note's benchmarks touched).
+Recorded the fix in `agent_space/af_win_env.sh` and `agent_space/af_run_test.sh` (both
+scratch, not committed) so it's reproducible: build-time env leaves `ROCM_PATH`/`HIP_PATH` unset,
+test-time env exports both `=<_rocm_sdk_devel>`.
+
+### Full GPU test suite
+```
+export ROCM_PATH=<_rocm_sdk_devel> HIP_PATH=<_rocm_sdk_devel>
+export ROCBLAS_TENSILE_LIBPATH=<_rocm_sdk_libraries_gfx1151>/bin/rocblas/library
+export ROCBLAS_USE_HIPBLASLT=0
+export PATH=<build-gfx1151/bin>:<_rocm_sdk_libraries_gfx1151>/bin:<_rocm_sdk_devel>/bin:$PATH
+export HIP_VISIBLE_DEVICES=0
+bash utils/timeit.sh arrayfire test -- ctest --test-dir projects/arrayfire/src/build-gfx1151 \
+  -R "_cuda$" -j1 --output-on-failure
+```
+`ROCBLAS_USE_HIPBLASLT=0` carried forward from the gfx1201/gfx1101 recipe (routes GEMM through
+rocBLAS Tensile, avoiding a hipBLASLt FP8 regression noted on an earlier TheRock SDK; not
+re-verified as still-necessary on this 7.14.0a20260612 SDK, but harmless to keep and matches the
+validated recipe exactly). No `ROCM_KPACK_PATH` (no `.kpack` file ships for gfx1151).
+
+**Result: 129/131 PASS (98%), 2 failures, wall time 1888.9s (~31.5 min).** This equals gfx1201's
+best recorded disposition (129/131) and beats every other Windows run on file. Both failures are
+the SAME already-documented, cross-platform, non-port-defect residuals seen on gfx90a/gfx942/
+gfx1100/windows-gfx1101/windows-gfx1201 -- no new failure class, nothing gfx1151-specific:
+1. `test_confidence_connected_cuda` (Failed, 4.11s): every subtest reports "Image IO Not
+   Configured" -- the `AF_WITH_IMAGEIO=OFF` disposition, identical to every other platform.
+2. `test_sparse_arith_cuda` (SEGFAULT, 33.00s): crash trace resolves into
+   `sparse_arith_cuda.exe` itself with no informative symbol beyond the module base -- consistent
+   with the documented Windows rocsparse/hipSPARSE `csrgeam2` (SparseSparseArith path) crash first
+   found on gfx1101 and gfx1201 at the older sha. The dense-sparse `SPARSE_ARITH` (SpMV/SpMM)
+   subtests are NOT in this binary -- `test_sparse_cuda` (the separate SpMV/SpMM-heavy suite)
+   PASSED cleanly in 30.91s, matching the established "dense-sparse path is fine, only
+   sparse+sparse csrgeam2 crashes on Windows" split.
+
+Every suite the texture-object-removal round (`4ec30a7cd`..`950dcdd02`) touched passed cleanly on
+this wave32 RDNA3.5 target: `test_fast_cuda` (0.77s), `test_orb_cuda` (0.77s),
+`test_regions_cuda` (1.58s) -- all three read through plain pointers now (no texture API left in
+the HIP backend) and are correct here. The two Tensile-GEMM-dependent tests that caught the
+missing-`ROCBLAS_TENSILE_LIBPATH` environment bug on gfx1101's first attempt both passed cleanly:
+`test_inverse_dense_cuda` (2.49s), `test_lu_dense_cuda` (7.80s) -- confirms the Tensile library
+staging is correct on this arch too. `test_cholesky_dense_cuda` (15.02s), `test_qr_dense_cuda`
+(2.37s), `test_svd_dense_cuda` (13.26s), `test_pinverse_cuda` (19.17s), `test_solve_dense_cuda`
+(14.23s) all PASS -- full dense-factorization coverage. `test_sparse_cuda` (30.91s),
+`test_sparse_convert_cuda` (3.63s) PASS. `test_blas_cuda` (int8 gemm coverage) PASS. `test_scan_
+cuda` (34.04s), `test_scan_by_key_cuda` (31.19s), `test_reduce_cuda`, `test_transpose_cuda`,
+`test_sort_cuda`/`test_sort_by_key_cuda`/`test_sort_index_cuda` (thrust-backed, the slowest build
+step) all PASS -- wave32 kernels fully correct. `test_threading_cuda` PASSED in 14.12s with no
+CTest timeout (the historical 900s-timeout artifact seen on gfx1101's first Windows attempt did
+not recur here). `test_topk_cuda`/`test_nearest_neighbour_cuda` (the historically GPU-fault-prone
+suites) both PASS cleanly, no recurrence. No NaN, no unexpected HIP fault, no low-CU-starvation
+hang (the known 20-CU gfx1151 stdgpu-class risk did not manifest here -- arrayfire's kernels are
+not the extreme-contention spinlock-retry shape that fault class describes).
+
+### CUDA no-regression gate -- SKIPPED (already recorded at this head_sha)
+Per validator.md, this gate runs once per `head_sha` and this host has no CUDA toolkit regardless.
+The gfx942 validator already recorded it at `950dcdd02f348c74d29f4de8199bca38a7e7a245` (see the
+"CUDA no-regression gate -- SKIPPED" entry above the 2026-08-11 linux-gfx1100 revalidation):
+`cuda-not-validated`, an environmental wall (host `fmt` v12 collides with arrayfire's `dim3` log
+formatter in pure-CUDA `any.cu`; `src/backend/cuda` is untouched by this whole port at every
+commit). Not re-run here; nothing new to add.
+
+### Pre-completion checks
+`python3 utils/jargon.py --port arrayfire`: 1 known hit, `commit 6800d5586:19 'MOAT'`, the same
+maintainer-accepted leftover documented in every prior round (explicit decision on file not to
+rewrite a public commit already pointed at by validated arches); no new hits from anything touched
+this session (nothing was committed to the fork this session at all -- see below). Documentation
+gate: `CMakeLists.txt`'s `AF_BUILD_HIP` option block (line 95) plus the mutual-exclusivity check
+against `AF_BUILD_CUDA` (line 204-207) is still where this project documents its ROCm/HIP build;
+unchanged, still correct.
+`git -C projects/arrayfire/src status --porcelain` empty before, during and after (only the
+gitignored `build-gfx1151/` directory ever existed locally; DLLs were copied INTO that gitignored
+tree, not into anything tracked). No push was made to `moat-port` -- the freeze guard
+(`protect-fork`) was installed and never needed to fire because nothing in this session required
+a source or CMake edit.
+
+### State transition
+`port-ready -> completed` (this platform's first validation at any head), `validated_sha =
+950dcdd02f348c74d29f4de8199bca38a7e7a245`.
+`python3 utils/moatlib.py set-state arrayfire windows-gfx1151 completed --agent validator`.
