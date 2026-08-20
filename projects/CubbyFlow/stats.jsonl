@@ -73,3 +73,4 @@
 {"kind":"phase","ts":"2026-08-20T19:03:48Z","phase":"test","seconds":1.807,"exit":0,"cmd":"bash agent_space/run_unittests.sh"}
 {"kind":"phase","ts":"2026-08-20T19:03:53Z","phase":"test","seconds":1.637,"exit":0,"cmd":"bash agent_space/run_sphsim.sh"}
 {"kind":"phase","ts":"2026-08-20T19:04:19Z","phase":"cuda-compile","seconds":2.757,"exit":0,"cmd":"bash agent_space/build_cuda.sh"}
+{"kind":"session","ts":"2026-08-20T19:05:32Z","epoch":1787252732.651904579,"event":"end","platform":"linux-gfx1100"}
