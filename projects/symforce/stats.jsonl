@@ -63,3 +63,4 @@
 {"kind":"phase","ts":"2026-08-20T17:47:13Z","phase":"test","seconds":4.184,"exit":0,"cmd":"bash -c hipcc -x hip /var/lib/jenkins/moat/agent_space/symforce_sumstore_test.hip.cpp -I /var/lib/jenkins/moat/projects/symforce/src/symforce/caspar/source/runtime --offload-arch=gfx1100 -o /var/lib/jenkins/moat/agent_space/symforce_sumstore_test && HIP_VISIBLE_DEVICES=0 /var/lib/jenkins/moat/agent_space/symforce_sumstore_test"}
 {"kind":"phase","ts":"2026-08-20T17:47:39Z","phase":"compile","seconds":0.155,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/symforce/src/build_fix465_gfx1100 -j16"}
 {"kind":"phase","ts":"2026-08-20T17:47:39Z","phase":"cuda-compile","seconds":0.176,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/symforce/src/build_fix465_cuda -j16"}
+{"kind":"session","ts":"2026-08-20T18:10:05Z","epoch":1787249405.497174612,"event":"start","platform":"linux-gfx1100"}

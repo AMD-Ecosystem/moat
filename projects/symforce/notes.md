@@ -505,3 +505,123 @@ covers the round. Platforms must revalidate at the staging tip 73847999 once
 the branch is pushed and head advances.
 
 Push still BLOCKED on gh token `workflow` scope (see previous section).
+
+## Review 2026-08-20 (fix round moat-fix-465, delta moat-port..moat-fix-465)
+
+Verdict: changes-requested. The code change is correct and safe; the
+upstream-visible rationale attached to it is not, and it asserts a verification
+that was promised to the reporter and does not hold.
+
+### 1. The SumStore commit's stated mechanism is the one the reporter retracted
+
+`73847999` body: "Generated kernels call SumStore several times back to back
+against the same scratch buffer (one call per sum output), so the reuse pattern
+is real". notes.md line 486 repeats it as "Mechanism verified against
+generated-kernel call patterns".
+
+That call pattern is already safe without the fix. `SumStore` opens with a
+block-wide barrier at `symforce/caspar/source/runtime/memops.cuh:382`, three
+lines above the stage-1 write. Call N+1 therefore cannot write `inout_shared`
+until every thread, including tile 0 still in call N's stage-2 read, has reached
+that barrier. Back-to-back `SumStore`, and `SumStore` followed by
+`SumFlushFinal` (leading barrier at memops.cuh:418), are both covered.
+
+bjoernellens1 said exactly this in the PR #465 comment of 2026-08-05 ("both call
+sites that actually exhibit the divergence already have their own leading
+`__syncthreads()` ... making the trailing barrier look redundant at exactly the
+site where the divergence was observed") and withdrew the mechanism. The reply
+of 2026-08-19 promised "I'll verify the mechanism against the surrounding code
+rather than take it on faith". The commit as written reports the retracted
+explanation back as verified.
+
+The standalone harness has the same problem: agent_space/symforce_sumstore_test.hip.cpp:27-31
+issues four back-to-back `SumStore` calls, i.e. the already-safe pattern, so it
+cannot separate pre-fix from post-fix. Both binaries pass here (I reran both:
+4/4 sums exact, 20 runs bit-identical each). notes.md line 496 attributes the
+pre-fix pass to "the reporter's revert-retest being inconclusive off gfx1151";
+the simpler explanation is that the harness never exercises an unsafe sequence
+on any hardware. The binaries do differ as intended -- the gfx1100 code objects
+carry 9 vs 13 `s_barrier`, so the barrier is emitted and the comparison was a
+real one, it just tested the wrong pattern.
+
+The only unbarriered writer of the shared buffer I found is
+`WriteSum1..WriteSum4` (memops.cuh:217-243): a plain
+`inout_shared[threadIdx.x * dim + i] = x` with no leading `__syncthreads()`,
+emitted inside the compute region by accessors.py:445, :481 and :517. All
+shared-memory accessors alias one buffer (kernel.py:45 takes the max of
+accessors.py:161-168, one `__shared__ uint8_t inout_shared[]` in
+kernel.cu.jinja:23), and factor.py:254-262 builds a kernel that mixes `AddSum`
+(SumStore) with `AddSharedSum` (WriteSum + FlushSumShared), so a `SumStore`
+followed by an unbarriered `WriteSum` into the same buffer is reachable. Note
+this is a lead, not a conclusion: whether the write can actually land in the
+32-element window stage 2 reads depends on the element types the two accessors
+cast the buffer to (accessors.py:163 picks `kernel_t` for read accessors and
+`storage_t` for write accessors), and with a single element size thread 32+
+writes at index >= 32 and misses the window. Verify it before claiming it.
+
+Either resolution is fine, but pick one and make the commit body match it:
+- establish a concrete unsafe emitted sequence and cite it, or
+- state the change as what the reporter honestly called it -- defensive
+  hardening that moves the shared-buffer-reuse contract inside `SumStore`, with
+  the mechanism explicitly not root-caused, and say that the originally proposed
+  write-after-read chain does not hold because of the leading barrier.
+
+notes.md line 486 needs the same correction.
+
+### 2. Test Plan cites a build that never compiles the changed file
+
+`73847999` body: "CUDA and HIP builds of the runtime both still compile and
+link". The runtime target compiles only shared_indices.cu, solver_tools.cu and
+sort_indices.cu; none of them includes memops.cuh (the only includer is
+templates/kernel.cu.jinja:8). Both build trees confirm it -- no dependency entry
+mentions memops.cuh, and only those three objects exist. So that line is not
+evidence for the barrier on either backend. The HIP side is genuinely covered by
+the harness, which does include memops.cuh; the CUDA side had no compile of the
+changed header at all.
+
+The header does compile under nvcc -- I checked it directly, and this is the
+command worth putting in the Test Plan in place of the runtime-build line:
+
+```
+printf '#include "memops.cuh"\n__global__ void k(float* a, float* b, float* c, int n){ __shared__ float tmp[4]; __shared__ float sh[32]; int g = blockIdx.x*blockDim.x+threadIdx.x; caspar::SumStore<float>(tmp, sh, 0, g<n, a[g]); caspar::SumFlushFinal<float>(tmp, b, 4); caspar::FlushSumBlock<3,float>(c, sh, g<n); }\n' > nvcc_memops.cu
+nvcc -arch=sm_75 -c nvcc_memops.cu -I symforce/caspar/source/runtime -o nvcc_memops.o
+```
+
+### Checked and clean (no action)
+
+- Merge fidelity: of the 161 files upstream changed between b78c11dc and
+  13e72357, the only one that differs between `upstream/main` and
+  `moat-fix-465` is the caspar CMake template. No upstream hunk was dropped, no
+  conflict markers anywhere in the tree.
+- The resolved template block matches upstream's CUDA block verbatim inside
+  `else()`, including `CASPAR_MIN_ARCH` and the `75 80-real 86-real 89-real`
+  list; the HIP branch is byte-identical to the published tip. `CASPAR_MIN_ARCH`
+  has no consumer anywhere in the repo outside that template, so scoping it to
+  the CUDA branch is complete (upstream's stated consumer is a downstream
+  FetchContent parent, for which a CUDA arch is meaningless in a `USE_HIP=ON`
+  build).
+- Caspar surface of the upstream delta: the template is the only file upstream
+  touched under symforce/caspar, so nothing else in the merge can reach the HIP
+  path.
+- Barrier placement: function scope, after the `meta_group_rank() == 0` block,
+  so every thread executes it. `SumStore` is called block-uniformly -- the
+  accessor templates close the `if (global_thread_idx < problem_size)` block
+  before the call and reopen it after (accessors.py:541-545) -- and in any case
+  the function already contained two `__syncthreads()`, so a divergent call site
+  would already hang. No new hang risk, no numeric change on either backend; the
+  CUDA cost is one barrier per call.
+- The 32-lane stage-2 read assuming exactly 32 tiles is pre-existing upstream
+  behaviour on both backends, and AddSum's `EXTRA_DATA = 32 - 1024`
+  (accessors.py:537) hardcodes the same 1024-thread assumption, so the notes'
+  "harness bug, not a code bug" reading of the 256-thread failure holds.
+- Commit hygiene: titles 57 and 50 chars, both `[ROCm]`; both bodies disclose AI
+  assistance and carry a Test Plan in fenced blocks; no agent Co-Authored-By.
+  The `Co-authored-by: bjoernellens1 <64093272+...>` trailer matches that
+  account's real GitHub id (verified via the API), so credit lands correctly.
+- `jargon.py` clean on `--commits`, `--diff` and `--port`.
+- Fork worktree carries no modified tracked files (two build dirs and the
+  rendered runtime CMakeLists.txt are untracked; that file is not in either
+  tree, upstream's or ours, so it is local build scaffolding, not a source gap).
+- No GPU run for the round yet: expected at review time, and the porter's own
+  note that 73847999 changes device code and voids the merge-only carry-forward
+  is correct.
