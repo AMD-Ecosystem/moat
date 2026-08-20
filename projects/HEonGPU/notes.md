@@ -6877,3 +6877,115 @@ subject is documenting the ROCm build's memory-pool behavior (`README.md`,
 (`projects/HEonGPU/src`) clean at `542ea1a` throughout and after.
 
 linux-gfx90a: **completed** at `542ea1a127e7b963f92ca7a6c88d96cbbfbef439`.
+
+## Validation 2026-08-20 (linux-gfx1100, Radeon Pro W7800, ROCm 7.2.3) -- completed
+
+Revalidation, this arch's `validated_sha` (`6ac06d0`, round-10 `-fgpu-rdc` revert) -> head
+`542ea1a`. `python3 utils/moatlib.py classify HEonGPU 6ac06d0 542ea1a` -> `class=mixed
+arch_independent=False inert=False`, touching real code (the round-18 hipMM-for-RMM-stub
+swap: `memorypool.cu/.cuh`, `random.cuh`, `evaluationkey.cu/.cuh`, `context.cu`,
+`util.cu/.cuh`, the `thirdparty/rmm_hip_stub` deletions, plus the round-12/13 Windows
+static-link guard and round-14+ doc rounds), not a rename or comment reflow -- full
+real-GPU revalidation, no carry-forward attempted (the delta plainly fails the
+"behavior-preserving" precondition; gfx90a's same-head validation already found
+`codeobj_diff.py` unusable on a pip-SDK host, and this host uses the standard `/opt/rocm`
+layout but the delta itself is not a carry-forward candidate regardless). GPU: `rocminfo`
+reports four "AMD Radeon Pro W7800 48GB" (gfx1100, RDNA3/wave32); `/opt/rocm/.info/version`
+7.2.3.
+
+```bash
+cd projects/HEonGPU/src && git fetch origin && git merge --ff-only origin/moat-port  # -> 542ea1a
+for d in thirdparty/GPU-FFT thirdparty/GPU-NTT thirdparty/RNGonGPU; do (cd $d && git checkout -- . && git clean -fdx); done
+rm -rf build
+cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build \
+    -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release \
+    -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON
+cmake --build projects/HEonGPU/src/build -j$(nproc)
+ctest --test-dir projects/HEonGPU/src/build --output-on-failure
+```
+
+### New wall on this host: rapids-cmake `GPU_TARGETS` vs `CMAKE_HIP_ARCHITECTURES` mismatch
+
+The first configure (flags exactly as the prior gfx1100 recipe) failed inside hipMM's
+`rapids_hip_init_architectures`:
+
+```
+CMake Error ... mismatch between CMAKE_HIP_ARCHITECTURES and GPU_TARGETS;
+  CMAKE_HIP_ARCHITECTURES='gfx1100', GPU_TARGETS='gfx1100;gfx1100;gfx1100;gfx1100'
+```
+
+This host has **four** gfx1100 cards; ROCm's `hip-config.cmake` auto-populates the
+`GPU_TARGETS` cache variable with one entry per visible device (not deduplicated), so it
+disagrees textually with the single-valued `-DCMAKE_HIP_ARCHITECTURES=gfx1100` even though
+both name the same architecture. `AMDGPU_TARGETS` came out singular (`gfx1100`) and did
+not trip the sibling check just above it in the same function -- only `GPU_TARGETS` is
+populated per-device. This is a host-population artifact (new since the earlier `6ac06d0`
+gfx1100 validation, which predates the hipMM dependency reaching this project), not a
+regression in the port: reconfiguring with `-DGPU_TARGETS=gfx1100 -DAMDGPU_TARGETS=gfx1100`
+added alongside `-DCMAKE_HIP_ARCHITECTURES=gfx1100` makes all three agree before the
+rapids-cmake check runs, and configure/build then succeed cleanly. No source file touched;
+this is a configure-invocation-only workaround. Promoted to
+`.claude/skills/cuda-to-rocm/references/validation.md` (new bullet next to the existing
+rapids-cmake/HEonGPU entries) since any rapids-cmake-based HIP dependency (RAPIDS-derived
+libraries generally, not just hipMM) hits this on any multi-GPU AMD host.
+
+Full recipe used (compile wrapped in `utils/timeit.sh HEonGPU compile -- ...`):
+
+```bash
+cmake -S projects/HEonGPU/src -B projects/HEonGPU/src/build \
+    -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DGPU_TARGETS=gfx1100 -DAMDGPU_TARGETS=gfx1100 \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DHEonGPU_BUILD_TESTS=ON -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON
+cmake --build projects/HEonGPU/src/build -j64
+```
+
+Configure rc=0; build rc=0 (51.5s), 42/42 executables built (`find build/bin -type f
+-executable | wc -l` = 42: 15 tests, 24 examples, 3 benchmarks). Warnings only, same
+classes as prior runs (`-Wunused-value` on `[[nodiscard]]` HIP error codes,
+`cudaDeviceSynchronize`/`cudaMemcpyAsync` via the compat header). `git -C
+projects/HEonGPU/src status --porcelain` empty before and after (integrity gate).
+
+### Tests and examples (wrapped in `utils/timeit.sh HEonGPU test -- ...`)
+
+`ctest`: **20/20 passed**, run twice back to back (16.46s and 16.34s).
+
+`readelf -d` over all 42 `build/bin` executables: 0 matches for `libgomp` in any
+`DT_NEEDED` (the round-6/7 dual-OpenMP-runtime fix still holds on this from-scratch
+hipMM-era build).
+
+Ran and checked by inspection:
+- `1_basic_bfv`: exit 0; squared/scaled BFV matrix outputs correct (`1->1`, `12->144`,
+  `3*1+1=6`... etc, matches expected arithmetic exactly).
+- `15_basic_tfhe`: exit 0; all eight gate outputs verified against the printed truth
+  table (`Input1: 1,1,0,1,0,1,0,0`, `Input2: 1,0,1,0,1,1,1,0`, `Input3(control):
+  0,0,0,0,1,1,1,1`) -- NAND/AND/NOR/OR/XNOR/XOR/NOT/MUX all correct, identical shape to
+  the earlier gfx1100 and gfx942 runs.
+- `3_basic_memorypool_config` (the example this delta's own docs describe): exit 0,
+  reports a sane device/host hipMM pool status (`Device Pool: Total 38601019392 / Used
+  656304 / Free 38600363088`, `Host Pool: Total 268435456 / Used 0 / Free 268435456`) --
+  exercises exactly the hipMM memory-pool path the round's doc commits are about.
+
+### CUDA no-regression gate
+
+Already recorded at this exact `head_sha` (`542ea1a`) by the linux-gfx90a revalidation
+session above ("CUDA no-regression gate re-run at this exact head": configure/build rc=0,
+zero `error:` lines, 57 executables linked, `-DCMAKE_CUDA_ARCHITECTURES=80` pinned). Per
+the validator's per-`head_sha` rule, not re-run here.
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --port HEonGPU` -> clean. Documentation confirmed present and
+current at this head, house style unchanged from the prior gfx1100 completion: `README.md`
+"AMD GPUs (ROCm)" section (`USE_HIP=ON`, hipMM/hipRAND/rocThrust substitutions, the new
+unified-memory pool-sizing guidance this delta added) and `docs/getting_started.rst` /
+`docs/advanced_topics.rst`.
+
+### Verdict
+
+`linux-gfx1100`: **completed** at `542ea1a127e7b963f92ca7a6c88d96cbbfbef439`. 20/20
+reproduced twice from a from-scratch build across the full round-10..round-19 delta
+(hipMM-for-RMM-stub swap, Windows static-link guard, memory-pool documentation); CUDA gate
+already recorded at this `head_sha` by gfx90a, not re-run; jargon and docs clean. New
+finding (host-population `GPU_TARGETS` mismatch on a multi-GPU rapids-cmake HIP configure)
+worked around at the configure invocation with no source or fork-branch change, and
+promoted to the `cuda-to-rocm` skill.
