@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:16:31Z",
-  "updated_at": "2026-08-20T00:29:54Z",
+  "updated_at": "2026-08-20T00:30:14Z",
   "head_sha": "97fc79a1322d157e99e83fc5f2790f04d4dea39a",
   "depends_on": [],
   "porting": null,
@@ -138,5 +138,6 @@
         "at": "2026-06-16T06:32:14Z"
       }
     }
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/foldmason/pull/1"
 }
