@@ -1207,3 +1207,104 @@ Checks before push: `utils/prose.py` clean on the section, `jargon.py --port
 op43dgs` clean, `audit-commits` clean, working tree clean (integrity gate),
 fork `main` untouched at 728de13. `d745b771` kept locally as tag `prev-head-2`
 in the clone for classification.
+
+## Review 2026-08-20 (round 3, reviewer, linux-gfx1100, /pr-review local-branch mode)
+
+Branch `moat-port` @ d648004aa63eb815ba369d6e53da6e9e35bfbaee vs base 728de13.
+Two commits: `8d5b2f4` (port, was 641d983) + `d648004` (Windows
+`/ALTERNATENAME`, was d745b77). 25 files, +177/-31. Verdict: CHANGES REQUESTED
+-- one item, a half-closure of the previous round's finding 2.
+
+History was rewritten again, so the series was re-checked rather than trusted:
+`git diff d745b771..d648004` is `README.md | 6 +++---` and nothing else, and
+`git diff 641d983 8d5b2f4 --name-only` is likewise `README.md` alone, so the
+port commit's non-README content is byte-identical to the round-2-reviewed
+tree. The Windows commit is unchanged in both patch and message
+(`git patch-id --stable` = `fa535bcd...` for both d745b77 and d648004; `diff`
+of the two `%B` bodies is empty). The device tree therefore did not move, and
+the round-2 fault-class verification carries over verbatim; it is not repeated.
+
+Round-2 findings, re-checked against the tree:
+
+1. torchvision -- CLOSED. `README.md:110` is now
+   `pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.4`,
+   on the same index line as torch. Independently confirmed the pairing exists
+   (`pip index versions torchvision --index-url .../rocm6.4` -> 0.24.1+rocm6.4,
+   0.24.0+rocm6.4, 0.23.0+rocm6.4) and that it covers the gap: `render.py:18`,
+   `metrics.py:16` and `lpipsPyTorch/modules/networks.py:7` are the only
+   module-scope third-party imports the documented commands reach beyond
+   plyfile/tqdm (`metrics.py:14`'s PIL arrives as a torchvision dependency).
+2. Windows -- HALF CLOSED, see below.
+3. `PYTORCH_ROCM_ARCH` default -- CLOSED and accurate on both halves.
+   `README.md:120` now says recent PyTorch builds for the visible GPUs while
+   older versions build for the architectures PyTorch itself was built for.
+   Checked both against source rather than the porter's summary: 2.14
+   `_get_rocm_arch_flags` walks `torch.cuda.device_count()` and collects
+   `gcnArchName` (`torch/utils/cpp_extension.py:2772-2781`); `v2.9.1` falls back
+   to `torch._C._cuda_getArchFlags()` (`v2.9.1:torch/utils/cpp_extension.py:2489-2495`).
+4. `--no-build-isolation` rationale -- CLOSED. `README.md:122` now attributes it
+   to `setup.py`'s top-level `import torch`. Confirmed: `setup.py:15` imports
+   torch in every submodule, and `git grep -E 'install_requires|build-system|setup_requires' -- submodules`
+   is empty with no `pyproject.toml` tracked anywhere, which is exactly why the
+   old "keeps pip from pulling a CUDA build of PyTorch" claim was wrong.
+
+### 1. The ROCm block now claims a Windows path whose very first command has no Windows wheel
+
+`README.md:113` adds `SET DISTUTILS_USE_SDK=1 # Windows only` and
+`README.md:114` adds the `SET` form of `PYTORCH_ROCM_ARCH`, inside a fence whose
+first step, `README.md:110`, is
+`pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.4`.
+That index has no Windows wheels at all: listing
+`download.pytorch.org/whl/rocm6.4/torch/` gives 118 wheels whose platform tags
+are only `linux_x86_64`, `manylinux_2_28_x86_64`, `manylinux2014_aarch64` and
+two `macosx` legacy stubs, zero `win_amd64`; `.../rocm6.4/torchvision/` is 176
+wheels, likewise zero; `.../nightly/rocm7.0/torch/` is zero as well. With
+`--index-url` (not `--extra-index-url`) pip has nowhere else to look, so a
+Windows reader fails on line 110 before reaching the `# Windows only` line that
+told them this recipe was for them.
+
+The prose pointer at `README.md:105` does not rescue them either: the PyTorch
+install selector it cites answers Windows+ROCm with the literal string "ROCm is
+not available on Windows" for both the stable and preview channels.
+
+This is the previous round's finding 2 half-closed. The env-var forms are right;
+what is still undocumented is where a Windows reader gets a ROCm PyTorch -- and
+the block now positively implies the documented source works there. This matters
+on this branch specifically: `d648004` exists only for Windows, and
+windows-gfx1101 and windows-gfx1201 are validated platforms (notes.md:543-551,
+notes.md:348-355), built against TheRock `rocm-sdk` wheels rather than
+download.pytorch.org.
+
+The porter's reason for not adding a Windows index (notes.md:1151-1154 -- do not
+assert an index we have not used) is sound and the fix does not require breaking
+it. One sentence next to `README.md:105` stating that the wheel index shown is
+Linux-only and that Windows needs a Windows ROCm build of PyTorch from a source
+that ships one is fully supported by what is verified above. Naming what this
+port was actually built against on Windows (the ROCm SDK wheels used for the two
+Windows validations) is optional and would also be accurate. Alternatively, if
+no Windows source is to be named at all, then `:113-114` should not be there
+either -- but that reopens finding 2, so documenting the source is the better
+exit.
+
+### Not blocking
+
+- The corrected skill lesson (`.claude/skills/cuda-to-rocm/references/strategy-b-torch.md:61`,
+  on this branch) is accurate as rewritten: the isolated build env contains only
+  the backend plus `[build-system] requires`, so a project pinning torch there
+  compiles against a CUDA torch while a project pinning nothing dies at metadata
+  generation, and `--no-deps` protection is vacuous when nothing is declared. Both
+  halves match this tree (no `pyproject.toml`, no `install_requires`, `import
+  torch` at `setup.py:15`).
+- `8d5b2f4`'s message grew a README paragraph in the changes list and a second
+  Test Plan fence covering the two `pip --dry-run` checks and the torchvision
+  index query. Title 66 chars, `[ROCm]` prefix, AI assistance disclosed, no
+  `Co-Authored-By`, no AMD-internal references. `jargon.py --port op43dgs`,
+  `moatlib.py audit-commits op43dgs` and `prose.py` on the added section are all
+  clean; the added README lines are ASCII (the non-ASCII hits in `README.md` are
+  upstream's own news section at :25-44).
+- Working tree clean at review time (integrity gate); fork `main` still 728de13;
+  local `moat-port` equals `origin/moat-port`.
+- GPU evidence at this head is owed but is not a review finding: the `setup.py`
+  delta from the round-1 fixes classified `mixed`, so all four platforms
+  revalidate next regardless of what this round changes. A README-only fix for
+  the item above classifies inert and adds nothing to that.
