@@ -7,14 +7,17 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T04:44:12Z",
-  "updated_at": "2026-08-20T01:45:31Z",
+  "updated_at": "2026-08-20T01:49:49Z",
   "head_sha": "9cfa09612047da4759af36dc1db7e1eb98e16848",
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx90a",
+    "since": "2026-08-20T01:49:49Z"
+  },
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 629335275,
-  "stage": "changes-requested",
+  "stage": "porting",
   "platforms": {
     "linux-gfx1100": {
       "state": "completed",
@@ -52,7 +55,7 @@
       "validated_sha": "471060045dad654d6fcb50ec45a3cd3345da3d8a",
       "started_at": "2026-06-05T08:58:58Z",
       "completed_at": "2026-06-23T22:49:26Z",
-      "updated_at": "2026-08-20T01:45:31Z",
+      "updated_at": "2026-08-20T01:49:49Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
