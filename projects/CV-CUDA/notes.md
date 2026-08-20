@@ -1133,3 +1133,89 @@ regression` -- not a gate, consistent with validator.md's "environmental wall" h
 sync -> FindHomography, wavefront floor) is clean; the sole deviation is one extra single-ULP
 residual outside the round's changed surface. Left for the porter/reviewer to close, most likely a
 baseline-count correction rather than a code change.
+
+## Reviewer ruling 2026-08-20 (d): the 42-vs-43 discrepancy is a THIRD test-fixture race, not a residual
+Adjudicating the gfx1100 validator's `validation-failed` at `358edc33` (3830/43 vs my twice-measured
+3831/42). No stage change: the state machine deliberately keeps a project at `review-passed` while
+architectures validate, and `review-passed -> reviewing` is refused, so this is a record correction
+rather than a re-review. No code change is required by this ruling.
+
+### (1) NOT the same class -- measured, not inferred
+`OpColorTwistPlanarVarShape/{0,1}.varshape_matches_interleaved` is **not** the single-ULP
+planar-vs-interleaved parity family. Three independent measurements:
+- MAGNITUDE. The genuine parity failures differ in ONE BYTE. `_/OpResizePlanar.tensor_matches_
+  interleaved/f58005b9`, from my own run log, prints `gpuInter` and `planarInter` identical across
+  the whole printed prefix except byte 20: `0x60` vs `0x61` -- the low byte of one float, exactly
+  1 ULP, which is the documented mechanism. `OpColorTwistPlanarVarShape/1` differs in the FIRST
+  float and keeps differing: interleaved `0x409CC258` = 4.8987 vs planar `0x4042F922` = 3.0465, and
+  further along the planar side holds `0x60040545` ~ 3.8e19 and `0x604B5B2F` ~ 5.9e19. The test
+  draws inputs from `uniform_distribution(0,1)` (TestOpColorTwist.cpp:298) and twist coefficients
+  from `uniform_real_distribution(-10,10)` (:428), so every legitimate output is bounded near +-40.
+  Values at 1e19 cannot come from this computation at all; they are not rounding.
+- SERIALIZATION. `AMD_SERIALIZE_COPY=3` alone makes all three ColorTwist parity tests PASS.
+  `AMD_SERIALIZE_KERNEL=3` alone does NOT (still 2 failures). So the fault is in a COPY, not in
+  kernel scheduling and not in arithmetic.
+- CONTROL. The same switch changes nothing for the real residuals: `_/OpResizePlanar.*` stays at
+  16 failures and `OpNormalize.*stddev_vectorized` stays at 2, with and without
+  `AMD_SERIALIZE_COPY=3`. Numeric residuals are invariant under serialization; races are not.
+```
+HIP_VISIBLE_DEVICES=2 build-hip/bin/cvcuda_test_system --gtest_filter='OpColorTwistPlanarVarShape/*'                    # 2 failed
+HIP_VISIBLE_DEVICES=2 AMD_SERIALIZE_COPY=3   build-hip/bin/cvcuda_test_system --gtest_filter='OpColorTwistPlanarVarShape/*'  # 3 passed
+HIP_VISIBLE_DEVICES=2 AMD_SERIALIZE_KERNEL=3 build-hip/bin/cvcuda_test_system --gtest_filter='OpColorTwistPlanarVarShape/*'  # 2 failed
+HIP_VISIBLE_DEVICES=2 AMD_SERIALIZE_COPY=3   build-hip/bin/cvcuda_test_system --gtest_filter='_/OpResizePlanar.*'            # 16 failed (unchanged)
+```
+
+### What it actually is: the documented Residual-A bug, third instance
+`tests/cvcuda/system/TestOpColorTwist.cpp:321` declares the planar upload's host buffer as a
+PER-ITERATION LOCAL -- `auto planes = test::planar::DeinterleaveToPlanes(...)` -- and then issues
+one `cudaMemcpy2DAsync` PER CHANNEL from `planes.data()` on `stream` (:327-331). `planes` is
+destroyed at the end of that loop iteration while those copies are still pending. The interleaved
+source in the same loop is safe because `srcHwc` is a `std::vector<std::vector<uint8_t>>` declared
+OUTSIDE the loop (:293) and indexed by `z` -- so only the PLANAR side reads freed heap, which is
+exactly why the planar output alone is wrong and why it carries values that are not floats from this
+computation at all. `stream` here is a plain `cudaStreamCreate` (:281), so this is NOT the R1
+null-stream-vs-non-blocking-stream class; it is purely host-buffer lifetime.
+This is verbatim the pattern already root-caused and accepted for
+`InterpolationVarShapeWrapTest.correct_shift` (see REMAINING cudatools residuals, Residual A):
+upstream test-fixture UB that is latent on CUDA, where a pageable async copy stages synchronously,
+and live on ROCm, where it is genuinely asynchronous. Same disposition as Residual A: DO NOT edit
+the upstream test. It is not a port defect, the operator is not implicated, and editing an upstream
+test would put gratuitous divergence in PR #293.
+
+### (2) Corrected residual definition -- replaces the exact count of 42
+`cvcuda_test_system` at this tip has **41 stable failures plus 0-2 race instances**, i.e. a
+legitimate observed total of **41, 42 or 43**:
+- **39 planar-vs-interleaved single-ULP parity** -- `_/OpResizePlanar` 16, `_/OpRotatePlanar` 9,
+  `_/OpPillowResizePlanar` 7, `_/OpRandomResizedCropPlanar` 4, `_/OpPadAndStackPlanar` 2,
+  `_/OpConv2DPlanar` 1. Deterministic, invariant under `AMD_SERIALIZE_COPY=3`, one differing byte.
+- **2 OpNormalize** `{tensor,varshape}_f32_single_channel_stddev_vectorized`, vectorized-vs-scalar.
+  Deterministic, invariant under serialization.
+- **0-2 `OpColorTwistPlanarVarShape/{0,1}`** -- the freed-pageable-buffer race above. Membership is
+  stable within one process and varies between processes; that is why my two sessions saw `/0` only
+  (42) and the validator's saw `/0` and `/1` (43) on the same binary and the same device index. A
+  later run of mine on device 2 in this session showed both, which rules out device index entirely.
+  `/2` has passed in every run so far and is not promised to.
+PASS CRITERION for this suite, replacing "exactly 42": **zero FindHomography failures; every failure
+is in the 39-entry parity list, the 2 OpNormalize entries, or `OpColorTwistPlanarVarShape/{0,1}`;
+nothing outside those three sets.** The validator's 43-item list satisfies it, and its own diff
+against my 42 already showed the only difference was `/1`. Re-record gfx1100 as passed on that
+basis.
+
+### (3) Blocking? No
+Nothing here touches the round's changes. FindHomography is clean, `cvcuda_test_unit` is
+27 passed / 1 skipped, and `nvcv_test_cudatools_system` stayed inside its two documented clusters.
+The extra failure is an upstream test bug this port already declined to fix once, on the same
+reasoning.
+My own gap, recorded so it is not repeated: in Review 2026-08-20 (b)/(c) I accepted "40
+planar-parity single-ULP" partly on the porter's summary and verified the MECHANISM without
+verifying the MAGNITUDE of every cluster. Two of those 40 were never parity failures at all. A
+residual family should be admitted only with a per-cluster magnitude measurement; the
+`AMD_SERIALIZE_COPY=3` control above takes about five seconds per cluster and separates race from
+arithmetic outright.
+
+### Supersedes
+- "Fix round 2026-08-20" and Review 2026-08-20 (b)/(c): wherever those say "42 failures = 40
+  planar-parity + 2 OpNormalize", read the three-way split above. The counts 48 -> 42 across R1
+  remain correct as totals.
+- Skill lesson (`fault-classes.md`, contraction entry) restated to 39 + 2, since two of the
+  quoted 40 were this race.

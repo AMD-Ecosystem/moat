@@ -88,3 +88,5 @@
 {"kind":"phase","ts":"2026-08-20T19:48:58Z","phase":"test","seconds":0.906,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/CV-CUDA/src/build-hip/bin && ./cvcuda_test_unit"}
 {"kind":"phase","ts":"2026-08-20T19:54:23Z","phase":"cuda-compile","seconds":161.446,"exit":1,"cmd":"bash -c source /opt/conda/etc/profile.d/conda.sh && conda activate cuda-12.8 && cmake --build /var/lib/jenkins/moat/projects/CV-CUDA/src/build-cuda -j16 -- -k 0"}
 {"kind":"session","ts":"2026-08-20T19:57:21Z","epoch":1787255841.658259570,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T19:58:46Z","epoch":1787255926.883743582,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T20:05:01Z","epoch":1787256301.054511474,"event":"end","platform":"linux-gfx1100"}
