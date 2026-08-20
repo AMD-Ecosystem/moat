@@ -114,3 +114,4 @@
 {"kind":"phase","ts":"2026-08-20T22:02:44Z","phase":"compile","seconds":0.224,"exit":1,"cmd":"ninja -C build-hip-win-gfx1151 lc0.exe"}
 {"kind":"phase","ts":"2026-08-20T22:03:07Z","phase":"compile","seconds":16.257,"exit":0,"cmd":"ninja -C /d/Develop/moat/projects/lc0/src/build-hip-win-gfx1151 lc0.exe"}
 {"kind":"phase","ts":"2026-08-20T22:09:56Z","phase":"test","seconds":39.043,"exit":0,"cmd":"meson test -C /d/Develop/moat/projects/lc0/src/build-hip-win-gfx1151"}
+{"kind":"session","ts":"2026-08-20T22:36:33Z","epoch":1787265393.381454200,"event":"end","platform":"windows-gfx1151"}
