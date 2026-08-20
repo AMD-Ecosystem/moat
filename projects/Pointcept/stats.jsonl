@@ -49,3 +49,4 @@
 {"kind":"phase","ts":"2026-08-20T20:51:12Z","phase":"test","seconds":33.768,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/Pointcept/src && HIP_VISIBLE_DEVICES=0 PYTHONPATH=. python3 /var/lib/jenkins/moat/agent_space/pointcept_sparse_conv_e2e.py --steps 20"}
 {"kind":"session","ts":"2026-08-20T20:55:52Z","epoch":1787259352.418060321,"event":"end","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-08-20T20:57:44Z","epoch":1787259464.862939651,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-20T21:09:56Z","epoch":1787260196.828173477,"event":"end","platform":"linux-gfx90a"}
