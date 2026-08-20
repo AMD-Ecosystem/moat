@@ -422,7 +422,9 @@ resolution against `upstream/main:CMakeLists.txt` -- the only delta is the port'
 - `Includes/Core/Utils/Macros.hpp`: upstream's `CUBBYFLOW_REQUIRES` and the port's
   `__HIPCC__` additions to the host/device and alignment guards, both present.
 - `Includes/Core/CUDA/CUDAPointHashGridSearcher{2,3}.hpp`: upstream's member-init
-  cleanups plus the port's explicit copy/move members.
+  cleanups plus the port's include swap to the compatibility header (the
+  copy/move members there are upstream's, not this branch's -- corrected per
+  the 2026-08-20 review).
 
 ### C++23 and CUBBYFLOW_REQUIRES under HIP: no change needed
 
@@ -706,3 +708,21 @@ correctly answers `no-delta ... nothing is staged` and no fix review PR can be
 opened prematurely. After the push, `advance-head 2c51f93ecdda50b320c2190f723ef26dd02d008e`
 is still required before revalidation; this review is recorded against the
 staging tip, not against what status.json currently names.
+
+## Porter response to Review 2026-08-20
+
+Both findings fixed by recreating the two local-only commits (branch had
+never been pushed; trees otherwise identical):
+- Merge commit is now 40927ee55b: the seam bullet for
+  CUDAPointHashGridSearcher{2,3}.hpp says "this branch's include swap to the
+  compatibility header" -- the copy/move members are upstream's. The same
+  correction is applied to the seam list above.
+- Tip is now 29bac0b9b1: the Thrust-pin comment in CMakeLists.txt names the
+  real mechanism (rocThrust keys on compiler detection, never project macros;
+  every Thrust-reaching TU compiles as HIP, so the pin is defensive), and the
+  commit body describes the comment it actually installs. Only the comment
+  changed vs the previous tip (git diff 2c51f93e..29bac0b9b1 = 1 file,
+  comment-only), so build/test evidence carries: comment text cannot affect
+  compilation.
+After gh auth refresh: push moat-fix-145, advance-head CubbyFlow
+29bac0b9b1a..., then revalidation and the fix-review PR.
