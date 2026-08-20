@@ -7,16 +7,22 @@
   "priority": 6.245,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-08-20T20:39:19Z",
+  "updated_at": "2026-08-20T20:49:17Z",
   "head_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
   "pr_url": "https://github.com/LeelaChessZero/lc0/pull/2420",
   "pr_number": 2420,
   "pr_opened_at": "2026-06-11T07:21:22Z",
-  "porting": null,
+  "porting": {
+    "arch": "windows-gfx1151",
+    "since": "2026-08-20T20:49:17Z"
+  },
   "waivers": {
     "windows": {
       "reason": "WITHDRAWN by the 2026-08-20 root-cause investigation -- DO NOT APPROVE. The earlier case for this waiver ('the obstacle is the Windows ROCm toolchain, a gfx-specific rocBLAS/Tensile fallback kernel for the value head's small GEMM shapes') has been FALSIFIED. The defect is a latent host-side stream-ordering bug in lc0's own weight-upload path, not a toolchain defect, and it is fixable in the port. allocAndUpload (src/neural/backends/cuda/layers.cc) launches copyTypeConverted on the legacy null stream, reading the shared scratch buffer, and returns without waiting; every compute stream is created cudaStreamNonBlocking so nothing orders that copy against the first evaluation, which overwrites the same scratch. The last upload of the last-constructed layer -- the value head's ip2_val_b_ -- loses the race, so exactly one 3-float bias is corrupted while every computed tensor around it is exact. Windows HIP loses this race deterministically where Linux HIP wins it. Measured on windows-gfx1151 at head 7727fa3: the dense-2 GEMM output equals a host double-precision reference exactly, the device bias reads -1.40802431 0.55243015 0.00000000 against the net's 0.43719077 -0.98977518 0.55311656, and adding cudaStreamSynchronize(0) at the end of allocAndUpload takes the gate check from 0/222 to 222/222 passing (value abs 6.0e-08, was 4.4e-02). rocBLAS/hipBLASLt was independently exonerated (ROCBLAS_USE_HIPBLASLT=0 changes nothing). Full evidence in projects/lc0/notes.md, section 'Investigation 2026-08-20 (windows-gfx1151) -- why Windows'. The correct route is a moat-fix-<pr#> round carrying the one-line fix, not a gate waiver; this suggestion is retained only to overwrite the falsified reasoning that stood here.",
-      "suggested_at": "2026-08-20T20:39:19Z"
+      "suggested_at": "2026-08-20T20:39:19Z",
+      "refused_by": "jeffdaily",
+      "refused_at": "2026-08-20T20:47:19Z",
+      "refused_note": "Refused on the 2026-08-20 root-cause evidence, which falsified the waiver's own rationale. The obstacle is NOT the Windows ROCm toolchain and NOT a gfx-specific rocBLAS/Tensile kernel: it is a latent host-side stream-ordering race in lc0's own code. allocAndUpload (src/neural/backends/cuda/layers.cc) memcpys into the shared scratch buffer, launches copyTypeConverted on the legacy null stream, and returns without synchronising; every compute stream is created cudaStreamNonBlocking, so nothing orders that copy against the first evaluation, which overwrites the same scratch. Only the last upload of the last-constructed layer survives to be observed, which for a classic net with no moves-left head is the value head's 3-float bias ip2_val_b_. Windows only loses the race because its KMD defers submission; the Linux KFD path lands the copy immediately. Verified fix is one line -- cudaStreamSynchronize(0) after the copy -- taking the gate from 0/222 to 222/222 and the value error from 4.4e-02 to 6.0e-08. Do not waive a real, fixable bug in our own port. Land the fix as a moat-fix-2420 round against open PR #2420, revalidate, and take the windows gate honestly."
     }
   },
   "pr_state": "open",
@@ -28,7 +34,7 @@
   },
   "license_spdx": "GPL-3.0",
   "upstream_repo_id": 135489692,
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -129,9 +135,9 @@
       "blocked_reason": "Value-head numerical defect confirmed unchanged at head 7727fa3 on TheRock ROCm 7.14.0a20260612 Windows SDK (AMD clang 23.0.0git). Builds+runs clean (261/261 targets, 8/8 CPU gtest, benchmark batch 1-256 fault-free). maia-1100 check backend (hip vs blas, atol=1e-3 rtol=1e-2): policy bit-identical (abs 3.0e-07, rel 5.2e-06); value wrong (abs 4.4e-02, rel 4.9e-01) on every one of 222/222 batches (sizes 1-55). Identical magnitude and pattern to the 2026-06-04 gfx1151 block and the 2026-06-05 gfx1101/gfx1201 block. Root cause unresolved (prior exhaustive investigation on gfx1101/gfx1201: graph capture off, use_gemm_ex=false, Conv1Layer loop replacement, standalone BLAS tests all PASS -- BLAS correct). Reopen if a TheRock ROCm Windows HIP runtime or value-head kernel fix is identified.",
       "validated_sha": null,
       "failed_sha": null,
-      "started_at": null,
+      "started_at": "2026-08-20T20:49:17Z",
       "completed_at": null,
-      "updated_at": "2026-08-20T16:48:04Z",
+      "updated_at": "2026-08-20T20:49:17Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -147,5 +153,11 @@
       }
     }
   },
-  "published_sha": "7727fa32c1992ef6702eacc1b8568715803b0701"
+  "published_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
+  "fix": {
+    "branch": "moat-fix-2420",
+    "base_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
+    "review_pr": null,
+    "opened_at": "2026-08-20T20:47:49Z"
+  }
 }
