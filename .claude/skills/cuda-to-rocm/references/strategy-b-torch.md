@@ -7,6 +7,16 @@ Torch hipifies extension sources at build time. Do not add a compat header and d
 - Build against a ROCm torch. If the tree was hipified once and is stale after edits, re-run the project's hipify step before rebuilding (a known incremental-build gotcha: edits to `.cu` can recompile the stale hipified mirror unless you re-hipify first).
 - For projects shipping their own `.cu` plus a setup.py, the change is often just: build against a ROCm torch and fix the fault classes below.
 
+### A vendored header tree passed only as `-I` is never hipified
+
+Torch's AOT hipify does NOT walk every header the compiler can reach. `CUDAExtension` calls it with `header_include_dirs=kwargs.get('include_dirs', [])` and `hipify_extra_files_only=True` (`torch/utils/cpp_extension.py`; same call in 2.9 through 2.14), so it preprocesses the listed sources plus the headers under the extension's `include_dirs` -- and nothing else. A vendored tree supplied only as `-I<dir>` inside `extra_compile_args` is invisible to it and stays pristine on disk.
+
+So do not add a hipify override (monkeypatching `torch.utils.hipify.hipify_python.hipify` to extend `ignores` or strip `header_include_dirs`) to "protect" a bundled header library until you have SEEN it get mangled. Check how the tree reaches the compiler first. Such a patch is the largest and least palatable hunk in an otherwise mechanical diff, it pins a private torch API, and it is a no-op whenever the tree is `-I`-only.
+
+Cheap proof, one build each: build with and without the override, deleting `build/`, the hipified mirror (`hip_*/`, `*.hip`) and `*.egg-info` between runs, then `diff -rq` the mirrors and hash the vendored tree. Identical output plus an unmodified tree settles it.
+
+If the project DOES pass the tree in `include_dirs`, the exposure is real: hipify copies only `.hpp`/`.h` into the mirror and content-rewrites them, so a header-only library with `.inl` bodies (GLM: 139 of them) loses files and can mis-detect its compiler. Fix it by not putting the vendored dir in `include_dirs` rather than by patching torch. GLM 0.9.9.9 in particular already has a `GLM_COMPILER_HIP` path and compiles verbatim under `-x hip`, so it needs no shim at all. (op43dgs -- a monkeypatch carried over from a gsplat precedent whose include wiring differed; verified no-op on torch 2.9.1, 2.13 and 2.14, then deleted)
+
 ### hipify generation: v1 renames, v2 masquerades
 
 Which generation runs decides what the `c10`/`at` CUDA classes are called, so it is worth
