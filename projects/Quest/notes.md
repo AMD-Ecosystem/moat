@@ -1857,12 +1857,18 @@ on the NVIDIA build as well; that is inert when unset, but it belongs in the sam
 
 ### 3. Recorded, not this round's to fix
 
-- `c1d7fff` still carries no AI-assistance disclosure (confirmed: the other four commits
-  match `AI coding agent`, `c1d7fff` does not). Registered as the unruled deferral
-  `quest-c1d7fff-missing-ai-disclosure`; a person rules it, not this review. Compounding
-  the case for the squash remedy: `9be60fc "[ROCm] Always split the decode KV range across
-  blocks"` is contradicted by `cbc3890`, which re-enables the single-block path, so an
-  unsquashed publication puts a self-reverting series in front of the maintainer.
+- ~~`c1d7fff` carries no AI-assistance disclosure.~~ RETRACTED, same day, before anyone
+  acted on it. Raised here off `grep -ci "AI coding agent"` -- the same too-narrow probe
+  that produced the original false positive one round earlier. `c1d7fff` does disclose, in
+  different words: "This work was authored with the assistance of Claude, an AI assistant."
+  The deferral `quest-c1d7fff-missing-ai-disclosure` was already withdrawn in `41d1deb`,
+  which landed from another host while this review was in progress. Two reviewers have now
+  made the identical mistake with the identical command: check disclosure with
+  `moatlib.py audit-commits`, never a grep for one phrasing.
+- What survives that line of thought, independent of disclosure: `9be60fc "[ROCm] Always
+  split the decode KV range across blocks"` is contradicted by `cbc3890`, which re-enables
+  the single-block path. Publishing unsquashed puts a self-reverting series in front of the
+  maintainer, so the PR-prep squash is worth doing on its own merits.
 - The CUDA no-regression gate is still owed at this head. Independently checked here and
   the previous round's risk assessment stands: `rapids_cuda_init_architectures` appears
   nowhere under `quest/ops/cmake` and `fetch_rapids.cmake` only downloads `RAPIDS.cmake`,
