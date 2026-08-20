@@ -103,3 +103,23 @@
 {"kind":"session","ts":"2026-08-20T04:42:23Z","epoch":1787200943.936755069,"event":"end","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-08-20T05:42:58Z","epoch":1787204578.683215147,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-20T05:51:51Z","epoch":1787205111.717663068,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T05:56:38Z","epoch":1787205398.509013246,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-20T06:00:55Z","phase":"compile","seconds":35.813,"exit":0,"cmd":"/opt/conda/envs/py_3.12/bin/python -m pip install /var/lib/jenkins/moat-worktrees/op43dgs/projects/op43dgs/src/submodules/simple-knn --no-build-isolation --no-deps"}
+{"kind":"phase","ts":"2026-08-20T06:01:45Z","phase":"compile","seconds":35.998,"exit":0,"cmd":"/opt/conda/envs/py_3.12/bin/python -m pip install /var/lib/jenkins/moat-worktrees/op43dgs/projects/op43dgs/src/submodules/diff-gaussian-rasterization-pinhole --no-build-isolation --no-deps"}
+{"kind":"phase","ts":"2026-08-20T06:04:00Z","phase":"test","seconds":2.096,"exit":0,"cmd":"env PYTHONPATH=agent_space/op43dgs /opt/conda/envs/py_3.12/bin/python agent_space/op43dgs/val_simpleknn.py"}
+{"kind":"phase","ts":"2026-08-20T06:04:11Z","phase":"test","seconds":2.254,"exit":0,"cmd":"env PYTHONPATH=agent_space/op43dgs /opt/conda/envs/py_3.12/bin/python agent_space/op43dgs/tier1_forward.py pinhole"}
+{"kind":"phase","ts":"2026-08-20T06:04:21Z","phase":"test","seconds":2.280,"exit":0,"cmd":"env PYTHONPATH=agent_space/op43dgs /opt/conda/envs/py_3.12/bin/python agent_space/op43dgs/tier2_backward.py pinhole"}
+{"kind":"phase","ts":"2026-08-20T06:04:32Z","phase":"test","seconds":3.738,"exit":0,"cmd":"env PYTHONPATH=agent_space/op43dgs /opt/conda/envs/py_3.12/bin/python agent_space/op43dgs/tier3_train.py pinhole"}
+{"kind":"phase","ts":"2026-08-20T06:05:17Z","phase":"compile","seconds":36.482,"exit":0,"cmd":"/opt/conda/envs/py_3.12/bin/python -m pip install /var/lib/jenkins/moat-worktrees/op43dgs/projects/op43dgs/src/submodules/diff-gaussian-rasterization-fisheye --no-build-isolation --no-deps"}
+{"kind":"phase","ts":"2026-08-20T06:05:28Z","phase":"test","seconds":2.250,"exit":0,"cmd":"env PYTHONPATH=agent_space/op43dgs /opt/conda/envs/py_3.12/bin/python agent_space/op43dgs/tier1_forward.py fisheye"}
+{"kind":"phase","ts":"2026-08-20T06:05:31Z","phase":"test","seconds":2.363,"exit":1,"cmd":"env PYTHONPATH=agent_space/op43dgs /opt/conda/envs/py_3.12/bin/python agent_space/op43dgs/tier2_backward.py fisheye"}
+{"kind":"phase","ts":"2026-08-20T06:05:34Z","phase":"test","seconds":3.657,"exit":1,"cmd":"env PYTHONPATH=agent_space/op43dgs /opt/conda/envs/py_3.12/bin/python agent_space/op43dgs/tier3_train.py fisheye"}
+{"kind":"phase","ts":"2026-08-20T06:07:12Z","phase":"compile","seconds":36.324,"exit":0,"cmd":"/opt/conda/envs/py_3.12/bin/python -m pip install /var/lib/jenkins/moat-worktrees/op43dgs/projects/op43dgs/src/submodules/diff-gaussian-rasterization-panorama --no-build-isolation --no-deps"}
+{"kind":"phase","ts":"2026-08-20T06:07:14Z","phase":"test","seconds":2.253,"exit":0,"cmd":"env PYTHONPATH=agent_space/op43dgs /opt/conda/envs/py_3.12/bin/python agent_space/op43dgs/tier1_forward.py panorama"}
+{"kind":"phase","ts":"2026-08-20T06:07:16Z","phase":"test","seconds":2.385,"exit":0,"cmd":"env PYTHONPATH=agent_space/op43dgs /opt/conda/envs/py_3.12/bin/python agent_space/op43dgs/tier2_backward.py panorama"}
+{"kind":"phase","ts":"2026-08-20T06:07:20Z","phase":"test","seconds":3.741,"exit":0,"cmd":"env PYTHONPATH=agent_space/op43dgs /opt/conda/envs/py_3.12/bin/python agent_space/op43dgs/tier3_train.py panorama 250 1e-4"}
+{"kind":"phase","ts":"2026-08-20T06:09:52Z","phase":"compile","seconds":36.295,"exit":0,"cmd":"/opt/conda/envs/py_3.12/bin/python -m pip install /var/lib/jenkins/moat-worktrees/op43dgs/projects/op43dgs/src/submodules/diff-gaussian-rasterization-pinhole --no-build-isolation --no-deps"}
+{"kind":"phase","ts":"2026-08-20T06:09:54Z","phase":"test","seconds":2.223,"exit":0,"cmd":"env PYTHONPATH=agent_space/op43dgs /opt/conda/envs/py_3.12/bin/python agent_space/op43dgs/tier1_forward.py pinhole"}
+{"kind":"phase","ts":"2026-08-20T06:09:57Z","phase":"test","seconds":2.286,"exit":0,"cmd":"env PYTHONPATH=agent_space/op43dgs /opt/conda/envs/py_3.12/bin/python agent_space/op43dgs/tier2_backward.py pinhole"}
+{"kind":"phase","ts":"2026-08-20T06:10:00Z","phase":"test","seconds":3.532,"exit":0,"cmd":"env PYTHONPATH=agent_space/op43dgs /opt/conda/envs/py_3.12/bin/python agent_space/op43dgs/tier3_train.py pinhole"}
+{"kind":"session","ts":"2026-08-20T06:16:11Z","epoch":1787206571.056734793,"event":"end","platform":"linux-gfx1100"}

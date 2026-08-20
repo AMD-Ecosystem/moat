@@ -840,3 +840,147 @@ GPU validation: all four platforms already carry `completed` at this head_sha,
 so nothing is owed there. Note that items 1, 2 and 5 change `setup.py`, which
 will advance head_sha into a build-affecting class and require a rebuild plus
 revalidation; item 3 and item 4 alone would classify inert.
+
+## Porter 2026-08-20 (linux-gfx1100) -- review round, d6ca8920 -> d745b771
+
+Answers all five findings of the 2026-08-20 review. Branch rebuilt as two
+coherent commits (no upstream PR exists, `pr_state=none`, so the port branch is
+still ours to shape); the final tree was byte-verified against the tree that was
+built and tested here before the history was rewritten.
+
+- `641d983` `[ROCm] HIP port: diff-gaussian-rasterization (3 cams) + simple-knn`
+  -- the source guards, the launch-syntax normalization, `.gitignore`, and now
+  the README ROCm section. The four `setup.py` files are byte-identical to
+  upstream in this commit.
+- `d745b77` `[ROCm] Windows: fix c10::ValueError dllimport LNK2001 in setup.py`
+  -- only the `/ALTERNATENAME` blocks, now the sole `setup.py` delta in the port.
+
+### 1+2. GLM hipify monkeypatch deleted (finding 1), so no ROCm gate remains (finding 2)
+
+Reproduced the reviewer's result on a THIRD torch, by build rather than by
+simulation. Pinhole built twice for gfx1100, once with `setup.py` carrying the
+d6ca892 monkeypatch and once without, deleting `build/`, `hip_rasterizer/` and
+`*.hip` between runs:
+
+- `diff -rq` on the hipified mirrors (`hip_rasterizer/` + `rasterize_points.hip`):
+  IDENTICAL.
+- sha256 over the whole `third_party/glm` tree: `5a7a2c26...` in BOTH builds,
+  and all 139 `.inl` files present in both. `git status` reports no
+  modification under `third_party/` after either build, so hipify never
+  rewrites GLM whether or not it is "protected".
+- torch here is 2.14.0a0+gitb81488e / HIP 7.2.53211, i.e. neither of the two
+  versions the reviewer checked (2.13 and 2.9.1). Same answer.
+
+The block is therefore gone from all three rasterizer `setup.py` files, taking
+the `import torch.utils.hipify.hipify_python` dependency on a private torch API
+with it. Nothing gates on `PYTORCH_ROCM_ARCH` or `/opt/rocm` any more; the only
+remaining guard in any `setup.py` is `os.name == 'nt' and torch.version.hip`
+(the Windows linker fix), which was already correct.
+
+Root cause of the original mistake, for the record: `CUDAExtension` passes
+`header_include_dirs=kwargs.get('include_dirs', [])` to hipify and sets
+`hipify_extra_files_only=True`. This project supplies GLM only as `-I` inside
+`extra_compile_args["nvcc"]`, never as `include_dirs`, so hipify never walks
+it. The gsplat precedent was carried over without checking that its include
+wiring matched.
+
+### 3. README ROCm install path (finding 3)
+
+`README.md` `## Installation` gains an `### AMD GPUs (ROCm)` subsection in the
+README's own style (```shell fences, one line per paragraph, ASCII): install a
+ROCm build of torch, do NOT use `environment.yml` (it pins `cudatoolkit` and
+`pytorch=1.12.1`), optional `PYTORCH_ROCM_ARCH`, then
+`pip install submodules/... --no-build-isolation --no-deps` for simple-knn and
+one rasterizer variant, with the mutually-exclusive-module note. This closes
+the gap the previous round recorded at notes.md:713-726.
+
+### 4. Test Plan fenced blocks (finding 4)
+
+Both commit messages now carry a Test Plan whose commands are in a fenced
+block; `moatlib.py audit-commits op43dgs` is clean (it flagged d6ca892 before).
+The Windows commit's block is the gfx1101/gfx1201 recipe from notes.md:567-607
+with host-specific paths generalized.
+
+### 5. Whitespace churn reverted (finding 5)
+
+The four `setup.py` files were reset to their upstream `728de13` content and the
+Windows block re-applied, so the trailing spaces on the Inria licence line
+(`:6` in each rasterizer) and on `"spatial.cu", ` (simple-knn `:40`) are back.
+Also dropped the incidental `here = ...` / `glm_dir = ...` refactor that only
+existed to feed the monkeypatch: the rasterizer `-I` line is upstream's again.
+The whole `setup.py` diff versus upstream is now the `/ALTERNATENAME` block and
+nothing else.
+
+### Build and test (real gfx1100, HIP_VISIBLE_DEVICES=0)
+
+Platform: AMD Radeon Pro W7800 48GB, gfx1100 (RDNA3, wave32), ROCm 7.2.1,
+torch 2.14.0a0+gitb81488e / HIP 7.2.53211, python 3.12. `setup.py` changes are
+build-affecting, so all four extensions were rebuilt from scratch.
+
+```
+export HIP_VISIBLE_DEVICES=0 PYTORCH_ROCM_ARCH=gfx1100 MAX_JOBS=16
+P=/opt/conda/envs/py_3.12/bin/python
+SRC=projects/op43dgs/src
+
+utils/timeit.sh op43dgs compile -- $P -m pip install $SRC/submodules/simple-knn --no-build-isolation --no-deps
+$P -m pip uninstall -y diff_gaussian_rasterization
+utils/timeit.sh op43dgs compile -- $P -m pip install $SRC/submodules/diff-gaussian-rasterization-pinhole --no-build-isolation --no-deps
+# fisheye and panorama likewise, uninstalling between variants
+```
+
+All four build clean; `llvm-objdump --offloading` shows only
+`hipv4-amdgcn-amd-amdhsa--gfx1100` in each installed `_C*.so` (3 bundles per
+rasterizer, 1 for simple-knn).
+
+The gitignored `agent_space/op43dgs/` harnesses from the June rounds were gone
+from this host, so they were rewritten from the notes: `raster_common.py`
+(scene + camera), `tier1_forward.py`, `tier2_backward.py`, `tier3_train.py`,
+`val_simpleknn.py`. They are pure torch (this host has numpy 2.5.2 against a
+torch built for numpy 1.x, so any `.numpy()` path would fail for reasons that
+have nothing to do with the port). Scene/camera differ from June's, so absolute
+slopes differ slightly; the gates are the ones notes.md documents.
+
+```
+utils/timeit.sh op43dgs test -- env PYTHONPATH=agent_space/op43dgs $P agent_space/op43dgs/val_simpleknn.py
+utils/timeit.sh op43dgs test -- env PYTHONPATH=agent_space/op43dgs $P agent_space/op43dgs/tier1_forward.py <variant>
+utils/timeit.sh op43dgs test -- env PYTHONPATH=agent_space/op43dgs $P agent_space/op43dgs/tier2_backward.py <variant>
+utils/timeit.sh op43dgs test -- env PYTHONPATH=agent_space/op43dgs $P agent_space/op43dgs/tier3_train.py <variant> 250 <lr>
+```
+
+Results (9 harness runs, all PASS):
+
+- simple-knn distCUDA2 (N=50000): finite=True nonneg=True bitwise_det=True.
+- pinhole Tier1: (3,128,128) finite=True coverage=0.9999 bitwise_det=True.
+- pinhole Tier2: grad-sum run-to-run rel diff 0.00e+00 on all four tensors;
+  opac slope=0.998 sign=1.00, sh slope=1.014 sign=1.00, scales slope=0.960
+  sign=1.00, means slope=0.245 sign=0.97 (sign-gated by design).
+- pinhole Tier3 (lr 3e-3, 250 it): loss 0.00363->0.00000, PSNR 24.40->55.37 dB.
+- fisheye Tier1: finite=True coverage=0.7589 bitwise_det=True.
+- fisheye Tier2: opac slope=0.954 sign=1.00, sh slope=0.868 sign=1.00,
+  scales slope=0.604 sign=1.00 (sign-gated on the curved variants),
+  means slope=-0.011 sign=0.53.
+- fisheye Tier3 (lr 1e-4, 250 it): loss 0.00240->0.00110, PSNR 26.20->29.61 dB.
+- panorama Tier1: finite=True coverage=0.0801 bitwise_det=True.
+- panorama Tier2: opac slope=1.003, sh slope=1.004, scales slope=0.993 (all
+  sign=1.00), means slope=1.236 sign=0.91.
+- panorama Tier3 (lr 1e-4, 250 it): loss 0.00027->0.00001, PSNR 35.70->50.92 dB.
+- Trainer path (`gaussian_renderer.render`, `scene.GaussianModel`, both compiled
+  modules) imports and runs.
+
+GOTCHA for the curved variants: the fisheye/panorama fit needs a SMALL step.
+At lr 3e-3 the fisheye fit diverges (loss 0.00240->0.00355) and at 5e-4 it only
+reaches 0.00174; at 1e-4 it converges cleanly. That is the documented
+optimal-projection approximate means gradient (notes.md:123-137), not a wave32
+fault -- the same harness at the same lr converges on pinhole, the analytic
+gradients are bitwise stable run to run, and no device code changed this round.
+The June record used a separate `fish_fit.py` for exactly this reason.
+
+Working tree clean at push time (integrity gate). Fork `main` untouched
+(728de13 upstream mirror). `d6ca892` is kept locally as tag `prev-head` in the
+clone for classification.
+
+`moatlib.py classify op43dgs d6ca8920 d745b771` -> `class=mixed
+arch_independent=False inert=False`, so all four platforms go to `revalidate`
+at the new head. Nothing in the device tree changed (the delta is `setup.py`
+packaging plus README), but the setup.py edits are build-affecting so a real
+rebuild per platform is the honest gate.
