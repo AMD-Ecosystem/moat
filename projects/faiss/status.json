@@ -7,67 +7,14 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-05-31T16:36:35Z",
-  "updated_at": "2026-08-20T07:20:06Z",
+  "updated_at": "2026-08-20T07:32:59Z",
   "head_sha": "01a09e824b4792d1ef4f14ef5cdb99c37737c353",
   "depends_on": [],
-  "porting": null,
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 81227005,
   "stage": "review-passed",
   "platforms": {
-    "linux-gfx90a": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "01a09e824b4792d1ef4f14ef5cdb99c37737c353",
-      "started_at": "2026-05-31T23:40:43Z",
-      "completed_at": "2026-08-20T06:15:43Z",
-      "updated_at": "2026-08-20T06:15:43Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "reviewer"
-    },
-    "linux-gfx1100": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "ab1dcf71",
-      "started_at": "2026-06-01T20:49:00Z",
-      "completed_at": "2026-06-08T03:47:04Z",
-      "updated_at": "2026-06-08T03:47:04Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 1,
-        "first_session_at": "2026-06-01T20:49:00Z",
-        "last_session_at": "2026-06-01T21:10:00Z"
-      },
-      "last_agent": "validator",
-      "carry_forward": {
-        "to": "ab1dcf71",
-        "method": "binary-equiv",
-        "detail": "TestUtils.cpp test-only change (CLOCK_REALTIME->std::chrono); faiss.dll device code objects unchanged (test TU not in faiss_gpu_objs)",
-        "at": "2026-06-08T03:47:04Z"
-      }
-    },
     "windows-gfx1101": {
       "state": "completed",
       "blocked": false,
@@ -113,6 +60,29 @@
       },
       "last_agent": "validator"
     },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "01a09e824b4792d1ef4f14ef5cdb99c37737c353",
+      "started_at": "2026-06-01T20:49:00Z",
+      "completed_at": "2026-08-20T07:32:59Z",
+      "updated_at": "2026-08-20T07:32:59Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-01T20:49:00Z",
+        "last_session_at": "2026-06-01T21:10:00Z"
+      },
+      "last_agent": "validator"
+    },
     "windows-gfx1151": {
       "state": "completed",
       "blocked": false,
@@ -135,6 +105,29 @@
         "last_session_at": null
       },
       "last_agent": "validator"
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "01a09e824b4792d1ef4f14ef5cdb99c37737c353",
+      "started_at": "2026-05-31T23:40:43Z",
+      "completed_at": "2026-08-20T06:15:43Z",
+      "updated_at": "2026-08-20T06:15:43Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
     }
   },
   "porting_released": {

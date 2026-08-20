@@ -1462,3 +1462,90 @@ Two things the approver should look at deliberately:
    current content, so the PR table claims ONLY linux-gfx90a (108/108) and
    windows-gfx1151 (119/119), both at `01a09e82`, and refers to the other three as earlier
    revisions of the same change. Do not re-add the unverifiable rows.
+## Validation 2026-08-20 (revalidate, linux-gfx1100) -> completed
+
+Device: AMD Radeon Pro W7800 48GB x4 (gfx1100, RDNA3, wave32), HIP_VISIBLE_DEVICES=0,
+ROCm 7.2.3 (system `/opt/rocm`). Platform was `revalidate`: `validated_sha=ab1dcf71`,
+`head_sha=01a09e824b4792d1ef4f14ef5cdb99c37737c353`.
+
+No local fork clone existed on this host; cloned fresh (`AMD-Ecosystem/faiss`), checked
+out `moat-port`, confirmed `HEAD == head_sha` (`01a09e824b4792d1ef4f14ef5cdb99c37737c353`).
+`pr-state faiss` -> `none`, so `moat-port` is not frozen. `python3 utils/moatlib.py
+protect-fork faiss` installed the pre-push hook on the new clone.
+
+**Route chosen: full real-GPU revalidation at head (not carry-forward).** `classify faiss
+ab1dcf71 01a09e824` (already recorded above by the gfx90a session) is `mixed`, so an
+automatic carry does not apply. No pre-existing build at `validated_sha` existed on this
+host to pair with a fresh head build for `codeobj_diff.py`, and building both shas from
+scratch would cost roughly the same wall time as one full build plus the real GPU suite
+while producing weaker evidence (no functional GPU run at all if verdict=identical), so
+this session ran the normal full revalidation instead, matching the route the
+windows-gfx1151 session chose for the same reason (single clone, no paired build dir).
+The review's own "Validation plan" note (line 1114 above) that `codeobj_diff` carry-forward
+is expected on all five platforms is not contradicted -- it is simply not the cheaper
+option on a host starting from zero, and the review does not mandate it over a full run.
+
+**Build (fresh, this host):**
+```
+$ git rev-parse HEAD
+01a09e824b4792d1ef4f14ef5cdb99c37737c353
+$ git status --porcelain --untracked-files=no   # clean before configure
+export PATH=/opt/rocm/bin:/opt/rocm/libexec/hipify:$PATH
+export ROCM_PATH=/opt/rocm
+cmake -S . -B build -G Ninja \
+  -DFAISS_ENABLE_GPU=ON -DFAISS_ENABLE_ROCM=ON -DFAISS_ENABLE_CUVS=OFF \
+  -DFAISS_ENABLE_PYTHON=OFF -DFAISS_ENABLE_C_API=OFF -DFAISS_ENABLE_EXTRAS=OFF \
+  -DBUILD_TESTING=ON -DBUILD_SHARED_LIBS=ON \
+  -DFAISS_OPT_LEVEL=generic -DFAISS_ENABLE_MKL=OFF -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_C_COMPILER=/opt/rocm/bin/amdclang \
+  -DCMAKE_CXX_COMPILER=/opt/rocm/bin/amdclang++ \
+  -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++
+# Configuring/Generating done, 0 errors -- hipify.sh ran at configure via execute_process
+ninja -C build -j24 faiss faiss_gpu_objs   # exit 0, 303/303 targets, 0 errors (4 pre-existing
+                                            # -Wignored-pragmas float_control warnings only)
+ninja -C build -j24                        # exit 0, 111/111 targets total, 0 errors
+```
+GPU arch confirmed in the built library: `llvm-objdump --offloading build/faiss/libfaiss.so`
+extracts a `hipv4-amdgcn-amd-amdhsa--gfx1100` offload bundle (plus host bundles), i.e. the
+real device code objects for this arch, not a CPU-only build.
+
+**GPU test results (HIP_VISIBLE_DEVICES=0, OPENBLAS_NUM_THREADS=1):**
+```
+$ ctest --test-dir build -j1 -R "TestGpu|TestCodePacking" --output-on-failure
+100% tests passed, 0 tests failed out of 108   (390.27 sec)
+$ build/faiss/gpu/test/TestGpuIcmEncoder
+[  PASSED  ] 7 tests.   (3030 ms; sharded n1..n20, uses all 4 local GPUs for the sharding suite)
+```
+115/115 GPU tests pass, exactly matching the gfx90a (108+7) and windows-gfx1151 (119,
+superset via individual --gtest_filter runs) records at this same head_sha, and matching
+this platform's own original 2026-06-01 run (108/108) suite-for-suite. No wrong numbers,
+no HSA faults, no regressions.
+
+**CUDA no-regression gate: already recorded at this exact head_sha, not re-run.**
+`linux-gfx90a`'s 2026-08-20 revalidation ran the CUDA no-regression gate at `01a09e824`
+(nvcc 12.8.93, `-DCMAKE_CUDA_ARCHITECTURES=80` pinned) and found no regression; this gate
+runs once per head_sha and this host need not repeat it.
+
+**Non-GPU regression.** No CPU-path code is touched by this branch (`ab1dcf71..head` is
+GPU-test-TU + hipify.sh comment + INSTALL.md only, per the review's delta accounting); no
+separate CPU ctest re-run performed, consistent with every prior session on this branch.
+
+**Integrity gate.** Configure's `hipify.sh` run rewrote the same tracked files under
+`faiss/gpu` and `c_api/gpu` as every prior session (confirmed via `git status --porcelain`
+before restoring). Restored before completing:
+```
+git checkout -- faiss/ c_api/
+git status --porcelain | grep -v '^??' | wc -l   # 0
+```
+`python3 utils/moatlib.py audit-clean faiss` -> OK. `python3 utils/jargon.py --port faiss`
+-> clean. `python3 utils/moatlib.py audit-commits faiss` -> OK. Documentation gate: INSTALL.md
+documents `-DFAISS_ENABLE_ROCM=ON`/`-DCMAKE_HIP_ARCHITECTURES` alongside the CUDA GPU build
+instructions (already reviewed; unchanged this round).
+
+**State.** `python3 utils/moatlib.py set-state faiss linux-gfx1100 completed` records
+`validated_sha=01a09e824b4792d1ef4f14ef5cdb99c37737c353`. This platform carries the
+`wave32` gate; combined with `linux-gfx90a` (`wave64`) and `windows-gfx1151` (`windows` +
+`wave32`) already satisfying their gates at this same head_sha, all three required gates
+remain satisfied at head. This is additive real-GPU evidence for `wave32` on a second,
+independent gfx1100 host.
