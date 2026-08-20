@@ -72,3 +72,8 @@
 {"kind":"phase","ts":"2026-08-20T18:32:21Z","phase":"test","seconds":0.900,"exit":0,"cmd":"/var/lib/jenkins/moat/projects/CV-CUDA/src/build-hip/bin/cvcuda_test_unit"}
 {"kind":"session","ts":"2026-08-20T18:37:36Z","epoch":1787251056.828988413,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-20T19:00:56Z","epoch":1787252456.970506909,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-20T19:12:18Z","phase":"compile","seconds":133.574,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/CV-CUDA/src/build-hip -j16"}
+{"kind":"phase","ts":"2026-08-20T19:14:15Z","phase":"test","seconds":107.583,"exit":1,"cmd":"/var/lib/jenkins/moat/projects/CV-CUDA/src/build-hip/bin/cvcuda_test_system"}
+{"kind":"phase","ts":"2026-08-20T19:14:40Z","phase":"test","seconds":1.167,"exit":1,"cmd":"/var/lib/jenkins/moat/projects/CV-CUDA/src/build-hip/bin/nvcv_test_cudatools_system"}
+{"kind":"phase","ts":"2026-08-20T19:14:55Z","phase":"test","seconds":0.897,"exit":0,"cmd":"/var/lib/jenkins/moat/projects/CV-CUDA/src/build-hip/bin/cvcuda_test_unit"}
+{"kind":"phase","ts":"2026-08-20T19:16:27Z","phase":"compile","seconds":2.009,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/CV-CUDA/src/build-hip -j16"}
