@@ -278,6 +278,24 @@ def gate_forks():
     return [l for l in r.stdout.splitlines() if l.strip()][:10]
 
 
+def gate_commits():
+    """Fork commits obey the message rules AGENTS.md states.
+
+    Those rules were written down and never executed. jargon.py walks the same range but
+    only for in-house vocabulary; pr_intent.py checks the PULL REQUEST title, which is a
+    different string. So a body missing its Test Plan could reach a maintainer unremarked,
+    and publication sends the branch as it stands -- `upstream.py --publish` opens the pull
+    request with `--head <fork>:<branch>` and squashing first is supported but not
+    enforced.
+
+    Slow for the same reason as the fork gate: it shells out per clone.
+    """
+    r = _run([sys.executable, "utils/moatlib.py", "audit-commits"])
+    if r.returncode == 0:
+        return []
+    return [l for l in r.stdout.splitlines() if l.strip()][:10]
+
+
 def gate_published():
     """No local clone carries commits on an open PR's branch that the PR does not.
 
@@ -522,6 +540,53 @@ def gate_harness_adapters():
     return problems
 
 
+# Spelled by construction so this file cannot trip its own gate.
+CONFLICT_START = "<" * 7 + " "
+CONFLICT_MID = "=" * 7
+CONFLICT_END = ">" * 7 + " "
+
+
+def gate_conflict_markers():
+    """No tracked file still carries an unresolved merge conflict.
+
+    `git add` on a conflicted file marks it RESOLVED, so committing the markers
+    themselves needs no force and produces no warning. A trunk-merge sweep across the
+    port branches does that resolution in bulk, which is where one slip becomes many
+    bad branches. Caught exactly that way on 2026-08-19: a resolution reached
+    port/colmap with the markers still in a skill reference, and every other gate
+    reported ok.
+
+    A conflict is the full start/middle/end triple in order, so a markdown setext
+    underline or a row of equals signs on its own is not one. An unterminated start is
+    reported too: prose about conflicts does not begin a line with the marker.
+    """
+    problems = []
+    r = _run(["git", "ls-files", "-z"])
+    for path in r.stdout.split(chr(0)):
+        if not path:
+            continue
+        p = REPO / path
+        if not p.is_file():
+            continue
+        try:
+            lines = p.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue                     # binary or unreadable: not this gate's business
+        start = mid = None
+        for n, line in enumerate(lines, 1):
+            if line.startswith(CONFLICT_START):
+                start, mid = n, None
+            elif start and mid is None and line.rstrip() == CONFLICT_MID:
+                mid = n
+            elif start and mid and line.startswith(CONFLICT_END):
+                problems.append(f"{path}:{start}: unresolved merge conflict committed "
+                                f"(`git add` alone only marks it resolved)")
+                start = mid = None
+        if start:
+            problems.append(f"{path}:{start}: merge conflict marker with no end marker")
+    return problems
+
+
 GATES = {
     "gh-guard": (gate_gh_guard, False),
     "harness-adapters": (gate_harness_adapters, False),
@@ -530,12 +595,14 @@ GATES = {
     "readme": (gate_readme, False),
     "licenses": (gate_licenses, False),
     "blobs": (gate_blobs, False),
+    "conflicts": (gate_conflict_markers, False),
     "states": (gate_states, False),
     "jargon": (gate_jargon, False),
     "optout": (gate_optout, False),
     "surface": (gate_surface, False),
     "published": (gate_published, False),
-    "forks": (gate_forks, True),      # slow: shells out per fork clone
+    "forks": (gate_forks, True),
+    "commits": (gate_commits, True),   # slow: shells out per fork clone      # slow: shells out per fork clone
 }
 
 

@@ -1600,6 +1600,95 @@ def _fork_repo(name):
     return PROJECTS / name / "src"
 
 
+# AGENTS.md states the commit-message rules; until this, nothing ran them. jargon.py
+# scans the same range but only for in-house vocabulary, and pr_intent.py checks the
+# PULL REQUEST title rather than the commit titles. So a body missing its disclosure or
+# its Test Plan reached upstream unremarked -- Quest c1d7fff did, through three porter
+# rounds, a full review and every gate.
+COMMIT_TITLE_MAX = 72
+# Disclosure wording is not standardised -- the fleet uses at least ten phrasings,
+# from "Assistance from an AI coding agent was used" to "Authored with the assistance
+# of Claude, an AI assistant by Anthropic". Match the naming rather than one sentence
+# shape, so the gate does not fail commits that comply in different words.
+_DISCLOSURE_TOKENS = ("ai coding agent", "ai agent", "ai assistant",
+                      "claude", "anthropic")
+_UNIT_SEP = chr(31)
+_REC_SEP = chr(30)
+
+
+def commit_message_problems(name, obj=None):
+    """What the fork branch's commits get wrong, one string per offence.
+
+    Judged over the WHOLE branch rather than the newest commit, because publication
+    sends the branch as it stands: `upstream.py --publish` opens the pull request with
+    `--head <fork>:<branch>`, and squashing first is supported but not enforced. Merges
+    are skipped, since a trunk merge carries upstream's message rather than ours.
+
+    Returns None when this host holds no clone of the fork -- the check did not run,
+    which is not the same as passing, the same distinction audit-clean draws.
+    """
+    obj = obj or load_status(name)
+    repo = _fork_repo(name)
+    if not repo.is_dir():
+        return None
+    base = obj.get("fork_default_branch") or "main"
+    fmt = "%H" + _UNIT_SEP + "%s" + _UNIT_SEP + "%b" + _REC_SEP
+    out = None
+    for cand in (f"origin/{base}..{PORT_BRANCH}", f"{base}..{PORT_BRANCH}"):
+        r = subprocess.run(["git", "log", "--no-merges", "--format=" + fmt, cand],
+                           cwd=str(repo), capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
+        if r.returncode == 0:
+            out = r.stdout
+            break
+    if out is None:
+        return [f"{name}: cannot resolve {base}..{PORT_BRANCH} in the local clone"]
+
+    records = [r for r in (x.strip(chr(10)) for x in out.split(_REC_SEP)) if r]
+    titles = [r.split(_UNIT_SEP)[1] for r in records if len(r.split(_UNIT_SEP)) > 1]
+    ours = [t for t in titles if t.startswith("[ROCm]")]
+    # The fork default is meant to be an unmodified upstream mirror. When it falls behind,
+    # base..moat-port stops describing our work and fills up with upstream's own commits,
+    # which of course do not follow our rules. Reporting each of those as an offence buries
+    # the real finding, which is that the mirror needs fast-forwarding before anyone reads
+    # a diff against it.
+    if titles and len(ours) * 2 < len(titles):
+        return [f"{name}: {len(titles) - len(ours)} of {len(titles)} commits in "
+                f"{base}..{PORT_BRANCH} are not ours -- the fork default branch is behind "
+                f"upstream; fast-forward it before judging commit messages or diffs"]
+
+    problems = []
+    for rec in records:
+        rec = rec.strip("\n")
+        if not rec:
+            continue
+        parts = rec.split(_UNIT_SEP)
+        if len(parts) < 2:
+            continue
+        sha, title = parts[0][:7], parts[1]
+        body = parts[2] if len(parts) > 2 else ""
+        if not title.startswith("[ROCm]"):
+            problems.append(f"{name} {sha}: title does not start with [ROCm] -- {title[:50]}")
+        if len(title) > COMMIT_TITLE_MAX:
+            problems.append(f"{name} {sha}: title is {len(title)} chars, over {COMMIT_TITLE_MAX}")
+        low = body.lower()
+        if not any(t in low for t in _DISCLOSURE_TOKENS):
+            problems.append(f"{name} {sha}: body does not disclose AI-agent assistance")
+        if "test plan" not in low:
+            # A Test Plan is a claim about running something, so it is only meaningful
+            # where the commit could change what runs. Reuse the regression guard's own
+            # classifier rather than inventing a second idea of "does not affect the
+            # build": a delta it calls inert cannot alter any target's compiled output.
+            verdict = _classify_safe(repo, parts[0] + "~1", parts[0])
+            if verdict is None or not getattr(verdict, "inert", False):
+                problems.append(f"{name} {sha}: body has no Test Plan")
+        elif "```" not in body:
+            problems.append(f"{name} {sha}: Test Plan has no fenced command block")
+        if "co-authored-by" in low:
+            problems.append(f"{name} {sha}: carries a Co-Authored-By trailer")
+    return problems
+
+
 # ---- fix rounds on an open upstream PR -------------------------------------
 #
 # Once an upstream PR is open, its head branch is upstream-visible: any push to it
@@ -2779,7 +2868,20 @@ def fleet(platform):
     After a project's folder moves to its own branch, `next_task` cannot see it --
     correctly, since you cannot work a project whose files are not in your tree. But
     then nothing answers "what is out there", and work becomes invisible rather than
-    merely elsewhere. This scans the refs and says which branch to check out."""
+    merely elsewhere. This scans the refs and says which branch to check out.
+
+    The question is about the remote, so fetch before answering it. The scan reads
+    remote-tracking refs, which are only as fresh as the last fetch; orient fetches
+    before it asks, but a direct `moatlib.py fleet` between orients answered from
+    refs minutes stale, and on 2026-08-20 that offered faiss's review to a second
+    host while linux-gfx90a's already-pushed lock acquisition sat unfetched. The
+    lock protocol still refused the second entry -- this fetch narrows the window,
+    it does not carry the exclusion. Offline the scan degrades to the old behavior:
+    stale refs and a warning, which beats refusing to answer at all."""
+    r = _git("fetch", "origin", "--prune", check=False)
+    if r.returncode != 0:
+        sys.stderr.write("fleet: fetch failed; answering from possibly stale "
+                         "remote-tracking refs\n")
     out = []
     for name, where in sorted(all_projects().items()):
         obj, _ = project_record(name)
@@ -3984,6 +4086,8 @@ def main(argv=None):
                    help="list projects whose upstream PR is ready to open (honors recorded dispositions; "
                         "use this instead of scanning raw state==completed)")
 
+    s = sub.add_parser("audit-commits", help="report fork commits that break the commit-message rules")
+    s.add_argument("name", nargs="?")
     s = sub.add_parser("audit-clean", help="report forks with uncommitted tracked source/build edits (integrity-gap fingerprint)")
     s.add_argument("name", nargs="?", default=None, help="one project, or omit to scan every fork")
 
@@ -4315,6 +4419,26 @@ def main(argv=None):
         print("NOTE: pr_ready checks the licence gate and recorded dispositions itself; "
               "a project listed here has passed both. What it cannot judge is whether "
               "the change is worth sending -- read the diff before opening.")
+    elif args.cmd == "audit-commits":
+        names = ([args.name] if args.name
+                 else [n for n, _o, _w in project_records()])
+        problems, judged = [], 0
+        for n in names:
+            found = commit_message_problems(n)
+            if found is None:
+                continue                 # no clone here: did not run, not a pass
+            judged += 1
+            problems.extend(found)
+        for line in problems:
+            print(line)
+        if problems:
+            sys.exit(1)
+        if judged == 0:
+            print("audit-commits: NO local fork clone to judge here"
+                  + (f" ({args.name})" if args.name else "")
+                  + " -- the check did not run; it binds on the hosts holding the clones")
+        else:
+            print(f"OK: fork commit messages conform ({judged} local clone(s) judged)")
     elif args.cmd == "audit-clean":
         names = ([args.name] if args.name
                  else [n for n, _o, _w in project_records()])
