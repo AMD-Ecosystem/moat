@@ -125,3 +125,5 @@
 {"kind":"session","ts":"2026-08-20T06:16:11Z","epoch":1787206571.056734793,"event":"end","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-20T06:20:26Z","epoch":1787206826.492083057,"event":"start","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-08-20T06:20:44Z","epoch":1787206844.367783987,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-20T06:20:15Z","epoch":1787206815.213738832,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T06:30:24Z","epoch":1787207424.750230294,"event":"end","platform":"linux-gfx1100"}

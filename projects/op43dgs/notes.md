@@ -984,3 +984,131 @@ arch_independent=False inert=False`, so all four platforms go to `revalidate`
 at the new head. Nothing in the device tree changed (the delta is `setup.py`
 packaging plus README), but the setup.py edits are build-affecting so a real
 rebuild per platform is the honest gate.
+
+## Review 2026-08-20 (round 2, reviewer, linux-gfx1100, /pr-review local-branch mode)
+
+Branch `moat-port` @ d745b771ec80d0662fd0bcdd4bf7bda609e4cbfd vs base 728de13
+(fork `main`, clean upstream mirror). History was rewritten since the previous
+round, so the branch was reviewed as a new series, not as a delta: two commits
+(641d983 port, d745b77 Windows `/ALTERNATENAME`), 25 files, +174/-31. Verdict:
+CHANGES REQUESTED -- four items, ALL of them inside the README block added this
+round. The code, the commit messages and the promoted skill lesson are clean;
+that re-verification is not repeated here.
+
+All five findings of the previous round are closed and were re-checked against
+the tree, not against the porter's summary: the GLM monkeypatch is gone from all
+three rasterizer `setup.py` files (`git diff 728de13 641d983 -- '*setup.py'` is
+empty, i.e. all four are byte-identical to upstream in the port commit, so the
+whitespace churn of finding 5 is reverted with it); no `PYTORCH_ROCM_ARCH` or
+`/opt/rocm` gate remains anywhere in the tree (the only surviving `setup.py`
+guard is `os.name == 'nt' and torch.version.hip`); `README.md:101-119` documents
+the ROCm install; `audit-commits` and `jargon.py --port` are both clean.
+
+Fix all four with one edit to `README.md:105-119`. Doing it now is free: all four
+platforms are already stale at this head (`pr-ready` reports every platform
+`completed` at d6ca892 against `head_sha` d745b77), so a doc-only commit on top
+changes nothing about the validation that has to run next.
+
+### 1. The ROCm environment recipe omits torchvision, which the repo's own eval path imports
+
+`README.md:111` installs `plyfile tqdm` only. The CUDA path it replaces installs
+torchvision through `environment.yml:13` (`torchvision=0.13.1`), and three
+tracked modules import it at module scope: `render.py:18` `import torchvision`,
+`metrics.py:16` `import torchvision.transforms.functional as tf`, and
+`lpipsPyTorch/modules/networks.py:7` `from torchvision import models`. So a
+reader who follows the new ROCm block can run `train.py` but fails with
+`ModuleNotFoundError` on `python render.py`, which `README.md:141` documents as
+the next step, and on `metrics.py`.
+
+Add torchvision to the same `--index-url` line as torch (`pip install torch
+torchvision --index-url ...`), not to a bare `pip install`: a PyPI torchvision is
+built against CUDA and is not the right pairing for a ROCm torch.
+
+### 2. No Windows path, in a branch whose second commit exists only for Windows
+
+`README.md:101-119` is Linux-shaped throughout (`export ...`), and the CUDA block
+one screen above carries `README.md:75` `SET DISTUTILS_USE_SDK=1 # Windows only`
+with no ROCm counterpart. This branch's other commit, d745b77, is a Windows-only
+linker fix, its own Test Plan sets `DISTUTILS_USE_SDK=1` before building, and two
+Windows platforms are validated platforms for this port. As written, the
+Windows ROCm build this port specifically enables is documented nowhere and a
+Windows reader following the ROCm section hits the distutils/SDK wall the CUDA
+section warns them about.
+
+Add the `set DISTUTILS_USE_SDK=1` line (and the `set` form of
+`PYTORCH_ROCM_ARCH`) to the ROCm block, matching how `:75` handles it.
+
+### 3. `defaults to the installed GPU` is not true on the PyTorch versions a reader will have
+
+`README.md:113` `export PYTORCH_ROCM_ARCH=gfx1100 # optional; defaults to the
+installed GPU`. That describes only very recent PyTorch: on current main,
+`_get_rocm_arch_flags` enumerates visible devices
+(`torch/utils/cpp_extension.py:2772-2787`), but on v2.9.1 -- the version this
+port's own Windows platforms validated against -- the fallback is
+`torch._C._cuda_getArchFlags()` (`v2.9.1:torch/utils/cpp_extension.py:2489-2495`),
+i.e. the architectures the installed PyTorch wheel was built for, which is not
+the same set and need not contain the user's GPU. A reader on a newer GPU than
+their wheel who trusts this line gets a module with no matching code object and a
+runtime failure rather than a build error.
+
+Reword to something version-independent: unset, the build targets whatever
+architectures the installed PyTorch supports; set it to your GPU's `gfx` id to
+target just that one.
+
+### 4. The rationale given for `--no-build-isolation --no-deps` is wrong
+
+`README.md:119` says the flags keep "pip from pulling a CUDA build of PyTorch
+into the build environment". Neither flag does that here. No `setup.py` in the
+tree declares `install_requires` and no `pyproject.toml` exists (`git grep
+'install_requires|build-system|setup_requires' -- submodules` is empty), so
+`--no-deps` has nothing to act on and an isolated build env would never install
+torch at all -- it installs only the setuptools backend. What actually breaks
+without `--no-build-isolation` is metadata generation, because `setup.py:15`
+imports torch:
+
+```
+$ pip --version
+pip 26.1.2
+$ pip install --dry-run --no-deps ./submodules/simple-knn
+  File "<string>", line 13, in <module>          # setup.py, import torch
+  ModuleNotFoundError                            # inside /tmp/pip-build-env-*/overlay
+ERROR: Failed to build 'file:///.../submodules/simple-knn' when getting requirements to build wheel
+```
+
+Say that instead: the submodules' `setup.py` imports torch, so the build has to
+see the ROCm PyTorch already installed in the active environment.
+
+### Not blocking
+
+- Skill lesson `65d2563` (`references/strategy-b-torch.md:10-18`) checks out
+  against the torch source, not just against the porter's summary:
+  `header_include_dirs=include_dirs` with `hipify_extra_files_only=True` is the
+  literal call in both `torch/utils/cpp_extension.py:1598-1607` (2.14) and
+  `v2.9.1:torch/utils/cpp_extension.py:1372-1381`; only `extra_files` are
+  preprocessed (`hipify_python.py:1165`), headers are pulled in solely through
+  the `header_include_dirs` lookup at `hipify_python.py:907-921`, and
+  `header_extensions` (`hipify_python.py:1096`) is `.cuh/.h/.hpp`, which is why a
+  `.inl`-carrying library would lose files if it ever were walked. The advice and
+  the cheap-proof recipe are correct as written.
+- Fault classes re-verified at this head: zero warp intrinsics, `warpSize`,
+  `tiled_partition`, `cg::reduce`, PTX, half2, textures or managed memory in the
+  device tree (`third_party/glm` excluded); `NUM_WARPS (BLOCK_SIZE/32)` at each
+  `cuda_rasterizer/auxiliary.h:25` remains dead with zero references (upstream
+  code, correctly left alone); `simple_knn.cu:162` still clamps its neighbour
+  window with `max(0, idx - 3)` / `min(P - 1, idx + 3)`.
+- `#define __trap __builtin_trap` (`cuda_rasterizer/auxiliary.h:18-22`) is
+  justified: `grep -rl __trap /opt/rocm/include` is empty on ROCm 7.2.1, and
+  `auxiliary.h:159` calls `__trap()` from `in_frustum`. Guarding
+  `device_launch_parameters.h` is likewise required rather than churn -- torch's
+  hipify has no mapping for it (`CUDA_INCLUDE_MAP['device_launch_parameters.h']`
+  is `None`) and ROCm ships no such header; all ten include sites are guarded
+  consistently.
+- The three rasterizer variants carry byte-identical payloads (each variant diff
+  is identical to pinhole's after normalising the variant name; only blob hashes
+  and hunk offsets differ).
+- CUDA path is unchanged: every source edit is inside `#if !defined(USE_ROCM)` /
+  `#if defined(USE_ROCM)` except the launch-syntax normalisation (semantically
+  identical to nvcc) and an unconditional `#include <cfloat>` in
+  `simple_knn.cu:19`.
+- GPU evidence at this head is owed but not a review finding: the `setup.py`
+  delta classified `mixed`, so all four platforms revalidate next.
