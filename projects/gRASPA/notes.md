@@ -415,7 +415,8 @@ force-push was deliberate and no upstream PR was open.
   the two extra Windows flags (`-D_USE_MATH_DEFINES` and an `-isystem` for
   clang's own intrinsic headers).
 
-Whole branch is 24 insertions / 1 deletion across 5 files.
+Whole branch is 29 insertions / 1 deletion across 5 files (`git diff --stat
+e4edfc2 moat-port`; it was 24/1 before the README rewording of 2026-08-20).
 
 ### What was dropped, and why
 
@@ -448,8 +449,10 @@ OOBPROBE block 134 thread 127 compA 1 AtomA 2147484974 sizeA 1327 compB 1 AtomB 
 The trailing threads decode interaction indices past the real pair count. The
 closed-form triangular-index inverse computes its square root argument
 (`-8*(int) InteractionIdx + 4*N*(N-1) - 7`) in **unsigned** 64-bit, because
-`NAdsorbateAtoms` is a `size_t`: past the real pair count it wraps to
-`2^64 - 27191` rather than going negative, `sqrt` of that is `2^32`,
+`NAdsorbateAtoms` is a `size_t`: past the real pair count it wraps rather
+than going negative. This thread's `InteractionIdx` is 883100 (the printed
+`AtomB` pins it exactly; there are only 879801 real pairs), so the argument
+is `2^64 - 26399`, `sqrt` of that is `2^32` to within a rounding step,
 `floor(sqrt/2 - 0.5)` is 2147483647, and `AtomA` comes out as the double
 -2147482322.0, which converts to the 2147484974 printed above. `AtomB` is then
 derived from that `AtomA` and lands at ~2.3e18. `MolID` is a `size_t*`, so the
@@ -682,6 +685,8 @@ only their messages, so `a0b6dce` -> `99712d2` and `9cfa096` -> `fd06b97`.
    it at 2.3e18 -- and notes that a signed evaluation would give `NaN`
    instead. The probe output and the rest of the argument are unchanged. The
    same sentence in the Rescope section above is corrected identically.
+   (The `2^64 - 27191` constant this round wrote was wrong; it is
+   `2^64 - 26399`, corrected in the 2026-08-20 second fix round below.)
 2. README.md Windows bullet: the hardcoded
    `<hip-sdk>/lib/clang/<version>/include` is replaced by
    `-isystem "$(clang++ -print-resource-dir)/include"`, which is right on
@@ -840,3 +845,81 @@ Rescope section of this file has the same drift.
 - No GPU run exists at `fd06b97`. Expected at review time, not part of this
   verdict. Because the fix for finding 1 is message-only, the tree that finally
   validates will still be this one.
+
+## Fix round 2026-08-20 (linux-gfx90a) -- re-review findings 1-2, text only
+
+Branch rewritten `fd06b97` -> `7e3c08b` (force-with-lease; no upstream PR
+open, `pr-state` reports `none`). **The tree is byte-identical to `fd06b97`**:
+`git diff fd06b97 7e3c08b` is empty and both commits carry the same tree
+object `ff186406cc62dbab135ec2dbf66c7bde30028efc`. Only the first commit's
+message changed, so `99712d2` -> `55d7c59` and `fd06b97` -> `7e3c08b` (the
+second message is byte-identical, verified with `diff`). **No rebuild and no
+re-run were done, deliberately: nothing a compiler reads changed.** The
+gfx90a binary and the nine-example run recorded in the Rescope section above
+describe this tree exactly; what they do not describe is the *sha*, so every
+platform still needs a validation pass at `7e3c08b`.
+
+### 1. The wrapped square-root argument is `2^64 - 26399`, not `2^64 - 27191`
+
+Recomputed independently from `src_clean/VDW_Coulomb.cu:1538-1539` before
+touching the message, and it reproduces the re-review exactly. Method: take
+the probe's `AtomA = 2147484974` as given and invert the `AtomB` expression,
+which is affine in `InteractionIdx` mod 2^64 (every operand is `size_t`, and
+`N - AtomA` wraps to 18446744071562067969, whose triangular term is
+2305843008139952128):
+
+```python
+N = 1327                                    # NAdsorbateAtoms, Tail-Correction
+NmA  = (N - 2147484974) % 2**64
+const = (2147484974 + 1 - N*(N-1)//2 + (NmA*((NmA-1) % 2**64) % 2**64)//2) % 2**64
+IIdx  = (2305843010287440402 - const) % 2**64          # -> 883100
+arg   = (-8*int_cast(IIdx) + 4*N*(N-1) - 7) % 2**64    # -> 2**64 - 26399
+```
+
+Results, each checked forward against the printed pair:
+
+| quantity | value |
+|---|---|
+| real pair count `N*(N-1)/2` | 879801 |
+| `InteractionIdx` implied by the printed `AtomB` | **883100** |
+| sqrt argument | **18446744073709525217 = 2^64 - 26399** |
+| `sqrt(arg)` (double) | 4294967295.9999967, i.e. 2^32 to a rounding step |
+| `floor(sqrt/2 - 0.5)` | 2147483647 |
+| `AtomA` as double -> `size_t` | -2147482322.0 -> 2147484974 (matches probe) |
+| `AtomB` from that `AtomA` | 2305843010287440402 (matches probe) |
+
+The previously written `2^64 - 27191` belongs to `InteractionIdx = 883199`,
+which yields `AtomB = 2305843010287440501` -- one hundred off the printed
+value, so it is falsifiable from the same paragraph. Both indices give the
+same `AtomA`, which is why the error survived the first fix round: `AtomA` is
+constant over a whole plateau of indices and only `AtomB` pins the index.
+`55d7c59`'s body now names `InteractionIdx 883100` and the 879801 real pairs
+alongside the constant, so the chain is checkable end to end without
+re-deriving the index. Note the sqrt is *not* exactly 2^32: `2^64 - 26399`
+rounds to the double `2^64 - 26624` (ulp is 2048 there), whose square root is
+just under 2^32 -- the body says "to within a rounding step" rather than
+claiming equality. `floor(sqrt/2 - 0.5)` is 2147483647 either way.
+
+The same sentence in the Rescope section above is corrected identically. The
+2026-08-20 review and re-review blocks keep their original numbers: they are
+dated records of what was said.
+
+### 2. Skill size claim refreshed
+
+`.claude/skills/cuda-to-rocm/references/assess-existing-support.md` said the
+rescoped port was "24 insertions across 5 files". `git diff --stat e4edfc2
+moat-port` is `5 files changed, 29 insertions(+), 1 deletion(-)` (the README
+rewording of the previous fix round added five lines), so the skill and the
+"Whole branch is ..." line in the Rescope section both say 29 now.
+
+### Gotcha worth remembering (project-specific, stays here)
+
+A commit body that quotes raw instrumentation output has to reconcile with it
+digit for digit, and the *second* decoded value is what pins the input. When
+a decode chain has a plateau -- here every `InteractionIdx` in a wide range
+maps to the same wrapped `AtomA` -- verifying the first printed number proves
+nothing about the constant you claim upstream of it. Invert the expression
+that is injective in the index instead. Not promoted to the skill: it is a
+reviewing habit about this kernel's evidence, and the generalizable half
+(unsigned wrap in padded-thread index math, latent OOB that stops
+reproducing) is already in `references/fault-classes.md` from the last round.
