@@ -1219,3 +1219,24 @@ instructions; this run followed it as written and it needed no correction.
 satisfied at the current `head_sha` (both prior Windows platforms are stale
 at the pre-rescope sha) -- `python3 utils/moatlib.py pr-ready gRASPA` reports
 `True` after this record.
+
+## Review PR opened 2026-08-20 (windows gate closed by gfx1151)
+
+Opened https://github.com/AMD-Ecosystem/gRASPA/pull/1 (`moat-port` -> `main`, 2 commits,
+5 files, +29/-1), title
+`[ROCm] Fix an out-of-bounds read and build the classical core on Windows`.
+`prose.py` and `jargon.py` clean. Awaiting `/moat approve`.
+
+Two things the approver should know:
+
+1. **The windows gate was NOT satisfied before this run**, despite `windows-gfx1101` and
+   `windows-gfx1201` both reading `completed`. Both are pinned to `4710600...`, a sha that
+   was force-pushed away in the 2026-08-20 rescope (upstream merged its own HIP backend via
+   `gpu_compat.h`, so the fork was rebuilt down to the residual 2-commit delta). Those two
+   records are pre-rescope artifacts. `pr-ready` is correct because windows-gfx1151 is
+   `completed` at the live head `7e3c08b`, but a platform-by-platform read of `status.json`
+   would be misleading. Worth either revalidating those two or annotating them.
+
+2. **The PR results table claims only the three platforms validated at `7e3c08b`**
+   (linux-gfx90a, linux-gfx1100, windows-gfx1151). The stale gfx1101/gfx1201 figures are
+   deliberately not cited, for the same reason.

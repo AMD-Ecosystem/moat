@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T04:44:12Z",
-  "updated_at": "2026-08-20T08:01:44Z",
+  "updated_at": "2026-08-20T08:05:02Z",
   "head_sha": "7e3c08b33df60cf2a970e2d9647a7a6922514458",
   "depends_on": [],
   "porting": null,
@@ -149,5 +149,6 @@
     "arch": "linux-gfx90a",
     "since": "2026-08-20T02:10:23Z",
     "at": "2026-08-20T02:14:30Z"
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/gRASPA/pull/1"
 }
