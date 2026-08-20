@@ -61,3 +61,12 @@
 {"kind":"session","ts":"2026-08-20T02:08:24Z","epoch":1787191704.882915935,"event":"end","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-08-20T02:10:23Z","epoch":1787191823.052306645,"event":"start","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-08-20T02:14:37Z","epoch":1787192077.451088645,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-20T02:16:10Z","epoch":1787192170.415750367,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-20T02:16:18Z","phase":"compile","seconds":0.005,"exit":127,"cmd":"bash -c GRASPA_ARCH=gfx90a ../HIP_COMPILE"}
+{"kind":"phase","ts":"2026-08-20T02:16:33Z","phase":"compile","seconds":9.178,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/gRASPA/src/src_clean && GRASPA_ARCH=gfx90a ../HIP_COMPILE"}
+{"kind":"phase","ts":"2026-08-20T02:16:49Z","phase":"test","seconds":0.231,"exit":0,"cmd":"bash -c HSA_XNACK=1 HIP_VISIBLE_DEVICES=1 /var/lib/jenkins/moat/projects/gRASPA/src/src_clean/hip_main.x > output.txt 2>&1; echo EXIT=$?"}
+{"kind":"phase","ts":"2026-08-20T02:17:44Z","phase":"test","seconds":35.736,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/gRASPA/src/Examples/Tail-Correction && HSA_XNACK=1 HIP_VISIBLE_DEVICES=1 /var/lib/jenkins/moat/projects/gRASPA/src/src_clean/hip_main.x > output.txt 2>&1"}
+{"kind":"phase","ts":"2026-08-20T02:17:54Z","phase":"test","seconds":0.328,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/gRASPA/src/Examples/Reference_NIST_SPCE/Box-1 && HSA_XNACK=1 HIP_VISIBLE_DEVICES=1 /var/lib/jenkins/moat/projects/gRASPA/src/src_clean/hip_main.x > output.txt 2>&1"}
+{"kind":"phase","ts":"2026-08-20T02:18:40Z","phase":"test","seconds":1.862,"exit":2,"cmd":"python3 -m pytest -q -s"}
+{"kind":"phase","ts":"2026-08-20T02:18:44Z","phase":"test","seconds":0.471,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/gRASPA/src/Examples && python3 -m pytest -q -s"}
+{"kind":"session","ts":"2026-08-20T02:20:13Z","epoch":1787192413.231832591,"event":"end","platform":"linux-gfx90a"}

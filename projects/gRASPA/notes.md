@@ -969,3 +969,80 @@ No GPU run exists at `7e3c08b`; expected at review time. Since the tree is the
 one already exercised on gfx90a, revalidation is a re-run for the sha rather
 than for new code, and Windows still owes the first check of the README flag
 recipe (see "For the next round" in the Rescope section).
+
+## Validation 2026-08-20 (linux-gfx90a revalidate, MI250X gfx90a, `7e3c08b`)
+
+**Tree-identity check**: `origin/moat-port` at `7e3c08b33df60cf2a970e2d9647a7a6922514458`
+carries tree `ff186406cc62dbab135ec2dbf66c7bde30028efc` (`git log --format='%H %T'`),
+the exact tree the Rescope section's nine-simulation + pytest run was recorded
+against (via `55d7c59`/`fd06b97`, both message-only rewrites of the same tree).
+Confirmed by direct inspection of this checkout, not taken from notes.
+
+**Judgment call**: since the platform's stale `validated_sha` (`4710600`, from
+the pre-rescope branch that was force-pushed away) carries no live evidence,
+this is a first real run against the rescoped code -- not a carry-forward. Given
+the tree-identity match, a full nine-simulation re-run would re-derive numbers
+already on record for this exact binary content; instead did a fresh clean
+build at `7e3c08b` (so the sha itself has direct build evidence) plus a real-GPU
+re-run of the OOB-relevant case (Tail-Correction) and one NIST reference box,
+plus the full pytest suite.
+
+**Build** (clean, `rm -f src_clean/hip_main.x` first):
+```bash
+export ROCM=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel
+export PATH=$ROCM/bin:$PATH
+cd projects/gRASPA/src/src_clean && GRASPA_ARCH=gfx90a ../HIP_COMPILE
+```
+Warnings only (same as prior rounds), `hip_main.x` 982792 bytes -- byte-identical
+size to the fix-round build recorded above, consistent with the tree match.
+
+**GPU test results** (HIP_VISIBLE_DEVICES=1, HSA_XNACK=1, MI250X gfx90a):
+
+```bash
+cd Examples/Tail-Correction && HSA_XNACK=1 HIP_VISIBLE_DEVICES=1 \
+  ../../src_clean/hip_main.x > output.txt 2>&1
+cd Examples/Reference_NIST_SPCE/Box-1 && HSA_XNACK=1 HIP_VISIBLE_DEVICES=1 \
+  ../../../src_clean/hip_main.x > output.txt 2>&1
+cd Examples && python3 -m pytest -q -s
+```
+
+- Tail-Correction (1327 Ar, the OOB-relevant case fixed by `55d7c59`): exit 0,
+  ENERGY DRIFT and GPU DRIFT all components 0.00000. Matches the Rescope run.
+- Reference_NIST_SPCE/Box-1 (400 SPCE waters): exit 0, ENERGY DRIFT and GPU
+  DRIFT all components 0.00000.
+- `python3 -m pytest -q -s` from `Examples/`: **5 passed**. Same reported
+  numbers as the Rescope round's pytest run (CO2-MFI GPU drift -4e-05,
+  NU2000 CPU/GPU drift -0.00456/-0.00018 against the checked-in CUDA reference
+  output for the three examples not re-run this round) -- those output.txt
+  files were untouched by this session (`git diff` empty against them both
+  before and after), so the suite is exercising the same on-disk evidence the
+  Rescope round did, not stale numbers from a different tree.
+
+**Cleanup**: the two tracked example `output.txt` files this run touched
+(`Tail-Correction`, `Reference_NIST_SPCE/Box-1`) were restored with
+`git checkout --`, and the untracked per-run directories
+(`AllData/FirstBead/Lambda/Movies/Restart/TMMC`, `Examples/.pytest_cache`,
+`Examples/__pycache__`) were removed. `git status --porcelain` at completion:
+only the untracked `src_clean/hip_main.x` build artifact.
+
+**CUDA no-regression gate**: not run this round -- environmental wall, not
+previously recorded at this head. This project's CUDA build (`NVC_COMPILE`)
+targets NVIDIA's HPC SDK compiler `nvc++` (`-target=gpu -stdpar=multicore
+-cuda`), which is a different product from the CUDA toolkit's `nvcc`. This
+host has `/opt/conda/envs/cuda-12.8/bin/nvcc` but no `nvc++`/HPC SDK
+(`/opt/nvidia` absent). `cuda-not-validated: NVC_COMPILE requires nvc++
+(NVIDIA HPC SDK), not installed on this host; the cuda-12.8 conda env provides
+only nvcc, a different compiler that cannot run this project's CUDA build
+script unmodified`. Not a gate. The Rescope section's argument that both kept
+commits are CUDA-neutral by construction (bounds-check reorder, `_WIN32`
+false on any CUDA host, additive `<numeric>`) still stands as reasoning, not
+compiled evidence.
+
+**Jargon / documentation gates**: `python3 utils/jargon.py --port gRASPA` ->
+clean. README.md has a dedicated "AMD / ROCm (HIP)" section (lines 70-102)
+next to the CUDA build instructions, covering the build command, `GRASPA_ARCH`,
+runtime `HSA_XNACK=1` requirement, the Allegro ROCm LibTorch path, the
+CUDA-only LCLin/cppflow exclusion, and the Windows clang recipe. Documented in
+the project's own house style.
+
+**Verdict**: PASS. `validated_sha` advances to `7e3c08b33df60cf2a970e2d9647a7a6922514458`.
