@@ -7,10 +7,13 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:16:31Z",
-  "updated_at": "2026-08-07T07:04:32Z",
+  "updated_at": "2026-08-20T00:11:42Z",
   "head_sha": "a290861",
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx90a",
+    "since": "2026-08-20T00:11:42Z"
+  },
   "waivers": {},
   "license_clearance": {
     "approved_by": "jeffdaily",
@@ -20,7 +23,7 @@
   },
   "license_spdx": "AGPL-3.0",
   "upstream_repo_id": 34064755,
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -29,7 +32,7 @@
       "validated_sha": "a290861",
       "started_at": "2026-06-05T05:06:43Z",
       "completed_at": "2026-06-08T00:38:47Z",
-      "updated_at": "2026-06-08T00:38:47Z",
+      "updated_at": "2026-08-20T00:11:42Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
