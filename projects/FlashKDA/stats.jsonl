@@ -6,3 +6,5 @@
 {"kind":"session","ts":"2026-08-14T14:25:21Z","epoch":1786717521.427508328,"event":"end","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-08-19T05:01:27Z","epoch":1787115687.749938491,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-19T05:04:05Z","epoch":1787115845.057749640,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T06:29:26Z","epoch":1787207366.578456516,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-20T06:33:56Z","epoch":1787207636.778818635,"event":"end","platform":"linux-gfx90a"}

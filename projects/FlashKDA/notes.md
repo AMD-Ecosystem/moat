@@ -369,3 +369,178 @@ Two things would stop it, and both belong to a person, not to this role:
 
 Neither was done here. The only write this run made was refreshing the queue summary
 so the row itself reports that four hosts agree and the screen is not the bottleneck.
+
+## Intake re-screen (2026-08-20, linux-gfx90a) — fifth dispatch, and the reason changes
+
+Fifth dispatch at `stage: unclaimed`. The decline is unchanged, but **the recorded
+reason moves from `cant-port` to `ported-elsewhere`**, because a check no earlier
+screen performed found that AMD itself now ships this capability on ROCm. The
+technical `cant-port` argument still holds independently — see below — so the decline
+is robust under either reason; `ported-elsewhere` is recorded because it is the
+stronger and less arguable of the two, and because it names the standing rule that
+applies: we do not duplicate AMD's own work.
+
+### The new finding: ROCm/aiter ships Kimi Delta Attention
+
+`ROCm/aiter` — AMD's own kernel library, MIT, "Copyright (C) 2024-2026, Advanced Micro
+Devices, Inc." — contains a Triton KDA implementation, including a path named after
+this very project:
+
+- `aiter/ops/triton/kimi_delta_attn/` — public entry point `chunk_kimi_delta_attn`,
+  documented as "Kimi Delta Attention Operations (Forward Only) ... for the KDA
+  linear-attention mixer used by Kimi-Linear / Kimi-K3. The chunked prefill op
+  mirrors `fla.ops.kda.chunk_kda`."
+- `aiter/ops/triton/_triton_kernels/chunk_delta_attn/flash_kda.py` — the fused
+  variant, exporting `flash_kda_fwd` and `flash_kda_supported`.
+- `op_tests/triton_tests/chunk_delta_attn/test_flash_kda.py` — tests the fused
+  FlashKDA path against the default chunk_delta_attn pipeline as reference, on
+  relative error because the two differ at bf16 level by design.
+- `op_tests/op_benchmarks/triton/bench_flash_kda.py` — a benchmark.
+- Listed in `aiter/ops/triton/README.md`: "kimi_delta_attn/ # Kimi Delta Attention
+  (chunked delta attention)".
+
+It is live work, not a stub, and it runs on real AMD hardware:
+
+    01ddb01 2026-08-10 [chunk_delta_attn] Add Triton kernels for chunk delta attention forward pass (#4568)
+    0f6766f 2026-08-12 [Triton] Fix LDS OOM issue on MI300 (#4671)
+    3679a25 2026-08-13 [Triton] Optimize chunk_delta_attn performance. (#4683)
+
+An LDS-OOM fix specific to MI300 is only written by someone running the kernel on
+MI300. That is the hardware evidence the `fla` route never had.
+
+**Why the earlier screens missed it, which is the transferable lesson.** All four
+prior screens searched for the project NAME (`FlashKDA` in AMD-Ecosystem, in ROCm, in
+repo search) and for forks of the upstream. AMD's support is neither: it is a
+differently-named op inside a large general-purpose kernel library, added on
+2026-08-10 — after the three real screens (08-13, 08-14, 08-14) had already run, and
+the 08-19 delta-check looked only at the project name again. Searching the CAPABILITY
+inside `ROCm/aiter` (`repo:ROCm/aiter kda in:path`, `repo:ROCm/aiter "kimi delta"`)
+is two API calls and is what found it. For any attention/GEMM/quantization kernel
+project, `ROCm/aiter` should be searched by capability, not just the org by name.
+
+### Scope parity: it is the same op, not a loose equivalent
+
+Upstream FlashKDA's entire public API is one function. `flash_kda/__init__.py` exports
+`fwd(q, k, v, g, beta, scale, out, A_log, dt_bias, lower_bound, initial_state,
+final_state, cu_seqlens)` — forward only, bf16, K = V = 128 — backed by four CUDA
+files in `csrc/smxx/` (`fwd_kernel1.cuh`, `fwd_kernel2.cuh`, `fwd_launch.cu`,
+`utils.cuh`). The README's stated purpose is to be auto-dispatched as
+`flash-linear-attention`'s `chunk_kda` backend (fla-org/flash-linear-attention#852).
+
+aiter's `chunk_kimi_delta_attn` is forward-only and explicitly "mirrors
+`fla.ops.kda.chunk_kda`" — the same op, in the same role, on ROCm. Upstream itself is
+forward-only too: training kernels are not in the tree, they are an unmerged
+third-party PR (#28, "Add CUDA training kernels (fwd+bwd) for KDA"). So there is no
+"but AMD only has part of it" gap to point at.
+
+Honest limits on the claim: aiter's implementation is Triton rather than CUTLASS-class
+tuned, it is 10 days old, and forward/prefill only. It is authoritative (AMD-official,
+actively maintained, MI300-fixed) rather than mature-by-age. Per
+`assess-existing-support.md`, authoritativeness is the deciding axis, not age — an
+AMD-official effort means reuse-and-improve or skip, never re-port from scratch.
+
+**Where the work goes if someone wants more KDA on AMD:** contribute to
+`ROCm/aiter/aiter/ops/triton/kimi_delta_attn/` — backward/training, decode, or
+performance. That is a different project with a different intake, and it is a far
+cheaper path than reimplementing 2,346 lines of CuTe/TMA kernels against Composable
+Kernel.
+
+### Delta-checks, all re-verified this run
+
+- **Licence: MIT, tier 1** (`licenses.py check MoonshotAI/FlashKDA` →
+  `license=MIT tier=1`, cleared to contribute). GitHub API `license.spdx_id = MIT`.
+  `license_spdx` stays `MIT`. Read directly from the `LICENSE` file by all three full
+  screens at this same SHA.
+- **Upstream head is still `1ce47ea`** ("optimize kda prepare cu_seqlens scan with
+  prefix-sum and binary search (#13)", 2026-07-29), and `master` is still the only
+  branch. The tree is byte-identical to what was screened three times, so the
+  code-level counts (24 `SM90_TMA`, 24 `make_tma`, 22 `CUTE_GRID_CONSTANT`,
+  `SUPPORTED_CUDA_ARCHS = ["90a","100a","103a","120a"]`, 2346 lines / six files) hold
+  by construction and were not recounted. No shallow clone was taken for the same
+  reason; re-running `scan-nvidia` over identical bytes would reproduce the identical
+  result recorded on 08-13, 08-14 and 08-14.
+- **The CuTeDSL EULA finding is unchanged and still uncleared.** The `cutlass`
+  submodule is still pinned at `5c149f52a436782210263fb2f19b354443a61c6a`, url
+  `https://github.com/NVIDIA/cutlass.git` (verified through the contents API at
+  `ref=1ce47ea`, no clone needed). Same pin means the same per-part licensing: the
+  ~40 `python/CuTeDSL/` files under the NVIDIA EULA, everything FlashKDA actually
+  builds against under BSD-3-Clause. Still a person's ruling if this is ever adopted;
+  this host does not clear it either. Moot if the decline is upheld.
+
+### Duplicate effort, including the open-PR/branch check no earlier screen ran
+
+This screen adds the upstream open-PR and branch check that the role now requires
+(added after FLAMEGPU2 was adopted while the maintainer's own HIP draft PR sat open).
+
+- **Upstream open PRs: 10, none AMD-related.** `gh pr list --state open` returns #16,
+  #17, #18, #19, #27, #28, #29, #30, #31, #32 — numerics tolerance, store
+  parallelization, FLA validation, CUTLASS error reporting, a CPU training backend, a
+  CUDA training-kernel PR, tile-prefix reuse, CP transition, reusable workspace, and
+  empty varlen batches. `--search "hip OR rocm OR amd"` over open PRs returns **empty**,
+  over ALL states returns **empty**, and the same search over issues returns **empty**.
+  No maintainer HIP draft, no competing AMD PR.
+- **Upstream branches: `master` only.** No rocm/hip/amd branch.
+- `AMD-Ecosystem/FlashKDA`, `ROCm/FlashKDA`, `AMD-Ecosystem/flash-kda`,
+  `ROCm/flash-kda`, `AMD-Ecosystem/flash-linear-attention`,
+  `ROCm/flash-linear-attention`: all still 404. Org-scoped repo search for `kda` in
+  AMD-Ecosystem and in ROCm: 0 each — which is exactly why the name search keeps
+  missing aiter, whose repo name contains no "kda".
+- **Forks: 118, none AMD-directed.** Scanning all fork full names for
+  `amd|rocm|hip|gfx[0-9]` yields two substring false positives and nothing else:
+  `Shamdon/FlashKDA` (known, "amd" inside the owner name) and, new this run,
+  `woshipapa/FlashKDA` ("hip" inside the owner name). Neither is an AMD port.
+- `vllm-project/FlashKDA` (12 stars, pushed 2026-08-19) re-checked directly since vLLM
+  does care about ROCm: branches are `master` (at upstream's `1ce47ea`), `dev`,
+  `agent/export-intermediate-recurrent-checkpoints`,
+  `codex/eagle-dual-checkpoint-pr7`, `thien-codex/state-store-refactor`; open PRs #7
+  and #8 are smem layout and recurrent-state export. Nothing toward AMD.
+- Repo search for `flashkda` adds nothing new: upstream, vllm-project's copy,
+  `Unitflexmed1821/FlashKDA` and `allanleewh/FlashKDA` (re-uploads),
+  `popfido/FlashKDA-mlx` (Apple MLX), `atomicmilkshake/godzilla-llama.cpp` (Windows
+  MSVC+CUDA).
+- No MOAT disposition for FlashKDA (282 entries, no `kda` key), no opt-out
+  (`optout.py list` → nobody), no other `port/` branch.
+
+**The `fla` amd-mi300 CI correction still stands, and has not moved.** Workflow run
+counts re-read this run: `amd-mi300.yml` = **0 runs**, `nvidia-h100.yml` = **3051**
+(was 3028 on 08-14). Both workflows report `state=active`, which is the trap — the job
+body is guarded `if: false`, so "active" describes the file, not any execution. Read
+the run count, never the state field. The `fla` Triton path remains
+installable-but-unvalidated on AMD; aiter, not fla, is now the credible AMD route.
+
+### The `cant-port` argument, unchanged and still independently sufficient
+
+Recorded here so that changing the reason does not lose it. Every layout, tensor and
+GEMM is a CuTe type and NVIDIA CUTLASS has no ROCm backend; TMA is the design rather
+than an optimization, with descriptors threaded through every kernel entry point as
+`CUTE_GRID_CONSTANT` parameters and the pipeline and barrier structure built around
+them; no AMD architecture has a TMA equivalent. Three hosts spanning RDNA3 (gfx1100),
+CDNA2 (gfx90a) and CDNA3 (gfx942) agreed there is no fleet platform on which this
+becomes a translation rather than a from-scratch kernel reimplementation. If a person
+prefers to record the decline on technical grounds instead, `cant-port` is equally
+defensible — the answer is the same either way.
+
+### Viability and dependencies
+
+Genuine CUDA, confirmed again: four CUDA sources in `csrc/smxx/`, a `flash_kda_C`
+compiled torch extension, `SUPPORTED_CUDA_ARCHS = ["90a","100a","103a","120a"]`,
+CUDA 12.9+ / PyTorch 2.4+ requirements. `viable = no` for MOAT's purposes.
+
+`depends_on` stays empty. No MOAT project provides CUTLASS, aiter, or
+flash-linear-attention, so there is no unknown hard dependency needing an intake
+request. PyTorch, CUDA 12.9+ and the vendored CUTLASS submodule are external build
+dependencies only.
+
+**Upstream health:** not archived, not disabled, 1221 stars (was 1218), 118 forks (was
+117), last push 2026-07-30, default branch `master`. A PR would still have a live
+destination if the recommendation were overridden.
+
+### Queue status
+
+Still row 1 of intake queue issue AMD-Ecosystem/moat#8, opened 2026-08-07, unanswered
+after 13 days. Five sessions have now been spent reaching the answer the first one
+reached — though this one earned its keep by finding the aiter implementation and by
+running the open-PR check for the first time. The two things that would stop the
+re-dispatch loop remain a person's: answer issue #8, or `moatlib.py set-hold FlashKDA`
+while it waits. Neither was done here. No fork was requested, no disposition was
+written, no PR was opened.
