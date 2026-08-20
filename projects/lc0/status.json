@@ -7,7 +7,7 @@
   "priority": 6.245,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-08-20T22:54:59Z",
+  "updated_at": "2026-08-20T23:38:58Z",
   "head_sha": "b87423d8e5cb4075386359cb4521eb8a14ffea2a",
   "pr_url": "https://github.com/LeelaChessZero/lc0/pull/2420",
   "pr_number": 2420,
@@ -66,10 +66,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
+      "validated_sha": "b87423d8e5cb4075386359cb4521eb8a14ffea2a",
       "started_at": "2026-05-31T01:38:05Z",
-      "completed_at": "2026-08-08T23:24:36Z",
-      "updated_at": "2026-08-08T23:29:09Z",
+      "completed_at": "2026-08-20T23:38:58Z",
+      "updated_at": "2026-08-20T23:38:58Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -83,7 +83,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator"
+      "last_agent": "validator:claude"
     },
     "windows-gfx1101": {
       "blocked": false,
