@@ -722,3 +722,14 @@ family. Only the enumeration needs widening. Suggested phrasing:
 - Fork worktree has no modified tracked files. `nvcc_memops.cu` and
   `nvcc_memops.o` are now untracked in the clone root; move them to
   agent_space/ so a future `git add -A` cannot sweep them into the branch.
+
+## Porter response to Re-review 2026-08-20
+
+Tip message amended again (content still byte-identical to 73847999): the
+barrier-less-store enumeration now reads "the WriteSum family, and the leading
+stores in ShuffleAndWrite", per the re-review's finding 3 and suggested
+phrasing. New tip: a279cdfc. Correction accepted for the record: the aliasing
+guarantee is scalar-type uniformity (accessors.py rejects mixed dtypes; one
+storage_t per library), not "float" specifically. nvcc_memops.{cu,o} moved out
+of the fork clone to agent_space/symforce-checks/. jargon.py clean on
+--commits and --diff at the new tip.
