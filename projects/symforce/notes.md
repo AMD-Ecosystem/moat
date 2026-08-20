@@ -473,3 +473,35 @@ upstream's .github/workflows edits, so GitHub refuses the HTTPS push
 host. Needs `gh auth refresh -h github.com -s workflow`, then
 `git -C projects/symforce/src push origin moat-fix-465` and the round resumes
 (advance-head to 398ba468, delta review, carry-forward, fix-review PR).
+
+## Fix round moat-fix-465 addendum: SumStore barrier fix 2026-08-20
+
+The round also folds in the fix promised in the PR #465 reply of 2026-08-19:
+bjoernellens1's report of solver nondeterminism on gfx1151 traced to
+SumStore (memops.cuh) returning while only warp tile 0 has read inout_shared,
+with buffer-reuse safety resting on the next call's leading barrier. Commit
+73847999 adds the trailing __syncthreads() (unguarded -- hazard is not
+platform-specific), Co-authored-by bjoernellens1.
+
+Mechanism verified against generated-kernel call patterns: accessors.py emits
+one SumStore per sum output back-to-back against the same inout_shared buffer;
+kernel blocks are 1024 threads (32 tiles exactly fill stage 2's 32-lane read --
+a harness with 256-thread blocks reads 24 stale lanes and fails; that is a
+harness bug, not a code bug).
+
+Evidence on linux-gfx1100 (Radeon Pro W7800, ROCm 7.2.1):
+- Standalone harness (agent_space/symforce_sumstore_test.hip.cpp): 1024-thread
+  kernel, four back-to-back SumStore calls into one inout_shared + SumFlushFinal,
+  problem_size 1000 exercising the valid mask. With fix: all 4 sums exact,
+  20 reruns bit-identical. Pre-fix code also passes here -- consistent with the
+  reporter's revert-retest being inconclusive off gfx1151; recorded as
+  no-regression hardening, not a local repro.
+- Runtime HIP build (gfx1100) and CUDA build (nvcc 12.8, USE_HIP=OFF) both
+  still compile and link with the barrier.
+
+NOTE: with 73847999 the device code CHANGED (barrier in SumStore), so the
+binary-equiv carry-forward noted above for the merge commit alone no longer
+covers the round. Platforms must revalidate at the staging tip 73847999 once
+the branch is pushed and head advances.
+
+Push still BLOCKED on gh token `workflow` scope (see previous section).
