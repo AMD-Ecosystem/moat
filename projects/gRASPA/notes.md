@@ -716,3 +716,127 @@ Links `hip_main.x` (982792 bytes), warnings only. `jargon.py --port gRASPA`
 clean on the rewritten branch. GPU evidence from the 2026-08-20 rescope run
 applies unchanged to this tree but is recorded against `9cfa096`, so every
 platform needs a validation pass at `fd06b97`.
+
+## Re-Review 2026-08-20 (fix round, `9cfa096` -> `fd06b97`)
+
+**Verdict: CHANGES REQUESTED**, on one point. Findings 2, 3 and 4 of the
+2026-08-20 review are fixed. Finding 1 is fixed in kind -- the mechanism is now
+correctly described as an unsigned 64-bit wrap -- but the one new constant the
+rewritten paragraph introduces does not reconcile with the probe output printed
+three lines above it in the same commit body, which is the same failure mode the
+finding was raised for.
+
+Confirmed by inspection, no action needed: `git diff 9cfa096 fd06b97` is
+README.md only (11 insertions / 6 deletions, one bullet), so the code is
+byte-identical to what was already accepted and the recorded gfx90a run still
+describes this tree's binary.
+
+### 1. `99712d2` commit body: the stated square-root argument contradicts the AtomA/AtomB pair the same body quotes as evidence
+
+The body says:
+
+> For this example the argument is 2^64 - 27191, its square root is 2^32, and
+> the subtraction leaves AtomA as the double -2147482322.0
+
+and quotes as its evidence, from the instrumented run:
+
+> AtomA 2147484974 sizeA 1327 AtomB 2305843010287440402 sizeB 1327
+
+Those two statements cannot both hold. Invert the `AtomB` expression at
+`src_clean/VDW_Coulomb.cu:1539`
+
+```cpp
+AtomB = InteractionIdx + AtomA + 1 - NAdsorbateAtoms*(NAdsorbateAtoms-1)/2 + (NAdsorbateAtoms-AtomA)*((NAdsorbateAtoms-AtomA)-1)/2;
+```
+
+for `NAdsorbateAtoms = 1327` and the printed `AtomA = 2147484974`. Every term is
+`size_t`, so `AtomB` is affine in `InteractionIdx` mod 2^64 and the printed
+`AtomB` pins the index exactly:
+
+```
+InteractionIdx implied by the printed pair: 883100
+sqrt arg = 18446744073709525217 = 2^64 - 26399
+```
+
+The claimed `2^64 - 27191` corresponds to `InteractionIdx = 883199`, which
+produces `AtomB = 2305843010287440501`, not the `...402` the body prints. Note
+this inversion uses the printed `AtomA` as given, so it does not depend on any
+model of how the negative double converts to `size_t`; it is an identity on the
+quoted numbers.
+
+Everything downstream of the constant is right and needs no change: for
+`2^64 - 26399` the square root is 4294967295.9999967 (~2^32),
+`floor(sqrt/2 - 0.5)` is 2147483647, `AtomA` is the double -2147482322.0, which
+is the printed 2147484974, and `AtomB` follows at 2.3e18. Fix by stating
+`2^64 - 26399` (optionally naming `InteractionIdx = 883100`, which makes the
+chain checkable end to end), or by dropping the specific constant and saying the
+argument wraps to just under 2^64. Do not leave a number a maintainer can
+falsify from the same paragraph.
+
+The same `2^64 - 27191` appears in the Rescope section of this file (the
+paragraph beginning "The closed-form triangular-index inverse") and in the
+2026-08-20 review's reproduction block above; correct the Rescope one with the
+commit body. The review block is a dated record of what was said and can stand.
+
+### 2. `.claude/skills/cuda-to-rocm/references/assess-existing-support.md` -- the size claim is stale
+
+The promoted paragraph says gRASPA "went from a multi-commit port with its own
+compat header and CMake build to 24 insertions across 5 files". That was true at
+`9cfa096`; `git diff e4edfc2...fd06b97 --stat` on the reviewed branch is
+`5 files changed, 29 insertions(+), 1 deletion(-)`. Say 29 insertions, or drop
+the count and keep "5 files", since the point is the order of magnitude and a
+count that drifts with every README wording change will keep going stale. The
+matching "Whole branch is 24 insertions / 1 deletion across 5 files" line in the
+Rescope section of this file has the same drift.
+
+### Checked and clean (no action)
+
+- Prior finding 2 is fixed and is layout-independent: `README.md:95-96` now uses
+  `-isystem "$(clang++ -print-resource-dir)/include"`, and the bullet says why
+  (the directory is under `lib/clang/` in the HIP SDK and `lib/llvm/lib/clang/`
+  in a ROCm build with LLVM in a subdirectory). `-print-resource-dir` is the
+  compiler's own answer, so it is right on both, including the TheRock layout
+  every Windows validation on this project actually used.
+- Prior finding 3 is fixed and the two artifacts now agree exactly.
+  `README.md:94-96` states the set once -- `-O3 -std=c++20 --offload-arch=<arch>
+  -x hip -fgpu-rdc -fopenmp -D_USE_MATH_DEFINES -isystem ...`, link with
+  `--hip-link` -- and `fd06b97`'s Windows Test Plan compile line carries exactly
+  those flags, no more. "the same flags as `HIP_COMPILE`" is gone, and
+  `-munsafe-fp-atomics`, `-Wno-unused-result` and `-Wno-format` appear in
+  neither, which is the right call for an untested RDNA target. The Test Plan's
+  five translation units (`main.cpp read_data.cpp data_struct.cpp axpy.cu
+  VDW_Coulomb.cu`) are exactly `HIP_COMPILE`'s five, and its link line matches
+  `HIP_COMPILE`'s (`-std=c++20 --offload-arch -fgpu-rdc -fopenmp --hip-link`).
+  The cmd block correctly uses `for /f "delims=" %i in ('clang++
+  -print-resource-dir') do set CLANG_RES=%i` rather than `$(...)`.
+- Prior finding 4 is fixed and both promotions are well placed and generalizable.
+  The `assess-existing-support.md` paragraph sits immediately after the "the
+  existing AMD support IS OURS" classification, which is where a reader asking
+  "does upstream already have this?" is already reading, and its rule -- re-check
+  every round, rebuild on current upstream and keep the residual, diff your fixes
+  against the merged shim before re-applying -- is the transferable part rather
+  than the gRASPA specifics. The `fault-classes.md` entry sits directly after the
+  existing out-of-bounds entry it extends, and adds a genuinely different shape
+  (index-decode overflow in padded threads, unsigned wrap producing astronomical
+  rather than past-the-end indices, `sqrt` of the wrapped value returning a real
+  where a signed evaluation would give `NaN`, and "it stopped crashing" not
+  closing an OOB finding) with a concrete method. Its quoted numbers are the
+  probe's `AtomA`/`AtomB` and the 18-exabyte offset, all of which check out
+  (2305843010287440402 * 8 = 1.84e19 bytes); it states no wrapped-argument
+  constant, so finding 1 does not touch it.
+- Hygiene: `jargon.py --port gRASPA` clean; titles 48 and 61 chars, both
+  `[ROCm]`; AI-assistance disclosure and a fenced Test Plan in both bodies; no
+  `Co-Authored-By`, `Signed-off-by` or noreply address; ASCII only in both
+  messages and the whole diff. Working tree at `fd06b97` has only the untracked
+  build artifact `src_clean/hip_main.x`, no modified tracked files.
+- Code re-verified unchanged and still correct: the bounds test at
+  `VDW_Coulomb.cu:1546` precedes both `MolID` loads (1547-1548), `MolA`/`MolB`
+  are consumed only at 1549, and the reorder cannot change the accepted-pair
+  set for any in-bounds thread. Windows
+  guards remain inert on Linux (`main.cpp:19-21, 33-61, 71-77`), and `<numeric>`
+  is additive. No fault-class exposure in the delta: no warp intrinsics, no
+  hardcoded 32, no textures, no library swaps; the block reduction is
+  `__syncthreads()`-based.
+- No GPU run exists at `fd06b97`. Expected at review time, not part of this
+  verdict. Because the fix for finding 1 is message-only, the tree that finally
+  validates will still be this one.
