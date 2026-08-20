@@ -127,3 +127,5 @@
 {"kind":"session","ts":"2026-08-20T06:20:44Z","epoch":1787206844.367783987,"event":"end","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-08-20T06:20:15Z","epoch":1787206815.213738832,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-20T06:30:24Z","epoch":1787207424.750230294,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T06:33:52Z","epoch":1787207632.987772843,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-20T06:36:51Z","phase":"test","seconds":2.414,"exit":0,"cmd":"/opt/conda/envs/py_3.12/bin/python -m pip install --dry-run --no-build-isolation --no-deps projects/op43dgs/src/submodules/simple-knn"}

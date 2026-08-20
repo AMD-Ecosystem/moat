@@ -1112,3 +1112,98 @@ see the ROCm PyTorch already installed in the active environment.
   `simple_knn.cu:19`.
 - GPU evidence at this head is owed but not a review finding: the `setup.py`
   delta classified `mixed`, so all four platforms revalidate next.
+
+## Porter 2026-08-20 (linux-gfx1100) -- review round 2, d745b771 -> d648004
+
+Answers all four findings of the round-2 review, which were all inside the
+README ROCm block. One edit to `README.md:107-122`, folded into the port commit
+by amend (`pr_state=none`, so the series is still ours to shape, and the review
+asked for one edit to a block this branch itself added). The branch is the same
+two commits: `8d5b2f4` port (was 641d983) + `d648004` Windows (was d745b77,
+cherry-picked unchanged -- `git show` message and patch byte-identical).
+
+`moatlib.py classify op43dgs d745b771 d648004` -> `class=doc-only
+arch_independent=True inert=True`, "no changes": the whole-branch delta versus
+the previous head is the single README hunk and nothing else, so no rebuild was
+run. The source tree that all four platforms must revalidate is byte-identical
+to the tree built and tested here at d745b771 (that revalidation was already
+owed from the previous round's `mixed` setup.py delta; this round does not add
+to it).
+
+### 1. torchvision missing from the documented environment
+
+`pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.4`.
+Confirmed the pairing exists on the ROCm index rather than assuming it:
+`pip index versions torchvision --index-url .../rocm6.4` -> `0.24.1+rocm6.4,
+0.24.0+rocm6.4, 0.23.0+rocm6.4`. Confirmed the need: `render.py:18`,
+`metrics.py:16`, `lpipsPyTorch/modules/networks.py:7` all import it at module
+scope, and `environment.yml:13` supplies it on the CUDA path only.
+
+### 2. Windows path
+
+Added inside the same fence, matching how the CUDA block at `:75` handles it:
+
+```
+SET DISTUTILS_USE_SDK=1 # Windows only
+export PYTORCH_ROCM_ARCH=gfx1100 # on Windows: SET PYTORCH_ROCM_ARCH=gfx1100
+```
+
+Deliberately did NOT add a Windows wheel index: the two Windows validations used
+TheRock `rocm-sdk` wheels (notes.md:543-551), not download.pytorch.org, and the
+section already points at the PyTorch install selector. Asserting an index we
+have not used on Windows would be a new inaccuracy in place of the old one.
+
+### 3. PYTORCH_ROCM_ARCH default
+
+The `# optional; defaults to the installed GPU` comment is gone; the variable is
+now set unconditionally in the block, with a prose sentence that is true on both
+versions: "Left unset, the default depends on the PyTorch version: recent
+versions build for the visible GPUs, while older ones build for the
+architectures the installed PyTorch itself was built for, which need not include
+your GPU." Re-checked the newer half against this host's torch:
+`_get_rocm_arch_flags` (`torch/utils/cpp_extension.py:2772-2787`, 2.14) walks
+`torch.cuda.device_count()` and collects `gcnArchName`; the reviewer's v2.9.1
+citation (`torch._C._cuda_getArchFlags()`) is the older half.
+
+### 4. Why --no-build-isolation is needed
+
+Reproduced both directions on this host with pip 26.1.2:
+
+```
+P=/opt/conda/envs/py_3.12/bin/python
+$P -m pip install --dry-run --no-deps projects/op43dgs/src/submodules/simple-knn
+$P -m pip install --dry-run --no-build-isolation --no-deps projects/op43dgs/src/submodules/simple-knn
+```
+
+The first fails in `getting requirements to build wheel` at `setup.py` line 13
+`import torch`, executed inside `/tmp/pip-build-env-*/overlay`; the second
+reports `Preparing metadata (pyproject.toml): finished with status 'done'` ->
+`Would install simple_knn-0.0.0`. Host-specific detail worth recording: this
+host's torch is an editable install pointing at `/var/lib/jenkins/pytorch`, and
+pip's build-env `sitecustomize` filters the base site-packages out of `sys.path`
+but NOT the `.pth`-injected source-tree entry, so the overlay failure surfaces
+one import later as `ModuleNotFoundError: typing_extensions` from inside
+`torch/__init__.py` rather than as `ModuleNotFoundError: torch`. Same cause,
+same fix; a host with a wheel-installed torch sees the plain `torch` form the
+reviewer recorded.
+
+README now says: "`--no-build-isolation` is required because each submodule's
+`setup.py` imports `torch` at build time and an isolated build environment does
+not have it; `--no-deps` then keeps the install from adding anything alongside
+the ROCm PyTorch."
+
+### Skill lesson promoted
+
+`references/strategy-b-torch.md` dependency-environment bullet said
+`--no-build-isolation` is needed because pip "pulls a CUDA torch to compile
+against". That is only true for a project that names torch in
+`[build-system] requires`; a project that names nothing (op43dgs: no
+`pyproject.toml` and no `install_requires` in any of the four submodules) gets
+no torch in the overlay at all and dies on the import. Corrected there, with
+the note that `--no-deps` protects nothing when no dependency is declared,
+because the wrong reason is exactly what got written into a README here.
+
+Checks before push: `utils/prose.py` clean on the section, `jargon.py --port
+op43dgs` clean, `audit-commits` clean, working tree clean (integrity gate),
+fork `main` untouched at 728de13. `d745b771` kept locally as tag `prev-head-2`
+in the clone for classification.
