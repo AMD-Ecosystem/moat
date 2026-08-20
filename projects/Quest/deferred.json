@@ -54,6 +54,19 @@
         "by": "Jeff Daily",
         "at": "2026-08-19T18:46:48Z"
       }
+    },
+    {
+      "id": "quest-c1d7fff-missing-ai-disclosure",
+      "kind": "other",
+      "component": null,
+      "summary": "c1d7fff, the commit the moat-port branch is built on, has no AI-assistance disclosure in its body; the other three commits do. AGENTS.md requires it per commit. It cannot be fixed by amending: that would rewrite the branch and orphan the validated shas. The intended remedy is the PR-prep squash to one commit, whose message carries the disclosure -- but nothing enforces that squash, so this must be checked before publishing. upstream.py --publish runs 'gh pr create --head <fork>:<branch>' and publishes the branch as it stands, publish_blockers has no squash requirement, and neither CONTRIBUTING.md nor the moat-checkup skill mentions squashing. Ruling wanted: squash at PR prep (and confirm the squash message carries the disclosure), or accept the branch as-is and rewrite before publication.",
+      "refs": [
+        "projects/Quest/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-20T00:14:40Z",
+      "decided": null
     }
   ]
 }
