@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:16:31Z",
-  "updated_at": "2026-08-20T00:26:32Z",
+  "updated_at": "2026-08-20T05:37:54Z",
   "head_sha": "a290861",
   "depends_on": [],
   "porting": null,
@@ -131,5 +131,7 @@
     "arch": "linux-gfx90a",
     "since": "2026-08-20T00:11:42Z",
     "at": "2026-08-20T00:26:32Z"
-  }
+  },
+  "on_hold": true,
+  "on_hold_reason": "Parked by Jeff Daily until ptheywood replies on upstream draft PR #1379 (amdgpu branch): waiting to learn whether he wants a PR against amdgpu or a cherry-pick of amdgpu-fixes @ 2ecf5a01. Port itself is complete on all four platforms at a290861."
 }
