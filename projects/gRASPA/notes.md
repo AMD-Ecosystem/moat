@@ -1046,3 +1046,76 @@ CUDA-only LCLin/cppflow exclusion, and the Windows clang recipe. Documented in
 the project's own house style.
 
 **Verdict**: PASS. `validated_sha` advances to `7e3c08b33df60cf2a970e2d9647a7a6922514458`.
+
+## Validation 2026-08-20 (linux-gfx1100 revalidate, W7800 gfx1100, `7e3c08b`)
+
+**Why a full run, not carry-forward**: the platform's stale `validated_sha`
+(`4710600`) is a commit on the pre-rescope branch that was force-pushed away
+(see the 2026-08-20 Rescope section); it no longer exists in `moat-port`
+history, so there is no delta to classify and no prior tree to diff against.
+Same judgment call as the gfx90a revalidation above: first real run against
+the rescoped code.
+
+**Clone**: no local checkout existed on this host; cloned
+`https://github.com/AMD-Ecosystem/gRASPA.git` fresh and checked out
+`moat-port` (`HEAD` = `7e3c08b33df60cf2a970e2d9647a7a6922514458`, matches
+`status.json.head_sha` exactly). `pr-state gRASPA` = `none`, so `moat-port`
+is not frozen.
+
+**GPU**: 4x AMD Radeon Pro W7800 48GB (gfx1100, RDNA3), ROCm 7.2.3 at
+`/opt/rocm` (this host has no `_rocm_sdk_devel` wheel; used the system ROCm
+install instead -- same `HIP_COMPILE` recipe, different toolchain path).
+
+**Build** (clean):
+```bash
+export PATH=/opt/rocm/bin:$PATH
+cd projects/gRASPA/src/src_clean && GRASPA_ARCH=gfx1100 ../HIP_COMPILE
+```
+Warnings only (`nodiscard` on HIP runtime calls the shim maps, one VLA
+extension warning -- same shapes as gfx90a). `hip_main.x` 1047592 bytes,
+exit 0.
+
+**GPU test results** (HIP_VISIBLE_DEVICES=0, HSA_XNACK=1):
+
+```bash
+cd Examples/Tail-Correction && HSA_XNACK=1 HIP_VISIBLE_DEVICES=0 \
+  ../../src_clean/hip_main.x > output_gfx1100.txt 2>&1
+cd Examples/Reference_NIST_SPCE/Box-1 && HSA_XNACK=1 HIP_VISIBLE_DEVICES=0 \
+  ../../../src_clean/hip_main.x > output_gfx1100.txt 2>&1
+cd Examples/CO2-MFI && HSA_XNACK=1 HIP_VISIBLE_DEVICES=0 \
+  ../../src_clean/hip_main.x > output_gfx1100.txt 2>&1
+cd Examples && python3 -m pytest -q -s
+```
+
+- Tail-Correction (1327 Ar, the OOB-relevant case fixed by `55d7c59`): exit 0,
+  ENERGY DRIFT and GPU DRIFT all components 0.00000.
+- Reference_NIST_SPCE/Box-1 (400 SPCE waters): exit 0, ENERGY DRIFT and GPU
+  DRIFT all components 0.00000.
+- CO2-MFI (18 CO2 molecules adsorbed): exit 0, ENERGY DRIFT 0.00000 all
+  components; GPU DRIFT Ewald [Host-Host] -0.00004 (sub-threshold, the same
+  k-space reduction-order signature seen on gfx90a, gfx1201 and gfx1101 --
+  every VDW and real-space Coulomb component is exactly 0.00000).
+- `python3 -m pytest -q -s` from `Examples/`: **5 passed**, checking the
+  committed reference `output.txt` files (untouched by this session --
+  each real run above was written to a separate `output_gfx1100.txt` so the
+  tracked reference outputs stay as-is; `git status` before and after had no
+  modified tracked files).
+
+**Cleanup**: all untracked per-run directories and the three
+`output_gfx1100.txt` files this run created were removed
+(`AllData/FirstBead/Lambda/Movies/Restart/TMMC` under `CO2-MFI`,
+`Reference_NIST_SPCE/Box-1`, and `Tail-Correction`; `Examples/.pytest_cache`,
+`Examples/__pycache__`). `git status --porcelain` at completion: only the
+untracked `src_clean/hip_main.x` build artifact.
+
+**CUDA no-regression gate**: not re-run -- already recorded as an
+environmental wall at this exact head_sha (`7e3c08b`) in the linux-gfx90a
+revalidation entry above (`NVC_COMPILE` needs `nvc++`/NVIDIA HPC SDK, not
+`nvcc`; this host also lacks `/opt/nvidia`).
+
+**Jargon / documentation gates**: `python3 utils/jargon.py --port gRASPA` ->
+clean. README.md's dedicated "AMD / ROCm (HIP)" section (already confirmed
+present at this head_sha in the gfx90a entry above) covers this arch too via
+`GRASPA_ARCH`.
+
+**Verdict**: PASS. `validated_sha` advances to `7e3c08b33df60cf2a970e2d9647a7a6922514458` for linux-gfx1100.
