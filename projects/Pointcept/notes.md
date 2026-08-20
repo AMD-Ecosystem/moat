@@ -518,4 +518,111 @@ spconv-triton 1.0.0):
 - Fault classes: this delta contains no kernel, no build-script and no `libs/` change. The
   one class that applies is the library swap, and it is guarded on `torch.version.hip`,
   matching round 1's `setup.py` guard style; wave32 behavior of the Triton kernels is the
+
+## Validation 2026-08-20 (validator, linux-gfx90a, round 2 revalidation)
+
+Platform: linux-gfx90a, AMD Instinct MI250X (gfx90a, wave64), HIP_VISIBLE_DEVICES=0
+(rocm-smi confirmed all 4 GCDs idle, no KFD PIDs, before selecting).
+Fork: AMD-Ecosystem/Pointcept @ moat-port, sha 87bc3e2 (validated_sha was 95f4a51;
+`moatlib.py platform_state` derived `revalidate`; `moatlib.py classify Pointcept 95f4a51
+87bc3e2` -> `class=mixed arch_independent=False inert=False`, so a full real-GPU
+re-run was done rather than a carry-forward -- the delta is a real upstream-main merge
+plus a 12-file Python change, not cosmetic).
+torch 2.14.0a0+git7d05abc, torch.version.hip 7.14.60850 (confirmed BEFORE trusting any
+result per the round 2 porter's pip-clobber gotcha; still the source-built ROCm torch,
+no drift this session), spconv-triton 1.0.0.
+
+### Build (timeit: compile phase)
+```
+cd libs/<lib> && HIP_VISIBLE_DEVICES=0 PYTORCH_ROCM_ARCH=gfx90a python setup.py install
+# pointops, pointops2, pointgroup_ops, pointrope, in that order
+```
+All four rebuilt cleanly from a clean checkout at 87bc3e2 (pointrope: ninja no-op then
+g++ link against `-lamdhip64 -lc10_hip -ltorch_hip`, confirming HIP link).
+
+### pointops2 in-tree tests (timeit: test phase)
+`yes "" | python test_<...>.py` from `libs/pointops2/functions/`, HIP_VISIBLE_DEVICES=0:
+- test_attention_op_step1.py: EXIT 0. ((attn_flat-attn_flat_v2)**2<1e-8).all()=True.
+- test_attention_op_step1_v2.py: EXIT 0. Same.
+- test_attention_op_step2.py: EXIT 1, `NameError: name 'x' is not defined` -- identical
+  pre-existing upstream test bug seen on every platform to date. GPU forward+backward
+  itself ran fine before the assertion. NOT a port issue.
+- test_relative_pos_encoding_op_step1.py: EXIT 0.
+- test_relative_pos_encoding_op_step1_v2.py: EXIT 0, max sq err 2.33e-10.
+- test_relative_pos_encoding_op_step1_v3.py: EXIT 0, max sq err 2.33e-10.
+- test_relative_pos_encoding_op_step2.py: EXIT 0.
+- test_relative_pos_encoding_op_step2_v2.py: EXIT 0, forward max sq err 7.13e-10;
+  attn_grad 2.594e-21; v_grad 3.388e-21; table_grad 1.147e-16.
+
+7/8 EXIT 0, 1/8 EXIT 1 (pre-existing, not port-caused). All numeric magnitudes match
+prior rounds' recorded values on this platform to within the expected run-to-run noise
+floor -- no regression.
+
+### Sparse-conv end-to-end (round 2's new gate; timeit: test phase)
+```
+cd projects/Pointcept/src
+HIP_VISIBLE_DEVICES=0 PYTHONPATH=. python3 ../../../agent_space/pointcept_sparse_conv_e2e.py --steps 20
+```
+- backend reported: `spconv_triton.pytorch` (confirms the ROCm branch is live).
+- semseg-spunet-v1m1-0-base: loss 3.0214 -> 0.6900 over 20 steps. PASS.
+- semseg-oacnns-v1m1-0-base: loss 3.0713 -> 0.7092 over 20 steps. PASS.
+- insseg-pointgroup-v1m1-0-spunet-base: loss 5.4093 -> 2.1980 over 20 steps. PASS.
+
+Layer smoke (`agent_space/spconv_triton_smoke.py`, SubMConv3d + SparseConv3d(stride 2)
++ SubMConv3d + SparseInverseConv3d, 20000 voxels): output finite, input grad finite and
+nonzero, 20-step SGD loop runs. PASS.
+
+PTv3 SubMConv3d surface re-check (independent inline script, not the reviewer's exact
+repro): `SubMConv3d(k=5, padding=1, bias=False, indice_key="stem")` then a second
+`SubMConv3d` reusing that key needs a matching kernel size and `algo` --
+spconv_triton's own API constraint (`subm with same indice_key must have same kernel
+size`), not a ROCm fault; using a second, distinct `indice_key` (the common real-model
+shape -- see the ten actual model files) gives finite output and finite/nonzero input
+grad. PASS. The full three-config e2e above already exercises many real reused-key
+SubMConv3d layers end-to-end, so this surface class is well covered regardless.
+
+### libs/ regression (unchanged by round 2, re-confirmed)
+Same build/test commands as above; no libs/ source touched by 87bc3e2. No regression.
+
+### CUDA no-regression gate
+`cuda-not-validated: environmental wall, not a port regression.` Raw `nvcc -c` of
+`libs/pointrope/kernels.cu` (the only tracked source edit ever made in this port, and
+the only nvcc-relevant file touched across both rounds) against
+`torch.utils.cpp_extension.include_paths()` from the ambient ROCm torch
+(2.14.0a0+git7d05abc) using `/opt/conda/envs/cuda-12.8/bin/nvcc -arch=sm_80 -std=c++20`:
+fails with ~100 errors bottoming out in `c10/util/complex_math.h`
+(`thrust::complex` undefined) and `ATen/core/TensorAccessor.h`
+(`torch::RestrictPtrTraits` undefined), cascading into one downstream error in
+`kernels.cu` itself (`torch::RestrictPtrTraits` unresolved -- a symptom, not a
+port-introduced symbol). Root cause confirmed identical to the skill's documented
+fingerprint: `torch/headeronly/util/complex.h` guards `#include <thrust/complex.h>`
+with the duplicated-token typo `#if defined(__HIPCC__) || defined(__HIPCC__)`
+(grepped directly in the installed torch/include tree, 5 occurrences), so under nvcc
+`__CUDACC__` never satisfies the (mistyped) guard and the thrust include is skipped
+while `c10/util/complex_math.h` still references `thrust::complex` unconditionally.
+This is a defect in the ambient ROCm PyTorch install, present identically for the
+pristine upstream `.cu` and the port's `.cu` (the file is byte-for-byte unmodified from
+upstream -- only `setup.py`'s compile-flag branch differs, and that plays no part in a
+raw `nvcc -c`). Confirmed the port's own changed sources carry no stray HIP-only
+tokens: `grep -n '__builtin_trap|__trap|__HIP|hip[A-Z]|amdgcn|USE_ROCM' libs/pointrope/{kernels.cu,pointrope.cpp,setup.py}`
+is empty. Not a gate; this is the same environmental wall documented in the
+`cuda-to-rocm` skill's "CUDA gate for torch-extension ports" section (first hit for
+this project; nothing to promote, the pattern is already recorded there).
+
+### Integrity gate
+`git -C projects/Pointcept/src status --porcelain`: 62 entries, all untracked (`??`),
+all matching `*hip*` -- the known hipify-artifact set (this round's clean rebuild also
+generated the `_v2`-suffixed pointops2 attention/rpe hipify variants and
+`bfs_cluster_kernel.hip`, same class as round 1's list, just not previously enumerated
+by filename). No modified tracked files. Clean.
+
+### Hygiene re-check
+`python3 utils/jargon.py --port Pointcept` -> clean. README Installation section
+documents the ROCm/AMD build in house style (`ROCm 7.0 and above`, `spconv-triton`
+drop-in note, `PYTORCH_ROCM_ARCH` selection note) -- already present from round 1/2,
+unchanged.
+
+Summary: linux-gfx90a -> completed at 87bc3e2 (revalidation, full real-GPU re-run, no
+carry-forward). No regression versus the porter/reviewer's evidence at this head; no
+regression versus round 1's validated behavior.
   validators' gate.
