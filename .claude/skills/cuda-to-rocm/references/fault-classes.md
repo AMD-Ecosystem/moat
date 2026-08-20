@@ -295,6 +295,59 @@ CUDA branch and picks width 32. hipify-perl prepends the runtime include at line
 masks the bug -- so the gate is correct only by accident and breaks for anyone building
 without hipify. Verify include order rather than trusting the prepend. (LC-framework)
 
+**hiprtc is not nvrtc, and a project that compiles kernels at runtime hits all of these at
+once.** The differences are not API-shaped, so a port that maps `nvrtcXxx` to `hiprtcXxx`
+and stops will build, load a 0-byte or wrong code object, and render nothing:
+
+- **No `-default-device` equivalent.** nvrtc can make every unmarked free function
+  `__device__`; clang cannot. Wrap each block of helper functions in
+  `#pragma clang attribute push (__attribute__((device)), apply_to=function)` / `pop`,
+  guarded by `#if defined(__HIPCC_RTC__)`. The pragma conflicts with `__global__`, so the
+  regions must EXCLUDE the kernel entry points -- regions, not whole files.
+- **Fixed-width types are not predeclared.** nvrtc supplies `uint32_t`/`uint64_t`
+  implicitly; hiprtc does not, so a header that uses them without `#include <cstdint>`
+  fails with a cascade of "unknown type name". Fix the header additively; it is a real
+  omission that helps the offline build too.
+- **`-ffast-math` implies `-ffinite-math-only` under clang.** nvcc's `--use_fast_math` does
+  NOT assume finite math. Any algorithm using Infinity or NaN as a sentinel (depth
+  sentinels, NaN clear values, NaN-compare early-outs) silently produces nothing. The
+  clang warning "use of infinity is undefined behavior due to the currently enabled
+  floating-point options" is the fingerprint -- treat it as fatal, not as noise.
+- **Host runtime headers are not on the include path**, so a shared compat header must
+  skip its `hip/hip_runtime.h` include under `__HIPCC_RTC__` and provide the handful of
+  intrinsics that came with it (`__float_as_uint` and friends) as macros. Macros, not
+  inline functions: one combined TU can reach the same header by two relative paths, where
+  `#pragma once` does not dedupe and duplicate definitions are an error.
+- **Do not pass `-fgpu-rdc`** (produces 0-byte code objects), pass the clang resource dir
+  and the ROCm include root as absolute `-isystem`/`-I` (derive them from `ROCM_PATH`),
+  and NUL-terminate the `hiprtcGetProgramLog` buffer yourself.
+
+(All from CuRast, whose whole renderer is runtime-compiled; its `notes.md` has the
+project-specific detail.)
+
+**Prefer the specific hipCUB algorithm header over the `<hipcub/hipcub.hpp>` umbrella.** The
+umbrella pulls in `device/device_for.hpp` -> `util_mdspan.hpp`, which needs C++23
+`std::extents` (`<mdspan>`, libstdc++ 15+). On a libstdc++ 13 host that is ~20 errors
+("no template named 'extents' in namespace 'std'") in a TU that only wanted a radix sort.
+`#include <hipcub/device/device_radix_sort.hpp>` compiles cleanly. CUB's umbrella header
+does not have this problem, so the umbrella include is what the CUDA source will have.
+A `namespace cub = hipcub;` alias next to the guarded include keeps every call site in the
+CUB spelling on both backends. (CuRast: `src/CubSort.cu`, ROCm 7.2.3 + GCC 13.)
+
+**Do not `target_link_libraries(<tgt> hip::hipcub)` on a target that also has plain C++
+sources.** `hip::hipcub` -> `roc::rocprim_hip` -> `roc::rocprim;hip::device`, and
+`hip::device` puts HIP compile options on the target's other languages. If the target mixes
+`.cpp` built by g++ with a couple of HIP TUs, use `find_package(hipcub REQUIRED)` for the
+existence check and add `${hipcub_INCLUDE_DIRS}` with `target_include_directories` instead.
+Same reasoning applies to `hip::device` generally. (CuRast: `cmake/common.cmake`.)
+
+**HIP's `cg::grid_group` has no `block_rank()`.** It offers `thread_rank()`, `size()`,
+`num_threads()` and `sync()` and nothing else
+(`amd_hip_cooperative_groups.h`); `grid.block_rank()` and `grid.thread_index()` are
+CUDA-only. Substitute the raw builtins -- `blockIdx.x` for a one-dimensional launch grid,
+`blockIdx.x*blockDim.x + threadIdx.x` for `thread_index()` -- and note the grid
+dimensionality the substitution assumes in the comment. (CuRast: `kernel_stage4_blend`.)
+
 **Missing-include errors are usually pre-existing upstream omissions**, not port breakage:
 CUDA's headers supplied them transitively and the narrower HIP include graph unmasks them.
 Fix additively -- it helps the CUDA build too. (LC-framework)

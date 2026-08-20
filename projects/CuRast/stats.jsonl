@@ -112,3 +112,20 @@
 {"kind":"session","ts":"2026-06-19T22:26:49Z","epoch":1781908009.801759200,"event":"end","platform":"windows-gfx1101"}
 {"kind": "tokens", "ts": "2026-06-19T22:27:49Z", "tokens": 100706, "source": "validator (gfx1101)"}
 {"kind": "tokens", "ts": "2026-06-23T22:21:28Z", "tokens": 15694, "source": "gfx90a dead-code cleanup (batch A subagent, shared)"}
+{"kind":"phase","ts":"2026-08-20T17:58:32Z","phase":"compile","seconds":1.917,"exit":1,"cmd":"cmake /var/lib/jenkins/moat/projects/CuRast/src -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -B /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build"}
+{"kind":"phase","ts":"2026-08-20T17:58:47Z","phase":"compile","seconds":1.370,"exit":1,"cmd":"cmake /var/lib/jenkins/moat/projects/CuRast/src -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -B /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build"}
+{"kind":"phase","ts":"2026-08-20T17:58:54Z","phase":"compile","seconds":0.521,"exit":0,"cmd":"cmake /var/lib/jenkins/moat/projects/CuRast/src -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -B /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build"}
+{"kind":"phase","ts":"2026-08-20T17:59:14Z","phase":"compile","seconds":14.925,"exit":2,"cmd":"cmake --build /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build --target CuRast -j64"}
+{"kind":"phase","ts":"2026-08-20T17:59:26Z","phase":"compile","seconds":2.716,"exit":2,"cmd":"cmake --build /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build --target CuRast -j64"}
+{"kind":"phase","ts":"2026-08-20T17:59:56Z","phase":"compile","seconds":9.123,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build --target CuRast -j64"}
+{"kind":"phase","ts":"2026-08-20T18:00:09Z","phase":"test","seconds":0.222,"exit":139,"cmd":"bash -c /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build/CuRast --bench ./example_donaukanal_urania.glb 1920 1080 30"}
+{"kind":"phase","ts":"2026-08-20T18:00:17Z","phase":"test","seconds":0.210,"exit":139,"cmd":"bash -c /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build/CuRast --bench ./example_donaukanal_urania.glb 1920 1080 30"}
+{"kind":"phase","ts":"2026-08-20T18:00:25Z","phase":"test","seconds":0.237,"exit":139,"cmd":"bash -c /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build/CuRast --bench ./example_donaukanal_urania.glb 1920 1080 30"}
+{"kind":"phase","ts":"2026-08-20T18:00:37Z","phase":"test","seconds":0.218,"exit":139,"cmd":"bash -c exec /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build/CuRast --bench ./example_donaukanal_urania.glb 1920 1080 30"}
+{"kind":"phase","ts":"2026-08-20T18:01:44Z","phase":"compile","seconds":13.141,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build --target CuRast -j64"}
+{"kind":"phase","ts":"2026-08-20T18:02:59Z","phase":"compile","seconds":12.979,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build --target CuRast -j64"}
+{"kind":"phase","ts":"2026-08-20T18:03:29Z","phase":"compile","seconds":13.356,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build --target CuRast -j64"}
+{"kind":"phase","ts":"2026-08-20T18:03:37Z","phase":"test","seconds":0.221,"exit":139,"cmd":"bash -c exec stdbuf -oL -eL /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build/CuRast --bench ./example_donaukanal_urania.glb 1920 1080 30"}
+{"kind":"phase","ts":"2026-08-20T18:03:44Z","phase":"test","seconds":0.207,"exit":139,"cmd":"bash -c exec stdbuf -oL -eL /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build/CuRast --bench ./example_donaukanal_urania.glb 1920 1080 30"}
+{"kind":"phase","ts":"2026-08-20T18:03:52Z","phase":"test","seconds":0.219,"exit":139,"cmd":"bash -c exec stdbuf -oL -eL /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build/CuRast --bench ./example_donaukanal_urania.glb 1920 1080 30"}
+{"kind":"phase","ts":"2026-08-20T18:04:04Z","phase":"test","seconds":1.904,"exit":0,"cmd":"bash /var/lib/jenkins/moat/agent_space/run_bench.sh"}

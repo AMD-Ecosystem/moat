@@ -1479,3 +1479,144 @@ Results:
 
 windows-gfx1101: port-ready -> completed, validated_sha=bfc95ddbd28e8bdf65bffe0662e79b2113b62935
 Optional platform; does NOT change head_sha, does NOT disturb the open PR (pr#2).
+
+## Fix round 2026-08-20 (linux-gfx1100 porter) -- staged tip 100d2e7
+
+### Maintainer situation
+
+Upstream PR m-schuetz/CuRast#2 was reopened 2026-08-06 with a promise from us to
+resolve the merge conflict against upstream main. The PR head (published_sha)
+is 302cb5fe and is frozen; this round stages on `moat-fix-2`, cut from that tip.
+Nothing was pushed to moat-port and no upstream write was made.
+
+### What merged (f870bc0)
+
+`git merge --no-commit upstream/main` onto the 302cb5fe tip. Upstream main added
+an opaque/translucent mesh split, a points renderer (src/kernels/points.cu), a
+CUB radix sort (src/CubSort.cu, built at build time -- CMake globs src/*.cu),
+src/types.h (i8..u64 aliases), and a translucent rasterizer
+(src/kernels/triangles_translucent.cu). 17 files, 1440 insertions / 93 deletions.
+
+ONE conflicted file, src/CuRast_render.h, three hunks:
+1. saveScreenshot: kept our ssW/ssH null-framebuffer fallback, took upstream's
+   `u64 numPixels` typedef rename.
+2. CuRast::draw target setup: kept our fbW/fbH null-framebuffer fallback, took
+   upstream's u64 casts.
+3. drawTrianglesVisbuffer call: took upstream's renamed variables
+   (meshes_unique_opaque, cvm_meshes_opaque) from the opaque/translucent split.
+
+### What was ported (100d2e7)
+
+1. **src/CubSort.cu -> hipCUB.** Guarded include of
+   `<hipcub/device/device_radix_sort.hpp>` + `namespace cub = hipcub;` +
+   cuda_to_hip.h (which already maps cudaMalloc/cudaFree). GOTCHA: the
+   `<hipcub/hipcub.hpp>` umbrella header does NOT compile against libstdc++ 13 --
+   it pulls device_for.hpp -> util_mdspan.hpp, which needs C++23 `std::extents`
+   (<mdspan>, libstdc++ 15+). 20 errors. Including only the specific device
+   algorithm header avoids it entirely.
+2. **cmake/common.cmake**: `find_package(hipcub REQUIRED)` and
+   `${hipcub_INCLUDE_DIRS}` added to target_include_directories. Deliberately NOT
+   `target_link_libraries(hip::hipcub)`: hip::hipcub -> roc::rocprim_hip ->
+   `roc::rocprim;hip::device`, and hip::device puts HIP compile flags on the plain
+   C++ sources (the file already carries a comment about avoiding hip::device).
+3. **src/types.h**: added `#include <cstdint>`. GOTCHA: hiprtc does not
+   predeclare the fixed-width types the way nvrtc does. triangles_translucent.cu
+   includes ../types.h BEFORE utils.cuh (which includes <cstdint>), so the RTC
+   compile died with "unknown type name 'uint64_t'" and a cascade of unknown
+   u32/u64. Unguarded fix, correct on both backends.
+4. **src/kernels/points.cu, src/kernels/triangles_translucent.cu**: the standard
+   front matter from triangles_visbuffer.cu -- `#if defined(USE_HIP) ||
+   defined(__HIP_PLATFORM_AMD__)` -> cuda_to_hip.h + `#define __CUDACC__` +
+   GLM_FORCE_PURE, `#else` -> GLM_FORCE_CUDA + <cooperative_groups.h>
+   (+ memcpy_async.h for translucent). translucent additionally got the
+   `#if defined(__HIPCC_RTC__) #pragma clang attribute push((device))` region
+   around its free helper functions (getVertex/getUV/encode/decode/binning),
+   popped before the first `extern "C" __global__`.
+5. **kernel_stage1_binning (translucent)**: same treatment as visbuffer stage1.
+   HIP branch drops the grid-rank-0 counter init and the `grid.sync()`, uses
+   `block.sync()`, and uses raw aligned storage for the `__shared__ CMesh`
+   (HIP rejects __shared__ with constructors). Counters +
+   queueSize + dbg_fragcount are zeroed host-side with cuMemsetD8Async /
+   cuMemsetD8 in drawTrianglesTranslucent. `#else` keeps upstream verbatim.
+6. **kernel_stage4_blend**: `grid.block_rank()` does not exist on HIP's
+   grid_group (checked amd_hip_cooperative_groups.h: grid_group has thread_rank,
+   size, sync only). Guarded to `blockIdx.x`; the launch grid is 1-D
+   (`{.gridsize = numTiles, .blocksize = 256}`), so the value is identical.
+7. **Launch sites (CuRast_render.h)**: drawPoints kernel_drawPoints and
+   kernel_stage3_computeRanges have no grid.sync -> launchOccupancyBased under
+   USE_HIP, launchCooperative on the `#else`. kernel_stage1_binning likewise.
+   NOTE: HipModularProgram::launchOccupancyBased and ::launchCooperative compute
+   IDENTICAL grid dimensions (blocksPerSM * numSMs clamped to [10, 100000]), so
+   the substitution is behavior-preserving; stage3's
+   `if(grid.thread_rank() >= *queueSize) return;` coverage limitation is
+   upstream's and is not changed by the port.
+8. **README.md**: the AMD dependency line now names hipCUB alongside hiprtc.
+
+### Build (linux-gfx1100, AMD Radeon Pro W7800 48GB, 35 CUs wave32, ROCm 7.2.3)
+
+```bash
+sudo apt-get install -y libturbojpeg0-dev libvulkan-dev libglfw3-dev \
+    libxkbcommon-dev libxinerama-dev libxi-dev libxrandr-dev libxcursor-dev
+HIP_VISIBLE_DEVICES=0 cmake /var/lib/jenkins/moat/projects/CuRast/src \
+    -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+    -B /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build
+HIP_VISIBLE_DEVICES=0 cmake --build \
+    /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build --target CuRast -j$(nproc)
+```
+
+Note vs earlier recipes: libxcursor-dev is also needed (bundled glfw fails
+configure with "Xcursor headers not found" without it).
+
+Build: exit 0, 0 errors, 10 warnings (pre-existing fread-return / nodiscard
+hipError_t class).
+
+### GPU test
+
+```bash
+cd /var/lib/jenkins/moat/projects/CuRast/src
+HIP_VISIBLE_DEVICES=0 ROCM_PATH=/opt/rocm \
+    /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build/CuRast \
+    --bench ./example_donaukanal_urania.glb 1920 1080 30
+```
+
+- rc=0, 30 frames, 966461 of 966461 triangles visible per frame
+- best visbuffer-pipeline 0.159 ms @ 1920x1080 (reference at 302cb5fe on this
+  GPU: 0.160 ms -- no regression)
+- bench_render.png 264481 bytes, 1920x1080, 21495 distinct colours, Donaukanal
+  scene, non-blank. PASS.
+- hiprtc modules compiled: resolve.cu 103056 B, triangles_visbuffer.cu 154112 B,
+  points.cu 6168 B -- points.cu is NEW and compiles with zero errors.
+- jpeg/BitReaderGPU.cuh + HashMap.cuh hiprtc errors: pre-existing, unrelated.
+- No GPU faults; no cooperative-launch failures.
+
+### Translucent path: compiled, NOT executed (honest limitation)
+
+`CuRastSettings::enableTranslucency` defaults to **false** upstream, and
+drawTrianglesTranslucent returns before constructing its runtime program when
+there are no translucent meshes, so the bundled example_donaukanal_urania.glb
+never reaches the module. Two things were checked:
+
+1. Forced `enableTranslucency = true` (throwaway edit, reverted): still 966461
+   tris through the visbuffer path and no translucent module compile -- every
+   texture in the sample model is fully opaque (LargeGlbLoader marks a texture
+   translucent only if some pixel has alpha != 255).
+2. Throwaway edit hoisting the `static CudaModularProgram* prog` construction
+   above the `if(meshes.size() == 0) return;` in drawTrianglesTranslucent, then
+   the same bench: `Including: ./src/kernels/triangles_translucent.cu` ->
+   **compiled code object, 39208 bytes, zero errors** under hiprtc on gfx1100.
+   Reverted before committing.
+
+So: triangles_translucent.cu compiles under hiprtc and its launch strategy is
+the same pattern already validated for the visbuffer pipeline, but its kernels
+(stage1 binning, the hipCUB sort call, stage3 ranges, stage4 blend) have NOT
+been executed on an AMD GPU. Exercising them needs a model with alpha textures
+plus enableTranslucency. Do not claim runtime validation of the translucent
+renderer from this round.
+
+### Round state
+
+- moat-fix-2 = 302cb5fe -> f870bc0 (merge) -> 100d2e7 (HIP enablement); pushed
+  to the fork. moat-port untouched, PR #2 unchanged.
+- head_sha advanced to 100d2e7; the four completed platforms read `revalidate`.
+- jargon.py clean: `--port CuRast`, `--commits moat-port..moat-fix-2`,
+  `--diff moat-port..moat-fix-2`.
