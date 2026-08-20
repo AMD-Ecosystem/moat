@@ -264,6 +264,16 @@ LC-framework's nvcc recipe uses `-fmad=false -mno-fma -ffp-contract=off`, so pin
 there would diverge. Integer-only components are unaffected. (CV-CUDA OpWarpPerspective;
 LC-framework.)
 
+**One contraction setting cannot satisfy both kinds of bit-exact test.** A project can have
+tests that compare a kernel against a CPU gold (which wants the contraction nvcc/host use) AND
+tests that compare two GPU code paths against each other byte-for-byte (which want the same
+contraction in both instantiations). clang contracts a `float` instantiation and a `float4`
+instantiation of the same template differently, so a per-plane path and a per-pixel path that are
+bit-identical on NVIDIA differ by 1 ULP on ROCm. Measure before choosing: on CV-CUDA v0.17
+`-ffp-contract=on` gave 48 failures (43 of them planar-vs-interleaved parity) and
+`-ffp-contract=off` gave 10 (but regressed the cubic-vs-gold case the `on` pin was added for).
+Treat the choice as a reviewed decision with numbers attached, not a default. (CV-CUDA)
+
 **An exact float-equality branch fed by approximate division can HANG, not just drift.**
 HIP's `__fdividef` differs ~1 ULP from CUDA, so a downstream exact-equality test on the
 quotient -- selecting a loop start or end index -- can flip on AMD. When that index feeds an
@@ -315,6 +325,24 @@ the CUDA build too and are not HIP-specific hacks. (Velvet)
 **Library swaps.** cuBLAS -> hipBLAS, cuFFT -> hipFFT, cuRAND -> hipRAND, cuSPARSE ->
 hipSPARSE, cuDNN -> MIOpen, Thrust/CUB -> rocThrust/hipCUB. Mostly 1:1; watch handle types
 and a few signature differences such as the hipBLAS v2 enums.
+
+**NVTX -> roctx.** Profiling range macros (`nvtxRangePushA`/`nvtxRangePop`) map onto roctx,
+which rocprof reports the same way, so a project whose build FATALS without NVTX headers does not
+need its ranges stubbed out. The header moved between ROCm versions: prefer
+`<rocprofiler-sdk-roctx/roctx.h>` and fall back to `<roctracer/roctx.h>` behind `__has_include`;
+both declare `roctxRangePushA`/`roctxRangePop`. Link `rocprofiler-sdk-roctx` or `roctx64`. A
+forwarding `nvtx3/nvToolsExt.h` on the HIP include path keeps every call site untouched. NVTX's
+INJECTION api (used by interposer/probe test helpers) has no roctx analogue -- leave those helpers
+out of the ROCm build. (CV-CUDA)
+
+**Code that reads curand's generator state internals needs a rocRAND translation, not an alias.**
+curand caches one spare Box-Muller normal and flags it with `state.boxmuller_flag ==
+EXTRA_FLAG_NORMAL`; rocRAND caches the same spare value but marks an EMPTY slot with a NaN
+sentinel and keeps the field private, so the predicate is
+`rocrand_device::detail::engine_boxmuller_helper<rocrand_state_xorwow>::has_float(&state)`.
+`skipahead` and `*_normal2` exist natively. Kernels that skip ahead deterministically depend on
+this predicate being right, so a wrong answer is a silent numeric divergence, not a build error.
+(CV-CUDA gaussian noise)
 
 **Negative entries for that table.** CUPTI has no ROCm analogue -- stub the optional
 per-kernel profiling path inert and let the timer fall back to `hipEvent` wall-clock rather

@@ -370,3 +370,142 @@ Jargon (`python3 utils/jargon.py --commits ef50300b..moat-port` and `--diff ef50
 Documentation: README.md still links "Building for AMD GPUs (ROCm)" to `docs/sphinx/installation.rst`; unchanged by this delta (already reviewer-verified 2026-05-31).
 
 Fork tree confirmed clean (`git status --porcelain` empty on tracked files) after returning to `moat-port` HEAD; no source/build edit was made or needed this cycle. Wall clock: two full from-scratch builds (~old ~6 min, new ~6 min per ninja step count) + codeobj_diff/sha256/jargon checks, well under the 60-minute budget.
+
+## Fix round 2026-08-20 (linux-gfx1100): merge upstream v0.17.0 into the port
+
+WHY: upstream PR CVCUDA/CV-CUDA#293 went CONFLICTING after upstream released v0.17.0
+(`5ac8708b` "Merge pull request #294 from CVCUDA/feat/judavis/v0.17"). No maintainer comment on the
+thread -- purely a merge conflict. Staged on `moat-fix-293` (base = published tip `642b3526`).
+NOT PUSHED (see PUSH BLOCKED below), so head_sha/advance-head deliberately untouched.
+
+### Commits on moat-fix-293 (local only)
+- `4837d17c` [ROCm] Merge upstream main into the AMD/HIP branch  -- the merge itself, 14 conflicts
+- `6f82cb89` [ROCm] Map the runtime APIs the v0.17.0 code newly uses  -- compat layer + shims
+- `92cbcd1e` [ROCm] Compile the operators added in v0.17.0 for AMD GPUs  -- source-level guards
+- `a81c5717` [ROCm] Keep the auto contrast reduction in 32-lane subgroups  -- wave64 shuffle fix
+- `9174db47` [ROCm] Correct the documented AMD architecture default  -- stale doc line (gfx90a pin
+  was removed in 642b3526 but installation.rst still claimed it)
+Delta moat-port..moat-fix-293: 1607 files (upstream's v0.17.0 release is ~1599 of them).
+
+### Upstream v0.17.0 changes that matter to this port
+- **3rdparty/ is GONE.** No git submodules any more (googletest/dlpack/pybind11/nvbench come from
+  `find_package`), and the prebuilt CUDA-only `libcuosd.a` is gone: OSD/BndBox/BoxBlur are now built
+  from in-tree sources (`osd.cu`, `CvCudaOSD.hpp`, `textbackend/`). The port's scope-out of those
+  three operators is KEPT (unchanged scope for an open PR), but the justification comment changed --
+  it can no longer say "prebuilt CUDA-only static lib". OPPORTUNITY for a later round: they are now
+  ordinary source and could plausibly be enabled for ROCm.
+- OSD/BndBox/BoxBlur tests moved into the main `CVCUDA_TEST_SOURCES` list (upstream dropped the
+  separate `CVCUDA_TEST_SOURCES_CUOSD` list and the `cuosd` link), so the ROCm build now filters
+  them out of that list; `tests/cvcuda/unit` likewise drops `TestOpBoxBlur.cpp`/`TestTextBackend.cpp`.
+- `OpHQResize.cu` was gutted: kernels moved to `OpHQResizeKernel.cuh`. The port's `__ldg`->plain-load
+  guard moved with the code.
+- `OpMinMaxLoc.cu` gained an ordered-int atomic encoding and an `OpSingleExtremaBase` CRTP base whose
+  `initFill` reads `Derived::init`. The port's "init() as a function, not a static constexpr member"
+  (HIP_vector_type ctor is not constexpr) survives -- call sites are now `init()`.
+- New CUDA-runtime surface the compat layer had to grow: compute-capability device attributes
+  (`CudaDeviceUtils.hpp`, OpResize, OpAdaptiveThreshold, OpHQResizeFilter, pillow_resize),
+  `cudaMemcpy3D*` + `make_cudaPos/Extent/PitchedPtr` (OpCenterCrop, custom_crop),
+  `cudaMallocAsync/cudaFreeAsync` (OpAdjustContrast), `cudaMemGetInfo` (TestOpPillowResize),
+  stream-capture + graph handles (OpAdjustContrast, OpAutoContrast, TestOpAutoContrast),
+  `cudaErrorNoDevice/InsufficientDriver` (TestCudaDeviceUtils).
+- `<math_constants.h>` (OpAutoContrast, CUDART_INF_F) and per-collective CUB headers
+  (`cub/block/*.cuh`, `cub/device/device_reduce.cuh`) -> new shims under `cmake/hip/`.
+- **NVTX is now mandatory**: `cvcuda_nvtx_config` fatals if `nvtx3/nvToolsExt.h` is not in the CUDA
+  toolkit, and `CVCUDA_NVTX_RANGE` is used at 228 sites. Mapped to **roctx**: shim header
+  `cmake/hip/nvtx3/nvToolsExt.h` (`nvtxRangePushA`->`roctxRangePushA`, prefers
+  `rocprofiler-sdk-roctx/roctx.h`, falls back to `roctracer/roctx.h`) + `find_library(roctx)` in the
+  USE_HIP branch. rocprof then reports the same ranges.
+- `gaussian_noise_util.cuh` pokes curand internals (`localState.boxmuller_flag == EXTRA_FLAG_NORMAL`)
+  and calls `curand_normal2`. rocRAND caches the same spare Box-Muller normal but marks an EMPTY slot
+  with a NaN sentinel, so the ROCm branch calls
+  `rocrand_device::detail::engine_boxmuller_helper<rocrand_state_xorwow>::has_float(&state)`
+  (wrapped as `cvcuda_hipHasCachedNormal` in the curand shim). `skipahead` exists natively in HIP.
+- Public-header compatibility checks (`add_header_compat_test`, gcc-11) compile the installed headers
+  with a plain compiler; those headers `#include <cuda_runtime.h>`. On HIP they now get the compat
+  include dir + `-DUSE_HIP -D__HIP_PLATFORM_AMD__` (and hip::host's include dirs for the nvcv ones).
+  NOTE: `-DPUBLIC_API_COMPILERS=` does NOT disable these -- an empty value falls back to the
+  gcc-11/gcc-10/clang-11/clang-14 default list. They only started running on this host because
+  gcc-11 is now installed.
+
+### Compute-capability attribute mapping (WATCH ON gfx90a)
+`cudaDevAttrComputeCapabilityMajor/Minor` -> `hipDeviceAttributeComputeCapabilityMajor/Minor`, which
+must match `hipDeviceProp_t` because the new `TestCudaDeviceUtils` unit test compares the two.
+Measured on this host: gfx1100 reports 11.0 -> sm=110, so every SM-keyed policy takes its default
+branch. gfx90a will report 9.0 -> **sm=90, which collides with SM90 (Hopper)** in
+`UseSharedMemoryCubicExpand()` (`sm == 80 || sm == 90`) and possibly other policy sites. Those paths
+are meant to be bit-exact alternatives, so the gfx90a operator suite is the check; flag it if
+OpResize cubic EXPAND regresses only on gfx90a.
+
+### Build (CLEAN, 418 targets)
+```
+cmake -S projects/CV-CUDA/src -B projects/CV-CUDA/src/build-hip -G Ninja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=/opt/rocm \
+  -DBUILD_PYTHON=OFF -DBUILD_TESTS=ON -DBUILD_TESTS_CPP=ON -DBUILD_TESTS_PYTHON=OFF \
+  -DBUILD_TESTS_WHEELS=OFF -DBUILD_BENCH=OFF -DBUILD_DOCS=OFF -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
+cmake --build projects/CV-CUDA/src/build-hip -j16
+```
+Host: AMD Radeon Pro W7800 (gfx1100, RDNA3 wave32), ROCm 7.2.1 (clang 22 at /opt/rocm-7.2.3).
+libnvcv_types.so.0.17.0, libcvcuda.so.0.17.0 and all C++ test exes build; no `-DPUBLIC_API_COMPILERS=`
+needed any more (the header-compat checks now pass on HIP).
+
+### GPU tests at the staging tip (HIP_VISIBLE_DEVICES=0, gfx1100)
+```
+HIP_VISIBLE_DEVICES=0 build-hip/bin/cvcuda_test_system            # 3825 passed / 48 FAILED (3886 run)
+HIP_VISIBLE_DEVICES=0 build-hip/bin/nvcv_test_cudatools_system    # 1107 passed / 16 failed
+HIP_VISIBLE_DEVICES=0 build-hip/bin/cvcuda_test_unit              # 27 passed / 0 failed (new exe)
+```
+- `nvcv_test_cudatools_system`: 1107/1123, **identical to the last gfx1100 validation** -- 15x
+  InterpolationVarShapeWrapTest.correct_shift + 1x TypeTraitsMakeTypeVectorTest/3, i.e. exactly the
+  two documented non-port residual clusters. No new failures.
+- `cvcuda_test_unit` (new in v0.17): all 27 pass, including TestCudaDeviceUtils (so the
+  compute-capability mapping agrees with hipDeviceProp_t) and TestOpHQResizePolicy.
+- `cvcuda_test_system`: 2608 -> 3886 tests (v0.17 added the whole planar-layout parity suite).
+  48 failures, ALL in code paths new in v0.17. Previous bar was 0 failures out of 2608.
+
+### The 48 cvcuda_test_system failures (all new-in-v0.17 code)
+Unique failing tests by cluster:
+- **43 planar-vs-interleaved parity** (`_/OpResizePlanar` 16, `_/OpRotatePlanar` 9,
+  `_/OpPillowResizePlanar` 7, `_/OpRandomResizedCropPlanar` 4, `_/OpPadAndStackPlanar` 3,
+  `_/OpConv2DPlanar` 1, `OpColorTwistPlanarVarShape/{0,1,2}` 3): v0.17 added
+  `tests/cvcuda/system/PlanarParityUtils.hpp`, which requires the planar (NCHW) result to be
+  BYTE-IDENTICAL to the interleaved (NHWC) result. Observed diffs are single-ULP float differences
+  (e.g. 0x61 vs 0x60 in one float's low byte). The planar path resizes each plane as a
+  single-channel view, so it instantiates T=float where the interleaved path instantiates T=float4,
+  and clang contracts the two instantiations differently.
+- **2 OpNormalize** (`tensor_f32_single_channel_stddev_vectorized`,
+  `varshape_f32_single_channel_stddev_vectorized`): same shape of problem -- new test memcmp's the
+  vectorized result against the scalar reference implementation.
+- **3 `_/OpFindHomography.varshape_correct_output`** ((8,16), (16,20), (25,40)): output is **NaN**.
+  This is a FUNCTIONAL failure, not a rounding one, and the tensor variant passes. FindHomography is
+  dual-touched (upstream changed it in v0.17 and the port has wave64/64-bit-mask work in it).
+  Not yet root-caused. Highest-value item for the next round.
+
+### -ffp-contract EXPERIMENT (evidence for the next round; NOT applied)
+Hypothesis: the parity clusters are FMA-contraction differences between the two instantiations.
+Built the same tree with `-ffp-contract=off` in place of the port's pinned `-ffp-contract=on`
+(separate build dir, since removed) and re-ran cvcuda_test_system on gfx1100:
+- `-ffp-contract=on`  (current): 3825 passed, **48 failed**
+- `-ffp-contract=off` (experiment): 3863 passed, **10 failed**
+  -> fixes 37 of the 43 planar-parity failures and both OpNormalize ones,
+  -> but REGRESSES 1 `_/OpWarpPerspective.varshape_correct_output/0502f34e` (one uint8 off by one),
+     which is exactly the cubic bit-exactness the `-ffp-contract=on` pin was added for (2026-05-31
+     root cause #6), and leaves the 3 FindHomography NaNs, 3 PadAndStackPlanar and 3
+     ColorTwistPlanarVarShape.
+DELIBERATELY NOT FLIPPED in this round: contraction is a global numerics setting, it was chosen and
+reviewer-verified for a documented reason, and flipping it changes gfx90a behavior too. It needs a
+reviewer decision plus a gfx90a run, not a merge-round side effect. The numbers above are the
+evidence for that decision.
+
+### PUSH BLOCKED (nothing pushed; head_sha NOT advanced)
+The delta touches `.github/workflows/codeql.yml` (upstream DELETED it in v0.17.0, so the merge
+carries that deletion) and this host's gh token lacks the `workflow` scope, so `git push` of
+`moat-fix-293` is rejected. Branch is complete and local at `9174db47`.
+After `gh auth refresh -s workflow`, in order:
+1. `git -C projects/CV-CUDA/src push origin moat-fix-293`
+2. `python3 utils/moatlib.py advance-head CV-CUDA 9174db47f42f54eefcfdae6cb1d34beab043318e`
+   (both completed arches then read `revalidate`)
+3. reviewer pass on the delta, then revalidation on gfx1100 + gfx90a
+4. `utils/upstream.py --fix-review` for the delta approval, then `--merge-fix --apply`
+Do NOT `advance-head` before the push: it would point head_sha at a sha no other host can fetch.
