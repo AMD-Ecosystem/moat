@@ -367,3 +367,46 @@ Documentation: the port did not need to add ROCm/HIP build docs -- upstream's ow
 - Total validator wall time: ~25 minutes including clone, cmake config debugging for the conda CUDA split layout, and codeobj_diff/nm analysis.
 
 No GPU test re-run was needed or performed (carry-forward, not full revalidation) -- MI250X index 3 (gfx90a) was confirmed present via `rocm-smi` but not exercised this round; the prior real-GPU pass (2026-06-05) at validated_sha 1bedbbb remains the basis, now extended to d369e07 by binary equivalence.
+
+## Fortran compiler availability on TheRock Windows (2026-08-20, maintainer question)
+
+Jeff asked whether a Fortran compiler ships as part of TheRock's distribution, since QUICK's
+windows block rests on "no MSVC-ABI Fortran compiler". Investigated directly on the gfx1151
+host.
+
+**A Fortran-named compiler DOES ship, and it is not a Fortran compiler.**
+`_rocm_sdk_devel/lib/llvm/bin/` contains both `flang.exe` and `amdflang.exe`. They report:
+
+```
+AMD flang version 23.0.0git (https://github.com/ROCm/llvm-project.git 52226beb...)
+Target: x86_64-pc-windows-msvc
+```
+
+which looks exactly right -- MSVC ABI, AMD build. It is a decoy. Three checks settle it:
+
+1. `flang.exe -fc1 -help` prints `OVERVIEW: clang LLVM compiler`. The binary is a **clang
+   driver**, not a Flang driver. `-fc1` (Flang's frontend flag) is rejected as an unknown
+   argument; the Flang frontend is simply not in this binary.
+2. Compiling a four-line `.f90` fails immediately: the driver spawns *itself* with `-fc1
+   -triple -emit-obj ...` and the spawned process rejects every one of those flags. Same
+   failure from `flang.exe` and `amdflang.exe`, with and without `MSYS2_ARG_CONV_EXCL="*"`.
+3. No Fortran runtime and no Fortran modules are packaged anywhere under `_rocm_sdk_devel`:
+   `find -iname 'flang_rt*'` and `find -iname 'iso_fortran_env.mod' -o -iname
+   '__fortran_builtins.mod'` both return nothing.
+
+So the substance of the existing block stands -- there is no usable Fortran compiler in
+TheRock on Windows -- but the recorded reason should be read with this correction: it is not
+that AMD ships nothing Fortran-shaped, it is that what ships is mislabelled clang with no
+Fortran frontend, runtime, or modules. Registered as a ROCm packaging bug report; see
+`deferred.json`.
+
+**The real alternative, and why this is not obviously a waiver.** The blocker is specifically
+an *MSVC-ABI* Fortran compiler. MinGW `gfortran` is out (GNU ABI, will not link against
+clang-cl/MSVC objects). But **Intel `ifx` (oneAPI Fortran) targets the MSVC ABI on Windows,
+is free, and interoperates with MSVC-ABI C/C++ objects** -- which is what QUICK needs to link
+its `.f90` modules against the HIP/clang-cl side. Nobody has tried it. Before waiving the
+windows gate here, someone should establish whether `ifx` + clang-cl + HIP can build QUICK,
+because if it can this is porter work rather than an excused gate.
+
+Note this does NOT make QUICK PR-ready on its own: `wave64` is also unsatisfied at head and
+still needs a gfx90a or gfx942 run.

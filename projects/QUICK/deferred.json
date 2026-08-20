@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "therock-windows-flang-is-clang",
+      "kind": "rocm-bug-report",
+      "component": "therock",
+      "summary": "TheRock's Windows ROCm SDK ships lib/llvm/bin/flang.exe and amdflang.exe that are actually clang driver binaries, not Flang. They advertise 'AMD flang version 23.0.0git / Target: x86_64-pc-windows-msvc', but 'flang.exe -fc1 -help' prints 'OVERVIEW: clang LLVM compiler', -fc1 is an unknown argument, and compiling any .f90 fails because the driver spawns itself with frontend flags it cannot parse. No flang_rt runtime libraries and no Fortran .mod files (iso_fortran_env, __fortran_builtins) are packaged anywhere in the SDK. Either ship a real Flang with its runtime and modules on Windows, or do not ship a binary named flang -- the current state makes it look like Fortran is supported when it is not, and blocks mixed Fortran/HIP projects such as QUICK.",
+      "refs": [
+        "projects/QUICK/notes.md ## Fortran compiler availability on TheRock Windows (2026-08-20)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-20T20:17:29Z",
+      "decided": null
+    }
+  ]
+}
