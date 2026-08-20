@@ -792,3 +792,41 @@ SumStore/SumFlushFinal is indexed by threadIdx.x scaled by the storing
 accessor's element stride, so nothing below element 32 is written by a thread
 outside the reading tile. Content still byte-identical to 73847999. New tip:
 1a9e9770. jargon.py clean on --commits and --diff.
+
+## Re-review 2026-08-20 #3 (tip 1a9e9770) -- PASSED
+
+Findings 1-4 all resolved. No open items.
+
+The invariant now in the message is true of every store in the header, which I
+checked by scanning each `__device__` function for its first store to
+`inout_shared` against its first `__syncthreads()`: the sixteen barrier-less
+storers are `WriteSum1..4`, `ReadAndShuffle1..4`,
+`ReadAndShuffleWithDefault1..4` and `ShuffleAndWrite1..4`. Scalar forms store at
+element `stride * threadIdx.x (+ i)`, vector forms at
+`caspar_size(dim) * threadIdx.x` (accessors.py:45-49, layouts.py:52-58), and
+ShuffleAndWrite adds `+1` plus row offsets of 1025 or more. In every case an
+index below 32 requires `threadIdx.x <= 31`, a lane of the reading tile, whose
+stage-2 read precedes the tile collective (memops.cuh:398-404) that no lane can
+retire past. `SumStore` and `SumFlushFinal` open with block-wide barriers at
+memops.cuh:382 and :418 as the sentence says.
+
+Verified at this tip: content byte-identical to 73847999 (`git diff --stat`
+empty), parent still the untouched merge 398ba468, so no evidence from earlier
+rounds needs re-deriving; of the 161 files upstream changed between b78c11dc
+and 13e72357 the caspar CMake template remains the only one differing from
+`upstream/main`; the port surface is the same 18 files; the round's only
+device-code delta is the four-line barrier hunk in `SumStore`. Title 61 chars
+with `[ROCm]`, body ASCII-only with the AI-assistance disclosure, a Test Plan of
+literal commands, the human co-author trailer and no agent `Co-Authored-By`;
+`jargon.py` clean on `--commits`, `--diff` and `--port`; no modified tracked
+files in the fork worktree.
+
+Cosmetic, fix only if the branch is touched again for another reason: the
+rewrapped paragraph leaves a short line, "leaving the function. The trailing /
+barrier replaces those implicit guarantees". Meaning and rendering are
+unaffected; not worth an amendment of its own.
+
+Next: the branch is still local-only (push blocked on the gh token's `workflow`
+scope, see the fix-round section above). Once it is pushed and head advances to
+1a9e9770, every platform revalidates -- the barrier changes device code, so the
+merge-only binary-equivalence carry-forward does not cover this tip.
