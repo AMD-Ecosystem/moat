@@ -9,3 +9,5 @@
 {"kind":"session","ts":"2026-08-14T15:10:49Z","epoch":1786720249.181995253,"event":"end","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-08-19T04:54:31Z","epoch":1787115271.378713862,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-19T04:57:34Z","epoch":1787115454.809845144,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T06:35:28Z","epoch":1787207728.031421232,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-20T06:39:47Z","epoch":1787207987.035431281,"event":"end","platform":"linux-gfx90a"}

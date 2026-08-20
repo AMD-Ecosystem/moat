@@ -469,3 +469,170 @@ spot -- spconv-triton is single-author, single-release, 1 star -- is unchanged a
 the fair counterargument; `cant-port` still holds independently and structurally, so the
 decline does not turn on which `SKIP_REASON` is chosen. An agent handed spconv again
 should read this file, confirm the queue is still unanswered, and stop.
+
+## Screen 7 -- 2026-08-20, intake, linux-gfx90a (verification of screens 2-6, plus three new checks)
+
+Seventh dispatch, same cause as screens 3-6: `stage: unclaimed` is actionable to the
+selector and intake queue issue **#8** is still open with **0 comments** (last updated
+2026-08-19T04:58Z, which is screen 6's own row refresh -- no person has replied). Verified
+rather than re-derived, from a fresh shallow clone `agent_space/spconv-screen7`.
+
+**Recommendation unchanged: DECLINE, reason `already-supported`.** Still a recommendation,
+not a decision. Nothing was written to `dispositions.json`; no GitHub write of any kind.
+
+Upstream HEAD is **`263d6b47425ef843c82f997b12d8b714013d216c` (2024-12-15)** -- byte-identical
+to screens 3, 4 and 5. Twenty months and seven screens, one commit.
+
+Re-verified on this host:
+
+| claim | screen 7 result |
+|---|---|
+| Apache-2.0, tier 1 | `licenses.py check traveller59/spconv` -> `license=Apache-2.0 tier=1, cleared to contribute` |
+| cumm Apache-2.0, tier 1 | `licenses.py check FindDefinition/cumm` -> same |
+| no NVIDIA proprietary text | `scan-nvidia agent_space/spconv-screen7` -> `no NVIDIA proprietary licence text` |
+| no vendored/submodule licences | `LICENSE` is the only licence/COPYING/NOTICE file in the tree; `.gitmodules` present but **0 bytes**, `git submodule status` empty, no `third_party/` |
+| one `.cu` in the repo | exactly one: `example/libspconv/main.cu`; zero `.cuh` |
+| 18 pccm meta-programs | `find spconv/csrc -name '*.py'` -> 18 |
+| zero AMD mentions in upstream docs | `grep -rniE 'amd\|rocm\|hip\|gfx[0-9]' README* docs/` -> no hits |
+| upstream dormant | `pushed_at` **2024-12-15T15:41:19Z**, 195 open issues, 2290 stars, `archived: false` -- unmoved |
+| cumm alive, Apache-2.0 | `pushed_at` 2026-03-21, 87 stars, not archived |
+| spconv-triton unmoved | `pushed_at` 2026-07-20, 1 star, 1 fork, Apache-2.0 |
+| FlexGEMM | MIT, `pushed_at` 2026-06-25, 146 stars (143 at screen 3) |
+| no AMD-Ecosystem / ROCm effort | `AMD-Ecosystem/{spconv,cumm,spconv-triton,FlexGEMM}`, `ROCm/{spconv,spconv-rocm,cumm,FlexGEMM}` -> all 404 |
+| GitHub-wide `spconv rocm` | `total_count: 2` -- `L-Reichardt/spconv-triton` and the empty unlicensed `jiaqiwang969/spconv-rocm` stub. Unchanged |
+| no disposition, no opt-out | `spconv` and `cumm` absent from all 282 `dispositions.json` entries; spconv absent from `data/candidates.json` |
+| spconv `depends_on` | `[]`, which is correct -- no `set-deps` needed on this record |
+
+### New check 1: upstream OPEN pull requests and BRANCHES, enumerated
+
+Screen 5 ran a PR *search* and got `total_count: 0`. This screen enumerated the full open
+set and the remote branch list on both repos, so the absence is from a listing rather than
+from a query that might have missed an unindexed PR.
+
+    gh pr list --repo traveller59/spconv --state open --search "hip OR rocm OR amd"   # []
+    gh pr list --repo traveller59/spconv --state open --limit 100                     # 10 PRs
+    git ls-remote --heads https://github.com/traveller59/spconv
+    git ls-remote --heads https://github.com/FindDefinition/cumm
+
+- **10 open PRs, none AMD/ROCm/HIP.** In order: #762 py3.12/3.13, #749 version compat,
+  #742 conv_relu, #728 `amp.custom_fwd` warning, #714 / #709 SparseGlobalAvgPool, #643
+  SparseAvgPool, #634 fuse-BN, #631 conv.py, #616 macOS CPU-only builds. (#728's branch
+  `fix/amp_custom_fwd` is *automatic mixed precision*, not AMD -- the near-miss a loose
+  grep would report.)
+- **spconv branches**: `master`, `develop`, `2.1.x`, `v1.1`, `v1.2.1`, `feature/ampere`,
+  `feature/bf16`. **cumm branches**: `main`, `0.2.x`, `feature/ampere`, `feature/debug`.
+  No `rocm`, `hip`, `amd` or `gfx*` branch on either. The only architecture branch anyone
+  ever cut is `feature/ampere`, on both repos.
+
+### New check 2: upstream has not merged a pull request since 2022
+
+The strongest dormancy evidence yet, and not recorded by screens 1-6, which all cited the
+2024-12-15 push date:
+
+    gh pr list --repo traveller59/spconv --state merged --limit 5
+    547  2022-12-27  Large kernel for implicit gemm
+    515  2022-09-22  Feature/Ampere
+    363  2021-11-07  v2.1
+
+**Three years and eight months without merging an external contribution.** The 2024-12-15
+push was the maintainer's own CI touch-up ("change all build back to windows-2019"), not a
+merge. PR #616, "Enable CPU-only builds on macOS" -- a small, self-contained *platform*
+contribution, exactly the shape a ROCm PR would take -- has sat open the whole time.
+
+This settles the "archived upstream still has fork value" clause in the role definition.
+spconv is not archived, so a PR is technically openable; the merge record says it would not
+land. Nobody should wait for one, and no one should read "not archived" here as a
+destination.
+
+### New check 3: functionality search, not name search, in the AMD orgs
+
+Screens 2-6 probed by *name* (`ROCm/spconv`, `AMD-Ecosystem/cumm`, ...). This screen
+searched the orgs for the *capability*, which is the method that caught FlashKDA's
+duplicate:
+
+    gh api "search/repositories?q=org:ROCm+sparse"          # 7
+    gh api "search/repositories?q=org:AMD-Ecosystem+sparse" # 0
+    gh api "search/repositories?q=org:ROCm+{submanifold,voxel,point+cloud,spconv}"  # 0 each
+    gh api "search/code?q=repo:ROCm/aiter+{spconv,submanifold}"                     # 0 each
+    gh api "search/repositories?q=%22sparse+convolution%22+rocm"                    # 1
+
+- ROCm's seven "sparse" repos are all sparse **linear algebra** -- `rocSPARSE`,
+  `hipSPARSE`, `hipSPARSELt` (all three now deprecated into `ROCm/rocm-libraries`),
+  `rocALUTION`, `hipfort`, and two internal benchmark tools. None is sparse
+  **convolution**: no hash-table voxel indexing, no submanifold rule generation. Adjacent
+  name, different problem.
+- `ROCm/aiter` ("AI Tensor Engine for ROCm", pushed today) has **zero** hits for `spconv`
+  or `submanifold`. It is the natural home if AMD ever took this on, and it has not.
+- GitHub-wide, the only repo describing itself as sparse convolution on ROCm is
+  `L-Reichardt/spconv-triton` -- the same answer the name search gives.
+
+This cuts both ways and the second half is the honest part. It confirms there is **no AMD
+first-party effort to duplicate or coordinate with** -- so this is not a race, and the
+`already-supported` claim still rests entirely on one outside project. It equally confirms
+there is **no AMD-owned place to hand the gap to** if spconv-triton lapses.
+
+### spconv-triton re-read on this host: MI300X only, still the whole AMD claim
+
+From today's README (not from the earlier screens' summaries):
+
+> Verified with: NVIDIA RTX 3060, A100, H100, L4, B200 - **AMD MI300X** - torch 2.4-2.13 - python 3.10-3.14
+
+> spconv does not run on AMD at all. On MI300X, measured against FlexGEMM on submanifold
+> convolution, the one common operator, spconv-Triton is faster and additionally covers
+> the full operator set.
+
+Operator coverage confirmed as claimed: submanifold and regular sparse convolution 1D-4D,
+transposed, inverse, pooling; parity against spconv 2.3.8 via a frozen golden-data suite;
+`tox` covers CUDA and ROCm runtimes; Triton is deliberately undeclared as a dependency so a
+ROCm install keeps its `pytorch-triton-rocm`. Two AMD-specific operational details worth
+carrying to whoever validates the swap: TF32 on torch 2.7+ AMD also needs
+`HIPBLASLT_ALLOW_TF32=1`, and the flag must be set on `spconv_triton`, not on the `spconv`
+alias, or it silently does nothing.
+
+**The verified-hardware line is MI300X (gfx942) alone.** gfx90a -- this host -- is
+unverified, as are gfx1100/wave32. That is the same bounded opt-in surface screens 2 and 6
+identified, now confirmed against the source of truth rather than a prior note.
+
+### Dependency context -- unchanged, and the resolution still belongs to Pointcept
+
+`moatlib.py deps` still reports `Pointcept: depends_on=['spconv'] -> WAITING on spconv`.
+`DEPENDENCIES.md` still contains no spconv mention, so the edge lives only in
+`Pointcept/status.json`. Pointcept is `stage: review-passed`, PR Pointcept/Pointcept#604
+merged 2026-07-06, `head_sha` 95f4a51, four platforms completed.
+
+Screen 6's correction stands and is the right framing: the edge is **stale as a blocker but
+real as a capability gap**. What providing spconv would actually entail is unchanged and
+unbounded -- an AMD codegen backend for cumm's CUTLASS-derived `mma.sync`/inline-PTX
+emitter, in a different repository, with nothing for hipify to translate in spconv itself.
+What the *gap* needs is the one-line `import spconv_triton.pytorch as spconv` swap,
+validated for SpUNet/OACNN/PointGroup on AMD. Those are not the same job, and only the
+second one has a bounded scope and a named recipient.
+
+`projects/Pointcept/` on `origin/main` still holds only `notes.md`, `plan.md`,
+`stats.jsonl`, `status.json` -- **no `deferred.json`**, so the gap remains unregistered
+five days after screen 6 reported it.
+
+### For a person -- the same three edits, none of them this screen's to make
+
+1. Answer intake queue issue **#8**. spconv's row has been correct and waiting since
+   2026-08-13 03:19Z. This is the only thing that stops screen 8.
+2. Rule on `Pointcept.depends_on = ['spconv']`. Note this is *not* purely cosmetic:
+   `pointcept/models/utils/structure.py:2` imports spconv unguarded at module top level,
+   so for the sparse-conv model configs it is a genuine hard runtime dependency, not an
+   optional one. Clearing it is a scoping ruling, which is why six screens have declined to
+   make it.
+3. Register the gap as a Pointcept deferral -- validate the `spconv_triton` swap for the
+   SpUNet/OACNN/PointGroup configs on AMD, gfx90a and gfx1100 included, neither of which
+   spconv-triton claims. `deferred.py add --project Pointcept` writes another project's
+   record from this branch, and defer-versus-now is a person's ruling either way.
+
+### Standing conclusion
+
+Seven screens on four platforms agree on every load-bearing fact, and the two new checks
+here only strengthen the case: no AMD work exists anywhere upstream (no PR, no branch, no
+merge in 44 months) and none exists in the AMD orgs by capability either. Screen 4's honest
+soft spot -- spconv-triton is single-author, single-release, 1 star, MI300X-only -- is
+unchanged and remains the fair counterargument to `already-supported`; `cant-port` holds
+independently and structurally, so the decline does not turn on which `SKIP_REASON` a person
+picks. An agent handed spconv again should read this file, confirm issue #8 is still
+unanswered, and stop.
