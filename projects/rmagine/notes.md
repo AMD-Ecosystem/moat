@@ -3139,3 +3139,26 @@ Recorded `validated_sha = cc6f8d293fb742c241ccab1d8b9c5d6a71b42a93`, state
 (linux-gfx942/gfx90a) and wave32 (linux-gfx1100 and this host) are now all
 `completed` at `cc6f8d29`, making rmagine PR-ready pending a maintainer/person
 decision on the held commit-message items above.
+
+## Review PR opened 2026-08-20 (windows gate closed)
+
+`pr-ready` went True once windows-gfx1151 completed at `cc6f8d29`. Opened the fork review
+PR at https://github.com/AMD-Ecosystem/rmagine/pull/1 (`moat-port` -> `main`, 2 commits, 43
+files), title `[ROCm] Add a HIP build path for the CUDA compute backend`. Body drafted from
+the per-platform evidence in this file; `prose.py` and `jargon.py` both clean. Awaiting
+`/moat approve`.
+
+The "Commit-message offences on this branch, unpublished (2026-08-19)" section above is now
+MOOT: the PR-prep squash (`5d3797f`) that produced `e715b9b`/`cc6f8d2` replaced the three
+offending commits, and `moatlib.py audit-commits rmagine` now reports
+`OK: fork commit messages conform`. Left the section in place as the record of why the
+squash was shaped that way; do not act on it.
+
+Fork `main` deliberately NOT synced to upstream before opening: it sits at `6b93e86`, the
+exact commit `moat-port` branched from, so the review diff is precisely our delta.
+Advancing it would have made the PR read as reverting upstream's newer work.
+
+For PR prep: upstream `uos/rmagine` `main` is now `2962242`, **7 commits ahead** of our base
+`6b93e86`. `--publish` test-merges, so a conflict would be caught there, but expect this to
+want an upstream-main merge round before or shortly after the upstream PR opens (same shape
+as the popsift `develop` merge).
