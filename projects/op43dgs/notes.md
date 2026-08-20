@@ -724,3 +724,119 @@ roughly: install a ROCm torch first, then `PYTORCH_ROCM_ARCH=<gfx>` +
 `environment.yml` pins a CUDA torch and must not be used on ROCm. This needs one
 short porter round against `README.md` before the PR is drafted. It is
 documentation only, so it will classify inert and needs no rebuild either.
+
+## Review 2026-08-20 (reviewer, linux-gfx1100, /pr-review local-branch mode)
+
+Branch `moat-port` @ d6ca89206f8e8881598c1694a6ca996332952599 vs base 728de13
+(fork `main`, clean upstream mirror). Two commits: bba10c8 (port) and d6ca892
+(Windows `/ALTERNATENAME`). 24 files, +251/-38. Verdict: CHANGES REQUESTED.
+Problems only below; the fault-class re-verification that found nothing is not
+repeated here (it agrees with the 2026-06-01 review: zero warp intrinsics /
+PTX / half2 / cg::reduce / textures / managed memory in the device tree
+excluding vendored GLM; `NUM_WARPS (BLOCK_SIZE/32)` at each
+`cuda_rasterizer/auxiliary.h:25` is still dead with zero references;
+`simple_knn.cu:162` clamps its neighbour window with `max(0, idx-3)` /
+`min(P-1, idx+3)`; `boxMinMax`'s shared reduction is `__syncthreads()`-based
+with no warp-synchronous shortcut; the fisheye and panorama diff payloads are
+byte-identical to pinhole after normalising the variant name).
+
+### 1. The GLM hipify monkeypatch is a no-op on both validated torch versions -- delete it or justify it
+
+`submodules/diff-gaussian-rasterization-pinhole/setup.py:29-55` (and the
+identical block in the `-fisheye` and `-panorama` setup.py) monkeypatches the
+private `torch.utils.hipify.hipify_python.hipify` to protect the vendored GLM.
+It has no observable effect on the torch this port was built and validated
+with, and it is the largest and least upstream-palatable hunk in the diff.
+
+Verified by running torch's exact `CUDAExtension` hipify invocation
+(`torch/utils/cpp_extension.py:1596-1607`) against a scratch copy of the
+pinhole extension tree, once stock and once with the monkeypatch installed:
+
+- `header_include_dirs=include_dirs` where `include_dirs = kwargs.get('include_dirs', [])`
+  (cpp_extension.py:1593). This setup.py never passes `include_dirs`; GLM is
+  supplied only as `-I` inside `extra_compile_args["nvcc"]` (setup.py:69). So
+  `header_include_dirs` is `[]` and the strip removes nothing.
+- With `hipify_extra_files_only=True` (cpp_extension.py:1605), only the five
+  listed sources are preprocessed. After the stock run,
+  `diff -rq` reports `third_party/glm` byte-identical to pristine, all 139
+  `.inl` files present, and the hipified mirror keeps the include verbatim
+  (`hip_rasterizer/forward.h:22: #include <glm/glm.hpp>`).
+- Stock and patched runs produce byte-identical `hip_rasterizer/` output.
+- torch 2.9.1 -- the version the Windows platforms validated on -- makes the
+  identical call (`v2.9.1:torch/utils/cpp_extension.py:1372-1381`), so this is
+  not a 2.13-only observation.
+
+notes.md:35-43 states the `.inl`-drop as established fact, but no run in this
+project ever recorded it: plan.md:216-218 told the porter to try the stock
+build first and confirm by the exact error, and stats.jsonl shows exactly one
+failed pinhole compile before the passing one, with no GLM error text anywhere
+in the record. The gsplat precedent is a different codebase with a different
+include wiring, so it does not transfer without evidence here.
+
+Action: rebuild the pinhole extension with setup.py:29-55 deleted. If it
+builds and Tier 1/2 pass, delete the block from all three setup.py files (that
+also removes the `import torch.utils.hipify` dependency on a private API from
+an upstream-visible file). If some torch genuinely needs it, keep it and paste
+the exact compiler error into notes.md so the next reviewer does not re-derive
+this.
+
+### 2. If the monkeypatch stays, its ROCm gate is wrong on Windows
+
+`submodules/diff-gaussian-rasterization-{pinhole,fisheye,panorama}/setup.py:37`
+gates on `os.environ.get("PYTORCH_ROCM_ARCH") or os.path.exists("/opt/rocm")`.
+The same file already uses the authoritative `torch.version.hip` fourteen lines
+above (setup.py:23). On Windows ROCm there is no `/opt/rocm`, so on the two
+validated Windows platforms the protection installed only because the validator
+exported `PYTORCH_ROCM_ARCH` by hand (notes.md:563, notes.md:572); a user who
+omits it -- `PYTORCH_ROCM_ARCH` is optional, torch falls back to
+`torch.cuda.get_arch_list()` -- gets a silently different build. A Linux
+pip-wheel ROCm install with no `/opt/rocm` has the same hole. Use
+`torch.version.hip`.
+
+### 3. The ROCm build is documented nowhere (blocks the PR)
+
+`README.md:67-99` `## Installation` carries the CUDA install path only:
+`conda env create --file environment.yml` followed by `pip install
+submodules/diff-gaussian-rasterization-{pinhole,panorama,fisheye}`.
+`environment.yml:7,11,13` pins `cudatoolkit=11.6`, `pytorch=1.12.1`,
+`torchvision=0.13.1`, so a reader on an AMD box who follows the README
+installs a CUDA torch and never reaches the ported code. `git grep -il rocm`
+over the tracked tree returns only the guarded sources and `.gitignore`.
+
+The porter role requires the ROCm build to be documented in the same place the
+project documents its CUDA build, as part of the port. The porter recorded this
+as outstanding at notes.md:713-726 and deferred it; it has to land before the PR
+is drafted. A parallel block in `## Installation`: install a ROCm torch first,
+then `PYTORCH_ROCM_ARCH=<gfx>` plus `pip install <submodule>
+--no-build-isolation --no-deps` per variant, with the note that
+`environment.yml` must not be used on ROCm. Match the README's existing
+```shell fenced style.
+
+### 4. d6ca892's Test Plan has no fenced command block
+
+`python3 utils/moatlib.py audit-commits op43dgs` reports
+`op43dgs d6ca892: Test Plan has no fenced command block`. The body's Test Plan
+is prose plus results; AGENTS.md requires literal commands in fenced blocks.
+The commands exist already at notes.md:567-607 (the gfx1101 build/test recipe,
+which is the same shape as gfx1201's). The 2026-08-20 hygiene round rewrote
+both messages and shortened this title but did not add the block.
+
+### 5. Unrelated whitespace churn widens the upstream diff
+
+Reverting these keeps the maintainer's diff to the ROCm change:
+
+- `submodules/diff-gaussian-rasterization-{pinhole,fisheye,panorama}/setup.py:6`
+  -- a trailing space dropped from the Inria licence comment line.
+- `submodules/simple-knn/setup.py:40` -- a trailing space dropped from
+  `"spatial.cu", `.
+
+Flagged as minor and non-blocking on 2026-06-01 (notes.md:204-206) and still
+present; since these files are being touched again for items 1-2, fix it in the
+same round.
+
+### Not blocking
+
+GPU validation: all four platforms already carry `completed` at this head_sha,
+so nothing is owed there. Note that items 1, 2 and 5 change `setup.py`, which
+will advance head_sha into a build-affecting class and require a rebuild plus
+revalidation; item 3 and item 4 alone would classify inert.
