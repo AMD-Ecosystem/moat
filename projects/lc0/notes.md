@@ -2246,3 +2246,141 @@ the published tip and reported clean over commits they had never read. Fixed on 
 runs below are real: they resolve `moat-fix-2420`. `jargon: clean`; `audit-commits` returns
 15 findings, **none against `b87423d8`** -- all sit at or below the published tip, including
 four inherited non-`[ROCm]` upstream commits already live in PR #2420.
+
+## Re-review 2026-08-20 (windows-gfx1151, reviewer) -- `b87423d8` -- REVIEW-PASSED
+
+Scope: the fix round only, `git diff 7727fa32...b87423d8` on `moat-fix-2420`. One file,
+`src/neural/backends/cuda/network_cuda.cc`, +5 lines. `moat-port` verified still at
+`7727fa32`; fork tree `git status --porcelain` clean; record `head_sha` `b87423d8`, and
+`318c524` appears nowhere in `status.json`.
+
+### The three prior findings are closed
+
+**1 (BLOCKING, closed).** The sync now sits at `network_cuda.cc:626-629`, after the last
+layer emplace (`FCMov2`, line 623) and before the `tensor_mem_` allocation (lines 648-651).
+Checked that it dominates every upload path, not just the six the prior review named:
+
+- Every `LoadWeights` call in the constructor is at `network_cuda.cc:441-621`, all above
+  the sync. Verified by enumerating call sites, not by reading the commit body.
+- Every layer whose constructor uploads internally is emplaced above it too: the last
+  such is `ValueHead` (`network_cuda.cc:590`), whose ctor's final writes are
+  `allocAndUpload(&ip2_val_w_/&ip2_val_b_)` at `layers.cc:2345-2346`, and `AttentionBody`'s
+  positional encoding at `layers.cc:2110-2111`.
+- Enumerated every `cudaMemcpy`/`copyTypeConverted` in `layers.cc` and mapped each to its
+  enclosing function: all are in `LoadWeights*` / `LoadSEWeights` / `allocAndUpload` / layer
+  constructors. The only other one is `dumpTensor` (`layers.cc:50`), a debug helper.
+  **No `Eval` in the file performs a host-to-device copy**, so no upload can be issued
+  after the sync.
+- No evaluation can precede it: the constructor performs none before line 629, the object
+  is not usable until the ctor returns, and the ctor's own first evaluation is
+  `allocateCudaGraphs` at `network_cuda.cc:659-673`, below the sync.
+- `hip_compat.h:107` maps `cudaStreamSynchronize`; no per-thread default stream is enabled,
+  so `0` is the legacy null stream that `copyTypeConverted(..., 0)` was launched on
+  (`kernels.h:75`, whose fourth parameter is `cudaStream_t stream`).
+
+The prior review's alternative -- keeping the `allocAndUpload` sync as well -- was correctly
+dropped; the constructor-boundary sync subsumes it and the delta is now one file.
+
+**2 (closed).** The commit body no longer claims a fix "at the source" in one function. It
+names all six same-shape paths, states the rule that only the last pre-evaluation write is
+observable, and justifies the boundary. Independently confirmed the two mechanism claims it
+rests on: `FCLayer<float>::LoadWeights` (`layers.cc:618-621`) copies straight into the weight
+tensor and bypasses scratch, whereas `allocAndUpload` (`layers.cc:1413-1418`) routes through
+scratch **for both precisions**, which is why fp32 maia-1100 (no moves-left head, last write
+`ip2_val_b_`) fails while fp32 `n744706` (last write `FCMov2`) does not.
+
+**3 (closed).** The Test Plan's `meson setup` block now carries `--native-file`,
+`-Dhip_include`, `-Dhip_libdirs`, `-Dopenblas_*`, and says the SDK paths are host-specific.
+Diffed the quoted `win-clang.ini` against the real `agent_space/lc0-win-native.ini`: same
+binaries (`clang` / `clang++`) and same `c_args` / `cpp_args`, ordering aside. Every option
+used exists in `meson_options.txt` (`hip`, `amd_gfx`, `hip_include`, `hip_libdirs`, `cudnn`,
+`cutlass`, `nvcc`, `plain_cuda`, `gtest`, `blas`, `opencl`, `onnx`, `openblas_include`,
+`openblas_libdirs`, `native_arch`). Only cosmetic drift remains: the plan builds into
+`build/` where the host used `build-hip-win-gfx1151/`. Not worth an amend.
+
+### Test Plan re-verified against the code, adversarially
+
+- `--show-movesleft` exists (`src/chess/uciloop.cc:62,268,316`) and prints the head's output
+  in the UCI info line only when `info.moves_left` is set.
+- The check backend's option names are real: `mode`, `atol`, `rtol`, `freq`
+  (`src/neural/backends/network_check.cc:288-333`).
+- **The "check backend cannot see moves left" claim is true.** `network_check.cc:147-179`
+  compares `GetQVal` and softmaxed `GetPVal` only; `GetMVal` (`:109-111`) forwards the work
+  backend's value and appears in no comparison.
+- `hip()` resolves to `MakeCudaNetwork<float>` and `hip-fp16` to `<half>`
+  (`network_cuda.cc:1381-1383`), and `hip-auto` selects `half` for `major >= 7`
+  (`:1364-1377`), so "fp16 is the configuration selected automatically on this hardware"
+  holds for gfx11.
+
+### The network descriptors: independently checked, the amended body is right
+
+Ran the project's own decoder rather than trusting either prior claim
+(`build-hip-win-gfx1151/lc0.exe describenet --weights=...`):
+
+| net | Network | Policy | MLH |
+|---|---|---|---|
+| `maia1100` | `NETWORK_SE_WITH_HEADFORMAT` | `POLICY_CONVOLUTION` | **absent** |
+| `n744706` | `NETWORK_SE_WITH_HEADFORMAT` | `POLICY_CONVOLUTION` | `MOVES_LEFT_V1` |
+| `t1-256x10` | **`NETWORK_ATTENTIONBODY_WITH_HEADFORMAT`** | `POLICY_ATTENTION` | `MOVES_LEFT_V1` |
+
+So the commit body's "a classic-body network with a moves-left head" (`n744706`) and "an
+attention-body network with one" (`t1-256x10`) are both accurate, and maia-1100 structurally
+cannot reach the moves-left path.
+
+**Correction to the record:** the RESUMED section's hand-rolled varint table above lists
+`t1-256x10` as `4 SE_WITH_HEADFORMAT`. That row is **wrong** -- the hand decode misread the
+field. Do not "fix" the commit body back to it.
+
+### Gates re-run on the staging branch
+
+`python3 utils/jargon.py --port lc0` -> `jargon: clean`.
+`python3 utils/moatlib.py audit-commits lc0` -> 15 findings, **none against `b87423d8`**;
+all sit at or below the published tip `7727fa32`, four of them inherited non-`[ROCm]`
+upstream commits already live in PR #2420 (`72ef79f`, `03d8bff`, `f94a8a1`, `d0c4eab`).
+Both now genuinely resolve `moat-fix-2420` via `moatlib.upstream_visible_branch()`.
+Commit hygiene checked directly as well: title 56 chars and `[ROCm]`-prefixed, AI-assistance
+disclosure present, Test Plan fenced with literal commands, no `Co-Authored-By` / noreply /
+sign-off trailer, `utils/prose.py` on the body -> `prose: clean`, ASCII-only new comment.
+
+### Non-blocking observations, recorded so they are not rediscovered
+
+Neither is a defect this round introduced, neither is reachable on ROCm through the changed
+file, and neither justifies enlarging an open upstream PR. They are noted for a person.
+
+1. **`network_cudnn.cc` has the identical latent race and is not fixed.** It creates all
+   three streams `cudaStreamNonBlocking` (`:238-242`), uploads every layer through
+   `scratch_mem_` (`:423-642`), evaluates out of that same `scratch_mem_` (`:775-829`), and
+   never synchronizes the null stream. It is **not built for HIP** -- `meson.build:681-682`
+   compiles only `layers.cc` and `network_cuda.cc` for the HIP target, and the comment at
+   `meson.build:621` says so explicitly -- so it is a CUDA/cuDNN-only exposure. Fixing it
+   would be a CUDA-path change with no ROCm evidence behind it; if the maintainer raises it
+   on PR #2420, the same one-line boundary sync applies after `network_cudnn.cc:642`.
+2. **`cudaMemset(tensor_mem_, ...)` at `network_cuda.cc:649-651` is a null-stream write that
+   happens *after* the new sync**, and the first evaluation that writes those same buffers
+   runs on non-blocking streams. It is not a weight upload and not a scratch write, so it is
+   outside the fix's claim, and CUDA/HIP `cudaMemset` on device memory is documented
+   asynchronous with respect to the host, which makes this the same shape one level down. It
+   is unmeasured, it is pre-existing upstream code untouched by this port, and every
+   measurement in this round passes, so it is deliberately not a finding. If it is ever
+   wanted, the cheap settlement is moving the existing sync below the memset loop rather
+   than adding a second one.
+
+### The host's Kernel_141 timeouts: judged, not inherited
+
+Independently assessed the RESUMED section's reasoning rather than accepting it, and it
+holds: the four events landed 2-13 s after `lc0.exe` exits, every run returned exit 0, no run
+reported a HIP error, each measurement reproduced digit-for-digit in a separate process in a
+timeout-free window, and the pre-change control produced the specifically predicted wrong
+value (moves left 72 against 82) rather than noise. A GPU engine reset perturbing arithmetic
+does not reproduce four independent runs bit-identically, nor corrupt exactly the one tensor
+the mechanism names. Nothing here attributes the timeouts to the port's device code. The
+host issue remains a person's to chase.
+
+### Verdict
+
+REVIEW-PASSED. No ROCm fault class is touched by a host-side stream synchronization: no
+wavefront-size assumption, no resource handle, no neighbour read, no texture pitch, no
+library swap, no per-arch branch. The change is unconditional and arch-unified, additive to
+CUDA behaviour (one wait per network at construction, unreachable from an evaluation, so it
+cannot land inside a graph capture), and preserves upstream structure. Validation on real
+hardware is the next gate.
