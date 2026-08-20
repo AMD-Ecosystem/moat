@@ -374,24 +374,42 @@ def status_path(name):
 
 
 def load_status(name):
-    """A project's record. Reads the working tree first, then falls back to the refs.
+    """A project's record, resolved in project_record's order: the project's own
+    branch, then the working tree, then the trunk.
 
-    The fallback exists because 29 call sites take a project name and expect a
-    record, and after the migration an in-flight project's folder is on its own
-    branch rather than in this checkout. Making each caller resolve separately is how
-    a few of them silently answer "not adopted" instead."""
+    The fallback beyond the working tree exists because 29 call sites take a project
+    name and expect a record, and after the migration an in-flight project's folder
+    is on its own branch rather than in this checkout. Making each caller resolve
+    separately is how a few of them silently answer "not adopted" instead.
+
+    The branch wins over the working tree AND the trunk for project_record's colmap
+    reason: an in-flight project is worked on its branch, a re-home cannot delete the
+    copy the protected trunk still carries, and any checkout cut from the trunk
+    carries that stale copy as a perfectly ordinary local file. Reading local-or-
+    trunk first is how popsift's merge-fix saw a record with no fix round in it and
+    refused an approval that was standing -- the round listing (project_record) said
+    READY while this function said there was nothing to approve. Being ON the
+    project's branch is not a special case: the working tree IS the branch then, so
+    the local read is both correct and cheaper."""
     p = status_path(name)
+    if current_branch() != f"port/{name}":
+        branch = port_branch_of(name)
+        if branch:
+            raw = _ref_read(f"origin/{branch}", f"projects/{name}/status.json")
+            if raw:
+                obj = json.loads(raw)
+                validate_status(obj)
+                return obj
     if p.exists():
         with open(p) as f:
             obj = json.load(f)
         validate_status(obj)
         return obj
-    for ref in ("origin/main", f"origin/port/{name}"):
-        raw = _ref_read(ref, f"projects/{name}/status.json")
-        if raw:
-            obj = json.loads(raw)
-            validate_status(obj)
-            return obj
+    raw = _ref_read("origin/main", f"projects/{name}/status.json")
+    if raw:
+        obj = json.loads(raw)
+        validate_status(obj)
+        return obj
     raise FileNotFoundError(str(p))
 
 
@@ -427,12 +445,24 @@ def upstream_full_name(name):
 def save_status(name, obj):
     # Writing a project whose record lives on another branch would create a second
     # copy here and diverge from the one being worked. Say where it lives instead.
+    # The port-branch check does not care whether this checkout carries a local copy:
+    # a checkout cut from the trunk carries the pre-re-home file as an ordinary
+    # stale local, and writing it is how a work-lock commit for one project ends up
+    # stranded on another project's branch. port_branch_of also catches a branch
+    # whose spelling differs in case, which the literal used to miss.
+    if current_branch() != f"port/{name}":
+        branch = port_branch_of(name)
+        if branch and _ref_read(f"origin/{branch}", f"projects/{name}/status.json"):
+            raise RuntimeError(
+                f"{name}'s record is being worked on origin/{branch}"
+                + ("" if not status_path(name).exists() else
+                   f", and this checkout's projects/{name} is a stale pre-re-home copy")
+                + ". Check out that branch to write it.")
     if not status_path(name).exists():
-        for ref in ("origin/main", f"origin/port/{name}"):
-            if _ref_read(ref, f"projects/{name}/status.json"):
-                raise RuntimeError(
-                    f"{name} is not in this checkout -- its record is on {ref}. "
-                    f"Check out that branch to write it.")
+        if _ref_read("origin/main", f"projects/{name}/status.json"):
+            raise RuntimeError(
+                f"{name} is not in this checkout -- its record is on origin/main. "
+                f"Check out the trunk to write it.")
     validate_status(obj)
     stale = check_against_trunk(obj)
     if stale:
