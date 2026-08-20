@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:24:38Z",
-  "updated_at": "2026-08-20T00:07:47Z",
+  "updated_at": "2026-08-20T00:08:11Z",
   "head_sha": "58d5496d3321d6776e8b78d8b94f4440ceec0f54",
   "depends_on": [],
   "porting": null,
@@ -131,5 +131,6 @@
         "at": "2026-06-23T22:48:40Z"
       }
     }
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/GOMC/pull/1"
 }
