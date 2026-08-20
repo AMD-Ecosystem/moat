@@ -880,3 +880,105 @@ four non-gfx90a arches, exactly as the review predicted.
 **Control-plane defect from the review also fixed** (rides on this branch, not the
 fork): `utils/check.py` GATES table had the `# slow: shells out per fork clone`
 comment duplicated on `commits` and missing from `forks`.
+
+## Review 2026-08-20 (round 2, reviewer, linux-gfx90a) -> changes-requested
+
+Delta review of `514cb457 -> 378d793e`. Confirmed the tree delta is exactly one comment
+in `faiss/gpu/hipify.sh` (`git diff 514cb4577 378d793e6 --stat`: 1 file, +2/-1; the same
+diff with `':!faiss/gpu/hipify.sh'` is empty), so everything else on the branch is the
+tree reviewed at 514cb457, and only the three commit messages were rewritten.
+
+One problem, in the text added this round.
+
+### 1. Commit 111ccaa8 -- the new Windows fenced block cannot run as written
+
+The block pairs
+
+```
+bash faiss/gpu/hipify.sh            # with hipify-perl on PATH
+...
+  -DFAISS_ENABLE_GPU=ON -DFAISS_ENABLE_ROCM=ON ... -DFAISS_ENABLE_C_API=ON ...
+```
+
+but a *relative* invocation of hipify.sh never reaches `c_api/`. `hipify_dir()` does a
+bare `cd "$1" || exit` (faiss/gpu/hipify.sh:13) with no subshell, and the second call
+site recomputes its path from the same relative `BASH_SOURCE[0]` *after* the first call
+has changed directory (hipify.sh:120-125). From the repo root the second target resolves
+to `<root>/faiss/faiss/gpu/../../c_api`, which does not exist, so the script prints a
+`cd` error and exits 1 with `c_api/gpu` untranslated. Reproduced this session with a
+path-only stub of the script: relative invocation -> `cd: faiss/gpu/../../c_api: No such
+file or directory`, exit 1; absolute invocation -> both directories processed, exit 0.
+CMakeLists.txt:87 uses the absolute `${PROJECT_SOURCE_DIR}/faiss/gpu/hipify.sh`, which is
+why the Linux CMake-driven flow in b4cf8268's Test Plan does build with C_API=ON.
+
+`c_api/gpu` does need the translation: `GpuResources_c.h`, `GpuResources_c.cpp`,
+`StandardGpuResources_c.*` and `DeviceUtils_c.*` all reference `cuda*` symbols in the
+committed tree. This is not a new discovery -- it is item 4 of the 2026-06-07
+windows-gfx1201 record above ("Run hipify-perl manually on c_api/gpu/*.cpp/*.h and apply
+the same sed fixups"), and this round's own porter note repeats it ("only the SECOND
+hipify_dir call (c_api) fails on Windows"). So the published recipe omits a step the
+recorded session actually performed, and a maintainer who runs it on Windows hits an
+error the author already knew about.
+
+Minimal fix, either one:
+- drop `-DFAISS_ENABLE_C_API=ON` from that block (this commit touches only
+  `faiss/gpu/test/TestCodePacking.cpp`; the C API is irrelevant to demonstrating it, and
+  the porter's own Linux 7.14 re-run used C_API=OFF), or
+- add the manual `c_api/gpu` hipify + sed lines recorded in the gfx1201 section.
+
+Do NOT "fix" hipify.sh's relative-path behavior instead: that is pre-existing upstream
+behavior on a path CMake never takes, and changing it grows the port's footprint for no
+porting benefit.
+
+Eliding host-specific toolchain flags (`CMAKE_C/CXX/HIP_COMPILER`, `CMAKE_PREFIX_PATH`,
+`BLAS_LIBRARIES`, `CMAKE_HIP_COMPILER_ROCM_ROOT`, `CMAKE_HIP_FLAGS`) from the same block
+is fine and should stay elided -- those are paths, not steps.
+
+While editing that message, confirm one detail it asserts: "ROCm 7.14 clang" for the
+gfx1151 run. The 2026-06-04 windows-gfx1151 record above states cmake 4.3.2 / all-clang-cl
+/ -j6 but no ROCm version; 7.14.0a20260604 is recorded for the 2026-06-07 gfx1201 session.
+The `-j24` in the block is also the gfx1201 figure. State what that session used or drop
+the version.
+
+### Verified clean this round (do not re-derive)
+
+- **hipify.sh:79-80 comment is now accurate and correctly scoped.** Re-ran ROCm 7.14
+  hipify-perl (`_rocm_sdk_devel/libexec/hipify/hipify-perl`, `.info/version` = 7.14.0) on
+  `faiss/gpu/utils/PtxUtils.cuh` from 378d793e: output is `#include
+  <hip/device_functions.h>` at line 12, no doubled prefix, so "harmless no-op on later
+  versions" holds and the sed (hipify.sh:88, anchored on the full literal
+  `#include <hip/hip/device_functions.h>`) does nothing there. The 7.2.x half is the
+  originally recorded symptom ("fatal error: 'hip/hip/device_functions.h' file not found",
+  notes section "THE ONE SOURCE CHANGE"). Folding it into b4cf8268 rather than a follow-up
+  is right: the over-broad claim now exists nowhere in history.
+- **Gates.** `moatlib.py audit-commits faiss` -> "OK: fork commit messages conform";
+  `jargon.py --port faiss` -> clean; `moatlib.py audit-clean faiss` -> OK. Fork clone has
+  zero modified tracked files (only untracked `*.hip` / `gpu-backup/` configure output).
+- **Message hygiene.** Titles 67 / 58 / 61 chars, all `[ROCm]`. All three bodies disclose
+  AI assistance. No `Co-Authored-By`, no noreply trailer, ASCII throughout, no
+  AMD-internal account reference. b4cf8268's Test Plan uses `$ROCM_PATH`.
+- **The other two Test Plans' commands match the recorded recipes.** 378d793e's gfx1201
+  results table matches the 2026-06-07 record suite-for-suite, and its Linux fenced block
+  is the recorded gfx90a ctest gate verbatim (`HIP_VISIBLE_DEVICES=1`,
+  `OPENBLAS_NUM_THREADS=1`, `-j1 -R "TestGpu|TestCodePacking"`). 111ccaa8's gfx1151 results
+  table matches the 2026-06-04 FINAL RESULT list, and its `-- -k 0` explanation matches the
+  recorded `gtest_discover_tests` 5s-timeout finding.
+- **Round-1 passes survive the rewrite**, verified against the tree rather than assumed:
+  `TestCodePacking.cpp` opens on the Meta copyright header (no leaked
+  `#include "hip/hip_runtime.h"`); the four `uniform_int_distribution<int> dist{0, 255}`
+  sites and the `<time.h>` -> `<chrono>` swap in `TestUtils.cpp` are byte-identical to the
+  reviewed versions; the INSTALL.md bullet is unchanged. Branch diff vs base is still the
+  same 4 files, +24/-9.
+- **Control-plane fix bd72ac3 is comment-only.** Both GATES entries keep
+  `(gate_*, True)`; only the trailing comments move. `utils/check.py` parses.
+- **Nothing for the ROCm fault classes.** No device code is touched anywhere on the
+  branch; this round touched one shell comment.
+
+### Validation status
+
+Unchanged by this round and not a reason for this verdict. All five platforms still record
+`validated_sha = ab1dcf71`: linux-gfx90a, linux-gfx1100, windows-gfx1101, windows-gfx1151,
+windows-gfx1201. The gfx90a 108/108 recorded at 514cb457 describes this tree too (the only
+delta is the hipify.sh comment, and hipify.sh is not compiled on either path), and a
+message-only fix for the finding above keeps that true, so the porter should land it before
+any validator starts.
