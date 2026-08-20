@@ -629,3 +629,7 @@ Two things are parked for a human decision, both stated here so neither is invis
    larger question this round raises -- whether a contribution offered against an
    upstream maintainer's own branch belongs in this project's record at all, or wants
    a shape the pipeline does not currently have.
+
+## Upstream offer posted 2026-08-20
+
+The draft comment from the 2026-08-20 contribution round was approved by Jeff Daily and posted on FLAMEGPU/FLAMEGPU2#1379: https://github.com/FLAMEGPU/FLAMEGPU2/pull/1379#issuecomment-5351177718 (behind the standing AI-disclosure line). The amdgpu-fixes branch (2ecf5a01, cut from ptheywood tip 5e42a64) is pushed to AMD-Ecosystem/FLAMEGPU2 after the host token gained the workflow scope. Waiting on ptheywood: PR against amdgpu vs cherry-pick. If PR: it is an upstream PR and must go through the fork review-PR approval flow first.
