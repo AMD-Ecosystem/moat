@@ -7,7 +7,7 @@
   "priority": 5.187,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T00:36:13Z",
-  "updated_at": "2026-08-20T05:57:51Z",
+  "updated_at": "2026-08-20T06:04:51Z",
   "head_sha": "758d5e77faf0cc64b86b785d9b0981f324b2c1ad",
   "pr_url": "https://github.com/alicevision/popsift/pull/186",
   "pr_number": 186,
@@ -172,7 +172,7 @@
   "fix": {
     "branch": "moat-fix-186",
     "base_sha": "d10126b5dab3f8e166e096ed9428a5ee01061052",
-    "review_pr": null,
+    "review_pr": "https://github.com/AMD-Ecosystem/popsift/pull/2",
     "opened_at": "2026-08-14T20:32:45Z"
   },
   "porting_released": {
