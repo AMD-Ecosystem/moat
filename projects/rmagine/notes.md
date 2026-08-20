@@ -3006,3 +3006,136 @@ than a cleanup.
 
 Ruled `hold` by Jeff Daily 2026-08-19: do not rewrite history for this; record it where
 whoever preps the pull request will see it.
+
+## Validation 2026-08-19 (windows-gfx1151 REVALIDATE at cc6f8d29) -- PASS -- closes windows gate
+
+Prior windows-gfx1151 validation was at `1213551f14f64c92c08048f377034b1ee362659d`
+(2026-08-14). Since then Jeff Daily performed a PR-prep squash-carry-forward
+(`5d3797f`, "kept whole per ruling") that force-pushed `moat-port` from the long,
+messy history down to two commits (`e715b9b` rmagine_cuda port, `cc6f8d2` HIPRT
+backend) and carried linux-gfx942/linux-gfx90a/linux-gfx1100 forward as
+tree-identical. windows-gfx1151 was NOT included in that carry-forward (its record
+stayed at `1213551`), so it came back to this host as `revalidate`. `classify`
+reports `class=mixed arch_independent=False inert=False` for the delta, so per the
+carry-forward shortcut policy this is not eligible for an automatic source-class
+carry; ran a full real-GPU revalidation instead rather than attempting a
+build+`codeobj_diff` shortcut (project is small/fast, ~7 min end-to-end wall time
+for reconfigure+build+test on this host, cheaper than proving binary equivalence).
+
+Host: this machine (gfx1151, AMD Radeon 8060S, RDNA3.5, wave32, 20 CU APU), Windows
+11, ROCm from TheRock pip wheels at
+`D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel` (HIP/clang 23.0.0).
+Local fork clone was stale at `1213551`; `git fetch origin moat-port` showed a
+`forced update` (confirming the squash/force-push), then `git checkout moat-port &&
+git reset --hard origin/moat-port` landed exactly on `cc6f8d293fb742c241ccab1d8b9c5d6a71b42a93`,
+matching `status.json.head_sha`.
+
+### Configure + build
+
+Identical recipe to the 2026-08-14 round, new build dir, same vcpkg deps already
+present on this host from that prior round (no reinstall needed):
+
+```
+source agent_space/win_rocm_env.sh
+ROCM="$ROCM_ROOT"
+ROCM_LLVM="$ROCM_ROOT/lib/llvm/bin"
+VCPKG="D:/vcpkg/installed/x64-windows"
+utils/timeit.sh rmagine compile -- cmake -S projects/rmagine/src -B agent_space/rmagine_gfx1151_build_cc6f8d2 \
+  -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON \
+  -DCMAKE_C_COMPILER="$ROCM_LLVM/amdclang.exe" \
+  -DCMAKE_CXX_COMPILER="$ROCM_LLVM/amdclang++.exe" \
+  -DCMAKE_HIP_COMPILER="$ROCM_LLVM/amdclang++.exe" \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DCMAKE_PREFIX_PATH="$ROCM;$VCPKG" \
+  -DRMAGINE_EMBREE_DISABLE=ON -DRMAGINE_OPTIX_DISABLE=ON \
+  -DRMAGINE_VULKAN_DISABLE=ON -DRMAGINE_VULKAN_CUDA_INTEROP_DISABLE=ON \
+  -DRMAGINE_OUSTER_DISABLE=ON -DRMAGINE_BUILD_TESTS=ON \
+  -DRMAGINE_BUILD_TOOLS=OFF \
+  -DCMAKE_CXX_FLAGS="-D_USE_MATH_DEFINES -DNOMINMAX" \
+  -DCMAKE_C_FLAGS="-D_USE_MATH_DEFINES" \
+  -DCMAKE_WINDOWS_EXPORT_ALL_SYMBOLS=TRUE
+
+sed -i 's/-fuse-ld=lld-link//g' agent_space/rmagine_gfx1151_build_cc6f8d2/build.ninja
+utils/timeit.sh rmagine compile -- cmake --build agent_space/rmagine_gfx1151_build_cc6f8d2 -j6
+```
+
+`rmagine_hiprt` skipped by CMake with the expected warning (HIPRT SDK absent),
+matching every other validated platform. 74/74 targets built cleanly. Only the same
+pre-existing `nodiscard`/deprecated-API warnings seen every prior round
+(`hipCtxGetCurrent`/`hipCtxSetCurrent`/`hipStreamDestroy`/`cudaDeviceSynchronize`/
+`cudaDriverGetVersion`/`cudaRuntimeGetVersion`), unchanged and not port-introduced.
+
+### Runtime DLL staging
+
+Same staging as the 2026-08-14 round (System32 `amdhip64_7.dll` still broken on this
+host, wins over `PATH`):
+
+```
+source agent_space/win_rocm_env.sh
+rocm_stage_runtime agent_space/rmagine_gfx1151_build_cc6f8d2/bin
+cp "$ROCM_ROOT/bin/hiprand.dll" "$ROCM_ROOT/bin/rocrand.dll" agent_space/rmagine_gfx1151_build_cc6f8d2/bin/
+cp D:/vcpkg/installed/x64-windows/bin/{assimp-vc145-mt,tbb12,poly2tri,minizip,z,kubazip,pugixml}.dll \
+  agent_space/rmagine_gfx1151_build_cc6f8d2/bin/
+```
+
+### Test results
+
+```
+export HIP_VISIBLE_DEVICES=0
+utils/timeit.sh rmagine test -- ctest --test-dir agent_space/rmagine_gfx1151_build_cc6f8d2 --output-on-failure -R "^cuda_"
+# Run 1: 8/8 PASS (6.58 s); Run 2 (determinism): 8/8 PASS (6.95 s)
+utils/timeit.sh rmagine test -- ctest --test-dir agent_space/rmagine_gfx1151_build_cc6f8d2 --output-on-failure -R "^core_"
+# 12/12 PASS (2.44 s) -- non-GPU regression set, unaffected by the HIP change
+```
+
+8 cuda_ tests: cuda_math, cuda_memory, cuda_memory_slicing, cuda_math_svd,
+cuda_math_statistics, cuda_math_reduction, cuda_math_reduction_correctness,
+cuda_public_headers. 12 core_ tests: core_math, core_memory, core_memory_slicing,
+core_quaternion, core_math_svd, core_math_statistics, core_math_cov_transform,
+core_math_gaussians, core_math_matrix_slicing, core_math_reduction,
+core_math_cholesky, core_math_lie. Matches the linux-gfx942/gfx90a/gfx1100 reference
+counts (8 cuda_ + 12 core_) at this same head_sha exactly.
+
+### GPU dispatch confirmed
+
+```
+./bin/rmagine_tests_cuda_math.exe
+```
+
+Output on device 0: `[RMagine - CudaContext] CUDA Driver Version / Runtime Version:
+71460.85.0 / 71460.85.0` / `Construct context on device 0 - AMD Radeon(TM) 8060S
+Graphics`, followed by real batched CUDA-math/reduction output. Both ctest runs of
+`cuda_math_reduction_correctness` (the `rm::sum`/`mean`/`cov` vs CPU-reference
+determinism gate) passed identically, consistent with the wave-size-hardened
+reduction being deterministic on this wave32 RDNA3.5 APU.
+
+### CUDA no-regression gate
+
+Not re-run. Already recorded once per head_sha at `1213551` by the linux-gfx1100
+validation (77/77 targets, nvcc 12.8.93, `sm_80` pinned; see the 2026-08-14
+windows-gfx1151 section above). `cc6f8d29` is a squash-carry-forward of `1213551`
+with `squash-carry-forward`'s built-in tree-identity check (it "refuses any squash
+that changed content"), so the same evidence covers this head. This host also has
+no CUDA toolchain (Windows, no nvcc); the gate would have been skipped here
+regardless.
+
+### Integrity + jargon gates
+
+`git -C projects/rmagine/src status --porcelain` empty; HEAD `cc6f8d29` matches
+`status.json.head_sha`. `python3 utils/jargon.py --port rmagine` -> `jargon: clean`.
+Documentation: unchanged from the 2026-08-13/08-14 rulings (README's `USE_HIP`
+silence and the two commit-title items remain a person's PR-shaping call, not
+blocking); not re-litigated here, no source content changed under the squash.
+
+### Verdict
+
+Stage 1 (rmagine_cuda HIP compute backend) REVALIDATED on gfx1151/Radeon 8060S at
+`cc6f8d293fb742c241ccab1d8b9c5d6a71b42a93`: 8/8 cuda_ (2 runs, bit-identical) + 12/12
+core_ PASS, no regression from the prior `1213551` windows-gfx1151 pass or from the
+Linux reference counts at the same head. CUDA no-regression gate already covered at
+this head via the squash's tree-identity guarantee. Integrity clean, jargon clean.
+Recorded `validated_sha = cc6f8d293fb742c241ccab1d8b9c5d6a71b42a93`, state
+`completed`. This closes the `windows` coverage gate at the current head -- wave64
+(linux-gfx942/gfx90a) and wave32 (linux-gfx1100 and this host) are now all
+`completed` at `cc6f8d29`, making rmagine PR-ready pending a maintainer/person
+decision on the held commit-message items above.
