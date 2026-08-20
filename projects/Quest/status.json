@@ -7,13 +7,13 @@
   "priority": 3.866,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-08-20T00:03:36Z",
-  "head_sha": "cbc389022736f4b7581da6219c1935d8b3947033",
+  "updated_at": "2026-08-20T00:10:02Z",
+  "head_sha": "f50e33ae635fc2dbb7810f2a374733745cb552cc",
   "depends_on": [],
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 815507746,
-  "stage": "porting",
+  "stage": "delta-ported",
   "platforms": {
     "linux-gfx1100": {
       "blocked": false,
@@ -68,7 +68,7 @@
       "failed_sha": "ac7382c78aa21fe51db761d691e320bfb7a87217",
       "started_at": "2026-08-19T21:38:01Z",
       "completed_at": "2026-08-13T23:35:09Z",
-      "updated_at": "2026-08-20T00:03:36Z",
+      "updated_at": "2026-08-20T00:10:02Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -86,13 +86,10 @@
       "last_agent": "porter:claude-code"
     }
   },
-  "porting": {
-    "arch": "windows-gfx1151",
-    "since": "2026-08-20T00:03:36Z"
-  },
+  "porting": null,
   "porting_released": {
     "arch": "windows-gfx1151",
-    "since": "2026-08-19T22:48:16Z",
-    "at": "2026-08-19T22:58:37Z"
+    "since": "2026-08-20T00:03:36Z",
+    "at": "2026-08-20T00:10:02Z"
   }
 }

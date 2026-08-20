@@ -1714,3 +1714,64 @@ symbol set against upstream (identical); `cp_async`'s non-PTX fallback being a s
 having no user outside the sparse decode kernel, so `prefill.cuh` and the CUDA prefill path
 are untouched by the accessor change; and V pointers being derived as
 `k_ptrs[j] + kv_offset_delta()`, so the K fix covers V.
+
+## Porter round 2026-08-19 (windows-gfx1151): review findings addressed -- `f50e33a`
+
+Taken here rather than handed to another host; the conflict of interest declared in the
+review above still stands and is not resolved by this round.
+
+**Finding 1 (int_buffer_ sentinel) -- fixed.** `GetChunkIndPtr` and `GetBatchIdxMap` now
+require `float_buffer_` as well. That is the temporary the partitioned kernel merges
+through and only the partitioning branch allocates it, so it still means what
+`int_buffer_` used to mean before the un-partitioned branch started allocating one too.
+
+**Finding 2 (`__HIP_NO_HALF_CONVERSIONS__`) -- the ODR claim was WRONG; corrected and
+documented instead.** The review asserted that translation units disagree on `__half`.
+They do not. The macros are on the command line for all five sources
+(`grep __HIP_NO_HALF_CONVERSIONS__ quest/ops/build/build.ninja` -> 5), and
+`torch/extension.h` is reached first in every one of them via `bsk_ops.h`. If torch pulled
+`hip/hip_fp16.h` at that point, the shim's undefs would be inert behind the include guard
+and the build would fail -- and when the undefs were removed as an experiment the 36
+errors landed in `decode_page.cuh` and `decode_attn.cuh`, headers that ALL five sources
+include, which shows the shim is what first pulls `hip_fp16.h` in every one of them. So
+the units agree and there is no ODR violation; `__half` also does not cross the libtorch
+boundary, whose public surface is `at::Half`. What is real is the include-order
+dependency, now written into the shim along with the loud failure mode and the remedy.
+
+**Finding 3 (neither launch shape testable everywhere) -- fixed.**
+`QUEST_DECODE_LAUNCH_SHAPE=single|split` overrides the occupancy decision; unset, nothing
+changes. This is what closes the coverage gap for gfx1100 and gfx942, which cannot reach
+the single-block shape by occupancy (32 >= 70 and 32 >= 304 are false) and therefore never
+exercised the `cbc3890` repair.
+
+**Finding 4 (CUDA CMake restructured, never compiled) -- not addressable here.** No CUDA
+toolchain on this host, and the gate is blocked by a pre-existing RAFT branch-24.02
+`CUDA::nvToolsExt` incompatibility rather than by anything the port did. Still owed.
+
+**Finding 5 (`cbc3890` changes NVIDIA behaviour) -- no action, recorded decision.**
+
+**Finding 6 (`c1d7fff` has no AI-assistance disclosure) -- resolved by the squash, NOT by
+rewriting history.** `moatlib.squash_carry_forward` documents that the PR-prep squash runs
+after every platform is terminal, so the branch collapses to one commit before the upstream
+PR and `c1d7fff`'s body never becomes upstream-visible. The squash message must carry the
+disclosure. Rewriting history to fix it would force-push `moat-port` and orphan the
+validated shas, which is the failure this repository already learned once.
+
+### Evidence
+
+```
+for shape in "" single split; do
+  QUEST_DECODE_LAUNCH_SHAPE=$shape python -m pytest quest/tests/test_rope.py \
+    quest/tests/test_estimate.py quest/tests/test_decode_attention.py \
+    quest/tests/test_approx_attention.py -q
+done
+```
+
+| configuration | result |
+|---|---|
+| default (occupancy picks single-block here) | **121 passed** |
+| `QUEST_DECODE_LAUNCH_SHAPE=single` | **121 passed** |
+| `QUEST_DECODE_LAUNCH_SHAPE=split` | **121 passed** |
+| `kv_len` sweep 17..1541, split forced | peak abs diff **2.4e-4**, std ratio **1.000** |
+
+Integrity: `git -C projects/Quest/src status --porcelain` clean at `f50e33a`.
