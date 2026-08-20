@@ -7,7 +7,7 @@
   "priority": 4.192,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-08-20T00:30:24Z",
+  "updated_at": "2026-08-20T00:30:44Z",
   "head_sha": "6c81cf0298be7ea1189628e76728e40ea5a33298",
   "porting": null,
   "waivers": {},
@@ -130,5 +130,6 @@
         "at": "2026-06-23T22:45:38Z"
       }
     }
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/mHC.cu/pull/1"
 }
