@@ -41,3 +41,4 @@
 {"kind":"session","ts":"2026-08-20T15:59:53Z","epoch":1787241593.991184800,"event":"start","platform":"windows-gfx1151"}
 {"kind":"phase","ts":"2026-08-20T16:09:10Z","phase":"compile","seconds":84.040,"exit":1,"cmd":"C:\\Users/<user>\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\LocalCache\\local-packages\\Python313\\Scripts\\cmake.exe --build D;C:\\Program Files\\Git\\Develop\\moat\\projects\\alien\\src\\build -j 16"}
 {"kind":"phase","ts":"2026-08-20T16:10:18Z","phase":"compile","seconds":24.792,"exit":1,"cmd":"C:\\Users/<user>\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\LocalCache\\local-packages\\Python313\\Scripts\\cmake.exe --build D;C:\\Program Files\\Git\\Develop\\moat\\projects\\alien\\src\\build -j 16"}
+{"kind":"session","ts":"2026-08-20T16:25:02Z","epoch":1787243103.070952500,"event":"end","platform":"windows-gfx1151"}
