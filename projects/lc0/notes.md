@@ -1659,3 +1659,176 @@ has completed the `windows` gate and no waiver is recorded (`waivers: {}` in sta
 Whether to pursue a waiver or a toolchain bug report for the underlying TheRock rocBLAS
 value-head defect is a maintainer decision, not made here -- this session only re-confirmed
 the measurement at the current head/SDK per the porter brief.
+
+## Investigation 2026-08-20 (windows-gfx1151) -- why Windows
+
+**ROOT CAUSE FOUND.** The Windows value-head defect is not a numerics, ABI, LLP64 or
+rocBLAS problem. It is a **host-side stream-ordering race in lc0's own weight upload
+path** (`allocAndUpload` in `src/neural/backends/cuda/layers.cc`) that corrupts exactly one
+weight tensor: the value head's second dense bias `ip2_val_b_`. A one-line
+`cudaStreamSynchronize(0)` at the end of `allocAndUpload` turns the failing gate command
+from 222/222 failures into **222/222 passes** on this host.
+
+This is a latent bug in upstream lc0's CUDA backend that only manifests under HIP on
+Windows. It is not a ROCm/TheRock component defect, so no `rocm-bug-report` was registered.
+
+### The mechanism
+
+```
+template <typename DataType>
+void allocAndUpload(DataType** gpu_dest, std::vector<float> cpu_src, void* scratch) {
+  ...
+  ReportCUDAErrors(cudaMalloc(gpu_dest, size));
+  ReportCUDAErrors(cudaMemcpy(scratch, &cpu_src[0], ..., cudaMemcpyHostToDevice));
+  copyTypeConverted((DataType*)(*gpu_dest), (float*)scratch, (int)cpu_src.size(), 0);
+}                                                                              ^^^ stream 0
+```
+
+`copyTypeConverted` launches an **asynchronous kernel on the legacy null stream** that reads
+the network's **shared `scratch_mem` buffer**. `allocAndUpload` returns without waiting for
+it. Every compute stream in this backend is created with `cudaStreamNonBlocking`
+(`network_cuda.cc:291-295`), so a non-blocking stream carries **no implicit ordering against
+the null stream**. The first network evaluation then writes its own intermediates into that
+same `scratch_mem` on `compute_stream`. If the still-pending null-stream copy kernel executes
+after that write, it copies the *evaluation's* scratch contents into the weight tensor
+instead of the weights.
+
+Only the final upload of the last-constructed layer is exposed to this window, because every
+earlier upload's kernel is flushed by the next `allocAndUpload`'s synchronous H2D `cudaMemcpy`
+into the same scratch. For a classic (non-attention-body) net with no moves-left head, the
+last layer constructed is the **value head**, and its last upload is `ip2_val_b_`. That is the
+entire reason the defect looked "value-head specific": the value head is not mathematically
+special here, it is merely last in the construction order.
+
+**Why Windows.** The race is latent on both operating systems; only the Windows HIP runtime
+loses it. Under the Windows KMD, kernel submission is batched/deferred, so the tiny 3-element
+null-stream copy had not executed by the time the first compute-stream evaluation overwrote
+`scratch_mem`; under the Linux KFD path the same launch lands immediately and wins. This is
+consistent with every observation on record: the failure is bit-for-bit identical and fully
+deterministic on gfx1151, gfx1101 and gfx1201 (all Windows) and absent on linux-gfx90a
+(wave64) and linux-gfx1100 (wave32, same wave width as gfx1151), across two TheRock SDKs.
+The operating system was always the only variable that tracked the failure, and the mechanism
+explains why: it is a host-side submission-timing property, not an ISA, wavefront or library
+property. The scheduling inference is the one link supported by inference rather than direct
+measurement; the corruption itself, its location, and the fix are all measured below.
+
+### Evidence chain (bisect, sample 0, maia-1100, batch 2)
+
+| Stage | HIP | blas ref | Verdict |
+|-------|-----|----------|---------|
+| trunk output into value head | 0.76097327 0.70556033 0.66990530 | 0.76097500 0.70556080 0.66990554 | match |
+| after value 1x1 conv | 0.27327654 0.34498364 0.0 | 0.27327642 0.34498358 0.0 | match |
+| after value dense 1 (+RELU) | sumabs 4.527254 | sumabs 4.527256 | match |
+| dense 2 weights `ip2_val_w_` on device | sumabs 18.892862 | sumabs 18.892862 | match |
+| dense 2 GEMM output, pre-bias | 0.45046660 -0.68904316 0.23963423 | (n/a) | **exact** vs a host double-precision reference dot product computed from the same device weights and device input |
+| **dense 2 bias `ip2_val_b_` on device** | **-1.40802431 0.55243015 0.00000000** | **0.43719077 -0.98977518 0.55311656** | **WRONG** |
+| WDL logits out | -0.95756 -0.13661 0.23963 | 0.88766 -1.67882 0.79275 | wrong, exactly by the bias delta |
+
+The final logits reproduce exactly as `prebias + bias` in both backends, so `addVectors` is
+correct too. The single corrupted datum in the whole network is that 3-float bias. Its content
+is plausible-magnitude foreign float data with a hard `0.0` in the third slot -- i.e. someone
+else's buffer, which is what pointed at the scratch race.
+
+Confirmation: printing the bias in the `ValueHead` constructor *with a `cudaDeviceSynchronize()`
+before the readback* showed the device copy already **correct** at construction time
+(`dev= 0.43719077 -0.98977518 0.55311656`), and that added synchronization alone made the whole
+check pass -- the tensor is uploaded correctly and then lost, not uploaded wrongly.
+
+### Proposed minimal fix (NOT committed -- `moat-port` is frozen behind PR #2420)
+
+```c
+   copyTypeConverted((DataType*)(*gpu_dest), (float*)scratch,
+                     (int)cpu_src.size(), 0);
++  ReportCUDAErrors(cudaStreamSynchronize(0));
+ }
+```
+
+in `allocAndUpload`, `src/neural/backends/cuda/layers.cc`. It is init-time only (once per
+weight tensor at network construction), so it has no steady-state performance cost, and it is
+correct on CUDA as well -- upstream's CUDA build relies on the same unordered null-stream
+launch and is simply winning the race today. An equally valid alternative is to give
+`allocAndUpload` the real upload stream instead of stream 0, but that requires threading a
+stream through every layer constructor; the sync is the smallest complete fix.
+
+Verified with the exact gate command that has failed on every Windows arch since 2026-06-04,
+with graph capture at its default (ON):
+
+```
+lc0.exe backendbench --backend=check \
+  "--backend-opts=hip(),blas(),mode=check,atol=1e-3,rtol=1e-2,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz \
+  --start-batch-size=1 --max-batch-size=55 --batches=4
+```
+
+Before: 0/222 passed, 222 `value incorrect (but policy ok)`, value abs 4.4e-02 rel 4.9e-01.
+After: **222/222 `Check passed`**, 0 errors; `mode=display` at batch 32 gives
+value abs **6.0e-08** rel 1.3e-06 (was 4.4e-02 / 4.9e-01), policy unchanged at 3.0e-07.
+
+Landing this is a separate decision: PR #2420 is open, so it needs a `moat-fix-<pr#>` round
+(`moatlib.py fix-branch`) plus the usual porter/reviewer/validator cycle, not a push to
+`moat-port`. Nothing was pushed or committed to the fork by this investigation.
+
+### Hypotheses ruled in / out
+
+- **Host/device struct-layout (MSVC ABI) mismatch -- RULED OUT.** No struct is passed to any
+  kernel on this path; all kernel arguments are scalars and pointers. Every stage from the
+  input planes through the dense-2 GEMM is bit-comparable to the CPU reference, which could
+  not happen if kernel arguments were being read at wrong offsets.
+- **LLP64 / 32-bit `long` on Windows -- RULED OUT.** A `\blong\b` grep over the entire HIP
+  backend (`*.cu *.h *.cc *.inc`, excluding `long long`) returns **zero** hits. The corrupted
+  datum is a 3-element float bias, not a size, stride, offset, mask or shift.
+- **FP contraction / fast-math divergence -- RULED OUT.** Everything up to and including the
+  dense-2 GEMM matches the CPU to ~1e-7, and the GEMM output equals a host double-precision
+  reference dot product exactly. The error was a wrong constant, not accumulated rounding.
+  (This is also why the original 4.4e-02 magnitude never fitted a contraction story.)
+- **Uninitialised / misaligned buffer -- RULED IN, refined.** The buffer is initialised, but
+  by an unordered async null-stream kernel reading a shared scratch buffer that the first
+  evaluation overwrites first. Not a Windows heap effect; a stream-ordering effect.
+- **Wrong CPU reference (OpenBLAS ILP64 / the `rocm-openblas` shim) -- RULED OUT.** lc0's
+  independent `eigen` backend agrees with `blas` to **3.0e-08** on value and 1.5e-07 on policy
+  (`--backend-opts=blas(),eigen(),mode=display`), so both CPU references agree and the GPU was
+  the outlier. This was the first thing checked and is worth keeping as a cheap habit.
+- **rocBLAS dispatching the small M=3 value GEMM to a broken hipBLASLt kernel** (the 2026-06-04
+  leading hypothesis) **-- RULED OUT.** `ROCBLAS_USE_HIPBLASLT=0` changes nothing, and the GEMM
+  output was subsequently proven exact.
+- **CUDA graph capture -- already cleared, and confirmed irrelevant.** The failure reproduces
+  identically with `hip(graph_capture=false)`, and the fix passes with capture at its default ON.
+
+### Exactly what was instrumented (all reverted; fork tree left clean)
+
+Throwaway edits in the local clone only, rebuilt with `ninja -C build-hip-win-gfx1151 lc0.exe`:
+
+1. `src/neural/backends/cuda/layers.cc`, `ValueHead<DataType>::Eval`: a `vhDump()` helper
+   (`cudaStreamSynchronize` + `cudaMemcpy` D2H + sum-of-abs and the first values) called on
+   `input` (trunk in), `buffer` (after the value conv), `scratch` (after dense 1) and `output`
+   (WDL logits), gated to the first few evaluations by a static counter.
+2. Same file, between the dense-2 `cublasXgemm` and `addVectors`: dumps of the pre-bias GEMM
+   output, of `ip2_val_b_` and `ip2_val_w_`, plus a host `double` reference dot product
+   recomputed from the device weights and device input -- this is what proved the GEMM exact
+   and the bias wrong.
+3. `src/neural/backends/blas/network_blas.cc`, `BlasComputation::ComputeBlocking`: a matching
+   `blasDump()` on `buffer2` (trunk), `head_buffer` (after value conv), `buffer3` (after
+   dense 1), `wdl` (logits), `ip2_val_w`, `ip2_val_b`.
+4. `ValueHead` constructor: readback of `ip2_val_b_` immediately after upload -- the probe that
+   accidentally fixed the bug (via its `cudaDeviceSynchronize`) and pinned the mechanism.
+
+Two traps worth repeating for anyone reproducing this:
+
+- Compare **sample 0 only**. The HIP value head runs with `N` padded above the requested batch
+  (N=4 for a requested batch of 2), so whole-tensor sums are not comparable between the two
+  backends; per-sample slices are.
+- A synchronous `cudaMemcpy` inside `Eval` breaks CUDA-graph capture and surfaces as
+  `CUBLAS_STATUS_INTERNAL_ERROR` on the second evaluation. Add `hip(graph_capture=false)` to
+  the backend options while instrumenting.
+
+The first HIP evaluation observed (`HIPVH[0]`) is a warm-up with an all-zero trunk input; the
+real check evaluation is the one whose trunk matches the blas dump.
+
+### Candidate lesson for the `cuda-to-rocm` skill
+
+Worth promoting when this port is next edited: *an async init-time kernel launched on the
+legacy null stream is not ordered against streams created `cudaStreamNonBlocking`, and Windows
+HIP loses that race deterministically where Linux HIP wins it.* Generic symptom to look for:
+one constant tensor wrong while everything computed around it is exact, the wrong values being
+plausible-magnitude foreign floats, and a "fix" that appears the moment you add a debug
+readback. Kept here rather than promoted now because this brief was investigation-only.
