@@ -7,13 +7,18 @@
   "priority": 6.119,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-08-12T22:10:37Z",
+  "updated_at": "2026-08-20T07:51:32Z",
   "head_sha": "642b352642d1228f412cf98883117cd6fe17f695",
   "pr_url": "https://github.com/CVCUDA/CV-CUDA/pull/293",
   "pr_number": 293,
   "pr_opened_at": "2026-06-18T21:22:26Z",
   "porting": null,
-  "waivers": {},
+  "waivers": {
+    "windows": {
+      "reason": "The CV-CUDA port was deliberately scoped Linux-only, so the obstacle is the platform rather than the GPU. No Windows build work was implemented in the port at all; the Windows platforms are untried followers reusing the Linux branch, and the record notes this was a maintainer call rather than an unexplored gap. Confirmed on windows-gfx1101 and windows-gfx1201. The HIP work is validated at head on linux-gfx90a (wave64) and linux-gfx1100 (wave32); windows is the only gate not satisfied at head. NOTE for the approver: unlike icicle or gpu4pyscf, this is a scoping decision rather than a demonstrated upstream impossibility -- if you would rather see Windows attempted than waived, refuse this and it becomes porter work. Nobody has established that CV-CUDA cannot build on Windows.",
+      "suggested_at": "2026-08-20T07:51:32Z"
+    }
+  },
   "pr_state": "open",
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 527819251,
