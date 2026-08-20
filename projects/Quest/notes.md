@@ -2083,3 +2083,147 @@ the delta. The lesson promoted to `cuda-to-rocm/references/validation.md` ("A pa
 some GPUs reach") was checked against the code it describes rather than the summary: the
 three no-op modes it lists are the ones this branch actually shipped and fixed, and its
 code fragments are the labelled anti-patterns plus the remedy, not a recipe.
+
+## Validation 2026-08-20 (linux-gfx1100, revalidate at `c9828e2`)
+
+Re-validation triggered by `head_sha` advancing from `9be60fc` (this platform's prior
+`validated_sha`) to `c9828e2`. `python3 utils/moatlib.py classify Quest 9be60fc c9828e2` ->
+`class=mixed arch_independent=False inert=False` (the three `decode/*.cuh` files are
+token-level mixed, `hip_compat/cuda_fp16.h` is comment-only, the new test file is added) --
+not doc/comment/rename-only, so no carry-forward shortcut; went straight to a full real-GPU
+run as instructed.
+
+4x Radeon Pro W7800 (gfx1100, wave32) visible via `rocm-smi --showhw`, none showing KFD
+activity (`rocm-smi --showpids` empty before starting), `HIP_VISIBLE_DEVICES=1`. ROCm
+`hip 7.2.53211`, PyTorch 2.14.0a0+gitb81488e, python 3.12.13 (`/opt/conda/envs/py_3.12`),
+`transformers==4.37.2` `tokenizers==0.15.2` already present. Fork checkout already at
+`c9828e2` (`HEAD == origin/moat-port == status.json.head_sha`), clean, submodules
+(`flashinfer`, `pybind`) already initialized from a prior session.
+
+### Host hazard, same as recorded 2026-08-19: broken `find_package(Torch)` export on this
+shared host
+
+`torch.utils.cmake_prefix_path` resolves into `/var/lib/jenkins/pytorch`'s editable
+scikit-build-core dev checkout, which has no proper `cmake --install` tree. Same host as
+the earlier gfx1100 sessions; used the same known-good workaround,
+`-DCMAKE_PREFIX_PATH=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/torch/share/cmake`
+(a complete from-wheel torch install coexisting in the same environment). No fork or
+MOAT-tracked file touched.
+
+### Build
+
+Clean rebuild (wiped `quest/ops/build` first, per the standing note about force-included
+headers under `kernels/include/hip_compat`), wrapped `utils/timeit.sh Quest compile --
+ninja -C .../quest/ops/build`:
+
+```
+cd quest/ops && rm -rf build && mkdir -p build && cd build
+cmake -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_PREFIX_PATH=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/torch/share/cmake ..
+ninja
+ln -sf $PWD/_kernels*.so ../../
+```
+
+Configure and build both clean (6/6 objects, same two pre-existing nodiscard-`hipError_t`
+warnings at `decode_handler.cuh:197` and `approx_attn.cu:65` as every prior session, no new
+warnings, no errors). `grep -o -- '--offload-arch=[a-z0-9]*' build/build.ninja` -> `gfx1100`
+only. `import quest._kernels` exposes the same six ops as every prior session.
+
+### GPU tests
+
+Wrapped `utils/timeit.sh Quest test -- python3 -m pytest ...` (`PYTHONPATH` set to the fork
+checkout root, matching the README's `PYTHONPATH` recipe):
+
+```
+HIP_VISIBLE_DEVICES=1 PYTHONPATH=<fork-root> python3 -m pytest \
+  quest/tests/test_rope.py quest/tests/test_estimate.py quest/tests/test_decode_attention.py \
+  quest/tests/test_approx_attention.py quest/tests/test_decode_launch_shape.py -q
+```
+
+| suite | result |
+|---|---|
+| test_rope.py | 64 passed |
+| test_estimate.py | 9 passed |
+| test_decode_attention.py | 6 passed |
+| test_approx_attention.py | 42 passed |
+| test_decode_launch_shape.py | 3 passed |
+| **in-scope total** | **124 passed in 16.75-16.92s** |
+| test_topk.py | `-x`: `AttributeError: module 'quest._kernels' has no attribute 'topk_filtering'` |
+| test_prefill_attention.py | `-x`: `AttributeError: module 'quest._kernels' has no attribute 'prefill_with_paged_kv_cache'` |
+
+Scoped-out failure mode confirmed unchanged (`AttributeError`, not a wrong answer),
+matching every prior session. No non-GPU regression to check against an upstream baseline
+-- this project has no CPU-only test path; all suites require the compiled extension and a
+GPU.
+
+The new `test_decode_launch_shape.py` means the default run above already covers both
+launch shapes, per the review's note that no validator needs to remember the knob. Verified
+the override provably takes effect anyway, independently of the porter's evidence, with
+`AMD_LOG_LEVEL=3` on `test_decode_attention.py`:
+
+| forced shape | `BatchDecodeWithPagedKVCacheKernel` | `MergeStatesKernel` |
+|---|---|---|
+| single | 6 | **0** |
+| split | 6 | **6** |
+
+Matches the porter's table exactly (default here is `split`, gfx1100 at 70 CUs). Confirmed
+real device dispatch (not a mock) on `test_decode_attention.py` with `AMD_LOG_LEVEL=3`: 432
+`hipLaunchKernel` lines, 3921 `hipSuccess` occurrences, Quest's own compiled kernels present
+by name (`flashinfer::AppendPagedKVCacheDecodeKernel`,
+`flashinfer::AppendPagedKVCachePrefillKernel`, `flashinfer::BatchDecodeWithPagedKVCacheKernel`,
+`flashinfer::VariableLengthMergeStatesKernel`) -- identical counts to the 2026-08-19 session
+at the prior head, as expected since the delta does not touch the decode kernel bodies
+themselves.
+
+### CUDA no-regression gate
+
+Not skipped: no record of this gate at `c9828e2` yet (the last recording was at `9be60fc`),
+this platform's toolchain still has the CUDA 12.8 conda env and `gcc-11`/`g++-11`, so it was
+owed and available. Reproduced the standing wall fresh at this head, wrapped
+`utils/timeit.sh Quest cuda-compile -- cmake ...`:
+
+```
+cd quest/ops && mkdir build-cuda && cd build-cuda
+cmake -GNinja -DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=80 \
+  -DCMAKE_PREFIX_PATH=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/torch/share/cmake \
+  -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc ..
+```
+
+`enable_language(CUDA)` succeeded, the pinned `-DCMAKE_CUDA_ARCHITECTURES=80` survived to
+the cache, configure reached "Configuring done" -- then failed in the Generate step inside
+RAFT's own CMakeLists, identical to every prior recording:
+
+```
+CMake Error at build-cuda/_deps/raft-src/cpp/CMakeLists.txt:262 (target_link_libraries):
+  The link interface of target "raft" contains:
+    CUDA::nvToolsExt
+  but the target was not found.
+```
+
+**`cuda-not-validated: unchanged from 9be60fc/c1d7fff -- RAFT (pinned branch-24.02) requires
+the legacy CUDA::nvToolsExt CMake target, which FindCUDAToolkit no longer creates against a
+CUDA 12.8 toolkit; the configure fails inside RAFT's own CMakeLists before Quest's own .cu
+sources or the pybind11 target are ever reached.`** Same wall, same file, same line as every
+prior recording at every prior head_sha -- confirms the previous rounds' risk assessment
+that moving the `rapids-*` includes after `project()` in this branch's CMake restructure
+introduced no new breakage vector, since the failure is unrelated to that restructure and
+occurs at the identical RAFT-internal line. Throwaway `quest/ops/build-cuda` removed before
+completion.
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --port Quest` -> `jargon: clean`. `python3 utils/moatlib.py
+audit-commits Quest` -> OK (fork commit messages conform). README.md's "Building on AMD
+GPUs (ROCm)" section matches the commands run above verbatim, documents the
+`QUEST_DECODE_LAUNCH_SHAPE` knob, and names both scoped-out ops and everything downstream of
+them as not running on ROCm yet. No inaccuracy found; nothing sent back.
+
+`git -C projects/Quest/src status --porcelain`: clean. `HEAD` at `c9828e2`, matching
+`status.json.head_sha`.
+
+State: `revalidate` -> `completed` on linux-gfx1100, `validated_sha = c9828e2`. wave32 gate
+remains satisfied by this arch at the new head. CUDA gate: `cuda-not-validated`, recorded
+fresh at this head_sha (environmental wall, pre-existing, external to the port); no penalty,
+secondary and compile-only per the gate's own rules. Wall clock: build ~1 min, in-scope
+tests ~17s, CUDA-gate reproduction and log-evidence re-runs a few minutes; well within the
+~60 minute budget.
