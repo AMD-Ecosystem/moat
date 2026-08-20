@@ -7,13 +7,18 @@
   "priority": 6.245,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-08-20T16:48:04Z",
+  "updated_at": "2026-08-20T16:50:51Z",
   "head_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
   "pr_url": "https://github.com/LeelaChessZero/lc0/pull/2420",
   "pr_number": 2420,
   "pr_opened_at": "2026-06-11T07:21:22Z",
   "porting": null,
-  "waivers": {},
+  "waivers": {
+    "windows": {
+      "reason": "The obstacle is the Windows ROCm toolchain, not the GPU and not the port. lc0's value head is wrong by ~4.4e-02 absolute (relative 4.9e-01, with sign flips) against a 1e-3/1e-2 bar, while the policy head is bit-identical (~3e-07). The defect reproduces IDENTICALLY on all three Windows architectures tested -- gfx1151, gfx1101 and gfx1201 -- while linux-gfx90a (wave64) AND linux-gfx1100 (wave32) both PASS the same check at the same head. gfx1100 has the same wavefront width as gfx1151, so this is not a wave-size effect; the only variable that tracks the failure is the operating system and its ROCm/rocBLAS build. A prior exhaustive investigation cleared the obvious candidates: graph capture disabled, use_gemm_ex=false, Conv1Layer loop replacement, and standalone BLAS tests at the relevant dimensions all PASS. Leading suspicion is a gfx-specific rocBLAS/Tensile fallback kernel for the value head's small GEMM shapes in TheRock's Windows SDK. RE-CONFIRMED 2026-08-20 at head 7727fa3 on a NEWER SDK (TheRock ROCm 7.14.0a20260612, clang 23.0.0git) than the original 2026-06-04 ruling (7.14.0a20260604): 261/261 targets built, CPU gtest 8/8, benchmark fault-free, and the check backend still reports 0/222 passing with the identical 4.4e-02 magnitude and pattern. NOTE for the approver: the alternative to a waiver is a toolchain bug report against TheRock's rocBLAS rather than any change to this port. Jeff Daily already ruled BLOCK-and-move-on on 2026-06-04; this suggestion only offers the waiver route to close the record.",
+      "suggested_at": "2026-08-20T16:50:51Z"
+    }
+  },
   "pr_state": "open",
   "license_clearance": {
     "approved_by": "jeffdaily",
