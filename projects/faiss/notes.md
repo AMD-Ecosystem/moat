@@ -552,3 +552,143 @@ No delta-port needed: zero source changes vs ab1dcf71 (cmake -DCMAKE_HIP_ARCHITE
 Result matches gfx1201 (119 tests) exactly.
 
 State: completed. validated_sha = ab1dcf71
+
+## Port round 2026-08-20 (porter, linux-gfx90a) -- defect fix + history rewrite -> ported
+
+Branch rewritten: ab1dcf71 (3 commits) -> 514cb457 (3 commits). Force-pushed with
+--force-with-lease; no upstream PR existed (pr_state none), so moat-port was not frozen.
+
+### THE DEFECT: a leaked hipify artifact, not a fix -- REMOVED
+
+Commit e9fed66 carried `#include "hip/hip_runtime.h"` as LINE 1 of
+faiss/gpu/test/TestCodePacking.cpp, ABOVE the copyright header and unguarded.
+That file also compiles in NVIDIA/CUDA builds, where no HIP headers exist, so
+upstream CUDA CI would have failed on it. The earlier note (Revalidation
+2026-06-04, linux-gfx1100) rationalized it as "made explicit in source for MSVC
+builds". That rationalization was wrong. Evidence gathered this round:
+
+1. hipify-perl (ROCm 7.14) on the PRISTINE upstream TestCodePacking.cpp makes
+   exactly ONE change: it inserts `#include "hip/hip_runtime.h"` at line 1. That
+   is the whole diff. So the committed line is byte-identical to what the
+   translator emits.
+2. hipify.sh's `find ./gpu-tmp -name "*.cpp"` is RECURSIVE, so it processes
+   faiss/gpu/test/*.cpp. Confirmed empirically: this round's cmake configure
+   (which runs hipify.sh via execute_process) modified 154 tracked files in
+   place, and inserted that exact include into BOTH TestCodePacking.cpp AND
+   TestUtils.cpp -- the latter never having carried it in any commit. The include
+   is generated, on every ROCm configure, for free.
+3. The Windows flow does NOT bypass this. The recorded gfx1201/gfx1151 recipe
+   runs `bash faiss/gpu/hipify.sh` manually with hipify-perl on PATH; only the
+   SECOND hipify_dir call (c_api) fails on Windows. The faiss/gpu call succeeds,
+   so Windows gets the include inserted exactly like Linux.
+4. TestCodePacking.cpp uses ZERO hip*/cuda* API, no kernels, no launches. It
+   needs no HIP header of its own on any platform.
+5. Keeping it in source is actively harmful beyond the CUDA break: hipify-perl is
+   NOT idempotent for this insertion. Re-hipifying a file that already contains
+   the include ADDS A SECOND copy (verified). The committed line made every
+   manual re-hipify stack another duplicate -- the same non-idempotency class
+   already documented above for device_functions.h.
+
+CONCLUSION: the include was collateral from editing TestCodePacking.cpp in a
+hipified worktree -- precisely the failure the "## DO NOT COMMIT the generated
+artifacts" section above warns about. Chose REMOVAL over a `#if defined(USE_AMD_ROCM)`
+guard: a guard would fix the CUDA break but leave a redundant hunk that a Meta
+reviewer would rightly question, would still not stop hipify from inserting its own
+copy above it, and would not restore idempotency. Removal returns the file to
+upstream form plus only the uint8_t fix.
+
+### Also fixed this round
+
+- Commit 1 message said "gfx1100/gfx1151 followers" (in-house vocabulary that would
+  have shipped upstream). Reworded to name the GPUs. `jargon.py --port faiss` clean.
+- Commit 1 message claimed the doubled hip/ prefix affects "ROCm 7.x" generally.
+  Verified FALSE on 7.14: hipify-perl there emits the correct <hip/device_functions.h>.
+  The sed is still needed for 7.2.x and is a harmless idempotent no-op on 7.14.
+  Message now scopes the claim ("observed on ROCm 7.2.1; ROCm 7.14 emits the correct
+  path already").
+- Commit 1 Test Plan used literal /opt/rocm paths; changed to $ROCM_PATH so the recipe
+  reads correctly on installs that are not at /opt/rocm (this host is one).
+- Commit 2 title was 74 chars (over the 72 limit) and carried a redundant "faiss:"
+  prefix. Retitled to 58 chars.
+- Commit 3 (TestUtils.cpp) left `<time.h>` as an orphan include -- clock_gettime and
+  timespec were its only consumers and it removed both. Dropped it; `<chrono>` takes
+  its slot, keeping the include block in the file's existing sorted order.
+- Commit 3 message referenced commit "e9fed66" by sha, which the rewrite invalidated.
+  Now refers to it descriptively.
+
+### Doc gap closed (INSTALL.md)
+
+INSTALL.md already documented `-DFAISS_ENABLE_ROCM=ON` (Meta maintains the ROCm path),
+but its GPU option list documented `-DCMAKE_CUDA_ARCHITECTURES` with no AMD parallel.
+Our own porting experience is that a ROCm install shipping no default target list
+(no bin/target.lst) gives the HIP compiler no arch at all, so
+`-DCMAKE_HIP_ARCHITECTURES` is REQUIRED there, not optional. Added one bullet in the
+same list, same house style, immediately after the ROCm bullet.
+
+### Scan of the other two commits (requested)
+
+Only three added lines on the whole branch mention hip/rocm/amd/gfx: the two in
+hipify.sh (which executes only when FAISS_ENABLE_ROCM=ON) and the defective include.
+TestUtils.cpp's change is pure standard C++ (`<chrono>`), portable to nvcc. Nothing
+else is unguarded or CUDA-hostile. Branch is clean.
+
+### Build + test recipe on ROCm 7.14 (TheRock wheel, NO /opt/rocm)
+
+Prior gfx90a validation used ROCm 7.2.1 at /opt/rocm; that path no longer exists on
+this host. Adaptations, all environmental (zero source impact):
+
+```
+SDK=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel
+export ROCM_PATH=$SDK
+export PATH=$SDK/bin:$SDK/libexec/hipify:$PATH   # hipify-perl must be on PATH:
+                                                 # CMake runs hipify.sh at configure
+cmake -S . -B build -G Ninja \
+  -DFAISS_ENABLE_GPU=ON -DFAISS_ENABLE_ROCM=ON -DFAISS_ENABLE_CUVS=OFF \
+  -DFAISS_ENABLE_PYTHON=OFF -DFAISS_ENABLE_C_API=OFF -DFAISS_ENABLE_EXTRAS=OFF \
+  -DBUILD_TESTING=ON -DBUILD_SHARED_LIBS=ON \
+  -DFAISS_OPT_LEVEL=generic -DFAISS_ENABLE_MKL=OFF -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_C_COMPILER=$SDK/bin/amdclang \
+  -DCMAKE_CXX_COMPILER=$SDK/bin/amdclang++ \
+  -DCMAKE_HIP_COMPILER=$SDK/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH=$SDK \
+  -DBLAS_LIBRARIES=$SDK/lib/host-math/lib/librocm-openblas.so \
+  -DLAPACK_LIBRARIES=$SDK/lib/host-math/lib/librocm-openblas.so
+```
+
+Deltas vs the ROCm 7.2.1 recipe recorded above:
+- No system libopenblas-dev on this host. The SDK BUNDLES OpenBLAS as
+  lib/host-math/librocm-openblas.so; pointing BLAS_LIBRARIES/LAPACK_LIBRARIES at it
+  avoids an apt install entirely (the Windows sessions used the same library).
+  Keep OPENBLAS_NUM_THREADS=1 -- it is still OpenBLAS, so the many-core heap
+  artifact documented above still applies.
+- CMAKE_PREFIX_PATH must be set explicitly. The top CMakeLists prepends /opt/rocm,
+  which does not exist here, so find_package(HIP)/find_package(hipBLAS) need the hint.
+- Ninja instead of Make (faster; no behavioral difference observed).
+- C_API and EXTRAS OFF to save wall clock. Neither is a GPU gate and neither is
+  touched by any commit on this branch.
+- CMAKE_HIP_ARCHITECTURES=gfx90a still propagates as --offload-arch automatically;
+  no target property needed, same as 7.2.1.
+
+### Results at 514cb457 (MI250X gfx90a, ROCm 7.14, HIP_VISIBLE_DEVICES=1)
+
+- libfaiss.so + faiss_gpu_objs: 303/303 targets, 0 errors.
+- 11 GPU test targets: 27/27, 0 errors.
+- `ctest -j1 -R "TestGpu|TestCodePacking"`: **108/108 PASSED, 0 failed** (626s).
+  Identical suite size and result to the ROCm 7.2.1 baseline (108/108).
+- TestCodePacking (the touched file): 4/4 PASSED.
+- TestGpuSelect (raft/cuvs de-risking gate): 6/6 PASSED.
+- TestGpuIcmEncoder (direct; not matched by ctest -R): 7/7 PASSED.
+
+No regression. The port builds and passes identically on ROCm 7.14 and 7.2.1.
+
+### Platform effect
+
+head_sha ab1dcf71 -> 514cb457 orphans all five platforms' validated_sha, so every
+arch is now stale and needs re-testing. This was unavoidable: the jargon in commit 1's
+message and the defective include both live in already-validated commits, and neither
+is fixable by appending. The gfx90a evidence above was gathered AT the new head, so
+that arch's re-test is already satisfied in substance. The delta for the other four is
+tiny and test-only: one removed include line (which their own hipify step re-inserts
+at configure), one removed `<time.h>`, and an INSTALL.md bullet. libfaiss device code
+is untouched by all of it -- a binary-equivalence carry-forward should apply cleanly.

@@ -66,3 +66,9 @@
 {"kind":"phase","ts":"2026-06-19T23:41:23Z","phase":"test","seconds":7.461,"exit":1,"cmd":"python3 /b/develop/moat/agent_space/faiss_run_gfx1101.py /b/develop/moat/projects/faiss/src/build_gfx1101/faiss/gpu/test/TestGpuIndexIVFPQ.exe"}
 {"kind":"session","ts":"2026-06-19T23:43:05Z","epoch":1781912585.897408200,"event":"end","platform":"windows-gfx1101"}
 {"kind": "tokens", "ts": "2026-06-19T23:43:48Z", "tokens": 104264, "source": "validator (gfx1101)"}
+{"kind":"session","ts":"2026-08-20T04:46:38Z","epoch":1787201198.889085342,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-20T04:52:58Z","phase":"compile","seconds":21.076,"exit":0,"cmd":"bash /tmp/claude-1000/-var-lib-jenkins-moat/9278e12c-5067-4f62-88e9-1a6e7a813491/scratchpad/configure.sh"}
+{"kind":"phase","ts":"2026-08-20T04:54:29Z","phase":"compile","seconds":68.165,"exit":0,"cmd":"cmake --build projects/faiss/src/build --target faiss faiss_gpu_objs -j 32"}
+{"kind":"phase","ts":"2026-08-20T05:04:32Z","phase":"compile","seconds":9.893,"exit":0,"cmd":"cmake --build projects/faiss/src/build --target TestGpuSelect TestGpuDistance TestGpuIndexFlat TestGpuIndexIVFFlat TestGpuIndexIVFPQ TestGpuIndexIVFScalarQuantizer TestGpuIndexBinaryFlat TestGpuResidualQuantizer TestGpuIcmEncoder TestGpuMemoryException TestCodePacking -j 32"}
+{"kind":"phase","ts":"2026-08-20T05:15:36Z","phase":"test","seconds":626.532,"exit":0,"cmd":"ctest --test-dir /var/lib/jenkins/moat/projects/faiss/src/build -j1 -R TestGpu|TestCodePacking --output-on-failure"}
+{"kind":"session","ts":"2026-08-20T05:19:06Z","epoch":1787203146.119792380,"event":"end","platform":"linux-gfx90a"}

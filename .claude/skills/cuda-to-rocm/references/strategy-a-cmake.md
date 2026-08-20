@@ -111,3 +111,20 @@ compat header with `-include`.
   before compiling. Un-hipified files surface as "undeclared identifier cudaMalloc". Note
   that hipify prepends `#include "hip/hip_runtime.h"`, which breaks a g++ CPU reference
   build, so build that from a separate non-hipified copy. (LC-framework)
+- **When the project's hipify step rewrites TRACKED files in place, its output will leak
+  into your commits.** A configure-time hipify (faiss runs `faiss/gpu/hipify.sh` from
+  `execute_process`) edits the checked-in sources themselves -- in faiss, 154 tracked files
+  per configure -- so any file you then edit for a real fix gets committed with the
+  translator's changes riding along. The one that actually escaped was
+  `#include "hip/hip_runtime.h"` prepended as line 1 of a GPU *test* `.cpp`, above the
+  copyright header. That file also builds under CUDA, where no HIP header exists, so it
+  would have broken upstream's NVIDIA CI. Before committing, diff against the pristine tree
+  and restore everything the translator touched (`git checkout -- <dirs>`), keeping only
+  your own hunks; `git status` after a configure tells you the blast radius. Do not
+  "fix" a leaked include by guarding it -- delete it. The hipify step re-inserts it on
+  every ROCm configure (including manual Windows runs of the same script), the file did
+  not need it, and hipify-perl is NOT idempotent for that insertion: re-running it on a
+  file that already has the include adds a SECOND copy. Beware the plausible-sounding
+  rationalization ("made explicit in source for the MSVC build") -- verify by running
+  hipify-perl on the pristine file and diffing, which takes a minute and settles it.
+  (faiss)
