@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "pointcept-spconv-triton-e2e",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "Enable end-to-end sparse-conv model configs (SpUNet/OACNN/PointGroup) on ROCm via the spconv-triton drop-in, now that spconv is dispositioned already-supported. Upstream Pointcept imports spconv unguarded in those configs; spconv-triton (Apache-2.0, PyPI, MI300X-verified upstream, gfx90a/gfx1100 unverified) claims drop-in compatibility with spconv 2.x via a one-line import. Scope: wire the swap, then validate the sparse-conv configs end-to-end on real AMD GPUs.",
+      "refs": [
+        "projects/Pointcept/plan.md risk 4 and validation scope"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-20T19:37:24Z",
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-20T19:37:24Z",
+        "note": "Start Pointcept's porter flow now that depends_on is satisfied -- spconv declined already-supported with spconv-triton as the route (in-session, 2026-08-20)."
+      }
+    }
+  ]
+}
