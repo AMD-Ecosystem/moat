@@ -379,3 +379,193 @@ Result: 5 frames written, 13824 particles, no crash (GPU end-to-end PASS).
 Result: 722/722 PASS (no non-GPU regression).
 
 ### Verdict: PASS -> completed
+
+## Fix round 2026-08-20 (linux-gfx1100, porter): merge upstream main
+
+PR #145 is OPEN and was `CONFLICTING` / `mergeStateStatus: DIRTY`. Upstream moved
+far ahead of the PR base (~422 files): C++17 -> C++23 project-wide, vendored git
+submodules under `Libraries/` replaced by a vcpkg manifest (`vcpkg.json` +
+`vcpkg-configuration.json` with a `Libraries` overlay port for cnpy), a rewritten
+README/ARCHITECTURE.md, and a new `CUBBYFLOW_REQUIRES` concepts macro in
+`Includes/Core/Utils/Macros.hpp`.
+
+Thread traffic on #145 is bots only -- no maintainer comment. coderabbitai posted
+a review-stack comment and eventually approved; codacy-production reports "Not up
+to standards" with 9 medium ErrorProne issues (Codacy's own static analysis on the
+merged diff, not a maintainer request). Not chased in this round.
+
+### Staged on moat-fix-145 (branched from published tip 62f4604c)
+
+- `e506244969` `[ROCm] Merge upstream main into the AMD/HIP branch`
+  (merge of `upstream/main` 8f774f6a4f)
+- `2c51f93ecd` `[ROCm] Correct the AMD GPU docs and a stale build comment`
+
+### The one conflict
+
+Root `CMakeLists.txt`. Upstream deleted `add_subdirectory(Libraries/pybind11)`
+(pybind11 now comes from `find_package(pybind11 CONFIG REQUIRED)` via vcpkg) right
+next to the block the port edits. Resolution = upstream's new structure with the
+port delta reapplied verbatim: the `USE_HIP` option + `enable_language(HIP)` block,
+`USE_CUDA OR USE_HIP` on Tests/CUDATests and Examples/CUDASPHSim, and
+`NOT (USE_CUDA OR USE_HIP)` on the Python bindings. Verified by diffing the
+resolution against `upstream/main:CMakeLists.txt` -- the only delta is the port's.
+
+### Auto-merged seams, verified by hand
+
+- `Builds/CMake/CompileOptions.cmake`: upstream's `CXX_STANDARD 23` /
+  `CXX_STANDARD_REQUIRED ON` and its removal of `-std=c++1z` sit next to the port's
+  HIP-only warning suppressions; those stay `$<$<COMPILE_LANGUAGE:HIP>:...>`-scoped.
+- `Sources/Core/CMakeLists.txt`: upstream's tinyobjloader/flatbuffers wiring merged
+  with the port's `USE_HIP` glob that marks `CUDA/*.cu` and `CUDA/*.cpp` `LANGUAGE HIP`.
+- `Tests/CUDATests/CMakeLists.txt`: upstream's doctest linkage plus the port's
+  `LANGUAGE HIP` marking, both present.
+- `Includes/Core/Utils/Macros.hpp`: upstream's `CUBBYFLOW_REQUIRES` and the port's
+  `__HIPCC__` additions to the host/device and alignment guards, both present.
+- `Includes/Core/CUDA/CUDAPointHashGridSearcher{2,3}.hpp`: upstream's member-init
+  cleanups plus the port's explicit copy/move members.
+
+### C++23 and CUBBYFLOW_REQUIRES under HIP: no change needed
+
+Anticipated hazard that did not materialize. `CUBBYFLOW_REQUIRES` is guarded
+`#if !defined(__CUDACC__) && defined(__cpp_concepts) && __cpp_concepts >= 201907L`,
+and `cuda_to_hip.h` deliberately does NOT define `__CUDACC__` (that would flip
+rocThrust to its CUDA backend). So the `requires(...)` clauses DO reach hipcc.
+They compile clean: CMake propagates `CXX_STANDARD 23` to the HIP language, HIP
+TUs get `-std=c++23`, and ROCm 7.2 clang 22.0.0 accepts constrained templates in
+device compilation. Verified in `build/compile_commands.json`:
+
+```
+/opt/rocm/llvm/bin/clang++ ... -std=c++23 --offload-arch=gfx1100 -Werror ...
+```
+
+The macro's guard was left exactly as upstream wrote it. Do not add `__HIPCC__` to
+it -- that would silently disable concepts on the AMD path for no reason.
+
+### Build procedure (UPDATED -- supersedes the pre-vcpkg recipe above)
+
+`git submodule update --init --recursive` is obsolete; `.gitmodules` is gone.
+A bootstrapped vcpkg checkout and `VCPKG_ROOT` are now required, and CMake
+installs `vcpkg.json`'s dependencies during configure.
+
+```
+git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
+~/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+sudo apt-get install -y autoconf autoconf-archive automake libtool pkg-config \
+    python3-dev zip unzip curl
+export VCPKG_ROOT=~/vcpkg
+
+cd projects/CubbyFlow/src
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ \
+  -DBUILD_TESTS=ON -DBUILD_EXAMPLES=ON
+cmake --build build -j$(nproc)
+```
+
+`autoconf-archive` is REQUIRED and is not in the project's documented apt list:
+vcpkg pulls python3 (for pybind11), whose libb2 dependency fails `autoreconf` with
+`BUILD_FAILED` without it. First configure ~137 s (vcpkg builds python3, pybind11,
+gtest, benchmark, doctest, flatbuffers 1.7.1, pystring, tinyobjloader[double],
+cnpy from the overlay port); afterwards it is cached.
+
+TBB is not installed on this host, so CMake falls back to
+`-DCUBBYFLOW_TASKING_OPENMP` (OpenMP 4.5). Not a port concern; the same fallback
+applies to the CUDA path.
+
+CMake still wants clang directly for HIP, NOT the hipcc wrapper
+(`-DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++`).
+
+### Build result (linux-gfx1100, Radeon Pro W7800, ROCm 7.2.3, clang 22.0.0)
+
+PASS. All 15 binaries built. Zero errors AND zero warnings under `-Werror` --
+none of the port's HIP warning suppressions became stale, and the C++23 move
+introduced no new hipcc diagnostics.
+
+### GPU tests at the staging tip 2c51f93ecd
+
+```
+HIP_VISIBLE_DEVICES=0 ./build/bin/CUDATests
+```
+
+35/35 test cases, 3170/3170 assertions PASS.
+
+```
+cd <scratch>; HIP_VISIBLE_DEVICES=0 <src>/build/bin/CUDASPHSim -f 5
+```
+
+5 frames written, 13824 particles, exit 0 (GPU end-to-end PASS). Matches the
+2026-06-12 gfx1100 validation exactly.
+
+### CPU regression tests
+
+```
+HIP_VISIBLE_DEVICES=0 ./build/bin/UnitTests
+```
+
+814/814 PASS in 168 suites. (Was 722 before the merge; upstream added tests --
+MPM system data / SnowMPMSolver among them. No failures.)
+
+### CUDA no-regression gate
+
+nvcc 12.8 from /opt/conda/envs/cuda-12.8, host gcc 13, `CMAKE_CUDA_ARCHITECTURES=80`.
+The conda toolkit does not have the legacy-FindCUDA layout, so
+`CUDA_TOOLKIT_ROOT_DIR` must point at the `targets/x86_64-linux` subtree or
+`find_package(CUDA)` reports `missing: CUDA_INCLUDE_DIRS` and silently turns
+`USE_CUDA` back OFF (configure still succeeds -- check the `Using CUDA:` line):
+
+```
+export VCPKG_ROOT=~/vcpkg
+export PATH=/opt/conda/envs/cuda-12.8/bin:/opt/conda/envs/cuda-12.8/nvvm/bin:$PATH
+cmake -B build-cuda -S . -DCMAKE_BUILD_TYPE=Release -DUSE_CUDA=ON \
+  -DCMAKE_CUDA_ARCHITECTURES=80 \
+  -DCUDA_TOOLKIT_ROOT_DIR=/opt/conda/envs/cuda-12.8/targets/x86_64-linux \
+  -DCUDA_TOOLKIT_INCLUDE=/opt/conda/envs/cuda-12.8/targets/x86_64-linux/include \
+  -DCUDA_CUDART_LIBRARY=/opt/conda/envs/cuda-12.8/lib/libcudart.so \
+  -DBUILD_TESTS=ON -DBUILD_EXAMPLES=ON
+cmake --build build-cuda -j32 --target CubbyFlow
+cmake --build build-cuda -j32 --target CUDATests CUDASPHSim
+```
+
+Build: PASS, no errors. The port's `#if defined(__HIP__)` guards remain
+CUDA-inert across upstream's C++23 move. No GPU run (no NVIDIA GPU on this host).
+
+### Follow-up commit 2c51f93ecd: three text-only corrections
+
+1. `Documents/Install.md` still claimed `CMAKE_HIP_ARCHITECTURES` "defaults to
+   gfx90a". Commit 62f4604c removed that default in favor of CMake's host-GPU
+   detection and did not update the doc. Fixed.
+2. Upstream's new README carries a Quick Start whose prerequisite list names a
+   CUDA toolkit for the optional GPU backend. Added the parallel one-line ROCm
+   prerequisite there. Deliberately NOT a build block: the README defers the
+   step-by-step GPU build to `Documents/Install.md`, which already has the
+   `USE_HIP` section.
+3. The comment above the Thrust backend pin in `CMakeLists.txt` claimed the compat
+   header defines `__CUDACC__`. It does not (and `cuda_to_hip.h`'s own comment
+   explains why it must not). Reworded without the false premise; the pin stays.
+
+### jargon.py
+
+`--port CubbyFlow` clean. `--commits moat-port..moat-fix-145` clean.
+`--diff moat-port..moat-fix-145` reports 2 hits, BOTH false positives: the strings
+`MOaT` and `OsrB` occur inside the base64 payload of `Medias/Logos/Logo.svg`,
+added by upstream commit a1b680f3de ("docs: update project logo", Chris Ohk). Not
+our text. A diff-range jargon scan over a merge sees all of upstream's delta;
+check `--commits` and `--port` for our own text.
+
+### NOT DONE -- push is blocked on a token scope
+
+The merge carries upstream's `.github/workflows/*` changes and this host's gh
+token lacks the `workflow` scope, so pushing `moat-fix-145` is known-blocked.
+The branch is committed LOCALLY at `2c51f93ecd` and is unpushed; `head_sha`
+therefore still reads 62f4604c and `advance-head` was deliberately NOT run.
+
+Remaining steps, in order, after `gh auth refresh -s workflow`:
+
+1. `git -C projects/CubbyFlow/src push origin moat-fix-145`
+2. `python3 utils/moatlib.py advance-head CubbyFlow 2c51f93ecd...` (full sha
+   `2c51f93ecdda50b320c2190f723ef26dd02d008e`) -- flips the four completed
+   platforms to `revalidate`
+3. delta review of the round
+4. revalidation on the required gates (wave64, wave32, windows)
+5. fix review PR (`upstream.py --fix-review`), person approves, then
+   `upstream.py --merge-fix --apply`
