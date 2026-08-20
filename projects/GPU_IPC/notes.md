@@ -1314,3 +1314,96 @@ never committed; the throwaway old-sha worktree was removed before this
 validation, never committed). No source or build edit was needed for this
 arch at f9604bb. linux-gfx90a -> `completed`, `validated_sha` =
 f9604bbd1e965106ee0752b46e48f8e7828c6401.
+
+## Validation 2026-08-20: linux-gfx1100 revalidation at f9604bb (carry-forward)
+
+linux-gfx1100 (W7800, GPU index 0 of 3 visible on this host, ROCm 7.2.53211).
+Revalidation triggered by `head_sha` moving from the previously validated
+`3798cb295f5eca470b46ee817aab546227c15b5b` to
+`f9604bbd1e965106ee0752b46e48f8e7828c6401` (the warp-intrinsic macro-to-function
+rework recorded above).
+
+### Classification
+
+`python3 utils/moatlib.py classify GPU_IPC 3798cb2... f9604bb...` returns
+`class=mixed` (same as the gfx90a revalidation), so the carry-forward shortcut
+was attempted per the skill rather than assumed.
+
+### Carry-forward via codeobj_diff -- succeeded on this host
+
+Unlike the gfx90a host (TheRock SDK), this host's standard ROCm 7.2.3 SDK
+builds the OLD sha (3798cb2) cleanly -- it does not hit the
+macro/real-function collision in `amd_hip_bf16.h` that f9604bb fixes, because
+this SDK's headers apparently do not trip the same collision (or this build
+never transitively includes the colliding header path in a way that surfaces
+it under this SDK/version). Built both shas in throwaway git worktrees with
+the project's own recipe:
+
+```bash
+git worktree add <old_dir> 3798cb295f5eca470b46ee817aab546227c15b5b
+git worktree add <new_dir> f9604bbd1e965106ee0752b46e48f8e7828c6401
+cmake -S . -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
+```
+
+Both configure and build clean, exit 0, same warning set as every prior round
+(`[[nodiscard]]` on `cudaEvent*`/`cudaMemset`, pre-existing, not new).
+
+```bash
+python3 utils/codeobj_diff.py <old_dir>/build <new_dir>/build
+```
+
+Reports `verdict=indeterminate`, but the only indeterminate entries are
+CMake's own compiler-detection throwaways
+(`CMakeFiles/3.31.6/CMakeDetermineCompilerABI_{CXX,HIP}.bin`,
+`CMakeFiles/3.31.6/CompilerId{CXX,HIP}/a.out`) -- tiny compiler-check binaries
+CMake generates on every configure, unrelated to the project, where device-code
+extraction fails because they carry no device code at all. Pointing the tool
+directly at the actual build product instead:
+
+```bash
+python3 utils/codeobj_diff.py <old_dir>/build/gipc <new_dir>/build/gipc
+```
+
+`verdict=identical` -- exported symbols and device ISA identical (20 exports).
+This is the real evidence: the one binary the project produces is
+bit-for-bit-equivalent in its device code and symbol table across the head
+move on this arch. Consistent with the commit's own claim ("the translation
+itself is unchanged... shuffles stay pinned to width 32... shifted down to the
+calling lane's own 32-lane half") and with the grep already recorded above
+showing no caller uses the removed macro spellings.
+
+Carried forward rather than re-run:
+
+```bash
+python3 utils/moatlib.py carry-forward GPU_IPC linux-gfx1100 f9604bbd1e965106ee0752b46e48f8e7828c6401 \
+  binary-equiv "codeobj_diff verdict=identical on gipc binary (exported symbols + device ISA) between 3798cb2 and f9604bb; macro-to-function warp-intrinsic translation is behavior-preserving on gfx1100"
+```
+
+No GPU run was needed or performed for this arch this round; the last actual
+GPU pass on gfx1100 remains the 2026-08-08 validation recorded above (37
+frames, no HIP error, no NaN, documented line-search wedge).
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --port GPU_IPC`: clean (needed a local `main` branch
+pointing at `origin/main` and the local `moat-port` branch fast-forwarded to
+f9604bb in this worktree's fork clone before it could resolve `main..moat-port`;
+no content issue). Documentation unchanged since the last recorded check --
+the head move touches only `cuda_to_hip.h` and `device_utils.inl`.
+
+### CUDA no-regression gate
+
+Already recorded at f9604bb during the gfx90a revalidation above (per policy
+this gate runs once per head_sha). Skipped here.
+
+### State
+
+Fork tree clean throughout (`git -C projects/GPU_IPC/src status --porcelain`
+empty; both throwaway worktrees removed with `git worktree remove --force`
+before completion, never committed). No source or build edit was needed for
+this arch. linux-gfx1100 -> `completed`, `validated_sha` =
+f9604bbd1e965106ee0752b46e48f8e7828c6401 via carry-forward. Both Linux arches
+(wave32 via gfx1100, wave64 via gfx90a) are validated at the current head;
+`windows` remains the only open gate, still `blocked` on the CrowdStrike host
+defect recorded above.

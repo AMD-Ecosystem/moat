@@ -44,3 +44,6 @@
 {"kind":"phase","ts":"2026-08-19T22:22:35Z","phase":"compile","seconds":26.109,"exit":0,"cmd":"bash -c cd projects/GPU_IPC/src && cmake -S . -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(nproc)"}
 {"kind":"phase","ts":"2026-08-19T22:26:47Z","phase":"cuda-compile","seconds":30.858,"exit":2,"cmd":"bash -c cd projects/GPU_IPC/src && cmake -S . -B build_cuda -DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc && cmake --build build_cuda -j$(nproc)"}
 {"kind":"session","ts":"2026-08-19T22:28:38Z","epoch":1787178518.414108604,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-20T04:41:36Z","phase":"compile","seconds":17.120,"exit":0,"cmd":"bash -c cd projects/GPU_IPC/src && cmake -S . -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(nproc)"}
+{"kind":"session","ts":"2026-08-20T04:41:39Z","epoch":1787200899.924981900,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T04:43:29Z","epoch":1787201009.970799083,"event":"end","platform":"linux-gfx1100"}
