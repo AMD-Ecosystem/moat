@@ -7,19 +7,15 @@
   "priority": 6.119,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-08-20T20:15:18Z",
+  "updated_at": "2026-08-20T21:16:43Z",
   "head_sha": "358edc33955c58ecc1c219d21f3b3db59b10a50c",
   "pr_url": "https://github.com/CVCUDA/CV-CUDA/pull/293",
   "pr_number": 293,
   "pr_opened_at": "2026-06-18T21:22:26Z",
-  "porting": null,
   "waivers": {
     "windows": {
       "reason": "The CV-CUDA port was deliberately scoped Linux-only, so the obstacle is the platform rather than the GPU. No Windows build work was implemented in the port at all; the Windows platforms are untried followers reusing the Linux branch, and the record notes this was a maintainer call rather than an unexplored gap. Confirmed on windows-gfx1101 and windows-gfx1201. The HIP work is validated at head on linux-gfx90a (wave64) and linux-gfx1100 (wave32); windows is the only gate not satisfied at head. NOTE for the approver: unlike icicle or gpu4pyscf, this is a scoping decision rather than a demonstrated upstream impossibility -- if you would rather see Windows attempted than waived, refuse this and it becomes porter work. Nobody has established that CV-CUDA cannot build on Windows.",
-      "suggested_at": "2026-08-20T07:51:32Z",
-      "refused_by": "jeffdaily",
-      "refused_at": "2026-08-20T20:15:17Z",
-      "refused_note": "The porter decides whether Windows can reasonably be supported; do not waive on a scoping decision. Nobody has established that CV-CUDA CANNOT build on Windows -- the port was simply scoped Linux-only, and the Windows platforms are untried followers reusing the Linux branch. That is porter work, not an excused gate. Assess feasibility first (build system, host dependencies, any POSIX-only host code), then either implement Windows support or come back with a demonstrated impossibility, which would be a different and much stronger waiver case. SEPARATE AND PRIOR: this project is NOT currently PR-ready for an unrelated reason -- head_sha has advanced to 358edc33 (a staged fix round) while every platform record still sits at the published sha 642b3526, and linux-gfx1100 is validation-failed there. wave64 and wave32 both need revalidation at the new head regardless of what happens with Windows."
+      "suggested_at": "2026-08-20T07:51:32Z"
     }
   },
   "pr_state": "open",
@@ -27,6 +23,48 @@
   "upstream_repo_id": 527819251,
   "stage": "review-passed",
   "platforms": {
+    "windows-gfx1201": {
+      "blocked": true,
+      "blocked_reason": "Not Windows-ready: the CV-CUDA port is Linux-only (validated on linux-gfx90a + linux-gfx1100); no Windows build work was implemented and the Windows platforms are untried followers reusing the Linux branch. Per maintainer call, not ready for Windows -- do not validate.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T15:48:58Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1101": {
+      "blocked": true,
+      "blocked_reason": "Not Windows-ready: the CV-CUDA port is Linux-only (validated on linux-gfx90a + linux-gfx1100); no Windows build work was implemented and the Windows platforms are untried followers reusing the Linux branch. Per maintainer call, not ready for Windows -- do not validate.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T15:48:58Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
     "linux-gfx90a": {
       "state": "completed",
       "blocked": false,
@@ -57,13 +95,13 @@
       }
     },
     "linux-gfx1100": {
-      "state": "validation-failed",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": "VALIDATED gfx1100 (RDNA3 wave32, AMD Radeon Pro W7800, ROCm 7.2.1). No source/CMake edit needed (arch-unified port). Build: CLEAN for gfx1100 (DCMAKE_HIP_ARCHITECTURES=gfx1100; 68 code objects all hipv4-amdgcn-amd-amdhsa--gfx1100, zero gfx90a). cvcuda_test_system: 2608 PASSED, 0 FAILED (exit 0) -- identical to gfx90a bar, deterministic 2/2 runs. nvcv_test_cudatools_system: 1107/1123 (16 failures, all within the two documented residual clusters: 15x InterpolationVarShapeWrap.correct_shift = freed-dstVec pageable-async UB in test fixture, more indices exposed on gfx1100 due to RDNA3 more-consistently-async hipMemcpy2DAsync; 1x TypeTraitsMakeTypeVectorTest/3 = char/signed-char type identity). Zero failures outside documented clusters. No new failures. Fork untouched.",
-      "validated_sha": "642b352642d1228f412cf98883117cd6fe17f695",
+      "validated_sha": "358edc33955c58ecc1c219d21f3b3db59b10a50c",
       "started_at": "2026-05-31T18:44:00Z",
-      "completed_at": "2026-06-23T21:30:46Z",
-      "updated_at": "2026-08-20T19:56:59Z",
+      "completed_at": "2026-08-20T21:16:43Z",
+      "updated_at": "2026-08-20T21:16:43Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -78,55 +116,7 @@
         "last_session_at": "2026-05-31T19:10:00Z"
       },
       "last_agent": "validator:claude",
-      "carry_forward": {
-        "to": "642b352642d1228f412cf98883117cd6fe17f695",
-        "method": "source-class",
-        "detail": "CMake default-path change (drop gfx90a pin, rely on enable_language); explicit -DCMAKE_HIP_ARCHITECTURES builds -- how every platform validates -- are byte-identical",
-        "at": "2026-06-23T21:30:46Z"
-      },
       "failed_sha": "358edc33955c58ecc1c219d21f3b3db59b10a50c"
-    },
-    "windows-gfx1101": {
-      "blocked": true,
-      "blocked_reason": "Not Windows-ready: the CV-CUDA port is Linux-only (validated on linux-gfx90a + linux-gfx1100); no Windows build work was implemented and the Windows platforms are untried followers reusing the Linux branch. Per maintainer call, not ready for Windows -- do not validate.",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-05T15:48:58Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1201": {
-      "blocked": true,
-      "blocked_reason": "Not Windows-ready: the CV-CUDA port is Linux-only (validated on linux-gfx90a + linux-gfx1100); no Windows build work was implemented and the Windows platforms are untried followers reusing the Linux branch. Per maintainer call, not ready for Windows -- do not validate.",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-05T15:48:58Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
     }
   },
   "published_sha": "642b352642d1228f412cf98883117cd6fe17f695",
