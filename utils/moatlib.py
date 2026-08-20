@@ -2852,7 +2852,20 @@ def fleet(platform):
     After a project's folder moves to its own branch, `next_task` cannot see it --
     correctly, since you cannot work a project whose files are not in your tree. But
     then nothing answers "what is out there", and work becomes invisible rather than
-    merely elsewhere. This scans the refs and says which branch to check out."""
+    merely elsewhere. This scans the refs and says which branch to check out.
+
+    The question is about the remote, so fetch before answering it. The scan reads
+    remote-tracking refs, which are only as fresh as the last fetch; orient fetches
+    before it asks, but a direct `moatlib.py fleet` between orients answered from
+    refs minutes stale, and on 2026-08-20 that offered faiss's review to a second
+    host while linux-gfx90a's already-pushed lock acquisition sat unfetched. The
+    lock protocol still refused the second entry -- this fetch narrows the window,
+    it does not carry the exclusion. Offline the scan degrades to the old behavior:
+    stale refs and a warning, which beats refusing to answer at all."""
+    r = _git("fetch", "origin", "--prune", check=False)
+    if r.returncode != 0:
+        sys.stderr.write("fleet: fetch failed; answering from possibly stale "
+                         "remote-tracking refs\n")
     out = []
     for name, where in sorted(all_projects().items()):
         obj, _ = project_record(name)
