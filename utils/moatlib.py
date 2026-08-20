@@ -100,6 +100,23 @@ def validations(obj):
 
 PORT_BRANCH = "moat-port"  # the topic branch that holds the port on each fork
 
+
+def upstream_visible_branch(obj):
+    """The fork branch whose commit messages the maintainer will actually read.
+
+    Normally `moat-port`. But while a fix round is staged, it is the round's staging
+    branch: `upstream.py --merge-fix` fast-forwards the open pull request's branch to
+    exactly that tip, so the round's commits become the published ones. Judging
+    `moat-port` during a round inspects only the tip that is already published and
+    silently passes the very commits the round is adding -- a gate that reports clean
+    while looking at the wrong branch is worse than no gate.
+
+    `fix` is cleared when a round merges (see set_fix_merged), so this falls back to
+    the port branch on its own once the round is over.
+    """
+    fix = obj.get("fix") or {}
+    return fix.get("branch") or obj.get("fork_branch") or PORT_BRANCH
+
 # Where the PORT is. One fork, one answer, so this is a property of the project and
 # never of an architecture -- there is no such thing as "screened on gfx90a".
 #
@@ -357,24 +374,42 @@ def status_path(name):
 
 
 def load_status(name):
-    """A project's record. Reads the working tree first, then falls back to the refs.
+    """A project's record, resolved in project_record's order: the project's own
+    branch, then the working tree, then the trunk.
 
-    The fallback exists because 29 call sites take a project name and expect a
-    record, and after the migration an in-flight project's folder is on its own
-    branch rather than in this checkout. Making each caller resolve separately is how
-    a few of them silently answer "not adopted" instead."""
+    The fallback beyond the working tree exists because 29 call sites take a project
+    name and expect a record, and after the migration an in-flight project's folder
+    is on its own branch rather than in this checkout. Making each caller resolve
+    separately is how a few of them silently answer "not adopted" instead.
+
+    The branch wins over the working tree AND the trunk for project_record's colmap
+    reason: an in-flight project is worked on its branch, a re-home cannot delete the
+    copy the protected trunk still carries, and any checkout cut from the trunk
+    carries that stale copy as a perfectly ordinary local file. Reading local-or-
+    trunk first is how popsift's merge-fix saw a record with no fix round in it and
+    refused an approval that was standing -- the round listing (project_record) said
+    READY while this function said there was nothing to approve. Being ON the
+    project's branch is not a special case: the working tree IS the branch then, so
+    the local read is both correct and cheaper."""
     p = status_path(name)
+    if current_branch() != f"port/{name}":
+        branch = port_branch_of(name)
+        if branch:
+            raw = _ref_read(f"origin/{branch}", f"projects/{name}/status.json")
+            if raw:
+                obj = json.loads(raw)
+                validate_status(obj)
+                return obj
     if p.exists():
         with open(p) as f:
             obj = json.load(f)
         validate_status(obj)
         return obj
-    for ref in ("origin/main", f"origin/port/{name}"):
-        raw = _ref_read(ref, f"projects/{name}/status.json")
-        if raw:
-            obj = json.loads(raw)
-            validate_status(obj)
-            return obj
+    raw = _ref_read("origin/main", f"projects/{name}/status.json")
+    if raw:
+        obj = json.loads(raw)
+        validate_status(obj)
+        return obj
     raise FileNotFoundError(str(p))
 
 
@@ -410,12 +445,24 @@ def upstream_full_name(name):
 def save_status(name, obj):
     # Writing a project whose record lives on another branch would create a second
     # copy here and diverge from the one being worked. Say where it lives instead.
+    # The port-branch check does not care whether this checkout carries a local copy:
+    # a checkout cut from the trunk carries the pre-re-home file as an ordinary
+    # stale local, and writing it is how a work-lock commit for one project ends up
+    # stranded on another project's branch. port_branch_of also catches a branch
+    # whose spelling differs in case, which the literal used to miss.
+    if current_branch() != f"port/{name}":
+        branch = port_branch_of(name)
+        if branch and _ref_read(f"origin/{branch}", f"projects/{name}/status.json"):
+            raise RuntimeError(
+                f"{name}'s record is being worked on origin/{branch}"
+                + ("" if not status_path(name).exists() else
+                   f", and this checkout's projects/{name} is a stale pre-re-home copy")
+                + ". Check out that branch to write it.")
     if not status_path(name).exists():
-        for ref in ("origin/main", f"origin/port/{name}"):
-            if _ref_read(ref, f"projects/{name}/status.json"):
-                raise RuntimeError(
-                    f"{name} is not in this checkout -- its record is on {ref}. "
-                    f"Check out that branch to write it.")
+        if _ref_read("origin/main", f"projects/{name}/status.json"):
+            raise RuntimeError(
+                f"{name} is not in this checkout -- its record is on origin/main. "
+                f"Check out the trunk to write it.")
     validate_status(obj)
     stale = check_against_trunk(obj)
     if stale:
@@ -1603,9 +1650,10 @@ def commit_message_problems(name, obj=None):
     if not repo.is_dir():
         return None
     base = obj.get("fork_default_branch") or "main"
+    branch = upstream_visible_branch(obj)
     fmt = "%H" + _UNIT_SEP + "%s" + _UNIT_SEP + "%b" + _REC_SEP
     out = None
-    for cand in (f"origin/{base}..{PORT_BRANCH}", f"{base}..{PORT_BRANCH}"):
+    for cand in (f"origin/{base}..{branch}", f"{base}..{branch}"):
         r = subprocess.run(["git", "log", "--no-merges", "--format=" + fmt, cand],
                            cwd=str(repo), capture_output=True, text=True,
                            encoding="utf-8", errors="replace")
@@ -1613,7 +1661,7 @@ def commit_message_problems(name, obj=None):
             out = r.stdout
             break
     if out is None:
-        return [f"{name}: cannot resolve {base}..{PORT_BRANCH} in the local clone"]
+        return [f"{name}: cannot resolve {base}..{branch} in the local clone"]
 
     records = [r for r in (x.strip(chr(10)) for x in out.split(_REC_SEP)) if r]
     titles = [r.split(_UNIT_SEP)[1] for r in records if len(r.split(_UNIT_SEP)) > 1]
@@ -1625,7 +1673,7 @@ def commit_message_problems(name, obj=None):
     # a diff against it.
     if titles and len(ours) * 2 < len(titles):
         return [f"{name}: {len(titles) - len(ours)} of {len(titles)} commits in "
-                f"{base}..{PORT_BRANCH} are not ours -- the fork default branch is behind "
+                f"{base}..{branch} are not ours -- the fork default branch is behind "
                 f"upstream; fast-forward it before judging commit messages or diffs"]
 
     problems = []
