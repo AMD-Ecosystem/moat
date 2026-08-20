@@ -1946,3 +1946,88 @@ the same physical machine, which is not this host.
 
 Jeff refused the `windows` gate waiver on the same evidence, so the gate is to be taken
 honestly by validating the fix.
+
+## Review 2026-08-20 (windows-gfx1151, reviewer) -- CHANGES REQUESTED
+
+Scope: the fix round only, `git diff 7727fa32...df2c56a7` on `moat-fix-2420` (one line,
+`src/neural/backends/cuda/layers.cc`). Nothing below disputes the diagnosis: the three
+links were re-read and all hold -- `copyTypeConverted`'s fourth parameter is
+`cudaStream_t stream` and it launches `<<<blocks, kBlockSize, 0, stream>>>`
+(`common_kernels.cu:413-416`) with `0` passed from `layers.cc:1417`; all three backend
+streams are created `cudaStreamNonBlocking` (`network_cuda.cc:291-295`); and in the
+default `multi_stream=false` mode evaluation writes the very same `scratch_mem_`
+(`network_cuda.cc:760`) that every layer constructor uploaded through
+(`network_cuda.cc:442-622`). No per-thread default stream is enabled anywhere, so `0`
+really is the legacy null stream, and `hip_compat.h:107` maps `cudaStreamSynchronize`.
+
+### 1. BLOCKING -- the fix closes the hole only for uploads routed through `allocAndUpload`
+
+`allocAndUpload` is not the only weight-upload path that reads the shared scratch on
+stream 0 and returns unordered. The same shape, unchanged by this commit, is in
+
+- `FCLayer<half>::LoadWeights` -- `layers.cc:598` and `layers.cc:604`
+- `Conv1Layer<DataType>::LoadWeights` -- `layers.cc:1056` and `layers.cc:1062`
+- `ConvLayer<half>::LoadWeights` -- `layers.cc:222` and `layers.cc:232`
+- `FusedWinogradConvSELayer<DataType>::LoadWeights` / `LoadSEWeights` -- `layers.cc:844-894`
+- `AttentionBody` positional encoding -- `layers.cc:2112`
+
+The commit body's own rule ("only the last upload of the last-constructed layer is
+exposed") is right, but the last upload is not always an `allocAndUpload`. For a
+classic-body network **with** a moves-left head -- the T60/T70/T78 shape -- the layers
+constructed after the value head are `convMov`, `FCMov1`, `FCMov2`
+(`network_cuda.cc:605-623`). In fp16 the final upload is then `FCMov2`'s one-element
+bias at `layers.cc:604`, left pending exactly as `ip2_val_b_` was. In fp32
+`FCLayer<float>::LoadWeights` bypasses scratch entirely, so the last scratch reader is
+`convMov`'s bias at `layers.cc:1062`, followed only by null-stream `cudaMemcpy`s that do
+not guarantee it retired. fp16 is not an exotic configuration: `hip-auto` is the
+highest-priority registration (`network_cuda.cc:1376-1378`) and selects `half` for any
+device reporting major >= 7 (`network_cuda.cc:1364-1369`), which every gfx11 part does.
+
+The validated net, maia-1100, has no moves-left head, so 222/222 cannot see this. The
+gate would be taken on a port that still corrupts one weight on Windows for a common
+network shape.
+
+Smallest complete fix: one `ReportCUDAErrors(cudaStreamSynchronize(0));` after the
+layer-construction block in the `CudaNetwork` constructor, before the `tensor_mem_`
+allocation at `network_cuda.cc:628-648`. Construction is single-threaded and every
+upload path is null-stream ordered against every other, so a single sync at the boundary
+to the first evaluation covers all of them, in the same one line, without touching each
+`LoadWeights`. Keeping the `allocAndUpload` line as well is fine and self-documenting.
+
+### 2. Commit body must be re-worded with the fix
+
+"Waiting for the null stream before `allocAndUpload` returns fixes it at the source"
+is the claim finding 1 falsifies -- as written it fixes it at one of six sources. Once
+the constructor-level sync lands, the rationale paragraph should describe the boundary
+being ordered (end of network construction vs first evaluation) rather than one function.
+
+### 3. Test Plan does not reproduce the build it claims
+
+The body's `meson setup build -Dhip=true -Damd_gfx=gfx1151 ...` line omits everything
+that made the stated "Built for gfx1151 on Windows with clang-cl" build work on this
+host: `--native-file`, `-Dhip_include`, `-Dhip_libdirs` (the real command is recorded in
+the fix-round section above). A maintainer copying that block on Windows gets a configure
+failure. Either quote the command actually run or say plainly that the Windows SDK paths
+are host-specific.
+
+### 4. The recorded gate claim was not established by the command named
+
+`audit-commits` resolves `<default>..moat-port` with `PORT_BRANCH` hardcoded
+(`utils/moatlib.py:1608`), and `jargon.py --port` uses `fork_branch or PORT_BRANCH`
+(`utils/jargon.py:101`) while the fix branch lives at `fix.branch` in status.json.
+Neither command ever looked at `df2c56a`, so "audit-commits passes the new commit" in the
+fix-round section is unsupported as written.
+
+Re-checked here by running `commit_message_problems` with the range patched to
+`master..moat-fix-2420`: `df2c56a` produces **zero** findings (title `[ROCm]`, 56 chars,
+rationale, AI-assistance disclosure, fenced Test Plan, no `Co-Authored-By`, no MOAT
+vocabulary, author `Jeff Daily <jeff.daily@amd.com>`), and all 15 findings are on commits
+at or below the published tip `7727fa3`. The commit conforms; the sentence recording it
+should say how that was determined. Registered as a control-plane deferral.
+
+### Checked and clear
+
+Unguarded is correct (finding 1 aside): every `allocAndUpload` call site is a layer
+constructor, none is reachable from an `Eval`, so the sync cannot land inside a CUDA
+graph capture and costs nothing in steady state on the NVIDIA path. Fork tree clean, one
+commit on the branch, no ROCm fault class touched by a one-line host-side sync.

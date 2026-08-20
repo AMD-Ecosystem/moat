@@ -105,3 +105,5 @@
 {"kind":"phase","ts":"2026-08-20T20:54:43Z","phase":"compile","seconds":18.534,"exit":0,"cmd":"bash agent_space/lc0_fix_build.sh"}
 {"kind":"phase","ts":"2026-08-20T20:55:58Z","phase":"test","seconds":67.057,"exit":0,"cmd":"bash agent_space/lc0_fix_gate.sh"}
 {"kind":"phase","ts":"2026-08-20T20:57:42Z","phase":"test","seconds":52.096,"exit":0,"cmd":"bash agent_space/lc0_fix_gtest.sh"}
+{"kind":"session","ts":"2026-08-20T21:06:21Z","epoch":1787259981.597514800,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-20T21:13:30Z","epoch":1787260410.967038500,"event":"end","platform":"windows-gfx1151"}
