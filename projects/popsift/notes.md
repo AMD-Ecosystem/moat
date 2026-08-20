@@ -3407,3 +3407,18 @@ PASS. `windows-gfx1151`: revalidate -> completed; validated_sha =
 not write to the fork); `moat-fix-186` and `moat-port` left exactly as found
 (`moat-port` still `d10126b5dab3`, the published tip). `git -C
 projects/popsift/src status --porcelain` empty at completion.
+
+## Fix round merged 2026-08-20
+
+jeffdaily posted /moat approve on fork review PR #2; approval snapshotted
+(record-pr-approval, 758d5e77), then `upstream.py --merge-fix --apply`
+fast-forwarded moat-port to 758d5e77, posted the approved reply on upstream
+PR #186, recorded published_sha, and deleted moat-fix-186. Verified live:
+PR #186 OPEN, head 758d5e77, MERGEABLE -- the conflict is cleared.
+
+Operational gotcha, registered as deferral
+moatlib-load-status-stale-trunk-record: the apply step FAILS from a checkout
+that does not carry the project folder, because moatlib.load_status prefers
+origin/main's stale trunk record over origin/port/popsift. Run the tool from
+the project worktree (agent_space/wt-popsift), which also carries its own
+fork clone at projects/popsift/src.

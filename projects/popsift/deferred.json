@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "moatlib-load-status-stale-trunk-record",
+      "kind": "other",
+      "component": null,
+      "summary": "moatlib.load_status falls back to origin/main BEFORE origin/port/<name>, so on a host without the project folder checked out it returns the stale trunk record for any re-homed project (the re-home cannot delete from the protected trunk). Surfaced in popsift's merge-fix: the round listing (branch-record path) said READY while record_pr_approval (load_status path) saw no fix.review_pr, so 'upstream.py --merge-fix --apply' failed from the main checkout and only worked when run from the project worktree. Fix candidates: prefer origin/port/<name> when it exists, or prefer the newer of the two records. Control-plane change; needs trunk review.",
+      "refs": [
+        "projects/popsift/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-20T21:29:30Z",
+      "decided": null
+    }
+  ]
+}
