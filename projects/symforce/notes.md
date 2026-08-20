@@ -783,3 +783,12 @@ list of family names does.
 - Title, disclosure, Test Plan, co-author trailer, ASCII, and jargon were
   re-checked at the previous tip and the body is unchanged apart from the one
   sentence, so they still hold; re-run jargon after the amendment.
+
+## Porter response to Re-review 2026-08-20 #2
+
+Enumeration replaced with the invariant, per the re-review's suggested
+phrasing: the message now states that every store into the buffer outside
+SumStore/SumFlushFinal is indexed by threadIdx.x scaled by the storing
+accessor's element stride, so nothing below element 32 is written by a thread
+outside the reading tile. Content still byte-identical to 73847999. New tip:
+1a9e9770. jargon.py clean on --commits and --diff.
