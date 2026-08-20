@@ -95,3 +95,8 @@
 {"kind":"phase","ts":"2026-08-08T23:19:09Z","phase":"test","seconds":72.426,"exit":0,"cmd":"projects/lc0/src/build-hip/lc0 backendbench --backend=check --backend-opts=hip-fp16(),blas(),mode=check,atol=2.5e-2,rtol=1e-1,freq=1.0 --weights=agent_space/testnet.pb.gz --start-batch-size=1 --max-batch-size=32 --batches=4"}
 {"kind":"phase","ts":"2026-08-08T23:19:30Z","phase":"test","seconds":6.843,"exit":0,"cmd":"projects/lc0/src/build-hip/lc0 backendbench --backend=hip --weights=agent_space/maia1100.pb.gz --batches=3"}
 {"kind":"phase","ts":"2026-08-08T23:19:43Z","phase":"test","seconds":8.240,"exit":0,"cmd":"projects/lc0/src/build-hip/lc0 backendbench --backend=hip-fp16 --weights=agent_space/maia1100.pb.gz --batches=3"}
+{"kind":"phase","ts":"2026-08-20T16:37:21Z","phase":"compile","seconds":104.476,"exit":0,"cmd":"ninja -C projects/lc0/src/build-hip-win-gfx1151 -j 16"}
+{"kind":"phase","ts":"2026-08-20T16:37:22Z","phase":"compile","seconds":97.522,"exit":0,"cmd":"ninja -C projects/lc0/src/build-hip-win-gfx1151 -j 16"}
+{"kind":"phase","ts":"2026-08-20T16:39:30Z","phase":"test","seconds":57.634,"exit":0,"cmd":"meson test -C projects/lc0/src/build-hip-win-gfx1151"}
+{"kind":"phase","ts":"2026-08-20T16:44:11Z","phase":"compile","seconds":39.636,"exit":0,"cmd":"ninja -C projects/lc0/src/build-hip-win-gfx1151 -j 16"}
+{"kind":"phase","ts":"2026-08-20T16:45:31Z","phase":"test","seconds":56.022,"exit":0,"cmd":"meson test -C projects/lc0/src/build-hip-win-gfx1151"}

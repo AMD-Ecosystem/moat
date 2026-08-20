@@ -1525,3 +1525,137 @@ fallback otherwise). No staleness found.
 
 `git -C projects/lc0/src status --porcelain`: clean. validated_sha = 7727fa3. Transition:
 completed (validated_sha bumped from d83b6d1) -> completed.
+
+## Validation 2026-08-20 (windows-gfx1151) -- BLOCKED (defect re-confirmed at head 7727fa3)
+
+Narrow re-test of the 2026-06-04 windows-gfx1151 block: same net, same tolerance, one new
+variable (later fork head + newer TheRock SDK). Question: does the value-head defect still
+reproduce? Answer: yes, unchanged.
+
+Host: Windows 11, AMD Radeon 8060S (gfx1151, RDNA3.5 APU, 20 CUs). TheRock ROCm SDK
+`7.14.0a20260612` (`D:\Develop\TheRock\.venv`, pip `_rocm_sdk_devel` +
+`_rocm_sdk_libraries_gfx1151`), AMD clang `23.0.0git` (target x86_64-pc-windows-msvc),
+meson 1.10.1, ninja 1.13.2. This is newer than both the original 2026-06-04 gfx1151 block
+and the 2026-06-05 gfx1101/gfx1201 block (`7.14.0a20260604`).
+
+Fresh clone of `AMD-Ecosystem/lc0` @ `moat-port` into `projects/lc0/src`; HEAD `7727fa3`
+(`lc0.exe --help` reports `v0.33.0-dev+git.7727fa3`), matches `head_sha`. PR #2420 open,
+`published_sha` == `head_sha`, so `moat-port` is frozen -- no push made, read-only build.
+
+### Build
+
+Same recipe as the 2026-06-05 gfx1101/gfx1201 entry (`cross-files` native-file
+`agent_space/lc0-win-native.ini`, `clang`/`clang++` from
+`_rocm_sdk_devel/lib/llvm/bin`, MSVC `link.exe` ahead of MSYS `link` on PATH):
+
+```
+meson setup build-hip-win-gfx1151 \
+  -Dhip=true -Damd_gfx=gfx1151 \
+  -Dplain_cuda=false -Dcudnn=false -Dcutlass=false -Dnvcc=false \
+  -Dgtest=true -Dblas=true -Dopencl=false -Donnx=false \
+  -Db_lto=false -Dnative_arch=false \
+  --default-library=static \
+  --native-file=D:/Develop/moat/agent_space/lc0-win-native.ini \
+  -Dhip_libdirs=<ROCM_DEVEL>/lib,<ROCM_LIB_gfx1151>/lib \
+  -Dhip_include=<ROCM_DEVEL>/include \
+  -Dopenblas_libdirs=D:/Develop/moat/agent_space/openblas_shim/lib \
+  -Dopenblas_include=<ROCM_DEVEL>/lib/host-math/include/openblas
+
+bash utils/timeit.sh lc0 compile -- ninja -C projects/lc0/src/build-hip-win-gfx1151 -j 16
+```
+
+Result: 261/261 targets, clean, exit 0. Only benign warnings (nodiscard, dangling-else in
+`common_kernels.cu`, deprecated C prototypes in bundled zlib).
+
+New environment fact for this SDK build (`7.14.0a20260612`) not previously recorded: the
+`-Dblas=true` CPU reference backend needs OpenBLAS, and this TheRock devel package ships it
+under `lib/host-math/lib/rocm-openblas.lib` / `bin/rocm-openblas.dll`, not `openblas.lib`.
+lc0's meson.build calls `cc.find_library('openblas', ...)` literally, so it does not match
+`rocm-openblas`. Fix (throwaway host-side shim, not a fork edit): copy
+`rocm-openblas.lib` to `agent_space/openblas_shim/lib/openblas.lib` (the import library's
+internal DLL-name metadata still points at `rocm-openblas.dll`, so the renamed `.lib`
+links fine and the unrenamed `rocm-openblas.dll` staged next to the exe satisfies it at
+runtime) and pass `-Dopenblas_libdirs`/`-Dopenblas_include` pointing at the shim + TheRock's
+`lib/host-math/include/openblas`. Without this, meson silently builds without `-DUSE_BLAS`
+and the `blas` backend does not register (`Unknown backend: blas` at runtime) -- same root
+cause as the gfx1100 Linux `libopenblas-dev` gap recorded earlier in this file, just with a
+differently-named import library on the Windows SDK side.
+
+Runtime DLLs staged next to `lc0.exe` (System32 `amdhip64_7.dll` is broken on this host,
+see MOAT skill): `amdhip64_7.dll`, `amd_comgr.dll`, `hiprtc0714.dll`,
+`hiprtc-builtins0714.dll`, `rocm_kpack.dll`, `hipblas.dll`, `rocblas.dll`, `rocsolver.dll`
+(new transitive dep of `hipblas.dll` on this SDK), `libhipblaslt.dll` (new transitive dep
+of `rocblas.dll`), `rocm-openblas.dll`. Diagnosed via `dumpbin /dependents` walking the
+chain (`hipblas.dll` -> `rocsolver.dll`, `rocblas.dll` -> `libhipblaslt.dll`) after the
+generic "hipblas.dll: cannot open shared object file" exit-127 masked a transitive miss.
+
+### CPU gtest (non-GPU regression)
+
+```
+bash utils/timeit.sh lc0 test -- meson test -C projects/lc0/src/build-hip-win-gfx1151
+```
+
+8/8 OK (FP16, HashCat, OptionsParserTest, PositionTest, EncodePositionForNN, SyzygyTest,
+EngineTest, ChessBoard). 0 failures.
+
+### Benchmark (fault-free run)
+
+```
+lc0.exe backendbench --backend=hip --weights=agent_space/maia1100.pb.gz --batches=3
+```
+
+Batch sizes 1-256 ran clean, exit 0. No crash, no hang, no GPU error.
+
+### maia-1100 value-head cross-check (THE gate) -- FAILS, same as prior blocks
+
+```
+lc0.exe backendbench --backend=check \
+  "--backend-opts=hip(),blas(),mode=check,atol=1e-3,rtol=1e-2,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz \
+  --start-batch-size=1 --max-batch-size=55 --batches=4
+```
+
+Result: 0/222 passed, 222 "value incorrect (but policy ok)" errors, one per batch size
+1-55 across all 4 repeats. `mode=display` at batch=32:
+
+```
+maximum error for a batch of 32:
+  value: absolute: 4.4e-02, relative: 4.9e-01.
+  policy: absolute: 3.0e-07, relative: 5.2e-06.
+```
+
+Policy is bit-identical (abs 3.0e-07 vs the 2026-06-04 entry's ~1e-6, both well under the
+1e-3 bar); the value head is wrong by the same 4.4e-02 absolute magnitude recorded on
+2026-06-04 (gfx1151) and 2026-06-05 (gfx1101/gfx1201), against the 1e-3 tolerance. Exact
+match in both sign and magnitude to the prior blocks -- this is not new noise, it is the
+same defect.
+
+### Decision
+
+Per the porter brief, this was a narrow re-test only (build + the one check command),
+not a re-run of the exhaustive prior investigation (graph capture / use_gemm_ex /
+Conv1Layer / standalone BLAS, all already cleared on gfx1101/gfx1201 and not repeated
+here). The fork head advanced (`1a6c3e3` -> `7727fa3`, two porter/reviewer rounds) and
+the TheRock Windows SDK advanced (`7.14.0a20260604` -> `7.14.0a20260612`) since the
+original block; neither changed the outcome. Root cause remains unresolved and is not
+mine to chase further per the stop-discipline in this brief -- re-recording the block
+with fresh evidence is the correct, sufficient action.
+
+`python3 utils/moatlib.py set-blocked lc0 windows-gfx1151 "<see status.json blocked_reason>"`
+
+| Check | Result |
+|-------|--------|
+| Build (261/261 targets) | PASS |
+| CPU gtest 8/8 | PASS |
+| Benchmark batch 1-256 | PASS (no fault) |
+| maia-1100 value-head check (222 batches) | FAIL (value abs 4.4e-02 vs 1e-3 bar; policy bit-identical) |
+
+`git -C projects/lc0/src status --porcelain`: clean (fresh read-only clone, no fork edits).
+No push made (PR #2420 open, moat-port frozen). CUDA no-regression gate: skipped (this
+host has no CUDA toolkit; already recorded on linux-gfx90a at an earlier head and the gate
+is compile-only/code-scoped, not arch-scoped). `windows-gfx1151` stays `blocked`, matching
+the identical `blocked` status already carried by windows-gfx1101/gfx1201; no windows arch
+has completed the `windows` gate and no waiver is recorded (`waivers: {}` in status.json).
+Whether to pursue a waiver or a toolchain bug report for the underlying TheRock rocBLAS
+value-head defect is a maintainer decision, not made here -- this session only re-confirmed
+the measurement at the current head/SDK per the porter brief.
