@@ -123,3 +123,5 @@
 {"kind":"phase","ts":"2026-08-20T06:09:57Z","phase":"test","seconds":2.286,"exit":0,"cmd":"env PYTHONPATH=agent_space/op43dgs /opt/conda/envs/py_3.12/bin/python agent_space/op43dgs/tier2_backward.py pinhole"}
 {"kind":"phase","ts":"2026-08-20T06:10:00Z","phase":"test","seconds":3.532,"exit":0,"cmd":"env PYTHONPATH=agent_space/op43dgs /opt/conda/envs/py_3.12/bin/python agent_space/op43dgs/tier3_train.py pinhole"}
 {"kind":"session","ts":"2026-08-20T06:16:11Z","epoch":1787206571.056734793,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T06:20:26Z","epoch":1787206826.492083057,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-20T06:20:44Z","epoch":1787206844.367783987,"event":"end","platform":"linux-gfx90a"}
