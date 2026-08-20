@@ -7,14 +7,16 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T00:04:16Z",
-  "updated_at": "2026-08-20T18:54:52Z",
+  "updated_at": "2026-08-20T20:13:34Z",
   "head_sha": "e8dca915125a1c9fe193bc056fd9892095230eb4",
   "depends_on": [],
   "porting": null,
   "waivers": {
     "windows": {
       "reason": "GooFit host Application class uses POSIX struct sigaction unconditionally (include/goofit/Application.h:57), with no Windows equivalent substitutable without introducing new Win32-specific console-handler code; upstream itself marks Windows unofficial/unsupported (CMakeLists.txt:725) and ships no Windows docs or CI. This is a durable, in-source obstacle in upstream's own code, not a toolchain or driver gap -- matches the own-source-permanently waiver criterion, not a bug report.",
-      "suggested_at": "2026-08-20T18:54:52Z"
+      "suggested_at": "2026-08-20T18:54:52Z",
+      "approved_by": "jeffdaily",
+      "at": "2026-08-20T20:13:34Z"
     }
   },
   "license_clearance": {
