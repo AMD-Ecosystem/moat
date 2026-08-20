@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-08-07T17:05:59Z",
-  "updated_at": "2026-08-20T06:33:47Z",
+  "updated_at": "2026-08-20T06:42:24Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
@@ -18,9 +18,9 @@
   "intake": {
     "verdict": "decline",
     "reason": "ported-elsewhere",
-    "duplicate_effort": "ROCm/aiter ships Kimi Delta Attention on ROCm: aiter/ops/triton/kimi_delta_attn/ (chunk_kimi_delta_attn, forward-only, mirrors fla.ops.kda.chunk_kda) plus _triton_kernels/chunk_delta_attn/flash_kda.py (flash_kda_fwd), with tests and a benchmark; added 2026-08-10 (#4568), MI300 LDS OOM fix 2026-08-12 (#4671), perf work 2026-08-13 (#4683) -- AMD-official and running on MI300. No FlashKDA repo in AMD-Ecosystem or ROCm (404), no AMD-directed fork among 118, no rocm/hip/amd branch or PR upstream (10 open PRs, hip/rocm/amd search empty in all states), vllm-project/FlashKDA has 5 branches none AMD. fla's amd-mi300 CI is still 0 runs vs 3051 h100, so aiter not fla is the credible AMD route",
+    "duplicate_effort": "ROCm/aiter ships Kimi Delta Attention on ROCm: aiter/ops/triton/kimi_delta_attn/ (chunk_kimi_delta_attn, forward-only, mirrors fla.ops.kda.chunk_kda) plus _triton_kernels/chunk_delta_attn/flash_kda.py (flash_kda_fwd), with tests and a benchmark; added 2026-08-10 (#4568), MI300 LDS OOM fix 2026-08-12 (#4671), perf work 2026-08-13 (#4683) -- AMD-official and running on MI300. No FlashKDA repo in AMD-Ecosystem or ROCm (404), no AMD-directed fork among 118, no ROCm/HIP/AMD branch or PR upstream (10 open PRs, HIP/ROCm/AMD search empty in all states), vllm-project/FlashKDA has 5 branches none AMD. fla's amd-mi300 CI is still 0 runs vs 3051 h100, so aiter not fla is the credible AMD route",
     "viable": false,
     "summary": "MIT (tier 1) Hopper/Blackwell-only KDA forward kernel, entirely CUTLASS/CuTe with TMA as the design -- decline as ported-elsewhere, NEW since the earlier screens: ROCm/aiter (AMD's own library) already ships the same op on ROCm as Triton kimi_delta_attn/chunk_kimi_delta_attn with a flash_kda fused path, tests, benchmark and an MI300 LDS fix, forward-only exactly like upstream's single fwd() export, so a port would duplicate AMD's own work; the older cant-port argument (no ROCm CuTe backend, no AMD TMA, from-scratch CK rewrite on any fleet platform) still holds independently, and if more KDA on AMD is wanted the cheap path is contributing backward/decode to aiter",
-    "at": "2026-08-20T06:33:47Z"
+    "at": "2026-08-20T06:42:24Z"
   }
 }
