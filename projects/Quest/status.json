@@ -7,7 +7,7 @@
   "priority": 3.866,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-08-20T06:23:59Z",
+  "updated_at": "2026-08-20T06:27:24Z",
   "head_sha": "c9828e2eb037b1052ac4d036389481949ee29c4a",
   "depends_on": [],
   "waivers": {},
@@ -15,6 +15,30 @@
   "upstream_repo_id": 815507746,
   "stage": "review-passed",
   "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "c9828e2eb037b1052ac4d036389481949ee29c4a",
+      "failed_sha": "ac7382c78aa21fe51db761d691e320bfb7a87217",
+      "started_at": "2026-08-19T21:38:01Z",
+      "completed_at": "2026-08-20T06:23:59Z",
+      "updated_at": "2026-08-20T06:23:59Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
+    },
     "linux-gfx1100": {
       "blocked": false,
       "blocked_reason": null,
@@ -41,10 +65,10 @@
     "linux-gfx90a": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "9be60fc3997fa1ee4c81ae0332866b0be961346a",
+      "validated_sha": "c9828e2eb037b1052ac4d036389481949ee29c4a",
       "started_at": "2026-06-04T21:24:50Z",
-      "completed_at": "2026-08-13T23:56:02Z",
-      "updated_at": "2026-08-13T23:56:02Z",
+      "completed_at": "2026-08-20T06:27:24Z",
+      "updated_at": "2026-08-20T06:27:24Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -60,33 +84,8 @@
       },
       "last_agent": "validator",
       "state": "completed"
-    },
-    "windows-gfx1151": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "c9828e2eb037b1052ac4d036389481949ee29c4a",
-      "failed_sha": "ac7382c78aa21fe51db761d691e320bfb7a87217",
-      "started_at": "2026-08-19T21:38:01Z",
-      "completed_at": "2026-08-20T06:23:59Z",
-      "updated_at": "2026-08-20T06:23:59Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "state": "completed",
-      "last_agent": "validator"
     }
   },
-  "porting": null,
   "porting_released": {
     "arch": "linux-gfx1100",
     "since": "2026-08-20T05:16:05Z",

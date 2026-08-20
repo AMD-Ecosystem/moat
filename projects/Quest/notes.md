@@ -2339,6 +2339,110 @@ today (RAFT branch-24.02 `CUDA::nvToolsExt` wall against a CUDA 12.8 toolkit, fa
 RAFT's own CMakeLists before any Quest source is reached). This host has no CUDA toolkit
 regardless. Per the gate's own rule (once per head_sha, already satisfied), not repeated
 here.
+## Validation 2026-08-20 (linux-gfx90a, revalidate at `c9828e2`)
+
+Re-validation triggered by `head_sha` advancing from `9be60fc` (this platform's prior
+`validated_sha`) to `c9828e2`. `python3 utils/moatlib.py classify Quest 9be60fc c9828e2` ->
+`class=mixed arch_independent=False inert=False` (`decode_attn.cuh`, `decode_handler.cuh`,
+`decode_page.cuh` token-level mixed; `hip_compat/cuda_fp16.h` comment-only;
+`test_decode_launch_shape.py` added) -- matches the linux-gfx1100 classification of the same
+delta exactly. Not doc/comment/rename-only, so no carry-forward shortcut considered; this is
+the real revalidation the dispatch called for, given the delta's device-visible changes
+(repaired single-block decode launch shape, the `__HIP_NO_HALF_CONVERSIONS__` include-order
+fix, the `int_buffer_`/`float_buffer_` sentinel fix, and the launch-shape override plus its
+hard-error paths).
+
+4x MI250X (gfx90a, wave64) visible via `rocm-smi --showhw`, all idle (`rocm-smi --showpids`
+empty before starting), `HIP_VISIBLE_DEVICES=1` (104 compute units per `rocminfo`). ROCm
+7.14 (TheRock-style pip install under `/opt/conda/envs/py_3.12`, `hip 7.14.60850`, no
+`/opt/rocm` on this host), PyTorch 2.14.0a0+git7d05abc, python 3.12.13, `transformers==4.37.2`
+`tokenizers==0.15.2` already present in the environment. `projects/Quest/src` already existed;
+`git fetch origin` then `git checkout -B moat-port origin/moat-port` (another host had
+advanced/rewritten the branch earlier the same day) landed cleanly at `c9828e2`. Submodules
+`kernels/3rdparty/{flashinfer,pybind}` already initialized from a prior session.
+
+### Build
+
+Clean rebuild (wiped `quest/ops/build` first, per the standing note about force-included
+headers under `kernels/include/hip_compat`), wrapped `utils/timeit.sh Quest compile --
+ninja -C .../quest/ops/build`:
+
+```
+cd quest/ops && rm -rf build && mkdir -p build && cd build
+cmake -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_PREFIX_PATH=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/torch/share/cmake ..
+ninja
+ln -sf $PWD/_kernels*.so ../../
+```
+
+No editable-torch `cmake_prefix_path` hazard on this host (unlike the shared gfx1100 host):
+`torch.utils.cmake_prefix_path` resolves straight into the same site-packages tree used here.
+Configure and build both clean (6/6 objects, the same two pre-existing nodiscard-`hipError_t`
+warnings at `decode_handler.cuh:197` and `approx_attn.cu:65` as every prior session, no new
+warnings, no errors). `grep -o -- '--offload-arch=[a-z0-9]*' build.ninja` -> `gfx90a` only.
+`import quest._kernels` exposes the same six ops as every prior session.
+
+### GPU tests
+
+Wrapped `utils/timeit.sh Quest test -- python3 -m pytest ...`:
+
+```
+HIP_VISIBLE_DEVICES=1 PYTHONPATH=<fork-root> python3 -m pytest \
+  quest/tests/test_rope.py quest/tests/test_estimate.py quest/tests/test_decode_attention.py \
+  quest/tests/test_approx_attention.py quest/tests/test_decode_launch_shape.py -q
+```
+
+| suite | result |
+|---|---|
+| test_rope.py | 64 passed |
+| test_estimate.py | 9 passed |
+| test_decode_attention.py | 6 passed |
+| test_approx_attention.py | 42 passed |
+| test_decode_launch_shape.py | 3 passed |
+| **in-scope total** | **124 passed in 27.17s** |
+| test_topk.py | `-x`: `AttributeError: module 'quest._kernels' has no attribute 'topk_filtering'` |
+| test_prefill_attention.py | `-x`: `AttributeError: module 'quest._kernels' has no attribute 'prefill_with_paged_kv_cache'` |
+
+Scoped-out failure mode confirmed unchanged (`AttributeError`, not a wrong answer), matching
+every prior session. No non-GPU regression to check against an upstream baseline -- this
+project has no CPU-only test path; all suites require the compiled extension and a GPU.
+
+Per the dispatch, MI250X is high-CU (104 CUs/die), so this is exactly the arch the review's
+finding 3 identified as unable to reach the single-block shape by occupancy alone (32 >=
+104*blocks_per_cu is false for any realistic `blocks_per_cu`) -- confirmed directly with
+`AMD_LOG_LEVEL=3` on the unforced run before touching the override:
+
+| run | `BatchDecodeWithPagedKVCacheKernel` | `MergeStatesKernel` |
+|---|---|---|
+| default (no override) | 6 | 6 |
+
+`MergeStatesKernel` present means the default occupancy decision picks the split shape here,
+same as gfx1100 and as every prior gfx90a session at `9be60fc`. So the repaired single-block
+path (the CHANGES-behavior-on-low-CU-GPUs finding from the dispatch) is invisible to a plain
+suite run on this GPU by device property, exactly as documented -- which is why the override
+and `test_decode_launch_shape.py` exist. Forced both ways to prove the override actually
+flips the kernel selection on this arch too, independently of the porter's and gfx1100
+validator's evidence:
+
+| forced shape | `BatchDecodeWithPagedKVCacheKernel` | `MergeStatesKernel` |
+|---|---|---|
+| single | 6 | **0** |
+| split | 6 | **6** |
+
+Matches the documented mechanism exactly: forcing `single` suppresses `MergeStatesKernel`
+(no partition, no merge step) and forcing `split` restores it. `QUEST_DECODE_LAUNCH_SHAPE=Single`
+(bad value) run standalone through `test_decode_launch_shape.py`'s own third case: 3 passed,
+confirming the hard-error path is exercised here too, not just on gfx1100. Confirmed real
+device dispatch (not a mock): the `AMD_LOG_LEVEL=3` traces above show live kernel launches by
+name on the real device, not a skip/mock path.
+
+### CUDA no-regression gate
+
+Not repeated: already recorded fresh at this exact head_sha (`c9828e2`) by the linux-gfx1100
+validation above (`cuda-not-validated` -- RAFT branch-24.02's `CUDA::nvToolsExt` wall,
+pre-existing and external to the port). Runs once per head_sha per the standing rule; this
+host also lacks a CUDA toolkit clone under `/opt/conda`, so it would have been an
+environmental skip here regardless.
 
 ### Jargon and documentation
 
@@ -2363,3 +2467,17 @@ carried from the linux-gfx1100 recording at this same head_sha, no penalty. Wall
 env/fetch ~2 min, two failed configure/link cycles diagnosing the Python-executable and
 build-type issues ~2 min each, final clean build ~1 min, tests ~15s, evidence re-runs a few
 minutes; well within the ~60 minute budget.
+audit-commits Quest` -> OK (fork commit messages conform). README.md's "Building on AMD GPUs
+(ROCm)" section (`README.md:58-73`) matches the commands run above verbatim and documents the
+`QUEST_DECODE_LAUNCH_SHAPE` knob accurately, including that it raises rather than silently
+no-oping and that `test_decode_launch_shape.py` covers both shapes. No inaccuracy found;
+nothing sent back.
+
+`git -C projects/Quest/src status --porcelain`: clean. `HEAD` at `c9828e2`, matching
+`status.json.head_sha`.
+
+State: `revalidate` -> `completed` on linux-gfx90a, `validated_sha = c9828e2`. wave64 gate
+remains satisfied by this arch at the new head. CUDA gate: `cuda-not-validated`, already
+recorded fresh at this head_sha by linux-gfx1100, no penalty, not re-run here. Wall clock:
+build ~1 min, in-scope tests ~30s (includes the subprocess-based launch-shape suite), forced
+single/split log-evidence re-runs a few minutes; well within the ~60 minute budget.

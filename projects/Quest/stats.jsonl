@@ -85,3 +85,7 @@
 {"kind":"phase","ts":"2026-08-20T06:20:26Z","phase":"test","seconds":16.559,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch312_venv/Scripts/python.exe -m pytest projects/Quest/src/quest/tests/test_rope.py projects/Quest/src/quest/tests/test_estimate.py projects/Quest/src/quest/tests/test_decode_attention.py projects/Quest/src/quest/tests/test_approx_attention.py projects/Quest/src/quest/tests/test_decode_launch_shape.py -q"}
 {"kind":"session","ts":"2026-08-20T06:24:06Z","epoch":1787207046.090480500,"event":"start","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-08-20T06:24:06Z","epoch":1787207046.733674700,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-20T06:22:26Z","epoch":1787206946.999445130,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-20T06:24:27Z","phase":"compile","seconds":47.318,"exit":0,"cmd":"ninja -C projects/Quest/src/quest/ops/build"}
+{"kind":"phase","ts":"2026-08-20T06:25:12Z","phase":"test","seconds":28.492,"exit":0,"cmd":"/opt/conda/envs/py_3.12/bin/python3 -m pytest projects/Quest/src/quest/tests/test_rope.py projects/Quest/src/quest/tests/test_estimate.py projects/Quest/src/quest/tests/test_decode_attention.py projects/Quest/src/quest/tests/test_approx_attention.py projects/Quest/src/quest/tests/test_decode_launch_shape.py -q"}
+{"kind":"session","ts":"2026-08-20T06:27:32Z","epoch":1787207252.889552161,"event":"end","platform":"linux-gfx90a"}
