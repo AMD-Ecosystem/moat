@@ -601,8 +601,8 @@ GATES = {
     "optout": (gate_optout, False),
     "surface": (gate_surface, False),
     "published": (gate_published, False),
-    "forks": (gate_forks, True),
-    "commits": (gate_commits, True),   # slow: shells out per fork clone      # slow: shells out per fork clone
+    "forks": (gate_forks, True),       # slow: shells out per fork clone
+    "commits": (gate_commits, True),   # slow: shells out per fork clone
 }
 
 
