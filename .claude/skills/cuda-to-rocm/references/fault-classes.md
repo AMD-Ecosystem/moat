@@ -179,7 +179,15 @@ scope still works. ROCm's is genuinely asynchronous, so the freed and reused buf
 after the copy is enqueued. The corruption appears only in bytes the kernel does not
 overwrite, and the failing set varies run to run. This is a use-after-free that is latent UB
 on CUDA, not an allocator defect -- confirm by keeping the source alive and watching the
-failures vanish. (CV-CUDA: InterpolationVarShapeWrap.)
+failures vanish, or without touching the source at all by re-running under `AMD_SERIALIZE_COPY=3`,
+which makes a copy-lifetime bug pass and leaves a genuine numeric residual untouched. That one
+switch is also the cheapest way to tell the two apart when a suite mixes them: run it per cluster
+before admitting anything into a documented residual family. Expect more than one instance per
+project -- the same idiom appears wherever a test builds a staging buffer per loop iteration, and
+the giveaway is that only the side fed from the short-lived buffer is wrong, often carrying values
+the computation could not produce at all. (CV-CUDA: InterpolationVarShapeWrap, and independently
+TestOpColorTwist's planar upload, whose per-iteration `DeinterleaveToPlanes` result feeds one async
+copy per channel.)
 
 **A functor returning a reference to a by-value or forwarded parameter** binds to a
 temporary that expires at the return. nvcc and CUB happen to keep the value live in
@@ -296,10 +304,11 @@ tests that compare two GPU code paths against each other byte-for-byte (which wa
 contraction in both instantiations). clang contracts a `float` instantiation and a `float4`
 instantiation of the same template differently, so a per-plane path and a per-pixel path that are
 bit-identical on NVIDIA differ by 1 ULP on ROCm. Measure before choosing, and clear unrelated
-defects out of the sample first: on CV-CUDA v0.17 `-ffp-contract=on` gave 42 failures (40 of them
-planar-vs-interleaved parity, 2 a vectorized-vs-scalar comparison) once an allocator ordering race
-was fixed, against 48 before -- 6 of the original failures were the race, not contraction, and a
-decision taken on the contaminated number would have been taken on the wrong evidence.
+defects out of the sample first: on CV-CUDA v0.17 `-ffp-contract=on` left 39
+planar-vs-interleaved parity failures and 2 a vectorized-vs-scalar comparison, against 48 before --
+6 of the original 48 were an allocator ordering race and 2 more were a use-after-free in a test
+fixture, so a THIRD of the sample was never about contraction at all, and a decision taken on the
+raw count would have been taken on the wrong evidence.
 `-ffp-contract=off` removed most of the parity failures but regressed the cubic-vs-gold case the
 `on` pin was added for, so `on` was kept. Treat the choice as a reviewed decision with numbers
 attached, not a default, and re-measure after every functional fix that lands in the same suite.
