@@ -2031,3 +2031,51 @@ Unguarded is correct (finding 1 aside): every `allocAndUpload` call site is a la
 constructor, none is reachable from an `Eval`, so the sync cannot land inside a CUDA
 graph capture and costs nothing in steady state on the NVIDIA path. Fork tree clean, one
 commit on the branch, no ROCm fault class touched by a one-line host-side sync.
+
+## Round PAUSED 2026-08-20 -- GPU engine timeouts during verification
+
+The second porter run (addressing the review's finding 1) pushed `318c524`
+("[ROCm] Order weight uploads against the first evaluation", replacing `df2c56a`) to
+`moat-fix-2420`, then was STOPPED mid-run. `moat-port` untouched at `7727fa3`.
+`head_sha` = `318c524` matches the fork tip; stage left at `porting` (lock held here,
+we intend to resume).
+
+**Do NOT treat `318c524` as verified.** Windows recorded three
+`Kernel_141` / VIDEO_ENGINE_TIMEOUT_DETECTED events at 14:30:32, 14:32:19 and
+14:36:55 -- entirely inside that porter's window (it took the lock at 14:16:09). Any
+gate numbers it measured span at least one GPU engine timeout and cannot be trusted
+for a correctness gate. The commit's CODE may well be right; its EVIDENCE is not.
+It must be re-measured on a quiet GPU before this round advances.
+
+Unaffected, and worth stating so it is not re-litigated: the earlier `df2c56a`
+measurement (0/222 -> 222/222, value abs err 4.4e-02 -> 6.0e-08) was recorded before
+14:13:31, ahead of the first timeout, so it stands. The reviewer's finding against it
+also stands -- `df2c56a` was incomplete, which is why `318c524` exists.
+
+### Why the timeouts, and why this is not simply "lc0 kernels are too long"
+
+A non-MOAT process holds this host's GPU COMPUTE engine at 85-93% continuously:
+`WorkloadsSessionHost.exe`, PID 24164, started 2026-08-19 09:32:08, parented by the
+DCOM launcher (`svchost` 2616). It stayed pegged at ~90% AFTER `lc0.exe` exited, so it
+is not ours and not a child of our work. Its `ExecutablePath` and `CommandLine` are
+not readable from this session and the binary is not under the usual Program Files or
+System32 roots, so the owning product is NOT established -- do not record a vendor
+guess as fact. Note only that AMD Adrenalin started logging at 09:32:29 the same
+morning and advertises local AI features (RSX Chatbot, Txt2Img, Privacy View), which
+makes it a candidate worth checking, nothing more.
+
+This matters for triage: on a 20-CU APU our kernels were contending for a compute
+engine already ~90% occupied, which is a far better explanation for exceeding even a
+60-second TDR window than lc0 kernel duration alone. `TdrDelay` and `TdrDdiDelay` are
+already 60 (registry, `HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers`);
+`TdrLevel` is unset.
+
+Kernel_141 history on this host: 2026-06-03, 06-04 (x2), 06-07 (x4), 08-18 (x2),
+08-20 (x3). The June cluster coincides with the sessions that first blocked lc0 and
+Gpufit here -- worth remembering before attributing any future gfx1151 numeric or
+hang finding to the GPU itself.
+
+### Before resuming
+
+Re-measure `318c524`'s gate with the compute engine idle. Confirm no foreign PID holds
+`\GPU Engine(*engtype_Compute)\Utilization Percentage` before starting.
