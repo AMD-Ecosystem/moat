@@ -7,11 +7,16 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:43:45Z",
-  "updated_at": "2026-08-07T07:05:03Z",
+  "updated_at": "2026-08-20T18:57:36Z",
   "head_sha": "8e228b5d0b5113e32c201d6b9b930fdc111c64b9",
   "depends_on": [],
   "porting": null,
-  "waivers": {},
+  "waivers": {
+    "windows": {
+      "reason": "PREFER THE CHEAPER FIX FIRST: this waiver is the fallback, not the recommendation. ESPResSo hard-requires MPI 3.0, which on Windows means MS-MPI. MS-MPI is absent on every Windows host in the fleet -- verified on windows-gfx1151 on 2026-08-20 (no 'C:\\Program Files\\Microsoft MPI', no mpiexec, no System32\\msmpi.dll) and previously recorded on windows-gfx1101/gfx1201, a different physical machine. It installs only via msmpisetup.exe, which needs administrator elevation that automated validation does not have. So the obstacle is Windows MPI packaging plus a permissions boundary, not the GPU and not the port: wave64 (linux-gfx90a) and wave32 (linux-gfx1100) are both completed at head 8e228b5d. RECOMMENDATION: rather than approve this, install MS-MPI on the gfx1151 host with admin rights and let the port be validated for real -- that is a few minutes of a person's time and yields genuine Windows evidence instead of an excused gate. Approve the waiver only if putting MPI on that host is unwanted. Honest scope note: no build was attempted on gfx1151, because the MPI prerequisite was checked first and is absent, so nothing could have linked.",
+      "suggested_at": "2026-08-20T18:57:36Z"
+    }
+  },
   "license_clearance": {
     "approved_by": "jeffdaily",
     "at": "2026-08-06T02:33:28Z",
@@ -108,6 +113,28 @@
       "started_at": null,
       "completed_at": null,
       "updated_at": "2026-06-08T15:24:19Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1151": {
+      "blocked": true,
+      "blocked_reason": "MPI runtime absent and not installable without a person. ESPResSo hard-requires MPI 3.0; on Windows that means MS-MPI. Verified absent on this host 2026-08-20: no 'C:\\Program Files\\Microsoft MPI' directory, no mpiexec on PATH, no C:\\Windows\\System32\\msmpi.dll. The MS-MPI redistributable installs only via msmpisetup.exe, which requires administrator elevation that automated validation does not have, and there is no user-mode/portable MS-MPI. Scope note, stated plainly: NO build was attempted on this host -- the MPI prerequisite was checked first and is absent, so a build could not have linked. This matches the already-recorded determination on windows-gfx1101 and windows-gfx1201 (a different physical machine), so the obstacle is the Windows platform's MPI packaging rather than anything about this GPU or the port. UNBLOCKING IS CHEAP AND IS A PERSON'S CALL: installing MS-MPI on this host with admin rights would very likely make espresso validatable here, which is a better outcome than a waiver. See the suggested waiver for the alternative.",
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-20T18:57:24Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
