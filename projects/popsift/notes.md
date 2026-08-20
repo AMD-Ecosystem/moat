@@ -3278,3 +3278,132 @@ PASS. `linux-gfx1100`: revalidate -> completed; validated_sha =
 does not write to the fork); `moat-fix-186` and `moat-port` left exactly as found
 (`moat-port` still `d10126b5dab3`, the published tip). `git -C
 projects/popsift/src status --porcelain` empty at completion.
+
+## Validation 2026-08-19 (windows-gfx1151) -- revalidate at fix-round tip 758d5e7: PASS
+
+Platform: AMD Radeon 8060S (gfx1151 APU, RDNA3.5, wave32, ~20 CU), Windows 11, TheRock
+ROCm pip SDK at `D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel`, AMD clang
+23.0.0git, HIP 7.14.60850. This platform's prior `validated_sha` was `d10126b5dab3`
+(`## Validation 2026-08-14 (windows-gfx1151) -- revalidate at fix-round tip d10126b: PASS`).
+Local clone was stale at `d10126b`; `git fetch origin` then `git reset --hard
+origin/moat-fix-186` -> `758d5e77faf0cc64b86b785d9b0981f324b2c1ad` == `head_sha`.
+`origin/moat-port` confirmed at `d10126b5dab3` (the published tip, unchanged). `git
+status --porcelain` empty throughout and at completion.
+
+`python3 utils/moatlib.py classify popsift d10126b5dab3 758d5e77faf` -> `class=mixed
+arch_independent=False inert=False` (`src/popsift/s_filtergrid.cu: mixed (token count
+differs)`). Confirmed with `git diff d10126b..758d5e77 --stat`: 1 file, +2/-1 -- exactly
+the two added `#include <thrust/iterator/zip_iterator.h>` / `<thrust/tuple.h>` lines
+already re-validated on linux-gfx90a and linux-gfx1100 at this same head_sha (this
+platform's own d10126b delta already covered the CMakeLists.txt comment reword and the
+RootSift threshold restore, so the residual delta here is smaller than those two Linux
+hosts', which validated from an older `4d51a780`/`f2712723` base). Not carry-forward
+eligible (real code delta, not doc/comment-only); full real-GPU revalidation performed.
+
+### Build (all-clang HIP, Ninja, examples + test targets -- same recipe as the d10126b pass)
+
+```
+source agent_space/win_rocm_env.sh
+DEVEL="D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel"
+BOOST="D:/Develop/moat-old/agent_space/boost_install"
+OXFORD="D:/Develop/moat-old/agent_space/oxford"
+CLANG="$DEVEL/lib/llvm/bin/clang.exe"
+bash utils/timeit.sh popsift compile -- cmake -S projects/popsift/src -B projects/popsift/src/build-win-gfx1151 -G Ninja \
+  -DUSE_HIP=ON -DPopSift_BUILD_EXAMPLES=ON -DBUILD_SHARED_LIBS=ON \
+  -DCMAKE_CXX_COMPILER="$CLANG" -DCMAKE_HIP_COMPILER="$CLANG" \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH="$DEVEL;$BOOST" -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+  -DPopSift_USE_TEST_CMD=ON -DPopSift_TESTFILE_PATH="$OXFORD" \
+  -DCMAKE_LINKER_TYPE=LLDFIX -DCMAKE_HIP_USING_LINKER_LLDFIX=-fuse-ld=lld \
+  -DCMAKE_CXX_USING_LINKER_LLDFIX=-fuse-ld=lld -DCMAKE_C_USING_LINKER_LLDFIX=-fuse-ld=lld \
+  -DBoost_COMPILER="-vc143" -DBoost_USE_STATIC_LIBS=ON -DBoost_NO_SYSTEM_PATHS=ON
+bash utils/timeit.sh popsift compile -- cmake --build projects/popsift/src/build-win-gfx1151 -j4
+```
+
+100% built (36/36): `popsift.dll`, `popsift-demo.exe`, `popsift-match.exe`. Only the
+pre-existing benign `-Wunused-value` (debug_macros nodiscard `hipError_t`,
+`s_filtergrid.cu:146`) and `-Wdeprecated-declarations` (rocThrust
+`thrust::identity<int>` at `s_filtergrid.cu:294`, MSVC `sscanf`) warnings; no new
+warnings from the two added includes. 0 errors. Runtime staged with
+`rocm_stage_runtime projects/popsift/src/build-win-gfx1151/Windows-AMD64` (this host's
+known System32 `amdhip64_7.dll` defect; copies `amdhip64_7.dll`, `amd_comgr.dll`,
+`hiprtc*.dll`, `rocm_kpack.dll` next to the exes).
+
+### GPU validation -- Oxford boat cross-arch gate (real gfx1151 GPU, downsampling=-1, VLFeat/loop/RootSift)
+
+```
+cd projects/popsift/src/build-win-gfx1151/Windows-AMD64
+./popsift-demo.exe -i <oxford>/img<N>.pgm --gauss-mode vlfeat --desc-mode loop \
+  --popsift-mode --root-sift --downsampling -1 --log
+```
+
+| Image | gfx1151 feat/desc | Reference (this head_sha, gfx90a/gfx1100) | Match |
+|-------|--------------------|---------------------------------------------|-------|
+| img1  | 8351 / 9874        | 8351 / 9874                                  | EXACT |
+| img2  | 7946 / 9452        | 7945/9451 (gfx90a wave64 boundary divergence) / 7946/9452 (gfx1100) | EXACT (wave32 figure) |
+| img3  | 6158 / 7280        | 6158 / 7280                                  | EXACT |
+| img4  | 4802 / 5799        | 4802 / 5799                                  | EXACT |
+| img5  | 4618 / 5476        | 4618 / 5476                                  | EXACT |
+| img6  | 3855 / 4618        | 3855 / 4618                                  | EXACT |
+
+All 6 counts byte-identical to this platform's own figures at `d10126b` and to the
+wave32 (gfx1100) reference at `758d5e7`; img2's gfx90a-only off-by-one (documented
+wave64 boundary divergence, a known hard-class instance, not chased) is absent here as
+expected on a wave32 device. (img5/img6 in the batched loop hit this host's known
+`--log` disk-write timeout under `run_in_background`-less batching; re-ran individually
+and got the same counts, matching the gfx90a session's identical observation.)
+
+Determinism: img1, 5/5 repeat runs -> 8351/9874 every run. `sort -n
+output-features.txt | md5sum` = `3712245bb59826937b55312f22fd803e` -- **byte-identical**
+to the value this same host recorded for the pre-round tip `d10126b`
+(`## Validation 2026-08-14 (windows-gfx1151)`), confirming the two added Thrust
+includes make no observable change to gfx1151 descriptor bytes (same conclusion
+gfx90a and gfx1100 independently reached for the same delta).
+
+Descriptor sanity (img1, 9874 descriptors x 128 = 1,263,872 values, parsed from
+`output-features.txt`): 0 NaN, 0 Inf; per-descriptor L2 norm (RootSift) in
+[0.999073, 1.000850], mean ~1.0000, 0 all-zero descriptors; keypoint x in
+[0.769713, 848.482], y in [2.00715, 679.359] (within the 850x680 image) --
+byte-identical to the figures this platform recorded at `d10126b`.
+
+### Changed-TU coverage: exercised `s_filtergrid.cu` at runtime
+
+The boat gate above does not enter `Pyramid::extrema_filter_grid` (needs
+`--filter-max-extrema` set; default off, `--popsift-mode` does not set it). Ran the
+grid-filter path directly, same as the gfx90a/gfx1100 sessions:
+```
+./popsift-demo.exe -i <oxford>/img1.pgm --gauss-mode vlfeat --desc-mode loop \
+  --popsift-mode --root-sift --downsampling -1 --filter-max-extrema 2000 --filter-grid 4
+```
+3/3 runs: feature count stable at 2008 every run (matches the gfx90a/gfx1100 figure);
+descriptor count varies slightly (2333/2333/2331) from the default `random`
+sort-mode tie-breaking at the grid boundary (expected on every arch, not a wave-size
+artifact -- the deterministic selected-feature COUNT was stable). No NaN, no crash,
+exit 0 every time. Real evidence the changed TU's device path executes correctly on
+gfx1151, not just that it links.
+
+### CUDA no-regression gate
+
+Not re-run. Already recorded at this exact head_sha (`758d5e77faf0cc64b86b785d9b0981f324b2c1ad`)
+by the linux-gfx90a validator (`## Validation 2026-08-14 (linux-gfx90a) -- revalidate at
+fix-round tip 758d5e7`, nvcc 12.8.93, sm_86, 0 errors/0 warnings). This host has no CUDA
+toolkit (Windows); per the validator rule the gate lands on whichever Linux arch
+validates first.
+
+### Jargon / documentation gate
+
+`python3 utils/jargon.py --port popsift`: one hit, "fault classes" in commit
+`05e698ec8`. `git merge-base --is-ancestor 05e698ec8 d10126b5dab3` -> yes (the
+published tip has itself advanced to `d10126b` since the last pass; still an
+ancestor), confirming it is pre-existing content already live in open PR #186, not new
+content from this round. `README.md:18,68-85` documents the ROCm/HIP build including
+the dedicated "Windows (gfx1151 / TheRock ROCm)" subsection; unaffected by this
+round's one-file delta.
+
+### Result
+
+PASS. `windows-gfx1151`: revalidate -> completed; validated_sha =
+`758d5e77faf0cc64b86b785d9b0981f324b2c1ad` (== head_sha). No fork push (validator does
+not write to the fork); `moat-fix-186` and `moat-port` left exactly as found
+(`moat-port` still `d10126b5dab3`, the published tip). `git -C
+projects/popsift/src status --porcelain` empty at completion.
