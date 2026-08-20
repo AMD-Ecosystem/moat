@@ -122,3 +122,5 @@
 {"kind":"phase","ts":"2026-08-11T23:43:58Z","phase":"compile","seconds":125.976,"exit":0,"cmd":"bash -lc \ncd /var/lib/jenkins/moat/projects/CuMesh/src && \\\nHIP_VISIBLE_DEVICES=0 GPU_ARCHS=gfx1100 python3 setup.py build \\\n  --build-base /var/lib/jenkins/moat/agent_space/CuMesh-build-new-gfx1100 --force\n"}
 {"kind":"phase","ts":"2026-08-11T23:46:53Z","phase":"compile","seconds":126.745,"exit":0,"cmd":"bash -lc \ncd /var/lib/jenkins/moat/projects/CuMesh/src && \\\nHIP_VISIBLE_DEVICES=0 GPU_ARCHS=gfx1100 python3 setup.py build \\\n  --build-base /var/lib/jenkins/moat/agent_space/CuMesh-build-old-samepath-gfx1100 --force\n"}
 {"kind":"session","ts":"2026-08-11T23:50:25Z","epoch":1786492225.304926809,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-20T15:46:57Z","phase":"compile","seconds":0.179,"exit":0,"cmd":"cmd.exe /c D:\\Develop\\moat\\agent_space\\cumesh_build.bat"}
+{"kind":"phase","ts":"2026-08-20T15:50:09Z","phase":"compile","seconds":164.109,"exit":1,"cmd":"cmd.exe /c D:\\Develop\\moat\\agent_space\\cumesh_build.bat"}

@@ -49,6 +49,17 @@ a DLL-load error; rebuilding a correct binary against a broken runtime is the si
 biggest time sink on Windows. A port is not "broken on Windows" until it has been run
 against a full ROCm distribution.
 
+## Windows: `cmd.exe /c "<script>.bat"` from Git Bash silently does nothing
+
+Git Bash's MSYS layer rewrites any argument that looks like a Unix path, and `/c` (cmd's
+own switch, not a path) gets mangled into a drive letter. `cmd.exe /c "build.bat"`
+launched from Git Bash then opens an interactive shell and returns immediately -- exit 0,
+a log containing only the `Microsoft Windows [Version ...]` banner, no compiler output,
+in well under a second. That is a silent no-op, not a build result: a real build takes
+real time, so a suspiciously fast "pass" from a `cmd.exe /c` wrapper on this host is the
+tell. Fix: prefix the invocation with `MSYS2_ARG_CONV_EXCL="*"` (or `MSYS2_ARG_CONV_EXCL=/c`)
+to stop the rewrite; `MSYS2_ARG_CONV_EXCL="*" cmd.exe /c "build.bat"` runs the script.
+
 ## Windows: static initializers in TheRock's DLLs may never run
 
 **A C++ test that gates on `torch::cuda::is_available()` can fail on Windows against a
@@ -74,6 +85,36 @@ a forced reference into the hooks translation unit so the linker cannot drop it;
 `_initterm` on the DLL's CRT section directly; spawning a thread after load, since the
 TLS callbacks that do exist fire on `DLL_THREAD_ATTACH` and `DLL_PROCESS_ATTACH` calls
 `DisableThreadLibraryCalls`.
+
+## Windows torch-extension CUDA-compat shims can rot across torch versions
+
+A hand-written `cuda.h`/`cuda_runtime.h` shim (added so an unhipified vendored header
+like `#include <ATen/cuda/CUDAContext.h>` still compiles under HIP on Windows, where
+TheRock's SDK ships no CUDA compat headers at all) is only complete against the specific
+torch build it was validated with. Torch's own `c10/cuda/CUDAStream.h` is not a stable,
+minimal surface: a later torch nightly can add a method (`is_capturing()`, using
+`cudaStreamCaptureStatus`/`cudaStreamCaptureStatusNone`/`cudaStreamIsCapturing`) that an
+older validated build never exercised, and the shim silently stops covering it. The
+symptom is `error: unknown type name 'cudaStreamCaptureStatus'; did you mean
+'hipStreamCaptureStatus'` deep inside a real torch header the port does not own, which
+reads like a toolchain wall but is not one -- it is pure host-side header compilation, no
+GPU or driver involved, so it is not host-specific and would reproduce on any Windows arch
+building against that same (or a newer, similarly-shaped) torch release. Confirm by
+diffing the shim's declared symbol set against what the failing header line actually
+needs; if the shim is missing a handful of names it is a narrow, describable gap, not
+grounds for a waiver ("if your own notes say an X fix would let this reach completed, you
+are looking at a defect").
+
+A second, distinct symptom can appear in the same file once the first class of error is
+fixed or tolerated past clang's `-ferror-limit`: "redefinition of ..." across `c10/hip/*`
+headers, when a `.hip` file includes both the vendored header's raw
+`ATen/cuda/CUDAContext.h` chain AND an explicit `ATen/hip/impl/HIPStreamMasqueradingAsCUDA.h`
+include added earlier (to make `at::cuda::getCurrentCUDAStream()` resolve). On a torch
+version where `ATen/cuda/*` is genuinely non-hip-aware content rather than a HIP-aliased
+masquerading header, both trees land in one translation unit and collide -- a structural
+conflict between two real headers, not a one-line shim fix, and worth escalating to the
+porter rather than patching live during validation. (CuMesh, windows-gfx1151, torch
+2.12.0+rocm7.14.0a20260519 vs. the 2.9.1 build the port was last validated against)
 
 ## Two GPUs visible to one process can crash the runtime
 

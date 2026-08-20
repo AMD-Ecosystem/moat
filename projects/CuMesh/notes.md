@@ -1605,3 +1605,134 @@ NVIDIA/AMD as alternatives and documents `BUILD_TARGET=rocm GPU_ARCHS=<arch>`.
 **Integrity**: `git -C projects/CuMesh/src status --porcelain` is empty; local `HEAD`
 and `origin/moat-port` both resolve to `392b4dd41f8b10b795b00e44cb1b294b1388cefa`;
 `third_party/cubvh` submodule clean at `757b913bfbf19ed65e3a379d159391a8e29efa0f`.
+
+## Validation 2026-08-20 (windows-gfx1151, FAILED -- torch-version header regression in `_cubvh`)
+
+**Verdict**: validation-failed. First Windows validation attempt at current head
+`392b4dd41f8b10b795b00e44cb1b294b1388cefa` (the `windows-gfx1101`/`windows-gfx1201`
+`completed` records are pinned to the older `d5c1355`, four commits behind head; both
+still resolve locally -- `git cat-file -e d5c1355^{commit}` succeeds, so that history was
+not force-pushed away, it is simply stale evidence, not current).
+
+**Platform**: windows-gfx1151 (AMD Radeon 8060S, gfx1151, RDNA3.5 APU, 20 CU, wave32),
+Windows 11 Enterprise 10.0.26100. Toolchain: TheRock ROCm 7.14.0a20260519 SDK devel tree,
+torch `2.12.0+rocm7.14.0a20260519` (agent_space/torch_venv, Python 3.13, python.org
+build, no spaces in path), MSVC 14.44.35207 BuildTools, clang-cl host compiler (per the
+project's documented Windows recipe). `torch.cuda.get_device_name(0)` reports "AMD
+Radeon(TM) 8060S Graphics"; `torch.cuda.is_available()` is True.
+
+**Fork setup**: cloned `AMD-Ecosystem/CuMesh` fresh into `projects/CuMesh/src` (no local
+clone existed before this session), checked out `moat-port`, confirmed local `HEAD` ==
+`392b4dd41f8b10b795b00e44cb1b294b1388cefa` == `head_sha`. Ran `python3
+utils/moatlib.py protect-fork CuMesh` (upstream PR #36 is open, published_sha ==
+head_sha, so the pre-push hook must be armed even though a validator never pushes).
+`git submodule update --init --recursive` pulled `third_party/cubvh` to the pinned
+`757b913b` and its nested Eigen to `e63d9f6c`, matching the recorded pins exactly.
+
+**Build command** (adapted from the recipe in "Build commands (Windows)" above to this
+host's paths; `BUILD_TARGET=rocm` added explicitly, `GPU_ARCHS`/`PYTORCH_ROCM_ARCH` set
+to `gfx1151`):
+
+```bat
+call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+set HIP_VISIBLE_DEVICES=0
+set BUILD_TARGET=rocm
+set GPU_ARCHS=gfx1151
+set PYTORCH_ROCM_ARCH=gfx1151
+set ROCM_HOME=D:\Develop\moat\agent_space\torch_venv\Lib\site-packages\_rocm_sdk_devel
+set ROCM_PATH=%ROCM_HOME%
+set HIP_PATH=%ROCM_HOME%
+set HIP_DEVICE_LIB_PATH=%ROCM_HOME%\lib\llvm\amdgcn\bitcode
+set DISTUTILS_USE_SDK=1
+set CC=%ROCM_HOME%\lib\llvm\bin\clang-cl.exe
+set CXX=%ROCM_HOME%\lib\llvm\bin\clang-cl.exe
+cd /d D:\Develop\moat\projects\CuMesh\src
+D:\Develop\moat\agent_space\torch_venv\Scripts\python.exe setup.py build_ext --inplace --force
+```
+
+Invoked as `MSYS2_ARG_CONV_EXCL="*" utils/timeit.sh CuMesh compile -- cmd.exe /c "...\cumesh_build.bat"`.
+Note for future Windows validators on this host: `cmd.exe /c "<script>.bat"` from Git
+Bash silently opens an interactive shell instead of running the script unless
+`MSYS2_ARG_CONV_EXCL="*"` is set (MSYS mangles the `/c` flag as a path). Without it the
+wrapped command "succeeds" in under a second having done nothing -- a silent no-op, not a
+build result; always sanity-check that the log actually contains compiler output.
+
+**Result**: FAILED, 164.109s, exit 1. `cumesh._C` (the main module, 12 source files)
+compiled and linked cleanly to `_C.cp313-win_amd64.pyd` -- confirmed present in
+`build/lib.win-amd64-cpython-313/cumesh/`, with no failed objects among
+`atlas/clean_up/connectivity/cumesh/ext_winhip/geometry/hash/io/simple_dual_contour/
+svox2vert/shared/simplify`. The `cumesh._cubvh` extension failed: 2 of 3 its translation
+units errored (`third_party/cubvh/src/api_gpu.hip` and `src/cubvh_bindings_winhip.hip`);
+`third_party/cubvh/src/bvh.hip` compiled fine (`bvh.obj` present). `setup.py` never
+reached the third (`_cumesh_xatlas`) extension because `build_ext` aborts the whole
+command on the first extension's failure.
+
+**Root cause, confirmed by reading the actual headers, not just the error text**: both
+failing files reach cubvh's own upstream header `third_party/cubvh/include/gpu/api_gpu.h:5`,
+which unconditionally does `#include <ATen/cuda/CUDAContext.h>` (pristine NVIDIA-style
+code, not hipified -- `_hipify_cubvh_sources()` in `setup.py` only hipifies files under
+`cubvh/src`, never `cubvh/include`, and that was already known and accepted: hipify only
+needs to rewrite the *call sites*, not this header, because the previously-validated torch
+version's copy of `c10/cuda/CUDAStream.h` shipped content that compiled fine for a HIP
+target). On this host's torch (`2.12.0+rocm7.14.0a20260519`), that assumption no longer
+holds: `ATen/cuda/CUDAContext.h` -> `c10/cuda/CUDAStream.h` is genuinely raw/CUDA-only
+content, and its `is_capturing()` method (`c10/cuda/CUDAStream.h:122`) uses
+`cudaStreamCaptureStatus`, `cudaStreamCaptureStatusNone`, and (implicitly)
+`cudaStreamIsCapturing` -- three symbols this fork's own `hip_cuda_compat/cuda.h` shim
+does not define (it has `cudaStreamGetPriority`, `cudaStreamSynchronize`,
+`cudaStreamQuery`, but not the graph-capture trio). That alone is `error: unknown type
+name 'cudaStreamCaptureStatus'`. A second, distinct class of error follows in the same
+translation unit once the error limit tolerates it: `c10/hip/HIPDeviceAssertionHost.h`,
+`HIPException.h`, `HIPFunctions.h`, `HIPStream.h` all report "redefinition" -- because the
+same `.hip` file *also* explicitly includes `<ATen/hip/impl/HIPStreamMasqueradingAsCUDA.h>`
+under `#ifdef USE_ROCM` (the fix documented above under "HIPStreamMasqueradingAsCUDA
+include", added specifically so `at::cuda::getCurrentCUDAStream()` resolves under HIP).
+On this torch version both the `ATen/cuda/*` tree and the `ATen/hip/*` tree get pulled
+into the same TU and define overlapping class/macro names that are not designed to
+coexist -- clang hits `-ferror-limit=20` and stops before reporting how much further this
+goes. Full compiler command lines, include chains, and every error line are preserved in
+`agent_space/cumesh_build.log` on this host (not committed; regenerable from the recipe
+above).
+
+**Environment vs. defect**: this is a code-level gap, not a host/driver/GPU wall. It does
+not touch the GPU at all -- it fails at pure header compilation, before any device code is
+emitted, and would reproduce on any Windows host building against this same (or any
+newer, similarly-shaped) TheRock torch release, including `windows-gfx1101` and
+`windows-gfx1201` when they next revalidate at this head with a current toolchain; their
+`completed` records used the older `torch 2.9.1+rocm7.14`, which is why they never saw
+this. A concrete fix is describable (extend `hip_cuda_compat/cuda.h` with the missing
+capture-status trio, and resolve the double-inclusion of `ATen/cuda/*` and `ATen/hip/*` in
+the two `_cubvh` translation units -- e.g. by not including
+`ATen/hip/impl/HIPStreamMasqueradingAsCUDA.h` at all if extending the shim already makes
+`ATen/cuda/CUDAContext.h` self-sufficient, or by routing the stream lookup through a
+narrower alias that avoids pulling in the conflicting headers), so per the validator brief
+this is `validation-failed` back to the porter, not a waiver candidate: "if your own notes
+say an X fix would let this reach completed, you are looking at a defect."
+
+**Scope check**: only `cumesh._cubvh` (the vendored BVH library binding) is affected.
+`cumesh._C` (the port's own kernels -- the surface actually audited for fault classes in
+every review round) built and linked cleanly against this same torch/ROCm/MSVC stack, so
+the port's own `dtypes.cuh`/`clean_up.cu`/`setup.py` changes are not implicated. No GPU
+test was run: with `_cubvh` failing to build, `cumesh` cannot import (the package's
+`__init__` pulls in all three extensions), so none of the six example scripts were
+attempted.
+
+**CUDA no-regression gate**: not evaluated here (no CUDA toolkit on this host, and per the
+validator brief this gate runs once per head_sha regardless of platform). Already recorded
+for this head_sha by the linux-gfx942 validator (carried from `4440182`, `git diff
+--name-status 4440182..392b4dd` touches only `README.md` and two comment lines).
+
+**Integrity**: `git -C projects/CuMesh/src status --porcelain` is empty after removing one
+harmless stray untracked directory, `hip_hip_compat/eigen_hip_compat.h` -- a build-time
+artifact of `_hipify_cubvh_sources()`'s hipify pass doing blind `cuda`->`hip` text
+substitution on a path that already said `hip_cuda_compat`, producing a doubled-`hip`
+sibling directory containing one copied header. Untracked, gitignored by extension (not
+by name), not a source edit; deleted before finishing. Worth a porter follow-up
+(`.gitignore` entry or renaming the shim directory to something hipify's string
+replacement can't collide with) but not gating -- it produced no build failure and no
+tracked-file diff.
+
+**State**: `python3 utils/moatlib.py set-state CuMesh windows-gfx1151 validation-failed
+--agent validator` recorded `failed_sha = 392b4dd41f8b10b795b00e44cb1b294b1388cefa`. No
+fork push was attempted or needed (validator never writes to the fork; the freeze guard
+was armed regardless per the dispatch brief).
