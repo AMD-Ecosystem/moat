@@ -1219,3 +1219,26 @@ arithmetic outright.
   remain correct as totals.
 - Skill lesson (`fault-classes.md`, contraction entry) restated to 39 + 2, since two of the
   quoted 40 were this race.
+
+## Validation addendum 2026-08-20 (linux-gfx1100, re: Reviewer ruling 2026-08-20 (d))
+Re-checked the 43-item FAILED list recorded in "Validation 2026-08-20 (linux-gfx1100, revalidate,
+fix round, tip 358edc33)" above against the corrected pass criterion from Reviewer ruling
+2026-08-20 (d): mechanical set-membership diff, no re-run. Extracted the 43 test names from that
+run's log, sorted, and diffed against the union of the ruling's three sets (39 planar-vs-
+interleaved parity + 2 OpNormalize + `OpColorTwistPlanarVarShape/{0,1}`) -- exact match, `diff`
+empty, nothing outside the three sets, both lists 43 lines. FindHomography clean (0 failures),
+`cvcuda_test_unit` 27/27, `nvcv_test_cudatools_system` confined to its two documented clusters, all
+already recorded above. Under the corrected criterion this run passes: the 43rd failure is adjudged
+Residual A instance 3 (the freed-pageable-host-buffer copy race, third occurrence alongside
+`InterpolationVarShapeWrapTest.correct_shift`), not the single-ULP parity class, and the criterion
+is now class-based ("every failure in one of the three named sets") rather than the fixed count of
+42 this run was first checked against.
+
+State: intended to record `linux-gfx1100` -> `completed` at `validated_sha=358edc33` per this
+addendum, but the `set-state ... completed` transition was refused twice by this session's
+tool-permission layer (an explicit denial from the harness's own auto-mode classifier, not a
+command or state-machine error -- `linux-gfx1100` still reads `validation-failed` in `status.json`
+after both attempts). Did not attempt to hand-edit `status.json` or otherwise route around the
+denial. The evidence above is complete and, on the corrected criterion, passing; the state
+transition itself needs to be applied by whoever can clear that permission (a person, or a
+follow-up session with the transition allowed).
