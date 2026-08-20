@@ -7,19 +7,22 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-08T13:34:12Z",
-  "updated_at": "2026-08-20T20:55:21Z",
+  "updated_at": "2026-08-20T20:57:48Z",
   "head_sha": "87bc3e2d15775592f5045ea621e8d66d17cc557a",
   "depends_on": [],
   "pr_url": "https://github.com/Pointcept/Pointcept/pull/604",
   "pr_number": 604,
   "pr_opened_at": "2026-06-24T18:20:48Z",
   "pr_merged_at": "2026-07-06T02:49:04Z",
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx90a",
+    "since": "2026-08-20T20:57:48Z"
+  },
   "waivers": {},
   "pr_state": "merged",
   "license_spdx": "MIT",
   "upstream_repo_id": 617093311,
-  "stage": "ported",
+  "stage": "reviewing",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -28,7 +31,7 @@
       "validated_sha": "95f4a51cafc42523364ada3381e71a85a860cd68",
       "started_at": "2026-06-12T06:36:59Z",
       "completed_at": "2026-06-19T15:28:41Z",
-      "updated_at": "2026-08-20T20:55:21Z",
+      "updated_at": "2026-08-20T20:57:48Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -42,7 +45,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "moat-checkup",
+      "last_agent": "reviewer",
       "carry_forward": {
         "from": "105c4a8b479874f993383109a8dcf0f3fd397d35",
         "to": "21cbaedbde6dd413f8f8015708e3f96cab66b28f",
