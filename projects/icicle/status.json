@@ -7,10 +7,15 @@
   "priority": 4.507,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T03:26:35Z",
-  "updated_at": "2026-08-07T07:05:11Z",
+  "updated_at": "2026-08-20T07:50:32Z",
   "head_sha": "2609ca44361c7ebc6c3b8ca5af7985a256b5b79f",
   "porting": null,
-  "waivers": {},
+  "waivers": {
+    "windows": {
+      "reason": "Upstream icicle's host framework has no Windows support, and the obstacle is the operating system rather than the GPU. src/runtime.cpp uses POSIX dlopen/dlfcn.h and dirent.h for backend discovery and emits an explicit '#error Unsupported operating system' for anything that is not Linux or macOS; utils.h uses cxxabi.h for demangling, which has no Windows equivalent; test_base.h uses POSIX setenv. Confirmed independently on windows-gfx1151 (at d8e04fd) and on windows-gfx1201/gfx1101. The HIP GPU kernels themselves are correct and validated at head 2609ca44 on linux-gfx90a (wave64) and linux-gfx1100 (wave32); only the POSIX-only backend loader blocks Windows. Porting that loader to LoadLibrary/FindFirstFile is upstream-scope work well beyond this port's minimal footprint. Windows is the only gate not satisfied at head.",
+      "suggested_at": "2026-08-20T07:50:32Z"
+    }
+  },
   "license_spdx": "MIT",
   "upstream_repo_id": 611226044,
   "stage": "review-passed",
