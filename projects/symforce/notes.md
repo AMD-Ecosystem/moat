@@ -653,3 +653,72 @@ The runtime-library build claim is dropped.
 
 jargon.py clean on --commits and --diff over moat-port..moat-fix-465.
 Back to delta-ported for re-review of the text-only change.
+
+## Re-review 2026-08-20 (amended tip 6f860d97)
+
+Verdict: changes-requested, one item. Both findings from Review 2026-08-20 are
+resolved. The new rationale is sound and its ordering argument checks out; its
+enumeration of which stores lack a leading barrier is incomplete, and that
+sentence is now the load-bearing claim of the commit.
+
+### 3. "the WriteSum-family stores that do not" is not the full set
+
+`6f860d97` body, paragraph 1: "SumStore and SumFlushFinal each open with a
+block-wide barrier, and the WriteSum-family stores that do not can only touch
+the 32-element window stage two reads from lanes of the reading tile itself".
+
+`ShuffleAndWrite1..4` also store into `inout_shared` before their first barrier:
+memops.cuh:797-803 writes `inout_shared[threadIdx.x + 1]` and `inout_shared[0]`,
+with the barrier only at :803. They are emitted block-uniformly by `AddPair`
+(accessors.py:634-655) and `WritePair` (:657-685), and factor.py:213-234 puts
+`AddPair` in the same kernel as `AddSum`, with `AddSum("out_rTr")`
+unconditionally present in the `res_jac_first` kernel (factor.py:254-262). So a
+`SumStore` followed by an unbarriered `ShuffleAndWrite` store into the same
+buffer is reachable in emitted code, and a maintainer checking the sentence
+finds a store the sentence does not account for.
+
+The conclusion survives: the window is elements 0..31, `ShuffleAndWrite` writes
+element `threadIdx.x + 1` (and element 0 from thread 0), so only threads 0..30
+land in it and those are lanes of the reading tile, exactly as for the WriteSum
+family. Only the enumeration needs widening. Suggested phrasing:
+
+  "...and the stores that do not -- the WriteSum family, and the leading stores
+  in ShuffleAndWrite -- can only reach the 32-element window stage two reads
+  from lanes of the reading tile itself, whose reads the shuffle collectives
+  already order."
+
+### Findings 1 and 2: resolved
+
+- The retracted back-to-back-SumStore mechanism is gone. The replacement text
+  states the call-site invariants and says plainly that the interleaving was not
+  pinned down and that the change rests on the reporter's empirical evidence
+  plus the contract argument. That matches what bjoernellens1 actually wrote and
+  what the 2026-08-19 reply promised.
+- The WriteSum window/ordering argument is correct as far as it goes. Verified:
+  `WriteSumN` writes elements `N*t .. N*t+N-1` (memops.cuh:217-243), so a write
+  inside elements 0..31 needs `N*t <= 31`, hence `t <= 31` -- lanes of tile 0.
+  Those lanes read `inout_shared[thread_rank]` before the first `shfl_xor`
+  (memops.cuh:398-402), and the tile collective cannot retire until every lane
+  reaches it, so no lane exits `SumStore` before all tile reads complete; on
+  CUDA `cg::reduce` over the tiled partition synchronizes the same way
+  (memops.cuh:404). The cross-warp case the porter rules out is genuinely ruled
+  out: accessors.py:110-112 rejects `dtype != kernel_dtype` ("only supports
+  homogenious scalar types") and a library carries one `storage_t` for every
+  kernel and factor (library.py:138, :152), so all accessors aliasing one
+  buffer use the same element size. (Notes wording above says "uniform float
+  storage"; the guarantee is uniform, not specifically float.)
+- Test Plan now cites the hipcc harness and the nvcc TU, and states that the
+  changed header is not part of the prebuilt runtime library. Both true. I
+  re-ran the nvcc compile at the amended tip: exit 0.
+
+### Also checked at this tip
+
+- Content identical to 73847999 (`git diff --stat 73847999 6f860d97` empty) and
+  the merge commit is still 398ba468, so nothing in Review 2026-08-20's clean
+  list needs re-deriving.
+- Title 61 chars with `[ROCm]`; body ASCII-only, AI-assistance disclosure and
+  Test Plan present, human co-author trailer intact, no agent Co-Authored-By.
+- `jargon.py` clean on `--commits`, `--diff`, `--port`.
+- Fork worktree has no modified tracked files. `nvcc_memops.cu` and
+  `nvcc_memops.o` are now untracked in the clone root; move them to
+  agent_space/ so a future `git add -A` cannot sweep them into the branch.

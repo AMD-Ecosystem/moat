@@ -65,3 +65,5 @@
 {"kind":"phase","ts":"2026-08-20T17:47:39Z","phase":"cuda-compile","seconds":0.176,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/symforce/src/build_fix465_cuda -j16"}
 {"kind":"session","ts":"2026-08-20T18:10:05Z","epoch":1787249405.497174612,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-20T18:18:25Z","epoch":1787249905.297361378,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T18:21:58Z","epoch":1787250118.159866961,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T18:25:13Z","epoch":1787250313.497723357,"event":"end","platform":"linux-gfx1100"}
