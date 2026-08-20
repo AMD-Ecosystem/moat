@@ -194,6 +194,38 @@
       "upstream_issue": null,
       "created_at": "2026-08-06T06:52:58Z",
       "decided": null
+    },
+    {
+      "id": "moat-gate-misses-conflict-markers",
+      "kind": "other",
+      "component": null,
+      "summary": "Neither utils/check.py nor the pre-push hook notices unresolved conflict markers in a committed file. During the 2026-08-19 fleet sync a merge resolution was committed and pushed to port/colmap with '<<<<<<< HEAD' still in .claude/skills/cuda-to-rocm/references/validation.md, and every gate reported ok; it was caught by hand afterwards and fixed forward in 7deba5c. 'git add' on a conflicted file marks it resolved, so this is easy to do under time pressure and the sweep makes it a bulk operation. A cheap gate would scan tracked text files for '^<<<<<<< ', '^>>>>>>> ' and a '^=======$' between them.",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-19T16:11:16Z",
+      "decided": {
+        "choice": "now",
+        "by": "Jeff Daily",
+        "at": "2026-08-19T19:20:00Z"
+      },
+      "project": null
+    },
+    {
+      "id": "moat-no-gate-on-commit-message-rules",
+      "kind": "other",
+      "component": null,
+      "summary": "Nothing checks the commit-message rules AGENTS.md states, so a non-compliant body reaches upstream unnoticed. AGENTS.md requires every fork commit to start with [ROCm], keep the title to 72 characters, explain rationale, disclose AI assistance and carry a Test Plan. What exists: jargon.py --port scans the whole branch, but only for in-house vocabulary; pr_intent.py enforces TITLE_MAX=72 on the PULL REQUEST title in CI, not on commit titles; check.py has no commit-message gate; pr_ready checks platform gates and fork cleanliness only. Found on Quest, where c1d7fff shipped with no AI-assistance disclosure and three rounds of gates, review and pr-readiness reporting never mentioned it -- a human reviewer caught it. The same shape as the gh-guard and conflict-marker gates already added: a rule written down but never executed. A cheap gate would walk <fork default>..moat-port for each project with a local clone and check title prefix, title length, and the presence of a disclosure line and a Test Plan in the body.",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-20T00:15:29Z",
+      "decided": {
+        "choice": "now",
+        "by": "Jeff Daily",
+        "at": "2026-08-20T04:30:19Z"
+      },
+      "project": null
     }
   ]
 }
