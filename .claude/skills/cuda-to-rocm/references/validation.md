@@ -44,6 +44,30 @@ a DLL-load error; rebuilding a correct binary against a broken runtime is the si
 biggest time sink on Windows. A port is not "broken on Windows" until it has been run
 against a full ROCm distribution.
 
+## Windows: an unpinned `find_package(Python)` silently builds against the wrong interpreter, and an unpinned build type silently wants a debug lib that does not exist
+
+A CMake project that calls `find_package(Python REQUIRED COMPONENTS Interpreter
+Development)` with no hint, on a Windows host that has more than one Python discoverable
+via PATH or the registry, does not necessarily pick the venv you activated. It can silently
+resolve a different interpreter -- e.g. a system Python 3.13 instead of the venv's cp312 --
+and link the extension against that interpreter's import library, producing a
+`_kernels.cp313-win_amd64.pyd` when the test harness needs a cp312 build. Nothing in the
+configure or build log flags this; the target filename (`cp3XX-win_amd64.pyd`) is the tell,
+and only shows up in `build.ninja`, not the configure summary. Fix by pinning
+`-DPython_EXECUTABLE=<venv>/Scripts/python.exe` explicitly rather than trusting discovery.
+
+Separately, an unset `CMAKE_BUILD_TYPE` on a single-config Windows generator (Ninja) is not
+"no build type" -- CMake and MSVC toolchain files commonly default it to `Debug`. A pybind
+target's `Python::Python`/`Development` component then links against the DEBUG import
+library (`python312_d.lib`), which a normal (non-debug) CPython install does not ship. The
+failure surfaces at the LINK step, after every object has compiled cleanly:
+`lld-link: error: could not open 'python312_d.lib': no such file or directory`. It reads
+like a missing dependency, not a build-type default; fix by pinning
+`-DCMAKE_BUILD_TYPE=Release` explicitly. Both knobs are validator-environment CMake
+invocation flags, not fork changes -- record them in `notes.md` so the next Windows session
+does not rediscover them, the same way the amdclang++-vs-clang-cl and `-fuse-ld=lld-link`
+Windows CMake gotchas already are.
+
 ## Windows: static initializers in TheRock's DLLs may never run
 
 **A C++ test that gates on `torch::cuda::is_available()` can fail on Windows against a
