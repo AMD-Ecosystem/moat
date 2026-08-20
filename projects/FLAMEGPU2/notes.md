@@ -413,3 +413,195 @@ crash). The RTC skip behavior is correct -- RTC is not implemented for AMD/HIP.
 Verdict: PASS (matches gfx1201 exactly) - functional GPU validation successful on gfx1101.
 1049 functional tests pass, 59 RTC tests skipped as expected, 11 concurrency benchmark
 failures same as gfx1201. Behavior is identical across Windows RDNA3 (gfx1101) and RDNA4 (gfx1201).
+
+## Rebase onto the maintainer's current branch, 2026-08-20 (linux-gfx90a)
+
+Direction change from Jeff: upstream FLAMEGPU/FLAMEGPU2 has open draft PR #1379
+"AMD GPU Support via HIP/ROCm" by ptheywood, on branch `amdgpu` **in the upstream
+repository**, opened 2026-04-13 and still actively developed (last push 2026-08-18).
+Verified with `gh pr view 1379 --repo FLAMEGPU/FLAMEGPU2` (OPEN, draft, base `master`,
+80 commits). Opening our own PR would duplicate his work, so instead we offer a small
+PR against his branch carrying only our novel fixes plus validation evidence.
+
+### His current tip
+
+`5e42a64b6b31621ae459417716307228c41ee9c5` -- "Fix DO NOT MERGE test prev commented
+out. Rebase this into the correct commit when verified on AMD.", 2026-08-18.
+
+He rebased/rewrote the branch since we forked it. Our base `6487086` is **not** an
+ancestor of his current tip; the merge base is `1a11aea7` (2026-04-21). 84 commits on
+his branch that are not on `moat-port`. The substantive new work since our base:
+
+- `FLAMEGPU_GPU` renamed to `FLAMEGPU_BACKEND` (values CUDA/HIP/OFF, with a deprecation
+  shim for the old name in `cmake/enable_languages.cmake`). **Our build recipe below
+  uses the new option name.**
+- `FLAMEGPU_CURAND_ENGINE` renamed to `FLAMEGPU_GPURAND_ENGINE`.
+- A large "Abstraction:" series wrapping the runtime API behind
+  `flamegpu::detail::gpu::*` free functions and the
+  `FLAMEGPU_GPU_RUNTIME_SYMBOL` / `FLAMEGPU_GPU_DRIVER_SYMBOL` token-pasting macros
+  (C++20 abbreviated function templates).
+- `include/flamegpu/detail/curand.cuh` replaced by `include/flamegpu/detail/gpu/rand.cuh`.
+- `FLAMEGPU_ENABLE_NVTX` deprecated in favour of `FLAMEGPU_ENABLE_PROFILING`; roctx
+  implemented behind the `util::nvtx` namespace.
+- HIP version reported in telemetry in place of the NVCC version.
+- `AgentVector::resize` AMD ID-initialisation bug fixed by him.
+- Several `DO NOT MERGE` / `WIP` commits still present, which he clearly intends to
+  squash before undrafting.
+
+### Which of our two fixes survived
+
+| our commit | fix | still needed at 5e42a64b? |
+|:---|:---|:---|
+| e1bb7068 (part 1) | `hipandStateMRG32k3a_t` -> `hiprandStateMRG32k3a_t` | **No.** Obsolete. |
+| e1bb7068 (part 2) | rule-of-five on `CUDAEventTimer` | **Yes.** |
+| a290861 | missing `#include <windows.h>` in `CUDAEnsemble.cu` | **Yes.** |
+
+- The hiprand typo is gone because the file it lived in is gone. `detail/gpu/rand.cuh`
+  now writes the state type as `FLAMEGPU_GPU_DRIVER_SYMBOL(randStateMRG32k3a_t)`, which
+  pastes the `cu`/`hip` prefix rather than spelling the whole identifier out, so the
+  whole class of typo is designed out. Nothing to contribute.
+- `include/flamegpu/detail/CUDAEventTimer.cuh` at his tip still creates two events in
+  the constructor, destroys them in the destructor, and declares no copy/move
+  operations. Handles are still raw members (now `flamegpu::detail::gpu::Event_t`).
+  Still a latent double-destroy. Re-applied.
+- `src/flamegpu/simulation/CUDAEnsemble.cu` at his tip still calls
+  `SetThreadExecutionState` / `ES_CONTINUOUS` / `ES_SYSTEM_REQUIRED` at lines 54, 63 and
+  516 inside `#ifdef _MSC_VER` with no `windows.h` include. `AbstractSimRunner.cu`,
+  `SimLogger.cu` and `MPISimRunner.cu` all include it directly, so this is an
+  inconsistency in his tree, not a preference. Re-applied, matching their guard style.
+
+### Branch offered
+
+`amdgpu-fixes`, cut from `upstream/amdgpu` at `5e42a64b`, two commits, tip
+`2ecf5a011b0cd0c1ba156192adaa84963d215c82`:
+
+```
+2ecf5a01 Fix: Add missing windows.h include in CUDAEnsemble.cu
+7f9f6a20 Fix: Delete CUDAEventTimer copy/move to avoid double event destroy
+5e42a64b (his tip)
+```
+
+Commit titles deliberately follow HIS branch's `Topic: sentence` house style rather
+than our `[ROCm]` prefix, because these target his HIP branch and would look foreign
+with our prefix. Both messages disclose AI assistance and carry a Test Plan.
+`jargon.py --commits` and `prose.py` are clean on both.
+
+`moat-port`, `head_sha` and `stage` were deliberately NOT touched. This contribution
+does not fit the standard single-upstream-PR shape and the record model for it is a
+question for a person.
+
+#### PUSH BLOCKED -- needs a person
+
+`git push origin amdgpu-fixes` is refused by GitHub:
+
+```
+! [remote rejected] amdgpu-fixes -> amdgpu-fixes
+  (refusing to allow an OAuth App to create or update workflow
+   `.github/workflows/Docs.yml` without `workflow` scope)
+```
+
+The host's `gh` token has scopes `gist, read:org, repo` -- no `workflow`. The branch
+itself touches no workflow file; the rejection is because pushing 86 commits that are
+new to the fork necessarily introduces his `.github/workflows/*` changes ("CI: Add HIP
+7 CI workflow" and friends) as new content on that remote. Granting `workflow` scope,
+or pushing from a credential that has it, is a human decision. The branch exists
+locally at `projects/FLAMEGPU2/src` on `amdgpu-fixes`; a person can push it as-is.
+
+### Build recipe at his tip (linux-gfx90a)
+
+Note the two changes from the June recipe: `FLAMEGPU_GPU` is now `FLAMEGPU_BACKEND`,
+and this host no longer has `/opt/rocm` -- ROCm arrives as the TheRock python wheel
+under the conda env.
+
+```bash
+ROCM=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel
+CORE=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_core
+
+cmake -S projects/FLAMEGPU2/src -B projects/FLAMEGPU2/src/build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DFLAMEGPU_BACKEND=HIP \
+  -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_CXX_COMPILER=$ROCM/lib/llvm/bin/clang++ \
+  -DCMAKE_C_COMPILER=$ROCM/lib/llvm/bin/clang \
+  -DCMAKE_PREFIX_PATH="$ROCM;$CORE" \
+  -DFLAMEGPU_BUILD_TESTS=ON
+
+cmake --build projects/FLAMEGPU2/src/build \
+  --target flamegpu boids_bruteforce tests -j 96
+```
+
+Configure 16.2 s, compile 175.7 s, both exit 0, zero compiler errors. CMake 3.31.6
+(his range is `3.25.2...4.3.0`). Compiler: AMD clang 23.0.0git from ROCm 7.14.0;
+`HIPVersion` reported by the binary's own telemetry payload is `7.14.60850`. No source
+change beyond the two commits above was needed -- his branch builds clean for HIP on
+this host out of the box.
+
+### Test results at his tip + our two fixes (linux-gfx90a)
+
+GPU: AMD Instinct MI250X at `HIP_VISIBLE_DEVICES=3` (confirmed by the run's telemetry
+payload, `"GPUDevices":"AMDInstinctMI250X/MI250"`). ROCm 7.14.0.
+
+```bash
+HIP_VISIBLE_DEVICES=3 ./projects/FLAMEGPU2/src/build/bin/Release/tests
+```
+
+```
+[==========] Running 1134 tests from 89 test suites.
+[==========] 1134 tests from 89 test suites ran. (39327 ms total)
+[  PASSED  ] 1070 tests.
+[  SKIPPED ] 64 tests
+```
+
+Exit 0. Zero failures. The 64 skips are all runtime-compilation (RTC) tests, which are
+not supported on the HIP backend, and match the June result. One more test exists than
+in June (1134 vs 1133) and one more passes (1070 vs 1069), from the `getDeviceName` /
+`getDeviceNames` tests he added when splitting `detail/gpu/device_name.hpp` out.
+
+Example run:
+
+```bash
+HIP_VISIBLE_DEVICES=3 ./projects/FLAMEGPU2/src/build/bin/Release/boids_bruteforce --steps 10 -v
+# Total Processing time: 0.152604 s, exit 0
+```
+
+### DRAFT comment for upstream PR #1379 -- NOT POSTED, needs human approval
+
+Everything below the rule is a draft only. No agent has posted or will post it.
+
+---
+
+We have been building and testing this branch on a few AMD GPUs and would like to offer the results, plus two small fixes, in case they are useful.
+
+At 5e42a64 the Linux HIP build is clean out of the box and the test suite passes on an AMD Instinct MI250X (gfx90a, CDNA2, wavefront 64) with ROCm 7.14: 1070 passed, 64 skipped, 0 failed. The 64 skips are the runtime-compilation tests. boids_bruteforce runs to completion.
+
+An earlier revision of the branch was also tested on three more GPUs, which between them cover both wavefront sizes and both operating systems:
+
+- AMD Radeon Pro W7800 (gfx1100, RDNA3, wavefront 32), Linux, ROCm 7.2.1: 1069 passed, 64 skipped, 0 failed.
+- AMD Radeon RX 9070 XT (gfx1201, RDNA4), Windows, ROCm 7.14 nightly: 1058 passed, 64 skipped, 11 failed.
+- AMD Radeon PRO V710 (gfx1101, RDNA3), Windows, ROCm 7.14 nightly: 1049 passed, 59 skipped, 11 failed.
+
+The 11 Windows failures are all in TestCUDASimulationConcurrency, which asserts a 1.5x speedup from running agent functions concurrently across streams; the measured speedup there was about 1.0x. Every functional test passes on both Windows GPUs. We have not characterised the cause and are not drawing any broader conclusion from it, but we are happy to look into it separately if that would help.
+
+We have two fixes on a branch cut from 5e42a64:
+
+The first deletes the copy and move operations on CUDAEventTimer. It creates two events in its constructor and destroys them in its destructor, but is implicitly copyable, so a copy would leave two objects owning the same handles and the second destructor would throw. Nothing in the tree copies one today, so this is latent; deleting the four operations turns any future copy into a compile error.
+
+The second adds a guarded windows.h include to CUDAEnsemble.cu. It calls SetThreadExecutionState in three `#ifdef _MSC_VER` blocks without including the header. The CUDA build picks the declaration up transitively, but the HIP build on Windows does not and the file will not compile. AbstractSimRunner.cu, SimLogger.cu and MPISimRunner.cu all include it directly already.
+
+Would you prefer these as a PR against amdgpu, or would you rather just cherry-pick them? Either suits us. We are also glad to rerun the suite on any of these GPUs whenever it would be useful to you.
+
+---
+
+### Documentation
+
+No documentation change is owed by this round. He already documents the ROCm build
+thoroughly in `README.md` -- a support matrix, a ROCm >= 7.0 requirement row, the
+amdclang++/GCC caveat, `FLAMEGPU_BACKEND=HIP` + `CMAKE_HIP_ARCHITECTURES`, and a
+dedicated "Linux (HIP)" build section. Our two commits are one-line bug fixes with no
+user-visible surface.
+
+Worth flagging for a person: his README still lists AMD on Windows as "Not supported",
+yet we have a Windows HIP build passing 1058/1049 functional tests on two RDNA GPUs,
+and the `windows.h` fix above is exactly what that build needs to compile. Offering the
+Windows evidence may be the more valuable half of this contribution, but changing that
+matrix row is his call, not a change we should push into his branch unasked.
