@@ -1062,3 +1062,59 @@ path).
 carry `validated_sha = ab1dcf71` and read as needing revalidation, unchanged in
 substance by this round -- the delta they face is still the hipify.sh comment plus the
 two host-only test TUs, so binary-equivalence carry-forward remains the expected route.
+
+## Review 2026-08-20 (round 3, reviewer, linux-gfx90a) -> review-passed
+
+Delta review of `378d793e -> 01a09e82`, the round-2 finding's fix. No problems found; the
+round-2 finding is closed. Recorded below only so round 4 (if any) does not re-derive it.
+
+- **The round was message-only, verified not asserted.** `git diff 378d793e 01a09e82` is
+  empty and `git rev-parse 378d793e^{tree} 01a09e82^{tree}` gives
+  `91a2ac0b2ffc0a7160473cecf8d64f29697bed6e` twice. Commit 1 is the same object
+  (`b4cf8268`); commit 3's message is byte-identical across the sha move
+  (`git log -1 --format=%B` of each, `cmp` clean); only `111ccaa8 -> a8a9d1e5` changed
+  text. The branch diff vs base is still the same 4 files, +24/-9.
+- **The published hipify invocation now works, reproduced independently.** With a
+  path-only stub of `faiss/gpu/hipify.sh` (lines 13-14 plus the two call sites at
+  120-125; the real script is not idempotent, so it was not re-run on the tree),
+  `bash faiss/gpu/hipify.sh` from the repo root prints
+  `cd: faiss/gpu/../../c_api: No such file or directory` and exits 1, while
+  `bash "$(pwd)/faiss/gpu/hipify.sh"` -- the form now published -- processes
+  `<root>/faiss` then `<root>/c_api` and exits 0. `hipify.sh` itself is unchanged from
+  378d793e, as the review required.
+- **C_API is genuinely out of the way.** `-DFAISS_ENABLE_C_API=ON` is gone from the
+  block, and `option(FAISS_ENABLE_C_API "Build C API." OFF)` at CMakeLists.txt:72
+  confirms the remaining flags reproduce the configuration the gfx1151 record's targets
+  were built in. The absolute invocation still translates `c_api/gpu`, but with C_API off
+  nothing compiles it, so the block asserts no work that record does not support.
+- **Every figure in the amended block traces to the 2026-06-04 gfx1151 record.**
+  Ninja (line 268), CMake 4.3.2 / clang-cl / `-j6` (line 259), `-- -k 0` and the 5s
+  `gtest_discover_tests` timeout (lines 266-271), per-process runs with
+  `OPENBLAS_NUM_THREADS=1` (line 302), and all ten suite counts including the IVFPQ
+  shared-RNG caveat (lines 303-310). No ROCm version is claimed for that session, which
+  the record indeed does not state; `-j24` (a gfx1201 figure) is gone. The Linux re-check
+  block keeps "ROCm 7.14" and TestCodePacking 4/4, both backed by the 514cb457 gfx90a
+  session (line 679), and no longer claims an unrecorded `-j 16`.
+- **Gates and hygiene.** `moatlib.py audit-commits faiss` -> OK; `jargon.py --port faiss`
+  -> clean; `moatlib.py audit-clean faiss` -> OK; fork clone has zero modified tracked
+  files. Titles 67 / 58 / 61, all `[ROCm]`; all three bodies disclose AI assistance; no
+  `Co-Authored-By`/noreply/Signed-off/ghstack trailer; ASCII throughout; no AMD-internal
+  account reference. `origin/moat-port` is at `01a09e82`, so the fork carries the reviewed
+  tip.
+- **Nothing for the ROCm fault classes, again.** The branch touches one shell script
+  comment plus sed, one Markdown bullet, and two host-only test TUs; no device code, no
+  warpSize literal, no resource handle, no per-arch branch. The CUDA arm of
+  CMakeLists.txt:81-92 is untouched and `FAISS_ENABLE_ROCM` still defaults OFF.
+- **Control-plane payload unchanged this round**: the `strategy-a-cmake.md` lesson
+  (verified against hipify-perl behavior in round 1) and the comment-only `utils/check.py`
+  GATES fix are the only non-`projects/faiss` files on the branch.
+
+### Validation plan (all five platforms stale at `validated_sha = ab1dcf71`)
+
+Delta `ab1dcf71..01a09e82` is INSTALL.md (+5), the hipify.sh comment, and one removed
+line in each of TestCodePacking.cpp (the leaked `hip/hip_runtime.h`) and TestUtils.cpp
+(the orphan `<time.h>`). Neither test TU enters `faiss_gpu_objs` or libfaiss device code,
+so `codeobj_diff.py` binary-equivalence carry-forward is the expected route on all five;
+gfx90a additionally has the fresh 108/108 at the 514cb457 tree (one shell comment away
+from this tree, and hipify.sh is not compiled), which the validator should record as
+evidence at the equivalent tree rather than as a run at the commit object.
