@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-05-31T16:36:35Z",
-  "updated_at": "2026-08-20T06:15:43Z",
+  "updated_at": "2026-08-20T07:15:16Z",
   "head_sha": "01a09e824b4792d1ef4f14ef5cdb99c37737c353",
   "depends_on": [],
   "porting": null,
@@ -117,10 +117,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "ab1dcf71",
+      "validated_sha": "01a09e824b4792d1ef4f14ef5cdb99c37737c353",
       "started_at": null,
-      "completed_at": "2026-06-08T03:47:04Z",
-      "updated_at": "2026-06-08T03:47:04Z",
+      "completed_at": "2026-08-20T07:15:16Z",
+      "updated_at": "2026-08-20T07:15:16Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -134,13 +134,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
-      "carry_forward": {
-        "to": "ab1dcf71",
-        "method": "binary-equiv",
-        "detail": "TestUtils.cpp test-only change (CLOCK_REALTIME->std::chrono); faiss.dll device code objects unchanged (test TU not in faiss_gpu_objs)",
-        "at": "2026-06-08T03:47:04Z"
-      }
+      "last_agent": "validator"
     }
   },
   "porting_released": {

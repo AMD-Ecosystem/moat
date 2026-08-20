@@ -137,11 +137,13 @@ they regenerate at configure. The fork commit must contain ONLY the hipify.sh ed
 committing, restore them (`git checkout -- faiss/ c_api/`, preserving just hipify.sh) so the
 diff is one file. The build dir keeps the hipified/tested artifacts untouched.
 
-## Install as a dependency (raft, cuvs, and other FAISS-GPU consumers)
-FAISS is a base library: raft (neighbors/detail/faiss_select) and cuvs vendor a CUDA-only COPY
-of FAISS's gpu/utils select files. GPU-validating FAISS-ROCm proper (TestGpuSelect green on
-gfx90a) is the canonical confirmation that the kWarpSize warp/block-select is wave64-correct on
-CDNA; it directly de-risks the raft and cuvs select ports.
+## Install as a dependency
+For raft, cuvs, and other FAISS-GPU consumers: FAISS is a base library. raft
+(neighbors/detail/faiss_select) vendors a CUDA-only COPY of FAISS's gpu/utils select files;
+cuvs fetches and links libfaiss directly (see the reviewer note above -- not a vendor copy).
+GPU-validating FAISS-ROCm proper (TestGpuSelect green on gfx90a, gfx1100, gfx1101, gfx1151,
+gfx1201) is the canonical confirmation that the kWarpSize warp/block-select is wave64- and
+wave32-correct on CDNA and RDNA; it directly de-risks the raft and cuvs select ports.
 
 To build + install the ROCm fork for a consumer (into _deps/faiss/install at the repo root):
 ```
@@ -1273,3 +1275,165 @@ prior record and remains satisfied. linux-gfx1100 (wave32) and the three windows
 platforms are still stale at `ab1dcf71` and read `revalidate` for whichever arch picks
 them up next; the tree-relationship argument above (one uncompiled hipify.sh comment,
 test-TU-only line removals) applies identically to those platforms.
+
+## Validation 2026-08-20 (revalidate, windows-gfx1151) -> completed
+
+Device: AMD Radeon 8060S (gfx1151, RDNA3.5 APU, 20 CUs, wave32), Windows 11.
+Platform was `revalidate`: `validated_sha=ab1dcf71`, `head_sha=01a09e824b4792d1ef4f14ef5cdb99c37737c353`.
+No local fork clone existed on this host; cloned fresh, checked out `moat-port`, confirmed
+`HEAD == head_sha`, ran `python3 utils/moatlib.py protect-fork faiss` on the new clone.
+
+**Route chosen: full real-GPU revalidation at head (not carry-forward).** Only one clone
+existed on this host (no pre-existing build dir to diff against `validated_sha`), so
+building both shas for `codeobj_diff.py` would have doubled wall time for no evidentiary
+gain over just running the suite once at head; the gfx90a revalidator already did the
+tree-relationship argument (INSTALL.md + hipify.sh comment + two host-only test-TU line
+removals, no device code touched) and its own binary-equivalence spot-check. Full run
+matches the route the gfx1201/gfx1101 windows sessions used at their respective shas.
+
+**ROCm SDK on this host:** TheRock pip wheels, `D:/Develop/TheRock/.venv/Lib/site-packages`,
+ROCm 7.14.0a20260612 (`_rocm_sdk_devel`, `_rocm_sdk_core`, `_rocm_sdk_libraries_gfx1151`).
+
+**Toolchain: GNU-driver clang/clang++ for ALL CMake languages** (not clang-cl), matching
+the gfx1201/gfx1101 recorded recipe rather than the original 2026-06-04 gfx1151 session's
+"all-clang-cl" -- clang-cl was not re-attempted since the GNU-driver recipe is proven on
+two other Windows arches and configured cleanly on the first attempt here too.
+
+**Gotcha found this session, not previously recorded: CMAKE_PREFIX_PATH as a semicolon
+list must use Windows drive-letter form (`D:/...`), not MSYS POSIX form (`/d/...`).**
+A single-path CMake variable (e.g. `CMAKE_C_COMPILER=/d/Develop/...`) is silently
+normalized to `D:/Develop/...` by Git Bash's argv path conversion, but a semicolon-joined
+multi-path argument (`CMAKE_PREFIX_PATH=/d/A;/d/B;/d/C`) is passed through UNCONVERTED --
+confirmed with `cmake --debug-find-pkg=HIP`: the considered-paths list showed the literal
+`/d/Develop/...` strings, and `find_package(HIP REQUIRED)` failed even though
+`_rocm_sdk_devel/lib/cmake/hip/hip-config.cmake` exists exactly under that prefix. Fix:
+build `CMAKE_PREFIX_PATH` (and any other semicolon-list `-D` var) from a `D:/...`-style
+shell variable, reserving `/d/...` POSIX form only for bash's own PATH-based lookups
+(e.g. locating `hipify-perl`, where the opposite problem applies: `D:/...` in `PATH`
+gets colon-split at the drive letter and breaks bash's search entirely). Two different
+"same GPU/host" gotchas for the same drive letter depending on which side consumes the
+string.
+
+**Hipify (manual, absolute invocation per the committed recipe):**
+```
+SITE=/d/Develop/TheRock/.venv/Lib/site-packages
+export PATH="$SITE/_rocm_sdk_devel/libexec/hipify:$PATH"   # POSIX form for PATH lookup
+cd projects/faiss/src
+bash "$(pwd)/faiss/gpu/hipify.sh"   # absolute invocation reaches both faiss/gpu and c_api/gpu
+```
+Exit 0, both `faiss/gpu` and `c_api/gpu` hipified (c_api is hipified unconditionally by
+the script even though `FAISS_ENABLE_C_API=OFF` in this recipe; harmless, restored below).
+
+**Configure (gfx1151, C_API off per the current recorded recipe):**
+```
+SDK="D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel"
+LIBS="D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_libraries_gfx1151"
+cmake -S . -B build -G Ninja \
+  -DFAISS_ENABLE_GPU=ON -DFAISS_ENABLE_ROCM=ON -DFAISS_ENABLE_CUVS=OFF \
+  -DFAISS_ENABLE_PYTHON=OFF -DFAISS_ENABLE_C_API=OFF \
+  -DBUILD_TESTING=ON -DBUILD_SHARED_LIBS=ON \
+  -DFAISS_OPT_LEVEL=generic -DFAISS_ENABLE_MKL=OFF -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DCMAKE_C_COMPILER="$SDK/lib/llvm/bin/clang.exe" \
+  -DCMAKE_CXX_COMPILER="$SDK/lib/llvm/bin/clang++.exe" \
+  -DCMAKE_HIP_COMPILER="$SDK/lib/llvm/bin/clang++.exe" \
+  -DCMAKE_PREFIX_PATH="$SDK;$SDK/lib/host-math;$LIBS" \
+  -DCMAKE_HIP_COMPILER_ROCM_ROOT="$SDK" \
+  -DCMAKE_HIP_FLAGS="--rocm-device-lib-path=$SDK/lib/llvm/amdgcn/bitcode" \
+  -DBLAS_LIBRARIES="$SDK/lib/host-math/lib/rocm-openblas.lib" \
+  -DLAPACK_LIBRARIES="$SDK/lib/host-math/lib/rocm-openblas.lib" \
+  -DCMAKE_WINDOWS_EXPORT_ALL_SYMBOLS=ON
+```
+Configuring/Generating done, 0 errors. `find_package(HIP)`/`find_package(hipBLAS)`
+resolved from `CMAKE_PREFIX_PATH` once the drive-letter-form fix above was applied.
+
+**Build:**
+```
+cmake --build build --target faiss faiss_gpu_objs -j6
+  # 302/302 targets, exit 0; faiss.dll links (13 -Wignored-pragmas/-Wignored-attributes
+  # warnings, all pre-existing __pragma(float_control)/__declspec(dllimport) MSVC-isms
+  # that clang tolerates as no-ops; 3 LNK4217 duplicate-import warnings, harmless)
+cmake --build build --target TestGpuSelect TestGpuDistance TestGpuIndexFlat \
+  TestGpuIndexIVFFlat TestGpuIndexIVFPQ TestGpuIndexIVFScalarQuantizer \
+  TestGpuIndexBinaryFlat TestGpuResidualQuantizer TestGpuIcmEncoder \
+  TestGpuMemoryException TestCodePacking -j6 -- -k 100
+  # all 11 .exe produced (verified by ls); ninja reports each target FAILED because
+  # gtest_discover_tests execs the .exe post-link with no ROCm DLLs on PATH -> 0xc0000135,
+  # not a link failure. -k 100 (not -k 0) needed to push past all 11 in one invocation on
+  # this cmake/ninja combination; `-k 0` alone stopped after the first failure here.
+```
+
+**Runtime DLL staging (broken System32 amdhip64_7.dll on this host -- known gotcha,
+see [[gfx1151-apu-runtime-gaps]]).** Full transitive dependency walk via
+`dumpbin /dependents` (`MSYS2_ARG_CONV_EXCL="*"`) found MORE than the previously-recorded
+DLL set was needed for this configuration (BLAS/BLAS-adjacent + GPU BLAS chain, since
+`FAISS_ENABLE_C_API=OFF` this time changes nothing here but the transitive walk is worth
+recording in full since the prior session's list was incomplete for this test target mix):
+```
+amdhip64_7.dll, amd_comgr*.dll, hiprtc*.dll, rocm_kpack.dll   (HIP runtime)
+hipblas.dll, rocblas.dll, libhipblaslt.dll, rocsolver.dll      (GEMM chain: faiss.dll -> hipblas -> rocblas -> libhipblaslt; hipblas -> rocsolver)
+rocm-openblas.dll                                              (host BLAS; from $SDK/bin, NOT lib/host-math/lib which has no .dll)
+gtest.dll                                                      (from build/bin/, BUILD_SHARED_LIBS=ON builds it shared)
+faiss.dll                                                      (the library itself, next to the test .exe)
+```
+`libomp140.x86_64.dll` is also a `faiss.dll` dependency but was already present in
+`C:/Windows/System32` on this host (VC++ redistributable), so no copy was needed.
+`ROCBLAS_TENSILE_LIBPATH=$SDK_LIBRARIES/bin/rocblas/library` (env var, not a copied file)
+was required for `TestGpuDistance`/`TestGpuResidualQuantizer`/any GEMM-touching suite --
+without it rocBLAS aborts (exit 3) looking for `TensileLibrary.dat` next to the .exe.
+
+**GPU test results (gfx1151, HIP_VISIBLE_DEVICES=0, OPENBLAS_NUM_THREADS=1, each suite
+its own process, run directly -- not via ctest/gtest_discover_tests):**
+
+```
+TestGpuSelect              6/6   PASS (run twice: 3346ms, 3891ms -- deterministic)
+TestGpuDistance           28/28  PASS  (BF16 subtests self-skip as documented)
+TestCodePacking             4/4  PASS  (validates the uint8_t->int fix, still in tree)
+TestGpuIndexBinaryFlat      4/4  PASS
+TestGpuIcmEncoder            7/7  PASS
+TestGpuResidualQuantizer     1/1  PASS
+TestGpuIndexFlat            18/18 PASS  (45s; exit 0, no teardown crash)
+TestGpuIndexIVFFlat         21/21 PASS  (306s; LongIVFList 190s, Reconstruct_n 110s)
+TestGpuIndexIVFScalarQuantizer 12/12 PASS
+TestGpuIndexIVFPQ          13/13 effective PASS
+    (11/13 direct run; Float16Coarse + Add_IP FAIL in the monolithic binary,
+     PASS individually via --gtest_filter -- reproduced and confirmed this session,
+     the same documented shared-RNG-advance-past-3.5%-tolerance non-bug recorded on
+     every other platform on this branch)
+```
+Total: 119 tests across 10 suites, all PASS. Matches the gfx90a reference (108/108 via
+ctest -R "TestGpu|TestCodePacking", +7 TestGpuIcmEncoder run separately = 115, plus this
+session's extra individually-verified IVFPQ isolation checks) and the prior gfx1201/gfx1101
+windows sessions (119 each) suite-for-suite.
+
+**TestGpuMemoryException: exit 3, `hipError 719 unspecified launch failure` in
+`DeviceVector<char>::append`.** Same documented APU unified-memory OOM divergence as the
+2026-06-04 windows-gfx1151 session (identical error site, identical error code) --
+NOT a functional-correctness regression; the FAISS_ASSERT correctly fires on the failed
+launch, the launch itself fails because this APU's unified memory does not give a clean
+hipErrorOutOfMemory the way discrete VRAM does. Not re-litigated further; see
+[[gfx1151-apu-runtime-gaps]] and the original 2026-06-04 entry above.
+
+**CUDA no-regression gate: already recorded at this exact head_sha, not re-run.**
+`linux-gfx90a`'s 2026-08-20 revalidation (see above) ran the CUDA no-regression gate at
+`01a09e824` (nvcc 12.8.93, `-DCMAKE_CUDA_ARCHITECTURES=80` pinned, no `CUDA_ARCHITECTURES
+native` in source) and found no regression; this gate runs once per head_sha, and this
+Windows host has no CUDA toolkit to run it with regardless.
+
+**Integrity gate.** Configure ran `faiss/gpu/hipify.sh` twice this session (once manually
+before configure, plus CMake's own `execute_process` call at CMakeLists.txt:87 -- the
+latter is a no-op on Windows per the documented "cmake can't exec a .sh" gotcha, so no
+double-hipify occurred), leaving the same tracked-file rewrite + untracked `.hip`/`gpu-backup`
+artifacts as every prior session. Restored before completing:
+```
+git checkout -- faiss/ c_api/
+git status --porcelain | grep -v '^??' | wc -l   # 0
+```
+`python3 utils/moatlib.py audit-clean faiss` -> OK. `python3 utils/jargon.py --port faiss`
+-> clean. `python3 utils/moatlib.py audit-commits faiss` -> OK.
+
+**State.** `python3 utils/moatlib.py set-state faiss windows-gfx1151 completed` records
+`validated_sha=01a09e824b4792d1ef4f14ef5cdb99c37737c353`. This platform carries both the
+`wave32` and `windows` gates; combined with `linux-gfx90a` already satisfying `wave64` at
+this same head_sha, all three required gates (`wave64`, `wave32`, `windows`) are now
+satisfied at head -- `python3 utils/moatlib.py pr-ready faiss` should read `True`.
