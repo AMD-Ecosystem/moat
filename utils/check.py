@@ -278,6 +278,24 @@ def gate_forks():
     return [l for l in r.stdout.splitlines() if l.strip()][:10]
 
 
+def gate_commits():
+    """Fork commits obey the message rules AGENTS.md states.
+
+    Those rules were written down and never executed. jargon.py walks the same range but
+    only for in-house vocabulary; pr_intent.py checks the PULL REQUEST title, which is a
+    different string. So a body missing its Test Plan could reach a maintainer unremarked,
+    and publication sends the branch as it stands -- `upstream.py --publish` opens the pull
+    request with `--head <fork>:<branch>` and squashing first is supported but not
+    enforced.
+
+    Slow for the same reason as the fork gate: it shells out per clone.
+    """
+    r = _run([sys.executable, "utils/moatlib.py", "audit-commits"])
+    if r.returncode == 0:
+        return []
+    return [l for l in r.stdout.splitlines() if l.strip()][:10]
+
+
 def gate_published():
     """No local clone carries commits on an open PR's branch that the PR does not.
 
@@ -583,7 +601,8 @@ GATES = {
     "optout": (gate_optout, False),
     "surface": (gate_surface, False),
     "published": (gate_published, False),
-    "forks": (gate_forks, True),      # slow: shells out per fork clone
+    "forks": (gate_forks, True),
+    "commits": (gate_commits, True),   # slow: shells out per fork clone      # slow: shells out per fork clone
 }
 
 
