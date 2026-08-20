@@ -7,7 +7,7 @@
   "priority": 4.348,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T03:26:34Z",
-  "updated_at": "2026-08-20T04:12:59Z",
+  "updated_at": "2026-08-20T04:13:18Z",
   "head_sha": "917c2477d9aae682bff81fcbab9b623c3122c01f",
   "porting": null,
   "waivers": {},
@@ -166,5 +166,6 @@
         "at": "2026-06-23T22:48:53Z"
       }
     }
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/ntransformer/pull/1"
 }
