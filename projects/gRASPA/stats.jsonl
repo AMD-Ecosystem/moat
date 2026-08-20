@@ -85,3 +85,4 @@
 {"kind":"phase","ts":"2026-08-20T07:59:06Z","phase":"test","seconds":25.426,"exit":0,"cmd":"bash -c cd D:/Develop/moat/projects/gRASPA/src/Examples/CO2-MFI && HSA_XNACK=1 D:/Develop/moat/projects/gRASPA/src/src_clean/hip_main.exe"}
 {"kind":"phase","ts":"2026-08-20T07:59:43Z","phase":"test","seconds":10.989,"exit":0,"cmd":"bash -c cd D:/Develop/moat/projects/gRASPA/src/Examples/Methane-TMMC && HSA_XNACK=1 D:/Develop/moat/projects/gRASPA/src/src_clean/hip_main.exe"}
 {"kind":"phase","ts":"2026-08-20T08:00:01Z","phase":"test","seconds":4.612,"exit":0,"cmd":"bash -c cd D:/Develop/moat/projects/gRASPA/src/Examples/Tail-Correction && HSA_XNACK=1 D:/Develop/moat/projects/gRASPA/src/src_clean/hip_main.exe"}
+{"kind":"session","ts":"2026-08-20T08:02:53Z","epoch":1787212973.641779400,"event":"end","platform":"windows-gfx1151"}
