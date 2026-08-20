@@ -1878,3 +1878,114 @@ on the NVIDIA build as well; that is inert when unset, but it belongs in the sam
   shared decode code (`decode_attn.cuh:476`, `decode_page.cuh:337`,
   `decode_handler.cuh:123-150`). The gfx1100 and gfx90a evidence does not carry to
   `f50e33a`; both need a fresh run, and per finding 1 that run should cover both shapes.
+
+## Porter round 2026-08-20 (linux-gfx1100): review findings 1-2 addressed -- `c9828e2`
+
+Written on a different host from the one that wrote `cbc3890`/`f50e33a`, so this round
+carries no conflict of interest with the code it is fixing. `pr-state Quest` is `none`, so
+`moat-port` itself moved; no staging branch.
+
+**Finding 1 (three silent no-op modes in the launch-shape override) -- fixed**, exactly the
+minimal remedy the review specified, in `BatchDecodeWithPagedKVCacheWorkEstimation`
+(`kernels/include/decode/decode_attn.cuh:864-931`):
+
+- an unrecognized value now throws `std::invalid_argument` instead of returning 0;
+- the `static const int forced_shape` lambda is gone -- `std::getenv` runs on every call,
+  which costs nothing at a host-side setup site called once per `begin_forward`, and makes
+  an in-process `setenv` take effect;
+- `forced_shape < 0 && tmp_size == 0` after the partition search throws, closing the
+  `if(new_batch_size == batch_size) { tmp_size = 0; }` exit from a requested `split`.
+
+Empty is treated as unset alongside absent, and that is documented in both the header
+comment and the README. This is deliberate: `env VAR= cmd` and CI systems that materialize
+an unset variable as `""` should mean "no override", not a hard error, and the failure mode
+the finding is about is a typo, not an empty string. The previous round's own evidence loop
+(`for shape in "" single split`) depends on it too.
+
+No new public API: no `partitioned()` getter, no pybind surface change. The throws reach
+Python through pybind11 as `ValueError` at `quest/utils/decode_wrapper.py:43`.
+
+**Finding 2 (override exercised by nothing, documented nowhere, not HIP-guarded) -- fixed,
+both remedies rather than one.** The review offered "either drive it from the test suite or
+document it in the README"; both were cheap and they answer different halves of the finding
+(no in-tree consumer; an upstream maintainer meeting an undocumented `getenv`).
+
+- NEW `quest/tests/test_decode_launch_shape.py` (44 lines): re-runs `test_decode_attention.py`
+  and `test_approx_attention.py` once per shape as subprocesses with `QUEST_DECODE_LAUNCH_SHAPE`
+  set, and asserts that a bad value fails with the new message. Subprocesses, not
+  `monkeypatch.setenv`: it also keeps working if the caching in finding 1 ever comes back.
+  It runs the two named files by path, so collecting the whole directory cannot recurse.
+  `cwd=REPO_ROOT` so `import quest` resolves the same way the README's `python -m pytest`
+  recipe does.
+- README ROCm section (`README.md:73`) documents the knob in the section's own prose style.
+
+**Not HIP-guarded, deliberately, now stated where the decision is visible** (README, commit
+body, here) rather than left implicit. The gap the knob closes is a property of the device's
+CU count, not of the platform -- an NVIDIA part with a high SM count never reaches the
+single-block shape either -- so guarding it would remove the coverage from exactly the leg
+that has no other way to get it. It is inert unless set. It does add a runtime knob to the
+NVIDIA build, so it belongs in the same scope caveat as `cbc3890`, and the CUDA
+no-regression gate is still owed at this head (finding 3, unchanged: no `nvcc` on this
+host, and the RAFT branch-24.02 `CUDA::nvToolsExt` wall is still the blocker).
+
+### Evidence (Radeon Pro W7800, gfx1100, wave32, `HIP_VISIBLE_DEVICES=1`)
+
+Build: `utils/timeit.sh Quest compile -- ninja -C .../quest/ops/build` into the existing
+configure from the 2026-08-19 session (`-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100
+-DCMAKE_PREFIX_PATH=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/torch/share/cmake`
+-- the host's editable-torch `cmake_prefix_path` hazard recorded in that session still
+applies). 6/6 objects, no new warnings: the same two pre-existing nodiscard-`hipError_t`
+warnings at `decode_handler.cuh:197` and `approx_attn.cu:65`.
+
+| configuration | in-scope suites + new test |
+|---|---|
+| default (occupancy picks split here, 70 CUs) | **124 passed** in 16.7s |
+| `QUEST_DECODE_LAUNCH_SHAPE=single` | **124 passed** in 16.9s |
+| `QUEST_DECODE_LAUNCH_SHAPE=split` | **124 passed** in 16.7s |
+| `QUEST_DECODE_LAUNCH_SHAPE=` (empty) | 6 passed (decode only), override inert as documented |
+| `test_decode_launch_shape.py` alone | 3 passed in 12.5s |
+
+121 of those 124 are the unchanged baseline (`test_rope.py` 64, `test_estimate.py` 9,
+`test_decode_attention.py` 6, `test_approx_attention.py` 42), matching every prior
+gfx1100/gfx90a session; the 3 new ones are the launch-shape file. Out-of-scope suites
+unchanged: `test_topk.py` and `test_prefill_attention.py` still stop at the missing
+`topk_filtering` / `prefill_with_paged_kv_cache` attributes.
+
+The override provably takes effect, which is what the finding actually asked for and does
+not depend on the new hard-errors:
+
+```
+QUEST_DECODE_LAUNCH_SHAPE=$shape AMD_LOG_LEVEL=3 python3 -m pytest \
+  quest/tests/test_decode_attention.py -q -s 2>&1 | grep -o "MergeStatesKernel"
+```
+
+| forced shape | `BatchDecodeWithPagedKVCacheKernel` | `MergeStatesKernel` |
+|---|---|---|
+| single | 6 | **0** |
+| split | 6 | **6** |
+
+Both hard-errors were observed, not just written:
+
+- `QUEST_DECODE_LAUNCH_SHAPE=Single` -> `ValueError: QUEST_DECODE_LAUNCH_SHAPE must be
+  "single" or "split", got "Single"`, 1 failed. The review's own example of a silent typo.
+- the split guard cannot be reached at `batch_size == 1`, so it was checked by temporarily
+  inverting its condition to `tmp_size != 0`, rebuilding, and running forced split ->
+  `ValueError: QUEST_DECODE_LAUNCH_SHAPE=split cannot be honored: partitioning a batch of 1
+  left the batch size unchanged, so this call runs the single-block shape`. Condition
+  restored, rebuilt, and the whole table above re-run after the revert.
+
+`python3 utils/jargon.py --port Quest` -> clean. `moatlib.py audit-commits Quest` -> OK
+(all six titles `[ROCm]`, <= 72 chars, disclosure present, no agent `Co-Authored-By`).
+`git -C projects/Quest/src status --porcelain` clean at `c9828e2`.
+
+Lesson promoted to the `cuda-to-rocm` skill (`references/validation.md`, "A path only some
+GPUs reach: force it, with an override that cannot be ignored"): the whole shape of this --
+a device-property branch that leaves one path untested fleet-wide, the three ways a forcing
+knob silently no-ops, and confirming the forced paths differ with `AMD_LOG_LEVEL=3` before
+trusting the knob -- applies to any port with an occupancy- or wavefront-dependent branch.
+
+State: `changes-requested` -> `porting` -> `ported`, `head_sha` `f50e33a` -> `c9828e2`. All
+three platforms carried `validated_sha` `9be60fc` and now read `revalidate`; they needed a
+fresh run at `f50e33a` already (per the review's last bullet) and this head adds shared
+unguarded changes to `decode_attn.cuh`, so nothing was lost. gfx1100 evidence above is a
+porter's build+test record, not a validation record.

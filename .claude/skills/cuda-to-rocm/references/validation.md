@@ -118,6 +118,46 @@ new evidence even when the wall stops you one step later) versus what remains
 unexercised (no compile line was ever seen for the port's own kernels). Don't let the
 record imply more than what was actually run.
 
+## A path only some GPUs reach: force it, with an override that cannot be ignored
+
+When a kernel picks between two code paths from a device property -- multiprocessor
+count, occupancy, wavefront size, available LDS -- every machine exercises exactly one
+of them and the other is untested there. Quest's decode takes a single-block kernel over
+a partitioned one when `batch_size * num_kv_heads >= blocks_per_cu * cu_count`: true on a
+20-CU part, false on 70- and 304-CU ones, so a repair to the single-block path was
+invisible to two of the three platforms that validated it and to any NVIDIA CI.
+
+An environment-variable override that forces the choice is the cheap fix, but only if it
+cannot be ignored in silence. Otherwise a green run under the override is
+indistinguishable from a run that never took the forced path, and the evidence the
+override exists to produce is worth nothing. Three ways it no-ops, all of which shipped
+in Quest's first version of the knob:
+
+- an unrecognized value returning "no override" instead of failing, so `Single` for
+  `single`, or any typo, reads as a pass;
+- caching the `getenv` in a function-local `static`, so the in-process
+  `monkeypatch.setenv` that a "test-visible override" invites reads the first value the
+  process ever saw -- read it per call instead, this is host-side setup, not an inner
+  loop;
+- a pre-existing fallback further down that leaves the requested path anyway (Quest's
+  `if (new_batch_size == batch_size) { tmp_size = 0; }` reverts a requested split to the
+  single-block shape).
+
+Hard-error on all three, using the project's own exception type so it surfaces in the
+test harness (`throw std::invalid_argument` reaches Python as `ValueError` through
+pybind11). Then drive the override from a test in the tree -- a pytest that re-runs the
+affected suites once per path as subprocesses -- so the coverage is automatic instead of
+something a validator must remember from a commit body, and document the knob where the
+build is documented. Do not restrict such a knob to the HIP build without a reason: the
+coverage gap comes from the device, not the platform, and the NVIDIA leg has it too.
+
+Confirm independently that the forced paths really do differ before trusting the
+override: `AMD_LOG_LEVEL=3` plus a grep for a kernel name only one path launches is
+enough (in Quest, forced split launched `MergeStatesKernel` six times over the decode
+suite, forced single-block never launched it). A guard that no test can reach -- Quest's
+split-requested-but-unpartitioned error, unreachable at batch size 1 -- can be checked by
+inverting its condition, rebuilding, observing the throw, then restoring and rebuilding.
+
 ## Diagnosing a suspected AMD fault before escalating
 
 Two patterns that each cost a deep investigation before the real cause was found.

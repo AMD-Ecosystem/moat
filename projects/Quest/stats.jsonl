@@ -62,3 +62,9 @@
 {"kind":"phase","ts":"2026-08-19T22:25:50Z","phase":"test-singleblock-repair","seconds":5.120,"exit":0,"cmd":"bash -c cd projects/Quest/src && 'D:/Develop/moat/agent_space/torch312_venv/Scripts/python.exe' -m pytest quest/tests/test_rope.py quest/tests/test_estimate.py quest/tests/test_decode_attention.py quest/tests/test_approx_attention.py -q"}
 {"kind":"session","ts":"2026-08-20T04:41:09Z","epoch":1787200869.241706974,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-20T04:50:10Z","epoch":1787201410.396409074,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T04:59:16Z","epoch":1787201956.872740417,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-20T05:02:33Z","phase":"compile","seconds":35.075,"exit":0,"cmd":"ninja -C /var/lib/jenkins/moat-worktrees/Quest/projects/Quest/src/quest/ops/build"}
+{"kind":"phase","ts":"2026-08-20T05:02:55Z","phase":"test","seconds":5.476,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat-worktrees/Quest/projects/Quest/src && python3 -m pytest quest/tests/test_rope.py quest/tests/test_estimate.py quest/tests/test_decode_attention.py quest/tests/test_approx_attention.py -q"}
+{"kind":"phase","ts":"2026-08-20T05:04:13Z","phase":"test","seconds":12.701,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat-worktrees/Quest/projects/Quest/src && python3 -m pytest quest/tests/test_decode_launch_shape.py -q"}
+{"kind":"phase","ts":"2026-08-20T05:06:13Z","phase":"test","seconds":17.791,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat-worktrees/Quest/projects/Quest/src && python3 -m pytest quest/tests/test_rope.py quest/tests/test_estimate.py quest/tests/test_decode_attention.py quest/tests/test_approx_attention.py quest/tests/test_decode_launch_shape.py -q"}
+{"kind":"session","ts":"2026-08-20T05:12:34Z","epoch":1787202754.601834508,"event":"end","platform":"linux-gfx1100"}
