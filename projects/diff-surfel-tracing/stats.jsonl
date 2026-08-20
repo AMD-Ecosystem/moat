@@ -67,3 +67,5 @@
 {"kind":"phase","ts":"2026-08-19T06:03:42Z","phase":"compile","seconds":21.420,"exit":0,"cmd":"bash -c \ncd projects/diff-surfel-tracing/src && rm -rf build *.egg-info diff_surfel_tracing/hiprt_root diff_surfel_tracing/hiprt_cache diff_surfel_tracing/_C*.so 2>/dev/null; PYTORCH_ROCM_ARCH=gfx1100 ROCM_PATH=/opt/rocm   python3 /var/lib/jenkins/moat-worktrees/diff-surfel-tracing/agent_space/build_wrapper.py develop --no-deps\n"}
 {"kind":"phase","ts":"2026-08-19T06:04:05Z","phase":"test","seconds":11.980,"exit":0,"cmd":"bash -c \ncd projects/diff-surfel-tracing/src && rm -rf diff_surfel_tracing/hiprt_cache && HIP_VISIBLE_DEVICES=0 python3 example/validate_rocm.py\n"}
 {"kind":"session","ts":"2026-08-19T06:08:38Z","epoch":1787119718.803406324,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T07:28:52Z","epoch":1787210932.438061300,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-20T07:49:17Z","epoch":1787212157.484398900,"event":"end","platform":"windows-gfx1151"}

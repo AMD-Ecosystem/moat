@@ -2455,3 +2455,129 @@ backported here only because the pinned tag predates them.
 If HIPRT#68 and Orochi#146 land, `third_party/hiprt-rocm-fixes.patch` loses its
 lane-mask entries and the "apply this patch first" step in the ROCm build
 instructions shrinks accordingly.
+
+## Validation attempt 2026-08-20 (windows-gfx1151, Radeon 8060S, RDNA3.5 APU)
+
+First Windows validation attempt, at `moat-port` `173f32a` (`port-ready` ->
+this run). **FAIL**: build succeeds end to end, but the GPU gate crashes
+inside HIP RT's own JIT compiler before any tracer kernel runs. Recorded via
+`python3 utils/moatlib.py set-state diff-surfel-tracing windows-gfx1151
+validation-failed` (`failed_sha` = `173f32a9d0182452a6dcc02433e093b34311f665`).
+
+### Environment
+
+Fresh clone into `projects/diff-surfel-tracing/src`, `git checkout moat-port`,
+`HEAD` verified at `head_sha`, `git status --porcelain` clean before starting.
+`python3 utils/moatlib.py protect-fork diff-surfel-tracing` run on the fresh
+clone. Torch venv `agent_space/torch_venv` (`agent_space/win_torch_env.sh`):
+torch 2.12.0+rocm7.14.0a20260519, `PYTORCH_ROCM_ARCH=gfx1151`, `CC=CXX=`
+TheRock `clang-cl.exe`, MSVC 14.44 `link.exe` first on PATH.
+
+### Build: both stages succeeded
+
+```
+git submodule update --init third_party/hiprt
+git -C third_party/hiprt apply "$(pwd)/third_party/hiprt-rocm-fixes.patch"   # applies clean, 12 files
+cmake -DCMAKE_BUILD_TYPE=Release -DBITCODE=OFF -DNO_UNITTEST=ON -DHIP_PATH=$ROCM_ROOT \
+    -S third_party/hiprt -B <scratch>/hiprt_build
+cmake --build <scratch>/hiprt_build --config Release --target hiprt03001 -- -m
+```
+
+Visual Studio 17 2022 generator (CMake's own default on this host; the
+project's `CMakeLists.txt` never calls `enable_language(HIP)`, it drives
+`hipcc`/`clang-cl` through plain custom rules, so the CMake-HIP-language
+all-clang-cl rule this host otherwise follows does not apply here -- MSVC
+`cl.exe` compiles the C++ host code directly and it just works). Configured
+in 8s, built in 15s: `hiprt0300164.dll`/`.lib` produced clean, only the
+pre-existing `codecvt_utf8_utf16` deprecation and `gcnArchName` pointer-bool
+warnings seen on every other platform.
+
+```
+rm -rf build *.egg-info diff_surfel_tracing/hiprt_root diff_surfel_tracing/hiprt_cache \
+    diff_surfel_tracing/*.dll diff_surfel_tracing/kernels.h diff_surfel_tracing/params.h \
+    diff_surfel_tracing/config.h diff_surfel_tracing/auxiliary.h
+python -m pip install -e . --no-build-isolation --no-deps -v
+```
+
+`HIPRT_HOME` needed no override: `setup.py` prefers `third_party/hiprt` once
+its submodule is checked out and built, matching the gfx1100 validator's
+finding. Built clean: the standalone glue static lib (HIP RT + Orochi +
+hipew/cuew) compiled with `clang++`/`llvm-ar` from the ROCm devel tree, the
+`ext_winhip.hip`/`trace_surfels_winhip.hip` shims compiled via `hipcc.exe`
+(`--offload-arch=gfx1151`), then `link.exe` produced
+`diff_surfel_tracing/_C.cp313-win_amd64.pyd` linking `hiprt0300164.lib`,
+`c10_hip.lib`, `torch_hip.lib`, `version.lib`. Only pre-existing
+`Tensor.type()`/pybind11-visibility deprecation warnings, identical in
+character to the ones both Linux validators recorded. `import
+diff_surfel_tracing` succeeds standalone.
+
+### GPU gate: crashes in `hiprtBuildTraceKernels`, before any tracer kernel runs
+
+```
+rm -rf diff_surfel_tracing/hiprt_cache
+python example/validate_rocm.py
+```
+
+Crashes immediately with `Exception Code: 0xC0000005` (access violation) in
+every run (reproduced twice). The stack from Windows' fault handler is
+consistent both times:
+
+```
+0x...2F0  diff_surfel_tracing\hiprt0300164.dll + 0x252F0
+0x...959  diff_surfel_tracing\hiprt0300164.dll + 0x24959
+0x...728  diff_surfel_tracing\hiprt0300164.dll + 0x2D728
+0x...974  diff_surfel_tracing\hiprt0300164.dll + 0x87974, hiprtBuildTraceKernels() + 0x894
+0x...AB6  diff_surfel_tracing\_C.cp313-win_amd64.pyd + 0x40AB6
+...
+```
+
+So the fault is inside HIP RT's own `hiprtBuildTraceKernels` -- the call that
+JIT-compiles `kernels.h` and the BVH-builder kernels via hiprtc/comgr -- not
+in this port's own device code, and not reached from anywhere near the
+tracer's own kernel launch path (the crash is on the way IN to building the
+trace kernels, before `build_acceleration_structure` or any `trace_surfels`
+call in the harness).
+
+### Ruled out: NOT the known System32-amdhip64 DLL-resolution fault
+
+Tried the documented fix (`gfx1151-apu-runtime-gaps` /
+`windows-dll-not-found-diagnosis`): staged TheRock's `amdhip64_7.dll`,
+`amd_comgr0713.dll`, `hiprtc07013.dll`, `hiprtc-builtins07013.dll` and
+`rocm_kpack.dll` both next to `python.exe` (the venv's `Scripts/` dir) and
+next to `hiprt0300164.dll` in the installed package directory
+(`rocm_stage_runtime` from `agent_space/win_rocm_env.sh`/`win_torch_env.sh`).
+Re-ran with a cleared cache: **identical crash, same offset
+(`hiprtBuildTraceKernels() + 0x894`) both before and after staging.** A
+DLL-resolution problem would either fail earlier (load-time, naming a missing
+module) or change behavior once the correct DLLs are co-located; this did
+neither, which argues against the System32-driver-collision class and for a
+fault inside HIP RT's Windows JIT path itself (hiprtc invocation, comgr
+handoff, or the on-disk kernel cache) that this port's Linux-only validation
+history has not exercised. Not root-caused further -- out of the remaining
+time budget.
+
+### What this attempt did NOT test
+
+Only one hypothesis (DLL staging) was tried before stopping, per the stop
+discipline budget; a genuine root cause (attach a debugger / minidump to see
+the actual faulting instruction and operand inside `hiprtBuildTraceKernels`,
+or bisect `hiprtSetCacheDirPath`/`HIPRT_PATH` resolution on Windows
+specifically) was not attempted. The crash is inside vendored HIP RT, the
+same dependency already carrying the wave64 lane-mask defects reported
+upstream on Linux -- this may be a distinct, Windows-specific HIP RT defect,
+or an environment gap in how this host's hiprtc/comgr toolchain is wired for
+HIP RT's JIT (separate from torch's own, which resolves fine -- `import
+diff_surfel_tracing` and torch's own device queries did not crash).
+
+### Integrity
+
+`git -C projects/diff-surfel-tracing/src status --porcelain --ignore-submodules=none`
+clean at completion (the `third_party/hiprt` submodule's local patch-and-build
+state left over from the build; verify before the next attempt, or reset with
+`git -C third_party/hiprt checkout -- . && git -C third_party/hiprt clean
+-fdx` first). No source or build file was edited in the fork; nothing
+committed there. All workaround/build scripts (`agent_space/win_torch_env.sh`,
+`rocm_stage_runtime`) are MOAT-side and gitignored.
+
+**Next validator: do not re-run the DLL-staging fix, it is confirmed not the
+cause. Start from the debugger/minidump step instead.**
