@@ -7,7 +7,7 @@
   "priority": 4.22,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-08-20T00:28:06Z",
+  "updated_at": "2026-08-20T00:29:13Z",
   "head_sha": "88a0749457f8cfa2d0f696f1829ffdfd26008a0d",
   "porting": null,
   "waivers": {},
@@ -166,5 +166,6 @@
         "at": "2026-06-23T22:50:33Z"
       }
     }
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/gpuRIR/pull/1"
 }
