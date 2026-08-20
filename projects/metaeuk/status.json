@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T04:44:13Z",
-  "updated_at": "2026-08-20T04:13:30Z",
+  "updated_at": "2026-08-20T04:14:09Z",
   "head_sha": "e6070cc18e4cad1ab59de1f8fe16b1da202d5e74",
   "depends_on": [],
   "porting": null,
@@ -137,5 +137,6 @@
         "at": "2026-06-23T22:47:43Z"
       }
     }
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/metaeuk/pull/1"
 }
