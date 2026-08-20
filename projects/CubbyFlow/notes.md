@@ -773,3 +773,75 @@ Bookkeeping unchanged: `head_sha` still names 62f4604c while the push waits on
 the token scope, so `fix-ready` answers `no-delta` and no fix review PR can open
 early. After the push, `advance-head 29bac0b9b1e8981d9921446829f9c0df1b97f2fe`
 is required before revalidation on wave64/wave32/windows.
+
+## Revalidation linux-gfx1100 2026-08-20 (fix round, tip 29bac0b9b1)
+
+Full real-GPU revalidation at `29bac0b9b1e8981d9921446829f9c0df1b97f2fe`
+(`moat-fix-145`, Radeon Pro W7800, ROCm 7.2.3, clang 22.0.0). Fork clone
+verified at that exact commit, no modified tracked files (untracked
+`build-cuda/`, `UnitTests.log`, `cuda_tests.log` only). Ran the real tests at
+the tip rather than carrying forward, since they are fast; the earlier
+reviewer note that `git diff 2c51f93e..29bac0b9b1` is comment-only in
+`CMakeLists.txt` is corroborated by the rebuild doing zero recompilation
+(every target reported "Built target X" with no compile lines).
+
+Build (`export VCPKG_ROOT=/var/lib/jenkins/vcpkg`):
+
+```
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ \
+  -DBUILD_TESTS=ON -DBUILD_EXAMPLES=ON
+cmake --build build -j$(nproc)
+```
+
+PASS, all 15 targets built, no compile invocations needed (incremental,
+object files unaffected by the comment-only change), consistent with zero
+errors/warnings recorded for this tree in the fix-round build above.
+
+GPU tests:
+
+```
+HIP_VISIBLE_DEVICES=0 ./build/bin/CUDATests
+```
+
+35/35 test cases, 3170/3170 assertions PASS.
+
+```
+HIP_VISIBLE_DEVICES=0 ./build/bin/UnitTests
+```
+
+814/814 PASS in 168 suites.
+
+```
+HIP_VISIBLE_DEVICES=0 <src>/build/bin/CUDASPHSim -f 5
+```
+
+5 frames written, 13824 particles, exit 0. All three counts match the
+fix-round evidence recorded above exactly.
+
+CUDA no-regression gate: re-ran at this head_sha too (previously recorded
+only at `2c51f93ecd`), using the existing `build-cuda/` tree and the same
+recipe as above (`CMAKE_CUDA_ARCHITECTURES=80`, nvcc 12.8 from
+`/opt/conda/envs/cuda-12.8`). PASS, `CubbyFlow`, `CUDATests`, `CUDASPHSim`
+all build cleanly. Note: this project's own CMake picks
+`-gencode;arch=compute_75,code=sm_75` for the actual nvcc invocation
+regardless of the `-D` pin (legacy `FindCUDA` path, not
+`CMAKE_CUDA_ARCHITECTURES`-driven); sm_75 is a real modern architecture
+(Turing) with native `atomicAdd(double*)`, so this is not the "arch pin did
+not take, silently degraded to an ancient arch" fingerprint -- just a
+different fixed target than requested, and irrelevant to a compile-only
+passthrough check. No NVIDIA GPU on this host, no runtime claim made.
+
+`python3 utils/jargon.py --port CubbyFlow` (run from `/var/lib/jenkins/moat`,
+not the worktree) is clean. Documentation: `Documents/Install.md` already
+carries the corrected HIP/ROCm build section (`USE_HIP=ON`,
+`CMAKE_HIP_ARCHITECTURES`) reviewed in the fix round above; unchanged by this
+revalidation.
+
+Commands: `bash utils/timeit.sh CubbyFlow compile -- bash agent_space/build_hip.sh`,
+`bash utils/timeit.sh CubbyFlow test -- bash agent_space/run_cudatests.sh`,
+`bash utils/timeit.sh CubbyFlow test -- bash agent_space/run_unittests.sh`,
+`bash utils/timeit.sh CubbyFlow test -- bash agent_space/run_sphsim.sh`,
+`bash utils/timeit.sh CubbyFlow cuda-compile -- bash agent_space/build_cuda.sh`.
+All exit 0. Result: PASS, `completed` at `29bac0b9b1e8981d9921446829f9c0df1b97f2fe`.

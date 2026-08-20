@@ -65,3 +65,11 @@
 {"kind":"session","ts":"2026-08-20T18:25:32Z","epoch":1787250332.112353453,"event":"end","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-20T18:33:14Z","epoch":1787250794.912624189,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-20T18:34:58Z","epoch":1787250898.301490933,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T19:02:31Z","epoch":1787252551.368983621,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-20T19:02:55Z","phase":"compile","seconds":0.120,"exit":1,"cmd":"bash -c export VCPKG_ROOT=/var/lib/jenkins/vcpkg && cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ -DBUILD_TESTS=ON -DBUILD_EXAMPLES=ON && cmake --build build -j$(nproc) 2>&1 | tee /var/lib/jenkins/moat/agent_space/wt-CubbyFlow/agent_space_build.log | tail -80"}
+{"kind":"phase","ts":"2026-08-20T19:03:08Z","phase":"compile","seconds":1.839,"exit":0,"cmd":"bash agent_space/build_hip.sh"}
+{"kind":"phase","ts":"2026-08-20T19:03:12Z","phase":"compile","seconds":0.006,"exit":0,"cmd":"bash -c tail -c 0"}
+{"kind":"phase","ts":"2026-08-20T19:03:42Z","phase":"test","seconds":0.316,"exit":0,"cmd":"bash agent_space/run_cudatests.sh"}
+{"kind":"phase","ts":"2026-08-20T19:03:48Z","phase":"test","seconds":1.807,"exit":0,"cmd":"bash agent_space/run_unittests.sh"}
+{"kind":"phase","ts":"2026-08-20T19:03:53Z","phase":"test","seconds":1.637,"exit":0,"cmd":"bash agent_space/run_sphsim.sh"}
+{"kind":"phase","ts":"2026-08-20T19:04:19Z","phase":"cuda-compile","seconds":2.757,"exit":0,"cmd":"bash agent_space/build_cuda.sh"}
