@@ -1119,3 +1119,103 @@ present at this head_sha in the gfx90a entry above) covers this arch too via
 `GRASPA_ARCH`.
 
 **Verdict**: PASS. `validated_sha` advances to `7e3c08b33df60cf2a970e2d9647a7a6922514458` for linux-gfx1100.
+
+## Validation 2026-08-20 (windows-gfx1151, Radeon 8060S gfx1151 RDNA3.5 APU, first validation, `7e3c08b`)
+
+**Why a full run, not carry-forward**: no prior `windows-gfx1151` record exists.
+`windows-gfx1101` and `windows-gfx1201` both carry `validated_sha =
+471060045dad654d6fcb50ec45a3cd3345da3d8a`, the pre-rescope branch that was
+force-pushed away on 2026-08-20 (see the Rescope section); it no longer
+exists in `moat-port` history, so neither counts as live evidence for the
+`windows` gate at the current `head_sha`. This is the first real run against
+the rescoped README-driven Windows recipe.
+
+**Clone**: no local checkout existed on this host; cloned
+`https://github.com/AMD-Ecosystem/gRASPA.git` fresh and checked out
+`moat-port` (`HEAD` = `7e3c08b33df60cf2a970e2d9647a7a6922514458`, matches
+`status.json.head_sha` exactly). `protect-fork` installed.
+
+**GPU**: AMD Radeon 8060S (gfx1151, RDNA3.5 APU, 20 CUs), Windows 11. ROCm
+from a TheRock pip SDK at `D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel`
+(HIP/clang 7.14, clang++ 23.0.0). This host's `C:\WINDOWS\SYSTEM32\amdhip64_7.dll`
+is broken (a known host issue, see the `cuda-to-rocm` skill / host notes, not
+a port defect); the SDK's own `amdhip64_7.dll`, `amd_comgr.dll`, `rocm_kpack.dll`
+and `hiprtc*.dll` were copied next to the executable rather than relying on PATH.
+
+**Build** (README's Windows recipe -- no CMake since the rescope; `HIP_COMPILE`
+is a bash script and does not run on Windows, so the classical core is built by
+driving `clang++` directly per `README.md`'s AMD/ROCm section):
+```bash
+ROCM=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel
+export INCLUDE='<MSVC 14.44.35207 + Windows SDK 10.0.22621.0 include dirs>'
+export LIB='<MSVC 14.44.35207 + Windows SDK 10.0.22621.0 lib dirs>;<ROCM>/lib/llvm/lib/clang/23/lib/windows'
+export PATH="$ROCM/lib/llvm/bin:<MSVC 14.44.35207 Hostx64/x64 bin>:$PATH"
+cd src_clean
+CLANG_RES="$(clang++ -print-resource-dir)"
+clang++ -O3 -std=c++20 --offload-arch=gfx1151 -x hip -fgpu-rdc -fopenmp \
+  -D_USE_MATH_DEFINES -isystem "$CLANG_RES/include" \
+  -c main.cpp read_data.cpp data_struct.cpp axpy.cu VDW_Coulomb.cu
+clang++ -std=c++20 --offload-arch=gfx1151 -fgpu-rdc -fopenmp --hip-link \
+  main.o read_data.o data_struct.o axpy.o VDW_Coulomb.o -o hip_main.exe
+```
+Both commands wrapped in `utils/timeit.sh gRASPA compile --`. Compile: exit 0,
+warnings only (nodiscard on the `hipError_t`-returning shim calls, one VLA
+extension in `fxn_main.h` -- same shapes as every Linux build). Link: exit 0,
+`hip_main.exe` 1537536 bytes. The README's `-isystem "$(clang++
+-print-resource-dir)/include"` recipe (finding `.../lib/llvm/lib/clang/23/include`
+on this TheRock layout) built cleanly first try -- no `emmintrin.h`/`wmemcmp`
+link error, confirming the fix documented in `9cfa096`/`7e3c08b`.
+
+**GPU test results** (`HSA_XNACK=1`, run from each example directory, wrapped
+in `utils/timeit.sh gRASPA test --`):
+
+1. CO2-MFI: exit 0, `Work took 24.075271 seconds`. ENERGY DRIFT (CPU vs
+   running) all components 0.00000. GPU DRIFT: Ewald [Host-Host] -0.00004
+   (sub-threshold; every VDW and real-space Coulomb component exactly
+   0.00000), the same k-space reduction-order signature seen on gfx90a,
+   gfx1100, gfx1201 and gfx1101. 17 CO2 molecules adsorbed (`C_co2[16], #:
+   17`) -- identical to the gfx1201 run's 17 (Monte Carlo stochastic
+   variance; gfx1101 saw 26, gfx1100/gfx90a saw 18).
+2. Methane-TMMC (the OOB-relevant case fixed by `55d7c59`/`a0b6dce`): exit 0,
+   `Work took 9.884038 seconds`, all three phases (INIT/EQUIL/PRODUCTION)
+   completed without a memory access fault.
+3. Tail-Correction (1327 Ar, the case whose crash the OOB fix's commit body
+   documents in detail): exit 0, `Work took 3.435470 seconds`. ENERGY DRIFT
+   and GPU DRIFT all components 0.00000. `Ar[20], #: 1323` -- identical to
+   the gfx1201 run's 1323 (gfx1101 saw 1333, gfx1100/gfx90a saw 1327).
+
+`python3 -m pytest -q -s` from `Examples/` (checking the five committed
+reference `output.txt` files, the same evidence class the gfx90a/gfx1100
+revalidations used -- Bae-Mixture and NU2000-pX-LinkerRotations were not
+re-run here, ~28 min and untested-arch time cost respectively, out of budget
+for this platform): **5 passed**. Reported drifts match the Linux-recorded
+reference exactly: Methane-TMMC 0.0/0.0, Bae-Mixture -0.0/0.0, NU2000
+-0.00456/-0.00018, Tail-Correction -0.0/0.0.
+
+**Cleanup**: a `rm -rf .../output.txt` before each real run deleted the three
+tracked reference `output.txt` files (CO2-MFI, Methane-TMMC, Tail-Correction)
+instead of just clearing stale per-run state; restored with `git checkout --`
+along with two files the Methane-TMMC run modified in place
+(`Restart/System_0/restartfile`, `TMMC/System_0/TMMC_Statistics.data`) and one
+it deleted (`AllData/System_0/AllAdsorbate.data`). All untracked per-run
+directories (`AllData/FirstBead/Lambda/Movies/Restart/TMMC` under the three
+example folders) were removed. `git status --porcelain` at completion: only
+the untracked build artifacts in `src_clean/` (`hip_main.exe` and the five
+copied runtime DLLs) -- no modified or missing tracked files.
+
+**CUDA no-regression gate**: not re-run -- already recorded as an
+environmental wall at this exact `head_sha` (`7e3c08b`) in the linux-gfx90a
+revalidation entry above (`NVC_COMPILE` needs `nvc++`/NVIDIA HPC SDK, not
+`nvcc`; this Windows host has no CUDA toolkit at all, consistent with that
+gate running once per head_sha on whichever host can attempt it).
+
+**Jargon / documentation gates**: `python3 utils/jargon.py --port gRASPA` ->
+clean. `README.md`'s "AMD / ROCm (HIP)" section documents the Windows build
+in the project's own house style, in the same place as the CUDA/Linux
+instructions; this run followed it as written and it needed no correction.
+
+**Verdict**: PASS. `windows-gfx1151` -> `completed`, `validated_sha =
+7e3c08b33df60cf2a970e2d9647a7a6922514458`. This is the first `windows` gate
+satisfied at the current `head_sha` (both prior Windows platforms are stale
+at the pre-rescope sha) -- `python3 utils/moatlib.py pr-ready gRASPA` reports
+`True` after this record.
