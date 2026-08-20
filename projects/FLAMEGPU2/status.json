@@ -7,13 +7,10 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:16:31Z",
-  "updated_at": "2026-08-20T00:11:42Z",
+  "updated_at": "2026-08-20T00:26:32Z",
   "head_sha": "a290861",
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx90a",
-    "since": "2026-08-20T00:11:42Z"
-  },
+  "porting": null,
   "waivers": {},
   "license_clearance": {
     "approved_by": "jeffdaily",
@@ -129,5 +126,10 @@
       },
       "last_agent": "validator"
     }
+  },
+  "porting_released": {
+    "arch": "linux-gfx90a",
+    "since": "2026-08-20T00:11:42Z",
+    "at": "2026-08-20T00:26:32Z"
   }
 }
