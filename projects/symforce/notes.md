@@ -441,3 +441,35 @@ Device: AMD Radeon PRO V710 (gcnArchName: gfx1101)
 Numerical results match gfx1201 exactly (same expected values). The HIP-specific code paths (FlushSumBlock shared-memory atomics, SumStore butterfly reduction within tiled_partition<32>, WriteIdx/ReadIdx device memory) all execute correctly on wave32 gfx1101.
 
 VALIDATION PASSED on gfx1101 (AMD Radeon PRO V710, RDNA3, wave32).
+
+## Fix round moat-fix-465: merge upstream main 2026-08-20
+
+Upstream PR #465 went CONFLICTING after upstream main moved. Staged fix round on
+moat-fix-465 (cut from published tip e994ef0b): merged upstream/main
+(13e72357), one conflict in
+symforce/caspar/source/templates/buildfiles/CMakeLists.txt.jinja -- upstream's
+CASPAR_MIN_ARCH export + new CUDA arch list landed in the block our USE_HIP
+switch wrapped. Resolution keeps the USE_HIP structure and adopts upstream's new
+CUDA block verbatim inside the else(); HIP branch untouched. CASPAR_MIN_ARCH has
+no consumer outside the template. Merge commit: 398ba468.
+
+Evidence on linux-gfx1100 (Radeon Pro W7800, ROCm 7.2.1):
+- HIP build passes at the merge tip (runtime CMakeLists rendered from the
+  template with python_bindings=False, caslib.name=caspar_runtime):
+```
+cmake symforce/caspar/source/runtime -B build_hip -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100
+cmake --build build_hip -j16
+```
+- codeobj_diff verdict identical for all three device objects
+  (shared_indices.cu.o, solver_tools.cu.o, sort_indices.cu.o) between e994ef0b
+  and 398ba468 -> binary-equiv carry-forward candidate for the fix round.
+- CUDA path compile+link check with nvcc (conda env cuda-12.8, USE_HIP=OFF):
+  libcaspar_runtime_core.a links with upstream's new arch list.
+- jargon.py clean on the whole branch and on the moat-port..moat-fix-465 delta.
+
+BLOCKED at push: gh token lacks `workflow` scope and the merge carries
+upstream's .github/workflows edits, so GitHub refuses the HTTPS push
+("refusing to allow an OAuth App to ... update workflow"). No SSH key on this
+host. Needs `gh auth refresh -h github.com -s workflow`, then
+`git -C projects/symforce/src push origin moat-fix-465` and the round resumes
+(advance-head to 398ba468, delta review, carry-forward, fix-review PR).

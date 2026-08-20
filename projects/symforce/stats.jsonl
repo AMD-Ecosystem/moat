@@ -55,3 +55,7 @@
 {"kind":"session","ts":"2026-06-20T06:48:16Z","epoch":1781938096.515161800,"event":"end","platform":"windows-gfx1101"}
 {"kind": "tokens", "ts": "2026-06-20T06:49:35Z", "tokens": 50677, "source": "validator (gfx1101)"}
 {"kind": "tokens", "ts": "2026-06-23T22:25:32Z", "tokens": 20289, "source": "gfx90a dead-code cleanup (batch D subagent, shared)"}
+{"kind":"session","ts":"2026-08-20T17:39:47Z","epoch":1787247587.063128255,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-20T17:39:47Z","phase":"compile","seconds":0.119,"exit":1,"cmd":"cmake /var/lib/jenkins/moat/projects/symforce/src/symforce/caspar/source/runtime -B /var/lib/jenkins/moat/projects/symforce/src/build_fix465_gfx1100 -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100"}
+{"kind":"phase","ts":"2026-08-20T17:41:16Z","phase":"compile","seconds":9.944,"exit":0,"cmd":"bash -c cmake /var/lib/jenkins/moat/projects/symforce/src/symforce/caspar/source/runtime -B /var/lib/jenkins/moat/projects/symforce/src/build_fix465_gfx1100 -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 && cmake --build /var/lib/jenkins/moat/projects/symforce/src/build_fix465_gfx1100 -j16"}
+{"kind":"phase","ts":"2026-08-20T17:42:17Z","phase":"cuda-compile","seconds":8.054,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/symforce/src/build_fix465_cuda -j16"}
