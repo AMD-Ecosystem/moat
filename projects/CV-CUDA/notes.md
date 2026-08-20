@@ -1027,3 +1027,109 @@ impossible without rewriting a pushed staging branch, which would invalidate eve
 here, and GitHub's commit view preserves hard wraps rather than reflowing them, so it renders
 correctly as-is. The rule bites on the PR title/body and any maintainer reply, which are drafted
 separately -- run `utils/prose.py` on those before publishing.
+
+## Validation 2026-08-20 (linux-gfx1100, revalidate, fix round, tip `358edc33`)
+AMD Radeon Pro W7800 48GB (gfx1100, RDNA3 wave32), ROCm 7.2.1, host has 4x W7800 (indices 0-3).
+Fork clone at `358edc33` on `moat-fix-293`, tree clean throughout. Existing `build-hip` was
+already at this tip (whitespace-only delta from the prior build); `ninja` in `build-hip` did
+zero recompilation (2 trivial regen steps only, confirming the binaries under test are the
+tip's build).
+
+Commands:
+```
+bash utils/timeit.sh CV-CUDA compile -- bash -c "cd projects/CV-CUDA/src/build-hip && ninja -j$(nproc)"
+HIP_VISIBLE_DEVICES=0 bash utils/timeit.sh CV-CUDA test -- build-hip/bin/cvcuda_test_system
+HIP_VISIBLE_DEVICES=0 bash utils/timeit.sh CV-CUDA test -- build-hip/bin/cvcuda_test_unit
+HIP_VISIBLE_DEVICES=0 build-hip/bin/nvcv_test_cudatools_system   # x4 runs
+```
+
+Results:
+- `cvcuda_test_unit`: **27 passed / 1 skipped / 0 failed** (28 collected) -- exact match to the
+  documented baseline.
+- `nvcv_test_cudatools_system`: 4 runs on device 0 gave **8, 13, 9, 11** failures, all confined to
+  the two documented clusters (`InterpolationVarShapeWrapTest.correct_shift` +
+  `TypeTraitsMakeTypeVectorTest/3`, verified by grepping the FAILED list for anything outside
+  those two suite names -- none found in any run). Squarely inside the documented 6-13
+  nondeterministic range; no new cluster.
+- `cvcuda_test_system`: **3830 passed / 43 failed / 13 skipped** (3886 run) -- **one more than the
+  twice-reproduced 42 baseline** (reviewer measured 3831/42 on this exact tip on device 2, twice:
+  Review 2026-08-20 (b) initial and Review 2026-08-20 (c) final verification). Zero
+  `FindHomography` failures (`grep -c FindHomography` on the FAILED list = 0) -- the round's
+  actual fix target (allocator null-stream sync + wavefront-aware block floor) is completely
+  clean, matching the expectation exactly.
+
+### The one extra failure, diagnosed (not chased further)
+Diffing the 43-test FAILED list against the reviewer's documented 42 (Review 2026-08-20 (c),
+"cvcuda_test_system 42 failures ... 40 planar-vs-interleaved parity + 2 OpNormalize"): every one
+of the 39 non-ColorTwist planar-parity indices and both OpNormalize tests match exactly. The sole
+difference is `OpColorTwistPlanarVarShape/1.varshape_matches_interleaved`, which fails here in
+addition to the documented `/0` (index `/2` still passes, as documented).
+
+Checked whether this is genuinely reproducible or a one-off:
+- Two full independent `cvcuda_test_system` process invocations (minutes apart, device 0) gave
+  byte-identical 43-item FAILED lists.
+- `--gtest_filter="OpColorTwistPlanarVarShape/*.varshape_matches_interleaved"` alone, run 3x on
+  device 0: `/0` and `/1` FAIL every time, `/2` PASSES every time -- fully deterministic, not
+  flaky.
+- Re-ran the same filtered command on device 2 (`HIP_VISIBLE_DEVICES=2`, the exact index the
+  reviewer used): same result, `/0` and `/1` FAIL. Rules out a single-card manufacturing/clock
+  outlier among the host's 4 identical W7800s -- this is not GPU-instance variance.
+
+So the extra failure is a real, stable, reproducible deviation from the reviewer's own
+twice-measured baseline on the same binary and the same GPU index, not test flakiness on my end.
+It sits inside the identical residual family the reviewer already root-caused as non-functional
+(compiler FMA-contraction differences between the planar T=float and interleaved T=floatN
+instantiations of the same op, producing single-ULP byte mismatches against the new v0.17
+byte-identity parity check) -- `OpColorTwistPlanarVarShape/{0,1,2}` are three instantiations of
+that same templated test, and `/1` sitting at the same single-ULP boundary as `/0` is consistent
+with that mechanism, not with a new functional defect. I did not chase further: per validator
+stop discipline, this is recorded as a magnitude, not root-caused deeper.
+
+Per the dispatch criterion ("system-suite failures exactly the 42 documented parity residuals (or
+fewer)"), 43 does not meet the bar as stated, even though every indicator that matters for this
+round's actual change (zero FindHomography failures, unit suite exact, cudatools confined to its
+two clusters) is clean. Recording as **validation-failed** rather than deciding unilaterally that
+the extra single-ULP residual is in-tolerance -- that is a call for the porter/reviewer, most
+likely resolved as a one-line documented-baseline correction (42 -> 43) given the evidence above,
+but it is their call to make with full context, not mine to wave through silently.
+
+### CUDA no-regression gate (run at this head_sha; not previously recorded here)
+Toolchain: `/opt/conda/envs/cuda-12.8/bin/nvcc` 12.8.93, host gcc 13.3.0. Needed
+`mamba install -n cuda-12.8 -c nvidia libcublas-static libcusolver-static libcusparse-static cuda-cudart-static cuda-nvtx`
+(static math libs + nvtx, same requirement as the 2026-06-18 check) plus one throwaway local fix:
+this conda cuda-toolkit package ships `nvtx3/nvToolsExt.h` under
+`nsight-compute-*/host/target-linux-x64/nvtx/include/`, not under
+`targets/x86_64-linux/include/` where CV-CUDA's `find_path(... NAMES nvtx3/nvToolsExt.h)` looks;
+symlinked it in (host-local env fix, not a source/project change, nothing committed).
+```
+cmake -S . -B build-cuda -G Ninja -DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=80 \
+  -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc \
+  -DCMAKE_PREFIX_PATH=/opt/conda/envs/cuda-12.8 \
+  -DBUILD_PYTHON=OFF -DBUILD_TESTS=ON -DBUILD_TESTS_CPP=ON -DBUILD_TESTS_PYTHON=OFF \
+  -DBUILD_TESTS_WHEELS=OFF -DBUILD_BENCH=OFF -DBUILD_DOCS=OFF -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DPUBLIC_API_COMPILERS=
+bash utils/timeit.sh CV-CUDA cuda-compile -- cmake --build build-cuda -j16 -- -k 0
+```
+Configure confirms the pin took (`CUDA Arch: 80`, `--generate-code=arch=compute_80,code=[compute_80,sm_80]`
+on every nvcc invocation). 439/461 build steps succeeded, including both files this round
+actually touched (`resize_var_shape.cu.o`, `OpFindHomography.cu.o`, `OpFindHomography.cpp.o`) with
+no errors or warnings attached. The 3 failures are the identical pre-existing environmental class
+already documented in "CUDA compile-check 2026-06-18", present before this round's changes and
+unrelated to any port source:
+1. `lib/libnvcv_types.so` link fails: `src/nvcv/util/stubs/lib{dl,pthread,rt}-2.17_stub.so` are
+   unfetched git-LFS pointer files (`file` reports "ASCII text", contents are literal
+   `version https://git-lfs.github.com/spec/v1 ...` pointers); `git lfs` is not installed on this
+   host, so these were never materialized. Same 3 files, same failure mode as 2026-06-18.
+2. The two `nvcv_standalone`/`nvcv_standalone_static` nested `ExternalProject` sub-builds fail
+   their own `cmake` configure step with "Could NOT find GTest" -- a GTest-discovery gap in that
+   nested project's own `CMakeLists.txt:24 find_package(GTest)`, independent of any HIP/CUDA code.
+No source file failed to compile; the gate is a pure passthrough for everything this round
+touched. Recorded as `cuda-not-validated: pre-existing environmental gap (unfetched git-LFS stub
+.so + nested-subproject GTest discovery), identical class to the 2026-06-18 check, not a code
+regression` -- not a gate, consistent with validator.md's "environmental wall" handling.
+
+### State
+`linux-gfx1100` -> `validation-failed` at `358edc33`. Everything the round's fix targets (allocator
+sync -> FindHomography, wavefront floor) is clean; the sole deviation is one extra single-ULP
+residual outside the round's changed surface. Left for the porter/reviewer to close, most likely a
+baseline-count correction rather than a code change.

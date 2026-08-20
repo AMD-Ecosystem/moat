@@ -82,3 +82,8 @@
 {"kind":"phase","ts":"2026-08-20T19:33:27Z","phase":"compile","seconds":8.651,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/CV-CUDA/src/build-hip --target cvcuda"}
 {"kind":"session","ts":"2026-08-20T19:34:57Z","epoch":1787254497.190733267,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-20T19:38:49Z","epoch":1787254729.426776489,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T19:40:01Z","epoch":1787254801.456880381,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-20T19:40:08Z","phase":"compile","seconds":0.070,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/CV-CUDA/src/build-hip && ninja -j$(nproc)"}
+{"kind":"phase","ts":"2026-08-20T19:42:09Z","phase":"test","seconds":107.571,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/CV-CUDA/src/build-hip/bin && ./cvcuda_test_system"}
+{"kind":"phase","ts":"2026-08-20T19:48:58Z","phase":"test","seconds":0.906,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/CV-CUDA/src/build-hip/bin && ./cvcuda_test_unit"}
+{"kind":"phase","ts":"2026-08-20T19:54:23Z","phase":"cuda-compile","seconds":161.446,"exit":1,"cmd":"bash -c source /opt/conda/etc/profile.d/conda.sh && conda activate cuda-12.8 && cmake --build /var/lib/jenkins/moat/projects/CV-CUDA/src/build-cuda -j16 -- -k 0"}
