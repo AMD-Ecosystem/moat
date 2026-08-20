@@ -509,3 +509,172 @@ After `gh auth refresh -s workflow`, in order:
 3. reviewer pass on the delta, then revalidation on gfx1100 + gfx90a
 4. `utils/upstream.py --fix-review` for the delta approval, then `--merge-fix --apply`
 Do NOT `advance-head` before the push: it would point head_sha at a sha no other host can fetch.
+
+## Review 2026-08-20 (reviewer; fix round, delta moat-port..moat-fix-293 @ 9174db47)
+VERDICT: **changes-requested**. Two defects (one reproduced and fixed experimentally on this host,
+one wave64 static-analysis hazard), plus a misclassification of the round's own test evidence that
+also rides a promoted skill lesson to main. Merge fidelity and commit hygiene are clean.
+
+### R1 (BLOCKING, port defect, root-caused and fix verified) DefaultAllocator zero-fill is not ordered
+`src/nvcv/src/priv/DefaultAllocator.cpp:76` -- `NVCV_CHECK_THROW(::cudaMemset(ptr, 0, size));` runs on
+the NULL stream. HIP's blocking memset entry point is still *enqueued* for device memory, and the null
+stream does NOT synchronize with a stream created with `hipStreamNonBlocking`. Any caller that
+allocates an NVCV tensor/image and then uploads into it on a non-blocking stream races: the zero-fill
+can land AFTER the H2D copy and wipe the freshly uploaded data. v0.17 makes the tests do exactly that
+(upstream's own test fix creates a `cudaStreamCreateWithFlags(..., cudaStreamNonBlocking)` stream up
+front and uploads with `cudaMemcpyAsync` on it -- TestOpFindHomography.cpp:204 for the tensor test, :403 for the varshape test).
+
+THIS IS THE ROOT CAUSE OF THE 3 `_/OpFindHomography.varshape_correct_output` NaNs. Evidence chain
+(all on gfx1100, HIP_VISIBLE_DEVICES=2, build-hip at a81c5717's tree):
+- Device-side probe in `compute_src_dst_mean` (temporary, reverted): sample 0 reads its uploaded
+  points (`src0=(57,53)`), samples 1..N read `src0=(0,0)` / `dst0=(0,0)` from distinct, plausible
+  device pointers. So the inputs were zeroed, not miscomputed.
+- Zero inputs make the mean and abs-shift sums 0, which hits upstream's NEW explicit degenerate
+  sentinel in `compute_model_estimate` (`OpFindHomography.cu:828-838`, `x[tid] = nanf("")` at :837). The NaN
+  is upstream's "I saw no data" marker, not a solver blow-up -- the port's wave64/mask work in that
+  file is NOT implicated.
+- `AMD_SERIALIZE_COPY=3 AMD_SERIALIZE_KERNEL=3` alone makes the data arrive and the test PASS.
+- Adding `NVCV_CHECK_THROW(::cudaStreamSynchronize(0));` after the memset (one line, HIP-only branch)
+  and rebuilding: all 19 FindHomography tests pass, `cvcuda_test_system` goes 48 -> **42** failures,
+  `nvcv_test_cudatools_system` goes 16 -> **8-12** failures (that cluster is nondeterministic).
+- Both experiments reverted; the fork tree is clean and rebuilt at 9174db47.
+FIX: the zero-fill must be complete before `doAllocCudaMem` returns. `cudaMemset` +
+`cudaStreamSynchronize(0)` is verified; `hipMemsetAsync(...,0)` + null-stream sync is equivalent.
+Allocation already synchronizes (hipMalloc), so this costs nothing structural, and it is inside the
+existing `#if defined(__HIP_PLATFORM_AMD__) || defined(USE_HIP)` guard so the CUDA path is untouched.
+NOTE: this bug is not new to v0.17 -- it has been latent since the zero-fill was added; v0.17 is
+merely the first caller that allocates and then uploads on a non-blocking stream.
+
+### R2 (BLOCKING for the gfx90a gate, wave64, predicted not observed) blockDim < wavefront breaks two reductions
+`src/cvcuda/priv/OpFindHomography.cu:1443-1446` is new in v0.17:
+`block.x = refinementWork <= 32 ? 32 : refinementWork <= 64 ? 64 : ...` with `refinementWork = 2 *
+numPoints`. `computeModel` then calls `calculate_JtJ` -> `calculate_Jtx_matvec` (:512-564) and
+`max<myfabs>` (:778-811). Both compute the warp count as `blockDim.x / warpSize`:
+- `OpFindHomography.cu:556`: `val[r] = (tid < blockDim.x / warpSize) ? warpSums[r][lane] : 0;`
+- `OpFindHomography.cu:803`: `val = (tid < blockDim.x / warpSize) ? warpSums[lane] : 0;`
+On a 64-lane wavefront with `block.x == 32`, `blockDim.x / warpSize == 0`, so EVERY lane takes the
+`: 0` branch and the block reduction silently returns 0. The first stage is wrong too: the loop
+starts at `offset = warpSize / 2 == 32` and `__shfl_down_sync` then reads lanes 32..63, which are not
+part of the block. Reachable whenever `2 * numPoints <= 32`, i.e. `numPoints <= 16`; the varshape
+test generates exactly that (`dis_num_points(4, maxPoints)`, `numPoints = numXPoints^2`, minimum 16).
+gfx1100 is wave32 so it cannot exhibit this -- a green gfx1100 run is not evidence against it.
+FIX (arch-unified, CUDA spelling preserved): floor the refinement block at the wavefront width on the
+ROCm path, e.g. keep upstream's ladder but start it at 64 under `USE_HIP`. Ceil-dividing the warp
+count alone is not sufficient (it leaves the out-of-block shuffles).
+
+### R3 (must fix) the round's failure classification is partly wrong
+The "Fix round 2026-08-20" section classifies all 48 `cvcuda_test_system` failures as new-v0.17-path
+issues, "43 planar-vs-interleaved single-ULP byte-parity ... 3 FindHomography NaNs". Measured here:
+with R1 fixed, the failures drop to 42 = 40 planar-parity + 2 OpNormalize. So 3 FindHomography AND
+3 planar-parity failures were the allocator race, not FMA contraction or ULP. Re-measure after R1 and
+restate the residual set; the `-ffp-contract` evidence table quotes the same contaminated numbers.
+
+### R4 (must fix) the promoted skill lesson quotes the contaminated numbers
+`.claude/skills/cuda-to-rocm/references/fault-classes.md` (new this round, "One contraction setting
+cannot satisfy both kinds of bit-exact test") states "`-ffp-contract=on` gave 48 failures (43 of them
+planar-vs-interleaved parity)". Merging that to main teaches every future porter to attribute an
+allocator-ordering race to FMA contraction. Update the numbers to the post-R1 measurement. The
+lesson's core claim (clang contracts a `float` and a `float4` instantiation of the same template
+differently, so two code paths that are bit-identical on NVIDIA differ by 1 ULP on ROCm) survives:
+40 planar-parity failures remain after R1.
+
+### R5 (must fix, low cost) the gfx90a compute-capability watch item is under-specified
+The note names only `UseSharedMemoryCubicExpand()`. `hipDeviceAttributeComputeCapabilityMajor/Minor`
+gives gfx90a sm=90 and gfx1100 sm=110, so the two AMD arches take DIFFERENT policy branches at these
+sites (all new in v0.17 -- `git grep cudaDevAttrComputeCapability moat-port -- src/` is empty):
+- `src/cvcuda/priv/OpResize.cu:735` `UseSharedMemoryCubicExpand()`: `sm == 80 || sm == 90` -> TRUE on
+  gfx90a, FALSE on gfx1100. The smem-tiled float CUBIC EXPAND path is gfx90a-only.
+- `src/cvcuda/priv/legacy/pillow_resize.h:40` `PillowResizeSupportsFusedDownscale()`: `major == 8 ||
+  major == 9` -> TRUE on gfx90a (and on gfx942/gfx908, also major 9), FALSE on gfx1100.
+- Same-branch on both arches, listed so the validator can stop worrying about them:
+  `BrightnessContrastPolicy.hpp:29` (`sm == 89`), `AdaptiveThresholdPolicy.hpp:29` (`sm == 75`),
+  `OpHQResizeKernel.cuh:229` (`== 89`), `OpResize.cu:1164` (`sm >= 80`).
+- Unaudited threshold helpers keyed on sm, worth a glance if gfx90a diverges: `OpAdvCvtColor.cu:820`
+  and `:890` (`Planar444RowsPerThreadForSM`), `OpLabel.cu:1749` (`LabelU32BlockHeightForSM`),
+  `legacy/calc_hist.cu:276` (`UseOnePixelHistogramKernel`), `legacy/convert_to.cu:98`,
+  `legacy/copy_make_border_var_shape.cu:103`.
+The mapping choice itself is CORRECT and should not be changed: the new `cvcuda_test_unit`
+`TestCudaDeviceUtils.CurrentDeviceSMMatchesDeviceProperties` (tests/cvcuda/unit/TestCudaDeviceUtils.cpp:64-68) asserts
+`GetCurrentDeviceSM(sm) == properties.major * 10 + properties.minor`, so any sentinel mapping would
+have to diverge `hipGetDeviceProperties` too, or edit an upstream test.
+
+### R6 (low) new preprocessor block is misindented and the project's own formatter rejects it
+`src/cvcuda/priv/legacy/resize_var_shape.cu:1468-1472` (added in 92cbcd1e): `    #if` sits at 4
+spaces with its body at 8 while the surrounding statements are at 12. The repo runs clang-format
+v14 as a pre-commit hook (`.pre-commit-config.yaml:49-53`); clang-format moves the directive to
+column 0 and the body to 12. Run the project's own hook over the files this round touched.
+
+### R7 (low) the roctx lesson claims an exclusion the port did not make
+The new fault-classes.md roctx entry ends "NVTX's INJECTION api (used by interposer/probe test
+helpers) has no roctx analogue -- leave those helpers out of the ROCm build." Nothing in this port
+excludes one: `tests/cvcuda/nvtx_probe` is added at `tests/cvcuda/CMakeLists.txt:26-29` behind
+`BUILD_TESTS_PYTHON AND BUILD_PYTHON`, both OFF in the ROCm configuration, so it was never
+configured. `NvtxProbe.cpp` uses `NvtxGetExportTableFunc_t`, `NVTX_ETID_CALLBACKS`,
+`NvtxExportTableCallbacks` and `NVTX_CBID_CORE_RangePushA`, none of which `cmake/hip/nvtx3/
+nvToolsExt.h` provides -- so a ROCm build with `-DBUILD_PYTHON=ON` would fail to compile there.
+Either reword the lesson to what was verified, or make it true by adding the guard; and record the
+BUILD_PYTHON=ON gap in the scope decisions above either way.
+
+### DECISION (a) -ffp-contract stays `on`
+KEEP the `-ffp-contract=on` pin (CMakeLists.txt:65). Rationale, in order:
+1. `on` is the semantic match to nvcc's `--fmad=true` (contract within one expression, not across
+   statements). That equivalence is the port's stated numerics invariant and the reason the CUDA-gold
+   bit-exact tests mean anything on ROCm. `off` matches neither nvcc nor the host reference; it just
+   happens to make two HIP instantiations agree with each other.
+2. `off` regresses `_/OpWarpPerspective.varshape_correct_output/0502f34e`, a previously green,
+   CUDA-bit-exact case, and the pin exists precisely for that class (root cause #6, 2026-05-31).
+   Trading a validated GPU-vs-gold property for parity in a brand-new self-consistency suite is the
+   wrong direction.
+3. The evidence that motivated the flip is contaminated (R3): 6 of the 48 were the allocator race.
+   The comparison must be re-run after R1 before it can be weighed at all.
+4. It is a global flag: flipping it changes gfx90a numerics too and would require a full
+   re-validation of everything `on` was chosen to protect. Not a merge-round side effect.
+The remaining planar-vs-interleaved parity failures are therefore accepted as a documented residual
+of the new v0.17 parity suite (single-ULP, two instantiations of the same template) -- record the
+post-R1 count and the ULP evidence, and leave the follow-up (matching the vector width across the
+planar and interleaved instantiations, or a scoped `#pragma clang fp contract`) to a later round.
+
+### DECISION (b) the 3 FindHomography NaNs BLOCK this round
+They are a port defect (R1) in the port's own HIP-only allocator zero-fill, not upstream code
+behaving differently on HIP, and the fix is one line that is already verified on this host. Fix R1
+and R2, re-run `cvcuda_test_system` + `nvcv_test_cudatools_system` + `cvcuda_test_unit` on gfx1100,
+restate the residuals (R3), correct the lesson (R4), then the round can go to gfx90a revalidation.
+
+### What was checked (verification basis, not defects)
+- MERGE FIDELITY, exhaustively rather than by sampling: `git diff upstream/main...moat-fix-293
+  --name-only` is exactly the 67-file port surface (47 upstream files modified + 20 new
+  `cmake/hip/` headers), `--diff-filter=D` is EMPTY (the merge deleted no upstream file), and every
+  hunk outside the compat headers is either inside a `USE_HIP`/`__HIP_PLATFORM_AMD__` guard or
+  behaviour-identical on CUDA (`__shfl_*_sync(..., 32)` where 32 is the CUDA default width;
+  `typename`/`this->` two-phase-lookup spellings; `uint3{threadIdx.x,...}`; `OP::init` constexpr
+  member -> `__host__ __device__` function; `float4{a,b,c,0.f}` where CUDA aggregate-zero-filled).
+  No conflict markers (`git grep '<<<<<<<'` empty; the two `=======` hits are reStructuredText
+  section underlines in docs/sphinx/index.rst:20 and samples/operators/inpaint.rst:20).
+- All six prior root-cause fixes and the allocator zero-fill survive the merge intact.
+- roctx shim: CV-CUDA's only NVTX surface is `nvtxRangePushA`/`nvtxRangePop` (src/cvcuda/priv/
+  Nvtx.hpp:30,35; 228 call sites through `CVCUDA_NVTX_RANGE`), which map 1:1 onto roctx push/pop
+  nesting. `__has_include` ordering matches the `find_library` NAMES ordering.
+- rocRAND Box-Muller predicate is exactly equivalent: rocrand_common.h:140 `has_float` is
+  `boxmuller_float != ROCRAND_NAN_FLOAT` (spare present), rocrand_normal.h:748-761 caches the spare
+  on `rocrand_normal(rocrand_state_xorwow*)` and `rocrand_normal2` bypasses the cache -- the same
+  shape as curand's `boxmuller_flag == EXTRA_FLAG_NORMAL` / `curand_normal2`. `m_state` is protected
+  with `friend engine_boxmuller_helper`, so the helper is the sanctioned accessor.
+- a81c5717 (auto-contrast) is correct on both wave widths: stage 1 reduces within `tid/32` groups
+  with explicit width 32; stage 2 runs under `if (warp == 0)` so only lanes 0..31 are active and the
+  width-32 shuffles never reach an inactive lane; `lane < numWarps` guards the shared reads
+  (numWarps = 4 or 8). No other new-in-v0.17 shuffle/ballot/activemask site exists outside the files
+  already handled (`git grep __shfl/__ballot/__activemask/warpSize src/` audited).
+- New CUB usage is all >= 256-thread blocks (OpMinMaxLoc BW=32 BH=8; OpCLAHE kHistBins), so the
+  wave64 single-wavefront TempStorage hazard fixed in OpPairwiseMatcher does not recur.
+- Commit hygiene: 8 commits in `upstream/main..moat-fix-293`, every title `[ROCm]`-prefixed and
+  <= 65 chars, bodies carry rationale + AI-assistance disclosure + a fenced Test Plan, no
+  Co-Authored-By/noreply/ghstack/Signed-off-by, ASCII only in commit text and in every added source
+  line, author is the maintainer's own public identity, no organization-account references.
+- `utils/jargon.py` clean three ways: `--commits upstream/main..moat-fix-293`,
+  `--diff upstream/main...moat-fix-293` (whole branch, not just this round), and `--port CV-CUDA`.
+- Independent test reproduction on gfx1100 at the reviewed tree (build-hip rebuilt at 9174db47;
+  9174db47 itself is docs-only so the binaries match the code):
+  `nvcv_test_cudatools_system` 1107/1123 with 15x InterpolationVarShapeWrapTest.correct_shift +
+  1x TypeTraitsMakeTypeVectorTest/3 -- byte-identical to the recorded run and to the two documented
+  non-port residual clusters. `cvcuda_test_system --gtest_filter='*FindHomography*'` reproduces the
+  3 NaN failures deterministically, in isolation as well as in the full suite.

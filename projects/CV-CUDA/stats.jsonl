@@ -70,3 +70,5 @@
 {"kind":"phase","ts":"2026-08-20T18:31:16Z","phase":"compile","seconds":0.850,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/CV-CUDA/src/build-hip -j12"}
 {"kind":"phase","ts":"2026-08-20T18:32:11Z","phase":"test","seconds":1.113,"exit":1,"cmd":"/var/lib/jenkins/moat/projects/CV-CUDA/src/build-hip/bin/nvcv_test_cudatools_system"}
 {"kind":"phase","ts":"2026-08-20T18:32:21Z","phase":"test","seconds":0.900,"exit":0,"cmd":"/var/lib/jenkins/moat/projects/CV-CUDA/src/build-hip/bin/cvcuda_test_unit"}
+{"kind":"session","ts":"2026-08-20T18:37:36Z","epoch":1787251056.828988413,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T19:00:56Z","epoch":1787252456.970506909,"event":"end","platform":"linux-gfx1100"}
