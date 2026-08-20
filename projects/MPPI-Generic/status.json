@@ -7,7 +7,7 @@
   "priority": 4.766,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T00:36:14Z",
-  "updated_at": "2026-08-20T00:08:57Z",
+  "updated_at": "2026-08-20T00:09:21Z",
   "head_sha": "cef61e57f70cf56e475c6d182a9098d5dcd8b827",
   "porting": null,
   "waivers": {},
@@ -129,5 +129,6 @@
         "at": "2026-06-23T22:44:48Z"
       }
     }
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/MPPI-Generic/pull/1"
 }
