@@ -68,3 +68,5 @@
 {"kind":"phase","ts":"2026-08-20T05:04:13Z","phase":"test","seconds":12.701,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat-worktrees/Quest/projects/Quest/src && python3 -m pytest quest/tests/test_decode_launch_shape.py -q"}
 {"kind":"phase","ts":"2026-08-20T05:06:13Z","phase":"test","seconds":17.791,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat-worktrees/Quest/projects/Quest/src && python3 -m pytest quest/tests/test_rope.py quest/tests/test_estimate.py quest/tests/test_decode_attention.py quest/tests/test_approx_attention.py quest/tests/test_decode_launch_shape.py -q"}
 {"kind":"session","ts":"2026-08-20T05:12:34Z","epoch":1787202754.601834508,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T05:15:54Z","epoch":1787202954.747185483,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T05:24:08Z","epoch":1787203448.517911615,"event":"end","platform":"linux-gfx1100"}

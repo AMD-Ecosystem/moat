@@ -1989,3 +1989,97 @@ three platforms carried `validated_sha` `9be60fc` and now read `revalidate`; the
 fresh run at `f50e33a` already (per the review's last bullet) and this head adds shared
 unguarded changes to `decode_attn.cuh`, so nothing was lost. gfx1100 evidence above is a
 porter's build+test record, not a validation record.
+
+## Review 2026-08-20 (linux-gfx1100, delta `f50e33a..c9828e2`, whole branch `origin/main...c9828e2`) -- PASS
+
+Follow-up on the `changes-requested` round. Scope: the delta that answers the previous
+review's findings, plus a re-read of the whole branch for anything the churn disturbed.
+`pr-state Quest` is `none` and `status.json` carries no `fix` block, so this is still the
+pre-PR branch and `moat-port` itself is the working branch. Six commits, `origin/moat-port`
+== `c9828e2`, working tree clean.
+
+### Previous round's findings
+
+**Finding 1 (three silent no-op modes) -- closed, all three verified in the code, not from
+the porter's summary.**
+
+- Unrecognized value: `decode_attn.cuh:878-888` throws `std::invalid_argument` before the
+  occupancy decision at `:890`. Same idiom and same exception type the file's own
+  `SWITCH_*` macros already use (`decode_attn.cuh:1089,1145,1151`; `<sstream>`/`<stdexcept>`
+  arrive through `flashinfer/utils.cuh:21-22`), so nothing new is required on the include
+  path and the throw crosses only ordinary lambdas -- `DISPATCH_PYTORCH_DTYPE_TO_CTYPE` and
+  `SWITCH_LAYOUT` in `approx_attn.cu:41-56`, none of them `noexcept` -- to reach pybind11 as
+  a `ValueError`.
+- Static latch: gone. `decode_attn.cuh:876` is a plain per-call `std::getenv`, and
+  `:890` is the only consumer of the resulting `forced_shape`. This host function is
+  reached once per `begin_forward` (`decode_handler.cuh:91-107` is its only caller
+  fork-wide), so the per-call read costs nothing.
+- Requested split reverting: `decode_attn.cuh:924-931` throws when `forced_shape < 0` and
+  `tmp_size` ended at `0`, immediately after the `if(new_batch_size == batch_size)` exit at
+  `:917`. The guard cannot fire from Python -- `approx_attn.cu:33` fixes
+  `batch_size = 1`, and `PartitionPagedKVCacheBinarySearchMinNumPagePerBatch`
+  (`decode_attn.cuh:758-783`) plus the `new_batch_size += 1` append cannot return `1` -- so
+  the porter's inverted-condition check is the right way to have exercised it.
+
+With those in place a green forced run is real evidence: forced `single` sets
+`tmp_size = 0` unconditionally (`:893-896`), the dispatch reads exactly that through
+`GetTempFloatBuffer` (`decode_handler.cuh:248-260`), and there is no second occupancy
+decision anywhere on the branch (`max_grid_size` is consumed only at `:892` and `:914`).
+
+**Finding 2 (no in-tree consumer, undocumented, not HIP-guarded) -- closed.**
+`quest/tests/test_decode_launch_shape.py` drives both shapes as subprocesses, which also
+survives the caching in finding 1 ever returning; it names the two suites by path
+(`:32`), so collecting the directory cannot recurse. Its third case
+(`test_unrecognized_launch_shape_is_rejected`, `:42-45`) is worth more than it looks: it
+fails unless the loaded module really reads the variable, so it is a canary against a
+stale `_kernels*.so` under the other two cases. `README.md:73` documents the knob. The
+not-HIP-guarded decision is stated in the README, the commit body and the notes; it is the
+right call for the reason given (the gap is a CU-count property, not a platform one) and
+it is inert unless set.
+
+**Finding 3 items -- carried, unchanged.** See "Standing" below.
+
+### Minor -- not worth a porter round, fold into the PR-prep pass
+
+1. `quest/tests/test_decode_launch_shape.py:27-28` -- the `shape is None` branch of
+   `_run_suites` is unreachable. The only two callers (`:38`, `:43`) pass a string. Drop
+   the branch and the `else`.
+2. `README.md:73` -- the knob is documented inside `### Building on AMD GPUs (ROCm)`
+   (`README.md:58`) but is live on the CUDA build too, as its own third sentence says. A
+   reader of the CUDA build instructions never reaches it. One line under the CUDA
+   instructions, or a move to a neutral spot, when the branch is squashed for the PR.
+
+### Standing, carried from the previous round and still owed
+
+- The CUDA no-regression gate at this head. The branch now changes NVIDIA behaviour in
+  three places -- the `cbc3890` single-block repair, the `getenv` on every
+  `begin_forward`, and the two new throws -- and the CMake restructure
+  (`quest/ops/CMakeLists.txt:1-60`) has never been configured with a CUDA toolchain. No
+  `nvcc` on this host either, and the blocker remains the pre-existing RAFT branch-24.02
+  `CUDA::nvToolsExt` wall rather than anything the port did. Re-checked here:
+  `rapids_cuda_init_architectures` appears nowhere under `quest/ops/cmake`, which is the
+  one entry point that must precede `project()`, so there is still no known breakage
+  vector -- but it is unverified, not verified.
+- All three platforms read `revalidate` at `c9828e2`. The new test file means a plain
+  suite run now covers both launch shapes on every platform, so no validator needs to
+  remember the knob.
+- The series is self-reverting for a reader (`9be60fc "Always split the decode KV range
+  across blocks"` against `cbc3890 "Fix the single-block decode path and re-enable it"`).
+  The PR-prep squash stays worth doing on its own merits.
+
+### Re-verified on the moved tip, so a later round does not redo them
+
+The delta touches only the host work-estimation function, `README.md` and the new test, so
+the device-side items were re-read rather than assumed: `protective_get_k_ptr_heads` still
+selects the trailing page by position and still bounds the `indices` read at
+`page_iter < last_indptr - 1` (`decode_page.cuh:337-350`); the extended indptr is installed
+on the un-partitioned path only (`decode_handler.cuh:258-260`) and `float_buffer_` remains
+the sound "partitioned" sentinel for `GetChunkIndPtr`/`GetBatchIdxMap`
+(`decode_handler.cuh:55-70`, assigned only at `:110`); `BeginForward` allocates nothing
+before the throw can happen (`:90-108`), so a rejected value leaks no buffer;
+`jargon.py --port Quest` clean; `moatlib.py audit-commits Quest` OK (six `[ROCm]` titles,
+all under 72 characters, disclosure present, no agent `Co-Authored-By`); no non-ASCII in
+the delta. The lesson promoted to `cuda-to-rocm/references/validation.md` ("A path only
+some GPUs reach") was checked against the code it describes rather than the summary: the
+three no-op modes it lists are the ones this branch actually shipped and fixed, and its
+code fragments are the labelled anti-patterns plus the remedy, not a recipe.
