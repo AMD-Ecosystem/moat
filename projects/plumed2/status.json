@@ -7,14 +7,16 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:16:31Z",
-  "updated_at": "2026-08-20T07:52:33Z",
+  "updated_at": "2026-08-20T20:14:41Z",
   "head_sha": "cb90687f8706326ed2ce02f4a98c18bd05bdc582",
   "depends_on": [],
   "porting": null,
   "waivers": {
     "windows": {
       "reason": "PLUMED's build system for the GPU plugin is Linux-only, so the obstacle is the platform rather than the GPU. It requires autotools (autoconf/automake, absent on the Windows host) and emits POSIX shared objects loaded via dlopen; configure.ac detects only .so and .dylib and has no Windows .dll / LoadLibrary path. Making PLUMED's plugin mechanism work on Windows is upstream build-system work, far outside this port's minimal footprint. Confirmed on windows-gfx1101 and windows-gfx1201. NOTE for the approver: approving this alone does NOT make plumed2 PR-ready -- wave32 is also unsatisfied at head and still needs a gfx1100 run. Because plumed2 cannot build on Windows at all, the wave32 gate cannot be carried by this Windows host and must come from a Linux RDNA machine.",
-      "suggested_at": "2026-08-20T07:52:33Z"
+      "suggested_at": "2026-08-20T07:52:33Z",
+      "approved_by": "jeffdaily",
+      "at": "2026-08-20T20:14:41Z"
     }
   },
   "license_clearance": {
