@@ -633,3 +633,93 @@ Two things are parked for a human decision, both stated here so neither is invis
 ## Upstream offer posted 2026-08-20
 
 The draft comment from the 2026-08-20 contribution round was approved by Jeff Daily and posted on FLAMEGPU/FLAMEGPU2#1379: https://github.com/FLAMEGPU/FLAMEGPU2/pull/1379#issuecomment-5351177718 (behind the standing AI-disclosure line). The amdgpu-fixes branch (2ecf5a01, cut from ptheywood tip 5e42a64) is pushed to AMD-Ecosystem/FLAMEGPU2 after the host token gained the workflow scope. Waiting on ptheywood: PR against amdgpu vs cherry-pick. If PR: it is an upstream PR and must go through the fork review-PR approval flow first.
+
+## Wave32 evidence at the offered tip, 2026-08-20 (linux-gfx1100)
+
+The gfx1100 numbers in the posted comment are from June, at OUR `moat-port` base
+`6487086`, i.e. before ptheywood's 84-commit rewrite of `amdgpu` (the
+`FLAMEGPU_GPU` -> `FLAMEGPU_BACKEND` rename and the `flamegpu::detail::gpu::*`
+abstraction series). Only gfx90a had been run at his current tip, and gfx90a is
+wave64, so nothing had exercised the rewritten runtime abstraction on wave32. This
+round closes that: the exact branch we offered him, built and run on wave32.
+
+No source change was made and nothing was pushed. `moat-port` is untouched,
+`head_sha` is still `a290861`, and `amdgpu-fixes` is still `2ecf5a01`.
+
+### What was built
+
+`AMD-Ecosystem/FLAMEGPU2` branch `amdgpu-fixes` at `2ecf5a01` -- ptheywood's tip
+`5e42a64b` plus our two fixes (`CUDAEventTimer` rule-of-five, `windows.h` include in
+`CUDAEnsemble.cu`). Reported project version `2.0.0-rc.5+2ecf5a01`.
+
+Host: AMD Radeon Pro W7800 48GB, gfx1100 (RDNA3, wavefront 32), Linux.
+ROCm 7.2.3 at `/opt/rocm` (`AMD clang version 22.0.0git ... roc-7.2.3 26084`),
+CMake 3.31.6, 64-core Threadripper PRO 5975WX.
+
+```bash
+git clone --branch amdgpu-fixes https://github.com/AMD-Ecosystem/FLAMEGPU2 projects/FLAMEGPU2/src
+
+cmake -S projects/FLAMEGPU2/src -B projects/FLAMEGPU2/src/build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DFLAMEGPU_BACKEND=HIP \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_CXX_COMPILER=/opt/rocm/lib/llvm/bin/clang++ \
+  -DCMAKE_C_COMPILER=/opt/rocm/lib/llvm/bin/clang \
+  -DFLAMEGPU_BUILD_TESTS=ON
+
+cmake --build projects/FLAMEGPU2/src/build \
+  --target flamegpu boids_bruteforce tests -j 32
+```
+
+Configure 12.4 s, compile 179.3 s, both exit 0. Zero compiler errors and zero
+compiler warnings. As on gfx90a, his branch needs no source change beyond our two
+fixes to build for HIP; the `FLAMEGPU_BACKEND` option name is required (the old
+`FLAMEGPU_GPU` still works via his deprecation shim).
+
+### Test results
+
+```bash
+./projects/FLAMEGPU2/src/build/bin/Release/tests
+```
+
+```
+[==========] Running 1134 tests from 89 test suites.
+[==========] 1134 tests from 89 test suites ran. (28686 ms total)
+[  PASSED  ] 1070 tests.
+[  SKIPPED ] 64 tests
+```
+
+Exit 0. **1070 passed, 64 skipped, 0 failed** -- identical to the gfx90a run at the
+same commit, including the test count (1134) and the skip set (all RTC, unsupported
+on the HIP backend). 46 tests are `DISABLED_` upstream and are not in the 1134.
+
+So the abstraction series is wave32-clean: no wavefront-size assumption leaked into
+`flamegpu::detail::gpu::*`, and the wave32 result did not drift from June
+(1069/64/0 at `6487086` vs 1070/64/0 here; the extra pass is his new
+`getDeviceName` / `getDeviceNames` test, same delta gfx90a saw).
+
+```bash
+./projects/FLAMEGPU2/src/build/bin/Release/boids_bruteforce --steps 10 -v
+# Total Processing time: 0.058868 s, exit 0
+```
+
+Bit-for-bit the same total step time as the June run on this host (0.058773 s then),
+which is a useful negative result on its own: his rewrite cost nothing measurable.
+
+### Consequence for the posted comment
+
+The comment tells ptheywood that gfx1100 was tested on "an earlier revision of the
+branch". That is now understated -- gfx1100 matches gfx90a at `5e42a64`. Offering
+the correction is a person's call and a second upstream comment; it is not urgent
+and probably best folded into whatever reply his answer prompts.
+
+### Stage still needs a person
+
+Unchanged from the previous round and repeated here so it is not lost: the stage is
+`porting` with the lock released, and `porting` exits only to `ported` or
+`delta-ported`. Both are false -- `moat-port` was not touched and there is nothing
+new for a reviewer. So the selector will keep dispatching a porter to this project
+on every host, and each one will find no porting work. This round did not write a
+stage. Two ways out, both a person's: `set-hold` until ptheywood answers, which is
+exactly what "parked on someone else's reply" means and touches no state; or a
+repair back to `review-passed`, where the gfx90a round found it.

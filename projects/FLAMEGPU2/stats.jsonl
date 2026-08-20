@@ -37,3 +37,9 @@
 {"kind":"phase","ts":"2026-08-20T00:19:30Z","phase":"compile","seconds":175.731,"exit":0,"cmd":"cmake --build projects/FLAMEGPU2/src/build --target flamegpu boids_bruteforce tests -j 96"}
 {"kind":"phase","ts":"2026-08-20T00:20:55Z","phase":"test","seconds":39.988,"exit":0,"cmd":"env HIP_VISIBLE_DEVICES=3 ./projects/FLAMEGPU2/src/build/bin/Release/tests"}
 {"kind":"session","ts":"2026-08-20T00:26:36Z","epoch":1787185596.305094202,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-20T05:24:02Z","epoch":1787203442.184920898,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-20T05:24:39Z","phase":"compile","seconds":12.435,"exit":0,"cmd":"cmake -S projects/FLAMEGPU2/src -B projects/FLAMEGPU2/src/build -DCMAKE_BUILD_TYPE=Release -DFLAMEGPU_BACKEND=HIP -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_CXX_COMPILER=/opt/rocm/lib/llvm/bin/clang++ -DCMAKE_C_COMPILER=/opt/rocm/lib/llvm/bin/clang -DFLAMEGPU_BUILD_TESTS=ON"}
+{"kind":"phase","ts":"2026-08-20T05:27:49Z","phase":"compile","seconds":179.292,"exit":0,"cmd":"cmake --build projects/FLAMEGPU2/src/build --target flamegpu boids_bruteforce tests -j 32"}
+{"kind":"phase","ts":"2026-08-20T05:28:34Z","phase":"test","seconds":29.836,"exit":0,"cmd":"./projects/FLAMEGPU2/src/build/bin/Release/tests"}
+{"kind":"phase","ts":"2026-08-20T05:28:48Z","phase":"test","seconds":0.855,"exit":0,"cmd":"./projects/FLAMEGPU2/src/build/bin/Release/boids_bruteforce --steps 10 -v"}
+{"kind":"session","ts":"2026-08-20T05:31:19Z","epoch":1787203879.374487956,"event":"end","platform":"linux-gfx1100"}
