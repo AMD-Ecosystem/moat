@@ -814,3 +814,69 @@ windows-gfx1151, windows-gfx1201. Fixing the two findings above advances head ag
 so the porter should land both before any validator starts. The resulting delta stays
 test/doc/build-glue only, so a binary-equivalence carry-forward remains the expected
 route for the four non-gfx90a arches.
+
+## Porter round 2026-08-20 (linux-gfx90a) -- answers the 2026-08-20 review
+
+Both findings fixed by rebuilding the three-commit branch (no upstream PR, so a
+rewrite is allowed). New head `378d793e` (was `514cb457`); old tip kept locally as
+`backup-514cb457` in the fork clone.
+
+**Finding 1 (hipify.sh comment scope).** The comment now says what the commit message
+says. Folded into the commit that owns the file (`b4cf8268`, was `a509e6a8`), not a
+follow-up commit, so the branch never asserts the over-broad claim:
+
+```
+-    # undo the doubled hip/ prefix hipify-perl (ROCm 7.x) emits for device_functions.h
++    # ROCm 7.2.x hipify-perl emits a doubled hip/hip/ prefix for device_functions.h;
++    # undo it (harmless no-op on later versions, which emit the correct path)
+```
+
+`bash -n faiss/gpu/hipify.sh` passes; the sed itself is byte-identical.
+
+**Finding 2 (bd1809f Test Plan had no fenced command block).** Reworded in place
+(`111ccaa8`, was `bd1809f3`). The Test Plan now carries the literal Windows gfx1151
+hipify/configure/build/run commands and the Linux gfx90a `TestCodePacking` re-check in
+two fenced blocks, keeps the 10-suite results table, and explains `-- -k 0` (the
+`gtest_discover_tests` 5s timeout, not a link failure). Gate now clean:
+
+```
+$ python3 utils/moatlib.py audit-commits faiss
+OK: fork commit messages conform (1 local clone(s) judged)
+$ python3 utils/jargon.py --port faiss
+jargon: clean
+```
+
+**No rebuild was needed, and this is verifiable rather than asserted.** The whole tree
+delta versus the reviewed tip is the one comment line above, in a script that runs only
+from the `FAISS_ENABLE_ROCM` arm of CMakeLists.txt and is not compiled on either path:
+
+```
+$ git diff 514cb4577 378d793e6 --stat
+ faiss/gpu/hipify.sh | 3 ++-
+$ git diff 514cb4577 378d793e6 -- . ':!faiss/gpu/hipify.sh'
+(empty)
+```
+
+So the porter's 108/108 gfx90a ctest run recorded above still describes this tree
+exactly, minus a comment. No `timeit.sh compile` entry for this round: nothing was
+compiled, and inventing one would be false telemetry.
+
+**Classification / platform state.** `advance-head` moved head to `378d793e`; all five
+platforms carry `validated_sha = ab1dcf71` and therefore read as needing revalidation,
+same as they did at `514cb457`. Note for whoever carries them forward:
+
+```
+$ python3 utils/moatlib.py classify faiss 514cb45770310d75400c096bcbd5570cea907b54 378d793e6...
+class=mixed arch_independent=False inert=False
+faiss/gpu/hipify.sh: unknown file type
+```
+
+`mixed` here is only the classifier having no rule for `.sh`; the single hunk is a
+comment. Against `ab1dcf71` the delta is still hipify.sh plus the two host-only test
+TUs (TestCodePacking.cpp, TestUtils.cpp), neither of which enters `faiss_gpu_objs`
+device code, so binary-equivalence carry-forward remains the expected route for the
+four non-gfx90a arches, exactly as the review predicted.
+
+**Control-plane defect from the review also fixed** (rides on this branch, not the
+fork): `utils/check.py` GATES table had the `# slow: shells out per fork clone`
+comment duplicated on `commits` and missing from `forks`.
