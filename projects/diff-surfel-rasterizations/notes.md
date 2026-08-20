@@ -1106,3 +1106,28 @@ Pre-completion checks: jargon clean; the ROCm build is documented at README.md:6
 `git status --porcelain` in src shows only untracked build output (`build/`,
 `*.egg-info`, the built `_C.*.pyd` per variant) and no modified tracked file, at
 `f088679` before and after. No fork commit made or needed.
+
+## Commit-message offences on this branch, unpublished (2026-08-19)
+
+`python3 utils/moatlib.py audit-commits diff-surfel-rasterizations` reports the following. They are recorded
+rather than fixed: fixing a commit message rewrites its sha, and the branch carries
+validated platforms.
+
+| commit | offence | effect if published |
+|---|---|---|
+| `98f0c05` | no Test Plan at all -- the Windows/HIP `ext.cpp` ABI fix | a build-system fix with no stated verification, on the platform it exists for |
+| `d7e9f1a` | Test Plan uses an indented block rather than a fenced one | none in practice: an indented block renders as code on GitHub. AGENTS.md asks for fenced blocks specifically, so the gate flags it |
+
+Why this matters before the pull request and not after: there is no squash at PR prep.
+`upstream.py --publish` opens the pull request with `--head <fork>:<branch>`, so every
+commit here is what the maintainer reads, permanently. This branch has no upstream PR
+yet, so it is still fixable -- once one is open, `moat-port` is frozen and rewriting it
+would rewrite the pull request in front of the maintainer.
+
+A message-only rebase would be tree-identical, so `moatlib squash-carry-forward` would
+carry every validated platform across it and nothing would need revalidating. The cost
+is a `--force-with-lease` push on a shared branch, which is why it is a decision rather
+than a cleanup.
+
+Ruled `hold` by Jeff Daily 2026-08-19: do not rewrite history for this; record it where
+whoever preps the pull request will see it.
