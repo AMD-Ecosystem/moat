@@ -1834,3 +1834,91 @@ this delta touches it, so it is not a finding against this round. Worth noting t
 is the SAME class this round fixed in src/types.h -- hiprtc does not predeclare the
 fixed-width types -- so the same one-line `#include <cstdint>` in those two headers is the
 likely fix whenever the jpeg-texture path is taken up.
+
+## Revalidation linux-gfx1100 2026-08-20
+
+Platform read `revalidate` at head fc84149 (validated_sha was still 302cb5fe from the
+prior published round). GPU: AMD Radeon Pro W7800 48GB, 35 CUs (wave32), ROCm 7.2.3.
+
+### Build
+
+Incremental rebuild off the existing configured tree (already at fc84149, gfx1100):
+
+```bash
+HIP_VISIBLE_DEVICES=0 cmake --build \
+    /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build --target CuRast -j$(nproc)
+```
+
+`[100%] Built target CuRast`, exit 0, 0 errors (nothing to recompile; binary mtime newer
+than every tracked source file, confirming it reflects fc84149).
+
+### GPU test
+
+```bash
+cd /var/lib/jenkins/moat/projects/CuRast/src
+HIP_VISIBLE_DEVICES=0 ROCM_PATH=/opt/rocm \
+    /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build/CuRast \
+    --bench ./example_donaukanal_urania.glb 1920 1080 30
+```
+
+- rc=0, 30 frames, 966461 of 966461 triangles visible every frame.
+- best visbuffer-pipeline time 0.160 ms @ 1920x1080 (matches the recorded 0.159-0.160 ms
+  band, no regression).
+- hiprtc code objects match the record exactly: resolve.cu 103056 B,
+  triangles_visbuffer.cu 154112 B, points.cu 6168 B.
+- bench_render.png: 264481 bytes, 1920x1080, 8-bit RGBA PNG (byte-identical size to the
+  recorded evidence). Non-blank Donaukanal render.
+- jpeg/BitReaderGPU.cuh + HashMap.cuh hiprtc errors reproduced as expected: pre-existing,
+  unrelated to this round, unchanged from prior records.
+- No GPU faults, no cooperative-launch failures.
+
+Gotcha hit and worked around: invoking the binary through `utils/timeit.sh` with a
+relative model path segfaults, because `timeit.sh` itself `cd`s to the MOAT repo root
+before running "$@", so the relative `./example_donaukanal_urania.glb` no longer resolves
+from the fork checkout. Worked around with `bash -c 'cd <fork src> && ... CuRast --bench
+./example_donaukanal_urania.glb ...'` as the command handed to `timeit.sh`. Not a port
+defect -- a harness/cwd interaction with the wrapper script, worth remembering for any
+project whose binary takes cwd-relative asset paths.
+
+### CUDA no-regression gate (not previously recorded at this head_sha)
+
+`notes.md` had no CUDA-gate record for 100d2e7/fc84149 (only for the earlier 08da182 and
+ae95035 heads), so this Linux host ran it for the current fix round.
+
+nvcc `/opt/conda/envs/cuda-12.8/bin/nvcc`, host gcc 13.3, pinned sm_80. Throwaway local
+patches (reverted before finishing, confirmed via `git status --porcelain` clean
+afterward): `CMakeLists.txt` `CMAKE_CUDA_ARCHITECTURES 75 86 89 90` -> `80`,
+`cmake/common.cmake` `find_package(CUDAToolkit 13.1` -> `12.8`.
+
+```bash
+cmake /var/lib/jenkins/moat/projects/CuRast/src -DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=80 \
+    -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc \
+    -DCMAKE_CUDA_FLAGS="-I/opt/conda/envs/cuda-12.8/targets/x86_64-linux/include" \
+    -B <cudabuild>
+cmake --build <cudabuild> --target CuRast -j8
+```
+
+Configure succeeds; build fails with exit 2, the SAME pre-existing wall recorded against
+ae95035/037df01: `src/CURuntime.h:73` `println(FILE*)` needs a C++23-`<print>` stdlib,
+`src/kernels/lines.cu:93,173` `atomicMin(uint64_t*)` has no matching overload under 12.8,
+`src/main.cpp:70` `cuCtxCreate` 4-arg form needs CUDA 13.1's `CUctxCreateParams` API. This
+fix round's own delta (100d2e7..fc84149: the two `HIP_DEVPTR_ADD` sites in main.cpp plus
+guarded/`#else`-only whitespace in CuRast_render.h and triangles_translucent.cu) touches
+none of the three failing sites and introduces no new error class. GATE PASS (pure
+passthrough; failures are pre-existing upstream, not a regression from this round).
+
+### Integrity gate
+
+`git -C .../projects/CuRast/src status --porcelain` clean (no modified tracked files) both
+before and after the CUDA-gate throwaway patches were reverted.
+
+### Documentation and jargon
+
+`python3 utils/jargon.py --port CuRast` -> clean. README.md `### AMD GPUs (ROCm/HIP)`
+section (build instructions, dependency list, Known Issues) unchanged by this round and
+still accurate.
+
+### Result
+
+PASS. `moatlib.py set-state CuRast linux-gfx1100 completed --agent "validator:claude"`,
+recording `validated_sha = fc84149`.

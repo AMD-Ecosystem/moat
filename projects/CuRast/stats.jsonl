@@ -135,3 +135,9 @@
 {"kind":"phase","ts":"2026-08-20T18:28:59Z","phase":"test","seconds":1.979,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/CuRast/src && HIP_VISIBLE_DEVICES=0 ROCM_PATH=/opt/rocm /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build/CuRast --bench ./example_donaukanal_urania.glb 1920 1080 30 2>&1 | tail -6"}
 {"kind":"session","ts":"2026-08-20T18:31:45Z","epoch":1787250705.410426389,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-20T18:34:55Z","epoch":1787250895.670152778,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-20T18:36:22Z","epoch":1787250982.020658302,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-20T18:36:34Z","phase":"compile","seconds":0.207,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build --target CuRast -j64"}
+{"kind":"phase","ts":"2026-08-20T18:36:44Z","phase":"test","seconds":0.219,"exit":139,"cmd":"/var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build/CuRast --bench ./example_donaukanal_urania.glb 1920 1080 30"}
+{"kind":"phase","ts":"2026-08-20T18:37:00Z","phase":"test","seconds":1.910,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/CuRast/src && HIP_VISIBLE_DEVICES=0 ROCM_PATH=/opt/rocm /var/lib/jenkins/moat/agent_space/CuRast-fix2-gfx1100-build/CuRast --bench ./example_donaukanal_urania.glb 1920 1080 30"}
+{"kind": "phase", "ts": "2026-08-20T18:40:45Z", "phase": "cuda-compile", "seconds": 0.0, "exit": 2, "cmd": "cmake --build <cudabuild> --target CuRast -j8 (pinned sm_80, nvcc 12.8; throwaway CMAKE_CUDA_ARCHITECTURES + CUDAToolkit version patches, reverted)"}
+{"kind":"session","ts":"2026-08-20T18:41:21Z","epoch":1787251281.711297402,"event":"end","platform":"linux-gfx1100"}
