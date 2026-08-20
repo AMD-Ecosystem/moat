@@ -1832,3 +1832,101 @@ HIP loses that race deterministically where Linux HIP wins it.* Generic symptom 
 one constant tensor wrong while everything computed around it is exact, the wrong values being
 plausible-magnitude foreign floats, and a "fix" that appears the moment you add a debug
 readback. Kept here rather than promoted now because this brief was investigation-only.
+
+## Fix round 2026-08-20 (windows-gfx1151) -- one-line fix landed on the staging branch
+
+The stream-ordering race identified in the investigation section above is now
+implemented and verified on this host. PR #2420 is open, so the commit went on the
+staging branch cut from the published tip, never on `moat-port`.
+
+- Branch `moat-fix-2420`, base `7727fa32c199` (unchanged published tip).
+- Commit `df2c56a` `[ROCm] Order weight uploads against the first evaluation`.
+
+### The diff (one line, `src/neural/backends/cuda/layers.cc`, `allocAndUpload`)
+
+```
+   copyTypeConverted((DataType*)(*gpu_dest), (float*)scratch,
+                     (int)cpu_src.size(), 0);
++  ReportCUDAErrors(cudaStreamSynchronize(0));
+ }
+```
+
+Unconditional, not guarded by `USE_HIP`/`__HIPCC__`: the missing ordering is a real
+defect on the CUDA path too, which is merely winning the race today. Init-time only, so
+no steady-state cost.
+
+### Build (unchanged recipe, TheRock ROCm 7.14.0a20260612 Windows SDK, AMD clang 23.0.0git)
+
+Build directory `build-hip-win-gfx1151` was configured earlier this session with:
+
+```
+meson setup build-hip-win-gfx1151 . \
+  -Dhip=true -Damd_gfx=gfx1151 \
+  -Dplain_cuda=false -Dcudnn=false -Dcutlass=false -Dnvcc=false \
+  -Dgtest=true -Dblas=true -Dopencl=false -Donnx=false \
+  -Db_lto=false -Dnative_arch=false -Ddefault_library=static \
+  -Dhip_libdirs=<sdk_devel>/lib,<sdk_libs_gfx1151>/lib \
+  -Dhip_include=<sdk_devel>/include \
+  -Dopenblas_libdirs=agent_space/openblas_shim/lib \
+  -Dopenblas_include=<sdk_devel>/lib/host-math/include/openblas \
+  --native-file=agent_space/lc0-win-native.ini
+```
+
+Rebuild for each measurement below:
+
+```
+bash utils/timeit.sh lc0 compile -- ninja -C build-hip-win-gfx1151 lc0.exe
+```
+
+134/134 targets both times, clean link, one benign `-Wswitch` warning in `layers.cc`.
+
+### Gate (graph capture left at its DEFAULT, i.e. ON)
+
+```
+./lc0.exe backendbench --backend=check \
+  "--backend-opts=hip(),blas(),mode=check,atol=1e-3,rtol=1e-2,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz \
+  --start-batch-size=1 --max-batch-size=55 --batches=4
+```
+
+| | passed | failed |
+|---|---|---|
+| base `7727fa3` (rebuilt and re-measured here, not quoted) | **0** | **222** (`value incorrect (but policy ok)`) |
+| with `df2c56a` | **222** | **0** |
+
+`mode=display`, batch 32, 2 batches:
+
+```
+./lc0.exe backendbench --backend=check \
+  "--backend-opts=hip(),blas(),mode=display,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz \
+  --start-batch-size=32 --max-batch-size=32 --batches=2
+```
+
+| | value abs | value rel | policy abs | policy rel |
+|---|---|---|---|---|
+| base `7727fa3` | 4.4e-02 | 4.9e-01 | 3.0e-07 | 5.2e-06 |
+| with `df2c56a` | **6.0e-08** | **1.3e-06** | 3.0e-07 | 5.2e-06 |
+
+Policy is unchanged, as expected: it never depended on the corrupted bias.
+
+### Non-GPU regression
+
+```
+bash utils/timeit.sh lc0 test -- meson test -C build-hip-win-gfx1151
+```
+
+8/8 OK (`FP16`, `HashCat`, `OptionsParserTest`, `PositionTest`, `EncodePositionForNN`,
+`SyzygyTest`, `EngineTest`, `ChessBoard`), 0 fail.
+
+### Gates
+
+`python3 utils/jargon.py --port lc0` clean, and the same scan over the staging range
+(`master..moat-fix-2420`, `master...moat-fix-2420`) clean. `audit-commits` passes the new
+commit; its 15 remaining findings are all on commits at or below the published tip
+`7727fa3` (including four inherited non-`[ROCm]` commits), i.e. pre-existing in the open
+PR and not touchable without rewriting published history.
+
+Note for anyone reproducing: `utils/jargon.py --port` resolves `master..moat-port` with
+LOCAL branch names, so a clone that only has `origin/master` fails with "cannot resolve";
+`git branch master origin/master` in the fork clone is the fix, not a fetch problem.

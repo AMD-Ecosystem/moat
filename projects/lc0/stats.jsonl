@@ -100,3 +100,8 @@
 {"kind":"phase","ts":"2026-08-20T16:39:30Z","phase":"test","seconds":57.634,"exit":0,"cmd":"meson test -C projects/lc0/src/build-hip-win-gfx1151"}
 {"kind":"phase","ts":"2026-08-20T16:44:11Z","phase":"compile","seconds":39.636,"exit":0,"cmd":"ninja -C projects/lc0/src/build-hip-win-gfx1151 -j 16"}
 {"kind":"phase","ts":"2026-08-20T16:45:31Z","phase":"test","seconds":56.022,"exit":0,"cmd":"meson test -C projects/lc0/src/build-hip-win-gfx1151"}
+{"kind":"phase","ts":"2026-08-20T20:51:16Z","phase":"compile","seconds":19.032,"exit":0,"cmd":"bash agent_space/lc0_fix_build.sh"}
+{"kind":"phase","ts":"2026-08-20T20:53:11Z","phase":"test","seconds":104.035,"exit":0,"cmd":"bash agent_space/lc0_fix_gate.sh"}
+{"kind":"phase","ts":"2026-08-20T20:54:43Z","phase":"compile","seconds":18.534,"exit":0,"cmd":"bash agent_space/lc0_fix_build.sh"}
+{"kind":"phase","ts":"2026-08-20T20:55:58Z","phase":"test","seconds":67.057,"exit":0,"cmd":"bash agent_space/lc0_fix_gate.sh"}
+{"kind":"phase","ts":"2026-08-20T20:57:42Z","phase":"test","seconds":52.096,"exit":0,"cmd":"bash agent_space/lc0_fix_gtest.sh"}
