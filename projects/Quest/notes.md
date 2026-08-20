@@ -2227,3 +2227,139 @@ fresh at this head_sha (environmental wall, pre-existing, external to the port);
 secondary and compile-only per the gate's own rules. Wall clock: build ~1 min, in-scope
 tests ~17s, CUDA-gate reproduction and log-evidence re-runs a few minutes; well within the
 ~60 minute budget.
+
+## Validation 2026-08-20 (windows-gfx1151, revalidate at `c9828e2`)
+
+Re-validation triggered by `head_sha` advancing from `9be60fc` (this platform's prior
+`validated_sha`, from the 2026-08-13 session and its own follow-on porter/repair round at
+`cbc3890`) to `c9828e2` via the two linux-gfx1100 porter/review rounds. This platform's own
+`cbc3890` repair (single-block decode path fix) is folded into `c9828e2`; the delta since
+`9be60fc` is `mixed`/not arch-independent (per the linux-gfx1100 classify call recorded
+above), so no carry-forward shortcut -- full real-GPU run.
+
+AMD Radeon 8060S (gfx1151, RDNA3.5 APU, wave32, 20 CUs), Windows 11. Reused the existing
+`torch312_venv` (torch 2.12.0+rocm7.14.0a20260519, ROCm 7.14 devel, python 3.12.13,
+`transformers==4.37.2` `tokenizers==0.15.2`), all already set up per
+`agent_space/win_torch312_env.sh` from the 2026-08-13 session; no re-provisioning needed.
+`moat-port` checkout fast-forwarded from `f50e33a` (stale local tip) to `origin/moat-port`
+`c9828e2` (`git fetch` + `git merge --ff-only`); submodules already initialized, matched
+`git submodule status`.
+
+### Build: same amdclang++/GNU-driver recipe as 2026-08-13, plus two fixes this round found
+
+Configure, wrapped `utils/timeit.sh Quest compile -- cmake ...`:
+
+```
+cmake -GNinja -S quest/ops -B quest/ops/build \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_CXX_COMPILER=<rocm>/lib/llvm/bin/amdclang++.exe \
+  -DCMAKE_HIP_COMPILER=<rocm>/lib/llvm/bin/amdclang++.exe \
+  -DPython_EXECUTABLE=<venv>/Scripts/python.exe \
+  -DCMAKE_PREFIX_PATH=<venv>/Lib/site-packages/torch/share/cmake
+ninja -C quest/ops/build   # after stripping ' -fuse-ld=lld-link' from build.ninja (1 occurrence)
+```
+
+Two environment issues surfaced and were fixed, neither a port defect -- both are `find_package(Python
+REQUIRED COMPONENTS Interpreter Development)` (`quest/ops/CMakeLists.txt:61`) with no venv
+hint, on a host with more than one Python on PATH/registry:
+
+1. Without `-DPython_EXECUTABLE`, CMake picked up the system `Python313` (registry/PATH,
+   not the `torch312_venv` interpreter) and linked against its `.lib`, producing a
+   `_kernels.cp313-win_amd64.pyd` that would not match the `transformers==4.37.2`-compatible
+   cp312 environment. Fixed by pinning `-DPython_EXECUTABLE` to the venv interpreter.
+2. With Python fixed, CMake's default `CMAKE_BUILD_TYPE` (unset -> `Debug` here) drove the
+   pybind Python::Python target to look for `python312_d.lib`, which does not exist for a
+   normal (non-debug) CPython install -- `lld-link: error: could not open 'python312_d.lib'`.
+   Fixed by pinning `-DCMAKE_BUILD_TYPE=Release`. Neither knob touches the fork; both are
+   validator-side CMake invocation flags, recorded here so a later Windows session does not
+   rediscover them.
+
+6/6 objects, link succeeded. Same two pre-existing nodiscard-`hipError_t` warnings as every
+prior session (`decode_handler.cuh:197`, `approx_attn.cu:65`), no new warnings, no errors.
+`import quest._kernels` (after staging `amdhip64_7.dll`/`amd_comgr*.dll`/`hiprtc*.dll`/
+`rocm_kpack.dll` next to it, per the standing System32-DLL-shadowing workaround) exposes the
+same six ops as every prior session: `BatchDecodeWithPagedKVCachePyTorchWrapper`,
+`append_kv_cache_decode/prefill`, `apply_rope_in_place`, `estimate_attn_score`,
+`rms_norm_forward`.
+
+### GPU tests: 124/124, matches the linux-gfx1100 reference exactly
+
+Wrapped `utils/timeit.sh Quest test -- python -m pytest ...`:
+
+```
+python -m pytest quest/tests/test_rope.py quest/tests/test_estimate.py \
+  quest/tests/test_decode_attention.py quest/tests/test_approx_attention.py \
+  quest/tests/test_decode_launch_shape.py -q
+# 124 passed in 14.97s
+```
+
+| suite | linux-gfx1100 @ `c9828e2` | windows-gfx1151 @ `c9828e2` |
+|---|---|---|
+| test_rope.py | 64 passed | **64 passed** |
+| test_estimate.py | 9 passed | **9 passed** |
+| test_decode_attention.py | 6 passed | **6 passed** |
+| test_approx_attention.py | 42 passed | **42 passed** |
+| test_decode_launch_shape.py | 3 passed | **3 passed** |
+| **total** | **124 passed** | **124 passed** |
+
+Scoped-out suites unchanged: `test_topk.py` / `test_prefill_attention.py` still stop at
+`AttributeError` on the RAFT/prefill symbols that are not part of the ROCm build (recorded
+expected shape, no wrong-answer failure).
+
+### Real device dispatch, and this GPU's own launch-shape default confirmed live
+
+`batch_size * num_kv_heads = 32 >= blocks_per_cu * cu_count = 1 * 20 = 20` on this 20-CU
+APU, so the CU table above predicts the **single-block** shape by default -- the exact path
+this platform's own `cbc3890` repaired. Confirmed rather than assumed, with
+`AMD_LOG_LEVEL=3` on `test_decode_attention.py`, counting `MergeStatesKernel` occurrences
+(present only in the split shape's merge step):
+
+| configuration | `MergeStatesKernel` count |
+|---|---|
+| default (no override) | **0** -- single-block, as the CU table predicts |
+| `QUEST_DECODE_LAUNCH_SHAPE=single` | **0** |
+| `QUEST_DECODE_LAUNCH_SHAPE=split` | **6** |
+
+420 `hipLaunchKernel` lines in the default run (comparable order of magnitude to gfx1100's
+432 at the same head), including Quest's own compiled kernels by name -- real device
+dispatch, not a mock. The bad-value hard error (`QUEST_DECODE_LAUNCH_SHAPE=Single` ->
+`ValueError`) and the "split requested but unusable" guard are both exercised by
+`test_decode_launch_shape.py`, which passed as part of the 124 above; not re-derived by hand
+this round since the new test file is exactly built to cover them and already ran green
+here.
+
+No non-GPU regression to check: this project has no CPU-only test path, unchanged from
+every prior session.
+
+### CUDA no-regression gate: not re-run, already recorded fresh at this head_sha
+
+`cuda-not-validated` was reproduced fresh at `c9828e2` by the linux-gfx1100 validator earlier
+today (RAFT branch-24.02 `CUDA::nvToolsExt` wall against a CUDA 12.8 toolkit, failing inside
+RAFT's own CMakeLists before any Quest source is reached). This host has no CUDA toolkit
+regardless. Per the gate's own rule (once per head_sha, already satisfied), not repeated
+here.
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --port Quest` -> `jargon: clean`. `python3 utils/moatlib.py
+audit-commits Quest` -> OK. README.md's "Building on AMD GPUs (ROCm)" section (already
+reviewed for accuracy against this exact head by the 2026-08-20 linux-gfx1100 review) was
+not re-derived; the commands run above match it, modulo the venv-Python-executable and
+build-type pins that are validator-environment specifics rather than anything the recipe
+gets wrong. No inaccuracy found; nothing sent back.
+
+### Integrity
+
+`git -C projects/Quest/src status --porcelain`: clean at completion. `HEAD` at `c9828e2`,
+matching `status.json.head_sha`, fast-forwarded from the stale local `f50e33a` this session
+found on arrival. Removed the throwaway `-fuse-ld=lld-link` edit's build directory and the
+staged runtime DLLs/`.pyd` symlink before finishing (all untracked, gitignored except the
+five staged DLLs, which were deleted directly) -- no tracked file touched.
+
+State: `revalidate` -> `completed` on windows-gfx1151, `validated_sha = c9828e2`. windows
+gate remains satisfied by this arch at the new head. CUDA gate: `cuda-not-validated`,
+carried from the linux-gfx1100 recording at this same head_sha, no penalty. Wall clock:
+env/fetch ~2 min, two failed configure/link cycles diagnosing the Python-executable and
+build-type issues ~2 min each, final clean build ~1 min, tests ~15s, evidence re-runs a few
+minutes; well within the ~60 minute budget.
