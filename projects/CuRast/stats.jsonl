@@ -144,3 +144,4 @@
 {"kind":"session","ts":"2026-08-20T19:30:45Z","epoch":1787254245.770965661,"event":"start","platform":"linux-gfx90a"}
 {"kind":"phase","ts":"2026-08-20T19:32:18Z","phase":"compile","seconds":20.087,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/agent_space/CuRast-gfx90a-fix2-build --target CuRast -j128"}
 {"kind":"phase","ts":"2026-08-20T19:32:38Z","phase":"test","seconds":9.007,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat/projects/CuRast/src && HIP_VISIBLE_DEVICES=3 ROCM_PATH=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel /var/lib/jenkins/moat/agent_space/CuRast-gfx90a-fix2-build/CuRast --bench ./example_donaukanal_urania.glb 1920 1080 30"}
+{"kind":"session","ts":"2026-08-20T19:34:07Z","epoch":1787254447.498107716,"event":"end","platform":"linux-gfx90a"}
