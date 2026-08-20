@@ -7,7 +7,7 @@
   "priority": 4.426,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-08-20T00:08:22Z",
+  "updated_at": "2026-08-20T00:08:47Z",
   "head_sha": "c77df45b3fcd9d659b3a9f77cc2fdfef673a19e0",
   "porting": null,
   "waivers": {},
@@ -124,5 +124,6 @@
         "at": "2026-06-16T06:33:12Z"
       }
     }
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/LEAP/pull/1"
 }
