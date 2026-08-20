@@ -445,10 +445,17 @@ block, and running Tail-Correction (1327 adsorbate atoms):
 OOBPROBE block 134 thread 127 compA 1 AtomA 2147484974 sizeA 1327 compB 1 AtomB 2305843010287440402 sizeB 1327
 ```
 
-The trailing threads decode interaction indices past the real pair count, the
-closed-form triangular-index inverse takes a square root of a negative number,
-and the resulting `size_t` indices are ~2^31 and ~2.3e18. `MolID` is a
-`size_t*`, so the second load is an ~18-exabyte offset from the base pointer.
+The trailing threads decode interaction indices past the real pair count. The
+closed-form triangular-index inverse computes its square root argument
+(`-8*(int) InteractionIdx + 4*N*(N-1) - 7`) in **unsigned** 64-bit, because
+`NAdsorbateAtoms` is a `size_t`: past the real pair count it wraps to
+`2^64 - 27191` rather than going negative, `sqrt` of that is `2^32`,
+`floor(sqrt/2 - 0.5)` is 2147483647, and `AtomA` comes out as the double
+-2147482322.0, which converts to the 2147484974 printed above. `AtomB` is then
+derived from that `AtomA` and lands at ~2.3e18. `MolID` is a `size_t*`, so the
+second load is an ~18-exabyte offset from the base pointer. (A genuinely
+negative argument would give `NaN`, not a 2^31-scale index -- see the
+2026-08-20 review.)
 Whether that faults is up to what the driver happens to have mapped, which is
 why it faulted in June and does not today.
 
@@ -660,3 +667,52 @@ Put the edit on this branch so it is reviewed with the code.
   swallows the `sdata[threadIdx.x] = 0.0;` at 1474. It is harmless -- `sdata` is
   overwritten unconditionally at 1557-1558 before the first read at 1567 -- and
   it is upstream's, untouched by this port.
+
+## Fix round 2026-08-20 (linux-gfx90a) -- review findings 1-4 addressed
+
+Branch rewritten `9cfa096` -> `fd06b97` (force-with-lease; no upstream PR
+open). The **source tree is byte-identical to 9cfa096**: `git diff 9cfa096
+fd06b97` is README.md only. The two commits keep their content and change
+only their messages, so `a0b6dce` -> `99712d2` and `9cfa096` -> `fd06b97`.
+
+1. `99712d2` body: the mechanism paragraph now says the square root argument
+   is evaluated in unsigned 64-bit (`NAdsorbateAtoms` is `size_t`) and wraps
+   to `2^64 - 27191`, giving `sqrt = 2^32`, `AtomA` as the double
+   -2147482322.0 and thus the printed 2147484974, with `AtomB` derived from
+   it at 2.3e18 -- and notes that a signed evaluation would give `NaN`
+   instead. The probe output and the rest of the argument are unchanged. The
+   same sentence in the Rescope section above is corrected identically.
+2. README.md Windows bullet: the hardcoded
+   `<hip-sdk>/lib/clang/<version>/include` is replaced by
+   `-isystem "$(clang++ -print-resource-dir)/include"`, which is right on
+   both the official HIP SDK layout and the TheRock layout every Windows
+   validation here actually used.
+3. README.md Windows bullet no longer says "the same flags as `HIP_COMPILE`".
+   It states the tested set explicitly -- `-O3 -std=c++20 --offload-arch=<arch>
+   -x hip -fgpu-rdc -fopenmp -D_USE_MATH_DEFINES -isystem ...`, link with
+   `--hip-link` -- and `fd06b97`'s Windows Test Plan now uses exactly that
+   set. `-munsafe-fp-atomics`, `-Wno-unused-result` and `-Wno-format` are
+   deliberately absent from the Windows recipe: they are `HIP_COMPILE`'s
+   gfx90a-oriented and warning-quieting choices, not something to hand an
+   RDNA target untested. The Test Plan's cmd block takes the resource dir via
+   `for /f ... in ('clang++ -print-resource-dir')`, since `$(...)` is not cmd.
+4. Two lessons promoted to the `cuda-to-rocm` skill on this branch:
+   `references/assess-existing-support.md` gains a paragraph on a third party
+   merging a HIP backend mid-flight (re-check upstream every round; rebuild on
+   current upstream and keep the residual; diff your fixes against the merged
+   shim first), and `references/fault-classes.md` gains an entry next to the
+   OOB one on a latent OOB that stops reproducing plus unsigned wrap in
+   padded-thread index math, with the instrumented-printf method.
+
+**Rebuild** (message/README-only delta, so no simulation rerun):
+
+```bash
+export ROCM=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel
+export PATH=$ROCM/bin:$PATH
+cd projects/gRASPA/src/src_clean && GRASPA_ARCH=gfx90a ../HIP_COMPILE
+```
+
+Links `hip_main.x` (982792 bytes), warnings only. `jargon.py --port gRASPA`
+clean on the rewritten branch. GPU evidence from the 2026-08-20 rescope run
+applies unchanged to this tree but is recorded against `9cfa096`, so every
+platform needs a validation pass at `fd06b97`.
