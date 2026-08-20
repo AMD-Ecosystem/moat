@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T04:24:21Z",
-  "updated_at": "2026-08-20T00:29:24Z",
+  "updated_at": "2026-08-20T00:29:44Z",
   "head_sha": "74bd2d82bf2b98db0121ce80eafcd91f44885a87",
   "depends_on": [],
   "porting": null,
@@ -138,5 +138,6 @@
         "at": "2026-06-16T06:34:31Z"
       }
     }
-  }
+  },
+  "review_pr": "https://github.com/AMD-Ecosystem/foldseek/pull/1"
 }
