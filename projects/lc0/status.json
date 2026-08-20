@@ -7,7 +7,7 @@
   "priority": 6.245,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-08-20T21:01:46Z",
+  "updated_at": "2026-08-20T21:03:06Z",
   "head_sha": "df2c56a7158a04bf92a20f2ad3506954dd8b601c",
   "pr_url": "https://github.com/LeelaChessZero/lc0/pull/2420",
   "pr_number": 2420,
@@ -128,13 +128,13 @@
       }
     },
     "windows-gfx1151": {
-      "blocked": true,
-      "blocked_reason": "Value-head numerical defect confirmed unchanged at head 7727fa3 on TheRock ROCm 7.14.0a20260612 Windows SDK (AMD clang 23.0.0git). Builds+runs clean (261/261 targets, 8/8 CPU gtest, benchmark batch 1-256 fault-free). maia-1100 check backend (hip vs blas, atol=1e-3 rtol=1e-2): policy bit-identical (abs 3.0e-07, rel 5.2e-06); value wrong (abs 4.4e-02, rel 4.9e-01) on every one of 222/222 batches (sizes 1-55). Identical magnitude and pattern to the 2026-06-04 gfx1151 block and the 2026-06-05 gfx1101/gfx1201 block. Root cause unresolved (prior exhaustive investigation on gfx1101/gfx1201: graph capture off, use_gemm_ex=false, Conv1Layer loop replacement, standalone BLAS tests all PASS -- BLAS correct). Reopen if a TheRock ROCm Windows HIP runtime or value-head kernel fix is identified.",
+      "blocked": false,
+      "blocked_reason": null,
       "validated_sha": null,
       "failed_sha": null,
       "started_at": "2026-08-20T20:49:17Z",
       "completed_at": null,
-      "updated_at": "2026-08-20T21:01:46Z",
+      "updated_at": "2026-08-20T21:03:06Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
