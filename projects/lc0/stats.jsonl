@@ -124,3 +124,6 @@
 {"kind":"phase","ts":"2026-08-20T23:30:38Z","phase":"test","seconds":85.440,"exit":0,"cmd":"meson test -C /var/lib/jenkins/moat/projects/lc0/src/build-hip"}
 {"kind":"phase","ts":"2026-08-20T23:37:54Z","phase":"cuda-compile","seconds":94.734,"exit":0,"cmd":"ninja -C /var/lib/jenkins/moat/projects/lc0/src/build-cuda -j16"}
 {"kind":"session","ts":"2026-08-20T23:39:09Z","epoch":1787269149.809159163,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-20T23:42:35Z","phase":"compile","seconds":0.224,"exit":1,"cmd":"ninja -C build-hip-win-gfx1151 lc0.exe"}
+{"kind":"phase","ts":"2026-08-20T23:43:21Z","phase":"compile","seconds":17.282,"exit":0,"cmd":"ninja -C /d/Develop/moat/projects/lc0/src/build-hip-win-gfx1151 lc0.exe"}
+{"kind":"phase","ts":"2026-08-21T00:20:20Z","phase":"compile","seconds":18.388,"exit":0,"cmd":"ninja -C projects/lc0/src/build-hip-win-gfx1151 lc0.exe"}

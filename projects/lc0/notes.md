@@ -2536,3 +2536,102 @@ README.md (added in PR-prep 2026-06-11) already covers the build this round vali
 
 `validated_sha` = `b87423d8e5cb4075386359cb4521eb8a14ffea2a`. Transition: revalidate ->
 completed.
+
+## Round PARKED 2026-08-20 -- host crashed twice; memset hardening deferred
+
+**Stop decision.** windows-gfx1151 bugchecked TWICE while building and running the lc0
+gate, ~40 minutes apart:
+
+| when | event |
+|---|---|
+| 16:44:25 | bugcheck `0xD1 DRIVER_IRQL_NOT_LESS_OR_EQUAL`, reboot 16:47 |
+| 17:24:36 | bugcheck again (Event 41 + 1001), reboot 17:24:25 |
+
+Root cause from `kd !analyze -v` on `C:\Windows\MEMORY.DMP` (full output was written to
+gitignored `agent_space/crash-analysis.txt`; the fields that matter are reproduced here so
+they survive):
+
+```
+BUGCHECK_CODE      d1
+BUGCHECK_P1        28          (near-null offset dereferenced)
+BUGCHECK_P2        2           (IRQL 2, DPC level)
+BUGCHECK_P3        0           (read)
+BUGCHECK_P4        fffff80373a4882e
+SYMBOL_NAME        dxgmms2!VidSchiProcessHwQueuePageFaultedDpc+19a
+MODULE_NAME        dxgmms2
+IMAGE_NAME         dxgmms2.sys      (10.0.26100.8875)
+FAILURE_BUCKET_ID  AV_dxgmms2!VidSchiProcessHwQueuePageFaultedDpc
+```
+
+`dxgmms2` is the Windows WDDM video scheduler, and the faulting routine is its handler for a
+**page-faulted GPU hardware queue**. `amdkmdag` is the only other graphics module in the dump.
+That unifies the day's symptoms into one fault path rather than three: the `Kernel_141`
+VIDEO_ENGINE_TIMEOUT_DETECTED events (18 on this host, 4 during lc0 runs), the `dwm.exe`
+crash at 15:18, and these bugchecks are all the same scheduler. This is a driver-stack
+problem, NOT a defect in this port -- but it makes windows-gfx1151 unable to certify lc0 for
+now. Jeff called the stop.
+
+**State left behind, deliberately:**
+- `moat-fix-2420` stays at `b87423d8`, which is REVIEW-PASSED and whose gate numbers were
+  measured in timeout-free windows and reproduced across separate processes. Nothing about
+  the crashes invalidates it.
+- `moat-port` untouched at `7727fa32`; PR #2420 unchanged. No fork or upstream write happened.
+- stage restored to `review-passed`, work lock RELEASED so this host does not strand the
+  project. The next step remains a validator at `b87423d8` -- on a host that stays up.
+
+**The deferred memset hardening.** After the passing re-review, the reviewer noted one
+same-shape hole: `cudaMemset(tensor_mem_, ...)` (network_cuda.cc, in the `if (!multi_stream_)`
+block) is an asynchronous null-stream write that lands AFTER the sync `b87423d8` adds, while
+the first evaluation writes those same buffers on non-blocking streams. Jeff asked for the
+fix: move the single existing sync below the memset loop rather than add a second one. The
+edit was written and reviewed by eye but NEVER VERIFIED -- both crashes happened trying to
+measure it -- so it was reverted rather than committed unverified. Registered in
+`deferred.json` as `lc0-move-sync-below-memset`. The exact edit, to reapply:
+
+    diff --git a/src/neural/backends/cuda/network_cuda.cc b/src/neural/backends/cuda/network_cuda.cc
+    index 1ca3096..ae44902 100644
+    --- a/src/neural/backends/cuda/network_cuda.cc
+    +++ b/src/neural/backends/cuda/network_cuda.cc
+    @@ -623,11 +623,6 @@ class CudaNetwork : public Network {
+           network_.emplace_back(std::move(FCMov2));
+         }
+     
+    -    // Weight uploads convert through the shared scratch buffer on the legacy
+    -    // null stream, which is not ordered against the non-blocking streams used
+    -    // below. Wait for them before the first evaluation reuses the scratch.
+    -    ReportCUDAErrors(cudaStreamSynchronize(0));
+    -
+         // 3. Allocate GPU memory for running the network:
+         //    - three buffers of max size are enough (one to hold input, second to
+         //      hold output and third to hold skip connection's input).
+    @@ -652,6 +647,13 @@ class CudaNetwork : public Network {
+           }
+         }
+     
+    +    // Construction issues asynchronous work on the legacy null stream: weight
+    +    // uploads that convert through the shared scratch buffer, and the zeroing
+    +    // of the tensor buffers above. None of it is ordered against the
+    +    // non-blocking streams the evaluation uses, so wait for it once here,
+    +    // before the first evaluation writes those same buffers.
+    +    ReportCUDAErrors(cudaStreamSynchronize(0));
+    +
+         tensor_mem_size_ = multi_stream_ ? maxSize : 0;
+     
+         // pre-allocate cuda graphs for search threads
+
+Note for whoever picks it up: the memset loop only runs when `!multi_stream_`, so confirm
+which stream mode the gate actually exercises before claiming the path is covered.
+
+### Stage note: `ported`, and why the re-review is a formality
+
+The state machine has no rewind, so `porting -> review-passed` is an illegal transition and
+the round had to land on `ported`. That is honest but slightly misleading, so to be explicit:
+
+**The fork tree is byte-identical to `b87423d8`, which already passed review.** The unverified
+memset edit was reverted, not committed; `git -C projects/lc0/src status --porcelain` is empty
+and `HEAD` is `b87423d8`. Nothing has changed since
+`## Re-review 2026-08-20 (windows-gfx1151, reviewer) -- b87423d8 -- REVIEW-PASSED`.
+
+So the next reviewer can confirm `git diff b87423d8 HEAD` is empty, note that the prior
+re-review stands, and pass without re-reading the delta. The real next step is a VALIDATOR at
+`b87423d8` -- and not on windows-gfx1151 until the `dxgmms2` crashes are resolved.

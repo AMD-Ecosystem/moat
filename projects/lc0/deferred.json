@@ -30,6 +30,19 @@
       "upstream_issue": null,
       "created_at": "2026-08-20T21:13:18Z",
       "decided": null
+    },
+    {
+      "id": "lc0-move-sync-below-memset",
+      "kind": "other",
+      "component": null,
+      "summary": "Move the single cudaStreamSynchronize(0) in CudaNetwork's constructor (network_cuda.cc) from just after the layer-construction block to after the 'if (!multi_stream_)' tensor_mem_ malloc/memset loop, so it also orders the asynchronous null-stream cudaMemset of the tensor buffers against the non-blocking streams the first evaluation uses. Do NOT add a second sync -- move the existing one. Raised by the reviewer as a non-blocking same-shape hole after b87423d8 passed review; Jeff asked for it. The edit was written and eye-reviewed but never verified: windows-gfx1151 bugchecked twice (dxgmms2!VidSchiProcessHwQueuePageFaultedDpc) attempting to measure it, so it was reverted rather than committed unverified. The exact diff is embedded in projects/lc0/notes.md under '## Round PARKED 2026-08-20'. Caveat: the memset loop only runs when !multi_stream_, so confirm which stream mode the gate exercises before claiming coverage.",
+      "refs": [
+        "projects/lc0/notes.md ## Round PARKED 2026-08-20"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-21T00:32:26Z",
+      "decided": null
     }
   ]
 }
