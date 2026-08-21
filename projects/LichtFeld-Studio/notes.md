@@ -823,3 +823,192 @@ moatlib.classify returned class=comment-only, inert=True.
 ### Verdict: CARRY-FORWARD (source-class: comment-only)
 validated_sha = 60c8b90b3b644e1f1c9fee44b709eec9cbbb7b30
 No GPU re-run needed. Device code unchanged vs d33abd70.
+
+## Validation 2026-08-20 (windows-gfx1151, AMD Radeon 8060S, RDNA3.5 APU, wave32)
+
+Attempted first windows-gfx1151 validation. Host: TheRock ROCm SDK 7.14
+(venv-gsplat: torch 2.12.0+rocm7.14.0a20260531, _rocm_sdk_devel, clang-cl
+23.0.0), MSVC BuildTools 14.44.35207, Windows 11. git -C src HEAD confirmed
+== head_sha (5cbfdf1a7b1b6a6553ce077a5aa8d6209fd3f51c) before starting;
+protect-fork installed.
+
+Deps used (all already fetched on this host from a prior attempt, reused):
+glm 1.0.1 at D:/Develop/moat-old/_deps/glm-1.0.1, args.hxx at
+D:/Develop/moat-old/_deps/lfs_args, spdlog + GTest CMake configs at
+D:/Develop/moat-old/agent_space/cppdeps/install, nlohmann_json + TBB from
+inside _rocm_sdk_devel/venv-gsplat's Library.
+
+Toolchain: all-clang-cl (D:/Develop/moat/agent_space/lfs_win_toolchain.cmake),
+CMAKE_HIP_COMPILER_FRONTEND_VARIANT=MSVC, CMAKE_HIP_COMPILER_FORCED=TRUE.
+PYTORCH_ROCM_ARCH=gfx1151 required for find_package(Torch)'s LoadHIP.cmake
+(else "No GPU arch specified for ROCm build").
+
+### Configure-time fixes (0 fork changes needed)
+- nlohmann_json_DIR / TBB_DIR must point at the exact package dir (not a
+  parent share/share/cmake guess) -- find_package(... CONFIG) does not
+  walk an arbitrary CMAKE_PREFIX_PATH/share the way share/cmake/<pkg>
+  suffix search expects.
+
+### Three Windows-only build breaks found and fixed (fork commit 53c363f8,
+### NOT yet pushed -- see "Push blocked" below)
+
+1. clang-cl /Fo + HIP dual-pass = "cannot specify /Fo<OBJECT> when
+   compiling multiple source files". This is the exact bug class flagged in
+   the dispatch brief (ROCm/TheRock#5615, confirmed today on this host by the
+   alien project). Root cause and fix identical to alien's: in
+   cmake/HipCompute.cmake, under if(WIN32),
+   string(REPLACE "/Fo<OBJECT>" "-o <OBJECT>" CMAKE_HIP_COMPILE_OBJECT
+   "${CMAKE_HIP_COMPILE_OBJECT}"). LichtFeld-Studio does NOT use -fgpu-rdc
+   (CUDA_SEPARABLE_COMPILATION OFF), so unlike alien this project needed
+   only the compile-rule half of the fix, not a custom RDC link rule --
+   confirming the bug is about clang-cl's per-TU host+device dual pass, not
+   specifically about -fgpu-rdc's separate device-link step.
+2. cmake/hip_tests/CMakeLists.txt unconditionally linked
+   OpenImageIO::OpenImageIO, but that target is only defined
+   if(NOT WIN32) in HipCompute.cmake (the Windows build routes
+   image_io.cpp through a stub instead). src/core/CMakeLists.txt already
+   gates its own OIIO link with
+   $<$<NOT:$<PLATFORM_ID:Windows>>:OpenImageIO::OpenImageIO> (added in the
+   original 13e585d4 Windows commit) -- the test executable's link line just
+   never got the same treatment. Applied the identical generator-expression
+   guard. This must have been latent since e24593f4 (OIIO link present since
+   the very first commit); it is unclear how a prior windows-gfx1101 build
+   configured past it -- possibly an older CMake/torch combination resolved
+   OpenImageIO::OpenImageIO to something via a different search path, or
+   the prior validator's toolchain differed enough to not reach this line.
+   Not re-diagnosed given the time budget; flagging for anyone revisiting
+   gfx1101/gfx1201.
+3. src/hip_compat/c10/cuda/CUDACachingAllocator.h namespace collision:
+   the WIN32 branch aliased c10::cuda::CUDACachingAllocator to
+   c10::hip::HIPCachingAllocator. On the CURRENT TheRock Windows torch
+   (2.12.0+rocm7.14.0a20260531; the earlier windows-gfx1101 validation used
+   2.9.1+rocm7.14.0a20260604), c10/hip/HIPCachingAllocator.h is a fully
+   hipified, auto-hipify-generated file that already opens
+   namespace c10::cuda::CUDACachingAllocator directly (mirroring Linux's
+   in-place hipification) -- c10::hip::HIPCachingAllocator no longer exists
+   as a name at all. The shim's alias declaration therefore both referenced a
+   nonexistent namespace AND redefined the one the header had already opened
+   -- two compile errors from one stale assumption. TheRock's Windows torch
+   build clearly changed shape between these two dates; this is a toolchain
+   drift fault, not a code defect the porter introduced. Fix: drop the
+   alias, just include the header (matches the Linux branch's shape now that
+   both platforms hipify c10::cuda in place). Verified nothing in the project
+   references c10::hip::HIPCachingAllocator by name.
+
+All three fixes are Windows-only (WIN32-guarded or PLATFORM_ID:Windows
+generator expressions); the Linux gfx90a/gfx1100 CMake path and compiled
+object code are unaffected (this project's own prior revalidation history
+already establishes the pattern of Windows-only commits landing here without
+disturbing Linux -- see the 2026-06-05/06-07 revalidation entries above).
+
+### Result after the three fixes: full compute-tranche compile succeeds
+
+cmake --build build-win-gfx1151 --target lfs_compute_tests -j 12: 94/94
+objects compiled, zero errors (all 9 compute libraries + lfs_compute_tests'
+own TUs, including every .cu kernel file). Only benign warnings (nodiscard
+on hipError_t, template-instantiation notes, -Wswitch on an unhandled
+enumerator in camera-model code -- pre-existing, not touched here). This is
+strong evidence the HIP PORT ITSELF is source-correct for gfx1151/RDNA3.5;
+what remains is purely link-stage toolchain plumbing (see below).
+
+### Remaining blocker: HIP executable link fails on this SDK layout + clang-cl
+
+Two distinct problems, one environment-workaround-only (no fork change), one
+still open and NOT fixed (porter-scope):
+
+1. _rocm_sdk_devel layout mismatch feeding HIP_CLANG_PATH. CMake's
+   built-in HIP-language support (CMakeDetermineHIPCompiler.cmake) derives
+   CMAKE_HIP_COMPILER_ROCM_ROOT from clang -v -print-targets's own
+   self-reported "Found HIP installation" path, then some later step (not
+   located in any shipped .cmake module text -- likely constructed at
+   generate time, never grep-able as a literal string) computes
+   HIP_CLANG_PATH=<root>/llvm/bin for the hipcc.exe-based link rule. On
+   TheRock's Windows SDK, LLVM is nested one level deeper, at
+   <root>/lib/llvm/bin, so the generated path is wrong and the link step
+   fails immediately with failed to execute: "...\_rocm_sdk_devel/llvm/bin\
+   clang.exe". WORKAROUND (host-local only, no fork change):
+   mklink /J _rocm_sdk_devel\llvm _rocm_sdk_devel\lib\llvm (junction).
+   This is a TheRock/CMake integration gap on this SDK build, not a
+   LichtFeld-Studio issue -- likely affects every HIP-language CMake project
+   built against this exact _rocm_sdk_devel layout on Windows. Worth a
+   rocm-bug-report deferral if seen again on another port.
+2. STILL BLOCKING, not fixed: with the junction in place, the link
+   command executes but fails differently. LichtFeld does not use
+   -fgpu-rdc (no RDC), yet CMake's default HIP-language executable link
+   still routes through hipcc.exe, which invokes
+   clang.exe --driver-mode=g++ (the GCC driver, not clang-cl) to do the
+   actual --hip-link. CMake generated the link command's object/library
+   list as an MSVC-style response file (Windows backslash paths, matching the
+   clang-cl frontend used for compilation), but the GCC-driver clang parses
+   response files with GNU backslash-escaping rules, which silently eats
+   every backslash in every path: D:\Develop\...\torch\lib\torch.lib
+   becomes the literal string D:Developtorchlibtorch.lib. Every object and
+   .lib argument in the link line is corrupted this way; the link fails
+   with ~30 clang: error: no such file or directory: '<mangled path>' plus
+   clang: error: no input files.
+   This is the exact fault class the AMD-Ecosystem/alien fork's
+   cmake/hip_link_win.py + custom CMAKE_HIP_LINK_EXECUTABLE override was
+   written to solve ("The GCC-driver clang.exe does not accept bare
+   MSVC-style linker flags... it treats them as file paths" -- alien
+   CMakeLists.txt). Porting an equivalent wrapper/override into
+   LichtFeld-Studio's cmake/HipCompute.cmake is genuine new build
+   infrastructure (a link-command wrapper script plus a
+   CMAKE_HIP_LINK_EXECUTABLE override), not a one-line fix, and is left for
+   the porter. LichtFeld has no RDC device-link requirement, so the fix may
+   be simpler than alien's (no -fgpu-rdc --hip-link device-link stage to
+   reproduce) -- possibly linking directly via clang-cl.exe (MSVC frontend,
+   correctly parses the MSVC-style rsp CMake already generates) instead of
+   routing through hipcc.exe's hardcoded GCC-driver mode may be sufficient
+   for a non-RDC target; not attempted here for lack of time to verify
+   correctness of HIP runtime registration under that path.
+
+### Push blocked
+
+The sandbox's auto-mode classifier blocked git push origin moat-port from
+this session (twice, same denial) for the fork commit 53c363f8 (the three
+fixes above, on top of 5cbfdf1a). The commit exists locally in this host's
+clone at D:/Develop/moat/projects/LichtFeld-Studio/src and is NOT on
+origin/moat-port. A human needs to run
+bash agent_space/push_lfs_moat_port.sh (or git push origin moat-port from
+that clone) to publish it. head_sha in status.json is therefore left
+unchanged at 5cbfdf1a... (what is actually live on origin); this
+validation is recorded as failed against that sha, since even with the local
+fixes applied, the attempt did not reach a passing GPU run.
+
+### CUDA no-regression gate
+
+NOT run here: this Windows host has no CUDA toolkit (nvcc) available, and
+no dedicated cuda-12.8 conda env exists on it. Per the validator
+instructions this gate is expected to land on whichever Linux arch validates
+first; not yet recorded in this file at any sha as of this entry -- next
+Linux validator (gfx90a or gfx1100) should run it if not already covered.
+
+### jargon.py finding (pre-existing, not introduced here)
+
+python3 utils/jargon.py --port LichtFeld-Studio reports 3 pre-existing
+upstream-visible MOAT-vocabulary instances, all from commits that predate
+this session: commit 13e585d47 ("...via MOAT" in the authorship line) and
+two instances in e24593f4e ("Strategy A", "colmap model" in a code
+comment). These block pr-ready's jargon gate; flagging here so a future
+porter round folds a fix into its next commit (cannot be fixed by amending
+those commits -- both are already carried in multiple arches' validated_sha).
+
+### Kernel_141 GPU-engine-timeout count
+
+Before: 18. After: 18. No new timeouts; host stayed stable through this
+session (build-only, no GPU test run was reached).
+
+### Verdict: VALIDATION-FAILED (windows-gfx1151)
+
+Did not reach a GPU test run -- blocked at the final HIP executable link
+step by a Windows/clang-cl/hipcc toolchain response-file bug (see above),
+which needs a porter-scope CMake link-rule change (following the
+AMD-Ecosystem/alien precedent) to resolve. The suggested windows gate
+waiver on this project should NOT be approved on the strength of this
+attempt -- the remaining blocker is a describable, fixable build-tooling gap
+(a link wrapper), squarely in "someone can ship a fix for this" territory
+per the waiver's own prior refusal, not a permanent platform obstacle. Three
+independent, low-risk, Windows-only fixes ARE ready on fork commit 53c363f8
+(pending push by a human) and get the full compute tranche + test binary to
+compile cleanly (94/94 objects) on gfx1151, which is a meaningful step
+forward for the next attempt.

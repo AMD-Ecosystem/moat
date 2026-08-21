@@ -7,7 +7,7 @@
   "priority": 6.263,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-08-08T17:15:21Z",
+  "updated_at": "2026-08-21T03:01:40Z",
   "head_sha": "5cbfdf1a7b1b6a6553ce077a5aa8d6209fd3f51c",
   "depends_on": [],
   "porting": null,
@@ -131,6 +131,30 @@
         "first_session_at": null,
         "last_session_at": null
       }
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": "5cbfdf1a7b1b6a6553ce077a5aa8d6209fd3f51c",
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-21T03:01:40Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "validation-failed",
+      "last_agent": "validator"
     }
   }
 }

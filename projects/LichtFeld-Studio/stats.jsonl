@@ -59,3 +59,5 @@
 {"kind": "tokens", "ts": "2026-06-16T06:37:04Z", "tokens": 48627, "source": "validator"}
 {"kind": "tokens", "ts": "2026-06-23T22:54:15Z", "tokens": 22786, "source": "gfx90a in-pipeline cleanup (batch 1 subagent, shared)"}
 {"kind": "tokens", "ts": "2026-06-07T19:56:48Z", "tokens": 72412, "source": "validator"}
+{"kind":"session","ts":"2026-08-21T02:34:49Z","epoch":1787279689.545089000,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-21T03:01:51Z","epoch":1787281311.860068200,"event":"end","platform":"windows-gfx1151"}
