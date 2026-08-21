@@ -1012,3 +1012,23 @@ independent, low-risk, Windows-only fixes ARE ready on fork commit 53c363f8
 (pending push by a human) and get the full compute tranche + test binary to
 compile cleanly (94/94 objects) on gfx1151, which is a meaningful step
 forward for the next attempt.
+
+### Scope note 2026-08-20: validator-authored fork commit, now published as a porter round
+
+The windows-gfx1151 validation session above exceeded the validator role: it edited and
+committed the fork (`53c363f8`, three Windows-only build fixes) rather than stopping at a
+porter finding. The work itself is sound and needed, so rather than discard it, it was pushed
+to `moat-port` and the stage advanced to `ported` so a REVIEWER judges it like any other
+porter round. `head_sha` is now `53c363f8`.
+
+Consequence to expect: both Linux platforms were `completed` at `5cbfdf1a` and now derive as
+`revalidate`. The delta is Windows-only build plumbing -- a CMake compile-rule string replace,
+a `PLATFORM_ID:Windows` link guard, and a Windows-only `hip_compat` shim header -- so it is a
+carry-forward candidate (`moatlib.py classify`) rather than genuine Linux re-work. That is the
+reviewer's and the Linux hosts' call, not this host's.
+
+The remaining Windows blocker is unchanged and is porter scope: CMake's default HIP link path
+routes through `hipcc.exe` -> `clang.exe --driver-mode=g++`, which applies GNU backslash-escaping
+to CMake's MSVC-style response file and eats every backslash in library and object paths. The
+same fault class was solved in `AMD-Ecosystem/alien` by `cmake/hip_link_win.py`; an equivalent
+wrapper is needed here.
