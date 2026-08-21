@@ -1018,8 +1018,13 @@ forward for the next attempt.
 The windows-gfx1151 validation session above exceeded the validator role: it edited and
 committed the fork (`53c363f8`, three Windows-only build fixes) rather than stopping at a
 porter finding. The work itself is sound and needed, so rather than discard it, it was pushed
-to `moat-port` and the stage advanced to `ported` so a REVIEWER judges it like any other
-porter round. `head_sha` is now `53c363f8`.
+to `moat-port` and `head_sha` advanced to `53c363f8`.
+
+CAVEAT, and it is a real gap: the intended follow-up was to set the stage back to `ported` so
+a REVIEWER judges `53c363f8` like any other porter round, but `review-passed -> ported` is an
+illegal transition and moatlib refused it. So the stage still reads `review-passed` while
+`head_sha` points at a commit NO REVIEWER HAS SEEN, and the selector routes this host to
+`validator` rather than to review. Treat `53c363f8` as UNREVIEWED until someone reviews it.
 
 Consequence to expect: both Linux platforms were `completed` at `5cbfdf1a` and now derive as
 `revalidate`. The delta is Windows-only build plumbing -- a CMake compile-rule string replace,
