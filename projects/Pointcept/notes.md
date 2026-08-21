@@ -735,6 +735,129 @@ continuous `~/.triton/cache` growth and `py-spy`-sampled `make_amdgcn` activity 
 compiles in progress) before concluding a hang, and record wall-clock magnitude and
 stop rather than waiting indefinitely.
 
+## Validation 2026-08-21 (validator, windows-gfx1151, first Windows validation at head)
+
+Platform: windows-gfx1151, AMD Radeon 8060S (gfx1151, RDNA3.5 APU, 20 CUs, wave32),
+Windows 11, HIP_VISIBLE_DEVICES=0. This is the first validation of this platform for
+Pointcept (no prior `windows-gfx1151` record existed); `windows-gfx1101`/
+`windows-gfx1201` had completed at the older `95f4a51c` (round 1 only, pre-spconv),
+both still reachable in the fork (`git cat-file -e 95f4a51c^{commit}` succeeds).
+Fork: AMD-Ecosystem/Pointcept @ moat-port, sha 87bc3e2 (matches `status.json head_sha`
+exactly; `pr-state Pointcept` -> `merged`, PR #604; 87bc3e2 sits directly on
+`moat-port` post-merge, no `moat-fix-*` branch involved).
+Env: TheRock pip-SDK venv (`agent_space/torch_venv`, space-free prefix), torch
+2.12.0+rocm7.14.0a20260519, torch.version.hip 7.13.26190. CXX/CC=clang-cl.exe from
+`_rocm_sdk_devel/lib/llvm/bin`, MSVC 14.44.35207 link.exe prepended to PATH,
+DISTUTILS_USE_SDK=1, ROCM_HOME/ROCM_PATH/HIP_PATH=`_rocm_sdk_devel`.
+
+### Build (timeit: compile phase, 137.7s, exit 0)
+```
+export PYTORCH_ROCM_ARCH=gfx1151 HIP_VISIBLE_DEVICES=0
+export CXX=<_rocm_sdk_devel>/lib/llvm/bin/clang-cl.exe CC=<same>
+export ROCM_HOME=<_rocm_sdk_devel> DISTUTILS_USE_SDK=1
+export INCLUDE="C:\Windows\Temp\sparsehash-sparsehash-2.0.4\src;$INCLUDE"
+cd libs/<lib> && python setup.py install   # pointops, pointops2, pointgroup_ops, pointrope
+```
+All four built cleanly (pointops 36.8s, pointops2 39.4s, pointgroup_ops 23.5s,
+pointrope 37.7s). No installed sparsehash headers existed on this host yet; downloaded
+sparsehash-2.0.4 and wrote a fresh `sparsehash/internal/sparseconfig.h`
+(`GOOGLE_NAMESPACE=::google`, `HASH_FUN_H=<unordered_map>`, `SPARSEHASH_HASH=std::hash`,
+`HASH_NAMESPACE=std`) rather than reusing the tarball's shipped
+`src/windows/sparsehash/internal/sparseconfig.h` (that one targets old-MSVC
+`stdext::hash_compare`, not clang-cl/C++17 `std::hash`) -- matches the gfx1201/gfx1101
+validators' documented recipe. All 4 `.pyd`/`_C` extensions imported cleanly and
+`torch.cuda.get_device_name(0)` returned `AMD Radeon(TM) 8060S Graphics`.
+
+### pointops2 in-tree tests (timeit: test phase)
+`libs/pointops2/functions/test_*.py` via a small driver (`agent_space/pointcept_test_gfx1151.py`,
+feeds blank stdin for the interactive `input()` pauses, HIP_VISIBLE_DEVICES=0):
+- test_attention_op_step1.py: EXIT 0, `((attn-attn_v2)**2<1e-8).all()`=True.
+- test_attention_op_step1_v2.py: EXIT 0, same.
+- test_attention_op_step2.py: EXIT 1, `NameError: name 'x' is not defined` (line 60,
+  var commented out at 32-34) -- identical pre-existing upstream test bug seen on
+  every prior platform. GPU forward+backward itself ran to completion first. NOT a
+  port issue.
+- test_relative_pos_encoding_op_step1{,_v2,_v3}.py: EXIT 0; v2/v3 max sq err 2.328e-10
+  (matches gfx90a/gfx1100/gfx1201/gfx1101's 2.33e-10 exactly).
+- test_relative_pos_encoding_op_step2.py: EXIT 0.
+- test_relative_pos_encoding_op_step2_v2.py: EXIT 0; forward max sq err 9.313e-10;
+  attn_grad 2.594e-21; v_grad 1.601e-21; table_grad 6.267e-17 (gfx90a: 2.594e-21 /
+  3.388e-21 / 1.147e-16 -- same order of magnitude, well within noise floor).
+
+7/8 EXIT 0, 1/8 EXIT 1 (pre-existing, not port-caused). Matches every prior platform's
+pattern exactly.
+
+Test dependency `torch_scatter` had no ROCm/Windows wheel on this host (fresh venv);
+built from the 2.1.2 sdist with the same ROCm patch as gfx1101/gfx1201/gfx1100 (uint64
+mask on the `at::Half` `__shfl_*_sync` wrappers, `SHFL_*_SYNC` macros routed through
+`__shfl_*_sync` with the cast, `FULL_MASK` widened to `0xffffffffffffffffULL` in
+`segment_csr_cuda.cu`/`segment_coo_cuda.cu`, `setup.py` `use_ninja` False->True for HIP
+`.hip` compilation on Windows): `pip install <sdist-dir> --no-build-isolation --no-deps`,
+built and installed cleanly (throwaway, test-env only, not committed).
+
+### Custom op driver (agent_space/pointcept_op_driver_gfx1151.py)
+Rewritten locally (no prior driver script was present on this fresh host); same API
+surface and tolerance basis as the gfx90a/gfx1100/gfx1201/gfx1101 drivers described
+above in this file:
+- pointops `knn_query`: GPU vs brute-force CPU `torch.cdist` k-NN (2000 pts, 500
+  queries, k=16), set-match fraction 1.000000. PASS.
+- pointrope: GPU vs CPU max abs err 4.709e-06 (fast-math; gfx90a 9.06e-06, gfx1100/
+  gfx1101 2.47e-05 -- same order of magnitude). Round-trip (forward then inverse)
+  max abs err 2.384e-07 (gfx90a 7.15e-07). PASS.
+- ballquery_batch_p: 16732 pairs, 0 radius violations (r=0.1, 2000 pts uniform). PASS.
+- bfs_cluster: 1 cluster, 1995/2000 pts (threshold=50) -- matches gfx90a's 1995/2000.
+  PASS.
+
+### Round 2 (spconv-triton) surface: blocked by no Triton wheel on Windows
+`pip install spconv-triton` succeeded (pure-Python+Triton wheel, no build step,
+1.0.0). Importing the port's selector module
+(`pointcept/models/utils/spconv.py`) resolves the `torch.version.hip is not None`
+branch and attempts `import spconv_triton.pytorch`, which imports `triton` at
+`spconv_triton/pytorch/_impl/gemm.py:35`. `pip install triton` on this host:
+`ERROR: Could not find a version that satisfies the requirement triton (from
+versions: none)` -- PyPI ships no Windows wheel for `triton` at all (this is not
+ROCm-specific: the upstream Triton project does not publish Windows distributions
+for either the NVIDIA or AMD backend). This is a third-party toolchain gap in Triton
+itself, not a defect in Pointcept's 12-file round-2 diff and not specific to this
+port's ROCm branch -- the identical `import triton` would fail for a CUDA build on
+Windows too. No workaround exists short of building Triton from source for Windows,
+which is out of scope for a validator. Recorded here as `spconv-triton-not-validated:
+no Windows Triton wheel on PyPI (environmental, not a port regression)`; not a gate.
+The round 2 surface (SpUNet/OACNN/PointGroup end-to-end via spconv-triton) has now
+been evidenced on gfx90a (numeric pass) and gfx1100 (compiles, no numeric pass within
+window); windows platforms cannot exercise it at all pending a Windows Triton build,
+independent of this port.
+
+### CUDA no-regression gate
+Already recorded at this head_sha (87bc3e2) by linux-gfx90a
+(`cuda-not-validated: environmental wall`); skipped here (no CUDA toolkit on this
+Windows host in any case).
+
+### Integrity gate
+`git -C projects/Pointcept/src status --porcelain`: 62 entries, all untracked (`??`),
+all matching the known hipify-artifact filename classes (`*_hip.cpp`,
+`*_hip_kernel.h`, `*_hip_kernel.hip`, `pointrope/kernels.hip`,
+`bfs_cluster_hip.cpp`/`bfs_cluster_kernel.hip`). No modified tracked files. Clean.
+
+### Hygiene re-check
+`python3 utils/jargon.py --port Pointcept` -> clean. README Installation section
+documents the ROCm/AMD build in house style, unchanged from round 1/2.
+
+### Host stability
+`Kernel_141_*` WER report count: 18 before, 18 after. No new GPU engine timeouts or
+bugchecks during this validation.
+
+Summary: windows-gfx1151 -> completed at 87bc3e2 (first validation of this platform).
+Core port surface (libs/pointops, pointops2, pointgroup_ops, pointrope) fully built
+and tested on real gfx1151 hardware with no regression: build clean, 7/8 pointops2
+in-tree tests EXIT 0 (8th is the same pre-existing upstream test bug seen on every
+platform), all custom driver checks PASS with numerics matching every other validated
+platform to within the expected fast-math/atomic-order noise floor. Round 2's
+spconv-triton surface cannot be exercised on any Windows platform because Triton ships
+no Windows wheel -- an environmental gap in a third-party dependency, unrelated to
+this port's own code, already evidenced end-to-end on gfx90a and compile-verified on
+gfx1100.
+
 ### CUDA no-regression gate
 Already recorded at this head_sha (87bc3e2) in the linux-gfx90a validation above
 (`cuda-not-validated: environmental wall`); per the validator role, this gate runs once

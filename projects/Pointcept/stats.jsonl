@@ -93,3 +93,8 @@
 {"kind":"phase","ts":"2026-08-21T00:42:23Z","phase":"test","seconds":1700,"exit":137,"cmd":"bash -c cd projects/Pointcept/src && HIP_VISIBLE_DEVICES=0 PYTHONPATH=. python3 -u pointcept_sparse_conv_e2e.py --steps 5 --only spunet (killed, step-0 fwd+bwd still autotuning)"}
 {"kind":"phase","ts":"2026-08-21T00:42:23Z","phase":"test","seconds":2171,"exit":137,"cmd":"bash -c cd projects/Pointcept/src && HIP_VISIBLE_DEVICES=0 PYTHONPATH=. python3 -u agent_space/spconv_triton_smoke.py (killed, step-0 fwd+bwd still autotuning)"}
 {"kind":"session","ts":"2026-08-21T00:44:05Z","epoch":1787273045.652424824,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-21T04:17:18Z","epoch":1787285838.540986400,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-21T04:21:36Z","phase":"compile","seconds":137.672,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe agent_space/pointcept_build_gfx1151.py"}
+{"kind":"phase","ts":"2026-08-21T04:22:39Z","phase":"test","seconds":15.454,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe agent_space/pointcept_test_gfx1151.py"}
+{"kind":"phase","ts":"2026-08-21T04:27:02Z","phase":"test","seconds":28.524,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe agent_space/pointcept_test_gfx1151.py"}
+{"kind":"phase","ts":"2026-08-21T04:30:17Z","phase":"test","seconds":2.948,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe agent_space/pointcept_op_driver_gfx1151.py"}
