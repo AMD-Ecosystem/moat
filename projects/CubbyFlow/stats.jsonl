@@ -81,3 +81,8 @@
 {"kind":"phase","ts":"2026-08-20T23:21:49Z","phase":"test","seconds":3.708,"exit":0,"cmd":"./projects/CubbyFlow/src/build/bin/UnitTests"}
 {"kind":"phase","ts":"2026-08-20T23:21:56Z","phase":"test","seconds":1.299,"exit":0,"cmd":"/var/lib/jenkins/moat/projects/CubbyFlow/src/build/bin/CUDASPHSim -f 5"}
 {"kind":"session","ts":"2026-08-20T23:23:11Z","epoch":1787268191.963366502,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-21T03:42:29Z","epoch":1787283749.937433600,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-21T03:44:23Z","phase":"compile","seconds":0.286,"exit":1,"cmd":"bash agent_space/cubbyflow_gfx1151_build.sh"}
+{"kind":"phase","ts":"2026-08-21T04:08:36Z","phase":"compile","seconds":1330.571,"exit":1,"cmd":"bash agent_space/cubbyflow_gfx1151_build.sh"}
+{"kind":"phase","ts":"2026-08-21T04:10:07Z","phase":"compile","seconds":52.148,"exit":1,"cmd":"bash agent_space/cubbyflow_gfx1151_build.sh"}
+{"kind":"phase","ts":"2026-08-21T04:11:38Z","phase":"compile","seconds":47.951,"exit":1,"cmd":"bash agent_space/cubbyflow_gfx1151_build.sh"}

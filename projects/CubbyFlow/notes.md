@@ -930,3 +930,152 @@ build (`USE_HIP=ON`, `CMAKE_HIP_ARCHITECTURES`) in the same section as the
 CUDA build; unchanged by this revalidation.
 
 ### Verdict: PASS -> completed at `29bac0b9b1e8981d9921446829f9c0df1b97f2fe`
+
+## Validation 2026-08-20 (windows-gfx1151, validator) -- FAILED at build
+
+Platform: windows-gfx1151 (AMD Radeon 8060S, RDNA3.5 APU, 20 CUs, wave32),
+Windows 11. Fix round tip 29bac0b9b1e8981d9921446829f9c0df1b97f2fe
+(moat-fix-145). Fresh clone (no prior local checkout on this host):
+`git clone --branch moat-fix-145 --single-branch
+https://github.com/AMD-Ecosystem/CubbyFlow.git projects/CubbyFlow/src`.
+`git rev-parse HEAD` matched head_sha exactly. protect-fork installed
+(the upstream PR #145 is open; moat-port stays untouched throughout).
+62f4604c834e0c25ec8f5a829fc1670db23d3cb0 (the sha windows-gfx1101/gfx1201
+validated) still exists as the tip of moat-port on the fork (git ls-remote
+confirms). Tree stayed clean (git status --porcelain only ever showed the
+untracked build_gfx1151/); no fork source or build file was edited during
+this session.
+
+### Toolchain prerequisites fixed locally (validator-side only, no fork edits)
+
+- D:/vcpkg was a shallow clone (git rev-list --count HEAD == 1); a manifest
+  install fails at configure with "vcpkg was cloned as a shallow
+  repository ... failed to git show versions/baseline.json" for every port
+  (same fault class the linux-gfx90a validator hit and fixed the same way).
+  Fixed with `git fetch --unshallow origin` (30161 commits after).
+- CubbyFlow's CMakeLists.txt line 2 requires cmake_minimum_required(VERSION
+  3.31.6); the system CMake (3.31.0, both the PATH one and vcpkg's own
+  bundled tool) is below that floor. Used vcpkg's cached
+  cmake-3.31.10-windows tool
+  (C:/Users/jdaily/AppData/Local/vcpkg/downloads/tools/cmake-3.31.10-windows/...)
+  explicitly for both configure and build.
+
+### Attempt 1: all-clang-cl (CMAKE_C/CXX/HIP_COMPILER = clang-cl.exe)
+
+Per the general Windows-ROCm house style (clang-cl as host compiler).
+vcpkg install succeeded (22 min cold, this host's first CubbyFlow vcpkg
+build). CMake configure failed at HIP language detection:
+
+CMake Error at .../Windows-MSVC.cmake:69 (message):
+  MSVC compiler version not detected properly:
+Call Stack: .../Windows-Clang-HIP.cmake:1, CMakeHIPInformation.cmake:35,
+  CMakeLists.txt:81 (enable_language)
+CMake Error at .../CMakeDetermineCompilerABI.cmake:74 (try_compile):
+  Failed to configure test project build system.
+-- Configuring incomplete, errors occurred!
+
+This is the recorded CMake-3.31-vs-clang-cl-as-HIP-compiler ABI-detection
+wall (this host has no newer CMake). Environmental, not project-specific.
+
+### Attempt 2: all-clang++ (GNU-driver, matching the project's own prior
+Windows recipe from the 2026-06-12/2026-06-19 windows-gfx1201/gfx1101
+validations: CMAKE_HIP_COMPILER=CMAKE_CXX_COMPILER=clang++.exe,
+CMAKE_C_COMPILER=clang.exe)
+
+vcpkg restored the whole dependency set from the now-warm binary cache in
+under 5s (the compiler-hash cache key differs per compiler, but package
+contents matched, so vcpkg served every port from
+C:\Users\jdaily\AppData\Local\vcpkg\archives). CMake configure succeeded,
+including HIP language ABI detection (-- Using HIP: arch gfx1151). Build
+failed compiling the first HIP translation unit:
+
+[149/326] Building HIP object Tests/CUDATests/.../CUDAArray1Tests.cu.obj
+D:\...\amdclang++.exe ... -std=c++23 --offload-arch=gfx1151 ... -x hip -c
+  .../Tests/CUDATests/CUDAArray1Tests.cu
+.../__clang_cuda_math_forward_declares.h:93:17: error: __device__ function
+  'isfinite' cannot overload __host__ __device__ function 'isfinite'
+C:\...\VC\Tools\MSVC\14.44.35207\include\cmath:672:17: note: previous
+  declaration is here
+  672 | _CLANG_BUILTIN1(isfinite)
+
+19 such errors (isfinite/isinf/isnan/isnormal for float/double/long double
+plus related overloads), all in the first HIP TU compiled -- every HIP TU
+in the project would fail identically, since they all pull the same
+__clang_hip_runtime_wrapper.h chain.
+
+### Attempt 3 (diagnostic, not a fix): amdclang.exe/amdclang++.exe
+
+Same GNU-driver family as attempt 2 (CuRast's Windows recipe uses
+amdclang++.exe specifically). Ran to confirm the failure is not an
+artifact of using plain clang++.exe instead of the amdclang wrapper.
+vcpkg restored again from cache (408 ms). Configure succeeded identically.
+Build hit the exact same 19 errors on the same file (CUDAArray1Tests.cu.obj,
+isfinite/isinf/isnan/isnormal), confirming the fault is independent of
+which GNU-driver clang binary is used.
+
+### Root cause and the fix, precisely (not applied -- validator role, no fork edits)
+
+CubbyFlow's CMake sets CXX_STANDARD 23 project-wide (upstream's C++23
+move, Builds/CMake/CompileOptions.cmake), and per the 2026-08-20 fix-round
+review, this propagates to the HIP language too -- there is no HIP-scoped
+override. On Linux with ROCm's own libc++/libstdc++, -std=c++23 on a HIP
+TU is fine (confirmed on linux-gfx1100/gfx90a: -std=c++23
+--offload-arch=gfx1100 compiles clean). On Windows, an all-GNU-driver HIP
+TU still targets the MSVC CRT (-D_DLL -D_MT -Xclang
+--dependent-lib=msvcrt), so it still includes the MSVC C++23 STL <cmath>,
+which marks isfinite/isinf/isnan/isnormal __host__ __device__ via
+_CLANG_BUILTIN1(...). HIP's own __clang_cuda_math_forward_declares.h
+declares the same names __device__-only. A __device__-only redeclaration
+of an existing __host__ __device__ overload is an error, not a merge --
+hence every HIP TU fails at TU #1.
+
+This is the same fault class CuRast's Windows port hit and fixed (its fix
+#2, projects/CuRast/notes.md): pin HIP translation units to -std=c++20
+(via target_compile_options($<$<COMPILE_LANGUAGE:HIP>:-std=c++20>),
+WIN32-scoped so Linux/macOS keep C++23 unchanged) so the HIP TU never
+reaches the C++23 STL branch of <cmath> that carries the conflicting
+builtin markers. CubbyFlow's CMake has no such HIP-scoped standard pin
+today -- this is a genuine, describable, porter-actionable build gap, not
+a toolchain/environment wall and not a candidate for a Windows waiver (the
+give-away: a fix a porter could ship, already proven on a sibling project
+on this exact host today).
+
+Attempt 1's failure is a separate, environmental issue (CMake 3.31 cannot
+ABI-probe clang-cl as a HIP-language compiler on this host; no newer CMake
+installed) -- unrelated to attempt 2/3's cmath conflict. Not verified
+whether a newer CMake would let clang-cl reach the same cmath conflict
+(clang-cl also targets the MSVC CRT, so it looks at least as exposed);
+attempt 1 never got past configure so this was not directly confirmed.
+
+### No GPU tests run
+
+The build never produced CUDATests.exe, UnitTests.exe, or CUDASPHSim.exe
+for this arch/toolchain combination, so no GPU or CPU-regression evidence
+was collected on windows-gfx1151 this round. USE_HIP=ON marks only
+Sources/Core/CUDA, Tests/CUDATests, and Examples/CUDASPHSim sources as HIP
+language, so the CPU-only UnitTests target compiles no HIP TUs and would
+likely build independently of this fault -- not verified this round
+(stopped after confirming the root cause, per the revised time budget).
+
+### CUDA no-regression gate
+
+Not applicable/not re-run on this host (no CUDA toolkit; already recorded
+PASS at this exact head_sha by linux-gfx1100, the gate is per-head_sha,
+not per-platform).
+
+### Host stability
+
+Kernel_141 GPU-engine-timeout report count: 18 before this session, 18
+after (unchanged) -- no new GPU timeouts or crashes from this session's
+failed builds.
+
+### Verdict: FAIL -> validation-failed at 29bac0b9b1e8981d9921446829f9c0df1b97f2fe
+
+Sent back to the porter. Needed fix: pin HIP-language translation units to
+-std=c++20 on Windows (WIN32-scoped, mirroring CuRast's fix in
+Sources/Core/CMakeLists.txt or the shared HIP compile-options block),
+leaving the CXX-language CXX_STANDARD 23 and the Linux/macOS HIP build
+unchanged. After that fix, this platform needs a full re-run; vcpkg deps
+are already warm in this host's binary cache from this session, so the
+next attempt should reconfigure/build in well under 5 minutes before
+reaching GPU tests.
