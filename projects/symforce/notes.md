@@ -972,3 +972,151 @@ tracked-file changes -- clean.
 
 VALIDATION PASSED on gfx90a (AMD Instinct MI250X) at tip 1a9e9770. State set
 to completed, validated_sha = 1a9e9770.
+
+## Validation windows-gfx1151 2026-08-20 (fix round, tip 1a9e9770)
+
+GPU: AMD Radeon 8060S Graphics (gcnArchName: gfx1151, RDNA3.5 APU, wave32),
+Windows 11. `Kernel_141` WER report count: 18 before, 18 after -- no GPU
+engine timeouts during this run.
+
+No fork clone existed on this host; cloned fresh
+(`git clone https://github.com/AMD-Ecosystem/symforce.git`), fetched and
+checked out `moat-fix-465` -- local HEAD ==
+`1a9e9770c375840a277a5fcd04416eb2c5a7f009`, matching `head_sha`. Confirmed
+`e994ef0b` (the sha windows-gfx1101/windows-gfx1201 validated at) still
+exists in the fork (`git cat-file -e e994ef0b^{commit}` succeeds). Ran
+`python3 utils/moatlib.py protect-fork symforce` (PR #465 is open, freeze
+guard installed).
+
+Read the delta `e994ef0b..1a9e9770`: 16 commits, but only 2 files touch the
+caspar (GPU) surface --
+`symforce/caspar/source/runtime/memops.cuh` (+4, the `SumStore` trailing
+`__syncthreads()` from this fix round) and
+`symforce/caspar/source/templates/buildfiles/CMakeLists.txt.jinja`
+(CASPAR_MIN_ARCH + new CUDA arch list, confined to the `else()` / non-HIP
+branch). Everything else in the 159-file diffstat is skymarshal/eigen_lcm
+codegen and dependency-pin churn, no caspar surface. Matches exactly what the
+linux-gfx90a/linux-gfx1100 revalidation entries above already recorded.
+
+### Build
+
+Rendered `runtime/CMakeLists.txt` from the jinja template (not tracked in the
+repo), same as the linux-gfx90a fix-round revalidation:
+```
+python3 -c "
+import jinja2, types
+env = jinja2.Environment(loader=jinja2.FileSystemLoader('symforce/caspar/source/templates/buildfiles'))
+tmpl = env.get_template('CMakeLists.txt.jinja')
+caslib = types.SimpleNamespace(name='caspar_runtime')
+content = tmpl.render(caslib=caslib, python_bindings=False)
+open('symforce/caspar/source/runtime/CMakeLists.txt', 'w').write(content)
+"
+```
+
+CMake on this host is 3.31.0, which cannot do `enable_language(HIP)` ABI
+detection with clang-cl. Used the GNU-driver route (clang.exe/clang++.exe for
+all languages, TheRock ROCm SDK), the same recipe that worked for
+windows-gfx1201/windows-gfx1101:
+```
+cmake -S symforce/caspar/source/runtime -B build_gfx1151 -G Ninja \
+  -DCMAKE_C_COMPILER=<ROCM_ROOT>/lib/llvm/bin/clang.exe \
+  -DCMAKE_CXX_COMPILER=<ROCM_ROOT>/lib/llvm/bin/clang++.exe \
+  -DCMAKE_HIP_COMPILER=<ROCM_ROOT>/lib/llvm/bin/clang++.exe \
+  -DCMAKE_PREFIX_PATH=<ROCM_ROOT>/lib/cmake \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151
+cmake --build build_gfx1151 --parallel 20
+```
+(`ROCM_ROOT = D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel`.)
+Configure and build succeeded; no clang-cl `/Fo` bundler bug or MSVC
+`MSVC_RUNTIME_LIBRARY` Generate-step error was hit (both are clang-cl-route
+faults, avoided by the GNU-driver route). Only warnings: the same
+pre-existing `-Wunused-value` nodiscard warnings on `cudaMemcpy`/
+`cudaMemset`/CUB calls the linux entries recorded, unrelated to this round.
+`caspar_runtime_core.lib` built. Confirmed gfx1151 device code embedded via
+`strings` on both the intermediate `.obj` and the final `.lib` (COFF object
+format -- `llvm-objdump --offloading` does not support COFF, unlike the ELF
+objects on Linux):
+```
+strings build_gfx1151/CMakeFiles/caspar_runtime_core.dir/shared_indices.cu.obj | grep amdhsa--gfx
+# hipv4-amdgcn-amd-amdhsa--gfx1151
+```
+
+### Test
+
+Wrote a standalone SumStore/SumFlushFinal harness
+(`agent_space/symforce_sumstore_test.hip.cpp`, no copy survived from the
+Linux hosts' gitignored `agent_space` -- rewrote it against the checked-out
+tip's `memops.cuh` signatures, same shape as the linux entries: one
+1024-thread block, four back-to-back `SumStore` calls into a shared
+`inout_shared`/`shared_tmp` pair with `problem_size=1000` exercising the
+24-lane invalid mask, then `SumFlushFinal`; analytic expectation
+sum(0..999) = 499500). Compiled directly with clang++ (C++17 required by
+hipcub/rocprim on the include path pulled in via `cuda_to_hip.h`):
+```
+<ROCM_ROOT>/lib/llvm/bin/clang++.exe -x hip agent_space/symforce_sumstore_test.hip.cpp \
+  -std=c++17 -I projects/symforce/src/symforce/caspar/source/runtime \
+  --offload-arch=gfx1151 --rocm-path=<ROCM_ROOT> \
+  --rocm-device-lib-path=<ROCM_ROOT>/lib/llvm/amdgcn/bitcode \
+  -I <ROCM_ROOT>/include -L <ROCM_ROOT>/lib -lamdhip64 \
+  -o agent_space/symforce_sumstore_test_1a9e9770.exe
+```
+Staged `amdhip64_7.dll`, `amd_comgr*.dll`, `rocm_kpack.dll` next to the exe
+(this host's System32 `amdhip64_7.dll` is broken and wins over PATH).
+
+```
+HIP_VISIBLE_DEVICES=0 ./agent_space/symforce_sumstore_test_1a9e9770.exe
+```
+Output:
+```
+Device: AMD Radeon(TM) 8060S Graphics (gcnArchName: gfx1151)
+[PASS] rep 0: slot0=499500.000000 slot1=499500.000000 slot2=499500.000000 slot3=499500.000000 (expected 499500.000000)
+=== PASSED === all 20 reps, 4 sums exact each
+```
+No loosened tolerances -- exact match (rel err 0.00e+00) against the analytic
+expectation, matching the linux entries' rel-err bar. This is a low-CU
+(20-CU) RDNA3.5 APU and a known iterative-solver FP-divergence host, but
+`SumStore`/`SumFlushFinal` are a fixed-shape shuffle+atomic reduction, not an
+iterative solver, so that fault class does not apply here; the exact-match
+result confirms it.
+
+Tried to cross-check the emitted `s_barrier` instruction count against the
+linux entries' 9-pre-fix/13-post-fix disassembly comparison, as a freshness
+check that the harness binary is genuinely built from the tip's barriered
+`memops.cuh`. `llvm-objdump --offloading` does not support the PE/COFF `.exe`
+on Windows (ELF-only), and `roc-obj-ls`/`roc-obj-extract` are not shipped in
+this SDK's `bin/`; `clang-offload-bundler -unbundle` failed to find bundles
+(the exe likely uses the new offload-packager format). Fell back to emitting
+device assembly directly (`--cuda-device-only -S`), but that build is
+unoptimized (calls to `__work_group_barrier`/`__syncthreads` go through
+`s_swappc_b64` rather than inlined `s_barrier`), so the instruction-count
+comparison doesn't transfer across this toolchain's optimization shape.
+Dropped the cross-check as unnecessary rather than sinking more budget into
+it: unlike the Linux hosts' persistent `agent_space`, this harness was
+written and compiled fresh in this session directly against the checked-out
+tip's `memops.cuh` (read immediately before writing the harness), so there is
+no stale-binary risk the barrier count was guarding against on Linux.
+
+### CUDA no-regression gate
+
+Already recorded at this head_sha by the linux-gfx1100 revalidation entry
+above (PASS, `nvcc -arch=sm_80` TU compile of `memops.cuh`, conda env
+cuda-12.8) -- not re-run here (no CUDA toolkit on this host, and the rule is
+once per head_sha regardless).
+
+### Gates checked before completion
+
+`python3 utils/jargon.py --port symforce` -> `jargon: clean`. Documentation:
+`symforce/caspar/README.md`, "AMD GPUs (ROCm/HIP)" section, still present and
+unaffected by this round's two-file delta (confirmed by reading it directly
+in this checkout).
+
+Removed the locally-rendered `runtime/CMakeLists.txt` before finishing;
+`git status --porcelain` in the fork clone (`projects/symforce/src`) is
+clean.
+
+VALIDATION PASSED on gfx1151 (AMD Radeon 8060S Graphics, RDNA3.5 APU,
+wave32) at tip 1a9e9770. State set to completed, validated_sha = 1a9e9770.
+This is the fleet's only Windows host; `windows-gfx1101` and
+`windows-gfx1201` remain at the older `e994ef0b` (not yet revalidated at this
+fix-round tip), so this is the platform-record that first satisfies the
+`windows` gate at head_sha 1a9e9770.

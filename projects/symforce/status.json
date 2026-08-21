@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-08-20T22:22:34Z",
+  "updated_at": "2026-08-21T04:44:27Z",
   "head_sha": "1a9e9770c375840a277a5fcd04416eb2c5a7f009",
   "depends_on": [],
   "pr_url": "https://github.com/symforce-org/symforce/pull/465",
@@ -123,6 +123,30 @@
         "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
         "at": "2026-06-23T22:23:19Z"
       }
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "1a9e9770c375840a277a5fcd04416eb2c5a7f009",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-08-21T04:44:27Z",
+      "updated_at": "2026-08-21T04:44:27Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
     }
   },
   "published_sha": "e994ef0b441d5502b07cd58e21a0fc2489eccec3",
