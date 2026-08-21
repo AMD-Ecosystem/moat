@@ -2022,3 +2022,149 @@ alongside hiprtc (added in the fix round); unchanged by this validation, still a
 ### State transition
 
 linux-gfx90a: revalidate -> completed, `validated_sha = fc841498fe82b1743e9c00f57a7651b003fff1d7`.
+
+## Validation 2026-08-21 (windows-gfx1151, port-ready -> completed at fc84149)
+
+GPU: AMD Radeon 8060S (gfx1151, RDNA3.5 APU), 20 CUs (wave32), HIP_VISIBLE_DEVICES=0,
+Windows 11 Enterprise, host XSJJDAILYL02. First validation of this platform (no prior
+`windows-gfx1151` record existed). ROCm: TheRock pip SDK at
+`D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel`.
+
+### Pre-flight
+
+- `git ls-remote https://github.com/AMD-Ecosystem/CuRast.git` confirmed `302cb5fe...`
+  (the published_sha / windows-gfx1101+gfx1201 validated_sha) is still present as
+  `refs/heads/moat-port`, unchanged/not force-pushed away -- the older Windows evidence
+  is against a live, still-reachable commit.
+- No local fork clone existed on this host. Cloned
+  `https://github.com/AMD-Ecosystem/CuRast.git` into `projects/CuRast/src`, fetched and
+  checked out `moat-fix-2` at `fc841498fe82b1743e9c00f57a7651b003fff1d7`
+  (`git rev-parse HEAD` confirmed match to `head_sha`). Ran
+  `python3 utils/moatlib.py protect-fork CuRast` (PR #2 is open; freeze guard installed).
+
+### Toolchain note (confirms recorded gfx1151 CMake-HIP guidance)
+
+Per this host's standing environment memory: for a plain CMake HIP project (not a
+PyTorch C++ extension), all CMake languages must go on the GNU-driver `amdclang++.exe`,
+not `clang-cl`. This matches the recipe already recorded above for windows-gfx1201 /
+windows-gfx1101 (amdclang.exe / amdclang++.exe for C/CXX/HIP), so no new recipe was
+needed -- just retargeted `-DCMAKE_HIP_ARCHITECTURES=gfx1151`.
+
+### Vulkan import library
+
+No Vulkan SDK was installed on this host. `cmake/common.cmake`'s `ADD_VULKAN` only
+needs `vulkan-1.lib` (headers are vendored under `libs/vulkan`). Generated one from the
+System32 `vulkan-1.dll` already present:
+
+```bash
+export MSYS2_ARG_CONV_EXCL="*"
+"<MSVC HostX64/x64 bin>/dumpbin.exe" /exports C:/Windows/System32/vulkan-1.dll > dumpbin_exports.txt
+# build vulkan-1.def (LIBRARY vulkan-1 / EXPORTS / <268 symbol names from dumpbin>)
+"<MSVC HostX64/x64 bin>/lib.exe" /def:vulkan-1.def /out:vulkan-1.lib /machine:x64
+```
+
+Placed at `C:/Users/jdaily/AppData/Local/Temp/vulkan_sdk/Lib/vulkan-1.lib`, `$VULKAN_SDK`
+pointed at the parent dir -- same layout the windows-gfx1201/gfx1101 notes describe.
+
+### Build
+
+```powershell
+$ROCM = "D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel"
+$env:HIP_VISIBLE_DEVICES = "0"
+$env:VULKAN_SDK = "C:/Users/jdaily/AppData/Local/Temp/vulkan_sdk"
+$env:ROCM_PATH = $ROCM
+$env:HIP_DEVICE_LIB_PATH = "$ROCM/lib/llvm/amdgcn/bitcode"
+cmake -S D:/Develop/moat/projects/CuRast/src -B D:/Develop/moat/projects/CuRast/build `
+      -DUSE_HIP=ON `
+      -DCMAKE_HIP_ARCHITECTURES=gfx1151 `
+      -DCMAKE_PREFIX_PATH="$ROCM" `
+      -DCMAKE_C_COMPILER="$ROCM/lib/llvm/bin/amdclang.exe" `
+      -DCMAKE_CXX_COMPILER="$ROCM/lib/llvm/bin/amdclang++.exe" `
+      -DCMAKE_HIP_COMPILER="$ROCM/lib/llvm/bin/amdclang++.exe" `
+      "-DCMAKE_HIP_FLAGS=--rocm-device-lib-path=$ROCM/lib/llvm/amdgcn/bitcode" `
+      -G Ninja
+cmake --build D:/Develop/moat/projects/CuRast/build --target CuRast -j 8
+```
+
+Configure: clean, no errors (12.9s). Build: exit 0, 0 errors, 20.2s, 278 total warnings
+(grep-counted), 0 occurrences of `-Wpointer-arith`/`arithmetic on a pointer to void` --
+confirms the fix round's `HIP_DEVPTR_ADD` fix for the point-loader `cuMemcpyHtoD` offsets
+(the High finding from the 2026-08-20 review) is clean on gfx1151/amdclang++ too, matching
+the gfx90a/gfx1100 confirmation already recorded. Remaining warnings are the pre-existing
+fread-return / nodiscard-`hipError_t` classes plus hipcub nodiscard notes -- same classes
+recorded on every other platform. Binary: `CuRast.exe` (4.77 MB).
+
+Runtime DLLs staged next to the exe (System32 `amdhip64_7.dll` on this host is broken and
+wins over PATH -- see the platform environment note): `amdhip64_7.dll`, `amd_comgr.dll`,
+`hiprtc0714.dll`, `hiprtc-builtins0714.dll`, `rocm_kpack.dll`, `rocsolver.dll`,
+`libhipblaslt.dll`.
+
+### GPU test
+
+```bash
+cd D:/Develop/moat/projects/CuRast/src
+HIP_VISIBLE_DEVICES=0 ROCM_PATH="D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel" \
+    D:/Develop/moat/projects/CuRast/build/CuRast.exe \
+    --bench ./example_donaukanal_urania.glb 1920 1080 30
+```
+
+(Wrapped via `utils/timeit.sh CuRast test -- bash -c '...'` with an explicit `cd` inside
+the wrapped command -- `timeit.sh` itself `cd`s to the MOAT repo root first, so the
+relative asset path would otherwise fail to resolve; same gotcha the linux-gfx1100/gfx90a
+fix-round revalidations recorded.)
+
+Results:
+- rc=0, 30 frames, 966,461 of 966,461 triangles visible every frame.
+- Best visbuffer-pipeline time: 0.469 ms @ 1920x1080 (slower than the discrete
+  gfx1201/gfx1100 GPUs recorded elsewhere in this file, consistent with a 20-CU APU vs.
+  32-35 CU discrete cards -- not a fault).
+- `bench_render.png`: 264,619 bytes -- byte-identical to the windows-gfx1201 reference
+  recorded for `ecdf587` above -- 1920x1080 RGBA, all 2,073,600 pixels non-zero, 21,484
+  unique colors (reference band: 21,484-21,544 across platforms/shas, consistent with
+  expected atomics-ordered float accumulation differences). Donaukanal building scene,
+  correct geometry and textures. PASS.
+- hiprtc code objects compiled for gfx1151: resolve.cu 98,016 B, triangles_visbuffer.cu
+  147,440 B, points.cu 5,888 B (points.cu is the fix round's new kernel; compiles with
+  zero errors here too, third architecture confirming it after gfx1100/gfx90a).
+- jpeg/BitReaderGPU.cuh + HashMap.cuh hiprtc "unknown type name 'uint8_t'/'uint32_t'"
+  errors reproduced as expected: pre-existing, unrelated to this round, same fault class
+  recorded on every prior platform (jpeg path only, not the visbuffer pipeline under
+  test).
+- No GPU faults, no cooperative-launch failures, no post-bench crash (exit 0 cleanly --
+  unlike the gfx90a launch-member-dispatch anomaly, which is recorded as gfx90a-specific).
+- Translucent path (points.cu IS exercised via the normal drawPoints kernel;
+  triangles_translucent.cu / hipCUB radix sort are NOT) -- same honest limitation
+  recorded on every other platform: the bundled Donaukanal model has no alpha textures
+  and `enableTranslucency` defaults to false.
+
+### CUDA no-regression gate
+
+Already recorded at this head_sha by linux-gfx1100 ("CUDA no-regression gate (not
+previously recorded at this head_sha)", in "Revalidation linux-gfx1100 2026-08-20"
+above): GATE PASS, pure passthrough, pre-existing CUDA-13.1/`<print>` wall unchanged.
+Runs once per head_sha; this host has no CUDA toolkit and did not attempt it.
+
+### Integrity gate
+
+`git -C projects/CuRast/src status --porcelain` clean (no modified tracked files) after
+build + bench. The throwaway `vulkan-1.def`/`vulkan-1.lib`/`dumpbin_exports.txt` files
+live outside the fork clone (under the Temp vulkan_sdk dir), not in the tracked tree.
+
+### Jargon and documentation
+
+`python3 utils/jargon.py --port CuRast` -> clean (fetched local `main`/`moat-port`
+branches first so the diff ranges resolve). README.md `### AMD GPUs (ROCm/HIP)` section
+already documents hipCUB alongside hiprtc; unchanged by this validation, still accurate.
+
+### Kernel_141 host-stability check
+
+`Kernel_141_*` WER report count: 18 before this validation, 18 after -- unchanged. No
+host instability observed during this run.
+
+### State transition
+
+windows-gfx1151: port-ready -> completed, `validated_sha = fc841498fe82b1743e9c00f57a7651b003fff1d7`.
+All three required gates (wave64: linux-gfx90a; wave32: linux-gfx1100/windows-gfx1151;
+windows: windows-gfx1151) are now satisfied at head_sha `fc841498...`. `pr-ready` should
+read True; windows-gfx1101/windows-gfx1201 remain at their older `302cb5fe` sha (revalidate
+expected when a maintainer/porter next inspects them, not required for this gate).
