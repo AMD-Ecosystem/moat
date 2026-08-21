@@ -1362,3 +1362,100 @@ the platform that actually exercises R2 (the wavefront-floor fix); FindHomograph
 it. The extra `OpColorTwistPlanarVarShape/2` failure (beyond gfx1100's `{0,1}`) is recorded here as
 a data point for whoever eventually tightens the residual-set documentation -- same root cause,
 independently verified, not blocking.
+
+## Validation 2026-08-20 (windows-gfx1151) -- FEASIBILITY FINDING, not a GPU run
+
+RESULT: validation-failed (no build reached, no GPU exercised). This is the deliverable the
+refused windows waiver asked for: a concrete answer on whether CV-CUDA can build on Windows at
+all, with file:line evidence -- not a re-assertion of the "Linux-only scoping" waiver text.
+
+### Setup
+Host: windows-gfx1151 (RDNA3.5 APU, AMD Radeon 8060S, 20 CUs, wave32), Windows 11, no local fork
+clone existed for this project on this host. Cloned `AMD-Ecosystem/CV-CUDA` (--recurse-submodules)
+into `projects/CV-CUDA/src`, checked out `moat-fix-293` (per `status.json`'s `fix.branch` -- the
+PR is open and `moat-port` is frozen at `published_sha=642b3526`), confirmed
+`git rev-parse HEAD` == `358edc33955c58ecc1c219d21f3b3db59b10a50c` (`head_sha`). `protect-fork`
+could not install its hook in this clone (a stock git-lfs `pre-push.sample`-derived hook was
+already present and the classifier that guards this session blocked moving it aside); no push was
+made or attempted, so this did not matter in practice, but it is recorded because a future agent
+that DOES need to push to this clone must resolve it first.
+CUDA no-regression gate: already recorded at this exact head_sha by the linux-gfx1100 validator
+(2026-08-20); not re-run (validator.md step 3, once per head_sha).
+
+### Feasibility verdict: NO -- confirmed hard blocker, not scoping
+
+The top-level `CMakeLists.txt` and every `cmake/*.cmake` file have **zero** `WIN32`/`MSVC`/
+`Windows` conditionals (`grep -rn "WIN32\|_WIN32\|MSVC\|Windows" CMakeLists.txt cmake/*.cmake` ->
+no output) -- confirming the "deliberately scoped Linux-only" characterization was accurate as of
+the last porter round. But the concrete, load-bearing blocker is narrower and specific:
+
+`src/nvcv/util/SymbolVersioning.hpp` defines `NVCV_PROJ_DEFINE_API`, the macro that emits the
+implementation of **every public API entry point in both libraries** -- every `OpXxx.cpp` operator
+(70+ files: OpResize.cpp, OpWarpAffine.cpp, ... via `CVCUDA_DEFINE_API` in
+`src/cvcuda/priv/SymbolVersioning.hpp`) and every NVCV core object (Allocator.cpp, Array.cpp,
+Image.cpp, Tensor.cpp, TensorBatch.cpp, ... via `NVCV_DEFINE_API`). It uses ELF/glibc-style
+`.symver`-based symbol versioning for API-compat aliasing, unconditionally -- no `#ifdef __linux__`
+or `#ifdef __ELF__` guard anywhere in the file:
+
+```
+src/nvcv/util/SymbolVersioning.hpp:70   #if NVCV_GCC_VERSION >= 100000
+src/nvcv/util/SymbolVersioning.hpp:73       __attribute__((__symver__(...)))
+src/nvcv/util/SymbolVersioning.hpp:76   __asm__(".symver " #FUNC "_v" ... );   // else branch
+```
+
+`NVCV_GCC_VERSION` (`src/nvcv/util/Compiler.hpp:20-22`) is defined ONLY for real GCC
+(`defined(__GNUC__) && !defined(__clang__)`) -- it is undefined under clang, which per the
+preprocessor evaluates the `#if` as 0. **Both** the Linux/HIP build (`CMAKE_HIP_COMPILER` is
+clang++, from ROCm) **and** the Windows/HIP build (clang-cl) are clang, so both take the
+`__asm__(".symver ...")` branch, not the attribute branch. On Linux/ELF that inline-asm directive
+assembles fine (`.symver` is a real GNU-as/ELF pseudo-op). On Windows the object format is
+COFF/PE, which has no such concept, and clang-cl's integrated assembler rejects it outright.
+
+Confirmed directly by isolating the exact macro expansion and compiling it with this host's
+ROCm clang-cl (`$ROCM_ROOT/lib/llvm/bin/clang-cl.exe`, AMD clang 23.0.0git,
+`Target: x86_64-pc-windows-msvc`):
+
+```
+$ "$CC" /c t2.cpp      # t2.cpp reproduces SymbolVersioning.hpp's exact else-branch expansion
+<inline asm>(1,1): error: unknown directive
+    1 | .symver nvcvFoo_v1_0,nvcvFoo@@NVCV_1.0
+      | ^
+1 error generated.
+```
+
+(The attribute branch alone, tested separately, only warns -- `warning: unknown attribute
+'__symver__' ignored` -- and would silently compile without the version alias; it is the inline-
+asm branch that is actually taken by clang, and that one is a hard error.)
+
+This is not a peripheral file: it is included by `src/cvcuda/priv/SymbolVersioning.hpp` and
+`src/nvcv/src/priv/SymbolVersioning.hpp`, which together are `#include`d by essentially every
+`.cpp` in `src/cvcuda/Op*.cpp` and `src/nvcv/src/*.cpp` (confirmed via
+`grep -rln "SymbolVersioning.hpp" src/` -> 85 files, none of them in the already-scoped-out cuOSD
+set). The very first translation unit CMake compiles in either target would fail here, well before
+`enable_language(HIP)`-related issues (MSVC-ABI detection, `MSVC_RUNTIME_LIBRARY`, the `/Fo`
+offload-bundler bug) that other Windows ports on this host have hit and worked around -- those
+never got exercised because this blocker is upstream of them in the source, not the toolchain.
+
+### What this is, concretely, for a porter
+`NVCV_PROJ_DEFINE_API_HELPER` / `NVCV_PROJ_SYMVER` in `src/nvcv/util/SymbolVersioning.hpp` need a
+`defined(_WIN32)` (or `defined(_MSC_VER)`) branch that skips ELF symbol versioning entirely and
+just emits a plain exported definition (e.g. `extern "C" __declspec(dllexport) RETTYPE FUNC_VER
+ARGS` with `FUNC_VER` aliased to `FUNC` when there is only one version, since COFF/PE has no
+native multi-version-per-symbol mechanism -- this needs actual design thought, not a one-line
+`#ifdef`, because `NVCV_PROJ_DEFINE_API_OLD` calls that keep multiple ABI versions of the same
+function alive have no COFF equivalent at all). This is real porter/source work, not a build-flag
+workaround; a validator does not do it. No fork edit was made this run.
+
+### Scoped out / not reached
+Did not attempt a full CMake configure or build (the blocker above is unconditional and hits the
+first source file compiled regardless of configure options); did not exercise the GPU or the
+runtime DLL staging (`amdhip64_7.dll` etc.) since nothing built. Did not re-check
+windows-gfx1101/windows-gfx1201 (still correctly `blocked`, per their existing block text, until
+this SymbolVersioning gap is actually fixed by a porter).
+
+### State
+`windows-gfx1151` -> `validation-failed` at `failed_sha=358edc33955c58ecc1c219d21f3b3db59b10a50c`.
+This supersedes the refused waiver text with the specific evidence it asked for: the obstacle is a
+genuinely fixable source defect (ELF-only symbol versioning with no Windows branch), not an
+unfixable platform limit -- so this stays a `validation-failed` routed to a porter, not a renewed
+waiver suggestion. Kernel_141 WER report count: 18 before, 18 after (no GPU load was ever reached).
