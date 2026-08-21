@@ -1736,3 +1736,182 @@ push from this platform. `moatlib.py carry-forward` NOT used -- this is real
 GPU evidence at 5401278.
 
 Verdict: PASS. State: linux-gfx90a completed, validated_sha=5401278cefa9b0115c665dfdffb367531e64a9aa.
+
+## Validation 2026-08-20 (windows-gfx1151, first validation, port-ready -> completed)
+
+Platform: AMD Radeon 8060S (gfx1151, RDNA3.5 APU, wave32, 20 CUs), Windows 11
+Enterprise. `d6ca89206f8e8881598c1694a6ca996332952599` (the sha the two other
+Windows platforms, windows-gfx1101/gfx1201, are recorded `completed` at) is
+**no longer a valid object in the fork** (`git cat-file -e d6ca8920...^{commit}`
+-> `fatal: Not a valid object name`). This is NOT the dead-sha carry-forward
+trap: it is the expected result of the four documented history rewrites this
+branch went through during the 2026-08-20 review-round series (bba10c8/d6ca892
+-> 8d5b2f4/d745b771 -> ... -> 7058b4a/5401278, all `--force-with-lease`, all
+recorded in this file, all pre-dating any upstream PR so the series was still
+ours to shape). `head_sha` 5401278 is the tip of that rewritten history and is
+what this validation targets; d6ca8920 predates the rewrite and no longer
+exists anywhere in the fork's ref graph. windows-gfx1101/gfx1201 both need a
+revalidate at 5401278 for the same reason (their recorded `validated_sha` is
+one of the rewritten-away commits), but that is those platforms' business, not
+this one's -- this is a first validation for windows-gfx1151, gated on
+`port-ready`.
+
+### Environment
+
+Venv: `agent_space/torch_venv` (Python 3.13), `rocm-sdk` ROCm 7.14.0a20260519,
+torch 2.12.0+rocm7.14.0a20260519 built with the `[device-gfx1151]` extra.
+Sourced `agent_space/win_torch_env.sh` (sets `ROCM_ROOT`, `HIP_DEVICE_LIB_PATH`,
+`DISTUTILS_USE_SDK=1`, `PYTORCH_ROCM_ARCH=gfx1151`, `HIP_VISIBLE_DEVICES=0`,
+clang-cl as `CC`/`CXX`, MSVC `link.exe` prepended to `PATH` ahead of
+`/c/Users/jdaily/.local/bin`). `torch.cuda.get_device_name(0)` ->
+"AMD Radeon(TM) 8060S Graphics"; `torch.cuda.is_available()` -> True.
+
+Fresh clone: `git clone https://github.com/AMD-Ecosystem/op43dgs.git
+projects/op43dgs/src`, `git checkout moat-port`, `git rev-parse HEAD` =
+`5401278cefa9b0115c665dfdffb367531e64a9aa` (matches `head_sha`). No
+`.gitmodules` / no submodules -- the four extension trees (including vendored
+GLM) are plain tracked directories in this fork, confirmed by `ls submodules/`.
+`python3 utils/moatlib.py protect-fork op43dgs` installed the pre-push hook
+(no upstream PR is open, `pr_state=none`, so this is precautionary).
+
+Non-torch deps installed `--no-deps` (matching notes.md's recorded recipe,
+plus `pillow` for the trainer-path import check that PIL is a transitive
+`scene/dataset_readers.py` import the other platforms' recipes did not
+separately call out): `plyfile`, `tqdm` (already present), `pillow`.
+
+### Build commands (from-scratch, all four extensions; ~90s each)
+
+```
+source agent_space/win_torch_env.sh
+export MAX_JOBS=16
+SRC=projects/op43dgs/src
+
+# simple-knn
+utils/timeit.sh op43dgs compile -- "$TORCH_PY" -m pip install $SRC/submodules/simple-knn --no-build-isolation --no-deps
+
+# rasterizer variants, one at a time (shared module name diff_gaussian_rasterization)
+"$TORCH_PIP" uninstall -y diff_gaussian_rasterization
+utils/timeit.sh op43dgs compile -- "$TORCH_PY" -m pip install $SRC/submodules/diff-gaussian-rasterization-pinhole --no-build-isolation --no-deps
+# fisheye, panorama: same pattern, uninstall between
+```
+
+All four extensions built clean (exit 0), no `/Fo` bundler fault, no
+`enable_language(HIP)` ABI-detection fault, no `MSVC_RUNTIME_LIBRARY` Generate
+failure (this project has no CMake -- pure `setup.py`/`CUDAExtension`, so those
+CMake-specific Windows/HIP walls documented in the skill do not apply here).
+No Windows-specific source delta was needed beyond what commit `5401278`
+already carries (the `/ALTERNATENAME` `c10::ValueError` fix, unchanged from
+the gfx1101/gfx1201 rounds) -- confirmed by an unmodified `git status
+--porcelain` in the clone throughout.
+
+### Test harnesses
+
+The gitignored `agent_space/op43dgs/` harnesses did not exist on this host
+(same loss the gfx1100/gfx90a revalidation rounds hit) and were rewritten from
+this file's descriptions: `raster_common.py` (synthetic scene/camera via the
+project's own `getWorld2View2`/`getProjectionMatrix` conventions),
+`val_simpleknn.py`, `tier1_forward.py`, `tier2_backward.py` (written directly
+with the sign-vs-slope gate split from notes.md:123-137 and notes.md:1517-1530:
+`scales` sign-gated on the curved variants, `means3D` always sign-gated),
+`tier3_train.py`. 500 Gaussians for Tier2 (FD forward-pass count scales with
+Gaussian count; kept small for wall-clock), 1500 for Tier1/Tier3, 128x128
+render, n=40 FD samples, eps=1e-3.
+
+```
+source agent_space/win_torch_env.sh
+cd agent_space/op43dgs
+"$TORCH_PY" val_simpleknn.py
+"$TORCH_PY" tier1_forward.py <variant>
+"$TORCH_PY" tier2_backward.py <variant>
+"$TORCH_PY" tier3_train.py <variant> 250 <lr>
+```
+
+### Results (13 harness checks, 12 PASS / 1 documented non-port FD-gate miss)
+
+- simple-knn distCUDA2 (N=50000): finite=True nonneg=True bitwise_det=True. PASS.
+- pinhole (PRIMARY) Tier1: shape (3,128,128), finite=True, coverage=0.4365,
+  bitwise_det=True. PASS. `CUDA Kernel: Optimal GS (pinhole)` printed on load.
+- pinhole Tier2: grad-sum run-to-run rel diff 0.00e+00 all four tensors; opac
+  slope=0.996 sign=1.00 PASS; sh slope=1.013 sign=0.50 [slope gate] PASS;
+  scales slope=0.964 sign=1.00 PASS; means slope=0.289 sign=0.88 [sign>=0.70
+  gate, scaled by design] PASS.
+- pinhole Tier3 (lr=3e-3, 250 it): loss 0.03541->0.00081, PSNR (final)=55.20
+  dB, no NaN. PASS.
+- fisheye Tier1: coverage=0.2640, bitwise_det=True. PASS.
+- fisheye Tier2: opac slope=0.998 sign=1.00 PASS; sh slope=0.707 sign=0.80
+  [slope gate] PASS; scales slope=0.626 sign=1.00 [sign gate, curved variant]
+  PASS; **means slope=0.025 sign=0.62 FAIL (gate >=0.70)**.
+- fisheye Tier3 (lr=1e-4, 250 it): loss 0.01982->0.00822, PSNR (final)=31.51
+  dB, no NaN. CONVERGES. PASS.
+- panorama Tier1: coverage=0.0184, bitwise_det=True. PASS.
+- panorama Tier2: opac slope=1.001 sign=1.00 PASS; sh slope=1.051 sign=0.55
+  [slope gate] PASS; scales slope=1.000 sign=0.97 [sign gate] PASS; means
+  slope=1.987 sign=0.93 [sign>=0.70 gate] PASS.
+- panorama Tier3 (lr=1e-4, 250 it): loss 0.00157->0.00017, PSNR (final)=49.85
+  dB, no NaN. CONVERGES. PASS.
+- Trainer-path import (`gaussian_renderer`, `scene`, `simple_knn._C.distCUDA2`,
+  `diff_gaussian_rasterization.{GaussianRasterizationSettings,
+  GaussianRasterizer}`): imports and runs. PASS -- no non-GPU regression.
+
+### fisheye means3D sign=0.62 -- same documented class as gfx1100's sign=0.53, not chased further
+
+This is the third independent random-scene draw of the pre-existing,
+CUDA-identical, scene-dependent FD-sign weakness in op43dgs's approximate
+analytic backward for the curved variants (notes.md:123-137 established it at
+review time from the diff, not from a single run's numbers; notes.md:1532-1564
+recorded gfx1100 hitting sign=0.53 with its own random scene and ruled it a
+pre-existing, non-port property). Per the validator stop-discipline rule ("a
+clean build producing wrong numbers on ONE architecture ... is a known hard
+class, not a port bug to chase deep"), and because this is now the *third*
+scene/platform combination reproducing the same class of result (gfx1100
+0.53, gfx90a's own synthetic scene 0.77 i.e. passing, this host's scene 0.62),
+not chased further. Decisive evidence it is not a wave32/RDNA3.5 fault:
+- grad-sum run-to-run rel diff for means3D is 0.00e+00 -- perfectly
+  deterministic, rules out a race/nondeterminism explanation.
+- Tier3 (the designated actual correctness gate for these approximate
+  directions, notes.md:135) converges cleanly on fisheye at the documented
+  small step: loss 0.01982->0.00822, PSNR 31.51 dB, no NaN -- the same
+  qualitative result as every other platform's fisheye Tier3.
+- Nothing in this port's changed-line set touches `computeCov2D` /
+  `computeCov2DCUDA` / the analytic backward / any projection math (re-grepped
+  `git diff 728de13 HEAD -- '*.cu' '*.cuh'` on this checkout: every hit is
+  inside a `USE_ROCM` guard, the launch-spacing normalization, or `#include
+  <cfloat>`), so a platform-independent algorithmic property cannot originate
+  in the ROCm-specific edits.
+Not escalated to the porter for the same reason gfx1100's instance was not:
+the fault, if it is one, predates the port and lives in an upstream
+algorithmic property common to every platform that has run this harness.
+
+### CUDA no-regression gate
+
+Already recorded at this exact `head_sha` by linux-gfx1100
+(notes.md:1566-1604, re-affirmed by linux-gfx90a at notes.md:1719-1725):
+`cuda-not-validated: ambient torch install is a ROCm dev build with no CUDA
+counterpart; nvcc dies in torch/headeronly's thrust::complex guard (duplicated
+__HIPCC__ token), not in this port's own files`. Per the validator role ("runs
+ONCE per head_sha"), not repeated here -- this host also has no CUDA toolkit
+(`nvcc` not on PATH), so it could not be re-run regardless.
+
+### Jargon / documentation / integrity
+
+`python3 utils/jargon.py --port op43dgs` -> `jargon: clean`. `README.md` ROCm
+section (reviewed clean through review round 4, notes.md:1373-1450) unchanged
+at this head. `git -C projects/op43dgs/src status --porcelain` empty
+throughout (only the gitignored `agent_space/op43dgs/` harnesses and the
+MOAT-repo `stats.jsonl`/`notes.md`/`status.json` touched). Fork `main`
+untouched at `728de13`; `moat-port` unchanged (validator pushes no fork
+commits). Windows Kernel_141 GPU-engine-timeout count: 18 before this
+validation, 18 after (`Get-ChildItem ... -Filter 'Kernel_141_*' | measure`) --
+no new engine-timeout events across the four build/uninstall cycles and 13
+harness runs.
+
+Verdict: PASS. State: windows-gfx1151 completed, validated_sha=5401278cefa9b0115c665dfdffb367531e64a9aa.
+
+`python3 utils/moatlib.py pr-ready op43dgs` after this state write: all three
+required gates (wave64: linux-gfx90a; wave32: linux-gfx1100/gfx1151/gfx1101/
+gfx1201; windows: windows-gfx1151, now completed at head) are satisfied at
+`head_sha`. windows-gfx1101 and windows-gfx1201 remain `completed` at the
+now-nonexistent `d6ca8920` and are stale relative to `head_sha`, but per
+AGENTS.md a gate needs only one platform completed at head carrying its
+property -- windows-gfx1151 now does. Those two platforms' revalidation is
+their own concern, not a blocker recorded here.
