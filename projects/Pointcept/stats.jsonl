@@ -98,3 +98,4 @@
 {"kind":"phase","ts":"2026-08-21T04:22:39Z","phase":"test","seconds":15.454,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe agent_space/pointcept_test_gfx1151.py"}
 {"kind":"phase","ts":"2026-08-21T04:27:02Z","phase":"test","seconds":28.524,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe agent_space/pointcept_test_gfx1151.py"}
 {"kind":"phase","ts":"2026-08-21T04:30:17Z","phase":"test","seconds":2.948,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe agent_space/pointcept_op_driver_gfx1151.py"}
+{"kind":"session","ts":"2026-08-21T04:33:32Z","epoch":1787286812.735382100,"event":"end","platform":"windows-gfx1151"}
