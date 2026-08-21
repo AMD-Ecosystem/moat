@@ -86,3 +86,4 @@
 {"kind":"phase","ts":"2026-08-21T04:08:36Z","phase":"compile","seconds":1330.571,"exit":1,"cmd":"bash agent_space/cubbyflow_gfx1151_build.sh"}
 {"kind":"phase","ts":"2026-08-21T04:10:07Z","phase":"compile","seconds":52.148,"exit":1,"cmd":"bash agent_space/cubbyflow_gfx1151_build.sh"}
 {"kind":"phase","ts":"2026-08-21T04:11:38Z","phase":"compile","seconds":47.951,"exit":1,"cmd":"bash agent_space/cubbyflow_gfx1151_build.sh"}
+{"kind":"session","ts":"2026-08-21T04:14:46Z","epoch":1787285686.580521700,"event":"end","platform":"windows-gfx1151"}
