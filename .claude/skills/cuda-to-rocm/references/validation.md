@@ -91,6 +91,12 @@ accumulation divergence rather than a port bug, and RDNA3.5 (gfx1151) is where i
 shown up. Record the error magnitude and stop rather than chasing it deep: the
 comparison that matters is against the other architectures, not against a fix.
 
+## A Triton-based ROCm dependency can take an order of magnitude longer to cold-compile on RDNA than on CDNA
+
+A pip-installed, pure-Python-plus-Triton ROCm drop-in library (e.g. a spconv reimplementation) can spend tens of minutes inside `triton/backends/amd/compiler.py:make_amdgcn` autotuning a single model's first forward+backward pass on an RDNA (gfx11xx, wave32) host, when the identical recipe completes quickly on a CDNA (gfx90a, wave64) host. This is a property of the AMD Triton backend's LLVM AMDGPU codegen maturity per architecture, not a port defect -- the port's own diff in a case like this can be a three-line backend selector, with zero kernel code of its own.
+
+Before concluding a hang, distinguish real (if slow) compilation from a stuck process: `sudo py-spy dump --pid <pid>` repeatedly and confirm every sample lands inside `make_amdgcn` (compiling) or `torch.cuda.synchronize` (benchmarking a just-built kernel autotune candidate), never blocked on an exception or a lock; and watch `~/.triton/cache` grow continuously (new files appearing every few minutes) across the wait. Both together are the fingerprint of genuine, ongoing, error-free compilation, just slow. If a bounded validation window elapses without a completed step, record the wall-clock magnitude, confirm the selector/import path resolves to the correct backend independently (a cheap, fast check that does not require a full training step), and stop rather than waiting indefinitely -- this is the same "record the magnitude and stop" discipline as a wrong-numbers-on-one-arch finding, just for compile time instead of correctness. (Pointcept, spconv-triton on gfx1100)
+
 ## Diagnosing a suspected AMD fault before escalating
 
 Two patterns that each cost a deep investigation before the real cause was found.

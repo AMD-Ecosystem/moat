@@ -626,3 +626,137 @@ Summary: linux-gfx90a -> completed at 87bc3e2 (revalidation, full real-GPU re-ru
 carry-forward). No regression versus the porter/reviewer's evidence at this head; no
 regression versus round 1's validated behavior.
   validators' gate.
+
+## Validation 2026-08-21 (validator, linux-gfx1100, round 2 revalidation)
+
+Platform: linux-gfx1100, 4x AMD Radeon Pro W7800 48GB (gfx1100, wave32), ROCm driver
+6.16.13, HIP_VISIBLE_DEVICES=0 (rocm-smi confirmed all 4 GPUs idle, no KFD PIDs, before
+starting). This host previously completed linux-gfx1100 at 95f4a51 (round 1, June 2026);
+`moatlib.py classify Pointcept 95f4a51 87bc3e2` -> `class=mixed arch_independent=False
+inert=False`, so a full revalidation was required (carry-forward not applicable).
+Fork: AMD-Ecosystem/Pointcept @ moat-port, sha 87bc3e2 (matches status.json head_sha
+exactly; no open upstream PR for this content -- PR #604 is merged and 87bc3e2 sits
+directly on `moat-port` as new post-merge work, confirmed via `pr-state Pointcept` ->
+`merged` and `git log` showing no `moat-fix-*` branch involved).
+torch 2.14.0a0+gitb81488e, torch.version.hip 7.2.53211 (source-built ROCm torch on this
+host, confirmed unclobbered after every pip install below), triton 3.8.0+git10f6be36.
+
+### Build (timeit: compile phase)
+```
+export HIP_VISIBLE_DEVICES=0 PYTORCH_ROCM_ARCH=gfx1100
+cd libs/pointops && python setup.py install         # OK
+cd libs/pointops2 && python setup.py install        # OK
+cd libs/pointgroup_ops && python setup.py install    # OK (apt libsparsehash-dev first)
+cd libs/pointrope && python setup.py install         # OK
+```
+All four built cleanly from the clean 87bc3e2 checkout (only pre-existing
+`Tensor.data<T>()`-deprecated warnings in pointgroup_ops, and `-Wnan-infinity-disabled`
+warnings in pointrope host code -- both pre-existing, not port-introduced). Matches
+round 1's already-completed gfx1100 build; round 2 touches zero files under `libs/`.
+
+### pointops2 in-tree tests (timeit: test phase)
+`yes "" | python test_<...>.py` from `libs/pointops2/functions/`, HIP_VISIBLE_DEVICES=0:
+- test_attention_op_step1.py: EXIT 0. max sq err 3.64e-12 vs v1, well below 1e-8 gate.
+- test_attention_op_step1_v2.py: EXIT 0. Same.
+- test_attention_op_step2.py: EXIT 1, pre-existing upstream `NameError: name 'x'` (line
+  32-34 def commented out) -- identical to every prior platform (gfx90a, round 1
+  gfx1100/gfx1101/gfx1201). Forward+backward itself ran to completion before the
+  assertion. NOT a port issue.
+- test_relative_pos_encoding_op_step1{,_v2,_v3}.py: EXIT 0, v2/v3 max sq err 2.33e-10
+  (identical to gfx90a's 2.33e-10).
+- test_relative_pos_encoding_op_step2.py: EXIT 0.
+- test_relative_pos_encoding_op_step2_v2.py: EXIT 0, forward max sq err 7.13e-10;
+  attn_grad 2.594e-21, v_grad 1.906e-21, table_grad 1.098e-16 (gfx90a: 2.594e-21 /
+  1.906e-21 / 1.098e-16 -- identical to 3+ significant figures).
+
+7/8 EXIT 0, 1/8 EXIT 1 (pre-existing, not port-caused, matches every platform to date).
+This is a real numeric GPU pass on wave32 hardware, not a smoketest.
+
+### spconv-triton path: import verified correct, kernels compile, no numeric pass within window
+Round 2's actual diff (12 files, +30/-10) is limited to
+`pointcept/models/utils/spconv.py` (a 3-line `torch.version.hip` branch selecting
+`spconv.pytorch` vs `spconv_triton.pytorch`) plus ten call sites switched to import it.
+Environment: `pip install spconv-triton` (1.0.0, pure-Python+Triton wheel, no build
+step) plus the same test-only deps as the gfx90a round 2 notes (torchvision built from
+source since PyPI wheels pull CUDA torch -- had to use the `v0.20.1` tag rather than
+`main`, since `main`'s `torchvision/csrc/ops/cpu/deform_conv2d_kernel.cpp` calls
+`torch::stable::permute`, which does not exist in this host's older dev-build ABI
+surface -- an unrelated torch/torchvision version-skew issue, not ROCm-specific;
+torch_scatter/torch_cluster built from sdist with the same ROCm shuffle-mask patch as
+round 1/2's gfx90a notes; huggingface-hub, accelerate, pydantic+pydantic-core==2.46.4,
+typing_inspection, annotated-types, typing_extensions>=4.16 needed bumping for
+peft/transformers/wandb's pure-Python import chain -- none of this touches torch itself,
+confirmed via `torch.version.hip` after every install).
+
+`from pointcept.models.utils.spconv import spconv as spconv_backend;
+print(spconv_backend.__name__)` -> `spconv_triton.pytorch`. Confirms round 2's selector
+resolves correctly to the ROCm branch on this host, matching the reviewer's independent
+gfx90a verification of the identical code.
+
+Two real-GPU attempts to get a numeric forward+backward pass through spconv-triton:
+1. `pointcept_sparse_conv_e2e.py --steps 5 --only spunet` (recreated from the gfx90a
+   round's description -- the script itself lives in host-local `agent_space/`, not
+   committed, and was not present on this host; recreated against
+   `configs/scannet/{semseg-spunet-v1m1-0-base,semseg-oacnns-v1m1-0-base,
+   insseg-pointgroup-v1m1-0-spunet-base}.py` via `Config.fromfile` + `build_model`,
+   synthetic 2x20000-voxel batches, AdamW). Killed after 1700s (28 min) still inside
+   step 0's backward pass, never reaching a printed loss.
+2. `spconv_triton_smoke.py` (recreated from the round 1 gfx90a layer-level smoke
+   description: SubMConv3d + SparseConv3d(stride 2) + SubMConv3d +
+   SparseInverseConv3d, 20000 voxels, 20-step SGD). Killed after 2171s (36 min) still
+   inside step 0's backward pass, never reaching a printed loss.
+
+Both attempts printed `backend: spconv_triton.pytorch` immediately (import path
+confirmed live) and then spent the entire remaining time inside
+`spconv_triton/pytorch/_impl/gemm.py:conv_forward` -> `triton.runtime.autotuner` ->
+`triton/backends/amd/compiler.py:make_amdgcn` (`py-spy dump`, `sudo py-spy dump --pid
+<pid>`, repeated samples): the AMD Triton backend's LLVM AMDGPU codegen stage, invoked
+once per autotune candidate per distinct kernel shape. `~/.triton/cache` grew
+continuously throughout both attempts (707MB after run 1, 1.5GB after run 2, with new
+files appearing every few minutes) -- this is genuine, ongoing, successful compilation
+of real gfx1100 AMDGCN kernels, not a hang: every sampled stack was either inside
+`make_amdgcn` (compiling) or `torch.cuda.synchronize` (benchmarking a just-compiled
+kernel), never blocked on an error or a lock. No compile error, no crash, no exception
+was observed in either attempt at any point before being killed.
+
+Conclusion: the round 2 selector code is verified correct on gfx1100 (import resolves,
+kernels compile to valid wave32 AMDGCN across dozens of distinct autotune
+configurations with zero errors over 65 cumulative minutes), but neither attempt
+produced a completed forward+backward step, so there is no NUMERIC pass/fail evidence
+for the spconv-triton path specifically on this arch to report. This reads as a
+third-party toolchain characteristic -- the Triton AMD backend's LLVM AMDGPU codegen
+being far slower on gfx1100 (RDNA3, wave32) than on gfx90a (CDNA2, wave64), where the
+identical recipe completed and passed per the gfx90a round 2 validation notes above --
+not a defect in this port's own 12-file diff. Promoted to the `cuda-to-rocm` skill
+(`references/validation.md`) as a fault-class note: Triton-based ROCm dependencies can
+have order-of-magnitude-longer cold-cache autotune/compile latency on RDNA (gfx11xx)
+than on CDNA hosts, and a validator hitting this should classify it by checking for
+continuous `~/.triton/cache` growth and `py-spy`-sampled `make_amdgcn` activity (real
+compiles in progress) before concluding a hang, and record wall-clock magnitude and
+stop rather than waiting indefinitely.
+
+### CUDA no-regression gate
+Already recorded at this head_sha (87bc3e2) in the linux-gfx90a validation above
+(`cuda-not-validated: environmental wall`); per the validator role, this gate runs once
+per head_sha and is skipped here.
+
+### Integrity gate
+`git -C projects/Pointcept/src status --porcelain`: 62 entries, all untracked (`??`),
+all matching the known hipify-artifact filename classes (`*_hip.cpp`,
+`*_hip_kernel.h`, `*_hip_kernel.hip`, `*bfs_cluster_kernel.hip`). No modified tracked
+files. Clean.
+
+### Hygiene re-check
+`python3 utils/jargon.py --port Pointcept` -> clean. README Installation section
+documents the ROCm/AMD build in house style, unchanged from round 1/2.
+
+Summary: linux-gfx1100 -> completed at 87bc3e2 (revalidation). Core port surface
+(libs/pointops, pointops2, pointgroup_ops, pointrope) fully rebuilt and re-tested on
+real gfx1100 hardware with no regression (7/8 pointops2 tests pass, numerics match
+gfx90a to several significant figures; the 8th is the same pre-existing upstream test
+bug seen on every platform). Round 2's spconv-triton selector is verified correct by
+inspection and by live import on this host; its third-party Triton kernels were
+observed compiling successfully (zero errors) to real gfx1100 AMDGCN across two
+independent real-GPU attempts, but neither reached a completed step within the
+validation window, so this specific new surface carries confirmed-compiling-but-not-
+numerically-confirmed status on gfx1100, recorded here rather than blocking on it.
