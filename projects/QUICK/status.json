@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-06-05T00:05:54Z",
-  "updated_at": "2026-08-20T07:52:03Z",
+  "updated_at": "2026-08-21T04:35:14Z",
   "head_sha": "d369e07",
   "depends_on": [],
   "porting": null,
@@ -101,6 +101,28 @@
       "started_at": null,
       "completed_at": null,
       "updated_at": "2026-06-08T01:43:25Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1151": {
+      "blocked": true,
+      "blocked_reason": "No usable Fortran compiler on Windows, verified directly on this host rather than assumed. QUICK is a mixed Fortran/HIP build whose .f90 modules must link against the HIP/clang-cl side, so it needs an MSVC-ABI Fortran compiler. TheRock's Windows ROCm SDK ships lib/llvm/bin/flang.exe and amdflang.exe advertising 'AMD flang version 23.0.0git / Target: x86_64-pc-windows-msvc', which looks like exactly that -- but they are not Flang. Verified 2026-08-20: flang.exe is BYTE-IDENTICAL to clang.exe (md5 4146b241ae49296481b7bb54db9a7da2, 108,242,944 bytes both); 'flang.exe -fc1 -help' prints 'OVERVIEW: clang LLVM compiler' and rejects -fc1 as an unknown argument; compiling a four-line .f90 fails because the driver spawns itself with frontend flags it cannot parse; and no flang_rt runtime libraries and no Fortran .mod files (iso_fortran_env, __fortran_builtins) are packaged anywhere under the SDK. Registered as ROCm packaging bug report therock-windows-flang-is-clang. Scope note, stated plainly: NO build was attempted on this host, because the Fortran prerequisite was checked first and is absent, so the Fortran half could not have compiled. NOT necessarily a permanent platform limit: Intel ifx (oneAPI Fortran) targets the MSVC ABI and interoperates with MSVC-ABI C/C++ objects, and nobody has tried it -- that is the open question the suggested windows waiver should be judged against. Note wave64 is ALSO unsatisfied at head, so windows is not the only gate outstanding here.",
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-21T04:35:13Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
