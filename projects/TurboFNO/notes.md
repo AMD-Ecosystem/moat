@@ -1221,3 +1221,101 @@ head and needs no repeat.
 Jargon/documentation: not re-checked here (no source or doc file moved by this
 carry-forward; `jargon.py --port TurboFNO` was confirmed clean at b8d2e98 by both
 the porter and the fourth-round reviewer above).
+
+## Validation 2026-08-24 (linux-gfx90a, revalidation via binary-equiv carry-forward)
+
+Dispatch: linux-gfx90a held `validated_sha` ec49bcf (real-GPU numerical run of
+2026-06-04, carried through the shim-header refactor via binary-equiv + real-GPU
+re-run on 2026-06-24); `head_sha` had since moved to b8d2e98 across the two
+host-only fix-round commits (03141cf, b8d2e98). `classify` returned `unknown`
+(mixed, same as linux-gfx1100 saw for this exact delta), so this platform read
+`revalidate` and no shortcut applied automatically.
+
+GPU: 4x AMD Instinct MI250-family, gfx90a, warpSize=64. ROCm 7.14.0
+(TheRock nightly, `_rocm_sdk_devel`/`_rocm_sdk_core`/`_rocm_sdk_libraries` conda
+packages -- this host has no `/opt/rocm`). Fork: AMD-Ecosystem/TurboFNO
+`moat-port` @ b8d2e98 (`projects/TurboFNO/src`, fresh `--filter=blob:none` clone
+this session), clean before and after.
+
+`git diff ec49bcf..b8d2e98 --stat` confirmed the whole delta is one file,
+`utils/utils.cuh` (+28/-140), matching the reviewer's finding on gfx1100.
+
+Chose the carry-forward path (per the validator role's binary-equiv shortcut)
+over relying solely on the gfx1100 evidence, and independently re-derived the
+device-code-equivalence proof on THIS arch rather than reusing gfx1100's
+numbers, since `.hip_fatbin` content is architecture-specific:
+
+```
+cd projects/TurboFNO/src
+export PROJECT_ROOT=$(pwd)
+ROCM_SDK=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel
+export CMAKE_PREFIX_PATH=$ROCM_SDK:.../_rocm_sdk_core:.../_rocm_sdk_libraries
+export PATH=$ROCM_SDK/lib/llvm/bin:$ROCM_SDK/bin:$PATH
+export USE_HIP=1 CMAKE_HIP_ARCHITECTURES=gfx90a CMAKE_HIP_COMPILER=$ROCM_SDK/lib/llvm/bin/clang++
+
+# same-directory rebuild: ec49bcf's utils.cuh, capture, then b8d2e98's, rebuild in place
+git checkout ec49bcf5d5f2a662f00c3232d0759ac6c2dbe5c2 -- utils/utils.cuh
+bash install.sh   # 10/10, 0 errors, 70s
+llvm-objcopy --dump-section=.hip_fatbin=out.bin <variant>/fused*.cu.o /dev/null   # x10, sha256
+git checkout b8d2e9845c0146f2114d18810a54d90bac4e2588 -- utils/utils.cuh
+bash install.sh   # 10/10, 0 errors, 44s (full rebuild both times, not a no-op)
+llvm-objcopy --dump-section=.hip_fatbin=out.bin <variant>/fused*.cu.o /dev/null   # x10, sha256
+llvm-nm -D --defined-only <exe>   # exported symbols, both builds, sorted diff
+```
+
+Same-directory `.hip_fatbin` sha256: all 10 variants byte-identical, sizes
+1D_A 679664, 1D_B 810416, 1D_C 845088, 1D_D 801528, 1D_E 64936, 2D_A 1257976,
+2D_B 1407328, 2D_C 1441624, 2D_D 1399368, 2D_E 67512 (all gfx90a-specific, larger
+than the gfx1100 sizes recorded elsewhere in this file, as expected for a
+different ISA). Both compiles took comparable, substantial wall time (70s / 44s),
+confirming real full rebuilds each time, not the `install.sh clean`-without-
+`PROJECT_ROOT` no-op gotcha recorded above.
+
+Exported symbols (`llvm-nm -D --defined-only`, sorted diff): identical for all 10
+executables.
+
+`utils/codeobj_diff.py` (the amended lesson's primary, path-artifact-immune
+instrument) could NOT be run on this host: it hardcodes `/opt/rocm/bin/roc-obj-ls`,
+and this host's ROCm ships only as the `_rocm_sdk_*` conda packages with no
+`/opt/rocm` and no `roc-obj-ls` binary anywhere in those packages (checked by
+`find`). The same-directory sha256 compare plus the independent exported-symbol
+compare are the sound fallback the amended lesson names, and both were run in
+one directory as required, so the `__hip_cuid_`/build-path artifact does not
+apply here. Noting the tool gap for whichever arch validates next on a
+`_rocm_sdk_*`-only host.
+
+To close the gap further, also re-derived one wrapped, from-scratch build at
+head_sha and diffed its `.hip_fatbin` sha256 against the captured b8d2e98 set
+(10/10 identical), confirming build determinism independent of the two-header
+rebuild sequence:
+```
+utils/timeit.sh TurboFNO compile -- env PROJECT_ROOT=... USE_HIP=1 \
+  CMAKE_HIP_ARCHITECTURES=gfx90a CMAKE_HIP_COMPILER=... CMAKE_PREFIX_PATH=... \
+  PATH=... bash -c 'cd projects/TurboFNO/src && bash install.sh'
+```
+
+Runtime smoke on real GPU 0 (HIP_VISIBLE_DEVICES=0):
+- `TurboFNO_1D_E` (hipFFT/hipBLAS baseline, exercises `CUBLAS_CALL` and
+  `CUFFT_CALL` success paths): ran to completion, rc=0, clean timing output, zero
+  macro error lines.
+- `TurboFNO_1D_D` (fused FFT-GEMM-iFFT): ran cleanly for 20s (timed out by design,
+  the full sweep is long), all printed lines are clean timing output, zero macro
+  error lines.
+
+Result: linux-gfx90a carried forward ec49bcf -> b8d2e98 via
+`python3 utils/moatlib.py carry-forward TurboFNO linux-gfx90a b8d2e98 binary-equiv
+"..."`. `validated_sha` now b8d2e98. Tree restored to b8d2e98 and left clean
+(`git status --porcelain` empty in `projects/TurboFNO/src`); throwaway build dirs,
+`envpath.sh`, and scratch comparison files removed.
+
+CUDA gate: not run this round -- already recorded at head_sha b8d2e98 in the
+2026-08-24 fix-round and third-review sections above (nvcc 12.8,
+`-DCMAKE_CUDA_ARCHITECTURES=86`, `USE_HIP=OFF`, all 10 variants configure/compile/
+LINK, PASS=10 FAIL=0), so the CUDA no-regression gate is satisfied at this exact
+head and needs no repeat.
+
+Jargon/documentation: re-checked on this host after fetching `main` into the
+fresh clone (`git fetch origin main:main`, needed since the clone only tracked
+`moat-port`): `python3 utils/jargon.py --port TurboFNO` reports clean. README
+documents the ROCm/HIP build (`USE_HIP=1 bash install.sh`, `CMAKE_HIP_ARCHITECTURES`
+override) alongside the CUDA path, matching the project's house style.
