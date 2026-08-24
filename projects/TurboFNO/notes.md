@@ -910,3 +910,150 @@ Answering the second review of 2026-08-24, in
    length-preserving substitution still leaves 8 of 40 differing bytes. The
    same-directory rebuild is the fallback's only remedy; `codeobj_diff.py`
    remains the primary tool.
+
+## Review 2026-08-24 (third round, reviewer, linux-gfx1100): CHANGES REQUESTED
+
+Scope: fork delta `git diff 03141cf..b8d2e98` on `moat-port` (`utils/utils.cuh`,
+one hunk, +2 -3) plus the MOAT-side delta d98129b..HEAD on `port/TurboFNO`
+(commits 6e941a2, f966936).
+
+The FORK COMMIT PASSES. Every claim made for b8d2e98 was re-derived on this host
+and held, including both equivalence methods and the failure-path probe. Do not
+move `moat-port`, and do not advance `head_sha`: the two findings below are text
+in ONE MOAT file, `.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md`,
+and the fix needs no rebuild. The carry-forward evidence the validator needs for
+all four platforms stands independently of this verdict.
+
+### 1. `references/strategy-a-cmake.md:154-155`: the prescribed symbol-level filter misses a second cuid-derived symbol
+
+The clause rewritten this round says excluding the cuid "is sound only at SYMBOL
+level (`llvm-nm <obj> | grep -v __hip_cuid_`)". That filter is not sufficient:
+the object also carries `__hip_gpubin_handle_<same hash>`, which the pattern does
+not match, so the compare still reports a difference on exactly the artifact-only
+pair the bullet is about -- the false positive the bullet exists to prevent.
+
+Measured here (ROCm 7.2.3, gfx1100, two-line HIP TU, same source compiled with a
+relative then an absolute path spelling, everything else equal). After
+`llvm-nm <obj> | grep -v __hip_cuid_`, the two symbol lists differ in one line:
+
+```
+< __hip_gpubin_handle_3d38bd6c6898bb40
+> __hip_gpubin_handle_7bc76a999f99bed9
+```
+
+`llvm-nm` on that object lists both `__hip_cuid_<hash>` (B) and
+`__hip_gpubin_handle_<hash>` (b), same hash. Fix: filter both, e.g.
+`llvm-nm <obj> | grep -vE '__hip_(cuid|gpubin_handle)_'`, or normalize the hash
+with `sed -E 's/(__hip_(cuid|gpubin_handle)_)[0-9a-f]+/\1X/'`.
+
+### 2. `references/strategy-a-cmake.md:158-159`: the closing sentence re-opens the inference the bullet just closed
+
+"`llvm-nm <obj> | grep __hip_cuid_` on both objects tells you in one command
+whether a difference is only this." It cannot: a differing cuid is equally
+present when the device code really changed, because any recompilation that
+changes the command line changes the cuid too. Measured on the same TU:
+
+- artifact only (same source, relative vs absolute spelling):
+  `3d38bd6c6898bb40` vs `7bc76a999f99bed9`, 38 differing `.hip_fatbin` bytes.
+- real device change plus a different spelling (`* 2.0f` -> `* 3.0f`):
+  `3d38bd6c6898bb40` vs `565011c3249c0aa8`, 154 differing bytes.
+
+The grep output has the same shape in both cases, so it tells the reader the path
+artifact is PRESENT, never that it is the WHOLE difference. Reword to that, and
+point the "is this the whole difference" question at the two instruments the
+bullet already names -- `codeobj_diff.py`, or the same-directory rebuild.
+(This sentence predates the round, but it now closes a bullet whose new text
+says the opposite two lines earlier, so it should be settled here.)
+
+### Re-verified on this host, no change needed
+
+ROCm 7.2.3, AMD Radeon Pro W7800 (gfx1100, wave32), CUDA 12.8
+(`/opt/conda/envs/cuda-12.8`), CMake 3.31.6. `projects/TurboFNO/src` clean at
+b8d2e98 throughout (the `envpath.sh` install.sh generates was removed after).
+
+1. The diff is exactly the `fprintf`. `git diff 03141cf..b8d2e98` touches only
+   `utils/utils.cuh` and only the four lines of the statement: the macro name,
+   the `{ ... }` block, `cublasStatus_t status = call;`, `fflush(stdout)`,
+   `exit(EXIT_FAILURE)` and upstream's own `// cublas API error chekcing` comment
+   (typo and all) are byte-identical at `utils/utils.cuh:74-85`. No other file,
+   and none of the 4 call sites, appears in the diff. Argument types are right
+   (`const char*`, `int`, `const char*`, `int`) and the whole-tree build raises
+   no `-Wformat` warning citing the macro.
+2. Style and provenance. New string `"%s:%d: %s -> cuBLAS status %d\n"` is the
+   CUFFT_CALL shape (`"%s:%d: %s -> FFT status %d\n"`, `utils/utils.cuh:65`) with
+   the same `static_cast<int>` cast; it tracks no sample sentence. Tracked-tree
+   and on-disk greps (including the submodule) for "cuBLAS call", "CUDA RT call"
+   and "in line %d of file" = 0 hits; `licenses.py scan-nvidia` clean. Nothing in
+   the tree parses the old text (no `.py`/`.sh`/`.md` consumer; `install.sh` is
+   the only script).
+3. Device-code equivalence, both methods, re-derived rather than re-read. Same
+   directory: full build with the b8d2e98 header, `git checkout 03141cf --
+   utils/utils.cuh`, full rebuild, `llvm-objcopy --dump-section=.hip_fatbin` on
+   all ten kernel objects -- 10/10 sha256 identical, sizes matching the notes
+   exactly (1D_A 561568 ... 2D_E 55960), and all ten `utils.cu.o` identical too.
+   Across directories, the two executable sets copied to separate paths:
+   `codeobj_diff.py` `verdict=identical` with all ten per-binary lines reading
+   `identical (exported symbols + device ISA identical (3 exports))`.
+   Sharper than the porter's claim: of the ten kernel objects, only
+   `TurboFNO_1D_E` and `TurboFNO_2D_E` differ AS WHOLE OBJECTS, which is exactly
+   the two built CUBLAS_CALL call sites; the other eight are byte-identical
+   host half included. `strings` on the two executable sets differs only by the
+   old sentence leaving and the new one arriving. Restoring the header and
+   rebuilding reproduced the first capture byte for byte (deterministic tree).
+4. Build health. HIP `USE_HIP=1 CMAKE_HIP_ARCHITECTURES=gfx1100 bash install.sh`
+   at both headers: 10/10, 0 `error:`. The 435-vs-436 warning-line count between
+   the two builds is a `make -j` interleaving artifact (two warnings spliced onto
+   one line), not a new diagnostic: normalized by text the warning multisets are
+   identical. CUDA path with nvcc 12.8, `-DUSE_HIP=OFF
+   -DCMAKE_CUDA_ARCHITECTURES=86` on `1D_E_baseline` (the CUBLAS_CALL variant):
+   configure, compile and LINK, 0 errors, executable produced; throwaway build
+   dir removed.
+5. Failure path re-fired. `agent_space/turbofno_cublas_failpath.cu` rebuilt and
+   run on GPU 0:
+   ```
+   [probe] CUBLAS_CALL success path: silent, handle=non-null
+   .../turbofno_cublas_failpath.cu:17: cublasCgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, -1, -1, -1, &alpha, nullptr, 1, nullptr, 1, &beta, nullptr, 1) -> cuBLAS status 3
+   exit=1
+   ```
+   New format, `exit(EXIT_FAILURE)` preserved, success path silent. Runtime smoke
+   `HIP_VISIBLE_DEVICES=0 fusion_variants/1D_E_baseline/build/TurboFNO_1D_E`:
+   960 result lines, rc=0, zero macro output -- matching the porter's figure.
+6. Lesson clause 1 (`strategy-a-cmake.md:146-148`) is accurate, and its `-D`
+   term -- which the previous round had not measured -- holds. Two-line HIP TU,
+   gfx1100, each result stable: same spelling from two directories share
+   `__hip_cuid_3d38bd6c6898bb40` (the previous round's value, reproduced);
+   the same file spelled absolutely instead gives `7bc76a999f99bed9`; `-o e1.o` vs
+   `-o e2.o` `c40690cf2b58cdef` vs `43a24f11250cbcb0`; `-I incA` vs `-I incB`
+   `ac051cdbaec7c9` vs `9d8ba91809f2c5c5`; `-DFOO=1` vs `-DFOO=2`
+   `54a6235a4df4c233` vs `d5342f7db384503b`. The "CMake carries the build tree's
+   absolute path in all of them" half is true of this project's own
+   `flags.make`/`build.make`.
+7. Lesson clause 2's residue measurement reproduces qualitatively: a
+   length-preserving `sed` substitution of `__hip_cuid_<16 hex>` over both dumped
+   fatbins left 10 of 38 differing bytes here (the notes' TU gave 8 of 40), at
+   offsets just past 6300 -- name-derived table bytes, as stated. Only the
+   prescribed FILTER is wrong (finding 1), not this claim.
+8. New fault-classes entry (`references/fault-classes.md:326-329`) reproduces as
+   literally written, in native hipBLAS spelling and not just through the port's
+   compat header: `hipblasCgemm(h, HIPBLAS_OP_N, HIPBLAS_OP_N, -1, -1, -1, ...)`
+   on a handle from `hipblasCreate` returns 3 = `HIPBLAS_STATUS_INVALID_VALUE`,
+   with `hipGetLastError()` = 0 and `hipDeviceSynchronize()` = 0 afterwards, so
+   "touches no device memory" holds and the trigger is safe to fire from a probe.
+9. Records intact. The delta since d98129b removes four lines only: the sentence
+   that left the CUBLAS_CALL question open (now ruled) and the three superseded
+   cuid lines. Every earlier review and validation section is untouched;
+   `status.json` moves only `head_sha`, `stage`, `porting` and timestamps; all
+   four platforms keep their `completed` state and their `validated_sha`.
+   `deferred.json` gains the rocFFT item's filing (ROCm/hipFFT#185) and a
+   person's `now` ruling, which loses nothing.
+10. Commit hygiene on b8d2e98: title `[ROCm] Rewrite the CUBLAS_CALL error
+    message in utils.cuh` = 57 chars, correct prefix; no `Co-Authored-By`
+    trailer; AI assistance disclosed; Test Plan present with literal fenced
+    commands, and they run as written on this host (`install.sh` is mode 755,
+    `llvm-objcopy` is on PATH from `/opt/rocm/llvm/bin`, and the executable path
+    in the run command is the one install.sh produces). `jargon.py --port
+    TurboFNO` clean, `check.py` all ok, no AMD-internal account reference.
+11. No ROCm fault class is in scope for the fork delta: host-side preprocessor
+    text in one header, device code proven unchanged. No wavefront constant,
+    resource handle, OOB neighbour read, texture pitch, per-arch branch or
+    library swap is touched; Strategy A remains correct.
