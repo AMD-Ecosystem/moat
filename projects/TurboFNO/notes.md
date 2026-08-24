@@ -486,3 +486,159 @@ triggers that DO return a status: `hipfftExecC2C(plan, nullptr, nullptr, dir)`
 -> 6, on either a planned or an unplanned handle. Note `hipfftPlan1d(..., batch=0)`
 returns SUCCESS. Promoted to the skill (fault-classes) since any project porting
 cuFFT error-handling tests can hit it.
+
+## Review 2026-08-24 (reviewer, linux-gfx1100): CHANGES REQUESTED
+
+Scope: `git diff ec49bcf..03141cf` on `moat-port` (one file, `utils/utils.cuh`,
++26 -137) plus the skill lesson promoted with it (MOAT `8018ccf`). Verdict is
+changes-requested on the promoted lesson and one notes number ONLY. The fork
+branch needs no change: every claim made for 03141cf was re-verified on this
+host and held.
+
+### 1. Promoted lesson: the binary-equivalence recipe is unsound as written
+
+`.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md:133-137` tells the
+reader to dump `.hip_fatbin` per object and sha256-compare, then asserts "if it
+is not identical, something other than the helper changed". That inference only
+holds when both builds happen in the SAME directory. `__hip_cuid_<hash>` is
+derived from the source path, so two checkouts built side by side in different
+directories differ with no source change at all.
+
+Measured here: ec49bcf built at two different absolute paths, same compiler and
+flags, gives all ten `.hip_fatbin` sections DIFFERENT at identical sizes -- 54
+differing bytes in 1D_E's 53456-byte section, and `llvm-nm` shows
+`__hip_cuid_647db2785858a339` vs `__hip_cuid_842064d23045946`. Following the
+paragraph literally produces a 10/10 false alarm; it produced one here before
+the cause was found.
+
+Required edits to that paragraph:
+- say the two builds must occur in the same directory (build sha A, capture the
+  objects, `git checkout` sha B in place, rebuild), or that `__hip_cuid_` must be
+  excluded from the compare;
+- point at `utils/codeobj_diff.py`, MOAT's canonical instrument for exactly this
+  question. It compares normalized device ISA plus exported symbols, so it is
+  immune to the path artifact: run across DIFFERENT paths and across both shas it
+  reported `identical (exported symbols + device ISA identical (3 exports))` for
+  all ten `TurboFNO_*` executables. The hand-rolled sha256 compare should be the
+  fallback, not the headline;
+- note that `codeobj_diff.py`'s OVERALL verdict degrades to `indeterminate` when
+  the build tree contains CMake's own probe binaries
+  (`CMakeFiles/<ver>/CompilerId{CXX,HIP}/a.out`,
+  `CMakeDetermineCompilerABI_{CXX,HIP}.bin`), which have no device code. The
+  per-binary lines are the answer; the next validator carrying this project
+  forward will hit this.
+
+The same caveat is missing from this file's own record of the method at
+`projects/TurboFNO/notes.md:440-448` ("Built all ten variants at ec49bcf and at
+03141cf"): add that both builds were in one directory, so a later reader does not
+reproduce the false alarm.
+
+### 2. Notes: CUBLAS_CALL call-site count is half the tree count
+
+`projects/TurboFNO/notes.md:430` says `CUBLAS_CALL` has "2 active call sites".
+The tree has 4: `fusion_variants/{1D_E_baseline/fused.cu:186,
+2D_E_baseline/fused_trunc_2D.cu:219}` and
+`fusion_variants_benchmark/{1D_E_baseline/fused.cu:203,
+2D_E_baseline/fused_trunc_2D.cu:236}`. Two of the four are in the built
+variants. This is inconsistent with the same section's own tree-wide accounting
+(the 284 + 32 figures span `fusion_variants` AND `fusion_variants_benchmark`:
+146+146 raw lines minus 4+4 commented for CUDA_RT_CALL, 16+16 for CUFFT_CALL --
+both re-derived here and correct). Since this number is what a person weighs when
+ruling on the escalated CUBLAS_CALL question, state 4 (2 built).
+
+### Reviewer recommendation on the escalated CUBLAS_CALL question (person's call)
+
+Recommend giving it the same treatment, in one further round, and rewriting the
+message string only. Reasons: it is the last string in the header whose sentence
+tracks the sample's, it now sits directly below two macros that were rewritten
+precisely because their sentences did, and anyone comparing the header to the
+sample lands on it immediately -- which is the question this round was meant to
+close. Cost is bounded: keep the name `CUBLAS_CALL` and the
+report-then-`exit(EXIT_FAILURE)` behaviour, so none of the 4 call sites move, the
+diff stays one file, and the same host-only binary-equivalence proof applies.
+The argument for leaving it: it is upstream's OWN macro, sits outside the removed
+notice block, and rewriting it edits upstream code for no functional gain, which
+cuts against "smallest complete port". On balance the tidier provenance story is
+worth one more one-line commit, but this is a person's decision and is NOT
+blocking either this round or validation.
+
+### Claims re-verified independently on this host (all CONFIRMED)
+
+ROCm 7.2.3, AMD Radeon Pro W7800 (gfx1100, wave32); CUDA 12.8
+(`/opt/conda/envs/cuda-12.8`), no NVIDIA GPU.
+
+1. No NVIDIA proprietary text. `licenses.py scan-nvidia TurboFNO` clean;
+   independent `git grep -i` for "NOTICE TO LICENSEE", "Licensed Deliverables",
+   "PROPRIETARY and", "NVIDIA software license agreement" over the tracked tree =
+   0 hits; on-disk grep including the submodule checkout = 0 hits. The three
+   locations named by the porter (former 42-78, 156-240, 242-257) are all gone in
+   03141cf. `hip_compat/helper_{cuda,functions}.h` are 2-line inert stubs.
+   The submodule's `TurboFFT/Common/helper_cuda.h` carries a BSD-3-Clause header,
+   not the proprietary notice, and the gitlink is unchanged at e285704.
+2. Independence bar met. do/while(0) matches the file's OWN `CUDA_CALLER` idiom
+   at `utils/utils.cuh:28-37`; internals are `turbofno_rt_status` /
+   `turbofno_fft_status` by direct declaration, not `auto status =
+   static_cast<...>( call )`; message is `"%s:%d: %s -> %s (%d)"`, compiler-style,
+   not a reordering of the deleted sentence (compared against the ec49bcf text).
+3. 316 call sites untouched. `git diff --name-only ec49bcf..03141cf` =
+   `utils/utils.cuh` alone; a whole-tree `diff -rq` of the two checkouts also
+   reports only that file. Re-derived counts: 284 active CUDA_RT_CALL (292 lines
+   - 8 commented) and 32 CUFFT_CALL, matching the notes exactly. Every wrapped
+   expression is `cudaMalloc` (152) or `cudaMemcpy` (140) for CUDA_RT_CALL and
+   `cufftCreate/Plan1d/PlanMany/ExecC2C/Destroy` for CUFFT_CALL, so dropping the
+   sample's `static_cast` for a direct declaration is type-safe at every site --
+   there is no enum-to-enum initialisation anywhere.
+4. Behaviour preserved. Probe built with the port's own header
+   (`clang++ -x hip --offload-arch=gfx1100 -DUSE_HIP -Ihip_compat -Iutils`):
+   CUDA_RT_CALL silent on success, reports and CONTINUES on
+   `cudaMalloc(1<<48)`; CUFFT_CALL silent on success, reports and RETURNS 1 from
+   its enclosing function on `cufftExecC2C(plan, nullptr, nullptr, FORWARD)`
+   (status 6). The probe also exercised `if (r) CUDA_RT_CALL(...); else ...`,
+   which compiles and takes the else branch -- the do/while(0) dangling-else
+   improvement is real. No repo file or script consumes the old message text
+   (grep for "CUDA RT call" outside the submodule = 0 hits).
+5. Device-binary equivalence. Both shas rebuilt in ONE directory, all 10
+   `.hip_fatbin` sections byte-identical, sizes matching the notes exactly
+   (1D_A 561568, 1D_B 654176, 1D_C 682832, 1D_D 639192, 1D_E 53456,
+   2D_A 1042328, 2D_B 1152712, 2D_C 1181496, 2D_D 1139088, 2D_E 55960).
+   Independently, `utils/codeobj_diff.py` over the two builds:
+   `identical (exported symbols + device ISA identical (3 exports))` on all ten
+   executables. `utils/utils.cu` references none of the three macros, so the
+   byte-identical `utils.cu.o` claim follows.
+6. Both build paths healthy. HIP `USE_HIP=1 CMAKE_HIP_ARCHITECTURES=gfx1100 bash
+   install.sh` at BOTH shas: 10/10 executables, 0 `error:`, 436 warnings each
+   (unchanged). CUDA path at 03141cf with nvcc 12.8 and
+   `-DCMAKE_CUDA_ARCHITECTURES=86`: 10/10 configure + compile + LINK, 10
+   executables. The literal Test Plan command
+   (`cmake -S fusion_variants/1D_E_baseline -B build-cuda -DUSE_HIP=OFF
+   -DCMAKE_CUDA_ARCHITECTURES=86` + `cmake --build`) works as written with nvcc on
+   PATH, and `install.sh` is mode 755 so `./install.sh` works too. Runtime smoke
+   on gfx1100: 1D_E completes its whole sweep (rc=0), 1D_D emits 732 clean sweep
+   lines before my own timeout; neither printed macro error output.
+7. Submodule and notice FILES untouched. `TurboFFT` gitlink identical;
+   `git diff ec49bcf..03141cf -- LICENSE NOTICE` empty. `NOTICE` makes no
+   reference to the removed sample code, so nothing dangles.
+8. Commit hygiene. Title `[ROCm] Replace sample-derived error-check macros in
+   utils.cuh` = 61 chars, correct prefix; no `Co-Authored-By` trailer; AI
+   assistance disclosed; Test Plan present with literal fenced commands;
+   `python3 utils/jargon.py --port TurboFNO` = clean; no AMD-internal account
+   reference. The hard-wrapped body is correct for a commit message
+   (`utils/prose.py` scope is PR and issue bodies).
+
+The rocFFT gotcha promoted at `references/fault-classes.md:319-326` also
+reproduces here exactly as written: `hipfftPlan1d(&plan, 0, HIPFFT_C2C, 1)` never
+returns (killed at 60 s) on ROCm 7.2.3 / gfx1100 from a program including no
+project header, while `hipfftPlan1d(&plan, 16, HIPFFT_C2C, 0)` returns 0 and
+`hipfftExecC2C(plan, nullptr, nullptr, dir)` returns status 6. That entry stands
+as accurate; `deferred.json:rocfft-plan1d-size0-hang` is the right home for the
+report and still awaits a person's ruling.
+
+### Not applicable to this delta
+
+No wavefront-size, texture/rule-of-five, OOB-neighbour, texture-pitch, per-arch
+or library-substitution surface: the change is host-side preprocessor text in one
+header, and the device code is proven unchanged. Strategy A remains correct.
+Platform validation state is a separate matter -- all four platforms sit at
+`validated_sha` ec49bcf while `head_sha` is 03141cf, so revalidation (or a
+`codeobj_diff` carry-forward, which the evidence above already supports) is the
+validator's next step regardless of this verdict.
