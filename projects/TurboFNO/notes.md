@@ -692,3 +692,107 @@ the reviewer left it.
 2. `CUBLAS_CALL` count corrected from 2 to 4 (2 built), with the four sites
    named. The escalated question -- whether `CUBLAS_CALL` should get the same
    treatment -- stays OPEN for a person; only the number it rests on changed.
+
+## Review 2026-08-24 (second round, reviewer, linux-gfx1100): CHANGES REQUESTED
+
+Scope: the MOAT records delta only, `git diff a8f868d^..HEAD` on `port/TurboFNO`
+(commits a8f868d, 84cd1d6) -- `.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md`
+and `projects/TurboFNO/notes.md`. The fork is untouched, as the porter states:
+`projects/TurboFNO/src` is on `moat-port` at 03141cf with `git status --porcelain`
+empty, `head_sha` is unchanged, and the status delta moves only `stage`,
+`porting`, and timestamps.
+
+Verdict rests on two clauses of ONE rewritten bullet in the promoted lesson. The
+notes.md corrections are right and need no further edit, the fork needs no change,
+and no platform's validation standing is affected -- the carry-forward evidence
+for the validator stands either way.
+
+### 1. `references/strategy-a-cmake.md:146-147`: the cuid is a hash of the whole compile command line, not of the source path
+
+The sharpened claim was re-derived here on a two-line HIP TU with
+`/opt/rocm/llvm/bin/clang++ -x hip --offload-arch=gfx1100`, every result run
+twice and stable:
+
+- source spelled `k.cu` from two DIFFERENT directories, `-o k.o` both times:
+  SAME `__hip_cuid_3d38bd6c6898bb40`. The porter's claim holds.
+- same file, same directory, same `-o` string, source spelled relative vs
+  absolute: `9252138dbe91dd0c` vs `58b5bab2c2dbf798`; and two absolute spellings
+  of the same file through a symlinked directory (identical `real_path`) differ
+  again. So it is the spelling, not the canonical path. Holds.
+- BUT: same directory, same source spelling, only `-o e1.o` vs `-o e2.o`:
+  `c40690cf2b58cdef` vs `43a24f11250cbcb0`.
+- BUT: same directory, same source spelling, same `-o`, only `-I .../incA` vs
+  `-I .../incB`: `a4a75ac90ebba3c3` vs `b1891393852bb11e`.
+
+The attribution is exclusive where the mechanism is not, and that bites in the
+exact CMake case this bullet describes. This project's own generated rule
+(`build/CMakeFiles/TurboFNO_1D_E.dir/build.make:78`) is
+`... -o CMakeFiles/TurboFNO_1D_E.dir/fused.cu.o -x hip -c /abs/.../1D_E_baseline/fused.cu`
+with `flags.make` carrying `HIP_INCLUDES = -I/abs/.../hip_compat ...` and
+`HIP_DEFINES = -DDEFAULT_CONFIG_PATH=\"/abs/.../problem_size_1d.txt\"` -- three
+different arguments each carrying the build tree's absolute path. A reader who
+takes the sentence literally and tries to defeat the artifact by spelling the
+source relatively still gets different cuids across two trees. Reword to: the
+cuid is a hash of the compile command line -- the source path as spelled plus the
+other arguments (`-o`, `-I`, `-D`) -- which in a CMake build all carry the build
+tree's absolute path; hence the same-directory rule.
+
+### 2. `references/strategy-a-cmake.md:152`: "or exclude `__hip_cuid_` from the compare" does not work at the level this bullet is about
+
+The bullet is specifically the `llvm-objcopy --dump-section=.hip_fatbin` +
+sha256 recipe, so "exclude it from the compare" can only mean byte-normalizing
+the dumped section. Measured on the relative/absolute pair above: both
+`.hip_fatbin` sections are 33912 B and differ in 40 bytes; the name occurs
+exactly twice; after a length-preserving
+`LC_ALL=C sed -E 's/__hip_cuid_[0-9a-f]{16}/__hip_cuid_ZZZZZZZZZZZZZZZZ/g'` over
+both dumps, 8 bytes still differ (offsets 6309-6389 -- name-derived table bytes
+the substitution cannot reach), while `codeobj_diff.py` on the same pair reports
+`identical (exported symbols + device ISA identical)`. As written the escape
+hatch leaves a residue that reads exactly like the false positive the bullet
+exists to prevent. Either drop the clause, leaving the same-directory rebuild as
+the fallback's only remedy, or say the exclusion is SYMBOL-level
+(`llvm-nm <obj> | grep -v __hip_cuid_`, which is sound) and not a byte-level
+normalization of the fatbin.
+
+### Re-verified on this host, no change needed
+
+ROCm 7.2.3, W7800 (gfx1100), CMake 3.31.6.
+
+1. The unsound inference is gone: "something other than the helper changed"
+   appears nowhere under `.claude/`, and `strategy-a-cmake.md` is the only skill
+   file that mentions `hip_fatbin`, so no stale copy of the old recipe survives.
+2. codeobj_diff-first guidance (`:137-143`) is accurate. On a freshly configured
+   1D_E build tree, `codeobj_diff.compare_binary` returns
+   `('indeterminate', 'device-code extraction failed')` for all four probe
+   binaries (`CMakeFiles/3.31.6/CompilerId{CXX,HIP}/a.out`,
+   `CMakeDetermineCompilerABI_{CXX,HIP}.bin`) even compared against THEMSELVES,
+   and `utils/codeobj_diff.py:219-225` ranks indeterminate above identical, so
+   the overall verdict does degrade exactly as claimed and the "read the
+   PER-BINARY lines" remedy is the right one. (The proximate cause is
+   `roc-obj-ls` failing on a device-code-free binary rather than an empty ISA
+   comparison; the reader-facing statement is still correct.)
+3. The same-directory rule itself is sound, and `codeobj_diff.py` really is
+   immune to the artifact: it called the deliberately cuid-mismatched pair
+   `identical`.
+4. CUBLAS_CALL count. `git grep -n CUBLAS_CALL` at 03141cf gives the definition
+   (`utils/utils.cuh:74-75`) plus exactly the four active `cublasCgemm` sites
+   named at `notes.md:430-434`, line numbers matching byte for byte.
+   `install.sh` iterates only `fusion_variants/<10 variant dirs>`, never
+   `fusion_variants_benchmark`, so exactly two of the four are in built
+   variants. "4 in tree, 2 built" is correct.
+5. The notes equivalence write-up (`notes.md:440-465`) now carries the
+   same-directory caveat, and its "identical relative invocations from two
+   directories share a cuid, absolute paths do not" is literally true as measured
+   here -- the word "identical" already carries the whole-command-line condition
+   that finding 1 asks the skill text to make explicit.
+6. The escalated CUBLAS_CALL question is still recorded as open and still framed
+   as a person's call; only the number under it moved.
+7. The previous round's confirmed-claims record is intact. Inside notes.md the
+   delta removes six lines, all inside the two corrected passages (427-448);
+   `## Review 2026-08-24` at line 510 and everything under it is untouched, with
+   the porter's section appended after.
+8. Hygiene on the two new MOAT commits: `jargon.py --port TurboFNO` clean,
+   `check.py` all ok, no `Co-Authored-By` trailer, no AMD-internal account
+   reference, subjects scoped `TurboFNO: ...` (these are MOAT-side records, not
+   fork commits, so the `[ROCm]` title rule does not apply). No ROCm fault class
+   is in scope: no source, build, or kernel file moved this round.
