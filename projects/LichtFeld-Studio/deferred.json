@@ -47,6 +47,19 @@
         "by": "jeffdaily",
         "at": "2026-08-13T19:28:28Z"
       }
+    },
+    {
+      "id": "lfs-commit-msg-drop-alien-ref",
+      "kind": "other",
+      "component": null,
+      "summary": "Before the upstream PR, reword 53c363f8's commit body to drop the cross-project reference to AMD-Ecosystem/alien; keep the disclosure that a custom link wrapper is the follow-up. Do it in the PR-prep squash, not by amending 53c363f8.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md#review-2026-08-24"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-24T18:01:33Z",
+      "decided": null
     }
   ]
 }

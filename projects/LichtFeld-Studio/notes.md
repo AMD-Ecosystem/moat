@@ -1037,3 +1037,118 @@ routes through `hipcc.exe` -> `clang.exe --driver-mode=g++`, which applies GNU b
 to CMake's MSVC-style response file and eats every backslash in library and object paths. The
 same fault class was solved in `AMD-Ecosystem/alien` by `cmake/hip_link_win.py`; an equivalent
 wrapper is needed here.
+
+## Review 2026-08-24 (reviewer, windows-gfx1151) -- 53c363f8, REVIEW-PASSED
+
+Scope: `git diff 5cbfdf1a..53c363f8` -- the validator-authored commit that reached
+`moat-port` without ever being reviewed (see "Scope note 2026-08-20"). Three files,
++20/-14. No upstream PR is open. Verdict: the code stands as-is; do not revert and do
+not amend the commit.
+
+### Work-lock gap (bookkeeping, not a code problem)
+
+This review ran WITHOUT the `reviewing` work lock. `review-passed -> reviewing` is not in
+`STAGE_TRANSITIONS` (`utils/moatlib.py:180`, `review-passed: {porting}`), so moatlib refuses
+it, and the only legal route in -- `review-passed -> porting -> ported -> reviewing` -- means
+a reviewer entering the porter's exclusive stage, which the harness also refused. The lock
+field was `null` throughout, so nothing was stranded and nothing needs releasing; the stage
+already reads `review-passed`, which is this review's verdict, so the record is now accurate
+for the first time since 53c363f8 landed.
+
+Worth a tooling decision by a person: there is currently no legal way to send an unreviewed
+commit that landed at `review-passed` back through review. Either `review-passed -> reviewing`
+should be legal, or `review-passed -> ported`.
+
+### Findings
+
+1. `AMD-Ecosystem/alien` is named in the upstream-visible commit body of 53c363f8 (the
+   paragraph beginning "That is a distinct, larger problem ..."). MrNeRF has no idea what
+   that repository is, and it points a reader at an unrelated fork in our org. `jargon.py`
+   does not catch it because it is not in-house vocabulary, but it is in-house context.
+   Required rewrite before the upstream PR: keep the disclosure, drop the cross-project
+   name -- "a custom link wrapper is needed; left for a follow-up change". Do this in the
+   PR-prep squash or in the next commit's message; do NOT amend 53c363f8, which would churn
+   `head_sha` for a prose fix. Registered as deferral `lfs-commit-msg-drop-alien-ref` so it
+   cannot be lost at PR prep.
+
+2. The 2026-08-20 justification for taking only "the compile-rule half" of alien's fix is
+   wrong about what the other half does, and the error will cost the next porter time.
+   alien's `CMAKE_HIP_LINK_EXECUTABLE` override is not an RDC device-link rule. Read
+   `projects/alien/src/CMakeLists.txt:107-119`: the wrapper exists because the GCC-driver
+   clang "does not accept bare MSVC-style linker flags (/machine:x64, /subsystem:console,
+   etc.) -- it treats them as file paths", and because CMake injects `-fuse-ld=lld-link`
+   which conflicts with `--hip-link`; `hip_link_win.py` strips the former and `-Xlinker`-wraps
+   the latter. `-fgpu-rdc` rides along in alien's command line but is not the reason the
+   wrapper exists. That non-RDC half is EXACTLY LichtFeld's remaining blocker, so the correct
+   statement is "the compile-rule half was enough to compile; the link half is still needed
+   here, for a reason unrelated to RDC" -- not "this project does not need it". The commit
+   body of 53c363f8 gets this right ("a custom link wrapper"); only the notes entry was wrong.
+
+3. `src/hip_compat/c10/cuda/CUDACachingAllocator.h:13-15` is now torch-version-sensitive on
+   the Windows branch, and this is not written down anywhere. It is correct for TheRock torch
+   2.12.0a0 and INCORRECT for the 2.9.1 build windows-gfx1101 used. The deduction is forced by
+   this project's own record: gfx1101 compiled and ran 320/914 tests with the alias form, and
+   `tests/test_main.cpp:37`, `tests/test_tensor_stress.cpp:81`, `tests/test_tensor_memory.cpp:66`
+   and `tests/test_torch_comparisons.cpp:23` all call `c10::cuda::CUDACachingAllocator::`, so
+   under 2.9.1 the alias was load-bearing (the name did not otherwise exist) and was not a
+   redefinition. Remove it and those TUs stop compiling on 2.9.1. Targeting the current
+   toolchain is the right call -- a `TORCH_VERSION_*` conditional would be upstream-visible
+   complexity for a superseded build -- but anyone resuming windows-gfx1101/gfx1201 on an
+   older torch must expect this file to be the first thing that breaks.
+
+### Verified, so nobody re-derives it
+
+- `cmake/HipCompute.cmake:55-56`: `CMAKE_HIP_COMPILE_OBJECT` is populated when the REPLACE
+  runs. `project(... LANGUAGES HIP CXX C)` is at `CMakeLists.txt:54`, the include at :56, and
+  every consumer is an `add_subdirectory` from `HipCompute.cmake:269-276` -- later, same
+  (top-level) directory scope. The 94/94 compile confirms it empirically.
+- The `if(WIN32)` guard needs no clang-cl narrowing. The literal `/Fo<OBJECT>` only appears in
+  the rule CMake emits for the MSVC frontend variant; on a GCC-frontend Windows HIP toolchain
+  the REPLACE matches nothing and is a no-op. alien narrows to
+  `CMAKE_HIP_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"` but gains nothing by it here.
+- No RDC anywhere in the HIP path. Every `CUDA_SEPARABLE_COMPILATION` in the tree is either
+  `OFF` or in `tests/CMakeLists.txt` (:329, :415), which the HIP build never adds -- the
+  top-level `add_subdirectory(tests)` at :1010 sits after the `return()` at :57. Those are the
+  CUDA-language property in any case, inert for a HIP-language target. Dropping alien's
+  `-fgpu-rdc` link command was right; see finding 2 for what was NOT right to drop.
+- The OIIO guard at `cmake/hip_tests/CMakeLists.txt:181` is byte-identical to the established
+  in-tree pattern at `src/core/CMakeLists.txt:109` (which also guards `OpenMeshCoreStatic` at
+  :110), and the target is defined only under `if(NOT WIN32)` at `cmake/HipCompute.cmake:222,231`.
+  Nothing in `tests/*.cpp` includes an OpenImageIO header, and `lfs_compute_tests` links no
+  OpenMesh target, so removing the library on Windows removes no needed include dir or symbol.
+  Caveat on evidence: this is proven at compile only -- the Windows link has never been
+  reached -- but with no OIIO reference in any TU there is nothing left to resolve.
+- The shim fix is complete for its class: `src/hip_compat/` contains exactly one `c10` shim
+  (`c10/cuda/CUDACachingAllocator.h`), and a repo-wide grep finds no other `c10::hip` reference,
+  so no sibling alias carries the same stale assumption.
+- Linux is untouched. The `#else` branch of the shim (`#include_next <c10/cuda/CUDACachingAllocator.h>`)
+  is unchanged context in the diff; the only other edit to that file is the comment block, which
+  emits no code. The genex at hip_tests:181 evaluates to `OpenImageIO::OpenImageIO` on Linux, the
+  identical link. The HipCompute change is inside `if(WIN32)`. No fault-class surface is touched at
+  all: the diff contains no device code, no `warpSize`/`32`, no resource handle, no neighbor read.
+- Commit hygiene otherwise clean: title 69 chars with the `[ROCm]` prefix, rationale per file in
+  the body, "Authored with the assistance of Claude Code (Sonnet 5)", a Test Plan with an indented
+  command block matching the style of every prior commit on this branch, and no `Co-Authored-By`,
+  `noreply`, or internal account reference. `jargon.py --port LichtFeld-Studio` reports 3
+  instances, all pre-existing in 13e585d47 and e24593f4e; 53c363f8 contributes zero.
+  `moatlib.py audit-clean LichtFeld-Studio` is OK and the fork worktree is clean.
+  (`audit-commits` is not a moatlib subcommand; `audit-clean` is the equivalent gate.)
+
+### Linux carry-forward: eligible, and someone should record it
+
+`moatlib.py classify LichtFeld-Studio 5cbfdf1a 53c363f8` returns
+`class=mixed arch_independent=False inert=False`, flagging all three files on token count.
+That is the conservative answer, not the right one: classify cannot see that two of the three
+hunks sit behind `if(WIN32)` / `PLATFORM_ID:Windows` and the third is a comment block above a
+`#else` branch that did not move. Nothing in this delta changes what a Linux compiler is handed.
+Reviewer judgement: linux-gfx90a and linux-gfx1100 are source-class carry-forward eligible from
+5cbfdf1a to 53c363f8, no GPU re-run needed. `classify` disagreeing means a Linux host has to
+record it deliberately rather than being handed it -- that is the correct division; this Windows
+host does not write another architecture's evidence.
+
+### Next porter round (unchanged, restated for the record)
+
+Port an equivalent of `projects/alien/src/cmake/hip_link_win.py` for `CMAKE_HIP_LINK_EXECUTABLE`,
+minus the `-fgpu-rdc`/`--hip-link`/`-Xoffload-linker` parts alien needs and this project does not.
+The pieces that apply here are stripping `-fuse-ld=lld-link` and `-Xlinker`-wrapping MSVC-style
+flags and bare `.lib` names so the GCC-driver clang stops eating backslashes.
