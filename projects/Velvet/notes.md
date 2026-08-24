@@ -749,3 +749,154 @@ HIP_VISIBLE_DEVICES=1 agent_space/velvet_kernel_test_gfx1101.exe
 **ROCm**: TheRock 7.14.0a20260604
 **Commit**: 97d69a63ccceed5bec70d41c87cba81cab08b77f
 **Pass/fail**: 3/3 GPU kernel tests PASS; 0 failures
+
+## Fix round 2026-08-24 (linux-gfx1100, porter): NVIDIA helper headers off the AMD build, BSD swap
+
+Context (MOAT-internal; none of this wording is fork-visible): AMD counsel ruled on
+2026-08-24 that NVIDIA proprietary-licensed files must not compile, execute, or be a
+build input in anything AMD builds, and directed a swap to open-source replacements.
+Velvet vendors three pre-2017 CUDA-samples headers under `Velvet/External/cuda/`
+(`helper_cuda.h`, `helper_math.h`, `helper_string.h`), each carrying the
+"refer to the NVIDIA end user license agreement (EULA)" notice. This round implements
+the ruling. Staged under the open upstream PR (vitalight/Velvet#9, published tip
+`bb06b44`) on `moat-fix-9`; `moat-port` was never pushed. The deferral item
+`velvet-nvidia-proprietary-rescan` is the record of the question this answers.
+
+### Starting state, measured (the dispatch's premise was partly wrong)
+
+`Velvet/cuda_to_hip.h:69` `#include <helper_cuda.h>` is inside the `#else // CUDA path`
+branch, not the HIP branch; the includes in `Common.cuh:20-21` and
+`VtClothSolverGPU.hpp:13` are likewise behind `#if !defined(USE_HIP)`. So no vendored
+file was actually *compiled* on the AMD path even before this round. What was true:
+`CMakeLists.txt:80` put `Velvet/External/cuda` on the include path unconditionally (a
+build input on the AMD build), and the HIP branch's own `checkCudaErrors` was a
+paraphrase of the vendored header's `check<T>()` template, down to the
+`"CUDA error at %s:%d code=%d(%s) \"%s\""` message shape. Both are fixed here.
+
+### Commits on moat-fix-9 (base bb06b44)
+
+- `ff1ccd4` "[ROCm] Give the HIP build its own status check"
+  - `CMakeLists.txt`: `Velvet/External/cuda` is added to the include path only inside
+    `if(NOT USE_HIP)`. The AMD build never names the directory, so an accidental
+    `#include <helper_cuda.h>` on that path would fail to resolve rather than compile.
+  - `Velvet/cuda_to_hip.h`: the HIP branch's `checkCudaErrors` now expands to
+    `::Velvet::AbortOnHipError(expr, #expr, __FILE__, __LINE__)`, a non-template
+    `inline void(hipError_t, const char*, const char*, int)` written independently --
+    exact `hipError_t` parameter (not `template <typename T>` truthiness), different
+    name/namespace, message `file:line: expr -> str (code)`, no device-reset dance.
+    Added `<cstdio>`/`<cstdlib>` since it uses `std::fprintf`/`std::exit`.
+- `49f6db9` "[ROCm] Refresh the bundled CUDA samples helpers"
+  - All three files replaced byte-for-byte with NVIDIA's BSD-3-Clause releases from
+    `NVIDIA/cuda-samples@b7c5481c556c3fe98db060207ecaa41a4b9a9abc` (`Common/`):
+    `helper_cuda.h` sha256 `997f9ac1f8e5f8e5f45f8b11eebab5b89305dee7430b90654bafe62283cffee1`,
+    `helper_math.h` `b0e5e1e20960dbf64891d9c1578b4c69872d926063eba4081a6ce9df3daee124`,
+    `helper_string.h` `26e988c97fb3d77d498e384c685177ed7966e41d5d58ebc9b7d3d696859f5e57`.
+  - `grep -ri "end user license\|EULA" Velvet/External/cuda/` -> no hits at the tip.
+  - No licence or notice file was deleted anywhere.
+
+`checkCudaErrors` is the ONLY helper_cuda symbol Velvet uses (9 call sites:
+`Common.cuh` x2, `VtBuffer.hpp` x5, `VtClothSolverGPU.cu`, `SpatialHashGPU.cu`).
+`helper_math.h` and `helper_string.h` have zero call sites; `helper_math.h` is only
+`#include`d by `Common.cuh`'s CUDA branch and `helper_string.h` only by `helper_cuda.h`.
+Both were kept (swapped, not removed) so the CUDA path is untouched.
+
+### AMD build: proof that no vendored file is a build input
+
+Configure/build (this host: gfx1100, ROCm 7.2.1, vcpkg deps reinstalled per the Build
+section above; `xorg-dev` is an apt prereq for vcpkg glfw3):
+
+```bash
+export PATH=/opt/rocm/bin:/opt/rocm/llvm/bin:/usr/local/bin:/usr/bin:/bin
+export HIP_VISIBLE_DEVICES=0
+cmake -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_IGNORE_PATH=/opt/conda -DCMAKE_PREFIX_PATH=/opt/rocm \
+  -DCMAKE_TOOLCHAIN_FILE=/var/lib/jenkins/vcpkg/scripts/buildsystems/vcpkg.cmake
+bash utils/timeit.sh Velvet compile -- cmake --build build -j$(nproc)
+```
+
+Result: build succeeded (RC=0), `build/bin/Velvet`, `hipv4-amdgcn-amd-amdhsa--gfx1100`,
+all 14 kernels present in the code object (the 12 previously listed plus
+`ComputeTriangleNormals`/`ComputeVertexNormals`).
+
+Include-trace proof, run per translation unit with the exact flags from
+`build/CMakeFiles/Velvet.dir/flags.make`:
+
+```bash
+hipcc -x hip -fsyntax-only -H -O3 -DNDEBUG -std=gnu++17 --offload-arch=gfx1100 \
+  -DUSE_HIP -DUSE_PROF_API=1 -D__HIP_PLATFORM_AMD__=1 -D__HIP_ROCclr__=1 \
+  -I$PWD/Velvet -I$PWD/Velvet/External \
+  -isystem /var/lib/jenkins/vcpkg/installed/x64-linux/include <tu> 2>&1 \
+  | grep -c "External/cuda\|helper_cuda\|helper_math\|helper_string"
+```
+
+All 13 TUs report 0 (out of ~2000-2300 headers opened each). `grep -rl "External/cuda"
+build/` is empty, so the directory is not on any command line either. CMake's
+`HIP.includecache` still lists `helper_cuda.h`/`helper_math.h` with a `-` (unresolved) --
+that is CMake's textual scanner, which does not evaluate `#if`, not the compiler; the
+`-H` trace and the successful build are the real evidence.
+
+### GPU evidence (real hardware, gfx1100)
+
+`agent_space/velvet_check_gfx1100.cpp` includes the port's own `cuda_to_hip.h` with
+`USE_HIP` and drives the new check through the pattern Velvet uses --
+`cudaMallocManaged`, kernel launch, `atomicAdd`, `cudaDeviceSynchronize`, `cudaFree`,
+every one wrapped in `checkCudaErrors`:
+
+```bash
+hipcc -std=c++17 --offload-arch=gfx1100 -Iprojects/Velvet/src/Velvet \
+  -o agent_space/velvet_check_gfx1100 agent_space/velvet_check_gfx1100.cpp
+bash utils/timeit.sh Velvet test -- ./agent_space/velvet_check_gfx1100
+```
+
+PASS, exit 0: `AMD Radeon Pro W7800 48GB (gfx1100) warpSize=32`, atomicAdd total
+10000.0/10000 (2/2 checks PASS, 0 fail).
+
+Failure path (`agent_space/velvet_checkfail_gfx1100.cpp`, a deliberate 4 EiB
+`hipMalloc`) exits 1 after printing exactly:
+`velvet_checkfail_gfx1100.cpp:9: hipMalloc(&p, (size_t)1 << 62) -> out of memory (2)`.
+So the substitute reports and aborts, which is what the 9 call sites rely on.
+
+The GUI itself still cannot run here (headless server, no GPU-backed GL context) --
+same situation as every prior Linux validation of this project; the kernel-level test is
+the established stand-in.
+
+### CUDA path: no regression from the BSD swap (CUDA 12.8, /opt/conda/envs/cuda-12.8)
+
+```bash
+nvcc -std=c++17 -arch=sm_80 -c -o /dev/null -include glad/glad.h \
+  -IVelvet -IVelvet/External -IVelvet/External/cuda \
+  -I/var/lib/jenkins/vcpkg/installed/x64-linux/include Velvet/VtClothSolverGPU.cu
+# and Velvet/SpatialHashGPU.cu           -> RC=0, 0 errors, both shas
+g++ -std=c++17 -fsyntax-only -include glad/glad.h -IVelvet -IVelvet/External \
+  -IVelvet/External/cuda -I<vcpkg-include> \
+  -I/opt/conda/envs/cuda-12.8/targets/x86_64-linux/include Velvet/main.cpp
+# and Timer.cpp, VtEngine.cpp            -> RC=0, both shas
+```
+
+Run at `bb06b44` (extracted with `git archive` into a scratch tree) and at `49f6db9`:
+identical results. An `-H` trace on `main.cpp` confirms all three swapped headers are
+opened on the CUDA path, so the check is not vacuous.
+
+**Pre-existing gotcha, NOT caused by this round**: without `-include glad/glad.h` the
+Linux CUDA path fails to compile at both shas with the identical error --
+`cuda_gl_interop.h` pulls in `GL/gl.h`, and vcpkg's GLAD v1 header then hits
+`#error OpenGL header already included, remove this include, glad already provides it`.
+Upstream only ever built the CUDA path on Windows (Velvet.vcxproj), where the header
+order differs, so this has never mattered. Diff of the error lines at the two shas is
+empty. Worth a separate ruling if a Linux CUDA build is ever wanted; out of scope here.
+
+### State
+
+`head_sha` -> `49f6db9` (staging tip), `published_sha` stays `bb06b44`. That flips the
+four completed platforms to `revalidate`; correct -- the evidence is gathered on
+`moat-fix-9` before anything reaches the open PR. Next: reviewer on the delta, then
+revalidation, then `upstream.py --fix-review` and a person's `/moat approve` before
+`--merge-fix` moves `moat-port`.
+
+### Known, pre-existing gate failures (do not "fix" them in this round)
+
+`python3 utils/check.py` reports two commit-hygiene misses, both on commits at or below the
+published tip and therefore unamendable while PR #9 is open:
+`bb06b44` has no Test Plan section, and `97d69a6`'s Test Plan uses indented code blocks rather
+than fenced ones. The two commits added by this round pass the gate. `jargon.py --port Velvet`
+is clean across the whole branch.
