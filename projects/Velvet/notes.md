@@ -1068,3 +1068,64 @@ VtClothSolverGPU.cu 2>&1 | grep -c External/cuda` -> `0`, hipcc RC=0.
 `check.py` still reports only the two pre-existing commit misses at/below the published
 tip, plus a `surface` gate that is vacuous here because this project has never had a
 `surface.json` (it predates that gate); neither is this round's to fix.
+
+## Review 2026-08-24 (second pass, linux-gfx1100, reviewer): message amendment 659d86f / 7ccd4a9
+
+Scope: the message-only amendment answering the two findings above. Verdict: **review-passed**,
+no findings. Everything below was re-measured on this host; nothing was taken from the porter's
+record.
+
+**Trees byte-identical to the reviewed pair.** `ff1ccd4^{tree}` = `659d86f^{tree}` =
+`fd06f634782f0a47e1f2ed4b00654ef851a0275a`; `49f6db9^{tree}` = `7ccd4a9^{tree}` =
+`eb860fa3e245c309350b8a1f925426ffdd8b025d` (old shas still reachable in this clone, so this is a
+direct comparison, not a match against a recorded value). `git diff 49f6db9 7ccd4a9` and
+`git diff ff1ccd4 659d86f` are both empty. Parentage intact: `659d86f` -> `bb06b44` (the
+published tip), `7ccd4a9` -> `659d86f`. `git ls-remote origin` shows `moat-port` still at
+`bb06b44` and only `moat-fix-9` moved. `git status --porcelain` in `src` clean. The code claims
+confirmed in the first pass therefore stand unchanged and were not re-litigated.
+
+**`diff` of the two message pairs** shows exactly the two requested edits and nothing else: the
+combined `nvcc ... a.cu b.cu` form split per file in both bodies, and `49f6db9`'s "All five
+compile with no errors" replaced by the four-TU claim plus a `Timer.cpp` paragraph.
+
+**Finding 1 resolved.** Every Test Plan command run as written, at the tip and at `bb06b44`
+(`git archive` scratch tree), CUDA 12.8 from `/opt/conda/envs/cuda-12.8`:
+
+```bash
+nvcc -std=c++17 -arch=sm_80 -c -o /dev/null -include glad/glad.h -IVelvet -IVelvet/External \
+  -IVelvet/External/cuda -I/var/lib/jenkins/vcpkg/installed/x64-linux/include \
+  Velvet/VtClothSolverGPU.cu          # RC=0, 0 errors; same for SpatialHashGPU.cu; both shas
+g++ -std=c++17 -fsyntax-only -include glad/glad.h -IVelvet -IVelvet/External \
+  -IVelvet/External/cuda -I<vcpkg-include> \
+  -I/opt/conda/envs/cuda-12.8/targets/x86_64-linux/include Velvet/main.cpp
+                                      # RC=0; same for VtEngine.cpp; both shas; g++ 13.3.0
+hipcc -x hip -fsyntax-only -H -std=gnu++17 --offload-arch=gfx1100 -DUSE_HIP -IVelvet \
+  -IVelvet/External -isystem <vcpkg-include> Velvet/VtClothSolverGPU.cu 2>&1 \
+  | grep -c External/cuda             # RC=0, count 0
+```
+
+No invocation in either body now aborts on the "single input file" fatal.
+
+**Finding 2 resolved and the new text is accurate.** `Timer.cpp` under g++ 13.3.0: RC=1, 8
+errors, first at `Velvet/Timer.hpp:233`; under g++-11 11.5.0: RC=0 -- the versions named in the
+body. `Timer.hpp:1-15` includes `<unordered_map>` and `<string>` but not `<vector>`, so the
+attribution is right. `diff` of the g++ 13.3 error logs at `bb06b44` and at the tip is empty, so
+"the errors are identical with the old copies" holds literally. The paragraph sits in the same
+register as the glad paragraph two lines below it (pre-existing / unrelated to these files /
+identical with the old copies) and makes no claim beyond what reproduces. The body's list of
+"host translation units that include these headers" is correct for all three: a `-H` trace opens
+`helper_cuda.h` + `helper_string.h` from `Timer.cpp` and all three from `main.cpp` and
+`VtEngine.cpp`.
+
+**Hygiene on the two rewritten messages.** Titles `[ROCm]`-prefixed, 46 and 47 chars; AI-assistance
+disclosure in both; fenced Test Plan blocks in both; ASCII-only bodies; no `Co-Authored-By` /
+`Signed-off-by` / noreply trailer; no internal references; author and committer
+`jeff.daily@amd.com`. `jargon.py --port Velvet` clean; `prose.py` clean on both bodies.
+`check.py` reports the same two pre-existing commit misses at/below the published tip
+(`bb06b44`, `97d69a6`) and the vacuous `surface` gate -- unchanged by this round, none of it
+amendable while PR #9 is open.
+
+Non-blocking record note, for whoever next edits this file: the "CUDA path: no regression from
+the BSD swap" recipe and the first review section still cite `49f6db9`, which is no longer on the
+remote. The statements remain true (same tree as `7ccd4a9`), but a reader on a fresh clone cannot
+resolve that sha; re-point it to `7ccd4a9` next time the section is touched.
