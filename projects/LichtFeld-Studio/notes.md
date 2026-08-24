@@ -1485,3 +1485,55 @@ in `cmake/HipCompute.cmake` before `add_subdirectory(cmake/hip_tests)`, which wo
 `ctest` work and the caveat unnecessary. That edits a build file and would cost a real GPU
 revalidation, so it belongs to the PR-prep round (or to a maintainer's preference), not
 here.
+
+## Port round 2026-08-24 (porter, linux-gfx90a) -- 00187204, doc accuracy fixes
+
+Answers the four findings of "Review 2026-08-24 (reviewer, linux-gfx90a) -- 0c820fd1".
+One commit, `00187204 [ROCm] Correct four claims in the AMD GPU build docs`, one file,
+`docs/building_and_distribution.md`, +6/-5. No source, kernel or build file touched, so
+the delta is inert for every architecture and the carry-forward reasoning recorded at
+53c363f8 is unaffected. No build or GPU run for this round.
+
+1. (`:113`) The `-DCMAKE_HIP_COMPILER` prohibition is gone. Replaced with what is
+   established: the block above is the Linux recipe, the flag is unnecessary on a standard
+   ROCm install because HIP is enabled at `project()` time and CMake resolves the compiler
+   under `ROCM_PATH`, and it is needed when the toolchain lives outside the searched
+   locations (which is what the Windows rounds at notes.md:395-405 and :841-842 did).
+   **Correction to the record:** notes.md:56 ("Do NOT pass -DCMAKE_HIP_COMPILER (it
+   triggers a reconfigure that drops -DUSE_HIP)") is the origin of the false claim and is
+   wrong; it is left in place as the historical entry, superseded here. `USE_HIP` is a
+   plain cache BOOL inside `if(NOT DEFINED USE_HIP)` (CMakeLists.txt:13-18) precisely so a
+   command-line value survives a reconfigure.
+2. (`:88,98-99`) Both compiler flags in the copy-paste block now use
+   `${ROCM_PATH:-/opt/rocm}`; with the variable unset the block previously expanded to
+   `/llvm/bin/clang++`. The bullet now says the `/opt/rocm` default is the build's
+   (`cmake/HipCompute.cmake:74-76`, which also honours `$ENV{ROCM_PATH}`), not the shell's.
+   Worth knowing: this host has no `/opt/rocm` at all -- ROCm is the conda
+   `_rocm_sdk_devel` prefix named by `$ROCM_PATH` -- so the env var carries the build here.
+3. (`:92,104`) `-DGTest_DIR=/path/to/gtest/lib/cmake/GTest` added to the block, and the
+   GoogleTest/LibTorch bullet now offers `CMAKE_PREFIX_PATH` as the alternative, which is
+   what the gfx90a bring-up actually used (notes.md:56); Windows used `-DGTest_DIR`
+   (notes.md:400). Both routes are now in the doc, so the recipe configures as written.
+4. (`:115`) The "concurrent processes on one GPU produce spurious failures" cause is gone.
+   The doc now states only the supported fact: the binary runs its tests sequentially in a
+   single process, so run one instance at a time.
+
+Deliberately untouched: the `enable_testing()` improvement the reviewer deferred to PR prep
+(it edits a build file and would cost a real GPU revalidation).
+
+Checks: `prose.py` clean; title 52 chars with `[ROCm]`; ASCII-only; AI disclosure present;
+no `Co-Authored-By`. `jargon.py --port LichtFeld-Studio` still reports the same 3
+pre-existing instances in `13e585d47`/`e24593f4e` bodies and 0 from this commit (deferral
+`lfs-commit-msg-jargon-13e585d-e24593f`). Fork worktree clean; `pr-state` is `none`, so the
+push went to `moat-port` directly.
+
+### advance-head defect reproduced (deferral `lfs-advance-head-carries-doc-gate-failure`)
+
+`advance-head LichtFeld-Studio 00187204` moved `head_sha` but also rewrote
+linux-gfx90a's `failed_sha` from `0c820fd1` to `00187204`, so the arch still reads
+`validation-failed` **at the new head** instead of becoming a validator's job again. The
+failure it records (missing ROCm build docs at 53c363f8) has been answered twice over and
+has never been observed at this sha. linux-gfx1100 correctly reads stale
+(`validated_sha` 5cbfdf1a < head) and needs revalidation for the doc gate. Do not hand
+gfx90a back to a porter on the strength of that carried-forward record; it needs a
+validator.
