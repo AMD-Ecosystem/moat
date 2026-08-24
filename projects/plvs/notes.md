@@ -896,7 +896,7 @@ Carry-forward via binary-equiv. State -> completed. validated_sha = 3aa7489.
 
 ## Fix round 2026-08-13 (linux-gfx1100, porter): vendored NVIDIA headers restored to pristine
 
-Dispatch (ruled by jeffdaily 2026-08-13, reported to AMD counsel as a fix in progress): the
+Dispatch (ruled by jeffdaily 2026-08-13, recorded in the licensing review as a fix in progress): the
 port's history added ~41 lines of HIP implementation INSIDE `include/cuda/helper_cuda.h`, a
 file plvs vendors verbatim from the pre-2017 CUDA samples and which carries the NVIDIA EULA
 pointer notice. That made the port's diff a derivative modification of an
