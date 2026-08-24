@@ -1296,3 +1296,92 @@ validator/porter on this host hits the same slow-clone wall, the
 is far cheaper than a full clone when only a diff or a couple of files are needed;
 a full working tree still needs the slow full clone (or a lazy checkout, which was
 also too slow to finish here for the whole tree, ~280/​~2000+ files in >4 min).
+
+## Port round 2026-08-24 (porter, linux-gfx90a) -- 0c820fd1, ROCm build documented
+
+Answers the documentation-gate failure recorded in the validation entry above. Doc
+only: no source, kernel or build file touched, so the Linux compiled output at
+0c820fd1 is byte-identical to 53c363f8 and the carry-forward reasoning in that entry
+still applies unchanged.
+
+### What changed (2 files, +39/-0)
+
+- `docs/building_and_distribution.md` -- new `## AMD GPUs (ROCm/HIP)` section between
+  "Distribution Contents" and "CMake Options": what `-DUSE_HIP=ON` builds (the compute
+  libraries + `lfs_compute_tests`) and what it leaves to the CUDA path, the dependencies
+  supplied directly instead of through vcpkg (ROCm 7.x, GLM >= 1.0.1 via
+  `LFS_GLM_INCLUDE_DIR`, args via `LFS_ARGS_INCLUDE_DIR`, spdlog/nlohmann-json/TBB/OIIO/
+  OpenMesh, and for `BUILD_TESTS` GoogleTest plus a ROCm libtorch as `Torch_DIR`), a
+  configure/build/run block, and three gotchas: `CMAKE_HIP_ARCHITECTURES` auto-detects
+  when unset, `-DCMAKE_HIP_COMPILER` must NOT be passed (reconfigure drops `USE_HIP`),
+  and `lfs_compute_tests` must be run directly and serially. Also a `USE_HIP` row in the
+  existing CMake Options table and a pointer line under Requirements.
+- `README.md` -- one bullet in the existing "Current project notes" list pointing at that
+  section, so the neighbouring "LichtFeld Studio targets NVIDIA GPUs" line is qualified.
+
+### Doc placement: every location was checked, not just the README
+
+`git ls-tree -r --name-only moat-port | grep -E '\.(md|rst)$'` -- the only in-tree doc
+carrying real build commands is `docs/building_and_distribution.md`. The Docusaurus site
+under `docs/docs/` deliberately defers: `docs/docs/installation/index.md` points at the
+project Wiki, and `docs/docs/installation/building/windows.md` is literally one line,
+"Moved to [Wiki]". The root README likewise defers to the Wiki and only carries a
+descriptive bullet list. So the build block went in the one file that has one, and the
+README got a descriptive line in its own style -- no build steps imposed where the
+project keeps them elsewhere.
+
+### Verified against the build files rather than assumed
+
+- `ctest` is NOT wired on the HIP path, so the section does not mention it.
+  `enable_testing()` appears once in the tree, at `CMakeLists.txt:1009`, which is after
+  the `return()` at :57 that the `USE_HIP` branch takes; `cmake/HipCompute.cmake` and
+  `cmake/hip_tests/CMakeLists.txt` never call it. `gtest_discover_tests` still runs but
+  no `CTestTestfile.cmake` is generated. Every recorded validation on this project ran
+  the binary directly, which is consistent.
+- Binary path `build-hip/cmake/hip_tests/lfs_compute_tests` and the flag set are taken
+  from the recorded gfx90a runs earlier in this file, not invented.
+
+### Slow-network technique (this host, again)
+
+The full clone is still impractical here. A blob-filtered, no-checkout clone plus a
+sparse checkout of only the markdown gave a real working clone in ~21 s total, which
+`protect-fork`, `jargon.py --port` and a normal `git commit`/`git push` all accept:
+
+```
+git clone --filter=blob:none --no-checkout --branch moat-port <fork> projects/LichtFeld-Studio/src
+git -C projects/LichtFeld-Studio/src sparse-checkout init --no-cone
+git -C projects/LichtFeld-Studio/src sparse-checkout set '/docs/*.md' '/*.md'
+git -C projects/LichtFeld-Studio/src checkout moat-port
+git -C projects/LichtFeld-Studio/src branch master origin/master   # jargon.py needs a local master
+```
+Files outside the sparse set carry skip-worktree, so `git status --porcelain` stays clean
+and the integrity gate reads correctly. `git show <ref>:<path>` fetches individual blobs
+on demand, which is how the CMake files were read without checking them out. Note the
+last line: `jargon.py --port` resolves `master..moat-port` and fails on a clone that has
+only the remote-tracking ref. NOT usable for a build -- this is a docs/diff checkout.
+
+### Jargon: 3 pre-existing instances, 0 new
+
+`python3 utils/jargon.py --port LichtFeld-Studio` -> 3 instances, all in commit bodies
+older than 5cbfdf1a (`13e585d47:31` 'MOAT'; `e24593f4e:14` 'Strategy A' and
+'colmap model'). 0c820fd1 contributes none. They cannot be amended away (both commits sit
+at or below validated shas), so they are now registered as deferral
+`lfs-commit-msg-jargon-13e585d-e24593f` for the same PR-prep message rewrite that
+`lfs-commit-msg-drop-alien-ref` needs. `utils/prose.py` on both edited files reports only
+pre-existing hard-wrapping and the pre-existing non-ASCII bullet separators in README.md;
+nothing added by this commit.
+
+### Tooling defect this round hit -- needs a person (deferral registered)
+
+`advance-head` carried the linux-gfx90a FAILURE forward to 0c820fd1 instead of retiring
+it. That is `advance_head`'s deliberate rule (`utils/moatlib.py:2159-2183`): an inert
+delta "cannot have fixed anything", so the failure moves up to the new head. It is the
+wrong answer when the failure was the DOCUMENTATION gate, which only an inert delta can
+fix. Consequence: `failure_stands()` is now True at head, so once the stage reaches
+`review-passed` the selector routes linux-gfx90a to the porter again, in the exact loop
+that function's docstring was written to prevent. No porter-legal call clears it --
+`ARCH_TRANSITIONS` allows `validation-failed -> completed` only, which is a validator's
+write and needs a real GPU pass. Registered as `lfs-advance-head-carries-doc-gate-failure`.
+Practical unblock for whoever picks this up: dispatch the linux-gfx90a VALIDATOR
+explicitly after the review round rather than trusting the selector's routing; a real
+GPU pass at 0c820fd1 records `completed` and clears the stale failure by itself.

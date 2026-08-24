@@ -60,6 +60,33 @@
       "upstream_issue": null,
       "created_at": "2026-08-24T18:01:33Z",
       "decided": null
+    },
+    {
+      "id": "lfs-advance-head-carries-doc-gate-failure",
+      "kind": "other",
+      "component": null,
+      "summary": "moatlib advance_head carries a validation-failed record forward across an inert (doc-only) delta, on the rule that a delta which cannot change compiled output cannot have fixed anything. That rule is wrong for a DOCUMENTATION-GATE failure, which a doc-only commit is exactly the fix for: linux-gfx90a failed 53c363f8 for missing ROCm build docs, the porter's doc-only fix 0c820fd1 was classified inert, and failed_sha was advanced to 0c820fd1, so failure_stands() keeps returning True and arch_task will route linux-gfx90a back to the porter forever once the stage reaches review-passed. ARCH_TRANSITIONS allows validation-failed -> completed only, so no porter-legal call clears it; only a validator recording a real GPU pass does. Needs a person's ruling: either advance_head should not carry a failure forward when the failure was a documentation/prose gate rather than a code failure (it cannot tell today), or there should be an explicit way to retire a stale failure record.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md",
+        "utils/moatlib.py:2159-2183 (advance_head), :2740-2758 (failure_stands), :211-215 (ARCH_TRANSITIONS)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-24T22:28:54Z",
+      "decided": null
+    },
+    {
+      "id": "lfs-commit-msg-jargon-13e585d-e24593f",
+      "kind": "other",
+      "component": null,
+      "summary": "jargon.py --port reports 3 in-house-vocabulary instances still on moat-port, all in commit bodies older than 5cbfdf1a and none contributed by later commits: 13e585d47:31 'Authored with Claude (claude-sonnet-4-6 via MOAT).' and e24593f4e:14 'Strategy A (colmap model)' (two hits: 'Strategy A' and 'colmap model'). They are upstream-visible because the whole branch ships. They cannot be fixed by amending, since 13e585d47/e24593f4e are at or below shas archs have validated; the fix belongs in the same PR-prep message rewrite as lfs-commit-msg-drop-alien-ref. Rewrites: drop 'via MOAT' from the disclosure; say 'a single compatibility header' rather than 'Strategy A (colmap model)'.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-24T22:29:06Z",
+      "decided": null
     }
   ]
 }

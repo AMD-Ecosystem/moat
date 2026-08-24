@@ -185,3 +185,23 @@ was not vacuous.
 Nothing here is guarded on Windows. MSVC's STL is merely the first to implement P0533R9;
 ROCm/llvm-project#285 notes that libstdc++ doing so will break Linux identically. A
 `WIN32`-only guard, or a ROCm version check, would miss that. Probe for the capability.
+
+## A rate-limited host can still get a usable fork clone: filter the blobs, sparse the tree
+
+Some hosts have GitHub blob traffic throttled hard enough that a full clone of a large repo is not survivable inside a stop-discipline budget (measured at roughly 1-3 MB/min for a ~110 MB repo, so more than half an hour before anything is readable). A lazy promisor checkout of the whole tree is no better -- it re-fetches per file and stalls part way through. But history and trees are cheap: a blob-filtered clone with the working tree narrowed to the files you actually need is seconds, not minutes.
+
+```
+git clone --filter=blob:none --no-checkout --branch <port-branch> <fork> <dest>
+git -C <dest> sparse-checkout init --no-cone
+git -C <dest> sparse-checkout set '/docs/*.md' '/*.md'    # the paths this round edits
+git -C <dest> checkout <port-branch>
+git -C <dest> branch master origin/master                 # or the fork's default branch
+```
+
+Why each line matters:
+
+- `--filter=blob:none` fetches every commit and tree but no file contents, so the diff, log, and `git ls-tree` all work immediately. `git show <ref>:<path>` then pulls single blobs on demand -- enough to read a handful of build files without ever checking them out.
+- Files outside the sparse set carry `skip-worktree`, so `git status --porcelain` stays clean and the integrity gate reads correctly rather than reporting the rest of the tree as deleted.
+- The last line is not optional for MOAT tooling: `jargon.py --port` resolves `<default>..<port-branch>` and fails with "cannot resolve" on a clone that has only the remote-tracking ref.
+
+This is a docs, diff, and review checkout, not a build checkout -- a compile needs the whole tree and there is no way around paying for it. Use it for a documentation-only porter round, a reviewer reading a delta, or a validator verifying that a delta is confined to another platform's guards. (LichtFeld-Studio)
