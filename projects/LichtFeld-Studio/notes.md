@@ -1812,3 +1812,122 @@ so `CMakeLists.txt` and all sources are absent from the working tree though pres
 index. Run `git -C projects/LichtFeld-Studio/src sparse-checkout disable` (which fetches the
 missing blobs) before configuring, or the build will fail on missing files for reasons that
 have nothing to do with the port.
+
+## Validation 2026-08-24 (validator, linux-gfx90a) -- 7cd4d569, COMPLETED (carry-forward, no GPU re-run)
+
+Dispatched explicitly (not by the selector) to resolve deferral
+`lfs-advance-head-carries-doc-gate-failure`: `advance_head` had rewritten this arch's
+`failed_sha` across three doc-only porter/reviewer rounds (`0c820fd1`, `00187204`, `7cd4d569`)
+without ever routing the arch back to a validator, so `state` still read `validation-failed`
+at a head where the recorded failure (missing ROCm build docs at `53c363f8`) has been answered
+three times over and was never actually observed. `failure_stands()` cannot tell a
+documentation-gate failure from a code failure, so it kept reporting the stale failure as
+current (`failed_sha == head_sha` by construction of the rewrite). That is a tooling gap, not
+a verdict on this commit; the deferral is left open for a person's ruling on the general
+mechanism, and this entry is the arch-specific resolution.
+
+### Evidence path: source-class carry-forward from the last real GPU run, not a fresh run
+
+Last real GPU run on this arch: `235c590583896c340aa32154f3fb12cc446418e6`, 2026-06-07
+(test-gate-expansion entry above), 2048 tests / 119 suites, 2043 passed, 5 documented
+non-bug failures. Every validated_sha this arch has recorded since (`d33abd70`, `60c8b90b`,
+the carry-forward attempted at `53c363f8`) is a chain of carry-forwards from that run, none
+disputed by any later evidence.
+
+Re-derived the whole span independently rather than trusting the chain of individual entries:
+
+```
+git -C projects/LichtFeld-Studio/src diff --stat 235c5905..7cd4d569
+git -C projects/LichtFeld-Studio/src diff 235c5905..7cd4d569 -- <each changed file>
+```
+
+12 files changed end to end, 85 insertions / 43 deletions across the whole span from the last
+real run to the current head. Every hunk falls into one of four inert classes, verified by
+reading the diff content directly (not inferred from commit titles):
+
+1. **Comment/message text only** -- `CMakeLists.txt`, `cmake/HipCompute.cmake`,
+   `cmake/hip_tests/CMakeLists.txt`, `src/training/CMakeLists.txt`,
+   `src/training/rasterization/gsplat/Utils.cuh`,
+   `src/core/include/core/cuda/cuda_to_hip.h`, the three `*_win_stub.cpp` header comments:
+   the in-house-vocabulary scrub (`d33abd70`, `60c8b90b`) and the `message(STATUS "[ROCm]...")`
+   text `53c363f8`/`5cbfdf1a` touched. No code semantics anywhere in these hunks.
+2. **`if(WIN32)` / `#if defined(_WIN32)` guarded only** -- the `/Fo<OBJECT>` -> `-o <OBJECT>`
+   compile-rule replace and the `clang_rt.builtins` link block in `HipCompute.cmake`; the
+   `CUDACachingAllocator.h` rewrite (every `+`/`-` line sits inside `#if defined(_WIN32)`; the
+   `#else` / `#include_next` Linux arm shows zero changed lines in the hunk, confirmed by
+   reading the hunk context directly, not the file as a whole). Unreachable on this arch.
+3. **Generator expression, evaluates identically on Linux** -- `cmake/hip_tests/CMakeLists.txt`'s
+   `OpenImageIO::OpenImageIO` -> `$<$<NOT:$<PLATFORM_ID:Windows>>:OpenImageIO::OpenImageIO>`.
+   `NOT(PLATFORM_ID:Windows)` is true here, so the link line is unchanged.
+4. **Dead-code removal, unreachable given this arch's own build recipe** -- `5cbfdf1a` drops
+   the `if(NOT DEFINED CMAKE_HIP_ARCHITECTURES ...) set(... "gfx90a")` default in
+   `HipCompute.cmake`. Read `git show 5cbfdf1a` directly: the commit only removes a default
+   that is overridden the moment `-DCMAKE_HIP_ARCHITECTURES=gfx90a` is passed on the command
+   line, which every recorded build command for this arch does (notes.md:47 and every
+   `agent_space/lfs_build.sh` invocation since). The default was literally unreachable code
+   on this arch's own recipe; removing it changes nothing this arch's builds ever executed.
+5. **Documentation only** -- `docs/building_and_distribution.md` (+39, the whole
+   `## AMD GPUs (ROCm/HIP)` section) and one `README.md` line pointing at it. No `.cmake`,
+   `.cpp`, `.cuh`, or `.h` file with build/device-code effect.
+
+No file outside these five classes appears in the 235c5905..7cd4d569 diff. This is a stronger
+guarantee than a binary-equivalence build comparison (which only proves the compiler produced
+the same output for the one input it was given) because it establishes the input itself is
+unchanged everywhere this arch's compiler configuration can reach -- the same standard the
+53c363f8 validation entry above applied to the smaller 5cbfdf1a..53c363f8 slice, extended here
+to the full span back to the last real run. codeobj_diff.py / a from-scratch dual build was not
+run: the source-identity argument above is conclusive on its own and a full build was not
+needed to reach it (this host's fork checkout is the same blobless sparse clone noted above;
+`git diff`/`git show` on individual files fetched the handful of needed blobs lazily and
+quickly, unlike a full clone or full sparse-checkout disable).
+
+### Documentation gate: PASS (re-checked myself, not taken on faith)
+
+`git show 7cd4d569:docs/building_and_distribution.md` -- the `## AMD GPUs (ROCm/HIP)` section
+is present (build recipe, dependency list, `USE_HIP` CMake-options row linking back to the
+anchor). `README.md` links to it (`#amd-gpus-rocmhip`). Matches what the three review rounds
+above already verified line by line; this is an independent re-read of the file at head, not a
+re-use of their verdict.
+
+### Jargon gate: clean (re-run myself)
+
+```
+python3 utils/jargon.py --port LichtFeld-Studio
+```
+3 instances, all pre-existing in `13e585d47`/`e24593f4e` (older than the last real GPU run at
+`235c5905`, already recorded in deferral `lfs-commit-msg-jargon-13e585d-e24593f`, cannot be
+fixed by amending since both commits are at or below shas multiple arches have validated). Zero
+new instances from the 235c5905..7cd4d569 span. Not a blocker per the existing deferral.
+
+### CUDA no-regression gate: skipped (carried-forward revalidation)
+
+Per the validator role, this gate is skipped on a carried-forward revalidation. This project's
+CUDA gate has still never been recorded at any sha; flagging again (as the 53c363f8 entry
+above already did) for the next Linux host that does a FULL build here, not a carry-forward.
+`/opt/conda/envs/cuda-12.8/bin/nvcc` 12.8.93 is present and was confirmed working on this host
+in the 53c363f8 session.
+
+### Cosmetic, not a finding: `Utils.cuh:21` grammar
+
+`src/training/rasterization/gsplat/Utils.cuh:21` reads "...the a prior gsplat port confirmed
+this" -- a leftover article from the `d33abd70` in-house-vocabulary scrub (`the completed MOAT
+gsplat port` -> `the a prior gsplat port`), already carried forward and reviewed clean at the
+time. Grammar-only, no semantic content, not touched here to avoid amending an already-carried
+commit; worth a one-line fix whenever that file is next legitimately touched.
+
+### Verdict: COMPLETED (linux-gfx90a)
+
+```
+python3 utils/moatlib.py set-state LichtFeld-Studio linux-gfx90a completed --agent validator
+```
+`validated_sha = 7cd4d569387de493f4ac8fa677e6747fe5bffcb3`. This clears the stale
+`validation-failed` record; the underlying GPU evidence is still the 2026-06-07 real run at
+`235c5905` (2048 tests / 119 suites, 2043 passed, 5 documented non-bug failures), carried
+forward across a fully source-identity-verified span to the current head. No new GPU run was
+performed this session -- none was needed, and the honesty gate is satisfied by the
+source-identity argument above rather than by re-running tests that would produce the
+identical binary and therefore the identical result.
+
+The general tooling defect (`failure_stands()` cannot distinguish a documentation-gate failure
+from a code failure) remains open in deferral `lfs-advance-head-carries-doc-gate-failure` for a
+person's ruling; this entry resolves only this arch's record at this head.
