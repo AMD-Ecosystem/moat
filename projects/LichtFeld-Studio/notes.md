@@ -1152,3 +1152,147 @@ Port an equivalent of `projects/alien/src/cmake/hip_link_win.py` for `CMAKE_HIP_
 minus the `-fgpu-rdc`/`--hip-link`/`-Xoffload-linker` parts alien needs and this project does not.
 The pieces that apply here are stripping `-fuse-ld=lld-link` and `-Xlinker`-wrapping MSVC-style
 flags and bare `.lib` names so the GCC-driver clang stops eating backslashes.
+
+## Validation 2026-08-24 (validator, linux-gfx90a) -- 53c363f8, VALIDATION-FAILED (missing build docs)
+
+Summary up front: the code-correctness carry-forward finding below is real and stands
+(device code and test binary provably unchanged on this arch since 5cbfdf1a). But the
+overall verdict is FAILED, not completed, on a separate gate: **the ROCm/HIP build is
+undocumented anywhere in the tree at 53c363f8**. This was caught only at the final
+pre-completion check (validator role step 4 / porter.md step 7: "the validator will
+hold the arch if it is missing"), after `carry-forward` had already been recorded and
+briefly flipped this platform to `completed`. That was a sequencing mistake in this
+session -- the doc/jargon check belongs before recording any pass -- corrected by
+`python3 utils/moatlib.py set-state LichtFeld-Studio linux-gfx90a validation-failed`
+immediately after finding it, which records `failed_sha = 53c363f8` (the
+`carry_forward` record above stays in the JSON as history; `state` is what governs).
+
+### Documentation gate: FAILED
+
+`git grep -liE "rocm|USE_HIP|hip_compat|__HIP_PLATFORM_AMD__" 53c363f8` (on the bare
+mirror, tree-wide) matches only `CMakeLists.txt`, `cmake/HipCompute.cmake`,
+`cmake/hip_tests/CMakeLists.txt` -- build files -- plus one false positive
+(`docs/pnpm-lock.yaml:1377`, a base64 integrity hash that happens to contain the
+substring "rocm"). No `.md` file anywhere in the tree -- not `README.md`, not
+`docs/building_and_distribution.md` (the project's own CUDA build doc, checked
+directly: zero ROCm/HIP/AMD hits), nor anywhere under `docs/docs/` -- mentions the
+ROCm/HIP build, `USE_HIP`, the required CMake flags, or how to build/run
+`lfs_compute_tests`. This has been true since the port's first commits (13e585d47 /
+e24593f4e) and was never caught across 5+ prior validation/review rounds on this
+project (2026-05-31 through 2026-08-24) -- a genuine, longstanding gap, not something
+introduced by 53c363f8.
+
+Sent back per the validator role: this is a porter-scope fix (add a ROCm/HIP build
+section to `docs/building_and_distribution.md`, matching its existing CUDA-build
+house style, per porter.md step 7), not something for a validator to add quietly.
+Every arch validates the same content, so this blocks all platforms equally, not just
+gfx90a; it is not an arch-specific finding.
+
+### Jargon gate: clean (re-verified, no new instances)
+
+`utils/jargon.py --port` needs a local fork checkout (`projects/<name>/src/.git`),
+which this host did not have (see network note below). Reproduced the same check
+against the bare mirror directly:
+```
+python3 utils/jargon.py -C <bare-mirror> --commits master..moat-port --diff master...moat-port
+```
+Result: 3 instances, both already known (deferral `lfs-commit-msg-drop-alien-ref` is a
+different, PR-body-only finding from the reviewer; these 3 are the older
+`13e585d47`/`e24593f4e` instances first flagged 2026-08-20). All 3 predate 5cbfdf1a
+and are unrelated to this round's delta; `53c363f8` contributes zero new jargon
+(matches the reviewer's 2026-08-24 finding exactly). Not why this validation failed --
+recorded here so the next validator does not need to re-run it, and left as-is per the
+existing deferred item rather than blocking again on the same pre-existing debt.
+
+### Code-correctness finding this session actually established (still valid)
+
+Platform state was `revalidate` (head_sha advanced 5cbfdf1a -> 53c363f8 from the
+2026-08-20/24 windows-gfx1151 build-fix round; prior linux-gfx90a evidence was at 5cbfdf1a).
+
+### Delta re-verified independently (not just taking the reviewer's word)
+
+`moatlib.py classify LichtFeld-Studio 5cbfdf1a 53c363f8` returns `class=unknown
+arch_independent=False (classification failed -> revalidate)` on this host (the
+reviewer's session saw `class=mixed`; either way the tool is conservative and does
+not clear a carry-forward by itself).
+
+This host's outbound network to codeload.github.com/GitHub blob content is severely
+rate-limited (a `git clone` of the fork sustained roughly 1-3 MB/min; a lazy
+promisor-filtered checkout of a single tree fetched ~280 files of a much larger tree
+in over 4 minutes and was still incomplete). A full build-at-both-shas + codeobj_diff
+comparison was not practical inside the stop-discipline budget. Instead, verified the
+actual diff content directly against a `--filter=blob:none` bare mirror (cheap: this
+only fetches the handful of blobs that changed, not the whole tree):
+
+```
+git clone --bare --filter=blob:none https://github.com/AMD-Ecosystem/LichtFeld-Studio.git lfs.git
+git --git-dir=lfs.git diff --stat 5cbfdf1a7b1b6a6553ce077a5aa8d6209fd3f51c 53c363f8dfa285bfd917570baa151c8cc47e5235
+git --git-dir=lfs.git diff 5cbfdf1a7b1b6a6553ce077a5aa8d6209fd3f51c 53c363f8dfa285bfd917570baa151c8cc47e5235
+```
+
+3 files, +20/-14, matches the reviewer's count exactly:
+- `cmake/HipCompute.cmake`: the entire hunk (the `/Fo<OBJECT>` -> `-o <OBJECT>` REPLACE
+  and its comment) is inside an `if(WIN32)` block. Nothing outside it changed.
+- `cmake/hip_tests/CMakeLists.txt`: one line, bare `OpenImageIO::OpenImageIO` ->
+  `$<$<NOT:$<PLATFORM_ID:Windows>>:OpenImageIO::OpenImageIO>`. This generator
+  expression evaluates to the identical `OpenImageIO::OpenImageIO` on Linux
+  (`NOT(PLATFORM_ID:Windows)` is true here) -- byte-identical link line.
+- `src/hip_compat/c10/cuda/CUDACachingAllocator.h`: every changed line (`-`/`+`) sits
+  inside `#if defined(_WIN32)`; the diff hunk shows the `#else` line and the
+  `#include_next <c10/cuda/CUDACachingAllocator.h>` Linux branch with no `+`/`-`
+  marker at all (unchanged context). CMake's HIP-language build for this project is
+  Linux-only compiled through the `#else` arm; that arm is untouched.
+
+So the delta is not merely "probably Windows-only" per the reviewer's reading of the
+code shape -- every line CMake/clang can reach on this arch is textually identical
+before and after. This is a stronger guarantee than a binary-equivalence build
+comparison (which only proves the compiler produced the same output for *this*
+input, not that the input was unchanged) and was reached without needing a working
+checkout at all.
+
+Code-side, this delta IS carry-forward eligible on this arch (recorded, then
+superseded by the validation-failed verdict above -- kept in the JSON's
+`carry_forward` history field for whichever host resumes this):
+```
+python3 utils/moatlib.py carry-forward LichtFeld-Studio linux-gfx90a 53c363f8dfa285bfd917570baa151c8cc47e5235 source-class "..."
+```
+Device code and the compiled test binary are unchanged from the 5cbfdf1a build this
+would carry forward from (2048 tests / 119 suites, 2043 passed / 5 documented non-bug
+failures, last actually run on real gfx90a hardware at the 2026-06-07 test-gate-expansion
+entry above and unaffected by every subsequent Linux-side carry-forward since). Once
+the porter round adds the missing documentation and head_sha advances again, this
+platform can re-derive the same carry-forward reasoning against the new head (the code
+diff over the doc-only commit will itself be doc-only and should auto-carry-forward,
+or be re-verified the same way if `classify` is again conservative) without needing
+another GPU run, PROVIDED the doc commit does not also change source.
+
+### CUDA no-regression gate: not run
+
+Skipped per the validator role's explicit rule for carried-forward revalidations.
+Also observed as still never recorded for this project at any prior sha in this file
+(only the windows-gfx1151 entry above notes it was skipped there for lack of a
+toolkit) -- flagging so the next Linux host that does a FULL build (not a
+carry-forward) picks it up. `/opt/conda/envs/cuda-12.8/bin/nvcc` (12.8.93) is present
+and confirmed working on this host, so nothing environmental blocks it next time.
+
+### Environment drift note (host-local, not a fork issue)
+
+This host's ROCm install moved since the paths recorded earlier in this file: there is
+no `/opt/rocm` any more. The TheRock Python-package SDK now lives under
+`/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel/` (hipcc,
+clang++, clang all under `.../_rocm_sdk_devel/lib/llvm/bin/` and
+`.../_rocm_sdk_devel/bin/`). GPUs unchanged: 4x MI250X GCD (gfx90a), confirmed via
+`rocm-smi --showproductname`. `/var/lib/jenkins/moat/_deps/{glm-1.0.1,lfs_args}` (the
+vendored glm 1.0.1 and Taywee/args this project's build needs) were also absent on
+this host and were re-vendored fresh (git clone glm tag 1.0.1; curl args.hxx) for a
+future build attempt -- not used this session since no build was performed, left in
+place for the next validator/porter on this host. Apt packages installed this session
+that a future gfx90a build here will also need: `libopenmesh-dev nlohmann-json3-dev
+libspdlog-dev gcc-14 g++-14 libstdc++-14-dev` (previously present on some earlier host
+instance per this file's older notes, gone on this one). None of this is a fork defect;
+recorded so the next session on this host does not re-diagnose it. If the next
+validator/porter on this host hits the same slow-clone wall, the
+`--filter=blob:none` bare-mirror + targeted `git diff`/`git show` technique used here
+is far cheaper than a full clone when only a diff or a couple of files are needed;
+a full working tree still needs the slow full clone (or a lazy checkout, which was
+also too slow to finish here for the whole tree, ~280/​~2000+ files in >4 min).
