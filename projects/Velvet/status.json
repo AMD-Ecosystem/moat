@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-08-24T20:59:32Z",
+  "updated_at": "2026-08-24T21:35:50Z",
   "head_sha": "7ccd4a98451e144e05f5bdf19827a28471f787e0",
   "depends_on": [],
   "pr_url": "https://github.com/vitalight/Velvet/pull/9",
@@ -24,10 +24,10 @@
       "state": "completed",
       "blocked": true,
       "blocked_reason": "compute-only CDNA2 (MI250X): no graphics pipeline, AMD driver refuses a GL context, so OpenGL<->HIP buffer interop (hipGraphicsGLRegisterBuffer) is unavailable and the cloth-sim kernels behind it cannot run; builds but is not GPU-runnable. Port validated on RDNA (gfx1100, gfx1201).",
-      "validated_sha": "bb06b44",
+      "validated_sha": "7ccd4a98451e144e05f5bdf19827a28471f787e0",
       "started_at": "2026-06-05T05:26:23Z",
-      "completed_at": "2026-06-19T23:42:59Z",
-      "updated_at": "2026-06-23T22:21:52Z",
+      "completed_at": "2026-08-24T21:35:50Z",
+      "updated_at": "2026-08-24T21:35:50Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -43,10 +43,10 @@
       },
       "last_agent": "validator",
       "carry_forward": {
-        "to": "bb06b44",
-        "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:21:52Z"
+        "to": "7ccd4a98451e144e05f5bdf19827a28471f787e0",
+        "method": "binary-equiv",
+        "detail": "codeobj_diff verdict=identical (13 exports) cross-compiled on this linux-gfx1100 host (-DCMAKE_HIP_ARCHITECTURES=gfx90a) at both bb06b44 (scratch tree) and 7ccd4a9 (moat-fix-9 tip); gfx90a device code",
+        "at": "2026-08-24T21:35:50Z"
       }
     },
     "linux-gfx1100": {

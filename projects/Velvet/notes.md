@@ -1217,3 +1217,143 @@ call per the fix round note above; not attempted here.
 `git status --porcelain` in `projects/Velvet/src` clean (fork clone unchanged, still on
 `moat-fix-9` at `7ccd4a9`; scratch build dirs were untracked and removed). No push to the
 fork was needed or made.
+
+## Validation 2026-08-24 (linux-gfx90a, revalidation of fix round, carry-forward, executed cross-host)
+
+### Authorization
+
+Jeff Daily authorized (2026-08-24) satisfying linux-gfx90a's revalidation of the Velvet fix
+round by binary-equivalence carry-forward, executed on a linux-gfx1100 host, because
+linux-gfx90a's record is `blocked` for run-validation (compute-only CDNA2, no graphics
+pipeline for this OpenGL GUI project -- see the CRITICAL section above) while a
+binary-equivalence carry-forward needs only builds, not a run, and linux-gfx90a holds a real
+completed validation at the published tip `bb06b44`. This authorization covers both the
+cross-host execution and leaving the `blocked` flag/reason untouched (a POLICY record of a
+hardware capability gap, not a defect, and not something this carry-forward changes or needs
+to change).
+
+### Context
+
+Dispatched by direct instruction, not the selector (`next-task linux-gfx90a` returns `NONE`
+for Velvet because `blocked` archs are not dispatch candidates; that is expected and is why
+this round is authorized explicitly rather than picked up automatically). `head_sha` on
+`moat-fix-9` is `7ccd4a98451e144e05f5bdf19827a28471f787e0` (`published_sha` stays `bb06b44`,
+PR #9 open, `moat-port` untouched). linux-gfx90a's prior record: `state=completed`,
+`validated_sha=bb06b44`, `blocked=true`. This replicates the method of the same-day
+linux-gfx1100 carry-forward above, adapted for cross-compilation (no gfx90a GPU on this
+host; none is needed for a build-only equivalence check).
+
+### Method note (cuda-to-rocm skill, strategy-a-cmake.md, just promoted from TurboFNO)
+
+Used `utils/codeobj_diff.py` on the two binaries directly (not a whole-build-dir diff), which
+is immune to the `__hip_cuid_<hash>` path artifact the skill just documented: that hash is
+derived from the source path as spelled on the compiler command line, so two same-commit
+checkouts built in different directories can show spurious raw-fatbin diffs even with zero
+source change. `codeobj_diff.py` compares normalized device ISA plus exported symbols, so
+building the old sha in an `agent_space` scratch tree and the new sha in the fork clone (two
+different absolute paths) is sound evidence, not a shortcut.
+
+### Classification
+
+Same delta as the linux-gfx1100 round: `bb06b44..7ccd4a9`, `class=mixed` (CMake include-guard
+`if(NOT USE_HIP) ... endif()`, a host-only `AbortOnHipError` helper, and a byte-for-byte BSD-3
+header swap for the three vendored CUDA-samples files). `49f6db9^{tree} == 7ccd4a9^{tree}`
+(message-only amendment in between), so this is the same tree three prior `verdict=identical`
+gfx1100 results already covered; this round is the first gfx90a measurement of it.
+
+### Build (both shas, cross-compiled for gfx90a, no GPU required)
+
+```bash
+export PATH=/opt/rocm/bin:/opt/rocm/llvm/bin:/usr/local/bin:/usr/bin:/bin
+
+# old sha (bb06b44), scratch tree via git archive
+mkdir -p agent_space/Velvet-gfx90a-crosscompile/base-bb06b44
+(cd projects/Velvet/src && git archive bb06b44) | \
+  (cd agent_space/Velvet-gfx90a-crosscompile/base-bb06b44 && tar -x)
+cd agent_space/Velvet-gfx90a-crosscompile/base-bb06b44
+cmake -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_IGNORE_PATH=/opt/conda -DCMAKE_PREFIX_PATH=/opt/rocm \
+  -DCMAKE_TOOLCHAIN_FILE=/var/lib/jenkins/vcpkg/scripts/buildsystems/vcpkg.cmake
+bash utils/timeit.sh Velvet compile -- cmake --build build -j$(nproc)
+
+# head sha (7ccd4a9), in place in the fork clone (already on moat-fix-9 at this tip)
+cd projects/Velvet/src
+cmake -B build-gfx90a -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_IGNORE_PATH=/opt/conda -DCMAKE_PREFIX_PATH=/opt/rocm \
+  -DCMAKE_TOOLCHAIN_FILE=/var/lib/jenkins/vcpkg/scripts/buildsystems/vcpkg.cmake
+bash utils/timeit.sh Velvet compile -- cmake --build build-gfx90a -j$(nproc)
+```
+
+Both configure and build RC=0 at both shas. Warnings only, same shape as every prior
+validation of this project (`nodiscard hipError_t` ignored-return-value on pre-existing
+`cudaDeviceSynchronize`/`cudaEventElapsedTime`/`cudaEventDestroy`/`cudaMemsetAsync`/CUB
+calls). No gfx90a-specific compile issue that the gfx1100 build did not already show --
+nothing to escalate.
+
+`strings .../bin/Velvet | grep gfx90a` confirms `hipv4-amdgcn-amd-amdhsa--gfx90a` /
+`amdgcn-amd-amdhsa--gfx90a` present in both binaries.
+
+### Binary-equivalence check
+
+```bash
+python3 utils/codeobj_diff.py \
+  agent_space/Velvet-gfx90a-crosscompile/base-bb06b44/build/bin/Velvet \
+  projects/Velvet/src/build-gfx90a/bin/Velvet
+# -> verdict=identical
+#    Velvet vs Velvet: identical (exported symbols + device ISA identical (13 exports))
+```
+
+Same exports count (13) as every gfx1100 measurement of the same delta. No overall
+`indeterminate` was seen (only the two real binaries were compared, not whole build trees,
+so no CMake compiler-probe noise entered the comparison).
+
+### Record
+
+```bash
+python3 utils/moatlib.py carry-forward Velvet linux-gfx90a 7ccd4a9 binary-equiv \
+  "codeobj_diff verdict=identical (13 exports) cross-compiled on this linux-gfx1100 host
+   (-DCMAKE_HIP_ARCHITECTURES=gfx90a) at both bb06b44 (scratch tree) and 7ccd4a9 (moat-fix-9
+   tip); gfx90a device code confirmed in both binaries; carry-forward per Jeff Daily's
+   2026-08-24 authorization since gfx90a's blocked GL-interop gate needs only builds, not a
+   GPU run"
+```
+
+`carry_forward()` only requires `state=="completed"` to carry (verified by reading
+`utils/moatlib.py`); it does not touch or check the `blocked` flag, so no `set-blocked`
+call was needed or made. Result: `linux-gfx90a.state=completed`,
+`validated_sha=7ccd4a98451e144e05f5bdf19827a28471f787e0`, `blocked=true` and
+`blocked_reason` unchanged (still the GL-interop capability gap; correct -- this round
+revalidates the build, not the runtime, and the runtime gap has not changed).
+
+### CUDA gate, jargon, documentation
+
+Not re-run: this is a carried-forward revalidation of a head_sha already covered by three
+prior `verdict=identical` measurements and an already-clean `jargon.py --port Velvet` and
+unchanged build documentation (see the linux-gfx1100 carry-forward section above, same
+head_sha).
+
+### Integrity
+
+`git status --porcelain` in `projects/Velvet/src` clean after removing the untracked
+`build-gfx90a/` scratch build dir (no tracked file touched, no push made or needed; the
+clone stays on `moat-fix-9` at `7ccd4a9`, unmodified). The `agent_space` scratch tree used
+for the old-sha build was removed.
+
+### fix-ready
+
+```bash
+python3 utils/moatlib.py fix-ready Velvet
+# -> Velvet: fix-ready=False
+#    BLOCKING: windows-gfx1101=completed, windows-gfx1201=completed
+```
+
+Confirmed directly against `gate_satisfied()`: `wave64=True`, `wave32=True` (already covered
+by linux-gfx1100), `windows=False`. The wave64 gate this round exists to close is now
+satisfied at `head_sha=7ccd4a9` -- this carry-forward is what flipped it from unsatisfied to
+satisfied. The remaining blocker is `windows`: `windows-gfx1101` and `windows-gfx1201` both
+still hold `validated_sha=bb06b44` (pre-fix-round), so neither is evidence at the current
+head yet, even though both are `state=completed`. That is a Windows validator's revalidation
+to run, not this round's or this host's -- no Windows host, no code change needed, nothing
+for a person to decide yet. `upstream.py --fix-review` needs the windows gate too (it shares
+`_gate_blockers` with `pr_ready`), so the fix round is not ready for that step until a
+Windows arch revalidates at `7ccd4a9`.

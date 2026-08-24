@@ -75,3 +75,7 @@
 {"kind":"phase","ts":"2026-08-24T20:58:43Z","phase":"compile","seconds":9.328,"exit":0,"cmd":"cmake --build projects/Velvet/src/build_new -j64"}
 {"kind":"phase","ts":"2026-08-24T20:59:08Z","phase":"compile","seconds":9.352,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/agent_space/velvet-old-bb06b44/build_old -j64"}
 {"kind":"session","ts":"2026-08-24T21:00:16Z","epoch":1787605216.870153786,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-24T21:34:33Z","epoch":1787607273.850917876,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-24T21:35:08Z","phase":"compile","seconds":10.580,"exit":0,"cmd":"cmake --build agent_space/Velvet-gfx90a-crosscompile/base-bb06b44/build -j64"}
+{"kind":"phase","ts":"2026-08-24T21:35:30Z","phase":"compile","seconds":10.449,"exit":0,"cmd":"cmake --build projects/Velvet/src/build-gfx90a -j64"}
+{"kind":"session","ts":"2026-08-24T21:37:33Z","epoch":1787607453.223088082,"event":"end","platform":"linux-gfx90a"}
