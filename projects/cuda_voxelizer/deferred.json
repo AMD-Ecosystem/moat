@@ -5,7 +5,7 @@
       "id": "cuda-voxelizer-nvidia-proprietary-rescan",
       "kind": "other",
       "component": null,
-      "summary": "Rescan with the fixed scan_nvidia: src/libs/cuda/helper_cuda.h and helper_string.h carry the pre-2017 CUDA samples EULA-pointer notice (the known cuda_voxelizer case that motivated the EULA markers). Standing was established by reading, but no recorded ruling exists; needs a person's confirmation.",
+      "summary": "Rescan with the fixed scan_nvidia: src/libs/cuda/helper_cuda.h and helper_string.h carry the pre-2017 CUDA samples EULA-pointer notice (the known cuda_voxelizer case that motivated the EULA markers). Standing was established by reading, but no recorded ruling exists; needs a person's confirmation. COUNSEL RULING (2026-08-24): swap helper_cuda.h/helper_string.h for NVIDIA's BSD-3-Clause 2022 versions at the tip BEFORE any fork is created; never host the proprietary vintage at our tip.",
       "refs": [
         "moat main b336246 (case/wording-proof scan_nvidia)"
       ],
