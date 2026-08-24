@@ -2635,3 +2635,88 @@ and `HEAD` is `b87423d8`. Nothing has changed since
 So the next reviewer can confirm `git diff b87423d8 HEAD` is empty, note that the prior
 re-review stands, and pass without re-reading the delta. The real next step is a VALIDATOR at
 `b87423d8` -- and not on windows-gfx1151 until the `dxgmms2` crashes are resolved.
+
+## Review 2026-08-24 (linux-gfx90a, reviewer) -- `b87423d8` -- REVIEW-PASSED
+
+Second reviewer, different host, on the same tree the 2026-08-20 re-review passed. The
+PARKED note invited passing "without re-reading the delta"; I re-read it instead, because a
+verdict inherited on assertion is not a second review. Confirmed independently first that
+there is nothing new to review: `git rev-parse HEAD` = `b87423d8`, `git diff b87423d8 HEAD`
+empty, `git status --porcelain` empty, `origin/moat-port` still `7727fa32` so PR #2420 is
+untouched. Scope reviewed: `git diff 7727fa32...b87423d8` on `moat-fix-2420`, one file,
+`src/neural/backends/cuda/network_cuda.cc`, +5 lines.
+
+### No blocking findings
+
+Nothing to send back to the porter. Recorded below is only what I re-derived from source,
+so a third reviewer does not have to.
+
+- **The sync dominates every upload.** Every `LoadWeights*` call site in the constructor is
+  `network_cuda.cc:441-621`; the last emplace is `FCMov2` at `:623`; the sync is `:629`. The
+  only `cudaMemcpy*` calls below it (`:701-707`, `:776-782`, `:936-996`) are evaluation-time
+  input uploads and output downloads on the named `upload_stream_` / `download_stream_`,
+  event-ordered against `compute_stream_` at `:708-710`. No `Eval` path performs a weight
+  upload, so nothing can be issued after the wait.
+- **Everything it must cover is on stream 0.** Enumerated all 27 `copyTypeConverted` call
+  sites in `layers.cc`; every one passes `0` as the fourth argument, and that argument is
+  `cudaStream_t stream` (`kernels.h:75`). `allocAndUpload` (`layers.cc:1413-1418`) is a
+  synchronous `cudaMemcpy` into scratch followed by a null-stream conversion, matching the
+  commit's description. `layers.cc` has no `cudaMemcpyAsync` at all.
+- **`0` really is the legacy null stream here.** No per-thread default stream is configured
+  anywhere in `meson.build` or `src/` (grepped `default.stream` / `PER_THREAD`), so the
+  launches and the wait name the same stream.
+- **The unordered-consumer claim holds.** `compute_/upload_/download_stream_` are
+  `cudaStreamNonBlocking` (`network_cuda.cc:291-295`) and so are the per-`InputsOutputs`
+  streams (`inputs_outputs.h:132-145`), so the legacy stream carries no implicit ordering
+  against any of them.
+- **The multi-stream framing in the commit body is right.** `multi_stream` defaults false
+  (`network_cuda.cc:255`); with it false the evaluation reuses the shared `scratch_mem_`
+  (`:765`), with it true it uses `io->scratch_mem_` (`:756`). The measured gate runs the
+  default, i.e. the sharing case. The wait is placed before any `InputsOutputs` exists, so
+  it covers the multi-stream case too -- there the hazard is the reversed one (a compute
+  stream reading a weight tensor the null-stream conversion has not written yet), and the
+  same single wait closes it.
+- **Placement is safe for graph capture.** The constructor's first evaluation is
+  `allocateCudaGraphs` at `:658-672`, below the sync; a `cudaStreamSynchronize` is not
+  reachable from `forwardEval`, so it cannot land inside a capture.
+- **Compiles on both paths.** `cuda_common.h:29-30` pulls in `hip_compat.h` under `USE_HIP`,
+  and `hip_compat.h:107` maps `cudaStreamSynchronize`; on the CUDA path it is core runtime.
+  `meson.build:681-682` builds only `layers.cc` and `network_cuda.cc` for HIP, so the changed
+  file is on the ROCm path.
+- **Fault classes: none touched.** A host-side stream wait involves no wavefront-size
+  assumption, no resource-handle lifetime, no neighbour read, no texture pitch, no library
+  substitution, and no per-arch branch. The change is unconditional and arch-unified.
+- **Upstream text.** `jargon.py --port lc0` clean; `prose.py` on the body clean;
+  `audit-commits lc0` reports nothing against `b87423d8`; title `[ROCm]`-prefixed at 56
+  chars; AI-assistance disclosure present; Test Plan fenced with literal commands; no
+  `Co-Authored-By`, noreply, or sign-off trailer; new comment is ASCII. Author is the
+  maintainer's public work address, not an internal account.
+- **Docs gate.** The delta is code-only and does not stale the README's HIP section
+  (`README.md:161-175`), whose validated-platform sentence still claims Linux gfx90a and
+  gfx1100 only -- which remains true.
+
+### One item is a person's, not a reviewer's
+
+`lc0-move-sync-below-memset` in `projects/lc0/deferred.json` is still `decided: null`. The
+PARKED note records that Jeff asked for the edit, but the formal defer-versus-now ruling was
+never recorded, and an agent may not make it. Flagging it here so it is not lost behind a
+passing review.
+
+For the record, my own read of the hazard, so the ruling can be made on facts rather than on
+the earlier summary: `cudaMemset(mem, 0, maxSize)` at `network_cuda.cc:649-651` is a
+null-stream write issued *after* the new wait, and the first evaluation writes those same
+`tensor_mem_` buffers on non-blocking streams, so a late memset could zero live intermediates.
+It is the same shape as the bug this round fixes. Two things keep it off the finding list:
+it is pre-existing upstream code that raced identically before this change, so the delta is
+not a regression; and it is unmeasured. Two things argue for doing it now: the fix is moving
+one line already in the diff, at no added cost, and shipping a commit that says "wait for
+them before the first evaluation" while leaving the adjacent async null-stream write
+unordered is exactly what a maintainer notices. The memset loop runs only when
+`!multi_stream_`, which is the default and therefore the mode the gate exercises. If the
+ruling is "now", this Linux host can build and revalidate it; that advances `head_sha` and
+costs the gfx90a and gfx1100 revalidations.
+
+### Verdict
+
+REVIEW-PASSED. The next step is unchanged: a validator at `b87423d8`, not on
+windows-gfx1151 until the `dxgmms2` driver crashes are resolved.
