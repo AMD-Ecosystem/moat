@@ -131,12 +131,32 @@ The independence bar, in order of what a reader checks:
   upstream error into a crash.
 
 Prove it: `licenses.py scan-nvidia` clean afterwards, plus a device-code binary-equivalence
-check if the file is included by kernel TUs. Host-side helpers must leave the device code
-byte-identical (`llvm-objcopy --dump-section=.hip_fatbin` per object, sha256 compare); if it
-is not identical, something other than the helper changed. Check for DUPLICATE copies before
-declaring victory -- TurboFNO's header held the block twice, an edited copy that actually
-expanded and a verbatim one made dead by the `#ifndef` guards, and removing only the
-notice-covered one would have left the compiled copy in place. (plvs, TurboFNO.)
+check if the file is included by kernel TUs. A host-side helper must leave the device code
+unchanged, but proving that needs the right instrument:
+
+- **Reach for `python3 utils/codeobj_diff.py <old_build> <new_build>` first.** It compares
+  normalized device ISA plus exported symbols, which is the property the equivalence claim
+  actually rests on, and it is immune to the path artifact below -- the two builds may sit
+  in different directories. Read the PER-BINARY lines. The tool's OVERALL verdict degrades
+  to `indeterminate` whenever the build tree also holds CMake's own probe binaries
+  (`CMakeFiles/<ver>/CompilerId{CXX,HIP}/a.out`, `CMakeDetermineCompilerABI_{CXX,HIP}.bin`),
+  which contain no device code at all; that `indeterminate` says nothing about your kernels.
+- **The raw `llvm-objcopy --dump-section=.hip_fatbin` per object plus sha256 compare is the
+  fallback, and it is sound ONLY when both builds happen in the SAME directory.**
+  `__hip_cuid_<hash>` is derived from the source path as spelled on the compiler command
+  line, and CMake spells it absolutely, so two checkouts of the SAME commit built side by
+  side in different directories yield different fatbins -- identical in size, differing in a
+  few dozen bytes. Followed literally across two paths the recipe reports every object
+  changed with no source change whatever (TurboFNO: a 10/10 false alarm before the cause was
+  found). Build commit A, capture the objects, `git checkout` commit B in place, and rebuild
+  in that same directory; or exclude `__hip_cuid_` from the compare.
+  `llvm-nm <obj> | grep __hip_cuid_` on both objects tells you in one command whether a
+  difference is only this.
+
+Check for DUPLICATE copies before declaring victory -- TurboFNO's header held the block
+twice, an edited copy that actually expanded and a verbatim one made dead by the `#ifndef`
+guards, and removing only the notice-covered one would have left the compiled copy in
+place. (plvs, TurboFNO.)
 
 ## Build hygiene
 

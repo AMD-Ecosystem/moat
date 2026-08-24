@@ -427,9 +427,12 @@ every invocation is followed by `;`, which is what makes the switch from a bare
 `{ ... }` block to `do { ... } while (0)` safe (the new form is strictly better --
 it also survives an unbraced `if`/`else`).
 
-Left as is, flagged for a decision: `CUBLAS_CALL` (2 active call sites) is
-upstream's own macro, sits outside the notice-covered block and has no counterpart
-in it, but its message string
+Left as is, flagged for a decision: `CUBLAS_CALL` (4 active call sites in the
+tree, 2 of them in the built variants: `fusion_variants/1D_E_baseline/fused.cu:186`,
+`fusion_variants/2D_E_baseline/fused_trunc_2D.cu:219`, and the
+`fusion_variants_benchmark` copies at `1D_E_baseline/fused.cu:203` and
+`2D_E_baseline/fused_trunc_2D.cu:236`) is upstream's own macro, sits outside the
+notice-covered block and has no counterpart in it, but its message string
 `"ERROR: cuBLAS call \"%s\" failed in line %d of file %s with error code (%d)."`
 is a word-reordering of the sample's sentence. Out of scope for this round; worth
 a person's call on whether it should get the same treatment.
@@ -437,8 +440,9 @@ a person's call on whether it should get the same treatment.
 ### VERIFIED on this host (linux-gfx1100, ROCm 7.2.3, W7800, gfx1100)
 
 Device-code binary equivalence (the load-bearing proof that a host-only header
-change did not move numerics). Built all ten variants at ec49bcf and at 03141cf,
-extracted `.hip_fatbin` from each variant's kernel object with
+change did not move numerics). Built all ten variants at ec49bcf and at 03141cf
+IN ONE DIRECTORY -- built ec49bcf, saved the objects, `git checkout` 03141cf in
+place, rebuilt -- extracted `.hip_fatbin` from each variant's kernel object with
 `llvm-objcopy --dump-section`, and compared sha256:
 ```
 export PROJECT_ROOT=$(pwd)
@@ -447,7 +451,23 @@ USE_HIP=1 CMAKE_HIP_ARCHITECTURES=gfx1100 bash install.sh   # 43s, 10/10, 0 erro
 ```
 All 10 SAME, byte for byte (1D_A 561568 B, 1D_B 654176, 1D_C 682832, 1D_D 639192,
 1D_E 53456, 2D_A 1042328, 2D_B 1152712, 2D_C 1181496, 2D_D 1139088, 2D_E 55960).
-Even `__hip_cuid_` matched. `utils.cu.o` is byte-identical as a whole object.
+Even `__hip_cuid_` matched -- and only because both builds were in the same
+directory. The raw sha256 compare is valid ONLY that way: `__hip_cuid_<hash>` is
+derived from the source path as spelled on the compiler command line, and CMake
+spells it absolutely, so the same sha built at two different paths gives ten
+DIFFERENT `.hip_fatbin` sections at identical sizes and no source change at all
+(measured by the reviewer on this host, and reproduced here on a two-line HIP TU:
+identical relative invocations from two directories share a cuid, absolute paths
+do not -- `__hip_cuid_d58b34f5e97e06ef` vs `__hip_cuid_24773c8bdfb1bd86`, 41
+differing bytes in a 33648-byte section). Across different paths use
+`python3 utils/codeobj_diff.py <build_a> <build_b>` instead, which compares
+exported symbols plus normalized device ISA and is immune to the artifact; read
+its PER-BINARY lines, because its overall verdict degrades to `indeterminate`
+when CMake's own probe binaries (`CompilerId{CXX,HIP}/a.out`,
+`CMakeDetermineCompilerABI_{CXX,HIP}.bin`) sit in the build tree with no device
+code. It reported `identical (exported symbols + device ISA identical (3
+exports))` for all ten `TurboFNO_*` executables.
+`utils.cu.o` is byte-identical as a whole object.
 Only the ten `fused*.cu.o` host halves differ, which is the change itself.
 
 Runtime smoke on GPU 0 (this session GPU 0 was healthy; see the 2026-06-04 note
@@ -642,3 +662,33 @@ Platform validation state is a separate matter -- all four platforms sit at
 `validated_sha` ec49bcf while `head_sha` is 03141cf, so revalidation (or a
 `codeobj_diff` carry-forward, which the evidence above already supports) is the
 validator's next step regardless of this verdict.
+
+## Port round 2026-08-24 (porter, linux-gfx1100): records only, no fork change
+
+Answers the two findings of the review above. Nothing in the fork moved: the
+clone stayed clean at 03141cf on `moat-port`, `head_sha` is unchanged, and no
+`advance-head` was run, so every platform's validation standing is exactly as
+the reviewer left it.
+
+1. Binary-equivalence recipe (`references/strategy-a-cmake.md`). Rewritten to
+   lead with `utils/codeobj_diff.py` (exported symbols + normalized device ISA,
+   immune to the path artifact, read its per-binary lines because the overall
+   verdict degrades to `indeterminate` on CMake's probe binaries) and to demote
+   the raw `.hip_fatbin` sha256 compare to a fallback that is sound only when
+   both builds happen in the same directory. The same caveat is now on this
+   file's own equivalence write-up above.
+
+   The reviewer's `__hip_cuid_` measurement was adopted and independently
+   sanity-checked here on a two-line HIP TU, which sharpened it: the cuid is
+   derived from the source path AS SPELLED on the compiler command line, not
+   from the absolute path per se. Compiling `k.cu` by the same relative name
+   from two different directories gives the SAME cuid and byte-identical
+   `.hip_fatbin`; passing the two absolute paths gives
+   `__hip_cuid_d58b34f5e97e06ef` vs `__hip_cuid_24773c8bdfb1bd86` and 41
+   differing bytes in a 33648-byte section. CMake always spells the source
+   absolutely, which is why a CMake build reproduces the false alarm and why the
+   same-directory rule is the practical statement of it.
+
+2. `CUBLAS_CALL` count corrected from 2 to 4 (2 built), with the four sites
+   named. The escalated question -- whether `CUBLAS_CALL` should get the same
+   treatment -- stays OPEN for a person; only the number it rests on changed.
