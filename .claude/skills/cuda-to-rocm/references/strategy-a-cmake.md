@@ -152,11 +152,19 @@ unchanged, but proving that needs the right instrument:
   object changed with no source change whatever (TurboFNO: a 10/10 false alarm before the
   cause was found). The remedy is one directory: build commit A, capture the objects,
   `git checkout` commit B in place, and rebuild there. Excluding the cuid is sound only at
-  SYMBOL level (`llvm-nm <obj> | grep -v __hip_cuid_`), never as a byte-level normalization
-  of the dumped fatbin -- a length-preserving substitution of the name still left 8 of 40
-  differing bytes, name-derived table bytes it cannot reach.
-  `llvm-nm <obj> | grep __hip_cuid_` on both objects tells you in one command whether a
-  difference is only this.
+  SYMBOL level, and it must exclude BOTH cuid-derived symbols: the object also carries
+  `__hip_gpubin_handle_<same hash>`, so the filter is
+  `llvm-nm <obj> | grep -vE '__hip_(cuid|gpubin_handle)_'` (or a `sed` normalizing the hash
+  in both names). Filtering only `__hip_cuid_` still reports the handle line as a difference
+  on an artifact-only pair -- the very false positive this is meant to suppress. Never
+  exclude the cuid as a byte-level normalization of the dumped fatbin -- a length-preserving
+  substitution of the name still left 8 of 40 differing bytes, name-derived table bytes it
+  cannot reach.
+  A differing cuid is expected noise between two command lines, but its presence says
+  NOTHING about whether real device code also changed: the grep has the same shape for an
+  artifact-only rebuild and for an edited kernel. It shows the artifact is present, never
+  that it is the whole difference -- `codeobj_diff.py`, or the same-directory rebuild,
+  answers that.
 
 Check for DUPLICATE copies before declaring victory -- TurboFNO's header held the block
 twice, an edited copy that actually expanded and a verbatim one made dead by the `#ifndef`

@@ -1057,3 +1057,53 @@ b8d2e98 throughout (the `envpath.sh` install.sh generates was removed after).
     text in one header, device code proven unchanged. No wavefront constant,
     resource handle, OOB neighbour read, texture pitch, per-arch branch or
     library swap is touched; Strategy A remains correct.
+
+### Lesson clauses corrected this round (MOAT side)
+
+Answering the third review of 2026-08-24. Both findings were text in one file,
+`.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md`; no fork change, no
+rebuild, `head_sha` unmoved at b8d2e98 and all four platforms keep their
+`validated_sha`.
+
+1. The symbol-level exclusion now filters BOTH cuid-derived symbols:
+   "it must exclude BOTH cuid-derived symbols: the object also carries
+   `__hip_gpubin_handle_<same hash>`, so the filter is
+   `llvm-nm <obj> | grep -vE '__hip_(cuid|gpubin_handle)_'` (or a `sed`
+   normalizing the hash in both names). Filtering only `__hip_cuid_` still
+   reports the handle line as a difference on an artifact-only pair -- the very
+   false positive this is meant to suppress."
+2. The closing sentence no longer claims the grep settles the question:
+   "A differing cuid is expected noise between two command lines, but its
+   presence says NOTHING about whether real device code also changed: the grep
+   has the same shape for an artifact-only rebuild and for an edited kernel. It
+   shows the artifact is present, never that it is the whole difference --
+   `codeobj_diff.py`, or the same-directory rebuild, answers that."
+
+Re-derived here before writing, not taken on the reviewer's word (ROCm 7.2.3,
+gfx1100, two-line HIP TU `__global__ void k(float*)`, `hipcc --offload-arch=gfx1100 -c`):
+
+- The second symbol exists with the SAME hash. Relative spelling gives
+  `__hip_cuid_b047343c2f889a06` (B) and `__hip_gpubin_handle_b047343c2f889a06`
+  (b); the absolute spelling of the same file gives `7086e947e23ee42f` for both.
+- The narrow filter leaves a false positive. `llvm-nm | grep -v __hip_cuid_` on
+  that artifact-only pair still diffs one line, the `__hip_gpubin_handle_` line.
+  `grep -vE '__hip_(cuid|gpubin_handle)_'` and the `sed` normalization both
+  report the two symbol lists identical.
+- The cuid grep is uninformative in BOTH directions, which is more than the
+  reviewer claimed. Differing cuid with an artifact-only difference: `b047343c...`
+  vs `7086e947...`, 38 differing `.hip_fatbin` bytes (the reviewer's figure,
+  reproduced). Differing cuid with a real device change (`* 2.0f` -> `* 3.0f` in
+  a differently named file): `b047343c...` vs `daabb2444a8eecd9` -- same grep
+  shape. And with a byte-identical command line (same source path, same `-o`,
+  edited in place) the real `* 2.0f` -> `* 3.0f` change gives the SAME cuid
+  `a643a9dafcb1d423` on both objects while 14 fatbin bytes differ, so an
+  unchanged cuid is no evidence of unchanged device code either. Consistent with
+  the "hash of the whole compile command line" attribution, which this last
+  measurement independently confirms.
+
+Note on scope: notes.md was NOT rewritten to match. Its only two repetitions of
+the narrow filter (the second round's reviewer finding and the porter's reply to
+it) are historical records of what was said then, and editing them would falsify
+the record; this section supersedes them. The project's own equivalence write-up
+above never carried either flawed clause -- it prescribes the same-directory rule
+and `codeobj_diff.py` -- so nothing there needed correcting.
