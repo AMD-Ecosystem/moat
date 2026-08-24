@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-08-24T21:35:50Z",
+  "updated_at": "2026-08-24T21:56:36Z",
   "head_sha": "7ccd4a98451e144e05f5bdf19827a28471f787e0",
   "depends_on": [],
   "pr_url": "https://github.com/vitalight/Velvet/pull/9",
@@ -135,6 +135,30 @@
         "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
         "at": "2026-06-23T22:21:53Z"
       }
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": "7ccd4a98451e144e05f5bdf19827a28471f787e0",
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-24T21:56:36Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "validation-failed",
+      "last_agent": "validator"
     }
   },
   "published_sha": "bb06b44",

@@ -1541,3 +1541,26 @@ windows-gfx1151 recorded as validation-failed at failed_sha=7ccd4a98.... This is
 first-time dispatch for this platform on this project (no prior windows-gfx1151 record
 existed), so there is no blocked/waiver history to preserve -- the finding above is the
 record.
+
+### State-write lost to a merge race, re-recorded 2026-08-24
+
+The windows-gfx1151 validation above committed as `3b19655` with the message
+"windows-gfx1151 validation-failed at fix round 7ccd4a9", but `git show 3b19655 --
+projects/Velvet/status.json` is EMPTY: the platform record never reached the file. The
+`windows-gfx1151` key was absent from `status.json` entirely, so the selector kept offering
+this project to that host as `port-ready` and the README showed its windows column as
+needing revalidation rather than failed.
+
+Cause, most likely: two linux carry-forward commits (`9ef9d4a` gfx1100, `6f04e81` gfx90a)
+landed on this branch at essentially the same moment, and the `moat-status` semantic merge
+resolved `status.json` in favour of the side that did not carry the new key. The notes
+survived because notes.md union-merges; the structured record did not.
+
+Re-recorded by hand from the write-up above: `windows-gfx1151` -> `validation-failed`,
+`failed_sha = 7ccd4a98451e144e05f5bdf19827a28471f787e0`. No evidence was invented -- the
+finding, the repro and the root cause are all in the dated section above, written by the run
+that measured them.
+
+Worth watching for elsewhere: a commit whose MESSAGE claims a state transition is not proof
+the transition landed. When several hosts write one project concurrently, check
+`git show <sha> -- projects/<name>/status.json` is non-empty before trusting it.
