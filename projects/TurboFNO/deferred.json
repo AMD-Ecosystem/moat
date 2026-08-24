@@ -17,6 +17,19 @@
         "by": "jeffdaily",
         "at": "2026-08-13T19:26:20Z"
       }
+    },
+    {
+      "id": "rocfft-plan1d-size0-hang",
+      "kind": "rocm-bug-report",
+      "component": "rocFFT",
+      "summary": "hipfftPlan1d(&plan, 0, HIPFFT_C2C, 1) HANGS on ROCm 7.2.3 gfx1100 where cuFFT returns CUFFT_INVALID_SIZE for the same size-0 plan. Reproduced in a 12-line standalone program including no project header (found 2026-08-24 while verifying error-check macro failure paths in the TurboFNO port). Divergent error-vs-hang behavior for degenerate plan sizes; needs a rocFFT/hipFFT report with the standalone repro.",
+      "refs": [
+        "projects/TurboFNO/notes.md 2026-08-24 round"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-24T20:57:53Z",
+      "decided": null
     }
   ]
 }
