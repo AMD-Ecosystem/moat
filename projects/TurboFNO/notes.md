@@ -1107,3 +1107,52 @@ it) are historical records of what was said then, and editing them would falsify
 the record; this section supersedes them. The project's own equivalence write-up
 above never carried either flawed clause -- it prescribes the same-directory rule
 and `codeobj_diff.py` -- so nothing there needed correcting.
+
+## Review 2026-08-24 (fourth round, reviewer, linux-gfx1100): PASSES
+
+Narrow re-review of the two rewritten lesson clauses only (MOAT commit 3938b7e:
+`.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md`, notes, status). No
+finding. The fork is untouched at b8d2e98 and outside this scope; `head_sha` and
+every `validated_sha` are unchanged by the commit, so the carry-forward evidence
+for all four platforms stands.
+
+Re-derived independently before accepting (ROCm 7.2.3, gfx1100, two-line HIP TU
+`__global__ void k(float*)` with `#include <hip/hip_runtime.h>`,
+`hipcc --offload-arch=gfx1100 -c`, fresh scratch directory so the hashes are this
+run's, not the porter's):
+
+1. Symbol filter (`strategy-a-cmake.md:155-159`). Both cuid-derived symbols exist
+   with the SAME hash: `B __hip_cuid_db980b346c1be4aa` and
+   `b __hip_gpubin_handle_db980b346c1be4aa`. On the artifact-only pair (relative
+   vs absolute spelling of the same file), `llvm-nm | grep -v __hip_cuid_` still
+   diffs exactly one line, the `__hip_gpubin_handle_` line. The prescribed
+   `grep -vE '__hip_(cuid|gpubin_handle)_'` and the alternative
+   `sed -E 's/(__hip_(cuid|gpubin_handle)_)[0-9a-f]+/\1X/'` both report the two
+   symbol lists identical. The clause is accurate as written, including the `sed`
+   parenthetical.
+2. Closing sentence (`strategy-a-cmake.md:163-167`). No false claim.
+   - Differing cuid carries no information about real change: artifact-only pair
+     `db980b34...` vs `8ddb6b17...` (38 differing `.hip_fatbin` bytes, matching
+     the porter's figure); real device change under a different file name
+     `db980b34...` vs `76ef4d86...` (57 bytes). Same grep shape either way.
+   - Unchanged cuid is likewise no evidence: identical command line, source
+     edited in place `* 2.0f` -> `* 3.0f`, cuid `4cbbdd3a2fd1c866` on BOTH
+     objects while the fatbins differ in 14 bytes (the porter's number,
+     reproduced). The reference text makes no claim in this direction, so it does
+     not overreach; the notes section records it.
+   - The two instruments it points at are the right ones and both exist:
+     `utils/codeobj_diff.py`, and the same-directory rebuild the same bullet
+     prescribes.
+3. Scope decision. Leaving the two historical repetitions of the narrow filter
+   intact (`notes.md:756`, the second round's finding, and `notes.md:908`, the
+   porter's reply to it) is correct record-keeping: both sit inside dated round
+   sections and state what was said then, so editing them would falsify the
+   record rather than correct it. The appended section supersedes them, and the
+   canonical prescription now lives corrected in the skill reference, which is
+   where a reader looks. Spot-checked the porter's supporting claim: the
+   project's own equivalence write-up (`notes.md:454-470`) carries neither flawed
+   clause -- it prescribes the same-directory rule and `codeobj_diff.py` -- so
+   nothing there needed correcting.
+
+Out of scope and untouched by this commit: the fork diff, `head_sha`, and all
+prior confirmed claims.

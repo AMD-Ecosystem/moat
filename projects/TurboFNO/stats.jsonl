@@ -60,3 +60,5 @@
 {"kind":"phase","ts":"2026-08-24T22:04:44Z","phase":"compile","seconds":25.372,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat-worktrees/TurboFNO/projects/TurboFNO/src && export PROJECT_ROOT=$(pwd) && USE_HIP=1 CMAKE_HIP_ARCHITECTURES=gfx1100 bash install.sh"}
 {"kind":"phase","ts":"2026-08-24T22:11:30Z","phase":"test","seconds":137.442,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat-worktrees/TurboFNO/projects/TurboFNO/src && HIP_VISIBLE_DEVICES=0 timeout 300 fusion_variants/1D_E_baseline/build/TurboFNO_1D_E"}
 {"kind":"session","ts":"2026-08-24T22:13:54Z","epoch":1787609634.542563458,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-24T22:20:33Z","epoch":1787610033.429096146,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-24T22:23:18Z","epoch":1787610198.178545200,"event":"end","platform":"linux-gfx1100"}
