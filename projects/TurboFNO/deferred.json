@@ -5,7 +5,7 @@
       "id": "turbofno-nvidia-proprietary-rescan",
       "kind": "other",
       "component": null,
-      "summary": "Rescan with the fixed scan_nvidia: upstream's own utils/utils.cuh embeds CUDA-sample-derived code under 'a form of NVIDIA software license agreement' (lowercase form only the fixed scanner matches). The port stubs the helper headers but this file remains in the contributed tree; needs a person's licence ruling. COUNSEL RULING (2026-08-24): the two notice-covered macros compile on the AMD path and must be independently rewritten (plvs pattern); fix round queued behind the Velvet round.",
+      "summary": "Rescan with the fixed scan_nvidia: upstream's own utils/utils.cuh embeds CUDA-sample-derived code under 'a form of NVIDIA software license agreement' (lowercase form only the fixed scanner matches). The port stubs the helper headers but this file remains in the contributed tree; needs a person's licence ruling. POLICY (2026-08-24): the two notice-covered macros compile on the AMD path and must be independently rewritten (plvs pattern); fix round queued behind the Velvet round.",
       "refs": [
         "moat main b336246 (case/wording-proof scan_nvidia)"
       ],
