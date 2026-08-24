@@ -410,3 +410,24 @@ because if it can this is porter work rather than an excused gate.
 
 Note this does NOT make QUICK PR-ready on its own: `wave64` is also unsatisfied at head and
 still needs a gfx90a or gfx942 run.
+
+### Filed upstream: ROCm/TheRock#7596 (2026-08-24)
+
+The Windows Fortran finding is now reported: https://github.com/ROCm/TheRock/issues/7596
+"Is Fortran meant to be usable in the Windows ROCm SDK? flang.exe there is byte-identical to
+clang.exe". Filed by jeffdaily against ROCm/TheRock, since the defect is in what that build
+system packages rather than in ROCm's HIP runtime.
+
+It carries the three checkable proofs: the md5 collision between `flang.exe` and `clang.exe`
+(4146b241ae49296481b7bb54db9a7da2, 108,242,944 bytes each), `flang.exe -fc1 -help` printing
+"OVERVIEW: clang LLVM compiler", and the absence of any `flang_rt*` or Fortran `.mod` files in
+the SDK. It also asks the question that actually governs this port's fate: whether AMD supports
+any MSVC-ABI Fortran compiler that interoperates with the SDK's clang-cl/HIP objects.
+
+Bearing on the suggested `windows` waiver, still pending: the waiver should NOT be approved on
+the strength of "TheRock ships no working Fortran" alone. Intel `ifx` targets the MSVC ABI, is
+free, and interoperates with MSVC-ABI C/C++ objects, and nobody has tried it against QUICK.
+Either a maintainer answer on #7596 or an `ifx` attempt should settle it first.
+
+Independently of Windows, `wave64` is also unsatisfied at head, so QUICK needs a gfx90a or
+gfx942 run regardless of how the Fortran question lands.
