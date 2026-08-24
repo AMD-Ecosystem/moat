@@ -111,3 +111,33 @@ compat header with `-include`.
   before compiling. Un-hipified files surface as "undeclared identifier cudaMalloc". Note
   that hipify prepends `#include "hip/hip_runtime.h"`, which breaks a g++ CPU reference
   build, so build that from a separate non-hipified copy. (LC-framework)
+
+## Windows: CMake's HIP link rule mangles MSVC-style flags and paths
+
+On Windows, CMake's HIP link path routes through `hipcc.exe`, which invokes `clang.exe
+--driver-mode=g++` for `--hip-link`. That GCC driver then receives CMake's MSVC-style
+response file and flags, and misreads them two ways: it treats bare MSVC linker flags
+(`/machine:x64`, `/subsystem:console`) as file paths, and it applies GNU backslash-escaping
+to the response file, eating every backslash so `D:\path\torch.lib` arrives as
+`D:pathtorch.lib`. CMake also injects `-fuse-ld=lld-link`, which conflicts with `--hip-link`.
+
+**This has nothing to do with `-fgpu-rdc`.** A project with no relocatable device code at all
+still hits it if it links HIP through CMake on Windows. Do not conclude you are safe because
+you are not using RDC -- that mistake was made once already and cost a round.
+
+Fix: interpose a wrapper on the link step, set as `CMAKE_HIP_LINK_EXECUTABLE`. The canonical
+copy is `assets/hip_link_win.py` in this skill. It strips `-fuse-ld=*`, converts `-Xlinker`
+pairs and bare MSVC `/flags` to `-Wl,` form, and rewrites `-lXXX.lib` to `-Xlinker XXX.lib`
+so lld-link resolves them via `LIB`. It is ~60 lines and carries no project-specific state.
+
+**Vendor a copy into the fork** (conventionally `cmake/hip_link_win.py`) rather than
+referencing this repository: the project's CMake calls it, and the work is meant to be
+upstreamed, so a pull request cannot depend on a file that only exists here. Fix bugs in the
+canonical copy first, then re-copy into the forks that carry it.
+
+Guard the override to Windows. Related and separate: the clang-cl `/Fo` bundler bug, where the
+CMake HIP compile rule must emit `-o <OBJECT>` instead of `/Fo<OBJECT>` because the driver
+hands the same path to `clang-offload-bundler` as both input and output and Windows refuses to
+rewrite a memory-mapped file (ROCm/TheRock#5615). A project can need the compile-rule fix, the
+link wrapper, or both -- they are independent. (alien, origin of the wrapper; LichtFeld-Studio,
+which needs the link half.)
