@@ -5,7 +5,7 @@
       "id": "phoenixos-nvidia-proprietary-rescan",
       "kind": "other",
       "component": null,
-      "summary": "Rescan with the fixed scan_nvidia: the repo vendors the CUDA 11.3 API header set (utils/cudam/api_interceptor_gen/headers/11_3/: cuda.h, cublas_v2.h, cudnn.h, cufft*, curand.h, cusolver*, 14 files) carrying the NVIDIA 'software license agreement' proprietary notice (lowercase form only the fixed scanner matches). Stage is planned: the planner and a licence ruling must account for these before port work starts. Submodule scan coverage was partial (broken .gitmodules entry upstream).",
+      "summary": "Rescan with the fixed scan_nvidia: the repo vendors the CUDA 11.3 API header set (utils/cudam/api_interceptor_gen/headers/11_3/: cuda.h, cublas_v2.h, cudnn.h, cufft*, curand.h, cusolver*, 14 files) carrying the NVIDIA 'software license agreement' proprietary notice (lowercase form only the fixed scanner matches). Stage is planned: the planner and a licence ruling must account for these before port work starts. Submodule scan coverage was partial (broken .gitmodules entry upstream). COUNSEL RULING (2026-08-24): AMD cannot redistribute the CUDA toolkit headers even unused; a fork must not host them. Adoption therefore requires dropping utils/cudam/api_interceptor_gen/headers/11_3/ at the tip from the first commit (builds survive: generator outputs are committed), and the fork-history caveat applies. Planning stays held until this shape is agreed.",
       "refs": [
         "moat main b336246 (case/wording-proof scan_nvidia)"
       ],
