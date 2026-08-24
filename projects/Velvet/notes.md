@@ -1564,3 +1564,176 @@ that measured them.
 Worth watching for elsewhere: a commit whose MESSAGE claims a state transition is not proof
 the transition landed. When several hosts write one project concurrently, check
 `git show <sha> -- projects/<name>/status.json` is non-empty before trusting it.
+
+## Porter 2026-08-24 (windows-gfx1151, fix round 7ccd4a9 -> c21f1c6): host sources no longer compiled as HIP
+
+Answers the windows-gfx1151 `validation-failed` above. One commit on `moat-fix-9`:
+`c21f1c671ecd710e7d2a4fa85d2f25681712dc64` -- "[ROCm] Keep host sources out of the GPU
+language". Only `CMakeLists.txt` changed (27 insertions, 8 deletions); no source file was
+touched.
+
+### The change
+
+```cmake
+-  set_source_files_properties(${SOURCES} PROPERTIES LANGUAGE HIP)
+-  target_link_libraries(Velvet PRIVATE hip::hipcub roc::rocthrust)
++  set_source_files_properties(${CU_SOURCES} PROPERTIES LANGUAGE HIP)
++  foreach(rocm_target hip::hipcub roc::rocthrust roc::rocprim_hip)
++    if(TARGET ${rocm_target})
++      get_target_property(rocm_target_includes ${rocm_target} INTERFACE_INCLUDE_DIRECTORIES)
++      if(rocm_target_includes)
++        target_include_directories(Velvet SYSTEM PRIVATE ${rocm_target_includes})
++      endif()
++    endif()
++  endforeach()
++  target_link_libraries(Velvet PRIVATE hip::host)
+```
+
+Both halves are required, and narrowing the LANGUAGE property alone would have
+reintroduced exactly the failure the old comment described. The leak is measured, not
+guessed: in `lib/cmake/hip/hip-config.cmake`,
+
+```cmake
+function(hip_add_interface_compile_flags TARGET)
+  set_property(TARGET ${TARGET} APPEND PROPERTY
+    INTERFACE_COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:CXX>:${_HIP_SHELL}${ARGN}>")
+endfunction()
+```
+
+is called on `hip::device` with `-x hip` and `--offload-arch=<arch>`, gated on
+`COMPILE_LANGUAGE:CXX` -- that is, it targets precisely the plain C++ sources. The link
+chain that drags it in is `hip::hipcub` -> `roc::rocprim_hip` -> `hip::device` (and the same
+through `roc::rocthrust`), visible in `lib/cmake/rocprim/rocprim-targets.cmake:70`
+(`INTERFACE_LINK_LIBRARIES "roc::rocprim;hip::device"`). hipCUB/rocThrust/rocPRIM are header
+only and their `INTERFACE_INCLUDE_DIRECTORIES` all resolve to the ROCm `include` prefix, so
+taking the include directories loses nothing. `hip::host` carries only
+`__HIP_PLATFORM_AMD__=1` and the `amdhip64` import library -- no compile flags -- so the
+host units can still include `hip/hip_runtime.h` and `hip/hip_gl_interop.h` and still link
+the runtime.
+
+The CUDA path is untouched: everything above is inside `if(USE_HIP)`, so under `USE_HIP=OFF`
+language auto-detection still gives `.cpp -> CXX` and `.cu -> CUDA`.
+
+Why no ODR hazard from the split: `HOST_INIT` now expands differently in the two language
+groups (to `= val` in the `.cpp` units, to nothing in the `.cu` units), which is exactly what
+the NVIDIA build does. The only variable that matters is `Global::simParams`, an `inline`
+variable in `Global.hpp`; grep confirms neither `.cu` includes `Global.hpp` (they include
+`Common.hpp` only), so that inline variable is emitted solely by C++ units, all of which
+agree. Kernel launches are likewise confined: `CUDA_CALL` and `<<<>>>` appear only in
+`Common.cuh` (the macro definitions) and in the two `.cu` files, never in a header that a
+`.cpp` includes, so no host unit silently swallows a launch.
+
+### Build (this host)
+
+```bash
+export ROCM_DEVEL="D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel"
+cmake -B build_fix -S . -G Ninja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=$ROCM_DEVEL/lib/llvm/bin/clang.exe \
+  -DCMAKE_CXX_COMPILER=$ROCM_DEVEL/lib/llvm/bin/clang++.exe \
+  -DCMAKE_HIP_COMPILER=$ROCM_DEVEL/lib/llvm/bin/clang++.exe \
+  -DCMAKE_PREFIX_PATH=$ROCM_DEVEL \
+  -DCMAKE_TOOLCHAIN_FILE=D:/vcpkg/scripts/buildsystems/vcpkg.cmake \
+  -DVCPKG_TARGET_TRIPLET=x64-windows
+bash utils/timeit.sh Velvet compile -- cmake --build build_fix -j16
+```
+
+Clean configure and build, warnings only (the pre-existing `nodiscard hipError_t` ones).
+The language split is now visible in the build log -- 11 "Building CXX object" against 2
+"Building HIP object", where every one of the 13 previously said HIP:
+
+```bash
+grep -c "Building CXX object" agent_space/velvet_fix_build.log   # 11
+grep -c "Building HIP object" agent_space/velvet_fix_build.log   # 2
+```
+
+`strings build_fix/bin/Velvet.exe | grep gfx1151` still gives
+`hipv4-amdgcn-amd-amdhsa--gfx1151`, so device code is unchanged.
+
+Direct macro probe (temporary, reverted before committing): prepending
+
+```c
+#if defined(__HIPCC__)
+#error "PROBE: __HIPCC__ is defined in this host translation unit"
+#endif
+#pragma message("PROBE: __HIPCC__ not defined here")
+```
+
+to `Velvet/GUI.cpp` compiled cleanly and emitted the pragma message, so `__HIPCC__` is
+genuinely absent from a host unit. The recorded ninja command line for `GUI.cpp.obj`
+confirms the flags too: `DEFINES = ... -DUSE_HIP -D__HIP_PLATFORM_AMD__=1`,
+`FLAGS = -O3 -DNDEBUG -std=gnu++17 ...` -- no `-x hip`, no `--offload-arch`.
+
+### Real-application evidence (this is the first round that required it)
+
+Ran the actual `Velvet.exe` on the gfx1151 display, ROCm runtime DLLs staged next to the exe
+per this host's System32 `amdhip64_7.dll` defect. Screenshots in
+`agent_space/velvet_shot/` (`fix_full_t0.png`, `panel_t0.png`, `particles_crop.png`,
+`w_0.png`, `scene_3.png`, `nosc.png`).
+
+The Simulation panel now reads, against the zeros the validator recorded:
+
+| field | before | now | source of the value |
+| --- | --- | --- | --- |
+| Num Substeps | 0 | 2 | `Common.hpp` HOST_INIT(2) |
+| Num Iterations | 0 | 4 | `Common.hpp` HOST_INIT(4) |
+| Gravity | 0, 0, 0 | 0.000, -9.800, 0.000 | `Common.hpp` HOST_INIT(glm::vec3(0,-9.8f,0)) |
+| Damping | 0.000 | 0.250 | `Common.hpp` HOST_INIT(0.25f) |
+| Friction | 0.000 | 0.100 | `Common.hpp` HOST_INIT(0.1f) |
+| Collision Margin | 0.000 | 0.060 | `Common.hpp` HOST_INIT(0.06f) |
+| Enable Self Collision | off | on | `Common.hpp` HOST_INIT(true) |
+| Interleaved Hash | 0 | 3 | `Common.hpp` HOST_INIT(3) |
+| Relaxation Factor | 0.000 | 1.000 | `Common.hpp` HOST_INIT(1.0f) |
+| Max Speed | 0.000 | 18.000 | derived: 2 * particleDiameter / fixedDeltaTime * numSubsteps |
+
+Max Speed is the strongest of these, because it is not a literal default: it is computed in
+`VtClothSolverGPU.hpp:131` from `numSubsteps`, so a non-zero value proves the solver's own
+initialization ran with real numbers. Per-scene overrides also take effect now -- Cloth /
+Self Collision shows 8 substeps and friction 0.300, Cloth / High Resolution shows 10
+substeps and 10 iterations -- which the zeroed build could not do.
+
+The solve loop really runs: the Statistics panel reports Solver 3.0-3.7 ms per frame on the
+default 1681-particle scene (against a near-empty step before) and 26.9 ms on the
+40401-particle Cloth / High Resolution scene, and the Physics Frame counter advances at
+exactly the fixed 60 Hz (7988 -> 13604 across a 61 s span while the render counter ran at
+about 3400 FPS). The particles are no longer static: with Draw Particles on they leave the
+spawn pose and fall to the ground plane within the free-fall time from y=1.5 (visible by
+physics frame 40, about 0.67 s; free fall from 1.5 m takes 0.55 s). No HIP error was printed
+over several minutes of running, the process closed cleanly on window close, and no crash
+dump was produced.
+
+### A SECOND, SEPARATE DEFECT REMAINS -- do not read this round as a pass
+
+With the parameters fixed, the cloth simulates but does not hold its shape: within about
+half a second it collapses to a one-particle-thick line lying at the base of the collision
+sphere, and the cloth mesh itself never renders. Only the particle overlay shows anything.
+This is not the HOST_INIT bug and is not fixed here; it was simply invisible before, because
+with zero substeps nothing moved at all.
+
+What is known about it so far, so the next round does not re-derive it:
+
+- It is systemic across scenes, not specific to Cloth / Attach: Cloth / Self Collision
+  (3721 particles) and Cloth / High Resolution (40401 particles) collapse the same way.
+- It is not the self-collision path: unchecking Enable Self Collision and resetting still
+  collapses.
+- It is not a parameter problem any more -- every scene's own overrides are visibly applied.
+- The collapse is anisotropic. The particles keep their full extent along one axis (the band
+  is about as wide as the cloth) and lose it entirely along the other, which points at the
+  constraint solve or the delta accumulation (`AtomicAdd(glm::vec3*, index, val, reorder)`
+  and `ApplyDeltas` in `VtClothSolverGPU.cu`) rather than at integration or at the OpenGL
+  interop, since the particle overlay reads the same position buffer it draws from.
+- Untested here, and the first thing to establish: whether this also happens on gfx1100,
+  gfx1201 and gfx1101, i.e. whether it is arch-specific (wave32 against wave64) or affects
+  every HIP platform. gfx1151 is the only host in the fleet that can run the application at
+  all.
+
+### Every other platform now needs revalidation, and that is correct
+
+`head_sha` moved 7ccd4a9 -> c21f1c6, so linux-gfx90a, linux-gfx1100, windows-gfx1101 and
+windows-gfx1201 all read `revalidate`. This is not collateral churn. Each of those
+`completed` records rests on the standalone synthetic kernel test
+(`velvet_kernel_test_*`), which never constructed `Global::simParams`, never entered the
+solve loop and never launched the application -- which is precisely why a defect present
+since the port's first commit survived four platform passes. They were never evidence about
+this class of bug, so re-running them against a build that actually simulates is the point,
+not a cost.
