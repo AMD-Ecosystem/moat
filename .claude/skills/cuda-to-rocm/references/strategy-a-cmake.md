@@ -141,6 +141,72 @@ the host TUs with the host compiler) at both the base and the new sha and diff t
 `-H`-trace one TU to confirm the swapped files are actually opened so the check is not vacuous.
 Record the upstream commit and the sha256 of each file you copied in. (plvs, Velvet.)
 
+## Never mark the host `.cpp` files `LANGUAGE HIP` to dodge the flag leak
+
+The tempting shortcut when a mixed CXX/HIP target fails to compile is to mark *every* source
+`LANGUAGE HIP` so one set of flags applies uniformly. Do not. That defines `__HIPCC__` for
+the whole program, and CUDA projects routinely key host-only behaviour off `__CUDACC__` --
+which the port then extends to `__HIPCC__`, correctly, for the device path. The classic
+shape is a macro that suppresses default member initializers, because a
+`__device__ __constant__` copy of the struct cannot be dynamically initialized:
+
+    #if defined(__CUDACC__) || defined(__HIPCC__)
+        #define HOST_INIT(val)
+    #else
+        #define HOST_INIT(val) = val
+    #endif
+
+    struct SimParams { int numSubsteps HOST_INIT(2); glm::vec3 gravity HOST_INIT(...); };
+
+On NVIDIA the `.cpp` files are plain C++ and never see `__CUDACC__`, so the host copy keeps
+its defaults. Compile them as HIP and the host copy silently loses every initializer. Velvet
+shipped that way from its first commit: the application ran, rendered and reported a healthy
+GPU, but the solver read zero substeps, zero iterations and zero gravity, so nothing ever
+moved. It survived four platform validations because each used a standalone synthetic kernel
+test rather than the real binary. Grep for `__CUDACC__` and `__CUDA_ARCH__` in host headers
+before choosing an all-HIP target, and treat a hit as a hard blocker on that shortcut.
+
+The failure the shortcut was dodging has its own fix, above: the HIP compile flags leak
+because `hip::hipcub` and `roc::rocthrust` reach `hip::device` transitively
+(`roc::rocprim_hip` -> `hip::device` in `rocprim-targets.cmake`), and `hip::device`'s
+interface is built by
+
+    function(hip_add_interface_compile_flags TARGET)
+      set_property(TARGET ${TARGET} APPEND PROPERTY
+        INTERFACE_COMPILE_OPTIONS "$<$<COMPILE_LANGUAGE:CXX>:${_HIP_SHELL}${ARGN}>")
+    endfunction()
+
+called with `-x hip` and `--offload-arch=<arch>`. Note the genex is `COMPILE_LANGUAGE:CXX`,
+so it hits exactly the plain C++ sources and never the HIP ones -- the opposite of what the
+name suggests. Those three packages are header only, so take their include directories and
+link `hip::host` (which carries only `__HIP_PLATFORM_AMD__=1` and the `amdhip64` import
+library, no compile flags) for the runtime:
+
+    set_source_files_properties(${CU_SOURCES} PROPERTIES LANGUAGE HIP)
+    foreach(rocm_target hip::hipcub roc::rocthrust roc::rocprim_hip)
+      if(TARGET ${rocm_target})
+        get_target_property(inc ${rocm_target} INTERFACE_INCLUDE_DIRECTORIES)
+        if(inc)
+          target_include_directories(<tgt> SYSTEM PRIVATE ${inc})
+        endif()
+      endif()
+    endforeach()
+    target_link_libraries(<tgt> PRIVATE hip::host)
+
+Before splitting, check two things or you trade a silent-zeros bug for a silent-no-op bug:
+no header that a `.cpp` includes may contain a `<<<>>>` launch (a launch macro gated on
+`__CUDACC__ || __HIPCC__` expands to nothing in the host units, so the launch disappears),
+and no variable whose initializer the macro suppresses may be an `inline`/`extern` variable
+that both language groups emit (the linker folds one COMDAT and may pick the uninitialized
+one). Velvet passed both: launches live only in the two `.cu` files, and the `inline`
+`Global::simParams` is included by no `.cu`.
+
+Verify the split landed rather than assuming: the build log should show "Building CXX
+object" for the host files (Velvet: 11 CXX against 2 HIP, where all 13 previously said HIP),
+the recorded compile line for a host object should carry neither `-x hip` nor
+`--offload-arch`, and a temporary `#if defined(__HIPCC__) #error` probe in one host file
+should compile clean.
+
 ## Build hygiene
 
 - **Do not pin `--offload-arch` or `CMAKE_HIP_ARCHITECTURES` in the committed build.** Pass
