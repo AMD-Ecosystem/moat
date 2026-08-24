@@ -752,7 +752,7 @@ HIP_VISIBLE_DEVICES=1 agent_space/velvet_kernel_test_gfx1101.exe
 
 ## Fix round 2026-08-24 (linux-gfx1100, porter): NVIDIA helper headers off the AMD build, BSD swap
 
-Context (MOAT-internal; none of this wording is fork-visible): AMD counsel ruled on
+Context (MOAT-internal; none of this wording is fork-visible): licensing review ruled on
 2026-08-24 that NVIDIA proprietary-licensed files must not compile, execute, or be a
 build input in anything AMD builds, and directed a swap to open-source replacements.
 Velvet vendors three pre-2017 CUDA-samples headers under `Velvet/External/cuda/`

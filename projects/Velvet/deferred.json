@@ -5,7 +5,7 @@
       "id": "velvet-nvidia-proprietary-rescan",
       "kind": "other",
       "component": null,
-      "summary": "Rescan with the fixed scan_nvidia: Velvet/External/cuda/ vendors pre-2017 CUDA samples EULA-pointer headers (helper_cuda.h, helper_math.h, helper_string.h). The port engineered around them but no licence ruling on the vendored copies is recorded; needs a person's confirmation. COUNSEL RULING (2026-08-24): proprietary files must not compile on the AMD path and BSD-3 swap ordered; this fix round implements it.",
+      "summary": "Rescan with the fixed scan_nvidia: Velvet/External/cuda/ vendors pre-2017 CUDA samples EULA-pointer headers (helper_cuda.h, helper_math.h, helper_string.h). The port engineered around them but no licence ruling on the vendored copies is recorded; needs a person's confirmation. POLICY (2026-08-24): proprietary files must not compile on the AMD path and BSD-3 swap ordered; this fix round implements it.",
       "refs": [
         "moat main b336246 (case/wording-proof scan_nvidia)"
       ],
