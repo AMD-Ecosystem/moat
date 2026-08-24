@@ -1660,3 +1660,65 @@ contradicts this commit's own body. Both are upstream-visible comments. Trimming
 parenthetical (the rest of the comment is accurate and worth keeping) belongs with the
 PR-prep round together with the `enable_testing()` item, because it touches a build file and
 the validator has to rule on whether a comment-only build-file edit still carries forward.
+
+## Port round 2026-08-24 (porter, linux-gfx90a) -- 7cd4d569, HIP compiler detection sentence
+
+Answers the single blocking finding of "Review 2026-08-24 (reviewer, linux-gfx90a) -- 00187204".
+One commit, `7cd4d569 [ROCm] Correct how the docs describe HIP compiler detection`, one file,
+`docs/building_and_distribution.md`, +1/-1 -- the `:114` paragraph and nothing else. No source,
+kernel or build file touched, so the delta is inert for every architecture and the
+carry-forward reasoning recorded at 53c363f8 is unaffected. No build or GPU run for this round.
+
+Replacement text (the reviewer's suggested wording, used verbatim):
+
+> The commands above are the Linux recipe. `CMAKE_HIP_COMPILER` does not have to be set when
+> ROCm's `bin` directory is on `PATH`: CMake asks `hipconfig` where the ROCm Clang lives, and
+> HIP is enabled at `project()` time so no reconfigure is needed. Otherwise name the compiler
+> yourself with `-DCMAKE_HIP_COMPILER` or the `HIPCXX` environment variable; setting
+> `ROCM_PATH` alone does not steer that search.
+
+The mechanism was re-derived rather than taken on trust. `CMakeDetermineHIPCompiler.cmake:35-71`
+(both cmake 3.28.3 at `/usr/share/cmake-3.28` and 3.31.6 in the conda prefix): `$ENV{HIPCXX}`
+first, else `hipconfig --hipclangpath` into `CMAKE_HIP_COMPILER_HINTS`, then
+`_cmake_find_compiler(HIP)` over those hints and `PATH`; `:163-174` falls back to
+`hipconfig --rocmpath` and errors "Failed to find ROCm root directory" when that also fails.
+The project's own `ROCM_PATH` is first read in `cmake/HipCompute.cmake`, after detection.
+
+Reproduced here on a minimal `project(hipdetect LANGUAGES HIP CXX C)` with `ROCM_PATH` set to
+the SDK prefix and no `hipconfig` on `PATH`; the failing configure and all three rescues were
+run on **both** cmake 3.28.3 and 3.31.6, all four literally as printed in the commit's Test Plan:
+
+- fail: `cmake -B fails -DCMAKE_CXX_COMPILER=$ROCM_PATH/llvm/bin/clang++ -DCMAKE_C_COMPILER=...`
+  -> `CMakeDetermineHIPCompiler.cmake:174 Failed to find ROCm root directory` on both versions.
+- pass: `HIPCXX=$ROCM_PATH/llvm/bin/clang++ cmake -B ok-hipcxx` (rc=0 on both).
+- pass: `cmake -B ok-flag -DCMAKE_HIP_COMPILER=$ROCM_PATH/llvm/bin/clang++` (rc=0 on both).
+- pass: `PATH=$ROCM_PATH/bin:$PATH cmake -B ok-path` (rc=0 on both).
+
+**Gotcha for anyone re-running the reviewer's repro on this host:** dropping `$ROCM_PATH/bin`
+from `PATH` is *not* enough to make detection fail here. The conda env has its own
+`hipconfig` shim at `/opt/conda/envs/py_3.12/bin/hipconfig`, so the configure still succeeds
+and resolves `$ROCM_PATH/lib/llvm/bin/clang++`. Every directory containing a `hipconfig` has
+to leave `PATH` before the failure appears. This does not change the finding -- it confirms it,
+since the deciding factor is `hipconfig`'s reachability and never `ROCM_PATH`. Project-specific
+detail (a conda-hosted ROCm SDK), so it stays here rather than in the shared skill.
+
+Deliberately untouched, both still open for PR prep: the `CMakeLists.txt:51-54` comment
+parenthetical the reviewer flagged as non-blocking, and the `enable_testing()` item. Both edit
+a build file and would put the carry-forward question in front of a validator.
+
+Checks: title 59 chars with `[ROCm]`; `prose.py` clean; ASCII-only; AI disclosure present; no
+`Co-Authored-By`. `jargon.py --port LichtFeld-Studio` unchanged at the same 3 pre-existing
+instances in the `13e585d47`/`e24593f4e` bodies and 0 from this commit (deferral
+`lfs-commit-msg-jargon-13e585d-e24593f`). Fork worktree clean; `pr-state` re-checked as `none`
+immediately before pushing, so the commit went to `moat-port` as a plain fast-forward
+(`00187204..7cd4d569`, no force needed, pre-push hook allowed it). No review PR is recorded for
+this project, so there were no line threads to answer.
+
+### advance-head defect reproduced again (deferral `lfs-advance-head-carries-doc-gate-failure`)
+
+`advance-head LichtFeld-Studio 7cd4d569` again rewrote linux-gfx90a's `failed_sha` from
+`00187204` to `7cd4d569`, so after `set-state ... ported` the arch still reads
+`validation-failed` at the current head. As at the previous round: that failure is the missing
+ROCm build docs observed at 53c363f8, it has now been answered three times, and it has never
+been observed at this sha. gfx90a needs a **validator**, not another porter round. linux-gfx1100
+correctly reads stale (`validated_sha` 5cbfdf1a < head).
