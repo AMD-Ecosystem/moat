@@ -5,7 +5,7 @@
       "id": "cubvh-nvidia-proprietary-rescan",
       "kind": "other",
       "component": null,
-      "summary": "Rescan with the fixed scan_nvidia: LICENSE_NVIDIA at the repo root is the NVIDIA Source Code License for instant neural graphics primitives (non-commercial). The project is review-passed with no licence discussion in notes; a person must rule whether the NSCL-covered code affects tier standing and upstream contribution. COUNSEL RULING (2026-08-24): ask upstream to confirm what LICENSE_NVIDIA actually covers (probe found no NSCL-marked source; only a BSD-headed tiny-cuda-nn file). Do not delete the licence file. Upstream question is drafted and awaits a person's approval to post.",
+      "summary": "Rescan with the fixed scan_nvidia: LICENSE_NVIDIA at the repo root is the NVIDIA Source Code License for instant neural graphics primitives (non-commercial). The project is review-passed with no licence discussion in notes; a person must rule whether the NSCL-covered code affects tier standing and upstream contribution. POLICY (2026-08-24): ask upstream to confirm what LICENSE_NVIDIA actually covers (probe found no NSCL-marked source; only a BSD-headed tiny-cuda-nn file). Do not delete the licence file. Upstream question is drafted and awaits a person's approval to post.",
       "refs": [
         "moat main b336246 (case/wording-proof scan_nvidia)"
       ],
