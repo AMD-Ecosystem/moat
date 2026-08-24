@@ -900,3 +900,29 @@ published tip and therefore unamendable while PR #9 is open:
 `bb06b44` has no Test Plan section, and `97d69a6`'s Test Plan uses indented code blocks rather
 than fenced ones. The two commits added by this round pass the gate. `jargon.py --port Velvet`
 is clean across the whole branch.
+
+### Device-code comparison bb06b44 -> 49f6db9 (gfx1100), for the revalidations
+
+The AMD-path change is host code only (an inline error-reporting function) plus a CMake
+include-path guard; the swapped headers are never opened on the AMD path. Measured rather
+than assumed -- built the base tree (extracted with `git archive bb06b44`) with the same
+configure line and compared:
+
+```bash
+python3 utils/codeobj_diff.py <base>/build/bin/Velvet projects/Velvet/src/build/bin/Velvet
+# -> verdict=identical (exported symbols + device ISA identical (13 exports))
+```
+
+So a binary-equivalence carry-forward is available to the other platforms, including
+linux-gfx90a, which is `blocked` for GPU runtime (no graphics pipeline) but still builds --
+that is how it reached `completed` at bb06b44.
+
+### For a person: the wave64 gate on this fix round
+
+`moatlib.fix_ready('Velvet')` reports wave64 as "no viable arch can satisfy this gate",
+because the only wave64 platform (linux-gfx90a) is flagged `blocked` and so is not a
+dispatch candidate. Nothing regressed -- the gate was satisfied at publication because
+gfx90a's `completed` record sat at the then-current head. Moving head_sha to the staging tip
+makes that evidence stale, so before `upstream.py --fix-review` can record a review PR either
+gfx90a revalidates by carry-forward (its build still works; see the identical-device-code
+result above) or a person approves a wave64 waiver. An agent may only suggest one.
