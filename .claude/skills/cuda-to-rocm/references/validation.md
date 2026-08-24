@@ -106,3 +106,82 @@ On a host whose only installed PyTorch is a ROCm dev build (e.g. built from `/va
 - `torch/headeronly/util/complex.h` guards `#include <thrust/complex.h>` with `#if defined(__HIPCC__) || defined(__HIPCC__)` -- a duplicated-token typo, evidently meant `__CUDACC__ || __HIPCC__` -- so under nvcc the include is skipped while `c10/util/complex.h`/`complex_math.h` still reference `thrust::complex` unconditionally under `__CUDACC__`, cascading into ~100 "identifier thrust is undefined" errors on ANY project that includes `torch/extension.h`, regardless of that project's own code (observed on dev build `2.14.0a0+gitb6b444c`).
 
 Neither is a defect in the port: they are defects in the ambient PyTorch install, present identically whether you build the pristine upstream or the ROCm branch. Diagnose it as environmental by checking that the errors bottom out in `torch/headeronly`/`c10` (not the port's own files) and that `grep -n '__builtin_trap\|__trap\|__HIP\|hip[A-Z]\|amdgcn\|USE_ROCM'` over the port's own changed sources is empty. Do not chase this by patching the installed torch headers (that is fixing the environment, not the port). Record `cuda-not-validated: <the missing-header or duplicated-guard error>` and, if there is time budget left, substitute a source-level check: diff the port's CUDA-facing code (e.g. the non-ROCm branch of a dual-path file) against upstream and confirm it is byte-for-byte the same logic, only guarded differently -- that is as much passthrough evidence as a real nvcc pass would give without one. (FaithC, accelerated-scan)
+
+## HIP + C++23 on an older toolchain: `isfinite cannot overload` (and how to stay forward-compatible)
+
+Symptom, on the first HIP translation unit compiled at `-std=c++23`:
+
+```
+__clang_cuda_math_forward_declares.h:93:17: error: __device__ function 'isfinite'
+  cannot overload __host__ __device__ function 'isfinite'
+<MSVC>\include\cmath:672:17: note: previous declaration is here
+  672 | _CLANG_BUILTIN1(isfinite)
+```
+
+**Cause.** C++23 (P0533R9) makes the standard math functions `constexpr`. HIP treats a
+`constexpr` function as implicitly `__host__ __device__`, so clang's
+`__clang_cuda_math_forward_declares.h`, which declares `isfinite`/`isinf`/`isnan`/`isnormal`
+`__device__`-only, can no longer overload them. Every HIP TU fails identically -- they all
+pull the same `__clang_hip_runtime_wrapper.h` chain.
+
+**Already fixed upstream**: llvm/llvm-project#201563 (merged 2026-06-09) includes the
+forward-declares BEFORE `<cmath>`. Reported at ROCm/llvm-project#285 and #2669, both closed.
+Do NOT file this again.
+
+**Which toolchains have it** (verified 2026-08-24 by reading the shipped header, not by
+version arithmetic -- ROCm cherry-picks, so commit ancestry misleads):
+
+| Toolchain | Has fix? |
+|---|---|
+| ROCm 7.14 (`7.14.0a20260612`, the last of the old nightly stream) | no |
+| ROCm 10.0 (`release/therock-10.0`, llvm pin 2026-07-28) | **no** -- it will ship without it |
+| ROCm 10.1 nightly (`10.1.0a20260823` and later) | **yes** |
+| ROCm/llvm-project `amd-compiler-2026-06` .. `-09`, and `main` | no |
+| ROCm/llvm-project `amd-staging` | yes |
+
+To check any toolchain in one line, read the order in its own header:
+`grep -n -E '#include <cmath>|__clang_cuda_math_forward_declares' $(clang++ -print-resource-dir)/include/__clang_hip_runtime_wrapper.h`
+-- forward-declares on the LOWER line number means fixed.
+
+**Preferred fix: upgrade.** ROCm 10.1 nightlies carry it. Note the index moved: the old
+`rocm.nightlies.amd.com` is frozen at `7.14.0a20260612`; current builds are at
+`https://nightly.repo.amd.com/rocm/whl-next/`. Package layout changed too --
+`rocm-sdk-devel` is now a thin metapackage whose copy of this header is a SYMLINK into
+`_rocm_sdk_core`, and device packages renamed `rocm-sdk-libraries-gfx*` ->
+`rocm-sdk-device-gfx*`.
+
+**If you must stay on an older ROCm**, use `assets/HipCxx23Shim.cmake`. It generates a copy
+of the INSTALLED wrapper with the two includes reordered and puts it on the include path
+ahead of the resource dir -- the upstream fix, applied locally, with the language standard
+untouched.
+
+Measured alternatives, all tried against ROCm 7.14 on gfx1151:
+
+| Approach | Compiles at C++23 | Keeps C++23 language | Keeps C++23 STL |
+|---|---|---|---|
+| `-std=c++20` pin | yes | **no** | **no** |
+| `-D_CONSTEXPR23=` | **no** (the STL redefines it) | -- | -- |
+| `-D_HAS_CXX23=0` | yes | yes | **no** |
+| generated wrapper shim on `-I` | yes | yes | yes |
+
+Prefer the shim. Both `-std=c++20` and `-D_HAS_CXX23=0` leave HIP TUs and host TUs with
+DIFFERENT standard-library configurations, which is an ODR hazard whenever a shared type
+crosses that boundary -- and MSVC has no `detect_mismatch` for `_HAS_CXX*`, so it fails
+silently at runtime rather than loudly at link. That matters most in exactly the projects
+that hit this, since they are C++23 project-wide.
+
+**Forward compatibility is the whole design of the module**, because a shim that keeps
+applying after the toolchain is fixed would shadow a good header with a stale copy:
+generated from the installed header at configure time and never checked in; returns empty if
+a plain probe already compiles; returns empty if the installed header is already in the fixed
+order; and re-probes WITH the shim, discarding it and warning if it did not actually help.
+
+Verified in four directions on this host: ROCm 7.14 at C++23 -> shim generated and a real HIP
+target builds; a simulated ROCm 10.1 toolchain (real 10.1 header via `-resource-dir`) ->
+"no shim needed", nothing generated; a C++20 project -> "no shim needed"; and a negative
+control with the shim disabled -> the same target fails on the same header, proving the pass
+was not vacuous.
+
+Nothing here is guarded on Windows. MSVC's STL is merely the first to implement P0533R9;
+ROCm/llvm-project#285 notes that libstdc++ doing so will break Linux identically. A
+`WIN32`-only guard, or a ROCm version check, would miss that. Probe for the capability.
