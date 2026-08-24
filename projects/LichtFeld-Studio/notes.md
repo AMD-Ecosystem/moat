@@ -1537,3 +1537,126 @@ has never been observed at this sha. linux-gfx1100 correctly reads stale
 (`validated_sha` 5cbfdf1a < head) and needs revalidation for the doc gate. Do not hand
 gfx90a back to a porter on the strength of that carried-forward record; it needs a
 validator.
+
+## Review 2026-08-24 (reviewer, linux-gfx90a) -- 00187204, CHANGES-REQUESTED
+
+Scope: the delta only, `git diff 0c820fd1..00187204`. Everything at or before 0c820fd1 was
+reviewed in the entry above and is not re-reviewed here.
+
+Branch shape verified from the local clone: `git rev-parse 00187204^` is
+`0c820fd10d11aed375fbd17d9c6c73749dc5990e`, `origin/moat-port` is
+`00187204 -> 0c820fd1 -> 53c363f8`, and the reflog shows one `commit` entry on top of the
+cloned tip -- so despite `--force-with-lease` the push was a plain fast-forward append and
+0c820fd1 is byte-identical to what the previous round reviewed. Delta is 1 file,
+`docs/building_and_distribution.md`, +7/-6 (the porter entry says +6/-5; the extra pair is
+the reflowed `-DGTest_DIR` line, no content difference). No source, kernel or build file in
+the delta, so the doc-only carry-forward reasoning recorded at 53c363f8 is still intact.
+Fork worktree `git status --porcelain` clean.
+
+Hygiene re-checked at this commit and clean: title 52 chars with `[ROCm]`, no
+`Co-Authored-By`/`Signed-off-by`/noreply trailer, AI disclosure present, Test Plan in fenced
+blocks, no non-ASCII in any added line, no AMD-internal account reference,
+`jargon.py --port LichtFeld-Studio` still 3 pre-existing instances in `13e585d47`/`e24593f4e`
+bodies and 0 from this delta. `prose.py` reports hard wrapping at lines 15 and 28 of the doc
+-- both are upstream's own paragraphs (`git show origin/master:docs/building_and_distribution.md`
+contains them verbatim), and all 39 port-added lines are one line per paragraph, so that is
+not a finding against this port.
+
+Findings 2, 3 and 4 of the previous round are resolved; finding 1 is not, because its
+replacement text states a new mechanism that is false in a case I reproduced.
+
+### Per-finding resolution
+
+1. `-DCMAKE_HIP_COMPILER` prohibition (`:114`) -- **not resolved.** The prohibition is gone,
+   which was the required part, but the sentence that replaces it asserts a mechanism that
+   does not hold. See the finding below.
+2. `$ROCM_PATH` with no shell default (`:88,98-99`) -- **resolved.** Both compiler flags now
+   use `${ROCM_PATH:-/opt/rocm}` (`:98-99`) and the bullet attributes the `/opt/rocm` default
+   to the build (`cmake/HipCompute.cmake:72-78`, which prefers a set `ROCM_PATH`, then
+   `$ENV{ROCM_PATH}`, then `/opt/rocm`). Verified on this host that
+   `${ROCM_PATH:-/opt/rocm}/llvm/bin/clang++` resolves: `$ROCM_PATH/llvm` is a symlink to
+   `lib/llvm` on the ROCm 7.2 SDK here, so the documented path works on both layouts.
+3. GoogleTest not findable from the recipe (`:92,104`) -- **resolved.**
+   `-DGTest_DIR=/path/to/gtest/lib/cmake/GTest` is in the block (`:104`) and the dependency
+   bullet offers `CMAKE_PREFIX_PATH` (`:92`). `GTest_DIR` is the right cache variable for
+   `find_package(GTest CONFIG REQUIRED)` (`cmake/hip_tests/CMakeLists.txt:11`), and
+   "found by config package" holds for Torch too: `find_package(Torch REQUIRED)`
+   (`cmake/hip_tests/CMakeLists.txt:15`) has no module-mode `FindTorch.cmake` to fall back
+   to, so `Torch_DIR`/`CMAKE_PREFIX_PATH` are the routes.
+4. Invented serial-run cause (`:116`) -- **resolved.** The concurrent-process claim is gone;
+   what remains ("runs its tests sequentially in a single process; run one instance at a
+   time") is a property of the GoogleTest binary as built here and matches every recorded
+   run.
+
+### 1. `docs/building_and_distribution.md:114` -- "CMake finds the HIP compiler under `ROCM_PATH`" is false; CMake keys on `hipconfig`/`PATH`/`HIPCXX`, not on `ROCM_PATH`
+
+Current text: "`CMAKE_HIP_COMPILER` does not have to be set on a standard ROCm install: HIP
+is enabled at `project()` time and CMake finds the HIP compiler under `ROCM_PATH`. Pass it
+explicitly when the HIP toolchain lives somewhere CMake does not search."
+
+`ROCM_PATH` plays no part in CMake's HIP compiler search.
+`Modules/CMakeDetermineHIPCompiler.cmake` takes `$ENV{HIPCXX}` if set, else runs
+`hipconfig --hipclangpath` (hipconfig must be on `PATH`) to build `CMAKE_HIP_COMPILER_HINTS`,
+then calls `_cmake_find_compiler(HIP)`, which searches those hints and `PATH` for `clang++`
+(`Modules/CMakeDetermineCompiler.cmake:35-52`). The `ROCM_PATH` this project defines is
+consumed only later, in `cmake/HipCompute.cmake:72-82,132,136`, for include directories and
+`find_library` hints -- by then the HIP compiler is already resolved.
+
+Reproduced on this host, ROCm 7.2 SDK, with `ROCM_PATH` correctly set to the ROCm prefix and
+`$ROCM_PATH/bin` removed from `PATH`, using the doc's own flags
+(`-DUSE_HIP=ON -DCMAKE_CXX_COMPILER="$ROCM_PATH/llvm/bin/clang++" ...`) on a minimal project
+with this project's `if(NOT DEFINED USE_HIP)` / `project(... LANGUAGES HIP CXX C)` shape:
+
+```
+CMake Error at .../Modules/CMakeDetermineHIPCompiler.cmake:174 (message):
+  Failed to find ROCm root directory.
+```
+
+Identical failure on cmake 3.28.3 and 3.31.6. Note that `-DCMAKE_CXX_COMPILER` pointing into
+the ROCm tree does not rescue it, because `HIP` is the first language in
+`project(... LANGUAGES HIP CXX C)` (`CMakeLists.txt:55`) and the sibling-compiler-directory
+hint only uses languages already enabled. Putting `hipconfig` back on `PATH`, or setting
+`HIPCXX`, makes the same configure succeed (both verified).
+
+Why this matters rather than being a wording quibble: the bullet directly above
+(`:88`, "set it if ROCm is installed elsewhere") addresses the non-default-prefix reader, and
+`:114` then tells that reader `ROCM_PATH` is what makes CMake find the compiler. It is
+exactly that reader for whom it is untrue, and the escape hatch offered
+("when the HIP toolchain lives somewhere CMake does not search") does not help, because the
+doc has just told them `ROCM_PATH` is somewhere CMake searches. This is the same class the
+previous round rejected: an unverified mechanism attached to correct operational advice.
+
+Fix: keep the advice, state what CMake actually keys on. For example --
+
+"The commands above are the Linux recipe. `CMAKE_HIP_COMPILER` does not have to be set when
+ROCm's `bin` directory is on `PATH`: CMake asks `hipconfig` where the ROCm Clang lives, and
+HIP is enabled at `project()` time so no reconfigure is needed. Otherwise name the compiler
+yourself with `-DCMAKE_HIP_COMPILER` or the `HIPCXX` environment variable; setting
+`ROCM_PATH` alone does not steer that search."
+
+Any wording that does not claim `ROCM_PATH` drives the compiler search is acceptable; the
+sentence is the only thing blocking this round.
+
+### Checked, NOT findings
+
+- The commit body's assertions were re-checked and hold: `USE_HIP` is a plain cache BOOL
+  inside `if(NOT DEFINED USE_HIP)` (`CMakeLists.txt:13-16`); a minimal project with that
+  shape configured with `-DUSE_HIP=ON -DCMAKE_HIP_COMPILER=$ROCM_PATH/llvm/bin/clang++`
+  keeps `USE_HIP=ON` and takes the HIP branch (reproduced here on cmake 3.31.6);
+  `find_package(GTest CONFIG REQUIRED)` is at `cmake/hip_tests/CMakeLists.txt:11`; both
+  `#amd-gpus-rocmhip` anchors still resolve (`README.md:90`,
+  `docs/building_and_distribution.md:10,127`).
+- Test Plan uses placeholders (`<rocm libtorch>`) and discloses that the recorded run used
+  `CMAKE_PREFIX_PATH` rather than `-DGTest_DIR`. Honest and adequate for a doc-only commit.
+
+### Non-blocking, for PR prep -- not this round
+
+`CMakeLists.txt:51-54` still carries the mechanism this round retired: "enable HIP (not
+CUDA) at `project()` time so the HIP compiler is detected during CMakeDetermineSystem and no
+mid-configure reconfigure (which would not re-apply `-DUSE_HIP`) is triggered". That
+parenthetical contradicts the comment at `CMakeLists.txt:13-15`, which says the plain cache
+BOOL exists precisely so a command-line `-DUSE_HIP=ON` does survive a reconfigure, and it
+contradicts this commit's own body. Both are upstream-visible comments. Trimming the
+parenthetical (the rest of the comment is accurate and worth keeping) belongs with the
+PR-prep round together with the `enable_testing()` item, because it touches a build file and
+the validator has to rule on whether a comment-only build-file edit still carries forward.
