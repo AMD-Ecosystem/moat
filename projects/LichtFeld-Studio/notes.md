@@ -1385,3 +1385,103 @@ write and needs a real GPU pass. Registered as `lfs-advance-head-carries-doc-gat
 Practical unblock for whoever picks this up: dispatch the linux-gfx90a VALIDATOR
 explicitly after the review round rather than trusting the selector's routing; a real
 GPU pass at 0c820fd1 records `completed` and clears the stale failure by itself.
+
+## Review 2026-08-24 (reviewer, linux-gfx90a) -- 0c820fd1, CHANGES-REQUESTED
+
+Scope: `git diff 53c363f8..0c820fd1` -- the doc-only round answering the documentation
+gate. 2 files, +39/-0 (`docs/building_and_distribution.md`, `README.md`); confirmed no
+source, kernel or build file in the delta, so the doc-only carry-forward reasoning in the
+validation entry above is intact. `git status --porcelain` in the checkout is clean
+(sparse checkout; skip-worktree files do not show). Commit hygiene clean: title 50 chars
+with `[ROCm]`, AI disclosure, Test Plan, no `Co-Authored-By`, ASCII-only additions,
+no AMD-internal account reference in this commit. `jargon.py --port` reproduced: 3
+instances, all in `13e585d47`/`e24593f4e` bodies, 0 from this delta (deferral
+`lfs-commit-msg-jargon-13e585d-e24593f`). Section placement, both anchors
+(`#amd-gpus-rocmhip`), the `USE_HIP` row (default OFF matches `CMakeLists.txt:16-18`),
+the binary path `build-hip/cmake/hip_tests/lfs_compute_tests`, the dependency flag names
+(`LFS_GLM_INCLUDE_DIR`, `LFS_ARGS_INCLUDE_DIR`, `Torch_DIR`), the GLM >= 1.0.1 floor, the
+`ROCM_PATH` CMake default and the "hands off to HipCompute.cmake and returns" claim were
+each checked against the build files and hold.
+
+Verdict is changes-requested on documentation-accuracy grounds only: the round exists to
+make the ROCm build documented *correctly*, and three of the statements are not supported
+by this project's own record. All four fixes below are doc-only, so the next head stays
+inert and the carry-forward reasoning is unaffected.
+
+### 1. `docs/building_and_distribution.md:113` -- the `-DCMAKE_HIP_COMPILER` prohibition is not supported at head, and contradicts this project's Windows builds
+
+"Do not pass `-DCMAKE_HIP_COMPILER`. It provokes a second configure pass that does not
+re-apply `USE_HIP`, and the build then falls back to the CUDA path."
+
+- The stated mechanism cannot hold with the current declaration. `CMakeLists.txt:13-18`
+  declares `USE_HIP` as a plain cache BOOL inside `if(NOT DEFINED USE_HIP)` precisely so
+  a command-line `-DUSE_HIP=ON` survives a reconfigure, and its own comment attributes the
+  reset-to-default fallback to `option()`, which the file has not used since the first port
+  commit (`git log -S "Plain cache BOOL" -- CMakeLists.txt` -> `e24593f4`).
+- Reproduced here on cmake 3.31.6 with ROCm clang++ 23.0.0: a minimal project using the
+  same `if(NOT DEFINED X) set(X OFF CACHE BOOL ...)` shape, configured with
+  `-DUSE_HIP=ON -DCMAKE_HIP_COMPILER=<rocm>/lib/llvm/bin/clang++`, keeps `USE_HIP=ON` and
+  takes the HIP branch (so does the `option()` variant). This does not reproduce the full
+  project's configure, so it does not prove the sentence false in every environment -- it
+  does show the documented cause is not established.
+- This project's own Windows record does the opposite of what the doc instructs, and it
+  works: `notes.md:395-405` configures with `-DUSE_HIP=ON` *and*
+  `-DCMAKE_HIP_COMPILER=<venv>/.../clang++.exe` and reports 177/177 targets with
+  `lfs_compute_tests.exe` produced; the gfx1151 round used a toolchain file setting
+  `CMAKE_HIP_COMPILER_FORCED=TRUE` (`notes.md:841-842`) and compiled 94/94 objects.
+
+Fix: drop the paragraph or reduce it to what is established -- HIP is enabled at
+`project()` time, so `CMAKE_HIP_COMPILER` does not need to be set on a standard ROCm
+install. If the section is meant to be platform-generic, say that the block is the Linux
+recipe, since the recorded Windows recipe needs the very flag the doc forbids.
+
+### 2. `docs/building_and_distribution.md:88,98-99` -- `$ROCM_PATH` in the shell block has no shell default
+
+Line 88 says "`ROCM_PATH` defaults to `/opt/rocm`", which is true of the CMake variable
+(`cmake/HipCompute.cmake:70-76`) and not of the reader's shell. The copy-paste block then
+expands `-DCMAKE_CXX_COMPILER="$ROCM_PATH/llvm/bin/clang++"` to `/llvm/bin/clang++` for
+exactly the reader the sentence describes (default install, variable unset), who gets a
+confusing "compiler not found" instead of a build.
+
+Fix: `export ROCM_PATH="${ROCM_PATH:-/opt/rocm}"` as the first line of the block, or use
+`${ROCM_PATH:-/opt/rocm}` inline in both compiler flags.
+
+### 3. `docs/building_and_distribution.md:92,94-105` -- GoogleTest is required but the recipe never says how to find it
+
+`cmake/hip_tests/CMakeLists.txt:11` is `find_package(GTest CONFIG REQUIRED)`, and the
+recipe supplies a flag for every other non-default dependency. The recorded builds both
+had to point at GTest: the gfx90a bring-up needed `CMAKE_PREFIX_PATH` to include the conda
+GTest (`notes.md:56`, "CMAKE_PREFIX_PATH must include the torch cmake dir + conda GTest +
+/usr"), and the Windows recipe passed `-DGTest_DIR=` (`notes.md:400`). As written the
+block only configures when GTest is already on the default search path, which contradicts
+the commit body's claim that these are the commands the gfx90a bring-up used.
+
+Fix: add `-DGTest_DIR=/path/to/gtest/lib/cmake/GTest` to the block (or one sentence about
+`CMAKE_PREFIX_PATH` covering GTest and Torch).
+
+### 4. `docs/building_and_distribution.md:115` -- the serial-run rationale is unsupported
+
+"run it serially, since concurrent processes on one GPU produce spurious failures". No
+concurrent-run experiment is recorded anywhere in this file; every recorded run is a single
+process (`notes.md:191-198`, `274-277`, `671-677`), and `notes.md:197` says "single-process
+=> serial", which is a property of the binary, not an observed failure mode. Do not publish
+a causal claim upstream that the project's record does not support.
+
+Fix: drop the clause, or state the operational advice without the invented cause ("run one
+instance at a time; the binary runs its tests sequentially in a single process").
+
+### Checked and NOT a finding: the CTest sentence is correct
+
+`docs/building_and_distribution.md:115` says `lfs_compute_tests` is not registered with
+CTest on this path. `cmake/hip_tests/CMakeLists.txt` *does* call `gtest_discover_tests`,
+but `enable_testing()` exists only at `CMakeLists.txt:1009`, past the `return()` at :57
+that the `USE_HIP` branch takes. Verified empirically here that without `enable_testing()`
+CMake writes no `CTestTestfile.cmake` and `ctest` finds nothing, even when
+`TEST_INCLUDE_FILES` is appended -- so the doc is right in effect and the porter's claim
+survives independent checking.
+
+Non-blocking, and NOT for this doc-only round: the cleaner shape is one `enable_testing()`
+in `cmake/HipCompute.cmake` before `add_subdirectory(cmake/hip_tests)`, which would make
+`ctest` work and the caveat unnecessary. That edits a build file and would cost a real GPU
+revalidation, so it belongs to the PR-prep round (or to a maintainer's preference), not
+here.
