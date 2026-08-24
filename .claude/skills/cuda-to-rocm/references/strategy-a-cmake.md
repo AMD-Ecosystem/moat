@@ -143,13 +143,18 @@ unchanged, but proving that needs the right instrument:
   which contain no device code at all; that `indeterminate` says nothing about your kernels.
 - **The raw `llvm-objcopy --dump-section=.hip_fatbin` per object plus sha256 compare is the
   fallback, and it is sound ONLY when both builds happen in the SAME directory.**
-  `__hip_cuid_<hash>` is derived from the source path as spelled on the compiler command
-  line, and CMake spells it absolutely, so two checkouts of the SAME commit built side by
-  side in different directories yield different fatbins -- identical in size, differing in a
-  few dozen bytes. Followed literally across two paths the recipe reports every object
-  changed with no source change whatever (TurboFNO: a 10/10 false alarm before the cause was
-  found). Build commit A, capture the objects, `git checkout` commit B in place, and rebuild
-  in that same directory; or exclude `__hip_cuid_` from the compare.
+  `__hip_cuid_<hash>` is a hash of the whole compile command line: the source path as
+  spelled, plus `-o`, `-I` and `-D`, which in a CMake build all carry the build tree's
+  absolute path. Two checkouts of the SAME commit built side by side in different
+  directories therefore yield different fatbins -- identical in size, differing in a few
+  dozen bytes -- and spelling the source relatively does not defeat it, because the other
+  arguments still differ. Followed literally across two paths the recipe reports every
+  object changed with no source change whatever (TurboFNO: a 10/10 false alarm before the
+  cause was found). The remedy is one directory: build commit A, capture the objects,
+  `git checkout` commit B in place, and rebuild there. Excluding the cuid is sound only at
+  SYMBOL level (`llvm-nm <obj> | grep -v __hip_cuid_`), never as a byte-level normalization
+  of the dumped fatbin -- a length-preserving substitution of the name still left 8 of 40
+  differing bytes, name-derived table bytes it cannot reach.
   `llvm-nm <obj> | grep __hip_cuid_` on both objects tells you in one command whether a
   difference is only this.
 

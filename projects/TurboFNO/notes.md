@@ -435,7 +435,8 @@ tree, 2 of them in the built variants: `fusion_variants/1D_E_baseline/fused.cu:1
 notice-covered block and has no counterpart in it, but its message string
 `"ERROR: cuBLAS call \"%s\" failed in line %d of file %s with error code (%d)."`
 is a word-reordering of the sample's sentence. Out of scope for this round; worth
-a person's call on whether it should get the same treatment.
+a person's call on whether it should get the same treatment. (Ruled 2026-08-24 --
+rewrite the message string; see the round of 2026-08-24 at the end of this file.)
 
 ### VERIFIED on this host (linux-gfx1100, ROCm 7.2.3, W7800, gfx1100)
 
@@ -453,9 +454,10 @@ All 10 SAME, byte for byte (1D_A 561568 B, 1D_B 654176, 1D_C 682832, 1D_D 639192
 1D_E 53456, 2D_A 1042328, 2D_B 1152712, 2D_C 1181496, 2D_D 1139088, 2D_E 55960).
 Even `__hip_cuid_` matched -- and only because both builds were in the same
 directory. The raw sha256 compare is valid ONLY that way: `__hip_cuid_<hash>` is
-derived from the source path as spelled on the compiler command line, and CMake
-spells it absolutely, so the same sha built at two different paths gives ten
-DIFFERENT `.hip_fatbin` sections at identical sizes and no source change at all
+a hash of the whole compile command line -- the source path as spelled, plus
+`-o`, `-I` and `-D`, which under CMake all carry the build tree's absolute path
+-- so the same sha built at two different paths gives ten DIFFERENT
+`.hip_fatbin` sections at identical sizes and no source change at all
 (measured by the reviewer on this host, and reproduced here on a two-line HIP TU:
 identical relative invocations from two directories share a cuid, absolute paths
 do not -- `__hip_cuid_d58b34f5e97e06ef` vs `__hip_cuid_24773c8bdfb1bd86`, 41
@@ -796,3 +798,115 @@ ROCm 7.2.3, W7800 (gfx1100), CMake 3.31.6.
    reference, subjects scoped `TurboFNO: ...` (these are MOAT-side records, not
    fork commits, so the `[ROCm]` title rule does not apply). No ROCm fault class
    is in scope: no source, build, or kernel file moved this round.
+
+## Port round 2026-08-24 (porter, linux-gfx1100): CUBLAS_CALL message string
+
+Closes the escalated question flagged at line 430. Ruling by jeffdaily, 2026-08-24:
+give `CUBLAS_CALL` the same treatment as the other two macros, rewriting the
+MESSAGE STRING ONLY -- keep the macro name, the checked-call pattern, and the
+exact observable behaviour (report, then `exit(EXIT_FAILURE)`), so none of the 4
+call sites (2 of them built) move. The question is no longer open.
+
+Fork commit `b8d2e98` on `moat-port`, on top of 03141cf. `pr_state` was verified
+`merged` (PR #3) before pushing, so `moat-port` is not frozen and the commit is a
+plain fast-forward; nothing at or below the published tip was rewritten.
+
+### What changed
+
+`utils/utils.cuh`, one hunk, +2 -3: only the `fprintf` statement inside
+`CUBLAS_CALL`. Old string
+`"ERROR: cuBLAS call \"%s\" failed in line %d of file %s with error code (%d).\n"`
+-> new `"%s:%d: %s -> cuBLAS status %d\n"` with `__FILE__, __LINE__, #call,
+static_cast<int>(status)`, the same compiler-style shape and the same `int` cast
+the rewritten `CUDA_RT_CALL` / `CUFFT_CALL` use. The surrounding `{ ... }` block,
+the `cublasStatus_t status = call;` line, the `fflush(stdout)`, the
+`exit(EXIT_FAILURE)`, and upstream's own comment above the macro are untouched;
+the header now reports every failure one way and no message text in it tracks the
+sample's sentence.
+
+### VERIFIED on this host (linux-gfx1100, ROCm 7.2.3, W7800, gfx1100)
+
+Device-code equivalence by BOTH methods the amended lesson names, and they agree:
+
+- Same-directory rebuild (the sound form of the raw sha256 compare), run twice.
+  First incrementally, then as a CLEAN pair to remove any doubt about incremental
+  staleness: `install.sh clean` + full build with the 03141cf header in place,
+  dump `.hip_fatbin` from each kernel object, restore the new header, `install.sh
+  clean` + full build again in the same tree, dump again. All 10 byte-identical
+  both times, sizes matching every earlier round (1D_A 561568, 1D_B 654176,
+  1D_C 682832, 1D_D 639192, 1D_E 53456, 2D_A 1042328, 2D_B 1152712, 2D_C 1181496,
+  2D_D 1139088, 2D_E 55960). The incremental new-header objects are also
+  byte-identical to the clean new-header ones, 10/10, so the build is
+  deterministic in this tree. `utils.cu.o` identical in all ten variants as well
+  (10 distinct hashes across variants because of their per-variant `-D` flags,
+  each unchanged old vs new).
+- `python3 utils/codeobj_diff.py <old_copy> <new_copy>` with the two sets of
+  executables copied to two DIFFERENT directories: `verdict=identical`, and every
+  one of the ten per-binary lines reads `identical (exported symbols + device ISA
+  identical (3 exports))`. Path-immune cross-check of the same claim.
+
+```
+export PROJECT_ROOT=$(pwd)
+USE_HIP=1 CMAKE_HIP_ARCHITECTURES=gfx1100 bash install.sh   # 10/10, 0 errors, 436 warnings
+/opt/rocm/llvm/bin/llvm-objcopy --dump-section=.hip_fatbin=out.bin <variant>.cu.o /dev/null
+```
+
+CUDA path, nvcc 12.8 (`/opt/conda/envs/cuda-12.8`), `-DUSE_HIP=OFF
+-DCMAKE_CUDA_ARCHITECTURES=86`: all ten variants configure, compile AND LINK,
+PASS=10 FAIL=0. Throwaway `fusion_variants/*/build-cuda-check` dirs removed
+afterwards.
+
+Runtime smoke on GPU 0: `TurboFNO_1D_E` (the hipBLAS/hipFFT baseline, the built
+variant that actually calls `CUBLAS_CALL`) ran its whole sweep, 960 result lines,
+exit 0, zero macro output -- the success path is still silent.
+
+Failure path fired once, `agent_space/turbofno_cublas_failpath.cu` built with
+`clang++ -x hip --offload-arch=gfx1100 -DUSE_HIP -I hip_compat -I utils -include
+hip_compat/cuda_to_hip.h ... -lhipblas`:
+```
+[probe] CUBLAS_CALL success path: silent, handle=non-null
+.../turbofno_cublas_failpath.cu:17: cublasCgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, -1, -1, -1, &alpha, nullptr, 1, nullptr, 1, &beta, nullptr, 1) -> cuBLAS status 3
+exit=1
+```
+New format, and `exit(EXIT_FAILURE)` behaviour preserved exactly (status 3 =
+`HIPBLAS_STATUS_INVALID_VALUE`).
+
+### Gotchas
+
+- Forcing a hipBLAS error safely: a GEMM with negative extents returns status 3
+  without touching device memory, which is what the probe uses. Promoted to the
+  skill's fault-classes entry that already covers the rocFFT case, since any port
+  testing error-check macros needs a trigger that is verified to RETURN.
+- `install.sh clean` needs `PROJECT_ROOT` as much as a build does: without it the
+  script exits 1 at its own guard, and a `clean` whose output was redirected looks
+  like it worked. The "baseline" build after such a clean is then an incremental
+  no-op (2.4 s for ten variants, which is the tell). Check the elapsed time, or
+  set `PROJECT_ROOT` before `clean`.
+- The CUDA-path check needs `PROJECT_ROOT` exported too, not just the HIP one:
+  `CMakeLists.txt:24` fails configuration with "Please set the PROJECT_ROOT
+  environment variable" on both paths. A run without it fails all ten variants
+  identically, which reads like a source breakage and is not one.
+- `cuComplex` is not remapped by `hip_compat/cuda_to_hip.h` (it maps
+  `cublasStatus_t`, `cublasCgemm` and friends, not the complex types), so a probe
+  TU compiled against the header must spell `hipComplex` /
+  `make_hipFloatComplex`. Project-specific; the built variants use their own
+  complex typedefs and were unaffected.
+
+### Lesson clauses corrected this round (MOAT side)
+
+Answering the second review of 2026-08-24, in
+`.claude/skills/cuda-to-rocm/references/strategy-a-cmake.md`:
+
+1. The cuid attribution no longer claims the source spelling exclusively: it is
+   now "a hash of the whole compile command line: the source path as spelled,
+   plus `-o`, `-I` and `-D`, which in a CMake build all carry the build tree's
+   absolute path", with the explicit note that spelling the source relatively
+   does not defeat the artifact because the other arguments still differ. The
+   same sharpening is mirrored in this file's equivalence write-up above.
+2. "or exclude `__hip_cuid_` from the compare" is gone as a byte-level escape
+   hatch. The bullet now says exclusion is sound only at SYMBOL level
+   (`llvm-nm <obj> | grep -v __hip_cuid_`) and never as a byte-level
+   normalization of the dumped fatbin, citing the reviewer's measurement that a
+   length-preserving substitution still leaves 8 of 40 differing bytes. The
+   same-directory rebuild is the fallback's only remedy; `codeobj_diff.py`
+   remains the primary tool.

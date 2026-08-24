@@ -323,6 +323,10 @@ transform length zero -- never returns on ROCm 7.2.3, while cuFFT answers
 This bites when you deliberately force an error to test a port's error-check macros or its
 failure paths: pick a trigger that is verified to return, such as
 `hipfftExecC2C(plan, nullptr, nullptr, dir)` (status 6, on a planned or unplanned handle).
+For hipBLAS the equivalent verified trigger is a GEMM with negative extents --
+`hipblasCgemm(handle, HIPBLAS_OP_N, HIPBLAS_OP_N, -1, -1, -1, &alpha, nullptr, 1, nullptr,
+1, &beta, nullptr, 1)` returns `HIPBLAS_STATUS_INVALID_VALUE` (3) on a valid handle and
+touches no device memory, so it is safe to fire from a probe.
 More generally, before concluding a port hangs, reproduce the hang in a few-line program
 that includes none of the project's headers -- that separates a library bug from your
 change. (TurboFNO.)
