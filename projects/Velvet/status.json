@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-08-24T20:45:45Z",
+  "updated_at": "2026-08-24T20:59:32Z",
   "head_sha": "7ccd4a98451e144e05f5bdf19827a28471f787e0",
   "depends_on": [],
   "pr_url": "https://github.com/vitalight/Velvet/pull/9",
@@ -53,10 +53,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "bb06b44",
+      "validated_sha": "7ccd4a98451e144e05f5bdf19827a28471f787e0",
       "started_at": "2026-08-24T19:46:28Z",
-      "completed_at": "2026-06-23T22:21:53Z",
-      "updated_at": "2026-08-24T20:45:45Z",
+      "completed_at": "2026-08-24T20:59:32Z",
+      "updated_at": "2026-08-24T20:59:32Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -72,10 +72,10 @@
       },
       "last_agent": "reviewer",
       "carry_forward": {
-        "to": "bb06b44",
-        "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:21:53Z"
+        "to": "7ccd4a98451e144e05f5bdf19827a28471f787e0",
+        "method": "binary-equiv",
+        "detail": "codeobj_diff verdict=identical (13 exports) at both bb06b44/build_old and 7ccd4a9/build_new (identical tree to reviewed 49f6db9); mixed-class CMake/host-code delta, no device ISA change",
+        "at": "2026-08-24T20:59:32Z"
       }
     },
     "windows-gfx1101": {

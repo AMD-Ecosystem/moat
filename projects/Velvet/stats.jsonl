@@ -70,3 +70,8 @@
 {"kind":"session","ts":"2026-08-24T20:39:57Z","epoch":1787603997.809948563,"event":"end","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-24T20:41:16Z","epoch":1787604076.945776097,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-24T20:45:49Z","epoch":1787604349.396552272,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-24T20:58:04Z","epoch":1787605084.923734878,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-24T20:58:09Z","epoch":1787605089.968549939,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-24T20:58:43Z","phase":"compile","seconds":9.328,"exit":0,"cmd":"cmake --build projects/Velvet/src/build_new -j64"}
+{"kind":"phase","ts":"2026-08-24T20:59:08Z","phase":"compile","seconds":9.352,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/agent_space/velvet-old-bb06b44/build_old -j64"}
+{"kind":"session","ts":"2026-08-24T21:00:16Z","epoch":1787605216.870153786,"event":"end","platform":"linux-gfx1100"}

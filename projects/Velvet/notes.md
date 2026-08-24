@@ -1129,3 +1129,91 @@ Non-blocking record note, for whoever next edits this file: the "CUDA path: no r
 the BSD swap" recipe and the first review section still cite `49f6db9`, which is no longer on the
 remote. The statements remain true (same tree as `7ccd4a9`), but a reader on a fresh clone cannot
 resolve that sha; re-point it to `7ccd4a9` next time the section is touched.
+
+## Validation 2026-08-24 (linux-gfx1100, revalidation of fix round, carry-forward)
+
+Dispatched as `revalidate`: `validated_sha=bb06b44`, staging tip `head_sha=7ccd4a9` on
+`moat-fix-9` (PR #9 open, published tip stays `bb06b44`; `moat-port` not touched). Stage
+was `review-passed` (second-pass review above). GPU: AMD Radeon Pro W7800 48GB (gfx1100),
+ROCm 7.2.3 (`hipcc` 7.2.53211).
+
+### Classification
+
+```bash
+python3 utils/moatlib.py classify Velvet bb06b44 7ccd4a9
+# -> class=mixed arch_independent=False inert=False
+#    CMakeLists.txt: mixed; helper_cuda.h: mixed; helper_math.h: comment-only;
+#    helper_string.h: mixed; cuda_to_hip.h: mixed
+```
+
+`mixed`, not auto-carried by `advance_head` -- binary-equivalence check required before
+deciding between carry-forward and a full GPU re-run.
+
+### Binary-equivalence check (both shas, this arch)
+
+Built `head_sha` in place (fork clone already on `moat-fix-9` at `7ccd4a9`) and
+`validated_sha` in a scratch tree (`git archive bb06b44`), same configure line:
+
+```bash
+export PATH=/opt/rocm/bin:/opt/rocm/llvm/bin:/usr/local/bin:/usr/bin:/bin
+export HIP_VISIBLE_DEVICES=0
+cmake -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_IGNORE_PATH=/opt/conda -DCMAKE_PREFIX_PATH=/opt/rocm \
+  -DCMAKE_TOOLCHAIN_FILE=/var/lib/jenkins/vcpkg/scripts/buildsystems/vcpkg.cmake
+bash utils/timeit.sh Velvet compile -- cmake --build build -j$(nproc)
+```
+
+Both configure and build RC=0 at both shas (warnings only: `nodiscard hipError_t`
+ignored-return-value on pre-existing `cudaDeviceSynchronize`/`cudaMemsetAsync`/CUB calls,
+unrelated to this round).
+
+```bash
+python3 utils/codeobj_diff.py <bb06b44 build>/bin/Velvet <7ccd4a9 build>/bin/Velvet
+# -> verdict=identical
+#    Velvet vs Velvet: identical (exported symbols + device ISA identical (13 exports))
+```
+
+This is a third independent measurement of the same result the porter and the reviewer
+both recorded against `49f6db9` (tree-identical to `7ccd4a9`: `49f6db9^{tree} == 7ccd4a9^{tree}`,
+only commit messages differ between the two, per the message-amendment round). Carried
+forward, no GPU re-run:
+
+```bash
+python3 utils/moatlib.py carry-forward Velvet linux-gfx1100 7ccd4a9 binary-equiv \
+  "codeobj_diff verdict=identical (13 exports) at both bb06b44/build_old and 7ccd4a9/build_new
+   (identical tree to reviewed 49f6db9); mixed-class CMake/host-code delta, no device ISA change"
+```
+
+`linux-gfx1100.state=completed`, `validated_sha=7ccd4a9`.
+
+### CUDA gate
+
+Not re-run: this is a carried-forward revalidation (rule 3's exemption applies), and the
+gate at this exact tree was already independently re-verified twice today (porter's fix
+round, and both review passes above) with `nvcc` from `/opt/conda/envs/cuda-12.8` at
+`-arch=sm_80`, one invocation per file, RC=0/0 errors on the two `.cu` files, `main.cpp`,
+`VtEngine.cpp`; `Timer.cpp` fails identically at both shas under g++ 13.3 (pre-existing,
+want of `<vector>`, not this round's).
+
+### Jargon / documentation gate
+
+```bash
+python3 utils/jargon.py --port Velvet
+# -> jargon: clean
+```
+
+Build documentation for the ROCm path (`## Build` at the top of this file) is unchanged by
+this round and was not touched.
+
+### Open item, not mine to solve
+
+`moatlib.fix_ready('Velvet')`'s wave64 gap is unchanged by this round: linux-gfx90a is
+`blocked` (compute-only CDNA2, no GL interop -- hardware capability gap, not a defect) and
+so is not a validation-failed record. Whether a wave64 waiver is warranted is a person's
+call per the fix round note above; not attempted here.
+
+### Integrity
+
+`git status --porcelain` in `projects/Velvet/src` clean (fork clone unchanged, still on
+`moat-fix-9` at `7ccd4a9`; scratch build dirs were untracked and removed). No push to the
+fork was needed or made.
