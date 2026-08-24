@@ -98,6 +98,49 @@ Prefer this when the project includes CUDA headers by name. It does not apply wh
 use CUDA symbols without including a CUDA header, or where the build already injects a
 compat header with `-include`.
 
+## Vendored CUDA-samples helpers: keep them off the AMD build entirely
+
+Many CUDA projects vendor `helper_cuda.h` / `helper_math.h` / `helper_string.h` from a
+pre-2017 CUDA samples drop. Those copies carry "Please refer to the NVIDIA end user license
+agreement (EULA)", so they are proprietary-marked files, and the rule is that nothing AMD
+builds may compile, execute, or take them as a build input -- and that the port's diff must
+not modify them either (editing one makes the diff a derivative work of it). Never delete a
+licence or notice file to get there.
+
+Two moves, both needed:
+
+1. **Write your own substitute.** Grep first: in practice the only symbol a project uses from
+   `helper_cuda.h` is `checkCudaErrors` (plvs: 36 sites; Velvet: 9). Write it INDEPENDENTLY --
+   own name and namespace, a non-template function taking `hipError_t` exactly, your own
+   message format, no `DEVICE_RESET` dance. Do not paraphrase the sample's `check<T>()`
+   template or its `"CUDA error at %s:%d code=%d(%s)"` string; a HIP block that mirrors them
+   is the same derivative problem one indirection away. Velvet's first port did exactly that
+   and it had to be rewritten.
+2. **Keep the directory off the HIP include path**, so an accidental include fails to resolve
+   instead of compiling. Either wrap the entry (`if(NOT USE_HIP) target_include_directories(...
+   Velvet/External/cuda) endif()`, Velvet) or put a shadow header in a `hip_compat/` directory
+   prepended only on the HIP path (`include_directories(BEFORE ...)` inside `if(USE_HIP)`,
+   plvs/alien). The CUDA build's include resolution is untouched either way.
+
+**Prove it; do not infer it from the source.** `#if !defined(USE_HIP)` guards around the
+include lines are not evidence the file is not a build input, and CMake's own
+`HIP.includecache` lists textual `#include` lines it never resolved (it does not evaluate
+`#if`), so it will show `helper_cuda.h` on a build that never opened it. What settles it is a
+per-TU include trace with the build's real flags, taken from
+`build/CMakeFiles/<tgt>.dir/flags.make`:
+
+    hipcc -x hip -fsyntax-only -H <the build's exact flags> <tu> 2>&1 | grep -c helper_cuda
+
+Expect 0 for EVERY translation unit, plus an empty `grep -rl "<vendor dir>" build/`.
+
+**The CUDA path can usually be cleaned too.** NVIDIA republished all three headers under
+BSD 3-Clause in `NVIDIA/cuda-samples` under `Common/`, and they are API supersets of the old
+drops, so replacing the vendored copies with those releases verbatim is normally a no-op for
+the CUDA build. Verify rather than assume: compile the TUs that include them with `nvcc` (and
+the host TUs with the host compiler) at both the base and the new sha and diff the results, and
+`-H`-trace one TU to confirm the swapped files are actually opened so the check is not vacuous.
+Record the upstream commit and the sha256 of each file you copied in. (plvs, Velvet.)
+
 ## Build hygiene
 
 - **Do not pin `--offload-arch` or `CMAKE_HIP_ARCHITECTURES` in the committed build.** Pass
