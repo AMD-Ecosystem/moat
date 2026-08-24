@@ -26,10 +26,14 @@
       "refs": [
         "projects/TurboFNO/notes.md 2026-08-24 round"
       ],
-      "status": "open",
-      "upstream_issue": null,
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/hipFFT/issues/185",
       "created_at": "2026-08-24T20:57:53Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-08-24T21:59:41Z"
+      }
     }
   ]
 }
