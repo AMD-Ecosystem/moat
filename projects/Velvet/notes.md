@@ -1357,3 +1357,187 @@ to run, not this round's or this host's -- no Windows host, no code change neede
 for a person to decide yet. `upstream.py --fix-review` needs the windows gate too (it shares
 `_gate_blockers` with `pr_ready`), so the fix round is not ready for that step until a
 Windows arch revalidates at `7ccd4a9`.
+## Validation 2026-08-24 (windows-gfx1151, fix round bb06b44..7ccd4a9): FAIL -- real HIP kernel launches confirmed, but the actual application never simulates
+
+Dispatched as the fleet's only Windows host for this fix round: windows-gfx1101 and
+windows-gfx1201 are `completed` but stuck at the published `bb06b44` (do not carry this
+round), so windows-gfx1151 was the sole Windows evidence attempt at `head_sha=7ccd4a9` on
+`moat-fix-9` (PR #9 open, `moat-port` frozen at `bb06b44`).
+
+### Setup
+
+```bash
+git clone https://github.com/AMD-Ecosystem/Velvet.git projects/Velvet/src
+cd projects/Velvet/src && git checkout moat-fix-9   # HEAD = 7ccd4a98..., matches head_sha
+git cat-file -e bb06b44^{commit}                    # exists (published tip still reachable)
+python3 utils/moatlib.py protect-fork Velvet        # PR open -> freeze guard installed
+```
+
+Deps installed via vcpkg (none were pre-installed on this host):
+
+```bash
+D:/vcpkg/vcpkg.exe install glfw3 glad fmt glm assimp \
+  "imgui[core,opengl3-binding,glfw-binding]" --triplet x64-windows
+```
+
+(assimp/fmt were already present from a prior port on this host; glfw3/glad/glm/imgui
+built fresh, about 1.2 minutes total.)
+
+### Build
+
+CMake 3.31.0 here cannot do enable_language(HIP) ABI detection with clang-cl; used the
+GNU-driver route (clang.exe/clang++.exe, -G Ninja) that the gfx1201/gfx1101 validations
+already established for this project. Configure succeeded cleanly, no workaround needed:
+
+```bash
+export ROCM_DEVEL="D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel"
+cmake -B build_win_gfx1151 -S . -G Ninja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=$ROCM_DEVEL/lib/llvm/bin/clang.exe \
+  -DCMAKE_CXX_COMPILER=$ROCM_DEVEL/lib/llvm/bin/clang++.exe \
+  -DCMAKE_HIP_COMPILER=$ROCM_DEVEL/lib/llvm/bin/clang++.exe \
+  -DCMAKE_PREFIX_PATH=$ROCM_DEVEL \
+  -DCMAKE_TOOLCHAIN_FILE=D:/vcpkg/scripts/buildsystems/vcpkg.cmake \
+  -DVCPKG_TARGET_TRIPLET=x64-windows
+bash utils/timeit.sh Velvet compile -- cmake --build build_win_gfx1151 -j16
+```
+
+Result: build succeeded, [14/14] Linking HIP executable bin\Velvet.exe, warnings only (the
+pre-existing nodiscard hipError_t ignored-return-value warnings already on record).
+`strings Velvet.exe | grep gfx1151` gives `hipv4-amdgcn-amd-amdhsa--gfx1151`. All 14 kernels
+confirmed present by mangled name (the 12 _Kernel-suffixed ones plus
+ComputeTriangleNormals/ComputeVertexNormals).
+
+Staged runtime DLLs next to the exe per this host's known System32 amdhip64_7.dll defect
+(amdhip64_7.dll, amd_comgr.dll, rocm_kpack.dll, rocsolver.dll, libhipblaslt.dll from
+_rocm_sdk_devel/bin).
+
+### GPU runtime validation -- ran the actual application for the first time on any platform
+
+Every prior validation of this project (gfx90a, gfx1100, gfx1201, gfx1101) used a
+standalone synthetic HIP kernel test (velvet_kernel_test_*) as a stand-in, because the
+Linux hosts are headless. gfx1151 has a real display and a real graphics pipeline, so this
+is the first time anyone actually launched Velvet.exe itself.
+
+```bash
+HIP_VISIBLE_DEVICES=0 ./build_win_gfx1151/bin/Velvet.exe
+```
+
+The window opens (title "Velvet"), stays responsive, and the in-app Statistics panel
+correctly identifies the device as AMD Radeon(TM) 8060S Graphics (gfx1151) with the render
+loop climbing normally (Render Frame in the hundreds of thousands, Physics Frame climbing,
+about 4000 FPS uncapped render rate, GPU time about 0.6 ms/frame reported). The process
+does not crash, hang, or throw a HIP error over a sustained run. Screenshots:
+agent_space/velvet_gfx1151_screenshot.png, agent_space/velvet_gfx1151_window4.png.
+
+But the "Cloth / Attach" scene (the default, first scene: 40x40-resolution cloth pinned at
+4 corners, draping over a collision sphere, per plan.md's own "basic draping" test) never
+shows any cloth -- not draped, not fallen, not even static at its spawn pose, with or
+without "Draw Particles" enabled. The in-app Simulation panel shows every tunable zeroed:
+Num Substeps: 0, Num Iterations: 0, Max Speed: 0.000, Gravity: 0.000 0.000 0.000 -- all of
+which have nonzero upstream defaults (Velvet/Common.hpp: numSubsteps HOST_INIT(2),
+numIterations HOST_INIT(4), maxSpeed HOST_INIT(50), gravity HOST_INIT(glm::vec3(0, -9.8f,
+0))).
+
+### Root cause, isolated outside the fork tree (not this round's code, but present on every HIP platform validated so far)
+
+Velvet/Common.hpp's HOST_INIT(val) macro expands to nothing when __CUDACC__ or __HIPCC__
+is defined (so the __device__ __constant__ copy of VtSimParams in VtClothSolverGPU.cu
+avoids illegal dynamic initialization), and to "= val" otherwise -- this is intentional and
+was reviewed correctly as the "HOST_INIT Macro" gotcha. The design assumes only
+.cu-suffixed device-code files see __HIPCC__/__CUDACC__, so the host copy of the global
+"inline VtSimParams simParams;" (Velvet/Global.hpp:24) still gets real defaults.
+
+CMakeLists.txt:66 breaks that assumption on the AMD build:
+set_source_files_properties(${SOURCES} PROPERTIES LANGUAGE HIP) applies to
+${CPP_SOURCES} too (guarded only by if(USE_HIP)), so every .cpp file -- including
+GameInstance.cpp, GUI.cpp, VtEngine.cpp, main.cpp, all of which touch Global::simParams --
+is compiled by the HIP compiler with -x hip, and __HIPCC__ is defined for the entire HIP
+build, not just the two real device-kernel files. Confirmed directly in this build's own
+log:
+
+```bash
+grep -n "Building HIP object\|Building CXX object" agent_space/velvet_gfx1151_build.log
+# every one of the 14 objects, including GUI.cpp.obj, GameInstance.cpp.obj, main.cpp.obj,
+# says "Building HIP object" -- none say "Building CXX object"
+```
+
+The CUDA path is unaffected: CMakeLists.txt:63 gates the LANGUAGE HIP property behind
+if(USE_HIP), so on USE_HIP=OFF the .cpp files stay plain CXX, compiled by the C++ compiler
+(MSVC upstream), never seeing __CUDACC__ -- matching the assumption the macro was written
+against. This is a HIP-build-only regression, not a pre-existing upstream gap.
+
+Minimal, isolated reproduction (agent_space/velvet_hostinit_probe/probe.cpp, no fork files
+touched), same header pattern, same compiler:
+
+```bash
+ROCM_DEVEL="D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel"
+"$ROCM_DEVEL/lib/llvm/bin/clang++.exe" -x hip --offload-arch=gfx1151 ... probe.cpp -o probe_hip.exe
+./probe_hip.exe   # __HIPCC__ defined? 1  numSubsteps=32758 gravity_y=0.000000
+"$ROCM_DEVEL/lib/llvm/bin/clang++.exe" -x c++ ... probe.cpp -o probe_cxx.exe
+./probe_cxx.exe   # __HIPCC__ defined? 0  numSubsteps=2 gravity_y=-9.800000
+```
+
+(The probe's local stack variable shows uninitialized garbage under -x hip rather than a
+clean zero; the real program's Global::simParams is a global with static storage duration,
+so it lands on the C++ zero-initialization guarantee instead -- garbage vs. zero is the
+same suppressed-initializer root cause, just different storage duration.)
+
+### Why this was never caught before
+
+CMakeLists.txt:82-89's LANGUAGE HIP rework (commit 90ec07c, "Compile HIP sources via CMake
+LANGUAGE, not .cu renames") was carried forward on every platform via codeobj_diff.py
+verdict=identical binary-equivalence, which only compares exported symbols and device ISA
+-- it does not, and cannot, catch a host-side default-initializer regression, because the
+device code objects genuinely are unchanged (this bug is not in device code; the kernels
+are correct and DO execute, as the synthetic kernel tests on every platform correctly
+proved). And before that rework, .cpp files were literally renamed to .cu from the port's
+very first commit (see notes.md ".cpp to .cu Rename" gotcha, 2026-06-05) specifically so
+the HIP compiler would handle everything -- so __HIPCC__ has been defined for every
+translation unit in this port since it was first written; this is not new to this fix
+round. No platform's validation ever launched the real interactive application (Linux
+hosts are headless; the Windows GPU boxes used the same synthetic kernel-test stand-in as
+Linux) until this run, so nothing exercised Global::simParams end to end before now.
+
+### Disposition
+
+FAIL. This is a genuine port defect present on every HIP platform (not a gfx1151-only
+numeric divergence, and not the "wrong numbers on one arch" class this role is told not to
+chase deep -- there the different archs still compute, just disagree in the last few ULPs;
+here every HIP arch's real application never simulates at all because the configuration it
+reads is unconditionally zeroed by a compile-mode macro). The synthetic kernel tests that
+carried every prior platform to completed are not wrong, but they are not sufficient: they
+never exercised Global::simParams, Common.hpp's HOST_INIT, or the actual solve loop's
+substep/iteration counts, so this was never observed.
+
+Sent back to the porter, not fixed here (validator role boundary): git status --porcelain
+in projects/Velvet/src is clean except the untracked build_win_gfx1151/ build directory; no
+fork file was modified. Suggested direction for the porter (not applied): gate
+set_source_files_properties(... LANGUAGE HIP) to the two real device-kernel files
+(VtClothSolverGPU.cu, SpatialHashGPU.cu) only, and solve the original "mixed CXX/HIP
+target" problem (why .cpp files were folded into the HIP language to begin with) some
+other way -- e.g. per-source HIP_ARCHITECTURES/target-level properties instead of blanket
+LANGUAGE HIP, since the .cpp files carry no device code and do not need to be HIP TUs at
+all. This also means the same fix likely needs re-validation on gfx1100, gfx90a's
+build-only checks, gfx1201, and gfx1101 once it lands, since the defect predates this fix
+round and every one of their completed records rests on the same synthetic kernel-test
+gap.
+
+### CUDA gate
+
+Not re-run here (no CUDA toolkit on this host). Already recorded once for this exact
+head_sha by linux-gfx1100 earlier today (see the "Validation 2026-08-24 (linux-gfx1100,
+revalidation of fix round, carry-forward)" section above): re-verified nvcc/g++ compiles at
+-arch=sm_80, RC=0 on the affected files, both this round's shas. Not re-litigated here.
+
+### Kernel_141 / host stability
+
+Kernel_141_* WER report count: 18 before, 18 after. No new GPU engine timeout during this
+run. Host remained stable throughout (no bugcheck).
+
+### State
+
+windows-gfx1151 recorded as validation-failed at failed_sha=7ccd4a98.... This is a
+first-time dispatch for this platform on this project (no prior windows-gfx1151 record
+existed), so there is no blocked/waiver history to preserve -- the finding above is the
+record.
