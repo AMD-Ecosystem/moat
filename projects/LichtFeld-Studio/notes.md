@@ -1722,3 +1722,93 @@ this project, so there were no line threads to answer.
 ROCm build docs observed at 53c363f8, it has now been answered three times, and it has never
 been observed at this sha. gfx90a needs a **validator**, not another porter round. linux-gfx1100
 correctly reads stale (`validated_sha` 5cbfdf1a < head).
+
+## Review 2026-08-24 (reviewer, linux-gfx90a) -- 7cd4d569, REVIEW-PASSED
+
+Scope: the delta only, `git diff 00187204..7cd4d569`. Everything at or before 00187204 was
+reviewed in the two entries above.
+
+**No findings. The single blocking finding of the 00187204 round is resolved.**
+
+Branch shape: `git rev-parse 7cd4d569^` is `0018720450f4bc91fea240805a2948abaefd3358`,
+`origin/moat-port` and `HEAD` are both `7cd4d569`, `pr-state` is `none`, and the reflog shows
+three plain `commit` entries on top of the cloned tip 53c363f8 (clone 2026-08-24 22:21, 2041
+commits, not shallow) -- no amend or rebase, so the two previously reviewed commits are
+unchanged. Delta is 1 file, `docs/building_and_distribution.md`, +1/-1, the `:114` paragraph
+only. No source, kernel or build file, so the doc-only carry-forward reasoning recorded at
+53c363f8 is intact and the ROCm fault classes (wavefront width, texture rule-of-five, OOB
+neighbor clamping, 256B pitch, Strategy A/B, arch-unified fixes, library swaps) have no
+surface in this delta. Fork worktree `git status --porcelain` clean.
+
+Hygiene at 7cd4d569: title 59 chars with `[ROCm]`; no `Co-Authored-By`/noreply trailer; AI
+disclosure present; Test Plan in fenced blocks with literal commands; commit message and diff
+ASCII-only; no AMD-internal account reference. `jargon.py --port LichtFeld-Studio` unchanged
+at the same 3 pre-existing instances in the `13e585d47`/`e24593f4e` bodies (deferral
+`lfs-commit-msg-jargon-13e585d-e24593f`), 0 from this delta. `prose.py` still reports hard
+wrapping only at doc lines 15 and 28; both were re-checked as present verbatim in
+`origin/master:docs/building_and_distribution.md`, so they are upstream's paragraphs, and the
+replacement `:114` is a single line.
+
+### Fact-check of the new sentence (re-derived, not inherited)
+
+The wording originated as this reviewer role's suggestion at the previous round, so it was
+re-verified from primary sources rather than trusted.
+
+`CMakeDetermineHIPCompiler.cmake` read in full in both `/usr/share/cmake-3.28/Modules` and
+`/opt/conda/envs/py_3.12/share/cmake-3.31/Modules` (relevant regions identical): `:32-51`
+`$ENV{HIPCXX}` first, `:61-67` else `hipconfig --hipclangpath` into
+`CMAKE_HIP_COMPILER_HINTS`, `:71` `_cmake_find_compiler(HIP)` over hints and `PATH`;
+`:150-162` derives the ROCm root from the resolved Clang, `:163-172` falls back to
+`hipconfig --rocmpath`, `:174` errors "Failed to find ROCm root directory". Neither file
+references `ENV{ROCM_PATH}` anywhere.
+
+Re-reproduced independently on this host on a minimal `project(hipdetect LANGUAGES HIP CXX C)`
+with `ROCM_PATH` set to the SDK prefix and every `hipconfig`-bearing directory removed from
+`PATH` (both `$ROCM_PATH/bin` and the conda shim; `cmake`/`ninja` invoked by absolute path so
+scrubbing `PATH` stays honest). All four clauses of the sentence hold, on cmake 3.31.6 and
+3.28.3 alike:
+
+- no hipconfig reachable, `ROCM_PATH` set, nothing else -> `CMAKE_HIP_COMPILER-NOTFOUND`;
+  with the doc's `-DCMAKE_CXX_COMPILER`/`-DCMAKE_C_COMPILER` into the ROCm tree it is the
+  commit's exact `CMakeDetermineHIPCompiler.cmake:174 Failed to find ROCm root directory`,
+  identical on both cmake versions. This is the commit's Test Plan reproduced verbatim.
+- `$ROCM_PATH/bin` prepended to the otherwise scrubbed `PATH` -> rc=0, resolves
+  `$ROCM_PATH/lib/llvm/bin/clang++`, `CMAKE_HIP_ARCHITECTURES` auto-detected as gfx90a.
+- `-DCMAKE_HIP_COMPILER=$ROCM_PATH/lib/llvm/bin/clang++` with no hipconfig -> rc=0.
+- `HIPCXX=$ROCM_PATH/lib/llvm/bin/clang++` with no hipconfig -> rc=0.
+
+`HIP is enabled at project() time` matches `CMakeLists.txt:55`
+(`project(... LANGUAGES HIP CXX C)` inside `if(USE_HIP)`), and the sentence keeps only the
+uncontested half of that mechanism -- it does not repeat the `CMakeLists.txt:51-54`
+parenthetical still flagged below. The `:88` bullet ("the build looks for ROCm under
+`ROCM_PATH`") and `:114` no longer collide: `:88` is about `cmake/HipCompute.cmake`'s include
+and `find_library` hints, `:114` about compiler detection, and `:114` now says so explicitly.
+
+`"when ROCm's bin directory is on PATH"` -- judged acceptable, not a finding. It is phrased as
+a sufficient condition, not a necessary one, and the deciding factor is really any reachable
+`hipconfig` (confirmed here: `/opt/conda/envs/py_3.12/bin/hipconfig` alone satisfies
+detection, as the porter found). Naming ROCm's own `bin` is the accurate and useful
+instruction for an upstream reader; enumerating stray shims would be worse documentation.
+Likewise `"setting ROCM_PATH alone does not steer that search"` survives the one nuance that
+could have broken it: `hipconfig` itself does honour `ROCM_PATH` (checked --
+`ROCM_PATH=/nonexistent/rocm hipconfig --hipclangpath` prints `/nonexistent/rocm/lib/llvm/bin`,
+which CMake then discards at the `EXISTS` guard on `:65`), but that path requires a
+`hipconfig` already on `PATH`, which is exactly what the word "alone" excludes.
+
+### Still open, non-blocking, for PR prep -- carried unchanged from the previous round
+
+`CMakeLists.txt:51-54` still says HIP at `project()` time avoids a "mid-configure reconfigure
+(which would not re-apply `-DUSE_HIP`)", contradicting `CMakeLists.txt:13-15`, which says the
+plain cache BOOL exists so a command-line `-DUSE_HIP=ON` does survive that reconfigure. Both
+are upstream-visible comments. The porter deliberately left it, correctly: it edits a build
+file and belongs with the `enable_testing()` item in the PR-prep round, where a validator
+rules on carry-forward.
+
+### Heads-up for the validator on this host (not a defect in the port)
+
+`projects/LichtFeld-Studio/src` is a blobless (`remote.origin.partialclonefilter=blob:none`),
+sparse clone made for the doc rounds: `git sparse-checkout list` is `/docs/*.md` and `/*.md`,
+so `CMakeLists.txt` and all sources are absent from the working tree though present in the
+index. Run `git -C projects/LichtFeld-Studio/src sparse-checkout disable` (which fetches the
+missing blobs) before configuring, or the build will fail on missing files for reasons that
+have nothing to do with the port.
