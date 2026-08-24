@@ -316,6 +316,17 @@ the CUDA build too and are not HIP-specific hacks. (Velvet)
 hipSPARSE, cuDNN -> MIOpen, Thrust/CUB -> rocThrust/hipCUB. Mostly 1:1; watch handle types
 and a few signature differences such as the hipBLAS v2 enums.
 
+**A swapped library may be less defensive about bad arguments than the CUDA one.** Where
+cuFFT returns an error code, rocFFT can hang. `hipfftPlan1d(&plan, 0, HIPFFT_C2C, 1)` --
+transform length zero -- never returns on ROCm 7.2.3, while cuFFT answers
+`CUFFT_INVALID_SIZE`; `hipfftPlan1d(..., batch=0)` returns SUCCESS rather than an error.
+This bites when you deliberately force an error to test a port's error-check macros or its
+failure paths: pick a trigger that is verified to return, such as
+`hipfftExecC2C(plan, nullptr, nullptr, dir)` (status 6, on a planned or unplanned handle).
+More generally, before concluding a port hangs, reproduce the hang in a few-line program
+that includes none of the project's headers -- that separates a library bug from your
+change. (TurboFNO.)
+
 **Negative entries for that table.** CUPTI has no ROCm analogue -- stub the optional
 per-kernel profiling path inert and let the timer fall back to `hipEvent` wall-clock rather
 than substituting something. ck_tile's fused MHA ships headers but no prebuilt instance

@@ -98,6 +98,46 @@ Prefer this when the project includes CUDA headers by name. It does not apply wh
 use CUDA symbols without including a CUDA header, or where the build already injects a
 compat header with `-include`.
 
+### When the project's OWN sources embed vendor-sample code
+
+A shadow header handles a vendor sample header the project *includes*. It does nothing for
+sample code the project *pasted into its own file*, which then compiles on the HIP path too
+and ships in the port's tree. Typical shapes: an error-check macro (`CUDA_RT_CALL`,
+`CUFFT_CALL`, `checkCudaErrors`) or a small helper, usually still carrying the sample's
+notice comment. Run `python3 utils/licenses.py scan-nvidia <name>` on the fork tree; it
+names the files.
+
+Replace such a helper with a project-owned implementation rather than editing it or
+shadowing it, and remove the notice comment together with the code it covered. That is code
+replacement, not licence-file deletion -- never delete a standalone LICENSE/NOTICE file.
+
+The independence bar, in order of what a reader checks:
+
+- **Own control-flow shape.** Do not keep the sample's statement structure. Prefer the
+  project's own existing idiom (e.g. `do { ... } while (0)` where a neighbouring macro
+  already uses it) over the sample's bare `{ ... }` block.
+- **Own naming of internals.** Rename the temporaries; do not keep `status`,
+  `err`, or the sample's `static_cast<cudaError_t>( call )` initialiser shape.
+- **Own message format.** This is the tell reviewers actually spot. Write a new sentence,
+  do not reorder the sample's words. `"ERROR: CUDA RT call \"%s\" in line %d of file %s
+  failed with %s (%d)"` reordered into `"ERROR: cuBLAS call \"%s\" failed in line %d of
+  file %s with error code (%d)"` is still the sample's sentence.
+- **Keep the NAME, change the body.** Keeping `CUDA_RT_CALL`/`checkCudaErrors` means zero
+  call sites move (TurboFNO: 284 + 32 invocations untouched), so the diff is one file and
+  the change is reviewable.
+- **Keep the observable behaviour** unless you have a reason to change it, so the round
+  stays a text replacement and not a semantics change. If the original reported and
+  continued, do not make the replacement abort -- that can turn a pre-existing benign
+  upstream error into a crash.
+
+Prove it: `licenses.py scan-nvidia` clean afterwards, plus a device-code binary-equivalence
+check if the file is included by kernel TUs. Host-side helpers must leave the device code
+byte-identical (`llvm-objcopy --dump-section=.hip_fatbin` per object, sha256 compare); if it
+is not identical, something other than the helper changed. Check for DUPLICATE copies before
+declaring victory -- TurboFNO's header held the block twice, an edited copy that actually
+expanded and a verbatim one made dead by the `#ifndef` guards, and removing only the
+notice-covered one would have left the compiled copy in place. (plvs, TurboFNO.)
+
 ## Build hygiene
 
 - **Do not pin `--offload-arch` or `CMAKE_HIP_ARCHITECTURES` in the committed build.** Pass
