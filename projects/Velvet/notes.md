@@ -926,3 +926,95 @@ gfx90a's `completed` record sat at the then-current head. Moving head_sha to the
 makes that evidence stale, so before `upstream.py --fix-review` can record a review PR either
 gfx90a revalidates by carry-forward (its build still works; see the identical-device-code
 result above) or a person approves a wave64 waiver. An agent may only suggest one.
+
+## Review 2026-08-24 (linux-gfx1100, reviewer): fix round delta bb06b44..49f6db9
+
+Scope: `moat-fix-9`, two commits (`ff1ccd4`, `49f6db9`), five files. Every claim below was
+re-measured on this host rather than read from the porter's record. Verdict:
+**changes-requested** -- the code is correct, both upstream-visible commit bodies are not.
+
+### Findings
+
+1. `49f6db9` commit body, Test Plan block 1 (and the same form in `ff1ccd4`, Test Plan
+   block 3): the nvcc invocation cannot run as written. Two input files with `-c -o /dev/null`
+   aborts before compiling anything:
+
+   ```
+   nvcc fatal   : A single input file is required for a non-link phase when an outputfile is specified
+   ```
+
+   Reproduced verbatim with CUDA 12.8 from `/opt/conda/envs/cuda-12.8`. One invocation per
+   `.cu` file does compile cleanly (rc=0, 0 errors, at both shas), so the finding is the
+   literal command, not the result. Fix: split into two invocations in both commit bodies.
+
+2. `49f6db9` commit body: "All five compile with no errors, matching the result with the
+   previous copies of the headers" is false for `Velvet/Timer.cpp` on a current host compiler.
+   With the default `g++` here (Ubuntu 13.3.0) that TU fails with 8 errors, first at
+   `Velvet/Timer.hpp:233` -- `unordered_map<string, vector<cudaEvent_t>> cudaEvents;` with no
+   `#include <vector>` in `Timer.hpp:3-14`. It passes under `g++-11`, where libstdc++ pulls
+   `<vector>` in transitively, which is presumably how the pass was recorded. The error output
+   is byte-identical at `bb06b44` and `49f6db9` (`diff` of the two logs is empty), so this is
+   pre-existing and NOT caused by the header swap -- but a maintainer running the Test Plan on
+   a modern toolchain sees a failure this change appears to own. Fix: state the four TUs that
+   do compile and qualify `Timer.cpp` the way the glad conflict is already qualified in the
+   same body, or add the missing `#include <vector>` to `Timer.hpp` and keep the claim.
+   `notes.md`'s "and Timer.cpp, VtEngine.cpp -> RC=0, both shas" in the Fix round section needs
+   the same correction.
+
+Both are message-only amendments on a staging branch that carries no validation evidence yet
+(all four platforms sit at `validated_sha=bb06b44`) and no fix review PR, so nothing is lost by
+rewriting the two commits above the published tip.
+
+### Verified, independently
+
+- **Byte-identity of the three swapped headers.** Fetched `Common/helper_cuda.h`,
+  `helper_math.h`, `helper_string.h` from `NVIDIA/cuda-samples@b7c5481c556c3fe98db060207ecaa41a4b9a9abc`
+  and compared: sha256 match on all three, exactly the values recorded. All three carry the
+  BSD 3-Clause text; `grep -rniE "end user licen|EULA"` over the whole tree (excluding
+  `.git`/`build`) returns nothing at the tip, and `Velvet/External/` holds nothing else from
+  NVIDIA. `helper_math.h` differs from the old copy in the licence header ONLY (the rest of the
+  `git diff` is empty), so the CUDA path's device math is untouched. `helper_cuda.h` differs in
+  the licence header, cuFFT enum names Velvet never reaches, the SM-arch tables, and trailing
+  whitespace; `check<T>()` and the `checkCudaErrors` macro are unchanged.
+- **AMD build takes nothing from `External/cuda`.** Fresh `cmake -B ... -DUSE_HIP=ON` configure:
+  `HIP_INCLUDES` is `Velvet` + `Velvet/External` + the vcpkg isystem, and
+  `grep -rl External/cuda <fresh build tree>` is empty. Per-TU `-H` traces with the exact
+  `flags.make` flags on all 13 TUs: 0 hits for `External/cuda|helper_cuda|helper_math|helper_string`
+  (195-2279 headers opened each, rc=0 each). Two controls, which the porter's record did not
+  have: a TU that really includes `helper_string.h` scores 1 hit, so the grep is not blind; and
+  re-running `VtClothSolverGPU.cu` with `-I.../Velvet/External/cuda` forced onto the HIP command
+  line still scores 0, so the `#if !defined(USE_HIP)` guards in `Common.cuh:13-22` and
+  `VtClothSolverGPU.hpp:10-14` are the real barrier and `CMakeLists.txt:82-89` is defence in
+  depth, not the only thing holding.
+- **`AbortOnHipError` is independent** (`Velvet/cuda_to_hip.h:52-74`). Against the vendored
+  `check<T>()` (`bb06b44:Velvet/External/cuda/helper_cuda.h:566-574`) and the deleted HIP
+  paraphrase: exact `hipError_t` parameter instead of a template on truthiness, early return on
+  success instead of an `if (result)` body, `hipGetErrorString` instead of an enum-name lookup,
+  message `"%s:%d: %s -> %s (%d)"` instead of `"CUDA error at %s:%d code=%d(%s) \"%s\" \n"`,
+  namespaced under `Velvet`, no device-reset path. The deleted `__checkCudaErrors` did mirror
+  the sample's shape; the replacement does not. Macro is comma-safe at all 9 call sites
+  (`Common.cuh:81,88`, `VtBuffer.hpp:154,169,172,173,178`, `VtClothSolverGPU.cu:26`,
+  `SpatialHashGPU.cu:178`), each of which passes a `hipError_t`.
+- **CUDA path health.** With CUDA 12.8, one invocation per file: `VtClothSolverGPU.cu` and
+  `SpatialHashGPU.cu` rc=0/0 errors at both shas; `main.cpp` and `VtEngine.cpp` rc=0 at both
+  shas; `Timer.cpp` fails identically at both shas (finding 2). A `-H` trace on `main.cpp` opens
+  all three swapped headers, so the CUDA-path check is not vacuous.
+- **Device code identical.** Built `bb06b44` (git archive into a scratch tree) and the tip with
+  the same configure line; `utils/codeobj_diff.py` -> `verdict=identical (exported symbols +
+  device ISA identical (13 exports))`. The gfx1100 code object carries all 14 Velvet kernels
+  (11 from `VtClothSolverGPU`, 3 from `SpatialHashGPU`). The carry-forward premise the wave64
+  escalation rests on is therefore sound; this review does not change it.
+- **Porter's GPU evidence re-run**: `velvet_check_gfx1100` PASS/exit 0 (10000/10000 atomicAdd,
+  W7800 gfx1100 warpSize=32), `velvet_checkfail_gfx1100` prints the expected one-line message
+  and exits 1.
+- **Hygiene**: both new titles `[ROCm]`-prefixed and 46/47 chars, AI-assistance disclosure and
+  a fenced Test Plan present, ASCII, no `Co-Authored-By`, no internal references, author/committer
+  `jeff.daily@amd.com`. `jargon.py --port Velvet` clean. `check.py` reports only the two
+  pre-existing commit misses at/below the published tip (`bb06b44`, `97d69a6`), which are
+  unamendable while PR #9 is open and are not this round's blockers. `git status --porcelain`
+  in `src` is clean.
+- **Promoted lesson** (`strategy-a-cmake.md`, "Vendored CUDA-samples helpers off the AMD build"):
+  checked against the source, not the summary. The 9-call-site count, the CMake guard form, the
+  BSD swap procedure and the `-H`-trace method all match what I measured, and its claim that
+  `HIP.includecache` lists `helper_cuda.h`/`helper_math.h` on a build that never opened them
+  reproduces (lines 74 and 76 of the fresh `HIP.includecache`, unresolved).
