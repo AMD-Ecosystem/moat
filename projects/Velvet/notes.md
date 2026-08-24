@@ -863,14 +863,20 @@ the established stand-in.
 ### CUDA path: no regression from the BSD swap (CUDA 12.8, /opt/conda/envs/cuda-12.8)
 
 ```bash
+# one invocation per file: nvcc refuses two inputs for a non-link phase with -o
 nvcc -std=c++17 -arch=sm_80 -c -o /dev/null -include glad/glad.h \
   -IVelvet -IVelvet/External -IVelvet/External/cuda \
   -I/var/lib/jenkins/vcpkg/installed/x64-linux/include Velvet/VtClothSolverGPU.cu
-# and Velvet/SpatialHashGPU.cu           -> RC=0, 0 errors, both shas
+# same line for Velvet/SpatialHashGPU.cu -> RC=0, 0 errors, both shas
 g++ -std=c++17 -fsyntax-only -include glad/glad.h -IVelvet -IVelvet/External \
   -IVelvet/External/cuda -I<vcpkg-include> \
   -I/opt/conda/envs/cuda-12.8/targets/x86_64-linux/include Velvet/main.cpp
-# and Timer.cpp, VtEngine.cpp            -> RC=0, both shas
+# same line for VtEngine.cpp             -> RC=0, both shas, g++ 13.3.0 and g++-11 11.5.0
+# same line for Timer.cpp                -> RC=0 under g++-11 11.5.0 only. Under the
+#   default g++ 13.3.0 it fails with 8 errors from Velvet/Timer.hpp:233 (std::vector
+#   with no #include <vector>; older libstdc++ supplied it transitively). The error
+#   output is byte-identical at bb06b44 and 49f6db9 -- pre-existing upstream, not caused
+#   by this round, and deliberately not fixed here (unrelated upstream change).
 ```
 
 Run at `bb06b44` (extracted with `git archive` into a scratch tree) and at `49f6db9`:
@@ -1018,3 +1024,47 @@ rewriting the two commits above the published tip.
   BSD swap procedure and the `-H`-trace method all match what I measured, and its claim that
   `HIP.includecache` lists `helper_cuda.h`/`helper_math.h` on a build that never opened them
   reproduces (lines 74 and 76 of the fresh `HIP.includecache`, unresolved).
+
+## Message amendment 2026-08-24 (linux-gfx1100, porter): answers the review above
+
+Message-only round. Both commits above the published tip were rewritten with the same
+trees to fix the two Test Plan defects the review found; no source byte changed.
+
+`ff1ccd4` -> `659d86f`, `49f6db9` -> `7ccd4a9` (staging tip). Proof the code is untouched:
+`git rev-parse ff1ccd4^{tree}` = `fd06f634782f0a47e1f2ed4b00654ef851a0275a` = the new
+first commit's tree, `git rev-parse 49f6db9^{tree}` =
+`eb860fa3e245c309350b8a1f925426ffdd8b025d` = the new tip's tree, and
+`git diff --stat 49f6db9 7ccd4a9` is empty. Rebuilt with `git commit-tree` on the exact
+trees (interactive rebase is unavailable here), parent still `bb06b44`, so the branch
+remains a descendant of the published tip. `moat-port` was not pushed and still reads
+`bb06b44` on the remote; only `moat-fix-9` moved (`--force-with-lease` against the old
+tip, safe because no platform had validated at `49f6db9` and no fix review PR existed).
+
+What changed in the messages:
+
+- Finding 1: the combined `nvcc ... -c -o /dev/null a.cu b.cu` form is gone from both
+  bodies, replaced by one invocation per file. Verified by running each, at the tip and
+  at `bb06b44` (`git archive` scratch tree): all four RC=0, warnings only (glm constexpr
+  `#20013-D`).
+- Finding 2: `49f6db9`'s "All five compile with no errors" is now "The two .cu files,
+  main.cpp and VtEngine.cpp compile with no errors", with the compiler versions named
+  (CUDA 12.8, g++ 13.3) and a separate paragraph qualifying `Timer.cpp` in the same
+  register as the glad paragraph -- passes under g++ 11.5, fails under g++ 13.3 at
+  `Velvet/Timer.hpp:233` for want of `<vector>`, pre-existing and identical with the old
+  headers. The missing include was NOT added: that is an unrelated upstream fix and does
+  not belong to this round.
+- The `Timer.cpp`/`VtEngine.cpp` line in the CUDA-path recipe above carries the same
+  qualification now.
+
+Commands actually run to verify each Test Plan line (per file, at tip and at `bb06b44`):
+`nvcc -std=c++17 -arch=sm_80 -c -o /dev/null -include glad/glad.h ... VtClothSolverGPU.cu`
+RC=0; same for `SpatialHashGPU.cu` RC=0; `g++ -std=c++17 -fsyntax-only ... main.cpp` RC=0
+and `VtEngine.cpp` RC=0 under both g++ 13.3 and g++-11 11.5; `Timer.cpp` RC=1 (8 errors)
+under g++ 13.3 and RC=0 under g++-11, with `diff` of the two shas' error logs empty. The
+`ff1ccd4` include-trace line was re-run verbatim: `hipcc -x hip -fsyntax-only -H ...
+VtClothSolverGPU.cu 2>&1 | grep -c External/cuda` -> `0`, hipcc RC=0.
+
+`head_sha` -> `7ccd4a9`; `published_sha` stays `bb06b44`. `jargon.py --port Velvet` clean.
+`check.py` still reports only the two pre-existing commit misses at/below the published
+tip, plus a `surface` gate that is vacuous here because this project has never had a
+`surface.json` (it predates that gate); neither is this round's to fix.
