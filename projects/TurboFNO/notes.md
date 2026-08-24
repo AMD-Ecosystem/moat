@@ -372,3 +372,117 @@ Exported kernel symbols identical; only __hip_cuid_ differs (build-path hash, no
 utils.cu.obj has no .hip_fatbin section (no device kernels, as expected).
 
 Verdict: binary-equiv confirmed on gfx1201. windows-gfx1201 carried forward to ec49bcf5.
+
+## Fix round 2026-08-24 (linux-gfx1100, porter): sample-derived error macros replaced
+
+Dispatch: deferred.json item `turbofno-nvidia-proprietary-rescan`. Upstream's own
+`utils/utils.cuh` embedded two host-side error-check macros copied from the NVIDIA
+CUDA library samples, under the samples' notice comment block. They compile on both
+the CUDA and the HIP path, so the port carried them. Required outcome: the file
+carries no notice block and no sample-derived macro text, with the macro NAMES
+kept so no call site moves. Commit 03141cf on top of ec49bcf (fast-forward push,
+nothing rewritten -- ec49bcf was validated by all four platforms).
+
+### What the file actually contained (both copies)
+
+The copied block appeared TWICE in the 267-line header:
+- lines 42-78: an edited copy (upstream added `fflush(stdout)` and, in CUFFT_CALL,
+  `return 1`). Because it comes first, this is the copy that actually expands.
+- lines 156-203: the notice comment block, then lines 205-240 a second, verbatim
+  copy of the same two macros, dead because the `#ifndef` guards are already
+  satisfied by the first copy, then lines 242-257 a commented-out
+  `traits<CUFFT_C2C>` template from the same sample file.
+Removing only the notice-covered block would have left the derived macro text that
+actually compiles. Both copies had to go.
+
+### What changed
+
+- `CUDA_RT_CALL` / `CUFFT_CALL` rewritten independently. Independence bar (plvs
+  2026-08-13 precedent): own control-flow shape (`do { ... } while (0)`, matching
+  the file's own `CUDA_CALLER` idiom, not the sample's bare `{ ... }` block), own
+  internal naming (`turbofno_rt_status` / `turbofno_fft_status`, not `status`, and
+  a direct declaration rather than the sample's `static_cast<cudaError_t>(call)`),
+  and an own message format (`"%s:%d: %s -> %s (%d)"`, compiler-style
+  file:line first) rather than a paraphrase of the sample's
+  `"ERROR: CUDA RT call \"%s\" in line %d of file %s failed with %s (%d)."`.
+- Observable behaviour deliberately preserved so the round stays a text
+  replacement: CUDA_RT_CALL reports and CONTINUES (it never aborted upstream, and
+  making it abort would turn the known large-`bs` upstream OOB into a crash);
+  CUFFT_CALL reports and `return 1`s from the enclosing function. Both silent on
+  success.
+- Notice block, dead duplicate macros, and the commented-out traits template
+  deleted together as the code the notice covered. No standalone licence or
+  NOTICE file was touched anywhere.
+- `git diff --stat ec49bcf..03141cf` = `utils/utils.cuh | 26 insertions, 137
+  deletions`, one file. `python3 utils/licenses.py scan-nvidia TurboFNO` now
+  reports "no NVIDIA proprietary licence text" (it reported utils.cuh before).
+
+### Call sites: 316 total, all untouched
+
+Paren-matched scan of the whole repo (excluding the submodule and utils.cuh
+itself), skipping commented-out lines: 284 `CUDA_RT_CALL` and 32 `CUFFT_CALL`
+active invocations, of which 142 + 16 are in the ten built `fusion_variants/`.
+Zero source files other than utils.cuh appear in the diff. The same scan confirmed
+every invocation is followed by `;`, which is what makes the switch from a bare
+`{ ... }` block to `do { ... } while (0)` safe (the new form is strictly better --
+it also survives an unbraced `if`/`else`).
+
+Left as is, flagged for a decision: `CUBLAS_CALL` (2 active call sites) is
+upstream's own macro, sits outside the notice-covered block and has no counterpart
+in it, but its message string
+`"ERROR: cuBLAS call \"%s\" failed in line %d of file %s with error code (%d)."`
+is a word-reordering of the sample's sentence. Out of scope for this round; worth
+a person's call on whether it should get the same treatment.
+
+### VERIFIED on this host (linux-gfx1100, ROCm 7.2.3, W7800, gfx1100)
+
+Device-code binary equivalence (the load-bearing proof that a host-only header
+change did not move numerics). Built all ten variants at ec49bcf and at 03141cf,
+extracted `.hip_fatbin` from each variant's kernel object with
+`llvm-objcopy --dump-section`, and compared sha256:
+```
+export PROJECT_ROOT=$(pwd)
+USE_HIP=1 CMAKE_HIP_ARCHITECTURES=gfx1100 bash install.sh   # 43s, 10/10, 0 errors
+/opt/rocm/llvm/bin/llvm-objcopy --dump-section=.hip_fatbin=out.bin <variant>.cu.o /dev/null
+```
+All 10 SAME, byte for byte (1D_A 561568 B, 1D_B 654176, 1D_C 682832, 1D_D 639192,
+1D_E 53456, 2D_A 1042328, 2D_B 1152712, 2D_C 1181496, 2D_D 1139088, 2D_E 55960).
+Even `__hip_cuid_` matched. `utils.cu.o` is byte-identical as a whole object.
+Only the ten `fused*.cu.o` host halves differ, which is the change itself.
+
+Runtime smoke on GPU 0 (this session GPU 0 was healthy; see the 2026-06-04 note
+about clock-gated GPUs on this host, which did not recur):
+- `TurboFNO_1D_D` (fused): sweep prints cleanly, no macro error output.
+- `TurboFNO_1D_E` (hipFFT/hipBLAS baseline): same, exercising the CUFFT_CALL
+  success path around hipfftCreate/hipfftPlan1d/hipfftExecC2C.
+
+Failure-path probe for BOTH macros (`agent_space/turbofno_macro_failpath.cu`,
+built with `clang++ -x hip --offload-arch=gfx1100 -DUSE_HIP -Ihip_compat -Iutils
+... -lhipfft -lhipblas`):
+```
+[probe] CUFFT_CALL success path: silent, control flow continued
+.../turbofno_macro_failpath.cu:14: cufftExecC2C(plan, nullptr, nullptr, CUFFT_FORWARD) -> FFT status 6
+[probe] fft_probe returned 1 (expected 1)
+[probe] CUDA_RT_CALL success path: silent, q=non-null
+[probe] .../turbofno_macro_failpath.cu:29: cudaMalloc(&p, (size_t)1 << 48) -> out of memory (2)
+[probe] CUDA_RT_CALL failure path: control flow continued, p=(nil)
+```
+Both failure paths fire with the intended message and the intended control flow;
+both are silent on success.
+
+CUDA path intact, nvcc 12.8 (`/opt/conda/envs/cuda-12.8`), `USE_HIP=OFF`,
+`CMAKE_CUDA_ARCHITECTURES=86`: all ten variants configure, compile AND LINK.
+PASS=10 FAIL=0. (The CUDA-samples headers utils.cuh includes on that path come
+from the submodule's `TurboFFT/Common`, which is on the include path and was not
+touched.) Throwaway `fusion_variants/*/build-cuda-check` dirs removed afterwards.
+
+### Gotcha: hipfftPlan1d with length 0 HANGS (ROCm 7.2.3)
+
+Chasing a forced CUFFT_CALL error, `hipfftPlan1d(&plan, 0, HIPFFT_C2C, 1)` did not
+return an error -- it never returned at all. Reproduced with a 12-line program that
+does not include any TurboFNO header, so it is a rocFFT robustness issue, not a
+port issue. cuFFT returns `CUFFT_INVALID_SIZE` for the same call. Working error
+triggers that DO return a status: `hipfftExecC2C(plan, nullptr, nullptr, dir)`
+-> 6, on either a planned or an unplanned handle. Note `hipfftPlan1d(..., batch=0)`
+returns SUCCESS. Promoted to the skill (fault-classes) since any project porting
+cuFFT error-handling tests can hit it.

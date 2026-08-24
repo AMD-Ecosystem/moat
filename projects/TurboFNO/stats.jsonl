@@ -32,3 +32,10 @@
 {"kind":"phase","ts":"2026-06-24T22:19:45Z","phase":"compile","seconds":0.814,"exit":1,"cmd":"python3 agent_space/turbofno_build_win_gfx1201.py --arch gfx1201 --skip-variants --jobs 64"}
 {"kind":"phase","ts":"2026-06-24T22:22:16Z","phase":"compile","seconds":78.531,"exit":1,"cmd":"python3 agent_space/turbofno_binaryequiv_gfx1201.py"}
 {"kind": "tokens", "ts": "2026-06-24T22:28:21Z", "tokens": 85980, "source": "validator (windows-gfx1201)"}
+{"kind":"session","ts":"2026-08-24T20:21:10Z","epoch":1787602870.658726848,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-24T20:25:33Z","phase":"compile","seconds":0.005,"exit":127,"cmd":"bash install.sh"}
+{"kind":"phase","ts":"2026-08-24T20:26:24Z","phase":"compile","seconds":43.188,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat-worktrees/TurboFNO/projects/TurboFNO/src && bash install.sh"}
+{"kind":"phase","ts":"2026-08-24T20:28:50Z","phase":"compile","seconds":25.318,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/moat-worktrees/TurboFNO/projects/TurboFNO/src && bash install.sh"}
+{"kind":"phase","ts":"2026-08-24T20:48:31Z","phase":"test","seconds":0.216,"exit":0,"cmd":"/var/lib/jenkins/moat-worktrees/TurboFNO/agent_space/failpath"}
+{"kind":"phase","ts":"2026-08-24T20:50:26Z","phase":"compile","seconds":69.041,"exit":0,"cmd":"bash -c \nSP=/var/lib/jenkins/moat-worktrees/TurboFNO/projects/TurboFNO/src; export PROJECT_ROOT=$SP; export PATH=/opt/conda/envs/cuda-12.8/bin:$PATH\nPASS=0; FAIL=0\nfor d in $SP/fusion_variants/*/; do\n  n=$(basename $d); cd $d\n  if cmake -S . -B build-cuda-check -DUSE_HIP=OFF -DCMAKE_CUDA_ARCHITECTURES=86 \\\n       -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc > /dev/null 2>&1 \\\n     && cmake --build build-cuda-check -j16 > /dev/null 2>&1; then\n    echo \"PASS $n\"; PASS=$((PASS+1))\n  else\n    echo \"FAIL $n\"; FAIL=$((FAIL+1))\n  fi\ndone\necho \"PASS=$PASS FAIL=$FAIL\""}
+{"kind":"session","ts":"2026-08-24T20:55:26Z","epoch":1787604926.178789951,"event":"end","platform":"linux-gfx1100"}
