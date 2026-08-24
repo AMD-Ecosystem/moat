@@ -5,7 +5,7 @@
       "id": "h2o4gpu-nvidia-proprietary-rescan",
       "kind": "other",
       "component": null,
-      "summary": "Rescan with the fixed scan_nvidia: 12 files carry the pre-2017 CUDA samples EULA-pointer notice -- the vendored src/include/helper_*.h set AND h2o4gpu's own src/gpu/bwcheck.cu and src/include/exception.h, which copied the header. Project is awaiting-fork; the licence ruling should precede adoption. Submodule scan coverage was partial (cub pin). COUNSEL RULING (2026-08-24): swap the vendored NVIDIA-EULA files for BSD-3 versions (or drop the dead ones) at the tip BEFORE any fork is created, so the proprietary versions are never hosted at our tip. All flagged files are dead in the build, so this is a pre-adoption commit, not a port blocker.",
+      "summary": "Rescan with the fixed scan_nvidia: 12 files carry the pre-2017 CUDA samples EULA-pointer notice -- the vendored src/include/helper_*.h set AND h2o4gpu's own src/gpu/bwcheck.cu and src/include/exception.h, which copied the header. Project is awaiting-fork; the licence ruling should precede adoption. Submodule scan coverage was partial (cub pin). POLICY (2026-08-24): swap the vendored NVIDIA-EULA files for BSD-3 versions (or drop the dead ones) at the tip BEFORE any fork is created, so the proprietary versions are never hosted at our tip. All flagged files are dead in the build, so this is a pre-adoption commit, not a port blocker.",
       "refs": [
         "moat main b336246 (case/wording-proof scan_nvidia)"
       ],
