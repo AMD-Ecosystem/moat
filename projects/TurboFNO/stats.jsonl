@@ -62,3 +62,8 @@
 {"kind":"session","ts":"2026-08-24T22:13:54Z","epoch":1787609634.542563458,"event":"end","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-24T22:20:33Z","epoch":1787610033.429096146,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-24T22:23:18Z","epoch":1787610198.178545200,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-24T22:25:06Z","epoch":1787610306.277689904,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-24T22:25:20Z","phase":"compile","seconds":0.006,"exit":127,"cmd":"env PROJECT_ROOT=/var/lib/jenkins/moat-worktrees/TurboFNO/projects/TurboFNO/src USE_HIP=1 CMAKE_HIP_ARCHITECTURES=gfx1100 bash install.sh"}
+{"kind":"phase","ts":"2026-08-24T22:25:54Z","phase":"compile","seconds":25.429,"exit":0,"cmd":"env PROJECT_ROOT=/var/lib/jenkins/moat-worktrees/TurboFNO/projects/TurboFNO/src USE_HIP=1 CMAKE_HIP_ARCHITECTURES=gfx1100 bash -c cd '/var/lib/jenkins/moat-worktrees/TurboFNO/projects/TurboFNO/src' && bash install.sh"}
+{"kind":"phase","ts":"2026-08-24T22:26:38Z","phase":"compile","seconds":25.350,"exit":0,"cmd":"env PROJECT_ROOT=/var/lib/jenkins/moat-worktrees/TurboFNO/projects/TurboFNO/src USE_HIP=1 CMAKE_HIP_ARCHITECTURES=gfx1100 bash -c cd '/var/lib/jenkins/moat-worktrees/TurboFNO/projects/TurboFNO/src' && bash install.sh"}
+{"kind":"phase","ts":"2026-08-24T22:27:45Z","phase":"compile","seconds":25.259,"exit":0,"cmd":"env PROJECT_ROOT=/var/lib/jenkins/moat-worktrees/TurboFNO/projects/TurboFNO/src USE_HIP=1 CMAKE_HIP_ARCHITECTURES=gfx1100 bash -c cd '/var/lib/jenkins/moat-worktrees/TurboFNO/projects/TurboFNO/src' && bash install.sh"}

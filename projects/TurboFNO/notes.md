@@ -1156,3 +1156,68 @@ run's, not the porter's):
 
 Out of scope and untouched by this commit: the fork diff, `head_sha`, and all
 prior confirmed claims.
+
+## Validation 2026-08-24 (linux-gfx1100, revalidation via binary-equiv carry-forward)
+
+Dispatch: linux-gfx1100 held `validated_sha` ec49bcf (real-GPU run of 2026-06-04,
+carried through the shim-header refactor via binary-equiv on 2026-06-24); `head_sha`
+had since moved to b8d2e98 across two host-only fix-round commits (03141cf, b8d2e98)
+that this validation covers together. `classify` returns `mixed` (utils/utils.cuh
+token count differs), so the automatic carry-forward does not apply and this platform
+reads `revalidate`.
+
+GPU: AMD Radeon Pro W7800 48GB, gfx1100, warpSize=32. ROCm 7.2.3. Host has 4x W7800;
+this session used whichever device `install.sh`/build used (no runtime GPU dispatch
+needed for this method -- see below). Fork: AMD-Ecosystem/TurboFNO `moat-port` @
+b8d2e98 (`projects/TurboFNO/src`), clean before and after.
+
+Chose the carry-forward path over a real-GPU re-run: the delta is proven host-side
+preprocessor text in one header (error-check macro rewrites), the porter and
+reviewer already produced four rounds of device-code-equivalence evidence on this
+exact host/GPU/ROCm build today, and the amended `strategy-a-cmake.md` lesson
+(hardened through those same four rounds) gives an instrument immune to the one
+real failure mode found (the `__hip_cuid_`/build-path artifact). Independently
+re-derived rather than re-read the porter/reviewer's claims:
+
+```
+export PROJECT_ROOT=$(pwd)   # projects/TurboFNO/src
+# same-directory rebuild: build ec49bcf's utils.cuh, capture, checkout b8d2e98's, rebuild in place
+git checkout ec49bcf5d5f2a662f00c3232d0759ac6c2dbe5c2 -- utils/utils.cuh
+USE_HIP=1 CMAKE_HIP_ARCHITECTURES=gfx1100 bash install.sh   # 10/10, 0 errors, 25.4s
+/opt/rocm/llvm/bin/llvm-objcopy --dump-section=.hip_fatbin=out.bin <variant>.cu.o /dev/null   # x10
+git checkout b8d2e9845c0146f2114d18810a54d90bac4e2588 -- utils/utils.cuh
+USE_HIP=1 CMAKE_HIP_ARCHITECTURES=gfx1100 bash install.sh   # 10/10, 0 errors, 25.3s (full rebuild, not incremental no-op)
+/opt/rocm/llvm/bin/llvm-objcopy --dump-section=.hip_fatbin=out.bin <variant>.cu.o /dev/null   # x10
+# cross-check across different paths: copy each header's executables to a separate dir, then
+python3 utils/codeobj_diff.py agent_space/old_build_exes agent_space/new_build_exes
+```
+
+Same-directory `.hip_fatbin` sha256: all 10 variants byte-identical, sizes matching
+every prior round exactly (1D_A 561568, 1D_B 654176, 1D_C 682832, 1D_D 639192,
+1D_E 53456, 2D_A 1042328, 2D_B 1152712, 2D_C 1181496, 2D_D 1139088, 2D_E 55960).
+Both compiles ran the same wall time (~25s), confirming a real full rebuild each
+time, not a no-op.
+
+Cross-directory `codeobj_diff.py` (path-artifact-immune, the amended lesson's
+primary instrument): `verdict=identical`, all ten per-binary lines
+`identical (exported symbols + device ISA identical (3 exports))`.
+
+Both instruments agree with each other and with every prior round's numbers on
+this delta. No real-GPU numerical run was needed for this revalidation; device
+code is proven unchanged by two independent methods.
+
+Result: linux-gfx1100 carried forward ec49bcf -> b8d2e98 via
+`python3 utils/moatlib.py carry-forward TurboFNO linux-gfx1100 b8d2e98 binary-equiv
+"..."`. `validated_sha` now b8d2e98. Tree restored to b8d2e98 and left clean
+(`git status --porcelain` empty in `projects/TurboFNO/src`); throwaway build dirs
+and scratch comparison files removed.
+
+CUDA gate: not run this round -- already recorded at head_sha b8d2e98 in the
+2026-08-24 fix-round and third-review sections above (nvcc 12.8,
+`-DCMAKE_CUDA_ARCHITECTURES=86`, `USE_HIP=OFF`, all 10 variants configure/compile/
+LINK, PASS=10 FAIL=0), so the CUDA no-regression gate is satisfied at this exact
+head and needs no repeat.
+
+Jargon/documentation: not re-checked here (no source or doc file moved by this
+carry-forward; `jargon.py --port TurboFNO` was confirmed clean at b8d2e98 by both
+the porter and the fourth-round reviewer above).

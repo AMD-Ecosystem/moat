@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-03T23:28:39Z",
-  "updated_at": "2026-08-24T22:23:18Z",
+  "updated_at": "2026-08-24T22:28:30Z",
   "head_sha": "b8d2e9845c0146f2114d18810a54d90bac4e2588",
   "depends_on": [],
   "pr_url": "https://github.com/shixun404/TurboFNO/pull/3",
@@ -54,10 +54,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "ec49bcf5d5f2a662f00c3232d0759ac6c2dbe5c2",
+      "validated_sha": "b8d2e9845c0146f2114d18810a54d90bac4e2588",
       "started_at": "2026-08-24T20:23:26Z",
-      "completed_at": "2026-06-24T22:28:52Z",
-      "updated_at": "2026-08-24T22:23:18Z",
+      "completed_at": "2026-08-24T22:28:30Z",
+      "updated_at": "2026-08-24T22:28:30Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -72,10 +72,10 @@
         "last_session_at": null
       },
       "carry_forward": {
-        "to": "ec49bcf5d5f2a662f00c3232d0759ac6c2dbe5c2",
+        "to": "b8d2e9845c0146f2114d18810a54d90bac4e2588",
         "method": "binary-equiv",
-        "detail": "shim-header refactor: all 10 variant device objects + exported symbols byte-identical to 9ae7066 on gfx1100 (codeobj_diff)",
-        "at": "2026-06-24T22:28:52Z"
+        "detail": "revalidation of ec49bcf..b8d2e98 (2 host-only text commits in utils/utils.cuh, error-macro message rewrites): independently rebuilt both shas on this host (ROCm 7.2.3, gfx1100 W7800). Same-directory s",
+        "at": "2026-08-24T22:28:30Z"
       },
       "last_agent": "reviewer"
     },
