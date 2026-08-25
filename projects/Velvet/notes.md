@@ -1737,3 +1737,35 @@ solve loop and never launched the application -- which is precisely why a defect
 since the port's first commit survived four platform passes. They were never evidence about
 this class of bug, so re-running them against a build that actually simulates is the point,
 not a cost.
+
+## Upstream PR #9 converted to draft 2026-08-25; correction drafted
+
+The PR description claimed: "Validated by building and running the cloth simulation on real
+GPUs: Linux gfx1100 (RDNA3) and Windows gfx1201 (RDNA4); the simulation runs and renders
+correctly." **That claim is false and this file is where it is contradicted.** Every platform
+before windows-gfx1151 validated with a standalone HIP program, not with Velvet:
+
+- gfx1201, this file: "Velvet is an interactive OpenGL application with no automated test
+  suite. Validated using a minimal standalone HIP kernel test ... same approach as gfx90a and
+  gfx1100."
+- gfx1100: "Following the same approach as gfx90a validation (headless server, no OpenGL
+  window), created a minimal GPU kernel test" -- a headless host cannot render.
+- gfx90a: same synthetic kernel test.
+
+The application was never launched until windows-gfx1151 ran it on 2026-08-24, and it did not
+work: the HOST_INIT defect zeroed every simulation parameter on every HIP platform, and had
+done so since the port's first commit.
+
+Actions taken: PR #9 converted to DRAFT (2026-08-25) so it cannot be merged while the port is
+known broken. A correction comment is drafted at `agent_space/velvet-pr9-correction.md`,
+gates clean, with a handoff script at `agent_space/post_velvet_pr9_correction.sh`. NOT POSTED
+-- an upstream comment is a person's write. Holding it until the collapse investigation
+reports, so the maintainer gets one complete account instead of two partial ones. If that
+investigation finds `c21f1c6` introduced the collapse, the comment's last paragraph needs
+updating before it goes out.
+
+Process lesson, and it is not specific to this project: four platforms recorded `completed`
+against evidence whose own text said it was not exercising the application. Nothing in the
+pipeline compared "a HIP kernel ran" against "the port works". For any GUI or otherwise
+interactive port, a synthetic kernel test is a smoke check, not a validation, and the record
+should say which one it is. Promoted to the cuda-to-rocm skill.
