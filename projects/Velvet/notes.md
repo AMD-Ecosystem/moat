@@ -1962,3 +1962,124 @@ unmapped, and `hipMemcpy` against it returns `hipErrorInvalidValue` rather than 
 that copied a "map once, unmap once, keep the pointer" idiom out of a CUDA sample will silently
 transfer nothing. Check the return value of every interop copy; a silent no-op copy presents as
 a physics or rendering bug arbitrarily far from the real call.
+
+## Review 2026-08-25 (windows-gfx1151, reviewer): fix-round delta 7ccd4a9 -> c21f1c6
+
+Scope: `git diff 7ccd4a9845...c21f1c6` -- one file, `CMakeLists.txt`, +27/-8. Local branch
+review on `moat-fix-9`; no PR opened, nothing pushed to the fork.
+
+**Verdict: CHANGES REQUESTED.** The delta itself is correct, minimal and correctly gated --
+I could not fault the CMake -- but the round it stages does not produce a working port, and
+its commit body asserts simulation behaviour that this same host's probe later disproved.
+Both must be settled before this round is offered to the maintainer.
+
+### 1. Blocking: the staged round leaves the port non-functional (`Velvet/VtBuffer.hpp`)
+
+Independently confirmed the GL-interop lifetime defect described in the 2026-08-25
+investigation above, and confirmed its scope:
+
+- `VtBuffer.hpp:167-179` -- `registerBuffer()` registers, maps, takes the pointer into
+  `m_buffer` (`:173`), sets `m_count` (`:175`), then unmaps (`:178`) and keeps the pointer.
+- `VtBuffer.hpp:218` and `VtBuffer.hpp:231` are the only two dereferences of that pointer,
+  and both are bare `cudaMemcpy` with no `checkCudaErrors`, so the `hipErrorInvalidValue`
+  the runtime returns is discarded.
+- No kernel ever receives it: `grep` over `Velvet/` shows `VtRegisteredBuffer` named only
+  inside `VtBuffer.hpp`; every outside user (`MouseGrabber.hpp:33,85`,
+  `SpatialHashGPU.hpp:34`, `VtClothSolverGPU.hpp:215-216`) takes `VtMergedBuffer`, whose
+  `operator T*()` (`VtBuffer.hpp:235`) returns `m_vbuffer.data()`, the managed buffer.
+
+So the map/unmap scoping fix is complete at those two sites. Required in the next round:
+
+1. In `VtRegisteredBuffer`, leave only `cudaGraphicsGLRegisterBuffer` in `registerBuffer()`
+   and add `map()` / `unmap()`. `map()` = `cudaGraphicsMapResources` +
+   `cudaGraphicsResourceGetMappedPointer` + set `m_count`/`m_numBytes`, every call through
+   `checkCudaErrors`; `unmap()` = checked `cudaGraphicsUnmapResources`, then
+   `m_buffer = nullptr`.
+2. `unmap()` must clear `m_buffer` but KEEP `m_count` and `m_numBytes`.
+   `VtBuffer.hpp:212-213` computes the new offset from `m_rbuffers[last]->size()` where
+   `last = m_offsets.size() - 1`, i.e. the PREVIOUS, already-unmapped buffer -- zeroing the
+   counts on unmap would silently corrupt every offset after the first.
+   `registerNewBuffer()` must `map()` before the `rbuf->size()` reads at `:213`/`:217`.
+3. Scope map/unmap around both copies (`:218`, `:231`) and wrap both in `checkCudaErrors`.
+4. No `#ifdef`. A permanently-mapped interop pointer is undefined on CUDA too, so this is a
+   latent-bug fix for both backends and the commit message should say so.
+5. `destroy()` (`:149-164`) unregisters without unmapping; with tightly scoped map/unmap no
+   mapping is live there, but keep it that way rather than relying on it.
+
+### 2. Blocking: `c21f1c6`'s commit body claims physics that did not happen
+
+The body's Test Plan ends: "the physics frame counter advances at the fixed 60 Hz rate, and
+the particles fall under gravity. No HIP error is reported and the process exits cleanly."
+
+The investigation on this same host and this same sha found all 1681 particles seeded to the
+single point (0, 1.5, 1), 337 NaN positions by physics frame 1 and 1681 by frame 5 -- what
+was read as particles falling is a NaN point cloud, not gravity. "No HIP error is reported"
+is literally true only because the interop copies at `VtBuffer.hpp:218,231` are unchecked;
+the probe recorded `hipErrorInvalidValue` there.
+
+This is upstream-visible text on a PR whose description already had to be corrected once for
+an over-broad validation claim. Amend the body to claim exactly what was measured -- the
+simulation parameters are no longer zeroed (panel values, per-scene overrides, the derived
+Max Speed, the 60 Hz physics counter, 11 CXX vs 2 HIP objects, the `__HIPCC__` probe) -- and
+state plainly that a separate defect still prevents the cloth from simulating correctly.
+
+### 3. `CMAKE_CXX_COMPILER` became load-bearing and is undocumented (`README.md:64-70`)
+
+Before this commit every Velvet source was `LANGUAGE HIP`, so the host C++ compiler never
+touched them. After the split the 11 `.cpp` files are compiled by `CMAKE_CXX_COMPILER`, and
+they are not host-only code: `ninja -t deps` for `main.cpp.obj` in the gfx1151 build lists
+298 `thrust/` headers (via `VtClothObjectGPU.hpp` -> `VtClothSolverGPU.hpp` ->
+`VtBuffer.hpp` -> `Common.cuh:25-27`) and 24 `hip/` + `amd_detail/` headers. That build works
+only because it passes `-DCMAKE_CXX_COMPILER=<rocm>/lib/llvm/bin/clang++`, as every recorded
+recipe in this file does.
+
+The README ROCm configure block sets neither `CMAKE_CXX_COMPILER` nor `CMAKE_HIP_COMPILER`,
+so a reader on a stock host gets the distro default (`/usr/bin/c++`) compiling rocThrust and
+HIP headers -- a combination this port has never built. Untested, not asserted broken. Either
+document the ROCm C++ compiler as required in the README ROCm section, or establish during
+the Linux revalidation that the default host compiler handles those headers. The same caveat
+belongs in the `strategy-a-cmake.md` note this branch adds: splitting the languages moves the
+host TUs onto the host compiler, and header-only ROCm libraries reachable from a `.cpp`
+follow them there.
+
+### 4. A lesson recorded as promoted was not promoted (`notes.md:1771`)
+
+"For any GUI or otherwise interactive port, a synthetic kernel test is a smoke check, not a
+validation ... Promoted to the cuda-to-rocm skill." The only skill change on this branch is
+`references/strategy-a-cmake.md` (+109), where it survives as one clause at line 165 inside a
+CMake note. A validator planning a GUI port will not find it there. Put it in
+`references/validation.md` under the validation policy. The GL-interop fault class from the
+same investigation belongs in `references/fault-classes.md` and should ride the fix commit.
+
+### Checked, no action
+
+The CMake delta answers its brief. The `find_package` calls and everything the delta adds sit
+inside `if(USE_HIP)` (`CMakeLists.txt:31-34`, `:62-91`); under `USE_HIP=OFF` language
+auto-detection is untouched, so the CUDA path is unchanged. Substituting include directories
+for the imported targets is sound on this ROCm layout: `hip::hipcub`, `roc::rocthrust` and
+`roc::rocprim_hip` are all `INTERFACE IMPORTED` with only `INTERFACE_INCLUDE_DIRECTORIES`
+(all resolving to the ROCm include prefix) and `INTERFACE_LINK_LIBRARIES`; none carries
+compile definitions or options, and their configs add nothing but `find_dependency(rocprim)`.
+Dropping `hip::device` loses `-x hip`, `--hip-link` and `--offload-arch` only:
+`CMAKE_HIP_LINKER_PREFERENCE 90` means the mixed target still links with the HIP compiler,
+and `HIP_ARCHITECTURES` (`CMakeLists.txt:88-90`) supplies the arch. `hip::host` is sufficient
+for the host TUs -- `__HIP_PLATFORM_AMD__=1` plus `hip::amdhip64`, which carries the include
+prefix and `amdhip64.lib`. Independently re-verified the two preconditions for the language
+split: `<<<>>>` and `CUDA_CALL` appear only in the two `.cu` files, and the only `__HIPCC__`
+conditionals in the project are `Common.hpp:14` and `Common.cuh:34`. Commit hygiene on
+`c21f1c6` is otherwise correct: `[ROCm]` title of 47 characters, rationale, AI-assistance
+disclosure, fenced Test Plan, no `Co-Authored-By`, ASCII only.
+`python3 utils/jargon.py --port Velvet` -> clean.
+
+### Carry-forward judgement
+
+`python3 utils/moatlib.py classify Velvet 7ccd4a98 c21f1c6` -> `class=mixed
+arch_independent=False inert=False`, so linux-gfx90a, linux-gfx1100, windows-gfx1101 and
+windows-gfx1201 all read revalidate. I agree they must re-run, and for a stronger reason than
+the token-diff heuristic: every one of those `completed` records rests on the standalone
+`velvet_kernel_test_*` program, which never constructed `VtSimParams`, never entered the solve
+loop and never launched Velvet, so none of them was ever evidence about either defect at any
+sha (windows-gfx1101 and windows-gfx1201 additionally still carry `validated_sha` bb06b44).
+They should not re-run at `c21f1c6`, though: with the interop defect outstanding that would
+only re-record a broken port. Revalidate once, after the fix in finding 1 lands, and against
+the real application rather than a synthetic kernel.
