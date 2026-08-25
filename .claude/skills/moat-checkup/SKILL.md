@@ -35,7 +35,9 @@ asked us to stop is the one item here where continuing to work is worse than doi
 nothing. `orient.sh` names any port whose approval is standing and whose gates are
 met. `--review` is where work piles up: a port cannot be approved until its review PR
 exists, and nothing opens one automatically, so ports sit finished and unreviewable --
-the report names them all; do not trust any remembered count.
+the report names them all; do not trust any remembered count. A port whose earlier
+PR already merged reappears here as a FOLLOW-UP, tagged with the PR it follows, once
+new reviewed commits land past what that PR shipped (section 3).
 `--review --apply --name <p> --title '<t>' --body-file <f>` opens one. `--attention`
 lists open PRs where something needs a person: the PR no longer merges into its base
 (top of the list -- a conflict blocks the merge outright and no sha-comparing sweep
@@ -255,6 +257,27 @@ belongs in the record.
 ## 3. Merge and after
 
 On merge: `moatlib.py set-pr-merged <name>`.
+
+A merged PR is not the end of the port branch. When later work lands on it --
+reviewed and revalidated exactly like the first round, with the same gates binding
+at the new head -- the port is a FOLLOW-UP candidate and the whole submission shape
+repeats: `--review` lists it tagged with the finished PR, the review PR's diff is
+the delta past what that PR shipped, its title and body are the next upstream PR's
+verbatim, one `/moat approve` covers all three, and `--publish --apply` opens the
+next upstream PR after the same live re-checks. Nothing about the contract widens:
+the follow-up rides the same pre-authorized publish, and a stale platform or an
+unanswered waiver blocks it exactly as it would a first PR.
+
+Two preconditions are the follow-up's own. The record must say what the finished PR
+shipped -- `published_sha`, which `--dry-run` reports as BACKFILL where missing and
+`--apply` stamps from the live PR -- because that tip is the baseline the delta is
+judged and scanned against. And the fork's default branch must be fast-forwarded
+past the merge before the review PR opens: the review diff is judged against it,
+and an unsynced mirror replays the already-merged round in front of the reviewer
+(the tool refuses and says so; a squash-merged PR cannot be synced past and needs a
+person). Opening the review PR archives the finished PR into `pr_history`
+(`moatlib.py archive-pr` exists for recovery), and once the follow-up PR is open
+the branch is frozen again and maintainer requests go through the fix flow above.
 
 Landed work still needs tending. Upstream moves, and a port that worked six months ago can
 stop building. Periodically re-check merged projects: does the current upstream still build
