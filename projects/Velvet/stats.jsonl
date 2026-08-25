@@ -87,3 +87,5 @@
 {"kind":"session","ts":"2026-08-25T14:18:33Z","epoch":1787667513.383770100,"event":"end","platform":"windows-gfx1151"}
 {"kind":"phase","ts":"2026-08-25T14:24:06Z","phase":"compile","seconds":9.946,"exit":0,"cmd":"cmake --build projects/Velvet/src/build_probe -j16"}
 {"kind":"phase","ts":"2026-08-25T14:26:49Z","phase":"compile","seconds":10.006,"exit":0,"cmd":"cmake --build /d/Develop/moat/projects/Velvet/src/build_verify -j16"}
+{"kind":"session","ts":"2026-08-25T15:22:46Z","epoch":1787671366.824783600,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-08-25T15:28:53Z","epoch":1787671733.990945300,"event":"end","platform":"windows-gfx1151"}

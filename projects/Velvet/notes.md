@@ -2220,3 +2220,116 @@ directories.
 `revalidate`. They should re-run now, against the real application where the host can (only
 this gfx1151 host has a display; the Linux hosts are headless and gfx90a cannot create a GL
 context at all), because this is the first commit at which the simulation is correct.
+
+## Re-review 2026-08-25 (windows-gfx1151, reviewer): fix-round delta c21f1c6 -> a9016bc
+
+Scope: local-branch review of `moat-fix-9` at `a9016bc`, `git diff bb06b44...HEAD` with
+attention on the two commits that changed since `## Review 2026-08-25 (windows-gfx1151,
+reviewer)`. No PR opened, nothing pushed to the fork.
+
+**Verdict: REVIEW PASSED.** All four findings are genuinely addressed. I re-derived each
+claim from the code rather than from the porter's summary and found nothing to fault.
+
+### Finding 1 (GL interop) -- verified fixed, and complete
+
+Re-derived the two-site scoping independently rather than accepting it:
+
+- `VtBuffer.hpp:167-170` `registerBuffer()` now calls only `cudaGraphicsGLRegisterBuffer`.
+- `:174-180` `map()` maps, gets the pointer, sets `m_numBytes`/`m_count`, all checked.
+- `:184-188` `unmap()` unmaps checked and nulls `m_buffer` only.
+- `:219` maps BEFORE the three size reads at `:223`, `:227`, `:228`; `:229` unmaps after the
+  now-checked copy at `:228`. `:242-244` maps/copies/unmaps per buffer in `sync()`.
+
+Keeping `m_count`/`m_numBytes` across `unmap()` is not merely defensible, it is required.
+`push_back` at `:220` runs before `:222`, so `m_rbuffers.size() == m_offsets.size() + 1` and
+`m_rbuffers[last]` with `last = m_offsets.size() - 1` (`:222-223`) resolves to
+`m_rbuffers[size()-2]`, the previously registered and already-unmapped buffer. Zeroing the
+counts on unmap would corrupt every offset from the second buffer on. The first call is
+safe by the pre-existing `m_offsets.empty() ? 0 : ...` short circuit at `:223`, which stops
+the `0 - 1` underflow from being used as an index.
+
+Completeness re-checked by grep, not inherited: `VtRegisteredBuffer` is named only inside
+`VtBuffer.hpp` (`:122,125,127,129,131,217,250`); the only outside entry points are
+`VtClothSolverGPU.hpp:134-135` (`registerNewBuffer`) and `:115-116,151` (`sync`), both on
+`VtMergedBuffer`, whose `operator T*()` (`:248`) returns the managed `m_vbuffer`. No kernel
+receives a mapped pointer, so `data()`/`operator T*()` returning `nullptr` while unmapped is
+unreachable from outside the mapped scope.
+
+No path can reach `destroy()` (`:149-164`) with a live mapping: both map/unmap pairs are
+straight-line within one function body, there is no early return between them, and
+`checkCudaErrors` is `check()` at `helper_cuda.h:586-594`, which calls `exit(EXIT_FAILURE)`.
+That also settles exception safety for this codebase's style -- a failed interop call
+terminates rather than unwinding, so an RAII guard would buy nothing here, and leaving
+`destroy()` untouched is the smaller change. Double-mapping is likewise unreachable:
+`registerNewBuffer` maps a freshly constructed buffer, and `sync()` unmaps within the same
+loop iteration.
+
+### Finding 2 (portability) -- verified, and the CUDA path is improved, not merely unbroken
+
+No `#ifdef`, and nothing depends on HIP semantics: every call is a `cudaGraphics*` name
+routed through `cuda_to_hip.h:45-51`, and the same source compiles for both back ends.
+
+On CUDA the change is a real improvement in two independent ways. It stops relying on a
+pointer that the CUDA documentation defines only until the matching unmap, and it restores
+the GL<->CUDA synchronization that map/unmap provides -- the old code, having unmapped at
+registration, had no synchronization point between OpenGL drawing the VBO and the runtime
+writing it. Note for the record that this does change upstream CUDA runtime behaviour rather
+than being additive-and-guarded; that is the right call here (guarding it would leave the
+CUDA path on undefined behaviour) and `a9016bc`'s body states the reasoning plainly for the
+maintainer to judge.
+
+### Finding 3 (commit messages) -- verified honest against the measurements
+
+Checked every numeric claim in both bodies against the evidence in this file rather than
+against the porter's summary.
+
+`280ee3d`: 11 CXX / 2 HIP objects, the `__HIPCC__` `#error` probe, panel values (Substeps 2,
+Iterations 4, Max Speed 18.000, Gravity 0/-9.8/0), the per-scene overrides (8 substeps and
+friction 0.300; 10 substeps and 10 iterations) and "3.0 to 3.7 ms per frame" all trace to
+`notes.md:1684-1697`. The false "the particles fall under gravity ... no HIP error is
+reported" sentence is gone, and the closing paragraph now says outright that the simulation
+is not yet correct at that commit and names the interop defect fixed by the next one.
+
+`a9016bc`: extent 2.000 x 2.000, lowest point 1.500 -> 0.775 with corners held, mean stretch
+residual 0.0097 against rest length 0.05, zero NaN over 600 physics frames, both copies
+rc=0 -- all match the porter's `verify1.log` table exactly, with no rounding in the
+favourable direction. The body discloses that those numbers come from instrumentation that
+was not committed, and separates them from the shipped `build_verify` binary's own result.
+
+Hygiene: titles 56 and 48 characters, both `[ROCm]`; `git log --format='%(trailers)'` is
+empty for all four commits, so no `Co-Authored-By`; both carry "Written with the assistance
+of an AI coding agent."; both Test Plans are fenced literal commands; no non-ASCII in the
+delta; `git grep PROBE -- Velvet/` is empty, so no instrumentation leaked into the tree; no
+internal account, host or vocabulary references in any body.
+`python3 utils/jargon.py --port Velvet` -> `jargon: clean`.
+
+### Finding 4 (lessons) -- verified promoted and actionable
+
+`references/validation.md` +1 and `references/fault-classes.md` +14, both read as
+instructions a stranger can act on rather than as Velvet trivia: the first tells a validator
+what to do instead of a synthetic kernel test (launch the binary, drive the default scene,
+assert on state the application computes, route to a host with a display) and why; the
+second gives the fault class a name, the `hipErrorInvalidValue`-with-nothing-transferred
+signature, the unchecked-interop-copy tell, the audit instruction, and the portable fix.
+
+### Two items the validator must carry, not defects in this delta
+
+1. `README.md:64` says "This is the invocation the ROCm build is verified with", but only
+   the Windows form of it has been run (this host, `notes.md` porter section above). The
+   recorded linux-gfx1100 recipe (`notes.md:1160-1166`) sets no `CMAKE_CXX_COMPILER` at all,
+   and at `7ccd4a9` it did not need to. The linux revalidation at `a9016bc` must configure
+   with exactly the README block so that sentence is backed; if it has to deviate, the
+   sentence needs correcting before publication.
+2. The project's per-round nvcc CUDA-path compile check has not been re-run since
+   `VtBuffer.hpp` changed. `VtClothSolverGPU.cu` reaches `VtBuffer.hpp`, so the existing
+   invocation at `notes.md:1095` covers the new `map()`/`unmap()`. Compile risk is close to
+   nil -- the calls were already in this file and only moved -- but the check belongs in the
+   linux round before the fix review PR.
+
+### Carry-forward judgement
+
+`a9016bc` changes real host code that all four other platforms' records predate, and every
+one of those records rests on the synthetic kernel program rather than the application, so
+none is evidence about either defect at any sha. They must re-run against the real binary
+where the host can. This is the first commit at which the simulation is correct, so this is
+the right sha to re-run at.
