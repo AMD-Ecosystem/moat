@@ -231,13 +231,27 @@
       "id": "nvidia-notice-cd-class-tidy",
       "kind": "other",
       "component": null,
-      "summary": "COUNSEL RULING (2026-08-24): the C/D-class NVIDIA-notice items (dead-in-tree or text-only: EnvGS orphan script scripts/instant-ngp/colmap_to_nerf.py, OCTproZ about-dialog EULA copy shown even in AMD builds, LichtFeld-Studio nvImageCodec cmake pair, MASt3R-SLAM checkpoints notice, alien/plvs/cupoch vendored CUDA-path helpers, h2o4gpu dead vendored set) are not an immediate issue but should be tidied over time so it is clear AMD is not using them -- BSD swaps or bypass where possible, never deleting licence/notice files. LOW PRIORITY behind the A-class swaps (Velvet, TurboFNO) and pre-fork swaps (h2o4gpu, cuda_voxelizer, PhoenixOS header drop).",
+      "summary": "POLICY (2026-08-24): the C/D-class NVIDIA-notice items (dead-in-tree or text-only: EnvGS orphan script scripts/instant-ngp/colmap_to_nerf.py, OCTproZ about-dialog EULA copy shown even in AMD builds, LichtFeld-Studio nvImageCodec cmake pair, MASt3R-SLAM checkpoints notice, alien/plvs/cupoch vendored CUDA-path helpers, h2o4gpu dead vendored set) are not an immediate issue but should be tidied over time so it is clear AMD is not using them -- BSD swaps or bypass where possible, never deleting licence/notice files. LOW PRIORITY behind the A-class swaps (Velvet, TurboFNO) and pre-fork swaps (h2o4gpu, cuda_voxelizer, PhoenixOS header drop).",
       "refs": [
-        "counsel email 2026-08-24"
+        "licensing review 2026-08-24"
       ],
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-08-24T19:49:43Z",
+      "decided": null,
+      "project": null
+    },
+    {
+      "id": "upstream-followup-pr-flow",
+      "kind": "other",
+      "component": null,
+      "summary": "The upstream tooling has no path for a SECOND PR on a project whose first PR merged: pr-candidates and upstream.py --review exclude merged projects by design, and pr-ready reports 'pr-exists=the upstream PR is already merged' even when the moat-port branch carries new reviewed+revalidated commits. First hit: TurboFNO 2026-08-24 (three post-merge commits replacing vendor-sample-derived macro text, fully reviewed, platforms carrying forward). Interim: the person opens the follow-up PR manually from the fork and records it with set-pr-open once the tooling permits, or the record is kept in notes. Proper fix: a follow-up-PR flow (review PR on the fork, approval gate, publish) that treats the merged first PR as history rather than a terminal state.",
+      "refs": [
+        "projects/TurboFNO/notes.md 2026-08-24 rounds"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-24T22:25:33Z",
       "decided": null,
       "project": null
     }

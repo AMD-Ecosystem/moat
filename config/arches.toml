@@ -17,11 +17,27 @@
 [gates]
 required = ["wave64", "wave32", "windows"]
 
-# Only `windows` may be waived -- for a project whose obstacle is the platform rather
-# than the GPU (deep Linux file-I/O assumptions, say). Every waiver needs MAINTAINER
-# approval recorded in status.json; agents may only suggest one. This is the sole
-# escapable gate, so it must not be self-certifiable.
-waivable = ["windows"]
+# Two gates may be waived. Every waiver needs MAINTAINER approval recorded in
+# status.json; agents may only suggest one, and an unapproved suggestion BLOCKS rather
+# than clears. Neither is self-certifiable.
+#
+# `windows` -- the obstacle is the operating system rather than the GPU: deep Linux
+# file-I/O assumptions, a POSIX-only loader, a dependency with no Windows build.
+#
+# `wave64` -- the port's GPU work is INSEPARABLE from a graphics pipeline, which no
+# wave64 part has. Every wave64 architecture is CDNA, and CDNA is compute-only: the
+# driver will not create an OpenGL/Vulkan context, so a port whose device buffers ARE
+# the graphics buffers cannot execute there at all, on any host, ever. Velvet is the
+# case that forced this: its particle positions live in an OpenGL vertex buffer shared
+# with HIP through graphics interop, so there is no compute path to test in isolation.
+#
+# READ THAT NARROWLY. "The project has a GUI" is NOT the criterion, and neither is "the
+# README says it needs a graphics pipeline". Most rendering-adjacent projects still have
+# compute that runs perfectly well headless, and a partial wave64 validation of that
+# compute is real evidence worth having -- prefer it to a waiver. The bar is that the
+# GPU work under test cannot be reached without a graphics context. If a headless subset
+# exists, validate the subset and scope the claim; do not waive.
+waivable = ["windows", "wave64"]
 
 # Linux is deliberately not a gate. wave64 is only satisfiable on Linux (CDNA is
 # Linux-only), so proving wave64 proves Linux. There is likewise no wave64-Windows
