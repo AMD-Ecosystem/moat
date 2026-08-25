@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-03T23:28:39Z",
-  "updated_at": "2026-08-25T19:01:38Z",
+  "updated_at": "2026-08-25T23:25:24Z",
   "head_sha": "b8d2e9845c0146f2114d18810a54d90bac4e2588",
   "depends_on": [],
   "porting": null,
@@ -159,5 +159,17 @@
     }
   ],
   "pr_round": 2,
-  "review_pr": "https://github.com/AMD-Ecosystem/TurboFNO/pull/1"
+  "review_pr": "https://github.com/AMD-Ecosystem/TurboFNO/pull/1",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-25T23:23:34Z",
+    "head_sha": "b8d2e9845c0146f2114d18810a54d90bac4e2588",
+    "content_sha256": "8c894f949f3c8b17201ca5add935167af2124639d55dce1b7a835b2e6fe1731b",
+    "review_pr": "https://github.com/AMD-Ecosystem/TurboFNO/pull/1"
+  },
+  "pr_url": "https://github.com/shixun404/TurboFNO/pull/4",
+  "pr_number": 4,
+  "pr_opened_at": "2026-08-25T23:25:24Z",
+  "pr_state": "open",
+  "published_sha": "b8d2e9845c0146f2114d18810a54d90bac4e2588"
 }
