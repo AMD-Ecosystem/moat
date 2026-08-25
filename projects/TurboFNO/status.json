@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-03T23:28:39Z",
-  "updated_at": "2026-08-24T23:37:09Z",
+  "updated_at": "2026-08-25T18:11:49Z",
   "head_sha": "b8d2e9845c0146f2114d18810a54d90bac4e2588",
   "depends_on": [],
   "pr_url": "https://github.com/shixun404/TurboFNO/pull/3",
@@ -144,5 +144,6 @@
     "arch": "linux-gfx1100",
     "since": "2026-08-24T22:20:37Z",
     "at": "2026-08-24T22:23:18Z"
-  }
+  },
+  "published_sha": "ec49bcf5d5f2a662f00c3232d0759ac6c2dbe5c2"
 }
