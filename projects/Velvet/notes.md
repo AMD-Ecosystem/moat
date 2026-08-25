@@ -2333,3 +2333,171 @@ one of those records rests on the synthetic kernel program rather than the appli
 none is evidence about either defect at any sha. They must re-run against the real binary
 where the host can. This is the first commit at which the simulation is correct, so this is
 the right sha to re-run at.
+
+## Validation 2026-08-25 (windows-gfx1151, fix round a9016bc): PASS -- real application, all 8 required measurements confirmed
+
+Validator run, independent of the porter's investigation and fix-round evidence above.
+Reproduced everything from a fresh build in a new tree (`build_validate`) rather than
+reusing the porter's `build_verify`/`verify1.log`; instrumentation used to count NaN and
+interop-copy return codes was applied to a second throwaway tree (`build_valprobe`),
+reverted before completion. `git -C projects/Velvet/src status --porcelain` shows only
+untracked build directories at every checkpoint below.
+
+Host/GPU: windows-gfx1151 (gfx1151, RDNA3.5 APU, Radeon 8060S, 20 CUs, wave32), Windows 11.
+`moat-fix-9` at `a9016bcb5efb7a328785f428ba5e609cf98513c2` (== `head_sha`). `protect-fork
+Velvet` confirmed installed and current; no push to the fork was made or attempted (frozen,
+PR #9 open in draft).
+
+Kernel_141 WER crash-dump count: 18 before this session, 18 after -- unchanged, matches the
+steady baseline recorded on every prior validation of this project on this host.
+
+### Build (clean, no instrumentation)
+
+```bash
+export ROCM_DEVEL="D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel"
+cmake -B build_validate -S . -G Ninja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=$ROCM_DEVEL/lib/llvm/bin/clang.exe \
+  -DCMAKE_CXX_COMPILER=$ROCM_DEVEL/lib/llvm/bin/clang++.exe \
+  -DCMAKE_HIP_COMPILER=$ROCM_DEVEL/lib/llvm/bin/clang++.exe \
+  -DCMAKE_PREFIX_PATH=$ROCM_DEVEL \
+  -DCMAKE_TOOLCHAIN_FILE=D:/vcpkg/scripts/buildsystems/vcpkg.cmake \
+  -DVCPKG_TARGET_TRIPLET=x64-windows
+bash utils/timeit.sh Velvet compile -- cmake --build build_validate -j16
+```
+
+Exit 0, no errors. 11 "Building CXX object", 2 "Building HIP object" (matches the recorded
+language split). `strings build_validate/bin/Velvet.exe | grep gfx1151` gives
+`hipv4-amdgcn-amd-amdhsa--gfx1151`. Runtime DLLs staged next to the exe with
+`agent_space/win_rocm_env.sh`'s `rocm_stage_runtime` (System32 `amdhip64_7.dll` is broken on
+this host).
+
+### Independent probe build (throwaway, reverted)
+
+Reused the porter's per-physics-frame NaN/extent method (`agent_space/velvet_probe/`) but
+wrote my own patch rather than trusting `verify1.log`: `VtClothSolverGPU.hpp` got a
+`ValProbe()` method hooked at the same two anchors (`Simulate()` entry, after
+`ComputeNormal` at the frame-end, self-exits after 200 physics frames), and `VtBuffer.hpp`
+got explicit `hipError_t` capture-and-print around both `cudaMemcpy` calls in
+`registerNewBuffer()`/`sync()` (the shipped code already wraps both in `checkCudaErrors`,
+which aborts rather than reporting the return code, so this is a print-only addition, no
+code-path change). Patch script and full run log:
+`agent_space/velvet_valprobe_run.log` (422 lines), patch content recorded below for the
+record since the script itself lived in the session scratchpad, not `agent_space/`.
+
+Built in a second tree (`build_valprobe`), same recipe as above. Exit 0, same 11/2 object
+split, no errors. Ran the instrumented binary unattended; it printed its results and called
+`std::exit(0)` at physics frame 201, so the run terminates itself rather than needing to be
+killed.
+
+NaN-detector sanity check (item 5's "prove the counter still works"): the probe also runs a
+one-time self-test against a manufactured 3-element array containing exactly one
+`std::nanf("")`, using the identical `isnan(v.x)||isnan(v.y)||isnan(v.z)` expression the
+frame-end probe uses:
+
+```
+VALPROBE[selftest] manufactured_nan_count_expected=1 detected=1
+```
+
+Confirms `isnan()` genuinely trips on this compiler/build (no `-ffast-math` in the
+CMakeLists that could fold it away) before trusting a `nanPos=0` result as meaningful.
+
+Interop-copy return codes, all captured, no `rc=1` (`hipErrorInvalidValue`) anywhere in the
+log:
+
+```
+VALPROBE[seed-copy] bytes=20172 rc=0
+VALPROBE[seed-copy] bytes=20172 rc=0
+VALPROBE[sync-copy] i=0 bytes=20172 rc=0     (repeated every physics frame, ~211 times, always rc=0)
+```
+
+Frame-end extent/NaN samples (12 total, frames 0-5 then every 30th to 200; full log has all
+12):
+
+```
+VALPROBE[frame-end] n=1681 bbox=(-1.000,1.498,-1.000)-(1.000,1.500,1.000) ext=(2.000,0.002,2.000) nanPos=0 nanNrm=0
+VALPROBE[frame-end] n=1681 bbox=(-1.001,1.445,-1.001)-(1.001,1.500,1.001) ext=(2.002,0.055,2.002) nanPos=0 nanNrm=0
+VALPROBE[frame-end] n=1681 bbox=(-1.114,0.698,-1.113)-(1.113,1.500,1.114) ext=(2.227,0.802,2.227) nanPos=0 nanNrm=0
+VALPROBE[frame-end] n=1681 bbox=(-1.000,0.794,-1.000)-(1.000,1.500,1.000) ext=(2.000,0.705,2.000) nanPos=0 nanNrm=0
+VALPROBE[frame-end] n=1681 bbox=(-1.119,0.736,-1.118)-(1.118,1.500,1.118) ext=(2.237,0.763,2.237) nanPos=0 nanNrm=0
+VALPROBE[frame-end] n=1681 bbox=(-1.010,0.795,-1.010)-(1.010,1.500,1.010) ext=(2.021,0.705,2.021) nanPos=0 nanNrm=0
+VALPROBE[frame-end] n=1681 bbox=(-1.043,0.766,-1.043)-(1.043,1.500,1.043) ext=(2.086,0.733,2.086) nanPos=0 nanNrm=0
+VALPROBE[frame-end] n=1681 bbox=(-1.049,0.779,-1.049)-(1.049,1.500,1.049) ext=(2.098,0.720,2.098) nanPos=0 nanNrm=0
+```
+
+`nanPos=0 nanNrm=0` at all 12 sampled points across 200 physics frames -- zero NaN over the
+sustained run, and the detector is known-functional. The y maximum stays pinned at 1.500
+throughout (attached corners), the minimum settles around 0.72-0.78 (matches the porter's
+"about 0.775"), and x/z extent stays close to 2.0 throughout (transient overshoot to
+2.086-2.237 mid-fall is oscillation while the cloth is still settling onto the collision
+sphere, the same shape the porter's own log shows, not divergence -- it does not grow frame
+over frame). Instrumentation reverted (`git checkout -- Velvet/VtBuffer.hpp
+Velvet/VtClothSolverGPU.hpp`) before any commit; `git status --porcelain -- Velvet/` was
+empty afterward.
+
+### Real, clean-binary application evidence (the binary that would actually ship)
+
+Launched `build_validate/bin/Velvet.exe` (no instrumentation) on this host's display,
+screenshots via generic PowerShell capture helpers in `agent_space/velvet_shot/` (not part
+of the port):
+
+- `agent_space/velvet_shot/val_default.png` -- default scene (Cloth / Attach, 1681
+  particles). The cloth mesh renders as a textured red-gingham surface with lighting and a
+  cast shadow on the checkerboard floor, draped over the collision sphere, corners held --
+  not a particle overlay. Simulation panel reads exactly: Num Substeps 2, Num Iterations 4,
+  Max Speed 18.000, Gravity 0.000, -9.800, 0.000.
+- `agent_space/velvet_shot/val_scene_3.png` -- Cloth / Self Collision (clothResolution 60,
+  61^2 = 3721 particles, matches the task's count). Panel shows the scene's own override
+  (Num Substeps 8, Friction 0.300, matching the porter's record). This scene has no attached
+  corners (`SceneClothSelfCollision::PopulateActors` calls no `SetAttachedIndices`), so it is
+  a free-fall-onto-plane demo; after roughly 2.5 s (about 150 physics frames at 60 Hz, well
+  past the 0.55 s free-fall time from y=1.5) the cloth has landed and folded on the floor,
+  still showing its checkered pattern intact and coherent -- not a NaN/garbage point cloud
+  and not disintegrated, which is what a collapse looked like in the pre-fix screenshots.
+- `agent_space/velvet_shot/val_scene_6.png` -- Cloth / High Resolution (clothResolution 200,
+  201^2 = 40401 particles, matches the task's count). Panel shows Num Substeps 10, Num
+  Iterations 10, Max Speed 18.000 (matches the porter's record). The cloth drapes naturally
+  over the sphere with fine wrinkle detail intact, mesh rendered with texture and lighting,
+  no collapse.
+- A separate short launch of the same clean binary was wrapped in
+  `utils/timeit.sh Velvet test --` for the telemetry record: process stayed alive 6 s,
+  `Get-Process Velvet` confirmed a live main window, then was stopped cleanly. No crash, no
+  HIP error text, no WER report added (Kernel_141 count unchanged).
+
+### Requirement-by-requirement
+
+| # | requirement | result |
+| - | --- | --- |
+| 1 | build + launch real Velvet.exe | build_validate exit 0, 11 CXX/2 HIP objects, gfx1151 embedded; app launched, window live, screenshots captured |
+| 2 | cloth holds ~2.0 x 2.0 extent | ext x/z 2.000 at frame 0, 2.098 x 2.098 by frame ~200 (transient overshoot to about 2.24 mid-settle, does not grow further) |
+| 3 | sags 1.5 to ~0.775, corners held at 1.5 | y max pinned at 1.500 every sampled frame; y min settles 0.720-0.795 across late frames |
+| 4 | cloth MESH renders (textured, lit, shadowed) | val_default.png: gingham surface, lighting, cast shadow, not a point overlay |
+| 5 | zero NaN, detector sanity-checked | nanPos=0 nanNrm=0 at all 12 sampled frame-ends over 200 physics frames; selftest detected=1/expected=1 |
+| 6 | both interop cudaMemcpy calls succeed | seed-copy rc=0 (x2), sync-copy rc=0 every frame (about 211 calls), zero rc=1 occurrences |
+| 7 | Simulation panel defaults | Substeps 2, Iterations 4, Gravity (0.000,-9.800,0.000), Max Speed 18.000 -- read directly off val_default.png |
+| 8 | other scenes behave | Self Collision (3721 particles) and High Resolution (40401 particles) both render coherently, no collapse |
+
+Verdict: PASS. All 8 required measurements hold on a fresh, independent build and run of the
+actual application, not the synthetic kernel test that produced four false completions on
+this project earlier.
+
+### Two carry-forward items, not this arch's to fix
+
+- `README.md:64` ("the invocation the ROCm build is verified with") is backed for the
+  Windows form only; the Linux recipe recorded at `notes.md:1160-1166` sets no
+  `CMAKE_CXX_COMPILER`. Belongs to the linux-gfx1100 revalidation: either configure with
+  exactly the README block, or correct the sentence.
+- The nvcc CUDA-path compile check has not re-run since `VtBuffer.hpp` changed at this fix
+  round. This Windows host has no CUDA toolkit, so the gate is not run here; it lands on
+  whichever Linux arch validates next, per the standing CUDA-gate rule (once per head_sha, on
+  a host with the toolkit).
+
+### CUDA no-regression gate
+
+Not run on this host: no CUDA toolkit present (Windows host, in practice this gate lands on
+a Linux arch). cuda-not-validated: no CUDA toolkit on this Windows host.
+
+### jargon / documentation gates
+
+`python3 utils/jargon.py --port Velvet` gives `jargon: clean`. README.md ROCm build section
+present and accurate for the Windows form (see carry-forward item above for the Linux form).
