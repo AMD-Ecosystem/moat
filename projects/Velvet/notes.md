@@ -2537,3 +2537,32 @@ true, or reword it to "this is the shape of the invocation" and note which platf
 verified. Do not leave it as is. Same for the nvcc CUDA-path compile check, which has not
 re-run since `VtBuffer.hpp` changed -- `VtClothSolverGPU.cu` reaches it, so the existing
 invocation covers the new methods, but it has not been exercised.
+
+### Body updated again 2026-08-25: the CUDA sample headers were undocumented
+
+jeff spotted that neither the original nor the replacement PR body said anything about
+`Velvet/External/cuda`, even though commit `7ccd4a9` rewrites all three headers and accounts
+for most of the line count in the round (helper_string.h alone is +/-451 lines).
+
+That is worse than a documentation gap, because it is a LICENCE change to bundled
+third-party code. Verified by reading both revisions rather than trusting the commit
+message:
+
+- at `bb06b44`: "Copyright 1993-2013/2017 NVIDIA Corporation" and "Please refer to the
+  NVIDIA end user license agreement (EULA) associated with this source code"
+- at `a9016bc`: "Copyright (c) 2022, NVIDIA CORPORATION" with the BSD 3-Clause
+  redistribution terms
+
+So EULA-governed files were replaced verbatim with NVIDIA's own BSD 3-Clause republication
+from NVIDIA/cuda-samples at `b7c5481c556c3fe98db060207ecaa41a4b9a9abc`. This is the
+"A-class swap (Velvet)" the licensing deferral refers to, and shipping it unexplained would
+have left a maintainer looking at 500 lines of unattributed churn in vendored files.
+
+A section now says so on PR #9, stating the before and after notice text, that nothing was
+deleted and no notice stripped, that `checkCudaErrors` is the only symbol taken from the
+headers, and that the AMD build reads none of them.
+
+Lesson, and it generalises past this project: a PR body should account for every file the
+diff touches, especially vendored third-party code, and MOST especially when the change
+alters a licence notice. Three reviews and two body rewrites went past this because everyone
+was looking at the defect fixes. Check the diffstat against the body before publishing.
