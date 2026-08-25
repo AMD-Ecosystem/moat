@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-03T23:28:39Z",
-  "updated_at": "2026-08-25T18:11:49Z",
+  "updated_at": "2026-08-25T18:20:46Z",
   "head_sha": "b8d2e9845c0146f2114d18810a54d90bac4e2588",
   "depends_on": [],
   "pr_url": "https://github.com/shixun404/TurboFNO/pull/3",
@@ -15,7 +15,12 @@
   "pr_opened_at": "2026-06-24T22:49:43Z",
   "pr_merged_at": "2026-07-02T17:17:26Z",
   "porting": null,
-  "waivers": {},
+  "waivers": {
+    "windows": {
+      "reason": "Follow-up delta ec49bcf..b8d2e98 is host-side message text in utils/utils.cuh only: device binaries proven byte-identical on gfx1100 and gfx90a (five independent measurements), CUDA 12.8 build clean. Windows platforms hold real validations of the unchanged device code at prior tips (9ae7066/ec49bcf); revalidation at head awaits a Windows host. Maintainer ruled wave32-alone sufficient for this follow-up (2026-08-25).",
+      "suggested_at": "2026-08-25T18:20:46Z"
+    }
+  },
   "pr_state": "merged",
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 916975166,
