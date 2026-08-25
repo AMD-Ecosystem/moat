@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-08-25T16:12:12Z",
+  "updated_at": "2026-08-25T17:09:27Z",
   "head_sha": "a9016bcb5efb7a328785f428ba5e609cf98513c2",
   "depends_on": [],
   "pr_url": "https://github.com/vitalight/Velvet/pull/9",
@@ -168,16 +168,19 @@
       "last_agent": "validator"
     }
   },
-  "published_sha": "bb06b44",
-  "fix": {
-    "branch": "moat-fix-9",
-    "base_sha": "bb06b44",
-    "review_pr": "https://github.com/AMD-Ecosystem/Velvet/pull/1",
-    "opened_at": "2026-08-24T19:46:42Z"
-  },
+  "published_sha": "a9016bcb5efb7a328785f428ba5e609cf98513c2",
+  "fix": null,
   "porting_released": {
     "arch": "windows-gfx1151",
     "since": "2026-08-25T15:22:47Z",
     "at": "2026-08-25T15:28:47Z"
-  }
+  },
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-25T16:41:49Z",
+    "head_sha": "a9016bcb5efb7a328785f428ba5e609cf98513c2",
+    "content_sha256": "f3797eaad14db82f18aff05e54ff0f48bae8c52af478266fde24c661804fe19e",
+    "review_pr": "https://github.com/AMD-Ecosystem/Velvet/pull/1"
+  },
+  "fix_merged_at": "2026-08-25T17:09:27Z"
 }

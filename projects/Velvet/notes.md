@@ -2501,3 +2501,39 @@ a Linux arch). cuda-not-validated: no CUDA toolkit on this Windows host.
 
 `python3 utils/jargon.py --port Velvet` gives `jargon: clean`. README.md ROCm build section
 present and accurate for the Windows form (see carry-forward item above for the Linux form).
+
+## Fix round merged upstream 2026-08-25; PR #9 out of draft
+
+Sequence executed after jeffdaily approved AMD-Ecosystem/Velvet#1 with `/moat approve`:
+`upstream.py --merge-fix --apply` fast-forwarded `moat-port` to `a9016bc` and posted the
+approved reply; the upstream PR body was replaced from
+`agent_space/velvet-pr9-body.md`; PR #9 taken out of draft. Verified after each step --
+PR head is `a9016bcb5efb`, `published_sha == head_sha == a9016bc`, `fix` cleared,
+`fix_merged_at` recorded, the string "runs and renders correctly" no longer appears in the
+body, and the superseding sentence does.
+
+### Two artifacts of the ordering, recorded so nobody is puzzled later
+
+1. The posted reply opens "The description says ... 'runs and renders correctly'", but the
+   description no longer says that -- the body was replaced minutes afterwards. The comment
+   is the audit trail of the correction and the body is the corrected text; GitHub's edit
+   history reconciles them. Left as is deliberately: rewriting the comment to hide what was
+   corrected would defeat its purpose.
+
+2. `agent_space/velvet-pr9-correction.md` was NOT posted. Its content went out as the
+   `## Upstream reply` section of the review PR instead, so only one correction reached the
+   maintainer. That file is now spent; do not post it.
+
+### OUTSTANDING, and it is the same class of error we just apologised for
+
+`README.md` (published in `a9016bc`) says "This is the invocation the ROCm build is verified
+with" above a Linux example pinned to `gfx1100` and `$ROCM_PATH/lib/llvm/bin/clang`. Only the
+WINDOWS form has actually been run -- gfx1151, Windows paths. The claim is a soft
+overstatement about an invocation rather than a fabricated result, and jeff took the PR out
+of draft knowing it, but it is live upstream now.
+
+The Linux re-test at `a9016bc` should either run exactly that block and make the sentence
+true, or reword it to "this is the shape of the invocation" and note which platform was
+verified. Do not leave it as is. Same for the nvcc CUDA-path compile check, which has not
+re-run since `VtBuffer.hpp` changed -- `VtClothSolverGPU.cu` reaches it, so the existing
+invocation covers the new methods, but it has not been exercised.
