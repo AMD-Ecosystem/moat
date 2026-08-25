@@ -7,21 +7,18 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-08-25T14:31:59Z",
-  "head_sha": "c21f1c671ecd710e7d2a4fa85d2f25681712dc64",
+  "updated_at": "2026-08-25T14:35:07Z",
+  "head_sha": "a9016bcb5efb7a328785f428ba5e609cf98513c2",
   "depends_on": [],
   "pr_url": "https://github.com/vitalight/Velvet/pull/9",
   "pr_number": 9,
   "pr_opened_at": "2026-08-13T20:49:28Z",
-  "porting": {
-    "arch": "windows-gfx1151",
-    "since": "2026-08-25T14:31:59Z"
-  },
+  "porting": null,
   "waivers": {},
   "pr_state": "open",
   "license_spdx": "MIT",
   "upstream_repo_id": 483176101,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -146,7 +143,7 @@
       "failed_sha": "7ccd4a98451e144e05f5bdf19827a28471f787e0",
       "started_at": "2026-08-24T22:03:16Z",
       "completed_at": null,
-      "updated_at": "2026-08-25T14:31:59Z",
+      "updated_at": "2026-08-25T14:35:07Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -173,7 +170,7 @@
   },
   "porting_released": {
     "arch": "windows-gfx1151",
-    "since": "2026-08-25T14:09:22Z",
-    "at": "2026-08-25T14:18:27Z"
+    "since": "2026-08-25T14:31:59Z",
+    "at": "2026-08-25T14:35:07Z"
   }
 }

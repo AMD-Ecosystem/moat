@@ -183,6 +183,20 @@ the existing queue mutex, draining on teardown too. Only the op that hands per-c
 allocations into a callback-retired queue trips this, which is why one gate hangs while
 everything else passes. (qrack: `_PopQueue` under `UniformlyControlledSingleBit`.)
 
+**A graphics-interop device pointer dies at the unmap.**
+`cudaGraphicsResourceGetMappedPointer`/`hipGraphicsResourceGetMappedPointer` returns a pointer that is
+only valid until the matching `...GraphicsUnmapResources`. CUDA commonly keeps such a pointer usable
+afterwards, so the "map once at registration, unmap, keep the pointer" idiom copied out of CUDA GL-interop
+samples survives upstream. On ROCm the pointer is not a valid HIP allocation once unmapped: `hipMemcpy`
+against it returns `hipErrorInvalidValue` and moves NOTHING. The tell is an UNCHECKED interop copy -- the
+error code is discarded, so the failure surfaces arbitrarily far away as a physics, geometry or rendering
+bug (in Velvet the seed copy from the mesh VBO left every particle at the origin, the solver exploded into
+NaN, and the reverse copy never reached the VBO so the mesh appeared absent). Audit every
+`cudaGraphics*`/`hipGraphics*` user for the map scope, wrap each interop copy in the project's error check,
+and scope map/unmap tightly around each access. Fix it portably with no `#ifdef`: a permanently mapped
+resource is undefined on CUDA too, and leaving it mapped while the graphics API draws from it is a second
+bug. (Velvet: `VtBuffer.hpp` `VtRegisteredBuffer::registerBuffer`.)
+
 **`hipFree` is synchronizing** (`hipFreeAsync` is not), so an explicit
 `hipDeviceSynchronize()` before it is redundant. (anari-visionaray)
 

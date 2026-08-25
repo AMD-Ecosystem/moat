@@ -2083,3 +2083,140 @@ sha (windows-gfx1101 and windows-gfx1201 additionally still carry `validated_sha
 They should not re-run at `c21f1c6`, though: with the interop defect outstanding that would
 only re-record a broken port. Revalidate once, after the fix in finding 1 lands, and against
 the real application rather than a synthetic kernel.
+
+## Porter 2026-08-25 (windows-gfx1151, fix round c21f1c6 -> a9016bc): GL interop scoped, real-application evidence
+
+Answers `## Review 2026-08-25 (windows-gfx1151, reviewer)` above, all four findings. The
+round is unpublished (`published_sha` bb06b44, upstream PR #9 is a draft), so the parameter
+commit was amended in place; `moat-fix-9` was force-pushed with `--force-with-lease`.
+
+Branch after this round:
+
+```
+a9016bc [ROCm] Map the shared GL buffers around each device copy   <- new
+280ee3d [ROCm] Keep host sources out of the GPU language           <- amended c21f1c6
+7ccd4a9 [ROCm] Refresh the bundled CUDA samples helpers
+bb06b44 [ROCm] Rely on HIP arch auto-detect instead of pinning gfx90a   (published)
+```
+
+### Finding 1 (blocking): the GL-interop lifetime defect -- fixed
+
+`Velvet/VtBuffer.hpp`, +21/-5. `VtRegisteredBuffer::registerBuffer()` now only calls
+`cudaGraphicsGLRegisterBuffer`. Two new methods carry the mapping:
+
+- `map()` -- `cudaGraphicsMapResources` + `cudaGraphicsResourceGetMappedPointer` + sets
+  `m_count`/`m_numBytes`, every call through `checkCudaErrors`.
+- `unmap()` -- checked `cudaGraphicsUnmapResources`, then `m_buffer = nullptr` only. It
+  deliberately does NOT clear `m_count`/`m_numBytes`: `registerNewBuffer()` computes the new
+  offset from `m_rbuffers[last]->size()` where `last = m_offsets.size() - 1`, i.e. the
+  PREVIOUS, already-unmapped buffer, so zeroing the counts would corrupt every offset after
+  the first.
+
+`VtMergedBuffer::registerNewBuffer()` maps before the `rbuf->size()` reads and unmaps after
+the copy; `VtMergedBuffer::sync()` maps, copies and unmaps per registered buffer. Both
+`cudaMemcpy` calls are now wrapped in `checkCudaErrors`. No `#ifdef`: a permanently mapped
+interop pointer is undefined on CUDA too, so this is a latent-bug fix for both back ends,
+and the commit body says so. `destroy()` is unchanged -- with the map scoped to each copy no
+mapping is ever live there.
+
+### Finding 2 (blocking): the false claim in the commit body -- amended
+
+`c21f1c6` claimed "the particles fall under gravity. No HIP error is reported and the process
+exits cleanly." The same host's probe had recorded 337 NaN positions by physics frame 1 and
+all 1681 by frame 5, with a swallowed `hipErrorInvalidValue`. The amended commit (280ee3d)
+now claims only the panel values, the per-scene overrides, the derived Max Speed, the solver
+time per frame and the 60 Hz physics counter, and states plainly that the simulation is not
+yet correct at that commit because of the interop defect fixed in the next one.
+
+### Finding 3: `CMAKE_CXX_COMPILER` documented
+
+`README.md` ROCm section: the configure block now passes `CMAKE_C_COMPILER`,
+`CMAKE_CXX_COMPILER`, `CMAKE_HIP_COMPILER` and `CMAKE_PREFIX_PATH` from `$ROCM_PATH`, with
+one sentence explaining why the ROCm clang is required for CXX (only the two `.cu` files are
+HIP, but the plain C++ sources reach hipCUB, rocThrust and the HIP runtime headers through
+`Common.cuh`). It says the invocation is the one the build is verified with; it does not
+assert that another compiler fails, which is untested.
+
+### Finding 4: both lessons actually promoted
+
+- `references/validation.md`, validation policy: a synthetic kernel test is a smoke check and
+  never a validation for a GUI/interactive port -- launch the real binary, drive the default
+  scene, assert on what the application computes; route such projects to a host with a
+  display. Names Velvet and both defects that survived four platform passes.
+- `references/fault-classes.md`, Memory and lifetime: new fault class "A graphics-interop
+  device pointer dies at the unmap", naming Velvet, with the silent-no-op-copy signature, the
+  unchecked-interop-copy tell, and the portable (no `#ifdef`) fix.
+
+### Build (this host, gfx1151)
+
+```bash
+export ROCM_DEVEL="D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel"
+cmake -B build_verify -S . -G Ninja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=$ROCM_DEVEL/lib/llvm/bin/clang.exe \
+  -DCMAKE_CXX_COMPILER=$ROCM_DEVEL/lib/llvm/bin/clang++.exe \
+  -DCMAKE_HIP_COMPILER=$ROCM_DEVEL/lib/llvm/bin/clang++.exe \
+  -DCMAKE_PREFIX_PATH=$ROCM_DEVEL \
+  -DCMAKE_TOOLCHAIN_FILE=D:/vcpkg/scripts/buildsystems/vcpkg.cmake \
+  -DVCPKG_TARGET_TRIPLET=x64-windows
+bash utils/timeit.sh Velvet compile -- cmake --build build_verify -j16
+```
+
+Exit 0. 11 "Building CXX object", 2 "Building HIP object", 173 warnings, all pre-existing
+(123 ignored `hipError_t` return values, 35 non-literal format strings).
+`strings build_verify/bin/Velvet.exe | grep gfx1151` -> `hipv4-amdgcn-amd-amdhsa--gfx1151`.
+
+### Real-application evidence (the verification bar for this round)
+
+The application was launched, not a synthetic kernel test. ROCm runtime DLLs staged next to
+the exe (`agent_space/win_rocm_env.sh`, `rocm_stage_runtime`); run from the binary directory
+because the assets are resolved relative to the working directory:
+
+```bash
+cd build_verify/bin && HIP_VISIBLE_DEVICES=0 ./Velvet.exe
+```
+
+Screenshots: `agent_space/velvet_shot/fixed_win_big.png` (whole window, cloth + Simulation
+panel), `fixed_win_t1.png`, `fixed_win_t60.png` and `fixed_crop_t60.png` (same scene still
+intact after about a minute of continuous simulation).
+
+| requirement | measured |
+| --- | --- |
+| cloth keeps its full extent | 2.000 x 2.000 (x and z), every probe point across 600 frames |
+| sags from y=1.5 to about 0.77 | lowest point 1.500 -> 0.775; attached corners stay at 1.500 |
+| hangs from its attached corners | yes, four corners held, draping over the collision sphere |
+| the cloth MESH renders | yes -- textured gingham surface with lighting and shadow, not the point overlay |
+| zero NaN over a sustained run | nanPos=0 nanNrm=0 at every probe point across 600 physics frames |
+| both interop copies succeed | seed copy rc=0 (x2), sync copy rc=0; previously rc=1 (`hipErrorInvalidValue`) |
+| Simulation panel defaults | Num Substeps 2, Num Iterations 4, Gravity (0.000, -9.800, 0.000), Max Speed 18.000 |
+
+The numeric rows come from the same per-physics-frame probe used in the 2026-08-25
+investigation (`agent_space/velvet_probe/`), compiled into a separate `build_probe` tree on
+top of the committed fix and reverted before the commit; raw log
+`agent_space/velvet_probe/verify1.log`:
+
+```
+PROBE[seed-copy] bytes=20172 rc=0
+PROBE[seed-copy] bytes=20172 rc=0
+PROBE[sync-copy] i=0 bytes=20172 rc=0
+PROBE[frame-end] n=1681 bbox=(-1.000,1.498,-1.000)-(1.000,1.500,1.000) ext=(2.000,0.002,2.000) nanPos=0 nanNrm=0 stretchErrAvg=0.000000 max=0.000017
+...
+PROBE[frame-end] n=1681 bbox=(-1.049,0.775,-1.049)-(1.049,1.500,1.049) ext=(2.097,0.725,2.097) nanPos=0 nanNrm=0 stretchErrAvg=0.009669 max=0.023350
+PROBE[done] physicsFrames=600
+```
+
+Mean stretch residual settles at 0.0097 against a 0.05 rest length (about 2%), matching the
+experimental permanently-mapped build in the investigation -- so the scoped map costs no
+accuracy. The shipped (uninstrumented) `build_verify` binary ran for over a minute, printed
+no HIP error (`checkCudaErrors` aborts on any), and exited 0 on window close:
+`agent_space/velvet_probe/verify_run.log`.
+
+`git -C projects/Velvet/src status --porcelain` after the commit: only untracked build
+directories.
+
+### Still open for the other four platforms
+
+`head_sha` a9016bc, so linux-gfx90a, linux-gfx1100, windows-gfx1101 and windows-gfx1201 read
+`revalidate`. They should re-run now, against the real application where the host can (only
+this gfx1151 host has a display; the Linux hosts are headless and gfx90a cannot create a GL
+context at all), because this is the first commit at which the simulation is correct.

@@ -85,3 +85,5 @@
 {"kind":"phase","ts":"2026-08-24T22:07:14Z","phase":"compile","seconds":9.379,"exit":0,"cmd":"cmake --build projects/Velvet/src/build_fix -j16"}
 {"kind":"session","ts":"2026-08-25T14:09:20Z","epoch":1787666960.336831700,"event":"start","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-08-25T14:18:33Z","epoch":1787667513.383770100,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-25T14:24:06Z","phase":"compile","seconds":9.946,"exit":0,"cmd":"cmake --build projects/Velvet/src/build_probe -j16"}
+{"kind":"phase","ts":"2026-08-25T14:26:49Z","phase":"compile","seconds":10.006,"exit":0,"cmd":"cmake --build /d/Develop/moat/projects/Velvet/src/build_verify -j16"}
