@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-08-25T16:09:56Z",
+  "updated_at": "2026-08-25T16:12:12Z",
   "head_sha": "a9016bcb5efb7a328785f428ba5e609cf98513c2",
   "depends_on": [],
   "pr_url": "https://github.com/vitalight/Velvet/pull/9",
@@ -172,7 +172,7 @@
   "fix": {
     "branch": "moat-fix-9",
     "base_sha": "bb06b44",
-    "review_pr": null,
+    "review_pr": "https://github.com/AMD-Ecosystem/Velvet/pull/1",
     "opened_at": "2026-08-24T19:46:42Z"
   },
   "porting_released": {
