@@ -1769,3 +1769,196 @@ against evidence whose own text said it was not exercising the application. Noth
 pipeline compared "a HIP kernel ran" against "the port works". For any GUI or otherwise
 interactive port, a synthetic kernel test is a smoke check, not a validation, and the record
 should say which one it is. Promoted to the cuda-to-rocm skill.
+
+## 2026-08-25 -- windows-gfx1151 investigation: the cloth collapse is a GL-interop lifetime bug
+
+Investigation round only. No fork commit, no push; every probe was reverted and
+`git -C projects/Velvet/src status --porcelain` was left with only the pre-existing untracked
+build directories.
+
+### Verdict
+
+The collapse is caused by **using an OpenGL graphics-interop pointer after the resource has
+been unmapped**, in `Velvet/VtBuffer.hpp`. It has nothing to do with the solver, the atomics,
+GLM layout, or wavefront size, and **commit `c21f1c6` did not introduce it** -- the identical
+failure reproduces on the pre-split all-HIP build. `c21f1c6` only restored the simulation
+parameters, which made the solver start stepping and therefore made a defect that had been
+present since the first HIP commit visible for the first time.
+
+### The mechanism
+
+`VtRegisteredBuffer::registerBuffer()` maps the GL VBO, takes the device pointer, and then
+unmaps the resource, keeping the pointer:
+
+```cpp
+checkCudaErrors(cudaGraphicsGLRegisterBuffer(&m_cudaVboResource, vbo, cudaGraphicsRegisterFlagsNone));
+// map (example 'gl_cuda_interop_pingpong_st' says map and unmap only needs to be done once)
+checkCudaErrors(cudaGraphicsMapResources(1, &m_cudaVboResource, 0));
+checkCudaErrors(cudaGraphicsResourceGetMappedPointer((void**)&m_buffer, &m_numBytes, m_cudaVboResource));
+m_count = m_numBytes / sizeof(T);
+// unmap
+checkCudaErrors(cudaGraphicsUnmapResources(1, &m_cudaVboResource, 0));
+```
+
+Every later use of that pointer happens outside the map scope. In `VtMergedBuffer` there are
+exactly two such uses, and both are unchecked `cudaMemcpy` calls -- which is why a hard runtime
+error was invisible:
+
+- `registerNewBuffer()`: `cudaMemcpy(m_vbuffer.data() + offset, rbuf->data(), ..., cudaMemcpyDefault)`
+  -- seeds the solver's managed position buffer from the mesh VBO.
+- `sync()`: the reverse copy, pushing simulated positions and normals back into the VBOs the
+  renderer draws.
+
+On ROCm the mapped pointer is only valid between map and unmap. After the unmap it is not a
+valid HIP pointer at all: the copy fails with `hipErrorInvalidValue` (2 is not returned; the
+code is 1) and writes nothing. CUDA tolerates the same code, so upstream never noticed.
+
+Consequences, in order:
+
+1. The seed copy leaves the managed `positions` buffer all zeros.
+2. `InitializePositions_Kernel` then computes `modelMatrix * vec4(0,0,0,1)`, i.e. the model
+   translation, for every particle. All 1681 particles start at the single point (0, 1.5, 1).
+3. Stretch and self-collision produce zero corrections from coincident particles, but the
+   long-range attachment constraints (their slot positions are computed on the host, in
+   `VtClothObjectGPU::Start`, and are correct) yank particles out of that point towards the
+   real corners. The stretch solver then sees violations of order the whole cloth size, and the
+   simulation explodes into NaN -- 337 NaN positions by physics frame 1, all 1681 by frame 5.
+4. `sync()` never reaches the VBOs either, so the cloth mesh renders whatever OpenGL last had
+   and the mesh appears absent. The particle overlay draws `GL_POINTS` from the same VBO, so
+   what was read as "particles collapsing to a line" is a NaN/garbage point cloud, not physics.
+
+### Evidence
+
+Probe added to `VtClothSolverGPU::AddCloth` and `Simulate` (host code reading the managed
+buffers directly), built with the recorded gfx1151 recipe. Raw logs in
+`agent_space/velvet_probe/` (`run1.log`, `run2.log`, `run_ctl.log`, `run3.log`).
+
+Post-split build at `c21f1c6` (`build_fix`):
+
+```
+INITPROBE mesh.size=1681 vbufSize=1681 newParticles=1681 rbufBytes=20172 rbufCount=1681
+INITPROBE hipMemcpy D2H from GL-mapped ptr -> rc=1          <-- hipErrorInvalidValue
+INITPROBE i=0 meshVert=(-1.0000,-0.0000,0.0000) vbufAfterVBOCopy=(0.0000,0.0000,0.0000)
+INITPROBE i=1680 meshVert=(1.0000,-2.0000,0.0000) vbufAfterVBOCopy=(0.0000,0.0000,0.0000)
+INITPROBE modelMatrix = [1 0 0 0 | 0 -0 1 0 | 0 -1 -0 0 | 0 1.5 1 1]
+INITPROBE-AFTER i=0    pos=(0.0000,1.5000,1.0000)
+INITPROBE-AFTER i=1680 pos=(0.0000,1.5000,1.0000)
+PROBE[frame-end] n=1681 ext=(0.600,0.044,0.329) nanPos=337  nanNrm=389
+PROBE[frame-end] n=1681 ext=(1.200,0.065,0.618) nanPos=889  nanNrm=973
+PROBE[frame-end] n=1681 ...                     nanPos=1681 nanNrm=1681
+```
+
+`rbufBytes=20172 = 1681 * 12`, so registration and the reported size are correct; only the
+copy through the stale pointer fails.
+
+### The control: was it collapsing before the split?
+
+Yes, identically. `CMakeLists.txt` was temporarily reverted to `7ccd4a9` (the all-HIP build,
+13 HIP objects, 0 CXX objects), the same probe was compiled in, and the run produced
+byte-identical INITPROBE output -- `rc=1`, all-zero seed copy, every particle at (0, 1.5, 1).
+The probe fires in `AddCloth` during scene setup, which runs whether or not `numSubsteps` is
+zero, so the pre-split build reports it even though its solver never steps.
+
+`c21f1c6` is therefore exonerated. It is also exonerated structurally: it changes no device
+code (the two `.cu` files compile with the same `-x hip --offload-arch=gfx1151` flags before and
+after), and the failing call is a host-side HIP runtime call whose semantics do not depend on
+whether the calling translation unit was compiled as C++ or as HIP.
+
+### The primary hypothesis (GLM layout across the host/HIP boundary) is ruled out
+
+Measured by compiling one probe TU three ways with the exact flags the build uses, using
+`SHOW<(int)sizeof(...)>` against an undefined template so the value appears in the diagnostic.
+All three agree exactly:
+
+| quantity | `-x c++` (host TU) | `-x hip` (host pass) | `-x hip --cuda-device-only` |
+| --- | --- | --- | --- |
+| `sizeof/alignof glm::vec3` | 12 / 4 | 12 / 4 | 12 / 4 |
+| `sizeof/alignof glm::vec4` | 16 / 4 | 16 / 4 | 16 / 4 |
+| `sizeof/alignof glm::mat4` | 64 / 4 | 64 / 4 | 64 / 4 |
+| `sizeof/alignof VtSimParams` | 80 / 4 | 80 / 4 | 80 / 4 |
+| `offsetof(VtSimParams, gravity)` | 16 | 16 | 16 |
+| `offsetof(VtSimParams, numParticles)` | 60 | 60 | 60 |
+| `GLM_CONFIG_ALIGNED_GENTYPES` | 0 | 0 | 0 |
+| `GLM_CONFIG_SIMD` | 0 | 0 | 0 |
+| `GLM_CONFIG_SWIZZLE` | 0 | 0 | 0 |
+| `GLM_CONFIG_ANONYMOUS_STRUCT` | 0 | 0 | 0 |
+| `GLM_CONFIG_XYZW_ONLY` | 0 | 0 | 0 |
+| `GLM_ARCH` | same | same | same |
+| `GLM_COMPILER` | 0x20000400 | 0x40000000 | 0x40000000 |
+
+Only `GLM_COMPILER` differs -- GLM detects the HIP compiler -- and it changes none of the
+layout-relevant `GLM_CONFIG_*` values. `glm::vec3` is three contiguous floats on both sides, so
+the raw pointer arithmetic in `AtomicAdd` (`&(address[index].x) + r1`) is consistent across the
+boundary. The stale comment in `Common.cuh` about `GLM_FORCE_CUDA` remains wrong, but it is
+harmless.
+
+### Also ruled out: float atomics on fine-grained managed memory
+
+Worth recording because it is the usual suspect on AMD and it is *not* the problem here.
+`agent_space/velvet_probe/atomic.hip` runs 1024 threads doing `atomicAdd` against
+`hipMallocManaged` and `hipMalloc` allocations, including the exact
+`atomicAdd(&(vec3ptr[0].x) + r, val)` pattern. All six cases are exact on gfx1151:
+
+```
+expected float  = 1024
+  managed float = 1024.0   OK
+  device  float = 1024.0   OK
+  managed int   = 1024   OK
+  device  int   = 1024   OK
+  managed V3    = 1024.0 2048.0 3072.0   OK
+  device  V3    = 1024.0 2048.0 3072.0   OK
+```
+
+Also ruled out by the same probe run: the solver receives the right constraint counts
+(6480 stretch, 1600 bending, 6724 long-range attachment = 4 slots x 1681 particles for a
+resolution-40 cloth), so nothing is being dropped at scene build time.
+
+### Confirmed fix direction
+
+Experiment: delete the unmap from `registerBuffer()` (and unmap in `destroy()` before
+unregistering) so the pointer is used inside a live mapping. Rebuilt and rerun with the same
+probe:
+
+```
+INITPROBE hipMemcpy D2H from GL-mapped ptr -> rc=0
+INITPROBE i=0    meshVert=(-1.0000,-0.0000,0.0000) vbufAfterVBOCopy=(-1.0000,-0.0000,0.0000)
+INITPROBE i=1680 meshVert=( 1.0000,-2.0000,0.0000) vbufAfterVBOCopy=( 1.0000,-2.0000,0.0000)
+INITPROBE-AFTER i=0    pos=(-1.0000,1.5000,1.0000)
+INITPROBE-AFTER i=1680 pos=( 1.0000,1.5000,-1.0000)
+PROBE[frame-end] ext=(2.000,0.002,2.000) nanPos=0 stretchErrAvg=0.000000 max=0.000017
+PROBE[frame-end] ext=(2.086,0.733,2.086) nanPos=0 stretchErrAvg=0.010519 max=0.031143
+PROBE[frame-end] ext=(2.098,0.720,2.098) nanPos=0 stretchErrAvg=0.009807 max=0.022137
+```
+
+The cloth now behaves: it keeps its full 2.0 x 2.0 extent, sags in y from 1.5 to about 0.77
+under gravity while its four corners hold, the mean stretch-constraint residual settles around
+0.01 against a 0.05 rest length (2%), and there is not one NaN in 200 physics frames.
+
+That experiment proves causality but is not the patch to ship. Leaving a resource mapped while
+OpenGL draws from it is undefined on CUDA too. The correct minimal change is to scope the map:
+
+1. In `VtRegisteredBuffer`, keep only `cudaGraphicsGLRegisterBuffer` at registration and add
+   `map()` / `unmap()` that call `cudaGraphicsMapResources` /
+   `cudaGraphicsResourceGetMappedPointer` / `cudaGraphicsUnmapResources`.
+2. In `VtMergedBuffer::registerNewBuffer()` and `VtMergedBuffer::sync()`, map around the
+   `cudaMemcpy` and unmap after it. Those two call sites are the only places the mapped pointer
+   is ever dereferenced -- `grep` confirms `VtRegisteredBuffer` is used nowhere else and no
+   kernel receives it -- so this is complete.
+3. Wrap both of those `cudaMemcpy` calls in `checkCudaErrors`. An unchecked interop copy is
+   what let a hard `hipErrorInvalidValue` masquerade as a physics bug through four platform
+   validations.
+4. `sizeof(T)` on the mapped byte count is fine (`20172 = 1681 * 12`), so no change is needed
+   there.
+
+This is a portable correction: mapping around each access is what the CUDA documentation
+requires as well, so the CUDA path keeps working and does not need an `#ifdef`.
+
+### Lesson for the skill
+
+New fault class, worth promoting: **CUDA tolerates dereferencing a graphics-interop pointer
+obtained from `cudaGraphicsResourceGetMappedPointer` after `cudaGraphicsUnmapResources`; HIP
+does not.** On ROCm the pointer stops being a valid HIP allocation the moment the resource is
+unmapped, and `hipMemcpy` against it returns `hipErrorInvalidValue` rather than faulting. Ports
+that copied a "map once, unmap once, keep the pointer" idiom out of a CUDA sample will silently
+transfer nothing. Check the return value of every interop copy; a silent no-op copy presents as
+a physics or rendering bug arbitrarily far from the real call.
