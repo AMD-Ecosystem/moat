@@ -7,17 +7,20 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-19T04:40:36Z",
-  "updated_at": "2026-08-26T16:07:18Z",
+  "updated_at": "2026-08-26T16:07:54Z",
   "head_sha": "c7379c00f4617394112a10829817df6ece355bb6",
   "depends_on": [],
   "pr_url": "https://github.com/ashawkey/cubvh/pull/33",
   "pr_merged_at": "2026-06-23T13:54:59Z",
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx90a",
+    "since": "2026-08-26T16:07:54Z"
+  },
   "waivers": {},
   "pr_state": "merged",
   "license_spdx": "MIT",
   "upstream_repo_id": 573716613,
-  "stage": "ported",
+  "stage": "reviewing",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -26,7 +29,7 @@
       "validated_sha": "e5a657a",
       "started_at": "2026-06-19T04:56:39Z",
       "completed_at": "2026-06-19T16:40:24Z",
-      "updated_at": "2026-08-26T16:07:18Z",
+      "updated_at": "2026-08-26T16:07:54Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -40,7 +43,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "porter:claude-code",
+      "last_agent": "reviewer:claude-code",
       "carry_forward": {
         "from": "9c3b40d",
         "to": "e5a657a",
