@@ -114,3 +114,100 @@ Validation bar: signed/unsigned_distance + cuhashtable + sparse_voxel all pass o
 - Windows/MSVC pybind: upstream compiles bindings.cpp with MSVC + nvcc on Windows. Under ROCm the binding TU goes through hipcc, which MSVC rejects for HIP attributes (the problem the CuMesh bindings_winhip.cu worked around via a CuMesh-private header). For a standalone cubvh this must be solved inside cubvh (e.g. keep bindings.cpp host-only and not hipified, or a small in-repo compat shim) -- scope it as a Windows follower task, not the lead. The Windows-tier PR-readiness can be satisfied by gfx1201 once this is solved; the lead PR need not block on it.
 - `-ffp-contract=on` only if the 1e-5 distance tolerance fails on gfx90a (likely not needed).
 - Eigen: prefer the recursive submodule for a reproducible build; document apt libeigen3-dev as the fallback in the readme note if upstream prefers it.
+
+# Round 2: independent rewrite of the instant-ngp-derived core (2026-08-26)
+
+Goal: replace the ~1,200 raw lines (~700 non-trivial) that derive from
+instant-ngp (NVIDIA Source Code License, non-commercial) with independently
+written implementations of the same published algorithms, so the whole tree
+stands under cubvh's MIT licence. The author invited this ("maybe it's better
+to rewrite them", 2026-08-26; see notes.md "Licence scope answered by
+upstream"). Deliver upstream as a follow-up PR (PR #33 merged; the follow-up-PR
+flow handles it), then bump CuMesh's vendored copy.
+
+## Rewrite scope (from the provenance quantification, notes.md 2026-08-26)
+
+- `src/bvh.cu` (~740 lines, 68% verbatim): node/stack machinery,
+  `ray_intersect`, `closest_triangle`, `avg_normal_around_point`, median-split
+  `build()`, GPU wrappers. Effectively the whole file; the escape-index
+  threading and face_id/uvw plumbing are original but interwoven, so they are
+  reimplemented too.
+- `include/gpu/bounding_box.cuh` (~245 lines, 75%): whole-file copy.
+- `include/gpu/triangle.cuh` (~110 lines, 48%): sampling, area/normal, ray
+  intersect, point distance, centroid.
+- `include/gpu/bvh.cuh` (~70 lines, 44%): `FixedStack`, `TriangleBvhNode`,
+  abstract base. L85-113 `state_dict` is a 2024 contributor addition: KEEP.
+- `include/gpu/common.h` (~35-60 lines): Fibonacci-direction block; the launch
+  helpers can instead be re-attributed to tiny-cuda-nn (BSD).
+
+NOT in scope: marching-cubes files (only the canonical public triTable
+matches; optionally regenerate it from the published Lorensen-Cline/Bourke
+listing with a comment citing the source), `gpu_memory.h` (tiny-cuda-nn BSD,
+compliant), `pcg32.h` (Apache-2.0), eigen patches, and all cubvh-original code
+(api layers, bindings, floodfill, hashtables, decimation, Python).
+
+## Clean-room discipline (the reviewer gates this)
+
+- Spec-first: derive an interface-and-behavior spec from cubvh's public API,
+  its tests, and the golden harness below -- reading the derived
+  implementations only as needed to pin interfaces (node layout, extended
+  outputs face_id/uvw/depth, state_dict format).
+- Implement ONLY from published references: Moller-Trumbore or Woop watertight
+  ray-triangle intersection; point-triangle distance per Eberly (or Quilez's
+  public article, cited); median-split or SAH BVH build per PBRT; slab-test
+  AABB intersection; Fibonacci sphere lattice from the literature; ray-stab
+  sign determination per Nooruddin-Turk. Do NOT open instant-ngp's repo at any
+  point in the implementing session.
+- Independence verification afterwards: run the same similarity method the
+  provenance analysis used (normalized line matching + difflib) of the NEW
+  files against instant-ngp's ancestor snapshot (c4d622e) AND against old
+  cubvh; non-trivial-line overlap must drop to noise (interface lines
+  excepted). Record numbers in notes.md.
+- Behavior compatibility is the goal; textual similarity is the thing to
+  avoid. Where both collide (a 3-line function with one natural spelling),
+  prefer a genuinely different decomposition and note it.
+
+## Compatibility constraints
+
+- Python API unchanged (cubvh's bindings and consumers, incl. CuMesh).
+- `TriangleBvhNode` memory layout and `state_dict` serialization format
+  preserved (saved BVHs must round-trip); if impossible, version it and say so
+  loudly in the PR.
+- Extended outputs preserved: face_id, uvw, depth variants.
+- Keep the merged ROCm behavior: 64-deep traversal stack for
+  `closest_triangle` and lazy GPU node upload -- reimplement the behavior, not
+  the old text.
+
+## Work plan
+
+1. Golden harness FIRST, against the current build (e5a657a): deterministic
+   meshes (degenerate triangles, watertight + open), fixed query sets; capture
+   ray_intersect (t, face_id, uvw), closest_triangle / UDF / SDF (watertight +
+   raystab), avg_normal. Exact match for ids where the old build is
+   deterministic; documented epsilon policy for floats. Capture on a wave64
+   and a wave32 box (a wave32 host can capture later from e5a657a) so
+   cross-arch goldens exist. Harness lives in projects/cubvh/harness/.
+2. Rewrite bottom-up: bounding_box -> triangle -> node/stack + build ->
+   traversal kernels -> common.h block. Compile + golden after each module.
+3. Full regression on wave64 (gfx90a/gfx942), then wave32 (gfx1100 class).
+4. Performance comparison as a first-class deliverable: same host, old head vs
+   rewrite head back-to-back, >=5 reps, medians with spread; meshes ~10k /
+   ~200k / ~2M tris; BVH build time plus GPU throughput for ray_intersect,
+   closest_triangle, UDF, both SDF modes; wave64 AND wave32. Old-vs-new table
+   (absolute + percent) in notes.md, condensed version in the PR body.
+   Parity within noise is the target; investigate >5% regressions; a >10%
+   regression must be fixed or explicitly justified before publishing. State
+   honestly: CUDA path build-verified only, perf compared on AMD hardware.
+5. Independence verification + `licenses.py scan-nvidia` clean +
+   `jargon.py --port cubvh`.
+6. MOAT pipeline: porter round on moat-port (no open PR), normal review (the
+   reviewer gates the independence evidence), validations at the new head per
+   the gate lattice, then the follow-up-PR flow (--review, /moat approve,
+   --publish). PR body says plainly this replaces instant-ngp-derived code
+   with independent implementations so the tree matches its MIT licence,
+   thanks the author, cites the algorithm literature.
+7. After upstream merges: bump CuMesh's third_party/cubvh; LICENSE_NVIDIA
+   removal is the author's act -- the PR can note it becomes removable.
+
+Riskiest step is state_dict/node-layout compatibility; do it early (module
+3), not last.
