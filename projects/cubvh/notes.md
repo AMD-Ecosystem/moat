@@ -1209,3 +1209,143 @@ what the gates test, and they pass). Registered as a deferred item
 because the rewrite's stated goal was licence independence, not a perf
 change, and a 21-23% slowdown on the slowest op at the largest scale is
 something an upstream maintainer would reasonably ask about.
+
+### Perf regression confirmed and root-caused (windows-gfx1151) 2026-08-26
+
+**Confirmed real.** The first A/B ran old-before-new in every round, which on a
+shared-power APU could bias the second-measured build slower. Repeated the
+whole matrix with the order REVERSED (new before old), rounds 4-6:
+
+| scale | op | old-first | new-first | verdict |
+|---|---|---|---|---|
+| big2m | sdf_raystab | +20.9% | +24.0% | confirmed |
+| big2m | ray_trace | +6.0% | +6.1% | confirmed |
+| small10k | sdf_raystab | +5.8% | +5.5% | confirmed |
+| med200k | sdf_raystab | -5.5% | -2.1% | faster, confirmed |
+| (all) | udf / sdf_watertight / build | faster | faster | confirmed |
+
+big2m sdf_raystab raw medians: old [679.2, 671.2, 676.3] vs new [836.1, 832.5,
+840.7] -- non-overlapping across 6 independent rounds in both orderings. Not
+noise, not an ordering artifact.
+
+**Root cause: register pressure halving occupancy on the two ray-traversal
+kernels.** Extracted the gfx1151 code objects from both `.pyd`s (the embedded
+`__CLANG_OFFLOAD_BUNDLE__`; script at agent_space/ab/extract_co.py) and read
+the AMDGPU kernel metadata with `llvm-readelf --notes`:
+
+| bench op | kernel (old -> new name) | VGPR | SGPR | scratch | spills |
+|---|---|---|---|---|---|
+| ray_trace | raytrace_kernel -> bvh_ray_trace_kernel | **55 -> 172** | 42 -> 49 | 140 -> 140 | 0 -> 0 |
+| sdf_raystab | signed_distance_raystab_kernel -> bvh_signed_distance_raystab_kernel | **85 -> 171** | 52 -> 66 | 460 -> 524 | 0 -> 0 |
+| udf | unsigned_distance_kernel -> bvh_unsigned_distance_kernel | 59 -> 60 | 42 -> 45 | 268 -> 268 | 0 -> 0 |
+| sdf_watertight | signed_distance_watertight_kernel -> bvh_signed_distance_watertight_kernel | 72 -> 64 | 42 -> 45 | 268 -> 268 | 0 -> 0 |
+
+The correlation is exact: the ONLY two kernels whose VGPR count blew up are the
+only two that regressed, and the two whose VGPR count is flat or better both got
+faster. Spill counts are 0 on both sides, so this is pure occupancy loss, not
+spilling. On RDNA3/3.5 wave32 (1536 VGPRs per SIMD, 16-wave cap) 55 and 85 VGPRs
+both reach the 16-wave cap, while 171-172 VGPRs allow only 8 waves per SIMD --
+occupancy is halved on exactly the two regressing kernels.
+
+That also explains the scale dependence, which otherwise looks contradictory
+(sdf_raystab is +5.8% at 10k, -5.5% at 200k, +21% at 2M). Occupancy buys
+latency hiding, and latency hiding only matters once the tree stops fitting in
+cache. At 200k the rewrite's algorithmic wins dominate and it is genuinely
+faster; at 2M the traversal turns memory-latency-bound and the lost waves cost
+far more than the algorithmic win returns. The BVH TU also grew 215,160 ->
+262,000 bytes (+21.8%), consistent with the added unrolling.
+
+The api_gpu.cu code object is byte-identical (3,359,248 bytes) between the two
+builds, confirming the delta is entirely in the rewritten BVH TU.
+
+**Fix (proposed, NOT implemented -- porter work, and it costs a fleet-wide
+revalidation).** No algorithmic redesign needed; the old code proves ~55 VGPRs
+suffices for this traversal. Options, cheapest first:
+1. `__launch_bounds__` on the two regressing kernels to cap the register budget
+   (a target under 96 VGPRs restores the 16-wave cap), or the equivalent
+   `__attribute__((amdgpu_waves_per_eu(N)))`.
+2. Trim what holds the extra state live specifically on the RAY path: the
+   compile-time-unrolled fan-out-4 child loop keeps all four child boxes'
+   worth of live values in registers, and the branchless single-exit ray
+   intersector extends live ranges across the whole node visit. The distance
+   kernels share the traversal but did NOT regress, so the added pressure is
+   in the ray-specific code, which narrows the search.
+3. Re-measure with the same staged-A/B method; the VGPR count is readable from
+   the code object without running anything, so iteration is fast.
+
+Note this is a compile-time property, so it should reproduce on any wave32
+target from the same source -- see perf-plan-gfx1100.md, which makes exactly
+that prediction falsifiable.
+
+### Not gfx1151-specific: cross-arch codegen check 2026-08-26
+
+VGPR count is a compile-time property of source + target, so the "is this just
+this APU?" question was settled on this host by cross-compiling both shas for
+gfx1100 and gfx90a (no GPU needed to read a code object) and diffing the
+kernel metadata.
+
+| arch | ray_trace VGPR | sdf_raystab VGPR | udf | sdf_watertight | waves/SIMD old -> new |
+|---|---|---|---|---|---|
+| gfx1151 (RDNA3.5, wave32) | 55 -> 172 | 85 -> 171 | 59 -> 60 | 72 -> 64 | 16 -> 8 |
+| gfx1100 (RDNA3, wave32) | 52 -> 172 | 85 -> 171 | 59 -> 60 | 72 -> 64 | 16 -> 8 |
+| gfx90a (CDNA2, wave64) | 63 -> 86 | 98 -> 114 | 74 -> 68 | 96 -> 76 | 8 -> 5, 5 -> 4 |
+
+gfx1100 is IDENTICAL to gfx1151 to the register, so linux-gfx1100 should be
+expected to regress too -- this is a wave32 codegen property, not an APU
+quirk. gfx90a loses occupancy as well (8->5 and 5->4) but the absolute
+increase is far smaller (+23 and +16 VGPRs versus +117 and +86), and MI250X's
+HBM bandwidth hides what is left, which is the most likely reason the
+porter's wave64 A/B looked clean.
+
+Why wave32 is hit harder: at the 16-wave cap RDNA3 wave32 allows 1536/16 = 96
+VGPRs per wave, so the register allocator has room to spend up to ~168 before
+its heuristic objects -- and spending it walks straight off the 96-VGPR
+occupancy cliff. gfx90a's budget is 512/8 = 64 per wave, which constrains the
+allocator from the start.
+
+### Fix proven at codegen and runtime (throwaway experiment) 2026-08-26
+
+Applied locally to `src/bvh.cu`, measured, then REVERTED -- never committed,
+fork tree verified clean afterwards and the gfx1151 c7379c0 build restored.
+One attribute per kernel, no algorithmic change:
+
+```c
+__global__ __attribute__((amdgpu_waves_per_eu(16))) void bvh_ray_trace_kernel(...)
+__global__ __attribute__((amdgpu_waves_per_eu(16))) void bvh_signed_distance_raystab_kernel(...)
+```
+
+Codegen effect on gfx1151:
+
+| kernel | VGPR | waves/SIMD | spills |
+|---|---|---|---|
+| bvh_ray_trace_kernel | 172 -> **66** | 8 -> **16** | 0 -> 0 |
+| bvh_signed_distance_raystab_kernel | 171 -> **88** | 8 -> **16** | 0 -> 0 |
+
+Runtime effect (min-of-3, interleaved old/new/fix, ms):
+
+| scale | op | old | new | new+fix | new vs old | fix vs old |
+|---|---|---|---|---|---|---|
+| big2m | sdf_raystab | 640.20 | 816.08 | 668.25 | +27.5% | **+4.4%** |
+| big2m | ray_trace | 5.42 | 6.08 | 5.18 | +12.2% | **-4.4%** |
+| small10k | sdf_raystab | 252.39 | 269.51 | 253.43 | +6.8% | **+0.4%** |
+| med200k | sdf_raystab | 451.11 | 427.79 | 462.60 | -5.2% | +2.5% |
+| big2m | udf | 94.25 | 89.39 | 87.33 | -5.2% | -7.3% |
+| big2m | sdf_watertight | 97.06 | 91.09 | 90.19 | -6.1% | -7.1% |
+
+So the two regressions essentially close: big2m sdf_raystab +27.5% -> +4.4%,
+big2m ray_trace +12.2% -> -4.4% (faster than the pre-rewrite code). The
+untouched kernels are unaffected, as expected. The one cost is med200k
+sdf_raystab, which was -5.2% FASTER unfixed and becomes +2.5%: forcing 16
+waves is not free at the scale where occupancy was never the bottleneck, so a
+porter tuning this properly should sweep the `amdgpu_waves_per_eu` value
+rather than assume 16, and may want it scale- or arch-conditional.
+
+GOTCHA: `__launch_bounds__(128, 4)` was tried first and is a NO-OP -- on HIP
+the second argument is MIN WAVES PER EU (not CUDA's minBlocksPerMultiprocessor),
+and 4 was already satisfied at 8 waves. VGPR counts did not move at all.
+
+NOT IMPLEMENTED IN THE PORT, deliberately. It is porter work: it moves
+`head_sha` and forces every platform to revalidate, and `amdgpu_waves_per_eu`
+is AMD-specific so it must be guarded (`USE_ROCM` / `__HIP_PLATFORM_AMD__`)
+or it breaks the CUDA no-regression gate. Recorded here so the decision has
+numbers behind it; see perf-plan-gfx1100.md.
