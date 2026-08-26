@@ -185,3 +185,52 @@ was not vacuous.
 Nothing here is guarded on Windows. MSVC's STL is merely the first to implement P0533R9;
 ROCm/llvm-project#285 notes that libstdc++ doing so will break Linux identically. A
 `WIN32`-only guard, or a ROCm version check, would miss that. Probe for the capability.
+
+## Golden-differential validation for behavior-preserving rewrites
+
+When a round REWRITES working code instead of adding guarded edits -- a licence
+cleanup, a de-vendoring, a structural refactor -- the project's own test suite is
+too coarse: it samples a few hundred points where the rewrite changed thousands of
+lines. Validate differentially against the code being replaced (method built for
+cubvh's clean-room BVH rewrite; the harness shape lives in `projects/cubvh/harness/`):
+
+- Capture goldens from the OLD build FIRST, before any rewrite lands: deterministic
+  procedurally-generated inputs (include the nasty cases -- open meshes, degenerate
+  zero-area faces), fixed query sets, every public op, AND the serialized state.
+  Each arch captures its own goldens from the old sha; a host arriving late can
+  still do so because the old sha stays in fork history -- but capture BEFORE
+  validating the new head, not after.
+- Compare with an ADJUDICATED policy, not blind equality:
+  - Floats: a documented atol per op (observed FMA-reordering noise ~1e-7 on
+    unit-scale scenes; 2e-5 is generous and still catches algorithm errors).
+  - Discrete winners (nearest-element ids, argmin results): exact-match across
+    builds is UNACHIEVABLE on tie-dense inputs -- tie winners are decided by 1-ulp
+    differences, and hipcc -O3 contracts FMAs differently per inlining context, so
+    even IDENTICAL source produces 1-ulp diffs between TUs. Gate the NON-TIE
+    mismatch fraction (mismatch whose value gap exceeds atol) and verify every
+    remaining mismatch is a genuine tie.
+  - Intentional behavior changes: MASK the affected queries from old-vs-new, and
+    gate them with a SELF-consistency check instead (cubvh: zero-area faces became
+    invisible to distance queries; the new build on the full mesh must equal the
+    new build on the mesh with those faces removed -- exact 0.0 there).
+  - Serialization: cross-load the OLD build's serialized state into the NEW build
+    and require identical query behavior; that is the layout/encoding contract,
+    and it catches what struct-level static_asserts cannot (index-encoding
+    semantics).
+- For a clean-room rewrite specifically: separate spec-author and implementer
+  agents (the author reads the derived code and writes a behavior spec; the
+  implementer never sees the originals -- blank the files in the working tree so a
+  stray read returns nothing), then verify independence mechanically: normalized
+  difflib similarity plus verbatim-non-trivial-line fraction of each new file
+  against the ANCESTOR snapshot (era-matched, not upstream HEAD) and the old
+  files, and inspect every residual match. Run the scan even on code classified
+  "original, keep verbatim": on cubvh it caught three functions a careful manual
+  provenance analysis had misclassified as original that were in fact derived.
+- Perf is a deliverable of a rewrite, not a sanity check: same host, old sha vs
+  new sha back-to-back, >=5 reps, medians, multiple input scales, every hot op.
+  First rewrites commonly regress 10-25% on GPU hot loops through innocent
+  structure (early-out branches that diverge where the old code was single-exit;
+  runtime-bound child loops where the old code unrolled a compile-time fan-out; a
+  data-dependent insertion sort where a fixed compare-exchange network ran; an
+  extra cross product or sqrt per primitive test). All of those reclaim to parity
+  without behavior changes -- re-run the goldens after each perf fix. (cubvh)

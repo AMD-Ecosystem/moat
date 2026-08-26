@@ -825,3 +825,40 @@ the prohibitions stated, keep/ holds the extracted snippets, the
 correction round is recorded before the fix rather than after, and the
 similarity scan is what caught the misclassification -- a process that
 was covering for itself would not have produced that correction.
+
+## Porter fix round after review (linux-gfx90a, 2026-08-26)
+
+Both changes-requested findings addressed:
+1. Commit body corrected by amend (81a98f0 -> 2bb5138 -> c7379c0, tree
+   IDENTICAL all three -- message-only amends; branch had no validations at
+   the new head yet, so no validated_sha was orphaned): "within 2.4e-7"
+   -> "within 3.6e-7" (the true max, degen mesh; my earlier note repeated
+   the same wrong figure -- the 2.384e-07 is the max gap among face-id
+   mismatches, a different quantity); "identical ray hit/miss sets" ->
+   identical away from zero-area faces, with the 63/20000 degenerate-mesh
+   grazing-ray flips and their cause (safe_divide-guarded reciprocal
+   determinant) stated; "exact distance ties" -> "1-2 ulp distance ties";
+   and the now-contradictory "Ray casts are unaffected" sentence replaced
+   with an accurate boundary-sensitivity statement.
+2. Method promoted to the cuda-to-rocm skill:
+   references/validation.md new section "Golden-differential validation
+   for behavior-preserving rewrites" (golden capture from the old build
+   first, tie-aware discrete comparison, intentional-change masking with
+   self-consistency gates, serialization cross-load, clean-room two-agent
+   protocol + mechanical similarity verification, perf-as-deliverable with
+   the observed regression classes). check.py clean.
+
+Also closed in this round: the CUDA compile gate. validation.md's
+documented GPU-less nvcc env exists on this host
+(/opt/conda/envs/cuda-12.8); a TU instantiating the rewritten torch-free
+headers (triangle.cuh ray_intersect/distance_sq/closest_point/barycentric/
+centroid/normal, bounding_box.cuh distance_sq/slab ray_intersect, common.h
+fibonacci_dir/safe_divide/linear_kernel) compiles clean with nvcc 12.8,
+-std=c++17 --extended-lambda --expt-relaxed-constexpr -arch=sm_80: exit 0,
+only the pre-existing Eigen long-double warning (same as round 1's gate).
+bvh.cuh/bvh.cu cannot get the nvcc gate on this fleet (torch/torch.h pulls
+the ROCm-only PyTorch -- the documented torch-extension limitation); the PR
+states the CUDA status honestly and invites the author's CUDA run.
+
+head_sha -> c7379c0. Perf and golden evidence from 81a98f0 applies
+unchanged (tree-identical amends).
