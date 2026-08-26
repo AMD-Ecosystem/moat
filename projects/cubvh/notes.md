@@ -1015,3 +1015,120 @@ Outcome: all required GPU tests pass on real gfx90a hardware, both
 round-2 differential gates pass, CUDA gate already covers this head_sha,
 tree clean, jargon clean, docs present. linux-gfx90a -> completed
 (validated_sha = c7379c0).
+
+## Validation (round 2, windows-gfx1151) 2026-08-26 -- PASS at c7379c0
+
+GPU: gfx1151 (AMD Radeon 8060S, RDNA3.5 APU, wave32, 20 CUs, 67.9 GiB shared).
+Python 3.13.13, torch 2.12.0+rocm7.14.0a20260519 (hip 7.13.26190), rocm-sdk
+7.14.0a20260519 (TheRock wheels), AMD clang 23.0.0git, MSVC 14.44 link.exe,
+numpy 2.5.2, trimesh 5.0.0. Selector state was `port-ready` -- this platform
+has no prior record, so this is a first validation at the round-2 head, not a
+carry-forward candidate. It is the only Windows evidence at c7379c0:
+windows-gfx1101 and windows-gfx1201 still hold e5a657a.
+
+### Build
+```
+source agent_space/win_torch_env.sh          # CC=CXX=clang-cl, PYTORCH_ROCM_ARCH=gfx1151
+cd projects/cubvh/src && rm -rf build && find . -maxdepth 3 \
+  \( -name "*.hip" -o -name "*_hip.*" -o -name "_cubvh*.pyd" \) \
+  -not -path "./third_party/*" -delete
+"$TORCH_PY" setup.py build_ext --inplace --force
+```
+Exit 0, warnings only (nodiscard hipError_t, non-trivial memcpy -- all
+pre-existing and identical to the other platforms). Device code confirmed
+single-target: `strings _cubvh.cp313-win_amd64.pyd` -> `amdgcn-amd-amdhsa--gfx1151`
+only. The setup.py Windows blocks both fired as designed on this host: the
+`.hip`-to-MSVC-driver registration and the `/ALTERNATENAME` c10::ValueError
+thunk alias appear in the link line, so the clang-cl torch wheel links clean.
+No source delta was needed for gfx1151.
+
+### Upstream test suite
+- `test/signed_distance.py` -- PASS (exit 0). Ours 0.0149s = build 0.0007s +
+  query 0.0142s, vs Trimesh 0.0214s.
+- `test/unsigned_distance.py` -- 11 runs: 8 clean, 3 failed the SECOND
+  (cpoint, line 135) assertion, max abs diff 1.10e-4. The FIRST (distance,
+  line 121) assertion passed in all 11. That is the documented pre-existing
+  unseeded-`torch.randn` tie-breaking flake, not a distance regression; the
+  observed 3/11 is the same class as the notes' "~1 in 8" and gfx90a's 1/3.
+- `test/state_dict.py` -- fails on this platform for the documented reason:
+  `tempfile.NamedTemporaryFile()` holds an exclusive Windows handle, so
+  `torch.save(..., f.name)` cannot reopen the path and torch raises
+  `[enforce fail at inline_container.cc:745] open file failed with error
+  code: 32` (ERROR_SHARING_VIOLATION). Same as gfx1101 and gfx1201. It is an
+  upstream test-script portability bug that reproduces on unmodified CUDA
+  source and is deliberately NOT patched in the port. Re-ran the test body
+  verbatim with `tempfile.mktemp()` (a path with no live handle) in place of
+  the context manager: BVH state_dict round-trip PASS -- distances, face_id
+  and uvw all allclose.
+- `python -m pytest test/cuhashtable.py -v` -- 4 passed (test_3d_basic,
+  test_4d_basic, test_large_random, test_edge_values) in 2.09s.
+- `test/sparse_voxel.py <icosphere-subdiv3, 1280 faces> --workspace ...` --
+  GPU spcumc path ran end-to-end at res=1024 (12.9 GiB grid on the APU's
+  shared memory, no pressure at 67.9 GiB). `.npz` written with
+  active_cells / active_cells_sdf, **4,455,224 active voxels -- bit-identical
+  to gfx90a, gfx1100, gfx1101 and gfx1201**. The trailing
+  `ValueError: Both events must be recorded` reproduced exactly as
+  documented (the script never calls `end.record()`); GPU output complete.
+- CPU regression: `test/hashtable.py` PASS ("All CPU HashTable tests
+  passed", 0/50000 spurious negatives). `test/merge_vertices.py` PASS
+  (642->642 verts, 1280->1280 faces). `test/repair_holes.py` PASS.
+- `test/decimation.py` -- could not run its REFERENCE comparison: kiui 0.3.5
+  ships an empty `kiui/typing.py`, so `kiui.op`'s `from kiui.typing import *`
+  leaves `Union`/`Tensor` undefined and the import dies before any cubvh code
+  runs. That is a packaging defect in the third-party reference lib, not the
+  port, and it is CPU-only. Exercised cubvh's own decimation API directly
+  instead: `decimate(v, f, 320)` -> 320 verts / 636 faces and
+  `parallel_decimate(v, f, 320)` -> 175 verts / 346 faces, both producing
+  watertight meshes with volume 4.137 / 4.119 against the unit sphere's
+  4.18879.
+
+### Round-2 differential gates (both required, both PASS)
+This platform had no e5a657a goldens, so both builds were made here: checked
+out e5a657a detached, rebuilt clean, `golden.py capture --out
+agent_space/goldens-e5a657a-gfx1151`; then back to moat-port (c7379c0),
+rebuilt clean, and ran both gates against that reference.
+```
+"$TORCH_PY" projects/cubvh/harness/golden.py check     --ref agent_space/goldens-e5a657a-gfx1151
+"$TORCH_PY" projects/cubvh/harness/golden.py crossload --ref agent_space/goldens-e5a657a-gfx1151
+```
+`check`: PASS on all three meshes. gfx1151 agrees with its own pre-rewrite
+build MORE tightly than gfx90a did: max |dist diff| 5.960e-08 on torus10k and
+open (gfx90a saw 1.192e-07), 2.384e-07 on degen with the same 655
+degenerate-won queries excluded per the adjudicated policy. Zero non-tie
+face_id mismatches anywhere (ties only: 622/347/401). uvw diff exactly
+0.000e+00 on every mesh with NaN masks equal. Ray hit/miss 1.00000
+everywhere; ray face_id 1.00000 except open at 0.99990. raystab sign 0.99995
+(torus10k), 1.00000 (open, degen), 0.99910 (degen.nodegen -- the tightest
+margin observed on any platform against the 0.999 floor, worth watching but
+passing). `degen.nodegen` self-consistency exact 0.0; all `own_roundtrip`
+checks pass.
+`crossload`: PASS -- e5a657a-serialized state_dicts load into the c7379c0
+build and answer within the same tolerances on all three meshes, confirming
+the rewritten node layout and traversal still read foreign node arrays.
+
+### CUDA no-regression gate
+Not run here and not required: already recorded at this exact head_sha
+(c7379c0) by the porter and independently reproduced by the reviewer. Per
+validator step 3 the gate is per-head_sha, not per-arch, and this is a
+Windows host with no CUDA toolkit.
+
+### Harness dependencies installed (venv only, no source delta)
+`rtree`, `scipy` (trimesh's CPU proximity baseline -- without them
+signed/unsigned_distance abort in trimesh before reaching any assertion),
+`rich` (sparse_voxel), `pytest`, plus `kiui`/`opencv-python-headless`/
+`pymeshlab` for the decimation reference that then failed to import.
+
+### Integrity / hygiene
+- `git -C projects/cubvh/src status --porcelain` -- completely clean, no
+  modified tracked files and no untracked leftovers.
+- `python3 utils/jargon.py --port cubvh` -- clean.
+- readme.md carries the `#### AMD GPU (ROCm)` subsection at c7379c0.
+
+No gfx1151-specific issues: no TDR, no GPU wedge, no numerical divergence, no
+APU-specific fault. Notably this is an RDNA3.5 low-CU APU and the BVH
+traversal showed none of the low-CU starvation seen on stdgpu.
+
+Outcome: all required GPU tests pass on real gfx1151 hardware, both round-2
+differential gates pass, tree clean, jargon clean, docs present.
+windows-gfx1151 -> completed (validated_sha = c7379c0). This restores the
+`windows` gate at the round-2 head.

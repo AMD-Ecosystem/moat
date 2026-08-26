@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-19T04:40:36Z",
-  "updated_at": "2026-08-26T16:17:54Z",
+  "updated_at": "2026-08-26T17:24:55Z",
   "head_sha": "c7379c00f4617394112a10829817df6ece355bb6",
   "depends_on": [],
   "pr_url": "https://github.com/ashawkey/cubvh/pull/33",
@@ -125,6 +125,29 @@
         "detail": "setup.py: comment-only (comments/format only)",
         "at": "2026-06-19T17:51:26Z"
       }
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "c7379c00f4617394112a10829817df6ece355bb6",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-08-26T17:24:54Z",
+      "updated_at": "2026-08-26T17:24:54Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed"
     }
   },
   "porting_released": {
