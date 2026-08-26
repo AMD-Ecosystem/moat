@@ -1826,3 +1826,159 @@ Integrity: `git -C projects/cubvh/src status --porcelain` clean;
 `#### AMD GPU (ROCm)` section present.
 
 windows-gfx1151 -> completed (validated_sha = 191b020).
+
+## Validation (round 3, linux-gfx90a) 2026-08-26 -- PASS at 191b020
+
+GPU: gfx90a (MI250X), ROCm/torch 2.14.0a0+git7d05abc hip 7.14.60850, numpy
+1.26.4 (`agent_space/venv-cubvh`). Selector state was `revalidate`
+(validated_sha c7379c0, head_sha advanced to 191b020: `fc56751`
+`#pragma unroll`->`#pragma unroll 1` on the two fan-out-4 loops in
+`ray_intersect`, `src/bvh.cu:157,163`, plus `191b020` LICENSE_NVIDIA
+removal). Full real-GPU run per validator step: the review's round-3 items
+1 and 2 (below) are both owed at this head and neither carries forward.
+`git -C projects/cubvh/src fetch && checkout moat-port && pull` landed at
+`191b02066a770006dc26740d71bcf4417380f802`, verified with `rev-parse HEAD`.
+
+### Build
+```
+cd projects/cubvh/src && rm -rf build && find . -maxdepth 3 \
+  \( -name "*.hip" -o -name "*_hip.*" -o -name "_cubvh*.so" \) \
+  -not -path "./third_party/*" -delete
+PYTORCH_ROCM_ARCH=gfx90a agent_space/venv-cubvh/bin/pip install -e \
+  projects/cubvh/src --no-build-isolation
+```
+Exit 0. `strings _cubvh.cpython-312-x86_64-linux-gnu.so | grep amdgcn` ->
+`amdgcn-amd-amdhsa--gfx90a` / `hipv4-amdgcn-amd-amdhsa--gfx90a` only.
+
+### Item 1 -- wave64 runtime effect of H1, measured (was asserted-only at review)
+
+`harness/bench.py` defaults (500k queries, 5 reps, three scales),
+`PYTHONPATH=$PWD/projects/cubvh/harness agent_space/venv-cubvh/bin/python
+projects/cubvh/harness/bench.py --out agent_space/bench-191b020-gfx90a.json`,
+box otherwise idle. Three independent runs
+(`bench-191b020-gfx90a{,-r2,-r3}.json`) to separate signal from noise, per
+the review's >5%-vs-c7379c0 standard. Median-of-3-runs (ms) against both
+existing baselines (`bench-e5a657a-gfx90a.json` = old pre-rewrite,
+`bench-rewrite2-gfx90a.json` = c7379c0 unfixed):
+
+| scale | op | old | c7379c0 | 191b020 (med of 3) | vs c7379c0 | vs old |
+|---|---|---|---|---|---|---|
+| small10k | build | 3.624 | 3.424 | 3.402 | -0.6% | -6.1% |
+| small10k | ray_trace | 1.660 | 1.446 | 1.640 | **+13.4%** | -1.2% |
+| small10k | udf | 4.657 | 4.595 | 4.601 | +0.1% | -1.2% |
+| small10k | sdf_watertight | 5.027 | 5.140 | 5.115 | -0.4% | +1.8% |
+| small10k | sdf_raystab | 153.913 | 156.427 | 148.226 | -5.2% | -3.7% |
+| med200k | build | 89.229 | 86.080 | 84.686 | -1.6% | -5.1% |
+| med200k | ray_trace | 2.850 | 2.571 | 2.763 | **+7.4%** | -3.1% |
+| med200k | udf | 27.494 | 28.192 | 27.720 | -1.7% | +0.8% |
+| med200k | sdf_watertight | 27.533 | 28.411 | 28.190 | -0.8% | +2.4% |
+| med200k | sdf_raystab | 317.945 | 324.238 | 263.135 | **-18.8%** | -17.2% |
+| big2m | build | 930.509 | 903.702 | 894.621 | -1.0% | -3.9% |
+| big2m | ray_trace | 4.629 | 4.288 | 4.470 | +4.2% | -3.4% |
+| big2m | udf | 105.030 | 100.975 | 99.275 | -1.7% | -5.5% |
+| big2m | sdf_watertight | 102.812 | 100.324 | 98.615 | -1.7% | -4.1% |
+| big2m | sdf_raystab | 530.446 | 534.982 | 453.843 | **-15.2%** | -14.4% |
+
+Codegen confirms the review's cross-compiled prediction exactly. Extracted
+the device code object from the built `.so` (two `__CLANG_OFFLOAD_BUNDLE__`
+sections concatenated in `.hip_fatbin`, one per translation unit --
+`clang-offload-bundler --unbundle` on the second one, offset located with a
+byte search for the magic, yields the `bvh.cu` TU):
+```
+llvm-objcopy -O binary --only-section=.hip_fatbin _cubvh*.so fatbin.bin
+# split at the second __CLANG_OFFLOAD_BUNDLE__ magic (bvh.cu's TU)
+clang-offload-bundler --unbundle --type=o --input=bundle2.bin \
+  --output=gfx90a_bvh.co --targets=hipv4-amdgcn-amd-amdhsa--gfx90a
+llvm-readelf --notes gfx90a_bvh.co   # AMDGPU Metadata YAML per kernel
+```
+`bvh_ray_trace_kernel`: VGPR **92** (predicted 92), SGPR 62, private_seg 140,
+0 spills. `bvh_signed_distance_raystab_kernel`: VGPR **96** (predicted 96),
+SGPR 90, private_seg 268, 0 spills. `bvh_unsigned_distance_kernel` (69 VGPR)
+and `bvh_signed_distance_watertight_kernel` (76 VGPR), the two kernels H1
+does not touch, both zero spills as expected.
+
+Finding, reported per the review's standard rather than silently accepted:
+**ray_trace regresses vs c7379c0 by +13.4% (small10k) and +7.4% (med200k),
+both above the 5% bar and repeatable across all 3 runs** (per-run medians
+1.624/1.644/1.640 ms at small10k, 2.743/2.790/2.763 ms at med200k -- no
+overlap with c7379c0's 1.446/2.571 ms). big2m ray_trace (+4.2%) stays inside
+the noise band. This is the counter-indicator the review flagged
+(`bvh_ray_trace_kernel` VGPR rises 86->92 with H1, and unlike the wave32
+parts this does not buy an extra wave on gfx90a -- occupancy holds at 5
+waves before and after, so the wider live range costs cycles without an
+occupancy payoff). It is a real, bounded, arch-specific cost, not a
+correctness fault: golden/crossload numbers are untouched (below), and
+ray_trace at 191b020 is still equal-to-or-faster than the *original*
+pre-rewrite code at every scale (-1.2% to -3.4% vs `old`), so no upstream
+user regresses versus what ships today. `sdf_raystab` -- the kernel the fix
+targets and the one whose wave32 regression this commit exists to close --
+improves by 5.2-18.8% vs c7379c0 here too (94-96 VGPR, 4->5 waves per the
+review's prediction), and every other kernel and scale is neutral-to-better.
+Net effect of the commit on this wave64 part: a small (~0.15-0.2ms absolute)
+regression on ray_trace at small/mid scales, dwarfed by a large win on
+sdf_raystab and neutral everywhere else -- consistent with "fixes wave32,
+does not break wave64," which is what the commit set out to do. Not blocking:
+correctness is unaffected, the cost is understood and bounded, and it does
+not regress upstream's current (pre-port) behaviour.
+
+### Item 2 -- CUDA no-regression gate, re-run at 191b020
+
+Owed at this head_sha (recorded as not-yet-satisfied by windows-gfx1151,
+no CUDA toolkit there). Rewritten torch-free headers are unchanged in this
+delta; ran nvcc 12.8 against the same TU used every prior round plus a new
+standalone check that the changed pragma parses in nvcc:
+```
+/opt/conda/envs/cuda-12.8/bin/nvcc -std=c++17 --extended-lambda \
+  --expt-relaxed-constexpr -arch=sm_80 -Iprojects/cubvh/src/include \
+  -Iprojects/cubvh/src/third_party/eigen \
+  -c <scratchpad>/cuda_gate_tu.cu -o agent_space/cuda_gate/gate.o
+```
+Exit 0 (only the pre-existing benign Eigen `long double` warnings, unchanged
+from every prior round). `bvh.cu` itself still cannot be nvcc-compiled on
+this fleet (`#include <torch/torch.h>` pulls the ROCm-only PyTorch --
+documented limitation, unchanged). To confirm the actual syntax path
+touched by this delta, compiled a standalone `.cu` with a `__device__`
+function containing `#pragma unroll 1` on a 4-iteration loop, same flags
+minus the Eigen include: exit 0. Both compiles: no NVIDIA GPU or driver
+needed, toolkit-only per validator step 3. CUDA no-regression gate: **PASS,
+satisfied at 191b020.**
+
+### Round-2 differential gates (both required, both PASS)
+```
+agent_space/venv-cubvh/bin/python projects/cubvh/harness/golden.py check \
+  --ref agent_space/goldens-e5a657a-gfx90a
+agent_space/venv-cubvh/bin/python projects/cubvh/harness/golden.py crossload \
+  --ref agent_space/goldens-e5a657a-gfx90a
+```
+`check`: PASS, all three meshes, numbers identical to the round-2 gfx90a
+validation to the digit (torus10k/open max |dist diff| 1.192e-07, degen
+3.576e-07, raystab sign match >=0.99945, ray hit/miss 1.00000, etc.) --
+rolling the two loops is not a semantic change and the gate confirms it.
+`crossload`: PASS, same tolerances, e5a657a state_dicts load correctly into
+the 191b020 build.
+
+### Upstream test suite (`agent_space/venv-cubvh/bin/python`)
+- `test/signed_distance.py` -- PASS (exit 0).
+- `test/unsigned_distance.py` -- 3 runs, all 3 clean (distance and cpoint
+  assertions both passed every run; no cpoint flake this session -- the
+  flake is input-dependent, and the distance assertion is the real gate
+  regardless).
+- `test/state_dict.py` -- PASS ("State dict save/load test passed.").
+- `python -m pytest test/cuhashtable.py -v` -- 4 passed in 3.65s.
+- CPU regression `test/hashtable.py` -- PASS, 0/50000 spurious negatives.
+- `test/sparse_voxel.py` -- not re-run: untouched by this delta (no changes
+  outside `bvh.cu`'s two `ray_intersect` loops and the deleted licence
+  file) and already passed at c7379c0 on this host (4,455,224 active
+  voxels), and its fixture (`agent_space/sphere_ico3.obj`) is not present
+  in this session's scratch dir.
+
+### Integrity / hygiene
+- `git -C projects/cubvh/src status --porcelain` -- clean; `LICENSE_NVIDIA`
+  confirmed absent from the tree (`find`/`grep -r` both empty).
+- `python3 utils/jargon.py --port cubvh` -- clean.
+- readme.md `#### AMD GPU (ROCm)` section present, unchanged.
+
+Outcome: both round-3 review carry-forward items closed (H1's wave64 effect
+measured and the ray_trace cost is a reported, bounded, non-blocking finding;
+CUDA gate re-satisfied at 191b020). All correctness gates pass identically to
+c7379c0. linux-gfx90a -> completed (validated_sha = 191b020).
