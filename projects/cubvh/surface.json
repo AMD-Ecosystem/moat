@@ -1,0 +1,41 @@
+{
+  "generated_by": "utils/surface.py",
+  "source_sha": "e5a657a4e8f6",
+  "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+  "cuda": {
+    "files": [
+      "include/gpu/bounding_box.cuh",
+      "include/gpu/bounding_box_hip.cuh",
+      "include/gpu/bvh.cuh",
+      "include/gpu/bvh_hip.cuh",
+      "include/gpu/common.h",
+      "include/gpu/common_hip.h",
+      "include/gpu/floodfill.cuh",
+      "include/gpu/floodfill_hip.cuh",
+      "include/gpu/gpu_memory.h",
+      "include/gpu/gpu_memory_hip.h",
+      "include/gpu/hashtable.cuh",
+      "include/gpu/hashtable_hip.cuh",
+      "include/gpu/pcg32.h",
+      "include/gpu/pcg32_hip.h",
+      "include/gpu/spcumc.cuh",
+      "include/gpu/spcumc_hip.cuh",
+      "include/gpu/triangle.cuh",
+      "include/gpu/triangle_hip.cuh",
+      "src/api_gpu.cu",
+      "src/bvh.cu"
+    ],
+    "markers": {
+      "kernel": 26,
+      "device_code": 137,
+      "launch": 14
+    },
+    "libraries": {
+      "thrust": 188
+    }
+  },
+  "components": [],
+  "covered": [],
+  "scoped_out": [],
+  "removed_from_floor": []
+}

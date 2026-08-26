@@ -563,3 +563,72 @@ triangle.cuh 0.48 -> 0.250 (mostly the three wrongly-kept members -- being
 fixed), bounding_box.cuh 0.75 -> 0.125 (4 lines: struct decl, enlarge loop,
 the distance_sq one-liner being respelled), common.h 0.44 -> 0.125 (pinned
 fibonacci formulas). Final numbers after the fix round to follow.
+
+### Rewrite landed: fork commit 81a98f0 (porter, linux-gfx90a, 2026-08-26)
+
+Implementer rounds 2 (keep-list correction) and 3 (performance) completed;
+all gates green and independently re-verified by the orchestrator:
+- golden.py check PASS and crossload PASS vs the e5a657a goldens: distance
+  diffs <= 2.4e-7, ZERO non-tie face_id mismatches on any mesh, uvw <=
+  3.9e-6 with NaN masks equal, ray hit/miss 1.00000 on every mesh after
+  degenerate masking, old serialized BVHs load and answer identically, and
+  the degenerate self-consistency check (degen mesh vs degen-faces-removed
+  mesh) is exactly 0.0.
+- Upstream tests: signed_distance, unsigned_distance (rc=0), state_dict,
+  cuhashtable (4 passed), CPU hashtable, sparse_voxel end-to-end (known
+  pre-existing elapsed_time script bug at exit; npz written, 4,476,440
+  active voxels on a fresh icosphere -- spcumc untouched by this round).
+- Perf (bench.py, 500k queries, medians ms, old e5a657a -> new 81a98f0,
+  gfx90a): build 3.62->3.42 / 89.2->86.1 / 930.5->903.7; ray_trace
+  1.66->1.45 / 2.85->2.57 / 4.63->4.29; udf 4.66->4.60 / 27.5->28.2 /
+  105.0->101.0; sdfw 5.03->5.14 / 27.5->28.4 / 102.8->100.3; sdfr
+  153.9->156.4 / 317.9->324.2 / 530.4->535.0 (10k/200k/2M tris). Build and
+  ray faster everywhere; distance ops within ~3% (run noise ~2%). JSONs:
+  agent_space/bench-e5a657a-gfx90a.json, bench-rewrite2-gfx90a.json.
+- Perf history: the first implementation was 10-24% slower on the query
+  kernels; fixed by a division-and-sqrt-free distance_sq region form,
+  compile-time-unrolled fan-out-4 child loops behind a != FANOUT stackless
+  guard, a branchless single-exit ray intersector, a branchless slab test,
+  and a fixed 5-exchange compare-swap child ordering network (the canonical
+  optimal 4-input network) replacing a divergent insertion sort.
+- Final similarity vs instant-ngp c4d622e (non-trivial verbatim linefrac,
+  round-1 -> final): bvh.cu 0.68 -> 0.044, bvh.cuh 0.44 -> 0.231,
+  triangle.cuh 0.48 -> 0.031, bounding_box.cuh 0.75 -> 0.091, common.h
+  0.44 -> 0.098. Every residual match is a pinned POD/interface line, a
+  pinned formula, or a trivial one-liner (inspected and listed by
+  rewrite/similarity.py -v). bvh.cuh's 12 matches are all interface
+  signatures plus struct members that ARE the serialization contract.
+- licenses.py scan-nvidia: the only remaining hit is LICENSE_NVIDIA itself
+  (root licence file; its removal is upstream's call -- the PR notes it
+  becomes removable). jargon.py --port cubvh: clean. surface.json
+  generated (20 CUDA files). Fork main mirror fast-forwarded
+  d958f89 -> 757b913 (upstream merge of PR #33; plain fast-forward, kept
+  the mirror clean -- required before the follow-up review flow).
+- audit-commits could not be re-run after the mirror sync (harness
+  permission classifier blocked the command); criteria checked by hand:
+  [ROCm] title 67 chars, AI disclosure, fenced Test Plan, no agent
+  trailer, jargon clean.
+
+Commit: 81a98f0 "[ROCm] Rewrite BVH core as independent MIT-licensed
+implementations", pushed to AMD-Ecosystem/cubvh moat-port (PR #33 merged,
+branch free). head_sha advanced; linux-gfx90a set ported.
+
+### Outstanding for the rest of the round
+
+- Reviewer: normal pr-review of e5a657a..81a98f0 plus the independence
+  evidence (rewrite/SPEC.md process, similarity numbers, the corrected
+  keep set). The clean-room process notes above are the review inputs.
+- Validators at 81a98f0 per the gate lattice. NOTE for the wave32/Windows
+  hosts: capture e5a657a baseline goldens FIRST (checkout e5a657a, build,
+  `harness/golden.py capture`), then build 81a98f0 and run check +
+  crossload, then the platform's normal test set. bench.py old-vs-new on a
+  wave32 box completes the plan's cross-arch perf deliverable.
+- CUDA-path compile check: NOT done -- no NVIDIA toolchain anywhere in the
+  current fleet (round-1's cuda-12.8 container is gone; the pip
+  nvidia-cuda-nvcc-cu12 wheel ships only ptxas). The PR body states this
+  honestly and invites the author to run the CUDA build. If a host with
+  nvcc appears, compile a TU including the four rewritten headers plus
+  bvh.cu's traversal statics.
+- Then the follow-up-PR flow (upstream.py --review; published_sha backfill
+  will stamp e5a657a from the live PR; /moat approve; --publish), and
+  after upstream merges: CuMesh third_party/cubvh bump.
