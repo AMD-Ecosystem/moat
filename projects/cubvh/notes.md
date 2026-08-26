@@ -936,3 +936,82 @@ only if the body is edited for another reason before publishing.
 Verdict: review-passed at c7379c0. Next: validations at c7379c0 per the
 gate lattice (wave32 and Windows hosts capture their own e5a657a goldens
 first, per the porter's instructions above), then the follow-up-PR flow.
+
+## Validation (round 2, linux-gfx90a) 2026-08-26 -- PASS at c7379c0
+
+GPU: gfx90a (MI250X), ROCm/torch 2.14.0a0+git7d05abc hip 7.14.60850, numpy
+1.26.4 (agent_space/venv-cubvh). Selector state was `revalidate`
+(validated_sha e5a657a, head_sha advanced to c7379c0 across the round-2
+rewrite). Full real-GPU run, no carry-forward: bvh.cu, bvh.cuh, triangle.cuh,
+bounding_box.cuh, common.h are all rewritten (functional device-code delta),
+so `classify` would return `mixed`/`differ`, not eligible for binary-equiv.
+
+### Build
+```
+cd projects/cubvh/src && rm -rf build && find . -maxdepth 3 \
+  \( -name "*.hip" -o -name "*_hip.*" -o -name "_cubvh*.so" \) \
+  -not -path "./third_party/*" -delete
+PYTORCH_ROCM_ARCH=gfx90a agent_space/venv-cubvh/bin/pip install -e \
+  projects/cubvh/src --no-build-isolation
+```
+Forced fresh compile (build/ removed, hipify artifacts and the .so deleted
+first). Exit 0, 72.8s. `strings _cubvh.cpython-312-x86_64-linux-gnu.so |
+grep amdgcn` -> `amdgcn-amd-amdhsa--gfx90a` only (roc-obj-ls unavailable in
+this env's rocm_sdk_core build, strings substituted).
+
+### Upstream test suite (all agent_space/venv-cubvh/bin/python)
+- `test/signed_distance.py` -- PASS (exit 0). Ours 0.0146s vs Trimesh 0.0295s.
+- `test/unsigned_distance.py` -- 3 runs. Run 1: first (distance, line 121)
+  assertion PASSED; second (cpoint, line 135) assertion FAILED (2/3000
+  mismatched, max abs diff 2.06e-4) -- exactly the documented pre-existing
+  unseeded-torch.randn flake, not a distance regression. Runs 2 and 3: both
+  assertions PASSED. Matches notes' "~1 in 8" characterization (1/3 here).
+- `test/state_dict.py` -- PASS ("State dict save/load test passed.").
+- `python -m pytest test/cuhashtable.py -v` -- 4 passed (test_3d_basic,
+  test_4d_basic, test_large_random, test_edge_values) in 4.02s.
+- CPU regression `test/hashtable.py` -- PASS ("All CPU HashTable tests
+  passed.").
+- `test/sparse_voxel.py <icosphere-subdiv3, 1280 faces> --workspace
+  agent_space/sparse_voxel_out` -- GPU spcumc path ran end-to-end; the
+  known trailing `ValueError: Both events must be recorded` (missing
+  `end.record()` in the test script) reproduced exactly as documented.
+  `.npz` output present: active_cells / active_cells_sdf, 4,455,224 active
+  voxels (res=1024) -- identical count to every prior platform's pass on
+  this fixture family.
+
+### Round-2 differential gates (both required, both PASS)
+```
+agent_space/venv-cubvh/bin/python projects/cubvh/harness/golden.py check \
+  --ref agent_space/goldens-e5a657a-gfx90a
+agent_space/venv-cubvh/bin/python projects/cubvh/harness/golden.py crossload \
+  --ref agent_space/goldens-e5a657a-gfx90a
+```
+`check`: PASS on all three meshes. Numbers match the porter/reviewer's
+measurements exactly: torus10k/open max |dist diff| 1.192e-07, degen
+3.576e-07 (655 degenerate-won queries excluded per the adjudicated policy);
+zero non-tie face_id mismatches anywhere; uvw within 3.9e-6 (NaN masks
+equal); raystab sign match >=0.99945; ray hit/miss 1.00000 after
+degenerate-face masking; degen.nodegen self-consistency exact 0.0; all
+`own_roundtrip` checks pass.
+`crossload`: PASS -- old (e5a657a) serialized state_dicts load into the new
+build and answer within the same tolerances on all three meshes.
+
+### CUDA no-regression gate
+Already recorded at this exact head_sha (c7379c0) by both the porter (fix
+round, 2026-08-26) and independently reproduced by the reviewer
+(re-review, 2026-08-26): `nvcc 12.8 -std=c++17 --extended-lambda
+--expt-relaxed-constexpr -arch=sm_80` compile of the rewritten torch-free
+headers, exit 0. Per validator step 3 ("skip it if notes.md already
+records the CUDA gate at this head_sha"), not re-run here.
+
+### Integrity / hygiene
+- `git -C projects/cubvh/src status --porcelain` -- clean (only gitignored
+  hipify artifacts and the built .so untracked; no modified tracked files).
+- `python3 utils/jargon.py --port cubvh` -- clean.
+- readme.md carries the `#### AMD GPU (ROCm)` subsection (added round 1,
+  present unchanged at c7379c0).
+
+Outcome: all required GPU tests pass on real gfx90a hardware, both
+round-2 differential gates pass, CUDA gate already covers this head_sha,
+tree clean, jargon clean, docs present. linux-gfx90a -> completed
+(validated_sha = c7379c0).

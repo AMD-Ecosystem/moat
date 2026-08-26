@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-19T04:40:36Z",
-  "updated_at": "2026-08-26T16:10:12Z",
+  "updated_at": "2026-08-26T16:15:39Z",
   "head_sha": "c7379c00f4617394112a10829817df6ece355bb6",
   "depends_on": [],
   "pr_url": "https://github.com/ashawkey/cubvh/pull/33",
@@ -23,10 +23,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "e5a657a",
+      "validated_sha": "c7379c00f4617394112a10829817df6ece355bb6",
       "started_at": "2026-06-19T04:56:39Z",
-      "completed_at": "2026-06-19T16:40:24Z",
-      "updated_at": "2026-08-26T16:10:12Z",
+      "completed_at": "2026-08-26T16:15:39Z",
+      "updated_at": "2026-08-26T16:15:39Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -40,15 +40,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer:claude-code",
-      "carry_forward": {
-        "from": "9c3b40d",
-        "to": "e5a657a",
-        "method": "source-class",
-        "class": "comment-only",
-        "detail": "setup.py: comment-only (comments/format only)",
-        "at": "2026-06-19T17:51:26Z"
-      }
+      "last_agent": "validator"
     },
     "windows-gfx1101": {
       "state": "completed",
