@@ -22,11 +22,12 @@
       "id": "cubvh-wave32-raystab-perf-regression",
       "kind": "other",
       "component": null,
-      "summary": "Round-2 rewrite (c7379c0) regresses sdf_raystab +21-23% at 2M tris and +6-9% at 10k tris, and ray_trace +6-11% at 2M tris, on wave32 gfx1151; gfx90a wave64 saw neither. Query-kernel tuning was done on wave64. Correctness gates all pass. Rule: send back to porter for wave32 tuning, or accept and disclose. SECOND wave32 DATA POINT (linux-gfx1100, W7800, 2026-08-26): sdf_raystab regresses at every scale (+10-12% at 10k, +7.5-9.7% at 200k, +6% at 2M); ray_trace +8-15% at 10k/200k but -4 to -7% (faster) at 2M; VGPR cliff identical (174/173, 8 waves). The throwaway amdgpu_waves_per_eu(16) fix (67/88 VGPR, 16 waves, 0 spills) makes both kernels FASTER than pre-rewrite at every scale on gfx1100 (raystab -6 to -9%, ray_trace -4.5 to -18% vs old) with no med200k penalty. Fix confirmed on both wave32 parts with the same attribute value; remaining unknowns are the wave64 gfx90a effect and the CUDA-path guard.",
+      "summary": "Round-2 rewrite (c7379c0) regresses sdf_raystab +21-23% at 2M tris and +6-9% at 10k tris, and ray_trace +6-11% at 2M tris, on wave32 gfx1151; gfx90a wave64 saw neither. Query-kernel tuning was done on wave64. Correctness gates all pass. Rule: send back to porter for wave32 tuning, or accept and disclose. SECOND wave32 DATA POINT (linux-gfx1100, W7800, 2026-08-26): sdf_raystab regresses at every scale (+10-12% at 10k, +7.5-9.7% at 200k, +6% at 2M); ray_trace +8-15% at 10k/200k but -4 to -7% (faster) at 2M; VGPR cliff identical (174/173, 8 waves). The throwaway amdgpu_waves_per_eu(16) fix (67/88 VGPR, 16 waves, 0 spills) makes both kernels FASTER than pre-rewrite at every scale on gfx1100 (raystab -6 to -9%, ray_trace -4.5 to -18% vs old) with no med200k penalty. Fix confirmed on both wave32 parts with the same attribute value; remaining unknowns are the wave64 gfx90a effect and the CUDA-path guard. H1 (#pragma unroll 1 on the two ray_intersect fan-out loops) also confirmed on gfx1100: 71/73 VGPR, 16 waves, raystab -11 to -16% vs pre-rewrite at every scale and 2.5-10.7% better than the attribute; ray_trace ties the attribute. H1 is arch-neutral and is the fix to send to the porter.",
       "refs": [
         "projects/cubvh/notes.md#cross-arch-perf-deliverable",
         "projects/cubvh/notes.md#part-c-old-vs-new-ab-on-gfx1100-predictions-2-and-3-see-verdict",
-        "projects/cubvh/notes.md#part-d-the-fix-on-gfx1100-throwaway-experiment-reverted"
+        "projects/cubvh/notes.md#part-d-the-fix-on-gfx1100-throwaway-experiment-reverted",
+        "projects/cubvh/notes.md#h1-pragma-unroll-1-confirmed-on-gfx1100----supersedes-the-part-d-recommendation-2026-08-26"
       ],
       "status": "open",
       "upstream_issue": null,

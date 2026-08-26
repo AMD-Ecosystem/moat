@@ -1672,3 +1672,60 @@ noise, as expected. One attribute value (16) served both wave32 parts.
   no algorithm change), then revalidate; the evidence says it is a strict
   improvement on wave32 and low-risk elsewhere. Accept-and-disclose remains
   defensible at gfx1100's +6% big2m, but there is no longer a reason to pay it.
+
+### H1 (`#pragma unroll 1`) confirmed on gfx1100 -- supersedes the Part D recommendation 2026-08-26
+
+While Parts C-D ran here, windows-gfx1151 bisected the cause to the two
+`#pragma unroll` lines on the fan-out-4 loops in `ray_intersect`
+(`src/bvh.cu` lines 154 and 160 at c7379c0) and found `#pragma unroll 1`
+beats the pre-rewrite code (notes above, "Root cause narrowed to two
+`#pragma unroll` lines"). Repeated on gfx1100 as the same throwaway patch
+(applied, built, staged as `agent_space/ab/h1`, reverted; tree clean, c7379c0
+.so restored and md5-verified).
+
+Codegen, gfx1100 (ROCm 7.2.1):
+
+| kernel | new | new+attr(16) | new+H1 | waves | spills |
+|---|---|---|---|---|---|
+| bvh_ray_trace_kernel VGPR | 174 | 67 | **71** | 16 | 0 |
+| bvh_signed_distance_raystab_kernel VGPR | 173 | 88 | **73** | 16 | 0 |
+| bvh_signed_distance_raystab_kernel scratch | 492 | 492 | **268** | | |
+| BVH TU code object bytes | 264,336 | 264,976 | **197,336** | | |
+
+H1 also drops the raystab kernel's private segment back to the old 268
+bytes and makes the BVH code object smaller than the pre-rewrite 217,752.
+
+Runtime, four-way staged A/B, six rounds (r13-r15 old/new/fix/h1, r16-r18
+h1/fix/new/old), GPU 3, box idle. Raw `agent_space/ab/bench-*-r{13..18}.json`,
+summary `agent_space/ab/analyze4.py`. Min-of-6 (ms):
+
+| scale | op | old | new | +attr | +H1 | new/old | attr/old | H1/old | H1/attr |
+|---|---|---|---|---|---|---|---|---|---|
+| small10k | ray_trace | 0.93 | 1.04 | 0.90 | 0.93 | +11.3% | -2.9% | -0.1% | +3.0% |
+| small10k | sdf_raystab | 106.93 | 119.99 | 97.17 | **94.75** | +12.2% | -9.1% | **-11.4%** | -2.5% |
+| med200k | ray_trace | 1.57 | 1.68 | 1.41 | 1.46 | +7.4% | -10.1% | -7.2% | +3.2% |
+| med200k | sdf_raystab | 199.69 | 217.73 | 180.74 | **166.87** | +9.0% | -9.5% | **-16.4%** | -7.7% |
+| big2m | ray_trace | 2.49 | 2.40 | 2.12 | 2.03 | -3.7% | -15.2% | -18.6% | -4.0% |
+| big2m | sdf_raystab | 319.10 | 339.07 | 298.99 | **266.93** | +6.3% | -6.3% | **-16.4%** | -10.7% |
+| big2m | udf | 42.98 | 38.57 | 38.85 | 39.47 | -10.3% | -9.6% | -8.2% | +1.6% |
+| big2m | sdf_watertight | 46.42 | 41.35 | 41.63 | 41.36 | -10.9% | -10.3% | -10.9% | -0.6% |
+| big2m | build | 601.47 | 594.09 | 594.59 | 593.03 | -1.2% | -1.1% | -1.4% | -0.3% |
+
+Per-ordering tables agree in sign and magnitude (old-first big2m raystab H1
+-16.4%, h1-first -19.0%). Raw per-round medians for sdf_raystab are
+non-overlapping across all four sides at every scale, e.g. big2m old
+[319.9-335.3], new [340.6-345.8], attr [303.1-313.6], H1 [268.0-273.9].
+ray_trace: H1 and the attribute are a tie (raw ranges overlap; +-3-4% on
+min, mixed sign on median), both well ahead of unfixed new; at small10k H1 is
+at parity with old. Kernels the patch does not touch are unchanged within
+noise.
+
+Verdict: H1 is the fix to ship. On both wave32 parts it is faster than the
+attribute on sdf_raystab (gfx1100 by 2.5-10.7%) and equal on ray_trace, it
+is arch-neutral source (no `USE_ROCM` guard, so the nvcc gate needs no
+special case), and it is two characters of content. The Part D
+recommendation above (guarded `amdgpu_waves_per_eu(16)`) is superseded; it
+remains a valid data point that occupancy alone explains most of the loss.
+Still unmeasured anywhere: H1 on wave64 gfx90a (expected neutral-to-positive
+since the same live-range width costs it 8 -> 5 waves) and the CUDA build,
+which the porter's round will cover.
