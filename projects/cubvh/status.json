@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-19T04:40:36Z",
-  "updated_at": "2026-08-26T16:15:39Z",
+  "updated_at": "2026-08-26T16:17:54Z",
   "head_sha": "c7379c00f4617394112a10829817df6ece355bb6",
   "depends_on": [],
   "pr_url": "https://github.com/ashawkey/cubvh/pull/33",
@@ -131,5 +131,6 @@
     "arch": "linux-gfx90a",
     "since": "2026-08-26T16:07:54Z",
     "at": "2026-08-26T16:10:12Z"
-  }
+  },
+  "published_sha": "e5a657a4e8f6e66d090859a3d722040d895110fe"
 }
