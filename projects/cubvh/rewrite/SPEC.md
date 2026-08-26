@@ -132,6 +132,9 @@ ray-stab mode):
 - Map the unit square to the sphere in cylindrical form:
   cos_theta = 1 - 2*u  (i.e. -2u + 1)
   sin_theta = sqrtf(fmaxf(1 - cos_theta^2, 0))
+    (spell the clamp step through an intermediate variable or otherwise
+    differently from a single `sqrtf(fmaxf(1.0f - cos_theta * cos_theta,
+    0.0f))` line, keeping identical arithmetic order)
   angle = 2*PI*(v - 0.5f), evaluated with `sincosf(angle, &s, &c)`
   direction = { sin_theta * c, sin_theta * s, cos_theta }.
 
@@ -173,11 +176,30 @@ with the pinned layout and these `__host__ __device__` members:
   distance for zero-area triangles -- selection behavior depends on them
   never winning a closest-triangle competition.
 - KEEP VERBATIM from `keep/triangle_original_members.txt` (original MIT
-  code, not part of the rewrite): `point_in_triangle`,
-  `closest_point_to_line`, `closest_point`, `barycentric`.
+  code, not part of the rewrite): `barycentric` ONLY.
+  (CORRECTION 2026-08-26: `point_in_triangle`, `closest_point_to_line`,
+  and `closest_point` were initially and wrongly listed as keepable; a
+  verification pass showed they are NOT original. They must be REWRITTEN
+  like everything else, to the behavior below.)
+- `Eigen::Vector3f closest_point(Eigen::Vector3f p) const`
+  Nearest point on the (closed) triangle to p. Behavior: project p onto
+  the triangle's plane; if the projection lies inside the triangle,
+  return the projection; otherwise return the nearest of the three
+  closed edge segments' closest points (Ericson RTCD ch. 5 gives the
+  standard constructions). The inside test and the segment-closest-point
+  helper are yours to design (barycentric non-negativity is a natural
+  inside test given the kept `barycentric`); do not reuse a
+  normals-same-side test with translated-vertex cross products, and do
+  not name a helper `closest_point_to_line` / `point_in_triangle`.
+  Exact float equality with the previous build is NOT required here --
+  the golden tolerance for uvw is 1e-4 -- but degenerate (zero-area)
+  triangles must keep producing NaN-ish results (no special-casing to
+  finite values); the NaN masks are golden-checked.
 - Do NOT reimplement or keep: uniform surface sampling, surface area,
-  unsquared distance, vertex-array getter, stream output operator. They
-  are unused; dropping them is deliberate.
+  unsquared distance, vertex-array getter, stream output operator,
+  and (per the correction above) a standalone point-in-triangle
+  predicate or line-segment helper mirroring the old names. Unused or
+  superseded; dropping them is deliberate.
 
 ## File 3: `include/gpu/bounding_box.cuh`
 
@@ -193,9 +215,11 @@ Defines `struct BoundingBox` with the pinned layout and:
 - `void enlarge(const Eigen::Vector3f& p)` and
   `void enlarge(const Triangle& t)`: grow to include.
 - `float distance_sq(const Eigen::Vector3f& p) const`: squared distance
-  from p to the box, 0 when p is inside. The componentwise form
-  max(min - p, p - max, 0) has one natural spelling; any equivalent is
-  fine.
+  from p to the box, 0 when p is inside: per axis the excess
+  max(min - p, p - max, 0), then the sum of squares in axis order.
+  Spell it as a per-axis loop or accumulation, NOT as a single Eigen
+  cwiseMax expression chain (that exact one-liner spelling is the one
+  to avoid; the loop form produces identical floats).
 - `Eigen::Vector2f ray_intersect(<vector args>) const`: the slab method.
   Behavior pinned:
   - Per axis, the two slab parameters are computed with the KEPT

@@ -58,7 +58,8 @@ def compare(new_path, ref_path):
 
 
 def main():
-    args = sys.argv[1:]
+    args = [a for a in sys.argv[1:] if a != "-v"]
+    verbose = "-v" in sys.argv[1:]
     if len(args) < 2:
         print(__doc__)
         return 2
@@ -69,7 +70,7 @@ def main():
         ratio, frac, n, matched = compare(new, ref)
         print(f"{ref[-50:]:50s} {ratio:6.3f} {frac:8.3f} {n:5d}")
         worst = max(worst, frac)
-        if matched and "-v" in sys.argv:
+        if matched and verbose:
             for ln in matched:
                 print(f"    = {ln}")
     return 0

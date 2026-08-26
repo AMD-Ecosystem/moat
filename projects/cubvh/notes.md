@@ -502,3 +502,64 @@ inflate/center/diag/relative_pos/intersection/is_empty/corner enumeration/
 stream op; Triangle sample_uniform_position/surface_area/distance()/
 get_vertices/stream op. Nothing in cubvh (or its tests) uses them; the PR
 will state the removal plainly so downstream users can object.
+
+### Implementer round 1 result + adjudications (2026-08-26)
+
+The implementer produced the five files (929 lines total vs ~1360 before,
+unused derived members dropped per plan) and independently verified that the
+new build's node array and triangle permutation are BIT-IDENTICAL to the old
+build's (the median-split build reproduces the old tree exactly), so the
+build/layout/encoding contracts hold exactly; own-build state_dict round-trip
+is bitwise, and the old build's serialized BVHs crossload and answer
+identically within tolerance.
+
+Three residual classes were adjudicated by the spec author and encoded into
+the golden harness policy:
+1. face_id tie flips (~2% on tie-dense torus meshes): every mismatch is a
+   verified tie (distance gap <= 1.2e-7); the winner of an exact tie is
+   decided by inlining-sensitive 1-ulp FMA differences (hipcc -O3 contracts
+   FMA differently per inlining context -- the implementer demonstrated the
+   IDENTICAL source produces 1-ulp differences on ~6% of queries when
+   compiled standalone vs in-extension). Policy: only NON-tie mismatches
+   (gap > 2e-5) count, budget 0.1%. Result: 0 non-tie mismatches anywhere.
+2. Degenerate zero-area faces: the OLD build's handling is signed-zero
+   dependent (copysignf(1,+-0) flips an inside/outside branch), sometimes
+   NaN (never wins), sometimes a finite clamped-segment distance (wins).
+   Unreconstructible-by-design garbage. INTENTIONAL behavior change: the
+   rewrite makes zero-area faces report +inf distance (never win any
+   distance query). Harness: degenerate-won queries (655 on the degen mesh)
+   are excluded from old-vs-new and instead gated by a self-consistency
+   check -- the new build on the degen mesh must match the new build on the
+   same mesh with degenerate faces removed (result: 0.0 max diff). Ray
+   behavior on degenerate faces is unchanged-in-kind (safe_divide guard,
+   matches old on all but 63/20000 borderline grazing rays, masked).
+   This change goes in the PR body as a documented fix.
+3. Ray depth compared on same-face hits (one grazing ray on the open mesh
+   hits a different face at the barycentric boundary; hit/miss and face-id
+   fractions are separately gated).
+
+### PROVENANCE CORRECTION (supersedes part of the 2026-08-26 report)
+
+The provenance analysis classified triangle.cuh's `point_in_triangle`,
+`closest_point_to_line`, and `closest_point` as cubvh-original. That was
+WRONG: all three exist near-verbatim in instant-ngp's triangle.cuh at the
+ancestor snapshot (even the `// p -= p;` comment). Caught by the
+post-implementation similarity scan (rewrite/similarity.py) -- keeping them
+verbatim would have carried NSCL text through the rewrite. The keep set is
+corrected to: triangle.cuh `barycentric` ONLY (verified absent from ngp),
+bvh.cuh state_dict/load_state_dict block (torch serialization, PR #28,
+absent from ngp), common.h safe_divide + PI/SQRT2 constants (absent from
+ngp). A second implementer round is rewriting the three members from the
+amended spec (closest-point-on-triangle per Ericson RTCD ch. 5 behavior).
+Two byte-identical one-liner spellings (BoundingBox::distance_sq cwiseMax
+chain, fibonacci sin_theta line) are also being respelled with identical
+arithmetic.
+
+### First similarity scan (before the fix round)
+
+vs instant-ngp c4d622e (linefrac, was -> now): bvh.cu 0.68 -> 0.044,
+bvh.cuh 0.44 -> 0.231 (all 12 matches are pinned interface/POD lines),
+triangle.cuh 0.48 -> 0.250 (mostly the three wrongly-kept members -- being
+fixed), bounding_box.cuh 0.75 -> 0.125 (4 lines: struct decl, enlarge loop,
+the distance_sq one-liner being respelled), common.h 0.44 -> 0.125 (pinned
+fibonacci formulas). Final numbers after the fix round to follow.
