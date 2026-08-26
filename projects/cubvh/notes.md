@@ -1132,3 +1132,80 @@ Outcome: all required GPU tests pass on real gfx1151 hardware, both round-2
 differential gates pass, tree clean, jargon clean, docs present.
 windows-gfx1151 -> completed (validated_sha = c7379c0). This restores the
 `windows` gate at the round-2 head.
+
+### Cross-arch perf deliverable (harness/bench.py, windows-gfx1151, wave32) 2026-08-26
+
+The plan's outstanding item ("bench.py old-vs-new on a wave32 box completes
+the plan's cross-arch perf deliverable"). 500k queries, 5 reps, three mesh
+scales, old e5a657a vs new c7379c0.
+
+Method: both extensions were built here and STAGED SIDE BY SIDE
+(agent_space/ab/{old,new}, each a copy of the `cubvh` package plus its own
+`_cubvh.cp313-win_amd64.pyd`) so runs could be interleaved old/new/old/new
+without a rebuild between them. The `cubvh` python package is byte-identical
+between the two shas (`git diff e5a657a c7379c0 -- cubvh/` is empty), so the
+staged pair differs only in the compiled extension. 3 interleaved rounds each.
+Raw: agent_space/ab/bench-{old,new}-r{1,2,3}.json.
+
+Median-of-3-rounds, and min-of-3 as a robustness check (ms, old -> new):
+
+| scale | op | old | new | delta |
+|---|---|---|---|---|
+| small10k | build | 2.73 | 2.49 | -8.8% |
+| small10k | ray_trace | 2.47 | 2.42 | -2.0% |
+| small10k | udf | 6.22 | 5.96 | -4.2% |
+| small10k | sdf_watertight | 7.66 | 7.56 | -1.4% |
+| small10k | sdf_raystab | 255.48 | 270.18 | **+5.8%** |
+| med200k | build | 70.87 | 65.95 | -6.9% |
+| med200k | ray_trace | 3.74 | 3.62 | -3.1% |
+| med200k | udf | 31.98 | 30.55 | -4.5% |
+| med200k | sdf_watertight | 34.53 | 33.53 | -2.9% |
+| med200k | sdf_raystab | 450.83 | 425.88 | -5.5% |
+| big2m | build | 760.97 | 696.52 | -8.5% |
+| big2m | ray_trace | 5.67 | 6.01 | **+6.0%** |
+| big2m | udf | 96.19 | 87.54 | -9.0% |
+| big2m | sdf_watertight | 97.54 | 90.03 | -7.7% |
+| big2m | sdf_raystab | 670.07 | 810.28 | **+20.9%** |
+
+(table is min-of-3; medians agree in sign everywhere and put big2m
+sdf_raystab at +23.5% and big2m ray_trace at +10.7%.)
+
+MEASUREMENT ARTIFACT, do not read as a regression: on medians, `build` at
+med200k/big2m appears +51%/+46% slower. It is bimodal on BOTH sides -- old
+runs [70.9, 71.8, 118.3] and new [66.0, 108.4, 110.2] at med200k -- so the
+medians simply landed on different modes. `build` is host-side BVH
+construction, and the bimodality tracks host CPU contention, not the GPU.
+Min-of-3 (above) resolves it: build is 7-9% FASTER on the rewrite at every
+scale, matching gfx90a.
+
+Result vs gfx90a (wave64), where the porter measured build and ray faster
+everywhere and distance ops within ~3%:
+- CONFIRMED on wave32: build faster everywhere (-7 to -9%); udf faster
+  everywhere (-4 to -9%, better than gfx90a's ~par); sdf_watertight par to
+  -7.7% faster.
+- NOT confirmed on wave32, two ops regress and gfx90a did not see them:
+  - `sdf_raystab` +20.9%/+23.5% at 2,000,000 tris, and +5.8%/+9.0% at 10,368
+    tris, while being -5.5% FASTER at 204,800 tris. Spreads within a run are
+    tight (0.4-3%) and the sign is consistent across all 3 interleaved
+    rounds, so this is not noise. gfx90a saw only +0.9 to +2.0% here.
+  - `ray_trace` +6.0%/+10.7% at 2,000,000 tris only (par or faster at the two
+    smaller scales). gfx90a saw ray_trace faster at every scale.
+
+Reading: the round-2 query-kernel optimization work (division-and-sqrt-free
+distance_sq region form, compile-time-unrolled fan-out-4 child loops behind
+the stackless guard, branchless single-exit ray intersector, branchless slab
+test, fixed 5-exchange compare-swap ordering network) was tuned on wave64
+gfx90a. The two regressing ops are the two deepest-traversal ones, and they
+regress only at the largest tree, which is where traversal divergence and
+register pressure dominate -- consistent with the unrolled fan-out-4 loops
+and the branchless intersector costing more registers/occupancy on a wave32
+20-CU part than they win back. NOT diagnosed further here: this is a
+performance-tuning question for the porter on a wave32 host, not a
+correctness fault, and every correctness gate at c7379c0 passes.
+
+This does not change the windows-gfx1151 validation outcome (correctness is
+what the gates test, and they pass). Registered as a deferred item
+(`cubvh-wave32-raystab-perf-regression`) for a person to rule defer-vs-now,
+because the rewrite's stated goal was licence independence, not a perf
+change, and a 21-23% slowdown on the slowest op at the largest scale is
+something an upstream maintainer would reasonably ask about.

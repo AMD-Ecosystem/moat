@@ -81,3 +81,5 @@
 {"kind":"phase","ts":"2026-08-26T17:22:08Z","phase":"compile","seconds":0.200,"exit":127,"cmd":"bash -c cd \"$CUBVH_SRC\" && \"$TORCH_PY\" setup.py build_ext --inplace --force"}
 {"kind":"phase","ts":"2026-08-26T17:23:15Z","phase":"compile","seconds":55.250,"exit":0,"cmd":"bash -c cd \"$CUBVH_SRC\" && \"$TORCH_PY\" setup.py build_ext --inplace --force"}
 {"kind":"session","ts":"2026-08-26T17:25:14Z","epoch":1787765114.499828900,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-08-26T17:33:59Z","phase":"compile","seconds":47.503,"exit":0,"cmd":"bash -c cd \"$CUBVH_SRC\" && \"$TORCH_PY\" setup.py build_ext --inplace --force"}
+{"kind":"phase","ts":"2026-08-26T17:36:14Z","phase":"compile","seconds":52.806,"exit":0,"cmd":"bash -c cd \"$CUBVH_SRC\" && \"$TORCH_PY\" setup.py build_ext --inplace --force"}
