@@ -862,3 +862,77 @@ states the CUDA status honestly and invites the author's CUDA run.
 
 head_sha -> c7379c0. Perf and golden evidence from 81a98f0 applies
 unchanged (tree-identical amends).
+
+## Re-review (round 2, fix round) 2026-08-26 (reviewer, linux-gfx90a) -- PASS
+
+Scope: the porter fix round above, at fork head c7379c0. Both
+changes-requested findings are closed; no new blocking problems.
+
+Carry-over of evidence verified first, because everything else depends on
+it: `81a98f0^{tree} == 2bb5138^{tree} == c7379c0^{tree} == a5d9cce...`
+and `git diff 81a98f0 c7379c0` is empty, so the amends are message-only.
+c7379c0 sits directly on e5a657a, is pushed to origin/moat-port, and the
+fork tree is clean. My golden/crossload runs, the bitwise node-array
+comparison, the similarity scans and the perf table therefore all apply
+unchanged at c7379c0. No platform had validated 81a98f0, so no
+validated_sha was orphaned; all four platforms remain at e5a657a and owe
+a real revalidation at c7379c0 (that is the validators' gate, not this
+review's).
+
+Finding 1 (commit body) -- closed. Each corrected claim re-checked against
+my own measurements, not the porter's: "distances within 3.6e-7" against a
+measured max of 3.576e-07; "face-id differences only at 1-2 ulp distance
+ties" against measured max gaps of 2.384e-07 (degen) and 5.96e-08
+(torus10k/open), which at these magnitudes is 1-2 ulp; "identical ray
+hit/miss sets away from zero-area faces ... 63 of 20000 grazing rays that
+involve a zero-area face flip hit/miss, a consequence of the guarded
+reciprocal determinant" against my measured 63/20000, all 63 involving a
+degenerate face, cause `safe_divide` at triangle.cuh:37. The replacement
+sentence "Ray casts do not skip zero-area faces; their behavior at such
+faces was and remains numerically boundary-sensitive" is accurate in both
+directions (the +inf rule is in distance_sq only, and the old unguarded
+1/det was boundary-sensitive too) and no longer contradicts the disclosure
+two sentences later. Title still 67 chars, AI disclosure, fenced Test
+Plan, no agent trailer, ASCII only; jargon.py clean, audit-commits OK.
+
+Finding 2 (lesson promotion) -- closed. references/validation.md gained
+"Golden-differential validation for behavior-preserving rewrites" at the
+right level for that file. Fact-checked against the artifacts rather than
+the summary: the noise figures match what the harness prints (1.19e-7 to
+3.58e-7 against a 2e-5 atol), the tie policy matches what golden.py:229-237
+implements, the mask-plus-self-consistency rule matches golden.py:292-302
+and the exact 0.0 result I re-ran, the cross-load rule matches the
+crossload mode, and the "run the similarity scan even on code classified
+original" lesson matches the real correction -- I confirmed independently
+that point_in_triangle, closest_point_to_line and closest_point all exist
+near-verbatim in the ngp snapshot. The era-matched-ancestor point is the
+non-obvious part and it is right. The perf paragraph describes the FIXED
+forms, and each one is present in the shipped code (single-exit accept at
+triangle.cuh:47, unrolled fan-out behind the `!= FANOUT` guard at
+bvh.cu:146-165, the compare-exchange network at bvh.cu:93, the branchless
+slab test at bounding_box.cuh:50-56, the division-free region test at
+triangle.cuh:78-91), so a reader following it is not handed a defect.
+check.py clean.
+
+CUDA gate -- independently reproduced, not accepted on report. On this
+host, `nvcc 12.8 -std=c++17 --extended-lambda --expt-relaxed-constexpr
+-arch=sm_80 -I include -I third_party/eigen -c` of the coordinator's TU
+(scratchpad/cuda_gate_tu.cu, which instantiates Triangle
+ray_intersect/distance_sq/closest_point/barycentric/centroid/normal,
+BoundingBox distance_sq/ray_intersect, fibonacci_dir<32>, safe_divide and
+a host-side linear_kernel launch) exits 0 and emits an object file, with
+only the pre-existing Eigen long-double device-code warning. This is
+stronger than my earlier hipcc -std=c++17 syntax check: real nvcc, the
+CUDA path's own standard and flags. bvh.cuh/bvh.cu remain ungated because
+torch/torch.h pulls the ROCm-only PyTorch; that limitation is documented
+and the commit body states the CUDA status honestly.
+
+Non-blocking, do NOT amend for this alone: one line of the commit body is
+85 chars ("faces was and remains numerically boundary-sensitive. Unused
+helpers in the rewritten") where the rest wraps at ~70. Another
+message-only amend would churn head_sha again for cosmetics; fold it in
+only if the body is edited for another reason before publishing.
+
+Verdict: review-passed at c7379c0. Next: validations at c7379c0 per the
+gate lattice (wave32 and Windows hosts capture their own e5a657a goldens
+first, per the porter's instructions above), then the follow-up-PR flow.
