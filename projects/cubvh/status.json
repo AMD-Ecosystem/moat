@@ -7,20 +7,17 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-19T04:40:36Z",
-  "updated_at": "2026-08-26T19:04:16Z",
-  "head_sha": "c7379c00f4617394112a10829817df6ece355bb6",
+  "updated_at": "2026-08-26T19:21:57Z",
+  "head_sha": "191b02066a770006dc26740d71bcf4417380f802",
   "depends_on": [],
   "pr_url": "https://github.com/ashawkey/cubvh/pull/33",
   "pr_merged_at": "2026-06-23T13:54:59Z",
-  "porting": {
-    "arch": "windows-gfx1151",
-    "since": "2026-08-26T19:04:16Z"
-  },
+  "porting": null,
   "waivers": {},
   "pr_state": "merged",
   "license_spdx": "MIT",
   "upstream_repo_id": 573716613,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "windows-gfx1151": {
       "blocked": false,
@@ -29,7 +26,7 @@
       "failed_sha": null,
       "started_at": "2026-08-26T19:04:16Z",
       "completed_at": "2026-08-26T17:24:54Z",
-      "updated_at": "2026-08-26T19:04:16Z",
+      "updated_at": "2026-08-26T19:21:57Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -147,9 +144,9 @@
     }
   },
   "porting_released": {
-    "arch": "linux-gfx90a",
-    "since": "2026-08-26T16:07:54Z",
-    "at": "2026-08-26T16:10:12Z"
+    "arch": "windows-gfx1151",
+    "since": "2026-08-26T19:04:16Z",
+    "at": "2026-08-26T19:21:57Z"
   },
   "published_sha": "e5a657a4e8f6e66d090859a3d722040d895110fe"
 }

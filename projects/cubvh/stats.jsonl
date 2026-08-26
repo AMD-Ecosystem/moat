@@ -99,3 +99,4 @@
 {"kind":"session","ts":"2026-08-26T18:51:03Z","epoch":1787770263.435743053,"event":"end","platform":"linux-gfx1100"}
 {"kind":"phase","ts":"2026-08-26T18:53:19Z","phase":"compile","seconds":55.554,"exit":0,"cmd":"/opt/conda/envs/py_3.12/bin/pip install -e /var/lib/jenkins/moat/projects/cubvh/src --no-build-isolation"}
 {"kind":"phase","ts":"2026-08-26T18:58:46Z","phase":"test","seconds":305.624,"exit":0,"cmd":"bash agent_space/ab/run_h1.sh"}
+{"kind":"phase","ts":"2026-08-26T19:13:38Z","phase":"compile","seconds":51.499,"exit":0,"cmd":"bash -c cd \"$CUBVH_SRC\" && \"$TORCH_PY\" setup.py build_ext --inplace --force"}
