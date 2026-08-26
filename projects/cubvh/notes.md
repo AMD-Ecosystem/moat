@@ -1437,3 +1437,238 @@ the validator's CUDA no-regression gate expects.
 
 Still porter work, still moves `head_sha`, still forces a fleet-wide
 revalidation. Recorded so the decision has numbers.
+## Validation (round 2, linux-gfx1100) 2026-08-26 -- PASS at c7379c0
+
+GPU: gfx1100 (Radeon Pro W7800 48GB, 70 CU, wave32), ROCm 7.2.1, torch
+2.13.0a0+gitb5e90ff hip 7.2.53211, numpy 1.26.4. Selector state was
+`revalidate` (validated_sha e5a657a, head_sha c7379c0). Full real-GPU run, no
+carry-forward (functional device-code delta, same reasoning as gfx90a).
+Executed from `perf-plan-gfx1100.md`; Part A is this section, Parts B-D
+follow it.
+
+Python: `agent_space/venv-cubvh` = `python -m venv --system-site-packages`
+over `/opt/conda/envs/py_3.12` plus `pip install "numpy<2"`. The conda env
+carries numpy 2.5.0 and this torch was compiled against NumPy 1.x, so
+`torch.from_numpy` raises `RuntimeError: Numpy is not available` (and torch
+import warns "A module that was compiled using NumPy 1.x cannot be run in
+NumPy 2.5.0"). The venv shadows numpy without touching the shared env; the
+extension itself was built with the conda pip (same toolchain either way).
+`plyfile` complains it wants numpy>=2; nothing here imports it.
+
+### Build (both shas, same recipe, `PYTORCH_ROCM_ARCH=gfx1100`)
+```
+cd projects/cubvh/src && git checkout --detach <sha> && rm -rf build && \
+  find . -maxdepth 3 \( -name "*.hip" -o -name "*_hip.*" -o -name "_cubvh*.so" \) \
+  -not -path "./third_party/*" -delete
+PYTORCH_ROCM_ARCH=gfx1100 /opt/conda/envs/py_3.12/bin/pip install -e \
+  projects/cubvh/src --no-build-isolation
+```
+e5a657a: exit 0, 56.3s. c7379c0: exit 0, 54.9s. `roc-obj-ls` on each .so:
+two `hipv4-amdgcn-amd-amdhsa--gfx1100` code objects (api_gpu.cu 4,410,344
+bytes on both; the BVH TU 217,752 -> 264,336 bytes, +21.4%, matching
+gfx1151's +21.8%). The e5a657a build was staged to `agent_space/ab/old/`
+(package + .so) before rebuilding, so both extensions coexist for Part C.
+
+### Upstream test suite (agent_space/venv-cubvh/bin/python, HIP_VISIBLE_DEVICES=1)
+- `test/signed_distance.py` -- PASS (exit 0).
+- `test/unsigned_distance.py` -- 3 runs. Runs 1 and 2: both assertions
+  PASSED. Run 3: first (distance, line 121) assertion PASSED, second (cpoint,
+  line 135) assertion FAILED -- the documented unseeded-`torch.randn`
+  tie-break flake (1/3 here, same ratio as gfx90a). Distance gate passed 3/3.
+- `test/state_dict.py` -- PASS ("State dict save/load test passed.").
+- `python -m pytest test/cuhashtable.py -v` -- 4 passed in 2.44s.
+- CPU regression `test/hashtable.py` -- PASS ("All CPU HashTable tests
+  passed.").
+- `test/sparse_voxel.py agent_space/sphere_ico3.obj --workspace
+  agent_space/sparse_voxel_out` (trimesh icosphere subdiv 3, 1280 faces) --
+  GPU spcumc path ran end-to-end; known trailing `ValueError: Both events
+  must be recorded` reproduced. `.npz` written: active_cells /
+  active_cells_sdf = **4,455,224** (res=1024), identical to gfx90a, gfx1101,
+  gfx1201 and gfx1151.
+
+### Round-2 differential gates (both required, both PASS, HIP_VISIBLE_DEVICES=0)
+Reference captured on this host from the staged e5a657a build:
+`PYTHONPATH=agent_space/ab/old python harness/golden.py capture --out
+agent_space/goldens-e5a657a-gfx1100` (torus10k nodes [5461, 9], open [1365,
+9], degen [341, 9]). Then against the c7379c0 build:
+```
+agent_space/venv-cubvh/bin/python projects/cubvh/harness/golden.py check \
+  --ref agent_space/goldens-e5a657a-gfx1100 --json agent_space/golden-check-gfx1100.json
+agent_space/venv-cubvh/bin/python projects/cubvh/harness/golden.py crossload \
+  --ref agent_space/goldens-e5a657a-gfx1100 --json agent_space/golden-crossload-gfx1100.json
+```
+`check`: PASS on all three meshes; same figures as gfx90a to the digit:
+torus10k/open max |dist diff| 5.960e-08, degen 2.384e-07 (655 degenerate-won
+queries excluded), uvw diff 0.0 with equal NaN masks, raystab sign match
+0.99995 / 1.0 / 1.0 (degen.nodegen 0.99945), ray hit/miss 1.0 (223
+degenerate-face rays excluded on degen), rt face_id 1.0 / 0.9999 / 1.0, depth
+within 1.05e-05, own_roundtrip ok everywhere. `crossload`: PASS, same
+tolerances on all three meshes.
+
+### CUDA no-regression gate
+Already recorded at c7379c0 by the porter and reproduced by the reviewer
+(nvcc 12.8 sm_80, exit 0); not re-run (validator step 3).
+
+### Integrity / hygiene
+- `git -C projects/cubvh/src status --porcelain` -- clean at c7379c0.
+- `python3 utils/jargon.py --port cubvh` -- clean.
+- readme.md `#### AMD GPU (ROCm)` present.
+
+Outcome: linux-gfx1100 -> completed (validated_sha = c7379c0). This is the
+second wave32 platform to pass every correctness gate at this head.
+
+### Part B -- register counts on the real gfx1100 host (prediction 1: CONFIRMED)
+
+Code objects extracted with `roc-obj-ls -v` / `roc-obj-extract` from each
+staged .so (`agent_space/ab/co/{old,new}`), metadata via
+`llvm-readelf --notes`. ROCm 7.2.1 here versus the 7.14 cross-compile on
+gfx1151, hence the +-2 register drift; the cliff is the same.
+
+| bench op | kernel (old -> new name) | VGPR | SGPR | scratch | spills | waves/SIMD |
+|---|---|---|---|---|---|---|
+| ray_trace | raytrace_kernel -> bvh_ray_trace_kernel | **53 -> 174** | 50 -> 49 | 140 -> 140 | 0 -> 0 | 16 -> 8 |
+| sdf_raystab | signed_distance_raystab_kernel -> bvh_signed_distance_raystab_kernel | **85 -> 173** | 58 -> 67 | 444 -> 492 | 0 -> 0 | 16 -> 8 |
+| udf | unsigned_distance_kernel -> bvh_unsigned_distance_kernel | 59 -> 62 | 44 -> 48 | 268 -> 268 | 0 -> 0 | 16 -> 16 |
+| sdf_watertight | signed_distance_watertight_kernel -> bvh_signed_distance_watertight_kernel | 73 -> 64 | 44 -> 48 | 268 -> 268 | 0 -> 0 | 16 -> 16 |
+
+(gfx1151 cross-compile predicted 52 -> 172 and 85 -> 171.)
+
+api_gpu.cu sanity check: the two 4,410,344-byte code objects have identical
+`--notes` metadata, identical section tables, and identical disassembly
+(`llvm-objdump -d`, only the file-name header line differs). They are not
+md5-identical: 4,584 bytes differ, all inside .dynsym/.dynstr/.symtab, and
+`strings` shows the single differing symbol is the compiler-generated
+`__hip_cuid_<hash>` (441675e7934052da vs fb988a09e52e1221), which clang
+derives from the compilation unit's inputs. Same code, different unit id;
+the "byte-identical" gfx1151 statement holds for everything but that hash.
+
+### Part C -- old-vs-new A/B on gfx1100 (predictions 2 and 3: see verdict)
+
+Method per perf-plan-gfx1100.md: both extensions staged side by side
+(`agent_space/ab/{old,new}` = the `cubvh` package, byte-identical between
+the shas, plus that sha's `_cubvh*.so`), selected with
+`PYTHONPATH=agent_space/ab/<side>:projects/cubvh/harness`, so no rebuild
+between runs. `harness/bench.py` defaults (500k queries, 5 reps, three
+scales), HIP_VISIBLE_DEVICES=3, nothing else on the box (load ~1). Six
+rounds: r1-r3 old-then-new, r4-r6 new-then-old. Runner
+`agent_space/ab/run_ab.sh` / `run_matrix.sh`, summary `agent_space/ab/analyze.py`,
+raw `agent_space/ab/bench-{old,new}-r{1..6}.json`.
+
+Min-of-3 rounds per ordering (ms, old -> new):
+
+| scale | op | old-first (r1-3) | new-first (r4-6) | verdict |
+|---|---|---|---|---|
+| small10k | build | 2.34 -> 2.25 (-3.6%) | 2.34 -> 2.25 (-3.8%) | faster |
+| small10k | ray_trace | 0.90 -> 1.04 (+15.5%) | 0.95 -> 1.03 (+7.8%) | **slower** |
+| small10k | udf | 2.45 -> 2.31 (-5.8%) | 2.52 -> 2.40 (-4.6%) | faster |
+| small10k | sdf_watertight | 2.82 -> 2.74 (-2.8%) | 2.96 -> 2.77 (-6.4%) | faster |
+| small10k | sdf_raystab | 106.81 -> 118.00 (+10.5%) | 108.07 -> 121.18 (+12.1%) | **slower** |
+| med200k | build | 58.14 -> 56.60 (-2.7%) | 58.25 -> 56.61 (-2.8%) | faster |
+| med200k | ray_trace | 1.54 -> 1.67 (+8.9%) | 1.61 -> 1.68 (+3.9%) | **slower** |
+| med200k | udf | 13.06 -> 10.52 (-19.4%) | 13.31 -> 10.69 (-19.7%) | faster |
+| med200k | sdf_watertight | 13.99 -> 11.10 (-20.7%) | 14.39 -> 11.43 (-20.6%) | faster |
+| med200k | sdf_raystab | 196.72 -> 215.79 (+9.7%) | 203.47 -> 218.74 (+7.5%) | **slower** |
+| big2m | build | 604.34 -> 594.18 (-1.7%) | 604.23 -> 593.70 (-1.7%) | faster |
+| big2m | ray_trace | 2.54 -> 2.42 (-4.4%) | 2.57 -> 2.39 (-6.8%) | faster |
+| big2m | udf | 43.37 -> 38.13 (-12.1%) | 43.83 -> 38.90 (-11.3%) | faster |
+| big2m | sdf_watertight | 45.53 -> 40.53 (-11.0%) | 46.98 -> 41.64 (-11.4%) | faster |
+| big2m | sdf_raystab | 317.53 -> 336.61 (+6.0%) | 321.97 -> 340.27 (+5.7%) | **slower** |
+
+Median-of-3 agrees in sign on every row (big2m sdf_raystab +6.1% / +4.3%,
+small10k sdf_raystab +11.2% / +10.7%, med200k sdf_raystab +9.0% / +7.7%,
+small10k ray_trace +10.5% / +8.7%, med200k ray_trace +4.2% / +2.0%). Raw
+per-round medians for the headline rows are non-overlapping across all six
+rounds: big2m sdf_raystab old [319.0, 320.5, 324.1, 328.0, 328.9, 327.0] vs
+new [338.6, 340.0, 341.6, 340.8, 342.1, 342.2]; med200k old [198.0-205.2] vs
+new [216.5-220.5]; small10k old [110.2-114.0] vs new [119.2-125.6]. `build`
+showed none of gfx1151's bimodality here (old 608-612 ms every round), so
+its -2 to -4% is clean on both statistics.
+
+Verdict on the plan's predictions:
+1. VGPR 172/171 at c7379c0 -- CONFIRMED (174/173 under ROCm 7.2.1).
+2. gfx1100 regresses on sdf_raystab and ray_trace at big2m -- HALF
+   CONFIRMED. sdf_raystab regresses at big2m (+6%) and, unlike gfx1151, at
+   EVERY scale (+10-12% at 10k, +7.5-9.7% at 200k; gfx1151 was -2 to -5%
+   FASTER at 200k). ray_trace does NOT regress at big2m on gfx1100 (-4 to
+   -7%, faster); it regresses only at the two small scales, where the kernel
+   is 1-2 ms and the loss is 0.1 ms in absolute terms.
+3. Magnitude smaller than gfx1151's +27% -- CONFIRMED at big2m (+6%, GDDR6 and
+   70 CUs hide the halved occupancy far better than the APU), but NOT the
+   "under 8%" bar across the board: the sdf_raystab penalty is largest at
+   the SMALL scales on this part, which the APU model (latency-bound only
+   when the tree stops fitting in cache) did not predict.
+
+Reading: on a discrete part the tree stays cache-resident longer, so the
+occupancy loss shows up as a flat ~+6-12% tax on the raystab kernel at
+every scale rather than a cliff at 2M, and ray_trace's shorter per-ray
+work recovers it at 2M through the rewrite's algorithmic wins. Two wave32
+data points now agree that the two 170+-VGPR kernels are the only ones that
+lose, and everything else in the rewrite is a clear win.
+
+### Part D -- the fix on gfx1100 (throwaway experiment, reverted)
+
+Same patch as gfx1151, applied to `src/bvh.cu` and REVERTED after staging
+the build (`git status --porcelain` clean afterwards; the c7379c0 .so
+restored to `src/`, md5-verified against `agent_space/ab/new`):
+
+```c
+__global__ __attribute__((amdgpu_waves_per_eu(16))) void bvh_ray_trace_kernel(...)
+__global__ __attribute__((amdgpu_waves_per_eu(16))) void bvh_signed_distance_raystab_kernel(...)
+```
+
+Codegen on gfx1100 (ROCm 7.2.1), identical to the gfx1151 outcome:
+
+| kernel | VGPR | SGPR | scratch | spills | waves/SIMD |
+|---|---|---|---|---|---|
+| bvh_ray_trace_kernel | 174 -> **67** | 49 -> 46 | 140 -> 140 | 0 -> 0 | 8 -> **16** |
+| bvh_signed_distance_raystab_kernel | 173 -> **88** | 67 -> 67 | 492 -> 492 | 0 -> 0 | 8 -> **16** |
+| bvh_unsigned_distance_kernel | 62 | 48 | 268 | 0 | 16 (unchanged) |
+| bvh_signed_distance_watertight_kernel | 64 | 48 | 268 | 0 | 16 (unchanged) |
+
+Runtime, three-way staged A/B (`agent_space/ab/{old,new,fix}`), six rounds:
+r7-r9 old/new/fix, r10-r12 fix/new/old, GPU 3, box otherwise idle. Raw
+`agent_space/ab/bench-{old,new,fix}-r{7..12}.json`, summary
+`agent_space/ab/analyze3.py`. Min-of-6 (ms); median-of-6 agrees in sign on
+every row:
+
+| scale | op | old | new | new+fix | new vs old | fix vs old | fix vs new |
+|---|---|---|---|---|---|---|---|
+| small10k | ray_trace | 0.94 | 1.03 | 0.90 | +9.6% | **-4.5%** | -12.8% |
+| small10k | sdf_raystab | 107.32 | 120.50 | 97.44 | +12.3% | **-9.2%** | -19.1% |
+| med200k | ray_trace | 1.44 | 1.62 | 1.29 | +13.0% | **-9.9%** | -20.3% |
+| med200k | sdf_raystab | 199.28 | 217.53 | 181.87 | +9.2% | **-8.7%** | -16.4% |
+| big2m | ray_trace | 2.50 | 2.43 | 2.06 | -2.9% | **-17.7%** | -15.3% |
+| big2m | sdf_raystab | 319.96 | 338.43 | 300.89 | +5.8% | **-6.0%** | -11.1% |
+| big2m | udf | 43.66 | 37.89 | 38.78 | -13.2% | -11.2% | +2.3% |
+| big2m | sdf_watertight | 46.10 | 41.43 | 40.41 | -10.1% | -12.3% | -2.5% |
+| big2m | build | 601.46 | 593.21 | 593.89 | -1.4% | -1.3% | +0.1% |
+
+Raw per-round medians are non-overlapping in all six rounds, both orderings:
+big2m sdf_raystab old [321.8-331.4], new [340.0-344.8], fix [303.5-308.1];
+med200k old [200.9-207.6], new [218.6-222.3], fix [182.4-185.7]; small10k old
+[110.9-114.4], new [123.7-126.8], fix [103.0-106.1].
+
+So on the discrete wave32 part the fix does not merely close the regression,
+it turns both ray kernels into wins over the pre-rewrite code at every
+scale, and gfx1151's one cost (med200k sdf_raystab +2.5% with the fix) does
+not appear here (-8.7%). Kernels without the attribute are unchanged within
+noise, as expected. One attribute value (16) served both wave32 parts.
+
+### Decision input (two wave32 data points, same fix)
+
+- Unfixed c7379c0 regresses the two 170+-VGPR ray-traversal kernels on both
+  wave32 parts: gfx1151 +21-27% (big2m raystab), gfx1100 +6-12% (raystab,
+  every scale). Everything else in the rewrite is faster on both.
+- `amdgpu_waves_per_eu(16)` on those two kernels restores 16 waves/SIMD with
+  zero spills on both parts and makes gfx1100 faster than the old code
+  everywhere; on gfx1151 it closes the gap to +4.4% / -4.4% at big2m.
+- Not yet measured: the attribute's effect on wave64 gfx90a (86/114 VGPRs
+  there; `amdgpu_waves_per_eu(16)` is unreachable at wave64's 8-wave cap and
+  the compiler clamps to the maximum, so a per-arch value or a gfx11-only
+  guard is the porter's call), and the CUDA path, where the attribute must
+  be guarded (`__HIP_PLATFORM_AMD__`) to keep the nvcc gate green.
+- Recommendation for the person ruling `cubvh-wave32-raystab-perf-regression`:
+  send to the porter as a small follow-up commit (two guarded attributes,
+  no algorithm change), then revalidate; the evidence says it is a strict
+  improvement on wave32 and low-risk elsewhere. Accept-and-disclose remains
+  defensible at gfx1100's +6% big2m, but there is no longer a reason to pay it.

@@ -1,6 +1,6 @@
 # cubvh round-2 perf follow-up on linux-gfx1100
 
-Status: proposed, awaiting a person's go-ahead.
+Status: EXECUTED 2026-08-26 on linux-gfx1100 (W7800); results in notes.md "Validation (round 2, linux-gfx1100)" Parts A-D.
 Author: validator, windows-gfx1151, 2026-08-26.
 Target head: `c7379c0` (round-2 clean-room rewrite), baseline `e5a657a`.
 
