@@ -30,6 +30,19 @@
       "upstream_issue": null,
       "created_at": "2026-08-26T17:40:09Z",
       "decided": null
+    },
+    {
+      "id": "cubvh-ray-intersect-unroll-fix",
+      "kind": "other",
+      "component": null,
+      "summary": "Root cause of the wave32 perf regression is the two '#pragma unroll' lines on the fan-out-4 child loops in ray_intersect (VGPR 172->70, 171->73, occupancy 8->16 waves). Changing them to '#pragma unroll 1' makes the rewrite FASTER than the pre-rewrite code everywhere (big2m sdf_raystab -12.4%, med200k -19.6%). Similarity vs e5a657a provably unchanged (pragma lines are excluded from the metric). Decide: apply guarded by USE_ROCM (conservative, CUDA path untouched) or unguarded; either moves head_sha and forces fleet revalidation.",
+      "refs": [
+        "projects/cubvh/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-26T18:34:30Z",
+      "decided": null
     }
   ]
 }

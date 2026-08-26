@@ -1349,3 +1349,91 @@ NOT IMPLEMENTED IN THE PORT, deliberately. It is porter work: it moves
 is AMD-specific so it must be guarded (`USE_ROCM` / `__HIP_PLATFORM_AMD__`)
 or it breaks the CUDA no-regression gate. Recorded here so the decision has
 numbers behind it; see perf-plan-gfx1100.md.
+
+### Root cause narrowed to two `#pragma unroll` lines, and a fix that beats the old code 2026-08-26
+
+Follow-up to the occupancy finding. Bisected what actually consumes the
+registers, all as throwaway local patches on `src/bvh.cu` (each reverted; fork
+tree verified clean and the validated c7379c0 gfx1151 build restored at the
+end).
+
+**Sweeping `amdgpu_waves_per_eu` is a dead end -- it is a binary switch, not a
+dial.** Every value from 10 to 16 collapses to the same place:
+
+| variant | ray_trace VGPR/spill/waves | sdf_raystab VGPR/spill/waves |
+|---|---|---|
+| old (e5a657a) | 55 / 0 / 16 | 85 / 0 / 16 |
+| new, no attribute | 172 / 0 / 8 | 171 / 0 / 8 |
+| waves_per_eu(10) | 68 / 0 / 16 | 97 / 0 / 15 |
+| waves_per_eu(12) | 66 / 0 / 16 | 97 / 0 / 15 |
+| waves_per_eu(14) | 66 / 0 / 16 | 88 / 0 / 16 |
+| waves_per_eu(16) | 66 / 0 / 16 | 88 / 0 / 16 |
+
+There is no intermediate point that keeps ~120 VGPRs, so the med200k cost the
+attribute imposes (-5.2% faster becomes +2.5%) cannot be tuned away with it.
+
+**Bisection of the source cause** (both hypotheses tested independently from
+the unpatched c7379c0):
+
+| candidate | ray_trace VGPR | sdf_raystab VGPR | waves |
+|---|---|---|---|
+| (unpatched) | 172 | 171 | 8 |
+| H2: `__noinline__` on `ray_intersect_stackless` | 154 | 156 | 9 |
+| **H1: `#pragma unroll` -> `#pragma unroll 1` on the two FANOUT loops in `ray_intersect`** | **70** | **73** | **16** |
+
+H2 (the cold stackless fallback being inlined into the hot traversal loop)
+costs a real but minor ~18 VGPRs. **H1 is the cause.** The `#pragma unroll` on
+the fan-out-4 child loop forces all four children's bounding-box loads and
+intersection results to be live simultaneously, which is what walks off the
+96-VGPR occupancy cliff. Zero spills in every variant, so this is purely
+live-range width.
+
+**H1 runtime result: it does not merely erase the regression, it beats the
+pre-rewrite code everywhere** (min-of-3, interleaved old/new/h1, ms):
+
+| scale | op | old | new | no-unroll | new vs old | h1 vs old |
+|---|---|---|---|---|---|---|
+| big2m | sdf_raystab | 669.10 | 831.99 | 586.28 | +24.3% | **-12.4%** |
+| big2m | ray_trace | 5.62 | 6.35 | 5.23 | +13.0% | **-7.0%** |
+| med200k | sdf_raystab | 452.02 | 441.43 | 363.33 | -2.3% | **-19.6%** |
+| small10k | sdf_raystab | 261.60 | 272.34 | 226.61 | +4.1% | **-13.4%** |
+| big2m | udf | 96.30 | 90.14 | 89.34 | -6.4% | -7.2% |
+| big2m | sdf_watertight | 97.82 | 91.96 | 91.61 | -6.0% | -6.3% |
+
+The whole patch is two characters of content:
+```
+-                #pragma unroll
++                #pragma unroll 1
+```
+twice, inside `ray_intersect` only. It is strictly better than the
+`amdgpu_waves_per_eu` fix, which left +4.4% at big2m and cost +2.5% at
+med200k.
+
+**Licence-independence check (the point of round 2) -- PASS, and it is
+structurally impossible for it to fail.** `rewrite/similarity.py` of the
+patched file against the pre-rewrite `e5a657a` bvh.cu:
+
+| file compared to old e5a657a bvh.cu | ratio | linefrac | non-trivial lines |
+|---|---|---|---|
+| unpatched c7379c0 | 0.153 | 0.102 | 275 |
+| patched (no-unroll) | 0.153 | 0.102 | 275 |
+
+Byte-identical metrics. `similarity.py` excludes `#include`/`#pragma` lines
+from its non-trivial set by construction, and the patch touches ONLY `#pragma`
+lines, so it cannot move any similarity number. The rewrite's own constructs
+(`slot[]`/`key[]` + the compare-swap `sort_children` network) are untouched;
+nothing from the old implementation is reintroduced. No instant-ngp snapshot
+was fetched to run this -- the pre-rewrite cubvh file is the stricter and
+sufficient reference for "did we drift back".
+
+**Open question for the porter, NOT resolved here:** `#pragma unroll 1` is
+valid in nvcc as well as clang, so unlike `amdgpu_waves_per_eu` it needs no
+AMD guard -- but that cuts both ways, because it also changes CUDA codegen,
+and no NVIDIA hardware exists in the fleet to measure the effect there.
+Either guard it (`#ifdef USE_ROCM`, keeping the CUDA path's unroll exactly as
+upstream had it) or leave it unguarded and disclose. Guarding is the
+conservative choice and keeps the CUDA path a pure passthrough, which is what
+the validator's CUDA no-regression gate expects.
+
+Still porter work, still moves `head_sha`, still forces a fleet-wide
+revalidation. Recorded so the decision has numbers.
