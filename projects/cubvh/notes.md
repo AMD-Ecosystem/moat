@@ -632,3 +632,196 @@ branch free). head_sha advanced; linux-gfx90a set ported.
 - Then the follow-up-PR flow (upstream.py --review; published_sha backfill
   will stamp e5a657a from the live PR; /moat approve; --publish), and
   after upstream merges: CuMesh third_party/cubvh bump.
+
+## Review (round 2) 2026-08-26 (reviewer, linux-gfx90a) -- CHANGES REQUESTED
+
+Scope: fork diff e5a657a..81a98f0 (5 files, +593/-1050) plus the round's
+independence evidence. Code, strategy, layout/serialization contracts,
+harness policy and the two functional gates were re-verified independently;
+the two findings below are both in deliverable text, not in the code.
+
+### 1. MUST FIX -- the commit body states results the harness contradicts
+
+`git log -1` on 81a98f0, paragraph "Differential testing against the
+previous build ... shows distances within 2.4e-7, identical ray hit/miss
+sets, and face-id differences only at exact distance ties". This becomes the
+upstream PR body, and a maintainer can rerun the same harness. Measured on
+this host at 81a98f0 vs the e5a657a goldens (both `golden.py check` and
+`golden.py crossload`, and re-measured directly):
+
+- max |distance diff| is 3.576e-07, not 2.4e-7 -- see the printed
+  `degen/ud.dist`, `degen/sdw.dist`, `degen/sdr.dist` lines
+  ("max |d| diff 3.576e-07"). torus10k and open are 1.192e-07. The same
+  wrong figure is in the porter note above ("distance diffs <= 2.4e-7");
+  2.384e-07 is the largest distance GAP among face-id mismatches, which is
+  a different quantity.
+- ray hit/miss sets are NOT identical on the degenerate mesh: 63 of 20000
+  rays flip between hit and miss (measured unmasked; every one of them
+  involves a zero-area face in one build or the other -- old hits a
+  degenerate face on 208 rays, new on 189). The harness only reads
+  1.00000 there because `golden.py:253` excludes the 230 degenerate-face
+  rays. Cause is legitimate and worth stating rather than hiding: the new
+  Moller-Trumbore intersector guards the reciprocal determinant with
+  `safe_divide` (triangle.cuh:37) where the previous Quilez form divided
+  unguarded, so grazing rays against a zero-area triangle resolve
+  differently. The neighbouring sentence "Ray casts are unaffected" is
+  true as written about the +inf distance rule (ray_intersect never calls
+  distance_sq) but reads, next to the claim above, as a promise of
+  identical ray output; make it explicit that only non-degenerate geometry
+  is bit-comparable.
+- "face-id differences only at exact distance ties": the largest distance
+  gap among mismatching face ids is 2.384e-07 (degen; 5.96e-08 on
+  torus10k/open) -- a one-to-two-ulp tie, not an exact one. Say "ties to
+  within a few ulps".
+
+Fix by amending the commit body (and the numbers in the porter note); no
+code change is implied.
+
+### 2. MUST FIX -- the round's generalizable method is not promoted
+
+`.claude/skills/cuda-to-rocm/references/` contains no mention of golden
+capture, differential comparison, or clean-room rewriting (grep for
+"golden|differential|clean-room" returns nothing). Two methods from this
+round are project-independent and the next porter cannot see them from
+here:
+
+- capture goldens from the PRE-change build and gate the change against
+  them, with a comparison policy that (a) treats id selection among exact
+  ties as unconstrained, (b) masks the queries covered by a deliberate
+  behavior change and replaces that coverage with a self-consistency
+  invariant instead of dropping it. Belongs in `references/validation.md`.
+- the clean-room shape that worked here: spec-first from a separate agent,
+  blanked files, an implementer with no access to the originals, then a
+  normalized-line similarity scan as the check -- which is what caught
+  three members wrongly classified as original.
+
+Keep it short and put it on this branch so it is reviewed with the code.
+
+### Verified, no action (recorded so the next round does not redo it)
+
+- Gates re-run by the reviewer at 81a98f0 in agent_space/venv-cubvh:
+  `golden.py check --ref agent_space/goldens-e5a657a-gfx90a` PASS and
+  `golden.py crossload --ref ...` PASS.
+- The commit's strongest claim is true: `state_dict()["nodes"]` and
+  ["triangles"] from the new build are BITWISE equal to the e5a657a
+  goldens on all three meshes (torus10k 5461x9, open 1365x9, degen
+  341x9). Layout static_asserts (48/24/36) plus the aggregate-init
+  contract at api_gpu.cu:35 hold; Triangle remains an aggregate.
+- Harness policy is sound, not a cover: the degenerate mask is
+  ref-side-only in practice (655 old-won queries, 0 new-won), and the
+  substituted invariant (degen mesh vs degen-faces-removed mesh, same
+  build) is exact 0.0 on distances. `degen.nodegen/sdr.sign 0.99945` is
+  expected -- zero-area faces still block stab rays.
+- The +inf degenerate rule survives the collinear case, which was the
+  worry: `triangle.cuh:82-91` reaches the face branch only when the
+  barycentric numerators are exactly 0, which is not guaranteed for
+  collinear-but-distinct vertices; the degen mesh carries exactly that
+  triangle (golden.py:106) and the self-consistency check is 0.0, so it
+  holds in practice on gfx90a.
+- Corner of the intentional change, not covered by any test: a mesh whose
+  faces are ALL zero-area now returns distance 0 / face 0 everywhere (the
+  historical {0,0} no-winner fallback, bvh.cu:176-181). Verified directly.
+  Pathological input; mentioning it in the PR body is optional.
+- `test/unsigned_distance.py` fails intermittently (1 of 8 seeds, ~12%)
+  on the cpoint assert at atol=1e-5. NOT attributable to the rewrite: the
+  test draws unseeded `torch.randn` points, and the failing query's
+  closest point is exactly a shared dodecahedron vertex where trimesh
+  returns a point 1.55e-4 away on a different face; our distance agrees
+  with trimesh to 3e-7 and with a brute-force reference on our own face.
+  Validators should rerun rather than treat a single red run as a
+  regression.
+- Fault classes: no wave-size assumption anywhere in the five files (no
+  shuffles, ballots, shared memory or lane masks; 128-thread blocks;
+  FixedStack 32/64 are traversal depths). No textures, no RAII handles,
+  no library swaps. Neighbor reads are index-range scans from the node
+  encoding, bounded by the leaf range.
+- CUDA-path portability: no C++20-only construct in the rewritten math
+  headers -- `hipcc -std=c++17 -fsyntax-only -Wall` over a TU
+  instantiating Triangle::{distance_sq,ray_intersect,closest_point,
+  barycentric,normal,centroid}, BoundingBox::{distance_sq,ray_intersect}
+  and fibonacci_dir<32> is clean at both c++17 and c++20. bvh.cuh/bvh.cu
+  cannot be checked at c++17 on this host because this torch itself
+  requires C++20 (that is why setup.py splits the standard); the language
+  constructs used there (std::pair, std::numeric_limits, #pragma unroll,
+  Ref<const Vector3f>, host-only std::nth_element) all have precedent in
+  the pre-rewrite files that the CUDA build compiled.
+- Dropped members have no references anywhere in the tree, tests
+  included: sample_uniform_position, surface_area, Triangle::distance,
+  get_vertices, point_in_triangle, closest_point_to_line, and the
+  BoundingBox SAT/contains/inflate/center/diag/relative_pos/corner/stream
+  helpers all return zero hits (include/cpu/fill_holes.h's
+  point_in_triangle_2d is an unrelated CPU 2-D predicate). Only
+  hashtable.cuh (div_round_up) and api_gpu.cu consume the rewritten
+  headers externally, and both still compile and run.
+- Sorting network at bvh.cu:93-99 is the canonical optimal 4-input,
+  5-comparator network -- brute-forced over all 24 permutations, 0
+  failures. Escape threading (bvh.cu:383-392) is structural, so the
+  non-pre-order node emission order of the LIFO build is harmless.
+- Hygiene: title 67 chars with [ROCm]; AI disclosure present; fenced Test
+  Plan; no agent trailer; `jargon.py --port cubvh` clean;
+  `moatlib.py audit-commits cubvh` OK; ASCII-only in the new files and in
+  the commit body; fork tree clean (`git status --porcelain` empty; only
+  ignored *_hip.* and the .so are untracked); 81a98f0 pushed to
+  origin/moat-port; head_sha matches; `licenses.py scan-nvidia cubvh`
+  reports LICENSE_NVIDIA only.
+
+### Independence evidence -- judged sufficient
+
+Re-run of rewrite/similarity.py by the reviewer against the ngp c4d622e
+snapshot reproduces the recorded numbers (linefrac: bvh.cu 0.044,
+triangle.cuh 0.031, bounding_box.cuh 0.091, common.h 0.098/0.024,
+bvh.cuh 0.231; whole-file ratios 0.030/0.062/0.128/0.081/0.394). Every
+residual match was inspected:
+
+- bvh.cu: 12 lines, all pinned interface (`build(...) override`,
+  `TriangleBvh::make()`, `resize_and_copy_from_host`, `rng.advance(i*2)`)
+  or trivial one-liners (`int idx = 0;`, `if (node.left_idx < 0) {`).
+- triangle.cuh: 3 lines -- `struct Triangle {`, the pinned member
+  declaration, and `return (a + b + c) / 3.0f;`.
+- bounding_box.cuh: 3 lines -- struct declaration and a two-line iterator
+  loop.
+- bvh.cuh: 12 lines, all POD members that ARE the serialization contract,
+  pure-virtual signatures the untouched api layer calls, and
+  class/alias declarations.
+- common.h: `template <typename T>`, `float sin_phi, cos_phi;` and the
+  two-line `fractf`.
+
+Structural spot-checks by eye against the ngp originals confirm
+paraphrase-free rewrites, not renamed copies: child ordering is a
+5-exchange network over parallel key/slot arrays sorted ASCENDING with a
+reverse push, against ngp's descending `sorting_network<N,T>` over
+`DistAndIdx` (different comparator sequence too); `distance_sq` is a
+barycentric sign-form region test with clamped-edge fallbacks against
+ngp's Quilez cross-product sign-sum ternary; `closest_point` uses a
+barycentric inside test plus a running-best over three
+`closest_on_segment` calls against ngp's `point_in_triangle` +
+`closest_point_to_line` + `if (min == mag1)` chain -- exactly the family
+the provenance correction was raised for, and it is genuinely gone;
+`fibonacci_dir` splits the epsilon ladder into a helper and inlines the
+sphere map. The stackless walks have no counterpart in ngp at all (that
+snapshot's TriangleBvhNode has no escape field), so they carry no NSCL
+exposure; their shape follows cubvh's own MIT code via the spec.
+
+Keep set verified independently: `safe_divide`, `barycentric` and the
+`state_dict`/`load_state_dict` block appear in the pre-rewrite cubvh
+files but return ZERO hits across the whole ngp snapshot
+(no at::Tensor/from_blob/state_dict anywhere in it), so keeping them
+verbatim carries no NVIDIA-licensed text.
+
+One residual is worth naming for the licence reviewer rather than
+changing: common.h:81-87 reproduces the equal-area cylindrical map
+(`cos_theta = 1 - 2u`, `sqrtf(fmaxf(1 - cos_theta^2, 0))`,
+`sincosf(2*PI*(v-0.5f))`, `{sin_theta*cos_phi, sin_theta*sin_phi,
+cos_theta}`) whose arithmetic the spec pinned for raystab determinism, and
+which is close to ngp's `cylindrical_to_dir`. It is a five-line textbook
+projection with the variable names mathematics dictates, respelled as the
+spec directed (helper split, sqrt/fmax intermediate, inline phi); the
+similarity scan flags only `float sin_phi, cos_phi;`. Recording it so the
+licence reviewer sees the weakest point rather than discovering it.
+
+The clean-room process claim in the porter notes is supported by what is
+in the tree: SPEC.md is written as an interface/behavior document with
+the prohibitions stated, keep/ holds the extracted snippets, the
+correction round is recorded before the fix rather than after, and the
+similarity scan is what caught the misclassification -- a process that
+was covering for itself would not have produced that correction.

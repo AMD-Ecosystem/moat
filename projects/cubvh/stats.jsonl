@@ -53,3 +53,5 @@
 {"kind":"phase","ts":"2026-08-26T15:21:25Z","phase":"test","seconds":17.551,"exit":0,"cmd":"/var/lib/jenkins/moat/agent_space/wt-cubvh/agent_space/venv-cubvh/bin/python projects/cubvh/harness/bench.py --out agent_space/bench-rewrite-gfx90a.json"}
 {"kind": "tokens", "ts": "2026-08-26T15:43:46Z", "tokens": 1410000, "source": "porter:claude-code"}
 {"kind":"session","ts":"2026-08-26T15:43:46Z","epoch":1787759026.119355955,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-26T15:44:57Z","epoch":1787759097.864711906,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-26T16:03:36Z","epoch":1787760216.885479721,"event":"end","platform":"linux-gfx90a"}
