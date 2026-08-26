@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-19T04:40:36Z",
-  "updated_at": "2026-08-26T19:45:22Z",
+  "updated_at": "2026-08-26T20:02:14Z",
   "head_sha": "191b02066a770006dc26740d71bcf4417380f802",
   "depends_on": [],
   "waivers": {},
@@ -155,5 +155,17 @@
       "archived_at": "2026-08-26T19:45:22Z"
     }
   ],
-  "pr_round": 2
+  "pr_round": 2,
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-08-26T20:00:28Z",
+    "head_sha": "191b02066a770006dc26740d71bcf4417380f802",
+    "content_sha256": "198499c3f78900d3fafeb0f9aaa71289b35faa1e2e79641bb6537241a7d4f0ae",
+    "review_pr": "https://github.com/AMD-Ecosystem/cubvh/pull/1"
+  },
+  "pr_url": "https://github.com/ashawkey/cubvh/pull/34",
+  "pr_number": 34,
+  "pr_opened_at": "2026-08-26T20:02:14Z",
+  "pr_state": "open",
+  "published_sha": "191b02066a770006dc26740d71bcf4417380f802"
 }

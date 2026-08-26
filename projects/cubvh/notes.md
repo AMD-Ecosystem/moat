@@ -2113,3 +2113,14 @@ carries #33, review_pr = pull/1, head/stage untouched.
 
 Next: /moat approve on the review PR (a person), then
 `python3 utils/upstream.py --publish --apply`.
+
+## Upstream follow-up PR opened (2026-08-26)
+
+jeffdaily approved review PR AMD-Ecosystem/cubvh#1 (/moat approve, snapshot
+recorded, pr-commands clear). `upstream.py --publish --apply` re-checked the
+live approval and all gates and opened the round-2 upstream PR:
+https://github.com/ashawkey/cubvh/pull/34 (moat-port at 191b020; three
+commits: rewrite, wave32 occupancy fix, LICENSE_NVIDIA removal offered as a
+droppable final commit). published_sha = 191b020; moat-port is now frozen --
+any further fix stages on moat-fix-34 via the fix flow. Maintainer
+interaction from here belongs to moat-checkup.
