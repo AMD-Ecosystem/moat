@@ -613,7 +613,14 @@ def review_candidates():
         row = {"name": name, "fork": fork, "branch": branch, "base": base,
                "problem": None}
         if followup:
-            row["followup"] = d.get("pr_number")
+            # Old records carry only pr_url; the number gates archive_pr AND
+            # every "[follow-up to #N]" branch downstream, so derive it rather
+            # than silently degrading a follow-up to a first PR (cubvh,
+            # 2026-08-26: the review PR opened but the finished PR was never
+            # archived because this field was None).
+            row["followup"] = (d.get("pr_number")
+                               or (lambda n: int(n) if n else None)(
+                                      moatlib._pr_ref(d.get("pr_url"))[1]))
             row["prior_url"] = d.get("pr_url")
             row["base_sha"] = d.get("published_sha")
             # The review diff is judged against the fork's default branch, so

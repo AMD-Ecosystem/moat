@@ -2081,3 +2081,35 @@ bvh.cu:238,244,309, which were always outside this gate too).
 Outcome: all required GPU tests pass on real gfx1100 hardware (4x W7800),
 CUDA no-regression gate reproduced clean at this head, tree clean, jargon
 clean, docs present. linux-gfx1100 -> completed (validated_sha = 191b020).
+
+## Follow-up review PR opened + a flow bug fixed (linux-gfx90a, 2026-08-26)
+
+All three gates were satisfied at 191b020 (wave64 by linux-gfx90a, wave32 and
+windows by windows-gfx1151), pr-ready=True, so the follow-up review PR was
+opened with the round's body (perf tables for gfx90a and wave32, the
+degenerate-face fix, the licence story, the droppable LICENSE_NVIDIA removal
+commit): https://github.com/AMD-Ecosystem/cubvh/pull/1. prose.py clean,
+jargon scan runs inside the open flow.
+
+FLOW BUG found while verifying the result: upstream.py --review --apply
+opened the review PR but silently SKIPPED archiving finished PR #33, because
+this round-1-era record predates the pr_number field and
+review_candidates() populated row["followup"] with d.get("pr_number") =
+None. Consequence: pr_history empty, pr_round unbumped, and set_review_pr
+had already stamped the new round's URL, which a later bare archive-pr
+would have misfiled into #33's history entry.
+
+Fixed in tooling (this branch): moatlib.archive_pr and
+upstream.py review_candidates now derive the PR number from pr_url when
+pr_number is missing (the number is in the URL; refusing or silently
+degrading a follow-up to a first PR are both wrong). Other round-1-era
+records (cudaKDTree, evogp, ffpa-attn, k2 were in the same published_sha
+backfill sweep) would have hit the identical skip at their first follow-up.
+
+Recovery performed in the intended order: review_pr unstamped from the live
+record, archive-pr run (entry: #33 merged, shipped e5a657a4e8f6; pr_round ->
+2), review_pr re-recorded. Verified: live pr_* fields cleared, history
+carries #33, review_pr = pull/1, head/stage untouched.
+
+Next: /moat approve on the review PR (a person), then
+`python3 utils/upstream.py --publish --apply`.
