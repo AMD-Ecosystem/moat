@@ -1982,3 +1982,102 @@ Outcome: both round-3 review carry-forward items closed (H1's wave64 effect
 measured and the ray_trace cost is a reported, bounded, non-blocking finding;
 CUDA gate re-satisfied at 191b020). All correctness gates pass identically to
 c7379c0. linux-gfx90a -> completed (validated_sha = 191b020).
+## Validation (round 3, linux-gfx1100) 2026-08-26 -- PASS at 191b020
+
+GPU: gfx1100 (Radeon Pro W7800 48GB x4, wave32), ROCm 7.14.60850, torch
+2.14.0a0+git7d05abc hip 7.14.60850, Python 3.12.13 (system `py_3.12` conda
+env, `agent_space/venv-cubvh` = venv --system-site-packages + numpy<2,
+rtree, trimesh, rich). New host for this project (first checkout here);
+cloned AMD-Ecosystem/cubvh fresh, checked out `moat-port` at 191b020,
+fetched `third_party/eigen` submodule. Selector state was `revalidate`
+(validated_sha c7379c0, head_sha advanced to 191b020 across two commits:
+fc56751 "#pragma unroll 1" wave32-occupancy fix + comment, and 191b020
+LICENSE_NVIDIA removal). Full real-GPU run, no carry-forward: bvh.cu's
+codegen changes (register count), so this is not eligible for
+codeobj_diff binary-equivalence, matching the reviewer's classification.
+
+### Build
+```
+cd projects/cubvh/src && git submodule update --init --recursive third_party/eigen
+PYTORCH_ROCM_ARCH=gfx1100 agent_space/venv-cubvh/bin/pip install -e \
+  projects/cubvh/src --no-build-isolation -v
+```
+Exit 0. `strings _cubvh.cpython-312-x86_64-linux-gnu.so | grep amdgcn` ->
+`amdgcn-amd-amdhsa--gfx1100` only. Warnings only (nodiscard hipError_t,
+non-trivial memcpy -- pre-existing, matches every prior platform).
+
+### Upstream test suite (agent_space/venv-cubvh/bin/python, HIP_VISIBLE_DEVICES=0)
+- `test/signed_distance.py` -- PASS (exit 0). Ours 0.0084s vs Trimesh 0.0215s.
+- `test/unsigned_distance.py` -- 3/3 runs clean (both assertions passed every
+  time this session; the documented unseeded-torch.randn cpoint flake did not
+  trigger).
+- `test/state_dict.py` -- PASS ("State dict save/load test passed.").
+- `python -m pytest test/cuhashtable.py -v` -- 4 passed (test_3d_basic,
+  test_4d_basic, test_large_random, test_edge_values) in 2.88s.
+- `test/sparse_voxel.py <icosphere-subdiv3, 1280 faces> --workspace ...` --
+  GPU spcumc/thrust::hip::par path ran end-to-end; saved .npz with
+  active_cells / active_cells_sdf = **4,455,224** active voxels (res=1024),
+  identical to every prior platform's pass on this fixture family. Trailing
+  `ValueError: Both events must be recorded` reproduced exactly as
+  documented (known test-script bug, `end.record()` never called).
+- CPU regression: `test/hashtable.py` PASS (0/50000 spurious negatives).
+  `test/merge_vertices.py` PASS (642->642 verts, 1280->1280 faces).
+  `test/repair_holes.py` PASS. `test/decimation.py` could not run its
+  reference path (kiui.op imports cv2; even after installing
+  opencv-python-headless the numpy<2 pin this venv needs for
+  torch.from_numpy conflicts with opencv's numpy>=2 requirement -- same
+  class of third-party packaging defect the Windows validation hit via a
+  different kiui import path, not a port fault). Exercised cubvh's own API
+  directly instead, matching the windows-gfx1151 precedent:
+  `cubvh.decimate(v, f, 320)` -> 320 verts / 636 faces, watertight, volume
+  4.1378; `cubvh.parallel_decimate(v, f, 320)` -> 178 verts / 352 faces,
+  watertight, volume 4.1196 (unit-sphere reference 4.1888). Matches the
+  windows-gfx1151 figures closely (320/636 vol 4.137, 175/346 vol 4.119).
+
+### CUDA no-regression gate -- OWED for this head, now satisfied
+
+This is the first Linux platform to revalidate at 191b020 (windows-gfx1151
+validated the head but has no CUDA toolkit), so the gate was owed per the
+round-3 review. Created `/opt/conda/envs/cuda-12.8` (`conda create -y -n
+cuda-12.8 -c nvidia cuda-toolkit=12.8`, none existed on this host) and
+reproduced the porter/reviewer's established scope: a torch-free TU
+(`agent_space/cuda_gate_tu.cu`) instantiating `Triangle::{distance_sq,
+closest_point,normal,centroid,barycentric}`, `BoundingBox::{distance_sq,
+ray_intersect}`, `fibonacci_dir<32>`, `safe_divide`, and a `linear_kernel`
+launch of a kernel exercising all of them.
+```
+/opt/conda/envs/cuda-12.8/bin/nvcc -std=c++17 --extended-lambda \
+  --expt-relaxed-constexpr -arch=sm_80 \
+  -I projects/cubvh/src/include -I projects/cubvh/src/third_party/eigen \
+  -c agent_space/cuda_gate_tu.cu -o agent_space/cuda_gate_tu.o
+```
+Exit 0, object file emitted; only the pre-existing Eigen long-double
+device-code warning (identical to every prior CUDA-gate run on this
+project). `include/gpu/triangle.cuh`, `bounding_box.cuh`, and `common.h`
+are byte-identical between c7379c0 and 191b020 (`git diff c7379c0 191b020
+-- include/gpu/triangle.cuh include/gpu/bounding_box.cuh include/gpu/common.h`
+is empty), so this reproduces rather than merely repeats the earlier
+result.
+
+`src/bvh.cu` -- the file this head's only functional change touches --
+remains OUTSIDE the nvcc gate for the same pre-existing reason as every
+prior round: `include/gpu/bvh.cuh` pulls `<torch/torch.h>`, and this fleet
+has no NVIDIA-CUDA-built torch (only ROCm torch), so bvh.cu cannot be
+built as a real CUDA TU here. This is not a new gap introduced by my
+validation; it is the identical scope the porter and reviewer both
+recorded at c7379c0, disclosed in the commit body, and already reviewed
+(round 3 review, above) as "not a break of upstream's current behaviour"
+since nvcc accepts `#pragma unroll 1` as standard CUDA pragma syntax (same
+directive family as the `#pragma unroll` instances left unchanged at
+bvh.cu:238,244,309, which were always outside this gate too).
+
+### Integrity / hygiene
+- `git -C projects/cubvh/src status --porcelain` -- clean (only gitignored
+  hipify artifacts and the built .so untracked at any point; nothing
+  committed, submodule checkout is not a tracked-file change).
+- `python3 utils/jargon.py --port cubvh` -- clean.
+- readme.md `#### AMD GPU (ROCm)` subsection present at 191b020.
+
+Outcome: all required GPU tests pass on real gfx1100 hardware (4x W7800),
+CUDA no-regression gate reproduced clean at this head, tree clean, jargon
+clean, docs present. linux-gfx1100 -> completed (validated_sha = 191b020).

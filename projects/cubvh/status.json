@@ -7,96 +7,17 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-19T04:40:36Z",
-  "updated_at": "2026-08-26T19:39:41Z",
+  "updated_at": "2026-08-26T19:45:02Z",
   "head_sha": "191b02066a770006dc26740d71bcf4417380f802",
   "depends_on": [],
   "pr_url": "https://github.com/ashawkey/cubvh/pull/33",
   "pr_merged_at": "2026-06-23T13:54:59Z",
-  "porting": null,
   "waivers": {},
   "pr_state": "merged",
   "license_spdx": "MIT",
   "upstream_repo_id": 573716613,
   "stage": "review-passed",
   "platforms": {
-    "windows-gfx1151": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "191b02066a770006dc26740d71bcf4417380f802",
-      "failed_sha": null,
-      "started_at": "2026-08-26T19:04:16Z",
-      "completed_at": "2026-08-26T19:26:24Z",
-      "updated_at": "2026-08-26T19:26:24Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "state": "completed",
-      "last_agent": "validator:claude-code"
-    },
-    "windows-gfx1201": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "e5a657a",
-      "started_at": null,
-      "completed_at": "2026-06-19T16:45:54Z",
-      "updated_at": "2026-06-19T17:51:26Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator",
-      "carry_forward": {
-        "from": "9c3b40d",
-        "to": "e5a657a",
-        "method": "source-class",
-        "class": "comment-only",
-        "detail": "setup.py: comment-only (comments/format only)",
-        "at": "2026-06-19T17:51:26Z"
-      }
-    },
-    "linux-gfx1100": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "c7379c00f4617394112a10829817df6ece355bb6",
-      "started_at": null,
-      "completed_at": "2026-08-26T18:40:36Z",
-      "updated_at": "2026-08-26T18:40:36Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator"
-    },
     "windows-gfx1101": {
       "state": "completed",
       "blocked": false,
@@ -141,6 +62,84 @@
         "last_session_at": null
       },
       "last_agent": "validator"
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "e5a657a",
+      "started_at": null,
+      "completed_at": "2026-06-19T16:45:54Z",
+      "updated_at": "2026-06-19T17:51:26Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "9c3b40d",
+        "to": "e5a657a",
+        "method": "source-class",
+        "class": "comment-only",
+        "detail": "setup.py: comment-only (comments/format only)",
+        "at": "2026-06-19T17:51:26Z"
+      }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "191b02066a770006dc26740d71bcf4417380f802",
+      "started_at": null,
+      "completed_at": "2026-08-26T19:45:02Z",
+      "updated_at": "2026-08-26T19:45:02Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator:claude-code"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "191b02066a770006dc26740d71bcf4417380f802",
+      "failed_sha": null,
+      "started_at": "2026-08-26T19:04:16Z",
+      "completed_at": "2026-08-26T19:26:24Z",
+      "updated_at": "2026-08-26T19:26:24Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator:claude-code"
     }
   },
   "porting_released": {
