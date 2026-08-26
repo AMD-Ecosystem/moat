@@ -1729,3 +1729,100 @@ remains a valid data point that occupancy alone explains most of the loss.
 Still unmeasured anywhere: H1 on wave64 gfx90a (expected neutral-to-positive
 since the same live-range width costs it 8 -> 5 waves) and the CUDA build,
 which the porter's round will cover.
+
+## Review (round 3) 2026-08-26 (reviewer, windows-gfx1151) -- PASS
+
+Delta reviewed: c7379c0..191b020, two commits.
+- `fc56751` -- `#pragma unroll` -> `#pragma unroll 1` on the two fan-out-4
+  child loops in `ray_intersect` (`src/bvh.cu:157,163`) plus a 3-line comment.
+- `191b020` -- deletes `LICENSE_NVIDIA`.
+
+Scope verified exact. All four `__global__` kernels in the TU accounted for:
+`bvh_unsigned_distance_kernel` (60 VGPR) and
+`bvh_signed_distance_watertight_kernel` (64 VGPR) are bit-identical before and
+after; only the two intended kernels move (172->70, 171->73), zero spills,
+occupancy 8->16 waves on both wave32 parts. The `#pragma unroll` sites left in
+place (`src/bvh.cu:238,244,309`) are deliberate, not an oversight: those
+kernels sit far below the 96-VGPR cliff and `avg_normal` is reached by no
+kernel in this TU.
+
+Licence removal factually supported and independently rechecked here:
+`grep -rn LICENSE_NVIDIA` over the tree returns nothing; the only file that
+ever contained "NVIDIA Source Code License" text was that file itself;
+`pyproject.toml:17` references only `LICENSE`, so packaging is unaffected;
+`gpu_memory.h` (BSD-3) and `pcg32.h` carry their own inline notices. Isolated
+as the last commit so the maintainer can drop it alone, and `c7379c0` was
+never amended.
+
+Commit hygiene clean: titles 59 and 55 chars, `[ROCm]` prefixed, AI assistance
+disclosed, Test Plans with literal fenced commands, no `Co-Authored-By` /
+noreply / ghstack trailers, ASCII throughout.
+
+TWO ITEMS CARRIED FORWARD, neither blocking, both for the revalidations that
+`head_sha` moving has already queued:
+
+1. The change is made fleet-wide on wave32 evidence (gfx1151 + gfx1100, both
+   real GPU), but its WAVE64 RUNTIME EFFECT IS ASSERTED, NOT MEASURED, and
+   there is a counter-indicator: cross-compiled for gfx90a,
+   `bvh_ray_trace_kernel` register usage rises 86 -> 92 VGPR. Occupancy holds
+   at 5 waves so no cliff is crossed, and the raystab kernel improves
+   114 -> 96 (4 -> 5 waves), so the net is expected neutral-to-positive. The
+   gfx90a revalidation should run `harness/bench.py` old-vs-new, not only the
+   correctness gates, or this stays open.
+2. `#pragma unroll 1` is understood by nvcc so the CUDA path compiles
+   unchanged, but the change alters CUDA codegen and no NVIDIA hardware exists
+   in the fleet to measure it. Not a break of upstream's current behaviour --
+   the pragma was introduced by the unpublished c7379c0, so nothing upstream
+   ships today is affected -- and the commit body discloses it. Recorded so it
+   is not later mistaken for a verified result.
+
+Outcome: review-passed at 191b020.
+
+## Validation (round 3, windows-gfx1151) 2026-08-26 -- PASS at 191b020
+
+Same host, toolchain and method as the round-2 validation above (gfx1151,
+torch 2.12.0+rocm7.14.0a20260519, clang-cl host, PYTORCH_ROCM_ARCH=gfx1151).
+Validates the `#pragma unroll 1` fix plus the LICENSE_NVIDIA removal.
+
+Build: clean rebuild, exit 0, device code `amdgcn-amd-amdhsa--gfx1151` only.
+Codegen confirmed at this head: ray_trace 70 VGPR, raystab 73 VGPR, both 16
+waves per SIMD, zero spills; the two closest-point kernels unchanged at 60 and
+64.
+
+Round-2 differential gates against this platform's own e5a657a goldens, both
+required, both PASS:
+```
+"$TORCH_PY" projects/cubvh/harness/golden.py check     --ref agent_space/goldens-e5a657a-gfx1151
+"$TORCH_PY" projects/cubvh/harness/golden.py crossload --ref agent_space/goldens-e5a657a-gfx1151
+```
+`check` PASS (58 checks ok), `crossload` PASS (45 checks ok). Rolling the
+loops is not a semantic change and the gates confirm it: same tolerances, same
+tie behaviour, same degenerate-face policy as at c7379c0.
+
+Upstream suite:
+- `test/signed_distance.py` -- PASS (exit 0).
+- `test/unsigned_distance.py` -- 5 runs, 5 clean, zero cpoint flakes this
+  session (the flake is input-dependent; the distance assertion passed in all
+  5, which is the real gate).
+- `python -m pytest test/cuhashtable.py` -- 4 passed.
+- `test/hashtable.py` (CPU) -- PASS, 0/50000 spurious negatives.
+- `test/state_dict.py` -- round-trip PASS via the documented `tempfile.mktemp`
+  substitution (the Windows NamedTemporaryFile error-32 limitation is
+  unchanged and still upstream's, not ours).
+- `test/sparse_voxel.py` -- GPU path end-to-end, **4,455,224 active voxels**,
+  identical to every prior platform and to c7379c0; known trailing
+  `elapsed_time` script bug reproduced as documented.
+
+The binary tested was built with the fix applied and LICENSE_NVIDIA still on
+disk; deleting a licence file cannot change compiled output, so the evidence
+applies unchanged to 191b020 (and the delta classifies as doc-only).
+
+CUDA no-regression gate: not run here (Windows host, no CUDA toolkit). The
+gate is per-head_sha and 191b020 is a new head, so it is OWED by whichever
+Linux platform revalidates first -- it has NOT been satisfied for this head.
+
+Integrity: `git -C projects/cubvh/src status --porcelain` clean;
+`python3 utils/jargon.py --port cubvh` clean over the whole branch; readme's
+`#### AMD GPU (ROCm)` section present.
+
+windows-gfx1151 -> completed (validated_sha = 191b020).
