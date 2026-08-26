@@ -1,0 +1,9 @@
+inline __host__ __device__ float safe_divide(float numerator, float denominator, float epsilon = 1e-6f) {
+	if (fabs(denominator) < epsilon) {
+		if (denominator <= 0)
+			return -(numerator / epsilon); 
+		else
+			return numerator / epsilon; 
+	}
+	return numerator / denominator;
+}

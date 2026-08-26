@@ -440,3 +440,65 @@ tiny-cuda-nn BSD-3 and compliant as retained. All derived material implements
 published algorithms, so an independent reimplementation from the literature
 is feasible; the port's own edits intersect the derived regions in only two
 lines. The detailed report is with the licensing review.
+
+## Round 2: clean-room rewrite -- porter session 1 (linux-gfx90a, 2026-08-26)
+
+Plan: see "Round 2" in plan.md. The deferral cubvh-nvidia-proprietary-rescan
+was ruled `now` (jeffdaily, 2026-08-13); the author invited the rewrite.
+
+### Process (clean-room, two roles)
+
+- A spec-author agent (this session's orchestrator) read the derived files
+  ONCE and wrote projects/cubvh/rewrite/SPEC.md: pinned struct layouts
+  (Triangle 48B a,b,c,id; BoundingBox min,max; TriangleBvhNode bb,left,right,
+  escape = 9 int32), the leaf/inner/escape node encoding, every behavioral
+  constant (MAX_DIST=1000, branching 4, leaf cap 8, stacks 32/64, fibonacci
+  epsilon ladder, pcg32 advance(2i), sentinels 1e6/{0,0}, EPSILON 1e-6), and
+  the quirks (degenerate-triangle NaN never wins closest; non-strict <= tie
+  keeps later triangle; ray t>=0 accepted; miss depth = MAX_DIST; negative
+  slab tmin not clamped; lazy GPU upload).
+- cubvh-original blocks that are NOT part of the rewrite were extracted
+  verbatim to rewrite/keep/ (closest_point/point_in_triangle/
+  closest_point_to_line/barycentric; bvh.cuh state_dict block; safe_divide).
+- The five derived files were BLANKED in the working tree and hipify
+  artifacts removed; a fresh implementer agent (separate context) writes the
+  new files from SPEC.md + published references only, with explicit
+  prohibitions on git-history recovery, *_hip artifacts, and instant-ngp.
+- Independence will be verified with rewrite/similarity.py (same normalized
+  difflib + verbatim-line method as the provenance analysis) against the
+  instant-ngp c4d622e snapshot AND old cubvh e5a657a.
+
+### Golden harness (projects/cubvh/harness/golden.py)
+
+Captured from the e5a657a build on gfx90a (MI250X, torch 2.14.0a0 hip 7.14,
+numpy<2 venv -- NOTE host torch moved from 2.13/ROCm7.2.1 since round 1; the
+env's numpy 2.5 breaks torch's numpy bridge, venv with numpy 1.26 fixes it):
+- meshes: torus10k (10368 tris, watertight), open (4393 tris, boundary),
+  degen (1155 tris + 3 zero-area/degenerate faces)
+- per mesh: unsigned/signed(watertight)/signed(raystab) distances + face_id
+  + uvw on 20k points, ray_trace on 20k rays, and the serialized state_dict
+- checks: distances atol 2e-5; face_id >=99.9% with tie verification; uvw
+  NaN-mask-aware atol 1e-4 (degenerate faces produce NaN uvw -- preserved
+  behavior); raystab sign >=99.9%; hit/miss >=99.9%; miss depth == 1000;
+  own-build state_dict round-trip bitwise; CROSSLOAD of old state_dicts.
+- baseline self-check: check PASS, crossload PASS (all diffs 0).
+- goldens live in agent_space/goldens-e5a657a-gfx90a (not committed);
+  regenerate on any host by building e5a657a and running `golden.py capture`.
+  A wave32 host should capture its own e5a657a goldens BEFORE validating the
+  rewrite (plan step 1).
+
+### Baseline perf (harness/bench.py, gfx90a, e5a657a, 500k queries, 5 reps)
+
+median ms: small10k build 3.62, ray 1.66, udf 4.66, sdfw 5.03, sdfr 153.91;
+med200k build 89.23, ray 2.85, udf 27.49, sdfw 27.53, sdfr 317.94;
+big2m build 930.51, ray 4.63, udf 105.03, sdfw 102.81, sdfr 530.45.
+Full JSON: agent_space/bench-e5a657a-gfx90a.json (regenerable).
+
+### Scope decision recorded
+
+Unused derived members are DROPPED rather than rewritten (smaller licence
+surface): BoundingBox SAT triangle test/project<>/signed_distance/contains/
+inflate/center/diag/relative_pos/intersection/is_empty/corner enumeration/
+stream op; Triangle sample_uniform_position/surface_area/distance()/
+get_vertices/stream op. Nothing in cubvh (or its tests) uses them; the PR
+will state the removal plainly so downstream users can object.
