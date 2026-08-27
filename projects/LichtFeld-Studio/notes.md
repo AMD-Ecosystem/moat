@@ -2054,6 +2054,12 @@ error: unknown type name 'cudaGraph_t'
 was not declared -- clang's overload-driven diagnostics for the earlier errors apparently
 suppressed that one further error, but gcc's plainer error recovery surfaces it.)
 
+[Later: that suppression now has a measured explanation; see the 2026-08-27b review and the
+2026-08-27c port round below. It is not overload resolution -- the call at `:104` passes
+`&graph`, and `graph` is declared with the then-unaliased type `cudaGraph_t`, so the argument
+is error-typed and clang drops the undeclared-callee diagnostic. The list above is a lower
+bound for exactly that reason.]
+
 Root cause, verified by reading the actual header rather than guessing: `c10/cuda/
 CUDAGraphsC10Utils.h` in this torch build has ZERO ROCm-awareness (`grep -c
 "USE_ROCM\|HIP_VERSION\|__HIP_PLATFORM"` on the file is 0) -- it is the raw, never-hipified
@@ -2171,11 +2177,18 @@ deferred instantiation for both, which is true of only one):
 - `cudaGraphRetainUserObject` (`:120-121`) is NOT deferred. Its arguments are a `cudaGraph_t`
   parameter, a local `cudaUserObject_t`, a literal, and an enumerator -- none dependent -- so
   ordinary lookup runs at template-definition time and an unaliased name is a hard error while
-  the helper is merely parsed. It was absent from the validator's list only because
-  `cudaGraphUserObjectMove`, an argument of that same call, was itself undeclared: clang stops
-  diagnosing the callee of a call whose argument list already contains an undeclared
-  identifier, so the callee's own error was suppressed. This alias is therefore REQUIRED for
-  `CUDAGraphsC10Utils.h` to parse at all under this torch, not a prudent extra.
+  the helper is merely parsed. It was absent from the validator's list because the call passes
+  `graph`, a variable of the then-unaliased type `cudaGraph_t`: clang drops the
+  undeclared-callee diagnostic when an argument is an ERROR-TYPED expression, and a variable
+  declared with an unknown type name is such an expression. An undeclared identifier that clang
+  can typo-correct is NOT (`cudaGraphUserObjectMove` prints "did you mean
+  'hipGraphUserObjectMove'?" and the call around it is still diagnosed). Generalized: a missing
+  TYPE alias hides every missing FUNCTION alias in each call that passes a value of that type,
+  so expect a second wave of function-name errors after the type aliases are fixed. This alias
+  is therefore REQUIRED for `CUDAGraphsC10Utils.h` to parse at all under this torch, not a
+  prudent extra. (Attribution corrected twice: the original entry claimed deferred
+  instantiation, the 2026-08-27b entry blamed the undeclared `cudaGraphUserObjectMove`
+  argument; measured probes are in the 2026-08-27c round below.)
 - `cudaUserObjectCreate` (`:110`) is the genuinely deferred one: its argument is `data.get()`
   on a `std::unique_ptr<T>`, so the call is looked up at instantiation, and the template is
   never instantiated in the current test TUs. This is the forward-looking alias -- without it
@@ -2183,8 +2196,9 @@ deferred instantiation for both, which is true of only one):
 
 Both mechanisms reproduced on this host (ROCm SDK clang 23.0.0git) with a 6-line TU each:
 a non-dependent call to an undeclared name inside an uninstantiated template errors
-immediately, while a sibling call with a dependent argument does not; adding an undeclared
-identifier to the argument list of the first makes clang report only that argument. Both have
+immediately, while a sibling call with a dependent argument does not. (The synthetic TU that
+was also used for the suppression half is unreliable and must not be trusted for it -- see the
+2026-08-27c round below; suppression was re-measured on the real header instead.) Both have
 hipify mappings (`cuda_to_hip_mappings.py:1553`, `:1411`) and real declarations
 (`hip_runtime_api.h:9466`, `:9499`).
 
@@ -2666,3 +2680,88 @@ texture pitch, library swap, build-system change or per-arch branch is in reach.
 For the next validator: whatever sha this lands on, the compiled tree is the one that already
 built `[212/212]` and passed 2044/2048 twice on this gfx1100 host on 2026-08-27, so the gfx1100
 revalidation should be quick; gfx90a is stale from `7cd4d569` and needs a real run.
+
+## Port round 2026-08-27c (porter, linux-gfx1100) -- 9143c8c0, masking argument reattributed
+
+Answers Finding 1 (blocking) of the `## Review 2026-08-27b ... CHANGES-REQUESTED` entry above.
+Third text-only round on the same paragraph; `cuda_to_hip.h` is still untouched since
+`c56016ba` and the nine mappings are settled. `pr-state` is `none`, so the work stayed on
+`moat-port` (no fix branch); fork worktree clean before and after (`git -C src status
+--porcelain` empty).
+
+### What was wrong and what replaces it
+
+The 2026-08-27b wording blamed the suppression of `cudaGraphRetainUserObject` on the undeclared
+identifier `cudaGraphUserObjectMove` in its argument list. Measured, that is false: clang drops
+the undeclared-callee diagnostic when an argument is an ERROR-TYPED expression, and a variable
+declared with an unknown type name is such an expression, while an undeclared identifier clang
+can typo-correct is not. The masking argument is `graph`, of the then-unaliased type
+`cudaGraph_t`. Generalized form now written into the skill: **a missing TYPE alias hides every
+missing FUNCTION alias in each call that passes a value of that type**, so a second wave of
+function-name errors is expected after the type aliases are fixed.
+
+### Re-measured on the real header, not on a synthetic TU
+
+Same probe harness as the 2026-08-27 round (recipe and flags recorded there), clang 23.0.0git
+from `_rocm_sdk_core/lib/llvm/bin/clang++`, torch `2.14.0a0+git7d05abc`, `-ferror-limit=0`,
+errors filtered to `CUDAGraphsC10Utils.h` (`H:` below):
+
+```
+undef (none)                                         -> no errors
+undef cudaGraphRetainUserObject + cudaGraphUserObjectMove   (cudaGraph_t still aliased)
+  -> H:121:56 undeclared 'cudaGraphUserObjectMove'; did you mean 'hipGraphUserObjectMove'?
+     H:121:7  undeclared 'cudaGraphRetainUserObject'   <-- callee IS reported
+undef cudaGraph_t + cudaGraphRetainUserObject
+  -> H:93:3, H:99:3, H:112:5 unknown type name 'cudaGraph_t'   only  (callee NOT reported)
+undef cudaStreamGetCaptureInfo_v2                    -> H:104:18 undeclared, reported
+undef cudaGraph_t + cudaStreamGetCaptureInfo_v2
+  -> H:93:3, H:99:3, H:112:5 unknown type name 'cudaGraph_t'   only  (callee NOT reported)
+```
+
+The first two rows reproduce the reviewer's table exactly. The fourth is the added confirmation
+of the direction of causation on the call the reviewer called decisive: `cudaStreamGetCaptureInfo_v2`
+at `:104` has no undeclared identifier anywhere in `stream, &status, &capture_id, &graph,
+nullptr, nullptr`, is reported on its own, and stops being reported the moment `cudaGraph_t`
+goes away. `graph` is declared at `:99` (local) and `:112` (parameter) with that type, so
+`:104` and `:121` -- the two suppressed calls -- are exactly the two that pass it. That also
+supplies the explanation the validator left open at the clang/gcc-14 discrepancy note above,
+which now carries a cross-reference here.
+
+The synthetic TU at the 2026-08-27b entry agreed with the wrong attribution because its
+`someUndeclaredEnum` has no typo-correction candidate, so that argument really was error-typed:
+it reproduced the suppression by a different route than the header did. Do not re-derive this
+from a synthetic TU; the per-alias `#undef` probe on the real header is the instrument.
+
+### Three copies updated
+
+1. fork commit body paragraph 2 (amended, `c8453260` -> `9143c8c0`),
+2. this file, the `Plus two ...` bullet in the 2026-08-27 entry, plus the cross-reference at the
+   validator's clang-vs-gcc note and a warning on the synthetic-TU sentence,
+3. `.claude/skills/cuda-to-rocm/references/validation.md`, mechanism (a) of the
+   libtorch-alias-gap bullet, replaced by the type-alias rule. Mechanism (b), the `#undef` probe
+   recipe and its closing sentence are unchanged, as the review asked.
+
+### Amend, not a follow-up commit
+
+Same justification as last round and re-checked: no platform has validated `c8453260`
+(linux-gfx90a `completed` and linux-gfx1100 `validation-failed`, both at `7cd4d569`),
+`moatlib.py pr-state` -> `none`, `moat-port` unpublished. `git commit --amend -F <msg>`, then
+`git push --force-with-lease=moat-port:c8453260... origin moat-port` (accepted; no bare
+`--force`). `origin/moat-port` is now `9143c8c0`.
+
+**Tree identity, which is why no rebuild was run**: `git diff c8453260 9143c8c0 --stat` is empty
+and `git diff --quiet` returns 0 -- byte-identical trees, message-only change. The `[212/212]`
+gfx1100 build and the 2044/2048 two-run GPU result recorded on 2026-08-27 therefore describe
+`9143c8c0`'s tree exactly, and the Test Plan in the amended body is unchanged and still
+literally accurate.
+
+`advance-head` -> `9143c8c01c4bea1d3a4f6fd126e18a148513f802`. gfx90a stays stale (it was already
+stale at `7cd4d569`); when either platform revalidates, the compiled content is identical to
+`c56016ba`.
+
+`python3 utils/jargon.py --port LichtFeld-Studio`: still 3 instances, all pre-existing in the
+`13e585d4`/`e24593f4` bodies (deferral `lfs-commit-msg-jargon-13e585d-e24593f`), 0 from
+`9143c8c0`. `utils/prose.py` clean on the amended body; title unchanged, `[ROCm] Alias newer
+LibTorch CUDA graph symbols for the HIP build`, 64 chars; ASCII-only; AI disclosure and Test
+Plan retained; no `Co-Authored-By`. No PR exists for this project, so there are no review
+threads to answer -- the loop closes in this file and in the skill.
