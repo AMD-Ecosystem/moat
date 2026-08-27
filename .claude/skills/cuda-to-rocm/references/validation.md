@@ -107,6 +107,48 @@ On a host whose only installed PyTorch is a ROCm dev build (e.g. built from `/va
 
 Neither is a defect in the port: they are defects in the ambient PyTorch install, present identically whether you build the pristine upstream or the ROCm branch. Diagnose it as environmental by checking that the errors bottom out in `torch/headeronly`/`c10` (not the port's own files) and that `grep -n '__builtin_trap\|__trap\|__HIP\|hip[A-Z]\|amdgcn\|USE_ROCM'` over the port's own changed sources is empty. Do not chase this by patching the installed torch headers (that is fixing the environment, not the port). Record `cuda-not-validated: <the missing-header or duplicated-guard error>` and, if there is time budget left, substitute a source-level check: diff the port's CUDA-facing code (e.g. the non-ROCm branch of a dual-path file) against upstream and confirm it is byte-for-byte the same logic, only guarded differently -- that is as much passthrough evidence as a real nvcc pass would give without one. (FaithC, accelerated-scan)
 
+## A torch build used only as a test oracle can break a build two different ways as it drifts
+
+When a project's own tensor/rasterizer/etc. library is libtorch-free and pulls in a ROCm
+PyTorch build purely as a parity-test oracle (`find_package(Torch)` in the test target
+only), that torch dependency is a moving target across sessions/hosts even though the
+port's own source did not change. Two independent fault shapes turned up on the same host,
+in the same build, from the same torch version bump (LichtFeld-Studio, torch `2.14.0a0`):
+
+- **Torch's vendored `fmt` shadows the system `fmt` any spdlog build expects.** Recent
+  PyTorch ships its own copy of `fmt` under `torch/include/fmt/` for its "stable ABI"
+  surface. `torch/include/fmt/core.h` is a small stub that, unless a project explicitly
+  opts in, includes only a reduced `base.h` -- but `torch/include/fmt/format.h` is the
+  REAL, full, current fmt (e.g. 12.x). Once `-isystem .../torch/include` is on a
+  translation unit's search path (added for the parity-oracle link), every `#include
+  <fmt/...>` in that TU -- including a completely unrelated `spdlog` header -- resolves to
+  torch's copy first, because a compiler's own implicit system directories (where the
+  distro's compatible `fmt`/`spdlog` actually live) are always searched last, after every
+  explicit `-I`/`-isystem`. If the distro's `libspdlog` was built against an older fmt API
+  (e.g. `fmt::basic_format_string`, renamed to `fmt::fstring` in fmt 12), the mismatch
+  surfaces as a template-not-found error inside `spdlog/common.h`, nothing about ROCm/HIP
+  at all. Confirm by swapping compilers (a different, unrelated compiler hitting the exact
+  same error rules out a compiler-version quirk) and by checking whether `torch/include/
+  fmt/format.h` exists and reports a newer `FMT_VERSION` than the system's `fmt/core.h`.
+  Fix without touching the fork: build `spdlog` from source with `-DSPDLOG_FMT_EXTERNAL=OFF`
+  (bundles spdlog's own matched fmt copy) and point `spdlog_DIR` at that install -- the same
+  "vendor a known-good copy locally" pattern already used for pinned `glm`/header-only deps.
+- **A libtorch `c10/cuda/*.h` header a project's compat layer already aliases for can grow
+  new symbols the alias list has not caught up to.** A CUDA-graph-capture/user-object-retain
+  helper added to `c10/cuda/CUDAGraphsC10Utils.h` in a newer torch build referenced
+  `cudaGraph_t`/`cudaHostFn_t`/`cudaUserObject_t`/`cudaUserObjectNoDestructorSync`/
+  `cudaGraphUserObjectMove`/`cudaUserObjectRelease`/`cudaStreamGetCaptureInfo_v2` literally
+  (this header is never hipified for a plain CMake consumer -- torch only hipifies at
+  `CUDAExtension` build time), while the project's own compat header already aliased
+  *other* symbols from the very same file (`cudaStreamCaptureMode`, `cudaStreamBeginCapture`,
+  ...) -- proof the aliasing strategy is right and the coverage merely fell behind a torch
+  version bump. This is a real, small, escalatable gap (confirm every missing symbol has a
+  `hip*` equivalent in the installed HIP runtime headers before reporting it, so the fix is
+  known to be "add N aliases", not an open-ended investigation), not something to route
+  around with an older pinned torch -- an older torch only hides the gap for one host's one
+  session; the same coverage will fall behind again on the next torch refresh. Send it back
+  to the porter with the exact symbol list and confirmed HIP counterparts. (LichtFeld-Studio)
+
 ## HIP + C++23 on an older toolchain: `isfinite cannot overload` (and how to stay forward-compatible)
 
 Symptom, on the first HIP translation unit compiled at `-std=c++23`:
