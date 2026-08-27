@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-08-25T17:09:27Z",
+  "updated_at": "2026-08-27T05:26:28Z",
   "head_sha": "a9016bcb5efb7a328785f428ba5e609cf98513c2",
   "depends_on": [],
   "pr_url": "https://github.com/vitalight/Velvet/pull/9",
@@ -57,13 +57,13 @@
       }
     },
     "linux-gfx1100": {
-      "state": "completed",
+      "state": "validation-failed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "7ccd4a98451e144e05f5bdf19827a28471f787e0",
       "started_at": "2026-08-24T19:46:28Z",
       "completed_at": "2026-08-24T20:59:32Z",
-      "updated_at": "2026-08-24T20:59:32Z",
+      "updated_at": "2026-08-27T05:26:28Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -77,13 +77,14 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer",
+      "last_agent": "validator",
       "carry_forward": {
         "to": "7ccd4a98451e144e05f5bdf19827a28471f787e0",
         "method": "binary-equiv",
         "detail": "codeobj_diff verdict=identical (13 exports) at both bb06b44/build_old and 7ccd4a9/build_new (identical tree to reviewed 49f6db9); mixed-class CMake/host-code delta, no device ISA change",
         "at": "2026-08-24T20:59:32Z"
-      }
+      },
+      "failed_sha": "a9016bcb5efb7a328785f428ba5e609cf98513c2"
     },
     "windows-gfx1101": {
       "state": "completed",

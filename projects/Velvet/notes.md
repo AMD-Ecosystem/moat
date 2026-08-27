@@ -2566,3 +2566,201 @@ Lesson, and it generalises past this project: a PR body should account for every
 diff touches, especially vendored third-party code, and MOST especially when the change
 alters a licence notice. Three reviews and two body rewrites went past this because everyone
 was looking at the defect fixes. Check the diffstat against the body before publishing.
+
+## Validation 2026-08-27 (linux-gfx1100, revalidation): FAIL -- Linux build regression, Timer.hpp missing `<vector>`
+
+Dispatched as `revalidate`: `validated_sha=7ccd4a98451e144e05f5bdf19827a28471f787e0`,
+`head_sha=a9016bcb5efb7a328785f428ba5e609cf98513c2` on `moat-port` (`fix` is null, PR #9 open,
+not draft, `published_sha == head_sha`). Stage `review-passed`. Host: 4x AMD Radeon Pro W7800
+48GB (gfx1100, RDNA3, wave32), ROCm via TheRock conda env
+(`/opt/conda/envs/py_3.12/.../_rocm_sdk_devel`, HIP 7.14.60850, clang 23.0.0git), Ubuntu
+24.04, kernel 6.8.
+
+### Classification
+
+```bash
+python3 utils/moatlib.py classify Velvet 7ccd4a98451e144e05f5bdf19827a28471f787e0 a9016bcb5efb7a328785f428ba5e609cf98513c2
+# -> class=unknown arch_independent=False (classification failed -> revalidate)
+```
+
+No fork clone existed locally yet, so classification failed and the selector correctly fell
+through to a full revalidate. Confirmed the real delta is two commits, both real code changes
+(not cosmetic): `280ee3d` "Keep host sources out of the GPU language" (host `.cpp` files go
+from `LANGUAGE HIP` to plain `CXX`, fixing a genuine bug where compiling host code as HIP
+zeroed `VtSimParams` defaults) and `a9016bc` "Map the shared GL buffers around each device
+copy" (the GL-interop lifetime fix from the windows-gfx1151 round). Real code change, no
+binary-equivalence shortcut applicable -- full build + GPU run required.
+
+### GL context: real hardware-backed OpenGL is achievable on this host
+
+This host has no display manager or DISPLAY by default (`glxinfo`/`Xvfb` not installed, no
+running X server). Unlike gfx90a (compute-only CDNA2, no display engine at all), gfx1100
+(RDNA3) has a graphics pipeline, so a real GPU-backed GL context is achievable, not just a
+software one:
+
+```bash
+sudo apt-get install -y xserver-xorg-core xserver-xorg-video-amdgpu xinit mesa-utils
+```
+
+`Xorg :1` with a minimal config pinning `Driver "amdgpu"` to one GPU (`/dev/dri/card1`, one of
+the four W7800s -- `card0` on this host is an unrelated AST BMC chip) fails with "No devices
+detected" if a legacy `BusID` is given (the amdgpu DDX is udev/platform-probed, not
+PCI-bus-probed); dropping `BusID` and using `Option "kmsdev" "/dev/dri/card1"` (with
+`AutoAddGPU false` / `AutoEnableDevices false` so the other three cards and the AST chip are
+not auto-attached) starts cleanly:
+
+```
+(II) AIGLX: Loaded and initialized radeonsi
+(II) GLX: Initialized DRI2 GL provider for screen 0
+```
+
+`DISPLAY=:1 glxinfo -B` confirms real hardware acceleration, not llvmpipe:
+
+```
+OpenGL renderer string: AMD Radeon Pro W7800 48GB (radeonsi, navi31, LLVM 20.1.2, DRM 3.64, ...)
+```
+
+Recorded here (and worth promoting to the skill) because the gfx90a notes above stop at
+"Mesa refuses a graphics context on a compute chip" without showing what a working headless
+RDNA X setup looks like; the fix is `Option "kmsdev"` targeting the render-capable card
+directly, not a `BusID`.
+
+### Build: FAILS at head_sha, succeeds at validated_sha (same host, same recipe shape)
+
+vcpkg was not present on this host; bootstrapped fresh (`/var/lib/jenkins/vcpkg`) and
+installed the recorded deps (needed `autoconf-archive` in addition to the previously
+recorded apt prereqs, for `pthread-stubs`):
+
+```bash
+sudo apt-get install -y pkg-config autoconf automake libtool xorg-dev libxinerama-dev \
+  libxcursor-dev libxi-dev libxrandr-dev libgl1-mesa-dev libglu1-mesa-dev autoconf-archive
+git clone https://github.com/microsoft/vcpkg.git && cd vcpkg && ./bootstrap-vcpkg.sh
+VCPKG_DISABLE_METRICS=1 ./vcpkg install glfw3 glad fmt glm assimp \
+  "imgui[core,opengl3-binding,glfw-binding]" --triplet x64-linux
+```
+
+Built at `head_sha` (`a9016bc`) with the README's own documented invocation
+(`README.md:66-74`, `ROCM_PATH` set to the TheRock devel prefix on this host):
+
+```bash
+source /etc/rocm_env.sh   # sets ROCM_PATH to the TheRock _rocm_sdk_devel prefix
+cmake -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+      -DCMAKE_C_COMPILER=$ROCM_PATH/lib/llvm/bin/clang \
+      -DCMAKE_CXX_COMPILER=$ROCM_PATH/lib/llvm/bin/clang++ \
+      -DCMAKE_HIP_COMPILER=$ROCM_PATH/lib/llvm/bin/clang++ \
+      -DCMAKE_PREFIX_PATH=$ROCM_PATH -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_TOOLCHAIN_FILE=/var/lib/jenkins/vcpkg/scripts/buildsystems/vcpkg.cmake
+bash utils/timeit.sh Velvet compile -- cmake --build build -j$(nproc)
+```
+
+Configure succeeds. Build fails:
+
+```
+Velvet/Timer.hpp:233:25: error: use of undeclared identifier 'vector'
+  unordered_map<string, vector<cudaEvent_t>> cudaEvents;
+```
+
+`Timer.hpp` uses `std::vector` (via `using namespace std;`) but never includes `<vector>` --
+only `<iostream>`, `<unordered_map>`, `<string>`, and the GL/HIP headers. Reproduced under
+BOTH host compilers available on this box: the ROCm SDK's own clang++ 23 (README's documented
+recipe, above) and the system GCC 13.3 (the recipe recorded at this file's line ~1160, from
+before the README was written) -- same error, same line, both times. This is not a
+compiler-specific strictness quirk; it fails universally on Linux.
+
+### Root cause confirmed: real regression introduced by `280ee3d`, not pre-existing
+
+Built `validated_sha` (`7ccd4a9`) in a scratch tree (`git archive`) with the old (pre-README)
+recipe on this exact host, no compiler pins:
+
+```bash
+cmake -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_IGNORE_PATH=/opt/conda -DCMAKE_PREFIX_PATH=$ROCM_PATH \
+  -DCMAKE_TOOLCHAIN_FILE=/var/lib/jenkins/vcpkg/scripts/buildsystems/vcpkg.cmake
+cmake --build build -j$(nproc)   # exit 0, build/bin/Velvet produced
+```
+
+`7ccd4a9` builds cleanly (exit 0) on this identical host/toolchain. At `7ccd4a9`,
+`set_source_files_properties(${SOURCES} PROPERTIES LANGUAGE HIP)` compiled every source,
+including `Timer.cpp`, as HIP via hipcc/clang, which happens to make `<vector>` reachable
+transitively. `280ee3d` correctly narrows this to `set_source_files_properties(${CU_SOURCES}
+...)` (only the two real device-code files), fixing a genuine bug (host code compiled as HIP
+zeroed `VtSimParams`'s defaults) -- but this unmasks the pre-existing missing
+`#include <vector>` in `Timer.hpp`, which no longer gets a free pass through the HIP compiler
+for that one file. Confirmed as the exact and only cause: adding `#include <vector>` after
+`#include <string>` in `Timer.hpp` (throwaway local edit, reverted with `git checkout --
+Velvet/Timer.hpp` before completion -- `git status --porcelain` and a `sha256sum` compared
+against `git show HEAD:Velvet/Timer.hpp` both confirm the working tree is byte-identical to
+HEAD) makes the identical build (`README`'s clang++ recipe) succeed, `build/bin/Velvet`
+produced, exit 0.
+
+This is a real, reproducible Linux build regression at `head_sha`, not an environment
+artifact: `validated_sha` builds, `head_sha` does not, on the same host with the same
+toolchain. It evidently was not caught by the windows-gfx1151 fix-round validation of this
+same delta because Windows pins `CMAKE_CXX_COMPILER` to the ROCm SDK's clang++.exe against
+the **MSVC STL** (not libstdc++), which transitively supplies `<vector>` from
+`<unordered_map>` there; Linux (both g++'s libstdc++ and the ROCm SDK clang++'s libstdc++)
+does not.
+
+### Distinguishing this from the known pre-existing CUDA-gate `Timer.cpp` finding
+
+Prior rounds (see "CUDA gate" sections above) recorded `Timer.cpp` failing an isolated
+`g++ -fsyntax-only` check under the CUDA path with the identical `<vector>` root cause, and
+correctly judged it pre-existing/not-a-regression there, because that isolated check fails
+identically at every sha checked (`bb06b44`, `49f6db9`, `7ccd4a9`) -- the CUDA/NVIDIA build
+never masked it via a HIP-language pass, so it was never masked at all on that path. Re-ran
+the same isolated CUDA-gate checks here at `head_sha` for completeness:
+
+```bash
+nvcc -std=c++17 -arch=sm_80 -c -o /dev/null -include glad/glad.h -IVelvet -IVelvet/External \
+  -IVelvet/External/cuda -I/var/lib/jenkins/vcpkg/installed/x64-linux/include \
+  Velvet/VtClothSolverGPU.cu    # RC=0
+# same line, Velvet/SpatialHashGPU.cu -> RC=0
+g++ -std=c++17 -fsyntax-only -include glad/glad.h -IVelvet -IVelvet/External \
+  -IVelvet/External/cuda -I/var/lib/jenkins/vcpkg/installed/x64-linux/include \
+  -I/opt/conda/envs/cuda-12.8/targets/x86_64-linux/include Velvet/main.cpp   # RC=0
+# same line, VtEngine.cpp -> RC=0
+# same line, Timer.cpp -> RC=1, 8 errors, first at Timer.hpp:233 (the same pre-existing gap)
+```
+
+CUDA no-regression gate: clean, consistent with the three prior recordings of this exact
+pre-existing gap (no new CUDA-path regression at this head). This is the opposite conclusion
+from the ROCm/HIP build result above precisely because the two paths reach `Timer.cpp`
+through different compilation modes -- which is itself the mechanism of the regression.
+
+**The fix belongs in the port**: add `#include <vector>` to `Velvet/Timer.hpp`. One line,
+verified above to be sufficient. Not applied here (validator does not patch port code);
+returning to the porter.
+
+### GPU application run: not reached
+
+`build/bin/Velvet` was never produced at `head_sha`, so the real-application scenarios
+(extent hold, sag, NaN detector, interop copy return codes) that windows-gfx1151 exercises
+could not be run here. The real hardware GL context set up above (Xorg + amdgpu/radeonsi on
+card1, torn down after this session) remains available for the next attempt once the porter's
+fix lands; nothing about GL-context availability blocks this project on this host.
+
+### Jargon / documentation gates
+
+```bash
+python3 utils/jargon.py --port Velvet
+# -> jargon: clean
+```
+
+README's ROCm build section (`README.md:56-76`) is present, accurate about requiring the
+ROCm clang for `CMAKE_CXX_COMPILER`, and was exactly what was used to reproduce the failure
+above -- the outstanding doc item from the windows-gfx1151 round (whether the Linux recipe
+matches the README) is resolved: it does match, and following it verbatim is how this
+regression was found. No documentation fix needed; the code fix is what's missing.
+
+### Integrity
+
+`git -C projects/Velvet/src status --porcelain` clean throughout (only untracked/ignored
+`build/` directories from this session and the scratch `git archive` tree at
+`agent_space/velvet_ctrl`, both removed; the one throwaway tracked-file edit to `Timer.hpp`
+used to confirm the fix was reverted and independently verified byte-identical to `HEAD` via
+`sha256sum` before this record was written). No push made to the fork (frozen, PR #9 open).
+
+### State
+
+`linux-gfx1100` set to `validation-failed`, `failed_sha=a9016bcb5efb7a328785f428ba5e609cf98513c2`.
+Escalating to the porter: add `#include <vector>` to `Velvet/Timer.hpp`.
