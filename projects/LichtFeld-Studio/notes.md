@@ -2164,11 +2164,28 @@ The seven the validator listed:
 Plus two the validator's error list did not contain, deliberately:
 `cudaUserObjectCreate` -> `hipUserObjectCreate`, `cudaGraphRetainUserObject` ->
 `hipGraphRetainUserObject`. These are the two calls inside `retainGraphUserObject<T>`
-(`CUDAGraphsC10Utils.h:109-125`). They were not diagnosed because that template is never
-instantiated in the current test TUs and their calls have dependent arguments, so lookup is
-deferred to instantiation -- aliasing only the parameter types would leave the helper half
-translated and it would break the first time any consumer instantiates it. Both have hipify
-mappings (`cuda_to_hip_mappings.py:1553`, `:1411`) and real declarations
+(`CUDAGraphsC10Utils.h:109-125`), and they escaped the error list by two DIFFERENT
+mechanisms (corrected 2026-08-27 after the review below; the original entry claimed
+deferred instantiation for both, which is true of only one):
+
+- `cudaGraphRetainUserObject` (`:120-121`) is NOT deferred. Its arguments are a `cudaGraph_t`
+  parameter, a local `cudaUserObject_t`, a literal, and an enumerator -- none dependent -- so
+  ordinary lookup runs at template-definition time and an unaliased name is a hard error while
+  the helper is merely parsed. It was absent from the validator's list only because
+  `cudaGraphUserObjectMove`, an argument of that same call, was itself undeclared: clang stops
+  diagnosing the callee of a call whose argument list already contains an undeclared
+  identifier, so the callee's own error was suppressed. This alias is therefore REQUIRED for
+  `CUDAGraphsC10Utils.h` to parse at all under this torch, not a prudent extra.
+- `cudaUserObjectCreate` (`:110`) is the genuinely deferred one: its argument is `data.get()`
+  on a `std::unique_ptr<T>`, so the call is looked up at instantiation, and the template is
+  never instantiated in the current test TUs. This is the forward-looking alias -- without it
+  the helper stays half translated and breaks for the first consumer that instantiates it.
+
+Both mechanisms reproduced on this host (ROCm SDK clang 23.0.0git) with a 6-line TU each:
+a non-dependent call to an undeclared name inside an uninstantiated template errors
+immediately, while a sibling call with a dependent argument does not; adding an undeclared
+identifier to the argument list of the first makes clang report only that argument. Both have
+hipify mappings (`cuda_to_hip_mappings.py:1553`, `:1411`) and real declarations
 (`hip_runtime_api.h:9466`, `:9499`).
 
 Every mapping verified twice before writing it: against this ROCm's
@@ -2443,3 +2460,70 @@ a full fmt at `torch/include/fmt/format.h` with `FMT_VERSION 120201`, `fmt/core.
 
 CUDA no-regression gate remains unrun at any sha (unchanged, tracked in the entries above);
 not held against this delta, which the NVIDIA build cannot reach.
+
+## Port round 2026-08-27b (porter, linux-gfx1100) -- c8453260, rationale corrected
+
+Answers Finding 1 (blocking) of the `## Review 2026-08-27 ... CHANGES-REQUESTED` entry above.
+Text-only round: the header change itself was verified correct by the review and
+`cuda_to_hip.h` is untouched. The wrong claim -- that both `cudaUserObjectCreate` and
+`cudaGraphRetainUserObject` escaped diagnosis via deferred template lookup -- was fixed in all
+three places it had been written:
+
+1. fork commit body (amended, `c56016ba` -> `c8453260`),
+2. `notes.md` "Port round 2026-08-27" entry (the `Plus two ...` paragraph above),
+3. `.claude/skills/cuda-to-rocm/references/validation.md`, the libtorch-alias-gap bullet.
+
+The skill bullet also had the reviewer's second defect: the earlier insertion split a sentence
+and its tail ("small and escalatable") was reintroduced a few lines later. Merged back into one
+sentence, so the assertion appears once.
+
+### Mechanisms re-verified independently before writing them down
+
+Not taken from the review on trust. Same compiler as the review
+(`$ROCM_SDK/lib/llvm/bin/clang++`, AMD clang 23.0.0git, `-std=gnu++23 -fsyntax-only`):
+
+```cpp
+// a.cpp -> "error: use of undeclared identifier 'retainIt'" ONLY (1 error)
+template <typename T> void helper(std::unique_ptr<T> data, Obj graph) {
+  Obj o{};
+  makeIt(&o, data.get());   // dependent argument: not diagnosed at definition time
+  retainIt(graph, o, 1);    // no dependent argument: hard error at definition time
+}
+// b.cpp -> "error: use of undeclared identifier 'someUndeclaredEnum'" ONLY (1 error)
+template <typename T> void helper(std::unique_ptr<T> data, Obj graph) {
+  Obj o{};
+  retainIt(graph, o, 1, someUndeclaredEnum);   // callee 'retainIt' NOT reported
+}
+```
+
+Both reproduce exactly as the reviewer's table and `#undef` probe predicted. So the compiler's
+error list is a lower bound for two separate reasons, and the corrected framing is stronger for
+the port: `cudaGraphRetainUserObject` is required for the header to parse at all, and only
+`cudaUserObjectCreate` is the forward-looking one.
+
+### Amend, not a follow-up commit
+
+Permitted here and cheapest here: no platform had validated `c56016ba` (linux-gfx90a
+`completed` at `7cd4d569`, linux-gfx1100 `validation-failed` at `7cd4d569`),
+`moatlib.py pr-state` -> `none`, `moat-port` unpublished. `git commit --amend -F <msg>`, then
+`git push --force-with-lease=moat-port:c56016ba... origin moat-port` (accepted; no bare
+`--force` was used or needed). `origin/moat-port` is now `c8453260`.
+
+**Tree identity, which is why no rebuild was run**: `git diff c56016ba c8453260 --stat` is
+empty and `git diff --quiet c56016ba c8453260` returns 0 -- byte-identical trees, message-only
+change. The `[212/212]` gfx1100 build and the 2044/2048 two-run GPU result recorded in the
+2026-08-27 entry above therefore describe `c8453260`'s tree exactly, and the Test Plan in the
+amended body is unchanged and still literally accurate. Fork worktree clean before and after
+(`git -C src status --porcelain` empty).
+
+`advance-head` -> `c845326025a6850f0a33a566edb36270ffbe9d1b`. gfx90a's `revalidate` status is
+unchanged in substance (it was already stale at `7cd4d569`); when it revalidates, note that the
+compiled content at `c8453260` is identical to `c56016ba`.
+
+`python3 utils/jargon.py --port LichtFeld-Studio`: still 3 instances, all pre-existing in the
+`13e585d4`/`e24593f4` bodies (deferral `lfs-commit-msg-jargon-13e585d-e24593f`), 0 from
+`c8453260`. `utils/prose.py` clean on the amended body; title unchanged, 64 chars; ASCII-only;
+AI disclosure and Test Plan retained; no `Co-Authored-By`.
+
+No PR exists for this project, so there were no review threads to answer -- the loop closes in
+this file and in the skill.
