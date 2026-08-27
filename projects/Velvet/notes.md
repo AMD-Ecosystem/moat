@@ -2806,9 +2806,10 @@ bash utils/timeit.sh Velvet compile -- cmake --build build -j$(nproc)
 # exit 0, build/bin/Velvet produced (15200536 bytes)
 ```
 
-Configure reports `Building with HIP, architectures: gfx1100`. Only the pre-existing
-`-Wunused-value` nodiscard warnings from the `cuda_to_hip.h` call macros remain (14 host
-warnings), matching "Known Warnings" above. No new diagnostics.
+Configure reports `Building with HIP, architectures: gfx1100`. Only pre-existing warnings
+remain: 135 from the 11 host CXX TUs and 50 from the two HIP TUs, as measured and attributed
+per TU by the 2026-08-27 review below. The "14 host warnings" figure originally recorded here
+was wrong by an order of magnitude. No new diagnostics.
 
 ### CUDA no-regression gate: the fix helps that path too
 
@@ -2965,3 +2966,63 @@ Not run here; the GL application scenarios at `dc6fd73` are the validator's roun
 headless Xorg recipe recorded above (`Option "kmsdev" "/dev/dri/card1"`, `AutoAddGPU false`)
 is available on this host. The missing GPU run is not a reason for this verdict; findings
 1-4 are.
+
+## Port 2026-08-27 (linux-gfx1100, porter): message-only amendment dc6fd73 -> 856c96b
+
+Answers the four `changes-requested` findings of the review directly above. All four are
+message-only, so no source file was touched and nothing was re-measured: the review's
+numbers were adopted verbatim.
+
+`dc6fd73` was amended in place rather than followed by a new commit. Amending is normally
+forbidden, but the three preconditions that make it forbidden were all absent here: no
+platform holds a `validated_sha` at `dc6fd73`, no fix review PR is open, and the commit sits
+strictly above the published tip `a9016bc`, which PR #9 still shows. A follow-up commit
+would have left the wrong claims permanently in the branch history the maintainer reads.
+
+### What changed in the message
+
+- Last paragraph: "Only the pre-existing nodiscard warnings from the runtime call macros
+  remain" replaced with the review's measurement -- 166 warnings, all pre-existing in the
+  upstream sources and unchanged by this commit: 125 nodiscard, 35 `-Wformat-security`,
+  3 `-Wreturn-type`, 2 `-Wunknown-escape-sequence`, 1
+  `-Wimplicit-const-int-float-conversion`.
+- First paragraph: the diagnostic is now attributed per compiler -- ROCm clang "use of
+  undeclared identifier 'vector'", g++ 13.3 "'vector' was not declared in this scope" --
+  instead of quoting one string against both.
+- First paragraph: the 111-column "libstdc++ does not expose" line reflowed; the whole body
+  is now <= 79 columns, matching every other commit on the branch.
+
+### Verification
+
+```bash
+git diff dc6fd73 856c96b --stat            # empty: tree byte-identical, message-only
+git merge-base --is-ancestor a9016bc 856c96b   # RC=0
+git log --oneline a9016bc..856c96b         # single commit
+git push --force-with-lease=moat-fix-9:dc6fd73... origin moat-fix-9
+git ls-remote origin moat-port moat-fix-9  # moat-port a9016bc, moat-fix-9 856c96b
+```
+
+`moat-port` unmoved at `a9016bc`, so PR #9 is untouched. `python3 utils/jargon.py --port
+Velvet` -> `jargon: clean` over the whole branch. Title unchanged at 47 chars, ASCII only,
+AI-assistance disclosure and fenced Test Plan intact. `git -C projects/Velvet/src status
+--porcelain` clean before and after. No build was run this round: the tree is unchanged from
+the one that built at `dc6fd73`, and `git diff --stat` proves it.
+
+`notes.md` finding 2 fixed above: the "Build: clean at gfx1100" section now carries the
+review's 135 host-TU / 50 HIP-TU split instead of "14 host warnings".
+
+### Left for the next reader: the review's two warning figures do not reconcile
+
+Recorded, not resolved, because this round was scoped to adopt the review's numbers rather
+than re-measure them. The review states 166 total with a 125-line nodiscard entry, and
+separately a 135 host / 50 HIP split; 135 + 50 = 185, and the same entry's own attribution
+(host 94 + HIP TUs 50) is 144, not 125. The commit body uses the 166 breakdown and the notes
+use the 135/50 split, each verbatim from the review, which is why the two now differ. The
+totals are all far above the "14" they replace and none of them is a claim of cleanliness, so
+nothing upstream-visible is overstated either way. Whoever next runs this build with `-j1`
+should settle which counting the numbers came from and make both records agree.
+
+### Skill
+
+No new promotion this round. The libstdc++/MSVC masking lesson from the previous round is
+already in `strategy-a-cmake.md`; a message-only amendment adds nothing portable.
