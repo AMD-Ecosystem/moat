@@ -2855,3 +2855,113 @@ regression, but the include was always missing. The masking is also platform-dep
 MSVC's `<unordered_map>` supplies `<vector>`, libstdc++'s does not, so Windows can pass the
 identical delta that fails on Linux -- which is exactly what happened here between the
 windows-gfx1151 and linux-gfx1100 rounds.
+
+## Review 2026-08-27 (linux-gfx1100, reviewer): fix-round delta a9016bc..dc6fd73
+
+Scope: `moat-fix-9`, one commit (`dc6fd73`), one file, one line -- `#include <vector>` in
+`Velvet/Timer.hpp:6`. Every claim below was re-measured on this host rather than read from
+the porter's record. Verdict: **changes-requested** -- the code is exactly right, the
+commit body overstates the build's cleanliness.
+
+### Findings
+
+1. `dc6fd73` commit body, last paragraph: "Only the pre-existing nodiscard warnings from
+   the runtime call macros remain" is not what the recorded Test Plan produces. Running that
+   exact configure/build on this host (same README recipe, same vcpkg tree, same toolchain,
+   binary byte-size 15200536 matching the porter's) gives 166 warnings, of which 41 are not
+   nodiscard/`-Wunused-value`. Attributed per TU with a serial (`-j1`) rebuild:
+
+   ```
+   35  -Wformat-security               GUI.cpp 13, VtEngine.cpp 11, main.cpp 11
+    3  -Wreturn-type                   Collider.hpp:53 via GUI.cpp, VtEngine.cpp, main.cpp
+    2  -Wunknown-escape-sequence       VtEngine.cpp
+    1  -Wimplicit-const-int-float-conversion   Helper.cpp
+   125 -Wunused-value (nodiscard)      host 94, HIP TUs 50 (SpatialHash 28, VtClothSolver 22)
+   ```
+
+   All 41 are pre-existing upstream code untouched by this commit (`git log master..HEAD --
+   Velvet/Collider.hpp` etc. are empty), so the change introduces no diagnostic -- but a
+   maintainer following the Test Plan sees warnings the body says are not there. Fix: state
+   what is true and checkable, e.g. "this change adds no new diagnostics; the build's
+   pre-existing warnings (nodiscard from the runtime call macros, plus format-security,
+   return-type and escape-sequence warnings in the upstream sources) are unchanged".
+
+2. `notes.md` "Build: clean at gfx1100" section above: "14 host warnings" is off by an order
+   of magnitude. The same recipe on the same host emits 135 warnings from the 11 host CXX TUs
+   (94 `-Wunused-value` + the 41 above) and 50 from the two HIP TUs. Correct the number with
+   the finding 1 amendment so the record and the commit agree.
+
+3. `dc6fd73` commit body, first paragraph: the quoted diagnostic is attributed to two
+   compilers but is verbatim only one of them. The ROCm clang 23 emits
+   `error: use of undeclared identifier 'vector'`; g++ 13.3.0 emits
+   `error: 'vector' was not declared in this scope` (plus a `did you forget to
+   '#include <vector>'` note). Same file, same line 233, same cause -- only the quoted string
+   differs. Fix while amending: attribute the quote to the ROCm clang, or drop the literal
+   quote.
+
+4. Same sentence, hard wrap: the body wraps at <= 79 columns everywhere except the line
+   beginning "libstdc++ does not expose", which is 111 columns. Every other commit on this
+   branch and at/below the published tip wraps at <= 79. Reflow the paragraph as part of the
+   same amendment.
+
+All four are message-only. `moat-fix-9` carries no validation evidence at `dc6fd73` yet (no
+platform has been validated at this sha) and no fix review PR is open, so amending above the
+published tip costs nothing now and would cost a GPU round later.
+
+### Verified, independently
+
+- **Root cause and fix, both directions.** Compiled `Timer.hpp` as a standalone TU with the
+  header from `a9016bc` and from `dc6fd73`, same flags: pre-fix fails at `Timer.hpp:233`
+  (`unordered_map<string, vector<cudaEvent_t>> cudaEvents;`), post-fix RC=0. Reproduced under
+  g++ 13.3.0 and under the ROCm SDK clang 23 (`$ROCM_PATH/lib/llvm/bin/clang++`).
+- **The masking mechanism the commit and the promoted lesson both assert.** Same ROCm clang,
+  same pre-fix header, only the language mode differing: `-x hip --offload-arch=gfx1100`
+  gives RC=0, plain C++ gives RC=1 with the undeclared-identifier error. The HIP runtime
+  headers really do supply `<vector>`; that is the whole of the regression, and it is why
+  `280ee3d` unmasked rather than caused it.
+- **Diff scope.** `git diff a9016bc...HEAD` is one file, one added line. `280ee3d` is
+  untouched (not reverted, not amended); `git log a9016bc..HEAD` is a single commit;
+  `dc6fd73` is a strict descendant of `a9016bc` (`git merge-base --is-ancestor` RC=0).
+- **Include placement.** `<vector>` last in the standard-library block matches `VtEngine.hpp`
+  (`iostream`, `memory`, `string`, `vector`) and `Actor.hpp` (`iostream`, `vector`). The
+  block is not alphabetical (`unordered_map` precedes `string`), so appending is the house
+  form.
+- **Full build.** README recipe verbatim into a scratch build dir: configure OK, build RC=0,
+  0 `error:`, `bin/Velvet` 15200536 bytes -- byte-size identical to the porter's. The
+  language split survives the change: 11 "Building CXX object" against 2 "Building HIP
+  object".
+- **No second latent gap of this class.** Syntax-checked all 11 host TUs in `CPP_SOURCES`
+  under plain g++ 13.3: all RC=0. `Velvet/test.cpp` fails (`Material.hpp:195` uses
+  `std::cout` with no `<iostream>`), but it is in no source list in `CMakeLists.txt:40-57`,
+  is untouched by the port, and is reached by no built TU -- pre-existing upstream, not this
+  round's.
+- **CUDA path.** `g++ -std=c++17 -fsyntax-only ... Velvet/Timer.cpp` RC=0 at this tip; the
+  same check failed at every earlier sha. The fix is additive and helps the NVIDIA path, as
+  the body claims.
+- **Freeze and integrity.** `git ls-remote origin` shows `moat-port` still at `a9016bc` and
+  `moat-fix-9` at `dc6fd73`. `git -C projects/Velvet/src status --porcelain` clean before and
+  after this review (all review builds went to scratch dirs outside the clone).
+- **Hygiene.** Title `[ROCm] Include <vector> where Timer.hpp uses it`, 47 chars; AI-assistance
+  disclosure present; fenced Test Plan present; ASCII only; no `Co-Authored-By`/noreply/
+  ghstack trailer; author and committer `jeff.daily@amd.com`, no internal account reference.
+  `jargon.py --port Velvet` clean over `master..moat-fix-9`. `check.py` flags only the two
+  pre-existing Velvet misses at/below the published tip (`bb06b44`, `97d69a6`), unamendable
+  while PR #9 is open.
+- **Promoted lesson** (`strategy-a-cmake.md`, the paragraph added after "Verify the split
+  landed"): checked against the code, not the summary. Placed directly after the split's
+  verification steps, which is where a reader doing the `LANGUAGE HIP` narrowing looks. Its
+  libstdc++ claim is the measurement above; its MSVC claim is carried by evidence already in
+  this file -- windows-gfx1151 validated `a9016bc`, which contains `280ee3d`, so Timer.cpp
+  compiled there as plain C++ against the MSVC STL and succeeded. Spelling the field
+  `vector<hipEvent_t>` rather than the source's `vector<cudaEvent_t>` is accurate after
+  `Velvet/cuda_to_hip.h:31` (`#define cudaEvent_t hipEvent_t`).
+- **Fault classes.** Not applicable to a standard-library include: no wavefront assumption,
+  no resource-handle lifetime, no indexing, no texture pitch, no library swap, no per-arch
+  branch. Device code is untouched, so the wave32/wave64 story is unchanged.
+
+### GPU
+
+Not run here; the GL application scenarios at `dc6fd73` are the validator's round, and the
+headless Xorg recipe recorded above (`Option "kmsdev" "/dev/dri/card1"`, `AutoAddGPU false`)
+is available on this host. The missing GPU run is not a reason for this verdict; findings
+1-4 are.

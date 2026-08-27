@@ -7,16 +7,13 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:19:23Z",
-  "updated_at": "2026-08-27T05:35:30Z",
+  "updated_at": "2026-08-27T05:44:25Z",
   "head_sha": "dc6fd73c56dcaaaee474232b403a87bccb5b2029",
   "depends_on": [],
   "pr_url": "https://github.com/vitalight/Velvet/pull/9",
   "pr_number": 9,
   "pr_opened_at": "2026-08-13T20:49:28Z",
-  "porting": {
-    "arch": "linux-gfx1100",
-    "since": "2026-08-27T05:35:30Z"
-  },
+  "porting": null,
   "waivers": {
     "wave64": {
       "reason": "The GPU work is inseparable from a graphics pipeline, which no wave64 part has. Velvet shares its particle position and normal buffers with OpenGL through graphics interop: VtRegisteredBuffer wraps cudaGraphicsGLRegisterBuffer over a GL vertex buffer object, and the solver reads and writes those very buffers. Every wave64 architecture is CDNA and CDNA is compute-only, so the driver refuses to create an OpenGL context there; linux-gfx90a is recorded blocked for exactly that reason and is the only wave64 host in the fleet. This is not a scheduling gap more hardware would close: no wave64 part has a graphics pipeline, so no evidence can ever exist. Meets the NARROW criterion added to config/arches.toml on 2026-08-25, not the loose one it warns against -- this is not merely a project with a GUI, nor a README claiming a graphics pipeline is needed. There is NO headless compute subset to validate instead: the device buffers ARE the graphics buffers, so the solve loop cannot be reached without a GL context. That is precisely why the earlier standalone kernel test was a smoke check rather than a validation, and why two defects survived four platform passes. Coverage that DOES exist at head a9016bc: wave32 and windows are both satisfied by windows-gfx1151, validated against the real application -- extent 2.0x2.0 held over 200 physics frames, sag 1.5 to 0.72-0.80 with corners pinned at 1.500, textured mesh rendering, zero NaN with the detector self-tested against a manufactured NaN, both interop copies returning success, and the Self Collision and High Resolution scenes exercised. The upstream PR body already states that compute-only parts cannot run this application.",
@@ -28,7 +25,7 @@
   "pr_state": "open",
   "license_spdx": "MIT",
   "upstream_repo_id": 483176101,
-  "stage": "reviewing",
+  "stage": "changes-requested",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -66,7 +63,7 @@
       "validated_sha": "7ccd4a98451e144e05f5bdf19827a28471f787e0",
       "started_at": "2026-08-24T19:46:28Z",
       "completed_at": "2026-08-24T20:59:32Z",
-      "updated_at": "2026-08-27T05:35:30Z",
+      "updated_at": "2026-08-27T05:44:25Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -181,8 +178,8 @@
   },
   "porting_released": {
     "arch": "linux-gfx1100",
-    "since": "2026-08-27T05:30:32Z",
-    "at": "2026-08-27T05:33:47Z"
+    "since": "2026-08-27T05:35:30Z",
+    "at": "2026-08-27T05:44:25Z"
   },
   "pr_approval": {
     "approved_by": "jeffdaily",

@@ -97,3 +97,6 @@
 {"kind":"phase","ts":"2026-08-27T05:19:42Z","phase":"compile","seconds":0.690,"exit":2,"cmd":"cmake --build projects/Velvet/src/build -j64"}
 {"kind":"phase","ts":"2026-08-27T05:21:40Z","phase":"compile","seconds":8.019,"exit":2,"cmd":"cmake --build projects/Velvet/src/build -j64"}
 {"kind":"phase","ts":"2026-08-27T05:31:29Z","phase":"compile","seconds":8.142,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/Velvet/src/build -j64"}
+{"kind":"session","ts":"2026-08-27T05:35:22Z","epoch":1787808922.501015861,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-27T05:40:54Z","phase":"compile","seconds":8.133,"exit":0,"cmd":"cmake --build /tmp/claude-1000/-var-lib-jenkins-moat/2c4c88f4-6477-4003-ba8d-e3fdd4f93208/scratchpad/rvbuild -j64"}
+{"kind":"session","ts":"2026-08-27T05:44:30Z","epoch":1787809470.196394234,"event":"end","platform":"linux-gfx1100"}
