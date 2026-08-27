@@ -190,7 +190,13 @@ def poll(rows):
     mechanical; --apply writes it. A pre-flow record whose head DISAGREES with the
     live PR goes to headdrift instead: there is no baseline to stamp, and inferring
     one from a record the PR contradicts is how a maintainer's push would get
-    blessed as our own."""
+    blessed as our own.
+
+    A FINISHED PR missing its published_sha rides the same backfill list (tagged
+    `finished`): its own head is the tip it shipped and outlives the merge, and
+    without the stamp a follow-up cannot be judged (pr_ready refuses to guess the
+    baseline). Stamped only when our record already agrees with GitHub about the
+    state -- a drifting record gets corrected first, not annotated."""
     sys.path.insert(0, str(REPO / "utils"))
     import moatlib
     drift, unreviewed, headdrift, backfill, errors = [], [], [], [], []
@@ -227,6 +233,9 @@ def poll(rows):
                 # No published_sha, and the record's head is absent or disagrees
                 # with the PR: there is no verified baseline to stamp.
                 headdrift.append({**r, "live": live, "nobaseline": True})
+        if (r["real"] in ("MERGED", "CLOSED") and live and not r.get("published")
+                and implied == r["ours"]):
+            backfill.append({**r, "live": live, "finished": True})
     return drift, unreviewed, headdrift, backfill, errors
 
 
@@ -558,37 +567,100 @@ def review_candidates():
 
     The gap this fills: everything after a review PR existed was automated -- fetch
     it, snapshot the approval, verify it still covers the content, publish -- and
-    nothing opened one. Twenty-eight ports sat PR-ready with none open."""
+    nothing opened one. Twenty-eight ports sat PR-ready with none open.
+
+    A finished (merged or closed) upstream PR is not terminal here: a project whose
+    branch moved past what that PR shipped is a FOLLOW-UP candidate, and its review
+    PR carries exactly that delta -- opening one archives the finished PR into
+    pr_history (moatlib.archive_pr) and the round repeats the first PR's whole
+    contract. A follow-up held only by coverage gates is reported rather than
+    silently skipped, because no other list names it; a finished PR with nothing
+    new past it stays silent, which is most of the fleet."""
     sys.path.insert(0, str(REPO / "utils"))
     import moatlib
 
     out = []
     for name in sorted(moatlib.all_projects()):
         d, _where = moatlib.project_record(name)
-        if d is None or d.get("review_pr") or d.get("pr_state") or d.get("pr_url"):
+        if d is None:
             continue
-        ready, blocking, _ = moatlib.pr_ready(name)
-        if not ready:
+        followup = d.get("pr_state") in ("merged", "closed")
+        if not followup and (d.get("review_pr") or d.get("pr_state")
+                             or d.get("pr_url")):
             continue
         fork = (d.get("fork_url") or "").replace("https://github.com/", "")
         branch = d.get("fork_branch") or moatlib.PORT_BRANCH
         base = d.get("fork_default_branch") or "main"
+        ready, blocking, _ = moatlib.pr_ready(name)
+        if not ready:
+            # The pr-exists refusals (open PR, nothing past the finished one, no
+            # recorded baseline) are the routine fleet and stay silent, as does
+            # every first-PR project still mid-pipeline. What must not stay
+            # silent is a follow-up delta held only by gates.
+            if followup and fork and blocking \
+                    and not any(g == "pr-exists" for g, _s in blocking):
+                out.append({"name": name, "fork": fork, "branch": branch,
+                            "base": base, "followup": d.get("pr_number"),
+                            "problem":
+                                f"follow-up to {d.get('pr_state')} PR "
+                                f"#{d.get('pr_number')} (delta "
+                                f"{(d.get('published_sha') or '?')[:12]}.."
+                                f"{(d.get('head_sha') or '?')[:12]}) blocked: "
+                                + ", ".join(f"{p}={s}" for p, s in blocking)})
+            continue
         if not fork:
             continue
+        row = {"name": name, "fork": fork, "branch": branch, "base": base,
+               "problem": None}
+        if followup:
+            row["followup"] = d.get("pr_number")
+            row["prior_url"] = d.get("pr_url")
+            row["base_sha"] = d.get("published_sha")
+            # The review diff is judged against the fork's default branch, so
+            # the mirror must already contain what the finished PR shipped:
+            # behind the merge, base...branch replays the finished round in
+            # front of the reviewer -- a wrong diff, not a smaller one.
+            sync = gh_json(["api",
+                            f"repos/{fork}/compare/{base}...{row['base_sha']}",
+                            "--jq", "{status: .status}"])
+            if not sync or not sync.get("status"):
+                row["problem"] = (f"cannot compare {base}..."
+                                  f"{row['base_sha'][:12]} on the fork")
+                out.append(row)
+                continue
+            if sync["status"] not in ("behind", "identical"):
+                row["problem"] = (
+                    f"the fork's {base} does not contain {row['base_sha'][:12]}, "
+                    f"the tip PR #{row['followup']} finished with -- fast-forward "
+                    f"the mirror from upstream first (a squash-merged PR needs a "
+                    f"person: what shipped is not upstream's commits)")
+                out.append(row)
+                continue
+            tip = gh_json(["api", f"repos/{fork}/git/ref/heads/{branch}",
+                           "--jq", "{sha: .object.sha}"])
+            if not tip or not moatlib.same_commit(tip.get("sha") or "",
+                                                  d.get("head_sha") or ""):
+                row["problem"] = (
+                    f"{branch} is at {((tip or {}).get('sha') or '?')[:12]} on "
+                    f"the fork but the record says head_sha "
+                    f"{(d.get('head_sha') or '?')[:12]}")
+                out.append(row)
+                continue
+            row["tip"] = tip["sha"]
         # The port branch has to exist and differ from the base. pr_ready never
         # checked this, so a fork with no port at all could present as ready.
         cmp = gh_json(["api", f"repos/{fork}/compare/{base}...{branch}",
                        "--jq", "{commits:.total_commits,files:(.files|length)}"])
         if not cmp:
-            out.append({"name": name, "fork": fork, "branch": branch, "base": base,
-                        "problem": f"cannot compare {base}...{branch} on the fork"})
+            row["problem"] = f"cannot compare {base}...{branch} on the fork"
+            out.append(row)
             continue
         if not cmp.get("commits"):
-            out.append({"name": name, "fork": fork, "branch": branch, "base": base,
-                        "problem": f"{branch} has no commits over {base}"})
+            row["problem"] = f"{branch} has no commits over {base}"
+            out.append(row)
             continue
-        out.append({"name": name, "fork": fork, "branch": branch, "base": base,
-                    "commits": cmp["commits"], "files": cmp["files"], "problem": None})
+        row.update({"commits": cmp["commits"], "files": cmp["files"]})
+        out.append(row)
     return out
 
 
@@ -616,9 +688,19 @@ def open_review_pr(row, title, body, apply=False):
     # point where fixing it is cheap -- after the review PR, a rewrite costs every
     # architecture its validation.
     try:
-        repo, commits, diff = jargon.port_range(row["name"])
-        hits += jargon.scan_commits(repo, commits, terms, allow)
-        hits += jargon.scan_diff(repo, diff, terms, allow)
+        if row.get("followup"):
+            # A follow-up branch reaches back through commits the finished PR
+            # already shipped, so base..branch would re-judge a round that is
+            # already upstream. This round's upstream-visible content is the
+            # delta past what shipped, scanned like a fix round's -- from a
+            # local clone when one holds both commits, over the API otherwise.
+            hits += _fix_delta_hits(row["fork"], row["base_sha"],
+                                    row.get("tip") or row["branch"],
+                                    clone=REPO / "projects" / row["name"] / "src")
+        else:
+            repo, commits, diff = jargon.port_range(row["name"])
+            hits += jargon.scan_commits(repo, commits, terms, allow)
+            hits += jargon.scan_diff(repo, diff, terms, allow)
     except ValueError as e:
         # Never silently skip. A gate that cannot run is not a gate that passed.
         return ("jargon", f"cannot check the branch for in-house vocabulary: {e}")
@@ -633,7 +715,21 @@ def open_review_pr(row, title, body, apply=False):
     if not apply:
         return ("would-open",
                 f"{row['fork']}: {row['branch']} -> {row['base']} "
-                f"({row['commits']} commits, {row['files']} files)\n\n{title}\n\n{body}")
+                f"({row['commits']} commits, {row['files']} files"
+                + (f"; follow-up to PR #{row['followup']}, delta past "
+                   f"{row['base_sha'][:12]}" if row.get("followup") else "")
+                + f")\n\n{title}\n\n{body}")
+    if row.get("followup"):
+        # The finished PR becomes history BEFORE anything external happens: if
+        # the create below fails, the record is an ordinary review-passed
+        # candidate and a retry re-enters here, while the reverse order could
+        # open a review PR no record explains. set_review_pr below then records
+        # the new round's review PR on the archived record.
+        try:
+            moatlib.archive_pr(row["name"])
+        except Exception as e:              # noqa: BLE001 - reported, not raised
+            return ("error", f"could not archive the finished PR "
+                             f"#{row['followup']}: {e}")
     r = subprocess.run(["gh", "pr", "create", "--repo", row["fork"],
                         "--head", row["branch"], "--base", row["base"],
                         "--title", title, "--body", body],
@@ -663,7 +759,11 @@ def open_review_pr(row, title, body, apply=False):
          f"its time against the branch tip.\n\n"
          f"The title and body above are what gets opened upstream, verbatim, so approving "
          f"here approves all three: the code, the title and the body. Anything pushed "
-         f"afterwards, or any edit to the title or body, voids it and needs a fresh one."],
+         f"afterwards, or any edit to the title or body, voids it and needs a fresh one."
+         + (f"\n\nThis is a follow-up to {row.get('prior_url') or 'the previous pull request'}, "
+            f"which is finished: only the delta since it is under review here, and "
+            f"publishing opens a new upstream pull request carrying it."
+            if row.get("followup") else "")],
         capture_output=True, text=True, timeout=90)
     return ("opened", url)
 
@@ -1565,7 +1665,9 @@ def main():
                     print(f"  BLOCKED  {r['name']:22} {r['problem']}")
                 else:
                     print(f"  READY    {r['name']:22} {r['branch']} -> {r['base']} "
-                          f"({r['commits']} commits, {r['files']} files)")
+                          f"({r['commits']} commits, {r['files']} files)"
+                          + (f" [follow-up to #{r['followup']}]"
+                             if r.get("followup") else ""))
             print(f"-- {sum(1 for r in rows if not r['problem'])} port(s) need a review PR; "
                   f"{sum(1 for r in rows if r['problem'])} blocked")
             print("   open one: --review --apply --name <p> --title '<t>' --body-file <f>")
@@ -1654,9 +1756,15 @@ def main():
             print(f"  HEAD-MOVED {r['name']:26} PR head {r['live'][:12]} != published "
                   f"{r['published'][:12]} {r['repo']}#{r['num']}")
     for r in backfill:
-        print(f"  BACKFILL   {r['name']:26} open PR from before the fix flow; live "
-              f"head {r['live'][:12]} == recorded head -- --apply stamps "
-              f"published_sha")
+        if r.get("finished"):
+            print(f"  BACKFILL   {r['name']:26} {r['ours']} PR shipped "
+                  f"{r['live'][:12]} and the record does not say so -- --apply "
+                  f"stamps published_sha, the baseline a follow-up is judged "
+                  f"against")
+        else:
+            print(f"  BACKFILL   {r['name']:26} open PR from before the fix flow; "
+                  f"live head {r['live'][:12]} == recorded head -- --apply stamps "
+                  f"published_sha")
     if headdrift:
         # Deliberately never applied: the usual cause is a maintainer pushing to
         # our branch, which a person did on purpose. The move is to READ what

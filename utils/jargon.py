@@ -98,7 +98,7 @@ def port_range(name):
     if not (repo / ".git").exists():
         raise ValueError(f"{name}: no fork clone at {repo} -- nothing to scan")
     base = obj.get("fork_default_branch") or "main"
-    branch = obj.get("fork_branch") or moatlib.PORT_BRANCH
+    branch = moatlib.upstream_visible_branch(obj)
     rng = f"{base}..{branch}"
     n = subprocess.run(["git", "-C", str(repo), "rev-list", "--count", rng],
                        capture_output=True, text=True, **_GIT_TEXT)
