@@ -207,6 +207,21 @@ the recorded compile line for a host object should carry neither `-x hip` nor
 `--offload-arch`, and a temporary `#if defined(__HIPCC__) #error` probe in one host file
 should compile clean.
 
+Then expect the split to unmask missing standard-library includes in host headers, and build
+on every OS in the gate before calling the split done. The HIP and CUDA runtime headers drag
+in a lot of the standard library, so a header that has always been compiled as a GPU source
+can use `std::vector` or `std::string` without including it and never be caught. Narrowing
+the language property makes it a plain C++ TU and the omission becomes a hard error that
+reads like a regression the split introduced; it is not, and the fix is the one-line
+`#include`, never a revert of the split. The masking is also platform-dependent, so the
+identical delta can pass on one OS and fail on another: MSVC's `<unordered_map>` supplies
+`<vector>`, libstdc++'s does not. Velvet's split passed a full Windows application
+validation and then failed to compile at all on Linux under both GCC 13 and the ROCm clang,
+on `unordered_map<string, vector<hipEvent_t>>` in a header including only `<iostream>`,
+`<unordered_map>` and `<string>`. Such a gap usually predates the port and breaks the
+project's own NVIDIA build on the same OS, so fixing it is upstream-friendly rather than
+AMD-specific -- say so in the commit message.
+
 ## Build hygiene
 
 - **Do not pin `--offload-arch` or `CMAKE_HIP_ARCHITECTURES` in the committed build.** Pass

@@ -96,3 +96,4 @@
 {"kind":"phase","ts":"2026-08-27T05:19:35Z","phase":"compile","seconds":8.060,"exit":2,"cmd":"cmake --build projects/Velvet/src/build -j64"}
 {"kind":"phase","ts":"2026-08-27T05:19:42Z","phase":"compile","seconds":0.690,"exit":2,"cmd":"cmake --build projects/Velvet/src/build -j64"}
 {"kind":"phase","ts":"2026-08-27T05:21:40Z","phase":"compile","seconds":8.019,"exit":2,"cmd":"cmake --build projects/Velvet/src/build -j64"}
+{"kind":"phase","ts":"2026-08-27T05:31:29Z","phase":"compile","seconds":8.142,"exit":0,"cmd":"cmake --build /var/lib/jenkins/moat/projects/Velvet/src/build -j64"}

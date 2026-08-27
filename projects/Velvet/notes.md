@@ -2764,3 +2764,94 @@ used to confirm the fix was reverted and independently verified byte-identical t
 
 `linux-gfx1100` set to `validation-failed`, `failed_sha=a9016bcb5efb7a328785f428ba5e609cf98513c2`.
 Escalating to the porter: add `#include <vector>` to `Velvet/Timer.hpp`.
+
+## Porter 2026-08-27 (linux-gfx1100, fix round a9016bc -> dc6fd73): Timer.hpp includes `<vector>`
+
+Answers the `validation-failed` above. PR #9 is open and `published_sha == head_sha ==
+a9016bc`, so `moat-port` is frozen: this round staged on `moat-fix-9`
+(`moatlib.py fix-branch Velvet`, base `a9016bc`, review PR not yet open), cut from the
+published tip and pushed alone. `git ls-remote` after the push confirms `moat-port` still at
+`a9016bc`. Pre-push hook armed via `protect-fork` before any work.
+
+### The change
+
+One line, exactly what the validator verified and nothing else:
+
+```diff
+ #include <unordered_map>
+ #include <string>
++#include <vector>
+```
+
+Placed last in the standard-library block, matching `VtEngine.hpp` (`iostream`, `memory`,
+`string`, `vector`) and `Actor.hpp`, which both put `<vector>` at the end of that block.
+`280ee3d` was NOT reverted -- it is the correct fix for the zeroed `VtSimParams` defaults;
+this commit closes the latent gap it unmasked.
+
+### Build: clean at gfx1100
+
+README recipe verbatim (`README.md:56-76`), same host/toolchain the validator used to
+reproduce the failure (4x W7800, gfx1100, TheRock ROCm HIP 7.14.60850 / clang 23.0.0git,
+Ubuntu 24.04, vcpkg at `/var/lib/jenkins/vcpkg`):
+
+```bash
+source /etc/rocm_env.sh
+cmake -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+      -DCMAKE_C_COMPILER=$ROCM_PATH/lib/llvm/bin/clang \
+      -DCMAKE_CXX_COMPILER=$ROCM_PATH/lib/llvm/bin/clang++ \
+      -DCMAKE_HIP_COMPILER=$ROCM_PATH/lib/llvm/bin/clang++ \
+      -DCMAKE_PREFIX_PATH=$ROCM_PATH -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_TOOLCHAIN_FILE=/var/lib/jenkins/vcpkg/scripts/buildsystems/vcpkg.cmake
+bash utils/timeit.sh Velvet compile -- cmake --build build -j$(nproc)
+# exit 0, build/bin/Velvet produced (15200536 bytes)
+```
+
+Configure reports `Building with HIP, architectures: gfx1100`. Only the pre-existing
+`-Wunused-value` nodiscard warnings from the `cuda_to_hip.h` call macros remain (14 host
+warnings), matching "Known Warnings" above. No new diagnostics.
+
+### CUDA no-regression gate: the fix helps that path too
+
+The isolated CUDA-path syntax check of `Timer.cpp` that has failed at every sha checked
+(`bb06b44`, `49f6db9`, `7ccd4a9`, `a9016bc` -- see the validator section above) now passes:
+
+```bash
+g++ -std=c++17 -fsyntax-only -include glad/glad.h -IVelvet -IVelvet/External \
+  -IVelvet/External/cuda -I/var/lib/jenkins/vcpkg/installed/x64-linux/include \
+  -I/opt/conda/envs/cuda-12.8/targets/x86_64-linux/include Velvet/Timer.cpp   # RC=0
+```
+
+g++ 13.3.0. That long-standing pre-existing gap is closed as a side effect, so the commit
+message states the fix serves both paths rather than being AMD-specific.
+
+### Not run here
+
+The GL application scenarios (extent hold, sag, NaN detector, interop copy return codes) are
+the validator's next round. The validator's headless GL recipe above (Xorg `:1`,
+`Option "kmsdev" "/dev/dri/card1"`, `AutoAddGPU false`) is the documented way to get a real
+radeonsi context on this host.
+
+### Documentation
+
+No doc change in this round. The README's ROCm build section is already present and accurate
+-- the validator followed it verbatim, which is how the regression surfaced.
+
+### Integrity and gates
+
+`git -C projects/Velvet/src status --porcelain` clean (only ignored `build/`).
+`python3 utils/jargon.py --port Velvet` -> `jargon: clean` (range `master..moat-fix-9`, so it
+covers the whole branch, not just this commit). Commit title 47 chars. Pushed with
+`--force-with-lease`; `moat-fix-9` is a strict descendant of `a9016bc` with nothing at or
+below the published tip amended. `advance-head` to `dc6fd73` flips the completed arches to
+`revalidate` so the delta carries evidence before it ever reaches PR #9.
+
+### Gotcha worth carrying (promoted to the skill)
+
+A header that a project compiles as a GPU source can hide a missing standard-library
+include: the HIP (and CUDA) runtime headers pull in a lot of libstdc++, so narrowing
+`LANGUAGE HIP` to the real device files is a correct change that routinely unmasks latent
+`#include` gaps in host headers. The failure is a plain C++ error and reads like a
+regression, but the include was always missing. The masking is also platform-dependent:
+MSVC's `<unordered_map>` supplies `<vector>`, libstdc++'s does not, so Windows can pass the
+identical delta that fails on Linux -- which is exactly what happened here between the
+windows-gfx1151 and linux-gfx1100 rounds.
