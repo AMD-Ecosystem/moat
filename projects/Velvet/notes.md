@@ -3197,3 +3197,263 @@ one host-header include.
 Not run here. The GL application scenarios at `856c96b` are the validator's round on this
 host; windows revalidates on its own. The absence of that run is not a reason to withhold
 this verdict.
+
+## Validation 2026-08-27 (linux-gfx1100): PASS -- first Linux application-level validation, real hardware-backed GL context
+
+Dispatched as `port-ready`/first application-level pass at `head_sha=856c96bd7713ced9c1d8b1cb1398cd13b892ff06`
+on `moat-fix-9` (PR #9 open, `published_sha=a9016bc`, `moat-port` frozen there). Every prior
+`linux-gfx1100` round validated with a synthetic standalone kernel test or a build-only check;
+this round runs the real `Velvet` application against a real hardware OpenGL context, matching
+the pattern the windows-gfx1151 validation established (8-requirement checklist above).
+
+Host: 4x AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), Ubuntu 24.04, kernel 6.8.0-65,
+ROCm via TheRock conda env (`/opt/conda/envs/py_3.12/.../_rocm_sdk_devel`, HIP 7.14.60850,
+clang 23.0.0git), vcpkg at `/var/lib/jenkins/vcpkg` (already bootstrapped with the recorded
+deps from the prior FAIL revalidation session).
+
+### Real hardware-backed GL context (headless Xorg, reproduced from the prior round's recipe)
+
+```
+Section "ServerFlags"
+    Option "AutoAddGPU" "false"
+    Option "AutoEnableDevices" "false"
+EndSection
+Section "Device"
+    Identifier "AMDGPU0"
+    Driver "amdgpu"
+    Option "kmsdev" "/dev/dri/card1"
+EndSection
+Section "Screen"
+    Identifier "Screen0"
+    Device "AMDGPU0"
+EndSection
+```
+
+```bash
+sudo Xorg :1 -config xorg-gfx1100.conf -logfile Xorg.1.log -novtswitch -sharevts &
+DISPLAY=:1 glxinfo -B
+# -> OpenGL renderer string: AMD Radeon Pro W7800 48GB (radeonsi, navi31, LLVM 20.1.2, DRM 3.64, ...)
+```
+
+Real radeonsi/navi31 acceleration confirmed (not llvmpipe).
+
+**New finding, worth the skill promotion below**: on this 4-GPU host, `card1`'s DRM device
+(the one Xorg above binds via `kmsdev`) does not correspond to `HIP_VISIBLE_DEVICES=1`. The
+first attempt to launch the real app with `HIP_VISIBLE_DEVICES=1` failed the very first
+interop call:
+
+```
+Velvet/VtBuffer.hpp:171: cudaGraphicsGLRegisterBuffer(&m_cudaVboResource, vbo, cudaGraphicsRegisterFlagsNone) -> invalid argument (1)
+```
+
+`card1`'s PCI path is `.../0000:43:00.0/drm/card1`. `rocminfo`'s per-agent `BDFID` decodes as
+`bus = (BDFID >> 8) & 0xff`: Node 1 (the first GPU agent, i.e. `HIP_VISIBLE_DEVICES=0`) has
+`BDFID=17152=0x4300`, bus `0x43` -- the same bus as `card1`. Switching to
+`HIP_VISIBLE_DEVICES=0` made the interop registration (and everything downstream) succeed
+immediately. This is an environment/host-topology detail, not a port defect: GL-HIP interop
+requires the OpenGL context and the HIP device to be the *same physical GPU*, and on a
+multi-GPU headless box nothing enforces that they default to matching indices. Promoted to the
+skill: decode `rocminfo`'s `BDFID` (`bus=(BDFID>>8)&0xff`) and match it against the target DRM
+card's PCI bus (`udevadm info --name=/dev/dri/cardN | grep DEVPATH`) before assuming
+`HIP_VISIBLE_DEVICES=0` is the right (or only) choice for an interop app on a multi-GPU host.
+
+### Build (README recipe verbatim)
+
+```bash
+source /etc/rocm_env.sh   # ROCM_PATH=/opt/conda/envs/py_3.12/.../_rocm_sdk_devel
+cd projects/Velvet/src
+cmake -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+      -DCMAKE_C_COMPILER=$ROCM_PATH/lib/llvm/bin/clang \
+      -DCMAKE_CXX_COMPILER=$ROCM_PATH/lib/llvm/bin/clang++ \
+      -DCMAKE_HIP_COMPILER=$ROCM_PATH/lib/llvm/bin/clang++ \
+      -DCMAKE_PREFIX_PATH=$ROCM_PATH -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_TOOLCHAIN_FILE=/var/lib/jenkins/vcpkg/scripts/buildsystems/vcpkg.cmake
+bash utils/timeit.sh Velvet compile -- cmake --build build -j$(nproc)
+```
+
+Configure reports `Building with HIP, architectures: gfx1100`. Build RC=0, only the
+pre-existing warnings recorded by the second-pass review above (166 total, none new).
+`build/bin/Velvet` is 15200536 bytes -- byte-identical to every prior record of this tree
+(porter, both reviews) -- and `strings build/bin/Velvet | grep gfx1100` gives
+`hipv4-amdgcn-amd-amdhsa--gfx1100`.
+
+### Real-application GPU evidence (instrumented probe, throwaway, reverted)
+
+Built a second tree, `build_probe` (outside the clone's tracked paths is not possible for
+source edits, so this was a genuine throwaway patch to three tracked files, reverted with
+`git checkout --` before completion and independently confirmed byte-identical to `HEAD` via
+`sha256sum` on all three -- see Integrity below). Wrote the instrumentation fresh rather than
+reusing any prior round's patch:
+
+- `Velvet/VtClothSolverGPU.hpp`: added a `ValProbe()` method, called once per physics frame
+  right after `ComputeNormal`/`cudaDeviceSynchronize` in `Simulate()` and before
+  `positions.sync()`/`normals.sync()`. It runs a one-time self-test against a manufactured
+  3-element array containing exactly one `std::nanf("")` (same `isnan(v.x)||isnan(v.y)||
+  isnan(v.z))` expression used for real detection), then walks the live managed `positions`/
+  `normals` buffers computing a bounding box and a NaN count, prints one `VALPROBE[frame-end]`
+  line, and calls `std::exit(0)` after 200 physics frames so the run terminates itself.
+- `Velvet/VtBuffer.hpp`: both `checkCudaErrors(cudaMemcpy(...))` interop-copy call sites (the
+  seed copy in `registerNewBuffer()` and the sync copy in `sync()`) now capture the
+  `cudaError_t` into a local before checking it, and print
+  `VALPROBE[seed-copy]`/`VALPROBE[sync-copy]` with the byte count and the raw code -- print-only,
+  `checkCudaErrors` still runs on the same value, so the code path is unchanged.
+- `Velvet/VtEngine.cpp`: a throwaway `VALPROBE_SCENE` environment variable, read once in `Run()`
+  right after `sceneIndex = m_nextSceneIndex;`, to select the initial scene without needing
+  mouse automation (`SwitchScene()` cannot be called before `Run()` creates `m_game`).
+
+Built and run three ways (`DISPLAY=:1`, real Xorg/radeonsi context, `HIP_VISIBLE_DEVICES=0`,
+run from `build_probe/bin` so relative `Assets/` paths resolve):
+
+**Cloth / Attach (default scene, 1681 particles, 41x41 grid), `VALPROBE_SCENE` unset:**
+
+```bash
+cd build_probe/bin && DISPLAY=:1 HIP_VISIBLE_DEVICES=0 ./Velvet
+```
+
+- 200 physics frames completed, self-exit at frame 200 (`VALPROBE[done] frames=200`).
+- `nanPos=0 nanNrm=0` at all 200 sampled frame-ends. Self-test:
+  `manufactured_nan_count_expected=1 detected=1`.
+- Interop copies: 2 seed-copy + 399 sync-copy = 401 occurrences, all `rc=0`; zero `rc=1`
+  (the last frame's `sync()` never runs because `std::exit(0)` fires first, hence 399 not 400).
+- Extent: x/z exactly 2.000 at frame 0, transient overshoot to 2.313 mid-fall, settling to
+  2.131 by frame 200 (same overshoot-then-settle shape windows-gfx1151 recorded, 2.0-2.237).
+- Sag/pin: y max (corners) 1.499-1.500 at every one of the 200 sampled frames; y min falls
+  1.498 -> 0.767 by frame 200 (transient min 0.684 mid-fall) -- matches windows' "1.5 to
+  0.72-0.80" band.
+
+**Cloth / Self Collision (`VALPROBE_SCENE=2`, 61x61=3721 particles):**
+
+```bash
+VALPROBE_SCENE=2 DISPLAY=:1 HIP_VISIBLE_DEVICES=0 ./Velvet   # from build_probe/bin
+```
+
+- 200 physics frames completed, self-exit at frame 200.
+- `nanPos=0 nanNrm=0` at all 200 sampled frame-ends; self-test passes again.
+- Interop: 2 seed-copy + 399 sync-copy = 401 occurrences, all `rc=0`, zero `rc=1`.
+- No attached corners in this scene: y extent collapses from 1.614 (frame 1) to 0.104 (frame
+  200) as the cloth free-falls and folds flat on the floor -- a fold-down, not a divergence
+  (matches windows' "cloth has landed and folded" description for the same scene).
+
+**Cloth / High Resolution (`VALPROBE_SCENE=5`, 201x201=40401 particles):**
+
+```bash
+VALPROBE_SCENE=5 DISPLAY=:1 HIP_VISIBLE_DEVICES=0 timeout 280 stdbuf -oL -eL ./Velvet
+```
+
+This scene is heavy enough on this host that a physics frame takes roughly 10.4 s of wall
+clock (271 s / 26 frames); reaching 200 frames would need over half an hour, which was not
+spent given the per-attempt time budget. The run was allowed to progress 26 physics frames
+before the 280 s `timeout` killed it (not a self-exit, hence an odd interop-copy count -- see
+below):
+
+- 26 sampled frame-ends, all `nanPos=0 nanNrm=0`.
+- Interop: 2 seed-copy + 53 sync-copy = 55 occurrences, all `rc=0`, zero `rc=1` (53 is odd
+  because `timeout` interrupted the process mid-frame, between `positions.sync()` and
+  `normals.sync()`, unlike the self-exit cases above).
+- Extent held near 2.0 x 2.0 throughout (2.000-2.001 x/z); y max held at the scene's own
+  post-drop plateau (1.260, matching the porter/windows record for this scene) while y min
+  fell smoothly from 1.260 to 0.608 -- physically plausible drape onto the collision sphere,
+  not divergence, over the 26 frames actually observed. This is a real but partial run: fewer
+  frames than the 200-frame pattern used for the other two scenes, recorded honestly rather
+  than padded.
+
+Patch reverted after all three runs: `git checkout -- Velvet/VtBuffer.hpp
+Velvet/VtClothSolverGPU.hpp Velvet/VtEngine.cpp`; `sha256sum` of all three matches
+`git show HEAD:<path>` exactly (see Integrity).
+
+### Clean-binary visual evidence (the binary that would actually ship)
+
+Ran `build/bin/Velvet` (no instrumentation) under the same real Xorg/radeonsi context,
+`HIP_VISIBLE_DEVICES=0`, captured with `scrot` (installed for this session) and scene
+selection done by clicking the in-app GUI list with `xdotool` (also installed for this
+session; neither tool is part of the port or committed anywhere):
+
+- Default scene (Cloth / Attach): textured red-gingham cloth mesh, lit, casting a shadow on
+  the checkerboard floor, draped over the collision sphere with corners held -- a rendered
+  mesh, not a particle overlay. Simulation panel: Num Substeps 2, Num Iterations 4, Max Speed
+  18.000, Gravity (0.000, -9.800, 0.000) -- matches the ValProbe run's own scene exactly.
+- Cloth / Self Collision (clicked in the GUI list): mid-fall screenshot shows the cloth
+  starting to crumple; a second screenshot ~4 s later shows it landed and folded flat on the
+  floor, checkered pattern fully intact and coherent -- not a NaN/garbage point cloud. Panel:
+  Num Substeps 8, Friction 0.300 (matches the scene's own override recorded by prior rounds).
+- Cloth / High Resolution (clicked in the GUI list): 40401-particle mesh renders correctly
+  with texture and lighting over the collision sphere; panel reads Num Substeps 10, Num
+  Iterations 10, Max Speed 18.000, matching the porter's and windows' record for this scene.
+  Given the ~10 s/frame real-time cost measured above, the captured window only shows the
+  early part of the drape (mesh just beginning to sag onto the sphere), not the fully-settled
+  drape windows-gfx1151 captured after longer wall-clock time -- recorded as a partial visual,
+  not claimed as full settling.
+
+### Requirement-by-requirement (against the windows-gfx1151 pattern)
+
+| # | requirement | result |
+| - | --- | --- |
+| 1 | build + launch real Velvet, real GL context | build RC=0, 15200536 bytes, gfx1100 embedded; real radeonsi/navi31 GL context (Xorg :1); app launched and rendered on all three scenes tested |
+| 2 | cloth holds ~2.0 x 2.0 extent | Attach: 2.000 -> transient 2.313 -> 2.131 by frame 200; HD: 2.000-2.001 held for all 26 observed frames |
+| 3 | sags 1.5 to ~0.7-0.8, corners held at 1.5 | Attach: y max 1.499-1.500 pinned every frame; y min 1.498 -> 0.767 (min 0.684 transient) |
+| 4 | cloth MESH renders (textured, lit, shadowed) | clean-binary screenshots: gingham surface, lighting, cast shadow, not a point overlay, all three scenes |
+| 5 | zero NaN, detector sanity-checked | nanPos=0 nanNrm=0 at every sampled frame across all three scenes (200+200+26); self-test detected=1/expected=1 twice |
+| 6 | both interop cudaMemcpy calls succeed | 0 occurrences of rc=1 (hipErrorInvalidValue) across 857 total copy occurrences (401+401+55); all rc=0 |
+| 7 | Simulation panel defaults/overrides | Attach: Substeps 2/Iter 4/Gravity(0,-9.8,0)/MaxSpeed 18.000; Self Collision: Substeps 8/Friction 0.300; HD: Substeps 10/Iter 10/MaxSpeed 18.000 -- all read off screenshots, all match prior-round records |
+| 8 | other scenes behave | Self Collision (3721 particles, folds flat, zero NaN) and High Resolution (40401 particles, zero NaN over 26 frames, holds extent) both exercised on real hardware |
+
+Verdict: **PASS**. All 8 requirements hold on a real, hardware-backed OpenGL context on
+gfx1100, using a fresh independent instrumentation pass (not copied from any prior round) plus
+clean-binary screenshots. This is the first Linux application-level validation for Velvet --
+every earlier `linux-gfx1100` PASS validated a synthetic standalone kernel test, not the real
+app; the High Resolution scene's evidence is a real but partial (26/200 frame) run, recorded
+honestly rather than padded, per stop discipline.
+
+### CUDA no-regression gate
+
+Not re-run: `git diff dc6fd73 856c96b --stat` is empty (the amendment round above is
+message-only, tree byte-identical), and the CUDA gate already passed at `dc6fd73` --
+`g++ -fsyntax-only` on `Timer.cpp` RC=0 and `nvcc -arch=sm_80` RC=0 on both `.cu` files,
+recorded in the "Porter 2026-08-27 ... Timer.hpp includes `<vector>`" section above. Since the
+tree this validation built is the identical tree that gate already covered, re-running it would
+test the same bytes twice; skipped per the "runs once per head_sha" rule applied to the actual
+compiled content rather than the cosmetic sha.
+
+### Jargon / documentation gates
+
+```bash
+python3 utils/jargon.py --port Velvet
+# -> jargon: clean
+```
+
+README's ROCm build section (`README.md:56-76`) used verbatim for the build above; no doc
+change needed this round.
+
+### Integrity
+
+Throwaway instrumentation to `Velvet/VtBuffer.hpp`, `Velvet/VtClothSolverGPU.hpp`,
+`Velvet/VtEngine.cpp` reverted with `git checkout --` before completion;
+`sha256sum` of all three matches `git show HEAD:<path>` exactly (verified above, all three
+hashes identical). `git -C projects/Velvet/src status --porcelain` shows only the ignored
+`build/` directory; `build_probe/` (untracked scratch) removed. No push made to the fork
+(frozen, PR #9 open); no GitHub write of any kind. The headless Xorg server and its config
+were torn down at the end of the session (scratch files, not part of the repo).
+
+### Host/GPU
+
+4x AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), Ubuntu 24.04, kernel 6.8.0-65-generic,
+ROCm HIP 7.14.60850 / AMD clang 23.0.0git (TheRock conda env), Mesa 25.2.8 (radeonsi, navi31,
+DRM 3.64) for the real GL context.
+
+### Skill promotion
+
+Two lessons promoted to `cuda-to-rocm` (`references/validation.md`):
+
+1. The headless Xorg `Option "kmsdev"` recipe for getting a real hardware GL context on a
+   card-less server (already recorded by the prior FAIL revalidation round).
+2. New this round: on a multi-GPU host, `HIP_VISIBLE_DEVICES` and the DRM card an Xorg/GLX
+   context is bound to are independent indices with no guaranteed correspondence. Decode
+   `rocminfo`'s per-agent `BDFID` (`bus = (BDFID >> 8) & 0xff`) and match it against the target
+   `/dev/dri/cardN`'s PCI bus (`udevadm info --name=/dev/dri/cardN | grep DEVPATH`) before
+   picking a `HIP_VISIBLE_DEVICES` value for a GL-interop application; a mismatch fails the
+   very first `cudaGraphicsGLRegisterBuffer`/`hipGraphicsGLRegisterBuffer` call with "invalid
+   argument", which reads like a port defect but is a host device-selection mismatch.
+
+### State
+
+`linux-gfx1100` -> `completed`, `validated_sha=856c96bd7713ced9c1d8b1cb1398cd13b892ff06`.
