@@ -258,6 +258,18 @@
         "at": "2026-08-25T18:06:14Z"
       },
       "project": null
+    },
+    {
+      "id": "moatlib-set-license-subcommand",
+      "kind": "other",
+      "component": null,
+      "summary": "Intake has no moatlib CLI setter for license_spdx; the FlexGEMM screen wrote it via a one-off moatlib.load_status/save_status call. A set-license subcommand would make licence recording a documented path.",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-27T02:08:19Z",
+      "decided": null,
+      "project": null
     }
   ]
 }
