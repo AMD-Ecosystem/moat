@@ -2720,3 +2720,131 @@ costs the gfx90a and gfx1100 revalidations.
 
 REVIEW-PASSED. The next step is unchanged: a validator at `b87423d8`, not on
 windows-gfx1151 until the `dxgmms2` driver crashes are resolved.
+
+## Validation 2026-08-27 (linux-gfx1100) -- `b87423d8` -- COMPLETED
+
+Full real-GPU revalidation (not a carry-forward). `validated_sha` was `7727fa32`; HEAD
+moved to `b87423d8` (the fix round: one 5-line, unconditional, `USE_HIP`-unguarded
+`ReportCUDAErrors(cudaStreamSynchronize(0));` at the end of the layer-construction block
+in `network_cuda.cc`'s constructor, ordering every null-stream weight upload against the
+first evaluation). Same class of functional change gfx90a re-ran full on 2026-08-20 (no
+shortcut applies to a real behavioral fix touching a shared host TU). Host had no local
+fork clone; cloned `AMD-Ecosystem/lc0` into `projects/lc0/src`, fetched and checked out
+`moat-fix-2420` (PR #2420 is open, so this round lives on the fix-staging branch;
+`moat-port` stays at `7727fa32`), confirmed `HEAD` == `b87423d8e5cb4075386359cb4521eb8a14ffea2a`
+== recorded `head_sha`, installed the protect-fork pre-push hook
+(`python3 utils/moatlib.py protect-fork lc0`).
+
+Host toolchain: TheRock ROCm SDK in the `py_3.12` conda env (HIP 7.14.0, AMD clang;
+`_rocm_sdk_devel`/`_rocm_sdk_core`/`_rocm_sdk_libraries` under
+`/opt/conda/envs/py_3.12/lib/python3.12/site-packages/`), no system `/opt/rocm`. No
+system meson (`pip install meson` into `py_3.12`, meson 1.12.0) and no `libopenblas-dev`
+(installed via apt), same gaps the gfx90a round hit on this SDK. 4x AMD Radeon Pro W7800
+(gfx1100, RDNA3, wave32), all four idle (`rocm-smi --showuse` 0%, no KFD PIDs); used GPU 0
+(`HIP_VISIBLE_DEVICES=0`).
+
+### Build
+
+```
+SDK=/opt/conda/envs/py_3.12/lib/python3.12/site-packages
+export PATH="$SDK/_rocm_sdk_devel/lib/llvm/bin:$SDK/_rocm_sdk_devel/bin:$SDK/_rocm_sdk_core/bin:$SDK/_rocm_sdk_libraries/bin:$PATH"
+cd projects/lc0/src
+meson setup build-hip \
+  -Dhip=true -Damd_gfx=gfx1100 \
+  -Dplain_cuda=false -Dcudnn=false -Dcutlass=false -Dnvcc=false \
+  -Dgtest=true -Dblas=true -Dopencl=false -Donnx=false \
+  -Db_lto=false -Dnative_arch=false \
+  -Dhip_libdirs="$SDK/_rocm_sdk_devel/lib,$SDK/_rocm_sdk_core/lib,$SDK/_rocm_sdk_libraries/lib" \
+  -Dhip_include="$SDK/_rocm_sdk_devel/include"
+bash utils/timeit.sh lc0 compile -- ninja -C projects/lc0/src/build-hip -j16
+```
+
+321/321 targets, clean link, warnings only (nodiscard, same class as every prior gfx1100
+build). `fp16_kernels.hip.o` = 2.1MB; `nm -C` shows 28 non-empty `SE_Layer_NHWC`
+instantiations (the fp16-gating fix stays intact on this arch).
+
+### CPU gtest (non-GPU regression)
+
+```
+bash utils/timeit.sh lc0 test -- meson test -C projects/lc0/src/build-hip
+```
+
+8/8 OK (`FP16`, `HashCat`, `PositionTest`, `OptionsParserTest`, `SyzygyTest`,
+`EncodePositionForNN`, `EngineTest`, `ChessBoard`), 0 failures. No regression.
+
+### GPU cross-check (maia-1100 conv-SE net, no moves-left head)
+
+```
+HIP_VISIBLE_DEVICES=0 projects/lc0/src/build-hip/lc0 backendbench --backend=check \
+  "--backend-opts=hip(),blas(),mode=check,atol=1e-3,rtol=1e-2,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz --start-batch-size=1 --max-batch-size=55 --batches=4
+```
+fp32: **222/222 Check passed, 0 errors** (batch 1-55 incl. odd 53/55), exit 0.
+
+```
+HIP_VISIBLE_DEVICES=0 projects/lc0/src/build-hip/lc0 backendbench --backend=check \
+  "--backend-opts=hip-fp16(),blas(),mode=check,atol=1.1e-1,rtol=2e-1,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz --start-batch-size=1 --max-batch-size=55 --batches=4
+```
+fp16: **222/222 Check passed, 0 errors**, exit 0.
+
+Not re-derived here: the moves-left upload-path defect (review finding 1) and its fix are
+a code-level property closed for every upload path by the 2026-08-24 reviewer's call-site
+enumeration and independently exercised on windows-gfx1151 (`n744706`, `--show-movesleft`:
+82/82/82 after the fix, 72 WRONG on fp16 before). `maia1100` has no moves-left head so it
+cannot probe that path; this arch's own contribution is whether the added constructor-level
+sync regresses or faults the wave32 kernel paths, and it does not.
+
+### Determinism
+
+```
+HIP_VISIBLE_DEVICES=0 projects/lc0/src/build-hip/lc0 backendbench --backend=check \
+  "--backend-opts=hip(),blas(),mode=display,freq=1.0" \
+  --weights=agent_space/maia1100.pb.gz --start-batch-size=8 --max-batch-size=8 --batches=2
+```
+Two separate runs: value abs **6.0e-08** / policy abs **5.1e-07**, identical both times
+and matching the gfx90a b87423d8 digits exactly. No reduction race, no ordering race
+introduced by the sync.
+
+### Fault-free sweep + device dispatch
+
+`--backend=hip` and `--backend=hip-fp16` `backendbench` (no `--backend=check`), batch
+1-256, maia-1100: both exit 0, no crash/hang/NaN. `AMD_LOG_LEVEL=3` confirms real device
+kernel dispatch (`copyTypeConverted_kernel`, `filterTransform_kernel`,
+`addBiasBatched_kernel`, `addVectors_kernel`, `NCHW_kernel`, `policyMap_kernel` named in
+the ROCr trace) interleaved with rocBLAS `Cijk_*_ISA1100_*` Tensile kernels.
+
+### CUDA no-regression gate
+
+Already recorded at this `head_sha` (`b87423d8`) by the linux-gfx90a revalidation above:
+258/258 targets, nvcc 12.8, `-Dcc_cuda=80`, pure passthrough. Not re-run here (runs once
+per head_sha, per the validator role).
+
+### Documentation / jargon gates
+
+`python3 utils/jargon.py --port lc0` -> `jargon: clean`. README.md's HIP section
+(added 2026-06-11, unchanged by this round) already documents this exact build and states
+"validated on Linux with ROCm on gfx90a (CDNA2) and gfx1100 (RDNA3)" -- still true.
+
+### Integrity
+
+`git -C projects/lc0/src status --porcelain` clean before and after (build dir is
+untracked/gitignored).
+
+### Summary
+
+| Test | Result |
+|------|--------|
+| HIP build (321/321) | PASS |
+| CPU gtest 8/8 | PASS |
+| maia-1100 fp32 conv-SE check (222 batches) | PASS |
+| maia-1100 fp16 conv-SE check (222 batches) | PASS |
+| Determinism (2 runs) | PASS |
+| Fault-free sweep fp32+fp16 batch 1-256 | PASS |
+| Device dispatch confirmed | PASS |
+| CUDA compile gate | PASS (recorded at this head_sha by linux-gfx90a) |
+| Fork tree clean | PASS |
+| jargon | clean |
+
+`validated_sha` = `b87423d8e5cb4075386359cb4521eb8a14ffea2a`. Transition: revalidate ->
+completed.

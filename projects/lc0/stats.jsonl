@@ -129,3 +129,5 @@
 {"kind":"phase","ts":"2026-08-21T00:20:20Z","phase":"compile","seconds":18.388,"exit":0,"cmd":"ninja -C projects/lc0/src/build-hip-win-gfx1151 lc0.exe"}
 {"kind":"session","ts":"2026-08-24T23:41:47Z","epoch":1787614907.182326868,"event":"start","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-08-24T23:46:09Z","epoch":1787615169.375356805,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-08-27T04:59:54Z","phase":"compile","seconds":44.811,"exit":0,"cmd":"ninja -C /var/lib/jenkins/moat/projects/lc0/src/build-hip -j16"}
+{"kind":"phase","ts":"2026-08-27T05:01:16Z","phase":"test","seconds":53.323,"exit":0,"cmd":"meson test -C /var/lib/jenkins/moat/projects/lc0/src/build-hip"}

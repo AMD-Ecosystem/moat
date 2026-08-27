@@ -7,7 +7,7 @@
   "priority": 6.245,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-08-24T23:46:04Z",
+  "updated_at": "2026-08-27T05:04:53Z",
   "head_sha": "b87423d8e5cb4075386359cb4521eb8a14ffea2a",
   "pr_url": "https://github.com/LeelaChessZero/lc0/pull/2420",
   "pr_number": 2420,
@@ -60,10 +60,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
+      "validated_sha": "b87423d8e5cb4075386359cb4521eb8a14ffea2a",
       "started_at": "2026-05-31T05:46:00Z",
-      "completed_at": "2026-08-08T02:03:02Z",
-      "updated_at": "2026-08-20T22:33:24Z",
+      "completed_at": "2026-08-27T05:04:53Z",
+      "updated_at": "2026-08-27T05:04:53Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -77,13 +77,7 @@
         "first_session_at": "2026-05-31T05:46:00Z",
         "last_session_at": "2026-05-31T06:05:00Z"
       },
-      "last_agent": "reviewer",
-      "carry_forward": {
-        "to": "7727fa32c1992ef6702eacc1b8568715803b0701",
-        "method": "full-revalidation",
-        "detail": "Fresh full real-GPU revalidation at 7727fa3 (not a binary-equiv/source-class shortcut): 331-target build (no rebuild needed, README-only delta), 8/8 CPU gtest, 222/222+222/222 maia-1100 conv-SE fp32/f",
-        "at": "2026-08-08T02:03:02Z"
-      }
+      "last_agent": "validator"
     },
     "windows-gfx1201": {
       "blocked": false,
