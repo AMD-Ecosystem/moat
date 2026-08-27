@@ -2110,3 +2110,118 @@ Recorded so the next round does not re-litigate these.
   the `4440182` result must not be carried forward. This host (linux-gfx1100) has a CUDA
   env at `/opt/conda/envs/cuda-12.8` left from the cubvh round that can be reused for
   it.
+
+## Porter 2026-08-27 (linux-gfx1100, fix round `moat-fix-36`, review answer)
+
+Answers the 2026-08-27 reviewer findings. New commit on the staging branch,
+`f08cec7` `[ROCm] Normalize the hipify extra-file paths on Windows`
+(`1b796f7..f08cec7`, appended -- nothing at or below the published `392b4dd` was
+touched, `origin/moat-port` still `392b4dd`). `setup.py` and `.gitignore` only.
+
+### Finding 1 (substantive) -- fixed at `setup.py:66-70`
+
+```python
+extra_files=[os.path.abspath(s).replace(os.sep, "/") for s in cubvh_cu],
+```
+
+plus a four-line comment above it saying why the separator matters, since a bare
+`.replace(os.sep, "/")` reads as a no-op to anyone on Linux.
+
+Re-derived the mechanism from this host's torch (`2.14.0a0+git7d05abc`,
+`/opt/conda/envs/py_3.12/.../torch/utils/hipify/hipify_python.py`) rather than
+trusting the review text:
+
+- `hipify()` appends `extra_files` VERBATIM to `all_files` (1139-1143); the walk
+  results are `_to_unix_path`'d (186), the extra entries are not.
+- `preprocessor()` does `filepath = _to_unix_path(filepath)` (829) then
+  `if filepath not in all_files` -> `[ignored, not to be hipified]` (831-834).
+  `_to_unix_path` is `path.replace(os.sep, '/')` (147-148), so on Windows a
+  backslash `os.path.abspath` entry can never equal itself as appended.
+
+**Key-lookup double-check (the reviewer asked for this explicitly, and it holds).**
+Both `preprocess_file_and_save_result` (207) and `preprocessor` (828) compute
+`fin_path = os.path.abspath(os.path.join(output_directory, filepath))` from the
+SAME raw `filepath`, so the key is native-separator normalized whichever shape we
+pass in. `os.path.abspath("C:/x/y")` on Windows returns `C:\x\y`, so the caller's
+`s_abs = os.path.abspath(s)` at `setup.py:76-77` still hits `result.get(s_abs)`. The
+probe below asserts this for both shapes.
+
+### Windows-separator emulation probe
+
+`agent_space/cumesh_extra_files_probe.py` (scratch, not committed to the fork).
+Reimplements the walk + `extra_files` append + membership test with `ntpath` and
+`\` standing in for Windows `os.path` / `os.sep`, over the real cubvh tree:
+
+```
+--- before: extra_files=[os.path.abspath(s) ...]
+  src/cubvh_bindings_winhip.cu       member=False key_matches_caller=True
+  third_party/cubvh/src/bvh.cu       member=True  key_matches_caller=True
+  third_party/cubvh/src/api_gpu.cu   member=True  key_matches_caller=True
+--- after:  extra_files=[os.path.abspath(s).replace(os.sep, '/') ...]
+  src/cubvh_bindings_winhip.cu       member=True  key_matches_caller=True
+  third_party/cubvh/src/bvh.cu       member=True  key_matches_caller=True
+  third_party/cubvh/src/api_gpu.cu   member=True  key_matches_caller=True
+```
+
+The finding reproduces exactly (only the wrapper, the one entry outside the walk
+root, was being skipped) and the fix flips it to MEMBER with the result key
+unchanged. This is an emulation, not a Windows run: the windows-gfx1151 validator
+still has to confirm against that host's torch `2.12.0+rocm7.14...` at the same two
+lines, and is the gate for this round.
+
+Real-hipify cross-check on Linux (`agent_space/run_helper.py`, scratch): calling
+`_hipify_cubvh_sources` on a copy of the tree returns
+`src/cubvh_bindings_winhip.cu -> src/cubvh_bindings_winhip.hip`,
+`.../bvh.cu -> .../bvh.hip`, `.../api_gpu.cu -> .../api_gpu.hip`, and the generated
+wrapper's include line is rewritten to
+`#include "../third_party/cubvh/src/bindings_hip.cpp"` -- the include the raw
+wrapper would otherwise keep, which is what dragged `<ATen/cuda/CUDAContext.h>` in
+under `__HIPCC__`. Unchanged from the previous round, as expected: the fix is a
+no-op on Linux where `os.sep == "/"`.
+
+Output path note for the Windows validator: the wrapper is written to
+`<repo>/src/cubvh_bindings_winhip.hip`, NOT under the cubvh root, because
+`preprocessor` joins `output_directory` with a `../..`-relative path (837, 851).
+`.gitignore`'s `*.hip` already covers it, so a Windows build leaves the tree clean.
+
+### Finding 2 (minor) -- fixed at `.gitignore:214-216`
+
+Now reads "hipify replaces a `cuda` substring anywhere in the directory path with
+`hip`". Confirmed against `get_hip_file_path`: `dirpath.replace('cuda', 'hip')`
+(`hipify_python.py:600`), a plain substring replace. The same misstatement was in
+`1b796f7`'s commit body; rather than amend a pushed commit, `f08cec7`'s body states
+the correction, so the PR history reads correctly end to end.
+
+### Build re-verification (gfx1100)
+
+Host: AMD Radeon Pro W7800, `gfx1100` (wave32), `HIP_VISIBLE_DEVICES=0`.
+Python 3.12, PyTorch `2.14.0a0+git7d05abc`, HIP/ROCm `7.14.60850`.
+
+```bash
+utils/timeit.sh CuMesh compile -- bash -lc 'cd /var/lib/jenkins/moat/projects/CuMesh/src && \
+  HIP_VISIBLE_DEVICES=0 BUILD_TARGET=rocm GPU_ARCHS=gfx1100 \
+  python3 setup.py build \
+  --build-base /var/lib/jenkins/moat/agent_space/CuMesh-porter-gfx1100-fixround2 --force'
+```
+
+PASS, exit 0, zero `error:` lines; `_C`, `_cubvh` and `_cumesh_xatlas` all built and
+linked. Warning set unchanged (ignored `nodiscard` `hipError_t`, non-trivial
+`memcpy` on `cubvh::Triangle`, pybind11 `-Wattributes`). Examples not re-run: the
+delta is one Windows-only string expression that is provably a no-op on Linux, and
+the six-example run at `1b796f7` stands.
+
+### Housekeeping
+
+- Documentation: no change. `README.md:14-36` already carries the AMD prerequisites
+  and the `BUILD_TARGET=rocm GPU_ARCHS=<arch>` block; the build procedure did not
+  change this round.
+- Jargon: `python3 utils/jargon.py --port CuMesh` reports only the two long-settled
+  hits inside the published `d5c1355`; `f08cec7` adds none.
+- Integrity: `git -C projects/CuMesh/src status --porcelain` empty, local `HEAD` ==
+  `origin/moat-fix-36` == `f08cec7df9578a1f615799daff1c17f9a8f39fcb`,
+  `origin/moat-port` == `392b4dd` (pre-push hook armed via `protect-fork`).
+- No skill promotion this round: `strategy-b-torch.md` already carries the
+  `extra_files` normalization hazard verbatim (the lesson this round failed to
+  follow), so there is nothing new to promote.
+- Still open for the validator: a `windows-*` pass at the new head is the gate, and
+  the CUDA no-regression gate remains open at this head (see the previous round).

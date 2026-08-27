@@ -134,3 +134,4 @@
 {"kind":"phase","ts":"2026-08-27T02:04:06Z","phase":"test","seconds":2.840,"exit":0,"cmd":"bash -lc export HIP_VISIBLE_DEVICES=0 PYTHONNOUSERSITE=1\nexport PYTHONPATH=/var/lib/jenkins/moat/agent_space/CuMesh-porter-gfx1100-de1badf/lib.linux-x86_64-cpython-312\ncd /var/lib/jenkins/moat/agent_space && python3 cumesh_bvh_check.py"}
 {"kind":"session","ts":"2026-08-27T02:13:00Z","epoch":1787796780.123010314,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-27T02:28:02Z","epoch":1787797682.533935612,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-27T02:35:04Z","phase":"compile","seconds":119.492,"exit":0,"cmd":"bash -lc cd /var/lib/jenkins/moat/projects/CuMesh/src && \\\n  HIP_VISIBLE_DEVICES=0 BUILD_TARGET=rocm GPU_ARCHS=gfx1100 \\\n  python3 setup.py build \\\n  --build-base /var/lib/jenkins/moat/agent_space/CuMesh-porter-gfx1100-fixround2 --force"}
