@@ -58,6 +58,25 @@ older torch -- so a guard keyed on the wrong axis silently breaks the other plat
 build. That fault class, with the two regressions that produced it, is in
 `fault-classes.md` under "Types, dispatch and platform limits". (aihwkit)
 
+### hipify scope for a vendored library: the `includes` pattern, not the walk
+
+Known first half: `torch/utils/hipify/hipify_python.py`'s `matched_files_iter` PRUNES `third_party/` from its file walk (it re-adds only `third_party/nvfuser`), so a vendored library's `.cu` sources are reported "[ignored, not to be hipified]" and the raw CUDA is handed to the compiler. The standard workaround is to run `hipify_python.hipify()` yourself, rooted at the vendored library so the prune does not apply.
+
+Less known second half, and the one that bites: **which HEADERS get rewritten is decided by the `includes` pattern, not by the walk.** `hipify()` extends `all_files` with every file under `header_include_dirs` that matches `includes`, and the include-rewrite hook then recursively hipifies any `#include`d header whose basename appears in `all_files`. Root your own pass at the library's `src/` with `includes=[<lib>/src/*]` and its `include/` tree stays raw -- even though you passed the include dir in `header_include_dirs`.
+
+That asymmetry is why this hides on Linux and detonates elsewhere. torch's own pass uses `project_directory=<extension root>` with `includes=[<root>/*]`, and that pattern DOES match `third_party/<lib>/include/...` even though the walk pruned it -- so torch quietly hipifies the vendored headers for you. A hand-rolled pass rooted narrower does not, and the platform that needs the hand-rolled pass is the only platform that breaks.
+
+The symptom is not a missing symbol, it is two header trees in one TU. A vendored header that includes `<ATen/cuda/CUDAContext.h>` stays raw while the source's `#ifdef USE_ROCM` include pulls `<ATen/hip/...>`, and those trees are alternatives that were never meant to coexist: torch's hipified `c10/hip/HIPStream.h` opens `namespace c10::cuda {` and declares the same `class CUDAStream` that `c10/cuda/CUDAStream.h` declares. You get a redefinition cascade across `c10/hip/HIPStream.h`, `HIPException.h`, `HIPFunctions.h`, `HIPDeviceAssertionHost.h`, plus `unknown type name 'cudaStreamCaptureStatus'` from `c10/cuda/CUDAStream.h`'s `is_capturing()`, which uses graph-capture symbols HIP has no equivalent for.
+
+**Fix the scope, not the symptom.** Add the library's include dir to `includes` (`includes=[<lib>/src/*, <lib>/include/*]`, rooted at `<lib>`) so hipify emits `api_hip.h` carrying `<ATen/hip/HIPContext.h>` and rewrites the including source to match. Adding the missing capture symbols to a CUDA-compat shim looks like the fix and is not: it silences the first error and leaves the redefinition cascade untouched. Keep the patterns tight -- a bare `<lib>/*` would drag a nested Eigen or other vendored headers into hipify's scope.
+
+Two diagnostics worth carrying:
+
+- If you see "redefinition" of `c10/hip/*` classes, look UP the include chain for a raw `ATen/cuda` include, not for a missing symbol. `ATen/cuda/*` and `ATen/hip/*` are mutually exclusive in a single TU.
+- Prefer making hipify's WALK find your sources over listing them in `extra_files`. The walk unix-normalizes each path; the `extra_files` append does not, and `preprocess_file_and_save_result` tests membership against the normalized form -- so on Windows an `extra_files` entry outside the walk root can be silently skipped.
+
+(CuMesh, whose bundled `cubvh` failed exactly this way on Windows while Linux had built it for months.)
+
 ### Dependency environment for PyTorch projects (the install path is part of the port)
 
 For a PyTorch-ecosystem project the in-repo `.cu` (above) is only half the bring-up: the project also `pip install`s a dependency graph that defaults to CUDA wheels, and getting a ROCm environment that actually EXERCISES your ported code is its own recurring task. The failure modes repeat across the whole 3D-vision / point-cloud / VLA / world-model space, so they generalize. (AMD's rocm3d -- Andy Luo and David Li, 2026, andyluo7.github.io -- catalogs these as reusable recipes for that domain; the dependency-family patterns below are the transferable core. Note the model: these are environment substitutions to get a project RUNNING on ROCm, not upstreamed source ports -- MOAT's deliverable is still the in-repo HIP port + multi-arch PR, so confirm your ported code is the code under test, not a swapped-in prebuilt wheel.)
