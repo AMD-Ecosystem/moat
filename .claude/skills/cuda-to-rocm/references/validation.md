@@ -133,6 +133,14 @@ in the same build, from the same torch version bump (LichtFeld-Studio, torch `2.
   Fix without touching the fork: build `spdlog` from source with `-DSPDLOG_FMT_EXTERNAL=OFF`
   (bundles spdlog's own matched fmt copy) and point `spdlog_DIR` at that install -- the same
   "vendor a known-good copy locally" pattern already used for pinned `glm`/header-only deps.
+  Pick the spdlog version by the fmt it bundles, not by whatever is newest in the distro:
+  bundled fmt 10.x and older hit `call to consteval function 'fmt::basic_format_string<...>'
+  is not a constant expression` from `FMT_STRING` under a recent Clang (seen with a ROCm SDK
+  carrying an LLVM 23 dev snapshot), which is a second, unrelated failure that looks like the
+  first one and reproduces with no torch include at all. spdlog 1.14.1 bundles fmt 10.2.1 and
+  fails; spdlog 1.15.3 bundles fmt 11.x and is clean. Triage both symptoms in a second with
+  `clang++ -std=c++20 -fsyntax-only -I<spdlog>/include` on a two-line TU calling
+  `spdlog::info("{:.6e}", f)`, instead of rebuilding the project to find out.
 - **A libtorch `c10/cuda/*.h` header a project's compat layer already aliases for can grow
   new symbols the alias list has not caught up to.** A CUDA-graph-capture/user-object-retain
   helper added to `c10/cuda/CUDAGraphsC10Utils.h` in a newer torch build referenced
@@ -144,7 +152,12 @@ in the same build, from the same torch version bump (LichtFeld-Studio, torch `2.
   ...) -- proof the aliasing strategy is right and the coverage merely fell behind a torch
   version bump. This is a real, small, escalatable gap (confirm every missing symbol has a
   `hip*` equivalent in the installed HIP runtime headers before reporting it, so the fix is
-  known to be "add N aliases", not an open-ended investigation), not something to route
+  known to be "add N aliases", not an open-ended investigation). Alias the whole helper, not
+  just the names the compiler named: an unqualified call with dependent arguments inside a
+  template (`cudaUserObjectCreate`, `cudaGraphRetainUserObject` there) is looked up only at
+  instantiation, so it produces no error while the helper is merely parsed -- covering the
+  parameter types alone leaves the body half translated and it breaks for the first consumer
+  that instantiates it. A gap this shape is small and escalatable, and it is not something to route
   around with an older pinned torch -- an older torch only hides the gap for one host's one
   session; the same coverage will fall behind again on the next torch refresh. Send it back
   to the porter with the exact symbol list and confirmed HIP counterparts. (LichtFeld-Studio)

@@ -2141,3 +2141,141 @@ torch. The Class A spdlog/fmt workaround (self-built spdlog, no fork change) is 
 above in case it helps whichever host next hits it; Class B needs the six-alias porter fix
 listed above before this or any other Linux arch can produce a runnable `lfs_compute_tests`
 against this torch version.
+
+## Port round 2026-08-27 (porter, linux-gfx1100) -- c56016ba, compat-header gap closed
+
+Answers the `## Revalidation 2026-08-27 (linux-gfx1100 ...)` VALIDATION-FAILED entry above.
+`pr-state` is `none`, so no upstream PR is open and the work went on `moat-port` directly
+(no fix branch); `protect-fork` armed before any edit. Fork worktree clean before and after
+(`git -C src status --porcelain` empty; the `build-hip-gfx1100*` dirs are gitignored).
+
+### Fix (Class B): nine aliases added to the libtorch-interop block of cuda_to_hip.h
+
+`src/core/include/core/cuda/cuda_to_hip.h`, the existing `/* ---- libtorch (ROCm) interop
+---- */` block (was 15 aliases, now 24). Kept the block's established style: one
+`#define cuda<X>  hip<X>` per line, hip name at column 52, ASCII-sorted. The whole file is
+inside `#if defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)`, so the NVIDIA path is
+untouched by construction.
+
+The seven the validator listed:
+`cudaGraph_t`, `cudaHostFn_t`, `cudaUserObject_t`, `cudaUserObjectNoDestructorSync`,
+`cudaGraphUserObjectMove`, `cudaUserObjectRelease`, `cudaStreamGetCaptureInfo_v2`.
+
+Plus two the validator's error list did not contain, deliberately:
+`cudaUserObjectCreate` -> `hipUserObjectCreate`, `cudaGraphRetainUserObject` ->
+`hipGraphRetainUserObject`. These are the two calls inside `retainGraphUserObject<T>`
+(`CUDAGraphsC10Utils.h:109-125`). They were not diagnosed because that template is never
+instantiated in the current test TUs and their calls have dependent arguments, so lookup is
+deferred to instantiation -- aliasing only the parameter types would leave the helper half
+translated and it would break the first time any consumer instantiates it. Both have hipify
+mappings (`cuda_to_hip_mappings.py:1553`, `:1411`) and real declarations
+(`hip_runtime_api.h:9466`, `:9499`).
+
+Every mapping verified twice before writing it: against this ROCm's
+`include/hip/hip_runtime_api.h` (declaration + signature) and against this torch's
+`torch/utils/hipify/cuda_to_hip_mappings.py`, which is what the block's own header comment
+says the names are taken from. All nine agree.
+
+`hipStreamGetCaptureInfo_v2` naming check (the one flagged as version-sensitive): it is a
+real function, `hip_runtime_api.h:8496`, and `amd_detail/amd_hip_runtime_pt_api.h:68`
+additionally `#define`s it to `__HIP_API_SPT(hipStreamGetCaptureInfo_v2)` when the
+per-thread-stream API is selected. A plain `#define cudaStreamGetCaptureInfo_v2
+hipStreamGetCaptureInfo_v2` is correct under both, since our macro expands first and the
+SPT macro (if in scope) then applies to the result -- exactly what hipify produces. Note
+also that the pre-existing `#define cudaStreamGetCaptureInfo hipStreamGetCaptureInfo` does
+NOT cover the `_v2` spelling: object-like macros match whole identifiers only, so the `_v2`
+name needs its own line.
+
+### Class A (environment only, no fork change) -- recipe as actually used here
+
+The validator's self-built-spdlog workaround is right in shape but its exact version does
+not build with this host's compiler. Recorded fully so the next session does not re-derive
+it:
+
+- Distro `libspdlog-dev` 1.12.0 (built `SPDLOG_FMT_EXTERNAL=1`) + torch's vendored fmt
+  12.2.1 under `torch/include/fmt/` -> `no template named 'basic_format_string' in
+  namespace 'fmt'`. Reproduced minimally here: system spdlog + `-isystem
+  .../torch/include` fails, system spdlog with a bundled-fmt spdlog on the include path
+  does not.
+- Self-built spdlog **v1.14.1** (bundles fmt **10.2.1**) -> a DIFFERENT failure with this
+  ROCm SDK's clang (LLVM 23 dev snapshot): `call to consteval function
+  'fmt::basic_format_string<...>::basic_format_string<FMT_COMPILE_STRING, 0>' is not a
+  constant expression`, from `FMT_STRING` inside `SPDLOG_LOGGER_CATCH`. fmt <= 10.x only;
+  independent of torch (reproduces with no torch include at all). The distro spdlog fails
+  this way too against system fmt 9.1.0, i.e. on this host the distro spdlog is unusable
+  with this compiler for two separate reasons.
+- Self-built spdlog **v1.15.3** (bundles fmt **11.x**) -> clean. This is the version to use.
+
+```
+git clone --depth 1 --branch v1.15.3 https://github.com/gabime/spdlog.git _deps/spdlog-src-1.15.3
+cmake -S _deps/spdlog-src-1.15.3 -B _deps/spdlog-src-1.15.3/build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DSPDLOG_BUILD_SHARED=OFF -DSPDLOG_FMT_EXTERNAL=OFF \
+  -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+  -DCMAKE_INSTALL_PREFIX=/var/lib/jenkins/moat/_deps/spdlog-install-1.15.3 \
+  -DCMAKE_CXX_COMPILER=$ROCM_SDK/lib/llvm/bin/clang++
+cmake --build _deps/spdlog-src-1.15.3/build -j64 --target install
+cmake -S projects/LichtFeld-Studio/src -B projects/LichtFeld-Studio/src/build-hip-gfx1100 \
+  -Dspdlog_DIR=/var/lib/jenkins/moat/_deps/spdlog-install-1.15.3/lib/cmake/spdlog
+```
+Fast triage for the next host: `clang++ -std=c++20 -fsyntax-only -I<spdlog>/include
+t.cpp` on a 2-line TU calling `spdlog::info("{:.6e}", f)` reproduces or clears both
+symptoms in a second, without a project rebuild.
+
+No documentation change was made for this. It is a third-party version collision with two
+independent roots (torch's vendored fmt shadowing the system one, AND fmt <= 10 versus a
+very new clang), neither ROCm-specific and one not even torch-specific, so any entry in
+`docs/building_and_distribution.md` short enough for its Troubleshooting section would have
+asserted a single cause that is not the whole cause. The ROCm build documentation added in
+the 2026-08-24 rounds is unchanged and still accurate; the compiler/spdlog vintage question
+belongs with the host, not with the project's build docs. The generalizable half is already
+in the `cuda-to-rocm` validation reference (promoted by the validator); refined there this
+round with the fmt-10-vs-new-clang caveat, since the recipe as written would have sent the
+next reader to a spdlog that does not build.
+
+### Build (gfx1100, wrapped with utils/timeit.sh compile)
+
+Host env identical to the 2026-08-27 validator entry: ROCm SDK at
+`/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel`, `$SDK/bin` on
+`PATH` (for `hipconfig`), torch `2.14.0a0+git7d05abc` / `torch.version.hip 7.14.60850`,
+GTest from `/usr/lib/x86_64-linux-gnu/cmake/GTest`, glm + args from
+`/var/lib/jenkins/moat/_deps`. Reused the validator's configured
+`build-hip-gfx1100` tree, reconfigured only `spdlog_DIR`.
+
+```
+cmake --build projects/LichtFeld-Studio/src/build-hip-gfx1100 --target lfs_compute_tests -j64
+```
+`[212/212]`, exit 0, ZERO errors. `lfs_compute_tests` links (34 MB). Before the header fix
+the same tree failed 4 TUs on the `cuda*` graph symbols (`test_main.cpp`,
+`test_torch_comparisons.cpp`, `test_tensor_memory.cpp`, `test_tensor_stress.cpp`) and 2 on
+Class A; after the fix + spdlog 1.15.3, none.
+
+### GPU test run (AMD Radeon Pro W7800, gfx1100, HIP_VISIBLE_DEVICES=0, wrapped test phase)
+
+```
+HIP_VISIBLE_DEVICES=0 ./projects/LichtFeld-Studio/src/build-hip-gfx1100/cmake/hip_tests/lfs_compute_tests
+```
+Run 1: 2048 tests / 119 suites, 12143 ms -- 2044 passed, 4 failed.
+Run 2: 2048 tests / 119 suites, 10914 ms -- 2044 passed, 4 failed. Same four, deterministic.
+
+Failures: `MCMCTest.RemoveGaussiansSoftDeletesRows`,
+`MCMCRelocateOptimizerStateTest.ResetBothSourceAndDestinationRows`,
+`TensorLazyIrTest.OnModeDefersUntilBoundaryAndMaterializes`,
+`TensorStressTest.DeepOperationChain` -- the exact set, and the exact count, of the
+2026-06-07 gfx1100 revalidation (2044/4), all four already documented there as
+test-design/measurement artifacts rather than port regressions. Same result under the much
+newer torch 2.14 / ROCm 7.14, which is additional evidence that nothing in the port depends
+on the torch version beyond the alias coverage fixed here.
+
+CUDA no-regression gate: still NOT run (unchanged from every prior entry; needs the vcpkg
+bootstrap). This round cannot have regressed it -- the only edited hunk is inside the
+file's `USE_HIP || __HIP_PLATFORM_AMD__` guard, which the NVIDIA build never enters.
+
+### Handoff
+
+`advance-head` -> `c56016ba30db5cad0c54ede67d1813419308db03`; state `ported`. This moves
+head off `7cd4d569`, so linux-gfx90a (validated at 7cd4d569) reads `revalidate`. Its
+delta is one guarded alias block in a header gfx90a compiles too, so a rebuild + rerun
+there should be cheap; a source-class carry-forward is NOT appropriate (the header is real
+compiled source, not an inert doc change). `jargon.py --port`: 3 instances, all pre-existing
+in commit bodies `13e585d4`/`e24593f4` (deferral `lfs-commit-msg-jargon-13e585d-e24593f`),
+0 new from `c56016ba`.
