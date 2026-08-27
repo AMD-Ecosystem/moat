@@ -2356,3 +2356,72 @@ no-regression check is still open.
 
 No lesson to promote: the hipify `extra_files` normalization asymmetry is already
 recorded from finding 1 of this round, and this commit only fixes how it was worded.
+
+## Review 2026-08-27 (linux-gfx1100 reviewer, fix round `moat-fix-36`, third pass)
+
+Scope: the answering commit only, `git diff f08cec7...1153341` -- one hunk, `setup.py`
+comment lines. `392b4dd..f08cec7` was settled by the two prior 2026-08-27 reviews and is
+not re-litigated. Verdict: **review-passed**, no findings.
+
+### Why the reworded comment is correct
+
+Re-derived from this host's torch (`2.14.0a0+git7d05abc`,
+`torch/utils/hipify/hipify_python.py`) rather than from either write-up, one claim at a
+time against `setup.py:66-70`:
+
+- "appends extra_files entries to its file list verbatim" -- `:1139-1143`; the only
+  transformation is `os.path.join(output_directory, f)` for a RELATIVE entry, and these
+  entries are absolute, so no separator ever changes. The `all_files_set` guard at
+  `:1142` only skips the append when the walk already produced the identical string.
+- "normalizes a candidate to forward slashes before the exact-match test" -- `:829`
+  (`filepath = _to_unix_path(filepath)`, itself `:146-148`) immediately before
+  `if filepath not in all_files:` at `:831`, a plain list membership, not `fnmatch`.
+- "the rest have a forward-slash duplicate from the walk" -- `:186` normalizes each
+  walk-yielded path, and hipify's default `extensions` (`:1095`) include `.cu`, so
+  `<cubvh>/src/bvh.cu` and `.../api_gpu.cu` are yielded under the
+  `includes=[<cubvh>/src/*, <cubvh>/include/*]` scope. `src/cubvh_bindings_winhip.cu`
+  lies outside `cubvh_root` and has no such duplicate, which is exactly the dependency
+  the sentence claims.
+- The driver loop is `for filepath in (all_files if not hipify_extra_files_only else
+  extra_files)` (`:1165`), so with `hipify_extra_files_only=True` the candidates ARE the
+  caller's entries -- the shape the comment describes is the shape that reaches `:829`.
+
+The previous round's defect (both sides described as normalized, which argues against
+the skip) is gone; the comment now states the asymmetry that the `.replace(os.sep, "/")`
+exists to work around.
+
+### Delta is comment-only, and nothing below it moved
+
+- `git diff f08cec7 1153341` touches `setup.py` alone, 5 insertions / 4 deletions, every
+  changed line a `#` line inside the `hipify()` call; `extra_files=` and every other
+  argument are untouched, so the generated `.hip` / `_hip.h` output is unchanged.
+  `third_party/cubvh` gitlink identical at `de1badf` on both sides. `ast.parse` clean.
+- No rewrite under the reviewed base: `f08cec7df9578a1f615799daff1c17f9a8f39fcb` (the
+  head recorded in `status.json` at the re-review) and
+  `1b796f71ff20778a3b68ff2d6622fb05043fed27` (recorded at the review before it) are both
+  present in the current `moat-fix-36` ancestry by full SHA, so the whole prefix
+  `392b4dd..5996569..1b796f7..f08cec7` is byte-identical to what was reviewed -- a commit
+  SHA fixes its entire ancestry. `origin/moat-port` is still
+  `392b4dd41f8b10b795b00e44cb1b294b1388cefa` after `git fetch`, `origin/moat-fix-36`
+  equals local HEAD `1153341`, four commits ahead of the published base, worktree clean.
+- Hygiene: title `[ROCm] Correct the comment on hipify extra-file matching` at 56 chars,
+  body carries rationale + AI-assistance disclosure + fenced Test Plan, no
+  `Co-Authored-By` / `Signed-off-by` / noreply trailer, ASCII only, no AMD-internal
+  account reference. `utils/prose.py` clean; `utils/jargon.py --port CuMesh` still
+  reports only the two long-settled hits inside the already-published `d5c1355`.
+- ROCm fault classes: not reachable by a Python comment edit; the round's substantive
+  analysis (warp size, clamped neighbour reads, arch-unified fixes, library swaps) was
+  checked at `1b796f7` and `f08cec7` and nothing since has touched device code.
+
+### For the validator, at head `1153341`
+
+Gates for this round are unchanged; restated so they are in one place:
+
+- A `windows-*` pass at `1153341` is THE gate -- the round exists to fix the Windows
+  hipify scope, and no Linux run can close it (`windows-gfx1151` is the platform that
+  recorded the failure at `392b4dd`).
+- `linux-gfx1100`, `linux-gfx942` and `linux-gfx90a` need revalidation at `1153341`; the
+  cubvh core changed at `5996569`, so nothing older carries forward.
+- The CUDA no-regression gate is OPEN at this head for the same reason -- the `4440182`
+  result must not be carried forward. This host has a CUDA env at
+  `/opt/conda/envs/cuda-12.8` for the header-compile check.
