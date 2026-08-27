@@ -7,21 +7,18 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-08-27T01:44:33Z",
-  "head_sha": "392b4dd41f8b10b795b00e44cb1b294b1388cefa",
+  "updated_at": "2026-08-27T02:09:15Z",
+  "head_sha": "1b796f71ff20778a3b68ff2d6622fb05043fed27",
   "depends_on": [],
   "pr_url": "https://github.com/JeffreyXiang/CuMesh/pull/36",
   "pr_number": 36,
   "pr_opened_at": "2026-06-19T18:11:32Z",
-  "porting": {
-    "arch": "linux-gfx1100",
-    "since": "2026-08-27T01:44:33Z"
-  },
+  "porting": null,
   "waivers": {},
   "pr_state": "open",
   "license_spdx": "MIT",
   "upstream_repo_id": 1097063193,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "linux-gfx90a": {
       "state": "validation-failed",
@@ -60,7 +57,7 @@
       "validated_sha": "392b4dd41f8b10b795b00e44cb1b294b1388cefa",
       "started_at": "2026-08-27T01:44:33Z",
       "completed_at": "2026-08-11T23:48:28Z",
-      "updated_at": "2026-08-27T01:44:33Z",
+      "updated_at": "2026-08-27T02:09:15Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -188,5 +185,16 @@
       "last_agent": "validator"
     }
   },
-  "published_sha": "392b4dd41f8b10b795b00e44cb1b294b1388cefa"
+  "published_sha": "392b4dd41f8b10b795b00e44cb1b294b1388cefa",
+  "fix": {
+    "branch": "moat-fix-36",
+    "base_sha": "392b4dd41f8b10b795b00e44cb1b294b1388cefa",
+    "review_pr": null,
+    "opened_at": "2026-08-27T01:44:40Z"
+  },
+  "porting_released": {
+    "arch": "linux-gfx1100",
+    "since": "2026-08-27T01:44:33Z",
+    "at": "2026-08-27T02:09:15Z"
+  }
 }

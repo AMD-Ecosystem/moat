@@ -1736,3 +1736,214 @@ tracked-file diff.
 --agent validator` recorded `failed_sha = 392b4dd41f8b10b795b00e44cb1b294b1388cefa`. No
 fork push was attempted or needed (validator never writes to the fork; the freeze guard
 was armed regardless per the dispatch brief).
+
+## Port fix round 2026-08-27 (linux-gfx1100 porter, staged on `moat-fix-36`)
+
+**Trigger**: two things at once. cubvh PR #34 ("[ROCm] Rewrite BVH core as independent
+MIT-licensed implementations") merged upstream on 2026-08-26 as `da26f94`, removing
+`LICENSE_NVIDIA` and with it the licence question that hung over the vendored BVH core;
+and the recorded `windows-gfx1151` validation failure at `392b4dd` still needed a fix.
+Upstream PR #36 is open, so `moat-port` stayed frozen at the published
+`392b4dd41f8b10b795b00e44cb1b294b1388cefa` and both commits went on the staging branch
+`moat-fix-36` cut from that tip. Staging tip after this round:
+`1b796f71ff20778a3b68ff2d6622fb05043fed27`.
+
+### Upstream cubvh delta 757b913..de1badf (submodule gitlink bump)
+
+5 commits, `git diff --stat` = `LICENSE_NVIDIA` (-97), `include/gpu/bounding_box.cuh`,
+`include/gpu/bvh.cuh`, `include/gpu/common.h`, `include/gpu/triangle.cuh`, `src/bvh.cu`
+(-973/+...), `test/degenerate_triangles.py` (new). 650 insertions, 1145 deletions.
+
+- `c7379c0` rewrite of the BVH core as independent MIT implementations,
+- `fc56751` rolls the BVH child loops to restore wave32 occupancy,
+- `191b020` removes `LICENSE_NVIDIA`,
+- `da26f94` merge of PR #34,
+- `de1badf` "Fix BVH distance queries without valid triangles".
+
+`include/gpu/api_gpu.h`, `src/api_gpu.cu`, `src/bindings.cpp`, `include/gpu/spcumc.cuh`,
+`include/gpu/gpu_memory.h`, and `include/gpu/hashtable.cuh` are UNCHANGED across the
+range. That matters twice over:
+
+1. **The Windows failure is not mooted by the new tip.** The gfx1151 failure came from
+   `include/gpu/api_gpu.h:5` unconditionally including `<ATen/cuda/CUDAContext.h>`, and
+   that line is byte-identical at `de1badf`. The fix had to be made here.
+2. **No glue adaptation was needed for the bump.** `common.h` deletes helpers
+   (`clamp`, `host_device_swap`, `n_threads_linear`, `n_blocks_linear`,
+   `cylindrical_to_dir`) and renames `n_threads_linear` -> `N_THREADS_LINEAR`, but
+   nothing in CuMesh references `cubvh::` anything: the only CuMesh file that mentions
+   cubvh at all is `src/cubvh_bindings_winhip.cu`, which just `#include`s the
+   submodule's `bindings.cpp`. `common.h` still includes `<cuda.h>`/`<cuda_runtime.h>`
+   and still spells `cudaStream_t`, so the `hip_cuda_compat/` shim is still required on
+   Windows; no shim entry became removable. The CUDA API surface the new cubvh tree uses
+   is unchanged and already fully covered by the shim (`cudaMalloc/Free/Memcpy/
+   MemcpyAsync/Memset/DeviceSynchronize/StreamSynchronize/GetLastError/GetErrorString`,
+   `cudaStream_t`, `cudaError_t`, `cudaSuccess`, the three `cudaMemcpyKind` values).
+
+Observable contract change worth knowing downstream: a distance query that finds no
+triangle now returns `+inf` / `face_id == -1` / `uvw == 0` instead of the old silent
+`{face 0, distance 0}`. CuMesh does not read that path, but TRELLIS.2-style consumers
+might.
+
+### Root cause of the windows-gfx1151 failure, and the fix
+
+The gfx1151 validator's diagnosis was correct about the symptoms and stopped one level
+above the cause. Reading `torch/utils/hipify/hipify_python.py` and comparing the two
+hipify invocations explains why Linux has never seen either error:
+
+- `hipify()` builds `all_files` from `matched_files_iter(output_directory, includes=...)`
+  and THEN extends it with every file under `header_include_dirs` that matches the same
+  `includes` patterns. `preprocess_file_and_save_result` only runs directly on
+  `extra_files` (`hipify_extra_files_only=True`), but the include-rewrite hook
+  (`mk_repl`) recursively hipifies any `#include`d header whose basename matches an
+  `all_files` entry. So **header rewriting is gated entirely on the `includes` pattern**.
+- torch's own pass (`cpp_extension.py:1598`) uses `project_directory=build_dir` (the
+  CuMesh root) and `includes=[build_dir/*]`. `third_party/` is pruned from the WALK, but
+  the header-include-dirs extension is not walk-based, so
+  `third_party/cubvh/include/gpu/api_gpu.h` matches `<root>/*` and IS hipified. Proof
+  from this host's build log: `.../include/gpu/api_gpu.h -> .../include/gpu/api_gpu_hip.h
+  [ok]`, and the compiled `api_gpu.hip` includes `<gpu/api_gpu_hip.h>`, whose contents
+  are `#include <ATen/hip/HIPContext.h>` and `#include <hip/hip_runtime.h>`. Linux
+  therefore never pulls the `ATen/cuda` tree into that TU at all.
+- CuMesh's own `_hipify_cubvh_sources()` (Windows-only, added 2026-06-19 to work around
+  the `third_party/` prune) used `project_directory=<cubvh>/src` and
+  `includes=[<cubvh>/src/*]`. Correct for the two `.cu` sources, but `<cubvh>/include/...`
+  does not match `<cubvh>/src/*`, so on Windows `api_gpu.h` was left raw. Its
+  `#include <ATen/cuda/CUDAContext.h>` then dragged in `c10/cuda/CUDAStream.h`
+  (`cudaStreamCaptureStatus` / `cudaStreamCaptureStatusNone` / `cudaStreamIsCapturing`,
+  none of which exist on HIP) while the `#ifdef USE_ROCM` include of
+  `ATen/hip/impl/HIPStreamMasqueradingAsCUDA.h` dragged in `c10/hip/HIPStream.h`.
+
+The redefinition cascade is not incidental: `c10/hip/HIPStream.h` opens
+`namespace c10::cuda {` and declares `class C10_CUDA_API CUDAStream` -- the SAME entity
+`c10/cuda/CUDAStream.h` declares. The two trees are alternatives, never co-includable.
+That also means the fix the failure notes floated first -- adding the graph-capture trio
+to `hip_cuda_compat/cuda.h` -- would NOT have been sufficient: it removes the first error
+and leaves the redefinition cascade untouched. Not adding those three symbols was a
+deliberate choice, not an oversight.
+
+**Fix** (`setup.py`, commit `1b796f7`): widen `_hipify_cubvh_sources()` to
+`project_directory=<cubvh>` with `includes=[<cubvh>/src/*, <cubvh>/include/*]`. Windows
+now produces exactly the header set Linux already compiles, and `ATen/cuda` is never
+reached from either `_cubvh` TU. The eigen and `hip_cuda_compat` header dirs stay out of
+the patterns, so nothing else is dragged into hipify's scope.
+
+**Verified on this host** (Linux, so it does not close the Windows gate, but it does
+prove the hipify-scope logic that is the whole substance of the fix). The Windows-only
+helper was extracted from `setup.py` with `ast` and invoked directly against this
+checkout after deleting every generated artifact:
+
+```bash
+python3 /var/lib/jenkins/moat/agent_space/hipify_scope_probe.py
+```
+
+Output: `api_gpu.h -> api_gpu_hip.h [ok]` plus `bvh.cuh`, `common.h`, `triangle.cuh`,
+`bounding_box.cuh`, `gpu_memory.h`, `floodfill.cuh`, `spcumc.cuh`, `hashtable.cuh`,
+`pcg32.h` all `[ok]`; `bindings.cpp -> bindings_hip.cpp`;
+`src/cubvh_bindings_winhip.cu -> src/cubvh_bindings_winhip.hip`. Both `_cubvh` TUs then
+reach the HIP tree only:
+
+- `api_gpu.hip` line 2: `#include <gpu/api_gpu_hip.h>`
+- `cubvh_bindings_winhip.hip`: `#include "../third_party/cubvh/src/bindings_hip.cpp"`,
+  and `bindings_hip.cpp` line 8: `#include <gpu/api_gpu_hip.h>`
+- `api_gpu_hip.h`: `#include <ATen/hip/HIPContext.h>` / `#include <hip/hip_runtime.h>`
+
+Also checked that the Windows `THRUST_CUDA_PAR` workaround in `spcumc.cuh` survives
+hipification harmlessly: in `spcumc_hip.cuh` both arms of the `#ifdef` expand to
+`thrust::hip::par`, which is what Linux has been compiling all along.
+
+**WINDOWS REVALIDATION JUDGES THIS FIX.** No Windows host was available in this round.
+The change is Windows-only code (`IS_WINDOWS and IS_HIP`), made on code-reading grounds
+plus the Linux equivalence argument above; a `windows-*` validator at head
+`1b796f71ff20778a3b68ff2d6622fb05043fed27` is what confirms it. The residual risk is
+that `ATen/hip/HIPContext.h` needs something from the TheRock Windows SDK that the shim
+lacks -- the gfx1151 log shows the `ATen/hip` tree already parsing there (its errors were
+all "redefinition", i.e. second definitions), so this is judged small but is not zero.
+
+### Stray `hip_hip_compat/` directory (validator follow-up, fixed)
+
+Cause is `get_hip_file_path()`, which rewrites a `cuda` PATH COMPONENT to `hip` when
+hipify writes a rewritten header -- so a header copied out of `hip_cuda_compat/` lands in
+`hip_hip_compat/`. Confirmed it is NOT produced by `_hipify_cubvh_sources()` (the probe
+run above created no such directory); it comes from torch's own pass, which has
+`hip_cuda_compat` in `header_include_dirs` and `includes=[<root>/*]`, so the shim headers
+do match. Renaming the shim directory would remove the artifact but touches 11 files plus
+`setup.py`, so the round took the one-line option: a `hip_hip_compat/` entry in the
+existing "PyTorch hipify generated files" block of `.gitignore`. No build behaviour
+change.
+
+### Build and test (linux-gfx1100)
+
+Host: AMD Radeon Pro W7800 48GB, `gfx1100` (wave32), 4 devices, `HIP_VISIBLE_DEVICES=0`.
+Python 3.12, PyTorch `2.14.0a0+git7d05abc`, HIP `7.14.60850`, ROCm `7.14.60850-0000000`.
+Test dependency installed this round: `trimesh 5.0.0` (`python3 -m pip install trimesh`);
+the examples import it and it was absent from this host.
+
+```bash
+utils/timeit.sh CuMesh compile -- bash -lc 'cd /var/lib/jenkins/moat/projects/CuMesh/src && \
+  HIP_VISIBLE_DEVICES=0 BUILD_TARGET=rocm GPU_ARCHS=gfx1100 \
+  python3 setup.py build \
+  --build-base /var/lib/jenkins/moat/agent_space/CuMesh-porter-gfx1100-de1badf --force'
+```
+
+PASS, exit 0, zero `error:` lines. All three extensions built and linked
+(`_C`, `_cubvh`, `_cumesh_xatlas`). Warnings are the already-recorded set (ignored
+`nodiscard` `hipError_t`, non-trivial `memcpy` on `cubvh::Triangle`, pybind11 visibility
+`-Wattributes`).
+
+```bash
+utils/timeit.sh CuMesh test -- bash -lc 'export HIP_VISIBLE_DEVICES=0 PYTHONNOUSERSITE=1
+export PYTHONPATH=/var/lib/jenkins/moat/agent_space/CuMesh-porter-gfx1100-de1badf/lib.linux-x86_64-cpython-312
+cd .../examples-run
+for script in simplify.py fill_holes.py remove_duplicate_faces.py unify_orientations.py remesh.py uv_unwrap.py; do python3 "$script"; done'
+```
+
+6/6 PASS:
+
+1. `simplify.py`: 34834 / 69451 -> 5017 vertices / 9964 faces
+2. `fill_holes.py`: 34834 / 69451 -> 34838 / 69594
+3. `remove_duplicate_faces.py`: unchanged at 34834 / 69451
+4. `unify_orientations.py`: unchanged at 34834 / 69451
+5. `remesh.py`: BVH + sparse grid + dual contouring + projection -> 102396 / 204916
+6. `uv_unwrap.py`: 90 clusters, xatlas charts/packing -> 45110 / 69451
+
+Counts match the previous gfx1100 and gfx942 runs (simplify varies run to run, as before).
+
+**Extra BVH check** (`agent_space/cumesh_bvh_check.py`, not committed to the fork -- the
+project has no test directory and the round did not add one). The BVH core was rewritten
+upstream, so a numeric check against a closed form was worth having on wave32:
+
+- icosphere (subdiv 4, r=1), 20000 random query points
+- unsigned distance vs `| |p| - 1 |`: max err 1.13e-3, all finite
+- signed distance vs `|p| - 1`: max err 1.13e-3; sign correct for 19982/19982 points
+  further than 2e-3 from the surface (the 3 disagreements inside that band are points
+  within the tessellation error, where either sign is defensible)
+- ray casts toward the origin from outside: 18601 hits, radius in [0.99887, 0.99999]
+- degenerate mesh (9 all-zero triangles): unsigned, watertight, and raystab queries all
+  return `+inf`, `face_id == -1`, `uvw == 0`, matching the contract in upstream's new
+  `test/degenerate_triangles.py`
+
+### Housekeeping
+
+- Documentation: no change needed. `README.md:14-36` already carries the AMD
+  prerequisites and the `BUILD_TARGET=rocm GPU_ARCHS=<arch>` build block next to the
+  NVIDIA one, and this round changed neither the build procedure nor the requirements.
+  The project has no `docs/` tree or external doc site.
+- Jargon: `python3 utils/jargon.py --port CuMesh` reports exactly the two long-settled
+  hits in the frozen published commit `d5c1355` (`moat-port`, `moat`), covered by the
+  2026-08-09 human decision to leave published messages alone. Neither new commit adds a
+  hit.
+- Integrity: `git -C projects/CuMesh/src status --porcelain` empty; local `HEAD` ==
+  `origin/moat-fix-36` == `1b796f71ff20778a3b68ff2d6622fb05043fed27`;
+  `origin/moat-port` still `392b4dd41f8b10b795b00e44cb1b294b1388cefa` (untouched, the
+  pre-push hook from `moatlib.py protect-fork` was armed for every push);
+  `third_party/cubvh` clean at `de1badf89b54975d407c42a02a47d41fa149e486`, Eigen at
+  `e63d9f6ccb7f6f29f31241b87c542f3f0ab3112b`.
+- The fork clone did not exist on this host at the start of the round; it was cloned
+  fresh with `--recursive`. Note for the next porter here: the fork's default branch
+  still records the submodule URL as `JeffreyXiang/cubvh`, so a fresh clone needs
+  `git submodule sync --recursive` after checking out the port branch or the submodule
+  fetch goes to the wrong remote.
+- CUDA no-regression gate: not run this round (no CUDA toolkit on this host). The delta
+  from the last CUDA-gated commit is now non-trivial -- it includes the rewritten cubvh
+  core -- so the gate is genuinely open at this head and a validator must not carry the
+  old `4440182` result forward across it.
