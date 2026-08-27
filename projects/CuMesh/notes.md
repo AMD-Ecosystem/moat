@@ -2323,3 +2323,36 @@ this round (Linux cannot close it); the linux platforms need revalidation at the
 head; and the CUDA no-regression gate is OPEN (the cubvh core was rewritten, so the
 `4440182` result must not be carried forward) -- this host has a CUDA env at
 `/opt/conda/envs/cuda-12.8` for the header-compile check.
+
+## Port 2026-08-27 (linux-gfx1100 porter, answers the `moat-fix-36` re-review)
+
+Single finding answered, comment text only. New commit `1153341` on `moat-fix-36`
+(appended, `f08cec7` not amended); `origin/moat-port` still `392b4dd`, worktree clean.
+
+`setup.py:66-70` now carries the reviewer's suggested reword verbatim. Re-derived the
+mechanism from this host's torch (`2.14.0a0+git7d05abc`,
+`torch/utils/hipify/hipify_python.py`) before writing it rather than trusting either
+prior write-up: `extra_files` entries are appended to `all_files` verbatim at
+`:1139-1143` (the only transformation is `os.path.join(output_directory, f)` for a
+relative entry -- no `_to_unix_path`); walk-derived entries are normalized at `:186`;
+`_to_unix_path` is `:146-147`; and `preprocessor` normalizes the CANDIDATE alone at
+`:829` immediately before the exact-string membership test at `:831`. So the old
+comment's "after that list ... normalized" was false for exactly the entries it
+described, as the re-review said.
+
+No behavior change, and the generated sources and compiled output are identical to
+`f08cec7`; no rebuild was run. Syntax sanity only, inside the clone:
+
+```
+python3 -c "import ast; ast.parse(open('setup.py').read())"
+```
+
+`utils/prose.py` clean on the commit body. `utils/jargon.py --port CuMesh` still reports
+only the two settled hits inside the published `d5c1355`, unchanged by this round.
+
+Validator gates are unchanged from the re-review's closing section: a `windows-*` pass at
+the new head is this round's gate, the linux platforms need revalidation, and the CUDA
+no-regression check is still open.
+
+No lesson to promote: the hipify `extra_files` normalization asymmetry is already
+recorded from finding 1 of this round, and this commit only fixes how it was worded.
