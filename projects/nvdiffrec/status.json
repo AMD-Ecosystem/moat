@@ -8,10 +8,21 @@
   "ext_type": "unknown",
   "stage": "unclaimed",
   "adopted_at": "2026-08-27T02:01:41Z",
-  "updated_at": "2026-08-27T02:01:41Z",
+  "updated_at": "2026-08-27T02:05:52Z",
   "head_sha": null,
-  "depends_on": [],
+  "depends_on": [
+    "nvdiffrast"
+  ],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {},
+  "license_spdx": "LicenseRef-NVIDIA-Source-Code-License",
+  "intake": {
+    "verdict": "decline",
+    "reason": "license-blocked",
+    "duplicate_effort": "none -- no AMD/ROCm fork, no port PR or branch, no AMD mention in docs",
+    "viable": false,
+    "summary": "Inverse rendering (mesh+material+lighting from images); wholly under the NVIDIA Source Code License, non-commercial research-only (tier 4), and hard-depends on nvdiffrast which MOAT already skipped license-blocked.",
+    "at": "2026-08-27T02:05:52Z"
+  }
 }
