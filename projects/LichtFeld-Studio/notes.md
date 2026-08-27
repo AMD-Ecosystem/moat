@@ -2279,3 +2279,167 @@ there should be cheap; a source-class carry-forward is NOT appropriate (the head
 compiled source, not an inert doc change). `jargon.py --port`: 3 instances, all pre-existing
 in commit bodies `13e585d4`/`e24593f4` (deferral `lfs-commit-msg-jargon-13e585d-e24593f`),
 0 new from `c56016ba`.
+
+## Review 2026-08-27 (reviewer, linux-gfx1100) -- c56016ba, CHANGES-REQUESTED
+
+Scope: `git diff 7cd4d569...c56016ba` on `moat-port` (1 file, +9/-0,
+`src/core/include/core/cuda/cuda_to_hip.h`), that commit's message, and the `cuda-to-rocm`
+skill edits riding this branch (`c829bf3` from the validator round and `8ac8d0a` from the
+porter round; neither is on `main`, so both are this review's to judge).
+
+The nine aliases are correct and the set is complete for this header -- verified below, not
+taken on trust. One blocking finding, which is exactly where that verification contradicts
+the stated reason for adding two of them.
+
+### Finding 1 (blocking): the reason given for `cudaGraphRetainUserObject` is wrong, and the skill lesson generalizes the wrong mechanism
+
+Three copies of the same claim:
+
+- `.claude/skills/cuda-to-rocm/references/validation.md:155-160` -- "Alias the whole helper,
+  not just the names the compiler named: an unqualified call with dependent arguments inside
+  a template (`cudaUserObjectCreate`, `cudaGraphRetainUserObject` there) is looked up only at
+  instantiation, so it produces no error while the helper is merely parsed"
+- `projects/LichtFeld-Studio/notes.md:2164-2172` -- "They were not diagnosed because that
+  template is never instantiated in the current test TUs and their calls have dependent
+  arguments, so lookup is deferred to instantiation"
+- fork commit `c56016ba` body, paragraph 2 -- "they are the calls that same helper makes, and
+  a template diagnoses them only when it is instantiated"
+
+That is true of `cudaUserObjectCreate` and false of `cudaGraphRetainUserObject`. Measured on
+this host (ROCm 7.14 SDK clang 23.0.0git, torch `2.14.0a0+git7d05abc`) by syntax-checking the
+real header behind the fork's own compat header, removing one alias at a time:
+
+```
+probe.cpp:  #include <core/cuda/cuda_to_hip.h>
+            [#undef <one alias>]
+            #include <c10/cuda/CUDAGraphsC10Utils.h>
+
+$ROCM_SDK/lib/llvm/bin/clang++ -std=gnu++23 -fsyntax-only -DUSE_HIP=1 -DUSE_ROCM=1 \
+  -D__HIP_PLATFORM_AMD__=1 -DC10_CUDA_NO_CMAKE_CONFIGURE_FILE -DTORCH_HIP_VERSION=714 \
+  -D__HIP_NO_HALF_OPERATORS__=1 -D__HIP_NO_HALF_CONVERSIONS__=1 \
+  -I src/core/include -I src/hip_compat -isystem $ROCM_SDK/include \
+  -isystem $TORCH/include -isystem $TORCH/include/torch/csrc/api/include probe.cpp
+
+undef (none)                     -> rc 0
+undef cudaUserObjectCreate       -> rc 0
+undef cudaGraphRetainUserObject  -> rc 1  CUDAGraphsC10Utils.h:121 use of undeclared identifier
+undef cudaUserObjectRelease      -> rc 1  CUDAGraphsC10Utils.h:123
+undef cudaStreamGetCaptureInfo_v2-> rc 1  CUDAGraphsC10Utils.h:104
+```
+
+`retainGraphUserObject`'s call at `CUDAGraphsC10Utils.h:120-121`,
+`cudaGraphRetainUserObject(graph, user_object, 1, cudaGraphUserObjectMove)`, has no dependent
+argument: `graph` is a `cudaGraph_t` parameter, `user_object` a local `cudaUserObject_t`, the
+rest a literal and an enumerator. Ordinary lookup therefore runs at template-definition time
+and an unaliased name is a hard error while the helper is only parsed. Only
+`cudaUserObjectCreate` (`:110`, argument `data.get()` on `std::unique_ptr<T>`) is genuinely
+deferred. Both halves reproduced minimally with the same compiler:
+
+```cpp
+template <typename T> void helper(std::unique_ptr<T> data, Obj graph) {
+  Obj o{};
+  makeIt(&o, data.get());   // no diagnostic: dependent argument
+  retainIt(graph, o, 1);    // error: use of undeclared identifier 'retainIt'
+}
+```
+
+The actual reason `cudaGraphRetainUserObject` never appeared in the validator's error list is
+a different mechanism, and the more useful one to write down: clang stops diagnosing the
+callee of a call whose argument list already contains an undeclared identifier.
+`cudaGraphUserObjectMove` was undeclared in that build and is an argument of that same call,
+so the callee's own error was suppressed. Reproduced:
+
+```cpp
+template <typename T> void helper(std::unique_ptr<T> data, Obj graph) {
+  Obj o{};
+  retainIt(graph, o, 1, someUndeclaredEnum);   // only 'someUndeclaredEnum' is reported
+}
+```
+
+Why this blocks rather than being a wording preference: `8ac8d0a` publishes the claim to every
+future agent, and as written it teaches the wrong diagnostic model for the very case it
+documents. A reader who believes only dependent-argument calls can hide concludes that a call
+with plain arguments would have been reported -- which is precisely the trap this port walked
+into. Keep the operative rule ("alias the whole helper, not just the names the compiler
+named"); state both masking mechanisms as the reason: the compiler's error list is a lower
+bound because (a) an undeclared identifier anywhere in an argument list suppresses the
+diagnostic for the callee name of that call, and (b) a call with a dependent argument inside a
+template nobody instantiates is not diagnosed at all.
+
+Two things to fix in the same pass:
+
+- `validation.md:153` "This is a real, small, escalatable gap" and `:160` "A gap this shape is
+  small and escalatable" now assert the same thing twice in one bullet -- the insertion split
+  a sentence and its tail was reintroduced. Drop one.
+- The corrected framing makes commit `c56016ba`'s body stronger, not weaker:
+  `cudaGraphRetainUserObject` is not a prudent extra, it is required for
+  `CUDAGraphsC10Utils.h` to parse at all under this torch; only `cudaUserObjectCreate` is the
+  forward-looking one. Amending the message costs nothing at this moment -- no platform has
+  validated `c56016ba` (linux-gfx1100 is `validation-failed` at 7cd4d569, linux-gfx90a
+  `completed` at 7cd4d569), `pr-state` is `none` and `moat-port` is unpublished, so a
+  message-only amend plus `--force-with-lease` loses no evidence. Do it now rather than
+  leaving it for the PR-prep rewrite, where it would join two deferrals already queued there.
+
+### Verified, no action (recorded so the next round need not re-derive it)
+
+Nine mappings, each checked twice as the porter claimed. All nine `hip*` names exist in this
+host's `_rocm_sdk_devel/include/hip/hip_runtime_api.h`: `hipGraph_t:1541`,
+`hipUserObject_t:1554`, `hipHostFn_t:1579`, `hipUserObjectNoDestructorSync:1852` (enum
+`hipUserObjectFlags` = 0x1), `hipGraphUserObjectMove:1856` (enum `hipUserObjectRetainFlags`
+= 0x1), `hipStreamGetCaptureInfo_v2:8496`, `hipUserObjectCreate:9466`,
+`hipUserObjectRelease:9477`, `hipGraphRetainUserObject:9499`. Parameter lists match the CUDA
+originals argument for argument at each of the four call sites in `CUDAGraphsC10Utils.h`
+(`unsigned long long*` for `CaptureId_t`, `unsigned int` flags taking the enumerators,
+defaulted `count`/`flags` via `__dparm`). All nine appear verbatim in this torch's
+`torch/utils/hipify/cuda_to_hip_mappings.py` (`:282`, `:1351`, `:1388`, `:1411`, `:1412`,
+`:1489`, `:1552`, `:1553`, `:1554`), which is the source the block's own comment cites; the
+porter's cited `:1553`/`:1411` are right.
+
+`hipStreamGetCaptureInfo_v2` per-thread-stream interaction: `amd_detail/amd_hip_runtime_pt_api.h:68`
+does define it to `__HIP_API_SPT(hipStreamGetCaptureInfo_v2)`, and the object-like alias is
+safe under both settings -- the compat macro expands first and the SPT macro then applies to
+the result via `##` pasting, the same path pre-existing aliases in this file already take for
+other SPT-wrapped entry points (`cudaStreamGetPriority:144`, `cudaMemcpyAsync:79`, both of
+whose `hip*` targets `amd_hip_runtime_pt_api.h` wraps identically). The pre-existing
+`#define cudaStreamGetCaptureInfo hipStreamGetCaptureInfo` indeed cannot cover the `_v2`
+spelling: object-like macros match whole preprocessing tokens, and `cudaStreamGetCaptureInfo_v2`
+is one token.
+
+Completeness: every `cuda*` identifier in `CUDAGraphsC10Utils.h` (19 of them) is now aliased,
+and the probe above parses the header clean with the shipped alias set. Nothing else in
+`retainGraphUserObject` is untranslated (`cudaSuccess` was already aliased at
+`cuda_to_hip.h:103`; `C10_CUDA_CHECK`/`C10_CUDA_CHECK_WARN` are torch's own macros).
+
+Guard and style: the whole file is inside `#if defined(USE_HIP) || defined(__HIP_PLATFORM_AMD__)`
+(`cuda_to_hip.h:15`) with `#else #include <cuda_runtime.h>` at `:241-243`, so the NVIDIA path
+cannot see the new lines; the block (`:123-150`) is one `#define` per line, `hip*` name at
+column 53 on every line including the nine new ones, and `LC_ALL=C sort -c` on the block's
+`cuda*` column passes. No duplicate `#define` introduced anywhere in the file.
+
+Fault classes: the delta is nine preprocessor aliases in an existing guarded block. No device
+code, no wavefront-width or lane-mask surface, no resource handle or rule-of-five, no
+neighbor indexing, no texture pitch, no library swap, no build-system change, no per-arch
+branch. Strategy is unchanged and still the single compat header.
+
+Hygiene at `c56016ba`: title `[ROCm] Alias newer LibTorch CUDA graph symbols for the HIP build`,
+64 chars; no `Co-Authored-By`/noreply/`Signed-off-by` trailer; AI disclosure present; Test Plan
+with literal fenced commands; body and diff ASCII-only, one line per paragraph; no
+AMD-internal account or host reference. `jargon.py --port LichtFeld-Studio` still reports the
+same 3 pre-existing instances in the `13e585d4`/`e24593f4` bodies (deferral
+`lfs-commit-msg-jargon-13e585d-e24593f`), 0 from this delta. `7cd4d569` is an ancestor of
+`c56016ba` (no rewrite), `origin/moat-port` is `c56016ba`, worktree `status --porcelain` clean.
+
+Skill edit, spdlog half (`validation.md:135-142`, from `8ac8d0a`): verified rather than
+trusted, and it is accurate. `_deps/spdlog-src` is `v1.14.1` bundling `FMT_VERSION 100201`,
+`_deps/spdlog-src-1.15.3` is `v1.15.3` bundling `110200`. The documented two-line triage
+recipe reproduces exactly as claimed with this ROCm SDK's clang: `-I spdlog-src/include` ->
+`call to consteval function 'fmt::basic_format_string<...>' is not a constant expression` out
+of `FMT_STRING` in `bundled/format-inl.h:61`; `-I spdlog-src-1.15.3/include` -> rc 0;
+`-I /usr/include` (distro spdlog 1.12 + system fmt 9.1.0) -> the same consteval error from
+`spdlog/details/fmt_helper.h:105`. The earlier `c829bf3` half also checks out: torch vendors
+a full fmt at `torch/include/fmt/format.h` with `FMT_VERSION 120201`, `fmt/core.h` is the
+19-line opt-in stub, and `basic_format_string` is gone in favour of `struct fstring`
+(`torch/include/fmt/base.h:2697`).
+
+CUDA no-regression gate remains unrun at any sha (unchanged, tracked in the entries above);
+not held against this delta, which the NVIDIA build cannot reach.
