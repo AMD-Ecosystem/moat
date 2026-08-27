@@ -2935,3 +2935,75 @@ Test Plan intact. `python3 utils/jargon.py --port LichtFeld-Studio`: exactly the
 instances in the `13e585d4`/`e24593f4` bodies (deferral
 `lfs-commit-msg-jargon-13e585d-e24593f`), 0 from this delta. `git -C src status --porcelain`
 empty.
+
+## Review 2026-08-27d (reviewer, linux-gfx1100) -- 3ae4672a, REVIEW-PASSED
+
+Scope: the amend `9143c8c0` -> `3ae4672a` and the three prose copies of the masking rule
+(`notes.md` bullet, `validation.md` mechanism (a), commit body paragraph 2). No findings; the
+single blocking finding of the 2026-08-27c review is answered and every rewritten sentence is
+true against the probe rows. Nothing else is re-litigated -- the header change and the nine
+mappings stay settled and `cuda_to_hip.h` has not moved since `c56016ba`.
+
+### Verified, no action
+
+Wording, re-measured rather than taken on the porter's word. I re-ran the per-alias `#undef`
+probe on the real header on this host (`_rocm_sdk_core/lib/llvm/bin/clang++` 23.0.0git,
+`-std=gnu++23 -fsyntax-only -ferror-limit=0`, torch `2.14.0a0+git7d05abc`, errors filtered to
+`CUDAGraphsC10Utils.h`) and every row the three passages rest on reproduces:
+
+```
+baseline                                    -> no header errors
+undef cudaUserObject_t + cudaGraphRetainUserObject
+  -> H:115:3 unknown type name 'cudaUserObject_t'; did you mean 'hipUserObject_t'?
+     H:121:7 undeclared 'cudaGraphRetainUserObject'   <-- callee IS reported
+undef cudaGraph_t + cudaGraphRetainUserObject  -> H:93,99,112 cudaGraph_t only (no suggestion)
+undef cudaGraph_t + cudaStreamGetCaptureInfo_v2 -> H:93,99,112 cudaGraph_t only
+undef cudaHostFn_t                          -> H:114:5 'cudaHostFn_t'; did you mean 'hipHostFn_t'?
+undef cudaGraph_t + cudaUserObjectRelease   -> the three cudaGraph_t errors AND H:123:25 reported
+undef cudaGraphRetainUserObject + cudaGraphUserObjectMove -> both reported at H:121
+```
+
+So: the discriminator is typo-correctability, `cudaGraph_t` is the only one of the three missing
+type names printed with no "did you mean", and the two calls it masks are exactly the two that
+pass `graph` -- `CUDAGraphsC10Utils.h:104` (`&graph`) and `:121`. `cudaHostFn_t` and
+`cudaUserObject_t` typo-correct and mask nothing (`destroy` reaches only the deferred
+`cudaUserObjectCreate`; `user_object` reaches `:121`/`:123`, both still reported). Suppression is
+per-call, not per-region.
+
+Against that, the three copies: the `notes.md` bullet (`notes.md:2181-2191`) qualifies both the
+bridge sentence and the "Generalized:" sentence and names the two non-masking types;
+`validation.md:161-172` qualifies mechanism (a) the same way and records the correctability flip,
+leaving the operative instruction, mechanism (b) and the probe recipe untouched; the commit body
+drops the universal outright and states only what holds for this header. No sentence in any of
+the three contradicts a measured row, and the "alias all nine" conclusion is unaffected.
+
+Mechanics. `git diff 9143c8c0 3ae4672a` empty and `git diff --quiet` rc 0, and `git diff --stat
+c56016ba 3ae4672a` empty too -- byte-identical trees, so the `[212/212]` gfx1100 build and the
+two 2044/2048 GPU runs of 2026-08-27 describe this tree exactly and the Test Plan is still
+literally accurate. `3ae4672a` and `9143c8c0` share the parent `7cd4d569` and `9143c8c0` is not
+an ancestor of HEAD: an amend, not an extra commit. `origin/moat-port`, HEAD and
+`status.json.head_sha` are all `3ae4672a3a6db5d183329343bf85aff8d93fe69a`. `git -C src status
+--porcelain` empty. `pr-state` -> `none` and no platform validated `9143c8c0` or `3ae4672a`
+(gfx90a `completed` at `7cd4d569`, gfx1100 `validation-failed` at `5cbfdf1a`), so the amend was
+free. Body diff touches paragraph 2 only. The skill edit is its own commit, `078e665`, touching
+only `validation.md`, with the project records in `51c3a98`.
+
+Hygiene at `3ae4672a`: title `[ROCm] Alias newer LibTorch CUDA graph symbols for the HIP build`,
+64 chars; `utils/prose.py` clean on the body; ASCII-only; no `Co-Authored-By`/noreply/
+`Signed-off-by`; AI disclosure and Test Plan with literal fenced commands present.
+`jargon.py --port LichtFeld-Studio`: exactly the 3 pre-existing instances in the
+`13e585d4`/`e24593f4` bodies (deferral `lfs-commit-msg-jargon-13e585d-e24593f`), 0 from this
+delta.
+
+Fault classes: unchanged and out of reach -- the delta is prose only. No device code, wavefront
+width, lane mask, resource handle, neighbor indexing, texture pitch, library swap, build-system
+change or per-arch branch.
+
+Nit, not a finding and not worth a round: the `cudaUserObjectCreate` sub-bullet cites
+`CUDAGraphsC10Utils.h:110` and the helper as `:109-125`, while the call is at `:116-117` and the
+template at `:110-126` in this torch build; every other line number in the entry is exact. Fold
+it in only if that bullet is edited for another reason.
+
+For the next validator: the compiled tree at `3ae4672a` is the one that already built `[212/212]`
+and passed 2044/2048 twice on this gfx1100 host on 2026-08-27, so gfx1100 should be quick;
+gfx90a is stale from `7cd4d569` and needs a real run on its own host.
