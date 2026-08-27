@@ -7,7 +7,7 @@
   "priority": 6.263,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-08-27T04:49:54Z",
+  "updated_at": "2026-08-27T04:54:37Z",
   "head_sha": "3ae4672a3a6db5d183329343bf85aff8d93fe69a",
   "depends_on": [],
   "porting": null,
@@ -55,13 +55,13 @@
       "failed_sha": "7cd4d569387de493f4ac8fa677e6747fe5bffcb3"
     },
     "linux-gfx1100": {
-      "state": "validation-failed",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "5cbfdf1a7b1b6a6553ce077a5aa8d6209fd3f51c",
+      "validated_sha": "3ae4672a3a6db5d183329343bf85aff8d93fe69a",
       "started_at": "2026-05-31T03:10:00Z",
-      "completed_at": "2026-06-23T22:53:10Z",
-      "updated_at": "2026-08-27T04:49:54Z",
+      "completed_at": "2026-08-27T04:54:37Z",
+      "updated_at": "2026-08-27T04:54:37Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -75,13 +75,7 @@
         "first_session_at": "2026-05-31T03:10:00Z",
         "last_session_at": "2026-05-31T03:20:00Z"
       },
-      "last_agent": "reviewer",
-      "carry_forward": {
-        "to": "5cbfdf1a7b1b6a6553ce077a5aa8d6209fd3f51c",
-        "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:53:10Z"
-      },
+      "last_agent": "validator",
       "failed_sha": "7cd4d569387de493f4ac8fa677e6747fe5bffcb3"
     },
     "windows-gfx1101": {

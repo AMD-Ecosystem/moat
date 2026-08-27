@@ -98,3 +98,8 @@
 {"kind":"session","ts":"2026-08-27T04:40:21Z","epoch":1787805621.866790315,"event":"end","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-27T04:46:10Z","epoch":1787805970.598802808,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-08-27T04:49:58Z","epoch":1787806198.853866234,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-08-27T04:52:05Z","epoch":1787806325.325452322,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-27T04:52:09Z","phase":"compile","seconds":0.179,"exit":0,"cmd":"cmake --build projects/LichtFeld-Studio/src/build-hip-gfx1100 --target lfs_compute_tests -j64"}
+{"kind":"phase","ts":"2026-08-27T04:52:35Z","phase":"test","seconds":13.100,"exit":1,"cmd":"env HIP_VISIBLE_DEVICES=0 /var/lib/jenkins/moat/projects/LichtFeld-Studio/src/build-hip-gfx1100/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-08-27T04:53:05Z","phase":"test","seconds":12.970,"exit":1,"cmd":"env HIP_VISIBLE_DEVICES=0 /var/lib/jenkins/moat/projects/LichtFeld-Studio/src/build-hip-gfx1100/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"session","ts":"2026-08-27T04:54:47Z","epoch":1787806487.888003871,"event":"end","platform":"linux-gfx1100"}

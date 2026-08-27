@@ -3007,3 +3007,107 @@ it in only if that bullet is edited for another reason.
 For the next validator: the compiled tree at `3ae4672a` is the one that already built `[212/212]`
 and passed 2044/2048 twice on this gfx1100 host on 2026-08-27, so gfx1100 should be quick;
 gfx90a is stale from `7cd4d569` and needs a real run on its own host.
+
+## Validation 2026-08-27 (validator, linux-gfx1100, AMD Radeon Pro W7800, RDNA3 gfx1100) -- COMPLETED
+
+Dispatched off `review-passed` at head `3ae4672a3a6db5d183329343bf85aff8d93fe69a` on `moat-port`
+(`pr-state` none, so no fix branch; `moat-port` is the working branch). This arch's block still
+read `validation-failed` from the 2026-08-27 revalidation entry above (`failed_sha 7cd4d569`) --
+per the validator role that is the record of what was seen at that commit, not a verdict on the
+tree in front of me, since two full port rounds (compat-header fix, wording amend) closed the gap
+since then.
+
+### Tree-identity check (why a fresh GPU run was not mandatory, but was still run)
+
+```
+$ cd src && git status --porcelain          # empty
+$ git rev-parse HEAD                        # 3ae4672a3a6db5d183329343bf85aff8d93fe69a
+$ git rev-parse HEAD^{tree}                  # 7241557c2092a6c42d2b573f4c49945593a89059
+$ git rev-parse c56016ba30db5cad0c54ede67d1813419308db03^{tree}
+                                              # 7241557c2092a6c42d2b573f4c49945593a89059
+```
+Same tree object as the porter's `c56016ba` build/test round (2026-08-27 above), confirming
+independently what reviews 2026-08-27b/c/d already established by `git diff --quiet`: every
+commit from `c56016ba` through `3ae4672a` (`c8453260`, `9143c8c0`, `3ae4672a`) is a message-only
+amend chain, tree unchanged. `status.json.head_sha` matches HEAD. Working tree clean.
+
+### Build-correspondence check (existing build dir vs. this tree)
+
+Rather than assume the `build-hip-gfx1100` directory from the porter's round still matches,
+reconfigured nothing and re-ran the build target:
+```
+$ bash utils/timeit.sh LichtFeld-Studio compile -- \
+    cmake --build projects/LichtFeld-Studio/src/build-hip-gfx1100 --target lfs_compute_tests -j64
+ninja: no work to do.
+```
+Ninja saw zero stale inputs -- the binary on disk (`lfs_compute_tests`, 34 MB, built
+2026-08-27 03:54 UTC by the porter round) already corresponds exactly to this tree. No
+rebuild was needed or performed. `CMakeCache.txt` confirms the recorded recipe: ROCm SDK
+clang++ from `_rocm_sdk_devel/lib/llvm/bin`, `CMAKE_HIP_ARCHITECTURES=gfx1100`, self-built
+`spdlog_DIR=/var/lib/jenkins/moat/_deps/spdlog-install-1.15.3/...` (fmt 11.x, per the Class A
+workaround above), `Torch_DIR` pointing at the same `2.14.0a0+git7d05abc` / `hip 7.14.60850`
+torch package.
+
+### GPU test run (real hardware, gfx1100, HIP_VISIBLE_DEVICES=0)
+
+```
+$ rocminfo | grep -E "Name:|Marketing"
+  Name:  gfx1100          Marketing Name:  AMD Radeon Pro W7800 48GB
+$ bash utils/timeit.sh LichtFeld-Studio test -- \
+    env HIP_VISIBLE_DEVICES=0 \
+    projects/LichtFeld-Studio/src/build-hip-gfx1100/cmake/hip_tests/lfs_compute_tests
+```
+Run 1: 2048 tests / 119 suites, 11021 ms -- 2044 passed, 4 failed.
+Run 2: 2048 tests / 119 suites, 10914 ms (approx) -- 2044 passed, 4 failed. Same four,
+deterministic across both runs (and matches the porter's own two 2026-08-27 runs and the
+2026-06-07 gfx1100 revalidation exactly):
+`MCMCTest.RemoveGaussiansSoftDeletesRows`,
+`MCMCRelocateOptimizerStateTest.ResetBothSourceAndDestinationRows`,
+`TensorLazyIrTest.OnModeDefersUntilBoundaryAndMaterializes`,
+`TensorStressTest.DeepOperationChain` -- all four already documented (2026-06-07 gfx1100 entry
+and the 2026-08-27 porter round) as test-design/measurement artifacts, not port regressions;
+no new failure appeared. 1 disabled test, consistent with prior runs. Non-GPU-gated behavior
+(build succeeds, binary links, no crash/hang) shows no regression vs. the upstream baseline
+recorded earlier in this file.
+
+### CUDA no-regression gate: still cuda-not-validated (environmental wall, unchanged)
+
+Not re-attempted this round; confirmed the wall is structural, not a missed shortcut, before
+declining it again: `CMakeLists.txt` routes any `NOT USE_HIP` configure straight through
+`VCPKG_ROOT`/`vcpkg.cmake` (lines 21-27) unconditionally -- there is no lighter-weight
+compute-only CUDA configure path to fall back to; the full ~40-package vcpkg bootstrap (USD,
+ffmpeg, OpenImageIO, SDL3, Vulkan, RmlUi, nanobind, assimp, Boost, glslang, shader-slang, ...)
+is required just to reach `cmake --build`, well outside this gate's ~15-minute compile-only
+budget. Unrun at every sha this project has had, by every prior validator/porter entry in this
+file (lines 978, 1269, 1902, 2123, 2304, 2479 above) -- recorded again here rather than
+re-attempted, per the stop-discipline note against grinding on a gate already shown infeasible
+under this budget. `cuda-not-validated: full CUDA configure requires the project's vcpkg
+bootstrap (~40 packages: USD, ffmpeg, OpenImageIO, SDL3, Vulkan, RmlUi, nanobind, assimp,
+Boost, glslang, shader-slang), infeasible inside the ~15-minute compile-only CUDA-gate budget;
+not a gate.`
+
+### Pre-completion checklist
+
+- `python3 utils/jargon.py --port LichtFeld-Studio`: 3 instances, all pre-existing in commit
+  bodies `13e585d4`/`e24593f4` (deferral `lfs-commit-msg-jargon-13e585d-e24593f`, status open,
+  not yet ruled by a person), 0 new from any commit in `7cd4d569..3ae4672a`. Consistent with
+  every prior round's jargon count on this branch; not a new gap introduced at this head.
+- Documentation: `docs/building_and_distribution.md` "AMD GPUs (ROCm/HIP)" section (from line
+  82) documents `-DUSE_HIP=ON`, the ROCm 7.x/clang++ prerequisite, GLM/Torch/GTest
+  requirements, the configure/build/test commands, and `CMAKE_HIP_ARCHITECTURES`, matching the
+  recipe actually used above. Unchanged since the 2026-08-24 doc rounds and still accurate.
+- Integrity: `git -C projects/LichtFeld-Studio/src status --porcelain` empty before and after
+  this session. No tracked file touched; only `build-hip-gfx1100/` (gitignored) and this
+  project's own `notes.md`/`status.json`/`stats.jsonl` were written.
+
+### Verdict: COMPLETED (linux-gfx1100)
+
+```
+python3 utils/moatlib.py set-state LichtFeld-Studio linux-gfx1100 completed --agent validator
+```
+`validated_sha = 3ae4672a3a6db5d183329343bf85aff8d93fe69a`. Real-GPU pass on AMD Radeon Pro
+W7800 (gfx1100, RDNA3, wave32), 2044/2048, the long-documented four-test artifact set,
+deterministic across two runs, on the exact head_sha reviewed and offered upstream-ready.
+`linux-gfx90a` remains `completed` at the older `7cd4d569` and reads `revalidate` on its own
+host per the porter's 2026-08-27 handoff note (the compat-header alias block is real compiled
+source there too, no carry-forward shortcut applies); not this session's arch.
