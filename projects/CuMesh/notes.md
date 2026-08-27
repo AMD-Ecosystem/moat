@@ -2425,3 +2425,196 @@ Gates for this round are unchanged; restated so they are in one place:
 - The CUDA no-regression gate is OPEN at this head for the same reason -- the `4440182`
   result must not be carried forward. This host has a CUDA env at
   `/opt/conda/envs/cuda-12.8` for the header-compile check.
+
+## Validation 2026-08-27 (linux-gfx1100 revalidate, fix round `moat-fix-36`)
+
+**Platform**: linux-gfx1100 (AMD Radeon Pro W7800 48GB, gfx1100, wave32, 4x devices,
+`HIP_VISIBLE_DEVICES=0`), Python 3.12, PyTorch `2.14.0a0+git7d05abc`, HIP/ROCm
+`7.14.60850`.
+
+**Branch/SHA**: `moat-fix-36` at `11533412aaaa8f21f26d7e46d8a468562c41ff96` (the fix
+round's final, reviewer-approved commit). `origin/moat-port` confirmed still
+`392b4dd41f8b10b795b00e44cb1b294b1388cefa` (frozen, upstream PR #36 open). Submodule
+pins confirmed: `third_party/cubvh` at `de1badf89b54975d407c42a02a47d41fa149e486`,
+nested `third_party/cubvh/third_party/eigen` at `e63d9f6ccb7f6f29f31241b87c542f3f0ab3112b`
+-- matches the pins recorded by the porter/reviewer this round exactly.
+
+**Integrity**: `git -C projects/CuMesh/src status --porcelain` empty before and after
+the run (build output goes to `agent_space/`, outside the tracked tree).
+
+### Build
+
+```bash
+utils/timeit.sh CuMesh compile -- bash -lc 'cd /var/lib/jenkins/moat/projects/CuMesh/src && \
+  HIP_VISIBLE_DEVICES=0 BUILD_TARGET=rocm GPU_ARCHS=gfx1100 \
+  python3 setup.py build \
+  --build-base /var/lib/jenkins/moat/agent_space/CuMesh-validator-gfx1100-1153341 --force'
+```
+
+PASS, exit 0, zero `error:` lines, 119s. All three extensions built (`_C`, `_cubvh`,
+`_cumesh_xatlas`). Warning set unchanged from prior rounds (`nodiscard` `hipError_t`,
+non-trivial `memcpy` on `cubvh::Triangle`, pybind11 `-Wattributes`).
+
+### Test: 6 example scripts
+
+```bash
+utils/timeit.sh CuMesh test -- bash -lc '
+export HIP_VISIBLE_DEVICES=0 PYTHONNOUSERSITE=1
+export PYTHONPATH=/var/lib/jenkins/moat/agent_space/CuMesh-validator-gfx1100-1153341/lib.linux-x86_64-cpython-312
+cd /var/lib/jenkins/moat/agent_space/CuMesh-validator-examples-1153341
+for script in simplify.py fill_holes.py remove_duplicate_faces.py unify_orientations.py remesh.py uv_unwrap.py; do
+  python3 "$script"
+done'
+```
+
+(`examples/*.py` copied to a scratch run dir, reusing the bunny mesh already cached by
+the porter's earlier run at `agent_space/CuMesh-porter-gfx1100-de1badf/examples-run/cache`
+to skip a redundant download; `trimesh` was already installed on this host.)
+
+6/6 PASS, 21s total:
+
+1. `simplify.py`: 34834 / 69451 -> 5001 vertices / 9931 faces
+2. `fill_holes.py`: 34834 / 69451 -> 34838 / 69594
+3. `remove_duplicate_faces.py`: unchanged at 34834 / 69451
+4. `unify_orientations.py`: unchanged at 34834 / 69451
+5. `remesh.py`: BVH + sparse grid + dual contouring + projection -> 102396 / 204916
+6. `uv_unwrap.py`: 90 clusters, xatlas charts/packing -> 45110 / 69451
+
+Counts match the previous gfx1100/gfx942 runs at this cubvh core (simplify's face count
+varies run to run per the 2026-08-09 review note; not a regression signal).
+
+### BVH numeric contract check (rewritten core, `de1badf`)
+
+The cubvh BVH core (`common.h`, `bvh.cuh`, `triangle.cuh`, `bounding_box.cuh`,
+`src/bvh.cu`) was rewritten upstream this round. Repeated the porter's analytic
+unit-sphere check plus the upstream `test/degenerate_triangles.py` contract, script at
+`agent_space/cumesh_bvh_check_validator.py` (scratch, not committed -- project has no
+test directory):
+
+```bash
+HIP_VISIBLE_DEVICES=0 PYTHONPATH=/var/lib/jenkins/moat/agent_space/CuMesh-validator-gfx1100-1153341/lib.linux-x86_64-cpython-312 \
+python3 /var/lib/jenkins/moat/agent_space/cumesh_bvh_check_validator.py
+```
+
+- icosphere (subdiv 4, r=1, 2562 vertices / 5120 faces), 20000 random query points in
+  `[-1.5, 1.5]^3`.
+- `unsigned_distance` vs analytic `| |p| - 1 |`: max err 1.134e-3, all finite.
+- `signed_distance` (mode `watertight`) vs analytic `|p| - 1`: max err 1.134e-3 (same
+  binary evaluated both ways, as expected); sign matches analytic sign on 100%
+  (19971/19971) of points farther than 2e-3 from the surface.
+- `ray_trace` toward the origin from 14683 points with `r > 1.2`: 14683/14683 hit, hit
+  radius in `[0.99886, 0.99999]`.
+- Degenerate mesh, reproducing upstream's `test/degenerate_triangles.py` exactly
+  (1 vertex at the origin, 9 zero-area faces all referencing it, 2 query points
+  `[0,0,0]` and `[1,2,3]`): `unsigned_distance`, `signed_distance` (both `watertight`
+  and `raystab` modes) all return `+inf` / `face_id == -1` / `uvw == 0` on both points --
+  matches the contract exactly.
+- `ray_trace` on the same degenerate mesh is not part of upstream's declared contract;
+  probed anyway from two origins OFF the mesh's single (world-origin) vertex and got
+  `face_id == -1`, `depth == 1000.0` (`MAX_DIST`) on both, consistent with "no surface
+  to hit". (A ray whose origin exactly coincides with a zero-area triangle's vertex
+  is a genuine edge case -- it reported a spurious hit at depth ~0 in an earlier probe
+  attempt with that origin -- but that is a query placed exactly on top of degenerate
+  geometry, not a contract this round establishes or a regression; noted here so the
+  next validator does not need to rediscover it.)
+
+All BVH contract checks PASS on real gfx1100 hardware.
+
+### CUDA no-regression gate: CLOSED at `1153341`
+
+Open per the reviewer's note (cubvh core rewritten at `5996569`; the `4440182` result
+does not carry forward). Compiled all three `cumesh._cubvh` extension sources --
+`third_party/cubvh/src/bvh.cu`, `src/api_gpu.cu`, `src/bindings.cpp` -- directly with
+real `nvcc`/`g++` and a genuine CUDA-enabled torch, pinned to `sm_80`
+(`-DCMAKE_CUDA_ARCHITECTURES` is not applicable here since this is a direct compiler
+invocation, not a cmake build; the arch pin is `-gencode=arch=compute_80,code=sm_80`).
+This is a superset of the CUDA-gate precedent recorded by the `cubvh` project itself
+(header-only compile of `spcumc.cuh`/`hashtable.cuh`/`floodfill.cuh`) and of this
+project's own prior gate (`4440182`, full `setup.py` build in a scratch venv): all five
+of this round's changed cubvh files (`common.h`, `bvh.cuh`, `triangle.cuh`,
+`bounding_box.cuh`, `src/bvh.cu`) are exercised, directly or transitively
+(`api_gpu.cu` -> `floodfill.cuh`/`spcumc.cuh`/`hashtable.cuh`).
+
+Environment (new CUDA-only scratch venv, network fetch, ~35-55 MB/s to
+download.pytorch.org on this host, ~2 min total):
+
+```bash
+python3.12 -m venv agent_space/cumesh_cuda_gate/venv
+source agent_space/cumesh_cuda_gate/venv/bin/activate
+pip install --index-url https://download.pytorch.org/whl/cu128 torch==2.11.0+cu128
+export CUDA_HOME=/opt/conda/envs/cuda-12.8
+export PATH=$CUDA_HOME/bin:$PATH
+TORCH_INC=$(python3 -c "import torch, os; print(os.path.join(os.path.dirname(torch.__file__), 'include'))")
+TORCH_API_INC=$(python3 -c "import torch, os; print(os.path.join(os.path.dirname(torch.__file__), 'include', 'torch', 'csrc', 'api', 'include'))")
+cd projects/CuMesh/src/third_party/cubvh
+
+nvcc -std=c++20 -O3 -gencode=arch=compute_80,code=sm_80 --expt-relaxed-constexpr \
+  -I "$TORCH_INC" -I "$TORCH_API_INC" -I include -I third_party/eigen \
+  -c src/bvh.cu -o /tmp/bvh_cuda_gate_final.o
+
+nvcc -std=c++20 -O3 -gencode=arch=compute_80,code=sm_80 --expt-relaxed-constexpr \
+  --extended-lambda -U__CUDA_NO_HALF_OPERATORS__ -U__CUDA_NO_HALF_CONVERSIONS__ -U__CUDA_NO_HALF2_OPERATORS__ \
+  -Xcompiler=-fvisibility=hidden -Xcompiler=-fvisibility-inlines-hidden \
+  -I "$TORCH_INC" -I "$TORCH_API_INC" -I include -I third_party/eigen \
+  -I /opt/conda/envs/py_3.12/include/python3.12 \
+  -DTORCH_API_INCLUDE_EXTENSION_H -DTORCH_EXTENSION_NAME=_cubvh \
+  -c src/api_gpu.cu -o /tmp/api_gpu_cuda_gate_final.o
+
+g++ -std=c++20 -O3 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden \
+  -I "$TORCH_INC" -I "$TORCH_API_INC" -I include -I third_party/eigen \
+  -I /opt/conda/envs/py_3.12/include/python3.12 \
+  -I $CUDA_HOME/targets/x86_64-linux/include \
+  -DTORCH_API_INCLUDE_EXTENSION_H -DTORCH_EXTENSION_NAME=_cubvh \
+  -c src/bindings.cpp -o /tmp/bindings_cuda_gate_final.o
+```
+
+All three, exit 0. Flags mirror `setup.py`'s real `nvcc`/`cxx` keys for the
+`cumesh._cubvh` extension on a non-Windows, non-HIP (i.e. real CUDA) build:
+`-std=c++20`, `--extended-lambda` plus the three `-U__CUDA_NO_HALF*__` undefines (the
+ones the port gates `if not IS_HIP`, so they only apply on this branch), and the
+visibility flags forwarded to `nvcc` via `-Xcompiler=` (the exact mechanism the
+2026-08-09 fix (`4440182`) put in place -- confirms that fix itself still holds at this
+new cubvh pin). Only warnings: pybind11 `-Wattributes` (pre-existing, matches every ROCm
+build log), Eigen `long double` device-code narrowing (pre-existing, recorded since
+2026-06-19), and an nvcc parser note on `torch::nn`'s use of `module` as an identifier
+(pre-existing torch-header noise, unrelated to cubvh).
+
+Wrapped: `utils/timeit.sh CuMesh cuda-compile -- <all three commands, set -e>`, exit 0,
+114s.
+
+**What this gate does NOT cover**: it is compile-only (no NVIDIA GPU on this host, no
+link/runtime step -- consistent with every previous CUDA gate on this project); it does
+not compile `cumesh._C` or `cumesh._cumesh_xatlas` (their sources were untouched by this
+round, and the round's `setup.py` delta -- `extra_files` path normalization and its
+comment -- only affects the Windows+HIP `_hipify_cubvh_sources()` branch, which is
+provably inert on this build: `IS_WINDOWS and IS_HIP` is `False` here). The
+`torch/torch.h` include in `bvh.cuh` IS exercised for real (an initial attempt to stub
+it out failed: the file uses `at::Tensor`/`at::from_blob`/`at::TensorOptions` in its
+`state_dict()`/`load_state_dict()` methods, so a real torch install was required, unlike
+the narrower `spcumc.cuh`/`hashtable.cuh`/`floodfill.cuh` precedent which has no torch
+dependency at all).
+
+**Verdict**: PASS. No CUDA regression from either half of this round -- the cubvh
+submodule bump to `de1badf` and the Windows-only `setup.py` hipify-scope fix.
+
+### Jargon and documentation gates
+
+- `python3 utils/jargon.py --port CuMesh`: exits 1, but the only 2 hits are inside the
+  already-published, human-settled `d5c1355` commit message (`moat-port`, `moat`), per
+  the 2026-08-09 decision recorded above not to rewrite frozen/published history. None
+  of this round's four new commits (`5996569`, `1b796f7`, `f08cec7`, `1153341`) add a
+  hit -- confirmed independently, not just taken from the porter/reviewer's word.
+- Documentation: `README.md` already documents the ROCm build (`BUILD_TARGET=rocm
+  GPU_ARCHS=<arch>`) next to the CUDA instructions; this round changed neither the build
+  procedure nor prerequisites, so no documentation delta was needed. Confirmed the
+  section is still present and accurate at this head.
+
+### Outcome
+
+linux-gfx1100 -> `completed`, `validated_sha` =
+`11533412aaaa8f21f26d7e46d8a468562c41ff96`. Per the reviewer's note, this does NOT
+close the round's actual gate: a `windows-*` pass at this same head is still required
+(the round exists to fix a Windows-only hipify-scope bug that no Linux run can
+observe), and `linux-gfx942`/`linux-gfx90a` still need their own revalidation at this
+head (the cubvh core changed at `5996569`, so nothing older carries forward for them
+either).
