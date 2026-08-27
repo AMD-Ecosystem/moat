@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "flexgemm-wave-barrier-syncwarp",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream #18 uses __builtin_amdgcn_wave_barrier() (scheduling barrier) as the __syncwarp() stand-in in migemm_neighmap_pp.cu:281-288, where lanes consume LDS written by other lanes. Correct on CDNA lockstep and wave64-correct indexing, but __threadfence_block() is the stronger form. Candidate one-line upstream PR; a person rules whether to pursue.",
+      "refs": [],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-08-27T02:08:18Z",
+      "decided": null
+    }
+  ]
+}
