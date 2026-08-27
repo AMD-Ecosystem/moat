@@ -1947,3 +1947,166 @@ upstream, so a numeric check against a closed form was worth having on wave32:
   from the last CUDA-gated commit is now non-trivial -- it includes the rewritten cubvh
   core -- so the gate is genuinely open at this head and a validator must not carry the
   old `4440182` result forward across it.
+
+## Review 2026-08-27 (linux-gfx1100 reviewer, fix round `moat-fix-36`)
+
+Scope: `git diff 392b4dd...1b796f7` on `moat-fix-36` (`.gitignore`, `setup.py`,
+`third_party/cubvh` gitlink), plus the skill lesson in commit `2d4aa81` on
+`port/CuMesh`. Verdict: **changes-requested**, one substantive defect.
+
+### 1. `setup.py:66` -- the Windows fix misses one of the two failing translation units
+
+`extra_files=[os.path.abspath(s) for s in cubvh_cu]` (setup.py:66) still carries
+`src/cubvh_bindings_winhip.cu`, and that file is the one extra-files entry that lies
+OUTSIDE the new walk root `cubvh_root` (setup.py:57). On Windows it is therefore
+silently dropped by hipify, so the fix repairs `third_party/cubvh/src/api_gpu.hip` but
+NOT `src/cubvh_bindings_winhip.hip` -- the second of the two TUs that failed at
+`392b4dd`.
+
+Mechanism, read out of the torch hipify shipped in this host's env
+(`torch 2.14.0a0+git7d05abc`, `torch/utils/hipify/hipify_python.py`):
+
+- `hipify()` appends each `extra_files` entry to `all_files` VERBATIM (lines 1139-1143);
+  it does not `_to_unix_path` them. `os.path.abspath` on Windows returns
+  backslash-separated paths.
+- `preprocessor()` then does `filepath = _to_unix_path(filepath)` (line 828) and
+  immediately `if filepath not in all_files:` -> `"[ignored, not to be hipified]"`
+  (lines 829-834). That is a plain string membership test, not `fnmatch`, so no
+  normcase saves it.
+- `third_party/cubvh/src/bvh.cu` and `.../api_gpu.cu` survive this only because
+  `matched_files_iter` yields a `_to_unix_path`'d duplicate of each from the walk
+  (line 186). `<root>/src/cubvh_bindings_winhip.cu` is not under `cubvh_root`, so no
+  such duplicate exists.
+
+Reproduced by emulating the Windows separator behaviour against this checkout (scratch
+script, not committed): with `extra_files` shaped as `os.path.abspath` shapes them on
+Windows, `bvh.cu` and `api_gpu.cu` test MEMBER and `src/cubvh_bindings_winhip.cu` tests
+SKIPPED.
+
+Consequence, and why it reproduces the recorded failure exactly: when the helper skips
+the wrapper, `_hipify_cubvh_sources` returns the original `.cu` path, torch's own pass
+converts it to `src/cubvh_bindings_winhip.hip`, and its include rewrite leaves
+`#include "../third_party/cubvh/src/bindings.cpp"` alone (basename `bindings.cpp` is not
+in torch's `all_files`: the walk prunes `third_party/`, and the `header_include_dirs`
+extension only admits header extensions, `hipify_python.py:1147-1157`). The compiler
+then reads the RAW `third_party/cubvh/src/bindings.cpp`, which includes the raw
+`third_party/cubvh/include/gpu/api_gpu.h:5`, i.e. `<ATen/cuda/CUDAContext.h>` ->
+`c10/cuda/CUDAStream.h:120-125`, `cudaStreamCaptureStatus` /
+`cudaStreamCaptureStatusNone` / `cudaStreamIsCapturing`. That is the recorded gfx1151
+error, unchanged.
+
+This also explains why Linux cannot see it, and it is not the reason the round's notes
+give. `api_gpu.h:4` guards the ATen include with
+`#if defined(__CUDACC__) || defined(__HIPCC__)`. On Linux `bindings.cpp` is compiled
+directly by the host C++ compiler (setup.py:169 picks it when not Windows+HIP), neither
+macro is defined, and the ATen include is skipped entirely. Only the Windows wrapper
+routes that source through hipcc, which defines `__HIPCC__` and switches the include on.
+So the wrapper TU is the one place the scope fix has to land, and it is the one place it
+does not.
+
+Fix: unix-normalize the extra-files paths, e.g.
+
+```python
+extra_files=[os.path.abspath(s).replace(os.sep, "/") for s in cubvh_cu],
+```
+
+This is safe for the caller's lookup at setup.py:73: `HIPIFY_FINAL_RESULT` is keyed by
+`os.path.abspath(os.path.join(output_directory, filepath))`
+(`hipify_python.py:207-209`), which re-normalizes to the native separator, so
+`result.get(s_abs)` with a backslash `s_abs` still hits. Rooting the pass so the walk
+reaches the wrapper would work too, but it widens the scope again for one file.
+
+Verify before re-review: the exact `hipify_python.py` in the WINDOWS host's torch
+(`2.12.0+rocm7.14...`) at the `extra_files` append and the `preprocessor` membership
+test. The finding is read out of `2.14.0a0` here; those two lines are old, but confirm
+rather than assume.
+
+Corrections to the round's analysis that follow from this:
+
+- "Windows now produces exactly the header set Linux already compiles, and `ATen/cuda`
+  is never reached from either `_cubvh` TU" is not established. It holds for
+  `api_gpu.hip`; it does not hold for `cubvh_bindings_winhip.hip`.
+- The probe evidence `src/cubvh_bindings_winhip.cu -> src/cubvh_bindings_winhip.hip`
+  and `bindings.cpp -> bindings_hip.cpp` is the one line of the Linux probe that does
+  NOT transfer to Windows, because `_to_unix_path` is a no-op on Linux. The probe cannot
+  cover this step by construction; a Windows run or an explicit separator-shaped check
+  is needed.
+- The skill lesson this round promoted already names this hazard verbatim
+  (`strategy-b-torch.md`, "Prefer making hipify's WALK find your sources over listing
+  them in `extra_files`"). The lesson is right; the code did not follow it.
+
+### 2. `.gitignore:214` -- comment does not describe what hipify actually does
+
+"hipify maps a `cuda` path component to `hip`" is a whole-component reading, and under
+that reading `hip_cuda_compat` (whose component is not named `cuda`) would not be
+rewritten -- so the comment argues against the artifact it exists to explain.
+`get_hip_file_path` does `dirpath = dirpath.replace('cuda', 'hip')`
+(`hipify_python.py:600`), a plain substring replacement over the whole directory path,
+which is exactly why a directory merely CONTAINING `cuda` is hit. This ships upstream;
+say "a `cuda` substring anywhere in the directory path".
+
+### Checked and clean (no action)
+
+Recorded so the next round does not re-litigate these.
+
+- Submodule bump `757b913..de1badf` needs no glue: `include/gpu/api_gpu.h`,
+  `src/api_gpu.cu`, `src/bindings.cpp`, `include/gpu/spcumc.cuh`,
+  `include/gpu/gpu_memory.h`, `include/gpu/hashtable.cuh`, `include/gpu/floodfill.cuh`,
+  `include/gpu/pcg32.h`, `include/cpu/api_cpu.h` and the Python package are all
+  byte-identical across the range (`git diff --quiet` per file). Only `common.h`,
+  `bvh.cuh`, `triangle.cuh`, `bounding_box.cuh`, `src/bvh.cu`, `LICENSE_NVIDIA` and a
+  new test move.
+- `hip_cuda_compat/cuda.h` coverage is unchanged and complete for the new tree: the full
+  CUDA surface cubvh uses at `de1badf` is `cudaMalloc/Free/Memcpy/MemcpyAsync/Memset/
+  DeviceSynchronize/StreamSynchronize/GetLastError/GetErrorString`, `cudaStream_t`,
+  `cudaError_t`, `cudaSuccess` and the three `cudaMemcpyKind` values; every one is in
+  the shim.
+- No new warp-size fault: the only `32` literals in the changed cubvh code are
+  `bvh.cuh:35` (`FixedStack` capacity) and `src/bvh.cu:18` (`N_STAB_DIRS`), neither
+  wave-related; no `warpSize`, `__shfl*`, `__ballot` or `__activemask` anywhere in the
+  changed files. The `#pragma unroll 1` change (`src/bvh.cu:157,163`) is arch-unified,
+  not per-arch `#ifdef`.
+- The FANOUT child loop is not an unclamped neighbour read: `src/bvh.cu:146`, `:233`,
+  `:306` each bail to the stackless walk when `right_idx - left_idx != FANOUT` before
+  the `left_idx + k` reads.
+- No dangling licence reference: nothing in CuMesh mentions `LICENSE_NVIDIA`.
+- `de1badf` IS the current tip of `ashawkey/cubvh` `main`
+  (`git ls-remote .../cubvh.git refs/heads/main`), and `.gitmodules` at `392b4dd`
+  already tracks that url/branch, so the commit body's claim holds.
+- Generated headers stay untracked: cubvh's own `.gitignore` covers `*_hip.h`,
+  `*_hip.cuh`, `*.hip` and `src/bindings_hip.cpp`, so the widened in-place output does
+  not dirty the submodule (`git -C third_party/cubvh status --porcelain` empty with all
+  ten generated headers present).
+- Hipify scope stays tight: with `includes=[<cubvh>/src/*, <cubvh>/include/*]`, neither
+  the nested Eigen nor `hip_cuda_compat/` enters `all_files`; a pristine
+  `git archive de1badf` copy run through the helper produced no `hip_hip_compat/`.
+  `include/cpu/*.h` are reached but come back "[skipped, no changes]" and keep their raw
+  include spellings, so no `common.h` / `common_hip.h` double-inclusion is possible (the
+  cpu headers include no gpu header).
+- Old-vs-new discriminating run on pristine copies: old scope leaves `src/api_gpu.hip:2`
+  as `#include <gpu/api_gpu.h>` and emits no `api_gpu_hip.h`; new scope emits
+  `api_gpu_hip.h` with `<ATen/hip/HIPContext.h>` and rewrites the source to match. The
+  root cause and the direction of the fix are correct.
+- Linux and NVIDIA paths untouched: the helper is called only under
+  `IS_WINDOWS and IS_HIP` (setup.py:172).
+- Commit hygiene: both titles `[ROCm]`-prefixed at 58 and 59 chars, bodies carry the
+  AI-assistance disclosure and a fenced Test Plan, no `Co-Authored-By`, no trailers, no
+  non-ASCII. `python3 utils/jargon.py --port CuMesh` reports only the two long-settled
+  hits inside the already-published `d5c1355`.
+- Skill lesson `2d4aa81` fact-checked against the source it describes, not the summary:
+  the `third_party` prune (`hipify_python.py:182-184`), torch's own
+  `project_directory=build_dir` / `includes=[build_dir/*]` /
+  `header_include_dirs=include_dirs` invocation (`cpp_extension.py:1598-1607`),
+  `c10/hip/HIPStream.h:54,62` opening `namespace c10::cuda` with
+  `class C10_CUDA_API CUDAStream`, `c10/cuda/CUDAStream.h:120-125` using the
+  graph-capture trio, and the `extra_files` normalization hazard in its second
+  diagnostic all check out. No change requested to the lesson.
+
+### For the validator, once the porter re-lands
+
+- A `windows-*` platform at the new head is the gate for this round; a Linux pass cannot
+  close it.
+- The CUDA no-regression gate is OPEN at this head -- the cubvh core was rewritten, so
+  the `4440182` result must not be carried forward. This host (linux-gfx1100) has a CUDA
+  env at `/opt/conda/envs/cuda-12.8` left from the cubvh round that can be reused for
+  it.
