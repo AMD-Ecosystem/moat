@@ -303,6 +303,58 @@
         "null"
       ]
     },
+    "pr_round": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "pr_history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "pr_url",
+          "pr_number",
+          "pr_state",
+          "published_sha",
+          "archived_at"
+        ],
+        "properties": {
+          "pr_url": {
+            "type": "string"
+          },
+          "pr_number": {
+            "type": "integer"
+          },
+          "pr_state": {
+            "enum": [
+              "merged",
+              "closed"
+            ]
+          },
+          "pr_opened_at": {
+            "type": "string"
+          },
+          "pr_merged_at": {
+            "type": "string"
+          },
+          "pr_closed_at": {
+            "type": "string"
+          },
+          "pr_closed_note": {
+            "type": "string"
+          },
+          "published_sha": {
+            "type": "string"
+          },
+          "review_pr": {
+            "type": "string"
+          },
+          "archived_at": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "fix": {
       "type": [
         "object",
