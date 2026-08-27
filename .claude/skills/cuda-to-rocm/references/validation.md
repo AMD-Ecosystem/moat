@@ -158,12 +158,19 @@ in the same build, from the same torch version bump (LichtFeld-Studio, torch `2.
   back to the porter with the exact symbol list and confirmed HIP counterparts.
   **Treat the compiler's error list as a lower bound and alias the whole helper, not just the
   names it printed.** Two independent mechanisms hide a missing alias, and only one of them is
-  the familiar template one. (a) Clang stops diagnosing the callee of a call whose argument
-  list already contains an undeclared identifier, so one missing alias used as an *argument*
-  silences the missing alias that is the *function being called*: with
-  `cudaGraphUserObjectMove` undeclared, the `cudaGraphRetainUserObject(...)` around it was
-  never reported, even though its arguments are all non-dependent and ordinary lookup would
-  have rejected it at template-definition time. (b) A call whose arguments *are* dependent is
+  the familiar template one. (a) Clang drops the undeclared-callee diagnostic when one of the
+  call's arguments is an *error-typed expression*, and a variable declared with a type whose
+  alias is missing is exactly that -- so **a missing type alias hides every missing function
+  alias in each call that passes a value of that type**, and those function names appear only
+  in a second wave, after the type aliases are added. In that header the unaliased `cudaGraph_t` hid
+  both `cudaGraphRetainUserObject(graph, ...)` -- whose arguments are all non-dependent, so
+  ordinary lookup would have rejected it at template-definition time -- and
+  `cudaStreamGetCaptureInfo_v2(..., &graph, ...)`, whose argument list contains no undeclared
+  name at all. An argument that is merely an undeclared *identifier* does not suppress the
+  callee when clang can typo-correct it (`cudaGraphUserObjectMove` -> "did you mean
+  'hipGraphUserObjectMove'?", and the call around it is still reported), so do not reason about
+  this from a synthetic reproducer whose undeclared name has no correction candidate; measure
+  on the real header with the probe below. (b) A call whose arguments *are* dependent is
   looked up only at instantiation, so inside a template nobody instantiates it produces no
   error at all while the helper is merely parsed (`cudaUserObjectCreate(&obj, data.get(), ...)`
   on a `std::unique_ptr<T>`). Either way, covering the parameter types alone leaves the body
