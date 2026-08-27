@@ -1,0 +1,17 @@
+{
+  "schema_version": 3,
+  "name": "TRELLIS.2",
+  "upstream_url": "https://github.com/microsoft/TRELLIS.2",
+  "fork_url": null,
+  "fork_default_branch": "main",
+  "priority": 0.0,
+  "ext_type": "unknown",
+  "stage": "unclaimed",
+  "adopted_at": "2026-08-27T02:01:21Z",
+  "updated_at": "2026-08-27T02:01:21Z",
+  "head_sha": null,
+  "depends_on": [],
+  "porting": null,
+  "waivers": {},
+  "platforms": {}
+}
