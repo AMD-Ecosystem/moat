@@ -2225,3 +2225,101 @@ the six-example run at `1b796f7` stands.
   follow), so there is nothing new to promote.
 - Still open for the validator: a `windows-*` pass at the new head is the gate, and
   the CUDA no-regression gate remains open at this head (see the previous round).
+
+## Review 2026-08-27 (linux-gfx1100 reviewer, fix round `moat-fix-36` re-review)
+
+Scope: the answering commit only, `git diff 1b796f7...f08cec7` (`setup.py`, `.gitignore`;
+no gitlink move, worktree clean, `origin/moat-port` still `392b4dd`). `392b4dd..1b796f7`
+was verified by the 2026-08-27 review and is not re-litigated here.
+Verdict: **changes-requested**, one finding, wording only in an upstream-shipping comment.
+
+### 1. `setup.py:66-69` -- the new comment misstates the mechanism it exists to explain
+
+```
+# extra_files entries are matched against hipify's file list verbatim,
+# after that list and the candidate path have been normalized to forward
+# slashes; a Windows-style path therefore never matches and the file is
+# skipped.
+```
+
+"that list ... normalized to forward slashes" is false for exactly the entries the
+comment is about. `hipify()` appends each `extra_files` entry to `all_files` VERBATIM
+(`hipify_python.py:1139-1143`); only the walk-derived entries are normalized
+(`:186`). The normalization the failure turns on is applied to the CANDIDATE alone,
+inside `preprocessor` (`:829`), just before the exact-string membership test (`:831`).
+Under the comment as written -- both sides normalized -- a backslash entry WOULD match,
+so the sentence argues against its own conclusion, which is the same defect class as
+last round's finding 2.
+
+The commit body of `f08cec7` states it correctly ("hipify appends those entries to its
+file list verbatim, but before testing a candidate against that list it normalizes the
+candidate"); the comment is a garbling of that sentence. Suggested reword:
+
+```python
+        # hipify appends extra_files entries to its file list verbatim, but
+        # normalizes a candidate to forward slashes before the exact-match
+        # test, so a backslash path from os.path.abspath() never matches and
+        # the file is skipped. Only entries outside the walk root above depend
+        # on this; the rest have a forward-slash duplicate from the walk.
+```
+
+Worth a round now rather than at PR time: no platform has validated `f08cec7` yet, so
+correcting it costs nothing, whereas correcting it after the Windows/Linux/CUDA sweep
+would invalidate all of it. Amending `f08cec7` is available (only `moat-port` is
+guarded by the pre-push hook and no evidence is tied to `f08cec7`); appending is fine
+too. Porter's call -- nothing else in the round needs to change.
+
+### Prior findings: both closed (verified independently, do not re-open)
+
+- Finding 1 fixed at `setup.py:70`, `os.path.abspath(s).replace(os.sep, "/")`. Re-derived
+  from this host's torch (`2.14.0a0+git7d05abc`) rather than from the porter's write-up:
+  append-verbatim at `hipify_python.py:1139-1143`, walk normalization at `:186`,
+  `_to_unix_path` at `:147-148`, candidate normalization + membership at `:828-834`.
+  Reproduced with an independent `ntpath` emulation (mine, not the porter's script):
+  before, `src/cubvh_bindings_winhip.cu` member=False while `bvh.cu` / `api_gpu.cu`
+  member=True; after, all three member=True.
+- The porter's `s_abs`-keying argument holds, and is the load-bearing part. Both
+  `preprocess_file_and_save_result` (`:207`) and `preprocessor` (`:828`) build
+  `fin_path = os.path.abspath(os.path.join(output_directory, filepath))` from the RAW
+  `filepath`, and `ntpath.join`/`abspath` renormalize `C:/x/y` to `C:\x\y`, so
+  `result.get(s_abs)` at `setup.py:76-77` hits for either shape. Checked with ntpath:
+  key(raw) == key(unix) == caller `s_abs`, and `relpath(.., cubvh_root)` is
+  `../../src/cubvh_bindings_winhip.cu` either way, so `get_hip_file_path` still writes
+  the wrapper to `<repo>/src/cubvh_bindings_winhip.hip` (covered by `.gitignore:210`).
+- Probe evidence is discriminating: the ntpath emulation flips exactly one entry, and
+  the real helper run I did on a pristine `git archive` copy of `f08cec7` +
+  `third_party/cubvh@de1badf` (Linux, where the change is a no-op) still yields
+  `src/cubvh_bindings_winhip.cu -> src/cubvh_bindings_winhip.hip` whose include is
+  `#include "../third_party/cubvh/src/bindings_hip.cpp"` ->
+  `bindings_hip.cpp:#include <gpu/api_gpu_hip.h>` -> `#include <ATen/hip/HIPContext.h>`,
+  with no `hip_hip_compat/` produced.
+- The Windows continuation of that chain checks out by reading, too: `bindings.cpp` is
+  in `all_files` from the walk, `mk_repl`'s current-dir probe resolves
+  `../third_party/cubvh/src/bindings.cpp` against `os.path.dirname(fin_path)` (native,
+  `:901-903`), and the recursive `preprocess_file_and_save_result` sees a unix candidate
+  that IS in `all_files`.
+- No new hazard from returning a `.hip` for the wrapper: torch's own pass
+  (`cpp_extension.py:1598-1607`) walks with the default extensions, which exclude
+  `.hip`, and carries the same native-separator `extra_files` shape, so the generated
+  wrapper is left alone and `cpp_extension.py:1613-1615` falls back to the path as
+  given. The `.cu` is no longer in `sources`, so there is no double-write.
+- Finding 2 fixed at `.gitignore:214-216`; `get_hip_file_path` does
+  `dirpath = dirpath.replace('cuda', 'hip')` (`hipify_python.py:600`), a substring
+  replace -- the surrounding docstring's "directory component named cuda" is precisely
+  the misreading the old comment had inherited.
+- Commit hygiene clean: title 55 chars with `[ROCm]`, rationale + AI-assistance
+  disclosure + fenced Test Plan, no trailers, no non-ASCII, `utils/prose.py` clean,
+  `utils/jargon.py --port CuMesh` still only the two settled hits inside the published
+  `d5c1355`.
+- Correcting `1b796f7`'s commit-body misstatement inside `f08cec7`'s body rather than
+  amending `1b796f7` is the right call: `1b796f7` carries this round's reviewed base and
+  a rewrite would strand that reference, and the merged PR history reads correctly with
+  the correction stated where it was made.
+
+### For the validator, once the comment lands
+
+Unchanged from the previous review: a `windows-*` pass at the new head is the gate for
+this round (Linux cannot close it); the linux platforms need revalidation at the new
+head; and the CUDA no-regression gate is OPEN (the cubvh core was rewritten, so the
+`4440182` result must not be carried forward) -- this host has a CUDA env at
+`/opt/conda/envs/cuda-12.8` for the header-compile check.
