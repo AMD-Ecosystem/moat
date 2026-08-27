@@ -2180,11 +2180,15 @@ deferred instantiation for both, which is true of only one):
   the helper is merely parsed. It was absent from the validator's list because the call passes
   `graph`, a variable of the then-unaliased type `cudaGraph_t`: clang drops the
   undeclared-callee diagnostic when an argument is an ERROR-TYPED expression, and a variable
-  declared with an unknown type name is such an expression. An undeclared identifier that clang
-  can typo-correct is NOT (`cudaGraphUserObjectMove` prints "did you mean
-  'hipGraphUserObjectMove'?" and the call around it is still diagnosed). Generalized: a missing
-  TYPE alias hides every missing FUNCTION alias in each call that passes a value of that type,
-  so expect a second wave of function-name errors after the type aliases are fixed. This alias
+  declared with an unknown type name is error-typed only when clang cannot typo-correct the type
+  name -- when it can, it recovers the declaration with the corrected type and the callee IS
+  still reported. `cudaGraph_t` prints no "did you mean", which is why it masked this call. An
+  undeclared identifier that clang can typo-correct does not suppress the callee either
+  (`cudaGraphUserObjectMove` prints "did you mean 'hipGraphUserObjectMove'?" and the call around
+  it is still diagnosed). Generalized: a missing TYPE alias whose name has no typo-correction
+  candidate hides every missing FUNCTION alias in each call that passes a value of that type, so
+  expect a second wave of function-name errors after adding such an alias; a missing type name
+  clang does correct (`cudaHostFn_t` and `cudaUserObject_t` here) masks nothing. This alias
   is therefore REQUIRED for `CUDAGraphsC10Utils.h` to parse at all under this torch, not a
   prudent extra. (Attribution corrected twice: the original entry claimed deferred
   instantiation, the 2026-08-27b entry blamed the undeclared `cudaGraphUserObjectMove`
@@ -2889,3 +2893,45 @@ indexing, texture pitch, library swap, build-system change or per-arch branch.
 For the next validator: whatever sha this lands on, the compiled tree is the one that already
 built `[212/212]` and passed 2044/2048 twice on this gfx1100 host on 2026-08-27, so gfx1100
 should be quick; gfx90a is stale from `7cd4d569` and needs a real run on its own host.
+
+## Port 2026-08-27d (porter, linux-gfx1100) -- wording only, 9143c8c0 -> 3ae4672a
+
+Answers the single finding of the 2026-08-27c review. No source change and no new probes: the
+edit is confined to the three prose copies of the masking rule, and every qualifier is the
+review's own wording over the review's own measured rows.
+
+Amend mechanics, same test as last round and re-checked here: no platform has validated
+`c8453260`, `9143c8c0` or `3ae4672a`, `pr-state` is `none`, `moat-port` unpublished. Pushed with
+`git push --force-with-lease=moat-port:9143c8c01c4bea1d3a4f6fd126e18a148513f802 origin
+HEAD:moat-port`. `git diff 9143c8c0 3ae4672a` empty and `git diff --quiet` rc 0 -- byte-identical
+trees, same parent `7cd4d569` -- so the `[212/212]` gfx1100 build and the two 2044/2048 GPU runs
+of 2026-08-27 still describe this tree exactly and the Test Plan in the body stays literally
+accurate.
+
+What changed in each copy:
+
+- `.claude/skills/cuda-to-rocm/references/validation.md`, mechanism (a): a variable declared with
+  a missing type name is error-typed only when clang cannot recover its declaration, i.e. when
+  that type name has no typo-correction candidate; most missing `cuda*` type names do have one
+  and clang then reports the callee normally; a name clang does not correct (here `cudaGraph_t`,
+  printed with no "did you mean") masks every missing function alias in each call passing a value
+  of that type. Added one line for what pins the mechanism to correctability -- flip only the
+  correctability of the type name and the suppression flips with it, in both directions (review
+  rows 1-3). The operative instruction (error list is a lower bound, add type aliases first and
+  re-run, then the per-alias `#undef` probe), mechanism (b) and the probe recipe are unchanged.
+- `notes.md`, the `cudaGraphRetainUserObject` bullet above: same qualifier on the bridge sentence
+  and on the "Generalized:" sentence, plus the review's finding that `cudaHostFn_t` and
+  `cudaUserObject_t` both typo-correct and mask nothing.
+- Commit body paragraph 2: took the review's "cleanest" option and dropped the universal instead
+  of qualifying it in upstream prose. It now states only what holds for this header -- the
+  compiler offers no spelling correction for `cudaGraph_t`, so the handle is an error-typed
+  expression and the undeclared-callee diagnostic is dropped for the two calls that pass it,
+  while the other missing type names do get a suggested HIP spelling and hide nothing. The
+  "alias all nine" conclusion the paragraph exists to support is unaffected.
+
+Hygiene at `3ae4672a`: title `[ROCm] Alias newer LibTorch CUDA graph symbols for the HIP build`,
+64 chars; `utils/prose.py` clean on the body; ASCII-only; no `Co-Authored-By`; AI disclosure and
+Test Plan intact. `python3 utils/jargon.py --port LichtFeld-Studio`: exactly the 3 pre-existing
+instances in the `13e585d4`/`e24593f4` bodies (deferral
+`lfs-commit-msg-jargon-13e585d-e24593f`), 0 from this delta. `git -C src status --porcelain`
+empty.
