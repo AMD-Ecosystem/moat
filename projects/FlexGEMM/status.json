@@ -8,7 +8,7 @@
   "ext_type": "setuptools-cuda-extension",
   "stage": "unclaimed",
   "adopted_at": "2026-08-27T02:01:36Z",
-  "updated_at": "2026-08-27T02:07:00Z",
+  "updated_at": "2026-08-27T15:05:23Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
@@ -20,7 +20,7 @@
     "reason": "already-supported",
     "duplicate_effort": "Upstream itself: JeffreyXiang/FlexGEMM#18 'Add AMD ROCm/HIP support' merged 2026-04-20; ATLAS-0321/FlexGEMM-rocm is a never-upstreamed duplicated kernels/hip tree, superseded. No AMD-Ecosystem or ROCm org repo.",
     "viable": false,
-    "summary": "Triton-based sparse-conv GEMM backend, not CUTLASS: upstream already runs on ROCm (PR #18 merged 2026-04-20, BUILD_TARGET=rocm in setup.py, MI300X Triton MFMA configs since the first commit, ~18.5k MI300X autotune entries shipped) so there is no port left to write; also unblocks TRELLIS.2 as a satisfied dependency.",
-    "at": "2026-08-27T02:07:00Z"
+    "summary": "Triton-based sparse-conv GEMM backend, not CUTLASS: upstream already runs on ROCm (PR #18 merged 2026-04-20, `BUILD_TARGET=rocm` in setup.py, MI300X Triton MFMA configs since the first commit, ~18.5k MI300X autotune entries shipped) so there is no port left to write; also unblocks TRELLIS.2 as a satisfied dependency.",
+    "at": "2026-08-27T15:05:23Z"
   }
 }
