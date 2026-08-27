@@ -152,15 +152,26 @@ in the same build, from the same torch version bump (LichtFeld-Studio, torch `2.
   ...) -- proof the aliasing strategy is right and the coverage merely fell behind a torch
   version bump. This is a real, small, escalatable gap (confirm every missing symbol has a
   `hip*` equivalent in the installed HIP runtime headers before reporting it, so the fix is
-  known to be "add N aliases", not an open-ended investigation). Alias the whole helper, not
-  just the names the compiler named: an unqualified call with dependent arguments inside a
-  template (`cudaUserObjectCreate`, `cudaGraphRetainUserObject` there) is looked up only at
-  instantiation, so it produces no error while the helper is merely parsed -- covering the
-  parameter types alone leaves the body half translated and it breaks for the first consumer
-  that instantiates it. A gap this shape is small and escalatable, and it is not something to route
-  around with an older pinned torch -- an older torch only hides the gap for one host's one
-  session; the same coverage will fall behind again on the next torch refresh. Send it back
-  to the porter with the exact symbol list and confirmed HIP counterparts. (LichtFeld-Studio)
+  known to be "add N aliases", not an open-ended investigation), and it is not something to
+  route around with an older pinned torch -- an older torch only hides the gap for one host's
+  one session; the same coverage will fall behind again on the next torch refresh. Send it
+  back to the porter with the exact symbol list and confirmed HIP counterparts.
+  **Treat the compiler's error list as a lower bound and alias the whole helper, not just the
+  names it printed.** Two independent mechanisms hide a missing alias, and only one of them is
+  the familiar template one. (a) Clang stops diagnosing the callee of a call whose argument
+  list already contains an undeclared identifier, so one missing alias used as an *argument*
+  silences the missing alias that is the *function being called*: with
+  `cudaGraphUserObjectMove` undeclared, the `cudaGraphRetainUserObject(...)` around it was
+  never reported, even though its arguments are all non-dependent and ordinary lookup would
+  have rejected it at template-definition time. (b) A call whose arguments *are* dependent is
+  looked up only at instantiation, so inside a template nobody instantiates it produces no
+  error at all while the helper is merely parsed (`cudaUserObjectCreate(&obj, data.get(), ...)`
+  on a `std::unique_ptr<T>`). Either way, covering the parameter types alone leaves the body
+  half translated. Check rather than reason about it: syntax-only compile the real torch header
+  behind the compat header, `#undef`-ing one alias at a time. Removal that still gives rc 0
+  means that name is diagnosed only at instantiation; removal that errors means it is required
+  at parse time, and if it was still absent from the original error list, something else in the
+  same call masked it. (LichtFeld-Studio)
 
 ## HIP + C++23 on an older toolchain: `isfinite cannot overload` (and how to stay forward-compatible)
 
