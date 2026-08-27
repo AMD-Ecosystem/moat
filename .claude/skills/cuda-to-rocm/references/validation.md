@@ -114,6 +114,18 @@ attached. A correct start logs `AIGLX: Loaded and initialized radeonsi` and
 (`OpenGL renderer string: AMD Radeon ... (radeonsi, ...)`), not llvmpipe. No input devices, no
 monitor, and no physical display cable are needed for this to work.
 
+On a multi-GPU host, that Xorg `kmsdev` card and a `HIP_VISIBLE_DEVICES` index are
+independent numbering schemes with no guaranteed correspondence, and a GL-interop port needs
+both to name the *same physical GPU*. A mismatch fails the very first
+`cudaGraphicsGLRegisterBuffer`/`hipGraphicsGLRegisterBuffer` call with "invalid argument",
+which reads like a port defect (the kind of interop bug a HIP port would introduce) but is
+actually a host device-selection error external to the code. Decode `rocminfo`'s per-agent
+`BDFID` (`bus = (BDFID >> 8) & 0xff`, e.g. `BDFID=17152=0x4300` -> bus `0x43`) and compare it
+against the target card's PCI bus (`udevadm info --name=/dev/dri/cardN | grep DEVPATH`, the bus
+segment right before `/drm/cardN`) to find the `HIP_VISIBLE_DEVICES` index that matches the
+card Xorg is bound to, rather than assuming index 0 (or whatever index was used for a prior,
+single-purpose HIP-only check) is also the GL-backed one.
+
 ## Diagnosing a suspected AMD fault before escalating
 
 Two patterns that each cost a deep investigation before the real cause was found.
