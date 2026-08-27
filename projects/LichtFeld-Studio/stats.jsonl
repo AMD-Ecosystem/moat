@@ -80,3 +80,7 @@
 {"kind":"session","ts":"2026-08-24T23:16:33Z","epoch":1787613393.457288703,"event":"end","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-08-24T23:20:47Z","epoch":1787613647.696597467,"event":"start","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-08-24T23:22:02Z","epoch":1787613722.684984987,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-08-27T03:25:26Z","epoch":1787801126.270248017,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-08-27T03:27:11Z","phase":"compile","seconds":6.247,"exit":0,"cmd":"cmake -S projects/LichtFeld-Studio/src -B projects/LichtFeld-Studio/src/build-hip-gfx1100 -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_CXX_COMPILER=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++ -DCMAKE_C_COMPILER=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang -DBUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release -DTorch_DIR=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/torch/share/cmake/Torch -DGTest_DIR=/usr/lib/x86_64-linux-gnu/cmake/GTest -DLFS_GLM_INCLUDE_DIR=/var/lib/jenkins/moat/_deps/glm-1.0.1 -DLFS_ARGS_INCLUDE_DIR=/var/lib/jenkins/moat/_deps/lfs_args"}
+{"kind":"phase","ts":"2026-08-27T03:29:19Z","phase":"compile","seconds":122.147,"exit":1,"cmd":"cmake --build projects/LichtFeld-Studio/src/build-hip-gfx1100 --target lfs_compute_tests -j64"}
+{"kind":"session","ts":"2026-08-27T03:43:41Z","epoch":1787802221.040944046,"event":"end","platform":"linux-gfx1100"}

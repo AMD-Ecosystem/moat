@@ -1931,3 +1931,213 @@ identical binary and therefore the identical result.
 The general tooling defect (`failure_stands()` cannot distinguish a documentation-gate failure
 from a code failure) remains open in deferral `lfs-advance-head-carries-doc-gate-failure` for a
 person's ruling; this entry resolves only this arch's record at this head.
+
+## Revalidation 2026-08-27 (linux-gfx1100, AMD Radeon Pro W7800, RDNA3 gfx1100) -- VALIDATION-FAILED (compat-header gap, torch version drift)
+
+Dispatched by the selector as `revalidate` (this arch's `validated_sha` was
+`235c590583896c340aa32154f3fb12cc446418e6`, head had moved to
+`7cd4d569387de493f4ac8fa677e6747fe5bffcb3` across the doc-only rounds analyzed
+exhaustively by the linux-gfx90a validator entry above). Fresh fork clone at head_sha,
+`git -C src log -1` confirmed `7cd4d569387de493f4ac8fa677e6747fe5bffcb3`; `protect-fork`
+run. `git -C src status --porcelain` clean throughout (no tracked-file edits made or left).
+
+### Host is not the host the recorded gfx1100 recipe describes
+
+`/opt/rocm` does not exist here; no `/var/lib/jenkins/moat/_deps/{glm-1.0.1,lfs_args}` (had
+to be re-vendored, same as the 2026-08-24 gfx90a note already anticipated for "the next
+gfx90a build here"). ROCm is the TheRock Python package under
+`/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel`, `clang++`/`clang`
+at `.../_rocm_sdk_devel/lib/llvm/bin/`, `hipconfig` on `PATH` via the same prefix's `bin/`.
+Torch: `2.14.0a0+git7d05abc`, `torch.version.hip = 7.14.60850` -- noticeably newer than
+every previously-recorded torch on this project (`2.13.0a0`/hip `7.2.53211` for the
+original gfx90a/gfx1100 runs; `2.9.1`/`2.12.0a0` for the two Windows attempts). apt
+packages needed and installed fresh: `libstdc++-14-dev gcc-14 g++-14 nlohmann-json3-dev
+libspdlog-dev libopenimageio-dev libopenmesh-dev libgtest-dev libgmock-dev` (system GTest
+CMake config found directly at `/usr/lib/x86_64-linux-gnu/cmake/GTest`, no conda GTest
+needed this time).
+
+### Configure: clean
+
+```
+cmake -S projects/LichtFeld-Studio/src -B projects/LichtFeld-Studio/src/build-hip-gfx1100 -G Ninja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_CXX_COMPILER=$ROCM_SDK/lib/llvm/bin/clang++ \
+  -DCMAKE_C_COMPILER=$ROCM_SDK/lib/llvm/bin/clang \
+  -DBUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release \
+  -DTorch_DIR=.../torch/share/cmake/Torch \
+  -DGTest_DIR=/usr/lib/x86_64-linux-gnu/cmake/GTest \
+  -DLFS_GLM_INCLUDE_DIR=/var/lib/jenkins/moat/_deps/glm-1.0.1 \
+  -DLFS_ARGS_INCLUDE_DIR=/var/lib/jenkins/moat/_deps/lfs_args
+```
+`CMAKE_HIP_ARCHITECTURES=gfx1100` took (confirmed in the configure log, "HIP architectures:
+gfx90a;gfx942;gfx950;gfx1100" is torch's OWN build-arch list printed by `LoadHIP.cmake`, a
+separate, unrelated line -- the project's own `-- HIP language enabled with compiler:` line
+and the generated `compile_commands.json` both show `gfx1100` for this project's targets).
+`enable_testing()`/ctest still not wired on this path, matching `docs/building_and_distribution.md`.
+
+### Build: FAILS to link a runnable test binary -- two independent causes found, one is host-environment-only, one is a genuine port compat-header gap
+
+`cmake --build build-hip-gfx1100 --target lfs_compute_tests -j64` fails. 6 of ~150 test TUs
+error out, in two unrelated fault classes:
+
+**Class A (host-environment only, worked around without touching the fork; affects
+`test_gradient_accumulation.cpp`, `test_mcmc_logit_verification.cpp` -- 2 files):**
+
+```
+/usr/include/spdlog/common.h:373:49: error: no template named 'basic_format_string' in
+namespace 'fmt'; did you mean 'std::basic_format_string'?
+```
+
+Root cause: this torch's Python package ships its own vendored `fmt` under
+`torch/include/fmt/` for its "stable ABI" opt-in surface -- `torch/include/fmt/core.h` is a
+19-line stub gated `#if !defined(TORCH_STABLE_ONLY) && !defined(TORCH_TARGET_VERSION)` that
+by default includes only `base.h`, not the full library, and `torch/include/fmt/format.h`
+is a REAL, FULL, vendored **fmt 12.2.1** (`FMT_VERSION 120201`). fmt 12 renamed the class
+`fmt::basic_format_string` to `fmt::fstring` (`format_string<T...> = typename
+fstring<T...>::t`); the class no longer exists under that name. `-isystem
+.../torch/include` is on this project's test-target include path (Torch is the parity
+oracle), and the compiler's implicit system directories (where the REAL, compatible system
+`libfmt-dev` 9.1.0 fmt lives, at `/usr/include/fmt/`) are always searched *after* every
+explicit `-I`/`-isystem`, so any `#include <fmt/...>` anywhere in the translation unit
+resolves to torch's vendored fmt 12 first, not the system one. `libspdlog-dev` here is
+1.12.0 (built by Debian with `SPDLOG_FMT_EXTERNAL=1`, i.e. against api-9-vintage external
+fmt), so `spdlog/common.h`'s `fmt::basic_format_string<T, Args...>` reference (written for
+fmt 8/9/10) does not resolve against torch's fmt 12. Nothing ROCm-specific: this is a pure
+apt-spdlog-version vs. torch-vendored-fmt-version collision that would hit the CUDA build
+identically if it linked this same torch build for its own parity-oracle tests, and it
+predates any HIP compat header entirely (spdlog is a general project dependency, not part
+of the CUDA->HIP surface).
+
+Confirmed the API-incompatibility diagnosis by testing an alternate compiler (gcc-14
+instead of ROCm's clang++, for host-only `CMAKE_CXX_COMPILER`/`CMAKE_C_COMPILER`, `HIP`
+language left on its auto-detected ROCm clang++ via `hipconfig` on `PATH`): identical
+failure, ruling out a clang-23 (this ROCm SDK's LLVM, a very recent dev snapshot) quirk.
+
+**Workaround used (host-environment substitution only, no fork edit, same pattern as
+already-vendored glm/args.hxx): build spdlog from source with its OWN bundled fmt copy**,
+so the compiled `spdlog::spdlog` target never touches system or torch fmt for its own
+internal use:
+```
+git clone --depth 1 --branch v1.14.1 https://github.com/gabime/spdlog.git _deps/spdlog-src
+cmake -S _deps/spdlog-src -B _deps/spdlog-src/build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DSPDLOG_BUILD_SHARED=OFF -DSPDLOG_FMT_EXTERNAL=OFF \
+  -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+  -DCMAKE_INSTALL_PREFIX=_deps/spdlog-install \
+  -DCMAKE_CXX_COMPILER=$ROCM_SDK/lib/llvm/bin/clang++
+cmake --build _deps/spdlog-src/build -j64 --target install
+# then reconfigure the project with:
+cmake -S ... -B build-hip-gfx1100 -Dspdlog_DIR=_deps/spdlog-install/lib/cmake/spdlog
+```
+This resolved Class A completely (confirmed: `SPDLOG_FMT_EXTERNAL` no longer appears in
+`compile_commands.json` for the affected TUs, and the `basic_format_string` error is gone
+in both the clang-23 and gcc-14 rebuilds).
+
+**Class B (a real, code-level compat-header gap -- STILL BLOCKING; affects
+`test_main.cpp`, `test_torch_comparisons.cpp`, `test_tensor_memory.cpp`,
+`test_tensor_stress.cpp` -- 4 files, including `test_main.cpp`, which defines `main()` for
+the whole `lfs_compute_tests` binary, so the executable cannot link at all):**
+
+```
+/opt/conda/envs/py_3.12/lib/python3.12/site-packages/torch/include/c10/cuda/CUDAGraphsC10Utils.h:93:3:
+error: unknown type name 'cudaGraph_t'
+...:99, :112   same, cudaGraph_t
+...:114:5: error: unknown type name 'cudaHostFn_t'; did you mean 'hipHostFn_t'?
+...:115:3: error: unknown type name 'cudaUserObject_t'; did you mean 'hipUserObject_t'?
+...:117:45: error: use of undeclared identifier 'cudaUserObjectNoDestructorSync';
+            did you mean 'hipUserObjectNoDestructorSync'?
+...:121:56: error: use of undeclared identifier 'cudaGraphUserObjectMove';
+            did you mean 'hipGraphUserObjectMove'?
+...:123:25: error: use of undeclared identifier 'cudaUserObjectRelease';
+            did you mean 'hipUserObjectRelease'?
+```
+(and, with gcc-14 instead of clang, the same site additionally reports `cudaStreamGetCaptureInfo_v2`
+was not declared -- clang's overload-driven diagnostics for the earlier errors apparently
+suppressed that one further error, but gcc's plainer error recovery surfaces it.)
+
+Root cause, verified by reading the actual header rather than guessing: `c10/cuda/
+CUDAGraphsC10Utils.h` in this torch build has ZERO ROCm-awareness (`grep -c
+"USE_ROCM\|HIP_VERSION\|__HIP_PLATFORM"` on the file is 0) -- it is the raw, never-hipified
+CUDA header, exactly as this project's own compat header already documents at
+`src/core/include/core/cuda/cuda_to_hip.h:118-122` ("The ROCm libtorch the compute gtests
+link against ships c10/cuda headers that reference these stream-capture / CUDA-graph /
+IPC-event symbols literally... Alias them so c10/cuda/CUDAStream.h etc. parse under
+hipcc."). That block (`cuda_to_hip.h:123-141`) already aliases 15 symbols from exactly this
+class (`cudaStreamBeginCapture`, `cudaStreamCaptureMode`, `cudaStreamGetCaptureInfo`,
+`cudaThreadExchangeStreamCaptureMode`, ...) and they all resolve fine here. What's missing
+is a newer slice of the SAME header: `CUDAGraphsC10Utils.h:93-125` add `CaptureInfo`
+(holds a raw `cudaGraph_t`), `captureInfoMayInitCtx()` (calls `cudaStreamGetCaptureInfo_v2`
+since `CUDA_VERSION` is undefined on this path, taking the pre-13000 branch), and
+`retainGraphUserObject<T>()` (a CUDA-graph user-object retain helper using `cudaHostFn_t`,
+`cudaUserObject_t`, `cudaUserObjectNoDestructorSync`, `cudaGraphUserObjectMove`,
+`cudaUserObjectRelease`). This is new surface in the CUDAGraphsC10Utils.h shipped by this
+newer torch nightly (2.14.0a0) that was not present, or not reached by any included header,
+in the 2.13.0a0 torch this project's compat header was written and validated against --
+the identical "torch nightly evolves a header this compat file already targets, coverage
+falls behind" class already documented in this file for
+`src/hip_compat/c10/cuda/CUDACachingAllocator.h` (windows-gfx1151 finding 3, 2026-08-20/24
+review). This is code-level, not host-level: the same gap would hit gfx90a's or any other
+Linux arch's build the moment it links this same (or a similarly recent) torch.
+
+Confirmed every missing HIP-side symbol actually exists under this ROCm SDK (so the fix is
+a pure aliasing addition, no functional gap on the HIP side):
+```
+$ROCM_SDK/include/hip/hip_runtime_api.h:1541:  typedef struct ihipGraph* hipGraph_t;
+$ROCM_SDK/include/hip/hip_runtime_api.h:1554:  typedef struct hipUserObject* hipUserObject_t;
+$ROCM_SDK/include/hip/hip_runtime_api.h:1579:  typedef void (*hipHostFn_t)(void* userData);
+$ROCM_SDK/include/hip/hip_runtime_api.h:1852:  hipUserObjectNoDestructorSync = 0x1
+$ROCM_SDK/include/hip/hip_runtime_api.h:1856:  hipGraphUserObjectMove = 0x1
+$ROCM_SDK/include/hip/hip_runtime_api.h:8496:  hipError_t hipStreamGetCaptureInfo_v2(...)
+$ROCM_SDK/include/hip/hip_runtime_api.h:9477:  hipError_t hipUserObjectRelease(...)
+```
+Fix for the porter: extend the `cuda_to_hip.h:118-141` libtorch-interop block with:
+`cudaGraph_t -> hipGraph_t`, `cudaHostFn_t -> hipHostFn_t`, `cudaUserObject_t ->
+hipUserObject_t`, `cudaUserObjectNoDestructorSync -> hipUserObjectNoDestructorSync`,
+`cudaGraphUserObjectMove -> hipGraphUserObjectMove`, `cudaUserObjectRelease ->
+hipUserObjectRelease`, `cudaStreamGetCaptureInfo_v2 -> hipStreamGetCaptureInfo_v2`. Not
+attempted here: per the 2026-08-20 windows-gfx1151 "Scope note", a validator editing and
+landing fork source itself was already flagged in this file as exceeding the role once;
+not repeating that here even though the fix is small and well-understood -- this is a
+porter-scope compat-header extension, escalated back per the validator role's own
+instruction ("Escalate hard failures back to the porter").
+
+### Consequence: no GPU test run was possible
+
+`test_main.cpp` (the gtest `main()`) is one of the 4 files hit by Class B, so
+`lfs_compute_tests` never links, on either compiler tried. No test binary exists to run.
+Per the Honesty gate, this is recorded as failed, not as a pass on partial compile evidence.
+
+### Not attempted / explicitly out of scope for this session
+
+- No attempt to pin an older torch (matching the `2.13.0a0`/hip `7.2.53211` build the port
+  was actually validated against) to sidestep Class B by avoiding the newer header
+  altogether -- that would validate a torch this host no longer has installed as its
+  primary env, and would not tell a future validator anything about the code gap that
+  will resurface the next time any host's torch is refreshed. The precise, escalatable
+  finding above is more useful than a green run against a torch nobody else will have.
+- CUDA no-regression gate: NOT run. The project's full CUDA (NVIDIA) path needs the
+  vcpkg-driven ~40-package bootstrap (USD, ffmpeg, OpenImageIO, SDL3, Vulkan, RmlUi,
+  nanobind, assimp, Boost, glslang, shader-slang, ...) per `plan.md`'s own Scope section
+  -- infeasible inside this gate's ~15-minute compile-only budget, and this HIP build never
+  reached a state where re-running it would have been cheap opportunistically. Still
+  unrecorded at any sha for this project (flagged repeatedly in this file already); leave
+  for whichever validator next reaches a passing HIP build with slack in the budget, or for
+  a session that scopes the CUDA check down to configure-only (no vcpkg) as the earlier
+  entries already suggested.
+- Jargon / documentation gates: not re-run: this session never reached the pre-completion
+  checklist because the build itself failed first.
+
+### Verdict: VALIDATION-FAILED (linux-gfx1100)
+
+```
+python3 utils/moatlib.py set-state LichtFeld-Studio linux-gfx1100 validation-failed --agent validator
+```
+`failed_sha = 7cd4d569387de493f4ac8fa677e6747fe5bffcb3`. Not a wave32/gfx1100-specific
+defect and not a regression introduced by any commit in the `235c5905..7cd4d569` span (that
+span is doc/comment/Windows-only per the exhaustive gfx90a analysis above, and does not
+touch `cuda_to_hip.h`'s libtorch-interop block) -- it is a pre-existing compat-header
+coverage gap against a torch nightly newer than any this project has previously built
+against, first surfaced here because this host's environment happens to carry that newer
+torch. The Class A spdlog/fmt workaround (self-built spdlog, no fork change) is recorded
+above in case it helps whichever host next hits it; Class B needs the six-alias porter fix
+listed above before this or any other Linux arch can produce a runnable `lfs_compute_tests`
+against this torch version.
