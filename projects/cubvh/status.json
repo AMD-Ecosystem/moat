@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-19T04:40:36Z",
-  "updated_at": "2026-08-26T20:02:14Z",
+  "updated_at": "2026-08-27T01:40:52Z",
   "head_sha": "191b02066a770006dc26740d71bcf4417380f802",
   "depends_on": [],
   "waivers": {},
@@ -166,6 +166,7 @@
   "pr_url": "https://github.com/ashawkey/cubvh/pull/34",
   "pr_number": 34,
   "pr_opened_at": "2026-08-26T20:02:14Z",
-  "pr_state": "open",
-  "published_sha": "191b02066a770006dc26740d71bcf4417380f802"
+  "pr_state": "merged",
+  "published_sha": "191b02066a770006dc26740d71bcf4417380f802",
+  "pr_merged_at": "2026-08-27T01:40:52Z"
 }
