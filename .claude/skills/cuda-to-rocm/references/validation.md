@@ -159,10 +159,17 @@ in the same build, from the same torch version bump (LichtFeld-Studio, torch `2.
   **Treat the compiler's error list as a lower bound and alias the whole helper, not just the
   names it printed.** Two independent mechanisms hide a missing alias, and only one of them is
   the familiar template one. (a) Clang drops the undeclared-callee diagnostic when one of the
-  call's arguments is an *error-typed expression*, and a variable declared with a type whose
-  alias is missing is exactly that -- so **a missing type alias hides every missing function
-  alias in each call that passes a value of that type**, and those function names appear only
-  in a second wave, after the type aliases are added. In that header the unaliased `cudaGraph_t` hid
+  call's arguments is an *error-typed expression*. A variable declared with a missing type name
+  is error-typed only when clang cannot recover its declaration, i.e. when that type name has no
+  typo-correction candidate; most missing `cuda*` type names DO have one and clang then reports
+  the callee normally -- so **a type name clang does not correct** (here `cudaGraph_t`, printed
+  with no "did you mean") **masks every missing function alias in each call passing a value of
+  that type**, and those function names appear only in a second wave, after the type aliases are
+  added. What pins that to correctability rather than to the argument being a type: `#undef`-ing
+  a type whose name typo-corrects leaves the callee reported, redefining that same type to an
+  uncorrectable spelling suppresses both callees, and redefining `cudaGraph_t` to a correctable
+  spelling brings its callee back -- flip only the correctability and the suppression flips with
+  it, in both directions. In that header the unaliased `cudaGraph_t` hid
   both `cudaGraphRetainUserObject(graph, ...)` -- whose arguments are all non-dependent, so
   ordinary lookup would have rejected it at template-definition time -- and
   `cudaStreamGetCaptureInfo_v2(..., &graph, ...)`, whose argument list contains no undeclared
