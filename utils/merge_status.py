@@ -34,6 +34,17 @@ would lose real information:
            fork-write lock used to release this way too; it now releases through
            an explicit `porting_released` marker instead -- see _merge_lock.
 
+One rule sits above all of those for the PR-lifecycle fields: `pr_round`. A
+follow-up pull request (archive_pr in moatlib) moves a finished PR into
+`pr_history` and starts the lifecycle over, and every per-field rule here would
+resurrect the finished round from a host still carrying it -- STICKY would
+restore the archived pr_merged_at over the new round's absence, and RANKED would
+rank the archived "merged" above the new round's "open". So when the two sides
+disagree on pr_round, the higher round supplies the ENTIRE PR block verbatim,
+absences included, and the per-field rules apply only within a round. The loser
+cannot lose information: a lower round's current PR is, by construction, an
+entry in the higher round's pr_history.
+
 Everything else is recency: for those the current value is the point, and a key
 missing from one side means that writer never had it rather than deleted it.
 """
@@ -62,6 +73,30 @@ STICKY = ("upstream_repo_id", "fork_url", "review_pr", "pr_approval",
           "adopted_at")
 UNION = ("platforms", "waivers")
 RESET = ("on_hold", "on_hold_reason")
+# Every field that describes the CURRENT upstream-PR round. When the two sides
+# disagree on pr_round, the higher round supplies all of these verbatim (see the
+# module docstring); within a round the usual per-field rules stand.
+PR_ROUND_FIELDS = ("pr_state", "pr_url", "pr_number", "pr_opened_at",
+                   "pr_merged_at", "pr_closed_at", "pr_closed_note",
+                   "published_sha", "review_pr", "pr_approval", "fix",
+                   "fix_merged_at", "pr_history", "pr_round")
+
+
+def _round_of(x):
+    return x.get("pr_round") or 1
+
+
+def _merge_history(a, b):
+    """Union of the two sides' archives, keyed on the archived PR's number.
+
+    Entries are write-once -- archive_pr records a finished PR exactly once -- so
+    a key present on both sides carries the same content and either copy will do;
+    ties resolve to B for determinism, like _union."""
+    ha = {e.get("pr_number"): e for e in (a.get("pr_history") or [])}
+    hb = {e.get("pr_number"): e for e in (b.get("pr_history") or [])}
+    merged = {**ha, **hb}
+    return sorted(merged.values(),
+                  key=lambda e: (e.get("archived_at") or "", e.get("pr_number") or 0))
 
 
 def _load(p):
@@ -200,6 +235,19 @@ def merge(a, b):
             out["pr_state"] = sa if _pr_rank(sa) > _pr_rank(sb) else sb
         else:
             out["pr_state"] = newer.get("pr_state") or sa or sb
+
+    if _round_of(a) != _round_of(b):
+        # A follow-up round opened on one side. The higher round's PR block wins
+        # wholesale -- overriding STICKY and the rank above, which would otherwise
+        # resurrect the finished round -- and its pr_history already carries the
+        # loser's current PR. Last, so no per-field rule can undo it.
+        win = a if _round_of(a) > _round_of(b) else b
+        for k in PR_ROUND_FIELDS:
+            out.pop(k, None)
+            if k in win and win[k] is not None:
+                out[k] = win[k]
+    elif "pr_history" in a or "pr_history" in b:
+        out["pr_history"] = _merge_history(a, b)
     return out
 
 
