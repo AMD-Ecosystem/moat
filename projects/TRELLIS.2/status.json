@@ -5,13 +5,50 @@
   "fork_url": null,
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
-  "stage": "unclaimed",
+  "ext_type": "torch-extension",
+  "stage": "awaiting-fork",
   "adopted_at": "2026-08-27T02:01:21Z",
-  "updated_at": "2026-08-27T02:01:21Z",
+  "updated_at": "2026-08-27T02:10:37Z",
   "head_sha": null,
-  "depends_on": [],
+  "depends_on": [
+    "CuMesh",
+    "FlexGEMM"
+  ],
   "porting": null,
   "waivers": {},
-  "platforms": {}
+  "platforms": {
+    "linux-gfx1100": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-27T02:10:37Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "intake"
+    }
+  },
+  "license_spdx": "MIT",
+  "upstream_repo_id": 1104510027,
+  "intake": {
+    "verdict": "fork",
+    "reason": null,
+    "duplicate_effort": "microsoft/TRELLIS.2#155 [ROCm] Add AMD GPU support, open non-draft since 2026-04-27, zero maintainer response; companion JeffreyXiang/CuMesh#31 closed by its own author after MOAT's CuMesh#36 opened. Coordinate, do not compete.",
+    "viable": true,
+    "summary": "Microsoft's 4B image-to-3D flagship (10.9k stars); MIT tier-1, only ~1350 lines of vendored o-voxel .cu with no warp intrinsics or cub/thrust, and setup.sh already branches on ROCm -- but an open non-draft ROCm PR #155 (andyluo7, 4 months stale, its CuMesh half closed in MOAT's favour) covers the same files, and licence-blocked nvdiffrast gates textured .glb export.",
+    "at": "2026-08-27T02:10:33Z"
+  }
 }
