@@ -2807,9 +2807,10 @@ bash utils/timeit.sh Velvet compile -- cmake --build build -j$(nproc)
 ```
 
 Configure reports `Building with HIP, architectures: gfx1100`. Only pre-existing warnings
-remain: 135 from the 11 host CXX TUs and 50 from the two HIP TUs, as measured and attributed
-per TU by the 2026-08-27 review below. The "14 host warnings" figure originally recorded here
-was wrong by an order of magnitude. No new diagnostics.
+remain: 166 in total, 116 from the 11 host CXX TUs and 50 from the two HIP TUs, as measured
+and attributed per TU by the second-pass review of 2026-08-27 below (the authoritative
+count; the "14 host warnings" figure originally recorded here and the "135 host" figure that
+briefly replaced it are both superseded). No new diagnostics.
 
 ### CUDA no-regression gate: the fix helps that path too
 
@@ -2880,6 +2881,10 @@ commit body overstates the build's cleanliness.
    125 -Wunused-value (nodiscard)      host 94, HIP TUs 50 (SpatialHash 28, VtClothSolver 22)
    ```
 
+   [Corrected by the second-pass review of 2026-08-27 below: the host share of the 125 is
+   **75**, not 94 (GUI 19, VtEngine 19, main 19, GameInstance 9, Timer 9); 75 + 50 = 125.
+   Every other figure in this block re-measured exactly.]
+
    All 41 are pre-existing upstream code untouched by this commit (`git log master..HEAD --
    Velvet/Collider.hpp` etc. are empty), so the change introduces no diagnostic -- but a
    maintainer following the Test Plan sees warnings the body says are not there. Fix: state
@@ -2891,6 +2896,11 @@ commit body overstates the build's cleanliness.
    of magnitude. The same recipe on the same host emits 135 warnings from the 11 host CXX TUs
    (94 `-Wunused-value` + the 41 above) and 50 from the two HIP TUs. Correct the number with
    the finding 1 amendment so the record and the commit agree.
+
+   [Corrected by the second-pass review of 2026-08-27 below: the host CXX total is **116**,
+   not 135 (75 `-Wunused-value` + the 41 above); 116 + 50 = 166, which is the total this
+   same finding block reports. The direction of finding 2 was right -- "14" was wrong by an
+   order of magnitude -- only the replacement figure was overstated by 19.]
 
 3. `dc6fd73` commit body, first paragraph: the quoted diagnostic is attributed to two
    compilers but is verbatim only one of them. The ROCm clang 23 emits
@@ -3022,7 +3032,168 @@ totals are all far above the "14" they replace and none of them is a claim of cl
 nothing upstream-visible is overstated either way. Whoever next runs this build with `-j1`
 should settle which counting the numbers came from and make both records agree.
 
+[Answered by the second-pass review of 2026-08-27 below, from one `-j1` build at `856c96b`:
+the commit body's 166 and its whole class breakdown are exact; the notes' 135 and the
+review's host-94 were both high by 19 and are corrected above. No amendment needed.]
+
 ### Skill
 
 No new promotion this round. The libstdc++/MSVC masking lesson from the previous round is
 already in `strategy-a-cmake.md`; a message-only amendment adds nothing portable.
+
+## Review 2026-08-27 (second pass, linux-gfx1100, reviewer): message amendment dc6fd73 -> 856c96b
+
+Scope: `moat-fix-9` at `856c96b`, the message-only amendment of `dc6fd73`. Verdict:
+**review-passed**. No finding. The one open item -- the warning figures that did not
+reconcile across three records -- is settled below by a single measurement, and it settles
+in the commit body's favour: the body is exactly right and only `notes.md` was wrong.
+
+### The warning count, reconciled
+
+One deterministic serial build at `856c96b`, clean scratch directory outside the clone,
+README recipe with `-j1` so every diagnostic is attributable to the translation unit that
+emitted it:
+
+```bash
+source /etc/rocm_env.sh
+S=/var/lib/jenkins/moat/agent_space/velvet-rev2-856c96b
+cmake -S projects/Velvet/src -B $S -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+      -DCMAKE_C_COMPILER=$ROCM_PATH/lib/llvm/bin/clang \
+      -DCMAKE_CXX_COMPILER=$ROCM_PATH/lib/llvm/bin/clang++ \
+      -DCMAKE_HIP_COMPILER=$ROCM_PATH/lib/llvm/bin/clang++ \
+      -DCMAKE_PREFIX_PATH=$ROCM_PATH -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_TOOLCHAIN_FILE=/var/lib/jenkins/vcpkg/scripts/buildsystems/vcpkg.cmake
+bash utils/timeit.sh Velvet compile -- cmake --build $S -j1   # RC=0
+grep -c 'warning:' $S/build.log                               # 166
+```
+
+Exit 0, 0 `error:`, `bin/Velvet` 15200536 bytes -- the same byte size the porter and the
+first-pass reviewer both recorded. ROCm HIP 7.14.60850 / AMD clang 23.0.0git, g++ 13.3.0,
+Ubuntu 24.04, vcpkg at `/var/lib/jenkins/vcpkg`, 4x W7800 (gfx1100).
+
+**Counting rule.** One count per `warning:` diagnostic line the compiler prints, i.e. an
+*occurrence*, not a distinct source site. This is the rule a reader gets by running the
+recipe and looking at the output, and it is independently confirmed by the compiler's own
+self-reported trailers: the ten `N warning(s) generated` lines in the log sum to exactly
+166 (33+9+1+9+33+31 host, 11+11+14+14 for the two HIP TUs' two offload passes). The count
+does not depend on `-j`: every TU is compiled exactly once in a full build, so the body's
+`-j$(nproc)` recipe yields the same 166.
+
+By class, occurrences:
+
+```
+125  -Wunused-value  (all "ignoring return value of type 'hipError_t' declared with
+                      'nodiscard'", every one through a cuda_to_hip.h macro)
+ 35  -Wformat-security
+  3  -Wreturn-type
+  2  -Wunknown-escape-sequence
+  1  -Wimplicit-const-int-float-conversion
+---
+166
+```
+
+By TU, occurrences (11 host CXX TUs, 2 HIP TUs; the five host TUs not listed emit none):
+
+```
+CXX GUI.cpp             33   = 19 unused-value + 13 format-security + 1 return-type
+CXX VtEngine.cpp        33   = 19 unused-value + 11 format-security + 1 return-type
+                               + 2 unknown-escape-sequence
+CXX main.cpp            31   = 19 unused-value + 11 format-security + 1 return-type
+CXX GameInstance.cpp     9   = 9 unused-value
+CXX Timer.cpp            9   = 9 unused-value
+CXX Helper.cpp           1   = 1 implicit-const-int-float-conversion
+HIP SpatialHashGPU.cu   28   = 28 unused-value  (two offload passes, 14 each)
+HIP VtClothSolverGPU.cu 22   = 22 unused-value  (two offload passes, 11 each)
+---
+host CXX 116  +  HIP 50  =  166
+```
+
+**Where the spread came from.** Three multipliers, all real, none an error in the code:
+
+- *Headers repeat across TUs.* Only 35 distinct `file:line:col` sites exist in the whole
+  build. `Timer.hpp` alone accounts for 81 of the 166 occurrences from 9 distinct sites,
+  because `GUI.cpp`, `VtEngine.cpp`, `main.cpp`, `GameInstance.cpp` and `Timer.cpp` each
+  include it. Likewise all 11 format-security occurrences in `VtEngine.cpp`, all 11 in
+  `main.cpp` and 11 of GUI.cpp's 13 come from the same 11 sites in `VtClothSolverGPU.hpp`;
+  GUI.cpp's other 2 are its own (`GUI.cpp:83`, `GUI.cpp:259`). All 3 `-Wreturn-type` are the
+  single site `Collider.hpp:53` seen from three TUs.
+- *A site can repeat inside one TU.* `Common.cuh:82` is the body of the error-check macro,
+  so it fires once per expansion: 6 times in `GUI.cpp` alone, 24 times over the build. That
+  is why GUI.cpp shows 33 occurrences against 28 distinct sites.
+- *HIP TUs compile twice.* clang reports `14 warnings generated when compiling for
+  gfx1100` and `14 ... when compiling for host` for `SpatialHashGPU.cu`, and 11/11 for
+  `VtClothSolverGPU.cu`. So the 50 HIP occurrences are 25 diagnostics seen twice each.
+
+Under other rules the same build is "125 warnings" (distinct sites counted once per TU --
+equal to the nodiscard total only by coincidence) or "35 warnings" (distinct sites across
+the whole build). The commit body's 166 is the occurrence count, which is what the recipe
+prints and what the compiler itself totals, so it needs no qualifier.
+
+**The three records, judged against that measurement:**
+
+| Record | Figure | Verdict |
+| --- | --- | --- |
+| `856c96b` commit body | 166 = 125 + 35 + 3 + 2 + 1 | exact, every term |
+| first-pass review, finding 1 | 125 nodiscard split "host 94, HIP 50" | host share is 75, not 94 |
+| first-pass review, finding 2 / `notes.md` | "135 host + 50 HIP" | host total is 116, not 135 |
+
+Both wrong figures are high by exactly 19, which is the `-Wunused-value` count of one of the
+three 19-warning host TUs (`GUI.cpp`, `VtEngine.cpp`, `main.cpp`) -- consistent with one host
+TU's nodiscard block being counted twice out of a log that was appended to rather than
+replaced. Nothing about the build changed between the two measurements: the binary byte size,
+the total 166, and the whole class breakdown all reproduce identically.
+
+Both wrong figures live only in `notes.md`, never upstream. They are corrected in place above
+with a pointer to this section, and the porter's "Left for the next reader" item is answered:
+the commit body's numbers stand as written and need no amendment.
+
+The body's characterisation also holds. All 125 `-Wunused-value` really are nodiscard
+warnings reached through the runtime-call macros (`cuda_to_hip.h:31-36` etc.), and every one
+of the 35 distinct warning sites is in an upstream file untouched by this commit
+(`Timer.hpp`, `VtClothSolverGPU.hpp`, `Common.cuh`, `VtBuffer.hpp`, `SpatialHashGPU.*`,
+`Collider.hpp`, `GUI.cpp`, `VtEngine.cpp`, `Helper.cpp`); none is in a file the port added.
+
+### The amendment's other three answers, re-verified
+
+- **Per-compiler attribution (first-pass finding 3).** Both quoted strings reproduce
+  verbatim, both at `Timer.hpp:233`, compiling `Timer.cpp` from the `a9016bc` tree as plain
+  C++ with `-DUSE_HIP -D__HIP_PLATFORM_AMD__`: AMD clang 23.0.0git gives `error: use of
+  undeclared identifier 'vector'`, g++ 13.3.0 gives `error: 'vector' was not declared in this
+  scope` (plus the `did you forget to '#include <vector>'` note). The same two checks at
+  `856c96b` give 0 errors each.
+- **Hard wrap (finding 4).** Longest body line is 79 columns; nothing over.
+- **Body claim about the NVIDIA path.** Unchanged from the first pass and still true.
+
+### Amendment mechanics
+
+`git diff dc6fd73..856c96b` is empty, so the tree is byte-identical to the one the first pass
+reviewed and the amendment is genuinely message-only -- no rebuild was needed to justify it,
+and the build above was run to settle the numbers, not to re-establish the tree.
+`git log a9016bc..856c96b --oneline` is the single commit; `git merge-base --is-ancestor
+a9016bc 856c96b` RC=0. `git ls-remote origin` shows `moat-port` still at `a9016bc` and
+`moat-fix-9` at `856c96b`, so PR #9 is untouched; `head_sha` in `status.json` is `856c96b`.
+Amending remained free: no platform holds a `validated_sha` at `dc6fd73` or `856c96b`, and
+no fix review PR is open.
+
+### Hygiene
+
+Title `[ROCm] Include <vector> where Timer.hpp uses it`, 47 chars. AI-assistance disclosure
+present, fenced Test Plan present, ASCII only, no `Co-Authored-By`/noreply/ghstack trailer,
+author and committer `jeff.daily@amd.com` with no internal account reference.
+`python3 utils/jargon.py --port Velvet` -> `jargon: clean`.
+`git -C projects/Velvet/src status --porcelain` clean before and after this review; the build
+went to `agent_space/`, outside the clone.
+
+### Fault classes
+
+Not applicable, unchanged from the first pass: the delta is one standard-library include and
+the amendment touched no source at all. No wavefront assumption, resource-handle lifetime,
+neighbour indexing, texture pitch, library swap or per-arch branch is in scope, and the
+device code is bit-identical to the tree windows-gfx1151 validated at `a9016bc` plus this
+one host-header include.
+
+### GPU
+
+Not run here. The GL application scenarios at `856c96b` are the validator's round on this
+host; windows revalidates on its own. The absence of that run is not a reason to withhold
+this verdict.
