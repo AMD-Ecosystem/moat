@@ -2527,3 +2527,142 @@ AI disclosure and Test Plan retained; no `Co-Authored-By`.
 
 No PR exists for this project, so there were no review threads to answer -- the loop closes in
 this file and in the skill.
+
+## Review 2026-08-27b (reviewer, linux-gfx1100) -- c8453260, CHANGES-REQUESTED
+
+Scope: only the answer to Finding 1 of the review above -- the amended commit body, the two
+corrected prose copies, and the amend mechanics. The header change and the nine mappings were
+settled last round and are not re-litigated. Everything the porter claimed about tree identity,
+history and hygiene checks out (verified below). One blocking finding remains, in the same
+place as last round: the mechanism written down for `cudaGraphRetainUserObject` is still wrong,
+just wrongly in a new way, and the skill bullet publishes a rule that this very header refutes.
+
+### Finding 1 (blocking): the masking argument is misidentified -- it is `graph`, not `cudaGraphUserObjectMove`
+
+Three copies of the new claim:
+
+- fork commit `c8453260` body, paragraph 2 -- "It stayed out of the diagnostics only because
+  cudaGraphUserObjectMove, an argument of that same call, was itself undeclared, and the
+  compiler stops diagnosing the callee of a call whose argument list already contains an
+  undeclared identifier."
+- `projects/LichtFeld-Studio/notes.md:2174-2177` -- same sentence.
+- `.claude/skills/cuda-to-rocm/references/validation.md:161-166` -- mechanism (a), generalized
+  into a rule for every future agent: "Clang stops diagnosing the callee of a call whose
+  argument list already contains an undeclared identifier ... with `cudaGraphUserObjectMove`
+  undeclared, the `cudaGraphRetainUserObject(...)` around it was never reported".
+
+The operative conclusions are right and unchanged -- `cudaGraphRetainUserObject` is required at
+parse time, `cudaUserObjectCreate` is genuinely deferred, the error list is a lower bound. The
+attribution of *which* argument did the masking is wrong, and so is the general rule derived
+from it. Measured on this host, same compiler and probe harness as last round
+(`$ROCM_SDK/lib/llvm/bin/clang++`, AMD clang 23.0.0git, `-std=gnu++23 -fsyntax-only
+-ferror-limit=0`, torch `2.14.0a0+git7d05abc`), against the real `CUDAGraphsC10Utils.h` behind
+the fork's own compat header:
+
+```
+#undef cudaGraphRetainUserObject + cudaGraphUserObjectMove   (cudaGraph_t still aliased)
+  -> H:121:56 undeclared 'cudaGraphUserObjectMove'
+     H:121:7  undeclared 'cudaGraphRetainUserObject'      <-- callee IS reported
+#undef cudaGraph_t + cudaGraphRetainUserObject              (the enum still aliased)
+  -> H:93:3, H:99:3, H:112:5 unknown type name 'cudaGraph_t'   only
+     (callee NOT reported)
+```
+
+So an undeclared identifier in the argument list does not suppress the callee here; an argument
+whose type is unknown does. The rule as written is refuted inside the very header it documents.
+
+The pre-fix state reproduces exactly (all nine aliases `#undef`-ed), and it matches the
+validator's recorded list at `notes.md:2039-2051` name for name and line for line:
+
+```
+H:93:3, H:99:3, H:112:5   unknown type name 'cudaGraph_t'
+H:114:5                   unknown type name 'cudaHostFn_t'
+H:115:3                   unknown type name 'cudaUserObject_t'
+H:117:45                  undeclared 'cudaUserObjectNoDestructorSync'
+H:121:56                  undeclared 'cudaGraphUserObjectMove'
+H:123:25                  undeclared 'cudaUserObjectRelease'
+```
+
+Three names are absent from it, not two: `cudaUserObjectCreate` (:116), `cudaGraphRetainUserObject`
+(:121:7) and `cudaStreamGetCaptureInfo_v2` (:104). That third one is the decisive case. Its
+argument list is `stream, &status, &capture_id, &graph, nullptr, nullptr` -- it contains no
+undeclared identifier at all, yet the callee is suppressed; `#undef cudaStreamGetCaptureInfo_v2`
+on its own does report it at `:104:18`. The validator already saw this and left it unexplained
+at `notes.md:2053-2055` ("clang's overload-driven diagnostics for the earlier errors apparently
+suppressed that one further error"). The one thing `:104` and `:121` have in common is `graph`,
+declared at `:99` and `:112` with the then-unknown type `cudaGraph_t`.
+
+The accurate rule, which explains both suppressed calls with one cause: clang drops the
+undeclared-callee diagnostic when an argument is an error-typed expression. A variable declared
+with an unknown type name is such an expression; an undeclared identifier that clang typo-corrects
+is not (`cudaGraphUserObjectMove` prints "did you mean 'hipGraphUserObjectMove'?" and the call
+around it is still diagnosed). The useful, generalizable form is therefore: **a missing type
+alias hides every missing function alias in each call that passes a value of that type**, so
+after fixing the type aliases expect a second wave of function-name errors. That is strictly more
+valuable than the sentence currently in the skill, and it is what actually happened here -- the
+seven names the two compilers printed were a lower bound precisely because `cudaGraph_t` was
+missing.
+
+Why the synthetic repro at `notes.md:2485-2497` agreed anyway: `retainIt(graph, o, 1,
+someUndeclaredEnum)` has no typo-correction candidate for `someUndeclaredEnum`, so that argument
+really is error-typed, and `graph` there is a valid `Obj`. It reproduces the suppression by a
+different route than the real header did, which is exactly why it confirmed the wrong attribution.
+Re-derive from the `#undef` probe on the real header, not from the synthetic TU.
+
+To fix, in one pass:
+
+- amend `c8453260`'s paragraph 2 to attribute the suppression to the `cudaGraph_t`-typed
+  argument. The amend is still free by the same test the porter applied and I re-confirmed:
+  no platform has validated `c8453260`, `pr-state` is `none`, `moat-port` unpublished. Note that
+  the amend will change `head_sha` again while leaving the tree identical, so record the tree
+  identity the same way.
+- `notes.md:2174-2177`: same correction.
+- `validation.md:161-166`: replace mechanism (a) with the type-alias form above. Keep mechanism
+  (b), the closing `#undef` probe recipe (`:167-172`), and its last sentence -- they are correct
+  and they are what would have caught this.
+
+### Verified, no action
+
+Tree identity and amend mechanics, all four of the porter's claims. `git diff --quiet c56016ba
+c8453260` returns 0 and `git diff --stat` is empty -- byte-identical trees, so the `[212/212]`
+gfx1100 build and the two 2044/2048 GPU runs recorded on 2026-08-27 describe `c8453260`'s tree
+exactly and the Test Plan in the body is still literally accurate. `git log --oneline` shows
+`c8453260` directly on `7cd4d569` with `c56016ba` unreachable from HEAD: an amend, not an extra
+commit. `origin/moat-port`, HEAD and `status.json.head_sha` are all
+`c845326025a6850f0a33a566edb36270ffbe9d1b`. `git -C src status --porcelain` empty.
+
+Both mechanisms as *stated for `cudaUserObjectCreate`* are correct: `#undef cudaUserObjectCreate`
+alone gives rc 0 (its `data.get()` argument on `std::unique_ptr<T>` defers lookup to
+instantiation), while `#undef cudaGraphRetainUserObject` alone gives rc 1 at `:121:7`, and
+`#undef cudaUserObjectRelease` / `cudaStreamGetCaptureInfo_v2` / `cudaGraphUserObjectMove` alone
+each give rc 1. The commit body's "cudaGraphRetainUserObject is required for the header to parse
+at all, not a prudent extra" is right, and it is the stronger framing.
+
+Body's "nine more of them" (was "seven") is now accurate: `CUDAGraphsC10Utils.h` names all nine
+new aliases literally (`grep -on 'cuda[A-Za-z_0-9]*'`: `cudaGraph_t:93`,
+`cudaStreamGetCaptureInfo_v2:104`, `cudaHostFn_t:114`, `cudaUserObject_t:115`,
+`cudaUserObjectCreate:116`, `cudaUserObjectNoDestructorSync:117`, `cudaGraphRetainUserObject:121`,
+`cudaGraphUserObjectMove:121`, `cudaUserObjectRelease:123`). "the seven the compiler named" is
+defensible on the distinct-name reading given the gcc-14 addendum at `notes.md:2053-2055` that
+surfaced `cudaStreamGetCaptureInfo_v2`; not a finding.
+
+Skill bullet's second defect from last round is fixed: "small and escalatable" now appears once,
+at `validation.md:153`, and the split sentence is merged. The per-alias `#undef` probe added at
+`validation.md:167-172` is accurate as a recipe and its closing sentence ("if it was still absent
+from the original error list, something else in the same call masked it") is the right instruction
+-- it survives the correction above unchanged.
+
+Hygiene at `c8453260`: title unchanged, `[ROCm] Alias newer LibTorch CUDA graph symbols for the
+HIP build`, 64 chars; no `Co-Authored-By`/noreply/`Signed-off-by`; AI disclosure present; Test
+Plan with literal fenced commands; ASCII-only; one line per paragraph and `utils/prose.py` clean
+on the body; no AMD-internal account or host reference. `jargon.py --port LichtFeld-Studio`:
+still exactly 3 pre-existing instances in the `13e585d4`/`e24593f4` bodies (deferral
+`lfs-commit-msg-jargon-13e585d-e24593f`), 0 from this delta.
+
+Fault classes: unchanged from last round -- the delta is prose only, `cuda_to_hip.h` is untouched
+since `c56016ba`. No device code, wavefront width, lane mask, resource handle, neighbor indexing,
+texture pitch, library swap, build-system change or per-arch branch is in reach.
+
+For the next validator: whatever sha this lands on, the compiled tree is the one that already
+built `[212/212]` and passed 2044/2048 twice on this gfx1100 host on 2026-08-27, so the gfx1100
+revalidation should be quick; gfx90a is stale from `7cd4d569` and needs a real run.
