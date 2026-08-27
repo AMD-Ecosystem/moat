@@ -92,6 +92,28 @@ accumulation divergence rather than a port bug, and RDNA3.5 (gfx1151) is where i
 shown up. Record the error magnitude and stop rather than chasing it deep: the
 comparison that matters is against the other architectures, not against a fix.
 
+## Getting a real hardware GL context on a headless RDNA host
+
+A headless Linux box with no display manager can still give a GUI/interop port a REAL,
+hardware-accelerated OpenGL context, if the GPU has a graphics pipeline (RDNA gfx11xx/gfx12xx;
+not CDNA gfx90a/gfx942, which the driver refuses outright -- see the smoke-check note above).
+Install `xserver-xorg-core` and `xserver-xorg-video-amdgpu`, then start `Xorg` on a spare
+display number against exactly one card. The naive config, a `Device` section with a legacy
+PCI `BusID`, fails with `(EE) No devices detected` even though the bus ID is correct: the
+amdgpu DDX is udev/platform-probed, not PCI-bus-probed, on a modern kernel, and a manual
+`BusID` fights the automatic `OutputClass` match rather than selecting it. Xorg then silently
+falls back to whatever other driver DOES probe successfully (on a server board this is
+frequently the BMC's own display chip, e.g. Aspeed AST, which is real hardware but has no 3D
+acceleration -- `glxinfo` then reports `swrast`/llvmpipe, not the discrete GPU, and looks like
+a headless-GL failure when it is actually a wrong-device failure). Drop `BusID` and target the
+render node directly instead: `Option "kmsdev" "/dev/dri/cardN"` in the `Device` section
+(find N via `cat /sys/class/drm/card*/device/uevent | grep -B5 amdgpu`, matching the PCI slot
+of the card you want), plus `Option "AutoAddGPU" "false"` so the other cards are not also
+attached. A correct start logs `AIGLX: Loaded and initialized radeonsi` and
+`GLX: Initialized DRI2 GL provider`; `DISPLAY=:N glxinfo -B` should then name the real card
+(`OpenGL renderer string: AMD Radeon ... (radeonsi, ...)`), not llvmpipe. No input devices, no
+monitor, and no physical display cable are needed for this to work.
+
 ## Diagnosing a suspected AMD fault before escalating
 
 Two patterns that each cost a deep investigation before the real cause was found.
@@ -107,6 +129,33 @@ On a host whose only installed PyTorch is a ROCm dev build (e.g. built from `/va
 - `torch/headeronly/util/complex.h` guards `#include <thrust/complex.h>` with `#if defined(__HIPCC__) || defined(__HIPCC__)` -- a duplicated-token typo, evidently meant `__CUDACC__ || __HIPCC__` -- so under nvcc the include is skipped while `c10/util/complex.h`/`complex_math.h` still reference `thrust::complex` unconditionally under `__CUDACC__`, cascading into ~100 "identifier thrust is undefined" errors on ANY project that includes `torch/extension.h`, regardless of that project's own code (observed on dev build `2.14.0a0+gitb6b444c`).
 
 Neither is a defect in the port: they are defects in the ambient PyTorch install, present identically whether you build the pristine upstream or the ROCm branch. Diagnose it as environmental by checking that the errors bottom out in `torch/headeronly`/`c10` (not the port's own files) and that `grep -n '__builtin_trap\|__trap\|__HIP\|hip[A-Z]\|amdgcn\|USE_ROCM'` over the port's own changed sources is empty. Do not chase this by patching the installed torch headers (that is fixing the environment, not the port). Record `cuda-not-validated: <the missing-header or duplicated-guard error>` and, if there is time budget left, substitute a source-level check: diff the port's CUDA-facing code (e.g. the non-ROCm branch of a dual-path file) against upstream and confirm it is byte-for-byte the same logic, only guarded differently -- that is as much passthrough evidence as a real nvcc pass would give without one. (FaithC, accelerated-scan)
+
+## Compiling host code as the GPU language can mask a missing standard-library include
+
+Marking every source file (host `.cpp` included) `LANGUAGE HIP` so a mixed-language CMake
+target avoids per-file flag headaches has a side effect beyond the obvious one (device-only
+macros like `__HIPCC__` now leak into host logic): it can also silently satisfy a missing
+standard-library include, because the GPU compiler's runtime headers transitively pull in
+things the file never explicitly asked for. Velvet's `Timer.hpp` used `std::vector` (via
+`using namespace std;`) with no `#include <vector>` -- invisible for months because
+`Timer.cpp` was compiled as HIP by clang. The day a later, correct fix narrowed
+`LANGUAGE HIP` to only the real device-code files (host code compiled as HIP had been
+zeroing a `__device__ __constant__` struct's default member initializers, a real bug), the
+same `Timer.cpp` became a plain C++ translation unit and the missing include surfaced as a
+hard error -- reproducing on BOTH gcc's and clang's libstdc++, so it was not a
+compiler-strictness fluke.
+
+The general lesson: a `LANGUAGE HIP`/`LANGUAGE CUDA` blanket on host sources is itself a code
+smell to check for during review, independent of whatever bug motivates removing it, because
+narrowing it later is exactly the kind of "obviously safe, mechanical" cleanup that exposes
+whatever it had been quietly compensating for. When a delta narrows which files compile as
+the GPU language, rebuild and treat any new missing-symbol/missing-include error in a file
+that changed compilation mode as a real regression to send back, not a toolchain quirk --
+even if an isolated single-file compile-only check of that same file already had the
+identical error recorded as pre-existing elsewhere (e.g. a CUDA-passthrough gate that never
+benefited from the masking in the first place, so it saw the bug all along and correctly
+called it pre-existing there). The two findings do not contradict: one path was always
+broken and stayed broken; the other was accidentally working and stopped.
 
 ## HIP + C++23 on an older toolchain: `isfinite cannot overload` (and how to stay forward-compatible)
 
