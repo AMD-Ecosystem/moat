@@ -7,10 +7,13 @@
   "priority": 6.263,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-08-27T04:10:30Z",
+  "updated_at": "2026-08-27T04:12:27Z",
   "head_sha": "c56016ba30db5cad0c54ede67d1813419308db03",
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx1100",
+    "since": "2026-08-27T04:12:27Z"
+  },
   "waivers": {
     "windows": {
       "reason": "The obstacle is the Windows toolchain, not the GPU: on a TheRock Windows build torch::cuda::is_available() returns false inside a standalone C++ executable because the CUDAHooksRegistry entry in torch_hip.dll is never registered, so no AMD card can run the tests there. Determined on windows-gfx1101 and confirmed host-wide on windows-gfx1201. Linux wave64 (gfx90a) and wave32 (gfx1100) both validated at head.",
@@ -28,7 +31,7 @@
   },
   "license_spdx": "GPL-3.0",
   "upstream_repo_id": 672651553,
-  "stage": "changes-requested",
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -61,7 +64,7 @@
       "validated_sha": "5cbfdf1a7b1b6a6553ce077a5aa8d6209fd3f51c",
       "started_at": "2026-05-31T03:10:00Z",
       "completed_at": "2026-06-23T22:53:10Z",
-      "updated_at": "2026-08-27T04:10:30Z",
+      "updated_at": "2026-08-27T04:12:27Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -75,7 +78,7 @@
         "first_session_at": "2026-05-31T03:10:00Z",
         "last_session_at": "2026-05-31T03:20:00Z"
       },
-      "last_agent": "reviewer",
+      "last_agent": "porter",
       "carry_forward": {
         "to": "5cbfdf1a7b1b6a6553ce077a5aa8d6209fd3f51c",
         "method": "source-class",
