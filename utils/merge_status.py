@@ -67,10 +67,15 @@ except Exception:  # a merge must still resolve if moatlib will not import
 _TERMINAL_PR = {"merged", "closed"}
 _PR_RANKABLE = set(PR_STATES) == {"open"} | _TERMINAL_PR
 
+# `maintained` is STICKY, not RESET like on_hold, though both are person-recorded
+# standing rulings that a person clears: under RESET, any newer write from a host
+# whose copy predates the ruling would silently erase it, and an erased ruling
+# re-arms the upstream-PR machinery against a maintainer's explicit no. A
+# resurrected clear (the STICKY failure mode) just needs re-clearing.
 STICKY = ("upstream_repo_id", "fork_url", "review_pr", "pr_approval",
           "license_clearance", "license_spdx", "pr_number", "pr_url",
           "pr_opened_at", "pr_merged_at", "pr_closed_at", "pr_closed_note",
-          "adopted_at")
+          "adopted_at", "maintained")
 UNION = ("platforms", "waivers")
 RESET = ("on_hold", "on_hold_reason")
 # Every field that describes the CURRENT upstream-PR round. When the two sides

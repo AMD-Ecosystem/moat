@@ -152,13 +152,18 @@ def outcome_cell(p):
     if p.get("pr_url"):
         # pr_state is the authority: the PR lifecycle is one project-level fact, not
         # something an arch's validation record carries. pr_merged_at backs it up for
-        # any record written before that was true.
+        # any record written before that was true. A maintained ruling outranks the
+        # closure it rode in on: "closed" alone reads as declined-and-done, and the
+        # one thing this cell must not say about a branch upstream sends its users
+        # to is that nothing came of it.
         state = p.get("pr_state") or ("merged" if p.get("pr_merged_at") else "open")
         glyph = {"merged": "🟣", "closed": "🔴"}.get(state, "🟢")
         num = p.get("pr_number")
         if num is None:  # derive from the .../pull/<n> URL tail when not recorded
             tail = p["pr_url"].rstrip("/").rsplit("/", 1)[-1]
             num = tail if tail.isdigit() else "?"
+        if p.get("maintained"):
+            return f"🔵 [#{num}]({p['pr_url']}) fork is upstream's AMD path"
         return f"{glyph} [#{num}]({p['pr_url']})"
     disp = p.get("disposition")
     if disp == "license-blocked":
@@ -210,10 +215,11 @@ def render_table(projects):
         "| ✅ | proven on the current code | | 🟣 | contribution merged upstream |",
         "| 🔄 | proven earlier; the code has moved since | | 🟢 | pull request open |",
         "| 🔧 | in progress | | 🔴 | pull request closed |",
-        "| ⬜ | not started | | ⚖️ | licence bars contributing the port |",
-        "| 🚫 | blocked, with a reason recorded | | ⚪ | set aside, with the reason recorded |",
-        "| 🎫 | waived for this project, with maintainer approval | | ⏸ | on hold, deliberately not being worked |",
-        "| — | nothing recorded | | — | nothing recorded |",
+        "| ⬜ | not started | | 🔵 | upstream points users at the fork instead of merging; the branch is maintained long-term |",
+        "| 🚫 | blocked, with a reason recorded | | ⚖️ | licence bars contributing the port |",
+        "| 🎫 | waived for this project, with maintainer approval | | ⚪ | set aside, with the reason recorded |",
+        "| — | nothing recorded | | ⏸ | on hold, deliberately not being worked |",
+        "| | | | — | nothing recorded |",
         "",
         "The project name links upstream.",
     ])

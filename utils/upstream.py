@@ -31,6 +31,8 @@ branch and opens a PR, and a human decides -- the same path everything else take
     python3 utils/upstream.py --fix-review       # staged fix rounds needing a review PR
     python3 utils/upstream.py --merge-fix        # approved fix rounds ready to merge
     python3 utils/upstream.py --merge-fix --apply # fast-forward the open PR to the approved tip
+    python3 utils/upstream.py --drift            # maintained forks vs upstream's advance
+    python3 utils/upstream.py --drift --apply    # also fast-forward a behind fork mirror
 
 Record maintenance and one publishing step. None of it does any porting -- that needs a
 GPU host and a session. These keep the record true, tell someone, and send an approved
@@ -584,6 +586,12 @@ def review_candidates():
         d, _where = moatlib.project_record(name)
         if d is None:
             continue
+        if d.get("maintained"):
+            # Upstream adopted the fork by reference: no follow-up PR will ever
+            # re-offer what a maintainer declined, so this is not a candidate --
+            # not a blocked one, not any kind. Sync rounds (--fix-review) carry
+            # its later work.
+            continue
         followup = d.get("pr_state") in ("merged", "closed")
         if not followup and (d.get("review_pr") or d.get("pr_state")
                              or d.get("pr_url")):
@@ -1090,14 +1098,23 @@ def _fix_delta_hits(fork, base, head, clone=None):
     return hits
 
 
+def _round_live(d, fix):
+    """Is this staged round still backed by what makes it a round? A fix round
+    needs its upstream PR open; a sync round needs the maintained ruling standing.
+    A round whose backing vanished is not silently a different kind of round."""
+    if fix.get("kind") == "sync":
+        return bool(d.get("maintained"))
+    return d.get("pr_state") == "open"
+
+
 def fix_review_rows():
-    """Staged fix rounds whose gates are met and which have no review PR yet."""
+    """Staged fix and sync rounds whose gates are met, with no review PR yet."""
     sys.path.insert(0, str(REPO / "utils"))
     import moatlib
     out = []
     for name, d, _where in all_records():
         fix = d.get("fix")
-        if not fix or fix.get("review_pr") or d.get("pr_state") != "open":
+        if not fix or fix.get("review_pr") or not _round_live(d, fix):
             continue
         fork = (d.get("fork_url") or "").replace("https://github.com/", "")
         if not fork:
@@ -1281,10 +1298,10 @@ def base_conflict(name, d, tip):
 
 
 def merge_fix_rows():
-    """Fix rounds with a recorded review PR, ready for the merge gate."""
+    """Fix and sync rounds with a recorded review PR, ready for the merge gate."""
     for name, d, _where in all_records():
         fix = d.get("fix")
-        if fix and fix.get("review_pr") and d.get("pr_state") == "open":
+        if fix and fix.get("review_pr") and _round_live(d, fix):
             yield name, d, fix
 
 
@@ -1475,6 +1492,24 @@ def do_merge_fix(name, d, fix, pr):
     stale = _sync_local_port_branch(clone, branch, tip)
     if stale:
         notes.append(stale)
+    if fix.get("kind") == "sync":
+        # A maintained branch has followers who clone it by name and get whatever
+        # the tip is that day. Tagging each approved sync gives them a fixed
+        # point to pin -- and gives us the exact tip any report is about. The
+        # date names the tag because "the sync of Sept 8" is how a person refers
+        # to it; the sha inside disambiguates a second same-day sync.
+        tag = f"rocm-{TODAY.replace('-', '')}"
+        tg = subprocess.run(["git", "-C", str(clone), "push", fork_url,
+                             f"{tip}:refs/tags/{tag}"],
+                            capture_output=True, text=True, timeout=60, env=env)
+        if tg.returncode and "already exists" in (tg.stderr or ""):
+            tag = f"rocm-{TODAY.replace('-', '')}-{tip[:7]}"
+            tg = subprocess.run(["git", "-C", str(clone), "push", fork_url,
+                                 f"{tip}:refs/tags/{tag}"],
+                                capture_output=True, text=True, timeout=60, env=env)
+        notes.append(f"tagged {tag}" if tg.returncode == 0 else
+                     f"could NOT tag the tip ({(tg.stderr or tg.stdout).strip()[:80]}); "
+                     f"push a rocm-<date> tag at {tip[:12]} by hand")
     # The branch's job is done and its commits are on the PR branch; a person
     # ruled that staging branches are deleted on merge so the next round can
     # reuse the name.
@@ -1598,6 +1633,178 @@ def report_merge_fix(apply, only=None):
     return ret
 
 
+# ---- maintained forks: the drift sweep --------------------------------------
+#
+# A maintained fork (moatlib.set_maintained) is a port branch upstream points its
+# users at instead of merging. Nothing pings us when upstream moves: the PR is
+# closed, so the CONFLICTING mergeable field that --attention watches no longer
+# exists, and both branches' own records stay truthful while the combination rots.
+# This sweep is the replacement signal. It asks, per maintained fork: how far has
+# upstream's base branch moved past the last sync, would the two still merge, and
+# does upstream's advance touch files the port changed? The merge-base needs no
+# stored baseline -- a sync round MERGES upstream in (never rebases), so the
+# merge-base advances to the absorbed tip on its own and "what upstream did since
+# the last sync" is always `merge-base..base`.
+#
+# Textual cleanliness is a tripwire, not a verdict: upstream editing a CUDA file
+# the port compiles-but-never-edited merges clean and can still break the HIP
+# build, which is what sync-round validation exists to catch. So the report ranks
+# CONFLICT above OVERLAP above BEHIND, and none of them is "fine".
+
+DRIFT_CACHE = REPO / "agent_space" / "drift-cache"
+
+
+def _drift_repo(name, upstream_url, fork_url):
+    """A minimal blobless repo for the probe, cached across runs (agent_space is
+    gitignored). Named remotes rather than URL fetches, because the lazy blob
+    fetches that `diff` and `merge-tree` trigger need a configured promisor
+    remote to fetch from. Works on any host -- no fork clone required."""
+    d = DRIFT_CACHE / name
+    if not (d / ".git").exists():
+        d.mkdir(parents=True, exist_ok=True)
+        if subprocess.run(["git", "init", "-q", str(d)],
+                          capture_output=True, text=True).returncode:
+            return None
+    for remote, url in (("upstream", upstream_url), ("fork", fork_url)):
+        if subprocess.run(["git", "-C", str(d), "remote", "set-url", remote, url],
+                          capture_output=True, text=True).returncode:
+            subprocess.run(["git", "-C", str(d), "remote", "add", remote, url],
+                           capture_output=True, text=True)
+    return d
+
+
+def drift_status(name, d):
+    """(state, info) for one maintained fork.
+
+    state: "conflict" (upstream and the port edit the same lines), "overlap"
+    (merges clean, but upstream touched files the port also changed), "behind"
+    (upstream moved, nothing the port changed), "current", or "unknown" (the
+    probe could not run -- which is an answer, never silence)."""
+    up_url, fork_url = d.get("upstream_url"), d.get("fork_url")
+    base = d.get("fork_default_branch") or "main"
+    branch = d.get("fork_branch") or "moat-port"
+    repo = _drift_repo(name, up_url, fork_url)
+    if repo is None:
+        return ("unknown", {"why": "cannot create the drift cache repo"})
+
+    def git(*a, timeout=120):
+        return subprocess.run(["git", "-C", str(repo), *a],
+                              capture_output=True, text=True, timeout=timeout)
+
+    for remote, ref, local in (("upstream", base, "refs/drift/base"),
+                               ("fork", branch, "refs/drift/port")):
+        f = git("fetch", "-q", "--filter=blob:none", remote,
+                f"+refs/heads/{ref}:{local}", timeout=300)
+        if f.returncode:
+            return ("unknown", {"why": f"cannot fetch {ref} from the {remote} "
+                                       f"({(f.stderr or '').strip()[:60]})"})
+    mb = git("merge-base", "refs/drift/base", "refs/drift/port").stdout.strip()
+    if not mb:
+        return ("unknown", {"why": f"no merge base between {base} and {branch}"})
+    info = {"base": base, "branch": branch, "merge_base": mb,
+            "base_tip": git("rev-parse", "refs/drift/base").stdout.strip(),
+            "port_tip": git("rev-parse", "refs/drift/port").stdout.strip(),
+            "behind": int(git("rev-list", "--count",
+                              f"{mb}..refs/drift/base").stdout.strip() or 0)}
+    # The mirror ride-along: the fork's default branch is an unmodified upstream
+    # mirror, and letting it rot makes every compare and review diff stale.
+    # Fast-forward only, and only under --apply; a diverged mirror is a person's.
+    ls = subprocess.run(["git", "ls-remote", fork_url, f"refs/heads/{base}"],
+                        capture_output=True, text=True, timeout=60)
+    mirror_tip = (ls.stdout.split() or [""])[0]
+    if mirror_tip and mirror_tip != info["base_tip"]:
+        if git("cat-file", "-e", f"{mirror_tip}^{{commit}}").returncode == 0 \
+                and git("merge-base", "--is-ancestor", mirror_tip,
+                        "refs/drift/base").returncode == 0:
+            info["mirror_behind"] = int(git("rev-list", "--count",
+                                            f"{mirror_tip}..refs/drift/base")
+                                        .stdout.strip() or 0)
+        else:
+            info["mirror_diverged"] = mirror_tip
+    if info["behind"] == 0:
+        return ("current", info)
+    ours = set(git("diff", "--name-only", mb,
+                   "refs/drift/port").stdout.split("\n")) - {""}
+    theirs = set(git("diff", "--name-only", mb,
+                     "refs/drift/base").stdout.split("\n")) - {""}
+    info["upstream_files"] = len(theirs)
+    info["overlap"] = sorted(ours & theirs)
+    mt = git("merge-tree", "--write-tree", "--name-only",
+             "refs/drift/base", "refs/drift/port")
+    if mt.returncode == 1:
+        files = []
+        for line in mt.stdout.splitlines()[1:]:
+            if not line.strip():
+                break
+            files.append(line.strip())
+        info["conflicts"] = files
+        return ("conflict", info)
+    if mt.returncode != 0:
+        return ("unknown", {**info, "why": "git merge-tree --write-tree failed "
+                                           "(git 2.38+ required)"})
+    return ("overlap" if info["overlap"] else "behind", info)
+
+
+def report_drift(apply=False):
+    sys.path.insert(0, str(REPO / "utils"))
+    rows = [(n, d) for n, d, _w in all_records() if d.get("maintained")]
+    print(f"upstream: {len(rows)} maintained fork(s)\n")
+    ret = 0
+    for name, d in sorted(rows):
+        state, info = drift_status(name, d)
+        if state == "unknown":
+            print(f"  UNKNOWN    {name:26} {info.get('why')}")
+            ret = 1
+            continue
+        behind = info["behind"]
+        if state == "conflict":
+            print(f"  CONFLICT   {name:26} upstream {info['base']} moved {behind} "
+                  f"commit(s); the merge conflicts in: "
+                  + ", ".join(info["conflicts"][:4]))
+        elif state == "overlap":
+            print(f"  OVERLAP    {name:26} upstream {info['base']} moved {behind} "
+                  f"commit(s); merges clean but touches {len(info['overlap'])} "
+                  f"file(s) the port changed: " + ", ".join(info["overlap"][:4]))
+        elif state == "behind":
+            print(f"  BEHIND     {name:26} upstream {info['base']} moved {behind} "
+                  f"commit(s), {info['upstream_files']} file(s), none the port "
+                  f"changed -- can still break the build; judge, do not assume")
+        else:
+            print(f"  CURRENT    {name:26} the port branch contains upstream "
+                  f"{info['base']}'s tip")
+        fix = d.get("fix")
+        if fix:
+            print(f"  {'':10} {'':26} sync round already in flight on "
+                  f"{fix.get('branch')}")
+        if info.get("mirror_diverged"):
+            print(f"  MIRROR     {name:26} the fork's {info['base']} is NOT an "
+                  f"ancestor of upstream's ({info['mirror_diverged'][:12]}) -- "
+                  f"the mirror diverged; a person sorts that out")
+            ret = 1
+        elif info.get("mirror_behind"):
+            if apply:
+                p = subprocess.run(["git", "-C",
+                                    str(DRIFT_CACHE / name), "push", "fork",
+                                    f"{info['base_tip']}:refs/heads/{info['base']}"],
+                                   capture_output=True, text=True, timeout=120)
+                print(f"  MIRROR     {name:26} "
+                      + (f"fast-forwarded the fork's {info['base']} to "
+                         f"{info['base_tip'][:12]}" if p.returncode == 0 else
+                         f"could NOT fast-forward the fork's {info['base']}: "
+                         f"{(p.stderr or p.stdout).strip()[:80]}"))
+                ret |= p.returncode != 0
+            else:
+                print(f"  MIRROR     {name:26} the fork's {info['base']} mirror is "
+                      f"{info['mirror_behind']} commit(s) behind upstream -- "
+                      f"--apply fast-forwards it")
+    if rows:
+        print("\n  a CONFLICT or OVERLAP round starts with: python3 utils/moatlib.py "
+              "sync-branch <name>")
+        print("  (then the normal porter/reviewer/validator cycle and the approved "
+              "merge through --merge-fix)")
+    return ret
+
+
 RECONCILED = REPO / "data" / "reconciled.json"
 
 
@@ -1647,6 +1854,10 @@ def main():
                     help="fast-forward an open upstream PR to an approved fix round's tip")
     ap.add_argument("--attention", action="store_true",
                     help="open upstream PRs where a maintainer is waiting on us")
+    ap.add_argument("--drift", action="store_true",
+                    help="maintained forks: how far upstream has moved and whether "
+                         "the port branch still merges (--apply also fast-forwards "
+                         "a behind mirror)")
     ap.add_argument("--resolve-threads", action="store_true",
                     help="with --name: resolve fork review PR threads whose last "
                          "word is ours (--apply to write)")
@@ -1725,6 +1936,8 @@ def main():
             print("resolve-threads: pass --name <project>")
             return 1
         return resolve_threads(a.name, apply=a.apply)
+    if a.drift:
+        return report_drift(apply=a.apply)
     if a.attention:
         return report_attention(recorded(), TODAY)
 
