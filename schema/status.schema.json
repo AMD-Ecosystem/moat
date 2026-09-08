@@ -381,11 +381,47 @@
         },
         "opened_at": {
           "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "sync"
+          ]
+        },
+        "upstream_sha": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },
     "fix_merged_at": {
       "type": "string"
+    },
+    "maintained": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "evidence",
+        "by",
+        "at"
+      ],
+      "properties": {
+        "evidence": {
+          "type": "string",
+          "minLength": 1
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
     },
     "review_pr": {
       "type": "string"

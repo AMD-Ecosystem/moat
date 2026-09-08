@@ -203,9 +203,12 @@ def build():
                     },
                 },
             },
-            # A maintainer-requested fix round in flight: the staging branch cut
-            # from the published tip, and the fork review PR where a person
-            # approves the delta. Cleared when the round merges.
+            # A staged round in flight: the staging branch cut from the published
+            # tip, and the fork review PR where a person approves the delta.
+            # Cleared when the round merges. kind "sync" marks a maintained-fork
+            # round absorbing upstream's advance (moatlib.sync_branch), with the
+            # upstream tip it absorbs pinned; absent kind means a
+            # maintainer-requested fix round on an open PR.
             "fix": {
                 "type": ["object", "null"],
                 "required": ["branch", "base_sha"],
@@ -214,9 +217,28 @@ def build():
                     "base_sha": {"type": "string", "minLength": 1},
                     "review_pr": {"type": ["string", "null"]},
                     "opened_at": {"type": "string"},
+                    "kind": {"enum": ["sync"]},
+                    "upstream_sha": {"type": "string", "minLength": 1},
                 },
             },
             "fix_merged_at": {"type": "string"},
+            # A person's ruling that upstream adopted the fork BY REFERENCE: the
+            # PR closed unmerged and upstream points its users at the port
+            # branch, which is now a long-lived public deliverable. pr_ready
+            # refuses while this stands, the fork pre-push hook keeps the branch
+            # frozen, later work lands through sync rounds, and `upstream.py
+            # --drift` watches upstream for conflicts. Like a waiver: a record
+            # without `by` grants nothing.
+            "maintained": {
+                "type": ["object", "null"],
+                "required": ["evidence", "by", "at"],
+                "properties": {
+                    "evidence": {"type": "string", "minLength": 1},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                    "note": {"type": "string"},
+                },
+            },
             # The review PR on our own fork: where a maintainer sees the code, title
             # and body together, and approves once.
             "review_pr": {"type": "string"},
