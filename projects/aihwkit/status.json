@@ -7,18 +7,21 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T01:19:43Z",
-  "updated_at": "2026-09-08T17:28:29Z",
+  "updated_at": "2026-09-08T21:54:28Z",
   "head_sha": "70577b578b7faa661611e905c0b9ec1a1d85bf33",
   "depends_on": [],
   "pr_url": "https://github.com/IBM/aihwkit/pull/770",
   "pr_number": 770,
   "pr_opened_at": "2026-06-08T22:00:49Z",
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx90a",
+    "since": "2026-09-08T21:54:28Z"
+  },
   "waivers": {},
   "pr_state": "closed",
   "license_spdx": "MIT",
   "upstream_repo_id": 296369718,
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -27,7 +30,7 @@
       "validated_sha": "70577b578b7faa661611e905c0b9ec1a1d85bf33",
       "started_at": "2026-06-04T01:28:01Z",
       "completed_at": "2026-08-09T01:02:52Z",
-      "updated_at": "2026-08-09T01:02:52Z",
+      "updated_at": "2026-09-08T21:54:28Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -41,7 +44,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
+      "last_agent": "porter",
       "carry_forward": {
         "to": "70577b578b7faa661611e905c0b9ec1a1d85bf33",
         "method": "binary-equiv",
@@ -144,5 +147,13 @@
     "by": "jeffdaily",
     "at": "2026-09-08T17:28:29Z",
     "note": "IBM cannot maintain AMD support themselves; they closed #770 and adopted the fork by reference (PR #770 discussion, 2026-09-08)"
+  },
+  "fix": {
+    "branch": "moat-sync-60ffe9e",
+    "base_sha": "70577b578b7faa661611e905c0b9ec1a1d85bf33",
+    "review_pr": null,
+    "opened_at": "2026-09-08T21:54:24Z",
+    "kind": "sync",
+    "upstream_sha": "60ffe9e45b0861bdee8daaf7323d2895d81c9bf9"
   }
 }
