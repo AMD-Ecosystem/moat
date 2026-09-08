@@ -68,3 +68,10 @@
 {"kind":"phase","ts":"2026-08-09T01:01:46Z","phase":"test","seconds":55.814,"exit":0,"cmd":"bash -c cd projects/aihwkit/src && HIP_VISIBLE_DEVICES=2 PYTHONPATH=src python -m pytest tests/test_simulator_tiles.py tests/test_bindings_tiles.py -q -k Cuda 2>&1 | tail -20"}
 {"kind":"phase","ts":"2026-08-09T01:02:01Z","phase":"test","seconds":9.320,"exit":0,"cmd":"bash -c cd projects/aihwkit/src && HIP_VISIBLE_DEVICES=2 PYTHONPATH=src python -m pytest tests/test_inference_tiles.py -q -k Cuda 2>&1 | tail -20"}
 {"kind": "tokens", "ts": "2026-08-09T14:30:54Z", "tokens": 114846, "source": "validator"}
+{"kind":"session","ts":"2026-09-08T21:54:33Z","epoch":1788904473.554538636,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-09-08T22:04:32Z","phase":"compile","seconds":96.094,"exit":0,"cmd":"cmake --build projects/aihwkit/src/build_hip -j32"}
+{"kind":"phase","ts":"2026-09-08T22:05:01Z","phase":"test","seconds":10.983,"exit":0,"cmd":"agent_space/venv_sync/bin/python -m pytest projects/aihwkit/src/tests/test_specific_tiles.py -q"}
+{"kind":"phase","ts":"2026-09-08T22:06:05Z","phase":"test","seconds":57.836,"exit":0,"cmd":"agent_space/venv_sync/bin/python -m pytest projects/aihwkit/src/tests/test_simulator_tiles.py projects/aihwkit/src/tests/test_bindings_tiles.py -q -k Cuda"}
+{"kind":"phase","ts":"2026-09-08T22:06:24Z","phase":"test","seconds":13.332,"exit":1,"cmd":"agent_space/venv_sync/bin/python -m pytest projects/aihwkit/src/tests/test_inference_tiles.py projects/aihwkit/src/tests/test_torch_tiles.py -q -k Cuda"}
+{"kind":"phase","ts":"2026-09-08T22:06:37Z","phase":"test","seconds":12.728,"exit":0,"cmd":"agent_space/venv_sync/bin/python -m pytest projects/aihwkit/src/tests/test_analog_ctx.py -q"}
+{"kind":"session","ts":"2026-09-08T22:11:14Z","epoch":1788905474.407694923,"event":"end","platform":"linux-gfx90a"}

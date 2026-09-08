@@ -678,3 +678,67 @@ Jargon: `python3 utils/jargon.py --port aihwkit` -> clean.
 
 Verdict: PASS (binary-equivalence carry-forward, corroborated by real-GPU
 smoke). Transitioning linux-gfx90a to completed (validated_sha 70577b5).
+
+## Sync round 2026-09-08 (porter, linux-gfx90a) -- absorb upstream at 60ffe9e
+
+Context: IBM closed PR #770 unmerged and adopted the fork by reference
+(README section "Running on AMD GPUs (ROCm/HIP)", merged as upstream #789).
+The project is a maintained fork now; `upstream.py --drift` reported upstream
+master 14 commits past the merge-base with a merge conflict in rpu_cub.h.
+
+Round: staged on moat-sync-60ffe9e (base 70577b5 = published tip), merge
+commit eb4d017 = `git merge 60ffe9e` (merge, never rebase -- the README tells
+people to clone moat-port by name).
+
+One conflict, src/rpucuda/cuda/rpu_cub.h: upstream appended a CCCL 3.0 shim
+(aliases for cub::TransformInputIterator / CountingInputIterator, removed in
+CUB 3.0 / CUDA 13) directly after `#include <cub/cub.cuh>`, the region our
+USE_HIP guard wraps; git matched their closing `#endif` (CUB_VERSION) with
+ours (USE_HIP) as common. Resolved by keeping the shim inside the CUDA-side
+`#else` branch and closing BOTH conditionals. The HIP side needs no
+counterpart: the shim is keyed to CUB_VERSION >= 300000, which only CUDA's
+CUB defines, and hipCUB (ROCm 7.14) still ships
+hipcub/iterator/transform_input_iterator.hpp and counting_input_iterator.hpp
+(call sites go through RPU_CUB_NS_QUALIFIER -> hipcub::). Verified by clean
+compile of maximizer.cu / noise_manager.cu / weight_clipper_cuda.cu.
+
+Environment (changed since the 2026-08-09 revalidation): ROCm 7.14 nightly
+via the pip rocm_sdk_devel package (no /opt/rocm on this host now), torch
+2.14.0a0 nightly. Toolchain paths:
+```
+R=/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel
+TORCH_CMAKE=$(python -c "import torch,os;print(os.path.dirname(torch.__file__))")/share/cmake
+cmake -S . -B build_hip -GNinja -DUSE_HIP=ON -DUSE_CUDA=OFF -DRPU_CXX_STANDARD=20 \
+  -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH="$TORCH_CMAKE;$R" -DRPU_BLAS=OpenBLAS -DBUILD_TEST=OFF \
+  -DRPU_USE_TORCH_BUFFERS=OFF
+cmake --build build_hip -j32     # 78/78, warnings only
+```
+The env torch is built against NumPy 1.x while the conda env carries numpy
+2.5.2, which breaks torch<->numpy interop the tests need; tests ran from a
+scratch venv (`python3 -m venv --system-site-packages` + `pip install
+"numpy<2"`), NOT by downgrading the shared env.
+
+Tests (HIP_VISIBLE_DEVICES=0, PYTHONPATH=src, .so copied from build_hip):
+- tests/test_specific_tiles.py: **36 passed** (suite grew from 18 upstream;
+  CRITICAL bit_line_maker / pulsed-update warp-size gate -- PASS).
+- test_simulator_tiles.py + test_bindings_tiles.py -k Cuda: **285 passed,
+  47 skipped, 0 failed** (was 284 at 70577b5; upstream added a case).
+- test_inference_tiles.py + test_torch_tiles.py -k Cuda: 40 passed, 23
+  skipped, **1 failed**: TorchInferenceTest_TorchInferenceCuda
+  test_input_range_grad (torch tile input_range.grad -0.0005 vs rpu_base
+  -0.0187 at decimal=4). NOT a sync regression: rebuilt the old validated
+  head 70577b5 in a worktree with the same toolchain and the failure is
+  byte-identical there (same -0.0005/-0.0187/0.01819531). Toolchain drift
+  since the June ROCm 7.2.1 pass; registered as deferral
+  aihwkit-input-range-grad-drift, CPU variant passes 2/2.
+- tests/test_analog_ctx.py (new upstream suite, #765): **177 passed, 29
+  skipped** on GPU.
+
+Fork mirror: master fast-forwarded to 60ffe9e by `upstream.py --drift
+--apply` before the round.
+
+Next: reviewer on the delta 70577b5..eb4d017, then per-platform revalidation
+(head move flipped all four platforms to revalidate), then
+`upstream.py --fix-review` / `/moat approve` / `--merge-fix --apply` (which
+tags the tip rocm-<date>).

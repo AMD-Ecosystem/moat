@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "aihwkit-input-range-grad-drift",
+      "kind": "other",
+      "component": null,
+      "summary": "test_torch_tiles.py TorchInferenceCuda test_input_range_grad fails on ROCm 7.14 nightly + torch 2.14 nightly (input_range.grad -0.0005 torch tile vs -0.0187 rpu_base tile, decimal=4 tolerance). Byte-identical failure at validated head 70577b5 and at the moat-sync-60ffe9e tip, so it is toolchain drift, not a port or sync regression; passed June 2026 on ROCm 7.2.1. Needs isolation: torch nightly GPU numerics vs HIP tile path.",
+      "refs": [
+        "projects/aihwkit/notes.md sync round 2026-09-08"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-09-08T22:10:33Z",
+      "decided": null
+    }
+  ]
+}
