@@ -742,3 +742,39 @@ Next: reviewer on the delta 70577b5..eb4d017, then per-platform revalidation
 (head move flipped all four platforms to revalidate), then
 `upstream.py --fix-review` / `/moat approve` / `--merge-fix --apply` (which
 tags the tip rocm-<date>).
+
+## Review 2026-09-09 (reviewer, linux-gfx90a, sync delta 70577b5..eb4d017)
+
+Scope: sync round moat-sync-60ffe9e -- upstream master (14 commits) merged
+into the port branch, one conflict resolution (rpu_cub.h).
+
+Merge fidelity (the core check for a sync merge): re-derived the port's diff
+on both sides -- `diff <(git diff 4302aaf 70577b5) <(git diff 60ffe9e
+eb4d017)` is 48 lines, all hunk offsets, blob ids, and the intended
+rpu_cub.h resolution. Nothing of the port dropped, nothing of upstream
+altered. Merge has exactly the two intended parents.
+
+Absorbed device code scanned for fault classes: no warp intrinsics, no
+hardcoded 32, no lane masks in the delta (kernelApplyChopperCorrectionToWeights
+is a grid-stride elementwise kernel; retune logic is host-side; new
+getWeightsCuda/setWeightsCuda use cudaMemcpyAsync D2D through the compat
+header -- clean compile proves coverage). Upstream CMake changes are all
+inside if(USE_CUDA); HIP path untouched. jargon.py --port: clean. Fork tree
+clean. Reviewer re-ran test_specific_tiles.py: 36/36.
+
+Findings:
+1. cuda-to-rocm skill lacked the CCCL 3.0 shim lesson (checklist 9);
+   ADDED to references/fault-classes.md in this round (build section).
+2. Validators: include tests/test_layers_linear.py + test_layers_convolution.py
+   in this round's revalidation -- upstream #765 rewrote the python tile
+   stack (base/periphery/functions/module/array/transfer) that those suites
+   exercise, and this round's porter run covered specific/simulator/bindings/
+   inference/torch/analog_ctx but not layers.
+3. audit-commits flags published tip 70577b5 "body has no Test Plan" --
+   pre-existing on the branch PR #770 shipped and upstream's README links;
+   immutable (rewriting the advertised branch is the one forbidden fix).
+   Expect the flag to persist; do not "fix" it.
+
+Verdict: review-passed. test_input_range_grad exoneration (toolchain drift,
+identical at old head) accepted; deferral aihwkit-input-range-grad-drift
+covers the investigation.

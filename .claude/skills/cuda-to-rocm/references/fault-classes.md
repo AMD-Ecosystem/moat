@@ -303,6 +303,19 @@ Fix additively -- it helps the CUDA build too. (LC-framework)
 injected with `-include`, object files are NOT rebuilt: wipe them manually or you validate
 stale code and get a silent false pass. (lc0)
 
+**Upstream CCCL 3.0 compat shims are CUDA-only by construction -- keep them out of the
+HIP path.** CCCL 3.0 (CUDA 13) removed the CUB fancy iterators
+(`cub::TransformInputIterator`, `cub::CountingInputIterator`), so upstreams are adding
+alias shims keyed to `CUB_VERSION >= 300000` right after `#include <cub/cub.cuh>` --
+which is exactly where a HIP guard around the CUB include ends, so a later sync merge
+conflicts there and git can even match the shim's closing `#endif` with the guard's.
+Resolve by placing the shim inside the CUDA branch of the guard: only CUDA's CUB
+defines `CUB_VERSION`, and hipCUB (through ROCm 7.14 at least) still ships
+`hipcub/iterator/transform_input_iterator.hpp` and `counting_input_iterator.hpp`, so
+call sites reaching iterators through a namespace-qualifier macro need no HIP-side
+counterpart. Expect this shim to appear in any CUB-using upstream as it adopts
+CUDA 13. (aihwkit)
+
 **MSVC-only upstreams accept code that clang and gcc reject**, so the HIP build (and the
 CUDA build under nvcc) is a stricter compiler than the project has ever seen. Velvet carried
 a member template whose parameter pack shadowed the class pack -- accepted by MSVC, rejected
