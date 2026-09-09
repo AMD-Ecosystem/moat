@@ -17,6 +17,7 @@
 // and 2.0 under point sampling -- an unambiguous discriminator.
 //
 // Copyright (c) 2026 Advanced Micro Devices, Inc.
+// SPDX-License-Identifier: MIT
 // Author: Jeff Daily
 
 #include <cstdio>

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Binary-equivalence confirmer for the MOAT regression guard (validator-side).
 
 Ground truth for "did the compiled program change on this arch?": compare the

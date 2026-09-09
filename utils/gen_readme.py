@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Regenerate the MOAT project table in README.md between sentinel markers,
 preserving all hand-written prose outside them. Reads every project's record across
 refs, not just the folders on this branch -- the table is the progress board, so work

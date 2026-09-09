@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Reconcile recorded upstream-PR state with reality.
 
 A protected trunk creates a bookkeeping gap. A project's own PR merges when the port

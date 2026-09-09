@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """git merge driver for projects/*/status.json (merge=moat-status in
 .gitattributes). Deterministic so concurrent CLIs never hard-conflict.
 

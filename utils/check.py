@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Every gate MOAT enforces, in one place.
 
 CI and the pre-push hook both call this, so they cannot drift. Adding a gate here
