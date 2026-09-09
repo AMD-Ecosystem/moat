@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """License tiering.
 
 The tier governs one thing: whether the port may be OFFERED UPSTREAM. It does not

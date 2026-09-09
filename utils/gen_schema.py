@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Generate schema/status.schema.json from moatlib.
 
 Generated rather than hand-written so the schema and the code that enforces it
