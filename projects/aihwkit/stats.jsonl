@@ -75,3 +75,9 @@
 {"kind":"phase","ts":"2026-09-08T22:06:24Z","phase":"test","seconds":13.332,"exit":1,"cmd":"agent_space/venv_sync/bin/python -m pytest projects/aihwkit/src/tests/test_inference_tiles.py projects/aihwkit/src/tests/test_torch_tiles.py -q -k Cuda"}
 {"kind":"phase","ts":"2026-09-08T22:06:37Z","phase":"test","seconds":12.728,"exit":0,"cmd":"agent_space/venv_sync/bin/python -m pytest projects/aihwkit/src/tests/test_analog_ctx.py -q"}
 {"kind":"session","ts":"2026-09-08T22:11:14Z","epoch":1788905474.407694923,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-09-09T04:04:47Z","epoch":1788926687.160305118,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-09-09T04:06:05Z","phase":"test","seconds":68.916,"exit":0,"cmd":"agent_space/venv_sync/bin/python -m pytest projects/aihwkit/src/tests/test_specific_tiles.py projects/aihwkit/src/tests/test_simulator_tiles.py projects/aihwkit/src/tests/test_bindings_tiles.py -q"}
+{"kind":"phase","ts":"2026-09-09T04:06:59Z","phase":"test","seconds":48.345,"exit":1,"cmd":"agent_space/venv_sync/bin/python -m pytest projects/aihwkit/src/tests/test_torch_tiles.py projects/aihwkit/src/tests/test_inference_tiles.py -q"}
+{"kind":"phase","ts":"2026-09-09T04:09:05Z","phase":"test","seconds":119.234,"exit":0,"cmd":"agent_space/venv_sync/bin/python -m pytest projects/aihwkit/src/tests/test_layers_linear.py projects/aihwkit/src/tests/test_layers_convolution.py -q"}
+{"kind":"phase","ts":"2026-09-09T04:09:22Z","phase":"test","seconds":13.125,"exit":0,"cmd":"agent_space/venv_sync/bin/python -m pytest projects/aihwkit/src/tests/test_analog_ctx.py -q"}
+{"kind":"session","ts":"2026-09-09T04:09:37Z","epoch":1788926977.912452084,"event":"end","platform":"linux-gfx90a"}

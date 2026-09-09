@@ -778,3 +778,27 @@ Findings:
 Verdict: review-passed. test_input_range_grad exoneration (toolchain drift,
 identical at old head) accepted; deferral aihwkit-input-range-grad-drift
 covers the investigation.
+
+## Revalidation 2026-09-09 (validator, linux-gfx90a, sync tip eb4d017)
+
+State: revalidate (validated_sha 70577b5 -> head eb4d017, sync round
+moat-sync-60ffe9e). GPU: AMD Instinct MI250X / MI250 (gfx90a, wave64).
+ROCm 7.14 nightly (pip rocm_sdk_devel), torch 2.14.0a0 nightly,
+HIP_VISIBLE_DEVICES=0. Build: build_hip at eb4d017 (ninja no-work,
+installed .so byte-identical to the build artifact). Tests from the
+numpy<2 scratch venv (see the sync-round entry for why).
+
+- test_specific_tiles + test_simulator_tiles + test_bindings_tiles (FULL,
+  CPU+GPU): **568 passed, 57 skipped, 0 failed**. The June-known stochastic
+  CPU flake (TileTest_Inference test_program_weights) passed this run.
+- test_torch_tiles + test_inference_tiles (FULL): **405 passed, 55 skipped,
+  1 failed** -- the known TorchInferenceCuda test_input_range_grad toolchain
+  drift, byte-identical at the OLD validated head on this toolchain
+  (exonerated in the sync-round entry; deferral
+  aihwkit-input-range-grad-drift).
+- test_layers_linear + test_layers_convolution (review directive -- #765
+  rewrote the python tile stack they exercise): **566 passed, 216 skipped**,
+  matching the June 2026-06-04 bar exactly.
+- test_analog_ctx (new upstream suite): **177 passed, 29 skipped**.
+
+Verdict: PASS at eb4d017. Transitioning linux-gfx90a to completed.
