@@ -31,7 +31,9 @@ users at a branch in ITS OWN repo, not at the fork. Consequences:
   but only the maintainer can move `experimental/hip`. Each future round therefore also
   needs an upstream PR whose BASE is `experimental/hip`, which `upstream.py --publish`
   does not support yet (it always targets the fork default branch, `master`). Asked the
-  maintainer on the PR (2026-09-10) whether that is how they want updates delivered.
+  maintainer on the PR (2026-09-10, comment id 5624490119, posted by jeffdaily) whether
+  they want updates as PRs based on `experimental/hip` or only HIP-specific fixes; no
+  answer yet.
   Until the publisher grows a base-branch option, that PR is a hand-approved step for a
   person; do not open it against master, and do not open it at all with `pr_ready`
   refusing under the maintained ruling.
