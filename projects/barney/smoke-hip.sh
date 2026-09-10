@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 # Backend-1 smoke render on gfx90a: render one ANARI scene through the barney
 # HIP device (the cuBQL software tracer) and confirm non-trivial output.
 set -euo pipefail

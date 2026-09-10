@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """File and check port-request issues -- the one intake queue.
 
 Two things feed it and they are the same thing. A community member suggests a CUDA

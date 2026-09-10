@@ -5,7 +5,7 @@
       "id": "cubvh-nvidia-proprietary-rescan",
       "kind": "other",
       "component": null,
-      "summary": "Rescan with the fixed scan_nvidia: LICENSE_NVIDIA at the repo root is the NVIDIA Source Code License for instant neural graphics primitives (non-commercial). The project is review-passed with no licence discussion in notes; a person must rule whether the NSCL-covered code affects tier standing and upstream contribution.",
+      "summary": "Rescan with the fixed scan_nvidia: LICENSE_NVIDIA at the repo root is the NVIDIA Source Code License for instant neural graphics primitives (non-commercial). The project is review-passed with no licence discussion in notes; a person must rule whether the NSCL-covered code affects tier standing and upstream contribution. UPSTREAM ANSWER (2026-08-26): the author states src/bvh.cu, include/gpu/triangle.cuh, and include/gpu/bounding_box.cuh borrow code from instant-ngp and LICENSE_NVIDIA was included for them; author open to a rewrite. Scope question answered; severity raised -- derived code is in the core, compiles on AMD, and our merged PR #33 touched bvh.cu.",
       "refs": [
         "moat main b336246 (case/wording-proof scan_nvidia)"
       ],

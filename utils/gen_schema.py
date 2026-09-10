@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Generate schema/status.schema.json from moatlib.
 
 Generated rather than hand-written so the schema and the code that enforces it
@@ -168,11 +170,47 @@ def build():
             "pr_closed_note": {"type": "string"},
             # What the open upstream PR shows. While a fix round is staged,
             # head_sha runs ahead of this on the staging branch; only the trusted
-            # merge path (upstream.py --merge-fix) advances it.
+            # merge path (upstream.py --merge-fix) advances it. Once the PR
+            # finishes, it records what that PR shipped -- the baseline a
+            # follow-up round's delta is judged against.
             "published_sha": {"type": ["string", "null"]},
-            # A maintainer-requested fix round in flight: the staging branch cut
-            # from the published tip, and the fork review PR where a person
-            # approves the delta. Cleared when the round merges.
+            # Which upstream-PR round the pr_* fields above describe; absent means
+            # the first. archive_pr moves a finished PR into pr_history and
+            # increments this, and the merge driver hands the whole PR block to
+            # the higher round -- the per-field rules would otherwise resurrect
+            # the finished round from a host still carrying it.
+            "pr_round": {"type": "integer", "minimum": 1},
+            # Finished upstream PRs, one entry per PR, appended when a follow-up
+            # round opens. Write-once: the merge driver unions entries by
+            # pr_number and never rewrites one.
+            "pr_history": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["pr_url", "pr_number", "pr_state",
+                                 "published_sha", "archived_at"],
+                    "properties": {
+                        "pr_url": {"type": "string"},
+                        "pr_number": {"type": "integer"},
+                        "pr_state": {"enum": ["merged", "closed"]},
+                        "pr_opened_at": {"type": "string"},
+                        "pr_merged_at": {"type": "string"},
+                        "pr_closed_at": {"type": "string"},
+                        "pr_closed_note": {"type": "string"},
+                        # The tip this PR shipped: the base a follow-up's delta
+                        # starts from.
+                        "published_sha": {"type": "string"},
+                        "review_pr": {"type": "string"},
+                        "archived_at": {"type": "string"},
+                    },
+                },
+            },
+            # A staged round in flight: the staging branch cut from the published
+            # tip, and the fork review PR where a person approves the delta.
+            # Cleared when the round merges. kind "sync" marks a maintained-fork
+            # round absorbing upstream's advance (moatlib.sync_branch), with the
+            # upstream tip it absorbs pinned; absent kind means a
+            # maintainer-requested fix round on an open PR.
             "fix": {
                 "type": ["object", "null"],
                 "required": ["branch", "base_sha"],
@@ -181,9 +219,28 @@ def build():
                     "base_sha": {"type": "string", "minLength": 1},
                     "review_pr": {"type": ["string", "null"]},
                     "opened_at": {"type": "string"},
+                    "kind": {"enum": ["sync"]},
+                    "upstream_sha": {"type": "string", "minLength": 1},
                 },
             },
             "fix_merged_at": {"type": "string"},
+            # A person's ruling that upstream adopted the fork BY REFERENCE: the
+            # PR closed unmerged and upstream points its users at the port
+            # branch, which is now a long-lived public deliverable. pr_ready
+            # refuses while this stands, the fork pre-push hook keeps the branch
+            # frozen, later work lands through sync rounds, and `upstream.py
+            # --drift` watches upstream for conflicts. Like a waiver: a record
+            # without `by` grants nothing.
+            "maintained": {
+                "type": ["object", "null"],
+                "required": ["evidence", "by", "at"],
+                "properties": {
+                    "evidence": {"type": "string", "minLength": 1},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                    "note": {"type": "string"},
+                },
+            },
             # The review PR on our own fork: where a maintainer sees the code, title
             # and body together, and approves once.
             "review_pr": {"type": "string"},

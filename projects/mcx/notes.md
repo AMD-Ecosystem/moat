@@ -1004,3 +1004,28 @@ ROCm: 7.2 (system), CUDA gate via conda cuda-12.8 (nvcc 12.8.93)
 Test suite: 36/40 PASS
 Wall clock (utils/timeit.sh): compile 57.6s, test suite 125.9s (exit 4 = 4
 failing tests, script itself ran clean), cuda-compile 56.9s
+
+## Maintainer correspondence 2026-09-10 (upstream PR #267)
+
+PrasoonMishra (AMD compiler side) opened fangq/mcx#267: declaring `slen`
+inside the photon-loop body (matching the OpenCL source) recovers 5.47x on
+cube60 on MI250X (10.7k -> 58.5k photon/ms); absorbed fractions unchanged
+(cube60b 0.93x, cube60planar 1.17x). Corroborates the deferred hipcc
+frontend codegen finding (deferred id hipcc-frontend-codegen-mcx: ~3.4x
+dynamic VALU excess vs the OpenCL frontend on the same gfx90a backend).
+
+fangq asked (2026-09-10) whether the 4 testmcx.sh failures in that PR's
+test run were introduced by our HIP PR #264. They were not; jeffdaily
+posted the evidence (agent-drafted, disclosure line included):
+https://github.com/fangq/mcx/pull/267#issuecomment-5621374349
+
+- "photon replay" / "photon replay -E": stale `.jdat` in testmcx.sh after
+  upstream 6d7a81a renamed the output to `.jdt`. fangq fixed the script on
+  master in 39c026e (2026-08-29); PR #267's branch (cut Aug 3) predates the
+  fix, hence the failures there. Manual replay verified correct on MI250X
+  during our June validation (3002==3002, absorbed 35.63%).
+- "exporting json input ... volume data" / "saving photon seeds": byte-exact
+  greps of zlib output (line 45 expects best-speed header `eAHs...` = 0x78
+  0x01; line 124 expects encoding ratio 13x.x%). Hosts whose zlib/miniz
+  emits default-compression 0x78 0x9C (`eJz...`) produce a valid stream of
+  identical data at 129.1%. Host-side zmat compression, arch-independent.
