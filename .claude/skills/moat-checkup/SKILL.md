@@ -311,6 +311,17 @@ the port compiles but never edited merges clean -- which is what the round's
 revalidation exists to catch. `--drift --apply` also fast-forwards the fork's
 default-branch mirror, which must track upstream or every compare goes stale.
 
+A maintainer may also host the branch THEMSELVES: arrayfire closed #3708 and copied the
+port's commits, unchanged, onto `arrayfire/arrayfire` `experimental/hip`, and pointed the
+README there rather than at the fork. Record it the same way -- the fork's `moat-port`
+stays the writable mirror of that branch and every behavior above still holds, `--drift`
+included, as long as the two tips stay equal. What changes is DELIVERY: a sync round's
+`--merge-fix --apply` can only move the fork branch, so each round additionally needs an
+upstream PR whose base is the maintainer's branch, and `--publish` cannot open that yet
+(it targets the default branch). Until it can, that PR is a person's hand-approved
+step. Say so in the `--note` when ruling, so the next sync round does not stall at
+`pr_ready`'s refusal wondering how to reach upstream.
+
 A sync round is a fix round with upstream's advance as its content, and it rides the
 same machinery end to end: `moatlib.py sync-branch <name>` stages `moat-sync-<sha7>`
 from the published tip and pins the upstream tip being absorbed; the porter MERGES

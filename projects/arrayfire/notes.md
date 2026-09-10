@@ -9,6 +9,35 @@ platform linux-gfx90a (MI250X, ROCm 7.2.1).
 Fork: https://github.com/AMD-Ecosystem/arrayfire (branch `moat-port`; `master` stays a clean
 upstream mirror). Actions disabled on the fork. base_sha 492718b.
 
+## Upstream outcome 2026-09-10 -- PR #3708 CLOSED unmerged; port adopted on upstream's own branch
+
+melonakos closed PR #3708 on 2026-09-10 (comment id 5623287125): ArrayFire will not carry a
+HIP backend in mainline releases; the commits now live UNCHANGED on
+https://github.com/arrayfire/arrayfire/tree/experimental/hip, and the README will point to
+that branch. VERIFIED same day: `experimental/hip` tip == fork `moat-port` tip == head_sha
+950dcdd02 (GitHub compare experimental/hip...AMD-Ecosystem:moat-port reports identical,
+0 ahead / 0 behind); experimental/hip is 8 commits ahead of upstream master, none behind.
+README on master does not mention the branch yet.
+
+Ruling: adopted BY REFERENCE (the moat-checkup maintained-fork case) -- recorded with
+`set-maintained` and this comment URL as evidence. The twist vs aihwkit: upstream points its
+users at a branch in ITS OWN repo, not at the fork. Consequences:
+
+- `moat-port` stays frozen and byte-identical to `experimental/hip`; it is the mirror we
+  can write to, and the pre-push hook keeps protecting it as usual.
+- `upstream.py --drift` still works as-is (it compares upstream master against the fork
+  branch, which equals upstream's branch today).
+- DELIVERY GAP: a sync round ends with `--merge-fix --apply` fast-forwarding `moat-port`,
+  but only the maintainer can move `experimental/hip`. Each future round therefore also
+  needs an upstream PR whose BASE is `experimental/hip`, which `upstream.py --publish`
+  does not support yet (it always targets the fork default branch, `master`). Asked the
+  maintainer on the PR (2026-09-10) whether that is how they want updates delivered.
+  Until the publisher grows a base-branch option, that PR is a hand-approved step for a
+  person; do not open it against master, and do not open it at all with `pr_ready`
+  refusing under the maintained ruling.
+
+No follow-up upstream PR against master is ever offered again for this port.
+
 ## PR fix-round 2026-07-02 (minimum ROCm version) -- doc-only, carried forward
 
 villekf (PR #3708) reported ROCm 7.0.3 compiles on Linux (Cray) but ROCm 6.4.4 fails on
