@@ -7,14 +7,14 @@
   "priority": 6.146,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T00:04:57Z",
-  "updated_at": "2026-08-20T17:50:44Z",
+  "updated_at": "2026-09-10T19:41:38Z",
   "head_sha": "950dcdd02f348c74d29f4de8199bca38a7e7a245",
   "pr_url": "https://github.com/arrayfire/arrayfire/pull/3708",
   "pr_number": 3708,
   "pr_opened_at": "2026-06-08T21:24:15Z",
   "porting": null,
   "waivers": {},
-  "pr_state": "open",
+  "pr_state": "closed",
   "license_spdx": "BSD-3-Clause",
   "upstream_repo_id": 25889802,
   "stage": "review-passed",
@@ -183,5 +183,13 @@
       "last_agent": "validator"
     }
   },
-  "published_sha": "950dcdd02f348c74d29f4de8199bca38a7e7a245"
+  "published_sha": "950dcdd02f348c74d29f4de8199bca38a7e7a245",
+  "pr_closed_at": "2026-09-10T18:11:29Z",
+  "pr_closed_note": "upstream hosts the identical commits itself on arrayfire/arrayfire branch experimental/hip; the fork branch stays a mirror of it",
+  "maintained": {
+    "evidence": "https://github.com/arrayfire/arrayfire/pull/3708#issuecomment-5623287125",
+    "by": "jeff",
+    "at": "2026-09-10T19:41:38Z",
+    "note": "upstream hosts the identical commits itself on arrayfire/arrayfire branch experimental/hip; the fork branch stays a mirror of it"
+  }
 }
