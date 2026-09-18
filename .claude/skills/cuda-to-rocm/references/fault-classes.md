@@ -216,20 +216,22 @@ distinct ways.
   Gaussian, FindHomography, Normalize, TensorBatchWrap, many Interpolation cases.)
 
 **A layered `cudaArray` collapses across kernel launches -- use a non-layered 3D array.**
-CONFIRMED bug, gfx90a/CDNA2, ROCm 7.2.1, ROCm/clr#275. A
+CONFIRMED bug on gfx90a (CDNA2), gfx1100 (RDNA3) and gfx1201 (RDNA4), ROCm 7.2.1 and at
+least back to HIP SDK 6.2; tracked as ROCm/rocm-systems#11872 (originally ROCm/clr#275). A
 `cudaArrayLayered | cudaArraySurfaceLoadStore` float array written one layer at a time via
 `surf2DLayeredwrite` reads back the LAST-written layer for EVERY layer index on a later
 launch -- through `tex2DLayered`, `surf2DLayeredread` and host `hipMemcpy3D` alike.
-`hipDeviceSynchronize` between writes and recreating the texture do not help. Fix: drop
-`cudaArrayLayered` and allocate with `hipMalloc3DArray`, accessed via
+`hipDeviceSynchronize` between writes and recreating the texture do not help. Root cause is
+in the HIP headers: `surf1D/2DLayered{read,write}` call the `__ockl_image_*_lod_*` builtins
+with the layer in the mip-LOD slot instead of the `_1Da`/`_2Da` array builtins. The
+collapse is write-side; `tex2DLayered` itself reads correctly once the writes land. Fix:
+drop `cudaArrayLayered` and allocate with `hipMalloc3DArray`, accessed via
 `surf3Dwrite`/`surf3Dread`/`tex3D` with the layer as a real z coordinate (a tall 2D array,
 W x H*L, also works). Map each `surf2DLayeredwrite(v,s,x,y,layer)` to
 `surf3Dwrite(v,s,x,y,layer)` once inside the compat header so call sites are untouched.
-CUDA keeps the real layered array byte-for-byte. AMD's candidate fix
-(ROCm/rocm-systems#6683) corrects only the `surf2DLayered` builtins -- `tex2DLayered` uses a
-different builtin and may collapse independently, so re-verify per ROCm version and keep
-the workaround until proven fixed on your stack. NOT confirmed on RDNA; a wave32 porter
-should re-run the repro to establish arch scope. (popsift: the Gaussian pyramid and DoG were
+CUDA keeps the real layered array byte-for-byte. The header fix (ROCm/rocm-systems#6683)
+was verified to cure all three read paths but was closed unmerged (no unit test), so keep
+the workaround until a ROCm release ships the fix. (popsift: the Gaussian pyramid and DoG were
 layered arrays, and without this the DoG was all-zero.)
 
 **A hardware linear-filter texture over an element-read float array is ARCH-SPECIFIC, not a

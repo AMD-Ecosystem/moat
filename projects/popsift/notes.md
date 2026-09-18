@@ -3422,3 +3422,19 @@ that does not carry the project folder, because moatlib.load_status prefers
 origin/main's stale trunk record over origin/port/popsift. Run the tool from
 the project worktree (agent_space/wt-popsift), which also carries its own
 fork clone at projects/popsift/src.
+
+## 2026-09-18 -- layered-array bug re-filed on ROCm/rocm-systems
+
+ROCm/clr#275 was filed against the pre-monorepo repo; the HIP runtime and headers now live
+in ROCm/rocm-systems. The candidate fix ROCm/rocm-systems#6683 was auto-closed as stale on
+2026-08-23 WITHOUT merging (policy bot: no accompanying unit test), and `develop`'s
+`amd_surface_functions.h` still passes `layer` into `__ockl_image_{load,store}_lod_2D`.
+A third party (dspl1236) confirmed the same defect on gfx1201/RDNA4 (Windows, ROCm 7.2.1),
+traced it back to HIP SDK 6.2, and showed `tex2DLayered` reads correctly when the array is
+filled by `hipMemcpy3D` (consistent with our write-side diagnosis).
+
+jeffdaily filed ROCm/rocm-systems#11872 carrying the full clr#275 content plus that
+commentary, asking RichardGe to reopen #6683 and add a unit test; a reply on clr#275
+pointing to it (thanking dspl1236 and redirecting their separate device-prop limits bug to rocm-systems) was posted as issuecomment-5734383793. Deferral popsift-texsurf-coherency now points at #11872. Consequence for
+the port: the non-layered-3D workaround stays required on every released ROCm; the
+"until #6683 lands" condition above has no date.
