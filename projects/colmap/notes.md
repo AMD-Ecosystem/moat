@@ -2283,3 +2283,108 @@ Second real-GPU pass at fix round 2's tip (wave64 gate stays satisfied, now curr
 head_sha). No skill promotion this round: the Mesa teardown hang is already documented in the
 skill/notes from 2026-08-08 with the same stack, and this session's gdb trace only reconfirms
 it rather than adding anything generalizable.
+
+## Validation 2026-09-21 (validator, linux-gfx1100, Radeon Pro W7800, GPU 0, revalidate: fix round 2)
+
+Revalidation triggered by fix round 2 (`0af9a2d6` -> `cfe7336f` on `moat-fix-4635`), this
+platform's prior `validated_sha` was `0af9a2d6` (2026-08-13). No fork clone existed on this
+host, so `git clone https://github.com/AMD-Ecosystem/colmap.git projects/colmap/src` then
+`git fetch origin moat-fix-4635 && git checkout -B moat-fix-4635 origin/moat-fix-4635` ->
+`cfe7336fe0efc297cdf7e2520b87a6dac38e2bf6`, matching `status.json.head_sha`. `rocm-smi
+--showproductname` confirmed all 4 GPUs on this host are `gfx1100` (Radeon Pro W7800);
+`HIP_VISIBLE_DEVICES=0` pins GPU 0 for every command below.
+
+The delta is the same merge-of-upstream-main-plus-nit-commit already classified `mixed` by
+the gfx90a validator this same day (`notes.md:2183`, hundreds of files touched via colmap
+main); a full real-GPU run was done rather than reaching for the codeobj_diff carry-forward
+path, consistent with that call.
+
+### Environment (new host, no prior session)
+
+ROCm/HIP: TheRock `rocm-sdk` pip stack in conda env `py_3.12` (`rocm-sdk-core` 10.0.0), no
+`/opt/rocm` -- `hipcc`/`rocminfo` resolve from
+`/opt/conda/envs/py_3.12/lib/python3.12/site-packages/_rocm_sdk_devel/`. Host `cmake` 3.31.6
+and `ninja` also come from that env; host `g++`/`gcc` 13.3.0 used for non-HIP TUs. 64-core
+host (`nproc`).
+
+Packages installed fresh (Ubuntu 24.04, none present before this session):
+`libboost-{program-options,graph,system,filesystem,test}-dev libeigen3-dev libflann-dev
+libfreeimage-dev libmetis-dev libgoogle-glog-dev libgflags-dev libgtest-dev libgmock-dev
+libglew-dev libsuitesparse-dev libceres-dev libopenimageio-dev openimageio-tools
+libcurl4-openssl-dev qt6-base-dev qt6-svg-dev libqt6opengl6-dev libgl1-mesa-dev
+libglu1-mesa-dev mesa-utils xvfb libxkbcommon-dev` plus **`libopencv-dev`**, needed on the
+first configure attempt exactly as the 2026-08-08 porter note predicted: without it,
+`find_package(OpenImageIO)` fails with imported target `OpenImageIO::OpenImageIO` referencing
+a non-existent `/usr/include/opencv4` include path. Not a COLMAP dependency in its own right,
+just an artifact of Ubuntu's OpenImageIO package export; confirms the trap is host-recipe
+knowledge, not tied to a specific prior host.
+
+### Build
+
+    cmake -S projects/colmap/src -B projects/colmap/src/build-hip-gui -GNinja \
+      -DCUDA_ENABLED=OFF -DHIP_ENABLED=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+      -DCMAKE_BUILD_TYPE=Release -DTESTS_ENABLED=ON -DGUI_ENABLED=ON \
+      -DCGAL_ENABLED=OFF -DDOWNLOAD_ENABLED=OFF -DONNX_ENABLED=OFF
+    -> "Enabling GPU support (OpenGL: ON, CUDA: OFF, HIP: ON)"
+
+    HIP_VISIBLE_DEVICES=0 utils/timeit.sh colmap compile -- \
+      cmake --build projects/colmap/src/build-hip-gui -j"$(nproc)"
+    -> 869/869 targets, exit 0, 239.19 s (fresh configure, not incremental -- new clone)
+
+### Test
+
+    HIP_VISIBLE_DEVICES=0 utils/timeit.sh colmap test -- \
+      xvfb-run -a ctest --test-dir projects/colmap/src/build-hip-gui -j4 --output-on-failure
+
+**162 of 162 pass, 7.30 s wall, no hang.** No Mesa/libgallium GL-teardown stall on this host
+this run (the intermittent hang recorded at gfx90a is a race, not deterministic here or
+there). Matches the last gfx90a baseline at this same head_sha (162/162) and the prior
+gfx1100 baseline at `0af9a2d6` (159/159) plus upstream main's own +3 new tests picked up by
+the merge -- no port regression.
+
+### Anti-no-op: kernel dispatches, not wall time
+
+    HIP_VISIBLE_DEVICES=0 AMD_LOG_LEVEL=3 xvfb-run -a \
+      projects/colmap/src/build-hip-gui/src/colmap/feature/sift_test
+
+32/32 pass, 2.95 s. `ShaderName :` dispatch counts (`__amd_rocclr_copyBuffer`/
+`copyBufferToImage` and templated `void` forms excluded from the compute-kernel tally):
+
+    ReduceHist x45, ComputeDOG x30, RowMatch x25, ColMatch x24, InitHist x18, ComputeKEY x18,
+    ListGen x14, MultiplyDescriptorGRay x12, MultiplyDescriptor x9, NormalizeDescriptor x5,
+    ComputeOrientation x5, MultiplyDescriptorG x4.
+
+Exact match, kernel-for-kernel and count-for-count, to every prior baseline on this project
+(gfx90a and this arch's own 2026-08-13 run). GPU bodies genuinely execute.
+
+### CUDA no-regression gate
+
+Already recorded at this head_sha by the gfx90a validator earlier today (`notes.md:2235`,
+all four targets built with nvcc 12.8.93 pinned to arch 80). Per the once-per-head_sha rule,
+skipped here.
+
+### Jargon and documentation
+
+    python3 utils/jargon.py --port colmap        -> jargon: clean
+
+`doc/install.rst:122-152` re-read on this host's clone: still documents the ROCm/HIP build
+(including the `rocm-sdk` auto-detect paragraph) in COLMAP's own house style, unchanged by
+this delta except for upstream's unrelated Boost-ABI wording (already noted by the gfx90a
+session).
+
+### Integrity
+
+    git -C projects/colmap/src status --porcelain  -> (empty), HEAD cfe7336fe0efc297...
+
+Fork tree clean throughout; no local edits made this session.
+
+### State recorded
+
+    linux-gfx1100.state = completed
+    linux-gfx1100.validated_sha = cfe7336fe0efc297cdf7e2520b87a6dac38e2bf6
+
+Real-GPU pass on a second wave32 architecture at fix round 2's tip, from a freshly cloned
+host with no prior colmap state -- confirms the build/test recipe in this file is
+self-contained and reproducible on a new machine, not an artifact of leftover host state. No
+skill promotion this round (the OpenCV/OpenImageIO trap and the Mesa teardown race are
+already documented; this run only reconfirms both).
