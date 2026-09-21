@@ -2171,3 +2171,115 @@ Checks run (for the record, not findings):
 - Commit hygiene: e454e412 title 42 chars, `[ROCm]`, AI disclosure + Test Plan, no agent
   trailer; cfe7336f is the maintainer's commit, authorship preserved. `jargon.py --port colmap`
   clean.
+
+## Validation 2026-09-21 (validator, linux-gfx90a, MI250X, GPU index 0, revalidate: fix round 2)
+
+Revalidation triggered by fix round 2 (`0af9a2d6` -> `cfe7336f` on `moat-fix-4635`, per
+status.json's `fix` block: merge of colmap main `7019dcc195` + maintainer nit commit
+`e30393b8`, review-passed above). `HIP_VISIBLE_DEVICES=0` for every GPU command;
+`rocm-smi --showproductname` confirmed GPU 0 is `gfx90a` (MI250X/MI250) before relying on it.
+Fork clone already checked out on `moat-fix-4635` at `cfe7336fe0efc297cdf7e2520b87a6dac38e2bf6`
+(porter's session earlier the same day); tree clean at session start.
+
+`classify` returned `class=mixed` (the merge touches hundreds of files via colmap main, well
+beyond the ROCm-relevant delta), which rules out the codeobj_diff carry-forward path per the
+dispatch instructions, so a full real-GPU run was done, not carried forward.
+
+### Build
+
+Reused the porter's `build-hip-gui` configure from earlier today (GUI ON, HIP ON, gfx90a,
+TheRock rocm-sdk 7.14.0 pip, no `/opt/rocm`) -- CMakeCache confirmed
+`CMAKE_HIP_ARCHITECTURES=gfx90a`, `HIP_ENABLED=ON`, `CUDA_ENABLED=OFF`, `GUI_ENABLED=ON`.
+
+    HIP_VISIBLE_DEVICES=0 utils/timeit.sh colmap compile -- \
+      cmake --build projects/colmap/src/build-hip-gui -j128
+    -> ninja: no work to do (build already current at cfe7336f from the porter's session)
+
+### Test
+
+    HIP_VISIBLE_DEVICES=0 utils/timeit.sh colmap test -- \
+      xvfb-run -a ctest --test-dir projects/colmap/src/build-hip-gui -j4 --output-on-failure
+
+First attempt hung: `feature/sift_test` stalled with 0.4% CPU for 18+ minutes after all 161
+other tests (of 162 total -- main added 3 tests since the last baseline of 159) had already
+passed by 15:55:57. Attached gdb (`thread apply all bt`) to the stuck PID and got an EXACT
+match to the pre-existing Mesa/libgallium GL-context-teardown deadlock recorded at
+`notes.md:668-686` (2026-08-08 review response): `__pthread_clockjoin_ex` ->
+`libgallium-25.2.8.so` (x4 frames) -> `libGLX_mesa.so.0` -> `XCloseDisplay` ->
+`QXcbBasicConnection::~QXcbBasicConnection()` -> ... -> `RunGpuTest`. Same fault class,
+same library versions, same call chain as before; not re-diagnosed from scratch, killed the
+hung process tree and retried per the documented `-j4` workaround (never a 100% fix, just the
+narrower race).
+
+Retry: **162 of 162 pass, 13.04 s wall, no hang.** `feature/sift_test` (2/162, 3.91 s),
+`mvs/gpu_mat_test` (15/162, 0.57 s), `util/opengl_utils_test` (18/162, 0.49 s) all pass.
+No regression versus the last gfx90a baseline (159/159 at `0af9a2d6`) -- the +3 total is
+upstream main's own new tests picked up by the merge, not a port change.
+
+### Anti-no-op: kernel dispatches, not wall time or ctest green
+
+    HIP_VISIBLE_DEVICES=0 AMD_LOG_LEVEL=3 xvfb-run -a \
+      projects/colmap/src/build-hip-gui/src/colmap/feature/sift_test
+
+32/32 `sift_test` cases pass. `ShaderName :` dispatch counts:
+
+    ReduceHist x45, ComputeDOG x30, RowMatch x25, ColMatch x24, InitHist x18, ComputeKEY x18,
+    ListGen x14, MultiplyDescriptorGRay x12, MultiplyDescriptor x9, NormalizeDescriptor x5,
+    ComputeOrientation x5, MultiplyDescriptorG x4 (plus FilterH/FilterV/DownsampleKernel/
+    UpsampleKernel collapsed under templated `void` names).
+
+Exact match, kernel-for-kernel and count-for-count, to every prior baseline on this project
+including the porter's own build earlier today at this same head_sha (`notes.md:2116-2119`).
+GPU bodies genuinely execute; not a green suite that skipped the compute path.
+
+### CUDA no-regression gate
+
+Not yet recorded at `cfe7336f` (prior CUDA gate entries are all at earlier shas: `4c531f5e`,
+`0af9a2d6`), so run fresh. No `CUDA_ARCHITECTURES native` hardcoded anywhere in the tree
+(checked). `/opt/conda/envs/cuda-12.8/bin/nvcc` (12.8.93), arch pinned to 80:
+
+    cmake -S projects/colmap/src -B projects/colmap/src/build-cuda -GNinja \
+      -DCUDA_ENABLED=ON -DHIP_ENABLED=OFF -DCMAKE_CUDA_ARCHITECTURES=80 \
+      -DCMAKE_CUDA_COMPILER=/opt/conda/envs/cuda-12.8/bin/nvcc \
+      -DCMAKE_BUILD_TYPE=Release -DTESTS_ENABLED=ON -DGUI_ENABLED=OFF \
+      -DCGAL_ENABLED=OFF -DDOWNLOAD_ENABLED=OFF -DONNX_ENABLED=OFF
+    -> "Enabling CUDA support (version: 12.8.93, archs: 80)", "Enabling GPU support
+       (OpenGL: OFF, CUDA: ON, HIP: OFF)"
+
+    utils/timeit.sh colmap cuda-compile -- cmake --build projects/colmap/src/build-cuda \
+      -j"$(nproc)" --target colmap_sift_gpu colmap_mvs_cuda colmap_feature_sift_test colmap_main
+
+All four targets built and linked with no errors: `libcolmap_sift_gpu.a`,
+`libcolmap_mvs_cuda.a`, `feature/sift_test`, `exe/colmap`. Compile-checked only (no NVIDIA GPU
+on this host); build directory removed afterward (throwaway, not committed). CUDA gate now
+recorded at this head_sha; a later validator at the same `cfe7336f` should skip it per the
+once-per-head_sha rule.
+
+### Jargon and documentation
+
+    python3 utils/jargon.py --port colmap        -> jargon: clean
+
+(This host resolved `--port` directly against the fix branch, unlike the 2026-08-14 session
+which needed `--commits`/`--diff`; either form was already confirmed clean by the reviewer.)
+
+`doc/install.rst:122-152` still documents the ROCm/HIP build including the `rocm-sdk`
+auto-detect paragraph. The delta touches `doc/install.rst` and `README.md`, but only for
+upstream main's unrelated Boost-ABI and copyright-line changes (`git diff 0af9a2d6..cfe7336f
+-- doc/install.rst README.md`); the ROCm section itself is untouched.
+
+### Integrity
+
+    git -C projects/colmap/src status --porcelain  -> (empty), HEAD cfe7336fe0efc297...
+
+Fork tree clean throughout; no local edits made this session (the merge/cherry-pick were the
+porter's, already pushed and reviewed).
+
+### State recorded
+
+    linux-gfx90a.state = completed
+    linux-gfx90a.validated_sha = cfe7336fe0efc297cdf7e2520b87a6dac38e2bf6
+
+Second real-GPU pass at fix round 2's tip (wave64 gate stays satisfied, now current at the new
+head_sha). No skill promotion this round: the Mesa teardown hang is already documented in the
+skill/notes from 2026-08-08 with the same stack, and this session's gdb trace only reconfirms
+it rather than adding anything generalizable.
