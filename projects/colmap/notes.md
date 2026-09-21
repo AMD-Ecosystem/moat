@@ -2143,3 +2143,31 @@ to a sha the fork does not have) and stage stays `porting` with the lock held by
 Side note: the first `set-state ... porting` push of port/colmap was refused by the MOAT pre-push
 `states`/`schema` gate on Velvet's approved `wave64` waiver, because this branch predated trunk's
 change making `wave64` waivable; `moatlib.py branch-sync --apply` merged trunk and the lock push landed.
+
+## Review 2026-09-21 (reviewer, linux-gfx90a): fix round 2 on moat-fix-4635 (cfe7336f)
+
+Scope: `git diff 0af9a2d6...cfe7336f` (merge e454e412 of colmap main 7019dcc195 + maintainer's
+nit commit e30393b8 cherry-picked as cfe7336f) and the effective upstream-PR diff
+`git diff 7019dcc195 cfe7336f` (25 files, +242/-107). No problems found; review passed.
+
+Checks run (for the record, not findings):
+- Tree identity: `cfe7336f^{tree}` = `refs/pull/4/head` (e30393b8) tree = `809a1660c842...`;
+  `git diff cfe7336f e30393b8` empty. Remote `moat-fix-4635` = cfe7336f; `moat-port` still 0af9a2d6.
+- No hunk lost: the +/- lines of `git diff d6d2bc8e 0af9a2d6` (old merge-base) minus
+  `dense_reconstruction_widget.cc` and `pycolmap/pipeline/mvs.cc` are identical to those of
+  `git diff 7019dcc195 e454e412`. Both dropped hunks already landed upstream via colmap#4640
+  (main carries the CUDA-or-HIP guards at widget:349 and mvs.cc:12,35).
+- Nit commit: CuTexImage PBO ctor `#else` branch is HIP-only (SIFTGPU_GL_INTEROP_ENABLED is
+  defined only for CUDA), CUDA path unchanged; the ctor has no callers in the tree, so the new
+  message cannot fire in COLMAP. `<iostream>` already included. Removed `cuda_to_hip.h` include
+  in feature_matching_utils.cc is safe on both toolchains: the file only calls
+  `SetBestCudaDevice`/`GetNumCudaDevices` from `colmap/util/cuda.h`. Test rename leaves no stale
+  `CreateSiftGPUMatcherCUDA` reference. ROCM_PATH comment matches the code: the config's
+  `set(... CACHE ...)` always creates the cache entry, so FindDependencies' env lookup is a
+  discarded default for consumers and only a pre-set `-DROCM_PATH` wins.
+- The 8 `nodiscard hipError_t` warnings (ProgramCU.cu:444,1239,1410,1413) are on original
+  SiftGPU lines (blame fe8f82ae/d3c8d5d45), no `-Werror` anywhere in the build: no action this
+  round (scope creep on an approved PR).
+- Commit hygiene: e454e412 title 42 chars, `[ROCm]`, AI disclosure + Test Plan, no agent
+  trailer; cfe7336f is the maintainer's commit, authorship preserved. `jargon.py --port colmap`
+  clean.
