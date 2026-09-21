@@ -25,6 +25,7 @@ would hand everything back anyway -- and the round trip costs more than doing it
     python3 utils/upstream.py --attention        # who is waiting on us
     python3 utils/upstream.py --fix-review       # staged fix rounds with no review PR open
     python3 utils/upstream.py --merge-fix        # approved fix rounds ready to fast-forward
+    python3 utils/upstream.py --drift            # maintained forks vs upstream's advance
     python3 utils/upstream.py --approvals        # approvals overtaken by a push or a body edit
     python3 utils/upstream.py --dry-run          # where our record disagrees with GitHub (incl. a moved PR head)
     python3 utils/moatlib.py waivers             # gate waivers waiting on a maintainer
@@ -35,7 +36,9 @@ asked us to stop is the one item here where continuing to work is worse than doi
 nothing. `orient.sh` names any port whose approval is standing and whose gates are
 met. `--review` is where work piles up: a port cannot be approved until its review PR
 exists, and nothing opens one automatically, so ports sit finished and unreviewable --
-the report names them all; do not trust any remembered count.
+the report names them all; do not trust any remembered count. A port whose earlier
+PR already merged reappears here as a FOLLOW-UP, tagged with the PR it follows, once
+new reviewed commits land past what that PR shipped (section 3).
 `--review --apply --name <p> --title '<t>' --body-file <f>` opens one. `--attention`
 lists open PRs where something needs a person: the PR no longer merges into its base
 (top of the list -- a conflict blocks the merge outright and no sha-comparing sweep
@@ -43,7 +46,10 @@ can see it), a maintainer asked for something, had the last word, or has gone qu
 `--fix-review` and `--merge-fix` are the two ends of a staged fix round (section 2);
 both test-merge the staged tip against the live upstream base, so a round that would
 flip the PR to CONFLICTING is caught before anyone approves it and again before the
-push -- a conflict there means the round must merge the base and resolve it. `--approvals` catches a review GitHub still shows as green over content
+push -- a conflict there means the round must merge the base and resolve it.
+`--drift` is the closed-PR counterpart of the conflict check: a maintained fork
+(section 3) has no live PR whose mergeable field anyone computes, so this sweep is
+the only thing that notices upstream moving against the port. `--approvals` catches a review GitHub still shows as green over content
 nobody approved. `--dry-run` is bookkeeping, and a HEAD-MOVED line in it is section
 2's maintainer-push case. The waiver listing is section 6: a waiver nobody has
 answered is a finished port that cannot be submitted.
@@ -250,16 +256,75 @@ tip re-enters the flow.
 If a maintainer signals they will not take the contribution, stop and record it rather
 than pushing. Record it with `moatlib.py set-pr-closed <name> --note "<why>"`, and if the
 project is settled for good ask for a disposition; a declined PR is a real result and
-belongs in the record.
+belongs in the record. One decline is not settled: a maintainer who closes the PR but
+points their users at the fork instead -- a README section, a closing comment naming the
+branch -- has adopted the fork BY REFERENCE, and that is the maintained-fork case in
+section 3, recorded by a person with `set-maintained`.
 
 ## 3. Merge and after
 
 On merge: `moatlib.py set-pr-merged <name>`.
 
+A merged PR is not the end of the port branch. When later work lands on it --
+reviewed and revalidated exactly like the first round, with the same gates binding
+at the new head -- the port is a FOLLOW-UP candidate and the whole submission shape
+repeats: `--review` lists it tagged with the finished PR, the review PR's diff is
+the delta past what that PR shipped, its title and body are the next upstream PR's
+verbatim, one `/moat approve` covers all three, and `--publish --apply` opens the
+next upstream PR after the same live re-checks. Nothing about the contract widens:
+the follow-up rides the same pre-authorized publish, and a stale platform or an
+unanswered waiver blocks it exactly as it would a first PR.
+
+Two preconditions are the follow-up's own. The record must say what the finished PR
+shipped -- `published_sha`, which `--dry-run` reports as BACKFILL where missing and
+`--apply` stamps from the live PR -- because that tip is the baseline the delta is
+judged and scanned against. And the fork's default branch must be fast-forwarded
+past the merge before the review PR opens: the review diff is judged against it,
+and an unsynced mirror replays the already-merged round in front of the reviewer
+(the tool refuses and says so; a squash-merged PR cannot be synced past and needs a
+person). Opening the review PR archives the finished PR into `pr_history`
+(`moatlib.py archive-pr` exists for recovery), and once the follow-up PR is open
+the branch is frozen again and maintainer requests go through the fix flow above.
+
 Landed work still needs tending. Upstream moves, and a port that worked six months ago can
 stop building. Periodically re-check merged projects: does the current upstream still build
 and pass on AMD hardware? This is the case the org fork ownership exists to support -- the
 fork is the place a fix gets prepared.
+
+### Maintained forks
+
+The other way a PR ends well: the maintainer declines the merge but points their users
+at the fork -- aihwkit is the origin case, IBM closing #770 while adding a README
+section that names `AMD-Ecosystem/aihwkit` `moat-port` as the way to run on AMD GPUs.
+The branch is then public API: people clone it by the name upstream printed, so it can
+never be renamed, rebased, or left to rot. A person records the ruling:
+
+    python3 utils/moatlib.py set-maintained <name> --evidence <URL> --by <who>
+
+From then on `pr_ready` refuses -- no follow-up PR re-offers what a maintainer
+declined -- the fork pre-push hook keeps `moat-port` frozen exactly as under an open
+PR, and `--drift` (in the checkup list above) watches upstream: how far its base
+branch has moved past the last sync, whether the merge would conflict, and whether
+its advance touches files the port changed. CONFLICT and OVERLAP both mean a sync
+round is due; BEHIND can still break the HIP build -- upstream editing a CUDA file
+the port compiles but never edited merges clean -- which is what the round's
+revalidation exists to catch. `--drift --apply` also fast-forwards the fork's
+default-branch mirror, which must track upstream or every compare goes stale.
+
+A sync round is a fix round with upstream's advance as its content, and it rides the
+same machinery end to end: `moatlib.py sync-branch <name>` stages `moat-sync-<sha7>`
+from the published tip and pins the upstream tip being absorbed; the porter MERGES
+that tip in (never a rebase -- it would rewrite the commits upstream tells people to
+clone), resolves, builds; head_sha follows the staging tip, so validated platforms
+flip to revalidate on their own; `--fix-review` opens the fork review PR, `/moat
+approve` gates it, and `--merge-fix --apply` fast-forwards `moat-port` -- then tags
+the tip `rocm-<date>`, so followers have fixed points to pin while the branch moves.
+There is rarely an `## Upstream reply` here: nobody asked for the round. The PR-flow
+states still bound the record: the project re-enters `porting` for the round and
+returns to `review-passed` after it, exactly as a fix round does.
+
+Upstream merging the port for real someday is the happy ending: a person records
+`set-pr-merged` and clears the ruling with `set-maintained <name> --clear --by <who>`.
 
 ## 4. Keeping the record straight
 

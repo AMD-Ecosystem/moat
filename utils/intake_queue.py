@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """The intake queue: one issue, N screened projects, one decision from a person.
 
 The 2026-08-06 dry run screened four projects and produced four pull requests,

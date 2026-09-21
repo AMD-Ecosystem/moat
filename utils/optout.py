@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Maintainers who asked not to receive pull requests from this effort.
 
 Anyone can say no, and saying it once has to be enough. This records the request and

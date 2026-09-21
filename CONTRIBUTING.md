@@ -188,6 +188,14 @@ together and one approval covers both. The title and body of a fix review PR are
 reply section is, and it ends at the next `##` heading so that what is written for our own
 eyes can sit in the same body without travelling with it.
 
+A port can also go upstream more than once. When reviewed, revalidated work lands on the
+port branch after its PR merged or closed, the same shape repeats from the top: a fork
+review PR carrying exactly the delta past what the finished PR shipped, one approval
+covering the code, the title and the body, and the same publishing step opening the next
+upstream PR. The finished PR moves into the record's history (`pr_history`) rather than
+blocking the route, and every gate binds at the new head exactly as it did for the first
+PR. The `moat-checkup` skill walks the preconditions.
+
 ## Who opens the upstream pull request
 
 An attended session on the maintainer's own machine, running one command -- the

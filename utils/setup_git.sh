@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 # Register the semantic status.json merge driver for this clone (idempotent).
 # Needed so .gitattributes 'merge=moat-status' takes effect on pull/merge.
 set -euo pipefail

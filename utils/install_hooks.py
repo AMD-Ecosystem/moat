@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Install MOAT's git hooks and the gh guard into this clone.
 
 Two gates, both of the same kind: a rule you cannot skip under time pressure beats one

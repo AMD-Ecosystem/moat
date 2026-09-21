@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 # Time one phase of work and append a record to projects/<project>/stats.jsonl.
 # Usage: utils/timeit.sh <project> <phase> -- <command...>
 # Phase is conventionally compile|test|misc; any label is kept and reported
