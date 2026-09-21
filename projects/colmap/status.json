@@ -7,13 +7,16 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-10T13:58:57Z",
-  "updated_at": "2026-09-21T15:50:09Z",
+  "updated_at": "2026-09-21T15:50:30Z",
   "head_sha": "cfe7336fe0efc297cdf7e2520b87a6dac38e2bf6",
   "depends_on": [],
   "fork_branch": "moat-port",
   "on_hold": false,
   "on_hold_reason": null,
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx90a",
+    "since": "2026-09-21T15:50:30Z"
+  },
   "waivers": {
     "windows": {
       "reason": "Windows gate approved with waiver: the ROCm/HIP port is functional on Windows gfx1151 -- the vast majority of Windows support is confirmed by tests (hardware AMD GL; gpu_mat 4/4, GPU SIFT matching 31/31, opengl_utils 3/3, 1530 assertions pass). The sole GPU-test failure, ExtractSiftFeaturesGPU.Nominal, is a pre-existing upstream COLMAP GL-context-teardown bug in code the port does not modify, filed upstream as https://github.com/colmap/colmap/issues/4633. Not a port defect.",
@@ -36,7 +39,7 @@
       "at": "2026-08-07T15:27:11Z"
     }
   },
-  "stage": "ported",
+  "stage": "reviewing",
   "platforms": {
     "linux-gfx90a": {
       "blocked": false,
@@ -44,7 +47,7 @@
       "validated_sha": "0af9a2d6c91e4723ed5c977fde5114c0d789ae10",
       "started_at": "2026-08-08T03:25:19Z",
       "completed_at": "2026-08-14T00:32:20Z",
-      "updated_at": "2026-09-21T15:50:09Z",
+      "updated_at": "2026-09-21T15:50:30Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -58,7 +61,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
+      "last_agent": "reviewer",
       "state": "completed"
     },
     "linux-gfx1100": {
