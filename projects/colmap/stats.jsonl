@@ -108,3 +108,7 @@
 {"kind":"phase","ts":"2026-08-14T00:30:40Z","phase":"compile","seconds":245.270,"exit":0,"cmd":"cmake --build projects/colmap/src/build-hip-gui -j128"}
 {"kind":"phase","ts":"2026-08-14T00:30:55Z","phase":"test","seconds":10.980,"exit":0,"cmd":"xvfb-run -a ctest --test-dir projects/colmap/src/build-hip-gui -j4 --output-on-failure"}
 {"kind":"session","ts":"2026-08-14T00:32:27Z","epoch":1786667547.752702203,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-09-21T15:18:53Z","phase":"compile","seconds":275.942,"exit":0,"cmd":"cmake --build projects/colmap/src/build-hip-gui -j128"}
+{"kind":"phase","ts":"2026-09-21T15:19:08Z","phase":"test","seconds":3.551,"exit":0,"cmd":"xvfb-run -a projects/colmap/src/build-hip-gui/src/colmap/feature/sift_test"}
+{"kind":"phase","ts":"2026-09-21T15:19:09Z","phase":"test","seconds":0.690,"exit":0,"cmd":"xvfb-run -a projects/colmap/src/build-hip-gui/src/colmap/util/opengl_utils_test"}
+{"kind":"phase","ts":"2026-09-21T15:19:10Z","phase":"test","seconds":0.663,"exit":0,"cmd":"xvfb-run -a projects/colmap/src/build-hip-gui/src/colmap/mvs/gpu_mat_test"}

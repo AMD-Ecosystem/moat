@@ -2068,3 +2068,78 @@ Second real-GPU pass at the fix round's tip (gfx1100 was first, 2026-08-13), and
 coverage's own instance of the gate. No skill promotion this round -- nothing here
 generalizes beyond what is already recorded for this project; the `libopencv-dev` trap and
 the TheRock `rocm-sdk` auto-detect path were already documented from the gfx1100 sessions.
+
+## Fix round 2 on linux-gfx90a 2026-09-21 (porter): merge colmap main + maintainer nits -- BLOCKED at push
+
+Context: upstream maintainer (ahojnnes) reviewed colmap/colmap#4635 ("Otherwise this looks good
+to me") and opened AMD-Ecosystem/colmap#4 (base `moat-port`), which REBASES our three commits
+onto colmap main `7019dcc195` and adds his commit `e30393b8` "[ROCm] Address review nits on HIP
+SIFT support". `moat-port` is frozen, so the round reproduces his tree as a MERGE on
+`moat-fix-4635` (plan approved by Jeff).
+
+### What was done (fork clone, local branch `moat-fix-4635`)
+
+    git fetch --prune origin                     # stale origin/moat-fix-4635 tracking ref pruned
+    git fetch origin '+refs/pull/4/head:refs/heads/fpr4'   # fpr4 = e30393b8, parent 02bece19a7
+    git fetch up main                            # 7019dcc195 is on colmap main
+    python3 utils/moatlib.py protect-fork colmap # pre-push hook installed (was missing)
+    git checkout moat-fix-4635                   # at 0af9a2d6 (published moat-port tip)
+    git merge --no-ff --no-commit 7019dcc195     # conflicts: opengl_utils_test.cc, pycolmap/pipeline/mvs.cc
+    git checkout 02bece19a7 -- src/colmap/util/opengl_utils_test.cc src/pycolmap/pipeline/mvs.cc
+    git diff --cached 02bece19a7                 # empty
+    git commit                                   # e454e412 "[ROCm] Merge main into the HIP SIFT branch"
+    git cherry-pick e30393b8                     # cfe7336f, author Johannes Schoenberger, message byte-identical
+
+Resolutions: `mvs.cc` = main's version unchanged (main restructured the file and already has the
+CUDA-or-HIP guard; the port's edit is superseded). `opengl_utils_test.cc` = main's content plus
+the port's `COLMAP_GUI_ENABLED` guard and `RunsThreadBody` test, as in the maintainer's rebase.
+
+Tree equality: `git rev-parse HEAD^{tree}` = `git rev-parse fpr4^{tree}` =
+`809a1660c842a0387d92cdb84d8ee1e6b345922a`. Local tip `cfe7336fe0efc297cdf7e2520b87a6dac38e2bf6`,
+strict descendant of `moat-port` 0af9a2d6.
+
+    python3 utils/jargon.py --port colmap        -> jargon: clean
+
+### Build and quick tests (MI250X gfx90a, TheRock rocm-sdk 7.14.0 pip, no /opt/rocm)
+
+Same configure as the prior gfx90a session (`build-hip-gui`, GUI ON, HIP ON, gfx90a). Main now
+builds a pinned Boost 1.92.0 from source during configure (colmap#4677); that worked with
+`-DDOWNLOAD_ENABLED=OFF` and needed no extra flags.
+
+    HIP_VISIBLE_DEVICES=0 utils/timeit.sh colmap compile -- cmake --build projects/colmap/src/build-hip-gui -j128
+    -> 752/752, exit 0. Configure: "Enabling GPU support (OpenGL: ON, CUDA: OFF, HIP: ON)"
+
+    HIP_VISIBLE_DEVICES=0 xvfb-run -a build-hip-gui/src/colmap/feature/sift_test        -> 32/32 PASSED
+    HIP_VISIBLE_DEVICES=0 xvfb-run -a build-hip-gui/src/colmap/util/opengl_utils_test   -> 4/4 PASSED (new RunsThreadBody included)
+    HIP_VISIBLE_DEVICES=0 xvfb-run -a build-hip-gui/src/colmap/mvs/gpu_mat_test         -> 4/4 PASSED
+
+Anti-no-op (`AMD_LOG_LEVEL=3`, `ShaderName :` counts on sift_test) matches every prior
+baseline: ReduceHist x45, ComputeDOG x30, RowMatch x25, ColMatch x24, InitHist x18, ComputeKEY
+x18, ListGen x14, MultiplyDescriptorGRay x12, MultiplyDescriptor x9, NormalizeDescriptor x5,
+ComputeOrientation x5, MultiplyDescriptorG x4, plus FilterH/FilterV in templated form.
+
+Warnings: 12 total. 8 are `-Wunused-value` "ignoring return value of type 'hipError_t' declared
+with 'nodiscard'" at `ProgramCU.cu:444,1239,1410,1413` -- original upstream SiftGPU lines
+(blame: fe8f82ae/d3c8d5d45), untouched by the port and by this round; ROCm 7.14 marks
+`hipError_t` nodiscard (the 2026-08-08 "no warnings" build was ROCm 7.2). Rest are Eigen/GCC
+maybe-uninitialized and an unused test helper in main's `delaunay_meshing_test.cc`. Not acted on.
+Full ctest and per-platform validation left to the validator.
+
+### BLOCKER: push rejected, token lacks `workflow` scope
+
+    git push origin moat-fix-4635:refs/heads/moat-fix-4635
+    ! [remote rejected] moat-fix-4635 -> moat-fix-4635 (refusing to allow an OAuth App to
+      create or update workflow `.github/workflows/build-docker.yml` without `workflow` scope)
+
+The merge necessarily carries main's changes to 6 files under `.github/workflows/`
+(build-docker/mac/pycolmap/ubuntu/windows.yml, install-ccache.ps1; +207/-138). This host's gh token
+has scopes `gist, read:org, repo`, no `workflow`. Needs a person: either grant the scope
+(`gh auth refresh -h github.com -s workflow`) or push the local branch from a host whose
+credentials have it. The pre-push freeze hook itself did not object (target is the staging
+branch). After the push lands: `advance-head colmap cfe7336fe0efc297cdf7e2520b87a6dac38e2bf6`,
+then `set-state colmap linux-gfx90a ported`. Until then head_sha stays 0af9a2d6 (not advanced
+to a sha the fork does not have) and stage stays `porting` with the lock held by linux-gfx90a.
+
+Side note: the first `set-state ... porting` push of port/colmap was refused by the MOAT pre-push
+`states`/`schema` gate on Velvet's approved `wave64` waiver, because this branch predated trunk's
+change making `wave64` waivable; `moatlib.py branch-sync --apply` merged trunk and the lock push landed.
