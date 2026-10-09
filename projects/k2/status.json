@@ -7,7 +7,7 @@
   "priority": 5.757,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-08-09T00:27:49Z",
+  "updated_at": "2026-10-09T15:40:27Z",
   "head_sha": "b6f7db06b05d92fd5bb5aede987e191793457e98",
   "pr_url": "https://github.com/k2-fsa/k2/pull/1353",
   "pr_number": 1353,
@@ -131,5 +131,6 @@
         "at": "2026-06-23T22:08:43Z"
       }
     }
-  }
+  },
+  "published_sha": "92912b1c12273c36368279ec4a3410e428503e20"
 }
