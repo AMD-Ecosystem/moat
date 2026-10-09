@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-03T23:28:39Z",
-  "updated_at": "2026-08-25T23:25:24Z",
+  "updated_at": "2026-10-09T15:38:05Z",
   "head_sha": "b8d2e9845c0146f2114d18810a54d90bac4e2588",
   "depends_on": [],
   "porting": null,
@@ -170,6 +170,7 @@
   "pr_url": "https://github.com/shixun404/TurboFNO/pull/4",
   "pr_number": 4,
   "pr_opened_at": "2026-08-25T23:25:24Z",
-  "pr_state": "open",
-  "published_sha": "b8d2e9845c0146f2114d18810a54d90bac4e2588"
+  "pr_state": "merged",
+  "published_sha": "b8d2e9845c0146f2114d18810a54d90bac4e2588",
+  "pr_merged_at": "2026-10-09T15:38:05Z"
 }
