@@ -7,7 +7,7 @@
   "priority": 3.907,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-08-07T07:04:59Z",
+  "updated_at": "2026-10-09T15:40:27Z",
   "head_sha": "93a838d776f5ffc1b4069291c7906129689ed1be",
   "pr_url": "https://github.com/ingowald/cudaKDTree/pull/40",
   "pr_number": 40,
@@ -175,5 +175,6 @@
         "at": "2026-06-11T22:18:52Z"
       }
     }
-  }
+  },
+  "published_sha": "93a838d776f5ffc1b4069291c7906129689ed1be"
 }
