@@ -7,7 +7,7 @@
   "priority": 6.361,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-08-20T16:22:05Z",
+  "updated_at": "2026-10-09T15:39:31Z",
   "head_sha": "444d12bbbbb625c50828cf509296c587fcdac674",
   "pr_url": "https://github.com/chrxh/alien/pull/710",
   "pr_number": 710,
@@ -158,5 +158,6 @@
       "state": "completed",
       "last_agent": "validator"
     }
-  }
+  },
+  "published_sha": "444d12bbbbb625c50828cf509296c587fcdac674"
 }
