@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-08T13:34:12Z",
-  "updated_at": "2026-08-21T04:33:05Z",
+  "updated_at": "2026-10-09T15:39:02Z",
   "head_sha": "87bc3e2d15775592f5045ea621e8d66d17cc557a",
   "depends_on": [],
   "pr_url": "https://github.com/Pointcept/Pointcept/pull/604",
@@ -157,5 +157,6 @@
     "arch": "linux-gfx90a",
     "since": "2026-08-20T20:57:48Z",
     "at": "2026-08-20T21:09:42Z"
-  }
+  },
+  "published_sha": "95f4a51cafc42523364ada3381e71a85a860cd68"
 }
