@@ -7,7 +7,7 @@
   "priority": 4.627,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-08-07T07:05:03Z",
+  "updated_at": "2026-10-09T15:40:27Z",
   "head_sha": "0d2e5711cf423e47065f83b96885e8f3c0eb23f6",
   "pr_url": "https://github.com/EMI-Group/evogp/pull/12",
   "pr_number": 12,
@@ -150,5 +150,6 @@
         "at": "2026-06-17T14:41:25Z"
       }
     }
-  }
+  },
+  "published_sha": "0d2e5711cf423e47065f83b96885e8f3c0eb23f6"
 }
