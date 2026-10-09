@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T23:23:31Z",
-  "updated_at": "2026-08-09T00:37:18Z",
+  "updated_at": "2026-10-09T15:40:56Z",
   "head_sha": "a0c404b71a19872c4d175f931378b74a682e3f09",
   "depends_on": [],
   "pr_url": "https://github.com/stotko/stdgpu/pull/484",
@@ -129,5 +129,6 @@
         "at": "2026-07-06T03:28:35Z"
       }
     }
-  }
+  },
+  "published_sha": "5e660960902821dbcb3b370b3e0cd2c66959bdea"
 }
