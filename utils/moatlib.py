@@ -3921,9 +3921,12 @@ def commit_to_branch(branch, files, message):
     env = {**os.environ, "GIT_INDEX_FILE": idx}
 
     def g(*args, stdin=None):
-        r = subprocess.run(["git", *args], cwd=str(REPO_ROOT), env=env, input=stdin,
-                           capture_output=True, text=True, check=True)
-        return r.stdout.strip()
+        # Bytes, not text mode: on Windows text mode turns every LF written to
+        # hash-object into CRLF, so a one-line record edit rewrites the whole file.
+        r = subprocess.run(["git", *args], cwd=str(REPO_ROOT), env=env,
+                           input=None if stdin is None else stdin.encode("utf-8"),
+                           capture_output=True, check=True)
+        return r.stdout.decode("utf-8").strip()
     try:
         g("read-tree", base)
         for path, content in files.items():
