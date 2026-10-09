@@ -2388,3 +2388,7 @@ host with no prior colmap state -- confirms the build/test recipe in this file i
 self-contained and reproducible on a new machine, not an artifact of leftover host state. No
 skill promotion this round (the OpenCV/OpenImageIO trap and the Mesa teardown race are
 already documented; this run only reconfirms both).
+
+## Upstream outcome (2026-10-09)
+
+colmap/colmap#4635 reads CLOSED on GitHub but the port landed. The maintainer (ahojnnes) approved it on 2026-09-24 with minor comments, then opened colmap/colmap#4795 from this PR's head with every commit retained, addressed the remaining review comments there (HIP no-device error mapping, runtime GPU-test skip, ROCM_PATH docs, stale "requires CUDA" wordings, `num_gpu_devices` rename, a ClangTidy CI failure), and merged it on 2026-10-01. #4635 was closed as superseded. Recorded as merged on jeffdaily's instruction; the reconciler will keep reporting a DRIFT line (record says merged, GitHub says CLOSED) because the recorded PR number is #4635.
