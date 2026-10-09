@@ -7,7 +7,7 @@
   "priority": 6.245,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-08-27T05:04:53Z",
+  "updated_at": "2026-10-09T15:38:33Z",
   "head_sha": "b87423d8e5cb4075386359cb4521eb8a14ffea2a",
   "pr_url": "https://github.com/LeelaChessZero/lc0/pull/2420",
   "pr_number": 2420,
@@ -22,7 +22,7 @@
       "refused_note": "Refused on the 2026-08-20 root-cause evidence, which falsified the waiver's own rationale. The obstacle is NOT the Windows ROCm toolchain and NOT a gfx-specific rocBLAS/Tensile kernel: it is a latent host-side stream-ordering race in lc0's own code. allocAndUpload (src/neural/backends/cuda/layers.cc) memcpys into the shared scratch buffer, launches copyTypeConverted on the legacy null stream, and returns without synchronising; every compute stream is created cudaStreamNonBlocking, so nothing orders that copy against the first evaluation, which overwrites the same scratch. Only the last upload of the last-constructed layer survives to be observed, which for a classic net with no moves-left head is the value head's 3-float bias ip2_val_b_. Windows only loses the race because its KMD defers submission; the Linux KFD path lands the copy immediately. Verified fix is one line -- cudaStreamSynchronize(0) after the copy -- taking the gate from 0/222 to 222/222 and the value error from 4.4e-02 to 6.0e-08. Do not waive a real, fixable bug in our own port. Land the fix as a moat-fix-2420 round against open PR #2420, revalidate, and take the windows gate honestly."
     }
   },
-  "pr_state": "open",
+  "pr_state": "merged",
   "license_clearance": {
     "approved_by": "jeffdaily",
     "at": "2026-08-06T02:33:28Z",
@@ -156,5 +156,6 @@
     "arch": "linux-gfx90a",
     "since": "2026-08-24T23:41:52Z",
     "at": "2026-08-24T23:46:04Z"
-  }
+  },
+  "pr_merged_at": "2026-10-09T15:38:33Z"
 }
