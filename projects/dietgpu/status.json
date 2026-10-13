@@ -7,7 +7,7 @@
   "priority": 4.496,
   "ext_type": "cmake",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-08-19T23:28:37Z",
+  "updated_at": "2026-10-13T23:56:43Z",
   "head_sha": "df33d83b6d1de3994f2505bd15a02008f4582bc7",
   "porting": null,
   "waivers": {},
@@ -155,5 +155,5 @@
       "state": "completed"
     }
   },
-  "review_pr": "https://github.com/AMD-Ecosystem/dietgpu/pull/1"
+  "review_pr": null
 }

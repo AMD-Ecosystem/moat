@@ -1341,3 +1341,28 @@ than a cleanup.
 
 Ruled `hold` by Jeff Daily 2026-08-19: do not rewrite history for this; record it where
 whoever preps the pull request will see it.
+
+## Upstream is archived: no upstream PR, the fork is the deliverable (2026-10-13)
+
+`gh api repos/facebookresearch/dietgpu` reports `archived: true` (repo metadata last
+changed 2026-07-28; last push 2026-03-18). An archived repository is read-only, so no
+pull request can be opened against it and `upstream.py --publish` can never succeed for
+this project. Nobody should wait for one.
+
+Ruled by Jeff Daily 2026-10-13:
+
+- Fork review PR https://github.com/AMD-Ecosystem/dietgpu/pull/1 closed unmerged, with
+  a comment saying why. It was neither approved (approval only authorizes a publish
+  that cannot happen) nor merged (fork `main` stays the unmodified upstream mirror and
+  the diff base). `review_pr` is cleared in the record.
+- `moat-port` is now the GitHub default branch of `AMD-Ecosystem/dietgpu`, so a visitor
+  lands on the port and its README "Building for AMD GPUs (ROCm/HIP)" subsection. This
+  is a deliberate exception to "the fork default branch remains an unmodified upstream
+  mirror". The recorded `fork_default_branch` stays `main`: the tooling reads that
+  field, not GitHub's live setting, as the mirror and diff base. Do not "repair" either.
+- This is not a `set-maintained` case: upstream never pointed its users at the fork.
+
+The commit-message offences recorded above (2026-08-19, ruled `hold`) are moot: no
+maintainer will read these commits as a pull request.
+
+Validation evidence is unchanged: all three required gates satisfied at `df33d83`.
