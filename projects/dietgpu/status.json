@@ -14,6 +14,82 @@
   "upstream_repo_id": 449427230,
   "stage": "review-passed",
   "platforms": {
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "a7c4674c62789743b9f8c3bb35aa1fa7bca4d24b",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:44:08Z",
+      "updated_at": "2026-06-25T22:06:41Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "a7c4674c62789743b9f8c3bb35aa1fa7bca4d24b",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:44:08Z"
+      }
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "38a99bda0da57d567e5465d63a83180b2eab7d35",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-10-14T01:55:07Z",
+      "updated_at": "2026-10-14T01:55:07Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed"
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "38a99bda0da57d567e5465d63a83180b2eab7d35",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-10-14T01:59:25Z",
+      "updated_at": "2026-10-14T01:59:25Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
+    },
     "windows-gfx1101": {
       "state": "completed",
       "blocked": false,
@@ -66,14 +142,14 @@
       },
       "last_agent": "validator"
     },
-    "windows-gfx1151": {
+    "linux-gfx950": {
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "38a99bda0da57d567e5465d63a83180b2eab7d35",
       "failed_sha": null,
       "started_at": null,
-      "completed_at": "2026-10-14T01:55:07Z",
-      "updated_at": "2026-10-14T01:55:07Z",
+      "completed_at": "2026-10-14T01:59:06Z",
+      "updated_at": "2026-10-14T01:59:06Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -87,7 +163,8 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "state": "completed"
+      "state": "completed",
+      "last_agent": "validator"
     },
     "linux-gfx90a": {
       "state": "completed",
@@ -116,59 +193,6 @@
         "method": "binary-equiv",
         "detail": "comment-header line-shift only; gfx90a+gfx1100 device code objects + exported symbols byte-identical at a7c4674 vs df33d83 (libgpu_ans: 162 exports, libgpu_float_compress: 332 exports)",
         "at": "2026-06-25T22:11:58Z"
-      }
-    },
-    "linux-gfx950": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "38a99bda0da57d567e5465d63a83180b2eab7d35",
-      "failed_sha": null,
-      "started_at": null,
-      "completed_at": "2026-10-14T01:59:06Z",
-      "updated_at": "2026-10-14T01:59:06Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "state": "completed",
-      "last_agent": "validator"
-    },
-    "windows-gfx1201": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "a7c4674c62789743b9f8c3bb35aa1fa7bca4d24b",
-      "started_at": null,
-      "completed_at": "2026-06-23T22:44:08Z",
-      "updated_at": "2026-06-25T22:06:41Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator",
-      "carry_forward": {
-        "to": "a7c4674c62789743b9f8c3bb35aa1fa7bca4d24b",
-        "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:44:08Z"
       }
     }
   },

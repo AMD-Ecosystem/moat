@@ -1510,6 +1510,118 @@ owed by whichever Linux host next carries nvcc.
 
 Recorded: linux-gfx950 `completed` at `38a99bd`. The gfx90a, gfx1100 and three Windows
 platforms derive `revalidate` from the head advance and are not touched here.
+## Validation 2026-10-14 (validator, linux-gfx942) -- first validation at 38a99bd
+
+Requested by Jeff Daily; headless fleet worker. Fork `moat-port` at exactly
+`38a99bda0da57d567e5465d63a83180b2eab7d35`, fresh clone, submodules initialized,
+`git status --porcelain` clean of tracked changes before and after (only untracked
+`build/` and `dietgpu/__pycache__/`). GPU: AMD Instinct MI300X HF, `gfx942:sramecc+:xnack-`
+(wave64), idle before the run, pinned by the dispatcher. No `/opt/rocm` in this
+container: ROCm is the Python wheel SDK 10.1.0 (HIP 7.16.26385, AMD clang 24.0.0git),
+CMake 3.31.6, Ninja, Python 3.11.17, torch 2.16.0a0+git6c3af02 (ROCm build).
+
+Build, with the PyTorch binding (the recipe from the 2026-10-13 section above):
+
+```
+cd projects/dietgpu/src
+git checkout 38a99bda0da57d567e5465d63a83180b2eab7d35
+git submodule update --init --recursive
+TP=$(cd /tmp && python -c 'import torch;print(torch.utils.cmake_prefix_path)')
+cmake -S . -B build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 "-DCMAKE_PREFIX_PATH=$TP;$(rocm-sdk path --root)"
+cmake --build build --target all -j 16
+```
+
+Configure 21 s, build 19 s, 63 ninja steps, exit 0. `libdietgpu.so` (the binding),
+`libgpu_ans.so`, `libgpu_float_compress.so`, `libdietgpu_utils.so` and the four gtest
+binaries all built. Only warnings: glog `VLOG`/`VLOG_IF` macro redefinition against
+torch's `logging_is_not_google_glog.h` while compiling `DietGpu.cpp` (8 warnings, host
+side, pre-existing on the CUDA build too), and TorchConfig's "library kineto not found".
+`CMAKE_POLICY_VERSION_MINIMUM` reports as unused with CMake 3.31; harmless.
+
+gtest (run directly, `ctest` discovers nothing under HIP, see the Test section):
+
+| binary | result | wall |
+|---|---|---|
+| ans_test | 4/4 PASSED | 575 ms |
+| ans_statistics_test | 4/4 PASSED | 1183 ms |
+| batch_prefix_sum_test | 2/2 PASSED | 575 ms |
+| float_test | 3/3 PASSED | 21883 ms |
+
+13/13 total, exit 0 each.
+
+Python binding tests, from the clone root (never from a PyTorch source checkout):
+
+```
+export DIETGPU_LIB=$PWD/build/lib/libdietgpu.so
+python -m unittest -v dietgpu/ans_test.py dietgpu/float_test.py
+```
+
+`Ran 10 tests ... OK`: 10/10 (TestANSCodec: test_codec, test_empty, test_split_compress,
+test_split_decompress; TestFloatCodec: test_codec, test_empty, test_large, test_simple,
+test_split_compress, test_split_decompress). Three tests print the upstream
+`StackDeviceMemory ... calling cudaMalloc` warning (temp memory sized 0 by the test);
+informational, same text as on CUDA.
+
+`python dietgpu/benchmark.py`, one run, verbatim output (GB/s; 128 MiB inputs for the
+16-bit types, 256 MiB for float32):
+
+```
+Float codec non-batched perf [128 * 512 * 1024] torch.bfloat16
+comp   time 0.211 ms B/W 635.0 GB/s, compression 134217728 -> 92033872 bytes (0.6857x)
+decomp time 0.194 ms B/W 691.9 GB/s
+Float codec batched perf [128, [512 * 1024]] torch.bfloat16
+comp   time 0.189 ms B/W 635.0 GB/s, compression 134217728 -> 92018624 bytes (0.6856x)
+decomp time 0.198 ms B/W 679.3 GB/s
+Float codec non-batched perf [128 * 512 * 1024] torch.float16
+comp   time 0.264 ms B/W 509.0 GB/s, compression 134217728 -> 117106112 bytes (0.8725x)
+decomp time 0.211 ms B/W 636.1 GB/s
+Float codec batched perf [128, [512 * 1024]] torch.float16
+comp   time 0.181 ms B/W 509.0 GB/s, compression 134217728 -> 117128880 bytes (0.8727x)
+decomp time 0.206 ms B/W 650.5 GB/s
+Float codec non-batched perf [128 * 512 * 1024] torch.float32
+comp   time 0.250 ms B/W 1072.0 GB/s, compression 268435456 -> 226252128 bytes (0.8429x)
+decomp time 0.302 ms B/W 888.2 GB/s
+Float codec batched perf [128, [512 * 1024]] torch.float32
+comp   time 0.239 ms B/W 1072.0 GB/s, compression 268435456 -> 226234896 bytes (0.8428x)
+decomp time 0.288 ms B/W 932.7 GB/s
+
+Raw ANS byte-wise non-batched perf [128 * 512 * 1024] torch.bfloat16
+comp   time 0.304 ms B/W 442.1 GB/s, compression 134217728 -> 111027088 bytes (0.8272x)
+decomp time 0.196 ms B/W 683.5 GB/s
+Raw ANS byte-wise batched perf [128, [512 * 1024]] torch.bfloat16
+comp   time 0.315 ms B/W 426.3 GB/s, compression 134217728 -> 111095776 bytes (0.8277x)
+decomp time 0.212 ms B/W 633.3 GB/s
+Raw ANS byte-wise non-batched perf [128 * 512 * 1024] torch.float16
+comp   time 0.249 ms B/W 539.4 GB/s, compression 134217728 -> 130665888 bytes (0.9735x)
+decomp time 0.220 ms B/W 609.6 GB/s
+Raw ANS byte-wise batched perf [128, [512 * 1024]] torch.float16
+comp   time 0.257 ms B/W 521.3 GB/s, compression 134217728 -> 130634480 bytes (0.9733x)
+decomp time 0.226 ms B/W 593.5 GB/s
+Raw ANS byte-wise non-batched perf [128 * 512 * 1024] torch.float32
+comp   time 0.558 ms B/W 481.1 GB/s, compression 268435456 -> 260831200 bytes (0.9717x)
+decomp time 0.462 ms B/W 581.2 GB/s
+Raw ANS byte-wise batched perf [128, [512 * 1024]] torch.float32
+comp   time 0.536 ms B/W 501.1 GB/s, compression 268435456 -> 260894480 bytes (0.9719x)
+decomp time 0.476 ms B/W 563.5 GB/s
+```
+
+Figures sit inside the MI300X min-max ranges in the 2026-10-13 table (the script
+quirks noted there still apply: batched float rows repeat the non-batched compress
+figure). Exit 0.
+
+Pre-completion checks: `python3 utils/jargon.py --port dietgpu` is clean (needs the
+fork's `main` fetched locally: `git fetch origin main:main`, or it cannot resolve the
+range). README documents the ROCm build and the `DIETGPU_LIB` binding path under
+"Building for AMD GPUs (ROCm/HIP)".
+
+cuda-not-validated at 38a99bd: this container has no CUDA toolkit (no
+`/opt/conda/envs/cuda-12.8`, no nvcc), so the CUDA-path compile check was not rerun.
+The last recorded nvcc check is the PR-prep one at `df33d83`; `6b8fd48` touches
+`dietgpu/CMakeLists.txt` and `DietGpu.cpp`, so a CUDA compile at `38a99bd` is still
+outstanding and belongs to whichever Linux host next validates with the toolkit.
+
+Recorded: `set-state dietgpu linux-gfx942 completed` (validated_sha 38a99bd).
 ## Revalidation 2026-10-14 (linux-gfx1100, full GPU run at 38a99bd)
 
 Platform: linux-gfx1100, AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32). Validator role, headless fleet worker.
