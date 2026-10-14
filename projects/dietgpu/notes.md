@@ -1366,3 +1366,52 @@ The commit-message offences recorded above (2026-08-19, ruled `hold`) are moot: 
 maintainer will read these commits as a pull request.
 
 Validation evidence is unchanged: all three required gates satisfied at `df33d83`.
+
+## PyTorch binding and benchmark.py under USE_HIP (2026-10-13)
+
+Requested by Jeff Daily. Two commits on top of `df33d83`, pushed to `moat-port`:
+
+- `6b8fd48` builds the PyTorch binding (`DietGpu.cpp`, `torch.ops.dietgpu.*`) under `USE_HIP`. Torch is optional on the HIP build: not found means only the binding is skipped, so the torch-free gtest build every earlier platform validated still configures. The Python files read the library path from `DIETGPU_LIB`.
+- `38a99bd` passes the `checksum` argument at the four `benchmark.py` call sites. Pre-existing upstream bug (stale since `0e2ccba`), also broken on CUDA; kept as its own commit.
+
+Neither commit has had a reviewer pass. `advance-head` moved `head_sha` to `38a99bd`, so every previously completed platform derives `revalidate`.
+
+Build recipe with the binding (container with the ROCm wheel SDK, no `/opt/rocm`):
+
+```
+TP=$(cd /tmp && python -c 'import torch;print(torch.utils.cmake_prefix_path)')
+mkdir build && cd build
+cmake .. -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+  "-DCMAKE_PREFIX_PATH=$TP;$(rocm-sdk path --root)"
+cmake --build . --target all -j 16
+for t in ans_test ans_statistics_test batch_prefix_sum_test float_test; do ./bin/$t; done
+cd ..
+export DIETGPU_LIB=$PWD/build/lib/libdietgpu.so
+python -m unittest -v dietgpu/ans_test.py dietgpu/float_test.py
+python dietgpu/benchmark.py
+```
+
+Do not run python with a PyTorch source checkout as the working directory.
+
+Evidence at exactly `38a99bd`, clean clone, no tracked file modified, ROCm 10.1.0 (HIP 7.16.26385), torch 2.16.0a0+git6c3af02. These runs are NOT recorded as platform validations; no validator role ran.
+
+| GPU | gtest | Python tests |
+|---|---|---|
+| AMD Instinct MI300X, gfx942 (wave64) | 13/13 | 10/10 |
+| AMD Instinct MI355X, gfx950 (wave64) | 13/13 | 10/10 |
+
+Also on gfx942 before the push: a configure with no Torch on `CMAKE_PREFIX_PATH` prints the skip message, defines no `dietgpu` target, and passes 13/13 gtests.
+
+`benchmark.py`, median of five runs (min-max), non-batched, GB/s. 128 MiB inputs for 16-bit types, 256 MiB for float32, N(0,1) data.
+
+| Codec, dtype | MI300X comp | MI300X decomp | MI355X comp | MI355X decomp |
+|---|---|---|---|---|
+| Raw ANS, bfloat16 | 436 (421-437) | 678 (635-691) | 490 (486-495) | 610 (608-623) |
+| Raw ANS, float16 | 524 (505-528) | 622 (604-632) | 627 (627-633) | 572 (569-575) |
+| Raw ANS, float32 | 485 (469-491) | 587 (574-597) | 569 (563-571) | 525 (523-532) |
+| Float, bfloat16 | 624 (501-630) | 684 (601-686) | 636 (633-642) | 632 (629-639) |
+| Float, float16 | 507 (493-508) | 629 (609-637) | 541 (539-550) | 609 (608-613) |
+| Float, float32 | 1074 (1049-1096) | 894 (882-904) | 1284 (1278-1291) | 919 (914-925) |
+
+Caveats: each timing is three iterations of a 0.2 to 0.5 ms kernel; the raw ANS rows report the last iteration, not a mean; the batched float rows print the non-batched compress figure (script quirks, untouched). MI300X run 4 was 3 to 20 percent slow on an idle GPU, cause not established. MI355X decodes 3 to 11 percent slower than MI300X on five of six rows while compressing faster; not investigated.
