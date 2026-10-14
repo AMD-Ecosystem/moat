@@ -14,33 +14,57 @@
   "upstream_repo_id": 449427230,
   "stage": "review-passed",
   "platforms": {
-    "linux-gfx1100": {
-      "state": "completed",
+    "linux-gfx1201": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "df33d83b6d1de3994f2505bd15a02008f4582bc7",
-      "started_at": "2026-06-02T06:00:00Z",
-      "completed_at": "2026-07-02T19:58:22Z",
-      "updated_at": "2026-07-02T19:58:22Z",
+      "validated_sha": "38a99bda0da57d567e5465d63a83180b2eab7d35",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-10-14T02:01:43Z",
+      "updated_at": "2026-10-14T02:01:43Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
         "wall_seconds": {
           "thinking": 0,
-          "compile": 24,
-          "test": 23,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "df33d83b6d1de3994f2505bd15a02008f4582bc7",
+      "started_at": "2026-06-02T00:52:55Z",
+      "completed_at": "2026-06-25T22:11:58Z",
+      "updated_at": "2026-06-25T22:11:58Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 11,
+          "test": 0,
           "misc": 0
         },
         "session_count": 1,
-        "first_session_at": "2026-06-02T06:00:00Z",
-        "last_session_at": "2026-06-02T06:35:00Z"
+        "first_session_at": "2026-06-02T05:00:00Z",
+        "last_session_at": "2026-06-02T05:30:00Z"
       },
       "last_agent": "validator",
       "carry_forward": {
         "to": "df33d83b6d1de3994f2505bd15a02008f4582bc7",
         "method": "binary-equiv",
-        "detail": "doc+comment-header delta a7c4674->df33d83 (README + copyright adds in cuda_to_hip.h/PtxUtils.cuh/DeviceDefs.cuh): kMaxWarpSize=64 unchanged on HIP; libgpu_ans.so (162 exports) + libgpu_float_compress.",
-        "at": "2026-07-02T19:58:22Z"
+        "detail": "comment-header line-shift only; gfx90a+gfx1100 device code objects + exported symbols byte-identical at a7c4674 vs df33d83 (libgpu_ans: 162 exports, libgpu_float_compress: 332 exports)",
+        "at": "2026-06-25T22:11:58Z"
       }
     },
     "windows-gfx1151": {
@@ -95,59 +119,6 @@
         "at": "2026-06-23T22:44:08Z"
       }
     },
-    "linux-gfx1201": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "38a99bda0da57d567e5465d63a83180b2eab7d35",
-      "failed_sha": null,
-      "started_at": null,
-      "completed_at": "2026-10-14T02:01:43Z",
-      "updated_at": "2026-10-14T02:01:43Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "state": "completed",
-      "last_agent": "validator"
-    },
-    "linux-gfx90a": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "df33d83b6d1de3994f2505bd15a02008f4582bc7",
-      "started_at": "2026-06-02T00:52:55Z",
-      "completed_at": "2026-06-25T22:11:58Z",
-      "updated_at": "2026-06-25T22:11:58Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 11,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 1,
-        "first_session_at": "2026-06-02T05:00:00Z",
-        "last_session_at": "2026-06-02T05:30:00Z"
-      },
-      "last_agent": "validator",
-      "carry_forward": {
-        "to": "df33d83b6d1de3994f2505bd15a02008f4582bc7",
-        "method": "binary-equiv",
-        "detail": "comment-header line-shift only; gfx90a+gfx1100 device code objects + exported symbols byte-identical at a7c4674 vs df33d83 (libgpu_ans: 162 exports, libgpu_float_compress: 332 exports)",
-        "at": "2026-06-25T22:11:58Z"
-      }
-    },
     "windows-gfx1101": {
       "state": "completed",
       "blocked": false,
@@ -176,6 +147,53 @@
         "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
         "at": "2026-06-23T22:44:08Z"
       }
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "38a99bda0da57d567e5465d63a83180b2eab7d35",
+      "started_at": "2026-06-02T06:00:00Z",
+      "completed_at": "2026-10-14T01:59:31Z",
+      "updated_at": "2026-10-14T01:59:31Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 24,
+          "test": 23,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-02T06:00:00Z",
+        "last_session_at": "2026-06-02T06:35:00Z"
+      },
+      "last_agent": "validator"
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "38a99bda0da57d567e5465d63a83180b2eab7d35",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-10-14T01:59:25Z",
+      "updated_at": "2026-10-14T01:59:25Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
     }
   },
   "no_upstream": {
