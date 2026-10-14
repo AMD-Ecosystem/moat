@@ -1427,3 +1427,57 @@ Tests (`HIP_VISIBLE_DEVICES=0`): ans_test 4/4, ans_statistics_test 4/4, batch_pr
 Optional binding attempt: not tried, no PyTorch of any kind is installed on this host (`import torch` raises ModuleNotFoundError in both the TheRock venv and system Python 3.13). The binding is optional, so this does not affect the gate; the Windows binding build under clang-cl remains unverified.
 
 CUDA gate: Windows host, no toolkit; not re-run (the 6b8fd48 CUDA path is covered by whatever Linux arch validates first). Jargon: `utils/jargon.py --port dietgpu` clean. Documentation: README.md gained the ROCm/Torch section in 6b8fd48.
+## Validation 2026-10-14 (validator, linux-gfx1201)
+
+Fork commit `38a99bda0da57d567e5465d63a83180b2eab7d35` (`moat-port` tip), fresh clone, `git status --porcelain` showed only untracked `build/` and `dietgpu/__pycache__/` before and after. This is the first validation of `linux-gfx1201` and the first platform validation at `38a99bd`; the gtest gate and the PyTorch binding were both run.
+
+Environment: AMD Radeon AI PRO R9700 (gfx1201, wave32), amdgpu 6.19.14, kernel 6.11.0; ROCm wheel SDK 10.1.0 with no `/opt/rocm` (HIP 7.16.26385, AMD clang 24.0.0git); torch 2.16.0a0+git6c3af02 (HIP build); cmake 3.31.6, ninja 1.13.0; Python 3.11.17.
+
+```
+cd projects/dietgpu/src   # clone of AMD-Ecosystem/dietgpu at 38a99bd, submodules initialized
+TP=$(cd /tmp && python -c 'import torch;print(torch.utils.cmake_prefix_path)')
+cmake -S . -B build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 "-DCMAKE_PREFIX_PATH=$TP;$(rocm-sdk path --root)"
+cmake --build build --target all -j 16
+for t in ans_test ans_statistics_test batch_prefix_sum_test float_test; do ./build/bin/$t; done
+export DIETGPU_LIB=$PWD/build/lib/libdietgpu.so
+python -m unittest -v dietgpu/ans_test.py dietgpu/float_test.py
+python dietgpu/benchmark.py
+```
+
+Configure 9 s, build 15 s (63 ninja steps, `libdietgpu.so` linked; TorchConfig warns `library kineto not found`, harmless). `llvm-objdump --offloading build/lib/libgpu_ans.so` extracts three `hip-amdgcn-amd-amdhsa--gfx1201` code objects (it writes them as files next to the library in this LLVM; delete them afterwards).
+
+| Suite | Result |
+|---|---|
+| ans_test | 4/4 PASS (ZeroSized, BatchPointer, BatchPointerLarge, BatchStride) |
+| ans_statistics_test | 4/4 PASS (Histogram, Normalization, Normalization_NonZero, Normalization_EqualWeight) |
+| batch_prefix_sum_test | 2/2 PASS (OneLevel, TwoLevel) |
+| float_test | 3/3 PASS (Batch, LargeBatch, BatchSize1), 17.5 s |
+| gtest total | 13/13 |
+| Python `ans_test.py` + `float_test.py` | 10/10 OK (`Ran 10 tests`, exit 0) |
+| `benchmark.py` | ran to completion, exit 0 |
+
+The Python tests print `WARNING: StackDeviceMemory: attempting to allocate 256 bytes with 0 bytes available; calling cudaMalloc` on the first allocation of three tests; upstream's own message for the zero-sized temp stack, not a failure.
+
+`benchmark.py` output, one run, GB/s (128 MiB inputs for 16-bit types, 256 MiB for float32):
+
+| Codec, dtype | comp ms | comp GB/s | decomp ms | decomp GB/s | ratio |
+|---|---|---|---|---|---|
+| Float non-batched, bfloat16 | 0.805 | 166.7 | 0.462 | 290.2 | 0.6895 |
+| Float batched, bfloat16 | 0.834 | 166.7 | 0.453 | 296.3 | 0.6895 |
+| Float non-batched, float16 | 0.966 | 139.0 | 0.519 | 258.5 | 0.8763 |
+| Float batched, float16 | 0.968 | 139.0 | 0.513 | 261.8 | 0.8766 |
+| Float non-batched, float32 | 1.672 | 160.5 | 1.080 | 248.6 | 0.8449 |
+| Float batched, float32 | 1.512 | 160.5 | 1.059 | 253.6 | 0.8448 |
+| Raw ANS non-batched, bfloat16 | 1.378 | 97.4 | 0.481 | 279.1 | 0.8351 |
+| Raw ANS batched, bfloat16 | 1.336 | 100.5 | 0.481 | 279.2 | 0.8356 |
+| Raw ANS non-batched, float16 | 1.243 | 108.0 | 0.531 | 252.8 | 0.9813 |
+| Raw ANS batched, float16 | 1.238 | 108.4 | 0.530 | 253.1 | 0.9811 |
+| Raw ANS non-batched, float32 | 2.647 | 101.4 | 1.034 | 259.7 | 0.9793 |
+| Raw ANS batched, float32 | 2.663 | 100.8 | 1.075 | 249.7 | 0.9794 |
+
+Same script quirks as the 2026-10-13 MI300X/MI355X runs (batched float rows print the non-batched compress bandwidth). Roughly a third of the MI300X figures, consistent with the R9700's lower memory bandwidth; not investigated.
+
+Pre-completion checks: `python3 utils/jargon.py --port dietgpu` is clean (it needs a local `main` ref in the clone: `git fetch origin main:main`). README documents the binding build and the `DIETGPU_LIB` test commands under "Building for AMD GPUs (ROCm/HIP)" (added by `6b8fd48`). `cuda-not-validated: no CUDA toolkit on this host` (no `/opt/conda`, no nvcc); the last CUDA-path compile check in these notes is at `df33d83`, so the two new commits have not been nvcc-compiled anywhere yet.
+
+Harness gotcha: `utils/timeit.sh` changes directory to the MOAT root before running the command, so `python -m unittest dietgpu/ans_test.py` with a relative path fails with `No module named 'dietgpu/ans_test'`. Wrap it as `bash -c "cd <src> && ..."` (the 0.03 s exit-1 test phase in stats.jsonl is that mistake, not a GPU failure).
