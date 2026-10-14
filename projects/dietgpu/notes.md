@@ -1487,3 +1487,62 @@ Other checks:
 - `python3 utils/jargon.py --port dietgpu`: clean (needed `git fetch origin main:main` in the clone first; the clone had only `moat-port` checked out).
 - README documents the ROCm build and, since 6b8fd48, the binding (`CMAKE_PREFIX_PATH` from `torch.utils.cmake_prefix_path`, `DIETGPU_LIB` for the Python files).
 - cuda-not-validated at 38a99bd on this host: no CUDA toolkit in this container (`/opt/conda/envs/cuda-12.8/bin/nvcc` absent, no conda). The CUDA passthrough gate for these two commits still needs a host with nvcc; the df33d83 nvcc check above does not cover the binding CMake change.
+
+## CUDA-path compile check at 38a99bd (2026-10-13)
+
+Requested by Jeff Daily. Not a platform validation; no platform state was touched. Nobody had compiled the CUDA path since the df33d83 check, and `6b8fd48` and `38a99bd` touch `dietgpu/CMakeLists.txt`, `dietgpu/DietGpu.cpp` and `dietgpu/utils/cuda_to_hip.h`. Host: Ubuntu 24.04 container on a MI355X host, no NVIDIA GPU, no system `nvcc`, nothing run. Fresh clone of `AMD-Ecosystem/dietgpu` at exactly `38a99bda0da57d567e5465d63a83180b2eab7d35`, submodules initialized (glog `6434410`, googletest `e2239ee`); `git status --porcelain` empty before and after every step.
+
+Toolkit: NVIDIA CUDA 12.9.2 redistributables for linux-x86_64 from `https://developer.download.nvidia.com/compute/cuda/redist/` (manifest `redistrib_12.9.2.json`), unpacked into one private root under `/tmp` with `tar --strip-components=1`; sha256 verified against the manifest. Nothing installed into the shared image or Python environment.
+
+| Archive | Version | Path under the redist root |
+|---|---|---|
+| cuda_nvcc | 12.9.86 | `cuda_nvcc/linux-x86_64/cuda_nvcc-linux-x86_64-12.9.86-archive.tar.xz` |
+| cuda_cudart | 12.9.79 | `cuda_cudart/linux-x86_64/cuda_cudart-linux-x86_64-12.9.79-archive.tar.xz` |
+| cuda_cccl | 12.9.27 | `cuda_cccl/linux-x86_64/cuda_cccl-linux-x86_64-12.9.27-archive.tar.xz` |
+
+`nvcc --version`: release 12.9, V12.9.86. Host compiler gcc 13.3.0 (Ubuntu 13.3.0-6ubuntu2~24.04.1). Two toolkit quirks worth knowing: the three archives are enough for compile-only, and for CMake's CUDA language check a `lib64 -> lib` symlink inside the private root is needed because nvcc's link step looks in `lib64` while the redist archive ships `lib`.
+
+glog generated headers (the df33d83 note did not say how they were supplied): configure the submodule standalone, which generates `glog/export.h`, `logging.h`, `raw_logging.h`, `stl_logging.h`, `vlog_is_on.h` into the build dir; the non-generated `glog/log_severity.h` and `platform.h` come from `third_party/glog/src`.
+
+```
+cmake -S third_party/glog -B <GLOG_BUILD> -DWITH_GFLAGS=OFF -DBUILD_TESTING=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+```
+
+### Compiled: the six codec translation units (USE_HIP undefined)
+
+From the clone root, `nvcc` on PATH from the private root:
+
+```
+nvcc -c -std=c++17 -arch=sm_70 -I. -Ithird_party/glog/src -I<GLOG_BUILD> -o <OBJ>/GpuANSEncode.o dietgpu/ans/GpuANSEncode.cu
+nvcc -c -std=c++17 -arch=sm_70 -I. -Ithird_party/glog/src -I<GLOG_BUILD> -o <OBJ>/GpuANSDecode.o dietgpu/ans/GpuANSDecode.cu
+nvcc -c -std=c++17 -arch=sm_70 -I. -Ithird_party/glog/src -I<GLOG_BUILD> -o <OBJ>/GpuANSInfo.o dietgpu/ans/GpuANSInfo.cu
+nvcc -c -std=c++17 -arch=sm_70 -I. -Ithird_party/glog/src -I<GLOG_BUILD> -o <OBJ>/GpuFloatCompress.o dietgpu/float/GpuFloatCompress.cu
+nvcc -c -std=c++17 -arch=sm_70 -I. -Ithird_party/glog/src -I<GLOG_BUILD> -o <OBJ>/GpuFloatDecompress.o dietgpu/float/GpuFloatDecompress.cu
+nvcc -c -std=c++17 -arch=sm_70 -I. -Ithird_party/glog/src -I<GLOG_BUILD> -o <OBJ>/GpuFloatInfo.o dietgpu/float/GpuFloatInfo.cu
+```
+
+| Translation unit | Result | Output |
+|---|---|---|
+| dietgpu/ans/GpuANSEncode.cu | PASS (exit 0) | only the nvcc sm_70 deprecation warning |
+| dietgpu/ans/GpuANSDecode.cu | PASS (exit 0) | same |
+| dietgpu/ans/GpuANSInfo.cu | PASS (exit 0) | same |
+| dietgpu/float/GpuFloatCompress.cu | PASS (exit 0) | same |
+| dietgpu/float/GpuFloatDecompress.cu | PASS (exit 0) | same |
+| dietgpu/float/GpuFloatInfo.cu | PASS (exit 0) | same |
+
+The warning on every unit, verbatim, is from the toolkit, not the source: `nvcc warning : Support for offline compilation for architectures prior to '<compute/sm/lto>_75' will be removed in a future release (Use -Wno-deprecated-gpu-targets to suppress warning).` No errors, no other warnings. None of these six units nor the headers they pull in changed between df33d83 and 38a99bd (`git diff --stat df33d83 38a99bd` lists only README.md, dietgpu/CMakeLists.txt, dietgpu/DietGpu.cpp, three .py files, and dietgpu/utils/cuda_to_hip.h), so this is a re-confirmation with a newer toolkit than the 12.0.140 used at df33d83. `cuda_to_hip.h` is reached only through the HIP force-include and the `hip_compat/` shims, neither of which is on the CUDA path; its one added line (`cudaMemcpyDeviceToDevice`) cannot affect the NVIDIA build.
+
+### Read and resolved, not compiled: dietgpu/DietGpu.cpp
+
+Needs a CUDA PyTorch, which this container does not have; it was not built against the ROCm PyTorch. `git diff df33d83 38a99bd -- dietgpu/DietGpu.cpp` is four added lines: the existing `#include <ATen/cuda/CUDAContext.h>` is now the `#else` branch of `#if defined(USE_HIP)` ... `#endif`, with `<ATen/hip/HIPContext.h>` in the HIP branch. df33d83's version contains no `USE_HIP` at all. A small script resolving only the `USE_HIP` conditionals (USE_HIP undefined; every other line and every other directive passed through unchanged) was applied to both versions: the df33d83 output equals its input byte for byte, and the 38a99bd output equals the df33d83 file byte for byte (same sha256), hence token for token. The file otherwise did not change.
+
+### CMake control flow in dietgpu/ with USE_HIP off: run, not only read
+
+Reading first: at df33d83 the directory is `if(NOT USE_HIP)` around `find_package(Torch REQUIRED)`, `add_library(dietgpu SHARED DietGpu.cpp)`, `add_dependencies`, `target_link_libraries(dietgpu PRIVATE gpu_float_compress glog::glog)`, `target_include_directories`. At 38a99bd those five commands are unchanged and unconditional; the `if(USE_HIP)` ... `else()` picks `find_package(Torch REQUIRED)` on the CUDA branch, and a trailing `if(USE_HIP)` block (the `TORCH_LIBRARIES` link) is skipped. The `unset(CMAKE_HIP_ARCHITECTURES)`, `LANGUAGE HIP`, `CMAKE_HIP_STANDARD 20` and `USE_ROCM=1` lines are inside the HIP branch.
+
+Then run, three configures with the private toolkit (`-DCMAKE_CUDA_COMPILER=<ROOT>/bin/nvcc -DCUDAToolkit_ROOT=<ROOT> -DCUDA_TOOLKIT_ROOT_DIR=<ROOT> -DUSE_HIP=OFF -G Ninja -DCMAKE_POLICY_VERSION_MINIMUM=3.5`, CMake 3.31.6), each with `--trace-expand --trace-source=<src>/dietgpu/CMakeLists.txt`:
+
+1. Real CUDA-branch configure at 38a99bd, no Torch: the CUDA language is identified (`NVIDIA 12.9.86 with host compiler GNU 13.3.0`), `find_package(CUDA)` finds the root, `Automatic GPU detection failed. Building for common architectures.` (no NVIDIA GPU), glog and googletest configure, then `dietgpu/CMakeLists.txt:17 (find_package)` fails: no `TorchConfig.cmake`. The trace shows exactly `if(USE_HIP)`, `else()`, `find_package(Torch REQUIRED)`, i.e. the CUDA branch is taken. Stopping here is an environment limit (no CUDA PyTorch), not a finding about the port.
+2. and 3. The same configure at df33d83 (a worktree of the same clone, submodules initialized, tracked files clean) and at 38a99bd, each with a stub `TorchConfig.cmake` that only sets `Torch_FOUND`, `TORCH_INCLUDE_DIRS=/stub/torch/include` and `TORCH_LIBRARIES=/stub/torch/lib/libtorch.so` so `find_package` succeeds. This stub is not a PyTorch; it exists only so the rest of the directory executes. Both configures complete (`Configuring done`, `Generating done`, exit 0). The two traces, after stripping path and line number, execute the same five effectful commands with identical arguments; the only differing lines are the control-flow lines `if(NOT USE_HIP)` versus `if(USE_HIP)` / `else()` / trailing `if(USE_HIP)`. The two generated `build.ninja` files (2612 lines each) are identical after normalizing the source and build directory paths, and neither contains `USE_ROCM` or the stub torch library. The `DietGpu.cpp` compile rule at 38a99bd is CXX with `-std=gnu++14`, `-Ddietgpu_EXPORTS`, the source root, the torch include dir, the CUDA include dir and glog, the same as at df33d83.
+
+Verdict: at 38a99bd the CUDA path compiles for the six codec units, `DietGpu.cpp` is unchanged for the NVIDIA build, and the CUDA-branch CMake logic produces the same build as at df33d83. Not covered, same as at df33d83: linking, running, and compiling `DietGpu.cpp` against a real CUDA PyTorch.
