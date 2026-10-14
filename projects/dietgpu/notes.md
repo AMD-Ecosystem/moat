@@ -1427,3 +1427,86 @@ Tests (`HIP_VISIBLE_DEVICES=0`): ans_test 4/4, ans_statistics_test 4/4, batch_pr
 Optional binding attempt: not tried, no PyTorch of any kind is installed on this host (`import torch` raises ModuleNotFoundError in both the TheRock venv and system Python 3.13). The binding is optional, so this does not affect the gate; the Windows binding build under clang-cl remains unverified.
 
 CUDA gate: Windows host, no toolkit; not re-run (the 6b8fd48 CUDA path is covered by whatever Linux arch validates first). Jargon: `utils/jargon.py --port dietgpu` clean. Documentation: README.md gained the ROCm/Torch section in 6b8fd48.
+## Validation 2026-10-14 (validator, linux-gfx950) -- first validation at 38a99bd
+
+Host: AMD Instinct MI355X, gfx950 (wave64), Ubuntu 24.04.5, no `/opt/rocm`; ROCm is the
+Python wheel SDK (`rocm-sdk version` 10.1.0, HIP 7.16.26385, AMD clang 24.0.0git), CMake
+3.31.6, Ninja, Python 3.11.17, torch 2.16.0a0+git6c3af02 (HIP 7.16.26385). One GPU
+pinned by the dispatcher (`HIP_VISIBLE_DEVICES=1`), confirmed idle (`amd-smi metric`
+0 percent GFX activity, 283 MB VRAM used) before the run. `ulimit -c 0`, `-j 16`.
+
+Fresh clone of the fork at exactly `38a99bd`, submodules initialized; `git status
+--porcelain` was empty before the run and shows only untracked `build/` and
+`dietgpu/__pycache__/` after it. No source edit, nothing pushed to the fork.
+
+Build (binding enabled: Torch and the ROCm SDK on `CMAKE_PREFIX_PATH`):
+
+```
+TP=$(cd /tmp && python -c 'import torch;print(torch.utils.cmake_prefix_path)')
+cmake -S . -B build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx950 \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+  "-DCMAKE_PREFIX_PATH=$TP;$(rocm-sdk path --root)"
+cmake --build build --target all -j 16
+```
+
+Configure 8 s, build 63/63 steps in 11 s. `libdietgpu.so` (the binding) links.
+`llvm-objdump --offloading build/lib/libgpu_ans.so` shows only `gfx950` code objects.
+Warnings only: glog's `VLOG`/`VLOG_IF` macros redefined over
+`c10/util/logging_is_not_google_glog.h` in `DietGpu.cpp` (8 host warnings), and
+TorchConfig's "library kineto not found". Neither affects the build.
+`CMAKE_POLICY_VERSION_MINIMUM` reports unused with this CMake, harmless.
+
+gtests, run directly (ctest discovers nothing under the HIP language build, as before):
+
+```
+for t in ans_test ans_statistics_test batch_prefix_sum_test float_test; do ./build/bin/$t; done
+```
+
+| suite | result | wall |
+|---|---|---|
+| ans_test | 4/4 PASSED | 0.3 s |
+| ans_statistics_test | 4/4 PASSED | 0.4 s |
+| batch_prefix_sum_test | 2/2 PASSED | 0.2 s |
+| float_test | 3/3 PASSED | 16.7 s |
+
+13/13.
+
+Python binding tests:
+
+```
+DIETGPU_LIB=$PWD/build/lib/libdietgpu.so python -m unittest -v dietgpu/ans_test.py dietgpu/float_test.py
+```
+
+`Ran 10 tests in 0.242s`, `OK` (10/10): ans_test codec, empty, split_compress,
+split_decompress; float_test codec, empty, large, simple, split_compress, split_decompress.
+The `StackDeviceMemory ... calling cudaMalloc` warnings are the upstream message for a
+zero-sized temp stack, not a failure.
+
+`DIETGPU_LIB=$PWD/build/lib/libdietgpu.so python dietgpu/benchmark.py`, one run, GB/s
+(script quirks as described in the 2026-10-13 section: the batched float rows repeat the
+non-batched compress figure):
+
+| codec, dtype | non-batched comp | non-batched decomp | batched comp | batched decomp | ratio |
+|---|---|---|---|---|---|
+| Float, bfloat16 | 612.5 | 625.4 | 612.5 | 596.8 | 0.6857x |
+| Float, float16 | 547.8 | 611.9 | 547.8 | 572.5 | 0.8724x |
+| Float, float32 | 1269.1 | 932.2 | 1269.1 | 878.7 | 0.8428x |
+| Raw ANS, bfloat16 | 489.3 | 604.1 | 482.2 | 581.3 | 0.8272x |
+| Raw ANS, float16 | 626.8 | 584.2 | 671.6 | 548.2 | 0.9737x |
+| Raw ANS, float32 | 569.9 | 524.0 | 557.4 | 517.4 | 0.9717x |
+
+Within the MI355X ranges recorded on 2026-10-13.
+
+Pre-completion checks: `python3 utils/jargon.py --port dietgpu` reports `jargon: clean`
+(the clone needs a local `main` ref for the range; `git branch main origin/main` after a
+single-branch clone). README documents the ROCm build and the binding under "Building
+for AMD GPUs (ROCm/HIP)".
+
+cuda-not-validated: this container has no CUDA toolkit (no nvcc, no conda), and the
+headless constraints forbid installing one; the CUDA compile gate was last run at
+`df33d83` (nvcc section above). `6b8fd48` touches `dietgpu/CMakeLists.txt`,
+`DietGpu.cpp` and the Python files, so a CUDA-side configure at `38a99bd` is still
+owed by whichever Linux host next carries nvcc.
+
+Recorded: linux-gfx950 `completed` at `38a99bd`. The gfx90a, gfx1100 and three Windows
+platforms derive `revalidate` from the head advance and are not touched here.
