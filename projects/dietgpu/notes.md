@@ -1427,3 +1427,63 @@ Tests (`HIP_VISIBLE_DEVICES=0`): ans_test 4/4, ans_statistics_test 4/4, batch_pr
 Optional binding attempt: not tried, no PyTorch of any kind is installed on this host (`import torch` raises ModuleNotFoundError in both the TheRock venv and system Python 3.13). The binding is optional, so this does not affect the gate; the Windows binding build under clang-cl remains unverified.
 
 CUDA gate: Windows host, no toolkit; not re-run (the 6b8fd48 CUDA path is covered by whatever Linux arch validates first). Jargon: `utils/jargon.py --port dietgpu` clean. Documentation: README.md gained the ROCm/Torch section in 6b8fd48.
+## Revalidation 2026-10-14 (linux-gfx1100, full GPU run at 38a99bd)
+
+Platform: linux-gfx1100, AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32). Validator role, headless fleet worker.
+Previous validated_sha: df33d83. New HEAD: 38a99bd (two commits: 6b8fd48 PyTorch binding under USE_HIP, 38a99bd benchmark.py checksum argument).
+State: revalidate -> completed (validated_sha=38a99bd). No carry-forward: the delta adds compiled content (the binding), so a real GPU run was required.
+
+Toolchain: ROCm wheel SDK 10.1.0 (no `/opt/rocm`; `rocm-sdk path --root` supplies the CMake prefix), HIP 7.16.26385, AMD clang 24.0.0git, CMake 3.31.6, Ninja, Python 3.11.17, torch 2.16.0a0+git6c3af02 (ROCm). Fresh clone of the fork at exactly `38a99bd`, submodules initialized; `git status --porcelain` showed no modified tracked file before or after (only untracked build output and logs).
+
+Commands (run with the fork clone as the working directory; `TP` is `torch.utils.cmake_prefix_path`, read from `/tmp` so no PyTorch source tree is on `sys.path`):
+
+```
+TP=$(cd /tmp && python -c 'import torch;print(torch.utils.cmake_prefix_path)')
+cmake -S . -B build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 "-DCMAKE_PREFIX_PATH=$TP;$(rocm-sdk path --root)"
+cmake --build build --target all -j 16
+for t in ans_test ans_statistics_test batch_prefix_sum_test float_test; do ./build/bin/$t; done
+export DIETGPU_LIB=$PWD/build/lib/libdietgpu.so
+python -m unittest -v dietgpu/ans_test.py dietgpu/float_test.py
+python dietgpu/benchmark.py
+```
+
+Configure found Torch and built the binding (`build/lib/libdietgpu.so` linked as target 63/63). Configure 14 s, build 21 s. `llvm-objdump --offloading build/lib/libgpu_ans.so` shows only `hip-amdgcn-amd-amdhsa--gfx1100` bundles, so the `CMAKE_HIP_ARCHITECTURES` pin took even though TorchConfig prints its own five-arch list. Build warnings: 22, all pre-existing (glog `LOG`/`CHECK`/`VLOG` macro redefinitions and `-Wbraced-scalar-init`), none from the binding.
+
+Results, all at `38a99bd` on the real GPU:
+
+| Suite | Result | Wall |
+|---|---|---|
+| ans_test | 4/4 PASSED | 0.43 s |
+| ans_statistics_test | 4/4 PASSED | 0.57 s |
+| batch_prefix_sum_test | 2/2 PASSED | 0.26 s |
+| float_test | 3/3 PASSED | 21.1 s |
+| gtest total | 13/13 | |
+| python -m unittest ans_test.py float_test.py | Ran 10 tests, OK (10/10) | 0.3 s |
+| benchmark.py | exit 0, all 12 codec/dtype blocks printed | 2.5 s |
+
+The Python runs print the upstream `StackDeviceMemory ... calling cudaMalloc` warning on three tests; that is the library's own temp-memory advisory, not an error, and the tests report `ok`.
+
+`benchmark.py`, single run, GB/s (ms). Same script quirks as the gfx942/gfx950 run above: three iterations, last iteration reported, batched float rows reuse the non-batched compress figure.
+
+| Codec, dtype | comp | decomp | ratio |
+|---|---|---|---|
+| Float non-batched, bfloat16 | 171.1 (0.784) | 164.3 (0.817) | 0.6895x |
+| Float batched, bfloat16 | 171.1 (0.767) | 169.4 (0.792) | 0.6895x |
+| Float non-batched, float16 | 154.0 (0.871) | 153.9 (0.872) | 0.8763x |
+| Float batched, float16 | 154.0 (0.863) | 154.0 (0.872) | 0.8766x |
+| Float non-batched, float32 | 144.4 (1.858) | 215.3 (1.247) | 0.8448x |
+| Float batched, float32 | 144.4 (1.339) | 225.5 (1.191) | 0.8448x |
+| Raw ANS non-batched, bfloat16 | 101.9 (1.318) | 159.1 (0.844) | 0.8351x |
+| Raw ANS batched, bfloat16 | 102.7 (1.307) | 154.7 (0.867) | 0.8356x |
+| Raw ANS non-batched, float16 | 114.1 (1.176) | 153.6 (0.874) | 0.9812x |
+| Raw ANS batched, float16 | 109.8 (1.223) | 148.5 (0.904) | 0.9811x |
+| Raw ANS non-batched, float32 | 104.9 (2.560) | 158.3 (1.696) | 0.9793x |
+| Raw ANS batched, float32 | 105.9 (2.536) | 156.6 (1.714) | 0.9794x |
+
+The W7800 is a 576 GB/s workstation card, so throughput sits at roughly a quarter to a third of the MI300X figures; nothing to investigate.
+
+Other checks:
+- `python3 utils/jargon.py --port dietgpu`: clean (needed `git fetch origin main:main` in the clone first; the clone had only `moat-port` checked out).
+- README documents the ROCm build and, since 6b8fd48, the binding (`CMAKE_PREFIX_PATH` from `torch.utils.cmake_prefix_path`, `DIETGPU_LIB` for the Python files).
+- cuda-not-validated at 38a99bd on this host: no CUDA toolkit in this container (`/opt/conda/envs/cuda-12.8/bin/nvcc` absent, no conda). The CUDA passthrough gate for these two commits still needs a host with nvcc; the df33d83 nvcc check above does not cover the binding CMake change.
