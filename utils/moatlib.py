@@ -3056,6 +3056,11 @@ def belongs_on_branch(obj):
     -- work the project owes, recorded outside the state machine."""
     if settled(obj):
         return False
+    # A recorded fix or sync round is work in flight by definition, whatever the
+    # validations say: its staging branch is being ported, reviewed and validated,
+    # and every step of the round writes this record.
+    if obj.get("fix"):
+        return True
     # A no-upstream ruling stands in for the PR: there is nobody to offer the port
     # to, so "not offered yet" can never become false and would pin the folder to
     # its branch forever. Such a project is finished on the other half alone.
