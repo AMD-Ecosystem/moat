@@ -44,6 +44,46 @@ a DLL-load error; rebuilding a correct binary against a broken runtime is the si
 biggest time sink on Windows. A port is not "broken on Windows" until it has been run
 against a full ROCm distribution.
 
+## Windows: keep one clang driver across every CMake language, and check the CMake version
+
+With CMake's `HIP` language on Windows, all three of `CMAKE_C_COMPILER`,
+`CMAKE_CXX_COMPILER` and `CMAKE_HIP_COMPILER` must use the SAME clang driver. Mixing
+drivers fails before one TU compiles, with an error that does not name the cause:
+`CXX=clang-cl` with `HIP=clang++` makes CMake apply MSVC link rules to a GNU-driver link
+line, giving `clang++: error: no such file or directory: '/machine:x64'`.
+
+Which driver to pick depends on the CMake version, so check it first:
+
+- **CMake 4.x: either works.** All-`clang-cl` is fine, and is what a project whose other
+  dependencies are MSVC-built will want. (UCM's recorded gfx1151 recipe; re-confirmed on
+  dietgpu with CMake 4.3.2.)
+- **CMake 3.31: `clang-cl` cannot be the HIP compiler.** `Windows-Clang-HIP.cmake` never
+  populates `CMAKE_HIP_SIMULATE_VERSION`, so configure dies inside `Windows-MSVC.cmake`
+  with "MSVC compiler version not detected properly". Use the GNU-driver
+  `clang`/`clang++` for all three instead -- it still targets the MSVC ABI, so MSVC-built
+  dependencies and vendored submodules link normally. (Proven on dietgpu.)
+
+Read that failure as "this CMake is too old", not "clang-cl cannot host HIP". A newer
+CMake is one `pip install cmake` away and TheRock's own venv already carries 4.3.2, so
+reach for it before restructuring a build around the older constraint.
+
+Note the split with PyTorch extension ports, where `clang-cl` IS the required host
+compiler (see strategy-b-torch.md): torch drives the compile itself and never goes
+through CMake's `HIP` language.
+
+## Windows: stage the ROCm runtime next to the .exe, kpack included
+
+On a host whose System32 `amdhip64_7.dll` is broken, `PATH` does not save you -- Windows
+resolves System32 first -- so copy the SDK runtime into the directory holding each test
+executable. Copy `rocm_kpack.dll` along with it: `amdhip64_7.dll` imports it, and when it
+is absent the process dies with a bare `error while loading shared libraries: ?` and exit
+127, naming no module at all. That empty `?` is the fingerprint of a missing transitive
+import, not of a bad port.
+
+`llvm-objdump -p <binary> | grep "DLL Name"` walks the import table and finds the gap in
+seconds; run it on the DLLs too, not just the .exe, since the missing module is usually
+one level down.
+
 ## Windows: static initializers in TheRock's DLLs may never run
 
 **A C++ test that gates on `torch::cuda::is_available()` can fail on Windows against a
