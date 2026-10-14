@@ -1415,3 +1415,15 @@ Also on gfx942 before the push: a configure with no Torch on `CMAKE_PREFIX_PATH`
 | Float, float32 | 1074 (1049-1096) | 894 (882-904) | 1284 (1278-1291) | 919 (914-925) |
 
 Caveats: each timing is three iterations of a 0.2 to 0.5 ms kernel; the raw ANS rows report the last iteration, not a mean; the batched float rows print the non-batched compress figure (script quirks, untouched). MI300X run 4 was 3 to 20 percent slow on an idle GPU, cause not established. MI355X decodes 3 to 11 percent slower than MI300X on five of six rows while compressing faster; not investigated.
+
+## Validation 2026-10-13 (windows-gfx1151, head 38a99bd)
+
+Platform: windows-gfx1151, AMD Radeon 8060S (gfx1151, wave32), Windows 11, TheRock pip SDK `_rocm_sdk_devel` (clang 23.0.0). Fork clone at exactly `38a99bda0da57d567e5465d63a83180b2eab7d35`; tracked files clean (only untracked build dirs). Result: 13/13 GPU tests PASS.
+
+Torch-free build (the gate), fresh dir `build-nt`, same recipe as 2026-08-13 (`-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151`, all-`clang++.exe` compilers, `CMAKE_PREFIX_PATH=$ROCM_ROOT`, no Torch). Configure printed `PyTorch not found; skipping the dietgpu PyTorch binding` and succeeded on Windows; 32/32 targets built (ans_test, ans_statistics_test, batch_prefix_sum_test, float_test, gpu_ans, gpu_float_compress, dietgpu_utils). Runtime DLLs (amdhip64_7, rocm_kpack, amd_comgr*, hiprtc*) staged next to the exes.
+
+Tests (`HIP_VISIBLE_DEVICES=0`): ans_test 4/4, ans_statistics_test 4/4, batch_prefix_sum_test 2/2, float_test 3/3.
+
+Optional binding attempt: not tried, no PyTorch of any kind is installed on this host (`import torch` raises ModuleNotFoundError in both the TheRock venv and system Python 3.13). The binding is optional, so this does not affect the gate; the Windows binding build under clang-cl remains unverified.
+
+CUDA gate: Windows host, no toolkit; not re-run (the 6b8fd48 CUDA path is covered by whatever Linux arch validates first). Jargon: `utils/jargon.py --port dietgpu` clean. Documentation: README.md gained the ROCm/Torch section in 6b8fd48.
