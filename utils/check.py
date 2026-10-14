@@ -609,9 +609,15 @@ GATES = {
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("gates", nargs="*", choices=list(GATES) + [], default=None)
+    # No `choices` here: Python 3.11 argparse checks the empty default of a
+    # nargs="*" positional against them and rejects a bare `check.py --fast`.
+    ap.add_argument("gates", nargs="*", metavar="gate",
+                    help="gates to run (default: all): " + ", ".join(GATES))
     ap.add_argument("--fast", action="store_true", help="skip slow gates")
     a = ap.parse_args()
+    unknown = [g for g in a.gates if g not in GATES]
+    if unknown:
+        ap.error(f"unknown gate: {', '.join(unknown)} (choose from {', '.join(GATES)})")
 
     selected = a.gates or [g for g, (_, slow) in GATES.items() if not (a.fast and slow)]
     failed = 0
