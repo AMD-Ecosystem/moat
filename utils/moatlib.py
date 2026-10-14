@@ -41,10 +41,11 @@ def _load_arches():
     with open(REPO_ROOT / "config" / "arches.toml", "rb") as f:
         cfg = tomllib.load(f)
     waves = {fam: gate for gate, fams in cfg["wave"].items() for fam in fams}
-    return waves, cfg["gates"]["required"], set(cfg["gates"].get("waivable", []))
+    return (waves, cfg["gates"]["required"], set(cfg["gates"].get("waivable", [])),
+            set((cfg.get("offline") or {}).get("platforms", [])))
 
 
-WAVE_BY_FAMILY, REQUIRED_GATES, WAIVABLE_GATES = _load_arches()
+WAVE_BY_FAMILY, REQUIRED_GATES, WAIVABLE_GATES, OFFLINE_PLATFORMS = _load_arches()
 
 # A platform is an architecture on an operating system. Any host that reports a GPU
 # has one, so this validates the FORM rather than checking membership of a list --
@@ -3179,6 +3180,13 @@ def arch_task(obj, platform):
     if blk.get("state") == "completed":
         if same_commit(blk.get("validated_sha"), obj.get("head_sha")):
             return None                  # this arch has proved this code
+        # Its hardware is gone for now (config/arches.toml [offline]) and every gate
+        # it carries is proven at this head by someone else: the refresh would be
+        # extra evidence nobody can produce, so it is not owed. With a gate it
+        # carries still unproven the task stands, so the gap stays visible.
+        if platform in OFFLINE_PLATFORMS \
+                and not (gates_for(platform) & unsatisfied_gates(obj)):
+            return None
         return ("validator", "revalidate")  # it proved an older one; refresh it
     # Nothing this arch has proved covers the current head: it never validated, or its
     # failure has been superseded by a fix. `port-ready` either way, which is the full
