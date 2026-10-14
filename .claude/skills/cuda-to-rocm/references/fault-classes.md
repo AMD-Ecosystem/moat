@@ -188,6 +188,43 @@ everything else passes. (qrack: `_PopQueue` under `UniformlyControlledSingleBit`
 
 ## Textures
 
+**gfx94x+ (CDNA3 and newer: MI300-class) disables the HIP image/texture object API at COMPILE
+TIME, not just at runtime.** ROCm's own headers define it out:
+`hip/amd_detail/amd_device_functions.h` has
+`#if !defined(__HIP_NO_IMAGE_SUPPORT) && defined(__gfx94plus_clr__) #define
+__HIP_NO_IMAGE_SUPPORT 1 #endif`, which marks every `tex1Dfetch<T>` overload in
+`texture_indirect_functions.h` `__attribute__((unavailable(...)))`. Any call is a hard
+compile error (`'tex1Dfetch<T, nullptr>' is unavailable: The image/texture API not supported
+on the device`), gated purely on `--offload-arch`, so the identical source compiles clean on
+gfx90a/gfx11xx/gfx12xx and fails ONLY on gfx942/gfx950 -- this surfaces as a validation
+failure on exactly one arch even though nothing about the build command differs (confirm the
+arch pin is correct before assuming a real regression; then check for `__gfx94plus_clr__` in
+the toolchain headers). A project doing a bare point-lookup through a texture object has a
+portable, unconditional fix, and the qualifying criterion is the ACCESS PATTERN, not the table
+size: point sampling only, no hardware filtering, no normalized coordinates, no address/border
+modes (arrayfire's FAST LUT is 64 KiB and still qualifies, so do not read "LUT" as "small").
+Replace `tex1Dfetch<T>(tex, n)` with a plain indexed read through a `const T*` and drop the
+`hipTextureObject_t` create/destroy. Apply it unconditionally rather than under an `#ifdef`:
+the results are bit-identical everywhere and one path is what gets tested. What that costs on
+the arches where textures do work is a THROUGHPUT question the compile does not answer (the
+texture path reads through the read-only cache), so if the tables are hot, time the affected
+tests before and after on a texture-capable arch instead of asserting the texture bought
+nothing. A project that genuinely needs
+hardware linear filtering has no CDNA3 hardware path at all and needs the software-lerp
+fallback below unconditionally on gfx94x+. (arrayfire: `fast.cu`/`orb.cu`/`regions.cu` FAST/
+ORB/connected-components kernels, all plain LUT point-lookups with no filtering, on MI300X.)
+
+Two things make that replacement cheap to get right. A pre-existing non-texture path for a
+type textures cannot carry (CUDA has no `double` texture, so such kernels usually already
+have a `double` specialization reading the pointer directly) is proof the algorithm is
+correct without the texture, and it is the specialization to fold the generic case into
+rather than to keep. And an RAII texture holder normally owns a copy of the source array
+purely to hold its refcount for the kernel's lifetime: keep that member, drop only the
+handle, so the holder's shape and its call sites are unchanged. Afterwards, grep the
+project's compat header -- removing the last texture user typically orphans a whole block of
+`cudaTextureObject_t`/`cudaResourceDesc`/channel-format aliases that should go in the same
+change. (arrayfire.)
+
 **Texture pitch alignment is 256 bytes on AMD against 32 on NVIDIA**, and it bites in two
 distinct ways.
 
