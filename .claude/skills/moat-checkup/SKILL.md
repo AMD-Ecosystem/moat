@@ -336,7 +336,10 @@ anything about the fork, so this is not the maintained case above. A person reco
 sweep. The ruling refuses a record that still carries a fork review PR: close that PR
 unmerged (approving it authorizes a publish that cannot happen; merging it destroys the
 fork's upstream mirror) and `set-review-pr <name> --clear` first. The port branch is
-not frozen and no drift sweep runs. Check for this before asking a person to approve a
+not frozen and no drift sweep runs. The ruling also stands in for the PR in
+`belongs_on_branch`: once every recorded platform is current at `head_sha` and no
+deferral is ruled `now`, `misplaced` reports the branch as ready to merge to `main`.
+A later fork commit recorded with `advance-head` re-homes the folder to `port/<name>`. Check for this before asking a person to approve a
 review PR: `gh api repos/<owner>/<repo> --jq .archived`. `--clear` withdraws the ruling
 if upstream is unarchived.
 

@@ -2495,7 +2495,15 @@ def advance_head(name, new_sha, repo=None):
     failure is evidence about the commit it happened on, so a HEAD move normally
     retires it and sends the arch back to a validator (see failure_stands) -- but a
     delta that cannot change compiled output cannot be the fix, so the failure is
-    carried forward to the new head instead."""
+    carried forward to the new head instead.
+
+    A head move puts a finished project back in flight, so a trunk-resident folder
+    is re-homed to `port/<name>` before the write. Fix and sync rounds already do
+    this for a project with an upstream PR; a no-upstream project has no rounds
+    (its port branch is not frozen), so this is the only event it has."""
+    moved, why = ensure_port_branch(name)
+    if moved:
+        print(why, file=sys.stderr)
     obj = load_status(name)
     repo = repo or _fork_repo(name)
     new_sha = full_sha(new_sha, repo)
@@ -2544,7 +2552,11 @@ def advance_head(name, new_sha, repo=None):
             if failed != blk.get("failed_sha"):
                 blk["failed_sha"] = failed
                 blk["updated_at"] = now_iso()
-    save_status(name, obj)
+    if moved:
+        # The folder is on a branch this checkout is not standing on.
+        save_record(name, obj, f"{name}: head_sha -> {new_sha[:12]}")
+    else:
+        save_status(name, obj)
     return obj
 
 
@@ -3043,7 +3055,10 @@ def belongs_on_branch(obj):
     -- work the project owes, recorded outside the state machine."""
     if settled(obj):
         return False
-    if not obj.get("pr_state"):
+    # A no-upstream ruling stands in for the PR: there is nobody to offer the port
+    # to, so "not offered yet" can never become false and would pin the folder to
+    # its branch forever. Such a project is finished on the other half alone.
+    if not obj.get("pr_state") and not obj.get("no_upstream"):
         return True
     if outstanding(obj):
         return True
