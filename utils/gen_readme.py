@@ -183,6 +183,10 @@ def outcome_cell(p):
         return "⚪ not-portable"
     if p.get("on_hold"):
         return "⏸ on hold"
+    # Finished work with nowhere upstream to send it. Not a blank: "nothing
+    # recorded" is the opposite of a port whose fork is the place to get it.
+    if p.get("no_upstream"):
+        return "🔵 fork is the AMD path; upstream takes no pull requests"
     return "—"
 
 
@@ -217,7 +221,7 @@ def render_table(projects):
         "| ✅ | proven on the current code | | 🟣 | contribution merged upstream |",
         "| 🔄 | proven earlier; the code has moved since | | 🟢 | pull request open |",
         "| 🔧 | in progress | | 🔴 | pull request closed |",
-        "| ⬜ | not started | | 🔵 | upstream points users at the fork instead of merging; the branch is maintained long-term |",
+        "| ⬜ | not started | | 🔵 | the fork is where AMD support lives: upstream points users at it instead of merging, or is archived and takes no pull requests |",
         "| 🚫 | blocked, with a reason recorded | | ⚖️ | licence bars contributing the port |",
         "| 🎫 | waived for this project, with maintainer approval | | ⚪ | set aside, with the reason recorded |",
         "| — | nothing recorded | | ⏸ | on hold, deliberately not being worked |",

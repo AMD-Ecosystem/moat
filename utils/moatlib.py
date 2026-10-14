@@ -1721,6 +1721,66 @@ def set_maintained(name, evidence, by, note=None, clear=False):
     return obj
 
 
+def set_no_upstream(name, evidence, by, note=None, clear=False):
+    """Record a person's ruling that this port has NO UPSTREAM DESTINATION: the
+    upstream repository is archived (read-only) or otherwise cannot take a pull
+    request, so the fork's port branch is the deliverable and stays one. dietgpu
+    is the origin case -- facebookresearch/dietgpu was archived after the port
+    was validated, and the port sat on the ready-to-open list for a PR GitHub
+    would refuse.
+
+    The ruling does one thing: pr_ready refuses, which takes the project off
+    every list that offers an upstream PR (pr-candidates, the review-PR sweep,
+    the publish step). It is not `set-maintained`: nobody upstream points users
+    at the fork, nothing freezes the port branch, and there is no drift to
+    watch on a repository that cannot move. It is not a disposition either: the
+    port is finished, validated work, not a candidate set aside.
+
+    A person's ruling, like a waiver: `by` is required and never defaulted, and
+    `evidence` names where it can be checked (the upstream repository URL
+    showing the archive banner). A PR that already exists is a contradiction a
+    person sorts out first -- an open one is live, and a finished one already
+    says how the round ended. --clear withdraws the ruling (upstream was
+    unarchived, or moved somewhere that takes pull requests)."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    if clear:
+        if not obj.get("no_upstream"):
+            raise ValueError(f"{name}: no no-upstream ruling recorded")
+        ok, why = record_writable_here(name)
+        if not ok:
+            raise ValueError(why)
+        obj.pop("no_upstream", None)
+        save_record(name, obj, f"{name}: no-upstream ruling cleared by {by}")
+        return obj
+    if not evidence:
+        raise ValueError(f"{name}: evidence is required -- name where the missing "
+                         f"destination can be checked (the archived upstream's URL)")
+    if obj.get("pr_state") or obj.get("pr_url"):
+        raise ValueError(f"{name}: an upstream PR is recorded "
+                         f"(pr_state={obj.get('pr_state')!r}) -- that PR already "
+                         f"says where this port went; a no-upstream ruling is for "
+                         f"a port that never had anywhere to go")
+    if obj.get("maintained"):
+        raise ValueError(f"{name}: the fork is already ruled maintained, which "
+                         f"settles the PR question on its own")
+    if obj.get("review_pr"):
+        raise ValueError(f"{name}: a fork review PR is still recorded "
+                         f"({obj['review_pr']}) -- approving it would publish to a "
+                         f"repository that cannot take the PR; close it and "
+                         f"`set-review-pr {name} --clear` first")
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    obj["no_upstream"] = {"evidence": evidence, "by": by, "at": now_iso()}
+    if note:
+        obj["no_upstream"]["note"] = note
+    save_record(name, obj,
+                f"{name}: ruled NO UPSTREAM DESTINATION by {by} ({evidence})")
+    return obj
+
+
 def archive_pr(name):
     """Move a finished (merged or closed) upstream PR into pr_history, freeing the
     pr_* fields for a follow-up round.
@@ -4114,6 +4174,17 @@ def pr_ready(name):
                          f"maintained port branch through sync rounds, not a "
                          f"new upstream PR")], [])
 
+    # No upstream destination: the repository is archived or otherwise cannot
+    # take a pull request. Refused here, at the gate both routes upstream pass
+    # through, so the port leaves every ready-to-open list instead of waiting
+    # on a PR GitHub would reject. The fork's port branch is the deliverable.
+    nu = obj.get("no_upstream")
+    if nu:
+        return (False, [("no-upstream",
+                         f"upstream cannot take a pull request "
+                         f"({nu.get('evidence')}) -- the fork's port branch is "
+                         f"the deliverable")], [])
+
     pr_state = obj.get("pr_state")
     if pr_state == "open":
         return (False, [("pr-exists", "the upstream PR is already open")], [])
@@ -4520,6 +4591,18 @@ def main(argv=None):
     s.add_argument("--note")
     s.add_argument("--clear", action="store_true",
                    help="withdraw the ruling (upstream merged after all)")
+
+    s = sub.add_parser("set-no-upstream",
+                       help="record a person's ruling that upstream cannot take a "
+                            "pull request (archived, read-only): pr_ready refuses "
+                            "and the fork's port branch is the deliverable")
+    s.add_argument("name")
+    s.add_argument("--evidence",
+                   help="where it can be checked (the archived upstream's URL)")
+    s.add_argument("--by", help="who ruled it; required, never defaulted")
+    s.add_argument("--note")
+    s.add_argument("--clear", action="store_true",
+                   help="withdraw the ruling (upstream takes pull requests again)")
 
     s = sub.add_parser("sync-branch",
                        help="establish the staging branch for a sync round on a "
@@ -4952,6 +5035,20 @@ def main(argv=None):
                   f"({obj['maintained']['evidence']}). The branch stays frozen "
                   f"(sync rounds move it: moatlib.py sync-branch {args.name}); "
                   f"`upstream.py --drift` watches upstream for conflicts.")
+    elif args.cmd == "set-no-upstream":
+        if not args.by:
+            print("set-no-upstream: --by is required -- this records a person's "
+                  "ruling", file=sys.stderr)
+            return 2
+        obj = set_no_upstream(args.name, args.evidence, args.by,
+                              note=args.note, clear=args.clear)
+        if args.clear:
+            print(f"{args.name}: no-upstream ruling cleared")
+        else:
+            print(f"{args.name}: ruled NO UPSTREAM DESTINATION "
+                  f"({obj['no_upstream']['evidence']}). No upstream PR will be "
+                  f"offered; the fork's {obj.get('fork_branch') or PORT_BRANCH} "
+                  f"branch is the deliverable.")
     elif args.cmd == "sync-branch":
         fix = sync_branch(args.name)
         print(f"{args.name}: sync round on {fix['branch']} "

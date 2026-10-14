@@ -133,7 +133,7 @@ widths are proven separately rather than assumed to follow from each other.
 | ✅ | proven on the current code | | 🟣 | contribution merged upstream |
 | 🔄 | proven earlier; the code has moved since | | 🟢 | pull request open |
 | 🔧 | in progress | | 🔴 | pull request closed |
-| ⬜ | not started | | 🔵 | upstream points users at the fork instead of merging; the branch is maintained long-term |
+| ⬜ | not started | | 🔵 | the fork is where AMD support lives: upstream points users at it instead of merging, or is archived and takes no pull requests |
 | 🚫 | blocked, with a reason recorded | | ⚖️ | licence bars contributing the port |
 | 🎫 | waived for this project, with maintainer approval | | ⚪ | set aside, with the reason recorded |
 | — | nothing recorded | | ⏸ | on hold, deliberately not being worked |

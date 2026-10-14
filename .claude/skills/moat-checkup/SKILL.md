@@ -323,6 +323,23 @@ There is rarely an `## Upstream reply` here: nobody asked for the round. The PR-
 states still bound the record: the project re-enters `porting` for the round and
 returns to `review-passed` after it, exactly as a fix round does.
 
+### No upstream destination
+
+A port can finish with nowhere to send it: upstream archived the repository, so GitHub
+refuses every pull request. dietgpu is the origin case -- validated on all three gates,
+then listed as ready to open for a PR that could never exist. Nothing upstream says
+anything about the fork, so this is not the maintained case above. A person records it:
+
+    python3 utils/moatlib.py set-no-upstream <name> --evidence <URL> --by <who>
+
+`pr_ready` then refuses, which takes the port off `pr-candidates` and the review-PR
+sweep. The ruling refuses a record that still carries a fork review PR: close that PR
+unmerged (approving it authorizes a publish that cannot happen; merging it destroys the
+fork's upstream mirror) and `set-review-pr <name> --clear` first. The port branch is
+not frozen and no drift sweep runs. Check for this before asking a person to approve a
+review PR: `gh api repos/<owner>/<repo> --jq .archived`. `--clear` withdraws the ruling
+if upstream is unarchived.
+
 Upstream merging the port for real someday is the happy ending: a person records
 `set-pr-merged` and clears the ruling with `set-maintained <name> --clear --by <who>`.
 

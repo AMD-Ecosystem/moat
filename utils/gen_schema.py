@@ -241,6 +241,21 @@ def build():
                     "note": {"type": "string"},
                 },
             },
+            # A person's ruling that the port has no upstream destination: the
+            # upstream repository is archived or otherwise cannot take a pull
+            # request, so pr_ready refuses and the fork's port branch is the
+            # deliverable. Unlike `maintained`, nothing freezes the branch and
+            # nothing watches upstream. A record without `by` grants nothing.
+            "no_upstream": {
+                "type": ["object", "null"],
+                "required": ["evidence", "by", "at"],
+                "properties": {
+                    "evidence": {"type": "string", "minLength": 1},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                    "note": {"type": "string"},
+                },
+            },
             # The review PR on our own fork: where a maintainer sees the code, title
             # and body together, and approves once.
             "review_pr": {"type": "string"},
