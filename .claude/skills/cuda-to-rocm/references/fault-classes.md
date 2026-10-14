@@ -359,6 +359,67 @@ than substituting something. ck_tile's fused MHA ships headers but no prebuilt i
 library in `/opt/rocm/lib`, so `fmha_fwd` is declared-only and using it means vendoring CK's
 codegen. (cuSZ, lc0)
 
+**A ROCm-only branch inside a shared template still COMPILES on the CUDA path.** Gating the
+divergence on a `static constexpr bool` predicate that is false on NVIDIA (`if(needsCast())`)
+keeps the branch from RUNNING there, but a plain `if` instantiates both arms in every
+instantiation, so an expression that is ill-formed for the CUDA element type breaks the
+NVIDIA build -- and nothing on ROCm notices, because there it is the branch that runs. Write
+such branches `if constexpr`: the discarded arm of a condition that is not value-dependent
+after instantiation is never instantiated, which is exactly the guarantee a
+platform-conditional block needs. The trap that found it: `(ScalarType)0` with
+`ScalarType = __half`. In a HOST translation unit, CUDA headers up to 12.1 keep `__half`'s
+integer converts behind `#if defined(__CUDACC__)`, so `int` converts to `float` and to
+`double` at equal rank and the cast is ambiguous ("call of overloaded `__half(int)` is
+ambiguous"). CUDA 12.2 relaxed that gate to `#if !defined(__CUDA_FP16_DISABLE_IMPLICIT_INTEGER_CONVERTS_FOR_HOST_COMPILERS__) || defined(__CUDACC__)`,
+so every release up to 12.1 is affected, plus any 12.2-or-newer build that defines the
+disable macro; a recent toolkit hides the bug unless the project opts out. Prefer a float
+literal (`0.f`) in half comparisons anywhere, and compile-check the CUDA path against 12.1
+headers or older, not only the newest toolkit installed -- bisected against the real
+headers, 12.1 fails and 12.2.53 onward compiles. (marian-dev)
+
+**A scalar's WIDTH follows the compute/scale type, not the matrix type.** When a ROCm
+library refuses the narrow compute type its CUDA counterpart accepted and you widen it to
+32F, the `alpha`/`beta` passed through a `const void*` must widen too. The library reads
+four bytes through that pointer; aiming it at a two-byte `half` scales by whatever adjacent
+bytes happen to be there -- large enough to give infinities in one call, near enough to zero
+to erase the product in the next, with no error status anywhere. Grep every call whose
+compute or scale type you changed for the scalars that go with it. (marian-dev: hipBLASLt
+rejects `HIPBLAS_COMPUTE_16F` and hipSPARSE rejects `HIP_R_16F` as an SpMM compute type;
+both call sites kept passing `half` scalars, and the hipBLASLt one survived review and three
+platform validations because the assertion that would have caught it was never reached.)
+
+**A zero workspace size does not mean "skip the operation".** Upstream code shaped like
+`if(bufferSize > 0) { alloc; call; free; }` is correct only where the vendor always wants
+scratch. cuSPARSE always does for `CUSPARSE_SPMM_CSR_ALG2`, so the shortcut is invisible on
+NVIDIA; hipSPARSE wants none at these shapes, reports zero, and the multiplication is never
+issued -- the output keeps whatever it held, which reads as wrong numbers rather than as an
+error. Make the call unconditional and only the allocation conditional. Suspect the pattern
+wherever a `*_bufferSize` query gates its own operation. (marian-dev)
+
+**A "find the best algorithm" call WRITES to the tensor named as its output.** MIOpen's
+`miopenFindConvolution{Forward,BackwardData,BackwardWeights}Algorithm` benchmark by running
+each candidate, so the destination argument is clobbered. cuDNN's fixed-algorithm enums need
+no such step, so a port that introduces one has nothing to inherit this from. Give each find
+a buffer that is about to be overwritten anyway: the forward find may take the real output,
+but the backward finds must NOT be handed the live input and weight tensors merely because
+the signature accepts them. Getting it wrong corrupts the model in place and presents as
+training diverging to NaN, not as a wrong kernel. Cache the choice per input shape -- a graph
+replays the same convolution once per batch. (marian-dev)
+
+**MIOpen honours only a unit alpha and a zero beta for 2D convolution, pooling and bias.**
+cuDNN's accumulate form (`beta = 1`, used by every backward pass that adds into an existing
+gradient) has to be rebuilt as an operation into a staging buffer followed by
+`miopenOpTensor(miopenTensorOpAdd, ...)`. MIOpen's pooling backward also reads the indices
+its forward pass recorded, so that workspace must outlive the forward call rather than being
+a local. (marian-dev)
+
+**hipSPARSE has no uniform half-precision SpMM.** Half operands are accepted only in the
+mixed-precision mode, which pairs half sparse and dense inputs with a FLOAT result matrix and
+float scalars; asking for a half result is `HIPSPARSE_STATUS_NOT_SUPPORTED` (and an all-half
+compute type is `INVALID_VALUE`). Compute into a float scratch and cast back. The supported
+combinations are tabulated in `rocsparse_spmm.h`, which is faster to read than to probe.
+(marian-dev)
+
 **Never name the pointee struct of an opaque CUDA handle.** `CUstream_st`/`CUevent_st` do
 not exist under HIP. Spell it `std::remove_pointer_t<cudaStream_t>` so it survives the
 typedef swap. (cuSZ)
