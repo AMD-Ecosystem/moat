@@ -7,7 +7,7 @@
   "priority": 5.508,
   "ext_type": "make",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-08-07T07:04:36Z",
+  "updated_at": "2026-10-09T15:39:02Z",
   "head_sha": "6231243f",
   "pr_url": "https://github.com/brucefan1983/GPUMD/pull/1538",
   "pr_number": 1538,
@@ -159,5 +159,6 @@
         "at": "2026-06-03T22:51:48Z"
       }
     }
-  }
+  },
+  "published_sha": "6231243fdaabe33217b44dce15aa75c138a3468b"
 }
