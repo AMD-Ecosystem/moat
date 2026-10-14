@@ -1427,3 +1427,104 @@ Tests (`HIP_VISIBLE_DEVICES=0`): ans_test 4/4, ans_statistics_test 4/4, batch_pr
 Optional binding attempt: not tried, no PyTorch of any kind is installed on this host (`import torch` raises ModuleNotFoundError in both the TheRock venv and system Python 3.13). The binding is optional, so this does not affect the gate; the Windows binding build under clang-cl remains unverified.
 
 CUDA gate: Windows host, no toolkit; not re-run (the 6b8fd48 CUDA path is covered by whatever Linux arch validates first). Jargon: `utils/jargon.py --port dietgpu` clean. Documentation: README.md gained the ROCm/Torch section in 6b8fd48.
+## Revalidation 2026-10-14 (validator, linux-gfx90a) -- full GPU run at 38a99bd
+
+Platform: linux-gfx90a, AMD Instinct MI250X / MI250 (gfx90a:sramecc+:xnack-), one GCD pinned with `HIP_VISIBLE_DEVICES=1` (idle before the run: 0 percent GFX activity, 10 MB VRAM used). Ubuntu 24.04.5, Python 3.11.17, ROCm wheel SDK 10.1.0 (no `/opt/rocm`; HIP 7.16.26385, AMD clang 24.0.0git), CMake 3.31.6, Ninja. torch 2.16.0a0+git6c3af02 (ROCm), `torch.utils.cmake_prefix_path` on `CMAKE_PREFIX_PATH`.
+
+Fork: AMD-Ecosystem/dietgpu @ `38a99bda0da57d567e5465d63a83180b2eab7d35` (moat-port tip; the two commits on top of `df33d83` described in the section above). Fresh clone, submodules initialized, `git rev-parse HEAD` = `38a99bd` and `git status --porcelain` showed only `build/` and `dietgpu/__pycache__/` (untracked output) before and after the run. No source edit.
+
+Why a full run: `6b8fd48` is a mixed delta (CMake plus `DietGpu.cpp` plus the Python loaders), so there is no binary-equivalence carry-forward; the binding is new code on this platform.
+
+### Build (one configure covers the gtest gate and the Torch binding)
+
+```
+cd projects/dietgpu/src
+git submodule update --init --recursive
+TP=$(cd /tmp && python -c 'import torch;print(torch.utils.cmake_prefix_path)')
+cmake -S . -B build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+  "-DCMAKE_PREFIX_PATH=$TP;$(rocm-sdk path --root)"
+cmake --build build --target all -j 16
+```
+
+Configure: 18.6 s, Torch found (`Torch_DIR` under the venv torch), `CMAKE_HIP_COMPILER` resolved to the SDK's `lib/llvm/bin/clang++` through the prefix path, `CMAKE_BUILD_TYPE=RelWithDebInfo`. One harmless TorchConfig warning (`library kineto not found`). Build: exit 0, all targets including `lib/libdietgpu.so`; `llvm-objdump --offloading lib/libgpu_ans.so` lists only `hip-amdgcn-amd-amdhsa--gfx90a` bundles. Warnings: `DietGpu.cpp` emits 8 `-Wmacro-redefined` for `LOG_IF`/`CHECK`/`DLOG`/`DCHECK`/`VLOG`/`VLOG_IF`, because the venv torch is built without glog (`c10/util/logging_is_not_google_glog.h`) while dietgpu vendors glog; same as the 2026-10-13 gfx942/gfx950 builds, not a port defect.
+
+Gotcha for the wrapper: `utils/timeit.sh` cds to the MOAT root before running the command, so `cmake ..` from inside `build/` fails ("source directory does not contain CMakeLists.txt"); pass absolute `-S`/`-B` paths, or wrap the step in `bash -c "cd ... && ..."`.
+
+### GPU tests (gtest gate, run directly; run twice)
+
+```
+for t in ans_test ans_statistics_test batch_prefix_sum_test float_test; do ./build/bin/$t; done
+```
+
+| binary | run 1 | run 2 |
+|---|---|---|
+| ans_test | 4/4 PASSED (424 ms) | 4/4 PASSED (422 ms) |
+| ans_statistics_test | 4/4 PASSED (821 ms) | 4/4 PASSED (811 ms) |
+| batch_prefix_sum_test | 2/2 PASSED (326 ms) | 2/2 PASSED (326 ms) |
+| float_test | 3/3 PASSED (26.6 s) | 3/3 PASSED (26.6 s) |
+
+Total 13/13, identical across both runs.
+
+### PyTorch binding tests and benchmark
+
+```
+export DIETGPU_LIB=$PWD/build/lib/libdietgpu.so
+python -m unittest -v dietgpu/ans_test.py dietgpu/float_test.py
+python dietgpu/benchmark.py
+```
+
+unittest: `Ran 10 tests`, `OK` (TestANSCodec: test_codec, test_empty, test_split_compress, test_split_decompress; TestFloatCodec: test_codec, test_empty, test_large, test_simple, test_split_compress, test_split_decompress). `torch.cuda.get_device_name(0)` = `AMD Instinct MI250X / MI250`. The `StackDeviceMemory: attempting to allocate 256 bytes with 0 bytes available; calling cudaMalloc` lines are the library's own advisory when a test passes no temp buffer; upstream behaviour, not a failure.
+
+`benchmark.py` output, one run, GB/s as printed (MI250X single GCD; see the 2026-10-13 section for the script's quirks, which apply unchanged):
+
+```
+Float codec non-batched perf [128 * 512 * 1024] torch.bfloat16
+comp   time 0.581 ms B/W 230.8 GB/s, compression 134217728 -> 92059792 bytes (0.6859x)
+decomp time 0.588 ms B/W 228.3 GB/s
+Float codec batched perf [128, [512 * 1024]] torch.bfloat16
+comp   time 0.583 ms B/W 230.8 GB/s, compression 134217728 -> 92020304 bytes (0.6856x)
+decomp time 0.694 ms B/W 193.4 GB/s
+Float codec non-batched perf [128 * 512 * 1024] torch.float16
+comp   time 0.566 ms B/W 237.2 GB/s, compression 134217728 -> 117097344 bytes (0.8724x)
+decomp time 0.602 ms B/W 222.8 GB/s
+Float codec batched perf [128, [512 * 1024]] torch.float16
+comp   time 0.628 ms B/W 237.2 GB/s, compression 134217728 -> 117127328 bytes (0.8727x)
+decomp time 0.719 ms B/W 186.7 GB/s
+Float codec non-batched perf [128 * 512 * 1024] torch.float32
+comp   time 0.904 ms B/W 296.9 GB/s, compression 268435456 -> 226240208 bytes (0.8428x)
+decomp time 1.101 ms B/W 243.8 GB/s
+Float codec batched perf [128, [512 * 1024]] torch.float32
+comp   time 0.900 ms B/W 296.9 GB/s, compression 268435456 -> 226235920 bytes (0.8428x)
+decomp time 1.177 ms B/W 228.1 GB/s
+
+Raw ANS byte-wise non-batched perf [128 * 512 * 1024] torch.bfloat16
+comp   time 1.054 ms B/W 127.3 GB/s, compression 134217728 -> 111021392 bytes (0.8272x)
+decomp time 0.740 ms B/W 181.4 GB/s
+Raw ANS byte-wise batched perf [128, [512 * 1024]] torch.bfloat16
+comp   time 1.085 ms B/W 123.7 GB/s, compression 134217728 -> 111093744 bytes (0.8277x)
+decomp time 0.846 ms B/W 158.7 GB/s
+Raw ANS byte-wise non-batched perf [128 * 512 * 1024] torch.float16
+comp   time 0.844 ms B/W 159.1 GB/s, compression 134217728 -> 130669424 bytes (0.9736x)
+decomp time 0.746 ms B/W 180.0 GB/s
+Raw ANS byte-wise batched perf [128, [512 * 1024]] torch.float16
+comp   time 0.881 ms B/W 152.3 GB/s, compression 134217728 -> 130639968 bytes (0.9733x)
+decomp time 0.860 ms B/W 156.0 GB/s
+Raw ANS byte-wise non-batched perf [128 * 512 * 1024] torch.float32
+comp   time 1.817 ms B/W 147.8 GB/s, compression 268435456 -> 260816816 bytes (0.9716x)
+decomp time 1.467 ms B/W 183.0 GB/s
+Raw ANS byte-wise batched perf [128, [512 * 1024]] torch.float32
+comp   time 1.862 ms B/W 144.2 GB/s, compression 268435456 -> 260891328 bytes (0.9719x)
+decomp time 1.668 ms B/W 160.9 GB/s
+```
+
+Roughly 2 to 4x below the MI300X figures in the previous section, in line with one MI250X GCD's HBM bandwidth; the compression ratios match the MI300X/MI355X runs to four digits, so the archives are the same size across wave64 parts.
+
+### Other gates
+
+- CUDA no-regression compile: `cuda-not-validated` on this host (no nvcc, no `/opt/conda`). The `df33d83..38a99bd` delta does not change the CUDA path: `DietGpu.cpp` keeps the original `ATen/cuda/CUDAContext.h` include in the `#else` branch of a new `#if defined(USE_HIP)`, `dietgpu/CMakeLists.txt` keeps `find_package(Torch REQUIRED)` and the unchanged `add_library(dietgpu ...)` in its `else()` branch, `cuda_to_hip.h` is HIP-only, and the Python edits are a load path and the `checksum` argument the CUDA binding also requires. The nvcc check recorded at `df33d83` stands for the shared `.cu`/`.cuh` sources, which this delta does not touch.
+- Jargon: `python3 utils/jargon.py --port dietgpu` reports `clean` (needs a local `main` ref in the clone: `git branch main origin/main` after a `--branch moat-port` clone).
+- Documentation: README "Building for AMD GPUs (ROCm/HIP)" gained the binding, `CMAKE_PREFIX_PATH`, `DIETGPU_LIB` and the test/benchmark commands in `38a99bd`.
+- Integrity: tracked tree clean at `38a99bd` after the run.
+
+Verdict: PASS. linux-gfx90a -> completed at `38a99bd`.
