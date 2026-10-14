@@ -1565,7 +1565,12 @@ def set_review_pr(name, url):
                 f"where a person approves the FINISHED port, and their approval on it "
                 f"opens the upstream PR. Finish the gates, then "
                 f"`upstream.py --review --apply --name {name}` opens and records it.")
-    obj["review_pr"] = url or None
+    if url:
+        obj["review_pr"] = url
+    else:
+        # Absent, not null: the schema types this field as a string and the
+        # status merge driver drops a null sticky field anyway.
+        obj.pop("review_pr", None)
     save_record(name, obj, f"{name}: review PR "
                            + (f"recorded -- {url}" if url else "cleared"))
     return obj
