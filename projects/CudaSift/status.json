@@ -7,7 +7,7 @@
   "priority": 5.346,
   "ext_type": "unknown",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-10-16T17:57:29Z",
+  "updated_at": "2026-10-16T18:06:12Z",
   "head_sha": "6d1429a1988aab428b91f9113199eed5371712b7",
   "pr_url": "https://github.com/Celebrandil/CudaSift/pull/97",
   "pr_number": 97,
@@ -153,16 +153,19 @@
       "last_agent": "validator"
     }
   },
-  "published_sha": "fa258712a8d0ee0763dd42e698578042683fb44f",
-  "fix": {
-    "branch": "moat-fix-97",
-    "base_sha": "fa258712a8d0ee0763dd42e698578042683fb44f",
-    "review_pr": "https://github.com/AMD-Ecosystem/CudaSift/pull/1",
-    "opened_at": "2026-10-16T17:30:41Z"
-  },
+  "published_sha": "6d1429a1988aab428b91f9113199eed5371712b7",
+  "fix": null,
   "porting_released": {
     "arch": "windows-gfx1151",
     "since": "2026-10-16T17:40:57Z",
     "at": "2026-10-16T17:42:58Z"
-  }
+  },
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-10-16T18:04:33Z",
+    "head_sha": "6d1429a1988aab428b91f9113199eed5371712b7",
+    "content_sha256": "341dd0e619cbdee3e419ef97036cd1c20784ce3bb77bb43b459df44f6c06946b",
+    "review_pr": "https://github.com/AMD-Ecosystem/CudaSift/pull/1"
+  },
+  "fix_merged_at": "2026-10-16T18:06:12Z"
 }
