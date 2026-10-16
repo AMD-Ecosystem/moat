@@ -42,3 +42,5 @@
 {"kind":"phase","ts":"2026-10-16T17:36:39Z","phase":"test","seconds":1.200,"exit":0,"cmd":"bash -c cd /d/Develop/moat/projects/CudaSift/src && ./build-hip/test_extract.exe"}
 {"kind":"phase","ts":"2026-10-16T17:36:43Z","phase":"test","seconds":1.277,"exit":0,"cmd":"bash -c cd /d/Develop/moat/projects/CudaSift/src && ./build-hip/test_match.exe"}
 {"kind":"phase","ts":"2026-10-16T17:36:47Z","phase":"test","seconds":1.061,"exit":0,"cmd":"bash -c cd /d/Develop/moat/projects/CudaSift/src && ./build-hip/test_homography.exe"}
+{"kind":"session","ts":"2026-10-16T17:40:56Z","epoch":1792172457.098258500,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-16T17:43:00Z","epoch":1792172580.683601100,"event":"end","platform":"windows-gfx1151"}

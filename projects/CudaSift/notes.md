@@ -564,3 +564,9 @@ Exit 0. Tests run from src/ (data paths are cwd-relative): test_extract 10/0, te
 The suite never calls CopyToTexture. Scratch check agent_space/cudasift_c2t/c2t.cpp (port of #99's TestCopyToTextureFromHost plus a device-source case; 1000x700, pitch 1024), linked against cudasift_lib:
 - fa25871 (old): host -> texture 697480 of 700000 differ; device -> texture 0 of 716800 differ.
 - 6d1429a (new): host 0 of 700000; device 0 of 716800. PASS.
+
+## Review 2026-10-16 (fix round moat-fix-97, delta fa25871..6d1429a, windows-gfx1151)
+
+Verdict: review-passed. No findings.
+
+Checked: host copy (`cudaImage.cu:106`) uses `width`-float rows, matching `Download`/`Readback` (`cudaImage.cu:59,70`); device copy (`cudaImage.cu:108`) uses `pitch`-float rows into the `pitch`-wide array from `InitTexture` (`cudaImage.cu:84`), byte-identical to the old linear copy. CUDA path now uses the standard `cudaMemcpy2DToArray` (behavior change on CUDA host path is the upstream reviewer's requested bug fix). `cuda_to_hip.h:72-74` comment matches the code. Commit 6d1429a: `[ROCm]` title 62 chars, no trailers, AI disclosure present, Test Plan fenced; `utils/jargon.py --port CudaSift` clean.
