@@ -546,3 +546,21 @@ CudaSift 3e4df2b` carried all 5 completed platforms forward. `pr-ready`=True.
 
 PR draft written to projects/CudaSift/pr-draft.md (base=AdaLovelace). NOT
 opened -- awaiting jeff's approval.
+
+## Fix round moat-fix-97 (2026-10-16, windows-gfx1151) -- review 5545563533 on upstream PR #97
+
+Reviewer f-dy (not the maintainer; author of upstream #99/#100) checked #97 against open bug-fix PRs #96, #98, #99, #100:
+1. `CudaImage::CopyToTexture`: our HIP host path copied `pitch`-float rows from `h_data`, whose rows are `width` floats (see `Download`), reading `(pitch-width)*height` floats past the buffer and shearing the texture when `pitch != width`. ADOPTED their suggestion verbatim: `cudaMemcpy2DToArray` on both backends (host `width` rows, device `pitch` rows; the array is `pitch` floats wide so the device copy equals the original linear copy), dropping the `#if USE_HIP` branch. #99 changes the host line with a trailing comment and keeps `cudaMemcpyToArray` for the device line, so the lines are close to #99 but not identical; expect a small conflict whichever lands second.
+2. `cudaSiftH.cu` Laplace kernel upload: #99 resizes to `(MAX_OCTAVES+1)*12*16`, which needs #99's `MAX_OCTAVES`. NOT adopted; whichever PR merges second takes both changes.
+3. `__syncwarp()` added by #99: HIP provides the no-mask `__syncwarp()` by default (`include/hip/amd_detail/amd_warp_sync_functions.h:161`, ROCm 7.14), and #99 uses only that form. No mapping needed. (The masked form static_asserts a 64-bit mask.)
+
+Fork commit 6d1429a on moat-fix-97 (base fa25871).
+
+Build (windows-gfx1151, TheRock 7.14, OpenCV 4.9.0 from agent_space/opencv_install which lacks videoio, so demo_video is not built -- environment only):
+    cmake -S projects/CudaSift/src -B build-hip -GNinja -DUSE_HIP=ON -DCMAKE_CXX_COMPILER=<rocm>/lib/llvm/bin/clang++.exe -DCMAKE_HIP_COMPILER=<rocm>/lib/llvm/bin/clang++.exe -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_PREFIX_PATH=<rocm> -DOpenCV_DIR=<opencv>/lib -DCMAKE_BUILD_TYPE=Release
+    cmake --build build-hip -j16 --target cudasift_lib cudasift test_extract test_match test_homography
+Exit 0. Tests run from src/ (data paths are cwd-relative): test_extract 10/0, test_match 11/0, test_homography 8/0 (stereo 753 RANSAC matches).
+
+The suite never calls CopyToTexture. Scratch check agent_space/cudasift_c2t/c2t.cpp (port of #99's TestCopyToTextureFromHost plus a device-source case; 1000x700, pitch 1024), linked against cudasift_lib:
+- fa25871 (old): host -> texture 697480 of 700000 differ; device -> texture 0 of 716800 differ.
+- 6d1429a (new): host 0 of 700000; device 0 of 716800. PASS.

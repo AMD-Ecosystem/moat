@@ -30,3 +30,15 @@
 {"kind": "tokens", "ts": "2026-06-11T22:43:36Z", "tokens": 70654, "source": "porter PR-prep"}
 {"kind": "tokens", "ts": "2026-06-07T03:41:10Z", "tokens": 62451, "source": "validator"}
 {"kind": "tokens", "ts": "2026-06-23T22:24:32Z", "tokens": 24752, "source": "gfx90a dead-code cleanup (batch B subagent, shared)"}
+{"kind":"phase","ts":"2026-10-16T17:35:10Z","phase":"compile","seconds":6.164,"exit":0,"cmd":"cmake -S projects/CudaSift/src -B projects/CudaSift/src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_CXX_COMPILER=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++.exe -DCMAKE_HIP_COMPILER=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++.exe -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_PREFIX_PATH=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel -DOpenCV_DIR=/d/Develop/moat/agent_space/opencv_install/lib -DCMAKE_BUILD_TYPE=Release"}
+{"kind":"phase","ts":"2026-10-16T17:35:16Z","phase":"compile","seconds":3.768,"exit":1,"cmd":"cmake --build projects/CudaSift/src/build-hip -j16"}
+{"kind":"phase","ts":"2026-10-16T17:35:25Z","phase":"compile","seconds":1.122,"exit":0,"cmd":"cmake --build projects/CudaSift/src/build-hip -j16 --target cudasift_lib cudasift test_extract test_match test_homography"}
+{"kind":"phase","ts":"2026-10-16T17:35:37Z","phase":"test","seconds":0.550,"exit":127,"cmd":"./build-hip/test_extract.exe"}
+{"kind":"phase","ts":"2026-10-16T17:35:40Z","phase":"test","seconds":0.387,"exit":127,"cmd":"./build-hip/test_match.exe"}
+{"kind":"phase","ts":"2026-10-16T17:35:43Z","phase":"test","seconds":0.375,"exit":127,"cmd":"./build-hip/test_homography.exe"}
+{"kind":"phase","ts":"2026-10-16T17:36:22Z","phase":"test","seconds":0.547,"exit":1,"cmd":"D:/Develop/moat/projects/CudaSift/src/build-hip/test_extract.exe"}
+{"kind":"phase","ts":"2026-10-16T17:36:26Z","phase":"test","seconds":0.699,"exit":0,"cmd":"D:/Develop/moat/projects/CudaSift/src/build-hip/test_match.exe"}
+{"kind":"phase","ts":"2026-10-16T17:36:29Z","phase":"test","seconds":0.654,"exit":0,"cmd":"D:/Develop/moat/projects/CudaSift/src/build-hip/test_homography.exe"}
+{"kind":"phase","ts":"2026-10-16T17:36:39Z","phase":"test","seconds":1.200,"exit":0,"cmd":"bash -c cd /d/Develop/moat/projects/CudaSift/src && ./build-hip/test_extract.exe"}
+{"kind":"phase","ts":"2026-10-16T17:36:43Z","phase":"test","seconds":1.277,"exit":0,"cmd":"bash -c cd /d/Develop/moat/projects/CudaSift/src && ./build-hip/test_match.exe"}
+{"kind":"phase","ts":"2026-10-16T17:36:47Z","phase":"test","seconds":1.061,"exit":0,"cmd":"bash -c cd /d/Develop/moat/projects/CudaSift/src && ./build-hip/test_homography.exe"}
