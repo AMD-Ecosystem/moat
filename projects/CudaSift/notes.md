@@ -570,3 +570,6 @@ The suite never calls CopyToTexture. Scratch check agent_space/cudasift_c2t/c2t.
 Verdict: review-passed. No findings.
 
 Checked: host copy (`cudaImage.cu:106`) uses `width`-float rows, matching `Download`/`Readback` (`cudaImage.cu:59,70`); device copy (`cudaImage.cu:108`) uses `pitch`-float rows into the `pitch`-wide array from `InitTexture` (`cudaImage.cu:84`), byte-identical to the old linear copy. CUDA path now uses the standard `cudaMemcpy2DToArray` (behavior change on CUDA host path is the upstream reviewer's requested bug fix). `cuda_to_hip.h:72-74` comment matches the code. Commit 6d1429a: `[ROCm]` title 62 chars, no trailers, AI disclosure present, Test Plan fenced; `utils/jargon.py --port CudaSift` clean.
+
+## Validation 2026-10-16 (windows-gfx1151) at 6d1429a -- fix round 97
+Fork tree clean at 6d1429a (only untracked build-hip/). Build and runs as recorded in "Fix round moat-fix-97" above, from this exact tree: test_extract 10 passed / 0 failed, test_match 11/0, test_homography 8/0 (stereo 753 RANSAC matches; reproducibility 1910/1910; scaleUp 3104 > 1910). CopyToTexture scratch check: host 0/700000 differ, device 0/716800 differ (old fa25871: host 697480/700000). No HIP fault, clean exit.
