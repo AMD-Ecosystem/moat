@@ -7,7 +7,7 @@
   "priority": 5.346,
   "ext_type": "unknown",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-10-16T17:55:39Z",
+  "updated_at": "2026-10-16T17:57:29Z",
   "head_sha": "6d1429a1988aab428b91f9113199eed5371712b7",
   "pr_url": "https://github.com/Celebrandil/CudaSift/pull/97",
   "pr_number": 97,
@@ -157,7 +157,7 @@
   "fix": {
     "branch": "moat-fix-97",
     "base_sha": "fa258712a8d0ee0763dd42e698578042683fb44f",
-    "review_pr": null,
+    "review_pr": "https://github.com/AMD-Ecosystem/CudaSift/pull/1",
     "opened_at": "2026-10-16T17:30:41Z"
   },
   "porting_released": {
