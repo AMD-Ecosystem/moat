@@ -3211,3 +3211,50 @@ cuda-not-validated: unchanged wall. The non-HIP configure goes through the proje
 - Integrity: `git -C src status --porcelain` empty; only the gitignored build dir was written.
 
 ### Verdict: COMPLETED (linux-gfx1100) at cf21cb26
+## Revalidation 2026-10-20 (validator, linux-gfx90a, MI250X GCD, wave64) -- cf21cb26, COMPLETED (full real-GPU run)
+
+Selector read `revalidate` (validated_sha 7cd4d569, head cf21cb26). No carry-forward: `moatlib classify 7cd4d569 cf21cb26` returned `unknown` (no fork clone at that moment), and the span is not inert anyway -- besides the Windows-only CMake/docs (d36fedb7, 5dfb778f, cf21cb26) and the `memory_pool.hpp` `LFS_CORE_API` export (matches upstream), it contains 3ae4672a/c56016ba's nine LibTorch CUDA-graph aliases in `cuda_to_hip.h`, which is compiled source on this arch and had never run here. So a full build and GPU run, from a fresh clone.
+
+### Host (differs from the recorded gfx90a recipe)
+No `/opt/rocm`, no conda. TheRock ROCm SDK 10.1.0 Python wheels in `/opt/python-3.11-venv` (`_rocm_sdk_devel`, `_rocm_sdk_core`, `_rocm_sdk_libraries`), torch `2.16.0a0+git6c3af02` / hip `7.16.26385`, CMake 3.31.6, Ninja 1.13. Ubuntu 24.04, gcc 13 + apt gcc-14/libstdc++-14-dev. apt: `libstdc++-14-dev gcc-14 g++-14 nlohmann-json3-dev libopenimageio-dev libopenmesh-dev libgtest-dev libgmock-dev` (TBB already present). Vendored into `agent_space/_deps`: glm tag 1.0.1, Taywee `args.hxx` (master), spdlog v1.15.3 built with bundled fmt (the 2026-08-27 Class A recipe; distro spdlog not installed).
+
+Two environment-only steps beyond the docs, neither a port issue:
+- `ROCM_PATH` must point at the SDK root (`_rocm_sdk_devel`); unset, `find_library(HIPRAND_LIB ... HINTS ${ROCM_PATH}/lib /opt/rocm/lib)` fails at configure. The docs already say to set it when ROCm is not in `/opt/rocm`.
+- Runtime: `LD_LIBRARY_PATH=<site-packages>/torch/lib:<site-packages>/_rocm_sdk_core/lib:<site-packages>/_rocm_sdk_libraries/lib`, otherwise exit 127 on `libhiprand.so.1` (wheel libraries are not on the loader path).
+
+### Build (wrapped, compile phase)
+```
+SDK=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+export ROCM_PATH=$SDK PATH=$SDK/bin:$PATH
+cmake -S projects/LichtFeld-Studio/src -B projects/LichtFeld-Studio/src/build-hip-gfx90a -G Ninja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_CXX_COMPILER=$SDK/lib/llvm/bin/clang++ -DCMAKE_C_COMPILER=$SDK/lib/llvm/bin/clang \
+  -DBUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release \
+  -DTorch_DIR=/opt/python-3.11-venv/lib/python3.11/site-packages/torch/share/cmake/Torch \
+  -DGTest_DIR=/usr/lib/x86_64-linux-gnu/cmake/GTest \
+  -Dspdlog_DIR=agent_space/_deps/spdlog-install/lib/cmake/spdlog \
+  -DLFS_GLM_INCLUDE_DIR=agent_space/_deps/glm-1.0.1 -DLFS_ARGS_INCLUDE_DIR=agent_space/_deps/lfs_args
+cmake --build projects/LichtFeld-Studio/src/build-hip-gfx90a --target lfs_compute_tests -j48
+```
+(script: `agent_space/lfs_build.sh`, run under `utils/timeit.sh LichtFeld-Studio compile`). Fresh build, 232/232, zero errors (only the long-standing unused-result warnings on `cudaGetLastError()`). The binary embeds 21 `amdgcn-amd-amdhsa--gfx90a` code objects and no other target. Fork HEAD = cf21cb26822ec44cc725b3c7e6e95c27a8c1e5af, `git status --porcelain` empty before and after.
+
+### GPU test run (HIP_VISIBLE_DEVICES=0 pinned by the dispatcher; GCD idle, 10 MB used, before the run)
+```
+ulimit -c 0
+HIP_VISIBLE_DEVICES=0 utils/timeit.sh LichtFeld-Studio test -- \
+  projects/LichtFeld-Studio/src/build-hip-gfx90a/cmake/hip_tests/lfs_compute_tests
+```
+Run 1: 2048 tests / 119 suites, 16013 ms -- 2044 passed, 4 failed. Run 2: 14728 ms, identical. 1 disabled test, as before.
+Failures: `MCMCTest.RemoveGaussiansSoftDeletesRows`, `MCMCRelocateOptimizerStateTest.ResetBothSourceAndDestinationRows`, `TensorLazyIrTest.OnModeDefersUntilBoundaryAndMaterializes`, `TensorStressTest.DeepOperationChain` -- the documented non-bug set, now the same four on all three validated platforms (linux-gfx1100, windows-gfx1151, linux-gfx90a).
+
+Versus the last real gfx90a run (235c5905, 2026-06-07, 2043/2048): `ImageKernelsTest.FusedCannyUInt8MatchesNormalizedFloatInput`, documented then as a 1-ULP cross-input boundary in Canny NMS, now passes in both runs. No port code touched that kernel in the span, and the toolchain changed (ROCm 7.2.1 hipcc -> TheRock 10.1 clang), so this is consistent with the boundary case it was documented as. No new failure. VRAMResizeTest (5/5) passes in the full suite here.
+
+### CUDA no-regression gate: cuda-not-validated (unchanged)
+Not run. Same structural wall recorded in every earlier entry: a non-HIP configure goes through the vcpkg bootstrap (~40 packages), outside the compile-only budget; this host also has no CUDA toolkit (`/opt/conda` absent). The new compiled code in the span sits inside the `USE_HIP || __HIP_PLATFORM_AMD__` guard of `cuda_to_hip.h` or under `WIN32`; the one shared line (`memory_pool.hpp`, `class LFS_CORE_API LabelGuard`) is identical to upstream master.
+
+### Pre-completion checklist
+- Jargon: `python3 utils/jargon.py --port LichtFeld-Studio` (after `git fetch origin master:master` in the blobless clone) reports the 3 pre-existing commit-message instances in 13e585d47/e24593f4e, registered as deferral `lfs-commit-msg-jargon-13e585d-e24593f` (awaiting a person's ruling). Nothing new from 7cd4d569..cf21cb26.
+- Documentation: `docs/building_and_distribution.md` "AMD GPUs (ROCm/HIP)" Linux recipe matches what was built here, with only `ROCM_PATH`/placeholders substituted; it already tells the reader to set `ROCM_PATH` for a non-default install.
+- Integrity: fork tree clean; only gitignored `build-hip-gfx90a/` written.
+
+### Verdict: COMPLETED (linux-gfx90a), validated_sha cf21cb26

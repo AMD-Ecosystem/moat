@@ -10,7 +10,6 @@
   "updated_at": "2026-10-20T02:06:32Z",
   "head_sha": "cf21cb26822ec44cc725b3c7e6e95c27a8c1e5af",
   "depends_on": [],
-  "porting": null,
   "waivers": {
     "windows": {
       "reason": "The obstacle is the Windows toolchain, not the GPU: on a TheRock Windows build torch::cuda::is_available() returns false inside a standalone C++ executable because the CUDAHooksRegistry entry in torch_hip.dll is never registered, so no AMD card can run the tests there. Determined on windows-gfx1101 and confirmed host-wide on windows-gfx1201. Linux wave64 (gfx90a) and wave32 (gfx1100) both validated at head.",
@@ -30,14 +29,38 @@
   "upstream_repo_id": 672651553,
   "stage": "review-passed",
   "platforms": {
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "cf21cb26822ec44cc725b3c7e6e95c27a8c1e5af",
+      "failed_sha": "5cbfdf1a7b1b6a6553ce077a5aa8d6209fd3f51c",
+      "started_at": "2026-10-20T00:45:37Z",
+      "completed_at": "2026-10-20T01:49:59Z",
+      "updated_at": "2026-10-20T01:49:59Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
+    },
     "linux-gfx90a": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "7cd4d569387de493f4ac8fa677e6747fe5bffcb3",
+      "validated_sha": "cf21cb26822ec44cc725b3c7e6e95c27a8c1e5af",
       "started_at": "2026-05-31T01:11:33Z",
-      "completed_at": "2026-08-24T23:20:53Z",
-      "updated_at": "2026-08-24T23:20:53Z",
+      "completed_at": "2026-10-20T02:04:32Z",
+      "updated_at": "2026-10-20T02:04:32Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -122,30 +145,6 @@
         "first_session_at": null,
         "last_session_at": null
       }
-    },
-    "windows-gfx1151": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "cf21cb26822ec44cc725b3c7e6e95c27a8c1e5af",
-      "failed_sha": "5cbfdf1a7b1b6a6553ce077a5aa8d6209fd3f51c",
-      "started_at": "2026-10-20T00:45:37Z",
-      "completed_at": "2026-10-20T01:49:59Z",
-      "updated_at": "2026-10-20T01:49:59Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "state": "completed",
-      "last_agent": "validator"
     }
   },
   "porting_released": {
