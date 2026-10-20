@@ -349,6 +349,9 @@
           "review_pr": {
             "type": "string"
           },
+          "fix_abandoned": {
+            "$ref": "#/$defs/fix_abandoned"
+          },
           "archived_at": {
             "type": "string"
           }
@@ -395,6 +398,9 @@
     },
     "fix_merged_at": {
       "type": "string"
+    },
+    "fix_abandoned": {
+      "$ref": "#/$defs/fix_abandoned"
     },
     "maintained": {
       "type": [
@@ -541,6 +547,54 @@
         "completed",
         "validation-failed"
       ]
+    },
+    "fix_abandoned": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "branch",
+          "base_sha",
+          "by",
+          "reason",
+          "at"
+        ],
+        "properties": {
+          "branch": {
+            "type": "string",
+            "minLength": 1
+          },
+          "base_sha": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tip_sha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "review_pr": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "sync"
+            ]
+          },
+          "by": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "at": {
+            "type": "string"
+          }
+        }
+      }
     },
     "arch": {
       "type": "object",

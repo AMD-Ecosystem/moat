@@ -253,6 +253,14 @@ landed, review the commit(s), and put a recommendation in front of a person; nev
 auto-absorb or revert it. If the content is accepted, a fresh fix round from the new
 tip re-enters the flow.
 
+A staged round can also become pointless before it merges: upstream lands the same fix
+itself (lc0 #2454 did, while moat-fix-2420 sat staged), the maintainer withdraws the
+request, or the PR merges or closes with the round still recorded. Whether to drop it is
+a person's call; they record it with `moatlib.py abandon-fix <name> --by <who> --reason
+"<why>"`, which clears the round, returns `head_sha` to the round's base (so evidence
+gathered on the dropped tip stops counting), and keeps the dropped branch and tip in
+`fix_abandoned`. The staging branch stays on the fork as evidence.
+
 If a maintainer signals they will not take the contribution, stop and record it rather
 than pushing. Record it with `moatlib.py set-pr-closed <name> --note "<why>"`, and if the
 project is settled for good ask for a disposition; a declined PR is a real result and
