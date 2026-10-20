@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Generate schema/status.schema.json from moatlib.
 
 Generated rather than hand-written so the schema and the code that enforces it
@@ -199,13 +201,17 @@ def build():
                         # starts from.
                         "published_sha": {"type": "string"},
                         "review_pr": {"type": "string"},
+                        "fix_abandoned": {"$ref": "#/$defs/fix_abandoned"},
                         "archived_at": {"type": "string"},
                     },
                 },
             },
-            # A maintainer-requested fix round in flight: the staging branch cut
-            # from the published tip, and the fork review PR where a person
-            # approves the delta. Cleared when the round merges.
+            # A staged round in flight: the staging branch cut from the published
+            # tip, and the fork review PR where a person approves the delta.
+            # Cleared when the round merges. kind "sync" marks a maintained-fork
+            # round absorbing upstream's advance (moatlib.sync_branch), with the
+            # upstream tip it absorbs pinned; absent kind means a
+            # maintainer-requested fix round on an open PR.
             "fix": {
                 "type": ["object", "null"],
                 "required": ["branch", "base_sha"],
@@ -214,9 +220,46 @@ def build():
                     "base_sha": {"type": "string", "minLength": 1},
                     "review_pr": {"type": ["string", "null"]},
                     "opened_at": {"type": "string"},
+                    "kind": {"enum": ["sync"]},
+                    "upstream_sha": {"type": "string", "minLength": 1},
                 },
             },
             "fix_merged_at": {"type": "string"},
+            # Rounds a person ruled will never merge (moatlib.abandon_fix), with
+            # the staging tip that was dropped and why. Append-only.
+            "fix_abandoned": {"$ref": "#/$defs/fix_abandoned"},
+            # A person's ruling that upstream adopted the fork BY REFERENCE: the
+            # PR closed unmerged and upstream points its users at the port
+            # branch, which is now a long-lived public deliverable. pr_ready
+            # refuses while this stands, the fork pre-push hook keeps the branch
+            # frozen, later work lands through sync rounds, and `upstream.py
+            # --drift` watches upstream for conflicts. Like a waiver: a record
+            # without `by` grants nothing.
+            "maintained": {
+                "type": ["object", "null"],
+                "required": ["evidence", "by", "at"],
+                "properties": {
+                    "evidence": {"type": "string", "minLength": 1},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                    "note": {"type": "string"},
+                },
+            },
+            # A person's ruling that the port has no upstream destination: the
+            # upstream repository is archived or otherwise cannot take a pull
+            # request, so pr_ready refuses and the fork's port branch is the
+            # deliverable. Unlike `maintained`, nothing freezes the branch and
+            # nothing watches upstream. A record without `by` grants nothing.
+            "no_upstream": {
+                "type": ["object", "null"],
+                "required": ["evidence", "by", "at"],
+                "properties": {
+                    "evidence": {"type": "string", "minLength": 1},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                    "note": {"type": "string"},
+                },
+            },
             # The review PR on our own fork: where a maintainer sees the code, title
             # and body together, and approves once.
             "review_pr": {"type": "string"},
@@ -267,6 +310,23 @@ def build():
             # Only what an ARCHITECTURE can record. port-ready and revalidate are
             # derived from (stage, validated_sha, head_sha) and never stored.
             "archstate": {"enum": sorted(m.ARCH_STATES)},
+            "fix_abandoned": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["branch", "base_sha", "by", "reason", "at"],
+                    "properties": {
+                        "branch": {"type": "string", "minLength": 1},
+                        "base_sha": {"type": "string", "minLength": 1},
+                        "tip_sha": {"type": ["string", "null"]},
+                        "review_pr": {"type": "string"},
+                        "kind": {"enum": ["sync"]},
+                        "by": {"type": "string", "minLength": 1},
+                        "reason": {"type": "string", "minLength": 1},
+                        "at": {"type": "string"},
+                    },
+                },
+            },
             "arch": {
                 "type": "object",
                 # `state` is not required: a migrated block holds only what this arch

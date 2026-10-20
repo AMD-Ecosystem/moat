@@ -349,6 +349,9 @@
           "review_pr": {
             "type": "string"
           },
+          "fix_abandoned": {
+            "$ref": "#/$defs/fix_abandoned"
+          },
           "archived_at": {
             "type": "string"
           }
@@ -381,11 +384,77 @@
         },
         "opened_at": {
           "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "sync"
+          ]
+        },
+        "upstream_sha": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },
     "fix_merged_at": {
       "type": "string"
+    },
+    "fix_abandoned": {
+      "$ref": "#/$defs/fix_abandoned"
+    },
+    "maintained": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "evidence",
+        "by",
+        "at"
+      ],
+      "properties": {
+        "evidence": {
+          "type": "string",
+          "minLength": 1
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "no_upstream": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "evidence",
+        "by",
+        "at"
+      ],
+      "properties": {
+        "evidence": {
+          "type": "string",
+          "minLength": 1
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
     },
     "review_pr": {
       "type": "string"
@@ -478,6 +547,54 @@
         "completed",
         "validation-failed"
       ]
+    },
+    "fix_abandoned": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "branch",
+          "base_sha",
+          "by",
+          "reason",
+          "at"
+        ],
+        "properties": {
+          "branch": {
+            "type": "string",
+            "minLength": 1
+          },
+          "base_sha": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tip_sha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "review_pr": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "sync"
+            ]
+          },
+          "by": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "at": {
+            "type": "string"
+          }
+        }
+      }
     },
     "arch": {
       "type": "object",
