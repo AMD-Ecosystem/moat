@@ -2848,3 +2848,10 @@ untracked/gitignored).
 
 `validated_sha` = `b87423d8e5cb4075386359cb4521eb8a14ffea2a`. Transition: revalidate ->
 completed.
+
+## 2026-10-20 -- fix round retired, moat-port re-pointed at upstream master
+
+- Upstream #2454 (926e99f, Menkib64) landed `cudaDeviceSynchronize()` at the end of network construction in both `network_cuda.cc` and `network_cudnn.cc`, a superset of the one-line wait the moat-fix-2420 round carried (b87423d8, `network_cuda.cc` only). Third-party confirmation on Windows gfx1200, TheRock 10.2.0: 222/222 at 6.0e-08 on master, 0/222 at 4.4e-02 with 926e99f reverted (https://github.com/LeelaChessZero/lc0/pull/2454#issuecomment-6273346601).
+- jeffdaily abandoned the fix round (`moatlib.py abandon-fix`); it stays in `fix_abandoned`, and the staging branch stays on the fork.
+- #2420's squash (ef33106) is patch-id identical to `git diff d8ce482 7727fa3`, so upstream master carries the whole port. A plain merge of master into moat-port conflicts in 7 files only because git cannot see that, so moat-port was fast-forwarded to 4975680, a merge commit (parents 7727fa3, upstream master 58e78009) whose tree is exactly upstream master's. `head_sha` -> 4975680.
+- Owed: windows-gfx1151 validation (closes the windows gate), linux-gfx90a and linux-gfx1100 revalidation. The fork's `master` mirror is still 36 commits behind upstream; it was not fast-forwarded.
