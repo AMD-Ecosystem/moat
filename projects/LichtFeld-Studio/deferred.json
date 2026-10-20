@@ -120,6 +120,32 @@
         "at": "2026-10-20T04:19:55Z",
         "note": "jeff 2026-10-19: work it now"
       }
+    },
+    {
+      "id": "hip-windows-vmm-va-not-reused",
+      "kind": "rocm-bug-report",
+      "component": "hip-runtime-windows",
+      "summary": "TheRock ROCm 7.14 Windows (amdhip64_7.dll, gfx1151): after a hipMemAddressReserve range has had a chunk mapped (hipMemCreate/hipMemMap/hipMemSetAccess, then hipMemUnmap/hipMemRelease), hipMemAddressFree returns hipSuccess but the VA range is never handed out again; every later reservation lands higher. After ~240 GiB of cumulative reservations hipMemAddressReserve logs 'failed to create a va range mem object' and then raises an access violation (0xC0000005) inside amdhip64_7.dll instead of returning an error. Without the map step the same 16 GiB reserve/free loop reuses one address. 40-line reproducer in projects/LichtFeld-Studio/notes.md (Sync round 2026-10-19). LichtFeld-Studio's gsplat intersection cache reserves 16+16+8+16+8 GiB per cache, so a process dies after about four caches; the Windows gate run isolates test suites per process to work around it.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-20T08:34:04Z",
+      "decided": null
+    },
+    {
+      "id": "lfs-hip-stream-ordered-mempool",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "The tensor library's stream-ordered memory pool (cudaMallocAsync/cudaFreeAsync default mempool, release threshold) is compiled only under '#if CUDART_VERSION >= 12080' (13 sites in src/core/tensor/internal/memory_pool.hpp). CUDART_VERSION is undefined in the HIP build, so since the first HIP port the library has used the non-pooled fallback (hipMalloc/hipFree plus device syncs); the log line 'CUDA memory pooling not available (requires CUDA >= 12.8)' is that path. Upstream's newer tests exercise the pooled behaviour: AllocCounterTest.PoolCacheHitDoesNotIncrement fails, and test_tensor_multistream.cpp fails three cases and deadlocks in BucketCrossStreamReuseIsOrdered (pool.deallocate -> hipFree + hipDeviceSynchronize while the producer stream is held by a host callback), so that file is left out of lfs_compute_tests. HIP has hipMallocAsync/hipFreeAsync and hipMemPool* equivalents; enabling them would change allocator behaviour on every AMD platform and needs validation on wave32, wave64 and Windows. Needs a person's ruling: port now, or defer.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-20T11:05:03Z",
+      "decided": null
     }
   ]
 }

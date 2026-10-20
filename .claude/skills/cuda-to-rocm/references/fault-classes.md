@@ -340,6 +340,24 @@ Fix additively -- it helps the CUDA build too. (LC-framework)
 injected with `-include`, object files are NOT rebuilt: wipe them manually or you validate
 stale code and get a silent false pass. (lc0)
 
+**Project code that splits on `__CUDACC__` means "compiled by the device compiler", and HIP
+does not define it.** Upstreams increasingly hide host-only C++23 (`std::expected` error
+types, `std::source_location` capture) from nvcc with `#if !defined(__CUDACC__)` and show
+device helpers only under `#if defined(__CUDACC__)`. A HIP source defines `__HIPCC__`
+instead, so it parses the host-only branch (a C++23 `#error` or missing `std::expected`
+under the HIP C++20 standard) and silently skips device fast paths. Treat `__CUDACC__` in
+project code as `defined(__CUDACC__) || defined(__HIPCC__)`; `__HIPCC__` is set only for
+HIP sources, so plain C++ TUs keep the host branch. Do not define `__CUDACC__` globally
+instead: rocThrust takes its CUDA-system path under it. Re-grep after every upstream sync,
+since new splits arrive with new code. (LichtFeld-Studio)
+
+**CUDA error codes HIP lacks still appear in switch labels.** Error classifiers name codes
+such as `cudaErrorMisalignedAddress`, `cudaErrorInvalidPc` or `cudaErrorSystemNotReady`
+that have no `hipError_t`. Aliasing them to the nearest HIP code duplicates a case label
+when that code is also listed. Define each as `static_cast<hipError_t>(<CUDA value>)` after
+checking no `hipError_t` enumerator uses the value: the labels stay distinct, and since HIP
+never returns them they are unreachable. (LichtFeld-Studio)
+
 **MSVC-only upstreams accept code that clang and gcc reject**, so the HIP build (and the
 CUDA build under nvcc) is a stricter compiler than the project has ever seen. Velvet carried
 a member template whose parameter pack shadowed the class pack -- accepted by MSVC, rejected

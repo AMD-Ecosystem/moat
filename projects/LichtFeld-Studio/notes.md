@@ -3264,3 +3264,101 @@ Not run. Same structural wall recorded in every earlier entry: a non-HIP configu
 jeff approved a one-time, message-only rewrite of `moat-port` so the branch carries no in-house vocabulary before the upstream PR (resolves `lfs-commit-msg-jargon-13e585d-e24593f` and `lfs-commit-msg-drop-alien-ref`). `git filter-branch --msg-filter` over `origin/master..cf21cb26` changed six message lines: "Strategy A (colmap model)" (e24593f4), "via MOAT" (13e585d4), the AMD-Ecosystem/alien reference and "(gfx1151 bring-up)" in the title (53c363f8), and "bring-up" in 0c820fd1 and 00187204. Tree identical (`c73fb63a`), author/committer/dates identical per commit, `jargon.py` clean. Pushed with `--force-with-lease=moat-port:cf21cb26`; new head 69d080dc (contributor commit d36fedb7 is now 9c0cd117, author unchanged). `squash-carry-forward` carried windows-gfx1151, linux-gfx90a and linux-gfx1100 to 69d080dc.
 
 `pytorch-windows-torch-hip-include-symbol`: already fixed upstream by pytorch/pytorch#201445 (issue #201444), the same change verified locally on gfx1151: a LibTorch consumer prints `is_available=0` with no torch_hip.dll import on the stock export and `is_available=1` with the INTERFACE `-INCLUDE:?warp_size@cuda@at@@YAHXZ` item on torch_hip. Recorded as filed against that PR.
+
+## Sync round 2026-10-19 (porter, windows-gfx1151): upstream 730b7130..ca01b056 merged into moat-port
+
+Upstream MrNeRF/LichtFeld-Studio master advanced 1808 commits (730b7130, 2026-05-29 -> ca01b056). `git merge origin/master` into moat-port at 69d080dc (merge, not rebase; 69d080dc and origin/master are both ancestors of the new tip). No upstream PR exists, so moat-port took a normal fast-forward push.
+
+### Fork commits (on top of 69d080dc)
+- 7384a010e `[ROCm] Merge upstream master (ca01b056) into the HIP port` (conflict resolution only; message lists each conflict)
+- f3e8fb9f7 `[ROCm] Build the synced compute libraries and tests with HIP`
+- 91cc319d1 `[ROCm] Treat HIP device compiles like nvcc in the new header splits`
+- 2e2afbe92 `[ROCm] Keep the new 32-lane warp code correct on 64-lane wavefronts`
+- f4354fd6d `[ROCm] Update the AMD build docs for the synced dependencies`
+- 4ae813b40 `[ROCm] Link libstdc++'s stacktrace library for the ROCm clang` (Linux only; no effect on Windows)
+- 5e0cc1660 `[ROCm] Add upstream's new compute tests to lfs_compute_tests`
+- 33e97d013 `[ROCm] Use the SIMT attention and conv kernels in the HIP build`
+Checks: `git merge-base --is-ancestor origin/master HEAD` and `--is-ancestor 69d080dc HEAD` both true; `python3 utils/jargon.py --port LichtFeld-Studio` clean (after `git branch -f master origin/master` in the clone; with the stale local master it flags upstream's own commits); first-parent messages ASCII, titles 57-67 chars, no trailer.
+
+### Conflicts (18) and resolution
+The CUDA side of each conflict is upstream's; the HIP changes were re-applied on top.
+- CMakeLists.txt: upstream added vcpkg profile validation, RC, NOMINMAX, fast-linker selection before project() and moved to 0.5.5. The USE_HIP branch stays first and returns before them; its project() version follows upstream (0.5.5).
+- README.md: upstream rewrote the notes (now says AMD GPUs are unsupported for the app); our AMD compute-library line kept after them.
+- docs/building_and_distribution.md: upstream's clang-cl requirement, contributor setup, LFS_CUDA_COMPILER_CACHE row and model-download notes kept; USE_HIP row placed after the new row.
+- src/core/CMakeLists.txt: upstream's source/link lists taken whole (OIIO replaced by JPEG/PNG/TIFF/WebP/OpenEXRCore, OpenMeshCore, new lfs_logger/lfs_nn_kernels/event_bridge, ABI stamp). The Windows stub swap is reapplied to image_codecs.cpp + image_exr.cpp. It used to be keyed on WIN32 alone, which also changed the NVIDIA Windows build; it is now `USE_HIP AND WIN32`.
+- src/core/cuda/memory_arena.cu: upstream rewrote the boundary decommit loop; LFS_DPTR_OFF reapplied to all `arena.d_ptr + x` (2 new sites).
+- logger.hpp / logger.cpp: upstream's SourceSite signature and Windows console code taken; the __HIPCC__ printf guard kept.
+- tensor_broadcast_ops.cuh: upstream's smem/coalesced channel kernels taken under the CUDA-or-HIP guard. Their host-side `block_size / 32` only sizes a grid-stride launch, so wave64 stays correct.
+- tensor_generic_ops.cuh, tensor_ops.cu: upstream's par_nosync + include changes taken; thrust::cuda alias kept.
+- core warp_reduce.cuh, tensor_warp_reduce.cu: upstream's max/min_reduce_op functors and reworked reductions taken; the port's warp-size macros reapplied mechanically (verified the result differs from the 69d080dc file by exactly upstream's delta).
+- tensor.cpp: upstream's saturating float->int and torch_uint8_cast conversions moved into the port's `convert_one` template, which keeps __half branches out of non-matching instantiations.
+- mcmc_kernels.cu: upstream deleted the histogram kernels; its includes taken, thrust alias kept.
+- edge_compute kernels_forward.cuh + helper_math.h: deleted upstream (#1501 dedup, #1945 removed the backend); port edits dropped.
+- gsplat RasterizeToPixelsFromWorld3DGS{Fwd,Bwd}.cu: upstream moved cudaFuncSetAttribute into set_kernel_max_dynamic_smem (Utils.cuh); the per-call `(const void*)` casts go with it and the cast moved into the helper.
+
+### Audit of upstream's new compute code (what the merge compiled that the port never saw)
+- New targets/sources HipCompute.cmake must handle: lfs_logger (xxHash), lfs_nn_kernels (WMMA/mma.sync), lfs_event_bridge, lfs_core ABI stamp (lfs_core_abi_stamp target + LFS_CORE_ABI_INCLUDE_DIR), codec libs, VmmDeviceBuffer, lfs_depth_anchor (links lfs_io), MRNF/sh_value_codec/morton_reorder/perf_bench/live_model_mutation_guard/config_serialization/blob_seeding in lfs_training.
+- Fault class "host-vs-device TU split on __CUDACC__": upstream now hides C++23 host code (error.hpp, cuda_error_typed.hpp, device_fault.hpp host half, source_site.hpp) from nvcc via `__CUDACC__`, which HIP does not define. Converted 7 headers to `__CUDACC__ || __HIPCC__` (__HIPCC__ is set only for HIP sources). Same for 4 new __CUDACC__-guarded fast paths in tensor_broadcast_ops.cuh, which HIP was silently skipping.
+- Fault class "32-lane groups on a 64-lane wavefront" (new upstream rasterizer code, wave64 only): fastgs blend/warp-cull forward, blend backward, pop_scores, the instance-emission coop loop, and gsplat backward treat a warp as a 32-lane group (8x4 sub-tile): 32-bit `unsigned` ballots indexed by lane, `__ffs` source lanes, `__shfl_sync(mask, v, src)` broadcasts, and warp_ops::warp_reduce_sum (which the port widened to the native 64). On wave64 the second group would read the first group's bits/lanes and the sum would fold both groups (double-counted atomics). Fixed with LFS_GROUP32_{BALLOT,SHFL,SUM,MAX} (fastgs kernel_utils.cuh) and GSPLAT_TILE32_{BALLOT,SHFL,MASK} (gsplat Utils.cuh): ballot >> (__lane_id() & 32), shuffles with width 32, group-only xor folds. CUDA expansions are the original expressions. Correct by construction on wave32 (gfx1151 tested); wave64 correctness is exercised only by gfx90a.
+- Mask-only (32-bit literal fails ROCm's static_assert, semantics already wave64-safe because folds use offsets < 32 and only lane 0 of each 32-group reads): nn attention/elementwise/lpips (LFS_NN_WARP_MASK in nn_device.cuh), training warp_reduce.cuh block_reduce_min4/min2, blob_seeding, densification radix-select, tensor_fused_pointwise, fastgs warp_exclusive_scan_uint (its `& 31` guard keeps the shfl_up in-group).
+- New cg::reduce site in gsplat Bwd (pixel-pair kernel) given the same butterfly as the existing one.
+- Tensor cores: nn gemm/conv/attention use nvcuda::wmma and conv3x3_mma uses mma.sync/ldmatrix/cp.async PTX, all under `__CUDA_ARCH__ >= 700/800`. The compat header defines __CUDA_ARCH__ = 1 in the HIP device pass, so upstream's scalar `#else` fallbacks run; conv3x3_mma_available() probes the compiled arch (1) and declines. Only an empty <mma.h> shim was needed. (A rocWMMA port would be a separate performance item.)
+- Inline PTX avoiding fast-math FTZ (sh_value_quant_kernels.cu sub/mul/fma.rn, mask_normalization.cuh setp): HIP branch uses __fsub_rn/__fmul_rn/__fmaf_rn and a plain compare (no fast math, f32 denormals kept).
+- CUdeviceptr arithmetic class again: vmm_device_buffer.cpp keeps base/handles as uint64_t in its header; converted at each driver call (LFS_VMM_PTR/HANDLE/U64), as memory_arena.cu does.
+- Compat header: ~25 new aliases (runtime, external semaphores, cuRAND Philox/normal4/curand, driver OOM, CUstream_st/CUevent_st tags for io headers' forward declarations), cuGetErrorName -> hipDrvGetErrorName (2-arg; was wrong), 10 CUDA error codes HIP lacks given their CUDA values as distinct unreachable hipError_t (they appear in switch labels; aliasing to an existing HIP code would duplicate cases), __grid_constant__ (empty), __trap, __nanosleep (s_sleep 1).
+- New shims: <mma.h>, <nvml.h> (types only; NVML is dlopen'd and absent on AMD), cub device_scan/radix_sort/select, thrust/system/cuda/execution_policy.h.
+- Linux-only, untested here (for the Linux validators): codec libs found with FindJPEG/PNG/TIFF + WebP config-or-library + OpenEXR config; xxhash.h from libxxhash-dev; `-lstdc++exp` linked only if a std::stacktrace probe links (failure_report.cpp uses std::stacktrace when libstdc++ 14 enables it; upstream links stdc++exp for GCC only). apt additions vs the last recipe: `libjpeg-dev libpng-dev libtiff-dev libwebp-dev libopenexr-dev libxxhash-dev`; OpenImageIO no longer needed.
+
+### Tests: what changed in lfs_compute_tests
+- Upstream deleted 36 of the listed files (test cleanup #1413, POPSpa #2043), including test_mcmc_relocate_optimizer_state_bug.cpp (one of the four long-standing failures). Pruned.
+- test_mask_loss.cpp and test_mcmc.cpp now include training/trainer.hpp / strategies/improved_gs_plus.hpp (dataset -> io loader); they left the compute set. MCMCTest.RemoveGaussiansSoftDeletesRows (long-standing failure) goes with test_mcmc.
+- test_gsplat_rasterizer.cpp now exercises MRNF, the SH value codec and the depth-anchor cache: kept by adding those training sources, linking lfs_depth_anchor, and a header-only `lfs_io` INTERFACE target (src/io/include) in HipCompute.cmake.
+- test_image_kernels.cpp now constructs NvCodecImageLoader inside try blocks that skip on throw; cmake/hip_tests/nvcodec_image_loader_stub.cpp throws, so those cases skip as designed.
+- test_image_kernels.cpp narrows size_t in braced lists (GCC warns, clang errors): `-Wno-c++11-narrowing` on the test target only.
+- 72 new upstream compute tests added (tensor/allocator/stream lifetime, tensor_hardening_tests themes a-f, warp-cull blend/bwd, fused losses, joint Adam, MCMC multinomial, nn ops/MoGe-2, PPISP/bilateral) plus helper .cu sources device_fault_cuda_utils.cu, tensor_hardening_cuda_utils.cu, fastgs_tile_culling_boundary_cuda.cu. test_masked_ssim_window.cpp is Linux-only: it names a local `far`, which <windows.h> (pulled in by upstream's core/native_fs.hpp) defines as an empty macro, so it cannot compile on any Windows compiler (upstream defect).
+- Left out: test_vram_leak_regression.cpp (needs the IPC exportable storage the HIP build excludes; on Linux the call would hit an unresolved symbol at run time) and test_tensor_multistream.cpp (pooled cross-stream reuse; see the mempool finding below; BucketCrossStreamReuseIsOrdered deadlocks, which would hang a single-process run).
+- nn attention/conv (found by the new NnOpsTest): the host dispatch picks the fp16 tensor-core kernels unconditionally (attention) or from compute-capability major >= 7 (conv; AMD reports 9/11). In the HIP device pass those compile to their pre-Volta branches and flash_attn_d64's is empty, so attention returned zeros and the large 3x3 conv wrong values. 33e97d01 routes HIP to the SIMT tiled attention and SIMT conv kernels. NnOpsTest 31/31 after.
+
+### Build (windows-gfx1151, Radeon 8060S; TheRock ROCm 7.14, torch 2.12.0+rocm7.14.0a20260531, CMake 4.3.2, MSVC 14.44)
+agent_space/lfs_sync.bat = the documented Windows command (lfs_doccheck2.bat) with one more CMAKE_PREFIX_PATH entry for xxhash.h (agent_space/_deps/xxhash-0.8.3/include, v0.8.3 single header), build dir agent_space/lfs-sync, Release, `-j 8` (16 physical cores, shared APU):
+```
+MSYS2_ARG_CONV_EXCL="*" utils/timeit.sh LichtFeld-Studio compile -- cmd.exe /c 'agent_space\lfs_sync.bat'
+```
+Final tip 33e97d01: configure + build clean (13 build iterations during the round; logs agent_space/lfs_sync_build*.log). The build directory lives outside the repo, which matters for one test (below).
+
+### ROCm Windows runtime defect found (deferral hip-windows-vmm-va-not-reused)
+GsplatRasterizerTest.SteadyStateSecondForwardHasZeroIsectAllocs passes alone but raised SEH 0xC0000005 on its 4th repeat, after which the process hangs. AMD_LOG_LEVEL=3 shows `hipMemAddressReserve(17179869184)` -> PAL "Failed PAL memory allocation ... failed to create a va range mem object", then the AV inside amdhip64_7.dll. Every gsplat intersection cache reserves 16+16+8+16+8 GiB of VA (sized from hipMemGetInfo total); the port's unmap/release/free sequence is correct (20 create/map, 19-20 unmap/release, every free hipSuccess), but each new reservation lands at a higher base (0xB1B1E0000 ... 0x3B1B1E0000). Standalone reproducer (agent_space/va_repro/va_repro.cpp, clang-cl + amdhip64.lib):
+```cpp
+// loop 24x: hipMemAddressReserve(&p, 16 GiB, 64 KiB); [hipMemCreate 64 KiB; hipMemMap(p); hipMemSetAccess;
+//           hipMemUnmap; hipMemRelease;] hipMemAddressFree(p, 16 GiB); print p
+```
+Without the bracketed map step every iteration returns base 0x304000000 (VA reused). With it the bases climb 0x304000000, 0x704000000, ... 0x3B04000000 and iteration 15 faults with 0xC0000005 in amdhip64_7.dll (+0x509B40). So on this runtime a mapped-then-freed range is never recycled, and reservation failure crashes instead of returning an error. Not a port defect; Linux ROCr is not expected to share it (gfx90a/gfx1100 validators will show). Registered `hip-windows-vmm-va-not-reused` (rocm-bug-report) for a person's ruling.
+
+Windows test procedure consequence: one process cannot run the whole suite (any ~4 gsplat caches exhaust VA). agent_space/lfs_suite_runner.py runs one gtest suite per process and re-runs a suite test-by-test when it crashes, hangs (1200 s) or reports SEH.
+
+### GPU test results (windows-gfx1151)
+Suite-isolated runner (agent_space/lfs_suite_runner.py), cwd = the fork checkout root (as the docs' `build-hip\cmake\hip_tests\lfs_compute_tests.exe` implies), LFS_EXCLUDE=TensorReserveInplaceCat.AllocationFailurePreservesInstalledStorage:
+```
+LFS_CWD='D:\Develop\moat\projects\LichtFeld-Studio\src' \
+LFS_EXCLUDE='TensorReserveInplaceCat.AllocationFailurePreservesInstalledStorage' \
+  utils/timeit.sh LichtFeld-Studio test -- python agent_space/lfs_suite_runner.py 'D:\Develop\moat\agent_space\lfs-sync-runs\r3'
+```
+- r1 (merge + build fixes, the carried-over 1591-test set, before new tests): 1580 passed, 5 failed, 6 skipped. Failures: 4 DepthAnchor* (Windows codec stub) + TensorReserveInplaceCat.AllocationFailurePreservesInstalledStorage.
+- r3 at 33e97d01 (2198 run, 170 suites, 1468 s): **2162 passed, 10 failed, 25 skipped, 0 incomplete**. Only GsplatRasterizerTest needed per-test processes (VA defect).
+- The four long-standing failures: MCMCTest.RemoveGaussiansSoftDeletesRows and MCMCRelocateOptimizerStateTest.* left the set with their files (above); TensorLazyIrTest.OnModeDefersUntilBoundaryAndMaterializes and TensorStressTest.DeepOperationChain now PASS.
+- No failure in the carried-over set except the Windows codec stub and the excluded probe.
+
+Failures at 33e97d01, all in newly added upstream tests, triaged:
+- DepthAnchorSetupTest.{FingerprintTracksDepthContentWithPreservedMetadata, MissingAndZeroDepthRemainEmpty, ProgressFailurePropagatesWithIdleWorkers}, DepthAnchorFit.UsesOnlyThePointsTheCameraObserved: `save_png` returns false through the Windows image-codec stub. Windows-only; Linux links real libpng.
+- CudaErrorDiagnostics.ForcedCudaErrorReportHasExpectedSections: expects "Error: cudaErrorInvalidDevice" / "cudaSetDevice(-1)"; the report stringizes the expression after the compat header's macro substitution, so it reads hipErrorInvalidDevice / hipSetDevice(-1). Inherent to the compat-header approach; not a behaviour defect.
+- CudaErrorDiagnostics.ContractReportNamesTensorCallerInStack: expects the test function's name in the host stack; the Release lfs_compute_tests.exe has no PDB (frame shows c10::...+0x6AADD5). Symbolization/environment.
+- AllocCounterTest.PoolCacheHitDoesNotIncrement: pool re-allocation calls the driver because the stream-ordered pool is compiled only for CUDART_VERSION >= 12080 (memory_pool.hpp, 13 sites), which is never true under HIP; pre-existing since the first port. Deferral `lfs-hip-stream-ordered-mempool` (feature-port) for a person's ruling.
+- CudaTest.D1_BinaryInPlaceWaitsForGatedProducer, TensorD4FromBlobHomeStreamTest.{ItemTypedDrainsStampedHome, StampedBlobThroughPinnedOpCrossStream): consumer reads before the gated producer's write (D1: 1 instead of 3; D4: 0x7F7F7F7F sentinel). AMD_LOG_LEVEL=3 on D1 shows the add kernel launched on the consumer stream with no hipStreamWaitEvent on the producer; binary_op_inplace_generic (tensor_impl.hpp) does not call prepare_inputs_for_stream/sync_to_stream for `other`. The runtime pattern itself is correct here: agent_space/va_repro/gate_repro.cpp (gate + event + cross-stream wait) is ordered 3/3 runs. UNRESOLVED: upstream CI runs tensor.hardening on CUDA and these pass there, so something CUDA-side joins that I have not found; candidates are the pooled allocator (above) and the lazy-IR home-stream stamping. Not caused by this round's code changes as far as found; flag for the reviewer and for the Linux validators (do they fail on gfx90a/gfx1100 too?).
+- Excluded on this host only: TensorReserveInplaceCat.AllocationFailurePreservesInstalledStorage allocates hipMemGetInfo total + 4 bytes and expects failure; on this unified-memory APU (total 91612 MiB) the allocation succeeds after 53 s (r1). Test premise does not hold on an APU, and it is a large-memory probe this laptop must not run; discrete GPUs should pass it.
+- WarpCullBwdTest.ReverseWalkHasZeroBlockFences fails only when cwd is an out-of-repo build dir (it opens src/... or ../src/... relative to cwd); passes from the checkout root (13/13 WarpCull*).
+
+### Not verified here (for the reviewer and the Linux validators)
+- Linux configure/build of the new dependency handling (codec libs, OpenEXR config, xxhash.h, stdc++exp probe) was not run on this host.
+- Wave64 correctness of the 32-lane-group fixes is only exercised on gfx90a.
+- CUDA no-regression gate: not run (no CUDA toolkit on this host); every CUDA-visible change is either upstream's or a macro whose CUDA expansion is the original expression, plus the src/core/CMakeLists.txt fix that restores the real image sources to the NVIDIA Windows build.
+

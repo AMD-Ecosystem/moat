@@ -124,6 +124,21 @@ LichtFeld-Studio a wrongly-suggested gate waiver. An earlier version of this ent
 `lld-link` omitting `.CRT$XCU` from `torch_hip.dll`; that was wrong, and checking the
 executable's import table first would have found the real cause.
 
+## Windows: VMM address ranges that were mapped are never reused
+
+On TheRock ROCm 7.14 for Windows (amdhip64_7.dll, gfx1151), `hipMemAddressFree` on a range
+that once had a chunk mapped (`hipMemCreate`, `hipMemMap`, `hipMemSetAccess`, then
+`hipMemUnmap`, `hipMemRelease`) returns `hipSuccess`, but the range is never handed out again:
+each later `hipMemAddressReserve` lands higher. After about 240 GiB of cumulative
+reservations, reserve logs `failed to create a va range mem object` and then faults with
+0xC0000005 inside amdhip64 instead of returning an error; gtest reports an SEH exception and
+the process often hangs. A reserve/free loop with no map step reuses one address, so a
+short reproducer that skips the map will not show it. Code that sizes VA reservations
+generously (tens of GiB per cache) and recreates them dies after a few cycles: the test
+passes alone and fails on its Nth repeat or deep into a suite. `AMD_LOG_LEVEL=3` shows the
+climbing bases. Run such suites one gtest suite per process, with a per-test fallback, and
+treat it as a runtime defect, not a port bug. (LichtFeld-Studio)
+
 ## Two GPUs visible to one process can crash the runtime
 
 On ROCm 7.14 a process that could see a mixed RDNA3 + RDNA4 pair crashed in the HIP
@@ -408,6 +423,13 @@ clone of the fork usually has no local `main`, and `scan_commits`/`scan_diff` (u
 instead of erroring -- so an unfetched `main` produces a false "clean", not a crash. Fetch
 it first (`git fetch --depth 50 origin main:main`) and confirm the range resolves to a
 nonzero commit count before trusting a "clean" result. (mahout)
+
+The opposite false alarm happens after an upstream sync: the scan's base is the clone's
+local default branch, and if that branch still points at the old mirror tip, every
+upstream commit the merge brought in is scanned as if it were the port's, and upstream's
+own wording ("Strategy B", "revalidate", "COLMAP model") is reported. Fast-forward the local
+default branch to the fetched upstream (`git branch -f master origin/master`) before
+scanning. (LichtFeld-Studio)
 
 ## A cached build-script decision from a wrong env var survives fixing the env var
 

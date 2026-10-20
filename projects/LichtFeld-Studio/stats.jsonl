@@ -131,3 +131,26 @@
 {"kind":"phase","ts":"2026-10-20T02:03:32Z","phase":"test","seconds":18.401,"exit":1,"cmd":"projects/LichtFeld-Studio/src/build-hip-gfx90a/cmake/hip_tests/lfs_compute_tests"}
 {"kind":"phase","ts":"2026-10-20T02:03:49Z","phase":"test","seconds":17.173,"exit":1,"cmd":"projects/LichtFeld-Studio/src/build-hip-gfx90a/cmake/hip_tests/lfs_compute_tests"}
 {"kind":"session","ts":"2026-10-20T02:04:36Z","epoch":1792461876.997656317,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-10-20T05:14:36Z","epoch":1792473277.068399100,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-10-20T06:20:34Z","phase":"compile","seconds":1.755,"exit":1,"cmd":"cmd.exe /c agent_spacelfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T06:23:24Z","phase":"compile","seconds":54.861,"exit":1,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T06:40:20Z","phase":"compile","seconds":362.172,"exit":1,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T07:13:23Z","phase":"compile","seconds":755.044,"exit":1,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T07:20:34Z","phase":"compile","seconds":20.489,"exit":127,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T07:28:05Z","phase":"compile","seconds":142.484,"exit":1,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T07:40:55Z","phase":"compile","seconds":723.208,"exit":127,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T07:42:00Z","phase":"compile","seconds":8.876,"exit":127,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T07:42:38Z","phase":"compile","seconds":12.512,"exit":0,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T07:43:41Z","phase":"test","seconds":2.938,"exit":0,"cmd":"bash agent_space/lfs_sync_run.sh --gtest_list_tests"}
+{"kind":"phase","ts":"2026-10-20T07:56:04Z","phase":"test","seconds":720.743,"exit":1,"cmd":"bash agent_space/lfs_sync_run.sh"}
+{"kind":"phase","ts":"2026-10-20T08:28:13Z","phase":"test","seconds":689.554,"exit":1,"cmd":"timeout 1800 bash agent_space/lfs_sync_run.sh --gtest_filter=-GsplatRasterizerTest.*"}
+{"kind":"phase","ts":"2026-10-20T08:53:34Z","phase":"test","seconds":1420.287,"exit":0,"cmd":"python agent_space/lfs_suite_runner.py D:\\Develop\\moat\\agent_space\\lfs-sync-runs\\r1"}
+{"kind":"phase","ts":"2026-10-20T09:08:29Z","phase":"compile","seconds":761.437,"exit":1,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T09:24:17Z","phase":"compile","seconds":751.609,"exit":1,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T09:36:27Z","phase":"compile","seconds":691.226,"exit":1,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T09:50:19Z","phase":"compile","seconds":761.306,"exit":127,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T09:52:52Z","phase":"compile","seconds":9.491,"exit":0,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T10:43:37Z","phase":"test","seconds":3001.866,"exit":0,"cmd":"python agent_space/lfs_suite_runner.py D:\\Develop\\moat\\agent_space\\lfs-sync-runs\\r2"}
+{"kind":"phase","ts":"2026-10-20T11:05:39Z","phase":"compile","seconds":16.374,"exit":0,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-20T11:36:17Z","phase":"test","seconds":1470.739,"exit":0,"cmd":"python agent_space/lfs_suite_runner.py D:\\Develop\\moat\\agent_space\\lfs-sync-runs\\r3"}
+{"kind":"session","ts":"2026-10-20T11:53:25Z","epoch":1792497206.198064900,"event":"end","platform":"windows-gfx1151"}
