@@ -2676,3 +2676,84 @@ README documents the ROCm build next to the CUDA one.
 
 **Integrity**: `git status --porcelain` in the fork clone is empty (build outputs are ignored).
 **Result**: windows-gfx1151 -> completed at 11533412aaaa8f21f26d7e46d8a468562c41ff96.
+
+## Validation 2026-10-20 (linux-gfx90a, fix round `moat-fix-36` at 1153341) -- PASS
+
+**Platform**: linux-gfx90a (AMD Instinct MI250X / MI250, `gfx90a:sramecc+:xnack-`, wave64), one GCD
+pinned by `HIP_VISIBLE_DEVICES=0`. Python 3.11, torch `2.16.0a0+git6c3af02` (`torch.version.git_version`
+= `6c3af026fb597f8c9a571362f475097e4c39d6ed`), `torch.version.hip` = `7.16.26385`, TheRock ROCm SDK
+wheels `rocm-sdk-* 10.1.0`, hipcc from `_rocm_sdk_devel`. This is a newer toolchain than every earlier
+gfx90a record (ROCm 7.2, torch 2.13) and than linux-gfx1100 (HIP 7.14) at this head.
+
+**Environment**: the job's isolated venv; torch installed into it with
+`$FLEET_VENV/bin/python -m pip install --no-deps <the image's own torch-2.16.0a0+git6c3af02 wheel>`, then
+`pip install fsspec trimesh` (trimesh 5.1.1). Nothing installed into the shared image Python.
+
+**Commit**: fresh fork clone, `moat-fix-36` at `11533412aaaa8f21f26d7e46d8a468562c41ff96` (head_sha);
+`origin/moat-port` confirmed still `392b4dd` (frozen, PR #36 open); `protect-fork` run. Submodules
+`third_party/cubvh` `de1badf89b54`, nested eigen `e63d9f6ccb7f`, matching the recorded pins.
+
+**Build**:
+```bash
+utils/timeit.sh CuMesh compile -- bash -c "cd projects/CuMesh/src && GPU_ARCHS=gfx90a MAX_JOBS=64 $FLEET_VENV/bin/python -m pip install . --no-build-isolation -v"
+```
+PASS, exit 0, 173s, zero `error:` lines, all three extensions (`_C`, `_cubvh`, `_cumesh_xatlas`),
+13 `--offload-arch=gfx90a` compiles.
+
+**Examples** (`utils/timeit.sh CuMesh test -- bash agent_space/run_examples.sh`: examples copied to a
+scratch dir, bunny downloaded fresh, run from there against the installed package, `ulimit -c 0`;
+uv_unwrap run 3 times): 8/8 runs exit 0, 57s.
+
+| example | linux-gfx90a (this run) | linux-gfx1100 (2026-08-27) | windows-gfx1151 (2026-10-20) |
+|---|---|---|---|
+| simplify | 34834/69451 -> 4812 v / 9556 f | 5001 / 9931 | 4974 / 9878 |
+| fill_holes | -> 34838 / 69594 | same | same |
+| remove_duplicate_faces | 34834 / 69451 unchanged | same | same |
+| unify_orientations | 34834 / 69451 unchanged | same | same |
+| remesh | -> 102396 / 204916 | same | same |
+| uv_unwrap | **106 clusters, 41757 v** / 69451 f | 90 clusters, 45110 | 90 clusters, 45018 |
+
+simplify varies run to run (2026-08-09 review note). **uv_unwrap vertex count over 3 runs: 41757,
+41757, 41757** (106 clusters each time, deterministic). So gfx90a lands on neither side of the
+45110/45018 split. The difference starts in the GPU fast-clustering stage (106 vs 90 charts) before
+xatlas sees anything.
+
+**Why this does not fail the port** (investigated, about 15 min):
+- The fix-round delta is not the cause. `392b4dd` (the published tip, cubvh `757b913`) built on the
+  same toolchain (`setup.py build --build-base agent_space/build392`) gives the same 106 clusters /
+  41757 v on 2 runs. `392b4dd..1153341` touches only `setup.py`, `.gitignore` and the cubvh gitlink.
+- The port does not touch the chart code: `git diff --stat origin/main 1153341 -- src/` does not list
+  `src/atlas.cu`. The kernel has no warp intrinsics; chart areas and normals come from
+  `cub::DeviceSegmentedReduce::Sum/Reduce` float sums (hipCUB/rocPRIM), whose summation order is a
+  library property. Those sums drive a greedy 100-iteration refinement.
+- The result is floating-point-order sensitive on this hardware: the same `392b4dd` sources rebuilt
+  with `HIPCC_COMPILE_FLAGS_APPEND=-ffp-contract=off` give 105 clusters / 43208 v.
+- The 106-chart atlas is valid (`agent_space/chart_check.py`): 106 chart ids 0..105, chart offsets
+  cover all 69451 faces, every chart nonempty and edge-connected (0 charts with >1 component),
+  uv_unwrap UVs finite in [0, 0.99852]. Size profile: 53 single-face charts, 19 charts >1000 faces
+  (largest 7749); the `-ffp-contract=off` build has 42 single-face charts and 18 >1000.
+- Earlier gfx90a runs on ROCm 7.2 gave 90 clusters / 45110, the same as gfx1100, so wave64 by
+  itself does not produce 106. The variable that changed is the toolchain (HIP 7.16 / rocm-sdk 10.1.0).
+  Not isolated further: no wave32 card is available here to run the same toolchain, so whether gfx1100
+  on HIP 7.16 also gives 106 is open. The next linux-gfx1100 run on a newer image should record its
+  uv_unwrap chart count to settle it.
+
+**BVH contract check** (`agent_space/bvh_check.py`, scratch; torch seed 0; run from `/tmp` against the
+installed package): icosphere subdiv 4, 2562 v / 5120 f, 20000 random points in [-1.5,1.5]^3.
+unsigned distance vs analytic max err 1.134e-3, all finite, all face_id >= 0; signed (watertight) max
+err 1.134e-3, sign match 19971/19971 beyond 2e-3 of the surface; ray_trace toward the origin from
+14683 points with r>1.2: 14683/14683 hit, hit radius [0.99886, 0.99999]. Degenerate mesh (1 vertex,
+9 zero-area faces, queries [0,0,0] and [1,2,3]): unsigned, signed watertight and signed raystab all
+return +inf / face_id -1 / uvw 0. Identical to the gfx1100 numbers.
+
+**CUDA gate**: closed at this head_sha by linux-gfx1100 (2026-08-27); not rerun.
+
+**Jargon/docs**: `python3 utils/jargon.py --port CuMesh` (after fetching local `main` and `moat-fix-36`
+refs into the fork clone) reports only the 2 known hits in the published `d5c1355` message, which a
+person already ruled stays. README documents `BUILD_TARGET=rocm GPU_ARCHS=...` next to the CUDA build.
+
+**Integrity**: `git -C projects/CuMesh/src status --porcelain` empty, HEAD `1153341`.
+
+**Result**: linux-gfx90a -> completed at 11533412aaaa8f21f26d7e46d8a468562c41ff96 (closes wave64 for
+this round). The uv_unwrap chart-count change is recorded above for a person to judge; it reproduces on
+the already-published tip and is not caused by this round.

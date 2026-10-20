@@ -149,3 +149,7 @@
 {"kind":"phase","ts":"2026-10-20T22:14:21Z","phase":"compile","seconds":143.605,"exit":0,"cmd":"cmd.exe /c D:\\Develop\\moat\\.claude\\worktrees\\agent-a148d27adb4763218\\agent_space\\cumesh_build_w.bat"}
 {"kind":"phase","ts":"2026-10-20T22:16:33Z","phase":"test","seconds":107.020,"exit":0,"cmd":"bash agent_space/run_tests.sh"}
 {"kind":"session","ts":"2026-10-20T22:17:05Z","epoch":1792534625.294441400,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-20T22:52:10Z","epoch":1792536730.411550957,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-20T22:56:12Z","phase":"compile","seconds":172.899,"exit":0,"cmd":"bash -c cd projects/CuMesh/src && GPU_ARCHS=gfx90a MAX_JOBS=64 /var/lib/jenkins/fleet/jobs/mi200-20261020-154900-cumesh-gfx90a-validator-prompt/venv/bin/python -m pip install . --no-build-isolation -v"}
+{"kind":"phase","ts":"2026-10-20T22:57:21Z","phase":"test","seconds":57.493,"exit":0,"cmd":"bash agent_space/run_examples.sh"}
+{"kind":"session","ts":"2026-10-20T23:06:40Z","epoch":1792537600.358180025,"event":"end","platform":"linux-gfx90a"}
