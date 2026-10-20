@@ -74,6 +74,7 @@ Scan this list against what you are doing. If any line could apply, open
 - An over-wide `__shfl*` width silently clamps to the physical wavefront instead of erroring; the symptom is a metric shift, not a crash.
 - Intra-wave barrier divergence: a per-row early return before `__syncthreads()` is benign on CUDA, faults on wave64.
 - `cub`/`hipCUB` block-collective `TempStorage` reuse races on a 64-thread block without an explicit `__syncthreads`.
+- A lane-0-only `atomicAdd` result broadcast by `__shfl` must be initialised on all lanes; clang(HIP) exploits the UB and every lane does the atomic.
 - `__smid()` can EXCEED `multiProcessorCount` on AMD, unlike NVIDIA.
 - HIP's device `warpSize` is not an `int`; cast it at any `printf` vararg.
 

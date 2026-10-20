@@ -132,6 +132,18 @@ wave32 result -- popsift's gfx1100 reported deterministic non-zero features from
 miscounted extrema path, a false pass. Where the algorithm is deterministic, diff the
 wave32 output against the wave64 output for the same input. (popsift)
 
+**A leader-only write broadcast by shuffle must be initialised on every lane.** The
+warp-aggregated atomic idiom -- `int base; if (lane == 0) base = atomicAdd(ctr, n);
+base = __shfl(base, 0);` -- reads `base` uninitialised on every other lane. That is UB,
+and "the shuffle only reads lane 0, so it is harmless" is wrong: nvcc keeps the guard,
+but clang(HIP) can use the UB to drop it, so EVERY lane performs the atomic and the
+counter advances by `warpSize * n`. Declare `int base = 0;`. The symptom is a count
+exactly `warpSize` times the real number of writes, with the surplus slots never written
+(zeroed or stale entries downstream). Measured by an upstream user on gfx1201, ROCm 7.2.1,
+against popsift's pre-port `extrema_count()`; the same construct left in a CUDA `#else`
+branch is the same UB waiting for a compiler. Grep the port for this idiom and initialise
+it on both paths. (popsift, upstream issue #193)
+
 **Special case: a warp-width-dependent SERIALIZED FORMAT.** If the warp width determines an
 on-disk or in-memory layout rather than just launch geometry, it cannot follow the per-arch
 device constant -- pin it to a fixed maximum width, or carry the producing device's width

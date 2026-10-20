@@ -3438,3 +3438,7 @@ commentary, asking RichardGe to reopen #6683 and add a unit test; a reply on clr
 pointing to it (thanking dspl1236 and redirecting their separate device-prop limits bug to rocm-systems) was posted as issuecomment-5734383793. Deferral popsift-texsurf-coherency now points at #11872. Consequence for
 the port: the non-layered-3D workaround stays required on every released ROCm; the
 "until #6683 lands" condition above has no date.
+
+## 2026-10-20: upstream merged #186; issue #193 on write_index
+
+alicevision/popsift#186 merged into develop as d0d7960 (2026-10-20 12:19 UTC); recorded with `set-pr-merged`. Upstream issue #193 (dspl1236) measured that `extrema_count()`'s uninitialised `write_index` is NOT harmless under clang(HIP): on gfx1201, ROCm 7.2.1, every lane performed the `atomicAdd`, so `ext_ct` was exactly 32x the extrema written, and the grid filter then promoted never-written slots to zero-sigma survivors with dead descriptors. Our review-thread reply on #186 called it harmless; that was wrong. The merged HIP branch initialises it (`int write_index = 0;`); the CUDA `#else` branch upstream still does not, which is upstream's to fix (the reporter offered a PR). Lesson promoted to cuda-to-rocm fault-classes (wavefront section).

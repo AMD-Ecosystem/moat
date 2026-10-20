@@ -7,13 +7,13 @@
   "priority": 5.187,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T00:36:13Z",
-  "updated_at": "2026-08-20T21:28:58Z",
+  "updated_at": "2026-10-20T22:33:28Z",
   "head_sha": "758d5e77faf0cc64b86b785d9b0981f324b2c1ad",
   "pr_url": "https://github.com/alicevision/popsift/pull/186",
   "pr_number": 186,
   "pr_opened_at": "2026-06-08T16:22:54Z",
   "waivers": {},
-  "pr_state": "open",
+  "pr_state": "merged",
   "license_spdx": "MPL-2.0",
   "upstream_repo_id": 36376397,
   "stage": "review-passed",
@@ -183,5 +183,6 @@
     "content_sha256": "20e64f0cf683b1965a14baa8bb8eea395c34c390629c988d3aa6461f3198be9d",
     "review_pr": "https://github.com/AMD-Ecosystem/popsift/pull/2"
   },
-  "fix_merged_at": "2026-08-20T21:28:58Z"
+  "fix_merged_at": "2026-08-20T21:28:58Z",
+  "pr_merged_at": "2026-10-20T22:33:28Z"
 }
