@@ -68,6 +68,17 @@ Read that failure as "this CMake is too old", not "clang-cl cannot host HIP". A 
 CMake is one `pip install cmake` away and TheRock's own venv already carries 4.3.2, so
 reach for it before restructuring a build around the older constraint.
 
+The one working mixed setup is LibTorch's own: `clang-cl` for C and C++, `clang++` for HIP,
+with HIP enabled AFTER C and C++ (`project(... LANGUAGES CXX C)` then
+`set(CMAKE_HIP_COMPILER_FORCED TRUE)` + `enable_language(HIP)`) and the HIP rules
+overridden to GNU style: compile object, depfile, `-isystem`, the MSVC runtime-library
+options, and C++ link rules for non-RDC targets. On CMake 4.3+ also strip the MSVC-style
+defaults (`/DWIN32 /O2 ...`) from `CMAKE_HIP_FLAGS` and its per-config variants and map the
+MSVC debug-information options to nothing, or clang++ rejects `/DWIN32` and `-Zi`. A
+project whose tests link ROCm LibTorch inherits this setup, because `find_package(Torch)`
+applies the same rules. See LichtFeld-Studio `cmake/HipCompute.cmake` and pytorch
+`cmake/public/LoadHIP.cmake`. (LichtFeld-Studio)
+
 Note the split with PyTorch extension ports, where `clang-cl` IS the required host
 compiler (see strategy-b-torch.md): torch drives the compile itself and never goes
 through CMake's `HIP` language.
@@ -85,31 +96,33 @@ import, not of a bad port.
 seconds; run it on the DLLs too, not just the .exe, since the missing module is usually
 one level down.
 
-## Windows: static initializers in TheRock's DLLs may never run
+## Windows: a C++ LibTorch consumer must force the torch_hip.dll import
 
 **A C++ test that gates on `torch::cuda::is_available()` can fail on Windows against a
-port that works perfectly.** TheRock's PyTorch Windows build links `torch_hip.dll` with
-`lld-link`, which emits no `.CRT$XCU` section; `_DllMainCRTStartup`'s CRT init pointer is
-NULL, `_initterm` never runs, and so `REGISTER_CUDA_HOOKS`'s static initializers never
-execute. `CUDAHooksRegistry` in `torch_cpu.dll` stays empty, `getCUDAHooks()` returns a
-no-op stub, and `is_available()` answers false on a machine whose GPU is fine.
+port that works perfectly**, because the executable never loads `torch_hip.dll` at all.
+The GPU hooks register from static initializers in that DLL, and the MSVC-ABI linker keeps
+a DLL import only when something references one of its symbols. A test that calls only
+`torch::` and `at::` APIs living in `torch_cpu.dll` references none, so the import is
+dropped, the registry stays empty and `is_available()` answers false on a machine whose
+GPU is fine. Check with `dumpbin /dependents <exe>` (prefix `MSYS2_ARG_CONV_EXCL="*"` from
+Git Bash): `torch_hip.dll` is missing from the list.
 
-The tell is the split: Python `import torch` reports devices correctly
-(`torch._C._cuda_getDeviceCount() > 0`), because the ctypes path does not go through the
-registry, while the standalone C++ executable says there is no GPU. Kernel tests that do
-not call `is_available()` first pass on the same run. If those three things are true
-together, this is the cause and the port is not at fault.
+PyTorch handles this for CUDA: `caffe2/CMakeLists.txt` puts
+`-INCLUDE:?warp_size@cuda@at@@YAHXZ` on `torch_cuda`'s interface link options for MSVC, so
+every consumer keeps the DLL. ROCm LibTorch has no such option on `torch_hip`, so a ROCm
+consumer has to add it to its own test target:
+`target_link_options(<tgt> PRIVATE "/INCLUDE:?warp_size@cuda@at@@YAHXZ")` under `WIN32`.
+With it, every torch-gated LichtFeld-Studio test that had failed now runs: 2044/2048 pass on gfx1151 and 2042/2048 on gfx1200.
+The missing interface option is tracked as `pytorch-windows-torch-hip-include-symbol`.
+
+The tell is the split: Python `import torch` reports devices correctly, because importing
+the package loads every DLL, while the standalone C++ executable says there is no GPU, and
+kernel tests that do not call `is_available()` first pass on the same run.
 
 Do not read it as "the project does not work on Windows" -- that mistake cost
-LichtFeld-Studio a wrongly-suggested gate waiver, on a port where 320 of 914 tests were
-passing on real gfx1101 hardware. It is a defect in a third-party build, so it is a
-deferred bug report (`therock-windows-lld-link-crt-xcu`, registered against
-LichtFeld-Studio -- `deferred.py list` finds it across refs) plus a workaround, not a
-property of the platform. Worth trying, none of them yet tested: `/WHOLEARCHIVE` or
-a forced reference into the hooks translation unit so the linker cannot drop it; calling
-`_initterm` on the DLL's CRT section directly; spawning a thread after load, since the
-TLS callbacks that do exist fire on `DLL_THREAD_ATTACH` and `DLL_PROCESS_ATTACH` calls
-`DisableThreadLibraryCalls`.
+LichtFeld-Studio a wrongly-suggested gate waiver. An earlier version of this entry blamed
+`lld-link` omitting `.CRT$XCU` from `torch_hip.dll`; that was wrong, and checking the
+executable's import table first would have found the real cause.
 
 ## Two GPUs visible to one process can crash the runtime
 
