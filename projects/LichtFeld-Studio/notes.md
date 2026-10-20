@@ -3111,3 +3111,32 @@ deterministic across two runs, on the exact head_sha reviewed and offered upstre
 `linux-gfx90a` remains `completed` at the older `7cd4d569` and reads `revalidate` on its own
 host per the porter's 2026-08-27 handoff note (the compat-header alias block is real compiled
 source there too, no carry-forward shortcut applies); not this session's arch.
+
+## Windows round 2026-10-19 (windows-gfx1151): contributor fix + CMake 4.3 follow-up
+
+Fork commits on top of 3ae4672a, head_sha -> 5dfb778f:
+- d36fedb7 `[ROCm] Build and run the HIP compute tests on Windows` -- outside contributor's AMD-Ecosystem/LichtFeld-Studio#1, squash-merged by jeffdaily (contributor kept as author; message edited at merge to add rationale + Test Plan). Tree identical to the PR head af0cf727 that was reproduced before merging.
+- 5dfb778f `[ROCm] Use GNU-style HIP flags on Windows with CMake 4.3+` -- strips MSVC-style tokens from CMAKE_HIP_FLAGS and replaces MSVC-style per-config HIP defaults with GNU ones (Release keeps -O3 -DNDEBUG); plus the Windows section in docs/building_and_distribution.md.
+
+### Corrected root cause of the old windows block
+The recorded diagnosis (lld-link omitting .CRT$XCU from torch_hip.dll so REGISTER_CUDA_HOOKS never runs) was WRONG. The test exe simply never imported torch_hip.dll: nothing referenced a symbol from it, so the linker dropped the import. PyTorch's caffe2/CMakeLists.txt adds `-INCLUDE:?warp_size@cuda@at@@YAHXZ` as an INTERFACE link option on torch_cuda for MSVC but has no torch_hip equivalent, so every standalone C++ consumer of ROCm LibTorch on Windows hits this. d36fedb7 adds the same /INCLUDE to lfs_compute_tests; `dumpbin /dependents` now lists torch_hip.dll and torch::cuda::is_available() is true.
+
+### CMake 4.3 HIP-flag gap (why 5dfb778f exists)
+With C/CXX on clang-cl, CMake 4.3+ (Platform/Windows-Clang.cmake takes the MSVC branch for HIP when CXX is MSVC-frontend) seeds CMAKE_HIP_FLAGS / _<CONFIG> with `/DWIN32 /D_WINDOWS /O2 /Ob2 /DNDEBUG`; GNU-frontend clang++ rejects each as "no such file or directory". d36fedb7 alone fails every HIP TU on CMake 4.3.2. pytorch cmake/public/LoadHIP.cmake:143-175 strips them for the same reason. On this path the per-config flags DO reach the compile line (verified in build.ninja), so the fix must restore GNU per-config flags, not just strip.
+
+### Build (windows-gfx1151, Radeon 8060S; TheRock ROCm 7.14, torch 2.12.0+rocm7.14.0a20260531, CMake 4.3.2, MSVC 14.44)
+Exactly the documented Windows command (docs/building_and_distribution.md), clang-cl C/CXX + clang++ HIP from `_rocm_sdk_devel/lib/llvm/bin`, PYTORCH_ROCM_ARCH=gfx1151, HIP_DEVICE_LIB_PATH set; host-specific -Dnlohmann_json_DIR / -DTBB_DIR / -DCMAKE_PREFIX_PATH as in earlier rounds. Script: agent_space/lfs_doccheck.bat. 233/233, HIP FLAGS `... -O3 -DNDEBUG -std=gnu++20 --offload-arch=gfx1151 -fms-runtime-lib=dll`, no MSVC tokens.
+
+### Runtime environment (host, not port)
+PATH = build dir; torch/lib; `_rocm_sdk_libraries/bin` BEFORE `_rocm_sdk_core/bin` and `_rocm_sdk_devel/bin`. With devel first, rocBLAS loads from devel/bin, cannot find gfx1151 TensileLibrary.dat and aborts (0x80000003), and hipRAND returns status 201. The POST_BUILD amdhip64_7.dll copy happens (from ROCM_PATH/bin).
+
+### Results (pre-validation evidence; formal validation follows review)
+- PR head af0cf727 + command-line HIP-flag override: 2044/2048, two runs identical.
+- af0cf727 + fix (no override): 2044/2048, two runs identical.
+- d36fedb7 + fix tree (= 5dfb778f) via the documented command: 2044/2048.
+Failures are exactly the linux-gfx1100 set: MCMCTest.RemoveGaussiansSoftDeletesRows, MCMCRelocateOptimizerStateTest.ResetBothSourceAndDestinationRows, TensorLazyIrTest.OnModeDefersUntilBoundaryAndMaterializes, TensorStressTest.DeepOperationChain. Previously 320/914 (564 is_available() failures).
+
+### VRAMResizeTest (device-wide hipMemGetInfo heuristics)
+Full suite: all 5 pass on gfx1151 (TensorAllocationReleasesMemory 4K delta 152 MB vs bound 160; MemoryPerResolution 1440p 121 vs bound 147). Alone (`--gtest_filter=VRAMResizeTest.*`, 5 runs, identical): MemoryPerResolution FAILS deterministically at 1440p, 150 MB vs bound 147 (expected 98); 4K tensor delta 126 MB. Contributor on gfx1200 saw the reverse (2 fail in suite, pass alone). Pool bucket rounding explains ~111 MB of the 1440p 150; the remaining ~39 MB is not explained. Same class as TensorStressTest.DeepOperationChain: a device-wide memory-counter heuristic, not a kernel defect. The gate is the full-suite run, where they pass here.
+
+Deferral bookkeeping: `therock-windows-lld-link-crt-xcu` set to done (its diagnosis was wrong; the symptom it tracked is resolved in the port by d36fedb7) and superseded by `pytorch-windows-torch-hip-include-symbol` (rocm-bug-report, component pytorch), awaiting a person's ruling. The windows-gfx1101/1201 blocked_reason text still carries the wrong diagnosis; those records belong to their own host, so they were left untouched here. When that host is back, clear them (`set-blocked --clear`) and let it revalidate at head.

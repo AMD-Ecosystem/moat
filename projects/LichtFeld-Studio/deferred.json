@@ -22,7 +22,7 @@
       "refs": [
         "projects/LichtFeld-Studio/notes.md"
       ],
-      "status": "open",
+      "status": "done",
       "upstream_issue": null,
       "created_at": "2026-08-07T23:07:19Z",
       "decided": {
@@ -96,6 +96,19 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-08-24T22:29:06Z",
+      "decided": null
+    },
+    {
+      "id": "pytorch-windows-torch-hip-include-symbol",
+      "kind": "rocm-bug-report",
+      "component": "pytorch",
+      "summary": "On Windows, ROCm LibTorch gives standalone C++ consumers no way to keep the torch_hip.dll import: caffe2/CMakeLists.txt adds -INCLUDE:?warp_size@cuda@at@@YAHXZ as an INTERFACE link option on torch_cuda for MSVC (lines 1414-1418) but has no torch_hip equivalent, so an exe that references no torch_hip symbol drops the DLL and torch::cuda::is_available() is false. LichtFeld-Studio works around it with the same /INCLUDE on its test exe (fork d36fedb7). Supersedes therock-windows-lld-link-crt-xcu, whose .CRT$XCU diagnosis was wrong.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md#windows-round-2026-10-19"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-20T01:01:02Z",
       "decided": null
     }
   ]
