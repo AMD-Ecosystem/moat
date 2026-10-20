@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Scan upstream-visible text for MOAT in-house vocabulary.
 
 Everything MOAT publishes to an upstream project -- commit messages, PR titles and
