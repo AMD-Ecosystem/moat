@@ -103,3 +103,5 @@
 {"kind":"phase","ts":"2026-08-27T04:52:35Z","phase":"test","seconds":13.100,"exit":1,"cmd":"env HIP_VISIBLE_DEVICES=0 /var/lib/jenkins/moat/projects/LichtFeld-Studio/src/build-hip-gfx1100/cmake/hip_tests/lfs_compute_tests"}
 {"kind":"phase","ts":"2026-08-27T04:53:05Z","phase":"test","seconds":12.970,"exit":1,"cmd":"env HIP_VISIBLE_DEVICES=0 /var/lib/jenkins/moat/projects/LichtFeld-Studio/src/build-hip-gfx1100/cmake/hip_tests/lfs_compute_tests"}
 {"kind":"session","ts":"2026-08-27T04:54:47Z","epoch":1787806487.888003871,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-20T01:05:11Z","epoch":1792458313.103121000,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-20T01:15:03Z","epoch":1792458904.037722900,"event":"end","platform":"windows-gfx1151"}
