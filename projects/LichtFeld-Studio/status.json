@@ -7,8 +7,8 @@
   "priority": 6.263,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-10-20T12:47:57Z",
-  "head_sha": "33e97d013eff76c856f56a99a4616618aa7af472",
+  "updated_at": "2026-10-20T22:38:46Z",
+  "head_sha": "ce822a31ad690650b7850c0a56a867cffeccb4f2",
   "depends_on": [],
   "waivers": {
     "windows": {
@@ -27,7 +27,7 @@
   },
   "license_spdx": "GPL-3.0",
   "upstream_repo_id": 672651553,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "windows-gfx1151": {
       "blocked": false,
@@ -36,7 +36,7 @@
       "failed_sha": "5cbfdf1a7b1b6a6553ce077a5aa8d6209fd3f51c",
       "started_at": "2026-10-20T00:45:37Z",
       "completed_at": "2026-10-20T01:49:59Z",
-      "updated_at": "2026-10-20T12:47:57Z",
+      "updated_at": "2026-10-20T22:38:46Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -149,11 +149,8 @@
   },
   "porting_released": {
     "arch": "windows-gfx1151",
-    "since": "2026-10-20T11:59:03Z",
-    "at": "2026-10-20T12:43:46Z"
+    "since": "2026-10-20T12:47:57Z",
+    "at": "2026-10-20T22:38:46Z"
   },
-  "porting": {
-    "arch": "windows-gfx1151",
-    "since": "2026-10-20T12:47:57Z"
-  }
+  "porting": null
 }

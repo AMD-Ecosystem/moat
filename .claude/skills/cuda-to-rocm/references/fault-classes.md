@@ -73,6 +73,25 @@ lossy or statistical pipeline the wrong collective still round-trips, so it surf
 quality-metric shift (compression ratio, PSNR) rather than a crash -- the cross-arch gate
 has to compare the METRIC, not just that the output decodes. (cuSZ)
 
+**A full 64-bit `*_sync` mask in 32-lane group code traps in a HIP debug build on wave64.**
+HIP's `__shfl*_sync` / `__ballot_sync` run `__hip_check_mask`, which asserts that the mask
+equals the lanes that reached the call (`__ballot(true)`), and `__hip_assert` is a
+`__builtin_trap()` unless `NDEBUG` is defined. Code written for 32-lane CUDA warps and kept
+correct on wave64 by group-local folds (offsets below 32, width-32 shuffles, the
+`>> (__lane_id() & 32)` ballot) is still wrong to pass `0xffff...ffffull` wherever the two
+halves of a wavefront can reach the intrinsic separately: a per-group `continue`, a
+per-group trip count, or a cross-warp step that runs only `threadIdx.x < 32` (or
+`warp_id == 0` with `warp_id = threadIdx.x / 32`). Release builds are correct and wave32
+cannot see it, because a group is the whole wave, so only a wave64 debug run traps. Pass the
+caller's group mask, `0xffffffffull << (__lane_id() & 32u)`: it is the whole wave on wave32
+and one half on wave64. The check runs a waterfall over distinct mask values, so each half
+is validated against itself, whether the halves arrive together or apart. HIP evaluates the
+shuffle in the caller's context, so the mask changes only that check and the ballot's
+`& mask`, never the data movement. Mask-free `__shfl(v, s, 32)` / `__ballot` also work but
+drop the check entirely. Folds over the native wavefront (`warp_id = threadIdx.x /
+warpSize`) keep the full mask. (LichtFeld-Studio: fastgs/gsplat 32-lane tile macros, nn
+softmax/norm block reductions, `block_reduce_min4`.)
+
 **Intra-wave barrier divergence.** A per-row early `return` before `__syncthreads()` is
 benign on CUDA when a row is a whole 32-lane warp -- the warp exits and leaves the barrier
 wait set. On wave64 two rows share a wavefront, so one row returning is a half-wave
@@ -366,6 +385,19 @@ failures and narrowing conversions. Fixes are additive and arch-independent, so 
 the CUDA build too and are not HIP-specific hacks. (Velvet)
 
 ## Types, dispatch and platform limits
+
+**`clock64()` is a 20-bit wrapping counter on RDNA3, so a cycle-bounded spin or delay
+ends early.** HIP's `clock64()` is `__builtin_readcyclecounter()`. On gfx11 that lowers to
+`s_getreg_b32 hwreg(HW_REG_SHADER_CYCLES, 0, 20)`, while gfx90a emits a 64-bit
+`s_memtime`. A `while (clock64() - start < cycles)` loop with `cycles` above 2^20 can exit at
+the counter's first wrap, after anywhere from 0 to about a million cycles instead of the
+intended tens of milliseconds. Nothing fails at the loop itself. What breaks is whatever the
+delay was holding open: a test that gates a producer stream to prove a consumer waits for it
+passes or fails by luck, and a device-side timeout fires immediately. Time such loops with
+`wall_clock64()`, a 64-bit constant-rate counter on every AMD GPU, and convert the duration
+with `hipDeviceGetAttribute(..., hipDeviceAttributeWallClockRate, dev)` (kHz). Treat any
+`clock64()`/`clock()` difference compared against more than 2^20 as this bug.
+(LichtFeld-Studio: tensor hardening `GateStream` delay kernel.)
 
 **Library swaps.** cuBLAS -> hipBLAS, cuFFT -> hipFFT, cuRAND -> hipRAND, cuSPARSE ->
 hipSPARSE, cuDNN -> MIOpen, Thrust/CUB -> rocThrust/hipCUB. Mostly 1:1; watch handle types

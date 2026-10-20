@@ -146,6 +146,45 @@
       "upstream_issue": null,
       "created_at": "2026-10-20T11:05:03Z",
       "decided": null
+    },
+    {
+      "id": "lfs-upstream-binary-inplace-no-stream-join",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream library defect (not a port or HIP defect): Tensor::add_/sub_/mul_/div_(Tensor) -> binary_op_inplace_generic (src/core/tensor/internal/tensor_impl.hpp:913-961 at ca01b056) launches on this->stream() after pin_operands, which only materializes deferred operands; nothing calls sync_to_stream/prepare_inputs_for_stream for other_dense, so a source last written on another stream is read unordered. CudaTest.D1_BinaryInPlaceWaitsForGatedProducer (tests/test_tensor_hardening_theme_d.cpp:134) fails on gfx1151 with a correct 100 ms gate (reads 1 instead of 3); CUDA is expected to fail it too (no workflow runs the hardening tier; tests/CMakeLists.txt:1224-1227 calls it the known-failure tier). Belongs in a separate upstream change, not moat-port.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md#porter-round-2026-10-20"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-20T13:30:47Z",
+      "decided": null
+    },
+    {
+      "id": "lfs-upstream-d4-prime-unordered",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream test defect: TensorD4FromBlobHomeStreamTest.{ItemTypedDrainsStampedHome, StampedBlobThroughPinnedOpCrossStream} prime the buffer with cudaMemset(0x7f) on the legacy stream, then cudaMemsetAsync(0) on a non-blocking producer (test_tensor_d4_from_blob_stream.cpp:121-127, :332-335). The two writes are unordered by the API contract; the test relies on the legacy-stream write landing first. On TheRock Windows HIP the null-stream memset is not executed until a later null-stream call, so it lands last every time (0x7F7F7F7F read), independent of gate length. Fix belongs upstream (synchronize after the prime, or prime on the producer stream before close()).",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md#porter-round-2026-10-20"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-20T13:31:11Z",
+      "decided": null
+    },
+    {
+      "id": "hip-windows-null-stream-work-not-submitted",
+      "kind": "rocm-bug-report",
+      "component": "hip-runtime",
+      "summary": "TheRock ROCm 7.14 Windows (PAL), gfx1151: a hipMemset on the null stream returns but is not executed until a later null-stream call; hipStreamQuery(nullptr) still returns hipErrorNotReady after a non-blocking stream gated 100 ms behind it has completed and synchronized. Deterministic standalone reproducer (no kernels: hipMemset(null) then hostfunc-gated hipMemsetAsync on a non-blocking stream, sync it, query null, hipMemcpy D2H) reads the null-stream value 3/3 runs; with hipStreamSynchronize(nullptr) after the first memset it reads the later value 3/3. Not a CUDA ordering guarantee, but a forward-progress difference from CUDA (Linux ROCr not checked) that turns unordered-but-timely test setups into deterministic failures. Needs a person's ruling on whether to report.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md#porter-round-2026-10-20"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-20T13:31:37Z",
+      "decided": null
     }
   ]
 }
