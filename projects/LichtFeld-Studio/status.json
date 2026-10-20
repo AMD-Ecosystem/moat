@@ -7,8 +7,8 @@
   "priority": 6.263,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-10-20T02:06:32Z",
-  "head_sha": "cf21cb26822ec44cc725b3c7e6e95c27a8c1e5af",
+  "updated_at": "2026-10-20T04:53:04Z",
+  "head_sha": "69d080dc9995003cef7d3fea68d7789f3eb2a0ad",
   "depends_on": [],
   "waivers": {
     "windows": {
@@ -32,11 +32,11 @@
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "cf21cb26822ec44cc725b3c7e6e95c27a8c1e5af",
+      "validated_sha": "69d080dc9995003cef7d3fea68d7789f3eb2a0ad",
       "failed_sha": "5cbfdf1a7b1b6a6553ce077a5aa8d6209fd3f51c",
       "started_at": "2026-10-20T00:45:37Z",
       "completed_at": "2026-10-20T01:49:59Z",
-      "updated_at": "2026-10-20T01:49:59Z",
+      "updated_at": "2026-10-20T04:53:03Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -57,10 +57,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "cf21cb26822ec44cc725b3c7e6e95c27a8c1e5af",
+      "validated_sha": "69d080dc9995003cef7d3fea68d7789f3eb2a0ad",
       "started_at": "2026-05-31T01:11:33Z",
       "completed_at": "2026-10-20T02:04:32Z",
-      "updated_at": "2026-10-20T02:04:32Z",
+      "updated_at": "2026-10-20T04:53:03Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -81,10 +81,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "cf21cb26822ec44cc725b3c7e6e95c27a8c1e5af",
+      "validated_sha": "69d080dc9995003cef7d3fea68d7789f3eb2a0ad",
       "started_at": "2026-05-31T03:10:00Z",
       "completed_at": "2026-10-20T02:06:32Z",
-      "updated_at": "2026-10-20T02:06:32Z",
+      "updated_at": "2026-10-20T04:53:03Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,

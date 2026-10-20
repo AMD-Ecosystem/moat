@@ -3258,3 +3258,9 @@ Not run. Same structural wall recorded in every earlier entry: a non-HIP configu
 - Integrity: fork tree clean; only gitignored `build-hip-gfx90a/` written.
 
 ### Verdict: COMPLETED (linux-gfx90a), validated_sha cf21cb26
+
+## PR-prep message rewrite 2026-10-19
+
+jeff approved a one-time, message-only rewrite of `moat-port` so the branch carries no in-house vocabulary before the upstream PR (resolves `lfs-commit-msg-jargon-13e585d-e24593f` and `lfs-commit-msg-drop-alien-ref`). `git filter-branch --msg-filter` over `origin/master..cf21cb26` changed six message lines: "Strategy A (colmap model)" (e24593f4), "via MOAT" (13e585d4), the AMD-Ecosystem/alien reference and "(gfx1151 bring-up)" in the title (53c363f8), and "bring-up" in 0c820fd1 and 00187204. Tree identical (`c73fb63a`), author/committer/dates identical per commit, `jargon.py` clean. Pushed with `--force-with-lease=moat-port:cf21cb26`; new head 69d080dc (contributor commit d36fedb7 is now 9c0cd117, author unchanged). `squash-carry-forward` carried windows-gfx1151, linux-gfx90a and linux-gfx1100 to 69d080dc.
+
+`pytorch-windows-torch-hip-include-symbol`: already fixed upstream by pytorch/pytorch#201445 (issue #201444), the same change verified locally on gfx1151: a LibTorch consumer prints `is_available=0` with no torch_hip.dll import on the stock export and `is_available=1` with the INTERFACE `-INCLUDE:?warp_size@cuda@at@@YAHXZ` item on torch_hip. Recorded as filed against that PR.
