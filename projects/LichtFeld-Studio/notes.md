@@ -3173,3 +3173,41 @@ Radeon 8060S (gfx1151, wave32, Windows 11), TheRock ROCm 7.14, torch 2.12.0+rocm
 - Test: PATH = build dir; torch/lib; _rocm_sdk_libraries/bin; _rocm_sdk_core/bin; _rocm_sdk_devel/bin. `ulimit -c 0; utils/timeit.sh LichtFeld-Studio test -- cmake/hip_tests/lfs_compute_tests.exe`, serial, twice: 2044/2048 both runs, identical. Failures (the four documented linux-gfx1100 set): MCMCTest.RemoveGaussiansSoftDeletesRows, MCMCRelocateOptimizerStateTest.ResetBothSourceAndDestinationRows, TensorLazyIrTest.OnModeDefersUntilBoundaryAndMaterializes, TensorStressTest.DeepOperationChain. VRAMResizeTest passes in the full suite.
 - CUDA gate: not run (no CUDA toolkit on Windows host); linux archs carry it.
 - Jargon: only hits are the registered e24593f4e commit-message deferral (Strategy A / colmap model, attribution line); cf21cb26 adds none. Docs: Windows recipe documented in docs/building_and_distribution.md and reproduced exactly.
+
+## Revalidation 2026-10-20 (validator, linux-gfx1100, AMD Radeon Pro W7800, RDNA3 gfx1100) -- cf21cb26, COMPLETED
+
+Dispatched as `revalidate`: validated_sha 3ae4672a, head_sha cf21cb26 (d36fedb7, 5dfb778f, cf21cb26 from the 2026-10-19 Windows rounds). `classify` gives `mixed` (CMakeLists.txt, cmake/HipCompute.cmake, cmake/hip_tests/CMakeLists.txt, memory_pool.hpp), so no automatic carry-forward. Linux-visible content of the delta: the top-level `project()` change sits in `if(WIN32)` with the old line kept in `else()`; HipCompute.cmake and hip_tests changes are inside `if(WIN32)` or `$<$<PLATFORM_ID:Windows>:...>`; `class LFS_CORE_API LabelGuard` expands to `__attribute__((visibility("default")))` on Linux (export.hpp:30) and matches upstream. Instead of building both shas for codeobj_diff, ran a full real-GPU revalidation at head (similar cost, stronger evidence).
+
+### Host environment (differs from the 2026-08-27 recipe)
+Fresh fork clone at moat-port, HEAD == cf21cb26, `protect-fork` installed. No /opt/rocm; ROCm is the TheRock Python SDK under `/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel` (rocm-sdk 10.1.0, AMD clang 24.0.0git). Torch `2.16.0a0+git6c3af02`, `torch.version.hip 7.16.26385` (newer than the 2.14.0a0 the c56016ba compat-header fix targeted; no new compat gap). CMake 3.31.6. apt: `nlohmann-json3-dev libopenimageio-dev libopenmesh-dev libgtest-dev libgmock-dev libspdlog-dev libstdc++-14-dev gcc-14 g++-14`. Without libstdc++-14-dev, `src/core/argument_parser.cpp` fails on `#include <print>` (host toolchain, not the port). Vendored into agent_space/_deps: glm 1.0.1, Taywee/args (master), spdlog v1.15.3 built static with bundled fmt (`-DSPDLOG_FMT_EXTERNAL=OFF`, Class A workaround from 2026-08-27).
+
+### Build
+```
+export ROCM_PATH=$SDK   # .../site-packages/_rocm_sdk_devel
+cmake -S src -B src/build-hip-gfx1100 -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_CXX_COMPILER=$SDK/lib/llvm/bin/clang++ -DCMAKE_C_COMPILER=$SDK/lib/llvm/bin/clang \
+  -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON \
+  -DLFS_GLM_INCLUDE_DIR=$DEPS/glm-1.0.1 -DLFS_ARGS_INCLUDE_DIR=$DEPS/lfs_args \
+  -DGTest_DIR=/usr/lib/x86_64-linux-gnu/cmake/GTest -Dspdlog_DIR=$DEPS/spdlog-install/lib/cmake/spdlog \
+  -DTorch_DIR=.../site-packages/torch/share/cmake/Torch
+utils/timeit.sh LichtFeld-Studio compile -- cmake --build src/build-hip-gfx1100 --target lfs_compute_tests -j24
+```
+232/232, clean. Configure warns `test file not found, skipping` for test_loss_gradients.cpp, test_mcmc_kernels.cpp and test_bilateral_grid.cpp; those names are in hip_tests/CMakeLists.txt at 3ae4672a as well, so the delta does not introduce them.
+
+### GPU test run (real hardware, gfx1100, HIP_VISIBLE_DEVICES=0, ulimit -c 0, serial)
+Runtime needs `LD_LIBRARY_PATH=$SITE/_rocm_sdk_libraries/lib:$SITE/_rocm_sdk_core/lib:$SITE/torch/lib`; without it the binary exits 127 (libhiprand.so.1, libamdhip64.so.7, librocrand.so.1 not found), an environment failure.
+```
+ulimit -c 0
+utils/timeit.sh LichtFeld-Studio test -- src/build-hip-gfx1100/cmake/hip_tests/lfs_compute_tests
+```
+Run 1: 2048 tests / 119 suites, 11660 ms: 2044 passed, 4 failed. Run 2: 10914 ms, 2044 passed, same 4 failed. 1 disabled test. The failures are the long-documented set: MCMCTest.RemoveGaussiansSoftDeletesRows, MCMCRelocateOptimizerStateTest.ResetBothSourceAndDestinationRows, TensorLazyIrTest.OnModeDefersUntilBoundaryAndMaterializes, TensorStressTest.DeepOperationChain. Identical to the 2026-08-27 linux-gfx1100 result at 3ae4672a and the 2026-10-19 windows-gfx1151 result at cf21cb26.
+
+### CUDA no-regression gate
+cuda-not-validated: unchanged wall. The non-HIP configure goes through the project's vcpkg bootstrap (~40 packages), which does not fit the compile-only budget, and this host has no cuda-12.8 env. The delta's only CUDA-path-visible edit is `LFS_CORE_API` on LabelGuard, which matches upstream origin/master.
+
+### Pre-completion checklist
+- Jargon: the 3 pre-existing commit-message hits (13e585d4, e24593f4) under the open deferral `lfs-commit-msg-jargon-13e585d-e24593f`; none from d36fedb7..cf21cb26.
+- Docs: Linux recipe in docs/building_and_distribution.md is unchanged by the delta and matches the build above (plus the host-specific spdlog_DIR, libstdc++-14 and LD_LIBRARY_PATH environment items).
+- Integrity: `git -C src status --porcelain` empty; only the gitignored build dir was written.
+
+### Verdict: COMPLETED (linux-gfx1100) at cf21cb26
