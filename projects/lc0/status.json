@@ -7,8 +7,8 @@
   "priority": 6.245,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-10-09T15:38:33Z",
-  "head_sha": "b87423d8e5cb4075386359cb4521eb8a14ffea2a",
+  "updated_at": "2026-10-20T22:07:38Z",
+  "head_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
   "pr_url": "https://github.com/LeelaChessZero/lc0/pull/2420",
   "pr_number": 2420,
   "pr_opened_at": "2026-06-11T07:21:22Z",
@@ -146,16 +146,21 @@
     }
   },
   "published_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
-  "fix": {
-    "branch": "moat-fix-2420",
-    "base_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
-    "review_pr": null,
-    "opened_at": "2026-08-20T20:47:49Z"
-  },
+  "fix": null,
   "porting_released": {
     "arch": "linux-gfx90a",
     "since": "2026-08-24T23:41:52Z",
     "at": "2026-08-24T23:46:04Z"
   },
-  "pr_merged_at": "2026-10-09T15:38:33Z"
+  "pr_merged_at": "2026-10-09T15:38:33Z",
+  "fix_abandoned": [
+    {
+      "branch": "moat-fix-2420",
+      "base_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",
+      "tip_sha": "b87423d8e5cb4075386359cb4521eb8a14ffea2a",
+      "by": "jeffdaily",
+      "reason": "Superseded upstream: LeelaChessZero/lc0#2454 (926e99f) landed an equivalent, broader null-stream wait (cudaDeviceSynchronize at the end of construction in both the cuda and cudnn backends) after #2420 merged at 7727fa3 without our fix. Third-party confirmation on Windows gfx1200: https://github.com/LeelaChessZero/lc0/pull/2454#issuecomment-6273346601",
+      "at": "2026-10-20T22:07:38Z"
+    }
+  ]
 }
