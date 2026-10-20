@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 # Backend-2 build: barney with the HIPRT (AMD hardware-RT) rtcore backend on
 # Linux gfx90a (ROCm 7.2.1). HIPRT supplies BVH build + traversal; barney keeps
 # its function-pointer program dispatch. See notes.md "Backend 2".
