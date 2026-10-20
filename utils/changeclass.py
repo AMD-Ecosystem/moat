@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Source-class classifier for the MOAT regression guard.
 
 Given two commits on a fork, decide whether the source delta is behavior-
