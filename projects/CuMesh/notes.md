@@ -2618,3 +2618,61 @@ close the round's actual gate: a `windows-*` pass at this same head is still req
 observe), and `linux-gfx942`/`linux-gfx90a` still need their own revalidation at this
 head (the cubvh core changed at `5996569`, so nothing older carries forward for them
 either).
+
+## Validation 2026-10-20 (windows-gfx1151, fix round `moat-fix-36` at 1153341) -- PASS
+
+**Platform**: windows-gfx1151 (AMD Radeon 8060S, gfx1151, RDNA3.5 APU, 20 CU, wave32), Windows 11
+Enterprise 10.0.26100, torch `2.12.0+rocm7.14.0a20260519` (Python 3.13), TheRock ROCm SDK devel tree,
+MSVC 14.44 vcvars64, clang-cl host compiler. Same toolchain as the 2026-08-20 failed attempt.
+
+**Commit**: `moat-fix-36` at `11533412aaaa8f21f26d7e46d8a468562c41ff96` (head_sha), fresh fork clone
+in an isolated worktree, `protect-fork` run. Submodules `third_party/cubvh` de1badf89b54,
+nested eigen e63d9f6ccb7f, matching the recorded pins.
+
+**Build** (`utils/timeit.sh CuMesh compile -- cmd.exe /c cumesh_build_w.bat`, with
+`MSYS2_ARG_CONV_EXCL="*"`; the .bat is the 2026-08-20 recipe with BUILD_TARGET=rocm,
+GPU_ARCHS=PYTORCH_ROCM_ARCH=gfx1151, CC=CXX=clang-cl, DISTUTILS_USE_SDK=1, ending in
+`python.exe setup.py build_ext --inplace --force`): PASS, exit 0, 143.6s, zero `error:` lines.
+`_C`, `_cubvh` and `_cumesh_xatlas` all built (`.cp313-win_amd64.pyd`). The `_cubvh` extension that
+failed at 392b4dd (raw `include/gpu/api_gpu.h` pulling `ATen/cuda/CUDAContext.h` next to
+`ATen/hip/*`) now compiles: the widened `_hipify_cubvh_sources()` from `1b796f7` fixes it on
+this torch. Housekeeping: one earlier attempt this session failed only because an interrupted
+`git submodule update` left the nested eigen submodule empty ("Eigen/Dense file not found"); that
+was a clone problem on this host, not the port.
+
+**Examples** (`utils/timeit.sh CuMesh test -- bash run_tests.sh`; examples copied to a scratch dir,
+bunny downloaded fresh, `HIP_VISIBLE_DEVICES=0`, `PYTHONPATH=<in-place build tree>`): 6/6 PASS.
+
+| example | windows-gfx1151 | linux-gfx1100 (2026-08-27) |
+|---|---|---|
+| simplify | 34834/69451 -> 4974 v / 9878 f | -> 5001 / 9931 (varies run to run) |
+| fill_holes | -> 34838 / 69594 | same |
+| remove_duplicate_faces | 34834 / 69451 unchanged | same |
+| unify_orientations | 34834 / 69451 unchanged | same |
+| remesh | -> 102396 / 204916 | same |
+| uv_unwrap | 90 clusters, 45018 v / 69451 f | 90 clusters, 45110 / 69451 |
+
+**uv_unwrap vertex count over 4 runs**: 45018, 45018, 45018, 45018 (deterministic here), 90
+clusters every time, 69451 faces. This equals the outside report (0xDELUXA, Windows gfx1200, TheRock
+ROCm, PR #36 comment: 45018 every run, 45110 on Linux gfx1100). Two independent Windows hosts and
+toolchains agree, and Linux differs by 92 vertices with identical cluster count and face count; so it
+is a Windows/clang-cl versus Linux difference in the chart-building stage (xatlas is CPU code in
+`_cumesh_xatlas`; float/ordering differences in chart growth change the number of split boundary
+vertices), not a GPU fault: cluster count and face count are unchanged. Not root-caused further.
+Outside evidence only; it is not a platform completion for gfx1200.
+
+**BVH contract check** (`agent_space/bvh_check.py`, scratch, not committed): icosphere subdiv 4,
+2562 v / 5120 f, 20000 random points in [-1.5,1.5]^3. unsigned distance vs analytic max err
+1.133e-3 all finite; signed distance max err 1.133e-3, sign match 100% (19953 points beyond 2e-3 of the
+surface); ray_trace toward origin from 14561 points with r>1.2: 14561/14561 hit, hit radius
+[0.99887, 0.99999]. Degenerate mesh (1 vertex, 9 zero-area faces): unsigned, signed watertight
+and raystab all return +inf / face_id -1 / uvw 0. All match the gfx1100 results.
+
+**CUDA gate**: closed at this head_sha by linux-gfx1100 (2026-08-27); no CUDA toolkit here, not rerun.
+
+**Jargon/docs**: `python3 utils/jargon.py --port CuMesh` reports only the 2 known hits in the already
+published `d5c1355` message (human-settled, frozen history); none from this round's four commits.
+README documents the ROCm build next to the CUDA one.
+
+**Integrity**: `git status --porcelain` in the fork clone is empty (build outputs are ignored).
+**Result**: windows-gfx1151 -> completed at 11533412aaaa8f21f26d7e46d8a468562c41ff96.
