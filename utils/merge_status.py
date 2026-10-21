@@ -79,7 +79,7 @@ _PR_RANKABLE = set(PR_STATES) == {"open"} | _TERMINAL_PR
 STICKY = ("upstream_repo_id", "fork_url", "review_pr", "pr_approval",
           "license_clearance", "license_spdx", "pr_number", "pr_url",
           "pr_opened_at", "pr_merged_at", "pr_closed_at", "pr_closed_note",
-          "adopted_at", "maintained", "no_upstream")
+          "adopted_at", "maintained", "no_upstream", "fix_abandoned")
 UNION = ("platforms", "waivers")
 RESET = ("on_hold", "on_hold_reason")
 # Every field that describes the CURRENT upstream-PR round. When the two sides
@@ -88,7 +88,7 @@ RESET = ("on_hold", "on_hold_reason")
 PR_ROUND_FIELDS = ("pr_state", "pr_url", "pr_number", "pr_opened_at",
                    "pr_merged_at", "pr_closed_at", "pr_closed_note",
                    "published_sha", "review_pr", "pr_approval", "fix",
-                   "fix_merged_at", "pr_history", "pr_round")
+                   "fix_merged_at", "fix_abandoned", "pr_history", "pr_round")
 
 
 def _round_of(x):

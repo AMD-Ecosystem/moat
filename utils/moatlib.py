@@ -1858,10 +1858,12 @@ def archive_pr(name):
                                  "pr_merged_at", "pr_closed_at", "pr_closed_note",
                                  "published_sha", "review_pr")
              if obj.get(k) is not None}
+    if obj.get("fix_abandoned"):
+        entry["fix_abandoned"] = obj["fix_abandoned"]
     entry["archived_at"] = now_iso()
     for k in ("pr_url", "pr_number", "pr_state", "pr_opened_at", "pr_merged_at",
               "pr_closed_at", "pr_closed_note", "published_sha", "review_pr",
-              "pr_approval", "fix", "fix_merged_at"):
+              "pr_approval", "fix", "fix_merged_at", "fix_abandoned"):
         obj.pop(k, None)
     obj["pr_history"] = (obj.get("pr_history") or []) + [entry]
     obj["pr_round"] = (obj.get("pr_round") or 1) + 1
@@ -2235,6 +2237,46 @@ def set_fix_merged(name, new_published_sha):
     return obj
 
 
+def abandon_fix(name, by, reason):
+    """A person's ruling that the staged round will never merge: upstream fixed the
+    problem itself (lc0 #2454 landed the fix our moat-fix-2420 round carried), the
+    maintainer withdrew the request, or the PR finished with the round still staged.
+
+    Clears the fix block and returns head_sha to the round's base -- the tip the PR
+    shows or shipped -- through the same platform pass as advance_head, so evidence
+    gathered on the discarded staging tip stops counting. The staging branch is left
+    on the fork as evidence. The ruling is appended to fix_abandoned so the record
+    still says what was staged and why it was dropped. Like a waiver: `by` is
+    required and never defaulted."""
+    if not by:
+        raise ValueError(f"{name}: --by is required -- abandoning a round is a "
+                         f"person's decision")
+    if not reason:
+        raise ValueError(f"{name}: --reason is required")
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    fix = obj.get("fix")
+    if not fix:
+        raise ValueError(f"{name}: no fix round in flight")
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    tip, base = obj.get("head_sha"), fix["base_sha"]
+    if not same_commit(tip, base):
+        repo = _fork_repo(name)
+        _move_head(obj, full_sha(base, repo), repo)
+    entry = {k: fix[k] for k in ("branch", "base_sha", "review_pr", "kind")
+             if fix.get(k) is not None}
+    entry.update({"tip_sha": tip, "by": by, "reason": reason, "at": now_iso()})
+    obj["fix"] = None
+    obj["fix_abandoned"] = (obj.get("fix_abandoned") or []) + [entry]
+    save_record(name, obj,
+                f"{name}: fix round {fix.get('branch')} abandoned by {by}; "
+                f"head_sha back to {base[:12]}")
+    return obj
+
+
 def set_published_sha(name, sha):
     """Stamp what the upstream PR shows (open) or shipped (merged/closed), on a
     record from before the field existed.
@@ -2508,6 +2550,17 @@ def advance_head(name, new_sha, repo=None):
     obj = load_status(name)
     repo = repo or _fork_repo(name)
     new_sha = full_sha(new_sha, repo)
+    _move_head(obj, new_sha, repo)
+    if moved:
+        # The folder is on a branch this checkout is not standing on.
+        save_record(name, obj, f"{name}: head_sha -> {new_sha[:12]}")
+    else:
+        save_status(name, obj)
+    return obj
+
+
+def _move_head(obj, new_sha, repo):
+    """advance_head's platform pass, on a record already in hand."""
     prev_head = obj.get("head_sha")
     obj["head_sha"] = new_sha
     for plat in list(obj["platforms"]):
@@ -2553,12 +2606,6 @@ def advance_head(name, new_sha, repo=None):
             if failed != blk.get("failed_sha"):
                 blk["failed_sha"] = failed
                 blk["updated_at"] = now_iso()
-    if moved:
-        # The folder is on a branch this checkout is not standing on.
-        save_record(name, obj, f"{name}: head_sha -> {new_sha[:12]}")
-    else:
-        save_status(name, obj)
-    return obj
 
 
 def carry_forward(name, platform, new_sha, method, detail):
@@ -4599,6 +4646,13 @@ def main(argv=None):
     s.add_argument("name")
     s.add_argument("new_published_sha")
 
+    s = sub.add_parser("abandon-fix",
+                       help="a person's ruling that the staged fix round will never "
+                            "merge: clear it and return head_sha to its base")
+    s.add_argument("name")
+    s.add_argument("--by", required=True)
+    s.add_argument("--reason", required=True)
+
     s = sub.add_parser("archive-pr",
                        help="move a finished (merged/closed) upstream PR into "
                             "pr_history, opening the record for a follow-up round "
@@ -5043,6 +5097,9 @@ def main(argv=None):
     elif args.cmd == "set-fix-merged":
         obj = set_fix_merged(args.name, args.new_published_sha)
         print(f"{args.name}: published_sha -> {obj['published_sha'][:12]}")
+    elif args.cmd == "abandon-fix":
+        obj = abandon_fix(args.name, args.by, args.reason)
+        print(f"{args.name}: fix round abandoned; head_sha -> {obj['head_sha'][:12]}")
     elif args.cmd == "archive-pr":
         e = archive_pr(args.name)
         print(f"{args.name}: PR #{e['pr_number']} ({e['pr_state']}) archived; the "
