@@ -7,12 +7,11 @@
   "priority": 6.245,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:02Z",
-  "updated_at": "2026-10-21T07:17:03Z",
+  "updated_at": "2026-10-21T07:17:05Z",
   "head_sha": "49756806f27520538d17a60ec5c4ac35416bb160",
   "pr_url": "https://github.com/LeelaChessZero/lc0/pull/2420",
   "pr_number": 2420,
   "pr_opened_at": "2026-06-11T07:21:22Z",
-  "porting": null,
   "waivers": {
     "windows": {
       "reason": "WITHDRAWN by the 2026-08-20 root-cause investigation -- DO NOT APPROVE. The earlier case for this waiver ('the obstacle is the Windows ROCm toolchain, a gfx-specific rocBLAS/Tensile fallback kernel for the value head's small GEMM shapes') has been FALSIFIED. The defect is a latent host-side stream-ordering bug in lc0's own weight-upload path, not a toolchain defect, and it is fixable in the port. allocAndUpload (src/neural/backends/cuda/layers.cc) launches copyTypeConverted on the legacy null stream, reading the shared scratch buffer, and returns without waiting; every compute stream is created cudaStreamNonBlocking so nothing orders that copy against the first evaluation, which overwrites the same scratch. The last upload of the last-constructed layer -- the value head's ip2_val_b_ -- loses the race, so exactly one 3-float bias is corrupted while every computed tensor around it is exact. Windows HIP loses this race deterministically where Linux HIP wins it. Measured on windows-gfx1151 at head 7727fa3: the dense-2 GEMM output equals a host double-precision reference exactly, the device bias reads -1.40802431 0.55243015 0.00000000 against the net's 0.43719077 -0.98977518 0.55311656, and adding cudaStreamSynchronize(0) at the end of allocAndUpload takes the gate check from 0/222 to 222/222 passing (value abs 6.0e-08, was 4.4e-02). rocBLAS/hipBLASLt was independently exonerated (ROCBLAS_USE_HIPBLASLT=0 changes nothing). Full evidence in projects/lc0/notes.md, section 'Investigation 2026-08-20 (windows-gfx1151) -- why Windows'. The correct route is a moat-fix-<pr#> round carrying the one-line fix, not a gate waiver; this suggestion is retained only to overwrite the falsified reasoning that stood here.",
@@ -33,29 +32,6 @@
   "upstream_repo_id": 135489692,
   "stage": "review-passed",
   "platforms": {
-    "linux-gfx90a": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "b87423d8e5cb4075386359cb4521eb8a14ffea2a",
-      "started_at": "2026-05-31T01:38:05Z",
-      "completed_at": "2026-08-20T23:38:58Z",
-      "updated_at": "2026-08-24T23:46:04Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "reviewer"
-    },
     "linux-gfx1100": {
       "state": "completed",
       "blocked": false,
@@ -100,6 +76,50 @@
         "last_session_at": null
       }
     },
+    "windows-gfx1101": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-20T21:05:04Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "49756806f27520538d17a60ec5c4ac35416bb160",
+      "started_at": "2026-05-31T01:38:05Z",
+      "completed_at": "2026-10-21T07:17:05Z",
+      "updated_at": "2026-10-21T07:17:05Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
@@ -122,27 +142,6 @@
         "last_session_at": null
       },
       "last_agent": "porter"
-    },
-    "windows-gfx1101": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-08-20T21:05:04Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
     }
   },
   "published_sha": "7727fa32c1992ef6702eacc1b8568715803b0701",

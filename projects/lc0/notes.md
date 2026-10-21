@@ -2873,6 +2873,20 @@ export PATH="$SDK/_rocm_sdk_devel/lib/llvm/bin:$SDK/_rocm_sdk_devel/bin:$SDK/_ro
 cd projects/lc0/src
 meson setup build-hip \
   -Dhip=true -Damd_gfx=gfx1100 \
+## Revalidation 2026-10-21 (linux-gfx90a) -- `4975680` (tree == upstream master `58e78009`) -- COMPLETED
+
+Full build and real-GPU run, not a carry-forward: `python3 utils/moatlib.py classify lc0 b87423d8 49756806` -> `class=mixed arch_independent=False inert=False` (the delta is 36 upstream commits plus upstream's own #2454 sync, touching `layers.cc`, `network_cuda.cc`, the HIP-compiled kernels and `backendbench.cc`). `git -C projects/lc0/src diff --stat 58e78009 HEAD` is empty, so what was validated is upstream master's own HIP backend. Fresh clone of `AMD-Ecosystem/lc0`, `moat-port` checked out, `HEAD` == `49756806f27520538d17a60ec5c4ac35416bb160` == `head_sha`; protect-fork hook installed. The 2026-08-20 memset-hardening experiments (`lc0-move-sync-below-memset`) were NOT part of this run.
+
+Host: MI250X (gfx90a), GPU pinned by the dispatcher (`HIP_VISIBLE_DEVICES=1`, idle at start; another job was using a different GPU), all GPU commands under `ulimit -c 0`. Toolchain changed again since the 2026-08-20 round: TheRock ROCm 10.1.0 pip SDK in `/opt/python-3.11-venv` (HIP 7.16.26385, AMD clang 24.0.0git); no `/opt/rocm`, no conda. meson 1.12.1 pip-installed into the job venv; `libopenblas-dev` (0.3.26) installed via apt for the `blas` reference backend. Host stayed up for the whole run; no amdgpu fault/reset lines in dmesg.
+
+### Build
+
+```
+SDK=/opt/python-3.11-venv/lib/python3.11/site-packages
+export PATH="$SDK/_rocm_sdk_devel/lib/llvm/bin:$SDK/_rocm_sdk_devel/bin:$SDK/_rocm_sdk_core/bin:$SDK/_rocm_sdk_libraries/bin:$PATH"
+cd projects/lc0/src
+meson setup build-hip \
+  -Dhip=true -Damd_gfx=gfx90a \
   -Dplain_cuda=false -Dcudnn=false -Dcutlass=false -Dnvcc=false \
   -Dgtest=true -Dblas=true -Dopencl=false -Donnx=false \
   -Db_lto=false -Dnative_arch=false \
@@ -2884,6 +2898,11 @@ bash utils/timeit.sh lc0 compile -- ninja -C projects/lc0/src/build-hip -j16
 ```
 
 Result: 321/321 targets, clean link, 0 `warning:` lines. Runtime needs `LD_LIBRARY_PATH=$OB/lib/x86_64-linux-gnu/openblas-pthread:$SDK/_rocm_sdk_devel/lib:$SDK/_rocm_sdk_core/lib:$SDK/_rocm_sdk_libraries/lib`.
+  -Dhip_include="$SDK/_rocm_sdk_devel/include"
+bash utils/timeit.sh lc0 compile -- ninja -C projects/lc0/src/build-hip -j16
+```
+
+321/321, clean link, 0 compiler warnings (the nodiscard warnings of earlier rounds are gone on this toolchain). `fp16_kernels.hip.o` 2.1MB, `common_kernels.hip.o` 1.5MB. Binary reports `v0.34.0-dev+git.4975680`.
 
 ### CPU gtest (non-GPU regression)
 
@@ -2957,6 +2976,76 @@ The worst value error is 1.1e-03 (fp16, t1-256x10), well inside fp16 rounding an
 ### Documentation / jargon / integrity
 
 `python3 utils/jargon.py --port lc0` -> `jargon: clean`. This needed a local `moat-port` branch in the fresh clone (`git branch moat-port origin/moat-port`). Without one the tool reports "cannot resolve master..moat-port", not a finding. README.md (upstream's) documents the HIP backend build (line 54: "install ROCm and build with the HIP backend"). `git -C projects/lc0/src status --porcelain` is clean.
+8/8 OK (`FP16`, `HashCat`, `PositionTest`, `OptionsParserTest`, `SyzygyTest`, `EncodePositionForNN`, `EngineTest`, `ChessBoard`), 0 failures.
+
+### Nets (all in gitignored `agent_space/nets/`, `lc0 describenet` checked)
+
+| file | source | body | policy | MLH |
+|---|---|---|---|---|
+| `maia1100.pb.gz` | `https://raw.githubusercontent.com/CSSLab/maia-chess/master/maia_weights/maia-1100.pb.gz` | SE, 6 blocks | conv | absent |
+| `n744706.pb.gz` | `https://storage.lczero.org/files/networks/0df5ca5b7485a043b88bea4f30d5b802033423f2f8ff0ca99b95e0646dd9325c` (training run 2, net 744706; `training.lczero.org/get_network?sha=` now 404s, storage URL works) | SE, 10 blocks | conv | V1 |
+| `t1-256x10.pb.gz` | `https://storage.lczero.org/files/networks-contrib/t1-256x10-distilled-swa-2432500.pb.gz` | attention body | attention | V1 |
+
+These are the first recorded source URLs for the two moves-left nets; earlier rounds had none, which is why the 2026-08-20 gfx90a round skipped them.
+
+### Pass counts change shape on upstream master -- read this before comparing to 222
+
+Upstream master's `backendbench` now runs one more checked evaluation per batch size than the base this port was validated on: the identical maia command gives `2 + 55 x 5 = 277` "Check passed" lines where earlier rounds got `2 + 55 x 4 = 222`. The log also now prints `Working backend set to blas. Reference backend set to hip.` for `hip(),blas()`. Same command, same tolerances; 277/277 here is the equivalent of 222/222. (1-16 x 2 batches gives 50 here vs the 34 recorded on windows-gfx1151.)
+
+### GPU gates
+
+```
+L=projects/lc0/src/build-hip/lc0
+$L backendbench --backend=check "--backend-opts=hip(),blas(),mode=check,atol=1e-3,rtol=1e-2,freq=1.0" \
+  --weights=agent_space/nets/maia1100.pb.gz --start-batch-size=1 --max-batch-size=55 --batches=4
+$L backendbench --backend=check "--backend-opts=hip-fp16(),blas(),mode=check,atol=1.1e-1,rtol=2e-1,freq=1.0" \
+  --weights=agent_space/nets/maia1100.pb.gz --start-batch-size=1 --max-batch-size=55 --batches=4
+# moves-left nets, same two specs, batch 1-16:
+$L backendbench --backend=check "--backend-opts=<spec>" --weights=agent_space/nets/<net>.pb.gz \
+  --start-batch-size=1 --max-batch-size=16 --batches=2
+# max error: the same ranges with mode=display, max taken over every "maximum error" block
+```
+
+| net | backend | check passed | failures | max value abs / rel | max policy abs / rel |
+|---|---|---|---|---|---|
+| maia1100 | hip (fp32) | **277/277** | 0 | **1.2e-07** / 2.6e-06 | 1.4e-06 / 8.6e-06 |
+| maia1100 | hip-fp16 | **277/277** | 0 | 8.6e-05 / 1.9e-03 | 1.1e-03 / 5.3e-02 |
+| n744706 | hip (fp32) | **50/50** | 0 | 1.8e-07 / 2.5e-06 | 5.7e-07 / 5.5e-06 |
+| n744706 | hip-fp16 | **50/50** | 0 | 2.7e-04 / 3.7e-03 | 7.7e-03 / 3.8e-02 |
+| t1-256x10 | hip (fp32) | **50/50** | 0 | 2.2e-07 / 5.8e-06 | 4.3e-07 / 4.6e-06 |
+| t1-256x10 | hip-fp16 | **50/50** | 0 | 1.6e-03 / 4.0e-02 | 1.3e-03 / 2.5e-02 |
+
+fp32 value error is at float rounding everywhere, five orders below the 4.4e-02 corrupted-bias signature. The fp16 numbers are ordinary half rounding (maia fp16 value abs 8.6e-05 is the same figure the 2026-07-02 gfx90a round recorded).
+
+### Moves-left head (`--backend=check` never compares `GetMVal`)
+
+```
+{ printf 'uci\nposition startpos\ngo nodes 200\n'; sleep 45; printf 'quit\n'; } | \
+  $L --weights=agent_space/nets/<net>.pb.gz --backend=<b> --show-movesleft --threads=1 --minibatch-size=1
+```
+
+(The `sleep` matters: piping the three lines alone closes stdin and lc0 exits before `go` prints anything.)
+
+| net | hip | hip-fp16 | blas |
+|---|---|---|---|
+| n744706 | 82 | 82 | 82 |
+| t1-256x10 | 92 | 92 | 92 |
+
+n744706 matches the post-fix 82/82/82 recorded on windows-gfx1151 (fp16 read 72 on the unfixed base there). Score agrees too (cp 23 and cp 17 on all three backends).
+
+### Determinism, sweep, dispatch
+
+- `mode=display` maia1100 fp32 batch 8 x 2, two separate processes: value abs 3.0e-08, policy abs 6.6e-07, identical both times.
+- `backendbench --backend=hip` and `--backend=hip-fp16`, maia1100, batch 1-256 x 2: both exit 0, 256 timing rows each, no NaN/error/abort.
+- `AMD_LOG_LEVEL=3` shows lc0's own kernels dispatched on the device (`InputTransform_kernel_192`, `OutputTransform_kernel_192`, `policyMap_kernel`, `expandPlanes_kernel_NCHW`, `addBias_NCHW_kernel`, `copyTypeConverted_kernel`, ...) interleaved with gfx90a Tensile `Cijk_*_ISA90a_*` GEMMs.
+
+### CUDA no-regression gate
+
+`cuda-not-validated: no CUDA toolkit on this host` (no `nvcc`, no `/usr/local/cuda`, no conda to create `cuda-12.8`). Not recorded at `4975680` before. The tree is byte-identical to upstream master `58e78009`, so the CUDA path is upstream's own code and not something the port changed; the gate is still owed by whichever Linux host with the toolkit validates next if anyone wants it at this sha.
+
+### Integrity / jargon / docs
+
+`git -C projects/lc0/src status --porcelain` empty (build dir untracked). `python3 utils/jargon.py --port lc0` -> `jargon: clean`. README.md's `### HIP (ROCm)` section is upstream's and still documents this exact build (`-Dhip=true -Damd_gfx=gfx90a ... -Db_lto=false`).
 
 ### Summary
 
@@ -2973,3 +3062,15 @@ The worst value error is 1.1e-03 (fp16, t1-256x10), well inside fp16 rounding an
 | jargon / tree clean | clean / clean |
 
 `validated_sha` = `49756806f27520538d17a60ec5c4ac35416bb160`. Transition: revalidate -> completed (linux-gfx1100 only).
+| HIP build (321/321) | PASS |
+| meson test 8/8 | PASS |
+| maia1100 fp32 / fp16 check | 277/277, 277/277 |
+| n744706 fp32 / fp16 check | 50/50, 50/50 |
+| t1-256x10 fp32 / fp16 check | 50/50, 50/50 |
+| max fp32 value abs error (all nets) | 2.2e-07 |
+| moves-left hip / fp16 / blas | agree (82, 92) |
+| Determinism, sweep 1-256, dispatch | PASS |
+| CUDA compile gate | not run (no toolkit) |
+| Fork tree clean, jargon clean | PASS |
+
+`validated_sha` = `49756806f27520538d17a60ec5c4ac35416bb160`. Transition: revalidate -> completed.
