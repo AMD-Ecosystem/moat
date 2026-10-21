@@ -43,3 +43,5 @@
 {"kind":"phase","ts":"2026-08-20T05:28:34Z","phase":"test","seconds":29.836,"exit":0,"cmd":"./projects/FLAMEGPU2/src/build/bin/Release/tests"}
 {"kind":"phase","ts":"2026-08-20T05:28:48Z","phase":"test","seconds":0.855,"exit":0,"cmd":"./projects/FLAMEGPU2/src/build/bin/Release/boids_bruteforce --steps 10 -v"}
 {"kind":"session","ts":"2026-08-20T05:31:19Z","epoch":1787203879.374487956,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-21T06:40:48Z","phase":"compile","seconds":40.965,"exit":1,"cmd":"cmake --build projects/FLAMEGPU2/src/build --target flamegpu boids_bruteforce tests -j16"}
+{"kind":"phase","ts":"2026-10-21T06:45:19Z","phase":"compile","seconds":233.118,"exit":0,"cmd":"cmake --build projects/FLAMEGPU2/src/build --target flamegpu boids_bruteforce tests -j16"}

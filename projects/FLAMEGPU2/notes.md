@@ -723,3 +723,38 @@ on every host, and each one will find no porting work. This round did not write 
 stage. Two ways out, both a person's: `set-hold` until ptheywood answers, which is
 exactly what "parked on someone else's reply" means and touches no state; or a
 repair back to `review-passed`, where the gfx90a round found it.
+
+## Sync to the rebased amdgpu branch, 2026-10-20 (windows-gfx1151)
+
+Ruling from Jeff, 2026-10-20: keep `moat-port` as a ready-to-use build of the upstream HIP branch (FLAMEGPU/FLAMEGPU2 PR #1379, branch `amdgpu`) plus our fixes, sync it ONCE, then put the project on hold. Do not follow his rebases. Our fixes reach upstream by describing them in a reply on #1379 so he commits them himself: the FLAME GPU CLA is an individual exclusive licence whose own text requires employer approval or the entity version for work done as an employee, so no AMD code is sent.
+
+ptheywood force-pushed `amdgpu` on 2026-10-20 to `bfda5dec` (69 commits, 0 behind master): C++20 `source_location` error checking, CUDA >= 12.4, GCC >= 11, a Clang warning-fix series, the full `flamegpu::detail::gpu` abstraction series. Neither of our August fixes was in it.
+
+`moat-port` history, no force-push:
+
+```
+7977ab2b CMake: Define NOMINMAX on Windows for every compiler, not only MSVC
+ab5f31ce Fix: Add missing windows.h include in CUDAEnsemble.cu      (cherry-pick of 2ecf5a01)
+1f08a6f0 Fix: Delete CUDAEventTimer copy/move to avoid double event destroy (cherry-pick of 7f9f6a20)
+599ed869 Merge the current amdgpu branch (bfda5dec)                 (-s ours + read-tree: tree == bfda5dec exactly)
+a290861e previous head
+```
+
+Net diff vs `upstream/amdgpu`: 3 files, +13 -2.
+
+New fault on his tip: `src/CMakeLists.txt` defines `NOMINMAX` only for `CMAKE_CXX_COMPILER_ID STREQUAL "MSVC"`. A Windows HIP build uses clang++, so the `windows.h` include brings in the min/max macros, which break `std::numeric_limits<T>::max()` in `detail/cuda.cuh:141`, `CUDAEnvironmentDirectedGraphBuffers.cuh:103-104` and rocPRIM's `functional.hpp` / `type_traits_functions.hpp` ("too few arguments provided to function-like macro invocation"). Without the include the same file fails instead with `use of undeclared identifier 'ES_CONTINUOUS'` (lines 54, 63, 516). Both changes are needed. Fixed by keying `NOMINMAX` on `WIN32`.
+
+Build (Windows 11, gfx1151, TheRock SDK 7.14, all languages on clang++; googletest pre-cloned because the in-CMake git clone fails on this host):
+
+```bash
+source agent_space/win_rocm_env.sh
+cmake -S $SRC -B $SRC/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFLAMEGPU_BACKEND=HIP \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DCMAKE_CXX_COMPILER="$ROCM_LLVM_BIN/clang++.exe" -DCMAKE_C_COMPILER="$ROCM_LLVM_BIN/clang.exe" \
+  -DCMAKE_HIP_COMPILER="$ROCM_LLVM_BIN/clang++.exe" -DCMAKE_PREFIX_PATH="$ROCM_ROOT" \
+  -DFLAMEGPU_BUILD_TESTS=ON -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST=$DEPS/googletest-src
+sed -i 's/-fuse-ld=lld-link//g' $SRC/build/build.ninja
+cmake --build $SRC/build --target flamegpu boids_bruteforce tests -j16
+```
+
+Result: 212/212, `tests.exe` and `boids_bruteforce.exe` linked.
