@@ -3594,3 +3594,62 @@ Owed to validation (not a review finding): the Linux configure must reject distr
 - Test: `ulimit -c 0; LFS_CWD='D:\Develop\moat\projects\LichtFeld-Studio\src' LFS_EXCLUDE='TensorReserveInplaceCat.AllocationFailurePreservesInstalledStorage' utils/timeit.sh LichtFeld-Studio test -- python agent_space/lfs_suite_runner.py 'D:\Develop\moat\agent_space\lfs-sync-runs\v1'` (one suite per process, GsplatRasterizerTest per test; PATH has _rocm_sdk_libraries/bin before _rocm_sdk_core/bin): 2198 run, 1446 s: **2162 passed, 10 failed, 25 skipped, 0 incomplete**, identical to the porter's r6 run.
 - The 10 failures are the already-known set, none new: 4 DepthAnchor* (codec stub on Windows), 2 CudaErrorDiagnostics, AllocCounterTest.PoolCacheHitDoesNotIncrement (pool), CudaTest.D1_BinaryInPlaceWaitsForGatedProducer, 2 TensorD4FromBlobHomeStreamTest (prime). GsplatRasterizerTest isolation is the known hip-windows-vmm-va-not-reused workaround.
 - CUDA gate: not run (no CUDA toolkit on this host); Linux validators own it.
+## Revalidation 2026-10-21b (validator, linux-gfx1100, AMD Radeon Pro W7800, RDNA3 gfx1100) -- 61ea877f, COMPLETED
+
+Selector read `port-ready` (failed_sha ce822a31, head 61ea877f: 71acd64d OpenEXR 3.3 floor and Linux dependency docs, 61ea877f `LFS_DEBUG_ASSERT_MSG` HIP host-pass branch). Full build and run from a fresh blobless clone at moat-port, HEAD == 61ea877fa5cb531c96bb1351299dc80e8ad98dde, `protect-fork` installed. Host as in the ce822a31 entry above: TheRock ROCm SDK 10.1.0 wheels (`/opt/python-3.11-venv`, no /opt/rocm), torch 2.16.0a0+git6c3af02, CMake 3.31.6, Ubuntu 24.04. Reused the OpenEXR v3.3.9 and spdlog v1.15.3 (bundled fmt) installs built by the ce822a31 run on this host, copied into agent_space/_deps; glm 1.0.1 and Taywee args vendored as before. Build script agent_space/lfs_build.sh = the docs recipe with SDK paths (`$SDK/lib/llvm/bin/clang{,++}`, `CMAKE_HIP_ARCHITECTURES=gfx1100`, `Torch_DIR`, `GTest_DIR`, `spdlog_DIR`, `LFS_GLM_INCLUDE_DIR`, `LFS_ARGS_INCLUDE_DIR`), `--target lfs_compute_tests`.
+
+### Docs check: distribution OpenEXR stops at the version check
+Configure against Ubuntu 24.04's `libopenexr-dev` 3.1.5 (no `OpenEXR_DIR`):
+```
+bash agent_space/lfs_build.sh build-hip-gfx1100-distroexr Release configure-only
+CMake Error at cmake/HipCompute.cmake:298 (find_package):
+  Could not find a configuration file for package "OpenEXR" that is
+  compatible with requested version "3.3".
+    /usr/lib/x86_64-linux-gnu/cmake/OpenEXR/OpenEXRConfig.cmake, version: 3.1.5
+    /lib/x86_64-linux-gnu/cmake/OpenEXR/OpenEXRConfig.cmake, version: 3.1.5
+-- Configuring incomplete, errors occurred!
+```
+So the failure now arrives at configure, with a message naming the version, as docs/building_and_distribution.md says. Then with OpenEXR 3.3 as the docs direct:
+```
+EXTRA_CMAKE="-DOpenEXR_DIR=<deps>/openexr-install/lib/cmake/OpenEXR" \
+  utils/timeit.sh LichtFeld-Studio compile -- bash agent_space/lfs_build.sh build-hip-gfx1100 Release
+```
+354/354, zero errors, 234 s. `LFS_HAVE_STDCXXEXP` succeeds; the binary links `libOpenEXRCore-3_3.so.32` from the 3.3.9 install. The spdlog 1.15 bundled-fmt line matches what this host has always needed. The docs as written reproduce the build here (the only host-specific items are the TheRock `lib/llvm` compiler path and the runtime `LD_LIBRARY_PATH`, both recorded in earlier entries).
+
+### Release GPU suite (HIP_VISIBLE_DEVICES=0 pinned by the dispatcher, GPU idle before (amd-smi 0 % GFX, 28 MB VRAM), `ulimit -c 0`, serial, cwd = fork src root)
+```
+ulimit -c 0
+utils/timeit.sh LichtFeld-Studio test -- bash agent_space/lfs_test.sh build-hip-gfx1100 <log>
+# = cd src && LD_LIBRARY_PATH=<site>/torch/lib:<site>/_rocm_sdk_core/lib:<site>/_rocm_sdk_libraries/lib ./build-hip-gfx1100/cmake/hip_tests/lfs_compute_tests
+```
+2204 tests / 170 suites, 1 disabled, ~31 s each:
+- Run 1: 2172 passed, 7 failed, 25 skipped.
+- Run 2: **2173 passed, 6 failed, 25 skipped** (identical to the ce822a31 result on this host and on gfx90a).
+- Run 3 (after the probe below was reverted and the binary rebuilt from the clean tree): 2172 passed, 7 failed, 25 skipped.
+
+The known six fail in every run, same messages as the ce822a31 triage: CudaErrorDiagnostics.ForcedCudaErrorReportHasExpectedSections, AllocCounterTest.PoolCacheHitDoesNotIncrement, AllocatorHygiene.FailedSlabReclaimRestoresOwnershipAndAccounting, DiscoverySweep.FullUInt8ScalarDomainMatchesTorch, DiscoverySweep.IntegerModuloByZeroThrowsInsteadOfCrashing, CudaTest.D1_BinaryInPlaceWaitsForGatedProducer.
+
+The tests jeff asked about:
+- **CudaTest.D1_BinaryInPlaceWaitsForGatedProducer: FAILS** in all three runs (120-121 ms), upstream `lfs-upstream-binary-inplace-no-stream-join` as before.
+- **TensorD4FromBlobHomeStreamTest.ItemTypedDrainsStampedHome and .StampedBlobThroughPinnedOpCrossStream: PASS** in all three runs (111 ms / 117 ms).
+
+### The seventh failure: FusedBgBlendTest.BackwardGradsMatchWithBlendedImage (intermittent, upstream test defect, not this delta)
+`test_fused_bg_blend.cpp:169: max_abs_diff(splat_color->means(), splat_color2->means()) < 1e-6f, actual: 0.0200001337` (also 0.0200001318). The test is new from the ca01b056 sync (absent at 69d080dc; last upstream touch 4d0cc6d2, #2486).
+- Rate on 61ea877f: 2 of 3 full runs; 334/500 with `--gtest_filter='FusedBgBlendTest.*' --gtest_repeat=500`; 35/40 alone in a fresh process. Its passes in the earlier full runs were luck.
+- Same rate on the ce822a31 binary still on this host from the previous job: 336/500. The delta does not cause it (and is Release-inert in kernels: `LFS_DEBUG_ASSERT_MSG` is `((void)0)` under NDEBUG).
+- Cause, located with a throwaway probe in the test (printing each differing element; reverted, rebuilt, tree clean): in 6 of 6 failing runs the only differing element is means[2].x, -0.0100001 versus +0.0100001. Splat 2 is at x = 0.0 (`(i % 5) * 0.3f - 0.6f`), on the mirror axis of a left-right-symmetric scene (identity rotation, cx = W/2, uniform `grad_out = 1`). So its true d/dmean_x is zero and the computed value is cancellation round-off whose sign follows the order of the float `atomicAdd`s into `grad_mean2d` (kernels_backward.cuh:1174), which has no fixed order on either vendor. With `eps = 1e-15` the first Adam step is lr * sign(g), so a round-off sign flip becomes a full 2*lr difference. The port's only change in that reduction is the 32-lane mask (`LFS_GROUP32_*`), which on wave32 is the whole wave.
+- Registered `lfs-upstream-bgblend-zero-grad-sign` (kind other) for a person's ruling. Fix belongs upstream (break the symmetry, or a larger eps / sign-tolerant comparison). It passed in both gfx90a runs at ce822a31, which says nothing about its rate there.
+
+### Wave64 Debug item
+Not applicable on this host (gfx1100, wave32). The unpatched Debug gfx90a run of WarpCull*, GsplatRasterizer*, NnOpsTest and the joint-Adam tests is still owed by a wave64 host.
+
+### CUDA no-regression gate
+cuda-not-validated: unchanged wall (no CUDA toolkit, `/opt/conda` absent; non-HIP configure goes through the vcpkg bootstrap). The delta's CUDA-visible content is nil: assert.hpp adds an `#elif defined(__HIPCC__)` branch nvcc never takes, and the OpenEXR floor sits in HipCompute.cmake.
+
+### Pre-completion checklist
+- Jargon: `python3 utils/jargon.py --port LichtFeld-Studio` clean.
+- Documentation: Linux recipe verified end to end above (version check on 3.1.5, build with 3.3.9).
+- Integrity: `git -C projects/LichtFeld-Studio/src status --porcelain` empty; the probe edit to tests/test_fused_bg_blend.cpp was reverted with `git checkout` and the binary rebuilt before run 3. Build dir build-hip-gfx1100 is gitignored.
+
+### Verdict: COMPLETED (linux-gfx1100) at 61ea877f
+The delta does what the two failures asked for on this platform. The GPU result is the ce822a31 result plus one intermittent upstream test (above) that fails at the same rate on ce822a31.

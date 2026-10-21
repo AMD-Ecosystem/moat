@@ -198,6 +198,19 @@
       "upstream_issue": null,
       "created_at": "2026-10-21T07:21:19Z",
       "decided": null
+    },
+    {
+      "id": "lfs-upstream-bgblend-zero-grad-sign",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream test defect: FusedBgBlendTest.BackwardGradsMatchWithBlendedImage (tests/test_fused_bg_blend.cpp, new in the ca01b056 sync) asserts two identical Adam steps give means within 1e-6. Splat 2 sits at x=0.0 on the mirror axis of a symmetric scene (cx=W/2, uniform grad_out=1), so its true d/dmean_x is zero and the computed value is cancellation round-off whose sign depends on the float atomicAdd order into grad_mean2d (kernels_backward.cuh). With Adam eps=1e-15 the first step is lr*sign(g), so means[2].x lands at -0.01 or +0.01 and the diff is 0.0200001 = 2*lr. linux-gfx1100: fails 35/40 alone in a fresh process, 334/500 with --gtest_repeat, 2 of 3 full-suite runs, and the same rate on the ce822a31 binary (336/500), so the 61ea877f delta did not cause it. The port's edit there only swaps the 32-lane mask, which on wave32 is the whole wave. Fix belongs upstream (break the symmetry, or compare with a sign-tolerant check or larger eps).",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md#revalidation-2026-10-21b"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-21T08:49:37Z",
+      "decided": null
     }
   ]
 }

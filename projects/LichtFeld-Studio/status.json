@@ -29,30 +29,6 @@
   "upstream_repo_id": 672651553,
   "stage": "review-passed",
   "platforms": {
-    "windows-gfx1151": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "61ea877fa5cb531c96bb1351299dc80e8ad98dde",
-      "failed_sha": "5cbfdf1a7b1b6a6553ce077a5aa8d6209fd3f51c",
-      "started_at": "2026-10-20T00:45:37Z",
-      "completed_at": "2026-10-21T09:02:38Z",
-      "updated_at": "2026-10-21T09:02:38Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "state": "completed",
-      "last_agent": "reviewer:claude-code"
-    },
     "linux-gfx90a": {
       "state": "validation-failed",
       "blocked": false,
@@ -78,13 +54,13 @@
       "failed_sha": "ce822a31ad690650b7850c0a56a867cffeccb4f2"
     },
     "linux-gfx1100": {
-      "state": "validation-failed",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "69d080dc9995003cef7d3fea68d7789f3eb2a0ad",
+      "validated_sha": "61ea877fa5cb531c96bb1351299dc80e8ad98dde",
       "started_at": "2026-05-31T03:10:00Z",
-      "completed_at": "2026-10-20T02:06:32Z",
-      "updated_at": "2026-10-21T06:37:55Z",
+      "completed_at": "2026-10-21T08:50:19Z",
+      "updated_at": "2026-10-21T08:50:19Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -100,6 +76,30 @@
       },
       "last_agent": "validator",
       "failed_sha": "ce822a31ad690650b7850c0a56a867cffeccb4f2"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "61ea877fa5cb531c96bb1351299dc80e8ad98dde",
+      "failed_sha": "5cbfdf1a7b1b6a6553ce077a5aa8d6209fd3f51c",
+      "started_at": "2026-10-20T00:45:37Z",
+      "completed_at": "2026-10-21T09:02:38Z",
+      "updated_at": "2026-10-21T09:02:38Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "reviewer:claude-code"
     },
     "windows-gfx1101": {
       "state": "validation-failed",
@@ -151,6 +151,5 @@
     "arch": "windows-gfx1151",
     "since": "2026-10-21T08:32:20Z",
     "at": "2026-10-21T08:35:44Z"
-  },
-  "porting": null
+  }
 }
