@@ -170,3 +170,18 @@
 {"kind":"phase","ts":"2026-10-21T06:31:15Z","phase":"test","seconds":34.829,"exit":1,"cmd":"bash agent_space/lfs_test.sh build-hip-gfx1100 /var/lib/jenkins/fleet/jobs/rx7900-20261020-231423-moat-lichtfeld-revalidate-ce822a31-sessi/moat/agent_space/run1.log"}
 {"kind":"phase","ts":"2026-10-21T06:32:39Z","phase":"test","seconds":32.426,"exit":1,"cmd":"bash agent_space/lfs_test.sh build-hip-gfx1100 /var/lib/jenkins/fleet/jobs/rx7900-20261020-231423-moat-lichtfeld-revalidate-ce822a31-sessi/moat/agent_space/run2.log"}
 {"kind":"session","ts":"2026-10-21T06:37:55Z","epoch":1792564675.918578888,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-21T06:17:39Z","epoch":1792563459.202928280,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-21T06:24:39Z","phase":"compile","seconds":350.155,"exit":1,"cmd":"agent_space/lfs_build.sh Release build-hip-gfx90a"}
+{"kind":"phase","ts":"2026-10-21T06:31:41Z","phase":"compile","seconds":359.419,"exit":0,"cmd":"agent_space/lfs_build.sh Release build-hip-gfx90a"}
+{"kind":"phase","ts":"2026-10-21T06:33:00Z","phase":"test","seconds":55.085,"exit":1,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a"}
+{"kind":"phase","ts":"2026-10-21T06:35:12Z","phase":"test","seconds":51.550,"exit":1,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a"}
+{"kind":"phase","ts":"2026-10-21T06:41:06Z","phase":"compile","seconds":346.802,"exit":1,"cmd":"agent_space/lfs_build.sh Debug build-hip-gfx90a-debug"}
+{"kind":"phase","ts":"2026-10-21T06:42:16Z","phase":"compile","seconds":14.243,"exit":1,"cmd":"cmake --build projects/LichtFeld-Studio/src/build-hip-gfx90a-debug --target lfs_compute_tests -j 128 -- -k 0"}
+{"kind":"phase","ts":"2026-10-21T06:48:27Z","phase":"compile","seconds":336.364,"exit":0,"cmd":"cmake --build projects/LichtFeld-Studio/src/build-hip-gfx90a-debug --target lfs_compute_tests -j 128"}
+{"kind":"phase","ts":"2026-10-21T06:59:39Z","phase":"test","seconds":648.184,"exit":143,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a-debug --gtest_filter=WarpCull*:GsplatRasterizer*:NnOpsTest.*:JointAdamCodecTest.*:GutJointAdamBatch.*:GutShNJointAdam.*"}
+{"kind":"phase","ts":"2026-10-21T07:15:18Z","phase":"test","seconds":443.645,"exit":0,"cmd":"agent_space/lfs_pertest.sh build-hip-gfx90a-debug WarpCull*:GsplatRasterizer*:NnOpsTest.*:JointAdamCodecTest.*:GutJointAdamBatch.*:GutShNJointAdam.* agent_space/dbg_focus 150"}
+{"kind":"phase","ts":"2026-10-21T07:15:52Z","phase":"test","seconds":18.044,"exit":0,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a-dbgO2 --gtest_filter=WarpCull*:GsplatRasterizer*:NnOpsTest.*:JointAdamCodecTest.*:GutJointAdamBatch.*:GutShNJointAdam.*"}
+{"kind":"phase","ts":"2026-10-21T07:16:34Z","phase":"test","seconds":42.307,"exit":134,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a-dbgO2"}
+{"kind":"phase","ts":"2026-10-21T07:17:49Z","phase":"test","seconds":37.582,"exit":1,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a-dbgO2 --gtest_filter=-DepthAnchorSetupTest.DamagedDepthPropagatesDecodeError"}
+{"kind":"phase","ts":"2026-10-21T07:19:17Z","phase":"test","seconds":59.623,"exit":1,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a-dbgO2 --gtest_filter=-DepthAnchorSetupTest.DamagedDepthPropagatesDecodeError:DeviceFaultTest.IndexSelectOobThrowsBoundsViolationWithFields"}
+{"kind":"session","ts":"2026-10-21T07:21:58Z","epoch":1792567318.998303188,"event":"end","platform":"linux-gfx90a"}

@@ -3496,3 +3496,53 @@ cuda-not-validated: unchanged wall (non-HIP configure goes through the vcpkg boo
 
 ### Verdict: VALIDATION-FAILED (linux-gfx1100) at ce822a31
 Back to the porter for the OpenEXR version floor and doc correction (and the spdlog line). The GPU result with OpenEXR 3.3.9 is the evidence a revalidation after that fix should match: 2173/2204, the 6 failures above, D4 passing, D1 failing.
+
+## Revalidation 2026-10-21 (validator, linux-gfx90a, MI250X GCD, wave64) -- ce822a31, VALIDATION-FAILED (OpenEXR >= 3.3; Debug HIP build does not compile)
+
+Selector read `revalidate` (validated_sha 69d080dc, head ce822a31). Full build and run from a fresh blobless clone at moat-port, HEAD == ce822a31ad690650b7850c0a56a867cffeccb4f2. Same host recipe as the 2026-10-20 gfx90a entry (TheRock ROCm SDK 10.1.0 wheels, torch 2.16.0a0+git6c3af02, CMake 3.31.6, Ubuntu 24.04; vendored glm 1.0.1, Taywee args, spdlog v1.15.3 bundled fmt) plus apt `libxxhash-dev` (the other new codec packages were already present). Build script agent_space/lfs_build.sh `<Release|Debug> <dir>` = the docs recipe with SDK paths, `--target lfs_compute_tests -j $MAX_JOBS`.
+
+### Release: same OpenEXR failure as linux-gfx1100
+`utils/timeit.sh LichtFeld-Studio compile -- agent_space/lfs_build.sh Release build-hip-gfx90a` with distro `libopenexr-dev` 3.1.5 -> `src/core/image_exr.cpp:218:20: error: use of undeclared identifier 'exr_get_chunk_table_offset'`. Independently confirmed the floor: the symbol enters `openexr_chunkio.h` in 5b034db0 (2024-04-16, "Add api for C++ integration"), first tag v3.3.0. The linux-gfx1100 entry above has the porter's fix (`find_package(OpenEXR 3.3 CONFIG REQUIRED)` plus the docs line). Built OpenEXR v3.3.14 static into agent_space/_deps (`-DBUILD_SHARED_LIBS=OFF -DOPENEXR_BUILD_TOOLS=OFF -DBUILD_TESTING=OFF`, distro Imath/libdeflate) and passed `-DOpenEXR_DIR`: Release builds clean, 354 steps. Configure: JPEG/PNG/TIFF found, WebP by config, `LFS_XXHASH_INCLUDE_DIR=/usr/include`, `LFS_HAVE_STDCXXEXP=1` (stdc++exp linked). Project device code is gfx90a only (3 other-arch bundles in the binary are prebuilt SDK code; no project source names those targets).
+
+### Release GPU run (HIP_VISIBLE_DEVICES=0, GCD idle before, `ulimit -c 0`, cwd = fork checkout root)
+```
+ulimit -c 0
+utils/timeit.sh LichtFeld-Studio test -- agent_space/lfs_run.sh build-hip-gfx90a
+# lfs_run.sh: LD_LIBRARY_PATH=<site>/torch/lib:<site>/_rocm_sdk_core/lib:<site>/_rocm_sdk_libraries/lib; cd src; ./<dir>/cmake/hip_tests/lfs_compute_tests "$@"
+```
+Run 1: 2204 tests / 170 suites, 53.7 s: **2173 passed, 6 failed, 25 skipped**, 1 disabled. Run 2: 50.1 s, identical. Byte-for-byte the same result and failure set as linux-gfx1100 (see its triage): CudaErrorDiagnostics.ForcedCudaErrorReportHasExpectedSections, AllocCounterTest.PoolCacheHitDoesNotIncrement, AllocatorHygiene.FailedSlabReclaimRestoresOwnershipAndAccounting (passes alone), DiscoverySweep.FullUInt8ScalarDomainMatchesTorch (torch 2.16 returns 255 for 255.5; checked in Python), DiscoverySweep.IntegerModuloByZeroThrowsInsteadOfCrashing (passes with `--gtest_death_test_style=threadsafe`), CudaTest.D1_BinaryInPlaceWaitsForGatedProducer. The three DiscoverySweep/AllocatorHygiene tests are new upstream files from the sync (absent at 69d080dc); none of the six touches a file the port changed.
+
+The tests jeff asked about, on wave64:
+- **CudaTest.D1_BinaryInPlaceWaitsForGatedProducer: FAILS** (1048576 mismatches, actual 1 expected 3; gate engaged, 117-118 ms). Upstream library defect `lfs-upstream-binary-inplace-no-stream-join`, as on every platform.
+- **TensorD4FromBlobHomeStreamTest.ItemTypedDrainsStampedHome and .StampedBlobThroughPinnedOpCrossStream: PASS** in both runs (109-110 ms / 115-116 ms). Two Linux ROCr hosts (gfx90a, gfx1100) now agree: the D4 failure is Windows-specific (the null-stream prime is executed before the gated producer here), which supports the Windows-runtime half of `hip-windows-null-stream-work-not-submitted`; the prime stays unordered by contract (`lfs-upstream-d4-prime-unordered`).
+
+### Wave64 Debug (no NDEBUG): the requested run, and a Debug build defect
+`utils/timeit.sh LichtFeld-Studio compile -- agent_space/lfs_build.sh Debug build-hip-gfx90a-debug` (HIP `-O0 -g`, no `-DNDEBUG` in any compile command) **fails to compile**, one TU, then `-k 0` confirms it is the only one:
+```
+src/core/tensor/tensor_masking_ops.cu:716:34: error: no matching function for call to 'format_cuda_safe'
+  (x7: lines 716, 740, 987, 1008, 1024, 1135, 1144)
+src/core/include/core/cuda_safe_format.hpp:157:31: note: candidate function not viable: call to __host__ function from __global__ function
+3 warnings and 7 errors generated when compiling for host.
+```
+Cause: `LFS_DEBUG_ASSERT_MSG` (src/core/include/core/assert.hpp:30-44, upstream) splits on `#if defined(__CUDA_ARCH__)`. In the device pass the compat header's `__CUDA_ARCH__ 1` selects `assert(condition)`, but clang also semantically checks the instantiated `__global__` templates (index_select_kernel etc.) in the **host** pass, where `__CUDA_ARCH__` is undefined, so the host branch's `format_cuda_safe(...)` call (a `__host__` function) inside a kernel is an error. nvcc's host pass never checks kernel bodies, so upstream's CUDA Debug build is fine; Release hides it because the macro is `((void)0)` under NDEBUG. Since the port supports Debug HIP builds (69d080dc), this is a port gap the sync exposed. **For the porter**: make the kernel-side form apply to HIP sources in both passes, e.g. `#if defined(__CUDA_ARCH__) || defined(__HIPCC__)` in assert.hpp (CUDA unchanged; the cost is that host functions inside .cu TUs on HIP lose the formatted debug message and get a plain `assert`), or another form the porter prefers. I verified only that throwaway (applied for the Debug runs below, then discarded; fork tree is clean).
+
+Debug runs (built with that throwaway, `-O0`), one process per test so a hang cannot hide the rest: `utils/timeit.sh LichtFeld-Studio test -- agent_space/lfs_pertest.sh build-hip-gfx90a-debug 'WarpCull*:GsplatRasterizer*:NnOpsTest.*:JointAdamCodecTest.*:GutJointAdamBatch.*:GutShNJointAdam.*' agent_space/dbg_focus 150`: 79 tests, **74 passed, 3 skipped** (the Release skips: AggregateOverflowTrainingStep, 2 opt-in NnOps fixtures), **2 TIMEOUT**: GsplatRasterizerTest.GutModeSteadyStateAllocs and .GutFromWorldGradParity (16 ms / ~97 ms in Release). Per suite: WarpCullBlendTest 5, WarpCullBwdTest 8, NnOpsTest 31, JointAdamCodecTest 8, GutJointAdamBatch 1, GutShNJointAdam 1, Gsplat* 25. No trap, no `__hip_check_mask` assertion, no 719 anywhere.
+
+The two timeouts are an `-O0` device-codegen hang, not a mask fault:
+- `AMD_SERIALIZE_KERNEL=3 AMD_LOG_LEVEL=3`: the last kernel launched is `gsplat_lfs::projection_ut_3dgs_fused_kernel<float>` and it never completes. rocgdb (SDK `rocgdb`, attach via SIGINT after 45 s): waves 1-3 of block 0 sit at one PC in `world_gaussian_to_image_gaussian_unscented_transform_shutter_pose<PerfectPinholeCameraModel>` at Cameras.cuh:1370 (the function's closing brace), "Backtrace stopped: previous frame identical to this frame", i.e. the epilogue returns into itself. The kernel and Cameras.cuh are unchanged from upstream (`git diff origin/master HEAD` empty) and contain no warp intrinsics.
+- Same tree built Debug with `-DCMAKE_HIP_FLAGS_DEBUG="-O2 -g0"` (still no NDEBUG, so `assert` and `__hip_check_mask` are live; agent_space/lfs_build_o2.sh, not timeit-wrapped): both tests pass (327 ms, 97 ms). So the hang needs `-O0`; it is not an assertion firing. Registered `lfs-hip-o0-ut-projection-hang` (rocm-bug-report, amdclang) for a person's ruling; no standalone reproducer yet.
+
+Asserts-on `-O2` Debug build, same wave64 set in one process: 79 run, **76 passed, 3 skipped, 0 failed**. Full suite on that build: `--gtest_filter=-DepthAnchorSetupTest.DamagedDepthPropagatesDecodeError:DeviceFaultTest.IndexSelectOobThrowsBoundsViolationWithFields`: 2202 run, **2171 passed, 25 skipped, 6 failed**, exactly the Release six. So with every HIP mask check live, nothing in the suite traps on wave64: finding 3 of the 2026-10-20 review is confirmed on hardware. The two exclusions are upstream Debug-only behaviour, not port faults:
+- DepthAnchorSetupTest.DamagedDepthPropagatesDecodeError aborts on upstream's host `assert(g_image_loader)` (src/core/image_loader.cpp:22): lfs_compute_tests registers no image loader (only the app and some mask tests call `set_image_loader`). In Release it passes only because calling the empty `std::function` throws `bad_function_call`, which satisfies `EXPECT_THROW(..., std::exception)`; it does not exercise the decoder. Worth a line in the porter's test-set notes.
+- DeviceFaultTest.IndexSelectOobThrowsBoundsViolationWithFields deliberately feeds an out-of-range index; with asserts on, the kernel's `LFS_DEBUG_ASSERT_MSG` device `assert` traps and leaves a sticky hipErrorLaunchFailure (719) that fails the next ~330 tests at 0 ms. CUDA's device `assert` kills the context the same way, and the test is not NDEBUG-gated upstream.
+
+### CUDA no-regression gate
+cuda-not-validated: unchanged wall (vcpkg bootstrap for a non-HIP configure; no CUDA toolkit, `/opt/conda` absent).
+
+### Pre-completion checklist
+- Jargon: `python3 utils/jargon.py --port LichtFeld-Studio` clean (after `git branch -f master origin/master` in the clone).
+- Documentation: fails on OpenEXR (as linux-gfx1100 recorded).
+- Integrity: `git -C projects/LichtFeld-Studio/src status --porcelain` empty at the end; the throwaway assert.hpp edit was reverted after each Debug build. Build dirs build-hip-gfx90a{,-debug,-dbgO2} are gitignored.
+
+### Verdict: VALIDATION-FAILED (linux-gfx90a) at ce822a31
+Back to the porter for (1) the OpenEXR 3.3 floor and docs (shared with linux-gfx1100) and (2) the Debug HIP compile error in `LFS_DEBUG_ASSERT_MSG` kernels. Expected result after the fix, for the next gfx90a run: Release 2173/2204 with the six failures above, D4 pass, D1 fail; Debug builds without a local patch, and the wave64 set passes at `-O2`-with-asserts (the `-O0` Gut projection hang is the registered toolchain item, not a gate on the port).
