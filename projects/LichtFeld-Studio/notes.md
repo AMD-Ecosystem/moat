@@ -3573,3 +3573,16 @@ Back to the porter for (1) the OpenEXR 3.3 floor and docs (shared with linux-gfx
 ### Notes
 - `advance-head` printed a UnicodeDecodeError traceback (cp1252 decode of a subprocess's output) before `head_sha -> 61ea877f...`; the head was recorded. Tooling nit on Windows, not this port.
 - Skill: refined the validator's 2026-10-21 fault-class entry (references/fault-classes.md) with why only template/overloaded calls fail and the lambda form.
+
+## Review 2026-10-21 (reviewer, windows-gfx1151) -- 61ea877f (delta ce822a31..61ea877f), REVIEW-PASSED
+
+Scope: 71acd64d (OpenEXR 3.3 floor, Linux dependency docs) and 61ea877f (`#elif defined(__HIPCC__)` lambda branch in src/core/include/core/assert.hpp), plus the fault-classes.md refinement on port/LichtFeld-Studio. pr-review skill, local-branch mode; fact-check done inline. No build or GPU run here, as the dispatch said.
+
+No findings. Checked and fact-checked:
+- assert.hpp: the change only inserts a branch. The `#if defined(__CUDA_ARCH__)` and `#else` bodies are unchanged, and nvcc and plain C++ never define `__HIPCC__`, so CUDA and .cpp expansions are byte-identical. The HIP device pass still takes the `assert(condition)` branch, because the compat header is force-included (`-include` in cmake/HipCompute.cmake:30) and defines `__CUDA_ARCH__ 1` under `__HIP_DEVICE_COMPILE__` (cuda_to_hip.h:255-259) before any `assert.hpp` include. In the host pass the message is evaluated only inside the failing `if`. The lambda's `auto` return turns a `format_cuda_safe` `std::string` or a literal into a temporary that lives until the `assertion_failed(std::string_view ...)` full-expression ends (failure_report.hpp:89), so nothing dangles. The consteval `CudaSafeFormatString` still gets a literal. `[&]` capture is valid in C++20 HIP (`CMAKE_HIP_STANDARD 20`). No ODR divergence: the only header-resident uses (fastgs buffer_utils.h:316,344) are included only from .cu/.cuh TUs, so no inline function is defined one way in HIP TUs and another way in .cpp TUs.
+- The skill text's claim that a call from a kernel to a single non-template `__host__` function stays deferred agrees with clang, which marks `__global__`/`__device__` functions as not emitted in the host pass. It also agrees with the gfx90a log, where only the `format_cuda_safe` template call errored.
+- OpenEXR floor: cmake/HipCompute.cmake:298 sits inside `if(NOT WIN32)` (line 284), so it cannot affect Windows. The 3.3 floor is backed by the symbol history in the validators' entries and by their successful 3.3.9/3.3.14 builds. Upstream's own vcpkg path asks for 3.4.15 (CMakeLists.txt:541); that is a different path and does not bear on this one.
+- Docs (building_and_distribution.md:233-235): accurate. `SPDLOG_FMT_EXTERNAL` defaults to OFF in spdlog, and `spdlog_DIR`/`OpenEXR_DIR` match the `find_package` calls at HipCompute.cmake:267,298.
+- Commits: titles 66/66 chars with `[ROCm]`, fenced Test Plans, "Authored with Claude.", no Co-Authored-By trailer, author is the public address. `python utils/jargon.py --port LichtFeld-Studio`: clean.
+
+Owed to validation (not a review finding): the Linux configure must reject distro OpenEXR 3.1.5 and then pass with `-DOpenEXR_DIR`, and a wave64 Debug build must compile unpatched. This host compiled Debug for gfx1151 and gfx90a but did not link it (Debug-CRT dependency mismatch).

@@ -7,7 +7,7 @@
   "priority": 6.263,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-10-21T08:32:20Z",
+  "updated_at": "2026-10-21T08:35:44Z",
   "head_sha": "61ea877fa5cb531c96bb1351299dc80e8ad98dde",
   "depends_on": [],
   "waivers": {
@@ -27,7 +27,7 @@
   },
   "license_spdx": "GPL-3.0",
   "upstream_repo_id": 672651553,
-  "stage": "reviewing",
+  "stage": "review-passed",
   "platforms": {
     "windows-gfx1151": {
       "blocked": false,
@@ -36,7 +36,7 @@
       "failed_sha": "5cbfdf1a7b1b6a6553ce077a5aa8d6209fd3f51c",
       "started_at": "2026-10-20T00:45:37Z",
       "completed_at": "2026-10-20T01:49:59Z",
-      "updated_at": "2026-10-21T08:32:20Z",
+      "updated_at": "2026-10-21T08:35:44Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -149,11 +149,8 @@
   },
   "porting_released": {
     "arch": "windows-gfx1151",
-    "since": "2026-10-21T07:24:48Z",
-    "at": "2026-10-21T08:28:01Z"
+    "since": "2026-10-21T08:32:20Z",
+    "at": "2026-10-21T08:35:44Z"
   },
-  "porting": {
-    "arch": "windows-gfx1151",
-    "since": "2026-10-21T08:32:20Z"
-  }
+  "porting": null
 }
