@@ -3605,6 +3605,17 @@ bash agent_space/lfs_build.sh build-hip-gfx1100-distroexr Release configure-only
 CMake Error at cmake/HipCompute.cmake:298 (find_package):
   Could not find a configuration file for package "OpenEXR" that is
   compatible with requested version "3.3".
+## Revalidation 2026-10-21b (validator, linux-gfx90a, MI250X GCD, wave64) -- 61ea877f, COMPLETED (full real-GPU run)
+
+Selector read `port-ready` (returning from the ce822a31 failure, so a full run with no carry-forward). Fresh blobless clone of moat-port, HEAD == 61ea877fa5cb531c96bb1351299dc80e8ad98dde, `protect-fork` installed. Host as in the 2026-10-20/21 gfx90a entries: TheRock ROCm SDK 10.1.0 wheels in `/opt/python-3.11-venv` (no /opt/rocm), torch 2.16.0a0+git6c3af02, CMake 3.31.6, Ninja, Ubuntu 24.04, distro `libopenexr-dev` 3.1.5. Reused the previous gfx90a run's dependency builds (copied into agent_space/_deps): OpenEXR v3.3.14 static, spdlog v1.15.3 with bundled fmt, glm 1.0.1, Taywee args. Build script agent_space/lfs_build.sh `<Release|Debug> <dir> [cmake args]` = the docs' Linux recipe as now written, with `ROCM_PATH=<site>/_rocm_sdk_devel` and the docs' `${ROCM_PATH}/llvm/bin/clang++` / `clang` (the SDK has an `llvm` dir, so the documented compiler path works unmodified), `-j $MAX_JOBS` (128 = physical cores).
+
+### Docs check: distribution OpenEXR stops at the version check
+Configure exactly per the docs with no `OpenEXR_DIR` (`agent_space/lfs_build.sh Release build-distro-exr`):
+```
+CMake Error at cmake/HipCompute.cmake:298 (find_package):
+  Could not find a configuration file for package "OpenEXR" that is
+  compatible with requested version "3.3".
+  The following configuration files were considered but not accepted:
     /usr/lib/x86_64-linux-gnu/cmake/OpenEXR/OpenEXRConfig.cmake, version: 3.1.5
     /lib/x86_64-linux-gnu/cmake/OpenEXR/OpenEXRConfig.cmake, version: 3.1.5
 -- Configuring incomplete, errors occurred!
@@ -3653,3 +3664,33 @@ cuda-not-validated: unchanged wall (no CUDA toolkit, `/opt/conda` absent; non-HI
 
 ### Verdict: COMPLETED (linux-gfx1100) at 61ea877f
 The delta does what the two failures asked for on this platform. The GPU result is the ce822a31 result plus one intermittent upstream test (above) that fails at the same rate on ce822a31.
+So 71acd64d moves the failure from compile time in image_exr.cpp to configure, with the message the porter predicted. Then, as the docs say, with `-DOpenEXR_DIR=<deps>/openexr-install/lib/cmake/OpenEXR` (3.3.14) and spdlog 1.15 via `spdlog_DIR`: configure clean (JPEG/PNG/TIFF found, WebP and OpenEXR by config, `LFS_HAVE_STDCXXEXP` success).
+
+### Release build and GPU suite
+```
+utils/timeit.sh LichtFeld-Studio compile -- bash agent_space/lfs_build.sh Release build-hip-gfx90a -DOpenEXR_DIR=<deps>/openexr-install/lib/cmake/OpenEXR
+ulimit -c 0   # HIP_VISIBLE_DEVICES=0 pinned by the dispatcher; GCD idle (10 MB used) before the run
+utils/timeit.sh LichtFeld-Studio test -- agent_space/lfs_run.sh build-hip-gfx90a
+```
+Build 354/354, zero errors (only the long-standing `cudaGetLastError()` unused-result and `-Wswitch` warnings). Project device code is gfx90a; three test-helper TUs (device_fault_cuda_utils.cu, tensor_hardening_cuda_utils.cu, fastgs_tile_culling_boundary_cuda.cu) and the final link also carry `--offload-arch` for gfx942/gfx950/gfx1100/gfx1201 inherited from SDK/torch interface flags, not from project CMake (no project file names those targets); gfx90a is among them, so harmless.
+
+Run 1: 2204 tests / 170 suites, 49.9 s: **2173 passed, 6 failed, 25 skipped**, 1 disabled. Run 2: 50.8 s, identical. Same counts and same six failures as the ce822a31 runs on linux-gfx90a and linux-gfx1100 (triage in the linux-gfx1100 2026-10-21 entry): CudaErrorDiagnostics.ForcedCudaErrorReportHasExpectedSections, AllocCounterTest.PoolCacheHitDoesNotIncrement, AllocatorHygiene.FailedSlabReclaimRestoresOwnershipAndAccounting, DiscoverySweep.FullUInt8ScalarDomainMatchesTorch, DiscoverySweep.IntegerModuloByZeroThrowsInsteadOfCrashing, CudaTest.D1_BinaryInPlaceWaitsForGatedProducer. None touches a file the port changed.
+- **CudaTest.D1_BinaryInPlaceWaitsForGatedProducer: FAILS** in both runs (1048576 mismatches, expected 3 actual 1; 117/118 ms), the upstream defect `lfs-upstream-binary-inplace-no-stream-join`. The other D1_* cases pass.
+- **TensorD4FromBlobHomeStreamTest.ItemTypedDrainsStampedHome and .StampedBlobThroughPinnedOpCrossStream: PASS** in both runs (110/110 ms, 114/117 ms), as on both Linux hosts at ce822a31.
+
+### Wave64 Debug (no NDEBUG), no local source patch
+- Default Debug (`-O0`; HIP flags `-g`, `grep -c DNDEBUG build.ninja` = 0): `utils/timeit.sh LichtFeld-Studio compile -- bash agent_space/lfs_build.sh Debug build-hip-gfx90a-debug -DOpenEXR_DIR=...` builds 354/354 with zero errors, tensor_masking_ops.cu included. At ce822a31 this exact configuration failed with 7 `no matching function for call to 'format_cuda_safe'` errors; 61ea877f fixes it for gfx90a.
+- `-O2` Debug (`-DCMAKE_{HIP,CXX,C}_FLAGS_DEBUG="-O2 -g0"`, still no NDEBUG, asserts and `__hip_check_mask` live), build dir build-hip-gfx90a-dbgO2: 354/354, zero errors.
+- Wave64 set on `-O2` Debug, one process, `ulimit -c 0`: `utils/timeit.sh LichtFeld-Studio test -- agent_space/lfs_run.sh build-hip-gfx90a-dbgO2 --gtest_filter='WarpCull*:GsplatRasterizer*:NnOpsTest.*:JointAdamCodecTest.*:GutJointAdamBatch.*:GutShNJointAdam.*'`: 79 tests / 12 suites, 16.7 s, **76 passed, 3 skipped, 0 failed** (skips: GsplatRasterizerTest.AggregateOverflowTrainingStep and the two opt-in NnOpsTest fixtures, as in Release). Per suite passed: WarpCullBlendTest 5, WarpCullBwdTest 8, NnOpsTest 29, JointAdamCodecTest 8, GutJointAdamBatch 1, GutShNJointAdam 1, GsplatRasterizer* 24. No trap, assertion or 719 in the log. Same as the patched run at ce822a31.
+- Full suite on `-O2` Debug, excluding the two upstream Debug-only tests documented in the ce822a31 gfx90a entry (DepthAnchorSetupTest.DamagedDepthPropagatesDecodeError, DeviceFaultTest.IndexSelectOobThrowsBoundsViolationWithFields): 2202 run, 57.8 s, **2171 passed, 25 skipped, 6 failed**, the Release six.
+- Extra: the same wave64 set on the `-O0` Debug build, minus the two known-hang GUT projection tests (`lfs-hip-o0-ut-projection-hang`): 77 run, 23.7 s, **74 passed, 3 skipped, 0 failed**.
+
+### CUDA no-regression gate
+cuda-not-validated: unchanged wall (non-HIP configure goes through the vcpkg bootstrap; no CUDA toolkit on this host, `/opt/conda` absent). 61ea877f's new branch is `#elif defined(__HIPCC__)`, which nvcc never takes; 71acd64d's floor sits in cmake/HipCompute.cmake, read only with `USE_HIP`.
+
+### Pre-completion checklist
+- Jargon: `python3 utils/jargon.py --port LichtFeld-Studio` clean (after `git branch -f master origin/master` in the clone).
+- Documentation: the "AMD GPUs (ROCm/HIP)" Linux recipe reproduces on Ubuntu 24.04 as written: distro OpenEXR rejected at configure, OpenEXR 3.3 from source plus spdlog 1.15 bundled-fmt build and pass. The environment-only steps from the 2026-10-20 entry still apply to this TheRock-wheel host (`ROCM_PATH` set, as the docs say; `LD_LIBRARY_PATH` to the wheel lib dirs at run time).
+- Integrity: `git -C projects/LichtFeld-Studio/src status --porcelain` empty; no source patch was applied at any point; build dirs build-hip-gfx90a{,-debug,-dbgO2} and the failed-configure build-distro-exr (removed) are gitignored.
+
+### Verdict: COMPLETED (linux-gfx90a), validated_sha 61ea877f
