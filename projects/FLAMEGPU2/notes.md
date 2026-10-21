@@ -758,3 +758,18 @@ cmake --build $SRC/build --target flamegpu boids_bruteforce tests -j16
 ```
 
 Result: 212/212, `tests.exe` and `boids_bruteforce.exe` linked.
+
+## Review 2026-10-20 (windows-gfx1151, fork head 7977ab2b)
+
+Scope: `git diff upstream/amdgpu moat-port` only (3 files, +13 -2: 1f08a6f0, ab5f31ce, 7977ab2b). Confirmed `git diff upstream/amdgpu 599ed869` is empty (upstream/amdgpu = bfda5dec), so the merge carries no content of ours. The maintainer's code was not reviewed.
+
+Verdict: review-passed. No blocking findings.
+
+Checked and recorded so the next reader does not redo it:
+
+- `CUDAEventTimer` deleted copy/move: the only construction sites are `new detail::CUDAEventTimer()` in `src/flamegpu/simulation/CUDASimulation.cu:61` (wrapped in `std::unique_ptr<detail::Timer>`) and `tests/test_cases/detail/test_CUDAEventTimer.cu:24`; nothing in src, tests, examples or swig holds one by value or in a container, so the deletion cannot break a build.
+- `CUDAEnsemble.cu:17-19` `#ifdef _MSC_VER` include matches the guard of the three `SetThreadExecutionState` blocks (55, 64, 517) and of `AbstractSimRunner.cu:9`, `SimLogger.cu:12`, `MPISimRunner.cu:13`. Linux (CUDA and HIP): not compiled. Windows CUDA (MSVC host): windows.h was already reached transitively and NOMINMAX was already defined, so only the declaration source changes. Windows HIP (clang++ targeting msvc, defines `_MSC_VER`): needed, built 212/212. windows.h now precedes the flamegpu headers in this file; grep of `include/` found no identifier colliding with common windows.h macros.
+- `src/CMakeLists.txt:555` `if(WIN32)`: PRIVATE, so no consumer sees it; only non-MSVC Windows compilers (clang++, clang-cl, MinGW) gain NOMINMAX, and since MSVC already compiled the same sources with NOMINMAX, no source can depend on the min/max macros. windows.h appears only in src files (`Telemetry.cpp`, `CUDAEnsemble.cu`, `AbstractSimRunner.cu`, `SimLogger.cu`, `MPISimRunner.cu`), none in public headers, tests or examples, so PRIVATE remains sufficient.
+- Commits: titles 66/53/67 chars, author jeff.daily@amd.com, no trailers, `jargon.py --port FLAMEGPU2` clean. `Topic: sentence` style mirrors the upstream branch deliberately.
+
+Minor, not actionable (commits are pushed to origin/moat-port and must not be amended): the Test Plans of 1f08a6f0 and ab5f31ce cite the gfx90a run (1070 passed, 64 skipped) taken at the earlier maintainer tip 5e42a64, not at bfda5dec. The validator's run at 7977ab2b supersedes them; if the fixes are described in a reply on #1379, cite the new-head evidence there.
