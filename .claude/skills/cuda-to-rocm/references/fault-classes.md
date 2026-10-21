@@ -370,6 +370,17 @@ HIP sources, so plain C++ TUs keep the host branch. Do not define `__CUDACC__` g
 instead: rocThrust takes its CUDA-system path under it. Re-grep after every upstream sync,
 since new splits arrive with new code. (LichtFeld-Studio)
 
+**clang checks kernel bodies in the HIP host pass; nvcc does not.** A macro that splits
+device and host forms on `#if defined(__CUDA_ARCH__)` takes the host form when clang
+compiles the host side of a HIP TU, and clang still type-checks the instantiated
+`__global__` bodies there. A host-only call in that branch (a string formatter, a throw)
+inside a kernel is then `call to __host__ function from __global__ function ... when
+compiling for host`, while nvcc builds the same code. It shows only where the macro is live,
+typically a debug assert that is `((void)0)` under NDEBUG, so Release passes and the first
+Debug build fails. Build Debug once after every upstream sync, and give HIP sources the
+kernel-safe form in both passes (`defined(__CUDA_ARCH__) || defined(__HIPCC__)`) or make
+the callee `__host__ __device__`. (LichtFeld-Studio)
+
 **CUDA error codes HIP lacks still appear in switch labels.** Error classifiers name codes
 such as `cudaErrorMisalignedAddress`, `cudaErrorInvalidPc` or `cudaErrorSystemNotReady`
 that have no `hipError_t`. Aliasing them to the nearest HIP code duplicates a case label

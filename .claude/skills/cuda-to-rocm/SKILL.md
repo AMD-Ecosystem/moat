@@ -103,6 +103,7 @@ Scan this list against what you are doing. If any line could apply, open
 - `__HIP_PLATFORM_AMD__` is undefined until `hip_runtime.h` is included; a gate placed before it silently picks the CUDA branch.
 - Missing includes in a HIP port are usually pre-existing upstream omissions unmasked by the narrower include graph.
 - A `-include`d compat header creates no dependency edge: wipe objects after editing it or you validate stale code.
+- clang type-checks kernel bodies in the HIP host pass, where `__CUDA_ARCH__` is unset: a `__CUDA_ARCH__`-split debug macro calling host code fails only in Debug.
 
 **Types, dispatch and platform limits**
 - Never name the pointee struct of an opaque handle (`CUstream_st`); use `std::remove_pointer_t<cudaStream_t>`.
