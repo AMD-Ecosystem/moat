@@ -2855,3 +2855,121 @@ completed.
 - jeffdaily abandoned the fix round (`moatlib.py abandon-fix`); it stays in `fix_abandoned`, and the staging branch stays on the fork.
 - #2420's squash (ef33106) is patch-id identical to `git diff d8ce482 7727fa3`, so upstream master carries the whole port. A plain merge of master into moat-port conflicts in 7 files only because git cannot see that, so moat-port was fast-forwarded to 4975680, a merge commit (parents 7727fa3, upstream master 58e78009) whose tree is exactly upstream master's. `head_sha` -> 4975680.
 - Owed: windows-gfx1151 validation (closes the windows gate), linux-gfx90a and linux-gfx1100 revalidation. The fork's `master` mirror is still 36 commits behind upstream; it was not fast-forwarded.
+
+## Validation 2026-10-21 (linux-gfx1100) -- `4975680` -- COMPLETED
+
+Full real-GPU revalidation, not a carry-over. `validated_sha` was `b87423d8` (the retired moat-fix-2420 tip); `head_sha` is `49756806f27520538d17a60ec5c4ac35416bb160`, the merge whose tree is upstream master `58e78009` (`git diff --stat 4975680 58e78009` empty, checked in the clone). So this round runs upstream master's HIP backend, with upstream #2454's `cudaDeviceSynchronize()` at the end of construction in place of our one-line wait. No fix block: built from `moat-port` (local `moat-port` == `origin/moat-port` == `head_sha`). Fresh clone of `AMD-Ecosystem/lc0` into `projects/lc0/src`; protect-fork hook installed.
+
+Host toolchain changed since 2026-08-27: TheRock ROCm SDK 10.1.0 in `/opt/python-3.11-venv` (HIP 7.16.26385, runtime 71626.38.5), no `/opt/rocm`, no conda. meson 1.12.1 was pip-installed into the job's private venv. The host has no OpenBLAS, and without it meson silently builds the CPU reference on Eigen. To keep the recorded `blas()` reference, without changing shared host packages, the Ubuntu noble packages were extracted (`apt-get download libopenblas-dev libopenblas0-pthread libopenblas-pthread-dev libgfortran5; dpkg -x`) into a private directory and passed in with `-Dopenblas_libdirs`/`-Dopenblas_include`. Runtime log: `OpenBLAS 0.3.26 ... Zen`. 4x AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32). The host is shared with another job, so everything ran on `HIP_VISIBLE_DEVICES=1` (dispatcher-pinned) under `ulimit -c 0`.
+
+### Build
+
+Same recipe as 2026-08-27. Only the SDK root changed, plus the two OpenBLAS options:
+
+```
+SDK=/opt/python-3.11-venv/lib/python3.11/site-packages
+OB=<private dir>/usr          # dpkg -x of the noble libopenblas packages
+export PATH="$SDK/_rocm_sdk_devel/lib/llvm/bin:$SDK/_rocm_sdk_devel/bin:$SDK/_rocm_sdk_core/bin:$SDK/_rocm_sdk_libraries/bin:$PATH"
+cd projects/lc0/src
+meson setup build-hip \
+  -Dhip=true -Damd_gfx=gfx1100 \
+  -Dplain_cuda=false -Dcudnn=false -Dcutlass=false -Dnvcc=false \
+  -Dgtest=true -Dblas=true -Dopencl=false -Donnx=false \
+  -Db_lto=false -Dnative_arch=false \
+  -Dhip_libdirs="$SDK/_rocm_sdk_devel/lib,$SDK/_rocm_sdk_core/lib,$SDK/_rocm_sdk_libraries/lib" \
+  -Dhip_include="$SDK/_rocm_sdk_devel/include" \
+  -Dopenblas_libdirs=$OB/lib/x86_64-linux-gnu/openblas-pthread \
+  -Dopenblas_include=$OB/include/x86_64-linux-gnu/openblas-pthread
+bash utils/timeit.sh lc0 compile -- ninja -C projects/lc0/src/build-hip -j16
+```
+
+Result: 321/321 targets, clean link, 0 `warning:` lines. Runtime needs `LD_LIBRARY_PATH=$OB/lib/x86_64-linux-gnu/openblas-pthread:$SDK/_rocm_sdk_devel/lib:$SDK/_rocm_sdk_core/lib:$SDK/_rocm_sdk_libraries/lib`.
+
+### CPU gtest (non-GPU regression)
+
+```
+bash utils/timeit.sh lc0 test -- meson test -C projects/lc0/src/build-hip
+```
+
+8/8 OK (`FP16`, `HashCat`, `PositionTest`, `OptionsParserTest`, `SyzygyTest`, `EncodePositionForNN`, `EngineTest`, `ChessBoard` 48.6s), 0 failures.
+
+### Nets (all re-fetched, decoded with `lc0 describenet`)
+
+| file | source | body | MLH |
+|---|---|---|---|
+| `maia1100.pb.gz` | `https://raw.githubusercontent.com/CSSLab/maia-chess/master/maia_weights/maia-1100.pb.gz` | SE_WITH_HEADFORMAT 6x64, conv policy | absent |
+| `n744706.pb.gz` | `https://storage.lczero.org/files/networks/0df5ca5b7485a043b88bea4f30d5b802033423f2f8ff0ca99b95e0646dd9325c` (training run 2, net 744706, 128x10; `training.lczero.org/get_network?sha=` returns 404 for it) | SE_WITH_HEADFORMAT 10x128, conv policy | MOVES_LEFT_V1 |
+| `t1-256x10.pb.gz` | `https://storage.lczero.org/files/networks-contrib/t1-256x10-distilled-swa-2432500.pb.gz` | ATTENTIONBODY_WITH_HEADFORMAT, attention policy | MOVES_LEFT_V1 |
+
+This is the first time the `n744706` source URL has been recorded. Earlier rounds could not refetch it.
+
+### GPU gate: `backendbench --backend=check`, hip vs blas, batch 1-55, `--batches=4`
+
+```
+HIP_VISIBLE_DEVICES=1 projects/lc0/src/build-hip/lc0 backendbench --backend=check \
+  "--backend-opts=hip(),blas(),mode=check,atol=1e-3,rtol=1e-2,freq=1.0" \
+  --weights=agent_space/<net>.pb.gz --start-batch-size=1 --max-batch-size=55 --batches=4
+HIP_VISIBLE_DEVICES=1 projects/lc0/src/build-hip/lc0 backendbench --backend=check \
+  "--backend-opts=hip-fp16(),blas(),mode=check,atol=1.1e-1,rtol=2e-1,freq=1.0" \
+  --weights=agent_space/<net>.pb.gz --start-batch-size=1 --max-batch-size=55 --batches=4
+```
+
+| net | fp32 `hip()` | fp16 `hip-fp16()` |
+|---|---|---|
+| maia1100 | **277/277** passed, exit 0 | **277/277**, exit 0 |
+| n744706 | **277/277**, exit 0 | **277/277**, exit 0 |
+| t1-256x10 | **277/277**, exit 0 | **277/277**, exit 0 |
+
+0 `incorrect`, 0 errors anywhere. **Why 277 and not the earlier 222:** upstream #2478 (`69fbfc6`, "backendbench: do not count the warm-up batch in --batches") is in this head. Each batch size now runs the warm-up plus 4 counted batches, all of them checked: 55 x 5 + 2 = 277, where it was 55 x 4 + 2 = 222. It is the same command, and the harness change alone accounts for the difference. Upstream master's `network_check` labels the first `--backend-opts` entry "Reference" and the second "Working" (log: `Working backend set to blas. Reference backend set to hip.`).
+
+### Max error (`mode=display`, same batch 1-55 x4 sweep, max over all 277 evaluations)
+
+| net | backend | value max abs / rel | policy max abs / rel |
+|---|---|---|---|
+| maia1100 | fp32 | **1.2e-07** / 2.6e-06 | 1.4e-06 / 9.8e-06 |
+| maia1100 | fp16 | 3.3e-04 / 7.2e-03 | 1.7e-03 / 3.1e-02 |
+| n744706 | fp32 | **1.5e-07** / 2.1e-06 | 7.7e-07 / 8.7e-06 |
+| n744706 | fp16 | 9.1e-04 / 1.3e-02 | 6.6e-03 / 5.1e-02 |
+| t1-256x10 | fp32 | **3.0e-07** / 7.7e-06 | 5.1e-07 / 5.7e-06 |
+| t1-256x10 | fp16 | 1.1e-03 / 2.9e-02 | 1.7e-03 / 1.9e-02 |
+
+The worst value error is 1.1e-03 (fp16, t1-256x10), well inside fp16 rounding and more than an order of magnitude below the 4.4e-02 corrupted-bias signature. At the historical single point (maia1100 fp32, batch 8, `--batches=2`), value abs is **6.0e-08** and policy abs 5.1e-07, identical over two separate runs and digit-for-digit equal to the `b87423d8` round. Upstream's construction-time sync therefore reproduces the result of our retired fix exactly.
+
+### Moves-left head (not compared by `--backend=check`; measured with `--show-movesleft`)
+
+`{ uci; position startpos; go nodes 200 } | lc0 --weights=<net> --backend=<be> --show-movesleft --threads=1 --minibatch-size=1`, last info line:
+
+| net | `hip` | `hip-fp16` | `blas` reference |
+|---|---|---|---|
+| n744706 | 82 | **82** | 82 |
+| t1-256x10 | 92 | 92 | 92 |
+
+`n744706` fp16 read 72 (wrong) on the pre-fix base in the windows-gfx1151 control. On upstream master it agrees with the reference.
+
+### Fault-free sweep + device dispatch
+
+`backendbench --backend=hip` and `--backend=hip-fp16`, maia1100, batch 1-256, `--batches=2`: both exit 0, 256/256 rows each, no NaN. With `AMD_LOG_LEVEL=3`, the trace names `copyTypeConverted_kernel`, `filterTransform_kernel`, `addBiasBatched_kernel`, `addBias_NCHW_kernel`, `addVectors_kernel`, `expandPlanes_kernel_NCHW` and `policyMap_kernel`, plus rocBLAS `Cijk_*_ISA1100` Tensile kernels.
+
+### CUDA no-regression gate
+
+`cuda-not-validated` on this host: there is no CUDA toolkit and no conda to create the `cuda-12.8` env. The `4975680` tree is byte-identical to upstream master `58e78009`, so a CUDA regression here would be upstream's own. For reference only, not as our gate: upstream's statuses on `58e78009` are all success (`ci/circleci: build`, `mac`, `mac latest`, `continuous-integration/appveyor/branch`; read-only `gh api .../commits/58e78009/status`). If a Linux host with the toolkit validates this head, it should run the gate once.
+
+### Documentation / jargon / integrity
+
+`python3 utils/jargon.py --port lc0` -> `jargon: clean`. This needed a local `moat-port` branch in the fresh clone (`git branch moat-port origin/moat-port`). Without one the tool reports "cannot resolve master..moat-port", not a finding. README.md (upstream's) documents the HIP backend build (line 54: "install ROCm and build with the HIP backend"). `git -C projects/lc0/src status --porcelain` is clean.
+
+### Summary
+
+| Test | Result |
+|------|--------|
+| HIP build 321/321 (TheRock 10.1.0, HIP 7.16) | PASS |
+| meson test 8/8 | PASS |
+| check fp32 + fp16 x maia1100, n744706, t1-256x10 (277 each) | PASS 6/6 |
+| max value error | fp32 3.0e-07, fp16 1.1e-03 |
+| moves-left hip / hip-fp16 / blas | 82/82/82, 92/92/92 |
+| determinism (maia fp32, 2 runs) | identical, 6.0e-08 |
+| sweep batch 1-256 fp32 + fp16 | PASS |
+| CUDA compile gate | not run (no toolkit on host) |
+| jargon / tree clean | clean / clean |
+
+`validated_sha` = `49756806f27520538d17a60ec5c4ac35416bb160`. Transition: revalidate -> completed (linux-gfx1100 only).
