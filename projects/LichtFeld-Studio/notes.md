@@ -3492,6 +3492,7 @@ cuda-not-validated: unchanged wall (non-HIP configure goes through the vcpkg boo
 - Jargon: `python3 utils/jargon.py --port LichtFeld-Studio` clean.
 - Documentation: Linux recipe does not reproduce on Ubuntu 24.04 (OpenEXR above); this is the failing item.
 - Integrity: `git -C src status --porcelain` empty; only the gitignored build dir written.
+- Seen in passing, not this round's finding: `python3 utils/check.py` fails its commits gate on two older port commits whose bodies have no Test Plan, 5511096c (2026-06-16, "Scrub internal port labels...") and 38ae02a9 (2026-06-05, Windows gfx1101/gfx1201 build fixes). They will hold up PR prep if nobody squashes or rewords them first.
 
 ### Verdict: VALIDATION-FAILED (linux-gfx1100) at ce822a31
 Back to the porter for the OpenEXR version floor and doc correction (and the spdlog line). The GPU result with OpenEXR 3.3.9 is the evidence a revalidation after that fix should match: 2173/2204, the 6 failures above, D4 passing, D1 failing.
