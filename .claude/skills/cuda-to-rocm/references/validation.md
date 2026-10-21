@@ -123,19 +123,23 @@ concurrent run, and every functional test passes, this is the cause and the port
 at fault. A 20-line repro and the bug report (`hip-win-stream-serialization`) are on
 FLAMEGPU2.
 
-## Windows: `hipStreamDestroy` after `hipDeviceReset` corrupts the heap
+## Using a stream after `hipDeviceReset` corrupts the heap (Windows shows it)
 
 **A process that finishes its work and then dies at exit with `0xC0000374` (heap
 corruption), `0xC0000409` or `0xC0000005` -- or `exit 127` under MSYS bash -- may be
 destroying a stream that `hipDeviceReset()` already tore down.** Projects that call a
 reset in a cleanup function while a C++ object owning streams is still in scope (its
-destructor runs after the reset) hit it; CUDA returns an error there, HIP on Windows
-corrupts its own heap, and one run of the repro hung unkillably. Stale `hipFree`,
-`hipHostFree` and `hipEventDestroy` are clean. Tell it apart from a missing DLL (which
-dies before `main` prints anything) by the work having completed first, and confirm by
-checking whether the crash appears only in runs that reset before the owning object is
-destroyed. A 12-line repro and the bug report (`hip-win-stream-destroy-after-reset`) are
-on FLAMEGPU2.
+destructor runs after the reset) hit it. Both `cudaDeviceReset` and `hipDeviceReset`
+document passing a destroyed resource to a later call as undefined behavior, so this is
+the application's misuse; CUDA happens to tolerate it, HIP frees the stream object in the
+reset and `hipStreamDestroy` then uses it again (valgrind: use-after-free on Linux too,
+where glibc aborts only some runs). The port-side fix is to destroy the owning object
+before the reset; whether to change the project is the upstream maintainer's call when
+a test exercises the order on purpose. Stale `hipFree` and `hipHostFree` fail cleanly
+with `hipErrorInvalidValue`; stale `hipEventDestroy` returns `hipSuccess` and was not
+checked under valgrind. Tell it apart from a missing DLL (which dies before `main`
+prints anything) by the work having completed first. A 12-line repro and a parity
+request to HIP are on FLAMEGPU2.
 
 ## Two GPUs visible to one process can crash the runtime
 
