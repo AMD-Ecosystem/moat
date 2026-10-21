@@ -192,6 +192,22 @@ port. Compare the assertion count against the CUDA build's, or filter the failin
 section out and watch whether the total moves. A deferral that makes a test case
 abort quietly defers the rest of the file with it. (marian-dev)
 
+## Failures that appear only when the whole suite runs in one process
+
+Two kinds show up on Linux and not on a host that runs one suite per process (as the
+Windows runners do), and neither is a port defect:
+
+- gtest death tests (`EXPECT_EXIT`, `EXPECT_DEATH`) under the default `fast` style
+  `fork()` without exec. Once an earlier test has initialized the HIP runtime, the child
+  can die with SIGSEGV before running the test body, even when the code under test is
+  CPU-only; gtest's "Death tests use fork() ... detected N threads" warning is the
+  sign. Rerun the test with `--gtest_death_test_style=threadsafe` (re-exec). If it
+  passes, the failure was the harness.
+- Tests that assume the state of a process-global allocator or cache: they pass alone
+  and fail after some unrelated earlier test. Run the test alone, then bisect the
+  suites that precede it with `--gtest_filter` to find the one that leaves the state
+  behind, and check that the port does not touch either file before you record it.
+
 ## One architecture gets wrong numbers while the others pass
 
 A clean build that produces wrong results on exactly one architecture -- an iterative
