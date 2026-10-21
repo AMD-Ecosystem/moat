@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "hip-win-stream-destroy-after-reset",
+      "kind": "rocm-bug-report",
+      "component": "HIP",
+      "summary": "Windows: hipStreamDestroy on a stream after hipDeviceReset corrupts the process heap (0xC0000374 / 0xC0000409, sometimes an unkillable hang) instead of returning an invalid-handle error; stale hipFree/hipEventDestroy are clean. Breaks FLAMEGPU teardown (util::cleanup then CUDASimulation dtor). 12-line repro in notes.",
+      "refs": [
+        "projects/FLAMEGPU2/notes.md#rocm-defects-found-on-windows-2026-10-21-windows-gfx1151"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-21T21:40:19Z",
+      "decided": null
+    },
+    {
+      "id": "hip-win-stream-serialization",
+      "kind": "rocm-bug-report",
+      "component": "HIP",
+      "summary": "Windows: kernels launched on separate non-blocking streams run serially (4x1-block 20 ms kernels: 80.5 ms on 1 stream vs 81.3 ms on 4; GPU_MAX_HW_QUEUES no effect), on gfx1151/gfx1101/gfx1201. Fails FLAMEGPU's 11 TestCUDASimulationConcurrency tests, which pass on Linux. Repro in notes.",
+      "refs": [
+        "projects/FLAMEGPU2/notes.md#rocm-defects-found-on-windows-2026-10-21-windows-gfx1151"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-21T21:40:38Z",
+      "decided": null
+    }
+  ]
+}

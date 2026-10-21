@@ -796,3 +796,65 @@ $BIN/boids_bruteforce.exe -s 2 -v
 - Integrity: fork clone has no modified tracked files. `jargon.py --port FLAMEGPU2` clean.
 
 Verdict: completed (functional pass, same known Windows concurrency-speedup failures).
+
+## ROCm defects found on Windows, 2026-10-21 (windows-gfx1151)
+
+Ruling from Jeff, 2026-10-21: windows-gfx1151 stays `completed` at 7977ab2b; both defects below are HIP runtime defects on Windows, not port defects, and are registered as `rocm-bug-report` deferrals on this project. Both reproduce without FLAMEGPU. Host: Radeon 8060S (gfx1151), Windows 11, TheRock SDK 7.14 (`amdhip64_7.dll` co-located, HIPVersion 7.14.60850). Build either repro with:
+
+```bash
+source agent_space/win_rocm_env.sh
+"$ROCM_LLVM_BIN/clang++.exe" -x hip --offload-arch=gfx1151 -O2 --rocm-path="$ROCM_ROOT" repro.hip -o repro.exe -L"$ROCM_ROOT/lib" -lamdhip64
+# co-locate the runtime: rocm_stage_runtime .
+```
+
+### 1. hipStreamDestroy on a stream after hipDeviceReset corrupts the heap (`hip-win-stream-destroy-after-reset`)
+
+FLAMEGPU trigger: `flamegpu::util::cleanup()` calls `hipDeviceReset()` on every device; a `CUDASimulation` still alive (boids `main`, `TestCleanup.CUDASimulation`) then destroys its streams. On CUDA that returns an error; on HIP/Windows the process dies at exit. This is the nonzero exit seen on every Windows host: `tests.exe` exit 127 after `TestCleanup.CUDASimulation`, `boids_bruteforce.exe` `0xC0000374`.
+
+```cpp
+#include <hip/hip_runtime.h>
+#include <cstdio>
+__global__ void touch(int *p) { p[threadIdx.x] = threadIdx.x; }
+int main() {
+    int *d; hipStream_t s;
+    hipMalloc(&d, 256 * sizeof(int));
+    hipStreamCreate(&s);
+    hipLaunchKernelGGL(touch, dim3(1), dim3(64), 0, s, d);
+    hipDeviceSynchronize();
+    printf("reset: %s\n", hipGetErrorName(hipDeviceReset()));
+    printf("hipStreamDestroy: %s\n", hipGetErrorName(hipStreamDestroy(s)));  // stale handle
+    return 0;
+}
+```
+
+Observed (separate processes): `0xC0000409`, `0xC0000374`, `0xC0000374`, then one run hung and could not be killed (still resident in the process table after `taskkill /F` and `Stop-Process -Force`). An earlier, smaller variant of the program exited 0 once, so the corruption is not always detected. Controls that exit 0: no stale release at all; stale `hipFree` / `hipHostFree` on `hipMalloc`, `hipHostMalloc`, `hipMallocManaged` and `hipHostAlloc` memory (`hipErrorInvalidValue`, clean); stale `hipEventDestroy` (`hipSuccess`, clean); `hipDeviceReset()` with no stale release; and every FLAMEGPU test that destroys its simulation before `main`'s `cleanup()`. Expected: `hipErrorInvalidResourceHandle` (or similar), as CUDA returns. Not yet checked on Linux.
+
+### 2. Kernels on different streams do not run concurrently (`hip-win-stream-serialization`)
+
+FLAMEGPU trigger: the 11 `TestCUDASimulationConcurrency.*` tests assert >= 1.5x speedup from running independent agent functions on separate streams. They measure ~1.0x on every Windows host (gfx1101, gfx1201, gfx1151) and pass on Linux (gfx90a, gfx1100, June).
+
+```cpp
+#include <hip/hip_runtime.h>
+#include <chrono>
+#include <cstdio>
+// wall_clock64, not clock64: on gfx11 clock64 reads a 20-bit shader-cycle counter that wraps, so a long spin never ends
+__global__ void spin(long long ticks) { long long t0 = wall_clock64(); while (wall_clock64() - t0 < ticks) {} }
+static double run(int n, hipStream_t *s, long long ticks) {
+    hipDeviceSynchronize();
+    auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < 4; ++i) hipLaunchKernelGGL(spin, dim3(1), dim3(64), 0, s[i % n], ticks);
+    hipDeviceSynchronize();
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+}
+int main() {
+    int khz; hipDeviceGetAttribute(&khz, hipDeviceAttributeWallClockRate, 0);
+    long long ticks = 20LL * khz;  // 20 ms per kernel
+    hipStream_t s[4];
+    for (auto &x : s) hipStreamCreateWithFlags(&x, hipStreamNonBlocking);
+    run(1, s, ticks);
+    double one = run(1, s, ticks), four = run(4, s, ticks);
+    printf("1 stream %.1f ms, 4 streams %.1f ms, speedup %.2fx\n", one, four, one / four);
+}
+```
+
+Observed: four 1-block kernels, 5 ms each: 1 stream 20.3 ms, 4 streams 21.6 ms; 20 ms each: 80.5 ms vs 81.3 ms; 10 ms each: 40.3 ms vs 41.2 ms. `GPU_MAX_HW_QUEUES=4` and `=8` do not change it. Expected on a GPU with 20 CUs and four 1-block kernels: ~4x. Not yet run on Linux as a control (FLAMEGPU's own concurrency tests passing there is the indirect control).
