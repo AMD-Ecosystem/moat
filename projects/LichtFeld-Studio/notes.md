@@ -3431,3 +3431,67 @@ Checked and not reported:
 For the validators (not findings): a Debug (no NDEBUG) gfx90a run of WarpCull*, GsplatRasterizer*, NnOpsTest and the joint-Adam tests is still owed; the porter's proof is a gfx90a Debug device compile plus the preprocessed mask scan. The Linux validators should report whether D1 and the two D4 tests fail there too: D1 should fail everywhere, and D4 is expected to pass by timing.
 
 Recommendation: Approve.
+
+## Revalidation 2026-10-21 (validator, linux-gfx1100, AMD Radeon Pro W7800, RDNA3 gfx1100) -- ce822a31, VALIDATION-FAILED (Linux build needs OpenEXR >= 3.3; docs say the Ubuntu package)
+
+Selector read `revalidate` (validated_sha 69d080dc, head ce822a31: the upstream ca01b056 sync plus the 2026-10-20 porter round). Full build and run from a fresh blobless clone at moat-port, HEAD == ce822a31ad690650b7850c0a56a867cffeccb4f2, `protect-fork` installed. First Linux build of the synced tree.
+
+### Host
+TheRock ROCm SDK 10.1.0 Python wheels in `/opt/python-3.11-venv` (no /opt/rocm), torch `2.16.0a0+git6c3af02`, CMake 3.31.6, Ninja, Ubuntu 24.04. Same recipe as the 2026-10-20 entry: vendored glm 1.0.1, Taywee `args.hxx`, spdlog v1.15.3 with bundled fmt (Class A, distro spdlog 1.12 + fmt 9 still installed but not used). New apt packages per the docs: `libjpeg-dev libpng-dev libtiff-dev libwebp-dev libopenexr-dev libxxhash-dev` (OpenImageIO not needed).
+
+Configure (agent_space/lfs_build.sh, docs recipe with SDK paths) is clean on the new dependency handling: JPEG/PNG/TIFF via Find modules, WebP and OpenEXR by config package, `LFS_XXHASH_INCLUDE_DIR=/usr/include`, and the `LFS_HAVE_STDCXXEXP` probe links (stdc++exp linked).
+
+### Build failure with the documented dependencies (the reason for validation-failed)
+```
+utils/timeit.sh LichtFeld-Studio compile -- bash agent_space/lfs_build.sh build-hip-gfx1100 Release
+src/core/image_exr.cpp:218:20: error: use of undeclared identifier 'exr_get_chunk_table_offset'
+FAILED: src/core/CMakeFiles/lfs_core.dir/image_exr.cpp.o
+```
+Ubuntu 24.04's `libopenexr-dev` is 3.1.5. `exr_get_chunk_table_offset` first appears in OpenEXR 3.3.0 (checked `src/lib/OpenEXRCore/openexr_chunkio.h` at v3.1.13 / v3.2.0 / v3.2.4: absent; v3.3.0 / v3.4.0: present). Upstream gets OpenEXR from vcpkg, so it never meets 3.1. The port's Linux path takes OpenEXR from the distribution, and:
+- cmake/HipCompute.cmake:297 `find_package(OpenEXR CONFIG REQUIRED)` has no version floor, so configure accepts 3.1.5 and the failure arrives at compile time in an upstream file;
+- docs/building_and_distribution.md "AMD GPUs (ROCm/HIP)" says "OpenEXR 3 ... from the distribution packages (on Ubuntu, ... `libopenexr-dev` ...)", which does not build on the current Ubuntu LTS.
+For the porter: require `find_package(OpenEXR 3.3 CONFIG REQUIRED)` and say in the docs that OpenEXR 3.3 or newer is needed (Ubuntu 24.04's package is too old; build it from source and pass `OpenEXR_DIR` or add its prefix to `CMAKE_PREFIX_PATH`). Every other file compiled with the distro packages (with `-k 0`, image_exr.cpp was the only error). Same shape, already recorded since 2026-08-27 as host environment: the docs also say spdlog comes from the distribution, and Ubuntu 24.04's libspdlog-dev 1.12 with external fmt 9 does not compile with the ROCm clang (`no template named 'basic_format_string'`); worth a line in the same doc fix.
+
+### Build with OpenEXR 3.3.9 built locally (to collect GPU evidence)
+OpenEXR v3.3.9 from source (agent_space/_deps, `-DOPENEXR_BUILD_TOOLS=OFF -DBUILD_TESTING=OFF`, uses the distro Imath and libdeflate), then:
+```
+EXTRA_CMAKE="-DOpenEXR_DIR=<deps>/openexr-install/lib/cmake/OpenEXR" \
+  utils/timeit.sh LichtFeld-Studio compile -- bash agent_space/lfs_build.sh build-hip-gfx1100 Release
+```
+308/308, zero errors, 206 s at -j32. The binary holds 37 gfx1100 code objects from the project (3 more multi-arch bundles are prebuilt SDK code). Links `libOpenEXRCore-3_3.so.32`.
+
+### GPU test run (HIP_VISIBLE_DEVICES=0 pinned by the dispatcher, GPU idle before the run, `ulimit -c 0`, serial, cwd = fork checkout root)
+```
+utils/timeit.sh LichtFeld-Studio test -- bash agent_space/lfs_test.sh build-hip-gfx1100 <log>
+# = cd src && LD_LIBRARY_PATH=<site>/torch/lib:<site>/_rocm_sdk_core/lib:<site>/_rocm_sdk_libraries/lib ./build-hip-gfx1100/cmake/hip_tests/lfs_compute_tests
+```
+Run 1: 2204 tests / 170 suites, 33.5 s: **2173 passed, 6 failed, 25 skipped**, 1 disabled. Run 2: 31.1 s, identical. Single process; no VA exhaustion (the Windows `hip-windows-vmm-va-not-reused` defect does not reproduce on Linux ROCr: GsplatRasterizerTest runs whole in-process). 2204 vs Windows 2198: test_masked_ssim_window.cpp is Linux-only.
+
+The tests jeff asked about:
+- **CudaTest.D1_BinaryInPlaceWaitsForGatedProducer: FAILS here too** (1048576 mismatches, actual 1 expected 3, gate engaged at ~121 ms). Matches the reviewer's reading: upstream `binary_op_inplace_generic` never joins `other`'s home stream (`lfs-upstream-binary-inplace-no-stream-join`).
+- **TensorD4FromBlobHomeStreamTest.ItemTypedDrainsStampedHome and .StampedBlobThroughPinnedOpCrossStream: PASS here** (113 ms / 119 ms, both full runs and an isolated rerun). So the D4 failure is Windows-specific: on Linux ROCr the legacy-stream `hipMemset(0x7f)` prime is executed before the gated producer's memset, so the race in the test's prime (`lfs-upstream-d4-prime-unordered`) resolves the CUDA way. This supports the Windows-runtime half of `hip-windows-null-stream-work-not-submitted`. The prime is still unordered by contract, so the upstream test defect stands.
+- All 27 of `TensorD4FromBlobHomeStreamTest.*:CudaTest.D*` except D1 pass in isolation.
+
+The six failures, triaged (none touches a file the port changed):
+1. CudaTest.D1_BinaryInPlaceWaitsForGatedProducer: upstream library defect, above.
+2. CudaErrorDiagnostics.ForcedCudaErrorReportHasExpectedSections: report reads `hipErrorInvalidDevice` / `hipSetDevice(-1)` after compat-header substitution; same as Windows, inherent to the approach.
+3. AllocCounterTest.PoolCacheHitDoesNotIncrement: stream-ordered pool compiled out under HIP (`lfs-hip-stream-ordered-mempool`); same as Windows.
+4. AllocatorHygiene.FailedSlabReclaimRestoresOwnershipAndAccounting (new on Linux): `failed_ptr` is null at test_allocator_hygiene.cpp:154 (trim never reaches the injected reclaim hook). **Passes alone**; fails when any single NaNInfGPUCheckTest case runs first in the same process (bisected over the 94 preceding suites, then each of the 32 NaNInf cases breaks it alone). The test assumes allocator state that an earlier test in the process does not leave behind. It passed on Windows only because that runner gives each suite its own process. `git diff origin/master...HEAD` is empty for the test, gpu_slab_allocator.hpp and memory_pool.hpp. Whether CUDA's stream-ordered pool (absent under HIP, item 3) would keep the earlier allocations off the slab is not determined here; it is a candidate link to `lfs-hip-stream-ordered-mempool`.
+5. DiscoverySweep.FullUInt8ScalarDomainMatchesTorch (new on Linux): torch-oracle drift, CPU and GPU alike. For 255.5 LFS throws (`UInt8 constant must be in [0, 255]`) while torch 2.16.0a0 returns [255] (`torch.full((1,),255.5,dtype=uint8)`; -1, -0.5 and 256 throw in both). The Windows host has torch 2.12, which evidently threw. Not GPU, not port.
+6. DiscoverySweep.IntegerModuloByZeroThrowsInsteadOfCrashing (new on Linux): CPU-only EXPECT_EXIT; the child dies with SIGSEGV under gtest's default fork-based death-test style (gtest warns of 51 threads, i.e. the live HIP runtime). **Passes with `--gtest_death_test_style=threadsafe`** (re-exec). Linux fork-after-HIP-init harness artifact; Windows death tests always re-exec, which is why it passed there.
+
+Windows failures that do not occur here: the 4 DepthAnchor* (real libpng on Linux), CudaErrorDiagnostics.ContractReportNamesTensorCallerInStack (Linux backtrace symbolizes), and the 2 D4 tests. TensorReserveInplaceCat.AllocationFailurePreservesInstalledStorage passes on this discrete 48 GB card. WarpCullBwdTest.* pass from the checkout root. On wave32: NnOpsTest 29 pass + 2 opt-in skips (fixture/weight file), WarpCull* 13/13, GsplatRasterizer* 24 pass + 1 skip (AggregateOverflowTrainingStep), joint-Adam (JointAdamCodecTest, GutJointAdamBatch, GutShNJointAdam) 10/10.
+
+### Wave64 Debug item
+Not applicable on this host (gfx1100 is wave32, where a 32-lane group is the whole wave). The Debug (no NDEBUG) gfx90a run of WarpCull*, GsplatRasterizer*, NnOpsTest and the joint-Adam tests is still owed by a wave64 host.
+
+### CUDA no-regression gate
+cuda-not-validated: unchanged wall (non-HIP configure goes through the vcpkg bootstrap; no CUDA toolkit on this host, `/opt/conda` absent).
+
+### Pre-completion checklist
+- Jargon: `python3 utils/jargon.py --port LichtFeld-Studio` clean.
+- Documentation: Linux recipe does not reproduce on Ubuntu 24.04 (OpenEXR above); this is the failing item.
+- Integrity: `git -C src status --porcelain` empty; only the gitignored build dir written.
+
+### Verdict: VALIDATION-FAILED (linux-gfx1100) at ce822a31
+Back to the porter for the OpenEXR version floor and doc correction (and the spdlog line). The GPU result with OpenEXR 3.3.9 is the evidence a revalidation after that fix should match: 2173/2204, the 6 failures above, D4 passing, D1 failing.
