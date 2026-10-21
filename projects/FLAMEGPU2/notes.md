@@ -773,3 +773,26 @@ Checked and recorded so the next reader does not redo it:
 - Commits: titles 66/53/67 chars, author jeff.daily@amd.com, no trailers, `jargon.py --port FLAMEGPU2` clean. `Topic: sentence` style mirrors the upstream branch deliberately.
 
 Minor, not actionable (commits are pushed to origin/moat-port and must not be amended): the Test Plans of 1f08a6f0 and ab5f31ce cite the gfx90a run (1070 passed, 64 skipped) taken at the earlier maintainer tip 5e42a64, not at bfda5dec. The validator's run at 7977ab2b supersedes them; if the fixes are described in a reply on #1379, cite the new-head evidence there.
+
+## Validation 2026-10-20 (windows-gfx1151, fork head 7977ab2b)
+
+GPU: AMD Radeon 8060S Graphics (gfx1151, RDNA3.5, wave32), Windows 11. Runtime: TheRock 7.14 SDK DLLs co-located with the exes (telemetry reports `HIPVersion 7.14.60850`, not the System32 7.2 driver). Build as in the sync section above (212/212).
+
+```bash
+BIN=projects/FLAMEGPU2/src/build/bin/Release
+$BIN/tests.exe                                   # full suite, 1134 tests
+$BIN/tests.exe --gtest_filter='TestCleanup.CUDASimulation'
+$BIN/tests.exe --gtest_filter='TestCleanup.CUDAEnsemble'
+$BIN/tests.exe --gtest_filter='TestUtilNVTX.*:CXXNamespaceTest.*:RTCNamespaceTest.*:TestVersion.*'
+$BIN/boids_bruteforce.exe -s 2 -v
+```
+
+- Full run: 1121 tests ran before the process died after `TestCleanup.CUDASimulation` (exit 127): 1050 OK, 11 FAILED, 59 SKIPPED.
+- The 13 tests the full run did not reach, run separately: 9 passed, 5 skipped (RTC). `TestCleanup.CUDASimulation` passes in isolation.
+- Total: 1059 passed, 64 skipped (runtime compilation, not implemented on AMD, upstream #1368), 11 failed.
+- The 11 failures are all `TestCUDASimulationConcurrency.*`, the 1.5x stream-speedup assertion, identical to windows-gfx1201 and windows-gfx1101 in June. Functional, not correctness.
+- Process teardown: every process exits nonzero after its work completes (`tests.exe` with a single passing test returns 127; `boids_bruteforce.exe` completes the simulation, then exits `0xC0000374` heap corruption). gfx1101 hit the same exit-127 stop at `TestCleanup` in June, so this predates this round; all three fixes are compile-time only. Not characterised further.
+- CUDA no-regression gate: not run on this host (no CUDA toolkit); owed by the first Linux validator at this head.
+- Integrity: fork clone has no modified tracked files. `jargon.py --port FLAMEGPU2` clean.
+
+Verdict: completed (functional pass, same known Windows concurrency-speedup failures).
