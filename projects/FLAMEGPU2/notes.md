@@ -977,3 +977,7 @@ exit=0
 ```
 
 Four 20 ms kernels run fully concurrently on four non-blocking streams (3.99x, the ideal is 4x), which matches the 12 `TestCUDASimulationConcurrency.*` passes above. The serialization seen on Windows is specific to the Windows runtime, so `hip-win-stream-serialization` is correctly scoped.
+
+## Correspondence 2026-10-21
+
+Posted (approved by Jeff) on FLAMEGPU/FLAMEGPU2#1379: https://github.com/FLAMEGPU/FLAMEGPU2/pull/1379#issuecomment-6328105164. Answers ptheywood's 2026-08-25 comment: CLA needs AMD approval or the entity version, so the three fixes are described for him to commit (all still absent at his tip 053cb68 = bfda5dec + one CI commit); gfx90a and gfx1151 results at 7977ab2b; Windows stream serialization; the hipStreamDestroy-after-hipDeviceReset use-after-free; #1387 not yet investigated. The reply commits us to raising both HIP defects with the ROCm runtime team.
