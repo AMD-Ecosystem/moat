@@ -194,3 +194,9 @@
 {"kind":"phase","ts":"2026-10-21T08:21:36Z","phase":"test","seconds":1454.075,"exit":0,"cmd":"python agent_space/lfs_suite_runner.py D:\\Develop\\moat\\agent_space\\lfs-sync-runs\\r6"}
 {"kind":"session","ts":"2026-10-21T08:32:19Z","epoch":1792571539.732772300,"event":"start","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-10-21T08:35:52Z","epoch":1792571752.448956100,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-21T08:40:15Z","epoch":1792572015.100052883,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-21T08:44:44Z","phase":"compile","seconds":234.277,"exit":0,"cmd":"bash agent_space/lfs_build.sh build-hip-gfx1100 Release"}
+{"kind":"phase","ts":"2026-10-21T08:45:26Z","phase":"test","seconds":32.697,"exit":1,"cmd":"bash agent_space/lfs_test.sh build-hip-gfx1100 /var/lib/jenkins/fleet/jobs/rx7900-20261021-013652-moat-lichtfeld-revalidate-61ea877f-sessi/moat/agent_space/run1.log"}
+{"kind":"phase","ts":"2026-10-21T08:45:58Z","phase":"test","seconds":32.689,"exit":1,"cmd":"bash agent_space/lfs_test.sh build-hip-gfx1100 /var/lib/jenkins/fleet/jobs/rx7900-20261021-013652-moat-lichtfeld-revalidate-61ea877f-sessi/moat/agent_space/run2.log"}
+{"kind":"phase","ts":"2026-10-21T08:49:23Z","phase":"test","seconds":32.350,"exit":1,"cmd":"bash agent_space/lfs_test.sh build-hip-gfx1100 /var/lib/jenkins/fleet/jobs/rx7900-20261021-013652-moat-lichtfeld-revalidate-61ea877f-sessi/moat/agent_space/run3.log"}
+{"kind":"session","ts":"2026-10-21T08:50:19Z","epoch":1792572619.362696949,"event":"end","platform":"linux-gfx1100"}
