@@ -981,3 +981,9 @@ Four 20 ms kernels run fully concurrently on four non-blocking streams (3.99x, t
 ## Correspondence 2026-10-21
 
 Posted (approved by Jeff) on FLAMEGPU/FLAMEGPU2#1379: https://github.com/FLAMEGPU/FLAMEGPU2/pull/1379#issuecomment-6328105164. Answers ptheywood's 2026-08-25 comment: CLA needs AMD approval or the entity version, so the three fixes are described for him to commit (all still absent at his tip 053cb68 = bfda5dec + one CI commit); gfx90a and gfx1151 results at 7977ab2b; Windows stream serialization; the hipStreamDestroy-after-hipDeviceReset use-after-free; #1387 not yet investigated. The reply commits us to raising both HIP defects with the ROCm runtime team.
+
+## Correction 2026-10-21: the stream-destroy crash is undefined behavior, not a HIP bug
+
+`cudaDeviceReset` documents: "It is the caller's responsibility to ensure that the resources are not accessed or passed in subsequent API calls and doing so will result in undefined behavior." (streams are on its list). `hipDeviceReset`'s header says it "deletes all streams created". So FLAMEGPU destroying a `CUDASimulation` after `util::cleanup()` is API misuse on both; CUDA tolerates it in practice, HIP use-after-frees. Recovery for NEW work after a reset is fine (gfx90a: the GPU tests after `TestCleanup.CUDASimulation` pass in the same process, exit 0). Section "ROCm defects found on Windows" above overstates repro 1 as a HIP defect; read it as a parity request (HIP should tolerate a stale stream as CUDA does, without a specific error code, since CUDA's actual return was not measured -- no NVIDIA GPU available). Stale `hipEventDestroy` returned `hipSuccess` and was not run under valgrind; the request should cover events too.
+
+Correction posted with Jeff's approval, in his voice: https://github.com/FLAMEGPU/FLAMEGPU2/pull/1379#issuecomment-6328248754
