@@ -349,6 +349,15 @@ the CUDA build too and are not HIP-specific hacks. (Velvet)
 
 ## Types, dispatch and platform limits
 
+**`clock64()` is a 20-bit counter on gfx11.** On RDNA3/3.5 it compiles to
+`s_getreg_b32 hwreg(HW_REG_SHADER_CYCLES, 0, 20)`, which wraps about every million cycles;
+gfx9 uses the 64-bit `s_memtime`. A spin-wait or timeout written `while (clock64() - start
+< n)` never terminates when the counter wraps first, so the kernel hangs -- intermittently,
+because it depends on where the counter stood at `start`. Elapsed-time measurements are
+silently wrong the same way. Use `wall_clock64()` (a 64-bit constant-rate counter on both,
+rate from `hipDeviceAttributeWallClockRate` in kHz) for any interval. Grep a port for
+`clock64` and `clock()` in device code. (FLAMEGPU2, found in a test probe)
+
 **Library swaps.** cuBLAS -> hipBLAS, cuFFT -> hipFFT, cuRAND -> hipRAND, cuSPARSE ->
 hipSPARSE, cuDNN -> MIOpen, Thrust/CUB -> rocThrust/hipCUB. Mostly 1:1; watch handle types
 and a few signature differences such as the hipBLAS v2 enums.

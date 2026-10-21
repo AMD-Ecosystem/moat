@@ -111,6 +111,32 @@ a forced reference into the hooks translation unit so the linker cannot drop it;
 TLS callbacks that do exist fire on `DLL_THREAD_ATTACH` and `DLL_PROCESS_ATTACH` calls
 `DisableThreadLibraryCalls`.
 
+## Windows: kernels on different streams run one after another
+
+**A test that asserts a speedup from multi-stream concurrency fails on every Windows host
+and passes on Linux.** HIP on Windows does not overlap kernels launched on separate
+non-blocking streams: four 1-block 20 ms kernels take 80.5 ms on one stream and 81.3 ms on
+four (gfx1151; the same project's concurrency tests failed identically on gfx1101 and
+gfx1201). `GPU_MAX_HW_QUEUES` does not change it. Results stay correct; only the overlap
+is lost. If a failing test's assertion is a timing ratio between a serial and a
+concurrent run, and every functional test passes, this is the cause and the port is not
+at fault. A 20-line repro and the bug report (`hip-win-stream-serialization`) are on
+FLAMEGPU2.
+
+## Windows: `hipStreamDestroy` after `hipDeviceReset` corrupts the heap
+
+**A process that finishes its work and then dies at exit with `0xC0000374` (heap
+corruption), `0xC0000409` or `0xC0000005` -- or `exit 127` under MSYS bash -- may be
+destroying a stream that `hipDeviceReset()` already tore down.** Projects that call a
+reset in a cleanup function while a C++ object owning streams is still in scope (its
+destructor runs after the reset) hit it; CUDA returns an error there, HIP on Windows
+corrupts its own heap, and one run of the repro hung unkillably. Stale `hipFree`,
+`hipHostFree` and `hipEventDestroy` are clean. Tell it apart from a missing DLL (which
+dies before `main` prints anything) by the work having completed first, and confirm by
+checking whether the crash appears only in runs that reset before the owning object is
+destroyed. A 12-line repro and the bug report (`hip-win-stream-destroy-after-reset`) are
+on FLAMEGPU2.
+
 ## Two GPUs visible to one process can crash the runtime
 
 On ROCm 7.14 a process that could see a mixed RDNA3 + RDNA4 pair crashed in the HIP
