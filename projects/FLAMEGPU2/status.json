@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:16:31Z",
-  "updated_at": "2026-10-21T22:03:53Z",
+  "updated_at": "2026-10-21T22:05:39Z",
   "head_sha": "7977ab2b6ad33015333424c5ea0f656241736ca5",
   "depends_on": [],
   "porting": null,
@@ -151,5 +151,5 @@
     "at": "2026-10-21T06:49:50Z"
   },
   "on_hold": true,
-  "on_hold_reason": "Parked by Jeff Daily until ptheywood replies on upstream draft PR #1379 (amdgpu branch): waiting to learn whether he wants a PR against amdgpu or a cherry-pick of amdgpu-fixes @ 2ecf5a01. Port itself is complete on all four platforms at a290861."
+  "on_hold_reason": "jeffdaily 2026-10-20: upstream owns the HIP PR (FLAMEGPU/FLAMEGPU2#1379, branch amdgpu). moat-port is kept as a validated build of his bfda5dec plus three fixes, synced once at 7977ab2b; do not follow his rebases and do not open an upstream PR. Fixes reach upstream as a described reply he commits himself (CLA needs employer sign-off). Retire when #1379 merges."
 }
