@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:16:31Z",
-  "updated_at": "2026-10-21T06:50:47Z",
+  "updated_at": "2026-10-21T22:03:53Z",
   "head_sha": "7977ab2b6ad33015333424c5ea0f656241736ca5",
   "depends_on": [],
   "porting": null,
@@ -26,10 +26,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "a290861",
+      "validated_sha": "7977ab2b6ad33015333424c5ea0f656241736ca5",
       "started_at": "2026-06-05T05:06:43Z",
-      "completed_at": "2026-06-08T00:38:47Z",
-      "updated_at": "2026-08-20T00:11:42Z",
+      "completed_at": "2026-10-21T22:03:53Z",
+      "updated_at": "2026-10-21T22:03:53Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -43,13 +43,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
-      "carry_forward": {
-        "to": "a290861",
-        "method": "binary-equiv",
-        "detail": "#include <windows.h> inside #ifdef _MSC_VER; linux clang does not define _MSC_VER, no compiled diff",
-        "at": "2026-06-08T00:38:47Z"
-      }
+      "last_agent": "validator"
     },
     "linux-gfx1100": {
       "state": "completed",

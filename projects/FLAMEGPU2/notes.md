@@ -797,6 +797,43 @@ $BIN/boids_bruteforce.exe -s 2 -v
 
 Verdict: completed (functional pass, same known Windows concurrency-speedup failures).
 
+## Validation 2026-10-21 (linux-gfx90a, fork head 7977ab2b)
+
+GPU: AMD Instinct MI250X (gfx90a, CDNA2, wave64), one GCD pinned with `HIP_VISIBLE_DEVICES` by the dispatcher (telemetry payload `"GPUDevices":"AMDInstinctMI250X/MI250"`). ROCm: TheRock python wheels `rocm-sdk-devel` / `rocm-sdk-core` 10.1.0 in the image venv (`libamdhip64.so.7.16`, AMD clang 24.0.0git); this host has no `/opt/rocm` and no conda. CMake 3.31.6. All runs under `ulimit -c 0`.
+
+Fork clone at `7977ab2b` (`moat-port`). Note: `upstream/amdgpu` has moved again since the sync (now `053cb687`, was `bfda5dec`); per the 2026-10-20 ruling it is not followed, and this run validates `7977ab2b` only.
+
+```bash
+SP=/opt/python-3.11-venv/lib/python3.11/site-packages
+ROCM=$SP/_rocm_sdk_devel; CORE=$SP/_rocm_sdk_core
+cmake -S projects/FLAMEGPU2/src -B projects/FLAMEGPU2/src/build -DCMAKE_BUILD_TYPE=Release \
+  -DFLAMEGPU_BACKEND=HIP -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_CXX_COMPILER=$ROCM/lib/llvm/bin/clang++ -DCMAKE_C_COMPILER=$ROCM/lib/llvm/bin/clang \
+  "-DCMAKE_PREFIX_PATH=$ROCM;$CORE" -DFLAMEGPU_BUILD_TESTS=ON
+cmake --build projects/FLAMEGPU2/src/build --target flamegpu boids_bruteforce tests -j 64
+projects/FLAMEGPU2/src/build/bin/Release/tests
+projects/FLAMEGPU2/src/build/bin/Release/boids_bruteforce --steps 10 -v
+```
+
+- Build: configure 15.9 s, compile 315 s, exit 0, 0 errors, 0 warnings.
+- `tests`: 1134 tests from 89 suites, **1070 passed, 64 skipped, 0 failed**, process exit **0**, 39.1 s. Identical to the June gfx90a run and the August run at 5e42a64 (1070/64/0). 46 `DISABLED_` tests upstream, not counted.
+- The 64 skips: 62 runtime-compilation (RTC) tests plus `TestUtilDetailCuda.cuDevicePrimaryContextIsActive` and `TestCUDASimulation.ApplyConfigDerivedContextCreation` ("Test not yet implemented for HIP/ROCm/AMD"), the same set as before.
+- `TestCUDASimulationConcurrency.*`: all 12 pass here (the 11 speedup tests plus `LayerConcurrencyDeviceException`), e.g. `LayerConcurrency` 1410 ms, `ConcurrentMessageOutputInput` 2817 ms. These are the tests that fail on every Windows host.
+- `TestCleanup.CUDASimulation` passes in the full run and the process exits 0, unlike Windows (exit 127). The underlying stale-stream use-after-free is present on Linux too (see the Linux control below); glibc simply did not detect it in this run.
+- `boids_bruteforce --steps 10 -v`: completes, Total Processing time 0.154859 s, exit 0.
+- CUDA no-regression gate (first run at this head): **pass**. CUDA 12.8.93 toolkit (`cuda-toolkit=12.8` from the nvidia channel, in a micromamba env under `agent_space/` since this host has no conda), host GCC 13.3.0, `-DCMAKE_CUDA_ARCHITECTURES=80` (confirmed in CMakeCache):
+  ```bash
+  C=agent_space/mamba/cuda-12.8
+  cmake -S projects/FLAMEGPU2/src -B agent_space/build-cuda -DCMAKE_BUILD_TYPE=Release -DFLAMEGPU_BACKEND=CUDA \
+    -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_CUDA_COMPILER=$C/bin/nvcc -DCUDAToolkit_ROOT=$C \
+    -DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER=gcc -DFLAMEGPU_BUILD_TESTS=ON
+  cmake --build agent_space/build-cuda --target flamegpu boids_bruteforce tests -j 64
+  ```
+  Configure 29.8 s, build 239 s, exit 0, 0 errors, 0 warnings; `flamegpu`, `boids_bruteforce` and `tests` all linked. Compile-only; no NVIDIA runtime behaviour is claimed.
+- Integrity: `git -C projects/FLAMEGPU2/src status --porcelain` empty. `jargon.py --port FLAMEGPU2` clean. Documentation: unchanged from the 2026-10-20 review (the upstream README documents the HIP build; our three commits have no user-visible surface).
+
+Verdict: completed. This satisfies the wave64 gate at 7977ab2b.
+
 ## ROCm defects found on Windows, 2026-10-21 (windows-gfx1151)
 
 Ruling from Jeff, 2026-10-21: windows-gfx1151 stays `completed` at 7977ab2b; both defects below are HIP runtime defects on Windows, not port defects, and are registered as `rocm-bug-report` deferrals on this project. Both reproduce without FLAMEGPU. Host: Radeon 8060S (gfx1151), Windows 11, TheRock SDK 7.14 (`amdhip64_7.dll` co-located, HIPVersion 7.14.60850). Build either repro with:
@@ -858,3 +895,85 @@ int main() {
 ```
 
 Observed: four 1-block kernels, 5 ms each: 1 stream 20.3 ms, 4 streams 21.6 ms; 20 ms each: 80.5 ms vs 81.3 ms; 10 ms each: 40.3 ms vs 41.2 ms. `GPU_MAX_HW_QUEUES=4` and `=8` do not change it. Expected on a GPU with 20 CUs and four 1-block kernels: ~4x. Not yet run on Linux as a control (FLAMEGPU's own concurrency tests passing there is the indirect control).
+
+### Linux control (linux-gfx90a)
+
+Run 2026-10-21 on the linux-gfx90a validation host: MI250X (gfx90a), one GCD pinned with `HIP_VISIBLE_DEVICES`, Ubuntu 24.04, kernel 6.8, the same ROCm that built FLAMEGPU for the validation above (TheRock wheels 10.1.0, `libamdhip64.so.7.16.26385`, AMD clang 24.0.0git). Each program was copied verbatim from the fenced blocks above into `agent_space/repro/` and built and run with:
+
+```bash
+ROCM=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+$ROCM/lib/llvm/bin/clang++ -x hip --offload-arch=gfx90a -O2 --rocm-path=$ROCM repro.hip -o repro -L$ROCM/lib -lamdhip64
+ulimit -c 0; timeout 60 ./repro
+```
+
+Both built with only `-Wunused-value` (nodiscard `hipError_t`) warnings.
+
+**Repro 1 (stale `hipStreamDestroy` after `hipDeviceReset`): also defective on Linux.** Five plain runs:
+
+```
+--- run 1
+reset: hipSuccess
+hipStreamDestroy: hipSuccess
+exit=0
+--- run 2
+reset: hipSuccess
+hipStreamDestroy: hipSuccess
+exit=0
+--- run 3
+corrupted double-linked list
+timeout: the monitored command dumped core
+Aborted                 timeout 60 ./repro1
+exit=134
+--- run 4
+corrupted double-linked list
+timeout: the monitored command dumped core
+Aborted                 timeout 60 ./repro1
+exit=134
+--- run 5
+reset: hipSuccess
+hipStreamDestroy: hipSuccess
+exit=0
+```
+
+(`ulimit -c 0` was in effect; no core file was written.) In runs 3 and 4 glibc detected the corruption and aborted (SIGABRT, 134) before anything reached stdout. When the program does finish, `hipStreamDestroy` on the stale handle returns `hipSuccess` instead of an error.
+
+`MALLOC_CHECK_=3`, three runs: all printed `reset: hipSuccess` / `hipStreamDestroy: hipSuccess` and exited 0, so this checker does not catch it.
+
+`valgrind` 3.22.0 (`valgrind --error-limit=no --num-callers=30 ./repro1`), one run, exit 132: `ERROR SUMMARY: 11 errors from 9 contexts`, all of them use-after-free inside `hipStreamDestroy`. Representative error, with frames inside libamdhip64 shown as `???`:
+
+```
+Invalid read of size 4
+   at 0x4C51EF7: ??? (libamdhip64.so.7)
+   by 0x4D3D1DA: hipStreamDestroy (libamdhip64.so.7)
+   by 0x10C29E: main (repro1)
+ Address 0x1457d204 is 564 bytes inside a block of size 768 free'd
+   at 0x484A164: operator delete(void*)
+   by 0x4E496FF / 0x49B9179 / 0x49B8E08 / 0x49A492F: ??? (libamdhip64.so.7)
+   by 0x4CEF2A4: hipDeviceReset (libamdhip64.so.7)
+   by 0x10C27C: main (repro1)
+ Block was alloc'd at
+   at 0x4846FA3: operator new(unsigned long)
+   by 0x4C480EE / 0x4C49B02: ??? (libamdhip64.so.7)
+   by 0x4D3C54A: hipStreamCreate (libamdhip64.so.7)
+   by 0x10C1EC: main (repro1)
+```
+
+The others are reads of size 4 and 8, one write of size 1 and one write of size 4, all into the same 768-byte block (offsets 0 to 564). Then `valgrind: Unrecognised instruction at address 0x4c6712a` inside libamdhip64, reached through the same `0x4E496FF` frame that frees the block, and the process dies with SIGILL. Valgrind's own text says that means either a jump to a non-code location or an instruction it cannot decode; following a freed object, the first is more likely, but this run does not prove it. Neither `printf` line appeared (stdout was still buffered when SIGILL killed the process).
+
+Conclusion: a stream object that `hipStreamCreate` allocates is freed by `hipDeviceReset`, and `hipStreamDestroy` on the old handle then reads and writes that freed memory and frees it again. The defect is in the common HIP runtime, not the Windows backend. Linux only shows it less often: glibc aborted 2 of 5 plain runs, and the FLAMEGPU process that does the same thing (`TestCleanup.CUDASimulation`, boids `main`) exited 0 in this host's runs. The `hip-win-stream-destroy-after-reset` deferral names Windows; its scope should be widened to all platforms (a person's call, and the id is left alone here).
+
+**Repro 2 (kernels on separate streams): overlaps on Linux.** Three runs, all exit 0:
+
+```
+--- run 1
+1 stream 80.0 ms, 4 streams 20.1 ms, speedup 3.99x
+exit=0
+--- run 2
+1 stream 80.0 ms, 4 streams 20.1 ms, speedup 3.99x
+exit=0
+--- run 3
+1 stream 80.0 ms, 4 streams 20.1 ms, speedup 3.99x
+exit=0
+```
+
+Four 20 ms kernels run fully concurrently on four non-blocking streams (3.99x, the ideal is 4x), which matches the 12 `TestCUDASimulationConcurrency.*` passes above. The serialization seen on Windows is specific to the Windows runtime, so `hip-win-stream-serialization` is correctly scoped.
