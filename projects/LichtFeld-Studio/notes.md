@@ -3586,3 +3586,11 @@ No findings. Checked and fact-checked:
 - Commits: titles 66/66 chars with `[ROCm]`, fenced Test Plans, "Authored with Claude.", no Co-Authored-By trailer, author is the public address. `python utils/jargon.py --port LichtFeld-Studio`: clean.
 
 Owed to validation (not a review finding): the Linux configure must reject distro OpenEXR 3.1.5 and then pass with `-DOpenEXR_DIR`, and a wave64 Debug build must compile unpatched. This host compiled Debug for gfx1151 and gfx90a but did not link it (Debug-CRT dependency mismatch).
+
+## Validation 2026-10-21 windows-gfx1151 (validator) -- 61ea877f
+
+- Fork clone projects/LichtFeld-Studio/src at 61ea877fa5cb531c96bb1351299dc80e8ad98dde, no modified tracked files. `python3 utils/jargon.py --port LichtFeld-Studio`: clean. Docs: the AMD GPU section of docs/building_and_distribution.md carries the ROCm build (reviewed).
+- Build: `MSYS2_ARG_CONV_EXCL="*" utils/timeit.sh LichtFeld-Studio compile -- cmd.exe /c 'agent_space\lfs_sync.bat'` (Release, gfx1151, existing tree): incremental, 6 steps (ABI stamp relink only), clean.
+- Test: `ulimit -c 0; LFS_CWD='D:\Develop\moat\projects\LichtFeld-Studio\src' LFS_EXCLUDE='TensorReserveInplaceCat.AllocationFailurePreservesInstalledStorage' utils/timeit.sh LichtFeld-Studio test -- python agent_space/lfs_suite_runner.py 'D:\Develop\moat\agent_space\lfs-sync-runs\v1'` (one suite per process, GsplatRasterizerTest per test; PATH has _rocm_sdk_libraries/bin before _rocm_sdk_core/bin): 2198 run, 1446 s: **2162 passed, 10 failed, 25 skipped, 0 incomplete**, identical to the porter's r6 run.
+- The 10 failures are the already-known set, none new: 4 DepthAnchor* (codec stub on Windows), 2 CudaErrorDiagnostics, AllocCounterTest.PoolCacheHitDoesNotIncrement (pool), CudaTest.D1_BinaryInPlaceWaitsForGatedProducer, 2 TensorD4FromBlobHomeStreamTest (prime). GsplatRasterizerTest isolation is the known hip-windows-vmm-va-not-reused workaround.
+- CUDA gate: not run (no CUDA toolkit on this host); Linux validators own it.
