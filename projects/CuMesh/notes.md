@@ -2723,20 +2723,43 @@ xatlas sees anything.
   same toolchain (`setup.py build --build-base agent_space/build392`) gives the same 106 clusters /
   41757 v on 2 runs. `392b4dd..1153341` touches only `setup.py`, `.gitignore` and the cubvh gitlink.
 - The port does not touch the chart code: `git diff --stat origin/main 1153341 -- src/` does not list
-  `src/atlas.cu`. The kernel has no warp intrinsics; chart areas and normals come from
-  `cub::DeviceSegmentedReduce::Sum/Reduce` float sums (hipCUB/rocPRIM), whose summation order is a
-  library property. Those sums drive a greedy 100-iteration refinement.
-- The result is floating-point-order sensitive on this hardware: the same `392b4dd` sources rebuilt
+  `src/atlas.cu` (nor `geometry.cu`, `connectivity.cu`, `shared.*`), and the kernel has no warp
+  intrinsics.
+- The result is floating-point sensitive on this hardware: the same `392b4dd` sources rebuilt
   with `HIPCC_COMPILE_FLAGS_APPEND=-ffp-contract=off` give 105 clusters / 43208 v.
 - The 106-chart atlas is valid (`agent_space/chart_check.py`): 106 chart ids 0..105, chart offsets
   cover all 69451 faces, every chart nonempty and edge-connected (0 charts with >1 component),
   uv_unwrap UVs finite in [0, 0.99852]. Size profile: 53 single-face charts, 19 charts >1000 faces
   (largest 7749); the `-ffp-contract=off` build has 42 single-face charts and 18 >1000.
-- Earlier gfx90a runs on ROCm 7.2 gave 90 clusters / 45110, the same as gfx1100, so wave64 by
-  itself does not produce 106. The variable that changed is the toolchain (HIP 7.16 / rocm-sdk 10.1.0).
-  Not isolated further: no wave32 card is available here to run the same toolchain, so whether gfx1100
-  on HIP 7.16 also gives 106 is open. The next linux-gfx1100 run on a newer image should record its
-  uv_unwrap chart count to settle it.
+- Earlier gfx90a runs on ROCm 7.2 gave 90 clusters / 45110, the same as gfx1100.
+
+**Correction (2026-10-21, root-cause follow-up on this host).** The explanation first written here
+(a toolchain or rocPRIM summation-order change) was wrong. A follow-up root-cause job on this image found:
+- gfx942 and gfx1100 on this same image (HIP 7.16.26385, rocm-sdk 10.1.0) give 90 clusters / 45110 v
+  with byte-identical output (`uv_unwrap.ply` md5 `af98b1598088f48c01c2a1a3ed473402`). The difference
+  is gfx90a-specific codegen, not the toolchain version or the rocPRIM path.
+- Cause: HIP's default `-ffp-contract=fast` plus SLP vectorization. On gfx90a, SLP produces packed
+  `v_pk_mul_f32` / `v_pk_fma_f32`, which fuse a different set of mul/add pairs in
+  `compute_face_normals_kernel` (`src/geometry.cu`) and in the `src/atlas.cu` kernels
+  (`init_chart_adj_kernel`, cost, refine, collapse). Face normals differ by up to 3 ulp on 8337 of
+  69451 faces. Building `cumesh._C` on gfx90a with `-fno-slp-vectorize` (or `-O1`) gives 90 / 45110
+  with exactly that md5; nothing else changes.
+- No wrong code: every intermediate is correct float32 for the contraction used (checked against
+  float64 CPU recomputation and an exact standalone emulation of each arch's FMA pattern). There is no
+  race, uninitialized read or xnack effect: `AMD_SERIALIZE_KERNEL=3`, `HIP_LAUNCH_BLOCKING=1`, memory
+  prefill and `HSA_XNACK=0/1` all leave 106 / 41757 unchanged.
+- The chart count is unstable under 1-ulp noise. Nudging 8000 random face normals by 1 ulp from a
+  90-chart input gives a different count 1 to 3 times in 8 (106 among them); nudging all faces gives
+  82 to 150. Upstream's refine loop does not converge (about 100 faces still change per iteration at
+  iteration 100), and `reassign_chart_ids` then splits the oscillating fragments into separate charts,
+  which is where the 53 single-face charts come from. This is upstream algorithm behaviour on every
+  arch.
+
+**Validation criterion for uv_unwrap from here on**: the uv_unwrap chart count and output vertex count
+are not a cross-arch invariant (they can also move with compiler version on the same arch). Judge
+uv_unwrap by successful completion plus a structurally valid atlas (every face in exactly one chart,
+charts nonempty and edge-connected, face count unchanged, UVs finite in [0, 1]), not by matching the
+90 / 45110 / 45018 numbers recorded by other platforms.
 
 **BVH contract check** (`agent_space/bvh_check.py`, scratch; torch seed 0; run from `/tmp` against the
 installed package): icosphere subdiv 4, 2562 v / 5120 f, 20000 random points in [-1.5,1.5]^3.
@@ -2755,5 +2778,5 @@ person already ruled stays. README documents `BUILD_TARGET=rocm GPU_ARCHS=...` n
 **Integrity**: `git -C projects/CuMesh/src status --porcelain` empty, HEAD `1153341`.
 
 **Result**: linux-gfx90a -> completed at 11533412aaaa8f21f26d7e46d8a468562c41ff96 (closes wave64 for
-this round). The uv_unwrap chart-count change is recorded above for a person to judge; it reproduces on
-the already-published tip and is not caused by this round.
+this round). The uv_unwrap chart-count difference is benign per-arch FP contraction (see the correction
+above); it reproduces on the already-published tip and is not caused by this round.
