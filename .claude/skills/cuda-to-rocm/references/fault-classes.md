@@ -379,7 +379,14 @@ compiling for host`, while nvcc builds the same code. It shows only where the ma
 typically a debug assert that is `((void)0)` under NDEBUG, so Release passes and the first
 Debug build fails. Build Debug once after every upstream sync, and give HIP sources the
 kernel-safe form in both passes (`defined(__CUDA_ARCH__) || defined(__HIPCC__)`) or make
-the callee `__host__ __device__`. (LichtFeld-Studio)
+the callee `__host__ __device__`. Only calls that go through overload resolution (templates,
+overload sets) fail at once; a call to a single non-template `__host__` function in a kernel
+is a deferred diagnostic that never fires, because the host pass does not emit kernel bodies.
+That gives a narrower fix that keeps the host form for host code in HIP TUs: under
+`#elif defined(__HIPCC__)` evaluate the message argument in `[&]() { return (message); }()`.
+clang makes an unattributed lambda `__host__ __device__`, so the template call inside it is
+legal in a kernel's host-pass body, while host functions still get the formatted message.
+(LichtFeld-Studio)
 
 **CUDA error codes HIP lacks still appear in switch labels.** Error classifiers name codes
 such as `cudaErrorMisalignedAddress`, `cudaErrorInvalidPc` or `cudaErrorSystemNotReady`
