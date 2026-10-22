@@ -232,3 +232,9 @@
 {"kind":"session","ts":"2026-10-22T05:45:20Z","epoch":1792647920.996815900,"event":"end","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-10-22T05:47:52Z","epoch":1792648072.137310600,"event":"start","platform":"windows-gfx1151"}
 {"kind":"session","ts":"2026-10-22T05:50:06Z","epoch":1792648207.008852600,"event":"end","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-22T05:54:43Z","epoch":1792648483.623931672,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-22T05:58:50Z","phase":"compile","seconds":235.978,"exit":0,"cmd":"bash agent_space/lfs_build.sh build-hip-gfx1100 Release"}
+{"kind":"phase","ts":"2026-10-22T05:59:31Z","phase":"test","seconds":32.571,"exit":1,"cmd":"bash agent_space/lfs_test.sh build-hip-gfx1100 /var/lib/jenkins/fleet/jobs/rx7900-20261021-225113-moat-lichtfeld-revalidate-81b7fa24-sessi/moat/agent_space/run1.log"}
+{"kind":"phase","ts":"2026-10-22T06:00:04Z","phase":"test","seconds":32.347,"exit":1,"cmd":"bash agent_space/lfs_test.sh build-hip-gfx1100 /var/lib/jenkins/fleet/jobs/rx7900-20261021-225113-moat-lichtfeld-revalidate-81b7fa24-sessi/moat/agent_space/run2.log"}
+{"kind":"phase","ts":"2026-10-22T06:00:36Z","phase":"test","seconds":32.517,"exit":1,"cmd":"bash agent_space/lfs_test.sh build-hip-gfx1100 /var/lib/jenkins/fleet/jobs/rx7900-20261021-225113-moat-lichtfeld-revalidate-81b7fa24-sessi/moat/agent_space/run3.log"}
+{"kind":"session","ts":"2026-10-22T06:01:30Z","epoch":1792648890.465153320,"event":"end","platform":"linux-gfx1100"}
