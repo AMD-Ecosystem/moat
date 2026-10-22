@@ -3773,3 +3773,43 @@ Owed to validation (not a review finding): the Linux HIP rebuilds (gfx90a, gfx11
 - Test: `ulimit -c 0; LFS_CWD='D:\Develop\moat\projects\LichtFeld-Studio\src' LFS_EXCLUDE='TensorReserveInplaceCat.AllocationFailurePreservesInstalledStorage' utils/timeit.sh LichtFeld-Studio test -- python agent_space/lfs_suite_runner_v2.py 'D:\Develop\moat\agent_space\lfs-sync-runs\v2'`. v2 runner = v1 runner with a Popen watchdog: `taskkill /T /F /PID` at timeout, and also 60 s after "SEH exception" appears in the log; no system setting changed. Result: 2198 run, 347 s, **2162 passed, 10 failed, 25 skipped, 0 incomplete**, identical to r7 and v1. The whole-suite GsplatRasterizerTest process hit the known SEH again, was killed by the watchdog (killed-after-seh), and the suite was then run per test as designed (no 5 h WER stall; no lfs_compute_tests process left afterwards).
 - The 10 failures are the known set, none new: 4 DepthAnchor* (codec stub on Windows), 2 CudaErrorDiagnostics, AllocCounterTest.PoolCacheHitDoesNotIncrement (pool), CudaTest.D1_BinaryInPlaceWaitsForGatedProducer, 2 TensorD4FromBlobHomeStreamTest (prime).
 - CUDA gate: not run (no CUDA toolkit on this host); the Linux fleet owns it.
+## Revalidation 2026-10-22 (validator, linux-gfx1100, AMD Radeon Pro W7800, RDNA3 gfx1100) -- 022a02db, VALIDATION-FAILED (80713459: Linux HIP host pass, `pow`/`fmod` on `__half` ambiguous)
+
+Selector read `revalidate` (validated_sha c9fd755c, head 022a02db: fece27a2, 80713459, 1df7fc8e, 022a02db). Full rebuild from a fresh blobless clone at moat-port, HEAD == 022a02dbeb02b253c343755b0e5ac875408eb39c, `protect-fork` installed. Host as in the 61ea877f entry: TheRock ROCm SDK 10.1.0 wheels (`/opt/python-3.11-venv`, clang 24 at `$SDK/lib/llvm/bin`), torch 2.16.0a0+git6c3af02, CMake 3.31.6, Ubuntu 24.04, gcc 14 libstdc++. Reused the OpenEXR v3.3.9 and spdlog v1.15.3 (bundled fmt) installs, glm 1.0.1 and Taywee args from the 61ea877f run (copied into agent_space/_deps); same agent_space/lfs_build.sh.
+
+### Build (fails)
+```
+EXTRA_CMAKE="-DOpenEXR_DIR=<deps>/openexr-install/lib/cmake/OpenEXR" \
+  utils/timeit.sh LichtFeld-Studio compile -- bash agent_space/lfs_build.sh build-hip-gfx1100 Release
+# ninja -k 0: 346 of 354 steps attempted, 27 FAILED, 236 s
+```
+Every error in the log is one of these two (27 x pow, 26 x fmod; no other error text):
+```
+src/core/tensor/internal/tensor_functors.hpp:609:39: error: call to 'pow' is ambiguous
+src/core/tensor/internal/tensor_functors.hpp:628:28: error: call to 'fmod' is ambiguous
+```
+Lines 609/628 are the `#else` branches 80713459 restored, `return static_cast<T>(std::pow(a, b));` and `return std::fmod(a, b);`, instantiated with `T = __half`. Candidates clang lists for `pow`: glibc `bits/mathcalls.h:140` (`double pow(double, double)`), libstdc++ `c++/14/cmath:376` (`pow(float, float)`), and `__clang_hip_cmath.h:154/157/178/245` (`pow(float,int)`, `pow(double,int)`, `pow(_Float16,int)`, `__DEF_FUN2(float, pow)`); for `fmod`: `mathcalls.h:168`, `cmath:276`, `__clang_hip_cmath.h:229`. Host pass only: on tensor_broadcast_ops.cu, `--cuda-host-only -fsyntax-only` gives both errors, `--cuda-device-only -fsyntax-only` gives none.
+
+Instantiation paths (both are `__global__` templates from the ca01b056 sync, absent at c9084760 and at the pre-sync tip f58844b4^1):
+- 25 TUs: `Tensor::binary_op_with_promotion<pow_op|mod_op>` (tensor_impl.hpp:2225/2262) -> `launch_binary_op_generic<__half,__half,...>` (tensor_impl.hpp:1150) -> `launch_vectorized_binary_half` (tensor_generic_ops.cuh:87) -> `vectorized_binary_half_kernel` (tensor_vectorized_ops.cuh:355) -> `op()<__half>` (tensor_vectorized_ops.cuh:197).
+- tensor_broadcast_ops.cu and one other: `launch_broadcast_binary<__half,__half,...>` -> `broadcast_binary_same_shape_kernel` (tensor_broadcast_ops.cuh:1221) -> `op()<__half>` (:786).
+
+So the porter's premise for 80713459 ("Linux HIP compiled upstream's expression before 38ae02a9 existed, gfx90a 2026-05-31 at 580e0012") does not cover the current tree: the `__half` instantiations at c9084760 did not go through these kernels, which the upstream sync added. The ambiguity is not MSVC-specific; it is HIP's `__half` converting to every floating type (the porter's own explanation), on libstdc++ too.
+
+Failed TUs: tensor_broadcast_ops, tensor_strided_ops, tensor_fused_pointwise, tensor_warp_reduce, tensor_ops, tensor_exports, tensor_debug, image_quantize, mask_normalization, lanczos_resize, undistort, selection_ops, initial_scales, splat_data_mirror_centroid, thin_structure, blob_seeding, gradient_residual, ssim_reduction, ssim, image_kernels, densification_kernels, mcmc_kernels, morton_reorder_kernels, mrnf_kernels, ppisp_controller, ppisp_controller_pool, fastgs rasterization_api (all `.cu`; each only through the tensor_functors.hpp errors above).
+
+### The other three commits compile on Linux HIP
+- fece27a2 (helper_math.h): forward.cu, backward.cu, pop_scores.cu, adam_shN_joint.cu, tests/fastgs_tile_culling_boundary_cuda.cu, and the plain .cpp TUs fast_rasterizer.cpp, test_warp_cull_blend.cpp, test_fastgs_tile_culling_boundary.cpp built (upstream `inline int max/min` restored). rasterization_api.cu failed only on the tensor_functors.hpp errors.
+- 1df7fc8e (mcmc_kernels.cu): the TU failed, but only on the tensor_functors.hpp errors; nothing at the rsqrtf `#ifdef __HIPCC__` branch.
+- 022a02db (tensor.cpp, plain CXX): built.
+
+### Candidate fix (for the porter; tested as a throwaway, not committed)
+Dropping `&& defined(_MSC_VER)` from both `#elif` lines (so every HIP host pass takes the `is_arithmetic_v` / `static_cast<float>` branch, which is what CUDA's `__half` resolves to): tensor_broadcast_ops.cu and image_quantize.cu `-fsyntax-only` with the build's own compile command, 0 errors each. Reverted with `git checkout`; `git status --porcelain` shows no modified tracked files. The comment would need rewording (the ambiguity is HIP's `__half`, not MSVC's overload set).
+
+### Not run
+No GPU suite: lfs_compute_tests did not link. D1_BinaryInPlace, TensorD4FromBlob* and FusedBgBlendTest not observed at this head. Wave64 Debug item not applicable here (gfx1100, wave32).
+
+### CUDA no-regression gate
+Not run here (no CUDA toolkit on this host, `/opt/conda` absent); the fleet CUDA compile check at 022a02db is still owed.
+
+### Verdict: VALIDATION-FAILED (linux-gfx1100) at 022a02db -- back to the porter for 80713459.

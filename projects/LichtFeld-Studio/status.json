@@ -7,7 +7,7 @@
   "priority": 6.263,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-10-22T05:07:37Z",
+  "updated_at": "2026-10-22T05:10:13Z",
   "head_sha": "022a02dbeb02b253c343755b0e5ac875408eb39c",
   "depends_on": [],
   "waivers": {
@@ -29,6 +29,51 @@
   "upstream_repo_id": 672651553,
   "stage": "review-passed",
   "platforms": {
+    "linux-gfx1100": {
+      "state": "validation-failed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "c9fd755c58471a239d2fa327d0138233ff38e358",
+      "started_at": "2026-05-31T03:10:00Z",
+      "completed_at": "2026-10-21T08:50:19Z",
+      "updated_at": "2026-10-22T05:10:13Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-05-31T03:10:00Z",
+        "last_session_at": "2026-05-31T03:20:00Z"
+      },
+      "last_agent": "validator",
+      "failed_sha": "022a02dbeb02b253c343755b0e5ac875408eb39c"
+    },
+    "windows-gfx1201": {
+      "blocked": true,
+      "blocked_reason": "Host-wide block, GPU-independent (carried from windows-gfx1101 determination): TheRock Windows torch_hip.dll (lld-link, no .CRT$XCU) leaves torch::cuda::is_available()==false in the standalone C++ test exe; native HIP kernels pass but torch-gated tests cannot run. Host toolchain bug, identical on gfx1201.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-06T23:40:22Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
     "linux-gfx90a": {
       "state": "completed",
       "blocked": false,
@@ -77,30 +122,6 @@
       "last_agent": "validator",
       "failed_sha": "5cbfdf1a7b1b6a6553ce077a5aa8d6209fd3f51c"
     },
-    "linux-gfx1100": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "c9fd755c58471a239d2fa327d0138233ff38e358",
-      "started_at": "2026-05-31T03:10:00Z",
-      "completed_at": "2026-10-21T08:50:19Z",
-      "updated_at": "2026-10-21T22:07:49Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 1,
-        "first_session_at": "2026-05-31T03:10:00Z",
-        "last_session_at": "2026-05-31T03:20:00Z"
-      },
-      "last_agent": "validator",
-      "failed_sha": "ce822a31ad690650b7850c0a56a867cffeccb4f2"
-    },
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
@@ -124,33 +145,11 @@
       },
       "state": "completed",
       "last_agent": "validator"
-    },
-    "windows-gfx1201": {
-      "blocked": true,
-      "blocked_reason": "Host-wide block, GPU-independent (carried from windows-gfx1101 determination): TheRock Windows torch_hip.dll (lld-link, no .CRT$XCU) leaves torch::cuda::is_available()==false in the standalone C++ test exe; native HIP kernels pass but torch-gated tests cannot run. Host toolchain bug, identical on gfx1201.",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-06T23:40:22Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
     }
   },
   "porting_released": {
     "arch": "windows-gfx1151",
     "since": "2026-10-22T04:44:13Z",
     "at": "2026-10-22T04:58:42Z"
-  },
-  "porting": null
+  }
 }
