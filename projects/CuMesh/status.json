@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-10-22T07:17:42Z",
+  "updated_at": "2026-10-22T07:22:32Z",
   "head_sha": "11533412aaaa8f21f26d7e46d8a468562c41ff96",
   "depends_on": [],
   "pr_url": "https://github.com/JeffreyXiang/CuMesh/pull/36",
@@ -184,5 +184,12 @@
     "arch": "linux-gfx1100",
     "since": "2026-08-27T02:52:33Z",
     "at": "2026-08-27T02:55:14Z"
+  },
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-10-22T07:20:24Z",
+    "head_sha": "11533412aaaa8f21f26d7e46d8a468562c41ff96",
+    "content_sha256": "d9d0896b101e27441fbadecb3486c7c3f6435981804981a1ce1c71b3de11292a",
+    "review_pr": "https://github.com/AMD-Ecosystem/CuMesh/pull/1"
   }
 }
