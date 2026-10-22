@@ -3857,3 +3857,13 @@ Answers both "Review 2026-10-22" findings, which concern only the MOAT branch's 
 1. fault-classes.md: the gate history now matches the record. The `_MSC_VER` gate was chosen because the gfx90a build at 580e0012 compiled upstream's call, but that build had no gate and predated the ca01b056 kernels that instantiate pow_op/mod_op with `__half`. The first Linux build with the gate (linux-gfx1100 at 022a02db) failed, and the clang 23 check came after that.
 2. validation.md: the cross-OS host-pass check must match the whole ROCm toolchain (clang major and HIP headers), because the 23-vs-24 evidence does not separate the compiler from `amd_hip_fp16.h`.
 No fork change, so no build or test was run.
+
+## Review 2026-10-22b (reviewer, windows-gfx1151) -- skill text only (e4c4a0c2), fork head unchanged at 81b7fa24, REVIEW-PASSED
+
+Scope: MOAT commit e4c4a0c2 (fault-classes.md, validation.md), answering "Review 2026-10-22". Fork head 81b7fa24 unchanged (found clean in "Review 2026-10-22"); `git status --porcelain` in src is empty. No build or test, as dispatched. Fact-checked inline against notes.md and status.json.
+
+- Finding 1 resolved: fault-classes.md:350-353 now says the `_MSC_VER` gate rested on an older Linux build that had no gate and predated the instantiating kernels, and that the first Linux build with the gate failed. Matches the record: 580e0012 (gfx90a, 2026-05-31) predates 38ae02a9 and the ca01b056 sync kernels (Revalidation 2026-10-22, Porter round 2026-10-22); gfx90a/gfx1100 at c9fd755c ran before the gate (80713459 landed in c9fd755c..022a02db); linux-gfx1100 failed at 022a02db (status.json failed_sha). The misplaced clang 23 claim is gone from this paragraph.
+- Finding 2 resolved: validation.md:15 now requires matching the whole ROCm toolchain (clang major and HIP headers) and says the cited run did not separate them. The header claim holds: `__half`'s templated `operator T()` gated on `is_floating_point<T>` is in hip/amd_detail/amd_hip_fp16.h (checked in the TheRock nightly `_rocm_sdk_core` include tree). "10.x headers" covers both the Linux validator's 10.1.0 and the porter's 10.2.0a nightly.
+- No other skill text still carries the old `_MSC_VER` pow advice or the "same clang major" rule (grep over .claude/skills/cuda-to-rocm).
+
+No findings.
