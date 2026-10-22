@@ -3875,3 +3875,48 @@ No findings.
 - Test: `ulimit -c 0; LFS_CWD='D:\Develop\moat\projects\LichtFeld-Studio\src' LFS_EXCLUDE='TensorReserveInplaceCat.AllocationFailurePreservesInstalledStorage' utils/timeit.sh LichtFeld-Studio test -- python agent_space/lfs_suite_runner_v2.py 'D:\Develop\moat\agent_space\lfs-sync-runs\v3'`. 2198 run, 333 s, **2162 passed, 10 failed, 25 skipped, 0 incomplete**, identical to 022a02db. GsplatRasterizerTest hit the known SEH, watchdog-killed, then isolated per test.
 - The 10 failures are the known set, none new: 4 DepthAnchor*, 2 CudaErrorDiagnostics, AllocCounterTest.PoolCacheHitDoesNotIncrement, CudaTest.D1_BinaryInPlaceWaitsForGatedProducer, 2 TensorD4FromBlobHomeStreamTest.
 - CUDA gate: not run (no CUDA toolkit on this host). The pow/fmod change at 81b7fa24 is the HIP `#elif` branch Windows already took, so Windows compile output is unchanged.
+## Revalidation 2026-10-22b (validator, linux-gfx1100, AMD Radeon Pro W7800, RDNA3 gfx1100) -- 81b7fa24, COMPLETED
+
+Selector read `port-ready` (failed_sha 022a02db, head 81b7fa24), so a full run with no carry-forward. jeff's dispatch called it `revalidate` against c9fd755c; either way the delta under test is c9fd755c..81b7fa24 (fece27a2, 80713459, 1df7fc8e, 022a02db, 81b7fa24). Fresh blobless clone of moat-port, HEAD == 81b7fa245d3e00fc6fe7d341a768de862c56efda, `protect-fork` installed. Host as in the 022a02db entry: TheRock ROCm SDK 10.1.0 wheels (`/opt/python-3.11-venv`, clang 24 at `$SDK/lib/llvm/bin`), torch 2.16.0a0+git6c3af02, CMake 3.31.6, Ninja, Ubuntu 24.04, gcc 14 libstdc++. Reused the OpenEXR v3.3.9 and spdlog v1.15.3 (bundled fmt) installs, glm 1.0.1 and Taywee args (copied into agent_space/_deps); same agent_space/lfs_build.sh / lfs_test.sh as the 022a02db run, paths updated.
+
+### Build: first Linux HIP compile of these five commits, clean
+```
+EXTRA_CMAKE="-DOpenEXR_DIR=<deps>/openexr-install/lib/cmake/OpenEXR" \
+  utils/timeit.sh LichtFeld-Studio compile -- bash agent_space/lfs_build.sh build-hip-gfx1100 Release
+# fresh build dir, ninja -k 0: 354/354, 0 FAILED, 236 s
+```
+No compile error anywhere, and no warning in tensor_functors.hpp, helper_math.h, mcmc_kernels.cu or tensor.cpp (1161 warnings in the log, none in those files). So on Linux HIP:
+- 81b7fa24 (`#elif defined(__HIPCC__)` pow_op/mod_op): the 27 TUs that failed at 022a02db (tensor_broadcast_ops, tensor_ops, ..., fastgs rasterization_api) all build; no `call to 'pow'/'fmod' is ambiguous`.
+- fece27a2 (helper_math.h guard, `using std::min/max` block removed, upstream `inline int max/min` restored): forward.cu, backward.cu, pop_scores.cu, rasterization_api.cu, adam_shN_joint.cu, fastgs_tile_culling_boundary_cuda.cu and the plain .cpp TUs build.
+- 1df7fc8e (mcmc_kernels.cu `#ifdef __HIPCC__` coefficient): builds.
+- 022a02db (tensor.cpp `half_to_integer_rz` under USE_HIP): builds; CPUDtypeConversionTest 6/6 pass.
+
+### Release GPU suite (HIP_VISIBLE_DEVICES=0 pinned by the dispatcher, GPU idle before (amd-smi 0 % GFX, 28 MB VRAM), `ulimit -c 0`, serial, cwd = fork src root)
+```
+ulimit -c 0
+utils/timeit.sh LichtFeld-Studio test -- bash agent_space/lfs_test.sh build-hip-gfx1100 <log>
+# = cd src && LD_LIBRARY_PATH=<site>/torch/lib:<site>/_rocm_sdk_core/lib:<site>/_rocm_sdk_libraries/lib ./build-hip-gfx1100/cmake/hip_tests/lfs_compute_tests
+```
+2204 tests / 170 suites, 1 disabled, ~31 s each:
+- Run 1: **2173 passed, 6 failed, 25 skipped**.
+- Run 2: 2172 passed, 7 failed, 25 skipped (the 6 plus FusedBgBlendTest.BackwardGradsMatchWithBlendedImage, `test_fused_bg_blend.cpp:169 ... actual: 0.0200001337`, the known `lfs-upstream-bgblend-zero-grad-sign` flake, same 2*lr magnitude as before).
+- Run 3: **2173 passed, 6 failed, 25 skipped**.
+
+Identical to the 61ea877f result on this host (2173/6/25 plus the same intermittent seventh). The six fail in every run, same set as before: CudaErrorDiagnostics.ForcedCudaErrorReportHasExpectedSections, AllocCounterTest.PoolCacheHitDoesNotIncrement, AllocatorHygiene.FailedSlabReclaimRestoresOwnershipAndAccounting, DiscoverySweep.FullUInt8ScalarDomainMatchesTorch, DiscoverySweep.IntegerModuloByZeroThrowsInsteadOfCrashing (integer modulo, not the `__half` path), CudaTest.D1_BinaryInPlaceWaitsForGatedProducer. Of the 129 tests whose names mention pow/mod/half/float16, 127 pass and the 2 failing entries are IntegerModuloByZero (its result line plus its summary line).
+
+The tests jeff asked about:
+- **CudaTest.D1_BinaryInPlaceWaitsForGatedProducer: FAILS** in all three runs (120-122 ms), upstream `lfs-upstream-binary-inplace-no-stream-join` as before.
+- **TensorD4FromBlobHomeStreamTest.ItemTypedDrainsStampedHome and .StampedBlobThroughPinnedOpCrossStream: PASS** in all three runs (111-113 ms / 116-119 ms).
+
+### Wave64 Debug item
+Not applicable on this host (gfx1100, wave32). The Debug WarpCull*/GsplatRasterizer*/NnOpsTest/joint-Adam run at -O2 belongs to a wave64 (gfx90a) host.
+
+### CUDA no-regression gate
+cuda-not-validated here: no CUDA toolkit on this host (`/opt/conda` absent, no nvcc). The fleet CUDA compile check at 81b7fa24 is still owed; the touched lines' `#else` branches are upstream's text (Review 2026-10-21b, Review 2026-10-22).
+
+### Pre-completion checklist
+- Jargon: `python3 utils/jargon.py --port LichtFeld-Studio` clean (after `git fetch origin master:master` in the blobless clone, which jargon needs to resolve master..moat-port).
+- Documentation: docs/building_and_distribution.md "AMD GPUs (ROCm/HIP)" section unchanged by this delta; the recipe built here as written (with the OpenEXR 3.3 `OpenEXR_DIR` the docs direct).
+- Integrity: `git -C projects/LichtFeld-Studio/src status --porcelain` empty; no source patch this run. Build dir build-hip-gfx1100 is gitignored.
+
+### Verdict: COMPLETED (linux-gfx1100) at 81b7fa24
