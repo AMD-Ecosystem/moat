@@ -3920,3 +3920,47 @@ cuda-not-validated here: no CUDA toolkit on this host (`/opt/conda` absent, no n
 - Integrity: `git -C projects/LichtFeld-Studio/src status --porcelain` empty; no source patch this run. Build dir build-hip-gfx1100 is gitignored.
 
 ### Verdict: COMPLETED (linux-gfx1100) at 81b7fa24
+
+## Revalidation 2026-10-22 (validator, linux-gfx90a, MI250X GCD, wave64) -- 81b7fa24, COMPLETED (full real-GPU run)
+
+Selector read `revalidate` (validated_sha c9fd755c; delta c9fd755c..81b7fa24 = fece27a2, 80713459, 1df7fc8e, 022a02db, 81b7fa24; 4 files: tensor_functors.hpp, tensor.cpp, mcmc_kernels.cu, fastgs helper_math.h). Full rebuild, no carry-forward. Fresh blobless clone of moat-port, HEAD == 81b7fa245d3e00fc6fe7d341a768de862c56efda, `protect-fork` installed. Host and recipe as in the 2026-10-21b gfx90a entry (TheRock ROCm SDK 10.1.0 wheels, torch 2.16.0a0+git6c3af02, CMake 3.31.6, Ninja, Ubuntu 24.04); reused OpenEXR 3.3.14 static, spdlog 1.15.3 bundled-fmt, glm 1.0.1 and Taywee args from that run. Same agent_space/lfs_build.sh / lfs_run.sh (docs' Linux recipe, `ROCM_PATH=<site>/_rocm_sdk_devel`, `${ROCM_PATH}/llvm/bin/clang++`, `-j 128` = physical cores).
+
+An earlier job on this host at 022a02db (not recorded before this entry) stopped on the error linux-gfx1100 reported: 27 x `tensor_functors.hpp:609:39: error: call to 'pow' is ambiguous` and 26 x `tensor_functors.hpp:628:28: error: call to 'fmod' is ambiguous`. 81b7fa24 removes it here.
+
+### Release build
+```
+utils/timeit.sh LichtFeld-Studio compile -- bash agent_space/lfs_build.sh Release build-hip-gfx90a -DOpenEXR_DIR=<deps>/openexr-install/lib/cmake/OpenEXR
+```
+354/354, **zero errors**, 359 s. Warnings 1175, identical in count and kind to the 61ea877f build on this host (480 -Wunused-value, 62 -Wswitch, 2 -Wdefaulted-function-deleted, 1 -Wignored-optimization-argument); none in the delta's files names pow, fmod, half, rsqrt or helper_math.
+
+### Release GPU suite (HIP_VISIBLE_DEVICES=0 pinned by the dispatcher, GCD idle before (0 % GFX, 10 MB VRAM), `ulimit -c 0`, serial)
+```
+ulimit -c 0
+utils/timeit.sh LichtFeld-Studio test -- agent_space/lfs_run.sh build-hip-gfx90a
+```
+2204 tests / 170 suites, 1 disabled:
+- Run 1 (50.1 s): **2173 passed, 6 failed, 25 skipped**.
+- Run 2 (50.1 s): **2173 passed, 6 failed, 25 skipped**.
+
+Identical to the 61ea877f result on this host. The six, in both runs: CudaErrorDiagnostics.ForcedCudaErrorReportHasExpectedSections, AllocCounterTest.PoolCacheHitDoesNotIncrement, AllocatorHygiene.FailedSlabReclaimRestoresOwnershipAndAccounting, DiscoverySweep.FullUInt8ScalarDomainMatchesTorch, DiscoverySweep.IntegerModuloByZeroThrowsInsteadOfCrashing, CudaTest.D1_BinaryInPlaceWaitsForGatedProducer. FusedBgBlendTest.BackwardGradsMatchWithBlendedImage passed in both runs (`lfs-upstream-bgblend-zero-grad-sign`; two passes say nothing about its rate). Of the 127 tests whose names mention pow/mod/half/float16, 126 pass in each run; the one failure is IntegerModuloByZeroThrowsInsteadOfCrashing (integer modulo, one of the six). CPUDtypeConversionTest 6/6 (022a02db), MCMCNaNFixTest 4/4, MCMCTensorOps 8/8, McmcMultinomialTest 5/5 (1df7fc8e) pass.
+
+The tests jeff asked about:
+- **CudaTest.D1_BinaryInPlaceWaitsForGatedProducer: FAILS** in both runs (118/117 ms, `expected=3, actual=1`), upstream `lfs-upstream-binary-inplace-no-stream-join` as before. The other D1_* cases pass.
+- **TensorD4FromBlobHomeStreamTest.ItemTypedDrainsStampedHome and .StampedBlobThroughPinnedOpCrossStream: PASS** in both runs (109/110 ms, 114/112 ms). All 14 TensorD4FromBlobHomeStreamTest cases pass.
+
+### Wave64 Debug (no NDEBUG), no local source patch
+- Default Debug (`-O0 -g`, `grep -c DNDEBUG build.ninja` = 0), build-hip-gfx90a-debug: 354/354, zero errors, 347 s.
+- `-O2` Debug (`-DCMAKE_{HIP,CXX,C}_FLAGS_DEBUG="-O2 -g0"`, no NDEBUG), build-hip-gfx90a-dbgO2: 354/354, zero errors, 365 s.
+- Wave64 set on `-O2` Debug, `ulimit -c 0`: `utils/timeit.sh LichtFeld-Studio test -- agent_space/lfs_run.sh build-hip-gfx90a-dbgO2 --gtest_filter='WarpCull*:GsplatRasterizer*:NnOpsTest.*:JointAdamCodecTest.*:GutJointAdamBatch.*:GutShNJointAdam.*'`: 79 tests / 12 suites, 16.6 s, **76 passed, 3 skipped, 0 failed** (skips: GsplatRasterizerTest.AggregateOverflowTrainingStep, NnOpsTest.ResizeMatchesNumpyFixture, NnOpsTest.WeightFilePythonRoundTrip). Passed per suite: WarpCullBlendTest 5, WarpCullBwdTest 8, NnOpsTest 29, JointAdamCodecTest 8, GutJointAdamBatch 1, GutShNJointAdam 1, GsplatRasterizer* 24. No trap, assertion or 719 in the log. Same as at 61ea877f.
+- Full suite on `-O2` Debug minus DepthAnchorSetupTest.DamagedDepthPropagatesDecodeError and DeviceFaultTest.IndexSelectOobThrowsBoundsViolationWithFields (upstream Debug-only, ce822a31 gfx90a entry): 2202 run, 58.6 s, **2171 passed, 25 skipped, 6 failed**, the Release six.
+- Extra: the wave64 set on `-O0` Debug minus GsplatRasterizerTest.GutModeSteadyStateAllocs and .GutFromWorldGradParity (`lfs-hip-o0-ut-projection-hang`): 77 run, 23.7 s, **74 passed, 3 skipped, 0 failed**.
+
+### CUDA no-regression gate
+cuda-not-validated here: no CUDA toolkit on this host (`/opt/conda` absent, no nvcc). The fleet CUDA compile check at 81b7fa24 is still owed, as the linux-gfx1100 entry says.
+
+### Pre-completion checklist
+- Jargon: `python3 utils/jargon.py --port LichtFeld-Studio` clean (after `git branch -f master origin/master` in the blobless clone).
+- Documentation: Linux recipe unchanged since 61ea877f and reproduced as before (OpenEXR 3.3 + spdlog 1.15).
+- Integrity: `git -C projects/LichtFeld-Studio/src status --porcelain` shows no modified tracked files; no source patch at any point. Build dirs are gitignored.
+
+### Verdict: COMPLETED (linux-gfx90a), validated_sha 81b7fa24

@@ -7,7 +7,7 @@
   "priority": 6.263,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-10-22T06:07:27Z",
+  "updated_at": "2026-10-22T06:34:33Z",
   "head_sha": "81b7fa245d3e00fc6fe7d341a768de862c56efda",
   "depends_on": [],
   "waivers": {
@@ -29,30 +29,6 @@
   "upstream_repo_id": 672651553,
   "stage": "review-passed",
   "platforms": {
-    "linux-gfx90a": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "c9fd755c58471a239d2fa327d0138233ff38e358",
-      "started_at": "2026-05-31T01:11:33Z",
-      "completed_at": "2026-10-21T09:14:28Z",
-      "updated_at": "2026-10-21T22:07:49Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator",
-      "failed_sha": "ce822a31ad690650b7850c0a56a867cffeccb4f2"
-    },
     "linux-gfx1100": {
       "state": "completed",
       "blocked": false,
@@ -77,6 +53,30 @@
       "last_agent": "validator",
       "failed_sha": "022a02dbeb02b253c343755b0e5ac875408eb39c"
     },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "81b7fa245d3e00fc6fe7d341a768de862c56efda",
+      "started_at": "2026-05-31T01:11:33Z",
+      "completed_at": "2026-10-22T06:34:33Z",
+      "updated_at": "2026-10-22T06:34:33Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "failed_sha": "ce822a31ad690650b7850c0a56a867cffeccb4f2"
+    },
     "windows-gfx1201": {
       "blocked": true,
       "blocked_reason": "Host-wide block, GPU-independent (carried from windows-gfx1101 determination): TheRock Windows torch_hip.dll (lld-link, no .CRT$XCU) leaves torch::cuda::is_available()==false in the standalone C++ test exe; native HIP kernels pass but torch-gated tests cannot run. Host toolchain bug, identical on gfx1201.",
@@ -97,30 +97,6 @@
         "first_session_at": null,
         "last_session_at": null
       }
-    },
-    "windows-gfx1151": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "81b7fa245d3e00fc6fe7d341a768de862c56efda",
-      "failed_sha": "5cbfdf1a7b1b6a6553ce077a5aa8d6209fd3f51c",
-      "started_at": "2026-10-20T00:45:37Z",
-      "completed_at": "2026-10-22T06:07:27Z",
-      "updated_at": "2026-10-22T06:07:27Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "state": "completed",
-      "last_agent": "validator"
     },
     "windows-gfx1101": {
       "state": "validation-failed",
@@ -145,6 +121,30 @@
       },
       "last_agent": "validator",
       "failed_sha": "5cbfdf1a7b1b6a6553ce077a5aa8d6209fd3f51c"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "81b7fa245d3e00fc6fe7d341a768de862c56efda",
+      "failed_sha": "5cbfdf1a7b1b6a6553ce077a5aa8d6209fd3f51c",
+      "started_at": "2026-10-20T00:45:37Z",
+      "completed_at": "2026-10-22T06:07:27Z",
+      "updated_at": "2026-10-22T06:07:27Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
     }
   },
   "porting_released": {
