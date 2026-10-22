@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """GitHub discovery + ranking for MOAT.
 
 Honest limit: this is a best-effort union of targeted searches, NOT a census of
