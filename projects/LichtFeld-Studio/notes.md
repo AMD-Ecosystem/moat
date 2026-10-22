@@ -3765,3 +3765,11 @@ No findings. Checked and fact-checked:
 - Commits: titles 63-66 chars with `[ROCm]`, fenced Test Plans, "Authored with Claude.", no Co-Authored-By trailer, public author address. `python utils/jargon.py --port LichtFeld-Studio`: clean; `moatlib.py audit-commits LichtFeld-Studio`: OK.
 
 Owed to validation (not a review finding): the Linux HIP rebuilds (gfx90a, gfx1100) are the first compile of the narrowed pow/fmod gate and of the restored `int min/max` in .cpp TUs on Linux; the fleet CUDA compile check should be rerun at 022a02db to confirm the six fastgs TUs and ten targets build and the touched regions preprocess identically to ca01b056.
+
+## Validation 2026-10-21b windows-gfx1151 (validator) -- 022a02db
+
+- Fork clone projects/LichtFeld-Studio/src at 022a02dbeb02b253c343755b0e5ac875408eb39c, no modified tracked files. `python3 utils/jargon.py --port LichtFeld-Studio`: clean. Docs: the AMD GPU section of docs/building_and_distribution.md carries the ROCm build (reviewed earlier, unchanged by this delta).
+- Build: `MSYS2_ARG_CONV_EXCL="*" utils/timeit.sh LichtFeld-Studio compile -- cmd.exe /c 'agent_space\lfs_sync.bat'` (Release, gfx1151, existing tree): incremental, 6 steps (ABI stamp relink), clean.
+- Test: `ulimit -c 0; LFS_CWD='D:\Develop\moat\projects\LichtFeld-Studio\src' LFS_EXCLUDE='TensorReserveInplaceCat.AllocationFailurePreservesInstalledStorage' utils/timeit.sh LichtFeld-Studio test -- python agent_space/lfs_suite_runner_v2.py 'D:\Develop\moat\agent_space\lfs-sync-runs\v2'`. v2 runner = v1 runner with a Popen watchdog: `taskkill /T /F /PID` at timeout, and also 60 s after "SEH exception" appears in the log; no system setting changed. Result: 2198 run, 347 s, **2162 passed, 10 failed, 25 skipped, 0 incomplete**, identical to r7 and v1. The whole-suite GsplatRasterizerTest process hit the known SEH again, was killed by the watchdog (killed-after-seh), and the suite was then run per test as designed (no 5 h WER stall; no lfs_compute_tests process left afterwards).
+- The 10 failures are the known set, none new: 4 DepthAnchor* (codec stub on Windows), 2 CudaErrorDiagnostics, AllocCounterTest.PoolCacheHitDoesNotIncrement (pool), CudaTest.D1_BinaryInPlaceWaitsForGatedProducer, 2 TensorD4FromBlobHomeStreamTest (prime).
+- CUDA gate: not run (no CUDA toolkit on this host); the Linux fleet owns it.
