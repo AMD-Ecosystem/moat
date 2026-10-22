@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-04T23:25:55Z",
-  "updated_at": "2026-10-22T07:22:32Z",
+  "updated_at": "2026-10-22T07:23:00Z",
   "head_sha": "11533412aaaa8f21f26d7e46d8a468562c41ff96",
   "depends_on": [],
   "pr_url": "https://github.com/JeffreyXiang/CuMesh/pull/36",
@@ -173,23 +173,12 @@
       "last_agent": "validator"
     }
   },
-  "published_sha": "392b4dd41f8b10b795b00e44cb1b294b1388cefa",
-  "fix": {
-    "branch": "moat-fix-36",
-    "base_sha": "392b4dd41f8b10b795b00e44cb1b294b1388cefa",
-    "review_pr": "https://github.com/AMD-Ecosystem/CuMesh/pull/1",
-    "opened_at": "2026-08-27T01:44:40Z"
-  },
+  "published_sha": "11533412aaaa8f21f26d7e46d8a468562c41ff96",
+  "fix": null,
   "porting_released": {
     "arch": "linux-gfx1100",
     "since": "2026-08-27T02:52:33Z",
     "at": "2026-08-27T02:55:14Z"
   },
-  "pr_approval": {
-    "approved_by": "jeffdaily",
-    "at": "2026-10-22T07:20:24Z",
-    "head_sha": "11533412aaaa8f21f26d7e46d8a468562c41ff96",
-    "content_sha256": "d9d0896b101e27441fbadecb3486c7c3f6435981804981a1ce1c71b3de11292a",
-    "review_pr": "https://github.com/AMD-Ecosystem/CuMesh/pull/1"
-  }
+  "fix_merged_at": "2026-10-22T07:23:00Z"
 }
