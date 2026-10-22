@@ -3867,3 +3867,11 @@ Scope: MOAT commit e4c4a0c2 (fault-classes.md, validation.md), answering "Review
 - No other skill text still carries the old `_MSC_VER` pow advice or the "same clang major" rule (grep over .claude/skills/cuda-to-rocm).
 
 No findings.
+
+## Validation 2026-10-22 windows-gfx1151 (validator) -- 81b7fa24
+
+- Fork clone projects/LichtFeld-Studio/src at 81b7fa245d3e00fc6fe7d341a768de862c56efda, no modified tracked files. `python3 utils/jargon.py --port LichtFeld-Studio`: clean. Docs unchanged by this delta (AMD GPU section of docs/building_and_distribution.md).
+- Build: `MSYS2_ARG_CONV_EXCL="*" utils/timeit.sh LichtFeld-Studio compile -- cmd.exe /c 'agent_space\lfs_sync.bat'` (Release, gfx1151): incremental, 227 steps (tensor_functors.hpp touched many TUs), linked lfs_compute_tests.exe clean.
+- Test: `ulimit -c 0; LFS_CWD='D:\Develop\moat\projects\LichtFeld-Studio\src' LFS_EXCLUDE='TensorReserveInplaceCat.AllocationFailurePreservesInstalledStorage' utils/timeit.sh LichtFeld-Studio test -- python agent_space/lfs_suite_runner_v2.py 'D:\Develop\moat\agent_space\lfs-sync-runs\v3'`. 2198 run, 333 s, **2162 passed, 10 failed, 25 skipped, 0 incomplete**, identical to 022a02db. GsplatRasterizerTest hit the known SEH, watchdog-killed, then isolated per test.
+- The 10 failures are the known set, none new: 4 DepthAnchor*, 2 CudaErrorDiagnostics, AllocCounterTest.PoolCacheHitDoesNotIncrement, CudaTest.D1_BinaryInPlaceWaitsForGatedProducer, 2 TensorD4FromBlobHomeStreamTest.
+- CUDA gate: not run (no CUDA toolkit on this host). The pow/fmod change at 81b7fa24 is the HIP `#elif` branch Windows already took, so Windows compile output is unchanged.
