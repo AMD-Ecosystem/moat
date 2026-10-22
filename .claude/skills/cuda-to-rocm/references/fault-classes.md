@@ -337,6 +337,20 @@ Host `std::min(a,b)` is `b<a?b:a` and `std::max(a,b)` is `a<b?b:a`; a device ver
 bytes and comparing host gold against device output differ bit-for-bit. Spell the device
 ternaries to match the host forms exactly. (CV-CUDA: OpMorphology CLOSE on RGBAf32.)
 
+**A HIP workaround in shared host code must not change CUDA's numbers.** HIP declares the
+scalar math builtins (`rsqrtf`, `min`/`max`) for the device only, and HIP's `__half`
+converts to every floating type through a template, so a port that rewrites a host call for
+HIP (`rsqrtf(x)` to `1.0f / std::sqrt(x)`, `std::pow(a, b)` to a cast through `double`,
+`__half` to an integer through `float`) silently changes the CUDA build too: `1.0f / sqrtf`
+rounds twice and moved 9 of 51 coefficients by 1 ULP, `pow` through double differed in the
+last bit, and the float route made NaN/Inf half-to-int undefined where CUDA's
+`__half2int_rz` saturates. Gate the rewrite on `__HIPCC__` (or the exact toolchain that
+needs it, `_MSC_VER` for the MSVC `<cmath>` overload ambiguity) and keep upstream's
+expression in the `#else`; where HIP needs a substitute, write the formula CUDA's host math
+uses (`(float)(1.0 / sqrt((double)x))` for host `rsqrtf`), and give conversions CUDA's
+saturation and NaN rules. A compile-only CUDA build with a per-TU preprocessed diff against
+upstream is what found these; HIP runs cannot. (LichtFeld-Studio)
+
 ## Headers, includes and build
 
 **A shared compat header must be host-includable.** Host `.cpp` TUs reach the shim through
@@ -369,6 +383,16 @@ project code as `defined(__CUDACC__) || defined(__HIPCC__)`; `__HIPCC__` is set 
 HIP sources, so plain C++ TUs keep the host branch. Do not define `__CUDACC__` globally
 instead: rocThrust takes its CUDA-system path under it. Re-grep after every upstream sync,
 since new splits arrive with new code. (LichtFeld-Studio)
+
+**Extend a CUDA guard for HIP; never re-key it.** Upstream's `#ifndef __CUDACC__` around
+host fallbacks for `fminf`/`min`/`max`/`rsqrtf` (CUDA-Samples `helper_math.h` and its
+copies) also admits the HIP device pass, because HIP never defines `__CUDACC__`. Re-keying
+it to `!defined(__CUDA_ARCH__)` exposes the fallbacks to nvcc's HOST pass, where `int
+max(int, int)` redefines CUDA's and every TU including the header fails -- invisible on
+ROCm. Add the HIP macro to the original test instead (`!defined(__CUDACC__) &&
+!defined(__HIP__)`), which leaves the CUDA and plain C++ expansions identical. HIP's host
+pass does not need the fallbacks when no host-emitted code calls them; compile the host
+objects without them to check. (LichtFeld-Studio)
 
 **clang checks kernel bodies in the HIP host pass; nvcc does not.** A macro that splits
 device and host forms on `#if defined(__CUDA_ARCH__)` takes the host form when clang

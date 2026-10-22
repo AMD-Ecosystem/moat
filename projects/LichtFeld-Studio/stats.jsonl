@@ -214,3 +214,6 @@
 {"kind":"phase","ts":"2026-10-21T09:13:20Z","phase":"test","seconds":59.231,"exit":1,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a-dbgO2 --gtest_filter=-DepthAnchorSetupTest.DamagedDepthPropagatesDecodeError:DeviceFaultTest.IndexSelectOobThrowsBoundsViolationWithFields"}
 {"kind":"phase","ts":"2026-10-21T09:13:52Z","phase":"test","seconds":25.160,"exit":0,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a-debug --gtest_filter=WarpCull*:GsplatRasterizer*:NnOpsTest.*:JointAdamCodecTest.*:GutJointAdamBatch.*:GutShNJointAdam.*-GsplatRasterizerTest.GutModeSteadyStateAllocs:GsplatRasterizerTest.GutFromWorldGradParity"}
 {"kind":"session","ts":"2026-10-21T09:14:33Z","epoch":1792574073.107850950,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-21T22:55:29Z","phase":"compile","seconds":605.757,"exit":0,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-21T22:56:28Z","phase":"compile","seconds":12.049,"exit":0,"cmd":"cmd.exe /c agent_space\\lfs_sync.bat"}
+{"kind":"phase","ts":"2026-10-22T04:31:32Z","phase":"test","seconds":20095.071,"exit":0,"cmd":"python agent_space/lfs_suite_runner.py D:\\Develop\\moat\\agent_space\\lfs-sync-runs\\r7"}
