@@ -3813,3 +3813,31 @@ No GPU suite: lfs_compute_tests did not link. D1_BinaryInPlace, TensorD4FromBlob
 Not run here (no CUDA toolkit on this host, `/opt/conda` absent); the fleet CUDA compile check at 022a02db is still owed.
 
 ### Verdict: VALIDATION-FAILED (linux-gfx1100) at 022a02db -- back to the porter for 80713459.
+
+## Porter round 2026-10-22 (porter, windows-gfx1151) -- 022a02db -> 81b7fa24, answers the linux-gfx1100 Revalidation 2026-10-22
+
+### Fork commit (on top of 022a02db, no amend, plain push; pr-state none)
+- 81b7fa245 `[ROCm] Use the float overload for __half pow and fmod on all HIP hosts` (70 chars). `utils/prose.py` clean; `python utils/jargon.py --port LichtFeld-Studio` clean; `moatlib.py audit-commits LichtFeld-Studio` OK.
+
+### Change
+- tensor_functors.hpp pow_op/mod_op: both `#elif defined(__HIPCC__) && defined(_MSC_VER)` -> `#elif defined(__HIPCC__)` (the validator's tested candidate). Comment now says the host `<cmath>` overloads (not "the MSVC" ones) are ambiguous for HIP's `__half`. The `#else` branches are untouched: `git diff ca01b056 HEAD` on the file shows only the two HIP `#elif` blocks plus the pre-existing `|| defined(__HIPCC__)` thrust guards, so CUDA (nvcc both passes) and plain g++ stay token-identical to upstream for these lines. Windows HIP took this branch already, so its compile is unchanged.
+- 80713459's premise was wrong for the current tree: the gfx90a 580e0012 build never instantiated `pow_op/mod_op<__half>` through the ca01b056 kernels (vectorized_binary_half_kernel, broadcast_binary_same_shape_kernel). Cause is HIP's `__half` templated `operator T()`, not MSVC.
+- Other `__half` host-pass code with the same premise: `git diff ca01b056 HEAD` over .cu/.cuh/.hpp/.h has no other `_MSC_VER`; the one `_WIN32` gate (src/hip_compat/c10/cuda/CUDACachingAllocator.h) is torch packaging, not `__half`, and Linux built it. `fmod_op` (std::fmod host branch) has no instantiation in src/. The gfx1100 log had no error besides these two lines, so nothing else.
+
+### Linux-target host-pass check from this Windows host (syntax only)
+- Sysroot: WSL Ubuntu 24.04 has no g++ and no passwordless sudo, so `apt-get download libstdc++-14-dev libgcc-14-dev libc6-dev linux-libc-dev libc6 libcrypt-dev` + `dpkg-deb -x` into ~/lfs-sysroot/root, `tar -ch usr/include usr/lib/gcc` copied to agent_space/linux-sysroot (glibc 2.39, libstdc++ 14.2).
+- Script agent_space/lfs_linux_hostpass24.sh: TheRock nightly clang 24 (D:\Develop\therock-nightly-gfx1151, rocm 10.2.0a20261016, `_rocm_sdk_core` HIP headers; rocThrust/rocPRIM from the 7.14 SDK via `-idirafter`, since the nightly has no thrust), the build's own -D/-I/-include flags minus Windows ones, `--target=x86_64-unknown-linux-gnu --sysroot=... --gcc-install-dir=.../gcc/x86_64-linux-gnu/14 -nogpulib --offload-arch=gfx1100 -x hip --cuda-host-only -fsyntax-only`. `-E -dM`: `__linux__`, `__GLIBC__ 2`, `__GLIBCXX__ 20240908`, `__HIPCC__`, no `_MSC_VER`.
+- Negative control (022a02db header, via git stash): tensor_broadcast_ops.cu -> exactly the validator's two errors, `tensor_functors.hpp:609:39: call to 'pow' is ambiguous` and `:628:28: call to 'fmod' is ambiguous`, candidates mathcalls.h:140/168 and c++/14/cmath:276/376.
+- Patched (81b7fa24): tensor_broadcast_ops.cu 0 errors; tensor_ops.cu (the vectorized_binary_half_kernel path) 0 errors.
+- Toolchain note: the same check with the 7.14 SDK clang 23 (the Windows build compiler) does NOT reproduce the ambiguity at 022a02db, so a Linux check on clang 23 is no evidence here. The real Linux compile is still owed to the Linux validators.
+
+### Build and suite (gfx1151, Release, existing tree)
+- `LFS_NINJA_ARGS="-k 0" MSYS2_ARG_CONV_EXCL="*" utils/timeit.sh LichtFeld-Studio compile -- cmd.exe /c 'agent_space\lfs_sync.bat'`: 227 steps, 0 FAILED.
+- `ulimit -c 0; LFS_CWD='D:\Develop\moat\projects\LichtFeld-Studio\src' LFS_EXCLUDE='TensorReserveInplaceCat.AllocationFailurePreservesInstalledStorage' utils/timeit.sh LichtFeld-Studio test -- python agent_space/lfs_suite_runner_v2.py 'D:\Develop\moat\agent_space\lfs-sync-runs\p1022'`: 2198 run, 338 s, **2162 passed, 10 failed, 25 skipped, 0 incomplete**; the known 10 (AllocCounterTest.PoolCacheHitDoesNotIncrement, 2 CudaErrorDiagnostics, CudaTest.D1_BinaryInPlaceWaitsForGatedProducer, 4 DepthAnchor*, 2 TensorD4FromBlobHomeStreamTest). GsplatRasterizerTest killed-after-seh and isolated per test, as before.
+
+### Skill
+- references/fault-classes.md "A HIP workaround in shared host code must not change CUDA's numbers": removed the "`_MSC_VER` for the MSVC `<cmath>` overload ambiguity" advice; gate on the cause (HIP's `__half`), not the first OS that failed.
+- references/validation.md: new bullet on the cross-OS HIP host-pass check from Windows (WSL apt-get download sysroot, matching clang major, negative control first).
+
+### Owed
+- Linux HIP rebuild + suite at 81b7fa24 (gfx1100, gfx90a); fleet CUDA compile check at 81b7fa24 (touched lines' `#else` are upstream's).
