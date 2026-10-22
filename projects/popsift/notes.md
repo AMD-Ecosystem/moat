@@ -3442,3 +3442,13 @@ the port: the non-layered-3D workaround stays required on every released ROCm; t
 ## 2026-10-20: upstream merged #186; issue #193 on write_index
 
 alicevision/popsift#186 merged into develop as d0d7960 (2026-10-20 12:19 UTC); recorded with `set-pr-merged`. Upstream issue #193 (dspl1236) measured that `extrema_count()`'s uninitialised `write_index` is NOT harmless under clang(HIP): on gfx1201, ROCm 7.2.1, every lane performed the `atomicAdd`, so `ext_ct` was exactly 32x the extrema written, and the grid filter then promoted never-written slots to zero-sigma survivors with dead descriptors. Our review-thread reply on #186 called it harmless; that was wrong. The merged HIP branch initialises it (`int write_index = 0;`); the CUDA `#else` branch upstream still does not, which is upstream's to fix (the reporter offered a PR). Lesson promoted to cuda-to-rocm fault-classes (wavefront section).
+
+## 2026-10-22: #193 mechanism (compile-only evidence)
+
+griwodz (maintainer) called the 32x over-count a HIP compiler bug and asked whether a ternary or a volatile `extrema_counter` avoids it. Minimal kernel mirroring `extrema_count()` with the assist.h `__shfl_sync` template wrapper, compiled with the TheRock nightly clang 23 (`--cuda-device-only -O2 -S [-emit-llvm]`, gfx1201 and gfx90a, not run):
+- original: IR has `call void @llvm.assume(i1 (workitem.id.x == 0))` in place of the branch; ISA loses the tid test and the `v_bfe` prefix offset (atomic optimizer then adds ct * popcount(exec)).
+- `-Xclang -no-enable-noundef-analysis`: assume gone. Trigger is the wrapper's `noundef` by-value parameter receiving an indeterminate int.
+- `= 0` and ternary: byte-identical ISA, guard and offset kept.
+- volatile `extrema_counter`: same assume, still broken. volatile `write_index`: correct but larger code.
+- calling `__shfl` directly (no wrapper) did not reproduce in the minimal kernel.
+Posted as a second comment on #193 (approved by jeffdaily).

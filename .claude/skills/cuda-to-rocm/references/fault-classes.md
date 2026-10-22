@@ -135,11 +135,17 @@ wave32 output against the wave64 output for the same input. (popsift)
 **A leader-only write broadcast by shuffle must be initialised on every lane.** The
 warp-aggregated atomic idiom -- `int base; if (lane == 0) base = atomicAdd(ctr, n);
 base = __shfl(base, 0);` -- reads `base` uninitialised on every other lane. That is UB,
-and "the shuffle only reads lane 0, so it is harmless" is wrong: nvcc keeps the guard,
-but clang(HIP) can use the UB to drop it, so EVERY lane performs the atomic and the
-counter advances by `warpSize * n`. Declare `int base = 0;`. The symptom is a count
-exactly `warpSize` times the real number of writes, with the surplus slots never written
-(zeroed or stale entries downstream). Measured by an upstream user on gfx1201, ROCm 7.2.1,
+and "the shuffle only reads lane 0, so it is harmless" is wrong. Clang marks C++
+parameters `noundef`, so passing the indeterminate value into a by-value shuffle wrapper
+makes the `lane != 0` path UB; the optimizer replaces the branch with
+`llvm.assume(threadIdx.x == 0)`, EVERY lane performs the atomic (counter advances by
+`warpSize * n`), and any `(1u << lane) - 1` prefix offset folds to 0. Declare
+`int base = 0;` or use a ternary; both give identical ISA, so it costs nothing. A
+volatile counter does not help. The symptom is a count exactly `warpSize` times the real
+number of writes, with the surplus slots never written (zeroed or stale entries
+downstream). To check a suspect site, emit device IR (`--cuda-device-only -S
+-emit-llvm`) and grep for `llvm.assume`; `-Xclang -no-enable-noundef-analysis` making it
+vanish confirms the cause. Measured by an upstream user on gfx1201, ROCm 7.2.1,
 against popsift's pre-port `extrema_count()`; the same construct left in a CUDA `#else`
 branch is the same UB waiting for a compiler. Grep the port for this idiom and initialise
 it on both paths. (popsift, upstream issue #193)
