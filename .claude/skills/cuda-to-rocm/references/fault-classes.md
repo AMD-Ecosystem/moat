@@ -347,9 +347,10 @@ last bit, and the float route made NaN/Inf half-to-int undefined where CUDA's
 `__half2int_rz` saturates. Gate the rewrite on `__HIPCC__` and keep upstream's
 expression in the `#else`. Do not narrow the gate to the toolchain where the error first
 showed: `std::pow(__half, __half)` was ambiguous in the HIP host pass on Linux too (glibc
-`double` vs libstdc++ `float`) once a `__half` kernel instantiated it, yet a `_MSC_VER` gate
-passed one Linux build that never reached that instantiation and one older clang (23) that
-did not diagnose it; key the gate to the cause (HIP's `__half`), not to the first OS that
+`double` vs libstdc++ `float`) once a `__half` kernel instantiated it. A `_MSC_VER` gate
+was chosen because an older Linux build had compiled upstream's call, but that build had no
+gate and predated the kernels that instantiate it, and the first Linux build with the gate
+failed; key the gate to the cause (HIP's `__half`), not to the first OS that
 failed; where HIP needs a substitute, write the formula CUDA's host math
 uses (`(float)(1.0 / sqrt((double)x))` for host `rsqrtf`), and give conversions CUDA's
 saturation and NaN rules. A compile-only CUDA build with a per-TU preprocessed diff against
