@@ -3074,3 +3074,23 @@ n744706 matches the post-fix 82/82/82 recorded on windows-gfx1151 (fp16 read 72 
 | Fork tree clean, jargon clean | PASS |
 
 `validated_sha` = `49756806f27520538d17a60ec5c4ac35416bb160`. Transition: revalidate -> completed.
+
+## Validation 2026-10-21/22 windows-gfx1151 at 4975680 (upstream master tree) -- completed with a known issue
+
+Fresh build of `moat-port` 4975680 (tree identical to upstream master after #2454) in `build-hip-win-up` (meson, `-Dhip=true -Damd_gfx=gfx1151`, TheRock ROCm SDK 7.14.0a20260612, `ninja -j4`): 345/345 targets. `rocblas/` and `hipblaslt/` library folders plus the SDK runtime DLLs staged next to `lc0.exe`. GPU: AMD Radeon(TM) 8060S Graphics, HIP runtime 71460.85.0.
+
+| check | result |
+|---|---|
+| `meson test` | 8/8 OK |
+| maia-1100 `hip` vs `blas`, batch 1-55, `--batches=4`, atol 1e-3 rtol 1e-2 | 277/277 passed |
+| maia-1100 `hip-fp16` vs `blas`, batch 1-55, atol 1.1e-1 rtol 2e-1 | 277/277 passed |
+| n744706 `hip`, solo | 270/277 passed, 0 failed; stopped by the 900 s run limit |
+| n744706 `hip-fp16`, overlapped with other runs | 275/277 passed, 0 failed |
+| t1-256x10 `hip`, overlapped | `HIP error: unspecified launch failure` at startup |
+| t1-256x10 `hip-fp16`, overlapped | 62/62 passed through batch 12, then stopped |
+
+Command shape: `lc0.exe backendbench --backend=check "--backend-opts=<hip|hip-fp16>(),blas(),mode=check,<tol>,freq=1.0" --weights=<net> --start-batch-size=1 --max-batch-size=55 --batches=4`.
+
+maia-1100 is the net that failed every check in August (value-head bias race); it now passes on the upstream fix. Moves-left output on the large nets is covered by linux-gfx90a and linux-gfx1100 (277/277 on all three nets, fp32 and fp16).
+
+**Known issue (release note).** On this Windows gfx1151 APU host, the large moves-left networks (t1-256x10, n744706 class) destabilize the WDDM GPU scheduler. Three lc0 runs overlapping at 21:20:39 produced a `Kernel_141` VIDEO_ENGINE_TIMEOUT_DETECTED. A later single, serialized rerun bugchecked the host at 00:25:58 with `0x119` VIDEO_SCHEDULER_INTERNAL_ERROR (P1 0x10), dump `C:\WINDOWS\Minidump\102226-80140-01.dmp` (not yet analyzed; needs an elevated debugger). This is the same scheduler as August's `0xD1` in `dxgmms2!VidSchiProcessHwQueuePageFaultedDpc`. It is a driver-stack failure, not a correctness defect: no check on any net failed. jeff ruled on 2026-10-26 to release-note it rather than block the gate. Do not rerun the large nets on this host; small nets (maia class) run clean.

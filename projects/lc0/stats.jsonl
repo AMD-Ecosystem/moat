@@ -148,3 +148,7 @@
 {"kind":"phase","ts":"2026-10-21T07:15:17Z","phase":"test","seconds":5.971,"exit":0,"cmd":"projects/lc0/src/build-hip/lc0 backendbench --backend=hip --weights=agent_space/nets/maia1100.pb.gz --start-batch-size=1 --max-batch-size=256 --batches=2"}
 {"kind":"phase","ts":"2026-10-21T07:15:25Z","phase":"test","seconds":7.554,"exit":0,"cmd":"projects/lc0/src/build-hip/lc0 backendbench --backend=hip-fp16 --weights=agent_space/nets/maia1100.pb.gz --start-batch-size=1 --max-batch-size=256 --batches=2"}
 {"kind":"session","ts":"2026-10-21T07:17:09Z","epoch":1792567029.434320146,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-10-21T22:40:08Z","epoch":1792622408.314829800,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-10-21T22:42:53Z","phase":"compile","seconds":139.845,"exit":0,"cmd":"ninja -C /d/Develop/moat/projects/lc0/src/build-hip-win-up -j4"}
+{"kind":"phase","ts":"2026-10-21T22:44:03Z","phase":"test","seconds":39.019,"exit":0,"cmd":"meson test -C /d/Develop/moat/projects/lc0/src/build-hip-win-up"}
+{"kind":"session","ts":"2026-10-26T15:27:44Z","epoch":1793028464.309132600,"event":"end","platform":"windows-gfx1151"}
