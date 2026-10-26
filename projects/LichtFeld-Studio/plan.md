@@ -41,6 +41,8 @@ Evidence:
 
 Open question 1 below was never put to jeff, and the compute-only cut was assumed. He ruled on 2026-10-26: port the full application (Vulkan viewer and CUDA-Vulkan interop, io including the nvImageCodec path, Python, MCP, USD, app), not only the compute tranche. The upstream review PR is held until the app runs on AMD. The "Scope decision" section above is superseded; the compute tranche at 81b7fa24 stays as the base. Phase plan and the interop spike spec are in jeff's plan `lichtfeld-full-app-port.md` (claude-shared plans): phase 1 is an interop spike on Linux and Windows, phase 2 is one porter extending `-DUSE_HIP=ON` to build the app and the full `lichtfeld_tests`.
 
+Image codecs (jeff, 2026-10-26): the nvImageCodec path is replaced with ROCm libraries (rocJPEG for JPEG decode, and whatever ROCm offers for the other cases), not the CPU decode path. CPU fallback only for a case with no ROCm option, recorded as such.
+
 ## Scope decision (IMPORTANT -- read before porting)
 This is a very large desktop app. The full build pulls ~40 vcpkg packages (USD,
 ffmpeg, OpenImageIO, SDL3, Vulkan, RmlUi, nanobind, assimp, Boost, glslang,
