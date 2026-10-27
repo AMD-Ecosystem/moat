@@ -171,7 +171,7 @@ The project name links upstream.
 | [cuda_voxelizer](https://github.com/Forceflow/cuda_voxelizer) | ⬜ | ⬜ | ⬜ | — |
 | [cudaKDTree](https://github.com/ingowald/cudaKDTree) ([fork](https://github.com/AMD-Ecosystem/cudaKDTree/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#40](https://github.com/ingowald/cudaKDTree/pull/40) |
 | [CudaSift](https://github.com/Celebrandil/CudaSift) ([fork](https://github.com/AMD-Ecosystem/CudaSift/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#97](https://github.com/Celebrandil/CudaSift/pull/97) |
-| [CuMesh](https://github.com/JeffreyXiang/CuMesh) ([fork](https://github.com/AMD-Ecosystem/CuMesh/tree/moat-port)) | 🔄 | ✅ | 🔄 | 🟢 [#36](https://github.com/JeffreyXiang/CuMesh/pull/36) |
+| [CuMesh](https://github.com/JeffreyXiang/CuMesh) ([fork](https://github.com/AMD-Ecosystem/CuMesh/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#36](https://github.com/JeffreyXiang/CuMesh/pull/36) |
 | [cuPDLP-C](https://github.com/COPT-Public/cuPDLP-C) ([fork](https://github.com/AMD-Ecosystem/cuPDLP-C/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#41](https://github.com/COPT-Public/cuPDLP-C/pull/41) |
 | [cuPDLPx](https://github.com/MIT-Lu-Lab/cuPDLPx) ([fork](https://github.com/AMD-Ecosystem/cuPDLPx/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#94](https://github.com/MIT-Lu-Lab/cuPDLPx/pull/94) |
 | [cupoch](https://github.com/neka-nat/cupoch) ([fork](https://github.com/AMD-Ecosystem/cupoch/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#143](https://github.com/neka-nat/cupoch/pull/143) |
@@ -222,10 +222,10 @@ The project name links upstream.
 | [kaldifeat](https://github.com/csukuangfj/kaldifeat) ([fork](https://github.com/AMD-Ecosystem/kaldifeat/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [KittenGpuLBVH](https://github.com/jerry060599/KittenGpuLBVH) ([fork](https://github.com/AMD-Ecosystem/KittenGpuLBVH/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#5](https://github.com/jerry060599/KittenGpuLBVH/pull/5) |
 | [LC-framework](https://github.com/burtscher/LC-framework) ([fork](https://github.com/AMD-Ecosystem/LC-framework/tree/moat-port)) | ✅ | ✅ | ✅ | — |
-| [lc0](https://github.com/LeelaChessZero/lc0) ([fork](https://github.com/AMD-Ecosystem/lc0/tree/moat-port)) | 🔄 | 🔄 | ⬜ | 🟣 [#2420](https://github.com/LeelaChessZero/lc0/pull/2420) |
+| [lc0](https://github.com/LeelaChessZero/lc0) ([fork](https://github.com/AMD-Ecosystem/lc0/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#2420](https://github.com/LeelaChessZero/lc0/pull/2420) |
 | [LEAP](https://github.com/llnl/LEAP) ([fork](https://github.com/AMD-Ecosystem/LEAP/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [libSGM](https://github.com/fixstars/libSGM) ([fork](https://github.com/AMD-Ecosystem/libSGM/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#89](https://github.com/fixstars/libSGM/pull/89) |
-| [LichtFeld-Studio](https://github.com/MrNeRF/LichtFeld-Studio) ([fork](https://github.com/AMD-Ecosystem/LichtFeld-Studio/tree/moat-port)) | 🔄 | 🔄 | 🔄 | — |
+| [LichtFeld-Studio](https://github.com/MrNeRF/LichtFeld-Studio) ([fork](https://github.com/AMD-Ecosystem/LichtFeld-Studio/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [LiteGS](https://github.com/MooreThreads/LiteGS) ([fork](https://github.com/AMD-Ecosystem/LiteGS/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [llm-awq](https://github.com/mit-han-lab/llm-awq) ([fork](https://github.com/AMD-Ecosystem/llm-awq/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [llm.c](https://github.com/karpathy/llm.c) ([fork](https://github.com/AMD-Ecosystem/llm.c/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#854](https://github.com/karpathy/llm.c/pull/854) |
@@ -252,7 +252,7 @@ The project name links upstream.
 | [plumed2](https://github.com/plumed/plumed2) ([fork](https://github.com/AMD-Ecosystem/plumed2/tree/moat-port)) | ✅ | ✅ | 🎫 | — |
 | [plvs](https://github.com/luigifreda/plvs) ([fork](https://github.com/AMD-Ecosystem/plvs/tree/moat-port)) | ✅ | ✅ | 🔧 | — |
 | [Pointcept](https://github.com/Pointcept/Pointcept) ([fork](https://github.com/AMD-Ecosystem/Pointcept/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#604](https://github.com/Pointcept/Pointcept/pull/604) |
-| [popsift](https://github.com/alicevision/popsift) ([fork](https://github.com/AMD-Ecosystem/popsift/tree/moat-port)) | ✅ | ✅ | ✅ | 🟢 [#186](https://github.com/alicevision/popsift/pull/186) |
+| [popsift](https://github.com/alicevision/popsift) ([fork](https://github.com/AMD-Ecosystem/popsift/tree/moat-port)) | ✅ | ✅ | ✅ | 🟣 [#186](https://github.com/alicevision/popsift/pull/186) |
 | [prismatic](https://github.com/prism-em/prismatic) ([fork](https://github.com/AMD-Ecosystem/prismatic/tree/moat-port)) | ✅ | ✅ | ✅ | — |
 | [pytorch3d](https://github.com/facebookresearch/pytorch3d) | ✅ | ✅ | ✅ | 🟣 [#2039](https://github.com/facebookresearch/pytorch3d/pull/2039) |
 | [qrack](https://github.com/unitaryfoundation/qrack) ([fork](https://github.com/AMD-Ecosystem/qrack/tree/moat-port)) | ✅ | ✅ | ✅ | — |
