@@ -183,6 +183,39 @@ the existing queue mutex, draining on teardown too. Only the op that hands per-c
 allocations into a callback-retired queue trips this, which is why one gate hangs while
 everything else passes. (qrack: `_PopQueue` under `UniformlyControlledSingleBit`.)
 
+**An init-time kernel launched on the legacy null stream is NOT ordered against streams
+created `cudaStreamNonBlocking`/`hipStreamNonBlocking`.** A weight/constant upload helper
+that stages through a SHARED scratch buffer, launches an async conversion kernel on stream
+0, and returns without synchronizing is racing the first real evaluation, which overwrites
+the same scratch from a non-blocking compute stream. Only the LAST upload before the first
+evaluation is exposed, because each earlier one is flushed by the next helper call's
+synchronous H2D `hipMemcpy` into the same scratch -- so the corruption lands on whatever
+tensor the last-constructed layer uploaded last, and looks deceptively like "that one layer
+is numerically broken". Fingerprint: exactly one CONSTANT tensor wrong while every COMPUTED
+tensor around it matches a CPU reference to ~1e-7, the wrong values being
+plausible-magnitude foreign floats, and the bug VANISHING the moment you add a debug
+readback (whose `hipDeviceSynchronize` supplies the missing ordering). Windows loses this
+race deterministically -- its KMD batches/defers submission -- where Linux HIP and CUDA
+land the tiny copy immediately and win it, so it presents as an OS-specific defect and
+invites a toolchain hunt. It is latent UB on CUDA too, so fix it unconditionally, never behind a
+platform guard -- but fix it at the BOUNDARY, not in the helper you caught it in. Such a
+codebase usually has several upload paths sharing the shape (lc0 has six: `allocAndUpload`
+plus five `LoadWeights`/positional-encoding variants), and whichever one happens to run
+last depends on the network shape and the precision, so synchronizing the single helper
+your reproducer exercised leaves the same bug live for another input. Construction is
+single-threaded and every upload is null-stream ordered against every other, so ONE
+device-wide synchronize at the end of construction covers all of them in the same one
+line. Put it after the LAST null-stream operation, not merely after the uploads: an async
+`hipMemset` that zeroes the evaluation's own buffers is the same race, so a sync placed
+before that allocation loop leaves it open. (lc0: `allocAndUpload` in
+`neural/backends/cuda/layers.cc` corrupting the value head's `ip2_val_b_`; the same 4.4e-02
+value error on gfx1101, gfx1151 and gfx1201 under Windows and absent on linux-gfx90a and
+linux-gfx1100, which had been misread as a rocBLAS/Tensile problem for two months. The
+first fix synchronized `allocAndUpload` alone; on a net WITH a moves-left head the last
+fp16 upload is `FCLayer<half>::LoadWeights` instead, which still corrupted the moves-left
+head while the value/policy gate passed 34/34. Upstream's own fix, lc0 #2454, is the
+reference shape: one `cudaDeviceSynchronize()` after the `tensor_mem_` malloc/memset loop.)
+
 **`hipFree` is synchronizing** (`hipFreeAsync` is not), so an explicit
 `hipDeviceSynchronize()` before it is redundant. (anari-visionaray)
 
