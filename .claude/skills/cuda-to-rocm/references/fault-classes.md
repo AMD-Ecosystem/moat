@@ -374,6 +374,40 @@ without hipify. Verify include order rather than trusting the prepend. (LC-frame
 CUDA's headers supplied them transitively and the narrower HIP include graph unmasks them.
 Fix additively -- it helps the CUDA build too. (LC-framework)
 
+**`CUDART_VERSION` is undefined under HIP, so every `#if CUDART_VERSION >= N` guard silently
+takes its fallback.** Audit them: some fallbacks change behaviour, not just speed. A
+`cudaMallocAsync` path that falls back to `cudaMalloc` makes the allocation uncapturable, and
+`hipMalloc` inside a graph capture fails with `hipErrorStreamCaptureUnsupported`; when the
+caller then bails out without ending the capture, every later allocation in the process
+fails the same way and a whole test binary goes red behind one root cause. Extend the guard
+(`|| defined(USE_HIP)`) where the HIP API exists, rather than defining `CUDART_VERSION`
+globally, which flips untested pool paths at once. (LichtFeld-Studio)
+
+**The vcpkg toolchain already overrides `add_library`/`add_executable`.** A second
+top-scope override (the MPPI retag trick) makes `_add_library` point at vcpkg's override,
+which recurses. In a vcpkg project retag `.cu` sources with a pass over all targets after
+the subdirectories are added: walk `BUILDSYSTEM_TARGETS` and `SUBDIRECTORIES`, and use
+`set_source_files_properties(... TARGET_DIRECTORY <tgt> PROPERTIES LANGUAGE HIP)` with paths
+made absolute against the target's `SOURCE_DIR`. (LichtFeld-Studio)
+
+**LibTorch's CMake package adds `-D__HIP_NO_HALF_OPERATORS__=1 -D__HIP_NO_HALF_CONVERSIONS__=1`
+to every target that links it** (`torch_hip` INTERFACE_COMPILE_OPTIONS). Project `.cu` test
+files that use `__half` arithmetic then fail with "invalid operands ... '__half'". If no HIP TU
+includes LibTorch, `#undef` both in the force-included compat header under `__HIP__`.
+(LichtFeld-Studio)
+
+**For plain C++ TUs the HIP headers `#define __noinline__ __attribute__((noinline))`**
+(nvcc defines it only when compiling CUDA). glib's `__has_attribute(__noinline__)` then fails
+("too few arguments provided to function-like macro"), so any TU that includes GTK after the
+HIP runtime breaks. `#undef __noinline__` in the compat header when `!defined(__HIP__)`.
+(LichtFeld-Studio)
+
+**Use the CUDA build's host compiler for host C++ in a large app.** HIP needs clang only for
+the HIP language; `CMAKE_C/CXX_COMPILER` can stay gcc. Upstream code tested only with gcc can
+trip clang-only C++ rejections unrelated to HIP (`__attribute__((visibility)) [[nodiscard]]`
+ordering; `std::expected<std::any, E>` constraint recursion with libstdc++ 14).
+(LichtFeld-Studio)
+
 **A force-included compat header creates no build dependency edge.** After editing a header
 injected with `-include`, object files are NOT rebuilt: wipe them manually or you validate
 stale code and get a silent false pass. (lc0)
@@ -598,3 +632,43 @@ When such a delta flips a passed arch to revalidate, REBUILD it rather than carr
 on "it is Windows-gated" reasoning. A binary-equivalence carry-forward inherently builds,
 which is how both regressions above were caught; a reasoning-only skip would have shipped a
 broken build. (aihwkit, MMseqs2)
+
+## Vulkan interop and image codecs
+
+**External memory ports 1:1; external semaphores do not.** `hipImportExternalMemory` with
+OPAQUE_FD/OPAQUE_WIN32, `hipExternalMemoryGetMappedMipmappedArray` + surface objects, and
+mapped buffers round-trip Vulkan data bit-exactly (RDNA3 Linux and Windows). Semaphores:
+`hipImportExternalSemaphore` rejects the timeline handle types in a front-end range check on
+both OSes; on Windows a timeline VkSemaphore exported OPAQUE_WIN32 imports as
+`hipExternalSemaphoreHandleTypeOpaqueWin32` and keeps timeline semantics; on Linux nothing
+imports (binary OPAQUE_FD returns not-supported down to the KFD). Order on the host there:
+import the fd into a second VkSemaphore on the app's device, wait = `vkWaitSemaphores`
+before enqueueing HIP work, signal = `hipStreamSynchronize` then `vkSignalSemaphore`. Routing
+the four `cuda*ExternalSemaphore*` calls to such an implementation from the compat header
+leaves every call site untouched. A blocking host wait deadlocks if the Vulkan submit that
+signals the value comes later on the same thread, so check submission order at each wait
+and put a timeout on the host wait. HIP has no `cudaDevAttrTimelineSemaphoreInteropSupported`.
+(LichtFeld-Studio, from the interop spikes)
+
+**HIP VMM memory exported to Vulkan works on Linux.** `hipMemCreate` with
+`hipMemHandleTypePosixFileDescriptor` + `hipMemExportToShareableHandle` gives an fd that RADV
+imports as OPAQUE_FD (and DMA_BUF), correct in both directions. Differences from CUDA: HIP
+has no handle-type-supported attribute, `hipMemAllocationProp` spells the field
+`requestedHandleType` (singular), `hipDeviceptr_t` is `void*` (CUDA's `CUdeviceptr` is an
+integer, so VA arithmetic needs adapters), and AMD's minimum granularity is 4 KiB, not 2 MiB.
+(LichtFeld-Studio)
+
+**Match HIP and Vulkan devices by PCI location (Linux) or LUID (Windows), never by UUID.**
+HIP's UUID is the board serial, RADV's encodes the PCI address, so a CUDA-style
+`deviceUUID` comparison never matches and a multi-GPU host picks the wrong Vulkan device.
+(LichtFeld-Studio)
+
+**rocJPEG writes past the row pitch.** Its output conversion writes each row out to a
+multiple of 8 pixels regardless of `RocJpegImage::pitch`, so with a tight pitch the first
+pixels of every following row are overwritten -- nondeterministically, up to full-scale
+errors. Decode into staging with rows padded to 16 pixels and copy the visible region out
+(`hipMemcpy2DAsync`), which also orders rocJPEG's own stream before the caller's. VCN also
+refuses images under 64x64 and progressive JPEGs: keep a CPU decode fallback inside the
+decoder wrapper, as nvImageCodec has, because callers assume decode succeeds.
+(LichtFeld-Studio)
+

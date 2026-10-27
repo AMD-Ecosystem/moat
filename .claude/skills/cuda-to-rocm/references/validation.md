@@ -467,3 +467,13 @@ the right env) before rebuilding. Generalizes beyond ROCm: always check `env | g
 from a different host generation -- ROCm/CUDA install layouts (`/opt/rocm` vs a
 TheRock/pip `_rocm_sdk_devel` tree vs a conda env) are not portable between hosts even
 within the same fleet. (mahout)
+
+## Headless Vulkan on a Linux GPU host: Xvfb plus Mesa's software WSI
+
+A Vulkan app or test that needs a window can run on a headless RDNA host under `xvfb-run`,
+but Xvfb has no DRI3, so RADV reports no presentation support and the app silently picks
+llvmpipe (which lacks external memory/semaphore interop and skips the interop tests).
+`export MESA_VK_WSI_DEBUG=sw VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.json` lets
+RADV present through Mesa's software path and hides llvmpipe; the GPU still does all the
+rendering and interop. Screenshots come from `xwd -root -display :N`. (LichtFeld-Studio)
+
