@@ -4196,9 +4196,16 @@ def adds_nothing_to_upstream(name, obj):
     an ancestor of upstream's default branch tip.
 
     Needs the local fork clone and a reachable upstream; without either it
-    returns False, so the follow-up stays listed rather than being hidden."""
+    returns False, so the follow-up stays listed rather than being hidden. A
+    worktree from make_worktree has no clone of its own, so the main checkout's
+    is used when this tree lacks one."""
     sha, url = obj.get("head_sha"), obj.get("upstream_url")
     repo = _fork_repo(name)
+    if not (repo / ".git").exists():
+        common = _git("rev-parse", "--path-format=absolute", "--git-common-dir",
+                      check=False).stdout.strip()
+        if common:
+            repo = Path(common).parent / "projects" / name / "src"
     if not sha or not url or not (repo / ".git").exists():
         return False
     branch = obj.get("fork_default_branch") or "main"
