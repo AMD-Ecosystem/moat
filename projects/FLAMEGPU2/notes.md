@@ -1000,3 +1000,5 @@ Correction posted with Jeff's approval, in his voice: https://github.com/FLAMEGP
 | `cudaFree(stale)` | 40 exit 0, returns `cudaErrorInvalidValue` |
 
 Under `compute-sanitizer` the stream and event cases both die ("process didn't terminate successfully"), so CUDA's stale-stream check is not airtight either; valgrind is not installed on those nodes. Conclusion: the parity request is narrow and real for streams (CUDA validates the handle and returns `cudaErrorInvalidResourceHandle`; HIP returns `hipSuccess` after a use-after-free). For events there is no parity to ask for: CUDA itself segfaults about a quarter of the time.
+
+Filed with Jeff's approval as a parity request (UB acknowledged, streams only; events dropped because CUDA also segfaults on a stale `cudaEventDestroy`): https://github.com/ROCm/rocm-systems/issues/14322. Deferral `hip-win-stream-destroy-after-reset` is marked filed; its summary predates the correction and the Linux control, so read this section and the 2026-10-26 baseline over it.
