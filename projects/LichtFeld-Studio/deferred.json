@@ -237,6 +237,32 @@
       "upstream_issue": null,
       "created_at": "2026-10-26T15:38:42Z",
       "decided": null
+    },
+    {
+      "id": "rocjpeg-output-row-overrun",
+      "kind": "rocm-bug-report",
+      "component": "rocJPEG",
+      "summary": "rocJPEG 1.10 (ROCm SDK 10.1.0, gfx1100, VCN backend): rocJpegDecode's output conversion writes each output row out to a multiple of 8 pixels regardless of the destination pitch. With a tight pitch (width*3 for ROCJPEG_OUTPUT_RGB) the overrun lands on the first pixels of the next row, so the left edge of every row is corrupted nondeterministically (bicycle 1237x822: 19 of 20 repeat decodes differ in columns 0-2 by up to 171; 642x480 needs 18 bytes of row padding). RGB_PLANAR has the same overrun per plane. Reproducer: agent_space/rocjpeg_probe/det.cpp described in notes.md. The port pads staging rows to 16 pixels.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-27T17:31:25Z",
+      "decided": null
+    },
+    {
+      "id": "lfs-hip-video-hw-codec",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "LichtFeld-Studio full-app HIP port: FFmpeg video decode (NVDEC *_cuvid) and encode (h264_nvenc) open AV_HWDEVICE_TYPE_CUDA, which fails on AMD, so video import/export falls back to FFmpeg's software codecs. rocDecode could replace NVDEC for decode (ROCm has no video encoder; VA-API/AMF are outside ROCm). Not in the Phase 2 work order; needs jeff's ruling: port decode to rocDecode now, or defer.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-27T17:31:25Z",
+      "decided": null
     }
   ]
 }
