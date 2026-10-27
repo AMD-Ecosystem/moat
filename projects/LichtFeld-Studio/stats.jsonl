@@ -256,3 +256,4 @@
 {"kind":"phase","ts":"2026-10-27T16:25:35Z","phase":"compile","seconds":10.842,"exit":1,"cmd":"bash agent_space/lfs_full_build.sh build-hip-full configure"}
 {"kind":"phase","ts":"2026-10-27T16:31:51Z","phase":"compile","seconds":337.394,"exit":1,"cmd":"bash agent_space/lfs_full_build.sh build-hip-full build"}
 {"kind":"phase","ts":"2026-10-27T16:55:03Z","phase":"compile","seconds":244.345,"exit":0,"cmd":"bash agent_space/lfs_compute_build.sh build-hip-compute"}
+{"kind":"phase","ts":"2026-10-27T17:37:05Z","phase":"test","seconds":8.135,"exit":0,"cmd":"bash agent_space/suite_runner.sh build-hip-gcc/tests/lichtfeld_tests /var/lib/jenkins/fleet/jobs/rx7900-20261027-090910-lfs-full-app-porter/moat/agent_space/full2"}
