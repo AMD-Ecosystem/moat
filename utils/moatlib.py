@@ -4185,6 +4185,54 @@ def squash_carry_forward(name, new_sha, repo=None):
                    "skipped": skipped, "optional": optional, "stale": stale})
 
 
+def adds_nothing_to_upstream(name, obj):
+    """Does head_sha's tree already exist in upstream's history?
+
+    After a merged PR the port branch can move to upstream itself: upstream lands
+    its own fix for what a follow-up would have carried, and the branch is
+    re-pointed by a merge whose tree is upstream's (lc0, 2026-10-20). head_sha
+    then differs from published_sha while offering nothing, and only a tree
+    comparison can tell. True when head_sha, or a parent with the same tree, is
+    an ancestor of upstream's default branch tip.
+
+    Needs the local fork clone and a reachable upstream; without either it
+    returns False, so the follow-up stays listed rather than being hidden."""
+    sha, url = obj.get("head_sha"), obj.get("upstream_url")
+    repo = _fork_repo(name)
+    if not sha or not url or not (repo / ".git").exists():
+        return False
+    branch = obj.get("fork_default_branch") or "main"
+
+    def git(*args, timeout=60):
+        try:
+            return subprocess.run(["git", *args], cwd=str(repo), capture_output=True,
+                                  text=True, timeout=timeout)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+
+    r = git("ls-remote", url, f"refs/heads/{branch}")
+    tip = (r.stdout.split() or [""])[0] if r and not r.returncode else ""
+    if not tip:
+        return False
+    have = git("cat-file", "-e", f"{tip}^{{commit}}")
+    if not have or have.returncode:
+        f = git("fetch", "--quiet", url, f"refs/heads/{branch}", timeout=300)
+        have = git("cat-file", "-e", f"{tip}^{{commit}}")
+        if not f or f.returncode or not have or have.returncode:
+            return False
+    trees = git("rev-parse", f"{sha}^{{tree}}")
+    parents = git("rev-parse", f"{sha}^@")
+    if not trees or trees.returncode or not parents or parents.returncode:
+        return False
+    tree = trees.stdout.strip()
+    for c in [sha, *parents.stdout.split()]:
+        t = git("rev-parse", f"{c}^{{tree}}")
+        a = git("merge-base", "--is-ancestor", c, tip)
+        if t and t.stdout.strip() == tree and a and a.returncode == 0:
+            return True
+    return False
+
+
 def pr_ready(name):
     """Is a port ready for its next upstream PR?
 
@@ -4285,6 +4333,12 @@ def pr_ready(name):
                              f"the upstream PR is already {pr_state} and the branch "
                              f"has nothing past what it shipped -- a follow-up "
                              f"starts when new reviewed commits land")], [])
+        if adds_nothing_to_upstream(name, obj):
+            return (False, [("pr-exists",
+                             f"the upstream PR is already {pr_state} and head_sha "
+                             f"{obj['head_sha'][:12]} carries upstream's own tree "
+                             f"-- upstream absorbed the port, so a follow-up "
+                             f"would offer nothing")], [])
         # A follow-up delta exists; the gates below judge it at head_sha exactly
         # as they judge a first PR.
     elif obj.get("pr_url"):
