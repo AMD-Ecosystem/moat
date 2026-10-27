@@ -987,3 +987,16 @@ Posted (approved by Jeff) on FLAMEGPU/FLAMEGPU2#1379: https://github.com/FLAMEGP
 `cudaDeviceReset` documents: "It is the caller's responsibility to ensure that the resources are not accessed or passed in subsequent API calls and doing so will result in undefined behavior." (streams are on its list). `hipDeviceReset`'s header says it "deletes all streams created". So FLAMEGPU destroying a `CUDASimulation` after `util::cleanup()` is API misuse on both; CUDA tolerates it in practice, HIP use-after-frees. Recovery for NEW work after a reset is fine (gfx90a: the GPU tests after `TestCleanup.CUDASimulation` pass in the same process, exit 0). Section "ROCm defects found on Windows" above overstates repro 1 as a HIP defect; read it as a parity request (HIP should tolerate a stale stream as CUDA does, without a specific error code, since CUDA's actual return was not measured -- no NVIDIA GPU available). Stale `hipEventDestroy` returned `hipSuccess` and was not run under valgrind; the request should cover events too.
 
 Correction posted with Jeff's approval, in his voice: https://github.com/FLAMEGPU/FLAMEGPU2/pull/1379#issuecomment-6328248754
+
+## NVIDIA baseline 2026-10-26: what CUDA does with stale handles after `cudaDeviceReset`
+
+`agent_space/cuda-stale-after-reset.cu` (the HIP repro translated, plus `setvbuf(stdout, nullptr, _IONBF, 0)` and a fresh `cudaMalloc` after the stale release). Tesla V100-SXM2-32GB, CUDA 12.9 (V12.9.86), driver 575.57.08, `nvcc -O2 -arch=sm_70`, two different nodes, 20 runs per case per node:
+
+| case | result (40 runs) |
+|---|---|
+| none | 40 exit 0 |
+| `cudaStreamDestroy(stale)` | 40 exit 0, returns `cudaErrorInvalidResourceHandle`, later `cudaMalloc` succeeds |
+| `cudaEventDestroy(stale)` | 29 exit 0 returning `cudaErrorDeviceUninitialized`; 11 SIGSEGV (139) inside the call |
+| `cudaFree(stale)` | 40 exit 0, returns `cudaErrorInvalidValue` |
+
+Under `compute-sanitizer` the stream and event cases both die ("process didn't terminate successfully"), so CUDA's stale-stream check is not airtight either; valgrind is not installed on those nodes. Conclusion: the parity request is narrow and real for streams (CUDA validates the handle and returns `cudaErrorInvalidResourceHandle`; HIP returns `hipSuccess` after a use-after-free). For events there is no parity to ask for: CUDA itself segfaults about a quarter of the time.
