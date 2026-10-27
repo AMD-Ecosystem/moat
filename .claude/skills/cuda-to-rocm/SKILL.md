@@ -85,6 +85,9 @@ Scan this list against what you are doing. If any line could apply, open
 - Rule-of-five on resource handles: CUDA tolerates double-destroy of a texture/stream/event; AMD does not.
 - A functor returning a reference to a by-value parameter (lifetime UB) is tolerated by nvcc, not by clang/HIP.
 - `hipLaunchHostFunc` callback threads must not call ANY runtime API.
+- A `hipLaunchHostFunc` callback must not block either: ROCr runs it on the async-events thread, so a callback waiting on a host gate stalls every later event on the device (a multi-stream test hung on gfx1100).
+- HIP after `fork()` crashes in the child (segfault in hipEventQuery); a test that forks and then touches the GPU fails on ROCm.
+- A query HIP reports as unsupported (`cudaLimitPrintfFifoSize` -> hipErrorUnsupportedLimit) leaves a sticky last error that the NEXT launch check reports; clear it under the HIP branch.
 
 **Textures**
 - Texture pitch alignment: AMD requires 256-byte row pitch for pitched 2D binds (32 on NVIDIA).
@@ -93,7 +96,8 @@ Scan this list against what you are doing. If any line could apply, open
 - Gate hardware-vs-software texture paths on a VERIFIED runtime self-test, never on creation success or `_WIN32`.
 
 **Floating point**
-- `__fsqrt_rn` is not always correctly rounded on gfx90a (1 ULP high); CUDA's is IEEE-correct.
+- `__fsqrt_rn` is not always correctly rounded on gfx90a or gfx1100 (1 ULP high); CUDA's is IEEE-correct. Map it to `sqrtf` when a test compares against host sqrt.
+- Without `__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__` HIP's HOST `min`/`max` take int, so `min(float, float)` in `__host__ __device__` code silently truncates on the host (whole-pixel camera errors); define it for the HIP build.
 - clang(HIP) defaults to `-ffp-contract=fast` and forms FMAs ACROSS expressions; nvcc contracts expression-only.
 - Exact float-equality branches fed by `__fdividef` produce out-of-range indices.
 - HIP device `cuda::min`/`max` NaN-selection can differ from host `std::min`/`max`.
