@@ -26,6 +26,19 @@
       "upstream_issue": "https://github.com/ROCm/rocm-systems/issues/14323",
       "created_at": "2026-10-21T21:40:38Z",
       "decided": null
+    },
+    {
+      "id": "hip-reset-undetectable-ctx-state",
+      "kind": "rocm-bug-report",
+      "component": "HIP",
+      "summary": "hipDeviceReset is undetectable: hipDevicePrimaryCtxGetState stays active=0 and hipExecutionCtxGetId keeps the same id across a reset (Linux gfx90a 7.16 and Windows gfx1151 7.14), where CUDA reports active 1->0 and a destroyed/new cuCtxGetId. Blocks FLAMEGPU's CUDA-style guard in destroyStreams().",
+      "refs": [
+        "projects/FLAMEGPU2/notes.md#correspondence-2026-10-2223-and-reset-detection-on-hip-2026-10-26"
+      ],
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/rocm-systems/issues/14328",
+      "created_at": "2026-10-27T01:23:49Z",
+      "decided": null
     }
   ]
 }
