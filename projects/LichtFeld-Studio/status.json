@@ -7,7 +7,7 @@
   "priority": 6.263,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-10-26T15:26:04Z",
+  "updated_at": "2026-10-27T16:07:57Z",
   "head_sha": "81b7fa245d3e00fc6fe7d341a768de862c56efda",
   "depends_on": [],
   "waivers": {
@@ -149,11 +149,11 @@
   },
   "porting_released": {
     "arch": "windows-gfx1151",
-    "since": "2026-10-22T05:47:52Z",
-    "at": "2026-10-22T05:50:06Z"
+    "since": "2026-10-26T15:26:04Z",
+    "at": "2026-10-27T16:07:57Z"
   },
   "porting": {
-    "arch": "windows-gfx1151",
-    "since": "2026-10-26T15:26:04Z"
+    "arch": "linux-gfx1100",
+    "since": "2026-10-27T16:07:57Z"
   }
 }
