@@ -4030,3 +4030,42 @@ Tests: 144 pass, 3 fail -- `NvCodecAvailabilityTest.AvailableExactlyWhenADataset
 
 ### Not ported to AMD hardware paths (for jeff)
 - FFmpeg video: NVDEC (`*_cuvid`) and NVENC (`h264_nvenc`) via AV_HWDEVICE_TYPE_CUDA fail to open on AMD and the existing code falls back to FFmpeg's software decoders/encoders. rocDecode could replace NVDEC for decode; ROCm has no encoder. Not part of the Phase 2 work order; raised as a question rather than assumed.
+
+## Porter round 2026-10-27, continued (porter, linux-gfx1100) -- aeefda98 -> f90b8d1e, stage left at `porting` (GUI-training GPU hang, see below)
+
+### Further fork commits (plain push on top of aeefda98)
+- 821267778 `[ROCm] Use stream-ordered allocation for scratch buffers on HIP` (a hipMalloc inside a graph capture failed and left the suite's later graph tests failing; cuda_allocation.hpp and cuda_scratch.hpp take the CUDART_VERSION >= 11020 branch on HIP)
+- 89eb96b04 `[ROCm] Document the full ROCm/HIP application build` (docs/building_and_distribution.md, README.md; compute-only build documented as `-DLFS_HIP_COMPUTE_ONLY=ON`)
+- 87c38767d `[ROCm] Match CUDA's host min/max and __fsqrt_rn rounding on HIP`: (a) without `__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__` HIP's host `min`/`max` overloads take int, so a host `min(float, float)` in shared camera code truncated (fisheye and lens-prior tests off by whole pixels); the define is set in HipToolchain.cmake. (b) `__fsqrt_rn` on HIP is the native approximation, 1 ulp off CUDA's correctly rounded sqrt (InitialScales); the compat header maps it to `sqrtf`.
+- 9bd721c6c `[ROCm] Contract only within expressions in the HIP SSIM kernels` (masked vs unmasked SSIM maps differed by 2 ulp because clang's default HIP contraction fuses across statements; `-ffp-contract=on` for kernels/ssim.cu only)
+- f90b8d1ee `[ROCm] Clear HIP's unsupported printf FIFO limit query at startup` (main.cpp reads `cudaLimitPrintfFifoSize` for the VRAM report; HIP returns hipErrorUnsupportedLimit and the sticky error made model init fail with "Failed to initialize SplatData: hipErrorUnsupportedLimit")
+jargon: clean; audit-commits: OK; every commit built (full build, gcc-14 host) before its push. CUDA branches untouched: every change is under `USE_HIP`, `__HIPCC__`, `$<COMPILE_LANGUAGE:HIP>` or a new HIP-only file.
+
+### lichtfeld_tests (step 5), Release, gfx1100, GPU 0, `ulimit -c 0`, Xvfb + RADV
+Built: LichtFeld-Studio, lichtfeld_tests, lfs_py module, MCP, all 1376 ninja steps. Run per suite (`agent_space/suite_runner.sh`, `timeout -k 30 900` each, 747 suites):
+- First full pass at 9bd721c6-era source minus the last three numeric fixes, cwd = src root: 6510 passed, 119 skipped, 88 failed, 4 suites aborted or hung; 3306 s.
+- Run lichtfeld_tests from the build directory, as ctest does: the 55 PythonIntegrationTest and 3 PythonIOTest failures were the cwd (they find the lfs_py module next to the binary); from the build dir they pass (51 + 4 skipped, 60 + 1 skipped).
+- After 87c38767d and 9bd721c6c: InitialScales (2), LensPriors (3), GutOpenCvFisheye (1), MaskedSSIMMetricTest (1) and the whole SSIM group (53) pass.
+Remaining 23 failures, classified:
+- HIP-reported text or NVIDIA-specific expectations (test assumptions, not port defects): CudaErrorTypedTest (2) and CudaErrorDiagnostics (1) expect CUDA error names; ShareableAllocationLimitTest (1) hardcodes NVIDIA's 2 MiB VMM granularity (AMD 4 KiB); AllocCounterTest (1) and ShValueStorageTest (1) count allocations of the CUDA >= 12.8 pool path; NvCodecAvailabilityTest / NvCodecImageLoaderJpeg2k16Bit / NvCodecSentinelValidatorTest (3) see "Image codecs" above; SceneCombinedEncode (1) compares a checksum frozen from NVIDIA fast-math division; FastGSKernelTest (1) is a perf-ratio assertion.
+- Video (8): VideoFrameExtractorOutputNaming (4), Codecs/VideoColorRange (2), VideoEncoderOpenTest (1) expect NVDEC/NVENC, plus AV1 has no software decoder in the vcpkg FFmpeg build. Question for jeff in deferral `lfs-hip-video-hw-codec`.
+- Numeric, small: NormalLossHunt (1) 29.9458 vs bound 29.929 (0.06 %); DiscoverySweep (2, both known flaky in upstream notes); FusedBgBlendTest (1) passes on rerun.
+- ProjectDocumentTest autosave (1): the test forks a process that then uses HIP; HIP after fork segfaults in hipEventQuery. Test-harness pattern, not a port defect.
+Aborted or hung suites (4):
+- UndoHistoryTest: intermittent segfault in CPU-only `Scene::getVisibleNodes` (no HIP frames; looks like an upstream use-after-free).
+- VisualizerImplResetTest: hangs; the fixture's one-pixel PNG is malformed (IDAT inflates to 2 bytes), upstream fixture issue.
+- MaskResizedCache: one glibc robust-mutex abort, passes on rerun.
+- TensorMultiStreamTest.BucketCrossStreamReuseIsOrdered: hangs. The test blocks a hipLaunchHostFunc callback on a host-side gate; ROCr runs host callbacks on its async-events thread, so a blocking callback stalls every later event on the device. Real HIP behaviour difference, not fixed in this round.
+Interop subset (Xvfb, RADV): 222 pass, 2 skip, 1 fail (granularity, above).
+
+### Smokes (step 6)
+- Headless training, bicycle `images_4`, 3000 iterations: 55.4 s, 54.1 it/s, 555,255 splats, JPEGs decoded by rocJPEG, PLY and project exported. With `--eval`: PSNR 23.6575, SSIM 0.6559, LPIPS 0.3612; held-out renders look right.
+- Viewer: `LichtFeld-Studio -v splat_3000.ply` under Xvfb with RADV opens and renders the bicycle scene correctly through the Vulkan interop (screenshot checked).
+
+### BLOCKER: training from the GUI hangs the GPU
+`agent_space/gui_train_smoke.sh`: app started with `-d data/bicycle --images images_4 --iter 5000` under Xvfb/RADV, training started through the MCP `training.start` tool. Twice: training stopped advancing at iteration 326 while `is_running` stayed true for 90 s. On kill the process does not exit: it sits in D state in `__flush_workqueue` (kernel waits for GPU work to drain). gdb attach was refused (ptrace scope; `sudo gdb` timed out). After the second time GPU 0 was wedged: a trivial HIP program hangs in D state on GPU 0 and also on GPU 1, and amd-smi hangs. The host needs a person to reset the GPUs or reboot it; this job started no further GPU work.
+What differs from the passing headless run is the viewer during training: host-timeline semaphore waits/signals (hip_host_timeline), HIP-exported VMM splat storage read by Vulkan, and the trainer's viewer-release handshake. The likeliest mechanism is a GPU-side wait that is never satisfied (a Vulkan queue submission waiting on a timeline value the HIP side never signals, or the reverse), but this is NOT diagnosed. Next round, on a healthy host: run the GUI training with `HSA_ENABLE_DEBUG`/`AMD_LOG_LEVEL=3`, `VK_LOADER_DEBUG` off, and log every hip_host_timeline wait/signal value; check whether a Vulkan submit waits on a value that `signal_semaphores` never reaches; repeat with exportable storage disabled to split the two mechanisms.
+Because the full application's main interactive path can wedge the GPU, the stage stays `porting` instead of `ported`: handing review a branch with a known device hang would waste the review. Question for jeff: confirm that GUI training is in the step-6 bar (the work order's smokes, headless training and viewer opening/rendering, both pass), or rule that it may go to review with this hang recorded.
+
+### Skill
+Promoted to cuda-to-rocm SKILL.md on this branch: host min/max truncation (`__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__`), `__fsqrt_rn` also 1 ulp off on gfx1100, sticky error from an unsupported limit query, HIP after fork, blocking hipLaunchHostFunc callbacks.
