@@ -41,6 +41,8 @@ Evidence:
 
 Open question 1 below was never put to jeff, and the compute-only cut was assumed. He ruled on 2026-10-26: port the full application (Vulkan viewer and CUDA-Vulkan interop, io including the nvImageCodec path, Python, MCP, USD, app), not only the compute tranche. The upstream review PR is held until the app runs on AMD. The "Scope decision" section above is superseded; the compute tranche at 81b7fa24 stays as the base. Phase plan and the interop spike spec are in jeff's plan `lichtfeld-full-app-port.md` (claude-shared plans): phase 1 is an interop spike on Linux and Windows, phase 2 is one porter extending `-DUSE_HIP=ON` to build the app and the full `lichtfeld_tests`.
 
+Upstream PR framing (jeff, 2026-10-27): keep finishing this port even though upstream `dev` is taking a different route (francescofugazzi's native HIP backend behind the backend-neutral tensor layer, #3781/#3782/#3809/#3844). When the upstream PR is filed, its body says plainly that this approach differs from the one the maintainers are taking, and presents it for the lessons it holds for completing any HIP port (wave64 fixes, the HIP/Vulkan interop measurements, the test triage), not as a competing backend.
+
 Image codecs (jeff, 2026-10-26): the nvImageCodec path is replaced with ROCm libraries (rocJPEG for JPEG decode, and whatever ROCm offers for the other cases), not the CPU decode path. CPU fallback only for a case with no ROCm option, recorded as such.
 
 ## Scope decision (IMPORTANT -- read before porting)

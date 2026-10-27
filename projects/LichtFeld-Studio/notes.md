@@ -4069,3 +4069,17 @@ Because the full application's main interactive path can wedge the GPU, the stag
 
 ### Skill
 Promoted to cuda-to-rocm SKILL.md on this branch: host min/max truncation (`__HIP_DEFINE_EXTENDED_HOST_MIN_MAX__`), `__fsqrt_rn` also 1 ulp off on gfx1100, sticky error from an unsupported limit query, HIP after fork, blocking hipLaunchHostFunc callbacks.
+
+## GUI-training hang diagnosed 2026-10-27 (primary, from rx7900 kernel logs)
+
+The "training from the GUI stops at iteration 326" blocker in the porter round above is an amdgpu kernel fault, not a user-space hang. Host kernel 6.8.0-65-generic, amdgpu DKMS 6.16.13, W7800 at PCI 0000:43:00.0.
+
+- 12:30:55 `amdgpu 0000:43:00.0: [gfxhub] page fault (src_id:0 ring:24 vmid:9 pasid:32776)`.
+- 12:44:08 and 14:02:36 (the two GUI training runs): `BUG: kernel NULL pointer dereference, address: 0000000000000038`, `RIP: amdgpu_gem_va_ioctl+0x731/0x9c0`, called from `amdgpu_drm_ioctl`. GEM VA ioctls come from the Vulkan driver (RADV) mapping buffer objects, so the trigger is on the viewer side of the HIP/Vulkan sharing during training.
+- 14:04:11 `amdgpu: Failed to reserve buffers in ttm.` / `Failed to map peer:0000:43:00.0 mem_domain:4`.
+
+The oopsed thread died holding the VM page-directory reservation. Two kworkers then block forever on it: `amdgpu_amdkfd_restore_userptr_worker -> validate_invalid_user_pages -> amdgpu_vm_lock_pd -> amddrm_exec_lock_obj`, and `svm_range_restore_work`. Every later `open("/dev/kfd")` blocks in `kfd_create_process -> __flush_workqueue` behind them, on every GPU in the host, which is why a trivial HIP program hangs even on the GPUs the test never used.
+
+`amd-smi reset -G` succeeded on 0000:43:00.0 and 0000:46:00.0 ("device wedged, but recovered through reset") but does not release the stuck lock: after both resets a 64-thread HIP kernel still blocked in `kfd_create_process` on all four GPUs. Only a reboot clears it.
+
+Next: reproduce on a healthy host with the viewer's HIP/Vulkan storage sharing during training as the suspect (the headless run, which has no Vulkan, passed), and capture the RADV calls just before the fault. A user-space bug can expose this, but a NULL dereference in the kernel driver is a kernel bug regardless, and goes to the amdgpu driver as a bug report with the dmesg excerpt.
