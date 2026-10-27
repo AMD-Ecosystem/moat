@@ -3964,3 +3964,69 @@ cuda-not-validated here: no CUDA toolkit on this host (`/opt/conda` absent, no n
 - Integrity: `git -C projects/LichtFeld-Studio/src status --porcelain` shows no modified tracked files; no source patch at any point. Build dirs are gitignored.
 
 ### Verdict: COMPLETED (linux-gfx90a), validated_sha 81b7fa24
+
+## Porter round 2026-10-27 (porter, linux-gfx1100) -- full-application port, 81b7fa24 -> aeefda98
+
+jeff's scope ruling of 2026-10-26 (plan.md "Scope ruling", claude-shared plan `lichtfeld-full-app-port.md` Phase 2). Lock handed to linux-gfx1100 by jeff on 2026-10-27. Host: 4x Radeon Pro W7800 (gfx1100), GPU pinned with HIP_VISIBLE_DEVICES=0, TheRock ROCm SDK 10.1.0 wheels in /opt/python-3.11-venv (hipconfig 7.16.26385), torch 2.16.0a0+git6c3af02, CMake 3.31.6, Ubuntu 24.04, RADV (Mesa 25.2.8).
+
+### Fork commits (on top of 81b7fa24, plain push)
+- 170463860 `[ROCm] Build the full application with -DUSE_HIP=ON`
+- ca902a143 `[ROCm] Port the application's CUDA runtime use and kernels to HIP`
+- d6f528d9d `[ROCm] Share viewer images and splat storage between HIP and Vulkan`
+- aeefda982 `[ROCm] Replace nvImageCodec with rocJPEG, libjpeg and OpenJPH on HIP`
+`python3 utils/jargon.py --port LichtFeld-Studio`: clean. `moatlib.py audit-commits`: OK.
+
+### Build system (step 1)
+- `-DUSE_HIP=ON` now runs the normal vcpkg build with HIP in place of CUDA (app, viewer, io, Python module, MCP, lichtfeld_tests). The old compute-only build is `-DUSE_HIP=ON -DLFS_HIP_COMPUTE_ONLY=ON` (distribution packages, no vcpkg, lfs_compute_tests), unchanged otherwise.
+- Shared HIP setup moved to `cmake/HipToolchain.cmake`; HipCompute.cmake includes it. `.cu` retagging is a post-configure pass over all targets (`lfs_hip_retag_cuda_sources`), not add_library/add_executable overrides: the vcpkg toolchain already overrides both and a second override recurses.
+- ROCm include dir is added `AFTER SYSTEM` (ROCm bundles nlohmann/flatbuffers headers that would shadow vcpkg's). ROCm lib dir goes into CMAKE_BUILD_RPATH and the app RPATH slot `CUDAToolkit_LIBRARY_DIR` (the pip SDK is not in ld.so.conf).
+- Host compiler: gcc-14 for C/C++ (upstream's Linux host compiler), ROCm clang only for HIP. With clang as the C++ compiler two upstream files fail for clang-vs-gcc reasons unrelated to HIP: `std::expected<std::any, lfs::Error>` hits a constraint-recursion error with libstdc++ 14 (src/app/mcp_gui_tools.cpp), and `LFS_VIS_API [[nodiscard]]` ordering is rejected (vksplat_input_packer.hpp). The compute-only recipe keeps clang.
+- lichtfeld_tests takes LibTorch from `-DTorch_DIR` on HIP; LibTorch's package adds `-D__HIP_NO_HALF_OPERATORS__=1 -D__HIP_NO_HALF_CONVERSIONS__=1` to consumers, which the compat header undoes for HIP TUs (no test .cu includes torch).
+
+### Recipe (validators repeat this)
+vcpkg, in the job directory (never a shared path):
+```
+git clone https://github.com/microsoft/vcpkg.git $DEPS/vcpkg   # used at 5363acb796e576328288fae60c25304e227e9839 (2026-10-27); manifest baseline c3867e71 is in its history
+$DEPS/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+sudo apt install git curl unzip gcc-14 g++-14 ccache ninja-build zip tar pkg-config python3 python3-dev libxinerama-dev libxcursor-dev xorg-dev libglu1-mesa-dev libwayland-dev libxkbcommon-dev libegl-dev libdecor-0-dev libibus-1.0-dev libdbus-1-dev libsystemd-dev libgtk-3-dev nasm autoconf autoconf-archive automake libtool bison flex python3-venv
+# optional pre-build of the dependencies (CMake configure would do the same through manifest mode):
+CC=gcc-14 CXX=g++-14 VCPKG_MAX_CONCURRENCY=24 $DEPS/vcpkg/vcpkg install --x-manifest-root=<src> --x-install-root=$DEPS/vcpkg_installed \
+  --triplet x64-linux --host-triplet x64-linux --overlay-triplets=<src>/cmake/triplets/release-only --x-feature=tests --clean-after-build
+```
+78 packages, 585 s (9.7 min) on this 32-core host, binary cache in `$DEPS/vcpkg-bincache` (VCPKG_DEFAULT_BINARY_CACHE). Configure reuses it (restores in seconds) as long as CC/CXX are gcc-14 in the environment (the ABI hash includes the compiler).
+Configure and build (`agent_space/lfs_full_build.sh`):
+```
+export VCPKG_ROOT=$DEPS/vcpkg CC=gcc-14 CXX=g++-14 ROCM_PATH=<site>/_rocm_sdk_devel
+unset PYTHONPATH   # the fleet sets it to a pylib with typing_extensions, which reorders the generated Python stubs and fails the stub check
+git submodule update --init --recursive   # external/libvterm
+cmake -S <src> -B build-hip-gcc -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_C_COMPILER=/usr/bin/gcc-14 -DCMAKE_CXX_COMPILER=/usr/bin/g++-14 -DCMAKE_HIP_COMPILER=$ROCM_PATH/lib/llvm/bin/clang++ \
+  -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DVCPKG_TARGET_TRIPLET=x64-linux -DVCPKG_HOST_TRIPLET=x64-linux \
+  -DVCPKG_OVERLAY_TRIPLETS=<src>/cmake/triplets/release-only -DLFS_VCPKG_MAX_CONCURRENCY=24 -DTorch_DIR=<site>/torch/share/cmake/Torch
+cmake --build build-hip-gcc -j 24
+```
+Full build: 1376 ninja steps, about 5-6 min at -j24 (first clang-host attempt: 343 s for 1376 steps).
+Runtime for the viewer/Vulkan tests on a headless host: Xvfb plus `MESA_VK_WSI_DEBUG=sw VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.json` (Xvfb has no DRI3, so RADV cannot present otherwise and the app picks llvmpipe, which lacks external semaphores). `sudo apt install xvfb xauth`; run under `xvfb-run -a -s "-screen 0 1920x1080x24"`.
+Test data: tests and the training smoke read `data/bicycle` and `data/garden` (Mip-NeRF 360, `http://storage.googleapis.com/gresearch/refraw360/360_v2.zip`, 12.5 GB; unzip only `bicycle/*` `garden/*`). Symlinked into `<src>/data` (git-ignored).
+
+### Interop (step 2)
+- External memory (image via mipmapped array + surface, buffer): aliased 1:1, as the spike showed.
+- Linux semaphores: the compat header routes cudaImport/Signal/Wait/DestroyExternalSemaphore to `lfs::core::hip_host_timeline` (src/core/cuda/hip_host_timeline.cpp). Import = a second VkSemaphore imported from the exported fd (vkImportSemaphoreFdKHR) on the app's VkDevice; wait = vkWaitSemaphores on the host (10 s timeout -> hipErrorLaunchTimeOut); signal = hipStreamSynchronize + vkSignalSemaphore. VulkanContext registers the ops after init and clears them first in shutdown. No call site changed (interop, trainer viewer-release wait, memory arena, vksplat renderer). Checked the selection-query path: its HIP wait comes after the Vulkan submit, so the blocking host wait cannot deadlock there.
+- Windows: `cudaExternalSemaphoreHandleTypeTimelineSemaphoreWin32` aliased to `hipExternalSemaphoreHandleTypeOpaqueWin32` (the Windows spike's finding). NOT TESTED here; a Windows round must run it.
+- Timeline attribute query skipped on HIP (no HIP attribute).
+- Device matching: Vulkan device matched to HIP device by PCI domain/bus/device (VK_EXT_pci_bus_info) on Linux and LUID on Windows; `VulkanContext::deviceUUID()` returns the matched HIP device's UUID on HIP (its only consumers are the interop registration, in the window manager and six tests).
+- Exportable splat storage (HIP-exported VMM memory imported by Vulkan) is NOT optional: moving a model into renderer storage has no fallback. Spike (agent_space/vmm_spike/vmm.hip): hipMemCreate(POSIX fd) + hipMemExportToShareableHandle -> Vulkan VkImportMemoryFdInfoKHR as OPAQUE_FD and as DMA_BUF, 12 KiB and 64 MiB: 0 words wrong both directions. exportable_storage.cpp builds on HIP (integer VA kept, adapters at the five VMM calls, `requestedHandleType` singular); export reported supported on Linux, not on Windows (Win32 VMM export untested, viewer falls back there). AMD VMM granularity is 4 KiB (NVIDIA 2 MiB).
+Tests (Xvfb, RADV): 222 pass, 2 skip (gd.ply missing), 1 fail `ShareableAllocationLimitTest.ChunkEnvCapsAndRoundsToGranularity` (hardcodes NVIDIA's 2 MiB granularity; AMD 4096).
+
+### Image codecs (step 3) -- what was checked
+- rocJPEG 1.10 (SDK `include/rocjpeg/rocjpeg.h`): decode only (baseline JPEG, VCN hardware backend; hybrid backend enum exists), outputs RGB / RGB planar / Y / YUV into device buffers. No encode API. Used for JPEG decode.
+- rocDecode (in the SDK): video codecs only (H.264/HEVC/AV1/VP9), no still-image codecs.
+- MIVisionX / rocAL: not in TheRock's SDK wheels; rocAL's image decode uses rocJPEG or CPU libraries, no JPEG 2000 or PNG GPU decode.
+- TheRock package list (site-packages `_rocm_sdk_*`): no JPEG 2000, PNG or JPEG-encode library.
+- So CPU paths: JPEG encode (libjpeg), JPEG 2000 encode/decode (OpenJPH, HTJ2K; already in the vcpkg tree as an OpenEXR dependency), and JPEG streams VCN refuses (libjpeg). PNG never went through nvImageCodec (upstream throws and uses the CPU loader).
+- VCN constraints found: rejects images smaller than 64x64 (16, 32, 48 px fail with JPEG_NOT_SUPPORTED; 64 decodes) and progressive JPEG (parse returns BAD_JPEG).
+- ROCm defect: rocJPEG's output conversion writes each row out to a multiple of 8 pixels past the given pitch. With a tight pitch it overwrites the first pixels of the next row, nondeterministically (agent_space/rocjpeg_probe/det.cpp: bicycle 1237x822 RGB, 19 of 20 repeat decodes differ in x 0..2 by up to 171; 642x480 needs 18 bytes of padding, 1237 needs 9; planar needs (w rounded to 8) as well). Workaround in the loader: decode into staging with rows padded to 16 px + 16 spare rows, cudaMemcpy2DAsync the visible region.
+Tests: 144 pass, 3 fail -- `NvCodecAvailabilityTest.AvailableExactlyWhenADatasetJpegDecodesOnTheGpu` (expects the string "nvImageCodec (GPU)"; HIP reports "rocJPEG (GPU)"), `NvCodecImageLoaderJpeg2k16Bit.RoundTrips2160pGrayAndRgbLossless` (also round-trips Part-1 ht=0 JPEG 2000; no CPU or ROCm encoder here, no production caller uses it), `NvCodecSentinelValidatorTest.SkippedMemberIsRetriedOrFailsHardBeforeReturn` (tests nvImageCodec's batch-retry test seam, which the HIP loader does not have).
+
+### Not ported to AMD hardware paths (for jeff)
+- FFmpeg video: NVDEC (`*_cuvid`) and NVENC (`h264_nvenc`) via AV_HWDEVICE_TYPE_CUDA fail to open on AMD and the existing code falls back to FFmpeg's software decoders/encoders. rocDecode could replace NVDEC for decode; ROCm has no encoder. Not part of the Phase 2 work order; raised as a question rather than assumed.

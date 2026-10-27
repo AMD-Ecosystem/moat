@@ -252,3 +252,7 @@
 {"kind":"phase","ts":"2026-10-22T06:32:44Z","phase":"test","seconds":59.998,"exit":1,"cmd":"agent_space/lfs_run.sh build-hip-gfx90a-dbgO2 --gtest_filter=-DepthAnchorSetupTest.DamagedDepthPropagatesDecodeError:DeviceFaultTest.IndexSelectOobThrowsBoundsViolationWithFields"}
 {"kind":"phase","ts":"2026-10-22T06:33:27Z","phase":"test","seconds":25.142,"exit":0,"cmd":"timeout 300 agent_space/lfs_run.sh build-hip-gfx90a-debug --gtest_filter=WarpCull*:GsplatRasterizer*:NnOpsTest.*:JointAdamCodecTest.*:GutJointAdamBatch.*:GutShNJointAdam.*-GsplatRasterizerTest.GutModeSteadyStateAllocs:GsplatRasterizerTest.GutFromWorldGradParity"}
 {"kind":"session","ts":"2026-10-22T06:34:38Z","epoch":1792650878.624466448,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-27T16:23:24Z","phase":"compile","seconds":584.761,"exit":0,"cmd":"bash agent_space/vcpkg_install.sh"}
+{"kind":"phase","ts":"2026-10-27T16:25:35Z","phase":"compile","seconds":10.842,"exit":1,"cmd":"bash agent_space/lfs_full_build.sh build-hip-full configure"}
+{"kind":"phase","ts":"2026-10-27T16:31:51Z","phase":"compile","seconds":337.394,"exit":1,"cmd":"bash agent_space/lfs_full_build.sh build-hip-full build"}
+{"kind":"phase","ts":"2026-10-27T16:55:03Z","phase":"compile","seconds":244.345,"exit":0,"cmd":"bash agent_space/lfs_compute_build.sh build-hip-compute"}
