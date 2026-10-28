@@ -4274,3 +4274,49 @@ Consequences for the next Windows round:
 - Never import a HIP VMM export into Vulkan as OPAQUE_WIN32_KMT again on this laptop.
 - The working direction on Windows is Vulkan-allocated exportable memory imported into HIP (measured in the spike). The Windows viewer path should allocate the shared splat storage on the Vulkan side, or as Vulkan-exported memory that HIP imports, instead of exporting HIP VMM memory.
 - Candidate ROCm bug report, not yet registered: HIP VMM export with a Win32 handle type is unsupported on Windows, and the POSIX-typed export returns a handle that no Vulkan import type maps correctly.
+
+## Review 2026-10-28b (reviewer, linux-gfx1100) -- 2ac6bc3d (delta f90b8d1e..2ac6bc3d, plus the two rocJPEG lessons in dac010c), CHANGES-REQUESTED
+
+### Summary
+2ac6bc3d answers items 2-4 of "Review 2026-10-28": the HIP loader now sends a JPEG to the CPU only when its frame header says rocJPEG cannot decode it, logs each CPU decode with its reason, raises every other failure as an error, keeps the good frames of a batch encode, encodes into a buffer libjpeg never frees, and rejects structurally incomplete streams before rocJPEG sees them. Verdict: changes requested for the two items below. Item 2 also applies to the skill lessons. Item 1 of "Review 2026-10-28" (the Windows HIP viewer) is still open. jeff paused it on 2026-10-28 (plan.md "Windows viewer ruling"), so this review does not ask for it.
+
+### Port Correctness
+1. An extended sequential JPEG (SOF1, 8-bit) is a decode error on HIP, not a CPU decode. `rocjpeg_unsupported_reason` (`src/io/nvcodec_image_loader_hip.cpp:550`) treats markers C0 and C1 as rocJPEG-supported, and the comment at :546-548 says rocJPEG "decodes 8-bit baseline and extended Huffman JPEG". rocJPEG 1.10 does not.
+   - Evidence: a 128x96 4:2:0 baseline JPEG (PIL, quality 90) with its SOF0 marker byte changed to C1 is a valid stream: PIL/libjpeg decodes it to exactly the pixels of the SOF0 original. `rocJpegStreamParse` returns `ROCJPEG_STATUS_BAD_JPEG` for it on the SDK's librocjpeg.so.1.10.0, while the SOF0 original parses. This was a parse-only probe on GPU 3 (HIP_VISIBLE_DEVICES=3, `ulimit -c 0`) with nothing submitted to the decoder; the probe was the porter's `rocjpeg_hang/parseonly.cpp`. The current rocJPEG source (ROCm/rocm-systems `projects/rocjpeg/src/rocjpeg_parser.cpp`, 1.13.0) rejects every frame marker except SOF0 ("names a coding process other than baseline sequential DCT").
+   - Failure: `check_rocjpeg` turns BAD_JPEG into a plain `std::runtime_error`, so `decode_jpeg` logs "Decode failed" and throws with fallback enabled, instead of decoding on the CPU with a reason. The CUDA path decodes SOF1 on the GPU: the vendored nvImageCodec nvjpeg decoder lists `NVIMGCODEC_JPEG_ENCODING_EXTENDED_SEQUENTIAL_DCT_HUFFMAN` as supported (`external/nvImageCodec/extensions/nvjpeg/cuda_decoder.cpp:493`). Under jeff's codec rule SOF1 is a case no ROCm library covers, so it belongs on the named CPU path.
+   - Fix: only C0 is rocJPEG's. Classify C1 as CPU with its own reason ("extended sequential JPEG"). Correct the comment at :546-548, the startup line at :844, and the commit body's list. Add a SOF1 case to `UnsupportedStreamsFallBackToTheCpuAndAreReported` (`tests/test_nvcodec_hip_jpeg.cpp:132`). A baseline stream with its marker byte patched to C1 is enough, and it is safe: with the fix it never reaches the hardware, and without it rocJPEG refuses it at parse.
+   - The same correction applies to the skill: `.claude/skills/cuda-to-rocm/references/fault-classes.md:707` says rocJPEG 1.10 "decodes 8-bit baseline/extended Huffman JPEG". Make it baseline (SOF0) only, and add SOF1 to the list of streams that fail `rocJpegStreamParse` with BAD_JPEG.
+2. The code comment and the lesson say every check prevents a hang, but only the missing scan was measured to hang. The comment at `nvcodec_image_loader_hip.cpp:438-442` says rocJPEG "parses streams that lack any of these and submits them to the hardware decoder, which then hangs". The lesson at `fault-classes.md:719-723` gives the same five checks as the cure for the hang.
+   - The porter's own probe log (job rx7900-20261028-135555, `probe` on `trunc.jpg`: 29612 bytes, cut inside the scan, no EOI) shows the opposite for one of them: `parse=SUCCESS info=SUCCESS 256x256 decode=ROCJPEG_STATUS_SUCCESS`, run twice, with no ring reset. The no-scan stream is the only measured hang. A scan header with no data was parse-checked only.
+   - Fix: say which failure was measured to hang (no SOS) and that the other checks reject corrupt streams as a precaution. In the lesson, write "a JPEG cut inside its scan decodes; one with no scan hangs", so the next porter does not take the end-of-image check to be the hang fix.
+   - The lesson's last sentence, "Never put such a stream in a test that can reach the hardware decoder", contradicts this round's `CorruptJpegInABatchIsRejectedBeforeDecoding` (`tests/test_nvcodec_hip_jpeg.cpp:195`). That test passes the no-scan stream through the loader, where `inspect_jpeg` is the only barrier. The test is the right regression guard for the check. Reword the lesson to the rule the round actually follows: such a stream may appear only in a test of the host-side check. A regression in that check then costs one ring reset, so run the test on a GPU no other job is using.
+
+### Checked as asked (no finding)
+- Fallback list against rocJPEG 1.10:
+  - Progressive, arithmetic-coded, CMYK and 4:1:1 fail parse with BAD_JPEG. Under 64x64 (48x48, 200x40) gives JPEG_NOT_SUPPORTED at decode. 4:4:4/4:4:0/4:2:2/4:2:0/gray decode. These are the porter's probe results, matched by `rocjpeg_unsupported_reason` apart from SOF1 (item 1).
+  - Precision other than 8 and component counts other than 1 or 3 also go to the CPU.
+  - A JPEG with restart markers (DRI) parses.
+- Logging:
+  - Every CPU decode passes through `log_cpu_decode`, which logs LOG_WARN with the reason for the first three and then every 500th, the same cadence as the CUDA path's CODEC_UNSUPPORTED logging (`nvcodec_image_loader.cpp` `log_decode_failure`). The backstop status is named in the reason.
+  - `jpeg_decoder()` names the CPU decodes once any happened.
+  - Every other rocJPEG, HIP or allocation failure logs "[NvCodecImageLoader] Decode failed" and throws, as the CUDA path does.
+  - Only two calls submit to the hardware: the startup probe (a self-encoded 64x64 JPEG, :698-702) and `decode_jpeg` after `inspect_jpeg` (:781-783).
+- Structure check on valid JPEGs:
+  - I rebuilt the check from the 2ac6bc3d source (`JpegFrame` through `rocjpeg_unsupported_reason`, extracted verbatim) and ran it on the host only. All 1516 bicycle/garden images route to rocJPEG (1191 + 325).
+  - I also ran 701 other `.jpg`/`.jpeg` files found on this host. No valid JPEG was rejected. The ERROR results were PNGs named `.jpg` and the porter's deliberately truncated probe files. The CPU results were progressive images and one 45x34 image.
+  - Nothing was fed to the hardware decoder.
+- Hang input: the 609-byte no-scan stream, a scan without data and a missing EOI all stop at `inspect_jpeg` with "Corrupt JPEG". The unsupported-frame branch sends corrupt streams to libjpeg, never to rocJPEG. Not tested: a scan that names an undefined Huffman table. `inspect_jpeg` does not check for it, and no evidence says it hangs.
+- Truncated inside the scan, CUDA versus HIP:
+  - This cannot be settled on this host. nvJPEG is closed source and there is no NVIDIA GPU here. The vendored nvImageCodec 0.9.0 has no CPU JPEG extension (only nvjpeg and nvjpeg2k) and maps a failed nvjpeg decode to IMAGE_CORRUPTED, so whether CUDA errors depends on libnvjpeg.
+  - What the user sees is the same on both builds. The shared single-image caller (`src/io/pipelined_image_loader.cpp:3459-3480`) catches any GPU decode exception and decodes the file with `decode_file_on_cpu`. The batch caller (:2732) propagates the throw, as CUDA's batch does ("JPEG batch item failed"). On HIP the only extra is the ERROR log line.
+  - A CUDA host run of a mid-scan truncation through `load_image_from_memory_gpu` would settle it. That is not a reason for changes-requested.
+- Items 3 and 4:
+  - Batch encode: a failed frame comes back empty with the CUDA wording, and readback errors still throw.
+  - Destination manager: libjpeg never frees the buffer. `client_data` survives `jpeg_create_compress`, and `ERREXIT` is raised outside the `try`.
+- CUDA path:
+  - `src/io/nvcodec_image_loader.{cpp,hpp}` are identical to ca01b056 at 2ac6bc3d.
+  - The delta touches only the HIP-only loader, the new HIP-only test, and two `if(USE_HIP)` hunks in `tests/CMakeLists.txt`.
+- Commits:
+  - `python3 utils/jargon.py --port LichtFeld-Studio`: clean.
+  - `moatlib.py audit-commits`: OK.
+  - Title 68 characters with `[ROCm]`, no Co-Authored-By, added lines ASCII.
