@@ -4083,3 +4083,14 @@ The oopsed thread died holding the VM page-directory reservation. Two kworkers t
 `amd-smi reset -G` succeeded on 0000:43:00.0 and 0000:46:00.0 ("device wedged, but recovered through reset") but does not release the stuck lock: after both resets a 64-thread HIP kernel still blocked in `kfd_create_process` on all four GPUs. Only a reboot clears it.
 
 Next: reproduce on a healthy host with the viewer's HIP/Vulkan storage sharing during training as the suspect (the headless run, which has no Vulkan, passed), and capture the RADV calls just before the fault. A user-space bug can expose this, but a NULL dereference in the kernel driver is a kernel bug regardless, and goes to the amdgpu driver as a bug report with the dmesg excerpt.
+
+### Second crash 2026-10-27, porter round lfs-gui-hang (primary, from rx7900 kernel logs and the job's run directory)
+
+After the reboot (host kernel now 6.8.0-138-generic, same amdgpu DKMS), the porter's GUI experiments hit the same oops: `BUG: kernel NULL pointer dereference, address: 0000000000000038`, `RIP: amdgpu_gem_va_ioctl+0x731/0x9c0`, Comm `LichtFeld-Studi`. This time no gfxhub page fault came first. The dispatcher's kernel-log watch stopped the job at the oops; one LichtFeld process stays in D state in `kfd_create_process -> __flush_workqueue`, so HIP is wedged host-wide again and the host needs another reboot.
+
+Runs before the oops (agent_space/runs in the job's clone, all on GPU 0, RADV under Xvfb):
+- `x0_noextmem` (`LFSX_NO_EXTMEM=1`): the viewer refuses to start ("Vulkan external memory interop is required"), so no training ran. Not a usable baseline.
+- `x1_notrainshare` (`LFSX_NO_TRAIN_SHARE=1`): training sat at iteration 1 for 90 s, VkSplat entered degraded mode ("refusing full input-copy fallback; model tensors must use Vulkan-external storage"), then "Training worker exited without terminal completion data".
+- `x3_nosparse` (`LFSX_NO_SPARSE=1`): no MCP log at all; this is the process left stuck opening /dev/kfd, so the oops came during or just before it.
+
+So turning off training-time sharing does not avoid the crash, and the viewer has no working no-sharing path to fall back to. The kernel bug is reachable from RADV's GEM VA ioctl in an app that also runs HIP; a reproducer still needs narrowing, but each attempt on this host costs a reboot of a shared machine. Related upstream kernel fixes found so far are not this site: CVE-2025-40339 (NULL in `amdgpu_vm_handle_moved` for a PRT VA entry) and CVE-2026-68275 (`GET_MAPPING_INFO` in `amdgpu_gem_op_ioctl`).
