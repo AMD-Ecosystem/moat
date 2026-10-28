@@ -4094,3 +4094,13 @@ Runs before the oops (agent_space/runs in the job's clone, all on GPU 0, RADV un
 - `x3_nosparse` (`LFSX_NO_SPARSE=1`): no MCP log at all; this is the process left stuck opening /dev/kfd, so the oops came during or just before it.
 
 So turning off training-time sharing does not avoid the crash, and the viewer has no working no-sharing path to fall back to. The kernel bug is reachable from RADV's GEM VA ioctl in an app that also runs HIP; a reproducer still needs narrowing, but each attempt on this host costs a reboot of a shared machine. Related upstream kernel fixes found so far are not this site: CVE-2025-40339 (NULL in `amdgpu_vm_handle_moved` for a PRT VA entry) and CVE-2026-68275 (`GET_MAPPING_INFO` in `amdgpu_gem_op_ioctl`).
+
+### Root cause 2026-10-28: amdgpu-dkms 6.16.13 NULL `bo_va` on `AMDGPU_VA_OP_CLEAR` in a compute VM (primary, from the module and DKMS source on both Linux hosts)
+
+The crash is a kernel driver bug in the amdgpu-dkms build on the gfx1100 host, already fixed in a newer amdgpu-dkms; it is not a port defect. Evidence:
+
+- Faulting site. `objdump -dr --disassemble=amdgpu_gem_va_ioctl /lib/modules/6.8.0-138-generic/updates/dkms/amdgpu.ko` (amdgpu-dkms 1:6.16.13.30300100-2303411.22.04): `amdgpu_gem_va_ioctl+0x731` is `mov 0x38(%rax),%rdi`, right after the `amdgpu_vm_update_pdes` call and a bool test on the VM, followed by `dma_fence_wait_timeout`. That is the inlined `amdgpu_gem_va_update_vm`, and 0x38 is `amdgpu_bo_va::last_pt_update`, matching the oops address `0000000000000038`.
+- Source (`/usr/src/amdgpu-6.16.13-2303411.22.04/amd/amdgpu/amdgpu_gem.c`). `amdgpu_gem_va_ioctl` sets `bo_va = NULL` for `AMDGPU_VA_OP_CLEAR`, and `amdgpu_gem_va_update_vm` then does `if (vm->is_compute_context) { if (bo_va->last_pt_update) ...`, dereferencing it. `is_compute_context` is set once KFD acquires the VM. In a process that runs both HIP and RADV, libdrm hands both the same amdgpu device and so the same render-node file and VM, so any `AMDGPU_VA_OP_CLEAR` from the Vulkan driver crashes the kernel. A HIP-only (headless training) or Vulkan-only process never reaches this, which matches every run so far.
+- Fixed in amdgpu-dkms 6.19.14 (1:6.19.14.31400100-2377056.24.04, on the gfx1201 host): the same block reads `if (bo_va && bo_va->last_pt_update)`.
+
+Consequence: GUI training cannot be tested on the gfx1100 host until its amdgpu-dkms is upgraded (a host-wide change plus a reboot), or it runs on a host whose amdgpu-dkms already has the guard. No user-space change in the port is appropriate. Nothing to file upstream, since the shipped newer driver fixes it. Related upstream thread: Dan Carpenter's smatch report on the same unchecked `bo_va` pattern in `amdgpu_gem_update_bo_mapping` (lkml 2025-12-17).
