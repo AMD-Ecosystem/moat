@@ -492,3 +492,19 @@ llvmpipe (which lacks external memory/semaphore interop and skips the interop te
 RADV present through Mesa's software path and hides llvmpipe; the GPU still does all the
 rendering and interop. Screenshots come from `xwd -root -display :N`. (LichtFeld-Studio)
 
+
+## HIP and Vulkan in one process can oops the kernel on an old amdgpu-dkms
+
+A process that runs both HIP and RADV shares one amdgpu VM (libdrm hands both the same device
+file), and once KFD owns that VM it is a compute VM. amdgpu-dkms 6.16.13 dereferences a NULL
+`bo_va` in `amdgpu_gem_va_ioctl` when the Vulkan driver sends `AMDGPU_VA_OP_CLEAR` in a compute
+VM: `BUG: kernel NULL pointer dereference, address: 0000000000000038`, `RIP:
+amdgpu_gem_va_ioctl+0x731`. From user space it looks like a GPU hang: an iteration counter
+stops, the process sits in D state on kill, and every later `open("/dev/kfd")` on every GPU in
+the host blocks in `kfd_create_process -> __flush_workqueue`. `amd-smi reset` does not clear
+it; only a reboot does. amdgpu-dkms 6.19.14 has the guard (`if (bo_va &&
+bo_va->last_pt_update)`). A HIP-only or Vulkan-only process never reaches it, so a headless
+run passing proves nothing about the interop path. Check `cat /sys/module/amdgpu/version`
+before running any HIP+Vulkan interop app, and do not debug the port for this symptom on an
+older driver. (LichtFeld-Studio: GUI training crashed twice at 6.16.13; on 6.19.14 the same
+binary trained 5000 iterations cleanly.)

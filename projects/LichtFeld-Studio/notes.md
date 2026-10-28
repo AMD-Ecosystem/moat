@@ -4052,7 +4052,7 @@ Remaining 23 failures, classified:
 - Numeric, small: NormalLossHunt (1) 29.9458 vs bound 29.929 (0.06 %); DiscoverySweep (2, both known flaky in upstream notes); FusedBgBlendTest (1) passes on rerun.
 - ProjectDocumentTest autosave (1): the test forks a process that then uses HIP; HIP after fork segfaults in hipEventQuery. Test-harness pattern, not a port defect.
 Aborted or hung suites (4):
-- UndoHistoryTest: intermittent segfault in CPU-only `Scene::getVisibleNodes` (no HIP frames; looks like an upstream use-after-free).
+- UndoHistoryTest: segfault in CPU-only `Scene::getVisibleNodes` (no HIP frames; looks like an upstream use-after-free). Diagnosed 2026-10-28, see "GUI training passes on amdgpu-dkms 6.19.14" below: deterministic at CropCommandsRespectTargetLocks, a test-lifetime use-after-free.
 - VisualizerImplResetTest: hangs; the fixture's one-pixel PNG is malformed (IDAT inflates to 2 bytes), upstream fixture issue.
 - MaskResizedCache: one glibc robust-mutex abort, passes on rerun.
 - TensorMultiStreamTest.BucketCrossStreamReuseIsOrdered: hangs. The test blocks a hipLaunchHostFunc callback on a host-side gate; ROCr runs host callbacks on its async-events thread, so a blocking callback stalls every later event on the device. Real HIP behaviour difference, not fixed in this round.
@@ -4104,3 +4104,33 @@ The crash is a kernel driver bug in the amdgpu-dkms build on the gfx1100 host, a
 - Fixed in amdgpu-dkms 6.19.14 (1:6.19.14.31400100-2377056.24.04, on the gfx1201 host): the same block reads `if (bo_va && bo_va->last_pt_update)`.
 
 Consequence: GUI training cannot be tested on the gfx1100 host until its amdgpu-dkms is upgraded (a host-wide change plus a reboot), or it runs on a host whose amdgpu-dkms already has the guard. No user-space change in the port is appropriate. Nothing to file upstream, since the shipped newer driver fixes it. Related upstream thread: Dan Carpenter's smatch report on the same unchecked `bo_va` pattern in `amdgpu_gem_update_bo_mapping` (lkml 2025-12-17).
+
+## GUI training passes on amdgpu-dkms 6.19.14 (porter, linux-gfx1100, 2026-10-28) -- f90b8d1e, stage -> `ported`
+
+Host driver upgraded by jeff: `cat /sys/module/amdgpu/version` = `6.19.14.31400100` (was 6.16.13, see "Root cause 2026-10-28"). Kernel 6.8.0-138-generic. GPU 0 (W7800) pinned with `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`, other three GPUs idle throughout. No source change was needed this round; fork head stays f90b8d1e.
+
+### Build
+Fresh clone of `moat-port` at f90b8d1e, clean tree, own build directory `build-hip-gcc`, the recipe above (`agent_space/lfs_full_build.sh`, gcc-14 host, ROCm clang for HIP) with the previous round's vcpkg checkout and binary cache: 1400/1400 ninja steps, rc 0. The app reports `version v0.5.5-dev-1680-gf90b8d1ee | tag f90b8d1ee` (no `-dirty`). No `LFSX_*` switches exist in this tree.
+
+### GUI training (step 6)
+`agent_space/gui_train.sh <tag> <iters> <max_s> [args]`: Xvfb + RADV (`MESA_VK_WSI_DEBUG=sw VK_DRIVER_FILES=/usr/share/vulkan/icd.d/radeon_icd.json`), `timeout -k 10 <max_s+60> ./LichtFeld-Studio -d data/bicycle --images images_4 -o <out> --iter <iters> [args]` from the build dir, training started over MCP `training.start`, `training.get_state` polled every 5 s, stop on `VK_ERROR_DEVICE_LOST`/"device lost"/"Memory access fault"/`hipErrorIllegalAddress`/`hipErrorLaunchFailure` in the log or an iteration counter stalled 30 s. Screenshots with `xwd -root` at 1/4, 1/2 and the end. Shipped configuration (MRNF strategy defaults).
+- `--iter 600`: finished, 600/600 in about 11 s, `is_running` false at the end, app exit 0. No fault sign. (The two 6.16.13 crashes stopped at iteration 326.)
+- `--iter 5000 --eval`: finished, 5000/5000. Training about 115 s (iteration 428 at 5 s, 2710 at 45 s, 4941 at 117 s; the UI showed 77 it/s early and 22 it/s at the end as the model grew), then evaluation of the held-out views. `PSNR: 25.0471, SSIM: 0.7439, LPIPS: 0.2582, Time: 0.4882s/image, #GS: 2116135`, "Training completed successfully", app exit 0. No fault sign in the log, no stall.
+- Viewer during training: the screenshots at iteration 380 (600 run), 2700 and 4990 (5000 run) show the bicycle scene rendered by the viewer through the HIP/Vulkan interop while training runs, sharper at each step, with the training panel advancing (Iteration 2,700 at 43.1 it/s; 4,990 with 2,116,135 splats). The dispatcher watched the kernel log from outside; this job saw no user-space fault sign.
+
+### Headless smoke (rerun)
+`LichtFeld-Studio --headless -d data/bicycle --images images_4 -o <out> --iter 3000 --eval --no-depth-auto-generate --no-normal-auto-generate` (Xvfb wrapper `agent_space/lfs_run.sh`, cwd build dir): exit 0, 65.1 s (46.1 it/s), 549,413 splats, PSNR 23.6675, SSIM 0.6562, LPIPS 0.3612 (last round 23.6575 / 0.6559 / 0.3612).
+
+### The suites that aborted or hung last round
+Run from the build dir, `timeout -k 30 600`, one process per suite, `lfs_run.sh build-hip-gcc/tests/lichtfeld_tests --gtest_filter=<suite>*`:
+- VisualizerImplResetTest: exit 0, 286 passed, 1 skipped (HeadlessOpenPrintsHydrationStagesWhenBenchPathSet). Last round's hang did not reproduce, so the malformed-PNG explanation recorded then is not sufficient; the cause of that hang is not established (it ran on the 6.16.13 driver).
+- MaskResizedCache: exit 0, 1 passed.
+- UndoHistoryTest: exit 139 (segfault) at CropCommandsRespectTargetLocks, the same test as both runs last round, so deterministic. The rest of the suite (`--gtest_filter='UndoHistoryTest*:-UndoHistoryTest.CropCommandsRespectTargetLocks'`): 124 passed. Under gdb the fault is SIGFPE in `lfs::core::Scene::getNodeById` (an `unordered_map` lookup) <- `isNodeEffectivelyVisible` <- `getVisibleNodes` <- `SceneManager::handleCropByEllipsoid` <- `EventBridge::emit` <- the test body. Cause: the test builds a new `SceneManager` per loop iteration, each one subscribes with `cmd::CropPLY::when([this] ...)` / `cmd::CropPLYEllipsoid::when([this] ...)` (scene_manager.cpp:709-714), and `~SceneManager` never unsubscribes, so by the ellipsoid half of the loop `emit` calls the handlers of up to 12 destroyed managers. An upstream use-after-free in CPU code and the test, not touched by the port and not a HIP issue.
+- TensorMultiStreamTest: exit 124, hangs in BucketCrossStreamReuseIsOrdered as last round (blocking `hipLaunchHostFunc` callback; see above). The rest (`--gtest_filter='TensorMultiStreamTest*:-TensorMultiStreamTest.BucketCrossStreamReuseIsOrdered'`): 18 passed, 1 failed, TrainerViewerHandshakeYieldsConsistentSnapshots (first reached this round, because the hang stopped the suite before): `torn_snapshots` 36 of 39, and `snapshots >= 50` fails at 39.
+  Classified with a standalone HIP copy of the test (`agent_space/handshake/hs.hip`, hipcc `--offload-arch=gfx1100 -O2`, GPU 0). Mode 0, the test as written: torn 36 of 39, 36 of 38. Mode 1, reader holds the mutex from its `hipStreamWaitEvent(render, params_ready)` to its `hipEventRecord(reader_done)`: torn 36 of 39, 35 of 39, because the writer's `cudaMemsetAsync` sits outside its lock and is still enqueued in that window. Mode 2, writer also holds the lock from its `reader_done` wait to its `params_ready` record, so every memset is event-ordered against every copy: torn 0 of 38, twice. So HIP's event record/wait semantics are correct. The test's protocol leaves memsets the writer enqueues between the reader's wait and its done-record unordered against the reader's copy, and passing depends on timing; on gfx1100 the copy and the memset overlap. The snapshot-count assertion is timing too: the writer finishes its 200000 iterations first, because each snapshot does 512 synchronous 1-byte D2H copies. Not a port defect. The test's comment says it mirrors the trainer/viewer protocol; if the app has the same window it would show as an occasional mixed-iteration viewer frame, which none of the screenshots show.
+
+### Skill
+Added to cuda-to-rocm `references/validation.md`: "HIP and Vulkan in one process can oops the kernel on an old amdgpu-dkms" (check `/sys/module/amdgpu/version` before running an interop app).
+
+### Verdict
+GUI training ran 5000 iterations on bicycle without a fault and the viewer rendered during it, so the step-6 bar is met. Stage `porting` -> `ported` at f90b8d1e.
