@@ -263,6 +263,19 @@
       "upstream_issue": null,
       "created_at": "2026-10-27T17:31:25Z",
       "decided": null
+    },
+    {
+      "id": "rocjpeg-no-scan-jpeg-hangs-vcn",
+      "kind": "rocm-bug-report",
+      "component": "rocjpeg",
+      "summary": "rocJPEG 1.10 (TheRock ROCm SDK 10.1.0 wheels, librocjpeg.so.1.10.0, hardware backend) accepts a JPEG that ends before its start-of-scan marker: rocJpegStreamParse and rocJpegGetImageInfo both return ROCJPEG_STATUS_SUCCESS (128x96, 3 components), and rocJpegDecode then submits it to the VCN JPEG engine, which hangs until the kernel driver resets the ring; the calling process loses its GPU context ('amdgpu: The CS has cancelled because the context is lost. This context is guilty of a hard recovery.', then abort). Smallest input: a 609-byte stream, a 128x96 baseline JPEG from libjpeg-turbo defaults at quality 95 (4:2:0) cut just before its FF DA marker (SOI, APP0, two DQT, SOF0, four DHT, no scan, no EOI); sha256 eae81db984182916e53d37f3a023a31189fc617126b71663ae4cad9c4a35b12e. Regenerate with agent_space/rocjpeg_hang/gen_hang_jpeg.c (recipe in notes.md). Host: Radeon Pro W7800 (gfx1100), amdgpu-dkms 6.19.14.31400100, kernel 6.8.0-138-generic. dmesg 2026-10-28 16:05:44 (lichtfeld_tests pid 92066): 'ring jpeg_dec timeout', then 'Ring jpeg_dec reset succeeded' and 'device wedged, but recovered through reset'. A scan header with no data and a stream without EOI also parse as SUCCESS; whether they hang was not tested (each try costs a ring reset on a shared GPU). Expected: rocJpegStreamParse returns ROCJPEG_STATUS_BAD_JPEG for a stream with no scan, and a malformed bitstream never hangs the engine. Workaround in the LichtFeld-Studio port: a host-side marker walk rejects such streams before rocJPEG sees them.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-28T21:19:27Z",
+      "decided": null
     }
   ]
 }

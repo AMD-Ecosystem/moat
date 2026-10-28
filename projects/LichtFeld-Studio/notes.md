@@ -4187,3 +4187,75 @@ The nine commits extend `-DUSE_HIP=ON` from the compute libraries to the whole a
   - `moatlib.py audit-commits`: OK.
   - All nine titles carry `[ROCm]`, at 51-68 characters.
   - No `Co-Authored-By` trailer, noreply address or AMD-internal account reference; added lines and messages are ASCII.
+
+## Porter round 2026-10-28b (porter, linux-gfx1100) -- review items 2, 3, 4; f90b8d1e -> 2ac6bc3d, stage -> `ported`
+
+Answers "Review 2026-10-28" items 2-4 (the codec loader). **Item 1 (the Windows HIP viewer has no splat rendering without Win32 VMM export) is not touched this round: it waits on jeff's decision.** Host: Radeon Pro W7800 (gfx1100), GPU 0 (HIP_VISIBLE_DEVICES=0, idle before), `ulimit -c 0`, amdgpu-dkms 6.19.14.31400100, kernel 6.8.0-138-generic, TheRock ROCm SDK 10.1.0 wheels (rocJPEG 1.10.0). Fresh clone of `moat-port`, own build dir, deps and vcpkg binary cache reused read-only from the 2026-10-27 porter job; recipe as in "Porter round 2026-10-27".
+
+### Fork commit (plain push on top of f90b8d1e; pr-state none)
+- 2ac6bc3da `[ROCm] Decode on the CPU only JPEGs rocJPEG cannot, and keep batches`. Files: `src/io/nvcodec_image_loader_hip.cpp` (HIP-only), new `tests/test_nvcodec_hip_jpeg.cpp`, `tests/CMakeLists.txt` (both hunks under `if(USE_HIP)`: the test file and `JPEG::JPEG` for it). `src/io/nvcodec_image_loader.{cpp,hpp}` identical to ca01b056. jargon: clean; audit-commits: OK; full build rc 0 before the push.
+
+### Item 2: CPU decode only for what rocJPEG does not support
+What rocJPEG 1.10 actually returns (probe `agent_space/probe/probe.cpp`, one decode per file, GPU 0):
+- progressive, arithmetic-coded (SOF9), CMYK (4 components), 4:1:1: `rocJpegStreamParse` -> BAD_JPEG (same status as a corrupt header).
+- 48x48 and 200x40: parse OK, `rocJpegDecode` -> JPEG_NOT_SUPPORTED. 200x64, 4:4:0, 4:2:2, 4:2:0, 4:4:4, gray: decode OK.
+- Truncated mid-scan or garbled scan data: decode SUCCESS (lenient, like libjpeg).
+So the status alone cannot tell "unsupported" from "corrupt". The loader now reads the frame header itself (`inspect_jpeg`) and sends to the CPU (libjpeg) only: SOF other than C0/C1, precision != 8, components not 1 or 3, chroma sampling outside 4:4:4/4:4:0/4:2:2/4:2:0, either side < 64; plus JPEG_NOT_SUPPORTED from any rocJPEG call as a backstop. Each CPU decode logs `LOG_WARN` with the reason (first 3, then every 500th, as the CUDA path's CODEC_UNSUPPORTED logging). Every other failure (rocJpegCreate, staging/tensor OOM, copy/sync, BAD_JPEG on a supported frame) logs `LOG_ERROR "[NvCodecImageLoader] Decode failed: ..."` and throws, as the CUDA path. With `enable_fallback=false` an unsupported stream throws "rocJPEG does not support this stream: <reason>". `jpeg_decoder()` (metrics report) returns "rocJPEG (GPU)" until a CPU decode happens, then "rocJPEG (GPU), CPU (libjpeg) for JPEGs rocJPEG does not support"; "CPU" when rocJPEG is unavailable. The startup line now names the CPU cases. Checked on the host only (`agent_space/probe/inspect_harness`, the loader's functions extracted): all 1516 bicycle/garden JPEGs route to rocJPEG.
+
+### rocJPEG hangs the VCN on a JPEG with no scan (found this round; deferral `rocjpeg-no-scan-jpeg-hangs-vcn`, component rocjpeg)
+The first version of the corrupt-JPEG test passed rocJPEG a JPEG cut just before its SOS marker. `rocJpegStreamParse` and `rocJpegGetImageInfo` return SUCCESS (128x96, 3 components), `rocJpegDecode` submits it, and the VCN JPEG engine hangs: the process printed "amdgpu: The CS has cancelled because the context is lost. This context is guilty of a hard recovery." and aborted. dmesg (read by the dispatcher; the job has no kernel-log access), 2026-10-28 16:05:44, process lichtfeld_tests pid 92066: `ring jpeg_dec timeout`, then `Ring jpeg_dec reset succeeded` and `device wedged, but recovered through reset`. The GPU recovered (a later rocJPEG decode on GPU 0 worked) and the dispatcher reported all four GPUs healthy. On HIP a single such file in a dataset kills the app; on CUDA it is a decode error.
+- Smallest reproducer: 609 bytes, sha256 `eae81db984182916e53d37f3a023a31189fc617126b71663ae4cad9c4a35b12e` (SOI, APP0 JFIF, 2x DQT, SOF0 128x96 4:2:0, 4x DHT; no SOS, no EOI). Kept at `agent_space/rocjpeg_hang/no_scan_128x96.jpg` in this job's clone (container-local). The headers do not depend on the pixels, so it regenerates byte for byte with libjpeg-turbo (vcpkg `libjpeg-turbo`, link `libjpeg.a`): `gcc gen_hang_jpeg.c -I<vcpkg_installed>/x64-linux/include <vcpkg_installed>/x64-linux/lib/libjpeg.a -o gen_hang_jpeg && ./gen_hang_jpeg no_scan_128x96.jpg && sha256sum no_scan_128x96.jpg`. To reproduce the hang: `rocJpegCreate(ROCJPEG_BACKEND_HARDWARE)`, parse, get image info, `rocJpegDecode` to ROCJPEG_OUTPUT_RGB (`agent_space/probe/probe.cpp`). Hardware submission was done exactly once (the accidental test run); the parse-only check (`agent_space/rocjpeg_hang/parseonly.cpp`, no decode) also returns SUCCESS for a scan header with no data and for a stream without EOI; whether those hang was not tested.
+- Fix in the loader: `inspect_jpeg` walks the markers on the host and requires a frame header, defined quantization tables, a well-formed first scan header naming frame components, scan data, and an end-of-image marker. A failing stream is a decode error ("Corrupt JPEG: ..."), never sent to rocJPEG and never decoded on the CPU. Consequence: a file truncated mid-scan (no EOI), which rocJPEG and libjpeg would decode with a gray tail, is now an error on HIP.
+- The test (`CorruptJpegInABatchIsRejectedBeforeDecoding`) covers three such streams, including this exact one (609 bytes, as logged), and they are rejected before any rocJPEG call. Final proof run after the push: passed, three "corrupt JPEG" errors logged, no hang.
+
+```c
+/* Writes a 128x96 baseline JPEG (libjpeg defaults, quality 95, 4:2:0) cut just
+ * before its start-of-scan marker: every header, no scan. Pixel values do not
+ * reach the output, since the scan is dropped.
+ * usage: gen_hang_jpeg out.jpg */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <jpeglib.h>
+int main(int argc, char** argv) {
+  const int w = 128, h = 96;
+  struct jpeg_compress_struct c; struct jpeg_error_mgr e; c.err = jpeg_std_error(&e);
+  jpeg_create_compress(&c); unsigned char* buf = NULL; unsigned long size = 0; jpeg_mem_dest(&c, &buf, &size);
+  c.image_width = w; c.image_height = h; c.input_components = 3; c.in_color_space = JCS_RGB;
+  jpeg_set_defaults(&c); jpeg_set_quality(&c, 95, TRUE); jpeg_start_compress(&c, TRUE);
+  unsigned char row[128 * 3]; memset(row, 128, sizeof row); JSAMPROW r = row;
+  while (c.next_scanline < c.image_height) jpeg_write_scanlines(&c, &r, 1);
+  jpeg_finish_compress(&c); jpeg_destroy_compress(&c);
+  unsigned long cut = 0;
+  for (unsigned long i = 2; i + 1 < size; ++i) if (buf[i] == 0xFF && buf[i + 1] == 0xDA) { cut = i; break; }
+  FILE* f = fopen(argv[1], "wb"); fwrite(buf, 1, cut, f); fclose(f); free(buf);
+  printf("%s: %lu bytes (full JPEG %lu)\n", argv[1], cut, size);
+  return 0;
+}
+```
+
+### Item 3: batch JPEG encode keeps the good frames
+`encode_batch_rgb_to_jpeg`: a frame whose encode fails (or whose pointer is null) logs `LOG_ERROR "Batch encode frame {i} failed: ..."`, comes back empty, and the rest are returned, then `LOG_WARN "Batch encode: N of M frames failed"` (the CUDA wording). Device readback errors still throw, as the CUDA path's batch-level failures do.
+
+### Item 4: libjpeg encoder frees each buffer once
+`jpeg_mem_dest` replaced by a destination manager over a `std::vector` owned by the encoder (lookup through `client_data`); libjpeg never frees or reallocates it; `ERREXIT(JERR_OUT_OF_MEMORY)` if the vector cannot grow. libjpeg error messages now go into the thrown text. Evidence (`agent_space/probe/enc_{old,new}.cpp`: the encoder structs extracted verbatim from f90b8d1e and from this commit, plus a progress hook that calls ERREXIT after scanline 900 of a 1024x1024 noise image, so after the buffer grew; g++ -fsanitize=address, static vcpkg libjpeg): old -> `AddressSanitizer: attempting double-free ... in ~JpegMemoryEncoder`; new -> encode returns false, destroyed cleanly, no leak report.
+
+### Tests (Release, `lfs_run.sh` = Xvfb + RADV, cwd build dir, one process per suite, `timeout -k 30 900`)
+New `NvCodecHipJpegTest` (HIP-only): 4/4 pass -- UnsupportedStreamsFallBackToTheCpuAndAreReported (progressive, 4:1:1, 48x48: CPU decode equals a libjpeg reference decode exactly, strict loader throws with the reason, `jpeg_decoder()` reports the CPU decodes), CorruptJpegInABatchIsRejectedBeforeDecoding, BadFrameInABatchEncodeDropsOnlyThatFrame (null middle frame), LargeEncodeGrowsTheOutputBuffer (1536x1024 noise, > 1 MiB output, decodes back).
+Codec and image-loader suites of lichtfeld_tests (passed/failed):
+- NvCodecImageLoaderJpeg 3/0, NvCodecImageLoaderJpeg2k8Bit 2/0, Jpeg2kExplicitLayout 1/0, NvCodecBatchDecodeTest 1/0.
+- NvCodecImageLoaderJpeg2k16Bit 0/1, NvCodecSentinelValidatorTest 0/1, NvCodecAvailabilityTest 0/1: the same three as last round (Part-1 JPEG 2000 round trip; nvImageCodec test seam; the test expects the literal "nvImageCodec (GPU)", HIP reports "rocJPEG (GPU)").
+- PipelinedImageLoaderTest 20/0, PipelinedLoaderLedger 8/0, PipelinedImageLoaderSidecarJpeg2k 3/0, PipelinedNormalDecode 12/0, PipelinedDepthDecode 20/0, PipelinedMaskUndistortTest 4/0, CompressedBlobTier 6/0, SidecarResumeSampler 1/0, CameraImageLoadTest 1/0, EnvironmentImageLoadTest 4/0, ImageIoTest 15/0, ParallelPngWriter 1/0.
+- VideoFrameExtractorOutcome 2/0, Trim 3/0, Params 2/0, VideoFrameExtractorWriteTest 28/0; VideoFrameExtractorOutputNaming 7/4 and VideoColorRange 4/2 (AV1): the same failures as last round (NVDEC/NVENC and no software AV1 decoder; deferral `lfs-hip-video-hw-codec`).
+Headless smoke (`--headless -d data/bicycle --images images_4 --iter 3000 --eval --no-depth-auto-generate --no-normal-auto-generate`): exit 0, 68 s, PSNR 23.6675, SSIM 0.6565, LPIPS 0.3610, 549,586 splats; metrics_report.txt "JPEG Decoder: rocJPEG (GPU)" (no CPU decodes on bicycle).
+GUI training (`agent_space/gui_train.sh g600 600 300`, MCP `training.start`): finished 600/600 in 11 s, app exit 0, no fault sign; the end screenshot shows the bicycle scene rendered by the viewer, "Training completed successfully", 102,139 splats.
+
+### Kernel-log events during this round (reported by the dispatcher)
+- 16:05:44 `ring jpeg_dec timeout` / `Ring jpeg_dec reset succeeded` / `device wedged, but recovered through reset`: the no-scan JPEG above.
+- 16:11:21 `[mmhub] page fault` from UTCL2 client DCEDMC (the display microcontroller), vmid:0 pasid:0, address 0x5010000: the driver's own display firmware, not a user process; all four GPUs passed a HIP check afterwards. The app logs here run 5 h ahead of dmesg (the jpeg_dec hang at 16:05:44 matches a test at 21:05:43), so 16:11:21 is 21:11:21 in the suite logs, which falls in **PipelinedLoaderLedger** (21:11:17.5-21:11:22.6). No Video* suite was running. Each suite starts its own Xvfb + RADV instance. Watch whether this repeats in a later round.
+
+### Skill
+cuda-to-rocm: fault-classes "Vulkan interop and image codecs" gains "Fall back to the CPU only for JPEGs rocJPEG cannot decode" (statuses observed per stream type) and "A JPEG that ends before its scan hangs the VCN JPEG engine"; SKILL.md index line updated.
+
+### Verdict
+Items 2, 3 and 4 fixed and tested; item 1 left for jeff. head_sha -> 2ac6bc3d. Stage `porting` -> `ported`.
