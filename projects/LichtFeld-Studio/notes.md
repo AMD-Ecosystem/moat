@@ -4134,3 +4134,56 @@ Added to cuda-to-rocm `references/validation.md`: "HIP and Vulkan in one process
 
 ### Verdict
 GUI training ran 5000 iterations on bicycle without a fault and the viewer rendered during it, so the step-6 bar is met. Stage `porting` -> `ported` at f90b8d1e.
+
+## Review 2026-10-28 (reviewer, linux-gfx1100) -- f90b8d1e (full-application delta 81b7fa24..f90b8d1e, plus shared hunks vs upstream ca01b056), CHANGES-REQUESTED
+
+### Summary
+The nine commits extend `-DUSE_HIP=ON` from the compute libraries to the whole application: the viewer's HIP/Vulkan interop (host-ordered timeline semaphores on Linux, PCI-bus/LUID device matching, HIP VMM export to Vulkan), rocJPEG plus CPU libjpeg/OpenJPH in place of nvImageCodec, and the numeric fixes. Verdict: changes requested for the four items below. Items 2-4 are small. Item 1 must be fixed on Windows or put to jeff before the Windows gate can mean anything for the app.
+
+### Port Correctness
+1. Windows: the HIP viewer cannot render splats. `src/core/cuda/exportable_storage.cpp:123-130` makes `export_handle_supported()` return false on `_WIN32`, with the comment "Windows uses the fallback". No fallback exists. `allocateExportableDeviceBlock` returns unexpected at :485, and VkSplat refuses a model without Vulkan-external storage (`src/visualizer/rendering/vksplat_viewport_renderer.cpp:5707`, "refusing full input-copy fallback"). The x1_notrainshare run on Linux showed the same outcome. The porter round's "viewer falls back there" and the "Not optional ... no fallback" line in the same entry contradict each other; the code agrees with the second.
+   - Fix: enable the Win32 handle path on HIP (the compat header already maps `CU_MEM_HANDLE_TYPE_WIN32` to `hipMemHandleTypeWin32`), have a Windows round test it against `hip-windows-vmm-va-not-reused`, and correct the comment.
+   - If Win32 VMM export cannot work, record that the Windows HIP viewer shows no splats as a decision for jeff. Do not ship the comment as written.
+   - Context: the full application has never been configured or built on Windows. The new Windows-only branches are unexercised: the LUID match (`vulkan_context.cpp`) and the `TimelineSemaphoreWin32` -> `OpaqueWin32` alias in `cuda_to_hip.h`. rocJPEG has no Windows build, so `LFS_HAVE_ROCJPEG=0` there, and `NvCodecImageLoader::is_available()` (`nvcodec_image_loader_hip.cpp:594`) returns false. That disables the CPU JPEG encode and JPEG 2000 cache paths too, matching CUDA without nvImageCodec.
+2. rocJPEG errors of every kind fall back to the CPU silently. `decode_jpeg` (`src/io/nvcodec_image_loader_hip.cpp:542-553`) catches every `std::exception`: `rocJpegCreate` failure inside `acquire()`, staging `cudaMalloc` OOM, tensor allocation OOM, and copy/sync errors, not only the not-supported and bad-JPEG statuses VCN returns for small or progressive images. It logs only at `LOG_DEBUG`. Meanwhile `jpeg_decoder()` (:611, feeding the metrics report) and the startup `LOG_INFO` keep saying "rocJPEG (GPU)".
+   - Failure scenario: VCN context creation fails after the startup probe, or the device runs short of memory. Every image then decodes on the CPU with nothing at default log level, and `rocJpegCreate` is retried for each image.
+   - Fix: fall back only on the rocJPEG refusal statuses, propagate other errors as the CUDA path does, and warn once when the CPU path is taken. jeff's codec rule requires each CPU case to be named; a silent CPU decode is the case the rule exists to prevent.
+3. `encode_batch_rgb_to_jpeg` (`nvcodec_image_loader_hip.cpp:1058-1076`) throws on the first failed frame. The CUDA implementation (`nvcodec_image_loader.cpp:2933-2944`) logs the frame, leaves its buffer empty and returns the rest. The caller `src/io/video_frame_extractor.cpp:1546-1551` skips empty entries, so on HIP one bad frame aborts the whole extraction. Fix: catch per frame, clear that output, and log it as CUDA does.
+4. Possible double free in `JpegMemoryEncoder` (`nvcodec_image_loader_hip.cpp:67-111`). With `jpeg_mem_dest(&codec, &buffer, &size)` (:90), libjpeg-turbo frees the old buffer when the output grows, but updates `*outbuffer` only in `term_destination`. If `error_exit` longjmps after a growth, `~JpegMemoryEncoder` calls `std::free(buffer)` (:77) on freed memory. It triggers only on a libjpeg error mid-compress, which is rare but possible. Fix: let libjpeg own the buffer until `jpeg_finish_compress` succeeds (copy it out then), or encode into a destination manager the class owns.
+
+### Testing (for the porter's recipe and the validators; not by itself a reason for changes-requested)
+- Only `lichtfeld_tests` was run, suite by suite. The full build also registers separate ctest entries and executables that were never run on HIP: `masked_ssim_noftz`, `POPSpaContracts`, `tensor.cuda_template_stub`, `lichtfeld_format_tests`, `lichtfeld_frame_tests`, `tensor.hardening`, `video.orientation`, the `lichtfeld.python.*` entries and the others in `tests/CMakeLists.txt`. Add them to the recipe (run `ctest` from the build dir, serially), or classify the ones that do not apply.
+- `masked_ssim_noftz_tests` compiles `src/training/kernels/ssim.cu` in the tests directory. The `-ffp-contract=on` that 9bd721c6 sets with `set_source_files_properties` in `src/training/CMakeLists.txt:81` is directory-scoped and does not reach that target. Its tests compare like with like, so it may pass anyway; run it.
+
+### Checked as asked (no finding)
+- CUDA token identity, 81b7fa24..f90b8d1e and the shared hunks vs ca01b056:
+  - Every source hunk is under `USE_HIP`, `__HIPCC__`, or `#if defined(__CUDACC__) || defined(__HIPCC__)`, or sits in a HIP-only file. That covers application.cpp, main.cpp, exportable_storage.cpp, cuda_allocation.hpp, cuda_scratch.hpp, kmeans.cu, splat_decimate_math.hpp, rad_dequant_math.hpp, environment_math.hpp, Cameras.cuh, cuda_vulkan_interop.cpp and vulkan_context.*.
+  - The CMake hunks are under `if(USE_HIP)`, `_LFS_HIP_COMPUTE_ONLY` (OFF for CUDA) or `$<COMPILE_LANGUAGE:HIP>` genexes that evaluate empty for CUDA. The CUDA `project()` call and the VcpkgProfiles order are unchanged. `nvcodec_image_loader_hip.cpp` is added only under `if(USE_HIP)`.
+  - Not rebuilt with nvcc here; this host has no CUDA toolkit.
+- Codecs:
+  - rocJPEG decode is used where it applies.
+  - The CPU paths are justified as recorded: rocJPEG 1.10 has no encode API, and the SDK has no JPEG 2000 library. The production JPEG 2000 encoders all use the HT default (`pipelined_image_loader.cpp`, `cache_image_loader.cpp:820`) and the caches never persist across builds, so the Part-1 gap is reachable only through a raw Part-1 `.jp2` codestream, which falls back to the CPU loader with a warning.
+  - The staging pad of 16 px plus 16 rows covers the recorded 8-px overrun for RGB, planar and Y.
+  - The rule of five holds on the rocJPEG handles.
+  - `lfs-hip-video-hw-codec` is registered in deferred.json and is still unruled. By jeff's codec rule rocDecode is a ROCm option for video decode, so that ruling is his to make. Encode has no ROCm library.
+- Interop device match:
+  - Linux compares PCI domain, bus and device via `VK_EXT_pci_bus_info`, which is queried only when the device lists it.
+  - Windows compares LUID.
+  - On no match, `hip_device_uuid_` keeps the Vulkan UUID, so the interop UUID check refuses rather than pairing the wrong cards.
+- Host ordering on Linux:
+  - Every wait call site (memory_arena.cu:529/640/717, trainer.cpp:2404, cuda_vulkan_interop.cpp:752/940) waits a value whose Vulkan submit already happened. The borrow is published from the post-submit callback, and `awaitVulkanRelease` runs after submission.
+  - A host-blocking wait in place of a stream wait orders all later work on every stream, which is stronger than CUDA's guarantee.
+  - Each signal runs `hipStreamSynchronize(stream)` before `vkSignalSemaphore`, so it covers the same work CUDA's stream-ordered signal does.
+  - Semaphores signaled by both sides alternate strictly (the selection query: HIP N, Vulkan N+1, host-waited before the next query), so the counter check before `vkSignalSemaphore` cannot race a pending lower Vulkan signal.
+  - Shutdown order: `trainer_manager_` is reset before the Vulkan context shuts down, and `set_vulkan_ops({})` runs first in `VulkanContext::shutdown`, so no host wait uses a destroyed `VkDevice`.
+  - Costs, not defects: the trainer host-blocks under `stream_sync_mutex_` for each viewer borrow, and a 10 s timeout replaces CUDA's unbounded GPU wait.
+- The Windows timeline-semaphore branch is unbuilt and untested; see item 1.
+- Test triage confirmed not port-caused:
+  - UndoHistoryTest.CropCommandsRespectTargetLocks builds a new `SceneManager` per loop iteration (tests/test_undo_history.cpp:4169). Its `cmd::CropPLY*::when([this]...)` handlers (scene_manager.cpp:709-714) are never removed by `~SceneManager` (:623-631), and the fixture's `EventBridge::clear_all()` runs per test, not per iteration. This is an upstream use-after-free, in files the port does not touch.
+  - TrainerViewerHandshakeYieldsConsistentSnapshots (tests/test_tensor_multistream.cpp, unchanged vs ca01b056): the writer's memset is enqueued outside the lock, between the reader's params_ready wait and its reader_done record, so it is unordered against the reader's copy. The race is in the test protocol, and the porter's mode-2 experiment shows HIP's event semantics are correct.
+  - ShareableAllocationLimitTest.ChunkEnvCapsAndRoundsToGranularity hardcodes `kGran = 2 MiB` (test_shareable_allocation_limit.cpp:147, unchanged), while `exportable_allocation_granularity()` returns HIP's 4 KiB minimum.
+- Jargon and commits:
+  - `python3 utils/jargon.py --port LichtFeld-Studio`: clean.
+  - `moatlib.py audit-commits`: OK.
+  - All nine titles carry `[ROCm]`, at 51-68 characters.
+  - No `Co-Authored-By` trailer, noreply address or AMD-internal account reference; added lines and messages are ASCII.
