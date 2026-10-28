@@ -4259,3 +4259,18 @@ cuda-to-rocm: fault-classes "Vulkan interop and image codecs" gains "Fall back t
 
 ### Verdict
 Items 2, 3 and 4 fixed and tested; item 1 left for jeff. head_sha -> 2ac6bc3d. Stage `porting` -> `ported`.
+
+## Windows viewer round 2026-10-28 (porter, windows-gfx1151): stopped by a host hang
+
+The round took the work lock at 21:34Z and was ended by the laptop hanging at 14:55 local (21:55Z). The event log has Kernel-Power 41 with BugcheckCode 0 and LongPowerButtonPressDetected true: no bugcheck, the machine stopped responding and was powered off. No fork commit was made; `moat-port` is still 2ac6bc3d.
+
+What the round found before the hang (probe sources in the laptop's `agent_space/lfs_vmm_win`, a copy of the interop spike's loader):
+- The port's splat storage is HIP VMM memory (`hipMemCreate`) exported to Vulkan, which is the opposite direction from the Windows interop spike (Vulkan allocates, HIP imports with `hipImportExternalMemory`, which works).
+- `hipMemCreate` with `requestedHandleType = hipMemHandleTypeWin32` returns 801 hipErrorNotSupported (TheRock ROCm 7.14, gfx1151). The HIP front end accepts only `None` and `PosixFileDescriptor`.
+- With `PosixFileDescriptor` the export succeeds on Windows and returns values such as 0x80002182 and 0x40000F02, which look like D3DKMT shared (KMT) handles, not NT handles. Imported into Vulkan as `OPAQUE_WIN32`, `vkAllocateMemory` fails with -13 (`VK_ERROR_UNKNOWN`). Imported as `OPAQUE_WIN32_KMT`, the import is accepted but maps the wrong memory (16384 of 16384 words wrong in both directions), and the next case ended in `VK_ERROR_DEVICE_LOST` (21:44Z).
+- After that, the known-good interop spike passed only 1 check instead of all, so the GPU was left degraded, and the host hung about 11 minutes later. The likely cause is the mis-aliased KMT import (GPU writes through a mapping of the wrong memory, on an APU whose GPU memory is system RAM), but this is not proven.
+
+Consequences for the next Windows round:
+- Never import a HIP VMM export into Vulkan as OPAQUE_WIN32_KMT again on this laptop.
+- The working direction on Windows is Vulkan-allocated exportable memory imported into HIP (measured in the spike). The Windows viewer path should allocate the shared splat storage on the Vulkan side, or as Vulkan-exported memory that HIP imports, instead of exporting HIP VMM memory.
+- Candidate ROCm bug report, not yet registered: HIP VMM export with a Win32 handle type is unsupported on Windows, and the POSIX-typed export returns a handle that no Vulkan import type maps correctly.
