@@ -700,8 +700,25 @@ HIP's UUID is the board serial, RADV's encodes the PCI address, so a CUDA-style
 multiple of 8 pixels regardless of `RocJpegImage::pitch`, so with a tight pitch the first
 pixels of every following row are overwritten -- nondeterministically, up to full-scale
 errors. Decode into staging with rows padded to 16 pixels and copy the visible region out
-(`hipMemcpy2DAsync`), which also orders rocJPEG's own stream before the caller's. VCN also
-refuses images under 64x64 and progressive JPEGs: keep a CPU decode fallback inside the
-decoder wrapper, as nvImageCodec has, because callers assume decode succeeds.
+(`hipMemcpy2DAsync`), which also orders rocJPEG's own stream before the caller's.
 (LichtFeld-Studio)
+
+**Fall back to the CPU only for JPEGs rocJPEG cannot decode, and say so.** rocJPEG 1.10 on
+VCN decodes 8-bit baseline/extended Huffman JPEG, 1 or 3 components, 4:4:4/4:4:0/4:2:2/4:2:0,
+at least 64x64. Progressive, arithmetic-coded, CMYK and 4:1:1 streams fail
+`rocJpegStreamParse` with `BAD_JPEG` -- the same status a corrupt file gets -- and small
+images fail `rocJpegDecode` with `JPEG_NOT_SUPPORTED`. So classify from the JPEG frame header
+(SOFn marker, precision, component count, sampling factors) yourself, decode only those cases
+on the CPU with a warning naming the reason, and let every other failure (OOM, decoder
+creation, corrupt data) surface as an error. A catch-all fallback hides real failures behind
+a silently slower path. (LichtFeld-Studio review)
+
+**A JPEG that ends before its scan hangs the VCN JPEG engine.** rocJPEG 1.10 parses such a
+stream as SUCCESS (dimensions and all) and submits it; the engine hangs until the driver
+resets the `jpeg_dec` ring, and the process's GPU context is lost ("context is guilty of a
+hard recovery", then abort). One corrupt file in a dataset kills the app, where nvJPEG
+returns an error. Walk the markers on the host before calling rocJPEG -- a frame header,
+defined quantization tables, a well-formed scan header, scan data, an end-of-image marker --
+and treat a failure as a decode error. Never put such a stream in a test that can reach the
+hardware decoder. (LichtFeld-Studio; deferral `rocjpeg-no-scan-jpeg-hangs-vcn`)
 
