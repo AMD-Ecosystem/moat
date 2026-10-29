@@ -59,7 +59,8 @@ delta-port on failure.
   gout[] array that overflows the gfx9 scratch frame; those legacy template
   instantiations are #ifndef USE_HIP'd out (the HF path uses gvhf-rys, not this
   legacy engine). nr_fill_ao_ints also compiled at -O1 to fit the frame.
-- get_smid: HIP `__smid()` returns a sparse (SE,CU) id that can exceed
+- (OBSOLETE since the 2026-10-29 upstream sync: upstream no longer indexes any pool by get_smid(), and probe_smid_range/pool_slots were removed. Kept for history.)
+  get_smid: HIP `__smid()` returns a sparse (SE,CU) id that can exceed
   multiProcessorCount (gfx90a: max 125 vs mpc 104). Any pool indexed as
   `pool + get_smid()*POOL_SIZE` MUST be sized to the smid range, not mpc, or
   blocks on high-id CUs write past it (silent ~4MB OOB on the d-shell int3c2e
@@ -459,3 +460,47 @@ would leave no way to run the HF/integral test suite (pytest + pyscf + cupy).
 Resolution: windows-gfx1101 and windows-gfx1201 both blocked with reason above.
 These platforms are non-viable for gpu4pyscf until a Windows CuPy-ROCm wheel is
 published. The port itself (linux-gfx90a + linux-gfx1100) is complete and validated.
+
+## Upstream sync 2026-10-29 (porter, linux-gfx942 MI300X, fork moat-port 899ec26 -> cdd8b8b)
+
+Requested by jeff before the upstream PR is opened. Upstream master was 173 commits ahead of the port base 72087c7.
+
+- Fork default branch `master` fast-forwarded 90dee1e -> 10dcea3 (upstream tip), plain push.
+- `git merge --no-ff upstream/master` into moat-port -> merge commit c9f1ac4. Conflicts (9 files) and resolution:
+  - df/int3c2e_bdiv.py, pbc/df/ft_ao.py, gvhf-rys/mole_helper.cu: upstream rewrote fill_int3c2e / ft_aopair as persistent kernels (`<<<multiProcessorCount>>>`, pool indexed by `blockIdx.x`, batches from an atomic `head` int stored after the pool). Nothing indexes a pool by `get_smid()` any more (grep: only the definition in vhf.cuh remains), so the earlier get_smid OOB fix is obsolete: `probe_smid_range()` (mole_helper.cu) and `__config__.pool_slots` were REMOVED and upstream's allocation taken verbatim. vhf.cuh keeps the `__HIPCC__` guard and the `__smid()` branch, with the long pool comment dropped. The 2026-06-02 sentinel proof no longer applies (no smid-indexed pool exists).
+  - dft/libxc.py: upstream's `load_library` now raises on a missing lib, so the `_libxc is None` guard was dead; upstream version taken (dft is not imported on ROCm anyway).
+  - lib/cusolver.py: hipSOLVER branch kept; upstream's new CUDA lookup (find_library, fallback to the nvidia/cusolver wheel via load_library) in the CUDA branch.
+  - lib/CMakeLists.txt: upstream dropped CUDA from `project()` and calls `enable_language(CUDA)` after setting arches; now `if(NOT USE_HIP) enable_language(CUDA)`. Kept HIP `project(C CXX HIP)`, upstream's 3.21 minimum and its new multigrid options.
+  - ecp/common.cu: upstream's block_reduce is now warpSize-generic (shared pass stops at warpSize, shuffle from warpSize/2); the HIP branch is the same loop with an unmasked `__shfl_down`.
+  - gvhf-md/contract_int3c2e.cu: upstream reuses `shared_memory` for the cross-warp partials; the port's `nwarps` is kept.
+  - pbc/__init__.py: upstream's new `pbc.properties` import joins scf/dft behind the ROCm check.
+- The merge commit body says "The HIP project() keeps upstream's Fortran removal pattern"; that is inaccurate (the HIP project() omits Fortran, as the port always did). Fix it in the PR-prep squash message.
+- New upstream files that failed to compile on HIP (static_assert: HIP `__shfl_down_sync` needs a 64-bit mask), fixed in cdd8b8b under `#ifdef USE_HIP`, CUDA unchanged:
+  - pbc/contract_ft_ao.cu (2 kernels x 2 sites): the sp_threads (=16) image-count max and the 16-lane Gv-group goutR sum use `__shfl_down(v, off, width)`; segments match on wave32/wave64 (gout_id is uniform per 16-lane group, so the preceding `break` is segment-uniform).
+  - gvhf-rys/int3c2e_recontract.cu: full-warp sum uses `__shfl_down(v, d, warpSize)`.
+- Audit of the other new/changed .cu in the HIP-built dirs (gint gvhf cupy_helper gvhf-rys gvhf-md ecp gdft pbc): no other `__shfl*_sync`/`__ballot`/PTX asm outside USE_HIP guards. multigrid (including the new multigrid_v3) is still not built for ROCm.
+- cdd8b8b also rewords the port comments that referred to internal planning stages ("ROCm/HIP port -- Milestone 1", "later milestone(s)", "pinned base", "deferred") in __init__.py, lib/CMakeLists.txt, gdft/CMakeLists.txt, gint/nr_fill_ao_ints.cu, pbc/CMakeLists.txt, pbc/df/__init__.py.
+
+### Build (gfx942, ROCm 10.1.0 TheRock SDK wheels in /opt/python-3.11-venv)
+
+```
+R=$(rocm-sdk path --root)
+cmake -S gpu4pyscf/lib -B agent_space/build-gfx942 -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R \
+  -DBUILD_CUTLASS=OFF -DBUILD_LIBXC=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build agent_space/build-gfx942 -j56
+```
+
+At c9f1ac4: 2 TUs fail (contract_ft_ao.cu, int3c2e_recontract.cu; the mask static_assert above). At cdd8b8b: exit 0, all 8 libs (cupy_helper gdft gecp gint gvhf gvhf_md gvhf_rys pbc); `llvm-objdump --offloading` shows a gfx942 code object in each. With the ROCm 10.1 toolchain the leftover untracked RDC split objects are named `lib*.so.0.hip-amdgcn-amd-amdhsa--<gfx>` (not `.hipv4-*`/`.host-*`): `rm -f gpu4pyscf/lib/*.so.0.hip-amdgcn-*` before checking `git status`. Fork tree clean after that.
+
+Pushed moat-port 899ec26..cdd8b8b (`jargon.py --port gpu4pyscf`: clean; upstream/master and the previous tip are both ancestors). `advance-head cdd8b8b`; linux-gfx942 porting -> ported, lock released. linux-gfx90a / linux-gfx1100 now read revalidate; this round needs review, then validation on wave64 and wave32.
+
+### GPU tests: NOT RUN (environment blocker, not a port failure)
+
+This host's image env (/opt/python-3.11-venv: numpy 1.26.4, scipy 1.10.1) has no CuPy and no pyscf, and no other env on the host has them. The job was dispatched without `--build`, so there is no `FLEET_VENV`; creating a private venv and installing cupy-rocm-7-0 / pyscf / numpy>=2 into it was refused by the fleet guard. ROCm 10.1 sonames match what cupy-rocm-7-0 links (libamdhip64.so.7, libhipblas.so.3, librocblas.so.5, librocsolver.so.0, libhipsolver.so.1), so a job WITH a venv should be able to install: numpy>=2.0,<2.3, scipy>=1.13, cupy-rocm-7-0==14.2.0, pyscf, pytest.
+
+Test-list change for the validator: upstream removed scf/tests/test_int2c2e.py (in the 2026-06-02 command) and added scf/tests/test_init_guess.py (SAP/VSAP guess), test_hf_lowmem.py and others; recompute the HF/integral set from `gpu4pyscf/scf/tests/` rather than reusing the old command.
+
+### Still owed before the upstream PR
+
+- PR-prep squash (`moatlib.py squash-carry-forward`, tree identical to the validated head): 8cb8806's body says "(Strategy" / "A ..." split across a line (jargon.py misses it), "This first milestone", "follow-on milestones", "Milestone 1", "pinned base", and describes probe_smid_range/pool_slots, which this sync removed. 899ec26's body says "in-house port-strategy labels". The squashed message must describe the merged result.
