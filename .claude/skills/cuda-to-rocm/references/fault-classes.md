@@ -246,6 +246,12 @@ nothing. A project that genuinely needs
 hardware linear filtering has no CDNA3 hardware path at all and needs the software-lerp
 fallback below unconditionally on gfx94x+. (arrayfire: `fast.cu`/`orb.cu`/`regions.cu` FAST/
 ORB/connected-components kernels, all plain LUT point-lookups with no filtering, on MI300X.)
+A port that already point-samples and lerps in software for that fallback is one step from
+the buffer form: the texture then supplies only two point fetches and the border address
+mode, so allocate the table with one trailing zero element standing in for the border texel
+and index it directly; the arithmetic, and so every result, is unchanged on every arch.
+Check the index range first -- here the caller's window bound kept the low index >= 0, so
+only the high side could touch the border. (gpuRIR `image_sample_lut`, gfx942.)
 
 Two things make that replacement cheap to get right. A pre-existing non-texture path for a
 type textures cannot carry (CUDA has no `double` texture, so such kernels usually already

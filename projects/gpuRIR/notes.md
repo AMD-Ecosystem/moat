@@ -310,3 +310,37 @@ Distance = 3.6056 m, expected direct-path sample = round(3.6056/343.0*16000) = 1
 - examples/example.py (2 src x 3 rcv, cardioid mic, MPLBACKEND=Agg): exit 0. PASS.
 
 Results match gfx90a/gfx1100/gfx1151 exactly (same sample 168, 0.166% near-direct agreement). No warp intrinsics; RDNA4 wave32 numerically equivalent.
+
+## Upstream sync + gfx942 port 2026-10-29 (linux-gfx942, MI300X, TheRock ROCm 10.1.0)
+
+Requested by jeff before the upstream PR is opened: upstream #87 (06da27d, 2026-08-25) moved CMakeLists.txt from `find_package(CUDA)` to `find_package(CUDAToolkit REQUIRED)` and links `CUDA::cufft`/`CUDA::curand` PUBLIC on `gpuRIRcu`, conflicting with the port's CMakeLists. Porting lock taken as linux-gfx942.
+
+### Fork branches
+- Fork `master` fast-forwarded fd8af43 -> 06da27d (plain push, verified ancestor first).
+- `moat-port` 88a0749 -> 27a44c8, commits on top, no rebase/amend:
+  - c171ee7 merge of upstream master. Conflict resolution: `find_package(CUDAToolkit REQUIRED)` inside the non-HIP branch; links moved to upstream's structure: `gpuRIRcu` PUBLIC `CUDA::cufft CUDA::curand` (CUDA) / `hip::hipfft hip::hiprand` (HIP); `gpuRIR_bind` PRIVATE `gpuRIRcu pybind11::module` once for both. No other upstream file changed; upstream added no tests.
+  - 5fef7a4 gfx942 texture fix (below).
+  - 27a44c8 README: ROCm prerequisite sentence + `CMAKE_ARGS="-DUSE_HIP=ON ..."` install line (the porter doc step had never been done; the README had no ROCm mention).
+
+### gfx942 fault: texture API compiled out on gfx94x+
+First gfx942 build of the merge failed: `gpuRIR_cuda.cu:248: error: 'tex1D<float, nullptr>' is unavailable: The image/texture API not supported on the device` (known fault class, `__gfx94plus_clr__` -> `__HIP_NO_IMAGE_SUPPORT`). Not caused by the merge; the port had never been built for gfx94x. Fix, all HIP-guarded, CUDA texture path untouched: on HIP the sinc LUT is a plain device buffer of `lut_len + 1` floats (trailing zero = border texel) and `image_sample_lut` indexes it with the same software lerp it already used over a point-filtered texture. Index range: `|t-tau| < Tw/2` keeps `floor(c) >= 0`; high side can reach index `lut_len` at most, which is the zero. Removed the now-unused array/texture aliases from `cuda_to_hip.h`. Applies to all AMD arches (one path); results are the same arithmetic as before, so prior arches' numerics are expected unchanged, but they read `revalidate` after advance-head. Promoted a short note to `cuda-to-rocm/references/fault-classes.md` (Textures).
+
+### Build (direct CMake; this host's guard blocks pip, even `--target`, so the `setup.py` route was not exercised here)
+```
+R=$(rocm-sdk path --root)
+cmake -S projects/gpuRIR/src -B agent_space/gpurir/build-tip -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DPYTHON_EXECUTABLE=$(which python3) -DCMAKE_BUILD_TYPE=Release
+cmake --build agent_space/gpurir/build-tip -j32
+```
+Result at 27a44c8: build OK, 333600-byte .so, offload bundle `hip-amdgcn-amd-amdhsa--gfx942`, `T PyInit_gpuRIR_bind`. Compile-only check with `-DCMAKE_HIP_ARCHITECTURES="gfx90a;gfx942;gfx1100;gfx1101;gfx1151;gfx1201"`: 0 errors, all six code objects present.
+Runtime (TheRock pip layout): `LD_LIBRARY_PATH=$SP/_rocm_sdk_libraries/lib:$SP/_rocm_sdk_core/lib`, `PYTHONPATH=<build dir>:projects/gpuRIR/src`, where SP is the venv site-packages; without it the import fails with `libhipfft.so.0: cannot open shared object file`.
+
+### Tests (HIP_VISIBLE_DEVICES=0, `ulimit -c 0`)
+Upstream has no test suite; the GPU suite is the validation harness plus all five upstream examples.
+- `python3 agent_space/gpurir/validate.py` (rewritten; the earlier harness was in a wiped agent_space): **12/12 PASS**.
+  - Direct-path-only RIR (nb_img [1,1,1]) vs a float64 reference: exact-sinc max rel err 9.49e-07, LUT (vs float64 LUT+lerp reference) 1.01e-06; threshold 2e-5, which separates the LUT and exact references (they differ by 1.30e-04), so the LUT check is discriminating.
+  - Shoebox 4x5x3, src (1,1,1.5) -> rcv (3,4,1.5), fs 16000: first arrival at sample 168 (expected 168) for LUT and exact, silence before the direct path, LUT vs exact near the direct path 0.165% of peak (matches the gfx1100/gfx1101/gfx1201 0.165-0.166%).
+  - simulateTrajectory (hipFFT): finite/non-zero, shape (14399,1); a static trajectory equals `np.convolve` to rel err 2.82e-07.
+  - Diffuse tail (hipRAND, Tdiff=0.1): finite, non-zero.
+- Examples, run from a scratch copy with a synthetic 2 s `source_signal.wav`. matplotlib and plotly are absent from the image and pip is blocked, so a no-op plotting stub was put on PYTHONPATH (the examples only plot; every GPU call runs): `example.py`, `simulate_trajectory.py` (wrote filtered_signal.wav), `polar_plots.py`, `time_vs_T60.py`, `time_vs_nbRIRs.py`: **5/5 exit 0**.
+Whether the plain-buffer LUT costs throughput on texture-capable arches (gfx90a/gfx11xx) was not timed; the time_vs_* examples there give a before/after if wanted.
