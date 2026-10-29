@@ -520,3 +520,66 @@ not a defect in the HIP port. The port's core quantum-gate, algorithm, and defer
 correctness all validated on gfx1101.
 
 Status: windows-gfx1101 port-ready -> completed at d438dc7b.
+
+## Upstream sync 2026-10-29 (linux-gfx942, porter): merge upstream 98b47407 into moat-port
+
+Requested by jeff before the upstream PR opens. No upstream PR open, so moat-port moved directly.
+Platform: MI300X gfx942 (wave64), TheRock ROCm SDK 10.1.0 pip wheels (HIP 7.16, AMD clang 24),
+HIP_VISIBLE_DEVICES=1.
+
+Fork default branch: fast-forwarded main d76903ee -> 98b47407 (plain push, ff only).
+moat-port: 7086bdbd -> a3f5427e, four commits on top, no rebase/amend:
+- 09d810c1 merge upstream/main (62 upstream commits since the old merge base). Textually clean.
+  Upstream touched two port-modified files without overlap: src/qengine/cuda.cu (Finish() before
+  sharing stateBuffer in Copy(); Android AllocStateVec branch removed) and CMakeLists.txt (version
+  10.13.3, new src/qpager_turboquant.cpp in the qrack sources). Also UINTPOW default 6 -> 5, a
+  bitCapIntOcl -> size_t sweep of ParallelFor, and 8 new test cases (205 -> 213), including
+  test_and/or/xor_single_bit, test_cl_logic_single_bit, test_logic_single_bit_invalid_args and
+  test_are_factorized.
+- 42bdc3d6 fix QEngineCUDA::SetAmplitudePage(QEnginePtr, src, dst, len). PRE-EXISTING UPSTREAM
+  CUDA BUG (from 2023, not introduced by the merge): the copy went this->page, with no offsets
+  and sized by srcOffset. QPager::SeparateEngines uses it, so a QPager-over-GPU Swap/CSwap that
+  touches page qubits left the wrong amplitudes, and a nonzero offset read out of bounds
+  (hipMemcpy -> hipErrorInvalidValue). Now page[src..src+len) -> this[dst..], as the OpenCL
+  engine does. It affects the NVIDIA build too, so the reviewer and jeff should decide whether
+  it belongs in this PR or should go upstream separately. It shipped earlier because the
+  previous gate ran only --layer-qengine; --layer-qpager was never run on the GPU.
+  Evidence: test_cswap under --proc-cuda --layer-qpager failed 20/20 at the merge and 10/10 at the
+  pre-merge head 7086bdbd (rebuilt in a worktree), and passed 10/10 on --proc-cpu --layer-qpager.
+  After the fix it passes 20/20.
+- 0caeb834 cmake/CUDA.cmake: apply the detected HIP architectures to every target. PRE-EXISTING
+  since 7086bdbd: with no -DCMAKE_HIP_ARCHITECTURES, configure failed with "HIP_ARCHITECTURES is
+  empty for target unittest/benchmarks/examples/qrack_pinvoke" (13 errors, the same count at
+  7086bdbd). Those targets are created before include(cmake/CUDA.cmake) runs enable_language(HIP),
+  and they link as HIP because they link qrack. Now: list(REMOVE_DUPLICATES) (detection gives one
+  entry per GPU, 8x gfx942 here), then set HIP_ARCHITECTURES on every BUILDSYSTEM_TARGETS entry.
+  An explicit arch gives the same values as before.
+- a3f5427e README: "Optional HIP (AMD ROCm) instead of OpenCL" section next to the CUDA one.
+  The port had no ROCm build doc before this (porter step 7).
+
+### Build (gfx942)
+```
+R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel   # pip ROCm; /opt/rocm elsewhere
+cmake -S projects/qrack/src -B projects/qrack/src/_build -DENABLE_CUDA=ON -DENABLE_OPENCL=OFF \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH=$R -DENABLE_TESTS=ON
+cmake --build projects/qrack/src/_build -j56 --target unittest
+export LD_LIBRARY_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_core/lib  # pip ROCm only
+```
+Clean, no warnings. Also built: an auto-detect configure (no arch) of all targets -> exit 0 with a single
+--offload-arch=gfx942; and -DCMAKE_HIP_ARCHITECTURES="gfx942;gfx1100" for the qrack library -> exit 0, with
+both offload arches.
+GOTCHA (pip ROCm): unittest needs LD_LIBRARY_PATH=<_rocm_sdk_core>/lib or it exits 127 (libamdhip64.so.7).
+
+### Tests at a3f5427e (`./_build/unittest --proc-<p> --layer-<l> -d yes`, under ulimit -c 0)
+- cuda/qengine (the established gate): All tests passed, 9612 assertions in 213 test cases, 47s.
+  The 8 new upstream tests pass on HIP.
+- cuda/qpager: All passed, 9609 / 213 (before the SetAmplitudePage fix: 212 passed, 1 failed, test_cswap).
+- cuda/qunit 9613/213, cuda/qunit-qpager 9613/213, cuda/qunit-multi 9610/213: all passed.
+- cuda/qtensornetwork: 209 passed, 4 failed, all "QInterface::{MUL,IMUL,CMUL}ModNOut not implemented!"
+  (test_imulmodnout, test_powmodnout, test_cimulmodnout, test_cpowmodnout). --proc-cpu fails the same
+  4, so this does not depend on the engine and is not a HIP issue.
+- --layer-qunit-multi-qpager runs 0 tests on any engine (the layer is not wired in test_main.cpp).
+- CPU regression: cpu/qengine 9612/213 passed, cpu/qpager 9609/213 passed.
+- test_ucmtrx (deferred-free fix) 12/12; qpager test_cswap 20/20.
+Suggestion for validators: add --layer-qpager to the GPU gate; it reaches the multi-page engine-to-engine copy paths that --layer-qengine never runs.
