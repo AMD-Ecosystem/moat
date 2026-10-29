@@ -546,7 +546,7 @@ Our port applied the foldseek HIP delta to foldmason's vendored tree. Upstream's
 
 ### Gaps
 
-1. Missing feature: upstream foldmason has no HIP path at all. The fix is upstream's normal subtree update. The smallest working step found is re-syncing `lib/foldseek/lib/mmseqs` plus one `<iostream>` include in `lib/foldseek/src/workflow/MultimerCluster.cpp`. That include belongs in foldseek's own `MultimerCluster.cpp` if foldseek master still lacks it (foldseek master built here, so it either has the include or reaches iostream another way; check before drafting).
+1. Missing feature: upstream foldmason has no HIP path at all. The fix is upstream's normal subtree update. The smallest working step found is re-syncing `lib/foldseek/lib/mmseqs` plus one `<iostream>` include in `lib/foldseek/src/workflow/MultimerCluster.cpp`. foldseek master already has that include (its `MultimerCluster.cpp` line 2 is `#include <iostream>`), so a normal full foldseek subtree sync brings it along; only the mmseqs-only shortcut needs it added.
 2. CMake 4: unconditional `cmake_policy(SET CMP0060 OLD)` (our port fixed it).
 3. Everything from the MMseqs2/foldseek lists once synced: docs, RDNA runtime unvalidated, Windows, ProstT5 on ROCm.
 4. Pre-existing regression failures (2/3 LDDT mismatch) exist with or without HIP. Worth telling upstream separately; not a port issue.
