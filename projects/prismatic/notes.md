@@ -694,3 +694,41 @@ No CUDA toolkit here (no conda, no nvcc). Creating a throwaway micromamba env wa
 ### Outcome
 
 **VALIDATED** on linux-gfx1100 at 6b9b6005 by a full real-GPU run (not a carry-forward). The device ISA is identical to 840f6f30. The test results match 840f6f30's on the same GPU.
+
+## Validation 2026-10-29 (windows-gfx1151, 6b9b6005) - PASS
+
+Host: AMD Radeon 8060S (gfx1151, RDNA3.5 APU, wave32). TheRock ROCm/HIP 7.14.0a20260612 (rocm-sdk-devel + rocm-sdk-libraries-gfx1151), MSVC 14.44, Windows 11. vcpkg at D:/Develop/vcpkg (classic mode, x64-windows): boost 1.91.0, hdf5 2.1.1, fftw3 3.3.11, zlib 1.3.2.
+
+### Build
+- vcpkg: `vcpkg install --recurse "hdf5[cpp,hl,zlib]:x64-windows" "fftw3[threads]:x64-windows"`. The `hl` feature is required: the project's `find_package(HDF5 ... HL CXX)` fails with "missing: HL" without it (the earlier gfx1201/gfx1101 vcpkg manifest pulled it in implicitly).
+- `source agent_space/win_rocm_env.sh`, then all-GNU-driver clang from the SDK for C, CXX and HIP:
+```
+cmake -S projects/prismatic/src -B projects/prismatic/src/build-gfx1151 -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE=D:/Develop/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 \
+  -DCMAKE_C_COMPILER=$ROCM_ROOT/lib/llvm/bin/clang.exe -DCMAKE_CXX_COMPILER=$ROCM_ROOT/lib/llvm/bin/clang++.exe \
+  -DCMAKE_HIP_COMPILER=$ROCM_ROOT/lib/llvm/bin/clang++.exe \
+  -DPRISMATIC_ENABLE_GPU=ON -DPRISMATIC_ENABLE_CLI=ON -DPRISMATIC_TESTS=ON -DCMAKE_BUILD_TYPE=Release \
+  "-DCMAKE_PREFIX_PATH=$ROCM_ROOT;D:/Develop/vcpkg/installed/x64-windows" -DFFTW_ROOT=<vcpkg> -DHDF5_ROOT=<vcpkg>
+cmake --build projects/prismatic/src/build-gfx1151 --parallel 8
+```
+Build succeeded (hip_compat shadow headers work under the Windows clang). The ninja post-build `prismatic-tests --run_test=NONE` step exits 0xc0000135 the first time because the DLLs are not staged yet; that is environment. Staged next to the exes: `rocm_stage_runtime` (amdhip64_7, rocm_kpack, amd_comgr, hiprtc), hipfft/rocfft, and from vcpkg hdf5*, fftw3*, boost_*, z, szip, aec.
+
+### CLI: PASS
+`prismatic.exe -i SI100.XYZ -o test_ms.h5 -a m -g 1` -> "Calculation complete." rc=0; `-a p -g 1` -> "PRISM Calculation complete." rc=0. Both 217063-byte outputs written. No TDR or launch failure.
+
+### Unit tests: 43/46 test cases pass (one suite per process, rc in parentheses)
+- hrtemTests 4/4, 8/8 assertions (0)
+- ioTests 21/22, 151/155 assertions (201): importSMatrix fails 4 assertions (annular 1.4e-3, DPC 2.4e-3, VD 5.7e-3, CBED 1.4e-4 vs tol 1e-4)
+- processingTests 5/5, 24/24 (0)
+- potentialTests 1/2 (201): PRISM01_integration 2 assertions, the known CPU-only 98730.5/1211818.88 reference mismatch
+- probeTests 3/3, 8/8 (0)
+- aberrationsTests 5/5, 12/12 (0)
+- seriesTests 3/3, 27/27 (0)
+- refocusTests 1/2 (201): matrixRefocus meanError 1.6177e-7 vs tol 1e-7 (deterministic over 3 runs)
+
+### Differences from gfx1201/gfx1101/gfx1100 and the control
+- importSMatrix: FP32-accumulation overshoot as on the other RDNA parts, but larger (x14-57 over tol vs 2-5x elsewhere) and CBED also over tol; varies run to run (annular 1.42e-3..1.63e-3 over three runs).
+- refocusTests/matrixRefocus: new tolerance miss on gfx1151 only (multislice vs PRISM mean |dI|, FP32-level, 1.6x over a 1e-7 tolerance).
+- Control: the previous head 840f6f30 built with the identical toolchain and run on this same GPU gives importSMatrix 1.33e-3/2.35e-3/5.56e-3/1.35e-4 and matrixRefocus 1.6173e-7. So 6b9b6005 changes nothing here; the extra misses are gfx1151 FP behaviour (RDNA3.5 APU), the same class as the iterative FP divergence recorded for this arch, not a port defect and not introduced by the shadow headers. Per stop discipline the magnitudes are recorded and not chased.
+- Jargon scan clean over the branch; docs position unchanged (upstream has no in-repo build doc to mirror). CUDA gate not re-run: delta is binary-equivalent device code (see linux-gfx90a/gfx1100 entries) and no CUDA toolkit on this host. Integrity: no modified tracked files in projects/prismatic/src (only untracked build-gfx1151/).
