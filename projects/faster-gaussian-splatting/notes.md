@@ -1713,3 +1713,62 @@ gate), making the project PR-ready; `windows-gfx1101` and `windows-gfx1201` rema
 `be2217e` and still owe a revalidation of their own, but that revalidation gates nothing
 further since `windows-gfx1151` already satisfies the gate at head -- extra evidence, not
 required.
+
+## Porter 2026-10-29 (linux-gfx942) -- upstream sync to d23bb78, commits 6b4452c + 7a49973
+
+Requested by jeff before the upstream PR is opened: upstream gained 14 commits (ae2bf80..d23bb78) with new warp-level kernel code. Platform: AMD Instinct MI300X HF (gfx942:sramecc+:xnack-), torch 2.16.0a0+git6c3af02, HIP 7.16.26385 (TheRock SDK wheels in the image venv), `HIP_VISIBLE_DEVICES=3`.
+
+### Fork moves
+
+- Fork `main` fast-forwarded `ae2bf80..d23bb78` (`git push origin upstream/main:refs/heads/main`, after checking `git merge-base --is-ancestor origin/main upstream/main`).
+- `moat-port`: `git merge --no-ff upstream/main` -> merge commit `6b4452c`, no conflicts (auto-merged kernels_mcmc.cuh, kernel_utils.cuh, README.md). Then `7a49973` with the two HIP fixes below. Pushed as a fast-forward `b0d21d5..7a49973`; `git merge-base --is-ancestor b0d21d5 HEAD` and `--is-ancestor upstream/main HEAD` both hold. No rebase, no amend.
+
+### Build failures the clean merge hid (exactly two)
+
+First build after the merge: `rc=1`, two errors and nothing else.
+```
+kernels_forward_hip.cuh:12:10: fatal error: 'cooperative_groups/reduce.h' file not found
+kernels_mcmc_hip.cuh:127:28: error: use of undeclared identifier 'hiprand_Philox4x32_10'
+```
+1. `65124e2` (CUDA 13 fix) replaced `cub::BlockReduce` with `cg::reduce(warp, v, cg::greater<uint>())` and `#include <cooperative_groups/reduce.h>`. hipify has no mapping for any `cooperative_groups/*` header. HIP declares `cg::reduce` in `<hip/cooperative_groups/hip_reduce.h>` (not pulled in by `hip_cooperative_groups.h`); `cg::greater` is in the main header. Fix: include swap under `#if defined(__HIP_PLATFORM_AMD__) || defined(USE_ROCM)` (same guard as buffer_utils.h/helper_math.h).
+2. `d7fae87` (fused MCMC noise) calls `curand_Philox4x32_10` from `<curand_philox4x32_x.h>`; hipify renames it to `hiprand_Philox4x32_10`, which exists nowhere in hipRAND/rocRAND (rocRAND's `ten_rounds` is `protected` in `rocrand_device::philox4x32_10_engine`). Fix: ROCm-only definition of `curand_Philox4x32_10` (ten Random123 rounds, M 0xD2511F53/0xCD9E8D57, W 0x9E3779B9/0xBB67AE85); CUDA keeps the header include. Same name so hipify renames definition and call identically. `at::CUDAGeneratorImpl::philox_engine_inputs` in densification_api.cu compiled unchanged on ROCm.
+
+### Wave64 audit of the new warp code (no change needed)
+
+Every new ballot/mask/tile site: `pending_primitives = warp.ballot(...)` stored in `uint` + `__ffs` (blend kernels in forward/inference/pruning_scores, the warp-level culling of `3cb0b75`); the existing `compute_exact_n_touched_tiles` / `create_instances_cu` ballots with `__popc`/`__fns`; `cg::reduce` over the tile; `warp.meta_group_rank()` and `warp.sync()` in the warp-wide SH gradient store (`c83e7b8`); the `n_warps = block_size_blend / 32` shared array. All go through `cg::tiled_partition<32>`. In `amd_hip_cooperative_groups.h`, `thread_block_tile<32>::ballot` = `adjust_mask(build_mask(), __ballot_sync(build_mask(), pred))`; `build_mask` places the upper tile of a wave64 at bits 32..63 and `adjust_mask` compacts them to 0..31, so the 32-bit truncation is tile-relative and correct. `cg::reduce` uses `groupMask(tile)` -> `__reduce_max_sync(mask, v)`, also tile-scoped. The new 192-thread blend block (tile 16x12, subtiles 8x4) is 3 wave64s / 6 tiles; the backward preprocess exit `if (thread_idx - lane_idx >= n_primitives) return;` is tile-uniform, so `warp.sync()` sees whole tiles. Dynamic LDS for the SH store is 128*15*12 = 23 KiB. Grad buffers moved to `torch::empty`; the kernel zero-fills invisible primitives and inactive SH bases with no early return in between (checked: n=37 sh=1 grad_shrest is exactly 0, as on the old build).
+
+### Build (gfx942)
+
+The image venv is shared by every job on the host, so build in place rather than installing:
+```bash
+export PYTORCH_ROCM_ARCH=gfx942 MAX_JOBS=32
+git -C projects/faster-gaussian-splatting/src/FasterGSCudaBackend clean -xdfq
+utils/timeit.sh faster-gaussian-splatting compile -- bash -c "cd $PWD/projects/faster-gaussian-splatting/src/FasterGSCudaBackend && python setup.py build_ext --inplace"
+```
+PASS, 36 s. `llvm-objdump --offloading` (from `_rocm_sdk_core/lib/llvm/bin`): 7 bundles, all `hip-amdgcn-amd-amdhsa--gfx942`. Only pre-existing warnings (`nodiscard` hipError_t, `-Wnan-infinity-disabled` from torch headers). The pre-merge head `b0d21d5` was built the same way in a `git worktree` under `agent_space/fgs_old` as the numerical baseline.
+
+### GPU tests (upstream ships none; scripts in `projects/faster-gaussian-splatting/gpu_tests/`)
+
+All under `ulimit -c 0`, `HIP_VISIBLE_DEVICES=3`, with `B=<path>/FasterGSCudaBackend` and `OLD_B` the baseline build:
+```bash
+python gpu_tests/run_outputs.py $OLD_B old.pt; python gpu_tests/run_outputs.py $B new.pt; python gpu_tests/run_outputs.py $B new2.pt
+python gpu_tests/compare.py old.pt new.pt; python gpu_tests/compare.py new.pt new2.pt
+python gpu_tests/new_checks.py $B     # 31/31 PASS
+python gpu_tests/train_check.py $B    # 3/3 PASS
+python gpu_tests/det.py $B            # 0 diff on 200k/100k/50k scenes
+```
+- **Old (b0d21d5) vs merged head**, 7 scenes x 12 outputs (inference image, training image, 6 gradients, densification info, pruning scores, 3D filter + visibility). Scenes: 37/1000/1001/5000/20000/20000-offscreen/200000 Gaussians at 256x256 .. 1920x1080, incl. 257x131 and 800x600 (not tile multiples), SH bases 1/4/9/16. Worst relative L2: inference/training image 1.44e-6, grad_means 1.12e-5, grad_scales 1.74e-5, grad_rotations 1.72e-5, grad_opacities 4.45e-6, grad_sh0/shrest 9.5e-6, densification grad-norm row 6.3e-6, pruning 1.3e-5 (exp -> exp2 and atomics; merged-head run-to-run noise is 3e-7..3e-6). 3D filter bit-equal. A wrong-half ballot on wave64 would be O(1) over half of every tile. The densification visibility-count row differs by exactly -1 on 10/221/195/809 primitives in four scenes, all with zero gradient in both builds: upstream's new screen-bounds clamp and 16 -> 12 tile height stop counting primitives that touch no pixel. Expected upstream behaviour.
+- **new_checks.py (31/31)**: Python Philox reference == Random123 KATs; device `add_noise` == Philox4x32-10 + Box-Muller reference to 8.65e-7 over 228 primitives (first/last 64 + stride), so the ROCm Philox is bit-exact; noise mean |.| < 0.005, std 0.998..1.003, max |corr| 4.3e-3 (n=100003); lanes 0-31 vs 32-63 std 0.9983/1.0021; offset advances between calls; reproducible under `torch.manual_seed`. For 4 scenes: inference == training forward (0 diff), training forward deterministic, the abs-grad (3-row) run leaves row 0 equal and grads within run-to-run noise (e.g. 200k: 5.45e-6 vs 3.28e-6), abs-grad row >= grad-norm row everywhere, all finite, foreground in all 6 subtile slots of the blend block (coverage 0.95..1.00).
+- **train_check.py (3/3)**: FusedAdam == torch.optim.Adam over 20 steps (3.1e-6); relocation_adjustment sane; 300-iteration fit with FusedAdam + add_noise + 3-row densification info: L1 0.1204 -> 0.0081.
+
+### Gotcha #9: tied depths make the forward pass nondeterministic (upstream, not ROCm)
+
+First runs of a 200k-Gaussian scene with `z = rand*6+2` gave run-to-run image diffs of 1.2e-4 on 2633 px, identically on the pre-merge build. Cause: `preprocess_cu` compacts visible primitives with `atomicAdd(n_visible_primitives, 1)` (kernels_forward.cuh:209) and the depth radix sort is keyed on `__float_as_uint(depth)` alone, so equal depths (about 1200 float32 collisions at 200k uniform samples) keep the atomic order. Same on CUDA. The scene generator now uses distinct depths; with that, 0 diff at 200k/100k/50k. Not a port issue; nothing to change.
+
+### Lessons promoted
+
+`cuda-to-rocm` skill, same branch: `references/strategy-b-torch.md` gains "Headers and functions hipify leaves broken" (the two gaps above), and `references/fault-classes.md` states that a `thread_block_tile<N>::ballot` result is tile-relative on HIP, so only a raw `__ballot` truncated to 32 bits is the fault.
+
+### State
+
+Records: `advance-head 7a49973`; linux-gfx942 `porting -> ported`. Every validated platform is now behind head and reads `revalidate`. The CUDA no-regression gate is owed at the new head (no nvcc on this host). The CUDA path changed only by moving `<curand_philox4x32_x.h>` into an `#else` branch and wrapping `<cooperative_groups/reduce.h>` in one. Fork review PR #2 reviewed b0d21d5 and predates this delta.
