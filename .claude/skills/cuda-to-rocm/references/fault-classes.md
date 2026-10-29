@@ -704,10 +704,11 @@ errors. Decode into staging with rows padded to 16 pixels and copy the visible r
 (LichtFeld-Studio)
 
 **Fall back to the CPU only for JPEGs rocJPEG cannot decode, and say so.** rocJPEG 1.10 on
-VCN decodes 8-bit baseline/extended Huffman JPEG, 1 or 3 components, 4:4:4/4:4:0/4:2:2/4:2:0,
-at least 64x64. Progressive, arithmetic-coded, CMYK and 4:1:1 streams fail
-`rocJpegStreamParse` with `BAD_JPEG` -- the same status a corrupt file gets -- and small
-images fail `rocJpegDecode` with `JPEG_NOT_SUPPORTED`. So classify from the JPEG frame header
+VCN decodes only 8-bit baseline (SOF0) JPEG, 1 or 3 components, 4:4:4/4:4:0/4:2:2/4:2:0,
+at least 64x64. Extended sequential (SOF1, which nvJPEG decodes), progressive,
+arithmetic-coded, CMYK and 4:1:1 streams fail `rocJpegStreamParse` with `BAD_JPEG` -- the
+same status a corrupt file gets -- and small images fail `rocJpegDecode` with
+`JPEG_NOT_SUPPORTED`. So classify from the JPEG frame header
 (SOFn marker, precision, component count, sampling factors) yourself, decode only those cases
 on the CPU with a warning naming the reason, and let every other failure (OOM, decoder
 creation, corrupt data) surface as an error. A catch-all fallback hides real failures behind
@@ -717,8 +718,13 @@ a silently slower path. (LichtFeld-Studio review)
 stream as SUCCESS (dimensions and all) and submits it; the engine hangs until the driver
 resets the `jpeg_dec` ring, and the process's GPU context is lost ("context is guilty of a
 hard recovery", then abort). One corrupt file in a dataset kills the app, where nvJPEG
-returns an error. Walk the markers on the host before calling rocJPEG -- a frame header,
-defined quantization tables, a well-formed scan header, scan data, an end-of-image marker --
-and treat a failure as a decode error. Never put such a stream in a test that can reach the
-hardware decoder. (LichtFeld-Studio; deferral `rocjpeg-no-scan-jpeg-hangs-vcn`)
+returns an error. Only the missing scan was measured to hang: a JPEG cut inside its scan
+(no end-of-image marker) decodes, with no reset, and one with no scan hangs. A scan header
+with no data was only parse-checked (SUCCESS). Walk the markers on the host before calling
+rocJPEG and require at least a scan with data; the port also requires a frame header,
+defined quantization tables, a well-formed scan header and an end-of-image marker, as a
+precaution against corrupt streams, and treats any failure as a decode error. Such a
+stream may appear only in a test of that host-side check, which is then the one barrier
+in front of the hardware: a regression in the check costs a ring reset, so run that test
+on a GPU no other job is using. (LichtFeld-Studio; deferral `rocjpeg-no-scan-jpeg-hangs-vcn`)
 
