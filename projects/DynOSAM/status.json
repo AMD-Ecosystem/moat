@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-07T17:05:58Z",
-  "updated_at": "2026-08-12T00:26:57Z",
+  "updated_at": "2026-10-29T18:06:43Z",
   "head_sha": null,
   "depends_on": [
     "opencv_contrib",
@@ -48,6 +48,11 @@
     "duplicate_effort": "none -- no AMD-Ecosystem/ROCm repo, all 33 upstream forks vanilla, no AMD mention in upstream docs",
     "viable": true,
     "summary": "ROS2 dynamic-object SLAM (BSD-3, 327 stars, active): its GPU-critical half is cv::cuda PyrLK/GoodFeatures, already ported and validated by our own opencv_contrib on gfx1100, and its own CUDA is one 327-line .cu; what decides it is whether we accept reimplementing its raw-TensorRT YOLOv8 inference on MIGraphX (no ONNX Runtime layer exists) inside a ROS2 + GTSAM + from-source-OpenCV stack.",
-    "at": "2026-08-12T00:26:46Z"
+    "at": "2026-08-12T00:26:46Z",
+    "decided": {
+      "choice": "fork",
+      "by": "jeffdaily",
+      "at": "2026-10-29T18:06:43Z"
+    }
   }
 }
