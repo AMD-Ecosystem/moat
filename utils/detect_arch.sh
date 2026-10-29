@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 # Detect this host's AMD GPU arch. Emits KEY=VALUE lines (GFX_ARCH, GFX_TRIPLE,
 # PLATFORM) to stdout for `eval`. Exits nonzero if no AMD GPU. Never hardcodes
 # the arch; arch varies per container/host.

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Enumerate what a port has to cover, and check that it all got accounted for.
 
 The recurring failure this exists to stop: a port that claimed success while
