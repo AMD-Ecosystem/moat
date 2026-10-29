@@ -560,3 +560,41 @@ foldseek and MMseqs2 now build their GPU prefilter for AMD GPUs with `-DENABLE_H
 
 Test plan: on an MI250X (gfx90a, ROCm 7.16), `foldmason search` with `--gpu 1` on the foldseek example set returned all 837 CPU hits with identical scores (plus 37 extra GPU prefilter hits). regression/run_regression.sh gives the same results as the current CPU build (run_easymsa and run_structuremsa already report LDDT 0.800894 against an expected 0.801621 on main).
 ====
+
+## Upstream HIP support validation on linux-gfx1100 (2026-10-29)
+
+jeff's request, same job as the linux-gfx90a section above, run on wave32. No MOAT state or fork branch was changed. Host: Radeon Pro W7800 (gfx1100, wave32), TheRock `rocm-sdk-devel` 10.1.0 (HIP 7.16.26385), gcc 13.3, CMake 3.31.6. Upstream: https://github.com/steineggerlab/foldmason `main` at `b4fa29907f8b5197212507968874bf04c94945cc` (2026-05-11). This agrees with the gfx90a findings and adds wave32 runtime evidence, a full `lib/foldseek` sync and a larger exact oracle.
+
+### Upstream as-is: no HIP (confirmed on this host)
+
+`cmake -DENABLE_HIP=1 -DCMAKE_HIP_ARCHITECTURES=gfx1100` warns "Manually-specified variables were not used by the project: ENABLE_HIP". The build is CPU-only (0 HIP objects, no libamdhip64). On that build `foldmason search exDB exDB_pad aln tmp --gpu 1` fails with `MMseqs2 was compiled without CUDA support / Error: Ungapped prefilter matching step died`. So an AMD user asking for the GPU gets a hard error, not a silent fallback.
+
+### Experiment: full `lib/foldseek` re-sync to foldseek master 463739e0 (scratch clone only)
+
+The gfx90a section re-synced only `lib/foldseek/lib/mmseqs`. Here all of `lib/foldseek` was replaced with `git archive` of foldseek 463739e0, to see what a normal upstream subtree update would hit:
+```
+git rm -rq lib/foldseek && mkdir lib/foldseek && git -C <foldseek> archive HEAD | tar -x -C lib/foldseek
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 -DENABLE_STRUCTTY=0 \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_PREFIX_PATH=$R
+```
+Two blockers, both foldmason-side merge work rather than HIP problems:
+1. Configure: `lib/foldseek/CMakeLists.txt:50: lib/structty is missing. Run: util/update_structty.sh`. foldseek checks `${CMAKE_SOURCE_DIR}/lib/structty`, which is foldmason's root when foldseek is vendored. foldseek should use `CMAKE_CURRENT_SOURCE_DIR` there (and for the gemmi include dir). Workaround: `-DENABLE_STRUCTTY=0`.
+2. Compile: `src/strucclustutils/structuremsa.cpp:1490: no matching function for call to 'LoLAlign::LoLAlign(unsigned int, bool)'`. foldseek's constructor is now `LoLAlign(unsigned int maxSeqLen, bool exact, int candidateSeeds, int refineSeeds)`. A scratch edit passing foldseek's defaults (`10, 3`, `LocalParameters.cpp:440-441`) builds. The real fix is foldmason's call, using whatever seed values the maintainers want.
+
+With those two, foldmason builds with HIP for gfx1100 and links libamdhip64. (The `MultimerCluster.cpp` `<iostream>` fix found on gfx90a is already in foldseek master, so a full sync does not need it.)
+
+### GPU tests on the synced scratch build (`ulimit -c 0`, `CUDA_VISIBLE_DEVICES=0`)
+
+- Bundled foldseek `example/`: GPU 874, CPU k-mer 837, all 837 common with 0 differences, 37 GPU-only. Identical to our port's gfx90a/gfx1100 numbers and to the gfx90a scratch run. Against `search --prefilter-mode 1` (CPU ungapped, same algorithm): byte-identical, 874 = 874 rows.
+- 284 SCOP domains (foldseek-regression `data/scop`): GPU 47729 rows, byte-identical to CPU ungapped (47729). Against CPU k-mer: 29137 common with 0 differences, 18592 GPU-only, 17 CPU-only.
+- Regression (`regression/run_regression.sh <foldmason> <scratch>`), pristine upstream build and synced HIP build side by side: identical, run_msa2lddt GOOD, run_easymsa BAD (expected 0.801621, actual 0.800894), run_structuremsa BAD. Same as gfx90a. The failures pre-date HIP and are on the CPU MSA path.
+
+### Gaps (wave32 additions to the gfx90a list)
+
+1. The missing feature is confirmed on wave32: upstream foldmason has no HIP path. Once synced, the GPU path is exact on gfx1100, so the RDNA item in the gfx90a gap 3 is answered for foldmason.
+2. A full `lib/foldseek` sync needs the `LoLAlign` constructor update in `structuremsa.cpp` and either `-DENABLE_STRUCTTY=0` or a foldseek-side `CMAKE_SOURCE_DIR` -> `CMAKE_CURRENT_SOURCE_DIR` fix. The mmseqs-only sync from the gfx90a section avoids both, but it leaves foldmason's foldseek API behind foldseek master.
+3. ProstT5 GPU: foldmason forces `ENABLE_PROSTT5` off unless the user asks. If enabled, the four foldseek blockers apply (see the foldseek notes, linux-gfx1100 section of this date).
+
+### Verdict
+
+Upstream foldmason has no HIP support. A subtree update, plus the two merge fixes above, gives an exact GPU path on wave32 and wave64. Our port's applied-delta approach is superseded by that sync.
