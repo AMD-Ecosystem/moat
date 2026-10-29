@@ -801,3 +801,80 @@ Draft 3, latent cleanup (only worth sending bundled with other HIP work):
 ====
 In `convert.cuh`, `ClampToInvalid::operator()(const unsigned int&)` selects `__vminu4` with `#ifdef __CUDA_ARCH__`. HIP device compilation does not define `__CUDA_ARCH__`, so on ROCm the device code takes the host fallback, which clamps each byte as `char` (signed on x86) instead of as an unsigned byte. Results are the same for byte values below 128, which covers every encoding makepaddedseqdb writes today, so nothing is broken; adding `|| defined(__HIP_DEVICE_COMPILE__)` with an unsigned per-byte min would keep the two backends identical if the encoding ever grows.
 ====
+## Upstream HIP support validation on linux-gfx1100 (2026-10-29)
+
+jeff's request: validate upstream's own ROCm/HIP support as if porting MMseqs2 ourselves, find every gap, and seed follow-up work from what this port learned. No MOAT state or fork branch was changed. Everything below is evidence only.
+
+### What was tested
+
+- Upstream: https://github.com/soedinglab/MMseqs2 `master` at `503743960fc57733a36951f5fa803cb3389af7e2` (2026-10-27). HIP support is c7eee558 "ROCm/HIP GPU support" (`ENABLE_HIP`, ROCm Dockerfiles, `test-gpu-rocm.yml`) plus the libmarv subtree merge f7f120ee of e067befb (libmarv split 1448d80e "Add ROCm/HIP support by mapping CUDA to HIP").
+- Host: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), `HIP_VISIBLE_DEVICES=0`.
+- Toolchain: TheRock pip SDK `rocm-sdk-devel` 10.1.0 (HIP runtime 7.16.26385, AMD clang 24.0.0git), gcc 13.3, CMake 3.31.6, Ninja. Upstream's CI and Dockerfiles use ROCm 7.2 apt packages; this is a newer toolchain than upstream tests.
+- Our port for comparison: AMD-Ecosystem/MMseqs2 `moat-port` at 75a9b029, scratch clone only.
+
+### Build (upstream's own recipe, from `.github/workflows/test-gpu-rocm.yml`)
+
+```
+R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+export ROCM_PATH=$R HIP_PATH=$R
+cmake -S MMseqs2 -B MMseqs2/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_PREFIX_PATH=$R
+utils/timeit.sh MMseqs2 upstream-hip-compile -- cmake --build MMseqs2/build -j32
+```
+
+PASS: clean build in 50 s, no errors, no source changes. A second build with `-DCMAKE_HIP_ARCHITECTURES=gfx11-generic` (the RDNA3 entry in upstream's `Dockerfile.GPU-debian-slim-rocm7` arch list) also builds in 71 s.
+
+### GPU tests
+
+All GPU runs under `ulimit -c 0`, `CUDA_VISIBLE_DEVICES=0`.
+
+1. Upstream regression suite, as upstream's ROCm CI runs it (`util/regression` submodule at 3a621dee):
+   ```
+   CUDA_VISIBLE_DEVICES=0 utils/timeit.sh MMseqs2 upstream-hip-regression -- \
+     MMseqs2/util/regression/run_regression.sh MMseqs2/build/src/mmseqs <scratch>
+   ```
+   43/43 GOOD, 0 failed, 229 s. The GPU tests SEARCH_GPU and SEARCH_GPU_SERVER both give ROC5 AUC 0.454819, an exact match to the expected value, so the gpuserver/IPC path also works on gfx1100.
+2. This port's own gate on bundled `examples/` (createdb DB.fasta, makepaddedseqdb, easy-search QUERY.fasta `--gpu 1` vs `--gpu 0`): GPU 14482 pairs, CPU 12901, common 12438, 0 pairs differ in bitscore or pident by >0.5. Every count is identical to this port's gfx90a/gfx1100/revalidation runs.
+3. A stronger oracle than the port used: compare the GPU against the CPU ungapped prefilter (`easy-search ... --prefilter-mode 1`, which runs the same algorithm on CPU). Result: GPU and CPU-ungapped m8 are byte-identical when sorted (14482 = 14482 rows). So the "2044 GPU-only / 463 CPU-only" pairs recorded in every earlier validation here come entirely from the prefilter-mode difference (k-mer vs ungapped), not from GPU numerics.
+4. Multi-tile kernels: QUERY.fasta has 16 queries longer than 1536 residues (max 4291), above the largest single-tile config. They give 243 common pairs with 0 mismatches. Queries of 769-1536 residues give 2381 common pairs with 0 mismatches.
+5. gfx11-generic binary: the same example search is byte-identical to the native gfx1100 build.
+
+### Fault-class comparison: our port vs upstream's HIP path
+
+| Our port's fix | Upstream's HIP | Verdict |
+|---|---|---|
+| DPX / SIMD-in-word intrinsics (`__vadd2`, `__viaddmax_*`, `__vibmax_*`, ...) emulated in `marv_simd_amd.cuh`, DPX TUs kept | DPX TUs (`*_instantiation_dpx*.cu`) are left out of the HIP build. The short2/int dispatch paths in `cudasw4.cuh` `throw std::runtime_error("short2 not supported"/"dpx not supported")` under HIP. Every AMD config table sets dpx=0. | Not needed. The DPX path can only be reached through a hand-written kernel-config file (the hook in `marv.cu:64` is commented out), and it fails loudly rather than silently. Our emulation was never runtime-exercised either (see Review 2026-06-04 item 1). |
+| cc 9.0 collision (gfx90a reads as Hopper, so DPX would be selected) pinned to the sm75 list | `#elif defined(__HIPCC__)` branch: cc 9.0 gets a gfx90a table, cc 9.4 a gfx942 table, anything else (gfx950 cc 9.5, every RDNA part) gets the gfx942 table. All are dpx=0. | Upstream handles it and has per-arch tuned tables. |
+| `__hmax2` emulated with scalar `__hmax` | `compatibility::hmax2` uses inline asm `v_pk_max_f16`; HIP 7.16 still has no `__hmax2` | Upstream works. Probe: the asm assembles for gfx90a, gfx942, gfx950, gfx1030, gfx1100, gfx1201 and gfx12-generic (on gfx12 the assembler accepts the old mnemonic). Minor: `asm volatile` blocks scheduling around it, and `__builtin_elementwise_max` on `_Float16x2` would avoid the asm. Performance only, not correctness. |
+| `cg::reduce` replaced with a tile butterfly (`marv_tile_reduce`) | `compatibility::group_reduce`, an `shfl_xor` butterfly over `group.size()` using 32-bit word relays for any T | Equivalent, and correct on wave32 and wave64 by construction. Validated on wave32 here. |
+| `__shfl_*_sync(0xFFFFFFFF)` routed to maskless shuffles; masks widened | The legacy non-PSSM kernels in `kernels.cuh` (the only full-warp mask users) and the `shfl_*_2xint16` helpers are `#ifndef __HIPCC__`. They have no callers anywhere in libmarv (grep for `call_GaplessFilter_row_wise*` and `call_GaplessFilter_float_many_pass` finds none outside kernels.cuh). | Upstream is better: it compiles dead code out instead of porting it. See the port defect below. |
+| `__CUDACC__`/`__NVCC__` guards widened to `\|\| __HIPCC__` | Same approach (hpc_helpers, convert.cuh, blosum.hpp) | Equivalent |
+| libmarv built SHARED for the `-fgpu-rdc` device link | Static `marv` with `HIP_SEPARABLE_COMPILATION ON` plus `POSITION_INDEPENDENT_CODE`, and CMake does the device link | Upstream works (verified). Ours is not needed. |
+| `cudaFuncSetAttribute(kernel, ...)` | `reinterpret_cast<const void*>(kernel)` at each call site | Equivalent |
+| `--gpu`/gpuserver honours `CUDA_VISIBLE_DEVICES` | `GPUSharedMemory::getShmHash` reads `HIP_VISIBLE_DEVICES` first, then `CUDA_VISIBLE_DEVICES`. The error text names `HIP_VISIBLE_DEVICES`. | Upstream is better |
+| Windows (libmarv DLL plus a Marv API harness on gfx1201/gfx1101; the `mmseqs` binary itself was never built on Windows) | None | Platform gap, low value: upstream's CUDA build has no native Windows support either. |
+
+### Gaps found
+
+1. Documentation lags the code (feature/platform gap, docs only). README.md:49 and :54 say "CDNA2 generation or newer ROCm-enabled GPUs are also supported", but upstream's ROCm container builds `gfx10-1-generic;gfx10-3-generic;gfx11-generic;gfx12-generic`, and this run shows RDNA3 wave32 passing the full regression including both GPU tests. Draft issue text (not posted):
+   > The README describes ROCm support as CDNA2 or newer, but the master-rocm7 container also ships RDNA code objects (gfx11-generic, gfx12-generic). On a Radeon Pro W7800 (gfx1100, wave32) with ROCm 10.1 / HIP 7.16, master 50374396 built with `-DENABLE_HIP=1 -DCMAKE_HIP_ARCHITECTURES=gfx1100` passes `util/regression/run_regression.sh` 43/43, including SEARCH_GPU and SEARCH_GPU_SERVER (ROC5 AUC 0.454819 exact), and GPU results are byte-identical to `--prefilter-mode 1` on CPU. Would you take a README change listing RDNA3 as supported?
+2. CUDA side effect of the HIP commit (defect, CUDA path, not HIP). `lib/libmarv/src/smithwaterman_kernel_config.cuh:345`: `getOptimalKernelConfigs_SW_default()` was changed from `getOptimalKernelConfigs_SW_sm89()` to `getOptimalKernelConfigs_SW_amd_gfx942()`. The CUDA ladder's `else` branch also calls `_default()`, so every NVIDIA card without its own table (sm86, sm87, sm100, sm110, ...) now gets the AMD gfx942 SW table. That table tops out at a 768 single-tile query length; sm89's goes to 1024. Results stay correct, but queries of 769-1024 move to the multi-tile path on those NVIDIA cards. The gapless `_default()` still returns sm89, so the change looks unintended. Draft fix: keep `_SW_default()` returning sm89 and add `_SW_amd_default()` returning gfx942 for the `__HIPCC__` branch, mirroring the gapless file. Not measured (no NVIDIA GPU here).
+3. Performance: upstream's tuned tables vs our sm75 pin. Clean single-job run of `mmseqs ungappedprefilter q1k t p --gpu 1 --max-seqs 1000 -e 10000` (first 1000 queries of the regression query.fasta against the padded targetannotation DB):
+   - upstream 50374396: 21.16 s and 21.12 s
+   - our port 75a9b029 (with the scratch `__syncwarp` fix below): 330.39 s and 330.38 s
+   - Output: `createtsv` of both prefilter DBs is byte-identical when sorted (1,000,000 rows).
+
+   Upstream's HIP path is 15.6x faster on gfx1100 with identical results. Our port's sm75 pin has tile sizes similar to upstream's AMD tables, so the gap is probably not the table alone (candidates: `hardcodedzero` vs `kernelparamzero` approach, the scalar `__hmax2` emulation, the maskless-shuffle redirect). It was not root-caused because the port is being retired. It settles which implementation should carry forward. (An earlier full-query-set timing ran while other CPU jobs were active and is discarded.)
+4. Not testable: the full arch list in upstream's Dockerfile (gfx90a/gfx942/gfx9-generic/gfx9-4-generic/gfx10-*) needs other hardware. Only gfx1100 and gfx11-generic were run here.
+
+### Our port vs upstream: defect in our port
+
+`moat-port` 75a9b029 no longer builds on HIP 7.16 (Linux). `cuda_to_hip.h` defines `HIP_DISABLE_WARP_SYNC_BUILTINS` for HIP >= 7.14 (the Windows TheRock workaround re-keyed in 398b7c00). On Linux HIP 7.16 that also removes `__syncwarp`:
+```
+lib/libmarv/src/kernels.cuh:777:9: error: use of undeclared identifier '__syncwarp'; did you mean '__sync_swap'?
+```
+This is the same failure dbeac858 fixed for 7.2, now hit on 7.16. The version key was wrong. Upstream never reaches it because it compiles the legacy kernels out on HIP. To compare performance, a throwaway scratch-only edit (`#define __syncwarp(...) __builtin_amdgcn_wave_barrier()` under that guard) was applied and never committed or pushed. With the port being retired in favour of upstream, this is evidence for that decision, not work to do.
+
+### Verdict
+
+Upstream's HIP support is complete and correct for the MMseqs2 GPU surface on gfx1100 wave32: build, the full regression including the GPU and gpuserver tests, byte-identical GPU-vs-CPU-ungapped results, and multi-tile queries all pass. Nothing our port fixed is missing upstream, apart from the Windows libmarv DLL. Follow-up candidates: the README RDNA statement (1) and the CUDA SW default table regression (2).
