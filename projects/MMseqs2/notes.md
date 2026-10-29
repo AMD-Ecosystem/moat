@@ -878,3 +878,10 @@ This is the same failure dbeac858 fixed for 7.2, now hit on 7.16. The version ke
 ### Verdict
 
 Upstream's HIP support is complete and correct for the MMseqs2 GPU surface on gfx1100 wave32: build, the full regression including the GPU and gpuserver tests, byte-identical GPU-vs-CPU-ungapped results, and multi-tile queries all pass. Nothing our port fixed is missing upstream, apart from the Windows libmarv DLL. Follow-up candidates: the README RDNA statement (1) and the CUDA SW default table regression (2).
+
+### Cross-reference: linux-gfx90a and linux-gfx1100 sections (2026-10-29)
+
+The two runs agree on everything both covered. This gfx1100 run settles the gfx90a section's open items:
+- gfx90a gap 1 ("wave32/RDNA unvalidated, expect 14482/12901/12438/0"): validated. gfx1100 gives exactly 14482/12901/12438/0, regression 43/43 including SEARCH_GPU and SEARCH_GPU_SERVER, and the gfx11-generic binary is identical. The README PR can therefore name RDNA3 on runtime evidence. Combine gfx90a draft 2 (from-source ROCm build) with gap 1 of the gfx1100 section (the support statement) into one README PR.
+- Found only on gfx1100: the CUDA-side `getOptimalKernelConfigs_SW_default()` -> gfx942 table regression (gap 2) and the 15.6x speed advantage of upstream over our port (gap 3). Found only on gfx90a: the latent `ClampToInvalid` `__CUDA_ARCH__` divergence and the standalone `align` tool check.
+- Shared cosmetic item for any HIP PR here: `src/commons/Parameters.cpp:108` (`--gpu` help "Use GPU (CUDA) if possible") and `src/prefiltering/ungappedprefilter.cpp:740` ("MMseqs2 was compiled without CUDA support") still say CUDA in HIP builds.
