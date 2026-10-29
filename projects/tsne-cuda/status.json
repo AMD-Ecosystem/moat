@@ -2,12 +2,12 @@
   "schema_version": 3,
   "name": "tsne-cuda",
   "upstream_url": "https://github.com/CannyLab/tsne-cuda",
-  "fork_url": null,
+  "fork_url": "https://github.com/AMD-Ecosystem/tsne-cuda",
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-08-07T06:47:29Z",
-  "updated_at": "2026-08-07T06:50:42Z",
+  "updated_at": "2026-10-29T22:07:35Z",
   "head_sha": null,
   "depends_on": [
     "faiss"
@@ -28,6 +28,6 @@
       "at": "2026-08-07T15:27:20Z"
     }
   },
-  "stage": "awaiting-fork",
+  "stage": "screened",
   "platforms": {}
 }
