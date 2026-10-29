@@ -427,3 +427,30 @@ Delta classification: comment-only (source-class carry-forward). The single comm
 
 No functional code, no device code, no CMake logic, no source symbols changed. Compiled
 output is identical. Carry-forward applied: linux-gfx90a completed at 79f235c9.
+
+## PR-prep vocabulary cleanup 2026-10-29 (porter, linux-gfx942 host)
+
+Requested by jeff before the upstream PR is opened. No upstream drift: upstream master and fork master both at 25c8978 (unchanged since 2025-08-20), so no fast-forward and no upstream merge was needed.
+
+`python3 utils/jargon.py --port oneflow` at 2729bee5 reported 5 hits: commit 68718f038 title "(Strategy A)", its body ("MOAT CUDA-to-ROCm porting effort", "Lead platform gfx90a"), and two added comments.
+
+1. Comment commit d019f3551 "[ROCm] Reword two port comments in plain terms" on top of 2729bee5, pushed as a fast-forward:
+   - cmake/cuda.cmake:49 "Followers override only -DCMAKE_HIP_ARCHITECTURES." -> "Other GPUs change only -DCMAKE_HIP_ARCHITECTURES."
+   - oneflow/core/device/cuda_pseudo_half.h:26-27 "(the HIP-vector-type-provides-operators fault class)" -> "would redefine those operators and fail to compile". Line count unchanged.
+   - `python3 utils/moatlib.py classify oneflow 2729bee5 d019f355` -> `class=comment-only arch_independent=True inert=True`. `advance-head oneflow d019f3551` carried linux-gfx90a and linux-gfx1100 forward (source-class, comment-only).
+   - Build check on gfx942 (ROCm 10.1 from the rocm-sdk Python packages, clang 24): the changed header compiled as HIP for gfx942 at both 2729bee5 and d019f355 (`clang++ -x hip --offload-arch=gfx942 -std=c++17 -DWITH_CUDA -DUSE_HIP -DOF_GPU_WARP_SIZE=64 -include oneflow/core/device/cuda_to_hip.h -Ioneflow/core/device/hip_compat -I. -c t.hip` on a TU including cuda_pseudo_half.h, rc=0 both), and its preprocessed output (`-E -P`) is byte-identical (md5 312c1815... both). The edited cmake/cuda.cmake parsed in a full configure (printed `CMAKE_HIP_ARCHITECTURES: gfx942`, `OF_GPU_WARP_SIZE: 64`).
+   - Full build and GPU test suite on gfx942 NOT run: oneflow's configure (cmake/python.cmake install_py_dev_deps) installs dev-requirements.txt with `--user` into the configuring Python. That fails in this host's shared image venv ("Can not perform a '--user' install") and the fleet guard refuses changing the shared Python environment; no per-job venv was provisioned. The host also has no /opt/rocm (ROCm comes from the rocm-sdk packages), so cmake/util.cmake's hard-coded /opt/rocm/include (review follow-on 3) would need CPATH or a fix there. To get gfx942 evidence, dispatch with a per-job venv (`--build`). No linux-gfx942 validation was recorded.
+2. PR-prep squash be1ef73f1 "[ROCm] HIP backend for the CUDA GPU path": a single commit on master (25c8978) whose tree equals d019f3551's tree (e40faba8...). The message is 68718f038's with the in-house labels removed, the "Lead platform" Test Plan line replaced by the two validated GPUs, the removed gfx90a arch pin described as HIP arch auto-detect, and paragraphs unwrapped. jargon: clean.
+   - Why a force-push is needed: the vocabulary is in a commit message already on moat-port, which can only be removed by rewriting history. No upstream PR is open (`pr-state oneflow` -> none), so moat-port is not frozen and nothing upstream-visible changes. `squash-carry-forward` refuses anything but a tree-identical squash, so no unvalidated content enters.
+   - NOT DONE: the fleet guard on this host refused `git push --force-with-lease=moat-port:d019f35... origin moat-port` ("only a plain push is allowed"). `squash-carry-forward oneflow be1ef73f1` had already run locally (it carried gfx90a + gfx1100); since the fork never received be1ef73, status.json was restored to its committed version and `advance-head oneflow d019f3551` re-run, so the record's head is the published d019f3551 and its carry-forward provenance reads 2729bee5 -> d019f3551.
+   - The squash was pushed (plain push, new branch) to the fork as `moat-port-squash` = be1ef73f19357dba273e913f4a04038a5476b89d. It still contains 68718f038's full content; only the history differs. To finish, a person (or a job allowed to force-push) runs, after the reviewer passes d019f3551:
+     ```
+     git -C projects/oneflow/src fetch origin
+     test "$(git -C projects/oneflow/src rev-parse origin/moat-port-squash^{tree})" = "$(git -C projects/oneflow/src rev-parse origin/moat-port^{tree})"
+     git -C projects/oneflow/src push --force-with-lease=moat-port:d019f35519eeb6f071ea4a6883b5c8f7a9adaa67 origin origin/moat-port-squash:moat-port
+     python3 utils/moatlib.py squash-carry-forward oneflow be1ef73f19357dba273e913f4a04038a5476b89d
+     python3 utils/moatlib.py commit-project oneflow "oneflow: PR-prep squash be1ef73, tree-identical carry-forward"
+     git -C projects/oneflow/src push origin --delete moat-port-squash
+     ```
+     If moat-port moved after d019f3551, the squash is stale: rebuild it with `git commit-tree <new-tip>^{tree} -p master -F <message of be1ef73>`.
+   - Stage set to `ported` at d019f3551 (comment-only on top of the reviewed 2729bee5), so the reviewer runs next; validation already carries forward on both Linux gates.
