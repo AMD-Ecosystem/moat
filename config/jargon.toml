@@ -48,10 +48,13 @@
 'awaiting-(port|fork|upstream|lead)' = "describe the actual wait"
 'carry-forward|carried forward'      = "'still valid for'"
 "pr-ready"                 = "'ready to submit'"
-'fault class(es)?'         = "name the actual issue"
+'fault[- ]class(es)?'      = "name the actual issue"
 "completeness gate"        = "omit"
 "pending-approval"         = "omit -- describe the actual blocker if it is relevant"
 "osrb"                     = "omit -- internal review process"
+'projects/[\w.+-]+/notes\.md' = "omit -- upstream has no such file; state the reason inline"
+'\(\S+ lesson\)'          = "state the technical reason; upstream does not know the other project"
+'\b(first|later|next) slice\b' = "'not ported yet' or 'not part of this change'"
 
 # Contexts where a term is legitimate. A URL containing the org or repo name is not
 # jargon, it is an address.
