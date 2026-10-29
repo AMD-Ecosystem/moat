@@ -444,3 +444,96 @@ No gfx1101-specific issues: the width-32 logical-warp shuffles used in
 gemv and layernorm are correct on both wave32 (gfx1101) and wave64 (gfx90a).
 
 Verdict: PASS. State set to completed at f843012.
+
+## Porting round 2026-10-29 (linux-gfx90a): attention, W8A8 GEMM, legacy GEMM
+
+jeff asked for a full port: the three ROCm throwing stubs left at a2a710a are now real HIP paths.
+Fork `moat-port`: a2a710a -> 73edaef (attention) -> 7f0f35f (W8A8) -> 2c5d913 (legacy GEMM)
+-> 2869c53 (README ROCm note). Host: AMD Instinct MI250X (gfx90a, wave64), ROCm 7.16
+(TheRock SDK in the image venv), torch 2.16.0a0+git6c3af02, Python 3.11.
+
+### What changed
+1. `single_query_attention` (csrc/attention, FasterTransformer decoder masked MHA). Kernel ported,
+   not replaced: utils.h has a HIP branch for each of the 13 fp16 inline-PTX blocks
+   (`__builtin_bit_cast` uint32<->`__half2`, `__hadd2/__hmul2/__hfma2/__float22half2_rn/...`);
+   template.hpp routes every shuffle through `MMHA_SHFL_XOR/MMHA_SHFL` (width 32 on HIP, the original
+   `__shfl_*_sync` on CUDA), compiles out the unused `mma.sync` hmma_fp32 (it also had an upstream
+   missing-comma typo clang rejects), and `cvt.rni.sat.s8.f32` -> rintf+clamp. cuda_bf16_fallbacks.cuh
+   defines `make_bfloat162` / `__floats2bfloat162_rn` on HIP (absent from every hip_bf16.h checked,
+   incl. clr trunk). The .cu launcher checks dynamic+static LDS against
+   `hipDeviceAttributeMaxSharedMemoryPerBlock` and throws (RuntimeError in Python) past the limit.
+   setup.py/pybind: exclusion + stub removed; on Windows ft_attention.cpp goes through the same
+   `_winhip.cu` shim loop as pybind.cpp (shim comment updated to "each .cpp source").
+   The host-compiled ft_attention.cpp includes hip_bf16.h through g++ fine on ROCm 7.16; the old
+   note said it failed on 7.2.1 -- watch for that on the gfx1100 host (if it fails, route the .cpp
+   through hipcc like the Windows shim does).
+2. W8A8 GEMM (`w8a8_gemm_forward_cuda`, `_fuse_bias`): hipBLASLt int8 (COMPUTE_32I, scale HIP_R_32I,
+   TN: C^T[N,M] = W[N,K] x A^T), PyTorch's `getCurrentCUDABlasLtHandle()`,
+   `getCUDABlasLtWorkspace()/Size()`, current stream. No heuristic result or failed matmul -> tiled
+   SIMT int8 kernel. Epilogue kernel mirrors the CUDA op order. setup.py links `hipblaslt` on ROCm.
+3. Legacy `gemm_forward_cuda`: SIMT kernel (32x64 tile, 256 threads, BK=32) that dequantizes the
+   legacy layout into LDS with the CUDA expression `fp16(s*(q-z))`, fp32 accumulate, single pass
+   over K (no split-K buffer on HIP). Layout: kernel [OC, IC/8] int32 (nibble i of word j = ic 8j+i,
+   no interleave), zeros [OC, zeros_w] (8 groups/word), scales [OC, 8*zeros_w]. Not the
+   quantization_new interleaved layout, so gemm_simt.cuh is reused in approach only.
+4. README: AMD note under the kernel install step.
+
+### Upstream caller contracts found (CUDA behaves the same; not changed)
+- single_query_attention uses `q.stride(0)` as the batch stride of q, k AND v. With GQA/MQA and
+  batch > 1, separate contiguous k/v tensors (as tinychat llama passes) are read at the wrong
+  offset; views of one fused qkv buffer work. TinyChat runs max_batch_size=1.
+- With `length_per_sample`, LDS is sized from `timestep`, so callers must pass timestep >= max length.
+- LDS limit on 64 KiB parts: last timestep that fits = fp16 D=128: 10867; bf16 D=64: 10889 (the
+  next refuses); fp32 D=128: 16239. TinyChat's kv_max_seq_len is <= 8192, so it fits.
+
+### Build
+```
+cd projects/llm-awq/src/awq/kernels
+find csrc \( -name '*.hip' -o -name '*_hip.*' -o -name 'hip_bf16_*' \) ! -name 'cuda_to_hip*' -delete
+rm -rf build
+PYTORCH_ROCM_ARCH=gfx90a MAX_JOBS=32 python setup.py build_ext --inplace
+```
+(Dev loop forced torch's ninja backend through a wrapper: 44 s vs the serial distutils default.)
+Fat binary `PYTORCH_ROCM_ARCH="gfx90a;gfx1100;gfx1201"`: builds with 0 errors; llvm-objdump
+--offloading shows gfx90a, gfx1100, gfx1201 code objects.
+
+### Tests (scripts committed in projects/llm-awq/tests/; run with PYTHONPATH=<src>/awq/kernels)
+- `attn_test.py`: 443/443 PASS. Kernel vs PyTorch reference (same rotary, cache write, softmax):
+  fp16+bf16 x head dims {32,48,64,80,96,112,128,160,192,224,256} x heads {8/8, 32/8 GQA, 8/1 MQA}
+  x t {0,1,31,32,517,2048} (covers all three THREADS_PER_BLOCK=64/128/256 launch variants); fp32;
+  batch 2-4 (MHA, GQA/MQA via fused qkv views); GPT-J + NeoX rotary, base 5e5 scale 0.5, partial
+  rotary, length_per_sample, ALiBi, cache wrap (t >= L); long t up to the LDS edge, next refused.
+  Max out err fp16 <= 1e-2, bf16 <= 4e-2 (bf16 logits stored in bf16), fp32 <= 1.3e-5.
+- `tinychat_e2e.py <src>`: 4/4 PASS. tinychat/models/llama.py loaded directly, 4 layers, AWQ 4-bit
+  WQLinear projections, random weights; greedy decode via single_query_attention vs re-running the
+  full sequence through the non-fused (prefill) attention each step, teacher-forced. Max |dlogit|
+  <= 2.9e-3, cosine >= 0.999999, argmax 40/40, 40/40, 64/64, 40/40 (MHA 8/8 D128, GQA 16/4 D64,
+  GQA 8/2 D128, MQA 8/1 D80).
+- `w8a8_test.py`: 25/25 PASS vs exact int64 matmul + same epilogue; shapes 1x8x4 .. 512x4096x4096
+  incl. 3x13x7, 33x50x100, 65x72x37, 300x130x520; bias and no bias; side stream. Profiler: every
+  shape ran hipBLASLt `Cijk_Alik_Bljk_I8II_...` on gfx90a.
+- `w8a8_simt_test.py <w8a8_gemm_cuda.cu>`: 7/7 exact. Builds the SIMT fallback kernel text in /tmp
+  via load_inline (no checkout path) since gfx90a never reaches it.
+- `legacy_gemm_test.py`: 8/8 PASS vs PyTorch dequant+matmul and vs legacy gemv_forward_cuda; M 1..300,
+  OC 64..11008, IC 1024..4096, G 64/128; max err 3.9e-3 (fp16 output rounding).
+- `w4a16_test.py <src>`: 30/30 PASS, regression of the previously validated WQLinear GEMV/GEMM path
+  vs a fake-quant reference. Test gotcha: `WQLinear.from_linear` does not clamp q to [0,15]; a
+  weight that rounds to 16 wraps to 0 (sparse 16*scale errors). Snap weights to the grid first.
+- CUDA no-regression: no nvcc on this host. `cuda_view.py`-style check (drop `__HIP_PLATFORM_AMD__`
+  branches, diff vs upstream d6e797a): CUDA-visible text of the attention files differs only by the
+  MMHA_SHFL*/MMHA_SET_MAX_DYNAMIC_SMEM_SIZE macros, which expand to the original calls; w8a8 and
+  gemm_cuda_gen CUDA text identical. setup.py: `libraries=[]` on CUDA.
+
+### Not done / limits
+- Real TinyChat generation with a llama AWQ checkpoint and tokenizer was NOT run: this host has no
+  transformers / flash_attn / tokenizers / checkpoint, and the fleet guard blocks pip (even into a
+  private venv). The module-level e2e above stubs `transformers.LlamaRotaryEmbedding` (unused) and
+  `flash_attn_func` (exact SDPA). Needs a host with those installed: run tinychat/demo.py with a
+  small llama-family AWQ checkpoint and compare against `--quant False` / non-fused attention.
+- Still owed: wave32 (gfx1100) and Windows GPU runs of all six tests (fat-binary compile only here).
+  On Windows also confirm hipblaslt links from the TheRock SDK and the ft_attention shim builds.
+- Performance: W8A8 hipBLASLt path adds an int32 [M,N] temporary and a separate epilogue launch;
+  legacy GEMM and W4A16 GEMM are SIMT (MFMA deferred items stand).
+- Deferred registry: `llm-awq-ft-attention-hip` and `llm-awq-w8a8-mfma-gemm` set done (the latter
+  runs hipBLASLt's MFMA int8 kernels, MI32x32x1 in the kernel name). `llm-awq-mfma-w4a16-gemm` stays open.
+- `tests/cuda_view.py <file>` prints a source as the CUDA build sees it (HIP branches dropped).
