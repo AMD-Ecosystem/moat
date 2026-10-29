@@ -574,3 +574,55 @@ Title: Build ProstT5 with the HIP backend when ENABLE_HIP is set
 Test plan: build with `-DENABLE_HIP=1 -DCMAKE_HIP_ARCHITECTURES=gfx90a`, then compare `foldseek createdb <fasta> db --prostt5-model weights --gpu 1` against `--gpu 0` output.
 ====
 (Draft only: the change has not been written or run. It needs a porter round before anyone offers it.)
+
+## Upstream HIP support validation on linux-gfx1100 (2026-10-29)
+
+jeff's request: validate upstream's own ROCm/HIP support as if porting foldseek ourselves, find every gap, and seed follow-up work from what this port learned. No MOAT state or fork branch was changed. See also the MMseqs2 notes section of the same date: the GPU library is the same code.
+
+### What was tested
+
+- Upstream: https://github.com/steineggerlab/foldseek `master` at `463739e0014a1549a527de589102cde98f802f37` (2026-09-09). HIP arrives only through the `lib/mmseqs` subtree update 5b3bc29 (2026-08-20, MMseqs2 dfef51d74, which includes "Add HIP CI" and "Add ROCm to readme" on the MMseqs2 side). `lib/mmseqs/lib/libmarv` is byte-identical to MMseqs2 master 50374396's libmarv (`diff -rq` clean), so every libmarv finding in the MMseqs2 section applies here.
+- Host and toolchain as in the MMseqs2 section: Radeon Pro W7800 gfx1100 wave32, TheRock `rocm-sdk-devel` 10.1.0 (HIP 7.16.26385), gcc 13.3, CMake 3.31.6.
+
+### Build
+
+foldseek's top-level CMake has no HIP option of its own. `ENABLE_HIP` is a cache option of `lib/mmseqs` that it forwards to libmarv, so passing it at the top level works:
+```
+R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel; export ROCM_PATH=$R HIP_PATH=$R
+cmake -S foldseek -B foldseek/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_PREFIX_PATH=$R
+utils/timeit.sh foldseek upstream-hip-compile -- cmake --build foldseek/build -j24
+```
+PASS: clean build in 58 s. The `foldseek` binary carries gfx1100 code objects (`llvm-objdump --offloading`) and links `libamdhip64.so.7`.
+
+### GPU tests (`ulimit -c 0`, `CUDA_VISIBLE_DEVICES=0`)
+
+1. This port's gate (bundled `example/`, `createdb`, `makepaddedseqdb`, `search --gpu 1 -e 10` vs `--gpu 0`): GPU 872 pairs, CPU 834, common 834, 0 CPU-only, 38 GPU-only, 0 pairs differ in bitscore or pident. Identical to every gfx90a/gfx1100 validation of our port.
+2. Stronger oracle, larger set: the 284 SCOP domains from the foldseek-regression submodule (`regression/data/scop`). The GPU result against `search db db_pad --prefilter-mode 1` (CPU ungapped, same algorithm) is byte-identical when sorted (19440 = 19440 rows). Against the default k-mer CPU search: 16180 common, 0 differing, 3260 GPU-only, 0 CPU-only.
+3. foldseek's regression suite (`regression` submodule 4acf0dd5, `run_regression.sh build/src/foldseek <scratch>`): 18/19 GOOD. The one failure, `run_easy_search_prostt5`, is environmental: it downloads `prostt5-f16-gguf.tar.gz` from foldseek.steineggerlab.workers.dev, and from this host DNS resolves and TCP connects but no bytes arrive (curl and wget, IPv4 and IPv6). It was stopped after several minutes. The suite has no `--gpu` test at all, which is why item 2 was added.
+
+### Fault-class comparison with our port
+
+Every libmarv item is as recorded in the MMseqs2 section: DPX left out, not emulated; cc 9.0 collision handled by AMD config tables; `hmax2` via `v_pk_max_f16`; `cg::reduce` replaced by a butterfly; legacy full-warp kernels compiled out. foldseek-specific items:
+
+| Our port | Upstream | Verdict |
+|---|---|---|
+| `getPaddedQueryLength` kept at the literal `sizeof(char4)*32` (host/device format constant) | Unchanged literal 32, not `warpSize` | Same. Correct on wave32 (and on wave64 per our gfx90a runs). |
+| `USE_HIP` top-level option threaded to libmarv, deliberately not enabling ggml | `ENABLE_HIP` exists only inside `lib/mmseqs`. The top-level `ENABLE_CUDA` stays 0, so ProstT5 ggml stays CPU-only. | Same scope as ours. See gap 1. |
+| Windows libmarv DLL plus harness (gfx1201, gfx1101) | None | Platform gap, as for MMseqs2 |
+
+### Gaps found
+
+1. ProstT5 (`createdb --prostt5-model ... --gpu 1`) is still CUDA-only. This is a GPU module neither upstream's HIP nor our port covered, and it has four layered blockers, each confirmed here:
+   - a. `CMakeLists.txt:87-92` turns on `GGML_CUDA` only when `ENABLE_CUDA` is set. Nothing turns on `GGML_HIP`.
+   - b. `CMakeLists.txt` forces `GGML_STATIC ON`, and the vendored `lib/prostt5/ggml/src/ggml-hip/CMakeLists.txt:101` stops with `message(FATAL_ERROR "Static linking not supported for HIP/ROCm")` (configure with `-DENABLE_HIP=1 -DGGML_HIP=ON` fails there).
+   - c. With that guard removed in a scratch copy (reverted afterwards), the vendored ggml does not compile against ROCm 7 hipBLAS: `ggml-cuda.cu:1112:9: error: unknown type name 'hipblasDatatype_t'` (also at :1614, :1615, plus a `hipblasGemmEx` overload mismatch). `hipblasDatatype_t` was removed in hipBLAS 3; current ggml maps to `hipDataType`/`hipblasComputeType_t`. So the ggml snapshot itself needs updating.
+   - d. `src/strucclustutils/structcreatedb.cpp:556` keeps only devices whose name contains "CUDA". A HIP ggml names its devices from `GGML_CUDA_NAME`, which is "ROCm" (`lib/prostt5/ggml/include/ggml-cuda.h:11`). So even a working ggml-hip build would end in "No GPU devices found". Fix: also accept "ROCm" (or test the backend type instead of the name).
+
+   Not runtime-tested, because the weights are unreachable from this host (above). This is the largest real HIP gap in foldseek and a natural follow-up PR: (a) and (d) are small foldseek changes, while (b) and (c) need a ggml update or a shared-library ggml-hip.
+2. Build and docs surface. foldseek's README GPU text is NVIDIA-only ("requires an NVIDIA GPU of the Ampere generation or newer", `CUDA_VISIBLE_DEVICES`). There is no top-level `ENABLE_HIP`, no ROCm Dockerfile and no ROCm CI, while MMseqs2 has all three. Draft README addition (not posted): build with `cmake -DENABLE_HIP=1 -DCMAKE_HIP_ARCHITECTURES=<gfx>`; `--gpu 1` structure search works on ROCm (validated on gfx1100 with GPU output byte-identical to `--prefilter-mode 1`); ProstT5 GPU inference is CUDA-only for now.
+3. Windows: as for MMseqs2 (our port covered only the libmarv DLL).
+
+### Verdict
+
+Upstream's HIP support is complete and correct for foldseek's `--gpu` structure search on gfx1100, through the shared libmarv. The real gap is ProstT5 GPU inference (gap 1, four blockers), followed by docs, Dockerfile and CI parity with MMseqs2 (gap 2).
