@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T00:05:54Z",
-  "updated_at": "2026-08-09T00:28:51Z",
+  "updated_at": "2026-10-09T15:39:59Z",
   "head_sha": "3e750fac",
   "depends_on": [],
   "pr_url": "https://github.com/arbor-sim/arbor/pull/2512",
@@ -125,5 +125,6 @@
         "at": "2026-06-19T20:51:16Z"
       }
     }
-  }
+  },
+  "published_sha": "3e750fac69d5dc87585d3748c4375c442507eca5"
 }

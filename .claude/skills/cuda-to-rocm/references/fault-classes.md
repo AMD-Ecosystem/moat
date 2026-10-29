@@ -183,10 +183,80 @@ the existing queue mutex, draining on teardown too. Only the op that hands per-c
 allocations into a callback-retired queue trips this, which is why one gate hangs while
 everything else passes. (qrack: `_PopQueue` under `UniformlyControlledSingleBit`.)
 
+**An init-time kernel launched on the legacy null stream is NOT ordered against streams
+created `cudaStreamNonBlocking`/`hipStreamNonBlocking`.** A weight/constant upload helper
+that stages through a SHARED scratch buffer, launches an async conversion kernel on stream
+0, and returns without synchronizing is racing the first real evaluation, which overwrites
+the same scratch from a non-blocking compute stream. Only the LAST upload before the first
+evaluation is exposed, because each earlier one is flushed by the next helper call's
+synchronous H2D `hipMemcpy` into the same scratch -- so the corruption lands on whatever
+tensor the last-constructed layer uploaded last, and looks deceptively like "that one layer
+is numerically broken". Fingerprint: exactly one CONSTANT tensor wrong while every COMPUTED
+tensor around it matches a CPU reference to ~1e-7, the wrong values being
+plausible-magnitude foreign floats, and the bug VANISHING the moment you add a debug
+readback (whose `hipDeviceSynchronize` supplies the missing ordering). Windows loses this
+race deterministically -- its KMD batches/defers submission -- where Linux HIP and CUDA
+land the tiny copy immediately and win it, so it presents as an OS-specific defect and
+invites a toolchain hunt. It is latent UB on CUDA too, so fix it unconditionally, never behind a
+platform guard -- but fix it at the BOUNDARY, not in the helper you caught it in. Such a
+codebase usually has several upload paths sharing the shape (lc0 has six: `allocAndUpload`
+plus five `LoadWeights`/positional-encoding variants), and whichever one happens to run
+last depends on the network shape and the precision, so synchronizing the single helper
+your reproducer exercised leaves the same bug live for another input. Construction is
+single-threaded and every upload is null-stream ordered against every other, so ONE
+device-wide synchronize at the end of construction covers all of them in the same one
+line. Put it after the LAST null-stream operation, not merely after the uploads: an async
+`hipMemset` that zeroes the evaluation's own buffers is the same race, so a sync placed
+before that allocation loop leaves it open. (lc0: `allocAndUpload` in
+`neural/backends/cuda/layers.cc` corrupting the value head's `ip2_val_b_`; the same 4.4e-02
+value error on gfx1101, gfx1151 and gfx1201 under Windows and absent on linux-gfx90a and
+linux-gfx1100, which had been misread as a rocBLAS/Tensile problem for two months. The
+first fix synchronized `allocAndUpload` alone; on a net WITH a moves-left head the last
+fp16 upload is `FCLayer<half>::LoadWeights` instead, which still corrupted the moves-left
+head while the value/policy gate passed 34/34. Upstream's own fix, lc0 #2454, is the
+reference shape: one `cudaDeviceSynchronize()` after the `tensor_mem_` malloc/memset loop.)
+
 **`hipFree` is synchronizing** (`hipFreeAsync` is not), so an explicit
 `hipDeviceSynchronize()` before it is redundant. (anari-visionaray)
 
 ## Textures
+
+**gfx94x+ (CDNA3 and newer: MI300-class) disables the HIP image/texture object API at COMPILE
+TIME, not just at runtime.** ROCm's own headers define it out:
+`hip/amd_detail/amd_device_functions.h` has
+`#if !defined(__HIP_NO_IMAGE_SUPPORT) && defined(__gfx94plus_clr__) #define
+__HIP_NO_IMAGE_SUPPORT 1 #endif`, which marks every `tex1Dfetch<T>` overload in
+`texture_indirect_functions.h` `__attribute__((unavailable(...)))`. Any call is a hard
+compile error (`'tex1Dfetch<T, nullptr>' is unavailable: The image/texture API not supported
+on the device`), gated purely on `--offload-arch`, so the identical source compiles clean on
+gfx90a/gfx11xx/gfx12xx and fails ONLY on gfx942/gfx950 -- this surfaces as a validation
+failure on exactly one arch even though nothing about the build command differs (confirm the
+arch pin is correct before assuming a real regression; then check for `__gfx94plus_clr__` in
+the toolchain headers). A project doing a bare point-lookup through a texture object has a
+portable, unconditional fix, and the qualifying criterion is the ACCESS PATTERN, not the table
+size: point sampling only, no hardware filtering, no normalized coordinates, no address/border
+modes (arrayfire's FAST LUT is 64 KiB and still qualifies, so do not read "LUT" as "small").
+Replace `tex1Dfetch<T>(tex, n)` with a plain indexed read through a `const T*` and drop the
+`hipTextureObject_t` create/destroy. Apply it unconditionally rather than under an `#ifdef`:
+the results are bit-identical everywhere and one path is what gets tested. What that costs on
+the arches where textures do work is a THROUGHPUT question the compile does not answer (the
+texture path reads through the read-only cache), so if the tables are hot, time the affected
+tests before and after on a texture-capable arch instead of asserting the texture bought
+nothing. A project that genuinely needs
+hardware linear filtering has no CDNA3 hardware path at all and needs the software-lerp
+fallback below unconditionally on gfx94x+. (arrayfire: `fast.cu`/`orb.cu`/`regions.cu` FAST/
+ORB/connected-components kernels, all plain LUT point-lookups with no filtering, on MI300X.)
+
+Two things make that replacement cheap to get right. A pre-existing non-texture path for a
+type textures cannot carry (CUDA has no `double` texture, so such kernels usually already
+have a `double` specialization reading the pointer directly) is proof the algorithm is
+correct without the texture, and it is the specialization to fold the generic case into
+rather than to keep. And an RAII texture holder normally owns a copy of the source array
+purely to hold its refcount for the kernel's lifetime: keep that member, drop only the
+handle, so the holder's shape and its call sites are unchanged. Afterwards, grep the
+project's compat header -- removing the last texture user typically orphans a whole block of
+`cudaTextureObject_t`/`cudaResourceDesc`/channel-format aliases that should go in the same
+change. (arrayfire.)
 
 **Texture pitch alignment is 256 bytes on AMD against 32 on NVIDIA**, and it bites in two
 distinct ways.
@@ -321,6 +391,67 @@ per-kernel profiling path inert and let the timer fall back to `hipEvent` wall-c
 than substituting something. ck_tile's fused MHA ships headers but no prebuilt instance
 library in `/opt/rocm/lib`, so `fmha_fwd` is declared-only and using it means vendoring CK's
 codegen. (cuSZ, lc0)
+
+**A ROCm-only branch inside a shared template still COMPILES on the CUDA path.** Gating the
+divergence on a `static constexpr bool` predicate that is false on NVIDIA (`if(needsCast())`)
+keeps the branch from RUNNING there, but a plain `if` instantiates both arms in every
+instantiation, so an expression that is ill-formed for the CUDA element type breaks the
+NVIDIA build -- and nothing on ROCm notices, because there it is the branch that runs. Write
+such branches `if constexpr`: the discarded arm of a condition that is not value-dependent
+after instantiation is never instantiated, which is exactly the guarantee a
+platform-conditional block needs. The trap that found it: `(ScalarType)0` with
+`ScalarType = __half`. In a HOST translation unit, CUDA headers up to 12.1 keep `__half`'s
+integer converts behind `#if defined(__CUDACC__)`, so `int` converts to `float` and to
+`double` at equal rank and the cast is ambiguous ("call of overloaded `__half(int)` is
+ambiguous"). CUDA 12.2 relaxed that gate to `#if !defined(__CUDA_FP16_DISABLE_IMPLICIT_INTEGER_CONVERTS_FOR_HOST_COMPILERS__) || defined(__CUDACC__)`,
+so every release up to 12.1 is affected, plus any 12.2-or-newer build that defines the
+disable macro; a recent toolkit hides the bug unless the project opts out. Prefer a float
+literal (`0.f`) in half comparisons anywhere, and compile-check the CUDA path against 12.1
+headers or older, not only the newest toolkit installed -- bisected against the real
+headers, 12.1 fails and 12.2.53 onward compiles. (marian-dev)
+
+**A scalar's WIDTH follows the compute/scale type, not the matrix type.** When a ROCm
+library refuses the narrow compute type its CUDA counterpart accepted and you widen it to
+32F, the `alpha`/`beta` passed through a `const void*` must widen too. The library reads
+four bytes through that pointer; aiming it at a two-byte `half` scales by whatever adjacent
+bytes happen to be there -- large enough to give infinities in one call, near enough to zero
+to erase the product in the next, with no error status anywhere. Grep every call whose
+compute or scale type you changed for the scalars that go with it. (marian-dev: hipBLASLt
+rejects `HIPBLAS_COMPUTE_16F` and hipSPARSE rejects `HIP_R_16F` as an SpMM compute type;
+both call sites kept passing `half` scalars, and the hipBLASLt one survived review and three
+platform validations because the assertion that would have caught it was never reached.)
+
+**A zero workspace size does not mean "skip the operation".** Upstream code shaped like
+`if(bufferSize > 0) { alloc; call; free; }` is correct only where the vendor always wants
+scratch. cuSPARSE always does for `CUSPARSE_SPMM_CSR_ALG2`, so the shortcut is invisible on
+NVIDIA; hipSPARSE wants none at these shapes, reports zero, and the multiplication is never
+issued -- the output keeps whatever it held, which reads as wrong numbers rather than as an
+error. Make the call unconditional and only the allocation conditional. Suspect the pattern
+wherever a `*_bufferSize` query gates its own operation. (marian-dev)
+
+**A "find the best algorithm" call WRITES to the tensor named as its output.** MIOpen's
+`miopenFindConvolution{Forward,BackwardData,BackwardWeights}Algorithm` benchmark by running
+each candidate, so the destination argument is clobbered. cuDNN's fixed-algorithm enums need
+no such step, so a port that introduces one has nothing to inherit this from. Give each find
+a buffer that is about to be overwritten anyway: the forward find may take the real output,
+but the backward finds must NOT be handed the live input and weight tensors merely because
+the signature accepts them. Getting it wrong corrupts the model in place and presents as
+training diverging to NaN, not as a wrong kernel. Cache the choice per input shape -- a graph
+replays the same convolution once per batch. (marian-dev)
+
+**MIOpen honours only a unit alpha and a zero beta for 2D convolution, pooling and bias.**
+cuDNN's accumulate form (`beta = 1`, used by every backward pass that adds into an existing
+gradient) has to be rebuilt as an operation into a staging buffer followed by
+`miopenOpTensor(miopenTensorOpAdd, ...)`. MIOpen's pooling backward also reads the indices
+its forward pass recorded, so that workspace must outlive the forward call rather than being
+a local. (marian-dev)
+
+**hipSPARSE has no uniform half-precision SpMM.** Half operands are accepted only in the
+mixed-precision mode, which pairs half sparse and dense inputs with a FLOAT result matrix and
+float scalars; asking for a half result is `HIPSPARSE_STATUS_NOT_SUPPORTED` (and an all-half
+compute type is `INVALID_VALUE`). Compute into a float scratch and cast back. The supported
+combinations are tabulated in `rocsparse_spmm.h`, which is faster to read than to probe.
+(marian-dev)
 
 **Never name the pointee struct of an opaque CUDA handle.** `CUstream_st`/`CUevent_st` do
 not exist under HIP. Spell it `std::remove_pointer_t<cudaStream_t>` so it survives the
