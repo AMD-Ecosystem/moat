@@ -744,3 +744,50 @@ Verdict: binary-equiv carry-forward. State: completed at 8c0b54507b837eba2e186ed
 ## 2026-10-29: merge upstream main to run its new GPU tests
 
 Before opening the upstream PR jeff asked for upstream's new GPU tests to be run on AMD. Fork `main` fast-forwarded b5c8daa -> abcd1ab (upstream tip). `moat-port` merged upstream main (no rebase) at 939db79: brings #32 (normExp shared-memory reduction fix and odd-rollout handling, new cases in `tests/mppi_core/normexp_kernel_tests.cu`) and #34 (GPU DDP feedback accumulation fix, new `tests/feedback_controllers/ddp_test.cu` cases). merge-tree was clean; the only overlap with the port is `include/mppi/core/mppi_common.cu`, different hunks. Every platform owes revalidation at 939db79; run the full GPU test suite, including the new normexp and ddp cases.
+
+## Validation 2026-10-29 (linux-gfx90a revalidate at 939db79, full GPU)
+
+Platform: gfx90a (MI250X, wave64), HIP_VISIBLE_DEVICES=1. Toolchain this time is TheRock pip ROCm in the image venv (HIP 7.16.26385, AMD clang 24.0.0git), NOT /opt/rocm: `R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`. libyaml-cpp-dev installed via apt. Delta from the last validated head (cef61e5) is only the upstream merge (#32 normExp reduction fix + odd rollouts, #34 GPU DDP feedback fix; touches `mppi_common.cu`, `ddp.cu` and the two test files), so no carry-forward: full rebuild and full suite as jeff asked.
+
+### Build
+```
+git -C src submodule update --init   # FAILS, see "cnpy submodule" below
+git -C src/submodules/cnpy checkout -f 91c53bc
+cmake -S src -B build -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DROCM_PATH=$R \
+  -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j 32
+```
+157/157 targets, exit 0, 96 s.
+
+### New upstream GPU tests (run directly)
+- `tests/mppi_core/normexp_kernel_tests`: 10/10 PASS (was 7 cases; new: computeBaselineCostDeviceOddRollouts, computeNormalizerDeviceOddRollouts, comparisonTestHostvsDeviceBaselineNormalizerCalculation; also computeBaselineCostDevice, computeNormalizerDevice, fullGPUcomputeWeightsEveryIteration all OK).
+- `tests/feedback_controllers/ddp_tests`: 10/10 PASS (new: DeviceDDP.TwoControls, DeviceDDP.FourControls; plus ModelWrapper_Test x3, TrackingCosts_Test x3, DDPSolver_Test.Cartpole_Tracking, DDPSolver_Test.Quadrotor_Tracking).
+
+### Full ctest (`ctest -j1 --timeout 120 --output-on-failure`, 225 s)
+432/462 pass (94%); 30 failed; 8 not run (5 upstream-DISABLED: ColoredNoise.check* x4, MATH_UTILS.Matrix3fMultiplicationP2; 3 GTEST_SKIP: RacerSuspensionTest.CPUvsGPU, QuadrotorMapCost.checkHeadingCost, FNNHelperTest.TestComputeGradComputationCompare). Total rose from 457 (gfx1100, 427b693b) by exactly the 5 new upstream cases.
+Core GPU suites: RolloutKernel 9/9, RMPPI 26/26, NormExp 10/10, DeviceDDP 2/2, DDPSolver 2/2, WeightedReduction 3/4 (the known legacy reference-kernel case).
+
+The 30 failures are the same set as the gfx1100 baseline, every one a recorded pre-existing category, none in code the merge touched:
+- 8 ARStandardCost.* (5 SEGFAULT + 3 Failed): deferred texture linear-filter class.
+- 2 ARRobustCostTest.getCostmapCost*: deferred vehicle cost.
+- 1 ARNeuralNetDynamics.computeGradTest + 6 FNN/LSTM/LSTMLSTMHelperTest LoadModel*: npz loader `map::at`.
+- 2 Dynamics.stepGPU, DubinsDynamics.TestUpdateStateGPU: vendor-agnostic dim_x guard.
+- 1 RacerDubins.ComputeStateTrajectoryFiniteTest: uninitialized state_der slot (CPU-only test).
+- 1 WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic: legacy in-place RAW hazard in the test's reference kernel.
+- 1 cuFFT.checkErrorCode: hipFFT dereferences the garbage plan handle.
+- 6 GaussianTests.Check*: hipRAND != cuRAND, over-tight 0.1% CDF bound.
+- 1 Integration.RK4: 1.94e-4 vs 1e-6 abs bound (fma rounding).
+- 1 SamplingDistributionTests.CompareLikelihoodRatioCostsCPUvsGPU: 1-ulp class (diff 5.96e-8 = 2^-24 vs `fabsf(cost)*5e-5`). Which instance fails moves run to run (full run: NLN<3,3>; 3 reruns of the 13-instance group: Gaussian<4,3>, Gaussian<1,7>, Gaussian<4,3>; always exactly 1 of 13), matching the random-input tolerance class recorded on gfx1100/gfx1201.
+
+GPU verdict: PASS. The merged normExp and DDP fixes work on wave64.
+
+### CUDA no-regression gate
+cuda-not-validated: this host has no CUDA toolkit and no conda; the sandbox refused downloading Miniforge to create the cuda-12.8 env. Owed by the next Linux host at 939db79 (or its successor).
+
+### Finish checks (why this is validation-failed, not completed)
+- Jargon: `python3 utils/jargon.py --port MPPI-Generic` clean (after `git branch moat-port origin/moat-port` in the clone).
+- **Documentation missing**: README.md documents the CUDA build (Prerequisites "CUDA 10 or newer", "Building MPPI-Generic with tests" with `cmake -DMPPI_BUILD_TESTS=ON ..`) and has no ROCm/HIP text at all (`grep -i 'rocm\|hip' README.md` is empty). The `-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=...` build and its ROCm prerequisites (hipRAND, hipFFT) belong next to it (porter.md step 7).
+- **cnpy submodule pinned to an unpublished commit**: `submodules/cnpy` points at a5fc3a5526b5 (from c27e0bf, the Windows DLL-export change), which exists in no public repo (`.gitmodules` url ACDSLab/cnpy: "not our ref"; GitHub API: "No commit found"; there is no AMD-Ecosystem/cnpy). A fresh `git submodule update --init` fails, leaving `submodules/cnpy` empty, and configure then fails at `add_subdirectory(submodules/cnpy)` / `configure_package_config_file`. Every Linux validation since c27e0bf has silently worked around this with 91c53bc. Nobody cloning the PR can build it. Fix options for porter/jeff: publish the cnpy change somewhere the submodule URL can reach (a fork needs a person to create it), or restore the 91c53bc pin and carry the DLL exports another way.
+
+State: validation-failed at 939db796f3f0 (failed_sha). Back to the porter for the two items above; GPU evidence above stands for the merged code.
