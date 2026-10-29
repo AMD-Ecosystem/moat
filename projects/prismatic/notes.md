@@ -632,3 +632,65 @@ cuda-not-validated: no CUDA toolkit on this host (no `/opt/conda`, no nvcc), and
 ### Outcome
 
 **VALIDATED** on linux-gfx90a at 6b9b6005.
+## Validation 2026-10-29 (linux-gfx1100, 6b9b6005) - PASS
+
+Full real-GPU revalidation of the shadow-header commit (840f6f30 -> 6b9b6005), plus a binary-equivalence check against 840f6f30 as extra evidence. GPU: Radeon PRO W7900-class gfx1100 (wave32), `HIP_VISIBLE_DEVICES=2`, runs under `ulimit -c 0`. Toolchain: TheRock ROCm SDK 10.1.0 pip wheels (no `/opt/rocm` on this host); `R=$(rocm-sdk path --root)` = `.../site-packages/_rocm_sdk_devel`.
+
+### Build (both shas, same recipe)
+
+Deps via apt: `libhdf5-dev libfftw3-dev libboost-test-dev libboost-filesystem-dev libboost-system-dev` (Ubuntu 24.04, Boost 1.83). 6b9b6005 in `src/`, 840f6f30 in a worktree `src-old/`:
+
+```bash
+cmake -S $SRC -B $BUILD -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ \
+  -DPRISMATIC_ENABLE_GPU=ON -DPRISMATIC_ENABLE_CLI=ON -DPRISMATIC_TESTS=ON \
+  -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release \
+  -DHDF5_ROOT=/usr/lib/x86_64-linux-gnu/hdf5/serial -DHDF5_PREFER_PARALLEL=OFF
+cmake --build $BUILD -j16
+```
+
+Both shas compiled and linked `prismatic` and `prismatic-tests` (57/57 steps through the link). The last step, upstream's own `PrismaticTestSuite` custom target (`./prismatic-tests --log_level=all --run_test=NONE`, CMakeLists.txt, unchanged from upstream d155fb93), exits 200 on both shas: Boost 1.83 reports "no test cases matching filter" for `--run_test=NONE`. Pre-existing upstream build quirk with newer Boost, not a port issue; it runs after both executables are produced.
+
+### codeobj_diff 840f6f30 vs 6b9b6005: identical
+
+`utils/codeobj_diff.py` hardcodes `/opt/rocm` and needs `roc-obj-ls`, which TheRock's SDK does not ship. Ran it unmodified through a scratch wrapper that points `NM`/`OBJDUMP` at `$R/llvm/bin/` and `ROC_OBJ_LS` at a stand-in that walks the binary's uncompressed `__CLANG_OFFLOAD_BUNDLE__` headers and prints roc-obj-ls style `offset=/size=` lines (each binary carries two bundles, one gfx1100 code object each):
+
+```
+codeobj_diff build-old/prismatic       build-new/prismatic        -> verdict=identical (exported symbols + device ISA identical (0 exports))
+codeobj_diff build-old/prismatic-tests build-new/prismatic-tests  -> verdict=identical (exported symbols + device ISA identical (9 exports))
+```
+
+Controls: prismatic vs prismatic-tests -> `differ` (symbol step). The raw code-object bytes differ old vs new, but `.text` and `.rodata` are byte-identical in all four code objects (llvm-objcopy --only-section); the only ELF difference is the `__hip_cuid_<hash>` symbol, derived from the source path (`src-old/` vs `src/`, strtab one byte shorter). `moatlib.py classify` -> `class=mixed arch_independent=False`, as expected for include moves.
+
+### CLI: PASS (both algorithms)
+
+```bash
+$S/build-new/prismatic -i $S/SI100.XYZ -o /tmp/pr_ms.h5    -a m -g 1   # "Calculation complete.", rc=0
+$S/build-new/prismatic -i $S/SI100.XYZ -o /tmp/pr_prism.h5 -a p -g 1   # "PRISM Calculation complete.", rc=0
+```
+
+Both ran 3 GPU streams on GPU #0 (48.2 GB visible). Each output .h5 is 229544 bytes.
+
+### prismatic-tests: 44/46 cases, 235/239 assertions
+
+```bash
+cd $S/build-new && ./prismatic-tests --report_level=short   # rc=201
+```
+
+Failures:
+1. `potentialTests/PRISM01_integration` (2 assertions): known pre-existing CPU-only reference mismatch, 98731.75/1211818.88 and 98667.375/1211883.25 vs 0.001 (same ~8% as every platform).
+2. `ioTests/importSMatrix` (2 assertions: annular 1.16e-4, VD 1.66e-4 vs tol 1e-4; the CBED, S-matrix and DPC checks pass). This is the same FP32 overshoot windows-gfx1201 and windows-gfx1101 recorded at 8a46c7ca, seen here on Linux for the first time (the 2026-06-05 gfx1100 entry recorded only the CLI). It predates this commit: the 840f6f30 binary on the same GPU gives the same 44/46 and 235/239, with importSMatrix 1.08e-4 / 1.55e-4. It is also nondeterministic run to run: three solo reruns of the 6b9b6005 binary (`--run_test=ioTests/importSMatrix`) gave annular 1.17e-4 / 1.20e-4 / 1.07e-4 and VD 1.67e-4 / 1.73e-4 / 1.54e-4. With identical device ISA and identical results at both shas, the commit changes nothing. Another process was sharing GPU 2 (about 0.9 GB VRAM, high GFX activity) during the run.
+
+### CUDA gate: cuda-not-validated on this host
+
+No CUDA toolkit here (no conda, no nvcc). Creating a throwaway micromamba env was refused by this session's sandbox, so the compile-only CUDA gate is still owed at 6b9b6005 by a Linux host that has `/opt/conda/envs/cuda-12.8`. For context, the commit only touches the `USE_HIP` side: `hip_compat/` is added only inside `if(USE_HIP)`, and the 8 include-edit files went back to byte-identical with upstream. That is not a substitute for the gate.
+
+### Completion checks
+
+- `python3 utils/jargon.py --port prismatic` -> `jargon: clean` (after creating local `master`/`moat-port` refs in the clone).
+- Documentation: upstream documents no build in-repo (README points to prism-em.com; `docs/` holds only the command-line reference), so there is no in-repo CUDA build doc for a ROCm section to mirror. Same position the reviews accepted.
+- `git -C projects/prismatic/src status --porcelain`: only untracked `build-new/`.
+
+### Outcome
+
+**VALIDATED** on linux-gfx1100 at 6b9b6005 by a full real-GPU run (not a carry-forward). The device ISA is identical to 840f6f30. The test results match 840f6f30's on the same GPU.
