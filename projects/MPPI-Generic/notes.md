@@ -898,3 +898,63 @@ cuda-not-validated: this host has no CUDA toolkit (no /opt/conda, no /usr/local/
 - Integrity: `git -C src status --porcelain` shows only `?? build-hip/`; submodule clean at 91c53bc.
 
 State: completed at 11b61ab on linux-gfx1100.
+## Validation 2026-10-29 (linux-gfx90a revalidate at 11b61ab, full GPU) -- completed
+
+Platform: gfx90a (MI250X, wave64), HIP_VISIBLE_DEVICES=1. Toolchain: TheRock pip ROCm in the image venv (no /opt/rocm), AMD clang 24.0.0git, cmake 3.31.6, Ninja; `R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`. Fork sha 11b61ab3557126b2220f4de2163d9f317cf176e9 (moat-port tip). Delta from 939db79: cnpy gitlink back to 91c53bc, `WINDOWS_EXPORT_ALL_SYMBOLS` on cnpy under `if (USE_HIP AND WIN32)`, README ROCm section. Requested as a full run, and the role requires one for an arch returning from validation-failed.
+
+### Fresh clone exactly as a user would (F2 check)
+```
+git clone https://github.com/AMD-Ecosystem/MPPI-Generic src
+git -C src checkout moat-port                     # 11b61ab
+git -C src submodule update --init --recursive    # rc=0
+```
+`Submodule path 'submodules/cnpy': checked out '91c53bc597b93992b9c92cdd92e4e50083c644a9'`. No manual cnpy workaround. F2 resolved.
+
+### Build
+```
+cmake -S src -B src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DROCM_PATH=$R \
+  -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build src/build-hip -j 32
+```
+157/157 targets, 0 errors, 63 s.
+
+### README ROCm section (F1 check)
+README.md has "Building MPPI-Generic for AMD GPUs (ROCm)" next to the CUDA build instructions. Ran its command literally (Unix Makefiles, no compiler override): `cmake -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DMPPI_BUILD_TESTS=ON ..`. On this host it fails at `find_package(hiprand)` because the pip SDK is not on any default CMake prefix. That is a host artifact: the June gfx90a/gfx1100 runs on a standard /opt/rocm used no prefix. Adding only `-DCMAKE_PREFIX_PATH=$R` makes it configure (rc=0). The auto-detect path the README describes (no `CMAKE_HIP_ARCHITECTURES`, plus the prefix) configures with `HIP Architecture(s): gfx90a;gfx90a;gfx90a;gfx90a` (one entry per GPU on the host; the duplicates are harmless). `make normexp_kernel_tests` built and ran 10/10. F1 resolved.
+
+### New upstream GPU tests
+```
+./tests/mppi_core/normexp_kernel_tests      # 10/10 PASS
+./tests/feedback_controllers/ddp_tests      # 10/10 PASS
+```
+normexp: computeBaselineCost, computeNormalizer, computeNormalizerDevice, computeBaselineCostDevice, computeBaselineCostDeviceOddRollouts, computeNormalizerDeviceOddRollouts, fullGPUcomputeWeightsEveryIteration, computeExpNorm, comparisonTestAutorallyMPPI_Generic, comparisonTestHostvsDeviceBaselineNormalizerCalculation, all OK.
+ddp: ModelWrapper_Test x3, TrackingCosts_Test x3, DDPSolver_Test.Cartpole_Tracking, DDPSolver_Test.Quadrotor_Tracking, DeviceDDP.TwoControls, DeviceDDP.FourControls, all OK.
+
+### Full ctest (`ctest --test-dir src/build-hip -j1 --timeout 120 --output-on-failure`, 221 s)
+431/462 pass, 31 fail, 8 not run (5 upstream-DISABLED: ColoredNoise.check* x4, MATH_UTILS.Matrix3fMultiplicationP2; 3 GTEST_SKIP: RacerSuspensionTest.CPUvsGPU, QuadrotorMapCost.checkHeadingCost, FNNHelperTest.TestComputeGradComputationCompare).
+
+30 of the 31 are the exact set recorded at 939db79 on this arch, all pre-existing categories:
+- 8 ARStandardCost.* (5 SEGFAULT + 3 Failed): deferred texture linear-filter class.
+- 2 ARRobustCostTest.getCostmapCostSpeed{Map,NoMap}Test: deferred vehicle cost.
+- 1 ARNeuralNetDynamics.computeGradTest + 6 loader cases (FNNHelperTest.LoadModelNPZTestNested, LSTMHelperTest.LoadModelPathTest/LoadModelPathInitTest/LoadModelNPZTest, LSTMLSTMHelperTest.LoadModelPathTest/LoadModelPathTestLongBuffer): npz loader `map::at`.
+- Dynamics.stepGPU, DubinsDynamics.TestUpdateStateGPU: dim_x guard.
+- RacerDubins.ComputeStateTrajectoryFiniteTest: uninitialized state_der slot (CPU-only).
+- WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic: RAW hazard in the test's reference kernel.
+- cuFFT.checkErrorCode: hipFFT dereferences the garbage plan handle.
+- 6 GaussianTests.Check*: hipRAND != cuRAND, over-tight CDF bound.
+- Integration.RK4: fma rounding vs 1e-6 abs bound.
+- SamplingDistributionTests.CompareLikelihoodRatioCostsCPUvsGPU<GaussianDistribution<1,7>>: relative-bound 1-ulp class.
+
+The 31st, CudaFloatStructsTests/0.VecAddVecMultScalar (float2): `(84006016, 12140199) != (84006008, 12140200)` with 1 block of 1 thread. That is 1 ulp (ulp = 8 at 8.4e7, 1 at 1.2e7) under an exact `==` assert, on inputs drawn from a `std::random_device`-seeded mt19937. It is the FMA-contraction case recorded on gfx1100 2026-05-30 and noted as intermittent on 2026-06-07. Rerun as its own process 8x: 8/8 pass (all three float2/3/4 instances). The delta touches no test, kernel, or header, so this is not a regression.
+
+GPU verdict: PASS. Same failure set as 939db79 apart from one known intermittent rounding case; the merged normExp and DDP fixes pass on wave64.
+
+### CUDA no-regression gate
+cuda-not-validated: this host has no CUDA toolkit, no conda and no /usr/local/cuda. The previous session on this host was refused when it tried to download Miniforge, so this run did not try again. The 11b61ab delta adds no CUDA-visible code (the CMake hunk is `USE_HIP AND WIN32` only, and 91c53bc is upstream's own cnpy pin), but the gate is still owed once at 11b61ab by a host with the toolkit.
+
+### Finish checks
+- Jargon: `python3 utils/jargon.py --port MPPI-Generic` -> clean.
+- Documentation: present (see F1 above).
+- Integrity: `git -C src status --porcelain` shows only `?? build-hip/`; cnpy submodule clean.
+
+State: completed at 11b61ab3557126b2220f4de2163d9f317cf176e9.
