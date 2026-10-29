@@ -7,17 +7,14 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-08T13:34:13Z",
-  "updated_at": "2026-10-29T23:28:21Z",
-  "head_sha": "2869c53607740ed0f9f02fb3502a22517e5a4367",
+  "updated_at": "2026-10-29T23:45:52Z",
+  "head_sha": "8f142865166c979de4b69ea10e0916df397d4b42",
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx90a",
-    "since": "2026-10-29T23:28:21Z"
-  },
+  "porting": null,
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 647984858,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -26,7 +23,7 @@
       "validated_sha": "a2a710a023f21d2b1ecbc157218f97d1f4001e58",
       "started_at": "2026-06-11T03:18:40Z",
       "completed_at": "2026-06-11T21:28:59Z",
-      "updated_at": "2026-10-29T23:28:21Z",
+      "updated_at": "2026-10-29T23:45:52Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -114,8 +111,8 @@
   },
   "review_pr": "https://github.com/AMD-Ecosystem/llm-awq/pull/1",
   "porting_released": {
-    "arch": "linux-gfx1100",
-    "since": "2026-10-29T23:18:59Z",
-    "at": "2026-10-29T23:25:11Z"
+    "arch": "linux-gfx90a",
+    "since": "2026-10-29T23:28:21Z",
+    "at": "2026-10-29T23:45:52Z"
   }
 }

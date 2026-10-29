@@ -50,8 +50,11 @@ Validated on linux-gfx90a (AMD Instinct MI250X, ROCm 7.2.1) at fork HEAD
   vector overloads; the read-only hint is advisory.
 setup.py: on ROCm drops the NVIDIA-only nvcc flags (`--use_fast_math`,
 `--threads`, `--expt-*`), adds `-ffast-math`, mirrors CUDA's
-`-U__CUDA_NO_HALF_*` with `-U__HIP_NO_HALF_*`, and filters the attention
-sources (sets `-DAWQ_DISABLE_ATTENTION`).
+`-U__CUDA_NO_HALF_*` with `-U__HIP_NO_HALF_*`, links `hipblaslt`, and (since
+a9998ae, on Linux and Windows) copies every .cpp source to a transient
+`*_cpp_shim.cu` so hipcc compiles it; no .cpp reaches g++/MSVC on ROCm.
+(Before a9998ae the shim was `*_winhip.cu`, Windows only; older records below
+use that name.)
 
 ## Build (repeatable)
 ROCm PyTorch env required (`torch.version.hip` set). On this host:
@@ -238,7 +241,7 @@ Verdict: PASS. State set to completed at f843012.
 
 ## Validation 2026-06-12 (linux-gfx1100)
 
-Platform: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave64), ROCm 7.2.1 / torch 2.13.0a0+gitb5e90ff. Fork HEAD f843012.
+Platform: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), ROCm 7.2.1 / torch 2.13.0a0+gitb5e90ff. Fork HEAD f843012.
 
 Build: cleaned stale hipified files, built from source for gfx1100 only:
 ```
@@ -549,3 +552,30 @@ Findings:
 2. Linux ROCm host compile of `ft_attention.cpp` is unverified on older ROCm (lower confidence, needs evidence). The a2a710a record above says the attention sources were excluded because `amd_hip_bf16.h` failed to parse in the g++-compiled host .cpp on ROCm 7.2.1; this round re-adds the file on Linux with g++ (`awq/kernels/setup.py:80-97` shims only on win32) and has been built only against ROCm 7.16 (this host is 7.16 as well, so it adds no evidence). If 7.2.x still fails, the whole extension stops building there. Either build HEAD once against a ROCm 7.2.x torch, or route `csrc/attention/ft_attention.cpp` through hipcc on Linux too (the same `_winhip.cu` shim, not gated on win32), and record the minimum ROCm.
 3. Lesson not promoted. `.claude/skills/cuda-to-rocm` is unchanged on port/llm-awq. That HIP's bf16 header has no `make_bfloat162` / `__floats2bfloat162_rn` (confirmed absent in the ROCm 7.16 SDK `amd_hip_bf16.h`; only `__float22bfloat162_rn` exists) hits every FasterTransformer-derived kernel, and the torch >= 2.9 limit of `getCUDABlasLtWorkspace*` (finding 1) hits any extension that calls hipBLASLt directly. Add both to `references/fault-classes.md` (library/header gaps), naming llm-awq.
 4. Upstream-visible text and records. (a) Commit 73edaef says the TinyChat logits "agree to <= 2.7e-3"; the recorded run above says max |dlogit| <= 2.9e-3. Reconcile at PR-prep squash. (b) a2a710a removed a trailing space from the CUDA-only signature line of `gemm_forward_4bit_cuda_m128n64k32` (`awq/kernels/csrc/quantization/gemm_cuda_gen.cu:38`); restore the upstream line so the CUDA path is byte-identical. (c) The "Validation 2026-06-12 (linux-gfx1100)" header above calls gfx1100 "RDNA3, wave64"; gfx1100 is wave32. Correct the record so nobody reads it as wave64 evidence.
+
+## Porting round 2026-10-29 (linux-gfx90a): review fixes
+
+Answers "Review 2026-10-29 (linux-gfx1100)". Fork `moat-port`: 2869c53 -> dac7721 -> a9998ae -> 8f14286. Host: AMD Instinct MI250X (gfx90a, wave64), ROCm 7.16 (TheRock SDK), torch 2.16.0a0+git6c3af02, Python 3.11. The review was recorded only here; the fork review PR (#1) has no review threads, so there is nothing to reply to on it.
+
+1. dac7721: the hipBLASLt workspace no longer comes from `at::cuda::getCUDABlasLtWorkspace*` (torch >= 2.9). The preference caps the workspace at 32 MiB; after the heuristic, `heuristic.workspaceSize` bytes are allocated as `at::empty({n}, _in_feats.options().dtype(at::kByte))` on the current stream (caching allocator, stream-ordered) and nullptr/0 is passed when the solution needs none. Cached handle (`getCurrentCUDABlasLtHandle()`, declared at v2.3.0 and v2.8.0 in `CUDAContextLight.h` under `ROCM_VERSION >= 50700`) and current stream kept. No torch-version conditional; `grep getCUDABlasLt csrc` is empty. Not built against a torch < 2.9 wheel on this host (none installed, and the fleet guard blocks pip); the remaining at::cuda calls were checked against the v2.3.0 / v2.8.0 headers.
+2. a9998ae: setup.py copies every .cpp source (pybind.cpp and attention/ft_attention.cpp) to `<name>_cpp_shim.cu` on ROCm on every OS, so hipcc compiles them; the suffix was `_winhip.cu`, Windows only. `-fopenmp -lgomp` now apply only to CUDA (no ROCm source reaches g++). .gitignore pattern renamed. CUDA build unchanged. Build log: `ft_attention_cpp_shim.o` and `pybind_cpp_shim.o` built by hipcc, zero .cpp files compiled by g++. This removes the ROCm 7.2.x g++/`amd_hip_bf16.h` question rather than answering it; no ROCm 7.2.x build was run. Windows still owes a run (the shim name changed there too).
+3. Skill: `references/fault-classes.md`, "Headers, includes and build", two new entries naming llm-awq (missing `make_bfloat162` / `__floats2bfloat162_rn` in HIP bf16; torch `getCUDABlasLtWorkspace*` only from 2.9). Re-checked: `amd_hip_bf16.h` in clr trunk has 0 matches for either name and 1 for `__float22bfloat162_rn`.
+4. (b) 8f14286 restores the trailing space on the CUDA kernel signature line of `gemm_cuda_gen.cu` and removes a blank line after the HIP `#endif` that made the CUDA view one line longer. `tests/cuda_view.py` output of `gemm_cuda_gen.cu` and `w8a8_gemm_cuda.cu` is now byte-identical to d6e797a (`diff` empty). (c) The 2026-06-12 linux-gfx1100 header now says wave32. (a) PR-PREP SQUASH TODO: commit 73edaef says the TinyChat logits "agree to <= 2.7e-3"; the recorded runs give max |dlogit| <= 2.9e-3 (2.930e-03 again this round). Write 2.9e-3 in the squashed message. History not rewritten now.
+
+Build (wrapped with timeit, 10m15s serial distutils):
+```
+cd projects/llm-awq/src/awq/kernels
+find csrc \( -name '*.hip' -o -name '*_hip.*' -o -name 'hip_bf16_*' -o -name '*_cpp_shim.cu' \) ! -name 'cuda_to_hip*' -delete
+rm -rf build
+PYTORCH_ROCM_ARCH=gfx90a MAX_JOBS=32 python setup.py build_ext --inplace
+```
+
+Tests at 8f14286 (run from /tmp, `PYTHONPATH=<src>/awq/kernels`, scripts in projects/llm-awq/tests/), all PASS:
+- `attn_test.py`: 443/443 (LDS edge refusals as before: fp32 D=128 t=16240 needs 65552 > 65536 B).
+- `tinychat_e2e.py <src>`: 4/4, argmax 40/40, 40/40, 64/64, 40/40; max |dlogit| 2.930e-03, min cos 0.999999.
+- `w8a8_test.py`: 25/25, all 24 shape cases ran hipBLASLt (paths {'hipblaslt': 24}); the 25th is the side-stream ordering check, which also goes through the new workspace path. Whether any chosen solution asked for a nonzero workspace was not instrumented.
+- `w8a8_simt_test.py <w8a8_gemm_cuda.cu>`: 7/7 exact.
+- `legacy_gemm_test.py`: 8/8, max err vs dequant ref 3.9e-3.
+- `w4a16_test.py <src>`: 30/30.
+jargon.py --port llm-awq clean; prose.py clean on the three commit bodies; titles 59-66 chars.
+

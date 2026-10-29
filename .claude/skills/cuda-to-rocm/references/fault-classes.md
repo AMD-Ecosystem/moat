@@ -380,6 +380,25 @@ by Clang and GCC. Expect missing `typename`/`template` disambiguators, two-phase
 failures and narrowing conversions. Fixes are additive and arch-independent, so they help
 the CUDA build too and are not HIP-specific hacks. (Velvet)
 
+**HIP's bf16 header has no `make_bfloat162` and no `__floats2bfloat162_rn`.** `amd_hip_bf16.h`
+offers only `__float22bfloat162_rn` (from a `float2`); the two-scalar builders that
+FasterTransformer-derived kernels (masked MHA, `cuda_bf16_fallbacks.cuh`) call everywhere are
+absent from every ROCm release checked, through clr trunk. Define them under
+`__HIP_PLATFORM_AMD__` in the project's own bf16 fallback header (set `.x`/`.y`, and
+`__float22bfloat162_rn(make_float2(a, b))`), not in a force-included compat header where a
+later ROCm definition would collide in every TU. (llm-awq)
+
+**Torch API used by a ROCm-only branch is a version floor nobody sees.** A HIP branch compiles
+only against the ROCm PyTorch on the porting host, which is usually far newer than the
+project's pinned torch. `at::cuda::getCUDABlasLtWorkspace()` / `getCUDABlasLtWorkspaceSize()`
+exist only from PyTorch 2.9 (`getCurrentCUDABlasLtHandle()` goes back to 2.3), so an extension
+that calls hipBLASLt directly with them stops building on every older ROCm wheel -- and since
+it is one extension, the kernels that already worked go down with it. Allocate the workspace
+as a byte tensor on the current stream (`at::empty({n}, input.options().dtype(at::kByte))`,
+sized from the chosen heuristic's `workspaceSize`, none when that is zero). Check each
+`at::cuda::` call a HIP branch adds against the oldest torch tag the project supports
+(`git show v2.3.0:aten/src/ATen/cuda/CUDAContextLight.h`). (llm-awq)
+
 ## Types, dispatch and platform limits
 
 **Library swaps.** cuBLAS -> hipBLAS, cuFFT -> hipFFT, cuRAND -> hipRAND, cuSPARSE ->

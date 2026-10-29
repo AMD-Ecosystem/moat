@@ -46,3 +46,12 @@
 {"kind": "tokens", "ts": "2026-06-20T02:43:01Z", "tokens": 80669, "source": "validator (gfx1101)"}
 {"kind":"session","ts":"2026-10-29T23:18:59Z","epoch":1793315939.129307384,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-10-29T23:25:14Z","epoch":1793316314.593667527,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-29T23:28:24Z","epoch":1793316504.979791429,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-29T23:40:46Z","phase":"compile","seconds":615.056,"exit":0,"cmd":"bash -c cd projects/llm-awq/src/awq/kernels && PYTORCH_ROCM_ARCH=gfx90a MAX_JOBS=32 python setup.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-10-29T23:41:20Z","phase":"test","seconds":5.889,"exit":0,"cmd":"python /var/lib/jenkins/fleet/jobs/mi200-20261029-162614-llmawq-fix/moat/projects/llm-awq/tests/attn_test.py"}
+{"kind":"phase","ts":"2026-10-29T23:41:35Z","phase":"test","seconds":15.081,"exit":0,"cmd":"python /var/lib/jenkins/fleet/jobs/mi200-20261029-162614-llmawq-fix/moat/projects/llm-awq/tests/tinychat_e2e.py /var/lib/jenkins/fleet/jobs/mi200-20261029-162614-llmawq-fix/moat/projects/llm-awq/src"}
+{"kind":"phase","ts":"2026-10-29T23:42:05Z","phase":"test","seconds":30.286,"exit":0,"cmd":"python /var/lib/jenkins/fleet/jobs/mi200-20261029-162614-llmawq-fix/moat/projects/llm-awq/tests/w8a8_test.py"}
+{"kind":"phase","ts":"2026-10-29T23:43:58Z","phase":"test","seconds":112.619,"exit":0,"cmd":"python /var/lib/jenkins/fleet/jobs/mi200-20261029-162614-llmawq-fix/moat/projects/llm-awq/tests/w8a8_simt_test.py /var/lib/jenkins/fleet/jobs/mi200-20261029-162614-llmawq-fix/moat/projects/llm-awq/src/awq/kernels/csrc/w8a8/w8a8_gemm_cuda.cu"}
+{"kind":"phase","ts":"2026-10-29T23:44:03Z","phase":"test","seconds":4.741,"exit":0,"cmd":"python /var/lib/jenkins/fleet/jobs/mi200-20261029-162614-llmawq-fix/moat/projects/llm-awq/tests/legacy_gemm_test.py"}
+{"kind":"phase","ts":"2026-10-29T23:44:08Z","phase":"test","seconds":4.971,"exit":0,"cmd":"python /var/lib/jenkins/fleet/jobs/mi200-20261029-162614-llmawq-fix/moat/projects/llm-awq/tests/w4a16_test.py /var/lib/jenkins/fleet/jobs/mi200-20261029-162614-llmawq-fix/moat/projects/llm-awq/src"}
+{"kind":"session","ts":"2026-10-29T23:45:53Z","epoch":1793317553.013780662,"event":"end","platform":"linux-gfx90a"}
