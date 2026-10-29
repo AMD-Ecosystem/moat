@@ -45,3 +45,4 @@
 {"kind":"phase","ts":"2026-06-20T02:40:41Z","phase":"test","seconds":13.506,"exit":0,"cmd":"B:\\develop\\TheRock\\external-builds\\pytorch\\.venv\\Scripts\\python.exe B;C:\\Program Files\\Git\\develop\\moat\\agent_space\\awq_model_test_win.py"}
 {"kind": "tokens", "ts": "2026-06-20T02:43:01Z", "tokens": 80669, "source": "validator (gfx1101)"}
 {"kind":"session","ts":"2026-10-29T23:18:59Z","epoch":1793315939.129307384,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-29T23:25:14Z","epoch":1793316314.593667527,"event":"end","platform":"linux-gfx1100"}
