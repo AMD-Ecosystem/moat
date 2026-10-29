@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 """Refuse `gh` invocations that would adopt a project or write upstream.
 
 The autonomy boundary says an agent may not take a GitHub-visible action against an
