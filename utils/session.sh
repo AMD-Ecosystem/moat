@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 # Mark session boundaries in a project's stats.jsonl.
 # Usage:
 #   utils/session.sh <project> <platform> start|end

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright Advanced Micro Devices, Inc.
+# SPDX-License-Identifier: MIT
 # MOAT entrypoint. Pull the latest MOAT state, detect this host's AMD arch, pick
 # the single next project + stage for this platform, and print a dispatch
 # summary. Standing upkeep on the way writes and pushes: hook/merge-driver
