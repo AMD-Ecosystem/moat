@@ -704,3 +704,100 @@ identical to the gfx1201 validation (same expected scores, same hit ids).
 Post-run hipInfo confirms gfx1101 remained healthy (no TDR event).
 
 VERDICT: PASS. State -> completed (validated_sha = 398b7c00).
+
+## Upstream HIP support validation on linux-gfx90a (2026-10-29)
+
+Purpose: upstream merged its own ROCm/HIP support (c7eee558 "ROCm/HIP GPU support", libmarv subtree e067befb "Add ROCm/HIP support", merged as f7f120ee). This section validates upstream's HIP path as if it were our port, using this port's checklist, and lists the gaps. No MOAT state or fork branch was changed.
+
+Host: linux-gfx90a, AMD Instinct MI250X GCD (gfx90a:sramecc+:xnack-), HIP_VISIBLE_DEVICES=0 and CUDA_VISIBLE_DEVICES=0. ROCm 7.16.26385 (TheRock pip SDK, `hipconfig --rocmpath` = `.../site-packages/_rocm_sdk_devel`), AMD clang 24.0.0git, host gcc 13.3.0, cmake 3.31.6. Note this is newer than upstream's Dockerfiles (ROCm 7.2) and than our port's validations (7.2.1).
+
+Upstream sha: `503743960fc57733a36951f5fa803cb3389af7e2` (master, 2026-10-27). Clone in `agent_space/upstream-hip/MMseqs2`.
+
+### Build (upstream's own option, following `.github/workflows/test-gpu-rocm.yml` and `Dockerfile.GPU-debian-slim-rocm7`)
+
+```
+R=$(hipconfig --rocmpath)
+cmake -S MMseqs2 -B MMseqs2/build-hip -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 -DHAVE_TESTS=1 \
+  -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=$R -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++
+utils/timeit.sh MMseqs2 compile -- cmake --build MMseqs2/build-hip -j48
+```
+
+Result: PASS, 102 s, zero HIP warnings or errors (only pre-existing rust/tinyexpr warnings). `mmseqs` is a single binary (libmarv static, `HIP_SEPARABLE_COMPILATION ON`), `.hip_fatbin` carries `amdgcn-amd-amdhsa--gfx90a`.
+
+Wave32/other-arch compile check: same configure with `-DCMAKE_HIP_ARCHITECTURES="gfx1100;gfx1201;gfx950"`, `cmake --build ... --target mmseqs`: PASS (263 s), code objects for gfx1100, gfx1201, gfx950 present. Upstream's packed-half max is inline asm `v_pk_max_f16`; a probe (`hipcc --offload-arch=<a> -c`) assembles it for gfx90a, gfx942, gfx950, gfx1030, gfx1100, gfx1151, gfx1201, gfx9-generic, gfx11-generic, gfx12-generic.
+
+### GPU tests (all under `ulimit -c 0`)
+
+1. Upstream regression suite (what upstream's ROCm CI runs):
+   ```
+   git submodule update --init util/regression
+   CUDA_VISIBLE_DEVICES=0 utils/timeit.sh MMseqs2 test -- util/regression/run_regression.sh build-hip/src/mmseqs <scratch>
+   ```
+   43/43 GOOD, 0 failed (327 s), including the two GPU tests: SEARCH_GPU GOOD (expected 0.454819, actual 0.454819) and SEARCH_GPU_SERVER GOOD (0.454819). The CPU tests in the same binary do not regress.
+2. Our port's GPU-vs-CPU oracle on the bundled example (same commands as the port validations above):
+   ```
+   mmseqs createdb examples/DB.fasta targetDB; mmseqs makepaddedseqdb targetDB targetDB_padded
+   mmseqs easy-search examples/QUERY.fasta targetDB_padded gpu.m8 tmp_gpu --gpu 1
+   mmseqs easy-search examples/QUERY.fasta targetDB cpu.m8 tmp_cpu --gpu 0
+   ```
+   GPU 14482 pairs, CPU 12901, common 12438, GPU-only 2044, CPU-only 463; on common pairs 0 differ in bitscore or pident (max diff 0.0). Identical counts to every validation of our port on gfx90a, gfx1100 and to each other, so upstream's HIP path reproduces our port's results exactly on this arch.
+3. libmarv standalone tools (upstream supports `ENABLE_HIP` there too):
+   ```
+   cmake -S lib/libmarv/src -B marv-standalone -DENABLE_HIP=1 -DCMAKE_BUILD_TYPE=Release -DCMAKE_HIP_ARCHITECTURES=gfx90a ...
+   cmake --build marv-standalone --target align makedb
+   ./makedb lib/libmarv/allqueries.fasta mdb
+   ./align --query lib/libmarv/allqueries.fasta --db mdb --scanType {Gapless|SW_Endpos|Gapless+SW_Endpos} --tsv --top 5
+   ```
+   Build PASS; all three scan types run; 20/20 queries have themselves as top-1 hit in every mode (self SW score e.g. 719 for the 144-residue leghemoglobin, end positions 143/143).
+
+Not tested here: multi-GPU (`CUDA_VISIBLE_DEVICES=0,1`), because the dispatcher pinned this job to one GPU; wave32 at runtime (no RDNA card on this host).
+
+### Comparison with our port, by fault class
+
+| Our port's fix | Upstream HIP | Verdict |
+|---|---|---|
+| gfx90a reports cc 9.0, so the cc-keyed selector would pick the Hopper DPX configs. We pinned a `USE_HIP` branch to the sm75 list. | `#elif defined(__HIPCC__)` branch with tuned AMD lists: cc 9.0 -> `_amd_gfx90a`, 9.4 -> `_amd_gfx942`, anything else -> gfx942 list. Every AMD entry is half2 gapless / float SW (no short2, no dpx). | Upstream better (arch-tuned, no collision). |
+| Scalar emulations of ~17 DPX/SIMD intrinsics (`marv_simd_amd.cuh`) so the force-instantiated DPX TUs compile. | DPX TUs are not compiled on HIP (`MARV_GPU_SOURCES_DPX` excluded), `MathOps<short2>` is `#if defined(__CUDACC__)`, and the short2/int dispatch arms `throw std::runtime_error("short2 not supported" / "dpx not supported")` on HIP. | Upstream does not need it. Only reachable through a user-supplied tuning-config file that selects short2/dpx; then it fails loudly rather than silently, which is acceptable. |
+| `__hmax2`/`__hmin2` scalar per-lane emulation | `compatibility::hmax2/hmin2` = inline `v_pk_max_f16`/`v_pk_min_f16` | Upstream better (native packed op); assembles on every target checked. |
+| `cg::reduce` replaced by tile-local butterfly | `compatibility::group_reduce` butterfly over `group_shfl_xor` for `stride < group.size()`, including the int3 end-position pack | Equivalent; tile-relative, correct on wave32 and wave64. SW gfx90a list uses tiles up to 32 on wave64. |
+| `__shfl_*_sync(0xFFFFFFFF, ...)` redirected to maskless; `warp_max_reduce_broadcast` given width 32 | The legacy non-PSSM kernels (`kernels.cuh`, the only users of 32-bit masks, `__syncwarp`, and `warp_max_reduce_broadcast`) are wrapped in `#ifndef __HIPCC__`; they are never launched on either platform (no caller of `call_GaplessFilter_*` outside kernels.cuh). | Not needed. Latent only: `warp_max_reduce_broadcast` still starts at offset 16 with no width, which would reduce only lanes 0-31 on wave64, but it is dead code on HIP. |
+| `HIP_DISABLE_WARP_SYNC_BUILTINS` keyed on ROCm >= 7.14 (bf16 shuffle overload collision) plus `__syncwarp` fallback | Nothing; builds clean on ROCm 7.16 | Not needed (the collision came from our compat header's own shuffle overloads). |
+| `__CUDACC__`/`__NVCC__` guards widened to `__HIPCC__` in hpc_helpers, blosum, convert | Same widening; uint64 atomics kept NVCC-only; `lane_id()` inline PTX `%laneid` left unguarded but unused | Equivalent. |
+| libmarv SHARED so the RDC device link happens in the HIP toolchain | Static libmarv with `HIP_SEPARABLE_COMPILATION ON` links cleanly into the C++ `mmseqs` target | Upstream better (one binary, matches the CUDA layout). |
+| `getPaddedQueryLength` pad stays literal `sizeof(char4)*32` | Same | Equivalent. |
+| `ClampToInvalid::operator()(unsigned)` device path: our port gives HIP an unsigned per-byte min (same as CUDA `__vminu4`) | Device code tests `#ifdef __CUDA_ARCH__`, which HIP does not define, so HIP device code runs the host fallback that compares as (signed on x86) `char`. | Latent divergence: identical for bytes < 128; makepaddedseqdb writes residue codes <= 52 (+32 for masked) and pad 20, so no effect in practice (results above are exact). Cleanup candidate, see draft 3. |
+| Windows (libmarv DLL + Marv API harness on gfx1201/gfx1101; mapped_file Win32, MARV_API exports, MSVC-ABI clang CMake fixes) | No Windows support in libmarv or mmseqs for HIP | Platform our port covered that upstream does not. Upstream's CUDA build has no Windows GPU path either, and the `mmseqs` binary itself is POSIX-only, so only the library was ever reachable. |
+| RDNA wave32 (gfx1100 Linux validated, gfx1201/gfx1101 Windows library-level) | Compiles for gfx1100/gfx1201 and Docker builds gfx10/11/12 generic targets, but README claims "CDNA2 generation or newer", RDNA falls through to the gfx942 tuning lists, and no RDNA runtime evidence exists upstream | Platform gap: unvalidated, not known broken. |
+
+### Gaps
+
+Defects in upstream's HIP on gfx90a: none found. Build, 43/43 regression (both GPU tests), GPU-vs-CPU exact, and the standalone aligner all pass.
+
+1. Platform (wave32/RDNA) -- unvalidated upstream. Needs a run of this same recipe on a linux-gfx1100 host (`-DCMAKE_HIP_ARCHITECTURES=gfx1100`, regression SEARCH_GPU/SEARCH_GPU_SERVER plus the example oracle, expect 14482/12901/12438/0). If it passes, a README PR can widen the support statement; if it fails, that is the first real upstream defect.
+2. Documentation -- no build-from-source instructions for `-DENABLE_HIP=1`. README line 54 sends ROCm users to the `master-rocm7` Docker tag only; the wiki (`MMseqs2.wiki` Home.md, "Compile from source for Linux with GPU support") has no HIP/ROCm text at all.
+3. Latent -- `ClampToInvalid` HIP device path (above). Not observable today.
+4. Windows -- not offered upstream; our port only reached libmarv on Windows. Low value unless jeff wants a Windows libmarv deliverable.
+
+### Drafts (not posted; no GitHub writes were made)
+
+Draft 2, README PR (upstream-visible text, ASCII, one line per paragraph):
+
+====
+Title: Document building MMseqs2-GPU from source for ROCm
+
+The README only points ROCm users at the Docker image. This adds the from-source build next to the existing CUDA instructions:
+
+    mkdir build && cd build
+    cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 -DCMAKE_HIP_ARCHITECTURES=gfx90a ..
+    make -j
+
+`CMAKE_HIP_ARCHITECTURES` takes the target GPU (for example `gfx90a` for MI200, `gfx942` for MI300) or `native`. GPU selection honors `HIP_VISIBLE_DEVICES` as well as `CUDA_VISIBLE_DEVICES`.
+
+Test plan: built at 50374396 with ROCm 7.16 for gfx90a; `util/regression/run_regression.sh` 43/43 GOOD including SEARCH_GPU and SEARCH_GPU_SERVER on an MI250X.
+====
+
+Draft 3, latent cleanup (only worth sending bundled with other HIP work):
+
+====
+In `convert.cuh`, `ClampToInvalid::operator()(const unsigned int&)` selects `__vminu4` with `#ifdef __CUDA_ARCH__`. HIP device compilation does not define `__CUDA_ARCH__`, so on ROCm the device code takes the host fallback, which clamps each byte as `char` (signed on x86) instead of as an unsigned byte. Results are the same for byte values below 128, which covers every encoding makepaddedseqdb writes today, so nothing is broken; adding `|| defined(__HIP_DEVICE_COMPILE__)` with an unsigned per-byte min would keep the two backends identical if the encoding ever grows.
+====
