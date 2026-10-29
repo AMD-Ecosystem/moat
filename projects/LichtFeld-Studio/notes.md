@@ -4320,3 +4320,31 @@ Consequences for the next Windows round:
   - `python3 utils/jargon.py --port LichtFeld-Studio`: clean.
   - `moatlib.py audit-commits`: OK.
   - Title 68 characters with `[ROCm]`, no Co-Authored-By, added lines ASCII.
+
+## Porter round 2026-10-29 (porter, linux-gfx1100) -- "Review 2026-10-28b" items 1 and 2; 2ac6bc3d -> a6548755, stage -> `ported`
+
+Host: Radeon Pro W7800 (gfx1100), GPU 1 (`HIP_VISIBLE_DEVICES=1`; another job had GPU 0), `ulimit -c 0`, amdgpu-dkms 6.19.14, TheRock ROCm SDK 10.1.0 wheels (rocJPEG 1.10.0). "Review 2026-10-28" item 1 (Windows viewer) untouched; paused by jeff. Nothing was sent to the hardware decoder except through the loader after `inspect_jpeg`; the scan-less stream was not submitted.
+
+### Fork commit (plain push on top of 2ac6bc3d; pr-state none)
+- a65487557 `[ROCm] Decode extended sequential JPEGs on the CPU`. Files: `src/io/nvcodec_image_loader_hip.cpp` (HIP-only), `tests/test_nvcodec_hip_jpeg.cpp` (HIP-only). `src/io/nvcodec_image_loader.{cpp,hpp}` identical to ca01b056 (`git diff --quiet ca01b056 -- ...`). jargon clean, prose clean, audit-commits OK, ASCII only.
+
+### Item 1: SOF1 decodes on the CPU with a named reason
+- `rocjpeg_unsupported_reason`: only marker C0 is rocJPEG's; C1 returns "extended sequential JPEG" (checked before precision, so a 12-bit SOF1 also reports the process). Comment now says rocJPEG decodes 8-bit baseline only and rejects every other frame type at parse, SOF1 included. Startup `LOG_INFO` lists "extended sequential" first among the CPU cases.
+- Test: `UnsupportedStreamsFallBackToTheCpuAndAreReported` gains an "extended sequential" case: the 128x96 libjpeg baseline stream with its SOF0 marker byte changed to C1 (found by walking the marker segments, not a byte search). It must decode on the CPU to exactly libjpeg's pixels and be refused with "extended sequential JPEG" when fallback is off. The host check routes it to the CPU, so it never reaches rocJPEG. Log: `Decoding a JPEG on the CPU (libjpeg): rocJPEG does not support it: extended sequential JPEG (18135 bytes)`.
+
+### Item 2: claims limited to what was measured
+- Loader comment on `inspect_jpeg`: a stream with no scan at all is parsed, submitted and hangs the decoder; the other checks reject corrupt streams as a precaution.
+- Skill `fault-classes.md` (both rocJPEG paragraphs) and the SKILL.md index line: baseline SOF0 only, SOF1 added to the BAD_JPEG-at-parse list (nvJPEG decodes it); "a JPEG cut inside its scan decodes, with no reset, and one with no scan hangs"; a scan header with no data was only parse-checked; the stream may appear only in a test of the host-side check, which is the one barrier in front of the hardware, so run that test on a GPU no other job is using. The regression test `CorruptJpegInABatchIsRejectedBeforeDecoding` is unchanged.
+
+### Build
+Own clone and build dir (`build-hip-gcc`), recipe of "Porter round 2026-10-27". **The deps directory of the 2026-10-27 porter job was deleted from the host during this round** (the whole job directory, including the vcpkg checkout, binary cache and `data/`). The vcpkg packages had already been restored into `build-hip-gcc/vcpkg_installed`, so the build finished without vcpkg by removing the now-missing `.../deps/vcpkg/scripts/buildsystems/vcpkg.cmake` from the regenerate edge of `build.ninja` (no CMake file changed this round, so no reconfigure was needed); 1401 ninja steps total over three invocations, final rc 0. Re-cloning and bootstrapping vcpkg was not done (the agent's permission policy refused it). **The next round needs a fresh vcpkg checkout** (`5363acb796e5`, recipe above); no binary cache is left on this host. Test data: bicycle and garden re-fetched from the Mip-NeRF 360 zip by HTTP range reads (only those two folders, 5.14 GiB, 1524 files) into `/var/lib/jenkins/fleet/jobs/rx7900-20261029-090528-lfs-sof1-fix/deps/data`.
+
+### Tests (Release, Xvfb + RADV, cwd build dir, one process per suite, `timeout -k 30 900`)
+- NvCodecHipJpegTest 4/0 (now with the SOF1 case).
+- NvCodecImageLoaderJpeg 3/0, NvCodecImageLoaderJpeg2k8Bit 2/0, Jpeg2kExplicitLayout 1/0, NvCodecBatchDecodeTest 1/0; NvCodecImageLoaderJpeg2k16Bit 0/1, NvCodecSentinelValidatorTest 0/1, NvCodecAvailabilityTest 0/1 (the same three tests as the last two rounds).
+- PipelinedImageLoaderTest 20/0, PipelinedLoaderLedger 8/0, PipelinedImageLoaderSidecarJpeg2k 3/0, PipelinedNormalDecode 12/0, PipelinedDepthDecode 20/0, PipelinedMaskUndistortTest 4/0, CompressedBlobTier 6/0, SidecarResumeSampler 1/0, CameraImageLoadTest 1/0, EnvironmentImageLoadTest 4/0, ImageIoTest 15/0, ParallelPngWriter 1/0.
+- VideoFrameExtractorOutcome 2/0, Trim 3/0, Params 2/0, WriteTest 28/0; OutputNaming 7/4, VideoColorRange 4/4 (unchanged; deferral `lfs-hip-video-hw-codec`).
+- Headless smoke (`--headless -d data/bicycle --images images_4 --iter 3000 --eval --no-depth-auto-generate --no-normal-auto-generate`): exit 0, 65.5 s (45.8 it/s), PSNR 23.6566, SSIM 0.6559, LPIPS 0.3616, 549,380 splats; metrics_report "JPEG Decoder: rocJPEG (GPU)".
+
+### Verdict
+Both items answered and tested. head_sha -> a6548755. Stage `porting` -> `ported`.
