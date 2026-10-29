@@ -8,7 +8,7 @@
   "ext_type": "torch-extension",
   "stage": "awaiting-fork",
   "adopted_at": "2026-08-27T02:01:21Z",
-  "updated_at": "2026-08-27T02:10:37Z",
+  "updated_at": "2026-10-29T18:06:57Z",
   "head_sha": null,
   "depends_on": [
     "CuMesh",
@@ -49,6 +49,11 @@
     "duplicate_effort": "microsoft/TRELLIS.2#155 [ROCm] Add AMD GPU support, open non-draft since 2026-04-27, zero maintainer response; companion JeffreyXiang/CuMesh#31 closed by its own author after MOAT's CuMesh#36 opened. Coordinate, do not compete.",
     "viable": true,
     "summary": "Microsoft's 4B image-to-3D flagship (10.9k stars); MIT tier-1, only ~1350 lines of vendored o-voxel .cu with no warp intrinsics or cub/thrust, and setup.sh already branches on ROCm -- but an open non-draft ROCm PR #155 (andyluo7, 4 months stale, its CuMesh half closed in MOAT's favour) covers the same files, and licence-blocked nvdiffrast gates textured .glb export.",
-    "at": "2026-08-27T02:10:33Z"
+    "at": "2026-08-27T02:10:33Z",
+    "decided": {
+      "choice": "fork",
+      "by": "jeffdaily",
+      "at": "2026-10-29T18:06:57Z"
+    }
   }
 }
