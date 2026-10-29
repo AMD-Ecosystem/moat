@@ -70,3 +70,5 @@
 {"kind":"phase","ts":"2026-10-29T23:29:44Z","phase":"test","seconds":105.515,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300-20261029-160437-sync-qrack/moat/projects/qrack/src && ./_build/unittest --proc-cpu --layer-qengine -d yes"}
 {"kind":"phase","ts":"2026-10-29T23:32:53Z","phase":"test","seconds":188.791,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi300-20261029-160437-sync-qrack/moat/projects/qrack/src && ./_build/unittest --proc-cpu --layer-qpager -d yes"}
 {"kind":"session","ts":"2026-10-29T23:34:02Z","epoch":1793316842.202498583,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-10-29T23:47:01Z","epoch":1793317621.250477560,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-10-29T23:50:06Z","epoch":1793317807.002637300,"event":"end","platform":"linux-gfx942"}

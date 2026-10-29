@@ -583,3 +583,21 @@ GOTCHA (pip ROCm): unittest needs LD_LIBRARY_PATH=<_rocm_sdk_core>/lib or it exi
 - CPU regression: cpu/qengine 9612/213 passed, cpu/qpager 9609/213 passed.
 - test_ucmtrx (deferred-free fix) 12/12; qpager test_cswap 20/20.
 Suggestion for validators: add --layer-qpager to the GPU gate; it reaches the multi-page engine-to-engine copy paths that --layer-qengine never runs.
+
+## Review 2026-10-29 (linux-gfx942, reviewer): whole fork diff upstream/main(98b47407)...a3f5427e
+Reviewed with /pr-review in local-branch mode, every finding fact-checked by re-reading the source and by running configure on this host.
+Verdict: changes-requested (1 must-fix). There is also 1 decision for jeff, which does not block.
+
+### Must-fix
+1. README.md:220 (a3f5427e) says the documented HIP build command works without `-DENABLE_OPENCL=OFF`, but it does not. cmake/CUDA.cmake:7-9 (upstream code) runs `if (ENABLE_OPENCL) set(ENABLE_CUDA OFF)`, ENABLE_OPENCL defaults ON (CMakeLists.txt:109), and it stays ON whenever find_package(OpenCL) succeeds. So on any host with an OpenCL library, the README command builds an OpenCL-only libqrack with no HIP engine, and configure still prints "HIP (ROCm) backend is: ON" (cmake/CUDA.cmake:26). Reproduced here: `cmake -S . -B /tmp/qrk_readme -DENABLE_CUDA=ON -DUSE_HIP=ON -DCMAKE_HIP_COMPILER=<sdk>/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=<sdk>` -> "OpenCL Support is: ON", "CUDA Support is: OFF", "HIP (ROCm) backend is: ON". The README line copies the bracket from the upstream CUDA line (README.md:210), which has the same problem, but the new section is what a ROCm user will follow. Fix: drop the brackets around `-DENABLE_OPENCL=OFF` on line 220, and say in the following paragraph that it is required, because with OpenCL enabled the CUDA engine, and so the HIP build, is turned off. Make the status message print the effective state, e.g. `if (ENABLE_CUDA AND USE_HIP)` around it, or print `ENABLE_CUDA AND USE_HIP`. Do not change the upstream CUDA line.
+
+### Decision for jeff (not a defect)
+- 42bdc3d6 changes the shared CUDA path (src/qengine/cuda.cu:216-217), with no USE_HIP guard. Fact-checked as correct: the old code copied this->page, with no offsets and sized by srcOffset. The new copy, page[srcOffset, +length) -> this[dstOffset, ...), matches QEngineOCL::SetAmplitudePage (opencl.cpp:174-219) and QEngineCPU (state.cpp:99). The QPager callers (qpager.cpp:335, 360, 675, 696) all expect that direction. The calls at 675/696 pass srcOffset=0, so the old code copied 0 bytes. The bug is still in upstream main 98b47407. jeff needs to decide whether it ships in this PR (it is the only behavior change on the NVIDIA path besides the DispatchFn typedef from eb787828) or goes upstream as a separate PR without the `[ROCm]` title. Nobody has built or run it on NVIDIA.
+
+### Checked, no finding
+- Merge 09d810c1 is not an evil merge: `git diff 49d2efc7 7086bdbd` and `git diff 09d810c1^2 09d810c1` are identical apart from hunk offsets and blob ids.
+- Upstream's changes to backend files since the old base (Copy() calls Finish(); Android AllocStateVec branch removed; parallel_for size_t sweep) add no cuda* symbol. Every cuda* token in the backend files is aliased in cuda_to_hip.h. Copy()'s Finish() runs on a user thread, so the deferred-free drain stays off the callback thread.
+- 0caeb834: an auto-detect configure here (`-DENABLE_CUDA=ON -DUSE_HIP=ON -DENABLE_OPENCL=OFF -DENABLE_TESTS=ON`, CMake 3.31.6, Ninja) exits 0, and every HIP compile carries a single --offload-arch=gfx942. The block runs only under `ENABLE_CUDA AND USE_HIP`, and the elseif CUDA branch is unchanged.
+- Wave size: no __shfl/__ballot/__activemask/warpSize/literal 32 in device code. Rule-of-five unchanged. No library swaps.
+- CUDA path, apart from the item above: the nvcc options and the CUDA.cmake elseif branch are byte-identical. cuda_to_hip.h on non-HIP includes <cuda_runtime.h> plus cuda_fp16.h under FPPOW<5, as before. The DispatchFn typedef in qengine_cpu.hpp is in the non-pthread #else only.
+- Commits: [ROCm] titles of 72 chars or fewer, AI assistance disclosed, Test Plan present, no Co-Authored-By trailer, ASCII only, `utils/jargon.py --port qrack` clean.
