@@ -7,13 +7,10 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:24:38Z",
-  "updated_at": "2026-10-29T22:27:46Z",
-  "head_sha": "840f6f30012196488eba9130e1f4c4c1398dc2f6",
+  "updated_at": "2026-10-29T22:28:36Z",
+  "head_sha": "6b9b6005ee39d8c667481a57b23d605e445a835b",
   "depends_on": [],
-  "porting": {
-    "arch": "windows-gfx1151",
-    "since": "2026-10-29T22:27:45Z"
-  },
+  "porting": null,
   "waivers": {},
   "license_clearance": {
     "approved_by": "jeffdaily",
@@ -23,7 +20,7 @@
   },
   "license_spdx": "GPL-3.0",
   "upstream_repo_id": 96109091,
-  "stage": "porting",
+  "stage": "delta-ported",
   "platforms": {
     "linux-gfx1100": {
       "state": "completed",
@@ -145,7 +142,7 @@
       "failed_sha": null,
       "started_at": "2026-10-29T22:27:45Z",
       "completed_at": null,
-      "updated_at": "2026-10-29T22:27:45Z",
+      "updated_at": "2026-10-29T22:28:36Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -161,5 +158,10 @@
       }
     }
   },
-  "review_pr": "https://github.com/AMD-Ecosystem/prismatic/pull/1"
+  "review_pr": "https://github.com/AMD-Ecosystem/prismatic/pull/1",
+  "porting_released": {
+    "arch": "windows-gfx1151",
+    "since": "2026-10-29T22:27:45Z",
+    "at": "2026-10-29T22:28:36Z"
+  }
 }

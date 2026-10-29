@@ -550,3 +550,11 @@ HIP_VISIBLE_DEVICES=1 ./prismatic-tests.exe
 ### Outcome
 
 **VALIDATED** on windows-gfx1101 at commit 8a46c7ca. Real GPU validation on AMD Radeon PRO V710 (gfx1101, RDNA3) confirms both Multislice and PRISM STEM simulation algorithms execute correctly. GPU remained healthy throughout (no TDR, no wedge). Failure pattern is identical to gfx1201: 2 CPU-only pre-existing reference failures + 1 importSMatrix FP32 accumulation tolerance overshoot, none related to the HIP port.
+
+## Porter 2026-10-29 (windows-gfx1151): shadow headers replace include edits (6b9b6005)
+
+jeff's call on review PR #1: switch from editing `#include` lines to the cuda-to-rocm skill's shim-header method before the upstream PR opens. `include/cuda_to_hip.h` moved to `hip_compat/cuda_to_hip.h` (CUDA `#else` branch and `USE_HIP` guard dropped; the directory is HIP-only). `hip_compat/{cuda_runtime.h,cuComplex.h,cufft.h}` are two-line forwarders (`#pragma once` + `#include "cuda_to_hip.h"`), so every former include site sees the same full alias set as at 840f6f30. `cmake/HIPShim.cmake` adds `include_directories(BEFORE ${CMAKE_SOURCE_DIR}/hip_compat)` inside `if(USE_HIP)`, before any target is created, so it reaches every target (cuda_add_* shims and the plain prismatic-tests target).
+
+Effect: diff vs upstream d155fb93 went from 16 files to 11. These are byte-identical to upstream again: include/{Multislice_calcOutput.cuh,PRISM03_calcOutput.cuh,configure.h,defines.h,fileIO.cuh,utility.cuh}, src/{fileIO.cu,utility.cu}; src/Multislice_calcOutput.cu and src/PRISM02_calcSMatrix.cu keep only their real changes.
+
+Local pre-push check on gfx1151 (TheRock 7.14 hipcc): a TU including `"cuComplex.h"`, `<cuda_runtime.h>` and `"cufft.h"` with `-DUSE_HIP -I hip_compat` compiled, linked hipfft, ran a cuFFT-spelled C2C plan + kernel launch, exit 0. Not the full project build; that is the validators' job. Expect binary-equivalent device ISA vs 840f6f30 (same preprocessed aliases), so `utils/codeobj_diff.py` old-vs-new is a useful extra check alongside the GPU run.
