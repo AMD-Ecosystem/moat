@@ -848,3 +848,53 @@ Neither is a GPU defect. Once the fix lands, the test results above should still
 - F2 (unfetchable cnpy gitlink a5fc3a5): gitlink restored to the public ACDSLab/cnpy 91c53bc (upstream's own pin); the only content of a5fc3a5 was WINDOWS_EXPORT_ALL_SYMBOLS on the cnpy SHARED library, now set from MPPI-Generic's CMakeLists.txt right after `add_subdirectory(submodules/cnpy)`, under `if (USE_HIP AND WIN32)`. Linux and CUDA builds see no change. No cnpy fork or upstream cnpy PR needed.
 - F1 (no ROCm docs): README gains a "Building MPPI-Generic for AMD GPUs (ROCm)" section (`-DUSE_HIP=ON`, optional `CMAKE_HIP_ARCHITECTURES`, auto-detect otherwise).
 - Windows (windows-gfx1151) must confirm the CMake-side export works: it is the one platform the cnpy change matters on.
+
+## Validation 2026-10-29 (linux-gfx1100 at 11b61ab, full GPU, fresh recursive clone)
+
+Platform: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), HIP_VISIBLE_DEVICES=1. Toolchain: TheRock ROCm SDK pip wheels in the image venv (`ROOT=$(rocm-sdk path --root)`), AMD clang 24.0.0. Fork sha 11b61ab3557126 (= origin/moat-port tip). Delta from the 939db79 round: cnpy gitlink back to public 91c53bc, `WINDOWS_EXPORT_ALL_SYMBOLS` on `cnpy` under `if (USE_HIP AND WIN32)`, README ROCm section. Full run, as a failed arch gets.
+
+### F2 check: fresh clone, submodules as a user gets them
+```
+git clone https://github.com/AMD-Ecosystem/MPPI-Generic src
+git -C src checkout 11b61ab3557126b2220f4de2163d9f317cf176e9
+git -C src submodule update --init --recursive
+```
+rc=0; `submodules/cnpy` checked out 91c53bc597b9 from https://github.com/ACDSLab/cnpy.git. No manual cnpy step. F2 resolved.
+
+### Build
+```
+cmake -S src -B src/build-hip -GNinja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=$ROOT/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROOT \
+  -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build src/build-hip -j 24
+```
+157/157 targets, exit 0, 0 errors, 50 s.
+
+README recipe check (configure only): `cmake -DUSE_HIP=ON -DMPPI_BUILD_TESTS=ON <src>` with only `$ROOT/bin` on PATH and `CMAKE_PREFIX_PATH=$ROOT` (no compiler, no arch) configures, rc=0; CMake finds clang 24 and auto-detects `gfx1100;gfx1100;gfx1100;gfx1100`. The repeats are CMake's own `enable_language(HIP)` probe enumerating every agent on a multi-GPU host and ignoring HIP_VISIBLE_DEVICES. Harmless, and not in the port's code.
+
+### New upstream GPU tests and core GPU-vs-CPU (run directly)
+- `tests/mppi_core/normexp_kernel_tests`: 10/10 PASS (incl. computeBaselineCostDeviceOddRollouts, computeNormalizerDeviceOddRollouts, fullGPUcomputeWeightsEveryIteration, comparisonTestHostvsDeviceBaselineNormalizerCalculation)
+- `tests/feedback_controllers/ddp_tests`: 10/10 PASS (incl. DeviceDDP.TwoControls, DeviceDDP.FourControls)
+- `tests/mppi_core/rollout_kernel_tests` 6/6, `tests/mppi_core/rmppi_kernel_tests` 5/5, `tests/dynamics/cartpole_dynamics_tests` 12/12 PASS
+
+### Full ctest (`ctest --test-dir src/build-hip -j1 --timeout 600`, 164 s)
+432/462 pass, 30 fail, 8 not run (5 upstream-DISABLED: ColoredNoise.check* x4, MATH_UTILS.Matrix3fMultiplicationP2; 3 GTEST_SKIP: RacerSuspensionTest.CPUvsGPU, QuadrotorMapCost.checkHeadingCost, FNNHelperTest.TestComputeGradComputationCompare).
+
+The 29 deterministic failures recorded at 939db79 recur by name: 8 ARStandardCost.* (5 SEGFAULT + 3 Failed; deferred texture linear-filter), 2 ARRobustCostTest.getCostmapCost*, ARNeuralNetDynamics.computeGradTest, 6 FNN/LSTM/LSTMLSTM LoadModel* (npz `map::at`), DubinsDynamics.TestUpdateStateGPU, Dynamics.stepGPU, RacerDubins.ComputeStateTrajectoryFiniteTest, WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic, cuFFT.checkErrorCode, 6 GaussianTests.Check*, Integration.RK4.
+
+The 30th comes from the known intermittent FP-tolerance pool:
+- CudaFloatStructsTests/*.VecAddVecMultScalar (cuda_math_utils_tests.cu:682, exact-equality assert on the float2 variant vs FMA rounding; recorded on the first gfx1100 run). 6 standalone reruns: 4 fail, 2 pass.
+- SamplingDistributionTests.CompareLikelihoodRatioCostsCPUvsGPU passed 13/13 in the full run; a separate `ctest -R CompareLikelihoodRatio` gave 10/13 (relative bound with no absolute floor, the class shown identical at cef61e5 vs 939db79 in the previous gfx1100 entry).
+The compiled Linux code at 11b61ab matches 939db79 as built with cnpy 91c53bc: the CMake change is WIN32-only and the gitlink is the 91c53bc every earlier Linux run used. So these intermittents are not a regression.
+
+GPU verdict: PASS. Zero regressions on gfx1100 wave32; the new normexp and DDP cases pass.
+
+### CUDA no-regression gate
+cuda-not-validated: this host has no CUDA toolkit (no /opt/conda, no /usr/local/cuda, no nvcc). Installing `nvidia-cuda-nvcc-cu12==12.8.*` and the headers into a scratch venv under agent_space was blocked by the fleet guard ("pip changing the Python environment every job on this host shares"). The gate is still owed at 11b61ab by a Linux host with the cuda-12.8 env. 11b61ab's only CMake change is under `if (USE_HIP AND WIN32)`, so CUDA configure is unchanged from 939db79, but 939db79 itself was never CUDA-compiled.
+
+### Finish checks
+- Jargon: `python3 utils/jargon.py --port MPPI-Generic` -> clean.
+- Documentation (F1): README has "Building MPPI-Generic for AMD GPUs (ROCm)" next to the CUDA build section (`-DUSE_HIP=ON`, `CMAKE_HIP_ARCHITECTURES`, ROCm provides hipRAND/hipFFT). Resolved.
+- Integrity: `git -C src status --porcelain` shows only `?? build-hip/`; submodule clean at 91c53bc.
+
+State: completed at 11b61ab on linux-gfx1100.
