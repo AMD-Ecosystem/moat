@@ -39,6 +39,13 @@ Those three cover the suffix case only, which is the whole mirror only when no s
 
 Do not trust the derivation on its own -- verify. `git clean -fdx`, full build, and `git status --porcelain` must print nothing: no tracked file modified AND no generated file newly untracked. The second half is the part that catches this; a tree where the artifacts are tracked passes the first half. It also catches a rename you did not predict, which is why it is the check that matters rather than the pattern list. If the project genuinely hand-writes a `.hip` file or already has a `hip/` directory (Strategy B ports normally do not), narrow the pattern rather than dropping it. (faster-gaussian-splatting)
 
+### Headers and functions hipify leaves broken
+
+A clean hipify run does not mean every name resolved. Two gaps surface only as compile errors in the hipified mirror, and both arrived in an upstream sync rather than the original port (faster-gaussian-splatting):
+
+- `<cooperative_groups/reduce.h>` has no mapping, so the mirror keeps the CUDA header name and fails with "file not found". HIP has the same `cg::reduce` (and `cg::plus`/`cg::greater`, which are already in the main header), but declares `cg::reduce` in `<hip/cooperative_groups/hip_reduce.h>`, which `<hip/hip_cooperative_groups.h>` does not include. Swap the include under `USE_ROCM`. `<cooperative_groups/scan.h>` likewise has a HIP counterpart, `<hip/cooperative_groups/hip_scan.h>`.
+- `curand_Philox4x32_10` (one raw Philox4x32-10 evaluation from `<curand_philox4x32_x.h>`) is renamed to `hiprand_Philox4x32_10`, which exists in neither hipRAND nor rocRAND. rocRAND keeps the rounds `protected` inside `rocrand_device::philox4x32_10_engine`. Define the function under `USE_ROCM` instead: ten rounds with multipliers `0xD2511F53`/`0xCD9E8D57` and key increments `0x9E3779B9`/`0xBB67AE85` between rounds. Keep the CUDA name, because hipify renames the definition and the call in the same way. Check it against the Random123 known-answer vectors (counter 0, key 0 gives `6627e8d5 e169c58d bc57ac4c 9b00dbd8`) so the noise stays bit-compatible with CUDA for a given seed and offset.
+
 ### hipify generation: v1 renames, v2 masquerades
 
 Which generation runs decides what the `c10`/`at` CUDA classes are called, so it is worth

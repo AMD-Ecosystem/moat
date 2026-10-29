@@ -58,7 +58,11 @@ s_extrema.)
 
 Width-32 LOGICAL warp ops (`__shfl*(...,32)`, `cub::WarpReduce<,32>`,
 `cg::tiled_partition<32>`) are arch-agnostic and fine -- they work within a 32-lane
-subgroup whatever the physical width.
+subgroup whatever the physical width. That includes the tile's `ballot()`: HIP's
+`thread_block_tile<N>::ballot` returns `unsigned long long`, but compacts the tile's lanes
+to bits `0..N-1` (`internal::helper::adjust_mask`), so storing it in a 32-bit integer and
+indexing it with `__ffs`/`__popc`/`__fns` is correct on wave64. Only a RAW `__ballot`
+truncated to 32 bits (the next entry) is the fault. (faster-gaussian-splatting)
 
 **A compat `__ballot_sync` that casts `__ballot()` to `uint32_t` takes the LOW 32 lanes**,
 which are the wrong lanes for any logical warp not at the wavefront base -- with
