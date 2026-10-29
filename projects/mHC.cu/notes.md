@@ -280,3 +280,7 @@ hipBLASLt native dispatch confirmed (AMD_LOG_LEVEL=3):
 - "Using Native code object: gfx1101" (not a fallback)
 
 Verdict: COMPLETED. windows-gfx1101 validated_sha=496626d.
+
+## 2026-10-29: clang-format conformance before the upstream PR
+
+CONTRIBUTING.md runs clang-format (repo `.clang-format`) on staged .cu/.cuh/.h. With clang-format 23.1.3 (pip wheel) every upstream file in src/csrc is clean; of the port's files only `src/csrc/include/cuda_to_hip.h` was not (29 diff lines). Fork commit 3246bc3 reformats it. `moatlib classify` rates the delta comment-only/arch-independent, so advance-head carried every platform forward. Check: `find src/csrc \( -name '*.cu' -o -name '*.cuh' -o -name '*.h' \) | xargs clang-format --dry-run --Werror` -> 0 warnings.

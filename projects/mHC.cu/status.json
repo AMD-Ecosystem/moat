@@ -7,8 +7,8 @@
   "priority": 4.192,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-08-20T00:30:44Z",
-  "head_sha": "6c81cf0298be7ea1189628e76728e40ea5a33298",
+  "updated_at": "2026-10-29T22:03:22Z",
+  "head_sha": "3246bc32bd06c00d938358fa7ac46bfa694d4b12",
   "porting": null,
   "waivers": {},
   "license_spdx": "MIT",
@@ -19,10 +19,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "6c81cf0298be7ea1189628e76728e40ea5a33298",
+      "validated_sha": "3246bc32bd06c00d938358fa7ac46bfa694d4b12",
       "started_at": "2026-06-02T06:58:53Z",
       "completed_at": "2026-06-23T22:45:38Z",
-      "updated_at": "2026-08-20T00:30:24Z",
+      "updated_at": "2026-10-29T22:03:21Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -38,20 +38,22 @@
       },
       "last_agent": "validator",
       "carry_forward": {
-        "to": "20d02324fd5abece21edfc41c42ab12cb719236b",
+        "from": "6c81cf0298be7ea1189628e76728e40ea5a33298",
+        "to": "3246bc32bd06c00d938358fa7ac46bfa694d4b12",
         "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:45:38Z"
+        "class": "comment-only",
+        "detail": "src/csrc/include/cuda_to_hip.h: comment-only (comments/format only)",
+        "at": "2026-10-29T22:03:21Z"
       }
     },
     "linux-gfx1100": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "6c81cf0298be7ea1189628e76728e40ea5a33298",
+      "validated_sha": "3246bc32bd06c00d938358fa7ac46bfa694d4b12",
       "started_at": "2026-06-02T08:00:00Z",
       "completed_at": "2026-06-23T22:45:38Z",
-      "updated_at": "2026-08-20T00:30:24Z",
+      "updated_at": "2026-10-29T22:03:21Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -67,20 +69,22 @@
       },
       "last_agent": "validator",
       "carry_forward": {
-        "to": "20d02324fd5abece21edfc41c42ab12cb719236b",
+        "from": "6c81cf0298be7ea1189628e76728e40ea5a33298",
+        "to": "3246bc32bd06c00d938358fa7ac46bfa694d4b12",
         "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:45:38Z"
+        "class": "comment-only",
+        "detail": "src/csrc/include/cuda_to_hip.h: comment-only (comments/format only)",
+        "at": "2026-10-29T22:03:21Z"
       }
     },
     "windows-gfx1101": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "6c81cf0298be7ea1189628e76728e40ea5a33298",
+      "validated_sha": "3246bc32bd06c00d938358fa7ac46bfa694d4b12",
       "started_at": null,
       "completed_at": "2026-06-23T22:45:38Z",
-      "updated_at": "2026-08-20T00:30:24Z",
+      "updated_at": "2026-10-29T22:03:21Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -95,20 +99,22 @@
         "last_session_at": null
       },
       "carry_forward": {
-        "to": "20d02324fd5abece21edfc41c42ab12cb719236b",
+        "from": "6c81cf0298be7ea1189628e76728e40ea5a33298",
+        "to": "3246bc32bd06c00d938358fa7ac46bfa694d4b12",
         "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:45:38Z"
+        "class": "comment-only",
+        "detail": "src/csrc/include/cuda_to_hip.h: comment-only (comments/format only)",
+        "at": "2026-10-29T22:03:21Z"
       }
     },
     "windows-gfx1201": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "6c81cf0298be7ea1189628e76728e40ea5a33298",
+      "validated_sha": "3246bc32bd06c00d938358fa7ac46bfa694d4b12",
       "started_at": null,
       "completed_at": "2026-06-23T22:45:38Z",
-      "updated_at": "2026-08-20T00:30:24Z",
+      "updated_at": "2026-10-29T22:03:22Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -124,10 +130,12 @@
       },
       "last_agent": "validator",
       "carry_forward": {
-        "to": "20d02324fd5abece21edfc41c42ab12cb719236b",
+        "from": "6c81cf0298be7ea1189628e76728e40ea5a33298",
+        "to": "3246bc32bd06c00d938358fa7ac46bfa694d4b12",
         "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:45:38Z"
+        "class": "comment-only",
+        "detail": "src/csrc/include/cuda_to_hip.h: comment-only (comments/format only)",
+        "at": "2026-10-29T22:03:22Z"
       }
     }
   },
