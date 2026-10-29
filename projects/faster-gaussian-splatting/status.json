@@ -7,17 +7,14 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-05T01:19:27Z",
-  "updated_at": "2026-10-29T23:47:06Z",
+  "updated_at": "2026-10-29T23:51:09Z",
   "head_sha": "7a499737e51b5ef692a669b09757fa740aae8024",
   "depends_on": [],
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-10-29T23:47:06Z"
-  },
+  "porting": null,
   "waivers": {},
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 1154833948,
-  "stage": "reviewing",
+  "stage": "changes-requested",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -142,7 +139,7 @@
       "failed_sha": null,
       "started_at": "2026-10-29T23:06:58Z",
       "completed_at": null,
-      "updated_at": "2026-10-29T23:47:06Z",
+      "updated_at": "2026-10-29T23:51:09Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -162,7 +159,7 @@
   "review_pr": "https://github.com/AMD-Ecosystem/faster-gaussian-splatting/pull/2",
   "porting_released": {
     "arch": "linux-gfx942",
-    "since": "2026-10-29T23:06:58Z",
-    "at": "2026-10-29T23:21:35Z"
+    "since": "2026-10-29T23:47:06Z",
+    "at": "2026-10-29T23:51:09Z"
   }
 }

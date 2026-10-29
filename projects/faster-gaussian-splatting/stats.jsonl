@@ -74,3 +74,5 @@
 {"kind":"phase","ts":"2026-10-29T23:17:07Z","phase":"test","seconds":4.178,"exit":0,"cmd":"python agent_space/fgs_tests/new_checks.py /var/lib/jenkins/fleet/jobs/mi300-20261029-160443-sync-faster-gaussian-splatting/moat/projects/faster-gaussian-splatting/src/FasterGSCudaBackend"}
 {"kind":"phase","ts":"2026-10-29T23:18:02Z","phase":"test","seconds":4.417,"exit":1,"cmd":"python agent_space/fgs_tests/train_check.py /var/lib/jenkins/fleet/jobs/mi300-20261029-160443-sync-faster-gaussian-splatting/moat/projects/faster-gaussian-splatting/src/FasterGSCudaBackend"}
 {"kind":"phase","ts":"2026-10-29T23:18:11Z","phase":"test","seconds":4.654,"exit":0,"cmd":"python agent_space/fgs_tests/train_check.py /var/lib/jenkins/fleet/jobs/mi300-20261029-160443-sync-faster-gaussian-splatting/moat/projects/faster-gaussian-splatting/src/FasterGSCudaBackend"}
+{"kind":"session","ts":"2026-10-29T23:47:06Z","epoch":1793317626.441279403,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-10-29T23:51:17Z","epoch":1793317877.232858189,"event":"end","platform":"linux-gfx942"}
