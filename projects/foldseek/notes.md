@@ -626,3 +626,9 @@ Every libmarv item is as recorded in the MMseqs2 section: DPX left out, not emul
 ### Verdict
 
 Upstream's HIP support is complete and correct for foldseek's `--gpu` structure search on gfx1100, through the shared libmarv. The real gap is ProstT5 GPU inference (gap 1, four blockers), followed by docs, Dockerfile and CI parity with MMseqs2 (gap 2).
+
+### Cross-reference: linux-gfx90a and linux-gfx1100 sections (2026-10-29)
+
+- gfx90a gap 3 ("RDNA/wave32 runtime unvalidated, expect 834/872/0 diff"): validated on gfx1100 with exactly 834/872/0, plus the SCOP 284-domain run, byte-identical to CPU ungapped.
+- The gfx90a draft PR "Build ProstT5 with the HIP backend when ENABLE_HIP is set" is not sufficient as written. Setting `GGML_HIP=ON` (blocker a) runs into the other three blockers found on gfx1100: `GGML_STATIC` vs ggml-hip's static guard (b), the vendored ggml's removed `hipblasDatatype_t` (c), and `structcreatedb.cpp:556` dropping devices not named "CUDA" while ggml-hip names them "ROCm" (d). The PR needs a ggml update (or a shared ggml-hip) plus the device-name fix, and must be validated with the weights on a host that can download them.
+- The gfx90a caveat that `-DENABLE_HIP=1 -DENABLE_CUDA=1` together would turn on `GGML_CUDA` stands. It is another reason to key ggml's backend on `ENABLE_HIP` explicitly.
