@@ -740,3 +740,7 @@ All HIP MPPI libraries: identical device ISA + exported symbols. Comment-only de
 confirmed to produce no change in device code on gfx90a.
 
 Verdict: binary-equiv carry-forward. State: completed at 8c0b54507b837eba2e186ed1cf7355533d974924.
+
+## 2026-10-29: merge upstream main to run its new GPU tests
+
+Before opening the upstream PR jeff asked for upstream's new GPU tests to be run on AMD. Fork `main` fast-forwarded b5c8daa -> abcd1ab (upstream tip). `moat-port` merged upstream main (no rebase) at 939db79: brings #32 (normExp shared-memory reduction fix and odd-rollout handling, new cases in `tests/mppi_core/normexp_kernel_tests.cu`) and #34 (GPU DDP feedback accumulation fix, new `tests/feedback_controllers/ddp_test.cu` cases). merge-tree was clean; the only overlap with the port is `include/mppi/core/mppi_common.cu`, different hunks. Every platform owes revalidation at 939db79; run the full GPU test suite, including the new normexp and ddp cases.
