@@ -7,10 +7,13 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T05:14:47Z",
-  "updated_at": "2026-10-29T23:33:43Z",
+  "updated_at": "2026-10-29T23:47:01Z",
   "head_sha": "a3f5427e0f315e2bb489e52ec569fd5f924b91b9",
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx942",
+    "since": "2026-10-29T23:47:01Z"
+  },
   "waivers": {},
   "license_clearance": {
     "approved_by": "jeffdaily",
@@ -20,7 +23,7 @@
   },
   "license_spdx": "LGPL-3.0",
   "upstream_repo_id": 114947047,
-  "stage": "ported",
+  "stage": "reviewing",
   "platforms": {
     "linux-gfx1100": {
       "state": "completed",
@@ -145,7 +148,7 @@
       "failed_sha": null,
       "started_at": "2026-10-29T23:06:48Z",
       "completed_at": null,
-      "updated_at": "2026-10-29T23:33:43Z",
+      "updated_at": "2026-10-29T23:47:01Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -158,7 +161,8 @@
         "session_count": 0,
         "first_session_at": null,
         "last_session_at": null
-      }
+      },
+      "last_agent": "reviewer"
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/qrack/pull/1",
