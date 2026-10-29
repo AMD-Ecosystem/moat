@@ -2,12 +2,12 @@
   "schema_version": 3,
   "name": "h2o4gpu",
   "upstream_url": "https://github.com/h2oai/h2o4gpu",
-  "fork_url": null,
+  "fork_url": "https://github.com/AMD-Ecosystem/h2o4gpu",
   "fork_default_branch": "main",
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-08-07T07:05:27Z",
-  "updated_at": "2026-08-07T07:06:56Z",
+  "updated_at": "2026-10-29T22:07:30Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
@@ -26,6 +26,6 @@
       "at": "2026-08-07T15:27:16Z"
     }
   },
-  "stage": "awaiting-fork",
+  "stage": "screened",
   "platforms": {}
 }
