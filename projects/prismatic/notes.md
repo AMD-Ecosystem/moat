@@ -558,3 +558,11 @@ jeff's call on review PR #1: switch from editing `#include` lines to the cuda-to
 Effect: diff vs upstream d155fb93 went from 16 files to 11. These are byte-identical to upstream again: include/{Multislice_calcOutput.cuh,PRISM03_calcOutput.cuh,configure.h,defines.h,fileIO.cuh,utility.cuh}, src/{fileIO.cu,utility.cu}; src/Multislice_calcOutput.cu and src/PRISM02_calcSMatrix.cu keep only their real changes.
 
 Local pre-push check on gfx1151 (TheRock 7.14 hipcc): a TU including `"cuComplex.h"`, `<cuda_runtime.h>` and `"cufft.h"` with `-DUSE_HIP -I hip_compat` compiled, linked hipfft, ran a cuFFT-spelled C2C plan + kernel launch, exit 0. Not the full project build; that is the validators' job. Expect binary-equivalent device ISA vs 840f6f30 (same preprocessed aliases), so `utils/codeobj_diff.py` old-vs-new is a useful extra check alongside the GPU run.
+
+## Review 2026-10-29 (6b9b6005, delta 840f6f30..6b9b6005)
+
+pr-review on the shadow-header commit. Checked: `include(cmake/HIPShim.cmake)` is at CMakeLists.txt:7, before every target (prismatic, prismatic-gui, pyprismatic_core, prismatic-tests, both cuda_add_* and plain add_* forms), so the directory-scoped `include_directories(BEFORE ...)` reaches all of them; no file outside hip_compat/ references cuda_to_hip.h; quoted includes (`"cuComplex.h"`, `"cufft.h"`) find no same-named file next to the includer, so they fall to the `-I` order where hip_compat is first; ROCm's hip_runtime/hip_complex/hipfft headers on the AMD platform do not include any CUDA-named header, so no self-recursion; CUDA builds never add the directory. The 8 include-only files are byte-identical to upstream d155fb93. Commit title 58 chars, `[ROCm]`, AI disclosure in prose, no trailer, jargon clean.
+
+Outside the code: review PR #1's body (the approved upstream body) still describes `include/cuda_to_hip.h` and its CUDA fall-through branch. It must be revised to describe hip_compat/ before publishing; that edit is a GitHub write needing jeff's approval of the text.
+
+Outcome: review-passed. All four platforms revalidate at 6b9b6005.
