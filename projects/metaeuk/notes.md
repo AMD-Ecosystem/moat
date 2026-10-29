@@ -556,3 +556,48 @@ Reproduce with the minus_strand regression data:
     metaeuk makepaddedseqdb proteins proteins_pad
     metaeuk predictexons contigs proteins_pad predEx tmp --gpu 1   # log shows "prefilter", not "ungappedprefilter"
 ====
+
+## Upstream HIP support validation on linux-gfx1100 (2026-10-29)
+
+jeff's request: validate upstream's own ROCm/HIP support as if porting metaeuk ourselves, find every gap, and seed follow-up work from what this port learned. No MOAT state or fork branch was changed. The GPU library is the same libmarv as MMseqs2. See the MMseqs2 notes section of the same date for the libmarv fault-class comparison, which applies here unchanged.
+
+### What was tested
+
+- Upstream: https://github.com/soedinglab/metaeuk `master` at `2b5193a844b3ba1759158fa5254cd3114b4ead3d` (2026-09-22). HIP arrives through the `lib/mmseqs` subtree merge eadaf81 (2026-09-08). `lib/mmseqs/lib/libmarv` is byte-identical to MMseqs2 master 50374396's libmarv.
+- Our port for comparison: AMD-Ecosystem/metaeuk `moat-port` e6070cc5. Its diff is the same libmarv set as the MMseqs2 port, plus `lib/mmseqs/src/CMakeLists.txt` and the Windows-only tinyexpr `-fPIC` guard.
+- Host and toolchain as in the MMseqs2 section: Radeon Pro W7800 gfx1100 wave32, TheRock `rocm-sdk-devel` 10.1.0 (HIP 7.16.26385).
+
+### Build
+
+```
+R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel; export ROCM_PATH=$R HIP_PATH=$R
+cmake -S metaeuk -B metaeuk/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_PREFIX_PATH=$R
+utils/timeit.sh metaeuk upstream-hip-compile -- cmake --build metaeuk/build -j24
+```
+PASS: clean, no source changes (`ENABLE_HIP` is the `lib/mmseqs` cache option).
+
+### Tests
+
+1. metaeuk regression (`tests` submodule = metaeuk-regression 9e024f34, `cd tests && ./run.sh build/src/metaeuk`), as upstream's azure pipeline runs it: rc=0, all 6 `test.sh` cases plus no_overlap, start_scan and sacc_tax pass ("ALL OKAY" x8). This is the CPU path, and it shows the HIP build does not regress it.
+2. The same 6 cases with `--gpu 1` added to `predictexons` (scratch script `agent_space/scripts/me_gpu_test.sh`, same createdb / predictexons / unitesetstofasta / reduceredundancy / compare_fasta_results.pl steps as `tests/test.sh`):
+   - `--gpu 1` alone, with an unpadded or a `makepaddedseqdb`-padded target: 6/6 "ALL OKAY", but `ungappedprefilter` never appears in the log. The CPU k-mer `prefilter` ran. The GPU was not used.
+   - `--gpu 1 --prefilter-mode 1`, unpadded target: 6/6 fail with `Database proteins is not a valid GPU database / Please call: makepaddedseqdb`. This is correct behaviour.
+   - `--gpu 1 --prefilter-mode 1`, padded target: the GPU ungapped prefilter runs. 1/6 "ALL OKAY" (target_cov). 5/6 report "number of predictions has changed" (more predictions: minus_strand 6 vs expected 5, multi_exon 6 vs 3, two_contigs 16 vs 8, target_overlap 8 vs 4, cluster_rep 3 vs 2).
+   - Oracle: the same 6 cases with `--gpu 0 --prefilter-mode 1` (CPU ungapped). `predExFlat.fas` and `predRedFlat.fas` are byte-identical to the GPU run in 6/6 cases. So GPU numerics are exact. The extra predictions come from the ungapped prefilter's higher sensitivity, and the regression expectations were recorded with the k-mer prefilter.
+
+### Gaps found
+
+1. `--gpu 1` is silently ignored by `predictexons` and `easy-predict` (defect, affects CUDA and HIP alike). Cause: `src/workflow/PredictExons.cpp:45` builds `SEARCH_PAR` with `par.createParameterString(par.searchworkflow)`, which forwards every parameter including the default `--prefilter-mode 0`. In the child `search`, `PARAM_PREF_MODE.wasSet` is therefore true, so `lib/mmseqs/src/workflow/Search.cpp:323` (`if (par.gpu == 1 && par.PARAM_PREF_MODE.wasSet == false)` -> ungapped prefilter) never fires, and the CPU k-mer prefilter runs. MMseqs2's `easy-search` avoids this by forwarding only explicitly set parameters (`createParameterString(par.searchworkflow, true)`, `EasySearch.cpp:127`). A user gets no error and no GPU. `predictexons -h` advertises `--gpu INT  Use GPU (CUDA) if possible`. Draft issue (not posted):
+   > `metaeuk predictexons ... --gpu 1` (and `easy-predict`) never runs the GPU prefilter: PredictExons.cpp forwards `--prefilter-mode 0` explicitly to `search`, so Search.cpp's "GPU implies ungapped prefilter" switch is skipped and the k-mer prefilter runs on CPU. With `--gpu 1 --prefilter-mode 1` and a `makepaddedseqdb` target the GPU path works, and its predictions are identical to `--gpu 0 --prefilter-mode 1`, but they differ from the default k-mer results the regression suite expects (5 of 6 cases predict more exons). Should `--gpu 1` imply `--prefilter-mode 1` here, as it does in MMseqs2 search, and should the README document `makepaddedseqdb` for GPU use?
+   Fix shape: mirror Search.cpp's switch in PredictExons.cpp before building `SEARCH_PAR`, plus README text on `makepaddedseqdb`. The prediction-count change is a maintainer decision, not a bug.
+2. No GPU documentation or GPU regression case. metaeuk's README never mentions `--gpu`, and metaeuk-regression has no GPU expectations.
+3. Cosmetic, shared with MMseqs2: the `--gpu` help text (`lib/mmseqs/src/commons/Parameters.cpp:108`, "Use GPU (CUDA) if possible") and the no-GPU error (`ungappedprefilter.cpp`, "MMseqs2 was compiled without CUDA support") still say CUDA in a HIP build. Belongs in MMseqs2.
+
+### About our port's earlier GPU evidence
+
+The 2026-06-05 gfx90a and 2026-06-08 gfx1100 validations recorded "GPU functional tests: PASS (6/6 core test suites, --gpu 1)" and "CPU vs GPU consistency: PASS (identical results)". Given gap 1, those runs never executed the GPU prefilter (their evidence was "Use GPU 1" in the parameter dump, which only echoes the flag). The 6/6 matched because they were CPU runs. The libmarv GPU path in metaeuk was in fact only exercised by the Windows Marv API harness. Today's `--prefilter-mode 1` run is the first evidence that the GPU path works inside metaeuk's workflow, on upstream's code. Lesson for future validations: confirm a GPU module actually ran (look for the GPU module in the log), not that the flag was accepted.
+
+### Verdict
+
+Upstream's HIP build of metaeuk is correct where the GPU is reachable: GPU predictions are identical to the CPU ungapped path on all 6 regression cases. The real gap is metaeuk-specific and platform-neutral: `--gpu 1` does nothing in its workflows (gap 1).
