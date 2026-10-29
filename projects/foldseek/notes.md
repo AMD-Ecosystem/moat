@@ -511,3 +511,66 @@ The Marv::scan() path (same as foldseek ungappedprefilter --gpu) is exercised.
 Results match gfx1201 and Linux gfx1100/gfx90a exactly.
 
 VERDICT: PASS. State -> completed (validated_sha = e296e43ec267ec824e5056d7f99c3661f2551643).
+
+## Upstream HIP support validation on linux-gfx90a (2026-10-29)
+
+Purpose: upstream foldseek gained HIP through its `lib/mmseqs` subtree (5b3bc29, 2026-08-20, then f53fe627 "Update lib/mmseqs to MMseqs2 22c2fff"). This validates that path as if it were our port and lists the gaps. No MOAT state or fork branch was changed. The libmarv-level analysis is in the MMseqs2 notes (`port/MMseqs2`, same date); foldseek's vendored `lib/mmseqs/lib/libmarv` is byte-identical to MMseqs2 master 50374396 (`diff -rq` clean), so every libmarv verdict there applies here.
+
+Host: linux-gfx90a, MI250X GCD, HIP_VISIBLE_DEVICES=0, CUDA_VISIBLE_DEVICES=0. ROCm 7.16.26385 (TheRock pip SDK), AMD clang 24.0.0git, gcc 13.3.0, cmake 3.31.6.
+
+Upstream sha: `463739e0014a1549a527de589102cde98f802f37` (master, 2026-09-09).
+
+### Build
+
+foldseek has no HIP option of its own, no ROCm Dockerfile and no ROCm CI; `ENABLE_HIP` is declared as a cache option in `lib/mmseqs/CMakeLists.txt` and works from the top level:
+
+```
+R=$(hipconfig --rocmpath)
+cmake -S foldseek -B foldseek/build-hip -DCMAKE_BUILD_TYPE=Release -DENABLE_HIP=1 \
+  -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=$R -DCMAKE_HIP_COMPILER=$R/llvm/bin/clang++
+utils/timeit.sh foldseek compile -- cmake --build foldseek/build-hip -j32 --target foldseek
+```
+
+Result: PASS, no HIP warnings; `foldseek` carries `amdgcn-amd-amdhsa--gfx90a`. ProstT5's ggml is built CPU-only (top-level `ENABLE_CUDA` stays 0, so `GGML_CUDA` is off and nothing sets `GGML_HIP`).
+
+### GPU tests (`ulimit -c 0`)
+
+1. Our port's oracle on the bundled `example/` (28 SCOP structures):
+   ```
+   foldseek createdb example/ exDB; foldseek makepaddedseqdb exDB exDB_pad
+   foldseek search exDB exDB     aln_cpu tmp_cpu --gpu 0 -e 10
+   foldseek search exDB exDB_pad aln_gpu tmp_gpu --gpu 1 -e 10
+   foldseek convertalis ...      # cpu.m8 / gpu.m8
+   ```
+   CPU 834 hits, GPU 872; all 834 CPU pairs present on GPU, 0 CPU-only, 38 GPU-only; 0 of 834 common rows differ in ANY column. Log shows `ungappedprefilter ... --gpu 1`. Identical to every validation of our port (gfx90a and gfx1100).
+2. Upstream regression (`regression` submodule, foldseek-regression 4acf0dd5), CPU paths in the HIP binary: `SKIP_PROSTT5=1 regression/run_regression.sh build-hip/src/foldseek <scratch>`: 18/18 TEST SUCCESS. ProstT5 skipped because its weight download (`prostt5-f16-gguf.tar.gz`) stalled at 0 bytes on this host. The suite has no GPU test.
+
+### Comparison with our port
+
+All libmarv items: see the MMseqs2 table (upstream better or equivalent on the cc 9.0 collision, DPX, `__hmax2`, `cg::reduce`, legacy mask widths, `__syncwarp`, static RDC link; same `getPaddedQueryLength` literal 32; latent `ClampToInvalid` divergence; no Windows; RDNA unvalidated). foldseek-specific:
+
+| Our port | Upstream | Verdict |
+|---|---|---|
+| New `USE_HIP` threaded top-level -> mmseqs -> libmarv, keeping `ENABLE_CUDA` for ggml | `ENABLE_HIP` lives in `lib/mmseqs` and sets `ENABLE_CUDA` only in that scope, so ggml stays CPU | Equivalent outcome. Caveat: `-DENABLE_HIP=1 -DENABLE_CUDA=1` together would turn on `GGML_CUDA` and fail without a CUDA toolkit; not a supported combination, just untidy. |
+| Windows libmarv DLL (gfx1201/gfx1101 harness) | none | Platform our port covered, upstream does not (same as MMseqs2; foldseek binary is POSIX-only). |
+| ProstT5 ggml GPU: out of scope | CPU-only on ROCm | Feature gap both share. ggml has a HIP backend (`GGML_HIP`), so `foldseek createdb --prostt5-model ... --gpu 1` could use the GPU on ROCm. |
+
+### Gaps
+
+Defects on gfx90a: none found.
+
+1. Docs/packaging: foldseek README and wiki say nothing about ROCm, and there is no ROCm Dockerfile or CI job (MMseqs2 has both). A foldseek user cannot tell `-DENABLE_HIP=1` exists.
+2. ProstT5 on ROCm: ggml built without `GGML_HIP`, so the ProstT5 path is CPU-only on AMD. A full port would map `ENABLE_HIP` to `GGML_HIP=ON` (+ `GPU_TARGETS`/`CMAKE_HIP_ARCHITECTURES`) in the top-level `if(ENABLE_PROSTT5)` block and validate `createdb --prostt5-model` CPU vs GPU. Needs the weights download, which failed here.
+3. RDNA/wave32 runtime: unvalidated (same as MMseqs2; needs a gfx1100 host run of the example oracle, expect 834/872/0 diff).
+4. Windows: not offered upstream; low value.
+
+### Draft (not posted)
+
+====
+Title: Build ProstT5 with the HIP backend when ENABLE_HIP is set
+
+`-DENABLE_HIP=1` builds the GPU prefilter for ROCm through lib/mmseqs, but the ProstT5 block in the top-level CMakeLists only turns on `GGML_CUDA` for `ENABLE_CUDA`, so on AMD GPUs ProstT5 inference stays on the CPU. This sets `GGML_HIP` (and passes `CMAKE_HIP_ARCHITECTURES` through as ggml's GPU targets) when `ENABLE_HIP` is on.
+
+Test plan: build with `-DENABLE_HIP=1 -DCMAKE_HIP_ARCHITECTURES=gfx90a`, then compare `foldseek createdb <fasta> db --prostt5-model weights --gpu 1` against `--gpu 0` output.
+====
+(Draft only: the change has not been written or run. It needs a porter round before anyone offers it.)
