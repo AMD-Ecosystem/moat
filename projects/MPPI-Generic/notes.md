@@ -791,3 +791,54 @@ cuda-not-validated: this host has no CUDA toolkit and no conda; the sandbox refu
 - **cnpy submodule pinned to an unpublished commit**: `submodules/cnpy` points at a5fc3a5526b5 (from c27e0bf, the Windows DLL-export change), which exists in no public repo (`.gitmodules` url ACDSLab/cnpy: "not our ref"; GitHub API: "No commit found"; there is no AMD-Ecosystem/cnpy). A fresh `git submodule update --init` fails, leaving `submodules/cnpy` empty, and configure then fails at `add_subdirectory(submodules/cnpy)` / `configure_package_config_file`. Every Linux validation since c27e0bf has silently worked around this with 91c53bc. Nobody cloning the PR can build it. Fix options for porter/jeff: publish the cnpy change somewhere the submodule URL can reach (a fork needs a person to create it), or restore the 91c53bc pin and carry the DLL exports another way.
 
 State: validation-failed at 939db796f3f0 (failed_sha). Back to the porter for the two items above; GPU evidence above stands for the merged code.
+## Validation 2026-10-29 (linux-gfx1100 revalidate at 939db79, full GPU) -- validation-failed (docs + submodule, not GPU)
+
+Platform: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), HIP_VISIBLE_DEVICES=1. Toolchain: TheRock ROCm SDK 10.1.0 pip wheels (`rocm-sdk path --root` = the venv's `_rocm_sdk_devel`), HIP 7.16, AMD clang 24. Note this is a newer toolchain than the 2026-06-07 gfx1100 run (ROCm 7.2.1). Fork sha 939db796f3f0 (moat-port tip; merge of upstream abcd1ab).
+
+Delta from validated_sha cef61e5: upstream #32 (normExp odd-rollout reduction fix in `mppi_common.cu`) and #34 (DDP feedback accumulation fix in `ddp.cu`) plus their tests. Real device-code change, so no carry-forward: full run.
+
+### Setup / build
+- `apt-get install libyaml-cpp-dev` (required by top-level CMakeLists `find_package(yaml-cpp REQUIRED)`; was missing on this image).
+- cnpy submodule: `git submodule update --init` FAILS (`upload-pack: not our ref a5fc3a5526b5...`). Used cnpy 91c53bc (ACDSLab/cnpy master) as the gfx90a run on 2026-06-16 did. See finding F2 below.
+```
+ROOT=$(rocm-sdk path --root)
+cmake -S projects/MPPI-Generic/src -B projects/MPPI-Generic/src/build-hip -GNinja \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=$ROOT/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$ROOT \
+  -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build projects/MPPI-Generic/src/build-hip -j 24
+```
+Result: 157/157 targets, exit 0, zero errors.
+
+### New upstream GPU tests (the reason for this round)
+```
+./tests/mppi_core/normexp_kernel_tests          # 10/10 PASS
+./tests/feedback_controllers/ddp_tests          # 10/10 PASS
+```
+normexp: computeBaselineCost_Test, computeNormalizer_Test, computeNormalizerDevice_Test, computeBaselineCostDevice_Test, computeBaselineCostDeviceOddRollouts_Test (new), computeNormalizerDeviceOddRollouts_Test (new), fullGPUcomputeWeightsEveryIteration_Test (new), computeExpNorm_Test, comparisonTestAutorallyMPPI_Generic, comparisonTestHostvsDeviceBaselineNormalizerCalculation -- all OK.
+ddp: ModelWrapper_Test x3, TrackingCosts_Test x3, DDPSolver_Test.Cartpole_Tracking, DDPSolver_Test.Quadrotor_Tracking, DeviceDDP.TwoControls (new), DeviceDDP.FourControls (new) -- all OK.
+
+Core GPU-vs-CPU: rollout_kernel_tests 6/6, rmppi_kernel_tests 5/5, cartpole_dynamics_tests 12/12 PASS.
+
+### Full ctest (`ctest --test-dir .../build-hip -j1 --timeout 600`, 168 s)
+430/462 pass, 32 fail. 462 = 457 previous + 5 new (3 normexp + 2 DeviceDDP), all 5 new pass.
+
+The 30 failures recorded on 2026-06-07 recur exactly (same names): 8 ARStandardCost.* (texture linear-filter, deferred), 2 ARRobustCostTest.*, ARNeuralNetDynamics.computeGradTest, DubinsDynamics.TestUpdateStateGPU, Dynamics.stepGPU, RacerDubins.ComputeStateTrajectoryFiniteTest, WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic, cuFFT.checkErrorCode, 6 GaussianTests.Check*, Integration.RK4, 6 FNN/LSTM/LSTMLSTM LoadModel* (npz map::at), SamplingDistributionTests CompareLikelihoodRatioCostsCPUvsGPU<GaussianDistribution<1,7>>.
+
+2 additional, both intermittent and pre-existing:
+- CompareLikelihoodRatioCostsCPUvsGPU<ColoredNoiseDistribution<3,3>> (gtest /8)
+- CompareLikelihoodRatioCostsCPUvsGPU<NLNDistribution<3,3>> (gtest /12)
+Magnitudes: abs diff 1.5e-8 at cost 3.17e-5; 1.2e-7 at 2.09e-3; 3.7e-9 at -3.41e-5, against a pure relative bound `fabsf(cost)*5e-5` with no absolute floor (generic_sampling_distribution_tests.cu:583): near-zero costs fail on float cancellation. Same class as the long-standing <1,7> failure. Proof it is not the merge: built cef61e5 (old validated sha) with the identical ROCm 10.1 toolchain and ran each typed case 6x as its own process: old /8 2/6 fail, /12 1/6 fail; new /8 2/6, /12 1/6. Identical. Run all 13 typed cases in one process: 13/13 pass on both builds (5 runs each). The merge touches none of the sampling code.
+
+GPU verdict: PASS, zero regressions at 939db79 on gfx1100.
+
+### CUDA gate
+cuda-not-validated: this host has no CUDA toolkit (no /opt/conda, no nvcc), and creating a cuda-12.8 env with a downloaded micromamba was refused by the session's permission policy. Not attempted any other way. Another Linux host must run the CUDA compile gate at 939db79.
+
+### Jargon
+`python3 utils/jargon.py --port MPPI-Generic` -> clean.
+
+### Completion check: FAILED (sent back to porter)
+F1 Documentation: README.md documents the CUDA build (Prerequisites, "Building MPPI-Generic with tests") but says nothing about ROCm/HIP. `git diff main moat-port -- README.md doc` is empty; the port has never documented `-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=<gfx>`, the hipRAND/hipFFT deps, or the C++17 requirement on HIP. Porter step 7 requires this before the diff goes upstream.
+F2 Unreachable submodule gitlink: commit c27e0bf ("[ROCm] Windows build fixes ...") moves `submodules/cnpy` from 91c53bc to a5fc3a5526b5c77b4a9c5233d06fb1b0d23380ed (the WINDOWS_EXPORT_ALL_SYMBOLS change). That commit exists on no public remote: `gh api repos/ACDSLab/cnpy/commits/a5fc3a5...` -> 422 "No commit found"; there is no AMD-Ecosystem/cnpy fork. So `git clone --recursive` / `git submodule update --init` of moat-port fails for every user, and the upstream PR would ship a dangling gitlink. Every Linux validation since June has silently built 91c53bc instead. Fix options for the porter: get the cnpy change into a public cnpy (upstream cnpy PR, which is a person's call) or revert the gitlink to 91c53bc and set `WINDOWS_EXPORT_ALL_SYMBOLS` on the `cnpy` target from MPPI-Generic's own CMakeLists under `if(USE_HIP AND WIN32)`.
+Neither is a GPU defect. Once the fix lands, the test results above should still hold for a doc-plus-CMake-only delta, but per the role a failed arch comes back as port-ready for a full run.
