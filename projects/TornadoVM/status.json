@@ -2,12 +2,12 @@
   "schema_version": 3,
   "name": "TornadoVM",
   "upstream_url": "https://github.com/beehive-lab/TornadoVM",
-  "fork_url": null,
+  "fork_url": "https://github.com/AMD-Ecosystem/TornadoVM",
   "fork_default_branch": "master",
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-08-07T07:05:11Z",
-  "updated_at": "2026-08-07T07:07:05Z",
+  "updated_at": "2026-10-29T22:07:22Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
@@ -26,6 +26,6 @@
       "at": "2026-08-07T15:41:21Z"
     }
   },
-  "stage": "awaiting-fork",
+  "stage": "screened",
   "platforms": {}
 }
