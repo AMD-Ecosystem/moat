@@ -55,3 +55,12 @@
 {"kind":"phase","ts":"2026-06-20T05:00:58Z","phase":"test","seconds":0.045,"exit":127,"cmd":"bash -c HIP_VISIBLE_DEVICES=1 ./prismatic-tests.exe"}
 {"kind": "tokens", "ts": "2026-06-20T05:07:59Z", "tokens": 70057, "source": "validator (gfx1101)"}
 {"kind": "tokens", "ts": "2026-06-23T22:50:53Z", "tokens": 14704, "source": "gfx90a in-pipeline cleanup (batch 5 subagent, shared)"}
+{"kind":"session","ts":"2026-10-29T22:33:48Z","epoch":1793313228.742141976,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-29T22:34:43Z","phase":"compile","seconds":10.096,"exit":2,"cmd":"cmake --build projects/prismatic/build-new -j32"}
+{"kind":"phase","ts":"2026-10-29T22:34:43Z","phase":"compile","seconds":10.052,"exit":2,"cmd":"cmake --build projects/prismatic/build-old -j32"}
+{"kind":"phase","ts":"2026-10-29T22:36:26Z","phase":"test","seconds":0.127,"exit":1,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261029-153122-prismatic-validate-gfx90a/moat/projects/prismatic/build-new/prismatic -i SI100.XYZ -o /tmp/prism_ms.h5 -a m -g 1"}
+{"kind":"phase","ts":"2026-10-29T22:36:26Z","phase":"test","seconds":0.131,"exit":1,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261029-153122-prismatic-validate-gfx90a/moat/projects/prismatic/build-new/prismatic -i SI100.XYZ -o /tmp/prism_p.h5 -a p -g 1"}
+{"kind":"phase","ts":"2026-10-29T22:36:37Z","phase":"test","seconds":3.841,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261029-153122-prismatic-validate-gfx90a/moat/projects/prismatic/build-new/prismatic -i /var/lib/jenkins/fleet/jobs/mi200-20261029-153122-prismatic-validate-gfx90a/moat/projects/prismatic/src/SI100.XYZ -o /tmp/prism_ms.h5 -a m -g 1"}
+{"kind":"phase","ts":"2026-10-29T22:36:40Z","phase":"test","seconds":3.390,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261029-153122-prismatic-validate-gfx90a/moat/projects/prismatic/build-new/prismatic -i /var/lib/jenkins/fleet/jobs/mi200-20261029-153122-prismatic-validate-gfx90a/moat/projects/prismatic/src/SI100.XYZ -o /tmp/prism_p.h5 -a p -g 1"}
+{"kind":"phase","ts":"2026-10-29T22:40:07Z","phase":"test","seconds":184.564,"exit":201,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261029-153122-prismatic-validate-gfx90a/moat/projects/prismatic/src/run && /var/lib/jenkins/fleet/jobs/mi200-20261029-153122-prismatic-validate-gfx90a/moat/projects/prismatic/build-new/prismatic-tests --report_level=detailed"}
+{"kind":"session","ts":"2026-10-29T22:42:11Z","epoch":1793313731.266765746,"event":"end","platform":"linux-gfx90a"}

@@ -566,3 +566,69 @@ pr-review on the shadow-header commit. Checked: `include(cmake/HIPShim.cmake)` i
 Outside the code: review PR #1's body (the approved upstream body) still describes `include/cuda_to_hip.h` and its CUDA fall-through branch. It must be revised to describe hip_compat/ before publishing; that edit is a GitHub write needing jeff's approval of the text.
 
 Outcome: review-passed. All four platforms revalidate at 6b9b6005.
+
+## Validation 2026-10-29 (linux-gfx90a) - PASS at 6b9b6005
+
+Revalidation after the shadow-header commit (840f6f30 -> 6b9b6005). Full real-GPU run; codeobj_diff old-vs-new recorded as extra evidence. `moatlib.py classify prismatic 840f6f30 6b9b6005` -> `class=mixed arch_independent=False inert=False`.
+
+### Host and toolchain
+
+AMD Instinct MI250X / MI250 GCD (gfx90a, wave64), `HIP_VISIBLE_DEVICES=2`, all GPU work under `ulimit -c 0`. TheRock ROCm SDK 10.1.0 from the pip venv (no `/opt/rocm` on this host): `R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`. cmake 3.31.6, Boost 1.83, Ubuntu serial HDF5. Build deps installed with `apt-get install libhdf5-dev libfftw3-dev libboost-test-dev libboost-filesystem-dev libboost-system-dev libboost-math-dev`.
+
+### Build (both shas, fork clone at src = 6b9b6005, worktree src-old = 840f6f30)
+
+```bash
+cmake -S projects/prismatic/src[-old] -B projects/prismatic/build-[new|old] \
+    -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+    -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ \
+    -DPRISMATIC_ENABLE_GPU=ON -DPRISMATIC_ENABLE_CLI=ON -DPRISMATIC_TESTS=ON \
+    -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release \
+    -DHDF5_ROOT=/usr/lib/x86_64-linux-gnu/hdf5/serial -DHDF5_PREFER_PARALLEL=OFF
+utils/timeit.sh prismatic compile -- cmake --build projects/prismatic/build-[new|old] -j32
+```
+
+`prismatic` and `prismatic-tests` built at both shas. `cmake --build` exits 2 only because of upstream's `PrismaticTestSuite` ALL custom target, which runs `./prismatic-tests --log_level=all --run_test=NONE`; Boost 1.83 rejects the empty filter ("Test setup error: no test cases matching filter", exit 200). Upstream behaviour with a newer Boost, identical at both shas, not a port defect; every real target builds.
+
+### codeobj_diff (extra evidence)
+
+`utils/codeobj_diff.py` hardcodes `/opt/rocm` for llvm-nm, llvm-objdump and roc-obj-ls. Ran a scratch copy with `ROCM=$R` and `ROC_OBJ_LS=/dockerx/clr_upstream/hipamd/bin/roc-obj-ls` (needs `libfile-which-perl liburi-perl`, and `$R/lib/llvm/bin` on PATH); the tool itself is unchanged.
+
+```
+python3 codeobj_diff.py build-old/prismatic       build-new/prismatic
+verdict=identical  prismatic vs prismatic: identical (exported symbols + device ISA identical (0 exports))
+python3 codeobj_diff.py build-old/prismatic-tests build-new/prismatic-tests
+verdict=identical  prismatic-tests vs prismatic-tests: identical (exported symbols + device ISA identical (9 exports))
+```
+
+Device code objects are present (roc-obj-ls lists `hip-amdgcn-amd-amdhsa--gfx90a` bundles with nonzero size), so the identical verdict compares real ISA. The export counts differ from the June runs (30/45) because of the different toolchain's nm view, not the port.
+
+### CLI: PASS
+
+```bash
+utils/timeit.sh prismatic test -- build-new/prismatic -i src/SI100.XYZ -o /tmp/prism_ms.h5 -a m -g 1   # "Calculation complete.", 484 probe positions, deviceProperties.major = 9
+utils/timeit.sh prismatic test -- build-new/prismatic -i src/SI100.XYZ -o /tmp/prism_p.h5  -a p -g 1   # "PRISM Calculation complete."
+```
+
+Both exit 0, outputs 229544 bytes each.
+
+### prismatic-tests: 45/46 cases, 237/239 assertions
+
+```bash
+utils/timeit.sh prismatic test -- bash -c "cd src/run && build-new/prismatic-tests --report_level=detailed"
+```
+
+(run from a directory one level under src/ so the tests' `../SI100.XYZ` and `../unittests/outputs/` paths resolve.)
+
+ioTests 22/22, hrtemTests 4/4, processingTests 5/5, probeTests 3/3, aberrationsTests 5/5, seriesTests 3/3, refocusTests 2/2, potentialTests 1/2. Only failure: potentialTests/PRISM01_integration, 2 assertions (`98724.875 / 1211818.88` and `98660.5 / 1211883.25` vs tol 0.001), the known pre-existing CPU-only reference mismatch at the same ~8% magnitude. importSMatrix passes on gfx90a.
+
+### CUDA gate
+
+cuda-not-validated: no CUDA toolkit on this host (no `/opt/conda`, no nvcc), and fetching one through micromamba was refused by this session's permission policy. Source-level substitute for the 840f6f30..6b9b6005 delta: `hip_compat/` reaches the include path only through `include_directories(BEFORE ...)` inside `if(USE_HIP)` in cmake/HIPShim.cmake; `git diff --quiet d155fb93 6b9b6005 -- include/ src/fileIO.cu src/utility.cu` is clean (byte-identical to upstream); src/Multislice_calcOutput.cu and src/PRISM02_calcSMatrix.cu change only their include lines back to upstream's. So a CUDA build compiles strictly closer to upstream than at 840f6f30. The CUDA compile gate has never been recorded for prismatic at any head and remains owed to a host with the toolkit.
+
+### Checks
+
+`python3 utils/jargon.py --port prismatic` -> clean. Docs: upstream documents no in-repo CUDA build procedure (only Dockerfiles), and this delta touches no docs. Fork tree clean apart from the untracked `run/` test scratch dir.
+
+### Outcome
+
+**VALIDATED** on linux-gfx90a at 6b9b6005.
