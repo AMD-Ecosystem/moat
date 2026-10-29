@@ -36,3 +36,4 @@
 {"kind":"phase","ts":"2026-10-29T23:24:33Z","phase":"compile","seconds":72.687,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi300-20261029-160448-sync-gpu4pyscf/moat/agent_space/build-gfx942 -j 56"}
 {"kind":"phase","ts":"2026-10-29T23:35:57Z","phase":"compile","seconds":69.847,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi300-20261029-160448-sync-gpu4pyscf/moat/agent_space/build-gfx942 -j 56"}
 {"kind":"session","ts":"2026-10-29T23:47:14Z","epoch":1793317634.624994949,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-10-29T23:56:05Z","epoch":1793318165.205558535,"event":"end","platform":"linux-gfx942"}
