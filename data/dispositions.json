@@ -631,14 +631,6 @@
     "reason": "not-a-target",
     "repo_id": 1211475186
   },
-  "forceflow/cuda_voxelizer": {
-    "decided": "2026-08-07T14:41:14Z",
-    "disposition": "verify",
-    "full_name": "Forceflow/cuda_voxelizer",
-    "note": "vendored NVIDIA CUDA-Samples headers under the old EULA notice; admin deciding whether forking is acceptable",
-    "reason": "verify",
-    "repo_id": 19234691
-  },
   "forceinjection/ai-fundamentals": {
     "decided": "2026-05-29T23:57:04Z",
     "disposition": "skip",
@@ -909,6 +901,15 @@
     "note": ".NET ML library; different ecosystem",
     "reason": "not-a-target",
     "repo_id": 58986200
+  },
+  "jeffreyxiang/flexgemm": {
+    "by": "jeffdaily",
+    "decided": "2026-10-29T18:07:26Z",
+    "disposition": "skip",
+    "full_name": "JeffreyXiang/FlexGEMM",
+    "note": "Decline FlexGEMM and nvdiffrec as suggested.",
+    "reason": "already-supported",
+    "repo_id": 1042536815
   },
   "jinbooooom/ai-infra-hpc": {
     "decided": "2026-05-30T00:31:01Z",
@@ -1390,6 +1391,15 @@
     "note": "Wholly under the NVIDIA Source Code License, proprietary non-commercial.",
     "reason": "license-blocked",
     "repo_id": 309488075
+  },
+  "nvlabs/nvdiffrec": {
+    "by": "jeffdaily",
+    "decided": "2026-10-29T18:07:27Z",
+    "disposition": "skip",
+    "full_name": "NVlabs/nvdiffrec",
+    "note": "Decline FlexGEMM and nvdiffrec as suggested.",
+    "reason": "license-blocked",
+    "repo_id": 431420791
   },
   "oneapi-src/oneapi-samples": {
     "decided": "2026-05-29T23:13:18Z",
