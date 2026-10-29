@@ -344,3 +344,20 @@ Upstream has no test suite; the GPU suite is the validation harness plus all fiv
   - Diffuse tail (hipRAND, Tdiff=0.1): finite, non-zero.
 - Examples, run from a scratch copy with a synthetic 2 s `source_signal.wav`. matplotlib and plotly are absent from the image and pip is blocked, so a no-op plotting stub was put on PYTHONPATH (the examples only plot; every GPU call runs): `example.py`, `simulate_trajectory.py` (wrote filtered_signal.wav), `polar_plots.py`, `time_vs_T60.py`, `time_vs_nbRIRs.py`: **5/5 exit 0**.
 Whether the plain-buffer LUT costs throughput on texture-capable arches (gfx90a/gfx11xx) was not timed; the time_vs_* examples there give a before/after if wanted.
+
+## Review 2026-10-29 (linux-gfx942, reviewer)
+
+Port Review: gpuRIR (`moat-port` 27a44c8 vs `master` 06da27d). Whole fork diff reviewed, with the three new commits (c171ee7 merge, 5fef7a4 LUT buffer, 27a44c8 README) read in full. `jargon.py --port gpuRIR`: clean.
+
+### Summary
+A HIP port of gpuRIR through a force-included compatibility header, with hipFFT/hipRAND swaps, a software-lerp LUT in a plain device buffer, and mixed precision disabled on HIP. **Request Changes**, for one finding: the CUDA LUT sampling line is not upstream's.
+
+### Minimal Footprint / Backward Compatibility (upstream)
+1. `src/gpuRIR_cuda.cu:243-258` (`image_sample_lut`): the CUDA path is not byte-identical to upstream. Upstream's single line `return (abs(t_tau)<Tw_2)? amp * tex1D<float>(sinc_lut, __fmaf_rz(t_tau,lut_oversamp,lut_center)) : 0.0f;` was rewritten for both backends as `if (abs(t_tau) >= Tw_2) return 0.0f;` followed by an `#if` split of the fetch. This came from a523c73, not from today's round. For finite input the two are equivalent. For NaN `tau` they differ: upstream's `<` is false and the function returns 0, while `>=` is also false and execution goes on to `tex1D(NaN)` on CUDA. Since 5fef7a4, HIP takes the same path into `(int)floorf(NaN)` and indexes `sinc_lut[i]`, which is UB in C++ (the old texture fetch was bounded by the border address mode). Fix: keep upstream's ternary verbatim in the `#else` (CUDA) branch, and give the HIP branch its own guard that keeps the NaN semantics, `if (!(abs(t_tau) < Tw_2)) return 0.0f;`, ahead of the coordinate and lerp. The CUDA source line is then unchanged, and HIP returns 0 exactly where CUDA does.
+
+### Fact-check record (claims verified, no finding)
+- CMake merge (c171ee7): `git diff -w master...moat-port -- CMakeLists.txt` is purely additive. The CUDA branch keeps `find_package(CUDAToolkit REQUIRED)`, `-D_FORCE_INLINES`, `CUDA_ARCHITECTURES all-major`, IPO, and the PUBLIC `CUDA::cufft CUDA::curand` link exactly as upstream has them. The only other CUDA-side edits are three trailing-space strips.
+- LUT buffer index range (5fef7a4): I brute-forced the HIP index math in float32 with a single-rounding fma, over Fs in {4k, 8k, 11.025k, 16k, 22.05k, 24k, 32k, 44.1k, 48k, 96k} and 2M `t_tau` samples each. The low index is always >= 0. The high `i+1` reaches exactly `lut_len` (the trailing zero) at Fs 4k/8k/11.025k/16k/22.05k/24k/32k/48k/96k, so the extra element is required and present. On HIP, point fetch at `i0+0.5` returned texel `i0`, so the buffer read is the same arithmetic as the old HIP path.
+- GPU spot check at 27a44c8, gfx942 (build: `cmake -S projects/gpuRIR/src -B agent_space/gpurir/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R`, R=`rocm-sdk path --root`). Direct-path RIR, LUT vs exact sinc, max error relative to peak: 8000 Hz 1.59e-3, 11025 Hz 1.29e-3, 16000 Hz 1.38e-4, 44100 Hz 6.85e-4, 48000 Hz 3.91e-4. All finite.
+- Lesson in `cuda-to-rocm/references/fault-classes.md` (Textures): accurate against `amd_device_functions.h` (`__gfx94plus_clr__` -> `__HIP_NO_IMAGE_SUPPORT`) and against the code.
+- Commit hygiene: all titles `[ROCm]`, <= 66 chars, no Co-Authored-By/noreply, AI disclosure and Test Plan present, ASCII only.
