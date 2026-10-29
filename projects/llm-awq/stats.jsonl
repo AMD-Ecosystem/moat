@@ -55,3 +55,4 @@
 {"kind":"phase","ts":"2026-10-29T23:44:03Z","phase":"test","seconds":4.741,"exit":0,"cmd":"python /var/lib/jenkins/fleet/jobs/mi200-20261029-162614-llmawq-fix/moat/projects/llm-awq/tests/legacy_gemm_test.py"}
 {"kind":"phase","ts":"2026-10-29T23:44:08Z","phase":"test","seconds":4.971,"exit":0,"cmd":"python /var/lib/jenkins/fleet/jobs/mi200-20261029-162614-llmawq-fix/moat/projects/llm-awq/tests/w4a16_test.py /var/lib/jenkins/fleet/jobs/mi200-20261029-162614-llmawq-fix/moat/projects/llm-awq/src"}
 {"kind":"session","ts":"2026-10-29T23:45:53Z","epoch":1793317553.013780662,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-10-29T23:48:57Z","epoch":1793317737.235225402,"event":"start","platform":"linux-gfx1100"}
