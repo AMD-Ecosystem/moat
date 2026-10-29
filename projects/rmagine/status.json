@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-06T06:58:03Z",
-  "updated_at": "2026-10-29T23:03:00Z",
+  "updated_at": "2026-10-29T23:03:18Z",
   "head_sha": "cc6f8d293fb742c241ccab1d8b9c5d6a71b42a93",
   "depends_on": [],
   "waivers": {},
@@ -176,11 +176,9 @@
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/rmagine/pull/1",
-  "pr_approval": {
-    "approved_by": "jeffdaily",
-    "at": "2026-10-29T22:14:44Z",
-    "head_sha": "cc6f8d293fb742c241ccab1d8b9c5d6a71b42a93",
-    "content_sha256": "9c98ab0886feed0b2bfad3fbd3afd0899fd3ea89ed5881ab81bba99532bf0e50",
-    "review_pr": "https://github.com/AMD-Ecosystem/rmagine/pull/1"
-  }
+  "pr_url": "https://github.com/uos/rmagine/pull/25",
+  "pr_number": 25,
+  "pr_opened_at": "2026-10-29T23:03:18Z",
+  "pr_state": "open",
+  "published_sha": "cc6f8d293fb742c241ccab1d8b9c5d6a71b42a93"
 }
