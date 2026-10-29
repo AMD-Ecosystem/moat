@@ -7,14 +7,17 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-08T13:34:13Z",
-  "updated_at": "2026-10-29T23:53:05Z",
+  "updated_at": "2026-10-29T23:55:45Z",
   "head_sha": "8f142865166c979de4b69ea10e0916df397d4b42",
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx90a",
+    "since": "2026-10-29T23:55:45Z"
+  },
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 647984858,
-  "stage": "changes-requested",
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -23,7 +26,7 @@
       "validated_sha": "a2a710a023f21d2b1ecbc157218f97d1f4001e58",
       "started_at": "2026-06-11T03:18:40Z",
       "completed_at": "2026-06-11T21:28:59Z",
-      "updated_at": "2026-10-29T23:45:52Z",
+      "updated_at": "2026-10-29T23:55:45Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
