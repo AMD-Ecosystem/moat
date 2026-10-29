@@ -510,3 +510,53 @@ on gfx1101 RDNA3. Results match gfx1201 (RDNA4) reference exactly. The port is
 wave-agnostic as designed -- no code changes needed vs the gfx1201 validation.
 gfx1101 TDR fragility note: all 3 tests completed quickly (<5s combined) -- no
 long kernels, no TDR risk.
+
+## Upstream HIP support validation on linux-gfx90a (2026-10-29)
+
+Purpose: decide whether upstream foldmason has HIP support of its own, as MMseqs2, foldseek and metaeuk now do. No MOAT state or fork branch was changed.
+
+Host: linux-gfx90a, MI250X GCD, HIP_VISIBLE_DEVICES=0, CUDA_VISIBLE_DEVICES=0. ROCm 7.16.26385 (TheRock pip SDK), AMD clang 24.0.0git, gcc 13.3.0, cmake 3.31.6.
+
+Upstream sha: `b4fa29907f8b5197212507968874bf04c94945cc` (main, 2026-05-11). Its `lib/foldseek` subtree was last synced 2026-04-06 (f35498f, foldseek 8dc75c74), before MMseqs2's HIP landed (2026-06-28).
+
+### Upstream as-is: no HIP
+
+No `cuda_hip_rename.h` / `cuda_hip_compatibility.cuh` anywhere in the tree and no `ENABLE_HIP` in any CMakeLists. Configuring with `-DENABLE_HIP=1 -DCMAKE_HIP_ARCHITECTURES=gfx90a` succeeds but CMake reports "Manually-specified variables were not used by the project: ENABLE_HIP", and the result is a CPU-only build. Built that way (`cmake --build ... --target foldmason`, PASS) as the CPU baseline.
+
+### Experiment: re-sync only the nested mmseqs (scratch worktree, not a fork change)
+
+1. Replacing all of `lib/foldseek` with foldseek master 463739e0 fails to compile: `src/strucclustutils/structuremsa.cpp:1490: no matching function for call to LoLAlign::LoLAlign(unsigned int, bool)` (foldseek API drift; also `lib/structty is missing` unless `-DENABLE_STRUCTTY=0`). A full foldseek re-sync is a real merge job for upstream, not a drop-in.
+2. Replacing only `lib/foldseek/lib/mmseqs` with foldseek master's `lib/mmseqs` (MMseqs2 22c2fff, the HIP-carrying copy) needs one fix: `lib/foldseek/src/workflow/MultimerCluster.cpp` uses `std::cout`/`std::endl` without `<iostream>` (newer mmseqs removed iostream from Debug.h). With `#include <iostream>` added, `-DENABLE_HIP=1 -DCMAKE_HIP_ARCHITECTURES=gfx90a` builds `foldmason` with a gfx90a code object.
+
+GPU check on that scratch build (`ulimit -c 0`), same recipe as our port's validations:
+
+```
+foldmason createdb lib/foldseek/example exDB; foldmason makepaddedseqdb exDB exDB_pad
+foldmason search exDB exDB     aln_cpu tmp_cpu --gpu 0 -e 10
+foldmason search exDB exDB_pad aln_gpu tmp_gpu --gpu 1 -e 10   # log: ungappedprefilter ... --gpu 1
+```
+
+CPU 837, GPU 874; all 837 CPU pairs on GPU with 0 bitscore/pident differences, 37 GPU-only. Identical to our port's gfx90a and gfx1100 results.
+
+Regression (`regression/run_regression.sh <foldmason> <scratch>`): scratch HIP build 1/3 (run_msa2lddt pass; run_easymsa and run_structuremsa BAD, expected LDDT 0.801621, actual 0.800894). Pristine upstream CPU build: the same 1/3 with byte-identical reports. These failures pre-date HIP and are unrelated to the GPU path (MSA steps run on CPU); our port's notes saw the same thing.
+
+### Comparison with our port
+
+Our port applied the foldseek HIP delta to foldmason's vendored tree. Upstream's route is to re-sync its subtree, and once it does, the libmarv verdicts from the MMseqs2 notes (`port/MMseqs2`, same date) apply as written. Our port's CMake 4.x fix (`CMP0060 OLD` only when CMake < 4.0) is still missing upstream: line 4 of the top-level CMakeLists sets it unconditionally. Not hit here with cmake 3.31.
+
+### Gaps
+
+1. Missing feature: upstream foldmason has no HIP path at all. The fix is upstream's normal subtree update. The smallest working step found is re-syncing `lib/foldseek/lib/mmseqs` plus one `<iostream>` include in `lib/foldseek/src/workflow/MultimerCluster.cpp`. That include belongs in foldseek's own `MultimerCluster.cpp` if foldseek master still lacks it (foldseek master built here, so it either has the include or reaches iostream another way; check before drafting).
+2. CMake 4: unconditional `cmake_policy(SET CMP0060 OLD)` (our port fixed it).
+3. Everything from the MMseqs2/foldseek lists once synced: docs, RDNA runtime unvalidated, Windows, ProstT5 on ROCm.
+4. Pre-existing regression failures (2/3 LDDT mismatch) exist with or without HIP. Worth telling upstream separately; not a port issue.
+
+### Draft (not posted)
+
+====
+Title: Update lib/foldseek to pick up ROCm GPU support
+
+foldseek and MMseqs2 now build their GPU prefilter for AMD GPUs with `-DENABLE_HIP=1`, but foldmason's vendored lib/foldseek predates that, so `ENABLE_HIP` is ignored. Updating the nested lib/foldseek/lib/mmseqs to foldseek master's copy is enough to build foldmason with `-DENABLE_HIP=1`, apart from one missing `#include <iostream>` in lib/foldseek/src/workflow/MultimerCluster.cpp.
+
+Test plan: on an MI250X (gfx90a, ROCm 7.16), `foldmason search` with `--gpu 1` on the foldseek example set returned all 837 CPU hits with identical scores (plus 37 extra GPU prefilter hits). regression/run_regression.sh gives the same results as the current CPU build (run_easymsa and run_structuremsa already report LDDT 0.800894 against an expected 0.801621 on main).
+====
