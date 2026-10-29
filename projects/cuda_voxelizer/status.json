@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "unknown",
   "adopted_at": "2026-08-07T07:03:06Z",
-  "updated_at": "2026-08-07T07:08:14Z",
+  "updated_at": "2026-10-29T18:07:11Z",
   "head_sha": null,
   "depends_on": [],
   "porting": null,
@@ -19,7 +19,12 @@
     "duplicate_effort": "none",
     "viable": true,
     "summary": "Small, actively-maintained MIT CUDA mesh voxelizer with a real GPU kernel path and no existing AMD/ROCm port; two vendored NVIDIA CUDA-Samples helper headers (helper_cuda.h, helper_string.h) carry old restrictive EULA-style text and should be reviewed/replaced during the port even though the project's own code is clean MIT.",
-    "at": "2026-08-07T07:08:00Z"
+    "at": "2026-08-07T07:08:00Z",
+    "decided": {
+      "choice": "fork",
+      "by": "jeffdaily",
+      "at": "2026-10-29T18:07:11Z"
+    }
   },
   "stage": "awaiting-fork",
   "platforms": {}
