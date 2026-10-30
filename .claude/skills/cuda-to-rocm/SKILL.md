@@ -110,6 +110,7 @@ Scan this list against what you are doing. If any line could apply, open
 - `char` vs `signed char` vector base types differ between HIP and CUDA.
 - AMD compute-capability values COLLIDE with NVIDIA arch numbers, so CC-keyed dispatch picks the wrong path.
 - hipCUB/rocPRIM: temp storage queries never return less than 4 bytes; segmented `ArgMax` returns an out-of-range key for an all-NaN segment.
+- On RDNA, `hipOccupancyMaxActiveBlocksPerMultiprocessor` counts the 128 KiB WGP and returns 1 for dynamic shared memory between 64 and 128 KiB, so "occupancy > 0, take the smem kernel" launches what cannot run.
 - Library swaps: cuBLAS -> hipBLAS, cuFFT -> hipFFT, cuRAND -> hipRAND, cuSPARSE -> hipSPARSE, cuDNN -> MIOpen, Thrust/CUB -> rocThrust/hipCUB. Handle types and v2-enum signatures differ.
 - Runtime PTX + CUDA Driver API is a third build class beyond A and B.
 - MSVC-only upstreams accept code gcc/clang reject; the HIP build is a stricter compiler.

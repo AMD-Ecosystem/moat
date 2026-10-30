@@ -414,6 +414,24 @@ the occupancy-based block-size choice and with it the reduction order. If a port
 put it behind a macro that is empty unless `USE_HIP`, so the CUDA kernels stay
 token-identical to upstream. (oneflow, ROCm SDK clang 24)
 
+**On RDNA, a nonzero occupancy does not mean the dynamic shared memory fits.** A common
+CUDA idiom picks a shared-memory kernel when `cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+..., smem)` returns > 0 and otherwise falls back to an uncached kernel (OneFlow's softmax,
+LayerNorm and RMSNorm, and the many projects that copied them). CUDA returns 0 once `smem`
+exceeds the per-block limit. On gfx1100 (ROCm 10.1.0) the HIP query counts against the 128 KiB
+WGP (`hipDeviceAttributeMaxSharedMemoryPerMultiprocessor`) and returns 1 for dynamic sizes
+between the 64 KiB per-workgroup limit and 128 KiB. The launch then either fails with
+`invalid argument` (dynamic > 64 KiB) or, when dynamic alone is <= 64 KiB but dynamic plus
+static is over it, is ACCEPTED and aborts the queue with `HSA_STATUS_ERROR_INVALID_ALLOCATION`,
+which kills the process. `hipFuncSetAttribute(MaxDynamicSharedMemorySize)` succeeds and is
+not enforced. The result is a crash window in the problem size, not a threshold: in oneflow
+fp32 LayerNorm forward failed at 16350..32568 columns and passed above it, because the query
+drops back to 0 at 128 KiB. CDNA (64 KiB LDS per CU) answers 0 correctly, so wave64 runs never
+see it. Fix: under `USE_HIP`, also require `smem + attr.sharedSizeBytes <=
+hipDeviceAttributeMaxSharedMemoryPerBlock` before taking the shared-memory path. Sweep widths
+past 64 KiB/element-size on an RDNA card. Sweeping to 8192 only catches the
+8-byte-per-column backward kernels. (oneflow, gfx1100)
+
 **A ROCm-only branch inside a shared template still COMPILES on the CUDA path.** Gating the
 divergence on a `static constexpr bool` predicate that is false on NVIDIA (`if(needsCast())`)
 keeps the branch from RUNNING there, but a plain `if` instantiates both arms in every
