@@ -662,3 +662,58 @@ Exit 0. All 101 CUDA objects compiled, with `--generate-code=arch=compute_80,cod
 - Fork tree: `git status --porcelain` is empty after `rm -f gpu4pyscf/lib/*.so.0.hip-amdgcn-*`.
 - gto/tests/test_ecp.py: not run (outside the validation set).
 - The PR-prep squash message (see "Still owed") is unchanged and still owed.
+## Validation 2026-10-30 (validator, linux-gfx90a MI250X GCD, fork moat-port @ 45d8053) -- VALIDATION FAILED (documentation gate)
+
+Requested by jeff after the 2026-10-30 review pass. GPU result: every in-scope HF/integral test passes. The documentation gate (validator step 4) fails; see "Step 4 checks". That is the only reason this platform is `validation-failed`.
+
+Host and env: gfx90a:sramecc+:xnack- (one MI250X GCD, `HIP_VISIBLE_DEVICES` pinned by the dispatcher), TheRock ROCm 10.1.0 SDK wheels (`R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`, AMD clang 24.0.0git d6f6cb69). Job venv (python 3.11.17) with the porter's package set: numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pytest 7.3.2. CuPy-ROCm needs `LD_LIBRARY_PATH=$R/lib`. A venv created from /opt/python-3.11-venv has no `rocm-sdk` script; call `/opt/python-3.11-venv/bin/rocm-sdk path --root`.
+
+### Build (committed flags) and the ROCm 10.1 miscompile on gfx90a
+```
+cmake -S gpu4pyscf/lib -B agent_space/build-gfx90a -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R \
+  -DBUILD_CUTLASS=OFF -DBUILD_LIBXC=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build agent_space/build-gfx90a -j64
+```
+Exit 0, 142 s, 8 libs (cupy_helper gdft gecp gint gvhf gvhf_md gvhf_rys pbc), each with a gfx90a code object (`llvm-objdump --offloading`). RHF water sto-3g: -74.9636307973671 vs CPU -74.9636307973705 (3.4e-12). RHF water def2-svp crashes with `HSA_STATUS_ERROR_MEMORY_FAULT` and a GPU hang analysis on the persistent kernel (grid 6656x4 = 104 CUs x 64, workgroup 64x4, group_seg 62808), then `rocBLAS error during freeing ... rocblas_status_internal_error`. This is the deferred `therock-10-1-machinelicm-clobbers-live-vgpr` miscompile from "Porter fix 2026-10-30". It is now confirmed at runtime on gfx90a, not only in that compiler's gfx90a disassembly. It is a toolchain defect, not a port defect. The 2026-06 gfx90a pass used ROCm 7.2.1, which this host does not have.
+
+Test build: identical, plus `"-DCMAKE_HIP_FLAGS=-mllvm -disable-machine-licm" "-DCMAKE_SHARED_LINKER_FLAGS=-mllvm -disable-machine-licm"` (into agent_space/build-gfx90a-licm). Exit 0, 128 s. RHF water/def2-svp -75.9607093289348 vs CPU -75.96070932895176 (1.7e-11); UHF spin=2 -75.71394397066102 vs -75.71394397065606 (5.0e-12). All tests below use this build.
+
+### Full test suite (scf/tests, 17 files), two runs
+```
+ulimit -c 0
+cd projects/gpu4pyscf/src
+LD_LIBRARY_PATH=$R/lib PYTHONPATH=$PWD python -m pytest gpu4pyscf/scf/tests -q -r fs --tb=line -p no:cacheprovider --junitxml=<run>.xml
+```
+Run 1: **122 passed, 8 skipped, 36 failed** (303.5 s). Run 2: **122 passed, 8 skipped, 36 failed** (209.1 s). The per-test outcomes are identical between the two runs (junit diff: the same 166 ids, 0 outcome changes) and match the gfx942 porter run at the same head.
+
+Per file (pass/skip/fail): test_addons 26/0/0, test_cphf 3/0/0, test_diffuse_orbital 0/1/10, test_dispersion_logic 8/0/0, test_fermi_smearing 2/0/1, test_gdm 1/0/4, test_ghf 6/0/0, test_hf_lowmem 2/0/0, test_init_guess 15/0/9, test_int4c2e 3/0/0, test_rhf 15/2/0, test_scf 5/0/2, test_scf_ecp 1/0/0, test_scf_j_engine 8/0/0, test_scf_jk 11/0/1, test_soscf 5/0/9, test_uhf 11/5/0.
+
+Skips (8): dftd3/dftd4 not installed (5), unconditional `hermi=0` skip (3).
+
+Failures (36). I checked each against its junit message. All are outside the HF/integral scope, in the same classes as "Porter fix 2026-10-30":
+- DFT, `hipErrorUnknown` on the numint path (libxc not built), 25: test_diffuse_orbital rhf_hessian/rks_lowmem/rohf/uhf (4); test_gdm gdm_rks/gdm_uks_spin_eq_0/gdm_uks_spin_neq_0 (3); test_init_guess hcore_guess_rks/sad_guess_rks/sad_guess_rks_vv10/sad_guess_uks/sad_guess_uks_ecp/sad_hf_guess_rks/sad_hf_guess_uks (7); test_scf to_cpu/to_gpu (2); test_soscf nr_rks/nr_rks_lda/nr_rks_rsh/nr_roks/nr_uks/nr_uks_lda/nr_uks_rsh/rks_gen_g_hop/uks_gen_g_hop (9).
+- PCM not built (`object has no attribute 'PCM'`), 4: test_diffuse_orbital uhf_solvent, test_gdm gdm_rks_pcm, test_init_guess sad_guess_rhf_pcm/vsap_guess_rks.
+- Analytic gradient (not ported), 4: test_diffuse_orbital rhf/rhf_lowmem (max gradient error 1600.5/1602.1 in run 1; rhf_lowmem 1553.6 in run 2), test_fermi_smearing test_gradient, test_scf_jk test_jk_energy_per_atom (4.48 in run 1, 3.23 in run 2). The magnitudes vary run to run, as on gfx942.
+- Environment, 3: test_diffuse_orbital *_against_qchem (`d-aug-cc-pvdz` is not in pyscf 2.14).
+
+Every HF/integral test passes: test_rhf, test_uhf, test_ghf, test_hf_lowmem, test_int4c2e (3/3, the shm_size fix), test_scf_j_engine (8/8, the wave64 lane-mask fix), test_scf_jk (all but the gradient case), test_scf_ecp, test_addons, test_cphf, test_dispersion_logic, and the HF guesses in test_init_guess.
+
+Numeric determinism (separate processes, water cc-pVTZ, SAD-guess density): J/K run-to-run max |diff| 7.1e-15; difference from CPU PySCF J 5.5e-13, K 2.6e-13. RHF energy -76.05678324246752 vs -76.05678324246749 across two processes. The J/K bytes differ at the ULP level, consistent with atomic accumulation order, so the results are not bitwise deterministic.
+
+### CUDA no-regression gate at 45d8053: PASS (compile-only)
+This host has no conda. I assembled the toolkit from NVIDIA's official 12.8 redist archives (cuda_nvcc 12.8.93, cuda_cudart 12.8.90, cuda_cccl 12.8.90) into agent_space/cuda-12.8, with a `lib64 -> lib` symlink (nvcc.profile expects lib64). The 12.8 `nvidia-cuda-nvcc-cu12` wheel has no `nvcc` driver, only ptxas/nvvm. Host gcc 13.3. Source: a `git archive 45d8053` export, so the HIP libs in the clone were not overwritten.
+```
+PATH=$K/bin:$PATH CUDACXX=$K/bin/nvcc cmake -S cuda-src/gpu4pyscf/lib -B build-cuda \
+  -DCMAKE_CUDA_ARCHITECTURES=80 -DCUDAToolkit_ROOT=$K -DBUILD_LIBXC=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build build-cuda -j64
+```
+Exit 0, 197 s, with `CUDA_ARCHITECTURES: 80` echoed. BUILD_CUTLASS=ON (the default; grouped_gemm compiled), BUILD_SOLVENT=ON. 12 libs: cupy_helper gdft gecp gint gvhf gvhf_md gvhf_rys mgrid_v2 mgrid_v3 pbc sem solvent. That includes the CUDA-only sem/solvent/multigrid dirs the port gates with `if(NOT USE_HIP)`. Not built: libxc (external, untouched by the port). This makes no claim about NVIDIA runtime behaviour.
+
+### Step 4 checks
+- Jargon: `python3 utils/jargon.py --port gpu4pyscf` -> `jargon: clean`. It needs local `master` and `moat-port` branches in the clone.
+- Integrity: `git -C projects/gpu4pyscf/src status --porcelain` shows only the untracked RDC split objects (`lib*.so.0.hip-amdgcn-amd-amdhsa--gfx90a`, `lib*.so.0.host-x86_64-unknown-linux-gnu-`). No tracked file is modified.
+- **Documentation: FAIL.** README.md "Compilation" documents the CUDA build (`cmake -S gpu4pyscf/lib -B build/temp.gpu4pyscf`, `cmake --build ...`, then the cutensor/cupy-cuda12x install line). The fork diff (30 files, master..moat-port) touches no README or other doc file. Nothing documents `-DUSE_HIP=ON`, `CMAKE_HIP_ARCHITECTURES`, the HIP compiler, `-DBUILD_CUTLASS=OFF -DBUILD_LIBXC=OFF`, or the `cupy-rocm-7-0` package. There is no docs/ tree, so README is the one place. For the porter: add a parallel ROCm block in that section, in its house style. It needs the commands, the CuPy-ROCm install line, and a short note that DFT, gradients, solvent and multigrid are not built for ROCm. This is upstream-visible text, so run jargon.py and prose.py on it. Because this arch returns from `validation-failed`, the next gfx90a pass is a full re-run (no carry-forward), so run this README fix's validation together with the toolchain-flag decision below.
+
+### Open for jeff (unchanged, now with gfx90a runtime evidence)
+`-mllvm -disable-machine-licm`: with the committed flags on ROCm 10.1, gfx90a crashes on every basis with d shells. Should the port carry the flag under USE_HIP, and should `therock-10-1-machinelicm-clobbers-live-vgpr` be filed upstream?

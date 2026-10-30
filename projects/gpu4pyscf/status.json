@@ -7,9 +7,8 @@
   "priority": 4.871,
   "ext_type": "cmake-cupy-plugin",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-10-30T01:06:06Z",
+  "updated_at": "2026-10-30T01:30:05Z",
   "head_sha": "45d8053064db65a7c776a65f9310ec4063bc5b5f",
-  "porting": null,
   "waivers": {
     "windows": {
       "reason": "The obstacle is the operating system, not the GPU: there is no CuPy-ROCm on Windows. gpu4pyscf's entire Python layer is CuPy-based (cupy.ndarray throughout, plus cupy_backends.cuda.libs.* for cuBLAS/cuSOLVER), and cupy-rocm ships manylinux2014 wheels only, with no Windows distribution and no Windows build path. With no CuPy-ROCm there is no importable GPU array type, so no GPU test path exists to exercise on Windows at all -- this is not a build failure that could be fixed in the port. Confirmed on windows-gfx1101 and windows-gfx1201. The HIP work itself is validated at head on linux-gfx90a (wave64) and linux-gfx1100 (wave32); windows is the only gate not satisfied at head.",
@@ -23,13 +22,13 @@
   "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
-      "state": "completed",
+      "state": "validation-failed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "899ec268910992ae968ef6e8e447483e9fa22244",
       "started_at": "2026-06-02T06:21:22Z",
       "completed_at": "2026-06-02T08:00:00Z",
-      "updated_at": "2026-06-16T05:32:42Z",
+      "updated_at": "2026-10-30T01:30:05Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -51,6 +50,28 @@
         "class": "comment-only",
         "detail": "gpu4pyscf/lib/CMakeLists.txt: comment-only (comments/format only); gpu4pyscf/lib/cuda_to_hip.h: comment-only (comments/format only)",
         "at": "2026-06-16T05:32:42Z"
+      },
+      "failed_sha": "45d8053064db65a7c776a65f9310ec4063bc5b5f"
+    },
+    "windows-gfx1101": {
+      "blocked": true,
+      "blocked_reason": "cupy-rocm has no Windows distribution (manylinux2014-only wheels); gpu4pyscf Python layer is entirely CuPy-ROCm-based (cupy.ndarray, cupy_backends.cuda.libs.*); no CuPy-ROCm on Windows means no GPU test path is exercisable on this host",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T21:10:19Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
       }
     },
     "linux-gfx1100": {
@@ -84,27 +105,6 @@
         "at": "2026-06-16T05:32:42Z"
       },
       "failed_sha": "45d8053064db65a7c776a65f9310ec4063bc5b5f"
-    },
-    "windows-gfx1101": {
-      "blocked": true,
-      "blocked_reason": "cupy-rocm has no Windows distribution (manylinux2014-only wheels); gpu4pyscf Python layer is entirely CuPy-ROCm-based (cupy.ndarray, cupy_backends.cuda.libs.*); no CuPy-ROCm on Windows means no GPU test path is exercisable on this host",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-05T21:10:19Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
     },
     "windows-gfx1201": {
       "blocked": true,
