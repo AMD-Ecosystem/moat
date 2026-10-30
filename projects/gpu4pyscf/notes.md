@@ -962,3 +962,25 @@ Scope: the delta commit 28f2418 in full, and the whole fork diff (31 files, +695
 
 ### Recommendation
 **Request Changes.** Both fixes go in one new commit on top of 28f2418 (no amend). No device code changes. The build-flag result has to stay the same (one `-disable-machine-licm` on every HIP compile and link line), so the porter's 28f2418 gfx942 test numbers carry over only if the VERBOSE check confirms that.
+
+## Porter 2026-10-30 (porter, linux-gfx942 MI300X, fork moat-port 28f2418 -> 13e3500): review findings 1 and 2
+
+jeff asked for both findings of the 28f2418 review fixed. Taken under the work lock (`changes-requested -> porting`). One new commit 13e3500 on top of 28f2418, pushed fast-forward (no amend, no force); `advance-head 13e3500...`.
+
+### Change
+- gpu4pyscf/lib/CMakeLists.txt: removed both `string(APPEND CMAKE_SHARED_LINKER_FLAGS ...)` lines (`-fgpu-rdc --hip-link` and `-mllvm -disable-machine-licm`), which the upstream `set(CMAKE_SHARED_LINKER_FLAGS "-Wl,--no-as-needed")` overwrites in the README build. The `-fgpu-rdc` comment now says CMake's HIP link rule repeats `CMAKE_HIP_FLAGS` and adds `--hip-link` itself, so those flags reach the shared-library (device) link. The LICM comment names ROCm 10.1 (AMD clang 24), says the d-shell SCF tests pass with ROCm 7.2.1 without the flag, and says to remove it once a ROCm release passes those tests without it.
+- README.md: the same compiler version, the 7.2.1 note and the removal condition.
+
+### Proof of no effective change (gfx942, ROCm 10.1 / AMD clang 24.0.0, cmake 3.31.6, GCC host)
+Built both 28f2418 and 13e3500 the README way:
+```
+cmake -S gpu4pyscf/lib -B <b> -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942
+cmake --build <b> -j $MAX_JOBS -v
+```
+Both exit 0. After normalizing the build dir name, 79 HIP `.cu` compile lines and 8 link lines in each build, and they are **byte-identical** between the two builds. Every compile and link line has `-disable-machine-licm` exactly once, and every link line has `--hip-link` and `-fgpu-rdc` once each. CMakeCache `CMAKE_SHARED_LINKER_FLAGS` is empty in both. Configure-only with `LDFLAGS=-Wl,-O1`, where the upstream `set` does not fire: all 8 `link.txt` have the flag, `--hip-link`, `-fgpu-rdc` and `-Wl,-O1` once each. At 28f2418 that path doubled them, so it now carries only one copy and still works.
+
+### Tests (fork @ 13e3500, `ulimit -c 0`, HIP_VISIBLE_DEVICES=4, job FLEET_VENV: numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pytest 7.3.2; `LD_LIBRARY_PATH=$(rocm-sdk path --root)/lib`)
+RHF water against CPU PySCF: sto-3g 9.7e-13, def2-svp 1.7e-11, cc-pvtz 6.3e-12 (the same as the 28f2418 flag build). The full scf suite was not rerun; the compile and link commands are identical to 28f2418, so its 28f2418 gfx942 result (122 passed, 8 skipped, 36 out-of-scope failures) carries over.
+
+### Other checks
+`jargon.py --port gpu4pyscf`: clean. `prose.py` on the commit message: clean. Title 62 chars. The added lines and the message are ASCII. `git status --porcelain` in the fork is empty. No CUDA rerun: the change only touches lines inside `if(USE_HIP)` and the README.
