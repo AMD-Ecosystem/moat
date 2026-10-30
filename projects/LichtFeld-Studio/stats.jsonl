@@ -326,3 +326,12 @@
 {"kind":"session","ts":"2026-10-30T20:55:26Z","epoch":1793393726.117421551,"event":"end","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-10-30T20:59:46Z","epoch":1793393986.371002212,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-10-30T21:03:11Z","epoch":1793394191.199886518,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T21:07:11Z","epoch":1793394431.968356446,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-30T21:12:10Z","phase":"compile","seconds":257.745,"exit":0,"cmd":"bash agent_space/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-30T21:16:30Z","phase":"compile","seconds":247.100,"exit":0,"cmd":"bash agent_space/lfs_compute_build.sh"}
+{"kind":"phase","ts":"2026-10-30T21:17:15Z","phase":"test","seconds":40.314,"exit":1,"cmd":"timeout -k 30 1200 /var/lib/jenkins/fleet/jobs/rx7900-20261030-140452-lfs-validate-gfx1100/build-compute/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-10-30T21:59:04Z","phase":"test","seconds":2486.935,"exit":0,"cmd":"bash agent_space/suite_runner.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-140452-lfs-validate-gfx1100/moat/agent_space/suites-full"}
+{"kind":"phase","ts":"2026-10-30T22:13:43Z","phase":"compile","seconds":257.128,"exit":0,"cmd":"bash agent_space/lfs_base_build.sh lichtfeld_tests"}
+{"kind":"phase","ts":"2026-10-30T22:20:52Z","phase":"test","seconds":74.794,"exit":0,"cmd":"bash agent_space/smoke.sh head"}
+{"kind":"phase","ts":"2026-10-30T22:22:36Z","phase":"test","seconds":65.194,"exit":0,"cmd":"bash agent_space/smoke.sh head-hip0"}
+{"kind":"session","ts":"2026-10-30T22:24:17Z","epoch":1793399057.981423881,"event":"end","platform":"linux-gfx1100"}

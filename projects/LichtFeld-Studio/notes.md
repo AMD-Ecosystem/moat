@@ -5083,3 +5083,66 @@ My agent came up with this analysis, but I've read and approved it.
 - Draft 1 is a new issue; Draft 2 is a comment on an existing open issue whose fix PR (ROCm/clr#287) has been open since 2026-09-16 with no review. Each needs your approval before posting.
 - Draft 2 says the #287 clamp "should also stop" defect 2 by reading only. Building a patched libamdhip64 to prove it was not attempted.
 - The rocJPEG odd-height overrun (a whole extra row past a pitch*height buffer) is new since the gfx1100 notes; the port's 16 spare staging rows cover it.
+## Revalidation 2026-10-30 (validator, linux-gfx1100, AMD Radeon Pro W7800, RDNA3 gfx1100) -- b0a50fa0, VALIDATION-FAILED (new intermittent crash/hang in `hipEventQuery` from `PinnedMemoryAllocator`, ProjectDocumentTest)
+
+Full run, no carry-forward: `moatlib.py classify LichtFeld-Studio 81b7fa24 b0a50fa0` -> `class=mixed`. Host: kernel 6.8.0-138-generic, amdgpu-dkms 6.19.14.31400100, TheRock ROCm SDK 10.1.0 wheels in /opt/python-3.11-venv (hipconfig 7.16.26385, rocDecode 1.10.0 and rocJPEG 1.10.0 already in the SDK, nothing installed), torch 2.16.0a0+git6c3af02, gcc-14 host, CMake 3.31.6, Xvfb + RADV. GPU: HIP device 1 = PCI 0000:46:00.0 = amd-smi GPU 3, mapped with `hipDeviceGetPCIBusId` (all four cards idle at the start). `ulimit -c 0`, every GPU run under `timeout`. The two smokes below used HIP device 0 = 0000:43:00.0; the reason is under the smoke. Nothing other than the committed fixtures and the bicycle dataset went to rocDecode or rocJPEG. The corrupt-JPEG test ran only as part of `NvCodecHipJpegTest`, whose notes say the host check rejects it before any rocJPEG call.
+
+### Build
+Fresh blobless clone of `moat-port` in this job, HEAD == b0a50fa0c0a7178267854a284ff0ec0258ed8fe5, `protect-fork` installed, `external/libvterm` submodule initialized, `src/data` -> `rx7900-20261029-090528-lfs-sof1-fix/deps/data` (read only). vcpkg 5363acb7 and its binary cache from `rx7900-20261030-094835-lfs-rocdecode/deps`, read only (`VCPKG_BINARY_SOURCES="clear;files,<cache>,read"`): "Restored 78 package(s) ... in 3.7 s".
+- Full application (`agent_space/lfs_full_build.sh` = the "Porter round 2026-10-27" recipe plus `-DLFS_VIDEO_TEST_FFMPEG=/usr/bin/ffmpeg`, -j24): configure 12.1 s, rocDecode found (`LFS_HAVE_ROCDECODE=1` on 424 build lines), 1403/1403 ninja steps, rc 0, 258 s. `LichtFeld-Studio --version`: `v0.5.5-dev-1688-gb0a50fa0 (b0a50fa0)`.
+- Compute-only (`-DUSE_HIP=ON -DLFS_HIP_COMPUTE_ONLY=ON`, ROCm clang for C/C++/HIP, `CMAKE_PREFIX_PATH=<full build>/vcpkg_installed/x64-linux;<site>/torch`, `LFS_GLM_INCLUDE_DIR`/`LFS_ARGS_INCLUDE_DIR` there, `Torch_DIR` the ROCm torch): 359 steps, rc 0, 247 s. `test_tensor_multistream.cpp` is compiled into `lfs_compute_tests`.
+- Pre-pool comparison build (for the ProjectDocumentTest finding only): `lichtfeld_tests` at acb5129a from a temporary worktree, same recipe, 1278 steps rc 0, 257 s; worktree removed afterwards.
+
+### lfs_compute_tests (one process)
+`timeout -k 30 1200 build-compute/cmake/hip_tests/lfs_compute_tests`: 2224 tests / 171 suites, 39.1 s, **2207 passed, 7 failed, 10 skipped**. The six known failures are CudaErrorDiagnostics.ForcedCudaErrorReportHasExpectedSections, AllocatorHygiene.FailedSlabReclaimRestoresOwnershipAndAccounting (order), DiscoverySweep (2), CudaTest.D1_BinaryInPlaceWaitsForGatedProducer, and TensorMultiStreamTest.TrainerViewerHandshakeYieldsConsistentSnapshots (torn 36 of 39). The seventh, WarpCullBwdTest.ReverseWalkHasZeroBlockFences ("could not locate kernels_backward.cuh"), failed because of the working directory: `utils/timeit.sh` cds to the MOAT root. Rerun from the src root, `--gtest_filter='WarpCull*'` gives 13/0. So this matches the porter's 2208/6/10 at c32560e9. `TensorMultiStreamTest.BucketCrossStreamReuseIsOrdered` OK in 16 ms (no hang); the suite is 19/1.
+
+### lichtfeld_tests, one process per suite (`agent_space/suite_runner.sh`, cwd build dir, Xvfb + RADV, `timeout -k 30 900` each, counts from gtest's PASSED/FAILED/SKIPPED lines)
+749 suites, 2482 s: **6942 passed, 14 failed, 124 skipped; 1 suite timed out (ProjectDocumentTest, rc 124, below)**. Each of the 14 failures is on the recorded list with its recorded cause:
+- CudaErrorTypedTest (2), CudaErrorDiagnostics (1): CUDA error names. ShareableAllocationLimitTest.ChunkEnvCapsAndRoundsToGranularity: 2 MiB vs 4 KiB.
+- NvCodecAvailabilityTest, NvCodecImageLoaderJpeg2k16Bit, NvCodecSentinelValidatorTest: "Porter round 2026-10-27".
+- SceneCombinedEncode.QuantizedBandsMatchMasterEncodedBytesAndBounds: checksum frozen from NVIDIA. NormalLossHunt.JointRotationCuda100kSteps: 29.9457703 vs 29.929, as recorded.
+- DiscoverySweep (2). TensorMultiStreamTest.TrainerViewerHandshakeYieldsConsistentSnapshots: protocol race.
+- VideoFrameExtractorOutputNaming.TimestampedGeneratedClipKeepsFrameHashes: MPEG-4 Part 2 clip, hashes frozen from NVDEC. WarpCullBwdTest.ReverseWalkHasZeroBlockFences: cwd-relative source path.
+
+Not failing this time: UndoHistoryTest 125/0 (its known use-after-free did not crash this run), PointerCancellationDispatchTest 21/0, FusedBgBlendTest 3/0, MaskResizedCache 1/0, VisualizerImplResetTest 286/0/1 skip. FastGSKernelTest skipped 24 (no garden checkpoint, as recorded).
+Requested suites (passed/failed):
+- rocDecode: RocDecodeVideo 4/0, Fixtures/RocDecodeMatchesSoftware 6/0.
+- Video: Codecs/VideoColorRange 6/0, VideoColorRangeMetadata 1/0, FormatsAndSelection/VideoFrameExtractorWriteTest 28/0, VideoDecoderFallback 7/0, VideoEncoderOpenTest 1/0, VideoEncoderValidationTest 3/0, VideoEncoderTimingTest 1/0, VideoEncoderSphericalMetadataTest 1/0, Backend/VideoEncoderColorTest 2/0, VideoFrameExtractorOutcome 2/0, Trim 3/0, Params 2/0, VideoFrameExtractorOutputNaming 10/1 (known), VideoExportUtilsTest 13/0, VideoExtractorFpsInputTest 14/0, VideoColorConvertTest 9/0, VideoCudaFrameHandoff 2/0, VideoCpuRgbConversion 2/0, VideoExtractorNaming 9/0, VideoExtractorNamingUiTest 21/0, VideoStreamProbe 1/0, VideoTrimRange 1/0, VideoExportFrameSchedule 1/0, VideoExtractorDialogTrim 4/0, Projection/VideoExportBandTest 8/0.
+- ctest `video.orientation`: passed (1.77 s).
+- Codecs and image loaders: NvCodecHipJpegTest 4/0, NvCodecImageLoaderJpeg 3/0, Jpeg2k8Bit 2/0, Jpeg2kExplicitLayout 1/0, NvCodecBatchDecodeTest 1/0, PipelinedImageLoaderTest 20/0, PipelinedLoaderLedger 8/0, PipelinedImageLoaderSidecarJpeg2k 3/0, Formats/PipelinedNormalDecode 12/0, Formats/PipelinedDepthDecode 20/0, AlphaAndSidecar/PipelinedMaskUndistortTest 4/0, CompressedBlobTier 6/0, SidecarResumeSampler 1/0, CameraImageLoadTest 1/0, EnvironmentImageLoadTest 4/0, ImageIoTest 15/0, ParallelPngWriter 1/0. The known three NvCodec tests fail.
+- Stream-ordered pool: AllocCounterTest 4/0, AllocCounterSiteTags 1/0, ShValueStorageTest 23/0, CudaPoolStreamTeardownTest 3/0, AllocatorHygiene 5/0 (registration order), CudaEventPoolTest 6/0, TensorMultiStreamTest 19/1 (known).
+
+### Headless smoke
+`agent_space/smoke.sh` (`LichtFeld-Studio --headless -d data/bicycle --images images_4 -o <out> --iter 3000 --eval --no-depth-auto-generate --no-normal-auto-generate`, Xvfb + RADV, GNU time, VRAM high-water mark of the pinned card):
+- HIP device 0 (0000:43:00.0, idle): exit 0, wall 65.1 s, training 62.8 s (47.8 it/s), VRAM peak 2918 MiB, host RSS 3.50 GB, PSNR 23.6511, SSIM 0.6559, LPIPS 0.3610, 549,292 splats, "JPEG Decoder: rocJPEG (GPU)". This matches the porter's c32560e9 row (67.2 s, 2918 MiB).
+- The first smoke ran on HIP device 1: exit 0, PSNR 23.6687, SSIM 0.6558, LPIPS 0.3615, 549,589 splats. Its timing was contended (wall 74.7 s, base VRAM 804 MiB): from about 22:19 UTC, 0000:46:00.0 showed 95-99 % `gpu_busy_percent` and 802 MiB used by a process this container cannot see (`amd-smi process` and `ps` list nothing; no process of this job was alive). The correctness runs above finished before that (21:17-22:16), when the card was idle.
+No "Memory access fault", hipError fault sign or lost device in either smoke log.
+
+### NEW FAILURE: ProjectDocumentTest crashes or hangs intermittently in `hipEventQuery` from `PinnedMemoryAllocator`
+- **Full run.** ProjectDocumentTest hit the 900 s timeout (rc 124). The process had 83 tests OK and was inside `AutosaveSigkillAtEveryBoundaryLeavesCompleteOldOrNewSidecar` after boundary 11. No child process was alive. The main thread was in `futex_wait_queue`.
+- **It is not the fork test.** The suite without that test passes 83/0. That test alone fails as recorded (fork after HIP, child dies with SIGSEGV, not SIGKILL) and does not hang.
+- **Rate across whole-suite runs (`--gtest_filter='ProjectDocumentTest.*'`, `timeout -k 10 120`).** Seven runs completed as recorded, 83 passed and 1 failed (the fork test). Two did not:
+  - Watchdog run 3: rc 139 (SIGSEGV) in `DeferredShellExposesUnloadedUnitsAndCommitsHydrationPerNodeUuid`.
+  - Watchdog run 6: hung in the same test.
+- **Stack of the hang** (watchdog `agent_space/pd/hangcatch.sh`, `sudo gdb -p ... thread apply all bt`), main thread:
+  `pthread_mutex_lock` (lll_lock_wait, futex expected=2) <- libamdhip64.so.7 (two unexported frames) <- `rocprofiler::hip::hip_api_impl<1,80>::functor<hipError_t, ihipEvent_t*>` <- `hipEventQuery` <- `lfs::core::PinnedMemoryAllocator::Block::all_uses_complete()` <- `PinnedMemoryAllocator::allocate(unsigned long)` <- `lfs::io::project::SplatChapterPayload::capture(...)` (liblfs_mcp.so) <- `write_phase_a_fixture` <- the test body.
+  No other thread is inside HIP: the threads are OpenBLAS servers, a rocprofiler-sdk PTL pool, an spdlog periodic worker, and ROCr's two AsyncEventsLoop threads (usleep and `hsaKmtWaitOnMultipleEvents`).
+- **Alone.** `--gtest_filter='ProjectDocumentTest.DeferredShellExposesUnloadedUnitsAndCommitsHydrationPerNodeUuid' --gtest_repeat=N`:
+  - Head build: hung after 86 OK (300 s timeout); rc 139 after 3 OK; rc 136 (SIGFPE) after 129 OK; hung after 71 OK under gdb.
+  - So the same call site can hang, segfault or SIGFPE. That looks like `hipEventQuery` reached with a stale or destroyed event, where the mutex word or pointer is garbage. Not proven.
+- **Predates the stream-ordered pool.** The acb5129a build (pre-pool; logs "CUDA memory pooling not available") gave rc 139 after 3 OK, then 300/300 OK in a second run. So the defect is not from the c32560e9 round. The porter rounds' single ProjectDocumentTest runs (2026-10-27, 2026-10-30c) did not hit it.
+- **Code involved is upstream text.** `src/core/tensor/pinned_memory_allocator.cpp`, `src/core/include/core/pinned_memory_allocator.hpp` and `src/core/tensor/cuda_event_pool.cpp` are identical to ca01b056. The blocks' `ready_events` come from `CudaEventPool`. `Block::~Block` calls `cudaEventDestroy` on its events, while `release_events()` returns them to the pool, which may also destroy them (cuda_event_pool.cpp:86). A path where a block still holds an event that was destroyed or handed out again would give exactly this on HIP. On CUDA, `cudaEventQuery` on a destroyed event returns an error (fault class "rule-of-five on resource handles"). This is a hypothesis for the porter, not a finding.
+- **Why it fails validation.** `SplatChapterPayload::capture` is on the project save path. An intermittent hang or crash there would also hit the application. It is not on the recorded list and its cause is not established. The other run artifacts (logs, `hang_bt_6.txt`) are in this job's `agent_space/pd/`, which is container-local.
+- **For the porter.** The reproducer is the `--gtest_repeat=300` filter above: it fails within a few hundred iterations on gfx1100 about two times in three. Find which event `all_uses_complete` queries, for example with an `AMD_LOG_LEVEL=4` run or by logging the event handles on acquire, release and destroy. Then decide port defect or upstream lifetime bug that CUDA tolerates. If it is upstream, it still needs a HIP-side answer before completion.
+
+### CUDA no-regression gate
+cuda-not-validated here: no CUDA toolkit on this host (`/opt/conda` absent, no nvcc). The porter rounds checked CUDA identity of every shared file with `unifdef` (see "Porter round 2026-10-30c" and "Review 2026-10-30d").
+
+### Pre-completion checks
+- `python3 utils/jargon.py --port LichtFeld-Studio`: clean.
+- `moatlib.py audit-commits LichtFeld-Studio`: OK.
+- Documentation: the ROCm build is in `docs/building_and_distribution.md` and README.md (reviewed in "Review 2026-10-30e").
+- `git -C projects/LichtFeld-Studio/src status --porcelain`: empty; HEAD b0a50fa0.
+
+### Verdict: VALIDATION-FAILED (linux-gfx1100) at b0a50fa0
+The rocDecode, Video*, codec/image-loader, pool and multistream suites all pass apart from recorded failures, and the smoke matches. The new ProjectDocumentTest crash/hang (above) goes back to the porter.
