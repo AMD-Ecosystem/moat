@@ -1073,6 +1073,33 @@ cmake --build build/temp.gpu4pyscf -j 32 -v
 | cc-pvtz | f | 2.8e-11 |
 
 The flag costs nothing in correctness on gfx1100 (066e91e without it: 1.3e-12 / 1.7e-11 / 6.2e-12; the geometry here differs slightly from that run's script, so only the magnitude compares).
+## Validation 2026-10-30 (validator, linux-gfx90a MI250X GCD, fork moat-port @ 5c60311) -- COMPLETED
+
+Requested by jeff: revalidate gfx90a now that the port carries `-mllvm -disable-machine-licm` for HIP builds (28f2418, 13e3500, 5c60311; review passed at 5c60311). Host: gfx90a (one MI250X GCD, `HIP_VISIBLE_DEVICES=0` as pinned by the dispatcher; it worked). Toolchain: TheRock ROCm SDK 10.1.0 (`R=$(rocm-sdk path --root)` = /opt/python-3.11-venv/.../_rocm_sdk_devel; HIP compiler identification Clang 24.0.0). Fork clone at 5c60311636487d1f881d2f96e6d0dc80d55a9412 (== origin/moat-port).
+
+### Python env (job venv)
+```
+$FLEET_VENV/bin/pip install 'numpy>=2.0,<2.3' 'scipy>=1.13' cupy-rocm-7-0==14.2.0 pyscf==2.14.0 pytest
+```
+Installed: python 3.11.17, numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pytest 7.3.2. The job venv sees the system TheRock install, so `rocm-sdk` and the HIP libraries come from /opt/python-3.11-venv; CuPy-ROCm needs `LD_LIBRARY_PATH=$R/lib`.
+
+### Build: README ROCm block, as written
+```
+export PATH=$FLEET_VENV/bin:$PATH
+cmake -S gpu4pyscf/lib -B build/temp.gpu4pyscf -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a
+cmake --build build/temp.gpu4pyscf -j 32 -v
+```
+- Deviations from the README: the arch, `-j 32`, and `-v` to see the flags. Paths passed absolute (utils/timeit.sh runs from the moat root). No command-line flag additions: the committed CMake only.
+- Exit 0, 210 s, 8 libs (cupy_helper gdft gecp gint gvhf gvhf_md gvhf_rys pbc). The verbose log has `-disable-machine-licm` on 87 lines: the 79 HIP compiles and the 8 `--hip-link` lines, matching the gfx942 porter count.
+
+### RHF water vs CPU PySCF (conv_tol 1e-12)
+| basis | max shell | GPU (Ha) | |GPU - CPU| (Ha) |
+|---|---|---|---|
+| sto-3g | p | -74.96302313846651 | 3.7e-12 |
+| def2-svp | d | -75.9609839870705 | 9.6e-12 |
+| cc-pvtz | f | -76.05712742030266 | 2.9e-11 |
+
+The d- and f-shell bases no longer abort (at 066e91e without the flag, def2-svp died with APERTURE_VIOLATION in rys_k_kernel).
 
 ### Tests
 ```
@@ -1090,3 +1117,13 @@ python -m pytest gpu4pyscf/scf/tests -q -rfs --tb=no -p no:cacheprovider
 - `python3 utils/jargon.py --port gpu4pyscf` -> `jargon: clean`.
 - Documentation: the README documents the ROCm build next to the CUDA build, including the flag paragraph; that build was followed here.
 - Integrity: `git -C projects/gpu4pyscf/src status --porcelain` is empty after the build.
+- Run 1: **122 passed, 8 skipped, 36 failed** (309 s). Run 2: **122 passed, 8 skipped, 36 failed** (207 s). Identical failure sets. No aborts, so the whole suite ran in one process (the 066e91e no-flag run needed one process per test).
+- Equal to the 066e91e gfx90a flag-build result (122/8/36) and the gfx942 28f2418 result. The 40 tests that the no-flag build broke at 066e91e all pass.
+- Failures, classified from the junit messages, all out of the HF/integral scope: 25 DFT (`hipErrorUnknown`, libxc not built), 4 PCM not built, 4 analytic gradient (test_diffuse_orbital test_rhf/test_rhf_lowmem, test_fermi_smearing test_gradient, test_scf_jk test_jk_energy_per_atom, off by 4.33 this run; it varies run to run as before), 3 `BasisNotFoundError` d-aug-cc-pvdz.
+- Skips (8): dftd3/dftd4 not installed (5), unconditional `hermi=0` (3).
+
+### Other checks
+- CUDA no-regression gate: not rerun. It passed at 28f2418 (Porter section), and 13e3500/5c60311 change only lines inside `if(USE_HIP)` and the README, with byte-identical HIP compile/link commands.
+- `python3 utils/jargon.py --port gpu4pyscf` -> `jargon: clean`.
+- Documentation: the README ROCm section documents the build and the flag; that build was followed here.
+- Integrity: `git -C projects/gpu4pyscf/src status --porcelain` is empty after the build and tests.
