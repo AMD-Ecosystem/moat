@@ -1790,3 +1790,41 @@ Verified and not findings: the ROCm `curand_Philox4x32_10` matches cuRAND's `_ph
 ### Recommendation
 
 **Request Changes** (one item: the HIP version dependency of `cg::reduce`, plus the matching correction to the promoted lesson).
+
+## Porter 2026-10-30 (linux-gfx942) -- answers Review 2026-10-29, commit d3e2266
+
+Requested by jeff: address the review's one finding, keep the ROCm build working on stable ROCm 7.2.x as well as TheRock 7.13+, CUDA path unchanged. Fork review PR #2 had no reviews and no line threads (checked with `gh pr view` and the reviewThreads GraphQL query), so the notes section was the whole list. Same platform as the previous round (MI300X gfx942, torch 2.16.0a0+git6c3af02, HIP 7.16.26385, `HIP_VISIBLE_DEVICES=3`).
+
+### Fact-check of the finding (confirmed)
+
+- Downloaded the ROCm 7.2.4 debs from `repo.radeon.com/rocm/apt/7.2.4/pool/main` (`hip-dev_7.2.53211.70204`, `rocm-llvm_22.0.0.26084.70204`, `rocm-device-libs`, `hip-runtime-amd`, `hipcc`, `rocm-core`, `hipcub-dev_4.2.0`, `rocprim-dev_4.2.0`) and extracted them with `dpkg-deb -x` into `agent_space/rocm724/root` (no install). `include/hip/cooperative_groups/` does not exist there, and `amd_hip_cooperative_groups.h` defines neither `reduce` nor `greater`. `hip_version.h`: 7.2.53211.
+- Contents API: `therock-7.12` neither; `therock-7.13` and `therock-7.14` have `hip_reduce.h` + `struct greater`; `hip_scan.h` absent at both 7.13 and 7.14 (present only in this image's 7.16 headers). Commit `1fe7989f90` (2026-03-23) adds `amd_hip_cooperative_groups_reduce.h` and edits the main header, so `reduce` and `greater` arrived together and one `__has_include` can gate both.
+- Control: the 7a49973 hipified header compiled with the 7.2.4 toolchain fails with exactly the reviewer's `fatal error: 'hip/cooperative_groups/hip_reduce.h' file not found`.
+
+### Fix (d3e2266, option (a))
+
+`kernels_forward.cuh`, ROCm branch only: `#if __has_include(<hip/cooperative_groups/hip_reduce.h>)` includes it; `#else` defines `cooperative_groups::greater<T>` and `reduce(const thread_block_tile<size, ParentCGTy>&, T, Op)` as an unrolled `tile.shfl_xor(value, offset)` loop over offsets size/2..1. HIP's tile `shfl_xor` is `__shfl_xor(var, laneMask, numThreads)`, tile-scoped on wave64. The CUDA `#else` and the call at line 501 (now 516) are untouched. README's "7.2 or newer recommended" is correct again, so no doc change.
+
+### Builds
+
+```bash
+export PYTORCH_ROCM_ARCH=gfx942 MAX_JOBS=32
+git -C projects/faster-gaussian-splatting/src/FasterGSCudaBackend clean -xdfq
+utils/timeit.sh faster-gaussian-splatting compile -- bash -c "cd $PWD/projects/faster-gaussian-splatting/src/FasterGSCudaBackend && python setup.py build_ext --inplace"
+```
+PASS (HIP 7.16, `hip_reduce.h` arm).
+
+ROCm 7.2.4 compile (the hipified `.hip` files from the build above): `<7.2.4>/lib/llvm/bin/clang++ -x hip --rocm-path=<7.2.4> --offload-arch=gfx942 -fno-gpu-rdc` with the same `-D`/`-std=c++20 -O3 -ffast-math` flags setup.py passes, project and torch `-I`s, and `-idirafter` an overlay of the 7.16 include dir WITHOUT its `hip/`, `hipcub/`, `rocprim/` (torch headers need hipBLAS etc.; first attempt used the whole 7.16 dir and `__has_include` found 7.16's `hip_reduce.h`, so it proved nothing). With the overlay, `-H` shows `hip_runtime.h`, `amd_hip_cooperative_groups.h`, `hipcub.hpp` from 7.2.4 and no `hip_reduce.h`. All 9 device TUs (adam, densification_api, mcmc, filter3d, backward, forward, inference, pruning_scores, rasterization_api) compile: PASS. Compile only (no 7.2 runtime/torch to link against); the gfx90a and gfx1100 hosts still need the full build at their revalidation.
+
+### GPU tests (`ulimit -c 0`)
+
+- Fallback at runtime on wave64: copy of the tree (`agent_space/fb`) with the `__has_include` forced to `#if 0` and the fallback symbols renamed `greater_fb`/`reduce_fb` (forcing it on 7.16 otherwise collides with the built-in `cg::greater` -- expected, the real build never takes that arm there). `run_outputs.py` + `compare.py` vs the real build: images, 3D filter and filter visibility bit-identical (filter3d incl. inf positions, `torch.equal`); worst relL2 3.68e-6 (pruning, 200k scene); native run-to-run worst 4.29e-6. `tile_max_n_processed` drives the backward per-tile early exit (`kernels_backward.cuh:338`), so an undercount would show as O(1) gradient loss.
+- Real build: `new_checks.py` 31/31 PASS, `train_check.py` 3/3 PASS (Adam 3.1e-6, L1 0.1204 -> 0.0080), `det.py` 0 diff at 200k/100k/50k.
+
+### Lesson corrected
+
+`.claude/skills/cuda-to-rocm/references/strategy-b-torch.md` "Headers and functions hipify leaves broken": the `cg::reduce` bullet now gives the version bound (therock-7.13+, absent through rocm-7.2.4), the two-arm pattern, the single-gate rationale, the extract-the-7.2.4-debs check and the overlay pitfall; `hip_scan.h` bounded to builds newer than therock-7.14.
+
+### State
+
+`jargon.py --port`: clean; `prose.py` on the commit body: clean. Pushed `7a49973..d3e2266` (fast-forward, no PR open upstream), `advance-head d3e2266`, linux-gfx942 `porting -> ported`. The CUDA no-regression gate is still owed at head (no nvcc here; the CUDA path is byte-identical to 7a49973's).
