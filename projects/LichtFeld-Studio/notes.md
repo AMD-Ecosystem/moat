@@ -4766,3 +4766,320 @@ The three findings of "Review 2026-10-30d" are answered. b0a50fa0 is one docs li
 
 ### Next
 Validator: revalidate at b0a50fa0 (docs only since c32560e9; the code delta since the validated 81b7fa24 is the c32560e9 round). The deferral stays open and unruled for jeff.
+
+## ROCm bug drafts 2026-10-30 (no pipeline role, linux-gfx1201)
+
+jeff ruled `rocjpeg-output-row-overrun` and `hip-vmheap-unmap-threshold-lost-or-overtrimmed` "now" on 2026-10-30: recheck each against the latest source and draft the report for his approval. Nothing was posted to GitHub, no PR was opened, no fork was pushed; stage, platform states and the work lock were not touched.
+
+Host: AMD Radeon AI PRO R9700 (gfx1201) x4, amdgpu 6.19.14.31400100, kernel 6.11. HIP 0 = PCI 0000:e3:00.0 = amd-smi GPU 3 (by a `hipDeviceGetPCIBusId` probe; HIP 1/2/3 = c3/03/06 = amd-smi 2/0/1), 0-1 % GFX activity and no processes before the runs; every run `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`, `timeout`. Allocations at most 1 GiB.
+Toolchains: installed TheRock ROCm 10.1.0 wheels (hipconfig 7.16.26385, librocjpeg.so.1.10.0). Newest nightly: ROCm 10.3.0a20261030 (`rocm[libraries,devel]` and `rocm-sdk-device-gfx1201` from `https://nightly.repo.amd.com/rocm/whl-next/`, into a job-local venv; hipconfig 7.18.26433, librocjpeg.so.1.13.0). The old `rocm.nightlies.amd.com/v2` index stops at 7.14.0a20260612. Binaries for the nightly built with its own hipcc and `-Wl,-rpath` to its `_rocm_sdk_devel/lib` and `_rocm_sdk_core/lib` (ldd checked). Source: ROCm/rocm-systems develop 5843ab42628e (2026-10-30), sparse clone (projects/clr/rocclr/platform, projects/clr/hipamd/src, projects/rocjpeg).
+
+### rocjpeg-output-row-overrun: still present in 1.13.0 and develop
+
+No existing issue (searched ROCm/rocm-systems for rocJPEG pitch/overrun/row/corrupt/odd width; the open rocJPEG issues are #11934 Windows support, #11435 Y400 segfault). Test images: synthetic baseline JPEGs from Pillow 12.3 (`gen.py`, quality 95, SOF0, SOS and EOI checked): 1237x822 4:2:0, 1237x822 4:4:4, 642x480 4:2:0, 641x481 4:2:0. No truncated or scan-less stream was sent to VCN. `rowover.cpp` (verbatim in the draft below): two padded-pitch decodes with sentinels 0xA5/0x5A measure bytes written past each row end and rows written below the image; 20 decodes at pitch width*3 into pitch*(height+2) compared with a padded-pitch decode. Output, identical on 10.1.0 and 10.3.0a20261030 except the "up to N bytes" counts:
+```
+1237x822 4:2:0 and 4:4:4: RGB 9 bytes past row end, RGB_PLANAR 3 per plane, 0 rows below; tight: 20/20 differ (cols 0..2, max abs 255), 19/19 differ from decode 0, 180 bytes below the image in total (9 per decode)
+642x480 4:2:0:            RGB 18, RGB_PLANAR 6, 0 rows below; tight: 20/20 differ (cols 0..5, max 255), 19/19 differ, 360 bytes below in total
+641x481 4:2:0:            RGB 21, RGB_PLANAR 7, 1 row below; tight: 20/20 differ (cols 0..6, max 255), 19/19 differ, 38840 bytes below in total (about one row + 21 per decode)
+```
+The overrun is exactly the width rounded up to 8 pixels (1240, 648, 648). New finding: an odd height also writes one row below the last row, so a buffer of exactly pitch*height (the documented minimum) is overrun by a whole row. The port's staging buffer pads rows to 16 px and adds 16 spare rows, so it is already covered.
+Code in develop 5843ab4: `rocjpeg_decoder.cpp:912-913` and `997-998` (`dst_width_in_8px_blocks = (picture_width + 7) / 8`, `dst_height_in_2row_blocks = (picture_height + 1) / 2`); `rocjpeg_hip_kernels.cpp:445-455` (RGB: two unconditional 24-byte `DUINT6` stores per thread) and `474-508` (planar: two 8-byte stores per plane); `:89` (RGBA->RGB kernel, 8-pixel store at the row end, width check only on the block start). The docs table (`docs/how-to/rocjpeg-decoding-a-jpeg-stream.rst:150-151`) gives pitch widths[0]*3 / widths[c] and size pitch*heights as the minimum. The samples (`samples/rocjpeg_samples_utils.h` `GetChannelPitchAndSizes`) align width and height to 16, which hides it. The 1.13.0 kernels were rewritten as batched kernels; the overrun survived the rewrite.
+
+### hip-vmheap-unmap-threshold-lost-or-overtrimmed: covered by #11690 except defect 2
+
+ROCm/rocm-systems#11690 (opened 2026-09-16, gfx1201, ROCm 7.2.1, open, no comments) names `VmHeap::TrimPhysMemory` overwriting `unmap_threshold_` with the caller's value (sync/pressure paths pass 0), `VmHeapArray::SetUnmapThreshold` skipping uncreated heaps (our defect 1), and `Heap::ReleaseAllMemory(min, safe)` ignoring `release_threshold_` on the non-VM path. Its fix PR is ROCm/clr#287 (open; clamps the argument in `VmHeap::TrimPhysMemory` to the configured threshold, applies `SetUnmapThreshold` to every heap, clamps `ReleaseAllMemory(min, safe)` on the non-VM path), with a test in ROCm/hip-tests#612 (open). #287 does not touch `VmHeapArray::Free`. Develop 5843ab4 still has every site (vmheap.cpp:170-196, 201-211, 423-444 with the trim at line 441, 465-473; hip_mempool_impl.cpp:106-131, 262-276).
+
+Is defect 2 distinct? Yes, as a caller; no, as the place a fix would land. #11690's reproducer comment says "the plain sync path does honor unmap_threshold_", and its lowered values come from the pressure path's `ReleaseAllMemory(0)` -> `TrimPhysMemory(0)`. Our multi-block case is on the plain sync path: `hipStreamSynchronize` -> `Device::ReleaseFreedMemory` -> `MemoryPool::ReleaseFreedMemory` -> `Heap::ReleaseAllMemory()` -> `EraseAllocation` -> `VmHeapArray::Free` -> `TrimPhysMemory(threshold - extra)`. Each free is followed by a sync, so the free heap is empty at every `FreeMemory` and the pressure branch (free heap > busy heap) never fires; the run with `AMD_DIRECT_DISPATCH=0`, which disables that branch, gives the same numbers. The threshold is set late, so defect 1 is not involved. #287's clamp in `VmHeap::TrimPhysMemory` would also neutralize defect 2, since the lowered value only acts as that function's argument (by reading; the patch was not built). So the comment adds defect 2 as a fourth site to #11690 rather than a new issue.
+
+`thr.hip` (verbatim in the draft below; `single` and `multi` modes), hipcc `--offload-arch=gfx1201 -O2`, identical output on 10.1.0 and 10.3.0a20261030:
+```
+single thr=max  alloc=512 early: 640 -> 128 MiB    late: 640 -> 640 MiB
+single thr=1024 alloc=512 early: 640 -> 128 MiB    late: 640 -> 640 MiB
+single thr=256  alloc=512 early: 640 -> 128 MiB    late: 640 -> 256 MiB
+single thr=64   alloc=512 early: 640 ->   0 MiB    late: 640 ->   0 MiB
+multi thr=256  3 x 200 MiB, free 1,0,2:   640 -> 640 -> 384 -> 128 MiB   (same with AMD_DIRECT_DISPATCH=0)
+multi thr=512  4 x 200 MiB, free 0,1,2,3: 896 -> 896 -> 896 -> 512 -> 512 MiB
+multi thr=1024 4 x 200 MiB, free 0,1,2,3: 896 throughout
+```
+These match the gfx1100 numbers in "Porter round 2026-10-30d" exactly. #11690's own reproducer (`repro11690.hip`, copied from the issue body) on gfx1201: reserved 256 MiB after alloc (the reporter saw 192 on 7.2.1), 128 MiB after frees + sync, "THRESHOLD BYPASSED", exit 2, on both 10.1.0 and 10.3.0a20261030. It was not run on gfx1100.
+
+### Draft 1: new issue for ROCm/rocm-systems (not filed)
+
+Title: `[rocJPEG] RGB and RGB_PLANAR decode writes past the row end and below the last row`
+
+`utils/prose.py` and `utils/jargon.py` on the body: clean. ASCII only.
+
+====
+My agent came up with this analysis, but I've read and approved it.
+
+### Problem
+
+`rocJpegDecode` with `ROCJPEG_OUTPUT_RGB` or `ROCJPEG_OUTPUT_RGB_PLANAR` writes each output row out to the next multiple of 8 pixels, and for an odd image height it writes one row below the image. With the destination sizes the documentation gives as the minimum (pitch `widths[0] * 3` for RGB, `widths[c]` for RGB planar, channel size pitch * height), the overrun lands on the first pixels of the next row, and after the last row it lands outside the buffer. The corrupted pixels differ from decode to decode.
+
+### Cause
+
+`AccumulateColorConvertToRGB` and `AccumulateColorConvertToRGBPlanar` size the conversion grid as `dst_width_in_8px_blocks = (picture_width + 7) / 8` and `dst_height_in_2row_blocks = (picture_height + 1) / 2` ([rocjpeg_decoder.cpp:912-913](https://github.com/ROCm/rocm-systems/blob/5843ab42628ef78c61ec7f091bc4e8756c28191c/projects/rocjpeg/src/rocjpeg_decoder.cpp#L912-L913), [997-998](https://github.com/ROCm/rocm-systems/blob/5843ab42628ef78c61ec7f091bc4e8756c28191c/projects/rocjpeg/src/rocjpeg_decoder.cpp#L997-L998)). Each thread of `ColorConvertYUVToRGBBatchedKernel` then stores 24 bytes to each of its two rows without checking the width or height ([rocjpeg_hip_kernels.cpp:445-455](https://github.com/ROCm/rocm-systems/blob/5843ab42628ef78c61ec7f091bc4e8756c28191c/projects/rocjpeg/src/rocjpeg_hip_kernels.cpp#L445-L455)), and `ColorConvertYUVToRGBPlanarBatchedKernel` stores 8 bytes per plane per row the same way ([474-508](https://github.com/ROCm/rocm-systems/blob/5843ab42628ef78c61ec7f091bc4e8756c28191c/projects/rocjpeg/src/rocjpeg_hip_kernels.cpp#L474-L508)). `ColorConvertRGBAToRGBBatchedKernel` also stores 8 whole pixels at the row end ([line 89](https://github.com/ROCm/rocm-systems/blob/5843ab42628ef78c61ec7f091bc4e8756c28191c/projects/rocjpeg/src/rocjpeg_hip_kernels.cpp#L89)). The documented minimum sizes ([rocjpeg-decoding-a-jpeg-stream.rst:150-151](https://github.com/ROCm/rocm-systems/blob/5843ab42628ef78c61ec7f091bc4e8756c28191c/projects/rocjpeg/docs/how-to/rocjpeg-decoding-a-jpeg-stream.rst?plain=1#L150-L151)) do not allow for this. The samples do not hit it because `GetChannelPitchAndSizes` aligns both the width and the height to 16. The links are to develop at 5843ab4 (rocJPEG 1.13.0); the rocJPEG 1.10.0 in ROCm 10.1.0 shows the same overrun.
+
+### Reproducer
+
+The program below decodes one baseline JPEG three ways: into a padded pitch pre-filled with two different sentinels, to measure how far past each row and below the last row the decode writes; and 20 times with pitch `width * 3` into a buffer of `pitch * (height + 2)` bytes, comparing each decode with the padded-pitch decode. The test images are synthetic baseline JPEGs from Pillow (script included).
+
+```
+python3 gen.py 1237 822 2 img_1237x822_420.jpg
+python3 gen.py 1237 822 0 img_1237x822_444.jpg
+python3 gen.py 642 480 2 img_642x480_420.jpg
+python3 gen.py 641 481 2 img_641x481_420.jpg
+hipcc --offload-arch=gfx1201 -O2 rowover.cpp -o rowover -lrocjpeg
+for f in img_*.jpg; do ./rowover $f 20; done
+```
+
+<details>
+<summary>rowover.cpp and gen.py</summary>
+
+```cpp
+// rocJPEG output row overrun: decode one baseline JPEG to ROCJPEG_OUTPUT_RGB and
+// ROCJPEG_OUTPUT_RGB_PLANAR and measure how far each row is written past its width.
+// Build: hipcc -O2 rowover.cpp -o rowover -lrocjpeg
+// Run:   ./rowover image.jpg [decodes]
+#include <hip/hip_runtime.h>
+#include <rocjpeg/rocjpeg.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <fstream>
+#include <iterator>
+#include <vector>
+
+#define CHECK(x) do { auto s_ = (x); if ((int)s_ != 0) { printf("%s failed: %d (line %d)\n", #x, (int)s_, __LINE__); exit(1); } } while (0)
+
+static RocJpegHandle dec;
+static RocJpegStreamHandle stream;
+static uint32_t W, H;
+
+// Decodes into planes of `pitch` bytes and `rows` rows, each pre-filled with `fill`.
+static std::vector<std::vector<uint8_t>> Decode(RocJpegOutputFormat fmt, uint32_t pitch, uint32_t rows, uint8_t fill) {
+    int planes = fmt == ROCJPEG_OUTPUT_RGB ? 1 : 3;
+    size_t bytes = (size_t)pitch * rows;
+    RocJpegImage img = {};
+    std::vector<uint8_t*> d(planes);
+    for (int c = 0; c < planes; c++) {
+        CHECK(hipMalloc(&d[c], bytes));
+        CHECK(hipMemset(d[c], fill, bytes));
+        img.channel[c] = d[c];
+        img.pitch[c] = pitch;
+    }
+    RocJpegDecodeParams p = {};
+    p.output_format = fmt;
+    CHECK(rocJpegDecode(dec, stream, &p, &img));
+    CHECK(hipDeviceSynchronize());
+    std::vector<std::vector<uint8_t>> h(planes, std::vector<uint8_t>(bytes));
+    for (int c = 0; c < planes; c++) {
+        CHECK(hipMemcpy(h[c].data(), d[c], bytes, hipMemcpyDeviceToHost));
+        CHECK(hipFree(d[c]));
+    }
+    return h;
+}
+
+// Padded pitch, two sentinels: reports the bytes written past the row width and the rows written past H.
+static void Overrun(RocJpegOutputFormat fmt, const char* name, uint32_t row_bytes) {
+    uint32_t pitch = row_bytes + 64, rows = H + 4;
+    auto a = Decode(fmt, pitch, rows, 0xA5), b = Decode(fmt, pitch, rows, 0x5A);
+    for (size_t c = 0; c < a.size(); c++) {
+        uint32_t max_past = 0, extra_rows = 0;
+        for (uint32_t y = 0; y < rows; y++) {
+            uint32_t last = 0;
+            for (uint32_t x = 0; x < pitch; x++) {
+                size_t i = (size_t)y * pitch + x;
+                if (a[c][i] != 0xA5 || b[c][i] != 0x5A) last = x + 1;
+            }
+            if (y < H && last > row_bytes && last - row_bytes > max_past) max_past = last - row_bytes;
+            if (y >= H && last) extra_rows++;
+        }
+        printf("%-10s plane %zu: row width %u bytes, written up to %u bytes past the row end, %u rows written below the last row\n",
+               name, c, row_bytes, max_past, extra_rows);
+    }
+}
+
+int main(int argc, char** argv) {
+    if (argc < 2) { printf("usage: %s image.jpg [decodes]\n", argv[0]); return 2; }
+    int n = argc > 2 ? atoi(argv[2]) : 20;
+    std::ifstream f(argv[1], std::ios::binary);
+    std::vector<unsigned char> jpg((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    CHECK(rocJpegCreate(ROCJPEG_BACKEND_HARDWARE, 0, &dec));
+    CHECK(rocJpegStreamCreate(&stream));
+    CHECK(rocJpegStreamParse(jpg.data(), jpg.size(), stream));
+    uint8_t nc; RocJpegChromaSubsampling ss; uint32_t ws[4], hs[4];
+    CHECK(rocJpegGetImageInfo(dec, stream, &nc, &ss, ws, hs));
+    W = ws[0]; H = hs[0];
+    printf("%s: %ux%u, %u components, subsampling %d\n", argv[1], W, H, nc, (int)ss);
+
+    Overrun(ROCJPEG_OUTPUT_RGB, "RGB", W * 3);
+    Overrun(ROCJPEG_OUTPUT_RGB_PLANAR, "RGB_PLANAR", W);
+
+    // Tight pitch (width * 3) against a padded-pitch reference, n times.
+    auto ref = Decode(ROCJPEG_OUTPUT_RGB, W * 3 + 64, H, 0)[0];
+    uint32_t tight = W * 3, slack_rows = 2;
+    int bad = 0, worst_diff = 0; uint32_t max_col = 0; size_t max_bytes = 0, past_end = 0;
+    std::vector<uint8_t> first;
+    int distinct = 0;
+    for (int k = 0; k < n; k++) {
+        auto t = Decode(ROCJPEG_OUTPUT_RGB, tight, H + slack_rows, 0xA5)[0];
+        size_t diff = 0;
+        for (uint32_t y = 0; y < H; y++)
+            for (uint32_t x = 0; x < tight; x++) {
+                int d = abs((int)t[(size_t)y * tight + x] - (int)ref[(size_t)y * (W * 3 + 64) + x]);
+                if (d) { diff++; if (x / 3 + 1 > max_col) max_col = x / 3 + 1; if (d > worst_diff) worst_diff = d; }
+            }
+        for (size_t i = (size_t)H * tight; i < t.size(); i++) past_end += t[i] != 0xA5;
+        if (diff) bad++;
+        if (diff > max_bytes) max_bytes = diff;
+        if (k == 0) first = t; else if (t != first) distinct++;
+    }
+    printf("tight pitch %u: %d of %d decodes differ from the padded-pitch decode (up to %zu bytes, pixel columns 0..%u, max abs diff %d); "
+           "%d of %d differ from decode 0; %zu bytes written below the image in total\n",
+           tight, bad, n, max_bytes, max_col ? max_col - 1 : 0, worst_diff, distinct, n - 1, past_end);
+    rocJpegStreamDestroy(stream);
+    rocJpegDestroy(dec);
+    return 0;
+}
+```
+
+```python
+# Writes baseline (SOF0) JPEGs with smooth color content plus noise.
+import sys
+import numpy as np
+from PIL import Image
+w, h, sub, out = int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3]), sys.argv[4]
+y, x = np.mgrid[0:h, 0:w].astype(np.float32)
+rng = np.random.default_rng(1)
+r = 128 + 100 * np.sin(x / 37.0) * np.cos(y / 53.0)
+g = 255 * x / w
+b = 255 * y / h
+img = np.stack([r, g, b], -1) + rng.normal(0, 12, (h, w, 3))
+Image.fromarray(np.clip(img, 0, 255).astype(np.uint8)).save(out, quality=95, subsampling=sub, optimize=False, progressive=False)
+```
+
+</details>
+
+### Expected vs actual
+
+Expected: with pitch `width * 3` (RGB) or `width` (RGB planar) and a buffer of pitch * height bytes, the decode writes `width` pixels per row and `height` rows, and repeated decodes are identical.
+
+Actual, identical on both ROCm versions below (bytes written past the end of each row, and rows written below the last row):
+
+| Image | RGB | RGB_PLANAR, each plane | Rows below the image |
+|---|---|---|---|
+| 1237x822, 4:2:0 and 4:4:4 | 9 | 3 | 0 |
+| 642x480, 4:2:0 | 18 | 6 | 0 |
+| 641x481, 4:2:0 | 21 | 7 | 1 |
+
+With pitch `width * 3`, 20 of 20 decodes differ from the padded-pitch decode in the first pixels of each row (pixel columns 0-2 for width 1237, 0-5 for 642, 0-6 for 641; largest difference 255), and no two of the 20 decodes are identical. For 641x481, each decode also writes about 1.9 KB (one row plus 21 bytes) past the end of a pitch * height buffer.
+
+### Versions and GPUs
+
+- AMD Radeon AI PRO R9700 (gfx1201): ROCm 10.1.0 (rocJPEG 1.10.0, HIP 7.16.26385) and the ROCm 10.3.0a20261030 nightly (rocJPEG 1.13.0, HIP 7.18.26433), TheRock Python wheels, amdgpu 6.19.14.31400100, Linux, hardware backend.
+- AMD Radeon PRO W7800 (gfx1100): ROCm 10.1.0 (rocJPEG 1.10.0), amdgpu 6.19.14.31400100. A 1237x822 photo decoded with pitch `width * 3` differed in pixel columns 0-2 in 19 of 20 repeat decodes, by up to 171; a 642x480 image needed 18 bytes of row padding.
+
+Workaround: decode into a staging buffer whose pitch is the width rounded up to a multiple of 8 pixels and whose height is rounded up to even, then copy the visible region.
+====
+
+### Draft 2: comment on ROCm/rocm-systems#11690 (not posted)
+
+`utils/prose.py` on the unquoted body: clean; on the quoted comment it flags the `>` paragraph-separator lines as wrapping, which is the quote-block syntax, not a wrap. `utils/jargon.py`: clean. ASCII only.
+
+====
+My agent came up with this analysis, but I've read and approved it.
+
+> Confirmed on AMD Radeon AI PRO R9700 (gfx1201) with ROCm 10.1.0 (HIP 7.16.26385) and the ROCm 10.3.0a20261030 nightly (HIP 7.18.26433), and on AMD Radeon PRO W7800 (gfx1100) with ROCm 10.1.0 (TheRock wheels, Linux, amdgpu 6.19.14). On gfx1201 the reproducer above prints reserved 256 -> 128 MiB with both versions. All three sites are unchanged in rocm-systems develop at 5843ab4.
+>
+> One more site, not covered by the analysis above: the plain sync path also trims below the threshold. `VmHeapArray::Free` ([vmheap.cpp:437-443](https://github.com/ROCm/rocm-systems/blob/5843ab42628ef78c61ec7f091bc4e8756c28191c/projects/clr/rocclr/platform/vmheap.cpp#L437-L443)) computes, when the free mapped size exceeds the threshold by `extra`, `trim = threshold - extra` (or 0 once `extra >= threshold`) and calls `TrimPhysMemory(trim)`. So the more a free overshoots the threshold, the further below it the heap is trimmed; it should trim to the threshold. It runs for every free that retires at `hipStreamSynchronize` (`ReleaseFreedMemory` -> `Heap::ReleaseAllMemory()` -> `EraseAllocation` -> `VmHeapArray::Free`). It needs neither site 2 (the threshold below is set after the first allocation) nor the `FreeMemory` pressure path (same numbers with `AMD_DIRECT_DISPATCH=0`). It shows when a freed block does not cover whole 128 MiB chunks, so the heap's own per-chunk pass in `UnmapPhysMemory` leaves more than the threshold mapped and this trim takes the rest.
+>
+> Default pool, threshold set after one 1 MiB alloc/free/sync, every `hipFreeAsync` followed by `hipStreamSynchronize`, `hipMemPoolAttrReservedMemCurrent` after each step (identical on gfx1201 with both ROCm versions and on gfx1100 with ROCm 10.1.0):
+>
+> | Threshold | Sequence | Reserved (MiB) | Expected |
+> |---|---|---|---|
+> | 256 MiB | 3 x 200 MiB, free 1, 0, 2 | 640 -> 640 -> 384 -> 128 | never below 256 |
+> | 512 MiB | 4 x 200 MiB, free 0, 1, 2, 3 | 896 -> 896 -> 896 -> 512 -> 512 | after the third free 200 MiB are still allocated, so only 312 MiB free stays mapped; at least 512 should |
+> | 256 MiB | 1 x 512 MiB | 640 -> 256 | honoured: the block covers whole chunks |
+> | max, 1024, 256 MiB set before the first allocation | 1 x 512 MiB | 640 -> 128 | site 2 |
+>
+> The `TrimPhysMemory` clamp in ROCm/clr#287 should also stop this, because the lowered value only takes effect as `VmHeap::TrimPhysMemory`'s argument; I have not tested with that patch. Trimming to `unmap_threshold_` in `VmHeapArray::Free` would fix the caller itself.
+>
+> <details>
+> <summary>Reproducer (hipcc -O2 thr.hip -o thr; ./thr multi 256 200 1,0,2)</summary>
+>
+> ```cpp
+> // hipMemPoolAttrReleaseThreshold on the default pool, Linux VM heap path.
+> // Build: hipcc -O2 thr.hip -o thr
+> // Run:   ./thr single <threshold MiB|max> <alloc MiB> early|late
+> //        ./thr multi  <threshold MiB> <block MiB> <free order, e.g. 1,0,2>   (threshold always set late)
+> // "late" sets the threshold after one 1 MiB hipMallocAsync/hipFreeAsync/hipStreamSynchronize.
+> // Every hipFreeAsync is followed by hipStreamSynchronize, so frees retire on the sync path.
+> #include <hip/hip_runtime.h>
+> #include <cstdint>
+> #include <cstdio>
+> #include <cstdlib>
+> #include <cstring>
+> #include <vector>
+>
+> #define CHECK(x) do { hipError_t e_ = (x); if (e_ != hipSuccess) { printf("%s: %s\n", #x, hipGetErrorString(e_)); exit(1); } } while (0)
+>
+> static hipMemPool_t pool;
+> static hipStream_t s;
+>
+> static uint64_t Attr(hipMemPoolAttr a) { uint64_t v = 0; CHECK(hipMemPoolGetAttribute(pool, a, &v)); return v; }
+> static uint64_t ReservedMiB() { return Attr(hipMemPoolAttrReservedMemCurrent) >> 20; }
+> static void SetThreshold(uint64_t t) {
+>     CHECK(hipMemPoolSetAttribute(pool, hipMemPoolAttrReleaseThreshold, &t));
+>     if (Attr(hipMemPoolAttrReleaseThreshold) != t) { printf("threshold readback mismatch\n"); exit(1); }
+> }
+> static void* Alloc(size_t bytes) {
+>     void* p = nullptr;
+>     CHECK(hipMallocAsync(&p, bytes, s));
+>     CHECK(hipMemsetAsync(p, 1, bytes, s));
+>     CHECK(hipStreamSynchronize(s));
+>     return p;
+> }
+> static void Free(void* p) { CHECK(hipFreeAsync(p, s)); CHECK(hipStreamSynchronize(s)); }
+>
+> int main(int argc, char** argv) {
+>     if (argc < 5) { printf("usage: see source\n"); return 2; }
+>     char bus[64];
+>     CHECK(hipDeviceGetPCIBusId(bus, sizeof(bus), 0));
+>     CHECK(hipDeviceGetDefaultMemPool(&pool, 0));
+>     CHECK(hipStreamCreate(&s));
+>     uint64_t thr = strcmp(argv[2], "max") == 0 ? UINT64_MAX : strtoull(argv[2], nullptr, 10) << 20;
+>     size_t size = strtoull(argv[3], nullptr, 10) << 20;
+>
+>     if (strcmp(argv[1], "single") == 0) {
+>         bool late = strcmp(argv[4], "late") == 0;
+>         if (late) Free(Alloc(1 << 20));
+>         SetThreshold(thr);
+>         void* p = Alloc(size);
+>         uint64_t before = ReservedMiB();
+>         Free(p);
+>         printf("%s single thr=%s alloc=%s MiB %s: reserved %llu -> %llu MiB\n", bus, argv[2], argv[3], argv[4],
+>                (unsigned long long)before, (unsigned long long)ReservedMiB());
+>     } else {
+>         Free(Alloc(1 << 20));
+>         SetThreshold(thr);
+>         std::vector<int> order;
+>         for (char* t = strtok(argv[4], ","); t; t = strtok(nullptr, ",")) order.push_back(atoi(t));
+>         std::vector<void*> blocks(order.size());
+>         for (auto& b : blocks) b = Alloc(size);
+>         printf("%s multi thr=%s MiB, %zu x %s MiB: reserved %llu", bus, argv[2], blocks.size(), argv[3],
+>                (unsigned long long)ReservedMiB());
+>         for (int i : order) { Free(blocks[i]); printf(" -> %llu", (unsigned long long)ReservedMiB()); }
+>         printf(" MiB\n");
+>     }
+>     return 0;
+> }
+> ```
+>
+> </details>
+====
+
+### For jeff
+- Draft 1 is a new issue; Draft 2 is a comment on an existing open issue whose fix PR (ROCm/clr#287) has been open since 2026-09-16 with no review. Each needs your approval before posting.
+- Draft 2 says the #287 clamp "should also stop" defect 2 by reading only. Building a patched libamdhip64 to prove it was not attempted.
+- The rocJPEG odd-height overrun (a whole extra row past a pitch*height buffer) is new since the gfx1100 notes; the port's 16 spare staging rows cover it.
