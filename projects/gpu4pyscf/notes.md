@@ -611,3 +611,54 @@ No new defects. Grep of the HIP-built dirs (gint gvhf cupy_helper gvhf-rys gvhf-
 - Test set and failure classification: as in "Porter fix 2026-10-30" (gpu4pyscf/scf/tests, 122 pass / 8 skip / 36 failures, all DFT, PCM, analytic-gradient or missing-basis). Add a determinism repeat, which the porter did not run.
 
 Verdict: REVIEW PASSED.
+
+## Validation 2026-10-30 (validator, linux-gfx1100, fork moat-port @ 45d8053) -- VALIDATION-FAILED (documentation only; GPU suite and CUDA gate pass)
+
+Requested by jeff after "Review 2026-10-30" passed. Platform: AMD Radeon Pro W7800 48GB, gfx1100 (wave32), one GPU pinned by the dispatcher. Toolchain: TheRock ROCm 10.1.0 SDK wheels (AMD clang 24.0.0git d6f6cb69). Venv: Python 3.11, numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0. Fork clone checked out at 45d8053064db65a7c776a65f9310ec4063bc5b5f (== origin/moat-port).
+
+### Result
+The GPU work passes on gfx1100. The arch is recorded `validation-failed` because the README does not document the ROCm build (validator step 4; porter step 7). This needs no code change.
+- **Documentation gap:** README.md's "Compilation" section (lines 36-53) gives the CUDA build (`cmake -S gpu4pyscf/lib -B build/temp.gpu4pyscf`, then installing `cutensor-cu12 cupy-cuda12x`). The port adds no ROCm counterpart there or anywhere else (`git diff master moat-port` touches no doc file; no README/CONTRIBUTING mention of ROCm or USE_HIP). Porter: add a parallel ROCm block to that section in README's style, as a new commit. It needs `-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=<gfx>`, `-DBUILD_CUTLASS=OFF -DBUILD_LIBXC=OFF`, the `cupy-rocm-7-0` package, and the HIP compiler hint if needed. Also state that DFT, gradients, solvent and multigrid are not built on ROCm. That is a docs-only delta. Because this arch returns from a failure, the next gfx1100 run is a full one (no carry-forward); it should take about 10 minutes, and this record is its baseline.
+
+### Build (committed flags; no `-disable-machine-licm`)
+```
+R=$(rocm-sdk path --root)
+cmake -S gpu4pyscf/lib -B agent_space/build-gfx1100 -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R \
+  -DBUILD_CUTLASS=OFF -DBUILD_LIBXC=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build agent_space/build-gfx1100 -j32
+```
+Exit 0. All 8 libs built (cupy_helper gdft gecp gint gvhf gvhf_md gvhf_rys pbc).
+
+**The gfx942 MachineLICM miscompile does not show on gfx1100** with this compiler. def2-svp (d shells, the generic rys_jk_kernel) runs with the committed flags. RHF water/def2-svp gives -75.96070932893481 against CPU pyscf -75.96070932895175 (1.7e-11). So validation here used the committed build, with no command-line workaround.
+
+### Tests
+```
+export LD_LIBRARY_PATH=$R/lib PYTHONPATH=$PWD; ulimit -c 0
+python -m pytest gpu4pyscf/scf/tests -q -rfs --tb=no -p no:cacheprovider
+```
+- Run 1: **126 passed, 8 skipped, 32 failed** (217 s).
+- Run 2 (determinism repeat): **126 passed, 8 skipped, 32 failed** (145 s), with an identical failure set.
+- Energy repeat, 3 separate processes. RHF water/def2-tzvp: -76.05868791529183 / ...180 / ...181. UHF water/cc-pvdz spin=2: -75.78154588046841 / ...843 / ...844. Run-to-run spread is <= 3e-14 Ha (atomic reduction order).
+- Skips (8): dftd3/dftd4 not installed (5), `hermi=0` unconditional skips (3).
+- Each of the 32 failures was rerun alone in its own process with the same result. All fall outside the HF/integral scope, matching the porter's classification:
+  - DFT, 23 tests. `numint.release_gpu_stack` -> `hipErrorUnknown` (libxc absent; DFT not built on ROCm). test_diffuse_orbital: test_rhf_hessian, test_rks_lowmem, test_rohf, test_uhf. The traceback confirms these are dft.RKS/ROKS despite their names. test_gdm: test_gdm_rks, test_gdm_uks_spin_eq_0, test_gdm_uks_spin_neq_0. test_init_guess: test_hcore_guess_rks, test_sad_guess_rks, test_sad_guess_rks_vv10, test_sad_guess_uks, test_sad_guess_uks_ecp, test_sad_hf_guess_rks, test_sad_hf_guess_uks. test_scf: test_to_cpu, test_to_gpu. test_soscf: test_nr_rks, test_nr_rks_lda, test_nr_rks_rsh, test_nr_roks, test_nr_uks, test_nr_uks_lda, test_nr_uks_rsh, test_rks_gen_g_hop, test_uks_gen_g_hop.
+  - PCM not built on ROCm (`object has no attribute 'PCM'`), 4 tests: test_diffuse_orbital test_uhf_solvent, test_gdm test_gdm_rks_pcm, test_init_guess test_sad_guess_rhf_pcm, test_init_guess test_vsap_guess_rks.
+  - Environment, 3 tests: `BasisNotFoundError` for d-aug-cc-pvdz in pyscf 2.14 (test_diffuse_orbital *_against_qchem x3).
+- Versus gfx942 (122/8/36), gfx1100 passes 4 more: the analytic-gradient cases test_diffuse_orbital test_rhf and test_rhf_lowmem, test_fermi_smearing test_gradient, and test_scf_jk test_jk_energy_per_atom. They pass in both runs. That fits the gfx942 failures being the ROCm 10.1 miscompile in the ip1 kernels and not port code. gfx1100 also passed test_jk_energy_per_atom in June.
+- Every HF/integral file passes completely: test_rhf, test_uhf, test_ghf, test_hf_lowmem, test_int4c2e, test_scf_j_engine, test_scf_jk, test_scf_ecp, test_addons, test_cphf, test_dispersion_logic, test_fermi_smearing, plus the HF guesses in test_init_guess.
+
+### CUDA no-regression gate at 45d8053: PASS (compile and link, not run)
+This host has no conda. The `nvidia-cuda-nvcc-cu12` wheel ships only `ptxas`, not the `nvcc` driver. So I assembled a private toolkit root `$K` in agent_space: the full nvcc 12.9.86 redistributable archive (nvcc, cicc, cudafe++, nvlink, fatbinary), plus the `nvidia-cuda-runtime-cu12==12.9.79` and `nvidia-cuda-cccl-cu12==12.9.27` wheel headers and libs. Host gcc 13.3.
+```
+cmake -S <worktree @45d8053>/gpu4pyscf/lib -B agent_space/build-cuda -DCMAKE_CUDA_ARCHITECTURES=80 \
+  -DCMAKE_CUDA_COMPILER=$K/bin/nvcc -DCUDAToolkit_ROOT=$K -DBUILD_CUTLASS=OFF -DBUILD_LIBXC=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build agent_space/build-cuda -j32
+```
+Exit 0. All 101 CUDA objects compiled, with `--generate-code=arch=compute_80,code=[compute_80,sm_80]`, and 12 shared libs linked. Those include the CUDA-only sem, solvent, mgrid_v2 and mgrid_v3, so the `if(NOT USE_HIP)` gating keeps them on CUDA. The only warnings are upstream's unused variables (#177-D in unrolled_rys_jk.cu). CUTLASS and libxc were off; both are external downloads, and the port does not change them.
+
+### Other checks
+- `jargon.py --port gpu4pyscf`: clean. (It needs local `master` and `moat-port` branches in the clone; a detached checkout gives "cannot resolve master..moat-port".)
+- Fork tree: `git status --porcelain` is empty after `rm -f gpu4pyscf/lib/*.so.0.hip-amdgcn-*`.
+- gto/tests/test_ecp.py: not run (outside the validation set).
+- The PR-prep squash message (see "Still owed") is unchanged and still owed.

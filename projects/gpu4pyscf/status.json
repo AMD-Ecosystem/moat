@@ -7,7 +7,7 @@
   "priority": 4.871,
   "ext_type": "cmake-cupy-plugin",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-10-30T00:43:38Z",
+  "updated_at": "2026-10-30T01:06:06Z",
   "head_sha": "45d8053064db65a7c776a65f9310ec4063bc5b5f",
   "porting": null,
   "waivers": {
@@ -54,13 +54,13 @@
       }
     },
     "linux-gfx1100": {
-      "state": "completed",
+      "state": "validation-failed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "899ec268910992ae968ef6e8e447483e9fa22244",
       "started_at": "2026-06-02T07:24:00Z",
       "completed_at": "2026-06-02T07:55:00Z",
-      "updated_at": "2026-06-16T05:32:42Z",
+      "updated_at": "2026-10-30T01:06:06Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -82,7 +82,8 @@
         "class": "comment-only",
         "detail": "gpu4pyscf/lib/CMakeLists.txt: comment-only (comments/format only); gpu4pyscf/lib/cuda_to_hip.h: comment-only (comments/format only)",
         "at": "2026-06-16T05:32:42Z"
-      }
+      },
+      "failed_sha": "45d8053064db65a7c776a65f9310ec4063bc5b5f"
     },
     "windows-gfx1101": {
       "blocked": true,
