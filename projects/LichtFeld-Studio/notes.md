@@ -4526,3 +4526,25 @@ cuda-to-rocm fault-classes "rocDecode's capability query is not a support check 
 
 ### Verdict
 "Review 2026-10-30b" item 1 answered. head_sha -> acb5129a. Stage `porting` -> `ported`.
+
+## Review 2026-10-30c (reviewer, linux-gfx1100) -- acb5129a (delta 1528e184..acb5129a, plus the skill commit a05773a6 and the deferred.json edit in a1612305), REVIEW-PASSED
+
+### Summary
+acb5129a compares rocDecode's caps minimum with the display size rounded up to the codec's block size (16 for H.264, 8 for HEVC, 1 for VP9/AV1) and adds 60x60 H.264/HEVC fixtures and tests. This answers "Review 2026-10-30b" item 1. No findings. The follow-on work jeff ruled on 2026-10-30 (Windows video Option A configure logic, `lfs-hip-stream-ordered-mempool`) is for the next porter round and is not asked for here; the Windows viewer stays paused.
+
+### Checked as asked (no finding)
+- Rounding against rocDecode's source (ROCm/rocm-systems `projects/rocdecode`, develop a9dad63, the clone in the "Review 2026-10-30b" job, read only):
+  - `rocdecode.h:171-172` documents `min_width`/`min_height` as coded sizes. The caps come from the VA driver's `VASurfaceAttribMinWidth/MinHeight` (`vaapi_videodecoder.cpp:1089-1094`).
+  - H.264: `avc_parser.cpp:1405-1406` sets the coded size to `(pic_width_in_mbs_minus1 + 1) * 16` by `(2 - frame_mbs_only_flag) * (pic_height_in_map_units_minus1 + 1) * 16`, so `ceil16(display)` <= coded (equal for progressive streams with less than 16 rows of cropping, smaller for interlaced or larger crops).
+  - HEVC: `hevc_parser.cpp:151` uses `pic_width_in_luma_samples`, a multiple of MinCbSizeY >= 8, so `ceil8(display)` <= coded.
+  - VP9 (`vp9_parser.cpp:670-671`, `frame_width/height`) and AV1 (`av1_parser.cpp:1263-1264`, `upscaled_width`, `frame_height`): coded size is the frame size, alignment 1 unchanged by this delta.
+  - Rounded <= coded in every case, so a stream that passes the pre-check has a coded size at or above the minimum: no stream below rocDecode's minimum is sent to it. The cost is the safe direction (an interlaced or heavily cropped stream may still go to the CPU when it would fit).
+  - The sequence callback (`rocdecode_decoder.cpp:272`) calls the same `capsRefusal` with the parsed coded size; that size is already a multiple of the alignment, so the rounding is a no-op there and the check stays exact. Maximum checks still use the display size: every maximum is a multiple of 16, so the answer is unchanged, and an over-cropped stream whose coded size exceeds the maximum is caught at the sequence callback as before.
+- Fixtures (system ffmpeg `trace_headers`): `h264_60x60.mp4` is High, `pic_width_in_mbs_minus1` 3, `frame_mbs_only_flag` 1, `frame_crop_right_offset` 2 (coded 64x64, display 60x60). `hevc_60x60.mp4` is Main, `pic_width_in_luma_samples` 64, `log2_min_luma_coding_block_size_minus3` 0 (MinCb 8). `h264_420.mp4` is 64x48 coded 64x48, still refused. All valid streams.
+- Device dependence of the new test: it assumes an H.264/HEVC minimum in (48, 64]. Mesa's `src/amd/common/ac_video.c` (main da28b3e, read only) sets 64x64 for H.264 and HEVC decode on every UVD and VCN version, including VCN 2.6 (gfx90a), and 16x16 for VP9/AV1. So the test should hold on the wave64 gate too; the gfx90a validator run confirms it.
+- GPU run (GPU 3 alone, `HIP_VISIBLE_DEVICES=3`, `ulimit -c 0`, `timeout -k 30 600`, the size-fix job's `build-hip-gcc/tests/lichtfeld_tests`, built 18:02:18 after `rocdecode_decoder.cpp.o` at 18:02:16 from a clean tree at acb5129a; cwd in this job's `agent_space/run`): `--gtest_filter='RocDecodeVideo.*:Fixtures/RocDecodeMatchesSoftware.*'` -> 10 passed, 0 skipped, 0 failed, including `MinimumSizeAppliesToTheCodedSize` and both 60x60 frame-by-frame comparisons against libavcodec. No "outside" refusal, no hipError, no memory access fault in the log.
+- CUDA path: the commit touches only HIP-only files (`rocdecode_decoder.cpp`, `test_rocdecode_video.cpp`), two fixtures and the fixture README.
+- Commit: title `[ROCm]`, 59 characters; body has the rationale, "Authored with Claude.", a fenced Test Plan; no Co-Authored-By; added lines ASCII. `python3 utils/jargon.py --port LichtFeld-Studio` clean; `moatlib.py audit-commits LichtFeld-Studio` OK.
+- Skill (a05773a6): the fault-classes paragraph and the SKILL.md index clause state that caps limits are coded sizes and to round the display size up to the block size before the minimum; matches the source above. The added lossless-flag cause matches the 1.10 header and develop.
+- Records: `rocdecode-h264-high444-420-silent-miscode` summary carries the `qpprime_y_zero_transform_bypass_flag` cause and the `VAProfileH264Main` note as asked. The "For jeff" line of "Porter round 2026-10-30" now says rocDecode 1.12.0 (ROCm 10.2.0) adds initial Windows support via vaon12.
+- Scope and safety: no stream other than the committed valid fixtures went to rocDecode; nothing went to rocJPEG. The two earlier job directories were only read. This job's fork clone is `projects/LichtFeld-Studio/src`.

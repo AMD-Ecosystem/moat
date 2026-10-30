@@ -298,3 +298,5 @@
 {"kind":"phase","ts":"2026-10-30T18:03:25Z","phase":"test","seconds":20.472,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-105357-lfs-rocdecode-size-fix/moat/agent_space/run_suites.sh Video*"}
 {"kind":"phase","ts":"2026-10-30T18:04:48Z","phase":"test","seconds":66.706,"exit":0,"cmd":"timeout -k 30 900 bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-105357-lfs-rocdecode-size-fix/moat/agent_space/lfs_run.sh ./LichtFeld-Studio --headless -d /var/lib/jenkins/fleet/jobs/rx7900-20261030-105357-lfs-rocdecode-size-fix/moat/projects/LichtFeld-Studio/src/data/bicycle --images images_4 --iter 3000 --eval --no-depth-auto-generate --no-normal-auto-generate -o /var/lib/jenkins/fleet/jobs/rx7900-20261030-105357-lfs-rocdecode-size-fix/moat/agent_space/runs/headless/out"}
 {"kind":"session","ts":"2026-10-30T18:06:25Z","epoch":1793383585.275230527,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T19:03:21Z","epoch":1793387001.611409231,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T19:07:22Z","epoch":1793387242.593192014,"event":"end","platform":"linux-gfx1100"}
