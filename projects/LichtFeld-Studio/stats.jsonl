@@ -345,3 +345,5 @@
 {"kind":"session","ts":"2026-10-30T22:37:40Z","epoch":1793399860.952164927,"event":"end","platform":"linux-gfx90a"}
 {"kind":"phase","ts":"2026-10-30T22:46:51Z","phase":"compile","seconds":268.224,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261030-152714-lfs-eventquery/repro/lfs_full_build.sh"}
 {"kind":"phase","ts":"2026-10-30T23:02:41Z","phase":"compile","seconds":249.626,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261030-152714-lfs-eventquery/repro/lfs_compute_build.sh"}
+{"kind":"session","ts":"2026-10-30T23:18:21Z","epoch":1793402301.348917833,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T23:31:53Z","epoch":1793403113.849557151,"event":"end","platform":"linux-gfx1100"}
