@@ -687,3 +687,22 @@ Tests at 90a711b (from /tmp, `PYTHONPATH=<src>/awq/kernels`, HIP_VISIBLE_DEVICES
 - `w4a16_test.py <src>`: 30/30.
 - `w8a8_handle_test.py <w8a8_gemm_cuda.cu>`: PASS, 16 threads, 1 device, one handle.
 jargon.py --port llm-awq clean; prose.py clean on both bodies; titles 65 and 58 chars. Still owed: wave32 and Windows runs at the new head (validators).
+
+## Review 2026-10-30 (linux-gfx1100, re-review at 90a711b)
+
+Verdict: review-passed. /pr-review skill, local-branch mode, fork `moat-port` at 90a711b, whole diff d6e797a...HEAD, plus the skill edit on port/llm-awq. Static review; no build or GPU run on this host. jeff asked for this re-review of the answers (ca71a9a, 90a711b) to "Review 2026-10-30 (linux-gfx1100, re-review at e8b1937)".
+
+Status of the three findings from that review:
+1. Resolved. The skill entry (`references/fault-classes.md:391-419`) now says `ROCM_VERSION` is never defined in a `cpp_extension` build, so every such guard in an installed header is false in an extension, current releases included, and that 2.4 only dropped the guard around the handle. Checked in the pytorch clone: no `#define ROCM_VERSION` under aten/c10/torch/csrc/torch/utils at v2.2.0, v2.3.0, v2.4.0, v2.8.0, v2.9.0; v2.8.0 `CUDADataType.h:81` carries the fp8 guard; ae9a4fa is in v2.4.0 and not in v2.3.0; `getCUDABlasLtWorkspace` appears in `CUDAContextLight.h` at v2.9.0 only.
+2. Resolved. ca71a9a compiles the hipBLASLt code only when `HIPBLASLT_VERSION_MAJOR > 0 || MINOR >= 6`, else a stub with the same signature returns false and the SIMT kernel runs. Checked in a blobless ROCm/hipBLASLt clone: VERSION_STRING 0.3.0 at rocm-5.7.0 and 0.6.0 at rocm-6.0.0; at both tags `library/CMakeLists.txt:34-35` configures `include/hipblaslt/hipblaslt-version.h` (`HIPBLASLT_VERSION_MAJOR/MINOR/PATCH/TWEAK`) and installs it with the other headers, and rocm-5.7.0 `hipblaslt.h:48` itself includes `hipblaslt/hipblaslt-version.h`, so the version header is present wherever the old unconditional `hipblaslt.h` include resolved. The ROCm 7.x SDK on this host has it at the same path. README states ROCm 5.7 minimum and hipBLASLt from 6.0.
+3. Resolved. 90a711b folds the condition into `TORCH_CHECK` and prints `%`.
+
+No new findings. Whole-diff pass (attention, reductions, compat header, dequant, W4A16 SIMT GEMM, legacy GEMM, W8A8, setup.py, README, gitignores) found no user-hitting defect. `jargon.py --port llm-awq` clean; all 12 commits have `[ROCm]` titles of 47-66 chars, no trailer or noreply, ASCII bodies; fork worktree clean.
+
+Observations, not findings (no action required for this round):
+- The HIP W4A16 GEMM (`gemm_simt.cuh`) accumulates each thread's partial sum in T (fp16/bf16) before the fp32 cross-thread reduce, the same scheme as the CUDA GEMV for M < 8; CUDA's tensor-core GEMM for M >= 8 accumulates in fp32. TinyChat fp16 e2e agrees to 2.9e-3; bf16 prefill was not measured separately. Worth a bf16 check by a validator, not a blocker.
+- Large-M prefill performance of that GEMM (re-dequant per 4-row batch, runtime-indexed `psum`) is already covered by the deferred MFMA GEMM item.
+
+PR-PREP SQUASH TODO additions (nits):
+- Skill entry `fault-classes.md:396`: `-DHIPBLAS_V2` is passed only from v2.3.0 (absent at v2.2.0, which the same sentence lists as checked); say "plus `-DHIPBLAS_V2` from 2.3".
+- ca71a9a body is accurate as written; the existing TODOs (dac7721, 73edaef, 1f3aadc bodies and Test Plan form) still stand.
