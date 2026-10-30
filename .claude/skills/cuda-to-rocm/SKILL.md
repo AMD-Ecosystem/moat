@@ -119,6 +119,18 @@ suspected AMD fault: a per-tile "later data corrupts earlier" signature usually 
 reproducer's input dtype is wrong, and SP-vs-DP triangulation distinguishes FP reassociation
 from a genuine wavefront bug. Both were learned the expensive way.
 
+## Performance -- correct is not done
+
+A byte-identical port can still be 10-30x slower. Profile the hot kernels with rocprofv3
+and read their ISA and `.private_segment_fixed_size` before blaming tile tables.
+- Emulating a packed intrinsic lane by lane (`__hmax2` as two scalar `__hmax`) cost 15x on
+  MMseqs2: ROCm's scalar `__hmax` keeps its NaN tests as branches, and the bloat pushes
+  unrolled register arrays into scratch. Use `__builtin_elementwise_max` on a 2-wide
+  `_Float16` vector.
+- `asm volatile` for a single ALU op serializes scheduling; it cost 2x against the builtin.
+- Tile-table choice and RDC/shared-library layout were second order (about 10% and nil).
+Method and numbers: `references/performance.md`.
+
 ## Portability rule for shared code
 
 Any fix to code that is not arch-guarded must be correct on **both** wavefront sizes. A
