@@ -706,3 +706,28 @@ Observations, not findings (no action required for this round):
 PR-PREP SQUASH TODO additions (nits):
 - Skill entry `fault-classes.md:396`: `-DHIPBLAS_V2` is passed only from v2.3.0 (absent at v2.2.0, which the same sentence lists as checked); say "plus `-DHIPBLAS_V2` from 2.3".
 - ca71a9a body is accurate as written; the existing TODOs (dac7721, 73edaef, 1f3aadc bodies and Test Plan form) still stand.
+
+## Validation 2026-10-30 (linux-gfx1201, wave32)
+
+Verdict: completed at fork `moat-port` 90a711b. jeff asked for this run after the review passed at 90a711b. Host: AMD Radeon AI PRO R9700 (gfx1201, RDNA4, wave32), ROCm 7.16 (TheRock SDK in the image venv, hipcc 7.16.26385), torch 2.16.0a0+git6c3af02, Python 3.11. HIP_VISIBLE_DEVICES pinned to one GPU by the dispatcher; everything under `ulimit -c 0`.
+
+Build (ninja `[14/14]`, 54 s; 0 errors; llvm-objdump --offloading shows only gfx1201):
+```
+cd projects/llm-awq/src/awq/kernels
+find csrc \( -name '*.hip' -o -name '*_hip.*' -o -name 'hip_bf16_*' -o -name '*_cpp_shim.cu' \) ! -name 'cuda_to_hip*' -delete
+rm -rf build
+PYTORCH_ROCM_ARCH=gfx1201 MAX_JOBS=24 python setup.py build_ext --inplace
+```
+
+Tests at 90a711b (from /tmp, `PYTHONPATH=<src>/awq/kernels`, scripts in projects/llm-awq/tests/), all PASS, every script exit 0:
+- `attn_test.py`: 443/443. Max out err fp16 2.54e-3, bf16 1.91e-2, fp32 1.19e-5. fp32 D=128 t=16239 passes; t=16240 (65552 B) and t=20000 (80592 B) refused against the 65536 B LDS limit, as on gfx90a.
+- `tinychat_e2e.py <src>`: 4/4; argmax 40/40, 40/40, 64/64, 40/40; max |dlogit| 2.930e-03, min cos 0.999999.
+- `w8a8_test.py`: 25/25; paths {'hipblaslt': 24} (no `?` this run), side-stream ordering PASS. hipBLASLt int8 is taken on gfx1201.
+- `w8a8_simt_test.py <src>/awq/kernels/csrc/w8a8/w8a8_gemm_cuda.cu`: 7/7 exact (SIMT fallback built via load_inline in /tmp, since the extension reaches hipBLASLt here).
+- `legacy_gemm_test.py`: 8/8, max err vs dequant ref 3.9e-3, vs legacy gemv 7.8e-3.
+- `w4a16_test.py <src>`: 30/30 (fp16 only; the reviewer's bf16-prefill observation is still unmeasured).
+- `w8a8_handle_test.py <w8a8_gemm_cuda.cu>`: PASS, 16 threads over 1 device, one handle.
+
+CUDA gate: cuda-not-validated: no CUDA toolkit on this host (no nvcc, no conda to create the cuda-12.8 env). Supplementary only: `tests/cuda_view.py` diff vs d6e797a shows 0 changed CUDA-visible lines in w8a8_gemm_cuda.cu, gemm_cuda_gen.cu, both dequantize.cuh and w8a8/quantization.cu; the remaining files differ by the reviewed shuffle/macro lines.
+
+Checks: `python3 utils/jargon.py --port llm-awq` clean. README documents the ROCm build (line 127). Fork worktree: no modified tracked files (`git status --porcelain` shows only untracked build output).
