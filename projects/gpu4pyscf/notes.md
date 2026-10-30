@@ -776,3 +776,64 @@ This agrees with the 45d8053 gfx1100 runtime result (def2-svp RHF 1.7e-11 vs CPU
 
 ### CUDA no-regression gate
 Not rerun. 066e91e is README-only, and the 45d8053 gate (PASS, this arch's 2026-10-30 run) covers the same code.
+## Validation 2026-10-30 (validator, linux-gfx90a MI250X GCD, fork moat-port @ 066e91e) -- VALIDATION FAILED (the README build crashes HF on ROCm 10.1; the toolchain-flag decision is open)
+
+Requested by jeff. The premise was that the README was the only gap. With the README build as written, that premise does not hold on this host. The documentation now exists, and jargon is clean. But the build it documents fails 40 in-scope HF/integral tests here, because of the deferred ROCm 10.1 MachineLICM miscompile. The suite only reaches the 45d8053 baseline when `-mllvm -disable-machine-licm` is added, and that flag is neither in the README nor committed. The integrity gate requires every build edit that validation needs to be committed, so this cannot be recorded `completed`. Carrying the flag, or documenting it, is jeff's open decision (deferred `therock-10-1-machinelicm-clobbers-live-vgpr`). This is not a porter defect: the fork has no code fix to make until that decision is taken.
+
+Host and env: gfx90a:sramecc+:xnack- (one MI250X GCD). TheRock ROCm SDK 10.1.0 wheels (`rocm-sdk version` -> 10.1.0, `R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`, HIP compiler identification Clang 24.0.0). This is the only ROCm on the host; there is no /opt/rocm. Python env: the previous gfx90a validation job's venv, used read-only, because the fleet guard refused pip in this job. Versions: python 3.11.17, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, numpy 2.2.6, scipy 1.17.1, pytest 7.3.2. CuPy-ROCm needs `LD_LIBRARY_PATH=$R/lib`. GPU pinning: the dispatcher set `HIP_VISIBLE_DEVICES=4`, but this container exposes only GPUs 0-3, so HIP saw no device (`hipErrorNoDevice`, then `hipsolverCreate failed`). That is a dispatcher bug. All four GPUs were idle and the one other running job was pinned to 2, so this run used `HIP_VISIBLE_DEVICES=0`.
+
+### Build: README "Compilation" ROCm block, as written
+```
+cd projects/gpu4pyscf/src          # fork @ 066e91eee794766343ea54be6560dcf430415502
+cmake -S gpu4pyscf/lib -B build/temp.gpu4pyscf -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a
+cmake --build build/temp.gpu4pyscf -j 32
+```
+- The only deviations from the README were the arch and `-j 32` (the README says `-j 4`).
+- Exit 0, 200 s, all 8 libs (cupy_helper gdft gecp gint gvhf gvhf_md gvhf_rys pbc).
+- `-DCMAKE_HIP_COMPILER` was not needed. CMake found `$R/lib/llvm/bin/clang++` through the TheRock venv on PATH. The README hint holds as an "if not found" fallback.
+- The `cupy-rocm-7-0` install line matches the package that works.
+- RHF water/sto-3g: -74.96308088371563, against CPU -74.96308088371701 (1.4e-12).
+- RHF water/def2-svp: aborts (rc 134) with `HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION` in `rys_k_kernel`, then `hipErrorIllegalAddress` at rys_contract_k.cu:676 (`RYS_build_k`, li,lj,lk,ll = 2,1,2,1).
+
+**The d-shell miscompile reproduces with this host's ROCm (10.1.0 TheRock, AMD clang 24.0.0).** It affects both `rys_jk_kernel` and `rys_k_kernel`, and every basis with d or f shells: (ds|ss), (dp|ss), (dp|dp), (fs|fp), (fs|dd), (fs|ff). The faults are `HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION` or `HSA_STATUS_ERROR_MEMORY_FAULT`.
+
+### Comparison build: identical plus the workaround flag
+This used a `git archive 066e91e` export in agent_space/src-licm, so the README-build libs were not overwritten. The README commands were run with `"-DCMAKE_HIP_FLAGS=-mllvm -disable-machine-licm" "-DCMAKE_SHARED_LINKER_FLAGS=-mllvm -disable-machine-licm"`. Exit 0, 8 libs. RHF water/def2-svp: -75.96096670688937, against CPU -75.96096670690653 (1.7e-11).
+
+### Full test suite (gpu4pyscf/scf/tests, 166 ids), one process per test
+An HSA abort kills the whole pytest process, so each test id ran in its own process: `agent_space/run_each.sh` (`pytest <id> -q -rfs --tb=short -p no:cacheprovider`, timeout 900). Env: `ulimit -c 0`, `HIP_VISIBLE_DEVICES=0`, `LD_LIBRARY_PATH=$R/lib`, `PYTHONPATH=<tree>`.
+
+| build | passed | skipped | failed | aborted | wall |
+|---|---|---|---|---|---|
+| README as written | 82 | 8 | 56 | 20 (SIGABRT) | 913 s |
+| + `-disable-machine-licm` | **122** | 8 | 36 | 0 | 1049 s |
+
+- **README build:** compared with the flag build, 40 tests move. 24 go FAIL -> PASS, 16 go CRASH -> PASS, and 4 go CRASH -> FAIL; those 4 are DFT tests that crash in the HF part first. All 40 die in the Rys J/K kernels with the HSA memory errors above. The tests moved by file:
+  - test_ghf: test_get_jk_complex, test_get_jk_real, test_ghf_scf, test_ghf_scf_complex_dm, test_to_cpu
+  - test_hf_lowmem: test_diis_on_cpu, test_rhf_scf
+  - test_init_guess: test_sad_guess_rhf_ghost, test_sad_hf_guess_rks, test_sad_hf_guess_uks
+  - test_rhf: test_chkfile, test_get_jk, test_get_jk1, test_get_jk1_hermi0, test_get_k, test_get_k1, test_get_k1_hermi0, test_init_guess, test_rhf_scf
+  - test_scf: test_rhf, test_rhf_cart, test_screening, test_to_cpu, test_to_gpu, test_uhf, test_uhf_cart
+  - test_scf_ecp: test_rhf
+  - test_scf_j_engine: test_general_contraction, test_irregular_angular_momemtum, test_j_engine_integral_screen, test_sparse_dm
+  - test_scf_jk: test_general_contraction, test_get_jk_rsh_stacked_dms, test_jk_get_k_sr, test_jk_hermi0, test_jk_hermi0_l5, test_jk_hermi1, test_jk_hermi1_cart, test_k_hermi1
+  - test_uhf: test_get_jk, test_get_jk1, test_get_k, test_get_k1, test_uhf_scf
+- **Flag build:** 122/8/36. This matches the 45d8053 gfx90a and gfx942 runs exactly. The 36 failures are all out of scope:
+  - DFT, 25: `hipErrorUnknown` from `deviceSetLimit` (libxc not built).
+  - PCM not built, 4.
+  - Analytic gradient, 4 (test_jk_energy_per_atom is off by 3.71 this run; it varies run to run, as before).
+  - `BasisNotFoundError` d-aug-cc-pvdz, 3.
+  - Skips (8): dftd3/dftd4 not installed (5), unconditional `hermi=0` skip (3).
+
+### Other checks
+- CUDA no-regression gate: not rerun. The 45d8053 -> 066e91e delta is README.md only (+11 lines), and the gate passed at 45d8053.
+- `python3 utils/jargon.py --port gpu4pyscf` -> `jargon: clean`.
+- Integrity: `git -C projects/gpu4pyscf/src status --porcelain` is empty at 066e91e.
+
+### For jeff (decision; nothing a porter can do without it)
+On ROCm 10.1 the documented gfx90a build crashes HF on any basis with d shells. The open ruling on deferred `therock-10-1-machinelicm-clobbers-live-vgpr` decides what clears this platform:
+- (a) the port carries `-mllvm -disable-machine-licm` under USE_HIP in CMake (compile and link flags; a build change, so every arch revalidates), or
+- (b) the README documents the flag as a ROCm 10.1 workaround (docs only), or
+- (c) gfx90a is validated on a ROCm without the bug. This host has only 10.1. The June pass used ROCm 7.2.1.
+
+With (a) or (b), the flag build above already passes 122/8/36 at this head, so the follow-up run should be short. Tooling note, unchanged from the porter's "Update": a docs delta does not retire this `validation-failed` record, so `fleet` routes gfx90a to the porter until jeff rules.
