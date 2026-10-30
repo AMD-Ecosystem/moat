@@ -7,7 +7,7 @@
   "priority": 4.871,
   "ext_type": "cmake-cupy-plugin",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-10-30T03:11:30Z",
+  "updated_at": "2026-10-30T04:22:47Z",
   "head_sha": "066e91eee794766343ea54be6560dcf430415502",
   "waivers": {
     "windows": {
@@ -75,13 +75,13 @@
       }
     },
     "linux-gfx1100": {
-      "state": "validation-failed",
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "899ec268910992ae968ef6e8e447483e9fa22244",
+      "validated_sha": "066e91eee794766343ea54be6560dcf430415502",
       "started_at": "2026-06-02T07:24:00Z",
-      "completed_at": "2026-06-02T07:55:00Z",
-      "updated_at": "2026-10-30T03:11:30Z",
+      "completed_at": "2026-10-30T04:22:47Z",
+      "updated_at": "2026-10-30T04:22:47Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -96,14 +96,6 @@
         "last_session_at": "2026-06-02T07:55:00Z"
       },
       "last_agent": "validator",
-      "carry_forward": {
-        "from": "8cb88067f72652557788a3dc7be075a38b717c82",
-        "to": "899ec268910992ae968ef6e8e447483e9fa22244",
-        "method": "source-class",
-        "class": "comment-only",
-        "detail": "gpu4pyscf/lib/CMakeLists.txt: comment-only (comments/format only); gpu4pyscf/lib/cuda_to_hip.h: comment-only (comments/format only)",
-        "at": "2026-06-16T05:32:42Z"
-      },
       "failed_sha": "066e91eee794766343ea54be6560dcf430415502"
     },
     "windows-gfx1201": {

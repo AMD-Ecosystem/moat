@@ -837,3 +837,59 @@ On ROCm 10.1 the documented gfx90a build crashes HF on any basis with d shells. 
 - (c) gfx90a is validated on a ROCm without the bug. This host has only 10.1. The June pass used ROCm 7.2.1.
 
 With (a) or (b), the flag build above already passes 122/8/36 at this head, so the follow-up run should be short. Tooling note, unchanged from the porter's "Update": a docs delta does not retire this `validation-failed` record, so `fleet` routes gfx90a to the porter until jeff rules.
+
+## Validation 2026-10-30 (validator, linux-gfx1100, fork moat-port @ 066e91e) -- COMPLETED
+
+Requested by jeff. This reruns the gfx1100 validation at 066e91e, which earlier could not install CuPy-ROCm (see "NOT VALIDATED" above). This job has its own venv. Host: AMD Radeon Pro W7800 48GB, gfx1100 (wave32). Toolchain: TheRock ROCm SDK 10.1.0 wheels in the job venv (HIP compiler identification Clang 24.0.0; `R=<venv site-packages>/_rocm_sdk_devel`, no /opt/rocm). Fork clone at 066e91eee794766343ea54be6560dcf430415502 (== origin/moat-port).
+
+### Python env (job venv)
+```
+pip install 'numpy>=2.0,<2.3' 'scipy>=1.13' cupy-rocm-7-0==14.2.0 pyscf==2.14.0 pytest
+```
+Installed versions: python 3.11.17, numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pytest 7.3.2. CuPy-ROCm needs `LD_LIBRARY_PATH=$R/lib`.
+
+GPU pinning: the dispatcher set `HIP_VISIBLE_DEVICES=4`, but this container has only GPUs 0-3. With that value, gpu4pyscf import fails with `RuntimeError: hipsolverCreate failed`. This is the same dispatcher bug the gfx90a run hit. amd-smi showed no process on any GPU and no other fleet job pinned, so this run used `HIP_VISIBLE_DEVICES=0`.
+
+### Build: README "Compilation" ROCm block, as written
+```
+export PATH=$FLEET_VENV/bin:$PATH
+cmake -S gpu4pyscf/lib -B build/temp.gpu4pyscf -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100
+cmake --build build/temp.gpu4pyscf -j 32
+```
+- Deviations from the README: the arch, and `-j 32` instead of `-j 4`.
+- The paths were passed absolute because utils/timeit.sh changes directory to the moat root.
+- Configure exit 0 (2 s); build exit 0 (106 s); 8 libs: cupy_helper gdft gecp gint gvhf gvhf_md gvhf_rys pbc.
+- CMake found the HIP compiler without the `-DCMAKE_HIP_COMPILER` hint.
+- No `-disable-machine-licm`: the committed flags only.
+
+Smoke check, RHF water against CPU pyscf:
+
+| basis | max shell | |GPU - CPU| (Ha) |
+|---|---|---|
+| sto-3g | p | 1.3e-12 |
+| def2-svp | d | 1.7e-11 |
+| cc-pvtz | f | 6.2e-12 |
+
+So the ROCm 10.1 d-shell MachineLICM miscompile (deferred `therock-10-1-machinelicm-clobbers-live-vgpr`) does not show at runtime on gfx1100. That agrees with the static check in the earlier 066e91e section.
+
+### Tests
+```
+ulimit -c 0
+export HIP_VISIBLE_DEVICES=0 LD_LIBRARY_PATH=$R/lib PYTHONPATH=<fork root>
+python -m pytest gpu4pyscf/scf/tests -q -rfs --tb=no -p no:cacheprovider
+```
+- Run 1: **126 passed, 8 skipped, 32 failed** (217 s).
+- Run 2: **126 passed, 8 skipped, 32 failed** (146 s).
+- The two runs have identical failure sets. Counts and failure set equal the 45d8053 gfx1100 baseline exactly.
+- Failures, classified from the junit messages (all out of the HF/integral scope):
+  - 25 DFT, `hipErrorUnknown` (libxc not built). The 45d8053 section's "23" was a miscount of its own list, which names 25.
+  - 4 PCM not built.
+  - 3 `BasisNotFoundError` d-aug-cc-pvdz.
+- Skips (8): dftd3/dftd4 not installed (5), unconditional `hermi=0` (3).
+- These all pass, as at 45d8053: test_rhf, test_uhf, test_ghf, test_hf_lowmem, test_int4c2e, test_scf_j_engine, test_scf_jk, test_scf_ecp, test_addons, test_cphf, test_dispersion_logic, test_fermi_smearing, and the HF guesses in test_init_guess.
+
+### Other checks
+- CUDA no-regression gate: not rerun. 45d8053 -> 066e91e is README.md only (+11 lines), and the gate passed at 45d8053.
+- `python3 utils/jargon.py --port gpu4pyscf` -> `jargon: clean`.
+- Documentation: the README documents the ROCm build next to the CUDA build, and that build was followed here.
+- Integrity: `git -C projects/gpu4pyscf/src status --porcelain` is empty after the build.
