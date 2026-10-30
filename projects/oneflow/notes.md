@@ -581,3 +581,30 @@ New pass over the whole diff: no code findings. Rechecked: the hardcoded-32 site
 Conditions on the PR-prep squash message (draft in "Porter round 2026-10-30"). Fix both before `git commit-tree`:
 - A. The draft lists the HIP-only `__launch_bounds__(1024)` among "The GPU correctness fixes found by running the tests". That claim is unsupported. On the ROCm clang 24 here, a kernel's metadata is identical with and without the attribute (`.max_flat_workgroup_size: 1024` both ways; the 2026-10-29 review and the porter both reproduced this), and no ROCm 7.2.1 metadata check was ever recorded for fault B. Take it out of that list and describe it as a stated bound, e.g. "on HIP only, the LayerNorm/RmsNorm/Softmax block kernels state __launch_bounds__(1024), the largest block the dispatch can choose (the CUDA kernels are unchanged)". Keep the fix claim only if a 7.2.1 gfx90a `--offload-device-only -S` comparison shows a metadata difference, and record that evidence here.
 - B. The sentence "Outside USE_HIP, the only edits are ones that leave NVIDIA results the same: the width argument in the softmax warp reduction, the `.template` removals, the eval-frame cast and the third-party build fixes" is incomplete. These unguarded edits are missing from it: LLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1 on LLVMSupportWithHeader (cmake/oneflow.cmake:371, applied to every build, although the cmake paragraph frames it as a ROCm-clang fix); the imp -> importlib replacements in python/oneflow/framework/{sysconfig,unittest}.py; the width-32 argument and the move of WarpReduce in user/kernels/layer_norm_gpu_kernel.cu; the kWarpSize/2 start offset in rms_norm.cuh WarpReduceSum (16 on CUDA, as before); and lru_cache.cu's OfWarpFfs/OfWarpPopc helpers, including `OfWarpPopc(valid_mask) != kWarpSize` in place of `valid_mask != kFullMask`. Each of these leaves NVIDIA results unchanged (checked in the 2026-10-29 review), so the fix is to list them, not to change code.
+
+## Validation 2026-10-30 (linux-gfx1100, NOT RUN: the dispatch has no per-job venv)
+
+Requested by jeff: the full GPU test suite at head 521f54782 under `ulimit -c 0`. Result: not run, and the platform state stays `revalidate`. I recorded no validation-failed, because nothing about the port failed. The stop is the job environment, and a `failed_sha` would send this head back to the porter for nothing.
+
+Host: Radeon Pro W7800 (gfx1100, wave32, 4 GPUs), HIP_VISIBLE_DEVICES=2 pinned by the dispatcher. This image has no /opt/rocm. ROCm 10.1.0 comes from the rocm-sdk wheels in the shared /opt/python-3.11-venv (Python 3.11, numpy 1.26.4, protobuf 6.33.5, torch 2.16.0a0). Fork clone at 521f547825b7; `git status --porcelain` is empty.
+
+Blocker (the same as both gfx942 rounds): the job was dispatched with FLEET_MOAT=1 but without FLEET_VENV/FLEET_WORKTREE. A full configure runs cmake/python.cmake `install_py_dev_deps`, which runs pip on dev-requirements.txt with `--user`, unconditionally, against the configuring Python. Here that is the shared image venv, which the fleet rules protect. I tried a build-time Python wrapper that skipped only that one call and passed everything else through. The fleet guard refused it and said not to look for another way, so I stopped there. The suite also needs packages that the shared env lacks or pins differently: dev-requirements wants protobuf <4 (the env has 6.33.5), and opencv-python, portalocker (python/oneflow/test_utils/throttle.py), rich, pytest-repeat, black and cmakelang are missing.
+
+Needed to run it: a redispatch with `--build`, which gives a per-job venv with dev-requirements.txt preinstalled. pip refuses `--user` inside a venv, so the cmake pip step also has to be skipped there; a person approves that, either as a wrapper or as a throwaway local edit to python.cmake. Then:
+```
+R=$(python3 -m rocm_sdk path --root)
+ROCM_CLANG=$R/lib/llvm/bin/clang++ ROCM_CLANG_C=$R/lib/llvm/bin/clang JOBS=<physical-core cap> bash build_rocm.sh all   # plus -DCMAKE_PREFIX_PATH=$R, which build_rocm.sh does not pass
+source build/source.sh
+cd python/oneflow/test/modules && python3 -m pytest -p no:warnings -p no:randomly -p no:cacheprovider --dist loadfile -n 4 --durations=50 .   # upstream ci/test/generic_test_multi_client.sh, minus -x
+```
+
+What did run on this host (no build needed):
+- Configure only, with arch auto-detect and `-DONEFLOW=OFF` (which skips include(oneflow) and the pip step):
+  ```
+  R=$(python3 -m rocm_sdk path --root)
+  cmake -S . -B agent_space/oneflow/cfg -G Ninja -DONEFLOW=OFF -DUSE_HIP=ON -DBUILD_CUDA=ON -DCMAKE_PREFIX_PATH=$R -DCMAKE_C_COMPILER=$R/lib/llvm/bin/clang -DCMAKE_CXX_COMPILER=$R/lib/llvm/bin/clang++ -DWITH_CUTLASS=OFF -DWITH_MLIR=OFF -DBUILD_RDMA=OFF -DBUILD_CPP_API=OFF -DBUILD_HWLOC=OFF -DBUILD_TESTING=OFF
+  ```
+  rc=0. It printed `CMAKE_HIP_ARCHITECTURES: gfx1100;gfx1100;gfx1100;gfx1100` (one entry per GPU, from rocm_agent_enumerator) and `OF_GPU_WARP_SIZE: 32`, so the auto-detect and wavefront derivation pick wave32 on real RDNA3 hardware.
+- `python3 utils/jargon.py --port oneflow`: 3 hits, all in 68718f038's commit message ("Strategy A", "MOAT", "Lead platform"), and 0 in added lines. This is the known review item 8, left for the PR-prep squash.
+- Documentation: README.md:145-150 has the ROCm configure block beside the CUDA one. Its `/opt/rocm/lib/llvm/bin/clang` paths are absent on rocm-sdk-wheel hosts like this one. That is not a finding, because /opt/rocm is the standard install.
+- CUDA compile gate: not run. There is no /opt/conda/envs/cuda-12.8 here, and creating it would change the shared environment. No host has recorded it at 521f54782 yet.
