@@ -7,7 +7,7 @@
   "priority": 6.236,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-10-30T00:43:12Z",
+  "updated_at": "2026-10-30T02:35:05Z",
   "head_sha": "521f547825b77e36a4752bd45b2a295ad2a0a633",
   "porting": null,
   "waivers": {
@@ -54,13 +54,13 @@
       }
     },
     "linux-gfx1100": {
-      "state": "completed",
+      "state": "validation-failed",
       "blocked": false,
       "blocked_reason": "GPU-validated on gfx1100 (RDNA3, wave32, ROCm 7.2.1). Fresh build from fork HEAD 68718f03: 190 gfx1100 code objects, OF_GPU_WARP_SIZE=32. Test slice: 73 passed / 2 failed (same pre-existing artifacts as gfx90a -- numpy __bool__ dtype-interop, not GPU faults). Wave32 warp reductions: softmax/layer_norm/rms_norm all produce correct results (softmax max_abs_diff=1.49e-08, layer_norm bwd gamma/beta no NaN, rms_norm bwd weight no NaN). LayerNormParamGrad wave64 fix is correct on wave32 (tile=32, block_dim_x=32, width=32 matches native wavefront). No fork changes needed. Fork 68718f0.",
       "validated_sha": "d019f35519eeb6f071ea4a6883b5c8f7a9adaa67",
       "started_at": "2026-05-31T10:07:00Z",
       "completed_at": "2026-06-23T22:46:36Z",
-      "updated_at": "2026-10-29T23:13:28Z",
+      "updated_at": "2026-10-30T02:35:05Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -82,7 +82,8 @@
         "class": "comment-only",
         "detail": "cmake/cuda.cmake: comment-only (comments/format only); oneflow/core/device/cuda_pseudo_half.h: comment-only (comments/format only)",
         "at": "2026-10-29T23:13:28Z"
-      }
+      },
+      "failed_sha": "521f547825b77e36a4752bd45b2a295ad2a0a633"
     },
     "windows-gfx1101": {
       "blocked": true,

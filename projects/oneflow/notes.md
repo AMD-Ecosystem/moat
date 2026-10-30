@@ -636,3 +636,59 @@ agent_space/norm_harness
 `device AMD Instinct MI250X / MI250 gcnArch gfx90a:sramecc+:xnack- warpSize 64 kWarpSize 64`; 42 passed, 0 failed. Max abs err: float softmax <= 5.6e-8, layer_norm fwd <= 7.8e-7, layer_norm bwd <= 4.6e-7, mean/inv_var <= 7.0e-8, rms_norm fwd <= 5.0e-7, rms_norm bwd <= 2.9e-7; double <= 9.3e-15. This shows the changed norm kernels compute correctly on wave64 CDNA2. It is not the validation gate (no liboneflow.so link, no Python op suite).
 
 Other checks at 521f54782: `python3 utils/jargon.py --port oneflow` -> 3 hits, all in 68718f038's commit message (known; the PR-prep squash removes them), 0 in added lines. `git -C projects/oneflow/src status --porcelain` empty. CUDA compile gate not run: it needs the same configure (pip step) and this host has no cuda-12.8 env; no host has recorded it for 521f54782 yet.
+
+## Validation 2026-10-30 (linux-gfx1100, full modules suite at 521f54782 -- validation-failed)
+
+Requested by jeff: the project's full GPU test suite at head_sha 521f547825b77e36a4752bd45b2a295ad2a0a633 under `ulimit -c 0`. This dispatch had FLEET_VENV/FLEET_WORKTREE, so the full monolith was built and the whole upstream `python/oneflow/test/modules` suite was run for the first time on any platform. Result: `revalidate -> validation-failed` (failed_sha 521f54782), because of three HIP-only GPU faults (below). The 9-file slice that earlier validations used still reads 73 passed / 2 failed, as before; the faults sit outside it, and the code they live in has not changed since d019f3551. So gfx90a probably has them too: rocPRIM's temp-storage minimum does not depend on the arch.
+
+Host: Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), HIP_VISIBLE_DEVICES=2 pinned by the dispatcher. ROCm 10.1.0 from the TheRock rocm-sdk wheels (no /opt/rocm), AMD clang 24.0.0git, Python 3.11.17, numpy 1.26.4, protobuf 3.20.3 (job venv), torch 2.16.0a0 (oracle, read-only from the base env). Fork clone at 521f54782, `git status --porcelain` empty before and after.
+
+### Environment recipe (job-private; nothing shared was modified)
+- Job venv: `$FLEET_VENV/bin/pip install -r dev-requirements.txt` (protobuf 3.20.3, opencv-python, cmakelang, ...), plus `pytest-timeout` and `mkl-static mkl-include`. Torch was linked read-only into `$FLEET_VENV-base-links` (the venv's .pth dir) from the base env.
+- cmake/python.cmake `install_py_dev_deps` runs `pip install -r dev-requirements.txt --user`, which pip refuses inside a venv. The fix needed no source edit: the job's pyvenv.cfg was set to `include-system-site-packages = true` for configure only, with `PYTHONUSERBASE=<job dir>/pyuser`, so pip found everything already satisfied and installed nothing.
+- CPU BLAS: this image has ATLAS without a CBLAS library. oneflow's bundled `cmake/third_party/FindBLAS.cmake` (Intel10_64lp_seq first, then "All") falls through to `f77blas;atlas` without a link test, so liboneflow.so built but `import oneflow` failed with `undefined symbol: cblas_sgemm`. Fix: static MKL from the job venv, made visible to that FindBLAS through `LD_LIBRARY_PATH=$FLEET_VENV/lib`, then `cmake -U 'BLAS*' build`. The bundled FindBLAS searches LD_LIBRARY_PATH, not MKLROOT. This is pre-existing upstream build behaviour, not the port.
+- LLVM clash at import, specific to TheRock wheels: `import oneflow` aborted with `realloc(): invalid pointer`. gdb showed the cause: `libLLVM.so.24.0git` (a dependency of TheRock's `libamd_comgr.so.3`, which liboneflow.so links) runs its static initializers and binds `SmallVectorBase::grow_pod` to oneflow's bundled `libLLVMSupport.so.17git`. Importing torch first avoids it, and so does `LD_PRELOAD=<rocm_sdk_devel>/lib/llvm/lib/libLLVM.so.24.0git`, which every test run here used. An /opt/rocm install, whose comgr does not export a shared libLLVM, is not expected to hit this (the 2026-05-31 gfx1100 run on ROCm 7.2.1 imported fine). It is an environment interaction, not a port defect. Still, anyone using oneflow on wheel-based ROCm will hit it, so it is worth a README line or a deferral once a person rules on it.
+
+### Commands
+```
+ulimit -c 0
+export PATH=$FLEET_VENV/bin:$PATH PYTHONUSERBASE=<job>/pyuser CCACHE_DIR=<job>/ccache
+export MKLROOT=$FLEET_VENV LD_LIBRARY_PATH=$FLEET_VENV/lib:$LD_LIBRARY_PATH
+R=$(python3 -m rocm_sdk path --root)
+CMAKE_PREFIX_PATH=$R ROCM_CLANG=$R/lib/llvm/bin/clang++ ROCM_CLANG_C=$R/lib/llvm/bin/clang JOBS=32 ./build_rocm.sh all
+```
+Configure: `CMAKE_HIP_ARCHITECTURES: gfx1100;gfx1100;gfx1100;gfx1100` (auto-detect), `OF_GPU_WARP_SIZE: 32`. liboneflow.so 946 MB; _oneflow_internal.cpython-311 15.9 MB. Smoke: GPU softmax (64x1000) vs torch max abs diff 3.7e-9; fp32 mm CPU and GPU diff 0.0.
+
+Suite: upstream `ci/test/generic_test_multi_client.sh` single-device pass (ONEFLOW_TEST_DEVICE_NUM=1), minus `-x`. The first attempt ran it as upstream does (`pytest --dist loadfile -n 4 ...`), but pytest-xdist 3.3.1 hit an INTERNALERROR (`KeyError: <WorkerController gw6>`) on replacing a crashed worker and stopped the session after 36 s. The final run therefore used one pytest process per file, 4 files at a time on the one GPU (upstream runs 4 tasks per GPU):
+```
+source build/source.sh
+export LD_PRELOAD=$R/../_rocm_sdk_devel/lib/llvm/lib/libLLVM.so.24.0git ONEFLOW_TEST_DEVICE_NUM=1
+cd python/oneflow/test/modules
+ls test_*.py | xargs -P 4 -I{} sh -c 'timeout -k 30 1800 python3 -m pytest -p no:warnings -p no:randomly -p no:cacheprovider --capture=sys --timeout=900 -rfE -q --junitxml=out/$(basename {} .py).xml {}'
+```
+Wall 810 s. The multi-device passes (ONEFLOW_TEST_DEVICE_NUM=2/4 via multi_launch.py) were not run: only one GPU is pinned to this job.
+
+### Results: 541 files, 1503 passed, 102 failed, 5 errors, 312 skipped; 7 files aborted (6 with no junit)
+Per-file process exit codes: 480 rc=0, 47 rc=1, 5 rc=2 (collection error), 2 rc=5 (no tests), 7 rc=134 (abort).
+
+**GPU faults on HIP (send back to the porter):**
+1. `NdarrayScalarReduce<kCUDA>` temp storage too small for tiny inputs (oneflow/core/ndarray/ndarray_reduce_impl.cu:205). `CHECK_GE(tmp_storage.ElemNum()*sizeof(T), tmp_storage_bytes)` aborts with `Check failed: (2 >= 4)` / `(3 >= 4)`. The tmp buffer is sized from the input (`ElemNum*sizeof(T)` bytes, so 2 to 3 bytes for a 2- or 3-element bool tensor), and hipcub/rocPRIM `DeviceReduce::Reduce` asks for at least 4 bytes, where CUB's single-tile path fits in the input size. Minimal repro: `flow.tensor([True, False], device="cuda").all()` aborts the process; `flow.ones(8, dtype=flow.bool, device="cuda").all()` and `flow.ones(2, device="cuda").sum()` work. It aborts test_allclose, test_equal and test_sparse (no junit), and was also the first crash in the xdist run. The fix belongs where the reduce tmp size is inferred: give the tmp buffer a floor (or size it from the hipcub query) under USE_HIP.
+2. `hipErrorLaunchFailure (719)` in test_loss (`TestBCELossModule::test_bce_loss_with_random_data_dim_2`, the first BCE case; 14 of the earlier cases in the file passed) and at process teardown in test_gumbel_softmax (both its tests pass, then the process aborts with 719). A plain `binary_cross_entropy` on a 4x5 GPU tensor works. The BCE kernel's device `assert`s are compiled out (`-DNDEBUG` on the HIP TU), so they do not explain it. Not root-caused; reproduce with `AMD_SERIALIZE_KERNEL=3 ONEFLOW_TEST_VERBOSE=1 pytest -s test_loss.py::TestBCELossModule::test_bce_loss_with_random_data_dim_2`.
+3. test_maxpool: `TestMaxPooling::test_maxpool2d_with_3d_input_tensor` aborts with `Out of memory when allocate size : 18446744073709547520` (a negative size, -4096, cast to size_t). A plain `max_pool2d` on a (3,8,8) GPU tensor works, so the trigger is a random shape in that test. Not root-caused.
+
+**HIP-specific interop gap (2 of the 107 junit failures/errors):**
+- DLPack device type: test_to_torch::test_to_torch_gpu (`BufferError: Unsupported device_type: 2`; oneflow exports kDLCUDA where torch-ROCm expects kDLROCM) and test_utils::test_utils_function (`Unsupported device type: 10`, the reverse direction). Plausibly in scope, since `device="cuda"` is the HIP backend and should speak kDLROCM; the porter can decide whether it is a fix or a documented limitation.
+
+**Not GPU faults (the other 105 junit failures/errors, each classified by message):**
+- 48: deferred kernels (op registered, `DeviceType_Name: kCUDA`, no kernel): conv1d/2d/3d, deconv2d, normalization, normalization_add_relu, tf_max_pool_2d, grid_sample (cuDNN); cublas_fused_mlp, fused_matmul_bias, fused_matmul_bias_add_relu_dropout, grouped_matmul_bias (cuBLASLt); lu_decomposition (cuSOLVER, test_det); fused_dot_feature_interaction, fused_attention_concat_past_key_value, fused_apply_rotary_emb (excluded fused .cu). All of them are in the cmake/oneflow.cmake exclusion list.
+- 14: autotest "endless loop". Checked for test_avgpool: every generated case is rejected by torch 2.16 (`avg_pool2d(): argument 'kernel_size' ... not NoneType`), so this is a test/torch-version mismatch. The conv/deconv random-data cases in this bucket would also need the deferred conv kernel.
+- 15: torch-version drift: ZeroTensor to numpy, PyTorchDoesNotSupportError on bce/kl_div grad_grad, `padding must be int`, `oneflow.char != oneflow.int8` dtype naming, kl_div grad_grad mismatch.
+- 10: the known numpy/oneflow `__bool__` interop quirk (test_concat, test_copy x2, test_div, test_logical_and, test_matmul fp16/int, test_slice x2, test_tensordot).
+- 15: missing test environment: torchvision (4 collection errors), /dataset files (test_image_decode, plus image_* reading None), ONEFLOW_CI env var (test_fft x5), `collections.Iterable` on Python 3.10+ (test_optim_lbfgs), `flow.unittest` attribute (test_image_resize).
+- 1: CPU digamma has no fp16 kernel (kCPU).
+- 2: CPU `cosh` docstring print mismatch; test_fused_codegeex_qkv_reshape passes a float shape to `view` (a test bug).
+- Aborts not listed above: test_dataset (`/dataset/imagenette/ofrecord` missing).
+
+Historic slice inside this run (same files as the 2026-05-31 validations): test_add 11, test_cast 9, test_where 19, test_masked_fill 6, test_broadcast_ops 8, test_transpose 6, test_softmax 1, test_layer_norm 4, test_matmul 9 passed / 2 failed (fp16/int `__bool__`) = 73 passed, 2 failed, unchanged. test_rmsnorm and test_skip_rms_norm pass.
+
+Other checks at 521f54782: `python3 utils/jargon.py --port oneflow` gives 3 hits, all in 68718f038's commit message (the known review item 8, left for the PR-prep squash) and 0 in added lines. README.md documents the ROCm build beside the CUDA one. CUDA compile gate: `cuda-not-validated: no CUDA toolkit on this host` (no /opt/conda, no nvcc; creating the env would change the shared image). No host has recorded it at 521f54782 yet. Non-GPU baseline versus an upstream CPU build: not built (a second full monolith); every non-GPU failure above is classified from its message as test-environment or torch-version drift, not as a ROCm change.

@@ -45,3 +45,10 @@
 {"kind":"phase","ts":"2026-10-30T00:51:48Z","phase":"compile","seconds":29.388,"exit":0,"cmd":"/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel/bin/amdclang++ -x hip --offload-arch=gfx90a -std=c++17 -O2 -DWITH_CUDA -DUSE_HIP -DOF_GPU_WARP_SIZE=64 -DOF_SOFTMAX_USE_FAST_MATH -include /var/lib/jenkins/fleet/jobs/mi200-20261029-174558-val-oneflow/moat/projects/oneflow/src/oneflow/core/device/cuda_to_hip.h -I/var/lib/jenkins/fleet/jobs/mi200-20261029-174558-val-oneflow/moat/projects/oneflow/src/oneflow/core/device/hip_compat -I/var/lib/jenkins/fleet/jobs/mi200-20261029-174558-val-oneflow/moat/projects/oneflow/src /var/lib/jenkins/fleet/jobs/mi200-20261029-174558-val-oneflow/moat/agent_space/norm_harness.cu -o /var/lib/jenkins/fleet/jobs/mi200-20261029-174558-val-oneflow/moat/agent_space/norm_harness"}
 {"kind":"phase","ts":"2026-10-30T00:51:49Z","phase":"test","seconds":0.834,"exit":0,"cmd":"agent_space/norm_harness"}
 {"kind":"session","ts":"2026-10-30T00:52:44Z","epoch":1793321564.636725271,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-10-30T01:36:39Z","epoch":1793324199.321093303,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-30T01:54:11Z","phase":"compile","seconds":1041.809,"exit":0,"cmd":"agent_space/build_oneflow.sh"}
+{"kind":"phase","ts":"2026-10-30T01:59:03Z","phase":"compile","seconds":11.523,"exit":0,"cmd":"agent_space/build_oneflow.sh"}
+{"kind":"phase","ts":"2026-10-30T02:02:28Z","phase":"compile","seconds":40.473,"exit":0,"cmd":"agent_space/build_oneflow.sh"}
+{"kind":"phase","ts":"2026-10-30T02:04:02Z","phase":"test","seconds":36.493,"exit":3,"cmd":"agent_space/test_oneflow.sh"}
+{"kind":"phase","ts":"2026-10-30T02:21:25Z","phase":"test","seconds":809.548,"exit":0,"cmd":"agent_space/test_oneflow_perfile.sh"}
+{"kind":"session","ts":"2026-10-30T02:35:14Z","epoch":1793327714.138347751,"event":"end","platform":"linux-gfx1100"}
