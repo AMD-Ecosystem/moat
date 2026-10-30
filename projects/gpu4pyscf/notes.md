@@ -1029,3 +1029,18 @@ Scope: covers the delta 13e3500..5c60311 and the whole flag change 066e91e..5c60
 
 ### Recommendation
 **Request Changes.** The fork at 5c60311 has no open findings; the next review of this lesson edit can pass the fork as-is. For PR prep, the 28f2418 body still describes the superseded link-flag mechanism ("The flag goes on both the HIP compile flags and the shared-library link flags"). If the three commits are squashed, the squashed message must take the 13e3500 wording instead.
+
+## Review 2026-10-30 (reviewer, linux-gfx942, fork moat-port @ 5c60311 unchanged; MOAT lesson 0a63d983) -- REVIEW PASSED
+
+Requested by jeff. Scope: the records-only fix the previous review asked for, the machine-licm bullet in `.claude/skills/cuda-to-rocm/references/validation.md` as corrected by the primary in 0a63d983, plus a check that the fork has not moved. The fork itself was covered by the earlier reviews and is unchanged.
+
+State bookkeeping: there is no `changes-requested -> reviewing` edge, so this run recorded the primary's 0a63d983 fix as the porter round (`changes-requested -> porting -> ported`, no fork change, `head_sha` stays 5c60311) and then took the work lock.
+
+Checked, not findings:
+- Fork `moat-port` tip is 5c60311636487d1f881d2f96e6d0dc80d55a9412; merge base with upstream/master is 10dcea3; 31 files, +697/-76, as in the previous review. `jargon.py --port gpu4pyscf`: clean.
+- The corrected lesson matches the facts in this file and in the fork: the flag is set only on `CMAKE_HIP_FLAGS` (gpu4pyscf/lib/CMakeLists.txt:65, inside `if(USE_HIP)`); CMake's HIP link rule reuses those flags on the `-fgpu-rdc` link (Porter 13e3500, Review 13e3500: all 8 `link.txt` carry the flag once); the project's `set(CMAKE_SHARED_LINKER_FLAGS "-Wl,--no-as-needed")` (CMakeLists.txt:96) overwrites a linker-flags append (Review 28f2418 finding 1). The text now says that, and asks for a verbose-build check of every compile and link line.
+- The "do not commit a compiler workaround" sentence is replaced with the outcome: it is a person's decision, and once made it goes under the HIP build only with a comment naming the compiler version, the arches and the removal condition. That is what CMakeLists.txt:57-64 carries.
+- Other claims in the bullet are unchanged and still agree with the notes: the rocgdb and objdump evidence (Upstream sync 2026-10-29), "-O1 did not help" (reproduces at -O1), the gfx90a pattern from the same compiler, gfx1100 running correctly with the same compiler (Validation gfx1100 @ 066e91e).
+- The branch adds only this bullet and the CUDA-root bullet to the skill (`git diff origin/main...HEAD -- .claude`), and both were read in earlier reviews.
+
+No findings. Carried over from the previous review for PR prep: if the three LICM commits are squashed, the squashed message must take the 13e3500 wording, not the 28f2418 body's "both the HIP compile flags and the shared-library link flags".
