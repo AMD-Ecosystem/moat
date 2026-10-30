@@ -1957,3 +1957,21 @@ Not run: this host has no CUDA toolkit (no `nvcc`, no `/opt/conda`), and the val
 ### Verdict
 
 **completed**, `linux-gfx90a`, `validated_sha=d3e2266399c1c87e35ea9d12049a2c4abac9a7de`: real-GPU pass on the HIP 7.16 build (31/31, 3/3, determinism 0 diff, numerics vs b0d21d5 explained). The 7.2.x fallback arm passed a 7.2.4 compile for gfx90a and a forced runtime check on gfx90a. The full 7.2.x runtime build is still open, see above.
+
+## CUDA gate 2026-10-30 (V100, CUDA 12.9)
+
+CUDA no-regression gate at head d3e2266399c1 (fork `moat-port`), owed since 7a49973. Run on an NVIDIA Tesla V100-SXM2-32GB (driver 575.57.08), nvcc 12.9.86, gcc 13.2, Python 3.12, with a CUDA torch in a scratch venv (`pip install torch==2.3.0 --index-url https://download.pytorch.org/whl/cu121`, plus `numpy<2 setuptools wheel ninja`), the recipe from Validation 2026-08-08. Upstream base for comparison: d23bb784d8 (fork `main`, the merge base). Fresh clones, `ulimit -c 0`.
+
+Build (identical for port and base):
+```
+cd FasterGSCudaBackend
+CUDA_HOME=/usr/local/cuda TORCH_CUDA_ARCH_LIST="7.0;8.0" MAX_JOBS=12 python setup.py build_ext --inplace
+```
+**PASS** at both shas. `cuobjdump --list-elf _C*.so`: 9 sm_70 + 9 sm_80 cubins at both. Warnings: the port's log has 84 extra `warning #3189-D: "module" is parsed as an identifier rather than a keyword` lines from torch 2.3's own headers (`torch/python.h`, `any_module_holder.h`); these come from the port's `-std=c++20` (upstream builds nvcc as c++17) and are the only warning text unique to the port. Harmless, but a visible CUDA-build difference reviewers may want to know about.
+
+Runtime on the V100 (extra evidence). Check script, same inputs on both builds: 3 random scenes (500 / 5000 / 20000 Gaussians, 256x256, antialiasing on/off, active SH bases 1/16/4), `rasterize` (inference) plus `diff_rasterize` forward and backward with a random upstream gradient and a (3, N) densification buffer:
+- Port and base both: all images finite, all gradients finite, same lit-pixel counts, same visible/nonzero-grad counts.
+- Inference image and training forward image: **bit-identical port vs base** for all 3 scenes.
+- Gradients and densification info: differ by atomic-accumulation order only. Port-vs-base max rel diff is at the base's own run-to-run noise (base vs a second base run): e.g. n5000 grad_means 2.76e-3 vs 2.78e-3, grad_scales 5.55e-3 vs 5.57e-3; n20000 grad_scales 7.90e-4 vs 7.52e-4; all other gradients 1e-7..1e-5 on both sides. The largest port/base-noise ratio is n500 grad_scales (6.7e-5 vs 5.8e-6), still a float-reorder magnitude.
+
+Result: CUDA gate **PASS** at d3e2266.
