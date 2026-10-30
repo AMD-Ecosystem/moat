@@ -938,3 +938,27 @@ Exit 0, `CUDA_ARCHITECTURES: 80`. 103 nvcc compile lines, 12 libs (cupy_helper g
 
 ### For the next roles
 Build-flag change, so every arch revalidates at 28f2418 after review. Validators no longer add the flag on the command line: the README recipe as written is now the test build on ROCm 10.1 gfx90a/gfx942. gfx1100 does not show the miscompile; the flag only changes its code shape, so its rerun is the check that the flag costs nothing there.
+
+## Review 2026-10-30 (reviewer, linux-gfx942, fork moat-port @ 28f2418 vs upstream/master 10dcea3; delta 066e91e..28f2418) -- CHANGES REQUESTED
+
+Scope: the delta commit 28f2418 in full, and the whole fork diff (31 files, +695/-76) re-read for anything the delta interacts with. Confirmed and not findings: the flag is set only inside `if(USE_HIP)` so no CUDA compile or link line can see it (the porter's CUDA 12.8 configure/build grep = 0 matches this); it applies to every HIP arch rather than a per-arch branch; title 58 chars with `[ROCm]`, AI disclosure in prose, fenced Test Plan, no `Co-Authored-By`/noreply; `jargon.py --port gpu4pyscf` clean; `prose.py` on the commit body clean; added lines ASCII.
+
+### Build System
+
+1. **gpu4pyscf/lib/CMakeLists.txt:63 is a no-op, and the comment at :56-61 says the opposite of what actually carries the fix.** `string(APPEND CMAKE_SHARED_LINKER_FLAGS " -mllvm -disable-machine-licm")` is thrown away by the upstream `set(CMAKE_SHARED_LINKER_FLAGS "-Wl,--no-as-needed")` at :94. That `set` runs whenever the C compiler is GCC and `LDFLAGS` is unset, which is the README build. The flag reaches the device link only because CMake's HIP link rule repeats `CMAKE_HIP_FLAGS` (`<LANGUAGE_COMPILE_FLAGS>`), so :62 alone covers both compile and link. And with `-fgpu-rdc -c` the device side only writes bitcode, so on the compile step the flag changes host code and nothing else. If a maintainer trusts the comment ("needed on both lines") and keeps only the linker line, the workaround disappears without any error. Evidence, on this host (TheRock ROCm 10.1, GCC 13.3 as the C compiler, cmake 3.31.6):
+   ```
+   cmake -S gpu4pyscf/lib -B <b> -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942
+   # CMakeCache: CMAKE_SHARED_LINKER_FLAGS is empty; all 8 link.txt files have exactly one
+   # -disable-machine-licm, one --hip-link and one -fgpu-rdc, sitting in the CMAKE_HIP_FLAGS group
+   # next to -Wno-register; the only CMAKE_SHARED_LINKER_FLAGS content there is -Wl,--no-as-needed.
+   # Same tree with only line 62 deleted:
+   grep -c disable-machine-licm <b2>/gvhf-rys/CMakeFiles/gvhf_rys.dir/link.txt   # -> 0
+   ```
+   Fix: drop :63 and rewrite the comment to say that the HIP link rule reuses `CMAKE_HIP_FLAGS`, so this one line also reaches the `-fgpu-rdc` device link, where device code is generated. The existing `string(APPEND CMAKE_SHARED_LINKER_FLAGS " -fgpu-rdc --hip-link")` at :55, and the "add --hip-link -fgpu-rdc on the shared-library link below" sentence at :49-50, come from earlier port commits and are dead for the same reason (CMake adds `--hip-link` itself, and `-fgpu-rdc` arrives through `CMAKE_HIP_FLAGS`). Drop or correct them in the same commit so that no comment in the block describes a mechanism that doesn't run. After the change, re-check that every `link.txt` still carries the flag once (VERBOSE build or `grep` as above) and that RHF water/def2-svp still matches CPU on gfx942.
+
+### Port Correctness
+
+2. **The comment (gpu4pyscf/lib/CMakeLists.txt:56-61) and the README paragraph (README.md:65) never say which compiler has the bug, so the removal condition cannot be checked.** The comment says "a ROCm compiler bug" and "Remove it only once a later ROCm compiler passes"; the README says "the ROCm compiler's machine LICM pass miscompiles" without any version. The defect was observed with the ROCm 10.1 compiler (AMD clang 24.0.0, deferred `therock-10-1-machinelicm-clobbers-live-vgpr`). The June gfx90a validation built with ROCm 7.2.1, without the flag, and passed the d-shell SCF tests. So the README's unqualified sentence is not accurate for every ROCm, and "a later ROCm compiler" has nothing to be later than. Fix: in both places, name the compiler version the miscompile was seen with (ROCm 10.1 / AMD clang 24). Keep the removal test as it is: drop the flag once the d-shell SCF tests pass on gfx90a and gfx942 without it.
+
+### Recommendation
+**Request Changes.** Both fixes go in one new commit on top of 28f2418 (no amend). No device code changes. The build-flag result has to stay the same (one `-disable-machine-licm` on every HIP compile and link line), so the porter's 28f2418 gfx942 test numbers carry over only if the VERBOSE check confirms that.

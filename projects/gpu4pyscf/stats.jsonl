@@ -96,3 +96,5 @@
 {"kind":"phase","ts":"2026-10-30T18:30:20Z","phase":"compile","seconds":133.056,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261030-111650-gpu4pyscf-flag/moat/agent_space/cuda_gate.sh"}
 {"kind":"phase","ts":"2026-10-30T18:35:18Z","phase":"test","seconds":158.924,"exit":1,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261030-111650-gpu4pyscf-flag/moat/agent_space/run_suite.sh 2"}
 {"kind":"session","ts":"2026-10-30T18:36:23Z","epoch":1793385383.382307595,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-10-30T19:22:44Z","epoch":1793388164.877040212,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-10-30T19:25:20Z","epoch":1793388320.499903683,"event":"end","platform":"linux-gfx942"}
