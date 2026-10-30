@@ -289,3 +289,35 @@ grep -c GOMC_CUDA agent_space/gomc-hip/CMakeFiles/GPU_NVT.dir/flags.make  # 2
 Smoke run only, not the validation gate: GOMC_GPU_GEMC and GOMC_CPU_GEMC on AR_KR/SingleRun (MI300X, HIP_VISIBLE_DEVICES=4, `ulimit -c 0`) both exit 0 with identical ENER_0 output. `python3 utils/jargon.py --port GOMC` is clean, and so is `git -C projects/GOMC/src status --porcelain`.
 
 Not blocking: `moatlib.py audit-commits GOMC` reports that 58d5496d and b1b67078 (both earlier rounds, already review-passed) have Test Plans with no fenced command block. Fixing that means rewriting their messages, so leave it to the PR-prep squash; no new commit can fix it.
+
+## Validation 2026-10-30 (linux-gfx90a, validator)
+
+Head 4c06552c (fork `moat-port`, fresh clone). Full real-GPU revalidation (prior gfx90a evidence was at 58d5496d; the upstream `development` merge is not a carry-forward candidate).
+
+GPU: AMD Instinct MI250X / MI250 GCD (gfx90a, wave64), HIP_VISIBLE_DEVICES=0, `ulimit -c 0`. ROCm: TheRock ROCm SDK 10.1.0 pip wheels (HIP 7.16.26385), no /opt/rocm.
+
+Build, following the README ROCm section with the SDK compiler path (no `-DCMAKE_HIP_ARCHITECTURES`, to exercise the README's autodetection: CMakeCache shows `gfx90a`):
+```bash
+R=$(rocm-sdk path --root)
+utils/timeit.sh GOMC compile -- bash -c "cmake -S $PWD/projects/GOMC/src -B $PWD/agent_space/gomc-hip -DUSE_HIP=ON \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release && cmake --build $PWD/agent_space/gomc-hip -j 32"
+```
+rc=0, all 8 executables (GOMC_CPU_{NVT,NPT,GCMC,GEMC}, GOMC_GPU_{NVT,NPT,GCMC,GEMC}). Warnings: 4978 `-Wunused-value` + 20 `-Wunused-result`, all `ignoring return value of type 'hipError_t' declared with 'nodiscard'` where upstream ignores the return of `CUMALLOC`/`cudaMemcpy` etc. in src/GPU/*.cu (HIP declares `hipError_t` nodiscard, CUDA does not). Cosmetic, not a gate.
+
+Tests: `utils/timeit.sh GOMC test -- bash agent_space/gomc_val.sh <build> <src> <work>`. The script copies test/input/Systems, sets `ConsoleFreq true 100` (PEN_HEX: 40), and derives single-box AR_KR NVT (1000 steps, Dis 0.87/Rot 0.13) and NPT (1000 steps, Dis 0.86/Rot 0.13/Vol 0.01, Pressure 100) configs from AR_KR/SingleRun/in.conf by dropping the box-1, GEMC, SwapFreq and ChemPot lines. It runs each with the GPU and the CPU executable of the same build, then compares every ENER_n row field by field and every `% Accepted` line. The GPU log reports `Device Name: AMD Instinct MI250X / MI250`.
+
+| run | GPU/CPU rc | ENER rows | GPU vs CPU max rel diff | acceptance lines GPU vs CPU | key acceptance |
+|---|---|---|---|---|---|
+| GEMC AR_KR SingleRun 3000 steps | 0/0 | 62 | 0 | identical | disp AR 48.30% / KR 19.04% (box 0) |
+| GEMC ISOPEN_NEOPEN SingleRun 3000 steps (MEMC) | 0/0 | 62 | 0 | identical | MEMC NEO-ISB 61.76% |
+| GCMC PEN_HEX SingleRun 200 steps (Ewald) | 0/0 | 12 | 0 | identical | PEN disp 43.75% |
+| NVT AR_KR box 0, 1000 steps | 0/0 | 11 | 0 | identical | disp AR 97.22% / KR 98.39% |
+| NPT AR_KR box 0, 1000 steps | 0/0 | 11 | 0 | identical | volume 50.0% |
+
+5/5 pass. GPU and CPU trajectories are identical at printed precision, and the results match the porter's gfx90a numbers at this head and the earlier rounds' recorded acceptances. GPU wall times: ISOPEN 4.34 s, PEN_HEX 0.61 s, others ~0.3 s (the timings include HIP init; the host was heavily loaded).
+
+Non-GPU: the CPU executables from the same build ran all five systems with rc=0. The CPU gtests do not compile on upstream `development` itself (unbalanced brace in test/src/ConsistentTrajectoryTest.cpp, recorded above). That is upstream breakage, the port leaves test/ untouched, and I did not re-run it here.
+
+CUDA compile gate: already recorded at 4c06552c (nvcc 12.8.93, all 8 executables), so it was not re-run.
+
+Completion checks: `git -C projects/GOMC/src status --porcelain` is empty, `python3 utils/jargon.py --port GOMC` is clean (after `git -C projects/GOMC/src branch -f development origin/development`), and the README carries the "Building GOMC for AMD GPUs with ROCm" section.
