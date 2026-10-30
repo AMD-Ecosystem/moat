@@ -81,3 +81,17 @@
 {"kind":"phase","ts":"2026-10-30T05:22:11Z","phase":"test","seconds":62.746,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261029-212409-val2-oneflow/moat/agent_space/run_suite.sh tensor 4"}
 {"kind":"phase","ts":"2026-10-30T05:25:18Z","phase":"test","seconds":54.885,"exit":0,"cmd":"python3 /var/lib/jenkins/fleet/jobs/rx7900-20261029-212409-val2-oneflow/moat/agent_space/norm_sweep.py 8000"}
 {"kind":"session","ts":"2026-10-30T05:26:34Z","epoch":1793337994.082464545,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T05:33:18Z","epoch":1793338398.242378668,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-30T05:36:45Z","phase":"compile","seconds":0.003,"exit":127,"cmd":"./build_rocm.sh all"}
+{"kind":"phase","ts":"2026-10-30T05:55:13Z","phase":"compile","seconds":1087.440,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261029-222942-fix3-oneflow/moat/projects/oneflow/src/build_rocm.sh all"}
+{"kind":"phase","ts":"2026-10-30T06:01:51Z","phase":"test","seconds":373.061,"exit":0,"cmd":"bash agent_space/grid.sh"}
+{"kind":"phase","ts":"2026-10-30T06:02:06Z","phase":"test","seconds":3.072,"exit":1,"cmd":"bash agent_space/sweep_run.sh norm_sweep.py 8180,8190,8191,8192,8193,12000,16000,16350,16380,16384,16400,24000,32000,32568,32760,32768,32800,40000,65000,65536,70000"}
+{"kind":"phase","ts":"2026-10-30T06:02:06Z","phase":"test","seconds":3.081,"exit":1,"cmd":"bash agent_space/sweep_run.sh norm_sweep.py 8192"}
+{"kind":"phase","ts":"2026-10-30T06:02:10Z","phase":"test","seconds":3.188,"exit":2,"cmd":"bash agent_space/pyt.sh test_layer_norm.py test_rmsnorm.py test_softmax.py test_activation.py"}
+{"kind":"phase","ts":"2026-10-30T06:02:38Z","phase":"test","seconds":8.312,"exit":0,"cmd":"bash agent_space/sweep_run.sh norm_sweep.py 8180,8190,8191,8192,8193,12000,16000,16350,16380,16384,16400,24000,32000,32568,32760,32768,32800,40000,65000,65536,70000"}
+{"kind":"phase","ts":"2026-10-30T06:03:01Z","phase":"test","seconds":22.870,"exit":0,"cmd":"bash agent_space/pyt.sh test_layer_norm.py test_rmsnorm.py test_softmax.py"}
+{"kind":"phase","ts":"2026-10-30T06:03:34Z","phase":"test","seconds":64.038,"exit":0,"cmd":"bash agent_space/sweep_run.sh norm_sweep.py 8192"}
+{"kind":"phase","ts":"2026-10-30T06:03:46Z","phase":"test","seconds":18.597,"exit":0,"cmd":"bash agent_space/pyt.sh test_activation.py"}
+{"kind":"phase","ts":"2026-10-30T06:04:04Z","phase":"test","seconds":18.250,"exit":0,"cmd":"bash agent_space/pyt.sh test_activation.py"}
+{"kind":"phase","ts":"2026-10-30T06:04:22Z","phase":"test","seconds":18.120,"exit":0,"cmd":"bash agent_space/pyt.sh test_activation.py"}
+{"kind":"phase","ts":"2026-10-30T06:19:49Z","phase":"test","seconds":824.950,"exit":0,"cmd":"bash agent_space/run_suite.sh modules 4"}
