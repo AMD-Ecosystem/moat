@@ -649,3 +649,41 @@ New findings:
 3. Literal `%%` in a user-visible error. `awq/kernels/csrc/quantization_new/gemm/gemm_cuda.cu:1171`: `TORCH_CHECK(false, "... requires K %% 128 == 0 and N %% 8 == 0.")`. TORCH_CHECK joins its message arguments with `c10::str`; it is not printf. The user therefore sees `K %% 128`. Write `%` and move the condition into the check: `TORCH_CHECK(num_in_channels % 128 == 0 && num_out_channels % (N_PER_BLOCK * K_INTERLEAVE) == 0, "gemm_forward_cuda_new (HIP) requires K % 128 == 0 and N % 8 == 0.")`.
 
 Checked and not findings this round. The handle cache is correct across devices: `w8a8_gemm_forward_hip` sets `OptionalCUDAGuard(device_of(_in_feats))` before `w8a8_int8_gemm_hipblaslt`, so `hipGetDevice` names the input's device, and `hipblasLtCreate` binds the handle to that device. The resize and create both happen under the lock, and nullptr is retried on the next call. With `use_ninja` gone, the ROCm .cu sources still get `extra_compile_args['nvcc']` and the shims still compile with hipcc (porter's ninja log, 14 steps). CUDA builds are back on ninja with the upstream `cxx` flags (only `-fopenmp -lgomp` moved to the end of the list). The PR-prep squash TODOs recorded by the porter (dac7721 and 73edaef bodies, the Test Plan form in 1f3aadc and e8b1937) cover the commit-message issues from the last two reviews; history has not been rewritten yet, as agreed. `jargon.py --port llm-awq` is clean. The new commits have `[ROCm]` titles of 56 and 58 chars, AI disclosure, a Test Plan, no trailer, and ASCII only.
+
+## Porting round 2026-10-30 (linux-gfx90a): answers re-review at e8b1937
+
+Answers "Review 2026-10-30 (linux-gfx1100, re-review at e8b1937)". Fork `moat-port`: e8b1937 -> ca71a9a -> 90a711b. Host: AMD Instinct MI250X (gfx90a, wave64), ROCm 7.16 (TheRock SDK, hipBLASLt 1.4.1), torch 2.16.0a0+git6c3af02, Python 3.11. No GitHub writes this round (jeff's instruction), so review PR #1 got no replies; it had no threads anyway.
+
+Version facts, all from `git show <tag>:<file>` in blobless clones of ROCm/hipBLASLt, ROCm/hipBLAS, ROCm/clr, ROCm/HIP, ROCm/rocm-cmake, and the read-only pytorch checkout:
+- hipBLASLt rocm-5.7.0 and rocm-5.7.1: VERSION_STRING 0.3.0; `hipblaslt.h:289-290` `hipblasLtMatrixLayoutCreate(..., hipblasDatatype_t, ...)`, `:398-400` `hipblasLtMatmulDescCreate(..., hipblasLtComputeType_t, hipblasDatatype_t)`. rocm-6.0.0: 0.6.0; `:392-393` takes `hipDataType`, `:496-498` takes `hipblasComputeType_t, hipDataType`. 6.1.0 0.7.0, 6.2.0 0.8.0, 6.4.0 0.12.0.
+- `hipblaslt-version.h.in` (both tags) defines `HIPBLASLT_VERSION_MAJOR/MINOR/PATCH/TWEAK` from `@hipblaslt_VERSION_*@`; `rocm_setup_version` (rocm-cmake rocm-5.7.0 `ROCMSetupVersion.cmake:119-147`) sets `${PROJECT_NAME}_VERSION_MAJOR/MINOR/PATCH` from VERSION_STRING; `library/CMakeLists.txt:34-35` configures it into `include/hipblaslt/hipblaslt-version.h`, installed by `rocm_install_targets(... INCLUDE ${CMAKE_BINARY_DIR}/include)`. It has no includes.
+- hipBLAS rocm-6.0.0 `hipblas.h:555` `HIPBLAS_COMPUTE_32I` is outside the `#ifdef HIPBLAS_V2` block (487-539), so it does not depend on the flag.
+- torch v2.3.0 `.github/scripts/generate_binary_build_matrix.py:25` `ROCM_ARCHES = ["5.7", "6.0"]`.
+- clr `amd_hip_bf16.h` rocm-5.7.0 vs rocm-6.0.0 differ only by an added `amd_hip_common.h` include; every bf16/half intrinsic the HIP paths call (`__float22bfloat162_rn`, `__bfloat1622float2`, `__bfloat162bfloat162`, `__hfma2`, `__hmax2`, ...) is declared at rocm-5.7.0; `__floats2bfloat162_rn` / `__float2bfloat162_rn` are absent at both and the HIP code does not call them (own fallback, or `__float22bfloat162_rn`). ROCm/HIP rocm-5.7.0 has `include/hip/hip_bf16.h`, `hip_fp16.h`, `library_types.h`. hipBLASLt itself exists from rocm-5.5.0, so `-lhipblaslt` links on 5.7.
+- `ROCM_VERSION`: no `#define ROCM_VERSION` and no `-DROCM_VERSION` in `cpp_extension.py` at v2.2.0, v2.3.0, v2.4.0, v2.8.0, v2.9.0, main (6c3af02); none in the installed 2.16 include tree, which still guards on it (`hip/HIPEvent.h:146`, `torch/headeronly/cuda/KernelUtils.h:20`, ...). The SDK `rocm_version.h` defines only `ROCM_VERSION_MAJOR/MINOR/PATCH` and `ROCM_BUILD_INFO`. v2.3.0 `cmake/Dependencies.cmake:1297` is the only definition. v2.4.0 `CUDAContextLight.h:83` declares the handle with no guard (ae9a4fa "[ROCm] enforce ROCM_VERSION >= 6.0 (#125646)"). `getCUDABlasLtWorkspace*`: 0 hits at v2.8.0, present at v2.9.0. v2.8.0 `CUDADataType.h:81` and v2.9.0 `:81,93` guard on `ROCM_VERSION`.
+
+1. (new finding 2, ROCm floor) ca71a9a: `w8a8_gemm_cuda.cu` includes `<hipblaslt/hipblaslt-version.h>` under `__has_include` and compiles the handle cache and `w8a8_int8_gemm_hipblaslt` only when hipBLASLt >= 0.6; otherwise a stub returns false and every call takes the existing SIMT kernel. `hipblaslt.h`, `<mutex>`, `<vector>` are included only inside the gate. README AMD note: "The kernels need ROCm 5.7 or newer; the W8A8 GEMM uses hipBLASLt on ROCm 6.0 and newer and a slower portable kernel on ROCm 5.7." The 5.7 floor for the rest of the extension rests on header reading (above) plus torch 2.3's own floor; no ROCm 5.7 or 6.0 SDK or torch 2.3 ROCm wheel is available here, so neither was built against.
+   Gate test: /tmp copy of `awq/kernels` with `include_dirs=["/tmp/llmawq-gate/fakeinc"]` added to its setup.py, where `fakeinc/hipblaslt/hipblaslt-version.h` defines 0.3.0 (found before the SDK's copy). Builds; `nm -D` shows 0 hipblasLt symbols; a profiler probe shows only `w8a8_int8_gemm_simt<16, 64>` + epilogue for 16x4096x4096, 17x4096x11008, 300x130x520; `w8a8_test.py` 25/25.
+2. (new finding 1, skill lesson) `references/fault-classes.md` entry rewritten: `ROCM_VERSION` is never defined in a `cpp_extension` build at any version checked, so every such guard in an installed header is false in an extension, current releases included (v2.8.0 `CUDADataType.h` fp8 example); 2.4 only dropped the guard around the handle declaration; read the guard around each declaration you call at the oldest supported tag. Added the hipBLASLt 0.3 -> 0.6 type change and the `HIPBLASLT_VERSION_*` gate as part of the same entry. Source llm-awq.
+3. (new finding 3) 90a711b: `TORCH_CHECK(num_in_channels % 128 == 0 && num_out_channels % (N_PER_BLOCK * K_INTERLEAVE) == 0, "... K % 128 == 0 and N % 8 == 0.")`.
+4. Test fix (MOAT-side `tests/w8a8_test.py`): the path classifier now ignores runtime-API events (`hip*`/`cuda*`). The profiler on this host sometimes drops the kernel record; before, a profile with only `hipLaunchKernel`/`hipDeviceSynchronize` was labelled `hipblaslt` (seen 3/24 in the gate build, which has no hipBLASLt code). Such cases now read `?`.
+
+PR-PREP SQUASH TODO addition: 1f3aadc body should say the fix applies to torch 2.3 with ROCm 6.0 (ca71a9a covers ROCm 5.7 by falling back to SIMT).
+
+Build (ninja `[14/14]`):
+```
+cd projects/llm-awq/src/awq/kernels
+find csrc \( -name '*.hip' -o -name '*_hip.*' -o -name 'hip_bf16_*' -o -name '*_cpp_shim.cu' \) ! -name 'cuda_to_hip*' -delete
+rm -rf build
+PYTORCH_ROCM_ARCH=gfx90a MAX_JOBS=32 python setup.py build_ext --inplace
+```
+
+Tests at 90a711b (from /tmp, `PYTHONPATH=<src>/awq/kernels`, HIP_VISIBLE_DEVICES pinned to one GPU), all PASS:
+- `attn_test.py`: 443/443 (fp32 D=128 t=16240 and t=20000 refused for shared memory, as before).
+- `tinychat_e2e.py <src>`: 4/4, argmax 40/40, 40/40, 64/64, 40/40; max |dlogit| 2.930e-03, min cos 0.999999.
+- `w8a8_test.py`: 25/25; with the fixed classifier paths {'hipblaslt': 20, '?': 4} (first run, old classifier: {'hipblaslt': 24}).
+- `w8a8_simt_test.py <w8a8_gemm_cuda.cu>`: 7/7 exact.
+- `legacy_gemm_test.py`: 8/8, max err vs dequant ref 3.9e-3.
+- `w4a16_test.py <src>`: 30/30.
+- `w8a8_handle_test.py <w8a8_gemm_cuda.cu>`: PASS, 16 threads, 1 device, one handle.
+jargon.py --port llm-awq clean; prose.py clean on both bodies; titles 66 and 61 chars. Still owed: wave32 and Windows runs at the new head (validators).
