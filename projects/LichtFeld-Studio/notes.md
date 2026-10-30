@@ -4734,3 +4734,35 @@ head_sha -> b0a50fa0 (documentation only; the platforms validated at 81b7fa24 re
 
 ### Verdict
 All three findings answered. The fork code is unchanged since c32560e9; the next review covers one docs line plus the records and skill text.
+
+## Review 2026-10-30e (reviewer, linux-gfx1100) -- b0a50fa0 (delta c32560e9..b0a50fa0, plus the deferral and skill edits in 12fc6030 and fb73b549), REVIEW-PASSED
+
+### Summary
+The three findings of "Review 2026-10-30d" are answered. b0a50fa0 is one docs line and is correct. The rewritten deferral and the `fault-classes.md` paragraph state the two rocclr causes correctly. The porter's dispute holds: a late 64 MiB threshold keeps nothing because memory is unmapped in whole 128 MiB chunks, so a trim *to* the threshold would also end at 0. The array-level over-trim is real, but it does not decide this case. One sentence my previous review gave the porter was wrong: which chunk an early threshold keeps. The reviewer corrected it in the deferral (below). The fork code is unchanged since c32560e9, so it was not reopened.
+
+### Records correction (made by this review in deferred.json)
+- **Which chunk is kept.** "Review 2026-10-30d" said the chunk an early max/1024 MiB threshold keeps is the heap's *first* chunk, because the block starts 256 bytes in. The porter round and the deferral repeated this. It is wrong. `VmHeap::Alloc` requests `AllocBlock(size + block_alignment_)` (rocclr/platform/vmheap.cpp:224; `block_alignment_ = kMinBlockAlignment` = 256, line 87). `SplitBlock` puts that block at the free block's start, heap offset 0 (372-380). Only the returned pointer moves 256 bytes in (228-230). So a 512 MiB request covers [0, 512 MiB + 256 B) and maps 5 chunks. Chunks 0-3 lie wholly inside it; the fifth is covered by 256 bytes only and is the one never unmapped.
+- **Evidence.** `agent_space/chunk/chunk.hip` (`chunk <thr MiB|max> <bytes> early|late`, same warm-up as the porter's `thr`; hipcc `--offload-arch=gfx1100 -O2`; `HIP_VISIBLE_DEVICES=1`, printed bus 0000:46:00.0, all four cards at 0 % by amd-smi; `ulimit -c 0`, `timeout 60` each). ReservedMemCurrent before -> after free + sync:
+  ```
+  bytes       early max / 1024 / 64        late max / 1024 / 64
+  536870656   512->0 / 512->0 / 512->0     512->512 / 512->512 / 512->0
+  536870657   640->128 / 640->128 / 640->0 640->640 / 640->640 / 640->0
+  536870912   640->128 / 640->128 / 640->0 640->640 / 640->640 / 640->0
+  ```
+  At 512 MiB - 256 B the block is exactly 4 chunks and an early threshold keeps nothing. One byte more adds the partial fifth chunk, and that is the 128 MiB kept.
+- **The 64 MiB late case, traced.** For 512 MiB the heap's own pass (`UnmapPhysMemory`, free mapped 640 > 64) unmaps chunks 3, 2, 1, 0 and stops at the fifth, which is outside the block's whole chunks. That leaves 128 MiB. `VmHeapArray::Free` then sees freed = 128, extra = 64, and trims to 0 (line 441), which takes it. A trim to 64 would take it as well (128 > 64). With the 4-chunk block, the heap pass alone reaches 0. So the porter's reading is right. The deferral's "(a late 64 MiB ends at 0 there)" is replaced with this account.
+- Edited only that clause and the "first chunk" clause in `hip-vmheap-unmap-threshold-lost-or-overtrimmed`'s summary. Status, kind and id are unchanged; nothing is filed.
+
+### Notes-only arithmetic (history, not edited)
+- "Porter round 2026-10-30d", early 64 MiB: "extra 576 >= 64". `VmHeapArray::Free` measures the free mapped size *after* the heap's own pass. With the heap threshold lost (0), that pass leaves only the partial chunk, so freed = 128 and extra = 64. The conclusion (trim to 0) is unchanged.
+- Same round, `multi` 256 MiB, second free: "440 MiB free mapped, `Free` trims to 256 - 184 = 72 MiB target". Actually the heap pass first unmaps chunk 0 (free mapped 384 aligned > 256). The array then sees about 312 MiB, so extra = 56 and the target is 200. That pass unmaps chunk 2, ending at 384 MiB reserved and 184 MiB free mapped. The total (two chunks) and the conclusion (ends at 128 MiB where 256 is allowed) are unchanged. The 512 MiB line (target 328) is right.
+
+### Checked as asked (no finding)
+- **b0a50fa0, docs/building_and_distribution.md:230.** One line. It names ROCm 10.1 once, with HIP 7.16 (matches `hipconfig` 7.16.26385) and rocDecode 1.10 in parentheses, and gives the Windows rocDecode availability as ROCm 10.2 / rocDecode 1.12, as in c32560e9. Dropping the "7.x" lower bound is justified because nothing older was tested. The compute-only "ROCm 7.x (tested with 7.2)" is ROCm release numbering and is correctly left alone.
+- **Commit.** Title `[ROCm]`, 60 characters. The body gives the rationale, "Authored with Claude.", and a fenced Test Plan. No Co-Authored-By trailer. Diff and message are ASCII. `python3 utils/jargon.py -C <fork clone> --commits c32560e9..b0a50fa0 --diff c32560e9..b0a50fa0`: clean.
+- **Deferral, rest of the summary.** The citations were rechecked at rocm-systems 58b6920: hip_mempool_impl.hpp:129-132, vmheap.cpp:465-473, 217-220, 170-196, 423-444 (line 441), vmheap.hpp:52 and 152. Cause (1), lost when set before the first allocation, matches `SetUnmapThreshold`'s `created_` check. Cause (2) is shown by the porter's 256 MiB `multi` sequence, which I traced by hand: 640 -> 640 -> 384 -> 128. The `FreeMemory` force-release is correctly labelled not isolated. The LD_PRELOAD timing is attributed to the review.
+- **fault-classes.md (12fc6030).** The paragraph says: lost if set before the first allocation; set late, memory is kept in 128 MiB chunks; below one chunk nothing is kept; a free can trim below the threshold; correctness unaffected; measure first; both deferral ids. All true at 58b6920 and in the runs above. "Unmapped ... whatever its value" leaves out the one partial chunk an early threshold of at least 128 MiB keeps. That is too fine a point for a skill heuristic, and the deferral carries it.
+- **Scope and safety.** The earlier job trees (`...-133134-lfs-mempool-review` rocm-systems clone, `...-134820-lfs-mempool-records-fix` fork clone and `thr` binaries) were only read; nothing was deleted. One GPU, HIP 1 by PCI address. No video or JPEG went to the hardware decoders.
+
+### Next
+Validator: revalidate at b0a50fa0 (docs only since c32560e9; the code delta since the validated 81b7fa24 is the c32560e9 round). The deferral stays open and unruled for jeff.
