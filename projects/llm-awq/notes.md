@@ -712,6 +712,11 @@ PR-PREP SQUASH TODO additions (nits):
 Verdict: completed at fork `moat-port` 90a711b. jeff asked for this run after the review passed at 90a711b. Host: AMD Radeon AI PRO R9700 (gfx1201, RDNA4, wave32), ROCm 7.16 (TheRock SDK in the image venv, hipcc 7.16.26385), torch 2.16.0a0+git6c3af02, Python 3.11. HIP_VISIBLE_DEVICES pinned to one GPU by the dispatcher; everything under `ulimit -c 0`.
 
 Build (ninja `[14/14]`, 54 s; 0 errors; llvm-objdump --offloading shows only gfx1201):
+## Validation 2026-10-30 (linux-gfx942)
+
+Platform: AMD Instinct MI300X HF (gfx942:sramecc+:xnack-, CDNA3, wave64), ROCm 7.16 (TheRock SDK in the image venv, HIP 7.16.26385), torch 2.16.0a0+git6c3af02, Python 3.11. One GPU (dispatcher-pinned HIP_VISIBLE_DEVICES). Fork `moat-port` at 90a711be48b58046448fd7e036b5ecc765cd677b (head_sha), fresh clone. jeff asked for this validation after the review pass at 90a711b. Everything below ran under `ulimit -c 0`.
+
+Build (ninja `[14/14]`, 0 errors; code object `amdgcn-amd-amdhsa--gfx942` only):
 ```
 cd projects/llm-awq/src/awq/kernels
 find csrc \( -name '*.hip' -o -name '*_hip.*' -o -name 'hip_bf16_*' -o -name '*_cpp_shim.cu' \) ! -name 'cuda_to_hip*' -delete
@@ -731,3 +736,22 @@ Tests at 90a711b (from /tmp, `PYTHONPATH=<src>/awq/kernels`, scripts in projects
 CUDA gate: cuda-not-validated: no CUDA toolkit on this host (no nvcc, no conda to create the cuda-12.8 env). Supplementary only: `tests/cuda_view.py` diff vs d6e797a shows 0 changed CUDA-visible lines in w8a8_gemm_cuda.cu, gemm_cuda_gen.cu, both dequantize.cuh and w8a8/quantization.cu; the remaining files differ by the reviewed shuffle/macro lines.
 
 Checks: `python3 utils/jargon.py --port llm-awq` clean. README documents the ROCm build (line 127). Fork worktree: no modified tracked files (`git status --porcelain` shows only untracked build output).
+PYTORCH_ROCM_ARCH=gfx942 MAX_JOBS=32 python setup.py build_ext --inplace
+```
+
+Tests (from /tmp, `PYTHONPATH=<src>/awq/kernels python projects/llm-awq/tests/<script> [arg]`), all exit 0, 0 FAIL lines:
+- `attn_test.py`: 443/443. fp32 D=128 t=16239 passes; t=16240 (65552 B) and t=20000 (80592 B) refused for shared memory against 65536 B, the same edge as gfx90a.
+- `tinychat_e2e.py <src>`: 4/4. MHA 8/8 D128 argmax 40/40, GQA 16/4 D64 39/40, GQA 8/2 D128 64/64, MQA 8/1 D80 40/40; max |dlogit| 2.441e-03 (1.465e-03 for MQA), min cos 0.999999. The single argmax miss is within the test's criterion (`agree >= steps - 1`, cos > 0.999; random weights give near-ties); gfx90a had 40/40 there.
+- `w8a8_test.py`: 25/25, paths {'hipblaslt': 24} plus the side-stream ordering check; max err e.g. 5.374e-03 at 512x4096x4096 with bias (max |out| 16.88).
+- `w8a8_simt_test.py <w8a8_gemm_cuda.cu>` (SIMT fallback, built in /tmp via load_inline): 7/7 exact, incl. 17x4096x11008 and 300x130x520.
+- `legacy_gemm_test.py`: 8/8, max err vs dequant ref 3.906e-03, vs legacy gemv 7.812e-03.
+- `w4a16_test.py <src>`: 30/30 (fp16), max err 3.47e-03 at 4096->11008.
+- `w8a8_handle_test.py <w8a8_gemm_cuda.cu>`: PASS, 16 threads over 1 device, one handle.
+
+Extra, not a gate (the reviewer's bf16 observation): `agent_space/w4a16_bf16_probe.py`, `w4a16_test.py` in bf16 (same shapes, M 1..64). Every output finite; worst max_err / max|ref| = 1.16e-02 (max err 3.2e-02 at |ref| 3.09, about 2 bf16 ulps). The error is 1.9x to 6.2x torch's own bf16 matmul of the same inputs, and the ratio is the same for the GEMV (M < 8) as for the HIP SIMT GEMM (M >= 8), consistent with both accumulating per-thread partial sums in T before the fp32 reduce. No bf16 regression specific to the GEMM rewrite was seen; a tighter bf16 bound would need fp32 accumulation in both kernels.
+
+CUDA no-regression gate: cuda-not-validated (environmental). nvcc 12.8.93 is at /usr/local/cuda-12.8 with gcc 13.3, but the only torch here is a ROCm build, and its include tree cannot be used for a CUDA compile. Each CUDA source (12 .cu with the upstream nvcc flags, `-gencode arch=compute_80,code=sm_80`; 2 .cpp with g++) was compiled at 90a711b and at upstream d6e797a with an identical script (`git archive` trees in /tmp). With c++17, all .cu except decoder_masked_multihead_attention.cu fail at both shas on `c10/cuda/impl/cuda_cmake_macros.h: No such file` (missing from the ROCm torch install), and the .cpp files hit torch 2.16's `#error C++20 or later`. With a throwaway shim header and c++20, both .cpp files and decoder_masked_multihead_attention.cu compile at both shas; the other 11 .cu fail at both shas in `c10/util/complex.h(29): identifier "thrust" is undefined` (ROCm-configured torch headers). The error text is identical port vs base for all 14 files. Needs a CUDA torch include tree to go further. The reviewer's `tests/cuda_view.py` check at this head (CUDA-visible text identical to d6e797a apart from macros that expand to the original calls) still stands.
+
+Checks: `jargon.py --port llm-awq` clean; README.md:127 documents the ROCm build next to the CUDA install step; fork tree clean (`git status --porcelain` empty).
+
+Verdict: PASS. linux-gfx942 completed at 90a711b.
