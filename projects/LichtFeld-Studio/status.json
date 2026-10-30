@@ -7,7 +7,7 @@
   "priority": 6.263,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-10-30T17:37:40Z",
+  "updated_at": "2026-10-30T17:41:32Z",
   "head_sha": "1528e184efe4c4cc2f9545cc8fccea926ac8429b",
   "depends_on": [],
   "waivers": {
@@ -27,7 +27,7 @@
   },
   "license_spdx": "GPL-3.0",
   "upstream_repo_id": 672651553,
-  "stage": "ported",
+  "stage": "reviewing",
   "platforms": {
     "linux-gfx1100": {
       "state": "completed",
@@ -36,7 +36,7 @@
       "validated_sha": "81b7fa245d3e00fc6fe7d341a768de862c56efda",
       "started_at": "2026-05-31T03:10:00Z",
       "completed_at": "2026-10-22T06:01:27Z",
-      "updated_at": "2026-10-30T17:37:40Z",
+      "updated_at": "2026-10-30T17:41:32Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -152,5 +152,8 @@
     "since": "2026-10-30T16:50:38Z",
     "at": "2026-10-30T17:37:40Z"
   },
-  "porting": null
+  "porting": {
+    "arch": "linux-gfx1100",
+    "since": "2026-10-30T17:41:32Z"
+  }
 }
