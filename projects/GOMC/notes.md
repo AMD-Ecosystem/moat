@@ -321,3 +321,40 @@ Non-GPU: the CPU executables from the same build ran all five systems with rc=0.
 CUDA compile gate: already recorded at 4c06552c (nvcc 12.8.93, all 8 executables), so it was not re-run.
 
 Completion checks: `git -C projects/GOMC/src status --porcelain` is empty, `python3 utils/jargon.py --port GOMC` is clean (after `git -C projects/GOMC/src branch -f development origin/development`), and the README carries the "Building GOMC for AMD GPUs with ROCm" section.
+## Validation 2026-10-30 (linux-gfx1100, validator)
+
+Requested by jeff after the `development` retarget passed review. Fork `moat-port` @ 4c06552c (= `origin/moat-port`). Previous gfx1100 evidence was at 58d5496d; `moatlib.py classify GOMC 58d5496d 4c06552c` -> `mixed` (the upstream `development` merge touches ~100 host files), so full re-run, no carry-forward.
+
+Host: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), HIP_VISIBLE_DEVICES=0, `ulimit -c 0`. Toolchain: TheRock ROCm SDK 10.1.0 pip wheels (no /opt/rocm), AMD clang 24.0.0git, g++ 13.3.0, CMake 3.31.6.
+
+### Build (README "Building GOMC for AMD GPUs with ROCm" recipe, compiler path adapted to the SDK, no arch given)
+
+```bash
+R=$(rocm-sdk path --root)
+cmake -S $PWD/projects/GOMC/src -B $PWD/agent_space/gomc-hip -DUSE_HIP=ON -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release
+cmake --build $PWD/agent_space/gomc-hip -j 32    # rc=0, 38 s, all 8 executables
+```
+The README's claim that the arch is detected from the installed GPU holds: with no `-DCMAKE_HIP_ARCHITECTURES`, the cache holds `gfx1100;gfx1100;gfx1100;gfx1100` (one entry per GPU on the host, harmless) and the GPU targets compile with `--offload-arch=gfx1100` only. Warnings: 5078 `-Wunused-value` + 20 `-Wunused-result`, all "ignoring return value of type 'hipError_t' declared with 'nodiscard'" (ROCm 10 marks `hipError_t` nodiscard; upstream ignores the same `cudaError_t` returns). Not a port defect, not a gate.
+
+### GPU runs vs CPU, same build
+
+Same procedure as the gfx90a retarget round: copy test/input/Systems to a scratch dir, `ConsoleFreq true 100`, single-box AR_KR NVT (1000 steps, Dis 0.87/Rot 0.13) and NPT (1000 steps, Dis 0.86/Rot 0.13/Vol 0.01, Pressure 100) derived from AR_KR/SingleRun/in.conf by dropping the box-1, GEMC, ChemPot and swap lines; each case runs `GOMC_GPU_<ens> in.conf` and `GOMC_CPU_<ens> in.conf` from the config directory, and every `ENER_n` console line plus every `% Accepted` line is compared. GPU log reports `Device Name: AMD Radeon Pro W7800 48GB`.
+
+| run | GPU / CPU exit | ENER points | GPU vs CPU max rel diff | acceptance (GPU = CPU, identical lines) | GPU wall |
+|---|---|---|---|---|---|
+| GEMC AR_KR SingleRun 3000 steps | 0 / 0 | 62 | 0 | disp AR 48.30% / KR 19.04% (box 0); same as gfx90a | 0.16 s |
+| GEMC ISOPEN_NEOPEN SingleRun 3000 steps (MEMC) | 0 / 0 | 62 | 0 | MEMC NEO-ISB 61.76%; same as gfx90a | 1.76 s |
+| GCMC PEN_HEX SingleRun 200 steps (Ewald) | 0 / 0 | 6 | 0 | PEN disp 43.75%; same as gfx90a | 0.30 s |
+| NVT AR_KR box 0, 1000 steps | 0 / 0 | 11 | 0 | disp AR 97.22% / KR 98.39% | 0.14 s |
+| NPT AR_KR box 0, 1000 steps | 0 / 0 | 11 | 0 | disp 98.00/97.55%, volume 50.0% | 0.15 s |
+| GEMC ISOPEN_NEOPEN 30000 steps (extra, ConsoleFreq 1000) | 0 / 0 | 62 | 0 | MEMC 54.05%, mol-transfer ISB 41.01% | 16 s |
+| GCMC PEN_HEX 2000 steps (extra, Ewald) | 0 / 0 | 42 | 0 | PEN disp 24.81%, mol-transfer PEN 19.05% | 2 s |
+
+Result: 7/7 GPU runs pass with GPU output identical to CPU at the printed precision. CPU executables of the same HIP build (the non-GPU path) build and run on every case. CPU gtests: not built, upstream `development` itself fails to compile them (ConsistentTrajectoryTest.cpp brace, see the retarget section); GPU gtests are CUDA-only. Unchanged from the retarget round.
+
+CUDA compile gate: already recorded at 4c06552c (nvcc 12.8.93, retarget section), not re-run.
+
+Completion checks: `git -C projects/GOMC/src status --porcelain` empty; `moatlib.py audit-clean GOMC` clean; `python3 utils/jargon.py --port GOMC` clean (needs local `development` and `moat-port` branches in the fork clone: `git branch -f development origin/development; git branch -f moat-port origin/moat-port`); ROCm build documented in README.
+
+Gotcha: `utils/timeit.sh` cds to the MOAT root, so GOMC runs (relative paths in in.conf) must be wrapped as `utils/timeit.sh GOMC test -- bash -c "cd <config dir> && <exe> in.conf"`.
