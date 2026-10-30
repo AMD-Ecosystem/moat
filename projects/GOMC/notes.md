@@ -214,3 +214,53 @@ The `hip::hipcub` CMake target propagates `-x hip --offload-arch=<arch>` flags t
 ### HIP separable compilation
 
 The port uses `HIP_SEPARABLE_COMPILATION ON` and `-fgpu-rdc` to allow `__device__` functions defined in one translation unit to be called from another (e.g., `CalcEnGPU` defined in CalculateEnergyCUDAKernel.cu and called from CalculateForceCUDAKernel.cu).
+
+## Retarget onto upstream `development` (2026-10-30, linux-gfx90a, porter)
+
+Requested by jeff: upstream CONTRIBUTING.md asks for PRs against `development`, so the port now sits on it (103 commits ahead of upstream `main` at merge time). The base-branch change in the records and the fork's `development` mirror are handled separately by the primary.
+
+Fork `moat-port`: 58d5496d -> 4c06552c (three new commits on top, nothing rewritten):
+- `faacd96a` merge commit of upstream `development` @ 09ec304e (`git merge --no-ff upstream/development`). Textually clean. The 4 files changed on both sides were reviewed by hand against `upstream/development`: CMakeLists.txt (development's compiler-ID chain plus new `else() FATAL_ERROR` sits before the USE_HIP/CUDA selection; it does not affect HIP because CXX stays g++), src/GPU/VariablesCUDA.cuh (development's `printFreeMemory` rewrite, `exit(cuda_status)` compiles under the compatibility header), src/Main.cpp and src/MoleculeLookup.cpp (host-side changes next to the header swap / HIP memoryClockRate branch). development adds no .cu/.cuh files, kernels or CUDA runtime calls (`git diff upstream/main upstream/development | grep '^+' | grep -E 'cuda|__global__|<<<|cub::'` hits only README prose and the printFreeMemory lines). New header src/FFTabulated.h is host-only.
+- `16cb7352` fix: GOMCHIPSetup.cmake used directory-scoped `add_compile_definitions(GOMC_CUDA USE_HIP __HIP_PLATFORM_AMD__)`, so the CPU ensembles (NVT/NPT/GCMC/GEMC) in a USE_HIP build were compiled with GOMC_CUDA and failed to link (undefined `UpdateGPULambda`, `CallTranslateParticlesGPU`, `CUDAMemoryManager::isFreed`, ...). Pre-existing since the original port (earlier rounds only built the GPU targets); a plain `cmake --build` of a USE_HIP config failed. Now per-target via `${GPU_HIP_defs}`.
+- `4c06552c` README: "Building GOMC for AMD GPUs with ROCm" section (the port had never documented the HIP build in the repo, only in the review PR body).
+
+### Build (this host, TheRock ROCm SDK 10.1.0 pip wheels, no /opt/rocm)
+
+```bash
+R=$(rocm-sdk path --root)
+cmake -S projects/GOMC/src -B gomc-build-hip -DUSE_HIP=ON -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ \
+  -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release -DGOMC_GTEST=ON
+cmake --build gomc-build-hip -j 128
+```
+All 8 executables (GOMC_CPU_{NVT,NPT,GCMC,GEMC}, GOMC_GPU_{NVT,NPT,GCMC,GEMC}) build. `utils/timeit.sh` cds to the MOAT root, so pass `-S/-B` absolute paths, never a relative `..`.
+
+CPU gtests (`GOMC_GTEST=ON`: GOMC_{NVT,NPT,GCMC,GEMC}_Test) do NOT compile on upstream `development` itself: upstream commit bc0cd248 ("Add missing check, fix comment typo...") leaves an unbalanced brace in test/src/ConsistentTrajectoryTest.cpp `Check_Neo_Pen`, so the following TEST()s nest inside it (`local class ... shall not have static data member`). Port does not touch test/. Upstream bug, not fixed here. GPU gtests (test/BuildGPUTests.cmake) are gated on `CMAKE_CUDA_COMPILER` and so are not built in a HIP configuration (unchanged from earlier rounds).
+
+### GPU runs (gfx90a, MI250X/MI250 GCD, HIP_VISIBLE_DEVICES=0, `ulimit -c 0`)
+
+Script: copies test/input/Systems to a scratch dir, sets `ConsoleFreq true 100`, derives single-box AR_KR NVT (1000 steps, Dis 0.87/Rot 0.13) and NPT (1000 steps, Dis 0.86/Rot 0.13/Vol 0.01, Pressure 100) configs from AR_KR/SingleRun/in.conf, runs each with the GPU and the CPU executable of the same build and compares every ENER_n point.
+
+| run | GPU exit | ENER points | GPU vs CPU max rel diff | acceptance (GPU = CPU) |
+|---|---|---|---|---|
+| GEMC AR_KR SingleRun 3000 steps | 0 | 62 | 0 (8 sig. figs) | disp AR 48.30% / KR 19.04% (box 0), matches recorded ~48/19 |
+| GEMC ISOPEN_NEOPEN SingleRun 3000 steps (MEMC) | 0 | 62 | 0 | MEMC NEO-ISB 61.76%, matches recorded 61.8% |
+| GCMC PEN_HEX SingleRun 200 steps (Ewald) | 0 | 6 | 0 | PEN disp 43.75%, matches recorded ~44% |
+| NVT AR_KR box 0, 1000 steps | 0 | 11 | 0 | disp AR 97.2% / KR 98.4% |
+| NPT AR_KR box 0, 1000 steps | 0 | 11 | 0 | disp 98.0/97.6%, volume 50.0% |
+
+GPU timings: GEMC ISOPEN 2.52 s, PEN_HEX 0.158 s, others < 0.02 s. BPTI_TIP3/K_CHANNEL_TIP3 SingleRun configs are checkpoint-test fixtures and are not runnable as GCMC inputs (both CPU and GPU: "chemical potential is missing for PROTA").
+
+### CUDA compile gate (CUDA 12.8)
+
+The PyPI `nvidia-cuda-nvcc-cu12` 12.8.x wheels (12.8.61, 12.8.93; also on pypi.nvidia.com) contain only `ptxas` + nvvm, no `nvcc`/`nvlink`/`cudafe++`, and the runtime wheel has no `libcudadevrt.a`/`libcudart_static.a`. Installed the wheels into the job venv as asked, then used NVIDIA's official redist archives for the same release (sha256 verified against redistrib_12.8.1.json): cuda_nvcc 12.8.93, cuda_cudart 12.8.90, cuda_cccl 12.8.90, extracted into one root with `--strip-components=1`, plus `ln -s lib lib64` (nvcc links from `lib64`).
+
+```bash
+cmake -S projects/GOMC/src -B gomc-build-cuda -DCMAKE_CUDA_COMPILER=$C/bin/nvcc -DCUDAToolkit_ROOT=$C \
+  -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release
+cmake --build gomc-build-cuda -j 128     # rc=0, 0 warnings, 138 s, all 8 executables
+```
+Upstream GOMCCUDASetup.cmake overrides `CMAKE_CUDA_ARCHITECTURES` to `all` on CMake >= 3.23 (flags show `-arch=all`), so `-DCMAKE_CUDA_ARCHITECTURES=80` is ignored; sm_80 is included in `all`. Upstream behavior, left alone.
+
+### Jargon
+
+`python3 utils/jargon.py --port GOMC` reports 3 hits, all upstream development's own comment "I'm the follower" in src/ParallelTemperingUtilities.cpp (lines 449/537/817), because `--port` scans from `fork_default_branch` (`main`), so development's 103 commits count as added. Against the real base: `jargon.py -C projects/GOMC/src --commits upstream/development..moat-port` and `--diff upstream/development...moat-port` are both clean. Becomes clean under `--port` once the records' base branch is `development`.
