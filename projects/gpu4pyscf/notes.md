@@ -1044,3 +1044,49 @@ Checked, not findings:
 - The branch adds only this bullet and the CUDA-root bullet to the skill (`git diff origin/main...HEAD -- .claude`), and both were read in earlier reviews.
 
 No findings. Carried over from the previous review for PR prep: if the three LICM commits are squashed, the squashed message must take the 13e3500 wording, not the 28f2418 body's "both the HIP compile flags and the shared-library link flags".
+
+## Validation 2026-10-30 (validator, linux-gfx1100, fork moat-port @ 5c60311) -- COMPLETED
+
+Requested by jeff, a revalidation at the head that carries `-mllvm -disable-machine-licm` for HIP builds (28f2418, 13e3500, 5c60311; review passed at 5c60311). Host: Radeon Pro W7800 48GB, gfx1100 (wave32). Toolchain: TheRock ROCm SDK 10.1.0 (HIP compiler identification Clang 24.0.0; `R=$(rocm-sdk path --root)` = `/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`, no /opt/rocm). Fork clone at 5c60311636487d1f881d2f96e6d0dc80d55a9412 (== origin/moat-port). GPU pin: dispatcher set `HIP_VISIBLE_DEVICES=0`, which exists here; amd-smi showed no process on any GPU.
+
+### Python env (job venv)
+```
+pip install 'numpy>=2.0,<2.3' 'scipy>=1.13' cupy-rocm-7-0==14.2.0 pyscf==2.14.0 pytest
+```
+Installed: python 3.11.17, numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pytest 7.3.2. CuPy-ROCm needs `LD_LIBRARY_PATH=$R/lib` (`rocm-sdk` is on PATH from /opt/python-3.11-venv, not in the job venv).
+
+### Build: README "Compilation" ROCm block, as written
+```
+export PATH=$FLEET_VENV/bin:$PATH
+cmake -S gpu4pyscf/lib -B build/temp.gpu4pyscf -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100
+cmake --build build/temp.gpu4pyscf -j 32 -v
+```
+- Deviations from the README: the arch, `-j 32` and `-v` (to check the flag). Paths absolute because utils/timeit.sh runs from the moat root. No `-DCMAKE_HIP_COMPILER` needed.
+- Configure exit 0 (2 s); build exit 0 (107 s); 8 libs: cupy_helper gdft gecp gint gvhf gvhf_md gvhf_rys pbc.
+- Verbose log: 79 HIP `.cu` compile lines and 8 `--hip-link` lines, each carrying `-disable-machine-licm` exactly once (the same counts as the gfx942 13e3500 check).
+
+### RHF water vs CPU PySCF (`ulimit -c 0`, conv_tol 1e-12)
+| basis | max shell | |GPU - CPU| (Ha) |
+|---|---|---|
+| sto-3g | p | 3.6e-12 |
+| def2-svp | d | 9.6e-12 |
+| cc-pvtz | f | 2.8e-11 |
+
+The flag costs nothing in correctness on gfx1100 (066e91e without it: 1.3e-12 / 1.7e-11 / 6.2e-12; the geometry here differs slightly from that run's script, so only the magnitude compares).
+
+### Tests
+```
+ulimit -c 0
+export HIP_VISIBLE_DEVICES=0 LD_LIBRARY_PATH=$R/lib PYTHONPATH=<fork root>
+python -m pytest gpu4pyscf/scf/tests -q -rfs --tb=no -p no:cacheprovider
+```
+- Run 1: **126 passed, 8 skipped, 32 failed** (227 s).
+- Run 2: **126 passed, 8 skipped, 32 failed** (156 s). Identical failure set to run 1.
+- Equal to the 066e91e and 45d8053 gfx1100 baselines. Failures classified by rerunning the 32 ids with `--tb=line`: 25 `hipErrorUnknown` (DFT/libxc not built: test_soscf rks/uks/roks x9, test_gdm x3 of 4, test_init_guess *rks/*uks x8, test_scf to_cpu/to_gpu, test_diffuse_orbital rks_df/rks_lowmem/uhf etc.), 4 PCM not built (`object has no attribute 'PCM'`), 3 `BasisNotFoundError` (d-aug-cc-pvdz). All out of the HF/integral scope.
+- Skips (8): dftd3/dftd4 not installed (5), unconditional `hermi=0` (3).
+
+### Other checks
+- CUDA no-regression gate: not rerun. It passed at 28f2418 (Porter 28f2418 section), and 28f2418..5c60311 changes only README.md and comment/flag lines inside `if(USE_HIP)` in gpu4pyscf/lib/CMakeLists.txt, which no CUDA rule reads (reviews of 13e3500 and 5c60311).
+- `python3 utils/jargon.py --port gpu4pyscf` -> `jargon: clean`.
+- Documentation: the README documents the ROCm build next to the CUDA build, including the flag paragraph; that build was followed here.
+- Integrity: `git -C projects/gpu4pyscf/src status --porcelain` is empty after the build.
