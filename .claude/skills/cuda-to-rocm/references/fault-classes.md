@@ -93,6 +93,19 @@ or `BlockRadixSort` lowers to a single-wavefront op with no syncing epilogue; re
 first's reads. CUDA's 32-wide warp split the block in two and masked it. (CV-CUDA:
 OpPairwiseMatcher crossCheck.)
 
+**Warp-tiled dispatch tables written for 32 lanes break when `kWarpSize` becomes 64.**
+Making the warp-size constant arch-correct is not the end of it; audit what is built FROM
+it. Two shapes recur. (1) A square `kWarpSize x kWarpSize` block (one warp of columns times
+one warp of rows) is 1024 threads on CUDA and 4096 on wave64, which fails to launch with
+`invalid configuration argument`; cap it at 1024 and let the row count shrink. (2) A width
+ladder that picks a thread-group width of 4, 8, 16, 32 for narrow rows and then switches to
+"one full warp per row, `min_cols * kWarpSize` columns read unconditionally" rungs: on
+wave64 the first full-warp rung receives rows of 33..63 columns and reads past them, and
+pack-2 rows of 66..128 match no rung at all (`invalid argument`). Add a 64-wide rung
+compiled only when the wavefront is 64. Sweep every width 1..N on wave64; spot widths like
+200 and 1024 pass and hide it. (oneflow: `MatrixColReduceByWarpBlock`, and the LayerNorm
+and RMSNorm warp dispatch in `layer_norm.cuh`/`rms_norm.cuh`.)
+
 **`__smid()` can EXCEED `multiProcessorCount` on AMD.** NVIDIA's `%smid` is dense in
 `[0, multiProcessorCount)`, so host code routinely sizes a per-SM scratch pool to that
 count and indexes it `pool + smid()*POOL_SIZE`. AMD packs `(SE,CU)` sparsely -- gfx9 is
@@ -429,6 +442,21 @@ compute or scale type you changed for the scalars that go with it. (marian-dev: 
 rejects `HIPBLAS_COMPUTE_16F` and hipSPARSE rejects `HIP_R_16F` as an SpMM compute type;
 both call sites kept passing `half` scalars, and the hipBLASLt one survived review and three
 platform validations because the assertion that would have caught it was never reached.)
+
+**rocPRIM never asks for less than 4 bytes of temp storage.** Every rocPRIM-backed hipCUB
+device algorithm (`DeviceReduce`, `DeviceSegmentedReduce`, ...) reports
+`max(needed, 4)` from its size query, even when it needs nothing; CUB reports 1 there.
+Upstream code that sizes the scratch from the INPUT (`elem_cnt * sizeof(T)`) and then checks
+it against the query passes on NVIDIA and fails for a 2- or 3-element reduce of a one-byte
+type on AMD. Size the scratch as `max(own estimate, library query)`. (oneflow:
+`flow.tensor([True, False], device="cuda").all()` aborted.)
+
+**hipCUB's segmented `ArgMax` returns an out-of-range key for a segment of NaNs.** rocPRIM
+folds a seed `{INT_MAX, lowest}` into every segment and keeps it when no element compares
+greater, so an all-NaN row yields `INT_MAX - segment_begin`; CUB returns an index inside the
+row. Anything that then indexes with the result (one-hot scatter, gather) traps or faults.
+Clamp keys outside `[0, segment_size)` after the call. (oneflow: `gumbel_softmax(hard=True)`
+in half precision, where `rand` rounds to exactly 1.0 often enough to make a NaN column.)
 
 **A zero workspace size does not mean "skip the operation".** Upstream code shaped like
 `if(bufferSize > 0) { alloc; call; free; }` is correct only where the vendor always wants

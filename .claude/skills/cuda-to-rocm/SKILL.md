@@ -74,6 +74,7 @@ Scan this list against what you are doing. If any line could apply, open
 - An over-wide `__shfl*` width silently clamps to the physical wavefront instead of erroring; the symptom is a metric shift, not a crash.
 - Intra-wave barrier divergence: a per-row early return before `__syncthreads()` is benign on CUDA, faults on wave64.
 - `cub`/`hipCUB` block-collective `TempStorage` reuse races on a 64-thread block without an explicit `__syncthreads`.
+- Tables built from `kWarpSize` (square `kWarpSize*kWarpSize` blocks, 4..32 thread-group width ladders) overflow 1024 threads or leave width gaps at 64.
 - `__smid()` can EXCEED `multiProcessorCount` on AMD, unlike NVIDIA.
 - HIP's device `warpSize` is not an `int`; cast it at any `printf` vararg.
 
@@ -108,6 +109,7 @@ Scan this list against what you are doing. If any line could apply, open
 - CUPTI has no ROCm analogue; ck_tile fmha ships headers but no instance library.
 - `char` vs `signed char` vector base types differ between HIP and CUDA.
 - AMD compute-capability values COLLIDE with NVIDIA arch numbers, so CC-keyed dispatch picks the wrong path.
+- hipCUB/rocPRIM: temp storage queries never return less than 4 bytes; segmented `ArgMax` returns an out-of-range key for an all-NaN segment.
 - Library swaps: cuBLAS -> hipBLAS, cuFFT -> hipFFT, cuRAND -> hipRAND, cuSPARSE -> hipSPARSE, cuDNN -> MIOpen, Thrust/CUB -> rocThrust/hipCUB. Handle types and v2-enum signatures differ.
 - Runtime PTX + CUDA Driver API is a third build class beyond A and B.
 - MSVC-only upstreams accept code gcc/clang reject; the HIP build is a stricter compiler.
