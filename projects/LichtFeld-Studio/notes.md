@@ -4348,3 +4348,37 @@ Own clone and build dir (`build-hip-gcc`), recipe of "Porter round 2026-10-27". 
 
 ### Verdict
 Both items answered and tested. head_sha -> a6548755. Stage `porting` -> `ported`.
+
+## Review 2026-10-30 (reviewer, linux-gfx1100) -- a6548755 (delta 2ac6bc3d..a6548755, plus the skill commit 073a0779), REVIEW-PASSED
+
+### Summary
+a6548755 routes SOF1 (extended sequential) JPEGs to the named CPU path and limits the hang claim in the `inspect_jpeg` comment to the measured no-scan case; 073a0779 makes the same two corrections in `fault-classes.md` and `SKILL.md`. Both items of "Review 2026-10-28b" are answered; no problems found. "Review 2026-10-28" item 1 (the Windows HIP viewer renders no splats) remains open, paused by jeff on 2026-10-28, and this review does not ask for it.
+
+### Records correction
+- The porter round's "VideoColorRange 4/4 (unchanged)" is a miscount by `agent_space/run_suites.sh`, which counts `[  FAILED  ]` lines, and gtest prints each failure twice. The suite log (`rx7900-20261029-090528-lfs-sof1-fix/moat/agent_space/suites/VideoColorRange.log`) says `PASSED 4 tests`, `FAILED 2 tests`: `av1_full.mkv` and `av1_limited.mkv`, "Your platform doesn't support hardware accelerated AV1 decoding". That is the same 4/2 as the 2ac6bc3d round. The same script reports OutputNaming as 7/4, and its log also says 4 failed, so that count is correct.
+
+### Checked as asked (no finding)
+- Codec routing (`src/io/nvcodec_image_loader_hip.cpp`):
+  - `rocjpeg_unsupported_reason` (:550) accepts only marker C0. C1 returns "extended sequential JPEG" before the precision check.
+  - Only one caller, `decode_jpeg` (:770-800), uses it. It logs through `log_cpu_decode` with "rocJPEG does not support it: <reason>" and throws that reason when fallback is off.
+  - The startup `LOG_INFO` (:846) lists "extended sequential" first.
+  - SOF0 handling is byte-identical to 2ac6bc3d, so no valid baseline JPEG is newly rejected. `inspect_jpeg` already accepted C1 as a frame header.
+- The SOF1 claim against the library: besides the 2026-10-28b parse probe, `strings` on the SDK's `librocjpeg.so.1.10.0` names only "SOF0 (Baseline DCT)" among frame markers. That matches the 1.13 source, which rejects all non-SOF0 frames, so "rejects every other frame type at parse" (:547-549) holds.
+- SOF1 test: the stream is the libjpeg baseline output with its C0 byte changed to C1, found by walking segment lengths.
+  - If the patch ever missed, the stream would stay SOF0 and the strict-loader assertion would fail. It cannot pass silently.
+  - With the fix, the SOF1 stream never reaches rocJPEG. Without it, rocJPEG refuses it at parse. So it is never submitted to the decoder either way.
+  - Rerun here from the porter's build tree, GPU 2 alone (`HIP_VISIBLE_DEVICES=2`, `ulimit -c 0`, Xvfb + RADV), filter `NvCodecHipJpegTest.UnsupportedStreamsFallBackToTheCpuAndAreReported` only: passed in 44 ms. Log: `Decoding a JPEG on the CPU (libjpeg): rocJPEG does not support it: extended sequential JPEG (18135 bytes)`.
+  - `CorruptJpegInABatchIsRejectedBeforeDecoding` was not run here, so no scan-less stream was sent anywhere.
+- Wording against the evidence:
+  - The loader comment (:440-442) claims a hang only for "no scan at all", and calls the other checks a precaution.
+  - `fault-classes.md` says the following, each matching the probe records in "Porter round 2026-10-28b" and "Review 2026-10-28b":
+    - SOF1, progressive, arithmetic-coded, CMYK and 4:1:1 fail at parse with BAD_JPEG.
+    - A cut inside the scan decodes with no reset.
+    - Only the missing scan hangs.
+    - A data-less scan was only parse-checked.
+  - The "nvJPEG decodes it" parenthetical rests on the vendored nvImageCodec decoder's supported-encoding list, as cited in "Review 2026-10-28b". It is not a CUDA run.
+  - The test rule now matches the regression test: a hang-prone stream may appear only in a test of the host check, run on an otherwise idle GPU.
+  - `SKILL.md`: "baseline SOF0 only: no SOF1 or progressive".
+- CUDA path: `git diff --quiet ca01b056 a6548755 -- src/io/nvcodec_image_loader.cpp src/io/nvcodec_image_loader.hpp` is clean. The delta touches only the HIP-only loader and `tests/test_nvcodec_hip_jpeg.cpp`, which is added only under `if(USE_HIP)` (`tests/CMakeLists.txt:940-941`).
+- Commits: `python3 utils/jargon.py --port LichtFeld-Studio` is clean, and `moatlib.py audit-commits` is OK. The title is 50 characters with `[ROCm]`, there is no Co-Authored-By, the body has a Test Plan in a fence, and the added lines in both commits are ASCII.
+- Build reuse: no rebuild was needed. The porter's job directory was read and its test binary run in place; nothing in it was modified or deleted. The local fork clone for jargon/audit is `projects/LichtFeld-Studio/src` in this job.
