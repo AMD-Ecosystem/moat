@@ -76,3 +76,27 @@
 {"kind":"phase","ts":"2026-10-30T03:17:10Z","phase":"test","seconds":17.736,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/rx7900-20261029-201124-val-gpurir/moat/agent_space/gpurir/ex && python3 time_vs_nbRIRs.py"}
 {"kind":"phase","ts":"2026-10-30T03:17:11Z","phase":"test","seconds":0.743,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/rx7900-20261029-201124-val-gpurir/moat/agent_space/gpurir/ex && python3 example_mp.py"}
 {"kind":"session","ts":"2026-10-30T03:18:07Z","epoch":1793330287.657009679,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T03:13:24Z","epoch":1793330004.220062674,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-30T03:13:48Z","phase":"compile","seconds":11.516,"exit":0,"cmd":"bash -c cmake -S projects/gpuRIR/src -B agent_space/gpurir/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DPYTHON_EXECUTABLE=/opt/python-3.11-venv/bin/python3 -DCMAKE_BUILD_TYPE=Release >agent_space/gpurir/cmake.log 2>&1 && cmake --build agent_space/gpurir/build -j16 2>&1 | grep -E 'warning|error|Built target'"}
+{"kind":"phase","ts":"2026-10-30T03:14:51Z","phase":"test","seconds":3.431,"exit":1,"cmd":"python3 agent_space/gpurir/validate.py"}
+{"kind":"phase","ts":"2026-10-30T03:15:06Z","phase":"test","seconds":8.100,"exit":1,"cmd":"python3 agent_space/gpurir/validate.py"}
+{"kind":"phase","ts":"2026-10-30T03:15:35Z","phase":"test","seconds":1.906,"exit":0,"cmd":"python3 agent_space/gpurir/validate.py"}
+{"kind":"phase","ts":"2026-10-30T03:15:48Z","phase":"test","seconds":0.013,"exit":2,"cmd":"python3 example.py"}
+{"kind":"phase","ts":"2026-10-30T03:15:48Z","phase":"test","seconds":0.023,"exit":2,"cmd":"python3 simulate_trajectory.py"}
+{"kind":"phase","ts":"2026-10-30T03:15:49Z","phase":"test","seconds":0.023,"exit":2,"cmd":"python3 polar_plots.py"}
+{"kind":"phase","ts":"2026-10-30T03:15:49Z","phase":"test","seconds":0.022,"exit":2,"cmd":"python3 time_vs_T60.py"}
+{"kind":"phase","ts":"2026-10-30T03:15:49Z","phase":"test","seconds":0.023,"exit":2,"cmd":"python3 time_vs_nbRIRs.py"}
+{"kind":"phase","ts":"2026-10-30T03:15:49Z","phase":"test","seconds":0.023,"exit":2,"cmd":"python3 example_mp.py"}
+{"kind":"phase","ts":"2026-10-30T03:15:54Z","phase":"test","seconds":0.117,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261029-201120-val-gpurir/moat/agent_space/gpurir/ex && python3 example.py"}
+{"kind":"phase","ts":"2026-10-30T03:15:54Z","phase":"test","seconds":0.104,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261029-201120-val-gpurir/moat/agent_space/gpurir/ex && python3 simulate_trajectory.py"}
+{"kind":"phase","ts":"2026-10-30T03:15:54Z","phase":"test","seconds":0.104,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261029-201120-val-gpurir/moat/agent_space/gpurir/ex && python3 polar_plots.py"}
+{"kind":"phase","ts":"2026-10-30T03:15:54Z","phase":"test","seconds":0.104,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261029-201120-val-gpurir/moat/agent_space/gpurir/ex && python3 time_vs_T60.py"}
+{"kind":"phase","ts":"2026-10-30T03:15:54Z","phase":"test","seconds":0.116,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261029-201120-val-gpurir/moat/agent_space/gpurir/ex && python3 time_vs_nbRIRs.py"}
+{"kind":"phase","ts":"2026-10-30T03:15:54Z","phase":"test","seconds":0.118,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261029-201120-val-gpurir/moat/agent_space/gpurir/ex && python3 example_mp.py"}
+{"kind":"phase","ts":"2026-10-30T03:16:01Z","phase":"test","seconds":1.166,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261029-201120-val-gpurir/moat/agent_space/gpurir/ex && python3 example.py"}
+{"kind":"phase","ts":"2026-10-30T03:16:08Z","phase":"test","seconds":7.321,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261029-201120-val-gpurir/moat/agent_space/gpurir/ex && python3 simulate_trajectory.py"}
+{"kind":"phase","ts":"2026-10-30T03:16:10Z","phase":"test","seconds":2.010,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261029-201120-val-gpurir/moat/agent_space/gpurir/ex && python3 polar_plots.py"}
+{"kind":"phase","ts":"2026-10-30T03:16:56Z","phase":"test","seconds":45.977,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261029-201120-val-gpurir/moat/agent_space/gpurir/ex && python3 time_vs_T60.py"}
+{"kind":"phase","ts":"2026-10-30T03:17:11Z","phase":"test","seconds":15.342,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261029-201120-val-gpurir/moat/agent_space/gpurir/ex && python3 time_vs_nbRIRs.py"}
+{"kind":"phase","ts":"2026-10-30T03:17:13Z","phase":"test","seconds":1.148,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261029-201120-val-gpurir/moat/agent_space/gpurir/ex && python3 example_mp.py"}
+{"kind":"session","ts":"2026-10-30T03:18:19Z","epoch":1793330299.162448307,"event":"end","platform":"linux-gfx90a"}

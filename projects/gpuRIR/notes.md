@@ -514,3 +514,37 @@ cuda-not-validated: this host has no CUDA toolkit (no `/opt/conda`, no nvcc), an
 
 ### Pre-completion checks
 `python3 utils/jargon.py --port gpuRIR`: clean. The README documents the ROCm build next to the CUDA prerequisites (lines 24 and 36). Fork tree clean at 39a7a9d.
+## Validation 2026-10-30 (linux-gfx90a, MI250X GCD, TheRock ROCm 10.1.0)
+
+Revalidation requested by jeff after the second re-review passed at 39a7a9d (half2 mixed-precision path enabled on HIP). Fork clone at `moat-port` 39a7a9d, `git status --porcelain` clean. Full GPU run, no carry-forward: the delta from the last gfx90a `validated_sha` (88a0749) includes the LUT buffer change and the newly live mp kernels.
+
+### Build (gfx90a)
+```
+R=$(rocm-sdk path --root)
+cmake -S projects/gpuRIR/src -B agent_space/gpurir/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DPYTHON_EXECUTABLE=$(which python3) -DCMAKE_BUILD_TYPE=Release
+cmake --build agent_space/gpurir/build -j16
+```
+OK, 320304-byte .so, `T PyInit_gpuRIR_bind`. Only warning is the pre-existing nodiscard on `cudaGetDeviceProperties` (line 1069).
+
+### Tests (`HIP_VISIBLE_DEVICES=3`, `ulimit -c 0`)
+Runtime env: `LD_LIBRARY_PATH=$SP/_rocm_sdk_libraries/lib:$SP/_rocm_sdk_core/lib`, `PYTHONPATH=agent_space/gpurir/build:projects/gpuRIR/src` (SP = venv site-packages). Upstream has no test suite; the GPU suite is the harness plus the upstream examples.
+
+`python3 agent_space/gpurir/validate.py`: **28/28 PASS**. The mp metric is the reviewer's: max |mp - float exact| / peak of the float result.
+- Float paths vs float64 reference (direct path, nb_img [1,1,1], room 4x5x3, src (1,1,1.5) -> rcv (3,4,1.5); reference uses float32 dist/tau as the kernel does), max err/peak: exact 5.31e-8 / 5.21e-8 / 1.46e-7 / 4.33e-8, LUT 5.45e-8 / 5.98e-8 / 4.09e-8 / 4.72e-8 at fs 8k / 16k / 44.1k / 48k (threshold 2e-5; reference LUT-vs-exact gap 1.59e-3 / 1.38e-4 / 6.85e-4 / 3.91e-4, so the check is discriminating).
+- Shoebox (T60 0.4, nb_img [10,10,10], fs 16k): first arrival 168 (expected 168) on exact and LUT, exactly zero before tau - Tw/2.
+- Diffuse tail (hipRAND, Tdiff 0.1 s, nb_img t2n(Tdiff)): finite, tail max 5.85e-3. simulateTrajectory (hipFFT) static trajectory vs `np.convolve`: shape (18399,1), rel err 2.26e-7.
+- NaN receiver x: 0 NaN, 0 nonzero samples on exact and LUT.
+- Mixed precision vs float exact, direct path: fs 8000 5.24e-4, 11025 5.76e-4, 16000 7.95e-4, 22050 3.64e-4, 44100 3.72e-4, 48000 6.76e-4, 96000 3.93e-4; peak sample identical (84/116/168/232/464/505/1009); all > 0, so mp really ran (threshold < 2e-3). The 8k/16k/44.1k/48k/96k values equal the gfx942 porter and reviewer figures.
+- Mixed precision, reverberant room (Sabine T60 0.6 s, Tmax 0.3 s, fs 16k, nb_img [52,42,69]): 1 src omni max err/peak 7.09e-4, RMS rel 1.43e-3; 2 src x 3 cardioid rcv 1.06e-3, RMS rel 1.43e-3 (threshold 5e-3; gfx942 reviewer 1.02e-3, porter 7.09e-4).
+- Mixed precision, odd requested sample counts. `simulateRIR` pads `nSamples` and `nSamplesISM` to even (`gpuRIR_cuda.cu:873,875`), so the kernels never see an odd T; the case is an odd `ceil(Tmax*Fs)` that gets padded. Requested 481 at 16k -> T 482, 1.29e-3 (same as the gfx942 reviewer's "odd sample count" case); 885 at 44.1k -> 886, 1.76e-3; 3201 at 16k with Tdiff 0.0500625 s (ISM part 801 -> 802 samples) -> 3202, ISM part 1.55e-3, diffuse tail RMS mp/float 1.053. Shapes equal to the float path.
+- Mode toggles: mp after LUT disables the LUT and is bit-equal to a plain mp run; LUT after mp disables mp and is bit-equal to a plain LUT run. Messages match upstream's.
+- Harness notes: the reference length must be the GPU output length (T is the float32 `ceil` padded to even, e.g. 2206 at 44.1 kHz for 0.05 s); a diffuse-tail check needs `nb_img = t2n(Tdiff)`, since with too few images the energy-fit window before Tdiff is empty and the fitted tail is exactly 0 (first harness draft: 25/28 for these two harness reasons, no port fault).
+
+Upstream examples, run from a scratch copy (`agent_space/gpurir/ex`, synthetic 2 s 16 kHz `source_signal.wav`, no-op matplotlib/plotly stub on PYTHONPATH since neither is installed and pip is blocked): example.py, simulate_trajectory.py (wrote filtered_signal.wav), polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py, plus example.py with `activateMixedPrecision(True)`/`activateLUT(False)`: **6/6 exit 0**.
+
+### CUDA gate
+cuda-not-validated on this host: no CUDA toolkit is installed (no conda, no nvcc), and the host's fleet guard blocks pip, so the conda/pip toolkit could not be set up. The CUDA compile gate at 39a7a9d is still open for a host that has the toolkit. The change at 39a7a9d only adds `|| defined(__HIP_DEVICE_COMPILE__)` and `!defined(USE_HIP) &&` to existing CUDA conditions (reviewer verification record above).
+
+### Pre-completion checks
+`python3 utils/jargon.py --port gpuRIR`: clean (master 06da27d .. moat-port 39a7a9d). README documents the ROCm build next to the CUDA one (`CMAKE_ARGS="-DUSE_HIP=ON ..."`). Fork tree clean.
