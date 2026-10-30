@@ -506,6 +506,30 @@ gradient) has to be rebuilt as an operation into a staging buffer followed by
 its forward pass recorded, so that workspace must outlive the forward call rather than being
 a local. (marian-dev)
 
+**MIOpen runs a convolution only on a handle where Find ran for it.** Find registers the
+solution's invokers on the handle it ran on; `miopenConvolutionForward` (and the backward calls)
+on any other handle fails with "No invoker was registered for convolution forward. Was find
+executed?". A cuDNN-shaped caller that searches once on a pooled handle and then runs on each
+stream's own handle trips it. Before the first run of a problem on a handle, run a
+non-exhaustive Find there into the output buffer the run is about to overwrite. Also:
+`miopenGetConvolutionNdDescriptor` rejects a requested dimension count larger than the
+descriptor's (cuDNN returns what it has), and MIOpen pooling reads alpha/beta as float and has
+no double. (oneflow)
+
+**hipBLASLt epilogues are not cuBLASLt's, per type and per format.** On gfx90a with hipBLASLt
+1.4, DEFAULT/BIAS/RELU/RELU_BIAS exist for f32/f16/bf16 but double has only DEFAULT, and the
+AUX/DRELU/BGRAD epilogues exist only for f16. cuBLASLt's ReLU auxiliary output is a 1-bit mask
+(leading dimension a multiple of 128) that callers size and may write themselves; hipBLASLt's is
+the pre-activation matrix in the output type, so mapping the enum alone writes far past a buffer
+sized for a mask. Probe availability with `hipblasLtMatmulAlgoGetHeuristic` per type and fall
+back to a plain GEMM plus a small kernel. hipBLASLt cannot read a layout's TYPE back
+(`hipblasLtMatrixLayoutGetAttribute` returns invalid attribute) and fixes the compute type at
+descriptor creation, so a shim has to remember both. (oneflow)
+
+**Two ROCm library headers can collide.** `rpp.h` (RpptInterpolationType) and `miopen.h` both
+declare an unscoped enumerator `BILINEAR`; a translation unit cannot include both. Keep the RPP
+call in its own file behind a small interface. (oneflow)
+
 **hipSPARSE has no uniform half-precision SpMM.** Half operands are accepted only in the
 mixed-precision mode, which pairs half sparse and dense inputs with a FLOAT result matrix and
 float scalars; asking for a half result is `HIPSPARSE_STATUS_NOT_SUPPORTED` (and an all-half
