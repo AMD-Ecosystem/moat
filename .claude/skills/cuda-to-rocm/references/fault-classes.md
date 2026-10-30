@@ -426,8 +426,8 @@ static is over it, is ACCEPTED and aborts the queue with `HSA_STATUS_ERROR_INVAL
 which kills the process. `hipFuncSetAttribute(MaxDynamicSharedMemorySize)` succeeds and is
 not enforced. The result is a crash window in the problem size, not a threshold: in oneflow
 fp32 LayerNorm forward failed at 16350..32568 columns and passed above it, because the query
-drops back to 0 at 128 KiB. CDNA (64 KiB LDS per CU) answers 0 correctly, so wave64 runs never
-see it. Fix: under `USE_HIP`, also require `smem + attr.sharedSizeBytes <=
+drops back to 0 at 128 KiB. gfx90a and gfx942 (64 KiB LDS per CU, equal to the per-block limit)
+answer 0 correctly, so wave64 runs there never see it. Fix: under `USE_HIP`, also require `smem + attr.sharedSizeBytes <=
 hipDeviceAttributeMaxSharedMemoryPerBlock` before taking the shared-memory path. With a
 compatibility header, map `cudaOccupancyMaxActiveBlocksPerMultiprocessor` to a small template
 that calls the HIP query and then reports 0 when dynamic plus static exceeds the per-block
