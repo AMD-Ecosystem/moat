@@ -717,3 +717,22 @@ Exit 0, 197 s, with `CUDA_ARCHITECTURES: 80` echoed. BUILD_CUTLASS=ON (the defau
 
 ### Open for jeff (unchanged, now with gfx90a runtime evidence)
 `-mllvm -disable-machine-licm`: with the committed flags on ROCm 10.1, gfx90a crashes on every basis with d shells. Should the port carry the flag under USE_HIP, and should `therock-10-1-machinelicm-clobbers-live-vgpr` be filed upstream?
+
+## Porter 2026-10-30 (linux-gfx942): README ROCm build section -- committed locally, NOT pushed
+
+jeff requested this round to fix the documentation failures on gfx90a and gfx1100 at 45d8053. The docs-only commit `066e91e` "[ROCm] Document the ROCm build in the README" sits on top of 45d8053 in this fleet job's fork clone. The patch is also at agent_space/readme-patch/ in the job's moat clone. The commit adds a block at the end of the README "Compilation" section, after the cutensor warning. Upstream text is unchanged. The block contains:
+- `-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=<gfx>`. CUTLASS and libxc already default to OFF under USE_HIP, so the recipe leaves those flags out.
+- The `-DCMAKE_HIP_COMPILER=<rocm_path>/llvm/bin/clang++` hint.
+- The `cupy-rocm-7-0` install line.
+- A note that the cuTENSOR warning is expected on ROCm.
+- A scope sentence: Hartree-Fock and the integral libraries are built; DFT (libxc), solvent, semi-empirical and multigrid are not.
+
+Analytic gradients are not called out; the README claims only HF.
+
+Checks:
+- Recipe on gfx942 with TheRock ROCm 10.1 (no /opt/rocm): `cmake -S gpu4pyscf/lib -B <build> -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++`, then `cmake --build <build> -j 56`. Both exit 0 and build all 8 libs. No CMAKE_PREFIX_PATH is needed.
+- `jargon.py --port gpu4pyscf` is clean, `prose.py` on the commit body is clean, and the added lines are ASCII.
+
+Open items:
+- The push of `moat-port` was refused in this headless job (the dispatch said no GitHub writes), so `advance-head` was NOT run. head_sha stays 45d8053, and no validator can fetch 066e91e yet. To land it, push the commit to the fork's `moat-port` (no PR is open, so the branch is not frozen), then run `python3 utils/moatlib.py advance-head gpu4pyscf <sha>`. The delta is documentation-only. The stage is still review-passed; this round did not take the work lock.
+- The README recipe does not include `-mllvm -disable-machine-licm`. That waits on jeff's open decision above. With ROCm 10.1 on gfx90a and gfx942, the documented build still hits the MachineLICM miscompile on bases with d shells.
