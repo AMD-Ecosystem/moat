@@ -335,6 +335,19 @@
         "at": "2026-10-30T21:13:19Z",
         "note": "jeff 2026-10-30: prepare and report if the conclusion holds. Recheck against the latest clr/rocclr first, then draft the issue for jeff's approval."
       }
+    },
+    {
+      "id": "rocdecode-sdk-va-driver-gfx90a-wrong-frames",
+      "kind": "rocm-bug-report",
+      "component": "rocDecode (TheRock SDK rocm_sysdeps Mesa VA driver)",
+      "summary": "TheRock ROCm SDK 10.1.0 (rocDecode 1.10.0) on gfx90a (MI200-class, amdgpu-dkms 6.16.6, kernel 6.8.0-101): rocDecode loads its bundled VA driver rocm_sysdeps/lib/radeonsi_drv_video.so -> librocm_sysdeps_gallium_drv_video.so (\"Mesa Gallium driver 26.3.0-devel\", sha256 9c3d6f36...b747a2). Through it every decoded H.264, HEVC and VP9 frame differs from libavcodec in nearly every byte (320x180 H.264 High: 57343 of 57600 luma and all 28800 chroma bytes; 60x60 H.264: all 3600/1800), while rocDecGetDecodeStatus reports success, so the output is silently wrong. The same binary with LIBVA_DRIVERS_PATH=/usr/lib/x86_64-linux-gnu/dri (Ubuntu Mesa 25.2.8-0ubuntu0.24.04.4 radeonsi_drv_video.so) decodes the same fixtures bit-exactly (10/10 RocDecodeVideo + RocDecodeMatchesSoftware), and system ffmpeg -hwaccel vaapi on the same card is bit-exact for h264_60x60.mp4, so the VCN hardware and the port's copy are fine. gfx1100 with the same SDK and bundled driver is bit-exact (porter rounds 2026-10-30), so the fault is gfx90a-specific, or specific to this host's older amdgpu-dkms 6.16.6; not separated (no second gfx90a host). Reproducer: lichtfeld_tests --gtest_filter='Fixtures/RocDecodeMatchesSoftware.*' with and without LIBVA_DRIVERS_PATH. Valid streams only; no hang risk. Nothing filed.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md \"Revalidation 2026-10-30 (validator, linux-gfx90a\""
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-30T22:35:48Z",
+      "decided": null
     }
   ]
 }

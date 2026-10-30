@@ -7,7 +7,7 @@
   "priority": 6.263,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-10-30T22:29:03Z",
+  "updated_at": "2026-10-30T22:37:40Z",
   "head_sha": "b0a50fa0c0a7178267854a284ff0ec0258ed8fe5",
   "depends_on": [],
   "waivers": {
@@ -27,40 +27,16 @@
   },
   "license_spdx": "GPL-3.0",
   "upstream_repo_id": 672651553,
-  "stage": "porting",
+  "stage": "review-passed",
   "platforms": {
-    "linux-gfx1100": {
-      "state": "validation-failed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "81b7fa245d3e00fc6fe7d341a768de862c56efda",
-      "started_at": "2026-05-31T03:10:00Z",
-      "completed_at": "2026-10-22T06:01:27Z",
-      "updated_at": "2026-10-30T22:29:03Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 1,
-        "first_session_at": "2026-05-31T03:10:00Z",
-        "last_session_at": "2026-05-31T03:20:00Z"
-      },
-      "last_agent": "validator",
-      "failed_sha": "b0a50fa0c0a7178267854a284ff0ec0258ed8fe5"
-    },
     "linux-gfx90a": {
-      "state": "completed",
+      "state": "validation-failed",
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "81b7fa245d3e00fc6fe7d341a768de862c56efda",
       "started_at": "2026-05-31T01:11:33Z",
       "completed_at": "2026-10-22T06:34:33Z",
-      "updated_at": "2026-10-22T06:34:33Z",
+      "updated_at": "2026-10-30T22:37:40Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -75,7 +51,7 @@
         "last_session_at": null
       },
       "last_agent": "validator",
-      "failed_sha": "ce822a31ad690650b7850c0a56a867cffeccb4f2"
+      "failed_sha": "b0a50fa0c0a7178267854a284ff0ec0258ed8fe5"
     },
     "windows-gfx1201": {
       "blocked": true,
@@ -145,6 +121,30 @@
       },
       "state": "completed",
       "last_agent": "porter"
+    },
+    "linux-gfx1100": {
+      "state": "validation-failed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "81b7fa245d3e00fc6fe7d341a768de862c56efda",
+      "started_at": "2026-05-31T03:10:00Z",
+      "completed_at": "2026-10-22T06:01:27Z",
+      "updated_at": "2026-10-30T22:29:03Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-05-31T03:10:00Z",
+        "last_session_at": "2026-05-31T03:20:00Z"
+      },
+      "last_agent": "validator",
+      "failed_sha": "b0a50fa0c0a7178267854a284ff0ec0258ed8fe5"
     }
   },
   "porting_released": {

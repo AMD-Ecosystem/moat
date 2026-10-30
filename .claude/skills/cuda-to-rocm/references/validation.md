@@ -516,3 +516,30 @@ run passing proves nothing about the interop path. Check `cat /sys/module/amdgpu
 before running any HIP+Vulkan interop app, and do not debug the port for this symptom on an
 older driver. (LichtFeld-Studio: GUI training crashed twice at 6.16.13; on 6.19.14 the same
 binary trained 5000 iterations cleanly.)
+
+## rocDecode frames wrong on one architecture: swap the VA driver before blaming the port
+
+rocDecode decodes through VA-API, and a TheRock SDK loads its own bundled Mesa VA driver
+(`<SDK>/lib/rocm_sysdeps/lib/radeonsi_drv_video.so`), not the distribution's. On gfx90a
+with SDK 10.1.0 (bundled "Mesa Gallium 26.3.0-devel", amdgpu-dkms 6.16.6) every H.264,
+HEVC and VP9 frame came back wrong in nearly every byte while `rocDecGetDecodeStatus`
+said success; gfx1100 with the same SDK was bit-exact. Three checks split it, each on
+valid streams only: `strace -f -e trace=openat` shows which render node and which
+`*_drv_video.so` the process opens (a wrong card is the other suspect); rerun the same
+test binary with `LIBVA_DRIVERS_PATH=/usr/lib/x86_64-linux-gnu/dri` (the distribution's
+Mesa; the bundled libva loads it), which was bit-exact; and decode the clip with the
+system `ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD<n>
+-hwaccel_output_format vaapi -vf hwdownload,format=nv12` against a software decode,
+which proves the video engine itself. When comparing against software decode, compare
+luma only or keep the source's pixel format: `-pix_fmt nv12` on a full-range stream
+rescales the range and makes a correct decode look wrong. (LichtFeld-Studio)
+
+## A free-memory-delta test can fail once per process on gfx90a
+
+HIP keeps device memory from some first uses for the life of the process. On gfx90a a
+plain program's first pageable 100 MiB `hipMemcpy` round trip took 150 MiB of
+`hipMemGetInfo` free memory for good, and later round trips took none. A test that reads
+free memory before an allocation and asserts it comes back afterwards can then fail by a
+fixed amount on its first run in a process and pass on repeats. Check with
+`--gtest_repeat=3` in one process before calling it a leak: a leak grows each
+repetition, a first-use cost appears once. (LichtFeld-Studio)

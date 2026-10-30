@@ -335,3 +335,11 @@
 {"kind":"phase","ts":"2026-10-30T22:20:52Z","phase":"test","seconds":74.794,"exit":0,"cmd":"bash agent_space/smoke.sh head"}
 {"kind":"phase","ts":"2026-10-30T22:22:36Z","phase":"test","seconds":65.194,"exit":0,"cmd":"bash agent_space/smoke.sh head-hip0"}
 {"kind":"session","ts":"2026-10-30T22:24:17Z","epoch":1793399057.981423881,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T21:08:23Z","epoch":1793394503.081270452,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-30T21:27:51Z","phase":"compile","seconds":1076.009,"exit":0,"cmd":"bash agent_space/lfs_full_build.sh /var/lib/jenkins/fleet/jobs/mi200-20261030-140506-lfs-validate-gfx90a/build-hip-gfx90a"}
+{"kind":"phase","ts":"2026-10-30T21:34:21Z","phase":"compile","seconds":359.151,"exit":0,"cmd":"bash agent_space/lfs_compute_build.sh /var/lib/jenkins/fleet/jobs/mi200-20261030-140506-lfs-validate-gfx90a/build-compute"}
+{"kind":"phase","ts":"2026-10-30T21:35:29Z","phase":"test","seconds":55.559,"exit":1,"cmd":"timeout -k 30 1800 /var/lib/jenkins/fleet/jobs/mi200-20261030-140506-lfs-validate-gfx90a/build-compute/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-10-30T21:37:01Z","phase":"test","seconds":57.522,"exit":1,"cmd":"agent_space/in_src.sh timeout -k 30 1800 /var/lib/jenkins/fleet/jobs/mi200-20261030-140506-lfs-validate-gfx90a/build-compute/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-10-30T22:24:01Z","phase":"test","seconds":2805.011,"exit":0,"cmd":"bash agent_space/run_suites.sh /var/lib/jenkins/fleet/jobs/mi200-20261030-140506-lfs-validate-gfx90a/build-hip-gfx90a /var/lib/jenkins/fleet/jobs/mi200-20261030-140506-lfs-validate-gfx90a/moat/agent_space/runs/lft1"}
+{"kind":"phase","ts":"2026-10-30T22:35:10Z","phase":"test","seconds":106.658,"exit":0,"cmd":"bash agent_space/smoke.sh r1 /sys/bus/pci/devices/0000:32:00.0"}
+{"kind":"session","ts":"2026-10-30T22:37:40Z","epoch":1793399860.952164927,"event":"end","platform":"linux-gfx90a"}
