@@ -1196,3 +1196,48 @@ There is no nvcc, conda or /usr/local/cuda on this host. The fde793b9f delta is 
 - Documentation: README.md:145-150 documents the ROCm configure next to the CUDA one, and build_rocm.sh matches it. Unchanged this round.
 - Not run: the multi-device suites (one GCD pinned) and the graph/misc/exceptions/dataloader dirs (not in this request).
 - `git -C projects/oneflow/src status --porcelain`: empty. No core files were written (`ulimit -c 0`).
+
+## Porter round 2026-10-30 (linux-gfx90a, MI250X; answers the `test_widths` item in "Validation 2026-10-30 (linux-gfx90a ... at fde793b9f: PASSED)" and the reviewer's `reduce_sum_like` residual)
+
+jeff asked for this round. Fork `moat-port` fde793b9f -> 7919c4f38 (two new commits, no amend, no force push). State `review-passed -> porting -> ported`, `advance-head` done. Both completed platforms now owe revalidation at 7919c4f38.
+
+### 48612112d `[ROCm] Seed the norm width tests and scale tolerance with 1/std`
+- Cause: at widths 1-2 a row's variance (LayerNorm) or mean square (RMSNorm) can approach eps, and x_grad subtracts terms of size rstd*|dy| that cancel, so both libraries carry errors far above upstream's fixed `atol=1e-5, rtol=1e-8`. Not a kernel fault.
+- Error law, measured (`agent_space/tol/scale.py`, torch fp32 GPU vs float64, 200000 rows per width): LayerNorm dx error / (rstd * max|dy*w| * max|x|*rstd) <= 3.5e-7 at every width 2..1024, i.e. it grows with rstd**2 (the x - mean cancellation times rstd); RMSNorm dx error / max(1, rstd) <= 2.2e-6, i.e. linear in rstd (no mean subtraction).
+- Change (shared helpers `_test_layer_norm` / `_test_rmsnorm`, so every test in the two files uses it): per-row `scale = max(1, 1/std)` from float64 x. LayerNorm: y atol 1e-5*scale, x_grad 1e-5*scale**2, weight_grad 1e-5*max(scale); bias_grad unchanged. RMSNorm: x_grad 1e-5*scale; y and weight_grad unchanged. fp16 branches get the same multipliers on their 1e-2. Rows with std >= 1 (everything past a few dozen columns: max rstd 1.4 at 64 cols, 1.0 at 8192) keep exactly the old bound, so the wide/well-conditioned checks are not weakened; the 0dad318ad-class wrong results (off by O(1) at 33-128 cols) are still caught.
+- Determinism: helpers take `rng=np.random` (upstream callers unchanged); `test_widths` and `test_wide_widths` pass `np.random.RandomState(cols)`; `_test_softmax_wide_rows` seeds `RandomState(cols)` itself (its tolerance was already `tol * max|ref|` vs float64, so only the seed changed).
+- oneflow vs torch on the GPU, per row (`agent_space/tol/of_vs_torch.py`, 200000 rows per width <= 16): worst |diff| / new bound 0.29 (RMS w=3), 0.19 at 8192; under the old 1e-5, failing row fractions were LN w2 dx 2.35e-2, LN w2 y 5.7e-4, LN w1 dx 0.46 (dx is pure noise there, var = 0), RMS w1 dx 6.2e-3.
+- Helper stress on draws unrelated to the test seeds (`agent_space/tol/stress.py`, shape [cols%3+2, cols]): new helper 0 failures in 2000 draws at each width 1..8 and 200 at 16/33/64/65/100/129, both files. Old helper: LN w2 35/500, LN w3 1/500, RMS w1 5/500, everything else 0.
+
+### 7919c4f38 `[ROCm] Size the reduce_sum_like scratch for hipCUB on HIP`
+- `ReduceSumLikeInferTmpSize` is now templated on <device, T> and, under USE_HIP on kCUDA, takes `max(elem_cnt*sizeof(T), CudaScalarReduceTmpStorageBytes<T, BinaryFuncSum>(elem_cnt))` (the cb4392c21 helper). The kernel also had to change: it described the scratch as an ndarray with x's shape, and NdarrayScalarReduce checks `tmp_storage.shape().ElemNum()*sizeof(T)`, so the bigger buffer alone still aborted ("Check failed: (2 >= 4)"). Under USE_HIP the scratch is now `XpuVarNdarray<T>(Shape({tmp_bytes / sizeof(T)}), ptr)`. Safe because every reduce path uses only ElemNum and ptr (NdarrayDefaultReduce rebuilds `storage(x.shape(), tmp_storage.ptr())`; ReduceKernel already passes the 1-D byte shape), and the eager/graph tmp tensor is a 1-D kChar of the inferred byte count (`TmpTensor::shape_view`). CUDA path: the `#else` keeps upstream's expression.
+- New `test_reduce_sum_like_short_one_byte_input` (int8, n x 2 and n x 1, n = 1..9, full reduce): passes; the same test aborts on the fde793b9f build. `agent_space/rsl.py` (int8/int32/fp32, n = 2..5) likewise.
+
+### Builds
+- HIP (gfx90a): same configure as "Validation ... fde793b9f" (job venv, `-DPython3_EXECUTABLE=<agent_space>/pywrap/python3`), `cmake --build build -j64`, 846 s, `OF_GPU_WARP_SIZE: 64`, then two incremental rebuilds. clang-format 11.1 (wheel) and black 19.10b0 applied to the changed files.
+- CUDA compile gate at the new tree: **full build PASSED** (configure + `cmake --build build -j64 -- -k 0`, rc=0, liboneflow.so 890 MB and `_oneflow_internal` linked; 221 CUDA objects, all `arch=compute_80`, no USE_HIP). Every one of the 20 `.cu`/`.cpp` files in `git diff --name-only $(git merge-base HEAD origin/master)` (base 25c8978c1) has a fresh object, including reduce_like_kernels.cpp, ndarray_reduce_impl.cu, layer_norm_gpu_kernel.cu (which pulls layer_norm.cuh/rms_norm.cuh/softmax.cuh). Built in a scratch worktree (`agent_space/oneflow-cuda`, the working diff applied) so the HIP build's in-tree installs were not touched. Not run (no NVIDIA GPU).
+  - Toolkit: the PyPI `nvidia-cuda-nvcc-cu12` 12.8.61/12.8.93 wheels contain no `nvcc` (ptxas/nvvm only), so `CUDA_HOME=$FLEET_VENV/cuda-12.8` was assembled from NVIDIA redist archives listed in `redistrib_12.8.1.json`, all sha256-verified: cuda_nvcc 12.8.93, cudart/cccl/nvtx/cupti/profiler_api/nvml_dev 12.8.90, nvrtc 12.8.93, libcublas 12.8.4.1, libcurand 10.3.9.90, libcusparse 12.5.8.93, libcufft 11.3.3.83, libcusolver 11.7.3.90, libnvjitlink 12.8.93, libnvjpeg 12.3.5.92, libnpp 12.3.3.100. cuDNN 8.9.7.29 and NCCL 2.32.3 from their cu12 wheels (unversioned `.so` symlinks in `$FLEET_VENV/cudeps`), `-DUSE_SYSTEM_NCCL=ON`. Host compiler gcc/g++ 13.3.
+  - Configure: `-DBUILD_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=80 -DCUDAToolkit_ROOT=$C -DCMAKE_CUDA_COMPILER=$C/bin/nvcc -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-13 -DCMAKE_C_COMPILER=/usr/bin/gcc-13 -DCMAKE_CXX_COMPILER=/usr/bin/g++-13 -DCUDNN_ROOT_DIR=$D/cudnn -DUSE_SYSTEM_NCCL=ON -DNCCL_ROOT_DIR=$D/nccl` plus the HIP build's other `-D` options (CUTLASS/MLIR/RDMA/CPP_API/HWLOC off, oneDNN on, Release, shared).
+  - Scratch-only third-party fixes (worktree, never the fork): upstream's pinned flash-attention-v2 mirror zip (oneflow-static.oss-cn-beijing.aliyuncs.com) now returns an HTTP error, so the URL/MD5 in the worktree's `cmake/third_party/flash_attention.cmake` were pointed at a local zip of the same commit eed2e82 from github.com/Oneflow-Inc/flash-attention-v2 with its `csrc/cutlass` submodule (NVIDIA/cutlass bbe579a9) added; and its `csrc/flash_attn/src/cuda_utils.cu` needed `#include <cstdio>`/`<cstdlib>` under CUDA 12.8 headers. Both are pre-existing upstream build rot, unrelated to the port, but anyone running the CUDA gate from a fresh tree will hit them.
+  - This supersedes the "cuda-not-validated (nvcc)" entries for the fde793b9f delta as far as compiling goes.
+
+### Stability (`agent_space/stability.sh`, under `ulimit -c 0`, `HIP_VISIBLE_DEVICES=1`, job venv, `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git` per `therock-libllvm-symbol-interposition`)
+```
+cd python/oneflow/test/modules
+python3 -m pytest -p no:warnings -p no:randomly -p no:cacheprovider -q -rfE <file>.py            # 30x each
+python3 -m pytest -p no:warnings -p no:randomly -p no:cacheprovider -q -rfE test_rmsnorm.py test_layer_norm.py test_softmax.py   # 10x
+```
+| run | result |
+|---|---|
+| test_layer_norm.py alone x30 | 30/30, 6 passed each |
+| test_rmsnorm.py alone x30 | 30/30, 6 passed + 1 upstream skip each |
+| test_softmax.py alone x30 | 30/30, 2 passed each |
+| test_reduce_sum_like.py alone x30 | 30/30, 2 passed each |
+| combined order x10 | 10/10, 14 passed + 1 skip each |
+Wall 1815 s (shared with the CUDA build's CPU load).
+
+### Other checks
+- `python3 utils/jargon.py --port oneflow`: the 3 known hits in 68718f038's message only; none in the two new commits. `utils/prose.py` clean on both messages. Titles 63 and 57 chars, `[ROCm]` prefix, prose disclosure, fenced Test Plan, no trailer.
+- `git -C projects/oneflow/src status --porcelain`: empty after commit.
+- Not run this round: the full modules/tensor suites and the width sweep (the C++ change touches only reduce_sum_like scratch sizing; the revalidation at 7919c4f38 owes them on both wave64 and wave32).
+- Lesson promoted: `cuda-to-rocm/references/validation.md` gains the no-conda CUDA toolkit recipe (redist archives, the wheel lacks nvcc) under the nvcc gate.
