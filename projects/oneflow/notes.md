@@ -1124,3 +1124,75 @@ No CUDA toolkit on this host (no /opt/conda, no nvcc). fde793b9f changes no CUDA
 - Documentation: README.md:145-150 documents the ROCm configure next to the CUDA one, and build_rocm.sh matches it.
 - `git -C projects/oneflow/src status --porcelain`: only untracked build output. No core files were written (`ulimit -c 0`).
 - Telemetry note: a first modules launch was stopped after a few minutes by a harness timeout I set too short and was rerun from scratch. Its partial run left no phase record, and the counts above are from the full rerun only.
+## Validation 2026-10-30 (linux-gfx90a, MI250X, full modules + tensor suites and norm/softmax width sweep at fde793b9f: PASSED)
+
+Requested by jeff after the review passed at fde793b9faec7d2f8e800b419e979613b8d12abf (fd94e199a plus the HIP-only occupancy-query wrapper): run the full test/modules suite, the tensor suite, and the LayerNorm/RMSNorm/softmax width sweep up to width 65000+, all under `ulimit -c 0`, and compare against the 521f54782 counts. Result: `revalidate -> completed` on linux-gfx90a. The wrapper is a no-op on CDNA2, as the commit says. The three wave64 faults from 521f54782 stay fixed, and no width up to 70000 aborts or gives a wrong result. Every remaining junit failure falls into a class already recorded as non-GPU. One test-quality item (below) does not block this arch, but the port's own `test_widths` tests are flaky and should be fixed before PR prep. `classify fd94e199a fde793b9f` gives `class=mixed` (cuda_to_hip.h plus three test files), so this was a full run.
+
+Host: one MI250X GCD (gfx90a:sramecc+:xnack-, wave64), `HIP_VISIBLE_DEVICES=1` pinned by the dispatcher. ROCm 10.1.0 from the rocm-sdk wheels, AMD clang 24.0.0git, Python 3.11, numpy 1.26.4, protobuf 3.20.3, torch 2.16.0a0+git6c3af02 (the oracle). Fresh blobless clone of fork moat-port at fde793b9f; `git -C projects/oneflow/src status --porcelain` was empty after every run.
+
+### Environment (job venv only, nothing shared touched)
+- `$FLEET_VENV/bin/python -m pip install -r dev-requirements.txt fsspec pytest-timeout` (pytest-xdist was already present). The image's torch, torch-*.dist-info, torchgen and functorch are symlinked read-only into `$FLEET_VENV-base-links`.
+- `-DPython3_EXECUTABLE=<agent_space>/pywrap/python3`, the 4-line wrapper that drops pip's `--user` and execs the venv python (no source edit).
+- Runtime: `source build/source.sh`, `ONEFLOW_TEST_DEVICE_NUM=1`, `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git`. This is still required: without it `import oneflow` aborts with `realloc(): invalid pointer` (`therock-libllvm-symbol-interposition`).
+
+### Build (681 s, `utils/timeit.sh oneflow compile`)
+```
+ulimit -c 0; export PATH=$FLEET_VENV/bin:$PATH; R=$(python3 -m rocm_sdk path --root)
+cmake -S . -B build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DBUILD_CUDA=ON -DCMAKE_PREFIX_PATH=$R \
+  -DCMAKE_C_COMPILER=$R/lib/llvm/bin/clang -DCMAKE_CXX_COMPILER=$R/lib/llvm/bin/clang++ \
+  -DWITH_CUTLASS=OFF -DWITH_MLIR=OFF -DWITH_MLIR_CUDA_CODEGEN=OFF -DBUILD_RDMA=OFF -DBUILD_CPP_API=OFF -DBUILD_HWLOC=OFF \
+  -DWITH_ONEDNN=ON -DBUILD_TESTING=OFF -DTREAT_WARNINGS_AS_ERRORS=OFF -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF \
+  -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DPython3_EXECUTABLE=<agent_space>/pywrap/python3
+cmake --build build -j128
+```
+rc=0, `OF_GPU_WARP_SIZE: 64`, liboneflow.so 932 MB. Smoke check: `flow.cuda.is_available()` True, a 4x1000 softmax sums to 4.0, `flow.all(flow.ones(2, dtype=flow.bool, device="cuda"))` True, `flow.sum(flow.ones(64, 72, device="cuda"), dim=0)` gives 64.
+
+### Occupancy wrapper on gfx90a (`agent_space/occ/occ.hip`, hipcc --offload-arch=gfx90a, not committed)
+This test copies the wrapper's logic and compares it with the raw `hipOccupancyMaxActiveBlocksPerMultiprocessor` for two `__launch_bounds__(1024)` kernels, one with 8 B and one with 4 KiB of static `__shared__`. It covers block sizes 128 and 1024 and dynamic sizes 1 KiB, 32 KiB, 60 KiB, 60 KiB+1, 64 KiB-8, 64 KiB-7, 64 KiB, 64 KiB+1, 80 KiB and 128 KiB. `hipDeviceAttributeMaxSharedMemoryPerBlock` is 65536. 0 mismatches in 40 queries: the raw query already answers 0 exactly where dynamic plus static exceeds 64 KiB (for example, 61441 B is 0 for the 4 KiB-static kernel). So the wrapper never changes a CDNA2 dispatch.
+
+### Test commands (`utils/timeit.sh oneflow test`)
+Per-file runner, the same as at fd94e199a, 8 files at a time on the one GCD (`agent_space/run_suite.sh <dir> 8`):
+```
+ulimit -c 0
+cd python/oneflow/test/<modules|tensor>
+ls test_*.py | xargs -P 8 -I{} sh -c "timeout -k 30 1800 python3 -m pytest -p no:warnings -p no:randomly -p no:cacheprovider --capture=sys --timeout=900 -rfE -q --junitxml=$OUT/\$(basename {} .py).xml {} > $OUT/\$(basename {} .py).log 2>&1"
+```
+The slice is `python3 -m pytest -p no:warnings -p no:randomly -p no:cacheprovider -q -rfE test_add.py test_cast.py test_where.py test_masked_fill.py test_broadcast_ops.py test_transpose.py test_softmax.py test_layer_norm.py test_matmul.py`.
+The sweep is `agent_space/norm_sweep.py drive` (not committed). It runs one subprocess per width chunk, so an abort is contained and recorded. It compares oneflow on the GPU against torch float64 on the CPU from identical inputs, with tolerance relative to 1+max|ref| of 1e-4 (fp32) and 2e-2 (fp16). Each case checks four ops: layer_norm (affine) y/dx/dgamma/dbeta, `flow._C.rms_norm` y/dx/dweight, and softmax and log_softmax y/dx. fp32 covers widths 1..8192 at 3 and 4 rows, widths 1..1100 at 8 and 64 rows, and the wide list 8180, 8190, 8191, 8192, 8193, 10240, 12000, 16000, 16350, 16380, 16384, 16400, 24000, 32000, 32568, 32760, 32768, 32800, 40000, 65000, 65536, 70000 at 3 and 4 rows. fp16 covers widths 1..1100, 2048, 4096, 8192 and the wide list at 3 and 4 rows. GroupNorm uses `agent_space/gn_check.py` on the porter round's 7 shapes, comparing the GPU fwd and dx/dw/db against torch float64.
+
+### Results
+| suite | passed | failed | errors | skipped | aborted files | 521f54782 (gfx90a) | fd94e199a (gfx90a validator) |
+|---|---|---|---|---|---|---|---|
+| modules (541 files) | 1529 | 101 | 5 | 314 | 3 | 1503/116/4/325 | 1527/96/5/313, 4 aborted |
+| tensor (22 files) | 365 | 4 | 0 | 22 | 0 | 326/254/0/19 (fault-2 crash loop) | 365/4/0/22 |
+| 9-file slice | 76 | 2 | 0 | 0 | 0 | 73/2 | 74/2 (+2 = test_layer_norm/test_softmax wide tests) |
+| norm/softmax sweep | 20878 cases, 83512 op checks, 0 bad, 0 crashed chunks | | | | | LN wrong 33-63/66-128, RMS abort at 100 | 6654 cases, 0 bad |
+| GroupNorm 7 shapes | worst abs 1.5e-5 | | | | | off by 4.7 / 3.2 / 31 | 1.8e-5 |
+
+Wall times: modules 997 s, tensor about 1.5 min, sweep 916 s. Worst sweep errors: fp32 ln 2.3e-6, rms 5.8e-7, softmax 1.8e-7, log_softmax 3.7e-7. fp16 ln 8.3e-4, rms 7.2e-4, softmax 2.3e-4, log_softmax 7.8e-4 (fp16 rounding). The new tests pass: test_layer_norm/test_rmsnorm `test_wide_widths` and test_softmax `test_softmax_wide_rows`, 3 passed in 10.8 s. test_layer_norm 6, test_rmsnorm 6 (+1 upstream skip), test_softmax 2, test_activation 75 (+2 skip), test_groupnorm 4, test_logical_reduce 22, test_sum 8 and test_gumbel_softmax 2 all pass in the suite run.
+
+Per-file exit codes for modules: 486 rc=0, 45 rc=1, 5 rc=2 (collection), 2 rc=5 (no tests), 3 rc=134. Compared with fd94e199a, modules gained 2 passed and 5 failed. In this run test_higher_derivative_loss completed instead of aborting (it aborts randomly on the torch BCE oracle), which adds its bce/kl_div/smooth_l1 grad_grad records. The rest of the difference is in the randomized deferred-kernel autotests.
+
+### Classification of every remaining failure (106 modules records, 4 tensor)
+- 50 deferred kernels not registered on HIP (all on the cmake/oneflow.cmake exclusion list): conv2d 16, global_higher_derivative_conv 3, qat_conv 2, conv1d 2, swautils 2, batchnorm 3 + batchnorm_add_relu 1 (normalization), det 3 (lu_decomposition), grid_sample 3, fused_rotary_embedding 3, fused_dot_feature_interaction 2, cublas_fused_mlp 1, global_rnn 1, fused_matmul_bias 1, groupwise_quantization 1, fused_matmul_bias_add_relu_dropout 1, grouped_matmul_bias 1, fused_attention_ops 1, deconv2d 1, global_maxpool channel_last 1 (tf_max_pool_2d), special_ops psi 1 (digamma).
+- 14 autotest "endless loop": avgpool (torch 2.16 argument rejection), conv/deconv retrying around the deferred kernels.
+- 10 numpy `__bool__` interop (known, every earlier run).
+- 8 torch 2.16 drift: bce grad_grad (PyTorchDoesNotSupportError; torch rejects targets outside [0,1]), kl_div grad_grad in test_global_higher_derivative_loss (PyTorchDoesNotSupportError), smooth_l1 grad_grad x2 (ZeroTensor to numpy), and other ZeroTensor/padding-must-be-int cases. test_higher_derivative_loss `test_kl_div_loss_grad_grad` fails with "1-grad_inputs[1] is not equal" in 6/6 GPU runs and also in 3/3 runs with `ONEFLOW_TEST_CPU_ONLY=1`, so it is not a GPU fault.
+- 6 `oneflow.char != oneflow.int8`; 5 `KeyError: 'ONEFLOW_CI'` (fft); 1 `collections.Iterable` (Python 3.11); 1 codegeex float view; 1 functional docstr doctest.
+- 5 collection errors (deform_conv2d, global_deform_conv2d, global_roi_align, image_resize, resnet_load_torch_weight).
+- 4 missing `/dataset` files (image_decode, image_batch_align, image_flip, image_normalize).
+- 3 aborted files: test_dataset (glog `Check failed: fd >= 0`, `/dataset/imagenette/ofrecord` missing); test_loss (the HSA exception names torch's own `binary_cross_entropy_out_cuda` kernel, i.e. the oracle device-asserting); test_maxpool (`invalid configuration argument (9)`, after the `ONEFLOW_ENABLE_NHWC` leak from the failing tf_max_pool_2d channel_last test; `pytest test_maxpool.py -k "not channel_last"` gives 10 passed).
+- tensor (identical to fd94e199a): test_safetensors (module not installed), test_tensor_indexing2 test_slice (bf16 `gather_nd` not registered on HIP; the open `__CUDA_BF16_TYPES_EXIST__` item), test_autocast half_mm and half_mm_add (fp16 ulp differences where oneflow matches an exact fp16-rounded reference and torch-ROCm does not, per the porter round).
+None of them is a wrong result or an abort in a ported kernel.
+
+### Test-quality item for the porter (not a GPU fault; fix before PR prep): `test_widths` is flaky at widths 1-2
+`test_layer_norm.py::TestLayerNorm::test_widths` and `test_rmsnorm.py::TestRMSNorm::test_widths` (added in 0dad318ad, so they ship upstream) each failed intermittently. Together they failed 4 times in 12 runs of `pytest test_rmsnorm.py test_layer_norm.py test_softmax.py` (0 of 15 standalone runs each failed, but the sample is small). Every failure is at width 1 or 2 on dx: LayerNorm `shape=[4, 2]` with max abs diff 1.11e-5 (row 4 values near 1.09e-2), and RMSNorm `shape=[3, 1]` with 1.5e-5 on a gradient of 93.26 (about 2 fp32 ulps). Upstream's compare is `np.allclose(atol=1e-5, rtol=1e-8)`, an absolute bound, with unseeded `np.random.randn` data, and the oracle is torch fp32 on the same GPU. At these widths the gradient is ill-conditioned: a near-zero variance or rms gives unbounded dx. Measured over 200000 random rows (`agent_space/narrow_acc.py`), both oneflow and torch-GPU against float64: LayerNorm width 2 has max error 1.1e-2 (oneflow) vs 9.9e-3 (torch), median 1.1e-7 vs 1.2e-7, and oneflow worse on 36.5% of rows; 1.9% of rows differ by more than atol, about 7% per 4-row call. RMSNorm width 1 has max error 2.6e-4 vs 2.8e-4, oneflow worse on 45% of rows; 0.66% of rows exceed atol, about 2.6% per call. So the kernels are as accurate as torch's, and the test bound is what fails. This does not depend on fde793b9f, because widths 1-2 never take the shared-memory path, and the same arithmetic would flake on CUDA. Suggested fix (porter's call): seed the data, or compare with a relative tolerance (or start the sweep at a width where the norm is well-conditioned). The new test is the only part that ships with this problem. It needs a new commit on top and a revalidation, so it is for jeff to schedule, preferably together with the PR-prep squash.
+
+### CUDA no-regression gate at fde793b9f: cuda-not-validated (nvcc)
+There is no nvcc, conda or /usr/local/cuda on this host. The fde793b9f delta is inside `cuda_to_hip.h`, which is wholly under `USE_HIP` and force-included only by the HIP build (verified in "Review 2026-10-30 ... fd94e199a..fde793b9f"), plus Python tests. The CUDA sources are therefore token-identical to fd94e199a. The last CUDA-side evidence is still the clang `-x cuda -fsyntax-only` pass at 521f54782.
+
+### Other checks at fde793b9f
+- `python3 utils/jargon.py --port oneflow`: the same 3 hits, all in 68718f038's commit message ("Strategy A", "MOAT", "Lead platform"), and 0 in added lines or in fde793b9f. This is review item 8, which only the PR-prep squash can clear; `squash-carry-forward` carries this validation to a tree-identical squash.
+- Documentation: README.md:145-150 documents the ROCm configure next to the CUDA one, and build_rocm.sh matches it. Unchanged this round.
+- Not run: the multi-device suites (one GCD pinned) and the graph/misc/exceptions/dataloader dirs (not in this request).
+- `git -C projects/oneflow/src status --porcelain`: empty. No core files were written (`ulimit -c 0`).

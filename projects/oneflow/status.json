@@ -7,7 +7,7 @@
   "priority": 6.236,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-10-30T07:21:22Z",
+  "updated_at": "2026-10-30T07:44:01Z",
   "head_sha": "fde793b9faec7d2f8e800b419e979613b8d12abf",
   "waivers": {
     "windows": {
@@ -25,10 +25,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": "ported + GPU-validated. liboneflow.so (1.3GB) and the _oneflow_internal pybind module LINK; the ep/cuda/primitive slice GPU-validates vs PyTorch-ROCm (device='cuda' == HIP backend, fwd+bwd): test_add/cast/where/masked_fill/broadcast_ops/transpose/softmax/layer_norm = 64 passed, matmul core = 9 passed. Monolith built with the ROCm clang; hip::host+roc::rccl linked (not hip::device); 17 .cu deferred (cuDNN/cuBLASLt/cuSOLVER/CUTLASS+wmma/libcu++/P2P) with their host registrations guarded or stubbed (NewLruCache, GridSampleKernelUtil<kCUDA> -> CPU-only). GPU faults fixed: hipblasSetMathMode no-op on CDNA, __launch_bounds__(1024) on the norm block kernels, CUDNN_BN_MIN_EPSILON=0.0, and the wave64 LayerNormParamGrad reduction (tile/launch/shared/width all 32, width-confined shfl). Fork 68718f0.",
-      "validated_sha": "fd94e199a27d6b5d0a207be0d13b6290c60605c1",
+      "validated_sha": "fde793b9faec7d2f8e800b419e979613b8d12abf",
       "started_at": "2026-05-31T01:37:32Z",
-      "completed_at": "2026-10-30T05:13:52Z",
-      "updated_at": "2026-10-30T05:13:52Z",
+      "completed_at": "2026-10-30T07:44:01Z",
+      "updated_at": "2026-10-30T07:44:01Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -44,27 +44,6 @@
       },
       "last_agent": "validator",
       "failed_sha": "521f547825b77e36a4752bd45b2a295ad2a0a633"
-    },
-    "windows-gfx1101": {
-      "blocked": true,
-      "blocked_reason": "Windows not viable: RCCL Linux-only (find_package rccl REQUIRED, nccl.h in cuda_util.h/core files); POSIX ibv/pthread_fork syscalls; platform.cmake MSVC flags clash with all-clang; 32 third-party deps Linux-centric ExternalProject; oneflow never shipped on Windows upstream. GPU port complete on linux-gfx90a+gfx1100.",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-05T12:08:57Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
     },
     "windows-gfx1201": {
       "blocked": true,
@@ -86,6 +65,29 @@
         "first_session_at": null,
         "last_session_at": null
       }
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-10-29T23:08:20Z",
+      "completed_at": null,
+      "updated_at": "2026-10-30T06:27:46Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
     },
     "linux-gfx1100": {
       "state": "completed",
@@ -111,14 +113,13 @@
       "last_agent": "validator",
       "failed_sha": "fd94e199a27d6b5d0a207be0d13b6290c60605c1"
     },
-    "linux-gfx942": {
-      "blocked": false,
-      "blocked_reason": null,
+    "windows-gfx1101": {
+      "blocked": true,
+      "blocked_reason": "Windows not viable: RCCL Linux-only (find_package rccl REQUIRED, nccl.h in cuda_util.h/core files); POSIX ibv/pthread_fork syscalls; platform.cmake MSVC flags clash with all-clang; 32 third-party deps Linux-centric ExternalProject; oneflow never shipped on Windows upstream. GPU port complete on linux-gfx90a+gfx1100.",
       "validated_sha": null,
-      "failed_sha": null,
-      "started_at": "2026-10-29T23:08:20Z",
+      "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-10-30T06:27:46Z",
+      "updated_at": "2026-06-05T12:08:57Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -131,8 +132,7 @@
         "session_count": 0,
         "first_session_at": null,
         "last_session_at": null
-      },
-      "last_agent": "reviewer"
+      }
     },
     "windows-gfx1151": {
       "blocked": true,
@@ -161,6 +161,5 @@
     "arch": "linux-gfx942",
     "since": "2026-10-30T06:24:14Z",
     "at": "2026-10-30T06:27:46Z"
-  },
-  "porting": null
+  }
 }
