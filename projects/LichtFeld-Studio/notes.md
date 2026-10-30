@@ -4688,3 +4688,49 @@ af2f13b4 (stream-ordered pool on HIP) and c32560e9 (Windows video Option A) are 
 
 ### Next
 Porter: findings 1 and 2 in the MOAT records only (deferred.json and fault-classes.md); finding 3 with the next fork commit, or now if jeff prefers. The fork head can stay at c32560e9 for the records fix, and the next review can be records-only.
+
+## Porter round 2026-10-30d (porter, linux-gfx1100) -- "Review 2026-10-30d" findings 1-3; c32560e9 -> b0a50fa0, stage -> `ported`
+
+Host: Radeon Pro W7800 (gfx1100), HIP device 1 = PCI 0000:46:00.0 = amd-smi GPU 3 (checked with the 2026-10-30c `bus` probe; amd-smi GPU 3 at 0-5 % GFX activity, no processes; amd-smi GPU 1 = HIP 3, which the review used, was 48 % busy at the start, so it was not used). `ulimit -c 0`, every GPU run under `timeout 60`. TheRock ROCm SDK 10.1.0 wheels (hipconfig 7.16.26385). Lock taken from `changes-requested`. Earlier job trees only read: the review's rocm-systems clone (`rx7900-20261030-133134-lfs-mempool-review/moat/agent_space/ext`, develop 58b6920). No build: the fork change is documentation only, and the head build at c32560e9 is the one recorded in "Porter round 2026-10-30c".
+
+### Finding 1: release threshold, cause and scope corrected (deferral renamed)
+Read rocclr at rocm-systems develop 58b6920 and confirmed the review's account, line numbers checked: `VmHeapArray::SetUnmapThreshold` (rocclr/platform/vmheap.cpp:465-473) copies the value only into heaps already `created_`; a heap is created on its first `Alloc` (217-220) with `unmap_threshold_ = 0` (vmheap.hpp:152); `VmHeap::FreeBlock` calls `UnmapPhysMemory` (170-196) on the freed block before merging it, unmapping 128 MiB chunks (vmheap.hpp:52) while the free mapped size is above the heap's threshold; `VmHeapArray::Free` (423-444) trims to `threshold - extra` or 0 (line 441), not to the threshold. `Heap::SetReleaseThreshold` (hipamd/src/hip_mempool_impl.hpp:129-132) forwards to the VM heap, so `hip_mempool_impl.cpp:137-139` is deliberate and is no longer blamed.
+
+Own reproducers (`agent_space/thr/thr.hip`, `multi.hip`, hipcc `--offload-arch=gfx1100 -O2`). `thr <threshold MiB|max> <alloc MiB> early|late 50`: "late" = after one 1 MiB hipMallocAsync/hipFreeAsync/hipStreamSynchronize; the threshold reads back unchanged in every case; ReservedMemCurrent after alloc -> after hipFreeAsync + hipStreamSynchronize, `hipMemGetInfo` free delta, mean of 50 same-size alloc/memset/free/sync cycles. Two runs, same reserved numbers both times (cycle times: run 1 / run 2):
+```
+thr=64   alloc=512 early: 640 ->   0 MiB, free +640, cycle 6.986 / 5.734 ms   late: 640 ->   0 MiB, free +640, cycle 6.873 / 5.984 ms
+thr=1024 alloc=512 early: 640 -> 128 MiB, free +512, cycle 5.241 / 4.776 ms   late: 640 -> 640 MiB, free +0,   cycle 0.025 / 0.028 ms
+thr=max  alloc=512 early: 640 -> 128 MiB, free +512, cycle 4.613 / 4.877 ms   late: 640 -> 640 MiB, free +0,   cycle 0.028 / 0.027 ms
+thr=64   alloc=32  early: 128 ->   0 MiB, free +128, cycle 1.305 / 0.175 ms   late: 128 ->   0 MiB, free +128, cycle 1.305 / 0.150 ms
+thr=128  alloc=32  early: 128 -> 128 MiB                                      late: 128 -> 128 MiB  (run 1 only)
+thr=256  alloc=512 early: 640 -> 128 MiB                                      late: 640 -> 256 MiB  (run 1 only)
+thr=384  alloc=512 early: 640 -> 128 MiB                                      late: 640 -> 384 MiB  (run 1 only)
+thr=640  alloc=512 early: 640 -> 128 MiB                                      late: 640 -> 640 MiB  (run 1 only)
+```
+Reading: set early, every threshold of at least 128 MiB gives the same 128 MiB (the heap's first chunk, which the 512 MiB block never wholly covers); 64 MiB early gives 0 because the array keeps its own copy and `VmHeapArray::Free` trims to 0 (extra 576 >= 64), taking the first chunk too. Set late, a chunk-multiple threshold is kept exactly, and 64 MiB still gives 0 because `UnmapPhysMemory` unmaps whole chunks while the free mapped size exceeds the threshold. The 64/32 cycle time varies run to run (1.3 vs 0.16 ms); the 512 MiB remap cost is 4.6-7.0 ms here (6.7 ms in round 2026-10-30c, 5-6 ms in the review).
+
+The trim-below-threshold half needs a free that does not wholly cover chunks, so the single-block test cannot show it. `multi <threshold MiB> <block MiB> <free order>` (late threshold, N blocks allocated back to back, freed one at a time, sync after each); the 1,0,2 and the 512 MiB cases were run twice with identical numbers, the rest once:
+```
+thr=256 3x200 MiB, free 1,0,2:   reserved 640 -> 640 -> 384 -> 128 MiB   (free mapped 240, 184, 128)
+thr=256 3x200 MiB, free 0,1,2:   reserved 640 -> 640 -> 384 -> 128 MiB
+thr=512 4x200 MiB, free 0,1,2,3: reserved 896 -> 896 -> 896 -> 512 -> 512 (free mapped 296, 496, 312, 512)
+thr=384 6x100 MiB, free 0,2,4,1,3,5: 640 x3 -> 512 -> 384 -> 384 (free mapped 140, 240, 340, 312, 284, 384)
+thr=1024 4x200 MiB: 896 throughout
+```
+With 256 MiB, the second free leaves 440 MiB free mapped, `Free` trims to 256 - 184 = 72 MiB target and unmaps two chunks; the pool ends with 128 MiB where the threshold allows 256. With 512 MiB the third free dips to 312 MiB free mapped (target 512 - 184 = 328).
+
+Records: deferral renamed `hip-mempool-release-threshold-ignored` -> `hip-vmheap-unmap-threshold-lost-or-overtrimmed` (component `clr (rocclr)`); its summary starts "(Formerly hip-mempool-release-threshold-ignored.)" so the old id still greps. Summary rewritten with both causes, pinned citations, the early/late and multi-block numbers, the `FreeMemory` force-release as a separate un-isolated policy, and the review's LD_PRELOAD timing (no training-time cost). Nothing filed; the deferral stays open and unruled. Earlier notes sections keep the old id as written.
+
+### Finding 2: skill
+cuda-to-rocm `references/fault-classes.md`, the `CUDART_VERSION` paragraph: the threshold reaches the VM heap only if set after the pool's first allocation; set before, it is lost; set late it holds memory in 128 MiB chunks, below one chunk keeps nothing, and a free can trim below it; correctness unaffected, measure before working around it; points to the new deferral id with the old one. `SKILL.md` had no line about it.
+
+### Finding 3: fork docs
+- b0a50fa0c `[ROCm] Name the tested ROCm release in the AMD GPU build docs` (60 characters; plain push on top of c32560e9; pr-state none): `docs/building_and_distribution.md:230` now reads "ROCm with its Clang and the rocJPEG and rocDecode libraries (tested with ROCm 10.1, which ships HIP 7.16 and rocDecode 1.10) ... On Windows, rocDecode is part of ROCm from ROCm 10.2 (rocDecode 1.12); with an older ROCm such as 10.1 the build configures with a warning and decodes all video on the CPU." The "7.x" lower bound is dropped because the rocDecode build was only ever tested with 10.1 (7.16 was the HIP version). The compute-only section's "ROCm 7.x (tested with 7.2)" is ROCm release numbering (the earlier compute-only rounds used ROCm 7.2.1 hipcc before the move to TheRock 10.1, per the FastGS boundary-case note) and is left as is.
+- Docs check: the file is outside the Docusaurus site (`docs/docusaurus.config.ts` serves `docs/docs`; `docs/docs/development/build.md:265` only links to it), so there is no docs build for it. Rendered with Python-Markdown (`fenced_code`): the edited requirement is one `<li>`. `git diff --check HEAD~1` clean, added line ASCII.
+- `python3 utils/jargon.py --port LichtFeld-Studio`: clean (needed a local `master` from `origin/master` in the fresh clone). `utils/prose.py` on the message: clean. `moatlib.py audit-commits LichtFeld-Studio`: OK.
+
+### Records
+head_sha -> b0a50fa0 (documentation only; the platforms validated at 81b7fa24 read `revalidate` as before). Stage `porting` -> `ported`.
+
+### Verdict
+All three findings answered. The fork code is unchanged since c32560e9; the next review covers one docs line plus the records and skill text.
