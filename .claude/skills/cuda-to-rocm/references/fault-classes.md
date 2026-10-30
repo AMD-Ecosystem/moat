@@ -421,10 +421,13 @@ once). To prove the CUDA view unchanged, note that `unifdef -UUSE_HIP` leaves
 `#if X || defined(USE_HIP)` as written (it does not reduce `X || 0`); compare with
 `-UUSE_HIP -DCUDART_VERSION=<N>` on both the upstream and the port file, for an N on each
 side of every guard. Once the HIP default pool is in use, do not count on
-`hipMemPoolAttrReleaseThreshold`: on ROCm 10.1 (Linux) freed blocks are released at the next
-synchronize whatever the threshold, except one 128 MiB chunk when the threshold is at least
-that size, so a 64 MiB threshold keeps nothing (deferral
-`hip-mempool-release-threshold-ignored`). (LichtFeld-Studio)
+`hipMemPoolAttrReleaseThreshold`. On ROCm 10.1 (Linux) it reaches the pool's VM heap only if
+it is set after the pool's first allocation; set before it (as most code does, in setup), it
+is lost and freed blocks are unmapped at the next synchronize whatever its value. Even when
+set late it keeps memory only in 128 MiB chunks, so a threshold below one chunk (such as
+64 MiB) keeps nothing, and a free can trim below the threshold. Correctness is unaffected;
+measure before working around it (deferral `hip-vmheap-unmap-threshold-lost-or-overtrimmed`,
+formerly `hip-mempool-release-threshold-ignored`). (LichtFeld-Studio)
 
 **The vcpkg toolchain already overrides `add_library`/`add_executable`.** A second
 top-scope override (the MPPI retag trick) makes `_add_library` point at vcpkg's override,
