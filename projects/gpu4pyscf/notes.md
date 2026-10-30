@@ -583,3 +583,31 @@ Full gpu4pyscf/scf/tests (17 files) at 45d8053, test build: **122 passed, 8 skip
 - Environment: test_diffuse_orbital *_against_qchem x3 (`d-aug-cc-pvdz` not in pyscf 2.14's basis set).
 
 Every HF/integral test passes: test_rhf, test_uhf, test_ghf, test_hf_lowmem, test_int4c2e, test_scf_j_engine, test_scf_jk (except the gradient case), test_scf_ecp, test_addons, test_cphf, test_dispersion_logic, and the HF guesses in test_init_guess. Validator command: the directory above, judged by this classification. Not run here: a determinism repeat.
+
+## Review 2026-10-30 (reviewer, linux-gfx942, fork moat-port @ 45d8053 vs upstream/master 10dcea3) -- REVIEW PASSED
+
+Re-review requested by jeff after the porter answered "Review 2026-10-29". Fresh clone of the fork, tree clean; fork `master` == upstream 10dcea3; `jargon.py --port gpu4pyscf` clean; 45d8053 title 66 chars, `[ROCm]` prefix, AI disclosure, fenced Test Plan, no trailer.
+
+### Prior findings: all resolved
+- Blocker, dft/libxc.py: resolved. ROCm-only `try/except OSError -> _libxc = None` (libxc.py:35-43). The CUDA branch calls `load_library` bare, so it still raises. The version/`xc_func_type` block is under `if _libxc is not None` (:74-85). Every other module-level `_libxc` use is already under upstream's `if _libxc is not None:` (:145). The remaining uses (`xc_func_type`, `_xc_func_p`, `XCfun.__init__`) are only reached at DFT call time.
+- The porter's extra import fix (pbc/__init__.py imports scf and properties on both backends, skips only dft on ROCm; pbc/df/__init__.py is upstream's again): correct, and it removes a port file. The porter's RHF/UHF runs exercise this chain.
+- Lane mask, md_contract_j.cu:103-107 and :437-441: resolved. `threadsx` is `ij = nsq // kl` from scf/j_engine.py:319-345, a power of two <= 16. `group_id*threadsx + threadsx <= warpSize`, so the 64-bit shift is in range and `__popcll(mask) == threadsx` on wave32 and wave64.
+- CUDA path, contract_int3c2e.cu: resolved. Footprint check: a script (agent_space/cudaview.py) emits the USE_HIP-undefined view of every changed .cu/.cuh and diffs it against upstream/master. contract_int3c2e.cu, md_contract_j.cu, int3c2e_recontract.cu, contract_ft_ao.cu, ft_ao.cu and int3c2e_create_tasks.cuh are byte-identical to upstream. The remaining differences are comments (ecp/common.cu, nr_fill_ao_ints.cu), vhf.cuh's `|| defined(__HIPCC__)` (a no-op on CUDA), and gen_grids.cu's nested-brace initializers (reviewed 2026-06-02; same values on both toolchains).
+- CMake order: resolved. lib/CMakeLists.txt:183-207 matches upstream's order, with sem/solvent/multigrid gated in place.
+- Stale comment: resolved (lib/CMakeLists.txt:39-40).
+- Commit hygiene: still owed at the PR-prep squash, as recorded under "Still owed". The squashed message must also cover 45d8053 and the libxc/pbc rationale.
+
+### Whole-diff pass (30 files)
+No new defects. Grep of the HIP-built dirs (gint gvhf cupy_helper gvhf-rys gvhf-md ecp gdft pbc) for `__ballot`, `__activemask`, `0xffffffff`, `% 32`, `/ 32` and inline asm: every hit is in a `#else` CUDA branch or in the unrolled_md_j*.cu TUs. Those TUs keep `% 32` and go through cuda_to_hip_shfl.h, which uses the mask only for its popcount.
+
+### Fact-check of the porter's gfx942 miscompile claim: CONFIRMED
+`clang++ -x hip --offload-arch=gfx942 --cuda-device-only -O3 -S -fno-gpu-rdc` of gvhf-rys/rys_contract_jk.cu with the TheRock ROCm 10.1 compiler (AMD clang 24.0.0git d6f6cb69). In `rys_jk_kernel`, v20 is set once (`v_mov_b32 v20, 0`, before the loop) and then used inside persistent loop `.LBB0_14` as the zero offset of `global_atomic_add v1, v20, v1, s[20:21]` and as an LDS base address. Inner loop `.LBB0_370` (parent `.LBB0_14`) overwrites it with a predicated `global_load_dwordx2 v[20:21], v[14:15], off offset:8`, and nothing resets it. This matches the rocgdb register dump (v20 nonzero in lane 0 only). With `-mllvm -disable-machine-licm` the atomic uses a different register (`global_atomic_add v1, v1, v2, s[4:5]`). It is a toolchain defect, not a port defect, and does not block review.
+
+### For jeff (decision, not a review finding)
+- The porter's open question stands: should the port carry `-mllvm -disable-machine-licm` under USE_HIP, and should the miscompile be filed upstream (deferred `therock-10-1-machinelicm-clobbers-live-vgpr`)? Until that is decided, a validator on the ROCm 10.1 toolchain must add the flag to both CMAKE_HIP_FLAGS and CMAKE_SHARED_LINKER_FLAGS (see the porter's recipe), or every basis with d shells crashes. The porter also reports the same pattern in this compiler's gfx90a output, so the wave64 revalidation needs the flag too if it uses this toolchain.
+
+### For the validator
+- The __config__.py change (shm_size minus 1 KB on ROCm) makes `shm_size < 64*1024` true on AMD. gpu4pyscf/gto/tests/test_ecp.py's five `skipIf(shm_size < 64*1024)` ECP-derivative tests (ip1/ipip, gradient-path integrals) now skip on ROCm. They were never in the HF validation set. Note the skips; they are not port failures.
+- Test set and failure classification: as in "Porter fix 2026-10-30" (gpu4pyscf/scf/tests, 122 pass / 8 skip / 36 failures, all DFT, PCM, analytic-gradient or missing-basis). Add a determinism repeat, which the porter did not run.
+
+Verdict: REVIEW PASSED.
