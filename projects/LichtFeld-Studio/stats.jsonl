@@ -280,3 +280,10 @@
 {"kind":"phase","ts":"2026-10-29T23:07:42Z","phase":"test","seconds":68.454,"exit":0,"cmd":"timeout -k 30 900 bash agent_space/lfs_run.sh ./LichtFeld-Studio --headless -d /var/lib/jenkins/fleet/jobs/rx7900-20261029-090528-lfs-sof1-fix/moat/projects/LichtFeld-Studio/src/data/bicycle --images images_4 -o /var/lib/jenkins/fleet/jobs/rx7900-20261029-090528-lfs-sof1-fix/moat/agent_space/runs/headless3000 --iter 3000 --eval --no-depth-auto-generate --no-normal-auto-generate"}
 {"kind":"session","ts":"2026-10-30T16:33:08Z","epoch":1793377988.218202459,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-10-30T16:35:57Z","epoch":1793378157.601184788,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T16:50:41Z","epoch":1793379041.181712338,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-30T17:10:37Z","phase":"compile","seconds":261.146,"exit":0,"cmd":"agent_space/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-30T17:20:07Z","phase":"compile","seconds":8.428,"exit":0,"cmd":"agent_space/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-30T17:32:20Z","phase":"compile","seconds":55.027,"exit":1,"cmd":"agent_space/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-30T17:34:03Z","phase":"compile","seconds":61.402,"exit":0,"cmd":"agent_space/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-30T17:35:34Z","phase":"compile","seconds":10.460,"exit":0,"cmd":"agent_space/lfs_full_build.sh"}
+{"kind":"session","ts":"2026-10-30T17:37:40Z","epoch":1793381860.153857917,"event":"end","platform":"linux-gfx1100"}

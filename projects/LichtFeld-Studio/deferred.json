@@ -259,7 +259,7 @@
       "refs": [
         "projects/LichtFeld-Studio/notes.md"
       ],
-      "status": "open",
+      "status": "done",
       "upstream_issue": null,
       "created_at": "2026-10-27T17:31:25Z",
       "decided": {
@@ -280,6 +280,32 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-10-28T21:19:27Z",
+      "decided": null
+    },
+    {
+      "id": "rocdecode-h264-high444-420-silent-miscode",
+      "kind": "rocm-bug-report",
+      "component": "rocdecode",
+      "summary": "rocDecode 1.10 (TheRock SDK 10.1.0), Radeon Pro W7800 gfx1100: an H.264 High 4:4:4 Predictive stream with 4:2:0 chroma (x264 lossless, profile_idc 244) passes rocDecGetDecoderCaps (the query has no profile field), parses, decodes with rocDecodeStatus_Success and no concealment, and returns wrong pixels (luma off by up to 177 against libavcodec). The VCN does not implement the profile, so rocDecode should refuse it in the sequence callback or the capability query. Reproducer: LichtFeld-Studio tests/data/video/h264_full.mp4 (256x256, 3 frames) through rocDecode's parser and decoder; HEVC and VP9 encodes of the same pattern decode bit-exact. The port refuses H.264 profiles other than Baseline/Main/High and decodes these on the CPU.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-30T17:36:17Z",
+      "decided": null
+    },
+    {
+      "id": "rocdecode-vp9-av1-signal-description-missing",
+      "kind": "rocm-bug-report",
+      "component": "rocdecode",
+      "summary": "rocDecode 1.10 (TheRock SDK 10.1.0), gfx1100: for VP9 and AV1 the parser's RocdecVideoFormat.video_signal_description reports video_full_range_flag 0 and matrix_coefficients 0 even for full-range BT.601 streams (VP9 color_range=1 with color_space BT_601; AV1 color_range=1 with mc=5), so a client that trusts it converts full-range video as limited range with an RGB matrix. H.264 and HEVC VUI values are correct. Reproducer: LichtFeld-Studio tests/data/video/vp9_full.webm and av1_full.mkv; FFmpeg's stream parameters read range JPEG and matrix BT470BG. The port takes VP9/AV1 colour metadata from FFmpeg instead (NVDEC has the same range issue, which upstream repairs).",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-30T17:36:18Z",
       "decided": null
     }
   ]

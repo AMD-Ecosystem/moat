@@ -728,3 +728,31 @@ stream may appear only in a test of that host-side check, which is then the one 
 in front of the hardware: a regression in the check costs a ring reset, so run that test
 on a GPU no other job is using. (LichtFeld-Studio; deferral `rocjpeg-no-scan-jpeg-hangs-vcn`)
 
+**NVDEC through FFmpeg becomes FFmpeg demux plus rocDecode.** FFmpeg has no rocDecode
+hwaccel, and the CUDA device context behind `*_cuvid` fails on AMD, so the code silently
+falls back to software decode. TheRock's SDK ships rocDecode's library, headers and CMake
+package but not the samples' `VideoDemuxer`/`RocVideoDecoder` helpers, so keep FFmpeg for
+demux and drive `rocDecCreateVideoParser`/`rocDecParseVideoData` yourself behind an
+`avcodec_send_packet`/`receive_frame`/`flush_buffers`-shaped class: H.264/HEVC packets
+through `h264_mp4toannexb`/`hevc_mp4toannexb`, the AV1 `av1C` config OBUs (extradata after
+4 bytes) prepended to the first packet after open or flush, a flush that destroys and
+recreates the parser (keep the decoder when the next sequence header matches), and frames
+of `AV_PKT_FLAG_DISCARD` packets (outside an MP4 edit list) dropped by pts as libavcodec
+does, or the frame count is one higher than the software decoder's. Copy each displayed
+picture (`rocDecGetVideoFrame`, offset by the display area) into an `AVBufferPool` of
+`hipMalloc`'d NV12/P010 buffers so frames stay on the GPU. Measured on gfx1100 against
+libavcodec/libdav1d: H.264 High, HEVC Main/Main 10, VP9 profiles 0/2 and AV1 8/10-bit
+bit-exact, timestamps preserved. (LichtFeld-Studio)
+
+**rocDecode's capability query is not a support check by itself.** `rocDecGetDecoderCaps`
+takes codec, chroma format and bit depth but no profile, and rocDecode 1.10 decodes an
+H.264 High 4:4:4 Predictive stream with 4:2:0 chroma (x264 lossless) with
+`rocDecodeStatus_Success` and wrong pixels. Gate the hardware path on the stream's profile
+too (H.264 Baseline/Main/High; HEVC Main/Main 10/Main Still), on the caps min/max size
+(H.264 starts at 64x64 on VCN 4, VP9/AV1 at 16x16), and decode the rest on the CPU with a
+logged reason. Also do not trust the parser's `video_signal_description` for VP9 and AV1:
+it reports limited range and matrix 0 for full-range streams; take those from FFmpeg's
+stream parameters (H.264/HEVC VUI values are right). Validate a port's decode against the
+software decoder frame by frame, not by eye. (LichtFeld-Studio; deferrals
+`rocdecode-h264-high444-420-silent-miscode`, `rocdecode-vp9-av1-signal-description-missing`)
+
