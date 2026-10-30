@@ -747,10 +747,16 @@ bit-exact, timestamps preserved. (LichtFeld-Studio)
 **rocDecode's capability query is not a support check by itself.** `rocDecGetDecoderCaps`
 takes codec, chroma format and bit depth but no profile, and rocDecode 1.10 decodes an
 H.264 High 4:4:4 Predictive stream with 4:2:0 chroma (x264 lossless) with
-`rocDecodeStatus_Success` and wrong pixels. Gate the hardware path on the stream's profile
-too (H.264 Baseline/Main/High; HEVC Main/Main 10/Main Still), on the caps min/max size
-(H.264 starts at 64x64 on VCN 4, VP9/AV1 at 16x16), and decode the rest on the CPU with a
-logged reason. Also do not trust the parser's `video_signal_description` for VP9 and AV1:
+`rocDecodeStatus_Success` and wrong pixels (its AVC picture parameters have no field for
+the SPS lossless flag `qpprime_y_zero_transform_bypass_flag`, so the engine is never told).
+Gate the hardware path on the stream's profile too (H.264 Baseline/Main/High; HEVC Main/Main
+10/Main Still) and on the caps size limits, and decode the rest on the CPU with a logged
+reason. The caps limits are coded sizes: before the minimum check, round the display size
+up to the codec's block size (16 for H.264, 8, the smallest coding block, for HEVC; VP9 and
+AV1 code the frame size itself). Comparing the display size refuses valid streams: a 60x60
+H.264 or HEVC stream is coded 64x64, inside VCN 4's 64x64 minimum, and decodes bit-exact.
+The maxima (4096, 8192, 4352) are multiples of 16, so the display size gives the same answer
+there. Also do not trust the parser's `video_signal_description` for VP9 and AV1:
 it reports limited range and matrix 0 for full-range streams; take those from FFmpeg's
 stream parameters (H.264/HEVC VUI values are right). Validate a port's decode against the
 software decoder frame by frame, not by eye. (LichtFeld-Studio; deferrals
