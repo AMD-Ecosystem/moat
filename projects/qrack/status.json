@@ -7,10 +7,9 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T05:14:47Z",
-  "updated_at": "2026-10-30T00:53:44Z",
+  "updated_at": "2026-10-30T01:09:17Z",
   "head_sha": "3bf7a75e6d48860a8fc78f55b13da5547609aa7b",
   "depends_on": [],
-  "porting": null,
   "waivers": {},
   "license_clearance": {
     "approved_by": "jeffdaily",
@@ -22,14 +21,14 @@
   "upstream_repo_id": 114947047,
   "stage": "review-passed",
   "platforms": {
-    "linux-gfx1100": {
-      "state": "completed",
+    "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "3bf7a75e6d48860a8fc78f55b13da5547609aa7b",
-      "started_at": null,
-      "completed_at": "2026-10-30T00:53:44Z",
-      "updated_at": "2026-10-30T00:53:44Z",
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-10-29T23:06:48Z",
+      "completed_at": null,
+      "updated_at": "2026-10-30T00:41:06Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -43,7 +42,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator"
+      "last_agent": "reviewer"
     },
     "windows-gfx1101": {
       "state": "completed",
@@ -78,10 +77,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "7086bdbd2608ad6e69cb2fd6c9e2aa7dcd5cf63c",
+      "validated_sha": "3bf7a75e6d48860a8fc78f55b13da5547609aa7b",
       "started_at": "2026-06-04T05:24:58Z",
-      "completed_at": "2026-06-23T22:49:59Z",
-      "updated_at": "2026-06-23T22:49:59Z",
+      "completed_at": "2026-10-30T01:09:17Z",
+      "updated_at": "2026-10-30T01:09:17Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -95,13 +94,30 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer",
-      "carry_forward": {
-        "to": "7086bdbd2608ad6e69cb2fd6c9e2aa7dcd5cf63c",
-        "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:49:59Z"
-      }
+      "last_agent": "validator"
+    },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "3bf7a75e6d48860a8fc78f55b13da5547609aa7b",
+      "started_at": null,
+      "completed_at": "2026-10-30T00:53:44Z",
+      "updated_at": "2026-10-30T00:53:44Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
     },
     "windows-gfx1201": {
       "state": "completed",
@@ -131,29 +147,6 @@
         "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
         "at": "2026-06-23T22:49:59Z"
       }
-    },
-    "linux-gfx942": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "failed_sha": null,
-      "started_at": "2026-10-29T23:06:48Z",
-      "completed_at": null,
-      "updated_at": "2026-10-30T00:41:06Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "reviewer"
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/qrack/pull/1",

@@ -637,6 +637,9 @@ Verdict: review-passed. No new findings.
 Requested by jeff after the 2026-10-30 review pass. Full real-GPU revalidation, no carry-forward: `moatlib.py classify qrack 7086bdbd 3bf7a75e` -> class=mixed (the upstream merge touches ~40 source files).
 Platform: AMD Radeon Pro W7800 48GB, gfx1100 (RDNA3, wave32), HIP_VISIBLE_DEVICES=0. TheRock ROCm SDK 10.1.0 pip wheels (AMD clang 24.0.0git), CMake from /opt/python-3.11-venv, Ninja.
 Fork: AMD-Ecosystem/qrack moat-port @ 3bf7a75e6d48860a8fc78f55b13da5547609aa7b (fresh clone, detached at head_sha).
+## Validation 2026-10-30 (linux-gfx90a, revalidate at 3bf7a75e -- full GPU run)
+Requested by jeff after the upstream merge and the 2026-10-29/30 fix rounds. Full real-GPU run, no carry-forward (delta 7086bdbd..3bf7a75e includes the upstream merge and the SetAmplitudePage source fix).
+Platform: MI250X gfx90a (wave64), "CUDA device #0: AMD Instinct MI250X / MI250", HIP_VISIBLE_DEVICES=0 (pinned by the dispatcher). TheRock ROCm SDK 10.1.0 pip wheels, CMake 3.31.6, Ninja. Fork clone at 3bf7a75e (= moat-port tip), tree clean (`git status --porcelain` empty apart from untracked _build).
 
 ### Build
 ```
@@ -675,3 +678,29 @@ Spot checks: test_ucmtrx (deferred-free fix) 0.015s qengine / 0.014s qpager, pas
 - Integrity: `git -C projects/qrack/src status --porcelain` empty (only untracked _build/ output).
 
 Result: linux-gfx1100 revalidate -> completed at 3bf7a75e.
+cmake -S projects/qrack/src -B projects/qrack/src/_build -G Ninja -DENABLE_CUDA=ON -DENABLE_OPENCL=OFF \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH=$R -DENABLE_TESTS=ON
+cmake --build projects/qrack/src/_build -j64 --target unittest
+export LD_LIBRARY_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_core/lib
+```
+Configure: "OpenCL Support is: OFF", "CUDA Support is: ON", "HIP (ROCm) backend is: ON". Build exit 0, 0 warnings, every HIP compile carries --offload-arch=gfx90a.
+
+### Tests (`ulimit -c 0; ./_build/unittest --proc-<p> --layer-<l> -d yes`, absolute binary path under utils/timeit.sh)
+- cuda/qengine: All tests passed, 9612 assertions in 213 test cases (47s)
+- cuda/qpager: All tests passed, 9609 / 213 (47s)
+- cuda/qunit: All tests passed, 9613 / 213
+- cuda/qunit-qpager: All tests passed, 9613 / 213
+- cuda/qunit-multi: All tests passed, 9610 / 213
+- cuda/qunit-multi-qpager: runs 0 tests (layer not wired in test_main.cpp, as on gfx942)
+- cuda/qtensornetwork: 209 passed, 4 failed (test_mulmodnout, test_imulmodnout, test_cmulmodnout, test_cimulmodnout; "QInterface::{MUL,IMUL,CMUL}ModNOut not implemented!"). cpu/qtensornetwork: same 209 passed / 4 failed, so engine-independent, not a HIP issue.
+- hybrid/qunit: All tests passed, 9613 / 213. hybrid/qengine runs 0 tests (not wired).
+- CPU regression: cpu/qengine 9612/213 passed (105s), cpu/qpager 9609/213 passed (122s). Same counts as gfx942.
+- Repeats: `--proc-cuda --layer-qengine test_ucmtrx` 12/12 rc=0 (deferred-free fix); `--proc-cuda --layer-qpager test_cswap` 20/20 rc=0 (SetAmplitudePage fix 42bdc3d6, now also confirmed on gfx90a).
+
+### Pre-completion checks
+- `python3 utils/jargon.py --port qrack`: clean.
+- Documentation: README.md "Optional HIP (AMD ROCm) instead of OpenCL" section documents the HIP build next to the CUDA one, with -DENABLE_OPENCL=OFF required.
+- cuda-not-validated: no CUDA toolkit on this host (no /opt/conda, no nvcc), and the fleet guard refuses installing pip nvcc wheels on this shared host. The CUDA compile gate has not been recorded at any head of this port; it still needs a host with the toolkit (12.8, -DCMAKE_CUDA_ARCHITECTURES=80). 42bdc3d6 changes the shared CUDA path, so this gap matters for jeff's decision on it.
+
+Status: linux-gfx90a revalidate -> completed at 3bf7a75e.
