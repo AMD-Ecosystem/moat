@@ -7,9 +7,12 @@
   "priority": 4.22,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-10-29T23:49:52Z",
+  "updated_at": "2026-10-30T00:00:17Z",
   "head_sha": "27a44c8e56e03fb72c32f14a4d536a6b54bdecad",
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx942",
+    "since": "2026-10-30T00:00:17Z"
+  },
   "waivers": {},
   "license_clearance": {
     "approved_by": "jeffdaily",
@@ -19,7 +22,7 @@
   },
   "license_spdx": "AGPL-3.0",
   "upstream_repo_id": 152045184,
-  "stage": "changes-requested",
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -173,7 +176,7 @@
       "failed_sha": null,
       "started_at": "2026-10-29T23:06:41Z",
       "completed_at": null,
-      "updated_at": "2026-10-29T23:49:52Z",
+      "updated_at": "2026-10-30T00:00:17Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
