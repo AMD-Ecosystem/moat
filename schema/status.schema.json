@@ -456,6 +456,39 @@
         }
       }
     },
+    "base_branch_ruling": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "branch",
+        "by",
+        "at"
+      ],
+      "properties": {
+        "branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "previous": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "at": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
     "review_pr": {
       "type": "string"
     },
