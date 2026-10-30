@@ -548,3 +548,22 @@ cuda-not-validated on this host: no CUDA toolkit is installed (no conda, no nvcc
 
 ### Pre-completion checks
 `python3 utils/jargon.py --port gpuRIR`: clean (master 06da27d .. moat-port 39a7a9d). README documents the ROCm build next to the CUDA one (`CMAKE_ARGS="-DUSE_HIP=ON ..."`). Fork tree clean.
+
+## CUDA gate 2026-10-30 (V100, CUDA 12.9)
+
+CUDA no-regression gate at head 39a7a9d93592 (fork `moat-port`), run on an NVIDIA Tesla V100-SXM2-32GB (driver 575.57.08), nvcc 12.9.86, gcc 13.2, CMake 3.31, Python 3.12, fresh clones. Upstream base for comparison: 06da27dd26 (fork `master`, the merge base). All runs under `ulimit -c 0`.
+
+Build (identical for port and base):
+```
+cmake -S src -B src/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DPYTHON_EXECUTABLE=$(which python)
+cmake --build src/build -j 12 -v
+```
+**PASS** at both shas. The arch is not a `-D` knob here: upstream's CMakeLists sets `CUDA_ARCHITECTURES all-major` on `gpuRIRcu`, so nvcc ran with `-arch=all-major`; `cuobjdump --list-elf libgpuRIRcu.a` shows one cubin each for sm_50, sm_60, sm_70, sm_80, sm_90, sm_100, sm_120 (sm_70 and sm_80 both present, no throwaway patch needed). 2 warnings at both shas, both pre-existing upstream (nvcc's pre-sm_75 deprecation notice and `cudaMemcpyToArray` deprecated at gpuRIR_cuda.cu:626).
+
+Runtime on the V100 (extra evidence; not the AMD gate). Upstream has no test suite, so a check script ran against both builds (`PYTHONPATH=src/build:src python gpurir_check.py out.npz`):
+- Shoebox 4x5x3, T60 0.6, Tmax 0.3, 16 kHz, src (1,1,1.5) -> rcv (3,4,1.5): first arrival at sample 168 (expected 168) for all four LUT x mixed-precision combinations; all finite.
+- LUT vs exact max err / peak 1.667e-3; mixed precision (half2 path is live on sm_70) vs float 7.086e-4; diffuse tail (cuRAND, Tdiff 0.1) finite and non-zero; simulateTrajectory (cuFFT) vs np.convolve rel err 3.84e-7.
+- 8/8 PASS on the port and 8/8 on the base. Every saved output (4 RIR variants, Tdiff shape, convolution) is **bit-identical port vs base**.
+- Upstream examples on the port build with a no-op matplotlib stub and a synthetic 2 s 16 kHz source_signal.wav: example.py, simulate_trajectory.py, time_vs_T60.py, time_vs_nbRIRs.py exit 0 (4/4); polar_plots.py not run (needs plotly, not installed).
+
+Result: CUDA gate **PASS** at 39a7a9d. The port's CUDA build is a passthrough and produces bit-identical results to upstream on NVIDIA hardware.
