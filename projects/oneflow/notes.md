@@ -1241,3 +1241,63 @@ Wall 1815 s (shared with the CUDA build's CPU load).
 - `git -C projects/oneflow/src status --porcelain`: empty after commit.
 - Not run this round: the full modules/tensor suites and the width sweep (the C++ change touches only reduce_sum_like scratch sizing; the revalidation at 7919c4f38 owes them on both wave64 and wave32).
 - Lesson promoted: `cuda-to-rocm/references/validation.md` gains the no-conda CUDA toolkit recipe (redist archives, the wheel lacks nvcc) under the nvcc gate.
+
+## Porter round 2026-10-30 (linux-gfx90a, MI250X; jeff: port every deferred TU, a full and complete port)
+
+jeff asked for this round: port all 17 deferred translation units (and the five cuDNN host TUs and the nvJPEG path), each NVIDIA-only library to its ROCm equivalent, CUDA paths behaviour-identical, one commit per family, no amend or force push. Stage path: the project was `ported`, which has no edge to `porting`, so the lock was taken through `ported -> reviewing -> changes-requested -> porting`; the "changes requested" is jeff's directive above, not a reviewer verdict. Host: two MI250X GCDs pinned by the dispatcher (HIP_VISIBLE_DEVICES=1,2), ROCm 10.1.0 SDK wheels (MIOpen 3.6.1, hipBLASLt 1.4.1, hipSOLVER, rocJPEG, RPP 3.2), job venv, `ulimit -c 0`.
+
+### Design: shim headers over the ROCm libraries
+The port already shadowed CUDA toolkit headers on the HIP include path only (`oneflow/core/device/hip_compat/`). This round adds two real shims there, so the kernels that call cuDNN and cuBLASLt stay byte-identical to upstream:
+- `hip_compat/cudnn.h`: the cuDNN subset oneflow calls, on MIOpen. Filter and convolution descriptors are small structs (MIOpen has no filter descriptor, and no compute/math type on a convolution descriptor). MIOpen convolution, pooling and batch norm ignore beta, so a nonzero beta (oneflow's `_add_to_output`) runs into a stream-ordered scratch buffer plus `miopenOpTensor`. The heuristic query (`cudnnGet*Algorithm_v7`, data-free on cuDNN) runs MIOpen Find on scratch buffers, never on the caller's tensors (Find writes its output). Max-pool backward reruns the forward into scratch to get MIOpen's index workspace. `CUDNN_VERSION` reads 8100 (bf16 available); the five `CUDNN_VERSION >= 7401` Ex batch-norm gates gain `&& !defined(USE_HIP)`, so normalization_add_relu takes upstream's own non-Ex path and the cudnn_fused pass stays off. Unscoped `BILINEAR` collides between miopen.h and rpp.h, so rpp.h lives in its own TU (below).
+- `hip_compat/cublasLt.h`: the cuBLASLt subset on hipBLASLt. The descriptor and the matrix layout are wrapper structs (hipBLASLt fixes the compute type at creation, and `hipblasLtMatrixLayoutGetAttribute(TYPE)` is unsupported). Measured on gfx90a with hipBLASLt 1.4.1 (`agent_space/probe/lt_probe.cpp`): DEFAULT/BIAS/RELU/RELU_BIAS have kernels for f32/f16/bf16, f64 only DEFAULT; RELU_AUX_BIAS, DRELU(_BGRAD), BGRADA/B only for f16. cuBLASLt's ReLU aux output is a 1-bit mask (leading dimension a multiple of 128) that oneflow sizes and that oneflow's own dropout kernel writes; hipBLASLt's aux is the pre-activation matrix, so the mask epilogues always run as a hipBLASLt GEMM plus a named fallback kernel in the shim that reads/writes the bit mask; BIAS/RELU on f64 and BGRAD where hipBLASLt has none use the same fallback. COMPUTE_16F (rejected by hipBLASLt) runs with 32F compute and float scalars.
+- hipBLAS `GemmEx`/`GemmBatchedEx`/`GemmStridedBatchedEx` gained the data-type-as-compute-type C++ overloads cuBLAS keeps (`hip_compat/cublas_v2.h`).
+- The compat header's handle-alias block (it pulled hipblaslt.h, hipsolver.h and miopen.h into every TU) is gone: `cuda_util.h` already includes the shims before `cuda_stream.h`, and each shim now declares its handle type.
+
+### Families (fork commits, in order)
+Fork `moat-port` 7919c4f38 -> 197416f07 (eleven commits, fast-forward push, no amend or force). Test evidence below is from the build of this tree before the final clang-format pass and README commit (whitespace and documentation only).
+
+| commit | family | TUs back in the HIP build | GPU evidence (gfx90a, one GCD) |
+|---|---|---|---|
+| 708beae73 | LRU cache: upstream `WarpMutexAtomicImpl`, 64 ways per set on wave64; `NewLruCache` unguarded | lru_cache.cu | upstream `cache_test.cpp` FullCache + LruCache pass (out-of-tree harness, `agent_space/lru/`); stress below |
+| 851f590d7 | cuSOLVER -> hipSOLVER (getrf via the Dn compat API) | lu_decomposition_kernel.cu | test_det.py pass |
+| 5c72bd08f | hipBLAS data-type-as-compute-type overloads (GemmEx, GemmBatchedEx, GemmStridedBatchedEx) | fused_self_attention_query_mul_key_and_value_kernel.cu | test_fused_self_attention.py pass |
+| 7648add58 | cuDNN -> MIOpen (`hip_compat/cudnn.h`); non-Ex BN path; wave64 ReLU-mask ballot fix | normalization_kernel.cu, cudnn_util.cpp, cudnn_conv_util.cpp, conv_cudnn_kernels.cpp, deconv_cudnn_kernel.cpp, tf_pool_gpu_kernel.cpp | conv1d 2 pass, conv2d 17 pass, deconv2d 1 pass (remaining failures are the pre-existing "autotest stuck in an endless loop" cases, same counts as every earlier run: 2/4/3); batchnorm, batchnorm_add_relu (failed before the ballot fix: addend grad off by exactly 1), instancenorm pass; channels-last max pool f32/f16 fwd+bwd exact vs torch |
+| 99f794ca6 | grid_sample: cuDNN spatial transformer compiled out, native kernels everywhere | grid_sample_kernel_util.cu | test_grid_sample.py pass |
+| 36ea8769a | cuBLASLt -> hipBLASLt (`hip_compat/cublasLt.h`), mask epilogues as GEMM + fallback kernel; relu-dropout ballot fix | cublas_fused_mlp_kernel.cu, cublas_fused_mlp_grad_kernel.cu, cublas_bias_add_relu_matmul_grad_kernel.cu, cublas_fused_matmul_bias_add_grad.cu, fused_matmul_bias_kernel.cu, fused_matmul_bias_add_relu_dropout.cu, grouped_matmul_bias.cu, fused_glu_kernel.cu | fused_matmul_bias, grouped_matmul_bias pass (fused_glu: 1 upstream skip); cublas_fused_mlp and fused_matmul_bias_add_relu_dropout: tolerance item below |
+| 0e19251a2 | dot feature interaction: upstream's batched-GEMM path (wmma compiled out) | fused_dot_feature_interaction_kernel.cu | test_fused_dot_feature_interaction.py 2 pass |
+| 14a985199 | rotary embedding + KV concat built without CUTLASS (MHA inference stays CUTLASS-only) | fused_attention_kernels.cu | test_fused_rotary_embedding 3 pass, test_fused_attention_ops 1 pass + 5 upstream skips |
+| ef80d669f | P2P shuffle: `hipPointerGetAttribute`, system-scope barrier atomics | one_embedding_embedding_shuffle_p2p_kernel.cu, ..._gradient_shuffle_p2p_kernel.cu | built (HIP and CUDA); multi-GPU validation owed, see below |
+| cba55c8d0 | nvJPEG/NPP -> rocJPEG/RPP (`image_resize_rpp.{h,cpp}`), CPU decoder only for streams VCN rejects | image_decoder_random_crop_resize_kernel.cpp (GPU kernel registered again) | `agent_space/jpeg/check_decoder.py`: 8 JPEGs 256->128 via OFRecordImageGpuDecoderRandomCropResize in nn.Graph vs OpenCV: mean abs 0.5, max 5; progressive JPEG takes the CPU fallback (exact) |
+| 197416f07 | README ROCm note | - | - |
+
+Nothing is left in the HIP exclusion list except the three non-self-contained `.cuh` standalone compiles (their code builds inside the `.cu` that include them).
+
+### LRU stress (`agent_space/lru/lru_stress.cpp`, unique keys per batch, every hit/evicted value checked, Dump checked for unique residents)
+| capacity (sets x 64 ways) | keys per put | put ms/iter | get ms/iter |
+|---|---|---|---|
+| 64 (1 set) | 2^18 | 3665 | 0.20 |
+| 128 (2 sets) | 2^20 | 7518 | 0.64 |
+| 256 (4 sets) | 2^18 | 910 | 0.20 |
+| 4096 (64 sets) | 2^20 | 238 | 0.64 |
+All pass, 20 rounds each; no starvation or hang even with 2^18 inserts serialized through one set lock. Upstream's LRU assumes unique keys within one Put batch (Evict does not re-check for a hit); a first stress with duplicate keys produced duplicate residents, which is upstream behaviour on any GPU, not a port fault.
+
+### CUDA compile gate (nvcc 12.8, sm_80): PASS for every changed TU
+Toolkit copied (read-only source) from the earlier oneflow-flaky job's sha256-verified redist assembly into `$FLEET_VENV/cuda-12.8`, cuDNN 8.9.7 and NCCL 2.32.3 wheel contents into the job venv; scratch worktree `agent_space/oneflow-cuda` with the port tree applied. Scratch-only (never pushed): the dead flash-attention mirror URL is dropped from `cmake/third_party.cmake`; with `WITH_CUTLASS=OFF` no TU includes flash-attention. `agent_space/build_cuda.sh config`, `prepare_oneflow_third_party`, then all 25 `.cu`/`.cpp` TUs changed by the port branch vs master 25c8978 (`agent_space/cuda_objs2.txt`, including both oneflow_internal TUs): 0 failed. The cudnn.h/cublasLt.h shims are on the HIP include path only and never reach nvcc.
+
+### Open items
+- **Multi-GPU (owed).** Two GCDs were pinned (HIP_VISIBLE_DEVICES=1,2) and a two-rank RCCL allreduce works, but `python3 -m oneflow.distributed.launch --nproc_per_node 2 -m pytest test/expensive/test_id_shuffle_global.py` stops in `test_embedding_gradient_shuffle` with a GPU memory fault (HSA exception in a 512-thread kernel, grid 851968) with or without `ONEFLOW_ONE_EMBEDDING_*_USE_P2P=1`, so it is in the existing non-P2P one_embedding shuffle path that no earlier run exercised (multi-device suites were never run). The P2P kernels are therefore built but not GPU-validated. HIP IPC was checked separately (`agent_space/probe/ipc_probe.cpp`): an interior-pointer handle opens at the allocation base, as on CUDA, so oneflow's offset arithmetic holds.
+- **float64 TF pooling (`tf_max_pool_2d` channels-last, test_maxpool_channel_last).** MIOpen pooling has no double (it also reads alpha/beta as float); float32/float16 work. Needs a non-MIOpen path for double.
+- **Test tolerance, not a fault:** test_cublas_fused_mlp (24 of 576 configs, x grad) and test_fused_matmul_bias_add_relu_dropout (26 of 108, output) fail the elementwise 1e-4 comparison in float32 only. Against a float64 reference the fused and unfused results carry the same error (for example x grad 2.2e-3 vs 1.8e-3 on |dx| up to 4224; output 2.2e-2 vs 2.4e-2 on |y| up to 4.3e4); they differ only because hipBLASLt and rocBLAS sum in different orders (on CUDA both paths go through the same cuBLAS kernels). A ROCm-gated tolerance would need a ROCm build flag in the test framework, which oneflow does not expose.
+- fused_multi_head_attention_inference stays CUTLASS-only, as in a CUDA build without CUTLASS.
+- Dot feature interaction uses the batched-GEMM path; a rocWMMA version of the tensor-core kernels would need the 32-lane warp layout reworked for wave64.
+- The shim's per-handle Find record is keyed by handle address; oneflow never destroys stream or pooled cuDNN handles before exit.
+- Lesson promoted: `cuda-to-rocm/references/fault-classes.md` (MIOpen Find is per handle; hipBLASLt epilogue availability and aux format; rpp.h/miopen.h BILINEAR) plus one SKILL.md index line.
+
+### Wave64 faults found and fixed this round
+- lru_cache.cu: one set = one warp of ways. The previous (never-built) adaptation kept 32 ways on a 64-lane wavefront, which puts two logical warps in one wavefront sharing ballots and shuffles, and two lane-0 spinners in one wavefront deadlock when they want the same set. `kWarpSize = kCudaWarpSize` (64 ways per set on CDNA, 32 on CUDA/RDNA) with upstream's `WarpMutexAtomicImpl`.
+- normalization_kernel.cu `ReluGpu`/`AddReluGpu` and fused_matmul_bias_add_relu_dropout.cu `FusedWarpReluDropoutKernel`: a 32-bit store of a 64-bit ballot; lanes 32-63 published lanes 0-31's bits (test_bn_add_relu2d: addend grad off by exactly 1). Each 32-lane half now keeps its own half of the ballot.
+- P2P BarrierKernel: flags spun on with volatile loads across the xGMI fabric; on HIP they are system-scope atomic store/load (release/acquire write back and invalidate L2).
+
+### Upstream-only behaviour kept
+- The upstream LRU cache assumes keys within one Put batch are unique (Evict does not re-check for a hit; oneflow always uniques ids first). A stress with duplicate keys in a batch produced duplicate residents, the same on any GPU; the stress harness uses unique keys per batch.
+- fused_multi_head_attention_inference has no kernel without CUTLASS, on CUDA as on ROCm.
