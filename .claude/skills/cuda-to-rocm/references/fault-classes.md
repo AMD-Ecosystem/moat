@@ -414,7 +414,17 @@ takes its fallback.** Audit them: some fallbacks change behaviour, not just spee
 caller then bails out without ending the capture, every later allocation in the process
 fails the same way and a whole test binary goes red behind one root cause. Extend the guard
 (`|| defined(USE_HIP)`) where the HIP API exists, rather than defining `CUDART_VERSION`
-globally, which flips untested pool paths at once. (LichtFeld-Studio)
+globally, which flips untested pool paths at once. A pool whose fallback frees with
+`hipFree` also synchronizes the device on every free, so a free while another stream waits on
+a host callback blocks forever (a gated-producer test deadlocks; the async free returns at
+once). To prove the CUDA view unchanged, note that `unifdef -UUSE_HIP` leaves
+`#if X || defined(USE_HIP)` as written (it does not reduce `X || 0`); compare with
+`-UUSE_HIP -DCUDART_VERSION=<N>` on both the upstream and the port file, for an N on each
+side of every guard. Once the HIP default pool is in use, do not count on
+`hipMemPoolAttrReleaseThreshold`: on ROCm 10.1 (Linux) freed blocks are released at the next
+synchronize whatever the threshold, except one 128 MiB chunk when the threshold is at least
+that size, so a 64 MiB threshold keeps nothing (deferral
+`hip-mempool-release-threshold-ignored`). (LichtFeld-Studio)
 
 **The vcpkg toolchain already overrides `add_library`/`add_executable`.** A second
 top-scope override (the MPPI retag trick) makes `_add_library` point at vcpkg's override,

@@ -300,3 +300,23 @@
 {"kind":"session","ts":"2026-10-30T18:06:25Z","epoch":1793383585.275230527,"event":"end","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-10-30T19:03:21Z","epoch":1793387001.611409231,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-10-30T19:07:22Z","epoch":1793387242.593192014,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T19:11:50Z","epoch":1793387510.408506472,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-30T19:20:13Z","phase":"compile","seconds":257.678,"exit":1,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-120910-lfs-mempool-winvideo/moat/agent_space/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-30T19:22:22Z","phase":"test","seconds":0.061,"exit":0,"cmd":"bash agent_space/smoke.sh base1"}
+{"kind":"phase","ts":"2026-10-30T19:22:22Z","phase":"test","seconds":0.059,"exit":0,"cmd":"bash agent_space/smoke.sh base2"}
+{"kind":"phase","ts":"2026-10-30T19:23:41Z","phase":"test","seconds":67.462,"exit":0,"cmd":"bash agent_space/smoke.sh base1"}
+{"kind":"phase","ts":"2026-10-30T19:24:50Z","phase":"test","seconds":68.487,"exit":0,"cmd":"bash agent_space/smoke.sh base2"}
+{"kind":"phase","ts":"2026-10-30T19:26:37Z","phase":"test","seconds":68.897,"exit":0,"cmd":"bash agent_space/smoke.sh base1"}
+{"kind":"phase","ts":"2026-10-30T19:27:47Z","phase":"test","seconds":69.891,"exit":0,"cmd":"bash agent_space/smoke.sh base2"}
+{"kind":"phase","ts":"2026-10-30T19:35:37Z","phase":"compile","seconds":260.248,"exit":0,"cmd":"bash agent_space/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-30T19:38:21Z","phase":"test","seconds":67.020,"exit":0,"cmd":"bash agent_space/smoke.sh pool1"}
+{"kind":"phase","ts":"2026-10-30T19:39:29Z","phase":"test","seconds":67.803,"exit":0,"cmd":"bash agent_space/smoke.sh pool2"}
+{"kind":"phase","ts":"2026-10-30T19:41:03Z","phase":"compile","seconds":0.054,"exit":1,"cmd":"cmake --build build-compute -j 24"}
+{"kind":"phase","ts":"2026-10-30T19:45:22Z","phase":"compile","seconds":239.955,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/rx7900-20261030-120910-lfs-mempool-winvideo/build-compute -j 24"}
+{"kind":"phase","ts":"2026-10-30T19:46:21Z","phase":"test","seconds":40.577,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/rx7900-20261030-120910-lfs-mempool-winvideo/moat/projects/LichtFeld-Studio/src && timeout -k 30 1800 /var/lib/jenkins/fleet/jobs/rx7900-20261030-120910-lfs-mempool-winvideo/build-compute/cmake/hip_tests/lfs_compute_tests > /var/lib/jenkins/fleet/jobs/rx7900-20261030-120910-lfs-mempool-winvideo/moat/agent_space/runs/compute/full.log 2>&1"}
+{"kind":"phase","ts":"2026-10-30T19:47:35Z","phase":"compile","seconds":48.230,"exit":0,"cmd":"bash agent_space/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-30T19:53:32Z","phase":"compile","seconds":260.867,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-120910-lfs-mempool-winvideo/moat/agent_space/lfs_build_wintest.sh"}
+{"kind":"phase","ts":"2026-10-30T19:55:54Z","phase":"compile","seconds":18.198,"exit":0,"cmd":"bash agent_space/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-30T20:23:02Z","phase":"test","seconds":1562.966,"exit":0,"cmd":"bash agent_space/suite_runner.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-120910-lfs-mempool-winvideo/moat/agent_space/runs/full"}
+{"kind":"phase","ts":"2026-10-30T20:25:41Z","phase":"test","seconds":67.335,"exit":0,"cmd":"bash agent_space/smoke.sh head"}
+{"kind":"session","ts":"2026-10-30T20:28:55Z","epoch":1793392135.016165224,"event":"end","platform":"linux-gfx1100"}

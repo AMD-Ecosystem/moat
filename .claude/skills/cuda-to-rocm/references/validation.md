@@ -154,6 +154,14 @@ installed in that machine, so a pinned `HIP_VISIBLE_DEVICES=1` copied from older
 notes silently selects a different card, or none. Read the device list at the time
 you use it (`rocminfo`, `hipInfo`).
 
+`amd-smi` numbers GPUs in its own order, which need not be HIP's. On a four-W7800 host
+`HIP_VISIBLE_DEVICES=2` was amd-smi's GPU 0, the card another job was using, while amd-smi
+GPU 2 was HIP device 0. To pick an idle card, match by PCI address: print
+`hipDeviceGetPCIBusId` for each `HIP_VISIBLE_DEVICES=<i>`, compare with `amd-smi list`
+(BDF) and `amd-smi process`, and read that card's `/sys/class/drm/card*/device/`
+`gpu_busy_percent` / `mem_info_vram_used` (the sysfs card number is a third ordering).
+(LichtFeld-Studio)
+
 ## RCCL collectives need the whole multi-GPU host at once
 
 NCCL->RCCL is a mechanical swap (RCCL is API-compatible and ships in ROCm), but
