@@ -361,3 +361,32 @@ A HIP port of gpuRIR through a force-included compatibility header, with hipFFT/
 - GPU spot check at 27a44c8, gfx942 (build: `cmake -S projects/gpuRIR/src -B agent_space/gpurir/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R`, R=`rocm-sdk path --root`). Direct-path RIR, LUT vs exact sinc, max error relative to peak: 8000 Hz 1.59e-3, 11025 Hz 1.29e-3, 16000 Hz 1.38e-4, 44100 Hz 6.85e-4, 48000 Hz 3.91e-4. All finite.
 - Lesson in `cuda-to-rocm/references/fault-classes.md` (Textures): accurate against `amd_device_functions.h` (`__gfx94plus_clr__` -> `__HIP_NO_IMAGE_SUPPORT`) and against the code.
 - Commit hygiene: all titles `[ROCm]`, <= 66 chars, no Co-Authored-By/noreply, AI disclosure and Test Plan present, ASCII only.
+
+## Porter round 2026-10-30 (linux-gfx942): Review 2026-10-29 addressed
+
+Review PR #1 on the fork has no line threads or review body; the only finding is the one in "Review 2026-10-29" above.
+
+### Finding 1 (image_sample_lut CUDA line not upstream's): fact-checked, fixed in af05f1d
+- Verified: `git show upstream/master:src/gpuRIR_cuda.cu` line 238 is the single ternary `return (abs(t_tau)<Tw_2)? amp * tex1D<float>(sinc_lut, __fmaf_rz(t_tau,lut_oversamp,lut_center)) : 0.0f;`, and the port replaced it for both backends with an early `>=` return. For NaN `t_tau` both comparisons are false, so the port fell through.
+- Verified on GPU that the NaN case is real on HIP, not just theoretical: at 27a44c8 (rebuilt in a detached worktree) a NaN receiver x gives an all-NaN RIR on the LUT path (800/800 samples NaN); the exact-sinc path returned zeros. (`(int)floorf(NaN)` is UB in C++; on AMDGPU the conversion evidently lands in range, and the NaN amp propagates.)
+- Fix: the `#else` (CUDA) branch is upstream's line verbatim; the HIP branch has its own `if (!(abs(t_tau) < Tw_2)) return 0.0f;` ahead of the coordinate and lerp. `git diff upstream/master -- src/gpuRIR_cuda.cu` now shows the upstream return line as unchanged context. The `sinc_lut_t` signature typedef stays (it is `cudaTextureObject_t` on CUDA, so the CUDA function is unchanged in type).
+
+### Build at af05f1d (gfx942, TheRock ROCm 10.1.0)
+```
+R=$(rocm-sdk path --root)
+cmake -S projects/gpuRIR/src -B agent_space/gpurir/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DPYTHON_EXECUTABLE=$(which python3) -DCMAKE_BUILD_TYPE=Release
+cmake --build agent_space/gpurir/build -j16
+```
+OK, 333600-byte .so, `T PyInit_gpuRIR_bind`. Only warning is the pre-existing upstream nodiscard on `cudaGetDeviceProperties` (line 1069). Compile-only with `-DCMAKE_HIP_ARCHITECTURES="gfx90a;gfx942;gfx1100;gfx1101;gfx1151;gfx1201"`: 0 errors, six code objects in the .so.
+
+### Tests (HIP_VISIBLE_DEVICES=0, `ulimit -c 0`)
+Runtime env as in the 2026-10-29 sync round (`LD_LIBRARY_PATH=$SP/_rocm_sdk_libraries/lib:$SP/_rocm_sdk_core/lib`, `PYTHONPATH=<build>:projects/gpuRIR/src`).
+- `python3 agent_space/gpurir/validate.py` (harness rewritten again; agent_space was fresh): **16/16 PASS**.
+  - Direct path (nb_img [1,1,1]) vs float64 reference, exact and LUT, fs 8k/16k/44.1k/48k: max err/peak 4.6e-8 .. 1.54e-7 (reference LUT-vs-exact gap 1.38e-4, so discriminating). Harness gotcha: the reference must compute `dist` and `tau = dist/c*Fs` in float32 as the kernel does; a float64 tau gives ~3e-5 error at 44.1/48 kHz on BOTH paths (tau ~460 samples, float32 ulp).
+  - Shoebox 4x5x3, src (1,1,1.5) -> rcv (3,4,1.5), fs 16k: first arrival 168 (expected 168) LUT and exact; silent before `tau - Tw/2`. (Silence must be checked before the direct path's Hann half-window, not just a few samples before tau.)
+  - Diffuse tail (hipRAND) finite/non-zero; simulateTrajectory (hipFFT) shape (14399,1), static trajectory vs np.convolve rel err 2.64e-7.
+  - NaN receiver position: all-zero RIR on LUT and exact paths (LUT path was all-NaN at 27a44c8: 15/16 there).
+- Upstream examples (scratch copy, synthetic 2 s 16 kHz `source_signal.wav`, no-op matplotlib/plotly stub since neither is installed): example.py, simulate_trajectory.py, polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py: **5/5 exit 0**.
+
+Commit af05f1d: `[ROCm]` title 57 chars, AI disclosure, Test Plan, no trailer; `jargon.py --port gpuRIR` clean, `prose.py` clean. Pushed plain to `moat-port` (27a44c8..af05f1d; no upstream PR open).
