@@ -1301,3 +1301,21 @@ Toolkit copied (read-only source) from the earlier oneflow-flaky job's sha256-ve
 ### Upstream-only behaviour kept
 - The upstream LRU cache assumes keys within one Put batch are unique (Evict does not re-check for a hit; oneflow always uniques ids first). A stress with duplicate keys in a batch produced duplicate residents, the same on any GPU; the stress harness uses unique keys per batch.
 - fused_multi_head_attention_inference has no kernel without CUTLASS, on CUDA as on ROCm.
+
+### Full test/modules suite at the ported tree (gfx90a, one GCD, `ulimit -c 0`, `agent_space/suite.sh`: one pytest per file, 8 at a time, `--timeout=900`, junit per file; `utils/timeit.sh oneflow test`, 18 min)
+```
+cd python/oneflow/test/modules
+ls test_*.py | xargs -P 8 -I{} sh -c "timeout -k 30 1800 python3 -m pytest -p no:warnings -p no:randomly -p no:cacheprovider --capture=sys --timeout=900 -rfE -q --junitxml=$OUT/\$(basename {} .py).xml {}"
+```
+| suite | passed | failed | errors | skipped | aborted files | fde793b9f (gfx90a validator) |
+|---|---|---|---|---|---|---|
+| modules (541 files) | 1577 | 54 | 5 | 314 | 3 | 1527/96/5/313, 4 aborted |
+
+Deferred-kernel not-found records: **0** (49 at fde793b9f). Every remaining record is in a class already recorded as not a port fault, except the two items under Open items:
+- 14 "autotest stuck in an endless loop" (avgpool 4, global_avgpool 1, conv1d 2, conv2d 4, deconv2d 3), unchanged; conv/deconv now run on MIOpen and their other cases pass, so these are the torch-2.16 argument rejections, not missing kernels.
+- numpy `__bool__` interop 12; `KeyError: 'ONEFLOW_CI'` 5 (fft); `oneflow.char != oneflow.int8` 6; ZeroTensor-to-numpy 4 and PyTorchDoesNotSupportError 3 plus kl_div grad_grad 1 (torch drift; test_higher_derivative_loss now completes instead of aborting); 5 collection errors (torchvision/flowvision-era imports); `/dataset` files 4 (image_batch_align, image_flip, image_normalize via `NoneType.astype`, plus mscoco); `collections.Iterable`; replication_pad `padding must be int`; codegeex float view; functional docstr.
+- test_cublas_fused_mlp and test_fused_matmul_bias_add_relu_dropout: the float32 tolerance item (same error vs float64 for fused and unfused paths).
+- Aborted: test_dataset (`/dataset` missing), test_loss (torch BCE oracle device assert), test_maxpool (float64 channels-last `tf_max_pool_2d`: MIOpen pooling has no double; previously this file aborted on the deferred kernel). test_global_maxpool `test_maxpool2d_channel_last` fails the same case.
+- Not run this round: tensor/graph/misc dirs and multi-device suites (see the multi-GPU open item).
+
+`git -C projects/oneflow/src status --porcelain`: empty. `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038's message (the PR-prep squash item); none in the eleven new commits. `utils/prose.py`: clean on all eleven messages.
