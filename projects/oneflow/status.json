@@ -7,7 +7,7 @@
   "priority": 6.236,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-10-30T05:27:21Z",
+  "updated_at": "2026-10-30T05:33:15Z",
   "head_sha": "fd94e199a27d6b5d0a207be0d13b6290c60605c1",
   "waivers": {
     "windows": {
@@ -19,7 +19,7 @@
   },
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 81634683,
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -94,7 +94,7 @@
       "validated_sha": "d019f35519eeb6f071ea4a6883b5c8f7a9adaa67",
       "started_at": "2026-05-31T10:07:00Z",
       "completed_at": "2026-06-23T22:46:36Z",
-      "updated_at": "2026-10-30T05:27:21Z",
+      "updated_at": "2026-10-30T05:33:15Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -169,5 +169,9 @@
     "arch": "linux-gfx942",
     "since": "2026-10-30T04:10:36Z",
     "at": "2026-10-30T04:14:18Z"
+  },
+  "porting": {
+    "arch": "linux-gfx1100",
+    "since": "2026-10-30T05:33:15Z"
   }
 }
