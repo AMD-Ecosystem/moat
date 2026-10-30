@@ -391,26 +391,32 @@ later ROCm definition would collide in every TU. (llm-awq)
 **Torch API used by a ROCm-only branch is a version floor nobody sees.** A HIP branch compiles
 only against the ROCm PyTorch on the porting host, which is usually far newer than the
 project's pinned torch, and one failing call takes the whole extension down with it, kernels
-that already worked included. Two traps in `ATen/cuda/CUDAContextLight.h`:
-`getCUDABlasLtWorkspace()` / `getCUDABlasLtWorkspaceSize()` exist only from PyTorch 2.9, and
-`getCurrentCUDABlasLtHandle()` is usable from an extension on ROCm only from 2.4. Up to 2.3 its
-declaration (and the `<cublasLt.h>` include) sits under
-`#if ... (defined(USE_ROCM) && ROCM_VERSION >= 50700)`, and `ROCM_VERSION` is defined only by
-PyTorch's own CMake (`add_definitions(-DROCM_VERSION=...)` in `cmake/Dependencies.cmake`): no
-installed header defines it (`rocm_version.h` has only `ROCM_VERSION_MAJOR/MINOR/PATCH`) and
-`cpp_extension` passes only `-D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1` (plus `-DHIPBLAS_V2`), so in
-a `cpp_extension` build the guard is false and the name is undeclared. Any guard on
-`ROCM_VERSION`, or on another macro PyTorch sets only through CMake, reads false in an extension
-up to 2.3. Calling hipBLASLt directly, keep the handle and workspace in the extension: one
-`hipblasLtHandle_t` per device from `hipblasLtCreate` on first use (mutex-guarded, never
-destroyed, as torch does), the current stream, and a byte-tensor workspace
-(`at::empty({n}, input.options().dtype(at::kByte))`, sized from the chosen heuristic's
-`workspaceSize`, none when zero). Checking a call against the oldest supported tag means reading
-the preprocessor guard around each declaration, not just finding the name:
-`git show v2.3.0:aten/src/ATen/cuda/CUDAContextLight.h` shows the handle declared, inside a guard
-that only PyTorch's own build satisfies. A guard inside an inline function body
+that already worked included. `ROCM_VERSION` is never defined in a `cpp_extension` build: only
+PyTorch's own CMake sets it (`add_definitions(-DROCM_VERSION=...)` in `cmake/Dependencies.cmake`),
+`cpp_extension` passes only `-D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1` (plus `-DHIPBLAS_V2`), no
+installed torch header defines it, and `rocm_version.h` has only `ROCM_VERSION_MAJOR/MINOR/PATCH`.
+Checked at v2.2.0, v2.3.0, v2.4.0, v2.8.0, v2.9.0 and main. So every `ROCM_VERSION` guard in an
+installed header reads false in an extension, current releases included: v2.8.0
+`ATen/cuda/CUDADataType.h` maps the fp8 types only under `!defined(USE_ROCM) || ROCM_VERSION >=
+60300`, so on ROCm an extension never sees those cases. `getCurrentCUDABlasLtHandle()` in
+`ATen/cuda/CUDAContextLight.h` is the case that broke here: up to 2.3 the declaration and the
+`<cublasLt.h>` include sit under `... (defined(USE_ROCM) && ROCM_VERSION >= 50700)`, so it is
+undeclared in an extension; 2.4 (ae9a4fa, "enforce ROCM_VERSION >= 6.0") dropped that guard, which
+is the only reason the handle is reachable from 2.4 on. `getCUDABlasLtWorkspace()` /
+`getCUDABlasLtWorkspaceSize()` exist only from 2.9. Before calling a torch API from a HIP branch,
+`git show <oldest supported tag>:<header>` and read the preprocessor guard around that
+declaration, not just whether the name is present; a guard inside an inline function body
 (`HIPGuardImplMasqueradingAsCUDA.h`'s `ROCM_VERSION < 50201` in `deviceCount()`) changes
-behaviour, not what is declared. (llm-awq)
+behaviour, not what is declared. Calling hipBLASLt directly, keep the handle and workspace in the
+extension: one `hipblasLtHandle_t` per device from `hipblasLtCreate` on first use (mutex-guarded,
+never destroyed, as torch does), the current stream, and a byte-tensor workspace
+(`at::empty({n}, input.options().dtype(at::kByte))`, sized from the chosen heuristic's
+`workspaceSize`, none when zero). The hipBLASLt API is itself a floor: 0.3 (ROCm 5.7) takes
+`hipblasDatatype_t` and `hipblasLtComputeType_t` in `hipblasLtMatrixLayoutCreate` /
+`hipblasLtMatmulDescCreate`; 0.6 (ROCm 6.0) takes `hipDataType` and `hipblasComputeType_t`
+(`HIP_R_8I`, `HIPBLAS_COMPUTE_32I`). Gate the hipBLASLt code on `HIPBLASLT_VERSION_MAJOR/MINOR`
+from `<hipblaslt/hipblaslt-version.h>` (installed by both) and keep a portable kernel for older
+releases, rather than letting it raise the ROCm floor of the whole extension. (llm-awq)
 
 ## Types, dispatch and platform limits
 

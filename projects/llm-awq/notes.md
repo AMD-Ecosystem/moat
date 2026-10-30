@@ -686,4 +686,4 @@ Tests at 90a711b (from /tmp, `PYTHONPATH=<src>/awq/kernels`, HIP_VISIBLE_DEVICES
 - `legacy_gemm_test.py`: 8/8, max err vs dequant ref 3.9e-3.
 - `w4a16_test.py <src>`: 30/30.
 - `w8a8_handle_test.py <w8a8_gemm_cuda.cu>`: PASS, 16 threads, 1 device, one handle.
-jargon.py --port llm-awq clean; prose.py clean on both bodies; titles 66 and 61 chars. Still owed: wave32 and Windows runs at the new head (validators).
+jargon.py --port llm-awq clean; prose.py clean on both bodies; titles 65 and 58 chars. Still owed: wave32 and Windows runs at the new head (validators).

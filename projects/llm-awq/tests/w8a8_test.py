@@ -31,7 +31,7 @@ def case(M, N, K, bias, results, kernels):
         else:
             eng.w8a8_gemm_forward_cuda(a, w, ws, as_, out)
         torch.cuda.synchronize()
-    names = [e.key for e in prof.key_averages() if "epilogue" not in e.key and "Memcpy" not in e.key and "Memset" not in e.key]
+    names = [e.key for e in prof.key_averages() if "epilogue" not in e.key and "Memcpy" not in e.key and "Memset" not in e.key and not e.key.startswith(("hip", "cuda"))]
     path = "simt" if any("w8a8_int8_gemm_simt" in n for n in names) else ("hipblaslt" if names else "?")
     kernels[path] = kernels.get(path, 0) + 1
     r, acc = ref(a, w, ws, as_, b)
