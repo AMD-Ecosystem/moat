@@ -98,3 +98,11 @@
 {"kind":"session","ts":"2026-10-30T06:21:38Z","epoch":1793341298.295815741,"event":"end","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-10-30T06:24:14Z","epoch":1793341454.402784341,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-10-30T06:27:46Z","epoch":1793341666.126349353,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-10-30T06:33:08Z","epoch":1793341988.142748751,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-30T06:52:15Z","phase":"compile","seconds":1096.582,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261029-232911-val3-oneflow/moat/projects/oneflow/src/build_rocm.sh all"}
+{"kind":"phase","ts":"2026-10-30T07:06:46Z","phase":"test","seconds":826.904,"exit":0,"cmd":"bash agent_space/run_suite.sh modules 4"}
+{"kind":"phase","ts":"2026-10-30T07:08:00Z","phase":"test","seconds":62.653,"exit":0,"cmd":"bash agent_space/run_suite.sh tensor 4"}
+{"kind":"phase","ts":"2026-10-30T07:14:21Z","phase":"test","seconds":371.904,"exit":0,"cmd":"bash agent_space/grid.sh"}
+{"kind":"phase","ts":"2026-10-30T07:18:22Z","phase":"test","seconds":7.356,"exit":0,"cmd":"bash agent_space/sweep_run.sh norm_sweep.py 8180,8190,8191,8192,8193,12000,16000,16350,16380,16384,16400,24000,32000,32568,32760,32768,32800,40000,65000,65536,70000"}
+{"kind":"phase","ts":"2026-10-30T07:19:26Z","phase":"test","seconds":59.713,"exit":0,"cmd":"bash agent_space/sweep_run.sh norm_sweep.py 8192"}
+{"kind":"session","ts":"2026-10-30T07:21:28Z","epoch":1793344888.297491928,"event":"end","platform":"linux-gfx1100"}
