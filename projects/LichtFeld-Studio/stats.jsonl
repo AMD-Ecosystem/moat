@@ -343,3 +343,5 @@
 {"kind":"phase","ts":"2026-10-30T22:24:01Z","phase":"test","seconds":2805.011,"exit":0,"cmd":"bash agent_space/run_suites.sh /var/lib/jenkins/fleet/jobs/mi200-20261030-140506-lfs-validate-gfx90a/build-hip-gfx90a /var/lib/jenkins/fleet/jobs/mi200-20261030-140506-lfs-validate-gfx90a/moat/agent_space/runs/lft1"}
 {"kind":"phase","ts":"2026-10-30T22:35:10Z","phase":"test","seconds":106.658,"exit":0,"cmd":"bash agent_space/smoke.sh r1 /sys/bus/pci/devices/0000:32:00.0"}
 {"kind":"session","ts":"2026-10-30T22:37:40Z","epoch":1793399860.952164927,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-30T22:46:51Z","phase":"compile","seconds":268.224,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261030-152714-lfs-eventquery/repro/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-30T23:02:41Z","phase":"compile","seconds":249.626,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261030-152714-lfs-eventquery/repro/lfs_compute_build.sh"}

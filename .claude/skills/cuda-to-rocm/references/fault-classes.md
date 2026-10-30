@@ -158,6 +158,28 @@ double-destroyed texture/stream/event handle; AMD faults. Give RAII wrappers exp
 default init (`handle = 0`), move-only semantics, and a guarded destructor. (colmap
 CuTexObj.)
 
+**Querying an event after its recording stream was destroyed is a use-after-free on HIP.**
+CUDA keeps an event valid after `cudaStreamDestroy` of the stream it was recorded on, and
+caches built on that (pinned host allocators that keep per-block "last use" events, event
+pools) query those events much later. HIP's `hipEventRecord` stores the stream in the event,
+and `hipEventQuery`/`hipEventSynchronize` read that stream's capture state -- and, if the
+freed memory happens to say "capturing", lock its mutex and hash into its event set --
+without checking the stream still exists (`checkEventCaptureRestrictions`, clr
+`hip_event.cpp`; `hipEventRecord`, `hipEventDestroy` and `hipStreamWaitEvent` do check).
+The query returns the right answer until the heap reuses the freed `hip::Stream`, then it
+hangs in `pthread_mutex_lock`, segfaults, or raises SIGFPE (a zero bucket count), so it
+looks like a flaky test that fails after tens to hundreds of repeats. Fingerprint: a gdb
+stack of `pthread_mutex_lock` <- two unexported libamdhip64 frames <- `hipEventQuery`, no
+other thread inside HIP. Prove it with an `LD_PRELOAD` shim over
+`hipEventRecord`/`hipStreamDestroy`/`hipEventQuery` that flags queries on events whose last
+recording stream is dead; a plain create/record/destroy/query loop will NOT reproduce it,
+because the next `hipStreamCreate` takes the chunk back with a clean status. Work around it
+under the HIP build at the point where the code already learns a stream is going away
+(its "release this stream" hook, after the sync): drop or return every completed event that
+was recorded on it, so no long-lived holder outlives the stream. (LichtFeld-Studio:
+`PinnedMemoryAllocator::release_stream`, project save hung or crashed on gfx1100; deferral
+`hip-event-query-destroyed-stream-uaf`.)
+
 **Fresh device allocations are NOT zero on ROCm**, where CUDA's allocator often hands back
 zeroed pages. A kernel writing only a sub-region and implicitly relying on a zero start
 passes on CUDA and reads garbage on ROCm. Fingerprint: a zero-tolerance test that PASSES in

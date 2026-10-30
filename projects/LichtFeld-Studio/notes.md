@@ -5192,3 +5192,101 @@ cuda-not-validated here: no CUDA toolkit on this host (`/opt/conda` absent, no n
 
 ### Verdict: VALIDATION-FAILED (linux-gfx90a) at b0a50fa0
 The compute library, the stream-ordered pool, rocJPEG and headless training all pass on gfx90a. Video decode does not: the port sends H.264/HEVC/VP9 to rocDecode on this card (its caps accept them), and through the SDK's bundled VA driver the frames come back wrong with a success status. jeff's instruction for this round was that the rocDecode suites must pass here, not only on gfx1100. The defect is in a prebuilt ROCm component, so it gets a registered bug report and a porter workaround rather than a waiver. For the porter (a workaround is a design choice; not decided here): options include verifying a decoded frame against a known-good probe before trusting rocDecode on an architecture, routing gfx90a to the CPU with a named reason, or loading a VA driver other than the bundled one. The AV1 finding is separate: on a GPU without AV1 hardware the named CPU path has no decoder in the vcpkg FFmpeg build, so either the reason should say AV1 cannot be decoded at all or the FFmpeg feature set needs a software AV1 decoder (dav1d); that is a scope question for jeff. The 4 MiB first-use, host-RAM and llvmpipe items need no port change.
+
+## Porter round 2026-10-30e (porter, linux-gfx1100) -- ProjectDocumentTest `hipEventQuery` hang/crash from "Revalidation 2026-10-30": HIP runtime use-after-free, worked around in the pinned allocator; b0a50fa0 -> 3b8ba25c, stage -> `ported`
+
+Host as in the revalidation (TheRock ROCm SDK 10.1.0 wheels, hipconfig 7.16.26385, gcc-14 host, Xvfb + RADV). GPU: HIP device 2 = PCI 0000:23:00.0 (mapped with `hipDeviceGetPCIBusId`; 0000:46:00.0 was busy with an invisible process again). `ulimit -c 0`, every GPU run under `timeout`. Fresh blobless clone of `moat-port`, `protect-fork` installed; builds in this job (`build-hip` full app, 1403 steps rc 0; `build-compute`, 359 steps rc 0) with the validator's recipes, vcpkg and binary cache read only from the rocdecode job.
+
+### Classification: HIP runtime bug (use-after-free in `hipEventQuery`/`hipEventSynchronize`), app-visible, so a named workaround in the port
+Not a port defect and not an upstream defect: the upstream code is legal CUDA.
+
+### Root cause
+- `SplatChapterPayload::capture` (src/io/project/splat_chapter.cpp) creates a non-blocking transfer stream, takes two 64 MiB pinned staging blocks and `record_stream`s them on it. On exit `StagingGuard` syncs the stream and `deallocate`s both blocks, which records a use event on the transfer stream (and the null stream) and caches the blocks; then `StreamGuard` calls `CudaMemoryPool::release_stream` (which forwards to `PinnedMemoryAllocator::release_stream`) and `cudaStreamDestroy`. The next capture's `allocate` reuses a cached block and `all_uses_complete` queries events whose recording stream is gone. The header comment says so on purpose: "Events stay valid after their recording stream is destroyed", which CUDA guarantees.
+- An `LD_PRELOAD` tracer (`repro/evtrace.cpp` in this job: remembers each event's last `hipEventRecord` stream, flags query/sync on events whose stream was destroyed) on the b0a50fa0 build: from the 2nd repeat on, both `hipEventQuery` calls in `allocate` are on events last recorded on a destroyed stream; all of them returned `hipSuccess` in 60 passing repeats. So the query never gets a wrong answer; it crashes while getting the right one.
+- HIP source (rocm-systems develop `projects/clr/hipamd/src/hip_event.cpp`) and the shipped binary agree: `hipEventRecord` stores the stream in `Event::captureStream_` on every record. `hipEventQuery` and `hipEventSynchronize` first call `checkEventCaptureRestrictions(event)`, which reads `captureStream_`, checks the stream's capture status and, if it reads "active", calls `IsEventCaptured`: lock the stream's mutex, hash the event into the stream's captured-event set. There is no `hip::isValid(stream)` guard, while `hipEventRecord`, `hipEventDestroy` and `hipStreamWaitEvent` all have one. Disassembly of libamdhip64.so.7 here: +0x17d1a0 calls +0x17c680 with the event; +0x17c688 loads `*(event+8)`, +0x17c698 compares `stream+0x234` to 1, +0x17c6bd `pthread_mutex_lock(stream+0x1d0)`, +0x17c6ef `div` by the set's bucket count. The validator's hang stack returns to +0x17c6c2 and +0x17d1a5, i.e. this mutex lock. Freed memory reading 1 at +0x234 gives the hang (garbage mutex), the SIGSEGV (garbage bucket array) or the SIGFPE (bucket count 0), which is the observed mix. Whether it fires depends on what the heap put in the freed `hip::Stream`, hence the intermittency.
+- The `AutosaveSigkill...` fork test is unrelated (it still fails as recorded, fork after HIP).
+
+### Standalone reproducer (`repro/stale_stream_query.hip` in this job)
+Simple stream create/record/sync/destroy/query loops never fail (20000 iterations, three orders, 0 errors): a fresh `hipStreamCreate` takes the freed chunk back with capture status 0. The reproducer instead reuses the freed chunk with `malloc`, which any program may do:
+
+```cpp
+// hipEventQuery on an event whose recording stream was synchronized and destroyed.
+// CUDA allows this: an event stays valid after its stream is destroyed. HIP keeps the
+// recording stream in the event and dereferences it in hipEventQuery/hipEventSynchronize.
+// The program then reuses the freed heap memory, as any program may; the query reads it.
+#include <hip/hip_runtime.h>
+#include <csignal>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <unistd.h>
+#include <vector>
+#define CK(x) do { hipError_t e_ = (x); if (e_ != hipSuccess) { printf("%s -> %s (line %d)\n", #x, hipGetErrorName(e_), __LINE__); exit(1); } } while (0)
+static void on_alarm(int) { const char m[] = "the event call did not return within 10 s (hang)\n"; write(1, m, sizeof m - 1); _exit(2); }
+int main(int argc, char** argv) {
+  const unsigned pattern = argc > 1 ? strtoul(argv[1], nullptr, 0) : 1u;
+  const bool use_sync = argc > 2 && strcmp(argv[2], "sync") == 0;
+  hipEvent_t event;
+  CK(hipEventCreateWithFlags(&event, hipEventDisableTiming));
+  hipStream_t stream;
+  CK(hipStreamCreateWithFlags(&stream, hipStreamNonBlocking));
+  CK(hipEventRecord(event, stream));
+  CK(hipStreamSynchronize(stream));
+  printf("before destroy: hipEventQuery -> %s\n", hipGetErrorName(hipEventQuery(event)));
+  CK(hipStreamDestroy(stream));
+  printf("after destroy:  hipEventQuery -> %s\n", hipGetErrorName(hipEventQuery(event)));
+  fflush(stdout);
+  // Ordinary heap traffic: take chunks until malloc hands back the stream's old address,
+  // then fill them with a 32-bit pattern (argv[1], default 1). argv[2] = "sync" uses hipEventSynchronize.
+  std::vector<void*> chunks;
+  void* reused = nullptr;
+  for (size_t size = 16; size <= 64 * 1024 && !reused; size += 16) {
+    void* p = malloc(size);
+    if (p == static_cast<void*>(stream)) {
+      reused = p;
+      for (size_t i = 0; i < size / 4; ++i) static_cast<unsigned*>(p)[i] = pattern;
+      printf("malloc(%zu) returned the destroyed stream's address %p; filled with 0x%x\n", size, p, pattern);
+    } else {
+      chunks.push_back(p);
+    }
+  }
+  if (!reused) { printf("heap did not reuse the stream address; inconclusive\n"); return 3; }
+  fflush(stdout);
+  signal(SIGALRM, on_alarm);
+  alarm(getenv("NO_ALARM") ? 0 : 10);
+  const hipError_t s = use_sync ? hipEventSynchronize(event) : hipEventQuery(event);
+  alarm(0);
+  printf("after reuse:    %s -> %s\n", use_sync ? "hipEventSynchronize" : "hipEventQuery", hipGetErrorName(s));
+  return 0;
+}
+```
+
+`hipcc --offload-arch=gfx1100 -O2 -o stale_stream_query stale_stream_query.hip`, HIP device 2:
+- `./stale_stream_query` (fill 1): "malloc(1328) returned the destroyed stream's address ...; filled with 0x1", then "the event call did not return within 10 s (hang)", rc 2; 3 of 3 runs. `1 sync` (hipEventSynchronize): hang too.
+- Controls: fill `0` -> `hipSuccess` (query and sync); fill `0xdeadbeef` -> `hipSuccess`. The outcome tracks only the word at +0x234, as the disassembly says.
+- `gdb -p` on the hung process: `pthread_mutex_lock` <- libamdhip64 +0x17c6c2 <- +0x17d1a5 <- `hipEventQuery` <- main, mutex = stream + 0x1d0. Same two frames as the app's hang.
+- Registered as `hip-event-query-destroyed-stream-uaf` (rocm-bug-report, `deferred.json`). No existing issue found in ROCm/rocm-systems, ROCm/clr or ROCm/HIP (searched "hipEventQuery destroyed stream", "checkEventCaptureRestrictions", "hipEventSynchronize hang"). Not filed; that is a person's call.
+
+### Fork change (3b8ba25c on top of b0a50fa0, plain push, pr-state none)
+`[ROCm] Drop completed pinned-cache events before a stream is destroyed`:
+- `src/core/tensor/pinned_memory_allocator.cpp`, `release_stream()`, under `#ifdef USE_HIP`: after the existing sync and sever, walk the cached blocks and return every event for which `cudaEventQuery` is `cudaSuccess` to `CudaEventPool` (NotReady stays; any other error is cleared and the event stays, so `all_uses_complete` still reports it). The stream is synchronized and still alive at that point, so every event recorded on it is completed and gets dropped, and no cached block outlives a stream it has an event on. Pooled events still carry the stale stream, but every pool user records before it queries, and `hipEventRecord` guards the old stream with `hip::isValid`.
+- `tests/test_pinned_stream_teardown.cpp`, under `#if defined(USE_HIP)`: `PinnedStreamTeardownTest.CachedBlockReuseAfterStreamDestroyIgnoresFreedStream` (cache a block with a use on a stream, `release_stream`, destroy, fill every malloc chunk of 16 B..64 KiB with 32-bit 1s, allocate again). Against the unfixed b0a50fa0 `liblfs_core.so` (the new test binary with `LD_LIBRARY_PATH` pointing at it, confirmed with `LD_DEBUG=libs`) it hangs 3 of 3 (killed at 60 s); with the fix it passes 20/20 repeats.
+- CUDA identity: `unifdef -UUSE_HIP -U__HIP_PLATFORM_AMD__` of both files is byte-identical to ca01b056.
+- Residual exposure, not fixed here: any other code that queries or synchronizes an event after its recording stream was destroyed without `release_stream` first. A few destroy sites do not call `release_stream` (`src/io/cuda/rad_encode_quant.cu`, `src/training/training_snapshot_service.cpp`, 3 of 7 in `src/training/trainer.cpp`). Not audited one by one; nothing in the validation runs points at them. The runtime fix in the registered bug covers all of them.
+
+### Tests (HIP device 2, Xvfb + RADV, cwd a scratch dir unless noted)
+- Target, before (b0a50fa0, validator's `build-hip-gcc`): `--gtest_filter='ProjectDocumentTest.DeferredShellExposesUnloadedUnitsAndCommitsHydrationPerNodeUuid'` `--gtest_repeat=300`: 300 OK, rc 139 after 109 OK, 300 OK; `--gtest_repeat=1000`: rc 136 (SIGFPE) after 179 OK, rc 139 after 144, rc 134 after 626. 4 of 6 runs failed.
+- Target, after (3b8ba25c, `build-hip`): `--gtest_repeat=1000` five runs in a row: 1000/1000 each, rc 0 (5000/5000). Tracer run with the fix: 60/60, 0 queries on destroyed-stream events (before: 2 per repeat).
+- `lichtfeld_tests` suites after (one process each, `timeout -k 30 900`): ProjectDocumentTest 83/1 (the recorded fork test), PinnedStreamTeardownTest 4/0, AllocCounterTest + AllocCounterSiteTags 5/0, AllocatorHygiene 5/0, CudaEventPoolTest 6/0, CudaPoolStreamTeardownTest 3/0, ShValueStorageTest 23/0, TensorMultiStreamTest 19/1 (the recorded handshake race), SceneValidity* + *HardeningThemeF* 59/0.
+- `tensor_hardening_tests` (whole binary): 106 passed, 1 failed (CudaTest.D1_BinaryInPlaceWaitsForGatedProducer, recorded: `lfs-upstream-binary-inplace-no-stream-join`); PinnedMemoryAllocatorTest 4/0.
+- `lfs_compute_tests` (whole binary, cwd the src root): 2225 tests / 171 suites, 39.4 s, 2209 passed, 6 failed, 10 skipped; the six are the recorded six (CudaErrorDiagnostics.ForcedCudaErrorReportHasExpectedSections, AllocatorHygiene.FailedSlabReclaimRestoresOwnershipAndAccounting, TensorMultiStreamTest.TrainerViewerHandshakeYieldsConsistentSnapshots, DiscoverySweep x2, CudaTest.D1). That is the porter's 2208/6/10 plus the new test.
+- Not rerun this round: the full 749-suite `lichtfeld_tests` sweep and the headless smoke; the change touches only `release_stream` under HIP, and the validator reruns both.
+
+### Checks
+`python3 utils/jargon.py --port LichtFeld-Studio`: clean. `utils/prose.py` on the commit message: clean. `moatlib.py audit-commits LichtFeld-Studio`: OK. `git -C projects/LichtFeld-Studio/src status --porcelain`: empty (untracked `data` symlink is gitignored).
+
+### Skill
+fault-classes "Memory and lifetime": new entry on HIP dereferencing an event's recording stream in `hipEventQuery`/`hipEventSynchronize` (source: this project), indexed in SKILL.md.
+
+### Verdict
+Fixed on the fork at 3b8ba25c; stage `ported` for review, linux-gfx1100 needs revalidation at the new head. The ROCm bug draft and filing (`hip-event-query-destroyed-stream-uaf`) wait for jeff.
