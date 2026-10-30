@@ -329,7 +329,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-10-30T19:41:35Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeff",
+        "at": "2026-10-30T21:13:19Z",
+        "note": "jeff 2026-10-30: prepare and report if the conclusion holds. Recheck against the latest clr/rocclr first, then draft the issue for jeff's approval."
+      }
     }
   ]
 }
