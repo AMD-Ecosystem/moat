@@ -704,3 +704,44 @@ Configure: "OpenCL Support is: OFF", "CUDA Support is: ON", "HIP (ROCm) backend 
 - cuda-not-validated: no CUDA toolkit on this host (no /opt/conda, no nvcc), and the fleet guard refuses installing pip nvcc wheels on this shared host. The CUDA compile gate has not been recorded at any head of this port; it still needs a host with the toolkit (12.8, -DCMAKE_CUDA_ARCHITECTURES=80). 42bdc3d6 changes the shared CUDA path, so this gap matters for jeff's decision on it.
 
 Status: linux-gfx90a revalidate -> completed at 3bf7a75e.
+
+## CUDA gate 2026-10-30 (V100, CUDA 12.9)
+
+CUDA no-regression gate at head 3bf7a75e (fork `moat-port`), never recorded before at any head. Run on NVIDIA Tesla V100-SXM2-32GB GPUs on two nodes (driver 575.57.08), nvcc 12.9.86, gcc 13.2, CMake 3.31, Ninja, fresh clones, `ulimit -c 0`. Upstream base for comparison: 98b47407 (fork `main`, the merge base).
+
+Build (identical for port and base):
+```
+cmake -S . -B _build -G Ninja -DENABLE_CUDA=ON -DENABLE_OPENCL=OFF -DENABLE_TESTS=ON \
+  -DQRACK_CUDA_ARCHITECTURES="70;80" -DCMAKE_CUDA_ARCHITECTURES="70;80"
+cmake --build _build --target unittest
+```
+Configure: "OpenCL Support is: OFF", "CUDA Support is: ON", "HIP (ROCm) backend is: OFF". **PASS** at both shas (39/39 steps). `cuobjdump --list-elf libqrack.a`: 3 sm_70 + 3 sm_80 cubins.
+
+Tests on the V100 (`./unittest --proc-cuda --layer-<l> -d yes`):
+
+| | port 3bf7a75e | base 98b47407 |
+|---|---|---|
+| cuda/qengine | 212/213 (test_trydecompose), twice | 213/213 (one run) |
+| cuda/qpager | **213/213** | 212/213 (**test_cswap** fails, tests.cpp:715) |
+| `--layer-qpager test_cswap`, repeated | **20/20 pass** | **0/20 pass** |
+| `--layer-qengine test_trydecompose`, repeated | 2/10 pass | 1/10 pass |
+| `--layer-qpager test_trydecompose`, repeated | 5/5 pass | -- |
+
+- test_trydecompose on the qengine layer is a pre-existing, intermittent upstream CUDA failure, not a regression: tests.cpp:3353 `REQUIRE_THAT(qftReg, HasProbability(0, 4, 0x2))` after `SetPermutation(0x2b); TryDecompose(0, qftReg2)`, with "Failed to read buffer, error code: 1" (cudaErrorInvalidValue) on most failing runs. It fails at the same rate at the base (and at upstream main db84c820, below); the port did not touch that path. It passes on every AMD run in this file.
+- test_cswap on qpager is the SetAmplitudePage bug, now shown on NVIDIA: deterministic at the base, fixed by 42bdc3d6 on the port.
+
+Result: CUDA gate **PASS** at 3bf7a75e (no port-only build error; no port-only test failure; one upstream CUDA bug fixed).
+
+## SetAmplitudePage upstream fix 2026-10-30 (V100, CUDA 12.9)
+
+jeff asked for 42bdc3d6 to go upstream as its own PR, separate from the port. Prepared, not opened:
+- Branch `fix-setamplitudepage` on the fork AMD-Ecosystem/qrack, commit 88e415976d23, one commit on upstream `main` tip db84c820 (unitaryfoundation/qrack). The cuda.cu hunk is 42bdc3d6's, applied cleanly; title has no `[ROCm]`; body credits Claude in prose, no trailer. clang-format (23.1.3, upstream `.clang-format`) on the touched lines: clean. `moat-port` untouched (still 3bf7a75e); `pr-state qrack` = none before the push.
+- Same build as above, upstream sources, V100:
+
+| unitaryfoundation/qrack db84c820 | before (base) | after (+ fix) |
+|---|---|---|
+| `--proc-cuda --layer-qpager test_cswap` x25 | **0/25** pass (tests.cpp:716, `HasProbability(0, 12, (1U << 9U) \| (1U << 11U))` sees all zeros) | **25/25** pass |
+| `--proc-cuda --layer-qpager -d yes` | 218/219 (test_cswap) | **219/219** (9975 assertions) |
+| `--proc-cuda --layer-qengine -d yes` | 218/219 (test_trydecompose) | 218/219 (test_trydecompose, unrelated, see above) |
+
+Upstream PR draft (title and body) is in jeff's report for this session; nothing was posted.
