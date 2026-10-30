@@ -266,3 +266,26 @@ Upstream GOMCCUDASetup.cmake overrides `CMAKE_CUDA_ARCHITECTURES` to `all` on CM
 `python3 utils/jargon.py --port GOMC` reports 3 hits, all upstream development's own comment "I'm the follower" in src/ParallelTemperingUtilities.cpp (lines 449/537/817), because `--port` scans from `fork_default_branch` (`main`), so development's 103 commits count as added. Against the real base: `jargon.py -C projects/GOMC/src --commits upstream/development..moat-port` and `--diff upstream/development...moat-port` are both clean. Becomes clean under `--port` once the records' base branch is `development`.
 
 Update: after the primary recorded `fork_default_branch: development` (fork `development` mirror = upstream 09ec304e, the merged commit), `git -C projects/GOMC/src branch -f development origin/development` then `python3 utils/jargon.py --port GOMC` -> clean. A fresh fork clone needs that local `development` branch for `--port` to resolve.
+
+## Review 2026-10-30 (linux-gfx942, reviewer)
+
+Scope: whole fork diff `git diff development...moat-port` at 4c06552c (base `development` = upstream 09ec304e; 22 files, +379/-49), with the merge faacd96a's four both-sides files read against `git diff 785c2ceb development` (merge base 785c2ceb). Verdict: review-passed, no blocking findings.
+
+Checked:
+- Merge faacd96a: `git show --cc` is empty for CMakeLists.txt, VariablesCUDA.cuh, Main.cpp and MoleculeLookup.cpp, so there are no hand-resolved hunks. development's changes there are host-only: the compiler-ID chain plus `else() FATAL_ERROR` (CXX stays GNU in a HIP configuration, so it never fires), the `printFreeMemory` rewrite (`exit(cuda_status)` takes an unscoped `hipError_t` enum, which converts implicitly to int), and `InputFileReader`, hostname and `operator=` changes away from the port's hunks. No CUDA symbol in `src/` or `lib/` is missing from `cuda_to_hip.h` (grep for `cuda[A-Z]*`, `CUDART_*`, `cub::`, `Cub*`, `__shfl*`, `__ballot*`, `warpSize`; the only CUDART_VERSION uses are the NVTX block, gated off under USE_HIP, and the Main.cpp `#elif` after the HIP branch).
+- 16cb7352 CMake scoping: `GOMCHIPSetup.cmake` is only included under `USE_HIP`, and `GOMCCUDASetup.cmake`/`GOMCCPUSetup.cmake` are byte-identical to development, so the CUDA build's flags are unchanged (it still adds `-DGOMC_CUDA` through `CMAKE_HOST_COMP_FLAGS`/`CMAKE_CUDA_COMP_FLAGS` on the GPU targets). The CUDA compile gate (nvcc 12.8.93, all 8 executables) recorded above still stands. The leftover directory-scoped `add_compile_definitions(WIN32 _USE_MATH_DEFINES)` affects only Windows and matches what CMake's MSVC defaults give the CPU targets. The CPU targets already link ws2_32 on WIN32.
+- Fault classes: no warp intrinsics, `warpSize`, textures, streams or lane masks in the GPU code; hipCUB reductions only; the double-`atomicAdd` polyfill is excluded on AMD; Random123 is configured for HIP device code. Nothing the merge added changes this.
+- README section: commands match the build; no device-selection environment variables.
+
+Evidence on this host (TheRock ROCm SDK 10.1.0 wheels, CMake via the job venv):
+```bash
+R=$(rocm-sdk path --root)
+cmake -S projects/GOMC/src -B agent_space/gomc-hip -DUSE_HIP=ON -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ \
+  -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release
+cmake --build agent_space/gomc-hip -j 64     # rc=0, all 8 executables (GOMC_CPU_* and GOMC_GPU_*)
+grep -c GOMC_CUDA agent_space/gomc-hip/CMakeFiles/NVT.dir/flags.make      # 0
+grep -c GOMC_CUDA agent_space/gomc-hip/CMakeFiles/GPU_NVT.dir/flags.make  # 2
+```
+Smoke run only, not the validation gate: GOMC_GPU_GEMC and GOMC_CPU_GEMC on AR_KR/SingleRun (MI300X, HIP_VISIBLE_DEVICES=4, `ulimit -c 0`) both exit 0 with identical ENER_0 output. `python3 utils/jargon.py --port GOMC` is clean, and so is `git -C projects/GOMC/src status --porcelain`.
+
+Not blocking: `moatlib.py audit-commits GOMC` reports that 58d5496d and b1b67078 (both earlier rounds, already review-passed) have Test Plans with no fenced command block. Fixing that means rewriting their messages, so leave it to the PR-prep squash; no new commit can fix it.

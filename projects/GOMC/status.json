@@ -7,13 +7,13 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:24:38Z",
-  "updated_at": "2026-10-30T18:44:00Z",
+  "updated_at": "2026-10-30T18:59:34Z",
   "head_sha": "4c06552c810100d289530e9475a07c81582e6581",
   "depends_on": [],
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 34094271,
-  "stage": "reviewing",
+  "stage": "review-passed",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -137,7 +137,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-10-30T18:44:00Z",
+      "updated_at": "2026-10-30T18:59:34Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -163,12 +163,9 @@
     "reason": "upstream CONTRIBUTING.md asks for PRs against development"
   },
   "porting_released": {
-    "arch": "linux-gfx90a",
-    "since": "2026-10-30T18:19:34Z",
-    "at": "2026-10-30T18:32:21Z"
-  },
-  "porting": {
     "arch": "linux-gfx942",
-    "since": "2026-10-30T18:44:00Z"
-  }
+    "since": "2026-10-30T18:44:00Z",
+    "at": "2026-10-30T18:59:34Z"
+  },
+  "porting": null
 }
