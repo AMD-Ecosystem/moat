@@ -72,3 +72,20 @@
 {"kind":"session","ts":"2026-10-29T23:34:02Z","epoch":1793316842.202498583,"event":"end","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-10-29T23:47:01Z","epoch":1793317621.250477560,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-10-29T23:50:06Z","epoch":1793317807.002637300,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-10-30T00:01:10Z","epoch":1793318470.567516392,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-10-30T00:01:50Z","phase":"compile","seconds":32.340,"exit":0,"cmd":"bash -c cmake -S projects/qrack/src -B projects/qrack/src/_build -DENABLE_CUDA=ON -DENABLE_OPENCL=OFF -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_HIP_COMPILER=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DENABLE_TESTS=ON > /tmp/qrk_cfg.log 2>&1 && cmake --build projects/qrack/src/_build -j56 --target unittest > /tmp/qrk_build.log 2>&1"}
+{"kind":"phase","ts":"2026-10-30T00:01:56Z","phase":"test","seconds":0.003,"exit":127,"cmd":"./unittest --proc-cuda --layer-qengine -d yes"}
+{"kind":"phase","ts":"2026-10-30T00:01:56Z","phase":"test","seconds":0.004,"exit":127,"cmd":"./unittest --proc-cuda --layer-qpager -d yes"}
+{"kind":"phase","ts":"2026-10-30T00:01:56Z","phase":"test","seconds":0.003,"exit":127,"cmd":"./unittest --proc-cuda --layer-qunit -d yes"}
+{"kind":"phase","ts":"2026-10-30T00:01:56Z","phase":"test","seconds":0.003,"exit":127,"cmd":"./unittest --proc-cuda --layer-qunit-qpager -d yes"}
+{"kind":"phase","ts":"2026-10-30T00:01:56Z","phase":"test","seconds":0.004,"exit":127,"cmd":"./unittest --proc-cuda --layer-qunit-multi -d yes"}
+{"kind":"phase","ts":"2026-10-30T00:01:56Z","phase":"test","seconds":0.005,"exit":127,"cmd":"./unittest --proc-cpu --layer-qengine -d yes"}
+{"kind":"phase","ts":"2026-10-30T00:01:56Z","phase":"test","seconds":0.004,"exit":127,"cmd":"./unittest --proc-cpu --layer-qpager -d yes"}
+{"kind":"phase","ts":"2026-10-30T00:02:52Z","phase":"test","seconds":46.802,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261029-165818-fix-qrack/moat/projects/qrack/src/_build/unittest --proc-cuda --layer-qengine -d yes"}
+{"kind":"phase","ts":"2026-10-30T00:03:40Z","phase":"test","seconds":47.363,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261029-165818-fix-qrack/moat/projects/qrack/src/_build/unittest --proc-cuda --layer-qpager -d yes"}
+{"kind":"phase","ts":"2026-10-30T00:03:41Z","phase":"test","seconds":1.222,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261029-165818-fix-qrack/moat/projects/qrack/src/_build/unittest --proc-cuda --layer-qunit -d yes"}
+{"kind":"phase","ts":"2026-10-30T00:03:43Z","phase":"test","seconds":1.359,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261029-165818-fix-qrack/moat/projects/qrack/src/_build/unittest --proc-cuda --layer-qunit-qpager -d yes"}
+{"kind":"phase","ts":"2026-10-30T00:03:44Z","phase":"test","seconds":1.206,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261029-165818-fix-qrack/moat/projects/qrack/src/_build/unittest --proc-cuda --layer-qunit-multi -d yes"}
+{"kind":"phase","ts":"2026-10-30T00:05:22Z","phase":"test","seconds":97.827,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261029-165818-fix-qrack/moat/projects/qrack/src/_build/unittest --proc-cpu --layer-qengine -d yes"}
+{"kind":"phase","ts":"2026-10-30T00:08:12Z","phase":"test","seconds":170.641,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261029-165818-fix-qrack/moat/projects/qrack/src/_build/unittest --proc-cpu --layer-qpager -d yes"}
+{"kind":"session","ts":"2026-10-30T00:08:52Z","epoch":1793318932.668773640,"event":"end","platform":"linux-gfx942"}

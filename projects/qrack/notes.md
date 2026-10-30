@@ -601,3 +601,16 @@ Verdict: changes-requested (1 must-fix). There is also 1 decision for jeff, whic
 - Wave size: no __shfl/__ballot/__activemask/warpSize/literal 32 in device code. Rule-of-five unchanged. No library swaps.
 - CUDA path, apart from the item above: the nvcc options and the CUDA.cmake elseif branch are byte-identical. cuda_to_hip.h on non-HIP includes <cuda_runtime.h> plus cuda_fp16.h under FPPOW<5, as before. The DispatchFn typedef in qengine_cpu.hpp is in the non-pthread #else only.
 - Commits: [ROCm] titles of 72 chars or fewer, AI assistance disclosed, Test Plan present, no Co-Authored-By trailer, ASCII only, `utils/jargon.py --port qrack` clean.
+
+## Porter 2026-10-30 (linux-gfx942): answer Review 2026-10-29
+moat-port a3f5427e -> 3bf7a75e (one commit on top, no rebase/amend). 42bdc3d6 (SetAmplitudePage) left untouched; whether it ships in this PR or goes upstream separately is still jeff's decision. The review PR (AMD-Ecosystem/qrack#1) had no /moat changes-requested and no line threads, so nothing to answer there; no GitHub writes this round.
+
+Must-fix 1 (README HIP command, ENABLE_OPENCL): fact-checked before the change. cmake/CUDA.cmake:7-9 is upstream code (`if (ENABLE_OPENCL) set(ENABLE_CUDA OFF)`), ENABLE_OPENCL defaults ON (CMakeLists.txt:109) and cmake/OpenCL.cmake only clears it when no OpenCL library is found. Reproduced on this host with the README command (no -DENABLE_OPENCL=OFF): "OpenCL Support is: ON", "CUDA Support is: OFF", "HIP (ROCm) backend is: ON". Confirmed.
+Fix 3bf7a75e: README HIP line drops the brackets around -DENABLE_OPENCL=OFF and the paragraph says it is required and why (also explains -DCMAKE_PREFIX_PATH, which had no explanation). cmake/CUDA.cmake prints "HIP (ROCm) backend is: ON" only under `ENABLE_CUDA AND USE_HIP`, else OFF. The upstream CUDA README line and the CUDA configure path are unchanged.
+After: README command without the flag -> "CUDA Support is: OFF", "HIP (ROCm) backend is: OFF"; with it -> ON/ON.
+
+Build (same recipe as the 2026-10-29 sync, -DCMAKE_HIP_ARCHITECTURES=gfx942, --target unittest, -j56): exit 0, no warnings.
+Tests at 3bf7a75e (`./unittest --proc-<p> --layer-<l> -d yes`, ulimit -c 0, HIP_VISIBLE_DEVICES=1, "CUDA device #0: AMD Instinct MI300X HF"):
+- cuda/qengine 9612/213 passed (46s); cuda/qpager 9609/213 passed (48s); cuda/qunit 9613/213; cuda/qunit-qpager 9613/213; cuda/qunit-multi 9610/213: all passed.
+- CPU regression: cpu/qengine 9612/213, cpu/qpager 9609/213 passed.
+GOTCHA: utils/timeit.sh runs the command from another directory, so pass the unittest binary as an absolute path (a relative ./unittest exits 127).
