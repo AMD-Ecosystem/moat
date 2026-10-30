@@ -1828,3 +1828,24 @@ ROCm 7.2.4 compile (the hipified `.hip` files from the build above): `<7.2.4>/li
 ### State
 
 `jargon.py --port`: clean; `prose.py` on the commit body: clean. Pushed `7a49973..d3e2266` (fast-forward, no PR open upstream), `advance-head d3e2266`, linux-gfx942 `porting -> ported`. The CUDA no-regression gate is still owed at head (no nvcc here; the CUDA path is byte-identical to 7a49973's).
+
+## Review 2026-10-30 (reviewer, linux-gfx942) -- d3e2266, re-review of Review 2026-10-29 -> review-passed
+
+Scope: the one finding of Review 2026-10-29, then the whole fork diff `origin/main...moat-port` again (main = upstream d23bb78; `rev-list --count moat-port..origin/main` = 0 and `HEAD..upstream/main` = 0). `jargon.py --port faster-gaussian-splatting`: clean. After a from-clean build the fork clone's `git status --porcelain` is empty.
+
+### Finding 1 (cg::reduce needs HIP 7.13+): resolved
+
+- `kernels_forward.cuh:10-29`: the ROCm branch includes `<hip/cooperative_groups/hip_reduce.h>` under `__has_include` and otherwise defines `cg::greater` and a `reduce` over `thread_block_tile<size, ParentCGTy>` as a `size/2..1` `tile.shfl_xor` butterfly. HIP 7.2.4's `thread_block_tile::shfl_xor` is `__shfl_xor(var, laneMask, numThreads)` (amd_hip_cooperative_groups.h:863), so the shuffle stays inside the 32-lane tile on wave64 and every lane ends with the tile max. At the one call site (`:516`) all lanes of every tile are converged (no early return in the blend kernel), as a full-tile shuffle requires. The CUDA `#else` and the call site are unchanged.
+- One `__has_include` gating both names is right: `1fe7989f90` (read-only `gh api`, 2026-03-23) touches `amd_hip_cooperative_groups.h` and adds `hip_reduce.h` together; this image's 7.16 header has `plus`/`less`/`greater` at lines 1329-1345.
+- Reproduced the fallback compile independently: from-clean `setup.py build_ext --inplace` on HIP 7.16 (PASS, `PYTORCH_ROCM_ARCH=gfx942`), then `forward.hip` and `backward.hip` compiled with the ROCm 7.2.4 `clang++ --rocm-path=<7.2.4>` (the debs the porter extracted on this host), setup.py's exact `-D`/`-std=c++20 -O3 -ffast-math` flags, and `-idirafter` an overlay of the 7.16 include dir without `hip/`, `hipcub/`, `rocprim/`. Both rc=0; `-H` shows `hip_runtime.h`, `amd_hip_cooperative_groups.h` and `hipcub.hpp` from 7.2.4 and no `hip_reduce.h`, so the fallback arm was the one compiled. The porter's runtime check of the fallback on wave64 (bit-identical images and 3D filter, gradients within run-to-run noise) covers its behaviour; the full 7.2.x build is owed by the gfx90a and gfx1100 revalidations.
+- Lesson correction (`strategy-b-torch.md`, "Headers and functions hipify leaves broken"): now bounded to therock-7.13+, absent through rocm-7.2.4 and therock-7.12; `hip_scan.h` bounded to builds newer than therock-7.14. Matches the commit's file list and the earlier contents-API checks.
+
+### Whole diff
+
+No new findings. The older hunks (setup.py C++20 and `-ffast-math`, the Windows `/ALTERNATENAME`, `HELPER_MATH_SKIP_VECTOR_OPS`, `lerp_scalar`, the `cub = hipcub` alias, `1 / std::sqrt`, `.gitignore`, README) are unchanged since the passed rounds; the ROCm `curand_Philox4x32_10` and the wave64 audit of the new warp code were verified in Review 2026-10-29. Commit d3e2266: `[ROCm]` title (62 chars), AI-assistance disclosure, Test Plan with fenced commands, no trailer.
+
+The CUDA no-regression gate is still owed at head (the CUDA path is byte-identical to 7a49973's, which changed it only by moving two includes into `#else` branches).
+
+### Recommendation
+
+**Approve** -> review-passed.
