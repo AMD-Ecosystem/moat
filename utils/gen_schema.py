@@ -260,6 +260,21 @@ def build():
                     "note": {"type": "string"},
                 },
             },
+            # A person's ruling that the upstream PR targets a branch other than
+            # the default recorded at scaffold (upstream asks for PRs against
+            # `development`, say). fork_default_branch carries the value; this
+            # records who changed it, from what, and why.
+            "base_branch_ruling": {
+                "type": ["object", "null"],
+                "required": ["branch", "by", "at"],
+                "properties": {
+                    "branch": {"type": "string", "minLength": 1},
+                    "previous": {"type": ["string", "null"]},
+                    "by": {"type": "string", "minLength": 1},
+                    "at": {"type": "string"},
+                    "reason": {"type": "string"},
+                },
+            },
             # The review PR on our own fork: where a maintainer sees the code, title
             # and body together, and approves once.
             "review_pr": {"type": "string"},
