@@ -614,3 +614,21 @@ Tests at 3bf7a75e (`./unittest --proc-<p> --layer-<l> -d yes`, ulimit -c 0, HIP_
 - cuda/qengine 9612/213 passed (46s); cuda/qpager 9609/213 passed (48s); cuda/qunit 9613/213; cuda/qunit-qpager 9613/213; cuda/qunit-multi 9610/213: all passed.
 - CPU regression: cpu/qengine 9612/213, cpu/qpager 9609/213 passed.
 GOTCHA: utils/timeit.sh runs the command from another directory, so pass the unittest binary as an absolute path (a relative ./unittest exits 127).
+
+## Review 2026-10-30 (linux-gfx942, reviewer): re-review, whole fork diff upstream/main(98b47407)...3bf7a75e
+Requested by jeff after the porter's answer to Review 2026-10-29. Reviewed with /pr-review in local-branch mode on a fresh clone of moat-port at 3bf7a75e; findings fact-checked inline against the source and by configuring on this host (CMake 3.31.6, TheRock pip ROCm SDK).
+Verdict: review-passed. No new findings.
+
+### Review 2026-10-29 must-fix 1 (README HIP command, ENABLE_OPENCL): resolved
+- README.md:220 now lists `-DENABLE_OPENCL=OFF` without brackets, and README.md:223 says it is required and why. The upstream CUDA line (README.md:210) is unchanged.
+- cmake/CUDA.cmake:26-30 prints "HIP (ROCm) backend is: ON" only under `ENABLE_CUDA AND USE_HIP`.
+- Reproduced here with `-DENABLE_CUDA=ON -DUSE_HIP=ON -DCMAKE_HIP_COMPILER=<sdk>/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=<sdk>`: without the flag -> "OpenCL Support is: ON", "CUDA Support is: OFF", "HIP (ROCm) backend is: OFF" (rc 0); with `-DENABLE_OPENCL=OFF` -> OpenCL OFF, CUDA ON, HIP ON, auto-detected gfx942 (rc 0).
+
+### Still open: decision for jeff (not a defect, does not block)
+- 42bdc3d6 (src/qengine/cuda.cu:215-217, SetAmplitudePage copy direction/offsets) changes the shared CUDA path with no USE_HIP guard. Re-read: correct, matches QEngineOCL/QEngineCPU. Whether it ships in this PR or goes upstream separately without the `[ROCm]` title is jeff's call; it has not been built or run on NVIDIA.
+
+### Checked, no finding
+- Delta a3f5427e..3bf7a75e is README.md and the cmake/CUDA.cmake status message only; no source or build-flag change, so the porter's 3bf7a75e test run (cuda qengine/qpager/qunit/qunit-qpager/qunit-multi, cpu qengine/qpager, 213 cases each) stands for review purposes.
+- Rest of the whole diff re-read: cuda_to_hip.h is the single HIP-aware header and inert on NVIDIA; PopQueue copies the QueueItem before pop_front, so moving its buffers into deferredFreeBuffers is safe, and the drain runs under queue_mutex on user threads only (clFinish, DispatchQueue); BUILDSYSTEM_TARGETS covers every qrack-linking target (no add_subdirectory; the only FetchContent is in the OpenCL path, which excludes HIP); nvcc options and the CUDA elseif branch are unchanged; no warpSize/32 assumptions, no library swaps.
+- The HIP_ARCHITECTURES-before-enable_language lesson is already in .claude/skills/cuda-to-rocm/references/strategy-a-cmake.md:45 on main; the port branch carries no skill edits.
+- Commits: all [ROCm] titles <= 72 chars (merge commit excepted), AI disclosure and Test Plan present in 3bf7a75e, no Co-Authored-By, ASCII only, `utils/jargon.py --port qrack` clean.
