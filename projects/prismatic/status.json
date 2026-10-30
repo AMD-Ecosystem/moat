@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:24:38Z",
-  "updated_at": "2026-10-29T23:21:46Z",
+  "updated_at": "2026-10-30T15:56:30Z",
   "head_sha": "6b9b6005ee39d8c667481a57b23d605e445a835b",
   "depends_on": [],
   "waivers": {},
@@ -152,5 +152,17 @@
     "arch": "windows-gfx1151",
     "since": "2026-10-29T22:30:13Z",
     "at": "2026-10-29T22:30:33Z"
-  }
+  },
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-10-30T15:51:06Z",
+    "head_sha": "6b9b6005ee39d8c667481a57b23d605e445a835b",
+    "content_sha256": "4768383c4f1c19f2d43ffc0b4424ee23429e9f0da1d02e6ba46f6afc0c1db97c",
+    "review_pr": "https://github.com/AMD-Ecosystem/prismatic/pull/1"
+  },
+  "pr_url": "https://github.com/prism-em/prismatic/pull/122",
+  "pr_number": 122,
+  "pr_opened_at": "2026-10-30T15:56:30Z",
+  "pr_state": "open",
+  "published_sha": "6b9b6005ee39d8c667481a57b23d605e445a835b"
 }
