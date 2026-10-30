@@ -7,14 +7,17 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-05T01:19:27Z",
-  "updated_at": "2026-10-29T23:51:09Z",
+  "updated_at": "2026-10-30T00:00:07Z",
   "head_sha": "7a499737e51b5ef692a669b09757fa740aae8024",
   "depends_on": [],
-  "porting": null,
+  "porting": {
+    "arch": "linux-gfx942",
+    "since": "2026-10-30T00:00:07Z"
+  },
   "waivers": {},
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 1154833948,
-  "stage": "changes-requested",
+  "stage": "porting",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -139,7 +142,7 @@
       "failed_sha": null,
       "started_at": "2026-10-29T23:06:58Z",
       "completed_at": null,
-      "updated_at": "2026-10-29T23:51:09Z",
+      "updated_at": "2026-10-30T00:00:07Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
