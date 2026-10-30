@@ -145,7 +145,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-10-20T11:05:03Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeff",
+        "at": "2026-10-30T18:47:14Z",
+        "note": "jeff 2026-10-30: port the stream-ordered pool to hipMallocAsync/hipFreeAsync/hipMemPool* now; restore test_tensor_multistream.cpp to the HIP test build; validate on wave32, wave64 and Windows."
+      }
     },
     {
       "id": "lfs-upstream-binary-inplace-no-stream-join",
