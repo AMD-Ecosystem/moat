@@ -755,3 +755,20 @@ CUDA no-regression gate: cuda-not-validated (environmental). nvcc 12.8.93 is at 
 Checks: `jargon.py --port llm-awq` clean; README.md:127 documents the ROCm build next to the CUDA install step; fork tree clean (`git status --porcelain` empty).
 
 Verdict: PASS. linux-gfx942 completed at 90a711b.
+
+## CUDA gate 2026-10-30 (V100, CUDA 12.9)
+
+CUDA no-regression gate at head 90a711be48b5 (fork `moat-port`). Run on a node with an NVIDIA Tesla V100-SXM2-32GB (driver 575.57.08), nvcc 12.9.86, gcc 13.2, Python 3.12, with upstream's pinned torch generation in a scratch venv (`pip install torch==2.3.0 --index-url https://download.pytorch.org/whl/cu121`, plus `numpy<2 setuptools wheel ninja`). This is the CUDA torch include tree the 2026-10-30 linux-gfx942 entry lacked. Upstream base for comparison: d6e797a42b (fork `main`, the merge base). Fresh clones, `ulimit -c 0`.
+
+Build (identical for port and base):
+```
+cd awq/kernels
+CUDA_HOME=/usr/local/cuda TORCH_CUDA_ARCH_LIST="8.0" MAX_JOBS=16 python setup.py build_ext --inplace
+CUDA_HOME=/usr/local/cuda TORCH_CUDA_ARCH_LIST="7.0" MAX_JOBS=16 python setup.py build_ext --inplace
+```
+- sm_80 (the gate): **PASS** at both shas. 12 .cu compiled with `-gencode=arch=compute_80,code=sm_80`, `cuobjdump --list-elf` on `awq_inference_engine*.so` shows 12 sm_80 cubins at both; 39 warning lines at both.
+- sm_70: **FAILS at both shas with the same errors**, so pre-existing and not a regression: upstream's kernels need sm_80. `gemm_cuda.cu` and `gemv_cuda.cu` (quantization_new): "no suitable user-defined conversion from `__nv_bfloat162` to `__half2`" (same counts at both, line numbers shifted by the port's 8 added lines); `w8a8_gemm_cuda.cu`: ptxas "Feature 'cp.async' requires .target sm_80 or higher".
+
+Runtime: not run. The only NVIDIA GPUs available are V100 (sm_70), which upstream does not build for, so `projects/llm-awq/tests/*` could not run on CUDA. No NVIDIA runtime behavior is claimed.
+
+Result: CUDA gate **PASS** at 90a711b (sm_80 compile + link, port and base identical in outcome).
