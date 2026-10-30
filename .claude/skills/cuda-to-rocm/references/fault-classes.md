@@ -379,6 +379,16 @@ Fix additively -- it helps the CUDA build too. (LC-framework)
 injected with `-include`, object files are NOT rebuilt: wipe them manually or you validate
 stale code and get a silent false pass. (lc0)
 
+**`#if __CUDA_ARCH__ >= NNN` and `#if CUDART_VERSION < NNNN` silently pick the wrong branch on
+HIP**, because neither macro is defined there (it reads as 0). An arch-gated kernel body
+compiles to an empty stub or its `#else` printf with no error, so a feature can look "built"
+yet never run; grep for both macros before calling a port complete. Widen the arch guard with
+`|| defined(__HIP_DEVICE_COMPILE__)` (never define `__CUDA_ARCH__` in a shim; HIP headers and
+libraries test it), and prefix version guards with `!defined(USE_HIP) &&` so HIP takes the
+modern CUDA spelling -- the legacy branch may name intrinsics HIP lacks (`h2div` vs
+`__h2div`). Confirm with the disassembly: the kernel should contain real instructions
+(`v_pk_*_f16` for half2 code). (gpuRIR)
+
 **MSVC-only upstreams accept code that clang and gcc reject**, so the HIP build (and the
 CUDA build under nvcc) is a stricter compiler than the project has ever seen. Velvet carried
 a member template whose parameter pack shadowed the class pack -- accepted by MSVC, rejected

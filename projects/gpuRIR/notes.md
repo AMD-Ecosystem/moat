@@ -404,3 +404,36 @@ A HIP port of gpuRIR through a force-included compatibility header, with hipFFT/
 ### Verification of Review 2026-10-29
 - Finding 1 (image_sample_lut CUDA line): resolved. In `git diff upstream/master -- src/gpuRIR_cuda.cu`, upstream's `return (abs(t_tau)<Tw_2)? amp * tex1D<float>(...)` appears as unchanged context in the `#else` branch (`src/gpuRIR_cuda.cu:257`). The HIP branch guards with `if (!(abs(t_tau) < Tw_2)) return 0.0f;` (line 245) ahead of the index math. Rebuilt af05f1d for gfx942 (same cmake line as the porter round, `-j16`). A NaN receiver x gives 0 NaN and 0 nonzero samples on both the LUT and exact paths, and the direct-path-only RIR peaks at sample 168 on both.
 - `jargon.py --port gpuRIR`: clean. af05f1d commit: `[ROCm]` title, AI disclosure, Test Plan, no trailer.
+
+## Porter round 2026-10-30 (linux-gfx942): mixed precision ported (Review 2026-10-30 finding 1)
+
+Requested by jeff: the `now` ruling on deferral `gpurir-mixed-precision` (2026-08-13) had not been carried out. Review PR #1 has no line threads or review body; the finding is the one in "Review 2026-10-30" above. No GitHub writes this round, so nothing was posted on the review PR.
+
+### Change (fork 39a7a9d on top of af05f1d)
+- `src/gpuRIR_cuda.cu`: the five `#if __CUDA_ARCH__ >= 530` guards (h2 constants, half2 helpers, the three mp kernels) become `#if __CUDA_ARCH__ >= 530 || defined(__HIP_DEVICE_COMPILE__)`. `__CUDA_ARCH__` is not defined in the shim.
+- The three `CUDART_VERSION` guards (line 13 `< 9000` -> `#define __h2div h2div`; lines 508 and 730 `< 9020` -> float `Tw_inv` converted in-kernel) become `#if !defined(USE_HIP) && CUDART_VERSION < ...`, so HIP takes the modern spelling: `__h2div` (declared in TheRock 10.1.0 `amd_hip_fp16.h:883`) and a host-side `__float2half2_rn` (`__HOST_DEVICE__` there, line 476). On CUDA each condition evaluates as before.
+- HIP early return in `activate_mixed_precision` removed; the function is now byte-identical to upstream (`git diff upstream/master` shows no hunk there).
+- Verified `__heq2`/`__hne2` on HIP return 1.0/0.0 half2 lanes (`-r` converted from the int mask), which `my_h2sinc` and the sign trick in `my_h2sinpi` rely on.
+- Code-object check: `generateRIR_mp_kernel` has 19 `v_pk_{fma,mul,add}_f16` instructions on gfx942, gfx90a, gfx1100 and gfx1201 (it was an empty stub before); `reduceRIR_mp_kernel` 2 on gfx942. Six-arch compile (gfx90a;gfx942;gfx1100;gfx1101;gfx1151;gfx1201): 0 errors.
+
+### Build at 39a7a9d (gfx942, TheRock ROCm 10.1.0)
+Same cmake line as the previous porter round (`agent_space/gpurir/build`, `-j16`). OK; only warning is the pre-existing nodiscard on `cudaGetDeviceProperties` (line 1069).
+
+### Tests (HIP_VISIBLE_DEVICES=0, `ulimit -c 0`, runtime env as in the 2026-10-29 sync round)
+`agent_space/gpurir/mp_validate.py`: **22/22 PASS**. Error is max |mp - float| / peak unless stated.
+- Direct path (nb_img [1,1,1]), room 4x5x3, src (1,1,1.5) -> rcv (3,4,1.5):
+
+  | fs | mp vs float exact | mp vs numpy float16 emulation of the kernel | float exact vs float64 | LUT vs exact |
+  |---|---|---|---|---|
+  | 8000 | 5.24e-4 | 5.5e-6 | 5.3e-8 | 1.59e-3 |
+  | 16000 | 7.95e-4 | 0 | 5.2e-8 | 1.38e-4 |
+  | 44100 | 3.72e-4 | 0 | 2.2e-6 | 6.85e-4 |
+  | 48000 | 6.76e-4 | 0 | 4.3e-8 | 3.91e-4 |
+
+  Peak sample identical (84/168/464/505). Thresholds: mp vs float in (0, 2e-3) -- the lower bound fails if mp silently falls back to float, as it did at af05f1d; emulation < 4e-3 (half ulp at peak is 7e-4..9.6e-4 of peak). The emulation replays the kernel's half2 polynomial sinpi/cospi, Hann window and `__h2div` in numpy float16 (fma as one float32 op then a cast); bit-exact at three of four rates, so the AMD half2 arithmetic matches IEEE half as the CUDA path assumes.
+- Reverberant shoebox, Sabine T60 0.6 s, Tmax 0.3 s, fs 16k, nb_img [52,42,69] (N=150696, multi-stage half2 reduction): max err/peak 7.09e-4, RMS rel 1.43e-3 (thresholds 3e-3 / 5e-3); first arrival 168 on both (expected 168).
+- 2 src x 3 cardioid rcv, Tdiff 0.15 s: ISM part max err/peak 1.29e-3 (threshold 5e-3); diffuse tail RMS mp/float 1.006.
+- Mode toggles: mp after LUT disables the LUT and gives the mp result; LUT after mp disables mp and gives the float result (bit-equal to a plain float run). Messages printed match upstream's.
+- Upstream examples (scratch copy, synthetic 2 s 16 kHz wav, no-op matplotlib/plotly stub incl. `plotly.subplots`): example.py, simulate_trajectory.py, polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py, plus example.py with `activateMixedPrecision(True)`/`activateLUT(False)`: **6/6 exit 0**.
+
+Deferral `gpurir-mixed-precision` set `done` with `utils/deferred.py set-status`. Commit 39a7a9d: `[ROCm]` title 51 chars, AI disclosure in prose, Test Plan, no trailer; `jargon.py --port gpuRIR` clean, `prose.py` clean on the body. Pushed plain to `moat-port` (af05f1d..39a7a9d; no upstream PR open). advance-head -> 39a7a9d, so every completed arch reads `revalidate` (the mp kernels now exist on all AMD arches; wave32 arches have not run them). Lesson promoted to `cuda-to-rocm/references/fault-classes.md` (Headers, includes and build): undefined `__CUDA_ARCH__`/`CUDART_VERSION` silently select stub or legacy branches on HIP.
