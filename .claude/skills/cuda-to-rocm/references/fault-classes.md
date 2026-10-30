@@ -428,7 +428,12 @@ not enforced. The result is a crash window in the problem size, not a threshold:
 fp32 LayerNorm forward failed at 16350..32568 columns and passed above it, because the query
 drops back to 0 at 128 KiB. CDNA (64 KiB LDS per CU) answers 0 correctly, so wave64 runs never
 see it. Fix: under `USE_HIP`, also require `smem + attr.sharedSizeBytes <=
-hipDeviceAttributeMaxSharedMemoryPerBlock` before taking the shared-memory path. Sweep widths
+hipDeviceAttributeMaxSharedMemoryPerBlock` before taking the shared-memory path. With a
+compatibility header, map `cudaOccupancyMaxActiveBlocksPerMultiprocessor` to a small template
+that calls the HIP query and then reports 0 when dynamic plus static exceeds the per-block
+limit: that restores CUDA's answer for every caller at once (oneflow also had the idiom in its
+CTC decoder) and leaves the CUDA sources untouched. Check each candidate block size
+separately, because static shared memory (block-reduce scratch) grows with it. Sweep widths
 past 64 KiB/element-size on an RDNA card. Sweeping to 8192 only catches the
 8-byte-per-column backward kernels. (oneflow, gfx1100)
 
