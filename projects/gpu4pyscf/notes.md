@@ -741,3 +741,38 @@ Open items:
 jeff clarified that pushing the fork's port branch is allowed. `git push origin moat-port` moved the fork from 45d8053 to 066e91e (`git ls-remote` confirms 066e91eee794766343ea54be6560dcf430415502). Then `advance-head gpu4pyscf 066e91e...` ran, and head_sha is now 066e91e.
 
 **Tooling gap: the failures did not clear.** advance_head classifies a documentation-only delta as inert and moves a `validation-failed` record's `failed_sha` up to the new head (moatlib.py advance_head, `failed = new_sha if verdict.arch_independent`). The reasoning is that a README edit cannot fix a failure. Here the failure WAS the README, so gfx90a and gfx1100 now record `failed_sha` = 066e91e, and `fleet` still routes both to the porter. No porter work is left. The legal way out is a validator run at 066e91e on each arch recording `completed` (`validation-failed -> completed` is allowed). The selector will not dispatch that run, so jeff has to request it explicitly. Each GPU suite already passed at 45d8053, and 066e91e changes only README.md. Fixing the rule (for example, letting a docs delta retire a docs-gate failure) is control-plane work and was not done here.
+
+## Validation 2026-10-30 (validator, linux-gfx1100, fork moat-port @ 066e91e) -- NOT VALIDATED (environment: no CuPy-ROCm installable in this job)
+
+Requested by jeff to clear the documentation-only failure at 066e91e: build by the new README section as written, run the full GPU suite, check the d-shell miscompile. Host: 4x AMD Radeon Pro W7800 48GB, gfx1100 (wave32), `HIP_VISIBLE_DEVICES=4` pinned by the dispatcher. Toolchain: TheRock ROCm SDK 10.1.0 wheels in /opt/python-3.11-venv (`rocm-sdk version` -> 10.1.0, AMD clang 24.0.0). Fork clone at 066e91eee794766343ea54be6560dcf430415502 (== origin/moat-port).
+
+### Result
+The record stays `validation-failed` at 066e91e. The cause is this job's environment, not the port. The image has no CuPy (`import cupy` fails in /opt/python-3.11-venv and in system python3). The job was dispatched without `FLEET_VENV`, and the fleet guard refused to create a job-local venv in agent_space and install the porter's package set into it ("pip changing the Python environment every job on this host shares"). I did not work around the guard, so no Python test ran. **For jeff:** redispatch this validation with `--build` (so the job gets its own `FLEET_VENV`), or preinstall the porter's package set (`'numpy>=2.0,<2.3' 'scipy>=1.13' cupy-rocm-7-0==14.2.0 pyscf==2.14.0 pytest`) in an environment the job may use. The rest of this section is the evidence that does not need CuPy.
+
+### Build by the README section as written: PASS
+From the fork root, with only the arch substituted and `-j` set to the host's 32 physical cores:
+```
+export PATH=/opt/python-3.11-venv/bin:$PATH
+cmake -S gpu4pyscf/lib -B build/temp.gpu4pyscf -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100
+cmake --build build/temp.gpu4pyscf -j 32
+```
+Configure exit 0 (2 s). CMake found the HIP compiler on its own (`_rocm_sdk_devel/lib/llvm/bin/clang++`, Clang 24.0.0), so the README's `-DCMAKE_HIP_COMPILER` hint was not needed. In this TheRock layout both `<rocm_path>/llvm/bin/clang++` and `<rocm_path>/lib/llvm/bin/clang++` exist, so the hint as written also resolves. Build exit 0 (107 s), 8 libs: cupy_helper gdft gecp gint gvhf gvhf_md gvhf_rys pbc. The README's CuPy-ROCm install step could not be run (see Result). `git status --porcelain` in the fork is clean after the build, because build/ and the .so files are ignored. `jargon.py --port gpu4pyscf`: clean.
+
+### GPU test suite: NOT RUN
+No CuPy, so `python -m pytest gpu4pyscf/scf/tests` cannot import gpu4pyscf. The baseline for this arch is still "Validation 2026-10-30 (linux-gfx1100, 45d8053)": 126 passed / 8 skipped / 32 failed in two identical runs, all failures out of scope. 066e91e changes only README.md (11 added lines), so device code is unchanged from 45d8053. That is the reason to expect the same counts, not evidence of them.
+
+### d-shell MachineLICM miscompile (deferred `therock-10-1-machinelicm-clobbers-live-vgpr`) on gfx1100: does not reproduce (static check)
+I compiled gvhf-rys/rys_contract_jk.cu device-only with this host's ROCm 10.1 compiler, the same way the gfx942 reviewer did:
+```
+clang++ -x hip --offload-arch=<gfx> --cuda-device-only -O3 -S -fno-gpu-rdc -DUSE_HIP -include gpu4pyscf/lib/cuda_to_hip.h \
+  -ffp-contract=on -std=gnu++17 -Igpu4pyscf/lib/gvhf-rys -Igpu4pyscf/lib/hip_compat -Igpu4pyscf/lib -Igpu4pyscf/lib/deps/include \
+  gpu4pyscf/lib/gvhf-rys/rys_contract_jk.cu
+```
+In `rys_jk_kernel` I took the persistent-loop head atomic and searched every non-store instruction after the loop header for a write to its zero-offset VGPR:
+- gfx942 (control): `global_atomic_add v1, v20, v1, s[20:21] sc0`. v20 is overwritten inside the loop by `global_load_dwordx2 v[20:21], ...` at 5+ sites, which is the defect as recorded.
+- gfx1100, -O3 and -O2: `global_atomic_add_u32 v2, v0, v2, s[18:19] glc`. v0 is set to 0 once before the loop (`v_mov_b32_e32 v0, 0`), and nothing writes v0 after the loop header.
+- `-mllvm -disable-machine-licm` still changes gfx1100 code (the kernel shrinks from 16522 to 15658 asm lines), but the clobber pattern is not there without it.
+This agrees with the 45d8053 gfx1100 runtime result (def2-svp RHF 1.7e-11 vs CPU with the committed flags). Runtime confirmation at 066e91e needs CuPy and was not run.
+
+### CUDA no-regression gate
+Not rerun. 066e91e is README-only, and the 45d8053 gate (PASS, this arch's 2026-10-30 run) covers the same code.
