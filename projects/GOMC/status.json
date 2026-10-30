@@ -3,11 +3,11 @@
   "name": "GOMC",
   "upstream_url": "https://github.com/GOMC-WSU/GOMC",
   "fork_url": "https://github.com/AMD-Ecosystem/GOMC",
-  "fork_default_branch": "main",
+  "fork_default_branch": "development",
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:24:38Z",
-  "updated_at": "2026-10-30T18:19:34Z",
+  "updated_at": "2026-10-30T18:22:33Z",
   "head_sha": "58d5496d3321d6776e8b78d8b94f4440ceec0f54",
   "depends_on": [],
   "porting": {
@@ -135,5 +135,12 @@
       }
     }
   },
-  "review_pr": "https://github.com/AMD-Ecosystem/GOMC/pull/1"
+  "review_pr": "https://github.com/AMD-Ecosystem/GOMC/pull/1",
+  "base_branch_ruling": {
+    "branch": "development",
+    "previous": "main",
+    "by": "jeff",
+    "at": "2026-10-30T18:22:33Z",
+    "reason": "upstream CONTRIBUTING.md asks for PRs against development"
+  }
 }
