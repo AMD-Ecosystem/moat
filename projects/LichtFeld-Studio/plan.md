@@ -368,3 +368,5 @@ oracle, supplied by the validator's environment, not a MOAT-tracked dep.
    USE_HIP so the smoke test does not require nvjpeg.
 5. CUB DoubleBuffer selector correctness on hipCUB for the gsplat tile sort
    (risk 5) -- verify the sorted buffer is the one read after SortPairs.
+
+Windows video decode ruling (jeff, 2026-10-30): Option A. On Windows, use rocDecode when the ROCm SDK ships it (rocDecode 1.12, ROCm 10.2 and later, which supports Windows through Mesa's VA-API on D3D12); with an older SDK, configure without rocDecode and decode video on the CPU, named and logged as such. Linux keeps the hard configure failure when rocDecode is missing. Windows validation of the full app therefore runs twice once Windows work resumes: once on ROCm < 10.2 (exercises the CPU fallback) and once on ROCm >= 10.2 (exercises rocDecode on Windows).
