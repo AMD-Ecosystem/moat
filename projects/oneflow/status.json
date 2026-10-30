@@ -7,7 +7,7 @@
   "priority": 6.236,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-10-30T19:16:46Z",
+  "updated_at": "2026-10-30T19:24:45Z",
   "head_sha": "7919c4f3898f6570fe1588ee18ef5a1c6a5cd964",
   "waivers": {
     "windows": {
@@ -19,7 +19,7 @@
   },
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 81634683,
-  "stage": "ported",
+  "stage": "reviewing",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -28,7 +28,7 @@
       "validated_sha": "fde793b9faec7d2f8e800b419e979613b8d12abf",
       "started_at": "2026-05-31T01:37:32Z",
       "completed_at": "2026-10-30T07:44:01Z",
-      "updated_at": "2026-10-30T19:16:46Z",
+      "updated_at": "2026-10-30T19:24:45Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -42,7 +42,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
+      "last_agent": "porter",
       "failed_sha": "521f547825b77e36a4752bd45b2a295ad2a0a633"
     },
     "windows-gfx1201": {
@@ -162,5 +162,8 @@
     "since": "2026-10-30T18:18:39Z",
     "at": "2026-10-30T19:16:46Z"
   },
-  "porting": null
+  "porting": {
+    "arch": "linux-gfx90a",
+    "since": "2026-10-30T19:24:45Z"
+  }
 }
