@@ -390,14 +390,27 @@ later ROCm definition would collide in every TU. (llm-awq)
 
 **Torch API used by a ROCm-only branch is a version floor nobody sees.** A HIP branch compiles
 only against the ROCm PyTorch on the porting host, which is usually far newer than the
-project's pinned torch. `at::cuda::getCUDABlasLtWorkspace()` / `getCUDABlasLtWorkspaceSize()`
-exist only from PyTorch 2.9 (`getCurrentCUDABlasLtHandle()` goes back to 2.3), so an extension
-that calls hipBLASLt directly with them stops building on every older ROCm wheel -- and since
-it is one extension, the kernels that already worked go down with it. Allocate the workspace
-as a byte tensor on the current stream (`at::empty({n}, input.options().dtype(at::kByte))`,
-sized from the chosen heuristic's `workspaceSize`, none when that is zero). Check each
-`at::cuda::` call a HIP branch adds against the oldest torch tag the project supports
-(`git show v2.3.0:aten/src/ATen/cuda/CUDAContextLight.h`). (llm-awq)
+project's pinned torch, and one failing call takes the whole extension down with it, kernels
+that already worked included. Two traps in `ATen/cuda/CUDAContextLight.h`:
+`getCUDABlasLtWorkspace()` / `getCUDABlasLtWorkspaceSize()` exist only from PyTorch 2.9, and
+`getCurrentCUDABlasLtHandle()` is usable from an extension on ROCm only from 2.4. Up to 2.3 its
+declaration (and the `<cublasLt.h>` include) sits under
+`#if ... (defined(USE_ROCM) && ROCM_VERSION >= 50700)`, and `ROCM_VERSION` is defined only by
+PyTorch's own CMake (`add_definitions(-DROCM_VERSION=...)` in `cmake/Dependencies.cmake`): no
+installed header defines it (`rocm_version.h` has only `ROCM_VERSION_MAJOR/MINOR/PATCH`) and
+`cpp_extension` passes only `-D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1` (plus `-DHIPBLAS_V2`), so in
+a `cpp_extension` build the guard is false and the name is undeclared. Any guard on
+`ROCM_VERSION`, or on another macro PyTorch sets only through CMake, reads false in an extension
+up to 2.3. Calling hipBLASLt directly, keep the handle and workspace in the extension: one
+`hipblasLtHandle_t` per device from `hipblasLtCreate` on first use (mutex-guarded, never
+destroyed, as torch does), the current stream, and a byte-tensor workspace
+(`at::empty({n}, input.options().dtype(at::kByte))`, sized from the chosen heuristic's
+`workspaceSize`, none when zero). Checking a call against the oldest supported tag means reading
+the preprocessor guard around each declaration, not just finding the name:
+`git show v2.3.0:aten/src/ATen/cuda/CUDAContextLight.h` shows the handle declared, inside a guard
+that only PyTorch's own build satisfies. A guard inside an inline function body
+(`HIPGuardImplMasqueradingAsCUDA.h`'s `ROCM_VERSION < 50201` in `deviceCount()`) changes
+behaviour, not what is declared. (llm-awq)
 
 ## Types, dispatch and platform limits
 

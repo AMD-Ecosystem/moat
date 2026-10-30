@@ -597,3 +597,38 @@ New findings:
 4. The CUDA host-compiler standard changed with no reason left on ROCm. `awq/kernels/setup.py:49` sets `cxx_args` to `-std=c++20`; upstream had `-std=c++17`, and the CUDA `nvcc` list (`:35`) still says c++17. Since a9998ae no ROCm source reaches the host compiler, so the `cxx` list now affects only the CUDA build: `pybind.cpp` and `ft_attention.cpp` go to g++ as C++20, and the `.cu` files go to nvcc as C++17. Restore `-std=c++17` in `cxx_args`; the ROCm `nvcc_args` keep c++20.
 
 Checked and not findings this round. The dac7721 workspace lifetime is safe: `at::empty` allocates on the current stream (the device guard is set and `stream` is `getCurrentCUDAStream()`), and when the block is freed at function exit, the caching allocator only reuses it in order on that stream. `make_bfloat162` / `__floats2bfloat162_rn` are absent from this host's ROCm SDK `amd_hip_bf16.h`, and `__float22bfloat162_rn` is present (lesson 1 holds). The shim copies sit next to their source, so relative includes resolve. Legacy SIMT GEMM: the loads stay in bounds (OC % 64 and IC % 32 are checked; the M tail is clamped). `jargon.py --port llm-awq` is clean. The three new commits have `[ROCm]` titles of 59-66 chars, AI disclosure, a Test Plan, no trailer, and ASCII only.
+
+## Porting round 2026-10-30 (linux-gfx90a): re-review fixes
+
+Answers "Review 2026-10-29 (linux-gfx1100, re-review at 8f14286)". Fork `moat-port`: 8f14286 -> 1f3aadc -> e8b1937. Host: AMD Instinct MI250X (gfx90a, wave64), ROCm 7.16 (TheRock SDK), torch 2.16.0a0+git6c3af02, Python 3.11. The review was recorded only here; review PR #1 has no threads, so nothing to reply to on it.
+
+1. (new finding 1, torch 2.3) 1f3aadc: `w8a8_gemm_cuda.cu` no longer calls `at::cuda::getCurrentCUDABlasLtHandle()`. `w8a8_hipblaslt_handle()` keeps a `std::vector<hipblasLtHandle_t>` indexed by `hipGetDevice()`, filled by `hipblasLtCreate` on first use under a function-static `std::mutex`, never destroyed (as torch leaks its own handles). A failed create returns nullptr and the GEMM falls back to the SIMT kernel (retried on the next call). Current stream and the `at::empty` byte workspace from dac7721 unchanged. No torch-version conditional.
+   Header verification (`git show <tag>:<file>` in the pytorch clone), reading the guard around every declaration the HIP build uses. After hipify the extension uses only `at::cuda::getCurrentCUDAStream`, `at::cuda::CUDAGuard`, `at::cuda::OptionalCUDAGuard`, `device_of`, `at::empty`/TensorOptions, through `ATen/hip/HIPContext.h` and `c10/hip/HIPGuard.h` (generated from `ATen/cuda/CUDAContext.h`, `c10/cuda/CUDAGuard.h`). At v2.3.0 and v2.8.0: `c10/cuda/CUDAStream.h` declares `getCurrentCUDAStream` unguarded (the only `#ifdef USE_ROCM` is inside an inline priority check); `c10/cuda/CUDAGuard.h` has no `#if` at all; `ATen/DeviceGuard.h` `device_of` unguarded; `ATen/cuda/CUDAContext.h` is includes only; `aten/src/ATen/hip/impl/HIPStreamMasqueradingAsCUDA.h` (`getCurrentHIPStreamMasqueradingAsCUDA`) has no guard; `HIPGuardImplMasqueradingAsCUDA.h` declares `HIPGuardMasqueradingAsCUDA` / `OptionalHIPGuardMasqueradingAsCUDA` unguarded, its one v2.3.0 guard (`ROCM_VERSION < 50201`, line 104) is inside the inline `deviceCount()` body and declares nothing. `CUDAContextLight.h`: v2.3.0 lines 12-14 and 85-87 guard `<cublasLt.h>` and the handle on `ROCM_VERSION >= 50700` (confirmed the review: `ROCM_VERSION` only from `cmake/Dependencies.cmake:1297` add_definitions; v2.3.0 `cpp_extension.py` COMMON_HIP_FLAGS = `-D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1` (+`-DHIPBLAS_V2` for ROCm >= 6.0)); v2.4.0 and v2.8.0 declare the handle unguarded; `getCUDABlasLtWorkspace*` absent at v2.8.0. The extension now calls none of the guarded names.
+   NOT built against a torch 2.3 (or 2.4..2.8) ROCm wheel: none installed here and pip is blocked on fleet hosts. So the torch 2.3 build is verified by header reading only. Separate, unverified floor: torch 2.3 ROCm wheels exist for ROCm 5.7 and 6.0; the hipBLASLt calls use `HIPBLAS_COMPUTE_32I` / `HIP_R_8I` (hipDataType), and whether ROCm 5.7's hipBLASLt headers accept those was not checked (no 5.7 SDK here).
+   New test `tests/w8a8_handle_test.py <w8a8_gemm_cuda.cu>`: builds the handle function text in /tmp via load_inline (no checkout path) and races its first use from 16 `std::thread`s spread over the visible devices (the pybind entry holds the GIL, so Python threads cannot race it). PASS: 16 threads over 1 device, one non-null handle. Only one GPU visible (dispatcher pinned HIP_VISIBLE_DEVICES), so per-device distinctness is not exercised.
+2. (new finding 2) Skill `references/fault-classes.md`, "Torch API used by a ROCm-only branch is a version floor nobody sees", rewritten: handle usable from an extension on ROCm only from torch 2.4; read the preprocessor guard around each declaration, not just the name; a `ROCM_VERSION` guard (and any macro torch defines only through CMake) is false in a `cpp_extension` build up to 2.3; recommended pattern is the extension-owned per-device handle. Source still llm-awq.
+3. (new finding 3) e8b1937: setup.py uses plain `BuildExtension` again; `use_ninja`, its comment and the now-unused `import sys` removed. This round's build ran through ninja (`[1/14]`..`[14/14]`), 115 s at MAX_JOBS=32.
+4. (new finding 4) e8b1937: `cxx_args` back to `-std=c++17` (CUDA host list matches upstream again apart from ordering of `-fopenmp -lgomp`, which is appended for CUDA only). torch's ROCm path passes `extra_compile_args['nvcc']` to hipcc for .cu (cpp_extension.py `cuda_post_cflags`), so the ROCm build is unaffected.
+
+PR-PREP SQUASH TODO (commit-message corrections; history not rewritten now):
+- dac7721 body: delete "The cached hipBLASLt handle (available since PyTorch 2.3)"; the handle is now the extension's own (1f3aadc). Its claim that the ROCm build "failed against PyTorch 2.3 through 2.8" and is fixed by dac7721 is wrong for 2.3: dac7721 restores 2.4..2.8 only, 1f3aadc covers 2.3 (by header reading; no 2.3 wheel build).
+- 73edaef: TinyChat logits agree to <= 2.9e-3, not 2.7e-3 (2.930e-03 again this round).
+- 1f3aadc / e8b1937 Test Plans: use the established form (`PYTHONPATH=. python ...` and the line "# (the test scripts are kept outside this repository)").
+
+Build:
+```
+cd projects/llm-awq/src/awq/kernels
+find csrc \( -name '*.hip' -o -name '*_hip.*' -o -name 'hip_bf16_*' -o -name '*_cpp_shim.cu' \) ! -name 'cuda_to_hip*' -delete
+rm -rf build
+PYTORCH_ROCM_ARCH=gfx90a MAX_JOBS=32 python setup.py build_ext --inplace
+```
+
+Tests at e8b1937 (from /tmp, `PYTHONPATH=<src>/awq/kernels`, scripts in projects/llm-awq/tests/), all PASS:
+- `attn_test.py`: 443/443 (fp32 D=128 t=16240 refused, 65552 > 65536 B, as before).
+- `tinychat_e2e.py <src>`: 4/4, argmax 40/40, 40/40, 64/64, 40/40; max |dlogit| 2.930e-03, min cos 0.999999.
+- `w8a8_test.py`: 25/25, paths {'hipblaslt': 24} (handle now from `w8a8_hipblaslt_handle()`), side-stream ordering PASS.
+- `w8a8_simt_test.py <w8a8_gemm_cuda.cu>`: 7/7 exact.
+- `legacy_gemm_test.py`: 8/8, max err vs dequant ref 3.9e-3.
+- `w4a16_test.py <src>`: 30/30.
+- `w8a8_handle_test.py <w8a8_gemm_cuda.cu>`: PASS (new, see 1).
+jargon.py --port llm-awq clean; prose.py clean on both commit bodies; titles 56 and 58 chars. Still owed: wave32 and Windows runs at the new head (validators).
