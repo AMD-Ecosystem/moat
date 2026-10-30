@@ -7,8 +7,8 @@
   "priority": 4.871,
   "ext_type": "cmake-cupy-plugin",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-10-30T01:30:05Z",
-  "head_sha": "45d8053064db65a7c776a65f9310ec4063bc5b5f",
+  "updated_at": "2026-10-30T03:11:30Z",
+  "head_sha": "066e91eee794766343ea54be6560dcf430415502",
   "waivers": {
     "windows": {
       "reason": "The obstacle is the operating system, not the GPU: there is no CuPy-ROCm on Windows. gpu4pyscf's entire Python layer is CuPy-based (cupy.ndarray throughout, plus cupy_backends.cuda.libs.* for cuBLAS/cuSOLVER), and cupy-rocm ships manylinux2014 wheels only, with no Windows distribution and no Windows build path. With no CuPy-ROCm there is no importable GPU array type, so no GPU test path exists to exercise on Windows at all -- this is not a build failure that could be fixed in the port. Confirmed on windows-gfx1101 and windows-gfx1201. The HIP work itself is validated at head on linux-gfx90a (wave64) and linux-gfx1100 (wave32); windows is the only gate not satisfied at head.",
@@ -28,7 +28,7 @@
       "validated_sha": "899ec268910992ae968ef6e8e447483e9fa22244",
       "started_at": "2026-06-02T06:21:22Z",
       "completed_at": "2026-06-02T08:00:00Z",
-      "updated_at": "2026-10-30T01:30:05Z",
+      "updated_at": "2026-10-30T03:11:30Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -51,7 +51,7 @@
         "detail": "gpu4pyscf/lib/CMakeLists.txt: comment-only (comments/format only); gpu4pyscf/lib/cuda_to_hip.h: comment-only (comments/format only)",
         "at": "2026-06-16T05:32:42Z"
       },
-      "failed_sha": "45d8053064db65a7c776a65f9310ec4063bc5b5f"
+      "failed_sha": "066e91eee794766343ea54be6560dcf430415502"
     },
     "windows-gfx1101": {
       "blocked": true,
@@ -81,7 +81,7 @@
       "validated_sha": "899ec268910992ae968ef6e8e447483e9fa22244",
       "started_at": "2026-06-02T07:24:00Z",
       "completed_at": "2026-06-02T07:55:00Z",
-      "updated_at": "2026-10-30T01:06:06Z",
+      "updated_at": "2026-10-30T03:11:30Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -104,7 +104,7 @@
         "detail": "gpu4pyscf/lib/CMakeLists.txt: comment-only (comments/format only); gpu4pyscf/lib/cuda_to_hip.h: comment-only (comments/format only)",
         "at": "2026-06-16T05:32:42Z"
       },
-      "failed_sha": "45d8053064db65a7c776a65f9310ec4063bc5b5f"
+      "failed_sha": "066e91eee794766343ea54be6560dcf430415502"
     },
     "windows-gfx1201": {
       "blocked": true,
