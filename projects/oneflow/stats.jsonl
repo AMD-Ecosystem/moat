@@ -52,3 +52,7 @@
 {"kind":"phase","ts":"2026-10-30T02:04:02Z","phase":"test","seconds":36.493,"exit":3,"cmd":"agent_space/test_oneflow.sh"}
 {"kind":"phase","ts":"2026-10-30T02:21:25Z","phase":"test","seconds":809.548,"exit":0,"cmd":"agent_space/test_oneflow_perfile.sh"}
 {"kind":"session","ts":"2026-10-30T02:35:14Z","epoch":1793327714.138347751,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T01:38:17Z","epoch":1793324297.476168639,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-30T01:49:13Z","phase":"compile","seconds":656.390,"exit":0,"cmd":"bash agent_space/of_build.sh"}
+{"kind":"phase","ts":"2026-10-30T03:08:33Z","phase":"test","seconds":955.151,"exit":0,"cmd":"bash agent_space/of_test2.sh"}
+{"kind":"session","ts":"2026-10-30T03:09:01Z","epoch":1793329741.521235778,"event":"end","platform":"linux-gfx90a"}

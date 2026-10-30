@@ -17,6 +17,19 @@
         "by": "jeffdaily",
         "at": "2026-08-13T18:11:34Z"
       }
+    },
+    {
+      "id": "therock-libllvm-symbol-interposition",
+      "kind": "rocm-bug-report",
+      "component": "llvm (rocm-sdk wheel libLLVM.so)",
+      "summary": "ROCm 10.1.0 rocm-sdk wheels: libamdhip64, libamd_comgr, hipblas, rocblas, rccl and others link the shared libLLVM.so.24.0git, which is built without -Bsymbolic-functions (readelf -d shows only FLAGS_1 NODELETE). A process that already loaded another LLVM (oneflow ships its own libLLVMSupport.so.17git as a NEEDED of liboneflow.so) gets its LLVM 24 static initializers bound to the LLVM 17 copies: import oneflow aborts with realloc(): invalid pointer in llvm::SmallVectorBase<unsigned long>::grow_pod called from libLLVM.so.24 __static_initialization_and_destruction_0. /opt/rocm 7.2.1 did not hit this (comgr there links LLVM statically). Workaround: LD_PRELOAD the SDK libLLVM.so.24.0git; a project-side fix is linking its own LLVM statically or with hidden visibility.",
+      "refs": [
+        "projects/oneflow/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-30T02:42:27Z",
+      "decided": null
     }
   ]
 }
