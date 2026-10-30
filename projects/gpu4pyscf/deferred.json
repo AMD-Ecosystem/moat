@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "therock-10-1-machinelicm-clobbers-live-vgpr",
+      "kind": "rocm-bug-report",
+      "component": "llvm-project",
+      "summary": "TheRock ROCm 10.1 SDK clang (AMD clang 24.0.0git d6f6cb69), gfx942 and gfx90a: MachineLICM-related miscompile in gpu4pyscf gvhf-rys rys_jk_kernel. A VGPR materialised once as 0 (v20, the vaddr offset of the work-queue global_atomic_add on head) is reused as the destination of a predicated global_load_dwordx2 inside the loop, so the next loop iteration's atomic faults (HSA MEMORY_APERTURE_VIOLATION) for any basis with d shells. -O1 still faults; -mllvm -disable-machine-licm (compile and link flags, -fgpu-rdc) fixes it. Reproducer: standalone device-only compile of gvhf-rys/rys_contract_jk.cu at fork 45d8053 and check the atomic's vaddr register for other defs. Choice for a person: file upstream ROCm/llvm-project, and whether the port should carry the flag.",
+      "refs": [
+        "projects/gpu4pyscf/notes.md#porter-fix-2026-10-30"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-30T00:35:52Z",
+      "decided": null
+    }
+  ]
+}

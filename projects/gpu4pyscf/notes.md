@@ -534,3 +534,52 @@ Scope: whole fork diff (29 files), with focus on the upstream merge c9f1ac4 and 
 - After the fixes, run at least `python -c "import gpu4pyscf; from pyscf import gto; from gpu4pyscf import scf; m=gto.M(atom='O 0 0 0; H 0 0.76 0.59; H 0 -0.76 0.59', basis='def2-svp'); print(scf.RHF(m).kernel())"` on a ROCm host with CuPy-ROCm before marking ported. Then validate wave64 and wave32 with the test set recomputed from gpu4pyscf/scf/tests/ (see the sync notes above). test_init_guess.py's vsap/qchem-sad cases import gpu4pyscf.dft.rks/numint and need libxc, so they fall under the existing DFT exclusion and are not port regressions.
 
 Verdict: REQUEST CHANGES (one blocker, one wave64 UB defect, one CUDA-path edit, two footprint/comment items).
+
+## Porter fix 2026-10-30 (porter, linux-gfx942 MI300X, fork moat-port cdd8b8b -> 45d8053)
+
+Answers "Review 2026-10-29". Each finding was fact-checked before any change. New commit on top of cdd8b8b (no rebase/amend/force). `jargon.py --port gpu4pyscf` clean, `prose.py` clean on the commit message. Pushed cdd8b8b..45d8053 (fast-forward); `advance-head 45d8053064db65a7c776a65f9310ec4063bc5b5f`. linux-gfx90a / linux-gfx1100 (validated at 899ec26) read revalidate.
+
+### Review findings
+- **Blocker (dft/libxc.py), CONFIRMED.** At cdd8b8b, RHF on gfx942 dies with `OSError: Unable to load libxc` (lib/utils.py:47). Fix as asked: under `cupy.cuda.runtime.is_hip`, catch OSError -> `_libxc = None`. The version/xc_func_type block is under `if _libxc is not None`, else `__version__ = 'unavailable (libxc not installed)'`. CUDA still calls load_library bare, so it raises.
+- **Second import blocker the review did not name, same class.** With libxc fixed, RHF then failed with `ImportError: cannot import name 'GDF' from gpu4pyscf.pbc.df`. scf/jk.py:1007 imports `gpu4pyscf.pbc.scf.rsjk`, the pbc.scf package imports ghf, and ghf does `from gpu4pyscf.pbc.df import GDF`, which the port's ROCm guard in pbc/df/__init__.py had skipped. Probes on ROCm: pbc.df, pbc.scf and pbc.properties all import cleanly. pbc.dft fails (libmgrid absent, and the int1e cycle). Fix: pbc/__init__.py imports scf and properties on both backends and skips only dft on ROCm. pbc/df/__init__.py is upstream's file again (one fewer port file). With pbc.df imported early by pbc/__init__, the aft -> pp_int -> pbc.gto.int1e cycle no longer trips (`import gpu4pyscf.pbc.gto.int1e` alone is clean).
+- **Lane mask (gvhf-md/md_contract_j.cu:101-103, :431-433), CONFIRMED.** The base had `t_id % 32`; upstream now uses `% warpSize` with the 32-bit mask. Fix: `unsigned long long mask = ((1ull << threadsx) - 1) << (group_id * threadsx);` under USE_HIP, with the CUDA line in `#else`. test_scf_j_engine passes.
+- **CUDA path (gvhf-md/contract_int3c2e.cu), CONFIRMED.** The upstream `thread_id < 8` / `offset = 4` / `__shfl_down_sync(0xff, ...)` lines are restored in `#else`, and `nwarps` is declared and used only under USE_HIP. A script that strips USE_HIP branches confirms the CUDA view of contract_int3c2e.cu and md_contract_j.cu is byte-identical to upstream/master.
+- **CMake order, CONFIRMED.** Upstream's add_subdirectory order is restored. sem and multigrid are wrapped `if(NOT USE_HIP)` in place, and solvent is `if(BUILD_SOLVENT AND NOT USE_HIP)`. The libgdft/libpbc/libgecp comment sits above gdft.
+- **Stale comment, CONFIRMED.** lib/CMakeLists.txt no longer says the force-included header carries the wave64 subgroup-reduction fix.
+- **Commit hygiene:** unchanged, still owed at the PR-prep squash (see "Still owed" above). The squashed message must also describe this commit.
+
+### Additional merge regression fixed: int4c2e LDS request (gpu4pyscf/__config__.py)
+test_int4c2e failed with `Failed to set CUDA shm size 65448: invalid argument`. Upstream f0e4de9 makes scf/int4c2e.py pass the raw `__config__.shm_size` to fill_int4c2e. On CUDA that is optin-2048. On ROCm the port's fallback gave the full 64 KB sharedMemPerBlock, leaving no room for the kernel's static `__shared__`. Fix: on ROCm, the fallback branch subtracts 1024. CUDA is unchanged, because the CUDA opt-in branch already reserves 2048. jk.py/j_engine.py SHM_SIZE (shm_size-1024) drops from 64512 to 63488 on ROCm. test_int4c2e: 3/3 pass.
+
+### gfx942 + TheRock ROCm 10.1 compiler miscompile (NOT a port defect; nothing committed for it)
+Any basis with d shells crashes RYS_build_jk on the generic rys_jk_kernel ((dp|dp) first): `HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION`, then `hipErrorIllegalAddress`. sto-3g and 6-31g pass (unrolled kernels only). The pre-merge head 899ec26 built on this host fails the same way, so the merge did not cause it. Proof:
+- `rocgdb -batch -ex 'set amdgpu precise-memory on' -ex run ...` stops on `global_atomic_add v1, v20, v1, s[20:21] sc0` (the `atomicAdd(head, 1)` at the top of the persistent loop). s[20:21] is the plausible head pointer. v20 = {0xaf654f6a in lane 0, 0 in lanes 1-63}.
+- `llvm-objdump -d` of the code object: v20 is set by `v_mov_b32 v20, 0` once (kernel entry) and later used as the destination of predicated `global_load_dwordx2 v[20:21]` (load_dm) inside the loop, with no reset. Source indices are all in bounds (gout max 80 < 81, dm_cache max 8 < 9), so there is no source UB.
+- Reproduces in a standalone `--cuda-device-only -S -O3 -fno-gpu-rdc` compile of gvhf-rys/rys_contract_jk.cu, and at -O1. The same pattern appears in gfx90a output from this compiler (AMD clang 24.0.0git d6f6cb69). The June gfx90a pass used ROCm 7.2.1.
+- `-mllvm -disable-machine-licm` in CMAKE_HIP_FLAGS and CMAKE_SHARED_LINKER_FLAGS (needed under -fgpu-rdc) fixes it: def2-svp J/K vs CPU 3.8e-13 / 1.2e-13.
+- Registered as deferred `therock-10-1-machinelicm-clobbers-live-vgpr` (rocm-bug-report). **Question for jeff:** file it upstream, and should the port carry `-mllvm -disable-machine-licm` for ROCm (it is a toolchain workaround, not a source fix)? Until decided, the gfx942 validator must build with the flag on the command line or use an older ROCm. The lesson is in the cuda-to-rocm validation reference.
+
+### Build and test (gfx942, ROCm 10.1 TheRock SDK, FLEET_VENV)
+Venv: `pip install 'numpy>=2.0,<2.3' 'scipy>=1.13' cupy-rocm-7-0==14.2.0 pyscf pytest` -> numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0. CuPy-ROCm needs `LD_LIBRARY_PATH=$(rocm-sdk path --root)/lib` (libamdhip64.so.7 etc.).
+
+```
+R=$(rocm-sdk path --root)
+cmake -S gpu4pyscf/lib -B agent_space/build-gfx942 -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R \
+  -DBUILD_CUTLASS=OFF -DBUILD_LIBXC=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build agent_space/build-gfx942 -j56          # exit 0, 8 libs (committed flags)
+# test build: same plus
+#   "-DCMAKE_HIP_FLAGS=-mllvm -disable-machine-licm" "-DCMAKE_SHARED_LINKER_FLAGS=-mllvm -disable-machine-licm"
+export LD_LIBRARY_PATH=$R/lib PYTHONPATH=$PWD HIP_VISIBLE_DEVICES=<one gpu>; ulimit -c 0
+python -m pytest gpu4pyscf/scf/tests -q -rfs --tb=no
+```
+
+RHF water/def2-svp -75.96070932893478 vs CPU -75.96070932895181 (1.7e-11). UHF (spin=2) diff 4.9e-12.
+
+Full gpu4pyscf/scf/tests (17 files) at 45d8053, test build: **122 passed, 8 skipped, 36 failed** (146 s). Skips: dftd3/dftd4 not installed, 3x `hermi=0`. Each failure was rerun in its own process to rule out context-poison cascades, and every one is outside the HF/integral scope:
+- DFT (numint -> `cupy_helper.release_gpu_stack` -> `deviceSetLimit(stack)` gives hipErrorUnknown; libxc absent): test_diffuse_orbital test_rhf_hessian/test_rks_lowmem/test_rohf/test_uhf (all dft.RKS/UKS/ROKS), test_gdm x3, test_init_guess hcore_guess_rks/sad_guess_rks/rks_vv10/uks/uks_ecp/sad_hf_guess_rks/sad_hf_guess_uks, test_scf test_to_cpu/test_to_gpu (as in June), test_soscf x9 (rks/uks/roks).
+- PCM solvent not built on ROCm (`object has no attribute 'PCM'`): test_diffuse_orbital test_uhf_solvent, test_gdm test_gdm_rks_pcm, test_init_guess test_sad_guess_rhf_pcm/test_vsap_guess_rks.
+- Analytic gradient (the energy assertions pass, the gradient assertion fails): test_diffuse_orbital test_rhf/test_rhf_lowmem (energy OK, gradient off by ~1800, varying run to run), test_fermi_smearing test_gradient, test_scf_jk test_jk_energy_per_atom (ip1 engine; 3.27/4.12/5.06 across runs, nondeterministic). gfx90a failed it in June, gfx1100 passed it. Worth a look when gradients are ported: run-to-run variation suggests uninitialized or racy data, possibly the same compiler issue in the ip1 kernels.
+- Environment: test_diffuse_orbital *_against_qchem x3 (`d-aug-cc-pvdz` not in pyscf 2.14's basis set).
+
+Every HF/integral test passes: test_rhf, test_uhf, test_ghf, test_hf_lowmem, test_int4c2e, test_scf_j_engine, test_scf_jk (except the gradient case), test_scf_ecp, test_addons, test_cphf, test_dispersion_logic, and the HF guesses in test_init_guess. Validator command: the directory above, judged by this classification. Not run here: a determinism repeat.
