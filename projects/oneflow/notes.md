@@ -915,3 +915,98 @@ No nvcc and no conda on this host. Rebuilding the clang `-x cuda -fsyntax-only` 
 - `python3 utils/jargon.py --port oneflow`: 3 hits, all in 68718f038's commit message ("Strategy A", "MOAT", "Lead platform"), 0 in added lines. This is the known review item 8. Only the PR-prep squash can fix it (history rewrite; the fork guard refuses it on moat-port), and `squash-carry-forward` carries this validation to a tree-identical squash. I did not send the port back for it, because no porter commit on top can clear a hit in an existing commit message. **For jeff:** the squash recipe in "PR-prep vocabulary cleanup 2026-10-29" is stale (based on d019f3551); redo it from fd94e199a and keep the RMSNorm loop fix as its own non-`[ROCm]` commit (see "Review 2026-10-30").
 - Documentation: README.md documents the ROCm configure next to the CUDA one; unchanged this round.
 - Multi-device suites (`ONEFLOW_TEST_DEVICE_NUM=2/4`) and the graph/misc/exceptions/dataloader dirs were not run (one GCD pinned; not in this request).
+## Validation 2026-10-30 (linux-gfx1100, full modules + tensor suites and norm width sweep at fd94e199a -- validation-failed)
+
+jeff asked for this run: validate the review-passed head fd94e199a27d6b5d0a207be0d13b6290c60605c1 on gfx1100. It covers the full test/modules suite, the tensor suite, and the LayerNorm/RMSNorm width sweep, under `ulimit -c 0`, compared against the 521f54782 counts. Result: `port-ready -> validation-failed` (failed_sha fd94e199a). All four fixes from the porter round hold on wave32, and every junit failure is classified as not a GPU fault. One new HIP-only GPU fault remains, and it aborts the process: block shared-memory norm/softmax kernels at widths whose LDS need falls between 64 and 128 KiB. It is RDNA-specific, it predates this round, and it is what makes test_layer_norm, test_rmsnorm and (randomly) test_activation abort.
+
+Host: Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), HIP_VISIBLE_DEVICES=1 pinned by the dispatcher. ROCm 10.1.0 from the rocm-sdk wheels (no /opt/rocm), AMD clang 24.0.0git, Python 3.11.17, numpy 1.26.4, protobuf 3.20.3 (job venv), torch 2.16.0a0 (the oracle, symlinked read-only into `$FLEET_VENV-base-links`). Fork clone at fd94e199a. `git status --porcelain` was empty before and after the run.
+
+### Build (18 min, `utils/timeit.sh oneflow compile`)
+```
+$FLEET_VENV/bin/pip install -r dev-requirements.txt fsspec pytest-timeout mkl-static mkl-include
+# agent_space/pywrap/python3: drops pip's --user (refused in a venv) and execs $FLEET_VENV/bin/python3; first on PATH, so build_rocm.sh's -DPython3_EXECUTABLE=$(which python3) picks it
+ulimit -c 0
+export PATH=<agent_space>/pywrap:$FLEET_VENV/bin:$PATH CCACHE_DIR=<job>/ccache PYTHONUSERBASE=<job>/pyuser
+export MKLROOT=$FLEET_VENV LD_LIBRARY_PATH=$FLEET_VENV/lib:$LD_LIBRARY_PATH   # CPU BLAS: static MKL (this image's ATLAS has no CBLAS)
+R=$(python3 -m rocm_sdk path --root)
+CMAKE_PREFIX_PATH=$R ROCM_CLANG=$R/lib/llvm/bin/clang++ ROCM_CLANG_C=$R/lib/llvm/bin/clang JOBS=32 ./build_rocm.sh all
+```
+rc=0. `CMAKE_HIP_ARCHITECTURES: gfx1100;gfx1100;gfx1100;gfx1100` (auto-detect), `OF_GPU_WARP_SIZE: 32`. liboneflow.so is 968 MB and links no unresolved `cblas_*`. Without the preload, `import oneflow` aborts with `realloc(): invalid pointer` (the `therock-libllvm-symbol-interposition` deferral). With `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git` it imports: `flow.cuda.is_available()` is True, a 64x1000 GPU softmax sums to 64.0, and fp32 64x64 mm differs from numpy by 5.7e-6 on both CPU and GPU.
+
+### Test commands (`utils/timeit.sh oneflow test`)
+Every run used `ulimit -c 0`, the build environment above, `source build/source.sh`, `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git` and `ONEFLOW_TEST_DEVICE_NUM=1`. The runner is the same one-pytest-per-file runner as the 521f54782 gfx1100 run, 4 files at a time on the one GPU:
+```
+cd python/oneflow/test/<modules|tensor>
+ls test_*.py | xargs -P 4 -I{} sh -c 'timeout -k 30 1800 python3 -m pytest -p no:warnings -p no:randomly -p no:cacheprovider --capture=sys --timeout=900 -rfE -q --junitxml=<out>/$(basename {} .py).xml {}'
+```
+Wall times: modules 841 s, tensor 63 s. The multi-device passes were not run, because only one GPU is pinned to this job.
+
+### Results vs 521f54782 (gfx1100)
+| suite | passed | failed | errors | skipped | aborted files | 521f54782 gfx1100 |
+|---|---|---|---|---|---|---|
+| modules (541 files) | 1448 | 101 | 5 | 310 | 6 (no junit) | 1503 / 102 / 5 / 312, 7 aborted |
+| tensor (22 files) | 367 | 2 | 0 | 22 | 0 | not run on gfx1100 (gfx90a porter at fd94e199a: 365/4/0/22) |
+| 9-file historical slice | 73 | 2 | 0 | 0 | 1 (test_layer_norm: test_widths aborts; the other 4 pass with `-k "not test_widths"`) | 73 / 2 |
+
+Per-file exit codes for modules: 484 rc=0, 44 rc=1, 5 rc=2 (collection), 2 rc=5 (no tests: test_fused_self_attention, test_shutting_down), 6 rc=134. The passed count falls 55 below 521f54782 because three whole files abort and write no junit: test_activation (75 tests when it completes), test_layer_norm and test_rmsnorm. At 521f54782 all three completed. In exchange, test_allclose, test_equal, test_sparse and test_gumbel_softmax stopped aborting.
+
+Slice detail: test_add 11, test_cast 9, test_where 19, test_masked_fill 6, test_broadcast_ops 8, test_transpose 6, test_softmax 1 and test_matmul 9 passed with 2 failed (the fp16/int `__bool__` quirk). test_layer_norm with `-k "not test_widths"` gives 4 passed, the same as at 521f54782.
+
+**Previously faulting files now pass on wave32 (porter fixes confirmed):** test_allclose 4, test_equal 11, test_sparse 2 (+2 skipped), test_gumbel_softmax 2 (no teardown 719), test_to_torch 5 (including test_to_torch_gpu, so DLPack is kDLROCM), test_utils 1, test_logical_reduce 22 (including test_reduce_short_one_byte_input), test_sum 8 (including test_sum_along_rows), test_argmax 3 (including the all-NaN row), test_groupnorm 4, test_global_groupnorm 1, test_fused_bias_add_dropout 1, test_skip_rms_norm 1. test_maxpool no longer aborts (4 failed, 7 passed; see below).
+
+### GPU fault (send back to the porter): shared-memory kernel chosen for LDS sizes RDNA cannot launch
+Symptom: on wide rows, softmax, log_softmax, LayerNorm and RMSNorm (forward and backward, fp32 and fp16) either abort the process with `HSA_STATUS_ERROR_INVALID_ALLOCATION` (kernel `LayerNormGradBlockSMemImpl`, `RmsNormGradBlockSMemImpl`, `SoftmaxBlockSMemImpl`, ...), followed by `cudaSetDevice ... illegal memory access (700)`, or fail a `CHECK` with `invalid argument (1)` (layer_norm_gpu_kernel.cu:278, softmax_backward.cu:48). Width grid, 3 rows, one process per cell (`.` ok, `A` queue abort, `E` invalid argument):
+```
+widths:          4096 8000 8150 8180 8190 8192 12000 16000 16350 16380 16384 16400 24000 32000 32568 32760 32768 32800 40000 65000 65536 70000
+ln_fwd float32   ........AAAEEEE.......
+ln_bwd float32   ...AAAEEAAAEEEE.......
+ln_fwd float16   ...............AAEEE..
+ln_bwd float16   .........AAEEEEAAEEE..
+rms_fwd float32  .........AAEEEEE......
+rms_bwd float32  ....AAEEEAAEEEEE......
+rms_fwd float16  .........AAEEEEE......
+rms_bwd float16  ....AAEEEAAEEEEE......
+sm_fwd float32   .........AAEEEE.......
+sm_bwd float32   ....AAEEEAAEEEE.......
+sm_fwd float16   .........AAEEEE.......
+sm_bwd float16   ....AAEEEAAEEEE.......
+```
+These are failure windows, not thresholds. Above about 128 KiB of LDS the uncached kernel is chosen, and it works. Hidden sizes 8192 (backward) and 16384 (forward) both fall inside a window, and both are common model widths.
+
+Cause, reproduced with a 20-line HIP program (`agent_space/occ_probe.hip`, not committed). The kernel is `__launch_bounds__(1024)` with `extern __shared__ float dyn[]` and an 8-byte static `__shared__`. It queries `hipOccupancyMaxActiveBlocksPerMultiprocessor(&nb, k, bs, dyn)`, then launches with `dyn` bytes:
+```
+optin 65536 perblock 65536 persm 131072 static 8 maxDyn 65528
+setattr(64504) -> no error
+bs 1024 dyn  65528 occ nb=2 launch ok
+bs 1024 dyn  65536 occ nb=1 launch "no error", sync: illegal memory access (queue abort HSA_STATUS_ERROR_INVALID_ALLOCATION)
+bs 1024 dyn  65544 occ nb=1 launch invalid argument
+bs 1024 dyn 131064 occ nb=1 launch invalid argument
+bs 1024 dyn 131072 occ nb=0 launch invalid argument
+```
+(bs 128 gives the same.) The softmax.cuh, layer_norm.cuh and rms_norm.cuh `TryDispatch*BlockSMemImpl*` helpers take the shared-memory kernel whenever this occupancy query returns > 0. On CUDA the query returns 0 when the block cannot fit, and that is the only guard. On gfx1100 the query counts against the 128 KiB WGP, so it returns 1 for anything up to 128 KiB. `cudaDevAttrMaxSharedMemoryPerBlockOptin` maps to the 64 KiB per-block value (cuda_to_hip.h:147). `MaximizeDynamicSharedMemorySize` sets 64 KiB - static - 1 KiB, and that setting is not enforced. The launch check compares dynamic memory alone against 64 KiB, so dynamic <= 64 KiB with static on top is accepted and then kills the queue. That is the `A` cells; dynamic > 64 KiB gives the `E` cells.
+
+Scope: this is HIP-only and RDNA-only. CDNA has 64 KiB of LDS per CU, so the query correctly answers 0 there. That is why the gfx90a porter's 1..8192 sweep was clean, and gfx942 and gfx950 should be too. It also hits gfx1151 and gfx1201 if they use WGP mode, which is likely. The port never touched this dispatch: `git diff 521f54782 fd94e199a` changes no smem or occupancy line, and `master..fd94e199a` changes only the softmax kernel's launch-bounds macro. So the fault has been latent since the first port. It shows now only because the porter's new test_widths (8191, 8192) and this sweep reach the window. test_activation's `test_softmax_module_with_batch_size_equal_10240` hits it when its random `dim` makes the reduced width 10240 (80 KiB backward): one of two reruns aborted there, and the other passed 75/75.
+
+For the porter: under `USE_HIP`, take a `TryDispatch*BlockSMemImpl*` path only if `smem + cudaFuncAttributes.sharedSizeBytes <= hipDeviceAttributeMaxSharedMemoryPerBlock` (otherwise `*success = false`), in softmax.cuh (forward and grad), layer_norm.cuh (forward and grad) and rms_norm.cuh (forward and grad). Then extend test_layer_norm/test_rmsnorm test_widths (and a softmax width test) beyond 8192 into each window, e.g. 12000, 16384, 24000, 32000, for fp32 and fp16. The runtime half is registered as `hip-rdna-occupancy-ignores-workgroup-lds-limit` (rocm-bug-report, deferred.json). Lesson promoted to cuda-to-rocm fault-classes.md (Types, dispatch and platform limits) with an index line in SKILL.md.
+
+### Norm width sweep below the window (`agent_space/norm_sweep.py 8000`, not committed)
+oneflow GPU vs a torch float64 CPU reference. Every width 1..8000 at 3 and 4 rows, plus 64 rows at widths 1..1100. Checked: layer_norm (affine) forward, dx, dweight and dbias; `flow._C.rms_norm` forward, dx and dweight; softmax. 17100 cases, 136800 checks, 0 bad (tolerance 1e-4 relative to 1+max|ref|). Worst relative errors: ln_fwd 6.4e-7, ln_dx 1.7e-5 (64x2, near-zero variance), ln_dw 3.7e-7, ln_db 2.1e-7, rms_fwd 2.0e-7, rms_dx 2.9e-7, rms_dw 2.2e-7, softmax 5.0e-8. The full 1..8192 sweep aborted at width ~8180 (ln_bwd fp32; the fault above). GroupNorm vs torch float64 (`agent_space/gn_check.py`), at the gfx90a failing shapes (4,6,3,(3,4,5)) and (2,4,2,(5,6)) plus (2,32,8,(7,9)), (3,64,32,(5,)), (2,128,4,(33,)), (2,8,8,(100,)) and (1,16,2,(64,64)): worst abs error 1.1e-5 over fwd/dx/dw/db.
+
+### Not GPU faults (all 106 modules junit failures/errors, classified by message)
+- 53 deferred kernels (op registered, no kCUDA kernel; all on the cmake/oneflow.cmake exclusion list): conv1d/2d/3d (incl. qat_conv, swautils, global higher-derivative conv), deconv2d, normalization (batchnorm, swautils), normalization_add_relu, tf_max_pool_2d (4 in test_maxpool, 1 in test_global_maxpool), grid_sample 3, lu_decomposition (test_det 3), cublas_fused_mlp (incl. test_global_rnn), fused_matmul_bias (incl. groupwise_quantization fused_linear), fused_matmul_bias_add_relu_dropout, grouped_matmul_bias, fused_dot_feature_interaction 2, fused_apply_rotary_emb 3, fused_attention_concat_past_key_value. test_maxpool's three non-channel_last failures are the known `ONEFLOW_ENABLE_NHWC` leak from the failed channel_last test (porter round 2026-10-30).
+- 14 autotest "endless loop" (avgpool rejected by torch 2.16; conv/deconv retrying around the deferred conv kernel).
+- 10 numpy `__bool__` interop (test_concat, test_copy x2, test_div, test_logical_and, test_matmul fp16/int, test_slice x2, test_tensordot).
+- 6 torch 2.16 drift: bce/kl_div grad_grad PyTorchDoesNotSupportError, ZeroTensor to numpy x3, replication_pad `padding must be int`.
+- 6 `oneflow.char != oneflow.int8` naming (test_tensor_ops x4, test_type_tensor x2).
+- 5 `KeyError: 'ONEFLOW_CI'` (test_fft).
+- 5 collection errors (deform_conv2d, global_deform_conv2d, global_roi_align, image_resize, resnet_load_torch_weight: torchvision/flowvision-era imports or `flow.unittest`).
+- 4 missing /dataset files (image_decode, image_batch_align, image_flip, image_normalize).
+- 3 others: `collections.Iterable` on Python 3.11 (test_optim_lbfgs), a float shape passed to `view` (test_fused_codegeex_qkv_reshape), the CPU `cosh` docstring print (test_functional_docstr).
+- Aborts besides the GPU fault: test_loss and test_higher_derivative_loss (torch's own `binary_cross_entropy` device assert on targets outside [0,1], the oracle; same as gfx90a), and test_dataset (/dataset/imagenette missing).
+- Tensor suite, 2 failures: test_safetensors (module not installed), and test_tensor_indexing2 test_slice (`gather_nd` kBFloat16 kernel not registered on HIP; the known `__CUDA_BF16_TYPES_EXIST__` open item). test_autocast passes here.
+
+### Other checks at fd94e199a
+- `python3 utils/jargon.py --port oneflow`: 3 hits, all in 68718f038's commit message ("Strategy A", "MOAT", "Lead platform"), and 0 in added lines or in the 4 new commits. This is review item 8, which the PR-prep squash removes.
+- Documentation: README.md:145-150 documents the ROCm configure next to the CUDA one, and build_rocm.sh matches it.
+- CUDA compile gate: `cuda-not-validated: no CUDA toolkit on this host` (no /opt/conda, no nvcc). It has not been re-run at fd94e199a on any host. The gfx90a 521f54782 run recorded a clang `-x cuda -fsyntax-only` pass.
+- `git -C projects/oneflow/src status --porcelain`: empty. No core files were written (`ulimit -c 0`).

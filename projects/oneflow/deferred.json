@@ -30,6 +30,19 @@
       "upstream_issue": null,
       "created_at": "2026-10-30T02:42:27Z",
       "decided": null
+    },
+    {
+      "id": "hip-rdna-occupancy-ignores-workgroup-lds-limit",
+      "kind": "rocm-bug-report",
+      "component": "clr (HIP runtime: hipOccupancyMaxActiveBlocksPerMultiprocessor, kernel launch validation)",
+      "summary": "ROCm 10.1.0 (rocm-sdk wheels), gfx1100 W7800: hipOccupancyMaxActiveBlocksPerMultiprocessor returns 1 for dynamic shared memory between the 64 KiB per-workgroup limit and the 128 KiB per-WGP LDS (MaxSharedMemoryPerMultiprocessor=131072), where CUDA returns 0 for a block that cannot launch. Separately, the launch check compares dynamic shared memory alone against 65536: a kernel with 8 B static LDS launched with 65536 B dynamic is accepted (hipGetLastError success) and the queue then aborts with HSA_STATUS_ERROR_INVALID_ALLOCATION, killing the process, instead of failing with hipErrorInvalidValue as 65544 B does. hipFuncSetAttribute(MaxDynamicSharedMemorySize, 64504) succeeds and is not enforced. 20-line reproducer recipe in projects/oneflow/notes.md (Validation 2026-10-30, fd94e199a). Port-side workaround: check smem + static <= MaxSharedMemoryPerBlock before choosing a shared-memory kernel.",
+      "refs": [
+        "projects/oneflow/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-30T05:24:14Z",
+      "decided": null
     }
   ]
 }

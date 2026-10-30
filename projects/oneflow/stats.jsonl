@@ -73,3 +73,11 @@
 {"kind":"phase","ts":"2026-10-30T05:01:33Z","phase":"test","seconds":963.086,"exit":0,"cmd":"bash agent_space/run_dir.sh modules"}
 {"kind":"phase","ts":"2026-10-30T05:03:03Z","phase":"test","seconds":89.753,"exit":0,"cmd":"bash agent_space/run_dir.sh tensor"}
 {"kind":"session","ts":"2026-10-30T05:13:52Z","epoch":1793337232.529060145,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-10-30T04:27:37Z","epoch":1793334457.881739622,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-30T04:28:17Z","phase":"compile","seconds":0.003,"exit":127,"cmd":"./build_rocm.sh all"}
+{"kind":"phase","ts":"2026-10-30T04:46:24Z","phase":"compile","seconds":1070.192,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261029-212409-val2-oneflow/moat/projects/oneflow/src/build_rocm.sh all"}
+{"kind":"phase","ts":"2026-10-30T04:47:45Z","phase":"test","seconds":52.993,"exit":134,"cmd":"python3 /var/lib/jenkins/fleet/jobs/rx7900-20261029-212409-val2-oneflow/moat/agent_space/norm_sweep.py"}
+{"kind":"phase","ts":"2026-10-30T05:20:49Z","phase":"test","seconds":841.104,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261029-212409-val2-oneflow/moat/agent_space/run_suite.sh modules 4"}
+{"kind":"phase","ts":"2026-10-30T05:22:11Z","phase":"test","seconds":62.746,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261029-212409-val2-oneflow/moat/agent_space/run_suite.sh tensor 4"}
+{"kind":"phase","ts":"2026-10-30T05:25:18Z","phase":"test","seconds":54.885,"exit":0,"cmd":"python3 /var/lib/jenkins/fleet/jobs/rx7900-20261029-212409-val2-oneflow/moat/agent_space/norm_sweep.py 8000"}
+{"kind":"session","ts":"2026-10-30T05:26:34Z","epoch":1793337994.082464545,"event":"end","platform":"linux-gfx1100"}

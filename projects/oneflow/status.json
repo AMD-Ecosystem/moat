@@ -7,7 +7,7 @@
   "priority": 6.236,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-10-30T05:13:52Z",
+  "updated_at": "2026-10-30T05:27:21Z",
   "head_sha": "fd94e199a27d6b5d0a207be0d13b6290c60605c1",
   "waivers": {
     "windows": {
@@ -21,27 +21,6 @@
   "upstream_repo_id": 81634683,
   "stage": "review-passed",
   "platforms": {
-    "windows-gfx1101": {
-      "blocked": true,
-      "blocked_reason": "Windows not viable: RCCL Linux-only (find_package rccl REQUIRED, nccl.h in cuda_util.h/core files); POSIX ibv/pthread_fork syscalls; platform.cmake MSVC flags clash with all-clang; 32 third-party deps Linux-centric ExternalProject; oneflow never shipped on Windows upstream. GPU port complete on linux-gfx90a+gfx1100.",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-05T12:08:57Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
     "linux-gfx90a": {
       "state": "completed",
       "blocked": false,
@@ -65,6 +44,80 @@
       },
       "last_agent": "validator",
       "failed_sha": "521f547825b77e36a4752bd45b2a295ad2a0a633"
+    },
+    "windows-gfx1101": {
+      "blocked": true,
+      "blocked_reason": "Windows not viable: RCCL Linux-only (find_package rccl REQUIRED, nccl.h in cuda_util.h/core files); POSIX ibv/pthread_fork syscalls; platform.cmake MSVC flags clash with all-clang; 32 third-party deps Linux-centric ExternalProject; oneflow never shipped on Windows upstream. GPU port complete on linux-gfx90a+gfx1100.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T12:08:57Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1201": {
+      "blocked": true,
+      "blocked_reason": "Windows not viable (same as gfx1101): RCCL Linux-only; POSIX ibv/pthread_fork syscalls; platform.cmake MSVC flags clash with all-clang; 32 third-party deps Linux-centric. GPU port complete on linux-gfx90a+gfx1100.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T12:09:10Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "linux-gfx1100": {
+      "state": "validation-failed",
+      "blocked": false,
+      "blocked_reason": "GPU-validated on gfx1100 (RDNA3, wave32, ROCm 7.2.1). Fresh build from fork HEAD 68718f03: 190 gfx1100 code objects, OF_GPU_WARP_SIZE=32. Test slice: 73 passed / 2 failed (same pre-existing artifacts as gfx90a -- numpy __bool__ dtype-interop, not GPU faults). Wave32 warp reductions: softmax/layer_norm/rms_norm all produce correct results (softmax max_abs_diff=1.49e-08, layer_norm bwd gamma/beta no NaN, rms_norm bwd weight no NaN). LayerNormParamGrad wave64 fix is correct on wave32 (tile=32, block_dim_x=32, width=32 matches native wavefront). No fork changes needed. Fork 68718f0.",
+      "validated_sha": "d019f35519eeb6f071ea4a6883b5c8f7a9adaa67",
+      "started_at": "2026-05-31T10:07:00Z",
+      "completed_at": "2026-06-23T22:46:36Z",
+      "updated_at": "2026-10-30T05:27:21Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 1140,
+          "test": 28,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-05-31T10:07:00Z",
+        "last_session_at": "2026-05-31T10:09:00Z"
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "from": "2729bee55d33698b8c55080e99337a24305a6a1c",
+        "to": "d019f35519eeb6f071ea4a6883b5c8f7a9adaa67",
+        "method": "source-class",
+        "class": "comment-only",
+        "detail": "cmake/cuda.cmake: comment-only (comments/format only); oneflow/core/device/cuda_pseudo_half.h: comment-only (comments/format only)",
+        "at": "2026-10-29T23:13:28Z"
+      },
+      "failed_sha": "fd94e199a27d6b5d0a207be0d13b6290c60605c1"
     },
     "linux-gfx942": {
       "blocked": false,
@@ -110,65 +163,11 @@
         "first_session_at": null,
         "last_session_at": null
       }
-    },
-    "linux-gfx1100": {
-      "state": "validation-failed",
-      "blocked": false,
-      "blocked_reason": "GPU-validated on gfx1100 (RDNA3, wave32, ROCm 7.2.1). Fresh build from fork HEAD 68718f03: 190 gfx1100 code objects, OF_GPU_WARP_SIZE=32. Test slice: 73 passed / 2 failed (same pre-existing artifacts as gfx90a -- numpy __bool__ dtype-interop, not GPU faults). Wave32 warp reductions: softmax/layer_norm/rms_norm all produce correct results (softmax max_abs_diff=1.49e-08, layer_norm bwd gamma/beta no NaN, rms_norm bwd weight no NaN). LayerNormParamGrad wave64 fix is correct on wave32 (tile=32, block_dim_x=32, width=32 matches native wavefront). No fork changes needed. Fork 68718f0.",
-      "validated_sha": "d019f35519eeb6f071ea4a6883b5c8f7a9adaa67",
-      "started_at": "2026-05-31T10:07:00Z",
-      "completed_at": "2026-06-23T22:46:36Z",
-      "updated_at": "2026-10-30T02:35:05Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 1140,
-          "test": 28,
-          "misc": 0
-        },
-        "session_count": 1,
-        "first_session_at": "2026-05-31T10:07:00Z",
-        "last_session_at": "2026-05-31T10:09:00Z"
-      },
-      "last_agent": "validator",
-      "carry_forward": {
-        "from": "2729bee55d33698b8c55080e99337a24305a6a1c",
-        "to": "d019f35519eeb6f071ea4a6883b5c8f7a9adaa67",
-        "method": "source-class",
-        "class": "comment-only",
-        "detail": "cmake/cuda.cmake: comment-only (comments/format only); oneflow/core/device/cuda_pseudo_half.h: comment-only (comments/format only)",
-        "at": "2026-10-29T23:13:28Z"
-      },
-      "failed_sha": "521f547825b77e36a4752bd45b2a295ad2a0a633"
-    },
-    "windows-gfx1201": {
-      "blocked": true,
-      "blocked_reason": "Windows not viable (same as gfx1101): RCCL Linux-only; POSIX ibv/pthread_fork syscalls; platform.cmake MSVC flags clash with all-clang; 32 third-party deps Linux-centric. GPU port complete on linux-gfx90a+gfx1100.",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-05T12:09:10Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
     }
   },
   "porting_released": {
     "arch": "linux-gfx942",
     "since": "2026-10-30T04:10:36Z",
     "at": "2026-10-30T04:14:18Z"
-  },
-  "porting": null
+  }
 }
