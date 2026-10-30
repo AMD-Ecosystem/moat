@@ -437,3 +437,24 @@ Same cmake line as the previous porter round (`agent_space/gpurir/build`, `-j16`
 - Upstream examples (scratch copy, synthetic 2 s 16 kHz wav, no-op matplotlib/plotly stub incl. `plotly.subplots`): example.py, simulate_trajectory.py, polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py, plus example.py with `activateMixedPrecision(True)`/`activateLUT(False)`: **6/6 exit 0**.
 
 Deferral `gpurir-mixed-precision` set `done` with `utils/deferred.py set-status`. Commit 39a7a9d: `[ROCm]` title 51 chars, AI disclosure in prose, Test Plan, no trailer; `jargon.py --port gpuRIR` clean, `prose.py` clean on the body. Pushed plain to `moat-port` (af05f1d..39a7a9d; no upstream PR open). advance-head -> 39a7a9d, so every completed arch reads `revalidate` (the mp kernels now exist on all AMD arches; wave32 arches have not run them). Lesson promoted to `cuda-to-rocm/references/fault-classes.md` (Headers, includes and build): undefined `__CUDA_ARCH__`/`CUDART_VERSION` silently select stub or legacy branches on HIP.
+
+## Review 2026-10-30 (linux-gfx942, reviewer, second re-review)
+
+Port Review: gpuRIR (`moat-port` 39a7a9d vs `master` 06da27d). Re-review requested by jeff after the mixed-precision porter round. Whole fork diff reviewed; 39a7a9d read in full against the unchanged mp kernels, helpers and host gates. `jargon.py --port gpuRIR`: clean.
+
+### Summary
+A HIP port of gpuRIR through a force-included compatibility header, with hipFFT/hipRAND swaps, a software-lerp LUT in a plain device buffer, and the half2 mixed-precision path now compiled and enabled on HIP. **Approve** (review-passed). Review 2026-10-30 finding 1 (deferral `gpurir-mixed-precision` ruled `now`) is resolved.
+
+### PR preparation (not a code defect; history cannot be amended)
+- The a523c73 commit body still says the half2 kernels "are reported unsupported on HIP so their empty stubs are never launched", which 39a7a9d reverses. The squashed commit message and PR body must describe the final state (mixed precision works on HIP) and not carry that sentence forward. The Test Plans of af05f1d and 39a7a9d name `validate.py` / `mp_validate.py`, which are not in the repository; the PR Test Plan should either inline the check or describe it without naming a missing script.
+
+### Verification record (claims fact-checked, no finding)
+- Guards: all five `__CUDA_ARCH__ >= 530` sites gain `|| defined(__HIP_DEVICE_COMPILE__)`; all three `CUDART_VERSION` sites gain `!defined(USE_HIP) &&`. On nvcc both additions are constant-false/true respectively, so every CUDA condition evaluates as before. `activate_mixed_precision` is byte-identical to upstream (no hunk in `git diff master...HEAD`).
+- HIP headers (TheRock 10.1.0 `amd_hip_fp16.h`): `__float2half2_rn` is `__HOST_DEVICE__` (476), `__heq2`/`__hne2` (655/659), `__h2div` (883), `h2rint` (1050) present.
+- Fault classes in the newly live code: `reduceRIR_mp_kernel` is a shared-memory tree with `__syncthreads()` every step down to s=1 (no warp-synchronous tail, no 32-lane assumption); block dims (32x4, 128) are plain block sizes. Host gate `cuda_arch = major*100+minor*10` is >= 900 on every AMD arch.
+- Independent GPU run at 39a7a9d on gfx942 (own script, `HIP_VISIBLE_DEVICES=4`, `ulimit -c 0`; build `cmake -S projects/gpuRIR/src -B agent_space/gpurir/build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release`, only the pre-existing nodiscard warning at line 1069). mp vs float exact, max |diff|/peak, all finite, mp output differs from float (so mp really ran), same peak sample:
+  - direct path: 8 kHz 5.24e-4, 16 kHz 7.95e-4, 44.1 kHz 3.72e-4, 48 kHz 6.76e-4, 96 kHz 3.93e-4 (first four match the porter's table exactly);
+  - reverberant shoebox, 2 src x 3 cardioid rcv, T60 0.6 s, Tmax 0.3 s, 16 kHz: 1.02e-3;
+  - odd sample count (Tmax 0.0300625 s at 16 kHz): 1.29e-3, shape identical to the float path.
+- Lesson in `cuda-to-rocm/references/fault-classes.md` (`__CUDA_ARCH__`/`CUDART_VERSION` undefined on HIP): accurate against the code and headers.
+- Commit hygiene: all seven titles `[ROCm]`, <= 61 chars; no Co-Authored-By/noreply; AI disclosure in prose; Test Plan present.
