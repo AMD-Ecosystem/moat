@@ -7,10 +7,9 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-05T01:19:27Z",
-  "updated_at": "2026-10-30T00:52:27Z",
+  "updated_at": "2026-10-30T01:00:44Z",
   "head_sha": "d3e2266399c1c87e35ea9d12049a2c4abac9a7de",
   "depends_on": [],
-  "porting": null,
   "waivers": {},
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 1154833948,
@@ -20,10 +19,10 @@
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "b0d21d5a1c20e60efc92d7047552f19683cd1b1a",
+      "validated_sha": "d3e2266399c1c87e35ea9d12049a2c4abac9a7de",
       "started_at": "2026-06-05T05:36:03Z",
-      "completed_at": "2026-08-09T15:31:42Z",
-      "updated_at": "2026-08-09T15:31:42Z",
+      "completed_at": "2026-10-30T01:00:44Z",
+      "updated_at": "2026-10-30T01:00:44Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -108,6 +107,29 @@
       },
       "last_agent": "validator"
     },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-10-29T23:06:58Z",
+      "completed_at": null,
+      "updated_at": "2026-10-30T00:43:02Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
+    },
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
@@ -131,29 +153,6 @@
       },
       "state": "completed",
       "last_agent": "validator"
-    },
-    "linux-gfx942": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "failed_sha": null,
-      "started_at": "2026-10-29T23:06:58Z",
-      "completed_at": null,
-      "updated_at": "2026-10-30T00:43:02Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "reviewer"
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/faster-gaussian-splatting/pull/2",

@@ -1897,3 +1897,63 @@ Totals: 84/84 output tensors match the pre-merge baseline within run-to-run nois
 ### Verdict
 
 **completed**, `linux-gfx1100`, `validated_sha=d3e2266`.
+## Validation 2026-10-30 (linux-gfx90a, revalidate at d3e2266)
+
+Requested by jeff after the upstream sync and fix rounds passed review. Platform: AMD Instinct MI250X / MI250 (gfx90a:sramecc+:xnack-), torch 2.16.0a0+git6c3af02, HIP 7.16.26385 (TheRock SDK wheels in the image venv), `HIP_VISIBLE_DEVICES=1`. Everything below ran under `ulimit -c 0`. Fork clone freshly cloned at `moat-port` = `d3e2266399c1c87e35ea9d12049a2c4abac9a7de`; `origin/main` = upstream `d23bb78`.
+
+### Delta classification
+
+`python3 utils/moatlib.py classify faster-gaussian-splatting b0d21d5a1c20e60efc92d7047552f19683cd1b1a d3e2266399c1c87e35ea9d12049a2c4abac9a7de` -> `class=mixed arch_independent=False inert=False` (upstream merge with real kernel changes plus the two HIP fix commits). A full real-GPU revalidation is required; no carry-forward attempt.
+
+### Build (from clean, HIP 7.16)
+
+```bash
+export PYTORCH_ROCM_ARCH=gfx90a MAX_JOBS=32
+git -C projects/faster-gaussian-splatting/src/FasterGSCudaBackend clean -xdfq
+utils/timeit.sh faster-gaussian-splatting compile -- bash -c "cd $PWD/projects/faster-gaussian-splatting/src/FasterGSCudaBackend && python setup.py build_ext --inplace"
+```
+PASS, 49 s, no errors. `llvm-objdump --offloading` on `_C.cpython-311-x86_64-linux-gnu.so`: 7 bundles, all `hip-amdgcn-amd-amdhsa--gfx90a`. Baseline `b0d21d5` was built the same way in a `git worktree` under `agent_space/fgs_old` (PASS) for the old-vs-new comparison. HIP 7.16 ships `hip_reduce.h`, so this build takes the `__has_include` arm. The fallback arm is covered in the section below.
+
+### GPU tests (scripts in `projects/faster-gaussian-splatting/gpu_tests/`; upstream ships none)
+
+`B` = the head build, `OLD_B` = the b0d21d5 build, one wrapped run:
+```bash
+utils/timeit.sh faster-gaussian-splatting test -- bash agent_space/run_all.sh
+# run_all.sh:
+python gpu_tests/run_outputs.py $OLD_B old.pt; python gpu_tests/run_outputs.py $B new.pt; python gpu_tests/run_outputs.py $B new2.pt
+python gpu_tests/compare.py old.pt new.pt; python gpu_tests/compare.py new.pt new2.pt
+python gpu_tests/new_checks.py $B; python gpu_tests/train_check.py $B; python gpu_tests/det.py $B
+```
+rc=0, 40 s.
+- **new_checks.py: 31/31 PASS.** Philox reference == Random123 KATs; device `add_noise` == Philox4x32-10 + Box-Muller reference to 8.65e-7 over 228 primitives (same figure as gfx942, so the ROCm Philox is bit-exact on gfx90a too); noise mean |.| <= 0.0041, std 0.9982..1.0030, max |corr| 4.30e-3; lanes 0-31 vs 32-63 of each wave64 std 0.9983/1.0021; offset advances; reproducible under `torch.manual_seed`. For the 1001/5000/20000/200000 scenes: inference == training forward (0 diff), training forward deterministic, abs-grad run within run-to-run noise, abs-grad row >= grad-norm row (0 violations), all finite, foreground in all 6 subtile slots (coverage 0.96..1.00).
+- **train_check.py: 3/3 PASS.** FusedAdam vs torch.optim.Adam over 20 steps: max abs diff 3.81e-6; relocation_adjustment sane; 300-iteration fit L1 0.1204 -> 0.0080.
+- **det.py: 0 diff** run-to-run at 200k and 100k (1920x1080) and 50k (1280x720), training forward and inference.
+- **Head run-to-run** (`compare.py new.pt new2.pt`, 84 tensors): images and filter3d bit-identical; worst relL2 3.01e-6 (grad_rotations, 200k).
+- **b0d21d5 vs head** (`compare.py old.pt new.pt`, 7 scenes x 12 outputs): images worst relL2 1.38e-6 (200k scene; 1.45e-6 of pixels > 1e-4); gradients worst relL2 6.19e-5 (grad_rotations, 200k), all other scenes <= 1.85e-6; in the 200k grad_rotations case the 100 largest elements carry 99.95% of the squared error (top abs diff 1.67e-2 against |ref|max 104), so the difference sits on a few primitives and is not tile-wide. A wrong-half wave64 ballot would be O(1) over half of every tile. 3D filter `torch.equal` in every scene, with identical inf masks (the `nan` in compare.py's filter3d lines is inf - inf). The dinfo relL2 up to 1.43e-2 is the visibility-count row (row 0) changing by exactly -1 on 5/249/210/871 primitives in the 1001/5000/20000/200000 scenes. Every one of them has zero gradient (row 1 = 0) in both builds. This is the upstream screen-bounds clamp and 16 -> 12 tile-height change that the 2026-10-29 porter entry describes (gfx942 counted 10/221/195/809; the per-primitive bounds use `-ffast-math` float arithmetic, so the boundary cases differ by arch, but each changed entry has the same signature). Row 1 (grad norm) differs only at accumulation-order level.
+
+### The fallback arm (HIP before 7.13), on gfx90a
+
+The 2026-10-30 review left "the full 7.2.x build is owed by the gfx90a and gfx1100 revalidations". This host's image has HIP 7.16 only (no `/opt/rocm`, no conda). I tried a private venv under `agent_space/` with `torch==2.14.1+rocm7.2` from the PyTorch ROCm 7.2 index. The fleet guard refused the `pip` call because it treats pip as changing the shared Python environment, so no ROCm 7.2 torch could be linked or run here. Two checks stand in for it:
+
+1. **ROCm 7.2.4 compile for gfx90a, all 9 device TUs: PASS.** Extracted (`dpkg-deb -x`, no install) `hip-dev`, `hip-runtime-amd`, `hipcc`, `rocm-llvm`, `rocm-device-libs`, `rocm-core`, `hipcub-dev`, `rocprim-dev`, `comgr` and `hsa-rocr-dev` at 7.2.53211.70204 from `repo.radeon.com/rocm/apt/7.2.4` into `agent_space/rocm724`. Each hipified `.hip` file from the build above was compiled with that toolchain and build.ninja's exact `cuda_cflags`/`cuda_post_cflags`, except that the 7.16 SDK include dir becomes `-idirafter` an overlay of it without `hip/`, `hipcub/` and `rocprim/`:
+   ```bash
+   $R/lib/llvm/bin/clang++ -x hip --rocm-path=$R <cuda_cflags minus the SDK -I> -idirafter agent_space/ovl -c <tu>.hip -o <tu>.o <cuda_post_cflags: ... -std=c++20 -O3 -ffast-math --offload-arch=gfx90a -fno-gpu-rdc>
+   ```
+   adam, densification_api, mcmc, filter3d, backward, forward, inference, pruning_scores, rasterization_api: 9/9 rc=0 (277 s wrapped). For forward.hip, `-H` shows `hip_runtime.h`, `amd_hip_cooperative_groups.h` and `hipcub.hpp` from 7.2.4 and no `hip_reduce.h`, so the fallback arm was compiled; the object carries a `hipv4-amdgcn-amd-amdhsa--gfx90a` bundle.
+2. **Fallback arm at runtime on gfx90a.** Ran the porter's method on this arch: a `git archive HEAD` copy under `agent_space/fb` with the `__has_include` forced to `#if 0` and the fallback names renamed `greater_fb`/`reduce_fb` (call site included), built with HIP 7.16 for gfx90a (PASS), then `run_outputs.py` plus a compare against the real head build. Inference/training images, filter3d and filter3d visibility are bit-identical in all 7 scenes (29/84 tensors bit-equal overall). The rest stay within the real build's own run-to-run noise: fallback-vs-real / run-to-run worst relL2 for grad_means 2.37e-7 / 2.57e-7, grad_scales 1.01e-6 / 2.97e-6, grad_rotations 1.39e-6 / 3.01e-6, grad_opacities 2.32e-7 / 2.38e-7, grad_sh0 2.55e-7 / 2.82e-7, grad_shrest 2.52e-7 / 2.77e-7, dinfo 1.87e-7 / 1.98e-7, pruning 2.00e-6 / 2.40e-6. `tile_max_n_processed` drives the backward per-tile early exit, so a wrong tile max would show as O(1) gradient loss.
+
+Still not done on gfx90a: linking and running against a real ROCm 7.2.x runtime and torch. That needs a host or job with a ROCm 7.2 torch environment, or a `--build` dispatch with its own `$FLEET_VENV`. linux-gfx1100's revalidation can also cover it if that host still runs ROCm 7.2.
+
+### CUDA no-regression gate
+
+Not run: this host has no CUDA toolkit (no `nvcc`, no `/opt/conda`), and the validator role skips the gate on such hosts. It is still owed at `d3e2266` by the first Linux host that has the toolkit. The CUDA path is byte-identical to 7a49973's, which only moved two includes into `#else` branches.
+
+### Completion checks
+
+- `python3 utils/jargon.py --port faster-gaussian-splatting` -> `jargon: clean` (local `main` branch created from `origin/main` first).
+- README: the ROCm build sits beside the CUDA one (`PYTORCH_ROCM_ARCH`, ROCm pip command, "ROCm ... 7.2 or newer recommended"). The 7.2 claim holds at compile level on gfx90a per the fallback section above.
+- `git -C projects/faster-gaussian-splatting/src status --porcelain` -> empty, after deleting the `_C...so.N.{hip-amdgcn,host}-*` bundle files that my `llvm-objdump --offloading` call extracted and removing the baseline worktree.
+
+### Verdict
+
+**completed**, `linux-gfx90a`, `validated_sha=d3e2266399c1c87e35ea9d12049a2c4abac9a7de`: real-GPU pass on the HIP 7.16 build (31/31, 3/3, determinism 0 diff, numerics vs b0d21d5 explained). The 7.2.x fallback arm passed a 7.2.4 compile for gfx90a and a forced runtime check on gfx90a. The full 7.2.x runtime build is still open, see above.
