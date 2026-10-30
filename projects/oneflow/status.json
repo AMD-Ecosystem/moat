@@ -7,12 +7,9 @@
   "priority": 6.236,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-10-30T00:00:38Z",
-  "head_sha": "d019f35519eeb6f071ea4a6883b5c8f7a9adaa67",
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-10-30T00:00:38Z"
-  },
+  "updated_at": "2026-10-30T00:11:05Z",
+  "head_sha": "521f547825b77e36a4752bd45b2a295ad2a0a633",
+  "porting": null,
   "waivers": {
     "windows": {
       "reason": "Upstream oneflow has never supported Windows, and the obstacle is the operating system rather than the GPU. cmake/oneflow.cmake:54 contains a literal error('Expanding macro in WIN32 is not supported yet') and there is no upstream Windows CI. Four further independent blockers, each sufficient on its own: RCCL is hard-required via find_package(rccl REQUIRED) and is Linux-only, with <nccl.h> pulled in by cuda_util.h -- the main GPU utility header included nearly everywhere -- plus four other core files; POSIX platform code sits outside any platform-excluded subdir (ibv_wrapper.cpp dlopening libibverbs.so, pthread_fork.cpp using pthread_atfork, unistd.h in several core files); cmake/platform.cmake is MSVC-only (/MP /bigobj /EHsc /GF /FC) and therefore mutually exclusive with the all-clang toolchain HIP requires on Windows; and 32 third-party libraries build from source through ExternalProject_Add with Linux-centric recipes. Making RCCL optional alone is a multi-file refactor across the GPU utility header, well beyond this port's minimal footprint. The determination was reached by build analysis on windows-gfx1101/gfx1201 on 2026-06-05, is architectural rather than per-GPU, and was carried to windows-gfx1151 on 2026-08-20 without re-deriving it. The HIP port itself is complete and validated at head 2729bee5 on linux-gfx90a (wave64) and linux-gfx1100 (wave32); windows is the only gate open. This is the strongest waiver case in the current set: unlike espresso or rmcl, no amount of host provisioning would help, because upstream's own build system refuses WIN32.",
@@ -23,7 +20,7 @@
   },
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 81634683,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -158,7 +155,7 @@
       "failed_sha": null,
       "started_at": "2026-10-29T23:08:20Z",
       "completed_at": null,
-      "updated_at": "2026-10-30T00:00:38Z",
+      "updated_at": "2026-10-30T00:11:05Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -177,7 +174,7 @@
   },
   "porting_released": {
     "arch": "linux-gfx942",
-    "since": "2026-10-29T23:47:19Z",
-    "at": "2026-10-29T23:54:42Z"
+    "since": "2026-10-30T00:00:38Z",
+    "at": "2026-10-30T00:11:05Z"
   }
 }

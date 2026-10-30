@@ -392,6 +392,15 @@ than substituting something. ck_tile's fused MHA ships headers but no prebuilt i
 library in `/opt/rocm/lib`, so `fmha_fwd` is declared-only and using it means vendoring CK's
 codegen. (cuSZ, lc0)
 
+**`__launch_bounds__(1024)` changes nothing on HIP and something on CUDA.** HIP-clang
+already gives every kernel `amdgpu-flat-work-group-size="1,1024"` (`.max_flat_workgroup_size:
+1024` in the code-object metadata) with or without the attribute -- check the metadata with
+`--offload-device-only -S` before crediting it with fixing a 1024-thread launch failure. On
+nvcc the same attribute caps registers per thread for every instantiation, which can move
+the occupancy-based block-size choice and with it the reduction order. If a port keeps it,
+put it behind a macro that is empty unless `USE_HIP`, so the CUDA kernels stay
+token-identical to upstream. (oneflow, ROCm SDK clang 24)
+
 **A ROCm-only branch inside a shared template still COMPILES on the CUDA path.** Gating the
 divergence on a `static constexpr bool` predicate that is false on NVIDIA (`if(needsCast())`)
 keeps the branch from RUNNING there, but a plain `if` instantiates both arms in every

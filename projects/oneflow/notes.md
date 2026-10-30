@@ -475,3 +475,89 @@ Verdict: changes-requested. Scope: the whole fork diff (58 files), with the comm
    - drop or correct the `__launch_bounds__` rationale and the "NVIDIA build is a pure passthrough" claim to match finding 2.
 
 CUDA path (checked, nothing to fix beyond finding 2): every other edit outside `USE_HIP` leaves the NVIDIA result unchanged. Specifically: the width argument in softmax WarpAllReduce; the WarpReduce width of 32 in layer_norm_gpu_kernel.cu; the rms_norm start offset kWarpSize/2 (=16); lru_cache's OfWarpFfs/OfWarpPopc (popc==32 is equivalent to mask==0xffffffff); the `.template` removals; the custom_eval_frame cast; the Eigen/flatbuffers/kineto third-party build patches; and the cmake `if(BUILD_CUDA AND USE_HIP) ... elseif(BUILD_CUDA)` splits.
+
+## Porter round 2026-10-30 (linux-gfx942 host, answers "Review 2026-10-29")
+
+Requested by jeff: address every finding of the 2026-10-29 review after fact-checking it, rerun the strengthened jargon check until added lines are clean, guard the `__launch_bounds__` additions with USE_HIP, keep CUDA paths unchanged, commits on top only (no force-push), record message rewrites for the PR-prep squash.
+
+Fork moat-port d019f3551 -> 521f54782 (fast-forward, 4 commits):
+- 9ab335eef [ROCm] State the reasons in port comments directly
+- 4cd3825b8 [ROCm] Apply the 1024-thread launch bound to the HIP build only
+- d46e907d5 [ROCm] Fix HIP build configuration issues
+- 521f54782 [ROCm] Document the ROCm build in the README
+
+`advance-head oneflow 521f547825b77e36a4752bd45b2a295ad2a0a633`. `classify d019f3551 521f54782` -> `class=mixed arch_independent=False inert=False`, so linux-gfx90a and linux-gfx1100 (validated at d019f3551) now read `revalidate`.
+
+Each finding, as fact-checked and resolved:
+1. Jargon in added lines: confirmed (jargon reported the 9 hits; "matching the raft pattern" at cuda_to_hip.h:70 confirmed by reading). Every pointer replaced by the technical reason; "validation slice" in cmake/oneflow.cmake also reworded. `python3 utils/jargon.py --port oneflow` now reports 0 added-line hits; the 3 remaining hits are all in 68718f038's commit message (finding 8).
+2. `__launch_bounds__(1024)` without a guard: confirmed on this host's ROCm SDK clang 24 (`amdclang++ -x hip --offload-arch=gfx942 --offload-device-only -S -O2` on a templated kernel with and without the attribute: both `.max_flat_workgroup_size: 1024`, `"amdgpu-flat-work-group-size"="1,1024"`). Not reproduced on ROCm 7.2.1 (not on this host). Per jeff, kept on HIP and guarded instead of dropped: softmax.cuh and layer_norm.cuh define `OF_HIP_BLOCK_LAUNCH_BOUNDS` as `__launch_bounds__(1024)` under USE_HIP and empty otherwise (`#ifndef`-guarded, the same pattern as OF_SHFL_FULL_MASK); the 9 kernels use it. With USE_HIP undefined the kernel declarations are token-for-token upstream's. layer_norm.cuh LayerNormBlockUncachedImpl keeps upstream's own unconditional bound.
+3. Mixed-wavefront arch list: confirmed by reading cmake/cuda.cmake (any `^gfx9` entry set 64 for the whole build). Now a FATAL_ERROR naming the wave64 and wave32 arches.
+4. build_rocm.sh pinned gfx90a: confirmed. It now passes `-DCMAKE_HIP_ARCHITECTURES` only when the env var is set; header comment no longer says gfx90a.
+5. /opt/rocm/include hard-coded in cmake/util.cmake: confirmed. Now `${hip_INCLUDE_DIRS}` (set by hip-config.cmake, include(cuda) runs before any oneflow target is created). The cuda.cmake and third_party.cmake comments that named /opt/rocm/include were updated.
+6. nvtxRangePushA/nvtxRangePop unguarded under USE_HIP: confirmed (only `OF_ENABLE_PROFILER`). Both now `#if defined(OF_ENABLE_PROFILER) && !defined(USE_HIP)`. cudaProfilerStart/Stop are aliased in cuda_to_hip.h and need no guard. Every remaining nvtx reference in profiler.cpp is under `!USE_HIP`.
+7. USE_HIP undeclared and dead WITH_RCCL block: confirmed (`git grep WITH_RCCL` -> only that block). Added `option(USE_HIP "Build the BUILD_CUDA GPU backend with ROCm/HIP" OFF)` after BUILD_CUDA in CMakeLists.txt; deleted the block.
+8. Commit hygiene: confirmed, and it cannot be fixed without rewriting history, which jeff ruled out for this round. Recorded below for the PR-prep squash. `utils/check.py` passes the 4 new commits; it still flags 2729bee, f4f9394 (no fenced Test Plan block) and 79f235c (no Test Plan), and jargon flags 68718f038's message. The fork branch `moat-port-squash` (be1ef73f1, tree of d019f3551) is now STALE; do not push it to moat-port. Re-cut the squash from the moat-port tip after revalidation.
+
+Not a review finding, but required of the porter: the README had a CUDA configure example and no ROCm one. Added a ROCm block beside it (USE_HIP, CMAKE_HIP_ARCHITECTURES/auto-detect, one wavefront family per build, build_rocm.sh, kernels not available yet). Paths in it use /opt/rocm, matching the build_rocm.sh compiler defaults.
+
+CUDA path: every code edit is under USE_HIP (cmake branches already `if(BUILD_CUDA AND USE_HIP)`, the new option defaults OFF, profiler guards add `!USE_HIP`, the launch-bounds macro is empty without USE_HIP). No CUDA build was run (no NVIDIA host here).
+
+Evidence on this host (MI300X, gfx942, ROCm from the rocm-sdk Python packages, amdclang++ 24.0.0git; HIP_VISIBLE_DEVICES=4; `ulimit -c 0`):
+- Configure with `-DONEFLOW=OFF` (skips include(oneflow) and its pip step, still runs cuda.cmake and third_party.cmake):
+  ```
+  R=$(python3 -m rocm_sdk path --root)
+  cmake -S . -B /tmp/of-cfg -G Ninja -DONEFLOW=OFF -DUSE_HIP=ON -DBUILD_CUDA=ON -DCMAKE_HIP_ARCHITECTURES="gfx942;gfx1100" -DCMAKE_PREFIX_PATH=$R -DCMAKE_C_COMPILER=$R/lib/llvm/bin/clang -DCMAKE_CXX_COMPILER=$R/lib/llvm/bin/clang++ -DWITH_CUTLASS=OFF -DWITH_MLIR=OFF -DBUILD_RDMA=OFF -DBUILD_CPP_API=OFF -DBUILD_HWLOC=OFF -DBUILD_TESTING=OFF
+  ```
+  "gfx942;gfx1100" -> FATAL_ERROR (mixes wavefront-64 (gfx942) and wavefront-32 (gfx1100)). gfx942 -> `OF_GPU_WARP_SIZE: 64`, configure done. gfx1100 -> 32. No arch -> auto-detect `gfx942;gfx942;...` (8 entries, one per GPU) -> 64. `find_package(hip)` -> `hip_INCLUDE_DIRS=$R/include`, which holds hipcub/hipcub.hpp and rccl/rccl.h.
+- Standalone GPU harness for the changed kernels (agent_space, not committed): includes softmax.cuh and rms_norm.cuh (which includes layer_norm.cuh), calls DispatchSoftmax, DispatchLayerNorm, DispatchLayerNormGrad, LaunchRmsNorm, LaunchRmsNormGrad with DirectLoad/DirectStore, compares to a double CPU reference. float cols 200/1024 (warp path), 4096/6000 (block shared-memory path), 40000 (block uncached path), double cols 128/4096 (uncached), 64 rows.
+  ```
+  amdclang++ -x hip --offload-arch=gfx942 -std=c++17 -O2 -DWITH_CUDA -DUSE_HIP -DOF_GPU_WARP_SIZE=64 -DOF_SOFTMAX_USE_FAST_MATH -include oneflow/core/device/cuda_to_hip.h -Ioneflow/core/device/hip_compat -I. norm_harness.cu -o norm_harness
+  ./norm_harness
+  ```
+  `device AMD Instinct MI300X HF gcnArch gfx942:sramecc+:xnack- warpSize 64 kWarpSize 64`; 35/35 PASS. Max abs err float: softmax <= 4.1e-9, layer_norm fwd/bwd <= 4.6e-7, rms_norm fwd/bwd <= 2.7e-7; double <= 4.7e-15.
+- `bash -n build_rocm.sh` clean.
+
+NOT DONE: the full liboneflow build and the Python GPU test suite on gfx942. Same blocker as the 2026-10-29 round, and this job was again dispatched without a per-job venv (FLEET_VENV unset): cmake/python.cmake runs `pip install -r dev-requirements.txt --user` at configure, which fails in the shared image venv, and the fleet guard refuses any pip install outside $FLEET_VENV. A private env is genuinely needed, not just a pip workaround: dev-requirements pins `protobuf>=3.9.2, <4.0`, while the base env has protobuf 6.33.5 (also missing: opencv-python, cmakelang, pytest-repeat, rich, portalocker, black). profiler.cpp was therefore not compiled (it needs the generated .pb.h). To get gfx942 build+test evidence, dispatch with `--build` so the job gets FLEET_VENV, then `CMAKE_HIP_ARCHITECTURES` unset, `ROCM_CLANG=$R/lib/llvm/bin/clang++ ROCM_CLANG_C=$R/lib/llvm/bin/clang JOBS=<cores> ./build_rocm.sh` with `-DPython3_EXECUTABLE=$FLEET_VENV/bin/python` and CMAKE_PREFIX_PATH=$R. The linux-gfx90a and linux-gfx1100 validators rebuild the full monolith at 521f54782 anyway.
+
+### PR-prep squash message (replaces be1ef73f1's; re-cut from the validated moat-port tip)
+
+Build with `git commit-tree <tip>^{tree} -p master -F <this message>`, check the tree equals the tip, then `squash-carry-forward`. Fill in the GPUs that actually validated the tip in the first paragraph and Test Plan.
+
+~~~~
+[ROCm] HIP backend for the CUDA GPU path
+
+Enable oneflow's existing CUDA GPU backend to build, link, and run on AMD GPUs through HIP/ROCm. oneflow's ROCm support was removed from master long ago; this is a from-scratch HIP enablement of the CUDA code, not a revival of dead plumbing. liboneflow.so links and the ep/cuda/primitive tensor ops GPU-validate against PyTorch-ROCm on MI250X (gfx90a) and Radeon Pro W7800 (gfx1100), ROCm 7.2.1.
+
+Review the CMake first, then the compatibility layer, then the host/kernel fixes.
+
+cmake -- a new USE_HIP option (default OFF) keeps BUILD_CUDA=ON (so -DWITH_CUDA is defined, the .cu glob is included, and DeviceType::kCUDA keeps meaning "the GPU backend"), but routes the toolkit, libraries, and the .cu source language to ROCm. The whole monolith is compiled with the ROCm clang (CC=clang, CXX=clang++, see build_rocm.sh): oneflow's data_type.h and ep/cuda/cuda_stream.h pull the HIP half/bf16 and library-handle headers (clang builtins) into thousands of host .cpp, which only parse under clang. cmake/cuda.cmake enables the HIP language (honoring -DCMAKE_HIP_ARCHITECTURES or auto-detecting the host GPU), finds the ROCm packages, links hip::host and roc::rccl but NOT hip::device (its -x hip INTERFACE option would recompile every host .cpp as device code), and derives OF_GPU_WARP_SIZE from the arch, refusing an arch list that mixes wavefront-64 and wavefront-32 GPUs because the width is one compile-time constant per build. The host .cpp get the ROCm include directory from find_package(hip). oneflow_add_library retags .cu/.cuh LANGUAGE HIP only under USE_HIP, so no files are renamed. The deferred cuDNN / cuBLASLt / cuSOLVER / CUTLASS+wmma / libcu++ / P2P kernels are filtered out of the HIP monolith glob, and three non-self-contained .cuh are dropped from the standalone-compile glob (their code still builds inside the .cu that include them). LLVMSupportWithHeader gets LLVM_DISABLE_ABI_BREAKING_CHECKS_ENFORCING=1 because the ROCm clang's bundled abi-breaking.h (checks=0) shadows oneflow's vendored LLVM headers (checks=1) and left liboneflow.so referencing an undefined symbol. Three third-party builds get clang/gcc-13 fixes: Eigen 3.90 Transpositions.h, kineto cstdint, and flatbuffers, whose hardcoded -Werror flags are stripped (for every build, since gcc-13 trips them too).
+
+compatibility layer -- oneflow/core/device/cuda_to_hip.h aliases the cuda*/cublas*/curand*/cufft*/cusolver*/complex symbols to their hip* equivalents, defines __CUDACC__ and (device-pass only) __CUDA_ARCH__, maps bf16 to __hip_bfloat16, provides a 64-bit full-warp shfl mask, selects __HIP_PLATFORM_AMD__ for the plain-C++ pass, gates the clang-only HIP math/library headers on __clang__, and sets CUDNN_BN_MIN_EPSILON to the modern cuDNN-8 value 0.0 (the old 1e-5 floor wrongly rejected eps=1e-6 layer norm). A hip_compat/ shim dir resolves the toolkit angle-bracket includes and is on the HIP include path only.
+
+host + kernels -- excluded ops that the monolith still references are cleanly handled: the LRU embedding cache (libcu++ semaphore) and the cuDNN grid-sample kernel report not-supported / register only CPU on ROCm. Host cuda* entry points are ported (CudaDriverGetPrimaryCtxActive via the native HIP driver API) or the cuDNN/cuSOLVER/cuBLASLt/nvjpeg/NVTX version-banner, handle and profiler-annotation code is guarded under !USE_HIP. CPython 3.12 dropped the imp module and changed the eval-frame hook signature -- both are handled so the module imports. The GPU correctness fixes found by running the tests: CublasMathModeGuard is a no-op on HIP (hipblas accepts only the default math mode; rocBLAS picks precision from the types); on HIP only, the LayerNorm/RmsNorm/Softmax block kernels state __launch_bounds__(1024) so the up-to-1024-thread launches the occupancy heuristic chooses always fit the register allocation (the CUDA kernels are unchanged); and LayerNormParamGrad's gamma/beta reduction is made wave64-correct -- its tile constant, dim3(32,..) launch, shared [32][33] transpose, and reduction width must all agree, so WarpReduce reduces 32 lanes via the width-confined 4-arg __shfl_down_sync (correct on wave32 and wave64). The README documents the ROCm configuration next to the CUDA one.
+
+Outside USE_HIP, the only edits are ones that leave NVIDIA results the same: the width argument in the softmax warp reduction, the `.template` removals, the eval-frame cast and the third-party build fixes.
+
+This work was authored with the assistance of Claude (Anthropic), an AI coding agent.
+
+Test Plan:
+Validated on MI250X (gfx90a, wave64) and Radeon Pro W7800 (gfx1100, wave32), ROCm 7.2.1.
+
+Build (the default target links liboneflow.so + the _oneflow_internal pybind module and copies it into python/oneflow/; the GPU arch is detected from the build machine):
+
+```
+./build_rocm.sh config
+cmake --build build -j16
+```
+
+GPU validation -- oneflow device="cuda" is the HIP backend, compared against the PyTorch-ROCm reference (forward + backward), serially on one GPU:
+
+```
+source build/source.sh
+cd python/oneflow/test/modules
+python3 -m pytest -q -p no:cacheprovider test_add.py test_cast.py test_where.py test_masked_fill.py test_broadcast_ops.py test_transpose.py test_softmax.py test_layer_norm.py
+python3 -m pytest -q -p no:cacheprovider test_matmul.py -k "not random_fp16_data and not random_int_data"
+```
+
+64 and 9 passed. The fp16 matmul output is bit-identical to torch; that subcase fails only on a numpy/oneflow __bool__ dtype-interop quirk. int matmul is a CPU op_kernel_not_found, unrelated to the GPU backend.
+~~~~
