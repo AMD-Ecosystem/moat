@@ -1012,3 +1012,20 @@ Both exit 0. All `flags.make`, `link.txt` and `build.make` files concatenated (8
 
 ### Other checks
 `jargon.py --port gpu4pyscf`: clean (needed `git fetch origin master:master` in a fresh `-b moat-port` clone first). `prose.py` on the commit message: clean. Title 57 chars, message and added lines ASCII. `git status --porcelain` in the fork is empty.
+
+## Review 2026-10-30 (reviewer, linux-gfx942, fork moat-port @ 5c60311 vs upstream/master 10dcea3; delta 066e91e..5c60311) -- CHANGES REQUESTED (MOAT skill text only; the fork is clean)
+
+Scope: covers the delta 13e3500..5c60311 and the whole flag change 066e91e..5c60311. The whole fork diff (31 files, +697/-76; nothing but CMakeLists.txt and README.md changed since the 45d8053 pass) was re-read where it touches the HIP CMake block. I also read the cuda-to-rocm lesson that this branch adds for the flag. Checked independently on this host (TheRock ROCm 10.1, cmake from /opt/python-3.11-venv, GCC host) and not findings:
+- `cmake -S gpu4pyscf/lib -B <b> -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942` exits 0.
+- In that build, each of the 8 `link.txt` files has `-disable-machine-licm`, `--hip-link` and `-fgpu-rdc` exactly once, and each of the 8 `flags.make` files has the flag once. CMakeCache `CMAKE_SHARED_LINKER_FLAGS` is empty.
+- The flag is appended only to `CMAKE_HIP_FLAGS` inside `if(USE_HIP)` (gpu4pyscf/lib/CMakeLists.txt:38-68). The HIP language is enabled only under USE_HIP, and no subdirectory, setup.py or builder sets HIP or linker flags, so a CUDA build cannot see it.
+- The comment at CMakeLists.txt:57-64 says what the flag works around (MachineLICM in ROCm 10.1 / AMD clang 24 clobbers the atomicAdd offset register in the Rys J/K kernels on gfx90a and gfx942). It also says when to remove it (a ROCm release passes the d-shell SCF tests on gfx90a and gfx942 without it).
+- README.md:56-67 matches the CMake behaviour and the recorded evidence.
+- `jargon.py --port gpu4pyscf` and `prose.py` are clean on all three commit bodies. The titles have `[ROCm]` and are 58, 62 and 57 chars. Each body discloses the AI agent in prose and has a fenced Test Plan. There is no Co-Authored-By or noreply trailer, the messages and added lines are ASCII, and the fork tree is clean.
+
+### Port Correctness (lesson promoted on this branch)
+
+1. **.claude/skills/cuda-to-rocm/references/validation.md:209 (the "Proving a real miscompile" bullet) still prescribes the mechanism that 13e3500 removed as dead.** It says the fix was "`-mllvm -disable-machine-licm` in both `CMAKE_HIP_FLAGS` and the shared linker flags (needed under `-fgpu-rdc`, where device codegen runs at link)". 13e3500, and this review's configure, show that the `CMAKE_SHARED_LINKER_FLAGS` append is overwritten in the default GCC build. They also show that CMake's HIP link rule already repeats `CMAKE_HIP_FLAGS` (and adds `--hip-link` itself), so the single `CMAKE_HIP_FLAGS` line reaches the `-fgpu-rdc` device link. The lesson exists only on port/gpu4pyscf (`git grep disable-machine-licm origin/main -- .claude/skills` = nothing), so this review owns it. As written it would lead the next porter to add the same dead line. Fix: reword that sentence to say that setting it on `CMAKE_HIP_FLAGS` is enough, because CMake's HIP link rule repeats those flags on the `-fgpu-rdc` link where device code is generated, and that a `CMAKE_SHARED_LINKER_FLAGS` append can be silently overwritten by the project. Also replace "do not commit a compiler workaround without a person's decision" with the outcome: a person did decide, and the fork carries it under USE_HIP with a dated removal condition. This is a MOAT record edit only. The fork does not change, `head_sha` stays 5c60311, and nothing needs revalidation for it.
+
+### Recommendation
+**Request Changes.** The fork at 5c60311 has no open findings; the next review of this lesson edit can pass the fork as-is. For PR prep, the 28f2418 body still describes the superseded link-flag mechanism ("The flag goes on both the HIP compile flags and the shared-library link flags"). If the three commits are squashed, the squashed message must take the 13e3500 wording instead.
