@@ -4627,3 +4627,64 @@ Deferral `lfs-hip-stream-ordered-mempool` -> done. New deferral `hip-mempool-rel
 
 ### Verdict
 Both rulings implemented, built, tested on gfx1100 and pushed. Every failure is on the recorded known list with its cause, or explained above.
+
+## Review 2026-10-30d (reviewer, linux-gfx1100) -- c32560e9 (delta acb5129a..c32560e9, plus the skill and deferral edits in 680337d8), CHANGES-REQUESTED (records and skill only; the fork code needs no change)
+
+### Summary
+af2f13b4 (stream-ordered pool on HIP) and c32560e9 (Windows video Option A) are correct and leave the CUDA view identical to upstream. No finding against the fork. The new ROCm bug candidate `hip-mempool-release-threshold-ignored` and the matching skill sentence state the wrong cause and overstate the symptom: the threshold *is* honoured when it is set after the pool's first allocation. Both need correcting before anyone files the bug. The porter's "no workaround needed" holds: honouring the threshold does not speed up training (measured below).
+
+### Findings
+1. **`projects/LichtFeld-Studio/deferred.json`, `hip-mempool-release-threshold-ignored`: wrong cause and wrong scope.** The record says freed memory goes at the next synchronize "even with the threshold at UINT64_MAX", and blames `Heap::ReleaseAllMemory()` (hip_mempool_impl.cpp:137-139) and `MemoryPool::FreeMemory` (262-266). Rechecked against clr (ROCm/rocm-systems develop 58b6920, sparse clone in this job's `agent_space/ext`, including `projects/clr/rocclr`, which the porter's clone lacked):
+   - Lines 137-139 are deliberate: with the VM heap, `Heap::SetReleaseThreshold` (hip_mempool_impl.hpp:129-132) passes the value to `vm_heap_.SetUnmapThreshold`, and the comment says "Managed memory controls the threshold on its own".
+   - The defect is in rocclr. `VmHeapArray::SetUnmapThreshold` (rocclr/platform/vmheap.cpp:465-473) copies the threshold only into heaps that are already `created_`. A heap is created lazily on its first `Alloc` (vmheap.cpp:217-219), and its own `unmap_threshold_` defaults to 0 (vmheap.hpp:152). So a threshold set before the pool's first allocation never reaches the heap. `VmHeap::FreeBlock` -> `UnmapPhysMemory` (vmheap.cpp:170-196) then unmaps every chunk that lies wholly inside the freed block. The library's `configure()` and the porter's reproducer both set the threshold first.
+   - A second defect affects even a late setting: `VmHeapArray::Free` (vmheap.cpp:437-443) trims to `threshold - (freed - threshold)`, or to 0 once the excess reaches the threshold, instead of trimming to the threshold. Physical memory moves in 128 MiB chunks (`kChunkSize`, vmheap.hpp:52). The chunk the porter saw retained is the heap's first chunk: the block starts 256 bytes in (vmheap.cpp:228-229), so that chunk is never wholly inside a freed block.
+   - The `FreeMemory` force-release (262-266, free heap larger than busy heap, under `AMD_DIRECT_DISPATCH`) is a separate release policy that ignores the threshold. It is real but was not isolated by either reproducer.
+   - Evidence (`agent_space/probe/thr2.hip`, HIP device 3 = PCI 0000:26:00.0, idle; hipcc `--offload-arch=gfx1100 -O2`; `thr2 <thr MiB> <alloc MiB> early|late 50`; "late" means after one 1 MiB hipMallocAsync/hipFreeAsync/sync; ReservedMemCurrent live -> after hipFreeAsync + hipStreamSynchronize; mean alloc/free/sync cycle):
+     ```
+     thr=1024 alloc=512 early: 640 -> 128 MiB, cycle 5.410 ms    late: 640 -> 640 MiB, cycle 0.028 ms
+     thr=max  alloc=512 early: 640 -> 128 MiB, cycle 4.804 ms    late: 640 -> 640 MiB, cycle 0.031 ms
+     thr=64   alloc=512 early: 640 ->   0 MiB, cycle 6.369 ms    late: 640 ->   0 MiB, cycle 5.600 ms
+     thr=64   alloc=32  early: 128 ->   0 MiB, cycle 1.179 ms    late: 128 ->   0 MiB, cycle 1.184 ms
+     ```
+     The porter's `threshold` binary reproduced their numbers here (max/512 and 1024/512: 640 -> 128 MiB).
+   - Fix: rewrite the summary with the two rocclr causes and the early/late table. Name both trigger conditions (threshold set before the first pool allocation, and any threshold below one 128 MiB chunk or an excess at least the threshold). Cite rocclr vmheap.cpp/hpp at a pinned commit. Use the measured remap cost (5-6 ms per 512 MiB here, 6.7 ms in the porter's run) rather than "about 8 ms".
+2. **`.claude/skills/cuda-to-rocm/references/fault-classes.md` (the `CUDART_VERSION` paragraph, added in 680337d8): the same overstatement.** It says freed blocks are released at the next synchronize "whatever the threshold, except one 128 MiB chunk". That is true only when the threshold is set before the pool's first allocation. Restate it: on ROCm 10.1 the threshold reaches the default pool's VM heap only if it is set after the pool's first allocation; it then holds memory in 128 MiB chunks; below one chunk (such as 64 MiB) it keeps nothing. Keep "do not count on it", and point to the deferral.
+3. **Minor, `docs/building_and_distribution.md:230` (c32560e9): two version schemes in one sentence.** The requirement reads "ROCm 7.x ... (tested with the ROCm 7.16 SDK)", and the new clause says rocDecode reaches Windows "from ROCm 10.2 (rocDecode 1.12)". An upstream reader cannot tell how 7.16 relates to 10.2. The commit message's own Test Plan says "ROCm 10.1" for the same SDK. Name the SDK one way throughout (the release number, with the HIP version in parentheses if wanted). This needs a fork commit, so it can ride with the next real change; it does not hold this round on its own.
+
+### Checked as asked (no finding)
+- **CUDA view.** Confirmed that `unifdef` does not reduce `X || defined(USE_HIP)`, so I reran the porter's method myself: `diff <(git show ca01b056:$f | unifdef -UUSE_HIP -DCUDART_VERSION=$v) <(unifdef -UUSE_HIP -DCUDART_VERSION=$v $f)` is empty for memory_pool.hpp, main.cpp, memory_arena_owner.cpp, moge2.cpp, vram_profiler.cpp, perf_bench.cpp and test_video_frame_extractor_naming.cpp, at v = 13000, 12080, 12079, 12000, 11020 and 11000 (each side of both the 12080 and the 11020 guard). Guard text is uniform: all 12 memory_pool.hpp sites read `#if CUDART_VERSION >= 12080 || defined(USE_HIP)`, and moge2.cpp keeps its own `>= 11020` form. Nothing in the tree defines `CUDART_VERSION` for HIP. One 12080 pool reader is left unconverted, `src/io/nvcodec_image_loader.cpp:565`, but the HIP build removes that file and compiles `nvcodec_image_loader_hip.cpp` instead (src/io/CMakeLists.txt:462-464), which reads no pool attribute. So it is dead on HIP, not a gap.
+- **Pool semantics, HIP vs CUDA.**
+  - Stream ordering: frees go to `hipFreeAsync` on the home stream after `bridgeStreams` for each recorded extra stream (memory_pool.hpp `free_routed`), as on CUDA.
+  - clr's `MemoryPool::FreeMemory` adds a marker event on the freeing stream. `FindMemory` reuses a block only when `IsSafeFind(stream, opportunistic)` holds. That is the same contract as CUDA's default (FollowEventDependencies, AllowOpportunistic and InternalDependencies all 1 in the clr constructor). The porter's probe saw cross-stream event-ordered reuse ordered correctly.
+  - Statistics: Reserved/Used Current/High map to clr's MappedSize/busy-heap sizes, and the High resets accept only 0, as on CUDA. Trim goes through `hipMemPoolTrimTo(pool, 0)` -> `free_heap_.ReleaseAllMemory(0)`, which also trims the VM heap.
+  - Allocation failure: `hipMallocAsync` failure is logged (`LogOnly`) and falls through to `try_allocate_direct` (`hipMalloc`), and the exact tier returns nullptr with the status. Both are unchanged from CUDA's structure.
+  - Untracked frees use `hipFreeAsync` as CUDA uses `cudaFreeAsync`.
+  - The slab tier and the size-bucket cache are unchanged; the size-bucket file already used `cudaMallocAsync` unguarded.
+- **Does the ignored threshold cost training time?** No measurable cost. I ran the head build (porter's `build-hip-gcc` at c32560e9, read-only) with an LD_PRELOAD shim (`agent_space/probe/shim.cpp`) that re-applies the threshold right after the first successful `hipMallocAsync`, so it is honoured from then on. Bicycle `images_4`, `--iter 3000 --eval --no-depth-auto-generate --no-normal-auto-generate`, Xvfb + RADV, HIP device 3, alternating order. Training time from the app's "Training completed in":
+
+  | run | 1 | 2 |
+  |---|---|---|
+  | as built (64 MiB, set early) | 61.4 s | 63.4 s |
+  | 128 MiB honoured | 63.2 s | 63.4 s |
+  | 1024 MiB honoured | 63.3 s | 63.8 s |
+
+  PSNR 23.65-23.67 in all six; rc 0. The size-bucket and slab caches absorb the hot sizes, as the porter said. "No workaround" is accepted.
+- **`AllocatorHygiene.FailedSlabReclaimRestoresOwnershipAndAccounting`.** `gpu_slab_allocator.hpp` and `tests/test_allocator_hygiene.cpp` are byte-identical to ca01b056. Neither has a `USE_HIP` line, and the slab tier uses plain `cudaMalloc`/`cudaFree`. tensor_ops.cu differs from upstream only in the rocThrust namespace alias and the hipCUB offset lambda, not in `NaNCheckBuffers` (thread_local 4-byte flag from `CudaMemoryPool`). `MIN_BLOCK_SIZE` is 256, so the flag and the test's 64-float tensor share size class 0. `slab_enabled_` is set in `configure()` after the pool setup on CUDA >= 12.8 exactly as on HIP now. CUDA has the same order dependence: upstream test-isolation defect, as classified.
+- **Windows Option A.**
+  - Configure: `src/io` is added from the root CMakeLists.txt (line 654), and `tests` later from the root (1311), so `PARENT_SCOPE` reaches the tests.
+  - Linux without rocDecode still hits `FATAL_ERROR` (the `else()` branch). Windows with rocDecode takes the first branch, because the decision is header plus library presence, not the OS.
+  - Stand-in decoder: `rocdecode_unavailable.cpp` includes only `rocdecode_decoder.hpp`, which pulls in libavcodec and no rocDecode header. Every public member is defined; the private `parse` is unreferenced. `unsupportedReason` returns the named reason for every stream.
+  - Routing: both call sites (video_frame_extractor.cpp:1082-1102, video_player.cpp:221-240) send a non-empty reason to FFmpeg's software decoder with a warning naming it. `transferToHost` is reached only with a rocDecode frame.
+  - No rocDecode symbol or header is referenced outside `src/io/video/rocdecode_*` and the HIP-only test.
+  - Tests: test_video_frame_extractor_naming.cpp is compiled only into `lichtfeld_tests`, which is the target that gets `LFS_HAVE_ROCDECODE`, so the `#if !LFS_HAVE_ROCDECODE` and the ternaries cannot see an undefined macro.
+  - Docs follow the code. Not built on Windows here; the porter's Linux `elseif(TRUE)` build is the evidence, and it is a sound stand-in for the compile and routing. Whether the Windows vcpkg FFmpeg has a software AV1 decoder stays open, as the porter noted.
+- **HIP device numbering.** Confirmed with the porter's `bus` probe: HIP 0, 1, 2, 3 = PCI 43, 46, 23, 26 = amd-smi GPU 2, 3, 0, 1. The validation.md lesson is accurate.
+  - Earlier records: correctness results do not depend on the card being idle.
+  - The one recorded result that could is `FastGSKernelTest`'s perf-ratio failure ("Porter round 2026-10-27", HIP 0). Its assertion compares interleaved generic and specialized backward medians (tests/test_fastgs_kernels.cpp:793, 2 % margin), so a co-tenant would mostly cancel out, but it was never rerun on a card known to be idle. It cannot be rerun on this host: `data/garden/point_cloud/iteration_7000/point_cloud.ply` is not on it.
+  - The 2026-10-30 and 2026-10-30b smokes on HIP 2 (67 s wall) match today's idle-card numbers, so they were not visibly contended.
+  - The validator rounds' "HIP_VISIBLE_DEVICES=0 pinned by the dispatcher, GPU idle (amd-smi 0 %)" (2026-10-21, 2026-10-22) may have checked a different card than the one used. `fleet.py` exports `--gpu` verbatim and does no mapping (scripts/fleet.py:228). For jeff: whoever picks `--gpu` from amd-smi on this host picks the wrong card.
+- **Commits.** Titles `[ROCm]`, 48 and 67 characters. Bodies give the rationale, "Authored with Claude.", and a fenced Test Plan. No Co-Authored-By trailer. Added lines are ASCII. The af2f13b4 claim that TrainerViewerHandshakeYieldsConsistentSnapshots fails without the pool is supported by "GUI training passes on amdgpu-dkms 6.19.14" (f90b8d1e, 36 of 39 torn). `python3 utils/jargon.py --port LichtFeld-Studio`: clean. `moatlib.py audit-commits LichtFeld-Studio`: OK.
+- **Scope and safety.** No video stream and no JPEG went to the hardware decoders in this review. The two earlier job directories were only read and run from; nothing was deleted. Every GPU run was under `timeout` with `ulimit -c 0` on HIP device 3 (idle by amd-smi GPU 1 before each run). The Windows viewer was not touched.
+
+### Next
+Porter: findings 1 and 2 in the MOAT records only (deferred.json and fault-classes.md); finding 3 with the next fork commit, or now if jeff prefers. The fork head can stay at c32560e9 for the records fix, and the next review can be records-only.

@@ -320,3 +320,4 @@
 {"kind":"phase","ts":"2026-10-30T20:23:02Z","phase":"test","seconds":1562.966,"exit":0,"cmd":"bash agent_space/suite_runner.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-120910-lfs-mempool-winvideo/moat/agent_space/runs/full"}
 {"kind":"phase","ts":"2026-10-30T20:25:41Z","phase":"test","seconds":67.335,"exit":0,"cmd":"bash agent_space/smoke.sh head"}
 {"kind":"session","ts":"2026-10-30T20:28:55Z","epoch":1793392135.016165224,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T20:33:29Z","epoch":1793392409.300476852,"event":"start","platform":"linux-gfx1100"}
