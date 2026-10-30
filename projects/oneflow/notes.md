@@ -608,3 +608,31 @@ What did run on this host (no build needed):
 - `python3 utils/jargon.py --port oneflow`: 3 hits, all in 68718f038's commit message ("Strategy A", "MOAT", "Lead platform"), and 0 in added lines. This is the known review item 8, left for the PR-prep squash.
 - Documentation: README.md:145-150 has the ROCm configure block beside the CUDA one. Its `/opt/rocm/lib/llvm/bin/clang` paths are absent on rocm-sdk-wheel hosts like this one. That is not a finding, because /opt/rocm is the standard install.
 - CUDA compile gate: not run. There is no /opt/conda/envs/cuda-12.8 here, and creating it would change the shared environment. No host has recorded it at 521f54782 yet.
+## Validation 2026-10-30 (linux-gfx90a, MI250X, NOT COMPLETED -- environment block, no state change)
+
+Requested by jeff: full GPU test suite at head_sha 521f547825b77e36a4752bd45b2a295ad2a0a633 under `ulimit -c 0`. Platform state was `revalidate` (validated at d019f3551; `classify d019f3551 521f54782` -> `class=mixed arch_independent=False inert=False`, so no carry-forward). Host: one MI250X GCD (`HIP_VISIBLE_DEVICES=2`, pinned by the dispatcher), ROCm from the rocm-sdk Python packages 10.1.0 (no /opt/rocm), AMD clang 24.0.0git, Python 3.11 shared image venv. Fork clone `projects/oneflow/src` at 521f54782, clean tree.
+
+What blocked the full build and suite: the same wall the gfx942 rounds hit. oneflow's configure (cmake/python.cmake `install_py_dev_deps`) always runs pip on dev-requirements.txt with `--user` against the configuring Python, and the requirements conflict with the shared image env (protobuf pinned `>=3.9.2, <4.0`; the image has 6.33.5; opencv-python, cmakelang, pytest-repeat, rich, portalocker, black, click==8.0.0 are missing). This job was dispatched without `--build`, so FLEET_VENV is unset and the fleet guard refuses any pip write. No workaround was attempted (no private venv, no `--user` write into the shared home). liboneflow.so was therefore not built and the Python suite (python/oneflow/test/modules) was not run, so linux-gfx90a is NOT recorded completed and NOT failed: it stays `revalidate`. Nothing here indicates a port defect.
+
+To finish: re-dispatch this validation with `--build` (FLEET_VENV set). Then, from the fork clone:
+```
+ulimit -c 0
+R=$(python3 -m rocm_sdk path --root)
+CMAKE_PREFIX_PATH=$R ROCM_CLANG=$R/lib/llvm/bin/clang++ ROCM_CLANG_C=$R/lib/llvm/bin/clang JOBS=<physical cores> PATH=$FLEET_VENV/bin:$PATH ./build_rocm.sh config
+cmake --build build -j<physical cores>
+source build/source.sh
+cd python/oneflow/test/modules
+python3 -m pytest -q -p no:cacheprovider test_add.py test_cast.py test_where.py test_masked_fill.py test_broadcast_ops.py test_transpose.py test_softmax.py test_layer_norm.py test_matmul.py
+```
+build_rocm.sh passes `-DPython3_EXECUTABLE=$(which python3)`, so putting $FLEET_VENV/bin first on PATH makes configure write into the job venv. The venv also needs torch for the PyTorch-ROCm oracle (e.g. created with `--system-site-packages`). For the full suite beyond the slice, run the whole modules directory serially and count failures in the deferred cuDNN/cuBLASLt/cuSOLVER/CUTLASS ops separately from the slice.
+
+Partial GPU evidence at 521f54782, covering the kernels this round changed (the `OF_HIP_BLOCK_LAUNCH_BOUNDS` macro in softmax.cuh/layer_norm.cuh with its 9 kernels, plus rms_norm.cuh). Standalone harness `agent_space/norm_harness.cu` (not committed): it includes softmax.cuh and rms_norm.cuh, calls DispatchSoftmax, DispatchLayerNorm, DispatchLayerNormGrad, LaunchRmsNorm and LaunchRmsNormGrad with DirectLoad/DirectStore, and compares against a double CPU reference. 64 rows; float cols 200/1024 (warp path), 4096/6000 (block shared-memory path), 40000 (block uncached path); double cols 128/4096 (uncached).
+```
+ulimit -c 0
+R=$(python3 -m rocm_sdk path --root); S=projects/oneflow/src
+$R/bin/amdclang++ -x hip --offload-arch=gfx90a -std=c++17 -O2 -DWITH_CUDA -DUSE_HIP -DOF_GPU_WARP_SIZE=64 -DOF_SOFTMAX_USE_FAST_MATH -include $S/oneflow/core/device/cuda_to_hip.h -I$S/oneflow/core/device/hip_compat -I$S agent_space/norm_harness.cu -o agent_space/norm_harness
+agent_space/norm_harness
+```
+`device AMD Instinct MI250X / MI250 gcnArch gfx90a:sramecc+:xnack- warpSize 64 kWarpSize 64`; 42 passed, 0 failed. Max abs err: float softmax <= 5.6e-8, layer_norm fwd <= 7.8e-7, layer_norm bwd <= 4.6e-7, mean/inv_var <= 7.0e-8, rms_norm fwd <= 5.0e-7, rms_norm bwd <= 2.9e-7; double <= 9.3e-15. This shows the changed norm kernels compute correctly on wave64 CDNA2. It is not the validation gate (no liboneflow.so link, no Python op suite).
+
+Other checks at 521f54782: `python3 utils/jargon.py --port oneflow` -> 3 hits, all in 68718f038's commit message (known; the PR-prep squash removes them), 0 in added lines. `git -C projects/oneflow/src status --porcelain` empty. CUDA compile gate not run: it needs the same configure (pip step) and this host has no cuda-12.8 env; no host has recorded it for 521f54782 yet.
