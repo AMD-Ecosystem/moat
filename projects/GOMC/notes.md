@@ -264,3 +264,5 @@ Upstream GOMCCUDASetup.cmake overrides `CMAKE_CUDA_ARCHITECTURES` to `all` on CM
 ### Jargon
 
 `python3 utils/jargon.py --port GOMC` reports 3 hits, all upstream development's own comment "I'm the follower" in src/ParallelTemperingUtilities.cpp (lines 449/537/817), because `--port` scans from `fork_default_branch` (`main`), so development's 103 commits count as added. Against the real base: `jargon.py -C projects/GOMC/src --commits upstream/development..moat-port` and `--diff upstream/development...moat-port` are both clean. Becomes clean under `--port` once the records' base branch is `development`.
+
+Update: after the primary recorded `fork_default_branch: development` (fork `development` mirror = upstream 09ec304e, the merged commit), `git -C projects/GOMC/src branch -f development origin/development` then `python3 utils/jargon.py --port GOMC` -> clean. A fresh fork clone needs that local `development` branch for `--port` to resolve.
