@@ -984,3 +984,14 @@ RHF water against CPU PySCF: sto-3g 9.7e-13, def2-svp 1.7e-11, cc-pvtz 6.3e-12 (
 
 ### Other checks
 `jargon.py --port gpu4pyscf`: clean. `prose.py` on the commit message: clean. Title 62 chars. The added lines and the message are ASCII. `git status --porcelain` in the fork is empty. No CUDA rerun: the change only touches lines inside `if(USE_HIP)` and the README.
+
+## Review 2026-10-30 (reviewer, linux-gfx942, fork moat-port @ 13e3500 vs upstream/master 10dcea3; delta 28f2418..13e3500) -- CHANGES REQUESTED
+
+Scope: the delta 13e3500 in full, 28f2418 again, and the whole fork diff (31 files, +697/-76) re-read where it touches the HIP CMake block. Not findings, checked independently on this host (TheRock ROCm 10.1, cmake from /opt/python-3.11-venv, GCC host): configure-only `cmake -S gpu4pyscf/lib -B /tmp/g4p-review-cfg -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942` -> all 8 `link.txt` carry `-disable-machine-licm`, `--hip-link` and `-fgpu-rdc` exactly once, all 8 `flags.make` carry the flag once, CMakeCache `CMAKE_SHARED_LINKER_FLAGS` empty. The flag is set only inside `if(USE_HIP)` (CMakeLists.txt:38-68) on `CMAKE_HIP_FLAGS`, which no CUDA rule reads, and no other build path (setup.py, builder) sets HIP flags. Both review findings of 28f2418 are fixed. `jargon.py --port gpu4pyscf` clean, `prose.py` on the 13e3500 body clean, title 62 chars with `[ROCm]`, AI disclosure in prose, fenced Test Plan, no trailers, added lines ASCII, fork tree clean.
+
+### Port Correctness
+
+1. **The ROCm 7.2.1 sentence and the removal condition (gpu4pyscf/lib/CMakeLists.txt:61 and :63-64; README.md:65) claim more than the evidence and leave the removal test ambiguous.** "With ROCm 7.2.1 those tests pass without it" follows "on gfx90a and gfx942", so it reads as covering both. The only 7.2.1 evidence is the June gfx90a validation; gfx942 has only ever been built with ROCm 10.1 (notes: every gfx942 section). And "Remove it once a ROCm release passes the d-shell SCF tests without it" names no architecture. ROCm 10.1 itself already passes those tests without the flag on gfx1100 (Validation 2026-10-30 gfx1100 @ 066e91e, and the 45d8053 gfx1100 run), so read literally the condition is already met by the very release that has the bug. The previous review asked to keep "on gfx90a and gfx942" in the removal test; 13e3500 dropped it. Fix, same wording in both places: "With ROCm 7.2.1 the d-shell SCF tests pass on gfx90a without it." and "Remove it once a ROCm release passes the d-shell SCF tests on gfx90a and gfx942 without it." Comment and README text only; no build change, so the 13e3500 build/test evidence carries over (the compile and link commands stay byte-identical).
+
+### Recommendation
+**Request Changes.** One new commit on top of 13e3500 (no amend), touching only those comment and README sentences. Re-run `jargon.py --port gpu4pyscf` and `prose.py` on the message.
