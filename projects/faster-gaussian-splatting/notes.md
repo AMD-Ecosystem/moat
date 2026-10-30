@@ -1849,3 +1849,51 @@ The CUDA no-regression gate is still owed at head (the CUDA path is byte-identic
 ### Recommendation
 
 **Approve** -> review-passed.
+
+## Validation 2026-10-30 (linux-gfx1100, revalidate at d3e2266)
+
+Requested by jeff after the upstream sync and fix rounds passed review. Platform: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32; `warp_size=32`), torch 2.16.0a0+git6c3af02, HIP 7.16.26385 (TheRock SDK wheels in the image venv), `HIP_VISIBLE_DEVICES=1`. Everything under `ulimit -c 0`.
+
+Trigger: revalidate, `validated_sha=b0d21d5` -> `head_sha=d3e2266`. `moatlib.py classify faster-gaussian-splatting b0d21d5 d3e2266` -> `class=mixed arch_independent=False inert=False` (the upstream merge rewrote kernels across 20+ source files), so this was a full real-GPU run, not a carry-forward.
+
+Toolchain coverage: this image's HIP 7.16 ships `hip/cooperative_groups/hip_reduce.h`, so this build took the `__has_include` arm of `kernels_forward.cuh`, not the `shfl_xor` fallback. The fallback has a compile check against ROCm 7.2.4 headers and a wave64 runtime check (gfx942 porter round) but no full ROCm 7.2.x build or run yet; a host with a 7.2.x torch still owes that.
+
+### Build
+
+Fresh clone of the fork, `moat-port` at `d3e2266`. Built in place because the image venv is shared:
+```bash
+export PYTORCH_ROCM_ARCH=gfx1100 MAX_JOBS=32
+git -C projects/faster-gaussian-splatting/src/FasterGSCudaBackend clean -xdfq
+utils/timeit.sh faster-gaussian-splatting compile -- bash -c "cd $PWD/projects/faster-gaussian-splatting/src/FasterGSCudaBackend && python setup.py build_ext --inplace"
+```
+PASS, rc=0, 36 s, no errors. Baseline: `b0d21d5` (the last head gfx1100 validated) built the same way in a `git worktree` at `agent_space/fgs_old`, rc=0. `llvm-objdump --offloading` (from `_rocm_sdk_core/lib/llvm/bin`) on both `_C.cpython-311-x86_64-linux-gnu.so`: 7 bundles, all `hip-amdgcn-amd-amdhsa--gfx1100`. Watch out: `llvm-objdump --offloading` extracts the bundles next to the `.so` as untracked files; delete them (or run it on a copy) before the porcelain check.
+
+### GPU tests (`projects/faster-gaussian-splatting/gpu_tests/`; upstream ships none)
+
+```bash
+B=$PWD/projects/faster-gaussian-splatting/src/FasterGSCudaBackend; OLD_B=$PWD/agent_space/fgs_old/FasterGSCudaBackend; G=projects/faster-gaussian-splatting/gpu_tests; O=agent_space/out
+utils/timeit.sh faster-gaussian-splatting test -- bash -c "ulimit -c 0; python $G/run_outputs.py $OLD_B $O/old.pt && python $G/run_outputs.py $B $O/new.pt && python $G/run_outputs.py $B $O/new2.pt && python $G/compare.py $O/old.pt $O/new.pt; python $G/compare.py $O/new.pt $O/new2.pt; python $G/new_checks.py $B; python $G/train_check.py $B; python $G/det.py $B"
+```
+rc=0, 23 s wall.
+
+- **run_outputs + compare, b0d21d5 vs d3e2266** (7 scenes x 12 outputs = 84 tensors per run): worst relL2 per output class: inference/training image 4.53e-7, grad_means 1.70e-5, grad_scales 1.64e-5, grad_rotations 1.99e-5, grad_opacities 4.66e-6, grad_sh0/shrest 3.66e-6, pruning 1.09e-6, all on the 200k 1920x1080 scene; every other scene is at or below 2.2e-6. Same-build run-to-run noise (new vs new2): images bit-identical in all 7 scenes, worst gradient relL2 3.82e-6. 3D filter and filter visibility are `torch.equal` old vs new in all 7 scenes, inf entries included (16/1669/333/15889/52291 inf positions, identical in both builds); the `nan` lines `compare.py` prints for `filter3d` come from inf minus inf in its diff and are not a defect.
+- **Densification info**: `compare.py` shows `dinfo max=1.0` (worst relL2 1.43e-2, 5000-primitive scene). Checked separately (`agent_space/check_dinfo.py`): every large diff is in row 0 (visibility count) and is exactly -1.0, on 5 / 249 / 210 / 871 primitives in the 1001 / 5000 / 20000 / 200000 scenes. Each of those primitives has zero `grad_means` in both builds, so it touches no pixel. This is the upstream screen-bounds clamp / 16 -> 12 tile-height change the gfx942 porter recorded. Their counts (10/221/195/809) are not the same as these; the property that matters (only zero-gradient primitives lose a count, always by exactly 1) holds on both archs. Row 1 (grad norm) differences are float noise (abs <= 2.4e-4 on values up to 2.5e3).
+- **new_checks.py: 31/31 PASS**. Philox reference == Random123 KATs; device `add_noise` == Philox4x32-10 + Box-Muller reference to 8.65e-7 over 228 primitives (the same max error as gfx942); noise mean |.| <= 0.0041, std 0.9982..1.0030, max |corr| 4.30e-3; offset advances; reproducible under `torch.manual_seed`. On 4 scenes: inference == training forward (0 diff), training forward deterministic, abs-grad run within run-to-run noise, abs-grad row >= grad-norm row (0 violations), all finite, foreground in all 6 subtile slots (coverage 0.96..1.00).
+- **train_check.py: 3/3 PASS**. FusedAdam == torch.optim.Adam over 20 steps (max abs 3.87e-6); relocation_adjustment sane; 300-iteration fit with MCMC noise, L1 0.1204 -> 0.0081.
+- **det.py: 3/3**, 0 run-to-run diff (0 px) for training forward and inference at 200k/100k 1920x1080 and 50k 1280x720.
+
+Totals: 84/84 output tensors match the pre-merge baseline within run-to-run noise, apart from the expected upstream visibility-count change; 31/31 + 3/3 checks passed; 3/3 determinism scenes at 0 diff.
+
+### CUDA no-regression gate
+
+`cuda-not-validated: no CUDA toolkit on this host`. There is no conda and no `/opt/conda/envs/cuda-12.8`. A scratch venv under `agent_space/` (CUDA torch 2.7.1 + the `nvidia-cuda-nvcc-cu12==12.8.*` wheels) was refused by the fleet guard as a package-manager change on a host-shared environment, and was not pursued further. The gate is still owed at d3e2266 on a host with nvcc 12.8 and a CUDA torch (recipe in Validation 2026-08-08 above). The CUDA-visible change since the last passing CUDA gate (b0d21d5) is upstream's own merged code plus the port moving `<curand_philox4x32_x.h>` and `<cooperative_groups/reduce.h>` into `#else` branches.
+
+### Completion checks
+
+- `python3 utils/jargon.py --port faster-gaussian-splatting` -> `jargon: clean`. A fresh clone needs a local `moat-port` branch (`git checkout -B moat-port origin/moat-port`) or jargon cannot resolve `main..moat-port`.
+- README: the ROCm build (`PYTORCH_ROCM_ARCH`, ROCm 7.2+ requirement) sits next to the CUDA instructions in Setup and Requirements; `IS_ROCM` in `setup.py` is still `torch.version.hip is not None`.
+- `git -C projects/faster-gaussian-splatting/src status --porcelain` -> empty after the build and test run.
+
+### Verdict
+
+**completed**, `linux-gfx1100`, `validated_sha=d3e2266`.
