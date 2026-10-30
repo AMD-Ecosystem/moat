@@ -4443,3 +4443,55 @@ cuda-to-rocm fault-classes "Vulkan interop and image codecs" gains "NVDEC throug
 
 ### Verdict
 Deferral `lfs-hip-video-hw-codec` -> done. head_sha -> 1528e184. Stage `porting` -> `ported`.
+
+## Review 2026-10-30b (reviewer, linux-gfx1100) -- 1528e184 (delta a6548755..1528e184, plus the rocDecode lessons and the two deferrals in 67ca0a12), CHANGES-REQUESTED
+
+### Summary
+d9fdf362 puts video decode on rocDecode behind an `avcodec`-shaped class; 1528e184 names the software H.264 encoder. This answers jeff's 2026-10-30 ruling on `lfs-hip-video-hw-codec`. Both rocDecode bug claims hold: GPU runs and the rocDecode source confirm them. The decoder's data flow, lifetimes and flush behaviour are sound. One problem: the size gate compares the display size against limits that rocDecode applies to the coded size, so streams rocDecode decodes bit-exactly are sent to the CPU. That is the case jeff's rule forbids, and the new skill lesson repeats the mistake. "Review 2026-10-28" item 1 (the Windows HIP viewer renders no splats) is still open, paused by jeff on 2026-10-28. This review does not ask for it.
+
+### Port Correctness
+1. The size check sends rocDecode-decodable streams to the CPU. `unsupportedReason` (`src/io/video/rocdecode_decoder.cpp:448`) calls `capsRefusal` (:118-124) with `codecpar->width/height`, the display size. The caps minimum is a coded-size limit: rocDecode compares it with `RocDecoderCreateInfo.width/height`, the coded size, which is also what `handleSequence` (:266) passes for the same check.
+   - Failure scenario: a valid 60x60 H.264 High clip and a 60x60 HEVC Main clip (system ffmpeg, libx264/libx265, `testsrc2`, 10 frames) both have coded size 64x64, inside the caps (64x64 minimum for H.264 and HEVC on this GPU). The port logs "60x60 H.264 is outside rocDecode's 64x64 to 4096x4096 on this GPU" and decodes them on the CPU.
+   - With the minimum check bypassed in a probe copy of the decoder (`agent_space/probe` in this job; `NOSIZE=1`), rocDecode decodes all 10 frames of each with `max dY 0 max dUV 0` against libavcodec. The display-area crop to 60x60 is correct.
+   - Affected streams: any display side whose coded size reaches the minimum, which is H.264 sides of 49-63 and HEVC sides of 57-63. Maximum checks are unaffected, since display <= coded.
+   - Fix: apply the minimum to the size rounded up to the coded alignment (16 for H.264 macroblocks; 8, the smallest HEVC MinCbSizeY, for HEVC; VP9/AV1 unchanged). Keep the display size for the maximum. Add the 60x60 H.264 case to `RocDecodeVideo` (it must open on rocDecode) next to the 64x48 refusal.
+   - Also fix the lesson at `.claude/skills/cuda-to-rocm/references/fault-classes.md:751`, "on the caps min/max size", so it says the minimum is a coded-size limit.
+
+### Records (for the porter; no code change)
+- Notes "For jeff" (line 4439) says "rocDecode is Linux-only". rocDecode's CHANGELOG (ROCm/rocm-systems `projects/rocdecode`, develop, version 1.12.0) says 1.12.0 for ROCm 10.2.0 adds "Initial Windows support ... via the vaon12 backend (Mesa's VA-API on D3D12 translation layer). Requires HIP and the vaon12 VA-API driver from TheRock for Windows". The README lists Windows 11 as a supported platform. The SDK here is 10.1.0 (rocDecode 1.10), which has no Windows support. Correct the line before it goes to jeff.
+  - How configure behaves on a Windows HIP build: the check in `src/io/CMakeLists.txt` (`if(USE_HIP)`) has no platform condition. `find_path(rocdecode/rocdecode.h)` and `find_library(rocdecode)` look under `${ROCM_PATH}`. With a 10.1 Windows SDK, configure stops with the FATAL_ERROR. With a 10.2+ SDK that ships `rocdecode.lib`, it should configure.
+  - `rocdecode_decoder.cpp` uses only FFmpeg, HIP and rocDecode APIs, with no POSIX calls. Not built or run on Windows.
+- `rocdecode-h264-high444-420-silent-miscode` says "The VCN does not implement the profile". The likelier specific cause, worth adding to the report: rocDecode's AVC parser reads `qpprime_y_zero_transform_bypass_flag` (`src/parser/avc_parser.cpp:987`), but `RocdecAvcPicParams.seq_fields` (`rocdecode.h`) has no field to pass it. The engine is therefore never told the stream is lossless. The decoder also always opens `VAProfileH264Main` (`vaapi_videodecoder.cpp`, `CreateDecoderConfig`).
+  - The port's profile gate does not depend on this. rocDecode's documentation lists H.264 support as 8-bit only, and the gate keeps Baseline/Main/High, the profiles the porter verified bit-exact.
+
+### Checked as asked (no finding)
+- The two bug claims, verified before accepting the workarounds (GPU 2 alone, `HIP_VISIBLE_DEVICES=2`, `ulimit -c 0`, each run under `timeout -k 10 60`, valid streams only):
+  - Build: my own copy of the porter's `harness.cpp` linked against the fork's `rocdecode_decoder.cpp` at 1528e184, with env switches to bypass the profile and size gates and print the parser's `video_signal_description`.
+  - `h264_full.mp4` with the profile gate bypassed: 3 frames, `rocDecodeStatus_Success`, `max dY 177 max dUV 0`. With the gate in place: "rocDecode does not decode the H.264 High 4:4:4 Predictive profile". `hevc_full.mp4`: dY 0.
+  - Parser signal description: vp9_full.webm, av1_full.mkv and av1_limited.mkv give `range 0 matrix 0 prim 0 trc 0`. h264_full and hevc_full give `range 1 matrix 5 prim 2 trc 2`, which is right.
+  - The rocDecode source (develop) agrees: `vp9_parser.cpp:268` and `av1_parser.cpp:274` zero `video_signal_description`. `hevc_parser.cpp:223-230` fills it from VUI.
+  - With the port's codecpar colour fields, VP9/AV1 frames carry range 2/1 and space 5 as the streams signal. Both workarounds rest on confirmed behaviour.
+- The CPU list against rocDecode:
+  - `rocDecGetDecoderCaps` on this W7800 (the porter's `caps` probe, rerun) supports only H.264 4:2:0 8-bit, HEVC 4:2:0 8/10, AV1 4:2:0 8/10/12 and VP9 4:2:0 8/10. That matches rocDecode's README and `rocDecode-formats-and-architectures.rst` (H.264 8-bit, HEVC/AV1/VP9 8/10-bit).
+  - `CreateDecoderConfig` has no MPEG-1/2/4, VP8 or VC-1 case, so MPEG-1/2/4 Part 2, VP8, VC-1, 4:2:2/4:4:4/monochrome and 10-bit H.264 are real limitations. They are refused by caps, named in the log, and not hard-coded.
+  - H.264/HEVC profiles beyond Baseline/Main/High and Main/Main 10/Main Still are outside the documented support.
+  - The only CPU case rocDecode can decode is item 1.
+  - Untested: 12-bit AV1 (Professional profile) passes caps and would open on rocDecode as P012. The documentation lists AV1 8/10-bit only and nothing measured 12-bit. Something for a validator to try with a valid clip; not a finding.
+- Errors versus CPU fallback: a failed caps query, `create()` failure, and every parser, decode, `rocDecGetVideoFrame` or copy failure surface as errors in both the extractor and the player. A sequence-level refusal also surfaces as an error. Only `unsupportedReason` routes to the CPU, at warning level with the reason. Dolby Vision keeps FFmpeg's decoder as on CUDA. Codecs absent from the NVDEC lists decode on the CPU exactly as on CUDA.
+- Resource lifetime and data flow (`rocdecode_decoder.{hpp,cpp}`):
+  - `State`'s destructor runs in the right order: frames, then parser before decoder, then pool uninit, bsf, packet, stream.
+  - Every early return in `create()` destroys the partly built `State` through the `unique_ptr`.
+  - Pool buffers are `hipFree`d on the last unref, so frames may outlive the decoder (player `close()`).
+  - Each displayed picture is copied and stream-synchronized before the callback returns, so no decode surface stays held and the pool cannot run dry (it grows on demand). `CudaFrameHandoff`'s HIP constructor has no decoder stream to wait on, and the consumer synchronizes before releasing the frame back to the pool.
+  - `flush()` recreates the parser, clears ready frames and discard pts, flushes the bsf, re-arms the AV1 config OBUs and clears draining. Seeks in the extractor (start time, sparse keyframe) and the player call it in place of `avcodec_flush_buffers`.
+  - The unopened `codec_ctx` the rocDecode branch allocates is never passed to `avcodec_*` decode calls or to `restoreCuvidFullRange`, which dereferences `codec->name`. All of those sit on the FFmpeg-decode path after the rocDecode early return.
+  - Frames from rocDecode have `duration` 0. FFmpeg's cuvid decoders also clear it, so frame selection falls back to 1/fps on both.
+- `TimestampedGeneratedClipKeepsFrameHashes`: the explanation holds on the code.
+  - The HIP software path is the CUDA software path. The extractor's software branch has no `USE_HIP` hunk, and a refused stream reaches the same `avcodec_find_decoder` fallback CUDA takes when NVDEC is unavailable.
+  - On CUDA, upstream's `vcpkg.json` enables FFmpeg `nvcodec`, so this 64x48 MPEG-4 Part 2 clip decodes on `mpeg4_cuvid`. Its frames reach swscale as NV12 after `av_hwframe_transfer_data` (`SWS_BILINEAR`, PNG output, so the hybrid path). On the CPU they reach swscale as YUV420P from libavcodec's MPEG-4 decoder.
+  - So the frozen hashes describe NVDEC output, and a HIP or CUDA CPU decode cannot be expected to reproduce them. Not run on CUDA; a CUDA host with NVDEC disabled would confirm it.
+- CUDA path: `unifdef -UUSE_HIP <f> | diff <(git show ca01b056:<f>) -` is empty for video_frame_extractor.cpp, video_player.cpp, video/video_encoder.cpp, video/cuda_frame_handoff.cpp, test_video_export_utils.cpp and test_video_frame_extractor_naming.cpp. The CMake hunks are inside `if(USE_HIP)`. `rocdecode_decoder.*` and `test_rocdecode_video.cpp` are HIP-only.
+- Commits: `python3 utils/jargon.py --port LichtFeld-Studio` is clean, and `moatlib.py audit-commits` is OK. Both titles carry `[ROCm]`, the bodies have a Test Plan and the prose mention "Authored with Claude.", there is no Co-Authored-By, and the added lines are ASCII.
+- Encoder: HIP skips `tryInitNvenc` and names the software path in the log and in the error. `encoderProbeError` is compiled out only on HIP, so no unused function is left behind.
+- The skill lessons in 67ca0a12 match the evidence, except "min/max size" (item 1). The FFmpeg-demux design, the flush and discard handling, the profile gate and the VP9/AV1 colour rule are as measured. The SKILL.md index line is accurate.
+- Scope and safety: the Windows viewer is out of scope (open, paused by jeff 2026-10-28). No corrupt or truncated stream went to the decoder and nothing went to rocJPEG. The porter's job directory was only read, with its probes run in place. My probe build and clips are in this job's `agent_space/`, and the fork clone for jargon/audit is this job's `projects/LichtFeld-Studio/src`.
