@@ -893,3 +893,48 @@ python -m pytest gpu4pyscf/scf/tests -q -rfs --tb=no -p no:cacheprovider
 - `python3 utils/jargon.py --port gpu4pyscf` -> `jargon: clean`.
 - Documentation: the README documents the ROCm build next to the CUDA build, and that build was followed here.
 - Integrity: `git -C projects/gpu4pyscf/src status --porcelain` is empty after the build.
+
+## Porter 2026-10-30 (porter, linux-gfx942 MI300X, fork moat-port 066e91e -> 28f2418): carry `-mllvm -disable-machine-licm` for HIP
+
+jeff ruled on the open toolchain-flag question (option (a) of the gfx90a 066e91e section): the port carries the flag in CMake for HIP builds, with the reason next to it. Taken under the work lock (`review-passed -> porting`). New commit 28f2418 on top of 066e91e, pushed fast-forward; `advance-head 28f2418...`.
+
+### Change
+- gpu4pyscf/lib/CMakeLists.txt, inside the existing `if(USE_HIP)` block: `string(APPEND CMAKE_HIP_FLAGS " -mllvm -disable-machine-licm")` and the same on `CMAKE_SHARED_LINKER_FLAGS` (device code is generated at link time under -fgpu-rdc). The comment says what it works around (machine LICM clobbers the register holding the atomicAdd offset at the top of the persistent loop in the Rys J/K kernels on gfx90a/gfx942; every d-shell basis crashes) and when it can go (a later ROCm compiler that passes the d-shell SCF tests without it).
+- README.md ROCm block: one paragraph saying the CMake configuration adds the flag, why, and not to remove it unless the d-shell SCF tests pass without it.
+- The deferred `therock-10-1-machinelicm-clobbers-live-vgpr` stays open: its remaining question (file the compiler bug upstream) is still jeff's. Nothing recorded on his behalf.
+
+### Build (gfx942, TheRock ROCm SDK 10.1.0, AMD clang 24.0.0; job FLEET_VENV, cmake 3.31.6)
+Venv: `pip install 'numpy>=2.0,<2.3' 'scipy>=1.13' cupy-rocm-7-0==14.2.0 pyscf==2.14.0 pytest` -> numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pytest 7.3.2. Runtime needs `LD_LIBRARY_PATH=$(rocm-sdk path --root)/lib`. GPU: dispatcher pin `HIP_VISIBLE_DEVICES=7` (worked on this host).
+```
+cmake -S gpu4pyscf/lib -B build/temp.gpu4pyscf -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942
+cmake --build build/temp.gpu4pyscf -j 56 -- VERBOSE=1
+```
+README recipe as written (only `-j`). Exit 0, 8 libs. VERBOSE log: every HIP `.cu` compile line and all 8 `--hip-link` lines carry `-mllvm -disable-machine-licm`. Rebuilt after the commit (comment-only change since the first build): relink only, tree clean.
+
+### Tests (fork @ 28f2418, `ulimit -c 0`)
+RHF water vs CPU PySCF:
+
+| basis | flag build | no-flag control |
+|---|---|---|
+| sto-3g | 9.8e-13 | 9.7e-13 |
+| def2-svp | 1.7e-11 | abort: APERTURE_VIOLATION in rys_k_kernel, hipErrorIllegalAddress at rys_contract_k.cu:676 |
+| cc-pvtz | 6.3e-12 | abort: APERTURE_VIOLATION, hipErrorIllegalAddress |
+
+The control is a `git ls-files` export of 28f2418 with the two `string(APPEND ...disable-machine-licm")` lines deleted (agent_space/noflag-src), built the same way.
+
+`python -m pytest gpu4pyscf/scf/tests -q -r fs --tb=line -p no:cacheprovider`: run 1 **122 passed, 8 skipped, 36 failed** (216 s); run 2 identical counts and identical failure set (157 s). Same as the 45d8053 gfx942 and 066e91e gfx90a flag-build results. All 36 failures out of scope: DFT/libxc (`deviceSetLimit` hipErrorUnknown; test_soscf rks/uks/roks, test_gdm, test_init_guess *rks/*uks, test_scf to_cpu/to_gpu, test_diffuse_orbital rks/rohf/uhf/hessian), PCM not built (4), analytic gradient (test_diffuse_orbital test_rhf/test_rhf_lowmem, test_fermi_smearing test_gradient, test_scf_jk test_jk_energy_per_atom), d-aug-cc-pvdz missing (3). Skips: dftd3/dftd4 (5), `hermi=0` (3).
+
+### CUDA no-regression gate (compile and link only): PASS
+The 12.8 `nvidia-cuda-nvcc-cu12` wheel has no `nvcc` driver (ptxas/nvvm only), as before, so the toolkit root `K=agent_space/cuda-12.8` was assembled from NVIDIA's official redist archives cuda_nvcc 12.8.93, cuda_cudart 12.8.90, cuda_cccl 12.8.90 (`lib64 -> lib` symlink); cublas/cusolver were not needed. The wheels (nvcc/runtime/cccl 12.8, cublas 12.8.5.5, cusolver 11.7.5.82) are also in FLEET_VENV. Host gcc 13.3. Source: `git ls-files` export of the working tree identical to 28f2418 (only the CMake comment wording changed afterwards).
+```
+PATH=$K/bin:$PATH CUDACXX=$K/bin/nvcc cmake -S cuda-src/gpu4pyscf/lib -B build-cuda \
+  -DCMAKE_CUDA_ARCHITECTURES=80 -DCUDAToolkit_ROOT=$K -DBUILD_LIBXC=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build build-cuda -j 56 -- VERBOSE=1
+```
+Exit 0, `CUDA_ARCHITECTURES: 80`. 103 nvcc compile lines, 12 libs (cupy_helper gdft gecp gint gvhf gvhf_md gvhf_rys mgrid_v2 mgrid_v3 pbc sem solvent; CUTLASS on by default). `grep -c disable-machine-licm build-cuda.log` = 0.
+
+### Other checks
+`jargon.py --port gpu4pyscf`: clean. `prose.py` on the commit message: clean. Title 58 chars. `git status --porcelain` in the fork: empty.
+
+### For the next roles
+Build-flag change, so every arch revalidates at 28f2418 after review. Validators no longer add the flag on the command line: the README recipe as written is now the test build on ROCm 10.1 gfx90a/gfx942. gfx1100 does not show the miscompile; the flag only changes its code shape, so its rerun is the check that the flag costs nothing there.
