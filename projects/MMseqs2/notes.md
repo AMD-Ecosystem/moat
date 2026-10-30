@@ -885,3 +885,73 @@ The two runs agree on everything both covered. This gfx1100 run settles the gfx9
 - gfx90a gap 1 ("wave32/RDNA unvalidated, expect 14482/12901/12438/0"): validated. gfx1100 gives exactly 14482/12901/12438/0, regression 43/43 including SEARCH_GPU and SEARCH_GPU_SERVER, and the gfx11-generic binary is identical. The README PR can therefore name RDNA3 on runtime evidence. Combine gfx90a draft 2 (from-source ROCm build) with gap 1 of the gfx1100 section (the support statement) into one README PR.
 - Found only on gfx1100: the CUDA-side `getOptimalKernelConfigs_SW_default()` -> gfx942 table regression (gap 2) and the 15.6x speed advantage of upstream over our port (gap 3). Found only on gfx90a: the latent `ClampToInvalid` `__CUDA_ARCH__` divergence and the standalone `align` tool check.
 - Shared cosmetic item for any HIP PR here: `src/commons/Parameters.cpp:108` (`--gpu` help "Use GPU (CUDA) if possible") and `src/prefiltering/ungappedprefilter.cpp:740` ("MMseqs2 was compiled without CUDA support") still say CUDA in HIP builds.
+
+## Performance root cause: upstream HIP vs our port on gfx1100 (2026-10-30)
+
+jeff's research question: why is upstream's HIP path 15.6x faster than our port (gap 3 above), and what should other ports learn. Evidence only: no MOAT state, fork branch or upstream was touched. Scratch trees under `agent_space/perf/` (not committed).
+
+Answer: the scalar `__hmax2` emulation in `marv_simd_amd.cuh` accounts for the whole gap. Swapping only that function for a packed max makes our port faster than upstream with the tile table unchanged. The table, `hardcodedzero` vs `kernelparamzero`, the shuffle redirect and SHARED/RDC vs static linking are each within about 10%. Upstream itself leaves another 2x on the table because its packed max is `asm volatile`.
+
+### Setup
+
+- Host: Radeon Pro W7800 (gfx1100, wave32), `HIP_VISIBLE_DEVICES=2`. TheRock `rocm-sdk-devel` 10.1.0 (HIP 7.16.26385, AMD clang 24.0.0git), CMake 3.31.6, Ninja.
+- Upstream: soedinglab/MMseqs2 `50374396` built with `-DENABLE_HIP=1 -DCMAKE_HIP_ARCHITECTURES=gfx1100` (static libmarv). Our port: AMD-Ecosystem/MMseqs2 `75a9b029` with the scratch `__syncwarp` fix from the gfx1100 section (a local-only commit in a scratch clone), `-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100` (SHARED libmarv, `-fgpu-rdc`).
+- Benchmark (same as gap 3): `q1k` = first 1000 queries of `util/regression/data/query.fasta` (388,288 residues), `t` = `makepaddedseqdb` of `targetannotation.fasta` (36,026 sequences).
+  ```
+  ulimit -c 0
+  mmseqs ungappedprefilter q1k t p --gpu 1 --max-seqs 1000 -e 10000 --threads 8
+  ```
+  Wall time of the whole command. Port variants rebuild only the `marv` target and run the port's `mmseqs` with `LD_LIBRARY_PATH` pointing at the variant `libmarv.so` (the binary has `DT_RUNPATH`, which `LD_LIBRARY_PATH` overrides; checked with `ldd`).
+- Output check: `createtsv q1k t p out` sorted and hashed. Every run below gives the same 1,000,000 rows (md5 of the sorted TSV `11ed9b5b...`), so every variant is result-identical to upstream and to the unmodified port.
+- Profiles: `rocprofv3 --kernel-trace --stats --output-format csv -- <command>`. rocprofv3 aborts (`Conflicting visibility of agent-1 between HIP_VISIBLE_DEVICES and CUDA_VISIBLE_DEVICES`) when both are set, so profiles ran with `CUDA_VISIBLE_DEVICES` unset.
+- Kernel resources: code objects pulled out with `llvm-objdump --offloading`, then `llvm-readelf --notes` (VGPRs, spills, `.private_segment_fixed_size`) and `llvm-objdump -d` (instruction counts per inner loop).
+
+### Profile: which kernels carry the gap
+
+Upstream: 20.49 s of kernel time across 24,433 launches, 99.7% in the half2 `GaplessFilter_strided_PSSM_{singletile,multitile}_kernel` instances (top: singletile group 8/numRegs 28 1.57 s, g4/r44 1.48 s, g4/r36 1.36 s). Our port: 328.23 s of kernel time across 24,436 launches, the same 49 half2 gapless kernels with the same call counts as variant A, 100.0% gapless. The time is spread over every hot kernel rather than one outlier: per-kernel port/A ratios are 12.8x (g4/r20, no scratch) to 20x (g4/r28, g4/r36) to 22-25x (g4/r44, g4/r52, g4/r60, the tiles that also use scratch). Top: g4/r44 32.1 s, g4/r52 29.2 s, g4/r36 27.8 s. The legacy non-PSSM kernels in `kernels.cuh` (the only users of the redirected `__shfl_*_sync` and of `__syncwarp`) are never launched by either build.
+
+### Bisection
+
+Port-side variants change one thing at a time; UR* change one thing in upstream.
+
+| run | hmax2 | gapless table / approach | wall s |
+|---|---|---|---|
+| upstream 50374396 | `asm volatile v_pk_max_f16` | gfx942 (kernelparamzero) | 21.00, 21.01, 21.01 |
+| port 75a9b029 | scalar `__hmax` per lane | sm75 (hardcodedzero) | 327.97, 328.3 |
+| B | scalar | gfx942 (kernelparamzero) | 450.04 |
+| A | `asm volatile` (upstream's) | sm75 (hardcodedzero) | 19.37, 19.37 |
+| H | `asm volatile` | sm75 tiles, all kernelparamzero | 19.46 |
+| C | `asm volatile` | gfx942 | 20.93 |
+| D | `__builtin_elementwise_max` | sm75 (hardcodedzero) | 9.21 |
+| E | builtin | sm75 tiles, all kernelparamzero | 9.43 |
+| F | builtin | gfx942 (kernelparamzero) | 10.21 |
+| G | builtin | gfx942 tiles, all hardcodedzero | 10.32 |
+| UR1 = upstream + scalar `__hmax` | scalar | gfx942 | 450.3 |
+| UR2 = upstream + builtin | builtin | gfx942 | 10.45 |
+| UR3 = upstream + plain `asm` (no `volatile`) | asm | gfx942 | 11.44 |
+
+The builtin variant is
+```
+typedef _Float16 h2v __attribute__((ext_vector_type(2)));
+return __builtin_bit_cast(__half2, __builtin_elementwise_max(__builtin_bit_cast(h2v, a), __builtin_bit_cast(h2v, b)));
+```
+which lowers to `v_pk_max_f16` (llvm.maxnum, same non-NaN-operand semantics as CUDA `__hmax2`).
+
+### Attribution of the 15.6x (port 328 s -> upstream 21.0 s)
+
+1. Scalar `__hmax2` emulation: all of it. Port -> A (only `__hmax2` changed to upstream's asm) is 328 -> 19.4 s, 16.9x, already faster than upstream. Reverse: putting the scalar form into upstream (UR1) takes it from 21.0 to 450.3 s, the same as B (port, gfx942 table, scalar) at 450.0 s, so with matching max and table the two code bases perform identically. Two mechanisms, both visible in the ISA:
+   - Instruction count. ROCm's scalar `__hmax` (`amd_hip_fp16.h`) is three `__hisnan` tests plus a compare; the compiler keeps them as `v_cmp_*_u16`, `v_cndmask`, `s_and_saveexec` and `s_cbranch_execz`. The inner loop of `hardcodedzero` singletile g4/r16 is 4169 instructions per subject letter in the port vs 318 upstream, 288 in A, 266 in D. The kernel is 7587 instructions vs 822 upstream.
+   - Scratch. With the bloated body, `#pragma unroll` loops over the per-thread `penalty_here_array` stop being fully unrolled: every port gapless kernel with numRegs >= 40 has 240-336 bytes of scratch, and from numRegs 52 the kernel collapses to 34 VGPRs with the array in memory. 107 of 160 half2 gapless kernels in the port use scratch; 0 in upstream and in A. The sm75 table selects 9 such tiles (r44, r52, r60), the gfx942 table 18 -- which is why B (table swapped, scalar max kept) is slower than the port, 450 s.
+2. Tile table: second order, and the wrong way round on RDNA3. With a fast max, sm75 beats upstream's gfx942 table by 8-11% (A 19.37 vs C 20.93; D 9.21 vs F 10.21). With the scalar max the gfx942 table is 37% slower (B) because it spills more.
+3. `hardcodedzero` vs `kernelparamzero`: within 1-2% (A 19.37 vs H 19.46; D 9.21 vs E 9.43; F 10.21 vs G 10.32).
+4. SHARED libmarv with `-fgpu-rdc` vs static with CMake's device link: nil. F (port layout, builtin, gfx942) 10.21 s vs UR2 (upstream layout, same source change and table) 10.45 s. The port's link line passes no `-O` to the RDC device link, which did not matter here.
+5. Maskless-shuffle redirect: nil. The hot kernels shuffle through cooperative-groups tiles (`group.shfl_up/down`), which compile to the same 14 `ds_bpermute_b32` in upstream, A and D; the redirected `__shfl_*_sync` calls are only in the never-launched legacy kernels.
+6. Upstream's own residual: `asm volatile` around `v_pk_max_f16` costs about 2x. Same instruction count as the builtin, but `volatile` pins every asm block in order, so the scheduler cannot hoist LDS loads ahead of the max chain: the g4/r16 inner loop has 22 `s_waitcnt` in A vs 9 in D, and per-kernel times in A are 2.2-3.0x those in D for every hot singletile kernel (g4/r44 1.480 vs 0.556 s, g4/r36 1.369 vs 0.559 s). Dropping only `volatile` (UR3) gets 21.0 -> 11.4 s; the builtin (UR2) 10.45 s. D's builtin does push the multitile kernels with numRegs >= 52 to 256 VGPRs with spills (multitile g8/r60 0.865 s in D vs 0.757 s in A), a small residual that a later tuning pass could look at.
+
+### Lessons for other ports
+
+Promoted to the `cuda-to-rocm` skill (`SKILL.md` "Performance -- correct is not done" and `references/performance.md`): emulating a packed intrinsic lane by lane can cost an order of magnitude even when results are exact, `asm volatile` for one ALU op serializes scheduling, and tile tables and build layout are second order. Profile and read the hot kernel's ISA and scratch size before concluding a port is done.
+
+### Upstream follow-up candidate (not drafted for posting, needs jeff)
+
+Replacing `compatibility::hmax2`/`hmin2`'s `asm volatile` in `lib/libmarv/src/cuda_hip_compatibility.cuh` with `__builtin_elementwise_max`/`min` on a `_Float16` 2-vector would make upstream's HIP gapless prefilter about 2x faster on gfx1100 (21.0 -> 10.45 s, identical output). Not measured on gfx90a/gfx942, where upstream's tables were tuned. Upstream-visible, so it is jeff's call whether to raise it.
