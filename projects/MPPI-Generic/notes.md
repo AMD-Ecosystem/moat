@@ -958,3 +958,28 @@ cuda-not-validated: this host has no CUDA toolkit, no conda and no /usr/local/cu
 - Integrity: `git -C src status --porcelain` shows only `?? build-hip/`; cnpy submodule clean.
 
 State: completed at 11b61ab3557126b2220f4de2163d9f317cf176e9.
+
+## CUDA gate 2026-10-30 (V100, CUDA 12.9)
+
+CUDA no-regression gate at head 11b61ab35571 (fork `moat-port`), owed since 939db79. Run on an NVIDIA Tesla V100-SXM2-32GB (driver 575.57.08), nvcc 12.9.86, gcc 13.2, CMake 3.31, Ninja. Deps built from source into a scratch prefix: Eigen 3.4.0, yaml-cpp 0.8.0 (shared); GoogleTest fetched by the build; Pillow + numpy for the test-data generators. Upstream base for comparison: abcd1ab419 (fork `main`, the merge base). Fresh recursive clones, `ulimit -c 0`.
+
+Build (identical for port and base):
+```
+git submodule update --init --recursive
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMPPI_BUILD_TESTS=ON -DMPPI_BUILD_EXAMPLES=ON \
+  -DMPPI_CUDA_ARCH_LIST="70;80" -DCMAKE_PREFIX_PATH=<prefix>
+LIBRARY_PATH=<prefix>/lib cmake --build build -j 12
+```
+"CUDA Architecture(s): 70;80". **PASS** at both shas, 181/181 steps (~11 min each). `LIBRARY_PATH` is needed only because yaml-cpp 0.8 exports a namespaced target and the build links plain `-lyaml-cpp`; same at both shas, environment only.
+
+Full ctest on the V100 (`ctest --test-dir build -j1 --timeout 600`, about 4.5 min):
+
+| | port 11b61ab | base abcd1ab |
+|---|---|---|
+| ctest | 517/535 pass, 18 fail | 516/535 pass, 19 fail |
+
+Not run at both: 9 Disabled (incl. ColoredNoise.check* and MATH_UTILS.Matrix3fMultiplicationP2) and FNNHelperTest.TestComputeGradComputationCompare (Skipped).
+
+The port's 18 failures are all in the base's 19, with the same names: BicycleSlipParametricTest.{Template, ComputeDynamics, ComputeDynamicsWithNormals, TestModelGPU, TestModelGPUNormals, TestModelGPUNormalsReverse, TestStepGPUvsCPU}, DubinsDynamics.TestUpdateStateGPU, Dynamics.stepGPU, RacerDubinsElevationTest.{TestStep, TestStepGPUvsCPU, TestStepReverse, TestStepGPUvsCPUReverse}, WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic, SamplingDistributionTests.CompareLikelihoodRatioCostsCPUvsGPU (Gaussian<1,7> and ColoredNoise<3,3>), Integration.RK4, ActivationFunctionTest.SigmoidGPU. The base's extra failure is RMPPITest.RobustMPPILargeVarianceRobustCost (one run each, so not classified further). These are upstream's own CUDA failures on this toolchain/GPU (several match the names that fail on AMD too: DubinsDynamics.TestUpdateStateGPU, Dynamics.stepGPU, WeightedReductionKernel.comparisonTestAutorallyMPPI_Generic, CompareLikelihoodRatioCostsCPUvsGPU), so they are not port regressions. The texture-backed tests deferred on HIP (ARStandardCost.*, texture helpers) pass on CUDA at the port, so the `if(USE_HIP)` exclusions do not touch the CUDA build.
+
+Result: CUDA gate **PASS** at 11b61ab (no port-only build error, no port-only test failure).
