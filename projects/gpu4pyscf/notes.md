@@ -995,3 +995,20 @@ Scope: the delta 13e3500 in full, 28f2418 again, and the whole fork diff (31 fil
 
 ### Recommendation
 **Request Changes.** One new commit on top of 13e3500 (no amend), touching only those comment and README sentences. Re-run `jargon.py --port gpu4pyscf` and `prose.py` on the message.
+
+## Porter 2026-10-30 (porter, linux-gfx942 MI300X, fork moat-port 13e3500 -> 5c60311): review finding 1 (wording)
+
+jeff asked for the finding of the 13e3500 review fixed. Taken under the work lock (`changes-requested -> porting`). One new commit 5c60311 on top of 13e3500, pushed fast-forward (no amend, no force); `advance-head 5c60311...`.
+
+### Change
+Wording only, the same sentences in gpu4pyscf/lib/CMakeLists.txt:61-64 (comment rewrapped) and README.md:65: "With ROCm 7.2.1 the d-shell SCF tests pass on gfx90a without it." and "Remove it once a ROCm release passes the d-shell SCF tests on gfx90a and gfx942 without it."
+
+### Proof of no effective change (gfx942, TheRock ROCm 10.1 / AMD clang 24.0.0, cmake 3.31.6 from /opt/python-3.11-venv, GCC host)
+Configure-only at 13e3500 (a git worktree) and at 5c60311:
+```
+cmake -S <src>/gpu4pyscf/lib -B <b> -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942
+```
+Both exit 0. All `flags.make`, `link.txt` and `build.make` files concatenated (8 + 8 + 8 per tree), with source and build paths normalized: byte-identical (2269 lines each). All 8 `link.txt` carry `-disable-machine-licm`, `--hip-link` and `-fgpu-rdc` once each; all 8 `flags.make` carry the flag once; CMakeCache `CMAKE_SHARED_LINKER_FLAGS` empty in both. No full build or test rerun: the commands are identical, so the 13e3500 build/test evidence carries over.
+
+### Other checks
+`jargon.py --port gpu4pyscf`: clean (needed `git fetch origin master:master` in a fresh `-b moat-port` clone first). `prose.py` on the commit message: clean. Title 57 chars, message and added lines ASCII. `git status --porcelain` in the fork is empty.

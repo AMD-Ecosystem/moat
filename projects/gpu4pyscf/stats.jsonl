@@ -102,3 +102,5 @@
 {"kind":"phase","ts":"2026-10-30T19:33:55Z","phase":"compile","seconds":99.315,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi300-20261030-122702-gpu4pyscf-flag2/moat/agent_space/build-new -j 112 -v"}
 {"kind":"session","ts":"2026-10-30T19:39:42Z","epoch":1793389182.176709821,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-10-30T19:42:06Z","epoch":1793389326.556400893,"event":"end","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-10-30T19:45:40Z","phase":"compile","seconds":3.399,"exit":0,"cmd":"cmake -S /var/lib/jenkins/fleet/jobs/mi300-20261030-124315-gpu4pyscf-flag3/moat/agent_space/g4p/base/gpu4pyscf/lib -B /var/lib/jenkins/fleet/jobs/mi300-20261030-124315-gpu4pyscf-flag3/moat/agent_space/g4p/b-base -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942"}
+{"kind":"phase","ts":"2026-10-30T19:45:43Z","phase":"compile","seconds":3.114,"exit":0,"cmd":"cmake -S /var/lib/jenkins/fleet/jobs/mi300-20261030-124315-gpu4pyscf-flag3/moat/projects/gpu4pyscf/src/gpu4pyscf/lib -B /var/lib/jenkins/fleet/jobs/mi300-20261030-124315-gpu4pyscf-flag3/moat/agent_space/g4p/b-new -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942"}
