@@ -796,3 +796,25 @@ Not run on this host; recorded PASS at 90a711b (sm_80) by the V100 gate above.
 
 ### Pre-completion checks
 `python3 utils/jargon.py --port llm-awq` clean; README.md:127 documents the ROCm build; fork tree clean at 90a711b. Skipped on purpose: real TinyChat generation / any checkpoint load (large-memory rule), as on Linux.
+
+## Porting round 2026-10-31 (windows-gfx1151): hipBLASLt import library on Windows
+
+Why: the windows-gfx1151 validation at 90a711b passed only with an environment workaround (a scratch `hipblaslt.lib` copy on `LIB`). `setup.py`'s `libraries=["hipblaslt"]` becomes `hipblaslt.lib` for link.exe, and TheRock's Windows SDK ships that import library only as `_rocm_sdk_devel/lib/libhipblaslt.dll.a` (every other ROCm library there has a `.lib`). The committed build has to link as is.
+
+Fix, fork commit c7ae2c5 `[ROCm] Link the hipBLASLt import library by path on Windows` (one commit on top of 90a711b, no amend): under `IS_ROCM and os.name == "nt"`, setup.py looks in `os.path.join(torch.utils.cpp_extension.ROCM_HOME, "lib")`; if `hipblaslt.lib` is absent and `libhipblaslt.dll.a` is present it sets `libraries = []` and `extra_link_args = [<path to libhipblaslt.dll.a>]`. Otherwise (Linux, CUDA, or a Windows SDK that has `hipblaslt.lib`) `libraries` stays as before and `extra_link_args` is `[]`, which setuptools treats the same as absent.
+
+Linux/CUDA unchanged, shown by dry evaluation (`agent_space/awq_dry/dry.py`: execs old 90a711b and new setup.py with torch/setuptools stubbed, `os.name` forced, captures the CUDAExtension kwargs): rocm/posix, cuda/posix, cuda/nt and rocm/nt-without-.dll.a all produce identical kwargs (`libraries ['hipblaslt']` or `[]`, `extra_link_args []`). Only rocm/nt with the real SDK root changes: `libraries []`, `extra_link_args [<root>\lib\libhipblaslt.dll.a]`.
+
+Build on windows-gfx1151 (Radeon 8060S, torch 2.12.0+rocm7.14.0a20260519, Python 3.13), from a `git archive` export in `agent_space/awq_scratch2`, `source agent_space/win_torch_env.sh`, `MAX_JOBS=16`, stock MSVC `LIB` (no scratch lib dir):
+```
+cd agent_space/awq_scratch2/awq/kernels
+utils/timeit.sh llm-awq compile -- python setup.py build_ext --inplace
+```
+Links with `...\_rocm_sdk_devel\lib\libhipblaslt.dll.a` on the link.exe line, 0 errors; `dumpbin /dependents` on the .pyd lists `libhipblaslt.dll`. The committed tree at c7ae2c5 was compared file by file with the tested export: identical.
+
+Tests (from /tmp, `PYTHONPATH=<scratch>/awq/kernels`, one GPU process at a time, `ulimit -c 0`), all exit 0, 0 FAIL lines:
+- `attn_test.py` 443/443; `tinychat_e2e.py <scratch>` 4/4; `w8a8_test.py` (scratch copy `agent_space/awq_w8a8_test_noprof.py`, profiler removed, as in the validation) 25/25; `w8a8_simt_test.py` 7/7; `legacy_gemm_test.py` 8/8; `w4a16_test.py` 30/30 (max err 3.87e-03); `w8a8_handle_test.py` PASS, 16 threads, 1 device, one handle.
+
+Test-harness gap, not fixed here: `projects/llm-awq/tests/w8a8_handle_test.py` (a MOAT test script, not part of the fork) passes `extra_ldflags=["-lhipblaslt"]` to `load_inline`, which link.exe ignores (LNK2019 `hipblasLtCreate`). This run used a scratch copy, `agent_space/awq_w8a8_handle_win2.py`, whose only change is `extra_ldflags=[os.path.join(ROCM_HOME, "lib", "libhipblaslt.dll.a")]`. Linux validators are unaffected. Likewise `w8a8_test.py`'s CUDA-activity profiler is unavailable in this Windows torch.
+
+Lesson promoted to the cuda-to-rocm skill: `references/strategy-b-torch.md`, "Windows: a ROCm library linked by name may have no `.lib`".
