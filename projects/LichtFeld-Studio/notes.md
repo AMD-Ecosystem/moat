@@ -5927,3 +5927,147 @@ Squash 566be1cd and 001fc728 into one commit before the upstream PR. As two comm
 
 ### Next
 Validators: revalidate linux-gfx1100, linux-gfx90a and the Windows gate at 001fc728 (gfx90a exercises libdav1d on the AV1 VideoColorRange cases). A tree configured at 566be1cd needs one `-UVCPKG_MANIFEST_DIR` reconfigure, or use a fresh directory; unset `PYTHONPATH` on fleet jobs.
+
+## H.264 4:4:4 root cause 2026-10-31 (no pipeline role, linux-gfx1100)
+
+jeff ruled deferral `rocdecode-h264-high444-420-silent-miscode` "now" (2026-10-31): harden the root cause before a report. No pipeline role; stage, platform states and the work lock untouched (a porter round ran on this host at the same time). Nothing posted anywhere.
+
+**Conclusion: the defect is in rocDecode, not Mesa or VCN firmware.** The wrong pixels come from the transform-bypass (lossless) flag, not from the High 4:4:4 Predictive profile: a profile_idc 244 4:2:0 stream with `qpprime_y_zero_transform_bypass_flag` 0 decodes bit-exact, and one with the flag 1 is wrong. VA-API cannot express H.264 lossless, Mesa never advertises it, and FFmpeg's VA-API decoder refuses the stream; forced past that refusal it produces byte-identical frames to rocDecode. rocDecode reads the flag and never refuses, so it returns `rocDecodeStatus_Success` and garbage. The porter's reading (missing `RocdecAvcPicParams` field, `VAProfileH264Main` always) is right as a description, but the field cannot be passed through VA-API at all, so the fix is a refusal, not a new field. The port's profile gate (High 4:4:4 Predictive to the CPU) stays correct; it is slightly broader than necessary (non-lossless 244 would decode), which is harmless.
+
+### Setup
+- GPU: HIP 1 = PCI 0000:46:00.0 = amd-smi GPU 3 = renderD129 (`torch.cuda.get_device_properties(i).pci_bus_id`, `/sys/class/drm/renderD*/device`); the concurrent porter used HIP 2/3. `HIP_VISIBLE_DEVICES=1`, `ulimit -c 0`, every GPU run under `timeout -k 10 60`. Valid streams only. No amdgpu fault seen.
+- Versions: TheRock ROCm SDK 10.1.0 wheels (rocDecode 1.10.0, bundled VA driver `rocm_sysdeps/lib/radeonsi_drv_video.so` = Mesa 26.3.0-devel, VA-API 1.22, symbol-versioned `__vaDriverInit_1_22@@AMDROCM_SYSDEPS_1.0`); Ubuntu 24.04 mesa-va-drivers 25.2.8-0ubuntu0.24.04.4, libva 2.20.0, FFmpeg 6.1.1-3ubuntu5, x264 0.164.3108 31e19f9; kernel 6.8.0-138-generic, amdgpu 6.19.14.31400100, VCN firmware 09.11.80.29 (`amd-smi firmware -g 3`). apt installed: vainfo, x264, libavformat-dev, libavcodec-dev, libavutil-dev, libswscale-dev, libva-dev.
+- rocDecode sources: blobless sparse clone of ROCm/rocm-systems (`projects/rocdecode`) in `agent_space/rs`, develop e57be12c6116b37ce422e761f707390f29e86d80 (1.12.0). 1.10 source = 33b9dbdc0eebde271e1b5b1b096ffa2e8e5078f0 (`ffc144c564^`, the last commit before the 1.11 bump; its `api/rocdecode/rocdecode.h` is byte-identical to the SDK header), worktree `agent_space/rs110`.
+- `videodecode` sample from the 1.10 tree: `ROCM_PATH=$R cmake -S samples/videoDecode -B agent_space/build-vd -DGPU_TARGETS=gfx1100 -DCMAKE_PREFIX_PATH=$R` (R = `_rocm_sdk_devel`), links the SDK `librocdecode.so.1`. Its `-o` file is NV12; its `-md5` digest equals the md5 of planar yuv420p (checked: qp10 stream digest b14d9f2c... = libavcodec `-pix_fmt yuv420p` md5). One scratch line added later to `roc_video_dec.cpp` `HandlePictureDisplay` printing `rocDecGetDecodeStatus` per picture (the stock sample only waits out InProgress).
+- rocDecode develop library: `cmake -S agent_space/rs/projects/rocdecode -B agent_space/build-rd-dev -DCMAKE_BUILD_TYPE=Release -DGPU_TARGETS=gfx1100` with SDK amdclang, `cmake --build -j 16 --target rocdecode`; run with `ROCM_PATH=$R LD_LIBRARY_PATH=build-rd-dev/lib:$R/lib/rocm_sysdeps/lib` (ldd confirms the develop `librocdecode.so.1`; without ROCM_PATH the develop VaapiLoader cannot find `librocm_sysdeps_va-drm.so.2`).
+- Driver selection: SDK driver is rocDecode's default; `LIBVA_DRIVERS_PATH=/usr/lib/x86_64-linux-gnu/dri` selects Ubuntu's (confirmed with `LD_DEBUG=files`). System `vainfo`/`ffmpeg` cannot load the SDK driver directly ("has no function __vaDriverInit_1_0", system libva 1.20); a shim dir with `libva.so.2 -> librocm_sysdeps_va.so.2` and `libva-drm.so.2 -> librocm_sysdeps_va-drm.so.2` in `LD_LIBRARY_PATH` plus `LIBVA_DRIVERS_PATH=$R/lib/rocm_sysdeps/lib` loads it (vainfo: "VA-API version: 1.22 ... Mesa Gallium driver 26.3.0-devel for AMD Radeon Pro W7800 48GB (radeonsi, navi31, DRM 3.64, 6.8.0-138-generic)").
+
+### Experiment 1: rocDecode's own sample on the fixture
+`h264_full.mp4` (md5 0433d114369b18050ad494a7550f0d00; High 4:4:4 Predictive, yuvj420p, level 11, 3 identical frames: a luma ramp, chroma 128). Reference: `ffmpeg -i h264_full.mp4 -f rawvideo` (native yuvj420p, no conversion) md5 60d75784980946950e19c6ae00a8ab47; framemd5 per frame 19056d1e078e16f3cf9c999c7448e8c3.
+- `videodecode -i fx/h264_full.mp4 -o out.yuv -md5`, SDK driver and Ubuntu driver: rc 0, 3 pictures, every picture `rocDecGetDecodeStatus` api 0 decode_status 2 (`rocDecodeStatus_Success`), MD5 388636301d3e6ce76efc5e24f71d1d62 with both drivers. Against the native reference: max dY 177 on 65279/65536 pixels per frame, chroma exact (the decoded image has 12 distinct luma values, the reference 220). The port's own use of rocDecode is ruled out.
+- Correction for whoever reads the earlier number: a first comparison against `-pix_fmt yuv420p` (481abd80...) gave max dY 161, because FFmpeg range-converts yuvj420p to yuv420p. The native comparison gives 177, the porter's figure.
+
+### Experiment 2: below rocDecode (FFmpeg VA-API, vainfo)
+- `vainfo --display drm --device /dev/dri/renderD129`, both drivers: H.264 decode lists only VAProfileH264ConstrainedBaseline, VAProfileH264Main, VAProfileH264High (VLD). Nothing covers High 4:4:4 Predictive or lossless; libva's `va.h` has no H.264 4:4:4 profile at all (H.264 entries: Baseline, Main, High, ConstrainedBaseline, MultiviewHigh, StereoHigh, High10) and `VAPictureParameterBufferH264` has no transform-bypass field.
+- `ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD129 -i fx/h264_full.mp4 -f framemd5 -`, both drivers: FFmpeg refuses: "Codec h264 profile 244 not supported for hardware decode." / "Failed setup for format vaapi: hwaccel initialisation returned error." and decodes in software (framemd5 19056d1e... = software).
+- Separate run with `-hwaccel_flags allow_profile_mismatch`: "Using possibly-incompatible profile 100 instead.", decodes on the hardware, wrong. `-hwaccel_output_format vaapi -vf hwdownload,format=nv12 -f rawvideo` output is byte-identical (`cmp`) to rocDecode's NV12 output, with both drivers. (Its `-pix_fmt yuv420p` md5 14cf98ad... and framemd5 cb26ba86... are the same frames after FFmpeg's range conversion.)
+
+### Experiment 3: lossless flag vs profile
+```
+ffmpeg -f lavfi -i testsrc2=size=256x256:rate=10 -frames:v 3 -pix_fmt yuv420p src.y4m
+x264 --profile high444 --qp 10 --output-csp i420 -o h444_qp10.264 src.y4m     # cde4af3c60c89505f202921b1ac1d662
+x264 --profile high444 --qp 0  --output-csp i420 -o h444_lossless.264 src.y4m # 0a7d4d9a5bc96f1b9b369df701496922
+python3 set_profile.py h444_qp10.264 p244_qp10.264 244                       # cccfcc47cd0693cc37f4f7c94077e3d6
+```
+- x264 (and `ffmpeg -c:v libx264 -profile:v high444 -qp 10`, same result) writes profile_idc 100 for the non-lossless stream: `--profile` is a ceiling, x264 picks profile_idc 244 only for lossless or 4:4:4. So `set_profile.py` (in `agent_space/h264`) rewrites the SPS profile_idc byte 100 -> 244; for chroma_format_idc 1 the SPS syntax of 100 and 244 is identical. Checked with `ffmpeg -bsf:v trace_headers`: p244_qp10 profile_idc 244, chroma_format_idc 1, qpprime 0 (ffprobe "High 4:4:4 Predictive"); h444_lossless 244 / 1 / qpprime 1; h444_qp10 100 / 1 / 0. libavcodec decodes p244_qp10 and h444_qp10 to identical frames (framemd5 42488617..., 209e631c..., bf8e04b2...), so the rewritten stream is valid. libavcodec's lossless decode equals the source exactly (a31753df... = `src.y4m` raw).
+- rocDecode 1.10 sample (`videodecode -i <f> -o <f>.yuv -md5`), SDK driver and Ubuntu driver, identical results:
+
+| Stream | profile_idc, bypass | libavcodec md5 | rocDecode md5 | Max diff |
+|---|---|---|---|---|
+| h444_qp10.264 | 100, 0 | b14d9f2ccdd60ea542d09e598805c619 | b14d9f2ccdd60ea542d09e598805c619 | 0 |
+| p244_qp10.264 | 244, 0 | b14d9f2ccdd60ea542d09e598805c619 | b14d9f2ccdd60ea542d09e598805c619 | 0 |
+| h444_lossless.264 | 244, 1 | a31753df5d556e50f85aca7c142ffcac | 9c3520b59f06f01b3e0ee01c74668145 | dY 223 (64958, 64452, 64694 of 65536 px), dU 240, dV 239 |
+
+  Every picture decode_status 2. **Non-lossless 244 bit-exact, lossless wrong: the transform-bypass flag is the cause.**
+- FFmpeg VA-API, both drivers: default refuses both 244 streams (software result); with `allow_profile_mismatch` p244_qp10 gives b14d9f2c... (exact) and h444_lossless gives 9c3520b5..., the same bytes as rocDecode.
+- rocDecode develop e57be12c (built above), both drivers: h264_full 388636301d3e..., h444_qp10 and p244_qp10 b14d9f2c..., h444_lossless 9c3520b5...: develop still has the defect, unchanged.
+
+### Experiment 4: code (rocm-systems develop e57be12c, `projects/rocdecode`; 1.10 = 33b9dbdc in parentheses)
+- `src/parser/avc_parser.cpp:987` (957): `ParseSps` reads `qpprime_y_zero_transform_bypass_flag`; nothing else reads it except the debug dump at :3484. The same block rejects bit depth != 8 with `CHECK_ALLOWED_RANGE` (:984, :986), but a failed `ParseSps` only skips the SPS ("Error occurred in SPS parsing. This SPS NAL unit is skipped.", :154-155), so a range check there alone would leave slices referencing a missing SPS. `NotifyNewSps` (:441) fails the sequence for an unsupported chroma format (:483) and its failure fails `DecodeCurrentPicture` (:345): the right place for a refusal. (I added the ParseSps check in the scratch clone and reverted it without running it, for that reason: slices without a valid SPS are not something to send to the VCN.)
+- `api/rocdecode/rocdecode.h:418` (418): `RocdecAvcPicParams`, documented at :416 as "configured to be the same as VA-API VAPictureParameterBufferH264"; `seq_fields` (:426-441) has no bypass bit, `avc_parser.cpp:693-703` (663-673) fills it. `RocdecDecodeCaps` (:160) has codec, chroma, bit depth, no profile. `RocdecVideoFormat` (rocparser.h) has no profile field either, so a client cannot see the profile through rocDecode.
+- `src/rocdecode/vaapi/vaapi_videodecoder.cpp:584` (566) decoder config and `:1219` (1074) caps query: `rocDecVideoCodec_AVC` always `VAProfileH264Main`.
+- Mesa main fd8ef2befafd01190e33f12dbfd109b924c8ebc3 (sparse clone `agent_space/mesa`): `src/amd/common/ac_vcn_dec.h:110-114` VCN H.264 profiles Baseline/Main/High/Stereo High/MVC only; `:156-161` SPS info flags (direct_8x8, mbaff, frame_mbs_only, delta_pic_order_always_zero, gaps_in_frame_num, extension support), no bypass bit. `ac_vcn_dec.c:1114` `build_avc_msg` maps profile_idc 66/77/100 only (:1142-1152) and `pps_flags.transform_8x8_mode_flag` to pps bit 0 (:1133); `ac_video_dec.h:35` declares `qpprime_y_zero_transform_bypass_flag` in `ac_video_dec_avc.sps_flags` but no decode code reads it (only encoder code touches the flag). VA frontend `picture_h264.c:104-105` copies `transform_8x8_mode_flag`; there is no bypass field to copy. `va_private.h:272` maps `PIPE_VIDEO_PROFILE_MPEG4_AVC_HIGH444` to `VAProfileNone`.
+
+### Experiment 5: can this VCN decode H.264 lossless?
+Inferred no: radeonsi decode caps `src/gallium/drivers/radeonsi/mm/si_mm_screen.c:355-357` and RADV `src/amd/vulkan/radv_video.c:427-429` accept only Baseline/Main/High for H.264 decode, and the firmware message as Mesa defines it has no way to signal bypass. `ac_video.c:296-310` (VCN AVC decode caps: 64x64..4096x4096, level 5.2, NV12) has no profile list. Not proven from hardware documentation. So the right behaviour is a refusal and the bug is rocDecode's silent success; no Mesa report is warranted (Mesa never claims the profile, and FFmpeg's VA path refuses correctly).
+
+### Existing reports
+`gh search issues --repo ROCm/rocm-systems` for "rocDecode lossless", "4:4:4", "High 4:4:4", "transform_bypass", "qpprime", "H.264 profile", "High444", and ROCm/rocDecode for lossless/444/profile/H264: nothing related (only #5058, closed, about 4:4:4 planar layer pointers).
+
+### Draft for jeff (new issue on ROCm/rocm-systems; not filed)
+`python3 utils/prose.py` and `python3 utils/jargon.py` on the draft file: both clean. First line is the title.
+
+====
+[rocDecode] H.264 lossless (transform bypass) streams decode to wrong pixels with success status
+
+My agent came up with this analysis, but I've read and approved it.
+
+### Problem
+
+rocDecode accepts H.264 streams that set `qpprime_y_zero_transform_bypass_flag` (lossless coding, High 4:4:4 Predictive profile, what `x264 --qp 0` writes) and decodes them to wrong pixels. No API call fails, and `rocDecGetDecodeStatus` reports `rocDecodeStatus_Success` for every picture. Luma differs from libavcodec on 98% to 99% of pixels, by up to 223. A High 4:4:4 Predictive stream with 4:2:0 chroma and the flag clear decodes bit-exact, so the cause is the lossless flag, not the profile. An application cannot detect this: `RocdecDecodeCaps` has no profile input, and nothing in the parser callbacks reports the flag.
+
+### Cause
+
+Proven on this card:
+
+- The frames rocDecode returns are byte-identical to FFmpeg's VA-API decode when FFmpeg is forced past its profile check (`-hwaccel_flags allow_profile_mismatch`), with both the VA driver bundled in the ROCm SDK and Ubuntu's Mesa driver. Without that flag FFmpeg refuses the stream ("Codec h264 profile 244 not supported for hardware decode") and decodes it in software.
+- The VA-API/VCN decode path has no lossless H.264 mode to ask for. `va.h` has no H.264 4:4:4 profile, and `VAPictureParameterBufferH264` has no transform-bypass field. `vainfo` lists only ConstrainedBaseline, Main and High for H.264 decode with either driver.
+- rocDecode reads the flag in `AvcVideoParser::ParseSps` (`src/parser/avc_parser.cpp:987`) and never acts on it. `RocdecAvcPicParams` (`api/rocdecode/rocdecode.h:418`) mirrors `VAPictureParameterBufferH264` and has no field for the flag. The VA-API backend always opens `VAProfileH264Main` (`src/rocdecode/vaapi/vaapi_videodecoder.cpp:584`, and `:1219` in the caps query). The same SPS code already rejects H.264 bit depths other than 8 (`avc_parser.cpp:984`, `:986`). Paths are under `projects/rocdecode` at develop e57be12c, and develop behaves the same as 1.10.
+
+Inferred from Mesa's VCN code (mesa main fd8ef2be): the hardware has no H.264 lossless decode. The VCN AVC decode message defines profiles only for Baseline, Main, High, Stereo High and MVC, and has no SPS bit for transform bypass (`src/amd/common/ac_vcn_dec.h:110-114`, `:156-161`). `build_avc_msg` (`ac_vcn_dec.c:1114`) never reads the `qpprime_y_zero_transform_bypass_flag` that `ac_video_dec.h:35` declares. radeonsi (`si_mm_screen.c:355-357`) and RADV (`radv_video.c:427-429`) advertise only Baseline, Main and High H.264 decode. Mesa never claims the profile, so the defect is rocDecode's silent success, not Mesa.
+
+Suggested fix: fail the sequence in `AvcVideoParser::NotifyNewSps` when the flag is set, as it already does for an unsupported chroma format (`avc_parser.cpp:483`), so the application gets an error and can fall back to a software decoder. A `CHECK_ALLOWED_RANGE` in `ParseSps` alone is not enough, because a failed SPS is only skipped (`avc_parser.cpp:154-155`).
+
+### Reproducer
+
+```
+ffmpeg -f lavfi -i testsrc2=size=256x256:rate=10 -frames:v 3 -pix_fmt yuv420p src.y4m
+x264 --profile high444 --qp 0 --output-csp i420 -o lossless.264 src.y4m
+x264 --profile high444 --qp 10 --output-csp i420 -o qp10.264 src.y4m
+python3 set_profile.py qp10.264 qp10_p244.264 244   # see below
+
+# libavcodec reference
+ffmpeg -v error -i lossless.264 -f rawvideo -pix_fmt yuv420p - | md5sum
+# rocDecode sample (samples/videoDecode); its -md5 digest is over planar 4:2:0, comparable to the line above
+videodecode -i lossless.264 -md5
+# the VA-API path underneath, forced past FFmpeg's profile check
+ffmpeg -v error -hwaccel vaapi -hwaccel_device /dev/dri/renderD128 -hwaccel_flags allow_profile_mismatch -i lossless.264 -f rawvideo -pix_fmt yuv420p - | md5sum
+```
+
+x264 writes profile_idc 100 for `--profile high444 --qp 10`, because `--profile` is a ceiling. `set_profile.py` rewrites that stream's profile_idc to 244. For 4:2:0 the SPS syntax of profiles 100 and 244 is identical, and libavcodec decodes both files to identical frames.
+
+<details>
+<summary>set_profile.py</summary>
+
+```python
+import sys
+
+data = bytearray(open(sys.argv[1], "rb").read())
+idc = int(sys.argv[3])
+i = 0
+while True:
+    i = data.find(b"\x00\x00\x01", i)
+    if i < 0:
+        break
+    h = i + 3
+    if data[h] & 0x1F == 7:
+        assert data[h + 1] == 100
+        data[h + 1] = idc
+    i = h
+open(sys.argv[2], "wb").write(data)
+```
+
+</details>
+
+### Expected vs actual
+
+Expected: rocDecode refuses the lossless stream with an error, so the application can decode it another way. Actual: success status and wrong frames.
+
+| Stream | profile_idc, bypass flag | libavcodec md5 | rocDecode md5 |
+|---|---|---|---|
+| lossless.264 | 244, 1 | a31753df5d556e50f85aca7c142ffcac (equals the source) | 9c3520b59f06f01b3e0ee01c74668145 (max luma diff 223) |
+| qp10.264 | 100, 0 | b14d9f2ccdd60ea542d09e598805c619 | b14d9f2ccdd60ea542d09e598805c619 |
+| qp10_p244.264 | 244, 0 | b14d9f2ccdd60ea542d09e598805c619 | b14d9f2ccdd60ea542d09e598805c619 |
+
+The rocDecode results are identical with both VA drivers and with rocDecode 1.10 and develop. The forced FFmpeg VA-API decode gives 9c3520b5... for lossless.264 and b14d9f2c... for qp10_p244.264. The md5 values depend on the x264 build (0.164.3108 31e19f9 here).
+
+### Versions
+
+- rocDecode 1.10.0 from the TheRock ROCm SDK 10.1.0 wheels, and rocDecode develop e57be12c (1.12.0) built from source
+- VA drivers: radeonsi bundled with the SDK (Mesa 26.3.0-devel, VA-API 1.22) and Ubuntu mesa-va-drivers 25.2.8-0ubuntu0.24.04.4 (libva 2.20.0)
+- FFmpeg 6.1.1 and x264 0.164.3108 from Ubuntu 24.04, kernel 6.8.0-138-generic, amdgpu 6.19.14, VCN firmware 09.11.80.29
+
+### GPU tested
+
+AMD Radeon Pro W7800 48GB (gfx1100). No other GPU architecture was tested.
+====
