@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:24:38Z",
-  "updated_at": "2026-10-31T07:04:48Z",
+  "updated_at": "2026-10-31T07:05:55Z",
   "head_sha": "b8d1aa911eefe23946cdd1c06160172541028864",
   "depends_on": [],
   "waivers": {},
@@ -15,66 +15,14 @@
   "upstream_repo_id": 34094271,
   "stage": "review-passed",
   "platforms": {
-    "linux-gfx90a": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "b8d1aa911eefe23946cdd1c06160172541028864",
-      "started_at": "2026-06-05T07:31:32Z",
-      "completed_at": "2026-10-31T07:04:48Z",
-      "updated_at": "2026-10-31T07:04:48Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator"
-    },
-    "windows-gfx1201": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "58d5496d3321d6776e8b78d8b94f4440ceec0f54",
-      "started_at": null,
-      "completed_at": "2026-06-23T22:48:40Z",
-      "updated_at": "2026-08-20T00:07:47Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator",
-      "carry_forward": {
-        "to": "2e3e59120593e88d48c74c3c7becc78c62381c05",
-        "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:48:40Z"
-      }
-    },
     "linux-gfx1100": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "4c06552c810100d289530e9475a07c81582e6581",
+      "validated_sha": "b8d1aa911eefe23946cdd1c06160172541028864",
       "started_at": null,
-      "completed_at": "2026-10-30T19:07:22Z",
-      "updated_at": "2026-10-30T19:07:22Z",
+      "completed_at": "2026-10-31T07:05:55Z",
+      "updated_at": "2026-10-31T07:05:55Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -89,34 +37,6 @@
         "last_session_at": null
       },
       "last_agent": "validator"
-    },
-    "windows-gfx1101": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "58d5496d3321d6776e8b78d8b94f4440ceec0f54",
-      "started_at": null,
-      "completed_at": "2026-06-23T22:48:40Z",
-      "updated_at": "2026-08-20T00:07:47Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "carry_forward": {
-        "to": "2e3e59120593e88d48c74c3c7becc78c62381c05",
-        "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:48:40Z"
-      }
     },
     "linux-gfx942": {
       "blocked": false,
@@ -164,6 +84,86 @@
       },
       "state": "validation-failed",
       "last_agent": "validator"
+    },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "b8d1aa911eefe23946cdd1c06160172541028864",
+      "started_at": "2026-06-05T07:31:32Z",
+      "completed_at": "2026-10-31T07:04:48Z",
+      "updated_at": "2026-10-31T07:04:48Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "58d5496d3321d6776e8b78d8b94f4440ceec0f54",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:48:40Z",
+      "updated_at": "2026-08-20T00:07:47Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "carry_forward": {
+        "to": "2e3e59120593e88d48c74c3c7becc78c62381c05",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:48:40Z"
+      }
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "58d5496d3321d6776e8b78d8b94f4440ceec0f54",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:48:40Z",
+      "updated_at": "2026-08-20T00:07:47Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "2e3e59120593e88d48c74c3c7becc78c62381c05",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:48:40Z"
+      }
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/GOMC/pull/1",
@@ -178,6 +178,5 @@
     "arch": "linux-gfx942",
     "since": "2026-10-31T06:49:47Z",
     "at": "2026-10-31T06:56:38Z"
-  },
-  "porting": null
+  }
 }

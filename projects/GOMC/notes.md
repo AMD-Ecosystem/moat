@@ -457,6 +457,11 @@ Smoke and equivalence evidence, not the gfx942 validation gate. The windows gate
 Requested by jeff after Review 2026-10-31. Fork `moat-port` @ b8d1aa91 (= `origin/moat-port`, fresh clone). The previous gfx90a evidence was at 4c06552c. b8d1aa91 changes host code (CalculateEnergy.cpp OpenMP clause, CellList.cpp copy ctor) that the Linux GPU and CPU targets compile with g++, so this is a full re-run, not a carry-forward.
 
 GPU: AMD Instinct MI250X / MI250 GCD (gfx90a, wave64), HIP_VISIBLE_DEVICES=3, `ulimit -c 0`. Toolchain: TheRock ROCm SDK 10.1.0 pip wheels (no /opt/rocm), AMD clang 24.0.0git, CXX g++ 13.3.0, CMake 3.31.6.
+## Validation 2026-10-31 (linux-gfx1100, validator)
+
+Requested by jeff. Fork `moat-port` @ b8d1aa91 (= `origin/moat-port`, fresh clone). Previous gfx1100 evidence was at 4c06552c; the delta is the clang host fixes commit (src/CalculateEnergy.cpp, src/CellList.cpp, CMake/GOMCHIPSetup.cmake). Full real-GPU re-run as requested, no carry-forward.
+
+Host: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), HIP_VISIBLE_DEVICES=3 (dispatcher pin), `ulimit -c 0`. Toolchain: TheRock ROCm SDK 10.1.0 pip wheels (no /opt/rocm), AMD clang 24.0.0git, g++ 13.3.0, CMake 3.31.6.
 
 ### Build (README "Building GOMC for AMD GPUs with ROCm" recipe, compiler path adapted to the SDK, no arch given)
 
@@ -486,3 +491,31 @@ Result: 7/7 pass. GPU output is identical to CPU at printed precision on every c
 CUDA compile gate at b8d1aa91: not run here. This host has no CUDA toolkit (no `/opt/conda/envs/cuda-12.8`, no `/usr/local/cuda`), and fetching NVIDIA's 12.8 redist archives was refused by this headless session's permission policy, so `cuda-not-validated: no toolkit on host, download not permitted in this session`. Mitigation, not a substitute: b8d1aa91 leaves CMakeLists.txt, GOMCCUDASetup.cmake and GOMCCPUSetup.cmake byte-identical (Review 2026-10-31), and its two source edits are host .cpp files that a CUDA build compiles with the host g++. This build compiled the same files with g++ 13.3.0 and `-DGOMC_CUDA` in the GPU targets (`grep -c GOMC_CUDA .../GPU_NVT.dir/flags.make` -> 2) and without it in the CPU targets, both rc=0. The gate stays open for the next Linux host that has nvcc. The last recorded CUDA gate is at 4c06552c.
 
 Completion checks: `git -C projects/GOMC/src status --porcelain` empty; `moatlib.py audit-clean GOMC` OK; `python3 utils/jargon.py --port GOMC` clean (after `git -C projects/GOMC/src branch -f development origin/development`); ROCm build documented in README.
+rc=0, 41 s, all 8 executables (GOMC_CPU_{NVT,NPT,GCMC,GEMC}, GOMC_GPU_{NVT,NPT,GCMC,GEMC}), 0 errors. Cache holds `gfx1100;gfx1100;gfx1100;gfx1100` from autodetection (one per GPU, harmless). Warnings: 5112 `-Wunused-value` + 20 `-Wunused-result` diagnostics, all the known `hipError_t` nodiscard class; not a gate.
+
+### GPU runs vs CPU, same build
+
+`utils/timeit.sh GOMC test -- bash -c "ulimit -c 0; python3 agent_space/gomc_val.py <build> <src> <work>"` (39 s). Same procedure as the earlier rounds: each case gets its own copy of test/input/Systems for GPU and for CPU; `ConsoleFreq true 100` (PEN_HEX 200 steps: 40; ISOPEN 30000: 1000); single-box AR_KR NVT (1000 steps, Dis 0.87/Rot 0.13) and NPT (1000 steps, Dis 0.86/Rot 0.13/Vol 0.01, `Pressure 100`) derived from AR_KR/SingleRun/in.conf by dropping the box-1, GEMC, ChemPot and SwapFreq lines; each runs `GOMC_GPU_<ens> in.conf` and `GOMC_CPU_<ens> in.conf` from the config dir. Every `ENER_n` row is compared field by field (numeric fields as relative difference) and every `% Accepted` line as a string. GPU log reports `Device Name: AMD Radeon Pro W7800 48GB`.
+
+| run | GPU / CPU exit | ENER rows | GPU vs CPU max rel diff | acceptance lines (GPU = CPU) | key acceptance | GPU wall |
+|---|---|---|---|---|---|---|
+| GEMC AR_KR SingleRun 3000 steps | 0 / 0 | 62 | 0 | 6/6 identical | disp AR 48.30% / KR 19.04% (box 0) | 0.16 s |
+| GEMC ISOPEN_NEOPEN SingleRun 3000 steps (MEMC) | 0 / 0 | 62 | 0 | 9/9 identical | MEMC NEO-ISB 61.76% | 1.82 s |
+| GCMC PEN_HEX SingleRun 200 steps (Ewald) | 0 / 0 | 12 | 0 | 12/12 identical | PEN disp 43.75% | 0.30 s |
+| NVT AR_KR box 0, 1000 steps | 0 / 0 | 11 | 0 | 4/4 identical | disp AR 97.22% / KR 98.39% | 0.14 s |
+| NPT AR_KR box 0, 1000 steps | 0 / 0 | 11 | 0 | 5/5 identical | disp 98.00/97.55%, volume 50.0% | 0.16 s |
+| GEMC ISOPEN_NEOPEN 30000 steps (extra) | 0 / 0 | 62 | 0 | 9/9 identical | MEMC 54.05%, mol-transfer ISB 41.01% | 15.9 s |
+| GCMC PEN_HEX 2000 steps (extra, Ewald) | 0 / 0 | 42 | 0 | 12/12 identical | PEN disp 24.81%, mol-transfer PEN 19.05% | 1.56 s |
+
+Result: 7/7 pass, GPU output identical to CPU at printed precision, and every key acceptance matches the gfx1100 round at 4c06552c and the gfx90a/gfx942 numbers. Non-GPU: the CPU executables of the same HIP build ran every case with rc=0. CPU gtests still not buildable on upstream `development` (ConsistentTrajectoryTest.cpp brace, retarget section); GPU gtests are CUDA-only. Unchanged.
+
+### CUDA compile gate at b8d1aa91 (CUDA 12.8)
+
+Not yet recorded at this head, and b8d1aa91 touches host .cpp files that the CUDA build also compiles, so run here. No conda on this host; used the retarget round's recipe: NVIDIA redist archives cuda_nvcc 12.8.93, cuda_cudart 12.8.90, cuda_cccl 12.8.90 (sha256 verified against redistrib_12.8.1.json), extracted into one root with `--strip-components=1`, plus `ln -s lib lib64`.
+```bash
+utils/timeit.sh GOMC cuda-compile -- bash -c "cmake -S $PWD/projects/GOMC/src -B $PWD/agent_space/gomc-cuda -DCMAKE_CUDA_COMPILER=$C/bin/nvcc \
+  -DCUDAToolkit_ROOT=$C -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release && cmake --build $PWD/agent_space/gomc-cuda -j 32"
+```
+rc=0, 100 s, 0 warnings, all 8 executables. Flags show `-arch=all` (upstream GOMCCUDASetup.cmake override, as recorded before). Compile-only; says nothing about NVIDIA runtime behavior.
+
+Completion checks: `git -C projects/GOMC/src status --porcelain` shows no modified tracked files; `moatlib.py audit-clean GOMC` OK; `python3 utils/jargon.py --port GOMC` clean (with local `development` = `origin/development`); ROCm build documented in README.
