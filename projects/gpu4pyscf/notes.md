@@ -1671,11 +1671,12 @@ int main(int argc, char **argv)
 
 **Environment:** AMD Radeon PRO W7800 48GB (gfx1100), reproduced on four cards in one host. Linux 6.8.0-138, amdgpu 6.19.14.31400100. TheRock ROCm SDK 10.1.0: HIP runtime 7.16.26385, AMD clang 24.0.0, rocBLAS 5.7.0.39d8d603.
 
-**Description:** `rocblas_zgemv_strided_batched` / `rocblas_dgemv_strided_batched` with `transA = rocblas_operation_none`, m in {1, 2, 4}, lda = m, incx = incy = 1, alpha = 1, beta = 0 and a batch_count above about 131072 writes wrong values to a varying subset of the outputs. `rocblas_gemm_strided_batched_ex` with n = 1 (N/N, f64_r or f64_c) shows the same, presumably because it dispatches to the same kernel. CuPy issues exactly this call for `einsum('xg,xg->g', a, b)` and for any `(B,1,k) @ (B,k,n)` matmul with small n, so applications get silently wrong results. The wrong values change from call to call. They are neither another batch entry's result nor a partial sum.
+**Description:** `rocblas_zgemv_strided_batched` / `rocblas_dgemv_strided_batched` with `transA = rocblas_operation_none`, m from 1 to 5 (m = 1, 2, 3, 4, 5 measured), lda = m, incx = incy = 1, alpha = 1, beta = 0 and a batch_count above about 131072 writes wrong values to a varying subset of the outputs. `rocblas_gemm_strided_batched_ex` with n = 1 (N/N, f64_r or f64_c) shows the same, presumably because it dispatches to the same kernel. CuPy issues exactly this call for `einsum('xg,xg->g', a, b)` and for any `(B,1,k) @ (B,k,n)` matmul with small n, so applications get silently wrong results. The wrong values change from call to call. They are neither another batch entry's result nor a partial sum.
 
 - double complex, m=1, k=3, batch_count=347395: several hundred wrong entries in every call on an otherwise idle GPU.
 - double, m=1, k=64, batch_count=262144: clean on an idle GPU, but 11 of 20 calls have wrong entries while another process runs small DGEMMs on the same GPU.
-- m >= 8, batch_count <= 65536, and n > 1 shapes were clean in every run.
+- double complex, k=3, batch_count=347395, 10 calls per m on an idle GPU: m = 1, 3 and 5 wrong in 10 of 10 calls (7089 wrong entries over the 10 calls at m=3, 92963 at m=5); m = 6, 7, 8 and 16 clean in 10 of 10 calls. The boundary on this card is between m=5 and m=6.
+- m >= 6, batch_count <= 65536, and n > 1 shapes were clean in every run.
 
 **Reproducer:** the attached `gemm_n1.cpp` (self-contained; CPU reference; prints the number of wrong entries per call).
 ```
@@ -1809,3 +1810,575 @@ Requested by jeff: review 51f6cf0 (BlockScan barrier) and 3982189 (rocBLAS batch
 - 51f6cf0 is an upstream CUDA bug fix carried in the port, applied unconditionally. Under your rule that non-ROCm fixes go upstream separately, it would leave this branch as its own upstream PR or issue. Its title also uses `[ROCm]`, which AGENTS.md requires for port commits, but your commit-title rule reserves that prefix for ROCm-specific changes. Which applies here is your call.
 - Finding 1: if you judge the global `cupy.matmul` replacement acceptable to upstream (precedent: the global allocator change at import), say so here and only finding 2 remains.
 - The rocBLAS issue draft (Porter 2026-10-31 section 2) is still unfiled; the m=3/5 failing and m=6/7 clean data above belong in it.
+
+## Porter 2026-10-31 (porter, linux-gfx1100 W7800, fork moat-port @ 3982189, nothing pushed) -- STOPPED: the pinned GPU hung during the call-site diagnostic
+
+Requested by jeff: rework 3982189 as the review asks (drop the global `cupy.matmul` patch; run a call-site diagnostic first; cover the listed sites and `contract` with a gpu4pyscf-local helper; rerun under load and the full tree). Work lock taken at 17:11Z (`changes-requested -> porting`, linux-gfx1100). Host: Radeon Pro W7800 (gfx1100), `HIP_VISIBLE_DEVICES=2` from the dispatcher (this is amd-smi GPU 0, BDF 23:00.0; HIP and amd-smi number the cards differently). TheRock ROCm SDK 10.1.0, rocBLAS 5.7. Job venv: numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion, geometric, pytest 7.3.2, pytest-xdist 3.3.1, pytest-timeout. Build: the README ROCm block (`-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100`, `-j 16`), exit 0, 12 libs. 51f6cf0 untouched.
+
+**Result: incomplete; nothing committed or pushed; `moat-port` is still 3982189.** At about 17:40Z, about 20 minutes into the diagnostic tree run, the GPU stopped completing work. Since then every process on it hangs at its first host-to-device copy: `hipMalloc` succeeds and the first `hipMemcpyAsync` H2D never completes (AMD_LOG_LEVEL=4 shows it stop after the queue is created and the staging buffer allocated). The same happens with `HSA_ENABLE_SDMA=0`, so it is not only the SDMA engine. It was still hung after every process of this job had exited (checked 18:14 to 18:26Z; amd-smi showed 95% GFX activity with 28 MB of VRAM in use, then 0%). The other job on this host (HIP devices 0,1) is on different cards. I did not move to another GPU, because the dispatcher's pin stands. **Cause unknown.** Running at the time: df, grad and hessian tests, 12 xdist workers, workaround removed, call-site shim preloaded. Someone with host access has to reset the card before any GPU work can run on it again.
+
+### What is done (in the job's fork clone, uncommitted; patch below)
+1. The global patch is removed: `_cupy_matmul`, `_hip_matmul` and the `cupy.matmul = _hip_matmul` assignment are deleted from cupy_helper.py.
+2. Helper `_hip_einsum` in gpu4pyscf/lib/cutensor.py. cupy_helper imports from cutensor, so the helper sits next to `_contract_einsum`. It is bound as the cupy-engine einsum of `contract` on ROCm (`einsum = _hip_einsum if cupy.cuda.runtime.is_hip else cupy.einsum`) and exported as `cupy_helper.einsum` with the same expression, so on CUDA `cupy_helper.einsum is cupy.einsum` and nothing changes. The docstring is the only comment and names the defect.
+   - Dispatch: each pairwise contraction is checked. If one operand has no free index and the free indices of the other span fewer than 8 entries, it is computed as a broadcast multiply and sum; otherwise it goes to `cupy.einsum`. There is no batch-size condition. A pairwise step is CuPy's own unit: `reduced_binary_einsum` forms `(B, L, K) @ (B, K, R)`, giving rocBLAS M=R, N=L. CuPy 14 passes the SECOND operand as arr0, because path (1, 0) pops index 1 first, so the exact regime is free(b) == 1 and free(a) < 8. The helper tests both orders, so a change in CuPy's operand order cannot reopen the gap. The extra order (rocBLAS M=1, N<8) is a clean shape. Rerouting it costs no more memory than the larger operand.
+   - Multi-operand calls (for example dft/numint.py:927 `'ijg,g,jg->j'`, which is in the list) are contracted pairwise from the last operand, which is CuPy's default (`optimize=False`) order, after casting every operand to the result dtype as CuPy does. These go to `cupy.einsum` unchanged: ellipsis, keyword arguments (`optimize=`, `dtype=`), non-CuPy operands, non-float dtypes (int einsums keep their dtype), and repeated letters in one operand.
+   - Unit check (agent_space/diag/unit.py, against NumPy, before the hang): 16 two-operand patterns in f64, c128 and f32, through both `einsum` and `contract`. They include 'gp,pg->p' at 347395, 'xgo,xgo->go', 'xbygo,xgo->bygo', 'g,g->', 'xg,xgi->gi' at 5 and 8 columns, 'xgi,xg->ig', 'pi,pij->pj', 'abz,ab->a' (own-index sum) and implicit output. Shapes and dtypes matched; worst relative error 3.3e-15. With the shim preloaded, no regime rocBLAS call remained except from the ellipsis fallback case. **Not run: the multi-operand version and its new unit cases** (three-operand, implicit scalar, int dtype, mixed f32/f64). That run hung on the GPU.
+3. **Not started: rewriting the direct `cp.einsum` sites.** The site list is incomplete (below), and none of it could be tested.
+
+### The diagnostic (step 2), partial
+Method: an LD_PRELOAD shim (agent_space/hook/blashook.c, source below) wraps rocBLAS `gemm_strided_batched_ex[_64]`, `{s,d,c,z}gemm_strided_batched[_64]` and `{s,d,c,z}gemv_strided_batched[_64]`. On every call with m == 1 or n == 1, the shim takes the GIL (`PyGILState_Ensure`) and calls `_blashook.hit()`, which records the innermost gpu4pyscf frames of the Python stack (so `@`, `cp.einsum`, `contract` and `.dot` are attributed alike), the shape, the dtype and the batch range. Regime filter: rocBLAS n == 1 and m < 8, any batch. Two gotchas: hipBLAS calls the `_64` entry points, and `dlsym(RTLD_NEXT)` does not find librocblas because CuPy loads hipBLAS RTLD_LOCAL, so the shim takes its handle with `dlopen("librocblas.so.5", RTLD_NOLOAD)`.
+
+Coverage before the hang: the CI selection (`-n 4 --dist loadfile -m 'not slow and not benchmark and not special'`) completed for cc, df/hessian, dispersion, fci, geomopt, dft (2 failed: test_sparse_index plus the numint2c fingerprint, the expected signature with the workaround removed) and gto. df, grad and hessian were part-way through: 69%, 61% and unknown. **Not reached: the other 29 directories, including every pbc/ directory, scf, tdscf, solvent, mp, nac, properties, x2c, sem and qmmm.** Note for the rerun: three directories at a time is CPU-oversubscribed, because each worker's PySCF CPU reference runs 64 OpenMP threads (256 threads per worker). Set `OMP_NUM_THREADS` for the diagnostic run (not for the comparison run).
+
+Larger grid than the tests (agent_space/diag/biggrid.py, same shim, workaround removed, under the tree's load): multigrid_v2 on a 4-carbon cell, 1.5x the test cell, ke_cutoff 400, mesh 93x83x117 = 903123, with 2 k-points. LDA nr_rks/kpts/nr_uks: run-to-run spread 2e-13. **PBE: 3.5e-3 / 5.2e-3 / 5.2e-3. r2scan: 2.7e-3 / 2.8e-3 / 3.0e-3.** That is the defect at a production-size mesh. numint2c mcol at grids level 5 (90112 points): LDA and PBE spread 0. **M06: 5.3e-8.** `nr_fxc` with mcol raises NotImplementedError (upstream), so it has no site.
+
+**Size of the list.** With no batch limit, the regime includes every full contraction that CuPy runs as a batch-1 strided GEMV, for example `cupy.einsum('ij,ji->', h1e, dm)` in scf/hf.py:197 energy_elec. In 10 of 39 test directories (three of them partial) there are already **159 regime call sites in 34 files**: 86 through `contract` (covered by the binding), 71 direct `cp.einsum` (to rewrite), and 2 `np.einsum` three-operand calls on CuPy arrays in df/tests/test_df_rhf_grad.py:332-333. 154 are in library code and 5 in test files. Batch above 1 at 66 sites. Batch at or above 65536 at 2 sites in the tree run and 7 in the larger-grid run, all in mcfun_gpu.py:230, multigrid_v2.py (1572, 1575, 1676, 1680, 1805, 1809) and hessian/rks.py:2814 (249856, m=3). No `@` or `.dot` site appeared yet. Extrapolated to the whole tree, rewriting every direct site means a few hundred lines across most of the package.
+
+**For jeff (decision, not taken):** the instruction "cover exactly those call sites, no batch-size limit" applied to this list rewrites every batch-1 trace energy. In every measurement (porter, validator, reviewer), batch_count <= 16384 was clean even under load. The first wrong entry ever seen was at 65536 under load. Two options:
+- (a) Rewrite every listed direct site, as instructed: a large upstream diff.
+- (b) Keep the helper's dispatch with no batch limit, as instructed, but apply it only at the sites whose recorded batch reaches the failing range. `contract` covers its callers either way.
+
+Which one you choose decides how the remaining work is done. The next porter should not choose for you.
+
+### Resume steps (for the next porter, after a GPU reset)
+1. Apply the patch below to `moat-port` @ 3982189 in a fresh clone. Repeat the unit check (cases listed above), including the multi-operand cases, against NumPy.
+2. Finish the diagnostic with the shim and `_blashook.py` below over all 39 directories, with OMP_NUM_THREADS capped. The site table below is the partial result to merge into.
+3. Rewrite the direct sites per jeff's ruling: `from gpu4pyscf.lib.cupy_helper import einsum` and `cp.einsum(` -> `einsum(`. No existing module binds a conflicting `einsum` name. Then do the load reruns and the full tree as the request describes.
+
+### Patch (uncommitted; `git diff` against 3982189)
+```diff
+diff --git a/gpu4pyscf/lib/cupy_helper.py b/gpu4pyscf/lib/cupy_helper.py
+index 5a7eaa1..8288d08 100644
+--- a/gpu4pyscf/lib/cupy_helper.py
++++ b/gpu4pyscf/lib/cupy_helper.py
+@@ -22,7 +22,7 @@ import scipy.linalg
+ import cupy
+ from pyscf import lib
+ from gpu4pyscf.lib import logger
+-from gpu4pyscf.lib.cutensor import contract
++from gpu4pyscf.lib.cutensor import contract, _hip_einsum
+ from gpu4pyscf.lib import cusolver
+ from gpu4pyscf.lib.memcpy import copy_array, p2p_transfer  #NOQA
+ from gpu4pyscf.lib import multi_gpu
+@@ -60,35 +60,7 @@ def kernel_source(code):
+         code = _HIP_KERNEL_PREAMBLE + code.replace('#include <cuComplex.h>', '')
+     return code
+ 
+-_cupy_matmul = cupy.matmul
+-
+-def _hip_matmul(x1, x2, out=None, **kwargs):
+-    '''cupy.matmul that keeps a batched product with a one-row left operand
+-    off rocBLAS.
+-
+-    CuPy computes (..., 1, k) @ (..., k, n) as gemm_strided_batched with N=1,
+-    which rocBLAS runs as gemv_strided_batched. On gfx1100 (rocBLAS 5.7) that
+-    returns wrong entries for m < 8 and a large batch count. cupy.einsum
+-    reaches it for every batched dot product, such as 'xg,xg->g'.
+-    '''
+-    if (out is None and not kwargs
+-            and isinstance(x1, cupy.ndarray) and isinstance(x2, cupy.ndarray)
+-            and x1.dtype.kind in 'fc' and x2.dtype.kind in 'fc'
+-            and max(x1.ndim, x2.ndim) >= 3
+-            and (x1.ndim == 1 or x1.shape[-2] == 1)):
+-        a = x1 if x1.ndim > 1 else x1[None]
+-        b = x2 if x2.ndim > 1 else x2[:,None]
+-        if a.shape[-1] == b.shape[-2]:
+-            c = (a.swapaxes(-1, -2) * b).sum(axis=-2, keepdims=True)
+-            if x1.ndim == 1:
+-                c = c[...,0,:]
+-            if x2.ndim == 1:
+-                c = c[...,0]
+-            return c
+-    return _cupy_matmul(x1, x2, out=out, **kwargs)
+-
+-if cupy.cuda.runtime.is_hip:
+-    cupy.matmul = _hip_matmul
++einsum = _hip_einsum if cupy.cuda.runtime.is_hip else cupy.einsum
+ 
+ libcupy_helper = load_library('libcupy_helper')
+ 
+diff --git a/gpu4pyscf/lib/cutensor.py b/gpu4pyscf/lib/cutensor.py
+index 08812c8..6aadeb1 100644
+--- a/gpu4pyscf/lib/cutensor.py
++++ b/gpu4pyscf/lib/cutensor.py
+@@ -52,6 +52,66 @@ def _create_tensor_descriptor(a):
+         a = cupy.ndarray(a.shape, a.dtype, a.data, strides)
+     return cutensor.create_tensor_descriptor(a)
+ 
++def _hip_einsum(subscripts, *operands, **kwargs):
++    '''cupy.einsum, except that a pairwise contraction in which one operand
++    has no free index and the free indices of the other span fewer than 8
++    entries is computed as a broadcast multiply and sum.
++
++    cupy.einsum runs such a contraction as a batched matmul
++    (..., 1, k) @ (..., k, n) with n < 8, which is rocBLAS
++    gemm_strided_batched_ex with n=1. rocBLAS runs that as
++    gemv_strided_batched, which returns wrong entries on gfx1100
++    (rocBLAS 5.7) for m < 8.
++    '''
++    sub = subscripts.replace(' ', '')
++    inputs, arrow, out = sub.partition('->')
++    subs = inputs.split(',')
++    if (len(operands) < 2 or len(subs) != len(operands) or kwargs
++            or '.' in sub or not all(isinstance(x, cupy.ndarray) and
++                                     x.dtype.kind in 'fc' for x in operands)):
++        return cupy.einsum(subscripts, *operands, **kwargs)
++    if not arrow:
++        out = ''.join(sorted(c for c in set(inputs) - {','}
++                             if inputs.count(c) == 1))
++    dtype = np.result_type(*operands)
++    operands = [x.astype(dtype, copy=False) for x in operands]
++    b, sb = operands[-1], subs[-1]
++    for i in range(len(operands) - 2, -1, -1):
++        rest = ''.join(subs[:i]) + out
++        keep = out if i == 0 else ''.join(
++            c for c in dict.fromkeys(subs[i] + sb) if c in rest)
++        b = _hip_einsum2(operands[i], subs[i], b, sb, keep)
++        sb = keep
++    return b
++
++def _hip_einsum2(a, sa, b, sb, out):
++    if (len(set(sa)) == len(sa) == a.ndim and
++            len(set(sb)) == len(sb) == b.ndim and
++            len(set(out)) == len(out) and set(out) <= set(sa + sb)):
++        size = dict(zip(sa, a.shape))
++        if all(size.get(c, n) == n for c, n in zip(sb, b.shape)):
++            size.update(zip(sb, b.shape))
++            rows = np.prod([size[c] for c in sa if c in out and c not in sb])
++            cols = np.prod([size[c] for c in sb if c in out and c not in sa])
++            if min(rows, cols) == 1 and max(rows, cols) < 8:
++                return _multiply_sum(a, sa, b, sb, out, size)
++    return cupy.einsum(f'{sa},{sb}->{out}', a, b)
++
++def _multiply_sum(a, sa, b, sb, out, size):
++    idx = [c for c in dict.fromkeys(out + sa + sb)
++           if c in out or (c in sa and c in sb)]
++    def expand(x, s):
++        own = tuple(i for i, c in enumerate(s) if c not in idx)
++        if own:
++            x = x.sum(axis=own)
++            s = ''.join(c for c in s if c in idx)
++        x = x.transpose([s.index(c) for c in idx if c in s])
++        return x.reshape([size[c] if c in s else 1 for c in idx])
++    c = expand(a, sa) * expand(b, sb)
++    if len(idx) > len(out):
++        c = c.sum(axis=tuple(range(len(out), len(idx))))
++    return c
++
+ def _contract_einsum(pattern, a, b, alpha, beta, out=None, einsum=cupy.einsum):
+     if out is None:
+         out = cupy.ascontiguousarray(einsum(pattern, a, b))
+@@ -146,7 +206,7 @@ if contract_engine is not None:
+     elif contract_engine == 'cuquantum':
+         from cuquantum import contract as einsum # type: ignore
+     elif contract_engine == 'cupy':
+-        einsum = cupy.einsum
++        einsum = _hip_einsum if cupy.cuda.runtime.is_hip else cupy.einsum
+     else:
+         raise RuntimeError('unknown tensor contraction engine.')
+ 
+```
+
+### Call-site shim (agent_space/hook/blashook.c, built with `gcc -O2 -shared -fPIC blashook.c -o blashook.so -ldl`)
+```c
+// LD_PRELOAD shim: forward rocBLAS strided-batched GEMM/GEMV calls and, for
+// shapes with n == 1 or m == 1, report the call to Python (_blashook.hit) so
+// the caller's stack can be recorded.
+#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <stdint.h>
+#include <stdio.h>
+
+typedef int (*gil_ensure_t)(void);
+typedef void (*gil_release_t)(int);
+typedef int (*run_t)(const char *);
+
+static __thread int in_hook;
+
+static void report(const char *kind, int ta, int tb, int m, int n, int k,
+                   int batch, int dtype)
+{
+    static gil_ensure_t ens;
+    static gil_release_t rel;
+    static run_t run;
+    if (in_hook) return;
+    if (!ens) {
+        ens = (gil_ensure_t)dlsym(RTLD_DEFAULT, "PyGILState_Ensure");
+        rel = (gil_release_t)dlsym(RTLD_DEFAULT, "PyGILState_Release");
+        run = (run_t)dlsym(RTLD_DEFAULT, "PyRun_SimpleString");
+        if (!ens || !rel || !run) return;
+    }
+    char buf[256];
+    snprintf(buf, sizeof buf,
+             "import _blashook; _blashook.hit('%s',%d,%d,%d,%d,%d,%d,%d)",
+             kind, ta, tb, m, n, k, batch, dtype);
+    in_hook = 1;
+    int st = ens();
+    run(buf);
+    rel(st);
+    in_hook = 0;
+}
+
+static void *sym(const char *name)
+{
+    static void *lib;
+    if (!lib) lib = dlopen("librocblas.so.5", RTLD_NOW | RTLD_NOLOAD);
+    if (!lib) lib = dlopen("librocblas.so.5", RTLD_NOW);
+    return dlsym(lib, name);
+}
+
+#define WANT(m, n) ((m) == 1 || (n) == 1)
+
+typedef int (*gsbex_t)(void *, int, int, int, int, int, const void *,
+                       const void *, int, int, int64_t, const void *, int, int,
+                       int64_t, const void *, const void *, int, int, int64_t,
+                       void *, int, int, int64_t, int, int, int, int32_t,
+                       uint32_t);
+
+int rocblas_gemm_strided_batched_ex(
+    void *h, int ta, int tb, int m, int n, int k, const void *alpha,
+    const void *a, int at, int lda, int64_t sa, const void *b, int bt, int ldb,
+    int64_t sb, const void *beta, const void *c, int ct, int ldc, int64_t sc,
+    void *d, int dt, int ldd, int64_t sd, int batch, int comp, int algo,
+    int32_t sol, uint32_t flags)
+{
+    static gsbex_t real;
+    if (!real) real = (gsbex_t)sym("rocblas_gemm_strided_batched_ex");
+    if (WANT(m, n)) report("gemm_strided_batched_ex", ta, tb, m, n, k, batch, at);
+    return real(h, ta, tb, m, n, k, alpha, a, at, lda, sa, b, bt, ldb, sb, beta,
+                c, ct, ldc, sc, d, dt, ldd, sd, batch, comp, algo, sol, flags);
+}
+
+typedef int (*gsb_t)(void *, int, int, int, int, int, const void *,
+                     const void *, int, int64_t, const void *, int, int64_t,
+                     const void *, void *, int, int64_t, int);
+
+#define GSB(P, DT)                                                            \
+int rocblas_##P##gemm_strided_batched(                                        \
+    void *h, int ta, int tb, int m, int n, int k, const void *alpha,          \
+    const void *a, int lda, int64_t sa, const void *b, int ldb, int64_t sb,   \
+    const void *beta, void *c, int ldc, int64_t sc, int batch)                \
+{                                                                             \
+    static gsb_t real;                                                        \
+    if (!real) real = (gsb_t)sym("rocblas_" #P "gemm_strided_batched"); \
+    if (WANT(m, n)) report(#P "gemm_strided_batched", ta, tb, m, n, k, batch, DT); \
+    return real(h, ta, tb, m, n, k, alpha, a, lda, sa, b, ldb, sb, beta, c,   \
+                ldc, sc, batch);                                              \
+}
+GSB(s, 151)
+GSB(d, 152)
+GSB(c, 154)
+GSB(z, 155)
+
+typedef int (*gvsb_t)(void *, int, int, int, const void *, const void *, int,
+                      int64_t, const void *, int, int64_t, const void *,
+                      void *, int, int64_t, int);
+
+#define GVSB(P, DT)                                                           \
+int rocblas_##P##gemv_strided_batched(                                        \
+    void *h, int ta, int m, int n, const void *alpha, const void *a, int lda, \
+    int64_t sa, const void *x, int incx, int64_t sx, const void *beta,        \
+    void *y, int incy, int64_t sy, int batch)                                 \
+{                                                                             \
+    static gvsb_t real;                                                       \
+    if (!real) real = (gvsb_t)sym("rocblas_" #P "gemv_strided_batched"); \
+    report(#P "gemv_strided_batched", ta, 0, m, n, 0, batch, DT);             \
+    return real(h, ta, m, n, alpha, a, lda, sa, x, incx, sx, beta, y, incy,   \
+                sy, batch);                                                   \
+}
+GVSB(s, 151)
+GVSB(d, 152)
+GVSB(c, 154)
+GVSB(z, 155)
+
+/* 64-bit interface (hipBLAS _64 entry points) */
+typedef int (*gsbex64_t)(void *, int, int, int64_t, int64_t, int64_t,
+                         const void *, const void *, int, int64_t, int64_t,
+                         const void *, int, int64_t, int64_t, const void *,
+                         const void *, int, int64_t, int64_t, void *, int,
+                         int64_t, int64_t, int64_t, int, int, int32_t,
+                         uint32_t);
+
+int rocblas_gemm_strided_batched_ex_64(
+    void *h, int ta, int tb, int64_t m, int64_t n, int64_t k,
+    const void *alpha, const void *a, int at, int64_t lda, int64_t sa,
+    const void *b, int bt, int64_t ldb, int64_t sb, const void *beta,
+    const void *c, int ct, int64_t ldc, int64_t sc, void *d, int dt,
+    int64_t ldd, int64_t sd, int64_t batch, int comp, int algo, int32_t sol,
+    uint32_t flags)
+{
+    static gsbex64_t real;
+    if (!real) real = (gsbex64_t)sym("rocblas_gemm_strided_batched_ex_64");
+    if (WANT(m, n)) report("gemm_strided_batched_ex_64", ta, tb, (int)m, (int)n, (int)k, (int)batch, at);
+    return real(h, ta, tb, m, n, k, alpha, a, at, lda, sa, b, bt, ldb, sb, beta,
+                c, ct, ldc, sc, d, dt, ldd, sd, batch, comp, algo, sol, flags);
+}
+
+typedef int (*gsb64_t)(void *, int, int, int64_t, int64_t, int64_t,
+                       const void *, const void *, int64_t, int64_t,
+                       const void *, int64_t, int64_t, const void *, void *,
+                       int64_t, int64_t, int64_t);
+
+#define GSB64(P, DT)                                                          \
+int rocblas_##P##gemm_strided_batched_64(                                     \
+    void *h, int ta, int tb, int64_t m, int64_t n, int64_t k,                 \
+    const void *alpha, const void *a, int64_t lda, int64_t sa, const void *b, \
+    int64_t ldb, int64_t sb, const void *beta, void *c, int64_t ldc,          \
+    int64_t sc, int64_t batch)                                                \
+{                                                                             \
+    static gsb64_t real;                                                      \
+    if (!real) real = (gsb64_t)sym("rocblas_" #P "gemm_strided_batched_64"); \
+    if (WANT(m, n)) report(#P "gemm_strided_batched_64", ta, tb, (int)m, (int)n, (int)k, (int)batch, DT); \
+    return real(h, ta, tb, m, n, k, alpha, a, lda, sa, b, ldb, sb, beta, c,   \
+                ldc, sc, batch);                                              \
+}
+GSB64(s, 151)
+GSB64(d, 152)
+GSB64(c, 154)
+GSB64(z, 155)
+
+typedef int (*gvsb64_t)(void *, int, int64_t, int64_t, const void *,
+                        const void *, int64_t, int64_t, const void *, int64_t,
+                        int64_t, const void *, void *, int64_t, int64_t,
+                        int64_t);
+
+#define GVSB64(P, DT)                                                         \
+int rocblas_##P##gemv_strided_batched_64(                                     \
+    void *h, int ta, int64_t m, int64_t n, const void *alpha, const void *a,  \
+    int64_t lda, int64_t sa, const void *x, int64_t incx, int64_t sx,         \
+    const void *beta, void *y, int64_t incy, int64_t sy, int64_t batch)       \
+{                                                                             \
+    static gvsb64_t real;                                                     \
+    if (!real) real = (gvsb64_t)sym("rocblas_" #P "gemv_strided_batched_64"); \
+    report(#P "gemv_strided_batched_64", ta, 0, (int)m, (int)n, 0, (int)batch, DT); \
+    return real(h, ta, m, n, alpha, a, lda, sa, x, incx, sx, beta, y, incy,   \
+                sy, batch);                                                   \
+}
+GVSB64(s, 151)
+GVSB64(d, 152)
+GVSB64(c, 154)
+GVSB64(z, 155)
+```
+`_blashook.py` (on PYTHONPATH; `BLASHOOK_DIR` selects the output directory; run with `LD_PRELOAD=.../blashook.so`):
+```python
+# Called from blashook.so for every rocBLAS strided-batched call with m == 1 or n == 1.
+import os, sys, json, traceback, time
+_D = os.environ.get('BLASHOOK_DIR', '/tmp')
+_stats = {}
+_n = 0
+_last = 0.0
+
+def _frames():
+    out = []
+    for fs in traceback.extract_stack()[:-2]:
+        f = fs.filename
+        i = f.rfind('gpu4pyscf/')
+        if i >= 0 and '/site-packages/' not in f:
+            out.append('%s:%d:%s' % (f[i:], fs.lineno, fs.name))
+    return out
+
+def _dump():
+    path = os.path.join(_D, 'hook-%d.json' % os.getpid())
+    rows = [dict(zip(('kind','ta','tb','m','n','dtype','chain'), k), **v) for k, v in _stats.items()]
+    with open(path + '.tmp', 'w') as f:
+        json.dump(rows, f)
+    os.replace(path + '.tmp', path)
+
+def hit(kind, ta, tb, m, n, k, batch, dtype):
+    global _n, _last
+    fr = _frames()
+    chain = tuple(fr[-4:])
+    key = (kind, ta, tb, m, n, dtype, chain)
+    s = _stats.get(key)
+    new = s is None
+    if new:
+        s = _stats[key] = {'count': 0, 'max_batch': 0, 'min_batch': 1 << 40, 'ks': [],
+                           'test': os.environ.get('PYTEST_CURRENT_TEST', sys.argv[0])}
+    s['count'] += 1
+    s['max_batch'] = max(s['max_batch'], batch)
+    s['min_batch'] = min(s['min_batch'], batch)
+    if k not in s['ks'] and len(s['ks']) < 20:
+        s['ks'].append(k)
+    _n += 1
+    now = time.time()
+    if new or now - _last > 5:
+        _last = now
+        _dump()
+import atexit; atexit.register(_dump)
+```
+
+### Partial site list (regime: rocBLAS n == 1, m < 8; columns: site, how it reaches rocBLAS, largest batch seen, rocBLAS m = CuPy output columns, dtype)
+| site | via | max batch | m | dtype |
+|---|---|---|---|---|
+| gpu4pyscf/dft/mcfun_gpu.py:230 | einsum | 3670016 | 1 | f64 |
+| gpu4pyscf/pbc/dft/multigrid_v2.py:1572 | einsum | 903123 | 1 | c128 |
+| gpu4pyscf/pbc/dft/multigrid_v2.py:1575 | einsum | 903123 | 1 | c128 |
+| gpu4pyscf/pbc/dft/multigrid_v2.py:1676 | contract | 903123 | 2 | c128 |
+| gpu4pyscf/pbc/dft/multigrid_v2.py:1680 | contract | 903123 | 2 | c128 |
+| gpu4pyscf/pbc/dft/multigrid_v2.py:1805 | contract | 903123 | 1 | c128 |
+| gpu4pyscf/pbc/dft/multigrid_v2.py:1809 | contract | 903123 | 1 | c128 |
+| gpu4pyscf/hessian/rks.py:2814 | contract | 249856 | 3 | f64 |
+| gpu4pyscf/dft/numint2c.py:420 | contract | 10240 | 1 | f64 |
+| gpu4pyscf/dft/numint2c.py:421 | contract | 10240 | 1 | f64 |
+| gpu4pyscf/dft/numint2c.py:422 | contract | 10240 | 1 | c128/f64 |
+| gpu4pyscf/dft/numint2c.py:423 | contract | 10240 | 1 | f64 |
+| gpu4pyscf/dft/numint2c.py:424 | contract | 10240 | 1 | f64 |
+| gpu4pyscf/dft/numint2c.py:434 | contract | 10240 | 1 | c128/f64 |
+| gpu4pyscf/dft/numint2c.py:438 | contract | 10240 | 1 | c128 |
+| gpu4pyscf/dft/numint2c.py:439 | contract | 10240 | 1 | c128 |
+| gpu4pyscf/dft/numint2c.py:440 | contract | 10240 | 1 | c128 |
+| gpu4pyscf/dft/numint2c.py:441 | contract | 10240 | 1 | c128 |
+| gpu4pyscf/dft/numint.py:2322 | contract | 4096 | 3 | f64 |
+| gpu4pyscf/hessian/rks.py:477 | contract | 4096 | 3 | f64 |
+| gpu4pyscf/hessian/rks.py:1322 | contract | 4096 | 3 | f64 |
+| gpu4pyscf/hessian/rks.py:1682 | contract | 4096 | 3 | f64 |
+| gpu4pyscf/hessian/rks.py:1697 | contract | 4096 | 1 | f64 |
+| gpu4pyscf/hessian/rks.py:1700 | contract | 4096 | 3 | f64 |
+| gpu4pyscf/hessian/rks.py:1795 | contract | 4096 | 3 | f64 |
+| gpu4pyscf/hessian/rks.py:1819 | contract | 4096 | 1 | f64 |
+| gpu4pyscf/hessian/rks.py:2586 | contract | 4096 | 5 | f64 |
+| gpu4pyscf/hessian/rks.py:2587 | contract | 4096 | 4 | f64 |
+| gpu4pyscf/hessian/rks.py:2686 | contract | 4096 | 3 | f64 |
+| gpu4pyscf/hessian/rks.py:2695 | contract | 4096 | 3 | f64 |
+| gpu4pyscf/hessian/rks.py:2716 | contract | 4096 | 3 | f64 |
+| gpu4pyscf/hessian/rks.py:2732 | contract | 4096 | 3 | f64 |
+| gpu4pyscf/hessian/rks.py:3122 | contract | 4096 | 1,6 | f64 |
+| gpu4pyscf/hessian/rks.py:3125 | contract | 4096 | 3 | f64 |
+| gpu4pyscf/hessian/uks.py:485 | contract | 4096 | 3 | f64 |
+| gpu4pyscf/hessian/uks.py:486 | contract | 4096 | 3 | f64 |
+| gpu4pyscf/hessian/uks.py:1308 | contract | 4096 | 3 | f64 |
+| gpu4pyscf/hessian/uks.py:1309 | contract | 4096 | 3 | f64 |
+| gpu4pyscf/hessian/rks.py:2609 | contract | 3789 | 5 | f64 |
+| gpu4pyscf/gto/int3c1e_ip.py:456 | einsum | 214 | 3 | f64 |
+| gpu4pyscf/nac/tdrks_grad_nacv.py:52 | einsum | 172 | 3 | f64 |
+| gpu4pyscf/nac/tdrks_grad_nacv.py:54 | einsum | 172 | 3 | f64 |
+| gpu4pyscf/grad/tests/test_tduhf_grad.py:241 | einsum | 148 | 1 | f64 |
+| gpu4pyscf/hessian/rks.py:1042 | contract | 126 | 3 | f64 |
+| gpu4pyscf/hessian/rks.py:2228 | contract | 126 | 3 | f64 |
+| gpu4pyscf/grad/rhf.py:445 | einsum | 117 | 3 | f64 |
+| gpu4pyscf/scf/rohf.py:156 | contract | 115 | 1 | f64 |
+| gpu4pyscf/scf/rohf.py:157 | contract | 115 | 1 | f64 |
+| gpu4pyscf/grad/rks.py:194 | einsum | 100 | 3 | f64 |
+| gpu4pyscf/grad/rhf.py:447 | einsum | 86 | 3 | f64 |
+| gpu4pyscf/df/tests/test_df_tdrhf_nac.py:213 | einsum | 74 | 1 | f64 |
+| gpu4pyscf/grad/tests/test_tdrhf_grad.py:306 | einsum | 74 | 1 | f64 |
+| gpu4pyscf/nac/tdrhf.py:210 | einsum | 74 | 3 | f64 |
+| gpu4pyscf/grad/uks.py:190 | einsum | 66 | 3 | f64 |
+| gpu4pyscf/grad/uks.py:194 | einsum | 66 | 3 | f64 |
+| gpu4pyscf/hessian/rks.py:538 | contract | 66 | 3 | f64 |
+| gpu4pyscf/hessian/uks.py:542 | contract | 66 | 3 | f64 |
+| gpu4pyscf/hessian/uks.py:550 | contract | 66 | 3 | f64 |
+| gpu4pyscf/grad/rks.py:179 | einsum | 59 | 3 | f64 |
+| gpu4pyscf/grad/rks.py:214 | einsum | 59 | 3 | f64 |
+| gpu4pyscf/grad/rks.py:318 | einsum | 59 | 3 | f64 |
+| gpu4pyscf/grad/uks.py:166 | einsum | 59 | 3 | f64 |
+| gpu4pyscf/grad/uks.py:170 | einsum | 59 | 3 | f64 |
+| gpu4pyscf/grad/uks.py:219 | einsum | 59 | 3 | f64 |
+| gpu4pyscf/grad/uks.py:224 | einsum | 59 | 3 | f64 |
+| gpu4pyscf/hessian/rks.py:606 | contract | 59 | 3 | f64 |
+| gpu4pyscf/hessian/uks.py:618 | contract | 59 | 3 | f64 |
+| gpu4pyscf/hessian/uks.py:626 | contract | 59 | 3 | f64 |
+| gpu4pyscf/nac/tdrhf_grad_nacv.py:44 | contract | 43 | 3 | f64 |
+| gpu4pyscf/nac/tdrhf_grad_nacv.py:47 | contract | 43 | 3 | f64 |
+| gpu4pyscf/nac/tdrhf_grad_nacv.py:63 | einsum | 43 | 3 | f64 |
+| gpu4pyscf/grad/rhf.py:449 | einsum | 29 | 3 | f64 |
+| gpu4pyscf/df/df_jk.py:346 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/df/df_jk.py:347 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/df/df_jk.py:389 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/df/df_jk.py:390 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/df/df_jk.py:454 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/df/df_jk.py:455 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/df/df_jk.py:465 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/df/df_jk.py:470 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/df/df_jk.py:475 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/df/df_jk.py:578 | contract | 1 | 4 | f64 |
+| gpu4pyscf/df/hessian/rhf.py:155 | contract | 1 | 4 | f64 |
+| gpu4pyscf/df/hessian/rhf.py:156 | contract | 1 | 2 | f64 |
+| gpu4pyscf/df/hessian/rhf.py:163 | contract | 1 | 2 | f64 |
+| gpu4pyscf/df/hessian/rhf.py:165 | contract | 1 | 2 | f64 |
+| gpu4pyscf/df/hessian/rhf.py:344 | contract | 1 | 4 | f64 |
+| gpu4pyscf/df/hessian/rhf.py:346 | contract | 1 | 2 | f64 |
+| gpu4pyscf/df/hessian/rhf.py:349 | contract | 1 | 2,3,6 | f64 |
+| gpu4pyscf/df/hessian/rhf.py:363 | contract | 1 | 6 | f64 |
+| gpu4pyscf/df/hessian/rhf.py:369 | contract | 1 | 6 | f64 |
+| gpu4pyscf/df/hessian/rhf.py:484 | contract | 1 | 4 | f64 |
+| gpu4pyscf/df/hessian/rhf.py:971 | contract | 1 | 4 | f64 |
+| gpu4pyscf/df/hessian/rhf.py:973 | contract | 1 | 2,3,5 | f64 |
+| gpu4pyscf/df/hessian/rhf.py:991 | contract | 1 | 2 | f64 |
+| gpu4pyscf/df/hessian/rhf.py:1029 | einsum | 1 | 3 | f64 |
+| gpu4pyscf/df/hessian/rhf.py:1067 | contract | 1 | 4 | f64 |
+| gpu4pyscf/df/hessian/rhf.py:1101 | contract | 1 | 4 | f64 |
+| gpu4pyscf/df/hessian/rhf.py:1104 | einsum | 1 | 2,3,5 | f64 |
+| gpu4pyscf/df/hessian/rhf.py:1105 | contract | 1 | 2 | f64 |
+| gpu4pyscf/df/hessian/rhf.py:1122 | contract | 1 | 4 | f64 |
+| gpu4pyscf/df/hessian/rhf.py:1125 | contract | 1 | 2,3,5 | f64 |
+| gpu4pyscf/df/hessian/rhf.py:1193 | contract | 1 | 3 | f64 |
+| gpu4pyscf/df/hessian/rhf.py:1382 | contract | 1 | 4 | f64 |
+| gpu4pyscf/df/hessian/rhf.py:1383 | contract | 1 | 2 | f64 |
+| gpu4pyscf/df/hessian/uhf.py:703 | einsum | 1 | 2,4,6,7 | f64 |
+| gpu4pyscf/df/tests/test_df_rhf_grad.py:332 | other | 1 | 1 | f64 |
+| gpu4pyscf/df/tests/test_df_rhf_grad.py:333 | other | 1 | 1 | f64 |
+| gpu4pyscf/dft/gks.py:105 | einsum | 1 | 1 | c128/f64 |
+| gpu4pyscf/dft/numint.py:533 | contract | 1 | 1 | f64 |
+| gpu4pyscf/dft/numint.py:927 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/dft/numint.py:2480 | contract | 1 | 1 | f64 |
+| gpu4pyscf/dft/numint.py:2481 | contract | 1 | 1 | f64 |
+| gpu4pyscf/dft/numint.py:2482 | contract | 1 | 1 | f64 |
+| gpu4pyscf/dft/rks.py:131 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/dft/rks.py:163 | einsum | 1 | 1 | c128/f64 |
+| gpu4pyscf/dft/rkspu.py:115 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/dft/uks.py:78 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/dft/ukspu.py:95 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/grad/rhf.py:206 | contract | 1 | 3 | f64 |
+| gpu4pyscf/grad/rhf.py:243 | einsum | 1 | 6 | f64 |
+| gpu4pyscf/grad/rhf.py:360 | contract | 1 | 3,6 | f64 |
+| gpu4pyscf/grad/rhf.py:416 | contract | 1 | 3 | f64 |
+| gpu4pyscf/grad/rks.py:518 | einsum | 1 | 3 | f64 |
+| gpu4pyscf/grad/rks.py:527 | einsum | 1 | 3 | f64 |
+| gpu4pyscf/grad/rks.py:541 | einsum | 1 | 3 | f64 |
+| gpu4pyscf/grad/rks.py:690 | einsum | 1 | 3 | f64 |
+| gpu4pyscf/grad/rkspu.py:120 | einsum | 1 | 3 | f64 |
+| gpu4pyscf/grad/uks.py:358 | einsum | 1 | 3 | f64 |
+| gpu4pyscf/grad/uks.py:364 | einsum | 1 | 3 | f64 |
+| gpu4pyscf/grad/uks.py:373 | einsum | 1 | 3 | f64 |
+| gpu4pyscf/grad/uks.py:378 | einsum | 1 | 3 | f64 |
+| gpu4pyscf/grad/uks.py:392 | einsum | 1 | 3 | f64 |
+| gpu4pyscf/grad/uks.py:398 | einsum | 1 | 3 | f64 |
+| gpu4pyscf/grad/ukspu.py:67 | einsum | 1 | 3 | f64 |
+| gpu4pyscf/hessian/rhf.py:105 | contract | 1 | 6 | f64 |
+| gpu4pyscf/hessian/rhf.py:106 | contract | 1 | 3 | f64 |
+| gpu4pyscf/hessian/rhf.py:109 | contract | 1 | 6 | f64 |
+| gpu4pyscf/hessian/rhf.py:736 | contract | 1 | 6 | f64 |
+| gpu4pyscf/hessian/rks.py:1680 | contract | 1 | 3 | f64 |
+| gpu4pyscf/hessian/rks.py:1698 | contract | 1 | 3 | f64 |
+| gpu4pyscf/hessian/rks.py:1701 | contract | 1 | 3 | f64 |
+| gpu4pyscf/hessian/rks.py:1793 | contract | 1 | 3 | f64 |
+| gpu4pyscf/hessian/rks.py:1820 | contract | 1 | 3 | f64 |
+| gpu4pyscf/hessian/rks.py:1823 | contract | 1 | 3 | f64 |
+| gpu4pyscf/hessian/rks.py:3563 | contract | 1 | 1 | f64 |
+| gpu4pyscf/nac/finite_diff.py:246 | einsum | 1 | 3 | f64 |
+| gpu4pyscf/nac/finite_diff.py:312 | einsum | 1 | 3 | f64 |
+| gpu4pyscf/pbc/dft/multigrid_v2.py:1924 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/scf/hf.py:119 | einsum | 1 | 1 | c128/f64 |
+| gpu4pyscf/scf/hf.py:120 | einsum | 1 | 1 | c128/f64 |
+| gpu4pyscf/scf/hf.py:123 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/scf/hf.py:197 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/scf/hf.py:198 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/scf/hf_lowmem.py:400 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/scf/hf_lowmem.py:401 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/scf/hf_lowmem.py:408 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/scf/uhf.py:60 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/scf/uhf.py:137 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/scf/uhf.py:140 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/scf/uhf.py:222 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/scf/uhf.py:223 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/scf/uhf.py:226 | einsum | 1 | 1 | f64 |
+| gpu4pyscf/scf/uhf.py:408 | einsum | 1 | 2 | f64 |
+| gpu4pyscf/solvent/grad/pcm.py:327 | contract | 1 | 3 | f64 |
+| gpu4pyscf/tdscf/ris.py:389 | contract | 1 | 6 | f64 |
+
+### Checks
+- Fork `git status --porcelain`: `M gpu4pyscf/lib/cupy_helper.py`, `M gpu4pyscf/lib/cutensor.py`. This is the uncommitted work above; no commit was made and nothing was pushed.
+- No JIT extension builds. All GPU work ran under `ulimit -c 0`.
+- The draft rocBLAS issue (Porter 2026-10-31 section 2) now carries the review's column data: m = 1, 3, 5 wrong, and 6, 7, 8, 16 clean.
+- Lock released with `port-lock --release` (agent stopped mid-port). The stage stays `porting`, so the selector hands this back to a porter.
