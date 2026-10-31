@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-05T01:19:27Z",
-  "updated_at": "2026-10-31T21:26:10Z",
+  "updated_at": "2026-10-31T21:29:21Z",
   "head_sha": "99d68f9bfb5348c3472bd34ae46a0e57d31f2fc0",
   "depends_on": [],
   "waivers": {},
@@ -15,6 +15,29 @@
   "upstream_repo_id": 1154833948,
   "stage": "review-passed",
   "platforms": {
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "be2217e32bc51e3bb23c2ec716a989b3b4dfab30",
+      "started_at": null,
+      "completed_at": "2026-06-08T15:40:41Z",
+      "updated_at": "2026-06-08T15:40:41Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
     "linux-gfx90a": {
       "state": "completed",
       "blocked": false,
@@ -23,6 +46,53 @@
       "started_at": "2026-06-05T05:36:03Z",
       "completed_at": "2026-10-30T01:00:44Z",
       "updated_at": "2026-10-30T01:00:44Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "b0d21d5a1c20e60efc92d7047552f19683cd1b1a",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-08-14T16:21:04Z",
+      "updated_at": "2026-08-14T16:21:04Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
+    },
+    "windows-gfx1101": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "be2217e32bc51e3bb23c2ec716a989b3b4dfab30",
+      "started_at": null,
+      "completed_at": "2026-06-19T23:47:21Z",
+      "updated_at": "2026-06-19T23:47:21Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -61,60 +131,14 @@
       },
       "last_agent": "validator"
     },
-    "windows-gfx1101": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "be2217e32bc51e3bb23c2ec716a989b3b4dfab30",
-      "started_at": null,
-      "completed_at": "2026-06-19T23:47:21Z",
-      "updated_at": "2026-06-19T23:47:21Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator"
-    },
-    "windows-gfx1201": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "be2217e32bc51e3bb23c2ec716a989b3b4dfab30",
-      "started_at": null,
-      "completed_at": "2026-06-08T15:40:41Z",
-      "updated_at": "2026-06-08T15:40:41Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator"
-    },
     "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": null,
+      "validated_sha": "99d68f9bfb5348c3472bd34ae46a0e57d31f2fc0",
       "failed_sha": null,
       "started_at": "2026-10-29T23:06:58Z",
-      "completed_at": null,
-      "updated_at": "2026-10-30T00:43:02Z",
+      "completed_at": "2026-10-31T21:29:21Z",
+      "updated_at": "2026-10-31T21:29:21Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -128,31 +152,8 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer"
-    },
-    "windows-gfx1151": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "b0d21d5a1c20e60efc92d7047552f19683cd1b1a",
-      "failed_sha": null,
-      "started_at": null,
-      "completed_at": "2026-08-14T16:21:04Z",
-      "updated_at": "2026-08-14T16:21:04Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "state": "completed",
-      "last_agent": "validator"
+      "last_agent": "validator",
+      "state": "completed"
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/faster-gaussian-splatting/pull/2",
@@ -160,6 +161,5 @@
     "arch": "linux-gfx1100",
     "since": "2026-10-31T20:52:28Z",
     "at": "2026-10-31T20:56:21Z"
-  },
-  "porting": null
+  }
 }
