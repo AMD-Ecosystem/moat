@@ -7,7 +7,7 @@
   "priority": 4.871,
   "ext_type": "cmake-cupy-plugin",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-10-31T11:27:05Z",
+  "updated_at": "2026-10-31T11:47:27Z",
   "head_sha": "e1ad6bc6d25e983b2dea21fe98af33ab4cfc3681",
   "waivers": {
     "windows": {
@@ -21,30 +21,6 @@
   "upstream_repo_id": 410435607,
   "stage": "review-passed",
   "platforms": {
-    "linux-gfx90a": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "5c60311636487d1f881d2f96e6d0dc80d55a9412",
-      "started_at": "2026-06-02T06:21:22Z",
-      "completed_at": "2026-10-30T20:17:39Z",
-      "updated_at": "2026-10-30T20:17:39Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 1,
-        "first_session_at": "2026-06-02T06:21:22Z",
-        "last_session_at": "2026-06-02T08:00:00Z"
-      },
-      "last_agent": "validator",
-      "failed_sha": "066e91eee794766343ea54be6560dcf430415502"
-    },
     "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
@@ -69,6 +45,30 @@
       "last_agent": "validator",
       "state": "completed"
     },
+    "linux-gfx1100": {
+      "state": "validation-failed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "5c60311636487d1f881d2f96e6d0dc80d55a9412",
+      "started_at": "2026-06-02T07:24:00Z",
+      "completed_at": "2026-10-30T20:12:41Z",
+      "updated_at": "2026-10-31T11:47:27Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 124,
+          "test": 207,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-02T07:24:00Z",
+        "last_session_at": "2026-06-02T07:55:00Z"
+      },
+      "last_agent": "validator",
+      "failed_sha": "e1ad6bc6d25e983b2dea21fe98af33ab4cfc3681"
+    },
     "windows-gfx1201": {
       "blocked": true,
       "blocked_reason": "cupy-rocm has no Windows distribution (manylinux2014-only wheels); same host as gfx1101, same blocker",
@@ -90,6 +90,30 @@
         "last_session_at": null
       }
     },
+    "linux-gfx90a": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "5c60311636487d1f881d2f96e6d0dc80d55a9412",
+      "started_at": "2026-06-02T06:21:22Z",
+      "completed_at": "2026-10-30T20:17:39Z",
+      "updated_at": "2026-10-30T20:17:39Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-02T06:21:22Z",
+        "last_session_at": "2026-06-02T08:00:00Z"
+      },
+      "last_agent": "validator",
+      "failed_sha": "066e91eee794766343ea54be6560dcf430415502"
+    },
     "windows-gfx1101": {
       "blocked": true,
       "blocked_reason": "cupy-rocm has no Windows distribution (manylinux2014-only wheels); gpu4pyscf Python layer is entirely CuPy-ROCm-based (cupy.ndarray, cupy_backends.cuda.libs.*); no CuPy-ROCm on Windows means no GPU test path is exercisable on this host",
@@ -110,36 +134,11 @@
         "first_session_at": null,
         "last_session_at": null
       }
-    },
-    "linux-gfx1100": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "5c60311636487d1f881d2f96e6d0dc80d55a9412",
-      "started_at": "2026-06-02T07:24:00Z",
-      "completed_at": "2026-10-30T20:12:41Z",
-      "updated_at": "2026-10-30T20:12:41Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 124,
-          "test": 207,
-          "misc": 0
-        },
-        "session_count": 1,
-        "first_session_at": "2026-06-02T07:24:00Z",
-        "last_session_at": "2026-06-02T07:55:00Z"
-      },
-      "last_agent": "validator",
-      "failed_sha": "066e91eee794766343ea54be6560dcf430415502"
     }
   },
   "porting_released": {
     "arch": "linux-gfx942",
     "since": "2026-10-31T09:44:29Z",
     "at": "2026-10-31T10:09:26Z"
-  },
-  "porting": null
+  }
 }

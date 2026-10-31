@@ -39,6 +39,19 @@
       "upstream_issue": null,
       "created_at": "2026-10-31T10:09:17Z",
       "decided": null
+    },
+    {
+      "id": "rocblas-gemm-strided-batched-m1n1-f64-gfx1100-wrong-results",
+      "kind": "rocm-bug-report",
+      "component": "rocBLAS",
+      "summary": "TheRock ROCm SDK 10.1.0 rocBLAS (librocblas.so.5.7) on gfx1100 (Radeon Pro W7800): rocblas_gemm_strided_batched_ex with f64, transA=transB=N, M=N=1, batch_count > 65536 returns wrong values for a varying handful of batch entries on many calls (k=64: 0 wrong at batch 65536, 4167 at 131072, 16589 at 262144 over 10 calls; k=16 and k=5 also, k=5 sporadically). rocblas_ddot_strided_batched on the same data is exact, and 4x4/8x8 or M/N=2 shapes and f32 are clean. In gpu4pyscf it reaches users through cupy.einsum batched contractions (no cuTENSOR on ROCm), e.g. dft/mcfun_gpu.py _eval_xc_lebedev, and fails dft/tests/test_numint2c.py::test_eval_xc_eff_fp (MGGA_C_M06 multicollinear vmat off by up to 4e-7, run to run). Port workaround (a person rules): avoid the m=n=1 batched GEMM, e.g. (a*b).sum(0). Reproducer in notes.md Validation 2026-10-31 (linux-gfx1100).",
+      "refs": [
+        "projects/gpu4pyscf/notes.md#validation-2026-10-31-validator-linux-gfx1100"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-31T10:47:00Z",
+      "decided": null
     }
   ]
 }

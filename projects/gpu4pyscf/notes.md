@@ -1314,11 +1314,43 @@ Per directory over all 39 `gpu4pyscf/**/tests`, under `ulimit -c 0`, `LD_LIBRARY
 `python -m pytest <dir> -n 4 --dist loadfile -m 'not slow and not benchmark and not special' -q -rfEs --tb=line -p no:cacheprovider --timeout 1800 --junitxml=...` (upstream CI selection; 4044 s total).
 
 | directory | porter gfx942 @ e1ad6bc p/f/s/e | this run p/f/s/e |
+## Validation 2026-10-31 (validator, linux-gfx1100, fork moat-port @ e1ad6bc) -- VALIDATION FAILED (rocBLAS batched-GEMM wrong results; port code not at fault)
+
+Requested by jeff: the full test tree at e1ad6bc on wave32, judged against the gfx942 run (1832/16/73/0). Host: AMD Radeon Pro W7800 48GB, gfx1100 (wave32), `HIP_VISIBLE_DEVICES=2` pinned by the dispatcher, no other process on that GPU. Driver amdgpu 6.19.14.31400100, kernel 6.8.0-138, MEC firmware 2680, `cwsr_enable=1`. Toolchain: TheRock ROCm SDK 10.1.0 (AMD clang 24.0.0), rocBLAS librocblas.so.5.7 from the SDK. Host CPU: Threadripper PRO 5975WX (AVX2, no AVX-512). Fork clone at e1ad6bc6d25e983b2dea21fe98af33ab4cfc3681 (== origin/moat-port); `git status --porcelain` empty after the run.
+
+**Result: validation-failed at e1ad6bc.** On gfx1100, rocBLAS `gemm_strided_batched_ex` with M=N=1 and a large batch_count returns wrong values for a varying handful of batch entries. CuPy-ROCm routes `cupy.einsum`/`cupy.matmul` batched contractions there, and with no cuTENSOR on ROCm gpu4pyscf's einsums go through CuPy's own engine. Users of the multigrid PBC DFT GGA/MGGA path (pbc/dft/multigrid_v2.py nr_rks/nr_uks, `cp.einsum("gp, pg -> p", xc_for_fock[1:4], Gv)`) and of the multicollinear GKS functionals (dft/mcfun_gpu.py `_eval_xc_lebedev`) get wrong, run-to-run varying numbers on this card. Every other failure maps to the gfx942 list or to an accuracy or host effect explained below. No port commit is at fault: with only `cupy.einsum` replaced, the affected tests pass. I did not mark this platform completed: wave32 is the only Linux wave32 evidence, and these are wrong results in shipped code paths, not an accuracy margin. **For jeff:** either the porter adds a ROCm workaround (keep these contractions off M=N=1 batched GEMM; see "Workaround evidence"), after which gfx1100 revalidates, or you accept the rocBLAS defect as known and rule this platform completed. Bug report registered: deferred `rocblas-gemm-strided-batched-m1n1-f64-gfx1100-wrong-results` (its summary predates the idle complex-f64 finding below; this section is the authoritative record).
+
+### Environment (job venv)
+```
+$FLEET_VENV/bin/pip install 'numpy>=2.0,<2.3' 'scipy>=1.13' cupy-rocm-7-0==14.2.0 pyscf==2.14.0 pytest pyscf-dispersion geometric pytest-timeout
+# numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.5.0, geometric 1.1.1, pytest 7.3.2, pytest-xdist 3.3.1, pytest-timeout 2.4.0
+# mcfun 0.2.6 was added during the run, after df/ and dft/ had run (to get a CPU reference for the GKS case); see the per-directory note
+export PATH=$FLEET_VENV/bin:$PATH LD_LIBRARY_PATH=$(rocm-sdk path --root)/lib PYTHONPATH=<fork>; ulimit -c 0
+```
+
+### Build: README ROCm block, clean build dir, libxc on (default), machine-LICM flag kept
+```
+rm -rf build
+cmake -S gpu4pyscf/lib -B build/temp.gpu4pyscf -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100
+cmake --build build/temp.gpu4pyscf -j 32 -v
+```
+Exit 0, 240 s (utils/timeit.sh compile). 12 libs (cupy_helper gdft gecp gint gvhf gvhf_md gvhf_rys mgrid_v2 mgrid_v3 pbc sem solvent) plus libxc.so.15 from the ExternalProject with `ENABLE_HIP=ON`. HIP compiler found without a hint; gfortran 13.3.0 for libsolvent. 213 `--offload-arch=gfx1100` lines; `-disable-machine-licm` on 113 lines; no other arch.
+
+### Water vs CPU PySCF (`ulimit -c 0`, conv_tol 1e-12)
+- RKS/def2-svp, grids level 3: B3LYP 1.07e-11, PBE 5.91e-12, M06 7.06e-12 Ha.
+- RHF energy: sto-3g 3.6e-12, def2-svp 9.7e-12, cc-pvtz 2.9e-11 Ha.
+- RHF gradient, max component: with the default `conv_tol_grad` (sqrt(conv_tol) = 1e-6) the gaps were 4e-11 / 3.2e-9 / 1.9e-8. That is SCF convergence: with conv_tol 1e-14 and conv_tol_grad 1e-10 they are 1.1e-11 / 4.3e-12 / 4.8e-12. The GPU gradient evaluated from the CPU-converged orbitals agrees with CPU to 4.6e-14 / 2.2e-13 / 8.5e-12.
+
+### Full tree (upstream CI selection), per directory
+Runner, per directory: `python -m pytest <dir> -n 4 --dist loadfile -m 'not slow and not benchmark and not special' -q -rfEs --tb=line -p no:cacheprovider --timeout 1800 --junitxml=...` (same as the gfx942 runner; one GPU). Wall time 3234 s.
+
+| directory | gfx942 @ e1ad6bc p/f/s/e | gfx1100 @ e1ad6bc p/f/s/e |
 |---|---|---|
 | cc/tests | 4/0/0/0 | 4/0/0/0 |
 | df/hessian/tests | 24/0/0/0 | 24/0/0/0 |
 | df/tests | 200/5/3/0 | 200/5/3/0 |
 | dft/tests | 113/0/9/0 | 113/0/9/0 |
+| dft/tests | 113/0/9/0 | 111/2/9/0 |
 | dispersion/tests | 16/0/0/0 | 16/0/0/0 |
 | fci/tests | 3/0/0/0 | 3/0/0/0 |
 | geomopt/tests | 0/0/5/0 | 0/0/5/0 |
@@ -1332,6 +1364,7 @@ Per directory over all 39 `gpu4pyscf/**/tests`, under `ulimit -c 0`, `LD_LIBRARY
 | nac/tests | 71/1/1/0 | 71/1/1/0 |
 | pbc/df/tests | 104/1/7/0 | 104/1/7/0 |
 | pbc/dft/tests | 156/0/18/0 | 156/0/18/0 |
+| pbc/dft/tests | 156/0/18/0 | 98/28/14/34 |
 | pbc/grad/tests | 185/0/2/0 | 185/0/2/0 |
 | pbc/gto/pseudo/tests | 7/0/0/0 | 7/0/0/0 |
 | pbc/gto/tests | 13/0/0/0 | 13/0/0/0 |
@@ -1371,3 +1404,30 @@ No new failure and no error, so there is no new GPU finding.
 ### Other gates
 - CUDA gate: skipped. It is already recorded at e1ad6bc (Review 2026-10-31, base vs head compared at machine-code level), and this host has no CUDA toolkit.
 - `python3 utils/jargon.py --port gpu4pyscf`: clean. README documents the ROCm build (the recipe above is the README's).
+| x2c/tests | 8/0/1/0 | 7/1/1/0 |
+| **total** | 1832/16/73/0 | 1771/47/69/34 |
+
+mcfun was installed while nac/tests was running, so pbc/dft/tests ran its mcfun-gated GKS tests (test_pbc_gks: 6 passed, 6 skipped), which gfx942 skipped. That is why pbc/dft has 14 rather than 18 skips.
+
+**The 16 gfx942 failures reproduce by name, all 16 and nothing else, in df (5), grad (2), mp (1), nac (1), pbc/df (1), pbc/scf (2), scf (2), tdscf (2).** Their classification (porter, with the reviewer's trsm correction) stands. Not individually re-root-caused here; same names, same directories.
+
+### The deviations, each root-caused
+1. **dft/test_numint2c.py::test_eval_xc_eff_fp** (MGGA_C_M06, multicollinear, vmat fingerprint off by 2.7e-8; on rerun `test_eval_xc_eff` vs CPU PySCF+mcfun, 4.8e-8) and **pbc/dft/test_multigrid_v2.py::test_get_vxc_gga, _gga_kpts, _mgga, _mgga_kpts** (vxc off by 3.5e-5 to 1.7e-3 against 1e-8, different every run): **rocBLAS M=N=1 batched GEMM.** Bisection:
+   - mcol M06: the run-to-run variation is in `mcfun_gpu.eval_xc_eff`. libxc is bit-reproducible on the same input (polarized deriv=2, 1.6M points, 6 runs), and it matches CPU libxc (exc 9e-15, vxc 1.3e-13, fxc relative 7e-11). It also does not come from a stream race (`AMD_SERIALIZE_KERNEL=3` and `HIP_LAUNCH_BLOCKING=1` still give wrong runs) or from reading pool garbage (prefilling the CuPy pool with 0, NaN, 1e300 or -1 changes nothing). Re-running each operation twice on identical inputs: only `cp.einsum('xgo,xgo->go')` and `cp.einsum('xbygo,xgo->bygo')` give different bits, at 1-60 entries per call. UKS M06 (no batched einsum) is exact and deterministic.
+   - multigrid: the density on the G mesh varies only by atomic-order jitter (1e-13). The xc-to-Fock input varies by up to 0.67 at the GGA term `cp.einsum("gp, pg -> p", xc_for_fock[1:4], Gv)`, which is rocBLAS `gemm_strided_batched_ex` f64_c, M=N=1, K=3, batch_count 347395 (mesh 67x61x85). Standalone, with random data on that shape: 688-757 wrong entries per call over 10 calls; `(x*Gv.T).sum(0)` gives 0.
+   - CuPy-only reproducer (no gpu4pyscf): `cp.einsum('xgo,xgo->go', a, b)` with a, b of shape (5, 10240, 160) f64 gives 1-3 wrong entries (errors 0.3-3.6) in 9 of 20 calls while the test tree shared the GPU; `(a*b).sum(0)` gives 0 of 20. ROCBLAS_LAYER=2 shows `gemm_strided_batched_ex -m 1 -n 1 -k 5 ... --batch_count 1638400`.
+   - Direct rocBLAS through ctypes (`rocblas_gemm_strided_batched_ex`, f64_r, N/N, M=N=1, lda=1, ldb=K, stride_c=1, device pointer mode): while another process used the GPU, k=64 gave 0 wrong at batch 4096 and 16384, 1 at 65536, 59385 at 131072 and 125093 at 262144 over 10 calls; k=16 gave 154; k=5 was sporadic. `rocblas_ddot_strided_batched` on the same data: always 0. Shapes (1x5)@(5x2), (2x5)@(5x1), 4x4, 8x8 and f32 (1x5)@(5x1): 0. No writes outside D (1M-entry sentinel bands on both sides intact), inputs unmodified.
+   - **Load dependence:** the fault is timing-sensitive. On an idle GPU (no other process), f64_r M=N=1 was clean at every size tried (k 3/5/64, batch up to 347395, 5-10 calls each), but **f64_c (complex128) M=N=1 still fails idle**: batch 347395, k=3 gave 106-136 wrong per call, k=5 155-220, k=64 0-1. With one concurrent process running GEMM+FFT on the same GPU, f64_r fails heavily (counts above), and the mcol M06 case gives 7 of 10 wrong runs against 0 of 10 idle. The upstream CI runner (`-n 4 --dist loadfile` on one GPU) always runs under such load.
+   - In the tree run, `test_get_vxc_lda_kpts` raised `hipErrorIllegalAddress` in the xdist worker that had just run the failing gga tests. The error is sticky, so the remaining 51 tests of that worker (17 test_pbc_numint, the rest of test_multigrid_v2, all 34 test_pbc_rks setups) failed or errored. Rerunning pbc/dft/tests with the same `-n 4 --dist loadfile`: 5 failed (the 4 above plus lda_kpts, 7.8e-4), 151 passed, 18 skipped, no illegal access. Serially on the idle GPU: 4 failed (the 4 above), 152 passed, 18 skipped. lda_kpts passes in the serial run. I could not tie the illegal access to rocBLAS (the guard bands caught no stray write), so it is recorded as seen once, following the wrong results, cause not proven.
+   - **Workaround evidence:** with a diagnostic `sitecustomize` that computes two-operand `cupy.einsum` as broadcast-multiply-and-sum (no GEMM), test_multigrid_v2.py + test_numint2c.py pass twice in a row: 34 passed, 3 skipped, 0 failed (serial). The port's HIP code (dc45713 multigrid_v2 `__shfl_down`) is not involved: the LDA density kernel it touches is deterministic to 1e-14 and every LDA test passes.
+2. **dft/test_numint.py::test_sparse_index** (`lib.fp(...) == 103.60117204957997` gives 103.60117204958): host CPU float summation, not GPU. The three fingerprinted arrays are int32 index arrays (1223/483/270 entries). All three fingerprints miss by 1-3 ulp, while changing any single index would move the fingerprint by about 1e-3 or more. `math.fsum` of the same products gives a third rounding (103.6011720495799). This host's numpy runs AVX2 OpenBLAS/SIMD (no AVX-512), so the dot's summation order differs from the reference machine's. An exact `==` on a float fingerprint cannot pass across CPUs; not a port or GPU question.
+3. **x2c/test_x2c.py::test_sfx2c1e_cart** (hcore max diff 6.12e-11 against `assertAlmostEqual(.., 10)`, i.e. 5e-11; deterministic): accuracy margin, 1.2x. max|hcore| is 33 Ha, so this is relative 1.9e-12. By substitution: with the generalized eigh (gpu4pyscf.lib.cusolver.eigh, hipSOLVER), `cp.linalg.eigh` and `cp.linalg.solve` all replaced by SciPy/NumPy on the GPU-built matrices, it is still 4.58e-11 (the integral floor). The GPU generalized eigh adds 1.5e-11, and cp.linalg.eigh and solve add nothing. No M=N=1 batched GEMM in this test. Same class as the "<3x tolerance misses" (rocBLAS/rocSOLVER accuracy margin); gfx942 passes it, presumably by a small margin.
+
+### Checks
+- CUDA gate: not rerun. It passed at e1ad6bc on gfx942 (porter and reviewer sections), and this host has no verified CUDA toolkit.
+- `python3 utils/jargon.py --port gpu4pyscf`: clean (after `git fetch origin master:master` in the clone).
+- Documentation: the README ROCm block builds as written (only the arch and `-j` changed).
+- Fork `git status --porcelain`: empty; no `from_h5.xyz` left.
+
+### What would flip this to completed
+A porter commit that keeps the batched contractions off M=N=1 `gemm_strided_batched` on ROCm. The narrowest place is CuPy's einsum as gpu4pyscf calls it: `gpu4pyscf/lib/cupy_helper.contract` and the direct `cp.einsum` sites in pbc/dft/multigrid_v2.py and dft/mcfun_gpu.py. Alternatively, a rocBLAS release without the defect. Then a gfx1100 rerun of the tree. A ruling by jeff that the defect is accepted also flips it, but that ruling is his.
