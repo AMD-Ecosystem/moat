@@ -399,3 +399,25 @@ Reproduced: `Base` (CPU GEMC, rc=0) writes `base_restart.chk`; `K_1` (reads it) 
 ### Result
 
 validation-failed at 4c06552c: the Windows all-clang build breaks on upstream `development` host code (items 1 and 2 need small source edits in moat-port; item 3 is a flag, best set in `GOMCHIPSetup.cmake` next to the existing `WIN32 _USE_MATH_DEFINES` definitions as `NOMINMAX`). Instructed not to change source, so none pushed. After the porter commits those, this arch returns as `port-ready` for a full run.
+
+## Porter 2026-10-30 (windows-gfx1151): clang host fixes
+
+Fork `moat-port` 4c06552c -> b8d1aa91 (one commit on top, nothing rewritten): "[ROCm] Fix host code that clang rejects in the Windows build". The three items from the windows-gfx1151 validation above:
+1. `src/CalculateEnergy.cpp` BoxForce: `atomCount, molCount` added to `shared(...)` of the `omp parallel for default(none)`.
+2. `src/CellList.cpp` copy ctor: `neighbors`/`head` array members dropped from the mem-initializer list and copied per box in the existing loop.
+3. `CMake/GOMCHIPSetup.cmake`: `NOMINMAX` added to the WIN32-only `add_compile_definitions(WIN32 _USE_MATH_DEFINES NOMINMAX)`.
+The checkpoint `std::ios::binary` fix (CheckpointSetup.cpp / CheckpointOutput.cpp) is deliberately NOT on moat-port: it is an upstream Windows bug for a separate upstream PR. So K_1/K_N checkpoint cases still exit 127 on Windows at b8d1aa91.
+
+Build (this host, TheRock SDK, all-clang, `agent_space/win_rocm_env.sh` sourced, py3shim first on PATH for `hip_link_win.py`):
+```bash
+R=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel
+cmake -S $SRC -B $B -G 'Unix Makefiles' -DCMAKE_MAKE_PROGRAM=C:/Strawberry/c/bin/gmake.exe -DUSE_HIP=ON \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++.exe -DCMAKE_C_COMPILER=$R/lib/llvm/bin/clang.exe \
+  -DCMAKE_CXX_COMPILER=$R/lib/llvm/bin/clang++.exe -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release
+cmake --build $B -j16      # rc=0, 0 errors, all 8 executables
+```
+Smoke only (not the validation gate), `ulimit -c 0`, runtime DLLs staged with `rocm_stage_runtime`: `python agent_space/gomc_val_win.py $B $SRC $W NVT` -> NVT AR_KR 1000 steps, rc 0/0, ENER 11/11, max rel diff 0, acceptance lines 15/15 identical, Device Name AMD Radeon(TM) 8060S Graphics, GPU 0.32 s.
+
+g++ sanity: WSL Ubuntu on this host has no g++/cmake, so no Linux build. Instead Strawberry MinGW-w64 g++ 13.2.0 `-std=gnu++17 -fopenmp -fsyntax-only -DENSEMBLE={1..4}` with the NVT target's include list on CalculateEnergy.cpp, CellList.cpp, Main.cpp: 12/12 rc=0. The Linux fleet (gfx90a/gfx1100) revalidates the real g++ build.
+
+Gotchas: the fork clone checks out CRLF (`core.autocrlf=true`; CellList.cpp is `i/mixed`), so scripted string edits must match `\r\n`. A bash heredoc fed to `python3 -` on this host ate a backslash-newline inside the Python source; write edit scripts to a file instead.
