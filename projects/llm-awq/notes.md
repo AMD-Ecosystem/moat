@@ -818,3 +818,28 @@ Tests (from /tmp, `PYTHONPATH=<scratch>/awq/kernels`, one GPU process at a time,
 Test-harness gap, not fixed here: `projects/llm-awq/tests/w8a8_handle_test.py` (a MOAT test script, not part of the fork) passes `extra_ldflags=["-lhipblaslt"]` to `load_inline`, which link.exe ignores (LNK2019 `hipblasLtCreate`). This run used a scratch copy, `agent_space/awq_w8a8_handle_win2.py`, whose only change is `extra_ldflags=[os.path.join(ROCM_HOME, "lib", "libhipblaslt.dll.a")]`. Linux validators are unaffected. Likewise `w8a8_test.py`'s CUDA-activity profiler is unavailable in this Windows torch.
 
 Lesson promoted to the cuda-to-rocm skill: `references/strategy-b-torch.md`, "Windows: a ROCm library linked by name may have no `.lib`".
+
+## Review 2026-10-31 (linux-gfx1100, c7ae2c5)
+
+Verdict: review-passed. /pr-review skill, local-branch mode, fork `moat-port`, scope the one new commit `git diff 90a711b...c7ae2c5` (`awq/kernels/setup.py`), plus the skill section the porter added on port/llm-awq (`references/strategy-b-torch.md`, "Windows: a ROCm library linked by name may have no `.lib`"). jeff asked for this review. No findings.
+
+Checks asked for, each verified on this host:
+- Linux and CUDA extension arguments unchanged. Built the extension from `git archive` copies of 90a711b and c7ae2c5 in /tmp (`PYTORCH_ROCM_ARCH=gfx1100 MAX_JOBS=16 python setup.py build_ext --inplace`, torch 2.16.0a0+git6c3af02, ROCm 7.16 TheRock SDK, `ROCM_HOME=.../site-packages/_rocm_sdk_devel`). With the tree path normalized, `build.ninja` (14 build steps, every compile line) and the final g++ link line are identical between the two; the link still ends `-L<ROCM_HOME>/lib ... -lhipblaslt`. CUDA cannot build here, so the CUDAExtension kwargs were checked by executing both setup.py files with torch/setuptools stubbed (`agent_space/dry_setup.py`): rocm/posix, cuda/posix, cuda/nt, and rocm/nt with both files or with neither give identical `libraries`, `extra_compile_args` and `sources`; `extra_link_args` goes from absent to `[]`, which setuptools' `Extension` treats as its own default (`extra_link_args or []`).
+- `ROCM_HOME` is the right root on Windows. `torch.utils.cpp_extension.library_paths()` puts `_join_rocm_home('lib')` on the link path for a HIP extension on every OS, so `<ROCM_HOME>/lib` is exactly the directory link.exe would have searched for `hipblaslt.lib`. `_find_rocm_home()` resolves `ROCM_HOME`/`ROCM_PATH`, then TheRock's `_rocm_sdk_devel` (preferred) or `_rocm_sdk_core`, then hipcc's parent; the gfx1151 porter run found the `.dll.a` in `_rocm_sdk_devel/lib`, and an AMD HIP SDK install named by `ROCM_PATH` keeps its import libraries in the same `lib`.
+- Fallback when neither file exists: `libraries` stays `["hipblaslt"]` and `extra_link_args` `[]`, the 90a711b behaviour (stub run above). The link then fails with LNK1181 as before; no new failure.
+- Checked and not a finding: if `ROCM_HOME` is None on a Windows ROCm torch, `os.path.join(None, "lib")` raises TypeError at setup.py load. At 90a711b the same environment already fails in `CUDAExtension` (`IS_HIP_EXTENSION` is false when `ROCM_HOME` is None, so `library_paths` takes the CUDA branch and raises "CUDA_HOME environment variable is not set"); only the error text changes, for a build that cannot work either way.
+- Skill section: consistent with the commit and with torch's library search above. `-l` on link.exe is an unrecognized option (ignored with a warning), matching the LNK2019 the gfx1151 run saw.
+
+Commit hygiene (c7ae2c5): `[ROCm]` title, 59 chars; "Authored with Claude."; fenced Test Plan in the established form; no trailer, no noreply; ASCII. `python3 utils/jargon.py --port llm-awq` clean (needed a local `main` in the fork clone: `git -C projects/llm-awq/src fetch origin main:main`). Fork worktree clean.
+
+Test helper fixed on port/llm-awq (trivial, in scope): `projects/llm-awq/tests/w8a8_handle_test.py` now passes `<ROCM_HOME>/lib/hipblaslt.lib`, or `libhipblaslt.dll.a` when there is no `.lib`, under `os.name == "nt"`, and `-lhipblaslt` otherwise. The Linux path is unchanged and passes below; the Windows branch has not been run (no Windows host here) and is the same logic as `agent_space/awq_w8a8_handle_win2.py` from the gfx1151 porter run. Still open for Windows: `w8a8_test.py` uses the CUDA-activity profiler, unavailable in that Windows torch (recorded in the gfx1151 entries).
+
+Linux evidence at c7ae2c5 (linux-gfx1100, RX 7900 class, wave32, `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`; the c7ae2c5 scratch build above, only gfx1100 code objects; from /tmp with `PYTHONPATH=<scratch>/awq/kernels`; load_inline builds under /tmp), all exit 0, 0 FAIL lines:
+- `attn_test.py` 443/443 (fp32 D=128 t=16240 and t=20000 refused for LDS as before).
+- `tinychat_e2e.py <scratch>` 4/4; argmax 40/40, 40/40, 64/64, 40/40; max |dlogit| 2.930e-03, min cos 0.999999.
+- `w8a8_test.py` 25/25, paths {'hipblaslt': 24}, max err 7.64e-03.
+- `w8a8_simt_test.py <w8a8_gemm_cuda.cu>` 7/7 exact.
+- `legacy_gemm_test.py` 8/8 (3.93e-03 vs dequant ref, 7.81e-03 vs legacy gemv).
+- `w4a16_test.py <scratch>` 30/30, max err 3.88e-03 (fp16).
+- `w8a8_handle_test.py <w8a8_gemm_cuda.cu>` (the fixed helper) PASS, 16 threads over 1 device, one handle.
+This is reviewer-run evidence; the platform record is the validator's to write at c7ae2c5.

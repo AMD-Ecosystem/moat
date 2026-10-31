@@ -3,7 +3,7 @@
 # extension's pybind entry holds the GIL, so Python threads cannot exercise this race.
 # PASS: every thread on a device gets the same non-null handle, devices get distinct handles, and a
 # later call returns the cached one.
-import sys, tempfile
+import os, sys, tempfile
 import torch
 from torch.utils.cpp_extension import load_inline
 src = open(sys.argv[1]).read()
@@ -35,8 +35,14 @@ std::vector<int64_t> race(int64_t nthreads) {
 }
 '''
 d = tempfile.mkdtemp(prefix="w8a8handle_")
+ldflags = ["-lhipblaslt"]
+if os.name == "nt":
+    # link.exe ignores -l; some Windows SDKs ship only libhipblaslt.dll.a.
+    from torch.utils.cpp_extension import ROCM_HOME
+    lib = os.path.join(ROCM_HOME, "lib", "hipblaslt.lib")
+    ldflags = [lib if os.path.exists(lib) else os.path.join(ROCM_HOME, "lib", "libhipblaslt.dll.a")]
 mod = load_inline("w8a8_handle", cpp_sources="std::vector<int64_t> race(int64_t nthreads);",
-                  cuda_sources=cuda, functions=["race"], build_directory=d, extra_ldflags=["-lhipblaslt"],
+                  cuda_sources=cuda, functions=["race"], build_directory=d, extra_ldflags=ldflags,
                   verbose=False)
 n = 16
 v = mod.race(n)
