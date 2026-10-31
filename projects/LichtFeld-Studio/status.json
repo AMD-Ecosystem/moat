@@ -7,7 +7,7 @@
   "priority": 6.263,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-10-31T06:23:45Z",
+  "updated_at": "2026-10-31T06:28:16Z",
   "head_sha": "001fc7285ed1d76cd73651ec5b71a13de19a96d4",
   "depends_on": [],
   "waivers": {
@@ -27,7 +27,7 @@
   },
   "license_spdx": "GPL-3.0",
   "upstream_repo_id": 672651553,
-  "stage": "ported",
+  "stage": "reviewing",
   "platforms": {
     "windows-gfx1151": {
       "blocked": false,
@@ -129,7 +129,7 @@
       "validated_sha": "566be1cd14d8afbd3d1876a56b55da43bd4372e1",
       "started_at": "2026-05-31T03:10:00Z",
       "completed_at": "2026-10-31T04:43:35Z",
-      "updated_at": "2026-10-31T06:23:45Z",
+      "updated_at": "2026-10-31T06:28:16Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -143,7 +143,7 @@
         "first_session_at": "2026-05-31T03:10:00Z",
         "last_session_at": "2026-05-31T03:20:00Z"
       },
-      "last_agent": "validator",
+      "last_agent": "reviewer",
       "failed_sha": "b0a50fa0c0a7178267854a284ff0ec0258ed8fe5"
     }
   },
@@ -152,5 +152,8 @@
     "since": "2026-10-31T06:04:39Z",
     "at": "2026-10-31T06:23:45Z"
   },
-  "porting": null
+  "porting": {
+    "arch": "linux-gfx1100",
+    "since": "2026-10-31T06:28:16Z"
+  }
 }
