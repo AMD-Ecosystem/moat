@@ -1,5 +1,9 @@
 # gpu4pyscf -- ROCm/HIP port plan (lead platform: linux-gfx90a, MI250X, ROCm 7.2.1)
 
+## Scope ruling (2026-10-31, jeff)
+
+The port is the whole project. The HF-first staging below ("Milestone 1", with DFT, solvent, semi-empirical, multigrid, gradients and Hessians deferred) was never approved and is superseded: every library is built for ROCm and every test directory is run (notes.md, "Porter 2026-10-31" sections). libxc needs no separate port: upstream libxc 7.1.2 builds with its own HIP backend through the existing ExternalProject. The sections below are kept as the original analysis.
+
 ## Project
 - Name: gpu4pyscf
 - Upstream: https://github.com/pyscf/gpu4pyscf

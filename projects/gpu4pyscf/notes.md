@@ -6,6 +6,8 @@ https://github.com/AMD-Ecosystem/gpu4pyscf , branch `moat-port`. Strategy A
 
 ## Milestone status
 
+**Superseded 2026-10-31**: nothing below is deferred any more. Every library, including libxc, solvent, sem and multigrid, is built for ROCm, and gradients and Hessians pass; see the "Porter 2026-10-31" sections at the end. The list below is history.
+
 - **Milestone 1 (HF / integrals) -- DONE on gfx90a.** gint, gvhf, gvhf-rys,
   gvhf-md, cupy_helper, plus the import-/runtime-coupled gecp, gdft and pbc.
   Validated: see Test Plan in the commit. J/K matches CPU PySCF to <1e-11,
@@ -1233,3 +1235,19 @@ Skips (73): optional packages (mcfun, phonopy, ASE, wannier90, pyscf.properties)
 
 ### CUDA gate (dc45713 plus the pending gint change): PASS
 Same redist toolkit. git archive dc45713 over the gate tree, plus the two gint files; `cmake --build -j 100 -- VERBOSE=1`: exit 0, 12 libs, all solvent/sem/multigrid_v2/multigrid_v3 TUs recompiled by nvcc, no USE_HIP or cuda_to_hip on any line.
+
+## Porter 2026-10-31 (porter, linux-gfx942 MI300X, fork moat-port dc45713 -> e1ad6bc): gint cleanup, final run, ported
+
+e1ad6bc `[ROCm] Drop the gint workaround for a source that is not built`: removes the HIP-only `set_source_files_properties(nr_fill_ao_ints.cu ... -O1)` and `target_link_options(gint PRIVATE -O1)`, and restores nr_fill_ao_ints.cu (the NROOTS 7/8 `#ifndef USE_HIP`) to upstream. The file is commented out of the gint source list, so none of it applied to a built source. The build log has no `-O1` on any line.
+
+Full tree rerun at the e1ad6bc tree (README build, gfx942, same runner): **1832 passed / 16 failed / 73 skipped / 0 errors**, identical per directory and the identical failure set to dc45713 (classification above). Baseline 5c60311: 575/639/135/259. CUDA gate covered e1ad6bc's TUs (previous section). `jargon.py --port gpu4pyscf` clean, `prose.py` clean on all five messages; fork `git status --porcelain` empty (note: md/tests writes `from_h5.xyz` into the cwd; delete it after a run).
+
+Commits this round (all on top of 5c60311, no amend or force): 4a90309, c073679, e469394, dc45713, e1ad6bc.
+
+### For jeff
+1. ECP derivative integrals with g shells exceed the 64 KB LDS on gfx90a/gfx942 (see the hardware-limit section above): accept as a hardware limit (upstream already skips on small-shared-memory GPUs) or ask for a reduced-LDS kernel.
+2. The ejk block-size mismatch (e469394) is a latent upstream bug on CUDA too; whether to report it upstream is your call.
+3. Perf follow-ups, not correctness: grouped GEMM via CK/hipBLASLt instead of one GEMM per group; a hipTensor contraction engine instead of cupy.einsum.
+
+### For the next roles
+Every platform revalidates at e1ad6bc. The validator should run the whole tree (agent_space-style per-directory loop above, or `pytest gpu4pyscf -m 'not slow and not benchmark and not special'`), not only scf/tests, and judge against the classification above. Build now includes libxc (ExternalProject, needs network for the libxc tarball) and Fortran (gfortran) for libsolvent. Test env additions: pyscf-dispersion, geometric (pytest-xdist optional).
