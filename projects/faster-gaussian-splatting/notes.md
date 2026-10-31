@@ -2167,3 +2167,33 @@ Not run here: this host has no CUDA toolkit (no `nvcc`, no `/opt/conda`). It is 
 ### Verdict
 
 **completed**, `linux-gfx942`, `validated_sha=99d68f9bfb5348c3472bd34ae46a0e57d31f2fc0`.
+
+## Validation 2026-10-31 (windows-gfx1151, port-ready at 99d68f9)
+
+Requested by jeff. Platform: AMD Radeon 8060S (gfx1151, RDNA3.5, wave32 APU), Windows 11, torch 2.12.0+rocm7.14.0a20260519 (`agent_space/torch_venv`, Python 3.13), env from `agent_space/win_torch_env.sh` (clang-cl host, `HIP_DEVICE_LIB_PATH`, MSVC link.exe first), `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`, one GPU process at a time. Fork cloned fresh, `moat-port` = `99d68f9bfb5348c3472bd34ae46a0e57d31f2fc0`, no source edit. The ROCm here is 7.14 with a hipRAND older than 3.5.0, so the bundled-Philox arm was compiled; the hipRAND 3.5.0 arm stays covered only by the porter's scratch build of PR #14808.
+
+### Build
+```bash
+source agent_space/win_torch_env.sh; export MAX_JOBS=16
+utils/timeit.sh faster-gaussian-splatting compile -- "$TORCH_PY" -m pip install -e projects/faster-gaussian-splatting/src/FasterGSCudaBackend --no-build-isolation
+```
+PASS, rc=0, 71 s from clean. `_C.cp313-win_amd64.pyd` built. The d3e2266 baseline (fork `git worktree`, `setup.py build_ext --inplace`, removed afterwards) also built, rc=0, 52 s.
+
+### Tests (GPU, real hardware; `projects/faster-gaussian-splatting/gpu_tests/` plus two scratch helpers in `agent_space/fgs99/`)
+`noise_dump.py` (add_noise for n = 37 / 100003 / 1000000, seeds 1 / 1234567 / 2^40+99, 3 calls each, 27 tensors) and `bitcmp.py` rewritten for this host. Run one script at a time with `$TORCH_PY <script> <FasterGSCudaBackend dir>`, all rc=0:
+- **add_noise bit identity vs d3e2266: 27/27 tensors bit-identical.**
+- **new_checks.py: 31/31 PASS.** add_noise vs Philox4x32-10 + Box-Muller reference 8.65e-7 over 228 primitives (identical to every Linux arch); std 0.9982..1.0030, max |corr| 4.30e-3; offset advances; reproducible; 4 rasterizer scenes: inference == training forward (0 diff), deterministic, triangle inequality 0 violations, all finite, coverage 0.96..1.00.
+- **train_check.py: 3/3 PASS.** FusedAdam vs torch.optim.Adam max abs 3.73e-6 (gfx942 3.10e-6, gfx90a 3.81e-6, gfx1100 3.87e-6); 300-iteration fit L1 0.1204 -> 0.0080.
+- **det.py: 3/3, 0 diff** (0 px) at 200k/100k 1920x1080 and 50k 1280x720.
+- **run_outputs d3e2266 vs head (84 tensors):** inference, train_image, filter3d_vis bit-identical (filter3d non-finite entries are the expected inf masks); gradients, dinfo, pruning differ by atomic order only. Worst relL2 old-vs-new 2.53e-6 (grad_rotations, 200k scene), new-vs-new2 2.89e-6; grad_scales 2.32e-6 / 2.43e-6. This is inside the Linux run-to-run range (gfx1100 3.8e-6, gfx942 2e-6..7e-6).
+
+Same figures as the Linux validations at this head (31/31, 3/3, 0-diff, 8.65e-7, L1 0.0080) and as the earlier laptop run at b0d21d5. No crash, hang, DLL or runtime error; nothing skipped. Failures: none.
+
+### CUDA gate
+Not run (Windows host, no toolkit); recorded at this head by the Linux rounds (mcmc.cu nvcc 12.8 sm_70/sm_80, sm_80 PTX byte-identical; full gate at d3e2266, V100).
+
+### Completion checks
+`utils/jargon.py --port faster-gaussian-splatting` -> clean. README carries the ROCm build beside the CUDA one and the hipRAND 3.5.0 note. Fork `git status --porcelain`: only the untracked built `.pyd`.
+
+### Verdict
+**completed**, `windows-gfx1151`, `validated_sha=99d68f9bfb5348c3472bd34ae46a0e57d31f2fc0`.
