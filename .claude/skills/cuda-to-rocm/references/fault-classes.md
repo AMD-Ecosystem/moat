@@ -805,3 +805,39 @@ stream parameters (H.264/HEVC VUI values are right). Validate a port's decode ag
 software decoder frame by frame, not by eye. (LichtFeld-Studio; deferrals
 `rocdecode-h264-high444-420-silent-miscode`, `rocdecode-vp9-av1-signal-description-missing`)
 
+**A rocDecode success status does not mean right pixels: check a reference clip once per
+process before trusting a codec.** On gfx90a (MI250X, amdgpu-dkms 6.16.6), rocDecode 1.10
+from TheRock SDK 10.1 loads the SDK's bundled Mesa VA-API driver
+(`rocm_sysdeps/lib/radeonsi_drv_video.so`), and through it every H.264, HEVC and VP9 frame,
+8- and 10-bit, is wrong in nearly every byte while `rocDecGetDecodeStatus` says success;
+Ubuntu's Mesa driver on the same card (`LIBVA_DRIVERS_PATH=/usr/lib/x86_64-linux-gnu/dri`)
+and the bundled driver on gfx1100 are bit-exact. Caps, profile and size gates cannot see
+this, so the port decodes an embedded two-frame 64x64 clip per codec and bit depth the first
+time a process asks about it, through the same demux, bitstream filter and copy code as real
+files, and compares each frame's MD5 with the digest of FFmpeg's software decode
+(`ffmpeg -i clip -pix_fmt nv12|p010le -f framemd5 -`, which hashes the frame packed with no
+row padding, the layout `av_image_copy_to_buffer(..., 1)` gives a host copy). A mismatch
+refuses that codec for the process with a named CPU reason. Key the result by device,
+codec and bit depth under a mutex, run it inside the capability query (lazily, not at
+start-up), and do not cache a decode error (that is an error, not a verdict). Cost on
+MI250X: 40-46 ms for the first codec (includes loading the VA driver), 7-18 ms per further
+codec. Even the intra frame was wrong, and 10-bit failed with 8-bit, but check each codec
+and depth: one codec's result is not evidence for another. Test it without a broken driver
+by injecting a wrong digest, and add a test that the verdict agrees with a full decode of
+the fixtures, so the same suite proves the check on a good driver and a bad one. Do not
+switch the VA driver from inside the application. (LichtFeld-Studio; deferral
+`rocdecode-sdk-va-driver-gfx90a-wrong-frames`)
+
+**The software fallback for AV1 needs libdav1d.** FFmpeg's built-in `av1` decoder only
+drives hardware accelerators (without one it fails with "Get current frame error"), and
+vcpkg's `ffmpeg` port builds no software AV1 decoder unless the `dav1d` feature is on. A
+CUDA project that relies on NVDEC for AV1 often never enables it, so a ROCm port's CPU
+path has nothing to decode AV1 with on GPUs without AV1 decode hardware (gfx90a), or on a
+build without rocDecode. Add `dav1d` for the ROCm build only; when the CUDA dependency set
+must stay unchanged and editing the shared `vcpkg.json` is not wanted, generate a copy of
+the manifest in the build tree before `project()` (CMake `string(JSON ...)` appends the
+feature; embed `vcpkg-configuration` with overlay paths made absolute; write it only when the
+content changes) and point `VCPKG_MANIFEST_DIR` at it. A manifest feature selected through
+`VCPKG_MANIFEST_FEATURES` under `if(USE_HIP)` is the smaller alternative if the manifest may
+change. (LichtFeld-Studio)
+
