@@ -1884,3 +1884,110 @@ Verdict: **review-passed**. No findings. 80cbda89b resolves the previous review'
 - `python3 utils/jargon.py --port oneflow` (through a temporary symlink to the fix5 clone, since removed): only the three known 68718f038 hits.
 - The test sits in the device-generic `python/oneflow/test/graph/` and runs on the CUDA path too; nothing in it is HIP-specific. It has not been run on an NVIDIA GPU.
 - The 2D bf16 registrations (`nccl_logical_2d_sbp_kernels.cpp:522,541`) still need 4 GPUs; the previous review accepted compile-in evidence for them.
+
+## Validation 2026-10-31 (linux-gfx942, MI300X, full modules + tensor suites, one_embedding/P2P/fused-interaction two-GPU runs, regression tests and graph-capture check at 80cbda89b: FAILED, one GPU finding)
+
+jeff asked for this run: validate `moat-port` at 80cbda89b (review-passed) on gfx942 from a clean build, with the full suites compared per file against gfx90a at af83657d7, the one_embedding and P2P tests and the fused-interaction harness on two GPUs (P2P on and off, 5 repetitions), the regression tests of the recent rounds, and the reviewer's graph-capture workspace check. Result: **validation-failed at 80cbda89b**, with three GPU findings:
+1. Batch norm training with one value per channel (N*H*W == 1, or batch size 1 for BatchNorm1d) aborts the process for float32 (and every MIOpen dtype). This is a deterministic port fault in the MIOpen shim. It does not depend on the arch (MIOpen's host code refuses the call), so gfx90a and gfx1100 have it too.
+2. Long-k float16/bfloat16 GEMMs (k = 2^20) are 25 to 50 times less accurate in oneflow than in torch on the same MI300X. gfx90a matched torch. Not root-caused.
+3. An intermittent hang (device spin) in the fused embedding-interaction training harness, 2 of 15 runs, not reproduced in 8 traced reruns.
+Everything else passed, or fails in a class that is explained and is not a port fault (two new such classes: numpy's AVX-512 int32 argsort as the oracle, and a CPU-reproducible flake in a global tril autotest).
+
+Host: MI300X (gfx942:sramecc+:xnack-, wave64), two GPUs pinned by the dispatcher (HIP_VISIBLE_DEVICES=4,5), Intel Xeon Platinum 8480C host (AVX-512, which matters below). ROCm 10.1.0 SDK wheels (MIOpen, hipBLASLt, rocJPEG, RPP), AMD clang 24.0.0git, Python 3.11.17, numpy 1.26.4, protobuf 3.20.3, torch 2.16.0a0+git6c3af02 (the oracle, linked read-only from the image). Fresh clone of the fork at 80cbda89b, `protect-fork` run, `ulimit -c 0` throughout, no JIT extension builds. `git -C projects/oneflow/src status --porcelain` empty.
+
+### Environment (job venv only)
+- The image's torch, torch-*.dist-info, torchgen and functorch were symlinked read-only into `$FLEET_VENV-base-links`. Then `$FLEET_VENV/bin/python -m pip install -r dev-requirements.txt fsspec pytest-timeout pytest-repeat opencv-python==4.11.0.86`.
+- `-DPython3_EXECUTABLE=<agent_space>/pywrap/python3`, the wrapper that drops pip's `--user` and runs the venv python.
+- Runtime: `source build/source.sh` and `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git` (`therock-libllvm-symbol-interposition`).
+
+### Build (clean build directory, 514 s, `utils/timeit.sh oneflow compile`)
+```
+ulimit -c 0; export PATH=$FLEET_VENV/bin:$PATH; R=$(python3 -m rocm_sdk path --root)
+cmake -S . -B build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DBUILD_CUDA=ON -DCMAKE_PREFIX_PATH=$R \
+  -DCMAKE_C_COMPILER=$R/lib/llvm/bin/clang -DCMAKE_CXX_COMPILER=$R/lib/llvm/bin/clang++ \
+  -DWITH_CUTLASS=OFF -DWITH_MLIR=OFF -DWITH_MLIR_CUDA_CODEGEN=OFF -DBUILD_RDMA=OFF -DBUILD_CPP_API=OFF -DBUILD_HWLOC=OFF \
+  -DWITH_ONEDNN=ON -DBUILD_TESTING=OFF -DTREAT_WARNINGS_AS_ERRORS=OFF -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF \
+  -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DPython3_EXECUTABLE=<agent_space>/pywrap/python3
+cmake --build build -j112
+```
+rc=0, 2048/2048 steps, `CMAKE_HIP_ARCHITECTURES: gfx942`, `OF_GPU_WARP_SIZE: 64`, liboneflow.so 930 MB. Smoke check: `flow.cuda.is_available()` True, a 4x1000 softmax sums to 4.0, and `flow.sum(flow.ones(64, 72, device="cuda"), dim=0)` gives 64.
+
+### GPU finding (port fault): batch norm training with one value per channel aborts on ROCm
+- MIOpen 3.6 (ROCm 10.1) rejects spatial batch-norm training with N*H*W == 1 and per-activation training with N == 1. It logs "BatchNorm Spatial training requires N*spatial_size > 1. Got N=1, spatial=1. This restriction matches PyTorch behavior." (`batchnormocl.cpp:87`; per-activation: `:98`, "requires N > 1") and returns an error. The shim's `cudnnBatchNormalizationForwardTraining` (`hip_compat/cudnn.h:1186`) passes the status through, `OF_CUDNN_CHECK` at `normalization_kernel.cu:506` (forward) or `:649` (backward) is fatal, and the process aborts with SIGABRT. cuDNN documents no such restriction, so on CUDA these calls compute.
+- Reproducer (`agent_space/bn_one.py`; one GPU): `nn.BatchNorm2d(3)`, train mode, on a (1, 3, 1, 1) float32 cuda tensor aborts in the forward pass. The same happens for `nn.BatchNorm1d(4)` in train mode on (1, 4), which is batch size 1 (any final batch of one row), on (1, 4, 1), and for `BatchNorm2d(track_running_stats=False)` in eval mode, which also normalizes with batch statistics. Eval mode with running statistics works, and so does any shape with N*H*W >= 2.
+- What correct output looks like: on the same input, oneflow's CPU kernel gives y = beta (0 here), dx = 0, dgamma = 0 and dbeta = dy. The float64 path on the HIP native kernels (ae91b978b) gives exactly that on the GPU: y about 1e-14, dx 0, dw 0, db 2 with dy = 2, running_var 0.9.
+- How the suite reaches it: the upstream randomized autotest `test_batchnorm.py::test_batchnorm2d_module_with_random_data`, when it draws N=1, H=W=1 (dim0 is random(1, 4)) together with training. That happened in 1 of 9 batch runs and in 1 of 96 stress runs of `-k "batchnorm2d_module_with_random_data or batchnorm2d_module_with_half"` (`agent_space/bns/`, run 93 has the log). Both full modules runs passed the file because they did not draw that shape. The 3d/1d autotests can draw the same.
+- Suggested fix, for the porter: in the shim's forward training and backward, send N*spatial == 1 (spatial mode) and N == 1 (per-activation mode) to the templated native kernels that already handle double, which are correct for this case, instead of to MIOpen. Add a test for batch size 1 in BatchNorm1d and for (1, C, 1, 1) in BatchNorm2d, train mode, float32 and float16, forward and backward against the CPU kernel.
+
+### Full suites at 80cbda89b (`agent_space/suite.sh`, the per-file runner of the earlier rounds: one pytest per file, 8 at a time, `--timeout=900`, junit per file; modules on GPU 4 and tensor on GPU 5 at the same time; `utils/timeit.sh oneflow test`: modules 670 s, tensor 80 s)
+```
+cd python/oneflow/test/<modules|tensor>
+ls test_*.py | xargs -P 8 -I{} sh -c "timeout -k 30 1800 python3 -m pytest -p no:warnings -p no:randomly -p no:cacheprovider --capture=sys --timeout=900 -rfE -q --junitxml=$OUT/\$(basename {} .py).xml {} > $OUT/\$(basename {} .py).log 2>&1"
+```
+| suite | passed | failed | errors | skipped | aborted files | gfx90a at af83657d7 |
+|---|---|---|---|---|---|---|
+| modules run 1 (545 files) | 1594 | 53 | 5 | 315 | 3 (test_dataset, test_loss, test_higher_derivative_loss) | 1597/50/5/315, the same 3 aborted |
+| modules run 2 (rerun, with the batch norm stress on GPU 5) | 1596 | 55 | 5 | 316 | 2 (test_dataset, test_loss; test_higher_derivative_loss completed with its 3 known failures) | |
+| tensor (22 files) | 368 | 1 | 0 | 22 | 0 | 366/3/0/22 |
+
+- Aborted files: test_dataset (`Check failed: fd >= 0`, `/dataset` missing); test_loss and test_higher_derivative_loss (the HSA exception, code 0x1016, names torch's own `binary_cross_entropy_out_cuda` in all three aborts: the torch BCE oracle device assert).
+- tensor: only test_safetensors (module not installed). test_autocast half_mm and half_mm_add, the fp16 ulp differences on gfx90a, pass on gfx942.
+- modules, per file against the gfx90a failure classes: every failure in run 1 is in a class notes.md already explains, except the three new ids below. That means 14 "autotest stuck in an endless loop" (avgpool 4, global_avgpool 1, conv1d 2, conv2d 4, deconv2d 3); 10 numpy `__bool__` interop (concat, copy x2, div, logical_and, matmul fp16/int, slice x2, tensordot); `KeyError: 'ONEFLOW_CI'` 5 (fft); `oneflow.char != oneflow.int8` 6 (tensor_ops 4, type_tensor 2); the higher-derivative oracles 5 (global_higher_derivative_loss bce/kl_div/smooth_l1, plus math_op and global_math_op abs grad_grad, all "Cannot convert a ZeroTensor to numpy" or PyTorchDoesNotSupportError); `/dataset` 4 (image_batch_align, image_decode, image_flip, image_normalize); 5 collection errors (deform_conv2d, global_deform_conv2d, global_roi_align, image_resize, resnet_load_torch_weight); lbfgs `collections.Iterable`; replication_pad; functional docstr; codegeex; and the float32 tolerance pair test_cublas_fused_mlp / test_fused_matmul_bias_add_relu_dropout. No kernel-not-found records.
+- New relative to gfx90a, explained, not port or GPU faults:
+  - **test_argsort::test_argsort and test_sort::test_sort (host CPU oracle).** Both compare int32 results (randn cast to int, so many ties) with `np.argsort` and its default quicksort. On this AVX-512 host (Sapphire Rapids), numpy 1.26 dispatches int32 argsort to its SIMD sort, which does not keep ties in order. oneflow returns the stable order on CPU and GPU alike: `agent_space/argsort_probe.py` found 24 differing configurations, all int32, half on `device="cpu"`, and in every one oneflow's result equals `np.argsort(kind="stable")`. With `NPY_DISABLE_CPU_FEATURES="AVX512F AVX512CD AVX512_KNL AVX512_KNM AVX512_SKX AVX512_CLX AVX512_CNL AVX512_ICL AVX512_SPR"`, both files pass 8/8 (2 failed, 6 passed without it). This is test-oracle behaviour that depends on the host CPU, so it fails the same way for a CUDA build on an AVX-512 host.
+  - **test_global_tril::test_global_tril_with_diag (randomized autotest, flaky on the CPU too).** A grad mismatch of about 1.3e-4 relative in 1 to 26 elements. It passed in run 2 and in 4 of 6 standalone runs. In a copy of the test restricted by placement type (`agent_space/tril/`), it failed 7/12 with only CPU placements (CPU kernels, torch on CPU) and 1 to 6/12 with only CUDA placements. tril without exp never failed (16 runs), and exp without tril failed on CUDA only (1/8). Direct probes of the kernels pass: exp forward and backward with a float64-drawn dy, local and global, 1-D and 2-D placements over all sbp pairs including partial_sum, are within 1.4e-7 of float64 on both devices (`exp_probe.py`, `exp_probe2.py`), and so is tril(x, d) followed by exp, with 400 cases per device (`tril_probe.py`). The forward outputs inside the autotest match to 1.2e-7. The mismatch is therefore in the autotest's global-grad comparison, not in a kernel, and it happens without the GPU. Upstream already skips the sibling `test_global_tril_without_diag` as flaky ("failed 2 times in past week"). Not root-caused further.
+- Run 2 vs run 1: test_global_tril passed. test_higher_derivative_loss completed instead of aborting and failed its 3 known torch-drift cases (bce PyTorchDoesNotSupportError, kl_div grad_grad, which also fails CPU-only, and smooth_l1 ZeroTensor). Nothing else changed.
+
+### Regression tests of the recent rounds (one GPU)
+`python3 -m pytest -p no:warnings -p no:randomly -p no:cacheprovider -v -rfE --timeout=900 modules/test_cross_entropy_float16.py modules/test_check_numerics_float16.py modules/test_pool2d_channels_last.py modules/test_batchnorm.py modules/test_conv_bias_grad.py modules/test_reduce_sum_like.py graph/test_graph_image_gpu_decoder.py` gave 16 passed and 2 upstream skips in each of 32 runs: 9 alone and 17 while the modules suite ran on the other GPU, plus 6 runs of the first five files (`agent_space/reg/`, `bn/`). The exception is the one abort above, the batch norm finding. That covers cross_entropy_float16 (3), check_numerics_float16 (2), pool2d_channels_last (1, 128 cases), test_batchnorm including test_batchnorm_float64 (5 + 1 skip), conv_bias_grad (2), reduce_sum_like (2) and the rocJPEG decoder test (hardware, opt-out and forced-failure fallback: 1 + 1 upstream skip; MI300X has JPEG engines). The two-GPU bf16 tests are in the next section.
+
+### Two-GPU runs, 5 rounds (`agent_space/emb5.sh` under `utils/timeit.sh oneflow test`; two-rank runs on GPUs 4,5 through `python3 -m oneflow.distributed.launch --nproc_per_node 2 --redirect_stdout_and_stderr`, wrapped in `setsid -w timeout`; one-GPU files on GPU 4)
+The porter's P2P and fused-interaction harnesses live on the gfx90a host, so they were rewritten here from the descriptions in this file (`agent_space/p2p_harness.py`, `fused_harness.py`, not committed). A first version of each fed the full batch on both ranks, because `to_global(split)` treats each rank's array as that rank's slice; after the fix, each rank feeds its own slice.
+
+| test | each of 5 rounds |
+|---|---|
+| expensive/test_id_shuffle_global.py, 2 ranks, `*_USE_P2P=0` and `=1` | 3 passed on both ranks |
+| modules/test_dynamic_allocation_gradient_shuffle_shuffle_global.py, 2 ranks, P2P 0 and 1 | 1 skipped (upstream `@unittest.skip`) |
+| expensive/test_oneembedding.py, 2 ranks | 1 passed on both ranks |
+| modules/test_comm_ops.py -k bfloat16 (all_reduce, all_gather_into_tensor), 2 ranks | 2 passed on both ranks |
+| graph/test_graph_nccl_logical_bfloat16.py, 2 ranks | 3 passed on both ranks |
+| P2P op harness, P2P on, 10 iterations (exact: forward rows == table rows, backward == row x ranks holding the id) | bad=0 on both ranks |
+| P2P op harness, P2P off, 10 iterations | bad=0 on both ranks |
+| fused harness, unfused, 50 steps | rc=0, losses finite, 0.3540 -> 0.3452 |
+| fused harness, fused P2P off | rc=0 in rounds 1-4; **round 5: hung** (below) |
+| fused harness, fused P2P on | rc=0 in rounds 1-4; **round 5: hung** (below) |
+| expensive/test_id_shuffle.py | 4 passed |
+| expensive/test_oneembedding.py, test_oneembedding_padding_idx.py, test_dynamic_allocation_gradient_shuffle.py | 1 passed each |
+| modules/test_one_embedding_adagrad.py, test_one_embedding_sgd.py | 1 passed each |
+| modules/test_one_embedding_adam.py, test_one_embedding_ftrl.py | 1 skipped each (upstream `@unittest.skip`) |
+| modules/test_fused_dot_feature_interaction.py | 2 passed |
+103 of 105 runs rc=0.
+
+- P2P kernels reached (AMD_LOG_LEVEL=3, P2P op harness, 2 iterations, both ranks identical): with P2P on, BarrierKernel 6, EmbeddingShuffleCudaKernel 2 and EmbeddingGradientShuffleCudaKernel 2, and no UnsortedSegmentRowSumGpu. With P2P off, `ncclDevKernel_Generic_2` and UnsortedSegmentRowSumGpu 2 instead.
+- Fused harness: MultiTableEmbedding, 26 tables x 2000 rows, dim 128, device-mem store, with AMP, then `fused_dot_feature_interaction([bottom(dense).unsqueeze(1), emb], output_concat=bottom(dense), output_padding=1)`, Linear, BCEWithLogits and SGD with lr 0.5, at 512 rows per rank with zipf ids. With FUSE_EMBEDDING_INTERACTION=1 the compiled job's `embedding_shuffle` has `skip_last_gather` true (false when unfused). Against round 1 unfused, losses are identical in all 13 completed runs. Top weights differ by at most 9.4e-6 max abs and 1.16e-5 rel L2, and the unfused reruns differ from round 1 by the same amount (6.7e-6 to 9.4e-6), so the fused paths, with P2P on and off, agree with the unfused path.
+
+**Open GPU finding: intermittent hang in the fused training harness (round 5).** `fh_fused_p2p0` (FUSE_EMBEDDING_INTERACTION=1, P2P off) printed nothing after initialization (about 21 s in) and ran into the 1200 s timeout (rc=124). `fh_fused_p2p1`, the next run, hung the same way. It was killed after 13 minutes with both GPUs at 100% GFX activity (`amd-smi metric --usage`), so a kernel was spinning on the device rather than the host waiting. Activity fell to 0% after the kill. The unfused run just before them completed in 28 s. Eight reruns of the P2P-off case under AMD_LOG_LEVEL=3 completed all 50 steps (`agent_space/logs/hang/`), so it is not reproduced and the spinning kernel is not identified. The harness prints only at the end, so the step is unknown. The second hang may have followed from the first (its processes were killed by the launcher's SIGTERM). That leaves 2 hangs in 15 untraced fused runs, both in round 5, and none in the 5 unfused runs or the 20 P2P op-harness runs. The porter's gfx90a rounds ran the same configurations 15/15 with no hang. For the porter: run the fused harness in a loop with a per-step print and a short timeout, and when one hangs, read the queue with `amd-smi` / rocgdb, or `AMD_LOG_LEVEL=3` restricted to kernel launches, to name the last launched kernel. The candidates are the new grid-stride `GatherSparseFeaturesGpu` / `ScatterAddSparseFeaturesGradGpu` and the NCCL shuffles that `skip_last_gather` selects.
+
+### Graph-capture workspace check on gfx942 (`agent_space/cg_ws2.py`, rewritten from the description in "Review 2026-10-31 ... f52f1b78e..af83657d7"; `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1`, two devices in one process)
+The check uses 7 shapes (17x1023x513, 1024^3, 4096x256x4096, 128x65536x128, 1x1048576x64, 2048x8192x2048, 8192^3) x float32/float16/bfloat16 x cuda:0/cuda:1, which makes 42 nn.Graph matmuls, captured in increasing size. After each capture it runs eager 4096x16384x4096 and 16384x4096x16384 GEMMs on the same device, then replays every graph 3 times, interleaved, in reverse capture order, with fresh inputs, against a float64 torch product. Result: all 42 graphs compile, capture and replay with no error on either device (122 s). There is no capture or workspace failure, so the `CUBLAS_VERSION` / `cublasSetWorkspace` gate holds on gfx942 too. 38 of 42 cases are within tolerance (float32 at most 4.7e-6). The 4 out of tolerance are 1x1048576x64 in float16 (up to 1.17e-2) and bfloat16 (up to 8.6e-2), on both devices. Their first graph run and their replays have the same error, so capture is not the cause.
+
+**Open GPU finding: long-k float16/bfloat16 GEMMs are 25 to 50 times less accurate in oneflow than in torch on the same MI300X.** Eager, with no graph (`agent_space/gemv_probe.py`, uniform(-1, 1) inputs, error = max abs / max |float64 ref|):
+
+| m x k x n | float16 oneflow / torch | bfloat16 oneflow / torch |
+|---|---|---|
+| 1 x 1048576 x 64 | 7.4e-3 / 2.8e-4 | 5.1e-2 / 2.5e-3 |
+| 2 x 1048576 x 64 | 6.7e-3 / 2.8e-4 | 9.2e-2 / 1.5e-3 |
+| 16 x 1048576 x 64 | 6.1e-3 / 4.1e-4 | 6.6e-2 / 1.8e-3 |
+| 1 x 65536 x 64 | 6.7e-4 / 2.3e-4 | 4.2e-3 / 2.4e-3 |
+
+oneflow's error grows about linearly with k (6.7e-4 at 2^16, 7e-3 at 2^20), which is the signature of partial sums accumulated or reduced in the 16-bit type. torch's stays near one output rounding. On gfx90a the review's cg_ws2 measured 2.3e-4 for float16 and 2.0e-3 for bfloat16 on 1x1048576 shapes, which is torch's level. So this is new on gfx942, where rocBLAS can route GEMMs through hipBLASLt, the case that check was meant to cover. Not root-caused. For the porter: trace the hipBLAS/rocBLAS call oneflow's Matmul primitive makes for this shape (`ROCBLAS_LAYER=2`, `HIPBLASLT_LOG_LEVEL`), compare its compute type, algorithm and workspace with torch's call for the same shape, and check whether giving the handle oneflow's workspace (the `CUBLAS_VERSION >= 11200` `cublasSetWorkspace` gate) or the compute type changes it.
+
+### CUDA compile gate: not rerun (80cbda89b changes no compiled file)
+af83657d7..80cbda89b changes only `python/oneflow/test/graph/test_graph_nccl_logical_bfloat16.py`, so the nvcc 12.8 sm_80 PASS recorded at af83657d7 for every changed TU covers the same compiled sources. This host has `/usr/local/cuda-12.8` from the image, but not the sha256-verified redist assembly of the earlier jobs, so it was not used.
+
+### Other checks
+- `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038's message ('Strategy A', 'MOAT', 'Lead platform'), which the PR-prep squash clears.
+- Documentation: README.md:145-150 documents the ROCm configure next to the CUDA one (its example uses `-DCMAKE_HIP_ARCHITECTURES=gfx942`), and build_rocm.sh matches it.
+- `git -C projects/oneflow/src status --porcelain`: empty.
+- Observation, not a finding: a top-level uncaught oneflow Python exception after GPU use (for example a shape error in `flow.matmul` on cuda tensors) ends in a SIGSEGV at interpreter exit, in `ep::CudaStream::CudaStream` reached from `vm::EpStreamPolicyBase::GetOrCreateEpStream` during teardown. The same error on CPU tensors exits cleanly. It happens only on a path where the process is already exiting with an error (pytest catches exceptions, so no test reaches it), and it was not compared with CUDA.
+- Not run: the 2D bf16 logical-kernel registrations (they need 4 GPUs) and the C++ `cudnn_test.cpp` (needs BUILD_TESTING; validated on gfx90a).

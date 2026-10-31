@@ -179,3 +179,11 @@
 {"kind":"phase","ts":"2026-10-31T13:55:22Z","phase":"test","seconds":31.337,"exit":0,"cmd":"agent_space/rt/rt.sh agent_space/rt/test_graph_nccl_logical_bfloat16.py"}
 {"kind":"phase","ts":"2026-10-31T13:55:53Z","phase":"test","seconds":31.321,"exit":0,"cmd":"agent_space/rt/rt.sh agent_space/rt/test_graph_nccl_logical_bfloat16.py"}
 {"kind":"session","ts":"2026-10-31T13:58:17Z","epoch":1793455097.195073010,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-10-31T14:03:22Z","epoch":1793455402.771938678,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-10-31T14:12:37Z","phase":"compile","seconds":514.050,"exit":0,"cmd":"agent_space/build.sh config"}
+{"kind":"phase","ts":"2026-10-31T14:14:22Z","phase":"test","seconds":80.152,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261031-065951-val-oneflow-80cb/moat/agent_space/suite.sh tensor /var/lib/jenkins/fleet/jobs/mi300-20261031-065951-val-oneflow-80cb/moat/agent_space/out/tensor 5"}
+{"kind":"phase","ts":"2026-10-31T14:24:11Z","phase":"test","seconds":669.761,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261031-065951-val-oneflow-80cb/moat/agent_space/suite.sh modules /var/lib/jenkins/fleet/jobs/mi300-20261031-065951-val-oneflow-80cb/moat/agent_space/out/modules 4"}
+{"kind":"phase","ts":"2026-10-31T15:19:46Z","phase":"test","seconds":673.157,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261031-065951-val-oneflow-80cb/moat/agent_space/suite.sh modules /var/lib/jenkins/fleet/jobs/mi300-20261031-065951-val-oneflow-80cb/moat/agent_space/out/modules2 4"}
+{"kind":"phase","ts":"2026-10-31T16:53:56Z","phase":"test","seconds":4432.942,"exit":0,"cmd":"agent_space/emb5.sh"}
+{"kind":"phase","ts":"2026-10-31T17:01:02Z","phase":"test","seconds":122.561,"exit":1,"cmd":"timeout -k 20 720 python3 agent_space/cg_ws2.py"}
+{"kind":"session","ts":"2026-10-31T17:02:38Z","epoch":1793466158.473605758,"event":"end","platform":"linux-gfx942"}
