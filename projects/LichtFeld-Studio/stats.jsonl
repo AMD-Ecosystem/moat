@@ -423,3 +423,4 @@
 {"kind":"phase","ts":"2026-10-31T08:43:32Z","phase":"test","seconds":3993.535,"exit":0,"cmd":"bash agent_space/gt.sh /var/lib/jenkins/fleet/jobs/mi200-20261030-234050-lfs-val3-gfx90a/moat/agent_space/runs/pdoc-repeat.log 7200 --gtest_filter=ProjectDocumentTest.*:-ProjectDocumentTest.AutosaveSigkillAtEveryBoundaryLeavesCompleteOldOrNewSidecar --gtest_repeat=1000 --gtest_brief=1"}
 {"kind":"phase","ts":"2026-10-31T08:45:33Z","phase":"test","seconds":105.388,"exit":0,"cmd":"bash agent_space/smoke.sh r1 /sys/bus/pci/devices/0000:2c:00.0"}
 {"kind":"session","ts":"2026-10-31T09:09:55Z","epoch":1793437795.860804140,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-10-31T19:52:20Z","epoch":1793476340.577416335,"event":"start","platform":"linux-gfx1100"}
