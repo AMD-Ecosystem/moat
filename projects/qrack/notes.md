@@ -745,3 +745,38 @@ jeff asked for 42bdc3d6 to go upstream as its own PR, separate from the port. Pr
 | `--proc-cuda --layer-qengine -d yes` | 218/219 (test_trydecompose) | 218/219 (test_trydecompose, unrelated, see above) |
 
 Upstream PR draft (title and body) is in jeff's report for this session; nothing was posted.
+
+## Porter 2026-10-31 (linux-gfx1100): revert of 42bdc3d6 NOT done -- the GPU suite depends on it
+jeff asked to revert 42bdc3d6 (SetAmplitudePage fix, now upstream PR https://github.com/unitaryfoundation/qrack/pull/1044) on `moat-port`, but only if no test that passes with it fails without it. One does, so per the instruction: no revert commit, nothing pushed, stage left at `review-passed`, head_sha still 3bf7a75e, no state transition, no lock taken.
+
+Platform: AMD Radeon Pro W7800 48GB, gfx1100 (wave32), HIP_VISIBLE_DEVICES=1 (pinned by the dispatcher), TheRock ROCm SDK 10.1.0 pip wheels, CMake from /opt/python-3.11-venv, Ninja.
+Two worktrees of the fork clone, both at 3bf7a75e: "with" = the tip as is; "without" = the tip plus `git revert --no-commit 42bdc3d6` (diff is exactly the cuda.cu:215-217 hunk back to `cudaMemcpy(oStateBuffer.get(), stateBuffer.get(), sizeof(complex) * srcOffset, ...)`).
+```
+R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+cmake -S $S -B $S/_build -G Ninja -DENABLE_CUDA=ON -DENABLE_OPENCL=OFF -DUSE_HIP=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH=$R -DENABLE_TESTS=ON
+cmake --build $S/_build -j10 --target unittest
+ulimit -c 0; LD_LIBRARY_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_core/lib \
+  $S/_build/unittest --proc-<p> --layer-<l> -d yes
+```
+Both builds: exit 0, 39/39, OpenCL OFF / CUDA ON / HIP ON, 0 compiler warnings. Every run printed "CUDA device #0: AMD Radeon Pro W7800 48GB".
+
+| proc/layer | with 42bdc3d6 | without (reverted) |
+|---|---|---|
+| cuda/qengine | 213/213 passed (9612) | 213/213 passed (9612) |
+| cuda/qpager | 213/213 passed (9609) | **212 passed, 1 failed: test_cswap** |
+| cuda/qunit | 213/213 (9613) | 213/213 (9613) |
+| cuda/qunit-qpager | 213/213 (9613) | 213/213 (9613) |
+| cuda/qunit-multi | 213/213 (9610) | 213/213 (9610) |
+| cuda/qtensornetwork | 209/4 failed (tests.cpp:4628/4649/4747/4774, ModNOut not implemented) | same 209/4, same 4 |
+| hybrid/qunit | 213/213 (9613) | 213/213 (9613) |
+| cpu/qengine | 213/213 (9612) | 213/213 (9612) |
+| cpu/qpager | 213/213 (9609) | 213/213 (9609) |
+| cpu/qtensornetwork | 209/4 (same 4) | 209/4 (same 4) |
+| `--proc-cuda --layer-qpager test_cswap` x10 | 10/10 pass | **0/10 pass** |
+
+Failure without the fix: tests.cpp:715 `REQUIRE_THAT(qftReg2, HasProbability(0, 12, (1U << 9U) | (1U << 11U)))`, expansion `/00000000000000000000:0 matches bit pattern [0,12]: 12/101000000000` (the register reads all zeros). Deterministic.
+Why: QPager::SeparateEngines (qpager.cpp:335/360/675/696) moves amplitudes between page engines with the engine-to-engine QEngineCUDA::SetAmplitudePage overload. Without the fix that copy runs the wrong way, ignores both offsets and is sized by srcOffset (0 bytes for the 675/696 callers), so a CSwap that touches page qubits loses the amplitudes. It is the same upstream bug the V100 run shows at upstream (0/20 and 0/25 before the fix); it is not HIP-specific. The qengine layer (the gate before 2026-10-29) does not reach this path, which is why the port looked independent of it; the qpager layer, added to the GPU gate in the 2026-10-29 round and run by every validator since, does.
+
+So the HIP port code does not need 42bdc3d6 to build or to pass --layer-qengine, but the full GPU suite recorded in these notes is green on this host only with it. Decision for jeff (not taken here): (a) revert anyway and treat cuda/qpager test_cswap as a known upstream failure until #1044 merges (it would need recording as an expected upstream failure so validators do not read it as a HIP regression), or (b) keep 42bdc3d6 on `moat-port` until #1044 merges, then drop it through the upstream merge in a sync round. The local fork clone `projects/qrack/src` is unchanged at 3bf7a75e (porcelain clean); no CUDA 12.8 compile gate run (no CUDA toolkit on this host, and nothing to gate since nothing was committed).
