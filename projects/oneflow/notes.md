@@ -2179,3 +2179,104 @@ Fused harness against the first unfused run (rank 0; rank 1 identical): top-weig
 - Left alone per jeff: flatbuffers `-Werror` strip, kineto `-include cstdint`, float64 convolution (`oneflow-float64-conv-hip`); the long-k float16/bfloat16 GEMM accuracy finding (separate gfx942 job).
 - Lesson promoted: `cuda-to-rocm/references/fault-classes.md` (+ SKILL.md index line), "The DATA a peer reads, not only the flags, needs uncached memory -- and on gfx1100 fine-grained is not enough".
 - Owed: gfx90a and gfx942 revalidation at 80a91de06 (the P2P staging, the batch norm routing and the cuBLASLt null-algo path all run there too).
+
+## Porter round 2026-10-31 (linux-gfx942, MI300X; jeff: long-k float16/bfloat16 GEMM accuracy and float64 convolution, a full and complete port)
+
+jeff asked for this round: (1) make long-k fp16/bf16 GEMMs right on ROCm (the rocBLAS `gemm_ex` k-split found by the `oneflow-gfx942-longk-half-matmul` investigation), choosing between a float D in rocBLAS and hipBLASLt by measured cost, applied only where the split can trigger, CUDA identical; (2) float64 convolution on HIP now (he ruled the deferred `oneflow-float64-conv-hip` "now"): forward, data grad, weight grad, all dims, groups, stride, padding, dilation, both layouts. One commit each with a regression test; flatbuffers/kineto edits left alone; full suites and the two-GPU tests 3 rounds at the final head; the fused-harness hang check 20 times with P2P on. Lock taken through `ported -> reviewing -> changes-requested -> porting` (jeff's directive, not a reviewer verdict), as in the earlier rounds. Host: MI300X (gfx942:sramecc+:xnack-), `HIP_VISIBLE_DEVICES=6,7` pinned by the dispatcher, ROCm 10.1.0 SDK wheels (rocBLAS 5.7, hipBLASLt 100401, MIOpen 3.6), job venv with the image's torch 2.16.0a0 linked read-only, `ulimit -c 0`, `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git` (`therock-libllvm-symbol-interposition`), no JIT extension builds. Fork `moat-port` 80a91de06 -> a12ca99e7, two new commits, fast-forward, no amend or force push.
+
+### Build
+Fresh clone (from the gfx942 validator's local clone, origin reset to the fork, `protect-fork` run), clean build of 80a91de06 with the validator's configure (`agent_space/build.sh config`: `-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DBUILD_CUDA=ON`, ROCm clang, CUTLASS/MLIR/RDMA off, oneDNN on, Release, pywrap python) at `-j28` (`MAX_JOBS`): 772 s, rc=0. Incremental rebuilds after each change (`utils/timeit.sh oneflow compile`); editing `hip_compat/cublas_v2.h` rebuilds ~916 TUs (~500 s).
+
+### Item 1: long-k float16/bfloat16 GEMMs (d81b70795 `[ROCm] Run long-k float16 and bfloat16 GEMMs on hipBLASLt`)
+Measured choice (`agent_space/longk/bench.cpp`, standalone, hipcc gfx942, oneflow's layout row-major (m,k)x(k,n) = column-major gemm(N,N,n,m,k); us per call, error vs a double reference of the rounded inputs):
+| m x k x n | rocBLAS 16-bit D (today) | rocBLAS float D + cast kernel | hipBLASLt, heuristic per call | hipBLASLt, cached algo |
+|---|---|---|---|---|
+| 1 x 2^20 x 64 | 7563 us, fp16 4.5e-3 / bf16 5.5e-2 | 65378 us, 2.5e-4 / 1.9e-3 | 45.5 us | 45.6 us, 2.5e-4 / 1.9e-3 |
+| 64 x 2^20 x 64 | 7933 us, 7.8e-3 / 5.4e-2 | 68759 us | 81 us | 86 us, 3.3e-4 / 2.6e-3 |
+| 1 x 32768 x 64 | 33 us | 1004 us | 12 us | 10 us |
+| 4 x (1 x 2^20 x 64) strided batched | 9247 us, 4.5e-3 / 5.5e-2 | 67244 us | 152 us | 146 us, 2.5e-4 / 1.9e-3 |
+| 2 x 16384 x 65536 (non-k-major operand: n*k = 2^30) | 958 us, 6.3e-4 / 4.5e-3 | 886 us | 535 us | 561 us, 3.3e-4 / 2.6e-3 |
+| ordinary: 1024^3 | 11.4 | 50.3 | 14.3 | 15.3 |
+| ordinary: 4096^3 | 263 | 287 | 230 | 231 |
+| ordinary: 8192^3 | 1751 | 2936 | 1799 | 1771 |
+| ordinary: 32 x 4096 x 4096 | 28.5 | 159 | 14.8 | 14.8 |
+| ordinary: 8 x (256 x 4096 x 1024) | 108 | 159 | 44 | 47 |
+- The float D path fixes accuracy (equal to hipBLASLt) but is 9x slower than today on the long-k shapes (still 1025 chunk launches, now float-output kernels). hipBLASLt is 100-170x faster than today on them and as accurate as torch. hipBLASLt needs a workspace there: with 0 bytes 1x2^20x64 takes 4172 us (fp16) and 64x2^20x64 bf16 30289 us; with oneflow's default 4 MiB stream workspace 60 us (same as 32 MiB). Chosen: hipBLASLt, only for 16-bit D with `max(lda, ldb) * k >= 2^30`; everything else stays on rocBLAS exactly as before (ordinary shapes are also not uniformly faster on hipBLASLt: 64^3 and 1024^3 are slower).
+- The trigger covers both operands: the 2 x 16384 x 65536 case (k-major operand ld*k = 2^28, the other operand's ld*k = 2^30) loses accuracy in rocBLAS too (6.3e-4 vs 3.3e-4 fp16), so the investigation's "k-major operand" rule is too narrow; `max(lda, ldb) * k` matches every case measured.
+- Change: `hip_compat/cublas_v2.h` (HIP include path only) gains `OfRocblasSplitsK` and `OfHipblasLtGemm` (column-major strided batched, COMPUTE_32F/scale R_32F, heuristic with the caller's workspace limit, NOT_SUPPORTED if none). Callers under `#if defined(USE_HIP)`: `broadcast_matmul.cpp` (both the strided-batched and the per-matmul `ForEachMatmul` branch, only when the compute type is 32F), `grouped_matmul_bias.cu` (half: per problem, after the bias pre-fill, beta 1), `fused_self_attention_query_mul_key_and_value_kernel.cu` (half). conv bias grad already writes a float D, `cublas_fused_matmul_bias_add_grad` is float/double only. One comment names the rocBLAS behaviour.
+- Probe (`agent_space/longk_probe.py`, eager, error = max abs / max |float64 ref|; before = this build at 80a91de06, `longk_before.txt` / `longk_after.txt`):
+| case | fp16 before / after / torch | bf16 before / after / torch | time before / after |
+|---|---|---|---|
+| matmul 1 x 2^20 x 64 | 7.35e-3 / 2.78e-4 / 2.78e-4 | 9.33e-2 / 2.48e-3 / 2.48e-3 | 10.2 ms / 0.12 ms |
+| matmul 16 x 2^20 x 64 | 9.13e-3 / 3.70e-4 / 3.70e-4 | 6.32e-2 / 3.53e-3 / 3.53e-3 | 10.2 ms / 0.10 ms |
+| matmul transpose_b 1 x 2^20 x 64 | 1.15e-2 / 3.75e-4 / 3.75e-4 | 4.10e-2 / 1.77e-3 / 1.77e-3 | |
+| matmul 2 x 16384 x 65536 | 6.25e-4 / 3.42e-4 / 3.42e-4 | 4.86e-3 / 2.46e-3 / 2.46e-3 | 0.88 / 0.55 ms |
+| bmm 4 x (1 x 2^18 x 64) | 1.57e-3 / 2.74e-4 / 2.74e-4 | 1.05e-2 / 2.10e-3 / 2.10e-3 | |
+| broadcast b (stride 0) / broadcast a | 1.8e-3, 2.0e-3 / 2.5e-4, 2.7e-4 / same | 1.9e-2, 1.4e-2 / 2.0e-3, 2.3e-3 / same | |
+| 1 x 16384 x 64, 64^3, 1024^3, transpose_a 2^20 (no split) | unchanged, equal to torch | unchanged | unchanged |
+After the change oneflow equals torch to all printed digits in every case (torch uses hipBLASLt on gfx942).
+- Regression test `modules/test_matmul_long_k.py` (new): k = 2^20 (B 2^20 x 16, 32 MB fp16), matmul, matmul transpose_b, bmm, broadcast batch, fp16 and bf16, error vs float64 product of the same inputs < 4 * 2^-significand (1.95e-3 / 1.56e-2). Passes; on the validator's 80cbda89b build (read-only, test copied to /tmp) every case fails: fp16 8.2e-3 / 1.0e-2 / 8.3e-3 / 1.5e-2, bf16 2.3e-2 / 4.0e-2 / 3.5e-2 / 4.1e-2. k = 2^15 splits only once (4.4e-4 vs 2.4e-4), too close to the bound for a test.
+- `cg_ws2.py` (`ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1`, both GPUs, 42 graphs captured then replayed interleaved after large eager GEMMs): 42/42 in tolerance, worst fp32 4.7e-6, fp16 4.2e-4, bf16 3.3e-3; 1 x 2^20 x 64 now fp16 2.7e-4 / 3.2e-4 and bf16 2.0e-3 / 2.7e-3 (validator at 80cbda89b: up to 1.17e-2 / 8.6e-2). hipBLASLt under capture with the stream workspace works.
+- The ROCm library defect itself is unchanged: rocBLAS `gemm_ex` should accumulate k-chunks in the compute type (and its 2^30 guard uses ld * k, not the operand footprint). Bug report for jeff to file is drafted in the investigation plan; not filed here.
+
+### Item 2: float64 convolution (a12ca99e7 `[ROCm] Run float64 convolution on HIP kernels and hipBLAS`)
+- New `oneflow/user/kernels/conv_hip_double_kernels.cu` (whole file under `WITH_CUDA && USE_HIP`): kernels for conv1d/2d/3d, conv_data_grad, conv_filter_grad and deconv1d/2d/3d, registered for kCUDA + kDouble with `kKernelPriorityOptimized`, so the cuDNN-based kernels (which stay registered for every dtype) lose only for double; no change to the cuDNN files. Per sample: an im2col kernel and one `hipblasDgemmStridedBatched` batched over the groups (column buffer laid out so each group is a strided matrix in both layouts); data grad = GEMM into the column buffer, then a gathering col2im (each input element sums the column entries that read it: no atomics, deterministic); filter grad accumulates one GEMM per sample (beta 0 then 1); deconv = the data grad of the matching convolution. Handles 1/2/3-D (padded to 3-D), groups, per-axis stride/padding/dilation, channels_first and channels_last, the fused bias input (`ONEFLOW_KERNEL_ENABLE_FUSED_CONV_BIAS`) and `_add_to_output`. CudaGraphSupport (no host sync). conv_bias_grad already ran natively for double (the `ConvBiasGradHipLayout` path in conv_cudnn_kernels.cpp). tmp size = one sample's column buffer.
+- Regression test `modules/test_conv_float64.py` (new; sets `ONEFLOW_KERNEL_ENABLE_FUSED_CONV_BIAS=1` before import so the bias goes to the conv kernel): conv over 1/2/3-D x {channels_first groups 1,2; channels_last groups 1} x 4 stride/padding/dilation sets, alternating bias; deconv over 1/2/3-D x groups 1,2 x the 4 sets, with output_padding; y, dx, dw, db vs torch CPU float64 to 1e-12 relative; nn.Conv2d 8x16x32x32 -> 32 with groups 1/4/16 (depthwise-like); `_add_to_output` on conv2d and conv_data_grad through OpBuilder (no pass fuses it into a conv; `fuse_add_to_output_pass.cpp` lists only matmul/normalization/dropout ops). 4 passed. On the validator's 80cbda89b build each of the 4 tests aborts (rc 134; "MIOpen: Unsupported data types configuration: FP64xFP64xFP64", then `cudnn_conv_util.cpp:443 Check failed: cudnnGetConvolutionForwardAlgorithm_v7`).
+- Wider sweep (`agent_space/conv64_sweep.py 400 0`, random nd, groups 1-3, n, c, f, per-axis kernel 1-3 / stride 1-3 / dilation 1-2 / padding 0-2, odd spatial sizes, bias, channels_last for groups 1, deconv with random output_padding; oneflow GPU fwd+bwd vs torch CPU): 383 configs, 0 failures, worst relative error 2.2e-15. Kernel trace (AMD_LOG_LEVEL=3) of a fused-bias conv shows `Im2Col<double>` and `AddBias<double>`.
+- Why torch and not oneflow's CPU as the oracle: oneflow's CPU channels_last convolution disagrees with torch (and with this GPU kernel, which matches torch to 1.8e-15) by O(1) for float64 (`/tmp` probe: conv1d channels_last groups 1: CPU err 17.8, GPU 1.8e-15); and the CPU deconv kernels have no groups. Both upstream CPU behaviour, not changed.
+- Upstream limits met (not changed, same on CUDA): `conv_filter_grad` refuses channels_last with groups > 1 at op inference (conv_op.cpp:381), so that combination has no backward on any device; the deconv functor takes filters from `weight.shape[1] * groups` even for channels_last (nn_functor.cpp:202), where dim 1 is a kernel axis, so channels_last deconv from Python only works when that kernel size equals filters/groups. The kernels themselves handle both layouts.
+- Not measured: double conv speed versus a float MIOpen conv (correctness path for float64; GEMM-based, no per-element atomics).
+
+### CUDA compile gate (nvcc 12.8.93, sm_80): PASS
+Toolkit assembled on this host into `$FLEET_VENV/cuda-12.8` from NVIDIA's `redistrib_12.8.1.json`: cuda_nvcc 12.8.93, cudart/cccl/nvtx/cupti/profiler_api/nvml_dev 12.8.90, nvrtc 12.8.93, libcublas 12.8.4.1, libcurand 10.3.9.90, libcusparse 12.5.8.93, libcufft 11.3.3.83, libcusolver 11.7.3.90, libnvjitlink 12.8.93, libnvjpeg 12.3.5.92, libnpp 12.3.3.100: 16/16 archives sha256-verified, `lib64 -> lib`. cuDNN 8.9.7.29 and NCCL 2.29.7 from their cu12 wheels (unversioned `.so` symlinks). Scratch tree `agent_space/cuda/oneflow-cuda` = `git archive` of 80a91de06 plus this round's files; scratch-only edits: flash-attention blocks of `cmake/third_party.cmake` in `if(FALSE)` (dead mirror), and `--user` dropped from `install_py_dev_deps` in `cmake/python.cmake` (pip refuses `--user` in a venv). Configure: Ninja, `-DBUILD_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=80`, g++-13 host, `-DUSE_SYSTEM_NCCL=ON`, CUTLASS/MLIR/RDMA/oneDNN off. `hip_compat` appears 0 times in build.ninja. TUs, sources sha256-identical to a12ca99e7: broadcast_matmul.cpp (g++-13), fused_self_attention_query_mul_key_and_value_kernel.cu, grouped_matmul_bias.cu, conv_hip_double_kernels.cu (nvcc `compute_80,code=[compute_80,sm_80]`; the last compiles to an empty object on CUDA): 4/4 rc=0. `cublas_v2.h` is HIP-only. Re-run script `agent_space/cuda/cuda_tu.sh`.
+
+### Full suites at a12ca99e7 (`agent_space/suite.sh`, the validator's per-file runner, 8 files at a time, `--timeout=900`; modules on GPU 6, 660 s; tensor on GPU 7, 85 s, concurrently)
+| suite | passed | failed | errors | skipped | gfx942 at 80cbda89b (run 1) |
+|---|---|---|---|---|---|
+| modules (547 files) | 1600 | 53 | 5 | 315 | 1594 / 53 / 5 / 315 (545 files) |
+| tensor (22 files) | 368 | 1 | 0 | 22 | 368 / 1 / 0 / 22 |
+- +6 passes: test_matmul_long_k (1), test_conv_float64 (4), test_batchnorm_single_value (1, from 97def642f).
+- Per test id against the validator's 80cbda89b junit: tensor identical (test_safetensors only). Modules: gone `test_global_tril::test_global_tril_with_diag` (the known CPU-reproducible flaky autotest); new `test_matmul::test_flow_tensor_matmul_with_random_data_allow_tf32` (float32, a path this round does not touch). That id is flaky on gfx942 independent of this round: 4/30 standalone failures at a12ca99e7 and 5/30 on the validator's 80cbda89b build (`/tmp` copy of test_matmul.py, `-k allow_tf32`); mismatch ~2e-4 absolute in one element (torch 8.34e-4, oneflow 5.93e-4) with allow_tf32 on both sides. Not investigated further; candidate cause: oneflow passes `CUBLAS_COMPUTE_32F_FAST_TF32` to hipBLAS (xf32-capable on gfx942) while torch on ROCm keeps fp32 for mm unless hipBLASLt TF32 is enabled.
+- Same aborted/abnormal files as at 80cbda89b: test_dataset, test_loss, test_higher_derivative_loss (134), and the 5 collection errors (rc 2). Every other failure is in the classes listed in "Validation 2026-10-31 (linux-gfx942 ...)", including the 9 conv/deconv autotest "stuck in an endless loop" records and the numpy `__bool__` matmul ones.
+
+### Two GPUs, 3 rounds at a12ca99e7 (`agent_space/two3.sh` = the validator's emb5.sh plus the two new P2P tests and a fused-harness variant with id_shuffle P2P; GPUs 6,7; 2891 s): 71 of 72 runs rc=0
+| test | each of 3 rounds |
+|---|---|
+| expensive/test_id_shuffle_global.py, embedding/gradient P2P 0 and 1 | 3 passed on both ranks |
+| modules/test_dynamic_allocation_gradient_shuffle_shuffle_global.py, P2P 0 and 1 | 1 skipped (upstream skip) |
+| expensive/test_oneembedding.py, 2 ranks | 1 passed on both ranks |
+| expensive/test_id_shuffle_p2p_global.py (new in e256dab86, id_shuffle P2P) | 1 passed on both ranks |
+| expensive/test_one_embedding_p2p_shuffle_global.py (new in b27adc49a) | 1 passed on both ranks |
+| modules/test_comm_ops.py -k bfloat16 | 2 passed on both ranks |
+| graph/test_graph_nccl_logical_bfloat16.py | 3 passed on both ranks |
+| P2P op harness, P2P on / off, 10 iterations | bad=0 on both ranks |
+| fused harness unfused / fused P2P off / fused P2P on | rc=0, losses identical to unfused (0.3540 -> 0.3452) |
+| fused harness fused P2P on + `ID_SHUFFLE_USE_P2P=1` | rounds 1-2 rc=0; **round 3 hung** (below) |
+| one GPU: test_id_shuffle 4, test_oneembedding / padding_idx / dynamic_allocation_gradient_shuffle / adagrad / sgd 1 each, adam / ftrl 1 skipped, test_fused_dot_feature_interaction 2 | passed |
+Fused harness against round 1 unfused: losses identical in all 11 completed runs; top weight relL2 2.0e-4 to 2.4e-4 and bottom 1.05e-5 to 1.15e-5, the same as the unfused reruns (2.2e-4 / 2.4e-4), so P2P on/off and id_shuffle P2P agree with unfused at rerun noise. This is the first gfx942 run of the b27adc49a/e256dab86 P2P coherence fixes: the exact P2P tests pass every round.
+
+**Hang (recurred, different configuration):** round 3 `fh_fused_p2p1_idp2p` (FUSE_EMBEDDING_INTERACTION=1, embedding + gradient + id_shuffle P2P) printed nothing (this harness version prints only at the end) and ran to the 1200 s timeout (rc=124); both GPUs at 100% GFX activity 13 min in (`agent_space/hangdiag/usage.txt`), i.e. a device-side spin, the signature the validator saw at 80cbda89b. rocgdb cannot attach here (`ptrace: Operation not permitted`, yama ptrace_scope 1, not root), so the spinning kernel is not named.
+
+### Fused-harness hang check (jeff: 20 runs with P2P on; `agent_space/fh20.sh`: fused harness with a per-step print, 300 s timeout, at 240 s record `amd-smi` usage and the last printed steps, then SIGABRT)
+| configuration (all FUSE_EMBEDDING_INTERACTION=1) | runs | hung | where |
+|---|---|---|---|
+| embedding + gradient P2P on (the requested check) | 20 | **0** | -- |
+| embedding + gradient + id_shuffle P2P on | 20 | 3 | steps 41, 28, 2 (of 50) |
+| same, `AMD_LOG_LEVEL=3` traced | 10 | 1 | step 40/41 |
+| id_shuffle P2P on, embedding + gradient P2P off | 20 | 2 | steps 2, 36 |
+| (round runs above) embedding + gradient + id_shuffle P2P on | 3 | 1 | -- |
+| (round runs above) embedding + gradient P2P on, and P2P off | 3 + 3 | 0 | -- |
+- So the hang the gfx942 validator saw at 80cbda89b (2 of 15 runs, P2P off and on, both in one round, before the b27adc49a/e256dab86 fixes) did **not** recur in 26 runs of the configurations it hit. It does recur, at 5 to 15 percent of runs, whenever `ONEFLOW_ONE_EMBEDDING_ID_SHUFFLE_USE_P2P=1` (upstream's opt-in knob), with or without the other P2P shuffles: the id_shuffle P2P path alone is sufficient. Every hang: both ranks stop at the same step, both GPUs at 100% GFX (device spin). Every completed run gives losses identical to the unfused run and top-weight relL2 at most 2.6e-4 (rerun noise), so the P2P data paths compute correctly when they finish.
+- Traced hang (`agent_space/fh20t/run8`): on both ranks the last launches are `BarrierAndComputeOut` (id_shuffle P2P) -> `CopyGpu` -> `EncodeLookupMaskKernel` -> `FusedInitSliceCast` -> `GatherKernel` -> `BarrierKernel` -> `EmbeddingShuffleCopyKernel`; 42 `BarrierAndComputeOut` launches per rank (41 completed steps + 1). Launch order is queue order, so the spinning kernel is one of the barriers, most likely the id_shuffle P2P `BarrierAndMemset`/`BarrierAndComputeOut` given the id-only result. Not identified further: rocgdb cannot attach (ptrace blocked), and the faulthandler stacks are suppressed by glog's abort handler.
+- Reading of the id_shuffle barrier (e256dab86): each rank stores `count + 1` into its own row of an uncached flag matrix with system-scope release and spins on peers' `[peer][me]` entries with system-scope acquire; `count` is a plain load of its own diagonal entry. Counters are monotonic, so a rank one barrier ahead cannot strand the other. Unexplained so far. Candidates for the next porter: one barrier's spinning block 0 waiting while the peer's matching kernel cannot be scheduled (each barrier launches 2 x SMs blocks of 1024 threads; the host `Sync()` after BarrierAndComputeOut and other streams may matter), or a flag visibility problem specific to xGMI. A bounded spin with a device printf of (rank, kernel, count, peer value) in both barriers would name it in one hang.
+- Registered `oneflow-gfx942-id-shuffle-p2p-intermittent-hang` (other) for a person to rule. It is not in this round's two items, and the id_shuffle P2P path is opt-in upstream (default off).
+
+### Other checks
+- `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038 ('Strategy A', 'MOAT', 'Lead platform').
+- `utils/prose.py` clean on both messages; titles 58/58 chars; clang-format 11.1 on the changed C++ and black 19.10b0 on the two new tests (both installed into the job venv).
+- `git -C projects/oneflow/src status --porcelain`: empty. Fork `moat-port` pushed 80a91de06..a12ca99e7 (fast-forward), `advance-head` a12ca99e7.
+- Deferred: `oneflow-float64-conv-hip` recorded as jeff's ruling "now" (from his dispatch) and set done; new `rocblas-gemm-ex-longk-16bit-chunk-rounding` (rocm-bug-report, rocBLAS; the report text and reproducer are in the investigation plan; filing is jeff's call) and `oneflow-gfx942-id-shuffle-p2p-intermittent-hang`.
+- Lesson promoted: `cuda-to-rocm/references/fault-classes.md` (Floating point) + SKILL.md index line, "rocBLAS `gemm_ex` rounds a 16-bit output once per k-chunk when k is long".
+- Left alone per jeff: flatbuffers `-Werror` strip and kineto `-include cstdint` (their own commit at the message-cleanup rewrite).
+- Observation, upstream: `test_matmul ... allow_tf32` is flaky on gfx942 (4-5/30), above.
+- Owed: review of d81b70795 and a12ca99e7, then gfx90a, gfx942 and gfx1100 validation at a12ca99e7 (hipBLASLt long-k routing and the float64 conv kernels run on every arch; gfx90a has not yet validated 80a91de06's changes either).

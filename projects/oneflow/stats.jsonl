@@ -208,3 +208,13 @@
 {"kind":"phase","ts":"2026-10-31T19:23:06Z","phase":"test","seconds":692.672,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261031-103358-oneflow-fix6/moat/agent_space/run_suite.sh modules 6 0"}
 {"kind":"phase","ts":"2026-10-31T19:58:56Z","phase":"test","seconds":2107.688,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261031-103358-oneflow-fix6/moat/agent_space/two_gpu.sh"}
 {"kind":"phase","ts":"2026-10-31T20:02:21Z","phase":"test","seconds":188.732,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261031-103358-oneflow-fix6/moat/agent_space/crash_stress.sh"}
+{"kind":"phase","ts":"2026-10-31T20:28:52Z","phase":"compile","seconds":772.308,"exit":0,"cmd":"agent_space/build.sh config"}
+{"kind":"phase","ts":"2026-10-31T20:37:37Z","phase":"compile","seconds":385.345,"exit":1,"cmd":"agent_space/build.sh config"}
+{"kind":"phase","ts":"2026-10-31T20:42:19Z","phase":"compile","seconds":254.376,"exit":0,"cmd":"agent_space/build.sh"}
+{"kind":"phase","ts":"2026-10-31T20:59:04Z","phase":"compile","seconds":497.671,"exit":0,"cmd":"agent_space/build.sh"}
+{"kind":"phase","ts":"2026-10-31T21:01:01Z","phase":"test","seconds":85.293,"exit":0,"cmd":"bash agent_space/suite.sh tensor /var/lib/jenkins/fleet/jobs/mi300-20261031-130739-oneflow-fix7/moat/agent_space/out/ten 7"}
+{"kind":"phase","ts":"2026-10-31T21:10:35Z","phase":"test","seconds":659.501,"exit":0,"cmd":"bash agent_space/suite.sh modules /var/lib/jenkins/fleet/jobs/mi300-20261031-130739-oneflow-fix7/moat/agent_space/out/mod 6"}
+{"kind":"phase","ts":"2026-10-31T22:15:31Z","phase":"test","seconds":2891.123,"exit":0,"cmd":"bash agent_space/two3.sh"}
+{"kind":"phase","ts":"2026-10-31T22:51:18Z","phase":"test","seconds":2124.919,"exit":0,"cmd":"bash -c agent_space/fh20.sh 20 /var/lib/jenkins/fleet/jobs/mi300-20261031-130739-oneflow-fix7/moat/agent_space/fh20a '' ; agent_space/fh20.sh 20 /var/lib/jenkins/fleet/jobs/mi300-20261031-130739-oneflow-fix7/moat/agent_space/fh20b ONEFLOW_ONE_EMBEDDING_ID_SHUFFLE_USE_P2P=1"}
+{"kind":"phase","ts":"2026-10-31T23:03:25Z","phase":"test","seconds":591.450,"exit":0,"cmd":"agent_space/fh20.sh 10 /var/lib/jenkins/fleet/jobs/mi300-20261031-130739-oneflow-fix7/moat/agent_space/fh20t ONEFLOW_ONE_EMBEDDING_ID_SHUFFLE_USE_P2P=1 AMD_LOG_LEVEL=3"}
+{"kind":"phase","ts":"2026-10-31T23:24:02Z","phase":"test","seconds":1172.852,"exit":0,"cmd":"agent_space/fh20_idonly.sh 20 /var/lib/jenkins/fleet/jobs/mi300-20261031-130739-oneflow-fix7/moat/agent_space/fh20c ONEFLOW_ONE_EMBEDDING_ID_SHUFFLE_USE_P2P=1"}

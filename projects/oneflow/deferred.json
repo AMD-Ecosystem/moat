@@ -78,10 +78,15 @@
       "refs": [
         "projects/oneflow/notes.md"
       ],
-      "status": "open",
+      "status": "done",
       "upstream_issue": null,
       "created_at": "2026-10-31T10:58:10Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-10-31T22:54:00Z",
+        "note": "Ruled 'do it now' in the 2026-10-31 gfx942 porter dispatch; implemented in fork a12ca99e7."
+      }
     },
     {
       "id": "hipblaslt-gfx1100-f64-null-algo",
@@ -94,6 +99,32 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-10-31T17:30:43Z",
+      "decided": null
+    },
+    {
+      "id": "rocblas-gemm-ex-longk-16bit-chunk-rounding",
+      "kind": "rocm-bug-report",
+      "component": "rocBLAS",
+      "summary": "rocBLAS 5.7 (ROCm 10.1) gemm_ex with float16/bfloat16 A/B/C/D and compute_type f32 splits k into chunks of floor((2^30-1)/ld) once ld*k of an operand reaches 2^30 and accumulates each chunk into the 16-bit D with beta=1, so D is rounded ~k/1023 times: at k=2^20 on MI300X the error is 25-50x a single rounding (fp16 7e-3, bf16 5e-2 relative; hipBLASLt 2.8e-4 / 2.5e-3), and the 1025 chunk launches take ~8 ms vs 45 us on hipBLASLt. The guard also fires for small operands (ld*k is not the footprint for a non-transposed B). The split is invisible to ROCBLAS_LAYER. Standalone reproducer in the plan oneflow-gfx942-longk-half-matmul (Results). oneflow works around it on HIP (fork d81b70795, hipBLASLt for these GEMMs). Filing, account and whether to check gfx90a first are for jeff.",
+      "refs": [
+        "projects/oneflow/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-31T23:04:59Z",
+      "decided": null
+    },
+    {
+      "id": "oneflow-gfx942-id-shuffle-p2p-intermittent-hang",
+      "kind": "other",
+      "component": null,
+      "summary": "gfx942 (MI300X, 2 GPUs over xGMI), fork a12ca99e7: the fused embedding-interaction training harness hangs intermittently (both GPUs 100% GFX, device spin) when ONEFLOW_ONE_EMBEDDING_ID_SHUFFLE_USE_P2P=1 is on with the embedding/gradient P2P shuffles: 3/20 untraced + 1/3 in the round runs + 1/10 traced, at random steps (2, 28, 40, 41 of 50). With id_shuffle P2P off and embedding+gradient P2P on: 0/20 plus 0/6. Traced hang: both ranks' last launches are BarrierAndComputeOut (id_shuffle P2P, e256dab86) then BarrierKernel and EmbeddingShuffleCopyKernel (embedding P2P); the spinning kernel is not identified (ptrace blocked on the host). id_shuffle P2P is upstream's opt-in knob and was never run on gfx942 before. Next: the id-shuffle-only result in notes, then a per-kernel device-side timeout/printf in the two barriers.",
+      "refs": [
+        "projects/oneflow/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-31T23:05:00Z",
       "decided": null
     }
   ]
