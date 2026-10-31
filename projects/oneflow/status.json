@@ -7,7 +7,7 @@
   "priority": 6.236,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-10-31T17:02:32Z",
+  "updated_at": "2026-10-31T17:32:01Z",
   "head_sha": "80cbda89b2c04f5af1570976dbf86231d674c544",
   "waivers": {
     "windows": {
@@ -45,27 +45,6 @@
       "last_agent": "reviewer",
       "failed_sha": "521f547825b77e36a4752bd45b2a295ad2a0a633"
     },
-    "windows-gfx1201": {
-      "blocked": true,
-      "blocked_reason": "Windows not viable (same as gfx1101): RCCL Linux-only; POSIX ibv/pthread_fork syscalls; platform.cmake MSVC flags clash with all-clang; 32 third-party deps Linux-centric. GPU port complete on linux-gfx90a+gfx1100.",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-05T12:09:10Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
     "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
@@ -90,14 +69,35 @@
       "last_agent": "validator",
       "state": "validation-failed"
     },
+    "windows-gfx1101": {
+      "blocked": true,
+      "blocked_reason": "Windows not viable: RCCL Linux-only (find_package rccl REQUIRED, nccl.h in cuda_util.h/core files); POSIX ibv/pthread_fork syscalls; platform.cmake MSVC flags clash with all-clang; 32 third-party deps Linux-centric ExternalProject; oneflow never shipped on Windows upstream. GPU port complete on linux-gfx90a+gfx1100.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T12:08:57Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
     "linux-gfx1100": {
-      "state": "completed",
+      "state": "validation-failed",
       "blocked": false,
       "blocked_reason": "GPU-validated on gfx1100 (RDNA3, wave32, ROCm 7.2.1). Fresh build from fork HEAD 68718f03: 190 gfx1100 code objects, OF_GPU_WARP_SIZE=32. Test slice: 73 passed / 2 failed (same pre-existing artifacts as gfx90a -- numpy __bool__ dtype-interop, not GPU faults). Wave32 warp reductions: softmax/layer_norm/rms_norm all produce correct results (softmax max_abs_diff=1.49e-08, layer_norm bwd gamma/beta no NaN, rms_norm bwd weight no NaN). LayerNormParamGrad wave64 fix is correct on wave32 (tile=32, block_dim_x=32, width=32 matches native wavefront). No fork changes needed. Fork 68718f0.",
       "validated_sha": "fde793b9faec7d2f8e800b419e979613b8d12abf",
       "started_at": "2026-05-31T10:07:00Z",
       "completed_at": "2026-10-30T07:21:22Z",
-      "updated_at": "2026-10-30T07:21:22Z",
+      "updated_at": "2026-10-31T17:32:01Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -112,15 +112,15 @@
         "last_session_at": "2026-05-31T10:09:00Z"
       },
       "last_agent": "validator",
-      "failed_sha": "fd94e199a27d6b5d0a207be0d13b6290c60605c1"
+      "failed_sha": "80cbda89b2c04f5af1570976dbf86231d674c544"
     },
-    "windows-gfx1101": {
+    "windows-gfx1201": {
       "blocked": true,
-      "blocked_reason": "Windows not viable: RCCL Linux-only (find_package rccl REQUIRED, nccl.h in cuda_util.h/core files); POSIX ibv/pthread_fork syscalls; platform.cmake MSVC flags clash with all-clang; 32 third-party deps Linux-centric ExternalProject; oneflow never shipped on Windows upstream. GPU port complete on linux-gfx90a+gfx1100.",
+      "blocked_reason": "Windows not viable (same as gfx1101): RCCL Linux-only; POSIX ibv/pthread_fork syscalls; platform.cmake MSVC flags clash with all-clang; 32 third-party deps Linux-centric. GPU port complete on linux-gfx90a+gfx1100.",
       "validated_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-06-05T12:08:57Z",
+      "updated_at": "2026-06-05T12:09:10Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -162,6 +162,5 @@
     "arch": "linux-gfx90a",
     "since": "2026-10-31T13:53:20Z",
     "at": "2026-10-31T13:58:17Z"
-  },
-  "porting": null
+  }
 }

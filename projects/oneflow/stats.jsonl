@@ -187,3 +187,11 @@
 {"kind":"phase","ts":"2026-10-31T16:53:56Z","phase":"test","seconds":4432.942,"exit":0,"cmd":"agent_space/emb5.sh"}
 {"kind":"phase","ts":"2026-10-31T17:01:02Z","phase":"test","seconds":122.561,"exit":1,"cmd":"timeout -k 20 720 python3 agent_space/cg_ws2.py"}
 {"kind":"session","ts":"2026-10-31T17:02:38Z","epoch":1793466158.473605758,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-10-31T14:04:07Z","epoch":1793455447.662269013,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-31T15:52:00Z","phase":"compile","seconds":6429.417,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261031-070004-val-oneflow-80cb/moat/projects/oneflow/src/build_rocm.sh all"}
+{"kind":"phase","ts":"2026-10-31T15:54:01Z","phase":"test","seconds":80.346,"exit":0,"cmd":"agent_space/run_suite.sh tensor 4 1"}
+{"kind":"phase","ts":"2026-10-31T15:54:25Z","phase":"test","seconds":0.002,"exit":127,"cmd":"./one_gpu.sh 5 1"}
+{"kind":"phase","ts":"2026-10-31T16:11:32Z","phase":"test","seconds":1131.460,"exit":0,"cmd":"agent_space/run_suite.sh modules 6 0"}
+{"kind":"phase","ts":"2026-10-31T16:16:23Z","phase":"test","seconds":737.447,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261031-070004-val-oneflow-80cb/moat/agent_space/one_gpu.sh 5 1"}
+{"kind":"phase","ts":"2026-10-31T17:23:07Z","phase":"test","seconds":1686.055,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261031-070004-val-oneflow-80cb/moat/agent_space/two_gpu.sh"}
+{"kind":"session","ts":"2026-10-31T17:32:01Z","epoch":1793467921.825905608,"event":"end","platform":"linux-gfx1100"}

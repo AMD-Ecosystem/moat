@@ -82,6 +82,19 @@
       "upstream_issue": null,
       "created_at": "2026-10-31T10:58:10Z",
       "decided": null
+    },
+    {
+      "id": "hipblaslt-gfx1100-f64-null-algo",
+      "kind": "rocm-bug-report",
+      "component": "hipBLASLt",
+      "summary": "ROCm 10.1.0 SDK, gfx1100 (W7800): hipblasLtMatmul with algo == nullptr returns HIPBLAS_STATUS_INTERNAL_ERROR (6) for every f64 GEMM (COMPUTE_64F, R_64F; 4 shapes from 32x8x16 to 1024^3, TN), while hipblasLtMatmulAlgoGetHeuristic on the same descriptor returns an algo that computes the right result. f32 with a null algo works. Reproducer: agent_space/probe/lt64mm.cpp in the 2026-10-31 gfx1100 validation (notes.md). oneflow's cuBLASLt shim needs a workaround (query the heuristic when algo is null) regardless.",
+      "refs": [
+        "projects/oneflow/notes.md#validation-2026-10-31-linux-gfx1100"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-31T17:30:43Z",
+      "decided": null
     }
   ]
 }
