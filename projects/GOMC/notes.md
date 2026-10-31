@@ -421,3 +421,33 @@ Smoke only (not the validation gate), `ulimit -c 0`, runtime DLLs staged with `r
 g++ sanity: WSL Ubuntu on this host has no g++/cmake, so no Linux build. Instead Strawberry MinGW-w64 g++ 13.2.0 `-std=gnu++17 -fopenmp -fsyntax-only -DENSEMBLE={1..4}` with the NVT target's include list on CalculateEnergy.cpp, CellList.cpp, Main.cpp: 12/12 rc=0. The Linux fleet (gfx90a/gfx1100) revalidates the real g++ build.
 
 Gotchas: the fork clone checks out CRLF (`core.autocrlf=true`; CellList.cpp is `i/mixed`), so scripted string edits must match `\r\n`. A bash heredoc fed to `python3 -` on this host ate a backslash-newline inside the Python source; write edit scripts to a file instead.
+
+## Review 2026-10-31 (linux-gfx942, reviewer)
+
+Scope: new commit b8d1aa91 (`git diff 4c06552c..b8d1aa91`: CMake/GOMCHIPSetup.cmake, src/CalculateEnergy.cpp, src/CellList.cpp) plus the whole port diff `git diff development...moat-port` at b8d1aa91 (24 files, +386/-53) as the PR base. Verdict: review-passed, no blocking findings.
+
+Checked:
+- CellList copy ctor (src/CellList.cpp:27-39): `neighbors`/`head` are `std::vector<...>[BOX_TOTAL]` public members (src/CellList.h:70-71); default-construct then per-box copy-assign gives the same deep copy as GCC's array mem-initializer extension. Its only caller is `ParallelTemperingUtilities::exchangeCellLists` (MPI parallel tempering), which no non-MPI run reaches, so it was exercised directly with a g++ harness: real `CellList.cpp` from 4c06552c and from b8d1aa91, a populated source CellList (list, per-box head/neighbors of different sizes, edgeCells, cutoff), copied, then the source mutated to prove the copy is deep. g++ 13.3.0, `-O2 -fopenmp -fno-access-control`, ENSEMBLE=1..4: all `ok=1`, and the hash of every copied field is identical between old and new for each ensemble (BOX_TOTAL=1: 7b19f582ea156c0c, BOX_TOTAL=2: 00f6adb03acf4d5d). Upstream's copy ctor still does not copy `cellSize`; pre-existing, untouched.
+- OpenMP clause (src/CalculateEnergy.cpp:329-336): `atomCount`/`molCount` are non-const local `int`s (lines 289-290, under the same `_OPENMP >= 201511` guard), used only as array-section lengths in the reductions and never written in the loop, so `shared` is correct and matches upstream's own idiom (`shared(lambda_Coul, lambdaSize)` with `energyRecip[ : lambdaSize]` in src/EwaldCached.cpp:431). Non-const, so older g++'s "predetermined shared" error for const variables cannot trigger. `-fsyntax-only -Wall -fopenmp`: g++ accepts old and new with the same 5 warnings; ROCm SDK clang++ on Linux reports the two `must have explicitly specified data sharing attributes` errors on 4c06552c and none on b8d1aa91.
+- NOMINMAX scope: added only inside `if(WIN32)` in CMake/GOMCHIPSetup.cmake, which CMakeLists.txt includes only under `USE_HIP`. `git diff 4c06552c b8d1aa91` and `git diff development b8d1aa91` are both empty for CMakeLists.txt, GOMCCUDASetup.cmake and GOMCCPUSetup.cmake, so CUDA and CPU-only configurations are byte-identical to before. Being directory-scoped, it also reaches the CPU targets of a Windows HIP build, which is required: the `std::max` in src/Main.cpp:106 is compiled into every target. (Upstream's own MSVC Windows build would hit the same macro from `<Winsock2.h>` in Main.cpp; upstream's problem, out of scope for the port.)
+- Whole diff vs `development`: unchanged from the 2026-10-30 review apart from b8d1aa91. Commit title 60 chars with `[ROCm]`, no Co-Authored-By/noreply, Test Plan fenced. `python3 utils/jargon.py --port GOMC` clean; `audit-clean` OK; `git -C projects/GOMC/src status --porcelain` empty. `audit-commits` still reports only 58d5496d and b1b67078 (known, deferred to the PR-prep squash).
+
+Evidence on this host (MI300X, gfx942, HIP_VISIBLE_DEVICES=4, `ulimit -c 0`; TheRock ROCm SDK 10.1.0 wheels, CXX = g++ 13.3.0). Both heads built in the same g++-host HIP configuration:
+```bash
+R=$(rocm-sdk path --root)
+cmake -S <src> -B agent_space/b-<new|old> -DUSE_HIP=ON -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ \
+  -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release
+cmake --build agent_space/b-<new|old> -j 32    # both rc=0, all 8 executables
+```
+Each case ran `GOMC_GPU_<ens> +p4 in.conf` and `GOMC_CPU_<ens> +p4 in.conf` (4 OpenMP threads) from the config dir; NVT/NPT are the single-box AR_KR derivations used by the earlier validators; PEN_HEX/MP is PEN_HEX SingleRun with `DisFreq 0.05`, `MultiParticleFreq 0.10` so the CPU executable runs the changed OpenMP BoxForce region (25 MultiParticle moves, 32% accepted, same on GPU).
+
+| case | rc GPU/CPU (both heads) | ENER rows | GPU vs CPU max rel diff | acceptance GPU = CPU | b8d1aa91 = 4c06552c (GPU ENER, CPU ENER, CPU acceptance) |
+|---|---|---|---|---|---|
+| GEMC AR_KR SingleRun 3000 | 0/0 | 62 | 0 | yes | identical |
+| GEMC ISOPEN_NEOPEN SingleRun 3000 | 0/0 | 62 | 0 | yes | identical |
+| GCMC PEN_HEX SingleRun 200 | 0/0 | 12 | 0 | yes | identical |
+| GCMC PEN_HEX + MultiParticle 200 | 0/0 | 22 | 0 | yes | identical |
+| NVT AR_KR box 0 1000 | 0/0 | 11 | 0 | yes | identical |
+| NPT AR_KR box 0 1000 | 0/0 | 11 | 0 | yes | identical |
+
+Smoke and equivalence evidence, not the gfx942 validation gate. The windows gate still needs the windows-gfx1151 validator at b8d1aa91; the K_1/K_N checkpoint exit 127 there is the known upstream text-mode stream bug, kept off moat-port by decision.
