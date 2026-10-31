@@ -6324,3 +6324,130 @@ Full method, commands and artifacts: claude-shared `plans/lichtfeld-cuda-build-c
 - Preprocessed comparison of all 1,293 TUs (nvcc device and host passes, g++): no change in meaning. Only the 13 token-only files already listed at 022a02dbe differ, and none of them changed since. Three test TUs differ only in gtest `__LINE__`-derived identifiers. No HIP-only header or source reaches any CUDA TU.
 - CMake: targets, compile commands identical; link lines identical except the known member reorder in `liblfs_core_cuda.a`; CMakeCache adds only `USE_HIP=OFF` and `LFS_HIP_COMPUTE_ONLY=OFF`.
 The 204cdab0 delta is documentation only, so this result holds at 204cdab0. This settles the "CUDA compile check still owed" items in the validation entries.
+
+## rocJPEG no-scan hang recheck 2026-10-31 (no pipeline role, linux-gfx1201)
+Requested by jeff after he ruled the deferral `rocjpeg-no-scan-jpeg-hangs-vcn` "now" (the ruling itself is not in `deferred.json`: `decided` is still null and `deferred.py pending` lists it; not recorded here, since a ruling is a person's write). No stage, platform state or lock touched. Nothing posted to GitHub.
+
+### Source (read-only `gh api`, ROCm/rocm-systems `projects/rocjpeg`)
+- rocJPEG 1.10.0 = rocm-systems `7da43026e4f2ef7600433c38c820732f7a205d22`, the submodule pin of TheRock tag `therock-10.1` (CMake `VERSION "1.10.0"`; CHANGELOG "rocJPEG 1.10.0 for ROCm 10.1.0"). Note: the `gpuep-releases/therock-10.1` branch (`4c2f7505`) says 1.9.0 and is not what the 10.1.0 wheels were built from. In 1.10.0 `src/rocjpeg_parser.cpp`: the marker loop (L84, guard `stream_ <= stream_end_`, reads one past the end and has no bounds check on the fill-byte skip or the segment length) ends at SOS or the end of the buffer; after it only `dht_marker_found` (L135) and `dqt_marker_found` are checked, never SOS; `ParseEOI` (L698-711) sets the slice data with no content check; `rocjpeg_vaapi_decoder.cpp` L868-872 submits the buffers as parsed. So the no-scan stream is accepted with a zero-initialized slice parameter (0 scan components).
+- develop `fe8e451e14c5d7e4b030106b4e7572d43b3b0ff3` (2026-10-31): the check exists. `rocjpeg_parser.cpp` L240-244 "Didn't find the SOS marker!" (added by 7a400ac5b2, PR #12403 "fix(rocjpeg): bounds-check JPEG marker parsing against malformed streams", merged 2026-09-30); L963-966 "the scan contains no entropy-coded data!" in `ParseEOI` (added by 9613d5ee13, PR #12516, the stream-parse fuzz target, merged 2026-10-05); L126-130 rejects EOI before SOS. A missing EOI is still accepted on purpose (coded data runs to the end of the buffer).
+- Which release carries it: both commits are in `release/therock-10.2` (rocJPEG 1.13.0, CHANGELOG "rocJPEG 1.13.0 for ROCm 10.2.0") and in `release/bkc/therock-10.2-20261013` (1.12.0) and `-10.3-20261027` (1.13.0); not in `release/bkc/therock-10.2-20260922` (1.10.0) or any 10.1 ref. TheRock has no `therock-10.2` tag yet, so no released ROCm carries the fix; the first will be ROCm 10.2.0 (rocJPEG 1.13.0). The 1.13.0 CHANGELOG has no Resolved issues line for it, and #12403's body frames it as out-of-bounds reads, never a GPU hang.
+- Mesa (gitlab mesa/mesa main `b27d00d7`, read-only raw fetch): `src/gallium/frontends/va/picture_mjpeg.c` `vlVaHandleSliceParameterBufferMJPEG` copies `num_components` and `slice_data_size` unchecked and `vlVaGetJpegSliceHeader` rebuilds an SOS with whatever component count it has; `src/amd/common/ac_vcn_dec.c` `vcn_jpeg_build_decode_cmd` builds register writes and has no bitstream check. The kernel JPEG ring only sees register writes, so its timeout/reset is the recovery, not a guard. Where a fix belongs: rocJPEG's parser (done on develop); a defense-in-depth reject of a zero-component or empty slice would belong in the Mesa VA frontend (gitlab.freedesktop.org, not rocm-systems).
+- Existing reports: `gh search issues` over ROCm/rocm-systems and ROCm/rocJPEG for rocjpeg + SOS/hang/jpeg_dec/malformed/timeout/truncated: none about the hang; only #12403 and #12516 (merged) and unrelated #11435, #8358.
+
+### Runtime: step 2 skipped (develop has the check); parse-only confirmation, no decode, no GPU work
+- Stream regenerated with the notes recipe against Ubuntu `libjpeg-turbo8-dev 2.1.5-2ubuntu2` (`gcc gen_hang_jpeg.c /usr/lib/x86_64-linux-gnu/libjpeg.a`, gcc 13.3.0): 609 bytes (full JPEG 817), sha256 `eae81db984182916e53d37f3a023a31189fc617126b71663ae4cad9c4a35b12e`, matches. Pillow 12.3.0 makes the same bytes: `Image.new('RGB',(128,96),(128,128,128)).save(b,'JPEG',quality=95,subsampling=2)` cut at the first FF DA (`cmp`: identical).
+- Variants from the full 817-byte JPEG: `sos_no_data.jpg` = everything through the SOS segment (offset 609, length 12) + FF D9, 625 bytes; `no_eoi.jpg` = full minus last 2 bytes, 815 bytes.
+- `parseonly.c`: `rocJpegStreamCreate` + `rocJpegStreamParse` only (no `rocJpegCreate`, no decoder, `HIP_VISIBLE_DEVICES=`), `ulimit -c 0`, `timeout 60`, built with `gcc -D__HIP_PLATFORM_AMD__ ... -lrocjpeg`. Both runs exit 0.
+  - rocJPEG 1.10.0 (`/opt/python-3.11-venv` ROCm SDK 10.1.0 wheels, `librocjpeg.so.1.10.0`): full SUCCESS, no_scan SUCCESS, sos_no_data SUCCESS, no_eoi SUCCESS.
+  - rocJPEG 1.13.0 (TheRock nightly 10.3.0a20261030 venv left by job gfx1201-20261030-141502, used read-only; manifest pins rocm-systems `1420d37cf2`, which contains both commits): full SUCCESS (0), no_scan BAD_JPEG (-3), sos_no_data BAD_JPEG (-3), no_eoi SUCCESS (0).
+- No hardware decode of any malformed stream here; no amd-smi GPU pick was needed since nothing touched a GPU. Whether sos_no_data and no_eoi hang the engine on 1.10.0 remains untested.
+- `repro.cpp` (the decode reproducer in the draft) was built with the 10.1.0 `hipcc` to check it compiles; it was not run.
+
+### Recommendation for jeff
+The parser bug is fixed upstream and will ship in ROCm 10.2.0, so a plain bug report would be closed as fixed. The draft below is therefore framed as: hang in released 10.1.0, already fixed on develop, asking for a Resolved issues CHANGELOG line in 1.13.0 and whether 10.1.x gets a backport. Not filing at all is also reasonable. The port's host-side marker walk stays needed for ROCm 10.1.
+
+Draft issue for ROCm/rocm-systems (not filed). Title: `[rocJPEG] 1.10.0 accepts a JPEG with no scan and the decode hangs the VCN JPEG engine`
+`python3 utils/prose.py`: clean. `python3 utils/jargon.py`: clean. ASCII only.
+
+====
+My agent came up with this analysis, but I've read and approved it.
+
+### Problem
+
+rocJPEG 1.10.0 (ROCm 10.1.0) accepts a JPEG that ends before its start-of-scan (FF DA) marker: `rocJpegStreamParse` and `rocJpegGetImageInfo` return `ROCJPEG_STATUS_SUCCESS` (128x96, 3 components), and `rocJpegDecode` then submits it to the VCN JPEG engine, which hangs until the kernel resets the ring. The calling process loses its GPU context and aborts. One truncated file in a dataset is enough to kill an application that decodes untrusted or damaged JPEGs.
+
+This is already fixed on `develop` and on `release/therock-10.2` (rocJPEG 1.13.0). I am filing it because the fix is not described as a fix for a GPU hang anywhere a 10.1 user would look: #12403 describes out-of-bounds reads, and the 1.13.0 CHANGELOG entry has no Resolved issues line for it. Requests: (1) add a Resolved issues line to the 1.13.0 CHANGELOG saying that streams with no scan, or a scan with no entropy-coded data, are now rejected with `ROCJPEG_STATUS_BAD_JPEG` instead of being submitted to the decoder; (2) say whether a 10.1.x patch release will carry #12403 and #12516.
+
+### Cause
+
+Proven from source and by a parse-only run (no decode). In 1.10.0 (rocm-systems [7da4302](https://github.com/ROCm/rocm-systems/tree/7da43026e4f2ef7600433c38c820732f7a205d22/projects/rocjpeg), the commit TheRock's `therock-10.1` tag pins), the marker loop in [`ParseJpegStream`](https://github.com/ROCm/rocm-systems/blob/7da43026e4f2ef7600433c38c820732f7a205d22/projects/rocjpeg/src/rocjpeg_parser.cpp#L84-L150) ends either at SOS or at the end of the buffer, and after the loop only the DHT and DQT flags are checked, never whether an SOS was seen. [`ParseEOI`](https://github.com/ROCm/rocm-systems/blob/7da43026e4f2ef7600433c38c820732f7a205d22/projects/rocjpeg/src/rocjpeg_parser.cpp#L698-L711) then sets the slice data with no check that it contains coded data, and the VA-API decoder [submits the buffers](https://github.com/ROCm/rocm-systems/blob/7da43026e4f2ef7600433c38c820732f7a205d22/projects/rocjpeg/src/rocjpeg_vaapi_decoder.cpp#L868-L872) as parsed. The loop guard `stream_ <= stream_end_` also lets it read past the end of a stream with no scan.
+
+On develop at [fe8e451](https://github.com/ROCm/rocm-systems/tree/fe8e451e14c5d7e4b030106b4e7572d43b3b0ff3/projects/rocjpeg), #12403 (7a400ac5) added the [missing-SOS rejection](https://github.com/ROCm/rocm-systems/blob/fe8e451e14c5d7e4b030106b4e7572d43b3b0ff3/projects/rocjpeg/src/rocjpeg_parser.cpp#L237-L244) and #12516 (9613d5ee) added the [empty-scan rejection](https://github.com/ROCm/rocm-systems/blob/fe8e451e14c5d7e4b030106b4e7572d43b3b0ff3/projects/rocjpeg/src/rocjpeg_parser.cpp#L963-L966). A stream with no EOI is still accepted on purpose (the coded data runs to the end of the buffer), which matches libjpeg for truncated scans.
+
+Inferred, not proven: the engine hangs because the submitted job has no scan (zero scan components, and slice data that is not coded data). The Mesa VA-API JPEG frontend (`src/gallium/frontends/va/picture_mjpeg.c`) rebuilds the headers from the VA parameters without rejecting a slice with zero components or no data, so nothing below rocJPEG stops such a job before it reaches the engine.
+
+### Reproducer
+
+The 609-byte stream (SOI, APP0, 2x DQT, SOF0 128x96 4:2:0, 4x DHT; no SOS, no EOI), sha256 `eae81db984182916e53d37f3a023a31189fc617126b71663ae4cad9c4a35b12e`. Pillow 12.3.0 makes it byte for byte:
+
+```
+python3 -c "import io; from PIL import Image; b = io.BytesIO(); Image.new('RGB', (128, 96), (128, 128, 128)).save(b, 'JPEG', quality=95, subsampling=2); d = b.getvalue(); open('no_scan.jpg', 'wb').write(d[:d.index(b'\xff\xda')])"
+sha256sum no_scan.jpg
+```
+
+Running the program below on it hangs the engine; please do not run it on a GPU other jobs are using.
+
+<details>
+<summary>repro.cpp</summary>
+
+```cpp
+// hipcc repro.cpp -lrocjpeg -o repro && ./repro no_scan.jpg
+#include <cstdio>
+#include <vector>
+#include <hip/hip_runtime.h>
+#include <rocjpeg/rocjpeg.h>
+int main(int argc, char** argv) {
+  FILE* f = fopen(argv[1], "rb");
+  std::vector<unsigned char> buf(1 << 20);
+  size_t n = fread(buf.data(), 1, buf.size(), f);
+  fclose(f);
+  RocJpegHandle h;
+  RocJpegStreamHandle s;
+  printf("create %d\n", rocJpegCreate(ROCJPEG_BACKEND_HARDWARE, 0, &h));
+  rocJpegStreamCreate(&s);
+  printf("parse %d\n", rocJpegStreamParse(buf.data(), n, s));
+  uint8_t nc;
+  RocJpegChromaSubsampling ss;
+  uint32_t w[ROCJPEG_MAX_COMPONENT], ht[ROCJPEG_MAX_COMPONENT];
+  printf("info %d (%ux%u, %u components)\n", rocJpegGetImageInfo(h, s, &nc, &ss, w, ht), w[0], ht[0], nc);
+  RocJpegDecodeParams p = {};
+  p.output_format = ROCJPEG_OUTPUT_RGB;
+  RocJpegImage img = {};
+  img.pitch[0] = w[0] * 3;
+  (void)hipMalloc(&img.channel[0], img.pitch[0] * ht[0]);
+  printf("decode %d\n", rocJpegDecode(h, s, &p, &img));
+  printf("sync %d\n", hipDeviceSynchronize());
+  (void)hipFree(img.channel[0]);
+  rocJpegStreamDestroy(s);
+  rocJpegDestroy(h);
+  return 0;
+}
+```
+
+</details>
+
+### Expected vs actual
+
+Expected: `rocJpegStreamParse` returns `ROCJPEG_STATUS_BAD_JPEG`, and no malformed stream ever reaches the engine.
+
+Actual on 1.10.0: parse and get-image-info return `ROCJPEG_STATUS_SUCCESS`; `rocJpegDecode` hangs the JPEG ring; the process prints `amdgpu: The CS has cancelled because the context is lost. This context is guilty of a hard recovery.` and aborts.
+
+Parse-only results (`rocJpegStreamParse` alone, no decoder, no GPU work), Radeon AI PRO R9700:
+
+| Stream | 1.10.0 (ROCm 10.1.0) | 1.13.0 (TheRock nightly 10.3.0a20261030, rocm-systems 1420d37) |
+| --- | --- | --- |
+| valid 128x96 JPEG (817 bytes) | SUCCESS | SUCCESS |
+| cut before FF DA (609 bytes) | SUCCESS | BAD_JPEG |
+| SOS header, then EOI, no coded data (625 bytes) | SUCCESS | BAD_JPEG |
+| valid JPEG without its EOI (815 bytes) | SUCCESS | SUCCESS |
+
+Only the 609-byte stream was decoded on hardware. Whether the other two malformed shapes also hang 1.10.0 was not tested.
+
+### Kernel log
+
+From the one decode of the 609-byte stream (W7800, 2026-10-28 16:05:44); these are the message texts, the full lines with device prefixes were not kept:
+
+```
+ring jpeg_dec timeout
+Ring jpeg_dec reset succeeded
+device wedged, but recovered through reset
+```
+
+The GPU recovered: a later rocJPEG decode succeeded.
+
+### Versions and GPUs
+
+- Hang: Radeon Pro W7800 (gfx1100), rocJPEG 1.10.0 from the TheRock ROCm SDK 10.1.0 Python wheels (`librocjpeg.so.1.10.0`, hardware backend), amdgpu-dkms 6.19.14, Linux 6.8.0-138-generic.
+- Parse-only check: Radeon AI PRO R9700 (gfx1201), rocJPEG 1.10.0 (ROCm SDK 10.1.0 wheels) and 1.13.0 (TheRock nightly 10.3.0a20261030), Linux 6.11.0-26-generic. No decode was run on this GPU.
+====
