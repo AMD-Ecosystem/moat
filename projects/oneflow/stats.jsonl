@@ -157,3 +157,5 @@
 {"kind":"phase","ts":"2026-10-31T10:50:29Z","phase":"compile","seconds":256.322,"exit":0,"cmd":"bash -c cat agent_space/cuda_tus.txt | xargs -P 48 -I{} sh -c 'bash agent_space/cuda_tu.sh {} > agent_space/cudalogs_$(echo {} | tr / _).log 2>&1 || echo FAIL {}'"}
 {"kind":"phase","ts":"2026-10-31T10:56:00Z","phase":"test","seconds":98.007,"exit":0,"cmd":"bash agent_space/suite.sh tensor 2"}
 {"kind":"phase","ts":"2026-10-31T11:11:47Z","phase":"test","seconds":1044.944,"exit":0,"cmd":"bash agent_space/suite.sh modules 1"}
+{"kind":"session","ts":"2026-10-31T11:23:32Z","epoch":1793445812.512762002,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-10-31T11:37:05Z","epoch":1793446625.038459185,"event":"end","platform":"linux-gfx90a"}
