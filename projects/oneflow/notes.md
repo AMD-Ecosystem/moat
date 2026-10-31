@@ -1821,3 +1821,34 @@ Verdict: **no correctness or graph-capture defect on gfx90a. Leave it as it is; 
 
 ### For the porter
 - Fix testing item 1. The change is test-only, so no CUDA compile gate is needed. Rerun the graph test on two GCDs and record the compiled op types of each case.
+
+## Porter round 2026-10-31 (linux-gfx90a, MI250X; answers "Review 2026-10-31 (reviewer, linux-gfx90a; ... f52f1b78e..af83657d7)", verdict changes-requested)
+
+Lock taken with `set-state oneflow linux-gfx90a porting`. Two MI250X GCDs pinned by the dispatcher (HIP_VISIBLE_DEVICES=1,2), `ulimit -c 0`, `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git`, no JIT builds. Fork `moat-port` af83657d7 -> 80cbda89b, one new commit, fast-forward, no amend or force push.
+
+### Environment
+- Python-test-only change, so no rebuild and no CUDA compile gate (as the review said). Root filesystem had 2.6 GB free; nothing outside this job was cleaned.
+- Fork clone: fresh clone of `moat-port` (unshallowed so `jargon.py` can resolve `master..moat-port`), `protect-fork` run.
+- Runs used the fix4 job's HIP build of af83657d7 read-only (`mi200-20261031-043916-oneflow-fix4`, its venv's python), with the test file copied to a temp dir under `/tmp` (`agent_space/rt.sh <tree> <test file>`; `PYTHONPATH=<tree>/python`, `oneflow.distributed.launch --nproc_per_node 2`). The pre-b2ce4bfcf evidence used the fix3 job's build of f52f1b78e the same way.
+
+### 80cbda89b `[ROCm] Make the bfloat16 graph boxing test run the logical kernels` (testing item 1)
+`test_graph_nccl_logical_bfloat16.py` now has three cases sharing one graph builder:
+
+| case | graph | compiled user ops (both ranks, from `_compiled_graph_proto.net.op`) | assertion |
+|---|---|---|---|
+| `test_collective_boxing_bfloat16` | inputs boxed straight to outputs (the old test) | none: boxing goes through collective boxing (`nccl_executor_backend`) | no `_nccl_logical*` op |
+| `test_nccl_logical_fusion_bfloat16` | `* 1` on each side of every `to_global`, default env | `_nccl_logical_fusion` x2, `_nccl_logical_s2s` x1, `scalar_mul` x8 | fusion and s2s present |
+| `test_nccl_logical_bfloat16` | same, `mock.patch.dict(os.environ, {"ENABLE_NCCL_LOGICAL_FUSION": "0"})` around the graph call | `_nccl_logical_all_reduce` x1, `_nccl_logical_reduce_scatter_noncontinuous` x1, `_nccl_logical_all_gather_noncontinuous` x1, `_nccl_logical_s2s` x2, `scalar_mul` x8 | no fusion; all four present |
+
+Every case checks dtype bfloat16, sbp, and exact values of the five outputs (P->B, P->S1, S0->S1, S1->B, S1->S0). The op lists were dumped with a scratch copy that prints the counter (`agent_space/dump/`) and match the review's. The fusion case ran after the unfused case in the same process and still got the fusion ops, so the env patch does not leak. The 2D registrations still need 4 GPUs (accepted by the review as compile-only evidence).
+
+Results:
+- af83657d7 build: 3 passed, 5 of 5 runs (`utils/timeit.sh oneflow test -- agent_space/rt.sh ...`, about 25 s each).
+- f52f1b78e build (before b2ce4bfcf): each case run alone (`-k`, `-s`) aborts both ranks with `F... nccl_util.h:55] UNIMPLEMENTED` (SIGABRT). No backtrace is printed, so which kernel reached `GetNcclDataType` first was not identified.
+- Mutation check on the af83657d7 build: forcing `compute_around_boxing=False` in the two logical cases gives 2 failed (both op assertions), 1 passed. The test can no longer pass with no logical kernel.
+
+### Checks
+- black 19.10b0 clean on the file.
+- Commit: title 67 characters, `[ROCm]`, AI disclosure, fenced test plan, no Co-Authored-By; `utils/prose.py` clean. The body states that b2ce4bfcf's message wrongly says its graph test runs the logical kernels (b2ce4bfcf not rewritten; the PR-prep squash message should drop that claim).
+- `python3 utils/jargon.py --port oneflow`: only the three known 68718f038 hits.
+- `git -C projects/oneflow/src status --porcelain`: empty.
