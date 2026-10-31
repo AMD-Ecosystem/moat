@@ -2382,3 +2382,529 @@ import atexit; atexit.register(_dump)
 - No JIT extension builds. All GPU work ran under `ulimit -c 0`.
 - The draft rocBLAS issue (Porter 2026-10-31 section 2) now carries the review's column data: m = 1, 3, 5 wrong, and 6, 7, 8, 16 clean.
 - Lock released with `port-lock --release` (agent stopped mid-port). The stage stays `porting`, so the selector hands this back to a porter.
+
+## Porter 2026-10-31 (porter, linux-gfx1100 W7800, fork moat-port @ 3982189, nothing pushed) -- STOPPED: HIP device 3 hung during the call-site diagnostic, the second card to hang under that run
+
+Requested by jeff, with his ruling of 2026-10-31: correctness is paramount, option (a). Every direct `cp.einsum` (and any `@`/`cp.matmul`) site whose contraction can land in the failing rocBLAS regime goes through the gpu4pyscf-local helper, at any batch size. Work lock taken at about 19:50Z (`porting`, linux-gfx1100). Host: Radeon Pro W7800 (gfx1100). The dispatcher pinned `HIP_VISIBLE_DEVICES=3`, which is amd-smi GPU 1, BDF 26:00.0 (HIP device 2, which hung last round, is amd-smi GPU 0 and was not touched). TheRock ROCm SDK 10.1.0, rocBLAS 5.7. Job venv (`$FLEET_VENV`): numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion, geometric, pytest 7.3.2, pytest-xdist, pytest-timeout. Build: README ROCm block (`-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100`, `-j 16`), exit 0, 12 libs. 51f6cf0 untouched.
+
+**Result: incomplete. Nothing committed or pushed; `moat-port` is still 3982189.** The pinned GPU passed a trivial HIP copy check at 19:50Z (`agent_space/gpucheck/c.hip`: hipMalloc, H2D and D2H of 4 MiB, compare). About 40 minutes into the call-site diagnostic (20:14 to 20:17Z, while nac/tests and pbc/dft/tests were running, 8 xdist workers, shim preloaded, workaround removed except through `contract`), the card stopped completing work. The workers spun at 100% CPU, amd-smi showed 0% GFX activity, and the pytest logs stopped. After every process of this job was killed, amd-smi GPU 1 showed **95% GFX activity, 28 MB VRAM, no process**, and the copy check still hung at its first `hipMemcpy` H2D (`AMD_LOG_LEVEL=3`: the queue is created and acquired, then nothing), checked at 20:33 and 20:37Z. That is the same signature HIP device 2 showed in the previous round, under the same diagnostic. **Two W7800s have now wedged during this run, and neither wedged in the validator's or porter's plain full-tree runs (one directory at a time, no shim, workaround on).** The cause is not established. The common factors are the LD_PRELOAD rocBLAS shim (it takes the GIL inside every hooked rocBLAS call), 8 to 12 concurrent workers, and running with the batched-GEMV defect active. **Someone with host access has to reset amd-smi GPU 1 (BDF 26:00.0) and GPU 0 (23:00.0).** I did not move to another GPU: HIP 0 and 1 belong to the other job, and the pin stands.
+
+### What is done
+
+1. **Helper, ready as commit 1 (patch below, unit-checked on the GPU before the hang).** It applies the stopped round's patch to 3982189, with three additions. (i) Ellipsis subscripts are expanded to explicit letters, so tdscf/uhf.py `'...ij,ij->...'` goes through the helper. (ii) Size-1 broadcasting of labelled dimensions is handled (CuPy and NumPy both accept it, which I checked). (iii) A non-string first argument (the sublist form) falls through to `cupy.einsum`. The global `cupy.matmul` patch is gone. On ROCm, `contract`'s CuPy engine uses `_hip_einsum`, which `cupy_helper.einsum` exports. On CUDA, `cupy_helper.einsum is cupy.einsum`.
+   - Unit check `agent_space/diag/unit.py` (21 patterns x 5 dtype pairs f64, c128, f32, f32/f64, c128/f64, through `einsum` and `contract`, against `numpy.einsum`). It covers two- and three-operand calls, implicit output, `'ij,ji'`, broadcast `(1,40),(1,3)`, diagonal `'ii,i->'`, int dtype kept, `optimize=`, ellipsis and sublist fall-through, and `contract` with alpha/beta/out. Shapes and dtypes matched; worst relative error 3.0e-14. In the same run plain `cupy.einsum` was wrong for `'xgo,xgo->go'` (5,10240,16): 0.21 relative c128, 0.15 c128/f64. `agent_space/diag/unit_ell.py`: 9 ellipsis patterns in f64 and c128, worst 1.5e-15. Malformed `'..i,i'` raises ValueError like CuPy.
+   - Commit message drafted (`agent_space/msg1.txt`, jargon clean). It is reproduced below the patch.
+2. **Which rocBLAS calls are affected (CuPy 14.2, `ROCBLAS_LAYER=2`).** 2-D `@`, `cp.dot`, 1-D@2-D and `tensordot` call plain `gemm` (n=1 for a one-row left operand). A broadcast batched matmul (`(B,1,k)@(k,n)`, `1-D@3-D`, `3-D@1-D`) calls `gemm_batched`. Only a same-batch matmul of 3-D or higher calls `gemm_strided_batched_ex`. At B=347395 c128, ten calls each, only `strided (B,1,3)@(B,3,1)` was wrong (690 to 799 wrong entries per call). The `gemm_batched` forms and 20000 plain `(1,3)@(3,3)` gemm calls were clean. So `@`/`matmul`/`dot` reach the defect only as a same-batch product with a one-row left operand. The 21 `cp.matmul` sites and the `@` lines with `None`/`reshape(..1..)` operands are all 2-D or 1-D (plain gemm). No `@`/`.dot`/`matmul` site appeared in the diagnostic.
+3. **Static scan of every call (`agent_space/diag/static.py`, below).** It finds every `einsum`, `contract`, `@`, `matmul`, `dot` and `tensordot` call and simulates CuPy's `optimize=False` pairwise order from literal subscripts: diagonal, then unary sum, then pairs `(n-1, n-2)` followed by `(-1, k)`. In the gpu4pyscf package there are 954 direct `cp.einsum`/`cupy.einsum` calls (720 library, 234 test), 2330 `contract` calls (covered by the binding), and 586 `@`. Findings:
+   - 370 direct calls have a pairwise step with a contracted index and one operand with no free index (the regime structurally; 237 library, 133 test).
+   - **A size-1 dimension reaches the regime too.** CuPy squeezes size-1 axes before pairing, so a free index of size 1 disappears. The diagnostic caught this in shipped code: nac/tdrhf_grad_nacv.py:63 `'xuv, nvu -> nux'` with one state (n = 1) ran as rocBLAS n=1, m=3. Structurally it is clean. Any contracting einsum can therefore land in the regime when a count (states, spin sets, k-points, atoms) is 1. Only calls with no contracting pairwise step (CuPy uses an elementwise multiply) and unary calls never reach rocBLAS.
+   - So, under the ruling, the site list is every direct call with a contracting pairwise step, split into two classes so the second can be dropped separately if you read the ruling more narrowly. **Class A (365):** the 358 direct calls structurally in the regime (370 less the 12 `optimize=` test references), plus the 4 ellipsis sites of that shape (tdscf/uhf.py 772, 773, 777, 778) and the 3 `np.einsum` sites seen dispatching CuPy arrays (pbc/df/aft.py:68 c128 batch 12167; df/tests/test_df_rhf_grad.py 332, 333). mp2.py's `_einsum = cupy.einsum` alias (line 27) also belongs here: lines 62, 63, 79 and 80 are in the regime, and 62/63 were caught at runtime. **Class B (256):** contracting calls that reach the regime only through a size-1 dimension. That is 253 direct calls (176 library, 77 test), tdscf/uhf.py 770 and 771 (ellipsis), df/tests/test_df_rhf_grad.py:317 (`np.einsum` on CuPy), and cc/ccsd_incore.py's `_einsum = cupy.einsum` alias (line 55).
+   - **Left as is (138 direct calls):** 79 unary calls (transpose, trace and sum; no GEMM), 47 calls with no contracting step (elementwise or outer product; CuPy multiplies), and the 12 `optimize=True` reference contractions in pbc/df/tests/test_pbc_df_derivatives.py. The helper passes `optimize=` through to `cupy.einsum`, which follows a greedy path, so a rewrite would change nothing there. They are test references only.
+   - Library `np.einsum`/`numpy.einsum`/`lib.einsum` (PySCF) calls whose subscripts are in the regime number 31, and they need CuPy operands to matter. I judged each from context: all are host NumPy (`.get()`, `cp.asnumpy`, PySCF CPU integrals, md/ on NumPy, `get_rho_naive`, and `transition_dipole` returning `.get()`) except pbc/df/aft.py:68, which is in class A. pbc/df/tests/test_rsdf_builder.py 692 and 693 dispatch CuPy but pass `optimize=True`, so they are left with the other `optimize` references.
+4. **Rewrite, prepared and not applied to the fork** (`agent_space/diag/rewrite.py`, below). It changes each listed call name to `einsum` and adds `from gpu4pyscf.lib.cupy_helper import einsum`, appended to a short single-line cupy_helper import or as a new line after the last cupy_helper import or the leading import block. It preserves CRLF (properties/raman.py is CRLF) and handles UTF-8 column offsets. The aliases are two hand edits: mp2.py line 20 gains `, einsum` with line 27 becoming `_einsum = einsum`, and ccsd_incore.py gains the import line after line 35 with line 55 becoming `    _einsum = einsum`. A preview over a copy of the tree: every file parses, 113 files change, 728 added lines, and no `cp.einsum`/`cupy.einsum` remains except the unary, non-contracting and `optimize=` calls. No module binds a conflicting `einsum` name (the bare uses are in comments and docstrings), and none of cupy_helper's own imports (cutensor, cusolver, memcpy, multi_gpu, logger) has a site, so there is no import cycle.
+5. **Skill:** the cuda-to-rocm fault-classes entry now recommends the local helper rather than the global `cupy.matmul` wrapper (this commit).
+
+### Diagnostic coverage (rocBLAS shim from the previous section, plus `agent_space/hook/npdisp.py`, which records gpu4pyscf callers of `numpy.einsum` given CuPy arrays)
+Runner per directory: `python -m pytest <dir> -n 4 --dist loadfile -m 'not slow and not benchmark and not special' -q -rfEs --tb=line -p no:cacheprovider -p npdisp --timeout 1800`, with `OMP_NUM_THREADS=8`, `LD_PRELOAD=blashook.so`, two directories at a time, at 3982189 plus the helper (direct sites unchanged). **Completed (22 directories):** lib, df/hessian, cc, dft (2 failed: test_sparse_index, test_numint2c fingerprint), dispersion, fci, geomopt (5 skipped), df (5 failed: test_general_contraction, test_grad_hybrid, test_j_energy_per_atom, test_jk_energy_per_atom, test_get_nacv_ee), gto, grad (2 failed: tdrhf and tduhf test_grad_elec), mcscf, md, mp (1 failed: test_dfmp2_kernel_one_gpu), hessian, and pbc/df (1 failed: test_ft_ao_strain_deriv). These are direct sites still on `cupy.einsum`, so the failures are not a comparison run. **Partial when the GPU hung:** nac, pbc/dft (41%). **Not reached:** pbc/grad, pbc/gto/pseudo, pbc/gto, pbc/hessian, pbc/lib, pbc/properties/berry, pbc/scf, pbc/tools, pbc/x2c, pop, properties, qmmm/pbc, qmmm, scf, sem/dmp, sem/grad, sem/gto, sem/integral, solvent, tdscf, tests and x2c. Result: 154 regime call sites (rocBLAS n=1, m<8). **None came through `contract`; the binding covers all of them.** 148 are statically flagged direct calls, 2 are the mp2 alias, 3 are `np.einsum` on CuPy, and 1 is the size-1 case above. Batch above 1 at 37 sites; batch at or above 65536 at dft/mcfun_gpu.py:230 (3276800, f64) and pbc/dft/multigrid_v2.py:1572 (347395, c128). Next largest: multigrid_v2.py:1575 (57387), pbc/df/aft.py:68 (12167), pbc/df/aft_jk.py 617 and 661 (9261), pbc/grad/rhf.py:434 (6320) and pbc/df/grad/krhf.py 480/485/515 (2197). Every dynamic site is in class A or B. The static list covers the directories not reached for direct calls. What it cannot cover there is a library `np.einsum` on CuPy arrays (judged above) and a same-batch one-row `@` (none found by grep).
+
+### What is left (resume steps, after a GPU reset)
+1. Fresh fork clone at 3982189. `git apply` the helper patch below and rebuild (README ROCm block). Rerun `unit.py` and `unit_ell.py` (the cases are listed in item 1; rewrite them from that list if agent_space is gone). Commit with the drafted message.
+2. Save the class A and class B lists below as JSON `[[path, line], ...]` with paths prefixed by `gpu4pyscf/` and the original 3982189 line numbers. Then run `python3 rewrite.py <src> A.json` and make the mp2 edit, then `python3 rewrite.py <src> B.json` and make the ccsd_incore edit. The tool maps line numbers through an import line it inserted itself. Commit the classes separately (A, then B), or group by directory.
+3. **Do not repeat the shim diagnostic on this host without jeff's go-ahead:** two cards have wedged under it. The static list plus the 22 directories already covered stand in for it.
+4. Validation, as requested: the affected test files several times under concurrent load; the larger-grid multigrid PBE/r2scan and numint2c M06 spreads (previous section: PBE 3.5e-3 to 5.2e-3, r2scan 2.7e-3 to 3.0e-3, M06 5.3e-8 without the fix; they must be stable); and the full tree with upstream CI's 4-worker selection under `ulimit -c 0`, per directory against 1832/16/73/0. None of this was run.
+5. Then `jargon.py --port gpu4pyscf`, push `moat-port`, `advance-head`, set `ported`, `commit-project`.
+
+### For jeff (decisions, not taken)
+- **Scope of the ruling.** Class B (256 sites) exists because a size-1 dimension sends any contracting einsum into the regime, and one shipped site was caught doing so. If "one operand with no free index" means structurally only, drop class B; class A alone is 365 sites. With both, the call-site diff is 113 files and about 728 added lines.
+- **Two wedged W7800s** (amd-smi GPU 0 and GPU 1) need a reset before any GPU work on this host, and whether the shim diagnostic may run again is your call.
+
+### Helper patch (`git diff` against 3982189)
+```diff
+diff --git a/gpu4pyscf/lib/cupy_helper.py b/gpu4pyscf/lib/cupy_helper.py
+index 5a7eaa1..8288d08 100644
+--- a/gpu4pyscf/lib/cupy_helper.py
++++ b/gpu4pyscf/lib/cupy_helper.py
+@@ -22,7 +22,7 @@ import scipy.linalg
+ import cupy
+ from pyscf import lib
+ from gpu4pyscf.lib import logger
+-from gpu4pyscf.lib.cutensor import contract
++from gpu4pyscf.lib.cutensor import contract, _hip_einsum
+ from gpu4pyscf.lib import cusolver
+ from gpu4pyscf.lib.memcpy import copy_array, p2p_transfer  #NOQA
+ from gpu4pyscf.lib import multi_gpu
+@@ -60,35 +60,7 @@ def kernel_source(code):
+         code = _HIP_KERNEL_PREAMBLE + code.replace('#include <cuComplex.h>', '')
+     return code
+ 
+-_cupy_matmul = cupy.matmul
+-
+-def _hip_matmul(x1, x2, out=None, **kwargs):
+-    '''cupy.matmul that keeps a batched product with a one-row left operand
+-    off rocBLAS.
+-
+-    CuPy computes (..., 1, k) @ (..., k, n) as gemm_strided_batched with N=1,
+-    which rocBLAS runs as gemv_strided_batched. On gfx1100 (rocBLAS 5.7) that
+-    returns wrong entries for m < 8 and a large batch count. cupy.einsum
+-    reaches it for every batched dot product, such as 'xg,xg->g'.
+-    '''
+-    if (out is None and not kwargs
+-            and isinstance(x1, cupy.ndarray) and isinstance(x2, cupy.ndarray)
+-            and x1.dtype.kind in 'fc' and x2.dtype.kind in 'fc'
+-            and max(x1.ndim, x2.ndim) >= 3
+-            and (x1.ndim == 1 or x1.shape[-2] == 1)):
+-        a = x1 if x1.ndim > 1 else x1[None]
+-        b = x2 if x2.ndim > 1 else x2[:,None]
+-        if a.shape[-1] == b.shape[-2]:
+-            c = (a.swapaxes(-1, -2) * b).sum(axis=-2, keepdims=True)
+-            if x1.ndim == 1:
+-                c = c[...,0,:]
+-            if x2.ndim == 1:
+-                c = c[...,0]
+-            return c
+-    return _cupy_matmul(x1, x2, out=out, **kwargs)
+-
+-if cupy.cuda.runtime.is_hip:
+-    cupy.matmul = _hip_matmul
++einsum = _hip_einsum if cupy.cuda.runtime.is_hip else cupy.einsum
+ 
+ libcupy_helper = load_library('libcupy_helper')
+ 
+diff --git a/gpu4pyscf/lib/cutensor.py b/gpu4pyscf/lib/cutensor.py
+index 08812c8..f05576d 100644
+--- a/gpu4pyscf/lib/cutensor.py
++++ b/gpu4pyscf/lib/cutensor.py
+@@ -12,6 +12,7 @@
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+ 
++import string
+ import numpy as np
+ import cupy
+ from gpu4pyscf.lib import logger
+@@ -52,6 +53,84 @@ def _create_tensor_descriptor(a):
+         a = cupy.ndarray(a.shape, a.dtype, a.data, strides)
+     return cutensor.create_tensor_descriptor(a)
+ 
++def _hip_einsum(subscripts, *operands, **kwargs):
++    '''cupy.einsum, except that a pairwise contraction in which one operand
++    has no free index and the free indices of the other span fewer than 8
++    entries is computed as a broadcast multiply and sum.
++
++    cupy.einsum runs such a contraction as a batched matmul
++    (..., 1, k) @ (..., k, n) with n < 8, which is rocBLAS
++    gemm_strided_batched_ex with n=1. rocBLAS runs that as
++    gemv_strided_batched, which returns wrong entries on gfx1100
++    (rocBLAS 5.7) for m < 8.
++    '''
++    if not isinstance(subscripts, str):
++        return cupy.einsum(subscripts, *operands, **kwargs)
++    sub = subscripts.replace(' ', '')
++    inputs, arrow, out = sub.partition('->')
++    subs = inputs.split(',')
++    if (len(operands) < 2 or len(subs) != len(operands) or kwargs
++            or not all(isinstance(x, cupy.ndarray) and
++                       x.dtype.kind in 'fc' for x in operands)):
++        return cupy.einsum(subscripts, *operands, **kwargs)
++    if not arrow:
++        out = ''.join(sorted(c for c in set(inputs) - {',', '.'}
++                             if inputs.count(c) == 1))
++        if '.' in inputs:
++            out = '...' + out
++    if '.' in sub:
++        ranks = [x.ndim - len(s) + 3 for x, s in zip(operands, subs)
++                 if '...' in s]
++        free = [c for c in string.ascii_letters if c not in sub]
++        if (not ranks or (inputs + out).count('.') !=
++                3 * (len(ranks) + ('...' in out)) or
++                min(ranks) < 0 or max(ranks) > len(free)):
++            return cupy.einsum(subscripts, *operands, **kwargs)
++        ell = ''.join(free[:max(ranks)])
++        subs = [s.replace('...', ell[len(ell) - x.ndim + len(s) - 3:])
++                for x, s in zip(operands, subs)]
++        out = out.replace('...', ell)
++    dtype = np.result_type(*operands)
++    operands = [x.astype(dtype, copy=False) for x in operands]
++    b, sb = operands[-1], subs[-1]
++    for i in range(len(operands) - 2, -1, -1):
++        rest = ''.join(subs[:i]) + out
++        keep = out if i == 0 else ''.join(
++            c for c in dict.fromkeys(subs[i] + sb) if c in rest)
++        b = _hip_einsum2(operands[i], subs[i], b, sb, keep)
++        sb = keep
++    return b
++
++def _hip_einsum2(a, sa, b, sb, out):
++    if (len(set(sa)) == len(sa) == a.ndim and
++            len(set(sb)) == len(sb) == b.ndim and
++            len(set(out)) == len(out) and set(out) <= set(sa + sb)):
++        size = {}
++        for c, n in list(zip(sa, a.shape)) + list(zip(sb, b.shape)):
++            size[c] = max(size.get(c, 1), n)
++        if all(n in (1, size[c]) for c, n in zip(sa + sb, a.shape + b.shape)):
++            rows = np.prod([size[c] for c in sa if c in out and c not in sb])
++            cols = np.prod([size[c] for c in sb if c in out and c not in sa])
++            if min(rows, cols) == 1 and max(rows, cols) < 8:
++                return _multiply_sum(a, sa, b, sb, out)
++    return cupy.einsum(f'{sa},{sb}->{out}', a, b)
++
++def _multiply_sum(a, sa, b, sb, out):
++    idx = [c for c in dict.fromkeys(out + sa + sb)
++           if c in out or (c in sa and c in sb)]
++    def expand(x, s):
++        own = tuple(i for i, c in enumerate(s) if c not in idx)
++        if own:
++            x = x.sum(axis=own)
++            s = ''.join(c for c in s if c in idx)
++        x = x.transpose([s.index(c) for c in idx if c in s])
++        it = iter(x.shape)
++        return x.reshape([next(it) if c in s else 1 for c in idx])
++    c = expand(a, sa) * expand(b, sb)
++    if len(idx) > len(out):
++        c = c.sum(axis=tuple(range(len(out), len(idx))))
++    return c
++
+ def _contract_einsum(pattern, a, b, alpha, beta, out=None, einsum=cupy.einsum):
+     if out is None:
+         out = cupy.ascontiguousarray(einsum(pattern, a, b))
+@@ -146,7 +225,7 @@ if contract_engine is not None:
+     elif contract_engine == 'cuquantum':
+         from cuquantum import contract as einsum # type: ignore
+     elif contract_engine == 'cupy':
+-        einsum = cupy.einsum
++        einsum = _hip_einsum if cupy.cuda.runtime.is_hip else cupy.einsum
+     else:
+         raise RuntimeError('unknown tensor contraction engine.')
+ 
+```
+
+### Drafted commit 1 message
+````
+[ROCm] Use a local einsum for one-sided batched dot products
+
+The previous change replaced cupy.matmul on the CuPy module, which changes CuPy for every user in the process and misses the @ operator. Replace it with a gpu4pyscf-local einsum.
+
+cupy.einsum computes a pairwise contraction as a batched matmul (B, L, K) @ (B, K, R). When one operand has no free index (L == 1) and the other's free indices span fewer than 8 entries, that is rocBLAS gemm_strided_batched_ex with n=1, which rocBLAS runs as gemv_strided_batched. On gfx1100 (rocBLAS 5.7) that kernel returns wrong, run-to-run varying entries for m < 8 at large batch counts; the threshold moves with GPU load, so there is no safe batch cut.
+
+On ROCm, cupy_helper.einsum contracts the operands pairwise in cupy.einsum's default order and computes each such pair as a broadcast multiply and sum; every other pair, and any call with keywords, non-CuPy operands or non-float dtypes, goes to cupy.einsum unchanged. contract uses it when it falls back to the CuPy engine, which is always the case on ROCm since CuPy-ROCm has no cuTENSOR. On CUDA, cupy_helper.einsum is cupy.einsum and contract is unchanged.
+
+This change was written with the assistance of an AI coding agent.
+
+Test Plan:
+
+```
+cmake -S gpu4pyscf/lib -B build/temp.gpu4pyscf -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100
+cmake --build build/temp.gpu4pyscf -j 16
+python -m pytest gpu4pyscf/lib/tests -q
+python -m pytest gpu4pyscf/pbc/dft/tests/test_multigrid_v2.py gpu4pyscf/dft/tests/test_numint2c.py -q
+```
+
+A unit check against numpy.einsum covered two- and three-operand contractions, implicit output, ellipsis, size-1 broadcasting and mixed float32/float64/complex128 operands; the largest relative error was 3.0e-14, while plain cupy.einsum returned 0.21 relative error for 'xgo,xgo->go' at 163840 points on the same GPU.
+````
+
+### Static scanner (`agent_space/diag/static.py`; `python3 static.py <src>/gpu4pyscf out.json`)
+```python
+# Static scan: every einsum/matmul/@/dot call in gpu4pyscf, classified by
+# whether some pairwise step (CuPy optimize=False order) has an operand with
+# no free index and a contracted index (the rocBLAS n == 1 regime for some sizes).
+import ast, sys, os, json
+root = sys.argv[1]
+def regime(sub):
+    sub = sub.replace(' ', '')
+    if '.' in sub: return 'ellipsis'
+    inputs, arrow, out = sub.partition('->')
+    subs = [''.join(dict.fromkeys(s)) for s in inputs.split(',')]
+    if not arrow:
+        out = ''.join(sorted(c for c in set(inputs) - {','} if inputs.count(c) == 1))
+    if len(subs) < 2: return 'unary'
+    # unary sums
+    def others(i, subs):
+        return set(out).union(*[set(s) for j, s in enumerate(subs) if j != i])
+    subs = [''.join(c for c in s if c in others(i, subs)) for i, s in enumerate(subs)]
+    ops = list(subs)
+    hit = []
+    while len(ops) > 1:
+        a = ops.pop(); b = ops.pop()   # CuPy: path (n-1, n-2), then (-1, k)
+        rest = set(out).union(*map(set, ops))
+        if not a or not b:
+            ops.append(a + b); continue
+        shared = set(a) & set(b)
+        contr = shared - rest
+        fa = set(a) - set(b); fb = set(b) - set(a)
+        if contr and (not fa or not fb):
+            hit.append('%s,%s' % (b, a))
+        keep = ''.join(c for c in dict.fromkeys(b + a) if c in rest)
+        ops.append(keep)
+    return 'REGIME:' + ';'.join(hit) if hit else 'clean'
+rows = []
+for dp, dn, fn in os.walk(root):
+    for f in fn:
+        if not f.endswith('.py'): continue
+        p = os.path.join(dp, f); rel = os.path.relpath(p, os.path.dirname(root))
+        try: tree = ast.parse(open(p).read())
+        except SyntaxError as e: print('SYNTAX', p, e); continue
+        for n in ast.walk(tree):
+            if isinstance(n, ast.BinOp) and isinstance(n.op, ast.MatMult):
+                rows.append((rel, n.lineno, '@', '', 'matmul')); continue
+            if not isinstance(n, ast.Call): continue
+            fn_ = n.func
+            if isinstance(fn_, ast.Attribute):
+                mod = ast.unparse(fn_.value); name = fn_.attr
+            elif isinstance(fn_, ast.Name):
+                mod = ''; name = fn_.id
+            else: continue
+            if name in ('einsum', '_einsum', 'contract', 'tmp_einsum'):
+                kw = [k.arg for k in n.keywords]
+                s = n.args[0] if n.args else None
+                if isinstance(s, ast.Constant) and isinstance(s.value, str):
+                    cls = regime(s.value); sub = s.value
+                else:
+                    cls = 'nonliteral'; sub = ast.unparse(s) if s is not None else ''
+                rows.append((rel, n.lineno, (mod + '.' if mod else '') + name, sub, cls + (' kw=' + ','.join(map(str, kw)) if kw else '')))
+            elif name in ('matmul', 'dot', 'tensordot', 'inner', 'vdot'):
+                rows.append((rel, n.lineno, (mod + '.' if mod else '') + name, '', 'matmul'))
+json.dump(rows, open(sys.argv[2], 'w'), indent=0)
+from collections import Counter
+print(Counter((r[2], r[4].split(':')[0].split(' ')[0]) for r in rows).most_common(60))
+```
+
+### Rewrite tool (`agent_space/diag/rewrite.py`)
+```python
+# Mechanical rewrite: at each listed call site, replace the call name
+# (cp.einsum / cupy.einsum / np.einsum / numpy.einsum / lib.einsum) by `einsum`,
+# and import einsum from gpu4pyscf.lib.cupy_helper.
+# usage: rewrite.py <tree root containing gpu4pyscf/> <sites.json: [[file, line], ...]>
+import ast, sys, json, re, collections
+root, sites = sys.argv[1], json.load(open(sys.argv[2]))
+by_file = collections.defaultdict(set)
+for f, ln in sites: by_file[f].add(ln)
+IMPORT = 'from gpu4pyscf.lib.cupy_helper import einsum'
+total = 0
+for f, lines in sorted(by_file.items()):
+    p = root + '/' + f
+    src = open(p, newline='').read()
+    tree = ast.parse(src)
+    # site lines are original numbering; a previous pass may have inserted IMPORT
+    ins = [i + 1 for i, l in enumerate(src.splitlines()) if l == IMPORT]
+    if ins:
+        lines = {ln + 1 if ln >= ins[0] else ln for ln in lines}
+    nl = '\r\n' if '\r\n' in src else '\n'
+    srclines = src.splitlines(keepends=True)
+    off = [0]
+    for l in srclines: off.append(off[-1] + len(l))
+    def pos(ln, col):  # ast col offsets are UTF-8 byte offsets
+        return off[ln - 1] + len(srclines[ln - 1].encode()[:col].decode())
+    edits = []
+    for n in ast.walk(tree):
+        if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                and n.func.attr == 'einsum' and n.lineno in lines):
+            fn = n.func
+            assert fn.lineno == fn.end_lineno
+            a = pos(fn.lineno, fn.col_offset)
+            b = pos(fn.end_lineno, fn.end_col_offset)
+            assert src[a:b] in ('cp.einsum', 'cupy.einsum', 'np.einsum', 'numpy.einsum', 'lib.einsum'), (f, n.lineno, src[a:b])
+            edits.append((a, b, n.lineno))
+    found = {e[2] for e in edits}
+    missing = {ln for ln in lines - found
+               if not re.search(r'(?<![.\w])einsum\(', srclines[ln - 1])}
+    assert not missing, (f, sorted(missing))  # a shared line may already be done
+    if not edits:
+        continue
+    for a, b, _ in sorted(edits, reverse=True):
+        src = src[:a] + 'einsum' + src[b:]
+    total += len(edits)
+    if f == 'gpu4pyscf/lib/cupy_helper.py':
+        open(p, 'w', newline='').write(src); continue
+    ls = src.splitlines(keepends=True)
+    # add to an existing single-line cupy_helper import, else a new line after it
+    imps = [n for n in tree.body if isinstance(n, ast.ImportFrom)
+            and n.module == 'gpu4pyscf.lib.cupy_helper' and n.level == 0]
+    done = False
+    for n in imps:
+        if any(a.name == 'einsum' for a in n.names):
+            done = True; break
+    for n in imps:
+        if done: break
+        l = ls[n.lineno - 1].rstrip('\r\n')
+        if n.lineno == n.end_lineno and '(' not in l and '#' not in l and len(l) + 8 <= 100:
+            ls[n.lineno - 1] = l + ', einsum' + nl; done = True
+    if not done:
+        if imps:
+            last = imps[-1].end_lineno
+        else:
+            first_def = min([m.lineno for m in tree.body if isinstance(m, (ast.FunctionDef, ast.ClassDef))] + [10**9])
+            last = max(n.end_lineno for n in tree.body if isinstance(n, (ast.Import, ast.ImportFrom)) and n.lineno < first_def)
+        ls.insert(last, IMPORT + nl)
+    open(p, 'w', newline='').write(''.join(ls))
+print(total, 'sites in', len(by_file), 'files')
+```
+
+### Site list (paths under `gpu4pyscf/`, line numbers at 3982189)
+#### Class A (365 sites)
+- `df/df_jk.py`: 346 347 389 390 454 455 465 470 475
+- `df/hessian/rhf.py`: 1029 1104
+- `df/hessian/tests/test_df_rhf_hessian.py`: 266 267
+- `df/hessian/tests/test_df_uhf_hessian.py`: 284
+- `df/hessian/uhf.py`: 624 703
+- `df/tests/test_df_int3c2e.py`: 492 492 500 500
+- `df/tests/test_df_rhf_grad.py`: 332 333
+- `df/tests/test_df_tdrhf_nac.py`: 213
+- `dft/gks.py`: 105
+- `dft/mcfun_gpu.py`: 230 231 237 247 261
+- `dft/numint.py`: 927
+- `dft/rks.py`: 131 163
+- `dft/rkspu.py`: 115
+- `dft/tests/test_numint.py`: 286
+- `dft/uks.py`: 78
+- `dft/ukspu.py`: 95
+- `grad/rhf.py`: 243 445 447 449 451
+- `grad/rks.py`: 179 194 214 318 518 527 541 690
+- `grad/rkspu.py`: 120
+- `grad/tests/test_tdrhf_grad.py`: 306
+- `grad/tests/test_tduhf_grad.py`: 241
+- `grad/ucdft.py`: 87 103
+- `grad/uks.py`: 166 170 190 194 219 224 358 364 373 378 392 398
+- `grad/ukspu.py`: 67
+- `gto/int3c1e_ip.py`: 456
+- `hessian/rks.py`: 2870 2885 2896 2898 2915 2935 2951 2953 2980 2997 3007 3009
+- `hessian/tests/test_rks_hessian_grid_response.py`: 1035 1036 1173 1174
+- `lib/tests/test_cuest_wrapper.py`: 1208 1252 1305 1308 1377 1380 1449 1452 1521 1524
+- `lib/tests/test_cutensor.py`: 30 36 52 56
+- `mcscf/casci.py`: 54 55
+- `mp/dfmp2_old.py`: 99 100
+- `nac/finite_diff.py`: 246 312
+- `nac/tdrhf.py`: 210
+- `nac/tdrks_grad_nacv.py`: 52 54
+- `nac/tests/test_tdrhf_nac_ee.py`: 312
+- `pbc/df/aft.py`: 68
+- `pbc/df/aft_jk.py`: 480 617 661 662
+- `pbc/df/fft.py`: 89
+- `pbc/df/ft_ao.py`: 598
+- `pbc/df/grad/krhf.py`: 480 483 485 487 499 515 516 677 796 922 925 927 1152 1208
+- `pbc/df/grad/kuhf.py`: 484 487 489 491 503 519 520 684
+- `pbc/df/grad/rhf.py`: 379 383 417 573 662 813 816 818
+- `pbc/df/grad/uhf.py`: 362 366 400 556
+- `pbc/df/tests/test_pbc_aft.py`: 506 509 536 539 566 569
+- `pbc/df/tests/test_pbc_df_derivatives.py`: 100 129 162 291 325 378 436 506 519 647 708 777 791 821 825 928
+- `pbc/df/tests/test_pbc_ft_ao.py`: 180 282
+- `pbc/df/tests/test_pbc_hcore_derivatives.py`: 40
+- `pbc/df/tests/test_pbc_int3c2e.py`: 271 277 322 328 458 459
+- `pbc/dft/gks.py`: 97 100
+- `pbc/dft/kgks.py`: 107 110
+- `pbc/dft/krks.py`: 73 77 172
+- `pbc/dft/krkspu.py`: 140 143
+- `pbc/dft/kuks.py`: 73 77 93
+- `pbc/dft/kukspu.py`: 125
+- `pbc/dft/multigrid_v2.py`: 1572 1575 1923 1924 1986 1989
+- `pbc/dft/multigrid_v3.py`: 2189 2256
+- `pbc/dft/numint.py`: 559 632 633
+- `pbc/dft/rks.py`: 110 114
+- `pbc/dft/tests/test_multigrid_v3.py`: 97 186 190 1238
+- `pbc/dft/tests/test_pbc_kucdft.py`: 59 60
+- `pbc/dft/tests/test_pbc_numint.py`: 486 492 499 506
+- `pbc/dft/uks.py`: 96 100
+- `pbc/grad/krhf.py`: 57 161
+- `pbc/grad/krks.py`: 246 272 305
+- `pbc/grad/krks_stress.py`: 114 115 197 198 214 215 216 223 224 231 232 341
+- `pbc/grad/krkspu.py`: 146
+- `pbc/grad/kucdft.py`: 108 122
+- `pbc/grad/kuks.py`: 247 250 277 280 315 318
+- `pbc/grad/rhf.py`: 229 231 233 235 237 239 434 439 440
+- `pbc/grad/tests/test_pbc_pp_grad.py`: 553 635 637
+- `pbc/scf/ghf.py`: 215
+- `pbc/scf/kghf.py`: 143 233
+- `pbc/scf/khf.py`: 195 196 742 840 841
+- `pbc/scf/kuhf.py`: 195 196 300 465 466
+- `pbc/scf/rsjk.py`: 1122 1196 1219 1306 1314 1320 1354 1360 1366
+- `pbc/scf/tests/test_pbc_scf_hf.py`: 318 322 326 330 334 343 347 351 355 359
+- `pbc/scf/tests/test_pbc_scf_jk.py`: 480 486 535 612 897 920 962 982 986
+- `pbc/scf/tests/test_pbc_scf_uhf.py`: 181 185 189 193 197 206 210 214 218 222
+- `pbc/scf/uhf.py`: 121
+- `pbc/tools/tests/test_magmom.py`: 42 51 192
+- `properties/eda.py`: 89 104
+- `properties/raman.py`: 94
+- `properties/tests/test_polarizability.py`: 102
+- `qmmm/external_field.py`: 94 165 180
+- `qmmm/mbis.py`: 1573 1580 1590 1609 1610 1611
+- `scf/ghf.py`: 279 283
+- `scf/hf.py`: 119 120 123 197 198
+- `scf/hf_lowmem.py`: 400 401 408
+- `scf/tests/test_init_guess.py`: 46 48
+- `scf/tests/test_rhf.py`: 333 337 341 345 349
+- `scf/tests/test_uhf.py`: 328 332 336 340 344
+- `scf/uhf.py`: 60 137 139 140 222 223 226 408
+- `sem/integral/fock.py`: 419 420
+- `solvent/hessian/pcm.py`: 446 448 557
+- `solvent/tests/test_pcm_tdscf_nac.py`: 134 200
+- `tdscf/uhf.py`: 772 773 777 778
+
+#### Class B (256 sites)
+- `df/grad/rhf.py`: 139
+- `df/grad/tdrhf.py`: 482 483
+- `df/hessian/tests/test_df_rhf_hessian.py`: 265
+- `df/hessian/tests/test_df_uhf_hessian.py`: 221 235 273 283 285 306
+- `df/tests/test_df_rhf_grad.py`: 273 317
+- `df/tests/test_df_tdrhf_grad.py`: 245 261
+- `dft/mcfun_gpu.py`: 240 248 249 262 263 265 325 331
+- `dft/tests/test_numint.py`: 457 461 465
+- `dft/xc_deriv.py`: 220 221 222 226 235 236 248 258 259 270 278
+- `gto/tests/test_mole.py`: 154
+- `hessian/rks.py`: 907 1047 1868 1870 2431 2432 2435 2450 2452 2454 2456 2459 2461 2624 2625 2628 2876 2888 2902 2904 2918 2924 2926 2938 2942 2944 2957 2959 2963 2965 2967 2969 2986 3000 3013 3015
+- `hessian/tests/test_rks_hessian_grid_response.py`: 160 161 162 163 167 168
+- `hessian/tests/test_vv10_hessian.py`: 221 222 223 224 228 229
+- `hessian/uks.py`: 1855 1857 1860 1862
+- `lib/tests/test_cuest_wrapper.py`: 1209 1219 1220 1221 1225 1253 1294 1306 1309 1319 1320 1321 1325 1366 1378 1381 1391 1392 1393 1397 1438 1450 1453 1463 1464 1465 1469 1510 1522 1525 1535 1536 1537 1541
+- `lib/tests/test_cutensor.py`: 24 43 72 80
+- `nac/tdrhf_grad_nacv.py`: 63 71 161 161 162 162 200 241 254 301 303 304 305 306 310 312 313 314 315 319 320 321 322 326 327 328 329 334 335 336 338 520
+- `nac/tdrks_grad_nacv.py`: 59 337 337 338 338 407 474 487 532 534 535 536 537 541 543 544 545 546 550 551 552 553 557 558 559 560 565 566 567 569
+- `nac/tdrks_ris_grad_nacv.py`: 142 142 143 143 192 243 256 299 301 302 303 304 308 310 311 312 313 317 318 319 320 324 325 326 327 332 333 334 336
+- `pbc/df/tests/test_pbc_df_derivatives.py`: 348 418 489 621 689 760 824
+- `pbc/df/tests/test_rsdf_builder.py`: 715 729
+- `pbc/dft/gen_grid.py`: 249
+- `pbc/dft/multigrid_v2.py`: 2065 2132
+- `pbc/dft/multigrid_v3.py`: 2445
+- `pbc/grad/tests/test_pbc_pp_grad.py`: 623
+- `pbc/scf/soscf.py`: 77 78 163 164 165 166
+- `scf/tests/test_init_guess.py`: 622 717
+- `scf/tests/test_scf_jk.py`: 231
+- `solvent/hessian/pcm.py`: 300
+- `tdscf/ris.py`: 1165 1172
+- `tdscf/uhf.py`: 125 770 771 850 851 859 860 1057 1059 1067 1069
+- `x2c/x2c.py`: 505
+
+#### Left as is (138 direct calls)
+- `cc/ccsd_incore.py`: 393
+- `df/hessian/rhf.py`: 508 738 748 1393
+- `df/hessian/uhf.py`: 157 289 422 586 755
+- `dft/mcfun_gpu.py`: 167 170 171 184 185
+- `grad/rks.py`: 491 723 774
+- `grad/rkspu.py`: 119
+- `grad/uks.py`: 333
+- `grad/ukspu.py`: 66
+- `gto/int3c1e_ip.py`: 450
+- `hessian/rks.py`: 2799 2809 2818 3173
+- `hessian/uks.py`: 737 747 756 904
+- `lib/cupy_helper.py`: 885
+- `pbc/df/grad/krhf.py`: 349
+- `pbc/df/grad/kuhf.py`: 353
+- `pbc/df/tests/test_pbc_df_derivatives.py`: 197 198 254 255 391 449 555 556 594 595 660 721
+- `pbc/dft/multigrid_v2.py`: 1483 1772
+- `pbc/dft/numint.py`: 557
+- `pbc/dft/tests/test_multigrid_v3.py`: 100 185
+- `pbc/grad/krhf.py`: 128 130
+- `pbc/grad/krks.py`: 83 222 242
+- `pbc/grad/krks_stress.py`: 246 344
+- `pbc/grad/krkspu.py`: 145
+- `pbc/grad/kuks.py`: 65 66 220 242 243
+- `qmmm/pbc/itrf.py`: 638
+- `solvent/hessian/pcm.py`: 93 94 126 127 142 148 238 239 271 272 285 289 295 447 449
+- `tdscf/_lr_eig.py`: 942 951 968 984 985
+- `tdscf/math_helper.py`: 475 484 501 517 518 619 628 646
+- `tdscf/rhf.py`: 116 117 144 145 146 147 149 150 189 190
+- `tdscf/ris.py`: 619 620 621 622 624 625 635 636
+- `tdscf/uhf.py`: 149 150 152 153 155 156 196 197 198 199 201 202 203 204 206 207 253 254 255 256 490 491 497 498 549 550 556 557
+
+### Checks
+- Fork `git status --porcelain` in the job clone: `M gpu4pyscf/lib/cupy_helper.py`, `M gpu4pyscf/lib/cutensor.py` (the stopped round's patch, uncommitted); the helper patch above is in a scratch worktree. Nothing committed or pushed.
+- No JIT extension builds. All GPU work ran under `ulimit -c 0`. HIP device 2 was not touched.
+- Lock released with `port-lock --release` (agent stopped mid-port); the stage stays `porting`.

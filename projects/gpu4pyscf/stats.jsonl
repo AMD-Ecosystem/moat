@@ -153,3 +153,5 @@
 {"kind":"phase","ts":"2026-10-31T17:13:45Z","phase":"compile","seconds":0.055,"exit":1,"cmd":"cmake --build build/temp.gpu4pyscf -j 16"}
 {"kind":"phase","ts":"2026-10-31T17:18:22Z","phase":"compile","seconds":246.049,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/rx7900-20261031-100852-gpu4pyscf-gemm-wa2/moat/projects/gpu4pyscf/src/build/temp.gpu4pyscf -j 16"}
 {"kind":"session","ts":"2026-10-31T18:27:47Z","epoch":1793471267.100492450,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-31T19:49:56Z","phase":"compile","seconds":0.052,"exit":1,"cmd":"cmake --build build/temp.gpu4pyscf -j 16"}
+{"kind":"phase","ts":"2026-10-31T19:54:16Z","phase":"compile","seconds":248.071,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/rx7900-20261031-124604-gpu4pyscf-gemm-wa3/moat/projects/gpu4pyscf/src/build/temp.gpu4pyscf -j 16"}
