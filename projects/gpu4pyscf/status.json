@@ -7,7 +7,7 @@
   "priority": 4.871,
   "ext_type": "cmake-cupy-plugin",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-10-31T17:11:56Z",
+  "updated_at": "2026-10-31T18:27:43Z",
   "head_sha": "3982189a90cc470caec8903924f355b538e78954",
   "waivers": {
     "windows": {
@@ -138,11 +138,8 @@
   },
   "porting_released": {
     "arch": "linux-gfx1100",
-    "since": "2026-10-31T16:39:16Z",
-    "at": "2026-10-31T17:06:39Z"
+    "since": "2026-10-31T17:11:56Z",
+    "at": "2026-10-31T18:27:43Z"
   },
-  "porting": {
-    "arch": "linux-gfx1100",
-    "since": "2026-10-31T17:11:56Z"
-  }
+  "porting": null
 }
