@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T05:14:47Z",
-  "updated_at": "2026-10-30T01:09:17Z",
+  "updated_at": "2026-10-31T21:29:13Z",
   "head_sha": "3bf7a75e6d48860a8fc78f55b13da5547609aa7b",
   "depends_on": [],
   "waivers": {},
@@ -19,7 +19,7 @@
   },
   "license_spdx": "LGPL-3.0",
   "upstream_repo_id": 114947047,
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "linux-gfx942": {
       "blocked": false,
@@ -101,9 +101,9 @@
       "blocked": false,
       "blocked_reason": null,
       "validated_sha": "3bf7a75e6d48860a8fc78f55b13da5547609aa7b",
-      "started_at": null,
+      "started_at": "2026-10-31T21:29:13Z",
       "completed_at": "2026-10-30T00:53:44Z",
-      "updated_at": "2026-10-30T00:53:44Z",
+      "updated_at": "2026-10-31T21:29:13Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -117,7 +117,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator"
+      "last_agent": "porter"
     },
     "windows-gfx1201": {
       "state": "completed",
@@ -154,5 +154,9 @@
     "arch": "linux-gfx942",
     "since": "2026-10-30T00:39:29Z",
     "at": "2026-10-30T00:41:06Z"
+  },
+  "porting": {
+    "arch": "linux-gfx1100",
+    "since": "2026-10-31T21:29:13Z"
   }
 }
