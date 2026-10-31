@@ -321,7 +321,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-10-30T17:36:18Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeff",
+        "at": "2026-10-31T06:23:34Z",
+        "note": "2026-10-31: harden root cause, then draft a report"
+      }
     },
     {
       "id": "hip-vmheap-unmap-threshold-lost-or-overtrimmed",
