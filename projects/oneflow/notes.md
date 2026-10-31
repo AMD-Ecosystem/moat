@@ -2061,3 +2061,121 @@ Fused harness (`agent_space/fused_harness.py`, rewritten from the porter's 0b04c
 - `python3 utils/jargon.py --port oneflow`: only the three known 68718f038 hits ('Strategy A', 'MOAT', 'Lead platform'; PR-prep squash item).
 - Documentation: README.md documents the ROCm configure next to the CUDA one; unchanged.
 - `git -C projects/oneflow/src status --porcelain`: empty.
+
+## Porter round 2026-10-31 (linux-gfx1100, two W7800; answers "Validation 2026-10-31" on linux-gfx942 and linux-gfx1100 at 80cbda89b, both validation-failed)
+
+jeff asked for this round: fix the validation findings one commit per fix with a regression test each (P2P forward-shuffle coherence on gfx1100, the never-ported id_shuffle P2P kernel, batch norm with one value per channel, float64 `cublas_fused_mlp` with a null algo on gfx1100), run the fused embedding-interaction harness with P2P on 20 times, rerun the three rare-crash files 10 times, the full modules and tensor suites and the two-GPU tests 5 rounds at the final head. Leave the flatbuffers/kineto edits and float64 convolution alone; the long-k half matmul accuracy finding belongs to a separate gfx942 job. Lock taken with `set-state oneflow linux-gfx1100 porting` (state was validation-failed). Host: two Radeon Pro W7800 48GB (gfx1100, wave32), `HIP_VISIBLE_DEVICES=0,1` pinned by the dispatcher, ROCm 10.1.0 SDK wheels, job venv with the image's torch 2.16.0a0 linked read-only, `ulimit -c 0`, `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git` (`therock-libllvm-symbol-interposition`), no JIT extension builds. Fork `moat-port` 80cbda89b -> 80a91de06: four new commits, fast-forward, no amend or force push.
+
+### Build (reusing the gfx1100 validator's build of 80cbda89b)
+The validator's clone and build directory (`rx7900-20261031-070004-val-oneflow-80cb`, a clean build of 80cbda89b, 6429 s) were copied with `cp -a`. Every absolute path in the build tree names the old job, so the copy was made usable without recompiling: (1) all 4984 build files containing the old path had it rewritten in place to `<job>/bld/...`, a path of exactly the same length (`<job>/bld` holds symlinks to `moat`, `venv`, `venv-base-links`), with each file's mtime restored, so binary files (`.ninja_deps`, objects, `.so` RPATHs) stay valid; (2) ninja 1.13's log (v7) keys each output on a rapidhash of its command line, so `.ninja_log` hashes were recomputed for the rewritten commands (`agent_space/tools/rehash.py`, `rapid.py`; the hash reproduced 1900 of 2048 old command hashes before rewriting, the rest are response-file links); (3) flatbuffers' in-source sub-build kept a stale `CMakeCache.txt` and was reset. The first ninja run then did 44 steps (generators, links), no compile. Every later build was incremental (`utils/timeit.sh oneflow compile -- ninja -C <job>/bld/.../build -j16`); editing `hip_compat/cudnn.h` or `hip_compat/cublasLt.h` rebuilds about 920 TUs each.
+
+### Finding 1: P2P forward shuffle stale data on gfx1100 (fixed, b27adc49a `[ROCm] Stage P2P shuffle data in uncached memory on HIP`)
+Standalone reproducer (`agent_space/probe/p2pdata.hip`, two processes, one GPU each, IPC): per iteration a kernel writes iteration-dependent ints into this rank's buffer, then oneflow's HIP BarrierKernel (system-scope release/acquire on uncached flags), then a kernel reads the peer's buffer and a checker counts mismatches; 200-500 iterations, 256 KB / 4 MB / 32 MB buffers:
+| data buffer | peer load | result |
+|---|---|---|
+| hipMalloc | plain, nontemporal, or system-scope atomic | every element wrong in every iteration from iteration 1 (256 KB, 4 MB); 32 MB passes because it overflows the 6 MB L2 |
+| hipDeviceMallocFinegrained | any | same as hipMalloc |
+| hipDeviceMallocUncached | any | 0 bad, also under hipGraph replay (500 iterations) |
+| hipMalloc + `hipEventRecord` of a `hipEventReleaseToSystem` event before the barrier | plain | 0 bad eagerly; under hipGraph capture/replay every element wrong again (the event's system release is not kept in the graph) |
+So on gfx1100 the producer's writes stay in its L2: neither the end of the producing kernel nor the barrier's system-scope release writes them back, and the peer's reads go to memory. (On gfx90a/gfx942 the system-scope release does write L2 back, which is why the same code passed there.) Consumer-side caching is not a factor: with the release event every iteration of changing data read correctly. 74fd81111 had covered the flags only, and its comment claimed the release made the data visible; that is false on gfx1100 and is corrected in e256dab86.
+CUDA's model: a GPU's L2 is the point of coherence for its own memory including peer accesses, so kernel boundaries plus volatile flags suffice there.
+Fix (HIP only): each kernel state owns an uncached staging buffer (`hipExtMallocWithFlags(..., hipDeviceMallocUncached)`, the size of `cur_rank_embeddings` / `embedding_grad`) and shares it over IPC instead of the op tensors. Forward: `GatherKernel` writes the rank's unique rows into it before `BarrierKernel`, then peers run `EmbeddingShuffleCopyKernel` (upstream's own non-fused kernels; upstream's `DISABLE_FUSE_GATHER_COPY` order Barrier -> Gather -> Copy has a race, since a peer may copy before the owner's gather; on HIP the gather is before the barrier). Gradient: `cudaMemcpyAsync` of `embedding_grad` into the staging buffer before the barrier. Peers read no ordinary device memory. The release event was rejected because it does not survive graph capture and these kernels declare CudaGraphSupport.
+Regression test `expensive/test_one_embedding_p2p_shuffle_global.py` (new): builds `embedding_shuffle` (skip_last_gather, is_train) and `embedding_gradient_shuffle` (skip_first_scatter) with OpBuilder, applied through `dispatch_crop_mirror_normalize_from_uint8` (as the 52009385c harness did), one nn.Graph, two ranks, float16, 26 tables x 64 rows x dim 128, 20 iterations with a table that changes every iteration (multiples of 1/8), exact forward rows and exact gradient (row x number of holder ranks) every iteration. Batch 64 matters: at 512 rows the shared buffers (6.8 MB) exceed the L2 and the unfixed kernels pass. Results: fixed build 1 passed on both ranks in 5 of 5 runs; kernel trace (AMD_LOG_LEVEL=3): GatherKernel 20, BarrierKernel 40, EmbeddingShuffleCopyKernel 20, EmbeddingGradientShuffleCudaKernel 20 per rank. Unfixed kernels (stash + rebuild of the two TUs): forward and backward mismatch at iteration 2 or 3 on both ranks, 2 of 2 runs (and at batch 16).
+One graph per process: the P2P kernels publish their IPC handles under `op_name + rank` (CtrlClient PushKV), and nn.Graph op names come from a per-graph counter (`embedding_shuffle-6`), so a second graph in the same process aborts with `Check failed: (kv_.emplace(k, v).second)`. That is upstream behaviour on CUDA too; it is why upstream's multi-graph `test_id_shuffle_global.py` cannot run with `ID_SHUFFLE_USE_P2P=1`.
+Fused harness (the validator's `fused_harness.py`, 50 steps) after the fix, against unfused run 1: unfused rerun top-weight relL2 2.8e-5; fused P2P on 2.6e-5 / 2.8e-5 / 2.8e-5; fused P2P off 3.0e-5; forward P2P only 3.0e-5 (validator at 80cbda89b: P2P on 3.0e-2, forward only 2.7e-2).
+
+### Finding 2: id_shuffle P2P kernel hang (fixed, e256dab86 `[ROCm] Share the P2P id shuffle buffer in uncached memory on HIP`)
+The kernel state's single shared buffer (partitioned unique counts, ids, table ids, barrier flags) is now `hipDeviceMallocUncached` on HIP, and `BarrierAndMemset` / `BarrierAndComputeOut` use system-scope release/acquire atomics like the other two kernels. Regression test `expensive/test_id_shuffle_p2p_global.py` (new; `ID_SHUFFLE_USE_P2P=1` at import, one graph, two ranks, 26 tables x 64 rows, 10 iterations, every iteration checked: distinct owned ids from the batch with the right table ids, num_unique_matrix column per owner, all distinct ids owned exactly once). Fixed: passes on both ranks; trace shows HashTableUniqueAndPartitionPairs, BarrierAndMemset, HashTableUniquePairs, BarrierAndComputeOut 10 each per rank and no NCCL kernel. Unfixed (stash + rebuild): hangs to the 150 s launcher timeout. Upstream `test_id_shuffle_global.py` with `ID_SHUFFLE_USE_P2P=1` now gets past the first graph and aborts in the second on the PushKV collision above (not a port fault).
+
+### Item 3: fused harness hang check (P2P on, 20 runs, after fixes 1 and 2)
+`agent_space/fh20.sh` (fused, embedding and gradient P2P on, 300 s timeout each): 20 of 20 rc=0 in 31-34 s, both ranks finite, no hang. Worst against unfused run 1: top-weight relL2 3.3e-5, max loss difference 7.2e-7 (rerun noise).
+
+### Finding 4: batch norm with one value per channel (fixed, 97def642f `[ROCm] Train batch norm with one value per channel on HIP kernels`)
+MIOpen rejects training with N*spatial == 1 (spatial) or N == 1 (per activation), and the shim passed `miopenStatusBadParm` on. The shim's double batch norm kernels are now templated on the tensor type with a float parameter/arithmetic type for float16/bfloat16 (`BatchNormType<T>`), and `UseNativeBatchNorm` sends double (as before) plus any training call whose slots reduce one value to them, forward training and backward. They normalize as `(x - mean) * a + bias` (was `x * a + (bias - mean * a)`), so a single value gives bias exactly. Regression test `test_batchnorm_single_value` in `modules/test_batchnorm.py`: (1,4), (1,4,1), (1,3,1,1), (1,3,1,1,1), float32/float64, with/without running stats, y/dx/dgamma/dbeta/running_mean to 1e-6; float16 through an AMP nn.Graph for (1,4) and (1,3,1,1); BatchNorm1d/BatchNorm2d modules incl. eval with `track_running_stats=False`. Fixed: test_batchnorm 6 passed + 1 upstream skip; with test_batchnorm_add_relu, test_instancenorm, test_groupnorm 9 more passed. Against the validator's 80cbda89b build (read-only, test copied to /tmp): aborts `normalization_kernel.cu:506 ... miopenStatusBadParm (3)`.
+Observations, not changed: (a) eager float16/bfloat16 batch norm fails for every shape on this build (`InferDataType Failed. Expected kFloat16, but got kFloat` in normalization_op.cpp): `NormalizationFunctor` casts gamma/beta/running stats to x's dtype while the op requires float parameters for 16-bit x. Upstream code, same on CUDA; 16-bit batch norm works through AMP graphs. (b) Running variance with one value per channel: the oneflow CPU kernel gives NaN (unbiased factor 1/(n-1) with n = 1); the HIP native kernel gives (1 - factor) * old + factor * 0 (0.9 from 1.0), as the double path already did. cuDNN's value is unknown here; the test does not assert it.
+
+### Finding 5: float64 cublas_fused_mlp null algo on gfx1100 (fixed, 80a91de06 `[ROCm] Pick the hipBLASLt algorithm when cuBLASLt callers pass none`)
+When the caller passes a null algo (cublas_fused_mlp does), the shim's `cublasLtMatmul` now runs `hipblasLtMatmulAlgoGetHeuristic` on the final descriptor (after `ApplyDesc` with the plan's native epilogue) with the call's workspace as the preference limit, and passes the returned algo; none returned gives `HIPBLAS_STATUS_NOT_SUPPORTED`. Regression test: upstream `test_cublas_fused_mlp.py` (float32 and float64), which aborted at 80cbda89b. Now: no abort; a copy restricted to float64 passes, float32 alone fails its 1e-4 fused-vs-unfused tolerance (the known float32 tolerance item, also on gfx90a/gfx942); float64 `flow._C.fused_mlp` (64x256 -> 128 -> 64, ReLU) vs float64 numpy: 8.6e-16 max relative error (float32: 4.7e-7). test_fused_matmul_bias passes; test_fused_matmul_bias_add_relu_dropout fails as before (float32 tolerance item).
+The library bug itself is unchanged and still open as `hipblaslt-gfx1100-f64-null-algo`: the validator's probe, rerun here (`hipcc --offload-arch=gfx1100 -O1 lt64mm.cpp -lhipblaslt`), gives status 6 and C[0]=0 with a null algo and status 0 with the right C[0] with the heuristic algo, for all four shapes, with and without a prior RELU_BIAS query. Source of the probe, kept here because the validator's agent_space is container-local:
+```cpp
+#include <hipblaslt/hipblaslt.h>
+#include <hip/hip_runtime.h>
+#include <cstdio>
+#include <vector>
+// f64 matmul with algo == nullptr, as oneflow's shim calls it, with and without a prior
+// RELU_BIAS heuristic query on the same descriptor.
+int run(hipblasLtHandle_t h, int m, int n, int k, bool toggle, bool use_algo) {
+  hipblasLtMatmulDesc_t d; hipblasLtMatmulDescCreate(&d, HIPBLAS_COMPUTE_64F, HIP_R_64F);
+  hipblasOperation_t tn = HIPBLAS_OP_N, tt = HIPBLAS_OP_T;
+  hipblasLtMatmulDescSetAttribute(d, HIPBLASLT_MATMUL_DESC_TRANSA, &tt, sizeof(tt));
+  hipblasLtMatmulDescSetAttribute(d, HIPBLASLT_MATMUL_DESC_TRANSB, &tn, sizeof(tn));
+  hipblasLtMatrixLayout_t a, b, c;
+  hipblasLtMatrixLayoutCreate(&a, HIP_R_64F, k, m, k); hipblasLtMatrixLayoutCreate(&b, HIP_R_64F, k, n, k);
+  hipblasLtMatrixLayoutCreate(&c, HIP_R_64F, m, n, m);
+  double *A, *B, *C, *bias; void* ws; size_t wss = 4 << 20;
+  hipMalloc(&A, 8.0 * m * k); hipMalloc(&B, 8.0 * k * n); hipMalloc(&C, 8.0 * m * n); hipMalloc(&bias, 8.0 * m); hipMalloc(&ws, wss);
+  std::vector<double> ha(m * k, 1.0), hb(k * n, 2.0);
+  hipMemcpy(A, ha.data(), 8.0 * m * k, hipMemcpyHostToDevice); hipMemcpy(B, hb.data(), 8.0 * k * n, hipMemcpyHostToDevice);
+  hipblasLtMatmulPreference_t p; hipblasLtMatmulPreferenceCreate(&p);
+  hipblasLtMatmulPreferenceSetAttribute(p, HIPBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &wss, sizeof(wss));
+  hipblasLtMatmulHeuristicResult_t r; int cnt = 0;
+  if (toggle) {
+    hipblasLtEpilogue_t e = HIPBLASLT_EPILOGUE_RELU_BIAS;
+    hipblasLtMatmulDescSetAttribute(d, HIPBLASLT_MATMUL_DESC_EPILOGUE, &e, sizeof(e));
+    hipblasLtMatmulDescSetAttribute(d, HIPBLASLT_MATMUL_DESC_BIAS_POINTER, &bias, sizeof(bias));
+    hipblasLtMatmulAlgoGetHeuristic(h, d, a, b, c, c, p, 1, &r, &cnt);
+    e = HIPBLASLT_EPILOGUE_DEFAULT; void* nb = nullptr;
+    hipblasLtMatmulDescSetAttribute(d, HIPBLASLT_MATMUL_DESC_EPILOGUE, &e, sizeof(e));
+    hipblasLtMatmulDescSetAttribute(d, HIPBLASLT_MATMUL_DESC_BIAS_POINTER, &nb, sizeof(nb));
+  }
+  const hipblasLtMatmulAlgo_t* algo = nullptr;
+  if (use_algo) { hipblasLtMatmulAlgoGetHeuristic(h, d, a, b, c, c, p, 1, &r, &cnt); algo = cnt ? &r.algo : nullptr; }
+  double al = 1, be = 0;
+  hipblasStatus_t st = hipblasLtMatmul(h, d, &al, A, a, B, b, &be, C, c, C, c, algo, ws, wss, 0);
+  double out = -1; hipDeviceSynchronize(); hipMemcpy(&out, C, 8, hipMemcpyDeviceToHost);
+  printf("m%d n%d k%d toggle=%d algo=%s: status %d C[0]=%g (want %g)\n", m, n, k, toggle, use_algo ? "heur" : "null", (int)st, out, 2.0 * k);
+  return st;
+}
+int main() {
+  hipblasLtHandle_t h; hipblasLtCreate(&h);
+  int shapes[][3] = {{256, 1, 512}, {64, 32, 16}, {1024, 1024, 1024}, {32, 8, 16}};
+  for (auto& s : shapes) for (int t = 0; t < 2; ++t) for (int u = 0; u < 2; ++u) run(h, s[0], s[1], s[2], t, u);
+}
+```
+
+### CUDA compile gate (nvcc 12.8.93, sm_80): PASS
+This host had no CUDA toolkit. Assembled `$FLEET_VENV/cuda-12.8` from NVIDIA's redist (`redistrib_12.8.1.json`): cuda_nvcc 12.8.93, cudart/cccl/nvtx/cupti/profiler_api/nvml_dev 12.8.90, nvrtc 12.8.93, libcublas 12.8.4.1, libcurand 10.3.9.90, libcusparse 12.5.8.93, libcufft 11.3.3.83, libcusolver 11.7.3.90, libnvjitlink 12.8.93, libnvjpeg 12.3.5.92, libnpp 12.3.3.100: 16/16 archives sha256-verified against the json, extracted with `--strip-components=1` (plus a `lib64 -> lib` symlink, without which CMake's CUDA compiler check cannot find `-lcudadevrt`). cuDNN 8.9.7.29 and NCCL 2.28.9 from their cu12 wheels (`pip download`, unversioned `.so` symlinks). Scratch tree `agent_space/oneflow-cuda` from `git archive HEAD` (no link to the fork), scratch-only: the two flash-attention blocks of `cmake/third_party.cmake` disabled (dead mirror; nothing includes it with CUTLASS off). `agent_space/build_cuda.sh config` (Ninja, BUILD_CUDA=ON, sm_80, g++-13 host, USE_SYSTEM_NCCL, CUTLASS/MLIR/RDMA/oneDNN off), `prepare_oneflow_third_party` rc=0. The TUs nvcc sees that this round changed are the three P2P kernels (every edit is under USE_HIP or in an `#else` that keeps the CUDA code); `hip_compat/cudnn.h` and `hip_compat/cublasLt.h` are on the HIP include path only (`hip_compat` and `USE_HIP` appear 0 times in the CUDA build.ninja). Compiled with their recorded commands (`nvcc ... -ccbin=/usr/bin/g++-13 --generate-code=arch=compute_80,code=[compute_80,sm_80]`), sources sha256-identical to 80a91de06: 3/3 rc=0 (`agent_space/build_cuda.sh -k 0 <three .cu.o targets>`).
+
+### Full suites at 80a91de06 (gfx1100; the validator's per-file runner `agent_space/run_suite.sh`: one pytest per file, `--timeout=900`, junit per file; modules on GPU 0, 6 files at a time; tensor on GPU 1, 4 at a time, concurrently; `utils/timeit.sh oneflow test`)
+| suite | passed | failed | errors | skipped | gfx1100 at 80cbda89b |
+|---|---|---|---|---|---|
+| modules (545 files) | 1598 | 50 | 5 | 315 | 1593 / 50 / 5 / 315 |
+| tensor (22 files) | 368 | 1 | 0 | 22 | 368 / 1 / 0 / 22 |
+- Per test id against the validator's junit at 80cbda89b: one new failure record, `test_cublas_fused_mlp::test_fused_matmul_op`, which aborted before (finding 5) and now runs; its float32 case is the known float32 tolerance item. One record gone: `test_special_ops::test_flow_digamma_with_random_data` (the autotest drawing CPU float16 digamma, random). Every other failure/error id is the same as at 80cbda89b (classes as listed in "Validation 2026-10-31 (linux-gfx1100 ...)").
+- Files without junit: test_dataset (134, `/dataset` missing), test_loss (134) and test_higher_derivative_loss (139 this time, the segfault after the same HSA exception 0x1016 in torch's `binary_cross_entropy_out_cuda`: the torch BCE oracle), test_fused_self_attention and test_shutting_down (rc 5, no tests collected). At 80cbda89b test_cublas_fused_mlp and test_vsplit were also in this list.
+- tensor: only test_safetensors (module not installed), as before.
+
+### Two GPUs, 5 rounds at 80a91de06 (`agent_space/two_gpu.sh`, `oneflow.distributed.launch --nproc_per_node 2 --redirect_stdout_and_stderr`, GPUs 0,1)
+65 of 65 runs rc=0:
+| test | every round |
+|---|---|
+| expensive/test_id_shuffle_global.py, embedding and gradient `*_USE_P2P` = 0 and = 1 | 3 passed on both ranks |
+| modules/test_dynamic_allocation_gradient_shuffle_shuffle_global.py, P2P 0 and 1 | 1 skipped (upstream `@unittest.skip`) |
+| expensive/test_id_shuffle_p2p_global.py (new; id_shuffle P2P on) | 1 passed on both ranks |
+| expensive/test_one_embedding_p2p_shuffle_global.py (new; embedding + gradient P2P on) | 1 passed on both ranks |
+| modules/test_comm_ops.py -k bfloat16 | 2 passed on both ranks |
+| graph/test_graph_nccl_logical_bfloat16.py | 3 passed on both ranks |
+| expensive/test_oneembedding.py, 2 ranks | 1 passed on both ranks |
+| fused harness unfused / fused P2P off / fused P2P on / fused P2P on with id_shuffle P2P | rc=0, finite |
+Fused harness against the first unfused run (rank 0; rank 1 identical): top-weight relL2 unfused reruns 2.6e-5..3.2e-5, fused P2P off 2.7e-5..3.0e-5, fused P2P on 2.6e-5..3.2e-5, fused P2P on + id_shuffle P2P 2.7e-5..3.0e-5; max loss difference at most 1.1e-6 everywhere. id_shuffle P2P with upstream's multi-graph test files is not runnable in one process (PushKV op-name collision, above), so id_shuffle "P2P on" is the new test plus the fused harness.
+
+### Rare crashes (item 4 of the gfx1100 validation): rerun at 80a91de06
+`agent_space/crash_stress.sh`: test_vsplit, test_global_einsum_eltwise_mul_then_reduce_sum and test_batchnorm, the three files 3 at a time alternating GPUs, 10 rounds: 30 of 30 rc=0 (3 / 1 / 6 passed + 1 skip each), no segfault, heap corruption or core. Plus one more run of each inside the full modules suite above, also clean. Not recurred; still unexplained.
+
+### Other checks
+- `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038 ('Strategy A', 'MOAT', 'Lead platform').
+- `utils/prose.py` clean on the four messages; titles 56/65/66/68 chars. clang-format 11.1 clean on the changed C++; black 19.10b0 clean on the changed tests (black touched only added lines).
+- `git -C projects/oneflow/src status --porcelain`: empty. Fork `moat-port` pushed 80cbda89b..80a91de06 (fast-forward), `advance-head` 80a91de06.
+- Left alone per jeff: flatbuffers `-Werror` strip, kineto `-include cstdint`, float64 convolution (`oneflow-float64-conv-hip`); the long-k float16/bfloat16 GEMM accuracy finding (separate gfx942 job).
+- Lesson promoted: `cuda-to-rocm/references/fault-classes.md` (+ SKILL.md index line), "The DATA a peer reads, not only the flags, needs uncached memory -- and on gfx1100 fine-grained is not enough".
+- Owed: gfx90a and gfx942 revalidation at 80a91de06 (the P2P staging, the batch norm routing and the cuBLASLt null-algo path all run there too).

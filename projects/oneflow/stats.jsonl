@@ -195,3 +195,16 @@
 {"kind":"phase","ts":"2026-10-31T16:16:23Z","phase":"test","seconds":737.447,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261031-070004-val-oneflow-80cb/moat/agent_space/one_gpu.sh 5 1"}
 {"kind":"phase","ts":"2026-10-31T17:23:07Z","phase":"test","seconds":1686.055,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261031-070004-val-oneflow-80cb/moat/agent_space/two_gpu.sh"}
 {"kind":"session","ts":"2026-10-31T17:32:01Z","epoch":1793467921.825905608,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-31T17:48:08Z","phase":"compile","seconds":0.003,"exit":1,"cmd":"ninja -j16"}
+{"kind":"phase","ts":"2026-10-31T17:48:24Z","phase":"compile","seconds":0.277,"exit":1,"cmd":"ninja -C /var/lib/jenkins/fleet/jobs/rx7900-20261031-103358-oneflow-fix6/bld/moat/projects/oneflow/src/build -j16"}
+{"kind":"phase","ts":"2026-10-31T17:50:04Z","phase":"compile","seconds":21.375,"exit":0,"cmd":"ninja -C /var/lib/jenkins/fleet/jobs/rx7900-20261031-103358-oneflow-fix6/bld/moat/projects/oneflow/src/build -j16"}
+{"kind":"phase","ts":"2026-10-31T17:56:20Z","phase":"compile","seconds":16.242,"exit":0,"cmd":"ninja -C /var/lib/jenkins/fleet/jobs/rx7900-20261031-103358-oneflow-fix6/bld/moat/projects/oneflow/src/build -j16"}
+{"kind":"phase","ts":"2026-10-31T18:35:25Z","phase":"test","seconds":643.055,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261031-103358-oneflow-fix6/moat/agent_space/fh20.sh"}
+{"kind":"phase","ts":"2026-10-31T18:40:16Z","phase":"compile","seconds":750.046,"exit":0,"cmd":"ninja -C /var/lib/jenkins/fleet/jobs/rx7900-20261031-103358-oneflow-fix6/bld/moat/projects/oneflow/src/build -j16"}
+{"kind":"phase","ts":"2026-10-31T18:48:56Z","phase":"compile","seconds":76.360,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261031-103358-oneflow-fix6/moat/agent_space/build_cuda.sh tp"}
+{"kind":"phase","ts":"2026-10-31T19:02:47Z","phase":"compile","seconds":52.726,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261031-103358-oneflow-fix6/moat/agent_space/build_cuda.sh -k 0 CMakeFiles/oneflow.dir/oneflow/user/kernels/one_embedding_embedding_gradient_shuffle_p2p_kernel.cu.o CMakeFiles/oneflow.dir/oneflow/user/kernels/one_embedding_embedding_shuffle_p2p_kernel.cu.o CMakeFiles/oneflow.dir/oneflow/user/kernels/one_embedding_id_shuffle_p2p_kernel.cu.o"}
+{"kind":"phase","ts":"2026-10-31T19:09:47Z","phase":"compile","seconds":488.210,"exit":0,"cmd":"ninja -C /var/lib/jenkins/fleet/jobs/rx7900-20261031-103358-oneflow-fix6/bld/moat/projects/oneflow/src/build -j16"}
+{"kind":"phase","ts":"2026-10-31T19:12:50Z","phase":"test","seconds":76.487,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261031-103358-oneflow-fix6/moat/agent_space/run_suite.sh tensor 4 1"}
+{"kind":"phase","ts":"2026-10-31T19:23:06Z","phase":"test","seconds":692.672,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261031-103358-oneflow-fix6/moat/agent_space/run_suite.sh modules 6 0"}
+{"kind":"phase","ts":"2026-10-31T19:58:56Z","phase":"test","seconds":2107.688,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261031-103358-oneflow-fix6/moat/agent_space/two_gpu.sh"}
+{"kind":"phase","ts":"2026-10-31T20:02:21Z","phase":"test","seconds":188.732,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261031-103358-oneflow-fix6/moat/agent_space/crash_stress.sh"}

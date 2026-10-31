@@ -154,6 +154,21 @@ reproducer hangs on the first barrier with `hipMalloc` and runs 20000 barriers w
 handles work on both. Allocate any buffer that another GPU polls as uncached or fine-grained.
 (oneflow)
 
+**The DATA a peer reads, not only the flags, needs uncached memory -- and on gfx1100 fine-grained
+is not enough.** Fixing the flags alone left oneflow's P2P shuffle reading stale rows on two
+Radeon W7800 (gfx1100, PCIe): first step right, later steps wrong, run-to-run varying. A
+two-process reproducer (producer kernel writes iteration-dependent data, the system-scope
+barrier, peer kernel reads it over IPC) reads stale data in every element of every iteration
+for `hipMalloc` AND for `hipDeviceMallocFinegrained` buffers that fit in L2, and correctly for
+`hipDeviceMallocUncached`. On gfx11 neither the end of the producing kernel nor a
+`__ATOMIC_RELEASE`/`__HIP_MEMORY_SCOPE_SYSTEM` store writes the producer's L2 back (on gfx90a and
+gfx942 the system release does, which is why the same code passed there). A
+`hipEventRecord` of a `hipEventReleaseToSystem` event before the barrier fixes eager runs but is
+lost under hipGraph capture/replay. Robust fix: the kernel owns an uncached staging buffer,
+shares that over IPC, and copies or gathers the data into it before the barrier. Two traps for
+the regression test: buffers larger than L2 get evicted and pass anyway (oneflow's test needed
+a small batch to fail), and checking only the last iteration of a loop hides it. (oneflow)
+
 **Out-of-bounds reads.** CUDA often tolerates a read one element past an allocation; AMD
 faults. Kernels reading index +/-1 or +/-width at edges (stencils, neighbour gathers) must
 clamp. (colmap ComputeDOG.)
