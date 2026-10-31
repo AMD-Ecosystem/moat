@@ -1852,3 +1852,35 @@ Results:
 - Commit: title 67 characters, `[ROCm]`, AI disclosure, fenced test plan, no Co-Authored-By; `utils/prose.py` clean. The body states that b2ce4bfcf's message wrongly says its graph test runs the logical kernels (b2ce4bfcf not rewritten; the PR-prep squash message should drop that claim).
 - `python3 utils/jargon.py --port oneflow`: only the three known 68718f038 hits.
 - `git -C projects/oneflow/src status --porcelain`: empty.
+
+## Review 2026-10-31 (reviewer, linux-gfx90a; /pr-review local-branch moat-port af83657d7..80cbda89b, the one commit answering "Review 2026-10-31 ... f52f1b78e..af83657d7")
+
+Verdict: **review-passed**. No findings. 80cbda89b resolves the previous review's only finding (testing item 1). Two MI250X GCDs (`HIP_VISIBLE_DEVICES=1,2`), `ulimit -c 0`, `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git`. Runs used the fix4 job's HIP build of af83657d7 read-only (`mi200-20261031-043916-oneflow-fix4`); af83657d7..80cbda89b changes only `python/oneflow/test/graph/test_graph_nccl_logical_bfloat16.py`, so that build is equivalent to 80cbda89b for this test. The test file was taken from `git show 80cbda89b:...` and run from a temp dir under `/tmp` (`agent_space/rt/rt.sh`, not committed). No rebuild, no JIT builds, nothing written to any checkout. The fork diff was read in the fix5 job's clone (HEAD 80cbda89b = origin `moat-port`).
+
+### Previous finding resolved
+- The two logical cases put `* 1` on each side of every `to_global`, so the pass inserts logical kernels; the direct input-to-output case is kept as the collective-boxing case and asserts no `_nccl_logical*` op. Every case checks dtype, sbp and exact values of all five outputs.
+- Compiled user ops, printed per rank by a scratch copy (`agent_space/rt/variant_a.py`), identical on both ranks and matching the porter's table:
+  - `ENABLE_NCCL_LOGICAL_FUSION=0`: `_nccl_logical_all_reduce` 1, `_nccl_logical_reduce_scatter_noncontinuous` 1, `_nccl_logical_all_gather_noncontinuous` 1, `_nccl_logical_s2s` 2, `scalar_mul` 8.
+  - default: `_nccl_logical_fusion` 2, `_nccl_logical_s2s` 1, `scalar_mul` 8.
+  - direct: no user op.
+- The commit message states the coverage correctly and says b2ce4bfcf's message overstated it. The PR-prep squash message must drop b2ce4bfcf's claim that its graph test runs the logical kernels.
+
+### Robustness of the op assertions
+- The assertions read `op.user_conf.op_type_name` (the registered op type) from `graph._compiled_graph_proto.net.op`, not an op instance name. `_compiled_graph_proto` returns `_compiled_job_proto`, parsed from `get_current_job_str()` after `complete_graph_for_runtime()` (graph.py:1419-1423), i.e. the job after every rewrite pass.
+- Neither logical case can pass vacuously under a fusion setting change: the fusion case requires `_nccl_logical_fusion` and `_nccl_logical_s2s` present; the unfused case requires fusion absent and all four unfused types present. Mutation (`agent_space/rt/variant_b.py`, env key misspelled so fusion stays on): the unfused case fails with `'_nccl_logical_fusion' unexpectedly found`, 1 failed 2 passed on both ranks. The porter's mutation (no compute around boxing) covers the other direction.
+- The collective-boxing case can only assert absence: collective boxing is inserted at the task/plan level, not as a job op, so there is no positive op to read from the job. Accepted.
+
+### Environment restoration
+- `ENABLE_NCCL_LOGICAL_FUSION` is `DEFINE_ENV_BOOL` (debug_mode.h:34), which calls `ParseBooleanFromEnv` on every call with no caching (env_var.h:26-31, unlike the `THREAD_LOCAL` variants), and the fusion pass reads it in `IsEnabled` on each compile (nccl_logical_op_fusion_pass.cpp:52-54). `mock.patch.dict` encloses the graph's first call, where compilation happens, and restores `os.environ` on exit.
+- Checked by order: `variant_a.py` renames the cases to run unfused, then fusion, then direct. The fusion case after the unfused one sees `ENABLE_NCCL_LOGICAL_FUSION` unset and still gets `_nccl_logical_fusion` x2. Pytest's default order (definition order) runs fusion before unfused, and the porter's unittest order ran unfused first; all three orders pass.
+- `flow.boxing.nccl.enable_use_compute_stream(True)` is process-global and stays set after the test, as in the original b2ce4bfcf version; all three cases set it, so it does not make the results order-dependent.
+
+### Runs
+- `utils/timeit.sh oneflow test -- agent_space/rt/rt.sh agent_space/rt/test_graph_nccl_logical_bfloat16.py`: 3 passed on both ranks, 3 of 3 runs (about 24.6 s each).
+- `variant_a.py`: 3 passed, op dump above. `variant_b.py`: 1 failed (expected), 2 passed.
+
+### Checked, no finding
+- Commit: title 66 characters (the porter round says 67; a counting slip only), `[ROCm]`, AI disclosure, fenced Test Plan, no Co-Authored-By or noreply, ASCII only. black 19.10b0 `--check` clean.
+- `python3 utils/jargon.py --port oneflow` (through a temporary symlink to the fix5 clone, since removed): only the three known 68718f038 hits.
+- The test sits in the device-generic `python/oneflow/test/graph/` and runs on the CUDA path too; nothing in it is HIP-specific. It has not been run on an NVIDIA GPU.
+- The 2D bf16 registrations (`nccl_logical_2d_sbp_kernels.cpp:522,541`) still need 4 GPUs; the previous review accepted compile-in evidence for them.

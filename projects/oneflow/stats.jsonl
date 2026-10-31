@@ -174,3 +174,8 @@
 {"kind":"phase","ts":"2026-10-31T13:39:32Z","phase":"test","seconds":31.349,"exit":0,"cmd":"agent_space/rt.sh /var/lib/jenkins/fleet/jobs/mi200-20261031-043916-oneflow-fix4/moat/projects/oneflow/src projects/oneflow/src/python/oneflow/test/graph/test_graph_nccl_logical_bfloat16.py"}
 {"kind":"phase","ts":"2026-10-31T13:40:04Z","phase":"test","seconds":31.402,"exit":0,"cmd":"agent_space/rt.sh /var/lib/jenkins/fleet/jobs/mi200-20261031-043916-oneflow-fix4/moat/projects/oneflow/src projects/oneflow/src/python/oneflow/test/graph/test_graph_nccl_logical_bfloat16.py"}
 {"kind":"session","ts":"2026-10-31T13:49:25Z","epoch":1793454565.388305647,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-10-31T13:53:20Z","epoch":1793454800.829710245,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-31T13:54:51Z","phase":"test","seconds":31.337,"exit":0,"cmd":"agent_space/rt/rt.sh agent_space/rt/test_graph_nccl_logical_bfloat16.py"}
+{"kind":"phase","ts":"2026-10-31T13:55:22Z","phase":"test","seconds":31.337,"exit":0,"cmd":"agent_space/rt/rt.sh agent_space/rt/test_graph_nccl_logical_bfloat16.py"}
+{"kind":"phase","ts":"2026-10-31T13:55:53Z","phase":"test","seconds":31.321,"exit":0,"cmd":"agent_space/rt/rt.sh agent_space/rt/test_graph_nccl_logical_bfloat16.py"}
+{"kind":"session","ts":"2026-10-31T13:58:17Z","epoch":1793455097.195073010,"event":"end","platform":"linux-gfx90a"}
