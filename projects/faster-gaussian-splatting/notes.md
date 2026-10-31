@@ -2042,3 +2042,24 @@ rc=0 at d3e2266 and at 99d68f9 (gcc 13.3; only the sm_70 deprecation notice). `-
 ### State
 
 `advance-head 99d68f9`, linux-gfx1100 `porting -> ported`; the project goes to the reviewer next, and every platform validated at d3e2266 owes revalidation at 99d68f9 after review. Once PR #14808 merges and ships in a ROCm release, a validator with that ROCm exercises the 3.5.0 path with no scratch prefix.
+
+## Review 2026-10-31 (reviewer, linux-gfx1100) -- 99d68f9 (hipRAND Philox gate) -> review-passed, with one publication condition
+
+Scope: `git diff d3e2266..99d68f9`, `kernels_mcmc.cuh` (+5/-1) and README (one bullet). No code defects found. One condition, recorded so whoever drafts the upstream PR checks it first.
+
+### Condition (before the upstream PR is drafted): the 300500 threshold rests on an unmerged hipRAND PR
+
+`kernels_mcmc.cuh:10` gates on `HIPRAND_VERSION >= 300500`. The encoding is right: `hiprand_version.h.in` defines `HIPRAND_VERSION @hiprand_VERSION_NUMBER@`, and hipRAND's CMakeLists computes it as `major*100000 + minor*100 + patch` (3.5.0 -> 300500; the SDK's 3.4.0 header says 300400). The threshold holds only while the hipRAND version bump and the function arrive together, and today they do so only in ROCm/rocm-libraries PR #14808, which is still open (head 9b5027b2). That PR bumps `VERSION_STRING` 3.4.0 -> 3.5.0 and adds `hiprand_Philox4x32_10` in the same change. `develop` and every `release/therock-*` branch (7.12 through 10.2) report 3.4.0 or lower, so no hipRAND lacking the function reports 300500 yet. If another change bumps develop to 3.5.0 before #14808 lands, or #14808 lands under a different version, a TheRock nightly would report 300500 without the function. The build would then fail at compile time with an undeclared `hiprand_Philox4x32_10`, because the local copy is compiled out; it fails loudly, never silently with the wrong function. The commit body's "hipRAND 3.5.0 adds it" is also only true once #14808 merges as written. Before the upstream PR is drafted, confirm #14808 merged with 3.5.0 (or move the threshold and the README/commit text to the version it shipped in). If the version link proves fragile, a non-template library function beats a local `template <class = void>` fallback in overload resolution. That would detect the function without the version number, but it is a design change from the ruled version gate and is jeff's call.
+
+### Fact-checked, no finding
+
+- Hipify (torch 2.16 `hipify_python`, same arguments as `CUDAExtension`, run on `git archive` copies in `agent_space/hip`): the only hipified file that differs between d3e2266 and 99d68f9 is `kernels_mcmc_hip.cuh`. In it, the 3.5.0 arm includes `<hiprand/hiprand_kernel.h>`, the `#else` arm is the unchanged local copy renamed to `hiprand_Philox4x32_10`, and the call site (line 147) is `hiprand_Philox4x32_10`. `hiprand_version.h` and the gate pass through untouched.
+- CUDA: the `#else` CUDA branch (`<curand_philox4x32_x.h>`) is textually unchanged; the porter's sm_80 PTX is byte-identical.
+- `<hiprand/hiprand_version.h>` is now included unconditionally on ROCm, where d3e2266 included no hipRAND header. That is safe because torch's own installed headers (`ATen/native/hip/DistributionTemplates.h`, `Randperm.cuh`) already require hipRAND, so any environment that can build this extension has it.
+- Lookup tables on the 3.5.0 path: they survive because rocRAND declares them `static const __device__` and device globals are registered with the host; this is the same cost every `hiprand_kernel.h` user, torch included, pays. No narrower hipRAND include exists: the function lives only in `hiprand_kernel_rocm.h`, which unconditionally includes `<rocrand/rocrand_kernel.h>`. Measured on gfx1100 with the porter's two builds (3.4.0 tree vs `fgs_hr`, three fresh processes each, `ulimit -c 0`): import 3.3 vs 3.4 ms; first `add_noise` launch, which includes code-object load, 0.73-0.90 vs 1.45-1.70 ms; steady-state launch 0.037 vs 0.038 ms; `_C.so` 19.47 vs 19.84 MB. About 1 ms once per process, nothing per launch: not worth a deviation from hipRAND.
+- README: accurate; it adds no requirement because older ROCm keeps the bundled copy.
+- Commit: `[ROCm]` title 64 chars, AI-assistance disclosure, fenced Test Plan, no trailer; `python3 utils/jargon.py --port faster-gaussian-splatting` -> `jargon: clean`. Fork clone status clean.
+
+### State
+
+`review-passed`. Every platform validated at d3e2266 or earlier owes revalidation at 99d68f9.
