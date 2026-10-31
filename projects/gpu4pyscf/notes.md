@@ -1127,3 +1127,35 @@ python -m pytest gpu4pyscf/scf/tests -q -rfs --tb=no -p no:cacheprovider
 - `python3 utils/jargon.py --port gpu4pyscf` -> `jargon: clean`.
 - Documentation: the README ROCm section documents the build and the flag; that build was followed here.
 - Integrity: `git -C projects/gpu4pyscf/src status --porcelain` is empty after the build and tests.
+
+## Porter 2026-10-31 (porter, linux-gfx942 MI300X, fork moat-port 5c60311 -> e469394): full port, part 1 (libxc, stack limit, gradient block size)
+
+Requested by jeff: the port must be complete. The earlier plan's HF-only staging (DFT, solvent, sem, multigrid, gradients and Hessians deferred) was never approved. Work lock taken (`review-passed -> porting`). Input: `~/.claude/plans/gpu4pyscf-libxc-hip-probe.md` (gfx1100/gfx90a probe). Three new commits on top of 5c60311 (no amend, no force push):
+
+- 4a90309 `[ROCm] Build GPU libxc with its HIP backend`: the libxc ExternalProject passes `-DENABLE_HIP=ON` plus `CMAKE_HIP_ARCHITECTURES` and `CMAKE_HIP_COMPILER` under USE_HIP; CUDA keeps `-DENABLE_CUDA=ON` and the CUDA arch. `BUILD_LIBXC` defaults ON on both. dft/libxc.py is upstream's file again apart from the version label (`7.1.2 (HIP)` on ROCm); the `_libxc = None` fallback is gone. The stale gdft CMake comment and README sentence are updated. libxc_prune.patch applies to 7.1.2 unchanged.
+- c073679 `[ROCm] Set the device stack limit through HIP directly`: `release_gpu_stack()` calls `hipDeviceSetLimit(hipLimitStackSize, 128)` through ctypes on ROCm (soname `libamdhip64.so.<major>` from `runtimeGetVersion() // 10000000`, i.e. the library CuPy already loaded), and raises through `cupy.cuda.runtime.check_status` on error. CuPy-ROCm's `deviceSetLimit` is a stub returning hipErrorUnknown (cupy_backends/hip/cupy_hip_runtime.h); calling HIP directly returns 0. This, not missing libxc, was behind the 25 "DFT" failures of every earlier validation.
+- e469394 `[ROCm] Keep the block size of the gradient energy kernels`: root cause of the analytic-gradient failures on wave64 (gfx90a, gfx942; gfx1100 passed). The kernels in unrolled_ejk_ip1.cu, unrolled_ejk_ip2_type12.cu and unrolled_ejk_ip2_type3.cu hard-code `constexpr int nsq_per_block = 256`, while their host launchers call `adjust_threads`, which doubles the block when `numRegs <= 128`. On gfx942 `rys_ejk_ip1_0000` has `.vgpr_count: 128`, so it was launched with 512 threads: every task done twice and the per-thread `rw` slices overlapping `cicj_cache`. H2/sto-3g (only the 0000 kernel) reproduced it: J gradient 40.5 vs 0.765, changing each run. Fix: under USE_HIP those three files redefine `adjust_threads` as a no-op. The other unrolled files read `blockDim.x` and keep the doubling. This is a latent upstream bug on CUDA too (it would fire on any GPU where these kernels fit 128 registers); CUDA left identical as instructed. Worth reporting upstream: **question for jeff**.
+
+### Environment (gfx942, TheRock ROCm SDK 10.1.0, AMD clang 24.0.0, cmake 3.31.6, HIP_VISIBLE_DEVICES=3)
+```
+$FLEET_VENV/bin/pip install 'numpy>=2.0,<2.3' 'scipy>=1.13' cupy-rocm-7-0==14.2.0 pyscf==2.14.0 pytest pyscf-dispersion geometric pytest-timeout
+# numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.5.0, geometric 1.1.1, pytest 7.3.2, pytest-xdist 3.3.1
+cmake -S gpu4pyscf/lib -B build/temp.gpu4pyscf -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942
+cmake --build build/temp.gpu4pyscf -j 100     # 3m15s with the libxc ExternalProject
+export LD_LIBRARY_PATH=$(rocm-sdk path --root)/lib PYTHONPATH=$PWD; ulimit -c 0
+```
+Test runner (agent_space/scripts/runtree.sh): per directory, `python -m pytest <dir> -n 4 --dist loadfile -m 'not slow and not benchmark and not special' -q -rfEs --tb=line -p no:cacheprovider --timeout 1800 --junitxml=...` (the upstream CI selection, `-n 4 --dist loadfile` as upstream CI, one GPU).
+
+### Results at e469394
+- Water RKS/def2-svp, grids level 3, conv_tol 1e-12, vs CPU PySCF: B3LYP 1.1e-11, PBE 6.1e-12, M06 7.1e-12 Ha.
+- Water RHF gradient vs CPU: sto-3g 6.3e-14, def2-svp 2.1e-13, cc-pvtz 9.9e-12 (before e469394: 27, 23, 4.2).
+- dft/tests (c073679): 113 passed, 9 skipped (mcfun not installed 8, dftd3 1), 0 failed. Baseline 5c60311 in the same env: 24 passed, 56 failed, 8 skipped, 20 errors.
+- scf/tests (c073679): 148 passed, 3 skipped, 13 failed; same-env 5c60311 baseline 125 passed, 3 skipped, 36 failed. (The c073679 commit message quotes "122 passed and 36 failed before", the earlier recorded gfx942 run without pyscf-dispersion; the same-env baseline is 125/36.) The 13: 4 PCM not built yet, 1 Hessian not imported, 3 d-aug-cc-pvdz missing from PySCF 2.14, 5 gradient (fixed by e469394, rerun in the full tree below).
+
+### CUDA no-regression gate: PASS
+NVIDIA redist archives from developer.download.nvidia.com/compute/cuda/redist (redistrib_12.8.1.json), each sha256-verified against the manifest: cuda_nvcc 12.8.93, cuda_cudart 12.8.90, cuda_cccl 12.8.90, cuda_profiler_api 12.8.90, unpacked to agent_space/cuda-12.8 (`lib64 -> lib`). Host gcc/gfortran 13.
+```
+PATH=$K/bin:$PATH CUDACXX=$K/bin/nvcc cmake -S <git archive>/gpu4pyscf/lib -B build-cuda -DCMAKE_CUDA_ARCHITECTURES=80 -DCUDAToolkit_ROOT=$K -DCMAKE_BUILD_TYPE=Release
+cmake --build build-cuda -j 100 -- VERBOSE=1
+```
+At c073679: exit 0, 12 libs, and the libxc ExternalProject built with `ENABLE_CUDA=ON`, `CMAKE_CUDA_ARCHITECTURES=80` (libxc.so.15). At e469394 (same tree, rebuilt): exit 0, the three unrolled_ejk_* TUs recompiled by nvcc.
