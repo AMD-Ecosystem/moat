@@ -358,3 +358,5 @@
 {"kind":"phase","ts":"2026-10-31T00:53:07Z","phase":"test","seconds":0.101,"exit":127,"cmd":"timeout -k 30 1800 bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/repro/run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/build-compute"}
 {"kind":"phase","ts":"2026-10-31T00:53:54Z","phase":"test","seconds":40.442,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/moat/projects/LichtFeld-Studio/src && timeout -k 30 1800 xvfb-run -a /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/build-compute/cmake/hip_tests/lfs_compute_tests"}
 {"kind":"session","ts":"2026-10-31T00:56:57Z","epoch":1793408217.970392831,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-31T01:00:37Z","epoch":1793408437.938714627,"event":"start","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-31T01:22:46Z","epoch":1793409766.984703954,"event":"end","platform":"linux-gfx1100"}
