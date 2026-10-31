@@ -347,3 +347,14 @@
 {"kind":"phase","ts":"2026-10-30T23:02:41Z","phase":"compile","seconds":249.626,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261030-152714-lfs-eventquery/repro/lfs_compute_build.sh"}
 {"kind":"session","ts":"2026-10-30T23:18:21Z","epoch":1793402301.348917833,"event":"start","platform":"linux-gfx1100"}
 {"kind":"session","ts":"2026-10-30T23:31:53Z","epoch":1793403113.849557151,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-30T23:42:20Z","epoch":1793403740.278120938,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-30T23:46:57Z","phase":"compile","seconds":0.004,"exit":127,"cmd":"bash repro/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-30T23:52:53Z","phase":"compile","seconds":347.761,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/repro/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-31T00:14:09Z","phase":"test","seconds":65.041,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/repro/v/smoke.sh after"}
+{"kind":"phase","ts":"2026-10-31T00:21:24Z","phase":"compile","seconds":242.564,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/repro/lfs_compute_build.sh"}
+{"kind":"phase","ts":"2026-10-31T00:46:07Z","phase":"test","seconds":1476.185,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/repro/v/suite_runner.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/runs/sweep"}
+{"kind":"phase","ts":"2026-10-31T00:52:55Z","phase":"compile","seconds":26.452,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/repro/lfs_full_build.sh"}
+{"kind":"phase","ts":"2026-10-31T00:53:01Z","phase":"compile","seconds":5.507,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/repro/lfs_compute_build.sh"}
+{"kind":"phase","ts":"2026-10-31T00:53:07Z","phase":"test","seconds":0.101,"exit":127,"cmd":"timeout -k 30 1800 bash /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/repro/run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/build-compute"}
+{"kind":"phase","ts":"2026-10-31T00:53:54Z","phase":"test","seconds":40.442,"exit":1,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/moat/projects/LichtFeld-Studio/src && timeout -k 30 1800 xvfb-run -a /var/lib/jenkins/fleet/jobs/rx7900-20261030-164007-lfs-eventfix2/build-compute/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"session","ts":"2026-10-31T00:56:57Z","epoch":1793408217.970392831,"event":"end","platform":"linux-gfx1100"}
