@@ -405,7 +405,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-10-31T02:53:19Z",
-      "decided": null
+      "decided": {
+        "choice": "defer",
+        "by": "jeff",
+        "at": "2026-10-31T20:16:32Z",
+        "note": "2026-10-31: settled by the PR-prep squash with 001fc728"
+      }
     },
     {
       "id": "lfs-squash-566be1cd-001fc728-at-pr-prep",
@@ -418,7 +423,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-10-31T06:33:01Z",
-      "decided": null
+      "decided": {
+        "choice": "defer",
+        "by": "jeff",
+        "at": "2026-10-31T20:16:02Z",
+        "note": "2026-10-31: do in the PR-prep squash (squash-carry-forward)"
+      }
     }
   ]
 }
