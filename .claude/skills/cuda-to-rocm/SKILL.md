@@ -85,6 +85,7 @@ Scan this list against what you are doing. If any line could apply, open
 - Rule-of-five on resource handles: CUDA tolerates double-destroy of a texture/stream/event; AMD does not.
 - A functor returning a reference to a by-value parameter (lifetime UB) is tolerated by nvcc, not by clang/HIP.
 - `hipLaunchHostFunc` callback threads must not call ANY runtime API.
+- A flag one GPU polls in another GPU's `hipMalloc` memory never updates on MI250X; use uncached or fine-grained memory.
 
 **Textures**
 - Texture pitch alignment: AMD requires 256-byte row pitch for pitched 2D binds (32 on NVIDIA).
@@ -101,6 +102,7 @@ Scan this list against what you are doing. If any line could apply, open
 **Headers, includes and build**
 - A shared compat header must be host-includable: gate device-only includes behind `__CUDACC__`/`__HIPCC__`, or CUB leaks into host TUs. Hit independently by two projects.
 - `__HIP_PLATFORM_AMD__` is undefined until `hip_runtime.h` is included; a gate placed before it silently picks the CUDA branch.
+- A compat header that defines `__CUDA_ARCH__` for HIP device code also makes numeric `#if __CUDA_ARCH__ < NNN` gates true, which can select `__trap()` fallbacks.
 - Missing includes in a HIP port are usually pre-existing upstream omissions unmasked by the narrower include graph.
 - A `-include`d compat header creates no dependency edge: wipe objects after editing it or you validate stale code.
 
@@ -110,7 +112,7 @@ Scan this list against what you are doing. If any line could apply, open
 - `char` vs `signed char` vector base types differ between HIP and CUDA.
 - AMD compute-capability values COLLIDE with NVIDIA arch numbers, so CC-keyed dispatch picks the wrong path.
 - hipCUB/rocPRIM: temp storage queries never return less than 4 bytes; segmented `ArgMax` returns an out-of-range key for an all-NaN segment.
-- MIOpen runs a convolution only on a handle where Find ran for it; hipBLASLt epilogues differ from cuBLASLt per type and in the ReLU aux format; rpp.h and miopen.h collide on `BILINEAR`.
+- MIOpen pooling needs its workspace in the forward pass for NHWC input; MIOpen runs a convolution only on a handle where Find ran for it; hipBLASLt epilogues differ from cuBLASLt per type and in the ReLU aux format; rpp.h and miopen.h collide on `BILINEAR`.
 - On RDNA, `hipOccupancyMaxActiveBlocksPerMultiprocessor` counts the 128 KiB WGP and returns 1 for dynamic shared memory between 64 and 128 KiB, so "occupancy > 0, take the smem kernel" launches what cannot run.
 - Library swaps: cuBLAS -> hipBLAS, cuFFT -> hipFFT, cuRAND -> hipRAND, cuSPARSE -> hipSPARSE, cuDNN -> MIOpen, Thrust/CUB -> rocThrust/hipCUB. Handle types and v2-enum signatures differ.
 - Runtime PTX + CUDA Driver API is a third build class beyond A and B.

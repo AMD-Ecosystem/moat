@@ -43,6 +43,32 @@
       "upstream_issue": null,
       "created_at": "2026-10-30T05:24:14Z",
       "decided": null
+    },
+    {
+      "id": "oneflow-upstream-channels-last-native-pooling",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream oneflow defect, every device and build (CPU too): the native channels_last pooling kernels compute wrong values. Maxpool2dBackwardComputeCLast (oneflow/user/kernels/max_pool_kernel_util.h) indexes dy and indices as src_start + h*src_width + w, ignoring the channel, so max_pool_2d(data_format='channels_last') gradients land on the wrong elements (CPU float32 1x6x6x2 k3: max |dx - torch| 11.3; GPU dilated cases 288/288 wrong in every dtype); avg_pool_2d channels_last forward reads garbage on CPU (7.5e33) and is wrong on GPU float64. A CUDA build reaches these kernels for channels_last max pooling with dilation != 1 or return_indices, and for CPU tensors. Not fixed in the port (not a ROCm issue); the HIP double channels_last route deliberately avoids them by pooling an NCHW view. Evidence: agent_space/pool_one.py and pool_nhwc.py recipes in projects/oneflow/notes.md (porter round 2026-10-31).",
+      "refs": [
+        "projects/oneflow/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-31T07:04:15Z",
+      "decided": null
+    },
+    {
+      "id": "oneflow-fused-sparse-dot-interaction-hip",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "ONEFLOW_ONE_EMBEDDING_FUSE_EMBEDDING_INTERACTION=1 rewrites embedding_shuffle -> fused_dot_feature_interaction(_grad) to take sparse_feature/sparse_indices inputs; only the wmma tensor-core kernels implement that input, and they are compiled out on HIP, so the fused op aborts with 'sparse_feature is not supported' (the same CHECK a CUDA GPU below sm_70 would hit for float16). That pass is the only thing that sets skip_last_gather/skip_first_scatter, so the P2P embedding shuffle kernels (ported and validated directly in the 2026-10-31 round) are unreachable from a real model on ROCm until a non-wmma (or rocWMMA, wave64-aware) sparse-feature dot-interaction kernel exists. Default (fuse off) is unaffected.",
+      "refs": [
+        "projects/oneflow/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-31T07:04:16Z",
+      "decided": null
     }
   ]
 }

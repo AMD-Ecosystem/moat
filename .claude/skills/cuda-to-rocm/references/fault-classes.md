@@ -143,6 +143,17 @@ slots. (dietgpu)
 
 ## Memory and lifetime
 
+**Cross-GPU flags in ordinary device memory are never seen by the peer on MI250X.** A barrier
+where each GPU writes a flag into its own buffer and spins on the peer's buffer through an IPC
+mapping (oneflow's P2P embedding shuffle) works on NVIDIA, where the owner's L2 is the point of
+coherence for peer accesses. With `hipMalloc` (coarse-grained) memory the write stays in the
+writer's L2 and the peer's read over xGMI goes to memory, so both GPUs spin forever -- even with
+`__hip_atomic_store`/`__hip_atomic_load` at `__HIP_MEMORY_SCOPE_SYSTEM`. A two-process
+reproducer hangs on the first barrier with `hipMalloc` and runs 20000 barriers with
+`hipExtMallocWithFlags(..., hipDeviceMallocUncached)` or `hipDeviceMallocFinegrained`; IPC
+handles work on both. Allocate any buffer that another GPU polls as uncached or fine-grained.
+(oneflow)
+
 **Out-of-bounds reads.** CUDA often tolerates a read one element past an allocation; AMD
 faults. Kernels reading index +/-1 or +/-width at edges (stencils, neighbour gathers) must
 clamp. (colmap ComputeDOG.)
@@ -372,6 +383,16 @@ headers into g++ and fails there. Put the shim in the lowest common layer, keep 
 includes (`hip_runtime.h`, `hipfft.h`) unconditional, and gate device-only ones behind
 `__CUDACC__` or `__HIPCC__ || __HIP_DEVICE_COMPILE__`. (SCAMP, stdgpu)
 
+**Defining `__CUDA_ARCH__` for the HIP device pass also feeds every numeric gate.** A compat
+header that sets `__CUDA_ARCH__` (to 1, say) so `#ifdef __CUDA_ARCH__` device/host selections
+work makes `#if __CUDA_ARCH__ < 530` TRUE in HIP device code. oneflow's `atomic.cuh` keeps a
+`half2` atomic-add overload under exactly that gate whose body is `__trap()`, for pre-sm_53 GPUs;
+on HIP it won overload resolution, so every `half2` atomic add raised an HSA hardware exception
+(code 0x1016, no fault address) in an otherwise ordinary kernel. Grep every numeric
+`__CUDA_ARCH__` comparison, not just `#ifdef`: `>=` gates silently drop native paths (slow but
+correct), `<` gates can select traps or legacy emulation. Guard each with `!defined(USE_HIP)`
+or the project's HIP macro at the site. (oneflow)
+
 **`__HIP_PLATFORM_AMD__` is undefined until `hip/hip_runtime.h` has been included in that
 TU.** A wave-width gate in a header included BEFORE the runtime header silently takes the
 CUDA branch and picks width 32. hipify-perl prepends the runtime include at line 1, which
@@ -504,7 +525,11 @@ cuDNN's accumulate form (`beta = 1`, used by every backward pass that adds into 
 gradient) has to be rebuilt as an operation into a staging buffer followed by
 `miopenOpTensor(miopenTensorOpAdd, ...)`. MIOpen's pooling backward also reads the indices
 its forward pass recorded, so that workspace must outlive the forward call rather than being
-a local. (marian-dev)
+a local. (marian-dev) MIOpen also pools an NHWC tensor by transposing it through that workspace,
+in the forward pass and for average pooling too: `miopenPoolingForward` with a null workspace
+faults in `batched_transpose_*` at address 0 for channels-last input. Always query
+`miopenPoolingGetWorkSpaceSizeV2` and pass the workspace, even for an inference-only forward.
+(oneflow)
 
 **MIOpen runs a convolution only on a handle where Find ran for it.** Find registers the
 solution's invokers on the handle it ran on; `miopenConvolutionForward` (and the backward calls)
