@@ -13,6 +13,32 @@
       "upstream_issue": null,
       "created_at": "2026-10-30T00:35:52Z",
       "decided": null
+    },
+    {
+      "id": "rocblas-trsm-accuracy-vs-lapack-gpu4pyscf",
+      "kind": "rocm-bug-report",
+      "component": "rocBLAS",
+      "summary": "rocBLAS strsm/dtrsm (TheRock ROCm 10.1, rocBLAS 5.7.0, gfx942) on gpu4pyscf's density-fitting Cholesky factors: on the DF-MP2 fp32 case (n=136, cond(L)=864, 270 structured right-hand sides) backward error 22 eps vs 3.8 eps for LAPACK, forward error 2.2e-5 vs 2.8e-6; on random right-hand sides with the same factor it matches LAPACK. Within the normwise n*eps bound, so an accuracy-margin report rather than a correctness bug. It makes test_dfmp2_kernel_one_gpu, test_grad_hybrid and test_j_energy_per_atom miss their tolerances by <3x (swapping in scipy's solve fixes each). Choice for a person: report to rocBLAS, or accept.",
+      "refs": [
+        "projects/gpu4pyscf/notes.md#review-2026-10-31"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-31T10:09:16Z",
+      "decided": null
+    },
+    {
+      "id": "gpu4pyscf-dc45713-msg-trsm-classification",
+      "kind": "other",
+      "component": null,
+      "summary": "Before the upstream PR, correct the failure classification in the dc45713 commit body (repeated in notes 'Porter 2026-10-31' part 2) during the PR-prep squash. Of its '4 miss tolerances' list, the DF-MP2, DF-RKS hybrid gradient and multi-DM J energy cases come from rocBLAS trsm accuracy, not 'float32 DF-MP2' or 'atomic accumulation order'. Evidence: notes Review 2026-10-31.",
+      "refs": [
+        "projects/gpu4pyscf/notes.md#review-2026-10-31"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-31T10:09:17Z",
+      "decided": null
     }
   ]
 }
