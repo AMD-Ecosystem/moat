@@ -103,6 +103,7 @@ Scan this list against what you are doing. If any line could apply, open
 - A shared compat header must be host-includable: gate device-only includes behind `__CUDACC__`/`__HIPCC__`, or CUB leaks into host TUs. Hit independently by two projects.
 - `__HIP_PLATFORM_AMD__` is undefined until `hip_runtime.h` is included; a gate placed before it silently picks the CUDA branch.
 - A compat header that defines `__CUDA_ARCH__` for HIP device code also makes numeric `#if __CUDA_ARCH__ < NNN` gates true, which can select `__trap()` fallbacks.
+- Feature and version macros CUDA headers define but HIP headers do not (`__CUDA_BF16_TYPES_EXIST__`, `CUBLAS_VERSION`) silently drop whole dtype paths; audit gates by macro class, not only `__CUDA_ARCH__`.
 - Missing includes in a HIP port are usually pre-existing upstream omissions unmasked by the narrower include graph.
 - A `-include`d compat header creates no dependency edge: wipe objects after editing it or you validate stale code.
 

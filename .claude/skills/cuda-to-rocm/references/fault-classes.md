@@ -402,6 +402,20 @@ the launch fails "Cannot find Symbol" at run time. A first audit that looked onl
 missed seven such sites; list every comparison (both operand orders, continuation lines) with its
 HIP resolution rather than sampling. (oneflow)
 
+**Audit every macro class that gates a dtype or arch path, not just `__CUDA_ARCH__`.** CUDA
+headers define feature macros that their HIP counterparts do not: `cuda_bf16.h` defines
+`__CUDA_BF16_TYPES_EXIST__`, `hip_bf16.h` does not, so a shim that maps `<cuda_bf16.h>` to
+`hip_bf16.h` turns every `#if defined(__CUDA_BF16_TYPES_EXIST__)` false. In oneflow that dropped
+the `ncclBfloat16` case (every bf16 collective aborted "UNIMPLEMENTED" although RCCL supports
+it), the bf16 gather/scatter kernels and five bf16 collective-kernel registrations, and two
+audits that listed only `__CUDA_ARCH__` comparisons missed it. Define the macro in the shim that
+stands in for the defining header, so it exists exactly where CUDA has it. Library version
+macros that HIP leaves undefined (`CUBLAS_VERSION`, `CUBLAS_VER_*`, `NVJPEG_VER_*`,
+`__CUDACC_VER_*`) read as 0 and silently skip whatever they gate (oneflow's
+`cublasSetWorkspace`), while a `CUDA_VERSION` the compat header pins (to 11080, say) makes every
+`< 12000` gate take the CUDA 11 branch. List each gate of each macro with its HIP resolution.
+(oneflow)
+
 **`__HIP_PLATFORM_AMD__` is undefined until `hip/hip_runtime.h` has been included in that
 TU.** A wave-width gate in a header included BEFORE the runtime header silently takes the
 CUDA branch and picks width 32. hipify-perl prepends the runtime include at line 1, which
@@ -561,7 +575,10 @@ deprecated and returns `miopenStatusNotImplemented` for every type and layout; a
 `miopenReduceTensor` ADD fails for bfloat16 (its runtime kernel does not compile) while float,
 half and double work. A shim that forwards these calls aborts the first time a user reaches
 them. Run double batch norm on small native kernels, and compute a bias gradient as dy times a
-ones vector with the project's own GEMM. (oneflow)
+ones vector with the project's own GEMM. Accumulate that sum in float: one GEMM per sample with
+beta = 1 into a half/bf16 output rounds N times (7-12x the single-rounding error at N = 256);
+reduce to float row sums with a mixed-type GEMM (`hipblasGemmEx`, f16/bf16 in, f32 out) and
+round once. (oneflow)
 
 **hipBLASLt epilogues are not cuBLASLt's, per type and per format.** On gfx90a with hipBLASLt
 1.4, DEFAULT/BIAS/RELU/RELU_BIAS exist for f32/f16/bf16 but double has only DEFAULT, and the
