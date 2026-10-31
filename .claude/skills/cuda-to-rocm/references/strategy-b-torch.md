@@ -42,6 +42,20 @@ older torch -- so a guard keyed on the wrong axis silently breaks the other plat
 build. That fault class, with the two regressions that produced it, is in
 `fault-classes.md` under "Types, dispatch and platform limits". (aihwkit)
 
+### Windows: a ROCm library linked by name may have no `.lib`
+
+An extension that adds a ROCm library beyond the HIP runtime torch already links
+(`libraries=["hipblaslt"]`, `extra_ldflags=["-lhipblaslt"]`) can fail only on Windows at the
+final link: `link.exe` looks for `hipblaslt.lib` (LNK1181), and ignores `-l` flags entirely
+(LNK2019 on the first symbol). TheRock's Windows SDK ships most import libraries as
+`lib/<name>.lib`, but hipBLASLt only as `lib/libhipblaslt.dll.a`. Check `<ROCM_HOME>/lib`
+for each library the port links. The fix that keeps Linux untouched: under
+`os.name == "nt"`, when `<name>.lib` is absent and `lib<name>.dll.a` is present, drop the
+name from `libraries` and pass the `.dll.a` by full path in `extra_link_args` (link.exe
+reads an archive by content, not extension); use `torch.utils.cpp_extension.ROCM_HOME`, never
+a host path. A validator copying the file to `<name>.lib` on `LIB` hides the gap; the
+committed build must link as is. (llm-awq)
+
 ### Dependency environment for PyTorch projects (the install path is part of the port)
 
 For a PyTorch-ecosystem project the in-repo `.cu` (above) is only half the bring-up: the project also `pip install`s a dependency graph that defaults to CUDA wheels, and getting a ROCm environment that actually EXERCISES your ported code is its own recurring task. The failure modes repeat across the whole 3D-vision / point-cloud / VLA / world-model space, so they generalize. (AMD's rocm3d -- Andy Luo and David Li, 2026, andyluo7.github.io -- catalogs these as reusable recipes for that domain; the dependency-family patterns below are the transferable core. Note the model: these are environment substitutions to get a project RUNNING on ROCm, not upstreamed source ports -- MOAT's deliverable is still the in-repo HIP port + multi-arch PR, so confirm your ported code is the code under test, not a swapped-in prebuilt wheel.)
