@@ -1749,3 +1749,75 @@ Run with `agent_space/suite.sh`, the per-file runner of the earlier rounds: one 
 - The `CUBLAS_VERSION >= 11200` `cublasSetWorkspace` gate (audit table) differs from a CUDA 12 build. No failure was found, and it was not changed.
 - `python3 utils/check.py` fails its commits gate on the `lint` commit (af83657d7): "title does not start with [ROCm]" and "body does not disclose AI-agent assistance". The commit follows jeff's rule and this round's instruction (`lint`, no body), so it was left as is. The PR-prep squash folds it in.
 - Open from earlier rounds and untouched here: the flatbuffers `-Werror` strip and kineto `-include cstdint` edits, and deferred `oneflow-float64-conv-hip`.
+
+## Review 2026-10-31 (reviewer, linux-gfx90a; /pr-review local-branch moat-port f52f1b78e..af83657d7, the four commits answering "Review 2026-10-31 ... 0b04c09af..f52f1b78e")
+
+Verdict: **changes-requested** (one must-fix finding, in a test). The fork code in all four commits is correct. Every finding was re-read in the code and backed by a GPU run: two MI250X GCDs (`HIP_VISIBLE_DEVICES=1,2`), `ulimit -c 0`, `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git`. The runs used the fix4 job's HIP build of af83657d7 read-only (`mi200-20261031-043916-oneflow-fix4`; its HEAD is af83657d7, equal to the fork `moat-port`). There were no JIT builds and nothing was written to any checkout. Scripts are in this job's `agent_space/` and are not committed.
+
+### Previous review: both must-fix findings and both hygiene items resolved
+- Finding 1 (`__CUDA_BF16_TYPES_EXIST__`), b2ce4bfcf. This was checked with the preprocessor, not by reading includes: `agent_space/ppcheck.py` runs each TU's recorded command from the HIP `compile_commands.json` with `-E` and counts the gated tokens in the output.
+  - All 28 TUs that `ninja -t deps` lists as including `nccl_util.h` contain `case DataType::kBFloat16: return ncclBfloat16`. That covers both the host and the device pass of the 6 `.cu` TUs, among them nccl_executor_backend.cu, cublas_fused_mlp_grad_kernel.cu, eager_nccl_s2s_kernel.cu, data_shuffle_kernel.cu and one_embedding_kernels.cu.
+  - `nccl_logical_kernels.cpp` contains `CclLogicalAllGatherNoncontinuous`, `CclLogicalReduceScatterNoncontinuous` and `CclLogicalS2SKernel<__hip_bfloat16>`. `nccl_logical_2d_sbp_kernels.cpp` contains both 2D bf16 registrations.
+  - `nd_index_slice_kernels.cu` contains the `DeviceAdd<kCUDA, bfloat16>` specialization in both its host and device passes.
+  - The only `cuda_bf16.h` in any TU's deps is `hip_compat/cuda_bf16.h`.
+  - Of the 6766 headers in the deps, none outside oneflow mentions the macro. In the ROCm include tree only `nccl_device/impl/*` does, and no TU includes those headers. Defining the macro in the shim rather than in `cuda_to_hip.h` is therefore equivalent for every gate.
+- Finding 2 (bias gradient precision), 11ddd0521. The two-step sum was checked by hand:
+  - GEMM 1 reads dy as an (N*C) x S row-major matrix, i.e. S x (N*C) column-major with `lda = S`, with `op(A) = T`, `m = N*C`, `k = S` and `ldc = N*C`.
+  - The float Matmul primitive then computes (T, N), `m = C`, `k = N` over the N x C `row_sums`, and Cast rounds once.
+  - For double input the accumulation type is double and the result is written straight to `bias_diff`.
+  - The tmp size (`ConvBiasGradHipLayout(dy, At(0), At(1), Count(2))`) matches the kernel's `num`, `channels` and `spatial` for 3-D, 4-D and 5-D. The tmp buffer belongs to the framework, so nothing has to be released. Empty batches return before the scratch is used.
+  - No oneflow code sets the cuBLAS pointer mode, so the host-pointer alpha and beta are valid.
+  - `unifdef -UUSE_HIP` of conv_cudnn_kernels.cpp at af83657d7 is byte-identical to master.
+- Testing items: c886e8ae4 adds the long-reduction and grid-stride float64 batch norm shapes. af83657d7 `lint` is pure black output (2 wraps and 1 blank line, no other change), and its title-only form follows jeff's lint-commit rule.
+
+### Testing (must fix)
+1. **`python/oneflow/test/graph/test_graph_nccl_logical_bfloat16.py` never runs a `_nccl_logical_*` kernel, so the five bf16 logical-kernel registrations that b2ce4bfcf enables are untested. b2ce4bfcf's message and the porter's notes both say they are tested.**
+   - The graph boxes its inputs straight into its outputs, so `insert_nccl_logical_op_pass` inserts nothing. Printing the compiled job (`g._compiled_graph_proto.net.op`) on both ranks shows no user op at all, only input/output/tick ops: the boxing goes through the collective-boxing path (`nccl_executor_backend`). That path is also a finding-1 path, and is why the test aborted on f52f1b78e, but it is not the path the test claims to cover.
+   - Evidence, `agent_space/gdump/t_bf16_ops.py` (the same test, but each input is first multiplied by 1 and each output by 1, which makes the boxing interior):
+     - With default settings, the compiled job holds `_nccl_logical_fusion` x2 and `_nccl_logical_s2s` x1. The fusion pass (on by default when the compute stream is used) merges the rest.
+     - With `ENABLE_NCCL_LOGICAL_FUSION=0` it holds `_nccl_logical_all_reduce`, `_nccl_logical_reduce_scatter_noncontinuous`, `_nccl_logical_all_gather_noncontinuous` and `_nccl_logical_s2s` x2, all bf16, and every output is exact on both ranks.
+   - So the kernels work. Only the test is wrong.
+   - Fix:
+     - Put a compute op on each side of every `to_global` in the graph.
+     - Run the graph a second time with `ENABLE_NCCL_LOGICAL_FUSION` set to `0` (the pass reads the variable on every call, so `mock.patch.dict(os.environ, ...)` around the graph's first call works), so that the unfused registrations run. The default run keeps the fusion kernel covered.
+     - Keep a direct input-to-output case as well if the collective-boxing coverage is wanted, and say which path each case covers.
+     - In notes.md, record the compiled op types of each case, read from `_compiled_graph_proto`.
+   - The 2D registrations (`nccl_logical_2d_sbp_kernels.cpp:522,541`) need a placement with two dimensions both larger than 1 (4 GPUs), so they cannot run on two GCDs. They are compiled in (preprocessor check above), and that is accepted as the evidence for them.
+   - b2ce4bfcf's message cannot be amended. Correct its description of the graph test in the PR-prep squash message; the new commit's message should state the coverage correctly.
+
+### Porter's open item: `CUBLAS_VERSION` undefined, so no `cublasSetWorkspace` on HIP
+Verdict: **no correctness or graph-capture defect on gfx90a. Leave it as it is; do not set the workspace on HIP in this port.**
+- The porter's `cg_matmul.py` did capture (the HIP log shows `hipStreamBeginCapture`), but it replayed identical inputs on one stream at three shapes.
+- `agent_space/cg_ws.py`, `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1`: 7 GEMM shapes, including k=65536, k=1048576 with m=1, an odd 17x1023x513 and 2048x8192x2048. Each runs as matmul, bmm and transposed matmul in float32, float16 and bfloat16, with 5 calls each and fresh random inputs on every call.
+  - Results: 189 kernel captures, 945 graph launches, 63/63 cases within tolerance against float64 numpy.
+- `agent_space/cg_ws2.py` runs on two devices (`cuda:0` and `cuda:1`, so two streams and two hipBLAS handles):
+  - It builds 42 graphs (7 shapes x 3 dtypes x 2 devices, up to 8192^3), in increasing size.
+  - After each capture it runs large eager GEMMs (4096x16384x4096 and 16384x4096x16384) on the same device, to grow any BLAS-internal workspace between captures.
+  - It then replays every graph three times, interleaved and in reverse capture order, with fresh inputs.
+  - Results: 378 captures and 1512 launches, all successful, and all 42 cases within tolerance on both devices. The worst relative errors are 4.2e-7 (fp32), 2.3e-4 (fp16) and 2.0e-3 (bf16).
+- Allocation tracing (`AMD_LOG_LEVEL=3`): no hipMalloc, hipMallocAsync or hipFree happens inside any capture window, in either run (244 allocations and 244 frees, all outside). rocBLAS checks the capture state itself (`_rocblas_handle::is_stream_in_capture_mode`, which calls `hipStreamIsCapturing`). With nothing allocated during capture, no replayed graph can reference a freed workspace.
+- Workspace across streams: each `CudaStream` owns its own hipBLAS handle and its own `workspace_`. The hipBLASLt callers pass `workspace_` explicitly on the same stream, so nothing is shared across streams. Turning on `hipblasSetWorkspace` would make rocBLAS and hipBLASLt share one buffer on one stream: that is serialized and safe, but it is a behaviour change with no demonstrated need.
+- Not covered: gfx942/gfx950, where rocBLAS can route GEMMs through hipBLASLt. That is not a required gate (wave64 is satisfied by gfx90a). If a gfx942 host validates this port, `cg_ws2.py` is the check to run there.
+
+### Gate-audit table: sampled, plus an independent grep
+- Sampled 19 rows against af83657d7: every cited line and resolution is right, including cuda_stream.cpp:55/72/92/116/173/187, cublas_fused_mlp_util.cuh:245, unary_functor.cuh:352/599, broadcast_matmul.cpp:174, auto_mixed_precision.cpp:167, atomic.cuh:310, cudnn_util.cpp:28/161, cudnn_conv_util.cpp:255, the decoder:297, fast_integer_math.h:90 and clip_by_value_kernel.cpp:58. The `>= 11000` count matches: 128 lines, of which 17 are compound `__CUDA_ARCH__` or `USE_HIP` gates already in the earlier `__CUDA_ARCH__` table, leaving the table's 111.
+- An independent sweep of every identifier in every `#if`/`#elif`/`#ifdef`/`#ifndef` under `oneflow/` (minus `ir/`), 177 identifiers (`agent_space/macros.py`), finds five gating macros that the table does not list. None behaves differently on HIP and CUDA, so none is a finding. Add them to the table:
+
+| macro / gate | sites | HIP resolution | status |
+|---|---|---|---|
+| `CUDA_VRSION >= 11000` (upstream typo) | group_norm_kernel.cu:445, 488, 753 (bf16 group_norm, grad and param-grad registrations) | undefined on CUDA and HIP alike: no bf16 group_norm on either | safe (same behaviour; upstream defect) |
+| `__CUDA_ARCH_ >= 530` (upstream typo) | groupwise_quantization_kernels.cu:105 (half `InplaceFmaScalar` specialization) | undefined on both: the generic template runs on both | safe (same behaviour) |
+| `__CUDA__` (with `__clang__`) | lru_cache.cu:25, 101, 138, 166, 223; atomic.cuh:47 | clang defines `__CUDA__` only in CUDA mode, so it is false under HIP; every site is also `!USE_HIP` or `__CUDA_ARCH__`-gated (earlier table) | safe |
+| `HAS_NCCL_SEND_RECV` (`NCCL_VERSION_CODE > 2700`, nccl_util.h:64) | cuda_send.cpp / cuda_recv.cpp (4) | true (23007) | safe |
+| `BN_ENABLE_EX_API` (`CUDNN_VERSION >= 7401 && !USE_HIP`, normalization_kernel.cu:31) | normalization_kernel.cu:128, 151, 470, ... | undefined on HIP by design (the `!USE_HIP` row) | safe |
+
+- The `__clang__` gates outside third-party code (maybe/, stacktrace.h, just.h, cached_caller.h, type_traits.h) select compiler builtins and diagnostics, not GPU semantics.
+
+### Checked, no finding
+- Commits: the titles are 59, 64 and 65 characters with `[ROCm]`, and `lint` (4). The three non-lint commits each have an AI disclosure and a fenced Test Plan. There is no Co-Authored-By or noreply trailer, and the messages are ASCII. `python3 utils/jargon.py --port oneflow` (run through a temporary symlink to the fix4 clone, since removed) gives only the three known 68718f038 hits.
+- `hip_compat/` is added to the include path only under `BUILD_CUDA AND USE_HIP` (cmake/cuda.cmake:81, util.cmake:250), so CUDA builds never see the new define.
+- `test_conv_bias_grad.py` reaches the op through `dispatch_ofrecord_bytes_decoder` because `conv_bias_grad` has `bind_python: False` and nothing in oneflow produces the op any more (no autograd or job-rewriter producer; only the AMP list names it). The test is the only way to exercise the kernel, and the tolerance is sound for cuDNN's float accumulation. It has not been run on an NVIDIA GPU.
+- Not rerun here, because no finding rests on them: the porter's conv_bias_grad, batch norm, comm_ops and full-suite results.
+
+### For the porter
+- Fix testing item 1. The change is test-only, so no CUDA compile gate is needed. Rerun the graph test on two GCDs and record the compiled op types of each case.
