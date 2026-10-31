@@ -400,6 +400,19 @@
       "upstream_issue": null,
       "created_at": "2026-10-31T02:53:19Z",
       "decided": null
+    },
+    {
+      "id": "lfs-squash-566be1cd-001fc728-at-pr-prep",
+      "kind": "other",
+      "component": null,
+      "summary": "Before the upstream PR, squash 566be1cd ('[ROCm] Decode AV1 on the CPU with libdav1d') and 001fc728 ('[ROCm] Add FFmpeg's dav1d feature through a vcpkg manifest feature') into one commit. As separate commits, upstream would read a commit that adds cmake/HipVcpkgManifest.cmake (76 lines) followed by one that deletes it, and 001fc728's second paragraph (VCPKG_MANIFEST_DIR cached at the copy, reconfigure with -UVCPKG_MANIFEST_DIR) describes build trees that exist only for fork 566be1cd and no upstream user ever had. The squashed message keeps 001fc728's rationale and complete Test Plan, drops the 'previous commit' sentence and the stale-tree paragraph, and so also settles lfs-commit-msg-566be1cd-test-plan-configure. Do it in the PR-prep squash (squash-carry-forward), not by rewriting validated history now.",
+      "refs": [
+        "projects/LichtFeld-Studio/notes.md \"Review 2026-10-31c\""
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-31T06:33:01Z",
+      "decided": null
     }
   ]
 }
