@@ -451,3 +451,38 @@ Each case ran `GOMC_GPU_<ens> +p4 in.conf` and `GOMC_CPU_<ens> +p4 in.conf` (4 O
 | NPT AR_KR box 0 1000 | 0/0 | 11 | 0 | yes | identical |
 
 Smoke and equivalence evidence, not the gfx942 validation gate. The windows gate still needs the windows-gfx1151 validator at b8d1aa91; the K_1/K_N checkpoint exit 127 there is the known upstream text-mode stream bug, kept off moat-port by decision.
+
+## Validation 2026-10-31 (linux-gfx90a, validator)
+
+Requested by jeff after Review 2026-10-31. Fork `moat-port` @ b8d1aa91 (= `origin/moat-port`, fresh clone). The previous gfx90a evidence was at 4c06552c. b8d1aa91 changes host code (CalculateEnergy.cpp OpenMP clause, CellList.cpp copy ctor) that the Linux GPU and CPU targets compile with g++, so this is a full re-run, not a carry-forward.
+
+GPU: AMD Instinct MI250X / MI250 GCD (gfx90a, wave64), HIP_VISIBLE_DEVICES=3, `ulimit -c 0`. Toolchain: TheRock ROCm SDK 10.1.0 pip wheels (no /opt/rocm), AMD clang 24.0.0git, CXX g++ 13.3.0, CMake 3.31.6.
+
+### Build (README "Building GOMC for AMD GPUs with ROCm" recipe, compiler path adapted to the SDK, no arch given)
+
+```bash
+R=$(rocm-sdk path --root)
+utils/timeit.sh GOMC compile -- bash -c "cmake -S $PWD/projects/GOMC/src -B $PWD/agent_space/gomc-hip -DUSE_HIP=ON \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release && cmake --build $PWD/agent_space/gomc-hip -j 32"
+```
+rc=0, 50 s, all 8 executables (GOMC_CPU_{NVT,NPT,GCMC,GEMC}, GOMC_GPU_{NVT,NPT,GCMC,GEMC}), 0 errors. Arch autodetected: cache `gfx90a;gfx90a;gfx90a;gfx90a`, GPU targets compile with `--offload-arch=gfx90a` only. Warnings: the known `hipError_t` nodiscard `-Wunused-value`/`-Wunused-result` set (about 4.9k + 20) and 4 `R123_USE_SSE redefined`; none new, not a gate.
+
+### GPU runs vs CPU, same build
+
+`utils/timeit.sh GOMC test -- bash -c "ulimit -c 0; python3 agent_space/gomc_val.py <build> <src> <work>"` (51.7 s total). Same procedure as the earlier Linux rounds: each case and each executable gets its own copy of test/input/Systems; `ConsoleFreq true 100` (PEN_HEX 200 steps: 40; ISOPEN 30000 steps: 1000); single-box AR_KR NVT (1000 steps, Dis 0.87/Rot 0.13) and NPT (1000 steps, Dis 0.86/Rot 0.13/Vol 0.01, Pressure 100) derived from AR_KR/SingleRun/in.conf by dropping the box-1, GEMC, ChemPot, SwapFreq and VolFreq lines. Each runs `GOMC_GPU_<ens> in.conf` and `GOMC_CPU_<ens> in.conf` from the config dir; every `ENER_n` row is compared field by field and every `% Accepted` line verbatim. GPU log reports `Device Name: AMD Instinct MI250X / MI250`.
+
+| run | GPU / CPU exit | ENER rows | GPU vs CPU max rel diff | acceptance lines (GPU = CPU) | key acceptance | GPU wall |
+|---|---|---|---|---|---|---|
+| GEMC AR_KR SingleRun 3000 steps | 0 / 0 | 62 | 0 | 6/6 identical | disp AR 48.30% / KR 19.04% (box 0) | 0.22 s |
+| GEMC ISOPEN_NEOPEN SingleRun 3000 steps (MEMC) | 0 / 0 | 62 | 0 | 9/9 identical | MEMC NEO-ISB 61.76% | 2.45 s |
+| GCMC PEN_HEX SingleRun 200 steps (Ewald) | 0 / 0 | 12 | 0 | 12/12 identical | PEN disp 43.75% | 0.38 s |
+| NVT AR_KR box 0, 1000 steps | 0 / 0 | 11 | 0 | 4/4 identical | disp AR 97.22% / KR 98.39% | 0.19 s |
+| NPT AR_KR box 0, 1000 steps | 0 / 0 | 11 | 0 | 5/5 identical | disp 98.00/97.55%, volume 50.0% | 0.19 s |
+| GEMC ISOPEN_NEOPEN 30000 steps (extra, ConsoleFreq 1000) | 0 / 0 | 62 | 0 | 9/9 identical | MEMC 54.05%, mol-transfer ISB 41.01% | 21.2 s |
+| GCMC PEN_HEX 2000 steps (extra, Ewald) | 0 / 0 | 42 | 0 | 12/12 identical | PEN disp 24.81%, mol-transfer PEN 19.05% | 1.63 s |
+
+Result: 7/7 pass. GPU output is identical to CPU at printed precision on every case. Every key acceptance matches the gfx90a round at 4c06552c and the gfx1100 round, including both extra runs. The CPU executables from the same HIP build build and run on all seven cases (non-GPU path). CPU gtests: not built, because upstream `development` itself fails to compile them (ConsistentTrajectoryTest.cpp brace, see the retarget section). GPU gtests are CUDA-only. Unchanged.
+
+CUDA compile gate at b8d1aa91: not run here. This host has no CUDA toolkit (no `/opt/conda/envs/cuda-12.8`, no `/usr/local/cuda`), and fetching NVIDIA's 12.8 redist archives was refused by this headless session's permission policy, so `cuda-not-validated: no toolkit on host, download not permitted in this session`. Mitigation, not a substitute: b8d1aa91 leaves CMakeLists.txt, GOMCCUDASetup.cmake and GOMCCPUSetup.cmake byte-identical (Review 2026-10-31), and its two source edits are host .cpp files that a CUDA build compiles with the host g++. This build compiled the same files with g++ 13.3.0 and `-DGOMC_CUDA` in the GPU targets (`grep -c GOMC_CUDA .../GPU_NVT.dir/flags.make` -> 2) and without it in the CPU targets, both rc=0. The gate stays open for the next Linux host that has nvcc. The last recorded CUDA gate is at 4c06552c.
+
+Completion checks: `git -C projects/GOMC/src status --porcelain` empty; `moatlib.py audit-clean GOMC` OK; `python3 utils/jargon.py --port GOMC` clean (after `git -C projects/GOMC/src branch -f development origin/development`); ROCm build documented in README.
