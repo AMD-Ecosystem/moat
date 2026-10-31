@@ -230,8 +230,8 @@
       "refs": [
         "claude-shared plans/lichtfeld-full-app-port.md, Results"
       ],
-      "status": "open",
-      "upstream_issue": null,
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/hip/issues/3909#issuecomment-6548445774",
       "created_at": "2026-10-26T15:38:27Z",
       "decided": {
         "choice": "now",
