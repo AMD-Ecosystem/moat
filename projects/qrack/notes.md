@@ -8,6 +8,11 @@ reachable only via the OpenCL backend. Net-new native ROCm/HIP backend.
 - Fork: https://github.com/AMD-Ecosystem/qrack, branch moat-port
 - Lead platform: linux-gfx90a (MI250X), ROCm 7.2.1
 
+## Known upstream failures (expected; not HIP regressions)
+Validators: these fail on CUDA as well as ROCm. Expect them, record them, and do not mark the arch failed for them alone.
+- **`test_cswap` under `--proc-cuda --layer-qpager`** (tests.cpp:715, `HasProbability(0, 12, (1U << 9U) | (1U << 11U))` sees all zeros; deterministic, 0/N runs pass). Cause: the upstream bug in the engine-to-engine `QEngineCUDA::SetAmplitudePage` overload (src/qengine/cuda.cu, around line 215). The copy runs the wrong way, ignores both offsets and is sized by srcOffset, so `QPager::SeparateEngines` loses amplitudes. The fix is upstream PR https://github.com/unitaryfoundation/qrack/pull/1044. On jeff's ruling of 2026-10-31 it is kept off `moat-port` (reverted in fb20e069). CUDA evidence: on a V100 with CUDA 12.9 the test fails 0/20 at upstream base 98b47407 and 0/25 at upstream db84c820, and passes 25/25 with the fix (see "CUDA gate 2026-10-30" and "SetAmplitudePage upstream fix 2026-10-30" below). It stays expected until #1044 merges and a sync round brings it into `moat-port`. Then it must pass again, and this entry should be removed. `--layer-qengine test_cswap` does not reach this path and must pass.
+- **4 ModNOut cases under `--layer-qtensornetwork`** (test_mulmodnout, test_imulmodnout, test_cmulmodnout, test_cimulmodnout; tests.cpp:4628/4649/4747/4774; "QInterface::{MUL,IMUL,CMUL}ModNOut not implemented!"). They fail identically on `--proc-cpu`. This is an upstream limitation of the layer and is engine-independent.
+
 ## What changed (6 files)
 - ADD include/common/cuda_to_hip.h -- the only HIP-aware file. On USE_HIP it
   includes <hip/hip_runtime.h> (+ hip_fp16.h on FPPOW<5) and aliases the ~20
@@ -780,3 +785,43 @@ Failure without the fix: tests.cpp:715 `REQUIRE_THAT(qftReg2, HasProbability(0, 
 Why: QPager::SeparateEngines (qpager.cpp:335/360/675/696) moves amplitudes between page engines with the engine-to-engine QEngineCUDA::SetAmplitudePage overload. Without the fix that copy runs the wrong way, ignores both offsets and is sized by srcOffset (0 bytes for the 675/696 callers), so a CSwap that touches page qubits loses the amplitudes. It is the same upstream bug the V100 run shows at upstream (0/20 and 0/25 before the fix); it is not HIP-specific. The qengine layer (the gate before 2026-10-29) does not reach this path, which is why the port looked independent of it; the qpager layer, added to the GPU gate in the 2026-10-29 round and run by every validator since, does.
 
 So the HIP port code does not need 42bdc3d6 to build or to pass --layer-qengine, but the full GPU suite recorded in these notes is green on this host only with it. Decision for jeff (not taken here): (a) revert anyway and treat cuda/qpager test_cswap as a known upstream failure until #1044 merges (it would need recording as an expected upstream failure so validators do not read it as a HIP regression), or (b) keep 42bdc3d6 on `moat-port` until #1044 merges, then drop it through the upstream merge in a sync round. The local fork clone `projects/qrack/src` is unchanged at 3bf7a75e (porcelain clean); no CUDA 12.8 compile gate run (no CUDA toolkit on this host, and nothing to gate since nothing was committed).
+
+## Porter 2026-10-31 (linux-gfx1100): revert 42bdc3d6 on jeff's ruling -> fb20e069
+jeff's ruling (2026-10-31), on the decision recorded in the previous entry: option (a). 42bdc3d6 is an upstream bug fix, now upstream PR https://github.com/unitaryfoundation/qrack/pull/1044, and non-ROCm fixes stay off the port branch. qpager `test_cswap` is a known upstream failure until #1044 merges. It is recorded under "Known upstream failures" at the top of this file.
+
+- Fork commit fb20e0693a667d9c7a31472f1a29a469c71f4dcb on `moat-port` is `git revert 42bdc3d6`, made as a new commit on 3bf7a75e (no amend, no force). The diff is exactly the cuda.cu SetAmplitudePage hunk, back to upstream's text. `git diff 98b47407 HEAD -- src/qengine/cuda.cu` now contains only the deferred-free hunks (from line 315 on). Pushed 3bf7a75e..fb20e069.
+- Platform: AMD Radeon Pro W7800 48GB, gfx1100 (wave32), HIP_VISIBLE_DEVICES=1 (dispatcher pin). TheRock ROCm SDK 10.1.0 pip wheels, CMake 3.31.6 from /opt/python-3.11-venv, Ninja, `ulimit -c 0`.
+
+HIP build (same recipe as the 2026-10-30 gfx1100 entry, `-j10`): exit 0, 39/39, OpenCL OFF / CUDA ON / HIP ON, 0 warnings.
+
+| proc/layer at fb20e069 | result |
+|---|---|
+| cuda/qengine | All tests passed, 9612 / 213 |
+| cuda/qpager | 212 passed, **1 failed: test_cswap** (tests.cpp:715, the known upstream failure) |
+| cuda/qunit | All passed, 9613 / 213 |
+| cuda/qunit-qpager | All passed, 9613 / 213 |
+| cuda/qunit-multi | All passed, 9610 / 213 |
+| cuda/qtensornetwork | 209 passed / 4 failed (the 4 ModNOut cases, known) |
+| hybrid/qunit | All passed, 9613 / 213 |
+| cpu/qengine | All passed, 9612 / 213 |
+| cpu/qpager | All passed, 9609 / 213 |
+| cpu/qtensornetwork | 209 / 4 failed (same 4) |
+| `--proc-cuda --layer-qpager test_cswap` x5 | 0/5 (expected) |
+| `--proc-cuda --layer-qengine test_cswap` x5 | 5/5 |
+| `--proc-cuda --layer-qengine test_ucmtrx` x5 | 5/5 (deferred-free fix) |
+
+This matches the "without" column of the previous entry exactly, so there is no new failure. Every run printed "CUDA device #0: AMD Radeon Pro W7800 48GB".
+
+CUDA 12.8 compile gate at fb20e069 (this host has no CUDA toolkit, so I downloaded NVIDIA's redist): https://developer.download.nvidia.com/compute/cuda/redist/redistrib_12.8.0.json gives cuda_nvcc 12.8.61 (sha256 145f8779...8604c54), cuda_cudart 12.8.57 (5bd3ac35...dc0ae2) and cuda_cccl 12.8.55 (dce4f2e7...fc7d60b). All three passed `sha256sum -c` against the JSON values, then were extracted into one prefix with `lib64 -> lib` symlinked (nvcc links `-lcudart_static` from lib64). gcc 13.3.
+```
+T=<cuda-12.8 prefix>
+cmake -S $S -B $S/_build-cuda -G Ninja -DENABLE_CUDA=ON -DENABLE_OPENCL=OFF -DENABLE_TESTS=ON \
+  -DCMAKE_CUDA_COMPILER=$T/bin/nvcc -DCUDAToolkit_ROOT=$T \
+  -DQRACK_CUDA_ARCHITECTURES=80 -DCMAKE_CUDA_ARCHITECTURES=80
+cmake --build $S/_build-cuda -j10 --target unittest
+```
+"The CUDA compiler identification is NVIDIA 12.8.61", OpenCL OFF / CUDA ON / HIP OFF, exit 0, 39/39. qengine.cu, cudaengine.cu and qengine/cuda.cu build as CUDA objects for sm_80. The only warnings are 4x `qrack_types.hpp(85): warning #68-D` on upstream's `QRACK_MAX_UINT(-1)` (an upstream line, blame 8735b6a8) and 3x nvcc "incompatible redefinition for option 'std'". None is from the port. Compile only: no NVIDIA GPU here. **CUDA compile gate PASS.**
+
+- `python3 utils/jargon.py --port qrack`: clean. Integrity: `git status --porcelain` shows only untracked `_build/` and `_build-cuda/`.
+- Docs: unchanged (README HIP section still accurate; the revert touches no build step).
+- State: took the lock (`set-state qrack linux-gfx1100 porting`), `advance-head qrack fb20e069`, then `ported`. Every arch now reads revalidate at fb20e069. A reviewer runs next; validators should read "Known upstream failures" first.
