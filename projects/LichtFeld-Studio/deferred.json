@@ -315,8 +315,8 @@
       "refs": [
         "projects/LichtFeld-Studio/notes.md"
       ],
-      "status": "open",
-      "upstream_issue": null,
+      "status": "filed",
+      "upstream_issue": "https://github.com/ROCm/rocm-systems/issues/14765",
       "created_at": "2026-10-30T17:36:17Z",
       "decided": {
         "choice": "now",
