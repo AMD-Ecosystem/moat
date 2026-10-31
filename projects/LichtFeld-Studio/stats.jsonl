@@ -376,3 +376,13 @@
 {"kind":"phase","ts":"2026-10-31T02:49:32Z","phase":"compile","seconds":0.320,"exit":1,"cmd":"bash agent_space/build.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-194004-lfs-video-review/build-hip"}
 {"kind":"phase","ts":"2026-10-31T02:52:02Z","phase":"test","seconds":56.876,"exit":0,"cmd":"bash agent_space/run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-194004-lfs-video-review/runs/video1.log 1800 Video*:*/Video*"}
 {"kind":"session","ts":"2026-10-31T02:54:17Z","epoch":1793415257.810407446,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-10-31T02:58:24Z","epoch":1793415504.463211737,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-31T02:59:22Z","phase":"compile","seconds":17.918,"exit":0,"cmd":"bash agent_space/cfg.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-195616-lfs-val-gfx1100/build-hip"}
+{"kind":"phase","ts":"2026-10-31T03:03:26Z","phase":"compile","seconds":238.601,"exit":0,"cmd":"bash agent_space/build.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-195616-lfs-val-gfx1100/build-hip"}
+{"kind":"phase","ts":"2026-10-31T03:07:41Z","phase":"compile","seconds":247.312,"exit":0,"cmd":"bash agent_space/lfs_compute_build.sh"}
+{"kind":"phase","ts":"2026-10-31T03:08:10Z","phase":"test","seconds":0.094,"exit":127,"cmd":"timeout -k 30 1200 bash agent_space/lfs_run.sh ../build-compute/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-10-31T03:08:59Z","phase":"test","seconds":40.275,"exit":1,"cmd":"timeout -k 30 1200 bash agent_space/lfs_run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-195616-lfs-val-gfx1100/build-compute/cmake/hip_tests/lfs_compute_tests"}
+{"kind":"phase","ts":"2026-10-31T03:33:34Z","phase":"test","seconds":1457.123,"exit":0,"cmd":"bash agent_space/suite_runner.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-195616-lfs-val-gfx1100/suites-full"}
+{"kind":"phase","ts":"2026-10-31T04:40:30Z","phase":"test","seconds":3887.702,"exit":1,"cmd":"timeout -k 30 7000 bash agent_space/lfs_run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-195616-lfs-val-gfx1100/build-hip/tests/lichtfeld_tests --gtest_filter=ProjectDocumentTest.* --gtest_repeat=1000"}
+{"kind":"phase","ts":"2026-10-31T04:41:46Z","phase":"test","seconds":65.179,"exit":0,"cmd":"bash agent_space/smoke.sh head"}
+{"kind":"session","ts":"2026-10-31T04:43:41Z","epoch":1793421821.557418920,"event":"end","platform":"linux-gfx1100"}
