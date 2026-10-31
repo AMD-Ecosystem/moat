@@ -143,3 +143,6 @@
 {"kind":"phase","ts":"2026-10-31T07:00:06Z","phase":"compile","seconds":54.359,"exit":0,"cmd":"bash agent_space/build.sh build"}
 {"kind":"phase","ts":"2026-10-31T07:01:13Z","phase":"compile","seconds":754.624,"exit":0,"cmd":"bash agent_space/build_cuda.sh -k 0"}
 {"kind":"phase","ts":"2026-10-31T07:02:49Z","phase":"compile","seconds":83.531,"exit":0,"cmd":"bash agent_space/build_cuda.sh -k 0"}
+{"kind":"phase","ts":"2026-10-31T08:46:48Z","phase":"compile","seconds":0.005,"exit":127,"cmd":"bash build.sh build"}
+{"kind":"phase","ts":"2026-10-31T08:49:25Z","phase":"compile","seconds":20.797,"exit":0,"cmd":"bash agent_space/build.sh build"}
+{"kind":"phase","ts":"2026-10-31T08:49:36Z","phase":"test","seconds":0.003,"exit":127,"cmd":"./py1.sh /var/lib/jenkins/fleet/jobs/mi200-20261031-002613-oneflow-fused-interaction/moat/agent_space/op_test.py"}
