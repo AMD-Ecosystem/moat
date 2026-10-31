@@ -221,7 +221,7 @@
       "id": "hip-timeline-semaphore-import-range-check",
       "kind": "rocm-bug-report",
       "component": "clr",
-      "summary": "hipImportExternalSemaphore (clr/hipamd/src/hip_memory.cpp) rejects every handle type above hipExternalSemaphoreHandleTypeD3D12Fence (4) with hipErrorInvalidValue, so hipExternalSemaphoreHandleTypeTimelineSemaphoreFd (9) and TimelineSemaphoreWin32 (10) can never import, on Linux (ROCm 7.16, gfx1100) or Windows (7.14, gfx1151). On Windows the PAL layer handles timeline semaphores: the same VkSemaphore imported as OpaqueWin32 keeps full timeline semantics. HIP also has no counterpart of cudaDevAttrTimelineSemaphoreInteropSupported.",
+      "summary": "hipImportExternalSemaphore (clr/hipamd/src/hip_memory.cpp L285-288 at rocm-systems develop e57be12c, 2026-10-31) rejects every handle type above hipExternalSemaphoreHandleTypeD3D12Fence (4) with hipErrorInvalidValue, so hipExternalSemaphoreHandleTypeTimelineSemaphoreFd (9) and TimelineSemaphoreWin32 (10) can never import, on Linux (TheRock ROCm SDK 10.1.0, HIP 7.16.26385, gfx1100: 1 hipErrorInvalidValue, 2026-10-26 and again 2026-10-31) or Windows (7.14, gfx1151). On Windows the PAL layer handles timeline semaphores (paldevice.cpp sets flags.timeline, but sets sharedViaNtHandle only for OpaqueWin32/D3D12Fence, so a fix likely needs TimelineSemaphoreWin32 there too); the same VkSemaphore imported as OpaqueWin32 keeps full timeline semantics. hipDeviceProp_t::timelineSemaphoreInteropSupported is hard-coded 0 (hip_device.cpp L838) and hipDeviceAttribute_t has no counterpart of cudaDevAttrTimelineSemaphoreInteropSupported. Matches ROCm/hip#3909 (Windows gfx1102, 7.2.6); comment drafted in notes.md, not posted.",
       "refs": [
         "claude-shared plans/lichtfeld-full-app-port.md, Results"
       ],
@@ -239,7 +239,7 @@
       "id": "hip-linux-external-semaphore-unsupported",
       "kind": "rocm-bug-report",
       "component": "rocr",
-      "summary": "On Linux no Vulkan semaphore can be imported into HIP: binary OPAQUE_FD import returns hipErrorNotSupported (801) because ROCr hsa_amd_external_semaphore_handle_open supports only Win32 handles and libhsakmt hsaKmtImportExternalSemaphore/signal/wait (libhsakmt/src/extsem.c) are stubs. ROCm 7.16, gfx1100, RADV Mesa 25.2. Forces host-side sync for Vulkan-HIP interop on Linux.",
+      "summary": "On Linux no Vulkan semaphore can be imported into HIP: binary OPAQUE_FD import returns hipErrorNotSupported (801) because ROCr hsa_amd_external_semaphore_handle_open supports only Win32 handles and libhsakmt hsaKmtImportExternalSemaphore/signal/wait (libhsakmt/src/extsem.c) are stubs. HSA has no timeline handle type and the rocclr ROCm backend maps none, so relaxing the HIP range check alone would turn the timeline failure into 801. Unchanged at rocm-systems develop e57be12c (2026-10-31). Seen on TheRock ROCm SDK 10.1.0 (HIP 7.16.26385), gfx1100, RADV Mesa 25.2.8, 2026-10-26 (amdgpu 6.16.13) and 2026-10-31 (amdgpu 6.19.14). Forces host-side sync for Vulkan-HIP interop on Linux.",
       "refs": [
         "claude-shared plans/lichtfeld-full-app-port.md, Results"
       ],
