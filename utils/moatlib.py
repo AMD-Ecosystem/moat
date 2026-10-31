@@ -1787,6 +1787,47 @@ def set_no_upstream(name, evidence, by, note=None, clear=False):
     return obj
 
 
+def set_base_branch(name, branch, by, reason=None):
+    """Record a person's ruling that the upstream PR targets `branch` rather than
+    the default branch recorded at scaffold. GOMC is the origin case: upstream's
+    CONTRIBUTING.md asks for pull requests against `development`, not `main`.
+
+    `fork_default_branch` is both the PR base and the fork branch kept as a clean
+    mirror of upstream's, so the branch must already exist on the fork -- a
+    person mirrors it there first, and this checks with a read-only ls-remote.
+    An open upstream PR already has its base, and a recorded approval was given
+    on a diff against the old one, so both refuse."""
+    obj, _where = project_record(name)
+    if obj is None:
+        raise FileNotFoundError(str(status_path(name)))
+    if obj.get("pr_state") == "open":
+        raise ValueError(f"{name}: an upstream PR is open -- its base is set on "
+                         f"GitHub, not here")
+    if obj.get("pr_approval"):
+        raise ValueError(f"{name}: a PR approval is recorded against the diff from "
+                         f"{obj.get('fork_default_branch')!r}; a new base needs a "
+                         f"new approval -- clear it first")
+    fork = obj.get("fork_url")
+    if not fork:
+        raise ValueError(f"{name}: no fork recorded -- the base must exist on it")
+    r = subprocess.run(["git", "ls-remote", fork, f"refs/heads/{branch}"],
+                       capture_output=True, text=True, timeout=60)
+    if r.returncode or not r.stdout.strip():
+        raise ValueError(f"{name}: no branch {branch!r} on {fork} -- mirror "
+                         f"upstream's {branch} to the fork first")
+    ok, why = record_writable_here(name)
+    if not ok:
+        raise ValueError(why)
+    old = obj.get("fork_default_branch")
+    obj["fork_default_branch"] = branch
+    obj["base_branch_ruling"] = {"branch": branch, "previous": old,
+                                 "by": by, "at": now_iso()}
+    if reason:
+        obj["base_branch_ruling"]["reason"] = reason
+    save_record(name, obj, f"{name}: PR base {old} -> {branch}, ruled by {by}")
+    return obj
+
+
 def archive_pr(name):
     """Move a finished (merged or closed) upstream PR into pr_history, freeing the
     pr_* fields for a follow-up round.
@@ -4752,6 +4793,15 @@ def main(argv=None):
     s.add_argument("--clear", action="store_true",
                    help="withdraw the ruling (upstream takes pull requests again)")
 
+    s = sub.add_parser("set-base-branch",
+                       help="record a person's ruling that the upstream PR targets "
+                            "BRANCH (sets fork_default_branch; the branch must "
+                            "already exist on the fork)")
+    s.add_argument("name")
+    s.add_argument("branch")
+    s.add_argument("--by", help="who ruled it; required, never defaulted")
+    s.add_argument("--reason")
+
     s = sub.add_parser("sync-branch",
                        help="establish the staging branch for a sync round on a "
                             "maintained fork: absorb upstream's advance, then the "
@@ -5200,6 +5250,14 @@ def main(argv=None):
                   f"({obj['no_upstream']['evidence']}). No upstream PR will be "
                   f"offered; the fork's {obj.get('fork_branch') or PORT_BRANCH} "
                   f"branch is the deliverable.")
+    elif args.cmd == "set-base-branch":
+        if not args.by:
+            print("set-base-branch: --by is required -- this records a person's "
+                  "ruling", file=sys.stderr)
+            return 2
+        obj = set_base_branch(args.name, args.branch, args.by, reason=args.reason)
+        print(f"{args.name}: PR base is now {obj['fork_default_branch']} "
+              f"(was {obj['base_branch_ruling']['previous']})")
     elif args.cmd == "sync-branch":
         fix = sync_branch(args.name)
         print(f"{args.name}: sync round on {fix['branch']} "
