@@ -370,3 +370,9 @@
 {"kind":"phase","ts":"2026-10-31T02:22:04Z","phase":"test","seconds":1794.994,"exit":0,"cmd":"bash agent_space/run_suites.sh /var/lib/jenkins/fleet/jobs/mi200-20261030-182453-lfs-gfx90a-video/build-hip /var/lib/jenkins/fleet/jobs/mi200-20261030-182453-lfs-gfx90a-video/moat/agent_space/runs/full"}
 {"kind":"phase","ts":"2026-10-31T02:33:34Z","phase":"test","seconds":104.800,"exit":0,"cmd":"bash agent_space/smoke.sh r1 /sys/bus/pci/devices/0000:2f:00.0/drm/card3/device"}
 {"kind":"session","ts":"2026-10-31T02:38:32Z","epoch":1793414312.231375864,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-10-31T02:41:41Z","epoch":1793414501.550555777,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-10-31T02:43:13Z","phase":"compile","seconds":12.228,"exit":1,"cmd":"bash agent_space/cfg.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-194004-lfs-video-review/build-hip"}
+{"kind":"phase","ts":"2026-10-31T02:48:54Z","phase":"compile","seconds":309.045,"exit":1,"cmd":"bash agent_space/build.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-194004-lfs-video-review/build-hip"}
+{"kind":"phase","ts":"2026-10-31T02:49:32Z","phase":"compile","seconds":0.320,"exit":1,"cmd":"bash agent_space/build.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-194004-lfs-video-review/build-hip"}
+{"kind":"phase","ts":"2026-10-31T02:52:02Z","phase":"test","seconds":56.876,"exit":0,"cmd":"bash agent_space/run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261030-194004-lfs-video-review/runs/video1.log 1800 Video*:*/Video*"}
+{"kind":"session","ts":"2026-10-31T02:54:17Z","epoch":1793415257.810407446,"event":"end","platform":"linux-gfx1100"}
