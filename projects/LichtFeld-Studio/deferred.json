@@ -310,7 +310,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-10-28T21:19:27Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeff",
+        "at": "2026-10-31T20:50:29Z",
+        "note": "2026-10-31: recheck on develop, then draft the issue"
+      }
     },
     {
       "id": "rocdecode-h264-high444-420-silent-miscode",
