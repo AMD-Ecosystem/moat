@@ -5645,3 +5645,262 @@ cuda-to-rocm `references/fault-classes.md` "The software fallback for AV1 needs 
 
 ### Verdict
 Built (fresh and existing directory) and tested on gfx1100, pushed. Stage `porting` -> `ported` for review; linux-gfx1100, linux-gfx90a and the Windows gate revalidate at 001fc728 (on gfx90a the AV1 VideoColorRange cases exercise libdav1d for real).
+
+
+## VP9/AV1 signal description root cause 2026-10-31 (no pipeline role, linux-gfx1201)
+
+jeff's request after ruling `rocdecode-vp9-av1-signal-description-missing` "now": locate the cause and draft the report. No stage, platform state or lock touched; the fork was not used. Host: AMD Radeon AI PRO R9700 (gfx1201), amdgpu 6.19.14.31400100, Linux 6.11, Ubuntu 24.04.
+
+### Conclusion
+- Proven (source, ROCm/rocm-systems develop e57be12c6116 and the `therock-10.1` branch 93273aa37e4b = rocDecode 1.10.0): both parsers read the colour fields and then discard them. `NotifyNewSequence()` sets `video_format_params_.video_signal_description = {0}` and fills nothing in before the sequence callback: `vp9_parser.cpp:268` (1.10: `:250`), `av1_parser.cpp:274` (1.10: `:269`). AVC (`avc_parser.cpp:538-545`; 1.10 `:508-515`) and HEVC (`hevc_parser.cpp:223-230`; 1.10 `:218-225`) copy the VUI after the same zeroing.
+- VP9: `ColorConfig()` is called on every key frame (`vp9_parser.cpp:559`) and reads `color_space` (3 bits) and `color_range` for profile 0 as well (`:724-744`; profile 0 implies only the subsampling). Parsed, not copied. A copy also needs the `color_space` enum translated to ISO/IEC 23091-4 matrix codes (FFmpeg's VP9 table: 0->2, 1->5, 2->1, 3->6, 4->7, 5->9, 7->0); VP9 has no primaries or transfer, so those should be 2.
+- AV1: `ParseColorConfig()` reads `color_description_present_flag`, primaries, transfer, matrix and `color_range` (`av1_parser.cpp:1469-1492`; defaults 2 when the flag is 0), and `matrix_coefficients` and `color_range` feed the VA picture parameters (`:314`, `:326`). Parsed, not copied; a direct copy is the fix.
+- Not a wrong mapping and not a decoder problem: every field is 0, even for streams whose correct value is 2 (unspecified), and every stream decodes 3/3 `rocDecodeStatus_Success`. `matrix_coefficients` 0 is Identity (GBR), so a client that trusts it treats YUV as RGB.
+- Inferred, not tested: the fix sketched in the draft (copy for AV1, table for VP9, `video_format` 5).
+- The 1.10 sources were read at `therock-10.1` (its CMakeLists says VERSION 1.10.0). Since then the parser files changed only for bounds checks (#12493, #12624), Windows portability and logging.
+
+### Runtime evidence
+- GPU: amd-smi GPU 2, PCI 0000:c3:00.0, idle (GFX 0%, VCN 0%). HIP orders the cards differently: `HIP_VISIBLE_DEVICES=1` is 0000:c3:00.0 (the probe prints the device's PCI address on every run). `ulimit -c 0`, each run `timeout -k 10 60`, valid streams only.
+- Probe: `sigprobe.cpp` (in the draft below): rocDecode parser plus an optional decode (`--decode`; the decoder is created only after `rocDecGetDecoderCaps` says supported), IVF input for VP9/AV1, Annex B split per NAL for H.264/HEVC. Built with each SDK's own hipcc and `-Wl,-rpath` to that SDK (ldd checked). An earlier version fed the whole HEVC file as one packet and decoded only 1 frame with a parse error; per-NAL feeding gives 3/3. That affected only the HEVC frame count, not the sequence callback.
+- Streams (system FFmpeg 6.1.1-3ubuntu5 from apt; libvpx-vp9, libaom-av1 `-cpu-used 8`, libsvtav1 1.7.0, libx264, libx265): `testsrc2=size=256x256:rate=25 -frames:v 3 -pix_fmt yuv420p` with `-color_range pc -colorspace bt470bg` (pc601), no colour options (default), or `-color_range tv -colorspace bt709 -color_primaries bt709 -color_trc bt709` (tv709). VP9 is profile 0.
+- Bitstream ground truth (`ffmpeg -c copy -bsf:v trace_headers` on the IVF files): VP9 default cs 0 range 0; pc601 cs 1 range 1; tv709 cs 2 range 0. AV1 (aom and svt) default: description flag 0, range 0; pc601: flag 1, cp 2, tc 2, mc 5, range 1; aom tv709: flag 1, cp 1, tc 1, mc 1, range 0.
+- rocDecode 1.10.0 (ROCm 10.1.0 wheels, HIP 7.16.26385) and rocDecode 1.12.0 (ROCm 10.3.0a20261030 nightly wheels, HIP 7.18.26433) give identical results:
+
+| stream | ffprobe | rocDecode range/matrix/prim/trc (video_format) | decode |
+| --- | --- | --- | --- |
+| vp9_default.ivf | tv, unknown | 0/0/0/0 (0) | 3/3 Success |
+| vp9_pc601.ivf | pc, bt470bg | 0/0/0/0 (0) | 3/3 Success |
+| vp9_tv709.ivf | tv, bt709 (prim/trc unknown) | 0/0/0/0 (0) | 3/3 Success |
+| aom_default.ivf, svt_default.ivf | tv, unknown | 0/0/0/0 (0) | 3/3 Success |
+| aom_pc601.ivf, svt_pc601.ivf | pc, bt470bg | 0/0/0/0 (0) | 3/3 Success |
+| aom_tv709.ivf | tv, bt709/bt709/bt709 | 0/0/0/0 (0) | 3/3 Success |
+| h264_pc601.h264, hevc_pc601.hevc | pc, bt470bg | 1/5/2/2 (5) | 3/3 Success |
+
+- Parser only (no decoder created), 1.10: vp9_pc601, aom_pc601 and svt_pc601 give the same zeros.
+- Newest nightly: installing `rocm[libraries,devel]` and `rocm-sdk-device-gfx1201` from `https://nightly.repo.amd.com/rocm/whl-next/` into a new venv in this job's directory was refused by the host's job guard (it treats any pip install as changing the shared Python environment). Instead I used the 10.3.0a20261030 nightly venv that another job on this host had installed, read-only. It was the index's newest when that job ran on 2026-10-30. Develop is at e57be12c (2026-10-31), and the parser files have not changed since 2026-10-02. For jeff: if a nightly newer than 10.3.0a20261030 matters for the report, allow the job-local install.
+- No existing report: `gh search issues`/`prs` on ROCm/rocm-systems (video_signal_description, VP9 color range, full range, color_range, AV1 matrix_coefficients, colour) and ROCm/rocDecode return nothing relevant.
+
+### Container versus bitstream
+- WebM/MKV copies of the same streams (mkvinfo v82.0): pc601 carries `Colour` MatrixCoefficients 5, Range 2 (full); tv709 carries matrix 1, primaries 1, transfer 1, Range 1; default carries no `Colour` element.
+- ffprobe on the IVF files (no container metadata) still reads range and matrix, so those come from the VP9/AV1 bitstream and the parser is at fault for them. ffprobe's primaries/transfer bt709 for vp9_tv709.webm come only from the WebM `Colour` element (vp9_tv709.ivf shows unknown): the VP9 bitstream cannot carry them, so rocDecode should report 2 there, not bt709. For AV1 the container and the bitstream agree.
+- For the port's fixtures: the range/matrix values FFmpeg's codecpar gives for vp9_full.webm and av1_full.mkv are bitstream values (as the IVF result shows), so the port's codecpar workaround reads the right data. For VP9 primaries/transfer only container values can ever exist.
+
+### Issue draft for jeff (not filed)
+Repository ROCm/rocm-systems. `python3 utils/prose.py` and `python3 utils/jargon.py` on the draft file: both clean. ASCII only.
+
+====
+Title: [rocDecode] VP9 and AV1 parsers return an all-zero video_signal_description
+
+My agent came up with this analysis, but I've read and approved it.
+
+## Problem
+
+For VP9 and AV1, the `RocdecVideoFormat` passed to the sequence callback always has `video_signal_description` set to all zeros: `video_full_range_flag` 0, `color_primaries` 0, `transfer_characteristics` 0, `matrix_coefficients` 0. This holds for every stream, whatever the bitstream signals. A full-range BT.601 stream therefore reports limited range, and `matrix_coefficients` 0 (Identity, i.e. GBR, in ISO/IEC 23091-4) tells a client to treat the decoded YUV as RGB. H.264 and HEVC report the VUI values correctly.
+
+## Cause
+
+Proven from the source: both parsers read the colour fields from the bitstream, but `NotifyNewSequence()` zeroes `video_signal_description` and never fills it in before calling the sequence callback.
+
+- VP9: `ColorConfig()` reads `color_space` and `color_range` on every key frame ([vp9_parser.cpp#L559](https://github.com/ROCm/rocm-systems/blob/e57be12c6116b37ce422e761f707390f29e86d80/projects/rocdecode/src/parser/vp9_parser.cpp#L559), [#L724-L744](https://github.com/ROCm/rocm-systems/blob/e57be12c6116b37ce422e761f707390f29e86d80/projects/rocdecode/src/parser/vp9_parser.cpp#L724-L744)), then [vp9_parser.cpp#L268](https://github.com/ROCm/rocm-systems/blob/e57be12c6116b37ce422e761f707390f29e86d80/projects/rocdecode/src/parser/vp9_parser.cpp#L268) sets `video_signal_description = {0}`.
+- AV1: `ParseColorConfig()` reads `color_primaries`, `transfer_characteristics`, `matrix_coefficients` and `color_range` ([av1_parser.cpp#L1469-L1492](https://github.com/ROCm/rocm-systems/blob/e57be12c6116b37ce422e761f707390f29e86d80/projects/rocdecode/src/parser/av1_parser.cpp#L1469-L1492)), and the decode path uses `matrix_coefficients` and `color_range` for the picture parameters ([#L314](https://github.com/ROCm/rocm-systems/blob/e57be12c6116b37ce422e761f707390f29e86d80/projects/rocdecode/src/parser/av1_parser.cpp#L314), [#L326](https://github.com/ROCm/rocm-systems/blob/e57be12c6116b37ce422e761f707390f29e86d80/projects/rocdecode/src/parser/av1_parser.cpp#L326)), but [av1_parser.cpp#L274](https://github.com/ROCm/rocm-systems/blob/e57be12c6116b37ce422e761f707390f29e86d80/projects/rocdecode/src/parser/av1_parser.cpp#L274) sets `video_signal_description = {0}`.
+- For comparison, AVC and HEVC copy the VUI fields after the same zeroing ([avc_parser.cpp#L538-L545](https://github.com/ROCm/rocm-systems/blob/e57be12c6116b37ce422e761f707390f29e86d80/projects/rocdecode/src/parser/avc_parser.cpp#L538-L545), [hevc_parser.cpp#L223-L230](https://github.com/ROCm/rocm-systems/blob/e57be12c6116b37ce422e761f707390f29e86d80/projects/rocdecode/src/parser/hevc_parser.cpp#L223-L230)).
+
+The same lines are in the ROCm 10.1 sources (rocDecode 1.10.0, `therock-10.1` branch at 93273aa: `vp9_parser.cpp:250`, `av1_parser.cpp:269`).
+
+Suggested fix (not tested): AV1 can copy its fields directly; when `color_description_present_flag` is 0 the parser already sets them to 2 (unspecified). VP9 needs a translation from `color_space` to a matrix code, as FFmpeg's VP9 decoder does: CS_UNKNOWN 2, CS_BT_601 5 (or 6, the same matrix), CS_BT_709 1, CS_SMPTE_170 6, CS_SMPTE_240 7, CS_BT_2020 9, CS_RGB 0. VP9 carries no primaries or transfer characteristics, so those should be 2 (unspecified). For both codecs `video_full_range_flag` is `color_range`, and `video_format` should be 5 (unspecified).
+
+## Reproducer
+
+Streams from FFmpeg's `testsrc2`, written to IVF so there is no container colour metadata. FFmpeg's `trace_headers` bitstream filter confirms the values in the bitstream: VP9 `color_space` 1, `color_range` 1; AV1 `color_description_present_flag` 1, `color_primaries` 2, `transfer_characteristics` 2, `matrix_coefficients` 5, `color_range` 1.
+
+```
+ffmpeg -f lavfi -i testsrc2=size=256x256:rate=25 -frames:v 3 -pix_fmt yuv420p -color_range pc -colorspace bt470bg -c:v libvpx-vp9 -profile:v 0 vp9_pc601.ivf
+ffmpeg -f lavfi -i testsrc2=size=256x256:rate=25 -frames:v 3 -pix_fmt yuv420p -color_range pc -colorspace bt470bg -c:v libaom-av1 -cpu-used 8 av1_pc601.ivf
+ffmpeg -f lavfi -i testsrc2=size=256x256:rate=25 -frames:v 3 -pix_fmt yuv420p -color_range pc -colorspace bt470bg -c:v libx264 h264_pc601.h264
+ffprobe -v error -show_entries stream=color_range,color_space vp9_pc601.ivf
+hipcc -o sigprobe sigprobe.cpp -I$ROCM_PATH/include -L$ROCM_PATH/lib -lrocdecode
+./sigprobe vp9 vp9_pc601.ivf --decode
+./sigprobe av1 av1_pc601.ivf --decode
+./sigprobe h264 h264_pc601.h264 --decode
+```
+
+<details>
+<summary>sigprobe.cpp</summary>
+
+```cpp
+// Prints the RocdecVideoFormat::video_signal_description that rocDecode's parser
+// reports in the sequence callback. Input: IVF (VP9, AV1) or an Annex B
+// elementary stream (H.264, HEVC). With --decode, also decodes on device 0.
+#include <hip/hip_runtime.h>
+#include <rocdecode/rocdecode.h>
+#include <rocdecode/rocparser.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <fstream>
+#include <iterator>
+#include <string>
+#include <vector>
+
+struct Ctx {
+    rocDecVideoCodec codec;
+    bool decode;
+    rocDecDecoderHandle dec = nullptr;
+    int decoded = 0, ok = 0;
+};
+
+static int ROCDECAPI OnSequence(void *user, RocdecVideoFormat *f) {
+    Ctx *c = static_cast<Ctx *>(user);
+    auto &s = f->video_signal_description;
+    printf("sequence: %ux%u chroma %d bit_depth %u | video_format %u video_full_range_flag %u "
+           "color_primaries %u transfer_characteristics %u matrix_coefficients %u\n",
+           f->coded_width, f->coded_height, f->chroma_format, f->bit_depth_luma_minus8 + 8,
+           s.video_format, s.video_full_range_flag, s.color_primaries, s.transfer_characteristics,
+           s.matrix_coefficients);
+    if (c->decode && !c->dec) {
+        RocdecDecodeCaps caps = {};
+        caps.device_id = 0;
+        caps.codec_type = c->codec;
+        caps.chroma_format = f->chroma_format;
+        caps.bit_depth_minus_8 = f->bit_depth_luma_minus8;
+        if (rocDecGetDecoderCaps(&caps) != ROCDEC_SUCCESS || !caps.is_supported) {
+            printf("decode: not supported by rocDecGetDecoderCaps on this device; parser only\n");
+            c->decode = false;
+            return f->min_num_decode_surfaces;
+        }
+        RocDecoderCreateInfo ci = {};
+        ci.device_id = 0;
+        ci.width = f->coded_width;
+        ci.height = f->coded_height;
+        ci.max_width = f->coded_width;
+        ci.max_height = f->coded_height;
+        ci.num_decode_surfaces = f->min_num_decode_surfaces;
+        ci.codec_type = c->codec;
+        ci.chroma_format = f->chroma_format;
+        ci.bit_depth_minus_8 = f->bit_depth_luma_minus8;
+        ci.display_rect.right = f->display_area.right;
+        ci.display_rect.bottom = f->display_area.bottom;
+        ci.output_format = f->bit_depth_luma_minus8 ? rocDecVideoSurfaceFormat_P016 : rocDecVideoSurfaceFormat_NV12;
+        ci.target_width = f->display_area.right - f->display_area.left;
+        ci.target_height = f->display_area.bottom - f->display_area.top;
+        ci.num_output_surfaces = 1;
+        if (rocDecCreateDecoder(&c->dec, &ci) != ROCDEC_SUCCESS) {
+            printf("decode: rocDecCreateDecoder failed\n");
+            return 0;
+        }
+    }
+    return f->min_num_decode_surfaces;
+}
+
+static int ROCDECAPI OnDecode(void *user, RocdecPicParams *p) {
+    Ctx *c = static_cast<Ctx *>(user);
+    if (!c->dec) return 1;
+    return rocDecDecodeFrame(c->dec, p) == ROCDEC_SUCCESS;
+}
+
+static int ROCDECAPI OnDisplay(void *user, RocdecParserDispInfo *d) {
+    Ctx *c = static_cast<Ctx *>(user);
+    if (!c->dec) return 1;
+    RocdecDecodeStatus st = {};
+    do {
+        rocDecGetDecodeStatus(c->dec, d->picture_index, &st);
+    } while (st.decode_status == rocDecodeStatus_InProgress);
+    c->decoded++;
+    if (st.decode_status == rocDecodeStatus_Success) c->ok++;
+    return 1;
+}
+
+int main(int argc, char **argv) {
+    if (argc < 3) {
+        fprintf(stderr, "usage: %s vp9|av1|h264|hevc <file> [--decode]\n", argv[0]);
+        return 2;
+    }
+    std::string name = argv[1];
+    Ctx c;
+    c.codec = name == "vp9" ? rocDecVideoCodec_VP9 : name == "av1" ? rocDecVideoCodec_AV1
+            : name == "h264" ? rocDecVideoCodec_AVC : rocDecVideoCodec_HEVC;
+    c.decode = argc > 3 && !strcmp(argv[3], "--decode");
+
+    hipDeviceProp_t prop;
+    if (hipGetDeviceProperties(&prop, 0) != hipSuccess) return 1;
+    printf("device 0: %s %s pci %04x:%02x:%02x.0\n", prop.name, prop.gcnArchName, prop.pciDomainID,
+           prop.pciBusID, prop.pciDeviceID);
+
+    std::ifstream in(argv[2], std::ios::binary);
+    std::vector<uint8_t> buf((std::istreambuf_iterator<char>(in)), {});
+
+    RocdecVideoParser parser;
+    RocdecParserParams pp = {};
+    pp.codec_type = c.codec;
+    pp.max_num_decode_surfaces = 1;
+    pp.max_display_delay = 0;
+    pp.user_data = &c;
+    pp.pfn_sequence_callback = OnSequence;
+    pp.pfn_decode_picture = OnDecode;
+    pp.pfn_display_picture = OnDisplay;
+    if (rocDecCreateVideoParser(&parser, &pp) != ROCDEC_SUCCESS) return 1;
+
+    RocdecSourceDataPacket pkt = {};
+    if (name == "vp9" || name == "av1") {
+        if (buf.size() < 32 || memcmp(buf.data(), "DKIF", 4)) return 1;
+        size_t off = 32;
+        while (off + 12 <= buf.size()) {
+            uint32_t sz;
+            memcpy(&sz, &buf[off], 4);
+            off += 12;
+            if (off + sz > buf.size()) break;
+            pkt = {};
+            pkt.payload = &buf[off];
+            pkt.payload_size = sz;
+            if (rocDecParseVideoData(parser, &pkt) != ROCDEC_SUCCESS) printf("parse: error\n");
+            off += sz;
+        }
+    } else {
+        // One packet per NAL unit (split before each 00 00 01 start code).
+        std::vector<size_t> starts;
+        for (size_t i = 0; i + 3 <= buf.size(); i++)
+            if (buf[i] == 0 && buf[i + 1] == 0 && buf[i + 2] == 1) starts.push_back(i);
+        starts.push_back(buf.size());
+        for (size_t k = 0; k + 1 < starts.size(); k++) {
+            pkt = {};
+            pkt.payload = &buf[starts[k]];
+            pkt.payload_size = starts[k + 1] - starts[k];
+            if (rocDecParseVideoData(parser, &pkt) != ROCDEC_SUCCESS) printf("parse: error\n");
+        }
+    }
+    pkt = {};
+    pkt.flags = ROCDEC_PKT_ENDOFSTREAM;
+    rocDecParseVideoData(parser, &pkt);
+    rocDecDestroyVideoParser(parser);
+    if (c.dec) {
+        printf("decode: %d frames, %d rocDecodeStatus_Success\n", c.decoded, c.ok);
+        rocDecDestroyDecoder(c.dec);
+    }
+    return 0;
+}
+```
+
+</details>
+
+## Expected vs actual
+
+| Stream | FFmpeg (`ffprobe`) | rocDecode `video_signal_description` |
+| --- | --- | --- |
+| VP9, `-color_range pc -colorspace bt470bg` | range pc, space bt470bg | range 0, matrix 0, primaries 0, transfer 0 |
+| VP9, defaults | range tv, space unknown | range 0, matrix 0, primaries 0, transfer 0 |
+| VP9, BT.709 limited | range tv, space bt709 | range 0, matrix 0, primaries 0, transfer 0 |
+| AV1 (libaom or SVT-AV1), `-color_range pc -colorspace bt470bg` | range pc, space bt470bg | range 0, matrix 0, primaries 0, transfer 0 |
+| AV1 (libaom or SVT-AV1), defaults | range tv, space unknown | range 0, matrix 0, primaries 0, transfer 0 |
+| AV1 (libaom), BT.709 limited | range tv, bt709 / bt709 / bt709 | range 0, matrix 0, primaries 0, transfer 0 |
+| H.264 and HEVC, `-color_range pc -colorspace bt470bg` | range pc, space bt470bg | range 1, matrix 5, primaries 2, transfer 2 (correct) |
+
+Expected, for the full-range BT.601 VP9 stream: range 1, matrix 5, primaries 2, transfer 2. For the AV1 one: range 1, matrix 5, primaries 2, transfer 2, as signalled. With defaults, the unspecified code 2 rather than 0. All streams decode with `rocDecodeStatus_Success` (3 of 3 frames); only the reported metadata is wrong.
+
+In WebM or Matroska, FFmpeg can also take colour from the container's `Colour` element. For VP9, primaries and transfer exist only there (the VP9 bitstream has no field for them), so rocDecode cannot be expected to report them; the IVF files above avoid this, and FFmpeg still reads range and matrix from the bitstream.
+
+## Versions
+
+- rocDecode 1.10.0 (ROCm 10.1.0 TheRock Python wheels, HIP 7.16.26385) and rocDecode 1.12.0 (ROCm 10.3.0a20261030 TheRock nightly wheels, HIP 7.18.26433); same result.
+- amdgpu 6.19.14.31400100, Linux 6.11, Ubuntu 24.04, FFmpeg 6.1.1 (Ubuntu package; libvpx, libaom, SVT-AV1 1.7.0).
+- GPUs: AMD Radeon AI PRO R9700 (gfx1201), tested with the program above. The same zero values were seen on an AMD Radeon PRO W7800 (gfx1100) with rocDecode 1.10.0. The parser is host code, so this does not depend on the GPU.
+====
