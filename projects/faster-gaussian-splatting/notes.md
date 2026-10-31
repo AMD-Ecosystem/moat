@@ -1975,3 +1975,70 @@ Runtime on the V100 (extra evidence). Check script, same inputs on both builds: 
 - Gradients and densification info: differ by atomic-accumulation order only. Port-vs-base max rel diff is at the base's own run-to-run noise (base vs a second base run): e.g. n5000 grad_means 2.76e-3 vs 2.78e-3, grad_scales 5.55e-3 vs 5.57e-3; n20000 grad_scales 7.90e-4 vs 7.52e-4; all other gradients 1e-7..1e-5 on both sides. The largest port/base-noise ratio is n500 grad_scales (6.7e-5 vs 5.8e-6), still a float-reorder magnitude.
 
 Result: CUDA gate **PASS** at d3e2266.
+
+## Porter 2026-10-31 (linux-gfx1100) -- hipRAND Philox gate, commit 99d68f9
+
+Requested by jeff: hipRAND is gaining `hiprand_Philox4x32_10(uint4 counter, uint2 key)` (ROCm/rocm-libraries PR #14808, hipRAND 3.5.0 / rocRAND 5.3.0; still open, head 9b5027b2, at the time of this round). His ruling: use it when available, a newer ROCm requirement is fine if documented. Platform: AMD Radeon Pro W7800 48GB (gfx1100), torch 2.16.0a0+git6c3af02, HIP 7.16.26385 (TheRock SDK wheels, hipRAND 3.4.0 = `HIPRAND_VERSION 300400`), `HIP_VISIBLE_DEVICES=0`, everything under `ulimit -c 0`.
+
+### Change (99d68f9, one commit on d3e2266, fast-forward push)
+
+- `kernels_mcmc.cuh`, ROCm branch: `#include <hiprand/hiprand_version.h>`; `#if HIPRAND_VERSION >= 300500` include `<hiprand/hiprand_kernel.h>` (the library function), `#else` the existing local copy (comment now says "hipRAND before 3.5.0"). CUDA `#else` branch untouched. The macro is `HIPRAND_VERSION` in `hiprand/hiprand_version.h`, encoded `major*100000 + minor*100 + patch` (from `hiprand_version.h.in` and hipRAND's CMakeLists `hiprand_VERSION_NUMBER`); the header exists in every hipRAND the README's ROCm 7.2+ covers. Hipify keeps the gate working: it renames both the local definition and the call to `hiprand_Philox4x32_10`, so with 3.5.0 the copy is compiled out and the call binds to hipRAND's `QUALIFIERS` (`__forceinline__ __device__`) function; a missed gate would be a redefinition error, not a silent mix.
+- README Requirements, AMD bullet: "hipRAND 3.5.0 or newer provides the Philox block function, while older ROCm uses a bundled copy with identical output".
+
+### Cost on the 3.5.0 path (for the reviewer and jeff)
+
+`hiprand_kernel_rocm.h` includes `rocrand/rocrand_kernel.h`, i.e. every rocRAND device generator. In the mcmc TU that keeps `d_xorwow_jump_matrices`, `d_xorwow_sequence_jump_matrices` (0x19000 each), `d_lfsr113_*_jump_matrices` (0x10000 each), `d_A1P127`/`d_A2P127` and friends: the gfx1100 code object grows 22 KB -> 388 KB, `_C.so` 19.47 MB -> 19.84 MB, plus four `-Wnan-infinity-disabled` warnings from `rocrand_normal.h` under `-ffast-math` (same class as torch's existing ones). Kernel code is unchanged apart from register numbering. There is no lighter hipRAND header for the block function; calling `rocrand_philox4x32_10` from `<rocrand/rocrand_philox4x32_10.h>` would avoid the tables but skips hipRAND, which is not what was ruled. Left as is; a hipRAND follow-up could expose the function in a lighter header.
+
+### Builds
+
+```bash
+export PYTORCH_ROCM_ARCH=gfx1100
+git -C projects/faster-gaussian-splatting/src/FasterGSCudaBackend clean -xdfq
+utils/timeit.sh faster-gaussian-splatting compile -- bash -c "cd $PWD/projects/faster-gaussian-splatting/src/FasterGSCudaBackend && python setup.py build_ext --inplace"
+```
+PASS, rc=0, 360 warning lines, the same count as the d3e2266 baseline (built the same way in a `git worktree` at `agent_space/fgs_old`).
+
+hipRAND 3.5.0 path: PR #14808 head 9b5027b fetched sparse (`git fetch --depth 1 --filter=blob:none origin pull/14808/head`, cone `projects/rocrand projects/hiprand`) into `agent_space/rl`, then built and installed into a scratch prefix (2m17s wall, no tests):
+```bash
+SDK=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel; P=agent_space/hr-prefix
+cmake -S rl/projects/rocrand -B b-rocrand -G Ninja -DCMAKE_CXX_COMPILER=$SDK/bin/amdclang++ -DCMAKE_PREFIX_PATH=$SDK -DROCM_PATH=$SDK -DGPU_TARGETS=gfx1100 -DBUILD_TEST=OFF -DBUILD_BENCHMARK=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$P
+cmake --build b-rocrand -j16 && cmake --install b-rocrand
+cmake -S rl/projects/hiprand -B b-hiprand -G Ninja -DCMAKE_CXX_COMPILER=$SDK/bin/amdclang++ -DCMAKE_PREFIX_PATH="$P;$SDK" -DROCM_PATH=$SDK -DGPU_TARGETS=gfx1100 -DBUILD_TEST=OFF -DBUILD_BENCHMARK=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$P
+cmake --build b-hiprand -j16 && cmake --install b-hiprand
+```
+Installed `HIPRAND_VERSION 300500`, `ROCRAND_VERSION 500300`. A copy of the committed tree (`git ls-files` tarred into `agent_space/fgs_hr`) with `$P/include` prepended to `include_dirs` in setup.py (extension include dirs come before torch's and the SDK's on the command line) built rc=0. Do not point a hipRAND build's `CMAKE_INSTALL_PREFIX` at the shared SDK: an older `/tmp/hrp` build on this host from another job had done that in its cache.
+
+### GPU tests
+
+Scripts: `gpu_tests/` plus two scratch helpers in `agent_space/`: `noise_dump.py` (add_noise for n=37/100003/1000000 with random scales, rotations, opacities, seeds 1 / 1234567 / 2^40+99, three calls each so the offset advances: 9 tensors) and `bitcmp.py` (byte-level equality).
+```bash
+utils/timeit.sh faster-gaussian-splatting test -- bash -c "ulimit -c 0; python agent_space/noise_dump.py $OLD_B noise_old.pt && python agent_space/noise_dump.py $B noise_new.pt && python agent_space/bitcmp.py noise_old.pt noise_new.pt; python $G/run_outputs.py $OLD_B old.pt && python $G/run_outputs.py $B new.pt && python $G/run_outputs.py $B new2.pt && python $G/compare.py old.pt new.pt; python $G/compare.py new.pt new2.pt; python $G/new_checks.py $B; python $G/train_check.py $B; python $G/det.py $B"
+```
+Local-copy path (hipRAND 3.4.0), rc=0:
+- mcmc TU gfx1100 ISA (`llvm-objdump -d` of the extracted bundle) identical to d3e2266's, 670 lines.
+- add_noise: **9/9 tensors bit-identical** to d3e2266.
+- run_outputs, 84 tensors: images, filter3d, filter3d_vis bit-identical old vs new. Gradients/dinfo/pruning are atomic-order nondeterministic: 29/84 tensors bit-equal old-vs-new and also 29/84 new-vs-new2. Worst relL2 old-vs-new / new-vs-new2: grad_means 2.19e-7 / 2.69e-7, grad_scales 2.26e-6 / 2.21e-6, grad_rotations 2.81e-6 / 3.06e-6, grad_opacities 2.75e-7 / 2.92e-7, grad_sh0 3.07e-7 / 2.59e-7, grad_shrest 3.09e-7 / 2.57e-7, dinfo 1.71e-7 / 2.01e-7, pruning 2.87e-7 / 3.20e-7.
+- new_checks 31/31 (add_noise vs Philox + Box-Muller reference 8.65e-7, as before), train_check 3/3 (L1 0.1204 -> 0.0080), det.py 0 diff on all 3 scenes.
+
+hipRAND 3.5.0 path (`agent_space/fgs_hr` build), rc=0:
+- add_noise: **9/9 tensors bit-identical** to d3e2266, so the library function matches the local copy bit for bit.
+- run_outputs vs d3e2266: images and filter3d bit-identical, gradients within run-to-run noise (worst grad_rotations 1.77e-6 vs 3.08e-6 run-to-run).
+- new_checks 31/31, train_check 3/3, det.py 0 diff.
+
+### CUDA no-regression gate (changed TU, CUDA 12.8)
+
+NVIDIA redist 12.8.0: `redistrib_12.8.0.json` from developer.download.nvidia.com, then `cuda_nvcc` 12.8.61, `cuda_cudart` 12.8.57, `cuda_cccl` 12.8.55, `libcurand` 10.3.9.55 linux-x86_64 archives, `sha256sum -c` against the manifest's sha256 values: 4/4 OK. Extracted into `agent_space/cuda128`. mcmc.cu needs no torch headers, so:
+```bash
+nvcc -std=c++20 -O3 -use_fast_math -lineinfo -IFasterGSCudaBackend/utils -IFasterGSCudaBackend/densification/include -gencode arch=compute_70,code=sm_70 -gencode arch=compute_80,code=sm_80 -c FasterGSCudaBackend/densification/src/mcmc.cu -Xcompiler -Wall
+```
+rc=0 at d3e2266 and at 99d68f9 (gcc 13.3; only the sm_70 deprecation notice). `-arch=sm_80 -ptx` output is byte-identical between the two (454 lines). This is a compile gate on the changed TU only, no NVIDIA GPU run; the CUDA preprocessor path is textually unchanged.
+
+### Completion checks
+
+- `python3 utils/jargon.py --port faster-gaussian-splatting` -> `jargon: clean`; `utils/prose.py` on the commit message -> clean.
+- `git -C projects/faster-gaussian-splatting/src status --porcelain` -> empty.
+- Pushed `d3e2266..99d68f9`, fast-forward, no upstream PR recorded (`pr-state` -> none).
+
+### State
+
+`advance-head 99d68f9`, linux-gfx1100 `porting -> ported`; the project goes to the reviewer next, and every platform validated at d3e2266 owes revalidation at 99d68f9 after review. Once PR #14808 merges and ships in a ROCm release, a validator with that ROCm exercises the 3.5.0 path with no scratch prefix.
