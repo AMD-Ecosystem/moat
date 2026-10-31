@@ -825,3 +825,23 @@ cmake --build $S/_build-cuda -j10 --target unittest
 - `python3 utils/jargon.py --port qrack`: clean. Integrity: `git status --porcelain` shows only untracked `_build/` and `_build-cuda/`.
 - Docs: unchanged (README HIP section still accurate; the revert touches no build step).
 - State: took the lock (`set-state qrack linux-gfx1100 porting`), `advance-head qrack fb20e069`, then `ported`. Every arch now reads revalidate at fb20e069. A reviewer runs next; validators should read "Known upstream failures" first.
+
+## Review 2026-10-31 (linux-gfx1100, reviewer): revert fb20e069, and whole fork diff upstream/main(98b47407)...fb20e069
+Reviewed with /pr-review in local-branch mode on a fresh clone of moat-port at fb20e069. Each finding was fact-checked inline by re-reading the source and by configuring at both the port and the base (CMake 3.31.6). No GPU rerun: nothing below needed GPU evidence, and the porter's fb20e069 run was on this same host (W7800 gfx1100) at this same sha.
+Verdict: changes-requested (1 must-fix). The revert itself is clean.
+
+### Must-fix
+1. cmake/CUDA.cmake:108 (`endif(ENABLE_CUDA)`) closes the block opened at cmake/CUDA.cmake:32 as `if (ENABLE_CUDA AND USE_HIP)`, so every configure prints `CMake Warning (dev) in cmake/CUDA.cmake: A logical block opening on the line .../cmake/CUDA.cmake:32 (if) closes on the line .../cmake/CUDA.cmake:108 (endif) with mis-matching arguments.` CMakeLists.txt:131 includes CUDA.cmake unconditionally, so the warning appears in the default CPU-only build and in the NVIDIA build, not only with USE_HIP. Reproduced: `cmake -S . -B /tmp/qrk_cpu -G Ninja -DENABLE_OPENCL=OFF -DENABLE_CUDA=OFF` prints it at fb20e069, and the same command at upstream 98b47407 does not. The port added this to configure output for every upstream user (since e0c9ddfc). The 2026-10-30 gfx1100 validator noted it as non-blocking, but nobody ruled on it and both earlier reviews missed it. Fix: change line 108 to `endif ()`, which upstream already uses at lines 9 and 23 of the same file, or to `endif (ENABLE_CUDA AND USE_HIP)`. Fixing it now costs almost nothing: every arch already owes revalidation at fb20e069, so a fix commit on top adds no extra validation round.
+
+### Revert fb20e069 (42bdc3d6): checked, no finding
+- Text: `git diff 42bdc3d6^ fb20e069 -- src/qengine/cuda.cu` is empty. `git diff 98b47407 fb20e069 -- src/qengine/cuda.cu` has hunks only from line 315 on (the deferred-free code), so SetAmplitudePage at cuda.cu:215-217 is byte-identical to upstream's.
+- Dependencies: the only commits between 42bdc3d6 and fb20e069 are 0caeb834, a3f5427e and 3bf7a75e. Together they touch only README.md and cmake/CUDA.cmake, and nothing in src/, include/ or test/. No README or CMake text mentions SetAmplitudePage or test_cswap. Nothing in the port depended on 42bdc3d6.
+- Commit message: `[ROCm]` title of 62 chars, AI assistance disclosed in prose, Test Plan in a fenced block, no Co-Authored-By trailer, ASCII only. `python3 utils/jargon.py --port qrack`: clean.
+
+### Known upstream failures entry: accurate, one precision note
+- Accurate: tests.cpp:715 is `REQUIRE_THAT(qftReg2, HasProbability(0, 12, (1U << 9U) | (1U << 11U)))`. The cuda.cu:215 description (copy runs the wrong way, ignores both offsets, sized by srcOffset) matches the restored text. The CUDA counts (0/20 at 98b47407, 0/25 at db84c820, 25/25 with the fix) match the V100 entries. On this host the porter saw 0/5 for qpager and 5/5 for qengine at fb20e069.
+- Precision (no action needed on the port): both the entry and the fb20e069 body name only `QPager::SeparateEngines`. The engine-to-engine overload is also called from `QPager::CombineEngines` (qpager.cpp:335, srcOffset=0, so the unfixed code copies 0 bytes) and `ComposeEither` (qpager.cpp:675/696). Any of them can lose amplitudes; which one this test hits was not traced. If the entry is edited later, name CombineEngines/SeparateEngines. The commit body cannot be amended, and it is moot if the branch is squashed for the PR.
+
+### Whole diff 98b47407...fb20e069: checked, no other finding
+- Re-read all 10 files, 204+/17-. Every point in the 2026-10-30 review's "Checked, no finding" still holds: the shim is inert on NVIDIA, the nvcc options and the CUDA elseif branch are unchanged, the deferred-free drain runs on user threads, and there are no warpSize or literal-32 assumptions and no library swaps.
+- Upstream has moved to db84c820 (adds src/qbridge.cpp as host C++, and bumps the version). `git merge-tree --write-tree HEAD upstream/main` gives no conflict. qbridge.cpp is a CXX source in add_library(qrack) and needs no HIP handling.
