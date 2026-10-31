@@ -833,11 +833,13 @@ drives hardware accelerators (without one it fails with "Get current frame error
 vcpkg's `ffmpeg` port builds no software AV1 decoder unless the `dav1d` feature is on. A
 CUDA project that relies on NVDEC for AV1 often never enables it, so a ROCm port's CPU
 path has nothing to decode AV1 with on GPUs without AV1 decode hardware (gfx90a), or on a
-build without rocDecode. Add `dav1d` for the ROCm build only; when the CUDA dependency set
-must stay unchanged and editing the shared `vcpkg.json` is not wanted, generate a copy of
-the manifest in the build tree before `project()` (CMake `string(JSON ...)` appends the
-feature; embed `vcpkg-configuration` with overlay paths made absolute; write it only when the
-content changes) and point `VCPKG_MANIFEST_DIR` at it. A manifest feature selected through
-`VCPKG_MANIFEST_FEATURES` under `if(USE_HIP)` is the smaller alternative if the manifest may
-change. (LichtFeld-Studio)
+build without rocDecode. Add `dav1d` for the ROCm build only, as a manifest feature (a
+`rocm` entry under `features` in `vcpkg.json` that lists `ffmpeg` with `dav1d`) appended
+to `VCPKG_MANIFEST_FEATURES` under `if(USE_HIP)` before `project()`, the way projects
+already select a `tests` feature; a CUDA configure never selects it, so its dependency set
+is unchanged. Do not generate a modified copy of the manifest in the build tree instead: it
+is a script rewriting a dependency choice (overlay paths, registries, user overrides and
+pkg-config caches all need handling) where the manifest has a declarative mechanism. The
+vcpkg toolchain caches `VCPKG_MANIFEST_DIR` with FORCE, so a build tree that ever pointed it
+elsewhere keeps doing so until reconfigured with `-UVCPKG_MANIFEST_DIR`. (LichtFeld-Studio)
 
