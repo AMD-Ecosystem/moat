@@ -7,8 +7,8 @@
   "priority": 6.236,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-10-31T09:45:58Z",
-  "head_sha": "0b04c09af87d5721d4cc4248026d233999a8bb1d",
+  "updated_at": "2026-10-31T11:13:17Z",
+  "head_sha": "f52f1b78ef2d8b7c8294cd40105ef49aea9dbde8",
   "waivers": {
     "windows": {
       "reason": "Upstream oneflow has never supported Windows, and the obstacle is the operating system rather than the GPU. cmake/oneflow.cmake:54 contains a literal error('Expanding macro in WIN32 is not supported yet') and there is no upstream Windows CI. Four further independent blockers, each sufficient on its own: RCCL is hard-required via find_package(rccl REQUIRED) and is Linux-only, with <nccl.h> pulled in by cuda_util.h -- the main GPU utility header included nearly everywhere -- plus four other core files; POSIX platform code sits outside any platform-excluded subdir (ibv_wrapper.cpp dlopening libibverbs.so, pthread_fork.cpp using pthread_atfork, unistd.h in several core files); cmake/platform.cmake is MSVC-only (/MP /bigobj /EHsc /GF /FC) and therefore mutually exclusive with the all-clang toolchain HIP requires on Windows; and 32 third-party libraries build from source through ExternalProject_Add with Linux-centric recipes. Making RCCL optional alone is a multi-file refactor across the GPU utility header, well beyond this port's minimal footprint. The determination was reached by build analysis on windows-gfx1101/gfx1201 on 2026-06-05, is architectural rather than per-GPU, and was carried to windows-gfx1151 on 2026-08-20 without re-deriving it. The HIP port itself is complete and validated at head 2729bee5 on linux-gfx90a (wave64) and linux-gfx1100 (wave32); windows is the only gate open. This is the strongest waiver case in the current set: unlike espresso or rmcl, no amount of host provisioning would help, because upstream's own build system refuses WIN32.",
@@ -19,7 +19,7 @@
   },
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 81634683,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "linux-gfx90a": {
       "state": "completed",
@@ -28,7 +28,7 @@
       "validated_sha": "fde793b9faec7d2f8e800b419e979613b8d12abf",
       "started_at": "2026-05-31T01:37:32Z",
       "completed_at": "2026-10-30T07:44:01Z",
-      "updated_at": "2026-10-31T09:45:58Z",
+      "updated_at": "2026-10-31T11:13:17Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -159,11 +159,8 @@
   },
   "porting_released": {
     "arch": "linux-gfx90a",
-    "since": "2026-10-31T09:02:29Z",
-    "at": "2026-10-31T09:22:22Z"
+    "since": "2026-10-31T09:45:58Z",
+    "at": "2026-10-31T11:13:17Z"
   },
-  "porting": {
-    "arch": "linux-gfx90a",
-    "since": "2026-10-31T09:45:58Z"
-  }
+  "porting": null
 }

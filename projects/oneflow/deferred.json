@@ -69,6 +69,19 @@
       "upstream_issue": null,
       "created_at": "2026-10-31T07:04:16Z",
       "decided": null
+    },
+    {
+      "id": "oneflow-float64-conv-hip",
+      "kind": "feature-port",
+      "component": null,
+      "summary": "float64 convolution aborts on ROCm: MIOpen 3.6.1 has no FP64 convolution solver (Find logs 'Unsupported data types configuration: FP64xFP64xFP64' and fails compiling MIOpenIm2d2Col.cpp), so conv/deconv in float64 abort in CudnnConvAlgorithmSearch::HeuristicSearch on any AMD GPU, where cuDNN runs them on CUDA. Fix: a non-MIOpen double path in the HIP build (im2col + hipBLAS GEMM, as oneflow's CPU conv kernels do) for forward, data grad and filter grad. Found in the 2026-10-31 porter round answering the 0b04c09af review; not started.",
+      "refs": [
+        "projects/oneflow/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-10-31T10:58:10Z",
+      "decided": null
     }
   ]
 }

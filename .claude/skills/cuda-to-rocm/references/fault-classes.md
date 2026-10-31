@@ -393,6 +393,15 @@ on HIP it won overload resolution, so every `half2` atomic add raised an HSA har
 correct), `<` gates can select traps or legacy emulation. Guard each with `!defined(USE_HIP)`
 or the project's HIP macro at the site. (oneflow)
 
+The `>=` gates are not only slow paths. A "no half support" stub behind `#if __CUDA_ARCH__ >= 530`
+that does `printf(...); assert(false);` returns garbage silently, because release builds drop the
+assert (oneflow's float16 softmax-cross-entropy gradient was off by up to 0.99 with exit code 0).
+The same gate around a HOST launcher (`#if __CUDA_ARCH__ >= 530 || !defined(__CUDA_ARCH__)`)
+compiles the launch in the host pass but drops the kernel's instantiation in the device pass, so
+the launch fails "Cannot find Symbol" at run time. A first audit that looked only at trap bodies
+missed seven such sites; list every comparison (both operand orders, continuation lines) with its
+HIP resolution rather than sampling. (oneflow)
+
 **`__HIP_PLATFORM_AMD__` is undefined until `hip/hip_runtime.h` has been included in that
 TU.** A wave-width gate in a header included BEFORE the runtime header silently takes the
 CUDA branch and picks width 32. hipify-perl prepends the runtime include at line 1, which
@@ -539,7 +548,20 @@ stream's own handle trips it. Before the first run of a problem on a handle, run
 non-exhaustive Find there into the output buffer the run is about to overwrite. Also:
 `miopenGetConvolutionNdDescriptor` rejects a requested dimension count larger than the
 descriptor's (cuDNN returns what it has), and MIOpen pooling reads alpha/beta as float and has
-no double. (oneflow)
+no double. Key the "Find ran here" record on the live handle and drop it in the destroy wrapper:
+`miopenCreate` hands out a destroyed handle's address again (about once in 60 create/destroy
+cycles on an MI250X with ROCm 10.1), and a record keyed on the bare address then skips the Find
+on a handle that never ran one. (oneflow)
+
+**MIOpen 3.6 (ROCm 10.1) lacks several cuDNN operations outright.** Measured on gfx90a:
+double batch norm finds no solver (and `miopenDeriveBNTensorDescriptor` always derives a FLOAT
+parameter descriptor, so a cuDNN-shaped type check on gamma fails first); double convolution has
+no solver either (Find fails compiling its im2col fallback); `miopenConvolutionBackwardBias` is
+deprecated and returns `miopenStatusNotImplemented` for every type and layout; and
+`miopenReduceTensor` ADD fails for bfloat16 (its runtime kernel does not compile) while float,
+half and double work. A shim that forwards these calls aborts the first time a user reaches
+them. Run double batch norm on small native kernels, and compute a bias gradient as dy times a
+ones vector with the project's own GEMM. (oneflow)
 
 **hipBLASLt epilogues are not cuBLASLt's, per type and per format.** On gfx90a with hipBLASLt
 1.4, DEFAULT/BIAS/RELU/RELU_BIAS exist for f32/f16/bf16 but double has only DEFAULT, and the

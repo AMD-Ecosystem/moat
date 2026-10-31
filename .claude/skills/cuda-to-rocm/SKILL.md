@@ -112,7 +112,7 @@ Scan this list against what you are doing. If any line could apply, open
 - `char` vs `signed char` vector base types differ between HIP and CUDA.
 - AMD compute-capability values COLLIDE with NVIDIA arch numbers, so CC-keyed dispatch picks the wrong path.
 - hipCUB/rocPRIM: temp storage queries never return less than 4 bytes; segmented `ArgMax` returns an out-of-range key for an all-NaN segment.
-- MIOpen pooling needs its workspace in the forward pass for NHWC input; MIOpen runs a convolution only on a handle where Find ran for it; hipBLASLt epilogues differ from cuBLASLt per type and in the ReLU aux format; rpp.h and miopen.h collide on `BILINEAR`.
+- MIOpen pooling needs its workspace in the forward pass for NHWC input; MIOpen runs a convolution only on a handle where Find ran for it (and reuses destroyed handle addresses); MIOpen 3.6 has no double batch norm or convolution and no bias backward; hipBLASLt epilogues differ from cuBLASLt per type and in the ReLU aux format; rpp.h and miopen.h collide on `BILINEAR`.
 - On RDNA, `hipOccupancyMaxActiveBlocksPerMultiprocessor` counts the 128 KiB WGP and returns 1 for dynamic shared memory between 64 and 128 KiB, so "occupancy > 0, take the smem kernel" launches what cannot run.
 - Library swaps: cuBLAS -> hipBLAS, cuFFT -> hipFFT, cuRAND -> hipRAND, cuSPARSE -> hipSPARSE, cuDNN -> MIOpen, Thrust/CUB -> rocThrust/hipCUB. Handle types and v2-enum signatures differ.
 - Runtime PTX + CUDA Driver API is a third build class beyond A and B.

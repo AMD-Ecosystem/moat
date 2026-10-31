@@ -148,3 +148,12 @@
 {"kind":"phase","ts":"2026-10-31T08:49:36Z","phase":"test","seconds":0.003,"exit":127,"cmd":"./py1.sh /var/lib/jenkins/fleet/jobs/mi200-20261031-002613-oneflow-fused-interaction/moat/agent_space/op_test.py"}
 {"kind":"session","ts":"2026-10-31T09:02:29Z","epoch":1793437349.340686069,"event":"start","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-10-31T09:22:28Z","epoch":1793438548.324985819,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-10-31T10:03:10Z","phase":"compile","seconds":1004.680,"exit":1,"cmd":"bash agent_space/build.sh config"}
+{"kind":"phase","ts":"2026-10-31T10:11:00Z","phase":"compile","seconds":422.076,"exit":0,"cmd":"bash agent_space/build.sh build"}
+{"kind":"phase","ts":"2026-10-31T10:11:30Z","phase":"test","seconds":18.926,"exit":0,"cmd":"bash agent_space/rt.sh test_cross_entropy_float16.py test_check_numerics_float16.py"}
+{"kind":"phase","ts":"2026-10-31T10:34:17Z","phase":"compile","seconds":420.530,"exit":0,"cmd":"bash agent_space/build.sh build"}
+{"kind":"phase","ts":"2026-10-31T10:42:20Z","phase":"compile","seconds":0.081,"exit":1,"cmd":"cmake --build build -j128 --target oneflow_testexe"}
+{"kind":"phase","ts":"2026-10-31T10:42:46Z","phase":"compile","seconds":13.028,"exit":1,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi200-20261031-024122-oneflow-fix3/moat/projects/oneflow/src/build -j128 --target oneflow_testexe"}
+{"kind":"phase","ts":"2026-10-31T10:50:29Z","phase":"compile","seconds":256.322,"exit":0,"cmd":"bash -c cat agent_space/cuda_tus.txt | xargs -P 48 -I{} sh -c 'bash agent_space/cuda_tu.sh {} > agent_space/cudalogs_$(echo {} | tr / _).log 2>&1 || echo FAIL {}'"}
+{"kind":"phase","ts":"2026-10-31T10:56:00Z","phase":"test","seconds":98.007,"exit":0,"cmd":"bash agent_space/suite.sh tensor 2"}
+{"kind":"phase","ts":"2026-10-31T11:11:47Z","phase":"test","seconds":1044.944,"exit":0,"cmd":"bash agent_space/suite.sh modules 1"}
