@@ -7,8 +7,8 @@
   "priority": 4.871,
   "ext_type": "cmake-cupy-plugin",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-10-31T06:44:14Z",
-  "head_sha": "e4693941c8dadf43ff2702f7717aab1dc095d8a2",
+  "updated_at": "2026-10-31T08:34:57Z",
+  "head_sha": "dc45713dc695ac9c1e3e3269f97cd1218b807ad8",
   "waivers": {
     "windows": {
       "reason": "The obstacle is the operating system, not the GPU: there is no CuPy-ROCm on Windows. gpu4pyscf's entire Python layer is CuPy-based (cupy.ndarray throughout, plus cupy_backends.cuda.libs.* for cuBLAS/cuSOLVER), and cupy-rocm ships manylinux2014 wheels only, with no Windows distribution and no Windows build path. With no CuPy-ROCm there is no importable GPU array type, so no GPU test path exists to exercise on Windows at all -- this is not a build failure that could be fixed in the port. Confirmed on windows-gfx1101 and windows-gfx1201. The HIP work itself is validated at head on linux-gfx90a (wave64) and linux-gfx1100 (wave32); windows is the only gate not satisfied at head.",

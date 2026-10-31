@@ -1159,3 +1159,77 @@ PATH=$K/bin:$PATH CUDACXX=$K/bin/nvcc cmake -S <git archive>/gpu4pyscf/lib -B bu
 cmake --build build-cuda -j 100 -- VERBOSE=1
 ```
 At c073679: exit 0, 12 libs, and the libxc ExternalProject built with `ENABLE_CUDA=ON`, `CMAKE_CUDA_ARCHITECTURES=80` (libxc.so.15). At e469394 (same tree, rebuilt): exit 0, the three unrolled_ejk_* TUs recompiled by nvcc.
+
+## Porter 2026-10-31 (porter, linux-gfx942 MI300X, fork moat-port e469394 -> dc45713): full port, part 2 (every module on ROCm)
+
+dc45713 `[ROCm] Build the solvent, semi-empirical and multigrid libraries`. Pushed; `advance-head dc45713`. What the HIP build left out at 5c60311, and how each is now handled:
+- **libsolvent** (PCM/SMD): built. Fortran re-enabled in the HIP `project()` (gfortran; the SMD mnsol sources). pcm.cu's 32-lane row reduction uses `__shfl_down(v, o, THREADS)` under USE_HIP.
+- **libsem**: built unchanged (no warp code).
+- **libmgrid_v2 / libmgrid_v3** (multigrid): built. v2 evaluation.cuh already reduces over `warpSize` with a `thread_id % warpSize` leader; HIP path uses full-wave `__shfl_down` (control flow there is block-uniform). v3 treats a warp as 32 lanes everywhere (`WARP_SIZE 32`, `lane = tid % 32`), so the existing popcount-width shim cuda_to_hip_shfl.h is force-included on the mgrid_v3 target. New hip_compat/cuComplex.h (`hipDoubleComplex`), `cudaPeekAtLastError` mapping, and `#undef I` in the CUB shim (multigrid_v2/screen.cu includes <complex.h>, whose `I` macro breaks rocPRIM).
+- **Python import guards**: gpu4pyscf/__init__.py and pbc/__init__.py are upstream's files again (grad, hessian, solvent, dft, tdscf, nac, pbc.dft import on ROCm).
+- **CUTLASS grouped GEMM** (grouped_dot/grouped_gemm, used by numint.nr_rks_group): on ROCm one cupy GEMM (hipBLAS) per group. Composable Kernel / hipBLASLt grouped GEMM is a perf follow-up, not a correctness gap.
+- **RawKernel sources** (cupy_helper.vec_dot, five multigrid_v3.py kernels, pbc/df/grad/rhf.py indexed_scale): `cupy_helper.kernel_source()` prepends, on ROCm only, `hip/hip_complex.h` aliases and `#define __shfl_down_sync(mask, var, delta) __shfl_down(var, delta, 32)` (all 11 sites use the full 32-bit mask with 32-lane groups). hiprtc has no cuComplex.h and HIP's `__shfl_down_sync` static_asserts a 64-bit mask.
+- **Analytic gradients and Hessians**: nothing was excluded at build level; they failed at runtime because of the ejk block-size bug fixed in e469394 (part 1).
+- **gint NROOTS 7/8 `#ifndef USE_HIP` and the gint `-O1`** (notes "Key port facts"): stale. nr_fill_ao_ints.cu is commented out of upstream's gint source list, so the guard covered nothing built, and `target_link_options(gint PRIVATE -O1)` lowered every gint kernel. Removed in a follow-up commit (below), file restored to upstream.
+- **Not ported, by nature**: cuTENSOR (CuPy-ROCm has no binding; the built-in cupy.einsum engine is used, GPU, slower). cuEST (lib/cuest_wrapper.py, optional NVIDIA closed-source backend never imported by the package; test_cuest_wrapper skips without it; no ROCm equivalent).
+
+### Hardware limit found (question for jeff)
+ECP derivative integrals (gto/ecp.py get_ecp_ip / get_ecp_ipip) for high angular momentum need more LDS than a gfx942 workgroup has (64 KB): (li,lj,lc)=(4,4,4) asks for 62680 B dynamic plus the kernel's static `gctr_smem`/`buf`, and `cudaFuncSetAttribute(type2_cart_ip1_general)` returns invalid argument. Upstream already skips these 5 tests (gto/tests/test_ecp.py) on any GPU with `shm_size < 64*1024`; with the skip removed, test_ecp_cart_ip1 passes and the 4 g-shell cases fail this way. Affects ECP gradients/Hessians only when the basis has g functions on an ECP atom with g projectors (e.g. not def2-TZVP). gfx950 (160 KB LDS) should not hit it. A reduced-LDS variant of type2_cart_ip1_general would be new kernel design, not porting: jeff's call.
+
+### Full test tree at dc45713 vs 5c60311 (gfx942, same env, same runner)
+Runner: agent_space/scripts/runtree.sh (per directory, `-n 4 --dist loadfile -m 'not slow and not benchmark and not special'`). Columns: passed/failed/skipped/errors.
+
+| directory | 5c60311 pass/fail/skip/err | new pass/fail/skip/err |
+|---|---|---|
+| cc/tests | 4/0/0/0 | 4/0/0/0 |
+| df/hessian/tests | 16/8/0/0 | 24/0/0/0 |
+| df/tests | 75/129/3/1 | 200/5/3/0 |
+| dft/tests | 24/56/8/20 | 113/0/9/0 |
+| dispersion/tests | 16/0/0/0 | 16/0/0/0 |
+| fci/tests | 3/0/0/0 | 3/0/0/0 |
+| geomopt/tests | 0/0/5/0 | 0/0/5/0 |
+| grad/tests | 10/107/0/0 | 115/2/0/0 |
+| gto/tests | 57/0/5/0 | 57/0/5/0 |
+| hessian/tests | 20/71/1/0 | 91/0/1/0 |
+| lib/tests | 33/6/1/0 | 39/0/1/0 |
+| mcscf/tests | 8/0/0/0 | 8/0/0/0 |
+| md/tests | 4/1/0/0 | 5/0/0/0 |
+| mp/tests | 20/1/0/0 | 20/1/0/0 |
+| nac/tests | 14/58/1/0 | 71/1/1/0 |
+| pbc/df/tests | 56/2/7/12 | 104/1/7/0 |
+| pbc/dft/tests | 0/1/1/52 | 156/0/18/0 |
+| pbc/grad/tests | 0/25/0/53 | 185/0/2/0 |
+| pbc/gto/pseudo/tests | 7/0/0/0 | 7/0/0/0 |
+| pbc/gto/tests | 0/0/0/4 | 13/0/0/0 |
+| pbc/hessian/tests | 0/0/0/4 | 0/0/6/0 |
+| pbc/lib/tests | 2/0/0/0 | 2/0/0/0 |
+| pbc/properties/berry/tests | 10/0/2/0 | 10/0/2/0 |
+| pbc/scf/tests | 12/38/0/12 | 88/2/1/0 |
+| pbc/tools/tests | 7/24/0/0 | 16/0/0/0 |
+| pbc/x2c/tests | 1/0/1/0 | 1/0/1/0 |
+| pop/tests | 2/0/0/0 | 2/0/0/0 |
+| properties/tests | 3/18/5/5 | 26/0/5/0 |
+| qmmm/pbc/tests | 0/3/0/0 | 3/0/0/0 |
+| qmmm/tests | 7/14/0/0 | 21/0/0/0 |
+| scf/tests | 125/36/3/0 | 159/2/3/0 |
+| sem/dmp/tests | 0/0/0/4 | 1/0/0/0 |
+| sem/grad/tests | 0/0/0/8 | 3/0/0/0 |
+| sem/gto/tests | 0/0/0/8 | 15/0/0/0 |
+| sem/integral/tests | 0/0/0/16 | 27/0/0/0 |
+| solvent/tests | 11/26/91/0 | 126/0/2/0 |
+| tdscf/tests | 20/15/0/60 | 93/2/0/0 |
+| tests | 0/0/0/0 | 0/0/0/0 |
+| x2c/tests | 8/0/1/0 | 8/0/1/0 |
+| **total** | 575/639/135/259 | 1832/16/73/0 |
+
+The baseline errors were mostly import-time (libsolvent/libsem/libmgrid absent, pbc.dft not imported, hipErrorUnknown from deviceSetLimit).
+
+### The 16 remaining failures, each checked
+- **Inputs from seeded `cupy.random` (7)**: CuPy-ROCm draws from hipRAND/rocRAND, not cuRAND, so hard-coded fingerprints of results on those inputs differ. df/test_df_tdrhf_grad::test_jk_energy_per_atom, df/test_df_tdrhf_nac::test_get_nacv_ee, grad/test_tdrhf_grad::test_grad_elec, grad/test_tduhf_grad::test_grad_elec, nac/test_tdrhf_nac_ee::test_get_nacv_ee, pbc/scf/test_pbc_soscf::test_rks_gen_g_hop, ::test_uks_gen_g_hop. Evidence: test_grad_elec's inputs run through CPU PySCF (pyscf.grad.tdrhf.grad_elec) give fp 7.823375488836 vs GPU 7.823375488826 (max diff 4.6e-12); the soscf tests pass all their CPU cross-checks (7 and 9 places) with only the fingerprint line disabled (scratch copy); the DF J/K energy derivative matches CPU-PySCF DF finite differences exactly (ratio 0.5 for J, -0.25 for K, all 9 components) and the test's own multi-DM vs per-DM check agrees to 4e-11.
+- **Basis missing from PySCF 2.14 (4)**: d-aug-cc-pvdz (scf x2, tdscf test_rtda_ris_diffuse) and df/test_general_contraction (BasisNotFoundError).
+- **Tolerance misses by <3x (4)**: mp/test_dfmp2_kernel_one_gpu (1.01e-7 vs 7 places; float32 cderi by default, float64 gives 9e-16 vs CPU); pbc/df/test_ft_ao_strain_deriv (3.8e-8 vs 3e-8 for a 1e-5 finite difference of values ~1134; the analytic value matches a CPU-evaluated Richardson FD to <=1e-8 in every component); df/test_df_tdrhf_grad::test_j_energy_per_atom (multi-DM vs sum of six single-DM runs 1.97-2.21e-12 vs 1e-12, varies run to run: atomic accumulation order); df/test_df_rks_grad::test_grad_hybrid (1.15e-9 vs CPU, tolerance 1e-9).
+- **tdscf/test_krylov::test_krylov_eigenvalue (1)**: random 3000x3000 matrix (seed 42, different on ROCm) whose 3rd/4th eigenvalues are 0.0013 apart; the solver hits the test's max_iter=35. With max_iter=100 it gives eigvec error 5.2e-8 at conv_tol 1e-8 and 5e-12 at 1e-12.
+Skips (73): optional packages (mcfun, phonopy, ASE, wannier90, pyscf.properties), CPU-feature limits stated in the tests, the ECP LDS limit above (5), and test_multigrid.py (legacy libmgrid, commented out upstream as well).
+
+### CUDA gate (dc45713 plus the pending gint change): PASS
+Same redist toolkit. git archive dc45713 over the gate tree, plus the two gint files; `cmake --build -j 100 -- VERBOSE=1`: exit 0, 12 libs, all solvent/sem/multigrid_v2/multigrid_v3 TUs recompiled by nvcc, no USE_HIP or cuda_to_hip on any line.
