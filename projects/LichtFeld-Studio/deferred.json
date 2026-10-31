@@ -132,7 +132,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-10-20T08:34:04Z",
-      "decided": null
+      "decided": {
+        "choice": "defer",
+        "by": "jeff",
+        "at": "2026-10-31T20:39:01Z",
+        "note": "2026-10-31: important; dig in once the laptop is free of other Windows validators. First question: does a newer ROCm than 7.14 (10.1.0, a >=10.2 nightly, develop source) still leak the VA range?"
+      }
     },
     {
       "id": "lfs-hip-stream-ordered-mempool",
