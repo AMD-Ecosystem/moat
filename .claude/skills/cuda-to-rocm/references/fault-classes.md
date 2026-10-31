@@ -390,6 +390,22 @@ Host `std::min(a,b)` is `b<a?b:a` and `std::max(a,b)` is `a<b?b:a`; a device ver
 bytes and comparing host gold against device output differ bit-for-bit. Spell the device
 ternaries to match the host forms exactly. (CV-CUDA: OpMorphology CLOSE on RGBAf32.)
 
+**rocBLAS `gemm_ex` rounds a 16-bit output once per k-chunk when k is long.** When the
+leading dimension of either operand times k reaches 2^30, rocBLAS (5.7, ROCm 10.1) splits k
+into chunks of floor((2^30 - 1) / ld) and accumulates each chunk's product into D with
+beta = 1. With a float16/bfloat16 D (`cublasGemmEx` -> `hipblasGemmEx` with compute type
+f32) the output is rounded about k / 1023 times for a contiguous k-major operand, so the error
+grows linearly with k: at k = 2^20 it is 25-50x a single rounding (fp16 7e-3, bf16 5e-2 relative),
+and the 1025 chunk launches also take ~8 ms. `ROCBLAS_LAYER` logs only the outer call; a kernel
+trace or `ROCBLAS_USE_HIPBLASLT=1` with the hipBLASLt log shows the chunks. A float D
+(written to scratch, cast once) restores accuracy but is ~10x slower still; hipBLASLt
+(`hipblasLtMatmul`, COMPUTE_32F, a few MiB of workspace) accumulates in float, rounds once and
+runs these shapes in 45-85 us on MI300X, which is what torch uses there. Route only 16-bit
+GEMMs with `max(lda, ldb) * k >= 2^30` to hipBLASLt so ordinary shapes keep their rocBLAS
+path; strided batched (including stride 0 broadcast) works the same way. A regression test
+needs k = 2^20 to clear a 4-ulp bound robustly; k = 2^15 splits only once. (oneflow: matmul
+primitive, grouped_matmul_bias, fused self-attention.)
+
 ## Headers, includes and build
 
 **A shared compat header must be host-includable.** Host `.cpp` TUs reach the shim through
