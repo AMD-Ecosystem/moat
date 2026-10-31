@@ -5556,3 +5556,55 @@ cuda-not-validated here: no CUDA toolkit on this host (`/opt/conda` absent, no n
 
 ### Verdict: COMPLETED (linux-gfx90a) at 566be1cd
 The b0a50fa0 blocker is answered on this card: with the SDK's bundled VA driver the self-check routes H.264, HEVC and VP9 to the CPU by name and every video test passes or skips with that reason; with Ubuntu's driver every check passes and hardware decode is bit-exact; AV1 decodes on the CPU with libdav1d. The stream pool held through 1000 ProjectDocumentTest repeats. Every other failure is on the recorded list with its recorded cause. The deferral `rocdecode-sdk-va-driver-gfx90a-wrong-frames` stays open and unfiled for jeff.
+
+## VA driver cross-arch check 2026-10-31 (no pipeline role, linux-gfx942)
+
+jeff's request: a short cross-architecture check for `rocdecode-sdk-va-driver-gfx90a-wrong-frames`, to help separate a VA driver defect from a kernel driver one. No pipeline role; no stage, platform state, lock or deferral touched. Fork untouched.
+
+Host and GPU:
+- GPU 0 of 8, PCI 0000:0c:00.0, `/dev/dri/renderD128`; `amd-smi process -g 0` showed no processes before and after; `amd-smi static`: AMD Instinct MI300X HF, device 0x74a9, gfx942 (Mesa names it gfx940), NPS1, not compute-partitioned. `ulimit -c 0`, every GPU command under `timeout -k 10 <60|120>`.
+- VCN: `/sys/bus/pci/devices/0000:0c:00.0/ip_discovery/die/0/12/{0..3}` (hw id 12 = VCN) all 4.0.3, four instances; `fw_version/vcn_fw_version` 0x0911801a. debugfs `amdgpu_firmware_info` and dmesg are not readable in this container.
+- `/sys/module/amdgpu/version` 6.16.13 (gfx90a host: 6.16.6; gfx1100 host: 6.19.14). Kernel 6.8.0-110-generic. Ubuntu 24.04.5.
+- SDK: no install needed. `/opt/python-3.11-venv` already has TheRock `rocm`, `rocm-sdk-core`, `rocm-sdk-devel`, `rocm-sdk-libraries` and `rocm-sdk-device-gfx942` 10.1.0 (same version as the gfx90a run). Bundled driver `_rocm_sdk_devel/lib/rocm_sysdeps/lib/radeonsi_drv_video.so` -> `librocm_sysdeps_gallium_drv_video.so`, sha256 9c3d6f369bb6086639e0ef632745f2ee4cf2e0d26f42f5adeec4e86456b747a2 (the gfx90a file; `_rocm_sdk_core` has the identical file).
+- apt (the only system change): `ffmpeg vainfo`, which installed ffmpeg 7:6.1.1-3ubuntu5, vainfo 2.12.0+ds1-1, libva2 2.20.0-2ubuntu0.2 and, as an ffmpeg dependency, mesa-va-drivers 25.2.8-0ubuntu0.24.04.4 (the same system driver version as on gfx90a).
+
+Loading the bundled driver from a stock FFmpeg: it exports only `__vaDriverInit_1_22@@AMDROCM_SYSDEPS_1.0`, so Ubuntu's libva 2.20 (VA-API 1.20) refuses it (`vainfo` rc 3, "has no function __vaDriverInit_1_0"). The SDK ships its own renamed libva 2.22 (`librocm_sysdeps_va.so.2`, `librocm_sysdeps_va-drm.so.2`), which is what rocDecode loads it through. A scratch dir with `libva.so.2` and `libva-drm.so.2` symlinked to those two, first on `LD_LIBRARY_PATH` followed by the SDK `rocm_sysdeps/lib` (for `librocm_sysdeps_drm.so.2`), puts system ffmpeg/vainfo on the SDK libva. Configurations: bundled driver + SDK libva; system driver + system libva; system driver + SDK libva (the last one isolates libva from the driver).
+
+```
+B=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel/lib/rocm_sysdeps/lib
+mkdir shim; ln -s $B/librocm_sysdeps_va.so.2 shim/libva.so.2; ln -s $B/librocm_sysdeps_va-drm.so.2 shim/libva-drm.so.2
+LD_LIBRARY_PATH=$PWD/shim:$B LIBVA_DRIVERS_PATH=$B LIBVA_DRIVER_NAME=radeonsi vainfo --display drm --device /dev/dri/renderD128
+LIBVA_DRIVERS_PATH=/usr/lib/x86_64-linux-gnu/dri LIBVA_DRIVER_NAME=radeonsi vainfo --display drm --device /dev/dri/renderD128
+```
+
+vainfo:
+- bundled: "Mesa Gallium driver 26.3.0-devel for AMD Instinct MI300X HF (radeonsi, gfx940, DRM 3.64, 6.8.0-110-generic)", VA-API 1.22, VLD for H264ConstrainedBaseline/Main/High, HEVCMain/Main10, JPEGBaseline, VP9Profile0/2, AV1Profile0; no VideoProc entrypoint.
+- system: "Mesa Gallium driver 25.2.8-0ubuntu0.24.04.4 for AMD Instinct MI300X HF (radeonsi, gfx940, LLVM 20.1.2, DRM 3.64, 6.8.0-110-generic)", the same VLD list plus `VAProfileNone: VAEntrypointVideoProc`. Same under either libva.
+- The GPU has VCN decode for every codec tested.
+
+Clips (system ffmpeg 6.1.1, 320x180, 10 frames, `-f lavfi -i testsrc2=size=320x180:rate=30 -frames:v 10`): `libx264 -profile:v high -pix_fmt yuv420p` (h264 High), `libx265 -profile:v main` (HEVC Main), `libx265 -profile:v main10 -pix_fmt yuv420p10le` (HEVC Main 10), `libvpx-vp9 -profile:v 0 -pix_fmt yuv420p`, `libvpx-vp9 -profile:v 2 -pix_fmt yuv420p10le`; ffprobe confirmed each profile and pix_fmt.
+
+Decode (`hwaccel_output_format vaapi` plus an explicit `hwdownload` so a silent software fallback fails rather than passing; `<hw>` nv12 or p010le, `<sw>` yuv420p or yuv420p10le):
+
+```
+ffmpeg -i clip -pix_fmt <sw> -f framemd5 sw.txt
+timeout -k 10 120 env [LD_LIBRARY_PATH=$PWD/shim:$B] LIBVA_DRIVERS_PATH=<dir> LIBVA_DRIVER_NAME=radeonsi \
+  ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD128 -hwaccel_output_format vaapi \
+  -i clip -vf hwdownload,format=<hw>,format=<sw> -f framemd5 hw.txt
+```
+
+Results (framemd5 per frame against software; every run rc 0, no warnings):
+
+| clip | bundled 26.3.0-devel + SDK libva 2.22 | system 25.2.8 + system libva 2.20 | system 25.2.8 + SDK libva 2.22 |
+|---|---|---|---|
+| H.264 High 8-bit | 10/10 | 10/10 | 10/10 |
+| HEVC Main | 10/10 | 10/10 | 10/10 |
+| HEVC Main 10 | 10/10 | 10/10 | 10/10 |
+| VP9 profile 0 | 10/10 | 10/10 | 10/10 |
+| VP9 profile 2 | 10/10 | 10/10 | 10/10 |
+
+A `-loglevel verbose` rerun of VP9 profile 2 in each configuration printed the driver string FFmpeg initialised (bundled: "Mesa Gallium driver 26.3.0-devel ...", `__vaDriverInit_1_22`, VA-API 1.22; system: 25.2.8 via `__vaDriverInit_1_20`) and was bit-exact again.
+
+Conclusion for gfx942 / amdgpu 6.16.13 / VCN 4.0.3: the bundled 26.3.0-devel driver decodes H.264, HEVC (8 and 10 bit) and VP9 (profile 0 and 2) bit-exactly. So the wrong frames are not a property of the bundled driver on every gfx9 data-centre part, and not of the amdgpu 6.16 series as such (this host's 6.16.13 is newer than gfx90a's 6.16.6). They point at gfx90a (VCN 2.6 on MI200; radeonsi takes per-family decode paths) or at 6.16.6 specifically. One caveat limits this comparison: on gfx90a the bundled driver was exercised through rocDecode, and system ffmpeg vaapi was only run with Ubuntu's driver. Running this same ffmpeg recipe (shim plus bundled driver) on the gfx90a host would show whether the fault reproduces without rocDecode, i.e. whether it is purely the driver on that card. Not run here (no gfx90a on this host).
+
+Scratch (container-local): `agent_space/va/` (clips, framemd5 files, vainfo output, shim).
