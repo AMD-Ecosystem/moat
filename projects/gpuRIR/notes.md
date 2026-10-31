@@ -567,3 +567,35 @@ Runtime on the V100 (extra evidence; not the AMD gate). Upstream has no test sui
 - Upstream examples on the port build with a no-op matplotlib stub and a synthetic 2 s 16 kHz source_signal.wav: example.py, simulate_trajectory.py, time_vs_T60.py, time_vs_nbRIRs.py exit 0 (4/4); polar_plots.py not run (needs plotly, not installed).
 
 Result: CUDA gate **PASS** at 39a7a9d. The port's CUDA build is a passthrough and produces bit-identical results to upstream on NVIDIA hardware.
+
+## Validation 2026-10-31 (windows-gfx1151, Radeon 8060S, TheRock ROCm 7.14.0a20260612)
+
+GPU: AMD Radeon 8060S, gfx1151 (RDNA3.5, wave32, APU). Fork `moat-port` = head_sha 39a7a9d, fresh clone, `git status --porcelain` empty. Full run, `ulimit -c 0`, one GPU process at a time. Approved by jeff for this host.
+
+### Build (all-clang, Ninja)
+```
+source agent_space/win_rocm_env.sh
+cmake -S projects/gpuRIR/src -B agent_space/gpurir_build -G Ninja -DCMAKE_C_COMPILER=$ROCM_ROOT/lib/llvm/bin/clang.exe \
+  -DCMAKE_CXX_COMPILER=$ROCM_ROOT/lib/llvm/bin/clang++.exe -DCMAKE_HIP_COMPILER=$ROCM_ROOT/lib/llvm/bin/clang++.exe \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_PREFIX_PATH=$ROCM_ROOT -DPYTHON_EXECUTABLE=<TheRock venv python 3.13> \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_HIP_STANDARD=17 -DCMAKE_CXX_STANDARD=17 \
+  -DCMAKE_CXX_FLAGS="-DNOMINMAX -DWIN32_LEAN_AND_MEAN" -DCMAKE_BUILD_TYPE=Release
+cmake --build agent_space/gpurir_build --target gpuRIR_bind -j16     # wrapped in utils/timeit.sh gpuRIR compile
+```
+OK; `gpuRIR_bind.cp313-win_amd64.pyd`. Only warning: the pre-existing nodiscard on `cudaGetDeviceProperties` (line 1069).
+
+### Tests
+Upstream has no test suite; the GPU suite is a harness (rewritten for this host, `agent_space/gpurir_win/validate.py`, same checks and thresholds as the Linux 39a7a9d runs minus the float64 direct-path reference) plus the five upstream examples. Run with the cp313 torch_venv python (numpy/scipy) with `os.add_dll_directory` for TheRock `_rocm_sdk_core/bin`, `_rocm_sdk_libraries_gfx1151/bin` and the build dir.
+`utils/timeit.sh gpuRIR test -- python validate.py`: **37/37 PASS**.
+- Direct path, peak sample at 8k/16k/22.05k/44.1k/48k/96k = 84/168/232/464/505/1009 (all expected). LUT vs exact 1.59e-3 / 1.38e-4 / 1.47e-3 / 6.85e-4 / 3.91e-4 / 7.52e-4 (the gfx90a reference LUT-vs-exact gaps 1.59e-3 / 1.38e-4 / 6.85e-4 / 3.91e-4 match to the digits).
+- Mixed precision vs float exact, direct path: 5.24e-4 / 7.95e-4 / 3.64e-4 / 3.72e-4 / 6.76e-4 / 3.93e-4, identical to the gfx90a/gfx1100 tables to the digits shown; mp ran (error > 0) and peak sample = float.
+- Shoebox 4x5x3 T60 0.6 nb_img [52,42,69]: first arrival 168, exact zero before sample 104, mp max err 7.087e-4 / RMS 1.425e-3 (Linux 7.09e-4 / 1.43e-3). 2 src x 3 cardioid rcv mp 1.04e-3. Odd counts 481@16k -> 482 (8.4e-4), 1329@44.1k -> 1330 (1.03e-3), 481@22.05k -> 482 (5.5e-4), shapes equal float.
+- Diffuse tail (hipRAND) finite, non-zero, with and without mp. simulateTrajectory (hipFFT) vs np.convolve: rel err 2.21e-7 (Linux 2.3e-7 .. 2.6e-7). NaN receiver: all zeros, no NaN, exact and LUT.
+- Upstream examples (scratch copy, synthetic 2 s 16 kHz source_signal.wav, MagicMock matplotlib/plotly since neither is installed): example.py, simulate_trajectory.py, polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py, and example.py with mp on / LUT off: **6/6 exit 0**.
+No harness bugs this time; no runtime DLL problem (the process loaded TheRock's amdhip64 via add_dll_directory ahead of System32 without issue). No skips.
+
+### CUDA gate
+Not run on this host (no CUDA toolkit); recorded PASS at 39a7a9d by the V100 gate above.
+
+### Pre-completion checks
+`python3 utils/jargon.py --port gpuRIR`: clean. README documents the ROCm build (lines 24, 36). Fork tree clean at 39a7a9d.

@@ -100,3 +100,8 @@
 {"kind":"phase","ts":"2026-10-30T03:17:11Z","phase":"test","seconds":15.342,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261029-201120-val-gpurir/moat/agent_space/gpurir/ex && python3 time_vs_nbRIRs.py"}
 {"kind":"phase","ts":"2026-10-30T03:17:13Z","phase":"test","seconds":1.148,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261029-201120-val-gpurir/moat/agent_space/gpurir/ex && python3 example_mp.py"}
 {"kind":"session","ts":"2026-10-30T03:18:19Z","epoch":1793330299.162448307,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-10-31T20:34:03Z","epoch":1793478847.168761900,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-10-31T20:35:58Z","phase":"compile","seconds":81.071,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/gpurir_build.sh"}
+{"kind":"phase","ts":"2026-10-31T20:38:01Z","phase":"test","seconds":12.768,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe /d/Develop/moat/agent_space/gpurir_win/validate.py"}
+{"kind":"phase","ts":"2026-10-31T20:45:43Z","phase":"test","seconds":158.463,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/gpurir_win/runall.sh"}
+{"kind":"session","ts":"2026-10-31T20:48:13Z","epoch":1793479696.663571300,"event":"end","platform":"windows-gfx1151"}
