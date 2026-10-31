@@ -1620,3 +1620,132 @@ Verdict: **changes-requested** (two must-fix findings). Every finding was re-rea
 - New Python tests: none depends on HIP-only behaviour. `LIBVA_DRIVER_NAME` is inert under nvJPEG, and the env knob and the "has nan or inf" text are upstream. They have not been run on an NVIDIA GPU.
 - Commits: all eight titles start with `[ROCm]` and are 53-68 characters, each has a fenced test plan and the AI disclosure, there is no Co-Authored-By, and they are ASCII only. `python3 utils/jargon.py --port oneflow`: only the three known 68718f038 hits.
 - Not a finding, for the record. In float64 BN with one value per channel (N*H*W == 1, training), the shim gives `running_var = (1-f)*running_var`, where oneflow's CPU kernel produces NaN (1/(n-1)). cuDNN's output for this case is unconfirmed.
+
+## Porter round 2026-10-31 (linux-gfx90a, MI250X; answers "Review 2026-10-31 (reviewer, linux-gfx90a; ... 0b04c09af..f52f1b78e)", verdict changes-requested)
+
+jeff asked for this round: fix the review's findings one commit per finding (bf16 on HIP, channels_first conv bias grad precision, a larger float64 batch norm shape, the black nit as a `lint` commit), extend the arch-gate audit to every macro that gates a half/bf16/fp8 or arch path (not only `__CUDA_ARCH__`), leave the flatbuffers and kineto edits and float64 convolution (deferred `oneflow-float64-conv-hip`) alone, and run the full modules and tensor suites once at the final head. Lock taken with `set-state oneflow linux-gfx90a porting`. Host: two MI250X GCDs pinned by the dispatcher (HIP_VISIBLE_DEVICES=1,2), ROCm 10.1.0 SDK wheels, job venv with the image's torch 2.16.0a0 linked read-only, `ulimit -c 0`, `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git` (`therock-libllvm-symbol-interposition`), no JIT extension builds. Fork `moat-port` f52f1b78e -> af83657d7: four new commits, fast-forward, no amend or force push.
+
+### Environment and build (disk)
+- The root filesystem had 12 GB free at the start (1.7 of 1.8 TB used by the host as a whole). Only this job's own scratch was cleaned (its ccache, 1.6 GB, after the first build); nothing else was touched.
+- Fork tree: `cp -a` of the fix3 job's clone including its HIP build tree (5.9 GB). The job path has the same length (`mi200-20261031-024122-oneflow-fix3` -> `mi200-20261031-043916-oneflow-fix4`), so the path was rewritten in place in all 2838 non-object files that held it (build files, pkgconfig, `.ninja_log`, the `python/oneflow/core` symlink), with mtimes kept. `protect-fork` run. CMake still re-ran and ninja rebuilt everything (2048 steps, `agent_space/build.sh`, the configure recorded in the 197416f07 round); rc=0. Later incremental builds rc=0. Free space stayed at 3.5 GB or more.
+- Venv: torch/functorch/torchgen linked from the image into `venv-base-links`, `$FLEET_VENV/bin/python -m pip install -r dev-requirements.txt fsspec pytest-timeout pytest-repeat clang-format==11.1.0.2 opencv-python==4.11.0.86`.
+- Evidence against the pre-fix code used the fix3 job's build of f52f1b78e read-only, running this round's new test files from a temp copy (`agent_space/rt_old.sh`).
+
+### b2ce4bfcf `[ROCm] Define __CUDA_BF16_TYPES_EXIST__ in the bf16 header on HIP` (finding 1)
+- The macro is defined in `hip_compat/cuda_bf16.h` (the HIP stand-in for `<cuda_bf16.h>`), not in `cuda_to_hip.h` as the review suggested. CUDA defines it in `cuda_bf16.h`, so the macro is now defined exactly where it is on CUDA. All seven gates reach that header: `nccl_util.h` includes it directly, `nd_index_slice_kernels.cu` through `atomic.cuh`, and both nccl_logical files through `nccl_util.h`. It also avoids touching the header force-included in every TU.
+- RCCL's `nccl_device/impl/*` headers also key on the macro (and use `__hip_bfloat16` under it). No oneflow TU includes them: 0 of the 4906 dependency paths in `ninja -t deps`.
+- Tests: new `test_comm_ops.py::test_all_reduce_bfloat16_1n2d` and `test_all_gather_into_tensor_bfloat16_1n2d`, and new `test/graph/test_graph_nccl_logical_bfloat16.py`. The graph test is a two-GPU graph with `enable_use_compute_stream(True)` boxing bfloat16 P->B, P->S(1), S(0)->S(1), S(1)->B and S(1)->S(0), which run on the `_nccl_logical_*` kernels, including the noncontinuous and s2s ones. Results on two GCDs (`agent_space/rt2.sh`, `oneflow.distributed.launch --nproc_per_node 2`): comm_ops all_reduce/all_gather gave 5 passed + 1 skipped (2n2d), and the graph test passed. `tensor/test_tensor_indexing2.py -k test_slice` passed.
+- On f52f1b78e, both the bfloat16 comm tests and the graph test abort both ranks with `F... nccl_util.h:55] UNIMPLEMENTED`.
+
+### 11ddd0521 `[ROCm] Sum the channels_first conv bias gradient in float on HIP` (finding 2)
+- channels_first now takes two steps:
+  - One `cublasGemmEx` (hipBLAS) reads dy as (N*C) x S in its own type and writes float row sums (double for double dy), with compute type 32F/64F.
+  - A float Matmul primitive sums those rows over N. A Cast primitive then rounds once into the half/bf16 output.
+- This also replaces N launches with two. The tmp buffer is laid out by `ConvBiasGradHipLayout`: ones(S) in dy's type, then ones(N), N*C row sums and the C-element float gradient. channels_last is unchanged (one GEMM, already single-rounding).
+- `unifdef -UUSE_HIP conv_cudnn_kernels.cpp` is byte-identical to master. The helper's trailing blank line sits inside the `#if` so that this holds.
+- New `test_conv_bias_grad.py`: random float16/bfloat16/float32/float64 dy, both layouts, shapes (256, 64, 7, 7), (5, 3, 9) and (2, 4, 3, 5, 6) (NHWC-ordered for channels_last), plus an empty batch.
+  - The reference is the float64 sum of the values the kernel sees. The tolerance is `2^-p * |ref| + 16 * 2^-24 * sum|dy|`: one rounding plus float accumulation.
+  - The op has no Python binding, so the test builds it with OpBuilder and runs it through `dispatch_ofrecord_bytes_decoder`. That is a generic one-input eager dispatcher, and its `name` attribute is ignored. `dispatch_feed_input` is lazy-only.
+  - Result: 2 passed. On f52f1b78e the float16 channels_first case fails (max err 0.79 vs tol 0.068).
+- The reviewer's `biasprec.py` metric (error / channel L2 norm, N=256, C=64, 7x7):
+
+  | dtype | channels_first | channels_last | one rounding |
+  |---|---|---|---|
+  | fp16 | 5.672e-4 (was 7.1e-3) | 5.672e-4 | 5.672e-4 |
+  | bf16 | 8.458e-3 (was 6.2e-2) | 8.458e-3 | 8.458e-3 |
+  | fp32 | 7.2e-7 | 7.7e-6 | 6.2e-8 |
+
+- The earlier 40-case harness (`agent_space/biasgrad_op.py`) still passes 40/40.
+
+### c886e8ae4 `[ROCm] Cover long reductions in the float64 batch norm test` and af83657d7 `lint` (testing items)
+- `test_batchnorm_float64` adds these shapes, each affine and with running stats, checked against torch to 1e-10:
+  - spatial (8, 3, 16, 16) in NCHW and NHWC: 2048 elements per channel, more than one 256-thread block;
+  - per-activation (600, 700): 600 per feature;
+  - per-activation (3, 70000): 70000 parameter slots, more than the 65535-block grid, so the grid-stride loop runs.
+- test_batchnorm: 5 passed, 1 skipped (upstream skip).
+- `lint` (title only, no body) is black 19.10b0 (upstream's version, default line length 88, as `ci/check/run_py_format.py` runs it) over test_batchnorm.py. It adds the second blank line before the class at line 89 that the review named, and also wraps two lines over 88 columns in `_test_batchnorm_float64` (lines 30 and 51, from ae91b978b) that the review did not list. The file is now black-clean.
+
+### Arch-gate audit, extended to every macro class (at af83657d7)
+Method:
+- `grep -rnE '^\s*#\s*(if|elif|ifdef|ifndef)'` over `oneflow/` (minus `oneflow/ir`) for every version, feature or arch macro: `CUDA_VERSION`, `CUDART_VERSION`, `__CUDACC_VER_*`, `__CUDA_{BF16,FP8,FP16}_TYPES_EXIST__`, `__CUDA_NO_*`, `CUDNN_VERSION/MAJOR/MINOR`, `CUBLAS_VERSION/VER_*`, `NCCL_VERSION_CODE/MAJOR/MINOR`, `NVJPEG_VER_*`, `CUSOLVER/CURAND/CUSPARSE/CUFFT_VER*`, `THRUST/CUB_VERSION`, `__CUDA_ARCH_LIST__`, `__CUDA_ARCH_FEAT*`, `CUDA_ARCH`, `__NVCC__`, `__CUDACC_RTC__/RDC__`, `CUTLASS_ARCH*` and `__HIP*`. That gives 247 sites. The `__CUDA_ARCH__` sites are in the table of the previous round (51 numeric sites, unchanged).
+- Third-party headers: the same pattern over the 1670 non-oneflow headers in the HIP build's `ninja -t deps`.
+
+What each macro resolves to on HIP:
+- `cuda_to_hip.h` (force-included on every HIP and host C++ TU): `CUDA_VERSION` 11080, `CUDART_VERSION` = `CUDA_VERSION`.
+- `hip_compat/cudnn.h`: `CUDNN_VERSION` 8100, `CUDNN_MAJOR/MINOR` = MIOpen's.
+- RCCL: `NCCL_VERSION_CODE` 23007.
+- `__CUDA_BF16_TYPES_EXIST__`: defined by `hip_compat/cuda_bf16.h` since b2ce4bfcf.
+- Undefined on HIP, so read as 0: `CUBLAS_VERSION`, `CUBLAS_VER_*`, `NVJPEG_VER_MAJOR`, `__CUDACC_VER_*`, `__CUDA_FP8_TYPES_EXIST__`, `CUDA_ARCH`.
+
+| macro / gate | sites | HIP resolution | status |
+|---|---|---|---|
+| `__CUDA_BF16_TYPES_EXIST__` | nccl_util.h:49; nd_index_slice_kernels.cu:175; nccl_logical_kernels.cpp:593, 612, 631; nccl_logical_2d_sbp_kernels.cpp:522, 541 | was undefined: ncclBfloat16 mapping, bf16 nd-index kernels and 5 bf16 logical-collective registrations dropped | fixed, b2ce4bfcf |
+| `CUDA_VERSION >= 11000` | 111 sites in 55 files (bf16 `#include <cuda_bf16.h>` 19, bf16 kernel registrations and specializations, `CUDA_R_16BF`/32F compute for bf16 in broadcast_matmul, cusolverDn handle, `CUBLAS_GEMM_DEFAULT`) | true: bf16 paths and modern cuBLAS/cuSOLVER paths on | safe (intended) |
+| `CUDA_VERSION >= 9010 / 10010 / 10020 / 11020 / 11030 / 11060 / 11070` | 44 sites (cublasLt handle, fused matmul-bias / MLP / GLU and their functors, P2P embedding shuffles, stream-ordered allocator in cuda_device, embedding manager, scaled_dot_product_attention, decoder) | true; no gate above 11080 exists in the tree | safe; the four `>= 10020 && !USE_HIP` sites (version checks, cuda_util) are excluded on purpose; scaled_dot_product_attention's kernels need CUTLASS, which is not built (kernel-not-found on CUDA without CUTLASS too) |
+| `CUDA_VERSION < 11000`, `< 10000` | tensor_utils.cpp:135, broadcast_matmul.cpp:174, auto_mixed_precision.cpp:167, atomic.cuh:310 | false: modern paths | safe |
+| `CUDA_VERSION < 12000` | cublas_fused_mlp_util.cuh:245 (cublasLt pointer-mode mask), cuda_stream.cpp:116 (`cudaGraphExecUpdate` 4-argument form) | true, unlike a CUDA 12 build: HIP's `hipGraphExecUpdate` has the 4-argument CUDA 11 signature, and the pointer-mode attribute is what the shim accepts | safe (test_fused_matmul_bias passes; test_cublas_fused_mlp, which reaches :245, runs and fails only the known float32 tolerance; CUDA-graph replay below) |
+| `CUDA_VERSION >= 11000 && <= 12010 && __CUDA_ARCH__ < 800` | cuda_pseudo_bfloat16.h:30 | excluded by `!USE_HIP` (hip_bf16.h has the operators) | safe (guarded earlier) |
+| `CUDA_VERSION` defined in every TU | all host `.cpp` gates | on CUDA it is defined only where `<cuda.h>` is included, on HIP everywhere; a host TU could therefore enable a block on HIP that a CUDA build skips | no site differs (checked in the HIP ninja deps): 19 of the 23 `.cpp` gate files include cuda_util.h; image_decoder_random_crop_resize_op.cpp includes `<cuda.h>` itself; auto_mixed_precision.cpp:167 tests `defined(CUDA_VERSION)` and is false on both; clip_by_value_kernel.cpp:58 is `!USE_HIP`; fill_test.cpp is not built (BUILD_TESTING off) |
+| `CUDART_VERSION` | cuda_stream.cpp:55 | defined (11080): runtime version banner | safe |
+| `CUBLAS_VER_MAJOR/MINOR` | cuda_stream.cpp:72 | inside `!USE_HIP` | safe |
+| `CUBLAS_VERSION >= 11000` | cuda_stream.cpp:173 (`CUBLAS_TF32_TENSOR_OP_MATH`) | undefined -> false; a CUDA 12 build is true | safe: no TF32 on CDNA2/RDNA, and `hipblasSetMathMode` is a no-op here |
+| `CUBLAS_VERSION >= 11200` | cuda_stream.cpp:187 (`cublasSetWorkspace(handle, workspace_, workspace_size_)`) | undefined -> false: the hipBLAS handle is not given oneflow's workspace, and rocBLAS/hipBLASLt use their own (the shim maps `cublasSetWorkspace` to `hipblasSetWorkspace`, which ROCm 10.1 exports) | **differs from CUDA; not changed, for jeff/reviewer**. No failure found: `agent_space/cg_matmul.py` with `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1` (nn.Graph matmul, 2-D sum, bmm; float32/float16/bfloat16; 4 replays) gives errors 1.2e-6 / 4.1e-4 / 3.3e-3 relative to the max of the float64 product. Enabling it would make every hipBLAS GEMM use oneflow's `ONEFLOW_EP_CUDA_CUBLAS_WORKSPACE_SIZE_MB` buffer, which the same stream's hipBLASLt calls also use; it needs its own testing before it is turned on |
+| `CUDNN_VERSION` (8100 via shim) | cudnn_util.cpp:28, 161, 167; cudnn_conv_util.cpp:111, 216, 255 | `>= 8100` / `> 7200` true, `< 7500` false; `>= 7401 && !USE_HIP` (BN Ex/fused add-relu, 5 sites) excluded | safe (handled in earlier rounds) |
+| `CUDNN_MAJOR/MINOR` | cuda_stream.cpp:92 | defined from MIOpen's version | safe |
+| `NCCL_VERSION_CODE > 2700`, `>= 21003` | 12 sites (logical collective kernels, boxing builders, send/recv, eager s2s, resource_desc, nccl_util) | true (23007) | safe |
+| `NVJPEG_VER_MAJOR >= 11` | image_decoder_random_crop_resize_kernel.cpp:297 | inside the nvJPEG branch, which is replaced by the rocJPEG branch on HIP | safe |
+| `CUDA_ARCH >= 800` (no underscores) | unary_functor.cuh:352, 599 (bf16 `__habs`, `htrunc`) | undefined on CUDA and HIP alike: the float fallback runs on both | safe (upstream typo, same behaviour) |
+| `__CUDACC_VER_*`, `__CUDA_FP8_TYPES_EXIST__`, `__CUDA_FP16_TYPES_EXIST__`, `__CUDA_NO_*`, `THRUST/CUB_VERSION`, `__CUDA_ARCH_LIST__`, `__NVCC__`, `CUTLASS_ARCH*` | none in oneflow/ | n/a | n/a |
+| `__HIP*` | fast_integer_math.h:90; cuda_to_hip.h; cublasLt.h/cudnn.h shims | the port's own device/host selection | safe |
+| third-party: `__CUDACC_VER_MAJOR__` | Eigen/Core:26 (`EIGEN_CUDACC_VER`) | no `.cu` TU includes Eigen/Core (host `.cpp` only, where `__CUDACC__` is not defined) | safe |
+| third-party: `__CUDA_BF16_TYPES_EXIST__` | rccl `nccl_device/impl/*` | not included by any oneflow TU | safe |
+
+No third-party header in the deps gates on `CUDA_VERSION`, `CUDART_VERSION`, `CUBLAS_VERSION`, `NCCL_VERSION_CODE`, `CUDNN_VERSION` or the fp8 macro.
+
+### Full suites at af83657d7
+Run with `agent_space/suite.sh`, the per-file runner of the earlier rounds: one pytest per file, 8 at a time, `--timeout=900`, junit per file. Modules ran on GCD 1 and tensor on GCD 2 at the same time, under `utils/timeit.sh oneflow test` (modules 1057 s, tensor 98 s).
+
+| suite | passed | failed | errors | skipped | aborted files | f52f1b78e |
+|---|---|---|---|---|---|---|
+| modules (545 files: 544 + test_conv_bias_grad) | 1597 | 50 | 5 | 315 | 3 | 1594/51/5/313, 3 aborted |
+| tensor (22 files) | 366 | 3 | 0 | 22 | 0 | 365/4/0/22 |
+
+- tensor: `test_tensor_indexing2 test_slice` (bf16 gather_nd) passes now, as expected. The 3 remaining failures are the known ones: test_safetensors (module not installed) and test_autocast half_mm and half_mm_add (fp16 ulp differences).
+- modules: the set of failing test ids compared with f52f1b78e (`agent_space/fails.py`) shows no new failures. The only one gone is `test_special_ops test_flow_psi_with_random_data`, a randomized autotest that drew CPU float16 digamma last time (no CPU float16 kernel on any build). Changes in the counts:
+  - +2 passed from test_conv_bias_grad;
+  - +2 skipped from the two new 1n2d bf16 comm tests, which run under the two-GPU launcher above;
+  - the randomized autotests move the remaining record.
+- The aborted files are unchanged: test_dataset (`/dataset` missing), and test_loss and test_higher_derivative_loss (the torch BCE oracle device assert).
+- Every failure is in a class already recorded as not a port fault:
+  - 14 "endless loop" (torch 2.16 argument rejections);
+  - 5 collection errors (torchvision/flowvision-era imports);
+  - `KeyError: 'ONEFLOW_CI'` 5;
+  - `oneflow.char != int8` 6;
+  - ZeroTensor and PyTorchDoesNotSupportError higher-derivative oracles 5;
+  - `/dataset` 4;
+  - numpy `__bool__` interop 10;
+  - lbfgs `collections.Iterable`;
+  - replication_pad;
+  - functional docstr;
+  - codegeex float view;
+  - the cublas_fused_mlp / fused_matmul_bias_add_relu_dropout float32 tolerance pair.
+- No kernel-not-found records.
+
+### CUDA compile gate (nvcc 12.8.93, sm_80): PASS
+- Toolkit: the sha256-verified redist assembly that the previous review checked (`.../mi200-20261031-002613-oneflow-fused-interaction/venv/cuda-12.8`, reached through the fix3 venv symlink), read-only.
+- There was no room to copy the configured CUDA tree (5.8 GB). `agent_space/cuda_tu.py` therefore runs each TU's recorded command from the fix3 job's `oneflow-cuda/build/compile_commands.json` with the source root rewritten to this job's fork tree. Generated headers and third-party installs come from that build tree, read-only, and the object goes to `agent_space/cuda_obj/`. A depfile check fails the TU if any oneflow header comes from the scratch tree instead of this tree.
+- conv_cudnn_kernels.cpp (g++-13; final formatted file) and nd_index_slice_kernels.cu (nvcc `arch=compute_80`): rc=0, fresh objects.
+- `hip_compat/cuda_bf16.h` is on the HIP include path only and never reaches nvcc. The Python tests are not compiled.
+
+### Other checks
+- clang-format 11.1 clean on conv_cudnn_kernels.cpp, and black 19.10b0 clean on every new or changed test file.
+- `utils/prose.py` is clean on the three non-lint messages. Titles are 59-65 characters, each discloses AI assistance and has a fenced test plan, and none has Co-Authored-By. The lint commit is `lint` alone.
+- `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038's message (PR-prep squash item).
+- `git -C projects/oneflow/src status --porcelain`: empty.
+- Lesson promoted to `cuda-to-rocm` (fault-classes): a CUDA header's feature macro (`__CUDA_BF16_TYPES_EXIST__`) that the HIP header does not define silently drops whole dtype paths, so audit gates by macro class, including version macros left undefined (`CUBLAS_VERSION`).
+
+### For jeff
+- Finding 1 put the macro in `hip_compat/cuda_bf16.h` rather than `cuda_to_hip.h` (reason above). Moving it is a one-line change if the force-included header is preferred.
+- The `CUBLAS_VERSION >= 11200` `cublasSetWorkspace` gate (audit table) differs from a CUDA 12 build. No failure was found, and it was not changed.
+- `python3 utils/check.py` fails its commits gate on the `lint` commit (af83657d7): "title does not start with [ROCm]" and "body does not disclose AI-agent assistance". The commit follows jeff's rule and this round's instruction (`lint`, no body), so it was left as is. The PR-prep squash folds it in.
+- Open from earlier rounds and untouched here: the flatbuffers `-Werror` strip and kineto `-include cstdint` edits, and deferred `oneflow-float64-conv-hip`.
