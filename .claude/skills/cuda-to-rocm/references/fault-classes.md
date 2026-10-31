@@ -93,6 +93,15 @@ or `BlockRadixSort` lowers to a single-wavefront op with no syncing epilogue; re
 first's reads. CUDA's 32-wide warp split the block in two and masked it. (CV-CUDA:
 OpPairwiseMatcher crossCheck.)
 
+The same missing barrier on a multi-wave block is timing-dependent, so it can pass every
+serial run. A `BlockScan` called once per loop iteration on the same storage, with no
+`__syncthreads()` between iterations, gave some threads wrong offsets only when other
+processes shared the GPU (pytest-xdist workers), on wave32 gfx1100. The symptom was
+`hipErrorIllegalAddress` in a LATER kernel that read the unwritten `-1` slots as indices.
+Before blaming the kernel that faults, check the index arrays it was given for unfilled
+entries, and run the producer under concurrent load. Fix it unconditionally: the barrier is
+CUB's documented requirement on CUDA too. (gpu4pyscf: `put_pairs_on_blocks_kernel`.)
+
 **`__smid()` can EXCEED `multiProcessorCount` on AMD.** NVIDIA's `%smid` is dense in
 `[0, multiProcessorCount)`, so host code routinely sizes a per-SM scratch pool to that
 count and indexes it `pool + smid()*POOL_SIZE`. AMD packs `(SE,CU)` sparsely -- gfx9 is
@@ -412,6 +421,18 @@ no `cuComplex.h` (use `hip/hip_complex.h` and alias `cuDoubleComplex`, `make_cuD
 definitions on ROCm only, leaving the CUDA source untouched. CuPy-ROCm ships no cuTENSOR
 binding (fall back to `cupy.einsum`) and CUTLASS-based extension kernels need a
 replacement such as one GEMM per group. (gpu4pyscf)
+
+**`cupy.einsum` batched dot products hit a rocBLAS batched-GEMV defect on gfx1100.** CuPy
+computes `(..., 1, k) @ (..., k, n)` as `gemm_strided_batched_ex` with n=1, which rocBLAS
+runs as `gemv_strided_batched`. Every batched dot product reaches it, for example
+`einsum('xg,xg->g')`. On gfx1100 (rocBLAS 5.7.0) that kernel returns wrong, run-to-run
+varying entries for m < 8 when batch_count is above about 131072. complex128 fails on an
+idle GPU; float64 fails only while another process uses the GPU, so the test runner's own
+parallelism decides whether CI sees it. Wrap `cupy.matmul` on ROCm only and compute the
+one-row case as `(a.swapaxes(-1, -2) * b).sum(-2, keepdims=True)`. `cupy.einsum` looks up
+`cupy.matmul` at call time, so this one wrapper covers every einsum caller. The `@`
+operator bypasses it, so log the rocBLAS shapes (`ROCBLAS_LAYER=2`) over the test run to
+prove no other path reaches the shape. (gpu4pyscf; reproducer in its notes.)
 
 **Negative entries for that table.** CUPTI has no ROCm analogue -- stub the optional
 per-kernel profiling path inert and let the timer fall back to `hipEvent` wall-clock rather

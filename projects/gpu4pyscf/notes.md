@@ -1431,3 +1431,352 @@ mcfun was installed while nac/tests was running, so pbc/dft/tests ran its mcfun-
 
 ### What would flip this to completed
 A porter commit that keeps the batched contractions off M=N=1 `gemm_strided_batched` on ROCm. The narrowest place is CuPy's einsum as gpu4pyscf calls it: `gpu4pyscf/lib/cupy_helper.contract` and the direct `cp.einsum` sites in pbc/dft/multigrid_v2.py and dft/mcfun_gpu.py. Alternatively, a rocBLAS release without the defect. Then a gfx1100 rerun of the tree. A ruling by jeff that the defect is accepted also flips it, but that ruling is his.
+
+## Porter 2026-10-31 (porter, linux-gfx1100 W7800, fork moat-port e1ad6bc -> 3982189): rocBLAS batched-GEMV workaround and a multigrid_v2 BlockScan race
+
+Requested by jeff: answer the gfx1100 validation failure at e1ad6bc with a full, correct port on every supported GPU. Work lock taken (`validation-failed -> porting`, linux-gfx1100). Host: Radeon Pro W7800 48GB x4 (gfx1100), `HIP_VISIBLE_DEVICES=2` from the dispatcher (GPUs 0, 1, 3 used briefly for the reproducer only, all idle at the time). TheRock ROCm SDK 10.1.0: HIP runtime 7.16.26385 (`hipRuntimeGetVersion` 71626385), AMD clang 24.0.0 (d6f6cb6918), rocBLAS 5.7.0.39d8d603 (librocblas.so.5.7). Venv: numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pytest-xdist 3.3.1 (no mcfun, to keep the test selection identical to gfx942).
+
+Two new commits on top of e1ad6bc (no amend, no force push):
+
+- 51f6cf0 `[ROCm] Synchronize before reusing BlockScan storage in multigrid_v2` (screening.cuh, one `__syncthreads()`; unconditional, it is a CUB contract violation on CUDA too).
+- 3982189 `[ROCm] Keep one-row batched matmul off rocBLAS gemv_strided_batched` (cupy_helper.py; ROCm only).
+
+### 1. The rocBLAS defect, reduced (no CuPy)
+
+It is wider than "M=N=1 GEMM". `rocblas_gemm_strided_batched_ex` with **n=1** (column-major, N/N) is run by rocBLAS as `gemv_strided_batched`, and `rocblas_{d,z}gemv_strided_batched` (transA=N) itself gives the same wrong entries. It fails for **m = 1, 2, 4** and is clean for m = 8, 12, 16, 64, 256; it needs a **batch_count above about 131072** (complex128, idle: 0/20 calls wrong at 65536 and 100000, 1/20 at 131072, 20/20 at 262144). m=1 with n=2/4 (CuPy `(B,m,k)@(B,k,1)`) and m=n=2 are clean. The wrong values are not another batch entry's result and not a partial sum of the k terms (checked against every other entry and every subset of the k products). The fault is the same on all four W7800s (GPU 0, 1, 2, 3: 2307, 2251, ~2300, 2301 wrong entries over 3 calls of complex128 m=n=1 k=3 batch 347395), so it is not one bad card.
+
+In CuPy terms: `(..., 1, k) @ (..., k, n)` becomes rocBLAS `M=n, N=1` (ROCBLAS_LAYER=2 confirms), so every batched matmul whose left operand has one row is exposed when n < 8. `cupy.einsum` produces exactly that for every batched dot product ('xg,xg->g', 'gp,pg->p', 'xbygo,xgo->bygo').
+
+Failure rate (`gemm_n1`, below; 20 calls each; "load" = a second process looping 256x256 DGEMM on the same GPU):
+
+| type | m | k | batch_count | idle: calls wrong / wrong entries | with load |
+|---|---|---|---|---|---|
+| f64_c | 1 | 3 | 347395 (the multigrid shape) | 20/20, 15469 | 20/20, 30830 |
+| f64_c | 1 | 5 | 347395 | 20/20, 5067 | |
+| f64_c | 1 | 3 | 131072 | 1/20, 2 | |
+| f64_c | 1 | 3 | 262144 | 20/20, 116 | |
+| f64_c | 2 | 3 | 347395 | 20/20, 37440 | |
+| f64_c | 4 | 3 | 347395 | 20/20, 116284 | |
+| f64_c | 8 | 3 | 347395 | 0/20 | |
+| f64_r | 1 | 5 | 1638400 (the mcfun shape) | 0/20 | 12/20, 20 |
+| f64_r | 1 | 5 | 262144 | | 8/20, 13 |
+| f64_r | 1 | 64 | 262144 | 0/20 | 11/20, 18 |
+| f64_r | 2 | 64 | 262144 | | 13/20, 42 |
+| f64_r | 4 | 64 | 262144 | 0/20 | |
+| f64_r | 1 | 64 | 65536 / 16384 | | 0/20 / 0/20 |
+| f64_c gemv_strided_batched | 1 | 3 | 347395 | 20/20, 15243 | |
+| f64_r gemv_strided_batched | 1 | 64 | 262144 | | 14/20, 33 |
+
+A heavier 4096x4096 DGEMM load gave f64_r only 1/5 calls wrong at k=64; many small concurrent kernels expose it best, which matches the pytest-xdist runner.
+
+Build and run (source in agent_space/repro/gemm_n1.cpp, pasted below):
+```
+R=$(rocm-sdk path --root)
+hipcc -O2 --offload-arch=gfx1100 gemm_n1.cpp -lrocblas -L$R/lib -Wl,-rpath,$R/lib -o gemm_n1
+./gemm_n1 z 1 3 347395 20          # complex128, idle
+./gemm_n1 d 1 64 262144 20 load    # float64 with a concurrent process
+./gemm_n1 z 1 3 347395 20 gemv     # same through rocblas_zgemv_strided_batched
+```
+
+```cpp
+// rocblas_gemm_strided_batched_ex with n=1 (and rocblas_?gemv_strided_batched)
+// returns wrong entries for small m and a large batch_count on gfx1100.
+//
+// build: hipcc -O2 --offload-arch=gfx1100 gemm_n1.cpp -lrocblas -o gemm_n1
+// usage: gemm_n1 <d|z> <m> <k> <batch_count> <calls> [load] [gemv]
+//   d = double (f64_r), z = double complex (f64_c)
+//   load: fork a child process that keeps the same GPU busy with 256x256
+//         DGEMMs while the parent runs
+//   gemv: call rocblas_?gemv_strided_batched instead of gemm_strided_batched_ex
+//
+// Column-major, no transposes: A is m x k (lda=m, stride_a=m*k), B is k x 1
+// (ldb=k, stride_b=k), D is m x 1 (ldd=m, stride_d=m), alpha=1, beta=0.
+// With m=1 this is exactly the call CuPy issues for einsum('xg,xg->g'):
+//   gemm_strided_batched_ex N N -m 1 -n 1 -k K --lda 1 --stride_a K --ldb K
+//   --stride_b K --ldc 1 --stride_c 1 --ldd 1 --stride_d 1
+#include <hip/hip_runtime.h>
+#include <rocblas/rocblas.h>
+#include <algorithm>
+#include <complex>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <random>
+#include <vector>
+#include <signal.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+#define HIP_CHECK(x) do { hipError_t e_ = (x); if (e_ != hipSuccess) { \
+    fprintf(stderr, "%s:%d %s\n", __FILE__, __LINE__, hipGetErrorString(e_)); exit(1); } } while (0)
+#define RB_CHECK(x) do { rocblas_status s_ = (x); if (s_ != rocblas_status_success) { \
+    fprintf(stderr, "%s:%d rocblas status %d\n", __FILE__, __LINE__, (int)s_); exit(1); } } while (0)
+
+typedef std::complex<double> zd;
+
+static void load_child()
+{
+    const int n = 256;
+    rocblas_handle h;
+    RB_CHECK(rocblas_create_handle(&h));
+    double *a, *b, *c;
+    HIP_CHECK(hipMalloc(&a, sizeof(double) * n * n));
+    HIP_CHECK(hipMalloc(&b, sizeof(double) * n * n));
+    HIP_CHECK(hipMalloc(&c, sizeof(double) * n * n));
+    HIP_CHECK(hipMemset(a, 0, sizeof(double) * n * n));
+    HIP_CHECK(hipMemset(b, 0, sizeof(double) * n * n));
+    double one = 1, zero = 0;
+    for (;;) {
+        RB_CHECK(rocblas_dgemm(h, rocblas_operation_none, rocblas_operation_none,
+                               n, n, n, &one, a, n, b, n, &zero, c, n));
+        HIP_CHECK(hipDeviceSynchronize());
+    }
+}
+
+static double rnd(std::mt19937_64 &g, std::uniform_real_distribution<double> &u, double *) { return u(g); }
+static zd rnd(std::mt19937_64 &g, std::uniform_real_distribution<double> &u, zd *)
+{
+    double re = u(g);
+    return {re, u(g)};
+}
+static rocblas_datatype dtype(double *) { return rocblas_datatype_f64_r; }
+static rocblas_datatype dtype(zd *) { return rocblas_datatype_f64_c; }
+
+static rocblas_status gemv(rocblas_handle h, int m, int k, const double *alpha, const double *a,
+                           long sa, const double *x, long sx, const double *beta, double *y, long sy, int batch)
+{
+    return rocblas_dgemv_strided_batched(h, rocblas_operation_none, m, k, alpha, a, m, sa, x, 1, sx,
+                                         beta, y, 1, sy, batch);
+}
+static rocblas_status gemv(rocblas_handle h, int m, int k, const zd *alpha, const zd *a,
+                           long sa, const zd *x, long sx, const zd *beta, zd *y, long sy, int batch)
+{
+    typedef rocblas_double_complex rz;
+    return rocblas_zgemv_strided_batched(h, rocblas_operation_none, m, k, (const rz *)alpha,
+                                         (const rz *)a, m, sa, (const rz *)x, 1, sx,
+                                         (const rz *)beta, (rz *)y, 1, sy, batch);
+}
+
+template <typename T>
+static int run(int m, int k, int batch, int calls, bool use_gemv)
+{
+    std::mt19937_64 g(12345);
+    std::uniform_real_distribution<double> u(-1.0, 1.0);
+    const long sa = (long)m * k, sb = k, sd = m;
+    std::vector<T> ha(sa * batch), hb(sb * batch), ref(sd * batch), hd(sd * batch);
+    for (auto &x : ha) x = rnd(g, u, (T *)nullptr);
+    for (auto &x : hb) x = rnd(g, u, (T *)nullptr);
+    for (long p = 0; p < batch; p++)
+        for (int i = 0; i < m; i++) {
+            T s = T(0);
+            for (int l = 0; l < k; l++) s += ha[p * sa + (long)l * m + i] * hb[p * sb + l];
+            ref[p * sd + i] = s;
+        }
+
+    T *da, *db, *dd;
+    HIP_CHECK(hipMalloc(&da, sizeof(T) * sa * batch));
+    HIP_CHECK(hipMalloc(&db, sizeof(T) * sb * batch));
+    HIP_CHECK(hipMalloc(&dd, sizeof(T) * sd * batch));
+    HIP_CHECK(hipMemcpy(da, ha.data(), sizeof(T) * sa * batch, hipMemcpyHostToDevice));
+    HIP_CHECK(hipMemcpy(db, hb.data(), sizeof(T) * sb * batch, hipMemcpyHostToDevice));
+
+    rocblas_handle h;
+    RB_CHECK(rocblas_create_handle(&h));
+    const T alpha = T(1), beta = T(0);
+    const rocblas_datatype dt = dtype((T *)nullptr);
+
+    int bad_calls = 0;
+    long bad_total = 0;
+    for (int c = 0; c < calls; c++) {
+        HIP_CHECK(hipMemset(dd, 0, sizeof(T) * sd * batch));
+        if (use_gemv)
+            RB_CHECK(gemv(h, m, k, &alpha, da, sa, db, sb, &beta, dd, sd, batch));
+        else
+            RB_CHECK(rocblas_gemm_strided_batched_ex(
+                h, rocblas_operation_none, rocblas_operation_none, m, 1, k, &alpha,
+                da, dt, m, sa, db, dt, k, sb, &beta, dd, dt, m, sd, dd, dt, m, sd, batch,
+                dt, rocblas_gemm_algo_standard, 0, 0));
+        HIP_CHECK(hipDeviceSynchronize());
+        HIP_CHECK(hipMemcpy(hd.data(), dd, sizeof(T) * sd * batch, hipMemcpyDeviceToHost));
+        long bad = 0, first = -1;
+        double maxerr = 0;
+        for (long i = 0; i < sd * batch; i++) {
+            double e = std::abs(hd[i] - ref[i]) / std::max(1.0, std::abs(ref[i]));
+            if (!(e <= 1e-12)) {
+                if (first < 0) first = i;
+                bad++;
+                maxerr = std::max(maxerr, e);
+            }
+        }
+        if (bad) bad_calls++;
+        bad_total += bad;
+        printf("call %2d: %ld of %ld entries wrong", c, bad, sd * batch);
+        if (bad) printf(" (first at %ld, max rel err %.3g)", first, maxerr);
+        printf("\n");
+    }
+    printf("summary: %s %s m=%d n=1 k=%d batch_count=%d: %d of %d calls wrong, %ld wrong entries\n",
+           use_gemv ? "gemv_strided_batched" : "gemm_strided_batched_ex",
+           dt == rocblas_datatype_f64_r ? "f64_r" : "f64_c", m, k, batch, bad_calls, calls, bad_total);
+    RB_CHECK(rocblas_destroy_handle(h));
+    HIP_CHECK(hipFree(da));
+    HIP_CHECK(hipFree(db));
+    HIP_CHECK(hipFree(dd));
+    return bad_calls ? 1 : 0;
+}
+
+int main(int argc, char **argv)
+{
+    if (argc < 6) {
+        fprintf(stderr, "usage: %s <d|z> <m> <k> <batch_count> <calls> [load] [gemv]\n", argv[0]);
+        return 2;
+    }
+    const char type = argv[1][0];
+    const int m = atoi(argv[2]), k = atoi(argv[3]), batch = atoi(argv[4]), calls = atoi(argv[5]);
+    bool load = false, use_gemv = false;
+    for (int i = 6; i < argc; i++) {
+        load |= !strcmp(argv[i], "load");
+        use_gemv |= !strcmp(argv[i], "gemv");
+    }
+
+    pid_t child = -1;
+    if (load) {
+        child = fork();
+        if (child == 0) load_child();
+        sleep(2);
+    }
+
+    hipDeviceProp_t prop;
+    HIP_CHECK(hipGetDeviceProperties(&prop, 0));
+    char ver[256];
+    RB_CHECK(rocblas_get_version_string(ver, sizeof(ver)));
+    int hipver;
+    HIP_CHECK(hipRuntimeGetVersion(&hipver));
+    printf("device: %s %s, HIP runtime %d, rocBLAS %s, load=%s\n", prop.name, prop.gcnArchName,
+           hipver, ver, load ? "on" : "off");
+
+    int rc = type == 'z' ? run<zd>(m, k, batch, calls, use_gemv) : run<double>(m, k, batch, calls, use_gemv);
+
+    if (child > 0) {
+        kill(child, SIGKILL);
+        waitpid(child, nullptr, 0);
+    }
+    return rc;
+}
+```
+
+### 2. Draft rocBLAS issue (for jeff to file; not filed)
+
+**Title:** gemv_strided_batched (and gemm_strided_batched_ex with n=1) returns wrong entries for small m and batch_count > 131072 on gfx1100
+
+**Environment:** AMD Radeon PRO W7800 48GB (gfx1100), reproduced on four cards in one host. Linux 6.8.0-138, amdgpu 6.19.14.31400100. TheRock ROCm SDK 10.1.0: HIP runtime 7.16.26385, AMD clang 24.0.0, rocBLAS 5.7.0.39d8d603.
+
+**Description:** `rocblas_zgemv_strided_batched` / `rocblas_dgemv_strided_batched` with `transA = rocblas_operation_none`, m in {1, 2, 4}, lda = m, incx = incy = 1, alpha = 1, beta = 0 and a batch_count above about 131072 writes wrong values to a varying subset of the outputs. `rocblas_gemm_strided_batched_ex` with n = 1 (N/N, f64_r or f64_c) shows the same, presumably because it dispatches to the same kernel. CuPy issues exactly this call for `einsum('xg,xg->g', a, b)` and for any `(B,1,k) @ (B,k,n)` matmul with small n, so applications get silently wrong results. The wrong values change from call to call. They are neither another batch entry's result nor a partial sum.
+
+- double complex, m=1, k=3, batch_count=347395: several hundred wrong entries in every call on an otherwise idle GPU.
+- double, m=1, k=64, batch_count=262144: clean on an idle GPU, but 11 of 20 calls have wrong entries while another process runs small DGEMMs on the same GPU.
+- m >= 8, batch_count <= 65536, and n > 1 shapes were clean in every run.
+
+**Reproducer:** the attached `gemm_n1.cpp` (self-contained; CPU reference; prints the number of wrong entries per call).
+```
+hipcc -O2 --offload-arch=gfx1100 gemm_n1.cpp -lrocblas -o gemm_n1
+./gemm_n1 z 1 3 347395 20
+./gemm_n1 d 1 64 262144 20 load
+./gemm_n1 z 1 3 347395 20 gemv
+```
+
+**Expected:** `0 of 347395 entries wrong` on every call (relative error <= 1e-12 against the CPU sum of k products).
+
+**Actual:** e.g. `call 0: 755 of 347395 entries wrong (first at 112, max rel err 2.89)`; `summary: gemm_strided_batched_ex f64_c m=1 n=1 k=3 batch_count=347395: 20 of 20 calls wrong, 15469 wrong entries`. With `load`, float64: `summary: gemm_strided_batched_ex f64_r m=1 n=1 k=64 batch_count=262144: 11 of 20 calls wrong, 18 wrong entries`.
+
+The deferred item `rocblas-gemm-strided-batched-m1n1-f64-gfx1100-wrong-results` predates this reduction; its summary says M=N=1 and batch > 65536, and this section is the authoritative description (n=1, m < 8, batch above about 131072; gemv_strided_batched itself is affected).
+
+### 3. The workaround (3982189)
+
+On ROCm only, `gpu4pyscf.lib.cupy_helper` replaces `cupy.matmul` with `_hip_matmul`. For float/complex operands with a batch (max ndim >= 3), no `out=` or other keyword, and a one-row left operand (`x1.ndim == 1` or `x1.shape[-2] == 1`), it computes `(a.swapaxes(-1, -2) * b).sum(axis=-2, keepdims=True)` (squeezing for 1-D operands, as matmul does). Every other call goes to the original `cupy.matmul`. That is the narrowest place covering every caller: `cupy.linalg._einsum.reduced_binary_einsum` looks up `cupy.matmul` at call time for every binary contraction, so all `cp.einsum` sites (about 740 in the tree), `lib.contract` (cupy engine, since there is no cuTENSOR on ROCm), and explicit `cp.matmul` are covered. The module already patches PySCF at import (`_patch_pyscf`), so this follows house style. CUDA: the assignment is under `cupy.cuda.runtime.is_hip`, so the CUDA path is unchanged. Not covered by construction: the `@` operator (`ndarray.__matmul__` calls CuPy's C-level matmul directly). The rocBLAS shape log of the full tree run (below) shows whether any `@` site reaches the shape.
+
+Unit checks against NumPy (`agent_space/shapes2.py`, 5 calls each, batch 347395 where shown): (B,1,3)@(B,3,1) 3.7e-15, (B,1,3)@(B,3,4) 4.0e-15, (B,4,3)@(B,3,1) 3.7e-15, (B,1,5)@(B,5,3) 5.3e-15, 1-D@3-D, 3-D@1-D, broadcast 3-D and 4-D <= 4.4e-16 with matching shapes; `einsum('gp,pg->p')` complex 2.0e-15, `einsum('xgo,xgo->go')` (5,10240,160) 3.6e-15, `einsum('xbygo,xgo->bygo')` 1.8e-15, `contract('xgo,xgo->go')` 1.8e-15. Before: 206-226 wrong entries per call for the multigrid einsum. With ROCBLAS_LAYER=2 the only rocBLAS call left from these was the clean `M=1, N=4` shape.
+
+### 4. The hipErrorIllegalAddress in pbc/dft: root-caused, a BlockScan race (51f6cf0)
+
+It is not rocBLAS and not caused by the einsum fix: it reproduces at e1ad6bc with the workaround removed.
+- Reproduction: `pytest gpu4pyscf/pbc/dft/tests/test_multigrid_v2.py -n 4` (default `--dist load`, so four processes run multigrid tests at the same time): hipErrorIllegalAddress in 2/2 runs with the workaround and 2/2 runs without it. Alone: `test_get_vxc_gga` 5/5 pass, and the whole file passes serially, even with 40 GB of the GPU held by another process (not memory pressure). Three concurrent serial runs of the file: 2 of 3 crash.
+- Location: with `HIP_LAUNCH_BLOCKING=1`, `evaluation.cuh:899` (`evaluate_xc_driver` launch check, li=1 lj=0, from test_get_nuc; li=0 lj=1 in another run).
+- Cause: a wrapper around `multigrid_v2.assign_pairs_to_blocks` that checks `pairs_on_blocks[:accumulated[-1]]` for entries outside [0, n_pairs) found slots left at the `-1` fill in the crashing processes (e.g. `n_pairs=2158 used=1163423 bad=91576`; 6 bad assignments in one process, 1 in another, 0 in the clean one), while the screening outputs (`screen_gaussian_pairs`) were always complete. `evaluate_xc_kernel` then reads `image_indices[-1]` and `non_trivial_pairs[-1]`. `put_pairs_on_blocks_kernel` (screening.cuh) calls `cub::BlockScan<int, 256>().ExclusiveSum` once per batch of 1024 pairs in a loop, and every call uses the same shared TempStorage with no `__syncthreads()` between calls. CUB requires that barrier before temp storage is reused. A fast wave can start the next scan while a slow one is still reading the previous result. Other processes on the GPU skew the wave timing, which is why it needs concurrency. (`count_pairs_on_blocks_kernel` already puts a `__syncthreads()` between its two BlockReduce calls; the other block collectives in multigrid_v2 are single calls or already barrier-separated.)
+- Fix: one `__syncthreads()` at the end of the loop body. After it: 6 of 6 concurrent runs of the file (two rounds of three) pass 29/29 with zero bad slots.
+- CUDA compile gate (a TU changed): NVIDIA redist 12.8.1 archives sha256-verified against redistrib_12.8.1.json (cuda_nvcc 12.8.93, cuda_cudart 12.8.90, cuda_cccl 12.8.90, cuda_profiler_api 12.8.90) into agent_space/cuda-12.8; `git ls-files` export of the working tree at 3982189; `cmake -S <tree>/gpu4pyscf/lib -B build-cuda -DCMAKE_CUDA_ARCHITECTURES=80 -DCUDAToolkit_ROOT=$K -DCMAKE_BUILD_TYPE=Release -DBUILD_LIBXC=OFF && cmake --build build-cuda -j 16 --target mgrid_v2`: exit 0, libmgrid_v2.so built, `screen.cu` (the TU that includes screening.cuh) compiled by nvcc for `compute_80,sm_80`, and no `USE_HIP` or `cuda_to_hip` on any compile line. The cupy_helper.py change is Python under `is_hip`, so nothing else on the CUDA side changes.
+
+### 5. Full test tree at 3982189 (gfx1100)
+
+Build: README ROCm block (`cmake -S gpu4pyscf/lib -B build/temp.gpu4pyscf -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100`, `-j 32`), clean build dir, libxc on: exit 0, 12 libs plus libxc.so.15; `-mllvm -disable-machine-licm` on the HIP compile lines (machine-LICM flag carried unchanged). Rebuilt mgrid_v2 after 51f6cf0.
+
+Runner, per directory, under `ulimit -c 0`, `PYTHONPATH=<fork> LD_LIBRARY_PATH=$(rocm-sdk path --root)/lib`, with `ROCBLAS_LAYER=2` piped through a FIFO into a shape tally (agent_space/blaslog_reader.py):
+`python -m pytest <dir> -n 4 --dist loadfile -m 'not slow and not benchmark and not special' -q -rfEs --tb=line -p no:cacheprovider --timeout 1800 --junitxml=...`
+
+| directory | gfx942 @ e1ad6bc p/f/s/e | gfx1100 @ 3982189 p/f/s/e |
+|---|---|---|
+| cc/tests | 4/0/0/0 | 4/0/0/0 |
+| df/hessian/tests | 24/0/0/0 | 24/0/0/0 |
+| df/tests | 200/5/3/0 | **201/4/3/0** |
+| dft/tests | 113/0/9/0 | **112/1/9/0** |
+| dispersion/tests | 16/0/0/0 | 16/0/0/0 |
+| fci/tests | 3/0/0/0 | 3/0/0/0 |
+| geomopt/tests | 0/0/5/0 | 0/0/5/0 |
+| grad/tests | 115/2/0/0 | 115/2/0/0 |
+| gto/tests | 57/0/5/0 | 57/0/5/0 |
+| hessian/tests | 91/0/1/0 | 91/0/1/0 |
+| lib/tests | 39/0/1/0 | 39/0/1/0 |
+| mcscf/tests | 8/0/0/0 | 8/0/0/0 |
+| md/tests | 5/0/0/0 | 5/0/0/0 |
+| mp/tests | 20/1/0/0 | 20/1/0/0 |
+| nac/tests | 71/1/1/0 | 71/1/1/0 |
+| pbc/df/tests | 104/1/7/0 | **105/0/7/0** |
+| pbc/dft/tests | 156/0/18/0 | 156/0/18/0 |
+| pbc/grad/tests | 185/0/2/0 | 185/0/2/0 |
+| pbc/gto/pseudo/tests | 7/0/0/0 | 7/0/0/0 |
+| pbc/gto/tests | 13/0/0/0 | 13/0/0/0 |
+| pbc/hessian/tests | 0/0/6/0 | 0/0/6/0 |
+| pbc/lib/tests | 2/0/0/0 | 2/0/0/0 |
+| pbc/properties/berry/tests | 10/0/2/0 | 10/0/2/0 |
+| pbc/scf/tests | 88/2/1/0 | 88/2/1/0 |
+| pbc/tools/tests | 16/0/0/0 | 16/0/0/0 |
+| pbc/x2c/tests | 1/0/1/0 | 1/0/1/0 |
+| pop/tests | 2/0/0/0 | 2/0/0/0 |
+| properties/tests | 26/0/5/0 | 26/0/5/0 |
+| qmmm/pbc/tests | 3/0/0/0 | 3/0/0/0 |
+| qmmm/tests | 21/0/0/0 | 21/0/0/0 |
+| scf/tests | 159/2/3/0 | 159/2/3/0 |
+| sem/dmp/tests | 1/0/0/0 | 1/0/0/0 |
+| sem/grad/tests | 3/0/0/0 | 3/0/0/0 |
+| sem/gto/tests | 15/0/0/0 | 15/0/0/0 |
+| sem/integral/tests | 27/0/0/0 | 27/0/0/0 |
+| solvent/tests | 126/0/2/0 | 126/0/2/0 |
+| tdscf/tests | 93/2/0/0 | 93/2/0/0 |
+| tests | 0/0/0/0 | 0/0/0/0 |
+| x2c/tests | 8/0/1/0 | **7/1/1/0** |
+| **total** | 1832/16/73/0 | **1832/16/73/0** |
+
+Wall time 6689 s (the host was shared with another job; the validator's run took 3234 s). **Total 1832/16/73/0, the same as gfx942.**
+
+- **pbc/dft/tests 156/0/18/0 and dft/tests' numint2c tests: the validator's deviations are gone.** test_multigrid_v2 (gga, gga_kpts, mgga, mgga_kpts, lda_kpts) and test_numint2c::test_eval_xc_eff_fp all pass. dft/tests' one failure is test_sparse_index (section 6).
+- **No hipErrorIllegalAddress and no worker abort anywhere in the tree** (`grep -l 'hipError\|Fatal Python' tree/*.log` is empty). Clean concurrent runs of test_multigrid_v2.py after 51f6cf0: this tree run plus 6 of 6 three-way concurrent runs (section 4). Before 51f6cf0 it failed 4 of 6 concurrent runs and 2 of 2 `-n 4` runs.
+- The 16 failures: 14 of gfx942's 16 by name (df test_general_contraction, test_grad_hybrid, test_jk_energy_per_atom, test_get_nacv_ee; grad test_tdrhf_grad and test_tduhf_grad test_grad_elec; mp test_dfmp2_kernel_one_gpu; nac test_get_nacv_ee; pbc/scf test_rks_gen_g_hop and test_uks_gen_g_hop; scf test_rhf_df_against_qchem and test_rks_df_against_qchem; tdscf test_rtda_ris_diffuse and test_krylov_eigenvalue), with the classes recorded earlier (RNG fingerprints, missing d-aug-cc-pvdz basis, rocBLAS trsm margin, Krylov cap). The other two gfx942 failures, df test_j_energy_per_atom (trsm margin) and pbc/df test_ft_ao_strain_deriv (finite-difference margin), pass here. The remaining two are host or margin effects explained in section 6: dft test_sparse_index (`103.60117204958 == 103.60117204957997`) and x2c test_sfx2c1e_cart (`6.122036211309023e-11` against 10 places), the same values the validator recorded.
+
+**rocBLAS shape log over the whole tree** (ROCBLAS_LAYER=2, agent_space/tree/blas_shapes.json): 691006 `gemm_strided_batched_ex` and 7428 `gemm_batched` calls in 15603 distinct shapes from 29 directories, largest batch_count 249856. No `gemv_strided_batched` call. Batched calls with n=1: only 7 `gemm_batched` shapes with batch_count 3 (hessian and solvent tests, m <= 21), far below the failing regime (above about 131072). So no other path, including `@`, reaches the defective kernel in the test tree.
+
+### 6. The two host-side deviations (no code change)
+
+- **dft/test_numint.py::test_sparse_index** (`lib.fp(...) == 103.60117204957997`, got 103.60117204958): host CPU float summation, not GPU. The fingerprinted arrays are int32 index arrays; all three fingerprints are 1-3 ulp off, while changing any single index would move the fingerprint by about 1e-3 or more. `math.fsum` of the same products gives a third rounding. This host's numpy runs AVX2 OpenBLAS/SIMD kernels (Threadripper PRO 5975WX, no AVX-512), so the dot's summation order differs from the machine that recorded the reference. An exact `==` on a float fingerprint cannot hold across CPUs. (The validator's analysis; the result reproduces in this run, see the table.)
+- **x2c/test_x2c.py::test_sfx2c1e_cart** (hcore max diff 6.12e-11 against `assertAlmostEqual(..., 10)`, i.e. 5e-11; deterministic): an accuracy margin of 1.2x, relative 1.9e-12 of max|hcore| = 33 Ha. With hipSOLVER's generalized eigh, `cp.linalg.eigh` and `cp.linalg.solve` all replaced by SciPy/NumPy on the GPU-built matrices it is still 4.58e-11 (the integral floor); the GPU generalized eigh adds 1.5e-11. No batched GEMV in this test. Same class as the other <3x rocBLAS/rocSOLVER accuracy misses; gfx942 passes it, presumably by a small margin.
+
+### Checks
+- `python3 utils/jargon.py --port gpu4pyscf`: clean. `utils/prose.py` on both commit bodies: clean. Titles 67 and 67 characters, `[ROCm]` prefix, AI disclosure in prose, fenced Test Plan, no Co-Authored-By.
+- Build log: `-mllvm -disable-machine-licm` on 113 HIP compile lines (carried unchanged).
+- Fork `git status --porcelain`: empty after removing the tests' `from_h5.xyz`.
+- Pushed `moat-port` e1ad6bc..3982189 (fast-forward).
+- Skill: `references/fault-classes.md` gained the batched-GEMV/CuPy einsum entry (Types, dispatch and platform limits) and a timing-dependent block-collective paragraph under the hipCUB TempStorage entry, plus one index line each in SKILL.md.
+
+### For jeff
+- File the rocBLAS issue from section 2 if you agree (not filed). The workaround stays in place until a fixed rocBLAS ships; its comment names the defect.
+- 51f6cf0 is a race in upstream's CUDA code too (CUB requires the barrier). It ships in the port PR; reporting it upstream separately is your call.
+- linux-gfx1100 now needs revalidation at 3982189. gfx942 and gfx90a also read `revalidate` because head moved.
