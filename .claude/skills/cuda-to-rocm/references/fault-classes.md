@@ -173,11 +173,19 @@ stack of `pthread_mutex_lock` <- two unexported libamdhip64 frames <- `hipEventQ
 other thread inside HIP. Prove it with an `LD_PRELOAD` shim over
 `hipEventRecord`/`hipStreamDestroy`/`hipEventQuery` that flags queries on events whose last
 recording stream is dead; a plain create/record/destroy/query loop will NOT reproduce it,
-because the next `hipStreamCreate` takes the chunk back with a clean status. Work around it
-under the HIP build at the point where the code already learns a stream is going away
-(its "release this stream" hook, after the sync): drop or return every completed event that
-was recorded on it, so no long-lived holder outlives the stream. (LichtFeld-Studio:
-`PinnedMemoryAllocator::release_stream`, project save hung or crashed on gfx1100; deferral
+because the next `hipStreamCreate` takes the chunk back with a clean status; fill freshly
+`malloc`'d 16 B-64 KiB chunks with 32-bit 1s after the destroy and the query hangs every time.
+Do not fix it holder by holder: the holders are not only caches but events in transit outside
+the holder's lock (blocks an `empty_cache` took and waits on after unlocking) and app-owned
+rings and frame fences no allocator hook sees, and a per-site sweep misses some. Fix the class
+where the compatibility header already maps the stream calls: route `cudaStreamCreate*` and
+`cudaStreamDestroy` to a small pool whose destroy synchronizes and parks the stream (real
+destroy only if it is capturing or fails to sync) and whose create reuses a parked stream with
+the same device, flags and default priority. No stream an event ever saw is freed, and the
+pool is bounded by the peak number of live streams. Do not park without reuse: an idle used
+stream holds about 8 MiB of host memory on TheRock 10.1. (LichtFeld-Studio:
+`core/cuda/hip_stream_reuse`, which replaced a `PinnedMemoryAllocator::release_stream` sweep;
+project save hung or crashed on gfx1100, and the review found three more holders; deferral
 `hip-event-query-destroyed-stream-uaf`.)
 
 **Fresh device allocations are NOT zero on ROCm**, where CUDA's allocator often hands back
