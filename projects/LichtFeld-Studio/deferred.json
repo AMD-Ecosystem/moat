@@ -228,7 +228,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-10-26T15:38:27Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeff",
+        "at": "2026-10-31T06:30:48Z",
+        "note": "2026-10-31: harden on current ROCm, then comment on ROCm/hip#3909"
+      }
     },
     {
       "id": "hip-linux-external-semaphore-unsupported",
