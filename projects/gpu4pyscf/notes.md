@@ -1295,3 +1295,79 @@ The 7 RNG cases were rerun: each fails only on its `lib.fp` fingerprint line, wi
 
 ### For the validators
 Judge against the porter's 16-failure classification, with this section's correction for test_dfmp2_kernel_one_gpu, test_grad_hybrid and test_j_energy_per_atom. Expect those three to miss their tolerance by less than 3x on every AMD arch, because they all go through rocBLAS trsm.
+
+## Validation 2026-10-31 (validator, linux-gfx942 MI300X, fork moat-port @ e1ad6bc) -- COMPLETED
+
+Independent validator run (fresh fork clone, clean build directory, separate job venv), HIP_VISIBLE_DEVICES=3, `gfx942:sramecc+:xnack-`. Toolchain: TheRock ROCm SDK 10.1.0 (AMD clang 24), cmake 3.31.6, gfortran 13, Python 3.11.17. Test env: numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.5.0, geometric 1.1.1, pytest 7.3.2, pytest-xdist 3.3.1, pytest-timeout 2.4.0.
+
+### Build (README recipe, libxc on by default)
+```
+pip install 'numpy>=2.0,<2.3' 'scipy>=1.13' cupy-rocm-7-0==14.2.0 pyscf==2.14.0 pytest pyscf-dispersion geometric pytest-timeout
+rm -rf build
+cmake -S gpu4pyscf/lib -B build/temp.gpu4pyscf -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942
+cmake --build build/temp.gpu4pyscf -j 100 -- VERBOSE=1
+```
+Exit 0 in 178 s: 12 libs plus libxc.so.15 (ExternalProject, `ENABLE_HIP=ON`). The build log has `-mllvm -disable-machine-licm` on the HIP compiles (113 lines), `--offload-arch=gfx942` only, and no `-O1`. Fork `git status --porcelain` is empty after the run (the runner deletes md/tests' `from_h5.xyz`).
+
+### Full test tree
+Per directory over all 39 `gpu4pyscf/**/tests`, under `ulimit -c 0`, `LD_LIBRARY_PATH=$(rocm-sdk path --root)/lib PYTHONPATH=$PWD`:
+`python -m pytest <dir> -n 4 --dist loadfile -m 'not slow and not benchmark and not special' -q -rfEs --tb=line -p no:cacheprovider --timeout 1800 --junitxml=...` (upstream CI selection; 4044 s total).
+
+| directory | porter gfx942 @ e1ad6bc p/f/s/e | this run p/f/s/e |
+|---|---|---|
+| cc/tests | 4/0/0/0 | 4/0/0/0 |
+| df/hessian/tests | 24/0/0/0 | 24/0/0/0 |
+| df/tests | 200/5/3/0 | 200/5/3/0 |
+| dft/tests | 113/0/9/0 | 113/0/9/0 |
+| dispersion/tests | 16/0/0/0 | 16/0/0/0 |
+| fci/tests | 3/0/0/0 | 3/0/0/0 |
+| geomopt/tests | 0/0/5/0 | 0/0/5/0 |
+| grad/tests | 115/2/0/0 | 115/2/0/0 |
+| gto/tests | 57/0/5/0 | 57/0/5/0 |
+| hessian/tests | 91/0/1/0 | 91/0/1/0 |
+| lib/tests | 39/0/1/0 | 39/0/1/0 |
+| mcscf/tests | 8/0/0/0 | 8/0/0/0 |
+| md/tests | 5/0/0/0 | 5/0/0/0 |
+| mp/tests | 20/1/0/0 | 20/1/0/0 |
+| nac/tests | 71/1/1/0 | 71/1/1/0 |
+| pbc/df/tests | 104/1/7/0 | 104/1/7/0 |
+| pbc/dft/tests | 156/0/18/0 | 156/0/18/0 |
+| pbc/grad/tests | 185/0/2/0 | 185/0/2/0 |
+| pbc/gto/pseudo/tests | 7/0/0/0 | 7/0/0/0 |
+| pbc/gto/tests | 13/0/0/0 | 13/0/0/0 |
+| pbc/hessian/tests | 0/0/6/0 | 0/0/6/0 |
+| pbc/lib/tests | 2/0/0/0 | 2/0/0/0 |
+| pbc/properties/berry/tests | 10/0/2/0 | 10/0/2/0 |
+| pbc/scf/tests | 88/2/1/0 | 88/2/1/0 |
+| pbc/tools/tests | 16/0/0/0 | 16/0/0/0 |
+| pbc/x2c/tests | 1/0/1/0 | 1/0/1/0 |
+| pop/tests | 2/0/0/0 | 2/0/0/0 |
+| properties/tests | 26/0/5/0 | 26/0/5/0 |
+| qmmm/pbc/tests | 3/0/0/0 | 3/0/0/0 |
+| qmmm/tests | 21/0/0/0 | 21/0/0/0 |
+| scf/tests | 159/2/3/0 | 159/2/3/0 |
+| sem/dmp/tests | 1/0/0/0 | 1/0/0/0 |
+| sem/grad/tests | 3/0/0/0 | 3/0/0/0 |
+| sem/gto/tests | 15/0/0/0 | 15/0/0/0 |
+| sem/integral/tests | 27/0/0/0 | 27/0/0/0 |
+| solvent/tests | 126/0/2/0 | 126/0/2/0 |
+| tdscf/tests | 93/2/0/0 | 93/2/0/0 |
+| tests | 0/0/0/0 | 0/0/0/0 |
+| x2c/tests | 8/0/1/0 | 8/0/1/0 |
+| **total** | 1832/16/73/0 | **1832/16/73/0** |
+
+### The 16 failures: the identical set, each with the recorded signature
+- RNG fingerprints (7): df test_jk_energy_per_atom (fp -14.927 vs 16.882), df test_get_nacv_ee (1.0724 vs -0.8861), grad/test_tdrhf_grad test_grad_elec (7.823375488826, the exact GPU value in the porter's evidence), grad/test_tduhf_grad test_grad_elec, nac/test_tdrhf_nac_ee test_get_nacv_ee, pbc/scf/test_pbc_soscf test_rks_gen_g_hop and test_uks_gen_g_hop. All O(1) fingerprint mismatches.
+- d-aug-cc-pvdz missing from PySCF 2.14 (4): BasisNotFoundError in df test_general_contraction, scf test_rhf_df_against_qchem and test_rks_df_against_qchem, tdscf test_rtda_ris_diffuse.
+- rocBLAS trsm accuracy (3, the review's correction): mp test_dfmp2_kernel_one_gpu 1.0117209e-7 vs 7 places (same digits as the review's rerun), df test_grad_hybrid 1.124e-9 vs 1e-9, df test_j_energy_per_atom 2.34e-12 vs 1e-12.
+- Finite-difference strain (1): pbc/df test_ft_ao_strain_deriv 3.77e-8 vs 3e-8.
+- Krylov cap (1): tdscf test_krylov_eigenvalue, eigenvector error 1.34e-5 at max_iter 35.
+No new failure and no error, so there is no new GPU finding.
+
+### Water vs CPU PySCF (def2-svp, grids level 3, conv_tol 1e-12)
+- RKS energies: B3LYP 1.07e-11, PBE 5.87e-12, M06 6.88e-12 Ha; all converged on both sides.
+- RHF gradient, GPU gradient evaluated on the CPU's converged orbitals: sto-3g 4.8e-14, def2-svp 2.2e-13, cc-pvtz 9.8e-12 (max abs). With two independently converged SCFs the gradient difference is 3.9e-11 / 3.2e-9 / 1.9e-8. That is the density difference allowed by conv_tol 1e-12, not the gradient engine.
+
+### Other gates
+- CUDA gate: skipped. It is already recorded at e1ad6bc (Review 2026-10-31, base vs head compared at machine-code level), and this host has no CUDA toolkit.
+- `python3 utils/jargon.py --port gpu4pyscf`: clean. README documents the ROCm build (the recipe above is the README's).
