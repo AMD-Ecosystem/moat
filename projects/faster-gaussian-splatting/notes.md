@@ -2063,3 +2063,55 @@ Scope: `git diff d3e2266..99d68f9`, `kernels_mcmc.cuh` (+5/-1) and README (one b
 ### State
 
 `review-passed`. Every platform validated at d3e2266 or earlier owes revalidation at 99d68f9.
+
+## Validation 2026-10-31 (linux-gfx1100, revalidate at 99d68f9)
+
+Requested by jeff after Review 2026-10-31 passed 99d68f9 (hipRAND Philox gate). Platform: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), torch 2.16.0a0+git6c3af02, HIP 7.16.26385 (TheRock SDK wheels in the image venv), hipRAND 3.4.0 (`HIPRAND_VERSION 300400`), `HIP_VISIBLE_DEVICES=0`, everything under `ulimit -c 0`. Fork freshly cloned, `moat-port` = `99d68f9bfb5348c3472bd34ae46a0e57d31f2fc0`.
+
+Trigger: `validated_sha=d3e2266` -> `head_sha=99d68f9`. `moatlib.py classify faster-gaussian-splatting d3e2266 99d68f9` -> `class=mixed arch_independent=False inert=False` (`kernels_mcmc.cuh: mixed (token count differs)`). Full real-GPU run as jeff asked, plus a binary comparison as extra evidence.
+
+Coverage: this SDK has hipRAND 3.4.0, so this build compiles the `#else` arm (bundled Philox copy). The 3.5.0 arm (`hiprand/hiprand_kernel.h`) was exercised only by the porter's scratch-prefix build of the unmerged ROCm/rocm-libraries PR #14808 (Porter 2026-10-31); it is not re-run here. The Review 2026-10-31 publication condition (confirm #14808 merged as hipRAND 3.5.0 before drafting the upstream PR) still stands.
+
+### Build
+
+The README recipe is the `PYTORCH_ROCM_ARCH=gfx1100` pip command with `--no-build-isolation`. That would install into the shared image venv, so the same `setup.py` was built in place, as on earlier platforms:
+```bash
+export PYTORCH_ROCM_ARCH=gfx1100 MAX_JOBS=16
+git -C projects/faster-gaussian-splatting/src/FasterGSCudaBackend clean -xdfq
+utils/timeit.sh faster-gaussian-splatting compile -- bash -c "cd $PWD/projects/faster-gaussian-splatting/src/FasterGSCudaBackend && python setup.py build_ext --inplace"
+```
+PASS, rc=0, 36 s, 378 warning lines. The d3e2266 baseline, built the same way in a `git worktree` at `agent_space/fgs_old`, has rc=0 and the same 378. `llvm-objdump --offloading` (from `_rocm_sdk_core/lib/llvm/bin`, run on a copy under `agent_space/`): 7 bundles, all `hip-amdgcn-amd-amdhsa--gfx1100`.
+
+Binary comparison, head vs d3e2266: `utils/codeobj_diff.py` hardcodes `/opt/rocm/llvm/bin`, which this image does not have (`FileNotFoundError: /opt/rocm/llvm/bin/llvm-nm`), so I ran the same comparison by hand with the SDK's llvm tools. `llvm-objdump -d --no-show-raw-insn` of each of the 7 extracted gfx1100 code objects: **7/7 disassembly identical**, including bundle 1, the mcmc TU (669 lines, 6 `add_noise` references). The bundle bytes differ, and so does `llvm-nm -D --defined-only` on `_C.so`, but only in the nine `__hip_cuid_*` symbols. Those are hashes of the source path, and the two builds were in different directories. On a hipRAND before 3.5.0 the device program is therefore unchanged on gfx1100. The GPU run below was done anyway.
+
+### GPU tests (`projects/faster-gaussian-splatting/gpu_tests/` plus two helpers)
+
+The helpers are rewritten from the porter's description: `noise_dump.py` (add_noise for n = 37 / 100003 / 1000000 with random scales, rotations, opacities and means, seeds 1 / 1234567 / 2^40+99, three calls per seed so the offset advances: 27 tensors) and `bitcmp.py` (byte equality). Both are scratch files in `agent_space/scripts/`.
+```bash
+utils/timeit.sh faster-gaussian-splatting test -- bash -c "ulimit -c 0; cd $O; python $S/noise_dump.py $OLD_B noise_old.pt && python $S/noise_dump.py $B noise_new.pt && python $S/bitcmp.py noise_old.pt noise_new.pt; python $G/run_outputs.py $OLD_B old.pt && python $G/run_outputs.py $B new.pt && python $G/run_outputs.py $B new2.pt && python $G/compare.py old.pt new.pt > cmp_old_new.txt; python $G/compare.py new.pt new2.pt > cmp_new_new2.txt; python $G/new_checks.py $B; python $G/train_check.py $B; python $G/det.py $B"
+```
+rc=0, 27 s wall. Every sub-step rc=0.
+
+- **add_noise bit-identity vs d3e2266: 27/27 tensors bit-identical.**
+- **new_checks.py: 31/31 PASS.** Philox reference == Random123 KATs; device `add_noise` == Philox4x32-10 + Box-Muller reference to 8.65e-7 over 228 primitives (same as gfx942, gfx90a and the earlier gfx1100 runs); mean |.| <= 0.0041, std 0.9982..1.0030, max |corr| 4.30e-3; lane halves std 0.9983/1.0021; offset advances; reproducible under `torch.manual_seed`. On 4 scenes: inference == training forward (0 diff), training forward deterministic, abs-grad within 10x run-to-run (worst ratio is the 200k scene, 4.68e-6 vs 1.08e-6; the others are <= 1.5x), triangle inequality 0 violations, all finite, subtile coverage 0.96..1.00.
+- **train_check.py: 3/3 PASS.** FusedAdam vs torch.optim.Adam over 20 steps: max abs 3.87e-6; relocation_adjustment sane; 300-iteration fit L1 0.1204 -> 0.0080.
+- **det.py: 3/3, 0 diff** (0 px) for training forward and inference at 200k/100k 1920x1080 and 50k 1280x720.
+- **run_outputs, d3e2266 vs head (84 tensors):** `torch.equal` holds for 29/84 old-vs-new and 29/84 new-vs-new2. That covers images, filter3d (inf entries included) and filter3d_vis in all 7 scenes; the porter's run also had 29/84. The rest are gradients, dinfo and pruning, which accumulate through float atomics. Worst relL2 old-vs-new / new-vs-new2: grad_means 2.61e-7 / 2.48e-7, grad_scales 4.96e-6 / 2.75e-6, grad_rotations 1.59e-6 / 2.88e-6, grad_opacities 2.32e-7 / 2.73e-7, grad_sh0 2.87e-7 / 2.82e-7, grad_shrest 2.86e-7 / 2.80e-7, dinfo 1.79e-7 / 2.03e-7, pruning 3.34e-7 / 1.97e-7. The grad_scales and pruning old-vs-new figures exceed this run's single run-to-run sample by less than 2x. The device ISA is identical, so these can only be atomic ordering; they also sit inside the Validation 2026-10-30 run-to-run range on this arch (worst gradient relL2 3.82e-6). Unlike the b0d21d5 -> d3e2266 comparison there is no dinfo row-0 shift, because 99d68f9 does not touch the rasterizer.
+
+Compared with earlier platforms at d3e2266: gfx1100 (Validation 2026-10-30) and gfx90a both had 31/31, 3/3, 0-diff determinism, Adam 3.87e-6 / 3.81e-6, L1 final 0.0081 / 0.0080, and the same 8.65e-7 Philox error. Every figure here matches.
+
+Failures: none.
+
+### CUDA no-regression gate
+
+Not run here: this host has no CUDA toolkit (no `nvcc`, no `/opt/conda`). Already covered at this head: the porter compiled the only changed TU (`mcmc.cu`) with nvcc 12.8 for sm_70/sm_80 at d3e2266 and 99d68f9, both rc=0, and the sm_80 PTX is byte-identical. The full CUDA build gate passed at d3e2266 (CUDA gate 2026-10-30, V100). The CUDA preprocessor branch is textually unchanged by 99d68f9.
+
+### Completion checks
+
+- `python3 utils/jargon.py --port faster-gaussian-splatting` -> `jargon: clean`.
+- README: the ROCm build sits next to the CUDA one in Setup (`PYTORCH_ROCM_ARCH` pip command), and Requirements carries the ROCm 7.2+ and hipRAND 3.5.0 bullet.
+- `git -C projects/faster-gaussian-splatting/src status --porcelain` -> empty after removing the baseline worktree; the offload bundles were extracted from copies under `agent_space/`.
+
+### Verdict
+
+**completed**, `linux-gfx1100`, `validated_sha=99d68f9bfb5348c3472bd34ae46a0e57d31f2fc0`. This covers the bundled-Philox (hipRAND < 3.5.0) arm. The 3.5.0 arm is still backed only by the porter's scratch build of the unmerged #14808.
