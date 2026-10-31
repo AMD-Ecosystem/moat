@@ -7,13 +7,13 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-08T13:34:13Z",
-  "updated_at": "2026-10-31T21:04:14Z",
+  "updated_at": "2026-10-31T21:42:04Z",
   "head_sha": "90a711be48b58046448fd7e036b5ecc765cd677b",
   "depends_on": [],
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 647984858,
-  "stage": "review-passed",
+  "stage": "porting",
   "platforms": {
     "linux-gfx1100": {
       "state": "completed",
@@ -160,9 +160,9 @@
       "blocked_reason": null,
       "validated_sha": "90a711be48b58046448fd7e036b5ecc765cd677b",
       "failed_sha": null,
-      "started_at": null,
+      "started_at": "2026-10-31T21:42:04Z",
       "completed_at": "2026-10-31T21:04:13Z",
-      "updated_at": "2026-10-31T21:04:13Z",
+      "updated_at": "2026-10-31T21:42:04Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -185,5 +185,9 @@
     "arch": "linux-gfx1100",
     "since": "2026-10-30T00:40:13Z",
     "at": "2026-10-30T00:44:55Z"
+  },
+  "porting": {
+    "arch": "windows-gfx1151",
+    "since": "2026-10-31T21:42:04Z"
   }
 }
