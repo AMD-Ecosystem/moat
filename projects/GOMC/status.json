@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-05T01:24:38Z",
-  "updated_at": "2026-10-30T19:07:22Z",
+  "updated_at": "2026-10-31T06:35:36Z",
   "head_sha": "4c06552c810100d289530e9475a07c81582e6581",
   "depends_on": [],
   "waivers": {},
@@ -140,6 +140,30 @@
         "last_session_at": null
       },
       "last_agent": "reviewer"
+    },
+    "windows-gfx1151": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": "4c06552c810100d289530e9475a07c81582e6581",
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-10-31T06:35:36Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "validation-failed",
+      "last_agent": "validator"
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/GOMC/pull/1",

@@ -358,3 +358,44 @@ CUDA compile gate: already recorded at 4c06552c (nvcc 12.8.93, retarget section)
 Completion checks: `git -C projects/GOMC/src status --porcelain` empty; `moatlib.py audit-clean GOMC` clean; `python3 utils/jargon.py --port GOMC` clean (needs local `development` and `moat-port` branches in the fork clone: `git branch -f development origin/development; git branch -f moat-port origin/moat-port`); ROCm build documented in README.
 
 Gotcha: `utils/timeit.sh` cds to the MOAT root, so GOMC runs (relative paths in in.conf) must be wrapped as `utils/timeit.sh GOMC test -- bash -c "cd <config dir> && <exe> in.conf"`.
+
+## Validation 2026-10-30 (windows-gfx1151, validator) -- validation-failed at 4c06552c
+
+Requested by jeff. Fork `moat-port` @ 4c06552c, fresh clone, tree clean. Host: Windows 11, AMD Radeon 8060S (gfx1151, RDNA3.5, wave32, Strix Halo APU); TheRock ROCm SDK (clang 23.0.0git, HIP 7.14 runtime DLLs staged next to each exe, `ulimit -c 0`, one GPU process at a time, `-j16`). The Windows gate was last met at 58d5496d (gfx1201/gfx1101); the `development` merge added upstream host code that the Windows all-clang toolchain rejects.
+
+### Build at exactly 4c06552c: FAILS (host .cpp, upstream `development` code; GPU kernels compile)
+
+```bash
+R=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel
+cmake -S $SRC -B $B -G 'Unix Makefiles' -DCMAKE_MAKE_PROGRAM=C:/Strawberry/c/bin/gmake.exe -DUSE_HIP=ON \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++.exe -DCMAKE_C_COMPILER=$R/lib/llvm/bin/clang.exe \
+  -DCMAKE_CXX_COMPILER=$R/lib/llvm/bin/clang++.exe -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release
+cmake --build $B -j16        # rc=2, no executable produced (GPU_* targets alone fail the same way)
+```
+Configure succeeds (the three 2026-06 Windows fixes are present). Three independent compile errors, none in port-touched code, all in lines upstream `development` added after the 58d5496d base:
+1. `src/CalculateEnergy.cpp:332/334`: `variable 'atomCount' / 'molCount' must have explicitly specified data sharing attributes` -- `#pragma omp parallel for default(none)` with `aForcex[ : atomCount]` reductions (upstream f9bef633 / 239b6884); g++ accepts it, clang does not. Fix: add `atomCount, molCount` to `shared(...)`.
+2. `src/CellList.cpp:28`: `array initializer must be an initializer list` -- copy ctor mem-initializes the array members `neighbors(other.neighbors), head(other.head)` (upstream 6e2420e2, 2026-06-24); a GCC extension, ill-formed C++. Fix: copy per box in the existing loop.
+3. `src/Main.cpp:106`: `std::max(1, numThreads)` hits the `max` macro of `<windows.h>` (pulled in by winsock). Fix: `-DNOMINMAX` (no source edit needed), or `(std::max)`.
+Linux never sees these because the host compiler there is g++.
+
+### Diagnostic evidence from an UNCOMMITTED scratch copy (not the gate; source differs from 4c06552c by the 1+2 edits above plus `-DCMAKE_CXX_FLAGS=-DNOMINMAX`)
+
+With those edits all 8 executables build (rc=0). Five cases, GPU = `GOMC_GPU_*`, CPU = `GOMC_CPU_*` of the same build; every ENER_n row and every acceptance line compared (`agent_space/gomc_val_win.py`). Device Name: AMD Radeon(TM) 8060S Graphics.
+
+| run | GPU/CPU exit | ENER rows | max rel diff | acceptance lines | GPU wall |
+|---|---|---|---|---|---|
+| GEMC AR_KR SingleRun 3000 | 0/0 | 62 | 0 | 67/67 identical | 0.32 s |
+| GEMC ISOPEN_NEOPEN 3000 (MEMC) | 0/0 | 62 | 0 | 70/70 identical (MEMC NEO-ISB 61.76%, as Linux) | 2.61 s |
+| GCMC PEN_HEX 200 (Ewald) | 0/0 | 12 | 0 | 23/23 identical | 0.48 s |
+| NVT AR_KR box 0, 1000 | 0/0 | 11 | 0 | 15/15 identical | 0.25 s |
+| NPT AR_KR box 0, 1000 | 0/0 | 11 | 0 | 16/16 identical | 0.28 s |
+
+So the GPU path is expected to pass on gfx1151 once the host source builds; this does not count as validation of 4c06552c. No hang, no crash, no bugcheck.
+
+### K_1/K_N checkpoint exit 127 (CPU executables only, no GPU)
+
+Reproduced: `Base` (CPU GEMC, rc=0) writes `base_restart.chk`; `K_1` (reads it) exits 127 right after `Random number seed: 123`; `K_N` then fails only because K_1 wrote no output. Not a missing DLL: `dumpbin /dependents GOMC_CPU_GEMC.exe` shows only WS2_32, MSVCP140, VCRUNTIME140, libomp140, UCRT api-sets, all resolved (Base runs with the same exe). Cause: `CheckpointSetup.cpp:47` `std::ifstream ifs(filename)` and `CheckpointOutput.cpp:58` `std::ofstream ofs(filename)` open the cereal `BinaryInputArchive`/`BinaryOutputArchive` streams in TEXT mode; on Windows the CRT translates `\n` (0x0A) and treats 0x1A as EOF, corrupting the binary checkpoint. With `std::ios::binary` added to both opens (scratch copy), AR_KR Base/K_1/K_N and ISOPEN_NEOPEN Base/K_1/K_N all exit 0. Verdict: UPSTREAM Windows bug in code the port does not touch (`git diff origin/development..moat-port -- src/CheckpointSetup.cpp src/CheckpointOutput.cpp` is empty; the lines are upstream's). Not an environment issue and not a port defect; the old "Windows checkpoint ABI" note was this. An upstream CPU-only comparison was not run: the same clang errors above block a clang build of `development`, and the cause is evident from the source. Fixing it is optional for the port; it is a candidate for a separate upstream PR (not bundled into moat-port).
+
+### Result
+
+validation-failed at 4c06552c: the Windows all-clang build breaks on upstream `development` host code (items 1 and 2 need small source edits in moat-port; item 3 is a flag, best set in `GOMCHIPSetup.cmake` next to the existing `WIN32 _USE_MATH_DEFINES` definitions as `NOMINMAX`). Instructed not to change source, so none pushed. After the porter commits those, this arch returns as `port-ready` for a full run.
