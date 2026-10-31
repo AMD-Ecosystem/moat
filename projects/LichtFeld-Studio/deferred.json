@@ -361,7 +361,12 @@
       "status": "open",
       "upstream_issue": null,
       "created_at": "2026-10-30T23:11:22Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeff",
+        "at": "2026-10-31T06:04:20Z",
+        "note": "2026-10-31: file upstream now"
+      }
     },
     {
       "id": "lfs-commit-msg-566be1cd-test-plan-configure",
