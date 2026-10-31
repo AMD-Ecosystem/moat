@@ -98,3 +98,7 @@
 {"kind":"phase","ts":"2026-10-30T00:57:59Z","phase":"cuda-compile","seconds":198.235,"exit":0,"cmd":"bash -c echo PORT; /tmp/llmawq-cuda/cc.sh /tmp/llmawq-cuda/port; echo BASE; /tmp/llmawq-cuda/cc.sh /tmp/llmawq-cuda/base"}
 {"kind":"phase","ts":"2026-10-30T01:05:28Z","phase":"cuda-compile","seconds":433.382,"exit":0,"cmd":"bash -c echo PORT; /tmp/llmawq-cuda/cc.sh /tmp/llmawq-cuda/port; echo BASE; /tmp/llmawq-cuda/cc.sh /tmp/llmawq-cuda/base"}
 {"kind":"session","ts":"2026-10-30T01:07:15Z","epoch":1793322435.201140301,"event":"end","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-10-31T20:55:16Z","phase":"compile","seconds":138.518,"exit":1,"cmd":"bash /d/Develop/moat/agent_space/awq_build.sh"}
+{"kind":"phase","ts":"2026-10-31T20:56:51Z","phase":"compile","seconds":18.768,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/awq_build.sh"}
+{"kind":"session","ts":"2026-10-31T21:04:09Z","epoch":1793480650.162540900,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-10-31T21:04:17Z","epoch":1793480657.821663000,"event":"end","platform":"windows-gfx1151"}

@@ -772,3 +772,27 @@ CUDA_HOME=/usr/local/cuda TORCH_CUDA_ARCH_LIST="7.0" MAX_JOBS=16 python setup.py
 Runtime: not run. The only NVIDIA GPUs available are V100 (sm_70), which upstream does not build for, so `projects/llm-awq/tests/*` could not run on CUDA. No NVIDIA runtime behavior is claimed.
 
 Result: CUDA gate **PASS** at 90a711b (sm_80 compile + link, port and base identical in outcome).
+
+## Validation 2026-10-31 (windows-gfx1151, Radeon 8060S, TheRock ROCm 7.14.0a20260519 torch venv)
+
+GPU: AMD Radeon 8060S, gfx1151 (RDNA3.5, wave32, APU). Fork `moat-port` = head_sha 90a711b, fresh clone, `git status --porcelain` empty. torch 2.12.0+rocm7.14.0a20260519, Python 3.13, `PYTORCH_ROCM_ARCH=gfx1151`. jeff approved this run on this host; every process under `ulimit -c 0`, one GPU process at a time, largest GPU allocation in the suite about 0.2 GiB (no full-model load, no LLM generation; tinychat_e2e is the random-weight 4-layer module test).
+
+### Build
+Built from a `git archive` copy of 90a711b in `agent_space/awq_scratch` (hipify writes into the tree, so the clone stays clean). `source agent_space/win_torch_env.sh` (clang-cl host compiler, MSVC link.exe first on PATH), then `utils/timeit.sh llm-awq compile -- python setup.py build_ext --inplace` with `MAX_JOBS=16`. All 14 sources compile (hipify v2, `.cpp` routed through hipcc by the `_cpp_shim.cu` copies, no source edit). The first link FAILED: `LINK : fatal error LNK1181: cannot open input file 'hipblaslt.lib'`. Cause: setup.py's `libraries=["hipblaslt"]` becomes `hipblaslt.lib` for MSVC link.exe, and the TheRock Windows SDK ships its hipBLASLt import library only as `_rocm_sdk_devel/lib/libhipblaslt.dll.a` (the DLL is `libhipblaslt.dll`). Workaround, environment only: copy `libhipblaslt.dll.a` to a scratch dir as `hipblaslt.lib` and prepend that dir to `LIB`; the relink then succeeded, `awq_inference_engine.cp313-win_amd64.pyd`. No tracked file changed. This is an SDK packaging gap (toolchain), not a port defect; the 2026-06 Windows validations predate the hipBLASLt W8A8 path and so never hit it. If a one-line build doc for Windows is wanted it belongs to the porter, not this run.
+
+### Tests (from /tmp, `PYTHONPATH=<scratch>/awq/kernels`, scripts from projects/llm-awq/tests/)
+All pass; compared with the Linux gfx1201 / gfx942 runs at the same head:
+- `attn_test.py`: **443/443** (Linux 443/443). fp32 D=128 edge t=16239 passes, t=16240 and 20000 refused for LDS as on Linux. One difference, not a failure: bf16 D=64 refuses already at t=10888 (needs 65544 B of LDS) where the Linux table has 10889 as the last fitting step; the compiler here gives the kernel 8 more static LDS bytes. The test only requires monotone refusal, and a refusal is the safe direction.
+- `tinychat_e2e.py <src>`: **4/4**; argmax 40/40, 40/40, 64/64, 40/40; max |dlogit| 2.93e-03, min cos 0.999999.
+- `w8a8_test.py`: as shipped it dies in `torch.profiler` ("Legacy CUDA profiling requires use_cpu=True"; no CUDA-activity profiler in this Windows torch). Run as a scratch copy with the profiler removed (`agent_space/awq_w8a8_test_noprof.py`, nothing else changed): **25/25** (24 shapes up to 512x4096x4096 with and without bias, plus the side-stream ordering check); max err 4.12e-03 at 512x4096x4096 with bias. Which int8 path ran (hipBLASLt vs SIMT) is therefore NOT observed on this host; the SIMT kernel is covered by the next item.
+- `w8a8_simt_test.py <w8a8_gemm_cuda.cu>`: **7/7** exact (load_inline from a temp dir, not the checkout).
+- `legacy_gemm_test.py`: **8/8**, max err 3.91e-03 vs dequant ref, 7.81e-03 vs legacy gemv (Linux 3.9e-03 / 7.8e-03).
+- `w4a16_test.py <src>`: **30/30**, max err 3.87e-03 (fp16 only).
+- `w8a8_handle_test.py <w8a8_gemm_cuda.cu>`: its `extra_ldflags=["-lhipblaslt"]` is a gcc-style flag that link.exe ignores (LNK2019 on `hipblasLtCreate`). Run with a scratch copy using `hipblaslt.lib` (same scratch LIB dir) and nothing else changed: **PASS**, 16 threads over 1 device, one handle.
+Total 547 checks, 0 failures. Two tests need a harness tweak on Windows (profiler, link flag); both are test-script limits, not kernel behaviour.
+
+### CUDA gate
+Not run on this host; recorded PASS at 90a711b (sm_80) by the V100 gate above.
+
+### Pre-completion checks
+`python3 utils/jargon.py --port llm-awq` clean; README.md:127 documents the ROCm build; fork tree clean at 90a711b. Skipped on purpose: real TinyChat generation / any checkpoint load (large-memory rule), as on Linux.
