@@ -128,6 +128,18 @@ at runtime. dietgpu's rANS archive serializes one coder state per lane
 wave64 archive byte-identical to its old format, and lets a wave32 device use the first 32
 slots. (dietgpu)
 
+**A host-side launch heuristic keyed on the register count can break a kernel whose block
+width is a compile-time constant.** A launcher that doubles the block when
+`cudaFuncGetAttributes(...).numRegs <= 128` is harmless for kernels that read
+`blockDim.x`, but a kernel that hard-codes `constexpr int nsq_per_block = 256` then runs
+every task twice and overlaps its per-thread shared-memory slices. NVIDIA builds of those
+kernels sat above 128 registers, so the mismatch was latent; on gfx90a/gfx942 one landed at
+exactly `.vgpr_count: 128` and the analytic gradient came out wrong by orders of magnitude,
+different on every run, while gfx1100 passed. When results are wrong and nondeterministic on
+one wave size only, compare each launcher's block geometry with the constants inside the
+kernel it launches; `llvm-readelf --notes` on the extracted code object gives the VGPR count.
+(gpu4pyscf)
+
 ## Memory and lifetime
 
 **Out-of-bounds reads.** CUDA often tolerates a read one element past an allocation; AMD
@@ -369,6 +381,11 @@ without hipify. Verify include order rather than trusting the prepend. (LC-frame
 CUDA's headers supplied them transitively and the narrower HIP include graph unmasks them.
 Fix additively -- it helps the CUDA build too. (LC-framework)
 
+**`<complex.h>` defines the macro `I`, which rocPRIM uses as a template parameter name.** A
+TU that includes `<complex.h>` before a hipCUB shim fails deep inside
+`rocprim/types/tuple.hpp` with `expected ')'` and `_Complex float` conversion errors. If the
+TU does not use `I`, `#undef I` in the shim before including hipCUB. (gpu4pyscf)
+
 **A force-included compat header creates no build dependency edge.** After editing a header
 injected with `-include`, object files are NOT rebuilt: wipe them manually or you validate
 stale code and get a silent false pass. (lc0)
@@ -385,6 +402,16 @@ the CUDA build too and are not HIP-specific hacks. (Velvet)
 **Library swaps.** cuBLAS -> hipBLAS, cuFFT -> hipFFT, cuRAND -> hipRAND, cuSPARSE ->
 hipSPARSE, cuDNN -> MIOpen, Thrust/CUB -> rocThrust/hipCUB. Mostly 1:1; watch handle types
 and a few signature differences such as the hipBLAS v2 enums.
+
+**CuPy-ROCm gaps a CuPy-based port meets at runtime.** `cupy.cuda.runtime.deviceSetLimit` is a
+stub that always raises hipErrorUnknown (`cupy_backends/hip/cupy_hip_runtime.h`); call
+`hipDeviceSetLimit` through ctypes from `libamdhip64.so.<major>`, the library CuPy already
+loaded (`runtimeGetVersion() // 10000000`). RawKernel sources compile with hiprtc, which has
+no `cuComplex.h` (use `hip/hip_complex.h` and alias `cuDoubleComplex`, `make_cuDoubleComplex`,
+`cuCreal`, `cuCimag`) and rejects a 32-bit mask in `__shfl_down_sync`; prepend those
+definitions on ROCm only, leaving the CUDA source untouched. CuPy-ROCm ships no cuTENSOR
+binding (fall back to `cupy.einsum`) and CUTLASS-based extension kernels need a
+replacement such as one GEMM per group. (gpu4pyscf)
 
 **Negative entries for that table.** CUPTI has no ROCm analogue -- stub the optional
 per-kernel profiling path inert and let the timer fall back to `hipEvent` wall-clock rather

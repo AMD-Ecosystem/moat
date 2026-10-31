@@ -173,6 +173,22 @@ accumulation divergence rather than a port bug, and RDNA3.5 (gfx1151) is where i
 shown up. Record the error magnitude and stop rather than chasing it deep: the
 comparison that matters is against the other architectures, not against a fix.
 
+That rule is for small, deterministic deviations. An error that is large (orders of
+magnitude) or changes from run to run on one wave size is a defect until shown otherwise:
+gpu4pyscf's analytic gradients failed only on gfx90a/gfx942 for months and turned out to be
+a launch-geometry mismatch (see the register-count heuristic in the fault classes). Reduce
+it to the smallest input that still fails (H2/STO-3G reached a single kernel) before
+calling it numerical.
+
+## Seeded `cupy.random` inputs differ between CUDA and ROCm
+
+CuPy-ROCm draws from hipRAND/rocRAND, so `cp.random.seed(n)` gives different numbers than
+CUDA's cuRAND. A test that hard-codes a fingerprint of results computed from such inputs
+fails on ROCm even when the computation is right. Do not count it as a GPU failure or edit
+it away: rerun the same inputs through the CPU reference (or the test's own CPU cross-check
+with only the fingerprint assertion disabled, in a scratch copy) and record that comparison.
+`np.random`-seeded tests are unaffected. (gpu4pyscf)
+
 ## Read what the project's own cross-backend checker actually compares
 
 A project that ships a "compare backend A against backend B" harness makes an attractive gate, but check which outputs it compares before trusting a pass, and check whether the test INPUT can reach the code you changed at all.
