@@ -519,3 +519,36 @@ utils/timeit.sh GOMC cuda-compile -- bash -c "cmake -S $PWD/projects/GOMC/src -B
 rc=0, 100 s, 0 warnings, all 8 executables. Flags show `-arch=all` (upstream GOMCCUDASetup.cmake override, as recorded before). Compile-only; says nothing about NVIDIA runtime behavior.
 
 Completion checks: `git -C projects/GOMC/src status --porcelain` shows no modified tracked files; `moatlib.py audit-clean GOMC` OK; `python3 utils/jargon.py --port GOMC` clean (with local `development` = `origin/development`); ROCm build documented in README.
+
+## Validation 2026-10-31 (windows-gfx1151, validator)
+
+Requested by jeff. Fork `moat-port` @ b8d1aa91 (`projects/GOMC/src`, `git status --porcelain` empty). Host: Windows 11, AMD Radeon 8060S (gfx1151, RDNA3.5, wave32, Strix Halo APU); TheRock ROCm SDK clang, runtime DLLs staged next to the exes (`rocm_stage_runtime`), `ulimit -c 0`, one GPU process at a time, `-j16`. Full run at the new head, no carry-forward.
+
+### Build at exactly b8d1aa91: PASS (all-clang, 0 errors, all 8 executables)
+
+```bash
+source agent_space/win_rocm_env.sh; unset CC CXX; export PATH=$PWD/agent_space/py3shim:$PATH
+R=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel
+cmake -S projects/GOMC/src -B agent_space/gomc-val/b -G 'Unix Makefiles' -DCMAKE_MAKE_PROGRAM=C:/Strawberry/c/bin/gmake.exe -DUSE_HIP=ON \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++.exe -DCMAKE_C_COMPILER=$R/lib/llvm/bin/clang.exe \
+  -DCMAKE_CXX_COMPILER=$R/lib/llvm/bin/clang++.exe -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release
+cmake --build agent_space/gomc-val/b -j16     # rc=0
+python agent_space/gomc_val_win.py agent_space/gomc-val/b projects/GOMC/src agent_space/gomc-val/w
+```
+The three 4c06552c host errors (OpenMP data-sharing, CellList array initializer, `max` macro) are gone; only nodiscard warnings on `hipError_t` remain.
+
+### Five cases, GPU (`GOMC_GPU_*`) vs CPU (`GOMC_CPU_*`) of the same build, every ENER row and acceptance line compared
+
+| run | exit GPU/CPU | ENER rows | max rel diff | acceptance lines | GPU / CPU wall |
+|---|---|---|---|---|---|
+| GEMC AR_KR SingleRun 3000 | 0/0 | 62/62 | 0 | 67/67 identical | 0.53 s / 0.05 s |
+| GEMC ISOPEN_NEOPEN SingleRun 3000 | 0/0 | 62/62 | 0 | 70/70 identical | 2.99 s / 2.32 s |
+| GCMC PEN_HEX SingleRun 200 | 0/0 | 12/12 | 0 | 23/23 identical | 0.48 s / 0.14 s |
+| NVT AR_KR box 0, 1000 | 0/0 | 11/11 | 0 | 15/15 identical | 0.26 s / 0.05 s |
+| NPT AR_KR box 0, 1000 | 0/0 | 11/11 | 0 | 16/16 identical | 0.26 s / 0.05 s |
+
+No hang, crash or bugcheck. K_1/K_N checkpoint cases excluded by instruction, not run: the known upstream text-mode checkpoint stream bug (`CheckpointSetup.cpp` / `CheckpointOutput.cpp`, untouched by the port), being fixed upstream separately.
+
+CUDA no-regression gate: not run here (Windows host, no CUDA toolkit); it lands on a Linux arch. `python3 utils/jargon.py --port GOMC` clean.
+
+Result: completed for windows-gfx1151 at b8d1aa91.
