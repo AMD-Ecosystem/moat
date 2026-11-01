@@ -2585,3 +2585,62 @@ Verdict: **review-passed**. No findings. ec23f427b resolves finding 2 and d9e417
 Titles are 69 and 55 chars with `[ROCm]`. Both messages are ASCII, disclose AI assistance, carry a fenced Test Plan and have no Co-Authored-By trailer. `utils/prose.py` is clean on both. `python3 utils/jargon.py -C <fix10 clone> --commits master..d9e41753e` reports only the three known hits in 68718f038, and `--diff master..d9e41753e` is clean.
 
 Owed: validation at d9e41753e on gfx90a, gfx942 and gfx1100.
+
+## Validation 2026-11-01 (linux-gfx942, MI300X, full suites, one_embedding/P2P two-GPU runs, fused-harness hang check, regression tests, long-k and graph-capture checks at d9e41753e: PASS)
+
+jeff asked for this run: validate review-passed `moat-port` d9e41753e on gfx942 from a clean build, with the full suites compared per file against the newest gfx942 numbers (42d68145d), the one_embedding and id_shuffle P2P tests on two GPUs (P2P on and off, 5 rounds), the fused embedding-interaction harness 20 times with P2P on, the regression tests of the recent rounds, the k = 2^20 fp16/bf16 matmul check against torch and `cg_ws2.py`. Result: **completed at d9e41753e**. No new failure id, no hang, every check at torch's level.
+
+Host: MI300X (gfx942:sramecc+:xnack-, wave64), `HIP_VISIBLE_DEVICES=6,7` pinned by the dispatcher, ROCm 10.1.0 SDK wheels, AMD clang 24.0.0git, Python 3.11, numpy 1.26.4, protobuf 3.20.3, torch 2.16.0a0+git6c3af02 (the oracle; the image's torch, torchgen and functorch symlinked read-only into `$FLEET_VENV-base-links`). Job venv: `pip install -r dev-requirements.txt fsspec pytest-timeout pytest-repeat opencv-python-headless==4.10.0.84 portalocker protobuf==3.20.3 numpy==1.26.4`. Fresh clone of the fork, `moat-port` = origin = d9e41753e, `protect-fork` run. `ulimit -c 0` throughout, `source build/source.sh` plus `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git` (`therock-libllvm-symbol-interposition`) for every run, no JIT extension builds. Scripts are the idshuffle-hang porter job's (`build.sh`, `env.sh`, `suite.sh`, `two3.sh`, `fhn.sh`, `fused_harness.py`, `p2p_harness.py`, `cmp.py`, `cg_ws2.py`) and fix7's `longk_probe.py`, with paths rewritten to this job; `emb5.sh` is `two3.sh` with 5 rounds.
+
+### Build (clean build directory, 512 s, `utils/timeit.sh oneflow compile`)
+The configure in "Validation 2026-10-31 (linux-gfx942 ...)" (`-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DBUILD_CUDA=ON`, ROCm clang, CUTLASS/MLIR/RDMA/HWLOC/CPP_API off, oneDNN on, Release, shared, pywrap python), `cmake --build build -j112` (`MAX_JOBS`). rc=0, `CMAKE_HIP_ARCHITECTURES: gfx942`, `OF_GPU_WARP_SIZE: 64`, liboneflow.so 954 MB. Smoke: `flow.cuda.is_available()` True, 4x1000 softmax sums to 4.0, `flow.sum(flow.ones(64, 72, device="cuda"), dim=0)` gives 64.
+
+### Full suites (`agent_space/suite.sh`: one pytest per file, 8 at a time, `--timeout=900`, junit per file; modules on GPU 6 660 s, tensor on GPU 7 concurrently; `utils/timeit.sh oneflow test`)
+| suite | passed | failed | errors | skipped | gfx942 at 42d68145d |
+|---|---|---|---|---|---|
+| modules (547 files) | 1603 | 54 | 5 | 315 | 1598 / 55 / 5 / 315 |
+| tensor (22 files) | 368 | 1 | 0 | 22 | identical |
+- Per test id against the 42d68145d junit (idshuffle-hang job's `suite_mod`/`suite_ten`): **no id fails here that passed there**. Gone: `test_special_ops::test_flow_digamma_with_random_data` (the CPU float16 kernel-not-found autotest draw). +5 passes are the tests added since: test_conv_float64 4 -> 6, test_matmul_long_k 1 -> 3, plus digamma.
+- Every failure is in a class notes.md already explains as not a port fault: 14 "autotest stuck in an endless loop" (avgpool 4, global_avgpool 1, conv1d 2, conv2d 4, deconv2d 3); numpy `__bool__` interop (concat, copy x2, div, logical_and, matmul fp16/int, slice x2, tensordot); fft `KeyError: 'ONEFLOW_CI'` 5; `oneflow.char != oneflow.int8` 6 (tensor_ops 4, type_tensor 2); the higher-derivative torch-drift oracles (global_higher_derivative_loss 3, math_op and global_math_op abs); `/dataset` 4 (image_batch_align, image_decode, image_flip, image_normalize); 5 collection errors (deform_conv2d, global_deform_conv2d, global_roi_align, image_resize, resnet_load_torch_weight); lbfgs, replication_pad, functional docstr, codegeex; the float32 tolerance pair cublas_fused_mlp / fused_matmul_bias_add_relu_dropout; argsort and sort (numpy's AVX-512 int32 argsort as the oracle); global_tril_with_diag (CPU-reproducible flaky autotest); special_ops psi random data (`op_kernel_not_found_error` on `kCPU`, the same CPU float16 draw as digamma).
+- Aborted files, the same three with the same causes: test_dataset (`Check failed: fd >= 0`), test_loss and test_higher_derivative_loss (HSA exception 0x1016 in torch's own `binary_cross_entropy_out_cuda`, the torch BCE oracle device assert).
+- tensor: only test_safetensors (module not installed).
+
+### Regression tests of the recent rounds (`agent_space/reg.sh`, one pytest per file, GPU 7, after the tensor suite)
+test_matmul_long_k 3 passed (27 s; default, without hipBLASLt, without workspace in a subprocess); test_conv_float64 6; test_grouped_matmul_bias 1; test_cross_entropy_float16 3; test_check_numerics_float16 2; test_pool2d_channels_last 1; test_batchnorm 6 passed, 1 upstream skip (includes test_batchnorm_float64 and test_batchnorm_single_value); test_conv_bias_grad 2. All rc=0. The bf16 collective tests are in the next table.
+
+### Two GPUs, 5 rounds (`agent_space/emb5.sh` under `utils/timeit.sh oneflow test`, 3155 s; two-rank runs on GPUs 6,7 through `python3 -m oneflow.distributed.launch --nproc_per_node 2 --redirect_stdout_and_stderr`, `setsid -w timeout`; one-GPU files on GPU 6): **120 of 120 runs rc=0**
+| test | each of 5 rounds |
+|---|---|
+| expensive/test_id_shuffle_global.py, embedding/gradient P2P 0 and 1 | 3 passed on both ranks |
+| modules/test_dynamic_allocation_gradient_shuffle_shuffle_global.py, P2P 0 and 1 | 1 skipped (upstream skip) |
+| expensive/test_oneembedding.py, 2 ranks | 1 passed on both ranks |
+| expensive/test_id_shuffle_p2p_global.py (sets id_shuffle P2P on itself) | 1 passed on both ranks |
+| expensive/test_one_embedding_p2p_shuffle_global.py (sets fused interaction + embedding/gradient P2P on itself) | 1 passed on both ranks |
+| modules/test_comm_ops.py -k bfloat16 | 2 passed on both ranks |
+| graph/test_graph_nccl_logical_bfloat16.py | 3 passed on both ranks |
+| P2P op harness, P2P on / off, 10 iterations | bad=0 on both ranks |
+| fused harness unfused / fused P2P off / fused P2P on / fused P2P on + id_shuffle P2P | rc=0 |
+| one GPU: test_id_shuffle 4, test_oneembedding / padding_idx / dynamic_allocation_gradient_shuffle / one_embedding_adagrad / sgd 1 each, adam / ftrl 1 skipped (upstream), test_fused_dot_feature_interaction 2 | passed |
+Fused harness against round 1 unfused (`cmp.py`, 19 runs): losses identical at all 50 steps (max difference 0, 0.3540 -> 0.3452), top weight relL2 1.86e-4 to 2.19e-4 and bottom 9.9e-6 to 1.1e-5, the same as the unfused reruns (2.06e-4 to 2.19e-4).
+
+### Fused-harness hang check (`agent_space/fhn.sh`, fused harness with a per-step print, 50 steps, a run still going at 120 s is recorded as hung; 1435 s)
+| configuration (FUSE_EMBEDDING_INTERACTION=1) | runs | hung | rc != 0 | secs |
+|---|---|---|---|---|
+| embedding + gradient + id_shuffle P2P on | 20 | **0** | 0 | 34-37 |
+| id_shuffle P2P only | 20 | **0** | 0 | 34-38 |
+All 40 against round 1 unfused: losses identical at every step, top relL2 <= 2.36e-4. Together with the 5 fused P2P-on runs per configuration above, 0 hangs in 55 fused runs with P2P on. Before 42d68145d the first two configurations hung in 3/20 and 2/20 runs on this host.
+
+### Long-k matmul (`agent_space/longk_probe.py`, eager, GPU 7, uniform(-1, 1), error = max abs / max |float64 ref|)
+oneflow equals torch to all printed digits in all 28 cases. 1 x 2^20 x 64: fp16 2.78e-4 / torch 2.78e-4, bf16 2.48e-3 / 2.48e-3 (124 / 95 us). 16 x 2^20 x 64: 3.70e-4 and 3.53e-3; transpose_b 1 x 2^20 x 64: 3.75e-4 and 1.77e-3; transpose_a 2^20: 2.72e-4 and 2.37e-3; 2 x 16384 x 65536: 3.42e-4 and 2.46e-3; bmm / broadcast b / broadcast a 4 x (1 x 2^18 x 64): 2.49e-4 to 2.74e-4 and 2.01e-3 to 2.32e-3; the short-k and square shapes unchanged and equal to torch.
+
+### Graph-capture workspace check (`agent_space/cg_ws2.py`, `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1`, GPUs 6,7 in one process)
+42 of 42 graphs captured and replayed (interleaved, after large eager GEMMs) within tolerance: worst float32 4.69e-6, float16 4.20e-4, bfloat16 3.27e-3. 1 x 2^20 x 64: fp16 3.21e-4 / 2.65e-4, bf16 2.73e-3 / 1.99e-3 (cuda:0 / cuda:1), against up to 1.17e-2 / 8.6e-2 at 80cbda89b.
+
+### CUDA compile gate: not rerun
+The porter's nvcc 12.8.93 sm_80 gate passed at every changed TU through d9e41753e (`hip_long_k_gemm.cu` PASS 1/1 in the last round); jeff's dispatch said to skip it.
+
+### Other checks
+- `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038's message ('Strategy A', 'MOAT', 'Lead platform'), which the PR-prep squash clears.
+- Documentation: README.md:145-150 documents the ROCm configure next to the CUDA one; build_rocm.sh matches.
+- `git -C projects/oneflow/src status --porcelain`: no modified tracked files (untracked build output only); HEAD = origin `moat-port` = d9e41753e.
+- Not run: the 2D bf16 logical-kernel registrations (need 4 GPUs) and the C++ `cudnn_test.cpp` (needs BUILD_TESTING).
