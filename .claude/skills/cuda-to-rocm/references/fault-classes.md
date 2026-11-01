@@ -419,10 +419,13 @@ Host `std::min(a,b)` is `b<a?b:a` and `std::max(a,b)` is `a<b?b:a`; a device ver
 bytes and comparing host gold against device output differ bit-for-bit. Spell the device
 ternaries to match the host forms exactly. (CV-CUDA: OpMorphology CLOSE on RGBAf32.)
 
-**rocBLAS `gemm_ex` rounds a 16-bit output once per k-chunk when k is long.** When the
-leading dimension of either operand times k reaches 2^30, rocBLAS (5.7, ROCm 10.1) splits k
-into chunks of floor((2^30 - 1) / ld) and accumulates each chunk's product into D with
-beta = 1. With a float16/bfloat16 D (`cublasGemmEx` -> `hipblasGemmEx` with compute type
+**rocBLAS `gemm_ex` rounds a 16-bit output once per k-chunk when k is long.** rocBLAS 5.7
+(ROCm 10.1) splits k exactly when `max(lda, ldb) * k >= 2^30` for 2-byte types
+(`gemm_tensile.hpp`: `safe_k = (2^31 - 1) / (max(ld_a, ld_b) * sizeof(Ti))`, split iff
+`safe_k < k`), with the leading dimensions as passed whatever the transposes, ignoring strides
+and batch count, into chunks of `safe_k`, and accumulates each chunk's product into D with
+beta = 1. ROCm 10.2 (rocm-libraries #12219) narrows the split to the operands k strides
+through, with the same 2^31-byte limit, so the 10.1 condition remains a safe superset. With a float16/bfloat16 D (`cublasGemmEx` -> `hipblasGemmEx` with compute type
 f32) the output is rounded about k / 1023 times for a contiguous k-major operand, so the error
 grows linearly with k: at k = 2^20 it is 25-50x a single rounding (fp16 7e-3, bf16 5e-2 relative),
 and the 1025 chunk launches also take ~8 ms. `ROCBLAS_LAYER` logs only the outer call; a kernel
@@ -445,7 +448,23 @@ rocBLAS does too wherever it does not chunk k itself (cuBLAS N,T, where neither 
 k-major). Choosing another algorithm does not help; shortening the chain does. Do the chunking
 yourself rather than asking hipBLASLt for a split-k: cut k into equal chunks of at most 2^15, run
 them as batched GEMMs (batch stride = chunk along k) that write each chunk's product to its own
-slice IN THE 16-BIT TYPE OF D, and sum the slices in float into D, rounding once. Do not give the
+slice IN THE 16-BIT TYPE OF D, and sum the slices in float into D, rounding once. A 16-bit slice
+limits each chunk's sum to the range and precision of that type: a float16 chunk of 8192 tokens
+whose products average above 8 (loss-scaled weight gradients) is inf even when the chunks cancel to
+a finite result, and finite chunk sums far larger than the result they cancel to are rounded
+relative to their own size (x = 4, dy = +-1.9 in 8192-token blocks: chunk sums near 62000, results
+near 250, 820 ulp; one unchunked WMMA GEMM gives 89). In the kernel that sums the slices, compute
+a block of outputs again from A and B as float dot products over all of k when any element's slices
+are not finite or their root-sum-square exceeds sqrt(3) times the block's largest result (where the
+slices' expected rounding error passes that result's own): random data never meets it, so it costs
+nothing there, needs no host sync, works under graph capture and keeps true inf/NaN inputs
+non-finite; an output where every block meets it is 50-100x slower. Chunking bounds the chain
+length, not cancellation: WMMA's error grows with the size of the partial sums, so ordinary
+unchunked gfx11 GEMMs are also tens of ulp off when large partial sums cancel (29-52 ulp at k =
+8192-32768 with x = 4, dy = +-3 in 4096-token blocks), and cancellation inside one chunk is
+invisible to the slice check (78 ulp at k = 65536 there, where one hipBLASLt GEMM gives 20).
+Realistic loss-scaled gradients (random data, results near 30000) stay at 0.55-0.92 ulp. Do not
+give the
 chunks a float D: on gfx1100 hipBLASLt picks a much smaller tile for a float D (an fp16 4096 x
 40000 x 4096 GEMM takes 139 ms with a float D against 16 ms with an fp16 one; 23-28x through
 torch's `out_dtype=float32`), which made x^T @ dy weight gradients with 40000-65536 tokens
@@ -453,8 +472,9 @@ torch's `out_dtype=float32`), which made x^T @ dy weight gradients with 40000-65
 (at most 16 slices unless that would exceed 2^15) measured 0.9-1.2 ulp for large outputs and <=
 1.2 ulp in every layout up to k = 2^20 on gfx1100, more accurate than 2^15 chunks (1.2-1.5 ulp)
 and no slower. Run each chunk on the library ordinary GEMMs use (rocBLAS, about 1.5x faster than
-hipBLASLt for large outputs on gfx1100) unless rocBLAS would split it again (`ld * chunk >=
-2^30`, where it rounds a 16-bit D per inner chunk). With that, large weight gradients run within
+hipBLASLt for large outputs on gfx1100) unless rocBLAS would split it again
+(`max(lda, ldb) * chunk >= 2^30` in ROCm 10.1, see the rocBLAS entry above, where it rounds a
+16-bit D per inner chunk). With that, large weight gradients run within
 about 1.1x of one plain GEMM. Fold the batch into the chunk calls, tile the slices over m and n to
 a memory budget with balanced tiles, and if a library has no algorithm for one tile, run that
 tile alone through rocBLAS with a float D rather than failing the call after earlier tiles were
