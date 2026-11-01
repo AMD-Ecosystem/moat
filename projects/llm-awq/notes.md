@@ -870,3 +870,29 @@ End-to-end scope: the same as the Linux validations at 90a711b (the random-weigh
 CUDA gate: not re-run (no nvcc and no conda on this host). Recorded PASS at 90a711b (sm_80, V100 node); the only delta since, c7ae2c5, changes setup.py under `IS_ROCM and os.name == "nt"` only, and the c7ae2c5 review showed the CUDA kwargs identical by dry evaluation.
 
 Checks: `python3 utils/jargon.py --port llm-awq` clean; README.md:127 documents the ROCm build next to the CUDA install step; fork tree clean (`git status --porcelain` empty).
+## Validation 2026-11-01 (linux-gfx942, c7ae2c5)
+
+Verdict: completed at fork `moat-port` c7ae2c57d3c642ae25e88f9d8402481b8273ff1e (head_sha, review-passed). jeff asked for this revalidation after the Windows hipBLASLt link round (90a711b -> c7ae2c5). Platform: AMD Instinct MI300X (gfx942:sramecc+:xnack-, CDNA3, wave64), ROCm 7.16 (TheRock SDK in the image venv, HIP 7.16.26385), torch 2.16.0a0+git6c3af02, Python 3.11, one dispatcher-pinned GPU. Everything under `ulimit -c 0`.
+
+Carry-forward not used: `moatlib.py classify llm-awq 90a711b c7ae2c5` -> `mixed` (awq/kernels/setup.py token count differs), so a full real-GPU run. The delta is 14 added lines in setup.py, all inside `IS_ROCM and os.name == "nt"` apart from `extra_link_args = []` being passed to `CUDAExtension`.
+
+Build from a `git archive` copy (no hipify or JIT build inside the clone):
+```
+git -C projects/llm-awq/src archive c7ae2c57d3c6 | tar -x -C /tmp/awq_c7ae2c5
+utils/timeit.sh llm-awq compile -- bash -c "cd /tmp/awq_c7ae2c5/awq/kernels && PYTORCH_ROCM_ARCH=gfx942 MAX_JOBS=32 python setup.py build_ext --inplace"
+```
+ninja `[14/14]`, 0 errors; link line still `-lhipblaslt` (the Linux path is unchanged); `llvm-objdump --offloading` shows only gfx942.
+
+Tests (from /tmp, `PYTHONPATH=/tmp/awq_c7ae2c5/awq/kernels python projects/llm-awq/tests/<script> [arg]`, wrapped in `utils/timeit.sh llm-awq test`), all exit 0, 0 FAIL lines. Compared with the gfx942 run at 90a711b:
+- `attn_test.py`: 443/443 (90a711b: 443/443). fp32 D=128 t=16239 passes, t=16240 (65552 B) and t=20000 (80592 B) refused against 65536 B, unchanged. bf16 D=64 refuses from t=10888 (65544 B) on this arch too, the same as the windows-gfx1151 run reported; the kernel sources did not change in this round, so this is not a delta.
+- `tinychat_e2e.py /tmp/awq_c7ae2c5`: 4/4 (same). argmax 40/40, 39/40, 64/64, 40/40; max |dlogit| 2.441e-03 (1.465e-03 MQA), min cos 0.999999. Identical numbers to 90a711b, including the one near-tie argmax miss on GQA 16/4 D64.
+- `w8a8_test.py`: 25/25 (same); max err 5.374e-03 at 512x4096x4096 with bias, identical to 90a711b. Paths {'hipblaslt': 23, '?': 1}. The `?` is the known profiler gap (2026-10-30 porting-round item 4: the profiler sometimes drops the kernel record, which the classifier labels `?`): a rerun gave the same 25/25 with the `?` on a different shape (first M=33 N=50 K=100, then M=65 N=72 K=37), and both outputs passed the tolerance. Not a kernel failure.
+- `w8a8_simt_test.py <w8a8_gemm_cuda.cu>` (load_inline under /tmp): 7/7 exact (same).
+- `legacy_gemm_test.py`: 8/8 (same), max err 3.894e-03 vs dequant ref, 7.812e-03 vs legacy gemv.
+- `w4a16_test.py /tmp/awq_c7ae2c5`: 30/30 (same), max err 3.473e-03 at 4096->11008 (90a711b: 3.47e-03).
+- `w8a8_handle_test.py <w8a8_gemm_cuda.cu>` (the reviewer's fixed helper, Linux branch `-lhipblaslt`): PASS, 16 threads over 1 device, one handle.
+Total 517 checks, 0 failures.
+
+CUDA gate: not rerun. Recorded PASS at 90a711b (V100 node, sm_80); this host has no CUDA torch include tree (see the 2026-10-30 gfx942 entry). The c7ae2c5 delta changes CUDAExtension kwargs only by `extra_link_args=[]` off Windows ROCm, which the reviewer showed equal to setuptools' default.
+
+Checks: `python3 utils/jargon.py --port llm-awq` clean (needs local `main` and `moat-port` branches in the fork clone); README.md:127 documents the ROCm build; fork tree clean (`git status --porcelain` empty).

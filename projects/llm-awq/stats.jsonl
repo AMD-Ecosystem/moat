@@ -128,3 +128,8 @@
 {"kind":"phase","ts":"2026-11-01T01:49:45Z","phase":"compile","seconds":74.562,"exit":0,"cmd":"bash -c cd /tmp/llmawq-val-c7ae2c5/awq/kernels && python setup.py build_ext --inplace"}
 {"kind":"phase","ts":"2026-11-01T01:53:43Z","phase":"test","seconds":210.860,"exit":0,"cmd":"bash /tmp/llmawq-run/run_all.sh"}
 {"kind":"session","ts":"2026-11-01T01:54:17Z","epoch":1793498057.169566542,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-01T01:47:45Z","epoch":1793497665.224262029,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-01T01:48:11Z","phase":"compile","seconds":0.013,"exit":2,"cmd":"python setup.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-01T01:49:39Z","phase":"compile","seconds":80.732,"exit":0,"cmd":"bash -c cd /tmp/awq_c7ae2c5/awq/kernels && PYTORCH_ROCM_ARCH=gfx942 MAX_JOBS=32 python setup.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-01T01:54:43Z","phase":"test","seconds":296.937,"exit":0,"cmd":"bash /tmp/awq_runtests.sh"}
+{"kind":"session","ts":"2026-11-01T01:55:57Z","epoch":1793498157.450661185,"event":"end","platform":"linux-gfx942"}
