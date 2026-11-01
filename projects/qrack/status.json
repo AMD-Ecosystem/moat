@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-06-04T05:14:47Z",
-  "updated_at": "2026-11-01T04:32:08Z",
+  "updated_at": "2026-11-01T04:35:11Z",
   "head_sha": "b06652a8fdc198ce80147efa4b05b0777b874144",
   "depends_on": [],
   "waivers": {},
@@ -24,11 +24,11 @@
     "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": null,
+      "validated_sha": "b06652a8fdc198ce80147efa4b05b0777b874144",
       "failed_sha": null,
       "started_at": "2026-10-29T23:06:48Z",
-      "completed_at": null,
-      "updated_at": "2026-10-30T00:41:06Z",
+      "completed_at": "2026-11-01T04:35:11Z",
+      "updated_at": "2026-11-01T04:35:11Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -42,7 +42,37 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "reviewer"
+      "last_agent": "validator",
+      "state": "completed"
+    },
+    "windows-gfx1201": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "7086bdbd2608ad6e69cb2fd6c9e2aa7dcd5cf63c",
+      "started_at": null,
+      "completed_at": "2026-06-23T22:49:59Z",
+      "updated_at": "2026-06-23T22:49:59Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "7086bdbd2608ad6e69cb2fd6c9e2aa7dcd5cf63c",
+        "method": "source-class",
+        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
+        "at": "2026-06-23T22:49:59Z"
+      }
     },
     "windows-gfx1101": {
       "state": "completed",
@@ -73,29 +103,6 @@
         "at": "2026-06-23T22:49:59Z"
       }
     },
-    "linux-gfx90a": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "3bf7a75e6d48860a8fc78f55b13da5547609aa7b",
-      "started_at": "2026-06-04T05:24:58Z",
-      "completed_at": "2026-10-30T01:09:17Z",
-      "updated_at": "2026-10-30T01:09:17Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator"
-    },
     "linux-gfx1100": {
       "state": "completed",
       "blocked": false,
@@ -119,14 +126,14 @@
       },
       "last_agent": "validator"
     },
-    "windows-gfx1201": {
+    "linux-gfx90a": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "7086bdbd2608ad6e69cb2fd6c9e2aa7dcd5cf63c",
-      "started_at": null,
-      "completed_at": "2026-06-23T22:49:59Z",
-      "updated_at": "2026-06-23T22:49:59Z",
+      "validated_sha": "3bf7a75e6d48860a8fc78f55b13da5547609aa7b",
+      "started_at": "2026-06-04T05:24:58Z",
+      "completed_at": "2026-10-30T01:09:17Z",
+      "updated_at": "2026-10-30T01:09:17Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -140,13 +147,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator",
-      "carry_forward": {
-        "to": "7086bdbd2608ad6e69cb2fd6c9e2aa7dcd5cf63c",
-        "method": "source-class",
-        "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
-        "at": "2026-06-23T22:49:59Z"
-      }
+      "last_agent": "validator"
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/qrack/pull/1",
@@ -154,6 +155,5 @@
     "arch": "linux-gfx1100",
     "since": "2026-11-01T02:47:17Z",
     "at": "2026-11-01T02:48:20Z"
-  },
-  "porting": null
+  }
 }

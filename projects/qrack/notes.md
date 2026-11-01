@@ -898,6 +898,9 @@ Verdict: review-passed. The 2026-10-31 must-fix is resolved and nothing else cha
 ## Validation 2026-11-01 (linux-gfx1100, revalidate 3bf7a75e -> b06652a8 -- full GPU run)
 Requested by jeff after the 2026-11-01 review pass. Full real-GPU run, no carry-forward: the delta from this arch's last validated_sha (3bf7a75e) includes the fb20e069 source revert of 42bdc3d6 (`moatlib.py classify` returned class=unknown before the clone existed; a source change either way).
 Platform: AMD Radeon Pro W7800 48GB, gfx1100 (RDNA3, wave32), HIP_VISIBLE_DEVICES=1 (dispatcher pin). TheRock ROCm SDK 10.1.0 pip wheels, CMake 3.31.6 from /opt/python-3.11-venv, Ninja. Fresh clone of AMD-Ecosystem/qrack, detached at b06652a8fdc198ce80147efa4b05b0777b874144 (= origin/moat-port tip).
+## Validation 2026-11-01 (linux-gfx942, first validator record, full GPU run at b06652a8)
+Requested by jeff after the 2026-11-01 review pass (42bdc3d6 revert fb20e069 plus the `endif ()` fix b06652a8). Full real-GPU run, no carry-forward (this arch had no validated_sha).
+Platform: MI300X gfx942 (wave64), every GPU run printed "CUDA device #0: AMD Instinct MI300X HF", HIP_VISIBLE_DEVICES=0 (dispatcher pin). TheRock ROCm SDK 10.1.0 pip wheels, CMake from /opt/python-3.11-venv, Ninja. Fresh clone of AMD-Ecosystem/qrack `moat-port` at b06652a8fdc198ce80147efa4b05b0777b874144.
 
 ### Build
 ```
@@ -941,3 +944,41 @@ Each: `$S/_build/unittest --proc-<p> --layer-<l> -d yes`, wrapped in `utils/time
 - Integrity: `git -C projects/qrack/src status --porcelain` empty (untracked _build/ only).
 
 Result: linux-gfx1100 revalidate -> completed at b06652a8 (only failures are the two recorded known upstream failure sets).
+  -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH=$R -DENABLE_TESTS=ON
+cmake --build $S/_build -j56 --target unittest
+```
+Exit 0, 39/39. "OpenCL Support is: OFF", "CUDA Support is: ON", "HIP (ROCm) backend is: ON". 0 CMake warnings (the mismatched-endif warning is gone), 0 compiler warnings, every HIP compile carries a single --offload-arch=gfx942.
+
+### Tests (`ulimit -c 0`, `LD_LIBRARY_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_core/lib`)
+Each: `utils/timeit.sh qrack test -- $S/_build/unittest --proc-<p> --layer-<l> -d yes > <log> 2>&1`.
+
+| proc/layer | b06652a8 (this run) | previous gfx942 run, 3bf7a75e (porter 2026-10-30, with 42bdc3d6) | wall |
+|---|---|---|---|
+| cuda/qengine | All passed, 9612 / 213 | 9612 / 213 | 43s |
+| cuda/qpager | 212 passed, 1 failed: **test_cswap** (tests.cpp:715, 9607/9608 assertions) | 9609 / 213 all passed | 62s |
+| cuda/qunit | All passed, 9613 / 213 | 9613 / 213 | 1s |
+| cuda/qunit-qpager | All passed, 9613 / 213 | 9613 / 213 | 1s |
+| cuda/qunit-multi | All passed, 9610 / 213 | 9610 / 213 | 1s |
+| cuda/qunit-multi-qpager | exit 0, runs 0 test cases (layer not wired in test_main.cpp) | 0 tests | 1s |
+| cuda/qtensornetwork | 209 passed, 4 failed (9367/9371): test_mulmodnout, test_imulmodnout, test_cmulmodnout, test_cimulmodnout (tests.cpp:4628/4649/4747/4774, "ModNOut not implemented!") | 209 / 4 | 0s |
+| hybrid/qunit | All passed, 9613 / 213 | -- (not run on gfx942 before) | 1s |
+| hybrid/qengine | exit 0, runs 0 test cases (not wired) | -- | 0s |
+| cpu/qengine | All passed, 9612 / 213 | 9612 / 213 | 88s |
+| cpu/qpager | All passed, 9609 / 213 | 9609 / 213 | 169s |
+| cpu/qtensornetwork | 209 passed, 4 failed (same 4 cases, same lines) | -- | 1s |
+
+Repeats (`$S/_build/unittest --proc-cuda --layer-<l> <test>`, 10 runs each):
+- qpager test_cswap: 0/10 (expected; known upstream failure, SetAmplitudePage, upstream PR #1044)
+- qengine test_cswap: 10/10
+- qengine test_ucmtrx (deferred-free fix): 10/10
+
+Per-test comparison: cuda/qengine and cuda/qpager run the same 213 test names. The only per-test change against the previous gfx942 run is cuda/qpager test_cswap, pass -> fail, which is the expected effect of reverting 42bdc3d6 and is listed under "Known upstream failures". It fails at the same assertion (tests.cpp:715, register reads all zeros) as on gfx1100 at fb20e069/b06652a8 and on V100 at upstream. The qtensornetwork set is mul/imul/cmul/cimul here, as on gfx90a and gfx1100 (the 2026-10-29 gfx942 entry named it imul/pow/cimul/cpow; the logs here name the four above). No other failure on any layer; the CPU regression layers are unchanged. Slowest GPU cases: test_bell_m 27.3s, test_m_array 13.2s (cuda/qengine).
+
+### Other gates
+- CUDA no-regression gate: already recorded at b06652a8 (CUDA 12.8.93 compile, "Porter 2026-11-01" entry); not rerun.
+- `python3 utils/jargon.py --port qrack`: clean.
+- Documentation: README.md:215-223 "Optional HIP (AMD ROCm) instead of OpenCL", with -DENABLE_OPENCL=OFF required.
+- Integrity: `git -C projects/qrack/src status --porcelain` empty at b06652a8.
+
+Result: linux-gfx942 -> completed at b06652a8.
