@@ -233,3 +233,5 @@
 {"kind":"phase","ts":"2026-11-01T06:30:09Z","phase":"compile","seconds":253.897,"exit":0,"cmd":"bash agent_space/build.sh config"}
 {"kind":"phase","ts":"2026-11-01T06:35:19Z","phase":"test","seconds":61.857,"exit":0,"cmd":"bash agent_space/mmconv.sh /var/lib/jenkins/fleet/jobs/mi300-20261031-231313-oneflow-fix8/moat/agent_space/mmconv"}
 {"kind":"session","ts":"2026-11-01T06:43:32Z","epoch":1793515412.893694493,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-01T07:02:44Z","epoch":1793516564.524070120,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-01T07:28:51Z","epoch":1793518131.240720523,"event":"end","platform":"linux-gfx942"}
