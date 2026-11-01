@@ -3276,3 +3276,93 @@ junit: test_ecp_cart, _cart_ip1, _cart_ipipv, _cart_ipvip_cart, _sph, _sph_ipnuc
 
 ### For jeff
 - test_rtddft_ris_diffuse now fails more often than not under the CI's `-n 4` load on gfx942 (6 of 8 concurrent runs), with correct numbers whenever the fp32 solver converges and fp64 always converging. Upstream's own warning says conv_tol 1e-6 is below what the fp32 solver promises. Whether the upstream PR body names it, or whether an upstream issue should note that the test's `td.conv_tol = 1e-6` with the fp32 default is at the floor, is your call. I recorded it as explained noise floor rather than a GPU finding; if you read your criterion as SCF-only, this platform should instead be failed on it.
+
+## Validation 2026-11-01 (validator, linux-gfx90a MI250X GCD, fork moat-port @ fb95c20) -- COMPLETED
+
+Requested by jeff: validate moat-port at fb95c20 (review-passed) on gfx90a; the CUDA gate already passed at fb95c20 on gfx942, so skipped. Host: AMD Instinct MI250X, one GCD, `gfx90a:sramecc+:xnack-`, `HIP_VISIBLE_DEVICES=0` from the dispatcher, idle at the start. amdgpu 6.16.6, kernel 6.8.0-101. TheRock ROCm SDK 10.1.0 (AMD clang 24.0.0git d6f6cb69). Host CPU 2x EPYC 7702 (Zen 2, AVX2, no AVX-512). Fresh fork clone at fb95c20e943ed113203cf20e1689bc2f5328b7b0 (= origin/moat-port), `protect-fork` run. `classify 5c60311 fb95c20` (this platform's validated_sha): mixed, so a full run. Everything ran under `ulimit -c 0`; no JIT extension builds; no rocBLAS shim.
+
+### Environment (job venv)
+`$FLEET_VENV/bin/python -m pip install 'numpy>=2.0,<2.3' 'scipy>=1.13' cupy-rocm-7-0==14.2.0 pyscf==2.14.0 pytest pyscf-dispersion geometric pytest-timeout` gives numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.5.0, geometric 1.1.1, pytest 7.3.2, pytest-xdist 3.3.1, pytest-timeout 2.4.0. No mcfun (as in the gfx942 reference). Run environment: `PATH=$FLEET_VENV/bin:$PATH LD_LIBRARY_PATH=$(rocm-sdk path --root)/lib PYTHONPATH=<fork>`.
+
+### Build: README ROCm block, clean build dir (`rm -rf build`), libxc on (default), machine-LICM flag kept
+```
+cmake -S gpu4pyscf/lib -B build/temp.gpu4pyscf -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a
+cmake --build build/temp.gpu4pyscf -j 64 -v
+```
+Exit 0 in 284 s (timeit compile). 12 libs (cupy_helper gdft gecp gint gvhf gvhf_md gvhf_rys mgrid_v2 mgrid_v3 pbc sem solvent) plus libxc.so.15 (ExternalProject, HIP backend). 213 `--offload-arch=gfx90a` lines and no other arch; `-disable-machine-licm` on 113 lines; no `-O1`.
+
+### gto/tests/test_ecp.py: 7 passed, 0 skipped
+`python -m pytest gpu4pyscf/gto/tests/test_ecp.py -v -rs`: test_ecp_cart, _cart_ip1, _cart_ipipv, _cart_ipvip_cart, _sph, _sph_ipnuc, _sph_iprinv all PASSED, none skipped (15 s). **On gfx90a the low-memory variant runs exactly the g-shell cases that exceed 64 KB; every other case takes the original kernel.** Kernel launches from `AMD_LOG_LEVEL=4` (`ShaderName`) over agent_space/ecp/run.py (the test's Na2 g-basis molecule; ip, ipipv, ipvip): `type2_cart_ip1_lowmem` 1, `type2_cart_ipipv_lowmem` 3, `type2_cart_ipvip_lowmem` 1, against `type2_cart_ip1_general` 147, `type2_cart_ipipv` 177, `type2_cart_ipvip` 179 original launches. The counts match the five over-limit rows of the gfx942 limit table (ip (4,4,4); ipipv (4,2,4), (4,3,4), (4,4,4); ipvip (4,4,4)), as expected with the same 65536 B per-block limit. (rocprofv3 `--kernel-trace` was tried first; it injects its log lines into CuPy's `hipcc -E -v` probe, so CuPy's JIT fails under it on this host. The HIP log was used instead.)
+
+### Water vs CPU PySCF (agent_space/water.py; def2-svp, grids level 3, conv_tol 1e-12)
+- RKS energy |GPU - CPU|: B3LYP 1.06e-11, PBE 5.97e-12, M06 6.96e-12 Ha; all converged on both sides.
+- RHF energy: sto-3g 3.6e-12, def2-svp 9.7e-12, cc-pvtz 2.9e-11 Ha.
+- RHF gradient max component, GPU gradient on the CPU-converged orbitals: sto-3g 3.4e-14, def2-svp 2.1e-13, cc-pvtz 8.4e-12. With two independently converged SCFs: 4.0e-11 / 3.2e-9 / 1.9e-8 (the density difference conv_tol 1e-12 allows; same as gfx942 and gfx1100).
+
+### multigrid_v2 with 4 concurrent workers (the original concurrency failure)
+`python -m pytest gpu4pyscf/pbc/dft/tests/test_multigrid_v2.py -n 4 --dist load -m 'not slow and not benchmark and not special'` (`--dist load`, so the file's tests are spread over all 4 workers at once), 3 runs after the tree: 26 passed, 3 skipped each time (65 s, 60 s, 60 s); no failure, no hipErrorIllegalAddress. In the tree run, pbc/dft/tests is 156/0/18/0.
+
+### Full tree at fb95c20 (agent_space/runtree.sh: each of the 39 `gpu4pyscf/**/tests` directories in turn, `python -m pytest <dir> -n 4 --dist loadfile -m 'not slow and not benchmark and not special' -q -rfEs --tb=line -p no:cacheprovider --timeout 1800 --junitxml=...`, counts from the junit files; wall 4943 s)
+
+| directory | gfx942 @ c8c9acc p/f/s/e | gfx90a @ fb95c20 p/f/s/e |
+|---|---|---|
+| cc/tests | 4/0/0/0 | 4/0/0/0 |
+| df/hessian/tests | 24/0/0/0 | 24/0/0/0 |
+| df/tests | 200/5/3/0 | 200/5/3/0 |
+| dft/tests | 113/0/9/0 | **112/1/9/0** |
+| dispersion/tests | 16/0/0/0 | 16/0/0/0 |
+| fci/tests | 3/0/0/0 | 3/0/0/0 |
+| geomopt/tests | 0/0/5/0 | 0/0/5/0 |
+| grad/tests | 115/2/0/0 | 115/2/0/0 |
+| gto/tests | 62/0/0/0 | 62/0/0/0 |
+| hessian/tests | 91/0/1/0 | 91/0/1/0 |
+| lib/tests | 39/0/1/0 | 41/0/1/0 |
+| mcscf/tests | 8/0/0/0 | 8/0/0/0 |
+| md/tests | 5/0/0/0 | 5/0/0/0 |
+| mp/tests | 20/1/0/0 | 20/1/0/0 |
+| nac/tests | 71/1/1/0 | 71/1/1/0 |
+| pbc/df/tests | 104/1/7/0 | 104/1/7/0 |
+| pbc/dft/tests | 156/0/18/0 | 156/0/18/0 |
+| pbc/grad/tests | 185/0/2/0 | 185/0/2/0 |
+| pbc/gto/pseudo/tests | 7/0/0/0 | 7/0/0/0 |
+| pbc/gto/tests | 13/0/0/0 | 13/0/0/0 |
+| pbc/hessian/tests | 0/0/6/0 | 0/0/6/0 |
+| pbc/lib/tests | 2/0/0/0 | 2/0/0/0 |
+| pbc/properties/berry/tests | 10/0/2/0 | 10/0/2/0 |
+| pbc/scf/tests | 88/2/1/0 | 88/2/1/0 |
+| pbc/tools/tests | 16/0/0/0 | 16/0/0/0 |
+| pbc/x2c/tests | 1/0/1/0 | 1/0/1/0 |
+| pop/tests | 2/0/0/0 | 2/0/0/0 |
+| properties/tests | 26/0/5/0 | 26/0/5/0 |
+| qmmm/pbc/tests | 3/0/0/0 | 3/0/0/0 |
+| qmmm/tests | 21/0/0/0 | 21/0/0/0 |
+| scf/tests | 159/2/3/0 | 159/2/3/0 |
+| sem/dmp/tests | 1/0/0/0 | 1/0/0/0 |
+| sem/grad/tests | 3/0/0/0 | 3/0/0/0 |
+| sem/gto/tests | 15/0/0/0 | 15/0/0/0 |
+| sem/integral/tests | 27/0/0/0 | 27/0/0/0 |
+| solvent/tests | 126/0/2/0 | 126/0/2/0 |
+| tdscf/tests | 93/2/0/0 | 93/2/0/0 |
+| tests | 0/0/0/0 | 0/0/0/0 |
+| x2c/tests | 8/0/1/0 | **7/1/1/0** |
+| **total** | 1837/16/68/0 | **1837/18/68/0** |
+
+lib/tests +2 passes: the two einsum matvec tests in test_cutensor.py added after c8c9acc (b7c39b6, fb95c20). Same total as gfx1100 at fb95c20.
+
+**15 of the 16 reference failures by name:** RNG fingerprints (df test_jk_energy_per_atom, df test_get_nacv_ee, grad tdrhf/tduhf test_grad_elec, nac test_get_nacv_ee, pbc/scf test_rks_gen_g_hop, test_uks_gen_g_hop); d-aug-cc-pvdz missing (df test_general_contraction, scf test_rhf_df_against_qchem, test_rks_df_against_qchem, tdscf test_rtda_ris_diffuse); rocBLAS trsm accuracy (df test_grad_hybrid, test_j_energy_per_atom); finite-difference strain (pbc/df test_ft_ao_strain_deriv); Krylov cap (tdscf test_krylov_eigenvalue).
+
+**The sixteenth reference class, rocBLAS trsm in DF-MP2, shows on the sibling test.** mp test_dfmp2_kernel_one_gpu (test_dfmp2_utilities.py) passed here; mp/test_dfmp2_utilities_large.py::test_dfmp2_kernel_multi_gpu failed instead (line 88, e_corr_os against CPU PySCF: 1.054e-7 against 7 places). It runs the same `decompose_j3c_gpu` path (mp/dfmp2_addons.py:538/563, fp32 `cupyx.scipy.linalg.solve_triangular` -> `rocblas_strsm`). By substitution (agent_space/trsm_sub.py, both dfmp2 test files, 7 tests): as built, two runs, multi_gpu fails at 1.075e-7 and 1.072e-7, the other 6 pass; with `solve_triangular` in dfmp2_addons replaced by `scipy.linalg.solve_triangular` on the host (same fp32 inputs, cast back to fp32), 7 passed. So it is the reviewed trsm accuracy margin (about 2x the 5e-8 tolerance), which on this card falls on the multi_gpu test rather than one_gpu. Same count in mp/tests (20/1/0/0) as the reference.
+
+**No noise-floor SCF test failed** (properties raman x5, tdscf wb97xv_tda x2, scf test_gdm_rhf, tdscf test_rtddft_ris_diffuse all passed), so none needed the rerun.
+
+**The two failures outside the 16 are host or accuracy effects, the same two that gfx1100 showed at e1ad6bc and fb95c20, with the same numbers here; neither is a GPU wrong result:**
+1. dft/test_numint.py::test_sparse_index, `lib.fp(...) == 103.60117204957997` gives 103.60117204958. Host CPU float summation (agent_space/sparse.py). The four fingerprinted arrays are int32 index arrays (1223/483/270/513 entries). Summing the same products in different orders gives: array 1 lib.fp 103.60117204958, math.fsum 103.6011720495799, sequential 103.60117204958003, numpy pairwise 103.60117204957996 (reference ...57997); array 2 lib.fp 5.61619733134347, sequential 5.616197331343498 (= the reference exactly); array 4 matches. So the reference values are one rounding of the same exact sum, while changing a single index would move a fingerprint by at least 4.3e-3 (the smallest cosine weight on a nonzero entry). This host's numpy is AVX2 (EPYC 7702, no AVX-512), like the gfx1100 host; the gfx942 host passes it.
+2. x2c/test_x2c.py::test_sfx2c1e_cart, hcore max diff 6.124e-11 against `assertAlmostEqual(.., 10)` (5e-11): deterministic accuracy margin, 1.2x (agent_space/x2c_sub.py). Two runs 6.124e-11 each; max|hcore| 33.0 Ha, so relative 1.9e-12. With the generalized eigh (gpu4pyscf.lib.cusolver.eigh) on SciPy: 4.583e-11; with every cp.linalg.eigh and cp.linalg.solve also on NumPy: 4.584e-11 (the integral floor). hipSOLVER's generalized eigh adds 1.5e-11, the same numbers as gfx1100.
+
+So there is no new GPU finding at fb95c20 on gfx90a.
+
+### Checks
+- CUDA gate: skipped as instructed (passed at fb95c20 on gfx942).
+- `python3 utils/jargon.py --port gpu4pyscf`: clean (after `git fetch origin master:master` in the clone).
+- Documentation: the README ROCm block builds as written (only the arch and `-j` changed; `-v` added to count flags).
+- Fork `git status --porcelain`: no tracked modifications (build output untracked; md/tests' `from_h5.xyz`, written to the clone root, removed).
