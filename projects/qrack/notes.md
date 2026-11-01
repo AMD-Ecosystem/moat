@@ -886,3 +886,11 @@ CUDA 12.8 compile gate at b06652a8. The 12.8.0 prefix from the last round was go
 - `python3 utils/jargon.py --port qrack`: clean. Integrity: `git status --porcelain` shows only untracked build output.
 - Docs: unchanged (no build step changed).
 - State: `set-state qrack linux-gfx1100 porting`, `advance-head qrack b06652a8`, then `ported`. Every arch reads revalidate at b06652a8; a reviewer runs next.
+
+## Review 2026-11-01 (linux-gfx1100, reviewer): b06652a8, delta fb20e069...b06652a8
+Reviewed with /pr-review in local-branch mode on a fresh clone of moat-port at b06652a8; findings fact-checked inline. No GPU rerun: nothing needed GPU evidence, and the porter's b06652a8 run was on this same host and sha.
+Verdict: review-passed. The 2026-10-31 must-fix is resolved and nothing else changed.
+
+- Delta: `git diff fb20e069 b06652a8` is the single line cmake/CUDA.cmake:108 `endif(ENABLE_CUDA)` -> `endif ()`. Every if/else/endif in CUDA.cmake now pairs with matching or empty arguments. `git diff 98b47407 HEAD --stat` is the same 10 files as at fb20e069.
+- Configure warnings at b06652a8 (CMake 3.31.6, Ninja): CPU-only (`-DENABLE_OPENCL=OFF -DENABLE_CUDA=OFF`) 0; HIP (`-DENABLE_CUDA=ON -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100`, TheRock 10.1.0 clang 24) 0, CUDA ON / HIP ON; NVIDIA (nvcc 12.8.93, `-DCUDAToolkit_ROOT=<prefix> -DCMAKE_CUDA_ARCHITECTURES=80`) 1, the CMP0074 warning from `find_package(CUDAToolkit)` at CUDA.cmake:18. Upstream 98b47407 with the same NVIDIA command prints the same CMP0074 warning (at its CUDA.cmake:15, the same line before the port's 3 added lines). No mismatched-block warning in any configure.
+- Commit: title 66 chars with `[ROCm]`, AI assistance disclosed in prose, Test Plan in fenced blocks, no Co-Authored-By trailer, ASCII only. `python3 utils/jargon.py --port qrack`: clean. Fork clone porcelain clean.
