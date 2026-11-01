@@ -435,20 +435,26 @@ path; strided batched (including stride 0 broadcast) works the same way. A regre
 needs k = 2^20 to clear a 4-ulp bound robustly; k = 2^15 splits only once. (oneflow: matmul
 primitive, grouped_matmul_bias, fused self-attention.)
 
-**gfx11 WMMA drifts over long k, in every library, with any output type.** The float accumulator
-of `v_wmma_f32_16x16x16_f16` does not round to nearest: one wave carrying it through 2^20
-products is off by 3.4e-3 relative, against 3.1e-5 for an fp32 FMA chain, and the bias is toward
-zero (it grows linearly with k: 4.6e-5 at 2^14, 7.7e-4 at 2^18). So on gfx1100 every hipBLASLt
-algorithm for a long-k fp16 GEMM gives the same error (all 298 that fit 4 MiB, float D too:
-about 6-8 fp16 ulp at k = 2^20), torch matches it digit for digit, and rocBLAS does too wherever
-it does not chunk k itself (cuBLAS N,T, where neither operand is k-major). Choosing another
-algorithm does not help; shortening the chain does: `hipblaslt_ext::GemmTuning::setSplitK(
-ceil(k / 2^15))` on the heuristic's algorithm gives <= 0.84 ulp in every layout and is also much
-faster (the heuristic picks unsplit kernels: 1 x 2^20 x 64 goes from 9.8 ms to ~0.3 ms). Gate it
-on the k length on the WMMA families, not on `ld * k`, and keep a float-output fallback for when
-no algorithm takes the split within the workspace. gfx9 MFMA keeps fp32 accuracy. gfx12 WMMA is
-unmeasured; the WMMA probe in `projects/oneflow/notes.md` (built for gfx1100 and gfx1201) answers it in one run. (oneflow:
-long-k matmul on gfx1100.)
+**gfx11 and gfx12 WMMA drift over long k, in every library, with any output type.** The float
+accumulator of `v_wmma_f32_16x16x16_f16` does not round to nearest: one wave carrying it through
+2^20 products is off by 3.4e-3 relative on gfx1100 and 1.7e-3 on gfx1201, against 3.1e-5 for an
+fp32 FMA chain, and the bias is toward zero (it grows linearly with k). So on gfx1100 every
+hipBLASLt algorithm for a long-k fp16 GEMM gives the same error (all 298 that fit 4 MiB, float D
+too: about 6-8 fp16 ulp at k = 2^20; gfx1201 2.5-3.7), torch matches it digit for digit, and
+rocBLAS does too wherever it does not chunk k itself (cuBLAS N,T, where neither operand is
+k-major). Choosing another algorithm does not help; shortening the chain does. Do the chunking
+yourself rather than asking hipBLASLt for a split-k: cut k into equal chunks of at most 2^15, run
+them as ONE strided-batched GEMM with a float D (batch stride = chunk along k; one more call for a
+shorter last chunk) into per-chunk float slices, and sum the slices in float into the 16-bit D.
+That is <= 1.1 ulp in every layout at k up to 2^20 and fast (transpose_b 2 x 2^20 x 16 in 0.1
+ms). Tile the float slices over m and n to a fixed budget per chunk, so a large output never
+falls back to a slow path for lack of workspace (an earlier split-k version fell to rocBLAS's
+non-WMMA float-D kernel there, up to 265x slower on gfx1100). Two reasons not to rely on
+`GemmTuning::setSplitK`: its partials need m * n * split floats of workspace, and on gfx1201 the
+heuristic's first kernel for k-major A and small outputs (`MT16x16x192`) is wrong by tens of
+ulp for many k above 2^17 and stays wrong with the split, which it accepts and runs. A GEMM
+whose k never exceeds 2^15 stays out of both. Gate on the k length on the WMMA families, not on
+`ld * k`. gfx9 MFMA keeps fp32 accuracy. (oneflow: long-k matmul on gfx1100 and gfx1201.)
 
 ## Headers, includes and build
 

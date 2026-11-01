@@ -144,6 +144,19 @@
       "upstream_issue": null,
       "created_at": "2026-11-01T14:48:16Z",
       "decided": null
+    },
+    {
+      "id": "hipblaslt-gfx1201-mt16x16x192-longk-wrong",
+      "kind": "rocm-bug-report",
+      "component": "hipBLASLt",
+      "summary": "On gfx1201 (Radeon AI PRO R9700, ROCm 10.1.0 SDK, hipBLASLt 1.4.1 = 100401) the heuristic's first algorithm for 16-bit GEMMs with COMPUTE_32F, transA=T, transB=N and a small output (16x2, 8x3, 16x1), Cijk_Alik_Bljk_{HHS,BBS}_..._MT16x16x192_MI16x16x1_..._ISA1201, is wrong for many k above 2^17: fp16 D(16x2) = A^T B is 39 / 86 / 60 / 70 fp16 ulp at k = 163840 / 200000 / 2^18 / 2^20 (0.5 ulp at 2^16 and 2^17, 0.9 at 196608). Not accumulation drift: deterministic, independent of lda and of GemmTuning::setSplitK (which the kernel accepts and honours with a PostGSU pass), and constant inputs sum exactly, so A and B elements of different k are paired. torch a @ b.t() on the same GPU hits the same kernel (64 / 86 / 59 / 64 ulp). Standalone C++ and torch reproducers in projects/oneflow/notes.md (Porter round 2026-11-01, linux-gfx1201, 4423a5fd9). oneflow works around it by never giving hipBLASLt a long-k GEMM on gfx11/gfx12.",
+      "refs": [
+        "projects/oneflow/notes.md: Porter round 2026-11-01 (linux-gfx1201 ... ee180b9d5 -> 4423a5fd9)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-01T17:32:08Z",
+      "decided": null
     }
   ]
 }
