@@ -226,3 +226,5 @@
 {"kind":"phase","ts":"2026-11-01T03:59:47Z","phase":"test","seconds":1865.797,"exit":0,"cmd":"bash agent_space/two3.sh"}
 {"kind":"phase","ts":"2026-11-01T04:02:05Z","phase":"test","seconds":83.165,"exit":0,"cmd":"bash agent_space/suite.sh tensor /var/lib/jenkins/fleet/jobs/mi300-20261031-184422-oneflow-idshuffle-hang/moat/agent_space/suite_ten 7"}
 {"kind":"phase","ts":"2026-11-01T04:11:43Z","phase":"test","seconds":661.870,"exit":0,"cmd":"bash agent_space/suite.sh modules /var/lib/jenkins/fleet/jobs/mi300-20261031-184422-oneflow-idshuffle-hang/moat/agent_space/suite_mod 6"}
+{"kind":"session","ts":"2026-11-01T04:25:10Z","epoch":1793507110.858892889,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-01T05:08:32Z","epoch":1793509712.579983398,"event":"end","platform":"linux-gfx942"}
