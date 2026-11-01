@@ -2347,3 +2347,58 @@ Note for PR prep (not a defect in the port, and not fixable without rewriting th
 ### Verdict
 
 **review-passed.** No findings. Every platform owes revalidation at 00e803d.
+
+## Validation 2026-11-01 (linux-gfx1100, revalidate at 00e803d)
+
+Requested by jeff after Review 2026-11-01 passed 00e803d (ROCM_HOME guard on the fe62b19 hipRAND probe). Platform: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), torch 2.16.0a0+git6c3af02, HIP 7.16.26385 (TheRock SDK wheels in the image venv, hipRAND 3.4.0, so the probe fails and the bundled Philox copy is compiled), `HIP_VISIBLE_DEVICES=1`, everything under `ulimit -c 0`. Fork freshly cloned, `moat-port` = `00e803dec721a28e4f9d6e060fd50dcdcf2925b9`, pre-push hook installed. No JIT extension build anywhere.
+
+Trigger: `validated_sha=99d68f9` -> `head_sha=00e803d`. `moatlib.py classify faster-gaussian-splatting 99d68f9 00e803d` -> `class=mixed arch_independent=False inert=False` (`kernels_mcmc.cuh` and `setup.py`, token count differs). Full real-GPU run, plus a code-object comparison as extra evidence.
+
+### Build
+
+The README recipe is the `PYTORCH_ROCM_ARCH=gfx1100` pip command with `--no-build-isolation`; that would install into the shared image venv, so the same `setup.py` was built in place, as on earlier platforms. Baseline 99d68f9 built the same way in a `git worktree` at `agent_space/fgs_old` (removed afterwards).
+```bash
+export PYTORCH_ROCM_ARCH=gfx1100 MAX_JOBS=32
+utils/timeit.sh faster-gaussian-splatting compile -- bash -c "cd $PWD/projects/faster-gaussian-splatting/src/FasterGSCudaBackend && python setup.py build_ext --inplace"
+utils/timeit.sh faster-gaussian-splatting compile -- bash -c "cd $PWD/agent_space/fgs_old/FasterGSCudaBackend && python setup.py build_ext --inplace"
+```
+Both rc=0, 360 `warning:` lines each (the count the gfx90a porter and reviewer saw at 00e803d; the 378 in the 99d68f9 gfx1100 record came from that run's grep pattern, and here both trees count the same under one pattern), 0 errors. `FGS_HAVE_HIPRAND_PHILOX4X32_10` absent from `build.ninja` (probe fails on hipRAND 3.4.0, as expected).
+
+Code objects: `llvm-objdump --offloading` (from `_rocm_sdk_core/lib/llvm/bin`) on copies under `agent_space/co_{new,old}`: 7 bundles each, all `hip-amdgcn-amd-amdhsa--gfx1100`. `llvm-objdump -d --no-show-raw-insn`: **7/7 disassembly identical** 99d68f9 vs 00e803d, the mcmc object (bundle 1, 669 lines) included. On a hipRAND without `hiprand_Philox4x32_10` the gfx1100 device program is unchanged since 99d68f9.
+
+### GPU tests (`gpu_tests/` plus `agent_space/scripts/noise_dump.py` and `bitcmp.py`)
+
+The two helpers were rewritten again from the description (scratch, not committed): `noise_dump.py` runs `add_noise` for n = 37 / 100003 / 1000000 with random scales, rotations, opacities and means from a fixed CPU generator, seeds 1 / 1234567 / 2^40+99, three chained calls per seed (27 tensors); `bitcmp.py` compares the int32 bit patterns.
+```bash
+utils/timeit.sh faster-gaussian-splatting test -- bash agent_space/run_all.sh
+# ulimit -c 0; noise_dump old/new + bitcmp; run_outputs old/new/new2 + compare old/new, new/new2; new_checks, train_check, det on 00e803d
+```
+rc=0, every sub-step rc=0.
+
+- **add_noise bit-identity vs 99d68f9: 27/27 bit-identical**; 27/27 calls changed their input, so the kernel ran.
+- **new_checks.py: 31/31 PASS.** Philox reference == Random123 KATs; device `add_noise` == Philox4x32-10 + Box-Muller reference to 8.65e-7 over 228 primitives; mean |.| <= 0.0041, std 0.9982..1.0030, max |corr| 4.30e-3; lane halves std 0.9983/1.0021; offset advances; reproducible under `torch.manual_seed`. 4 scenes: inference == training forward (0 diff), training forward deterministic, abs-grad delta within run-to-run (worst 1.46e-6 vs 1.18e-6), triangle inequality 0 violations, all finite, subtile coverage 0.96..1.00.
+- **train_check.py: 3/3 PASS.** FusedAdam vs torch.optim.Adam over 20 steps max abs 3.87e-6; relocation_adjustment sane; 300-iteration fit L1 0.1204 -> 0.0081.
+- **det.py: 3/3, 0 diff** (0 px) for training forward and inference at 200k/100k 1920x1080 and 50k 1280x720.
+- **run_outputs, 99d68f9 vs 00e803d (84 tensors):** 29/84 exactly equal old-vs-new and 29/84 new-vs-new2 (images, filter3d with its inf entries, filter3d_vis in all 7 scenes). Worst relL2 old-vs-new / new-vs-new2: grad_means 2.55e-7 / 2.54e-7, grad_scales 2.67e-6 / 1.65e-6, grad_rotations 1.87e-6 / 2.47e-6, grad_opacities 2.35e-7 / 2.13e-7, grad_sh0 2.46e-7 / 2.71e-7, grad_shrest 2.48e-7 / 2.69e-7, dinfo 2.13e-7 / 2.18e-7, pruning 2.44e-7 / 2.30e-7. The device ISA is identical, so the remaining differences can only be float-atomic ordering; all are inside this arch's recorded run-to-run range (Validation 2026-10-30: worst gradient relL2 3.82e-6).
+
+Comparison with earlier records: gfx1100 at 99d68f9 (Validation 2026-10-31) and at d3e2266: 31/31, 3/3, 0-diff determinism, Adam 3.87e-6, L1 final 0.0080/0.0081, Philox error 8.65e-7. gfx90a at fe62b19 (Porter 2026-11-01): 31/31, Adam 3.81e-6, L1 0.0080, 8.65e-7, 27/27 bit-identical. Every figure here matches; L1 final 0.0081 vs 0.0080 is the same last-digit spread the two earlier gfx1100 runs already show.
+
+Failures: none.
+
+### ROCM_HOME guard (arch-independent, re-checked)
+
+On a `git archive` copy of 00e803d in `agent_space/rh`: `python -c "import runpy, setuptools, torch.utils.cpp_extension as c; c.ROCM_HOME = None; setuptools.setup = lambda **k: None; runpy.run_path('setup.py')"` -> `OSError: ROCM_HOME environment variable is not set. Please set it to your ROCm install root.` (torch's own message, as the review expects).
+
+### CUDA no-regression gate
+
+Not run here: no CUDA toolkit on this host (no `nvcc`, no `/opt/conda`). Covered at this head by the porter: 00e803d changes only `setup.py` inside `hip_compiles`, which only the ROCm branch calls (CUDA path check: 0 subprocess/which calls, unchanged `nvcc_flags`); the CUDA arm of `kernels_mcmc.cuh` is unchanged since 99d68f9 (nvcc 12.8 sm_80 PTX byte-identical, Porter 2026-11-01). The full CUDA build gate last passed at d3e2266 (CUDA gate 2026-10-30, V100).
+
+### Completion checks
+
+- `python3 utils/jargon.py --port faster-gaussian-splatting` -> `jargon: clean`.
+- README: the ROCm build (`PYTORCH_ROCM_ARCH`, ROCm 7.2+ recommended, hipRAND/bundled Philox bullet naming no version) sits next to the CUDA instructions in Setup and Requirements.
+- `git -C projects/faster-gaussian-splatting/src status --porcelain` -> empty after the build and test run.
+
+### Verdict
+
+**completed**, `linux-gfx1100`, `validated_sha=00e803d`.
