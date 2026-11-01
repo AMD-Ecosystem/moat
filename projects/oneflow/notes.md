@@ -3076,3 +3076,62 @@ int main(int argc, char** argv) {
 - `git -C projects/oneflow/src status --porcelain`: no modified tracked files. `moat-port` pushed d9e41753e..ee180b9d5 to the explicit fork URL; the fleet guard refused a push to the remote name `origin`, which it cannot classify. `advance-head` ee180b9d5.
 - Lesson promoted: `cuda-to-rocm/references/fault-classes.md` (after the rocBLAS long-k entry) and a SKILL.md index line, "gfx11 WMMA drifts over long k".
 - Owed: review of ee180b9d5, then validation at ee180b9d5 on gfx1100, gfx942 and gfx90a (gfx9 takes the same calls with split 1, but `cublas_v2.h` changed), plus the gfx1201 WMMA probe if jeff wants gfx12 confirmed.
+
+## gfx1201 long-k WMMA probe 2026-11-01 (linux-gfx1201, information only; answers "gfx1201 (not measured here ...)" of the ee180b9d5 porter round)
+
+jeff's question: does gfx12 need the gfx11 treatment (split-k for long-k 16-bit GEMMs), as ee180b9d5 assumes? No state change, no lock, fork untouched. Host: Radeon gfx1201, `HIP_VISIBLE_DEVICES=0` pinned by the dispatcher, ROCm SDK wheels in the image venv (hipBLASLt 1.4.1 = 100401, HIP 7.16.26385), torch 2.16.0a0+git6c3af02, `ulimit -c 0`. oneflow itself was not built or run here; the hipBLASLt probe reproduces the port's selection rule instead. Build (in `agent_space/g12`, no JIT builds): `$D/lib/llvm/bin/clang++ -O2 -std=c++17 -x hip --rocm-path=$D --offload-arch=gfx1100 --offload-arch=gfx1201 -I$D/include <file>.cpp -L$D/lib -Wl,-rpath,$D/lib -lhipblaslt -lamdhip64` with `D=.../site-packages/_rocm_sdk_devel` (`--rocm-path` is needed, otherwise clang cannot find the device library).
+
+### Answer
+- **gfx12 drifts like gfx11, at about half the magnitude, so it does need split-k.** The WMMA accumulator is biased toward zero on gfx1201 too; unsplit hipBLASLt fp16 at k = 2^20 is 2.5-3.7 ulp (gfx1100: 5.8-8.3), and the port's split ceil(k / 2^15) brings every drifting case to <= 0.62 ulp. The 2^20 fp16 cases sit just under the 4-ulp bound unsplit, so gfx12 needs the split, with little margin to spare.
+- **ee180b9d5 would still fail `test_matmul_long_k` on gfx1201, for a different reason.** For cuBLAS T,N with a small output (oneflow `matmul transpose_b` 2 x 16, and `grouped_matmul` (3, 8, k)), hipBLASLt's top-1 heuristic kernel is `Cijk_Alik_Bljk_{HHS,BBS}_..._MT16x16x192_MI16x16x1_..._ISA1201_..._WG16_2_1`. At large k it is wrong far beyond drift: fp16 28-71 ulp, bf16 3.5-8.9 ulp. The error does not follow k monotonically (k = 196608, 245760, 258048, 261120, 262080 give <= 1.5 ulp; 212992, 229376, 253952, 260096, 262144, 786432, 2^20 give 41-91 ulp), it is deterministic (3 of 3 runs bit-identical), and `GemmTuning::setSplitK` neither changes it nor is refused by `isAlgoSupported`. The port takes the first of 8 heuristic algorithms that accepts the split, so it picks this kernel: modelled result 71.06 ulp fp16 for `matmul transpose_b` (bound 4) and 48.10 ulp for grouped 3 x 8. That is a hipBLASLt gfx1201 kernel defect (not WMMA drift, and not specific to oneflow): torch's `a @ b.t()` at the same shape is 63.6 ulp fp16 / 7.9 ulp bf16 through the same kernel. Every other kernel in the heuristic lists is <= 0.62 ulp with the split.
+
+### WMMA instruction probe (`wmma.cpp` from the porter round, unchanged, gfx12 operand path)
+K = 16 row 6.1e-8 (layout right). `wmma_err` / `fma_err` (max abs / max |ref|; fp16 ulp = 4.88e-4), uniform(-1, 1):
+
+| K | 1024 | 16384 | 65536 | 262144 | 1048576 |
+|---|---|---|---|---|---|
+| WMMA gfx1201 | 1.18e-6 | 2.10e-5 | 1.07e-4 | 3.82e-4 | **1.68e-3** |
+| FMA chain | 1.48e-6 | 3.39e-6 | 6.26e-6 | 1.07e-5 | 3.11e-5 |
+| WMMA gfx1100 (porter round) | | | | | 3.37e-3 |
+
+`DIST=positive`: mean signed WMMA error -1.33 / -21.4 / -341 at K = 2^16 / 2^18 / 2^20 (values about 16k / 65k / 262k), a bias toward zero; gfx1100 had -42.6 at 2^18. So gfx1201 does not round to nearest either; the drift is linear in K at about half the gfx11 rate.
+
+### Unchanged `lt_longk.cpp` (fp16 T,N 16 x 2, top-1, split k / 2^14)
+```
+gfx1201, hipBLASLt 100401
+k ulp_unsplit ulp_splitk kernel
+16384 0.79 0.79 Cijk_Alik_Bljk_HHS_BH_Bias_SHB_HA_S_SAB_SCD_SAV_UserArgs_MT16x16
+65536 0.52 0.52 Cijk_Alik_Bljk_HHS_BH_Bias_SHB_HA_S_SAB_SCD_SAV_UserArgs_MT16x16
+262144 60.50 59.47 Cijk_Alik_Bljk_HHS_BH_Bias_SHB_HA_S_SAB_SCD_SAV_UserArgs_MT16x16
+1048576 70.46 71.06 Cijk_Alik_Bljk_HHS_BH_Bias_SHB_HA_S_SAB_SCD_SAV_UserArgs_MT16x16
+```
+
+### hipBLASLt per layout (`agent_space/g12/lt_layouts.cpp`, output `sweep.txt`)
+`lt_layouts <f16|bf16> <opA> <opB> <M> <N> <log2 k> 8`: cuBLAS column-major form of each test case, uniform(-1, 1), COMPUTE_32F, 16-bit D, 4 MiB workspace preference, 8 heuristic algorithms each run unsplit and with the port's split ceil(k / 2^15) (2 / 8 / 32); "port" = first algorithm accepting the split, which was algorithm 0 in all 36 cases. Error in ulp of the type vs float64 of the rounded inputs, k = 2^16 / 2^18 / 2^20:
+
+| test case (cuBLAS form) | top-1 kernel (all three k) | fp16 unsplit | fp16 port split | bf16 unsplit | bf16 port split |
+|---|---|---|---|---|---|
+| matmul (N,N 16x2) | `Ailk_Bljk_*_MT16x16x32` | 0.48 / 1.21 / 3.55 | 0.48 / 0.46 / 0.31 | 0.52 / 0.59 / 0.56 | same |
+| transpose_b (T,N 16x2) | `Alik_Bljk_*_MT16x16x192` | 0.52 / **60.50 / 70.46** | 0.52 / **59.47 / 71.06** | 0.80 / **7.05 / 8.87** | same |
+| transpose_a (N,T 16x2) | `Ailk_Bjlk_*_MT16x16x32` | 0.51 / 1.10 / 3.70 | 0.51 / 0.57 / 0.47 | 0.61 / 0.51 / 0.77 | 0.61 / 0.51 / 0.62 |
+| bmm, broadcast (N,N 16x1 per batch) | `Ailk_Bljk_*_MT16x16x32` | 0.41 / 0.72 / 2.53 | 0.41 / 0.33 / 0.40 | 0.43 / 0.51 / 0.52 | same |
+| grouped (1, 16, k) (T,N 16x1) | `Alik_Bljk_*_MT32x32x128`, workspace 128 KiB (already GSU) | 0.43 / 0.48 / 0.59 | 0.47 / 0.63 / 0.59 | 0.75 / 0.41 / 0.26 | same |
+| grouped (3, 8, k) (T,N 8x3) | `Alik_Bljk_*_MT16x16x192` | 0.23 / **46.36 / 48.95** | 0.23 / **46.36 / 48.10** | 0.50 / **5.79 / 6.10** | same |
+
+At k = 2^20 the other heuristic entries: for T,N 16x2, MT32x32x128 and MT32x32x256 (128 KiB workspace) are 0.59 unsplit, MT64x16x128 / MT64x64x32 / MT128x64x64 are 3.62 unsplit and 0.59 split, and MT16x16x192 appears again at position 7 (70.46). For T,N 16x1 MT16x16x192 is position 1 (55.22 fp16, 6.84 bf16), and for 8x3 positions 0 and 4. bf16 drift is invisible at 2^20 (an 8x coarser ulp), except through MT16x16x192.
+
+### torch (`agent_space/g12/torch_layouts.py`, the test's seven cases in row-major torch form, seed 0, kernels from `AMD_LOG_LEVEL=3` ShaderName)
+| case | fp16 k = 2^16 / 2^18 / 2^20 | bf16 | kernel |
+|---|---|---|---|
+| matmul (2,k)@(k,16) | 0.53 / 1.06 / 3.03 | 0.40 / 0.48 / 0.33 | `MT16x16x32` |
+| transpose_b (2,k)@(16,k)^T | 0.88 / **58.84 / 63.64** | 0.70 / **7.29 / 7.91** | `MT16x16x192` |
+| transpose_a (k,2)^T@(k,16) | 0.70 / 1.26 / 3.07 | 0.60 / 0.50 / 0.45 | `Ailk_Bjlk_*_MT16x16x32` |
+| bmm (2,1,k)@(2,k,16) | 0.28 / 0.79 / 0.86 | 0.41 / 0.69 / 0.51 | `MT64x64x64` + `PostGSU16` |
+| broadcast (1,k)@(2,k,16) | 0.59 / 0.44 / 0.54 | 0.67 / 0.51 / 0.46 | `MT64x64x64` + `PostGSU16` |
+| (1,k)@(16,k)^T | 0.67 / 0.70 / 1.03 | 0.53 / 0.90 / 0.43 | `MT32x32x128` + `PostGSU16` |
+| (3,k)@(8,k)^T | 0.88 / **51.74 / 41.18** | 0.53 / **6.41 / 5.06** | `MT16x16x192` |
+
+torch's numbers differ slightly from the hipBLASLt probe's because the inputs come from a different generator; the kernels match the probe's top-1 except where torch's batched path picks a GSU kernel.
+
+### For the porter (a decision for jeff; nothing changed)
+Keeping gfx12 in `OfMatrixCoreAccumulationDrifts` is right. On top of that, gfx1201 needs the MT16x16x192 kernel kept out of long-k GEMMs; the probe shows that taking the next heuristic entry that is not this kernel would give <= 0.62 ulp in every case here. Ways to do that include skipping algorithms whose `getKernelNameFromAlgo` has `MT16x16x192` on gfx12, or preferring an algorithm with a nonzero workspace (GSU); either is a kernel-name or heuristic-order rule and should be validated with oneflow on this host. This is a second hipBLASLt library defect, separate from `hipblaslt-gfx1100-longk-half-accuracy`, and it also hits plain torch matmul on gfx1201; registering or reporting it is jeff's decision. The gfx1201 validator at ee180b9d5 should expect `test_matmul_long_k` to fail at `matmul transpose_b float16`.
