@@ -2454,3 +2454,31 @@ The probe's success arm (a hipRAND that declares `hiprand_Philox4x32_10`): this 
 ### Verdict
 
 **completed**, `linux-gfx90a`, `validated_sha=00e803dec721a28e4f9d6e060fd50dcdcf2925b9`.
+
+## Validation 2026-11-01 (windows-gfx1151, revalidate at 00e803d)
+
+Requested by jeff (Decision 25) after linux-gfx90a and linux-gfx1100 passed 00e803d. Platform: AMD Radeon 8060S (gfx1151, RDNA3.5, wave32 APU), Windows 11, torch 2.12.0+rocm7.14.0a20260519 (`agent_space/torch_venv`, Python 3.13), env from `agent_space/win_torch_env.sh` (clang-cl host), `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`, one GPU process at a time. Fork cloned fresh outside any shared checkout (`D:/Develop/fgsval/src`), `moat-port` = `00e803dec721a28e4f9d6e060fd50dcdcf2925b9`, no source edit. ROCm 7.14 hipRAND predates 3.5.0, so the bundled-Philox arm was compiled. Baseline for bit identity: the 99d68f9 build's outputs kept from the earlier laptop run (`agent_space/fgs99/noise_new.pt`, `new.pt`).
+
+### Build
+```bash
+source agent_space/win_torch_env.sh; export MAX_JOBS=16
+utils/timeit.sh faster-gaussian-splatting compile -- "$TORCH_PY" -m pip install -e D:/Develop/fgsval/src/FasterGSCudaBackend --no-build-isolation
+```
+PASS, rc=0, 52 s from clean; `_C.cp313-win_amd64.pyd` built.
+
+### Tests (GPU, real hardware; `gpu_tests/` plus scratch `noise_dump.py`, `bitcmp.py` from the 99d68f9 run), all sub-steps rc=0, 25 s total
+- **add_noise bit identity vs 99d68f9: 27/27 bit-identical.**
+- **new_checks.py: 31/31 PASS.** add_noise vs Philox4x32-10 + Box-Muller reference 8.65e-7 over 228 primitives; max |corr| 4.30e-3; inference == training forward (0 diff) on 4 scenes; triangle inequality 0 violations.
+- **train_check.py: 3/3 PASS.** FusedAdam vs torch.optim.Adam 3.73e-6; 300-iteration L1 0.1204 -> 0.0081.
+- **det.py: 3/3, 0 diff** (200k/100k 1920x1080, 50k 1280x720).
+- **run_outputs 99d68f9 vs 00e803d (84 tensors):** images, filter3d_vis bit-identical (filter3d inf masks equal); gradients/dinfo/pruning differ by float-atomic order only; worst relL2 old-vs-new 4.71e-6 (grad_scales, 200k), new-vs-new2 4.72e-6, same run-to-run level (earlier laptop run 2.5e-6 to 2.9e-6; Linux up to 3.8e-6; the 200k scene on this APU spreads a little wider).
+Same figures as the Linux validations at this head. No crash, hang, DLL or runtime error. Failures: none.
+
+### ROCM_HOME guard
+`c.ROCM_HOME = None; setuptools.setup = lambda **k: None; runpy.run_path('setup.py')` -> `OSError: ROCM_HOME environment variable is not set. Please set it to your ROCm install root.`
+
+### Not done
+Code-object diff of the `.pyd` against a 99d68f9 build (llvm-objdump --offloading does not read COFF; the Linux gfx1100 record shows 7/7 identical ISA; here the add_noise 27/27 and run_outputs bit-identical images stand in). CUDA gate: no toolkit on this host; recorded by Linux rounds. Jargon/README: verified clean by the Linux validations at this same head; no local project clone here, content is identical. Fork `git status --porcelain`: only the untracked `.pyd`.
+
+### Verdict
+**completed**, `windows-gfx1151`, `validated_sha=00e803dec721a28e4f9d6e060fd50dcdcf2925b9`.

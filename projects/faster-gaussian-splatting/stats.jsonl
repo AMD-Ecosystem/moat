@@ -137,3 +137,5 @@
 {"kind":"phase","ts":"2026-11-01T07:07:08Z","phase":"compile","seconds":48.910,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261031-235933-val-fgs-00e8/moat/agent_space/fgs_old/FasterGSCudaBackend && python setup.py build_ext --inplace"}
 {"kind":"phase","ts":"2026-11-01T07:08:11Z","phase":"test","seconds":38.675,"exit":0,"cmd":"bash agent_space/run_all.sh"}
 {"kind":"session","ts":"2026-11-01T07:09:53Z","epoch":1793516993.680356017,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-01T07:34:59Z","phase":"compile","seconds":52.208,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe -m pip install -e D:/Develop/fgsval/src/FasterGSCudaBackend --no-build-isolation"}
+{"kind":"phase","ts":"2026-11-01T07:35:43Z","phase":"test","seconds":25.032,"exit":0,"cmd":"bash /c/Users/<user>/AppData/Local/Temp/claude/D--Develop-moat/240e27b6-86c3-48b3-a2da-9b2c2b63178f/scratchpad/test.sh"}
