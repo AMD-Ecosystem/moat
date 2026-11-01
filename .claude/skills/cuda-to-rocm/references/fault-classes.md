@@ -444,16 +444,25 @@ too: about 6-8 fp16 ulp at k = 2^20; gfx1201 2.5-3.7), torch matches it digit fo
 rocBLAS does too wherever it does not chunk k itself (cuBLAS N,T, where neither operand is
 k-major). Choosing another algorithm does not help; shortening the chain does. Do the chunking
 yourself rather than asking hipBLASLt for a split-k: cut k into equal chunks of at most 2^15, run
-them as ONE strided-batched GEMM with a float D (batch stride = chunk along k; one more call for a
-shorter last chunk) into per-chunk float slices, and sum the slices in float into the 16-bit D.
-That is <= 1.1 ulp in every layout at k up to 2^20 and fast (transpose_b 2 x 2^20 x 16 in 0.1
-ms). Tile the float slices over m and n to a fixed budget per chunk, so a large output never
-falls back to a slow path for lack of workspace (an earlier split-k version fell to rocBLAS's
-non-WMMA float-D kernel there, up to 265x slower on gfx1100). Two reasons not to rely on
-`GemmTuning::setSplitK`: its partials need m * n * split floats of workspace, and on gfx1201 the
-heuristic's first kernel for k-major A and small outputs (`MT16x16x192`) is wrong by tens of
-ulp for many k above 2^17 and stays wrong with the split, which it accepts and runs. A GEMM
-whose k never exceeds 2^15 stays out of both. Gate on the k length on the WMMA families, not on
+them as batched GEMMs (batch stride = chunk along k) that write each chunk's product to its own
+slice IN THE 16-BIT TYPE OF D, and sum the slices in float into D, rounding once. Do not give the
+chunks a float D: on gfx1100 hipBLASLt picks a much smaller tile for a float D (an fp16 4096 x
+40000 x 4096 GEMM takes 139 ms with a float D against 16 ms with an fp16 one; 23-28x through
+torch's `out_dtype=float32`), which made x^T @ dy weight gradients with 40000-65536 tokens
+10-28x slower than one unchunked GEMM. One rounding per slice costs little: chunks of about 2^13
+(at most 16 slices unless that would exceed 2^15) measured 0.9-1.2 ulp for large outputs and <=
+1.2 ulp in every layout up to k = 2^20 on gfx1100, more accurate than 2^15 chunks (1.2-1.5 ulp)
+and no slower. Run each chunk on the library ordinary GEMMs use (rocBLAS, about 1.5x faster than
+hipBLASLt for large outputs on gfx1100) unless rocBLAS would split it again (`ld * chunk >=
+2^30`, where it rounds a 16-bit D per inner chunk). With that, large weight gradients run within
+about 1.1x of one plain GEMM. Fold the batch into the chunk calls, tile the slices over m and n to
+a memory budget with balanced tiles, and if a library has no algorithm for one tile, run that
+tile alone through rocBLAS with a float D rather than failing the call after earlier tiles were
+written. Two reasons not to rely on `GemmTuning::setSplitK`: its partials need m * n * split
+floats of workspace, and on gfx1201 the heuristic's first kernel for k-major A and small outputs
+(`MT16x16x192`) is wrong by tens of ulp for many k above 2^17 and stays wrong with the split,
+which it accepts and runs. A GEMM whose k never exceeds 2^15 stays out of both. The gfx1100 costs
+above were not measured on gfx1201. Gate on the k length on the WMMA families, not on
 `ld * k`. gfx9 MFMA keeps fp32 accuracy. (oneflow: long-k matmul on gfx1100 and gfx1201.)
 
 ## Headers, includes and build

@@ -101,7 +101,7 @@ Scan this list against what you are doing. If any line could apply, open
 - Exact float-equality branches fed by `__fdividef` produce out-of-range indices.
 - HIP device `cuda::min`/`max` NaN-selection can differ from host `std::min`/`max`.
 - rocBLAS `gemm_ex` with a 16-bit D splits long k (ld * k >= 2^30) and rounds D once per chunk; send those GEMMs to hipBLASLt.
-- gfx11/gfx12 WMMA float accumulation drifts with k (biased toward zero) in hipBLASLt and rocBLAS alike; run k-chunks of <= 2^15 yourself as one batched float-D GEMM, not hipBLASLt split-k (a gfx1201 kernel is wrong at large k even when split).
+- gfx11/gfx12 WMMA float accumulation drifts with k (biased toward zero) in hipBLASLt and rocBLAS alike; run k-chunks of <= 2^15 yourself with 16-bit per-chunk outputs summed in float (a float D is 8-28x slower on gfx1100), not hipBLASLt split-k (a gfx1201 kernel is wrong at large k even when split).
 
 **Headers, includes and build**
 - A shared compat header must be host-includable: gate device-only includes behind `__CUDACC__`/`__HIPCC__`, or CUB leaks into host TUs. Hit independently by two projects.

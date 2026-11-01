@@ -3405,3 +3405,151 @@ Verdict: **changes-requested**, two blockers. Every finding was fact-checked on 
 - Commit 4423a5fd9: the title `[ROCm] Run long-k 16-bit GEMMs as k-chunks on gfx11 and gfx12` is 61 characters. The message has the AI disclosure and a fenced test plan, and `utils/prose.py` is clean. Its timing claims are labelled as R9700 measurements and hold there. The superseded ee180b9d5 message (73-character title, "0.3 ms", "split-k") goes to the PR-prep message cleanup, not a blocker. `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038.
 - `git -C projects/oneflow/src status --porcelain`: clean.
 - Not tested: m > 2^20 (row tiles at the default budget), which needs a >= 64 GiB operand at k > 2^15. Row tiles were covered with the small budget instead.
+
+## Porter round 2026-11-01 (linux-gfx1100, two W7800; answers "Review 2026-11-01 (reviewer, linux-gfx1100 ... ee180b9d5..4423a5fd9)", verdict changes-requested, two blockers)
+
+jeff's direction: long-k half-precision GEMM must be right on ROCm, correctness first, test bound unchanged; within that, no 10-28x slowdown on ordinary weight-gradient shapes if an accurate faster route exists. First try the reviewer's second direction (16-bit chunk outputs summed in float), choose the chunk length by measured accuracy versus cost, fold the batch; fix the narrow-tile abort with a per-tile fallback plus a test; correct the skill lesson; add the gfx1100 float-D slowness to the hipBLASLt registry item; no upstream action. Host: two Radeon Pro W7800 48GB (gfx1100), `HIP_VISIBLE_DEVICES=0,1` pinned by the dispatcher, ROCm 10.1.0 SDK wheels (hipBLASLt 1.4.1 = 100401), torch 2.16.0a0+git6c3af02 (the image's, symlinked read-only into `$FLEET_VENV-base-links`), `ulimit -c 0`, `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git`, `PYTHONDONTWRITEBYTECODE=1`, no JIT extension builds. Lock `changes-requested -> porting`. Fork `moat-port` 4423a5fd9 -> **b269f0d80**: one new commit, fast-forward, no amend or force push.
+
+### Build
+Fresh clone of the fork in `projects/oneflow/src` (from the review10 job's clone, origin set to the fork URL), `protect-fork` run. Job venv: `pip install -r dev-requirements.txt fsspec pytest-timeout pytest-repeat mkl-static mkl-include opencv-python==4.11.0.86` into `$FLEET_VENV`, plus the `pywrap` python3 that drops `--user`; review10's ccache copied. `CMAKE_HIP_ARCHITECTURES=gfx1100 ./build_rocm.sh all`, `JOBS=32`, `utils/timeit.sh oneflow compile`: rc=0, 2050 steps; later edits rebuilt incrementally with `ninja -j32`, rc=0. (About 30 min of wall time was lost to a wait loop whose `pgrep -f` matched itself; not a build problem.)
+
+### What the time goes to
+- Standalone (`agent_space/lt/lt_floatd.cpp`, source below): hipBLASLt fp16 A^T B with COMPUTE_32F, heuristic top-1, 4 MiB workspace, fp16 D vs fp32 D: 4096 x 40000 x 4096 **16.2 vs 138.8 ms**; 4096 x 20000 x 4096 8.4 vs 69.5; 4096 x 32768 x 4096 13.5 vs 113.8; 1024 x 65536 x 1024 1.85 vs 14.7 ms. The float D gets `Cijk_Alik_Bljk_HSS_..._MT32x32x64`, the fp16 D `HHS_..._MT256x128x32` (or MT128x64x32). torch's `out_dtype=float32` (reviewer) is 23-28x; the top-1 standalone is 8-9x. Added to registry item `hipblaslt-gfx1100-longk-half-accuracy` (summary and ref; no upstream action).
+- First version of this round (16-bit slices, chunks of 2^15, all through hipBLASLt): 4096 x 40000 x 4096 x^T @ dy 35-42 ms, 4096 x 65536 x 4096 63 ms (d9e41753e: 21 / 34 ms). rocprofv3 `--kernel-trace --stats`: the time is in the chunk GEMM itself, `Cijk_Ailk_Bjlk_HHS_..._MT64x96x32` (64 ms per call for 4096 x 65536 x 4096 bf16/fp16), not in the slice sum or the allocation. Separate per-chunk calls instead of one batched call: within 5%.
+- torch on this GPU (`TORCH_BLAS_PREFER_HIPBLASLT` 1 / 0, x^T @ dy fp16): 4096 x 32768 x 4096 26.1 / **17.6** ms; 4096 x 20000 x 4096 17.2 / 10.5; 1024 x 32768 x 1024 1.98 / 1.47; 8192 x 24576 x 1024 10.0 / 6.7. So rocBLAS is about 1.5x faster than hipBLASLt for these layouts on gfx1100.
+
+### The rule chosen (b269f0d80, `hip_long_k_gemm.cu`; `cublas_v2.h` comment only)
+- Each k-chunk writes its product **in the type of D** to its own slice; `StoreTile` sums the slices in float, adds beta * D and rounds once (unchanged).
+- A chunk runs on **rocBLAS** (`hipblasGemmStridedBatchedEx`, 16-bit D) when `max(lda, ldb) * chunk < 2^30`, i.e. when rocBLAS will not split it into inner k-chunks that it rounds to D one by one (the rocBLAS long-k fault this port started from); on **hipBLASLt** otherwise (the k-major skinny shapes, where lda = k). So every library call on gfx11/gfx12 has k <= 2^15 and a single rounding per slice.
+- **Chunk length** (sweep below): about 2^13, `slices = max(ceil(k / 2^15), min(ceil(k / 2^13), 16))`, chunk = ceil(k / slices). So k = 40000 -> 5 chunks of 8000, 65536 -> 8 x 8192, 2^17 -> 16 x 8192, 2^18 -> 16 x 16384, 2^20 -> 32 x 32768.
+- **Batch folded**: one call per chunk with the batch as the batch dimension, or one call per batch with the chunks as the batch (plus one for a shorter last chunk), whichever needs fewer calls.
+- **Tiles**: `ONEFLOW_EP_CUDA_LONG_K_GEMM_MAX_TILE_SIZE` now counts 16-bit elements across all slices (default 2^25 = 64 MiB); each output element needs max(slices, 2) units (2 = one float for the rocBLAS float path). Whole batches per tile when the output fits, else balanced row/column tiles (`BalancedPiece`: equal pieces, never a lone narrow tail unless the tile itself is 2 wide).
+- **Blocker 2**: when hipBLASLt returns NOT_SUPPORTED for a tile, that tile alone runs rocBLAS `gemm_ex` with a float D (accurate on gfx1100 at k = 2^20, see the d9e41753e porter round) and the call continues; nothing was stored for the refused tile, so D is written exactly once. With a 16-bit D, hipBLASLt refused none of the small shapes probed (`agent_space/lt/refuse.cpp`: every layout, m, n in {1, 2, 3, 8, 16, 256, 1024}, k = 8192, lda = ldb = 2^20, batch 1 and 4; it refuses only float-D shapes with a 1-wide side), so the abort cannot be reproduced at b269f0d80 as it was at 4423a5fd9; the fallback branch was exercised with a temporary local switch (not committed) that refused every tile after the first: `edge.py` at tile budget 1000 and 10240, and tail3 (40000, 1025)^T @ (40000, 1024) with 1-wide last tiles, all correct.
+- gfx9 unchanged: the single hipBLASLt call with the 16-bit D; `ONEFLOW_EP_CUDA_LONG_K_GEMM_USE_HIPBLASLT=0` still means rocBLAS with a float D in tiles everywhere.
+
+### Chunk length: accuracy vs cost (`agent_space/p/chunk_sweep.txt`; a fixed chunk forced by a temporary env override, then removed; tile 2^24 per slice)
+| chunk | 4096x40000x4096 T,N fp16 | 4096x65536x4096 T,N | 1024x65536x1024 T,N | 4096x65536x4096 N,N | 8192x49152x1024 T,N | 128x65536x128 N,N | test layouts k = 2^16..2^20, worst |
+|---|---|---|---|---|---|---|---|
+| 2^13 | 22.0 ms 1.13 ulp | 35.2 / 0.95 | 2.39 / 0.96 | 35.1 / 1.02 | 13.8 / 1.10 | 0.100 / 0.86 | 1.15 |
+| 2^14 | 22.1 / 1.34 | 35.5 / 1.04 | 2.45 / 1.15 | 45.7 / 1.07 | 13.9 / 1.25 | 0.101 / 0.85 | 1.16 |
+| 2^15 | 22.7 / 1.35 | 35.8 / 1.22 | 2.55 / 1.30 | 46.7 / 1.27 | 14.5 / 1.50 | 0.181 / 1.04 | 1.32 |
+| 2^16 (one chunk up to 2^16) | 22.9 / 0.94 | 36.8 / 0.91 | 2.81 / 0.98 | 46.2 / 1.01 | 14.5 / 0.94 | 0.232 / 0.77 | 1.56 |
+
+Shorter chunks are more accurate (less WMMA drift per slice; the extra slice roundings average out) and no slower, sometimes faster (N,N 4096 x 65536 x 4096 35 vs 46 ms). 2^16 is shown only for comparison: chains above 2^15 are what the gfx1201 kernel defect and the drift need avoided, so it is not a candidate. The cap of 16 slices bounds memory (k = 2^20 at 2^13 would be 128 slices).
+
+### Tile budget (`agent_space/p/tile_sweep.txt`, final rule, fp16 / bf16)
+2^24 / 2^25 / 2^26 elements: 4096 x 40000 x 4096 T,N 26.5 / 23.5 / 22.7 ms; 4096 x 65536 x 4096 T,N 38.6 / 36.7 / 36.4; other shapes equal. Default 2^25 (64 MiB as 16-bit).
+
+### Timing at b269f0d80 against the reviewer's table (`agent_space/r/perf2.py`, `perf_final.txt`; oneflow `flow.matmul`, uniform(-1, 1), 10 pipelined calls; error = max abs / max |float64 ref| in ulp of the type; every run bitwise repeatable). d9e41753e, ee180b9d5 and 4423a5fd9 columns are the reviewer's gfx1100 measurements on this host; the d9e41753e T,N/N,N rows were re-run here and agree within 1% (21.05 / 34.36 / 44.36 / 13.66 ms fp16).
+| m x k x n, layout | d9e41753e fp16 / bf16 | ee180b9d5 | 4423a5fd9 | **b269f0d80** |
+|---|---|---|---|---|
+| 4096 x 40000 x 4096, T,N (x^T @ dy) | 20.8 / 20.4 ms, 0.94 / 0.74 ulp | 3659 / 3675 ms | 243 / 582 ms | **22.3 / 22.0 ms, 1.14 / 1.06** |
+| 4096 x 65536 x 4096, T,N | 34.0 / 33.4, 0.91 / 0.59 | 9223 / 8162 | 545 / 1510 | **34.5 / 34.2, 0.95 / 0.93** |
+| 1024 x 65536 x 1024, T,N | 2.74 / 4.06, 0.98 / 0.64 | 465 / 465 | 28.3 / 28.5 | **2.25 / 3.78, 0.96 / 0.91** |
+| 4096 x 65536 x 4096, N,N | 43.9 / 42.8, 1.01 / 0.62 | 213 / 285 | 247 / 241 | **33.5 / 32.7, 1.02 / 0.97** |
+| 8192 x 49152 x 1024, T,N | 13.4 / 13.2, 0.94 / 0.66 | 2805 / 2810 | 329 / 329 | **13.8 / 13.5, 1.10 / 0.96** |
+| 128 x 65536 x 128, N,N | 0.232 / 0.255, 0.77 / 0.68 | 0.438 / 0.140 | 0.213 / 0.213 | **0.100 / 0.125, 0.86 / 0.83** |
+| 1 x 2^20 x 64, N,N | 8.01 / 8.28, **8.27** / 1.42 | 0.301 / 0.292 | 0.399 / 0.394 | **0.530 / 0.538, 0.91 / 0.85** |
+| 16 x 2^20 x 2, T,N | 5.36 / 5.40, **6.79** / 1.13 | 0.191 / 0.204 | 0.441 / 2.12 | **0.196 / 0.201, 0.68 / 0.61** |
+| 2 x 2^20 x 16, transpose_b | 2.00 / 1.98, **7.12** / 1.14 | 0.082 / 0.081 | 0.307 / 0.307 | **0.084 / 0.082, 0.74 / 0.73** |
+| 3 x 2^20 x 8, transpose_b | 1.99 / 1.99, **8.15** / 1.31 | 0.081 / 0.081 | 0.237 / 0.238 | **0.079 / 0.079, 0.84 / 0.64** |
+| 2 x 200000 x 16, transpose_b | 0.394 / 0.393, 1.46 / 0.58 | 0.072 / 0.075 | 0.296 / 0.342 | **0.041 / 0.041, 0.73 / 0.78** |
+| 2 x 65536 x 16, transpose_b | 0.140 / 0.140, 0.82 / 0.61 | 0.082 / 0.082 | 0.173 / 0.222 | **0.041 / 0.041, 0.51 / 0.78** |
+
+Batched (`bperf.py`, fp16 `flow.bmm`; d9e41753e / ee180b9d5 / 4423a5fd9 / **b269f0d80**): 32 x 256 x 40000 x 256: 4.19 / 63.5 / 15.9 / **6.99 ms**, 1.03 ulp; 64 x 64 x 65536 x 64: 2.10 / 2.04 / 10.1 / **2.56**, 0.94 ulp; 8 x 1024 x 40000 x 1024: 13.1 / 62.0 / 63.4 / **15.5**, 1.11 ulp.
+
+So the large weight-gradient shapes are within 1.07x of d9e41753e (N,N and 1024 x 65536 x 1024 are faster), every case is correct to <= 1.14 ulp, and the k = 2^20 skinny shapes that failed the bound at d9e41753e stay fixed. Remaining costs, plainly: 1 x 2^20 x 64 N,N is 0.53 ms (ee180b9d5 0.30, d9e41753e 8.0); batched 32 x 256 x 40000 x 256 is 1.7x d9e41753e, 64 x 64 x 65536 x 64 1.2x. Accuracy is somewhat worse than a single GEMM for large outputs at k <= 2^16 (1.0-1.14 vs 0.6-1.0 ulp), the price of chunking at all; adversarial cancellation is bounded by sum |slice| / |D|, not by the test's random inputs.
+
+### Every test layout, k = 2^16 / 2^17 / 2^18 / 2^19 / 2^20 (`agent_space/p/layouts.py`, `layouts_final.txt`; ulp of the type vs float64; us per call over 20 pipelined calls)
+| case | fp16 ulp | bf16 ulp | fp16 us |
+|---|---|---|---|
+| matmul (2,k)@(k,16) | 0.71 / 0.74 / 0.92 / 0.81 / 0.64 | 0.75 / 0.97 / 0.91 / 0.89 / 0.45 | 51 / 37 / 62 / 97 / 219 |
+| transpose_b (2,k)@(16,k)^T | 0.51 / 1.14 / 0.58 / 1.01 / 0.74 | 0.78 / 0.46 / 0.61 / 0.56 / 0.73 | 40 / 30 / 45 / 77 / 80 |
+| transpose_a (k,2)^T@(k,16) | 0.80 / 0.91 / 0.73 / 0.65 / 1.08 | 0.53 / 0.64 / 0.50 / 1.17 / 0.50 | 52 / 53 / 117 / 219 / 222 |
+| bmm (2,1,k)@(2,k,16) | 0.94 / 0.72 / 0.56 / 0.81 / 0.65 | 1.06 / 0.76 / 0.61 / 0.89 / 0.43 | 68 / 69 / 85 / 136 / 432 |
+| broadcast (1,k)@(2,k,16) | 0.70 / 0.68 / 0.58 / 0.74 / 1.04 | 0.72 / 0.57 / 0.72 / 0.63 / 0.84 | 54 / 54 / 83 / 140 / 438 |
+| grouped (1, 16, k) | 0.44 / 0.65 / 0.75 / 0.56 / 0.71 | (fp16 only) | 24 / 39 / 59 / 99 / 93 |
+| grouped (3, 8, k) | 0.64 / 0.52 / 0.61 / 0.37 / 0.84 | (fp16 only) | 49 / 38 / 55 / 95 / 96 |
+
+Worst 1.17 ulp against the bound of 4.
+
+### gfx1201: owed to its validator, not measured here
+b269f0d80 takes the same code on gfx12. Nothing in this round was measured on gfx1201: the float-D slowness is a gfx1100 finding (the gfx1201 porter round saw 4423a5fd9's float-D chunks at about 1.45x of ee180b9d5 there), and the rocBLAS-vs-hipBLASLt choice and the 2^13 chunk length were chosen on gfx1100 numbers. Every library call still has k <= 2^15, so the gfx1201 MT16x16x192 defect (correct at k <= 131072) stays out of reach by construction, but rocBLAS's gfx1201 kernels for the chunks are new on that path. The gfx1201 validator should run `test_matmul_long_k.py`, `agent_space/p/layouts.py` and `perf2.py`/`bperf.py` (both copied from the review10 job) at b269f0d80 and record ulp and times next to the tables above.
+
+### Tests at b269f0d80 (GPU 0, one pytest per file, `utils/timeit.sh oneflow test`)
+- `test_matmul_long_k.py`: **3 passed** (23 s). New `_check_narrow_last_tile`: x (40000, 1025)^T @ dy (40000, 8) fp16 with `ONEFLOW_EP_CUDA_LONG_K_GEMM_MAX_TILE_SIZE=100`, so on gfx11/gfx12 the output is cut into 513 tiles 2 wide and a last one 1 wide; it runs in `test_matmul_long_k` and in the without-hipBLASLt / 0 MiB-workspace paths (164 MB of operands). By 4423a5fd9's tile arithmetic it would not have failed there either (not run: at this budget that version's tiles end in a 5-wide tail, and its refusal needed a float-D tile with a 1-wide side); it guards the narrow-tile arithmetic and the once-only store. The reviewer's (40000, 4097) x (40000, 256), (40000, 1025) x (40000, 1024), (65536, 4097) x (65536, 256) and (40000, 4103) x (40000, 256) (`tail3.py`) all give the exact sum at b269f0d80 (65536 overflows fp16 to inf, as on d9e41753e).
+- `test_matmul.py`: 9 passed, 2 failed (`test_flow_tensor_matmul_with_random_fp16_data`, `..._int_data`: `TypeError: __bool__ should return bool`, the known numpy class). `test_bmm.py`: 2 passed. `test_grouped_matmul_bias.py`: 1 passed.
+- `edge.py` (reviewer's; all transposes, bmm, broadcasts, 4-D broadcast, baddbmm with beta/alpha, grouped bias; k = 32769, 40000, 70001, 200000): default, tile budget 1000 and 7: **78 of 78 ok** each, worst 1.65 ulp (baddbmm beta 1 alpha -1 transpose_b k 70001 fp16, which adds a rounded C).
+- `cg_ws2.py` (`ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1`, both GPUs): 42 graphs captured, **0 of 126 replays out of tolerance**. `cg_ws3.py` (adds 1024 x 40000 x 2048 and 2048 x 70001 x 1024, whose 16-bit slices exceed the 4 MiB workspace, so the tile is allocated inside the capture): 54 graphs, **0 of 162 replays out of tolerance**; fp16 <= 5.7e-4, bf16 <= 4.3e-3.
+- The full suites were not rerun; the validators owe them at b269f0d80.
+
+### CUDA compile gate (nvcc 12.8.93, sm_80): PASS 1/1
+`redistrib_12.8.1.json` downloaded fresh (sha256 249e28a83008d711..., the same manifest as earlier rounds); `cuda_nvcc` 12.8.93, `cuda_cudart` 12.8.90, `cuda_cccl` 12.8.90 downloaded into an empty directory and sha256-verified against it (3/3 OK), extracted to `<job>/cuda-12.8`. The only changed TU nvcc sees is `hip_long_k_gemm.cu` (sha256 86bd5c62...); `cublas_v2.h` is on the HIP include path only (comment change) and the test is Python. `nvcc -ccbin=/usr/bin/g++-13 -std=c++17 -DWITH_CUDA -I<src> --generate-code=arch=compute_80,code=[compute_80,sm_80] -O3 -c -x cu hip_long_k_gemm.cu`: rc=0 (the file is `#if defined(WITH_CUDA) && defined(USE_HIP)`). clang-format 11.1.0 `--dry-run -Werror` clean on both C++ files, black 19.10b0 clean on the test.
+
+### Standalone reproducer of the gfx1100 float-D cost (`lt_floatd.cpp`; added to `hipblaslt-gfx1100-longk-half-accuracy`; nothing filed)
+Build: `hipcc -O2 -std=c++17 --offload-arch=gfx1100 lt_floatd.cpp -lhipblaslt -o lt_floatd` (here `$R/lib/llvm/bin/clang++ -O2 -std=c++17 -x hip --rocm-path=$R --offload-arch=gfx1100 -I$R/include lt_floatd.cpp -L$R/lib -Wl,-rpath,$R/lib -lhipblaslt -lamdhip64`); `./lt_floatd [m k n]`. Output on the W7800:
+```
+gfx1100, hipBLASLt 100401, fp16 A^T B, m 4096 k 40000 n 4096
+D fp16:    16.22 ms  Cijk_Alik_Bljk_HHS_BH_Bias_HA_S_SAV_UserArgs_MT256x128x32_MI16x16x1_SN_L
+D fp32:   138.84 ms  Cijk_Alik_Bljk_HSS_BH_Bias_HA_S_UserArgs_MT32x32x64_MI16x16x1_SN_LDSB0_A
+gfx1100, hipBLASLt 100401, fp16 A^T B, m 1024 k 65536 n 1024
+D fp16:     1.85 ms  Cijk_Alik_Bljk_HHS_BH_Bias_HA_S_SAV_UserArgs_MT128x64x32_MI16x16x1_SN_LD
+D fp32:    14.72 ms  Cijk_Alik_Bljk_HSS_BH_Bias_HA_S_UserArgs_MT32x32x64_MI16x16x1_SN_LDSB0_A
+```
+```cpp
+// hipBLASLt on gfx1100: a float D is 20-30x slower than a 16-bit D for the same fp16 GEMM.
+// D(m x n) = A^T B, A k x m and B k x n column major (fp16), COMPUTE_32F, heuristic top-1 algorithm,
+// 4 MiB workspace; prints the time per call (20 calls after 3 warm-ups) and the kernel name.
+// Build: hipcc -O2 -std=c++17 --offload-arch=gfx1100 lt_floatd.cpp -lhipblaslt -o lt_floatd
+#include <hip/hip_runtime.h>
+#include <hipblaslt/hipblaslt-ext.hpp>
+#include <hipblaslt/hipblaslt.h>
+#include <cstdio>
+#include <cstdlib>
+#include <string>
+
+#define CHECK(x) do { if ((x) != 0) { printf("%s:%d failed\n", __FILE__, __LINE__); exit(1); } } while (0)
+
+int main(int argc, char** argv) {
+  const long M = argc > 1 ? atol(argv[1]) : 4096, K = argc > 2 ? atol(argv[2]) : 40000,
+             N = argc > 3 ? atol(argv[3]) : 4096;
+  hipblasLtHandle_t lt; CHECK(hipblasLtCreate(&lt));
+  size_t ws_size = 4 << 20; void* ws; CHECK(hipMalloc(&ws, ws_size));
+  hipDeviceProp_t prop; CHECK(hipGetDeviceProperties(&prop, 0));
+  printf("%s, hipBLASLt %d, fp16 A^T B, m %ld k %ld n %ld\n", prop.gcnArchName,
+         HIPBLASLT_VERSION_MAJOR * 100000 + HIPBLASLT_VERSION_MINOR * 100 + HIPBLASLT_VERSION_PATCH, M, K, N);
+  void *da, *db, *dd;
+  CHECK(hipMalloc(&da, K * M * 2)); CHECK(hipMalloc(&db, K * N * 2)); CHECK(hipMalloc(&dd, M * N * 4));
+  CHECK(hipMemsetD16((hipDeviceptr_t)da, 0x3800, K * M)); CHECK(hipMemsetD16((hipDeviceptr_t)db, 0x3800, K * N));  // 0.5
+  for (hipDataType dt : {HIP_R_16F, HIP_R_32F}) {
+    hipblasLtMatmulDesc_t desc; CHECK(hipblasLtMatmulDescCreate(&desc, HIPBLAS_COMPUTE_32F, HIP_R_32F));
+    hipblasOperation_t t = HIPBLAS_OP_T;
+    CHECK(hipblasLtMatmulDescSetAttribute(desc, HIPBLASLT_MATMUL_DESC_TRANSA, &t, sizeof(t)));
+    hipblasLtMatrixLayout_t la, lb, ld;
+    CHECK(hipblasLtMatrixLayoutCreate(&la, HIP_R_16F, K, M, K));
+    CHECK(hipblasLtMatrixLayoutCreate(&lb, HIP_R_16F, K, N, K));
+    CHECK(hipblasLtMatrixLayoutCreate(&ld, dt, M, N, M));
+    hipblasLtMatmulPreference_t pref; CHECK(hipblasLtMatmulPreferenceCreate(&pref));
+    uint64_t max_ws = ws_size;
+    CHECK(hipblasLtMatmulPreferenceSetAttribute(pref, HIPBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &max_ws, sizeof(max_ws)));
+    hipblasLtMatmulHeuristicResult_t heur; int got = 0;
+    CHECK(hipblasLtMatmulAlgoGetHeuristic(lt, desc, la, lb, ld, ld, pref, 1, &heur, &got));
+    float alpha = 1, beta = 0;
+    auto run = [&] { CHECK(hipblasLtMatmul(lt, desc, &alpha, da, la, db, lb, &beta, dd, ld, dd, ld, &heur.algo, ws, ws_size, 0)); };
+    for (int i = 0; i < 3; ++i) run();
+    hipEvent_t e0, e1; CHECK(hipEventCreate(&e0)); CHECK(hipEventCreate(&e1));
+    CHECK(hipEventRecord(e0, 0)); for (int i = 0; i < 20; ++i) run(); CHECK(hipEventRecord(e1, 0));
+    CHECK(hipEventSynchronize(e1)); float ms; CHECK(hipEventElapsedTime(&ms, e0, e1));
+    printf("D %s: %8.2f ms  %s\n", dt == HIP_R_16F ? "fp16" : "fp32", ms / 20,
+           hipblaslt_ext::getKernelNameFromAlgo(lt, heur.algo).substr(0, 72).c_str());
+  }
+  return 0;
+}
+```
+
+### Other checks
+- Commit b269f0d80 `[ROCm] Use 16-bit k-chunk products in long-k GEMMs on gfx11 and gfx12` (69 chars; `utils/prose.py` clean): rationale, AI disclosure, fenced Test Plan; it says the numbers are gfx1100-only and gfx1201 is unmeasured.
+- `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038.
+- `git -C projects/oneflow/src status --porcelain`: clean. `moat-port` pushed 4423a5fd9..b269f0d80 to the explicit fork URL; `git ls-remote` shows b269f0d80.
+- Lesson corrected on this branch: `cuda-to-rocm/references/fault-classes.md` (gfx11/gfx12 WMMA entry: 16-bit per-chunk outputs, not float; the gfx1100 float-D cost; rocBLAS for chunks it will not split again; per-tile fallback; "fast / never falls back to a slow path" dropped; gfx1100 costs not measured on gfx1201) and the SKILL.md index line.
+- Owed: review of b269f0d80; validation at b269f0d80 on gfx1100, gfx942, gfx90a (gfx9 path unchanged in code, but the file changed) and gfx1201 (with the gfx1201 numbers above).
