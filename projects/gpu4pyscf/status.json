@@ -7,7 +7,7 @@
   "priority": 4.871,
   "ext_type": "cmake-cupy-plugin",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-11-01T10:03:36Z",
+  "updated_at": "2026-11-01T10:22:11Z",
   "head_sha": "fb95c20e943ed113203cf20e1689bc2f5328b7b0",
   "waivers": {
     "windows": {
@@ -21,75 +21,6 @@
   "upstream_repo_id": 410435607,
   "stage": "review-passed",
   "platforms": {
-    "linux-gfx942": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "e1ad6bc6d25e983b2dea21fe98af33ab4cfc3681",
-      "failed_sha": null,
-      "started_at": "2026-10-29T23:07:20Z",
-      "completed_at": "2026-10-31T11:27:05Z",
-      "updated_at": "2026-11-01T08:36:55Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "reviewer",
-      "state": "completed"
-    },
-    "linux-gfx1100": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "fb95c20e943ed113203cf20e1689bc2f5328b7b0",
-      "started_at": "2026-06-02T07:24:00Z",
-      "completed_at": "2026-11-01T10:03:36Z",
-      "updated_at": "2026-11-01T10:03:36Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 124,
-          "test": 207,
-          "misc": 0
-        },
-        "session_count": 1,
-        "first_session_at": "2026-06-02T07:24:00Z",
-        "last_session_at": "2026-06-02T07:55:00Z"
-      },
-      "last_agent": "validator",
-      "failed_sha": "e1ad6bc6d25e983b2dea21fe98af33ab4cfc3681"
-    },
-    "windows-gfx1201": {
-      "blocked": true,
-      "blocked_reason": "cupy-rocm has no Windows distribution (manylinux2014-only wheels); same host as gfx1101, same blocker",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-05T21:10:34Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
     "linux-gfx90a": {
       "state": "completed",
       "blocked": false,
@@ -135,6 +66,54 @@
         "last_session_at": null
       }
     },
+    "linux-gfx1100": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "fb95c20e943ed113203cf20e1689bc2f5328b7b0",
+      "started_at": "2026-06-02T07:24:00Z",
+      "completed_at": "2026-11-01T10:03:36Z",
+      "updated_at": "2026-11-01T10:03:36Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 124,
+          "test": 207,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-06-02T07:24:00Z",
+        "last_session_at": "2026-06-02T07:55:00Z"
+      },
+      "last_agent": "validator",
+      "failed_sha": "e1ad6bc6d25e983b2dea21fe98af33ab4cfc3681"
+    },
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "fb95c20e943ed113203cf20e1689bc2f5328b7b0",
+      "failed_sha": null,
+      "started_at": "2026-10-29T23:07:20Z",
+      "completed_at": "2026-11-01T10:22:11Z",
+      "updated_at": "2026-11-01T10:22:11Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "state": "completed"
+    },
     "linux-gfx1201": {
       "blocked": false,
       "blocked_reason": null,
@@ -156,12 +135,32 @@
         "first_session_at": null,
         "last_session_at": null
       }
+    },
+    "windows-gfx1201": {
+      "blocked": true,
+      "blocked_reason": "cupy-rocm has no Windows distribution (manylinux2014-only wheels); same host as gfx1101, same blocker",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T21:10:34Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
     }
   },
   "porting_released": {
     "arch": "linux-gfx942",
     "since": "2026-11-01T08:28:16Z",
     "at": "2026-11-01T08:36:55Z"
-  },
-  "porting": null
+  }
 }

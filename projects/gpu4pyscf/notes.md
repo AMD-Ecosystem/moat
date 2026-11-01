@@ -3161,11 +3161,30 @@ Exit 0 in 236 s (utils/timeit.sh compile). 12 libs plus libxc.so.15 (ExternalPro
 ### Full tree at fb95c20 (agent_space/tree/runtree.sh: each of the 39 `gpu4pyscf/**/tests` directories in turn, `python -m pytest <dir> -n 4 --dist loadfile -m 'not slow and not benchmark and not special' -q -rfEs --tb=line -p no:cacheprovider --timeout 1800 --junitxml=...`, GPU liveness check before each directory, never failed; wall 3322 s)
 
 | directory | gfx942 @ c8c9acc p/f/s/e | gfx1100 @ fb95c20 p/f/s/e |
+## Validation 2026-11-01 (validator, linux-gfx942 MI300X, fork moat-port @ fb95c20) -- COMPLETED
+
+Requested by jeff: validate moat-port at fb95c20 (review-passed) on gfx942; the CUDA gate already passed at fb95c20, so skipped. Host: MI300X, `gfx942:sramecc+:xnack-`, `HIP_VISIBLE_DEVICES=2` from the dispatcher, no other process on that GPU at the start. TheRock ROCm SDK 10.1.0. Fresh fork clone at fb95c20e943ed113203cf20e1689bc2f5328b7b0 (`protect-fork` run). `classify e1ad6bc fb95c20`: mixed, so a full run (no carry-forward). Everything ran under `ulimit -c 0`; no JIT extension builds; no rocBLAS shim.
+
+### Environment (job venv)
+`$FLEET_VENV/bin/python -m pip install 'numpy>=2.0,<2.3' 'scipy>=1.13' cupy-rocm-7-0==14.2.0 pyscf==2.14.0 pytest pyscf-dispersion geometric pytest-timeout` gives numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.5.0, geometric 1.1.1, pytest 7.3.2, pytest-xdist 3.3.1, pytest-timeout 2.4.0. No mcfun, as in the c8c9acc run. Run environment: `PATH=$FLEET_VENV/bin:$PATH LD_LIBRARY_PATH=$(rocm-sdk path --root)/lib PYTHONPATH=<fork>`.
+
+### Build: README ROCm block, clean build dir (fresh clone, no build/), libxc on (default), machine-LICM flag kept
+```
+cmake -S gpu4pyscf/lib -B build/temp.gpu4pyscf -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942
+cmake --build build/temp.gpu4pyscf -j 56 -- VERBOSE=1
+```
+Exit 0 in 180 s (timeit compile). 12 libs plus libxc.so.15 (ExternalProject, `-DENABLE_HIP=ON`). 213 `--offload-arch=gfx942` lines and no other arch; `-disable-machine-licm` on 113 lines; no `-O1`.
+
+### Full tree (upstream CI selection), per directory
+Per directory over all 39 `gpu4pyscf/**/tests`: `python -m pytest <dir> -n 4 --dist loadfile -m 'not slow and not benchmark and not special' -q -rfEs --tb=line -p no:cacheprovider --timeout 1800 --junitxml=...`, counts from the junit files. Wall 4071 s.
+
+| directory | gfx942 @ c8c9acc p/f/s/e | gfx942 @ fb95c20 p/f/s/e |
 |---|---|---|
 | cc/tests | 4/0/0/0 | 4/0/0/0 |
 | df/hessian/tests | 24/0/0/0 | 24/0/0/0 |
 | df/tests | 200/5/3/0 | 200/5/3/0 |
 | dft/tests | 113/0/9/0 | 112/1/9/0 |
+| dft/tests | 113/0/9/0 | 113/0/9/0 |
 | dispersion/tests | 16/0/0/0 | 16/0/0/0 |
 | fci/tests | 3/0/0/0 | 3/0/0/0 |
 | geomopt/tests | 0/0/5/0 | 0/0/5/0 |
@@ -3224,3 +3243,36 @@ So there is no new GPU finding at fb95c20 on gfx1100.
 - `python3 utils/jargon.py --port gpu4pyscf`: clean.
 - Documentation: the README ROCm block builds as written (only the arch and `-j` changed).
 - Fork `git status --porcelain`: no tracked modifications (build output untracked; the runner deletes md/tests' `from_h5.xyz`).
+| tdscf/tests | 93/2/0/0 | 92/3/0/0 |
+| tests | 0/0/0/0 | 0/0/0/0 |
+| x2c/tests | 8/0/1/0 | 8/0/1/0 |
+| **total** | 1837/16/68/0 | **1838/17/68/0** |
+
+The c8c9acc column is the 2026-11-01 ECP round's (identical to the e1ad6bc column except gto). lib/tests +2 passed are the two test_cutensor.py tests added in b7c39b6. The 16 reference failures reproduce by name, all 16: df test_general_contraction, test_grad_hybrid, test_j_energy_per_atom, test_jk_energy_per_atom, test_get_nacv_ee; grad tdrhf/tduhf test_grad_elec; mp test_dfmp2_kernel_one_gpu; nac test_get_nacv_ee; pbc/df test_ft_ao_strain_deriv; pbc/scf test_rks_gen_g_hop, test_uks_gen_g_hop; scf test_rhf_df_against_qchem, test_rks_df_against_qchem; tdscf test_rtda_ris_diffuse, test_krylov_eigenvalue (eigenvector error 1.336e-5 at 5 places, the recorded signature). No errors.
+
+### The 17th failure: tdscf test_diffuse_orbital_tdscf.py::test_rtddft_ris_diffuse -- fp32 eigensolver noise floor, not a GPU or port fault
+This is one of the nine noise-floor tests of the gfx1201 round ("tdscf test_rtddft_ris_diffuse (passed when rerun)"), but its mechanism is not the SCF conv_tol one: the SCF converges every time, and the failing assert is `assert np.all(td.converged)` (line 343) after the RIS TDDFT eigensolver. `ris.TDDFT` defaults to `single=True` (fp32 Krylov), the test asks `td.conv_tol = 1e-6`, and upstream's own ris.py:896 logs "Eigenvalue problem is solved in fp32 precision and may not converge to the required threshold" for any conv_tol below 1e-5. Evidence (agent_space/ris/ris_diffuse.py = the test body with verbose 5 and a printed result; same molecule, basis, grid, thresholds):
+- Reruns. pytest serial: 1 failed, 2 passed. Directory rerun `-n 4 --dist loadfile`: failed again (the other two tdscf failures as in the tree). Script serial on the idle GPU: 3 of 8 runs not converged. 4 concurrent copies (the CI load), two rounds: 6 of 8 not converged.
+- The SCF energy is -139.590475800196/-197 in every run (1e-12 jitter, atomic order). The fp32 residual history is identical to 3 digits through iteration 8 (4.0e-6), reaches 1.1e-6 to 1.2e-6 at iterations 9-10 and then wanders between 1.1e-6 and 2e-6 before drifting up as the fp32 subspace grows to max_iter 25. Runs that happen to dip below 1e-6 at iteration 9-10 converge (8.104543, 8.385999, 8.599421 eV); runs that miss end at max_iter with residuals 2e-5 to 3e-4 and the unconverged energies (for example 8.104624/8.388064/8.601086, or 8.104542/8.385893/8.599393, which recurs).
+- Control: the same body with `single=False` (fp64 Krylov), 8 serial runs and 8 under 4-way concurrent load: 16 of 16 converged at iteration 9 with max|R| 5.79e-7, bit-identical energies 8.10454359/8.38600091/8.59941198 eV. The converged fp32 runs agree with these to 1e-5 eV.
+- Not the port's einsum helper: with `cutensor._HIP_MAX_BATCH = 1 << 62` (reroute off) the fp32 body fails 1 of 8 serially, landing on the same recurring unconverged values. The port's only change in ris.py is two `einsum` renames in the post-solve basis transformation.
+- Not memory-dependent blocking (a hypothesis, since ris.py sizes work from `get_avail_mem`): with another process holding 150 GB and idle, 1 of 4 failed, the idle rate. So the load dependence is timing (atomic order in the fp32 matrix-vector products), not a different code path.
+So the tolerance sits at the fp32 eigensolver's residual floor, and whether a run lands under it is run-to-run. It passed in the c8c9acc tree run here by that chance. Classified as noise-floor convergence (same family as the SCF conv_tol tests, one precision level down), explained; not a GPU finding.
+
+### gto/tests/test_ecp.py: 7 of 7 passed, none skipped
+junit: test_ecp_cart, _cart_ip1, _cart_ipipv, _cart_ipvip_cart, _sph, _sph_ipnuc, _sph_iprinv all pass. Kernel selection from `rocprofv3 --kernel-trace` over the file (agent_space/ecp/trace): `type2_cart_ip1_lowmem` 2 launches, `type2_cart_ipipv_lowmem` 3, `type2_cart_ipvip_lowmem` 1, against the original kernels for everything else (type2_cart_ip1_general 303, type2_cart_ipipv 177, type2_cart_ipvip 179, type2_cart 117, type2_cart_ip1 73, type1_* 180). So on gfx942 the low-memory variant runs exactly for the over-limit g-shell cases (ip (4,4,4); ipipv (4,2,4), (4,3,4), (4,4,4); ipvip (4,4,4)), and the original kernel for every case that fits.
+
+### Water vs CPU PySCF (agent_space/water.py; def2-svp, grids level 3, conv_tol 1e-12)
+- RKS energies: B3LYP 1.06e-11, PBE 6.04e-12, M06 7.02e-12 Ha; all converged on both sides.
+- RHF: energy sto-3g 3.6e-12, def2-svp 9.6e-12, cc-pvtz 2.9e-11 Ha. Gradient max abs difference with the GPU gradient on the CPU-converged orbitals: 3.8e-14 / 2.0e-13 / 8.4e-12; with two independently converged SCFs 4.0e-11 / 3.2e-9 / 1.9e-8 (SCF convergence, as in earlier rounds).
+
+### multigrid_v2 under 4 concurrent workers (the original concurrency failure)
+`python -m pytest gpu4pyscf/pbc/dft/tests/test_multigrid_v2.py -n 4 --dist load -m 'not slow and not benchmark and not special' -q -rfEs --tb=line -p no:cacheprovider --timeout 1800` (`--dist load`, so all four workers run this file at once), 3 times: 26 passed, 3 skipped each time; no hipErrorIllegalAddress.
+
+### Other gates
+- CUDA gate: skipped; passed at fb95c20 on gfx942 per jeff, and this host has no CUDA toolkit.
+- `python3 utils/jargon.py --port gpu4pyscf`: clean. Documentation: the README ROCm block built as written (only `-j` changed).
+- Fork `git status --porcelain`: empty (md tests' `from_h5.xyz` in the clone root removed).
+
+### For jeff
+- test_rtddft_ris_diffuse now fails more often than not under the CI's `-n 4` load on gfx942 (6 of 8 concurrent runs), with correct numbers whenever the fp32 solver converges and fp64 always converging. Upstream's own warning says conv_tol 1e-6 is below what the fp32 solver promises. Whether the upstream PR body names it, or whether an upstream issue should note that the test's `td.conv_tol = 1e-6` with the fp32 default is at the floor, is your call. I recorded it as explained noise floor rather than a GPU finding; if you read your criterion as SCF-only, this platform should instead be failed on it.
