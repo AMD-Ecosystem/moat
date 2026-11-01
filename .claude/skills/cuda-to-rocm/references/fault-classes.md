@@ -470,6 +470,10 @@ reroutes some steps that are not one. Test the trigger differentially: record th
 `cupy.matmul` receives inside `cupy.einsum` (it looks the attribute up per call) over random
 patterns with size-1 broadcasting, with the batch threshold lowered so small shapes reach it,
 and require the helper to reroute exactly the calls that issue a matrix-vector step.
+The recorder sees the pairwise steps only when cuTENSOR is not a CuPy routine accelerator
+(CUDA CI often sets `CUPY_ACCELERATORS=cub,cutensor`), so clear the list with
+`cupy._core._accelerator.set_routine_accelerators([])` for the test and restore it in a
+`finally`; CuPy reads it on every call.
 Splitting the batch into chunks of 65535 also avoids the kernel loop, but measured on gfx1201 the multiply and sum is
 4x to 250x faster than the rocBLAS call for these shapes. Bind it as the contraction wrapper's
 einsum and switch the direct `cupy.einsum` sites to it; find them statically by simulating
