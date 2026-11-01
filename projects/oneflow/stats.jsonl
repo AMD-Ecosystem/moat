@@ -251,3 +251,5 @@
 {"kind":"phase","ts":"2026-11-01T07:59:33Z","phase":"test","seconds":5.850,"exit":0,"cmd":"agent_space/t.sh 7 test_grouped_matmul_bias.py --junitxml=/var/lib/jenkins/fleet/jobs/mi300-20261101-003205-oneflow-fix9/moat/agent_space/final/test_grouped_matmul_bias.xml"}
 {"kind":"phase","ts":"2026-11-01T07:59:42Z","phase":"test","seconds":8.350,"exit":0,"cmd":"agent_space/t.sh 7 test_conv_float64.py --junitxml=/var/lib/jenkins/fleet/jobs/mi300-20261101-003205-oneflow-fix9/moat/agent_space/final/test_conv_float64.xml"}
 {"kind":"session","ts":"2026-11-01T08:02:05Z","epoch":1793520125.213431485,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-01T08:06:32Z","epoch":1793520392.863795425,"event":"start","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-01T08:23:38Z","epoch":1793521418.270596835,"event":"end","platform":"linux-gfx942"}
