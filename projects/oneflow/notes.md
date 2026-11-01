@@ -2564,3 +2564,24 @@ The one changed TU, `hip_long_k_gemm.cu`, compiled with rc=0 to an empty object 
 - `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038. `utils/prose.py` is clean on both messages. Titles are 69/55 chars, ASCII, no Co-Authored-By, fenced Test Plans. clang-format 11.1 is clean on the .cu, and black 19.10b0 was applied to the test.
 - `git -C projects/oneflow/src status --porcelain`: no modified tracked files. `moat-port` pushed 9636ca67b..d9e41753e, `advance-head` d9e41753e.
 - Owed: review of 9636ca67b..d9e41753e, then validation at d9e41753e on gfx90a, gfx942 and gfx1100.
+
+## Review 2026-11-01 (reviewer, linux-gfx942, MI300X; /pr-review local-branch moat-port 9636ca67b..d9e41753e, the two commits answering "Review 2026-11-01 ... 9166f2fb2..9636ca67b")
+
+Verdict: **review-passed**. No findings. ec23f427b resolves finding 2 and d9e41753e resolves finding 1 of the previous review. The diff was read in the fix10 porter job's clone (HEAD d9e41753e = origin `moat-port`, `git status --porcelain` empty; `git fetch` there moved nothing). GPU runs used that job's build and venv read-only: nothing under `oneflow/`, `cmake/` or `CMakeLists.txt` is newer than `build/liboneflow.so`. Tests and probes ran from `/tmp/r8`. Setup: `HIP_VISIBLE_DEVICES=7`, `ulimit -c 0`, `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git`, `PYTHONDONTWRITEBYTECODE=1`. No JIT builds and no rebuild.
+
+### Checks (evidence, not findings)
+- **The k == 0 removal (ec23f427b) is safe.** All four `OfLongKGemm` call sites are guarded by `OfRocblasSplitsK` (`broadcast_matmul.cpp:209,232`, `grouped_matmul_bias.cu:146`, `fused_self_attention_query_mul_key_and_value_kernel.cu:103`). It requires `max(lda, ldb) * k >= 2^30` (`hip_compat/cublas_v2.h:68-71`), which is false for k = 0. The m/n/batch quick return stays ahead of hipBLASLt. Nothing else in `hip_long_k_gemm.cu` used `hipblasGemmStridedBatchedEx`, and the TU's includes are unchanged, so nothing is left orphaned.
+- **The smaller row-tile cases still reach every offset branch and a real batch loop.** With the knob at 256 and n = 300, `RocblasFloatOutputGemm` (`hip_long_k_gemm.cu:57-58`) uses tile_m = 256 and tile_n = 1, so each output column takes one 256-row tile and one 44-row tile. `rocprofv3 --kernel-trace` over `_check_row_tiles` (hipBLASLt skipped) counts 42 `StoreTile<__half>` and 42 `StoreTile<__hip_bfloat16>`. Traced one case at a time (`/tmp/r8/onecase.py`, fp16): plain 6, transpose_b 6, transpose_a+transpose_b 6, broadcast (3,k)@(2,k,300) 12, batched (2,3,k)@(2,k,300) 12. The rocBLAS GEMM count is 12 or 24 respectively. So both batched cases run the batch loop, one GEMM per batch per tile, and are not folded into one GEMM. Branches reached: op-N `i` and op-N `j * ldb` (plain), op-T `i * lda` (transpose_b), op-T `j` (transpose_a+transpose_b), and `batch * stride_*` (the last two). The porter's mutation results cover each of these branches. They were not rerun here because that needs a rebuild in the porter's tree, which this job uses read-only.
+- **"Output in pieces" at 1040 x 1024.** cuBLAS m = 1024, n = 1040, tile_size = 2^20, so the tiles are 1024 columns and then 16 columns. The trace shows 2 `StoreTile<__half>`. 4 MiB of workspace is exactly 2^20 floats, so the default run uses the workspace and the 0 MiB subprocess allocates.
+- **Host rounding in `_check` and `_check_grouped`.** The reference is still computed from exactly the 16-bit values the GPU receives (the same CPU tensors, cast to float64). The shape assertions still come before the `numel() == 0` skip.
+- **Whole-file GPU memory.** One pytest run of the file peaked at 6325 MB of used VRAM on GPU 7, sampled from sysfs every 20 ms against a 284 MB baseline. That agrees with the porter's 6197 MB and the commit message's "about 6 GB" (previously 37602 MB).
+- **CUDA.** ec23f427b touches only the HIP-only TU and d9e41753e only the Python test. The porter's nvcc 12.8 gate passed; it was not recompiled here.
+
+### Tests at d9e41753e (GPU 7, porter's build read-only, tests copied to /tmp/r8)
+- test_matmul_long_k.py: 3 passed in 33.2 s (without_workspace 13.4 s, default 9.9 s, without_hipblaslt 8.6 s).
+- test_bmm.py + test_grouped_matmul_bias.py: 3 passed in 14.4 s.
+
+### Commit messages
+Titles are 69 and 55 chars with `[ROCm]`. Both messages are ASCII, disclose AI assistance, carry a fenced Test Plan and have no Co-Authored-By trailer. `utils/prose.py` is clean on both. `python3 utils/jargon.py -C <fix10 clone> --commits master..d9e41753e` reports only the three known hits in 68718f038, and `--diff master..d9e41753e` is clean.
+
+Owed: validation at d9e41753e on gfx90a, gfx942 and gfx1100.
