@@ -7,7 +7,7 @@
   "priority": 4.871,
   "ext_type": "cmake-cupy-plugin",
   "adopted_at": "2026-05-30T00:46:51Z",
-  "updated_at": "2026-11-01T06:16:10Z",
+  "updated_at": "2026-11-01T06:47:35Z",
   "head_sha": "c8c9acc346e9a960b5287481a7878abae99af0a9",
   "waivers": {
     "windows": {
@@ -19,7 +19,7 @@
   },
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 410435607,
-  "stage": "reviewing",
+  "stage": "changes-requested",
   "platforms": {
     "linux-gfx942": {
       "blocked": false,
@@ -28,7 +28,7 @@
       "failed_sha": null,
       "started_at": "2026-10-29T23:07:20Z",
       "completed_at": "2026-10-31T11:27:05Z",
-      "updated_at": "2026-11-01T06:16:10Z",
+      "updated_at": "2026-11-01T06:47:35Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -160,11 +160,8 @@
   },
   "porting_released": {
     "arch": "linux-gfx942",
-    "since": "2026-11-01T04:25:42Z",
-    "at": "2026-11-01T06:10:04Z"
+    "since": "2026-11-01T06:16:10Z",
+    "at": "2026-11-01T06:47:35Z"
   },
-  "porting": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-01T06:16:10Z"
-  }
+  "porting": null
 }
