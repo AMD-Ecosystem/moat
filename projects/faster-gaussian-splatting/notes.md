@@ -2197,3 +2197,73 @@ Not run (Windows host, no toolkit); recorded at this head by the Linux rounds (m
 
 ### Verdict
 **completed**, `windows-gfx1151`, `validated_sha=99d68f9bfb5348c3472bd34ae46a0e57d31f2fc0`.
+
+## Porter 2026-11-01 (linux-gfx90a) -- hipRAND Philox feature test replaces the version gate, commit fe62b19
+
+Requested by jeff. His ruling (2026-10-31): the port must not wait for ROCm/rocm-libraries PR #14808. The `HIPRAND_VERSION >= 300500` gate in 99d68f9 guesses from a version number: a hipRAND reporting 3.5.0 without the function breaks the build, and #14808 may land under another version. Replace it with a feature test in the extension's build. Platform: AMD Instinct MI250X / MI250 (gfx90a), torch 2.16.0a0+git6c3af02, HIP 7.16.26385 (TheRock SDK wheels in the image venv, hipRAND 3.4.0, no `hiprand_Philox4x32_10`), `HIP_VISIBLE_DEVICES=0`, everything under `ulimit -c 0`. Fork freshly cloned at 99d68f9.
+
+### Reviewer's publication condition withdrawn
+
+Review 2026-10-31 made the upstream PR wait until #14808 merged as hipRAND 3.5.0 (or the threshold moved to the version it shipped in). jeff's ruling withdraws that condition. With the feature test, the build no longer depends on which version, or whether, #14808 ships: whenever the installed hipRAND declares `hiprand_Philox4x32_10(uint4, uint2)` the library function is used, otherwise the bundled copy, which is bit-identical. The commit body and README no longer name a hipRAND version, so neither can become false. The only remaining reference to #14808 is the commit body's link that explains where the function comes from.
+
+### Change (fe62b19, one commit on 99d68f9, fast-forward push)
+
+- `setup.py`, ROCm branch only: `hip_compiles(source)` runs `hipcc -x hip -fsyntax-only <nvcc_flags> -I<include_dirs + include_paths('cuda')> -` with the source on stdin; hipcc is found with `shutil.which('hipcc', path=ROCM_HOME/bin)` (PATHEXT covers `hipcc.exe`/`.bat` on Windows). stdout and stderr go to DEVNULL. The probe source includes `<hiprand/hiprand_kernel.h>` and calls `hiprand_Philox4x32_10(c, k)` in a `__device__` function; on success `-DFGS_HAVE_HIPRAND_PHILOX4X32_10` is appended to `nvcc_flags`. The CUDA `else` branch is untouched and never calls it. Syntax-only from stdin means no object file and no temp file.
+- `kernels_mcmc.cuh`: `#ifdef FGS_HAVE_HIPRAND_PHILOX4X32_10` replaces `#include <hiprand/hiprand_version.h>` + `#if HIPRAND_VERSION >= 300500`; comment on the bundled copy reworded ("This hipRAND has no counterpart...").
+- README AMD bullet: "the Philox block function comes from hipRAND when the installed hipRAND provides `hiprand_Philox4x32_10`, otherwise from a bundled copy with identical output".
+- No offload arch is passed to the probe, so hipcc uses its default (gfx906 when it does not detect one; on this host it sometimes picked gfx90a). The function's presence does not depend on the arch. If a future toolchain ever made the default-arch syntax check fail, the build would quietly take the bundled copy, which gives the same bits.
+
+### Probe checks (`agent_space/scripts/probe_flags.py` runs setup.py's module code with `setuptools.setup` stubbed and prints `nvcc_flags`)
+
+| tree | include path | probe | macro | full build |
+|---|---|---|---|---|
+| fork at fe62b19 | SDK hipRAND 3.4.0 | fails | absent (also absent from build.ninja) | rc=0, 378 warning lines, same as 99d68f9 |
+| copy with `agent_space/hr-prefix/include` first in `include_dirs` | #14808 hipRAND 3.5.0 / rocRAND 5.3.0 | passes | defined (in build.ninja) | rc=0, 382 warning lines (the 4 `-Wnan-infinity-disabled` from `rocrand_normal.h`) |
+| copy with `agent_space/broken-inc` first, whose `hiprand/hiprand_kernel.h` includes a missing header | broken | fails, no output | absent | rc=0, bundled copy, mcmc ISA identical to 99d68f9 |
+
+Probe cost: setup.py module code 3.7-4.6 s including the hipify that `CUDAExtension` runs at construction; the hipcc call alone is about 2 s. With `TMPDIR` pointed at an empty directory the probe left it empty, and the tree gained no files beyond the hipify mirror. Run by hand, the broken case reports `fatal error: 'deliberately_missing_header.h' file not found`; inside setup.py nothing is printed. The copies differ from fe62b19 only in that `include_dirs` line (checked file by file against `git show HEAD:`).
+
+CUDA path: setup.py executed with `torch.version.hip = None`, `subprocess.run` replaced by a function that raises, and `CUDAExtension`/`setup` stubbed: 0 calls, `IS_ROCM False`, `nvcc_flags ['-std=c++20', '-O3', '-use_fast_math']`.
+
+### rocRAND/hipRAND from #14808 (head 9b5027b, unchanged since the 99d68f9 round)
+
+Sparse fetch (`projects/rocrand projects/hiprand`) into `agent_space/rl`, then the same cmake commands as Porter 2026-10-31 with `-DGPU_TARGETS=gfx90a -DCMAKE_INSTALL_PREFIX=agent_space/hr-prefix` and `-j32`: rc=0, about 4 minutes wall (rocRAND's generator TUs dominate). Installed `HIPRAND_VERSION 300500`, `ROCRAND_VERSION 500300`; `hiprand_kernel_rocm.h:392` declares `hiprand_Philox4x32_10`. Both CMakeCaches show the scratch prefix, not the SDK.
+
+### Builds and code objects
+
+```bash
+export PYTORCH_ROCM_ARCH=gfx90a MAX_JOBS=32
+utils/timeit.sh faster-gaussian-splatting compile -- bash -c "cd $A/fgs_old/FasterGSCudaBackend && python setup.py build_ext --inplace"   # 99d68f9 worktree
+utils/timeit.sh faster-gaussian-splatting compile -- bash -c "cd $PWD/projects/faster-gaussian-splatting/src/FasterGSCudaBackend && python setup.py build_ext --inplace"
+```
+Both rc=0, 378 warning lines each. `llvm-objdump --offloading` on copies under `agent_space/co_*`, then `llvm-objdump -d --no-show-raw-insn`: **7/7 gfx90a code objects disassemble identically** between 99d68f9 and fe62b19, the mcmc object (bundle 1, 628 lines, 6 `add_noise` references) included. Bundle bytes differ only through the path-hashed `__hip_cuid_*` symbols, as recorded on gfx1100 and gfx942. mcmc code object size: 21,656 bytes for 99d68f9, fe62b19 and the broken-include build; 387,128 bytes in the #14808 build, which carries rocRAND's jump-matrix tables (2 `xorwow` symbols), so that build really uses the library function.
+
+### GPU tests (`gpu_tests/` plus `agent_space/scripts/noise_dump.py` and `bitcmp.py`, rewritten from the earlier description: n = 37 / 100003 / 1000000, seeds 1 / 1234567 / 2^40+99, three calls each, 27 tensors)
+
+```bash
+utils/timeit.sh faster-gaussian-splatting test -- bash agent_space/run_all.sh   # bitcmp old/new, run_outputs old/new/new2 + compare, new_checks, train_check, det on fe62b19
+utils/timeit.sh faster-gaussian-splatting test -- bash agent_space/run_hr.sh    # bitcmp old/hr and old/broken, run_outputs hr + compare, new_checks, train_check, det on the #14808 build
+```
+Both rc=0, every sub-step rc=0.
+
+- **add_noise vs 99d68f9: 27/27 bit-identical** for fe62b19 (bundled copy), for the #14808 build (library function) and for the broken-include build.
+- **fe62b19:** new_checks 31/31 (Philox + Box-Muller reference 8.65e-7 over 228 primitives; std 0.9982..1.0030; max |corr| 4.30e-3; wave64 halves 0.9983/1.0021), train_check 3/3 (Adam max abs 3.81e-6, L1 0.1204 -> 0.0080), det.py 0 diff in all 3 scenes. run_outputs 99d68f9 vs fe62b19: images, filter3d and filter3d_vis identical (max 0) in all 7 scenes; worst relL2 old-vs-new / new-vs-new2: grad_means 2.22e-7 / 2.54e-7, grad_scales 9.76e-7 / 2.45e-6, grad_rotations 9.50e-7 / 2.68e-6, grad_opacities 2.52e-7 / 2.53e-7, grad_sh0 2.75e-7 / 2.63e-7, grad_shrest 2.70e-7 / 2.61e-7, dinfo 2.03e-7 / 2.00e-7, pruning 2.57e-6 / 2.79e-6.
+- **#14808 build:** new_checks 31/31 (8.65e-7), train_check 3/3 (3.81e-6, L1 0.0080), det.py 0 diff. run_outputs vs 99d68f9: images and filter3d identical; worst gradient relL2 2.52e-6 (grad_rotations), pruning 3.25e-6, all inside this arch's run-to-run range (Validation 2026-10-30: up to 3.0e-6 gradients; gfx942 pruning 3.0e-6..7.4e-6).
+
+### CUDA no-regression gate (changed TU, CUDA 12.8)
+
+NVIDIA redist 12.8.0 manifest `redistrib_12.8.0.json`, archives `cuda_nvcc` 12.8.61, `cuda_cudart` 12.8.57, `cuda_cccl` 12.8.55, `libcurand` 10.3.9.55 (linux-x86_64): `sha256sum -c` against the manifest's values, 4/4 OK; extracted into `agent_space/cuda128`. gcc 13.3.
+```bash
+nvcc -std=c++20 -O3 -use_fast_math -lineinfo -IFasterGSCudaBackend/utils -IFasterGSCudaBackend/densification/include -gencode arch=compute_70,code=sm_70 -gencode arch=compute_80,code=sm_80 -c FasterGSCudaBackend/densification/src/mcmc.cu -Xcompiler -Wall
+```
+rc=0 at 99d68f9 and fe62b19 (only the sm_70 deprecation notice). `-arch=sm_80 -ptx`: byte-identical, 454 lines. The setup.py change does not reach a CUDA build (above).
+
+### Completion checks
+
+- `python3 utils/jargon.py --port faster-gaussian-splatting` -> `jargon: clean` (local `main` created from `origin/main`); `utils/prose.py` on the commit message -> clean; title 66 chars.
+- `git -C projects/faster-gaussian-splatting/src status --porcelain` -> empty after the in-place build and tests.
+- Pushed `99d68f9..fe62b19`, fast-forward; `pr-state` -> none.
+
+### State
+
+`advance-head fe62b19`, linux-gfx90a `porting -> ported`. Every platform validated at 99d68f9 owes revalidation at fe62b19 after review. The 3.5.0 arm is now selected by the probe rather than the version, so a validator on a ROCm that ships the function covers it with no scratch prefix.
