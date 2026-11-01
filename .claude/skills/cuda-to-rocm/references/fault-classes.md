@@ -461,8 +461,16 @@ after dropping size-1 axes, so any step with L or R = 1 is a candidate, for exam
 `cupy.matmul` on the CuPy module (a process-global monkeypatch of a third-party library that
 misses `@`; a reviewer rejected it). Add a project-local `einsum` that follows CuPy's default
 pairwise order and, on ROCm, computes a matrix-vector step with more than 65535 batches as a
-broadcast multiply and sum (on CUDA it is `cupy.einsum` itself). Splitting the batch into
-chunks of 65535 also avoids the kernel loop, but measured on gfx1201 the multiply and sum is
+broadcast multiply and sum (on CUDA it is `cupy.einsum` itself). The simulation must drop
+each operand's size-1 axes before it decides which labels the operands still waiting keep:
+CuPy builds a step's kept labels from the squeezed subscripts, so a label of size 1 in an
+earlier operand is contracted, not batched. Taking the full subscripts misses steps such as
+`'da,deab,dac->'` with the first operand shaped (1, 4), a matrix-vector product over `a`, and
+reroutes some steps that are not one. Test the trigger differentially: record the shapes
+`cupy.matmul` receives inside `cupy.einsum` (it looks the attribute up per call) over random
+patterns with size-1 broadcasting, with the batch threshold lowered so small shapes reach it,
+and require the helper to reroute exactly the calls that issue a matrix-vector step.
+Splitting the batch into chunks of 65535 also avoids the kernel loop, but measured on gfx1201 the multiply and sum is
 4x to 250x faster than the rocBLAS call for these shapes. Bind it as the contraction wrapper's
 einsum and switch the direct `cupy.einsum` sites to it; find them statically by simulating
 CuPy's pairwise order from the subscripts, then judge `numpy.einsum` calls that may receive
