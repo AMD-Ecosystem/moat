@@ -2597,6 +2597,12 @@ def advance_head(name, new_sha, repo=None):
         print(why, file=sys.stderr)
     obj = load_status(name)
     repo = repo or _fork_repo(name)
+    if Path(repo, ".git").exists():
+        r = subprocess.run(["git", "cat-file", "-e", f"{new_sha}^{{commit}}"],
+                           cwd=str(repo), capture_output=True, text=True)
+        if r.returncode != 0:
+            raise ValueError(f"{name}: {new_sha} is not a commit in {repo}; "
+                             "push the fork commit and fetch before advancing the head")
     new_sha = full_sha(new_sha, repo)
     _move_head(obj, new_sha, repo)
     if moved:
