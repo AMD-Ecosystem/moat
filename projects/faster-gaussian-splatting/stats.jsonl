@@ -132,3 +132,8 @@
 {"kind":"phase","ts":"2026-11-01T07:04:03Z","phase":"compile","seconds":35.346,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/rx7900-20261031-235948-val-fgs-00e8/moat/agent_space/fgs_old/FasterGSCudaBackend && python setup.py build_ext --inplace"}
 {"kind":"phase","ts":"2026-11-01T07:04:57Z","phase":"test","seconds":27.317,"exit":0,"cmd":"bash agent_space/run_all.sh"}
 {"kind":"session","ts":"2026-11-01T07:06:21Z","epoch":1793516781.131669792,"event":"end","platform":"linux-gfx1100"}
+{"kind":"session","ts":"2026-11-01T07:05:08Z","epoch":1793516708.990164321,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-01T07:06:19Z","phase":"compile","seconds":51.166,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261031-235933-val-fgs-00e8/moat/projects/faster-gaussian-splatting/src/FasterGSCudaBackend && python setup.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-01T07:07:08Z","phase":"compile","seconds":48.910,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261031-235933-val-fgs-00e8/moat/agent_space/fgs_old/FasterGSCudaBackend && python setup.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-01T07:08:11Z","phase":"test","seconds":38.675,"exit":0,"cmd":"bash agent_space/run_all.sh"}
+{"kind":"session","ts":"2026-11-01T07:09:53Z","epoch":1793516993.680356017,"event":"end","platform":"linux-gfx90a"}
