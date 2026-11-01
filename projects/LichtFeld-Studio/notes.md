@@ -6451,3 +6451,9 @@ The GPU recovered: a later rocJPEG decode succeeded.
 - Hang: Radeon Pro W7800 (gfx1100), rocJPEG 1.10.0 from the TheRock ROCm SDK 10.1.0 Python wheels (`librocjpeg.so.1.10.0`, hardware backend), amdgpu-dkms 6.19.14, Linux 6.8.0-138-generic.
 - Parse-only check: Radeon AI PRO R9700 (gfx1201), rocJPEG 1.10.0 (ROCm SDK 10.1.0 wheels) and 1.13.0 (TheRock nightly 10.3.0a20261030), Linux 6.11.0-26-generic. No decode was run on this GPU.
 ====
+
+## Upstream HIP backend test and coordination 2026-10-31
+
+Upstream merged its own HIP Tensor backend on `dev` (#3781, #3782, #3809, #3930, #3950; Tensor library only, no HIP trainer, Vulkan rendering, CPU decode). Project held (`set-hold on`) per jeff's Decision 20 option A. Upstream's own HIP tests at dev 8b3e59748f6e, ROCm SDK 10.1.0, upstream recipe: all pass on linux-gfx90a, linux-gfx942, linux-gfx1100, linux-gfx1201 (TensorOperationContracts.HIP 70 pass / 2 skip by design; hip-native and hip-host GPU tests; TensorPythonBindings.HIP; HipAdapter.Recovery; 3-4 runs each, no flakes). `hip_nn::norm` width-32 shuffles checked wave64-correct on gfx90a and gfx942. Off-scope: TensorOperationContracts.Vulkan InverseTrigPropagatesNan fails on Mesa llvmpipe (EXPECT_FLOAT_EQ too strict). Full logs in the claude-shared plans `lichtfeld-upstream-hip-backend-test-<arch>.md`.
+
+Coordination issue posted by jeff (approved text): https://github.com/MrNeRF/LichtFeld-Studio/issues/3968 -- results, gaps, and an offer of the port's trainer/wave64/rocJPEG/rocDecode pieces; asks the maintainers how to proceed. Next: wait for their reply before any further porter round.
