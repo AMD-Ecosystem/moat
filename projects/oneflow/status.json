@@ -7,7 +7,7 @@
   "priority": 6.236,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:30:03Z",
-  "updated_at": "2026-11-01T13:31:43Z",
+  "updated_at": "2026-11-01T14:48:23Z",
   "head_sha": "d9e41753e07b814fe0cea985444397aef97709cc",
   "waivers": {
     "windows": {
@@ -21,94 +21,6 @@
   "upstream_repo_id": 81634683,
   "stage": "review-passed",
   "platforms": {
-    "linux-gfx1100": {
-      "state": "validation-failed",
-      "blocked": false,
-      "blocked_reason": "GPU-validated on gfx1100 (RDNA3, wave32, ROCm 7.2.1). Fresh build from fork HEAD 68718f03: 190 gfx1100 code objects, OF_GPU_WARP_SIZE=32. Test slice: 73 passed / 2 failed (same pre-existing artifacts as gfx90a -- numpy __bool__ dtype-interop, not GPU faults). Wave32 warp reductions: softmax/layer_norm/rms_norm all produce correct results (softmax max_abs_diff=1.49e-08, layer_norm bwd gamma/beta no NaN, rms_norm bwd weight no NaN). LayerNormParamGrad wave64 fix is correct on wave32 (tile=32, block_dim_x=32, width=32 matches native wavefront). No fork changes needed. Fork 68718f0.",
-      "validated_sha": "fde793b9faec7d2f8e800b419e979613b8d12abf",
-      "started_at": "2026-05-31T10:07:00Z",
-      "completed_at": "2026-10-30T07:21:22Z",
-      "updated_at": "2026-10-31T20:02:56Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 1140,
-          "test": 28,
-          "misc": 0
-        },
-        "session_count": 1,
-        "first_session_at": "2026-05-31T10:07:00Z",
-        "last_session_at": "2026-05-31T10:09:00Z"
-      },
-      "last_agent": "validator",
-      "failed_sha": "80cbda89b2c04f5af1570976dbf86231d674c544"
-    },
-    "windows-gfx1101": {
-      "blocked": true,
-      "blocked_reason": "Windows not viable: RCCL Linux-only (find_package rccl REQUIRED, nccl.h in cuda_util.h/core files); POSIX ibv/pthread_fork syscalls; platform.cmake MSVC flags clash with all-clang; 32 third-party deps Linux-centric ExternalProject; oneflow never shipped on Windows upstream. GPU port complete on linux-gfx90a+gfx1100.",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-05T12:08:57Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1201": {
-      "blocked": true,
-      "blocked_reason": "Windows not viable (same as gfx1101): RCCL Linux-only; POSIX ibv/pthread_fork syscalls; platform.cmake MSVC flags clash with all-clang; 32 third-party deps Linux-centric. GPU port complete on linux-gfx90a+gfx1100.",
-      "validated_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-06-05T12:09:10Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
-    "windows-gfx1151": {
-      "blocked": true,
-      "blocked_reason": "Non-viable on Windows, arch-independent -- carrying the determination already recorded for windows-gfx1101/gfx1201 on 2026-06-05, which was reached by build analysis rather than by anything GPU-specific, so it applies unchanged to this GPU. Five independent blockers: (1) RCCL is hard-required (cmake/cuda.cmake has find_package(rccl REQUIRED) and roc::rccl in VENDOR_CUDA_LIBRARIES) and is Linux-only (Linux IPC, shared memory, sockets); <nccl.h> is pulled in by cuda_util.h, the main GPU utility header included nearly everywhere, plus 4 more core files. (2) POSIX platform code outside any platform-excluded subdir: ibv_wrapper.cpp dlopens libibverbs.so, pthread_fork.cpp uses pthread_atfork, several core files include unistd.h. (3) cmake/platform.cmake is MSVC-only (/MP /bigobj /EHsc /GF /FC), mutually exclusive with the all-clang toolchain HIP requires on Windows. (4) 32 third-party libraries build from source via ExternalProject_Add with Linux-centric recipes. (5) Upstream has NEVER shipped on Windows and cmake/oneflow.cmake:54 contains a literal error(\"Expanding macro in WIN32 is not supported yet\"). Scope note, stated plainly: no build was attempted on this host. The prior assessment established infeasibility before the build stage, the reasons are architectural rather than per-GPU, and nothing in them has changed; re-deriving it here would spend a validation cycle to reach an identical conclusion. wave64 (linux-gfx90a) and wave32 (linux-gfx1100) are both completed at head 2729bee5.",
-      "validated_sha": null,
-      "failed_sha": null,
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-08-20T19:14:15Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      }
-    },
     "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
@@ -133,6 +45,28 @@
       "last_agent": "validator",
       "state": "completed"
     },
+    "windows-gfx1151": {
+      "blocked": true,
+      "blocked_reason": "Non-viable on Windows, arch-independent -- carrying the determination already recorded for windows-gfx1101/gfx1201 on 2026-06-05, which was reached by build analysis rather than by anything GPU-specific, so it applies unchanged to this GPU. Five independent blockers: (1) RCCL is hard-required (cmake/cuda.cmake has find_package(rccl REQUIRED) and roc::rccl in VENDOR_CUDA_LIBRARIES) and is Linux-only (Linux IPC, shared memory, sockets); <nccl.h> is pulled in by cuda_util.h, the main GPU utility header included nearly everywhere, plus 4 more core files. (2) POSIX platform code outside any platform-excluded subdir: ibv_wrapper.cpp dlopens libibverbs.so, pthread_fork.cpp uses pthread_atfork, several core files include unistd.h. (3) cmake/platform.cmake is MSVC-only (/MP /bigobj /EHsc /GF /FC), mutually exclusive with the all-clang toolchain HIP requires on Windows. (4) 32 third-party libraries build from source via ExternalProject_Add with Linux-centric recipes. (5) Upstream has NEVER shipped on Windows and cmake/oneflow.cmake:54 contains a literal error(\"Expanding macro in WIN32 is not supported yet\"). Scope note, stated plainly: no build was attempted on this host. The prior assessment established infeasibility before the build stage, the reasons are architectural rather than per-GPU, and nothing in them has changed; re-deriving it here would spend a validation cycle to reach an identical conclusion. wave64 (linux-gfx90a) and wave32 (linux-gfx1100) are both completed at head 2729bee5.",
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-08-20T19:14:15Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
     "linux-gfx90a": {
       "state": "completed",
       "blocked": false,
@@ -156,6 +90,72 @@
       },
       "last_agent": "validator",
       "failed_sha": "521f547825b77e36a4752bd45b2a295ad2a0a633"
+    },
+    "windows-gfx1201": {
+      "blocked": true,
+      "blocked_reason": "Windows not viable (same as gfx1101): RCCL Linux-only; POSIX ibv/pthread_fork syscalls; platform.cmake MSVC flags clash with all-clang; 32 third-party deps Linux-centric. GPU port complete on linux-gfx90a+gfx1100.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T12:09:10Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "windows-gfx1101": {
+      "blocked": true,
+      "blocked_reason": "Windows not viable: RCCL Linux-only (find_package rccl REQUIRED, nccl.h in cuda_util.h/core files); POSIX ibv/pthread_fork syscalls; platform.cmake MSVC flags clash with all-clang; 32 third-party deps Linux-centric ExternalProject; oneflow never shipped on Windows upstream. GPU port complete on linux-gfx90a+gfx1100.",
+      "validated_sha": null,
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-06-05T12:08:57Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      }
+    },
+    "linux-gfx1100": {
+      "state": "validation-failed",
+      "blocked": false,
+      "blocked_reason": "GPU-validated on gfx1100 (RDNA3, wave32, ROCm 7.2.1). Fresh build from fork HEAD 68718f03: 190 gfx1100 code objects, OF_GPU_WARP_SIZE=32. Test slice: 73 passed / 2 failed (same pre-existing artifacts as gfx90a -- numpy __bool__ dtype-interop, not GPU faults). Wave32 warp reductions: softmax/layer_norm/rms_norm all produce correct results (softmax max_abs_diff=1.49e-08, layer_norm bwd gamma/beta no NaN, rms_norm bwd weight no NaN). LayerNormParamGrad wave64 fix is correct on wave32 (tile=32, block_dim_x=32, width=32 matches native wavefront). No fork changes needed. Fork 68718f0.",
+      "validated_sha": "fde793b9faec7d2f8e800b419e979613b8d12abf",
+      "started_at": "2026-05-31T10:07:00Z",
+      "completed_at": "2026-10-30T07:21:22Z",
+      "updated_at": "2026-11-01T14:48:23Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 1140,
+          "test": 28,
+          "misc": 0
+        },
+        "session_count": 1,
+        "first_session_at": "2026-05-31T10:07:00Z",
+        "last_session_at": "2026-05-31T10:09:00Z"
+      },
+      "last_agent": "validator",
+      "failed_sha": "d9e41753e07b814fe0cea985444397aef97709cc"
     }
   },
   "porting_released": {

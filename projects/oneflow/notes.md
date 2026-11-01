@@ -2735,3 +2735,103 @@ Skipped per the request. The nvcc 12.8.93 sm_80 PASS is recorded for every chang
 - `git -C projects/oneflow/src status --porcelain`: empty, also after the race probe was reverted and rebuilt.
 - Lesson promoted: `cuda-to-rocm/references/validation.md` ("Diagnosing a suspected AMD fault"): for a rare host crash in code the port does not touch, widen the suspected race window with a temporary sleep and check CPU-only work, instead of stress rerunning.
 - For a person (not a port item): the `LaunchLazyJob` enqueue-after-publish race above is an upstream oneflow bug on every backend. It is not registered as a deferral because it is outside the port. Whether to report it upstream is jeff's call.
+## Validation 2026-11-01 (linux-gfx1100, two W7800, full suites, one_embedding/P2P on two GPUs, fused-harness hang check, regression tests, long-k probe and graph-capture check at d9e41753e -- validation-failed, one GPU finding)
+
+jeff asked for this run: validate review-passed `moat-port` d9e41753e07b814fe0cea985444397aef97709cc on gfx1100 from a clean build. Result: **`validation-failed` at d9e41753e**. Everything passes, or fails in a class this file already explains, except one deterministic new failure. The port's own regression test `test_matmul_long_k.py::test_matmul_long_k` fails 6 of 6 runs (5 regression rounds plus the suite) on the default (hipBLASLt) path. hipBLASLt's gfx1100 kernel for long-k fp16 loses accuracy as k grows. torch on the same GPU gives bit-identical errors, and the port's own rocBLAS float-tile fallback is accurate. Details below, under the finding.
+
+Host: two Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), `HIP_VISIBLE_DEVICES=0,1` pinned by the dispatcher. ROCm 10.1.0 SDK wheels, AMD clang 24.0.0git, Python 3.11.17, numpy 1.26.4, protobuf 3.20.3, torch 2.16.0a0+git6c3af02 (the oracle; the image's torch, torch-*.dist-info, torchgen and functorch symlinked read-only into `$FLEET_VENV-base-links`). Fresh clone of the fork at d9e41753e, `protect-fork` run. `ulimit -c 0` for every run, `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git` (`therock-libllvm-symbol-interposition`, still required), `PYTHONDONTWRITEBYTECODE=1`, no JIT extension builds. `git -C projects/oneflow/src status --porcelain`: empty after all runs.
+
+### Build (clean build directory, 1056 s, `utils/timeit.sh oneflow compile`)
+`$FLEET_VENV/bin/python -m pip install -r dev-requirements.txt fsspec pytest-timeout pytest-repeat mkl-static mkl-include opencv-python==4.11.0.86`, plus the pywrap `python3` that drops pip's `--user`. Then:
+```
+ulimit -c 0
+export PATH=<agent_space>/pywrap:$FLEET_VENV/bin:$PATH CCACHE_DIR=<job>/ccache MKLROOT=$FLEET_VENV LD_LIBRARY_PATH=$FLEET_VENV/lib:$LD_LIBRARY_PATH
+R=$($FLEET_VENV/bin/python -m rocm_sdk path --root)
+rm -rf build; CMAKE_PREFIX_PATH=$R ROCM_CLANG=$R/lib/llvm/bin/clang++ ROCM_CLANG_C=$R/lib/llvm/bin/clang JOBS=32 CMAKE_HIP_ARCHITECTURES=gfx1100 ./build_rocm.sh all
+```
+rc=0, 2050 steps, `CMAKE_HIP_ARCHITECTURES: gfx1100`, `OF_GPU_WARP_SIZE: 32`, liboneflow.so 1.02 GB. The ccache was empty. Smoke check: `flow.cuda.is_available()` True with 2 devices; a 64x1000 softmax sums to 64.0; `flow.sum(flow.ones(64, 72, device="cuda"), dim=0)` gives 64.
+
+### Full suites (`utils/timeit.sh oneflow test`; modules 728 s on GPU 0, 6 files at a time; tensor 79 s on GPU 1, 4 at a time, concurrently)
+The per-file runner of the earlier rounds: `ls test_*.py | xargs -P N ... timeout -k 30 1800 python3 -m pytest -p no:warnings -p no:randomly -p no:cacheprovider --capture=sys --timeout=900 -rfE -q --junitxml=<out>/<file>.xml <file>`, with `source build/source.sh` and `ONEFLOW_TEST_DEVICE_NUM=1`.
+
+| suite | passed | failed | errors | skipped | gfx1100 at 80a91de06 | gfx942 at 42d68145d |
+|---|---|---|---|---|---|---|
+| modules (547 files, 545 junit) | 1608 | 53 | 5 | 316 | 1598 / 50 / 5 / 315 | 1598 / 55 / 5 / 315 |
+| tensor (22 files) | 368 | 1 | 0 | 22 | 368 / 1 / 0 / 22 | 368 / 1 / 0 / 22 (a12ca99e7) |
+
+- tensor: only test_safetensors (module not installed), the same as before.
+- modules, per test id against the gfx1100 junit at 80a91de06 (porter round 2026-10-31). +10 passed and +1 skipped come from the tests added since then (test_matmul_long_k 2, test_conv_float64 6, test_grouped_matmul_bias long-k, test_batchnorm_single_value, ...). There are 3 new failure ids:
+  - `test_higher_derivative_loss::test_bce_loss_grad_grad` and `::test_kl_div_loss_grad_grad`. The file completed this time instead of aborting in torch's BCE oracle (rc 139 at 80a91de06). These are its known torch-drift cases (bce PyTorchDoesNotSupportError; kl_div grad_grad, which also fails CPU-only), the same as gfx942 run 2 at 80cbda89b.
+  - **`test_matmul_long_k::test_matmul_long_k`: the GPU finding below.**
+  Every other failure/error id is the same as at 80a91de06, in the classes listed in "Validation 2026-10-31 (linux-gfx1100 ...)": 14 autotest "stuck in an endless loop", numpy `__bool__`, `KeyError: 'ONEFLOW_CI'`, `oneflow.char != int8`, higher-derivative oracles, `/dataset`, 5 collection errors, lbfgs, replication_pad, functional docstr, codegeex, and the float32 tolerance pair test_cublas_fused_mlp / test_fused_matmul_bias_add_relu_dropout. The test_cublas_fused_mlp failure is float32 only: a `/tmp` copy restricted to float64 passes, and one restricted to float32 fails. There were no kernel-not-found records.
+- Files without junit or with rc != 0/1: test_dataset and test_loss (134, known), test_fused_self_attention and test_shutting_down (5, no tests), the collection errors (2). The rare-crash files of the 80cbda89b run (test_vsplit, test_global_einsum_eltwise_mul_then_reduce_sum, test_batchnorm) passed.
+
+### Single-GPU one_embedding files and recent-round regression tests, 5 rounds (GPU 1, `agent_space/one_gpu.sh 5 1`, 715 s; one pytest per file, `--timeout=900`)
+Every round gave the same result for each file: test_id_shuffle 4 passed; test_oneembedding, test_oneembedding_padding_idx, test_dynamic_allocation_gradient_shuffle, test_one_embedding_adagrad, test_one_embedding_sgd 1 passed each; test_one_embedding_adam and test_one_embedding_ftrl 1 skipped (upstream `@unittest.skip`); test_fused_dot_feature_interaction 2 passed; **test_conv_float64 6 passed; test_grouped_matmul_bias 1 passed; test_cross_entropy_float16 3 passed; test_check_numerics_float16 2 passed; test_pool2d_channels_last 1 passed; test_batchnorm 6 passed + 1 upstream skip** (test_batchnorm_float64 and test_batchnorm_single_value included); **test_conv_bias_grad 2 passed**; test_reduce_sum_like 2 passed; graph/test_graph_image_gpu_decoder 1 passed + 1 upstream skip; test_cublas_fused_mlp 1 failed (the float32 tolerance item above). **test_matmul_long_k: 2 passed (`..._without_hipblaslt`, `..._without_workspace`), 1 failed (`test_matmul_long_k`) in 5 of 5 rounds, always `0.0034743935713545224 not less than 0.001953125 : matmul transpose_b oneflow.float16`.**
+
+### Two GPUs, 5 rounds (`agent_space/two_gpu.sh`, `oneflow.distributed.launch --nproc_per_node 2 --redirect_stdout_and_stderr`, `ONEFLOW_TEST_DEVICE_NUM=2`, GPUs 0,1; 2148 s): 65 of 65 runs rc=0
+| test (5 rounds each) | every round |
+|---|---|
+| expensive/test_id_shuffle_global.py, embedding and gradient `*_USE_P2P` = 0 and = 1 | 3 passed on both ranks |
+| modules/test_dynamic_allocation_gradient_shuffle_shuffle_global.py, P2P 0 and 1 | 1 skipped (upstream `@unittest.skip`) |
+| expensive/test_id_shuffle_p2p_global.py (id_shuffle P2P on) | 1 passed on both ranks |
+| expensive/test_one_embedding_p2p_shuffle_global.py (embedding + gradient P2P on) | 1 passed on both ranks |
+| modules/test_comm_ops.py -k bfloat16 (all_reduce / all_gather_into_tensor bf16) | 2 passed on both ranks |
+| graph/test_graph_nccl_logical_bfloat16.py | 3 passed on both ranks |
+| expensive/test_oneembedding.py, 2 ranks | 1 passed on both ranks |
+| fused harness: unfused / fused P2P off / fused P2P on / fused P2P on + id_shuffle P2P | rc=0, losses finite |
+
+### Fused embedding-interaction harness, 20 runs with all P2P on (`agent_space/fhn.sh fhall 20 1`, 641 s)
+The harness is the 80cbda89b validator's `fused_harness.py` (26 tables x 2000 rows, dim 128, AMP, `fused_dot_feature_interaction` with sparse features, 512 rows per rank, 50 steps), with two additions: a per-step print, and hang diagnostics. The process calls `prctl(PR_SET_PTRACER, ANY)` so that gdb can attach under yama ptrace_scope 1, and registers a faulthandler on SIGUSR1. Every run had `FUSE_EMBEDDING_INTERACTION=1`, embedding + gradient shuffle P2P on and `ID_SHUFFLE_USE_P2P=1`, the configuration that hung 3-6 of 20 before 42d68145d. A run still alive at 150 s would have been recorded as a hang (amd-smi usage, the last steps, and gdb plus Python stacks of both ranks). **20 of 20 completed in 32-33 s, no hang.** The compiled job has both fused ops taking `sparse_feature`. Against the first unfused run (rank 0; rank 1 identical):
+
+| mode | runs | max loss difference | top-weight relL2 | bottom relL2 |
+|---|---|---|---|---|
+| unfused reruns | 5 | 9.5e-7 | <= 3.0e-5 | <= 2.1e-5 |
+| fused, P2P off | 5 | 1.0e-6 | 2.8e-5 .. 2.9e-5 | <= 2.1e-5 |
+| fused, embedding + gradient P2P | 5 | 1.1e-6 | 2.6e-5 .. 3.0e-5 | <= 2.1e-5 |
+| fused, all P2P incl. id_shuffle (rounds) | 5 | 1.1e-6 | 2.5e-5 .. 3.1e-5 | <= 2.2e-5 |
+| fused, all P2P incl. id_shuffle (hang check) | 20 | 1.4e-6 | 2.4e-5 .. 3.2e-5 | <= 2.2e-5 |
+
+Loss 0.6942 -> 0.6944 everywhere. So every P2P path agrees with unfused at rerun noise.
+
+### CU-mask streams on gfx1100 (the reviewer's question 1 of "Review 2026-11-01 ... 80cbda89b..42d68145d")
+`agent_space/cum/cum.hip` is a standalone program (SDK hipcc `--offload-arch=gfx1100`, built outside any checkout). It builds the mask as 42d68145d does, with `multiProcessorCount` low bits, and records HW_ID1 (SE/SA/WGP/SIMD) for each of 35 x 64 blocks. `multiProcessorCount` is 35 (WGPs). A `hipStreamCreate` stream reaches 35 WGP slots and 70 (WGP, SIMD) slots. The first and last of 1, 16 and 64 CU-mask streams reach the same 35 / 70. So the mask covers every WGP in WGP mode.
+
+### GPU finding (fails the platform): hipBLASLt's long-k fp16 GEMM on gfx1100 misses the port's 4-ulp bound
+- Failing case: `test_matmul_long_k`, `matmul transpose_b` float16, (2 x 2^20) @ (16 x 2^20)^T. The error is 3.47e-3 = 7.1 ulp of fp16 against the bound 4 x 2^-11 = 1.95e-3. It is deterministic (the same digits in 6 of 6 runs). The other three default-path cases in the same test pass, so does every case on the forced fallback (`ONEFLOW_EP_CUDA_LONG_K_GEMM_USE_HIPBLASLT=0`) and on the 0 MiB-workspace subprocess, and so do the row-tile cases.
+- Probe on that exact shape (`agent_space/lk_tb.py`; oneflow vs torch on the same GPU vs a float64 product of the rounded inputs):
+
+  | case | oneflow default (hipBLASLt) | oneflow fallback (rocBLAS float tile) | torch |
+  |---|---|---|---|
+  | fp16 2 x 2^20 x 16, transpose_b | 3.47e-3 (7.12 ulp) | 2.60e-4 (0.53 ulp) | 3.47e-3 |
+  | fp16 2 x 2^20 x 16 | 7.04e-4 (1.44 ulp) | 2.36e-4 | 7.04e-4 |
+  | bf16 2 x 2^20 x 16, transpose_b | 4.47e-3 (1.14 ulp) | 2.03e-3 | 4.47e-3 |
+  | bf16 2 x 2^20 x 16 | 1.76e-3 | 1.76e-3 | 1.76e-3 |
+
+  The default path's errors are bit-identical to torch's, because torch also runs hipBLASLt on this GPU. The error grows with k (fp16 transpose_b, `lk_k.py`): 0.82 ulp at k = 2^14 (below the trigger, so rocBLAS) and at 2^16, 3.16 ulp at 2^18, 7.12 ulp at 2^20. That growth is the per-chunk or partial-sum rounding signature that d81b70795 set out to remove.
+- The kernel: oneflow passes COMPUTE_32F with scale R_32F, R_16F A/B/C/D, transA T, a 4 MiB workspace and the default epilogue (HIPBLASLT_LOG_LEVEL=2). The heuristic picks `Cijk_Alik_Bljk_HHS_BH_Bias_HA_S_SAV_UserArgs_MT32x32x128_MI16x16x1_..._ISA1100_..._WG32_4_1` (AMD_LOG_LEVEL=3 ShaderName). Not root-caused further: I did not try which hipBLASLt solution index or k-split setting is accurate.
+- The requested k = 2^20 probe (`agent_space/longk_probe.py`, uniform(-1, 1), error = max abs / max |float64 ref|). oneflow equals torch to all printed digits in every case, but torch's level on gfx1100 is far above the gfx942 reference levels named in the dispatch (fp16 about 2.8e-4, bf16 about 2.5e-3):
+
+  | m x k x n | fp16 oneflow = torch | bf16 oneflow = torch | fp16 / bf16 with `..._USE_HIPBLASLT=0` |
+  |---|---|---|---|
+  | 1 x 2^20 x 64 | 4.04e-3 | 5.55e-3 | 2.78e-4 / 2.53e-3 |
+  | 2 x 2^20 x 64 | 8.32e-4 | 1.48e-3 | 2.79e-4 / 1.48e-3 |
+  | 16 x 2^20 x 64 | 1.06e-3 | 2.11e-3 | 4.11e-4 / 1.79e-3 |
+  | 1 x 2^20 x 64 transpose_b | 2.89e-3 | 3.57e-3 | 2.01e-4 / 1.91e-3 |
+  | 1 x 2^16 x 64 | 4.42e-4 | 2.15e-3 | 2.94e-4 / 2.15e-3 |
+  | 2 x 16384 x 65536 | 3.34e-4 | 2.43e-3 | 3.02e-4 / 2.42e-3 |
+
+  So on gfx1100 the hipBLASLt route is about 14x worse than the gfx942 level for fp16 at 1 x 2^20 x 64, and only the port's rocBLAS float-tile fallback reaches it.
+- Why this is a fail and not an explained class: the failing test is the port's own regression test for d81b70795's accuracy claim, and it fails on this arch's default path. The root defect is in hipBLASLt's gfx1100 kernel selection (a library defect, registered as `hipblaslt-gfx1100-longk-half-accuracy`). The port still has to pass its own test on every arch. For the porter, the options are: (a) on gfx11 (or wherever the heuristic's kernel is inaccurate) send long-k 16-bit GEMMs to the rocBLAS float-tile path, which is accurate here but much slower (gfx942 measured 65 ms vs 0.13 ms at 1 x 2^20 x 64); (b) find a hipBLASLt algorithm or setting that accumulates correctly on gfx1100 (e.g. iterate `hipblasLtMatmulAlgoGetHeuristic` results, or check the GSU/split-k fields); (c) a person's ruling that the bound is "torch's level on this GPU", which would change the test rather than the code. Before d81b70795 this shape went through rocBLAS with a 16-bit D; that was not measured on gfx1100 here.
+
+### Graph-capture workspace check (`agent_space/cg_ws2.py`, `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1`, both GPUs, 126 s)
+I rewrote the script from the description in "Validation 2026-10-31 (linux-gfx942 ...)". It runs 7 shapes x fp32/fp16/bf16 x cuda:0/cuda:1 = 42 nn.Graph matmuls, captured in increasing size, with eager 4096x16384x4096 and 16384x4096x16384 GEMMs after each capture. Then every graph is replayed 3 times, interleaved, in reverse capture order, with fresh inputs, against a float64 torch product. Tolerances: fp32 1e-4, fp16 4e-3, bf16 3e-2. The first version of the script called torch while a oneflow capture was still in flight, and torch's lazy context init failed with `hipErrorStreamCaptureImplicit`, which then broke the captured GEMM. That was a harness error (torch is now initialized first and called only after oneflow output has synchronized), not a port fault. **Result: all 42 graphs captured and replayed with no error on either device.** Worst fp32 6.2e-6, fp16 4.4e-4 and bf16 3.3e-3 for every shape except 1 x 1048576 x 64. That shape gives fp16 3.2e-3 to 4.2e-3 (1 of 126 replays over 4e-3) and bf16 3.1e-3 to 5.7e-3, with the first run and the replays alike, matching the eager long-k probe above. So the capture and workspace path holds on gfx1100, and the long-k accuracy is the finding above.
+
+### CUDA compile gate: skipped per the dispatch
+The gate passed for every changed TU (nvcc 12.8.93, sm_80; last at d9e41753e, "Porter round 2026-11-01 ... 9166f2fb2..9636ca67b").
+
+### Other checks at d9e41753e
+- `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038 ('Strategy A', 'MOAT', 'Lead platform'; PR-prep squash item).
+- Documentation: README.md:145-150 documents the ROCm configure next to the CUDA one, and build_rocm.sh matches it.
+- `git -C projects/oneflow/src status --porcelain`: empty.
+- Telemetry: the two-GPU and hang-check phases first ran for 2 s each with rc 126 because a copied script lacked its exec bit, and the first cg_ws2 call used a relative path. I removed those bogus `phase` lines from stats.jsonl before committing; the recorded phases are the real runs.

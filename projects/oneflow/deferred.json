@@ -131,6 +131,19 @@
         "at": "2026-11-01T04:15:47Z",
         "note": "Ruled 'fix it, not deferred' in the 2026-11-01 gfx942 porter dispatch; fixed in fork 42d68145d."
       }
+    },
+    {
+      "id": "hipblaslt-gfx1100-longk-half-accuracy",
+      "kind": "rocm-bug-report",
+      "component": "hipBLASLt",
+      "summary": "On gfx1100 (W7800, ROCm 10.1.0) hipBLASLt's heuristic kernel for fp16 GEMMs with COMPUTE_32F and long k (Cijk_Alik_Bljk_HHS_BH_..._MT32x32x128_MI16x16x1_ISA1100) loses accuracy as k grows: (2 x 2^20)(16 x 2^20)^T is 7.1 ulp of fp16 (0.82 ulp at k = 2^16, 3.2 at 2^18), and 1 x 2^20 x 64 is 4.0e-3 relative vs 2.8e-4 for a float-accumulated GEMM. torch on the same GPU gives bit-identical errors. It fails oneflow's test_matmul_long_k on gfx1100.",
+      "refs": [
+        "projects/oneflow/notes.md: Validation 2026-11-01 (linux-gfx1100 ... d9e41753e)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-01T14:48:16Z",
+      "decided": null
     }
   ]
 }
