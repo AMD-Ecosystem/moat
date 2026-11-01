@@ -184,9 +184,19 @@ in the gradient barrier and the peer in no barrier. `GPU_MAX_HW_QUEUES=32` makin
 confirms it (oneflow: 6/20 hung at the default, 0/20 at 32). Fix: create the project's streams with
 `hipExtStreamCreateWithCUMask` over all CUs; ROCclr gives a CU-masked stream a hardware queue of
 its own outside the pool (a probe deadlocking 6/6 stream pairs at `GPU_MAX_HW_QUEUES=1` passes 30/30
-with CU-masked streams). High-priority streams have their own smaller pool and deadlock the same
-way. A spinning kernel alone does not block a later kernel of another stream on the same queue;
-the later kernel has to wait on prior work in its own stream first. (oneflow)
+with CU-masked streams). Each priority (low, normal, high) has a separate pool of the same size,
+capped by the same `GPU_MAX_HW_QUEUES` (`Device::acquireQueue` in `rocdevice.cpp`), so streams from
+`hipStreamCreateWithPriority` deadlock the same way. The mask counts `multiProcessorCount` units: on
+RDNA in WGP mode that count and the mask bits are WGPs, and ROCclr expands each bit to the WGP's two
+CUs, so `multiProcessorCount` set bits cover every CU on CDNA and RDNA alike. CU-masked queues never
+enter the pool; `hipStreamDestroy` destroys the queue (`Device::releaseQueue`), and each costs
+device memory for its ring buffer (4 MiB on gfx942), so create them per long-lived stream, not per
+operation. Every stream that can carry a cross-GPU spinner or a collective needs this, including
+streams the project creates outside its stream wrapper, or an argument that no spinner can share
+their pool: oneflow leaves its collective-boxing executor and fused-MLP gradient streams on the
+pool, safe only because every spin kernel now runs on a CU-masked stream. A spinning kernel alone
+does not block a later kernel of another stream on the same queue; the later kernel has to wait on
+prior work in its own stream first. (oneflow)
 
 **Out-of-bounds reads.** CUDA often tolerates a read one element past an allocation; AMD
 faults. Kernels reading index +/-1 or +/-width at edges (stencils, neighbour gathers) must
