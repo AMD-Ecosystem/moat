@@ -3128,3 +3128,99 @@ No findings. The previous must-fix (tests fail on CUDA CI because cuTENSOR takes
 - **pytest on gfx942:** `python -m pytest gpu4pyscf/lib/tests/test_cutensor.py -q`: 7 passed; with `CUPY_ACCELERATORS=cub,cutensor`: 7 passed.
 - **Skill edit 0a492b80** (fault-classes.md): accurate; the sentence matches the CuPy source above. It is on port/gpu4pyscf with the code it describes.
 - **Commit hygiene.** fb95c20 title 65 chars, `[ROCm]`; AI disclosure in prose; fenced Test Plan; no Co-Authored-By or noreply line; ASCII message and added lines; one file changed (test only, no CUDA/CPU behavior change). `python3 utils/jargon.py --port gpu4pyscf`: clean. Fork `git status --porcelain`: no tracked modifications. `origin/moat-port` = fb95c20.
+
+## Validation 2026-11-01 (validator, linux-gfx1100 W7800, fork moat-port @ fb95c20) -- COMPLETED
+
+Requested by jeff: validate fb95c20 (review-passed) on wave32. Host: AMD Radeon Pro W7800 48GB, gfx1100, `HIP_VISIBLE_DEVICES=1` from the dispatcher, `sharedMemPerBlock` 65536. TheRock ROCm SDK 10.1.0 (AMD clang 24.0.0), cmake from the job venv, gfortran 13. Host CPU Threadripper PRO 5975WX (AVX2, no AVX-512). Fresh fork clone at fb95c20e943ed113203cf20e1689bc2f5328b7b0 (= origin/moat-port), `protect-fork` run. Everything ran under `ulimit -c 0`; no JIT extension builds; no rocBLAS shim. CUDA gate skipped as instructed (passed at fb95c20 on gfx942).
+
+### Environment (job venv)
+```
+$FLEET_VENV/bin/python -m pip install 'numpy>=2.0,<2.3' 'scipy>=1.13' cupy-rocm-7-0==14.2.0 pyscf==2.14.0 pytest pyscf-dispersion geometric pytest-timeout
+# numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.5.0, geometric 1.1.1, pytest 7.3.2, pytest-xdist 3.3.1, pytest-timeout 2.4.0 (no mcfun, matching the gfx942 reference)
+export PATH=$FLEET_VENV/bin:$PATH LD_LIBRARY_PATH=$(/opt/python-3.11-venv/bin/rocm-sdk path --root)/lib PYTHONPATH=<fork>; ulimit -c 0
+```
+
+### Build: README ROCm block, fresh clone (no build dir), libxc on (default), machine-LICM flag kept
+```
+cmake -S gpu4pyscf/lib -B build/temp.gpu4pyscf -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100
+cmake --build build/temp.gpu4pyscf -j 32 -v
+```
+Exit 0 in 236 s (utils/timeit.sh compile). 12 libs plus libxc.so.15 (ExternalProject, `ENABLE_HIP=ON`). 213 `--offload-arch=gfx1100` lines and no other arch; `-disable-machine-licm` on 113 lines; no `-O1`.
+
+### gto/tests/test_ecp.py: 7 passed, 0 skipped
+`python -m pytest gpu4pyscf/gto/tests/test_ecp.py -v -rs`: test_ecp_cart, _cart_ip1, _cart_ipipv, _cart_ipvip_cart, _sph, _sph_ipnuc, _sph_iprinv all PASSED, none skipped. **The low-memory variant is what runs the g-shell cases that exceed 64 KB on this arch.** Kernel trace (`rocprofv3 --kernel-trace --stats` over the same pytest run, 7 passed): `type2_cart_ipipv_lowmem` 3 launches (the (4,2,4), (4,3,4), (4,4,4) cases), `type2_cart_ipvip_lowmem` 1 ((4,4,4)), `type2_cart_ip1_lowmem` 2 ((4,4,4)); every other general case takes the original kernels (`type2_cart_ip1_general` 303, `type2_cart_ipipv` 177, `type2_cart_ipvip` 179, `type2_cart` 80). That matches the gfx942 limit table: gfx1100 has the same 65536 B limit.
+
+### Water vs CPU PySCF (agent_space/tree/water.py; def2-svp, grids level 3, conv_tol 1e-12)
+- RKS energy |GPU - CPU|: B3LYP 1.06e-11, PBE 5.94e-12, M06 6.86e-12 Ha; all converged on both sides.
+- RHF energy: sto-3g 3.6e-12, def2-svp 9.6e-12, cc-pvtz 2.9e-11 Ha.
+- RHF gradient max component, GPU gradient on the CPU-converged orbitals: sto-3g 3.5e-14, def2-svp 2.1e-13, cc-pvtz 8.4e-12. With two independently converged SCFs: 4.0e-11 / 3.2e-9 / 1.9e-8 (the density difference conv_tol 1e-12 allows; same numbers as the e1ad6bc run on this card).
+
+### multigrid_v2 concurrency (the original failure)
+`python -m pytest gpu4pyscf/pbc/dft/tests/test_multigrid_v2.py gpu4pyscf/dft/tests/test_numint2c.py -n 4 -m 'not slow and not benchmark and not special'`, 3 runs, while the full tree was running on the same GPU (extra load, the condition under which the rocBLAS fault showed on gfx1100): 33 passed, 4 skipped each time (102 s, 58 s, 54 s); 0 failed. In the tree run itself, pbc/dft/tests is 156/0/18/0 (it was 98/28/14/34 at e1ad6bc on this card).
+
+### Full tree at fb95c20 (agent_space/tree/runtree.sh: each of the 39 `gpu4pyscf/**/tests` directories in turn, `python -m pytest <dir> -n 4 --dist loadfile -m 'not slow and not benchmark and not special' -q -rfEs --tb=line -p no:cacheprovider --timeout 1800 --junitxml=...`, GPU liveness check before each directory, never failed; wall 3322 s)
+
+| directory | gfx942 @ c8c9acc p/f/s/e | gfx1100 @ fb95c20 p/f/s/e |
+|---|---|---|
+| cc/tests | 4/0/0/0 | 4/0/0/0 |
+| df/hessian/tests | 24/0/0/0 | 24/0/0/0 |
+| df/tests | 200/5/3/0 | 200/5/3/0 |
+| dft/tests | 113/0/9/0 | 112/1/9/0 |
+| dispersion/tests | 16/0/0/0 | 16/0/0/0 |
+| fci/tests | 3/0/0/0 | 3/0/0/0 |
+| geomopt/tests | 0/0/5/0 | 0/0/5/0 |
+| grad/tests | 115/2/0/0 | 115/2/0/0 |
+| gto/tests | 62/0/0/0 | 62/0/0/0 |
+| hessian/tests | 91/0/1/0 | 91/0/1/0 |
+| lib/tests | 39/0/1/0 | 41/0/1/0 |
+| mcscf/tests | 8/0/0/0 | 8/0/0/0 |
+| md/tests | 5/0/0/0 | 5/0/0/0 |
+| mp/tests | 20/1/0/0 | 20/1/0/0 |
+| nac/tests | 71/1/1/0 | 71/1/1/0 |
+| pbc/df/tests | 104/1/7/0 | 104/1/7/0 |
+| pbc/dft/tests | 156/0/18/0 | 156/0/18/0 |
+| pbc/grad/tests | 185/0/2/0 | 185/0/2/0 |
+| pbc/gto/pseudo/tests | 7/0/0/0 | 7/0/0/0 |
+| pbc/gto/tests | 13/0/0/0 | 13/0/0/0 |
+| pbc/hessian/tests | 0/0/6/0 | 0/0/6/0 |
+| pbc/lib/tests | 2/0/0/0 | 2/0/0/0 |
+| pbc/properties/berry/tests | 10/0/2/0 | 10/0/2/0 |
+| pbc/scf/tests | 88/2/1/0 | 88/2/1/0 |
+| pbc/tools/tests | 16/0/0/0 | 16/0/0/0 |
+| pbc/x2c/tests | 1/0/1/0 | 1/0/1/0 |
+| pop/tests | 2/0/0/0 | 2/0/0/0 |
+| properties/tests | 26/0/5/0 | 26/0/5/0 |
+| qmmm/pbc/tests | 3/0/0/0 | 3/0/0/0 |
+| qmmm/tests | 21/0/0/0 | 21/0/0/0 |
+| scf/tests | 159/2/3/0 | 159/2/3/0 |
+| sem/dmp/tests | 1/0/0/0 | 1/0/0/0 |
+| sem/grad/tests | 3/0/0/0 | 3/0/0/0 |
+| sem/gto/tests | 15/0/0/0 | 15/0/0/0 |
+| sem/integral/tests | 27/0/0/0 | 27/0/0/0 |
+| solvent/tests | 126/0/2/0 | 126/0/2/0 |
+| tdscf/tests | 93/2/0/0 | 93/2/0/0 |
+| tests | 0/0/0/0 | 0/0/0/0 |
+| x2c/tests | 8/0/1/0 | 7/1/1/0 |
+| **total** | 1837/16/68/0 | **1837/18/68/0** |
+
+lib/tests +2 passes: the two einsum matvec tests in test_cutensor.py added after c8c9acc (b7c39b6, fb95c20).
+
+**The 16 reference failures, all present, each with its recorded signature:**
+- RNG fingerprints (7): df test_jk_energy_per_atom (31.81 against 2e-9, the -14.927 vs 16.882 fingerprint pair), df test_get_nacv_ee (1.07238 vs -0.88613), grad/test_tdrhf_grad test_grad_elec (7.823375488826505, the recorded GPU value), grad/test_tduhf_grad test_grad_elec (-2.6958 vs -14.0066), nac/test_tdrhf_nac_ee test_get_nacv_ee (1.07204 vs -0.88616), pbc/scf/test_pbc_soscf test_rks_gen_g_hop and test_uks_gen_g_hop (O(1) complex fingerprint mismatches).
+- d-aug-cc-pvdz missing from PySCF 2.14 (4): BasisNotFoundError in df test_general_contraction, scf test_rhf_df_against_qchem and test_rks_df_against_qchem, tdscf test_rtda_ris_diffuse.
+- rocBLAS trsm accuracy (3): mp test_dfmp2_kernel_one_gpu 1.049e-7 against 7 places, df test_grad_hybrid 1.028e-9 against 1e-9, df test_j_energy_per_atom 1.34e-12 against 1e-12.
+- Finite-difference strain (1): pbc/df test_ft_ao_strain_deriv 3.05e-8 against 3e-8.
+- Krylov cap (1): tdscf test_krylov_eigenvalue, eigenvector error 1.336e-5.
+
+**No noise-floor SCF test failed in this run** (raman x5, tdrks_vv10 wb97xv_tda x2, scf test_gdm_rhf, tdscf test_rtddft_ris_diffuse all passed), so none needed the rerun.
+
+**The two failures outside the 16 are the two gfx1100-host deviations already root-caused on this card type at e1ad6bc (Validation 2026-10-31, "The deviations", items 2 and 3) and seen again at 3982189; re-shown here with fresh evidence, neither is a GPU wrong result:**
+1. dft/test_numint.py::test_sparse_index, `lib.fp(...) == 103.60117204957997` gives 103.60117204958. Host CPU float summation. agent_space/tree/sparse.py: the four fingerprinted arrays are int32 index arrays (1223/483/270/513 entries); their fingerprints are 2, -32, -2 and 0 ulp from the reference values (the 32 ulp one is 2.8e-14 on 5.62, relative 5e-15), whereas changing one index moves a fingerprint by the size of a cosine term (order 1e-3 to 1); `math.fsum` of the same products gives a third rounding (103.6011720495799). This is AVX2 numpy summation order on this host against an exact `==` on a float, not the GPU.
+2. x2c/test_x2c.py::test_sfx2c1e_cart, hcore max diff 6.122e-11 against `assertAlmostEqual(.., 10)` (5e-11): deterministic accuracy margin, 1.2x. agent_space/tree/x2c.py: 3 runs 6.122e-11 each; max|hcore| 33.0 Ha, so relative 1.9e-12. With the generalized eigh (gpu4pyscf.lib.cusolver.eigh) on SciPy: 4.583e-11; with every cp.linalg.eigh and cp.linalg.solve also on NumPy: 4.584e-11 (the integral floor). Identical to the e1ad6bc numbers on this card: hipSOLVER's generalized eigh adds 1.5e-11. gfx942 passes it by a small margin.
+
+So there is no new GPU finding at fb95c20 on gfx1100.
+
+### Checks
+- `python3 utils/jargon.py --port gpu4pyscf`: clean.
+- Documentation: the README ROCm block builds as written (only the arch and `-j` changed).
+- Fork `git status --porcelain`: no tracked modifications (build output untracked; the runner deletes md/tests' `from_h5.xyz`).
