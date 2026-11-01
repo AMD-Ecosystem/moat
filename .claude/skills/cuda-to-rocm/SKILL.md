@@ -109,7 +109,7 @@ Scan this list against what you are doing. If any line could apply, open
 - CUPTI has no ROCm analogue; ck_tile fmha ships headers but no instance library.
 - `char` vs `signed char` vector base types differ between HIP and CUDA.
 - AMD compute-capability values COLLIDE with NVIDIA arch numbers, so CC-keyed dispatch picks the wrong path.
-- CuPy's `einsum` sends batched dot products to rocBLAS `gemv_strided_batched`, which returns wrong entries on gfx1100 for small m and a large batch.
+- rocBLAS `gemv` with more than 65535 batches (m < 2n) returns wrong entries (missing barrier in its batch loop); CuPy's `einsum` reaches it through batched dot products.
 - Library swaps: cuBLAS -> hipBLAS, cuFFT -> hipFFT, cuRAND -> hipRAND, cuSPARSE -> hipSPARSE, cuDNN -> MIOpen, Thrust/CUB -> rocThrust/hipCUB. Handle types and v2-enum signatures differ.
 - Runtime PTX + CUDA Driver API is a third build class beyond A and B.
 - MSVC-only upstreams accept code gcc/clang reject; the HIP build is a stricter compiler.

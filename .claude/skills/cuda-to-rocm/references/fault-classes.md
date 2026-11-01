@@ -422,31 +422,34 @@ definitions on ROCm only, leaving the CUDA source untouched. CuPy-ROCm ships no 
 binding (fall back to `cupy.einsum`) and CUTLASS-based extension kernels need a
 replacement such as one GEMM per group. (gpu4pyscf)
 
-**`cupy.einsum` batched dot products hit a rocBLAS batched-GEMV defect on gfx1100.** CuPy
-computes `(..., 1, k) @ (..., k, n)` as `gemm_strided_batched_ex` with n=1, which rocBLAS
-runs as `gemv_strided_batched`. Every einsum pairwise step in which one operand has no free
-index reaches it, for example `einsum('xg,xg->g')`. On gfx1100 (rocBLAS 5.7.0) that kernel
-returns wrong, run-to-run varying entries for m < 8 (m = CuPy's output columns) when
-batch_count is large (first seen at 65536 under load). complex128 fails on an idle GPU;
-float64 fails only while another process uses the GPU, so the test runner's own parallelism
-decides whether CI sees it. Broadcast batched matmul (`gemm_batched`) and 2-D matmul/dot
-(plain `gemm`) were clean. Do not replace `cupy.matmul` on the CuPy module: it is a
-process-global monkeypatch of a third-party library, it misses the `@` operator, and a
-reviewer rejected it. Add a project-local `einsum` instead (ROCm: route a pairwise step whose
-one side has no free index and whose other side's free indices span fewer than 8 entries to
-a broadcast multiply and sum, with no batch-size cut, since the threshold moves with load;
-CUDA: the name is `cupy.einsum` itself). Bind it as the project's contraction wrapper's
-einsum and switch every direct `cupy.einsum` site that is structurally in the regime to it.
-Find those sites statically (simulate CuPy's default pairwise order from the subscripts),
-then cover the dynamic ones (`numpy.einsum` dispatching CuPy arrays, `@`) with an
-LD_PRELOAD shim on the rocBLAS strided-batched entry points that records the Python caller
-over the test run; hipBLAS calls the `_64` entry points. CuPy squeezes size-1 axes before
-pairing, so a structurally clean contraction lands in the regime when a count (states, spin
-sets, k-points) is 1; only einsums with no contracting pairwise step never reach rocBLAS.
-Two W7800s wedged (first H2D copy never completes, 95% GFX activity with no process) during
-that shim run with 8 to 12 workers; the cause is not established, so prefer the static list
-and run the shim on one directory at a time. (gpu4pyscf; reproducer, shim and site list in
-its notes.)
+**rocBLAS `gemv` over more than 65535 batches returns wrong entries; `cupy.einsum` reaches it.**
+Root cause (https://github.com/ROCm/rocm-libraries/issues/14819): for transA=N and m < 2n,
+rocBLAS selects `rocblas_gemvn_kernel<32,16>`, which loops over the batches inside the kernel
+in steps of 65535 (the grid z limit) and has no `__syncthreads()` after its shared-memory
+reduction, so a wave starting the next batch overwrites partial sums another wave is still
+reading. Only non-final loop iterations are corrupted, so batch_count <= 65535 is always
+clean, and large m is affected too (m = n = 16 fails, m = 32 with n = 64 fails under load).
+`gemv_strided_batched` reaches it on gfx11xx/gfx12xx; on gfx942/gfx90a small shapes take a
+different kernel and the rest fail only under heavy load. `gemm_strided_batched_ex` with
+m or n = 1 reaches it where rocBLAS routes that call to gemv (gfx1100); on gfx1201 and gfx942
+it goes to Tensile, which splits the batch on the host, and is clean. complex128 fails on an
+idle RDNA GPU; float64 mostly needs a second process on the GPU, so test-runner parallelism
+decides whether CI sees it. CuPy computes each einsum pairwise step as `(B, L, K) @ (B, K, R)`
+after dropping size-1 axes, so any step with L or R = 1 is a candidate, for example
+`einsum('xg,xg->g')`, and so is a structurally clean contraction whose free index has size 1
+(one state, spin set or k-point). Fix in the project, not in CuPy: do not replace
+`cupy.matmul` on the CuPy module (a process-global monkeypatch of a third-party library that
+misses `@`; a reviewer rejected it). Add a project-local `einsum` that follows CuPy's default
+pairwise order and, on ROCm, computes a matrix-vector step with more than 65535 batches as a
+broadcast multiply and sum (on CUDA it is `cupy.einsum` itself). Splitting the batch into
+chunks of 65535 also avoids the kernel loop, but measured on gfx1201 the multiply and sum is
+4x to 250x faster than the rocBLAS call for these shapes. Bind it as the contraction wrapper's
+einsum and switch the direct `cupy.einsum` sites to it; find them statically by simulating
+CuPy's pairwise order from the subscripts, then judge `numpy.einsum` calls that may receive
+CuPy arrays. Do not hunt for sites with an LD_PRELOAD shim on rocBLAS that takes the GIL in
+every call: two W7800s wedged (first H2D copy never completes, 95% GFX activity with no
+process) during such a run with 8 to 12 workers. (gpu4pyscf; reproducer, site list and
+rewrite tool in its notes.)
 
 **Negative entries for that table.** CUPTI has no ROCm analogue -- stub the optional
 per-kernel profiling path inert and let the timer fall back to `hipEvent` wall-clock rather

@@ -2908,3 +2908,84 @@ print(total, 'sites in', len(by_file), 'files')
 - Fork `git status --porcelain` in the job clone: `M gpu4pyscf/lib/cupy_helper.py`, `M gpu4pyscf/lib/cutensor.py` (the stopped round's patch, uncommitted); the helper patch above is in a scratch worktree. Nothing committed or pushed.
 - No JIT extension builds. All GPU work ran under `ulimit -c 0`. HIP device 2 was not touched.
 - Lock released with `port-lock --release` (agent stopped mid-port); the stage stays `porting`.
+
+## Porter 2026-11-01 (porter, linux-gfx1201 R9700, fork moat-port 3982189..1e6d12c, pushed) -- rework around the rocBLAS root cause
+
+Requested by jeff after the root cause was filed as https://github.com/ROCm/rocm-libraries/issues/14819 (`rocblas_gemvn_kernel<32,16>` loops over batches inside the kernel in steps of 65535 with no `__syncthreads()` after its shared-memory reduction; non-final iterations are corrupted for transA=N, m < 2n, batch_count > 65535; evidence in claude-shared plans `rocblas-gemv-strided-batched-small-m-gfx1201.md` and `...-gfx942.md`). jeff's ruling (a) stands: class A and class B both go through the helper. Instruction: do not run the rocBLAS logging shim again; use the static site list. Work lock taken (`porting`, linux-gfx1201). Host: AMD Radeon AI PRO R9700 (gfx1201), `HIP_VISIBLE_DEVICES=0` from the dispatcher; the card stayed healthy the whole round (no hang). TheRock ROCm SDK 10.1.0 (AMD clang 24.0.0git d6f6cb69, HIP 7.16.26385, rocBLAS 5.7.0.39d8d603). Job venv: numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion, geometric, pytest 7.3.2, pytest-xdist 3.3.1, pytest-timeout. Build: README ROCm block with `-DCMAKE_HIP_ARCHITECTURES=gfx1201`, `-j 24`: exit 0, 12 libs plus libxc. 51f6cf0 untouched; four new commits on top, no amend or force.
+
+### Commits (all `[ROCm]`, titles 57-71 chars, AI disclosure in prose, fenced Test Plan, prose.py and jargon.py clean)
+1. **3e00881 Use a local einsum for batched matrix-vector contractions.** Drops the global `cupy.matmul` replacement (finding 1 of the 2026-10-31 review). `cutensor._hip_einsum`, exported as `cupy_helper.einsum` on ROCm (`cupy.einsum` itself on CUDA) and bound as `contract`'s CuPy-engine einsum on ROCm. Dispatch is now the root-cause condition: it simulates CuPy's default pairwise order (last two operands, then the result with each preceding one) on the axes CuPy keeps (size-1 axes dropped per operand, unary sums), and only if some step is a matrix-vector product (one side has no free index after that, a contracted index exists) with more than 65535 batches does it run the steps itself, computing those steps as broadcast multiply and sum. Every other call goes to `cupy.einsum(subscripts, *operands)` unchanged. The width bound (`< 8`) of the earlier patch is gone, because the regime includes large m (m = n = 16). Falls through: keywords (`optimize=`, `dtype=`), sublist form, non-CuPy operands, non-float result dtype, repeated labels, malformed ellipsis. Ellipsis is expanded. Docstring cites issue 14819.
+   - **Chunking vs multiply-and-sum (jeff preferred chunking unless it measures worse; it does).** Implemented and measured first: chunks of <= 65535 batches remove the kernel loop, but cost the same as the plain rocBLAS call. agent_space/t/bench.py, 10 calls, ms, plain / chunked / multiply-sum: 'gp,pg->p' c128 (3,347395) 12.01 / 11.86 / 0.26; 'xgo,xgo->go' f64 (5,10240,160) 129.5 / 115.3 / 0.64; 'xbygo,xgo->bygo' 19.15 / 19.15 / 0.33; 'bk,bkr->br' c128 (200000,16,16) 36.5 / 37.4 / 11.9; same f64 36.9 / 37.0 / 2.76; 'bkr,bk->br' c128 (200000,16,6) 32.2 / 32.1 / 2.16; 'xg,xgi->gi' i=64 13.0 / 13.7 / 2.83; 'bk,bk->b' f64 k=64 B=262144 168.7 / 166.4 / 1.43; c128 k=3 B=347395 11.7 / 11.5 / 0.22. So the commit keeps multiply-and-sum (4x to 250x faster than rocBLAS here). Its temporary is the size of the larger (matrix) operand.
+   - **Unit check** (agent_space/t/unit.py vs numpy.einsum): 25 patterns (two and three operands, implicit output, ellipsis, size-1 broadcast of free and batch labels, diagonal fall-through, batches 140000 to 420000, batch over two labels) x 6 dtype pairs (f64, c128, f32, f32/f64, c128/f64, int64), through `einsum` and `contract` (alpha/beta/out): 0 failures, worst relative error 6.3e-13 (a 420000-term full sum), shapes and dtypes equal to `cupy.einsum`. Malformed subscripts still raise ValueError.
+   - **rocBLAS log check** (`ROCBLAS_LAYER=2` bench log, agent_space/t/blascheck.py; this is the library's own logging, not the shim): through the helper, no batched call with m or n = 1 and batch_count > 65535 remains (unit check: only the two deliberate fall-through calls, `optimize=True` and sublist form). Plain `cupy.einsum` on the same shapes issues `gemm_strided_batched_ex -m 1 -n 1 -k 3 --batch_count 347395`, `-m 1 -n 16 -k 16 --batch_count 200000`, `-m 6 -n 1 -k 16 --batch_count 200000`, etc. CuPy 14.2 passes the second einsum operand first, so 'bk,bkr->br' is rocBLAS m=1, n=16 and 'bkr,bk->br' is m=6, n=1; the helper tests both sides.
+   - **Through CuPy, the requested shapes are exact with and without the helper on this card** (agent_space/t/cprepro.py, 10 calls each): 'bk,bkr->br' c128 m=16 n=16 batch 200000, 'bk,bk->b' c128 k=3 batch 347395, 'kb,kb->b', 'gp,pg->p', 'bkr,bk->br', f64 m=16, f64 k=64 batch 262144: 0 wrong. f64 under load (two processes running 256x256 DGEMM loops; agent_space/t/cpload.py, 20 calls each: 'bk,bk->b' 262144x64, 'bk,bkr->br' 16x16, 'bkr,bk->br' m=32 k=64 batch 131072, 'xg,xgi->gi' 1638400): 0 wrong, helper and plain. That matches the gfx1201 root-cause job: here rocBLAS sends `gemm_strided_batched_ex` with n = 1 to Tensile, which splits the batch on the host; only direct `gemv_strided_batched` fails on gfx1201. So this card cannot show a before/after through CuPy; the evidence that the fix covers the regime is the log check above plus the gfx1100 history.
+2. **5c1f918 Route batched dot-product einsums through cupy_helper.einsum:** class A, 365 sites in 96 files, with agent_space/diag/rewrite.py (from these notes) and A.json built from the class A list, plus the mp2.py alias edit.
+3. **fae6a22 Route einsums that reach a matrix-vector product via size-1 axes:** class B, 256 sites in 32 files, plus the ccsd_incore.py alias edit. Also drops `import cupy as cp` from pbc/df/tests/test_pbc_hcore_derivatives.py and pbc/scf/tests/test_pbc_scf_uhf.py, left unused by commit 2 (pyflakes before/after over every touched file: these two are the only new unused imports; no undefined names).
+   - Coverage after the rewrite (static.py from these notes over the tree): 146 direct `cp.einsum`/`cupy.einsum` calls remain = 79 unary + 47 non-contracting + 12 `optimize=` test references (the 138 "left as is") + 8 inside the helper. Every touched library module imports (agent_space/imp.py).
+4. **1e6d12c Name the compiler bug behind -disable-machine-licm:** CMake comment and README now say it works around a register coalescer bug in the ROCm 10.1 compiler (AMD clang 24), fixed in upstream LLVM 8c6e07731faf and in ROCm 10.2. **Not made conditional:** the ROCm 10.1 and 10.2 compilers cannot be told apart by version. CMake identifies TheRock 10.1 as `Clang 24.0.0`, and `cmake/Modules/LLVMVersion.cmake` on both ROCm/llvm-project `release/therock-10.1` and `release/therock-10.2` is 24.0.0 (read-only `gh api` contents query). The only distinguishing mark is the commit hash in `clang --version` (d6f6cb69), which other ROCm 10.1 builds need not carry. So the flag stays unconditional, and the comment says why.
+
+### CUDA compile gate
+NVIDIA redist 12.8.1 archives sha256-verified against redistrib_12.8.1.json (cuda_nvcc 12.8.93, cuda_cudart 12.8.90, cuda_cccl 12.8.90, cuda_profiler_api 12.8.90; all `OK`) into agent_space/cuda-12.8 (needs a `lib64 -> lib` link for nvcc's link step). `git ls-files` export of the tree at 1e6d12c: `cmake -S gpu4pyscf/lib -B build-cuda -DCMAKE_CUDA_ARCHITECTURES=80 -DCUDAToolkit_ROOT=$K -DCMAKE_CUDA_COMPILER=$K/bin/nvcc -DCMAKE_BUILD_TYPE=Release -DBUILD_LIBXC=OFF`: exit 0, `USE_HIP:BOOL=OFF`; `cmake --build build-cuda --target cupy_helper`: exit 0 (10 nvcc lines, none with `machine-licm` or `cuda_to_hip`). No CUDA TU changed this round; the Python changes are behind `cupy.cuda.runtime.is_hip`.
+
+### Validation on gfx1201 (all under `ulimit -c 0`)
+- **test_multigrid_v2.py + test_numint2c.py, `-n 4`, CI selection, 4 runs:** 33 passed, 4 skipped every time (43.6, 44.0, 44.3, 42.4 s).
+- **Larger grid** (agent_space/val/biggrid.py, run while two DGEMM load processes ran; the notes' gfx1100 description rebuilt: 4-carbon cell, 1.5x the test cell, ke_cutoff 400, mesh 93x83x117 = 903123; 3 repeats each; spread = max |v_i - v_0|): helper on, LDA 1.9e-13 / 1.9e-13 / 5.6e-13 (nr_rks / nr_rks 2 k-points / nr_uks), **PBE 2.5e-13 / 2.6e-13 / 5.3e-13, r2scan 4.1e-13 / 1.6e-13 / 6.3e-13** (gfx1100 without the fix: PBE 3.5e-3 to 5.2e-3, r2scan 2.7e-3 to 3.0e-3). numint2c mcol at grids level 5 (90112 points): LDA, PBE and **M06 spread 0** (gfx1100 without the fix: M06 5.3e-8). With the reroute disabled (`cutensor._HIP_MAX_BATCH = 1 << 62`) every spread is also at 1e-13 or 0 on this card, as expected from the Tensile routing above.
+- **Full tree** (agent_space/tree/runtree.sh: one directory at a time, `python -m pytest <dir> -n 4 --dist loadfile -m 'not slow and not benchmark and not special' -q -rfEs --tb=line -p no:cacheprovider --timeout 1800`, a GPU liveness check before each directory, which never failed). Wall about 75 min.
+
+| directory | gfx942 @ e1ad6bc | gfx1100 @ 3982189 | gfx1201 @ 1e6d12c |
+|---|---|---|---|
+| cc/tests | 4/0/0/0 | 4/0/0/0 | 4/0/0/0 |
+| df/hessian/tests | 24/0/0/0 | 24/0/0/0 | 24/0/0/0 |
+| df/tests | 200/5/3/0 | 201/4/3/0 | 200/5/3/0 |
+| dft/tests | 113/0/9/0 | 112/1/9/0 | 113/0/9/0 |
+| dispersion/tests | 16/0/0/0 | 16/0/0/0 | 16/0/0/0 |
+| fci/tests | 3/0/0/0 | 3/0/0/0 | 3/0/0/0 |
+| geomopt/tests | 0/0/5/0 | 0/0/5/0 | 0/0/5/0 |
+| grad/tests | 115/2/0/0 | 115/2/0/0 | 115/2/0/0 |
+| gto/tests | 57/0/5/0 | 57/0/5/0 | 57/0/5/0 |
+| hessian/tests | 91/0/1/0 | 91/0/1/0 | 91/0/1/0 |
+| lib/tests | 39/0/1/0 | 39/0/1/0 | 39/0/1/0 |
+| mcscf/tests | 8/0/0/0 | 8/0/0/0 | 8/0/0/0 |
+| md/tests | 5/0/0/0 | 5/0/0/0 | 5/0/0/0 |
+| mp/tests | 20/1/0/0 | 20/1/0/0 | 20/1/0/0 |
+| nac/tests | 71/1/1/0 | 71/1/1/0 | 71/1/1/0 |
+| pbc/df/tests | 104/1/7/0 | 105/0/7/0 | **99/6/7/0** |
+| pbc/dft/tests | 156/0/18/0 | 156/0/18/0 | 156/0/18/0 |
+| pbc/grad/tests | 185/0/2/0 | 185/0/2/0 | **184/1/2/0** |
+| pbc/gto/pseudo/tests | 7/0/0/0 | 7/0/0/0 | 7/0/0/0 |
+| pbc/gto/tests | 13/0/0/0 | 13/0/0/0 | 13/0/0/0 |
+| pbc/hessian/tests | 0/0/6/0 | 0/0/6/0 | 0/0/6/0 |
+| pbc/lib/tests | 2/0/0/0 | 2/0/0/0 | 2/0/0/0 |
+| pbc/properties/berry/tests | 10/0/2/0 | 10/0/2/0 | 10/0/2/0 |
+| pbc/scf/tests | 88/2/1/0 | 88/2/1/0 | **86/4/1/0** |
+| pbc/tools/tests | 16/0/0/0 | 16/0/0/0 | 16/0/0/0 |
+| pbc/x2c/tests | 1/0/1/0 | 1/0/1/0 | 1/0/1/0 |
+| pop/tests | 2/0/0/0 | 2/0/0/0 | 2/0/0/0 |
+| properties/tests | 26/0/5/0 | 26/0/5/0 | **21/5/5/0** |
+| qmmm/pbc/tests | 3/0/0/0 | 3/0/0/0 | 3/0/0/0 |
+| qmmm/tests | 21/0/0/0 | 21/0/0/0 | 21/0/0/0 |
+| scf/tests | 159/2/3/0 | 159/2/3/0 | **157/4/3/0** |
+| sem/dmp/tests | 1/0/0/0 | 1/0/0/0 | 1/0/0/0 |
+| sem/grad/tests | 3/0/0/0 | 3/0/0/0 | 3/0/0/0 |
+| sem/gto/tests | 15/0/0/0 | 15/0/0/0 | 15/0/0/0 |
+| sem/integral/tests | 27/0/0/0 | 27/0/0/0 | 27/0/0/0 |
+| solvent/tests | 126/0/2/0 | 126/0/2/0 | 126/0/2/0 |
+| tdscf/tests | 93/2/0/0 | 93/2/0/0 | **90/5/0/0** |
+| tests | 0/0/0/0 | 0/0/0/0 | 0/0/0/0 |
+| x2c/tests | 8/0/1/0 | 7/1/1/0 | 8/0/1/0 |
+| **total** | 1832/16/73/0 | 1832/16/73/0 | **1814/34/73/0** |
+
+**1814/34/73/0 against 1832/16/73/0.** The 16 reference failures appear here as before (df test_general_contraction, test_grad_hybrid, test_j_energy_per_atom, test_jk_energy_per_atom, test_get_nacv_ee; grad tdrhf/tduhf test_grad_elec; mp test_dfmp2_kernel_one_gpu; nac test_get_nacv_ee; pbc/df test_ft_ao_strain_deriv; pbc/scf test_rks_gen_g_hop, test_uks_gen_g_hop; scf test_rhf_df_against_qchem, test_rks_df_against_qchem; tdscf test_rtda_ris_diffuse, test_krylov_eigenvalue), less dft test_sparse_index and x2c test_sfx2c1e_cart, which pass on this host. The 18 extra failures (agent_space/tree/new18.txt), each rerun at the base commit 3982189 on this card (a worktree with this build's libraries):
+- **9 also fail at 3982189, so they are not from this round: a gfx1201-only defect in the k-point AFT path, not investigated.** pbc/df test_pbc_aft test_ej_ip1_kpts (max error 11.0), test_ek_ip1_kpts (9.13), test_vk_kpts_vs_fft (1.44); test_pbc_df_derivatives test_ejk_derivatives_kpts_with_long_range (7.0e-5), test_uhf_ejk_derivatives_kpts_with_long_range (4.8e-4); pbc/scf test_pbc_scf_jk test_vk_hermi1_kpts_vs_aft (0.046), test_ejk_ip1_per_atom_kpts (3.05); pbc/grad test_krhf_grad_with_pseudo (2.8e-3). The errors are deterministic and serial runs reproduce them; they fail with the helper's reroute disabled too. gfx1100 and gfx942 pass all of them, and gfx1201 had never run this port before. Also at 3982189: scf test_sad_guess_rks_vv10 (5.18e-7 against 5e-7, a 1.04x margin).
+- **9 pass at 3982189 and fail at 1e6d12c: SCF convergence thresholds at the double-precision noise floor, not wrong numbers.** properties test_raman_intensity (5 tests, `assert mf.converged` in raman.py:100; `conv_tol = 1e-14`), tdscf test_tdrks_vv10 test_wb97xv_tda and _triplet (`assert mf.converged`; `conv_tol = 1e-15`), scf test_gdm_rhf (5.88e-8 against 5e-8), tdscf test_rtddft_ris_diffuse (passed when rerun). Bisection of test_raman_hf_densityfitting: it fails at 3e00881 with the reroute disabled, fails at 3982189 with its global matmul replacement undone (pytest plugin `cupy.matmul = cupy_helper._cupy_matmul`), and fails at e1ad6bc (before any workaround). So it passed at 3982189 only because that replacement changed the summation order of small one-row batched matmuls. Those calls (about 300 per test, batch 1 to 34, for example (1,1,1156)@(1,1156,1)) agree with multiply-and-sum to 1e-10 relative, so rocBLAS is right there. With E = (2.5e-3, 2.5e-3, 0), |dE| between SCF cycles stays at 7e-15 to 2e-13 for 50 cycles at 1e6d12c and at 3982189 alike (agent_space/t/raman_conv.py). e_tot is -40.17 Ha, whose ulp is 7.1e-15, so `conv_tol = 1e-14` passes only when one step happens to land within about an ulp. At 3982189 that happened in 13 cycles; at 1e6d12c it did not within 50. The vv10 tests ask for 1e-15, below one ulp. Rerun of the nine at 1e6d12c: 5 of 9 failed (4 raman, wb97xv_tda), the other 4 passed.
+
+### Checks
+- `python3 utils/jargon.py --port gpu4pyscf`: clean. `utils/prose.py` on all four commit bodies: clean.
+- Fork `git status --porcelain`: no tracked modifications (untracked build output only). `moat-port` pushed 3982189..1e6d12c (fast-forward); `advance-head` to 1e6d12cb7399a7af58b4cce40eeb1d93f09dc578.
+- No rocBLAS shim was run (only `ROCBLAS_LAYER=2` logging in single processes for the unit shapes). No JIT extension builds. All GPU work ran under `ulimit -c 0` on the pinned GPU.
+- Skill: `references/fault-classes.md` batched-GEMV entry rewritten around the root cause (the kernel and condition, gemm_ex routing per arch, multiply-and-sum vs chunking, no shim); SKILL.md index line updated.
+
+### For jeff (decisions, not taken)
+- **Chunking was measured worse** (same cost as the rocBLAS call it splits; multiply-and-sum is 4x to 250x faster on every regime shape), so under your condition the helper keeps multiply-and-sum, now gated on the root-cause batch condition. If you want chunking anyway (memory: the multiply-and-sum temporary is the size of the larger operand), the chunked version is a ~15-line swap of `_hip_einsum2`'s regime branch, and I measured it.
+- **gfx1201 k-point AFT defect (8 tests, errors up to 11):** pre-existing at 3982189, gfx1201-only, independent of this round. It needs its own investigation before linux-gfx1201 could ever be a validated platform (it is not a required gate today: wave32 is covered by gfx1100).
+- **Noise-floor convergence tests** (raman x5, wb97xv_tda x2, gdm_rhf): these pass or fail by summation order. They will read as regressions on any card where 3982189's global replacement had been hiding them. They are upstream test-tolerance issues, not port defects.
