@@ -2316,3 +2316,34 @@ Requested by jeff. Host: MI250X (gfx90a), torch 2.16.0a0+git6c3af02, HIP 7.16.26
 ### State
 
 `advance-head 00e803d`, linux-gfx90a `porting -> ported`. The GPU results recorded at fe62b19 do not depend on this line; every platform owes revalidation at 00e803d after review.
+
+## Review 2026-11-01 (linux-gfx90a) -- 00e803d (ROCM_HOME guard) and skill commit faa498cb -> review-passed
+
+Requested by jeff. Scope: `git diff fe62b19..00e803d` on `moat-port` (one file, `FasterGSCudaBackend/setup.py`, +2 lines) plus `faa498cb` on `port/faster-gaussian-splatting` (`strategy-b-torch.md`, hipRAND Philox bullet). pr-review skill, findings re-checked inline. Host: MI250X (gfx90a), torch 2.16.0a0+git6c3af02, HIP 7.16.26385 (TheRock SDK wheels, hipRAND 3.4.0), `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`. Fork freshly cloned at 00e803d; builds only in scratch copies (`git archive` of fe62b19 and 00e803d into `agent_space/rv3/{old,new}`), no JIT extension build.
+
+### Previous finding (Review 2026-11-01, finding 1): resolved
+
+- `setup.py:40-41`: `hip_compiles` returns False when `ROCM_HOME is None`, before `os.path.join(ROCM_HOME, 'bin')`. `ROCM_HOME` is the name imported at module top from `torch.utils.cpp_extension`, so the guard reads the same value `CUDAExtension` later checks.
+- Rerun (`agent_space/rv3/rocmnone.py`: sets `torch.utils.cpp_extension.ROCM_HOME = None`, stubs `setuptools.setup`, `runpy` on each setup.py): fe62b19 -> `TypeError expected str, bytes or os.PathLike object, not NoneType`; 00e803d -> `OSError ROCM_HOME environment variable is not set. Please set it to your ROCm install root.` (torch's message, as at 99d68f9).
+- The None case is real: this torch's `_find_rocm_home` returns None when `ROCM_HOME`/`ROCM_PATH` are unset, neither `_rocm_sdk_devel` nor `_rocm_sdk_core` is importable, `hipcc` is not on PATH and `/opt/rocm` is absent. An empty `ROCM_HOME`/`ROCM_PATH` gives `""`, not None; `os.path.join('', 'bin')` is `bin`, `which` finds nothing there and the probe returns False, so no crash on that path either.
+- CUDA unaffected: the guard is inside `hip_compiles`, called only under `IS_ROCM`.
+- Skill `faa498cb`: the added sentence (return False when `cpp_extension.ROCM_HOME` is None; `os.path.join(None, 'bin')` hides torch's own error) matches the fork code and the reproduction; placed in the bullet a reader adding such a probe would read.
+
+### Build and GPU smoke (scratch copy of 00e803d)
+
+```bash
+export PYTORCH_ROCM_ARCH=gfx90a   # MAX_JOBS=128 = physical cores
+utils/timeit.sh faster-gaussian-splatting compile -- bash -c "cd agent_space/rv3/new/FasterGSCudaBackend && python setup.py build_ext --inplace"
+utils/timeit.sh faster-gaussian-splatting test -- python projects/faster-gaussian-splatting/gpu_tests/new_checks.py agent_space/rv3/new/FasterGSCudaBackend
+```
+Build rc=0, 360 `warning:` lines (same as the porter's 00e803d build); `FGS_HAVE_HIPRAND_PHILOX4X32_10` absent from `build.ninja` (probe fails on hipRAND 3.4.0, bundled copy used). new_checks 31/31 PASS.
+
+### Commit message and completion checks
+
+Title `[ROCm] Skip the hipRAND check when ROCM_HOME is not set`, 55 chars; AI disclosure present; fenced test plan; no trailers. `utils/prose.py` -> clean; `python3 utils/jargon.py --port faster-gaussian-splatting` -> `jargon: clean`; fork `git status --porcelain` empty.
+
+Note for PR prep (not a defect in the port, and not fixable without rewriting the commit): the test plan's first command, `python rocm_home_none.py FasterGSCudaBackend/setup.py`, names a script that is not in the repository; the sentence above it says what the script does. If the branch is squashed for the upstream PR, write that check as a self-contained command, e.g. `python -c "import runpy, setuptools, torch.utils.cpp_extension as c; c.ROCM_HOME = None; setuptools.setup = lambda **k: None; runpy.run_path('setup.py')"` from `FasterGSCudaBackend`.
+
+### Verdict
+
+**review-passed.** No findings. Every platform owes revalidation at 00e803d.
