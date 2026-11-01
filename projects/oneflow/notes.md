@@ -2525,3 +2525,42 @@ Verdict: **changes-requested**, for one test-cost finding plus one small cleanup
 
 ### Commit messages
 Titles 68/69/68 chars with `[ROCm]`, ASCII, AI disclosure, fenced Test Plan, no Co-Authored-By; `utils/prose.py` clean on all three. `python3 utils/jargon.py -C <clone> --commits master..9636ca67b` reports only the three known hits in 68718f038; `--diff master..9636ca67b` is clean.
+
+## Porter round 2026-11-01 (linux-gfx942, MI300X; answers "Review 2026-11-01 (reviewer, linux-gfx942 ... 9166f2fb2..9636ca67b)", verdict changes-requested)
+
+jeff's dispatch: fix both findings with commits on top, shrink the row-tile test to the reviewer's shapes, measure the whole file's peak GPU memory and shrink any other case larger than its branch needs. Host MI300X (gfx942:sramecc+:xnack-), `HIP_VISIBLE_DEVICES=6,7` pinned by the dispatcher (tests on GPU 7), ROCm 10.1.0 SDK wheels. Job venv set up as in the fix9 round (protobuf 3.20.3, pytest-timeout, opencv-python-headless 4.10.0.84, portalocker, black 19.10b0, clang-format 11.1, numpy 1.26.4; the image torch 2.16.0a0 symlinked read-only into `venv-base-links`; test_matmul/test_bmm/test_conv_float64 fail to collect without it). `ulimit -c 0`, `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git`, `PYTHONDONTWRITEBYTECODE=1`, no JIT extension builds. Lock taken `changes-requested -> porting`. Fork `moat-port` 9636ca67b -> d9e41753e: two new commits, fast-forward, no amend or force push.
+
+### Build
+Fresh clone from the fix9 job's clone, origin reset to the fork, `protect-fork` run. Clean build with the same configure (`agent_space/build.sh config`, `-j112` = `MAX_JOBS`), rc=0. A rebuild after editing `hip_long_k_gemm.cu` takes about 15 s.
+
+### Commits
+- ec23f427b `[ROCm] Drop the unreachable k == 0 call from the long-k GEMM fallback` (finding 2). Removes the `k == 0` -> `hipblasGemmStridedBatchedEx` branch. The m/n/batch quick return stays, and its comment now says only that.
+- d9e41753e `[ROCm] Shrink the GPU memory the long-k GEMM tests need` (finding 1, plus the rest of the file).
+  - `_check_row_tiles`: the reviewer's five cases, knob `ONEFLOW_EP_CUDA_LONG_K_GEMM_MAX_TILE_SIZE=256`, k = 2^15, n = 300: plain (3,k)@(k,300), transpose_b (3,k)@(300,k), transpose_a+transpose_b (k,3)@(300,k), broadcast (3,k)@(2,k,300) and batched (2,3,k)@(2,k,300). fp16 and bf16 against a GPU float32 product of the same values, 4-ulp bound. Errors (`/tmp/fix10prof/rowerr.py`), the same with hipBLASLt on and skipped and the same as the reviewer's table: fp16 0.54 / 0.57 / 0.63 / 0.60 / 0.59 ulp, bf16 0.63 / 0.66 / 0.59 / 0.58 / 0.68 ulp. `rocprofv3 --kernel-trace`: 42 `StoreTile<__half>` and 42 `StoreTile<__hip_bfloat16>` (6 + 6 + 6 + 12 + 12 each), so both batched cases run the batch loop.
+  - Mutation check (`agent_space/mut.sh`: mutate, rebuild, run, restore; each mutated run fails with hundreds to thousands of ulp on the expected cases and leaves the others passing): `i * lda` -> `i` fails transpose_b and transpose_a+b; op-N `i` -> `0` fails plain, broadcast and batched; `j * ldb` -> `j` fails plain, transpose_b, broadcast and batched; op-T `j` -> `j * ldb` fails transpose_a+b; dropping `batch * stride_a` fails broadcast and batched; dropping `batch * stride_b` fails batched only (cuBLAS stride_b is 0 for the broadcast); dropping `batch * stride_d` fails broadcast and batched. The source was restored (diff empty against the saved copy) and rebuilt before the final runs.
+  - Other cases. `_check` and `_check_grouped` built float64 inputs on the GPU, then cast them. They now round to 16 bits on the host, move only the 16-bit tensors, and compute the reference from the host copies. The shapes stay: k = 2^20 is what the accuracy check needs (k = 2^15 splits once, 4.4e-4 against 2.4e-4, too close to the bound; porter round 2026-10-31). The "output in pieces" case (default workspace, product larger than one 2^20-float tile) goes from 640 x 2048 to 1040 x 1024, about the smallest that is over one tile (m * n > 2^20 with ld = k = 2^15). It takes one full column tile and one 16-column tile.
+  - Peak used VRAM on GPU 7 (`agent_space/peak.sh`, sysfs `mem_info_vram_used` every 20 ms, 284 MB idle baseline; `import oneflow` plus one tiny kernel is 1612 MB):
+
+    | run | 9636ca67b | d9e41753e |
+    |---|---|---|
+    | whole file (one pytest) | 37602 MB | 6197 MB |
+    | test_matmul_long_k alone | not measured | 3072 MB (3429 MB with the row-tile fix alone, before host rounding) |
+    | test_matmul_long_k_without_hipblaslt alone | 18642 MB | 3003 MB |
+    | test_matmul_long_k_without_workspace (parent + subprocess) | 18889 MB | 3123 MB |
+    | `_check_row_tiles` alone | 16685 MB (knob 2^15) | 1944 MB (knob 256) |
+    | "output in pieces" alone | 3673 MB | 2793 MB |
+
+    The whole-file peak is two processes with their own context, the pytest parent (its allocator still caching) and the 0 MiB workspace subprocess. An `empty_cache()` before the subprocess saved only about 200 MB (5991 MB), so it was not kept. What each process uses above context is mostly allocator caching and library state, not test operands (the largest operand is now the 1040 x 2^15 fp16 one, 68 MB).
+
+### Tests at d9e41753e (one pytest per file, GPU 7, `agent_space/final/`)
+- test_matmul_long_k.py: 3 passed (30.2 s).
+- test_matmul.py: 9 passed, 2 failed (`test_flow_tensor_matmul_with_random_fp16_data`, `..._int_data`), the same two known failures as at 42d68145d, 9166f2fb2 and 9636ca67b.
+- test_bmm.py: 2 passed. test_grouped_matmul_bias.py: 1 passed. test_conv_float64.py: 6 passed.
+
+### CUDA compile gate (nvcc 12.8.93, sm_80): PASS 1/1
+The one changed TU, `hip_long_k_gemm.cu`, compiled with rc=0 to an empty object (HIP-only). The other change is Python. Toolkit: `redistrib_12.8.1.json` downloaded fresh (sha256 249e28a8..., the same as the previous manifest), and all 16 archives sha256-verified against it (`scripts/fetch_cuda.py`: verified 16/16). They were extracted to `$FLEET_VENV/cuda-12.8`. The cuDNN 8.9.7.29 and NCCL 2.29.7 wheels were sha256-checked against the PyPI JSON (both OK) and unpacked to `$FLEET_VENV/cudeps`. The scratch tree was copied from the fix9 job, and `hip_long_k_gemm.cu` copied in (sha256 identical to the fork). The compile command is fix9's `cmd_hip_long_k_gemm.cu.sh` with its paths rewritten. `hip_compat` appears 0 times in build.ninja.
+
+### Other checks
+- `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038. `utils/prose.py` is clean on both messages. Titles are 69/55 chars, ASCII, no Co-Authored-By, fenced Test Plans. clang-format 11.1 is clean on the .cu, and black 19.10b0 was applied to the test.
+- `git -C projects/oneflow/src status --porcelain`: no modified tracked files. `moat-port` pushed 9636ca67b..d9e41753e, `advance-head` d9e41753e.
+- Owed: review of 9636ca67b..d9e41753e, then validation at d9e41753e on gfx90a, gfx942 and gfx1100.
