@@ -843,3 +843,30 @@ Linux evidence at c7ae2c5 (linux-gfx1100, RX 7900 class, wave32, `HIP_VISIBLE_DE
 - `w4a16_test.py <scratch>` 30/30, max err 3.88e-03 (fp16).
 - `w8a8_handle_test.py <w8a8_gemm_cuda.cu>` (the fixed helper) PASS, 16 threads over 1 device, one handle.
 This is reviewer-run evidence; the platform record is the validator's to write at c7ae2c5.
+
+## Validation 2026-11-01 (linux-gfx1100, c7ae2c5)
+
+Verdict: completed at fork `moat-port` c7ae2c57d3c6 (head_sha, review-passed). jeff asked for this run after the c7ae2c5 review. Host: AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), ROCm 7.16 (TheRock SDK in the image venv, HIP 7.16.26385), torch 2.16.0a0+git6c3af02, Python 3.11. `HIP_VISIBLE_DEVICES=0` pinned by the dispatcher; everything under `ulimit -c 0`. Fresh fork clone, `git status --porcelain` empty before and after. Full run, not a carry-forward: this platform's previous `validated_sha` was a2a710a, before the attention, W8A8 and legacy GEMM rounds.
+
+Build from a `git archive` copy (hipify writes into the tree, so the clone stays clean; ninja `[14/14]`, 0 errors, 75 s; `llvm-objdump --offloading` shows only gfx1100):
+```
+git -C projects/llm-awq/src archive c7ae2c57d3c6 | tar -x -C /tmp/llmawq-val-c7ae2c5
+cd /tmp/llmawq-val-c7ae2c5/awq/kernels
+PYTORCH_ROCM_ARCH=gfx1100 MAX_JOBS=16 python setup.py build_ext --inplace
+```
+
+Tests (from /tmp, `PYTHONPATH=<scratch>/awq/kernels`, `TORCH_EXTENSIONS_DIR` under /tmp so load_inline never touches a checkout; scripts from projects/llm-awq/tests/, unmodified), every script exit 0, 0 FAIL lines, 538 checks:
+- `attn_test.py`: 443/443. Max out err fp16 2.22e-3, bf16 1.86e-2, fp32 1.20e-5 (gfx1201: 2.54e-3 / 1.91e-2 / 1.19e-5). fp32 D=128 t=16239 passes; t=16240 (65552 B) and t=20000 (80592 B) refused against the 65536 B LDS limit, as on every other arch. bf16 D=64 refuses from t=10888 (65544 B), one step earlier than the gfx90a table (10889 last fitting) and the same as windows-gfx1151 recorded: the compiler gives the kernel 8 more static LDS bytes here. The test requires only monotone refusal and a refusal is the safe direction; not a failure.
+- `tinychat_e2e.py <scratch>`: 4/4; argmax 40/40, 40/40, 64/64, 40/40; max |dlogit| 2.930e-03 (MQA 1.465e-03), min cos 0.999999. Same as gfx1201 and the gfx1151 run.
+- `w8a8_test.py`: 25/25, paths {'hipblaslt': 24} plus side-stream ordering PASS; max err 7.64e-03 (512x4096x4096 with bias 5.82e-03, max |out| 18.06; gfx942 5.37e-03 there). hipBLASLt int8 is taken on gfx1100.
+- `w8a8_simt_test.py <scratch>/awq/kernels/csrc/w8a8/w8a8_gemm_cuda.cu`: 7/7 exact.
+- `legacy_gemm_test.py`: 8/8, max err 3.95e-03 vs dequant ref, 7.81e-03 vs legacy gemv (gfx942 3.906e-03 / 7.812e-03).
+- `w4a16_test.py <scratch>`: 30/30 (fp16), max err 3.88e-03 (gfx942 3.47e-03 at 4096->11008; here 3.46e-03 at that shape).
+- `w8a8_handle_test.py <w8a8_gemm_cuda.cu>` (the helper as fixed in the c7ae2c5 review, Linux branch): PASS, 16 threads over 1 device, one handle.
+All numbers match the reviewer's gfx1100 evidence at c7ae2c5 and the Linux gfx1201 / gfx942 validations at 90a711b within fp16/bf16 rounding.
+
+End-to-end scope: the same as the Linux validations at 90a711b (the random-weight 4-layer TinyChat module test above). Real TinyChat generation with a checkpoint was not run, as on those hosts.
+
+CUDA gate: not re-run (no nvcc and no conda on this host). Recorded PASS at 90a711b (sm_80, V100 node); the only delta since, c7ae2c5, changes setup.py under `IS_ROCM and os.name == "nt"` only, and the c7ae2c5 review showed the CUDA kwargs identical by dry evaluation.
+
+Checks: `python3 utils/jargon.py --port llm-awq` clean; README.md:127 documents the ROCm build next to the CUDA install step; fork tree clean (`git status --porcelain` empty).
