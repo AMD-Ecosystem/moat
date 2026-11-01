@@ -118,3 +118,5 @@
 {"kind":"phase","ts":"2026-11-01T02:38:10Z","phase":"compile","seconds":51.435,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261031-192536-fgs-probe/moat/agent_space/fgs_hr/FasterGSCudaBackend && python setup.py build_ext --inplace"}
 {"kind":"phase","ts":"2026-11-01T02:38:59Z","phase":"compile","seconds":49.900,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261031-192536-fgs-probe/moat/agent_space/fgs_broken/FasterGSCudaBackend && python setup.py build_ext --inplace"}
 {"kind":"phase","ts":"2026-11-01T02:39:49Z","phase":"test","seconds":31.225,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi200-20261031-192536-fgs-probe/moat/agent_space/run_hr.sh"}
+{"kind":"session","ts":"2026-11-01T02:46:54Z","epoch":1793501214.160634359,"event":"start","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-01T02:53:36Z","epoch":1793501616.846581048,"event":"end","platform":"linux-gfx90a"}
