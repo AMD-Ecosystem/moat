@@ -7,13 +7,13 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-05T01:19:27Z",
-  "updated_at": "2026-11-01T02:41:00Z",
+  "updated_at": "2026-11-01T02:46:54Z",
   "head_sha": "fe62b19634ebd14d5accadd8be9128f2cd796225",
   "depends_on": [],
   "waivers": {},
   "license_spdx": "Apache-2.0",
   "upstream_repo_id": 1154833948,
-  "stage": "ported",
+  "stage": "reviewing",
   "platforms": {
     "windows-gfx1201": {
       "state": "completed",
@@ -45,7 +45,7 @@
       "validated_sha": "d3e2266399c1c87e35ea9d12049a2c4abac9a7de",
       "started_at": "2026-06-05T05:36:03Z",
       "completed_at": "2026-10-30T01:00:44Z",
-      "updated_at": "2026-11-01T02:41:00Z",
+      "updated_at": "2026-11-01T02:46:54Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -59,7 +59,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "validator"
+      "last_agent": "reviewer"
     },
     "windows-gfx1151": {
       "blocked": false,
@@ -162,5 +162,8 @@
     "since": "2026-11-01T02:28:53Z",
     "at": "2026-11-01T02:41:00Z"
   },
-  "porting": null
+  "porting": {
+    "arch": "linux-gfx90a",
+    "since": "2026-11-01T02:46:54Z"
+  }
 }
