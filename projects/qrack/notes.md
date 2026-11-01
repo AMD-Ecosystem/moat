@@ -894,3 +894,50 @@ Verdict: review-passed. The 2026-10-31 must-fix is resolved and nothing else cha
 - Delta: `git diff fb20e069 b06652a8` is the single line cmake/CUDA.cmake:108 `endif(ENABLE_CUDA)` -> `endif ()`. Every if/else/endif in CUDA.cmake now pairs with matching or empty arguments. `git diff 98b47407 HEAD --stat` is the same 10 files as at fb20e069.
 - Configure warnings at b06652a8 (CMake 3.31.6, Ninja): CPU-only (`-DENABLE_OPENCL=OFF -DENABLE_CUDA=OFF`) 0; HIP (`-DENABLE_CUDA=ON -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100`, TheRock 10.1.0 clang 24) 0, CUDA ON / HIP ON; NVIDIA (nvcc 12.8.93, `-DCUDAToolkit_ROOT=<prefix> -DCMAKE_CUDA_ARCHITECTURES=80`) 1, the CMP0074 warning from `find_package(CUDAToolkit)` at CUDA.cmake:18. Upstream 98b47407 with the same NVIDIA command prints the same CMP0074 warning (at its CUDA.cmake:15, the same line before the port's 3 added lines). No mismatched-block warning in any configure.
 - Commit: title 66 chars with `[ROCm]`, AI assistance disclosed in prose, Test Plan in fenced blocks, no Co-Authored-By trailer, ASCII only. `python3 utils/jargon.py --port qrack`: clean. Fork clone porcelain clean.
+
+## Validation 2026-11-01 (linux-gfx1100, revalidate 3bf7a75e -> b06652a8 -- full GPU run)
+Requested by jeff after the 2026-11-01 review pass. Full real-GPU run, no carry-forward: the delta from this arch's last validated_sha (3bf7a75e) includes the fb20e069 source revert of 42bdc3d6 (`moatlib.py classify` returned class=unknown before the clone existed; a source change either way).
+Platform: AMD Radeon Pro W7800 48GB, gfx1100 (RDNA3, wave32), HIP_VISIBLE_DEVICES=1 (dispatcher pin). TheRock ROCm SDK 10.1.0 pip wheels, CMake 3.31.6 from /opt/python-3.11-venv, Ninja. Fresh clone of AMD-Ecosystem/qrack, detached at b06652a8fdc198ce80147efa4b05b0777b874144 (= origin/moat-port tip).
+
+### Build
+```
+R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+S=<abs>/projects/qrack/src
+cmake -S $S -B $S/_build -G Ninja -DENABLE_CUDA=ON -DENABLE_OPENCL=OFF -DUSE_HIP=ON \
+  -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ \
+  -DCMAKE_PREFIX_PATH=$R -DENABLE_TESTS=ON
+cmake --build $S/_build -j16 --target unittest
+```
+Configure: OpenCL OFF / CUDA ON / HIP ON, 0 CMake warnings (the mis-matching endif warning is gone at b06652a8). Build exit 0, 39/39, 0 compiler warnings, every HIP compile carries a single --offload-arch=gfx1100. 23s.
+
+### Tests (`ulimit -c 0`, `LD_LIBRARY_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_core/lib`)
+Each: `$S/_build/unittest --proc-<p> --layer-<l> -d yes`, wrapped in `utils/timeit.sh qrack test --`. Every run printed "CUDA device #0: AMD Radeon Pro W7800 48GB". Compared per test case with this arch's previous validation (2026-10-30, 3bf7a75e, which still carried 42bdc3d6):
+
+| proc/layer | b06652a8 (this run) | 3bf7a75e (2026-10-30) | per-test delta |
+|---|---|---|---|
+| cuda/qengine | All passed, 9612 / 213 (68s) | All passed, 9612 / 213 | none |
+| cuda/qpager | 212 passed, 1 failed: test_cswap (tests.cpp:715), 9607/9608 assertions (89s) | All passed, 9609 / 213 | test_cswap pass -> fail: the known upstream failure restored by the fb20e069 revert (see "Known upstream failures") |
+| cuda/qunit | All passed, 9613 / 213 | same | none |
+| cuda/qunit-qpager | All passed, 9613 / 213 | same | none |
+| cuda/qunit-multi | All passed, 9610 / 213 | same | none |
+| cuda/qunit-multi-qpager | exit 0, 0 test cases (not wired in test_main.cpp) | same | none |
+| cuda/qtensornetwork | 209 passed, 4 failed (9367/9371) | same 209/4 | none; same 4 cases |
+| hybrid/qunit | All passed, 9613 / 213 | same | none |
+| hybrid/qengine | exit 0, 0 test cases (not wired) | same | none |
+| cpu/qengine | All passed, 9612 / 213 (47s) | same | none |
+| cpu/qpager | All passed, 9609 / 213 (34s) | same | none |
+| cpu/qtensornetwork | 209 passed, 4 failed (9367/9371) | same 209/4 | none; same 4 cases |
+
+- cuda/qpager test_cswap failure: tests.cpp:715 `REQUIRE_THAT(qftReg2, HasProbability(0, 12, (1U << 9U) | (1U << 11U)))`, expansion `/00000000000000000000:0 matches bit pattern [0,12]: 12/101000000000`. Exactly the recorded known upstream failure (SetAmplitudePage, upstream PR #1044), not a HIP regression.
+- qtensornetwork (cuda and cpu): test_mulmodnout, test_imulmodnout, test_cmulmodnout, test_cimulmodnout (tests.cpp:4628/4649/4747/4774), "QInterface::{MUL,IMUL,CMUL}ModNOut not implemented!". Known, engine-independent.
+- Repeats (no -d): `--proc-cuda --layer-qpager test_cswap` 0/10 (expected); `--proc-cuda --layer-qengine test_cswap` 10/10; `--proc-cuda --layer-qengine test_ucmtrx` 10/10 (deferred-free fix, 0.015s in the full run).
+- Slowest: test_bell_m 43.8s, test_m_array 21.6s (shot sampling), as before.
+- Same results as the porter's b06652a8 run on this host (2026-11-01 entry above).
+
+### Other gates
+- CUDA compile gate: already recorded PASS at b06652a8 (nvcc 12.8.93, sm_80, "Porter 2026-11-01" entry); not rerun.
+- `python3 utils/jargon.py --port qrack`: clean.
+- Documentation: README.md:215-223 "Optional HIP (AMD ROCm) instead of OpenCL", next to the CUDA build section; still accurate.
+- Integrity: `git -C projects/qrack/src status --porcelain` empty (untracked _build/ only).
+
+Result: linux-gfx1100 revalidate -> completed at b06652a8 (only failures are the two recorded known upstream failure sets).
