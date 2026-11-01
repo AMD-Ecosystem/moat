@@ -271,3 +271,12 @@
 {"kind":"phase","ts":"2026-11-01T12:36:59Z","phase":"test","seconds":3154.650,"exit":0,"cmd":"agent_space/emb5.sh"}
 {"kind":"phase","ts":"2026-11-01T13:01:15Z","phase":"test","seconds":1435.375,"exit":0,"cmd":"bash -c agent_space/fhn.sh 20 agent_space/fh20/all all && agent_space/fhn.sh 20 agent_space/fh20/id id"}
 {"kind":"session","ts":"2026-11-01T13:05:56Z","epoch":1793538356.945959819,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-01T11:24:35Z","epoch":1793532275.287403755,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-01T11:39:53Z","phase":"compile","seconds":814.816,"exit":0,"cmd":"bash agent_space/build.sh config"}
+{"kind":"phase","ts":"2026-11-01T11:42:19Z","phase":"test","seconds":110.335,"exit":0,"cmd":"bash agent_space/suite.sh tensor 1 4"}
+{"kind":"phase","ts":"2026-11-01T11:47:20Z","phase":"test","seconds":289.345,"exit":0,"cmd":"bash agent_space/reg.sh 1 r1"}
+{"kind":"phase","ts":"2026-11-01T11:59:09Z","phase":"test","seconds":1120.343,"exit":0,"cmd":"bash agent_space/suite.sh modules 0 8"}
+{"kind":"phase","ts":"2026-11-01T12:11:05Z","phase":"test","seconds":324.925,"exit":0,"cmd":"agent_space/py1.sh /var/lib/jenkins/fleet/jobs/mi200-20261101-032057-val-oneflow-d9e4/moat/agent_space/cg_ws2.py"}
+{"kind":"phase","ts":"2026-11-01T13:11:13Z","phase":"test","seconds":3511.694,"exit":0,"cmd":"bash agent_space/two5.sh"}
+{"kind":"phase","ts":"2026-11-01T13:30:12Z","phase":"test","seconds":1139.490,"exit":0,"cmd":"bash agent_space/fh20.sh"}
+{"kind":"session","ts":"2026-11-01T13:31:43Z","epoch":1793539903.669143389,"event":"end","platform":"linux-gfx90a"}

@@ -2644,3 +2644,94 @@ The porter's nvcc 12.8.93 sm_80 gate passed at every changed TU through d9e41753
 - Documentation: README.md:145-150 documents the ROCm configure next to the CUDA one; build_rocm.sh matches.
 - `git -C projects/oneflow/src status --porcelain`: no modified tracked files (untracked build output only); HEAD = origin `moat-port` = d9e41753e.
 - Not run: the 2D bf16 logical-kernel registrations (need 4 GPUs) and the C++ `cudnn_test.cpp` (needs BUILD_TESTING).
+## Validation 2026-11-01 (linux-gfx90a, MI250X; full suites, one_embedding/P2P two-GPU runs, fused-harness hang check and regression tests at d9e41753e: COMPLETED)
+
+jeff asked for this run: validate review-passed `moat-port` d9e41753e on gfx90a from a clean build. The full modules and tensor suites are compared per file with the newest gfx90a numbers (af83657d7). The run also covers the one_embedding and id_shuffle P2P tests on two GPUs (P2P on and off, 5 rounds), the fused embedding-interaction harness 20 times with P2P on, the regression tests of the recent rounds, the k = 2^20 fp16/bf16 error check against torch, and `cg_ws2.py`. The CUDA gate was skipped per the request, because the nvcc 12.8 sm_80 PASS is recorded at every changed TU. Result: **completed at d9e41753e**. Every failure is in a class this file already explains as not a port fault. The one abnormal file, test_grid_sample, has the same SIGSEGV signature as gfx1100's unexplained "rare host-side crash". It is now root-caused as an upstream nn.Graph runtime race (below).
+
+Host: two MI250X GCDs (gfx90a:sramecc+:xnack-, wave64, 104 CUs each), `HIP_VISIBLE_DEVICES=0,1` pinned by the dispatcher, AMD EPYC 7702 (2 x 64 cores). ROCm 10.1.0 SDK wheels in the job venv. Python 3.11.17, numpy 1.26.4, protobuf 3.20.3, opencv-python-headless 4.10.0.84, pytest-timeout. The oracle is the image's torch 2.16.0a0+git6c3af02, symlinked read-only into `venv-base-links`. Fresh clone of the fork at d9e41753e, `protect-fork` run. `ulimit -c 0` for every run, `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git` (`therock-libllvm-symbol-interposition`), `PYTHONDONTWRITEBYTECODE=1`, no JIT extension builds.
+
+### Build (clean build directory, 815 s, `utils/timeit.sh oneflow compile`)
+The recipe of the af83657d7 round (`agent_space/build.sh config`), without ccache, at `-j128` (= physical cores):
+```
+ulimit -c 0; export PATH=<agent_space>/pywrap:$FLEET_VENV/bin:$PATH; R=$($FLEET_VENV/bin/python -m rocm_sdk path --root)
+cmake -S . -B build -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DBUILD_CUDA=ON -DCMAKE_PREFIX_PATH=$R \
+  -DCMAKE_C_COMPILER=$R/lib/llvm/bin/clang -DCMAKE_CXX_COMPILER=$R/lib/llvm/bin/clang++ \
+  -DWITH_CUTLASS=OFF -DWITH_MLIR=OFF -DWITH_MLIR_CUDA_CODEGEN=OFF -DBUILD_RDMA=OFF -DBUILD_CPP_API=OFF -DBUILD_HWLOC=OFF \
+  -DWITH_ONEDNN=ON -DBUILD_TESTING=OFF -DTREAT_WARNINGS_AS_ERRORS=OFF -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF \
+  -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DPython3_EXECUTABLE=<agent_space>/pywrap/python3
+cmake --build build -j128
+```
+rc=0, `CMAKE_HIP_ARCHITECTURES: gfx90a`, `OF_GPU_WARP_SIZE: 64`, liboneflow.so 980 MB. Smoke check: `flow.cuda.is_available()` True with 2 devices, a 64x1000 softmax sums to 64.0, and a 64x64 fp32 mm differs from numpy by 7.6e-6. Free disk was 484 GB.
+
+### Full suites at d9e41753e (`agent_space/suite.sh`, the per-file runner: one pytest per file, `--timeout=900`, junit per file; modules on GPU 0, 8 at a time, 1120 s; tensor on GPU 1, 4 at a time, 110 s; `utils/timeit.sh oneflow test`)
+| suite | passed | failed | errors | skipped | aborted files | gfx90a at af83657d7 |
+|---|---|---|---|---|---|---|
+| modules (547 files) | 1605 | 52 | 5 | 316 | 3 (test_dataset, test_loss, test_grid_sample) | 1597 / 50 / 5 / 315 (545 files), 3 aborted (test_dataset, test_loss, test_higher_derivative_loss) |
+| tensor (22 files) | 366 | 3 | 0 | 22 | 0 | 366 / 3 / 0 / 22 |
+
+- tensor: the failing test ids are identical to af83657d7 (`agent_space/fails.py`): test_safetensors (module not installed) and test_autocast half_mm / half_mm_add (the known gfx90a fp16 ulp differences).
+- modules, per file (passed/failed/skipped from junit) against af83657d7. Every other file is identical:
+  - test_batchnorm 5/0/1 -> 6/0/1 (test_batchnorm_single_value, 97def642f);
+  - test_conv_float64 new, 6/0/0;
+  - test_matmul_long_k new, 3/0/0;
+  - test_higher_derivative_loss aborted before, now completes 2/2/1. The two failures are its known torch-oracle cases, bce PyTorchDoesNotSupportError and kl_div grad_grad, which also fails CPU-only;
+  - test_grid_sample 4/0/0 -> aborted (next item).
+  
+  Failure classes are the known ones: 14 "endless loop", 5 collection errors, `KeyError: 'ONEFLOW_CI'` 5, `oneflow.char != int8` 6, higher-derivative oracles (ZeroTensor / PyTorchDoesNotSupportError), `/dataset` 4, numpy `__bool__` 10, lbfgs `collections.Iterable`, replication_pad, functional docstr, codegeex float view, and the cublas_fused_mlp / fused_matmul_bias_add_relu_dropout float32 tolerance pair. No kernel-not-found records. test_dataset and test_loss abort as before (`/dataset` missing; torch BCE oracle device assert).
+- **test_grid_sample aborted: an upstream nn.Graph runtime race, not a port or GPU fault.** SIGSEGV (`Address not mapped to object [0x3c]`) in `vm::LazyJobStreamPolicy::DequeueNNGraph()`, reached from `CallbackNotifyKernel<signed char>::ForwardDataContent` -> `LaunchLazyJobInstructionPolicy::MakeJobInstance` FinishCb on an actor thread. That is the stack of gfx1100's test_vsplit crash at 80cbda89b ("rare host-side crashes", item 4, recorded as unexplained). It did not reproduce in 40 standalone runs (4 at a time over both GPUs, `agent_space/gs/`: 40/40 rc=0, 4 passed each).
+  - Cause, from the code. `LaunchLazyJobInstructionPolicy::Compute` (`oneflow/core/vm/lazy_job_instruction_policy.h:107-121`) pushes the job instance to the CallbackNotifier and SourceTick buffers, which starts the graph on the actor threads. Only after that does it call `lazy_job_stream_policy->EnqueueNNGraph(nn_graph_)` on the VM thread. When a small graph finishes first, its callback runs `DequeueNNGraph`, which does `queue_.pop()` on an empty `std::queue` (`lazy_job_stream_policy.cpp:41-45`), and that is undefined behaviour.
+  - Proof by widening the window. A temporary `std::this_thread::sleep_for(20 ms)` before `EnqueueNNGraph` was rebuilt (one TU, `instructions_builder.cpp`), and `/tmp/v90a/tinygraph.py` was run: an nn.Graph `x * 2 + 1` on 4 elements, called 200 times. The cuda graph crashed in 3 of 3 runs and the **cpu-only** graph in 2 of 2, every time with the same `DequeueNNGraph` SIGSEGV. The unmodified build ran 3 x 3000 and 3 x 2000 calls with no crash. The file was then restored with `git checkout --` and rebuilt, and `git status --porcelain` is empty.
+  - The port changes nothing under `oneflow/core/{vm,framework,job,thread,actor}` or in `callback_notify_kernel.cpp` (`git diff origin/master..moat-port` is empty there). The same race exists on CUDA. The fix would be to enqueue before publishing the SourceTick. Upstream's code; not changed.
+- `test_matmul ... allow_tf32` and `test_global_tril_with_diag` (gfx942 flakes) passed here.
+
+### Regression tests of the recent rounds (GPU 1, one pytest per file, `agent_space/reg.sh`, 2 rounds; round 1 alone, round 2 while nothing else ran on GPU 1)
+Every file gave the same result in both rounds: test_matmul_long_k 3 passed; test_conv_float64 6; test_grouped_matmul_bias 1; test_cross_entropy_float16 3; test_check_numerics_float16 2; test_pool2d_channels_last 1; test_batchnorm 6 + 1 upstream skip (includes test_batchnorm_float64 and test_batchnorm_single_value); test_conv_bias_grad 2; test_reduce_sum_like 2; test_fused_matmul_bias 1; test_bmm 2; graph/test_graph_image_gpu_decoder 1 + 1 upstream skip. test_cublas_fused_mlp fails 1 of 1. That is the known float32 tolerance item: copies restricted to one dtype (`/tmp/v90a/test_mlp64.py`, `test_mlp32.py`) give float64 1 passed and float32 1 failed. The bf16 collective tests are in the two-GPU table.
+
+### k = 2^20 fp16/bf16 matmul error against torch (`agent_space/longk.py`, eager, uniform(-1, 1), error = max abs / max |float64 ref| of the rounded inputs)
+| case | fp16 oneflow / torch | bf16 oneflow / torch |
+|---|---|---|
+| mm 1 x 2^20 x 64 | 2.78e-4 / 2.78e-4 | 2.53e-3 / 2.53e-3 |
+| mm 2 x 2^20 x 64 | 2.79e-4 / 2.79e-4 | 1.48e-3 / 1.48e-3 |
+| mm 16 x 2^20 x 64 | 4.11e-4 / 4.11e-4 | 1.79e-3 / 1.79e-3 |
+| mm transpose_b 1 x 2^20 x 64 | 2.01e-4 / 2.01e-4 | 1.91e-3 / 1.91e-3 |
+| bmm 4 x (1 x 2^18 x 64) | 2.54e-4 / 2.54e-4 | 1.98e-3 / 1.98e-3 |
+| mm 1 x 2^16 x 64 (no split) | 2.61e-4 / 2.61e-4 | 2.04e-3 / 2.04e-3 |
+oneflow equals torch in every case, at the level jeff gave (fp16 about 2.8e-4, bf16 about 2.5e-3).
+
+### Graph-capture workspace check (`agent_space/cg_ws2.py`, the gfx90a review's version plus shapes 1 x 2^20 x 64 and 128 x 65536 x 128; `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1`, cuda:0 and cuda:1 in one process, 325 s)
+54 nn.Graphs (matmul, bmm and transposed matmul in each; 9 shapes x fp32/fp16/bf16 x 2 devices) were captured in increasing size. After each capture the script ran eager 4096 x 16384 GEMMs, then replayed every graph 3 times, interleaved and in reverse order, with fresh inputs. **RESULT PASS**, 0 bad. The error metric is |y - ref| / (|A||B|), worst per dtype: fp32 4.2e-7, fp16 2.3e-4, bf16 2.0e-3. 1 x 2^20 x 64 gives fp16 9.5e-7 and bf16 1.2e-5. The two devices are identical.
+
+### Two GPUs, 5 rounds (`agent_space/two5.sh` under `utils/timeit.sh oneflow test`, 3512 s; two-rank runs through `python3 -m oneflow.distributed.launch --nproc_per_node 2 --redirect_stdout_and_stderr`, `setsid -w timeout`; one-GPU files on GPU 0): 120 of 120 runs rc=0
+| test | every one of 5 rounds |
+|---|---|
+| expensive/test_id_shuffle_global.py, embedding + gradient `*_USE_P2P` = 0 and = 1 | 3 passed on both ranks |
+| modules/test_dynamic_allocation_gradient_shuffle_shuffle_global.py, P2P 0 and 1 | 1 skipped (upstream `@unittest.skip`) |
+| expensive/test_id_shuffle_p2p_global.py (id_shuffle P2P) | 1 passed on both ranks |
+| expensive/test_one_embedding_p2p_shuffle_global.py (embedding + gradient P2P) | 1 passed on both ranks |
+| modules/test_comm_ops.py -k bfloat16 | 2 passed on both ranks |
+| graph/test_graph_nccl_logical_bfloat16.py | 3 passed on both ranks |
+| expensive/test_oneembedding.py, 2 ranks | 1 passed on both ranks |
+| one GPU: test_id_shuffle 4, test_oneembedding / padding_idx / dynamic_allocation_gradient_shuffle / adagrad / sgd 1 each, test_fused_dot_feature_interaction 2 | passed |
+| one GPU: test_one_embedding_adam, test_one_embedding_ftrl | 1 skipped each (upstream `@unittest.skip`) |
+| P2P op harness (exact forward rows and backward), P2P on and off, 10 iterations | bad=0 on both ranks |
+| fused harness, 50 steps: unfused / fused P2P off / fused P2P on / fused P2P on + id_shuffle P2P | rc=0, 36-39 s, finite |
+Fused harness (`agent_space/fused_harness.py`, the 0b04c09af-round harness with a per-step print) against unfused round 1 (`cmp.py`): losses identical at all 50 steps in all 20 runs (0.693604 -> 0.688721). Top-weight relL2 is 7.8e-5 to 1.4e-4 for the fused variants and 7.2e-5 to 1.0e-4 for the unfused reruns. Bottom weights are identical.
+
+### Fused-harness hang check (`agent_space/fh20.sh`, `fh.sh`: fused harness on two ranks with a per-step print; a hang is the process still running at 240 s, about 6x the normal 38 s, and the script then records the last step per rank, `amd-smi` usage and gdb stacks before killing it; 1139 s)
+| configuration (FUSE_EMBEDDING_INTERACTION=1) | runs | hung | rc != 0 |
+|---|---|---|---|
+| embedding + gradient + id_shuffle P2P on | 20 | **0** | 0 |
+| id_shuffle P2P only | 10 | **0** | 0 |
+| (in the 5 rounds above) embedding + gradient + id_shuffle P2P on | 5 + 1 calibration | 0 | 0 |
+All 30 runs took 36-39 s. Against unfused round 1, losses are identical at every step (max difference 0) and the top-weight relL2 is at most 1.3e-4 (rerun noise). Before 42d68145d these configurations hung in 2-3 of 20 runs on gfx942. 0 of 36 here is consistent with the stream fix holding on gfx90a, but it is not a proof for a rare race.
+- 42d68145d CU-mask streams on gfx90a (`/tmp/v90a/cum/cum.hip`, standalone hipcc `--offload-arch=gfx90a`, outside every checkout; the reviewer's open check for this arch). Built with the commit's mask (`multiProcessorCount` = 104 bits), CU-masked streams 0 and 15 of 16 each reach 104 distinct (cu, sh, se) `HW_ID` slots, as many as a `hipStreamCreate` stream. Destroying the 16 streams frees 32 MiB (2 MiB per queue on gfx90a).
+
+### CUDA compile gate: skipped
+Skipped per the request. The nvcc 12.8.93 sm_80 PASS is recorded for every changed TU through d9e41753e (latest: "Porter round 2026-11-01 ... 9166f2fb2..9636ca67b", `hip_long_k_gemm.cu`).
+
+### Other checks
+- `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038 ('Strategy A', 'MOAT', 'Lead platform'), which the PR-prep squash clears.
+- Documentation: README.md:145-150 documents the ROCm configure next to the CUDA one, and `build_rocm.sh` matches it. Unchanged.
+- `git -C projects/oneflow/src status --porcelain`: empty, also after the race probe was reverted and rebuilt.
+- Lesson promoted: `cuda-to-rocm/references/validation.md` ("Diagnosing a suspected AMD fault"): for a rare host crash in code the port does not touch, widen the suspected race window with a temporary sleep and check CPU-only work, instead of stress rerunning.
+- For a person (not a port item): the `LaunchLazyJob` enqueue-after-publish race above is an upstream oneflow bug on every backend. It is not registered as a deferral because it is outside the port. Whether to report it upstream is jeff's call.
