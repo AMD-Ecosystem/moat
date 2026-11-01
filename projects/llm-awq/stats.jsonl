@@ -133,3 +133,5 @@
 {"kind":"phase","ts":"2026-11-01T01:49:39Z","phase":"compile","seconds":80.732,"exit":0,"cmd":"bash -c cd /tmp/awq_c7ae2c5/awq/kernels && PYTORCH_ROCM_ARCH=gfx942 MAX_JOBS=32 python setup.py build_ext --inplace"}
 {"kind":"phase","ts":"2026-11-01T01:54:43Z","phase":"test","seconds":296.937,"exit":0,"cmd":"bash /tmp/awq_runtests.sh"}
 {"kind":"session","ts":"2026-11-01T01:55:57Z","epoch":1793498157.450661185,"event":"end","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-01T02:47:42Z","phase":"compile","seconds":1.023,"exit":1,"cmd":"bash -c cd ../awq_scratch3/awq/kernels && python setup.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-01T02:49:43Z","phase":"compile","seconds":106.795,"exit":0,"cmd":"bash -c cd ../awq_scratch3/awq/kernels && D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe setup.py build_ext --inplace"}

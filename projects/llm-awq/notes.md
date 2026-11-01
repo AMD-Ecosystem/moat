@@ -896,3 +896,28 @@ Total 517 checks, 0 failures.
 CUDA gate: not rerun. Recorded PASS at 90a711b (V100 node, sm_80); this host has no CUDA torch include tree (see the 2026-10-30 gfx942 entry). The c7ae2c5 delta changes CUDAExtension kwargs only by `extra_link_args=[]` off Windows ROCm, which the reviewer showed equal to setuptools' default.
 
 Checks: `python3 utils/jargon.py --port llm-awq` clean (needs local `main` and `moat-port` branches in the fork clone); README.md:127 documents the ROCm build; fork tree clean (`git status --porcelain` empty).
+
+## Validation 2026-11-01 (windows-gfx1151, c7ae2c5)
+
+Verdict: completed at fork `moat-port` c7ae2c57d3c642ae25e88f9d8402481b8273ff1e (head_sha). jeff approved this run on this host. Radeon 8060S (gfx1151, RDNA3.5, wave32 APU), torch 2.12.0+rocm7.14.0a20260519, Python 3.13, `PYTORCH_ROCM_ARCH=gfx1151`, `ulimit -c 0`, one GPU process at a time, no checkpoint or full-model load, largest allocation about 0.2 GiB.
+
+### Build (no LIB workaround)
+`git archive c7ae2c57d` of the fork clone into `agent_space/awq_scratch3` (fork clone `git status --porcelain` empty). Stock environment: `source agent_space/win_torch_env.sh`, `MAX_JOBS=16`, `LIB` checked to contain no scratch dir (the `agent_space/awq_libs` hipblaslt.lib copy is NOT used):
+```
+cd agent_space/awq_scratch3/awq/kernels
+utils/timeit.sh llm-awq compile -- python setup.py build_ext --inplace
+```
+rc=0. link.exe line ends with `...\_rocm_sdk_devel\lib\libhipblaslt.dll.a`; `awq_inference_engine.cp313-win_amd64.pyd` produced. The 90a711b LNK1181 on `hipblaslt.lib` is gone.
+
+### Tests (from /tmp, `PYTHONPATH=<scratch>/awq/kernels`; scripts from projects/llm-awq/tests/), all exit 0, 0 FAIL lines
+- `attn_test.py`: 443/443 (90a711b laptop 443/443; Linux 443/443). Same LDS refusals (fp32 D=128 t=16240, 20000).
+- `tinychat_e2e.py <scratch>`: 4/4; argmax 40/40, 40/40, 64/64, 40/40; max |dlogit| 2.930e-03 (same as 90a711b).
+- `w8a8_test.py` as a scratch copy with the profiler removed (`agent_space/awq_w8a8_test_noprof.py`): 25/25 (path not observed on this host, no CUDA-activity profiler in this Windows torch).
+- `w8a8_simt_test.py <w8a8_gemm_cuda.cu>`: 7/7 exact.
+- `legacy_gemm_test.py`: 8/8, max err 3.91e-03 vs dequant ref, 7.81e-03 vs gemv (same as before).
+- `w4a16_test.py <scratch>`: 30/30.
+- `w8a8_handle_test.py <w8a8_gemm_cuda.cu>` UNMODIFIED (the review's Windows branch picks `libhipblaslt.dll.a` itself): PASS, 16 threads over 1 device, one handle. A torch "Error checking compiler version" warning for clang-cl appears and is harmless.
+Total 547 checks, 0 failures. Matches the 90a711b laptop run and the Linux c7ae2c5 runs.
+
+### Checks
+CUDA gate: not run on this host; recorded PASS at 90a711b, and c7ae2c5 changes setup.py only under `IS_ROCM and os.name == "nt"`. `python3 utils/jargon.py --port llm-awq` clean; README.md:127 documents the ROCm build; fork tree clean.
