@@ -845,3 +845,44 @@ Verdict: changes-requested (1 must-fix). The revert itself is clean.
 ### Whole diff 98b47407...fb20e069: checked, no other finding
 - Re-read all 10 files, 204+/17-. Every point in the 2026-10-30 review's "Checked, no finding" still holds: the shim is inert on NVIDIA, the nvcc options and the CUDA elseif branch are unchanged, the deferred-free drain runs on user threads, and there are no warpSize or literal-32 assumptions and no library swaps.
 - Upstream has moved to db84c820 (adds src/qbridge.cpp as host C++, and bumps the version). `git merge-tree --write-tree HEAD upstream/main` gives no conflict. qbridge.cpp is a CXX source in add_library(qrack) and needs no HIP handling.
+
+## Porter 2026-11-01 (linux-gfx1100): answer Review 2026-10-31 -> b06652a8
+The one must-fix: cmake/CUDA.cmake:108 `endif(ENABLE_CUDA)` -> `endif ()` (upstream's style at lines 9 and 23 of the same file). Fork commit b06652a8fdc198ce80147efa4b05b0777b874144 on `moat-port`, a new commit on fb20e069 (no amend, no force). Pushed fb20e069..b06652a8. The fork review PR (AMD-Ecosystem/qrack#1) has no `/moat changes-requested` and no line threads, so there was nothing to reply to there.
+
+Platform: AMD Radeon Pro W7800 48GB, gfx1100 (wave32), HIP_VISIBLE_DEVICES=1 (dispatcher pin), TheRock ROCm SDK 10.1.0 pip wheels, CMake 3.31.6, Ninja, `ulimit -c 0`.
+
+Configure warnings (`cmake -S <tree> -B <dir> -G Ninja -DENABLE_OPENCL=OFF -DENABLE_CUDA=OFF`):
+
+| tree | CMake warnings |
+|---|---|
+| upstream 98b47407 | 0 |
+| fb20e069 | 1 (mis-matching endif, CUDA.cmake:32/108) |
+| b06652a8 | 0 |
+
+HIP: same recipe as "Porter 2026-10-31 ... -> fb20e069" (`-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100`, `-j10`). Configure 0 warnings, OpenCL OFF / CUDA ON / HIP ON; build exit 0, 39/39, 0 warnings.
+
+| proc/layer at b06652a8 | result |
+|---|---|
+| cuda/qengine | All passed, 9612 / 213 |
+| cuda/qpager | 212 passed, 1 failed: test_cswap (tests.cpp:715, known upstream failure) |
+| cuda/qunit | All passed, 9613 / 213 |
+| cuda/qunit-qpager | All passed, 9613 / 213 |
+| cuda/qunit-multi | All passed, 9610 / 213 |
+| cuda/qtensornetwork | 209 / 4 failed (the 4 ModNOut cases, tests.cpp:4628/4649/4747/4774, known) |
+| hybrid/qunit | All passed, 9613 / 213 |
+| cpu/qengine | All passed, 9612 / 213 |
+| cpu/qpager | All passed, 9609 / 213 |
+| cpu/qtensornetwork | 209 / 4 failed (same 4) |
+| `--proc-cuda --layer-qpager test_cswap` x5 | 0/5 (expected) |
+| `--proc-cuda --layer-qengine test_cswap` x5 | 5/5 |
+| `--proc-cuda --layer-qengine test_ucmtrx` x5 | 5/5 |
+
+Identical to the fb20e069 run. Every run printed "CUDA device #0: AMD Radeon Pro W7800 48GB".
+
+CUDA 12.8 compile gate at b06652a8. The 12.8.0 prefix from the last round was gone; this host had the 12.8.1 redist archives another job downloaded (cuda_nvcc 12.8.93, cuda_cudart 12.8.90, cuda_cccl 12.8.90). All three passed `sha256sum -c` against a freshly fetched https://developer.download.nvidia.com/compute/cuda/redist/redistrib_12.8.1.json (nvcc 9961b348...10d3, cudart 8d566b5f...ca68, cccl 0740e9e0...4e4b), and were extracted into a fresh prefix of my own with `lib64 -> lib`. gcc 13.3. Same cmake command as the fb20e069 entry.
+- "The CUDA compiler identification is NVIDIA 12.8.93", OpenCL OFF / CUDA ON / HIP OFF. Configure warnings: b06652a8 1 (CMP0074, from passing `CUDAToolkit_ROOT` to upstream's `find_package(CUDAToolkit)` at CUDA.cmake:18), upstream 98b47407 the same 1, fb20e069 2 (CMP0074 + mis-matching). So the NVIDIA configure now matches upstream.
+- Build exit 0, 39/39. Warnings are only the known upstream ones: 4x `qrack_types.hpp(85): warning #68-D` and 3x nvcc "incompatible redefinition for option 'std'". Compile only (no NVIDIA GPU here). **CUDA compile gate PASS.**
+
+- `python3 utils/jargon.py --port qrack`: clean. Integrity: `git status --porcelain` shows only untracked build output.
+- Docs: unchanged (no build step changed).
+- State: `set-state qrack linux-gfx1100 porting`, `advance-head qrack b06652a8`, then `ported`. Every arch reads revalidate at b06652a8; a reviewer runs next.
