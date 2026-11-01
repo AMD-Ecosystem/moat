@@ -122,10 +122,15 @@
       "refs": [
         "projects/oneflow/notes.md"
       ],
-      "status": "open",
+      "status": "done",
       "upstream_issue": null,
       "created_at": "2026-10-31T23:05:00Z",
-      "decided": null
+      "decided": {
+        "choice": "now",
+        "by": "jeffdaily",
+        "at": "2026-11-01T04:15:47Z",
+        "note": "Ruled 'fix it, not deferred' in the 2026-11-01 gfx942 porter dispatch; fixed in fork 42d68145d."
+      }
     }
   ]
 }

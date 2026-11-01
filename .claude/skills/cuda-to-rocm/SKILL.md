@@ -87,6 +87,7 @@ Scan this list against what you are doing. If any line could apply, open
 - `hipLaunchHostFunc` callback threads must not call ANY runtime API.
 - A flag one GPU polls in another GPU's `hipMalloc` memory never updates on MI250X; use uncached or fine-grained memory.
 - Data a peer GPU reads over IPC is stale on gfx1100 even in fine-grained memory and after a system-scope release; stage it in uncached memory (an event release is lost in graph replay).
+- HIP streams share a pool of hardware queues, so a cross-GPU spin barrier on one stream and a collective on another can deadlock two GPUs; give each stream its own queue with `hipExtStreamCreateWithCUMask`.
 
 **Textures**
 - Texture pitch alignment: AMD requires 256-byte row pitch for pitched 2D binds (32 on NVIDIA).

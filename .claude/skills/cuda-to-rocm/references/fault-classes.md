@@ -169,6 +169,25 @@ shares that over IPC, and copies or gathers the data into it before the barrier.
 the regression test: buffers larger than L2 get evicted and pass anyway (oneflow's test needed
 a small batch to fail), and checking only the last iteration of a loop hides it. (oneflow)
 
+**Streams share hardware queues on HIP, so a spinning kernel can block another stream's work and
+deadlock two GPUs.** CUDA streams make progress independently. HIP runs ordinary streams on a pool
+of `GPU_MAX_HW_QUEUES` (default 4) hardware queues per device per priority, and with the pool full
+ROCclr picks the least loaded queue per submission (`AMD_LOG_LEVEL=3` shows `Selected queue
+(mode=1): ... refCount: 2`). A packet that must wait for earlier work in its own stream then waits
+for everything ahead of it in the shared queue, including a spinning kernel from another stream. A
+cross-GPU spin barrier (oneflow's P2P one_embedding shuffles) issued on one stream and an NCCL/RCCL
+collective issued on another, in no fixed order between ranks, deadlocks when the two GPUs queue
+them in opposite orders: random step, 5-30 percent of runs, both GPUs at 100 percent. Diagnose
+without a debugger by giving each spin loop a `wall_clock64()` timeout that `printf`s rank, phase,
+target and seen value (device printf flushes while the kernel still spins): oneflow showed one rank
+in the gradient barrier and the peer in no barrier. `GPU_MAX_HW_QUEUES=32` making the hang go away
+confirms it (oneflow: 6/20 hung at the default, 0/20 at 32). Fix: create the project's streams with
+`hipExtStreamCreateWithCUMask` over all CUs; ROCclr gives a CU-masked stream a hardware queue of
+its own outside the pool (a probe deadlocking 6/6 stream pairs at `GPU_MAX_HW_QUEUES=1` passes 30/30
+with CU-masked streams). High-priority streams have their own smaller pool and deadlock the same
+way. A spinning kernel alone does not block a later kernel of another stream on the same queue;
+the later kernel has to wait on prior work in its own stream first. (oneflow)
+
 **Out-of-bounds reads.** CUDA often tolerates a read one element past an allocation; AMD
 faults. Kernels reading index +/-1 or +/-width at edges (stencils, neighbour gathers) must
 clamp. (colmap ComputeDOG.)

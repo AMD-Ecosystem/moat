@@ -218,3 +218,11 @@
 {"kind":"phase","ts":"2026-10-31T22:51:18Z","phase":"test","seconds":2124.919,"exit":0,"cmd":"bash -c agent_space/fh20.sh 20 /var/lib/jenkins/fleet/jobs/mi300-20261031-130739-oneflow-fix7/moat/agent_space/fh20a '' ; agent_space/fh20.sh 20 /var/lib/jenkins/fleet/jobs/mi300-20261031-130739-oneflow-fix7/moat/agent_space/fh20b ONEFLOW_ONE_EMBEDDING_ID_SHUFFLE_USE_P2P=1"}
 {"kind":"phase","ts":"2026-10-31T23:03:25Z","phase":"test","seconds":591.450,"exit":0,"cmd":"agent_space/fh20.sh 10 /var/lib/jenkins/fleet/jobs/mi300-20261031-130739-oneflow-fix7/moat/agent_space/fh20t ONEFLOW_ONE_EMBEDDING_ID_SHUFFLE_USE_P2P=1 AMD_LOG_LEVEL=3"}
 {"kind":"phase","ts":"2026-10-31T23:24:02Z","phase":"test","seconds":1172.852,"exit":0,"cmd":"agent_space/fh20_idonly.sh 20 /var/lib/jenkins/fleet/jobs/mi300-20261031-130739-oneflow-fix7/moat/agent_space/fh20c ONEFLOW_ONE_EMBEDDING_ID_SHUFFLE_USE_P2P=1"}
+{"kind":"phase","ts":"2026-11-01T01:56:51Z","phase":"compile","seconds":519.970,"exit":0,"cmd":"bash agent_space/build.sh config"}
+{"kind":"phase","ts":"2026-11-01T01:57:43Z","phase":"compile","seconds":45.850,"exit":0,"cmd":"bash agent_space/build.sh"}
+{"kind":"phase","ts":"2026-11-01T02:36:10Z","phase":"compile","seconds":8.007,"exit":0,"cmd":"bash agent_space/build.sh"}
+{"kind":"phase","ts":"2026-11-01T02:37:57Z","phase":"compile","seconds":36.162,"exit":0,"cmd":"bash agent_space/build.sh"}
+{"kind":"phase","ts":"2026-11-01T03:27:14Z","phase":"test","seconds":2945.496,"exit":0,"cmd":"bash agent_space/proof.sh"}
+{"kind":"phase","ts":"2026-11-01T03:59:47Z","phase":"test","seconds":1865.797,"exit":0,"cmd":"bash agent_space/two3.sh"}
+{"kind":"phase","ts":"2026-11-01T04:02:05Z","phase":"test","seconds":83.165,"exit":0,"cmd":"bash agent_space/suite.sh tensor /var/lib/jenkins/fleet/jobs/mi300-20261031-184422-oneflow-idshuffle-hang/moat/agent_space/suite_ten 7"}
+{"kind":"phase","ts":"2026-11-01T04:11:43Z","phase":"test","seconds":661.870,"exit":0,"cmd":"bash agent_space/suite.sh modules /var/lib/jenkins/fleet/jobs/mi300-20261031-184422-oneflow-idshuffle-hang/moat/agent_space/suite_mod 6"}
