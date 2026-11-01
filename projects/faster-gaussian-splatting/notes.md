@@ -2291,3 +2291,28 @@ Requested by jeff; his ruling stands that the port does not wait for ROCm/rocm-l
 ### Verdict
 
 **changes-requested** for finding 1 (fork setup.py and the skill lesson). After the fix the porter should rerun the ROCM_HOME=None check and one ROCm build; the GPU results recorded at fe62b19 do not depend on this line.
+
+## Porter 2026-11-01 (linux-gfx90a) -- answers Review 2026-11-01, commit 00e803d
+
+Requested by jeff. Host: MI250X (gfx90a), torch 2.16.0a0+git6c3af02, HIP 7.16.26385 (TheRock SDK wheels in `/opt/python-3.11-venv`, hipRAND 3.4.0), `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`. Fork freshly cloned at fe62b19, pre-push hook installed.
+
+### Change (00e803d, one commit on fe62b19, fast-forward push)
+
+`FasterGSCudaBackend/setup.py` `hip_compiles` now starts with `if ROCM_HOME is None: return False`, so a ROCm torch with no SDK found reaches `CUDAExtension`'s OSError again, as at 99d68f9. It is the only setup.py in the repository (`find . -name setup.py`), so no other copy of the probe exists. Skill: the hipRAND Philox bullet in `strategy-b-torch.md` now says to return False when `ROCM_HOME` is None, and why.
+
+### Checks (scripts in `agent_space/fix3/scripts`, fe62b19 tree via `git archive` in `agent_space/fix3/old`)
+
+- `rocmnone.py` (sets `torch.utils.cpp_extension.ROCM_HOME = None`, stubs `setuptools.setup`, runs setup.py): fe62b19 -> `TypeError expected str, bytes or os.PathLike object, not NoneType`; 00e803d -> `OSError ROCM_HOME environment variable is not set. Please set it to your ROCm install root.`
+- `flags.py` with the normal ROCM_HOME (`_rocm_sdk_devel`): both trees `['-std=c++20', '-O3', '-ffast-math']`, the probe fails on hipRAND 3.4.0 as before; no `FGS_HAVE_HIPRAND_PHILOX4X32_10` in either `build.ninja`.
+- Builds, `PYTORCH_ROCM_ARCH=gfx90a MAX_JOBS=64`, `utils/timeit.sh ... compile -- bash -c "cd <tree>/FasterGSCudaBackend && python setup.py build_ext --inplace"`: both exit 0 (51 s each), 360 `warning:` lines each.
+- `noise_dump.py` + `bitcmp.py` (n = 37 / 100003 / 1000000, seeds 1 / 1234567 / 2^40+99, three calls each, random inputs from a fixed CPU generator): **27/27 bit-identical** fe62b19 vs 00e803d; 9/9 consecutive calls change the output, so the kernel ran.
+- `gpu_tests/new_checks.py` on 00e803d: 31/31 PASS (Philox + Box-Muller reference max abs err 8.65e-7 over 228 primitives).
+- CUDA path, `cudapath.py` (`torch.version.hip = None`, `subprocess.run` and `shutil.which` replaced by functions that raise, `CUDAExtension`/`setup` stubbed): 0 calls, `IS_ROCM False`, `nvcc_flags ['-std=c++20', '-O3', '-use_fast_math']`. The new lines sit inside `hip_compiles`, which only the ROCm branch calls; no CUDA source changed.
+
+### Completion checks
+
+`utils/prose.py` on the message -> clean; title 55 chars; `python3 utils/jargon.py --port faster-gaussian-splatting` -> `jargon: clean`; fork `git status --porcelain` empty; `pr-state` -> none; pushed `fe62b19..00e803d`.
+
+### State
+
+`advance-head 00e803d`, linux-gfx90a `porting -> ported`. The GPU results recorded at fe62b19 do not depend on this line; every platform owes revalidation at 00e803d after review.

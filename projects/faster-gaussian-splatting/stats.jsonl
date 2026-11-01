@@ -120,3 +120,6 @@
 {"kind":"phase","ts":"2026-11-01T02:39:49Z","phase":"test","seconds":31.225,"exit":0,"cmd":"bash /var/lib/jenkins/fleet/jobs/mi200-20261031-192536-fgs-probe/moat/agent_space/run_hr.sh"}
 {"kind":"session","ts":"2026-11-01T02:46:54Z","epoch":1793501214.160634359,"event":"start","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-11-01T02:53:36Z","epoch":1793501616.846581048,"event":"end","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-01T04:24:33Z","phase":"compile","seconds":50.926,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261031-211929-fgs-fix3/moat/agent_space/fix3/old/FasterGSCudaBackend && python setup.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-01T04:24:33Z","phase":"compile","seconds":51.131,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261031-211929-fgs-fix3/moat/projects/faster-gaussian-splatting/src/FasterGSCudaBackend && python setup.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-01T04:25:28Z","phase":"test","seconds":3.873,"exit":0,"cmd":"/opt/python-3.11-venv/bin/python /var/lib/jenkins/fleet/jobs/mi200-20261031-211929-fgs-fix3/moat/projects/faster-gaussian-splatting/gpu_tests/new_checks.py /var/lib/jenkins/fleet/jobs/mi200-20261031-211929-fgs-fix3/moat/projects/faster-gaussian-splatting/src/FasterGSCudaBackend"}
