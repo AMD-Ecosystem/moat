@@ -2835,3 +2835,244 @@ The gate passed for every changed TU (nvcc 12.8.93, sm_80; last at d9e41753e, "P
 - Documentation: README.md:145-150 documents the ROCm configure next to the CUDA one, and build_rocm.sh matches it.
 - `git -C projects/oneflow/src status --porcelain`: empty.
 - Telemetry: the two-GPU and hang-check phases first ran for 2 s each with rc 126 because a copied script lacked its exec bit, and the first cg_ws2 call used a relative path. I removed those bogus `phase` lines from stats.jsonl before committing; the recorded phases are the real runs.
+
+## Porter round 2026-11-01 (linux-gfx1100, two W7800; answers "Validation 2026-11-01 (linux-gfx1100 ... at d9e41753e -- validation-failed)": long-k fp16 GEMM accuracy on gfx1100)
+
+jeff's dispatch: make long-k 16-bit GEMM right on gfx1100 without loosening the test bound. First look for an accurate, robust hipBLASLt selection rule; otherwise send long-k GEMMs on the inaccurate families to the float-tile fallback. Keep CUDA unchanged, cover the failing case in a test, and write a standalone hipBLASLt reproducer for a possible upstream report (no upstream action). Host: two Radeon Pro W7800 48GB (gfx1100), `HIP_VISIBLE_DEVICES=0,1` pinned by the dispatcher, ROCm 10.1.0 SDK wheels (hipBLASLt 1.4.1 = 100401, rocBLAS 5.7), torch 2.16.0a0+git6c3af02 (the image's, symlinked read-only into `$FLEET_VENV-base-links`), `ulimit -c 0`, `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git`, `PYTHONDONTWRITEBYTECODE=1`, no JIT extension builds. Lock taken `validation-failed -> porting`. Fork `moat-port` d9e41753e -> ee180b9d5: one new commit, fast-forward, no amend or force push.
+
+### Build
+Fresh clone from the d9e41753e gfx1100 validator's clone, origin set to the fork, `protect-fork` run, `moat-port` = origin. Job venv: `pip install -r dev-requirements.txt fsspec pytest-timeout pytest-repeat mkl-static mkl-include opencv-python==4.11.0.86` (into `$FLEET_VENV`; the guard refuses the same command spelled with the literal venv path), plus the validator's `pywrap` (drops pip's `--user`). Clean build `CMAKE_HIP_ARCHITECTURES=gfx1100 ./build_rocm.sh all` with `JOBS=32` and a copy of the validator's ccache: rc=0, about 17 min. After the `cublas_v2.h` edit, 943 steps incremental, rc=0.
+
+### Root cause: the gfx11 WMMA accumulator drifts, so no hipBLASLt algorithm is accurate unsplit
+- **All algorithms give the same error.** `agent_space/lt/enum.cpp` (standalone, SDK clang `--offload-arch=gfx1100`) takes the failing GEMM in oneflow's cuBLAS form (T,N, m=16 n=2 k=2^20, lda=ldb=k, fp16, COMPUTE_32F, 4 MiB workspace). `hipblasLtMatmulAlgoGetHeuristic` with 64 requested returns 64 algorithms, and every one gives **5.76 ulp**, 2.3 to 19 ms, workspace 0. `hipblaslt_ext::getAllAlgos` returns 611; 298 are supported within 4 MiB, all `Cijk_Alik_Bljk_HHS..._MI16x16x1_..._ISA1100` WMMA kernels, and every one gives **5.76 ulp** to four digits. A float32 D (`HSS` kernels, rounded to fp16 on the host) is also 5.76 ulp. The unrounded float D is already off by 5.4e-5 / 2.0e-4 / 7.8e-4 / 2.8e-3 relative at k = 2^14 / 2^16 / 2^18 / 2^20, i.e. linear in k. So float output does not help, and neither does the choice of algorithm.
+- **The instruction itself (`agent_space/lt/wmma.cpp`, source below):** one wave carries a `__builtin_amdgcn_wmma_f32_16x16x16_f16_w32` accumulator through k/16 steps (as a GEMM main loop does), against a scalar fp32 FMA chain, both vs a double reference of the same fp16 inputs. Error at k = 2^20: WMMA **3.37e-3**, FMA 3.11e-5. With all-positive inputs, the mean signed error at k = 2^18 is -42.6 on values of about 65536, a bias toward zero. So the accumulator does not round to nearest. That is the magnitude hipBLASLt shows (2.76e-3), and it explains why torch is bit-identical.
+- **rocBLAS has it too wherever it does not chunk k itself.** With the gfx942 investigation's `repro.cpp` built for gfx1100 (columns: rocBLAS 16-bit D / hipBLASLt default / rocBLAS float D), cuBLAS N,T (oneflow `transpose_a`; neither operand is k-major, so the old `max(lda, ldb) * k >= 2^30` trigger never fires) at 16 x 2 x 2^20 gives fp16 3.43e-3 (7 ulp) / 8.5e-4 / 1.15e-4. The float-D rocBLAS column is accurate in all four layouts at k = 2^20 (fp16 at most 3.17e-4, bf16 at most 3.07e-3, for 16x2, 64x16 and 2x16), which is why the port's fallback is accurate here. A 16-bit D through rocBLAS also takes the gfx942 chunk-rounding where its split fires (N,N 64 x 16: 9.0e-3).
+- **Through oneflow at d9e41753e** (`agent_space/p/layouts.py`, all four transposes, (m, n) in {(2,16), (16,2), (1,64)}, k = 2^16 and 2^20, ulp of the type vs float64), fp16 at k = 2^20: N,N 1.44 / 1.88 / **8.27**; transpose_b **7.12 / 6.62 / 7.02**; transpose_a **6.59 / 6.79** / 0.57; both 1.55 / 2.18 / **7.02**. bf16 is at most 1.42. At k = 2^16 everything is <= 1.10. Times at 2^20 are 1.0-10.0 ms per call.
+
+### The selection rule: hipBLASLt split-k, chains <= 2^15 (option 1 of the dispatch)
+`hipblaslt_ext::GemmTuning::setSplitK(s)` on the heuristic's algorithm (`agent_space/lt/splitk.cpp`, `isAlgoSupported(algo, tuning, ws)`, `initialize(algo, tuning, ws)`, `run`) shortens the chain. For the failing case, top-1 heuristic algorithm, s = 0/2/4/8/16/32/64/128: 5.76 / 2.48 / 1.34 / 1.20 / 0.66 / 0.66 / 0.48 / 0.48 ulp, and 1967 / 1000 / 505 / 263 / 140 / 77 / 72 / 73 us (workspace 0 to 512 KB). The second algorithm gives the same. Sweep (`sweep_splitk.txt`; fp16 and bf16; T,N 16x2, N,N 16x2, N,N 64x1, T,N 64x1, N,N 64x16, T,N 16x3; k = 2^16, 2^18, 2^20; s = k / 2^14): every case is <= 0.73 ulp, against up to 6.21 unsplit, and 3-50x faster than the unsplit heuristic kernel. Chosen:
+- On gfx11 and gfx12 (the WMMA families, recognised from `gcnArchName`), 16-bit GEMMs with **k > 2^15** go to `OfLongKGemm` in every layout. `OfRocblasSplitsK` became `OfUseLongKGemm`, which also keeps the old `ld * k >= 2^30` trigger for all GPUs. There, hipBLASLt runs with **split-k = ceil(k / 2^15)** on the first of 8 heuristic algorithms that accepts it within the stream workspace. If none does (for example a 0 MiB workspace, or a large m * n), the result is NOT_SUPPORTED and the existing rocBLAS float-tile fallback runs. gfx9 is unchanged (split 1 = the plain heuristic call). The rule depends on k and the GPU family only, not on a solution index. k <= 2^15 stays on rocBLAS as before (WMMA chain error at 2^15 is about 0.1-0.2 fp16 ulp; hipBLASLt unsplit at 2^16 measured <= 0.75 ulp), so ordinary GEMMs keep their path.
+- The split-k code needs the C++ `hipblaslt-ext.hpp`, so it lives in the HIP-only `hip_long_k_gemm.cu` (`OfHipblasLtSplitKGemm`, `OfMatrixCoreAccumulationDrifts`); `cublas_v2.h` only declares them. CUDA is untouched (every change is under `USE_HIP` or in HIP-only files).
+- Option 2 (all long-k GEMMs on the rocBLAS float tile on gfx11) was not taken: it is accurate but slow (on gfx942 the same fallback measured 65 ms vs 0.13 ms at 1 x 2^20 x 64), while split-k is both accurate and faster than today.
+
+### After the change (ee180b9d5), oneflow, `agent_space/p/after_layouts.txt`
+fp16 at k = 2^20, (2,16) / (16,2) / (1,64): N,N 0.61 / 0.51 / 0.80; transpose_b 0.74 / 0.71 / 0.71; transpose_a 0.32 / 0.32 / 0.80; both 0.55 / 0.82 / 0.71 ulp. bf16 <= 0.65. Every k = 2^16 case is <= 0.84. Time per oneflow call at k = 2^20: 93-553 us (was 983-10006 us); 1 x 2^20 x 64 N,N goes from 9.83 ms to 0.55 ms (0.25-0.29 ms of kernel time in `splitk.cpp`; the commit message's "0.3 ms" is that kernel time). Some k = 2^16 calls became slower, by up to about 70 us of host-side `hipblaslt_ext::Gemm` setup per call (N,N 2x16: 114 -> 181 us), while others became faster (N,N 1x64: 585 -> 312 us).
+
+### Commit ee180b9d5 `[ROCm] Split long-k 16-bit GEMMs on gfx11 and gfx12 to keep them accurate`
+`hip_compat/cublas_v2.h` (trigger, split_k parameter of `OfHipblasLtGemm`), `hip_long_k_gemm.cu` (the arch predicate, the split-k call, the split count), the four call sites renamed (`broadcast_matmul.cpp` x2, `grouped_matmul_bias.cu`, `fused_self_attention_query_mul_key_and_value_kernel.cu`), and `test_matmul_long_k.py` gains `matmul transpose_a` ((2^20, 2)^T @ (2^20, 16), fp16 and bf16) in `_check_all`, so it runs on the default, forced-fallback and 0 MiB-workspace paths. That case was 6.59 ulp on d9e41753e (above), past the 4-ulp bound. The new test file run against the d9e41753e validator build (read-only, test copied to /tmp) fails in `test_matmul_long_k` at the first case, as before (`0.00347 not less than 0.00195 : matmul transpose_b oneflow.float16`). Title 73 chars, `utils/prose.py` clean, clang-format 11.1 and black 19.10b0 clean.
+
+### Tests at ee180b9d5 (one pytest per file, GPU 1)
+- test_matmul_long_k.py: **3 passed** (21.2 s).
+- test_matmul.py: 9 passed, 2 failed (`test_flow_tensor_matmul_with_random_fp16_data`, `..._int_data`, both `TypeError: __bool__ should return bool`, the known numpy class).
+- test_bmm.py: 2 passed. test_grouped_matmul_bias.py: 1 passed.
+- `cg_ws2.py` (`ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1`, both GPUs, 42 graphs captured, 3 replays each): **0 of 126 replays out of tolerance**. 1 x 1048576 x 64 fp16 is now 3.2e-4 to 3.7e-4 (d9e41753e validator: 3.2e-3 to 4.2e-3) and bf16 1.4e-3 to 2.4e-3, so the split-k call works under capture with the stream workspace.
+- The full suites were not rerun in this round; the validator owes them at ee180b9d5.
+
+### CUDA compile gate (nvcc 12.8.93, sm_80): PASS 4/4
+`redistrib_12.8.1.json` downloaded fresh (sha256 249e28a8..., identical to the earlier manifest). The 16 archives from this host's fix6 job were sha256-verified 16/16 against it (`agent_space/cuda/fetch.py`) and extracted to `$FLEET_VENV/cuda-12.8`. cuDNN 8.9.7.29 and NCCL 2.28.9 wheels were sha256-matched against the PyPI JSON and unpacked to `$FLEET_VENV/cudeps`. The fix6 scratch tree `oneflow-cuda` was copied, the fork's `oneflow/` copied in (the 4 changed sources byte-identical to the fork), and the compile commands were taken from its build.ninja with paths rewritten (`hip_long_k_gemm.cu` from `grouped_matmul_bias.cu`'s). broadcast_matmul.cpp (g++-13), grouped_matmul_bias.cu, fused_self_attention_query_mul_key_and_value_kernel.cu and hip_long_k_gemm.cu (nvcc `--generate-code=arch=compute_80,code=[compute_80,sm_80]`; an empty object): rc=0. `hip_compat` appears 0 times in build.ninja.
+
+### gfx1201 (not measured here; the gfx1201 host can be asked)
+The code treats gfx12 like gfx11 because both use WMMA; that is an assumption, not a measurement. On gfx12 split-k is harmless for accuracy, and on these shapes it is likely faster. To confirm, `wmma.cpp` (below) is built for gfx1100 and gfx1201 (gfx12 operand layout; its K = 16 row checks the layout: about 1e-7 if right) and `lt_longk.cpp` runs unchanged. If gfx1201 WMMA turns out to round to nearest, gfx12 can be taken out of `OfMatrixCoreAccumulationDrifts`.
+
+### Standalone hipBLASLt reproducer (for a possible upstream report; nothing filed)
+`lt_longk.cpp`: fp16 GEMM D(16x2) = A^T B with COMPUTE_32F, heuristic top-1 algorithm, unsplit and with `GemmTuning::setSplitK(k / 2^14)`. Build: `hipcc -O2 --offload-arch=gfx1100 lt_longk.cpp -lhipblaslt -o lt_longk` (here: `$R/lib/llvm/bin/clang++ -O2 -std=c++17 -x hip --offload-arch=gfx1100 -I$R/include lt_longk.cpp -L$R/lib -Wl,-rpath,$R/lib -lhipblaslt`). Output on the W7800:
+```
+gfx1100, hipBLASLt 100401
+k ulp_unsplit ulp_splitk kernel
+16384 0.77 0.77 Cijk_Alik_Bljk_HHS_BH_Bias_HA_S_SAV_UserArgs_MT32x32x128_MI16x16
+65536 0.57 0.52 Cijk_Alik_Bljk_HHS_BH_Bias_HA_S_SAV_UserArgs_MT32x32x128_MI16x16
+262144 2.44 0.53 Cijk_Alik_Bljk_HHS_BH_Bias_HA_S_SAV_UserArgs_MT32x32x128_MI16x16
+1048576 8.34 0.63 Cijk_Alik_Bljk_HHS_BH_Bias_HA_S_SAV_UserArgs_MT32x32x128_MI16x16
+```
+The same with torch (`torch_longk.py`, torch 2.16.0a0 on this GPU, hipBLASLt by default): `16384 0.60 ulp`, `65536 1.21 ulp`, `262144 2.00 ulp`, `1048576 7.30 ulp`.
+```python
+# torch on ROCm: float16 (2 x k) @ (16 x k)^T through hipBLASLt; error vs float64 in fp16 ulp.
+import torch
+for k in (1 << 14, 1 << 16, 1 << 18, 1 << 20):
+    g = torch.Generator().manual_seed(0)
+    a = (torch.rand(2, k, generator=g, dtype=torch.float64) * 2 - 1).half()
+    b = (torch.rand(16, k, generator=g, dtype=torch.float64) * 2 - 1).half()
+    ref = a.double() @ b.double().t()
+    out = (a.cuda() @ b.cuda().t()).cpu().double()
+    print(k, "%.2f ulp" % ((out - ref).abs().max() / ref.abs().max() * 2 ** 11).item())
+```
+The report would say: the hipBLASLt (and Tensile) gfx11 WMMA kernels accumulate the whole k in one WMMA accumulator, which drifts with a bias toward zero, and the heuristic picks unsplit kernels for long k (which are also slow). A GSU/split-k choice that scales with k would fix both. The instruction-level probe (`wmma.cpp`, output in "Root cause" above) shows that the drift comes from the instruction, not from one kernel. Registered item `hipblaslt-gfx1100-longk-half-accuracy` covers this. Filing it, and where (hipBLASLt or the ISA/hardware side), is jeff's decision.
+
+`lt_longk.cpp`:
+```cpp
+// hipBLASLt fp16 GEMM, COMPUTE_32F: error grows linearly with k on gfx1100.
+// D(16x2) = A^T B, A and B stored k x 16 and k x 2 (column major), uniform(-1, 1) inputs.
+// Prints the error (max abs / max |ref|, ref in double from the same fp16 inputs) in fp16 ulp
+// (2^-11) for the heuristic's first algorithm, unsplit and with GemmTuning split-k = k / 2^14.
+// Build: hipcc -O2 --offload-arch=gfx1100 lt_longk.cpp -lhipblaslt -o lt_longk
+#include <hip/hip_runtime.h>
+#include <hipblaslt/hipblaslt-ext.hpp>
+#include <hipblaslt/hipblaslt.h>
+#include <cmath>
+#include <cstdio>
+#include <random>
+#include <vector>
+
+#define CHECK(x) do { if ((x) != 0) { printf("%s:%d failed\n", __FILE__, __LINE__); return 1; } } while (0)
+
+int main() {
+  const int M = 16, N = 2;
+  hipblasLtHandle_t lt; CHECK(hipblasLtCreate(&lt));
+  size_t ws_size = 4 << 20; void* ws; CHECK(hipMalloc(&ws, ws_size));
+  hipDeviceProp_t prop; CHECK(hipGetDeviceProperties(&prop, 0));
+  printf("%s, hipBLASLt %d\n", prop.gcnArchName, HIPBLASLT_VERSION_MAJOR * 100000 + HIPBLASLT_VERSION_MINOR * 100 + HIPBLASLT_VERSION_PATCH);
+  printf("k ulp_unsplit ulp_splitk kernel\n");
+  for (long K = 1 << 14; K <= 1 << 20; K <<= 2) {
+    std::mt19937 gen(0); std::uniform_real_distribution<float> U(-1, 1);
+    std::vector<_Float16> a(K * M), b(K * N);
+    for (auto& x : a) x = (_Float16)U(gen);
+    for (auto& x : b) x = (_Float16)U(gen);
+    std::vector<double> ref(M * N, 0.0);
+    double refmax = 0;
+    for (int n = 0; n < N; ++n)
+      for (int m = 0; m < M; ++m) {
+        for (long k = 0; k < K; ++k) ref[m + M * n] += (double)a[k + K * m] * (double)b[k + K * n];
+        refmax = std::fmax(refmax, std::fabs(ref[m + M * n]));
+      }
+    void *da, *db, *dd;
+    CHECK(hipMalloc(&da, a.size() * 2)); CHECK(hipMalloc(&db, b.size() * 2)); CHECK(hipMalloc(&dd, M * N * 2));
+    CHECK(hipMemcpy(da, a.data(), a.size() * 2, hipMemcpyHostToDevice));
+    CHECK(hipMemcpy(db, b.data(), b.size() * 2, hipMemcpyHostToDevice));
+    hipblasLtMatmulDesc_t desc; CHECK(hipblasLtMatmulDescCreate(&desc, HIPBLAS_COMPUTE_32F, HIP_R_32F));
+    hipblasOperation_t t = HIPBLAS_OP_T;
+    CHECK(hipblasLtMatmulDescSetAttribute(desc, HIPBLASLT_MATMUL_DESC_TRANSA, &t, sizeof(t)));
+    hipblasLtMatrixLayout_t la, lb, ld;
+    CHECK(hipblasLtMatrixLayoutCreate(&la, HIP_R_16F, K, M, K));
+    CHECK(hipblasLtMatrixLayoutCreate(&lb, HIP_R_16F, K, N, K));
+    CHECK(hipblasLtMatrixLayoutCreate(&ld, HIP_R_16F, M, N, M));
+    hipblasLtMatmulPreference_t pref; CHECK(hipblasLtMatmulPreferenceCreate(&pref));
+    uint64_t max_ws = ws_size;
+    CHECK(hipblasLtMatmulPreferenceSetAttribute(pref, HIPBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &max_ws, sizeof(max_ws)));
+    hipblasLtMatmulHeuristicResult_t heur; int got = 0;
+    CHECK(hipblasLtMatmulAlgoGetHeuristic(lt, desc, la, lb, ld, ld, pref, 1, &heur, &got));
+    float alpha = 1, beta = 0;
+    double ulp[2];
+    for (int split = 0; split < 2; ++split) {
+      CHECK(hipMemset(dd, 0, M * N * 2));
+      if (split == 0) {
+        CHECK(hipblasLtMatmul(lt, desc, &alpha, da, la, db, lb, &beta, dd, ld, dd, ld, &heur.algo, ws, ws_size, 0));
+      } else {
+        hipblaslt_ext::Gemm gemm(lt, desc, &alpha, da, la, db, lb, &beta, dd, ld, dd, ld);
+        hipblaslt_ext::GemmTuning tuning; tuning.setSplitK(K >> 14);
+        size_t need = 0;
+        CHECK(gemm.isAlgoSupported(heur.algo, tuning, need));
+        CHECK(gemm.initialize(heur.algo, tuning, ws, false, 0));
+        CHECK(gemm.run(0));
+      }
+      std::vector<_Float16> out(M * N);
+      CHECK(hipMemcpy(out.data(), dd, M * N * 2, hipMemcpyDeviceToHost));
+      double e = 0;
+      for (int i = 0; i < M * N; ++i) e = std::fmax(e, std::fabs((double)out[i] - ref[i]));
+      ulp[split] = e / refmax * 2048;
+    }
+    printf("%ld %.2f %.2f %s\n", K, ulp[0], ulp[1], hipblaslt_ext::getKernelNameFromAlgo(lt, heur.algo).substr(0, 64).c_str());
+    hipFree(da); hipFree(db); hipFree(dd);
+  }
+  return 0;
+}
+```
+
+`wmma.cpp` (instruction probe; build with `--offload-arch=gfx1100 --offload-arch=gfx1201`; `DIST=positive` for all-positive inputs):
+```cpp
+// Does the gfx11 WMMA f16 -> f32 instruction accumulate like an fp32 FMA chain?
+// One wave computes a 16x16 tile D = A(16xK) * B(Kx16) with v_wmma_f32_16x16x16_f16, carrying the
+// accumulator through all K/16 steps (as a GEMM kernel's main loop does), and the same tile with a
+// scalar fp32 FMA loop. Both are compared with a double reference of the same fp16 inputs.
+// Build: hipcc -O2 --offload-arch=gfx1100 --offload-arch=gfx1201 wmma.cpp -o wmma
+#include <hip/hip_runtime.h>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <random>
+#include <vector>
+
+typedef _Float16 half16 __attribute__((ext_vector_type(16)));
+typedef float float8 __attribute__((ext_vector_type(8)));
+typedef _Float16 half8 __attribute__((ext_vector_type(8)));
+
+// A row major 16 x K, B column major K x 16 (B[j * K + k]), D row major 16 x 16.
+__global__ void Wmma(const _Float16* a, const _Float16* b, float* d, int K) {
+  const int lane = threadIdx.x;  // wave32
+  const int r = lane % 16;
+  float8 acc = {};
+#if defined(__gfx1200__) || defined(__gfx1201__)
+  // gfx12: lanes 0-15 hold k 0-7 of each 16-step, lanes 16-31 k 8-15; D rows (lane / 16) * 8 + i.
+  for (int k0 = 0; k0 < K; k0 += 16) {
+    half8 va, vb;
+    for (int i = 0; i < 8; ++i) {
+      va[i] = a[r * K + k0 + (lane / 16) * 8 + i];
+      vb[i] = b[r * K + k0 + (lane / 16) * 8 + i];
+    }
+    acc = __builtin_amdgcn_wmma_f32_16x16x16_f16_w32_gfx12(va, vb, acc);
+  }
+  for (int i = 0; i < 8; ++i) d[((lane / 16) * 8 + i) * 16 + r] = acc[i];
+#else
+  // gfx11: each lane holds all 16 k of its row (A) or column (B); D rows 2 * i + lane / 16.
+  for (int k0 = 0; k0 < K; k0 += 16) {
+    half16 va, vb;
+    for (int i = 0; i < 16; ++i) {
+      va[i] = a[r * K + k0 + i];
+      vb[i] = b[r * K + k0 + i];
+    }
+    acc = __builtin_amdgcn_wmma_f32_16x16x16_f16_w32(va, vb, acc);
+  }
+  for (int i = 0; i < 8; ++i) d[(2 * i + lane / 16) * 16 + r] = acc[i];
+#endif
+}
+
+__global__ void Fma(const _Float16* a, const _Float16* b, float* d, int K) {
+  const int i = threadIdx.x / 16, j = threadIdx.x % 16;
+  float acc = 0;
+  for (int k = 0; k < K; ++k) acc = fmaf((float)a[i * K + k], (float)b[j * K + k], acc);
+  d[i * 16 + j] = acc;
+}
+
+int main(int argc, char** argv) {
+  std::vector<int> ks = {16, 1024, 16384, 65536, 262144, 1048576};
+  if (argc > 1) { ks.clear(); for (int i = 1; i < argc; ++i) ks.push_back(atoi(argv[i])); }
+  const char* dist = getenv("DIST") ? getenv("DIST") : "uniform";  // uniform (-1, 1) or positive (0, 1)
+  printf("K wmma_err fma_err (max abs / max |ref|; fp16 ulp = 4.88e-4) wmma_mean_signed_err\n");
+  for (int K : ks) {
+    std::mt19937 gen(0);
+    std::uniform_real_distribution<float> U(std::string(dist) == "positive" ? 0.f : -1.f, 1.f);
+    std::vector<_Float16> a(16 * K), b(16 * K);
+    for (auto& x : a) x = (_Float16)U(gen);
+    for (auto& x : b) x = (_Float16)U(gen);
+    std::vector<double> ref(256, 0.0);
+    for (int i = 0; i < 16; ++i)
+      for (int j = 0; j < 16; ++j)
+        for (int k = 0; k < K; ++k) ref[i * 16 + j] += (double)a[i * K + k] * (double)b[j * K + k];
+    _Float16 *da, *db; float* dd;
+    hipMalloc(&da, a.size() * 2); hipMalloc(&db, b.size() * 2); hipMalloc(&dd, 256 * 4);
+    hipMemcpy(da, a.data(), a.size() * 2, hipMemcpyHostToDevice);
+    hipMemcpy(db, b.data(), b.size() * 2, hipMemcpyHostToDevice);
+    double refmax = 0;
+    for (double r : ref) refmax = std::fmax(refmax, std::fabs(r));
+    std::vector<float> out(256);
+    double err[2], bias = 0;
+    for (int which = 0; which < 2; ++which) {
+      hipMemset(dd, 0, 256 * 4);
+      if (which == 0) Wmma<<<1, 32>>>(da, db, dd, K); else Fma<<<1, 256>>>(da, db, dd, K);
+      hipMemcpy(out.data(), dd, 256 * 4, hipMemcpyDeviceToHost);
+      double e = 0, s = 0;
+      for (int i = 0; i < 256; ++i) { e = std::fmax(e, std::fabs(out[i] - ref[i])); s += out[i] - ref[i]; }
+      err[which] = e / refmax;
+      if (which == 0) bias = s / 256;
+    }
+    printf("%d %.3e %.3e %.3e\n", K, err[0], err[1], bias);
+    hipFree(da); hipFree(db); hipFree(dd);
+  }
+  return 0;
+}
+```
+
+### Other checks
+- `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038. A local `master` branch had to be created from `origin/master` in the fresh clone before the range would resolve.
+- `git -C projects/oneflow/src status --porcelain`: no modified tracked files. `moat-port` pushed d9e41753e..ee180b9d5 to the explicit fork URL; the fleet guard refused a push to the remote name `origin`, which it cannot classify. `advance-head` ee180b9d5.
+- Lesson promoted: `cuda-to-rocm/references/fault-classes.md` (after the rocBLAS long-k entry) and a SKILL.md index line, "gfx11 WMMA drifts over long k".
+- Owed: review of ee180b9d5, then validation at ee180b9d5 on gfx1100, gfx942 and gfx90a (gfx9 takes the same calls with split 1, but `cublas_v2.h` changed), plus the gfx1201 WMMA probe if jeff wants gfx12 confirmed.

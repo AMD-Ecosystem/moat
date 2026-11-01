@@ -101,6 +101,7 @@ Scan this list against what you are doing. If any line could apply, open
 - Exact float-equality branches fed by `__fdividef` produce out-of-range indices.
 - HIP device `cuda::min`/`max` NaN-selection can differ from host `std::min`/`max`.
 - rocBLAS `gemm_ex` with a 16-bit D splits long k (ld * k >= 2^30) and rounds D once per chunk; send those GEMMs to hipBLASLt.
+- gfx11 WMMA float accumulation drifts with k (biased toward zero) in hipBLASLt and rocBLAS alike; split k (hipBLASLt split-k) so no chain exceeds ~2^15.
 
 **Headers, includes and build**
 - A shared compat header must be host-includable: gate device-only includes behind `__CUDACC__`/`__HIPCC__`, or CUB leaks into host TUs. Hit independently by two projects.
