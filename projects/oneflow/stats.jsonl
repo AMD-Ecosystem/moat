@@ -228,3 +228,8 @@
 {"kind":"phase","ts":"2026-11-01T04:11:43Z","phase":"test","seconds":661.870,"exit":0,"cmd":"bash agent_space/suite.sh modules /var/lib/jenkins/fleet/jobs/mi300-20261031-184422-oneflow-idshuffle-hang/moat/agent_space/suite_mod 6"}
 {"kind":"session","ts":"2026-11-01T04:25:10Z","epoch":1793507110.858892889,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-01T05:08:32Z","epoch":1793509712.579983398,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-01T06:16:32Z","epoch":1793513792.061559666,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-01T06:25:44Z","phase":"compile","seconds":516.277,"exit":0,"cmd":"bash agent_space/build.sh config"}
+{"kind":"phase","ts":"2026-11-01T06:30:09Z","phase":"compile","seconds":253.897,"exit":0,"cmd":"bash agent_space/build.sh config"}
+{"kind":"phase","ts":"2026-11-01T06:35:19Z","phase":"test","seconds":61.857,"exit":0,"cmd":"bash agent_space/mmconv.sh /var/lib/jenkins/fleet/jobs/mi300-20261031-231313-oneflow-fix8/moat/agent_space/mmconv"}
+{"kind":"session","ts":"2026-11-01T06:43:32Z","epoch":1793515412.893694493,"event":"end","platform":"linux-gfx942"}
