@@ -422,6 +422,26 @@ definitions on ROCm only, leaving the CUDA source untouched. CuPy-ROCm ships no 
 binding (fall back to `cupy.einsum`) and CUTLASS-based extension kernels need a
 replacement such as one GEMM per group. (gpu4pyscf)
 
+**Kernels that opt in to more than 64 KB of shared memory per block.** CUDA lets a kernel
+raise its dynamic shared memory with `cudaFuncSetAttribute(...MaxDynamicSharedMemorySize...)`
+up to `sharedMemPerBlockOptin` (99 KB to 227 KB on recent NVIDIA GPUs). AMD gives a block 64 KB
+of LDS on gfx90a, gfx942 and RDNA (gfx950 has 160 KB), and HIP counts the kernel's static
+`__shared__` arrays against the same limit, so a launch whose static plus dynamic size exceeds
+it fails at `hipFuncSetAttribute` with invalid argument even when the dynamic part alone fits.
+Find the cases by computing the driver's size formula over the whole parameter range and
+adding each kernel's `.group_segment_fixed_size` (from `llvm-readelf --notes` on the extracted
+code object). CuPy-ROCm has no `sharedMemPerBlockOptin`, so a Python guard on it needs a
+fallback. Fix for the over-limit cases only, chosen at run time from
+`hipDeviceAttributeMaxSharedMemoryPerBlock` plus `hipFuncGetAttributes().sharedSizeBytes`:
+move the largest scratch arrays that the inner loop does not read to a per-block
+global-memory workspace, size the grid to the resident blocks
+(`hipOccupancyMaxActiveBlocksPerMultiprocessor` times CUs) with each block looping over tasks
+so the workspace does not scale with the task count, and allocate it with
+`hipMallocAsync`/`hipFreeAsync` on the launch stream. Put the variant in a HIP-only file so the
+CUDA translation unit stays identical. In gpu4pyscf's ECP derivative kernels the variant gave
+bit-identical results and, at a few hundred tasks or more, ran in 0.6x the time of the
+LDS-heavy kernel, because its smaller LDS footprint keeps more blocks resident. (gpu4pyscf)
+
 **rocBLAS `gemv` over more than 65535 batches returns wrong entries; `cupy.einsum` reaches it.**
 Root cause (https://github.com/ROCm/rocm-libraries/issues/14819): for transA=N and m < 2n,
 rocBLAS selects `rocblas_gemvn_kernel<32,16>`, which loops over the batches inside the kernel
