@@ -665,3 +665,37 @@ utils/timeit.sh gpuRIR compile -- <torch_venv python> -m pip install -v --no-dep
 ### State
 `advance-head gpuRIR 214a51c`; windows-gfx1151 porting -> ported (lock released). All platforms validated at 39a7a9d now read revalidate at 214a51c. The change is setup.py/README only (no compiled source), so Linux revalidation should be a light check of the unchanged Linux arg list plus a normal run; the CUDA gate path (Linux or Windows default/VS generator) produces byte-identical CMake arguments.
 `python utils/jargon.py --port gpuRIR`: clean.
+
+## Review 2026-11-02 (linux-gfx942, reviewer): delta 39a7a9d..214a51c
+
+Port Review: gpuRIR (`moat-port` 214a51c, delta from 39a7a9d: setup.py, README.md). Requested by jeff after the windows-gfx1151 porter round. `jargon.py --port gpuRIR`: clean.
+
+### Summary
+setup.py now detects a non-Visual-Studio generator on Windows (so a Ninja HIP build works through `pip install`), and the README gives the Windows `CMAKE_ARGS`. **Request Changes**: one README problem.
+
+### Build System / documentation
+1. `README.md:36`: the Windows example passes `-DCMAKE_C_COMPILER=clang`, but the project never enables C. `CMakeLists.txt:14` is `project(gpuRIR LANGUAGES CXX HIP)` (`:19` is `CXX CUDA`), and pybind11 does not enable C either, so CMake ignores the option and prints `Manually-specified variables were not used by the project: CMAKE_C_COMPILER`. Reproduced here by configuring 214a51c with the README's exact option set (`-G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_HIP_COMPILER=clang++ -DCMAKE_PREFIX_PATH=$R -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942`, ROCm `lib/llvm/bin` first on PATH). Configure succeeds, then emits that warning. Fix: drop `-DCMAKE_C_COMPILER=clang` from the README sentence (and from the next commit's Test Plan). Confirm the Windows pip route still builds without it; the CMake code is the same on both OSes, so it should. A follow-up commit on top; no amend.
+
+### Verification record (claims fact-checked, no finding)
+- Generator detection (`setup.py:50-53`): `-G <name>`, `-G<name>` and `CMAKE_GENERATOR` are all detected, and a `-G` in `CMAKE_ARGS` overrides the env var, the same precedence CMake uses. The scan runs over the whole `cmake_args`, but the two fixed entries start with `-D`, so they cannot match. A trailing bare `-G` raises IndexError where CMake would itself refuse; that is malformed input and not counted. Generator names containing spaces cannot pass through `CMAKE_ARGS` because of the existing whitespace split (the porter noted this); `CMAKE_GENERATOR` covers them.
+- Dry run, my own script (`agent_space/gpurir_rev/dryrun.py`). It exec'd old (39a7a9d) and new `setup.py` with `setuptools.setup`, `subprocess.check_call`/`check_output`, `platform.system` and `sys.maxsize` patched, for each of Release/Debug and 64/32-bit:
+  - **identical** for Linux (no args; HIP args; `-G Ninja`; `-GNinja`; `CMAKE_GENERATOR=Ninja`), Windows with no generator (`-A x64`, `-- /m`), Windows `CMAKE_GENERATOR="Visual Studio 17 2022"`, Windows `-DUSE_HIP=OFF`, and Windows CUDA-style args;
+  - **intended differences only**: Windows `-G Ninja`, `-GNinja`, `CMAKE_GENERATOR=Ninja` and `NMake Makefiles` drop `-A`/`/m` and add `-DCMAKE_BUILD_TYPE=Release|Debug`. `CMAKE_GENERATOR="Ninja Multi-Config"` drops `-A`/`/m` and adds no build type. `--config <cfg>` remains in the build args for all of them, and a multi-config build needs it. A `-G Ninja` in CMAKE_ARGS wins over a VS `CMAKE_GENERATOR`.
+- A user `-DCMAKE_BUILD_TYPE` in CMAKE_ARGS is overridden by the appended one on Windows/Ninja, which is the same order the Linux branch has always used. Not a regression.
+- Footprint and style: 10 added lines, single quotes and `+=` list idiom as in the surrounding code, and one two-line comment. The Linux branch is byte-identical.
+- README: no device-selection variables before commands. A bare `clang`/`clang++` relies on ROCm's `lib/llvm/bin` being first on PATH (the porter's gotcha shows the failure otherwise). I judged that acceptable for an example that already says "the Clang compilers shipped with ROCm", because a full path differs between ROCm distributions (`bin/` vs `lib/llvm/bin/`).
+- Commit 214a51c: `[ROCm]` title, 47 chars; prose AI disclosure; no Co-Authored-By/noreply; fenced Test Plan. Its claim of "below 2e-7 of the peak" holds (max 1.461e-7, below).
+- Linux unaffected, GPU run on this host (MI300X gfx942, TheRock ROCm 10.1.0, `HIP_VISIBLE_DEVICES=3`, `ulimit -c 0`). Fresh clone at 214a51c, README Linux form plus this host's TheRock compiler/prefix:
+  ```
+  R=$(rocm-sdk path --root); export PATH=$R/lib/llvm/bin:$PATH
+  CMAKE_ARGS="-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R" \
+    utils/timeit.sh gpuRIR compile -- $FLEET_VENV/bin/python -m pip install -v --no-deps --no-build-isolation <clone>
+  ```
+  The install succeeded (job venv). CMakeCache has `CMAKE_BUILD_TYPE=Release` and generator Unix Makefiles, as before.
+  - Harness, rebuilt from the Linux checks in this file (`agent_space/gpurir_rev/validate.py`, run from /tmp against the installed module, `LD_LIBRARY_PATH=$SP/_rocm_sdk_libraries/lib:$SP/_rocm_sdk_core/lib`): **27/27 PASS**.
+    - f64 direct path, exact 5.305e-8 / 5.213e-8 / 1.461e-7 / 4.330e-8 and LUT 5.439e-8 / 5.979e-8 / 4.091e-8 / 4.718e-8 at 8k/16k/44.1k/48k. LUT-vs-exact reference gap 1.588e-3 / 1.378e-4 / 6.852e-4 / 3.908e-4, so the check discriminates. The exact figures are identical to windows-gfx1151.
+    - Shoebox: first arrival 168, silent before 104.
+    - mp vs float direct path 5.243e-4 / 7.952e-4 / 3.643e-4 / 3.720e-4 / 6.762e-4 / 3.928e-4 (8k..96k), the same as the other hosts. Reverberant mp 7.087e-4 / RMS 1.425e-3.
+    - Diffuse tail finite and non-zero; simulateTrajectory vs np.convolve 2.83e-7; NaN receiver gives all zeros for exact and LUT.
+    - Two harness bugs were fixed before the passing run, neither a port issue: the LUT reference used true division for the kernel's integer `lut_len/2`, and the first-arrival argmax spanned 300 samples and picked up a reflection at 272.
+  - Upstream examples (scratch copy, synthetic 2 s source_signal.wav, MagicMock matplotlib/plotly): example.py, simulate_trajectory.py, polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py **5/5 exit 0**.
