@@ -4096,3 +4096,73 @@ Every saved fault: float32 cuda:1 (9 runs): oneflow's output has the std (10.8) 
 - No source change: `git -C projects/oneflow/src status --porcelain` empty. No commit, no push, `head_sha` 4e418c9d4. No CUDA compile gate (no TU changed). `jargon.py` not rerun (branch unchanged since the last clean run: only the three known hits in 68718f038).
 - Deferred entry `oneflow-cg-first-graph-replay-fault` summary rewritten to these results.
 - Lesson corrected in `cuda-to-rocm/references/validation.md` ("Diagnosing a suspected AMD fault"): the previous bullet said the replay-order result proved the graph was corrupt before replay; it was the reference. New bullet: save output, read-back inputs and reference and recompute the reference on the CPU before blaming the code under test, and switch the suspected feature off first.
+
+## Porter round 2026-11-02 (linux-gfx1100, two W7800; jeff's request: find the owner of the first-graph replay fault, `oneflow-cg-first-graph-replay-fault`)
+
+jeff's direction: continue until the owner is known. (1) per-device sync and error checks after each step to learn which device reports first; (2) isolate the reference GEMM (plain rocBLAS on a fresh handle and stream, cuda:1, float32, fresh input copies, inputs read back before the GEMM); (3) read the port's float64 / shared-handle / per-stream queue / P2P code and test candidates; (4) bisect only if the small repro allows. Fix it in the port with a regression test if it is the port's; if it is HIP or a ROCm library, build a standalone reproducer, update the deferred entry and record the narrowest port-side workaround. Host: two Radeon Pro W7800 48GB (gfx1100), `HIP_VISIBLE_DEVICES=0,1`, ROCm 10.1.0 SDK wheels (HIP 7.16.26385), torch 2.16.0a0+git6c3af02 read-only, `ulimit -c 0`, `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git`, `OMP_NUM_THREADS=4`, one GPU process at a time on an otherwise idle CPU (load 1-2), no JIT extension builds. Build: the fix19 job's 4e418c9d4 build, read-only (its library still carries the env-gated, inert debug hooks that job recorded; nothing was built for oneflow this round). Scripts in this job's `agent_space/`: `s/o2.py` (o.py plus the knobs below), `step1.sh`..`step6.sh`, `one.sh`, `tally.sh`, `fisher.py`, `results.txt`, `logs/`, `dump/`, `hr/` (standalone HIP programs `stale`, `sx`, `pin`, `pin2`, `bw`), `s/t.py` (torch-only workload).
+
+**Outcome: the fault is in the ROCm runtime's copy path (HIP / ROCr SDMA), not in the port, not in oneflow's code and not in rocBLAS. The reference GEMM is correct; its INPUTS are wrong on the device, and ordinary `hipMemcpy` calls made from Python with no oneflow code in the path silently drop whole 48 KiB pieces in the same process. `HSA_ENABLE_SDMA=0` removes the fault (0 of 10 against 23 of 23, Fisher two-sided p = 1.1e-08), and so does the same build on a later ROCm nightly runtime (10.3.0a20261027 `libamdhip64` + `libhsa-runtime64` preloaded: 0 of 4 idle plus 0 of 1 loaded, p = 5.7e-05), while that nightly's ROCr alone under the 10.1 HIP still faults (1 of 2). So the bug is in the HIP runtime (clr) of the 10.1 SDK and is already fixed or masked in the later nightly. No standalone reproducer without oneflow yet: every standalone attempt was clean. No port change, no commit; `moat-port` stays at 4e418c9d4, stage stays `ported`, the porting lock was not taken.**
+
+### 1. Which device reports first (`CHK=1`: `hipSetDevice(d)`, `hipPeekAtLastError`, `hipDeviceSynchronize`, `hipPeekAtLastError` on each device after the graph call, after the output fetch, after the reference upload, after the reference GEMM and after its copy back)
+Neither. In every faulting run (n_chk 13 of 13 at that point, plus the post-mortem runs) all checks on both devices returned 0 through the wrong reference and its copy back; the 700 arrives later, at oneflow's next `EpEvent::Query` / `cudaEventRecord` / `cudaMemcpyAsync`, or at the next HIP call of the post-mortem. So no kernel has faulted when the wrong reference is read; the wrong data comes first, the fault second.
+
+### 2. Isolating the reference GEMM (faulted / runs, `o2.py EAGER=0 CHK=1` unless named, conditions cycled run by run)
+| condition | faulted | Fisher two-sided p vs baseline |
+|---|---|---|
+| baseline (`n` + `n_chk`, idle host) | **23/23** | |
+| `REF=rb`: float64 GEMM through plain rocBLAS from ctypes, fresh handle, fresh stream, fresh `hipMalloc` buffers, `hipMemcpyAsync` uploads, same host arrays | **0/4** | 0.0004 |
+| `REFDEV=cuda:1` | 1/2 (the first replay on cuda:0 then shows it) | |
+| `REFDT=f32` | 0/2 | |
+| `FRESH=1` (clone the host inputs first) | 0/2 | |
+| `READBACK=1` (read the uploaded inputs back before the GEMM) | 0/3 | 0.002 |
+The perturbing conditions (f32, fresh, readback) change the host and device allocation pattern of every reference in the capture phase too, so they are not evidence on their own. The decisive data came from the post-mortem (`POST=1`, acting only after the first bad reference, so nothing before the fault changes):
+- the device copies of the inputs are wrong: `xb` read back with 28 and 81 all-zero rows (bfloat16 cases), `xa` with 16 or 5 zero rows or off by 88 (float32 cases);
+- the reference output changed between two reads (40.9 apart in one run) with no kernel launched in between;
+- a re-upload of the same host arrays into new torch tensors gives the same wrong product;
+- torch's segments are intact: `hipMemGetAddressRange` on `xa`, `xb`, `y` returns exactly torch's segment base and size (3 of 3 runs), and the host source arrays are plain unregistered heap memory (`hipPointerGetAttributes` type 0), so no stale pin and no free under torch;
+- a probe of plain `hipMemcpy` H2D then `hipMemcpy` D2H into a host buffer pre-filled with -1 (139128 bytes, null stream, fresh `hipMalloc` buffer, no oneflow or torch call involved) comes back wrong: all elements, or exact 49152-byte pieces such as [2080:51232) and [19056:68208), still -1 (never delivered) or zero, with rc 0. The same for `hipMemcpyAsync` on a fresh stream. 4198392- and 16777216-byte probes in the same state were correct.
+
+With the probe run after every step (`PROBEALL=1`, `PROBESUB=1`): the first wrong probe on device 0 comes during the CAPTURE phase, right after the largest graphs (2048x70001x1024, 1024x40000x2048, 8192^3 bfloat16; 3 of 3 runs), and with HIP graphs off (`CG=0`) right after the 8192^3 bfloat16 graph call on cuda:1, while that graph still runs on device 1; then it recovers and recurs. So device-1 activity from oneflow breaks device-0 copies. (A probe between an nn.Graph call and its output fetch returns 906 with capture on: oneflow's capture is still running on another thread and a legacy null-stream copy is illegal during it; that is the probe's own perturbation, hence `CG=0` there.)
+
+### 3. Runtime and port candidates (single-variable conditions, faulted / runs; idle host unless noted)
+From 17:55 another fleet job's 32-way C++ build ran on this host (load 17-21). Runs after that are marked; the baseline still faulted 3 of 3 under it.
+| condition | faulted |
+|---|---|
+| `HSA_ENABLE_SDMA=0` (ROCr does the copies with blit kernels, no SDMA engines) | **0/10** (p = 1.1e-08) |
+| `DEBUG_HIP_DYNAMIC_QUEUES=0` (no dynamic HW queue release and per-stream SDMA engine reassignment) | 6/8 (not a fix) |
+| `DEBUG_CLR_AQL_BARRIER_OPT=0`, `DEBUG_CLR_AQL_DEV_QUEUE=0`, `DEBUG_CLR_ENABLE_KDQ=0`, `DEBUG_CLR_DOORBELL_SKIP=0`, `DEBUG_CLR_USE_MOVDIR64B=0` | 3/3 each |
+| ROCm 10.3.0a20261027 nightly `libamdhip64` + `libhsa-runtime64` (from `/tmp/t9008/rocm103`, another job's unpacked wheel) preloaded over the 10.1 SDK, same build | **0/4** idle (p = 5.7e-05), plus 0/1 under the load below |
+| that nightly's `libhsa-runtime64` alone (10.1 HIP on 10.3 ROCr) | **1/2** (both under the load below) |
+`AMD_LOG_LEVEL=3 AMD_LOG_MASK=256` shows the runtime assigning SDMA engines per stream on nearly every copy (2 engines per device, valid_mask 0x3; ~650 assignments per run; the same stream moves between 0x1 and 0x2 within 2 ms). With that logging on, the faulting process survived and kept producing wrong references and wrong probes for many steps instead of aborting.
+
+Port code read for shared state: on HIP each `CudaStream` creates its own rocBLAS handle (`cublasCreate` + `cublasSetStream`), its own workspace and MIOpen handle on its own stream and device; `CudaGraphExecutable` resets when the device changes; the float64 convolution path (a12ca99e7) is not on this workload's path (matmul only); the P2P uncached-memory commits touch only the one_embedding shuffle kernels; the CU-mask queues (42d68145d) were already cleared last round (`ONEFLOW_EP_CUDA_STREAM_FLAGS=0` still faults). The reference that goes wrong is torch's (or, at a lower rate, oneflow's own float64 GEMM), and the probe that goes wrong calls only HIP. No bisect: d9e41753e, before the long-k work, already faults, and nothing on the failing path is port code.
+
+### Standalone attempts (no oneflow; all clean)
+- `hr/stale` (pageable H2D from a reused host address; 139 KB-32 MiB, mmap and malloc): 0 of 300.
+- `hr/sx` (device-0 null-stream pageable H2D verified by a kernel or by D2H while 2-6 threads drive device 1 or device 0 with pageable H2D, kernels, D2H, event polling, CU-mask or plain streams, 128-256 MiB D2D copies, long kernels): 0 bad in about 1.1 million verified copies; with logging it shows the same per-stream engine churn as the oneflow run.
+- `hr/pin`, `hr/pin2` (large >128 MiB pinned-path transfers, sync and async, both directions, both devices, host unmapped right after, small probes between): 0 of 360.
+- `s/t.py` (the same shapes, dtypes and two GPUs with torch matmuls, float64 references on cuda:0, the same probe after every step): 0 wrong of 648 probes, 0 bad references (2 runs).
+So the trigger needs oneflow's multi-threaded asynchronous issue on device 1; the corrupted operations themselves are plain HIP copies.
+
+### Cost of the candidate workaround (`hr/bw`, device 0, median of 9, GPUs otherwise idle)
+| copy, device 0 | default | `HSA_ENABLE_SDMA=0` |
+|---|---|---|
+| pageable H2D / D2H, 139128 B | 19.8 / 18.0 us | 37.0 / 36.9 us |
+| pinned H2D / D2H, 139128 B | 15.2 / 13.0 us | 33.0 / 27.5 us |
+| pageable H2D / D2H, 4 MiB | 161 / 163 us | 186 / 202 us |
+| D2D, 4 MiB | 26.5 us | 37.8 us |
+| pageable H2D / D2H, 256 MiB | 9.54 / 9.66 ms | 9.87 / 10.18 ms |
+| pinned H2D / D2H and D2D, 256 MiB | 9.59 / 9.55 / 0.91 ms | 9.53 / 9.60 / 0.91 ms |
+Two runs each, within 2% of each other; measured at load 17 (the other job's build), GPU 0 otherwise idle. Small copies take twice as long and 4 MiB copies 15-40% longer, so the workaround is not free.
+
+### Port-side workaround: not applied
+The only workaround found is process-wide: `HSA_ENABLE_SDMA=0` in the environment before the HIP runtime initialises. A port change would have to set it from `python/oneflow/__init__.py` before `_oneflow_internal` loads; that changes every copy of every library in the user's process (torch included), does nothing if HIP was initialised first, and is not a narrow fix of oneflow code; it also costs copy time (table above). By the round's rule (apply only if free) it is not applied. User-side remedies on this host: a ROCm runtime with the fix (the 10.3.0a20261027 nightly ran clean), or `export HSA_ENABLE_SDMA=0` at the cost above. Whether to document either for users is jeff's call.
+
+### For whoever takes it next
+- Measure with `o2.py EAGER=0 CHK=1` (23 of 23 at the default on an idle host) and judge by `POST=1` / `PROBEALL=1` output, not by the OUT OF TOL line.
+- Owner: the 10.1 SDK's HIP runtime (clr) copy path on SDMA; the 10.3.0a20261027 nightly HIP does not show it here. Before writing a report, check whether the fix has shipped in a released SDK (rerun `o2.py` on it); if it has, the remedy is the ROCm version, not a report. A report needs a reproducer without oneflow; the next step is to record oneflow's HIP call sequence on device 1 around the 8192^3 graph call (an API trace with `AMD_LOG_LEVEL=3 AMD_LOG_MASK=1` around that step only) and replay it in C++ alongside the device-0 probe. Nothing has been drafted for ROCm or upstream.
+
+### Other checks
+- No source change: `git -C projects/oneflow/src status --porcelain` empty (fresh clone at 4e418c9d4, `protect-fork` installed). No commit, no push, `head_sha` 4e418c9d4. No CUDA compile gate: no TU changed. `python3 utils/jargon.py --port oneflow` (after creating the local `master` branch from `origin/master` in the fresh clone): only the three known hits in 68718f038.
+- Deferred entry `oneflow-cg-first-graph-replay-fault` summary rewritten to these results.
+- Lesson promoted: `cuda-to-rocm/references/validation.md`, "Diagnosing a suspected AMD fault": probe the HIP copy path directly when a wrong result survives a full device sync, `HSA_ENABLE_SDMA=0` as the first condition, a later nightly runtime preloaded under the same build as the second, the SDMA log mask, and the null-stream probe returning 906 during another thread's capture.
