@@ -599,3 +599,37 @@ Not run on this host (no CUDA toolkit); recorded PASS at 39a7a9d by the V100 gat
 
 ### Pre-completion checks
 `python3 utils/jargon.py --port gpuRIR`: clean. README documents the ROCm build (lines 24, 36). Fork tree clean at 39a7a9d.
+
+## Validation 2026-11-02 (windows-gfx1151): float64 reference and pip route
+
+Follow-up to the 2026-10-31 windows-gfx1151 section, closing two gaps. Same host (Radeon 8060S, gfx1151, TheRock ROCm 7.14.0a20260612, cp313 torch_venv python), fork `moat-port` = 39a7a9d, `ulimit -c 0`, one GPU process at a time, nothing pushed to the fork, platform state unchanged.
+
+### 1. float64 direct-path reference restored
+`agent_space/gpurir_win/validate.py` gained the Linux check: direct path (nb_img [1,1,1], room 4x5x3, src (1,1,1.5) -> rcv (3,4,1.5), beta 0, Tmax 0.05). The reference computes the source-receiver vector, dist (sqrtf), amp = 1/(4*pi*dist) and tau = dist/c*fs in float32 as `calcAmpTau_kernel` does, then evaluates the kernel formula in float64: exact path Hann(t-tau)*amp*sinc over |t-tau| < Tw/2 (Tw = round(8e-3f*fs)); LUT path rebuilds the 16x-oversampled table and applies the kernel's software linear interpolation (coord = 16*(t-tau)+lut_center, texel offset 0.5). The reference is zero-padded to the kernel's even sample count (44.1 kHz returns 2206 for 2205). Threshold 2e-5 of peak.
+```
+utils/timeit.sh gpuRIR test -- python agent_space/gpurir_win/validate.py      # 49/49 PASS
+bash agent_space/gpurir_win/runall.sh                                          # examples
+```
+| fs | exact kernel vs f64 ref | LUT kernel vs f64 LUT ref | LUT-ref vs exact-ref gap |
+|---|---|---|---|
+| 8000 | 5.31e-8 | 5.44e-8 | 1.588e-3 |
+| 16000 | 5.21e-8 | 5.98e-8 | 1.378e-4 |
+| 44100 | 1.461e-7 | 7.58e-8 | 6.852e-4 |
+| 48000 | 4.33e-8 | 1.059e-7 | 3.908e-4 |
+
+All values are max abs error / reference peak. They match the Linux gfx1100 numbers (5.3e-8 / 5.2e-8 / 1.46e-7 / 4.3e-8 exact; LUT-vs-exact gap 1.4e-4 to 1.6e-3). The gap is 4 to 5 orders above the 2e-5 threshold and the exact kernel is 1.377e-4..1.588e-3 away from the LUT reference, so the check discriminates the two paths (added as an explicit assertion per rate). Harness total 49/49 PASS (the earlier 37 plus 12 new); upstream examples 6/6 exit 0 (example.py, simulate_trajectory.py, polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py, example.py with mp on / LUT off). One harness bug on the first run: the reference was not padded to the kernel's even sample count at 44.1 kHz (shape 2206 vs 2205); fixed in the harness, no port change.
+
+### 2. `pip install .` route
+Scratch clone of the local fork checkout at 39a7a9d (`git status` clean, `build/` removed), install into a throwaway `--target` directory so the venv and other projects' packages are untouched (`pip list` shows no gpuRIR in the venv). `source agent_space/win_rocm_env.sh; unset CC CXX`, torch_venv python 3.13.13, pip 26.2.1, setuptools 81.0.0, CMake 3.31.0, ninja 1.13.0 (cmake and ninja from PATH; `--no-build-isolation` so pyproject's `cmake>=3.23` build requirement is not fetched).
+```
+CMAKE_ARGS="-G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=$ROCM_ROOT/lib/llvm/bin/clang.exe \
+ -DCMAKE_CXX_COMPILER=$ROCM_ROOT/lib/llvm/bin/clang++.exe -DCMAKE_HIP_COMPILER=$ROCM_ROOT/lib/llvm/bin/clang++.exe \
+ -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_PREFIX_PATH=$ROCM_ROOT -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+ -DCMAKE_HIP_STANDARD=17 -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_FLAGS=-DNOMINMAX" \
+python -m pip install --no-deps --no-build-isolation --target agent_space/gpurir_pip/target <clone>
+```
+Outcome: the documented route does NOT work on Windows with the README command alone, and fails in two stages that are both pre-existing upstream `setup.py`/source behavior, not ROCm port defects:
+1. **setup.py defect (Windows, non-Visual-Studio generator).** `setup.py` unconditionally appends `-A x64` and `-- /m` on Windows. HIP cannot be built with a Visual Studio generator, so a Ninja generator is required, and CMake rejects it: `CMake Error at CMakeLists.txt:14 (project): Generator Ninja does not support platform specification, but platform x64 was specified.` (attempt 1, exit 1, log `agent_space/gpurir_pip/pip1.log`). Not a configure option the user can pass; it needs `setup.py` to skip `-A`/`/m` for non-VS generators. Verified by removing those two lines in a scratch copy (`clone2`, not the fork): configure then succeeds.
+2. **Build type not set on Windows.** `setup.py` passes `CMAKE_BUILD_TYPE` only on non-Windows. With Ninja (single-config) and no build type, `NDEBUG` is not defined and upstream's `assert(pos_src.ndim == 2)` etc. in `python_bind.cpp` (lines 53-56, 98-99) compile; pybind11's `ndim` is a method so Clang errors: `python_bind.cpp:53:17: error: reference to non-static member function must be called` (6 errors, attempt 2, `pip2.log`). The same sources build in the Release build used by the 2026-10-31 run because that passed `-DCMAKE_BUILD_TYPE=Release`. Workaround, a documentable CMAKE_ARGS option: add `-DCMAKE_BUILD_TYPE=Release`.
+With both addressed (scratch `setup.py` minus the two lines, plus `-DCMAKE_BUILD_TYPE=Release`): attempt 3 `Successfully installed gpuRIR-1.2.0` (~28 s), `gpuRIR_bind.cp313-win_amd64.pyd` plus `gpuRIR/__init__.py` in the target. Harness rerun against the installed module only (`GPURIR_PIP_TARGET=<target>`, `gpuRIR_bind.__file__` confirmed in the target, with `os.add_dll_directory` for TheRock `_rocm_sdk_core/bin`, `_rocm_sdk_libraries_gfx1151/bin` and the target): **49/49 PASS**, f64 table identical to section 1.
+Environment note: nothing here was an environment failure. Fork not edited; the two upstream-script fixes were exercised only in the scratch clone. If the PR should make the pip route work on Windows, it needs a `setup.py` change (skip `-A x64`/`/m` when the generator is not Visual Studio, set `CMAKE_BUILD_TYPE` for single-config generators); that is a porter/maintainer decision and not made here. Linux `pip install` with `CMAKE_ARGS` is unaffected (setup.py sets the build type there).

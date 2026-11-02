@@ -105,3 +105,8 @@
 {"kind":"phase","ts":"2026-10-31T20:38:01Z","phase":"test","seconds":12.768,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe /d/Develop/moat/agent_space/gpurir_win/validate.py"}
 {"kind":"phase","ts":"2026-10-31T20:45:43Z","phase":"test","seconds":158.463,"exit":0,"cmd":"bash /d/Develop/moat/agent_space/gpurir_win/runall.sh"}
 {"kind":"session","ts":"2026-10-31T20:48:13Z","epoch":1793479696.663571300,"event":"end","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-02T20:44:41Z","phase":"test","seconds":5.448,"exit":0,"cmd":"/d/Develop/moat/agent_space/torch_venv/Scripts/python.exe agent_space/gpurir_win/validate.py"}
+{"kind":"phase","ts":"2026-11-02T20:49:17Z","phase":"pip-install","seconds":7.829,"exit":1,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe -m pip install --no-deps --no-build-isolation --target agent_space/gpurir_pip/target agent_space/gpurir_pip/clone"}
+{"kind":"phase","ts":"2026-11-02T20:50:35Z","phase":"pip-install","seconds":17.907,"exit":1,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe -m pip install --no-deps --no-build-isolation --target agent_space/gpurir_pip/target agent_space/gpurir_pip/clone2"}
+{"kind":"phase","ts":"2026-11-02T20:51:31Z","phase":"pip-install","seconds":15.983,"exit":0,"cmd":"D:/Develop/moat/agent_space/torch_venv/Scripts/python.exe -m pip install --no-deps --no-build-isolation --target agent_space/gpurir_pip/target agent_space/gpurir_pip/clone2"}
+{"kind":"phase","ts":"2026-11-02T20:52:05Z","phase":"test","seconds":4.387,"exit":0,"cmd":"agent_space/torch_venv/Scripts/python.exe agent_space/gpurir_win/validate.py"}
