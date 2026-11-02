@@ -7,7 +7,7 @@
   "priority": 4.22,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-11-02T21:28:49Z",
+  "updated_at": "2026-11-02T21:32:37Z",
   "head_sha": "214a51c774f91933836708948f45558d3b72dae3",
   "waivers": {},
   "license_clearance": {
@@ -18,7 +18,7 @@
   },
   "license_spdx": "AGPL-3.0",
   "upstream_repo_id": 152045184,
-  "stage": "changes-requested",
+  "stage": "porting",
   "platforms": {
     "windows-gfx1201": {
       "state": "completed",
@@ -154,7 +154,7 @@
       "validated_sha": "39a7a9d93592cb78b5913b974b6aaf8aa86ca1a0",
       "started_at": "2026-11-02T21:03:10Z",
       "completed_at": "2026-10-31T20:47:59Z",
-      "updated_at": "2026-11-02T21:16:44Z",
+      "updated_at": "2026-11-02T21:32:37Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -177,5 +177,8 @@
     "since": "2026-11-02T21:23:22Z",
     "at": "2026-11-02T21:28:49Z"
   },
-  "porting": null
+  "porting": {
+    "arch": "windows-gfx1151",
+    "since": "2026-11-02T21:32:37Z"
+  }
 }
