@@ -52,6 +52,20 @@
       "upstream_issue": null,
       "created_at": "2026-10-31T10:47:00Z",
       "decided": null
+    },
+    {
+      "id": "rocblas-complex-gemm-gfx12-grid-y-16bit",
+      "kind": "rocm-bug-report",
+      "component": "rocBLAS",
+      "summary": "TheRock ROCm 10.1 (rocBLAS 5.7.0.39d8d603, HIP 7.16.26385), gfx1201: rocblas_zgemm/cgemm (all transposes; also via gemm_ex f64_c/f32_c) with n > 2^21 = 65536*32 leave every column >= 2^21 unwritten and return success; dgemm/sgemm are correct. rocBLAS runs complex types on gfx12 with the generic fallback Tensile kernel Cijk_..._ZB/CB_MT32x32x8_..._WGM8 and launches it via hipExtModuleLaunchKernel with the n tiles in grid y (gridDim.y = ceil(n/32)). gfx12 passes work-group IDs y and z as 16-bit values (blockIdx.y = ttmp7 & 0xffff), and hipModuleLaunchKernel/hipExtModuleLaunchKernel accept gridDim.y/z > 65536 with hipSuccess and run with the index modulo 65536 (hipLaunchKernel rejects the same grid with hipErrorInvalidConfiguration). gfx1100/gfx942 get 32-bit IDs and are correct. This is the root cause of the 8 gfx1201-only k-point AFT failures in gpu4pyscf (expLk BvK-to-k transforms, n = 2.4M to 6.9M). Standalone reproducer (zgemm_min.cpp) and grid-wrap probe in the notes. Port-side workaround staged on fork branch rocm-gfx12-complex-gemm (e1b8041): split complex einsum steps wider than 2^21. Choice for a person: report to rocBLAS (Tensile launch geometry on gfx12) and/or HIP (module launch APIs accept and wrap an oversized grid), and whether the port carries the workaround.",
+      "refs": [
+        "projects/gpu4pyscf/notes.md#porter-2026-11-02",
+        "https://github.com/ROCm/rocm-libraries/issues/10551"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-02T21:32:14Z",
+      "decided": null
     }
   ]
 }

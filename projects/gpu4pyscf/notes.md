@@ -3366,3 +3366,115 @@ So there is no new GPU finding at fb95c20 on gfx90a.
 - `python3 utils/jargon.py --port gpu4pyscf`: clean (after `git fetch origin master:master` in the clone).
 - Documentation: the README ROCm block builds as written (only the arch and `-j` changed; `-v` added to count flags).
 - Fork `git status --porcelain`: no tracked modifications (build output untracked; md/tests' `from_h5.xyz`, written to the clone root, removed).
+
+## Porter 2026-11-02 (porter, linux-gfx1201 R9700, fork moat-port @ fb95c20; fix staged on fork branch rocm-gfx12-complex-gemm @ e1b8041, moat-port untouched) -- gfx1201 k-point AFT failures: root cause
+
+Requested by jeff: root-cause the gfx1201-only k-point AFT failures listed in the 2026-11-01 gfx1201 round (8 tests). Host: AMD Radeon AI PRO R9700 (gfx1201, wave32), `HIP_VISIBLE_DEVICES=0` from the dispatcher. TheRock ROCm SDK 10.1.0 (`R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`; AMD clang 24.0.0git d6f6cb69, HIP 7.16.26385, rocBLAS 5.7.0.39d8d603, hipBLASLt 1.4.1). Job venv: numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion, geometric, pytest 7.3.2, pytest-xdist 3.3.1, pytest-timeout; `LD_LIBRARY_PATH=$R/lib`. Build: README ROCm block, `cmake -S gpu4pyscf/lib -B build/temp.gpu4pyscf -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release`, `cmake --build ... -j 24`: exit 0, 12 libs plus libxc. All GPU work under `ulimit -c 0`; no JIT extension builds; no rocBLAS shim (only rocBLAS's own `ROCBLAS_LAYER=2` log and HIP's `AMD_LOG_LEVEL`). Scratch in agent_space/ (p1..p10.py, zg/).
+
+**PR state does not match the request.** The request said the upstream PR (pyscf/gpu4pyscf#1009) is open and moat-port frozen. #1009 is jeff's own "Sync before reusing BlockScan storage in put_pairs_on_blocks_kernel" (head AMD-Ecosystem:sync-blockscan-storage), MERGED 2026-11-02T16:28:58Z; there is no upstream PR from moat-port (`gh api repos/pyscf/gpu4pyscf/pulls?head=AMD-Ecosystem:moat-port&state=all` is empty) and status.json records no pr_state. So `moatlib.py fix-branch gpu4pyscf` refused ("no open upstream PR -- fixes stage only while one is open; otherwise ... the porter pushes it directly"). I kept to the instruction not to push moat-port: the fix is one commit on a separate fork branch `rocm-gfx12-complex-gemm` cut from moat-port (fb95c20), head_sha not advanced, no lock taken, stage still review-passed.
+
+### Confirmed at head fb95c20
+Serial runs reproduce all 8 with the same numbers: test_pbc_aft test_ej_ip1_kpts 11.021, test_ek_ip1_kpts 9.128, test_vk_kpts_vs_fft 1.435; test_pbc_df_derivatives test_ejk_derivatives_kpts_with_long_range 7.05e-5, test_uhf_ejk_derivatives_kpts_with_long_range 4.79e-4; test_pbc_scf_jk test_vk_hermi1_kpts_vs_aft 0.0462, test_ejk_ip1_per_atom_kpts 3.047; test_pbc_grad_krhf test_krhf_grad_with_pseudo (fails).
+
+### First wrong intermediate, kernel by kernel (test_vk_kpts_vs_fft cell, kmesh 3x2x1, mesh 25^3 = 15625 G)
+1. **Exchange contraction `_update_vk_` is right** (p2.py: every call checked against a numpy einsum of the same Gpq, dms and weights: max err 1e-13).
+2. **Coulomb weights are right** (p3.py: `weighted_coulG` vs PySCF CPU for each q: 7e-18).
+3. **The Gpq tensor fed to it is wrong**, only for G index >= 10625 (p3.py: 1352 bad G of 15625, err 0.81 against |ref| 1.05; vs `pyscf.pbc.df.ft_ao.ft_aopair_kpts`). My first FT probe compared only the first 500 G and missed it.
+4. **The error depends on how many G are evaluated together** (p4.py, q = kpts[1]): first 10000 G 2.8e-8, 10624 G 5.9e-7, 10700 G 9.4e-6, 12000 G 1.05e-3, all 15625 G 0.76; the bad G vectors evaluated alone are exact (3e-10). Gamma point (one BvK cell, no k transform) is exact over the full mesh (1e-9).
+5. **The FT kernel (`build_ft_aopair`) is right; the BvK-to-k transform is wrong** (p5.py): the raw evaluator output (nao, L, nao, nG) is bit-identical whole vs in chunks of 1000 G, while `contract('Lk,pLqG->kpqG', expLk, raw)` (pbc/df/ft_ao.py:550) and plain `cupy.einsum` on it differ from `numpy.einsum` by 2.9e-8 / 1.1e-3 / 0.81 at nG = 10000 / 12000 / 15625.
+6. **That einsum is one complex GEMM** (`ROCBLAS_LAYER=2`): `gemm_strided_batched_ex -m 6 -n 3515625 -k 6 --a_type f64_c ... --batch_count 1` (n = p*q*G = 15*15*15625). With random data (p6.py) it is already 95% wrong at nG = 10000 (n = 2.25M); the real FT values just decay at large |G|, which hid the error at smaller nG.
+7. **Threshold** (p7.py, `cupy.matmul` (n,6)@(6,6)): complex128 and complex64 fail from n = 2097153, first bad row exactly 2^21 = 2097152; float64 and float32 clean up to n = 8388608. Independent of m (1..128) and k (1..64) (p8.py: every row >= 2^21 wrong, none below), of `ROCBLAS_USE_HIPBLASLT=0/1`, and of transposes (p10.py: all four transpose pairs fail for c128/c64, none for f64/f32). Batched complex matmul over 65536, 65600 and 140000 batches (4x4) is clean (p9.py; the batch is split on the host).
+8. **Every one of the 8 tests issues such a call** (ROCBLAS_LAYER=2, `ROCBLAS_LOG_PATH`; scan_log.py lists complex calls with n > 2^21): vk_kpts_vs_fft 4x (m=6, n=3515625, k=6), ej_ip1_kpts 1x (6, 5334336, 6), ek_ip1_kpts 24x (6, 5334336, 6), ejk_derivatives_kpts_with_long_range 8x and the uhf one 8x (6, 3272481, 6), vk_hermi1_kpts_vs_aft 6x (3, 4194304, 3), ejk_ip1_per_atom_kpts 13x (6, 2370816, 6), krhf_grad_with_pseudo 51x (2, 6892100, 2). m = k = number of k-points: the `expLk` BvK-to-k transforms.
+
+### Root cause: gfx12 16-bit work-group IDs y/z, and rocBLAS launching complex GEMM tiles in grid y
+- **Standalone rocBLAS reproducer, no CuPy or gpu4pyscf** (agent_space/zg/zgemm_bign.cpp, below): `rocblas_zgemm`/`rocblas_cgemm` NN, C (m x n) = A (m x k) B (k x n), output poisoned with 0x7f bytes before the call. m=6, k=6: n = 2097152 correct (zgemm max err 6.7e-16); n = 2097216 -> 64 wrong columns, first wrong column 2097152, its value still the poison (bits 7f7f7f7f7f7f7f7f): never written. m=1, n=4194304, k=1: 2097152 wrong columns. `rocblas_dgemm` correct for every shape. m = 2097216, n = 6 correct (the m dimension is not affected).
+- **Kernels** (`TENSILE_DB=0x40`, `AMD_LOG_LEVEL=4`): zgemm runs `Cijk_Ailk_Bljk_ZB_MT32x32x8_SN_..._WG16_16_1_WGM8` (cgemm the `CB` twin) from rocBLAS's generic `Kernels.so-000-gfx1201.hsaco` via `hipExtModuleLaunchKernel(f, 256, 65538, 1, 256, 1, 1, ...)` = gridDim.y 65538 = ceil(2097216/32), returning hipSuccess. dgemm runs hipBLASLt's `Cijk_Ailk_Bljk_D_B_UserArgs_MT64x64x8_..._ISA1201_...` with global (2097216, 1, 1), tiles in x. rocBLAS ships only `fallback` complex Tensile libraries for gfx1201 (and for gfx1100); all 36 complex fallback kernels for gfx1201 are MT32x32 (strings over TensileLibrary_Type_ZZ/CC_*_fallback_gfx1201.dat), so the bound is n <= 65536 * 32 = 2^21 for every transpose.
+- **The hardware/ABI part** (agent_space/zg/grid3.cpp, markk.cpp): `hipGetDeviceProperties` gives maxGridSize (2147483647, 65535, 65535). `hipModuleLaunchKernel` and `hipExtModuleLaunchKernel` with gridDim.y = 65537 / 65538 / 100000 / 131072 / 131073 (and the same for z) return hipSuccess, and exactly 65536 distinct blockIdx.y values occur: work-group 65536 + i runs with blockIdx.y = i ("ran 65536 of 100000, duplicated 34464"). `hipLaunchKernel` and `hipExtLaunchKernel` reject gridDim.y or z > 65536 with hipErrorInvalidConfiguration (9) and run nothing; 65536 itself works (grid2.cpp). Device code shows why: for gfx1201 `hipcc --cuda-device-only -S` reads blockIdx.y as `s_and_b32 s3, ttmp7, 0xffff` and blockIdx.z as `s_lshr_b32 s6, ttmp7, 16`, i.e. 16 bits each packed in a trap temporary; for gfx1100 and gfx942 they arrive as full 32-bit SGPRs (`s15`, `s5`). gfx1100 runs the same fallback complex kernel with the same grid but with 32-bit IDs, which is why gfx1100 and gfx942 pass.
+- So: **rocBLAS (Tensile host code) launches a grid whose y dimension exceeds what gfx12 can index, through a launch API that does not validate it.** Two ROCm-side defects: rocBLAS/Tensile should fold or split the n tiles on gfx12 (as hipBLASLt's real kernels do), and `hipModuleLaunchKernel`/`hipExtModuleLaunchKernel` accept gridDim.y/z > 65536 with success and run with wrapped indices where `hipLaunchKernel` rejects it. Related, same hardware limit, different library: https://github.com/ROCm/rocm-libraries/issues/10551 (MIOpen RNN bias op, gfx1200, unchecked rejected launch). No existing report for rocBLAS complex GEMM or for the module-launch wrap found (read-only `gh search issues` in ROCm/rocm-libraries and ROCm/HIP and the ROCm org).
+- Not this: arch-conditional source (no `__gfx12__`/arch branches in gpu4pyscf/lib), LDS sizes, wave size, hipFFT (the AFT path does not FFT), the einsum matvec reroute (the call is a plain GEMM with batch 1).
+
+### Reproducer (condensed below; the zgemm/cgemm/dgemm version is agent_space/zg/zgemm_bign.cpp)
+```
+R=$(/opt/python-3.11-venv/bin/rocm-sdk path --root)
+hipcc --offload-arch=gfx1201 -O2 -std=c++17 zgemm_min.cpp -I$R/include -L$R/lib -lrocblas -Wl,-rpath,$R/lib -o zgemm_min
+./zgemm_min 6 2097152 6     # m n k
+./zgemm_min 6 2097216 6
+```
+Output on gfx1201 (rocBLAS 5.7.0.39d8d603), verified with exactly this source:
+```
+zgemm status 0 m=6 n=2097152 k=6: wrong columns 0, first -1
+zgemm status 0 m=6 n=2097216 k=6: wrong columns 64, first 2097152
+```
+```cpp
+// C (m x n) = A (m x k) * B (k x n), column-major; reports the first wrong column of C.
+#include <rocblas/rocblas.h>
+#include <hip/hip_runtime.h>
+#include <complex>
+#include <cstdio>
+#include <cstdlib>
+#include <vector>
+using Z = std::complex<double>;
+int main(int argc, char **argv) {
+    int m = atoi(argv[1]), n = atoi(argv[2]), k = atoi(argv[3]);
+    std::vector<Z> a((size_t)m*k), b((size_t)k*n), c((size_t)m*n);
+    srand(1);
+    for (auto &x : a) x = Z(rand() / (double)RAND_MAX - .5, rand() / (double)RAND_MAX - .5);
+    for (auto &x : b) x = Z(rand() / (double)RAND_MAX - .5, rand() / (double)RAND_MAX - .5);
+    Z *da, *db, *dc;
+    hipMalloc(&da, a.size()*16); hipMalloc(&db, b.size()*16); hipMalloc(&dc, c.size()*16);
+    hipMemcpy(da, a.data(), a.size()*16, hipMemcpyHostToDevice);
+    hipMemcpy(db, b.data(), b.size()*16, hipMemcpyHostToDevice);
+    hipMemset(dc, 0x7f, c.size()*16);                      // poison: unwritten columns keep it
+    rocblas_handle h; rocblas_create_handle(&h);
+    rocblas_double_complex one{1, 0}, zero{0, 0};
+    rocblas_status st = rocblas_zgemm(h, rocblas_operation_none, rocblas_operation_none, m, n, k, &one,
+        (rocblas_double_complex*)da, m, (rocblas_double_complex*)db, k, &zero, (rocblas_double_complex*)dc, m);
+    hipDeviceSynchronize();
+    hipMemcpy(c.data(), dc, c.size()*16, hipMemcpyDeviceToHost);
+    long bad = 0, first = -1;
+    for (long j = 0; j < n; j++) {
+        bool ok = true;
+        for (int i = 0; i < m; i++) {
+            Z ref = 0;
+            for (int l = 0; l < k; l++) ref += a[i + (size_t)l*m] * b[l + (size_t)j*k];
+            if (!(std::abs(c[i + (size_t)j*m] - ref) < 1e-10)) ok = false;
+        }
+        if (!ok) { bad++; if (first < 0) first = j; }
+    }
+    printf("zgemm status %d m=%d n=%d k=%d: wrong columns %ld, first %ld\n", (int)st, m, n, k, bad, first);
+    return bad != 0;
+}
+```
+The grid wrap without rocBLAS (grid3.cpp: `hipModuleLaunchKernel(f, 1, gy, 1, 64, 1, 1, ...)` on a kernel that does `atomicAdd(&hits[blockIdx.y], 1)`): gy = 100000 -> hipSuccess, 65536 distinct indices hit, 34464 hit twice.
+
+### Fix (staged, not on moat-port): e1b8041 `[ROCm] Split complex einsum products wider than 2**21 columns`
+On fork branch `rocm-gfx12-complex-gemm` (parent fb95c20). gpu4pyscf/lib/cutensor.py: `_hip_einsum` (already the einsum of `contract` and `cupy_helper.einsum` on ROCm) also reroutes when a complex pairwise step, simulated in CuPy's default order, has a row or column count above `_HIP_MAX_COLS = 1 << 21` (`_hip_gemm_cols`). `_hip_einsum2` then splits the outermost free output axis of the side with more free entries into parts of at most 2^21 free entries and recurses (a part still too large is split on its next axis), writing each part into a preallocated result. Every other call still goes to `cupy.einsum` unchanged; real dtypes are never split. Unconditional on ROCm (not gated on gfx12): correct everywhere, and the split is cheap at these sizes. Why the helper and not the ~20 `expLk` call sites (pbc/df/ft_ao.py:550, int3c2e, rsdf_builder, aft_jk, int2c2e, int1e, df_jk): any of them passes 2^21 for a large enough cell or k-mesh, and new sites inherit the guard. CuPy's mapping, from cupy/linalg/_einsum.py 14.2: for two operands the path pair (0, 1) pops operand 1 as arr0, and `cupy.matmul(arr0 (B, L, K), arr1 (B, K, R))` reaches rocBLAS with n = L (free size of the second einsum operand) and m = R; the log line `-m 6 -n 3515625` for 'Lk,pLqG' confirms it. The helper bounds both sides, which costs nothing when only m is large.
+- Commit body: rationale, AI disclosure, fenced Test Plan. Title 61 chars. `python3 utils/jargon.py --port gpu4pyscf`: clean; `utils/prose.py` on the body: clean. ruff 0.15 with the repo's .ruff.toml, the CI's `--select NPY --ignore NPY002`, and flake8 (repo .flake8): clean on both files. No CUDA translation unit changed and `_hip_einsum` is used on ROCm only, so no CUDA compile gate was run.
+- **Tests (test that fails before and passes after)**, gpu4pyscf/lib/tests/test_cutensor.py: `test_hip_einsum_complex_large` ('Lk,pLqG->kpqG', expLk (2,2), a (2,2,2,2^19+8), n = 2^21 + 32, through `einsum` and `contract`, vs numpy) and `test_hip_einsum_complex_split` (300 random 2- and 3-operand complex patterns with `_HIP_MAX_COLS` patched to 3 and routine accelerators cleared; records every complex `cupy.matmul` whose row or column count exceeds 3; requires none from the helper, plain cupy.einsum issued such calls in > 50 patterns, and results equal numpy to 1e-10). Without the cutensor.py change on this card: complex_large fails (max err 2.47), complex_split fails (first pattern 'cf,df,d->d'). With it: test_cutensor.py 9 passed.
+- **The 8 tests**: 8 passed with the fix (serial, 525 s), all 8 failed at fb95c20.
+- **Cost** (agent_space/bench.py, median of 10, R9700; plain cupy.einsum, which is wrong past 2^21, vs the helper): 'Lk,pLqG->kpqG' (6,6)x(15,6,15,15625) n=3.5M 9.58 -> 14.65 ms (1.53x); (6,6)x(24,6,24,9261) n=5.3M 14.29 -> 22.02 ms (1.54x); (2,2)x(26,2,26,10195) n=6.9M 7.85 -> 8.59 ms (1.09x); (8,8)x(40,8,40,16384) n=26M 875.8 -> 227.0 ms (0.26x, the unsplit call is slow there); n=2.0M (below the limit, not split) 5.83 -> 5.65 ms. Dispatch overhead on small complex calls, unfixed helper -> fixed helper: 'ij,jk->ik' 0.1249 -> 0.1291 ms, 'ij,jk,kl->il' 0.2015 -> 0.2026 ms (about 4 us; real-dtype calls skip the check). A first version that split the largest free axis (G, the innermost) cost 1.53x at 3.5M and 1.04x at 26M; splitting the outermost axis is what makes the 26M case fast. The remaining 1.5x at 3 to 5M columns is the copy of each part into the result (cupy.einsum takes no `out=`); in absolute terms 5 to 8 ms per call.
+- **Test directories on gfx1201**, `agent_space/rundirs.sh` (per directory: GPU liveness check, then `python -m pytest gpu4pyscf/<dir> -n 4 --dist loadfile -m 'not slow and not benchmark and not special' -q -rfEs --tb=line -p no:cacheprovider --timeout 1800`), passed/failed/skipped/errors:
+
+| directory | gfx942 @ fb95c20 | gfx1201 @ fb95c20 (before) | gfx1201 @ e1b8041 (after) |
+|---|---|---|---|
+| pbc/df/tests | 104/1/7/0 | 99/6/7/0 | 104/1/7/0 |
+| pbc/scf/tests | 88/2/1/0 | 86/4/1/0 | 88/2/1/0 |
+| pbc/grad/tests | 185/0/2/0 | 184/1/2/0 | 185/0/2/0 |
+| gto/tests | 62/0/0/0 | 62/0/0/0 | 62/0/0/0 |
+| lib/tests | 41/0/1/0 | 41/0/1/0 | 43/0/1/0 |
+
+Before: the 8 targets plus the 3 reference failures every arch shows (pbc/df test_ft_ao_strain_deriv, pbc/scf test_rks_gen_g_hop and test_uks_gen_g_hop). After: only those 3. lib +2 = the two new tests. Wall time, warm CuPy kernel cache: pbc/df 175 s before, 193 s after; pbc/grad 303 s before, 312 s after; pbc/scf 163 s before, 178 s after (cold cache); gto 42/52 s; lib 15/34 s (the two new tests account for about 20 s). The first run after the build (cold cache) took pbc/grad 605 s and pbc/df 250 s with the fix; the warm reruns above are the fair comparison.
+- **No oversized complex GEMM left from any path** (including direct `dot`/`matmul` calls outside the helper): pbc/df, pbc/scf and pbc/grad rerun at e1b8041 with rocBLAS's own call log, one file per xdist worker (agent_space/plug/rblog.py sets `ROCBLAS_LAYER=2` and `ROCBLAS_LOG_PATH` per `PYTEST_XDIST_WORKER` before rocBLAS loads; same pytest selection, same counts as above). Complex calls with n > 2^21: 0 of 36480 calls (pbc/df), 0 of 67509 (pbc/scf), 0 of 361316 (pbc/grad). The largest remaining are the split parts just below the limit (n = 2051406, 2074464, 2067630). Before the fix the 8 tests alone issued 115 such calls.
+
+### Checks
+- Fork: `git status --porcelain` shows no tracked modifications. `rocm-gfx12-complex-gemm` pushed (new branch, e1b8041, parent fb95c20); `git ls-remote` confirms moat-port still fb95c20. No advance-head (head_sha stays fb95c20), no lock taken, no state change.
+- `python3 utils/jargon.py --port gpu4pyscf`: clean. `utils/prose.py` on the commit body: clean.
+- Deferral registered: `rocblas-complex-gemm-gfx12-grid-y-16bit` (rocm-bug-report, rocBLAS) in projects/gpu4pyscf/deferred.json.
+- Skill: `references/fault-classes.md` new entry "gfx12 work-group IDs y and z are 16 bits..." after the batched-gemv entry; SKILL.md index line.
+- All GPU work under `ulimit -c 0` on `HIP_VISIBLE_DEVICES=0`; no JIT extension builds; no rocBLAS shim.
+
+### For jeff (decisions, not taken)
+1. **Where the fix goes.** MOAT has no open PR for gpu4pyscf (#1009 is your merged BlockScan fix), so by MOAT's rules moat-port is not frozen and a porter would push it directly. I followed your instruction instead and left moat-port alone. To take the fix: fast-forward moat-port to `rocm-gfx12-complex-gemm` (e1b8041 is a strict descendant of fb95c20), then `python3 utils/moatlib.py advance-head gpu4pyscf e1b8041bf80b6d4b8b11b2f3f6204c9ad9e1412e` from a porting round (stage is review-passed, so it needs the porting lock and a delta review); gfx90a, gfx942 and gfx1100 then read revalidate. If the PR is in fact open somewhere I did not find, `set-pr-open` and `fix-branch` first and I would restage on `moat-fix-<pr#>`.
+2. **Whether the port carries the workaround at all**, given its cost: correct results on gfx12 for every complex `contract`/`einsum` step past 2^21 columns, at 1.1x to 1.5x for 3.5M to 6.9M columns (5 to 8 ms per call), faster (0.26x) at 26M, about 4 us per small complex call, and no measurable test-suite change (pbc/df 175 -> 193 s, pbc/grad 303 -> 312 s, warm cache). Alternatives: gate it on `gcnArchName` starting with gfx12 (no cost elsewhere, but an arch check upstream must keep current), or carry nothing and document gfx12 k-point AFT as broken until rocBLAS is fixed. It is unconditional on ROCm now.
+3. **ROCm reports** (your call; draft material is in the deferral and above): (a) rocBLAS/Tensile on gfx12 launches complex GEMM with n tiles in grid y beyond 65536 -- fold into x as the hipBLASLt real kernels do, or split; (b) HIP `hipModuleLaunchKernel`/`hipExtModuleLaunchKernel` accept gridDim.y/z > 65536 on gfx12 with success and wrap the index, where `hipLaunchKernel` rejects the same grid. rocm-libraries#10551 (MIOpen, gfx1200) is the same hardware limit in another library.
+4. **gfx942/gfx1100 not rerun with the fix.** The change is Python only and the split is exact arithmetic regrouping, but a revalidation on a wave64 and a wave32 host is needed before it can reach a PR (that is what advance-head would trigger).
