@@ -633,3 +633,35 @@ Outcome: the documented route does NOT work on Windows with the README command a
 2. **Build type not set on Windows.** `setup.py` passes `CMAKE_BUILD_TYPE` only on non-Windows. With Ninja (single-config) and no build type, `NDEBUG` is not defined and upstream's `assert(pos_src.ndim == 2)` etc. in `python_bind.cpp` (lines 53-56, 98-99) compile; pybind11's `ndim` is a method so Clang errors: `python_bind.cpp:53:17: error: reference to non-static member function must be called` (6 errors, attempt 2, `pip2.log`). The same sources build in the Release build used by the 2026-10-31 run because that passed `-DCMAKE_BUILD_TYPE=Release`. Workaround, a documentable CMAKE_ARGS option: add `-DCMAKE_BUILD_TYPE=Release`.
 With both addressed (scratch `setup.py` minus the two lines, plus `-DCMAKE_BUILD_TYPE=Release`): attempt 3 `Successfully installed gpuRIR-1.2.0` (~28 s), `gpuRIR_bind.cp313-win_amd64.pyd` plus `gpuRIR/__init__.py` in the target. Harness rerun against the installed module only (`GPURIR_PIP_TARGET=<target>`, `gpuRIR_bind.__file__` confirmed in the target, with `os.add_dll_directory` for TheRock `_rocm_sdk_core/bin`, `_rocm_sdk_libraries_gfx1151/bin` and the target): **49/49 PASS**, f64 table identical to section 1.
 Environment note: nothing here was an environment failure. Fork not edited; the two upstream-script fixes were exercised only in the scratch clone. If the PR should make the pip route work on Windows, it needs a `setup.py` change (skip `-A x64`/`/m` when the generator is not Visual Studio, set `CMAKE_BUILD_TYPE` for single-config generators); that is a porter/maintainer decision and not made here. Linux `pip install` with `CMAKE_ARGS` is unaffected (setup.py sets the build type there).
+
+## Porter round 2026-11-02 (windows-gfx1151): setup.py Ninja route on Windows (214a51c)
+
+Closes the pip-route gap from the 2026-11-02 validation section. One commit on `moat-port`: 39a7a9d -> **214a51c** `[ROCm] Let setup.py build with Ninja on Windows` (fast-forward push; `pr-state` none, only the fork review PR AMD-Ecosystem/gpuRIR#1 exists). Host: Radeon 8060S gfx1151, TheRock ROCm 7.14.0a20260612, torch_venv python 3.13, CMake 3.31.0, ninja 1.13.0. `ulimit -c 0`, one GPU process at a time.
+
+### Change
+- `setup.py`: the generator is read from `-G<name>`/`-G <name>` in `CMAKE_ARGS` or from the `CMAKE_GENERATOR` env var. On Windows, `-A x64` and `-- /m` are appended only when no generator is given or it starts with `Visual Studio`; any other generator that is not `Multi-Config` gets `-DCMAKE_BUILD_TYPE=<cfg>` (so NDEBUG is defined and upstream's `python_bind.cpp` asserts compile out, as in the Linux path). Linux branch untouched. The `python_bind.cpp` asserts are untouched (upstream code).
+- `README.md`: one sentence after the ROCm `CMAKE_ARGS` example giving the Windows form: `-G Ninja`, `CMAKE_{C,CXX,HIP}_COMPILER=clang/clang++` (ROCm's Clang), `CMAKE_PREFIX_PATH=<ROCm path>`, `USE_HIP=ON`, `CMAKE_HIP_ARCHITECTURES=gfx1151`. No env-var prefix beyond `CMAKE_ARGS` itself. Probe showed `CMAKE_POLICY_VERSION_MINIMUM`, `CMAKE_{HIP,CXX}_STANDARD=17` and `-DNOMINMAX` are not needed for this pip build on CMake 3.31.
+- Note: a generator name with spaces (`Visual Studio 17 2022`, `Ninja Multi-Config`) cannot pass through `CMAKE_ARGS` because setup.py whitespace-splits it (pre-existing port behavior); use `CMAKE_GENERATOR` for those, which the change honors.
+
+### Argument-list regression check (dry run)
+Old (39a7a9d) vs new setup.py executed with `setuptools.setup` and `subprocess.check_call` monkeypatched, `platform.system` forced (scratch `dryrun.py`): identical cmake/build arguments for Linux (no CMAKE_ARGS; HIP args; `-G Ninja`), Windows with no generator, Windows `CMAKE_GENERATOR="Visual Studio 17 2022"`, Windows `CMAKE_ARGS=-DUSE_HIP=OFF`. Differences only where intended: Windows `-G Ninja`, `-GNinja`, `CMAKE_GENERATOR=Ninja` now drop `-A x64` and `-- /m` and add `-DCMAKE_BUILD_TYPE=Release`.
+
+### Validation (pip route, fresh clone at 214a51c, throwaway --target)
+```
+source agent_space/win_rocm_env.sh; unset CC CXX; L=$ROCM_ROOT/lib/llvm/bin
+CMAKE_ARGS="-G Ninja -DCMAKE_C_COMPILER=$L/clang.exe -DCMAKE_CXX_COMPILER=$L/clang++.exe -DCMAKE_HIP_COMPILER=$L/clang++.exe \
+ -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DCMAKE_PREFIX_PATH=$ROCM_ROOT -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+ -DCMAKE_HIP_STANDARD=17 -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_FLAGS=-DNOMINMAX" \
+utils/timeit.sh gpuRIR compile -- <torch_venv python> -m pip install -v --no-deps --no-build-isolation --target <abs target> <abs clone>
+```
+(no build-type option). `Successfully installed gpuRIR-1.2.0`; CMakeCache `CMAKE_BUILD_TYPE=Release`, generator Ninja, empty platform; `-DNDEBUG` in build.ninja.
+- `GPURIR_PIP_TARGET=<target> utils/timeit.sh gpuRIR test -- python agent_space/gpurir_win/validate.py`: **49/49 PASS**, `gpuRIR` and `gpuRIR_bind.__file__` in the target. f64 direct-path table identical to the 2026-11-02 validation (exact 5.305e-8 / 5.213e-8 / 1.461e-7 / 4.330e-8; LUT 5.439e-8 / 5.979e-8 / 7.575e-8 / 1.059e-7 at 8k/16k/44.1k/48k); shoebox mp max 7.087e-4 / RMS 1.425e-3.
+- Examples against the target (`runall_pip.sh`, runex variant importing from the target only): example.py, simulate_trajectory.py, polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py, example.py mp on / LUT off: **6/6 exit 0**, all 6 report `gpuRIR_bind` from the target.
+- README form exactly (bare `clang`/`clang++`, ROCm `lib/llvm/bin` first on PATH, only the six README options): install OK, example.py exit 0 from that target.
+- Gotcha (harness, not port): prepending `D:/...` to a Git-Bash PATH splits at the colon, so `clang` resolves elsewhere and CMake fails "Failed to find ROCm root directory" / compiler identification unknown. Use `/d/...` in PATH.
+- `utils/timeit.sh` cds to the repo root, so pass absolute paths to the wrapped command (first attempt exit 127 on a relative python path).
+- The worktree's fork clone had no pre-push hook; `moatlib.py protect-fork gpuRIR` installed it before the push.
+
+### State
+`advance-head gpuRIR 214a51c`; windows-gfx1151 porting -> ported (lock released). All platforms validated at 39a7a9d now read revalidate at 214a51c. The change is setup.py/README only (no compiled source), so Linux revalidation should be a light check of the unchanged Linux arg list plus a normal run; the CUDA gate path (Linux or Windows default/VS generator) produces byte-identical CMake arguments.
+`python utils/jargon.py --port gpuRIR`: clean.
