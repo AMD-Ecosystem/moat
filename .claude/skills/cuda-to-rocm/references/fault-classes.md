@@ -483,6 +483,32 @@ every call: two W7800s wedged (first H2D copy never completes, 95% GFX activity 
 process) during such a run with 8 to 12 workers. (gpu4pyscf; reproducer, site list and
 rewrite tool in its notes.)
 
+**gfx12 work-group IDs y and z are 16 bits: grid y/z above 65536 wraps or is rejected, and rocBLAS complex GEMM with n > 2^21 leaves columns unwritten.**
+On gfx12 (gfx1200/gfx1201) the compiler reads `blockIdx.y` as `ttmp7 & 0xffff` and
+`blockIdx.z` as `ttmp7 >> 16`; gfx11 and gfx9 receive 32-bit IDs in SGPRs (check with
+`hipcc --cuda-device-only -S` per arch). `hipGetDeviceProperties` reports
+`maxGridSize = (2^31-1, 65535, 65535)`; 65536 still works. Above it the launch API decides
+what happens: `hipLaunchKernel`/`hipExtLaunchKernel` return hipErrorInvalidConfiguration and
+run nothing (unchecked, that is silently missing output: MIOpen's RNN bias op,
+https://github.com/ROCm/rocm-libraries/issues/10551), while `hipModuleLaunchKernel` and
+`hipExtModuleLaunchKernel` return success and run every work-group with the y/z index taken
+modulo 65536, so work-group 65536 + i redoes work-group i and the tail is never touched.
+rocBLAS (5.7.0, TheRock 10.1) has only generic `fallback` Tensile kernels for complex types on
+gfx12 (`Cijk_..._ZB/CB_MT32x32x8_..._WG16_16_1_WGM8`), launched through
+`hipExtModuleLaunchKernel` with the 32-column tiles of n in grid y: every zgemm/cgemm (all four
+transposes) with n > 65536 * 32 = 2^21 returns columns >= 2^21 unwritten (a poisoned output
+keeps its poison), independent of m and k. Real GEMMs run hipBLASLt-generated kernels with
+the tiles in grid x and are clean to n = 8M; batched complex GEMM over 65536 batches is clean
+(the batch is split on the host). `AMD_LOG_LEVEL=3` prints each `hipExtModuleLaunchKernel`
+with its global sizes, which shows the grid. CuPy's einsum reaches it through k-point
+transforms such as `einsum('Lk,pLqG->kpqG')`, where n = p*q*G is millions. In a CuPy port
+fix it in the project-local einsum (above): for a complex pairwise step whose row or column
+count exceeds 2^21, split the outermost free output axis of the larger side and recurse. Split
+the outermost axis, not the largest: splitting the innermost axis made the strided writes into
+the result cost 1.5x, the outermost-axis split costs 1.1x to 1.5x at 3.5M to 6.9M columns and
+is 0.26x (faster than the unsplit call) at 26M. A kernel of your own that needs more than
+65536 work-groups in y or z must fold them into x. (gpu4pyscf; reproducers in its notes.)
+
 **Negative entries for that table.** CUPTI has no ROCm analogue -- stub the optional
 per-kernel profiling path inert and let the timer fall back to `hipEvent` wall-clock rather
 than substituting something. ck_tile's fused MHA ships headers but no prebuilt instance

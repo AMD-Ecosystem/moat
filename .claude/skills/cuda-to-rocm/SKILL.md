@@ -111,6 +111,7 @@ Scan this list against what you are doing. If any line could apply, open
 - AMD compute-capability values COLLIDE with NVIDIA arch numbers, so CC-keyed dispatch picks the wrong path.
 - A kernel that opts in to more than 64 KB of shared memory per block (static plus dynamic) cannot launch on most AMD GPUs; move scratch to a per-block global workspace for those cases.
 - rocBLAS `gemv` with more than 65535 batches (m < 2n) returns wrong entries (missing barrier in its batch loop); CuPy's `einsum` reaches it through batched dot products.
+- gfx12 work-group IDs y and z are 16 bits: grid y/z above 65536 is rejected or silently wraps, and rocBLAS complex GEMM with n > 2^21 leaves columns unwritten.
 - Library swaps: cuBLAS -> hipBLAS, cuFFT -> hipFFT, cuRAND -> hipRAND, cuSPARSE -> hipSPARSE, cuDNN -> MIOpen, Thrust/CUB -> rocThrust/hipCUB. Handle types and v2-enum signatures differ.
 - Runtime PTX + CUDA Driver API is a third build class beyond A and B.
 - MSVC-only upstreams accept code gcc/clang reject; the HIP build is a stricter compiler.
