@@ -7,8 +7,8 @@
   "priority": 4.22,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-11-02T21:32:37Z",
-  "head_sha": "214a51c774f91933836708948f45558d3b72dae3",
+  "updated_at": "2026-11-02T21:37:06Z",
+  "head_sha": "cf0acba47dd137bbb7663d2f51fc3e955ebeb724",
   "waivers": {},
   "license_clearance": {
     "approved_by": "jeffdaily",
@@ -18,7 +18,7 @@
   },
   "license_spdx": "AGPL-3.0",
   "upstream_repo_id": 152045184,
-  "stage": "porting",
+  "stage": "ported",
   "platforms": {
     "windows-gfx1201": {
       "state": "completed",
@@ -154,7 +154,7 @@
       "validated_sha": "39a7a9d93592cb78b5913b974b6aaf8aa86ca1a0",
       "started_at": "2026-11-02T21:03:10Z",
       "completed_at": "2026-10-31T20:47:59Z",
-      "updated_at": "2026-11-02T21:32:37Z",
+      "updated_at": "2026-11-02T21:37:06Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -173,12 +173,9 @@
   },
   "review_pr": "https://github.com/AMD-Ecosystem/gpuRIR/pull/1",
   "porting_released": {
-    "arch": "linux-gfx942",
-    "since": "2026-11-02T21:23:22Z",
-    "at": "2026-11-02T21:28:49Z"
-  },
-  "porting": {
     "arch": "windows-gfx1151",
-    "since": "2026-11-02T21:32:37Z"
-  }
+    "since": "2026-11-02T21:32:37Z",
+    "at": "2026-11-02T21:37:06Z"
+  },
+  "porting": null
 }

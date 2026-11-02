@@ -699,3 +699,22 @@ setup.py now detects a non-Visual-Studio generator on Windows (so a Ninja HIP bu
     - Diffuse tail finite and non-zero; simulateTrajectory vs np.convolve 2.83e-7; NaN receiver gives all zeros for exact and LUT.
     - Two harness bugs were fixed before the passing run, neither a port issue: the LUT reference used true division for the kernel's integer `lut_len/2`, and the first-arrival argmax spanned 300 samples and picked up a reflection at 272.
   - Upstream examples (scratch copy, synthetic 2 s source_signal.wav, MagicMock matplotlib/plotly): example.py, simulate_trajectory.py, polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py **5/5 exit 0**.
+
+## Porter round 2026-11-02 (windows-gfx1151): README C compiler option (cf0acba)
+
+Answers the linux-gfx942 review of 214a51c (one change requested). One commit on `moat-port`: 214a51c -> **cf0acba** `[ROCm] Drop the unused C compiler from the Windows README example` (fast-forward push; `pr-state` none). README.md only: `-DCMAKE_C_COMPILER=clang` removed from the Windows `CMAKE_ARGS` example sentence, nothing else. The commit's Test Plan uses the new form.
+
+### Check (build and plain import only; no GPU workload, another validator held the GPU)
+Host: Radeon 8060S gfx1151, TheRock ROCm 7.14.0a20260612, torch_venv python 3.13. Fresh clone at cf0acba (`status --porcelain` empty), the README's exact option set, bare `clang++` with ROCm `lib/llvm/bin` first on PATH (`/d/...` form), `CC`/`CXX` unset:
+```
+source agent_space/win_rocm_env.sh; unset CC CXX; export PATH=/d/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel/lib/llvm/bin:$PATH
+CMAKE_ARGS="-G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_HIP_COMPILER=clang++ -DCMAKE_PREFIX_PATH=$ROCM_ROOT -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151" \
+utils/timeit.sh gpuRIR compile -- <torch_venv python> -m pip install -v --no-deps --no-build-isolation --target <abs target> <abs clone>
+```
+- `Successfully installed gpuRIR-1.2.0`, exit 0; target has `gpuRIR/__init__.py` and `gpuRIR_bind.cp313-win_amd64.pyd`.
+- Log: no "Manually-specified variables were not used" and no `CMAKE_C_COMPILER` mention. Remaining warnings are pre-existing (setuptools license-classifier and distutils deprecations, vendored pybind11 `cmake_minimum_required` and `PYBIND11_CPP_STANDARD`).
+- `python -c "import gpuRIR"` from a temp cwd with `os.add_dll_directory` for TheRock `_rocm_sdk_core/bin`, `_rocm_sdk_libraries_gfx1151/bin` and the target: OK, `gpuRIR` and `gpuRIR_bind` resolve from the target.
+- `jargon.py --port gpuRIR`: clean.
+
+### State
+`advance-head gpuRIR cf0acba`; windows-gfx1151 porting -> ported. Platforms validated at 214a51c read revalidate; the delta is one README sentence, no code or build file, so revalidation is a light rerun. The GPU run on Windows happens in that revalidation.
