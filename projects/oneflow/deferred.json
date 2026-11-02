@@ -158,6 +158,19 @@
       "upstream_issue": null,
       "created_at": "2026-11-01T17:32:08Z",
       "decided": null
+    },
+    {
+      "id": "oneflow-cg-first-graph-replay-fault",
+      "kind": "other",
+      "component": null,
+      "summary": "Intermittent CUDA-graph replay fault on two gfx1100 GPUs (ROCm 10.1 SDK): in cg_ws3 (54 nn.Graph matmuls over both GPUs with ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1) the first-captured graph, a plain rocBLAS 17x1023x513 16-bit GEMM on cuda:1, replays with garbage in its first replay round and the next call fails with illegal memory access 700; 5 of 7 runs at 541d75105/4e418c9d4 in earlier rounds, 1 of 2 in this session; cg_ws2 about 1 in 13. Not root-caused. Refuted: graph memory nodes from hipMallocAsync/hipFreeAsync in capture (a build that never allocates in capture still faulted 1 of 5; cg_ws2 never allocates in capture). rocBLAS needs 0 bytes of handle memory for every shape (size query). Clean but not significant: tile cap 0/6, ROCBLAS_DEVICE_MEMORY_SIZE 0/6, single GPU 0/4, reduced scripts 0/39. Standalone HIP probes did not reproduce. Owner unknown (port, oneflow, HIP or rocBLAS); next steps in notes.",
+      "refs": [
+        "projects/oneflow/notes.md: Porter round 2026-11-02 (linux-gfx1100 ... root-cause the intermittent first-graph replay fault)"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-02T07:36:55Z",
+      "decided": null
     }
   ]
 }

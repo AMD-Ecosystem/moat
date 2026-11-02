@@ -3926,3 +3926,50 @@ Graph capture (`ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1`, on 4e418c9d4 and again on t
 - `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038.
 - `git -C projects/oneflow/src status --porcelain`: no modified tracked files. Fork `moat-port` pushed 541d75105..4e418c9d4 (fast-forward); `advance-head oneflow 4e418c9d4...`.
 - Owed: review of 4e418c9d4; validation on gfx1100, gfx942 and gfx90a (gfx9 does not chunk, so the trigger never runs there, but the TU and the test changed) and gfx1201 (same code as gfx1100; the rounding-aligned test must fail before and pass after there too). The cg_ws3 first-graph fault (above) needs its own investigation; it is not tied to a commit yet.
+
+## Porter round 2026-11-02 (linux-gfx1100, two W7800; jeff's request: root-cause the intermittent first-graph replay fault in cg_ws2 / cg_ws3)
+
+jeff's direction: make the k = 1023 first-graph replay fault reproducible at a measured rate, test one hypothesis at a time (graph memory nodes from `hipMallocAsync` / `hipFreeAsync` inside capture, rocBLAS / hipBLASLt workspace handling, per-stream queues, the nn.Graph runtime race), fix it in the port with a regression test or, if it is in HIP or a ROCm library, build a standalone reproducer, register it, and apply the narrowest port-side workaround if it is small and free. Fix nothing else. Host: two Radeon Pro W7800 48GB (gfx1100), `HIP_VISIBLE_DEVICES=0,1`, ROCm 10.1.0 SDK wheels, torch 2.16.0a0+git6c3af02 linked read-only, `ulimit -c 0`, `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git`, `OMP_NUM_THREADS=4`, no JIT extension builds. Lock `ported -> reviewing -> changes-requested -> porting` (as in the previous round). Scripts in `agent_space/x/` (loop driver `loop.sh`, reduced script `cg_min.py`, `wsq3.py`) and `agent_space/hr/` (standalone HIP probes `gm.hip`, `gr.hip`, `mc.hip`).
+
+**Outcome: not root-caused, no port change.** `moat-port` stays at 4e418c9d4. One hypothesis is refuted by a fault, two conditions ran clean at sample sizes too small to separate them from chance, and the standalone probes did not reproduce. Details below so the next attempt starts here.
+
+### Build
+Fresh clone of the fork (from the fix16 job's clone, origin the fork URL), `protect-fork`; venv as in the previous round (the guard needs the literal `$FLEET_VENV` path in the pip command; the torch links must be created in a separate command or the guard blocks them with the pip call). `CMAKE_HIP_ARCHITECTURES=gfx1100 ./build_rocm.sh all`, `JOBS=32`, `utils/timeit.sh oneflow compile`, rc=0, used only for the workaround experiment below. Every baseline run used the fix16 job's 4e418c9d4 build read-only.
+
+**Timing matters.** A cg_ws3 run takes 229 s when it passes and about 127 s when it faults (it aborts in the first replay round, skipping two). While the 32-job build ran, one cg_ws3 run took 2220 s and passed, and single-GPU runs took 221 / 585 s; runs under CPU load or overlapping another GPU process are not counted below. Renicing the build to 19 was not enough; measure with nothing else running.
+
+### Measurements (cg_ws3 unless named; both GPUs; one process at a time; fault = the `17x1023x513 bfloat16 cuda:1 ... replay0 <garbage> OUT OF TOL` line, then illegal memory access 700)
+
+| condition | build | faulted |
+|---|---|---|
+| default (fix16 round 3 of 4, here 1 of 2) | 4e418c9d4 | **4 of 6** (plus 541d75105 1 of 1: 5 of 7) |
+| `HIP_VISIBLE_DEVICES=0` or `=1` alone (27 graphs) | 4e418c9d4 | 0 of 4 (two of them under build load) |
+| `cg_min.py`: k = 1023 graph first, then only the two long-k shapes, 3 dtypes, both GPUs, eager GEMMs kept (18 graphs, 106 s) | 4e418c9d4 | 0 of 4 |
+| `ONEFLOW_EP_CUDA_LONG_K_GEMM_MAX_TILE_SIZE=1048576` (every tile fits the 4 MiB workspace: no allocation in any capture) (fix16 2, here 4) | 4e418c9d4 | 0 of 6 |
+| `ROCBLAS_DEVICE_MEMORY_SIZE=268435456` (rocBLAS preallocates and never reallocates its handle memory) | 4e418c9d4 | 0 of 6 |
+| **workaround build: no allocation inside capture** (patch below) | 4e418c9d4 + patch | **1 of 5** (run 4: `replay0 3.97e+01`, then 700, first reported by torch's `SetDevice` at the reference matmul) |
+
+Fisher's exact test, one-sided, against 5 of 7: tile cap 0 of 6 p = 0.016, rocBLAS memory 0 of 6 p = 0.016, `cg_min.py` 0 of 4 p = 0.045, workaround 1 of 5 p = 0.12. The two clean conditions share no mechanism, and the baseline was 1 of 2 in this session, so the clean runs may equally mean the rate was lower today than the pooled 5 of 7.
+
+### Hypotheses
+- **Graph memory nodes (`hipMallocAsync` / `hipFreeAsync` inside capture): refuted as the cause.** In cg_ws3, the float16 and bfloat16 captures of (1024, 40000, 2048) and (2048, 70001, 1024) need tiles of 20 / 36 MiB (5 / 9 slices), which miss the 4 MiB workspace; cg_ws2's shapes all fit (largest 128 x 65536 x 128: 256 KiB; the split space of 541d75105 adds 1 MiB), so cg_ws2 never captured an allocation and still faulted (3 times in about 40 earlier runs). `AMD_LOG_LEVEL=4` confirms the graph-memory path in cg_ws3: each such capture logs two `Failed hsa_amd_vmem_set_access. Failed with status:4099` (HIP setting access on the reserved graph VA for both GPUs before anything is mapped) and four `VMEM alloc: pool (selected)` per run; the standalone probes log the same lines and run correctly, so they look benign. The workaround that removes every allocation node (`agent_space/x/capture_tile_workaround.patch`: under capture take the tile from a per-stream, grow-only `hipMalloc` buffer with the capture mode relaxed for that call; `hipMalloc` itself returns `operation not permitted when stream is capturing` in ThreadLocal and Global modes, `mc.hip`) still faulted 1 of 5. Not applied.
+- **rocBLAS handle memory reallocated under a captured graph: unlikely.** On HIP oneflow gives rocBLAS no workspace (`cublasSetWorkspace` is under `CUBLAS_VERSION >= 11200`), so rocBLAS would grow its own memory and free the old buffer. But `rocblas_start/stop_device_memory_size_query` (`x/wsq3.py`, extending the earlier `wsq.py` to every cg_ws3 shape including the float32 long-k ones, 1 x 2^20 x 64 and the eager 4096 x 16384 x 4096 / 16384 x 4096 x 16384) reports 0 bytes (`rocblas_status_size_unchanged`) for every shape and dtype (1 x 2^20 x 64 in 16-bit returns success without taking part in the query). `ROCBLAS_DEVICE_MEMORY_SIZE` ran clean 0 of 6, which does not separate from chance here.
+- **Per-stream hardware queues (42d68145d):** not tested this round; also in d9e41753e, which ran 0 of 17 cg_ws2 and 0 of 1 cg_ws3 in earlier rounds.
+- **The nn.Graph runtime race recorded on gfx90a** (`DequeueNNGraph` before `EnqueueNNGraph`): a host SIGSEGV in `LazyJobStreamPolicy`, not a GPU illegal access; a different signature. Not pursued.
+- **Standalone probes, no oneflow (`hr/gm.hip`, `hr/gr.hip`):** per GPU a small graph captured first (an axpy kernel, or a rocBLAS bf16 17 x 1023 x 513 `rocblas_gemm_ex`), then 3 to 8 graphs that `hipMallocAsync` a 20-56 MiB tile, run kernels or k-chunk rocBLAS GEMMs into it, reduce, `hipFreeAsync`; CU-mask streams or plain streams; 256-768 MiB `hipMalloc`/`hipFree` or `hipMallocAsync` churn between captures; reversed replays checked bitwise against the capture-time output. `gm`: 0 bad in 4 variants x 10 runs plus 2 x 50 rounds. `gr` was built but not run (out of time).
+
+### What is established about the fault
+Only in two-GPU runs and only on cuda:1; always the first-captured shape (k = 1023), a 16-bit dtype, the first replay round, after every larger graph on both GPUs replayed correctly; never seen with one GPU visible (0 of 4, small sample). It needs most of the cg_ws3 sequence: the three-shape `cg_one.py` (0 of 35, earlier) and the two-long-k `cg_min.py` (0 of 4) did not fault. It appears to need an unloaded CPU (0 of 1 under build load, with the run 17x slower). The k = 1023 GEMM runs plain rocBLAS (`cublasGemmEx`), no ported long-k code and no rocBLAS device memory.
+
+### Next steps for whoever takes it
+1. Measure a larger interleaved baseline in one session (default vs condition alternating, 10+ each, about 40 min per 10 pairs) before trusting any clean condition; the per-session rate moved between 1 of 2 and 3 of 4.
+2. Attribute the faulting kernel: `AMD_SERIALIZE_KERNEL=3` so the 700 surfaces at the faulting launch (oneflow's stack then shows whether it is `CudaGraphExecutable::Launch` of the k = 1023 graph), and `AMD_LOG_LEVEL=3` with kernel logging around it. The `AMD_LOG_MASK=0x60000` used here logged nothing beyond level-1 lines, so the mask values for this runtime need checking first.
+3. Try the per-stream queue (`ONEFLOW_EP_CUDA_STREAM_FLAGS=0` selects `cudaStreamCreateWithFlags`, i.e. ordinary pooled streams) and `ROCBLAS_USE_HIPBLASLT=0` as single-variable conditions, and run `hr/gr` in a loop.
+
+### Final runs at 4e418c9d4 (fix16 job's build, read-only, one process at a time)
+`test_matmul_long_k.py` **3 passed** (26.7 s, GPU 1, `utils/timeit.sh oneflow test`). Graph capture (`ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1`): `cg_ws2.py` (both GPUs) **0 of 126**; `cg_ws3.py` **0 of 162** (one run; the fault rate needs many); `cg_ws4.py` **0 of 96**, worst 1.33 ulp; `cg_ovf.py` **0 of 48**; `n/cg_split.py` (GPU 1) **0 of 24**.
+
+### Other checks
+- No source change: `git -C projects/oneflow/src status --porcelain` shows no modified tracked file (the workaround is reverted; its patch is in `agent_space/x/`). Nothing pushed; `head_sha` stays 4e418c9d4. CUDA 12.8 gate run on the workaround version of `hip_long_k_gemm.cu` (redistrib_12.8.1.json fresh, sha256 249e28a8...cf17; nvcc 12.8.93 / cudart / cccl 12.8.90 sha256-verified 3/3; `nvcc -ccbin=/usr/bin/g++-13 -std=c++17 -DWITH_CUDA --generate-code=arch=compute_80,code=[compute_80,sm_80] -O3 -c -x cu`: rc=0); moot since the change was not kept.
+- `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038 (branch unchanged).
+- Registered as `oneflow-cg-first-graph-replay-fault` (`utils/deferred.py`, kind other, project oneflow).
