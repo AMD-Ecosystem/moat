@@ -718,3 +718,19 @@ utils/timeit.sh gpuRIR compile -- <torch_venv python> -m pip install -v --no-dep
 
 ### State
 `advance-head gpuRIR cf0acba`; windows-gfx1151 porting -> ported. Platforms validated at 214a51c read revalidate; the delta is one README sentence, no code or build file, so revalidation is a light rerun. The GPU run on Windows happens in that revalidation.
+
+## Review 2026-11-02 (linux-gfx942, reviewer): delta 214a51c..cf0acba
+
+Port Review: gpuRIR (`moat-port` cf0acba, delta from 214a51c: README.md, one sentence). **Approve**: the one finding of the previous review (`-DCMAKE_C_COMPILER=clang` unused) is resolved, and nothing new is found. `jargon.py --port gpuRIR` (whole branch vs `master`): clean.
+
+### Verification record (claims fact-checked, no finding)
+- Diff is exactly `-DCMAKE_C_COMPILER=clang ` removed from the Windows `CMAKE_ARGS` example at `README.md:36`; nothing else changed. `git grep CMAKE_C_COMPILER cf0acba`: no hits. `CMakeLists.txt:14` is `project(gpuRIR LANGUAGES CXX HIP)`, and vendored pybind11 enables only CXX, so no C compiler is needed.
+- Configure on this host (MI300X gfx942, TheRock ROCm 10.1.0, `ulimit -c 0`) with the README's exact Windows option set, ROCm `lib/llvm/bin` first on PATH, fresh clone at cf0acba:
+  ```
+  R=$(rocm-sdk path --root); export PATH=$R/lib/llvm/bin:$PATH
+  utils/timeit.sh gpuRIR compile -- cmake -S projects/gpuRIR/src -B <build> -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_HIP_COMPILER=clang++ -DCMAKE_PREFIX_PATH=$R -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942
+  ```
+  Exit 0; no "Manually-specified variables were not used" and no `CMAKE_C_COMPILER` in the log. Only the pre-existing pybind11 warnings remain (`cmake_minimum_required` deprecation, `PYBIND11_CPP_STANDARD`).
+- Completeness for the Windows pip route: the sentence follows the generic `CMAKE_ARGS=... pip install gpuRIR/` example and supplies the generator, both compilers, the ROCm prefix and the HIP options, which is everything setup.py's Ninja branch (214a51c) and the CMake HIP path read. The windows-gfx1151 porter round installed with exactly these options and imported the module. Ninja must be on PATH (build isolation installs only `cmake` from `pyproject.toml`); "select the Ninja generator" carries that, and it was in the sentence already approved at 214a51c, so not a finding.
+- Commit cf0acba: `[ROCm]` title, 65 chars; prose AI disclosure ("Authored with Claude."); no Co-Authored-By or noreply; ASCII; Test Plan with literal commands in a fenced block, using the new option set. One fast-forward commit on top of 214a51c, no amend.
+- Fork clone: `git status --porcelain` empty.

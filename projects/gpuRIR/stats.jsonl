@@ -119,3 +119,6 @@
 {"kind":"phase","ts":"2026-11-02T21:26:56Z","phase":"test","seconds":1.969,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi300-20261102-132019-gpurir-review-214a/venv/bin/python /var/lib/jenkins/fleet/jobs/mi300-20261102-132019-gpurir-review-214a/moat/agent_space/gpurir_rev/validate.py"}
 {"kind":"session","ts":"2026-11-02T21:28:49Z","epoch":1793654929.658485219,"event":"end","platform":"linux-gfx942"}
 {"kind":"phase","ts":"2026-11-02T21:35:15Z","phase":"compile","seconds":14.786,"exit":0,"cmd":"D:\\Develop\\moat\\agent_space\\torch_venv\\Scripts\\python.exe -m pip install -v --no-deps --no-build-isolation --target D;C:\\Program Files\\Git\\Develop\\moat\\agent_space\\gpurir_pip\\t6 D;C:\\Program Files\\Git\\Develop\\moat\\agent_space\\gpurir_pip\\c6"}
+{"kind":"session","ts":"2026-11-02T21:43:33Z","epoch":1793655813.904047343,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-02T21:44:13Z","phase":"compile","seconds":2.912,"exit":0,"cmd":"cmake -S projects/gpuRIR/src -B agent_space/gpurir_rev_cf0a/build -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_HIP_COMPILER=clang++ -DCMAKE_PREFIX_PATH=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx942"}
+{"kind":"session","ts":"2026-11-02T21:44:58Z","epoch":1793655898.086120122,"event":"end","platform":"linux-gfx942"}
