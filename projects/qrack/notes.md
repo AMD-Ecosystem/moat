@@ -982,3 +982,33 @@ Per-test comparison: cuda/qengine and cuda/qpager run the same 213 test names. T
 - Integrity: `git -C projects/qrack/src status --porcelain` empty at b06652a8.
 
 Result: linux-gfx942 -> completed at b06652a8.
+
+## Validation 2026-11-02 (windows-gfx1151, first validator record, risk-limited run at b06652a8)
+Requested by jeff on the gfx1151 laptop (prior bugchecks under sustained GPU load), so the run was staged: one GPU process at a time, hard `timeout 1200` per batch, 60 s or more between batches, `ulimit -c 0`, default 20-qubit width, stop on the first 719/hang/reset (none occurred).
+Platform: AMD Radeon 8060S Graphics gfx1151 (RDNA3.5, wave32, APU), TheRock ROCm 7.14.0a20260612 (D:/Develop/TheRock/.venv), amdclang++ for C, CXX and HIP, Ninja. Fresh clone of AMD-Ecosystem/qrack at b06652a8fdc198ce80147efa4b05b0777b874144 (= origin/moat-port tip), nothing committed to the fork. `pr-state qrack`: none.
+
+### Build
+Same recipe as the gfx1201 entry (above) with `-DCMAKE_HIP_ARCHITECTURES=gfx1151`, `-DCMAKE_PREFIX_PATH="$R;$RC"` with R=D:/Develop/TheRock/.venv/Lib/site-packages/_rocm_sdk_devel and RC=.../_rocm_sdk_core, `-DENABLE_PTHREAD=OFF -DENABLE_SSE3=OFF -DENABLE_FMA=OFF -DSEED_DEVRAND=OFF -DENABLE_TESTS=ON`, build `cmake --build _build -j16 --target unittest` wrapped in `utils/timeit.sh qrack compile --` (27 s, 38/38, 0 warnings). No source patch needed: the DispatchFn fallback the gfx1201 run added is now in the tree (include/qengine_cpu.hpp:22). Runtime DLLs staged next to unittest.exe with `rocm_stage_runtime` (agent_space/win_rocm_env.sh). Init printed "CUDA device #0: AMD Radeon(TM) 8060S Graphics". Test list: 213 cases at this head.
+
+### Tests (each `utils/timeit.sh qrack test -- timeout 1200 unittest.exe --proc-cuda --layer-<l> -d yes <filter>`)
+Exclusions, agreed in advance: the 8 `[sd_xfail]` tests (test_decompose, test_compose, test_dispose, test_dispose_perm, test_trydecompose, test_qunit_paging, test_getquantumstate, test_qneuron; on gfx1201 test_decompose/test_compose hit Windows PAL command-ring exhaustion giving 719, and test_compose gave a wrong state on gfx1101, so not risked on this laptop); test_cswap in the fast subset (known qpager failure, upstream #1044; run alone on qengine below); the slow sweeps test_m_array and test_bell_m (run as their own batches).
+
+| batch | filter | result | wall |
+|---|---|---|---|
+| 1 cuda/qengine fast | `"~[sd_xfail]" "~test_cswap" "~test_m_array" "~test_bell_m"` | All passed, 9538 assertions / 202 cases | 7.5 s |
+| 2 cuda/qengine | `test_m_array` | passed, 2 assertions | 69.5 s |
+| 3 cuda/qengine | `test_bell_m` | passed, 4 assertions | 118.2 s |
+| 4 cuda/qengine | `test_cswap` | passed, 5 assertions | ~1 s |
+| 5 cuda/qunit fast (same filter as 1) | | All passed, 9539 / 202 | seconds |
+| 6 cuda/qpager fast (same filter as 1; test_cswap excluded) | | All passed, 9538 / 202 | seconds |
+
+Pauses of 60 s or more between batches. No 719, "PAL failed", hang or driver reset in any log (grep of all logs). Not run: the 8 sd_xfail tests on this host (205 of 213 qengine cases exercised: 202 + test_m_array + test_bell_m + test_cswap), qpager test_cswap (known upstream failure), CPU layers (non-GPU, identical code on Linux), cuda/qtensornetwork.
+Wall-clock note: the slow sweeps were 69 s and 118 s here (gfx1201: 47.6 s / 96 s), nowhere near the 5-10 min the notes warned about.
+
+### Other gates
+- CUDA compile gate: already recorded PASS at b06652a8 (Porter 2026-11-01); not rerun (no CUDA toolkit on Windows).
+- `python3 utils/jargon.py --port qrack`: clean.
+- Documentation: README.md:215-223 "Optional HIP (AMD ROCm) instead of OpenCL" sits next to the CUDA build section.
+- Integrity: `git -C projects/qrack/src status --porcelain` empty (untracked _build/ only).
+
+Result: everything that ran passed; the exclusions are the pre-agreed ones. windows-gfx1151 -> completed at b06652a8.
