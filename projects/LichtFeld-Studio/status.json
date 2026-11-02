@@ -7,7 +7,7 @@
   "priority": 6.263,
   "ext_type": "cmake",
   "adopted_at": "2026-05-29T23:57:04Z",
-  "updated_at": "2026-10-31T21:17:52Z",
+  "updated_at": "2026-11-02T21:16:01Z",
   "head_sha": "204cdab0fa1066cb706e332c371ae9a0f846eff7",
   "depends_on": [],
   "waivers": {
@@ -170,5 +170,5 @@
   },
   "porting": null,
   "on_hold": true,
-  "on_hold_reason": "jeff 2026-10-31: upstream is merging its own HIP backend (MrNeRF/LichtFeld-Studio #3781 #3782 #3809 #3930 #3950); hold the port, test upstream master's HIP backend on the Linux fleet, coordinate with its author before any further port work"
+  "on_hold_reason": "moat-port is reference-only; upstream asked for focused PRs against dev (issue 3968), worked outside this pipeline"
 }
