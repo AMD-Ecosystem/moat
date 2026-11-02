@@ -1,0 +1,64 @@
+# Grades the cuda-to-rocm skill with skillscope, the harness the amd/skills
+# catalog runs on every skill it vendors, so green here means green there.
+#
+# Pinned to the skillscope v0.1.3 release tag rather than main, so this check
+# runs the commit that tag names, not whatever merges upstream next. Both
+# `uses:` lines below carry the pin; bump them together.
+#
+# Pull requests and the nightly schedule run the structural checks only: they
+# are offline and free. Routing and behavioral spend model tokens, so they run
+# on demand through workflow_dispatch, which is also the only trigger that
+# receives the API key.
+
+name: AMD Skills Checks
+
+on:
+  pull_request:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      structural:
+        description: Structural Tests
+        type: boolean
+        default: true
+      routing:
+        description: Routing Tests
+        type: boolean
+        default: false
+      behavioral:
+        description: Behavioral Tests
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  evals:
+    name: AMD Skills Checks
+    uses: amd/skillscope/.github/workflows/reusable.yml@v0.1.3
+    secrets:
+      api_key: ${{ github.event_name == 'workflow_dispatch' && (inputs.routing || inputs.behavioral) && secrets.ANTHROPIC_API_KEY || '' }}
+    with:
+      skills: .claude/skills/cuda-to-rocm
+      # Each step can be set to `required`, `optional`, or `off`.
+      structural: ${{ github.event_name != 'workflow_dispatch' && 'required' || inputs.structural && 'required' || 'off' }}
+      routing: ${{ github.event_name == 'workflow_dispatch' && inputs.routing && 'required' || 'off' }}
+      behavioral: ${{ github.event_name == 'workflow_dispatch' && inputs.behavioral && 'required' || 'off' }}
+
+  external-references:
+    name: External References
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Remote outages should be visible without blocking the offline Results gate.
+    continue-on-error: true
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Check external skill references
+        uses: amd/skillscope@v0.1.3
+        with:
+          command: structural
+          args: --external
+          skills: .claude/skills/cuda-to-rocm
