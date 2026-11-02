@@ -1,10 +1,8 @@
 {
-  "comment": "The two behavioral cases carry their code inline and ask for a written answer, so they need no GPU, no ROCm, no build, and no fixture files, and a run is one read of the skill plus one short file. Routing stages no workspace either, so an inline prompt cannot send the agent hunting for a file that is not there.",
   "evaluations": [
     {
       "id": "review-kernel-for-wave64",
       "skill_should_trigger": true,
-      "note": "Three of the skill's fault classes in nine lines: a hardcoded 32-lane warp, a ballot truncated to 32 bits, and a counter accumulated into a fresh allocation that was never zeroed. hipify translates every symbol here cleanly, which is the trap the skill exists for.",
       "prompt": "We're porting this CUDA kernel to HIP so the same code runs on an MI300X as well as our NVIDIA cards. hipify ran clean. Before we spend time building, review it for what will go wrong on the AMD side and write the findings to review.md. There is no GPU or ROCm on this machine, so don't try to build or install anything.\n\n```cpp\n#define WARP_SIZE 32\n\n__device__ float warp_sum(float v) {\n  for (int o = WARP_SIZE / 2; o > 0; o /= 2) v += __shfl_down_sync(0xffffffff, v, o);\n  return v;\n}\n\n__global__ void count_positive(const float* x, unsigned* count, int n) {\n  int i = blockIdx.x * blockDim.x + threadIdx.x;\n  uint32_t mask = (uint32_t)__ballot_sync(0xffffffff, i < n && x[i] > 0.f);\n  if (threadIdx.x % WARP_SIZE == 0) atomicAdd(count, __popc(mask));\n}\n\n// host side\ncudaMalloc(&d_count, sizeof(unsigned));\ncount_positive<<<blocks, 256>>>(d_x, d_count, n);\n```",
       "expected_behavior": [
         "Flag the hardcoded warp size of 32 as wrong on MI300X, whose wavefront is 64 lanes wide, and recommend deriving the width from the device's warpSize instead of hardcoding a different constant",
@@ -22,7 +20,6 @@
     {
       "id": "plan-torch-extension-port",
       "skill_should_trigger": true,
-      "note": "Strategy selection. A CUDAExtension build is a PyTorch extension, whose port leans on PyTorch's own hipify at build time; reaching for a standalone CMake HIP build or committing hipified copies is the wrong strategy implemented correctly.",
       "prompt": "Our repo is a PyTorch C++/CUDA extension. setup.py is essentially this:\n\n```python\nfrom setuptools import setup\nfrom torch.utils.cpp_extension import BuildExtension, CUDAExtension\n\nsetup(\n    name=\"fused_ops\",\n    ext_modules=[CUDAExtension(\"fused_ops\", [\"csrc/ops.cpp\", \"csrc/fused_kernel.cu\"])],\n    cmdclass={\"build_ext\": BuildExtension},\n)\n```\n\nWe want it to also build and run on AMD Instinct GPUs without breaking the NVIDIA build. Write a short porting plan to plan.md. Don't install or build anything; this machine has no GPU and the sources aren't here.",
       "expected_behavior": [
         "Identify the project as a PyTorch extension and plan to rely on PyTorch's own build-time hipify (the same CUDAExtension, built against a ROCm build of PyTorch), changing only what that translation cannot handle",
