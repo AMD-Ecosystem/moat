@@ -4043,3 +4043,56 @@ What this establishes:
 - No source change. This job has no fork clone; the two reused builds were only read (the fix16 clone shows no modified tracked file). Nothing pushed; `head_sha` stays 4e418c9d4. No CUDA compile gate and no `jargon.py` run: no TU and no commit changed (the last round's check of the same branch had only the three known hits in 68718f038).
 - Deferred entry `oneflow-cg-first-graph-replay-fault` summary updated to these results.
 - Lesson promoted: `cuda-to-rocm/references/validation.md`, "Diagnosing a suspected AMD fault": `AMD_LOG_MASK` is decimal-only on ROCm 10.1, graph replays log no `ShaderName`, no fault address is printed, and varying the replay order is the first move for a corrupt graph replay.
+
+## Porter round 2026-11-02 (linux-gfx1100, two W7800; jeff's request: shrink the forward-order repro and find which component owns the first-graph replay fault, `oneflow-cg-first-graph-replay-fault`)
+
+jeff's direction: predating the long-k work does not make the fault someone else's; shrink `cg_ws3r1f.py`, then decide whether it needs oneflow's graph runtime or HIP graphs, two active GPUs, or a port commit, test the gfx90a race hypothesis (sync between instantiate and first launch), and fix it in the port with a regression test if it is the port's. Host: two Radeon Pro W7800 48GB (gfx1100), `HIP_VISIBLE_DEVICES=0,1`, ROCm 10.1.0 SDK wheels, torch 2.16.0a0+git6c3af02 linked read-only, `ulimit -c 0`, `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git`, `OMP_NUM_THREADS=4`, no JIT extension builds, one GPU process at a time on an otherwise idle CPU (load 1-2). Scripts in `agent_space/` of this job: `s/o.py` (cg_ws3r1f.py with knobs; defaults reproduce it exactly), `s/cgs.py`, `one.sh`, `step*.sh`, `tally.sh`, `fisher.py`, `results.txt`, `dump/` (saved arrays of faulting runs), `shim/` and `ev/` (LD_PRELOAD probes), `hr/` (standalone HIP probes), `debug_hooks.patch` (the env-gated debug hooks used below, reverted).
+
+**Outcome: the fault is not in oneflow's graph replay and not in HIP graphs. In every faulting run that saved its arrays, the nn.Graph output is correct and the float64 REFERENCE GEMM computed afterwards on cuda:0 is garbage, followed by the illegal memory access 700.** Owner still unknown; no port change, no commit, `moat-port` stays at 4e418c9d4, stage stays `ported`, the porting lock was not taken.
+
+### Build
+Fresh clone of the fork from the fix16 job's clone (origin set to the fork URL, `protect-fork`), job venv (`dev-requirements.txt` etc. into `$FLEET_VENV`, torch links in `$FLEET_VENV-base-links`), fix16's ccache copied, `CMAKE_PREFIX_PATH=$R ROCM_CLANG=$R/lib/llvm/bin/clang++ ROCM_CLANG_C=$R/lib/llvm/bin/clang JOBS=32 CMAKE_HIP_ARCHITECTURES=gfx1100 utils/timeit.sh oneflow compile -- projects/oneflow/src/build_rocm.sh all`: rc=0, 1337 s, `oneflow.__git_commit__` 4e418c9d4. From 13:45 the build carried env-gated debug hooks (`DBG_SYNC_INST`, `DBG_SYNC_LAUNCH`, `DBG_SYNC_AFTER` in cuda_stream.cpp, `DBG_CHUNK` in chunk_manager.cpp, `DBG_SYNC_MEMCPY` in memcpy.cpp), inert without their variables; the sources are reverted (`git status --porcelain` empty), the build directory still holds that library.
+
+### Measurements (faulted / runs; fault = OUT OF TOL on a k = 1023 replay, then 700; all at 4e418c9d4, forward replay order, both GPUs)
+| condition | faulted | note |
+|---|---|---|
+| `cg_ws3r1f.py` as is (`orig`, and `o.py` defaults) | **5/5** | |
+| `o.py EAGER=0` (no eager GEMMs between captures): the working baseline `n`, 70 s a fault | **15/18** | |
+| replay only the k = 1023 graphs (`CHECK=small`) | 3/3 | |
+| `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=0` (nn.Graph, no HIP graph capture at all) | **2/2** | p = 1 vs `n` |
+| `DEBUG_HIP_GRAPH_CLASSIC_PATH=1` / `HIP_FORCE_DEV_KERNARG=0` | 1/1 / 1/1 | |
+| device sync before and after `hipGraphInstantiate` (the gfx90a race test) | 2/2 | |
+| stream sync before each graph launch / after it | 2/2 / 1/2 | |
+| stream sync after every oneflow memcpy that touches host memory | 3/3 | |
+| `ONEFLOW_EP_CUDA_LONG_K_GEMM_MAX_TILE_SIZE=1048576` (no stream-ordered allocation) | 3/3 | |
+| reference GEMMs by oneflow eager float64 on cuda:0 instead of torch (`REF=flow`) | 1/4 | p = 0.046 |
+| inputs read back AFTER the graph call instead of before (`PRE=0`) | 0/3 | p = 0.015 |
+| no GPU reference GEMMs (k = 1023 references on the CPU, others skipped) | 0/3 | p = 0.015 |
+| eager `flow.matmul` instead of nn.Graph | 0/2 | p = 0.053 |
+| k = 1023 shapes only (6 graphs) | 0/3 (plus 0/8 in `cgs.py` variants) | |
+| smaller workloads: float32 only 0/5, float32 + float16 0/3, float32 + bfloat16 0/3, shapes 0-3 0/1, shapes 0,6,7,8 0/1 | 0/13 | p < 1e-5 |
+| `cgs.py` (references computed after the graph call): base, numpy small refs, no torch, no eager, eager warm-up of the k = 1023 GEMMs | 0/16 | |
+| any LD_PRELOAD probe in the process (`shim/` 2/15, `ev/` 0/1) | 2/16 | the probes perturb the timing |
+
+### What the arrays show (`dump/`, `SAVE=`)
+Every saved fault: float32 cuda:1 (9 runs): oneflow's output has the std (10.8) of a correct 17 x 1023 x 513 product of U(-1, 1) inputs, while the reference holds float64 garbage (values like 6.5e-310). Two runs also saved the read-back inputs: the graph output matches `ra @ rb` on the CPU to **8.7e-7**, and the reference is off by 1.0 (torch, `n_tile` run 3) and 0.85 (oneflow float64 GEMM, `n_reflow` run 3). float16 cuda:0 (3 runs): both output and reference read back as zeros, after the fault. So:
+1. The k = 1023 graphs replay correctly. The "garbage replay" of the earlier rounds was the reference.
+2. A float64 GEMM on cuda:0 issued right after the cuda:1 replay returns garbage, then the 700 appears (oneflow reports it at its next call; torch logs `uncheckedSetDevice() ignored`). Whether that GEMM's kernel faults or an earlier kernel faulted and the runtime dropped the GEMM is not established: the runtime prints no address (`Memory Fault Error` only), `dmesg` is not readable here.
+3. HIP graph capture, instantiate/launch ordering, graph kernargs, stream-ordered allocation, the long-k code (d9e41753e predates it and faults) and host-memory copy semantics are each ruled out above. Torch is not required (oneflow's own float64 GEMM fails too, at a lower rate).
+4. It needs a large enough two-GPU workload in one process: every reduction of the 54-graph sequence passes (0/13 pooled), so the specific trigger (16-bit work, total memory, number of graphs) is not separated.
+
+### Probes that found nothing wrong
+- `shim/` (LD_PRELOAD on hipMalloc/hipFree/hipMallocAsync/hipFreeAsync, module launches during capture, graph instantiate/launch): no free of any address a captured kernel uses before process exit; every graph replays on the stream and device it was captured on; input copies, graph launch and output copy are on one stream in that order. Stream-ordered tiles of the cuda:1 long-k captures report device 0 from `hipPointerGetAttributes` (graph memory node VA; a plain `hipMallocAsync` on a device-1 stream reports device 1, `hr/ma.cpp`); irrelevant here since the tile cap still faults.
+- `ev/` (event created on one device and recorded or waited on a stream of another; memcpy with current device != stream device): 0 of 3798 records, 576 waits, 972 copies.
+- `DBG_CHUNK`: nn.Graph memory chunks are per device (chunk ids 0-7, each graph reuses its device's chunks); no cross-device sharing.
+- `hr/pg.cpp`: hipMemcpyAsync from or into pageable memory (69564, 2099196, 16 MiB; overwrite-and-free the source right after the call; event-poll or stream sync after a D2H): 0 bad of 1800 iterations on device 1.
+
+### For whoever takes it next
+- Measure with `o.py EAGER=0` (15/18, 70 s a fault, 120 s a pass) and `SAVE=` on; judge a run by `dump/` (graph output vs `ra @ rb`), not by the OUT OF TOL line.
+- The question is now why a float64 GEMM on cuda:0 fails after this two-GPU oneflow sequence. Next discriminators: replace the reference with a float64 GEMM through plain rocBLAS from a small C extension built outside the checkout (or hipBLAS via ctypes) on a fresh handle; run the reference on cuda:1 instead of cuda:0; put `hipDeviceSynchronize` on both devices plus `hipGetLastError` checks between the graph output and the reference, to see which device reports the fault first; `HSA_ENABLE_SDMA=0` and `GPU_MAX_HW_QUEUES` as single-variable conditions; a rocgdb session with `catch signal` / `info agents` at the memory fault if the container allows ptrace.
+- Until the owner is known nothing is drafted for ROCm or upstream.
+
+### Other checks
+- No source change: `git -C projects/oneflow/src status --porcelain` empty. No commit, no push, `head_sha` 4e418c9d4. No CUDA compile gate (no TU changed). `jargon.py` not rerun (branch unchanged since the last clean run: only the three known hits in 68718f038).
+- Deferred entry `oneflow-cg-first-graph-replay-fault` summary rewritten to these results.
+- Lesson corrected in `cuda-to-rocm/references/validation.md` ("Diagnosing a suspected AMD fault"): the previous bullet said the replay-order result proved the graph was corrupt before replay; it was the reference. New bullet: save output, read-back inputs and reference and recompute the reference on the CPU before blaming the code under test, and switch the suspected feature off first.
