@@ -455,17 +455,35 @@ a finite result, and finite chunk sums far larger than the result they cancel to
 relative to their own size (x = 4, dy = +-1.9 in 8192-token blocks: chunk sums near 62000, results
 near 250, 820 ulp; one unchunked WMMA GEMM gives 89). In the kernel that sums the slices, compute
 a block of outputs again from A and B as float dot products over all of k when any element's slices
-are not finite or their root-sum-square exceeds sqrt(3) times the block's largest result (where the
-slices' expected rounding error passes that result's own): random data never meets it, so it costs
-nothing there, needs no host sync, works under graph capture and keeps true inf/NaN inputs
-non-finite; an output where every block meets it is 50-100x slower. Chunking bounds the chain
+are not finite or their root-sum-square exceeds sqrt(3) times the block's largest result. That
+needs no host sync, works under graph capture and keeps true inf/NaN inputs non-finite, but it is
+a criterion on the slices' EXPECTED rounding error, not a bound: chunk sums that all round the same
+way pass it and lose 4.2 / 4.5 / 9.4 ulp at k = 2^16 / 2^19 / 2^20 (constructed). The sound test
+(the sum of the slices' half ulps against 3 * 2^-bits of the block's largest result) never fires
+on full 32 x 8 blocks of random data, but on 1 x 8 blocks it fires 1.4% (k = 2^16) to 19% (2^20)
+of the time against 0.5-1.1%, and a recompute re-reads A: it cost +15-19% on (1024, 2^20) @
+(2^20, 1) where root-sum-square cost 0-7%, so oneflow keeps root-sum-square. Random data DOES meet
+either test in blocks with few valid elements (root-sum-square: about 40% of 1-element blocks, 21%
+of 2, 6% of 4, 0.5-1.1% of 1 x 8 edge blocks such as a matrix-vector product's, 0 from 32 up), so
+the recompute must be cheap: one thread block walking k in 32-step tiles takes k / 32 serial
+steps (28 ms for one element at k = 2^20). Spread k over the block's threads with 16-byte loads
+and, when the output has few blocks, over several thread blocks per output block whose partial
+sums the last one to finish adds in a fixed order (deterministic); that brought one recomputed
+element at k = 2^20 to about 20 us and matrix-vector products to within 0-15% of the chunked
+GEMM with no recompute.
+Watch the register count while doing it: a fully unrolled 32-load loop (which hipcc otherwise
+serializes, waiting on every load) took the kernel from 66 to 248 VGPRs and the common case 11%
+slower, and even 98 VGPRs (two 16-byte runs in flight) cost large GEMMs 2-3% and full-block
+recomputes 9-34%; one run in flight per operand kept 79 VGPRs. An output where every full block
+recomputes is still 30-120x slower. Chunking bounds the chain
 length, not cancellation: WMMA's error grows with the size of the partial sums, so ordinary
 unchunked gfx11 GEMMs are also tens of ulp off when large partial sums cancel (29-52 ulp at k =
 8192-32768 with x = 4, dy = +-3 in 4096-token blocks), and cancellation inside one chunk is
-invisible to the slice check (78 ulp at k = 65536 there, where one hipBLASLt GEMM gives 20).
-Realistic loss-scaled gradients (random data, results near 30000) stay at 0.55-0.92 ulp. Do not
-give the
-chunks a float D: on gfx1100 hipBLASLt picks a much smaller tile for a float D (an fp16 4096 x
+invisible to the slice check (x = 4, dy = +-3 in 4096-token blocks of a 64 x k x 32 x^T @ dy:
+78 / 182 / 269 ulp at k = 2^16 / 2^18 / 2^20, where torch's single hipBLASLt GEMM, which splits k
+for such small outputs, gives 20 / 45 / 68; only a float accumulation without WMMA gets about 1,
+at 7-200x the cost). Realistic loss-scaled gradients (random data, results near 30000) stay at
+0.55-0.92 ulp. Do not give the chunks a float D: on gfx1100 hipBLASLt picks a much smaller tile for a float D (an fp16 4096 x
 40000 x 4096 GEMM takes 139 ms with a float D against 16 ms with an fp16 one; 23-28x through
 torch's `out_dtype=float32`), which made x^T @ dy weight gradients with 40000-65536 tokens
 10-28x slower than one unchunked GEMM. One rounding per slice costs little: chunks of about 2^13
