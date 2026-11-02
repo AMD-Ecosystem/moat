@@ -455,22 +455,31 @@ a finite result, and finite chunk sums far larger than the result they cancel to
 relative to their own size (x = 4, dy = +-1.9 in 8192-token blocks: chunk sums near 62000, results
 near 250, 820 ulp; one unchunked WMMA GEMM gives 89). In the kernel that sums the slices, compute
 a block of outputs again from A and B as float dot products over all of k when any element's slices
-are not finite or their root-sum-square exceeds sqrt(3) times the block's largest result. That
-needs no host sync, works under graph capture and keeps true inf/NaN inputs non-finite, but it is
-a criterion on the slices' EXPECTED rounding error, not a bound: chunk sums that all round the same
-way pass it and lose 4.2 / 4.5 / 9.4 ulp at k = 2^16 / 2^19 / 2^20 (constructed). The sound test
-(the sum of the slices' half ulps against 3 * 2^-bits of the block's largest result) never fires
-on full 32 x 8 blocks of random data, but on 1 x 8 blocks it fires 1.4% (k = 2^16) to 19% (2^20)
-of the time against 0.5-1.1%, and a recompute re-reads A: it cost +15-19% on (1024, 2^20) @
-(2^20, 1) where root-sum-square cost 0-7%, so oneflow keeps root-sum-square. Random data DOES meet
-either test in blocks with few valid elements (root-sum-square: about 40% of 1-element blocks, 21%
-of 2, 6% of 4, 0.5-1.1% of 1 x 8 edge blocks such as a matrix-vector product's, 0 from 32 up), so
-the recompute must be cheap: one thread block walking k in 32-step tiles takes k / 32 serial
-steps (28 ms for one element at k = 2^20). Spread k over the block's threads with 16-byte loads
-and, when the output has few blocks, over several thread blocks per output block whose partial
-sums the last one to finish adds in a fixed order (deterministic); that brought one recomputed
-element at k = 2^20 to about 20 us and matrix-vector products to within 0-15% of the chunked
-GEMM with no recompute.
+are not finite or a BOUND on their rounding error exceeds 3 units of roundoff of the output type (3
+x 2^-11 float16, 3 x 2^-8 bfloat16) times the block's largest result. The bound is the sum of half
+an ulp of each slice in its type (the float's exponent bits times the unit roundoff; 0 below the
+smallest normal, so all-zero inputs never recompute, at the price of half a subnormal step per
+slice left out) plus half an ulp of each float partial sum. That needs no host sync, works under
+graph capture, keeps true inf/NaN inputs non-finite, and holds in the worst case. Do not use a
+root-sum-square test (rss of the slices against sqrt(3) times the block maximum): it bounds only
+the EXPECTED error, and chunk sums that all round the same way pass it and lose 4.2 / 4.5 / 9.4
+ulp at k = 2^16 / 2^19 / 2^20 (a dot product of ones whose chunk sums sit just short of a rounding
+midpoint: 8.8 ulp in float16 and bfloat16; oneflow's regression test). The bound never fires on
+full 32 x 8 blocks of random data up to k = 2^20, but it does in blocks with few valid elements
+(uniform random data, k = 2^16 / 2^20: 39 / 72% of 1-element blocks, 21 / 57% of 2, 7 / 38% of 4,
+1.4 / 19% of the 1 x 8 edge blocks of a matrix-vector product, 0 / 0.8% of 32), so the recompute
+must be cheap: one thread block walking k in 32-step tiles takes k / 32 serial steps (28 ms for one
+element at k = 2^20). Spread k over the block's threads with 16-byte loads and, when the output has
+few blocks, over several thread blocks per output block whose partial sums the last one to finish
+adds in a fixed order (deterministic); that brought one recomputed element at k = 2^20 to about 20
+us. A recomputed 1 x 8 block still reads its 8 rows of A again, so the bound's cost is the fired
+fraction of a second read of A: on gfx1100 (oneflow) (1024, 2^20) @ (2^20, 1) took
+5.1 ms against 4.2 without any recompute (+20%; root-sum-square +1-16%), (4096, 65536) @ (65536,
+33) and (64, 2^20) @ (2^20, 1) +3-4% over root-sum-square, and every other shape measured,
+including large weight gradients, the same as root-sum-square. Float slices for such thin
+outputs would stop those firings, but hipBLASLt has no float-D algorithm for 1 x 1 outputs and
+rocBLAS splits k into many launches for them, and per-shape costs went both ways (oneflow, not
+adopted).
 Watch the register count while doing it: a fully unrolled 32-load loop (which hipcc otherwise
 serializes, waiting on every load) took the kernel from 66 to 248 VGPRs and the common case 11%
 slower, and even 98 VGPRs (two 16-byte runs in flight) cost large GEMMs 2-3% and full-block
