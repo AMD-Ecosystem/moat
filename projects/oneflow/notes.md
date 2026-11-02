@@ -3973,3 +3973,73 @@ Only in two-GPU runs and only on cuda:1; always the first-captured shape (k = 10
 - No source change: `git -C projects/oneflow/src status --porcelain` shows no modified tracked file (the workaround is reverted; its patch is in `agent_space/x/`). Nothing pushed; `head_sha` stays 4e418c9d4. CUDA 12.8 gate run on the workaround version of `hip_long_k_gemm.cu` (redistrib_12.8.1.json fresh, sha256 249e28a8...cf17; nvcc 12.8.93 / cudart / cccl 12.8.90 sha256-verified 3/3; `nvcc -ccbin=/usr/bin/g++-13 -std=c++17 -DWITH_CUDA --generate-code=arch=compute_80,code=[compute_80,sm_80] -O3 -c -x cu`: rc=0); moot since the change was not kept.
 - `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038 (branch unchanged).
 - Registered as `oneflow-cg-first-graph-replay-fault` (`utils/deferred.py`, kind other, project oneflow).
+
+## Porter round 2026-11-02 (linux-gfx1100, two W7800; jeff's request: continue the root-cause of the first-graph replay fault, `oneflow-cg-first-graph-replay-fault`)
+
+jeff's direction: correctness is paramount and a fault in about half of idle-CPU `cg_ws3` runs at 4e418c9d4 blocks the port. Build first, then run every experiment on an idle CPU with `OMP_NUM_THREADS=4`. Compare d9e41753e and 4e418c9d4 interleaved (12+ each), then single-variable conditions (8+ each, Fisher p against the pooled baseline). Identify the faulting kernel (check the `AMD_LOG_*` values first) and loop `hr/gr`. If the fault predates the long-k work (d9e41753e faults at a similar rate), say so plainly and stop. Host: two Radeon Pro W7800 48GB (gfx1100), `HIP_VISIBLE_DEVICES=0,1`, ROCm 10.1.0 SDK wheels, torch 2.16.0a0+git6c3af02 read-only, `ulimit -c 0`, `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git`, `OMP_NUM_THREADS=4`, no JIT extension builds. Scripts in `agent_space/x/` (`one.sh`, `step2.sh`, `step3.sh`, `step45.sh`, `fisher.py`, `results.txt`, `logs/`), `agent_space/r/cg_ws3r1*.py`, `agent_space/lg/`, `agent_space/rb/`.
+
+**Outcome: the fault predates the long-k work. d9e41753e faults at the same rate as 4e418c9d4 once the k = 1023 graphs replay first: 7 of 8 vs 6 of 8 (Fisher two-sided p = 1.0).** At d9e41753e the default replay order hid it in this sample (0 of 12), which is why step 2 looked like a regression. No port change. The porting lock was not taken, `moat-port` stays at 4e418c9d4, and the stage stays `ported`. Not root-caused. Every single-variable condition still faults.
+
+### Builds (read-only reuse; nothing built for oneflow this round)
+- 4e418c9d4: the fix16 job's build. Its tree is clean at 4e418c9d4. `hip_long_k_gemm.cu.o` (04:48:45) and `liboneflow.so` were built after the last source edit (04:48:37) and before the commit (05:09). `oneflow.__git_commit__` reads 541d75105 because CMake writes the version string at configure time. The fix17 build was not used: its `liboneflow.so` (06:45) still holds the reverted workaround (source reverted at 07:13).
+- d9e41753e: the val-oneflow-d9e4 job's build (clean tree, `__git_commit__` d9e41753e).
+- Built here: `lg/lg.hip`, `lg/lg2.hip` (log-mask probes), `rb/mem.cpp` (rocBLAS handle memory probe), and `hr/gr` rebuilt with the same SDK.
+
+### `AMD_LOG_MASK` on this image (`lg/lg`, a kernel launch, a graph capture and 3 replays)
+- **The mask is parsed as decimal. Any `0x...` value logs nothing beyond the 1-line banner**, which is why last round's `AMD_LOG_MASK=0x60000` showed nothing. Bits by content, at `AMD_LOG_LEVEL=4`: 1 = API calls (`hipLaunchKernel`, `hipGraphLaunch`), 131072 = memory, **2097152 = `ShaderName`** (kernel name per dispatch), 2 / 16 / 32 / 128 / 256 / 2048 / 4096 / 16384 / 524288 = other classes.
+- **A graph's kernel nodes log `ShaderName` once, at `hipGraphInstantiate`, and never on replay** (3 replays, no lines). So kernel-launch logging cannot name a kernel that faults inside a graph replay.
+- A kernel that stores through address 0x10 gives `hipErrorIllegalAddress` and, at level 1, only `Memory Fault Error` (`rocdevice.cpp:3929`) and `Device not Stable`. No faulting address is printed at any level. `dmesg` is not permitted in this container. **The faulting address cannot be read from this runtime here, so step 4's address-to-allocation mapping was not possible.**
+
+### Step 2: full `cg_ws3.py`, d9e41753e vs 4e418c9d4, interleaved run by run (ABBA order), 07:54-09:19
+| build | faulted | runs |
+|---|---|---|
+| d9e41753e | **0** | 12 |
+| 4e418c9d4 | **4** (runs 6, 7, 8, 9; run 9 also `17x1023x513 bfloat16 cuda:0 ... replay0 inf`) | 12 |
+
+Fisher one-sided p = 0.047. Load average 0.7-2.7 throughout (only this job's process). Passing runs took 223-230 s and faulting runs about 129 s.
+
+### Step 3: single-variable conditions at 4e418c9d4, cycled run by run (baseline, then each condition), 8 cycles, 09:19-11:03
+To save time this used `r/cg_ws3r1.py`, which is `cg_ws3.py` stopped after replay round 0. That is where every recorded fault happened, and the script is identical up to that point (130 s per run). Pooled baseline = step 2 at 4e418c9d4 (4 of 12) + step-3 baseline (1 of 8) = **5 of 20**.
+
+| condition | faulted / runs | Fisher one-sided p (fewer than 5/20) |
+|---|---|---|
+| baseline | 1 / 8 | |
+| `ONEFLOW_EP_CUDA_STREAM_FLAGS=0` (plain `hipStreamCreateWithFlags` streams: no CU-mask queue) | **3 / 8** | 0.87 |
+| `ROCBLAS_USE_HIPBLASLT=0` | **1 / 8** | 0.43 |
+| `ROCBLAS_DEVICE_MEMORY_SIZE=268435456` | **2 / 8** | 0.69 |
+| `ONEFLOW_EP_CUDA_LONG_K_GEMM_MAX_TILE_SIZE=1048576` (no allocation in any capture) | **2 / 8** | 0.69 |
+| `HIP_VISIBLE_DEVICES=1` alone (27 graphs, 68 s) | 0 / 8 | 0.16 |
+
+**Every two-GPU condition faults, with the same signature, so none of them is the cause on its own.** That retires last round's clean 0 of 6 for the tile cap and for `ROCBLAS_DEVICE_MEMORY_SIZE` as chance. Pooled over every two-GPU 4e418c9d4 run in this session, 13 of 52 faulted. One GPU stays clean (0 of 8 here, 0 of 12 over both rounds), but the sample is not significant.
+
+rocBLAS handle memory (`rb/mem`, no oneflow, every GEMM shape and layout of the cg_ws3 sequence including the eager 4096 x 16384 x 4096 / 16384 x 4096 x 16384 and the strided-batched chunk products): `rocblas_get_device_memory_size` stays at the default **33554432 bytes, managed, after every call**. This holds with `ROCBLAS_USE_HIPBLASLT` unset, 0 or 1 (librocblas links libhipblaslt and routes through `hipblaslt_ext`). So rocBLAS never reallocates the handle memory a captured graph could point to.
+
+### Step 4: which call faults
+- `AMD_SERIALIZE_KERNEL=3 AMD_LOG_LEVEL=1`, `r/cg_ws3r1v.py` (prints every replay): **1 of 4** faulted. Even serialized, the k = 1023 replay returned its garbage output to the host first (`17x1023x513 bfloat16 cuda:1 ... replay0 3.31e+00`, right after the 1024^3 graphs replayed correctly). Then ROCclr logged `Memory Fault Error`, and oneflow's next `EpEvent::Query` (`CudaDevice::SetAsActiveDevice`, `cudaSetDevice`) reported the 700. So the fault is in that graph's replay or just after it. No address is available (above).
+- **Replay order (`r/cg_ws3r1f.py`: round 0 in capture order, so the six k = 1023 graphs replay first, before any other graph replays):**
+
+| build | faulted / runs | first bad replay |
+|---|---|---|
+| 4e418c9d4 | **6 / 8** | 17x1023x513 float16 cuda:1 (5 runs; twice also bfloat16 cuda:0 `nan`), float32 cuda:1 (1 run) |
+| d9e41753e | **7 / 8** | 17x1023x513 float16 cuda:1 (7 runs; twice also bfloat16 cuda:0 `nan`) |
+
+d9e41753e vs 4e418c9d4 in this order: Fisher two-sided p = 1.0. In this order the fault is in the first replay of the run (faulting runs take 79 s). Forward 6 of 8 vs reverse 5 of 20 at 4e418c9d4: two-sided p = 0.03. d9e41753e forward 7 of 8 vs reverse 0 of 12: p = 0.0001. Run 8 at d9e41753e passed apart from its known `1x1048576x64 float16 cuda:0 replay0 4.12e-03` accuracy miss, fixed since ee180b9d5.
+
+What this establishes:
+1. **The k = 1023 graphs on cuda:1 (every dtype, float32 included) are already bad before any graph is replayed**, so the corruption happens during the capture phase (the 54 captures with their eager GEMMs and torch reference products), not in a later graph's replay. cuda:0's k = 1023 graphs are sometimes bad too.
+2. "Always bfloat16 cuda:1" in earlier rounds was an ordering artifact: in reverse order, bfloat16 cuda:1 is the first k = 1023 cuda:1 graph replayed, and the process aborts there.
+3. Replaying the 48 later graphs first lowers the rate a lot (0 of 12 at d9e41753e, 5 of 20 at 4e418c9d4). There is a timing or state element, not a fixed corruption. In reverse order the long-k graphs that 4e418c9d4 replays before the k = 1023 ones change how often it shows, and that is all step 2 measured.
+4. Neither the long-k chunking nor any code changed after d9e41753e is needed.
+
+### Step 5: `hr/gr` standalone (no oneflow; rocBLAS bf16 17 x 1023 x 513 graphs captured first per GPU, then four tile-allocating k-chunk graphs, 768 MiB churn, three reversed replay rounds checked bitwise; `./gr 3 4 1`, both GPUs)
+**0 bad in 20 runs** (18 replays each, 2-3 s per run). It does not reproduce. The probe lacks what oneflow's capture phase has: 54 captures, oneflow's graph runtime and allocator, and torch running float64 reference GEMMs on the same GPUs between captures.
+
+### Not established / next for whoever takes it
+- No owner. Nothing here points to the port's long-k code. Whether the fault is in the rest of the port, oneflow's nn.Graph runtime, HIP graphs or a library, these runs do not say, and no standalone reproducer exists. So no upstream or ROCm report is drafted. A ruling on any report is jeff's.
+- Cheapest discriminators now that the forward order reproduces at about 80% in 80 s: (a) drop torch from the capture phase (precompute the float64 references on the CPU, or after all captures), since torch's HIP context and float64 rocBLAS products on both GPUs are the main non-oneflow activity between captures; (b) drop the eager GEMMs between captures; (c) halve the shape list to find what in the capture phase is needed; (d) an older build in forward order (80cbda89b, the val-oneflow-80cb job's build, before 42d68145d and the long-k commits), only if (a)-(c) point at the port.
+- The forward-order script, not `cg_ws3.py`'s reverse order, is the one to measure with. At d9e41753e the reverse order hides the fault.
+
+### Other checks
+- No source change. This job has no fork clone; the two reused builds were only read (the fix16 clone shows no modified tracked file). Nothing pushed; `head_sha` stays 4e418c9d4. No CUDA compile gate and no `jargon.py` run: no TU and no commit changed (the last round's check of the same branch had only the three known hits in 68718f038).
+- Deferred entry `oneflow-cg-first-graph-replay-fault` summary updated to these results.
+- Lesson promoted: `cuda-to-rocm/references/validation.md`, "Diagnosing a suspected AMD fault": `AMD_LOG_MASK` is decimal-only on ROCm 10.1, graph replays log no `ShaderName`, no fault address is printed, and varying the replay order is the first move for a corrupt graph replay.
