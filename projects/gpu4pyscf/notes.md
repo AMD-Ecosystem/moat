@@ -3521,3 +3521,98 @@ No findings.
 ### Notes for jeff (not findings)
 - e1b8041's body still describes the unconditional split ("adds about 4 us per call to small complex einsums"); 5a87452 supersedes it. If the upstream PR goes up as one squashed commit, the body should be 5a87452's cause paragraph plus e1b8041's mechanism and cost figures, not both bodies concatenated.
 - On upstream CUDA CI (`CUPY_ACCELERATORS=cub,cutensor`), `test_hip_einsum_complex_large` does not clear the routine accelerators, so cupy.einsum sends each part to cuTENSOR and the "no matmul over 2^21" assertion passes without checking anything. The test still passes, and the forced split's values are still compared with numpy. The matmul check matters only on ROCm, where it does check. `test_hip_einsum_complex_split` clears the accelerators.
+
+## Validation 2026-11-03 (validator, linux-gfx1100 W7800, fork moat-port @ 5a87452) -- COMPLETED
+
+Requested by jeff: revalidate 5a87452 (review-passed; the gfx12-gated complex GEMM split, e1b8041 + 5a87452) on wave32. Host: AMD Radeon Pro W7800 48GB, gfx1100, `HIP_VISIBLE_DEVICES=2` from the dispatcher. TheRock ROCm SDK 10.1.0 (`R=$(/opt/python-3.11-venv/bin/rocm-sdk path --root)`), cmake 3.31.6 from the job venv. Fresh fork clone at 5a87452f319573c586fdd9776d280a0a2e980dd9 (= origin/moat-port), `protect-fork` run. All GPU work under `ulimit -c 0`; no JIT extension builds; no rocBLAS shim. CUDA gate not rerun: the delta fb95c20..5a87452 touches only gpu4pyscf/lib/cutensor.py and its test (no CUDA translation unit), as recorded by the porter and reviewer. `classify fb95c20 5a87452`: mixed (Python), so no binary-equivalence carry-forward; full run.
+
+### Environment (job venv)
+```
+$FLEET_VENV/bin/python -m pip install 'numpy>=2.0,<2.3' 'scipy>=1.13' cupy-rocm-7-0==14.2.0 pyscf==2.14.0 pytest pyscf-dispersion geometric pytest-timeout
+# numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.5.0, geometric 1.1.1, pytest 7.3.2, pytest-xdist 3.3.1, pytest-timeout 2.4.0
+export PATH=$FLEET_VENV/bin:$R/bin:$PATH LD_LIBRARY_PATH=$R/lib PYTHONPATH=<fork>; ulimit -c 0
+```
+
+### Build: README ROCm block, fresh clone (no build dir), libxc on (default)
+```
+cmake -S gpu4pyscf/lib -B build/temp.gpu4pyscf -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R
+cmake --build build/temp.gpu4pyscf -j 16 -v
+```
+Exit 0 in 254 s (utils/timeit.sh compile). 12 libs plus libxc.so.15. 213 `--offload-arch=gfx1100` lines and no other arch; `-disable-machine-licm` on 113 lines. (Two 0.004 s `compile` records with exit 1 in stats.jsonl just before it are my wrapper invocations that failed on a log path before cmake ran; not build failures.)
+
+### Gate on this card
+`cupy.cuda.runtime.getDeviceProperties(0)['gcnArchName']` = b'gfx1100'; `cutensor._hip_split_complex()` False, cache `{0: False}`. So gfx1100 runs the fb95c20 dispatch, as intended.
+
+### Targets (utils/timeit.sh test, 436 s)
+- `python -m pytest gpu4pyscf/lib/tests/test_cutensor.py -v`: **10 passed** (39.5 s), including test_hip_einsum_complex_large, test_hip_einsum_complex_split and test_hip_split_complex_gate.
+- The 8 k-point AFT tests, with the commit's Test Plan selection (which also matches the two `..._long_range1` tests): `python -m pytest gpu4pyscf/pbc/df/tests/test_pbc_aft.py gpu4pyscf/pbc/df/tests/test_pbc_df_derivatives.py gpu4pyscf/pbc/scf/tests/test_pbc_scf_jk.py -k "test_ej_ip1_kpts or test_ek_ip1_kpts or test_vk_kpts_vs_fft or ejk_derivatives_kpts_with_long_range or test_vk_hermi1_kpts_vs_aft or test_ejk_ip1_per_atom_kpts" -v`: **9 passed** (350 s, serial); `python -m pytest gpu4pyscf/pbc/grad/tests/test_pbc_grad_krhf.py -k test_krhf_grad_with_pseudo -v`: **1 passed**.
+- `python -m pytest gpu4pyscf/gto/tests/test_ecp.py -v -rs`: 7 passed, 0 skipped.
+
+### Full tree at 5a87452 (agent_space/runtree.sh: each of the 39 `gpu4pyscf/**/tests` directories in turn, `python -m pytest <dir> -n 4 --dist loadfile -m 'not slow and not benchmark and not special' -q -rfEs --tb=line -p no:cacheprovider --timeout 1800 --junitxml=...`, a CuPy liveness check before each directory, never failed; counts from the junit files; wall 3351 s)
+
+The gfx1100 @ fb95c20 column is the 2026-11-01 validation's table, restored here from commit 631e5eca: in the current notes.md that section keeps only the table's header row (the rows were lost in a later merge).
+
+| directory | gfx1100 @ fb95c20 p/f/s/e | gfx1100 @ 5a87452 p/f/s/e |
+|---|---|---|
+| cc/tests | 4/0/0/0 | 4/0/0/0 |
+| df/hessian/tests | 24/0/0/0 | 24/0/0/0 |
+| df/tests | 200/5/3/0 | 201/4/3/0 |
+| dft/tests | 112/1/9/0 | 112/1/9/0 |
+| dispersion/tests | 16/0/0/0 | 16/0/0/0 |
+| fci/tests | 3/0/0/0 | 3/0/0/0 |
+| geomopt/tests | 0/0/5/0 | 0/0/5/0 |
+| grad/tests | 115/2/0/0 | 115/2/0/0 |
+| gto/tests | 62/0/0/0 | 62/0/0/0 |
+| hessian/tests | 91/0/1/0 | 91/0/1/0 |
+| lib/tests | 41/0/1/0 | 44/0/1/0 |
+| mcscf/tests | 8/0/0/0 | 8/0/0/0 |
+| md/tests | 5/0/0/0 | 5/0/0/0 |
+| mp/tests | 20/1/0/0 | 20/1/0/0 |
+| nac/tests | 71/1/1/0 | 71/1/1/0 |
+| pbc/df/tests | 104/1/7/0 | 104/1/7/0 |
+| pbc/dft/tests | 156/0/18/0 | 156/0/18/0 |
+| pbc/grad/tests | 185/0/2/0 | 185/0/2/0 |
+| pbc/gto/pseudo/tests | 7/0/0/0 | 7/0/0/0 |
+| pbc/gto/tests | 13/0/0/0 | 13/0/0/0 |
+| pbc/hessian/tests | 0/0/6/0 | 0/0/6/0 |
+| pbc/lib/tests | 2/0/0/0 | 2/0/0/0 |
+| pbc/properties/berry/tests | 10/0/2/0 | 10/0/2/0 |
+| pbc/scf/tests | 88/2/1/0 | 88/2/1/0 |
+| pbc/tools/tests | 16/0/0/0 | 16/0/0/0 |
+| pbc/x2c/tests | 1/0/1/0 | 1/0/1/0 |
+| pop/tests | 2/0/0/0 | 2/0/0/0 |
+| properties/tests | 26/0/5/0 | 26/0/5/0 |
+| qmmm/pbc/tests | 3/0/0/0 | 3/0/0/0 |
+| qmmm/tests | 21/0/0/0 | 21/0/0/0 |
+| scf/tests | 159/2/3/0 | 159/2/3/0 |
+| sem/dmp/tests | 1/0/0/0 | 1/0/0/0 |
+| sem/grad/tests | 3/0/0/0 | 3/0/0/0 |
+| sem/gto/tests | 15/0/0/0 | 15/0/0/0 |
+| sem/integral/tests | 27/0/0/0 | 27/0/0/0 |
+| solvent/tests | 126/0/2/0 | 126/0/2/0 |
+| tdscf/tests | 93/2/0/0 | 93/2/0/0 |
+| tests | 0/0/0/0 | 0/0/0/0 |
+| x2c/tests | 7/1/1/0 | 7/1/1/0 |
+| **total** | **1837/18/68/0** | **1841/17/68/0** |
+
+Two directories differ, both explained:
+- lib/tests +3 passes: the three new test_cutensor.py tests (e1b8041: complex_large, complex_split; 5a87452: split_complex_gate).
+- df/tests one failure fewer: df test_j_energy_per_atom (both test_df_rhf_grad and test_df_tdrhf_grad define one; both passed this run) is a rocBLAS trsm accuracy-margin reference failure (1.34e-12 against 1e-12 at fb95c20); this run it landed under the tolerance. The other df margin failure, test_grad_hybrid, still fails at 1.028e-9 against 1e-9.
+
+**The 17 failures, each with its recorded signature (value from this run):**
+- RNG fingerprints (7): df test_jk_energy_per_atom (31.809 against 2e-9), df test_get_nacv_ee (1.07238 vs -0.88613), grad/test_tdrhf_grad test_grad_elec (7.823375488826498), grad/test_tduhf_grad test_grad_elec (-2.6958 vs -14.0066), nac/test_tdrhf_nac_ee test_get_nacv_ee (1.07204 vs -0.88616), pbc/scf/test_pbc_soscf test_rks_gen_g_hop and test_uks_gen_g_hop (O(1) complex fingerprint mismatches).
+- d-aug-cc-pvdz missing from PySCF 2.14 (4): BasisNotFoundError in df test_general_contraction, scf test_rhf_df_against_qchem and test_rks_df_against_qchem, tdscf test_rtda_ris_diffuse.
+- rocBLAS trsm accuracy (2 of 3): mp test_dfmp2_kernel_one_gpu (-0.21320335 vs -0.21320346, 1.05e-7 against 7 places), df test_grad_hybrid 1.028e-9 against 1e-9.
+- Finite-difference strain (1): pbc/df test_ft_ao_strain_deriv 3.046e-8 against 3e-8.
+- Krylov cap (1): tdscf test_krylov_eigenvalue, eigenvector error 1.336e-5.
+- gfx1100-host deviations (2), root-caused at e1ad6bc and fb95c20: dft test_sparse_index (103.60117204958 == 103.60117204957997, AVX2 host summation order on an exact float `==`), x2c test_sfx2c1e_cart (6.122e-11 against 5e-11, hipSOLVER generalized eigh adds 1.5e-11; same value as fb95c20).
+
+No failure outside these classes; no new GPU finding. The k-point AFT directories (pbc/df 104/1/7, pbc/scf 88/2/1, pbc/grad 185/0/2) equal fb95c20 on this card and the gfx1201 @ 5a87452 counts.
+
+### Noise-floor tests (agent_space/nf.sh, `-n 5`, two rounds)
+`python -m pytest gpu4pyscf/properties/tests/test_raman_intensity.py gpu4pyscf/tdscf/tests/test_tdrks_vv10.py::KnownValues::test_wb97xv_tda gpu4pyscf/tdscf/tests/test_tdrks_vv10.py::KnownValues::test_wb97xv_tda_triplet gpu4pyscf/scf/tests/test_gdm.py::KnownValues::test_gdm_rhf gpu4pyscf/tdscf/tests/test_diffuse_orbital_tdscf.py::KnownValues::test_rtddft_ris_diffuse -n 5 -m 'not slow and not benchmark and not special' -q -rfEs --tb=line -p no:cacheprovider --timeout 1800`: round 1 **9 passed, 1 skipped** (61 s); round 2 **9 passed, 1 skipped** (55 s). They also all passed inside the tree run (properties 26/0/5, tdscf and scf failures are only the classes above).
+
+### Checks
+- Fork: `git status --porcelain` shows only untracked `from_h5.xyz` (a test output file); no tracked modifications. HEAD 5a87452 = origin/moat-port.
+- `python3 utils/jargon.py --port gpu4pyscf`: clean (after creating the local `moat-port` branch the checker resolves).
+- Documentation: README carries the ROCm build block next to the CUDA one (unchanged in this delta).
