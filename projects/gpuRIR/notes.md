@@ -734,3 +734,34 @@ Port Review: gpuRIR (`moat-port` cf0acba, delta from 214a51c: README.md, one sen
 - Completeness for the Windows pip route: the sentence follows the generic `CMAKE_ARGS=... pip install gpuRIR/` example and supplies the generator, both compilers, the ROCm prefix and the HIP options, which is everything setup.py's Ninja branch (214a51c) and the CMake HIP path read. The windows-gfx1151 porter round installed with exactly these options and imported the module. Ninja must be on PATH (build isolation installs only `cmake` from `pyproject.toml`); "select the Ninja generator" carries that, and it was in the sentence already approved at 214a51c, so not a finding.
 - Commit cf0acba: `[ROCm]` title, 65 chars; prose AI disclosure ("Authored with Claude."); no Co-Authored-By or noreply; ASCII; Test Plan with literal commands in a fenced block, using the new option set. One fast-forward commit on top of 214a51c, no amend.
 - Fork clone: `git status --porcelain` empty.
+
+## Validation 2026-11-03 (linux-gfx1100, TheRock ROCm 10.1.0)
+
+Revalidation at head cf0acba (delta from this platform's validated 39a7a9d: setup.py generator detection from 214a51c plus the README sentence from cf0acba; `classify` = mixed on setup.py). Requested by jeff as a full run through the documented `pip install .` route, so the changed setup.py is what builds. GPU: Radeon gfx1100 (RDNA3, wave32), `HIP_VISIBLE_DEVICES=3`, every GPU run under `ulimit -c 0`. Fresh clone of the fork, `moat-port` = cf0acba47dd1, `git status --porcelain` empty before and after the build (pip builds into an untracked `build/`).
+
+### Build (pip route, job venv, python 3.11, pip 26.3, setuptools 79.0.1)
+```
+R=$(rocm-sdk path --root); export PATH=$R/lib/llvm/bin:$PATH
+CMAKE_ARGS="-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R" \
+  bash utils/timeit.sh gpuRIR compile -- $FLEET_VENV/bin/python -m pip install -v --no-deps --no-build-isolation projects/gpuRIR/src
+```
+`Successfully installed gpuRIR-1.2.0`, exit 0. CMakeCache: generator Unix Makefiles, `CMAKE_BUILD_TYPE=Release` (the Linux branch of setup.py is unchanged by 214a51c; the new generator scan only reads `CMAKE_ARGS`/`CMAKE_GENERATOR`). Installed `gpuRIR_bind.cpython-311-x86_64-linux-gnu.so` = 321456 bytes (same size as the 39a7a9d cmake build on this platform), offload bundle `hip-amdgcn-amd-amdhsa--gfx1100` only, `T PyInit_gpuRIR_bind`, 21 `v_pk_{fma,mul,add}_f16` in the gfx1100 code object (19 + 2, as before). Only warning: pre-existing nodiscard on `cudaGetDeviceProperties` (gpuRIR_cuda.cu:1069).
+
+### Tests (installed module only; `LD_LIBRARY_PATH=$SP/_rocm_sdk_libraries/lib:$SP/_rocm_sdk_core/lib`, SP = base site-packages)
+`gpuRIR.__file__` and `gpuRIR_bind.__file__` resolve to the job venv's site-packages, not the checkout. Harness is the 2026-10-30 gfx1100 `validate.py`, unchanged.
+```
+ulimit -c 0
+bash utils/timeit.sh gpuRIR test -- $FLEET_VENV/bin/python agent_space/v/validate.py
+```
+**35/35 PASS**, and the output is byte-identical (`diff` empty) to the 2026-10-30 gfx1100 log at 39a7a9d:
+- float32 paths vs float64 reference, direct path, max err/peak at 8k/16k/44.1k/48k: exact 5.31e-8 / 5.21e-8 / 1.46e-7 / 4.33e-8; LUT 5.45e-8 / 5.98e-8 / 4.09e-8 / 4.72e-8 (threshold 2e-5; LUT-vs-exact reference gap 1.59e-3 / 1.38e-4 / 6.85e-4 / 3.91e-4, so the check discriminates).
+- Shoebox T60 0.6, nb_img [52,42,69]: first arrival 168/168 (exact, LUT), silent before 104, LUT vs exact near direct 0.165% of peak. Diffuse tail (hipRAND) finite, non-zero. simulateTrajectory (hipFFT) vs np.convolve rel err 2.58e-7. NaN receiver: all zeros, exact and LUT.
+- Mixed precision vs float, direct path 8k..96k: 5.24e-4 / 7.95e-4 / 3.64e-4 / 3.72e-4 / 6.76e-4 / 3.93e-4, peak samples equal, float16 emulation diff 0 at all six rates. Reverberant 16k 7.09e-4 (RMS 1.43e-3), 44.1k 1.03e-3 (RMS 2.19e-3); 2 src x 3 cardioid 9.67e-4; odd counts 481@16k 1.29e-3, 1329@44.1k 1.79e-3, 481@22.05k 1.80e-3; mp + Tdiff ISM 1.59e-3, tail RMS ratio 1.059; mode toggles bit-equal.
+
+Upstream examples, fresh copies from the cf0acba checkout in a scratch dir with the synthetic 2 s 16 kHz `source_signal.wav` and the no-op matplotlib/plotly stub on PYTHONPATH (neither installed), each `bash utils/timeit.sh gpuRIR test -- bash -c "cd <scratch> && python <ex>"`: example.py, simulate_trajectory.py, polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py, example.py with `activateLUT(False)`/`activateMixedPrecision(True)`: **6/6 exit 0**, every one loading `gpuRIR_bind` from the venv. `filtered_signal.wav` from simulate_trajectory.py is bit-identical (`cmp`) to the 39a7a9d run's.
+
+### CUDA gate
+Not run here: no CUDA toolkit on this host (no nvcc, no /opt/conda). Recorded PASS at 39a7a9d on the V100 (2026-10-30). The delta since then is setup.py and README only; no compiled source or CMake file changed, and setup.py's Linux and Windows Visual Studio argument lists are unchanged (reviewer dry run, 2026-11-02).
+
+### Pre-completion checks
+`python3 utils/jargon.py --port gpuRIR`: clean (master 06da27d .. moat-port cf0acba). README documents the ROCm build next to the CUDA prerequisites and install line (Linux and Windows forms). Fork tree clean at cf0acba.
