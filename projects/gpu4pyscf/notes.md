@@ -3525,6 +3525,11 @@ No findings.
 ## Validation 2026-11-03 (validator, linux-gfx1100 W7800, fork moat-port @ 5a87452) -- COMPLETED
 
 Requested by jeff: revalidate 5a87452 (review-passed; the gfx12-gated complex GEMM split, e1b8041 + 5a87452) on wave32. Host: AMD Radeon Pro W7800 48GB, gfx1100, `HIP_VISIBLE_DEVICES=2` from the dispatcher. TheRock ROCm SDK 10.1.0 (`R=$(/opt/python-3.11-venv/bin/rocm-sdk path --root)`), cmake 3.31.6 from the job venv. Fresh fork clone at 5a87452f319573c586fdd9776d280a0a2e980dd9 (= origin/moat-port), `protect-fork` run. All GPU work under `ulimit -c 0`; no JIT extension builds; no rocBLAS shim. CUDA gate not rerun: the delta fb95c20..5a87452 touches only gpu4pyscf/lib/cutensor.py and its test (no CUDA translation unit), as recorded by the porter and reviewer. `classify fb95c20 5a87452`: mixed (Python), so no binary-equivalence carry-forward; full run.
+## Validation 2026-11-03 (validator, linux-gfx1201 R9700, fork moat-port @ 5a87452) -- COMPLETED
+
+Requested by jeff: validate 5a87452 (review-passed; gfx12-gated complex GEMM split) on this platform, full GPU tree compared per directory with this platform's previous counts, plus the 8 k-point AFT tests, test_cutensor.py and the recorded noise-floor tests. Host: AMD Radeon AI PRO R9700, `gcnArchName` b'gfx1201', `HIP_VISIBLE_DEVICES=1` from the dispatcher. TheRock ROCm SDK 10.1.0 (`R=$(/opt/python-3.11-venv/bin/rocm-sdk path --root)`). Fresh fork clone at 5a87452f319573c586fdd9776d280a0a2e980dd9 (= origin/moat-port), `protect-fork` run. All GPU work under `ulimit -c 0`; no JIT extension builds; no rocBLAS shim. First validation of this platform, so a full run (no carry-forward).
+
+**Environment note: this GPU was shared with a process from another container for the whole run** (amd-smi shows PID 1887414 on GPU 1, invisible from this container's process namespace). Its VRAM moved between 2.3 GB and 13.4 GB of the card's 32 GB while none of my processes were running. That explains the two OOMs below.
 
 ### Environment (job venv)
 ```
@@ -3581,11 +3586,30 @@ Exit 0 in 283 s (timeit compile). 12 libs (cupy_helper gdft gecp gint gvhf gvhf_
 ### Full tree at 5a87452 (agent_space/runtree.sh, same as the fb95c20 round: each of the 39 `gpu4pyscf/**/tests` directories in turn, `python -m pytest <dir> -n 4 --dist loadfile -m 'not slow and not benchmark and not special' -q -rfEs --tb=line -p no:cacheprovider --timeout 1800 --junitxml=...`, counts from the junit files; wall 4721 s)
 
 | directory | gfx90a @ fb95c20 p/f/s/e | gfx90a @ 5a87452 p/f/s/e |
+# numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.5.0, geometric 1.1.1, pytest 7.3.2, pytest-xdist 3.3.1, pytest-timeout 2.4.0 (no mcfun)
+export PATH=$FLEET_VENV/bin:$PATH LD_LIBRARY_PATH=$R/lib PYTHONPATH=<fork>; ulimit -c 0
+```
+
+### Build: README ROCm block, fresh clone, libxc on (default)
+```
+cmake -S gpu4pyscf/lib -B build/temp.gpu4pyscf -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R -DCMAKE_BUILD_TYPE=Release
+cmake --build build/temp.gpu4pyscf -j 12 -v
+```
+Exit 0 in 170 s (timeit compile). 12 libs plus libxc.so.15. 213 `--offload-arch=gfx1201` lines and no other arch; `-disable-machine-licm` on 113 lines. Gate on this card: `_hip_split_complex()` True.
+
+### Targeted runs
+- `python -m pytest gpu4pyscf/lib/tests/test_cutensor.py -v`: **10 passed** (test_hip_einsum_complex_large, _complex_split, test_hip_split_complex_gate among them).
+- The 8 k-point AFT targets, the commit's Test Plan `-k` (which also matches the two `..._long_range1` tests), `-n 4 --dist loadfile`: **9 passed** in 113 s (test_ej_ip1_kpts, test_ek_ip1_kpts, test_vk_kpts_vs_fft, test_ejk_derivatives_kpts_with_long_range(+1), test_uhf_ejk_derivatives_kpts_with_long_range(+1), test_vk_hermi1_kpts_vs_aft, test_ejk_ip1_per_atom_kpts). `pbc/grad/tests/test_pbc_grad_krhf.py -k test_krhf_grad_with_pseudo`: **1 passed**. All 8 failed at 1e6d12c on this card (errors up to 11).
+
+### Full tree at 5a87452 (agent_space/runtree.sh: each of the 39 `gpu4pyscf/**/tests` directories in turn, `python -m pytest <dir> -n 4 --dist loadfile -m 'not slow and not benchmark and not special' -q -rfEs --tb=line -p no:cacheprovider --timeout 1800 --junitxml=...`, GPU liveness check before each directory, never failed; counts from junit; wall 5768 s)
+
+| directory | gfx1201 @ 1e6d12c | gfx1201 @ 5a87452 |
 |---|---|---|
 | cc/tests | 4/0/0/0 | 4/0/0/0 |
 | df/hessian/tests | 24/0/0/0 | 24/0/0/0 |
 | df/tests | 200/5/3/0 | 200/5/3/0 |
 | dft/tests | 112/1/9/0 | 112/1/9/0 |
+| dft/tests | 113/0/9/0 | 113/0/9/0 |
 | dispersion/tests | 16/0/0/0 | 16/0/0/0 |
 | fci/tests | 3/0/0/0 | 3/0/0/0 |
 | geomopt/tests | 0/0/5/0 | 0/0/5/0 |
@@ -3594,6 +3618,9 @@ Exit 0 in 283 s (timeit compile). 12 libs (cupy_helper gdft gecp gint gvhf gvhf_
 | hessian/tests | 91/0/1/0 | 91/0/1/0 |
 | lib/tests | 41/0/1/0 | 44/0/1/0 |
 | lib/tests | 41/0/1/0 | **44/0/1/0** |
+| gto/tests | 57/0/5/0 | 62/0/0/0 |
+| hessian/tests | 91/0/1/0 | 91/0/1/0 |
+| lib/tests | 39/0/1/0 | 44/0/1/0 |
 | mcscf/tests | 8/0/0/0 | 8/0/0/0 |
 | md/tests | 5/0/0/0 | 5/0/0/0 |
 | mp/tests | 20/1/0/0 | 20/1/0/0 |
@@ -3601,6 +3628,9 @@ Exit 0 in 283 s (timeit compile). 12 libs (cupy_helper gdft gecp gint gvhf gvhf_
 | pbc/df/tests | 104/1/7/0 | 104/1/7/0 |
 | pbc/dft/tests | 156/0/18/0 | 156/0/18/0 |
 | pbc/grad/tests | 185/0/2/0 | 185/0/2/0 |
+| pbc/df/tests | 99/6/7/0 | **104/1/7/0** |
+| pbc/dft/tests | 156/0/18/0 | **153/3/18/0** |
+| pbc/grad/tests | 184/1/2/0 | **185/0/2/0** |
 | pbc/gto/pseudo/tests | 7/0/0/0 | 7/0/0/0 |
 | pbc/gto/tests | 13/0/0/0 | 13/0/0/0 |
 | pbc/hessian/tests | 0/0/6/0 | 0/0/6/0 |
@@ -3614,6 +3644,14 @@ Exit 0 in 283 s (timeit compile). 12 libs (cupy_helper gdft gecp gint gvhf gvhf_
 | qmmm/pbc/tests | 3/0/0/0 | 3/0/0/0 |
 | qmmm/tests | 21/0/0/0 | 21/0/0/0 |
 | scf/tests | 159/2/3/0 | 159/2/3/0 |
+| pbc/scf/tests | 86/4/1/0 | **88/2/1/0** |
+| pbc/tools/tests | 16/0/0/0 | 16/0/0/0 |
+| pbc/x2c/tests | 1/0/1/0 | 1/0/1/0 |
+| pop/tests | 2/0/0/0 | 2/0/0/0 |
+| properties/tests | 21/5/5/0 | 22/4/5/0 |
+| qmmm/pbc/tests | 3/0/0/0 | 3/0/0/0 |
+| qmmm/tests | 21/0/0/0 | 21/0/0/0 |
+| scf/tests | 157/4/3/0 | 157/4/3/0 |
 | sem/dmp/tests | 1/0/0/0 | 1/0/0/0 |
 | sem/grad/tests | 3/0/0/0 | 3/0/0/0 |
 | sem/gto/tests | 15/0/0/0 | 15/0/0/0 |
@@ -3666,3 +3704,35 @@ So there is no new GPU finding at 5a87452 on gfx90a; the gate is False here and 
 - `python3 utils/jargon.py --port gpu4pyscf`: clean (after `git fetch origin master:master` and a local `moat-port` ref in the clone).
 - Documentation: README unchanged by the delta; the ROCm block builds as written (only the arch and `-j` changed; `-v` added to count flags).
 - Fork `git status --porcelain`: empty (build output is ignored; md/tests' `from_h5.xyz`, written to the clone root, removed).
+| tdscf/tests | 90/5/0/0 | 92/3/0/0 |
+| tests | 0/0/0/0 | 0/0/0/0 |
+| x2c/tests | 8/0/1/0 | 8/0/1/0 |
+| **total** | 1814/34/73/0 | **1832/26/68/0** |
+
+Same test count as fb95c20 on the other arches plus the 3 tests 5a87452/e1b8041 added (lib +5 against 1e6d12c: the two b7c39b6/fb95c20 matvec tests and the three complex-split tests). gto +5 passes are the c8c9acc low-memory ECP kernels. pbc/df, pbc/scf and pbc/grad now equal the gfx942/gfx90a/gfx1100 reference counts: the k-point AFT defect is gone.
+
+**The 26 failures, by class:**
+- **The 16 reference failures, less two that pass on this host, as at 1e6d12c (14):** RNG fingerprints: df test_jk_energy_per_atom, df test_get_nacv_ee (1.07238 vs -0.88613), grad tdrhf test_grad_elec (7.8233754888, the recorded GPU value), tduhf test_grad_elec (-2.6958 vs -14.0066), nac test_get_nacv_ee (1.07204 vs -0.88616), pbc/scf test_rks_gen_g_hop, test_uks_gen_g_hop (O(1) complex mismatches). d-aug-cc-pvdz missing (BasisNotFoundError): df test_general_contraction, scf test_rhf_df_against_qchem, test_rks_df_against_qchem, tdscf test_rtda_ris_diffuse. rocBLAS trsm accuracy: mp test_dfmp2_kernel_one_gpu (1.015e-7 against 7 places), df test_grad_hybrid, df test_j_energy_per_atom. Finite-difference strain: pbc/df test_ft_ao_strain_deriv. Krylov cap: tdscf test_krylov_eigenvalue (eigenvector error 1.3359e-5, the recorded signature). That is 16; dft test_sparse_index and x2c test_sfx2c1e_cart pass on this host as before.
+- **Noise-floor convergence (7), the classes recorded at 1e6d12c on this card and at fb95c20 on gfx942:** properties test_raman_intensity x4 (`assert mf.converged`, raman.py:100, conv_tol 1e-14), scf test_gdm_rhf (6.17e-8 against 5e-8; 5.88e-8 at 1e6d12c), tdscf test_rtddft_ris_diffuse (`assert np.all(td.converged)`, line 343, the fp32 RIS eigensolver floor), scf test_sad_guess_rks_vv10 (5.1818e-7 against 5e-7, deterministic 1.04x margin, recorded at 3982189 on this card).
+- **pbc/dft (3), not seen on this card before; explained below, neither GPU nor port fault:** test_pbc_numint test_eval_ao_kpts and test_pbc_grids test_xc_gradient_mgga_with_response (hipErrorOutOfMemory), test_pbc_grids test_xc_gradient_unrestricted_k_with_response (1.224e-9 against 1e-9).
+
+### Noise-floor tests, rerun explicitly
+`python -m pytest gpu4pyscf/properties/tests/test_raman_intensity.py gpu4pyscf/tdscf/tests/test_tdrks_vv10.py gpu4pyscf/scf/tests/test_gdm.py::KnownValues::test_gdm_rhf gpu4pyscf/tdscf/tests/test_diffuse_orbital_tdscf.py::KnownValues::test_rtddft_ris_diffuse gpu4pyscf/scf/tests/test_init_guess.py::KnownValues::test_sad_guess_rks_vv10 -n 4 --dist loadfile` (the whole raman and vv10 files, so their slow-marked tests also ran), twice: 9 failed / 7 passed / 1 skipped, then 11 / 5 / 1. Every failure carries the recorded signature: raman.py:100 `assert mf.converged` (5 and 6 of the raman tests), test_tdrks_vv10.py:62 `assert mf.converged` after `conv_tol = 1e-15` (wb97xv_unrestricted_tda; then also wb97xv_tda_triplet and wb97xv_unrestricted_tddft), gdm 6.176e-8 and 6.248e-8 against 5e-8, sad_guess_vv10 5.1818196e-7 both times, rtddft_ris_diffuse once (line 343) and passed once. Same mechanisms as the 1e6d12c and fb95c20 records. No wrong number.
+
+### The three pbc/dft failures
+1. **test_eval_ao_kpts, hipErrorOutOfMemory: a shared card, not the split.** agent_space/peak.py runs the test through unittest with a CuPy allocator hook recording the pool's peak `used_bytes`: **20.17 GiB at 5a87452 with the gate on, 20.17 GiB with the gate forced off, and 20.17 GiB at 1e6d12c** (worktree of 1e6d12c with this build's libraries; the only compiled change since 1e6d12c is the ECP kernels, which this test does not use). Same demand at every commit. Whether it fits depends on the other container's process: serial runs passed 6 of 6 with the co-tenant at about 2.3 GB, and 1e6d12c's Python failed with "Out of memory allocating 10,062,360,064 bytes (allocated so far: 11,069,544,448)" while the co-tenant held 12.4 GB, then passed twice once it fell back to 2.3 GB. Under `-n 4` it failed in both directory runs (the tree, and a directory rerun with the co-tenant peaking at 9.1 GB), because three other workers share the remaining memory too. The test passed under `-n 4` on this card at 1e6d12c, when the card was not shared.
+2. **test_xc_gradient_mgga_with_response, hipErrorOutOfMemory in the tree run:** the same co-tenant effect. It passed in all 4 later serial runs whose result is attributable (a fifth printed one unattributed failure, see item 3).
+3. **test_xc_gradient_unrestricted_k_with_response, 1.22e-9 to 1.48e-9 against 1e-9: the finite-difference roundoff floor at the test's dx = 1e-5.** The test compares the analytic LDA response gradient with a central difference (`dx=1e-5`, comment: "dm is not very stable"). At 5a87452 it failed in the tree (1.224e-9), in a `-n 4` directory rerun (1.470e-9) and in 4 serial runs (1.292e-9, 1.475e-9, 1.472e-9, 1.476e-9); a fifth serial run, paired with the mgga test, printed one failure without its message, so that run is not attributable. It also failed with the gate forced off (1.297e-9; with the gate off 5a87452 runs fb95c20's dispatch, which the review showed bitwise equal), and 3 of 3 times at 1e6d12c's Python (1.21e-9, 1.26e-9, 1.39e-9). So no later port round caused it, and its pass on this card at 1e6d12c was a run that landed under the bound. agent_space/fdnoise.py (the test body, one converged density): the energy at a fixed geometry is bitwise identical over 5 evaluations (-3.168578159333110). The atom-gradient error is 1.062e-9 at dx = 1e-5 (twice, identical), **1.96e-10 at dx = 2e-5 and 1.36e-10 at dx = 4e-5**, while the lattice part grows as dx^2 (2.9e-9, 9.6e-9, 3.9e-8; its bound is 4e-9). So the analytic GPU gradient agrees with the finite difference to about 1.4e-10, and at dx = 1e-5 the difference is dominated by energy roundoff divided by 2dx. The run-to-run spread comes from the SCF density (conv_tol 1e-10), which differs from run to run. Same family as test_ft_ao_strain_deriv: a finite-difference tolerance at its floor.
+
+So there is no GPU wrong result and no regression from 5a87452 on gfx1201.
+
+### Other gates
+- CUDA gate: not re-run. 5a87452 changes only gpu4pyscf/lib/cutensor.py and its test (`git diff --stat fb95c20 5a87452`: 2 files, Python), the compile gate passed at fb95c20 on gfx942, and this host has no CUDA toolkit.
+- `python3 utils/jargon.py --port gpu4pyscf`: clean.
+- Documentation: the README ROCm block builds as written (arch, `-j`, compiler and prefix hints only).
+- Fork `git status --porcelain`: no tracked modifications (build output untracked; md tests' `from_h5.xyz` removed; the 1e6d12c worktree removed).
+
+### For jeff
+- linux-gfx1201 is not a required gate (wave32 is gfx1100's), so this is additive evidence: the 8 k-point AFT failures are fixed on gfx12, and nothing else moved.
+- test_xc_gradient_unrestricted_k_with_response fails most runs on this card at the upstream `dx=1e-5`, 1e-9 bound, and passes at the 2e-10 level with dx = 2e-5. It was not seen failing on gfx942/gfx90a/gfx1100 at fb95c20. Whether the upstream PR body mentions it is your call. I recorded it as an explained finite-difference floor; if you read the completion bar as needing it to have been seen in a prior record, this platform should be failed on it instead.
+- The two OOMs need a card nobody else is using to show pass under `-n 4`; peak demand is identical at 1e6d12c, so I did not hold the platform on them.
