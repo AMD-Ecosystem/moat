@@ -512,6 +512,20 @@ which it accepts and runs. A GEMM whose k never exceeds 2^15 stays out of both. 
 above were not measured on gfx1201. Gate on the k length on the WMMA families, not on
 `ld * k`. gfx9 MFMA keeps fp32 accuracy. (oneflow: long-k matmul on gfx1100 and gfx1201.)
 
+**A GEMM workaround covers every entry point that reaches the library, fused epilogues included.**
+oneflow routed its matmul, bmm and grouped GEMMs to the chunked long-k path but its cuBLASLt
+compat (`cublasLtMatmul` on hipBLASLt, used by the fused linear and MLP kernels and their
+backward) still sent the whole k to hipBLASLt: 5.7-8.4 float16 ulp on gfx1100 at k = 2^20 and
+98.75 ulp on gfx1201 at k = 163840 (the ROCm 10.1 hipBLASLt DepthU-192 kernels, fixed in hipBLASLt
+1.5.0). Grep for every call into the BLAS libraries, including Lt/fused wrappers, and put the
+selection in the one compat function they share. Run the GEMM through the same path and apply
+the epilogue (bias, ReLU, ReLU bit mask, masked gradient, bias gradient) afterwards in separate
+kernels; the result then equals the unfused ops bit for bit, which also gives the test a check
+that the path was taken (gate it on ROCm: cuBLASLt applies the epilogue before rounding). If the
+long-k path needs another library's handle (rocBLAS here) and the compat only receives the Lt
+handle, create the second handle with the first: a kernel may first run inside a graph capture,
+where the 32 MiB a rocBLAS handle allocates at creation cannot be. (oneflow, 0e606373b.)
+
 ## Headers, includes and build
 
 **A shared compat header must be host-includable.** Host `.cpp` TUs reach the shim through
