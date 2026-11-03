@@ -262,6 +262,9 @@ def set_status(args):
     it["status"] = args.status
     if args.upstream:
         it["upstream_issue"] = args.upstream
+    for ref in args.ref or []:
+        if ref not in it.setdefault("refs", []):
+            it["refs"].append(ref)
     msg = f"deferred: {args.id} -> {args.status}"
     sha = _store(where, obj, msg)
     if not sha:
@@ -363,6 +366,8 @@ def main(argv=None):
     s.add_argument("id")
     s.add_argument("status", choices=STATUSES)
     s.add_argument("--upstream", help="upstream issue URL once filed")
+    s.add_argument("--ref", action="append",
+                   help="add a findings/ path, notes ref or URL to the item (repeatable)")
 
     l = sub.add_parser("list", help="list deferred items (open by default)")
     l.add_argument("--all", action="store_true", help="include filed/done")
