@@ -7,7 +7,7 @@
   "priority": 0.0,
   "ext_type": "torch-extension",
   "adopted_at": "2026-06-08T13:34:13Z",
-  "updated_at": "2026-11-03T23:37:01Z",
+  "updated_at": "2026-11-03T23:37:38Z",
   "head_sha": "c7ae2c57d3c642ae25e88f9d8402481b8273ff1e",
   "depends_on": [],
   "waivers": {},
@@ -186,11 +186,9 @@
     "since": "2026-10-31T21:54:17Z",
     "at": "2026-10-31T22:02:22Z"
   },
-  "pr_approval": {
-    "approved_by": "jeffdaily",
-    "at": "2026-11-02T20:35:16Z",
-    "head_sha": "c7ae2c57d3c642ae25e88f9d8402481b8273ff1e",
-    "content_sha256": "d09b47b7b3d4b32415fde21a5943757f7cb65026cbc7767b906754d1e16e6644",
-    "review_pr": "https://github.com/AMD-Ecosystem/llm-awq/pull/1"
-  }
+  "pr_url": "https://github.com/mit-han-lab/llm-awq/pull/354",
+  "pr_number": 354,
+  "pr_opened_at": "2026-11-03T23:37:38Z",
+  "pr_state": "open",
+  "published_sha": "c7ae2c57d3c642ae25e88f9d8402481b8273ff1e"
 }
