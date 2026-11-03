@@ -425,3 +425,8 @@
 {"kind":"phase","ts":"2026-11-02T11:46:27Z","phase":"compile","seconds":0.003,"exit":127,"cmd":"./build_rocm.sh all"}
 {"kind":"phase","ts":"2026-11-02T11:47:04Z","phase":"compile","seconds":2.646,"exit":1,"cmd":"projects/oneflow/src/build_rocm.sh all"}
 {"kind":"phase","ts":"2026-11-02T12:10:38Z","phase":"compile","seconds":1337.436,"exit":0,"cmd":"projects/oneflow/src/build_rocm.sh all"}
+{"kind":"session","ts":"2026-11-03T02:08:04Z","epoch":1793671684.735230185,"event":"start","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-03T02:19:54Z","phase":"test","seconds":28.995,"exit":0,"cmd":"bash agent_space/v/run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261102-102851-oneflow-review13 0 python3 -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/modules/test_matmul_long_k.py"}
+{"kind":"phase","ts":"2026-11-03T02:20:04Z","phase":"test","seconds":9.907,"exit":1,"cmd":"bash agent_space/v/run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261102-102851-oneflow-review13 0 python3 -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/modules/test_matmul.py"}
+{"kind":"phase","ts":"2026-11-03T02:20:14Z","phase":"test","seconds":9.847,"exit":0,"cmd":"bash agent_space/v/run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261102-102851-oneflow-review13 0 python3 -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/modules/test_bmm.py"}
+{"kind":"phase","ts":"2026-11-03T02:20:19Z","phase":"test","seconds":5.228,"exit":0,"cmd":"bash agent_space/v/run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261102-102851-oneflow-review13 0 python3 -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/modules/test_grouped_matmul_bias.py"}

@@ -4166,3 +4166,17 @@ The only workaround found is process-wide: `HSA_ENABLE_SDMA=0` in the environmen
 - No source change: `git -C projects/oneflow/src status --porcelain` empty (fresh clone at 4e418c9d4, `protect-fork` installed). No commit, no push, `head_sha` 4e418c9d4. No CUDA compile gate: no TU changed. `python3 utils/jargon.py --port oneflow` (after creating the local `master` branch from `origin/master` in the fresh clone): only the three known hits in 68718f038.
 - Deferred entry `oneflow-cg-first-graph-replay-fault` summary rewritten to these results.
 - Lesson promoted: `cuda-to-rocm/references/validation.md`, "Diagnosing a suspected AMD fault": probe the HIP copy path directly when a wrong result survives a full device sync, `HSA_ENABLE_SDMA=0` as the first condition, a later nightly runtime preloaded under the same build as the second, the SDMA log mask, and the null-stream probe returning 906 during another thread's capture.
+
+## Review 2026-11-03 (reviewer, linux-gfx1100, two W7800; /pr-review local-branch moat-port 2b38a9bc3..4e418c9d4, commits 541d75105 and 4e418c9d4, plus MOAT lessons 37725143, e473edd7, 6ce134df, 27b293c0, 8d4bbd03; resumes the review13 job, which recorded no verdict)
+
+In progress (partial results recorded as they land). Host: `HIP_VISIBLE_DEVICES=0,1`, ROCm 10.1.0 SDK wheels, `ulimit -c 0`, `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git`, `OMP_NUM_THREADS=4`, no JIT extension builds. Builds used read-only: 4e418c9d4 = the review13 job's fresh build (clean tree) and the fix19 job's build (inert env-gated debug hooks); 541d75105 = the fix15 job's build (`__git_commit__` reads 2b38a9bc3, the configure-time string; its tree is at 541d75105); b269f0d80 = review11's. At start the CPU was not idle: another fleet job's 32-way pytorch build (GPU 2) and a rocprofiler job (GPU 3), load 35-40 of 64 threads.
+
+### Rounding-aligned regression case (`agent_space/ra/ra.py`: the 4e418c9d4 test's `_check_rounding_aligned`, printing the error)
+- 541d75105 default path: (1, 1) and (8, 33) **8.84 ulp float16, 8.76 bfloat16: FAIL** (bound 4). Without hipBLASLt (float-tile fallback): 0.29 / 0.35, pass.
+- 4e418c9d4: **0.29 / 0.35 ulp on both paths, both shapes: PASS.** So the test fails before and passes after, as the porter recorded.
+
+### Tests at 4e418c9d4 (review13 build, GPU 0, one pytest per file, `utils/timeit.sh oneflow test`; run at load 30-36 from the other job's build: correctness only)
+`test_matmul_long_k.py` **3 passed** (25.9 s). `test_matmul.py` 9 passed, 2 failed (`TypeError: __bool__ should return bool`, the known numpy class). `test_bmm.py` 2 passed. `test_grouped_matmul_bias.py` 1 passed. `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038.
+
+### SDMA experiment (partial; `agent_space/sd/loop.sh`, `sd/results.txt`, `sd/logs/`)
+Interleaved cycles from 02:23 UTC, load 1.4-2.5 (the other job's build had finished): `o2.py EAGER=0 CHK=1 POST=1` on the fix19 build and on the review13 build, and `cg_ws3.py`, each at default and with `HSA_ENABLE_SDMA=0`. **Cycle 1: `o2.py` with `HSA_ENABLE_SDMA=0` on the review13 build aborted with illegal memory access 700** (70 s, after `captured 54 graphs`, at torch's upload of the first replay's reference inputs `ra.to(cuda:0)`, then oneflow's `cudaEventRecord` check). So the fault itself, not only a wrong reference, survives SDMA off.
