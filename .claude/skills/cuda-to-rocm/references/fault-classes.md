@@ -506,7 +506,9 @@ fix it in the project-local einsum (above): for a complex pairwise step whose ro
 count exceeds 2^21, split the outermost free output axis of the larger side and recurse. Split
 the outermost axis, not the largest: splitting the innermost axis made the strided writes into
 the result cost 1.5x, the outermost-axis split costs 1.1x to 1.5x at 3.5M to 6.9M columns and
-is 0.26x (faster than the unsplit call) at 26M. A kernel of your own that needs more than
+is 0.26x (faster than the unsplit call) at 26M. Gate the split on the device's
+`gcnArchName` starting with `gfx12` (cached per device), so other GPUs keep the path they
+validated, and force the gate in the regression tests so CI on any GPU checks the split. A kernel of your own that needs more than
 65536 work-groups in y or z must fold them into x. (gpu4pyscf; reproducers in its notes.)
 
 **Negative entries for that table.** CUPTI has no ROCm analogue -- stub the optional
