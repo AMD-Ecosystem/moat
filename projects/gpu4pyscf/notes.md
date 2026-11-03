@@ -3557,6 +3557,34 @@ The gfx1100 @ fb95c20 column is the 2026-11-01 validation's table, restored here
 | cc/tests | 4/0/0/0 | 4/0/0/0 |
 | df/hessian/tests | 24/0/0/0 | 24/0/0/0 |
 | df/tests | 200/5/3/0 | 201/4/3/0 |
+## Validation 2026-11-03 (validator, linux-gfx90a MI250X GCD, fork moat-port @ 5a87452) -- COMPLETED
+
+Requested by jeff: revalidate moat-port at 5a87452 (review-passed; e1b8041 + 5a87452, the gfx12-gated complex GEMM split) on gfx90a. Host: AMD Instinct MI250X, one GCD, `gfx90a:sramecc+:xnack-`, `HIP_VISIBLE_DEVICES=0` from the dispatcher. TheRock ROCm SDK 10.1.0 (AMD clang 24.0.0git d6f6cb69). Host CPU 2x EPYC 7702 (AVX2). Fresh fork clone at 5a87452f319573c586fdd9776d280a0a2e980dd9 (= origin/moat-port per `ls-remote`), `protect-fork` run. `classify fb95c20 5a87452` (this platform's validated_sha): mixed (cutensor.py and test_cutensor.py only), so a full run as requested; no carry-forward. Everything ran under `ulimit -c 0`; no JIT extension builds; no rocBLAS shim. CUDA gate: skipped (the delta is Python only, no CUDA translation unit changed; recorded at fb95c20 on gfx942).
+
+### Environment (job venv, fresh)
+`$FLEET_VENV/bin/python -m pip install 'numpy>=2.0,<2.3' 'scipy>=1.13' cupy-rocm-7-0==14.2.0 pyscf==2.14.0 pytest==7.3.2 pytest-xdist==3.3.1 pyscf-dispersion geometric pytest-timeout`: numpy 2.2.6, scipy 1.17.1, cupy-rocm-7-0 14.2.0, pyscf 2.14.0, pyscf-dispersion 1.5.0, geometric 1.1.1, pytest 7.3.2, pytest-xdist 3.3.1, pytest-timeout 2.4.0. Same versions as the fb95c20 round. Run environment: `PATH=$FLEET_VENV/bin:$PATH LD_LIBRARY_PATH=$(rocm-sdk path --root)/lib PYTHONPATH=<fork>`.
+
+### Build: README ROCm block, fresh clone (no prior build dir)
+```
+cmake -S gpu4pyscf/lib -B build/temp.gpu4pyscf -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a
+cmake --build build/temp.gpu4pyscf -j 64 -v
+```
+Exit 0 in 283 s (timeit compile). 12 libs (cupy_helper gdft gecp gint gvhf gvhf_md gvhf_rys mgrid_v2 mgrid_v3 pbc sem solvent) plus libxc.so.15. 213 `--offload-arch=gfx90a` lines and no other arch; `-disable-machine-licm` on 113 lines; no `-O1`. Identical to fb95c20.
+
+### Gate and the targeted tests
+- Gate on this GPU: `gcnArchName` b'gfx90a:sramecc+:xnack-', `cutensor._hip_split_complex()` False, cache `{0: False}`. So gfx90a runs the fb95c20 einsum dispatch.
+- `python -m pytest gpu4pyscf/lib/tests/test_cutensor.py -v`: **10 passed** (59 s), including test_hip_einsum_complex_large, test_hip_einsum_complex_split and test_hip_split_complex_gate.
+- The 8 k-point AFT targets, the 5a87452 Test Plan commands:
+  `python -m pytest gpu4pyscf/pbc/df/tests/test_pbc_aft.py gpu4pyscf/pbc/df/tests/test_pbc_df_derivatives.py gpu4pyscf/pbc/scf/tests/test_pbc_scf_jk.py -k "test_ej_ip1_kpts or test_ek_ip1_kpts or test_vk_kpts_vs_fft or ejk_derivatives_kpts_with_long_range or test_vk_hermi1_kpts_vs_aft or test_ejk_ip1_per_atom_kpts" -n 4 --dist loadfile`: **9 passed** in 173 s (the 7 targets plus the two `..._long_range1` the `-k` also matches).
+  `python -m pytest gpu4pyscf/pbc/grad/tests/test_pbc_grad_krhf.py -k test_krhf_grad_with_pseudo`: **1 passed** (49 s).
+
+### Full tree at 5a87452 (agent_space/runtree.sh, same as the fb95c20 round: each of the 39 `gpu4pyscf/**/tests` directories in turn, `python -m pytest <dir> -n 4 --dist loadfile -m 'not slow and not benchmark and not special' -q -rfEs --tb=line -p no:cacheprovider --timeout 1800 --junitxml=...`, counts from the junit files; wall 4721 s)
+
+| directory | gfx90a @ fb95c20 p/f/s/e | gfx90a @ 5a87452 p/f/s/e |
+|---|---|---|
+| cc/tests | 4/0/0/0 | 4/0/0/0 |
+| df/hessian/tests | 24/0/0/0 | 24/0/0/0 |
+| df/tests | 200/5/3/0 | 200/5/3/0 |
 | dft/tests | 112/1/9/0 | 112/1/9/0 |
 | dispersion/tests | 16/0/0/0 | 16/0/0/0 |
 | fci/tests | 3/0/0/0 | 3/0/0/0 |
@@ -3565,6 +3593,7 @@ The gfx1100 @ fb95c20 column is the 2026-11-01 validation's table, restored here
 | gto/tests | 62/0/0/0 | 62/0/0/0 |
 | hessian/tests | 91/0/1/0 | 91/0/1/0 |
 | lib/tests | 41/0/1/0 | 44/0/1/0 |
+| lib/tests | 41/0/1/0 | **44/0/1/0** |
 | mcscf/tests | 8/0/0/0 | 8/0/0/0 |
 | md/tests | 5/0/0/0 | 5/0/0/0 |
 | mp/tests | 20/1/0/0 | 20/1/0/0 |
@@ -3616,3 +3645,24 @@ No failure outside these classes; no new GPU finding. The k-point AFT directorie
 - Fork: `git status --porcelain` shows only untracked `from_h5.xyz` (a test output file); no tracked modifications. HEAD 5a87452 = origin/moat-port.
 - `python3 utils/jargon.py --port gpu4pyscf`: clean (after creating the local `moat-port` branch the checker resolves).
 - Documentation: README carries the ROCm build block next to the CUDA one (unchanged in this delta).
+| **total** | 1837/18/68/0 | **1840/18/68/0** |
+
+lib/tests +3 passes: the three tests e1b8041 and 5a87452 add to test_cutensor.py. Every other directory is identical.
+
+**The 18 failures are the same 18 by name as at fb95c20 on this platform, with the same numbers where they were measured, so every one is a known, explained class:**
+- RNG fingerprints: df test_jk_energy_per_atom (31.8 vs 2e-9), df test_get_nacv_ee, grad tdrhf/tduhf test_grad_elec, nac test_get_nacv_ee, pbc/scf test_rks_gen_g_hop, test_uks_gen_g_hop.
+- d-aug-cc-pvdz missing: df test_general_contraction, scf test_rhf_df_against_qchem, test_rks_df_against_qchem, tdscf test_rtda_ris_diffuse.
+- rocBLAS trsm accuracy margin: df test_grad_hybrid (1.0275e-9 vs 1e-9), test_j_energy_per_atom (1.118e-12 vs 1e-12); DF-MP2 on the sibling test mp test_dfmp2_kernel_multi_gpu (e_corr_os -0.96261373 vs -0.96261362, diff 1.07e-7 against 7 places; 1.075e-7 / 1.072e-7 at fb95c20).
+- Finite-difference strain: pbc/df test_ft_ao_strain_deriv. Krylov cap: tdscf test_krylov_eigenvalue.
+- Host CPU summation order: dft test_sparse_index (103.60117204958 vs 103.60117204957997, the same value as at fb95c20).
+- hipSOLVER generalized-eigh accuracy margin: x2c test_sfx2c1e_cart (6.1237e-11 vs 5e-11, the same 6.124e-11 as at fb95c20).
+
+**Noise-floor tests all ran and passed** (from the junit files): properties test_raman_intensity.py x5 (test_raman_hf_densityfitting, test_raman_pbe0_densityfitting_pcm_with/without_response, test_polarizability_derivative_pcm_with/without_response; test_raman_wb97mv skipped as before), tdscf test_wb97xv_tda and test_wb97xv_tda_triplet, scf test_gdm_rhf, tdscf test_rtddft_ris_diffuse. None needed a rerun.
+
+So there is no new GPU finding at 5a87452 on gfx90a; the gate is False here and the delta's only effect on this card is the three new passing tests.
+
+### Checks
+- CUDA gate: skipped (Python-only delta; passed at fb95c20 on gfx942).
+- `python3 utils/jargon.py --port gpu4pyscf`: clean (after `git fetch origin master:master` and a local `moat-port` ref in the clone).
+- Documentation: README unchanged by the delta; the ROCm block builds as written (only the arch and `-j` changed; `-v` added to count flags).
+- Fork `git status --porcelain`: empty (build output is ignored; md/tests' `from_h5.xyz`, written to the clone root, removed).
