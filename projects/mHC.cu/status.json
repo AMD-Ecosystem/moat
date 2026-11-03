@@ -7,7 +7,7 @@
   "priority": 4.192,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-10-29T22:03:22Z",
+  "updated_at": "2026-11-03T23:38:14Z",
   "head_sha": "3246bc32bd06c00d938358fa7ac46bfa694d4b12",
   "porting": null,
   "waivers": {},
@@ -139,5 +139,12 @@
       }
     }
   },
-  "review_pr": "https://github.com/AMD-Ecosystem/mHC.cu/pull/1"
+  "review_pr": "https://github.com/AMD-Ecosystem/mHC.cu/pull/1",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-03T23:25:10Z",
+    "head_sha": "3246bc32bd06c00d938358fa7ac46bfa694d4b12",
+    "content_sha256": "db6a01130c02bf76a721aff3c9961d1cad2309c32ac0e723d33acd77e5e14fd1",
+    "review_pr": "https://github.com/AMD-Ecosystem/mHC.cu/pull/1"
+  }
 }
