@@ -431,3 +431,31 @@
 {"kind":"phase","ts":"2026-11-03T02:20:14Z","phase":"test","seconds":9.847,"exit":0,"cmd":"bash agent_space/v/run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261102-102851-oneflow-review13 0 python3 -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/modules/test_bmm.py"}
 {"kind":"phase","ts":"2026-11-03T02:20:19Z","phase":"test","seconds":5.228,"exit":0,"cmd":"bash agent_space/v/run.sh /var/lib/jenkins/fleet/jobs/rx7900-20261102-102851-oneflow-review13 0 python3 -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/modules/test_grouped_matmul_bias.py"}
 {"kind":"session","ts":"2026-11-03T04:55:23Z","epoch":1793681723.315880278,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-03T16:35:09Z","phase":"compile","seconds":0.002,"exit":127,"cmd":"./build_rocm.sh all"}
+{"kind":"phase","ts":"2026-11-03T16:35:22Z","phase":"compile","seconds":0.268,"exit":1,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261103-082947-oneflow-fix21/moat/projects/oneflow/src/build_rocm.sh all"}
+{"kind":"phase","ts":"2026-11-03T17:24:41Z","phase":"compile","seconds":2903.167,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261103-082947-oneflow-fix21/moat/projects/oneflow/src/build_rocm.sh all"}
+{"kind":"phase","ts":"2026-11-03T17:34:37Z","phase":"compile","seconds":256.380,"exit":0,"cmd":"cmake --build projects/oneflow/src/build -j32"}
+{"kind":"phase","ts":"2026-11-03T17:50:29Z","phase":"test","seconds":8.929,"exit":1,"cmd":"python -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/modules/test_matmul.py"}
+{"kind":"phase","ts":"2026-11-03T17:50:35Z","phase":"test","seconds":5.254,"exit":0,"cmd":"python -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/modules/test_fused_matmul_bias.py"}
+{"kind":"phase","ts":"2026-11-03T17:50:38Z","phase":"test","seconds":3.681,"exit":1,"cmd":"python -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/modules/test_cublas_fused_mlp.py"}
+{"kind":"phase","ts":"2026-11-03T17:50:42Z","phase":"test","seconds":3.656,"exit":1,"cmd":"python -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/modules/test_fused_matmul_bias_add_relu_dropout.py"}
+{"kind":"phase","ts":"2026-11-03T17:50:51Z","phase":"test","seconds":8.818,"exit":0,"cmd":"python -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/modules/test_linear.py"}
+{"kind":"phase","ts":"2026-11-03T17:50:51Z","phase":"test","seconds":30.724,"exit":0,"cmd":"python -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/modules/test_matmul_long_k.py"}
+{"kind":"phase","ts":"2026-11-03T17:50:54Z","phase":"test","seconds":3.072,"exit":0,"cmd":"python -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/graph/test_graph_linear.py"}
+{"kind":"phase","ts":"2026-11-03T17:50:58Z","phase":"test","seconds":3.565,"exit":0,"cmd":"python -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/graph/test_graph_linear_train.py"}
+{"kind":"phase","ts":"2026-11-03T17:50:59Z","phase":"test","seconds":7.681,"exit":0,"cmd":"python -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/modules/test_bmm.py"}
+{"kind":"phase","ts":"2026-11-03T17:51:02Z","phase":"test","seconds":3.108,"exit":0,"cmd":"python -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/modules/test_grouped_matmul_bias.py"}
+{"kind":"phase","ts":"2026-11-03T17:51:12Z","phase":"test","seconds":3.732,"exit":1,"cmd":"python -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/modules/test_cublas_fused_mlp.py"}
+{"kind":"phase","ts":"2026-11-03T17:51:16Z","phase":"test","seconds":3.678,"exit":1,"cmd":"python -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/modules/test_fused_matmul_bias_add_relu_dropout.py"}
+{"kind":"phase","ts":"2026-11-03T17:55:19Z","phase":"compile","seconds":7.551,"exit":0,"cmd":"cmake --build projects/oneflow/src/build -j32"}
+{"kind":"phase","ts":"2026-11-03T18:01:08Z","phase":"compile","seconds":337.550,"exit":0,"cmd":"cmake --build projects/oneflow/src/build -j32"}
+{"kind":"phase","ts":"2026-11-03T18:01:17Z","phase":"test","seconds":8.376,"exit":1,"cmd":"python -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/modules/test_matmul.py"}
+{"kind":"phase","ts":"2026-11-03T18:01:22Z","phase":"test","seconds":5.195,"exit":0,"cmd":"python -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/modules/test_fused_matmul_bias.py"}
+{"kind":"phase","ts":"2026-11-03T18:01:26Z","phase":"test","seconds":3.884,"exit":1,"cmd":"python -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/modules/test_cublas_fused_mlp.py"}
+{"kind":"phase","ts":"2026-11-03T18:01:30Z","phase":"test","seconds":3.681,"exit":1,"cmd":"python -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/modules/test_fused_matmul_bias_add_relu_dropout.py"}
+{"kind":"phase","ts":"2026-11-03T18:01:38Z","phase":"test","seconds":8.645,"exit":0,"cmd":"python -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/modules/test_linear.py"}
+{"kind":"phase","ts":"2026-11-03T18:01:39Z","phase":"test","seconds":30.548,"exit":0,"cmd":"python -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/modules/test_matmul_long_k.py"}
+{"kind":"phase","ts":"2026-11-03T18:01:41Z","phase":"test","seconds":3.042,"exit":0,"cmd":"python -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/graph/test_graph_linear.py"}
+{"kind":"phase","ts":"2026-11-03T18:01:45Z","phase":"test","seconds":3.548,"exit":0,"cmd":"python -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/graph/test_graph_linear_train.py"}
+{"kind":"phase","ts":"2026-11-03T18:01:47Z","phase":"test","seconds":7.697,"exit":0,"cmd":"python -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/modules/test_bmm.py"}
+{"kind":"phase","ts":"2026-11-03T18:01:50Z","phase":"test","seconds":3.079,"exit":0,"cmd":"python -m pytest -q -p no:cacheprovider projects/oneflow/src/python/oneflow/test/modules/test_grouped_matmul_bias.py"}
