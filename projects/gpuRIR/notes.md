@@ -765,3 +765,52 @@ Not run here: no CUDA toolkit on this host (no nvcc, no /opt/conda). Recorded PA
 
 ### Pre-completion checks
 `python3 utils/jargon.py --port gpuRIR`: clean (master 06da27d .. moat-port cf0acba). README documents the ROCm build next to the CUDA prerequisites and install line (Linux and Windows forms). Fork tree clean at cf0acba.
+## Validation 2026-11-03 (linux-gfx90a, MI250X GCD, TheRock ROCm 10.1.0): cf0acba via `pip install .`
+
+Revalidation at `moat-port` cf0acba (review-passed), requested by jeff. Delta from this platform's `validated_sha` 39a7a9d is `setup.py` (generator detection, Windows-only effect) and one README sentence; `classify` says `mixed`, so a full GPU run rather than a carry-forward. Fork clone at cf0acba, `git status --porcelain` empty. `HIP_VISIBLE_DEVICES=1` (one GCD), `ulimit -c 0`, job-private venv (Python 3.11.17, numpy 1.26.4, scipy 1.10.1), CMake 3.31.6, ninja from PATH. No JIT extension builds; nothing pushed to the fork.
+
+### Build: the documented route, fresh clone of cf0acba
+```
+R=$(rocm-sdk path --root); export PATH=$R/lib/llvm/bin:$PATH
+CMAKE_ARGS="-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R" \
+  utils/timeit.sh gpuRIR compile -- $FLEET_VENV/bin/python -m pip install -v --no-deps --no-build-isolation <clone>
+```
+`Successfully installed gpuRIR-1.2.0` into the job venv. CMakeCache: `CMAKE_BUILD_TYPE=Release`, generator Unix Makefiles (Linux setup.py arguments unchanged). The installed `.so` embeds only an `amdgcn-amd-amdhsa--gfx90a` code object. Warnings are the pre-existing ones (nodiscard `cudaGetDeviceProperties` at gpuRIR_cuda.cu:1069, vendored pybind11 CMake notices, setuptools license-classifier deprecation). The pip route works on this host now (the 2026-10-30 run had to use direct CMake because the guard blocked pip; the job-private `$FLEET_VENV` is allowed).
+
+Second build exercising the changed generator scan on Linux: same command plus `-G Ninja` at the front of `CMAKE_ARGS`, into a throwaway `--target` from a second fresh clone. Installed; CMakeCache generator Ninja, `CMAKE_BUILD_TYPE=Release`, `NDEBUG` in build.ninja.
+
+### Tests
+Runtime env: `LD_LIBRARY_PATH=$SP/_rocm_sdk_libraries/lib:$SP/_rocm_sdk_core/lib` (SP = the TheRock site-packages). Upstream has no test suite; the GPU suite is the harness rebuilt from the checks in this file plus the upstream examples. `gpuRIR.__file__` and `gpuRIR_bind.__file__` confirmed in the install location for each run.
+```
+utils/timeit.sh gpuRIR test -- $FLEET_VENV/bin/python agent_space/gpurir/validate.py     # 34/34 PASS (venv install)
+PYTHONPATH=<ninja target> $FLEET_VENV/bin/python agent_space/gpurir/validate.py         # 34/34 PASS (-G Ninja build)
+utils/timeit.sh gpuRIR test -- bash agent_space/gpurir/runall.sh                        # examples 6/6 exit 0
+```
+- float32 kernels vs float64 reference, direct path (nb_img [1,1,1], room 4x5x3, src (1,1,1.5) -> rcv (3,4,1.5), dist/amp/tau in float32 as `calcAmpTau_kernel`, kernel formula in float64, threshold 2e-5 of peak), max err / peak:
+
+  | fs | exact vs f64 ref | LUT vs f64 LUT ref | LUT-ref vs exact-ref gap |
+  |---|---|---|---|
+  | 8000 | 5.305e-8 | 5.439e-8 | 1.588e-3 |
+  | 16000 | 5.213e-8 | 5.979e-8 | 1.378e-4 |
+  | 44100 | 1.461e-7 | 4.091e-8 | 6.852e-4 |
+  | 48000 | 4.330e-8 | 4.718e-8 | 3.908e-4 |
+
+  Identical to the 2026-10-30 gfx90a run and the gfx942 review at 214a51c. The discrimination checks (gap > 1e-4 and exact kernel > 2e-5 from the LUT reference) pass at every rate.
+- Shoebox (T60 0.4, nb_img [10,10,10], fs 16k): first arrival 168 on exact and LUT, exactly zero over samples 0..103.
+- Diffuse tail (hipRAND, Tdiff 0.1, nb_img t2n = [18,14,23]): finite, tail max 5.851e-3 (2026-10-30: 5.85e-3). simulateTrajectory (hipFFT) vs `np.convolve`: shape (18399,1), rel err 2.44e-7.
+- NaN receiver x: 0 NaN, 0 nonzero on exact and LUT.
+- Mixed precision vs float exact, direct path: 5.243e-4 / 5.764e-4 / 7.952e-4 / 3.643e-4 / 3.720e-4 / 6.762e-4 / 3.928e-4 at 8k / 11.025k / 16k / 22.05k / 44.1k / 48k / 96k, peaks 84/116/168/232/464/505/1009; identical to 2026-10-30.
+- Mixed precision, reverberant (Sabine T60 0.6, Tmax 0.3, fs 16k, nb_img [52,42,69]): 1 src omni 7.087e-4, RMS rel 1.425e-3 (same as 2026-10-30); 2 src x 3 cardioid rcv 5.465e-4, RMS rel 1.517e-3 (this harness's geometry, not the earlier one, so not compared).
+- Mixed precision, odd requested counts (reverberant room, nb_img t2n(Tmax)): 481@16k -> T 482, 1.293e-3 (2026-10-30: 1.29e-3); 885@44.1k -> T 886, 1.664e-3; 3201@16k with Tdiff 0.0500625 -> T 3202, ISM part 802 samples 1.549e-3, diffuse tail RMS mp/float 1.053 (2026-10-30: 1.55e-3, 1.053).
+- Mode toggles: mp after LUT bit-equal to plain mp, LUT after mp bit-equal to plain LUT; upstream messages printed.
+- Harness bug on the first run (31/34): the discrimination check demanded a LUT/exact reference gap > 1e-3, which the 16k/44.1k/48k gaps (1.4e-4 to 6.9e-4) do not meet; corrected to > 1e-4 (5x the 2e-5 threshold). No port issue.
+
+Upstream examples from a scratch copy (synthetic 2 s 16 kHz `source_signal.wav`, matplotlib/plotly replaced by MagicMock through a `sitecustomize` on PYTHONPATH, since neither is installed): example.py, simulate_trajectory.py (wrote filtered_signal.wav), polar_plots.py, time_vs_T60.py, time_vs_nbRIRs.py, example.py with `activateMixedPrecision(True)`/`activateLUT(False)`: **6/6 exit 0**.
+
+Result vs this platform's previous run (39a7a9d, 28/28 + 6/6): every figure the two harnesses share is identical; no regression.
+
+### CUDA gate
+Not rerun: no CUDA toolkit on this host. The compiled sources are unchanged since 39a7a9d, where the V100 CUDA gate passed (2026-10-30 section), and the delta's setup.py change only alters arguments on Windows with a non-Visual-Studio generator.
+
+### Pre-completion checks
+`python3 utils/jargon.py --port gpuRIR`: clean. README documents the ROCm build next to the CUDA one (Linux and Windows `CMAKE_ARGS` forms). Fork clone and both build clones: `git status --porcelain` empty.

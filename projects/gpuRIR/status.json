@@ -7,7 +7,7 @@
   "priority": 4.22,
   "ext_type": "unknown",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-11-03T18:44:11Z",
+  "updated_at": "2026-11-03T18:45:57Z",
   "head_sha": "cf0acba47dd137bbb7663d2f51fc3e955ebeb724",
   "waivers": {},
   "license_clearance": {
@@ -20,6 +20,29 @@
   "upstream_repo_id": 152045184,
   "stage": "review-passed",
   "platforms": {
+    "linux-gfx942": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": null,
+      "started_at": "2026-10-29T23:06:41Z",
+      "completed_at": null,
+      "updated_at": "2026-11-02T21:44:58Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "reviewer"
+    },
     "windows-gfx1201": {
       "state": "completed",
       "blocked": false,
@@ -48,6 +71,29 @@
         "detail": "gfx90a pin removal; CMake default-path/dead-code change, build byte-identical, no GPU re-run",
         "at": "2026-06-23T22:50:33Z"
       }
+    },
+    "windows-gfx1151": {
+      "state": "completed",
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "39a7a9d93592cb78b5913b974b6aaf8aa86ca1a0",
+      "started_at": "2026-11-02T21:03:10Z",
+      "completed_at": "2026-10-31T20:47:59Z",
+      "updated_at": "2026-11-02T21:37:06Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "porter"
     },
     "windows-gfx1101": {
       "state": "completed",
@@ -78,52 +124,6 @@
         "at": "2026-06-23T22:50:33Z"
       }
     },
-    "linux-gfx942": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "failed_sha": null,
-      "started_at": "2026-10-29T23:06:41Z",
-      "completed_at": null,
-      "updated_at": "2026-11-02T21:44:58Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "reviewer"
-    },
-    "linux-gfx90a": {
-      "state": "completed",
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": "39a7a9d93592cb78b5913b974b6aaf8aa86ca1a0",
-      "started_at": "2026-05-30T05:22:31Z",
-      "completed_at": "2026-10-30T03:18:14Z",
-      "updated_at": "2026-10-30T03:18:14Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator"
-    },
     "linux-gfx1100": {
       "state": "completed",
       "blocked": false,
@@ -147,14 +147,14 @@
       },
       "last_agent": "validator"
     },
-    "windows-gfx1151": {
+    "linux-gfx90a": {
       "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "39a7a9d93592cb78b5913b974b6aaf8aa86ca1a0",
-      "started_at": "2026-11-02T21:03:10Z",
-      "completed_at": "2026-10-31T20:47:59Z",
-      "updated_at": "2026-11-02T21:37:06Z",
+      "validated_sha": "cf0acba47dd137bbb7663d2f51fc3e955ebeb724",
+      "started_at": "2026-05-30T05:22:31Z",
+      "completed_at": "2026-11-03T18:45:57Z",
+      "updated_at": "2026-11-03T18:45:57Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -168,7 +168,7 @@
         "first_session_at": null,
         "last_session_at": null
       },
-      "last_agent": "porter"
+      "last_agent": "validator"
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/gpuRIR/pull/1",
@@ -176,6 +176,5 @@
     "arch": "linux-gfx942",
     "since": "2026-11-02T21:43:34Z",
     "at": "2026-11-02T21:44:58Z"
-  },
-  "porting": null
+  }
 }
