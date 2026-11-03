@@ -33,6 +33,18 @@ Searches performed:
 - CUDA enabled via `OHM_FEATURE_CUDA` option, uses modern CMake `enable_language(CUDA)` approach (lines 104 in `cmake/OhmCuda.cmake`)
 - `.cu` files compiled via `cuda_add_library` (deprecated path) or direct `add_library` (modern path)
 
+## Strategy revision (2026-11-03, ruled by jeffdaily)
+
+The first port (`moat-port` 09782e7..141e356) added a parallel `gputil/hip/` backend: about 3,700 lines that are hipify output of `gputil/cuda/` (after a cuda->hip rename, gpuBuffer.cpp differs on 10 of 638 lines, gpuPinnedBuffer.cpp on 4 of 236, hutil_atomic.h on 1 of 215), plus `.hip` copies of the `.cu` kernel wrappers. Open question 1 below (separate directory vs unify) was never put to a person. jeff ruled: keep that port for reference on the fork branch `moat-port-separate-hip-backend` (141e356, validated on linux-gfx90a, linux-gfx1100, windows-gfx1101, windows-gfx1201), and start `moat-port` over from upstream master (4e2e769) with a lightweight masquerade port.
+
+**Masquerade design** (supersedes "Port strategy" and "File-by-file change list" below):
+- Build the existing CUDA backend through HIP. `gputil/cuda/*.cpp`, the `ohmgpu/gpu/*.cu` wrappers and `tests/gputiltest/cuda/*.cu` compile unchanged as `LANGUAGE HIP` when the HIP option is on. No copied source files, no `gputil/hip/` directory, no `.hip` duplicates of `.cu` files.
+- One small compat header (cuda_to_hip.h style, as the `cuda-to-rocm` skill's Strategy A describes) maps the `cuda*` runtime names used by `gputil/cuda/` to `hip*`, included in place of `<cuda_runtime.h>`/`<cuda.h>` under the HIP build only. The CUDA build must compile byte-for-byte the same code as upstream.
+- The real HIP differences the first port found become guards, not copies: the runtime header path, `cudaDeviceProp` -> `hipDeviceProp_t`, and the `cutil_math.h` vector operators that collide with HIP's own (guard them off under HIP; keep dot/length/normalize/clamp).
+- Reuse the CUDA targets' source lists in CMake rather than duplicating them; whether the HIP build reuses the `cuda` target and type names or adds thin `hip` aliases is the porter's call, chosen for the smallest diff, and recorded in notes.
+- Carry over the first port's validated fixes that still apply (HIP arch auto-detect rather than a pinned gfx90a; the `<utility>`/`<iomanip>` includes the Windows clang-cl build needed), each in its own commit with its reason.
+- Success bar is unchanged: gputiltest and ohmtest GPU suites at the counts the first port reached (gputiltest 8/8, ohmtest 58/58 on gfx90a), and CPU suites not regressed.
+
 ## Port strategy
 
 **Strategy**: A (pure CMake, compat-header model with OpenCL compatibility layer)
