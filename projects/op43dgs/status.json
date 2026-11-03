@@ -7,7 +7,7 @@
   "priority": 3.393,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:50Z",
-  "updated_at": "2026-08-24T16:59:28Z",
+  "updated_at": "2026-11-03T23:39:18Z",
   "head_sha": "5401278cefa9b0115c665dfdffb367531e64a9aa",
   "waivers": {},
   "license_clearance": {
@@ -159,5 +159,12 @@
     "at": "2026-08-20T07:02:29Z"
   },
   "porting": null,
-  "review_pr": "https://github.com/AMD-Ecosystem/op43dgs/pull/1"
+  "review_pr": "https://github.com/AMD-Ecosystem/op43dgs/pull/1",
+  "pr_approval": {
+    "approved_by": "jeffdaily",
+    "at": "2026-11-03T23:30:34Z",
+    "head_sha": "5401278cefa9b0115c665dfdffb367531e64a9aa",
+    "content_sha256": "573c7f48da098c49f60b78bf23390de7503f6110d206bbdb73f7c09a4f17c546",
+    "review_pr": "https://github.com/AMD-Ecosystem/op43dgs/pull/1"
+  }
 }
