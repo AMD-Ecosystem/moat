@@ -396,3 +396,49 @@ GPU-vs-CPU differential (`agent_space/cv/cvdiff.py <exe> test_models/bunny.OBJ <
 Release 512 equals the first gfx942 review's numbers at 316616d (7 / 1); -O0 equals the `-ffp-contract=off` triangulation on every arch (4 / 0), as expected since -O0 forms no FMAs. Accepted FP class.
 
 - `_DEBUG` -O0 build at 64: device counters read back through `cudaMemcpyFromSymbol` (`Processed 5110 triangles`, `Tested 117367 voxels`, `Marked 45229 voxels`), the same as gfx1201 and gfx90a; solid prints 0 (upstream's solid kernel never increments them).
+
+## Validation 2026-11-04 (linux-gfx1201, validator, moat-port 3625a1e) -- revalidation
+
+Verdict: completed. Satisfies the wave32 gate at head 3625a1e. `classify 689b885 3625a1e` = `mixed` (`src/main.cpp`, `hip_compat/cuda_runtime.h`), so full real-GPU revalidation, no carry-forward.
+
+Host: AMD Radeon AI PRO R9700 (gfx1201, RDNA4, wave32, discrete PCIe), one GPU pinned with `HIP_VISIBLE_DEVICES=0`. TheRock ROCm 10.1.0 pip SDK, HIP 7.16.26385, AMD clang 24.0.0git (d6f6cb6), amdgpu 6.19.14, CMake 3.31.6, g++ 13.3.0. All GPU runs under `ulimit -c 0`. Trimesh2 2022.03.04 (`0b3d9e2`), `make -C trimesh2/libsrc -j24`.
+
+### Builds (all exit 0; warnings upstream-only: `main.cpp:28` -Wwrite-strings, `%llu` -Wformat, `nodiscard` on unchecked upstream calls in the `.cu` files, Trimesh2 `mathutil.h`)
+
+```
+# README Linux recipe, verbatim apart from the ROCm prefix
+cd src && mkdir build && cd build
+cmake -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 -DCMAKE_PREFIX_PATH=$(rocm-sdk path --root) -DTrimesh2_INCLUDE_DIR:PATH=<tm2>/include -DTrimesh2_LINK_DIR:PATH=<tm2>/lib.Linux64 ..
+cmake --build . --parallel 24
+# the others: common="-G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1201 -DCMAKE_PREFIX_PATH=$(rocm-sdk path --root) <Trimesh2 flags>"
+cmake -S <src> -B b-rel   $common -DCMAKE_BUILD_TYPE=Release
+cmake -S <src> -B b-o0    $common -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_HIP_FLAGS_DEBUG=-g -O0"
+cmake -S <src> -B b-o0dbg $common -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_HIP_FLAGS_DEBUG=-g -O0 -D_DEBUG" -DCMAKE_CXX_FLAGS=-D_DEBUG
+```
+
+Emitted atomics on gfx1201 (`llvm-objdump --offloading`, `llvm-objdump -d`): Release `global_atomic_or_b32` / `global_atomic_xor_b32`; -O0 and README builds `flat_atomic_or_b32` / `flat_atomic_xor_b32`. So every build here runs the native bitwise atomics, now into `hipMalloc` memory (GPU log: `Allocating 32 KB / 2 MB / 16 MB of CUDA device memory for Voxel Grid`).
+
+### GPU-vs-CPU differential, `test_models/bunny.OBJ`
+
+Harness `agent_space/scripts/cuvox_diff.py <exe> <model> <work> <tag> --repeat 3`: each run in its own directory with a copy of the model; GPU run then `-cpu` on the same binary; GPU log must show `## GPU VOXELISATION` and `Voxelization GPU time` and no CPU section; binvox RLE, morton `.bin` bitset and obj_points decoded to voxel sets; each 512 case re-run 3 more times on the GPU and sha256-compared with the first. 54 cases (3 builds x 2 modes x 3 sizes x 3 formats), counts identical across binvox / morton / obj_points in every row; 54 of 54 512 repeats byte-identical.
+
+| mode | size | filled CPU | Release diff (GPU-only/CPU-only) | device -O0 diff | README-recipe diff | GPU ms binvox Release / -O0 / README |
+|---|---|---|---|---|---|---|
+| surface | 64 | 13,802 | 0 | 0 | 0 | 0.3 / 13.0 / 12.0 |
+| surface | 256 | 221,760 | 0 | 0 | 0 | 3.9 / 254 / 255 |
+| surface | 512 | 887,315 | 9 (3/6) | 4 (2/2) | 4 (2/2) | 25.6 / 1,635 / 1,635 |
+| solid | 64 | 52,258 | 0 | 0 | 0 | 0.3 / 10.5 / 10.2 |
+| solid | 256 | 3,345,384 | 0 | 0 | 0 | 5.0 / 296 / 296 |
+| solid | 512 | 26,763,628 | 1 (1/0) | 0 | 0 | 38.9 / 2,242 / 2,245 |
+
+- 512 residual: Release equals this arch's 689b885 Release numbers exactly (9 / 1); -O0 equals the `-ffp-contract=off` triangulation on every arch (4 / 0). The accepted FP class (contraction plus `rsqrtf`), nothing larger.
+- Risk 2 (bitwise atomics into the voxel table): no missing voxels in any build, including device -O0, the build that gave 0 filled voxels on gfx90a at 689b885. The table is now device memory, so this arch exercises the fixed path; gfx90a's own -O0 rerun at 3625a1e is the porter's (recorded above) until its validator runs.
+- Solid 512 Release GPU kernel 38.9 ms (managed table at 689b885 was slower on discrete cards; gfx90a went from 9.3 s to 0.4 s).
+- `_DEBUG` -O0 build at 64: surface prints `Processed 5110 triangles`, `Tested 117367 voxels`, `Marked 45229 voxels` through `cudaMemcpyFromSymbol`; solid prints 0 (upstream's solid kernel never counts). Differential at 64 binvox + morton, surface + solid: 0.
+- Writers at 64 (Release): `-o obj` GPU and CPU byte-identical; `-o vox` identical except the last 4 bytes, which also differ between two `-cpu` runs (upstream `VoxWriter.cpp` uninitialized `colors[255]`, as recorded before).
+- Upstream CI smoke `cuda_voxelizer -f bunny.OBJ -s 64 -cpu` with the README build: exit 0, `## CPU VOXELISATION`, writes `bunny.OBJ_64.vox`. CPU filled counts equal every earlier arch.
+- CUDA gate not rerun: recorded at 3625a1e (V100 run above). `utils/jargon.py --port cuda_voxelizer` clean. Fork tree clean at 3625a1e (`git status --porcelain` empty, `build/` untracked).
+
+### README Linux recipe builds unoptimized device code (not a correctness failure; registered for a person)
+
+The README's Linux ROCm line sets no `CMAKE_BUILD_TYPE`. With an empty build type CMake passes no `-O` to the HIP compiler, and clang compiles HIP device code at -O0: the README build's gfx1201 code objects are byte-for-byte the same size as the explicit `-O0` Debug build's (15,897 / 10,976 disassembly lines vs 586 / 579 for Release), they emit the -O0 `flat_atomic_*` forms, and the differential and timings match the -O0 build row for row. A user following the README gets a GPU path 50 to 60 times slower than Release (512 surface 1,635 ms vs 25.6 ms; solid 2,245 ms vs 38.9 ms). Upstream's CUDA line also has no build type, but nvcc optimizes device code by default, so the CUDA reader does not see this. The Windows ROCm line already passes `-DCMAKE_BUILD_TYPE=Release`; the fix is the same flag on the Linux line (docs-only, carried forward automatically). The earlier gfx1201 validation's README row (512 surface 4, solid 0) was this same effect. Registered as `cuda-voxelizer-readme-linux-release-build-type`.

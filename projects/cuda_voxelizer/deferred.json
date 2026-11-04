@@ -43,6 +43,19 @@
       "upstream_issue": null,
       "created_at": "2026-11-04T09:58:35Z",
       "decided": null
+    },
+    {
+      "id": "cuda-voxelizer-readme-linux-release-build-type",
+      "kind": "other",
+      "component": null,
+      "summary": "README Linux ROCm build line sets no CMAKE_BUILD_TYPE, so clang compiles HIP device code at -O0 (gfx1201: code objects equal the -O0 Debug build; GPU path 50-60x slower than Release, 512 surface 1635 ms vs 25.6 ms). Results are correct. Fix: add -DCMAKE_BUILD_TYPE=Release to the Linux line as the Windows line already has (docs-only commit, carried forward). Porter at PR prep or now; a person rules.",
+      "refs": [
+        "projects/cuda_voxelizer/notes.md#validation-2026-11-04-linux-gfx1201-validator-moat-port-3625a1e----revalidation"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-04T10:24:36Z",
+      "decided": null
     }
   ]
 }
