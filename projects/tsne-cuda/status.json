@@ -7,12 +7,11 @@
   "priority": 0.0,
   "ext_type": "cmake",
   "adopted_at": "2026-08-07T06:47:29Z",
-  "updated_at": "2026-11-04T21:30:22Z",
+  "updated_at": "2026-11-04T21:33:57Z",
   "head_sha": "4fedca7e8eac2c8861b02b38905266960f4d2a86",
   "depends_on": [
     "faiss"
   ],
-  "porting": null,
   "waivers": {},
   "license_spdx": "BSD-3-Clause",
   "intake": {
@@ -30,6 +29,54 @@
   },
   "stage": "review-passed",
   "platforms": {
+    "linux-gfx90a": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": "4fedca7e8eac2c8861b02b38905266960f4d2a86",
+      "failed_sha": null,
+      "started_at": null,
+      "completed_at": "2026-11-04T21:33:57Z",
+      "updated_at": "2026-11-04T21:33:57Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "state": "completed",
+      "last_agent": "validator"
+    },
+    "linux-gfx1201": {
+      "blocked": false,
+      "blocked_reason": null,
+      "validated_sha": null,
+      "failed_sha": "4fedca7e8eac2c8861b02b38905266960f4d2a86",
+      "started_at": null,
+      "completed_at": null,
+      "updated_at": "2026-11-04T21:30:22Z",
+      "stats": {
+        "tokens_total": 0,
+        "tokens_approx": true,
+        "wall_seconds": {
+          "thinking": 0,
+          "compile": 0,
+          "test": 0,
+          "misc": 0
+        },
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
+      },
+      "last_agent": "validator",
+      "state": "validation-failed"
+    },
     "windows-gfx1151": {
       "blocked": false,
       "blocked_reason": null,
@@ -74,30 +121,6 @@
         "first_session_at": null,
         "last_session_at": null
       }
-    },
-    "linux-gfx1201": {
-      "blocked": false,
-      "blocked_reason": null,
-      "validated_sha": null,
-      "failed_sha": "4fedca7e8eac2c8861b02b38905266960f4d2a86",
-      "started_at": null,
-      "completed_at": null,
-      "updated_at": "2026-11-04T21:30:22Z",
-      "stats": {
-        "tokens_total": 0,
-        "tokens_approx": true,
-        "wall_seconds": {
-          "thinking": 0,
-          "compile": 0,
-          "test": 0,
-          "misc": 0
-        },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
-      },
-      "last_agent": "validator",
-      "state": "validation-failed"
     }
   },
   "porting_released": {

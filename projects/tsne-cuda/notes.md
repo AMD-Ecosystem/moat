@@ -222,3 +222,37 @@ With the INSTALL.md form, `libtsnecuda.so` links GCC's `libgomp.so.1`, but a FAI
 ### CUDA gate
 
 `cuda-not-validated`: no CUDA toolkit or conda on this host, and the CUDA build also needs a CUDA-built GPU FAISS (`find_package(FAISS REQUIRED)`), which the conda toolkit does not provide. Still owed on the mi355 host before the port goes to jeff.
+## Validation 2026-11-04 (validator, linux-gfx90a) -> completed
+
+Head `4fedca7` (clean tree, `git status --porcelain` empty). AMD Instinct MI250X/MI250 (gfx90a, sramecc+ xnack-), one GCD via `HIP_VISIBLE_DEVICES=0`, `ulimit -c 0`. ROCm: TheRock pip SDK 10.1.0 (`rocm-sdk path --root`), no `/opt/rocm` on this host.
+
+FAISS `moat-port` `01a09e8` built for gfx90a per faiss notes "Install as a dependency", with the SDK `llvm/bin/clang{,++}` for C/CXX/HIP, `-DCMAKE_PREFIX_PATH=$SDK` and the two workarounds above (`-include hip/hip_fp16.h -include hip/hip_bf16.h`, copy of `InvertedListScannerStats.h`). tsne-cuda: the INSTALL.md Linux recipe plus the HIP-compiler hint it documents (system gcc 13.3 for C/CXX):
+```
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a \
+  -DCMAKE_HIP_COMPILER=$SDK/llvm/bin/clang++ -DCMAKE_PREFIX_PATH="$SDK;$FAISS_PREFIX" -DBUILD_TESTS=ON
+cmake --build build -j 32
+```
+rc 0. 94 warnings: 52 `-Wunused-value` (`[[nodiscard]] hipError_t`), 12 `-Wswitch` (error-name switches), and 18 from FAISS headers (`Panorama.h` `#pragma float_control`, `Index.h` `VERSION_STRING` redefined).
+
+Runtime gotcha (environment, not the port): a FAISS built with the SDK clang links LLVM `libomp.so`, which its runpath does not cover, so `import`/`fit` fails with `OSError: libomp.so: cannot open shared object file`. Fix: `LD_LIBRARY_PATH=$FAISS_PREFIX/lib:$SDK/lib/llvm/lib`. (`libtsnecuda.so` itself links `libgomp`; both runtimes then load into one process, and no test was affected.)
+
+Results (Python 3.11.17 venv, numpy 1.26.4, scikit-learn 1.9.1, pytest 7.3.2; `PYTHONPATH` unset, package not installed: `import tsnecuda` -> `ModuleNotFoundError`, `pip show tsnecuda` -> not found):
+
+- `ctest --test-dir build --output-on-failure`: 1/1 passed (0.59 s).
+- `./build/tsnecuda_test` 10 consecutive runs: 10/10 rc 0, `PASSED 8 tests` each.
+- `cd build/python && python -c "import tsnecuda; tsnecuda.test()"`: rc 0, total_time 10.56 s (run 1), 8.39 s (run 2). Slower than gfx942/gfx1201 (2.3-3.1 s), all of it one-time setup rather than iterations: `_time_knn` 3.55 s, `_time_norm` 2.8-3.8 s, `_time_init_fft` 3.79 s first run / 0.56 s second; `_time_nbodyfft` 0.05 s, `_time_attr` 0.02 s. Recorded only, not a gate.
+- `python -m pytest -v build/python/tsnecuda/test`: 7 passed in 77.09 / 79.03 / 68.90 s (3 runs, absolute path, cwd MOAT root) and 61.31 s (INSTALL.md form, cwd source root). Includes `test_digits_quality_synchronized_kernels` and `test_digits_quality_launch_overrides`.
+- Metric harness (`test_tsne.py` helpers called directly to print values) against its thresholds:
+
+| metric | measured | threshold |
+|---|---|---|
+| digits trustworthiness | 0.99285 | >= 0.97 |
+| digits 5-fold 10-NN accuracy | 0.96218 | >= 0.95 |
+| scikit-learn TSNE trustworthiness (reference) | 0.99330 | ours >= ref - 0.02 |
+| digits, `TSNE_SYNC_KERNELS=1` | trust 0.99135, kNN 0.96051 | 0.97 / 0.95 |
+| digits, launch overrides (64/256/256/256) | trust 0.99254, kNN 0.96664 | 0.97 / 0.95 |
+| blobs 50000, k=32 ARI | 1.0 (5.18 s) | >= 0.95 |
+| blobs 10000, k=1024 (CPU FAISS) ARI | 1.0 (4.46 s) | >= 0.9 |
+
+- `utils/jargon.py --port tsne-cuda`: clean. Documentation: INSTALL.md "Building for AMD GPUs (ROCm)" (Linux and Windows), linked from README.
+- CUDA gate: `cuda-not-validated: no CUDA toolkit on this host (no conda, no nvcc)`; also needs a CUDA-built FAISS for `find_package(FAISS REQUIRED)`. Still owed on a CUDA-capable host at `4fedca7`.
