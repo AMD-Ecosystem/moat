@@ -328,3 +328,7 @@ GPU-vs-CPU differential, `test_models/bunny.OBJ`, validator's harness (`cuvox_co
 - Upstream CI smoke `-s 64 -cpu` (Release build): exit 0, writes `bunny.OBJ_64.vox`.
 - `utils/jargon.py --port cuda_voxelizer` clean; `utils/prose.py` on the commit message clean; fork tree clean at 3625a1e.
 - Not rerun: the `-D_DEBUG` device-counter build (counters and `cudaMemcpyFromSymbol` are untouched by this change), Windows, and the other arches. 3625a1e advances head, so every arch revalidates.
+
+## CUDA run on NVIDIA V100 at 3625a1e (2026-11-04, primary session)
+
+Same node, driver 575.57.08, CUDA 12.9, sm_70, and the same recipe as the earlier V100 section. At 3625a1e ("[ROCm] Keep the voxel table in device memory"; this changes main.cpp, which the CUDA build compiles), configure, build and link pass with USE_HIP OFF. `-s 64`, `-s 64 -solid` and `-s 64 -cpu` all exit 0, and the GPU run prints `[CUDA] CUDA device(s) found` with the same bounding box as before. The GPU `-s 64 -o binvox` output is byte-identical to the `-cpu` output (`cmp` clean). The CUDA no-regression gate holds at 3625a1e.
