@@ -1495,3 +1495,102 @@ Not a port regression and not in the 12-test gate, so not a validation failure; 
 - Jargon and documentation checks were recorded clean at this head by the Linux validators (same commit); not repeated. Integrity: `git -C agent_space/leap-win status --porcelain` empty, HEAD b37ca0a. No fork push, no `gh` write.
 
 validated_sha: b37ca0a2d0f04c48f0a65670fa54fe7553d2fecd
+
+## Port 2026-11-04 (porter, linux-gfx90a, bilateral bounds-check fix, moat-port b37ca0a -> d2112b6)
+
+jeff's ruling: llnl/LEAP takes no outside PRs, so the upstream bounds-check bug the windows-gfx1151 validator found (entry above) is carried on moat-port as its own commit, the same policy as for other inactive upstreams.
+
+Commit d2112b63f025446cd519453423679c5cd8740bf5 "Fix off-by-one bounds checks in bilateral_filter.cu" (no `[ROCm]` prefix: not ROCm-specific). It changes only `src/bilateral_filter.cu` lines 27, 82, 139, 193: `if (i > N.x || j >= N.y || k >= N.z) return;` -> `if (i >= N.x || ...)`. The `j` and `k` checks were already `>=` at all four sites, so `i` was the only index to fix. Kernels: `bilateralFilterKernel`, `bilateralFilterKernel_txt`, `scaledBilateralFilterKernel`, `scaledBilateralFilterKernel_txt` (launched with `setBlockSize`/`setGridSize`, 8x8x8 or 16x16x1 blocks with the grid rounded up, so `i == N.x` threads exist whenever `N.x` is not a block multiple; the dump_point volume has N.x = 133). `python3 utils/jargon.py --port LEAP`: clean. Pushed `b37ca0a..d2112b6 moat-port`; `advance-head LEAP d2112b6`.
+
+### Same pattern elsewhere in `src/` (for jeff; not changed)
+`grep -rnE 'if \(.*\b[ijkmnl] > ' src/` plus `> N\.[xyz]` searches over `src/*.cu *.cuh *.cpp *.h`. No other site uses `> N.x`/`> N.y`/`> N.z` as an out-of-range test on a 0-based index. The near matches are all correct:
+- `ramp_filter.cu:63,88` `i > N.x - 1 || j > N.y - 1`, `:120` `k > N.z - 1`, `:641,702` `j > N.y - 1` (equivalent to `>=`).
+- `noise_filters.cu:306,341,385,440,540,712`, `total_variation.cu:209,425,440` `i < sliceStart || i > sliceEnd`: `sliceEnd` is inclusive (`sliceEnd = N_1 - 1` when unset), and each kernel first returns on `i >= N.x`.
+- `noise_filters.cu:554-564,727-739` are commented out and use `> N.x - 1`.
+- `ramp_filter_cpu.cpp:221` `i > N / 2` is frequency-index logic, not a bounds check.
+
+### Build (both rc=0, `all archs for visible cards are included for compilation (gfx90a)`)
+Host: AMD Instinct MI250X GCD (gfx90a), HIP_VISIBLE_DEVICES=2 (pinned by the dispatcher), torch 2.16.0a0+git6c3af02, HIP 7.16.26385, numpy 1.26.4. All GPU runs under `ulimit -c 0`.
+```
+env -u PYTORCH_ROCM_ARCH MAX_JOBS=32 bash utils/timeit.sh LEAP compile -- bash -c "cd projects/LEAP/src && python setup_AMD.py build_ext --inplace"   # d2112b6 (fork clone)
+git -C projects/LEAP/src archive b37ca0a | tar -x -C agent_space/cmp/b37ca0a
+(cd agent_space/cmp/b37ca0a && env -u PYTORCH_ROCM_ARCH MAX_JOBS=32 python setup_AMD.py build_ext --inplace)
+```
+
+### Tests (`utils/timeit.sh LEAP test`)
+```
+python dump_point.py <b37ca0a>/src pt_old.npz ; python dump_point.py projects/LEAP/src/src pt_new.npz   # scripts extracted unchanged from this file
+python compare_outputs.py pt_old.npz pt_new.npz        # ALL BIT-IDENTICAL (20 arrays), incl. bilateral_out and priorbilateral_out (0/2179072 differ)
+(cd <build> && python unitTests/gpu_vs_cpu_validate.py) # both rc=0, 12/12 PASS, OVERALL: PASS; the 12 result lines identical between builds
+```
+gpu_vs_cpu_validate values equal the gfx90a record at b37ca0a (parallel adjoint 2.54e-05/1.64e-05 ... modular VD 3.39e-03, fbp 0.9998). The `ok`/`FAILED` lines of the two dump_point runs are identical. As before on gfx90a, `upsample` fails in the script (ctypes dtype) and `dictionary` memory-faults in the OMP kernel (`HSA_STATUS_ERROR_MEMORY_FAULT`), in both builds; unrelated to this change. On gfx90a the old check never faulted, so as expected the only effect here is no output change. The fault itself is removed only where it showed up (gfx1151); the windows-gfx1151 validator's throwaway copy with the identical edit ran dump_point to the end (entry above), and that platform's revalidation at d2112b6 is the evidence of record.
+
+### Not done / for jeff
+- CUDA compile: no nvcc on this host (as recorded before); the change is the same 4-character edit on both vendors.
+- The commit body's Test Plan cites the Radeon 8060S result from the gfx1151 validator's throwaway copy (same edit), not a run at d2112b6; revalidation there will confirm it.
+- Every platform now reads `revalidate` at d2112b6.
+- `dictionary` (OMP kernel) memory fault on gfx90a: still a separate pre-existing upstream fault, not looked at.
+
+### Corrected review PR body at d2112b6 (for jeff)
+Changed from the b37ca0a body above: one sentence in "Effect on the CUDA/NVIDIA path" (it follows "CUDA behavior is unchanged.", which would otherwise be false now) and one placeholder line in "Validation". The PR is not edited.
+
+~~~~markdown
+## Summary
+
+This PR adds AMD GPU support to LEAP by making the CUDA projector, filter, and scatter kernels build and run correctly on ROCm through HIP. It uses the existing torch extension build (`setup_AMD.py`): on a ROCm install, PyTorch's build machinery hipifies the canonical `.cu` sources at build time, so a single set of sources serves both vendors and no file is renamed or duplicated for HIP.
+
+To build on ROCm, from the repository root:
+
+```
+python setup_AMD.py build_ext --inplace
+```
+
+The build compiles for the GPU architectures PyTorch's extension build selects by default: with PyTorch 2.12 and later, those of the GPUs visible at build time; with earlier releases, those the installed PyTorch was built for. Set `PYTORCH_ROCM_ARCH` (for example `PYTORCH_ROCM_ARCH="gfx90a;gfx942;gfx1100"`) to choose the architectures explicitly.
+
+The resulting `leapct` shared library is loaded by `leapctype.py` via ctypes exactly as before.
+
+## What is implemented
+
+Texture sampling is the central piece of the port. LEAP's projectors read their volume or sinogram through texture objects, with several hundred `tex3D`/`tex2D`/`tex1D<float>` fetches, many at fractional coordinates relying on `cudaFilterModeLinear` hardware interpolation. HIP does not offer linear filtering on float element-read textures, so on ROCm every texture is created with point filtering, and device-only helpers `leapTex3D`/`leapTex2D`/`leapTex1D` (`cuda_utils.h`) do the trilinear/bilinear/linear blend in software from the corner texels with the CUDA unnormalized -0.5 texel-center convention. The corners are point fetches at texel centers, so the bound address mode (border or clamp) governs out-of-range neighbors exactly as with hardware filtering. On CUDA the helpers forward straight to the texture builtins, preserving hardware filtering.
+
+On gfx942 and gfx950 the texture API is disabled at compile time, and gfx942 reports no image support at run time. For those GPUs `loadTexture`, `loadTexture_from_cpu` and `loadTexture1D` (`cuda_utils.cu`) copy the data into one linear device buffer behind a small header holding the extents and the bound address mode, and the texture handle points at that buffer. The helpers compiled for those targets (ROCm's HIP headers define `__HIP_NO_IMAGE_SUPPORT` in device code for them) read the buffer the way the bound texture samples: unnormalized coordinates, point sampling, and the bound address mode (border returns zero, clamp repeats the edge texel), so no read goes past the buffer. Every other GPU keeps real texture objects, because the buffer is exact but, on an AMD Instinct MI250X (gfx90a), made projection 3.0 to 3.3 times and backprojection 1.8 to 2.5 times slower where it feeds the software blend. The loaders choose at run time from the current device's `hipDeviceAttributeImageSupport` and check that choice against a flag compiled into each target's device code, refusing to create a handle if they disagree, so a multi-architecture build hands every GPU the representation its code reads. `cudaFreeArray` and `cudaDestroyTextureObject` are redirected on ROCm so the existing call sites release either kind unchanged. On CUDA, `loadTexture*` keep their original bodies.
+
+Fetch sites whose texture is bound with linear filtering call the helpers with linear interpolation; point-bound fetch sites (for example the Siddon projectors, which fetch at integer coordinates) call them with `linear = false`, a plain point fetch. The Joseph modular-beam path chooses its filter mode at runtime, so those kernels take a `linearInterp` flag and pass it through, keeping both modes correct with one kernel.
+
+Detector-edge footprint weights can compute coordinates of the form `0/0 = NaN`; CUDA hardware texturing returns a finite border/clamped value for a non-finite coordinate, which the call site then multiplies by the zero weight. The helpers map non-finite input coordinates to finite ones to reproduce that, keeping cone/fan/modular projections finite at the detector edges.
+
+The GPU FFT filter path (ramp and Hilbert filtering in `ramp_filter.cu`) is enabled on ROCm by defining `__INCLUDE_CUFFT`; the cuFFT calls map to hipFFT during hipify and the extension links `hipfft`.
+
+Build-system and cleanup changes: the ROCm branch of `setup_AMD.py` gains the `__INCLUDE_CUFFT` define and hipFFT linkage, and GPU architecture selection stays with PyTorch's extension build; three stale one-shot hipify dumps (`src/hip_utils.h`, `src/projectors_Joseph_cpu_hip.h`, `src/ramp_filter_hip.cuh`) are removed because they are unreferenced and collide with the names the build-time hipify generates, and those generated outputs are now gitignored; `src/analytic_ray_tracing_gpu.cu` includes `cuda_runtime.h` before its `.cuh` so `float3`/`float2` resolve on HIP.
+
+Windows/MSVC support required four guarded fixes: `leap_defines.h` skips its `uint8`/`uint16` typedefs when they would clash with HIP's vector types under MSVC (`file_io.cpp` gets a local cstdint-based typedef under the same guard); a minimal `PYBIND11_MODULE` stub satisfies the `/EXPORT:PyInit_leapct` symbol the torch extension linker requires; `PROJECTOR_EXPORTS` is defined so the C interface exports rather than imports; and `leapct_exports.def` lists the 207 exported symbols so MSVC link-time code generation does not strip them.
+
+A new test, `unitTests/gpu_vs_cpu_validate.py`, exercises 6 geometries (parallel, fan, cone-parallel, cone-flat, cone-curved, modular) with both the VD and SF projector models, checking that forward/backprojection/FBP are finite, that FBP of a uniform cylinder recovers an interior value of 1.0 (which also exercises the hipFFT ramp-filter path), and that the forward/backprojection adjoint identity `<Af,g> == <f,A^T g>` holds.
+
+## Effect on the CUDA/NVIDIA path
+
+CUDA behavior is unchanged. The one exception is vendor-neutral: the four kernels in `src/bilateral_filter.cu` tested `i > N.x` instead of `i >= N.x` and so read and wrote one slice past the volume, and this PR also corrects that check, which leaves every in-range output unchanged (<bilateral fix evidence: GPUs where `BilateralFilter`/`PriorBilateralFilter` outputs match the previous build, and the GPU where the old check faulted>). The texture helpers compile to the original hardware `tex*D` builtins under nvcc, so NVIDIA builds keep their textures and hardware linear filtering; the linear-memory texture path, the `cudaFreeArray`/`cudaDestroyTextureObject` redirection, hipFFT linkage, and ROCm build flags are guarded to HIP; the vector-type guard requires both MSVC and the HIP platform. The CPU projectors (`*_cpu.cpp`) are not touched. On Linux, the only CUDA-visible source change is mechanical: texture fetch sites call the forwarding helpers, and the Joseph modular-beam kernels carry the extra `linearInterp` parameter. The other three Windows fixes (the `PyInit_leapct` stub, `PROJECTOR_EXPORTS`, and the `.def` export list) depend only on Windows, so they also apply to a CUDA build of `setup_AMD.py` on Windows; that build was not tested.
+
+## Validation
+
+All testing was done on real AMD GPUs. `unitTests/gpu_vs_cpu_validate.py` (12 tests: 6 geometries x {VD, SF}) passed 12/12 on each of:
+
+- <GPU, gfx target, Linux or Windows, and any notes, for each GPU validated at the final commit>
+
+<Summary of the per-test results at the final commit: finite outputs, FBP interior recovery, adjoint relative error, and whether the results agree across GPUs.>
+
+<For a GPU with texture hardware: whether forward, backprojection and FBP outputs are bit-identical to the texture-only build that preceded gfx942 support, and the change in projection time. For a GPU without image support: the projection and backprojection times measured there.>
+
+<Bilateral filter bounds-check fix: per GPU, `BilateralFilter`/`PriorBilateralFilter` outputs before and after the fix, and the result on the GPU where the old check faulted.>
+
+One pre-existing upstream behavior was reproduced, not introduced: modular-beam SF FBP does not converge (tilted-detector separable footprint), while modular SF forward projection matches modular VD and modular VD FBP recovers 1.0. No `*_cpu.cpp` file is modified.
+
+This work was authored with the assistance of Claude, an AI assistant.
+
+---
+
+This pull request was prepared with the help of an AI assistant acting as a coding agent and was read and approved by a person before it was opened. It comes from an ongoing effort to add AMD GPU support to widely used CUDA projects, one repository at a time: https://github.com/AMD-Ecosystem/moat -- that repository describes how the work is done and what a person checks before anything is submitted.
+
+If you would rather not receive pull requests from this effort, say so here or open an issue at https://github.com/AMD-Ecosystem/moat/issues/new/choose and we will close this and stop. That can cover this repository alone or everything you own, whichever you prefer.
+~~~~
+
