@@ -1270,3 +1270,70 @@ bash utils/timeit.sh TIGRE cuda-compile -- bash -c "cd port && $FLEET_VENV/bin/p
 - Host g++ warnings (NumPy deprecated API, `malloc` return ignored in GpuIds.cpp, zero-length printf format in TIGRE_common.cpp) identical in count to the baseline.
 
 The CUDA compile gate is satisfied at b61ff14. No CUDA runtime behaviour is claimed (no NVIDIA GPU).
+## Review 2026-11-04 (reviewer, linux-gfx90a, delta 34f31a6..b61ff14 plus whole-port CUDA-path audit -> review-passed)
+
+jeff asked for this run. Lock: `set-state TIGRE linux-gfx90a reviewing`. Fresh fork clone, `moat-fix-747` at b61ff14c, compared against upstream master 69bdd9f (`git remote add upstream https://github.com/CERN/TIGRE`; the fork's `master` mirror is still a07589f, the published PR's base).
+
+### Verdict: review-passed. No code findings.
+
+### Delta 34f31a6..b61ff14
++5 lines in `Common/CUDA/RandomNumberGenerator.cu`, CRLF kept, nothing else touched. Against 69bdd9f the file's diff is now `-#include <cuda.h>` / `+#include "cuda_to_hip.h"` / `+#ifndef USE_HIP` / `+#endif`; the cuRAND pair and the blank line after it are upstream's bytes in upstream's place. On CUDA the TU sees `<cuda_runtime_api.h>`, `<cuda.h>` (both from the header's `#else /* CUDA */` branch, cuda_to_hip.h:231-232), then `<curand_kernel.h>`, `<curand.h>`: upstream's set plus `cuda_runtime_api.h`, which `curand_kernel.h` pulls in anyway. On HIP the guard drops the pair and the header's `hiprand_kernel.h` plus `curand*` aliases (cuda_to_hip.h:180-189) supply the RNG, as at 34f31a6. Keeping cuRAND out of the shared header is the right call: `grep -l curand` finds only this file. Commit: `[ROCm]` title of 51 chars, AI disclosure in prose, no Co-Authored-By, Test Plan fenced. `jargon.py --port TIGRE`: clean.
+
+### Whole-port CUDA-path audit (`git diff 69bdd9f b61ff14`, 17 files)
+Every removed CUDA include: `<cuda_runtime_api.h>` and/or `<cuda.h>` in GpuIds.cpp, gpuUtils.cu, Siddon_projection(.cu, _parallel.cu), ray_interpolated_projection(.cu, _parallel.cu), voxel_backprojection(.cu, 2.cu, _parallel.cu), and `<cuda.h>` in RandomNumberGenerator.cu. The header's CUDA branch includes exactly those two, so no CUDA TU lost a header; the cuRAND pair was the only gap and b61ff14 closes it. GD_TV, GD_AwTV, PICCS, tv_proximal only add the header. No `.hpp` changed.
+
+Every edit outside a `USE_HIP` guard, and what nvcc compiles for it:
+- `tex3D<float>` -> `tex3D_TIGRE` (voxel_backprojection, voxel_backprojection2, voxel_backprojection_parallel, ray_interpolated_projection_parallel): on CUDA `tex3D_TIGRE` is a `__forceinline__` `return tex3D<float>(tex, x, y, z);` (cuda_to_hip.h:284-286). Same fetch.
+- ray_interpolated_projection.cu:197-200 `if (geo.accuracy>1) tex3D<float> else tex3D_TIGRE`: both branches are the same `tex3D<float>` call on CUDA.
+- `filterMode = tigre_hw_linear_supported() ? Linear : Point` (5 sites) and `tigre_sync_hw_linear()` (5 sites): the CUDA stubs are `return true` and an empty body (cuda_to_hip.h:235-237), so `cudaFilterModeLinear` and no call, as upstream.
+- `<< <` / `>> >` -> `<<<` / `>>>` in GD_TV, GD_AwTV, PICCS (6 launches): token spelling only.
+- Intended shared fixes: the Np cap in Siddon_projection.cu:259-266 and Siddon_projection_parallel.cu:388-392 (a no-op for any valid ray, shown bitwise by the gfx90a validator at 5a3da55), and the two `cudaStreamSynchronize(stream[1])` from 34f31a6.
+- gpuUtils.cu: the self-test block is under `#if defined(USE_HIP) && ...` (gpuUtils.cu:7); on CUDA the file differs only by the include swap.
+- Byte noise, no compiled effect: tv_proximal.cu, voxel_backprojection_parallel.cu and ray_interpolated_projection_parallel.cu end in `}\r` where upstream ends in `}` (all three without a final newline). In tv_proximal.cu that is the only change besides the include. Published since cf873a2; not worth a commit on its own, but if the branch gets another round the three bytes can go back.
+
+`setup.py` on the nvcc path: `BUILD_WITH_HIP` defaults off; `define_macros` gains `USE_HIP` / `__HIP_PLATFORM_AMD__` only under it; `locate_cuda()`, the `cuda_version` parse and the `-gencode` loop moved unchanged into the `else:`; both compile hooks put the HIP branch first as `if _is_cuda_file(src) and BUILD_WITH_HIP:` and keep upstream's nvcc branch verbatim as the `elif`; `libraries=[GPU_RUNTIME_LIB]` is `"cudart"` on CUDA. The one unconditional change is `Common/CUDA/gpuUtils.cu` added to `_Ax` (setup.py:444). It is needed on HIP (it defines `tigre_hw_linear_supported()` for ray_interpolated_projection.cu); on CUDA it is one more nvcc compile (20 vs 19 in the nvcc 12.8 log) of a file the other 7 extensions already build, adding no symbol `_Ax` did not resolve before. Harmless and matches the other extensions, so not a finding, but it is the only nvcc-path build difference besides the shared fixes.
+
+Conclusion: apart from the Np caps, the two stream syncs, the extra `gpuUtils.cu` in `_Ax` and three trailing CR bytes, nvcc compiles upstream's code. Not verified with nvcc on this host (no CUDA toolkit); **the CUDA compile check is still owed at b61ff14** (mi355 host, nvcc 12.8; expect rc 0, 8/8 extensions, 629 ptxas entry functions, warnings as the 69bdd9f baseline).
+
+### Reviewer check on this host (MI250X gfx90a, TheRock ROCm SDK 10.1, HIP_VISIBLE_DEVICES=3 pinned, `ulimit -c 0`)
+Reviewer check, not validator evidence. Scripts and `run_head.sh` copied from the gfx90a porter job's host-local `agent_space/` (2 passes of the parallel and repeat loops).
+```
+export PATH=/opt/python-3.11-venv/bin:$PATH BUILD_WITH_HIP=1 HIP_ARCH=gfx90a ROCM_PATH=$(rocm-sdk path --root)
+utils/timeit.sh TIGRE compile -- bash -c "cd projects/TIGRE/src && $FLEET_VENV/bin/python setup.py build_ext --inplace -j 16"
+utils/timeit.sh TIGRE test -- bash $PWD/agent_space/run_head.sh $PWD/projects/TIGRE/src $PWD/agent_space/scripts
+```
+- Build: rc 0, 0 `error:` lines, 8/8 `.so`, 20 hipcc compiles at `-std=c++14`, no nvcc. Self-test: unsupported (software trilinear fallback), as before on this GPU.
+- Upstream pytest, 7 files: 6 + 1 + 3 + 37 + 5 + 9 + 9 = **70 passed, 0 failed**.
+- Cone gates, solver sweep, `tigre_parallel.py` (2 passes): every number equals the porter's b61ff14 record to the printed digit (27.46/111.2, 0.0040, 0.2864, 0.1929, 1.004e-05 / 6.076e-05; sart 4.9635 ... ossart_tv 3.4159; 0.0043 / 0.0041 / 0.0056, FBP 0.0833, SIRT 0.1952). RESULT PASS in all.
+- Repeats: `repeat_par.py` and `repeat_par_interp.py`, parallel and cone, 2 passes -> 0/20 differ in all 16 cases (320 repeats bitwise identical).
+
+### Proposed fix review PR body and `## Upstream reply`
+Checked every claim against the code and the records: 98 commits from the PR's base a07589f to 69bdd9f (`git rev-list --count`); cf873a2 replaced exactly `<cuda.h>`, `<curand_kernel.h>`, `<curand.h>` with the header; the 38-error nvcc failure is the nvcc 12.8 record; the race numbers (28 of 120, up to 11 of 20 in one set, projections 0 to 8, 43.9% -> "up to 44%") are the gfx90a validator's 5a3da55 control at the 34f31a6 entry; "the published tip showed the same fault" is the 5a3da55 validation's base run (random 7/20). The body says plainly that the published PR did not compile with nvcc and that b61ff14 fixes it. Title (72 chars) is accurate. Three corrections:
+1. Body, CUDA paragraph: "the HIP preprocessed output of the file is unchanged" -> "unchanged apart from blank lines" (the porter's own comparison and the commit body say that; line markers move).
+2. Reply: "the CUDA side of that file now includes the same headers as master" is not exact; it also gets `cuda_runtime_api.h` through the compatibility header. Reworded to "includes the cuRAND headers again, in the same place as master".
+3. Reply: had no race numbers. Added the gfx90a figures (28 of 120 repeats differed, errors up to 44% of the maximum) and the bitwise-stable result after the fix.
+Placeholders stay: no validator record and no nvcc check exist at b61ff14 yet. `jargon.py -`: clean. `prose.py`: clean.
+
+Corrected draft. Title: `[ROCm] Merge upstream master, fix the HIP build and a parallel-beam race`
+```
+Upstream PR CERN/TIGRE#747 conflicts with master (98 commits since the PR's base), and as published it does not compile with nvcc. This round merges upstream master at 69bdd9f into the port, fixes the CUDA build, adds one HIP build fix, and fixes an upload/kernel ordering race in the parallel-beam projectors that the round's new parallel-beam checks exposed.
+
+CUDA build fix (b61ff14): the published PR replaced the <cuda.h>, <curand_kernel.h> and <curand.h> includes in Common/CUDA/RandomNumberGenerator.cu with the compatibility header, whose CUDA branch includes only the CUDA runtime headers. nvcc 12.8 then fails on that file (identifier "curandState" is undefined, 38 errors) and the _RandomNumberGenerator extension does not build for NVIDIA GPUs. The two cuRAND includes are back, under #ifndef USE_HIP, in the same place as upstream; no other CUDA translation unit changes, and the HIP preprocessed output of the file is unchanged apart from blank lines. <CUDA compile result at b61ff14: fill in from the nvcc check>.
+
+Merge (cfc014e): one conflicting hunk in Common/CUDA/Siddon_projection_parallel.cu. Upstream rewrote the parallel Siddon projector (full Euler angles, missed-ray return, per-axis intersection counts with a z term). Resolved by taking upstream's kernel and re-applying the port's intersection-count cap on the new Npx + Npy + Npz sum, widened to nVoxelX + nVoxelY + nVoxelZ + 3 to match the cone kernel. Everything else auto-merged; upstream's new CUDA code uses only runtime calls and point-filtered texture reads that the compatibility header already covers.
+
+HIP build fix (5a3da55): setup.py compiled the HIP sources with -std=c++11. Current rocRAND device headers use std::enable_if_t, so the .cu sources no longer compile on current ROCm; C++14 is the lowest standard they accept. The HIP compile now uses -std=c++14. The nvcc flags, the host C++ flags and the Windows HIP path are unchanged.
+
+Race fix (34f31a6): CreateTextureParallel and CreateTextureParallelInterp upload the volume with cudaMemcpy3DAsync on stream[1] from a pageable host buffer, and the first projection kernel then runs on stream[0] with nothing ordering the two streams. CUDA may perform a copy from pageable host memory synchronously with respect to the host, which hides the race there; HIP does not. On gfx90a (MI250X), at 5a3da55, 28 of 120 repeated parallel Siddon projections of identical input differed from the first run (up to 11 of 20 in one set), all in the first kernel batch (projections 0 to 8), with errors up to 44% of the maximum. The published tip showed the same fault, and upstream master has the same code. Both functions now call cudaStreamSynchronize(stream[1]) after the upload, as the cone projector and the parallel backprojector already synchronize after theirs. The interpolated case was not observed to fail but has the same ordering. The sync only adds ordering, so it cannot change CUDA output that was already correct. An audit of the async copies in the built .cu sources found no other upload that a kernel on another stream consumes without a sync in single-GPU runs.
+
+Retested at b61ff14 on <GPUs with a validator record at b61ff14>, ROCm 10.1: all 8 extensions build; the 7 new upstream test files pass (70 tests); cone beam: interpolated vs Siddon projection 0.40%, FDK nRMSE 0.286, OS-SART 0.193, adjointness residual 1.0e-05, and all 9 iterative solvers finite; parallel beam: Siddon vs interpolated 0.43%, 0.41% and 0.56% at axis-aligned, offset and full Euler angle sets, FBP 0.083, SIRT 0.195, and missed rays return promptly. Repeating each projector 20 times on identical input gives bitwise identical output in every run (parallel and cone, Siddon and interpolated), where parallel Siddon at 5a3da55 differed in 28 of 120 runs. Compared with the published tip built the same way, cone Ax, FDK and adjointness are identical; the SART-family numbers moved, and swapping only iterative_recon_alg.py between the two trees restores them to four digits, so that change comes from upstream's new SART weight (a675320), not from the HIP code. <confirm the numbers and the repeat count against the validator records at b61ff14>.
+
+## Upstream reply
+
+The branch as I previously pushed it did not compile with nvcc: RandomNumberGenerator.cu had lost its cuRAND includes on the CUDA path. That is fixed; the CUDA side of that file includes the cuRAND headers again, in the same place as master. I also merged current master into this branch, keeping the new parallel Siddon projector from master where it conflicted with the port, and added a small setup.py fix so the HIP build works with current ROCm, whose rocRAND headers need C++14. The branch also fixes an upload/kernel ordering race in the parallel-beam projectors: on an MI250X, 28 of 120 repeated parallel Siddon projections of identical input differed, with errors up to 44% of the maximum, and with the fix every repeat is bitwise identical. I re-ran the cone and parallel-beam projection, reconstruction and adjointness checks on <GPUs validated at the final head>, and checked that all 8 extensions build with nvcc 12.8 <only once the nvcc check at b61ff14 passes>.
+```
+
+### What remains
+- CUDA compile check at b61ff14 (mi355 host, nvcc 12.8).
+- Validators at b61ff14 on every gate (linux-gfx90a, linux-gfx1100, windows).
+- jeff: the multi-GPU halo races (tv_proximal reproduced on 2x gfx942; GD_TV / GD_AwTV analysis only), still outside this round.
