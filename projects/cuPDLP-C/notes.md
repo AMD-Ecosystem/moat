@@ -653,3 +653,37 @@ Retested at 8f43bf8 on AMD Instinct MI250X (gfx90a) and AMD Radeon Pro W7800 (gf
 
 I merged current main into this branch, so it no longer conflicts, and every file the port touches keeps the line endings the repository uses for it. I retested on an AMD Instinct MI250X (gfx90a) and an AMD Radeon Pro W7800 (gfx1100): testcudalin, testcublas, afiro, and your new CTest suite and NumPy checker all pass. build.sh also gains a `MODE=hip` option, documented in INSTALL, and I removed the per-file copyright and author lines the port had added, since the project records attribution in AUTHORS and OWNERSHIP.txt.
 ```
+
+## Review 2026-11-04 (moat-fix-41 at f56941f, linux-gfx90a): re-review
+
+Scope: `git diff 8f43bf8 f56941f` (3 files, 9 deletions, 0 insertions), plus a re-check of the full port `git diff upstream/main f56941f`. upstream/main is still f81f459, so the merge resolution reviewed at 09bb532 stands.
+
+Verdict: review passed. No findings.
+
+- Only port-added lines removed. `FindHIPConf.cmake` and `cupdlp/cuda/cuda_to_hip.h` do not exist on upstream/main, and upstream's `cupdlp_cuda_kernels.cu` starts at `#include "cupdlp_cuda_kernels.cuh"` with no comment block, so all nine deleted lines (copyright, author, empty separator in each file) came from the port. No upstream text touched; each file keeps its description comment.
+- Line endings kept: the deleted lines were CRLF, and the files are 62/62, 108/108, 474/474 CRLF at head. Across all 14 port files each uses the same single convention as upstream (CMake/CUDA all CRLF; INSTALL, README.md, build.sh 0 CR).
+- No per-file attribution left: `git diff upstream/main f56941f | grep -iE '^\+.*(copyright|author|\(c\)|daily|amd\.com|rights reserved|spdx|contributor|written by|advanced micro)'` returns nothing. The remaining `AMD` mentions are technical (option text, `__HIP_PLATFORM_AMD__`, docs). AUTHORS, OWNERSHIP.txt and THIRD_PARTY_NOTICES are not in the port diff. Git commit author metadata is the only place the address appears, which is normal authorship, not a file header.
+- f56941f commit message: `[ROCm]` title within 72 characters, rationale, "Authored with Claude.", fenced Test Plan, no Co-Authored-By trailer.
+- Upstream PR #41, read-only query today: OPEN, DIRTY, head d380bca, 0 comments, 0 reviews. "No maintainer has commented" holds.
+- Gates at f56941f: linux-gfx90a and linux-gfx1100 completed (validated at 8f43bf8, carried forward as comment-only); the windows gate is still owed (both Windows records at d380bca), so the body cannot be posted yet.
+
+Minor wording, not a finding: f56941f's message and the drafted body say the project keeps no per-file copyright headers. Upstream's inherited CSparse files `cupdlp/cupdlp_cs.c` and `cupdlp/cupdlp_cs.h` carry them, and OWNERSHIP.txt says existing notices are preserved. Accurate for the project's own sources. The commit stays as is (no amend); the body below is narrowed to say "its own sources". At any PR-prep squash, apply the same narrowing to the commit message.
+
+### Fix review PR body at f56941f: review
+
+The draft in "Fix round 2026-11-04 (moat-fix-41 -> f56941f)" passes `jargon.py -` and `prose.py`, and it is ASCII. Claims checked against the head: README diff is the one AMD line; 14 files differ from upstream/main and every other file is byte-identical; the line-ending claim holds; "most" CRLF is right; the INSTALL description matches INSTALL:27-42; and the retest list matches the gfx90a and gfx1100 validator records at 8f43bf8 (testcudalin, testcublas, afiro Optimal -464.75 in 200 iterations, CTest 4/4, installed suite 4/4, NumPy checker, build.sh end to end), which both carry forward to f56941f. The `## Upstream reply` names only MI250X (gfx90a) and W7800 (gfx1100), the two GPUs with a completed record at f56941f. The only change is the narrowing above. If a Windows platform completes at f56941f before posting, its GPU may be added to both the retest paragraph and the reply; if the head moves, re-check. Corrected body (jargon.py - clean, prose.py clean, ASCII). Title unchanged: `[ROCm] Merge current upstream main into the HIP port`
+
+```
+Upstream PR COPT-Public/cuPDLP-C#41 showed as conflicting after upstream landed its COIN-OR preparation commit (b196976, merged in f81f459). That commit bundles HiGHS 1.6.0, adds build.sh, INSTALL and a tests/ suite, rewrites the README, and converts most source and CMake files to CRLF. No maintainer has commented on the PR; this round only brings it up to date.
+
+What changed on this branch:
+- f10a1e8: merge of upstream main (`-X ignore-cr-at-eol`). The three real conflicts were resolved keeping both sides: the HIP branches stay, the CUDA branches take upstream's `${CMAKE_CUDA_PATH}/include`, and the README takes upstream's text plus one AMD line. Every file the port adds or changes keeps upstream's line endings for that file (CRLF for the CMake files and CUDA sources, LF for README.md, INSTALL and build.sh); all other files are byte-identical to upstream, so the PR diff stays the port only.
+- 09bb532 and 8f43bf8: `MODE=hip` for build.sh, with INSTALL documenting it, listing where the hip install lands (`.coinor-deps/cupdlp-hip-install/bin/plc`) and noting that it needs the ROCm libraries kept in place.
+- f56941f: removes the AMD copyright and author lines from FindHIPConf.cmake, cuda_to_hip.h and cupdlp_cuda_kernels.cu, because the project keeps no per-file headers on its own sources and records attribution in AUTHORS and OWNERSHIP.txt. Comment-only; each file keeps its description comment.
+
+Retested at 8f43bf8 on AMD Instinct MI250X (gfx90a) and AMD Radeon Pro W7800 (gfx1100): testcudalin, testcublas and plc on afiro (Optimal, -464.75, 200 iterations), upstream's CTest suite 4/4, the installed suite 4/4, the NumPy checker, and `MODE=hip bash build.sh` end to end. f56941f changes only comments; the W7800 rebuild and rerun at f56941f gave the same results.
+
+## Upstream reply
+
+I merged current main into this branch, so it no longer conflicts, and every file the port touches keeps the line endings the repository uses for it. I retested on an AMD Instinct MI250X (gfx90a) and an AMD Radeon Pro W7800 (gfx1100): testcudalin, testcublas, afiro, and your new CTest suite and NumPy checker all pass. build.sh also gains a `MODE=hip` option, documented in INSTALL, and I removed the per-file copyright and author lines the port had added, since the project records attribution in AUTHORS and OWNERSHIP.txt.
+```
