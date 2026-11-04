@@ -1234,3 +1234,12 @@ Retested at b61ff14 on <GPUs with a validator record at b61ff14>, ROCm 10.1: all
 
 The branch as I previously pushed it did not compile with nvcc: RandomNumberGenerator.cu had lost its cuRAND includes on the CUDA path. That is fixed; the CUDA side of that file now includes the same headers as master. I also merged current master into this branch, keeping the new parallel Siddon projector from master where it conflicted with the port, and added a small setup.py fix so the HIP build works with current ROCm, whose rocRAND headers need C++14. The branch also fixes an upload/kernel ordering race in the parallel-beam projectors, which shows up on AMD GPUs. I re-ran the cone and parallel-beam projection, reconstruction and adjointness checks on <GPUs validated at the final head>, and checked that all 8 extensions build with nvcc 12.8 <only once the nvcc check at b61ff14 passes>.
 ```
+
+## Multi-GPU halo-race verification 2026-11-04 (linux-gfx942, 2x MI300X, fleet job, evidence only)
+
+jeff's plan `tigre-multigpu-halo-race-verification.md` in claude-shared plans; full numbers, method and the draft upstream issue are in its Results. No state changed; nothing committed or pushed to the fork. Tested at 34f31a6; b61ff14 does not touch tv_proximal.cu, GD_TV.cu, GD_AwTV.cu or cuda_to_hip.h.
+- gfx942 cannot build the projectors, so only `_tv_proximal _minTV _AwminTV _gpuUtils` were built (scratch-only: setup.py ext list cut, `tex3D` in the gpuUtils probe and `tex3D_TIGRE` guarded by `__HIP_NO_IMAGE_SUPPORT`), and the kernels were driven directly with the solvers' arguments, 20 bitwise repeats per case, `HIP_VISIBLE_DEVICES` pinned to 2 GPUs, `ulimit -c 0`.
+- **tv_proximal halo race reproduced** (hazard (b), last device's halo upload vs next `update_u`): 2 GPUs at 512^3 gave 18 and 11 distinct outputs in two batches of 20 (worst 1.06% of max), 128x1024x1024 gave 20/20 distinct (1.38%), differences only in slices next to the split. 256^3 and smaller were stable. `cudaDeviceSynchronize()` at the end of the `dev>0` block makes every case bitwise stable, and the result is bitwise equal to the unfixed code under `AMD_SERIALIZE_KERNEL=3 AMD_SERIALIZE_COPY=3`.
+- **GD_TV / GD_AwTV halo race not reproduced** in 240 two-GPU runs (up to 512^3 and 64x2048x2048, also `GPU_MAX_HW_QUEUES=16`); analysis only.
+- Separate deterministic finding: 2-GPU tv_proximal differs from 1-GPU by about 5% of max at the split slices and the last slice, in every run and with or without the fix. Cause not confirmed.
+- All 1-GPU controls were bitwise stable.
