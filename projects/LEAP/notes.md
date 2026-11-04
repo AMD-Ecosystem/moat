@@ -1342,3 +1342,59 @@ Comparison with this platform's earlier record: the last gfx90a validation is at
 
 ### CUDA gate: cuda-not-validated
 cuda-not-validated: no CUDA toolkit on this host (no `/opt/conda`, no nvcc). `nvidia-cuda-nvcc-cu12==12.8.*` from pip into `$FLEET_VENV` ships only `ptxas`, not `nvcc` (uninstalled again). Fetching micromamba to build a local CUDA 12.8 env was refused by the session's permission policy. No CUDA compile has been recorded at b37ca0a on any host; the reviewers' by-eye argument (all additions HIP-guarded, 0 removed lines in `cuda_utils.cu`) is the only CUDA evidence at this head.
+## Validation 2026-11-04 (validator, linux-gfx942, moat-port @ b37ca0a)
+
+Verdict: completed at b37ca0a2d0f04c48f0a65670fa54fe7553d2fecd (tip of `moat-port`, no upstream PR open). Every check matches the porter's counts at this head and this platform's earlier records (gfx942 port entry at e503672, gfx942 review of b37ca0a): 12/12 PASS, all dumps bit-identical to e503672, fat build takes the buffer path, 0 bytes leaked, CUDA compile gate passes.
+
+Host: AMD Instinct MI300X (gfx942, `Gfx Major/Minor/Stepping: 9/4/2`), torch 2.16.0a0+git6c3af02, numpy 1.26.4, /opt/python-3.11-venv, HIP_VISIBLE_DEVICES=2 (pinned by the dispatcher), every GPU run under `ulimit -c 0`. Fork clone at projects/LEAP/src checked out at b37ca0a; e503672 and a fat copy of b37ca0a are `git archive`s under agent_space/cmp. Scripts `dump_outputs.py`, `compare_outputs.py` (gfx942 port entry), `dump_point.py`, `leak_check.py` (dual-path port entry) extracted unchanged from this file.
+
+### Builds (all rc=0, 0 errors)
+```
+env -u PYTORCH_ROCM_ARCH MAX_JOBS=28 bash utils/timeit.sh LEAP compile -- bash -c "cd projects/LEAP/src && python setup_AMD.py build_ext --inplace"         # 13.8 s; "all archs for visible cards ... (gfx942)"; 20 hipcc lines, --offload-arch=gfx942
+env -u PYTORCH_ROCM_ARCH MAX_JOBS=28 bash utils/timeit.sh LEAP compile -- bash -c "cd agent_space/cmp/e503672 && python setup_AMD.py build_ext --inplace"  # 15.4 s
+PYTORCH_ROCM_ARCH="gfx90a;gfx942" MAX_JOBS=56 bash utils/timeit.sh LEAP compile -- bash -c "cd agent_space/cmp/fat && python setup_AMD.py build_ext --inplace"  # 24.0 s
+```
+
+### Tests (all rc=0)
+```
+AMD_LOG_LEVEL=3 bash utils/timeit.sh LEAP test -- bash -c "cd <build> && python unitTests/gpu_vs_cpu_validate.py"   # b37ca0a 6.5 s, e503672 6.8 s, fat 6.0 s
+python dump_outputs.py <build>/src <x>.npz 256    # interleaved e503672 old_r1, b37ca0a new_r1, e503672 old_r2, b37ca0a new_r2, fat fat_r1; ~40-42 s each
+python compare_outputs.py old_r1.npz new_r1.npz   # ALL BIT-IDENTICAL (36/36), time ratios 0.995-1.007
+python compare_outputs.py old_r2.npz new_r2.npz   # ALL BIT-IDENTICAL (36/36), 0.991-1.008
+python compare_outputs.py new_r1.npz fat_r1.npz   # ALL BIT-IDENTICAL (36/36), 0.994-1.006: fat binary takes the buffer path on gfx942
+python compare_outputs.py old_r1.npz old_r2.npz   # ALL BIT-IDENTICAL (36/36), 0.993-1.012 (run-to-run)
+python dump_point.py <build>/src pt_<x>.npz       # e503672, b37ca0a, fat: 15 ok each (~5 s); upsample FAILED (ctypes dtype, pre-existing, every build); dictionary ok
+python compare_outputs.py pt_e503672.npz pt_b37ca0a.npz   # ALL BIT-IDENTICAL (20 arrays)
+python compare_outputs.py pt_b37ca0a.npz pt_fat.npz       # ALL BIT-IDENTICAL (20 arrays)
+python leak_check.py <build>/src                  # delta 0 bytes over 200 iterations for e503672, b37ca0a, fat (~3.2 s each); sum(g)=377330 in all three
+```
+`gpu_vs_cpu_validate.py`: 12/12 PASS, OVERALL: PASS for all three builds; the 12 result lines are byte-identical across the builds (same md5) and equal the gfx942 port and review entries (parallel VD/SF adjoint 2.54e-05/1.64e-05, fan 2.44e-04/1.85e-04, coneparallel 1.24e-03/5.07e-05, cone-flat 1.42e-04/1.46e-04 fbp 0.9998, cone-curved 8.54e-05/1.30e-04, modular VD 3.39e-03 fbp 0.9998, modular SF fwd-vs-VD err 0.000). 0 `Error: GPU` lines and 0 lines containing "error" in the b37ca0a log. `Unknown device type` prints 12 times per dump (upstream `getSPcores`, cosmetic, as the review recorded).
+
+gfx942 times, median of 5, 256 cols x 266 rows x 360 views, device-resident tensors, ms, project / backproject (review figures at b37ca0a in parentheses agree within 0.6%):
+```
+geometry_model   e503672 r1      b37ca0a r1      e503672 r2      b37ca0a r2      fat (b37ca0a)
+parallel_VD      127.1 /  33.6   127.7 /  33.8   127.5 /  34.0   127.6 /  33.7   127.9 /  33.6
+parallel_SF      127.5 /  33.9   128.0 /  34.1   128.0 /  33.9   128.1 /  34.1   128.1 /  34.0
+fan_VD           121.5 /  32.0   121.4 /  32.0   121.8 /  32.0   121.8 /  32.1   121.7 /  32.1
+fan_SF           121.5 /  60.1   121.8 /  60.2   121.8 /  60.2   122.0 /  60.3   122.1 /  60.3
+coneparallel_VD  242.0 /  36.1   242.5 /  36.1   242.8 /  36.6   242.6 /  36.5   243.0 /  36.3
+coneparallel_SF  242.6 /  84.9   243.3 /  84.9   243.0 /  85.2   243.6 /  85.2   243.3 /  85.1
+cone-flat_VD     227.7 /  42.5   227.9 /  42.7   228.2 /  42.5   228.1 /  42.6   228.3 /  42.6
+cone-flat_SF     228.1 / 252.8   228.1 / 251.5   228.4 / 251.2   228.5 / 253.1   228.5 / 252.5
+cone-curved_VD   242.1 /  35.7   242.3 /  35.7   242.4 /  35.7   242.8 /  35.7   242.8 /  35.5
+cone-curved_SF   242.0 / 160.8   242.7 / 160.5   242.6 / 160.9   242.5 / 160.4   242.9 / 160.9
+modular_VD       222.6 /  42.4   222.6 /  42.3   223.0 /  42.3   223.0 /  42.5   222.8 /  42.4
+modular_SF       222.6 /  94.3   223.0 /  94.3   223.1 /  94.3   223.1 /  94.5   223.7 /  94.4
+```
+
+### CUDA compile gate at b37ca0a: pass (first record at this head)
+nvcc 12.8.93 at /usr/local/cuda (no conda env on this host), upstream CMake path on a `git archive` of b37ca0a:
+```
+PATH=/usr/local/cuda/bin:$PATH CUDACXX=/usr/local/cuda/bin/nvcc bash utils/timeit.sh LEAP cuda-compile -- bash -c "cmake -S agent_space/cuda/b37 -B agent_space/cuda/b37/build -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release && cmake --build agent_space/cuda/b37/build -j 56"   # rc=0, 34.8 s, Built target leapct
+```
+`src/CMakeLists.txt` sets `CUDA_ARCHITECTURES all-major` on the target for CMake > 3.23, which overrides the `-D` pin; that is upstream and gives real archs: `cuobjdump --list-elf libleapct.so` shows 20 objects each for sm_50/60/70/80/90/100/120. No CUDA runtime behaviour is claimed.
+
+### Completion checks
+- `python3 utils/jargon.py --port LEAP`: clean (after `git fetch origin main:main moat-port:moat-port` in the clone).
+- Docs: upstream documents installation on its wiki; the ROCm build is the pre-existing `setup_AMD.py`, as at earlier validations. No change.
+- `git -C projects/LEAP/src status --porcelain`: no modified tracked files (untracked build output only).

@@ -7,9 +7,8 @@
   "priority": 4.426,
   "ext_type": "torch-extension",
   "adopted_at": "2026-05-30T01:04:51Z",
-  "updated_at": "2026-11-04T18:49:28Z",
+  "updated_at": "2026-11-04T18:52:51Z",
   "head_sha": "b37ca0a2d0f04c48f0a65670fa54fe7553d2fecd",
-  "porting": null,
   "waivers": {},
   "license_spdx": "MIT",
   "upstream_repo_id": 644559794,
@@ -38,14 +37,14 @@
       },
       "last_agent": "validator"
     },
-    "linux-gfx1100": {
-      "state": "completed",
+    "linux-gfx942": {
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": "c77df45b3fcd9d659b3a9f77cc2fdfef673a19e0",
-      "started_at": "2026-06-02T13:30:00Z",
-      "completed_at": "2026-06-16T06:33:12Z",
-      "updated_at": "2026-08-20T00:08:22Z",
+      "validated_sha": "b37ca0a2d0f04c48f0a65670fa54fe7553d2fecd",
+      "failed_sha": null,
+      "started_at": "2026-11-04T17:10:14Z",
+      "completed_at": "2026-11-04T18:52:51Z",
+      "updated_at": "2026-11-04T18:52:51Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -55,17 +54,12 @@
           "test": 0,
           "misc": 0
         },
-        "session_count": 1,
-        "first_session_at": "2026-06-02T13:30:00Z",
-        "last_session_at": "2026-06-02T14:00:00Z"
+        "session_count": 0,
+        "first_session_at": null,
+        "last_session_at": null
       },
       "last_agent": "validator",
-      "carry_forward": {
-        "to": "4e102c9cfd371b5900c68461bdc8f2a320d71017",
-        "method": "source-class",
-        "detail": "Comment-only docstring reword in host-side validation script unitTests/gpu_vs_cpu_validate.py (bit-identical -> identical); no device code, no compiled artifact, arch-independent",
-        "at": "2026-06-16T06:33:12Z"
-      }
+      "state": "completed"
     },
     "windows-gfx1101": {
       "state": "completed",
@@ -118,14 +112,14 @@
         "at": "2026-06-16T06:33:12Z"
       }
     },
-    "linux-gfx942": {
+    "linux-gfx1100": {
+      "state": "completed",
       "blocked": false,
       "blocked_reason": null,
-      "validated_sha": null,
-      "failed_sha": null,
-      "started_at": "2026-11-04T17:10:14Z",
-      "completed_at": null,
-      "updated_at": "2026-11-04T18:39:02Z",
+      "validated_sha": "c77df45b3fcd9d659b3a9f77cc2fdfef673a19e0",
+      "started_at": "2026-06-02T13:30:00Z",
+      "completed_at": "2026-06-16T06:33:12Z",
+      "updated_at": "2026-08-20T00:08:22Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -135,11 +129,17 @@
           "test": 0,
           "misc": 0
         },
-        "session_count": 0,
-        "first_session_at": null,
-        "last_session_at": null
+        "session_count": 1,
+        "first_session_at": "2026-06-02T13:30:00Z",
+        "last_session_at": "2026-06-02T14:00:00Z"
       },
-      "last_agent": "reviewer"
+      "last_agent": "validator",
+      "carry_forward": {
+        "to": "4e102c9cfd371b5900c68461bdc8f2a320d71017",
+        "method": "source-class",
+        "detail": "Comment-only docstring reword in host-side validation script unitTests/gpu_vs_cpu_validate.py (bit-identical -> identical); no device code, no compiled artifact, arch-independent",
+        "at": "2026-06-16T06:33:12Z"
+      }
     }
   },
   "review_pr": "https://github.com/AMD-Ecosystem/LEAP/pull/1",

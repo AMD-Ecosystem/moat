@@ -73,3 +73,23 @@
 {"kind":"phase","ts":"2026-11-04T18:42:40Z","phase":"compile","seconds":17.704,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261104-104019-v-leap/moat/projects/LEAP/src && python setup_AMD.py build_ext --inplace"}
 {"kind":"phase","ts":"2026-11-04T18:46:53Z","phase":"test","seconds":234.575,"exit":0,"cmd":"bash agent_space/scripts/run_all.sh"}
 {"kind":"session","ts":"2026-11-04T18:49:28Z","epoch":1793818168.738820489,"event":"end","platform":"linux-gfx90a"}
+{"kind":"session","ts":"2026-11-04T18:43:54Z","epoch":1793817834.463589549,"event":"start","platform":"linux-gfx942"}
+{"kind":"phase","ts":"2026-11-04T18:44:17Z","phase":"compile","seconds":13.825,"exit":0,"cmd":"bash -c cd projects/LEAP/src && python setup_AMD.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-04T18:44:18Z","phase":"compile","seconds":15.416,"exit":0,"cmd":"bash -c cd agent_space/cmp/e503672 && python setup_AMD.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-04T18:44:57Z","phase":"compile","seconds":24.025,"exit":0,"cmd":"bash -c cd agent_space/cmp/fat && python setup_AMD.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-04T18:45:12Z","phase":"test","seconds":6.524,"exit":0,"cmd":"bash -c cd projects/LEAP/src && python unitTests/gpu_vs_cpu_validate.py"}
+{"kind":"phase","ts":"2026-11-04T18:45:19Z","phase":"test","seconds":6.831,"exit":0,"cmd":"bash -c cd agent_space/cmp/e503672 && python unitTests/gpu_vs_cpu_validate.py"}
+{"kind":"phase","ts":"2026-11-04T18:45:25Z","phase":"test","seconds":6.045,"exit":0,"cmd":"bash -c cd agent_space/cmp/fat && python unitTests/gpu_vs_cpu_validate.py"}
+{"kind":"phase","ts":"2026-11-04T18:46:27Z","phase":"test","seconds":40.765,"exit":0,"cmd":"python agent_space/scripts/dump_outputs.py agent_space/cmp/e503672/src agent_space/out/old_r1.npz 256"}
+{"kind":"phase","ts":"2026-11-04T18:47:08Z","phase":"test","seconds":40.530,"exit":0,"cmd":"python agent_space/scripts/dump_outputs.py projects/LEAP/src/src agent_space/out/new_r1.npz 256"}
+{"kind":"phase","ts":"2026-11-04T18:47:50Z","phase":"test","seconds":42.190,"exit":0,"cmd":"python agent_space/scripts/dump_outputs.py agent_space/cmp/e503672/src agent_space/out/old_r2.npz 256"}
+{"kind":"phase","ts":"2026-11-04T18:48:31Z","phase":"test","seconds":40.376,"exit":0,"cmd":"python agent_space/scripts/dump_outputs.py projects/LEAP/src/src agent_space/out/new_r2.npz 256"}
+{"kind":"phase","ts":"2026-11-04T18:49:13Z","phase":"test","seconds":42.135,"exit":0,"cmd":"python agent_space/scripts/dump_outputs.py agent_space/cmp/fat/src agent_space/out/fat_r1.npz 256"}
+{"kind":"phase","ts":"2026-11-04T18:50:09Z","phase":"test","seconds":5.137,"exit":0,"cmd":"python agent_space/scripts/dump_point.py agent_space/cmp/e503672/src agent_space/out/pt_e503672.npz"}
+{"kind":"phase","ts":"2026-11-04T18:50:14Z","phase":"test","seconds":4.988,"exit":0,"cmd":"python agent_space/scripts/dump_point.py projects/LEAP/src/src agent_space/out/pt_b37ca0a.npz"}
+{"kind":"phase","ts":"2026-11-04T18:50:19Z","phase":"test","seconds":5.152,"exit":0,"cmd":"python agent_space/scripts/dump_point.py agent_space/cmp/fat/src agent_space/out/pt_fat.npz"}
+{"kind":"phase","ts":"2026-11-04T18:50:26Z","phase":"test","seconds":3.320,"exit":0,"cmd":"python agent_space/scripts/leak_check.py agent_space/cmp/e503672/src"}
+{"kind":"phase","ts":"2026-11-04T18:50:29Z","phase":"test","seconds":3.239,"exit":0,"cmd":"python agent_space/scripts/leak_check.py projects/LEAP/src/src"}
+{"kind":"phase","ts":"2026-11-04T18:50:33Z","phase":"test","seconds":3.237,"exit":0,"cmd":"python agent_space/scripts/leak_check.py agent_space/cmp/fat/src"}
+{"kind":"phase","ts":"2026-11-04T18:51:56Z","phase":"cuda-compile","seconds":34.842,"exit":0,"cmd":"bash -c cmake -S agent_space/cuda/b37 -B agent_space/cuda/b37/build -DCMAKE_CUDA_ARCHITECTURES=80 -DCMAKE_BUILD_TYPE=Release > agent_space/logs/cuda_cfg.log 2>&1 && cmake --build agent_space/cuda/b37/build -j 56 > agent_space/logs/cuda_build.log 2>&1"}
+{"kind":"session","ts":"2026-11-04T18:52:51Z","epoch":1793818371.325348033,"event":"end","platform":"linux-gfx942"}
