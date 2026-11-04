@@ -2405,6 +2405,39 @@ utils/timeit.sh mahout compile -- $FLEET_VENV/bin/maturin build \
   --compatibility linux --interpreter $FLEET_VENV/bin/python --out agent_space/mahout_wheels
 $FLEET_VENV/bin/python -m pip install --no-deps --force-reinstall \
   agent_space/mahout_wheels/qumat_qdp-0.3.0.dev0-cp311-cp311-linux_x86_64.whl
+## Validation 2026-11-04 (validator, linux-gfx90a) -- fix round 1399 at 95845611e, PASS
+
+Full real-GPU revalidation at the staged fix round's tip (no carry-forward: the delta merges upstream code). Checkout: fresh clone of AMD-Ecosystem/mahout `moat-fix-1399`, `git rev-parse HEAD` = 95845611e6f2baaeb80cf876b493678a97017135, `git status --porcelain` empty before and after. `git ls-remote`: `moat-fix-1399` 95845611e, `moat-port` still 9a3a08e0f (freeze intact). upstream/main still 6f354a5cf.
+
+Env: AMD Instinct MI250X GCD (gfx90a, wave64), HIP_VISIBLE_DEVICES=2 (dispatcher-pinned, idle), `ulimit -c 0`, ROCm 10.1 `rocm-sdk` pip packages (HIP 7.16.26385, AMD clang 24.0.0git), cargo/rustc 1.97.1, torch 2.16.0a0+git6c3af02 (ROCm, image env via PYTHONPATH), Python 3.11.17, maturin into the job venv. Same env script as the porter's 2026-11-04 round (`agent_space/mahout_env.sh`: CARGO_HOME under agent_space, RUSTUP_HOME=/opt/rust, ROCM_PATH=.../_rocm_sdk_devel, LD_LIBRARY_PATH=.../_rocm_sdk_core/lib, QDP_USE_HIP=1, QDP_HIP_ARCH_LIST=gfx90a).
+
+### Rust (exact commands)
+```
+utils/timeit.sh mahout compile -- cargo build --manifest-path projects/mahout/src/qdp/Cargo.toml \
+  -p qdp-core -p qdp-kernels --no-default-features --features hip -j 32
+utils/timeit.sh mahout test -- cargo test --manifest-path projects/mahout/src/qdp/Cargo.toml \
+  -p qdp-core -p qdp-kernels --no-default-features --features hip -j 32 -- --test-threads=1
+```
+- build: exit 0 (18.9s).
+- test: exit 0, **385 passed, 0 failed, 4 ignored** over 29 `test result:` lines -- identical to the porter's gfx90a count at this sha, per suite: lib 114, arrow_ipc_io 5, engine_init 3, estimate 9, gpu_angle_encoding 12, gpu_api_workflow 8, gpu_basis_encoding 7, gpu_dlpack 9, gpu_fidelity 17, gpu_iqp_encoding 22, gpu_memory_safety 4, gpu_norm_f32 2, gpu_ptr_encoding 69, gpu_validation 8, null_handling 6, numpy 4, parquet_f32 7, parquet_f32_fidelity 4, parquet_io 8, preprocessing 14, reader 3, tensorflow_io 9, torch_io 3, types 6, kernels lib 0, amplitude_encode 21, angle_encode 10, doctests 1 (+4 ignored: the same pipeline/io/reader/numpy doctest fixtures). Versus this platform's previous record (368 at 9a3a08e0f): +17 = upstream's added tests, as the porter reconciled.
+- Rerun with `--nocapture`: 385 passed, zero `SKIP` lines, so every GPU test ran on the GCD.
+
+### No-GPU engine init (#1551)
+```
+HIP_VISIBLE_DEVICES= cargo test --manifest-path projects/mahout/src/qdp/Cargo.toml -p qdp-core \
+  --no-default-features --features hip -j 32 --test engine_init --test gpu_angle_encoding -- --test-threads=1 --nocapture
+HIP_VISIBLE_DEVICES= $FLEET_VENV/bin/python -m pytest --rootdir $S $S/testing/qdp_python/test_engine_init.py -q -rs -p no:cacheprovider
+```
+- Rust: engine_init 3 passed; gpu_angle_encoding 12 passed with every GPU case printing `SKIP: No GPU available` (upstream's intended behaviour), no panic.
+- Python: test_engine_init 2 passed. `_qdp.cuda_available()` False with GPUs hidden, True on the pinned GCD.
+
+### Python (exact commands)
+```
+$FLEET_VENV/bin/python -m pip install maturin
+utils/timeit.sh mahout compile -- $FLEET_VENV/bin/maturin build \
+  --manifest-path projects/mahout/src/qdp/qdp-python/Cargo.toml --features hip --profile dev \
+  --compatibility linux --interpreter $FLEET_VENV/bin/python --out $PWD/agent_space/mahout_wheels
+$FLEET_VENV/bin/python -m pip install --no-deps --force-reinstall agent_space/mahout_wheels/qumat_qdp-0.3.0.dev0-cp311-cp311-linux_x86_64.whl
 export PYTHONPATH=/opt/python-3.11-venv/lib/python3.11/site-packages; S=$PWD/projects/mahout/src
 utils/timeit.sh mahout test -- $FLEET_VENV/bin/python -m pytest --rootdir $S \
   $S/testing/qdp $S/testing/qdp_python $S/qdp/qdp-python/tests -q -rs -p no:cacheprovider
@@ -2425,3 +2458,16 @@ utils/timeit.sh mahout test -- $FLEET_VENV/bin/python -m pytest --rootdir $S \
 
 ### Result
 linux-gfx1100 `completed` at 95845611e6f2baaeb80cf876b493678a97017135. Fills the fix review body's `linux-gfx1100 (W7800)` line: Rust 385 passed / 0 failed / 4 ignored; Python 321 passed / 14 skipped / 0 failed.
+- wheel: exit 0 (16.6s, dev profile).
+- pytest: exit 0, **321 passed, 14 skipped, 0 failed** -- identical to the porter's count. Skips are the same 14: 2 multi-GPU, 1 tensorflow absent, 1 loader path-validation, 5 test_torch_ref CUDA-reference, 2 test_engine_init (GPU present; run above with GPUs hidden), 2 AmdQdpEngine not built, 1 test_triton_amd_backend NVIDIA reference absent.
+
+### CUDA no-regression gate
+cuda-not-validated on this host: no CUDA toolkit (`which nvcc` empty, no /usr/local/cuda, no conda to create the cuda-12.8 env). A pip `nvidia-cuda-nvcc-cu12==12.8.*` install ships only `ptxas`, not the `nvcc` driver, so no toolkit could be assembled within the gate's budget (scratch removed). Still owed at 95845611e by a host with nvcc. The round changes no `.cu`, no build.rs and no runtime binding; the porter type-checked the CUDA arm of the one port change with `QDP_NO_CUDA=1`.
+
+### Gates
+- Jargon: `python3 utils/jargon.py -C projects/mahout/src --commits upstream/main..95845611e --diff upstream/main..95845611e` -> clean. `python3 utils/jargon.py --port mahout` (now resolves `main..moat-fix-1399`; needs `git fetch origin main:main` in a single-branch clone first) -> only the 5 known `HEAD_SHA` hits in upstream's own automerge-gate code; `git diff upstream/main 95845611e | grep -ci head_sha` = 0.
+- Docs: qdp/DEVELOPMENT.md "### AMD GPU build (ROCm / HIP)" (line 118) and qdp/qdp-python/README.md "### AMD ROCm Usage" (line 49) present.
+- Fork worktree clean; nothing pushed.
+
+### Result
+`python3 utils/moatlib.py set-state mahout linux-gfx90a completed --agent validator` at head_sha 95845611e6f2baaeb80cf876b493678a97017135. For the fix review PR body: "linux-gfx90a (MI250X, ROCm 10.1): Rust 385 passed, 0 failed, 4 ignored; Python 321 passed, 14 skipped, 0 failed."
