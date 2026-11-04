@@ -771,3 +771,19 @@ Tests, each `utils/timeit.sh CudaSift test -- bash -c 'cd projects/CudaSift/src 
 | test_homography | 0    | 8 passed, 0 fail  | translation h[2]=30.13 h[5]=20.27; stereo 752 RANSAC / 675 inliers |
 
 PASS 29/29, no HIP fault. Keypoint counts identical to 6d1429a and to gfx90a/gfx1100 (1910, 7077/1910/542/6, 1740/1876/1910/1919); RANSAC counts within run-to-run variation (stereo 752 vs 753). CUDA gate and CopyToTexture check already recorded at 6d1429a; the delta is HIP-only defines.
+
+## CUDA compile check (nvcc 12.8) at db7c163
+
+Compile-only check on a Linux host with NVIDIA CUDA 12.8.93 (`/usr/local/cuda-12.8`, apt toolkit) and no NVIDIA GPU; GCC 13.3.0, CMake 3.31.6, OpenCV 4.6.0 (`apt-get install libopencv-dev`). Port: fork `moat-fix-97` at db7c163aa8f48c939ef5e03afaf1a7823173eb3f. Baseline: upstream Celebrandil/CudaSift `AdaLovelace` at ed5ef54c67354959e3d5fa829d30de5b278b4d62 (the merge base). Fresh clones, nothing modified.
+
+Upstream's documented build script (tests and examples ON, `CMAKE_CUDA_ARCHITECTURES 89` from CMakeLists), same for both:
+```bash
+CUDACXX=/usr/local/cuda-12.8/bin/nvcc VERBOSE=1 bash scripts/build.sh Release
+```
+- rc=0 on both. nvcc compiled the same 11 translation units on both: `cudaImage.cu`, `cudaSiftH.cu`, `matching.cu`, `mainSift.cpp`, `examples/demo_{extract,match,video}.cpp`, `tests/{benchmark,test_extract,test_match,test_homography}.cpp` (the .cpp files are LANGUAGE CUDA). `cuobjdump --list-elf build/libcudasift_lib.a` shows `sm_89.cubin` for cudaImage, cudaSiftH and matching on both.
+- Targets built, identical: cudasift_lib, cudasift, demo_extract, demo_match, demo_video, benchmark, test_extract, test_match, test_homography.
+- Warnings: baseline has 2 `-Wdeprecated-declarations` for `cudaMemcpyToArray` (`cudaImage.cu:106`, `:108`); the port's switch to `cudaMemcpy2DToArray` removes both. Port: zero warnings, zero errors. No new warnings.
+- `./build/test_extract`: both load the image and then stop at `cudaImage.cu` line 24 with `CUDA driver version is insufficient for CUDA runtime version` (rc=255; no NVIDIA driver). Environment, identical on baseline.
+- `matching.cu` MatchSiftPoints2 now uses signed `min(int,int)` where upstream mixed int and unsigned; `MatchSiftData` returns early when either point count is 0, so `numPts-1 >= 0` and both forms pick the same index.
+
+Result: no CUDA regression at db7c163. Platform states unchanged.
