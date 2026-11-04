@@ -135,3 +135,11 @@
 {"kind":"session","ts":"2026-08-19T05:50:05Z","epoch":1787118605.748657526,"event":"end","platform":"linux-gfx1100"}
 {"kind":"phase","ts":"2026-11-04T08:04:04Z","phase":"compile","seconds":0.329,"exit":1,"cmd":"cmake --build . --target install -j 12"}
 {"kind":"session","ts":"2026-11-04T08:05:12Z","epoch":1793779512.217832900,"event":"start","platform":"windows-gfx1151"}
+{"kind":"phase","ts":"2026-11-04T08:12:07Z","phase":"compile","seconds":383.579,"exit":0,"cmd":"cmake --build D:/Develop/moat/agent_space/wt-plvs/agent_space/plvs_win/ocv-build --target install -j 12"}
+{"kind":"phase","ts":"2026-11-04T08:27:47Z","phase":"compile","seconds":95.861,"exit":1,"cmd":"cmake --build D:/Develop/moat/agent_space/wt-plvs/projects/plvs/src/build-win-gfx1151 --target plvs -j 14"}
+{"kind":"phase","ts":"2026-11-04T08:30:30Z","phase":"compile","seconds":98.262,"exit":0,"cmd":"cmake --build D:/Develop/moat/agent_space/wt-plvs/projects/plvs/src/build-win-gfx1151 --target plvs -j 14"}
+{"kind":"phase","ts":"2026-11-04T08:41:23Z","phase":"compile","seconds":90.520,"exit":1,"cmd":"cmake --build D:/Develop/moat/agent_space/wt-plvs/projects/plvs/src/build-win-gfx1151 --target mono_tum -j 14"}
+{"kind":"phase","ts":"2026-11-04T08:41:53Z","phase":"compile","seconds":0.544,"exit":1,"cmd":"cmake --build D:/Develop/moat/agent_space/wt-plvs/projects/plvs/src/build-win-gfx1151 --target mono_tum -j 14"}
+{"kind":"phase","ts":"2026-11-04T08:42:19Z","phase":"compile","seconds":0.564,"exit":0,"cmd":"cmake --build D:/Develop/moat/agent_space/wt-plvs/projects/plvs/src/build-win-gfx1151 --target mono_tum -j 14"}
+{"kind":"phase","ts":"2026-11-04T08:59:01Z","phase":"compile","seconds":91.749,"exit":0,"cmd":"cmake --build D:/Develop/moat/agent_space/wt-plvs/projects/plvs/src/build-win-gfx1151 --target mono_tum -j 14"}
+{"kind":"session","ts":"2026-11-04T09:03:17Z","epoch":1793782997.794740700,"event":"end","platform":"windows-gfx1151"}

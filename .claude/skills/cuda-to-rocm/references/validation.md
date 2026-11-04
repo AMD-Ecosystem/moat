@@ -85,6 +85,41 @@ import, not of a bad port.
 seconds; run it on the DLLs too, not just the .exe, since the missing module is usually
 one level down.
 
+## Windows: a crash trace without a PDB names the wrong function
+
+**The function names in a Windows crash trace from a binary linked without `/DEBUG` are
+the nearest EXPORTED symbol, not the function that was running.** The tell is the
+offset: `save_object_data() + 0x214FE7 byte(s)` is two megabytes past that symbol, so it
+is not that function. plvs lost three porter sessions on two hosts to such a trace: a
+`0xC00000FD` stack overflow whose frames all read
+`boost::archive::...oserializer<...KeyFrame>::save_object_data` was diagnosed as
+"clang-cl miscompiles boost.serialization into infinite recursion", tried against
+static/dynamic boost and `-O0`, and recorded as a toolchain wall. Relinking with
+`-Xlinker /DEBUG` (a PDB, no recompile) and feeding the trace's image offsets
+(`0x140000000 + offset`) to `llvm-symbolizer --obj=<exe>` showed the truth in one run:
+seven frames, ending in `__chkstk` under `Tracking::MonocularInitialization`.
+
+Rerun the binary after relinking -- `/DEBUG` changes the `/OPT` defaults, so the old
+trace's offsets do not map onto the new image. A short trace that ends in `__chkstk`
+(`_alloca_probe`) is a big stack frame, not recursion: get the frame sizes from the
+`movl $imm, %eax` before each `__chkstk` call in `llvm-objdump -dr <file>.obj`. Windows
+gives an executable 1 MB of stack and Linux threads get 8 MB, so code that keeps large
+objects on the stack (plvs: three nested ~420 KB `Frame` locals) runs on Linux and
+overflows on Windows. The fix is a stack reserve on the Windows link
+(`add_link_options(LINKER:/STACK:8388608)` under `if(WIN32)`); `std::thread` workers take
+their size from the same PE header. A `/STACK` change that "did not help" is worth
+checking with `llvm-readobj --file-headers <exe> | grep StackReserve` -- the flag may
+never have reached the linker.
+
+## Windows: TheRock clang 23 can hang in x86 register allocation
+
+A host C++ TU that compiles in about a second at `-O1` but never finishes at `-O2`/`-O3`
+is a compiler fault, not a slow build. Find the function with
+`-mllvm -debug-pass=Executions` under a `timeout`: the last lines name the pass and the
+function (plvs libelas: `Greedy Register Allocator` on `Elas::gapInterpolation`; at `-O1`
+with `-funroll-loops` the same pass crashes instead). `-mllvm -regalloc=basic` on that
+one source file keeps the optimization level and compiles it in a second.
+
 ## Windows: static initializers in TheRock's DLLs may never run
 
 **A C++ test that gates on `torch::cuda::is_available()` can fail on Windows against a

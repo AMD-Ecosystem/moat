@@ -2173,3 +2173,58 @@ protobuf/glfw3, the 8 bundled CPU libs, `WinBoostArchiveCompat.cpp` already comm
 whether `oserializer<text_oarchive, PLVS2::KeyFrame>::save_object_data` still recurses. Given this
 session's isolated-mechanism evidence, there is real reason to expect it may not -- but only the
 real binary settles it.
+
+## Port round 2026-11-04 (windows-gfx1151, porter): full-SLAM binary built and RUN -- the "boost.serialization recursion" was a misread trace; real cause a 1 MB Windows stack. Head e0dcda3
+
+Host: Radeon 8060S (gfx1151, wave32, 20 CUs), TheRock SDK 7.14.60850 (`_rocm_sdk_devel`, clang 23.0.0git), CMake 3.31.0, vcpkg `D:/Develop/vcpkg` x64-windows (DYNAMIC: boost 1.91 vc145, PCL 1.15.1, protobuf 6.33.4, Abseil DLL, octomap 1.10, pangolin[core] 0.9.5, glog, glfw3).
+
+### Verdict on the recorded Windows block
+The 2026-06-16 gfx1201 block ("clang-cl miscompiles boost.serialization static type-registration -> infinite recursion in `oserializer<text_oarchive, KeyFrame>::save_object_data`") is WRONG. Reproduced the identical crash here first (`0xC00000FD` right after `Images in the sequence: 798`, same `save_object_data` / `singleton_module::is_locked` frame names), then noticed the offsets: `save_object_data() + 0x214FE7 byte(s)` -- the names are just the nearest EXPORTED symbol of a binary with no PDB. Relinked with `-Xlinker /DEBUG`, reran, symbolized with `llvm-symbolizer --obj=mono_tum.exe` (address = 0x140000000 + offset):
+
+```
+_alloca_probe (chkstk.asm)            <- stack probe faulting
+PLVS2::Tracking::MonocularInitialization
+PLVS2::Tracking::Track
+PLVS2::Tracking::GrabImageMonocular
+PLVS2::System::TrackMonocular
+main
+```
+
+Seven frames, no recursion, no boost. Frame sizes from `llvm-objdump -dr Tracking.cc.obj` (`movl $imm,%eax` before `__chkstk`): GrabImageMonocular 0x682a8, Track 0x684a8, MonocularInitialization 0x68278, CreateInitialMapMonocular 0x68388 -- ~427 KB each (whole `Frame` objects on the stack). Three nested = ~1.28 MB > the 1 MB Windows default (`SizeOfStackReserve: 1048576`); Linux threads get 8 MB. The earlier "32 MB /STACK still crashed" claim was evidently never verified in the PE header.
+
+Fix: `add_link_options(LINKER:/STACK:8388608)` under `if(WIN32)` (commit e0dcda3). Control: the same build at 1 MB crashed twice (run1, run2); at 8 MB it runs clean (run3-run5). No boost/compiler/toolchain wall exists. The windows-gfx1201 and windows-gfx1101 blocked_reason text is therefore wrong (both offline hardware; left untouched -- not this platform's record).
+
+### Build recipe (GNU-driver clang++ for C/CXX/HIP -- CMake 3.31 cannot use clang-cl as the HIP compiler, see the skill's validation.md)
+Scripts in `agent_space/plvs_win/` of the wt-plvs worktree (env.sh, build_bundled.sh, configure_main.sh, run_mono.sh, ate.py). Steps and wall time:
+
+1. vcpkg: `X_VCPKG_ASSET_SOURCES='x-script,curl --ssl-no-revoke -L -o {dst} {url};x-block-origin' VCPKG_MAX_CONCURRENCY=16 vcpkg install pcl octomap protobuf "pangolin[core]" --triplet x64-windows` -- 14 min (`pangolin[core]` skips the ffmpeg default feature).
+2. OpenCV-with-HIP gfx1151: AMD-Ecosystem/opencv @ moat-port 50f05b1 + opencv_contrib @ 041d552, GNU-driver clang, `-DWITH_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151 -DBUILD_LIST=core,imgproc,features2d,calib3d,highgui,imgcodecs,flann,ximgproc,video,cudev,cudaarithm,cudafilters,cudawarping,cudaimgproc,cudafeatures2d,cudastereo -DOPENCV_PYTHON_SKIP_DETECTION=ON -DCMAKE_{C,CXX}_FLAGS=-march=x86-64-v3`, install. ~8 min. (`-DWITH_PYTHON=OFF` breaks configure on CMake 3.31 with `find_package called with invalid argument "OFF"`; use `OPENCV_PYTHON_SKIP_DETECTION`.) Point consumers at a wrapper `ocv-wrap/OpenCVConfig.cmake` that presets `CUDA_FOUND` / `CUDA_VERSION_STRING=7.14.60850`, no-ops `find_cuda_helper_libs`, then includes `ocv-install/lib/OpenCVConfig.cmake` (the top-level install config rejects GNU-driver clang as "no binaries compatible").
+3. Bundled CPU libs (each with `-DCMAKE_PREFIX_PATH=$VCPKG -DOpenCV_DIR=ocv-wrap -DOPENCV_VERSION=4 -DEIGEN3_INCLUDE_DIR=... -DG2O_EIGEN3_INCLUDE=... -DBUILD_WITH_MARCH_NATIVE=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5`): g2o, DBoW2, line_descriptor, open_chisel, voxblox (libraries; its test exes fail on `-ignore:4221`, irrelevant), reconfigure voxblox (copies the .pb.h), chisel_server (`--target chisel_server`), voxblox_server, volumetric_mapping (`-msse4.2`; Abseil's `-ignore:4221` reaches the GNU-driver link line, so `sed -i 's/ -ignore:4221//g' build.ninja CMakeFiles/*.rsp` then relink). libsgm and libelas-gpu with `-DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1151`.
+4. Main: `configure_main.sh -DWITH_FASTFUSION=OFF` (USE_HIP=ON, gfx1151) then `cmake --build build-win-gfx1151 --target mono_tum`. The link needs `LIB` to start with the MSVC 14.50 lib dir (VS 2026): the vcpkg archives are built with toolset 14.50 and reference `__std_find_first_not_of_trivial_pos_1` / `__std_regex_transform_primary_char`, absent from the 14.44 libs the shell's LIB points at (host environment, not a port issue).
+5. Runtime: copy vcpkg `bin/*.dll`, `ocv-install/bin/*.dll`, `volumetric_mapping.dll` and the SDK runtime (`rocm_stage_runtime`) next to `Examples/Monocular/mono_tum.exe`; prepend the SDK core/libraries bin dirs to PATH.
+
+### Port-side fixes (fork commits on top of bab4052; all WIN32- or PCL-version-guarded, Linux build unchanged)
+- 6ac02a3 `[ROCm] Fix the Windows build with PCL 1.15 and DLL dependencies`:
+  - `include/VoxelGridCustom.hpp`: PCL 1.15.0 moved `cloud_point_index_idx` into `pcl::internal` (checked: absent from the 1.14.0/1.14.1 headers, present in 1.15.0). `#if PCL_VERSION_COMPARE(>=, 1, 15, 0) using pcl::internal::cloud_point_index_idx;` replaces a no-op block.
+  - `CMakeLists.txt`: the Abseil link sweep (written for static-md) is skipped when `absl::abseil_dll` exists; otherwise it linked `abseil_test_dll.lib`, which a DLL Abseil does not install.
+  - `Thirdparty/voxblox/CMakeLists.txt`: the WIN32 header gather now also copies the generated `*.pb.h` from the build dir, as `create_include.sh` does on Linux.
+  - `Thirdparty/libelas-gpu/CMakeLists.txt`: `elas.cpp` gets `-mllvm -regalloc=basic` on WIN32+Clang. clang 23's greedy register allocator never finishes on `Elas::gapInterpolation` at -O2/-O3 (also with -march=native, -fno-vectorize, -fno-unroll-loops; found with `-mllvm -debug-pass=Executions`) and segfaults at -O1 with -funroll-loops. With the basic allocator the file compiles in ~1 s.
+- e0dcda3 `[ROCm] Reserve an 8 MB stack for the Windows executables` (the runtime fix above).
+
+### GPU run (real gfx1151): mono_tum, TUM RGB-D freiburg1_xyz, 798 frames -- PASS (porter evidence; validator to confirm)
+`bash agent_space/plvs_win/run_mono.sh runN.log` (viewer on; the Pangolin window works on the console session). run3/run4 at the e0dcda3 content with WITH_LIBELAS=OFF; run5 with the committed default WITH_LIBELAS=ON:
+
+| run | exit | lost/reset | keyframes | ATE RMSE (Sim3-aligned vs groundtruth) | median track time |
+|---|---|---|---|---|---|
+| run3 | 0 | 0 | 49 | 0.97 cm (max 2.79) | 36.1 ms |
+| run4 | 0 | 0 | 48 | 0.95 cm (max 2.44) | 36.4 ms |
+| run5 | 0 | 0 | 48 | 1.00 cm (max 2.77) | -- |
+
+The map initializes at frame ~2 (235 points), the trajectory spans the full sequence (1305031102.18 -> 1305031128.65), clean Shutdown. GPU path proven: an `AMD_LOG_LEVEL=3` 40 s run logged 33,886 `hipLaunchKernel` calls including `IC_Angle` x2152 and `calcOrb` x2148 (the plvs Orb_gpu kernels) plus FAST. `mono_tum.exe` carries gfx1151 code objects; `SizeOfStackReserve: 8388608`.
+
+### Not done / for the validator
+- No all-clang-cl build: CMake 3.31 on this host cannot take clang-cl as the HIP compiler (skill: "keep one clang driver"), and the recorded gfx1201 recipe is GNU-driver clang++ too. Not needed now that the fault is understood.
+- libsgm GPU (aloe) was already PASS on gfx1151 on 2026-08-20; libsgm/libelas were rebuilt here but not re-run.
+- `fastfusion` is off (as on gfx1201); it is not on the mono path.
+- Linux arches flip to revalidate: the delta is WIN32/PCL>=1.15-guarded, so their device code and Linux host builds are unchanged (binary-equiv carry-forward should apply).
+- Lesson promoted to `.claude/skills/cuda-to-rocm/references/validation.md`: "a crash trace without a PDB names the wrong function" and "TheRock clang 23 can hang in x86 register allocation".
