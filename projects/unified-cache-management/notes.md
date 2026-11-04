@@ -783,3 +783,142 @@ Tooling note: `utils/jargon.py` CRASHED on this host before it could answer --
 confusing `AttributeError: 'NoneType' object has no attribute 'split'`. It
 decodes `git log` output with the Windows cp1252 default. `PYTHONUTF8=1` works
 around it; the real fix belongs in the tool.
+
+## Sync round on moat-fix-1021 (2026-11-04, porter, linux-gfx942)
+
+PR #1021 showed CONFLICTING against upstream `develop` (190 commits of drift since
+merge-base 8e3a29e3). Fix round staged with `fix-branch` (base = published
+8545865f). Upstream tip merged, NOT rebased: `moat-port` stays an ancestor.
+
+Commits on `moat-fix-1021` (pushed; head_sha -> af3eb74b):
+- `80be85e7` merge of upstream `develop` @ f366bfa1. Subject is git's URL-merge form
+  ("Merge branch 'develop' of https://github.com/ModelEngine-Group/unified-cache-management");
+  the first attempt's default subject named the staging branch and `jargon.py --port`
+  flagged it, so the merge was recreated with the identical tree (`git commit-tree`)
+  before anything was pushed, and the three commits below replayed unchanged.
+- `26b0b3ed` [ROCm] Build cuda_event.cc and alias the new runtime calls for HIP
+- `91185a3f` [ROCm] Let HIP infer the copy direction like the CUDA runtime does
+- `af3eb74b` [ROCm] Move the PLATFORM=rocm note to the build-from-source guides
+
+### Conflicts and resolutions (5 files, both sides kept)
+- `CMakeLists.txt`: upstream moved `string(TOLOWER ...)` above the flag block; the port
+  wraps the flags in `if(WIN32)/else()`. Kept upstream's order plus the port's WIN32 block.
+- `setup.py`: PLATFORM warning list -> `cuda, rocm, ascend, ascend-a3, ascend-a5, musa, maca`.
+- `ucm/store/nfsstore/device/CMakeLists.txt`: FATAL_ERROR list ->
+  `ascend, ascend-a3, ascend-a5, maca, musa, cuda, rocm, simu`.
+- `ucm/shared/test/CMakeLists.txt`: kept upstream's `CONFIGURE_DEPENDS` glob and
+  `router_perf.cc` exclude, plus the port's WIN32 `thread_pool_test.cc` exclude.
+- `docs/source/getting-started/quickstart_vllm.md`: upstream removed the whole
+  "Build From Source Code" section (moved to `developer-guide/build_from_source.md`).
+  Took upstream's file in the merge; commit af3eb74b puts the PLATFORM=rocm note next
+  to the CUDA block in `docs/source/developer-guide/build_from_source.md`, adds the same
+  guidance to the new English docs-site build guide, and adds the ROCm row to the
+  docs-site support matrix (mirrors docs/source). The zh docs-site pages were not touched.
+
+### New upstream surface the ROCm build had to absorb
+- The CUDA trans backend gained `cuda_event.cc` (new `Trans::Event`) and calls
+  `cudaDeviceReset`, `cudaMemset`, `cudaStreamDestroy`, `cudaEventQuery`,
+  `cudaEventSynchronize`, `cudaMemcpyDeviceToDevice`, `cudaErrorNotReady`. 26b0b3ed adds
+  `cuda_event.cc` to `trans/rocm/CMakeLists.txt` and the seven aliases to the hip_compat
+  shim. No new `.cu`/`.cuh` in anything the ROCm build compiles (the three new `.cu` are
+  under `toolkit/src/dev-sandbox`, not part of the build). `paged_ham_dist_mla.cu`
+  unchanged upstream.
+- Upstream #1566 "Sunset nfsstore and pcstore": `ucm/store/CMakeLists.txt` no longer adds
+  `nfsstore`, so the `nfsstore/device/rocm` arm (and `cuda_device.cu`) is no longer
+  compiled on any platform. Sources kept upstream; the port's arm stays, dormant, just
+  like the CUDA one. The store copy-kernel gate is now carried by the trans gtests.
+- New modules (`ucm/v2`, `transport/p2p`, `store/dram`, `store/asu`, ...) have no CUDA
+  code; `dram` and `p2p` build only for ascend/simu.
+- 91185a3f (decision for the reviewer): the new cache2 `DumpThenLoad*` integration tests
+  pass `malloc` buffers as the "device" addresses. HIP rejects
+  `hipMemcpyAsync(..., hipMemcpyDeviceToHost)` with a pageable source
+  (`hipErrorInvalidValue`, reproduced standalone in agent_space/probe); the CUDA runtime
+  copies by pointer location under UVA. The shim now maps the three explicit copy kinds to
+  `hipMemcpyDefault`. Before: 4 failures "Failed(1, invalid argument) to copy shard";
+  after: all pass. Promoted to `cuda-to-rocm` fault-classes ("Memory and lifetime").
+
+### Build (gfx942 / MI300X, ROCm 7.16 pip SDK, torch 2.16.0a0 ROCm)
+This host has no `/opt/rocm`; ROCm is the pip SDK under the image venv, so
+`R=$(hipconfig --rocmpath)` (= `.../site-packages/_rocm_sdk_devel`). Pointing
+`CMAKE_HIP_COMPILER` at a missing `/opt/rocm/llvm/bin/clang++` surfaces as
+"hip-lang Error: clangrt builtins lib could not be found".
+```
+R=$(hipconfig --rocmpath)
+cmake -S src -B build_rocm -DRUNTIME_ENVIRONMENT=rocm -DBUILD_UCM_STORE=ON \
+  -DBUILD_UNIT_TESTS=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=-Wno-error=unused-result
+cmake --build build_rocm -j28
+cmake -S src -B build_sparse -DRUNTIME_ENVIRONMENT=rocm -DBUILD_UCM_STORE=OFF \
+  -DBUILD_UCM_SPARSE=ON -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_HIP_COMPILER=$R/lib/llvm/bin/clang++ -DCMAKE_PREFIX_PATH=$R \
+  -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE=/opt/python-3.11-venv/bin/python3 \
+  -DCMAKE_CXX_FLAGS=-Wno-error=unused-result
+cmake --build build_sparse -j28 --target hamming
+```
+Code objects: `cuda_sm_kernel.cu.o` and `hamming.cpython-311-x86_64-linux-gnu.so` both gfx942.
+
+### GPU results at af3eb74b (single pinned GPU, `ulimit -c 0`)
+`ctest --test-dir build_rocm -j1 --timeout 600`: 338 discovered, 1 disabled
+(UCMetricsStress.TenWritersOneCollector), **330/337 pass** (previous bar at 8545865:
+84/87 gfx90a, 85/87 gfx1100; upstream grew the suite 87 -> 338).
+- Copy-kernel gates all pass: UCTransUnitTest.{CopyDataWithCE, CopyDataWithSM,
+  CopyDataBatchWithSM}, plus new UCTransUnitTest.{EmptyEventIsSafe,
+  MemsetAndDeviceToDevice} (exercise the new aliases);
+  UCPosixTrans{Manager,Queue}Test.TransBlock[LayerWise] (4/4);
+  UCCache2TransManagerIntegrationTest.DumpThenLoad* (4/4, after 91185a3f).
+  UCMetricsUT.ConcurrentUpdateAndCollect passed this run.
+- 7 failures, none in port code:
+  - DataStrategyTest x6 (SetupPublishesAndImportsAllRanks, SegmentsAreSharedAcrossRanks,
+    SecondSetupIsRejected, MissingPeerTimesOut, PeerHandleMismatchIsRejected,
+    PeerPollingWaitsForDelayedPublish): new upstream tests where rank r uses device r;
+    with one visible GPU `hipSetDevice(1)` fails "invalid device ordinal". Need >= 2
+    visible GPUs; the job was pinned to one, so not run here. A validator with two GPUs
+    should run `ctest -R DataStrategyTest`.
+  - UCLoggerPerfTest.MultiThreadPerfUCInfoVsRateLimitRandomContent: known timing flake;
+    an isolated rerun of `-R UCLoggerPerfTest` passed it and failed its sibling
+    MultiThreadPerfUCInfoVsRateLimit instead.
+- Hamming (`HAMMING_DIR=<abs build_sparse/.../rocm/ham_dist> python3
+  ucm/sparse/test/gsa/test_hamming_rocm_ref.py`): mla PASS (max_abs_err=42.0,
+  max_rel_err=1.25e-03), gqa PASS exact, determinism PASS. Same numbers as gfx90a/gfx1100.
+- CUDA path: not built (no CUDA toolkit here). The CUDA sources are untouched by the
+  three [ROCm] commits; the merge took upstream's CUDA files as-is.
+
+### Tooling observations
+- `fix-branch` could not cut `port/unified-cache-management` from the trunk: the moat
+  pre-push hook failed `readme: README table is stale` (other ports' live state had
+  moved), and the push carries origin/main. Worked around by creating the port branch
+  locally with a `README: regenerate status table` commit and pushing it normally, then
+  rerunning `fix-branch`. `ensure_port_branch` will hit this whenever the trunk README
+  drifts.
+- `jargon.py --port` resolves `develop..moat-fix-1021` against the local `develop`, and
+  the fork's `develop` mirror is stale (70c3cb38), so the scan swept 150k lines of
+  upstream code. Pointed the local `develop` ref at upstream's tip to scan only the
+  PR diff (local ref only; nothing pushed). `upstream.py --drift --apply` would fast-forward the mirror.
+
+### Proposed fix review PR body (for jeff)
+Title: `[ROCm] Merge current upstream develop into the ROCm port`
+Head `moat-fix-1021` -> base `moat-port`. Not opened.
+
+====
+Upstream PR #1021 was reported as conflicting with `develop` (190 upstream commits since the PR's base). This round merges the current `develop` tip (f366bfa) into the branch. It is a merge, not a rebase, so the published PR commits stay as they are.
+
+Conflicts (5 files, both sides kept): platform lists in `setup.py` and `ucm/store/nfsstore/device/CMakeLists.txt` (upstream added `ascend-a5`, the PR added `rocm`); the WIN32 flag block in `CMakeLists.txt`; the test glob in `ucm/shared/test/CMakeLists.txt` (upstream's `CONFIGURE_DEPENDS` and `router_perf` exclude plus the PR's WIN32 exclude); and `quickstart_vllm.md`, where upstream moved the build-from-source section into the developer guide.
+
+Follow-up commits:
+- 26b0b3e: upstream's CUDA transfer backend gained `cuda_event.cc` and a few more runtime calls; the ROCm target now builds `cuda_event.cc` and the compat header aliases the new names.
+- 91185a3: HIP rejects a copy whose kind does not match the pointers (CUDA's runtime does not). Upstream's new cache2 dump/load tests pass host buffers as device addresses, so the compat header now maps the copy kinds to `hipMemcpyDefault`. This changes existing behaviour of the shim for the reviewer to judge; correctly placed copies are unaffected.
+- af3eb74: the `PLATFORM=rocm` note moves to `build_from_source.md` (both doc trees), plus the ROCm row in the docs-site support matrix.
+
+Upstream #1566 stopped compiling nfsstore, so the nfsstore ROCm device arm is now dormant, the same as its CUDA counterpart.
+
+Retested on AMD Instinct MI300X (gfx942), ROCm 7.16: ctest 330/337 (the copy-kernel, event, memset/D2D and cache2 dump/load gates all pass; 6 DataStrategyTest cases need two visible GPUs and one logger perf test is a known timing flake), Hamming kernel reference test mla/gqa/determinism all pass. Other platforms revalidate at this head before approval.
+
+## Upstream reply
+
+The branch is merged with current `develop` and the conflicts are resolved. The C++ unit tests and the Hamming kernel test were rerun on an AMD Instinct MI300X (gfx942).
+
+## Notes for approval
+
+The reply above should be updated with any other GPUs that revalidate this head before `/moat approve`.
+====

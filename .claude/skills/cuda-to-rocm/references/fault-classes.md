@@ -233,6 +233,8 @@ fp16 upload is `FCLayer<half>::LoadWeights` instead, which still corrupted the m
 head while the value/policy gate passed 34/34. Upstream's own fix, lc0 #2454, is the
 reference shape: one `cudaDeviceSynchronize()` after the `tensor_mem_` malloc/memset loop.)
 
+**A copy kind that disagrees with the pointers is `hipErrorInvalidValue`.** With unified addressing the CUDA runtime ignores a wrong `cudaMemcpyKind` and copies by where the pointers actually live; HIP checks it. `hipMemcpyAsync(dst, src, n, hipMemcpyDeviceToHost, s)` with a pageable `malloc` source returns `invalid argument` (gfx942, ROCm 7.16). Tests that stand in host buffers for device addresses hit this first. A compat header that maps `cudaMemcpy{HostToDevice,DeviceToHost,DeviceToDevice}` to `hipMemcpyDefault` restores the CUDA behaviour without touching the CUDA path. (unified-cache-management: cache2 `DumpThenLoad*` integration tests.)
+
 **`hipFree` is synchronizing** (`hipFreeAsync` is not), so an explicit
 `hipDeviceSynchronize()` before it is redundant. (anari-visionaray)
 
