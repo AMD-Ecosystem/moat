@@ -1135,7 +1135,7 @@ cd port && $FLEET_VENV/bin/python setup.py build_ext --inplace -j 16   # rc=1
 | base 69bdd9f | 0 | 8/8 | 19 (13 unique `.cu`) | 19x `-std=c++11` |
 | port 34f31a6 | 1 | 7/8, `_RandomNumberGenerator` missing | 19 (13 unique `.cu`) | 19x `-std=c++11` |
 
-Error (33 errors, all in one TU, first ones):
+Error (`38 errors detected in the compilation of "Common/CUDA/RandomNumberGenerator.cu"`, first ones):
 ```
 Common/CUDA/RandomNumberGenerator.cu(63): error: incomplete type "void" is not allowed
 Common/CUDA/RandomNumberGenerator.cu(63): error: identifier "curandState" is undefined
