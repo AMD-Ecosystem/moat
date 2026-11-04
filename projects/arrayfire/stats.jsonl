@@ -143,3 +143,5 @@
 {"kind":"phase","ts":"2026-11-04T21:02:55Z","phase":"test","seconds":2.897,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261104-125624-review2-arrayfire/moat/projects/arrayfire/src/build-hip-gfx1100/test/reduce_cuda"}
 {"kind":"phase","ts":"2026-11-04T21:02:58Z","phase":"test","seconds":2.892,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/rx7900-20261104-125624-review2-arrayfire/moat/projects/arrayfire/src/build-hip-gfx1100/test/reduce_cuda"}
 {"kind":"session","ts":"2026-11-04T21:04:08Z","epoch":1793826248.845686550,"event":"end","platform":"linux-gfx1100"}
+{"kind":"phase","ts":"2026-11-04T21:08:48Z","phase":"cuda-compile","seconds":134.178,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi355-20261104-125655-cuda-arrayfire/moat/agent_space/build-port -j 32 -- -k 0"}
+{"kind":"phase","ts":"2026-11-04T21:08:50Z","phase":"cuda-compile","seconds":136.027,"exit":0,"cmd":"cmake --build /var/lib/jenkins/fleet/jobs/mi355-20261104-125655-cuda-arrayfire/moat/agent_space/build-base -j 32 -- -k 0"}

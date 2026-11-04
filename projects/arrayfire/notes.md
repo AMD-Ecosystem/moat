@@ -3038,3 +3038,40 @@ Delivery: this moves only the fork branch. Upstream hosts the same commits on `a
 
 ### Handoff
 `set-state arrayfire linux-gfx1100 review-passed`. Validators: re-run `reduce_cuda` and the full `_cuda$` ctest at 83f66a507 on the wave64 hosts, which are the only ones that exercise the `kWarpSize` change, and on windows. Export `ROCM_PATH` on SDK-wheel hosts. Nothing was pushed to the fork. `moat-port` is still 950dcdd02.
+
+## CUDA compile check (nvcc 12.8) at 83f66a507
+2026-11-04, MOAT helper on the mi355 fleet host (CUDA 12.8 toolkit at `/usr/local/cuda-12.8`, `nvcc` V12.8.93, gcc 13.3, Ubuntu 24.04, cmake 3.31.6; no NVIDIA GPU or driver). Asked for by jeff. Compared fork 83f66a507 (`moat-sync-64c88d9`) against its merged upstream parent 64c88d932. No platform state changed; nothing pushed.
+
+**Result: PASS, no regression.** Both trees configure and build with exit 0, 707/707 ninja steps, 0 errors, the same 438 warnings, the same targets and artifacts, and identical device code.
+
+### Recipe (upstream's own CUDA CI build, `.github/scripts/ci.sh` job `linux-cuda-gpu-build`)
+Dependencies from upstream's `install-deps-ubuntu.sh --compiler gcc` list (apt): `libboost-dev libboost-stacktrace-dev libfftw3-dev liblapacke-dev libfreeimage-dev` added; `libopenblas-dev` and `libgtest-dev` were already present. spdlog v1.9.2, fmt, span-lite and the test data come from arrayfire's pinned fetches. sparse.tamu.edu still returns 403, so the Matrix Market data comes from upstream's `check-matrix-data.py` as in the sync-round entry above. `.github/` is identical in both trees.
+```
+git -C af-port worktree add ../af-base 64c88d932
+python3 -I af-$T/.github/scripts/check-matrix-data.py af-$T build-$T        # prints ON, 9 matrices restored
+AF_CI_MTX_FILES=ON cmake -S af-$T -B build-$T -G Ninja -C af-$T/.github/scripts/linux-cuda-gpu.cmake \
+  -DCUDA_architecture_build_targets=8.0 \
+  -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-12.8
+utils/timeit.sh arrayfire cuda-compile -- cmake --build build-$T -j 32 -- -k 0
+```
+(`T` is `port` or `base`. `linux-cuda-gpu.cmake` sets CUDA ON, CPU/OpenCL/oneAPI/unified/Forge/examples/docs/cuDNN OFF, Release, tests ON with the Matrix Market data. `-DCUDA_architecture_build_targets` is the knob `ci.sh` uses, since a bare `CMAKE_CUDA_ARCHITECTURES` does not reach `AFcuda_helpers.cmake`.)
+
+### Results
+| | upstream 64c88d932 | fork 83f66a507 |
+|---|---|---|
+| configure exit | 0 | 0 (log identical apart from one line-number shift, CMakeLists.txt:150 -> 151) |
+| build exit / steps | 0, 707/707 (136 s) | 0, 707/707 (134 s) |
+| nvcc / compiler errors | 0 | 0 |
+| warnings (normalised, counted) | 438 | 438, identical set |
+| ninja targets | 1716 | 1716, identical after path normalisation |
+| `.cu` objects compiled by nvcc | 51 (50 in `afcuda`) | 51 (50 in `afcuda`) |
+| artifacts (`.so`, test executables) | 136 | 136, identical list |
+| ctest tests registered | 133 | 133 |
+| `libafcuda.so.3.10.1` | 211554664 bytes | 211554664 bytes; 12395 exported dynamic symbols, same list |
+
+- The warnings are all pre-existing upstream ones: 411 `-Wstrict-aliasing` and 15 `-Wuninitialized` in `common/half.hpp`, 10 deprecated `cusparseCreateIdentityPermutation`, 1 deprecated `thrust::unary_function` (`kernel/regions.hpp`), 1 `-Wunused-result` in `test/mmio/mmio.c`.
+- nvcc built the CUDA backend: `ninja -t commands afcuda` shows 50 `nvcc ... .cu` compiles, each with `--generate-code=arch=compute_80,code=[sm_80]` only.
+- HIP is not configured in the CUDA build: `AF_BUILD_HIP:BOOL=OFF` (its default) is the only HIP entry in `CMakeCache.txt`, `build.ninja` has no `hip` mention, and `build-port/src/backend/` holds only `common` and `cuda`.
+- Device code is identical: `cuobjdump -xelf all` pulls 50 sm_80 cubins from each `libafcuda`. They have the same sizes and the same symbol tables (after dropping nvcc's per-path module-id hash). All 7081 `.text.*` kernel sections hash identically (agent_space `textcmp.py`). The few hundred bytes that differ per cubin are outside `.text`, in the path-derived module ids.
+- `half.hpp` is the port's only shared header change that reaches CUDA. Run through `unifdef -U__HIP_RTC__`, it differs from upstream only by comments, blank lines and `__DH__` on `half2int` and `half::infinity()`. The nvcc build shows no effect: no new warning and the same device `.text`. NVRTC (the CUDA runtime JIT, which embeds `half.hpp`) was checked without a GPU through libnvrtc 12.8 (`--gpu-architecture=sm_80 --std=c++17 --device-as-default-execution-space`, the backend's own options). Each `src/backend/cuda/kernel/*.cuh` and `common/half.hpp` was compiled, with empty stubs for the five dummy headers `compile_module.cpp` substitutes. The outcome is identical in both trees: 45/56 compile, including `half.hpp` and the half-using `jit.cuh`, `copy.cuh`, `medfilt.cuh`, `fftconvolve.cuh` and `anisotropic_diffusion.cuh`. The other 11 fail the same way in both because the harness does not supply the launcher-defined macros (`MAX_CONV1_FILTER_LEN`, `SCONV_THREADS_Y`) or the generated `optypes.hpp`.
+- Not run: the tests (no GPU). Even `ctest -N` cannot run the `print_info` post-test hook without `libcuda.so.1`, in both trees (environment).
