@@ -1,0 +1,147 @@
+{
+ "generated_by": "utils/surface.py",
+ "source_sha": "244db8f13811",
+ "note": "A FLOOR, not the whole truth. The planner may add entries the scan cannot see (driver API, runtime PTX, non-C++ builds) and may remove a generated one only with a reason recorded in removed_from_floor.",
+ "cuda": {
+  "files": [
+   "src\\exe\\main.cu",
+   "src\\ext\\pymodule_ext.cu",
+   "src\\fit_tsne.cu",
+   "src\\include\\common.h",
+   "src\\include\\kernels\\apply_forces.h",
+   "src\\include\\kernels\\attr_forces.h",
+   "src\\include\\kernels\\nbodyfft.h",
+   "src\\include\\kernels\\perplexity_search.h",
+   "src\\include\\kernels\\rep_forces.h",
+   "src\\include\\options.h",
+   "src\\include\\test\\test_distance.h",
+   "src\\include\\test\\test_reduce.h",
+   "src\\include\\test\\test_tsne.h",
+   "src\\include\\util\\cuda_utils.h",
+   "src\\include\\util\\data_utils.h",
+   "src\\include\\util\\debug_utils.h",
+   "src\\include\\util\\distance_utils.h",
+   "src\\include\\util\\math_utils.h",
+   "src\\include\\util\\matrix_broadcast_utils.h",
+   "src\\include\\util\\random_utils.h",
+   "src\\include\\util\\reduce_utils.h",
+   "src\\include\\util\\thrust_transform_functions.h",
+   "src\\include\\util\\thrust_utils.h",
+   "src\\kernels\\apply_forces.cu",
+   "src\\kernels\\attr_forces.cu",
+   "src\\kernels\\nbodyfft.cu",
+   "src\\kernels\\perplexity_search.cu",
+   "src\\kernels\\rep_forces.cu",
+   "src\\test\\test.cu",
+   "src\\util\\cuda_utils.cu",
+   "src\\util\\data_utils.cu",
+   "src\\util\\debug_utils.cu",
+   "src\\util\\distance_utils.cu",
+   "src\\util\\math_utils.cu",
+   "src\\util\\matrix_broadcast_utils.cu",
+   "src\\util\\random_utils.cu",
+   "src\\util\\reduce_utils.cu",
+   "src\\util\\thrust_utils.cu"
+  ],
+  "markers": {
+   "warp_intrinsic": 1,
+   "kernel": 31,
+   "launch": 24,
+   "device_code": 13
+  },
+  "libraries": {
+   "cublas": 63,
+   "cufft": 31,
+   "cusparse": 43,
+   "thrust": 502,
+   "cusolver": 1
+  }
+ },
+ "components": [
+  {
+   "id": "library:tsnecuda",
+   "kind": "library",
+   "where": "CMakeLists.txt"
+  },
+  {
+   "id": "option:BUILD_PYTHON",
+   "kind": "option",
+   "where": "CMakeLists.txt",
+   "default": "ON",
+   "doc": "Build python if ON"
+  },
+  {
+   "id": "python:tsnecuda",
+   "kind": "python_package",
+   "where": "src/python/tsnecuda/TSNE.py, src/python/setup.py",
+   "added_by": "planner",
+   "note": "ctypes loader for libtsnecuda; in scope (Windows DLL name, package_data)"
+  },
+  {
+   "id": "build:windows",
+   "kind": "build_path",
+   "where": "CMakeLists.txt",
+   "added_by": "planner",
+   "note": "Windows HIP build (LLP64 long->int64_t, ssize_t, sys/time.h, WIN32 CMake guards, DLL prefix/exports, hip_link_win.py); in scope, required windows gate"
+  },
+  {
+   "id": "test:tsnecuda.test",
+   "kind": "test",
+   "where": "src/python/tsnecuda/__init__.py",
+   "added_by": "planner",
+   "note": "upstream-documented smoke (INSTALL.md:105); in scope, plus metric harness in plan.md Test plan"
+  },
+  {
+   "id": "benchmark:tune_kernels",
+   "kind": "benchmark",
+   "where": "cmake/benchmarks/tune_kernels.py",
+   "added_by": "planner",
+   "note": "vendor-neutral launch-config sweep; run on ROCm, not modified"
+  },
+  {
+   "id": "example:mnist-cifar",
+   "kind": "example",
+   "where": "examples/mnist.py, examples/cifar.py",
+   "added_by": "planner",
+   "note": "vendor-neutral Python over tsnecuda; covered by inspection"
+  },
+  {
+   "id": "doc:install-rocm",
+   "kind": "doc",
+   "where": "INSTALL.md, README.md",
+   "added_by": "planner",
+   "note": "add a ROCm build subsection"
+  },
+  {
+   "id": "exe:tsne-cli",
+   "kind": "executable",
+   "where": "src/exe/main.cu",
+   "added_by": "planner",
+   "note": "C++ CLI; upstream removed it from the build in v4.0.0. PROPOSED scope-out, pending jeff (plan.md open question 1)"
+  },
+  {
+   "id": "test:gtest-suite",
+   "kind": "test",
+   "where": "src/test/test.cu, src/include/test/*",
+   "added_by": "planner",
+   "note": "dead gtest suite (all TESTs commented, includes deleted headers, no target). PROPOSED scope-out, pending jeff"
+  },
+  {
+   "id": "packaging:cuda-wheel-conda",
+   "kind": "packaging",
+   "where": "packaging/",
+   "added_by": "planner",
+   "note": "CUDA wheel/conda/pypi pipeline. PROPOSED scope-out, pending jeff"
+  },
+  {
+   "id": "viz:zmq-visualization",
+   "kind": "example",
+   "where": "visualization/",
+   "added_by": "planner",
+   "note": "CPU Python ZMQ viewers; feature compiled out upstream (-DNO_ZMQ). PROPOSED scope-out, pending jeff"
+  }
+ ],
+ "covered": [],
+ "scoped_out": [],
+ "removed_from_floor": []
+}

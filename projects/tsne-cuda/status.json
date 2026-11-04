@@ -5,17 +5,14 @@
   "fork_url": "https://github.com/AMD-Ecosystem/tsne-cuda",
   "fork_default_branch": "main",
   "priority": 0.0,
-  "ext_type": "unknown",
+  "ext_type": "cmake",
   "adopted_at": "2026-08-07T06:47:29Z",
-  "updated_at": "2026-11-04T07:19:37Z",
+  "updated_at": "2026-11-04T07:26:50Z",
   "head_sha": null,
   "depends_on": [
     "faiss"
   ],
-  "porting": {
-    "arch": "windows-gfx1151",
-    "since": "2026-11-04T07:19:37Z"
-  },
+  "porting": null,
   "waivers": {},
   "license_spdx": "BSD-3-Clause",
   "intake": {
@@ -31,7 +28,7 @@
       "at": "2026-08-07T15:27:20Z"
     }
   },
-  "stage": "planning",
+  "stage": "planned",
   "platforms": {
     "windows-gfx1151": {
       "blocked": false,
@@ -40,7 +37,7 @@
       "failed_sha": null,
       "started_at": null,
       "completed_at": null,
-      "updated_at": "2026-11-04T07:19:37Z",
+      "updated_at": "2026-11-04T07:26:50Z",
       "stats": {
         "tokens_total": 0,
         "tokens_approx": true,
@@ -56,5 +53,10 @@
       },
       "last_agent": "planner"
     }
+  },
+  "porting_released": {
+    "arch": "windows-gfx1151",
+    "since": "2026-11-04T07:19:37Z",
+    "at": "2026-11-04T07:26:50Z"
   }
 }

@@ -1,1 +1,3 @@
 {"kind": "tokens", "ts": "2026-08-07T06:52:52Z", "tokens": 67084, "source": "intake"}
+{"kind":"session","ts":"2026-11-04T07:19:36Z","epoch":1793776776.714406100,"event":"start","platform":"windows-gfx1151"}
+{"kind":"session","ts":"2026-11-04T07:26:50Z","epoch":1793777210.749123100,"event":"end","platform":"windows-gfx1151"}
