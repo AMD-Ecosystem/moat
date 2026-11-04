@@ -304,6 +304,25 @@ reference shape: one `cudaDeviceSynchronize()` after the `tensor_mem_` malloc/me
 **`hipFree` is synchronizing** (`hipFreeAsync` is not), so an explicit
 `hipDeviceSynchronize()` before it is redundant. (anari-visionaray)
 
+**Creating a hipBLASLt or MIOpen handle while ANY thread captures a graph exits the process.**
+`hipblasLtCreate` zero-fills its buffers with a synchronous `hipMemset` on the null stream. That
+is refused with `hipErrorStreamCaptureImplicit` (906, "operation would make the legacy stream
+depend on a capturing blocking stream") while any blocking stream on the device is capturing:
+in another thread, in thread-local capture mode, and even when the capturing stream was created
+non-blocking. The process then exits with status 1 inside the call, so there is no status to
+check. `miopenCreate`
+creates a hipBLASLt handle and fails the same way. `hipblasCreate`, `hipsolverDnCreate`,
+`hipblasLtDestroy` and `hipFree` were fine (ROCm 10.1, hipBLASLt 1.4.1, MIOpen 3.6.1). cuBLASLt
+and cuDNN never touch the null stream at creation, so a CUDA framework that creates handles
+lazily (a new eager stream, an op's kernel state) while a graph runner captures on another
+thread breaks only on HIP. Switching the creating thread to relaxed capture mode does not help.
+What works: a process-wide shared mutex that each capture holds shared from begin to end, while
+the compat `cublasLtCreate` and `cudnnCreate` hold it exclusively. Skip the wait on a thread that
+is itself capturing, or it deadlocks. To find who creates the handle, break on `hipMemset` in gdb
+and read the backtrace: a log ordered by time alone suggests a lazy allocation inside the
+captured call, but here the call came from another thread. (oneflow, 021f4ad34: an eager fused
+MLP backward run right after an nn.Graph training step under `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1`.)
+
 ## Textures
 
 **gfx94x+ (CDNA3 and newer: MI300-class) disables the HIP image/texture object API at COMPILE

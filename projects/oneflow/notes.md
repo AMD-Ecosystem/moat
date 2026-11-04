@@ -4275,6 +4275,8 @@ Large long-k outputs pay what matmul pays for the same GEMM (the chunked path); 
 ### Graph capture (`agent_space/g/cg_fused.py`, `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1`, k = 2^20)
 An nn.Graph with fused_matmul_bias (plain and with `_add_to_output`, alpha, beta), a two-layer fused_mlp and a one-layer fused_matmul_bias_add_relu_dropout: 4 runs with new inputs each, every output **bitwise equal to eager**, float16 and bfloat16 (0 mismatches). A training nn.Graph (float32 master weights cast to float16, fused_mlp forward and backward captured, SGD lr 0), default and `ONEFLOW_ONE_EMBEDDING_FUSED_MLP_ASYNC_GRAD=1`: 3 steps each, graph loss equals eager loss in every step, no capture error.
 
+**Correction (porter round 2026-11-04, linux-gfx1100):** "no capture error" is true of this script only, and it says nothing about fused MLP async grad under CUDA graphs in general. The script's eager reference in the training loop was a forward only (`loss_e = tm(x, dy)`), never an eager backward, so no fused-MLP grad kernel state (which creates its own hipBLASLt handle) was ever created while the graph was capturing. An eager backward run right after a captured training step exits the process with hipBLASLt error 906 on every build up to 1a6bc2149 (see "Porter round 2026-11-04"). Its gradients were also never compared (SGD lr 0 leaves the weights unchanged). The 2026-11-04 review's explanation (the script ran "warmed") is not the mechanism either; see that round.
+
 ### Integrity and text
 clang-format 11.1.0 `--dry-run -Werror` clean on both C++ files; black 19.10b0 clean on the test. `git -C projects/oneflow/src status --porcelain`: no modified tracked files. Commit title 62 characters with `[ROCm]`, rationale, AI disclosure, fenced Test Plan, no trailer; `utils/prose.py` clean. `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038. `pr-state oneflow`: none. Pushed `moat-port` 4e418c9d4..0e606373b (fast-forward), `advance-head oneflow 0e606373b...`. Not done: the CUDA compile gate (nvcc) this round: the change touches only `hip_compat/cublasLt.h` (HIP build only), `flags.cpp` (a plain `#ifdef USE_HIP` lambda) and a Python test.
 
@@ -4391,3 +4393,89 @@ Review14 required at least one of (a), (b) and (c). Option (c) is done: the audi
 
 ### For the gfx1201 validation (after a review passes; jeff's coordinator)
 On linux-gfx1201 the validator must show the new long-k tests failing at 4e418c9d4 and passing at the new head. That is the hipBLASLt DepthU-192 case (`hipblaslt-gfx1201-mt16x16x192-longk-wrong`, fixed in hipBLASLt 1.5.0 / ROCm 10.2, no ROCm 10.1 backport, so the workaround stays). Run the head's `test_matmul_long_k.py` checks against a 4e418c9d4 build through `agent_space/collect.py`. Without its `with_rocm` shim, the 4e418c9d4 build fails with an AttributeError (`flags.with_rocm` does not exist there), which proves nothing. Record the failing check count and the worst ulp. At 4e418c9d4, bfloat16 is expected to exceed the 4-ulp bound on gfx1201 as well (7-10 ulp per the audit); on gfx1100 only float16 does. At the new head, every check must pass, along with `test_matmul_long_k.py` as a whole.
+
+## Porter round 2026-11-04 (linux-gfx1100, two W7800; answers "Review 2026-11-04 (reviewer, linux-gfx1100 ... 4e418c9d4..1a6bc2149)", verdict changes-requested)
+
+Host: `HIP_VISIBLE_DEVICES=0,1` (dispatcher), ROCm 10.1.0 SDK wheels (HIP 7.16.26385, hipBLASLt 1.4.1 = `hipblasLtGetVersion` 100401, MIOpen 3.6.1), torch 2.16.0a0+git6c3af02 symlinked read-only into `$FLEET_VENV-base-links` (the autotests import it; without it 33 files fail at collection), `ulimit -c 0`, `OMP_NUM_THREADS=4`, `LD_PRELOAD=$R/lib/llvm/lib/libLLVM.so.24.0git`, no JIT extension builds. State `changes-requested` -> `porting` (lock taken by this job). `pr-state oneflow`: none, and `gh pr list -R Oneflow-Inc/oneflow --state all --search head:moat-port` is empty. So there is no fix branch to stage on (`fix-branch` refuses without an open PR), and the round goes on `moat-port` directly, as fix21 and fix22 did. Scripts in `agent_space/t/`, `agent_space/hb/`, `agent_space/suite/`.
+
+### Build
+Fresh clone of the fork (`--reference` the fix22 clone, `--dissociate`), `protect-fork`. `pip install -r dev-requirements.txt fsspec pytest-timeout pytest-repeat opencv-python==4.11.0.86 clang-format==11.1.0.2` into `$FLEET_VENV`; ccache copied from the fix22 job (`CCACHE_BASEDIR=<job>`). `agent_space/env.sh` as in fix21/fix22 with `JOBS=$MAX_JOBS` (16). `utils/timeit.sh oneflow compile -- build_rocm.sh all`: rc=0, 1062 s. `cmake --build build -j16` afterwards: nothing left to compile; `nm -C liboneflow.so` shows `oneflow_hip_cublaslt::CaptureMutex()::mutex`.
+
+### The blocker is a different mechanism from the one the review recorded
+The review recorded "hipBLASLt runs a lazy hipMalloc and a synchronous hipMemset inside the captured matmul". gdb on the fix22 build (`break hipMemset` with `bt`, `agent_space/t/gdb1.log`) shows otherwise. The failing 25 MiB `hipMemset` (26214400 bytes) is called from `hipblasLtCreate` <- `cublasLtCreate` <- `MatmulGradKernelState` <- `CublasFusedMLPGradKernel::CreateOpKernelState` <- `StatefulOpKernel::TryInitOpKernelStateAndCache` <- the eager VM worker thread. That is the repro's eager reference backward (`te(x, dy).backward()`). Its first call creates the eager kernel state, and with it a hipBLASLt handle, while the graph's actor thread is still capturing the first step (`g(x, dy)` returns before the capture is done). The graph's own kernel state is created at actor construction, before any capture, and is not involved.
+- `SYNC=1` (`flow.cuda.synchronize()` between the graph step and the eager reference, `t/cg_grad_s.py`, k = 1024, cold, graph called first): 0 mismatches, rc 0. `SYNC=0`: 906, rc 1. So the cold capture itself works; the failure needs a handle creation on another thread during the capture. This also explains the review's other observations: `WARM=1` creates the eager state before any capture, ASYNC_GRAD=0 uses no kernel state with its own handle, and CUDA_GRAPH=0 has no capture.
+- Standalone, no oneflow (`agent_space/hb/cap2.cpp`, `cap3.cpp`, minimal `repro.cpp`; thread A begins a capture on a stream and launches a kernel, thread B creates a handle meanwhile): `hipblasLtCreate` prints the 906 at `hipblaslt.cpp:170` and the process exits with status 1 inside the call (3 of 3). That holds in thread-local capture mode, with the creating thread switched to relaxed mode (`hipThreadExchangeStreamCaptureMode`), and with the capturing stream created `hipStreamNonBlocking`. `miopenCreate` fails the same way (MIOpen creates a hipBLASLt handle). `hipblasCreate` + `hipblasSetStream`, `hipsolverDnCreate`, `hipblasLtDestroy` and `hipFree` on thread B pass.
+- So the review's second option (non-blocking streams for `MatmulGradKernelState`) cannot work: the capturing stream's flags do not matter, and the creation happens on a thread that is not capturing. The first option (trigger the allocation outside capture at `cublasLtCreate`) does not apply either: the allocation is in `cublasLtCreate`, and its caller decides when that runs.
+
+### The change (021f4ad34, `[ROCm] Create hipBLASLt handles outside CUDA graph capture`, on top of 1a6bc2149)
+- `hip_compat/cublasLt.h`: a process-wide `std::shared_mutex` (`oneflow_hip_cublaslt::CaptureMutex`); `BeginCapture` / `EndCapture` (shared lock plus a thread-local "this thread is capturing" flag); `HandleCreationGuard` (exclusive lock, skipped on a thread that is capturing, which would otherwise deadlock on itself). `cublasLtCreate` takes the guard.
+- `hip_compat/cudnn.h`: `cudnnCreate` (MIOpen) takes the guard; it includes `<cublasLt.h>` (the compat header).
+- `ep/cuda/cuda_stream.cpp`: under `USE_HIP`, `BeginGraphCapture` / `EndGraphCapture` hold the shared lock around `cudaStreamBeginCapture` .. `cudaStreamEndCapture`. That is oneflow's only capture site (grep for `StreamBeginCapture`). The only `cublasLtCreate` callers are the `CudaStream` constructor and `MatmulGradKernelState`. `cudnnCreate` is called by the `CudaStream` constructor and by `CudnnHandlePool::Get`, which releases its own mutex first.
+- Lock order: a capture thread holds the shared lock and may take `BlasHandlesMutex` or the cudnn pool mutex. A creator holds the exclusive lock and takes `BlasHandlesMutex` only inside it. Nobody waits for the capture mutex while holding either, so there is no cycle.
+- Test: `python/oneflow/test/graph/test_graph_fused_mlp_cuda_graph.py` (new). It runs in a subprocess, because the failure exits the process and the env flags must be set at start, with `ONEFLOW_KERNEL_ENABLE_CUDA_GRAPH=1 ONEFLOW_ONE_EMBEDDING_FUSED_MLP_ASYNC_GRAD=1`. A two-layer fused_mlp training nn.Graph (float32 master weights cast to float16, k = 1024, SGD lr 1) runs three steps, each followed at once by the same step in eager mode. The weight update must equal minus the eager gradient (rtol = atol = 1e-3).
+
+### Results
+- New test on the fix22 build (1a6bc2149, with the test file from this tree): **5 of 5 fail** with the 906. At 021f4ad34: **5 of 5 pass** (4.8-4.9 s each, GPU 1).
+- The review's repro `t/cg_grad.py` at 021f4ad34, ASYNC_GRAD=1, CUDA graphs on, cold, at k = 64 (it segfaulted after the 906 before), 1024 and 2^20: **0 mismatches each, 16 of 16 checks bitwise equal**.
+- fix21's `g/cg_fused.py` at 021f4ad34, ASYNC_GRAD 0 and 1, float16 and bfloat16: 0 mismatches each.
+- Suite (`agent_space/suite/run.sh`; `utils/timeit.sh oneflow test`): fix22's 122-file list plus the new test, test_conv1d/2d, test_conv_bias_grad, test_conv_float64, test_deconv2d, test_cublas_fused_mlp, test_fused_matmul_bias and test_fused_matmul_bias_add_relu_dropout. 131 files, one pytest per file, `timeout 900`, 3 per GPU. **113 files pass, 18 fail.** Per test id against fix22's junit at 1a6bc2149, **all 395 shared ids have the same outcome**. Of the 45 new ids, the new test passes. The failures are known classes: test_conv1d 2, test_conv2d 4 and test_deconv2d 3 random-data autotests, as recorded at 42d68145d; and the float32 tolerance pair test_cublas_fused_mlp / test_fused_matmul_bias_add_relu_dropout, which I checked here fails the same way on the fix22 build. Totals: 299 pass, 118 skip, 23 fail.
+- clang-format 11.1.0 `--dry-run -Werror` is clean on the three C++ files; black 19.10b0 is clean on the test. `utils/prose.py` is clean on the message: title 57 characters, AI disclosure in prose, fenced Test Plan, no trailer. `python3 utils/jargon.py --port oneflow`: only the three known hits in 68718f038. `git -C projects/oneflow/src status --porcelain`: clean.
+- CUDA build: the change is under `USE_HIP` or inside HIP-only compat headers, and the test is CUDA-neutral (it passes on CUDA today). No nvcc compile gate was run, for the same reason as fix22: no configured CUDA tree on this host.
+
+### Not done: publishing 021f4ad34 to the fork
+Publishing `moat-port` to the fork would be a fast-forward of 1a6bc2149 -> 021f4ad34 (`origin/moat-port` was 1a6bc2149, and no upstream PR is open). This session's permission classifier refused it ("Create Public Surface"), and it was not retried or routed around. Without it, `advance-head` would point every validator at a sha the fork does not have. So this round stops at `porting`, with the lock held by linux-gfx1100. To finish (jeff, or a rerun on this host): publish `moat-port` from this job's clone, where commit 021f4ad34 is the only copy (`/var/lib/jenkins/fleet/jobs/rx7900-20261103-234023-oneflow-fix23/moat/projects/oneflow/src`). Then run `moatlib.py advance-head oneflow <021f4ad34 full sha>` and `set-state oneflow linux-gfx1100 ported`.
+
+### Lesson promoted
+`cuda-to-rocm` `references/fault-classes.md`, "Memory and lifetime": creating a hipBLASLt or MIOpen handle while any thread captures a graph exits the process. The entry gives the shared-mutex shape, and says to find the creator by breaking on `hipMemset`, not from a time-ordered log.
+
+### Draft ROCm bug report for jeff (NOT filed; registered as `hipblaslt-create-null-stream-memset-during-capture`)
+Suggested repository: ROCm/rocm-libraries (hipBLASLt; MIOpen is affected through it).
+
+Title: hipblasLtCreate exits the process while another thread is capturing a stream (hipErrorStreamCaptureImplicit from a null-stream hipMemset)
+
+Body:
+
+`hipblasLtCreate` zero-fills the buffers it allocates with a synchronous `hipMemset` on the null stream. When any thread on the device is capturing a blocking stream into a graph, HIP refuses that memset with `hipErrorStreamCaptureImplicit` (906), as it should for a legacy-stream operation. hipBLASLt then prints `Hip error: 'operation would make the legacy stream depend on a capturing blocking stream'(906) at .../hipblaslt/library/src/amd_detail/hipblaslt.cpp:170`, and the process exits with status 1 inside the call, so the caller gets no status to handle. `miopenCreate` fails the same way, because it creates a hipBLASLt handle.
+
+cuBLASLt's `cublasLtCreate` does not touch the null stream. So frameworks that create a handle lazily (a new stream object, an op's kernel state) on one thread while another thread captures a CUDA graph work on CUDA and exit on ROCm. We hit it in a framework's eager op running right after a graph-captured training step.
+
+The failure does not depend on the capture mode. It is the same in thread-local mode, with the creating thread switched to `hipStreamCaptureModeRelaxed`, and when the capturing stream was created with `hipStreamNonBlocking`. `hipblasCreate`, `hipsolverDnCreate`, `hipblasLtDestroy` and `hipFree` on the second thread do not fail.
+
+Reproducer (`hipcc --offload-arch=gfx1100 repro.cpp -lhipblaslt -o repro && ./repro`; it exits with status 1 after printing the 906 line, 3 of 3 runs):
+
+```cpp
+#include <hip/hip_runtime.h>
+#include <hipblaslt/hipblaslt.h>
+#include <atomic>
+#include <cstdio>
+#include <thread>
+
+__global__ void noop() {}
+
+int main() {
+  hipStream_t stream;
+  (void)hipStreamCreate(&stream);
+  std::atomic<int> phase{0};
+  std::thread capture([&] {
+    (void)hipStreamBeginCapture(stream, hipStreamCaptureModeThreadLocal);
+    hipLaunchKernelGGL(noop, 1, 1, 0, stream);
+    phase = 1;
+    while (phase != 2) {}
+    hipGraph_t graph;
+    fprintf(stderr, "end capture: %d\n", (int)hipStreamEndCapture(stream, &graph));
+  });
+  while (phase != 1) {}
+  hipblasLtHandle_t handle;
+  hipblasStatus_t status = hipblasLtCreate(&handle);  // never returns: the process exits with 1
+  fprintf(stderr, "hipblasLtCreate: %d\n", (int)status);
+  phase = 2;
+  capture.join();
+  return 0;
+}
+```
+
+Expected: `hipblasLtCreate` succeeds while another thread captures, as `cublasLtCreate` does. For example, it could initialize its buffers with `hipMemsetAsync` on a private non-blocking stream and synchronize that stream. Failing that, it should return an error status instead of exiting the process.
+
+Environment: ROCm 10.1.0 (TheRock SDK wheels), HIP 7.16.26385, hipBLASLt 1.4.1 (`hipblasLtGetVersion` 100401), MIOpen 3.6.1, AMD Radeon Pro W7800 48GB (gfx1100), Linux 6.8.0, amdgpu 6.19.14. Not checked on a newer nightly or on another GPU.
+
+Workaround in the application: serialize handle creation against capture, with a shared mutex held by each capture and taken exclusively around `hipblasLtCreate` / `miopenCreate`.
