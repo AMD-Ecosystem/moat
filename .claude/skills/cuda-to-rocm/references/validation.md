@@ -154,6 +154,17 @@ installed in that machine, so a pinned `HIP_VISIBLE_DEVICES=1` copied from older
 notes silently selects a different card, or none. Read the device list at the time
 you use it (`rocminfo`, `hipInfo`).
 
+## scikit-learn's KMeans can crash on a host with very many cores
+
+A Python test that scores an embedding or clustering with `sklearn.cluster.KMeans` can
+exit with SIGSEGV or SIGABRT on a 224-thread host after every assertion passed, about half
+the time. The fault is in scipy's bundled OpenBLAS (`sgemm_incopy_*`) called from a
+libgomp worker hundreds of threads deep, and it reproduces with KMeans alone, without the
+port loaded (4 of 6 runs; 0 of 6 with `OMP_NUM_THREADS=16`). It is not the GPU and not the
+port. Cap the threads around the call, `with threadpoolctl.threadpool_limits(8):`
+(threadpoolctl is a scikit-learn dependency), rather than exporting an environment variable
+the next validator will not know to set. (tsne-cuda)
+
 ## RCCL collectives need the whole multi-GPU host at once
 
 NCCL->RCCL is a mechanical swap (RCCL is API-compatible and ships in ROCm), but

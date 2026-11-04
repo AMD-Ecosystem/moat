@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "tsne-cuda-cpu-knn-missing-neighbors",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream bug, not ROCm-specific: KNearestNeighbors' CPU path (num_neighbors >= 1024) searches an IVFFlat index with sqrt(N) cells and nprobe 20; on clustered data the probed cells hold fewer than k points and FAISS pads the result with -1, which PostprocessNeighborIndices passes on as index -1 (upstream 'TODO: Add -1 notification'). make_blobs 3000x50, k=1024: 16408 missing slots across 315 points (CPU FAISS alone), then a GPU memory fault in syv2k. Same code path on CUDA. Candidate upstream issue or follow-up fix; the port's test uses 10000 points (0 missing).",
+      "refs": [
+        "projects/tsne-cuda/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-04T19:24:32Z",
+      "decided": null
+    },
+    {
+      "id": "tsne-cuda-reducemean-axis1-divisor",
+      "kind": "other",
+      "component": null,
+      "summary": "Upstream bug, not ROCm-specific: tsnecuda::util::ReduceMean always scales by 1/N, so a row mean (axis=1) of an NxM matrix divides by N instead of M. The revived reduction tests only use 512x512, which hides it. Candidate upstream issue; no caller in the t-SNE path was checked for impact.",
+      "refs": [
+        "projects/tsne-cuda/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-04T19:24:33Z",
+      "decided": null
+    },
+    {
+      "id": "faiss-rocm10-fp16-include-and-install-header",
+      "kind": "other",
+      "component": null,
+      "summary": "FAISS moat-port (01a09e8) does not build against TheRock ROCm 10.1 (pip SDK): faiss/gpu/utils/Float16.cuh uses half2/__float22half2_rn/__hip_bfloat16 without hip_fp16.h/hip_bf16.h on the USE_AMD_ROCM path (the #include is in the !USE_AMD_ROCM branch), and newer hip_runtime.h no longer pulls them in. Worked around for tsne-cuda with -DCMAKE_HIP_FLAGS='-include hip/hip_fp16.h -include hip/hip_bf16.h'. Separately, cmake --install omits faiss/impl/InvertedListScannerStats.h, which installed AuxIndexStructures.h includes (copied by hand). Both belong to the faiss port, revalidation on current ROCm.",
+      "refs": [
+        "projects/tsne-cuda/notes.md"
+      ],
+      "status": "open",
+      "upstream_issue": null,
+      "created_at": "2026-11-04T19:24:33Z",
+      "decided": null
+    }
+  ]
+}

@@ -412,6 +412,15 @@ rate from `hipDeviceAttributeWallClockRate` in kHz) for any interval. Grep a por
 hipSPARSE, cuDNN -> MIOpen, Thrust/CUB -> rocThrust/hipCUB. Mostly 1:1; watch handle types
 and a few signature differences such as the hipBLAS v2 enums.
 
+**An error-name `switch` over every CUDA status value can lose a case label.** Projects often
+carry a `switch` that names each `cublasStatus_t`/`cufftResult` value. hipBLAS has no
+`CUBLAS_STATUS_LICENSE_ERROR`, and current hipFFT (1.0.26, ROCm 10.1) has dropped
+`HIPFFT_LICENSE_ERROR` (its enum now skips 15). Aliasing the missing name to a value another
+case already uses is a duplicate-case-label error. In a shim, map it to a distinct value
+instead: `HIPBLAS_STATUS_UNKNOWN`, and `static_cast<hipfftResult>(15)` (inside the enum's
+range, and the value cuFFT used). Do not define `CUDART_VERSION` to switch the cases off:
+rocThrust and hipCUB key on it. (tsne-cuda)
+
 **Negative entries for that table.** CUPTI has no ROCm analogue -- stub the optional
 per-kernel profiling path inert and let the timer fall back to `hipEvent` wall-clock rather
 than substituting something. ck_tile's fused MHA ships headers but no prebuilt instance

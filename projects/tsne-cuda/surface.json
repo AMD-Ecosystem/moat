@@ -82,7 +82,7 @@
       "kind": "build_path",
       "where": "CMakeLists.txt",
       "added_by": "planner",
-      "note": "Windows HIP build (LLP64 long->int64_t, ssize_t, sys/time.h, WIN32 CMake guards, DLL prefix/exports, hip_link_win.py); in scope, required windows gate"
+      "note": "Windows HIP build (LLP64 long->int64_t, ssize_t, sys/time.h, pymodule_tsne dllexport, WIN32 CMake guards, lib prefix, DLL in package_data); in scope, required windows gate. No link wrapper: a non-RDC HIP shared library links through CMake's own rule with the GNU-driver clang++ (as FAISS's Windows build did)."
     },
     {
       "id": "test:tsnecuda.test",
@@ -141,7 +141,44 @@
       "note": "CPU Python ZMQ viewers; feature compiled out upstream (-DNO_ZMQ). PROPOSED scope-out, pending jeff"
     }
   ],
-  "covered": [],
+  "covered": [
+    {
+      "id": "library:tsnecuda",
+      "how": "USE_HIP CMake build with hip_compat/ shadow headers (6bab251); built and run on linux-gfx942"
+    },
+    {
+      "id": "option:BUILD_PYTHON",
+      "how": "build/python package produced and imported in all GPU runs"
+    },
+    {
+      "id": "python:tsnecuda",
+      "how": "ctypes load on Linux unchanged; Windows lib prefix + package_data (2adca53)"
+    },
+    {
+      "id": "build:windows",
+      "how": "34ed72d (sources), 2adca53 (DLL name/packaging), 2b32cb8 (CMake guards, docs); written on Linux, validation belongs to the windows gate"
+    },
+    {
+      "id": "test:tsnecuda.test",
+      "how": "smoke passes; plus pytest quality tests src/python/tsnecuda/test/test_tsne.py (2e948b4), 7/7 on gfx942"
+    },
+    {
+      "id": "benchmark:tune_kernels",
+      "how": "runs to completion on gfx942 (--n 20000 --iters 300 --repeats 1)"
+    },
+    {
+      "id": "example:mnist-cifar",
+      "how": "vendor-neutral Python over the same TSNE API the tests exercise; unchanged"
+    },
+    {
+      "id": "doc:install-rocm",
+      "how": "INSTALL.md 'Building for AMD GPUs (ROCm)' + Windows subsection, README pointer"
+    },
+    {
+      "id": "test:gtest-suite",
+      "how": "reduce tests revived behind -DBUILD_TESTS=ON (b11946a); 8/8 on gfx942"
+    }
+  ],
   "scoped_out": [
     {
       "id": "exe:tsne-cli",
