@@ -7154,7 +7154,7 @@ Same class, smaller: upstream's comment at `thirdparty/CMakeLists.txt:7-8` ("Con
 - "run twice from a clean build": the porter's notes show one fresh build and two serial runs.
 - Nothing says `HEonGPU_BUILD_SHARED=ON` is unbuilt on AMD GPUs (finding 1).
 
-Corrected body below, true at `2f4de2d`. The porter must update the `HEonGPU_BUILD_SHARED` sentence after fixing finding 1, and the Testing section after the round. `jargon.py -` and `prose.py` are clean on it. Title unchanged: "Add HIP support for AMD GPUs".
+Corrected body below, true at `2f4de2d`. (Porter, 2026-11-04: the `HEonGPU_BUILD_SHARED` sentence and the Testing section are updated in place to be true at `2e51886`; see the porter round below.) The porter must update the `HEonGPU_BUILD_SHARED` sentence after fixing finding 1, and the Testing section after the round. `jargon.py -` and `prose.py` are clean on it. Title unchanged: "Add HIP support for AMD GPUs".
 
 ====
 This adds a HIP build so HEonGPU runs on AMD GPUs through ROCm, alongside the existing CUDA build. The HIP build is selected with `-D USE_HIP=ON`. With the option off (the default) the CUDA build configures as before; the few source changes it shares with the HIP build are listed below under "Changes that also reach the CUDA build".
@@ -7166,7 +7166,7 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-The kernel and host sources keep their CUDA spelling. `thirdparty/hip_compat/` holds shims for `cuda_runtime.h`, `curand_kernel.h` and the other CUDA headers the sources include; in a HIP build that directory comes first on the include path, so each CUDA runtime and cuRAND name resolves to its HIP or hipRAND counterpart, and the shims are installed with the library for projects that use the installed headers. `src/CMakeLists.txt` and the test, example and benchmark lists grow a HIP branch next to the CUDA one. The pinned GPU-NTT, GPU-FFT and RNGonGPU submodules are built for AMD GPUs from patches under `thirdparty/patches/`, which configuring applies only when `USE_HIP` is on. `cmake/Config.cmake.in` carries the same choice into the installed package. Hardcoded warp sizes are replaced with `warpSize` where the value has to follow the hardware, since AMD GPUs run 64-lane wavefronts on CDNA and 32-lane ones on RDNA. `-D HEonGPU_BUILD_SHARED=ON` has not been built for AMD GPUs yet.
+The kernel and host sources keep their CUDA spelling. `thirdparty/hip_compat/` holds shims for `cuda_runtime.h`, `curand_kernel.h` and the other CUDA headers the sources include; in a HIP build that directory comes first on the include path, so each CUDA runtime and cuRAND name resolves to its HIP or hipRAND counterpart, and the shims are installed with the library for projects that use the installed headers. `src/CMakeLists.txt` and the test, example and benchmark lists grow a HIP branch next to the CUDA one. The pinned GPU-NTT, GPU-FFT and RNGonGPU submodules are built for AMD GPUs from patches under `thirdparty/patches/`, which configuring applies only when `USE_HIP` is on. `cmake/Config.cmake.in` carries the same choice into the installed package. Hardcoded warp sizes are replaced with `warpSize` where the value has to follow the hardware, since AMD GPUs run 64-lane wavefronts on CDNA and 32-lane ones on RDNA. `-D HEonGPU_BUILD_SHARED=ON` also builds for AMD GPUs; sources that include the HEonGPU headers are still compiled as HIP there, as `docs/advanced_topics.rst` describes.
 
 ## Changes that also reach the CUDA build
 
@@ -7197,7 +7197,7 @@ The remaining fixes are AMD-only or Windows-only:
 
 ## Testing
 
-At the current head, on an AMD Instinct MI250X (gfx90a, wave64) with ROCm 7.16 on Linux: the HIP build compiles all 49 test, 28 example and 3 benchmark programs, and `ctest` passes 301 of 301 test cases. The suite was run twice in a row on a fresh build with no failures, and the BFV, CKKS, TFHE, bootstrapping, session, multi-stream and multiparty examples were run with their decrypted values checked; the eight TFHE gate outputs match their truth tables bit for bit.
+At the current head, on an AMD Instinct MI250X (gfx90a, wave64) with ROCm 7.16 on Linux: the static HIP build compiles all 49 test, 28 example and 3 benchmark programs, and `ctest` passes 301 of 301 test cases. The shared build (`-D HEonGPU_BUILD_SHARED=ON`) compiles its 49 test programs and `ctest` passes 296 of 296, including both shared-state cases; it leaves out the seven noise-budget cases that launch a library kernel directly, as the test CMake file does for any shared build. Each suite was run twice in a row on a fresh build with no failures. The BFV, CKKS, TFHE, bootstrapping, session and multiparty examples were run with their decrypted values checked, and the multi-stream example ran to completion; the eight TFHE gate outputs match their truth tables bit for bit.
 
 Earlier revisions of this branch, before the merge of the 2.0 changes, passed the then 20 test programs twice from a clean build on an AMD Instinct MI300X (gfx942, ROCm 7.14, Linux), an AMD Radeon Pro W7800 (gfx1100, RDNA3, wave32, ROCm 7.2.3, Linux) and an AMD Radeon 8060S (gfx1151, RDNA3.5, wave32, ROCm 7.14, Windows 11). Those platforms are being rerun at the current head and this description will be updated with the results.
 
@@ -7213,3 +7213,50 @@ This pull request was prepared with the help of an AI assistant acting as a codi
 
 If you would rather not receive pull requests from this effort, say so here or open an issue at https://github.com/AMD-Ecosystem/moat/issues/new/choose and we will close this and stop. That can cover this repository alone or everything you own, whichever you prefer.
 ====
+
+## Porter round 2026-11-04 (linux-gfx90a) -- the three gfx942 review findings, `2e51886`
+
+Dispatched by Jeff Daily at `changes-requested`, head `2f4de2d`. Head `2f4de2d` -> `2e51886` (two commits, pushed to `moat-port` as a fast-forward; `pr-state` none). The hipMM bridge is untouched (Jeff's pending decision).
+
+### Finding 1: `HEonGPU_BUILD_SHARED=ON` on HIP now builds and passes (`cabdf02`)
+
+`test/CMakeLists.txt`: the `heongpu_test_plugin_a/b` targets get the same HIP arm `add_test` has: `shared_state_plugin.cpp` `LANGUAGE HIP`, `hip::host`, `thirdparty/hip_compat` SYSTEM BEFORE, `USE_HIP`, `HIP_ARCHITECTURES`. Nothing else was needed: the `--exclude-libs,ALL` link and the PIC static `ntt`/`fft`/`rngongpu` archives linked into `libheongpu.so.2.1.1` on the first try (rc=0, 0 `error:` lines). `shared_state_testcases` links the two plugins and `libheongpu.so.2.1`, `librmm.so`, `librapids_logger.so`, `libamdhip64.so.7` (ldd). The FATAL_ERROR fallback was not needed, so the README AMD section is unchanged.
+
+### Finding 2: comments and docs (`2e51886`, comments/docs only)
+
+Measured the real reason first: a host-only compile of `test/shared_state_plugin.cpp` with the build's own defines and includes, under both g++ and the SDK's clang++ (no `-x hip`), fails with exactly three errors: `__umul64hi` undeclared at `GPU-NTT/.../modular_arith.cuh:352` and `heongpu/util/bigintegerarith.cuh:229`, and `warpSize` undeclared at `heongpu/util/util.cuh:416`. The five CMake comments and `docs/advanced_topics.rst:131` now say that the headers use `__umul64hi` and `warpSize` in non-template device functions and the HIP headers declare those only when a source is compiled as HIP; no comparison with nvcc. `thirdparty/CMakeLists.txt:7-9` now says configuring does not change the source tree "except that a HIP build applies the patches below to the submodule checkouts". Rebuilding both trees after this commit recompiled nothing (0 `Building HIP|CXX` lines).
+
+### Finding 3: the skill's RMM version history (MOAT side, this branch)
+
+Checked against the rapidsai/rmm tags (raw headers at each tag), and the review's correction was itself incomplete, so the bullet now gives the whole sequence: 25.12 ships the resource headers under both `rmm/mr/` and `rmm/mr/device/` (both URLs 200), 26.02 drops `rmm/mr/device/` (404 at 26.02, 26.04, 26.06); stream-first `allocate(stream, bytes, alignment)` plus `allocate_sync` is already in `device_memory_resource.hpp` at 26.02 and 26.04 (25.12 still has `allocate(bytes, stream)` / `allocate_async`), so the old text's "RMM 26.06 ... reordered allocation" was wrong too; `pool_memory_resource` is still `template <typename Upstream` at 25.12 and 26.04 and a plain `class RMM_EXPORT pool_memory_resource` at 26.06; `set_current_device_resource` returns `device_memory_resource*` at 25.12/26.04 and `cuda::mr::any_resource<cuda::mr::device_accessible>` at 26.06. The bullet now tells a reader at 26.02-26.04 that they need the header paths and allocation helpers but not the resource-type branches.
+
+### Build (linux-gfx90a, MI250X, ROCm 7.16 pip SDK, CMake 4.1.3 in this job's venv)
+
+```bash
+R=/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel
+cmake -S projects/HEonGPU/src -B <build> -DCMAKE_PREFIX_PATH=$R \
+  -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DGPU_TARGETS=gfx90a -DAMDGPU_TARGETS=gfx90a \
+  -DCMAKE_BUILD_TYPE=Release -DHEonGPU_BUILD_TESTS=ON \
+  [-DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON | -DHEonGPU_BUILD_SHARED=ON]
+cmake --build <build> -j32
+```
+
+Both fresh trees, wrapped in `utils/timeit.sh HEonGPU compile`; both rc=0, 0 `error:` lines. Static: 49 test, 28 example, 3 benchmark executables. Shared: 49 test executables (no `bfv_noise_budget_testcases`, plus `shared_state_testcases`).
+
+### Tests (HIP_VISIBLE_DEVICES=3 as pinned, `ulimit -c 0`, serial `ctest --output-on-failure`, wrapped in `utils/timeit.sh HEonGPU test`)
+
+- Static run 1: **301/301 passed**, 341.86 s. Run 2: **301/301**, 341.72 s.
+- Shared run 1: **296/296 passed**, 340.44 s, including `HEonGPU.Shared_Library_Users_Share_The_Memory_Pool` and `HEonGPU.Shared_Library_Users_Share_The_Random_Number_Generator`. Run 2: **296/296**, 340.74 s. 296 = 301 - 7 `BFVNoiseBudget.*`/noise-budget cases in `bfv_noise_budget_testcases` (static only, upstream's rule) + 2 shared-state cases.
+
+Examples and benchmark on the static build, each exit 0: `1_basic_bfv` (squares `1,144,529,961,...`), `2_basic_ckks` (`100,400,900,1600` then halves), `3_basic_memorypool_config` (device pool `Total 54873239552 / Used 657248`), `9_multi_stream_usage_way1` (ran to "Done."; prints no values), `17_ckks_session` (max error 2.65e-08), `15_basic_tfhe` (all eight gates match the truth table, inputs `1,1,0,1,0,1,0,0` / `1,0,1,0,1,1,1,0`, control `0,0,0,0,1,1,1,1`), `bootstrapping/3_ckks_bit_bootstrapping` (`EXPECTED:0 - ACTUAL:-1.1e-10`), `bootstrapping/1_ckks_regular_bootstrapping` (`EXPECTED:0.2 + 0.4i - ACTUAL:0.199999 + 0.39999i`), `mpc/1_multiparty_computation_bfv`, `benchmark/tfhe_benchmark` (XOR 15.92 ms, MUX 28.56 ms avg).
+
+Checks: `jargon.py --port HEonGPU` clean (needed a local `main` branch in the fresh clone: `git branch main origin/main`); `prose.py` clean on both commit bodies and on the updated PR body; titles 57 and 59 chars; fork `status --porcelain` clean. The two commits were split once locally before pushing (the first had picked up the test comment); nothing was pushed before the final shape.
+
+### PR body
+
+Updated in place in the gfx942 review's corrected body above: the `HEonGPU_BUILD_SHARED` sentence now says it builds for AMD GPUs, and the Testing section gives both configurations' counts. Not posted; review PR #1 untouched.
+
+### Still owed
+
+- CUDA no-regression compile at the new head: no nvcc on this host. The two commits here touch only `USE_HIP` arms and comments, but `2f4de2d`'s `memorypool.cu` CUDA arm is still uncompiled.
+- wave32 (`linux-gfx1100`) and Windows (`windows-gfx1151`) revalidation at `2e51886`.

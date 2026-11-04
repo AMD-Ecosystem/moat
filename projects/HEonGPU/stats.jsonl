@@ -333,3 +333,11 @@
 {"kind":"session","ts":"2026-11-04T00:57:46Z","epoch":1793753866.044932918,"event":"end","platform":"linux-gfx90a"}
 {"kind":"session","ts":"2026-11-04T07:17:59Z","epoch":1793776679.564444362,"event":"start","platform":"linux-gfx942"}
 {"kind":"session","ts":"2026-11-04T07:26:11Z","epoch":1793777171.461878398,"event":"end","platform":"linux-gfx942"}
+{"kind":"session","ts":"2026-11-04T07:38:23Z","epoch":1793777903.629904370,"event":"start","platform":"linux-gfx90a"}
+{"kind":"phase","ts":"2026-11-04T07:41:31Z","phase":"compile","seconds":137.510,"exit":0,"cmd":"agent_space/fix2/build.sh /var/lib/jenkins/fleet/jobs/mi200-20261103-232754-heongpu-fix2/moat/agent_space/fix2/static -DHEonGPU_BUILD_EXAMPLES=ON -DHEonGPU_BUILD_BENCHMARKS=ON"}
+{"kind":"phase","ts":"2026-11-04T07:43:45Z","phase":"compile","seconds":120.021,"exit":0,"cmd":"agent_space/fix2/build.sh /var/lib/jenkins/fleet/jobs/mi200-20261103-232754-heongpu-fix2/moat/agent_space/fix2/shared -DHEonGPU_BUILD_SHARED=ON"}
+{"kind":"phase","ts":"2026-11-04T07:48:09Z","phase":"test","seconds":341.930,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-232754-heongpu-fix2/venv/bin/ctest --test-dir agent_space/fix2/static --output-on-failure"}
+{"kind":"phase","ts":"2026-11-04T07:53:59Z","phase":"test","seconds":340.520,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-232754-heongpu-fix2/venv/bin/ctest --test-dir agent_space/fix2/shared --output-on-failure"}
+{"kind":"phase","ts":"2026-11-04T07:59:57Z","phase":"test","seconds":341.803,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-232754-heongpu-fix2/venv/bin/ctest --test-dir agent_space/fix2/static --output-on-failure"}
+{"kind":"phase","ts":"2026-11-04T08:05:38Z","phase":"test","seconds":340.819,"exit":0,"cmd":"/var/lib/jenkins/fleet/jobs/mi200-20261103-232754-heongpu-fix2/venv/bin/ctest --test-dir agent_space/fix2/shared --output-on-failure"}
+{"kind":"session","ts":"2026-11-04T08:08:02Z","epoch":1793779682.167442825,"event":"end","platform":"linux-gfx90a"}
