@@ -387,3 +387,74 @@ plc.exe -fname afiro.mps -nIterLim 5000:
 
 Result: 3/3 PASS on AMD Radeon PRO V710 (gfx1101, RDNA3, wave32).
 validated_sha = 1a1ddff3840c0dd7c8d22302052ed84348d440e4
+
+## Upstream sync round 2026-11-04 (moat-fix-41, linux-gfx1100)
+
+Why: upstream PR #41 was reported as conflicting with `main`. Upstream landed one large commit (b196976 "Prepare cuPDLP-C for COIN-OR", merged as f81f459). It bundles HiGHS 1.6.0 under `ThirdParty/HiGHS`, adds `build.sh`, `INSTALL`, `tests/` (CTest + NumPy checker), rewrites README.md, removes `example/` (afiro.mps now at `ThirdParty/HiGHS/check/instances/afiro.mps`), replaces the hardcoded `/usr/local/cuda/include` with `${CMAKE_CUDA_PATH}/include`, and converts every source and CMake file to CRLF. README.md, INSTALL, build.sh and other docs/scripts stay LF upstream (51 CRLF, 61 LF files outside ThirdParty).
+
+Branch: `moat-fix-41` cut from published tip d380bcab.
+- f10a1e80 merge of upstream/main f81f4592 (`git merge -X ignore-cr-at-eol upstream/main`). Subject rewritten to git's pull-style default `Merge branch 'main' of https://github.com/COPT-Public/cuPDLP-C` because jargon flagged the `moat-fix-41` branch name in the default subject.
+- 09bb5323 `[ROCm] Add a HIP mode to build.sh and document it in INSTALL`.
+
+Conflicts (10 raw, all whole-file CRLF hunks; 3 remained with ignore-cr-at-eol) and resolutions:
+- `cupdlp/CMakeLists.txt`: kept the port's HIP branch, `(CUDA)` message and Windows `m` guard; took upstream's `${CMAKE_CUDA_PATH}/include` in the CUDA branch.
+- `cupdlp/cuda/CMakeLists.txt`: kept the port's restructured CUDA_SOURCES / HIP / CUDA layout; replaced `/usr/local/cuda/include` in the CUDA branch with upstream's `${CMAKE_CUDA_PATH}/include`.
+- `README.md`: took upstream's rewritten README and added one AMD line in its "Build, install and test" section (the old cmake-block section no longer fits; upstream defers build steps to INSTALL / build.sh). 09bb532 then points that line at `MODE=hip bash build.sh`.
+- Silent fix: the ignore-cr merge dropped upstream's blank line before the new `# Installation checks` block in the top CMakeLists.txt; restored.
+- No new CUDA code reached the files the port builds: upstream's .cu/.cuh changes were line endings only. Upstream's new top-level install rules work unchanged for HIP (`if(TARGET cudalin)`; `INSTALL_RPATH_USE_LINK_PATH` picks up the ROCm libs).
+
+Line endings: every port-touched file is in upstream's convention for that file. All CMake, `.cmake`, `.cu`, `.cuh`, `.h` files the port adds or changes (including the port-added `FindHIPConf.cmake` and `cuda_to_hip.h`) are CRLF; README.md, INSTALL, build.sh stay LF like upstream. Check: `git diff upstream/main moat-fix-41 --stat` lists only the 12 previous port files plus build.sh and INSTALL, and its line content equals the port's pre-sync delta (`git diff --ignore-cr-at-eol 7b94c41 d380bca`) apart from the resolutions above. Every other file is byte-identical to upstream.
+
+Build (TheRock pip SDK, hipconfig 7.16.26385, AMD Radeon Pro W7800 48GB gfx1100, HIP_VISIBLE_DEVICES=3):
+```bash
+export ROCM_PATH=$(hipconfig --rocmpath)
+cmake -S src/ThirdParty/HiGHS -B highs-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PWD/highs -DBUILD_SHARED_LIBS=ON -DFAST_BUILD=ON
+cmake --build highs-build -j10 && cmake --install highs-build
+export HIGHS_HOME=$PWD/highs
+cmake -S src -B build -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+cmake --build build -j10
+```
+`ROCM_PATH` must be set on a pip-SDK host (no /opt/rocm); without it FindHIPConf cannot find hipblas.
+
+Tests (ulimit -c 0, LD_LIBRARY_PATH=$HIGHS_HOME/lib:build/lib):
+- `build/bin/testcudalin`: 0,1,4,...,81 PASS
+- `build/bin/testcublas`: `2-norm is :0.000000` PASS
+- `build/bin/plc -fname src/ThirdParty/HiGHS/check/instances/afiro.mps -nIterLim 5000`: Optimal, primal -4.64750896e+02, dual -4.64831392e+02, rel primal infeas 3.21e-05, rel dual infeas 3.60e-06, rel gap 8.65e-05, 200 iterations. PASS, identical to the 2026-06 gfx1100 figures.
+- New upstream suite, `ctest --test-dir build`: 4/4 passed (installation_bounded, equality, mixed_bounds, compressed_mps).
+- `cd src && python3 tests/run.py --project cuPDLP-C --mode gpu --binary build/bin/plc --output <tmp>`: pass=true, x=(1.00000001, 1.99999999), objective 7.99999999.
+- `ROCM_PATH=... GPU_ARCH=gfx1100 HIGHS_HOME=... MODE=hip bash build.sh` in a clean worktree of 09bb532: exit 0. CTest 4/4, installed suite 4/4, checker pass=true (`Cuda device 0: AMD Radeon Pro W7800 48GB`), both checker-regression controls PASS. The installed plc resolves hipblas/hipsparse through its install rpath, with no LD_LIBRARY_PATH set.
+Bar met: 3/3 recorded tests at the same counts, plus upstream's new tests.
+
+Not done this round: CUDA no-regression compile (no nvcc on this host; the only CUDA-path change is upstream's own `${CMAKE_CUDA_PATH}/include` line); `MODE=hip` without GPU_ARCH (auto-detect, validated in d380bca, not rerun); wave64 and Windows revalidation (other hosts).
+
+Jargon: `jargon.py --port cuPDLP-C` reports 2 hits, both in upstream's bundled `ThirdParty/HiGHS` ("strategy a..." in HEkkDual.h comments). They show up only because the fork's `main` mirror is still at 7b94c41; `git diff upstream/main moat-fix-41` has none. Fast-forwarding the fork mirror (`upstream.py --drift --apply`) clears them.
+
+Scope note for jeff: 09bb532 (build.sh `MODE=hip` + INSTALL step) is the one addition beyond conflict resolution. The triage left it as a scope question. It is in because build.sh/INSTALL are now where upstream documents the CUDA build, and the porter contract puts the ROCm build doc in the same place. It is a separate commit; if you would rather leave build.sh alone, dropping it leaves the README line from the merge (`-DUSE_HIP=ON` in place of `-DBUILD_CUDA=ON`) as the only AMD doc.
+
+### Copyright/author header finding (for jeff; unchanged this round)
+
+`cupdlp/cuda/cupdlp_cuda_kernels.cu`, `cupdlp/cuda/cuda_to_hip.h` and `FindHIPConf.cmake` carry "Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved. / Author: Jeff Daily". Upstream house style has no per-file headers: of the project's .c/.h/.cu/.cuh/.cpp files, only `cupdlp/cupdlp_cs.c/.h` (inherited CSparse, kept for attribution) carry one; the existing CUDA files have none. Attribution lives in AUTHORS, OWNERSHIP.txt (which declares Dongdong Ge the owner of project-owned code, MIT) and THIRD_PARTY_NOTICES. Under AGENTS.md's default this house style does not expect parallel attribution, and the header on `cupdlp_cuda_kernels.cu` claims "All rights reserved" on a file that is mostly upstream code, which sits awkwardly next to OWNERSHIP.txt. Recommendation: remove the three headers in a follow-up `[ROCm]` commit, or reduce them to a plain description line. The merge did not force a change, so they are unchanged. Your call.
+
+### Proposed fix review PR body (for jeff)
+
+Title: `[ROCm] Merge current upstream main into the HIP port`
+
+```
+Upstream PR COPT-Public/cuPDLP-C#41 showed as conflicting after upstream landed its COIN-OR preparation commit (b196976, merged in f81f459). That commit bundles HiGHS 1.6.0, adds build.sh, INSTALL and a tests/ suite, rewrites the README, and converts all source and CMake files to CRLF. No maintainer has commented on the PR; this round only brings it up to date.
+
+What changed on moat-fix-41:
+- f10a1e8: merge of upstream main (`-X ignore-cr-at-eol`). The three real conflicts were resolved keeping both sides: the HIP branches stay, the CUDA branches take upstream's `${CMAKE_CUDA_PATH}/include`, and the README takes upstream's text plus one AMD line. Every file the port adds or changes follows upstream's line endings (CRLF for sources and CMake, LF for README/INSTALL/build.sh); all other files are byte-identical to upstream, so the PR diff stays the port only.
+- 09bb532: `MODE=hip` for build.sh and an INSTALL step, since those are now upstream's documented build path. Separate commit so it can be dropped.
+
+Retested on AMD Radeon Pro W7800 (gfx1100): testcudalin, testcublas and plc on afiro (Optimal, -464.75, 200 iterations, same figures as before), upstream's CTest suite 4/4, the NumPy checker pass, and `MODE=hip bash build.sh` end to end. Wave64 and Windows revalidation follow on their hosts.
+
+Open for you: whether to keep 09bb532, and the AMD copyright/author headers on three port files (see notes); unchanged here.
+
+## Upstream reply
+
+I merged current main into this branch, so it no longer conflicts, and every file the port touches now follows the repository's line endings (CRLF for sources and CMake files). I retested on an AMD Radeon Pro W7800 (gfx1100): the CUDA-linalg and BLAS tests, afiro, and your new CTest and checker suite all pass, and build.sh gains a `MODE=hip` option.
+
+## Notes
+
+Evidence and commands: projects/cuPDLP-C/notes.md, "Upstream sync round 2026-11-04".
+```
