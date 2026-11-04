@@ -224,3 +224,71 @@ README-recipe build (no `CMAKE_BUILD_TYPE`), the same 18 cases: 64 and 256 are 0
 ### Plan risk 2 (bitwise atomics on managed memory, discrete card)
 
 Does not fire on this discrete PCIe gfx1201. The differential is exact at 64/256 and the 512 residual is fully explained by FP. Standalone probe `agent_space/scripts/managed_atomics.hip` (`hipcc --offload-arch=gfx1201 -O2`): `hipMallocManaged` 8 MiB, `hipMemset`, then one thread per bit doing `atomicOr` (and `atomicXor` x3 on a second buffer), then again after a host `memset` of the managed buffer. Results: atomicOr 0 of 2,097,152 words wrong, atomicXor 0 of 2,097,152, atomicOr after host touch 0 of 2,097,152. Device reports `ManagedMemory=1`, `ConcurrentManagedAccess=1`, `PageableMemoryAccess=0`, `Integrated=0`; pointer type managed. gfx90a (wave64 discrete without MI300-class coherence) is still unmeasured.
+## Validation 2026-11-04 (linux-gfx90a, validator, moat-port 689b885) -- validation-failed
+
+Verdict: **validation-failed** on plan risk 2. Every default build passes the differential, but only because of a compiler accident: in a build whose device code keeps the atomic's metadata (device `-O0`), the GPU output on this card is empty with no error. The plan's remedy for risk 2 applies: "Fix if it fires: allocate the voxel table with `cudaMalloc` + `cudaMemset` and copy it back with `cudaMemcpy` before file output". Back to the porter.
+
+Host: AMD Instinct MI250X/MI250 (gfx90a:sramecc+:xnack-), one GCD (`HIP_VISIBLE_DEVICES=0`), Linux. TheRock ROCm 10.1.0 pip SDK (`rocm-sdk path --root`), HIP 7.16.26385, AMD clang 24.0.0git (d6f6cb6), CMake 3.31.6, Ninja, g++ 13.3. Trimesh2 2022.03.04 (`0b3d9e2`), `make -C libsrc` (full libsrc builds on this host), `lib.Linux64/libtrimesh.a`. All GPU runs under `ulimit -c 0`.
+
+### Build (README Linux recipe)
+
+```
+cd src && mkdir build && cd build
+cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx90a -DCMAKE_PREFIX_PATH=$(rocm-sdk path --root) -DTrimesh2_INCLUDE_DIR:PATH=<trimesh2>/include -DTrimesh2_LINK_DIR:PATH=<trimesh2>/lib.Linux64 ..
+cmake --build . --parallel 64
+```
+
+Exit 0, `[8/8] Linking CXX executable cuda_voxelizer`, upstream warnings only. Device prints `AMD Instinct MI250X / MI250` (plus the known cosmetic "Hopper"/"compute capability 9.0" name from helper_cuda.h).
+
+### GPU-vs-CPU differential (default Release build), `test_models/bunny.OBJ`
+
+Harness: `agent_space/cuvox_compare.py <exe> <model> <workdir> [--sizes] [--formats] [--repeat N]` (GPU run then `-cpu` on the same binary; the GPU log must show `## GPU VOXELISATION` and `Voxelization GPU time` and no "Falling back"; binvox decoded from RLE, morton `.bin` as a bit set, obj_points as vertex lines). The binvox, morton and obj_points counts agree in every case.
+
+| mode | size | filled CPU | filled GPU | differing (GPU-only / CPU-only) | GPU time (binvox) |
+|---|---|---|---|---|---|
+| surface | 64 | 13,802 | 13,802 | 0 | 2.5 ms |
+| surface | 256 | 221,760 | 221,760 | 0 | 23.4 ms |
+| surface | 512 | 887,315 | 887,313 | 8 (3 / 5) | 107.8 ms |
+| solid | 64 | 52,258 | 52,258 | 0 | 13.8 ms |
+| solid | 256 | 3,345,384 | 3,345,384 | 0 | 333 ms |
+| solid | 512 | 26,763,628 | 26,763,629 | 1 (1 / 0) | 9.3 s |
+
+- 512 residual is the accepted FP class, reproduced: `-DCMAKE_HIP_FLAGS=-ffp-contract=off` gives surface 4 (2/2), solid 0; also replacing `rsqrtf` in `normalize()` with `1.0f / sqrtf` (copy of the tree in agent_space, not the fork) gives surface 0, solid 0.
+- Repeat stability: GPU runs at 512, surface and solid, binvox, morton and obj_points, 3 runs each: output byte-identical (sha256) run to run.
+- `-o vox` and `-o obj` at 64: obj byte-identical GPU vs CPU. vox differs only in its last 4 bytes, and so do two `-cpu` runs of the same binary. This is pre-existing upstream behaviour in untouched vendored code: `VoxWriter.cpp:543` fills the palette with `i < 255`, so `colors[255]`, the file's final int32, is uninitialized stack. With those 4 bytes excluded, all 6 files (3 GPU, 3 CPU) are identical. Not a port issue.
+- Debug: `-DCMAKE_BUILD_TYPE=Debug` links and runs at 64 (surface and solid, binvox and morton): 0 diff. Linux Debug does not define `_DEBUG`, so a second Debug build added `-DCMAKE_CXX_FLAGS=-D_DEBUG -DCMAKE_HIP_FLAGS=-D_DEBUG`: links (no duplicate-symbol error from the per-TU `__device__` counters), 0 diff, and `cudaMemcpyFromSymbol` reads the counters (`[Debug] Processed 5110 triangles on the GPU`, `Tested 117367 voxels`, `Marked 45229 voxels`).
+- Upstream CI smoke `./build/cuda_voxelizer -f ./test_models/bunny.OBJ -s 64 -cpu`: exit 0, CPU path, writes the `.vox`. CPU counts match the porter's gfx1151 and the reviewer's gfx942 CPU counts exactly. There is no nvcc here, so an unmodified upstream binary could not be built for a CPU baseline.
+- CUDA gate: not re-run here. It is already recorded at this head (porter nvcc 12.8 build at 689b885; V100 run at 689b885).
+- `utils/jargon.py --port cuda_voxelizer`: clean. ROCm build is in the README. Fork tree clean at 689b885 (`git status --porcelain` empty; `build/` untracked).
+
+### Risk 2: managed-memory atomicOr/atomicXor fire on gfx90a
+
+Standalone probe (`agent_space/probe/p4.hip`, `hipcc --offload-arch=gfx90a -O2`): `hipMallocManaged` buffer, `hipMemset` 0, one thread per bit doing `atomicOr`/`atomicXor(&t[w], 1u << b)`. Device attributes: ManagedMemory=1, ConcurrentManagedAccess=1, PageableMemoryAccess=0.
+
+| buffer | op | bits set / expected |
+|---|---|---|
+| hipMalloc | atomicOr / atomicXor (contended and spread) | 2,097,152 / 2,097,152 |
+| hipMallocManaged | atomicOr / atomicXor (contended and spread) | **0 / 2,097,152**, no error from launch or sync |
+| hipMallocManaged | `atomicOr_system` / `atomicXor_system` | 2,097,152 / 2,097,152 |
+
+The same failure appears at 64, 4096, 65,536 and 2M words. `atomicAdd`, plain stores and `atomicOr(0xffffffff)` on managed memory work. So the native `global_atomic_or`/`global_atomic_xor` into managed memory is dropped silently: host-resident fine-grained memory over PCIe, where AtomicOps cover only add, swap and CAS.
+
+Why the shipped binary still passes: its code objects contain no native OR/XOR, only one `global_atomic_cmpswap` retry loop per kernel (`llvm-objdump --offloading build/cuda_voxelizer`, `llvm-objdump -d` on the gfx90a bundles). At `-O0` the device IR of `voxelize.cu` and `voxelize_solid.cu` carries `atomicrmw or/xor ... !amdgpu.no.fine.grained.memory`, the same as the probe. `-mllvm -opt-bisect-limit` shows the metadata is dropped by pass 3893, `inline on _Z17voxelize_triangle7voxinfoPfPjb` (inlining `setBit`), after which the backend expands the RMW to CAS, which PCIe supports. Device codegen by optimization level, for both `.cu` files: `-O0` gives `flat_atomic_or`/`flat_atomic_xor`; `-O1`, `-O2`, `-O3` and `-Os` give `global_atomic_cmpswap`. The CMake Release, Debug and `-ffp-contract=off` builds all contain only the CAS.
+
+End to end with device `-O0` (`-DCMAKE_BUILD_TYPE=Debug "-DCMAKE_HIP_FLAGS_DEBUG=-g -O0"`, otherwise the README recipe), size 64, binvox:
+
+| mode | filled CPU | filled GPU | differing |
+|---|---|---|---|
+| surface | 13,802 | **0** | 13,802 |
+| solid | 52,258 | **0** | 52,258 |
+
+So correctness on discrete MI200 depends on an inliner side effect that a compiler change (or a user's `-O0` debug build) removes, with an empty grid and no error as the symptom. gfx942 (reviewer probe) and the gfx1151 APU (porter) do not drop the native atomics, which is why they passed.
+
+Fix options for the porter (each also correct on CUDA):
+
+1. The plan's remedy: allocate `vtable` with `cudaMalloc` + `cudaMemset`, and copy it back into a host buffer with `cudaMemcpy` after the kernel, before the writers. hipMalloc + native OR/XOR measured exact above.
+2. Smaller: `atomicOr_system`/`atomicXor_system` in `setBit`/`setBitXor` on the HIP build. Measured exact on managed memory above, but it changes the two kernel sources and needs a HIP guard, because CUDA's `_system` atomics need sm_60.
+
+Option 1 matches the plan and keeps the kernels untouched. After the fix, a validator should repeat this matrix and the device `-O0` build on gfx90a.
+
+The fault class is promoted to the `cuda-to-rocm` skill (`references/fault-classes.md` Memory and lifetime, plus the SKILL.md index line) on this branch.
