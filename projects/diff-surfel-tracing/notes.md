@@ -2902,3 +2902,63 @@ PYTHONPATH="$PWD" "$TORCH_PY" -X faulthandler example/validate_rocm.py          
 Result: run 1 and run 2, each from a cold cache, exit 0, `50/50 checks passed`, including the in-script cold-cache bit-for-bit reproduction; traced geometry 62/64 (missing [5, 25]), P=4096 1343 traced, P=16384 3309 traced, identical to the Linux gates. The project has no other test suite (README lists none; validate_rocm.py is the GPU gate recorded on the Linux validations). The original crash (null `hiprtcCreateProgram` in `hiprtBuildTraceKernels`) is gone.
 
 CUDA no-regression gate: not run on this host (Windows, no CUDA toolkit); carried by the Linux validators. `jargon.py --port diff-surfel-tracing` clean; README documents the ROCm build and run-time `ROCM_PATH`/`HIP_PATH` requirement. Fork tree clean after resetting the submodule patch and removing build output.
+
+## Validation 2026-11-04 (linux-gfx942, MI300X, HIP 7.16.26385) -- FAILED: the README install route ships a wheel without the runtime kernel sources
+
+Additive evidence at `moat-port` `21f62d0` (= head_sha; the three required gates already pass there). Unlike every other platform on record, which used `setup.py build_ext --inplace`, this run installed exactly as the README's `### AMD GPUs` block documents: a package install with `pip install -v .`. Host: AMD Instinct MI300X HF (`gfx942:sramecc+:xnack-`), torch 2.16.0a0+git6c3af02, ROCm SDK wheel `_rocm_sdk_devel` (HIP 7.16.26385), no /opt/rocm, pip 26.3, setuptools 79.0.1. The install went into the job's private venv (with a `.pth` pointing at the host torch site-packages), so the shared environment was untouched.
+
+### Build
+
+```
+git clone -b moat-port https://github.com/AMD-Ecosystem/diff-surfel-tracing.git src && cd src   # 21f62d0, tree clean
+git submodule update --init --recursive third_party/hiprt          # 8602b8c
+git -C third_party/hiprt apply ../../third_party/hiprt-rocm-fixes.patch   # applies clean
+export ROCM_PATH=<venv>/site-packages/_rocm_sdk_devel HIP_PATH=$ROCM_PATH PATH=$ROCM_PATH/bin:$PATH
+cmake -DCMAKE_BUILD_TYPE=Release -DBITCODE=OFF -DNO_UNITTEST=ON -DHIP_PATH=$ROCM_PATH -S third_party/hiprt -B third_party/hiprt/build
+cmake --build third_party/hiprt/build --target hiprt03001 -j56     # clean, libhiprt0300164.so
+export PYTORCH_ROCM_ARCH=gfx942 MAX_JOBS=56
+pip install -v .                                                   # FAILS, see Finding 1
+pip install -v --no-build-isolation .                              # builds, but see Finding 2
+```
+
+### Finding 1 (pre-existing upstream, not a gate): the literal `pip install -v .` fails under build isolation
+
+With no `pyproject.toml`, pip 26 builds in an isolated environment that has no torch, and `setup.py` imports torch at line 6: `ModuleNotFoundError: No module named 'torch'` in `get_requires_for_build_wheel`. The upstream CUDA instructions use the identical command (`git show ef6f24b:README.md`, line 34), so this predates the port; `--no-build-isolation` gets past it. The porter may want to add the flag to the AMD block, but it is upstream's documented command.
+
+### Finding 2 (port defect, FAILS the gate): a fresh-clone package install has no `kernels.h`, headers or `hiprt_root`
+
+`_stage_runtime_files_into_pkg()` copies `kernels.h`, `params.h`, `config.h`, `auxiliary.h` and `hiprt_root/` into `diff_surfel_tracing/` from inside `CustomBuildExtension.build_extensions` (`setup.py:170-174`). In a wheel build setuptools runs `build_py` (which resolves `package_data`) BEFORE `build_ext`, so on a fresh clone the globs match nothing. The install log shows `running build_py` at line 49 with no file copied and `running build_ext` at line 52; the installed package holds only `__init__.py` and `_C.cpython-311-x86_64-linux-gnu.so`. Running the harness against it:
+
+```
+ulimit -c 0; export ROCM_PATH=... HIP_PATH=$ROCM_PATH
+python3 <src>/example/validate_rocm.py         # run from outside the source tree, so the installed package is imported
+ERROR: HIPRT tracer could not open kernel source <site-packages>/diff_surfel_tracing/kernels.h
+WARNING: getFunctionFromFile of file ../contrib/Orochi/ParallelPrimitives/RadixSortKernels.h failed.   (x5)
+Unable to open '../hiprt/impl/BvhBuilderKernels.h' ... hiprt_wrapper.cpp:268 HIPRT error 2
+ERROR: trace kernel launch failed: invalid resource handle (400)
+torch.AcceleratorError: CUDA error: invalid resource handle      # exit 1, 5 checks passed before the first forward
+```
+
+A SECOND install from the same tree (`--force-reinstall`) does ship the files (the log then shows `copying diff_surfel_tracing/kernels.h` and 235 `hiprt_root` lines under `build_py`), because the first build left them staged in the source package. So the wheel always carries the PREVIOUS build's copies: they are missing on the first install and stale after an edit to `kernels.h` or a different `HIPRT_HOME`. `build_ext --inplace` (every other platform) never goes through `build_py`, which is why no earlier validation saw this. Suggested direction for the porter: stage the files before `build_py` runs (for example from a `build_py` subclass, or at module level under `USE_HIP`), and re-run this route from a fresh clone. A related fragility, not by itself a failure: on Linux `libhiprt0300164.so` is not shipped, and `_C` finds it through a RUNPATH into the source clone (`third_party/hiprt/dist/bin/Release`), so the installed package breaks if the clone is moved or deleted.
+
+### GPU gate on the second (complete) install: 50/50, twice, each from a cold cache
+
+```
+rm -rf <site-packages>/diff_surfel_tracing/hiprt_cache
+HIP_VISIBLE_DEVICES=<pinned> python3 <src>/example/validate_rocm.py   # ulimit -c 0, ROCM_PATH exported at run time
+50/50 checks passed                                                    # run 1, 16.4 s; run 2 (cache deleted again), 6.9 s
+```
+
+The two logs are textually identical, and the numbers match gfx90a's at this head: covered 0.241, depth [1.820, 4.574], 62/64 traced (missing [5, 25]), grads3D median cosine 0.9825, fd slopes colors 1.0021 / opacities 0.7428 / means3D 0.9390 / scales 0.8855, bounce delta 3.627e-01, P=4096 rgb mean 0.19876 / covered 0.386 / 1343 traced, P=16384 rgb mean 0.25417 / covered 0.457 / 3309 traced, cold-cache image bit-identical, cache repopulated (6 files).
+
+### BVH build behaviour on MI300X (the hardware the 64-lane `subwarpMask` fix targets)
+
+Rounds 1 and 2 on this platform hung in HIP RT's `Collapse` at 46, 48 and 64 surfels. With the patch, there is no hang anywhere. A probe (`agent_space`, not committed) built the BVH for the harness's `make_scene` at P = 16, 32, 46, 48, 64, 128, 200, 1024, 4096, 16384 and 65536, five seeds each (55 builds, up to 131,072 triangles), timed a first build and a rebuild with `torch.cuda.synchronize()` on both sides, then traced forward and backward:
+
+- every build returned; first build 12.6 to 16.2 ms at every size (dominated by fixed overhead), rebuild 0.41 ms at 32 triangles rising to 3.3 ms at 131,072;
+- every image finite, covered fraction 0.23 at P=16 rising to 0.52 at 65536; small scenes trace 94-100% of surfels (for example P=46: 46,46,45,46,46; P=64: 63,63,64,62,64), so no geometry is lost from the BVH;
+- no HIP RT warnings once the package had its runtime files.
+
+### CUDA gate, jargon, integrity
+
+`cuda-not-validated: no CUDA toolkit on this host (no /opt/conda, no nvcc)`; the 173f32a..21f62d0 delta has no CUDA-compiled file (see the gfx1100 entry above). `python3 utils/jargon.py --port diff-surfel-tracing` clean. No source or build file was edited; afterwards the submodule patch application was undone and the fork tree checked clean.
