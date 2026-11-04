@@ -127,3 +127,32 @@ Without `-DCMAKE_HIP_ARCHITECTURES`, CMake detected gfx942 (README and `527b087`
 - Plan risk 2 (bitwise atomics on managed memory, discrete wave64) does not fire on gfx942: the differential above is exact at 64/256, and a standalone probe (`hipMallocManaged` 8 MiB, `hipMemset`, then atomicOr/atomicXor setting every bit) left 0 of 2,097,152 words wrong; the device reports `hipDeviceAttributeManagedMemory=1`, `ConcurrentManagedAccess=1`, `PageableMemoryAccess=0`, pointer type managed. gfx90a (no MI300-class coherence) is still unmeasured.
 - Timings: surface 512 GPU 109 ms vs CPU 2.45 s; solid 512 GPU 4.8 s vs CPU 137 s.
 - A Linux `CMAKE_BUILD_TYPE=Debug` does not define `_DEBUG` (only MSVC does), so the `_DEBUG` device counters and `cudaMemcpyFromSymbol` are covered only by the Windows Debug run.
+
+## Porter round 2026-11-04 (linux-gfx950, answering the 2026-11-04 review)
+
+### Finding 1: README libomp140 (fixed in `689b885`)
+
+New commit on top of `316616d` (no amend): one paragraph after the Windows build text saying the executable needs the ROCm `bin` DLLs and `libomp140.x86_64.dll` (VS LLVM OpenMP runtime, `VC\Redist\MSVC\<version>\debug_nonredist\x64\Microsoft.VC143.OpenMP.LLVM`) on `PATH` or next to `cuda_voxelizer.exe`. `utils/jargon.py --port cuda_voxelizer` clean, `utils/prose.py` on the commit message clean.
+
+### Finding 2: CUDA no-regression build (run; passes)
+
+Host: Linux x86_64, CUDA 12.8 from apt (`nvcc` V12.8.93 at `/usr/local/cuda/bin`, not on the default `PATH`), GCC 13.3.0, CMake 3.31.6, Ninja. No NVIDIA GPU. Trimesh2 `2022.03.04` (`0b3d9e2`) built with its own Makefile (`make -C libsrc`) into `lib.Linux64/libtrimesh.a`, as upstream CI does. The upstream CI recipe, `USE_HIP` left at its default OFF:
+
+```
+export PATH=/usr/local/cuda/bin:$PATH CUDAARCHS=60
+cmake -GNinja -DTrimesh2_INCLUDE_DIR=<trimesh2>/include -DTrimesh2_LINK_DIR=<trimesh2>/lib.Linux64 -S . -B build-cuda
+cmake --build build-cuda --parallel 64
+./build-cuda/cuda_voxelizer -f ./test_models/bunny.OBJ -s 64 -cpu
+./build-cuda/cuda_voxelizer -f ./test_models/bunny.OBJ -s 64
+```
+
+- Configure: `The CUDA compiler identification is NVIDIA 12.8.93 with host compiler GNU 13.3.0`, `Found CUDAToolkit ... 12.8.93`, OpenMP 4.5.
+- Build at `689b885` (head): exit 0, `[8/8] Linking CXX executable cuda_voxelizer`; both `.cu` files compiled by nvcc for sm_60. Warnings only: upstream `-Wformat` (`%llu` for `size_t`) in `util_cuda.cpp:34`, `util_io.cpp:21`, `main.cpp:67`, `-Wwrite-strings` in `main.cpp:28` (lines the port does not touch), and nvcc's "architectures prior to sm_75 deprecated" note for `CUDAARCHS=60`. No warning from the replaced helper headers or the HIP-only code.
+- The same recipe also builds and links at `94d1340` (helper headers alone) and `8b84b91` (helpers + launch syntax), the two commits whose Test Plans show a CUDA build, each in a detached worktree; `-s 64 -cpu` exit 0 at both.
+- `-s 64 -cpu` (the upstream CI smoke): exit 0, writes `bunny.OBJ_64.vox`. `-s 64` without `-cpu`: exit 0, `[CUDA] First call to CUDA Runtime API failed`, `CUDA GPU not found`, falls back to CPU voxelization -- the expected behaviour with no NVIDIA driver.
+
+What this does not cover: the Test Plans of `94d1340` and `8b84b91` show `./build/cuda_voxelizer -f ./test_models/bunny.OBJ -s 64` as a GPU run; with no NVIDIA GPU on this host that ran the CPU fallback, so the CUDA kernels compiled and linked but did not execute. The build half of those Test Plans is now true; the NVIDIA GPU execution is still unobserved.
+
+### Local HIP build (linux-gfx950, porter sanity, not validation)
+
+TheRock pip SDK (`rocm-sdk path --root`), HIP Clang 24.0.0, same Trimesh2 (g++ build): `cmake -S . -B build-hip -G Ninja -DUSE_HIP=ON -DCMAKE_HIP_ARCHITECTURES=gfx950 -DCMAKE_PREFIX_PATH=$(rocm-sdk path --root) -DCMAKE_BUILD_TYPE=Release -DTrimesh2_INCLUDE_DIR=<trimesh2>/include -DTrimesh2_LINK_DIR=<trimesh2>/lib.Linux64`, `cmake --build build-hip --parallel 64`: exit 0. `-s 64 -o binvox` takes the GPU path (`CUDA device(s) found`, "MapSMtoCores for SM 9.5 is undefined", the known cosmetic fallback). The validator owns the differential.
