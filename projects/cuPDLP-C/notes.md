@@ -533,3 +533,26 @@ Open for you: whether to keep the build.sh/INSTALL commits, and the AMD copyrigh
 
 <UPSTREAM_REPLY: write once validation has completed at 8f43bf8. Say that current main is merged so the PR no longer conflicts, that every file the port touches keeps the repository's line endings for it, which AMD GPUs (only those with a completed validation at 8f43bf8) passed testcudalin, testcublas, afiro and the new CTest suite and NumPy checker, and that build.sh gains a `MODE=hip` option documented in INSTALL.>
 ```
+
+## Review 2026-11-04 (moat-fix-41 at 8f43bf8, linux-gfx942): re-review
+
+Scope: the new commit since the 09bb532 review, `git diff 09bb532 8f43bf8` (INSTALL only, +4/-3). upstream/main is still f81f459, so the merge resolution reviewed at 09bb532 stands. `git diff upstream/main 8f43bf8` still lists the same 14 files. Each file still uses one line-ending convention, the same one upstream uses (CRLF line count equals total lines for the CMake/CUDA/header files; INSTALL, README.md and build.sh have 0 CR).
+
+Verdict: review passed. There are no findings.
+
+- Finding 1 (INSTALL hip install path) is addressed. INSTALL:37-39 lists `.coinor-deps/cupdlp-hip-install/bin/plc`, which matches build.sh `prefix="$PWD/.coinor-deps/cupdlp-$mode-install"` for `MODE=hip`. INSTALL:42 reads "CUDA or ROCm libraries". INSTALL stays LF, and its longest line (85) is within upstream's line-width range for the file.
+- 8f43bf8 commit message: `[ROCm]` title within 72 characters, rationale, "Authored with Claude.", fenced Test Plan, and no Co-Authored-By trailer.
+- `jargon.py --port cuPDLP-C` (local `main` set to origin/main in the clone) gives the same 2 known false positives in bundled `ThirdParty/HiGHS` comments, which come from the stale fork mirror.
+- Upstream PR #41, read-only query today: OPEN, CONFLICTING/DIRTY, head d380bca, 0 comments and 0 reviews. "No maintainer has commented" holds. No fork review PR exists yet.
+
+### Fix review PR body at 8f43bf8: review
+
+`jargon.py -` and `prose.py` both report clean, and the text is ASCII. I checked every factual claim against the head: the README diff is the one AMD line, the line-ending claim holds, "most" CRLF is right, 09bb532/8f43bf8 are separate commits, and the INSTALL description matches. The `<TESTED_ON>` and `<UPSTREAM_REPLY>` placeholders are correct for now, because no platform has a validation recorded at 8f43bf8 (all read revalidate). The body cannot be posted until validators complete at 8f43bf8. To reduce the risk of a placeholder being posted verbatim, here is a ready `## Upstream reply` with one slot to fill. Name only the GPUs whose platform records show `completed` with `validated_sha` 8f43bf8. If the head moves again, re-check. It passes `jargon.py -`, `prose.py` and the ASCII check:
+
+```
+## Upstream reply
+
+I merged current main into this branch, so it no longer conflicts, and every file the port touches keeps the line endings the repository uses for it. I retested on <GPUs validated at 8f43bf8, e.g. "an AMD Instinct MI300X (gfx942)">: testcudalin, testcublas, afiro, and your new CTest suite and NumPy checker all pass. build.sh also gains a `MODE=hip` option, documented in INSTALL.
+```
+
+The open questions for jeff are unchanged (whether to keep the build.sh/INSTALL commits, and the AMD copyright headers).
