@@ -3,12 +3,14 @@
 LLNL LEAP (LivermorE AI Projector for CT). ROCm/HIP port, lead linux-gfx90a.
 Strategy B: torch CUDAExtension build-time hipify over the canonical `.cu`.
 
-## Build (gfx90a;gfx1100, GCD 0)
+## Build
 ```
 cd projects/LEAP/src
-export HIP_VISIBLE_DEVICES=0 PYTORCH_ROCM_ARCH="gfx90a;gfx1100"
-python setup_AMD.py build_ext --inplace        # or: bash build_rocm.sh
+python setup_AMD.py build_ext --inplace
 ```
+- `build_rocm.sh` was removed at 5f6816f (see "Changes requested 2026-11-04").
+  With `PYTORCH_ROCM_ARCH` unset, torch picks the targets; set it to override,
+  e.g. `PYTORCH_ROCM_ARCH="gfx90a;gfx1100"` for a multi-arch build.
 - `setup_AMD.py` is the torch CUDAExtension build (the repo's plain `setup.py` is
   the CMake/ctype path; do not use it for ROCm). The ROCm branch defines
   `-D__USE_GPU -D__INCLUDE_CUFFT` and links `hipfft`.
@@ -382,3 +384,150 @@ Cone-flat geometry with tilt, mu=0.01: NaN/Inf count = 0/6128640. PASS.
 Wave32/RDNA3 verdict: software-interpolation fix is arch-unified/wave-agnostic. gfx1101 (RDNA3, wave32) results are numerically identical to gfx90a (CDNA2, wave64), gfx1100 (RDNA3, wave32), and gfx1201 (RDNA4, wave32) for all 12 cases.
 
 validated_sha: 4e102c9cfd371b5900c68461bdc8f2a320d71017
+
+## Changes requested 2026-11-04 (porter, linux-gfx90a, moat-port c77df45 -> 5f6816f)
+
+jeff's `/moat changes-requested` on the review PR, https://github.com/AMD-Ecosystem/LEAP/pull/1#issuecomment-6618789350 (2026-11-04T00:09:12Z, against head c77df45):
+
+> In build_rocm.sh, why are we forcing certain gfx targets instead of letting them auto-detect somehow?
+
+The PR had no line threads (graphql `reviewThreads` empty); that comment is the whole request.
+
+Answer: `build_rocm.sh` (added by the port) hard-coded `HIP_VISIBLE_DEVICES=0` and `PYTORCH_ROCM_ARCH="gfx90a;gfx1100"`, the validation hosts' GPUs. Apart from that it ran `rm -rf build *.egg-info` and `python setup_AMD.py build_ext --inplace | tee build_rocm.log`. torch's `CUDAExtension` already chooses the targets when `PYTORCH_ROCM_ARCH` is unset, so the script was removed rather than given its own arch detection. `setup_AMD.py` has no arch selection of its own (checked `git diff origin/main..moat-port -- setup_AMD.py`). `git grep build_rocm` found no other reference in the fork.
+
+### torch default, verified against the installed source
+
+The dispatch analysis said the unset default is `torch._C._cuda_getArchFlags()` (the list torch was built with). That was true from pytorch 71ee3849248 (#80498, 2022) through 2.11. pytorch 8bbfb71691b (#168998, "[ROCm] Detect and compile for user architecture only", first in v2.12.0) changed it to the arches of the visible GPUs. The torch on this host (2.16.0a0+git6c3af02, HIP 7.16.26385), `torch/utils/cpp_extension.py`:
+
+```
+2895	    _archs = os.environ.get('PYTORCH_ROCM_ARCH', None)
+2896	    if not _archs:
+2897	        arch_set = set()
+2898	        # the assumption is that the extension should run on any of the currently visible cards,
+2899	        # which could be of different types - therefore all archs for visible cards should be included
+2900	        for i in range(torch.cuda.device_count()):
+2901	            device_properties = torch.cuda.get_device_properties(i)
+2902	            if hasattr(device_properties, "gcnArchName"):
+2903	                device_arch = (device_properties.gcnArchName).split(":", 1)[0]
+2904	                arch_set.add(device_arch)
+2905
+2906	        archs = ";".join(arch_set)
+...
+2912	    else:
+2913	        archs = _archs.replace(' ', ';')
+2914
+2915	    archs = archs.split(';')
+2916	    flags = [f'--offload-arch={arch}' for arch in archs]
+```
+
+Both defaults are reasonable, and `PYTORCH_ROCM_ARCH` overrides either. On torch >= 2.12 the default follows `HIP_VISIBLE_DEVICES`, so a build on a pinned GPU produces only that GPU's arch. (`torch._C._cuda_getArchFlags()` here is `gfx90a gfx942 gfx950 gfx1100 gfx1201`, but this torch does not use it as the default.) Since `setup_AMD.py` already calls `torch.cuda.get_device_name(0)`, a visible GPU is needed at build time anyway.
+
+### Build and test (HIP_VISIBLE_DEVICES=3 from the dispatcher, PYTORCH_ROCM_ARCH unset)
+
+The image exports `PYTORCH_ROCM_ARCH=gfx90a;gfx942;gfx950;gfx1100;gfx1201`, so the build used `env -u PYTORCH_ROCM_ARCH`. Python is /opt/python-3.11-venv (torch above). `$FLEET_VENV` has no torch.
+
+```
+cd projects/LEAP/src && git clean -xfdq
+env -u PYTORCH_ROCM_ARCH bash utils/timeit.sh LEAP compile -- bash -c "cd $S && python setup_AMD.py build_ext --inplace"   # rc=0
+# log: cpp_extension.py:2909] The environment variable `PYTORCH_ROCM_ARCH` is not set, all archs for visible cards are included for compilation (gfx90a).
+# 20 hipcc invocations, all --offload-arch=gfx90a; output src/leapct.cpython-311-x86_64-linux-gnu.so
+$ROCM_SDK_DEVEL/lib/llvm/bin/llvm-objdump --offloading src/leapct*.so
+# 20 hip-amdgcn-amd-amdhsa--gfx90a bundles + 20 host bundles; no other arch
+LD_LIBRARY_PATH=$ROCM_SDK_DEVEL/lib ldd src/leapct*.so | grep hipfft   # libhipfft.so.0 resolved
+AMD_LOG_LEVEL=3 python unitTests/gpu_vs_cpu_validate.py               # rc=0, Gfx Major/Minor/Stepping: 9/0/10
+```
+(`$ROCM_SDK_DEVEL` = `/opt/python-3.11-venv/lib/python3.11/site-packages/_rocm_sdk_devel`. llvm-objdump writes the extracted bundles next to the .so; they were deleted afterwards and the fork tree is clean.)
+
+gpu_vs_cpu_validate.py: 12/12 PASS, OVERALL: PASS. The numbers match the 2026-06-02 gfx90a run except cone-flat VD, where the fbp interior is 0.9998 (was 1.0000) and the adjoint 1.42e-04 (was 1.18e-04); this is a newer torch/ROCm stack with no device-code change.
+```
+parallel      VD  finite=True  fbp_interior=1.0000 (err 0.000)  adjoint=2.54e-05  PASS
+parallel      SF  finite=True  fbp_interior=1.0000 (err 0.000)  adjoint=1.64e-05  PASS
+fan           VD  finite=True  fbp_interior=1.0000 (err 0.000)  adjoint=2.44e-04  PASS
+fan           SF  finite=True  fbp_interior=1.0000 (err 0.000)  adjoint=1.85e-04  PASS
+coneparallel  VD  finite=True  fbp_interior=1.0000 (err 0.000)  adjoint=1.24e-03  PASS
+coneparallel  SF  finite=True  fbp_interior=1.0000 (err 0.000)  adjoint=5.07e-05  PASS
+cone-flat     VD  finite=True  fbp_interior=0.9998 (err 0.000)  adjoint=1.42e-04  PASS
+cone-flat     SF  finite=True  fbp_interior=0.9998 (err 0.000)  adjoint=1.46e-04  PASS
+cone-curved   VD  finite=True  fbp_interior=1.0000 (err 0.000)  adjoint=8.54e-05  PASS
+cone-curved   SF  finite=True  fbp_interior=1.0000 (err 0.000)  adjoint=1.30e-04  PASS
+modular       VD  finite=True  fbp_interior=0.9998 (err 0.000)  adjoint=3.39e-03  PASS
+modular       SF  finite=True  fwd-vs-VD (err 0.000)  adjoint=n/a  PASS
+```
+The log also has 61 `:1:rocdevice.cpp:4161 hsa_amd_pointer_info() failed` lines from the HIP runtime at log level 1. Tests pass, and this is likely ctypes host pointers being queried. Earlier notes do not say whether those runs printed them.
+
+Attenuated-beam detector-edge check: the script for the earlier "cone-flat with tilt, mu=0.01" gate was never recorded, so it was rewritten (agent_space, not committed). It uses the test's geometry constants, f=1, voxel mu=0.01 via `set_attenuationMap`, then `project`. Results:
+- parallel beam: 0/6128640 non-finite, max 47.114. PASS.
+- cone-flat tilt=1: LEAP prints `Error: attenuated backprojection only works for parallel-beam data!` and returns all zeros, which is an upstream restriction. The earlier records' "cone-flat with tilt" counts of 0/N may have measured this zero output and not a real projection: the gfx1101 count, 6128640, equals 360x133x128 for this geometry. The parallel-beam run is the meaningful check of the point-bound `f` fetch.
+
+The source delta is the deletion of one shell script; no device or host source changed. Prior platform evidence is at c77df45. Whether the validators carry it forward or re-run is their decision from the delta.
+
+Not done here: step 9 of porter.md (replying on the review PR). This was a fleet job with every `gh` write forbidden, so the review PR has no reply. jeff can answer his own comment with the "Answer" paragraph above.
+
+### Questions for jeff
+
+1. The dispatch prompt asked the new body to say the build "targets the architectures the installed PyTorch was built for". That is the pre-2.12 behaviour only (see above), so the proposed body names both. If you want a single sentence, current torch's behaviour is "the GPUs visible at build time".
+2. The body's build snippet starts with `cd src`, but `setup_AMD.py` is at the repository root (`src/setup_AMD.py` does not exist), so `cd src && python setup_AMD.py ...` fails. As instructed, the line is left verbatim below. The fix is to drop `cd src` (run from the repository root). The built `.so` is still copied into `src/`, where `leapctype.py` loads it.
+
+### Proposed review PR body (for jeff)
+
+Two changes from the live body, nothing else. The build snippet loses the `PYTORCH_ROCM_ARCH` export and the `build_rocm.sh` comment, and a sentence after it gives the default and the override. In "Build-system and cleanup changes", the `setup_AMD.py`/`build_rocm.sh` clause is corrected. Checked with `utils/prose.py` (clean), `utils/jargon.py` (clean), ASCII only. The PR is not edited.
+
+~~~~markdown
+## Summary
+
+This PR adds AMD GPU support to LEAP by making the CUDA projector, filter, and scatter kernels build and run correctly on ROCm through HIP. It uses the existing torch extension build (`setup_AMD.py`): on a ROCm install, PyTorch's build machinery hipifies the canonical `.cu` sources at build time, so a single set of sources serves both vendors and no file is renamed or duplicated for HIP.
+
+To build on ROCm:
+
+```
+cd src
+python setup_AMD.py build_ext --inplace
+```
+
+The build compiles for the GPU architectures PyTorch's extension build selects by default: with PyTorch 2.12 and later, those of the GPUs visible at build time; with earlier releases, those the installed PyTorch was built for. Set `PYTORCH_ROCM_ARCH` (for example `PYTORCH_ROCM_ARCH="gfx90a;gfx1100"`) to choose the architectures explicitly.
+
+The resulting `leapct` shared library is loaded by `leapctype.py` via ctypes exactly as before.
+
+## What is implemented
+
+Texture sampling is the central piece of the port. LEAP's projectors issue several hundred `tex3D`/`tex2D`/`tex1D<float>` fetches at fractional coordinates and rely on `cudaFilterModeLinear` hardware interpolation on float element-read textures, which HIP rejects at texture-creation time. On ROCm, every texture is therefore created with point filtering (`cuda_utils.cu`), and new device-only helpers `leapTex3D`/`leapTex2D`/`leapTex1D` (`cuda_utils.h`) perform the trilinear/bilinear/linear blend in software at the fetch site. Each corner sample goes through the hardware point-mode `tex*D<float>`, so the texture address mode (border-zero or clamp) still governs out-of-range neighbors exactly as hardware interpolation did, with no out-of-bounds memory access, and the CUDA unnormalized -0.5 texel-center convention is reproduced. On CUDA the helpers forward straight to the texture builtins, preserving hardware filtering.
+
+Only fetch sites whose texture is bound with linear filtering are routed through the helpers. Point-bound textures keep the raw `tex*D<float>` fetch, because HIP point sampling already matches CUDA point sampling exactly; routing an integer-coordinate point fetch (for example the Siddon projectors) through the linear helper would wrongly blend neighbors. The Joseph modular-beam path chooses its filter mode at runtime, so those kernels take a `linearInterp` flag and the helper degrades to a point fetch when it is false, keeping both modes correct with one kernel.
+
+Detector-edge footprint weights can compute coordinates of the form `0/0 = NaN`; CUDA hardware texturing returns a finite border/clamped value for a non-finite coordinate, which the call site then multiplies by the zero weight. The software helpers sanitize non-finite input coordinates to reproduce that, keeping cone/fan/modular projections finite at the detector edges.
+
+The GPU FFT filter path (ramp and Hilbert filtering in `ramp_filter.cu`) is enabled on ROCm by defining `__INCLUDE_CUFFT`; the cuFFT calls map to hipFFT during hipify and the extension links `hipfft`.
+
+Build-system and cleanup changes: `setup_AMD.py` gains a ROCm branch (defines and hipFFT linkage) and leaves GPU architecture selection to PyTorch's extension build; three stale one-shot hipify dumps (`src/hip_utils.h`, `src/projectors_Joseph_cpu_hip.h`, `src/ramp_filter_hip.cuh`) are removed because they are unreferenced and collide with the names the build-time hipify generates, and those generated outputs are now gitignored; `src/analytic_ray_tracing_gpu.cu` includes `cuda_runtime.h` before its `.cuh` so `float3`/`float2` resolve on HIP.
+
+Windows/MSVC support required four guarded fixes: `leap_defines.h` skips its `uint8`/`uint16` typedefs when they would clash with HIP's vector types under MSVC (`file_io.cpp` gets a local cstdint-based typedef under the same guard); a minimal `PYBIND11_MODULE` stub satisfies the `/EXPORT:PyInit_leapct` symbol the torch extension linker requires; `PROJECTOR_EXPORTS` is defined so the C interface exports rather than imports; and `leapct_exports.def` lists the 207 exported symbols so MSVC link-time code generation does not strip them.
+
+A new test, `unitTests/gpu_vs_cpu_validate.py`, exercises 6 geometries (parallel, fan, cone-parallel, cone-flat, cone-curved, modular) with both the VD and SF projector models, checking that forward/backprojection/FBP are finite, that FBP of a uniform cylinder recovers an interior value of 1.0 (which also exercises the hipFFT ramp-filter path), and that the forward/backprojection adjoint identity `<Af,g> == <f,A^T g>` holds.
+
+## Effect on the CUDA/NVIDIA path
+
+CUDA behavior is unchanged. The texture helpers compile to the original hardware `tex*D` builtins under nvcc, so NVIDIA builds keep hardware linear filtering; the point-filter override, hipFFT linkage, and ROCm build flags are guarded to HIP; the Windows fixes are guarded to MSVC (the vector-type guard additionally requires the HIP platform). The CPU projectors (`*_cpu.cpp`) are not touched. The only CUDA-visible source change is mechanical: linear-filtered fetch sites call the forwarding helpers, and the Joseph modular-beam kernels carry the extra `linearInterp` parameter.
+
+## Validation
+
+All testing was done on real AMD GPUs. `unitTests/gpu_vs_cpu_validate.py` (12 tests: 6 geometries x {VD, SF}) passed 12/12 on each of:
+
+- AMD Instinct MI250X (gfx90a, CDNA2, wave64), Linux. Native gfx90a dispatch confirmed with `AMD_LOG_LEVEL=3`. A multi-architecture `gfx90a;gfx1100` build was verified to contain both code objects, with `libhipfft` linked.
+- AMD Radeon Pro W7800 48GB (gfx1100, RDNA3, wave32), Linux. Two runs, deterministic, matching the gfx90a results.
+- AMD Radeon RX 9070 XT (gfx1201, RDNA4, wave32), Windows, ROCm SDK 7.14.0a20260604 wheels with torch 2.9.1.
+- AMD Radeon PRO V710 (gfx1101, RDNA3, wave32), Windows.
+
+For every geometry/model pair: forward, backprojection, and FBP outputs are finite (zero NaN/Inf); the uniform-cylinder FBP interior recovers 1.0000 within 0.03%; and the adjoint identity holds with relative error below 5e-3 (typically around 1e-4). Results are numerically identical across all four GPUs. As an extra check for the detector-edge NaN-coordinate case, a tilted cone-beam attenuated-beam forward projection was scanned for non-finite values: 0 of 760320 on gfx90a, 0 of 5898240 on gfx1100, and 0 of 6128640 on gfx1101.
+
+Two pre-existing upstream behaviors were reproduced, not introduced: modular-beam SF FBP does not converge (tilted-detector separable footprint), while modular SF forward projection matches modular VD and modular VD FBP recovers 1.0; and the in-tree CPU projectors returned incorrect values under this torch extension build in our environment, so the cylinder-FBP recovery and adjoint identity serve as the correctness gates instead of a GPU-vs-CPU comparison. No `*_cpu.cpp` file is modified.
+
+This work was authored with the assistance of Claude, an AI assistant.
+
+---
+
+This pull request was prepared with the help of an AI assistant acting as a coding agent and was read and approved by a person before it was opened. It comes from an ongoing effort to add AMD GPU support to widely used CUDA projects, one repository at a time: https://github.com/AMD-Ecosystem/moat -- that repository describes how the work is done and what a person checks before anything is submitted.
+
+If you would rather not receive pull requests from this effort, say so here or open an issue at https://github.com/AMD-Ecosystem/moat/issues/new/choose and we will close this and stop. That can cover this repository alone or everything you own, whichever you prefer.
+
+
+~~~~

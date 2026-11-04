@@ -44,3 +44,6 @@
 {"kind":"session","ts":"2026-06-16T09:53:13Z","epoch":1781603593.040874900,"event":"end","platform":"windows-gfx1101"}
 {"kind": "tokens", "ts": "2026-06-16T06:35:36Z", "tokens": 25238, "source": "porter"}
 {"kind": "tokens", "ts": "2026-06-16T09:54:31Z", "tokens": 86685, "source": "validator"}
+{"kind":"phase","ts":"2026-11-04T00:21:05Z","phase":"compile","seconds":0.024,"exit":2,"cmd":"python setup_AMD.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-04T00:21:28Z","phase":"compile","seconds":17.298,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261103-161453-leap-fix-arch/moat/projects/LEAP/src && python setup_AMD.py build_ext --inplace"}
+{"kind":"phase","ts":"2026-11-04T00:22:31Z","phase":"test","seconds":9.350,"exit":0,"cmd":"bash -c cd /var/lib/jenkins/fleet/jobs/mi200-20261103-161453-leap-fix-arch/moat/projects/LEAP/src && AMD_LOG_LEVEL=3 python unitTests/gpu_vs_cpu_validate.py"}
